@@ -95,6 +95,29 @@ pub struct ParsedStatus {
     pub event: AgentStatusEvent,
 }
 
+/// Stamp a session-id-free [`StatusSnapshot`] with a Vimeflow PTY
+/// session id, producing the [`AgentStatusEvent`] that the rest of
+/// the runtime consumes.
+///
+/// Centralizes the eight-field copy that was originally duplicated
+/// across `base/watcher_runtime::compose_event`,
+/// `claude_code/statusline::snapshot_to_event`, and the test-only
+/// `codex/parser::snapshot_to_event` (PR #261 Claude review F2).
+/// Future `AgentStatusEvent` field additions only need to update this
+/// one mapping.
+pub(crate) fn stamp_snapshot(session_id: &str, snapshot: StatusSnapshot) -> AgentStatusEvent {
+    AgentStatusEvent {
+        session_id: session_id.to_string(),
+        agent_session_id: snapshot.agent_session_id,
+        model_id: snapshot.model_id,
+        model_display_name: snapshot.model_display_name,
+        version: snapshot.version,
+        context_window: snapshot.context_window,
+        cost: snapshot.cost,
+        rate_limits: snapshot.rate_limits,
+    }
+}
+
 /// Where transcript paths come from. Step 0c extracted this from
 /// `AgentAdapter`; step B' narrows visibility from `pub` to
 /// `pub(crate)` so it lines up with the other 4 split traits in

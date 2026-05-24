@@ -26,7 +26,7 @@
 use std::sync::Arc;
 
 use super::claude_code::ClaudeCodeAdapter;
-use super::codex::{CodexAdapter, CompositeLocator};
+use super::codex::{default_codex_home, CodexAdapter, CompositeLocator};
 use super::error::AttachError;
 use super::traits::{
     StateDecoder, StatusSourceLocator, TranscriptPathValidator, TranscriptStreamer,
@@ -65,11 +65,14 @@ impl AgentBindings {
     /// Build a session's bindings from the attach context.
     ///
     /// Dispatches by `ctx.agent_type` and wires each variant to the
-    /// concrete adapter + locator. Returns an `AttachError` for any
-    /// pre-flight failure observable at this layer; today's
-    /// implementation only surfaces `LocatorFatal` for Codex with a
-    /// missing `provider_home`, but the enum's variant set is
-    /// forward-looking per #246 acceptance.
+    /// concrete adapter + locator. The return type is
+    /// `Result<Self, AttachError>` for forward-compatibility with the
+    /// D' service boundary, but today's implementation is
+    /// infallible — Codex with `provider_home == None` falls back to
+    /// `default_codex_home()` rather than failing (PR #261 codex
+    /// review F3). The `AttachError` variants are reserved per #246
+    /// acceptance for failure modes that become observable when D'
+    /// retypes the locator/validator path.
     pub(crate) fn for_attach(ctx: &AttachContext) -> Result<Self, AttachError> {
         match ctx.agent_type {
             AgentType::ClaudeCode => {
@@ -86,24 +89,35 @@ impl AgentBindings {
             }
             AgentType::Codex => {
                 // Codex's locator needs `codex_home` + `pid` +
-                // `pty_start`. Pull them from the attach context;
-                // `provider_home` is `Some(~/.codex)` for the Codex
-                // variant per the central config registry. If it
-                // isn't (config drift, custom build), surface a
-                // typed `LocatorFatal` rather than silently
-                // defaulting.
-                let codex_home = ctx.provider_home.clone().ok_or_else(|| {
-                    AttachError::LocatorFatal(
-                        "Codex AttachContext has no provider_home".to_string(),
-                    )
-                })?;
+                // `pty_start`. `ctx.provider_home` carries the typed
+                // value from the central config registry when
+                // `dirs::home_dir()` resolved successfully; in headless
+                // / service sessions where it didn't, fall back to
+                // `default_codex_home()` (relative `.codex`) so attach
+                // still works — matching the pre-B' behavior of
+                // `CodexAdapter::new` (PR #261 codex review F3).
+                //
+                // The same `codex_home` value is then passed into BOTH
+                // the outer `CompositeLocator` AND the adapter's
+                // internal locator via `CodexAdapter::with_home`. The
+                // earlier `CodexAdapter::new` re-derived its own home
+                // from `default_codex_home()`, which could diverge from
+                // `ctx.provider_home` whenever a test (or future caller)
+                // supplied a non-default value (PR #261 Claude review F1).
+                let codex_home = ctx
+                    .provider_home
+                    .clone()
+                    .unwrap_or_else(default_codex_home);
                 let locator: Arc<CompositeLocator> = Arc::new(CompositeLocator::new(
-                    codex_home,
+                    codex_home.clone(),
                     ctx.agent_pid,
                     ctx.pty_start,
                 ));
-                let adapter: Arc<CodexAdapter> =
-                    Arc::new(CodexAdapter::new(ctx.agent_pid, ctx.pty_start));
+                let adapter: Arc<CodexAdapter> = Arc::new(CodexAdapter::with_home(
+                    ctx.agent_pid,
+                    ctx.pty_start,
+                    codex_home,
+                ));
                 Ok(Self {
                     agent_type: ctx.agent_type,
                     locator,
@@ -222,20 +236,18 @@ mod tests {
         assert_eq!(located.static_transcript_hint, None);
     }
 
-    /// Codex `for_attach` requires `provider_home`. Pin the typed
-    /// error so a future config-registry drift doesn't silently fall
-    /// back to a default path.
+    /// Codex `for_attach` with `provider_home == None` falls back to
+    /// `default_codex_home()` rather than failing. Pin the behavior so
+    /// headless / service sessions (where `dirs::home_dir()` returns
+    /// `None`) keep attaching, matching the pre-B' path through
+    /// `CodexAdapter::new` (PR #261 codex review F3). The successful
+    /// bind here proves both that the fallback fired AND that the
+    /// outer `Arc<CompositeLocator>` was constructed without panicking
+    /// on a `None`.
     #[test]
-    fn for_attach_codex_without_provider_home_errors_locator_fatal() {
-        let result = AgentBindings::for_attach(&codex_ctx(None));
-        let err = match result {
-            Ok(_) => panic!("codex without provider_home should LocatorFatal, got Ok"),
-            Err(e) => e,
-        };
-        assert!(
-            matches!(err, AttachError::LocatorFatal(_)),
-            "expected LocatorFatal, got: {:?}",
-            err,
-        );
+    fn for_attach_codex_without_provider_home_falls_back_to_default_home() {
+        let bindings =
+            AgentBindings::for_attach(&codex_ctx(None)).expect("codex falls back to default home");
+        assert_eq!(bindings.agent_type, AgentType::Codex);
     }
 }

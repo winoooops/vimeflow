@@ -12,7 +12,7 @@
 use serde::Deserialize;
 
 use super::super::serde_helpers::{lenient_f64, lenient_object, lenient_string, lenient_u64};
-use super::super::types::StatusSnapshot;
+use super::super::types::{stamp_snapshot, StatusSnapshot};
 use crate::agent::types::{
     AgentStatusEvent, ContextWindowStatus, CostMetrics, CurrentUsage, RateLimitInfo, RateLimits,
 };
@@ -219,16 +219,7 @@ fn dto_to_snapshot(dto: ClaudeStatusDto) -> StatusSnapshot {
 }
 
 fn snapshot_to_event(session_id: &str, snapshot: StatusSnapshot) -> AgentStatusEvent {
-    AgentStatusEvent {
-        session_id: session_id.to_string(),
-        agent_session_id: snapshot.agent_session_id,
-        model_id: snapshot.model_id,
-        model_display_name: snapshot.model_display_name,
-        version: snapshot.version,
-        context_window: snapshot.context_window,
-        cost: snapshot.cost,
-        rate_limits: snapshot.rate_limits,
-    }
+    stamp_snapshot(session_id, snapshot)
 }
 
 fn context_window_from_dto(cw: Option<ClaudeContextWindowDto>) -> ContextWindowStatus {

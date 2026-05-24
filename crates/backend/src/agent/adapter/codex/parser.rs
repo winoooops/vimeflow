@@ -29,7 +29,7 @@ use serde::Deserialize;
 
 use super::super::serde_helpers::{lenient_f64, lenient_object, lenient_string, lenient_u64};
 #[cfg(test)]
-use crate::agent::adapter::types::ParsedStatus;
+use crate::agent::adapter::types::{stamp_snapshot, ParsedStatus};
 use crate::agent::adapter::types::StatusSnapshot;
 #[cfg(test)]
 use crate::agent::types::AgentStatusEvent;
@@ -85,16 +85,7 @@ pub(crate) fn parse_rollout_snapshot(raw: &str) -> Result<StatusSnapshot, String
 
 #[cfg(test)]
 fn snapshot_to_event(session_id: &str, snapshot: StatusSnapshot) -> AgentStatusEvent {
-    AgentStatusEvent {
-        session_id: session_id.to_string(),
-        agent_session_id: snapshot.agent_session_id,
-        model_id: snapshot.model_id,
-        model_display_name: snapshot.model_display_name,
-        version: snapshot.version,
-        context_window: snapshot.context_window,
-        cost: snapshot.cost,
-        rate_limits: snapshot.rate_limits,
-    }
+    stamp_snapshot(session_id, snapshot)
 }
 
 // -------------------------- DTO layer --------------------------

@@ -2,7 +2,7 @@
 id: module-boundaries
 category: code-quality
 created: 2026-04-30
-last_updated: 2026-05-07
+last_updated: 2026-05-24
 ref_count: 1
 ---
 
@@ -51,3 +51,36 @@ Don't widen the coupling by adding a second importer.
 - **Finding:** `TerminalZone` decided whether to wire `aria-labelledby` on each panel by recomputing `isActive || status === 'running' || status === 'paused'` inline. The exact same predicate (modulo the `isActive` half) lives in `pickNextVisibleSessionId.ts` as `isOpenSessionStatus`, which `Sidebar` and `SessionTabs` both consume. Today the two are equivalent, but the moment `isOpenSessionStatus` is widened (e.g. to admit a future `suspended` status), `TerminalZone`'s `hasVisibleTab` would silently lag — panels for the new status would emit `aria-labelledby={undefined}` even though `SessionTabs` would render a visible tab for them, breaking the WAI-ARIA tablist↔tabpanel linkage with no build error and no test failure. Same finding-class as #2 above (sibling-shape mismatch is a coupling smell) but the consequence here is functional, not stylistic.
 - **Fix:** Imported `isOpenSessionStatus` from `../utils/pickNextVisibleSessionId`. Replaced the inline three-line OR with `isActive || isOpenSessionStatus(session.status)`. Updated the comment to state the canonical-predicate consumption rationale ("a future non-open status auto-flows into both visibility surfaces without TerminalZone needing a separate update"). Code-review heuristic: when two files in the same feature directory implement the same predicate inline, ONE of them should host the helper and the other(s) should consume it — and reviewers should flag the duplicate the moment the second copy lands, not after a status-set extension surfaces the drift.
 - **Commit:** _(see git log for the cycle-17 fix commit on PR #174)_
+
+---
+
+### 4. Refactor splits a constructor — internal `codex_home` derivation desyncs between adapter and outer locator
+
+- **Source:** github-claude | PR #261 round 1 | 2026-05-24
+- **Severity:** MEDIUM
+- **File:** `crates/backend/src/agent/adapter/bindings.rs`
+- **Finding:** Step B' of the agent-adapter refactor moved `CompositeLocator` construction out of `CodexAdapter::new` and into `AgentBindings::for_attach`, but kept `CodexAdapter::new(pid, pty_start)` as the way to build the transitional `adapter_for_transcript_state`. `for_attach` derived `codex_home` from `ctx.provider_home`, then constructed two locators with potentially different homes: `bindings.locator = CompositeLocator::new(codex_home, ...)` and (inside `CodexAdapter::new`) a second `CompositeLocator::new(default_codex_home(), ...)`. Whenever `ctx.provider_home != default_codex_home()` (any test passing a custom home, or a future build-time override), `adapter.located_status_source()` would silently use the wrong root. Latent in B' (no live caller reached that path) but B''/D' migrations would inherit the mismatch unnoticed.
+- **Fix:** Promoted the test-only `CodexAdapter::with_home(pid, pty_start, codex_home)` to `pub(crate)` so the adapter accepts the same `codex_home` that the outer `CompositeLocator` used. `for_attach` now computes `codex_home` once and clones it into both. Lesson: when refactoring a self-contained constructor (`CodexAdapter::new`) into a multi-site wiring (`for_attach`), every value the original constructor *derived* internally needs to flow through the new wiring as a single source of truth — not be re-derived at each call site.
+- **Commit:** _(PR #261 round 1 `/lifeline:upsource-review` cycle 1)_
+
+---
+
+### 5. Triplicated `StatusSnapshot → AgentStatusEvent` 8-field mapping across three modules
+
+- **Source:** github-claude | PR #261 round 1 | 2026-05-24
+- **Severity:** LOW
+- **File:** `crates/backend/src/agent/adapter/base/watcher_runtime.rs` (and the duplicates in `claude_code/statusline.rs` + `codex/parser.rs`)
+- **Finding:** Three byte-for-byte identical 8-field mappings of `(session_id, StatusSnapshot) → AgentStatusEvent` lived in `base/watcher_runtime::compose_event`, `claude_code/statusline::snapshot_to_event`, and the test-only `codex/parser::snapshot_to_event`. Required-field additions to `AgentStatusEvent` would compile-error at all three sites (struct-literal syntax), but an optional-field addition could silently drift if only the watcher path was updated. Triple-duplication is the canonical cross-module DRY violation that this pattern was built for (cf. #1 and #3).
+- **Fix:** Promoted the mapping to `pub(crate) fn stamp_snapshot(session_id, StatusSnapshot) -> AgentStatusEvent` next to `StatusSnapshot` in `crate::agent::adapter::types`. All three call sites now delegate to it. Lesson: when a refactor extracts a session-id-free intermediate type (`StatusSnapshot`) deliberately to invert composition, the inverse stamping must be centralized too — otherwise every downstream call site re-implements the inversion and they drift on the next field addition.
+- **Commit:** _(PR #261 round 1 `/lifeline:upsource-review` cycle 1)_
+
+---
+
+### 6. Refactor surfaces what the old code absorbed — `dirs::home_dir() == None` becomes a hard-fail
+
+- **Source:** github-codex-connector | PR #261 round 1 | 2026-05-24
+- **Severity:** MEDIUM
+- **File:** `crates/backend/src/agent/adapter/bindings.rs`
+- **Finding:** Step B' moved `codex_home` derivation from `CodexAdapter::new` (which absorbed `dirs::home_dir() == None` via a `.codex` relative fallback) into `AgentBindings::for_attach`, which expected the typed `ctx.provider_home`. When that was `None`, `for_attach` returned `AttachError::LocatorFatal("Codex AttachContext has no provider_home")` rather than absorbing it. But `provider_home` is set via `dirs::home_dir().map(...)` in the central config registry — so it's `None` whenever the underlying call returns `None` (headless / service sessions with no resolvable `$HOME` / `/etc/passwd` entry). The refactor silently turned "works with relative `.codex`" into "Codex watcher fails to attach", a behavioral regression that disables status/transcript updates entirely in those environments. The reviewer's framing: "make sure the new wiring preserves the fallback the old constructor encapsulated, not just the happy path."
+- **Fix:** Promoted `default_codex_home()` from a module-private `fn` to `pub(crate) fn` and replaced the `ok_or_else(|| LocatorFatal(...))` with `unwrap_or_else(default_codex_home)`. Renamed the test from `..._errors_locator_fatal` to `..._falls_back_to_default_home`. Updated `error.rs`'s module doc to mark `AttachError` infallible at the `for_attach` site (variants reserved for D'). Lesson: refactors that hoist a `fn`'s body into a new module shape must preserve *every* observable behavior that body encapsulated — not just the happy path. Convert "what does the old code do when its inputs are degenerate?" into a checklist item in the refactor design pass.
+- **Commit:** _(PR #261 round 1 `/lifeline:upsource-review` cycle 1)_

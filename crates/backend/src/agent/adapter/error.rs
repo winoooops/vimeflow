@@ -6,16 +6,18 @@
 //! - [`crate::agent::adapter::codex::locator::LocatorError`] —
 //!   provider-local (Codex), lives inside the locator impl.
 //! - [`AttachError`] — attach-level. **In B' the only wired path is
-//!   [`AgentBindings::for_attach`] returning `AttachError`, which
-//!   `start_agent_watcher_inner` maps to `String`.** Locator failures
+//!   [`AgentBindings::for_attach`] returning `Result<Self, AttachError>`,
+//!   which `start_agent_watcher_inner` maps to `String`.** As of PR
+//!   #261 codex round-4 fix, `for_attach` is infallible — the former
+//!   `LocatorFatal` for missing `provider_home` was replaced by a
+//!   `default_codex_home()` fallback so headless / service sessions
+//!   without a resolvable `$HOME` keep attaching. Locator failures
 //!   raised by `StatusSourceLocator::locate` still surface as
-//!   `String` through `base::start_for`; the remaining variants
-//!   (`LocatorExhausted` / `LocatorFatal` / `LocatorAmbiguous` /
-//!   `ValidatorRejected` / `NoAgentDetected` / `UnsupportedAgent`)
-//!   are reserved per #246 acceptance for the future D'
-//!   `AgentWatcherService` boundary, which will retype the locator
-//!   path. Today's `LocatorFatal` use in `for_attach` is the only
-//!   live producer — see `AgentBindings::for_attach`.
+//!   `String` through `base::start_for`. All six variants
+//!   (`NoAgentDetected` / `UnsupportedAgent` / `LocatorExhausted` /
+//!   `LocatorFatal` / `LocatorAmbiguous` / `ValidatorRejected`) are
+//!   reserved per #246 acceptance for the D' `AgentWatcherService`
+//!   boundary, which will retype the locator / validator path.
 //! - [`crate::agent::adapter::types::ValidateTranscriptError`] — stays
 //!   separate because it feeds `TxOutcome` diagnostics in the runtime,
 //!   not attach failures.

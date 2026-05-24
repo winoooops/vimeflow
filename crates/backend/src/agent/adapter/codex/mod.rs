@@ -48,7 +48,13 @@ impl CodexAdapter {
         }
     }
 
-    #[cfg(test)]
+    /// Explicit-home constructor. Used by `AgentBindings::for_attach`
+    /// so the outer `Arc<CompositeLocator>` and the adapter's internal
+    /// `CompositeLocator` share the same `codex_home`. Without this,
+    /// `CodexAdapter::new` would re-resolve `default_codex_home()`
+    /// and the two locators could see different roots whenever
+    /// `provider_home != default_codex_home()` (PR #261 Claude
+    /// review F1).
     pub(crate) fn with_home(pid: u32, pty_start: SystemTime, codex_home: PathBuf) -> Self {
         Self {
             locator: CompositeLocator::new(codex_home, pid, pty_start),
@@ -60,7 +66,13 @@ impl CodexAdapter {
     }
 }
 
-fn default_codex_home() -> PathBuf {
+/// Codex `codex_home` fallback. `dirs::home_dir()` returns `Some(~)` on
+/// typical desktop/CLI runs but `None` in headless / service sessions
+/// (no `HOME` env, no `/etc/passwd` entry). Mirrors the pre-B' behavior
+/// of `CodexAdapter::new`: `~/.codex` when home is known, relative
+/// `.codex` otherwise (PR #261 codex review F3 — keep Codex attach
+/// working when `provider_home` is `None`).
+pub(crate) fn default_codex_home() -> PathBuf {
     dirs::home_dir()
         .map(|home| home.join(".codex"))
         .unwrap_or_else(|| PathBuf::from(".codex"))

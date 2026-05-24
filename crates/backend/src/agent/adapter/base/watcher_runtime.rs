@@ -55,23 +55,16 @@ fn resolve_transcript_path(
 /// Step B': compose `AgentStatusEvent` from the session-id-free
 /// `StatusSnapshot` returned by `StateDecoder::decode`. The
 /// session_id stamping moved out of the decoder and into the runtime
-/// per the v4-frozen plan's R2.2 invariant. Local helper, not exposed
-/// — pre-B' callers of `parse_status` (the `AgentAdapter` façade)
-/// still do their own composition.
+/// per the v4-frozen plan's R2.2 invariant. Thin wrapper around
+/// `types::stamp_snapshot`; PR #261 Claude review F2 consolidated
+/// the previously-duplicated eight-field mapping into one
+/// `pub(crate)` helper that this function (and the legacy façade
+/// `snapshot_to_event` paths) both call.
 fn compose_event(
     session_id: &str,
     snapshot: crate::agent::adapter::types::StatusSnapshot,
 ) -> AgentStatusEvent {
-    AgentStatusEvent {
-        session_id: session_id.to_string(),
-        agent_session_id: snapshot.agent_session_id,
-        model_id: snapshot.model_id,
-        model_display_name: snapshot.model_display_name,
-        version: snapshot.version,
-        context_window: snapshot.context_window,
-        cost: snapshot.cost,
-        rate_limits: snapshot.rate_limits,
-    }
+    crate::agent::adapter::types::stamp_snapshot(session_id, snapshot)
 }
 
 /// Handle to a running watcher — dropping it stops the watcher and polling thread
