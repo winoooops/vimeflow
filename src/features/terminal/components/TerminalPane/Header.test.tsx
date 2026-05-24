@@ -83,10 +83,10 @@ describe('Header', () => {
     expect(screen.queryByText('−12')).not.toBeInTheDocument()
   })
 
-  test('collapsed header also hides the worktree chip', () => {
+  test('collapsed header hides the git ref chip', () => {
     render(<Header {...baseProps} isCollapsed worktreeName="agent-sidebar" />)
 
-    expect(screen.queryByTestId('worktree-chip')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('git-ref-chip')).not.toBeInTheDocument()
   })
 
   test('null branch omits the branch segment', () => {
@@ -95,10 +95,10 @@ describe('Header', () => {
     expect(screen.queryByText('feat/jose-auth')).not.toBeInTheDocument()
   })
 
-  test('renders worktree chip when worktreeName is supplied', () => {
+  test('renders git ref chip with worktree label when worktreeName is supplied', () => {
     render(<Header {...baseProps} worktreeName="agent-sidebar" />)
 
-    expect(screen.getByTestId('worktree-chip')).toHaveTextContent(
+    expect(screen.getByTestId('git-ref-chip-wt-label')).toHaveTextContent(
       'agent-sidebar'
     )
   })
