@@ -25,14 +25,6 @@ export interface WorkspaceCommandDeps {
    * via `setPaneUserLabel(ptyId, label)`.
    */
   activePanePtyId: string | null
-  /**
-   * Agent type of the active pane, or `null` if no session is active.
-   * This value is intentionally NOT trusted for `:rename-pane` write-back:
-   * new Claude/Codex panes can report `generic` until detection catches up.
-   * The command asks the backend to sync and lets the backend's live-agent
-   * registry decide whether `/rename` is supported.
-   */
-  activePaneAgentType: 'claude-code' | 'codex' | 'aider' | 'generic' | null
   createSession: () => void
   removeSession: (id: string) => void
   renameSession: (id: string, name: string) => void

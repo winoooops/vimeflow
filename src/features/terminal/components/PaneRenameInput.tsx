@@ -96,6 +96,7 @@ export const PaneRenameInput = ({
         onChange={(event) => setValue(event.target.value)}
         onBlur={onCancel}
         onKeyDown={handleKeyDown}
+        aria-label="Pane name"
         aria-invalid={validation.kind !== 'valid'}
         className="w-full bg-transparent px-1 py-0.5 font-mono text-[12.5px] text-on-surface outline-none"
       />

@@ -153,9 +153,11 @@ fn try_emit(
     last_emitted_title: &mut Option<String>,
 ) {
     let sanitized = sanitize_title(raw_title);
-    let is_user_renamed = sanitized
+    let source = sanitized
         .as_deref()
-        .is_some_and(|title| pending_user_rename_matches(session_id, title));
+        .map(|title| title_source_for_emit(session_id, title))
+        .unwrap_or(TitleSource::AiGenerated);
+    let is_user_renamed = matches!(&source, TitleSource::UserRenamed);
     let is_duplicate = sanitized.as_deref() == last_emitted_title.as_deref();
     let (title, new_memo) = match sanitized {
         Some(_) if is_duplicate && !is_user_renamed => return,
@@ -164,11 +166,6 @@ fn try_emit(
         None => return,
     };
 
-    let source = if is_user_renamed {
-        title_source_for_emit(session_id, &title)
-    } else {
-        TitleSource::AiGenerated
-    };
     let payload = AgentSessionTitleEvent {
         session_id: session_id.to_string(),
         agent_session_id: agent_session_id.to_string(),
@@ -182,19 +179,6 @@ fn try_emit(
     }
 
     *last_emitted_title = new_memo;
-}
-
-fn pending_user_rename_matches(session_id: &str, title: &str) -> bool {
-    let Ok(mut pending) = PENDING_RENAMES.lock() else {
-        log::warn!("codex title sync: pending rename lock poisoned");
-        return false;
-    };
-
-    let now = Instant::now();
-    pending.retain(|rename| rename.expires_at > now);
-    pending
-        .iter()
-        .any(|rename| rename.session_id == session_id && rename.title == title)
 }
 
 fn title_source_for_emit(session_id: &str, title: &str) -> TitleSource {

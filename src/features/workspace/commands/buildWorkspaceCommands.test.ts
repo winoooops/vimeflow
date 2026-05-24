@@ -39,7 +39,6 @@ describe('buildWorkspaceCommands - happy paths', () => {
       setPaneUserLabel,
       renameAgentSession,
       activePanePtyId: 'pty-active',
-      activePaneAgentType: 'generic',
       setActiveSessionId,
       notifyInfo,
     })
@@ -62,7 +61,6 @@ describe('buildWorkspaceCommands - happy paths', () => {
       setPaneUserLabel,
       renameAgentSession,
       activePanePtyId: 'pty-active',
-      activePaneAgentType: 'generic',
       setActiveSessionId,
       notifyInfo,
     })
@@ -84,7 +82,6 @@ describe('buildWorkspaceCommands - happy paths', () => {
       setPaneUserLabel,
       renameAgentSession,
       activePanePtyId: 'pty-active',
-      activePaneAgentType: 'generic',
       setActiveSessionId,
       notifyInfo,
     })
@@ -107,7 +104,6 @@ describe('buildWorkspaceCommands - happy paths', () => {
       setPaneUserLabel,
       renameAgentSession,
       activePanePtyId: 'pty-left',
-      activePaneAgentType: 'generic',
       setActiveSessionId,
       notifyInfo,
     })
@@ -133,7 +129,6 @@ describe('buildWorkspaceCommands - happy paths', () => {
       setPaneUserLabel,
       renameAgentSession,
       activePanePtyId: 'pty-shell',
-      activePaneAgentType: 'generic',
       setActiveSessionId,
       notifyInfo,
     })
@@ -162,7 +157,6 @@ describe('buildWorkspaceCommands - happy paths', () => {
       setPaneUserLabel,
       renameAgentSession,
       activePanePtyId: 'pty-agent',
-      activePaneAgentType: 'claude-code',
       setActiveSessionId,
       notifyInfo,
     })
@@ -191,7 +185,6 @@ describe('buildWorkspaceCommands - happy paths', () => {
       setPaneUserLabel,
       renameAgentSession,
       activePanePtyId: 'pty-claude',
-      activePaneAgentType: 'claude-code',
       setActiveSessionId,
       notifyInfo,
     })
@@ -213,7 +206,6 @@ describe('buildWorkspaceCommands - happy paths', () => {
       setPaneUserLabel,
       renameAgentSession,
       activePanePtyId: 'pty-codex',
-      activePaneAgentType: 'codex',
       setActiveSessionId,
       notifyInfo,
     })
@@ -235,7 +227,6 @@ describe('buildWorkspaceCommands - happy paths', () => {
       setPaneUserLabel,
       renameAgentSession,
       activePanePtyId: null,
-      activePaneAgentType: null,
       setActiveSessionId,
       notifyInfo,
     })
@@ -257,7 +248,6 @@ describe('buildWorkspaceCommands - happy paths', () => {
       setPaneUserLabel,
       renameAgentSession,
       activePanePtyId: 'pty-left',
-      activePaneAgentType: 'generic',
       setActiveSessionId,
       notifyInfo,
     })
@@ -279,7 +269,6 @@ describe('buildWorkspaceCommands - happy paths', () => {
       setPaneUserLabel,
       renameAgentSession,
       activePanePtyId: 'pty-left',
-      activePaneAgentType: 'generic',
       setActiveSessionId,
       notifyInfo,
     })
@@ -304,7 +293,6 @@ describe('buildWorkspaceCommands - happy paths', () => {
       setPaneUserLabel,
       renameAgentSession,
       activePanePtyId: 'pty-left',
-      activePaneAgentType: 'generic',
       setActiveSessionId,
       notifyInfo,
     })
@@ -327,7 +315,6 @@ describe('buildWorkspaceCommands - happy paths', () => {
       setPaneUserLabel,
       renameAgentSession,
       activePanePtyId: 'pty-left',
-      activePaneAgentType: 'generic',
       setActiveSessionId,
       notifyInfo,
     })
@@ -349,7 +336,6 @@ describe('buildWorkspaceCommands - happy paths', () => {
       setPaneUserLabel,
       renameAgentSession,
       activePanePtyId: 'pty-active',
-      activePaneAgentType: 'generic',
       setActiveSessionId,
       notifyInfo,
     })
@@ -371,7 +357,6 @@ describe('buildWorkspaceCommands - happy paths', () => {
       setPaneUserLabel,
       renameAgentSession,
       activePanePtyId: 'pty-active',
-      activePaneAgentType: 'generic',
       setActiveSessionId,
       notifyInfo,
     })
@@ -391,7 +376,6 @@ describe('buildWorkspaceCommands - happy paths', () => {
       setPaneUserLabel,
       renameAgentSession,
       activePanePtyId: 'pty-active',
-      activePaneAgentType: 'generic',
       setActiveSessionId,
       notifyInfo,
     })
@@ -413,7 +397,6 @@ describe('buildWorkspaceCommands - happy paths', () => {
       setPaneUserLabel,
       renameAgentSession,
       activePanePtyId: 'pty-active',
-      activePaneAgentType: 'generic',
       setActiveSessionId,
       notifyInfo,
     })
@@ -433,7 +416,6 @@ describe('buildWorkspaceCommands - happy paths', () => {
       setPaneUserLabel,
       renameAgentSession,
       activePanePtyId: 'pty-active',
-      activePaneAgentType: 'generic',
       setActiveSessionId,
       notifyInfo,
     })
@@ -455,7 +437,6 @@ describe('buildWorkspaceCommands - happy paths', () => {
       setPaneUserLabel,
       renameAgentSession,
       activePanePtyId: 'pty-active',
-      activePaneAgentType: 'generic',
       setActiveSessionId,
       notifyInfo,
     })
@@ -476,7 +457,6 @@ describe('buildWorkspaceCommands - happy paths', () => {
       setPaneUserLabel,
       renameAgentSession,
       activePanePtyId: 'pty-active',
-      activePaneAgentType: 'generic',
       setActiveSessionId,
       notifyInfo,
     })
@@ -497,7 +477,6 @@ describe('buildWorkspaceCommands - happy paths', () => {
       setPaneUserLabel,
       renameAgentSession,
       activePanePtyId: 'pty-active',
-      activePaneAgentType: 'generic',
       setActiveSessionId,
       notifyInfo,
     })
@@ -525,7 +504,6 @@ describe('buildWorkspaceCommands - happy paths', () => {
       setPaneUserLabel,
       renameAgentSession,
       activePanePtyId: 'pty-active',
-      activePaneAgentType: 'generic',
       setActiveSessionId,
       notifyInfo,
     })
@@ -546,7 +524,6 @@ describe('buildWorkspaceCommands - happy paths', () => {
       setPaneUserLabel,
       renameAgentSession,
       activePanePtyId: 'pty-active',
-      activePaneAgentType: 'generic',
       setActiveSessionId,
       notifyInfo,
     })
@@ -568,7 +545,6 @@ describe('buildWorkspaceCommands - happy paths', () => {
       setPaneUserLabel,
       renameAgentSession,
       activePanePtyId: 'pty-active',
-      activePaneAgentType: 'generic',
       setActiveSessionId,
       notifyInfo,
     })
@@ -621,7 +597,6 @@ describe('buildWorkspaceCommands - failure modes', () => {
       setPaneUserLabel,
       renameAgentSession,
       activePanePtyId: 'pty-active',
-      activePaneAgentType: 'generic',
       setActiveSessionId,
       notifyInfo,
     })
@@ -643,7 +618,6 @@ describe('buildWorkspaceCommands - failure modes', () => {
       setPaneUserLabel,
       renameAgentSession,
       activePanePtyId: 'pty-active',
-      activePaneAgentType: 'generic',
       setActiveSessionId,
       notifyInfo,
     })
@@ -670,7 +644,6 @@ describe('buildWorkspaceCommands - failure modes', () => {
       setPaneUserLabel,
       renameAgentSession,
       activePanePtyId: 'pty-active',
-      activePaneAgentType: 'generic',
       setActiveSessionId,
       notifyInfo,
     })
@@ -692,7 +665,6 @@ describe('buildWorkspaceCommands - failure modes', () => {
       setPaneUserLabel,
       renameAgentSession,
       activePanePtyId: 'pty-active',
-      activePaneAgentType: 'generic',
       setActiveSessionId,
       notifyInfo,
     })
@@ -717,7 +689,6 @@ describe('buildWorkspaceCommands - failure modes', () => {
       setPaneUserLabel,
       renameAgentSession,
       activePanePtyId: 'pty-active',
-      activePaneAgentType: 'generic',
       setActiveSessionId,
       notifyInfo,
     })
@@ -744,7 +715,6 @@ describe('buildWorkspaceCommands - failure modes', () => {
       setPaneUserLabel,
       renameAgentSession,
       activePanePtyId: 'pty-active',
-      activePaneAgentType: 'generic',
       setActiveSessionId,
       notifyInfo,
     })
@@ -766,7 +736,6 @@ describe('buildWorkspaceCommands - failure modes', () => {
       setPaneUserLabel,
       renameAgentSession,
       activePanePtyId: 'pty-active',
-      activePaneAgentType: 'generic',
       setActiveSessionId,
       notifyInfo,
     })
@@ -792,7 +761,6 @@ describe('buildWorkspaceCommands - failure modes', () => {
       setPaneUserLabel,
       renameAgentSession,
       activePanePtyId: 'pty-active',
-      activePaneAgentType: 'generic',
       setActiveSessionId,
       notifyInfo,
     })
@@ -822,7 +790,6 @@ describe('buildWorkspaceCommands - failure modes', () => {
       setPaneUserLabel,
       renameAgentSession,
       activePanePtyId: 'pty-active',
-      activePaneAgentType: 'generic',
       setActiveSessionId,
       notifyInfo,
     })
@@ -850,7 +817,6 @@ describe('buildWorkspaceCommands - failure modes', () => {
       setPaneUserLabel,
       renameAgentSession,
       activePanePtyId: 'pty-active',
-      activePaneAgentType: 'generic',
       setActiveSessionId,
       notifyInfo,
     })
@@ -876,7 +842,6 @@ describe('buildWorkspaceCommands - failure modes', () => {
       setPaneUserLabel,
       renameAgentSession,
       activePanePtyId: 'pty-active',
-      activePaneAgentType: 'generic',
       setActiveSessionId,
       notifyInfo,
     })
@@ -902,7 +867,6 @@ describe('buildWorkspaceCommands - failure modes', () => {
       setPaneUserLabel,
       renameAgentSession,
       activePanePtyId: 'pty-active',
-      activePaneAgentType: 'generic',
       setActiveSessionId,
       notifyInfo,
     })
@@ -927,7 +891,6 @@ describe('buildWorkspaceCommands - failure modes', () => {
       setPaneUserLabel,
       renameAgentSession,
       activePanePtyId: 'pty-active',
-      activePaneAgentType: 'generic',
       setActiveSessionId,
       notifyInfo,
     })
@@ -957,7 +920,6 @@ describe('buildWorkspaceCommands - failure modes', () => {
       setPaneUserLabel,
       renameAgentSession,
       activePanePtyId: 'pty-active',
-      activePaneAgentType: 'generic',
       setActiveSessionId,
       notifyInfo,
     })
@@ -987,7 +949,6 @@ describe('buildWorkspaceCommands - failure modes', () => {
       setPaneUserLabel,
       renameAgentSession,
       activePanePtyId: 'pty-active',
-      activePaneAgentType: 'generic',
       setActiveSessionId,
       notifyInfo,
     })
@@ -1012,7 +973,6 @@ describe('buildWorkspaceCommands - failure modes', () => {
       setPaneUserLabel,
       renameAgentSession,
       activePanePtyId: 'pty-active',
-      activePaneAgentType: 'generic',
       setActiveSessionId,
       notifyInfo,
     })
@@ -1034,7 +994,6 @@ describe('buildWorkspaceCommands - failure modes', () => {
       setPaneUserLabel,
       renameAgentSession,
       activePanePtyId: 'pty-active',
-      activePaneAgentType: 'generic',
       setActiveSessionId,
       notifyInfo,
     })

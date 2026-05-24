@@ -25,7 +25,9 @@ describe('PaneRenameInput', () => {
       />
     )
 
-    expect(screen.getByRole('textbox')).toHaveValue('old')
+    expect(screen.getByRole('textbox', { name: 'Pane name' })).toHaveValue(
+      'old'
+    )
   })
 
   test('falls back to session.name when no agentTitle', () => {

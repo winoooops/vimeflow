@@ -36,7 +36,6 @@ pub(crate) fn emit_agent_cwd(
     events.emit_json("agent-cwd", serialize_event(payload)?)
 }
 
-#[allow(dead_code)] // Used by title-sync adapters added in follow-up tasks
 pub(crate) fn emit_agent_session_title(
     events: &dyn EventSink,
     payload: &AgentSessionTitleEvent,
