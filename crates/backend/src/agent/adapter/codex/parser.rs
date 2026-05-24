@@ -531,6 +531,45 @@ mod tests {
         assert_eq!(parsed.event.model_id, "gpt-5.4");
     }
 
+    /// Direct coverage for the production decoder entry point
+    /// (`parse_rollout_snapshot`) — distinct from `parse_rollout`'s
+    /// session-id-stamping wrapper. PR #261 cycle 13 review F37:
+    /// without this test, a regression that re-introduces a
+    /// `session_id` field on `StatusSnapshot` (violating R2.2) would
+    /// only be caught by integration tests; the parser unit suite
+    /// would still pass because everything else went through the
+    /// `parse_rollout` wrapper that adds the id back on top.
+    #[test]
+    fn parse_rollout_snapshot_returns_session_id_free_status() {
+        let raw = fixture("rollout-minimal.jsonl");
+        let snapshot = parse_rollout_snapshot(Some("pty-direct"), &raw)
+            .expect("snapshot should parse");
+        // R2.2: snapshot carries `agent_session_id` (from JSONL
+        // payload) but NO Vimeflow session_id field — that's stamped
+        // by the runtime via `stamp_snapshot`.
+        assert_eq!(
+            snapshot.agent_session_id,
+            "019defd8-15a1-7401-9f4f-40fe52a1c590"
+        );
+        assert_eq!(snapshot.model_id, "gpt-5.4");
+    }
+
+    /// Direct coverage for the malformed-line skip path on
+    /// `parse_rollout_snapshot` with `session_id = None`. PR #261
+    /// cycle 13 review F37 — the `session_id: Option<&str>` parameter
+    /// is diagnostic-only (cycle 3 F7); `None` is a legitimate
+    /// production call shape (e.g., a hypothetical future caller that
+    /// hasn't been wired through the runtime yet). Pins that the
+    /// fold-with-skip contract works regardless of session_id.
+    #[test]
+    fn parse_rollout_snapshot_skips_malformed_with_no_session_id() {
+        let raw = fixture("rollout-malformed-mid.jsonl");
+        let snapshot = parse_rollout_snapshot(None, &raw)
+            .expect("malformed mid skip works with session_id=None");
+        assert_eq!(snapshot.agent_session_id, "sess-malformed");
+        assert_eq!(snapshot.model_id, "gpt-5.4");
+    }
+
     #[test]
     fn task_started_fallback_for_context_window_size() {
         let raw = r#"{"timestamp":"...","type":"event_msg","payload":{"type":"task_started","model_context_window":128000}}

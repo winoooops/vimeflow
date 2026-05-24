@@ -672,8 +672,9 @@ impl CompositeLocator {
 impl CodexSessionLocator for CompositeLocator {
     /// Two-strategy dispatch with an INTENTIONALLY narrow fallback
     /// gate. `FsScanFallback` runs only when `SqliteFirstLocator`
-    /// reported `Unresolved(reason)` containing `"schema drift"` —
-    /// i.e. the SQLite tables themselves are missing or renamed.
+    /// reported `Unresolved(reason)` that **starts** with the
+    /// `"schema drift: "` prefix — i.e. the SQLite tables themselves
+    /// are missing or renamed.
     ///
     /// Ambiguity-class `Unresolved` errors (`"multiple codex session
     /// candidates matched cwd"` / `"multiple ... remained after bind
@@ -694,7 +695,19 @@ impl CodexSessionLocator for CompositeLocator {
     fn resolve_rollout(&self, ctx: &BindContext<'_>) -> Result<RolloutLocation, LocatorError> {
         match self.primary.resolve_rollout(ctx) {
             Ok(location) => Ok(location),
-            Err(LocatorError::Unresolved(reason)) if reason.contains("schema drift") => {
+            // `starts_with("schema drift: ")` rather than `contains(...)`
+            // because the prefix is the structurally significant part:
+            // both producer sites in `SqliteFirstLocator` emit
+            // `"schema drift: <table> table not found"`. A future
+            // `Unresolved` message that mentions "schema drift" mid-
+            // sentence (e.g., a diagnostic about retry context) would
+            // misfire the fallback dispatch and could bind a stale
+            // rollout from a different session (PR #261 cycle 13
+            // review F35). The prefix-match makes the gate
+            // dispatch-on-class rather than substring-on-text.
+            Err(LocatorError::Unresolved(reason))
+                if reason.starts_with("schema drift: ") =>
+            {
                 self.fallback.resolve_rollout(ctx)
             }
             Err(other) => Err(other),

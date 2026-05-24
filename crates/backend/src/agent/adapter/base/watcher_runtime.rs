@@ -320,12 +320,20 @@ pub(super) fn start_watching(
     //   watcher itself doesn't need the locator again.
     // - `bindings.streamer` — reserved for B'' which migrates
     //   `TranscriptState::start_or_replace` onto
-    //   `Arc<dyn TranscriptStreamer>`. B'' will extract this field
-    //   AND remove `adapter_for_transcript_state` in the same step.
-    //   The compiler currently can't catch a B'' that forgets to
-    //   extract `streamer` because the field is silenced;
+    //   `Arc<dyn TranscriptStreamer>`. B'' MUST consume
+    //   `bindings.streamer` directly (not construct a fresh
+    //   `Arc<dyn TranscriptStreamer>` at the call site), because for
+    //   the Codex arm `bindings.streamer` and
+    //   `bindings.adapter_for_transcript_state` are clones of the
+    //   SAME `Arc<CodexAdapter>` — which holds the shared
+    //   `Arc<CompositeLocator>` from cycle 11 F31. Constructing a
+    //   fresh adapter at the B'' call site would re-introduce the
+    //   double-locator hazard cycle 11 closed. B'' will extract this
+    //   field AND remove `adapter_for_transcript_state` in the same
+    //   step. The compiler currently can't catch a B'' that forgets
+    //   to extract `streamer` because the field is silenced;
     //   compensate by keeping this comment as the human-readable
-    //   migration checkpoint.
+    //   migration checkpoint (PR #261 cycle 13 review F36).
     // - `bindings.agent_type` — diagnostics-only; the watcher
     //   doesn't branch on it (each adapter's split-trait impls
     //   carry their own behavior).
