@@ -291,8 +291,7 @@ fn maybe_start_transcript(
 /// Step 0c: the parameter shape changed from a bare
 /// `status_file_path: PathBuf` to the full
 /// [`LocatedStatusSource`] so the per-update transcript-path lookup
-/// (which now goes through
-/// [`TranscriptPathSource`](crate::agent::adapter::types::TranscriptPathSource))
+/// (which now goes through `TranscriptPathSource`)
 /// can consult `static_transcript_hint` for Codex. The file watched
 /// is still `located.status_path`; the rest of the struct is cloned
 /// into each callback so they can resolve transcript paths via the

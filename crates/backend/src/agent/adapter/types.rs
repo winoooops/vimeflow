@@ -6,8 +6,8 @@ use crate::agent::types::{AgentStatusEvent, ContextWindowStatus, CostMetrics, Ra
 
 /// Raw, untrusted, not-yet-validated transcript path emitted by either
 /// the locator at attach time (via
-/// [`TranscriptPathSource::static_hint`]) or the statusline decoder at
-/// each update (via [`TranscriptPathSource::dynamic_hint`]).
+/// `TranscriptPathSource::static_hint`) or the statusline decoder at
+/// each update (via `TranscriptPathSource::dynamic_hint`).
 /// Validation through `AgentAdapter::validate_transcript` converts a
 /// `RawPath` into a canonicalized `PathBuf` before any transcript
 /// tailing happens.
@@ -22,7 +22,7 @@ pub type RawPath = String;
 ///
 /// Step 0c rename of the former `StatusSource`. The new
 /// `static_transcript_hint` field carries Codex's locator-known rollout
-/// path so the runtime can ask [`TranscriptPathSource::static_hint`]
+/// path so the runtime can ask `TranscriptPathSource::static_hint`
 /// for it without depending on the adapter-private `Mutex` side channel
 /// (deprecated in 0c, kept in place for back-compat; targeted for
 /// removal in a later step).
@@ -37,7 +37,7 @@ pub struct LocatedStatusSource {
     /// locator resolves the rollout file before any statusline update);
     /// `None` for Claude (the path is dynamic, arriving inside every
     /// statusline JSON update — see
-    /// [`TranscriptPathSource::dynamic_hint`]).
+    /// `TranscriptPathSource::dynamic_hint`).
     ///
     /// Held here so the runtime can pass a `&LocatedStatusSource` into
     /// `static_hint` instead of threading the path through
@@ -63,11 +63,11 @@ pub struct LocatedStatusSource {
 ///    return this type, and the runtime composes
 ///    `AgentStatusEvent { session_id, ..snapshot }` afterwards.
 /// 2. No transcript path — that lookup is fully owned by
-///    [`TranscriptPathSource`]; the decoder never surfaces it.
+///    `TranscriptPathSource`; the decoder never surfaces it.
 ///
 /// Field set mirrors the non-`session_id` fields of
 /// [`AgentStatusEvent`]. Step B' wired the decoder to return this
-/// type via [`crate::agent::adapter::traits::StateDecoder`] — the
+/// type via `crate::agent::adapter::traits::StateDecoder` — the
 /// session-id stamp now happens in the runtime composition layer
 /// (`parse_statusline` / `parse_rollout` test wrappers for now,
 /// `AgentAdapter::parse_status` until B''/D' migrate it).
@@ -88,7 +88,7 @@ pub struct StatusSnapshot {
 /// Statusline-parser output as consumed by `base/watcher_runtime`.
 ///
 /// Step 0c removed the `transcript_path: Option<String>` field — the
-/// runtime now resolves transcript paths via [`TranscriptPathSource`]
+/// runtime now resolves transcript paths via `TranscriptPathSource`
 /// instead of via this side channel.
 #[derive(Debug, Clone)]
 pub struct ParsedStatus {
