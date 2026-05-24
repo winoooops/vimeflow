@@ -1,8 +1,12 @@
 import userEvent from '@testing-library/user-event'
-import { fireEvent, render, screen } from '@testing-library/react'
-import { describe, expect, test, vi } from 'vitest'
+import { act, fireEvent, render, screen } from '@testing-library/react'
+import { afterEach, describe, expect, test, vi } from 'vitest'
 import { useState, type ReactElement } from 'react'
 import type { Pane } from '../../sessions/types'
+import {
+  register as registerPaneHeaderRef,
+  unregister as unregisterPaneHeaderRef,
+} from '../paneHeaderRefs'
 import { PaneRenameInput } from './PaneRenameInput'
 
 const makePane = (overrides: Partial<Pane> = {}): Pane => ({
@@ -16,6 +20,10 @@ const makePane = (overrides: Partial<Pane> = {}): Pane => ({
 })
 
 describe('PaneRenameInput', () => {
+  afterEach(() => {
+    unregisterPaneHeaderRef('pty-1')
+  })
+
   test('renders pre-filled with pane.agentTitle when present', () => {
     render(
       <PaneRenameInput
@@ -115,5 +123,54 @@ describe('PaneRenameInput', () => {
     expect(screen.getByRole('alert')).toHaveTextContent(
       'control characters are not allowed'
     )
+  })
+
+  test('tracks pane header position when layout changes', () => {
+    const anchor = document.createElement('div')
+
+    const getBoundingClientRect = vi
+      .fn()
+      .mockReturnValueOnce({
+        top: 12,
+        left: 24,
+        width: 180,
+        height: 28,
+      })
+      .mockReturnValue({
+        top: 40,
+        left: 64,
+        width: 220,
+        height: 32,
+      })
+    anchor.getBoundingClientRect = getBoundingClientRect
+    registerPaneHeaderRef('pty-1', anchor)
+
+    render(
+      <PaneRenameInput
+        pane={makePane()}
+        initialValue="valid-title"
+        onSubmit={vi.fn()}
+        onCancel={vi.fn()}
+      />
+    )
+
+    const frame = screen.getByTestId('pane-rename-frame')
+    expect(frame).toHaveStyle({
+      top: '12px',
+      left: '24px',
+      width: '180px',
+      minHeight: '28px',
+    })
+
+    act(() => {
+      window.dispatchEvent(new Event('resize'))
+    })
+
+    expect(frame).toHaveStyle({
+      top: '40px',
+      left: '64px',
+      width: '220px',
+      minHeight: '32px',
+    })
   })
 })

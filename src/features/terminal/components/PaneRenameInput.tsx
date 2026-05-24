@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type {
   ChangeEvent,
@@ -17,6 +17,24 @@ interface PaneRenameInputProps {
   onCancel: () => void
   externalError?: string | null
   onExternalErrorDismiss?: () => void
+}
+
+interface AnchorRect {
+  top: number
+  left: number
+  width: number
+  height: number
+}
+
+const rectFromAnchor = (anchor: HTMLElement): AnchorRect => {
+  const rect = anchor.getBoundingClientRect()
+
+  return {
+    top: rect.top,
+    left: rect.left,
+    width: rect.width,
+    height: rect.height,
+  }
 }
 
 const errorMessageForValue = (value: string): string | null => {
@@ -46,14 +64,44 @@ export const PaneRenameInput = ({
   onExternalErrorDismiss,
 }: PaneRenameInputProps): ReactPortal => {
   const [value, setValue] = useState(initialValue)
+  const [anchorRect, setAnchorRect] = useState<AnchorRect | null>(null)
   const inputRef = useRef<HTMLInputElement | null>(null)
   const validation = validateTitle(value)
-  const anchor = getPaneHeaderRef(pane.ptyId)
-  const rect = anchor?.getBoundingClientRect()
 
   useEffect(() => {
     inputRef.current?.select()
   }, [])
+
+  useLayoutEffect(() => {
+    const anchor = getPaneHeaderRef(pane.ptyId)
+
+    if (!anchor) {
+      setAnchorRect(null)
+
+      return
+    }
+
+    const updateRect = (): void => {
+      const latestAnchor = getPaneHeaderRef(pane.ptyId)
+      setAnchorRect(latestAnchor ? rectFromAnchor(latestAnchor) : null)
+    }
+
+    updateRect()
+
+    const resizeObserver =
+      typeof ResizeObserver === 'undefined'
+        ? null
+        : new ResizeObserver(updateRect)
+    resizeObserver?.observe(anchor)
+    window.addEventListener('resize', updateRect)
+    window.addEventListener('scroll', updateRect, true)
+
+    return (): void => {
+      resizeObserver?.disconnect()
+      window.removeEventListener('resize', updateRect)
+      window.removeEventListener('scroll', updateRect, true)
+    }
+  }, [pane.ptyId])
 
   const handleChange = (event: ChangeEvent<HTMLInputElement>): void => {
     setValue(event.target.value)
@@ -76,13 +124,13 @@ export const PaneRenameInput = ({
     }
   }
 
-  const style: CSSProperties = rect
+  const style: CSSProperties = anchorRect
     ? {
         position: 'fixed',
-        top: rect.top,
-        left: rect.left,
-        width: rect.width,
-        minHeight: rect.height,
+        top: anchorRect.top,
+        left: anchorRect.left,
+        width: anchorRect.width,
+        minHeight: anchorRect.height,
       }
     : {
         position: 'fixed',
@@ -97,6 +145,7 @@ export const PaneRenameInput = ({
 
   return createPortal(
     <div
+      data-testid="pane-rename-frame"
       style={style}
       className="z-50 rounded-md bg-surface-container/90 p-1 shadow-[0_12px_40px_rgba(0,0,0,0.42)] backdrop-blur-md"
     >

@@ -178,6 +178,9 @@ fn try_emit(
         return;
     }
 
+    if is_user_renamed {
+        consume_pending_user_rename(session_id, &payload.title);
+    }
     *last_emitted_title = new_memo;
 }
 
@@ -190,14 +193,30 @@ fn title_source_for_emit(session_id: &str, title: &str) -> TitleSource {
     let now = Instant::now();
     pending.retain(|rename| rename.expires_at > now);
 
+    if pending
+        .iter()
+        .any(|rename| rename.session_id == session_id && rename.title == title)
+    {
+        TitleSource::UserRenamed
+    } else {
+        TitleSource::AiGenerated
+    }
+}
+
+fn consume_pending_user_rename(session_id: &str, title: &str) {
+    let Ok(mut pending) = PENDING_RENAMES.lock() else {
+        log::warn!("codex title sync: pending rename lock poisoned");
+        return;
+    };
+
+    let now = Instant::now();
+    pending.retain(|rename| rename.expires_at > now);
+
     if let Some(index) = pending
         .iter()
         .position(|rename| rename.session_id == session_id && rename.title == title)
     {
         pending.remove(index);
-        TitleSource::UserRenamed
-    } else {
-        TitleSource::AiGenerated
     }
 }
 
@@ -214,12 +233,21 @@ mod tests {
     use super::*;
     use crate::agent::events::AGENT_SESSION_TITLE;
     use crate::runtime::FakeEventSink;
+    use serde_json::Value;
     use std::io::Write;
     use std::sync::atomic::Ordering;
     use std::time::Duration;
     use tempfile::TempDir;
 
     static PENDING_RENAME_TEST_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
+
+    struct FailingEventSink;
+
+    impl EventSink for FailingEventSink {
+        fn emit_json(&self, _event: &str, _payload: Value) -> Result<(), String> {
+            Err("emit failed".to_string())
+        }
+    }
 
     fn pending_rename_test_guard() -> std::sync::MutexGuard<'static, ()> {
         // Keep tests that mutate the module-level pending registry isolated.
@@ -328,6 +356,37 @@ mod tests {
         record_user_rename("pty-1", "MyTask");
         try_emit(
             &sink_dyn,
+            "pty-1",
+            "abc-uuid",
+            "MyTask",
+            &mut last_emitted_title,
+        );
+        try_emit(
+            &sink_dyn,
+            "pty-1",
+            "abc-uuid",
+            "MyTask",
+            &mut last_emitted_title,
+        );
+
+        let titles = title_payloads(&sink);
+        assert_eq!(titles.len(), 1);
+        assert_eq!(titles[0]["title"], "MyTask");
+        assert_eq!(titles[0]["source"], "user-renamed");
+    }
+
+    #[test]
+    fn pending_user_rename_survives_emit_failure() {
+        let _guard = pending_rename_test_guard();
+        clear_pending_renames_for_test();
+        let failing_sink: Arc<dyn EventSink> = Arc::new(FailingEventSink);
+        let sink: Arc<FakeEventSink> = Arc::new(FakeEventSink::new());
+        let sink_dyn: Arc<dyn EventSink> = sink.clone();
+        let mut last_emitted_title = None;
+
+        record_user_rename("pty-1", "MyTask");
+        try_emit(
+            &failing_sink,
             "pty-1",
             "abc-uuid",
             "MyTask",
