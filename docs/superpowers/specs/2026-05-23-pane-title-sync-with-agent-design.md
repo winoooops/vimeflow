@@ -2098,3 +2098,5 @@ PR2.
     thread (§6.3). Wrapping each line parse in a `Result` and
     logging-and-skipping would let one bad event coexist with
     healthy ones.
+
+<!-- codex-reviewed: 2026-05-24T06:22:38Z -->
