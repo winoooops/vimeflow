@@ -4,7 +4,7 @@ import { Tooltip } from '../../../../components/Tooltip'
 import { Dropdown, type DropdownOption } from './Dropdown'
 import { PriorityPlus } from './PriorityPlus'
 import { Segmented } from './Segmented'
-import { Toggle } from './Toggle'
+import { ViewSettingsDropdown } from './ViewSettingsDropdown'
 
 // Pierre option subtypes — pulled from `BaseDiffOptions` so a Pierre version
 // bump that widens / renames the enums is caught at type-check time rather
@@ -32,25 +32,6 @@ const THEME_OPTIONS: readonly DropdownOption<DiffsThemeNames>[] = [
   { value: 'dracula', label: 'dracula' },
   { value: 'github-dark', label: 'github-dark' },
   { value: 'one-dark-pro', label: 'one-dark-pro' },
-]
-
-const INDICATOR_OPTIONS: readonly DropdownOption<DiffIndicators>[] = [
-  { value: 'classic', label: 'classic', description: 'Plus and minus glyphs' },
-  { value: 'bars', label: 'bars', description: 'Colored gutter bars' },
-  { value: 'none', label: 'none', description: 'No indicator column' },
-]
-
-const OVERFLOW_OPTIONS: readonly DropdownOption<Overflow>[] = [
-  {
-    value: 'scroll',
-    label: 'scroll',
-    description: 'Horizontal scroll for long lines',
-  },
-  {
-    value: 'wrap',
-    label: 'wrap',
-    description: 'Soft-wrap long lines to next row',
-  },
 ]
 
 const LINE_DIFF_OPTIONS: readonly DropdownOption<LineDiffType>[] = [
@@ -265,52 +246,26 @@ export const DiffChipToolbar = ({
       options={THEME_OPTIONS}
       onChange={onThemeChange}
     />,
-    // 11. indicators dropdown.
-    <Dropdown
-      key="indicators"
-      label="indicators"
-      value={diffIndicators}
-      options={INDICATOR_OPTIONS}
-      onChange={onDiffIndicatorsChange}
-      width={220}
-    />,
-    // 12. overflow dropdown.
-    <Dropdown
-      key="overflow"
-      label="overflow"
-      value={overflow}
-      options={OVERFLOW_OPTIONS}
-      onChange={onOverflowChange}
-      width={240}
-    />,
-    // 13. line numbers toggle — `disableLineNumbers` inverted so the chip
-    // reads `on / off` naturally instead of `disable on / disable off`.
-    <Toggle
-      key="line-numbers"
-      label="line numbers"
-      value={!disableLineNumbers}
-      onChange={(next): void => onDisableLineNumbersChange(!next)}
-    />,
-    // 14. background tint toggle — also inverted.
-    <Toggle
-      key="background"
-      label="background tint"
-      value={!disableBackground}
-      onChange={(next): void => onDisableBackgroundChange(!next)}
-    />,
-    // 15. file header toggle — also inverted.
-    <Toggle
-      key="file-header"
-      label="file header"
-      value={!disableFileHeader}
-      onChange={(next): void => onDisableFileHeaderChange(!next)}
-    />,
-    // 16. sticky header toggle — direct, no inversion.
-    <Toggle
-      key="sticky-header"
-      label="sticky header"
-      value={stickyHeader}
-      onChange={onStickyHeaderChange}
+    // 11. View ▾ gear chip — consolidates the indicators / overflow
+    // dropdowns and the four boolean toggle chips into a single portal-
+    // rendered popover with a Format section (nested sub-dropdowns) and
+    // a View Options section (checkbox rows). Replaces six standalone
+    // chips that previously stretched the toolbar to ~15 visible items
+    // (PR #263 QA feedback — Option A from the design preview).
+    <ViewSettingsDropdown
+      key="view-settings"
+      diffIndicators={diffIndicators}
+      onDiffIndicatorsChange={onDiffIndicatorsChange}
+      overflow={overflow}
+      onOverflowChange={onOverflowChange}
+      disableLineNumbers={disableLineNumbers}
+      onDisableLineNumbersChange={onDisableLineNumbersChange}
+      disableBackground={disableBackground}
+      onDisableBackgroundChange={onDisableBackgroundChange}
+      disableFileHeader={disableFileHeader}
+      onDisableFileHeaderChange={onDisableFileHeaderChange}
+      stickyHeader={stickyHeader}
+      onStickyHeaderChange={onStickyHeaderChange}
     />,
   ]
 

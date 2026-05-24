@@ -150,7 +150,10 @@ describe('DiffChipToolbar', () => {
     resizeCallback = null
   })
 
-  test('renders the 15 functional chips on the unstaged view', () => {
+  test('renders the consolidated 10 functional chips on the unstaged view', () => {
+    // After PR #263 follow-up: indicators / overflow dropdowns + the four
+    // boolean toggle chips collapsed into a single View ▾ chip, so the
+    // unstaged view ships 10 visible chips (was 15 pre-consolidation).
     renderToolbar({ diffMode: 'unstaged' })
 
     // Segmented: split / unified.
@@ -189,25 +192,31 @@ describe('DiffChipToolbar', () => {
     expect(
       screen.getByRole('button', { name: /pierre-dark/i })
     ).toBeInTheDocument() // theme
-    expect(screen.getByRole('button', { name: /classic/i })).toBeInTheDocument() // indicators
-    expect(screen.getByRole('button', { name: /scroll/i })).toBeInTheDocument() // overflow
 
-    // Toggles.
+    // Consolidated View ▾ chip replaces the two dropdowns + four toggles.
     expect(
-      screen.getByRole('button', { name: /line numbers/i })
+      screen.getByRole('button', { name: /view settings/i })
     ).toBeInTheDocument()
 
+    // The standalone chips that used to live on the bar must NOT render
+    // anymore — they only appear inside the View ▾ popover (verified in
+    // ViewSettingsDropdown.test.tsx). Searching for the trigger by the
+    // pre-consolidation accessible names should now miss the toolbar.
     expect(
-      screen.getByRole('button', { name: /background tint/i })
-    ).toBeInTheDocument()
+      screen.queryByRole('button', { name: /^classic$/i })
+    ).not.toBeInTheDocument()
 
     expect(
-      screen.getByRole('button', { name: /file header/i })
-    ).toBeInTheDocument()
+      screen.queryByRole('button', { name: /^scroll$/i })
+    ).not.toBeInTheDocument()
 
     expect(
-      screen.getByRole('button', { name: /sticky header/i })
-    ).toBeInTheDocument()
+      screen.queryByRole('button', { name: /^line numbers$/i })
+    ).not.toBeInTheDocument()
+
+    expect(
+      screen.queryByRole('button', { name: /^sticky header$/i })
+    ).not.toBeInTheDocument()
   })
 
   test('renders the unstage chip on the staged view', () => {
@@ -267,30 +276,36 @@ describe('DiffChipToolbar', () => {
     expect(onLineDiffTypeChange).toHaveBeenCalledWith('char')
   })
 
-  test('clicking the line numbers toggle inverts the disable flag', async () => {
+  test('opening the View ▾ chip reveals the consolidated controls', async () => {
+    const user = userEvent.setup()
+    renderToolbar()
+
+    await user.click(screen.getByRole('button', { name: /view settings/i }))
+
+    // All six row labels are present inside the portal-rendered popover.
+    expect(await screen.findByText('Indicators')).toBeInTheDocument()
+    expect(screen.getByText('Overflow')).toBeInTheDocument()
+    expect(screen.getByText('Line numbers')).toBeInTheDocument()
+    expect(screen.getByText('Background tint')).toBeInTheDocument()
+    expect(screen.getByText('File header')).toBeInTheDocument()
+    expect(screen.getByText('Sticky header')).toBeInTheDocument()
+  })
+
+  test('clicking the Line numbers row inside View ▾ inverts the disable flag', async () => {
     const user = userEvent.setup()
     const onDisableLineNumbersChange = vi.fn<(next: boolean) => void>()
 
-    // Default disableLineNumbers === false, so the toggle reads as "on";
-    // clicking should set the disable flag to true (the inverted of true).
     renderToolbar({
       disableLineNumbers: false,
       onDisableLineNumbersChange,
     })
 
-    await user.click(screen.getByRole('button', { name: /line numbers/i }))
+    await user.click(screen.getByRole('button', { name: /view settings/i }))
+    const row = await screen.findByRole('button', { name: /line numbers/i })
+    await user.click(row)
+
     expect(onDisableLineNumbersChange).toHaveBeenCalledTimes(1)
     expect(onDisableLineNumbersChange).toHaveBeenCalledWith(true)
-  })
-
-  test('clicking the sticky header toggle fires onChange with the flipped value', async () => {
-    const user = userEvent.setup()
-    const onStickyHeaderChange = vi.fn<(next: boolean) => void>()
-
-    renderToolbar({ stickyHeader: true, onStickyHeaderChange })
-
-    await user.click(screen.getByRole('button', { name: /sticky header/i }))
-    expect(onStickyHeaderChange).toHaveBeenCalledWith(false)
   })
 
   test('disabled staging chips do not fire any callback when clicked', async () => {
@@ -317,16 +332,17 @@ describe('DiffChipToolbar', () => {
     expect(stage.className).toContain('text-on-surface-variant/40')
   })
 
-  test('PriorityPlus collapses the lower-priority toggles into the overflow menu at a narrow width', () => {
+  test('PriorityPlus collapses the lower-priority chips into the overflow menu at a narrow width', () => {
     renderToolbar({ diffMode: 'unstaged' })
 
-    // Layout: every chip is 60 px wide with 12 px gaps; the first eight
-    // (segmented through discard all) sit on row 1, the rest land on row 2.
-    // The container width (380 px) is just wide enough to fit eight 60-px
-    // items plus the 32 + 12 px overflow chip on the visible row.
+    // Layout: every chip is 60 px wide with 12 px gaps. With consolidation
+    // the unstaged view ships 10 chips (was 15 pre-consolidation), so the
+    // overflow threshold shifts. Width 600 px fits the first eight chips
+    // plus the 32 + 12 px overflow chip on the visible row; the trailing
+    // two (theme + View ▾) fold into the `…` menu.
     const layouts: ItemLayout[] = []
-    for (let i = 0; i < 15; i++) {
-      // Eight chips fit on row 1 (i < 8), the rest on row 2 (i >= 8).
+    for (let i = 0; i < 10; i++) {
+      // Eight chips fit on row 1 (i < 8), the rest land on row 2 (i >= 8).
       const row = i < 8 ? 0 : 1
       const colIndex = row === 0 ? i : i - 8
       layouts.push({
@@ -337,7 +353,7 @@ describe('DiffChipToolbar', () => {
       })
     }
 
-    stubLayout(priorityPlusRoot(), layouts, 1000)
+    stubLayout(priorityPlusRoot(), layouts, 600)
     fireResize()
 
     // Overflow chip appears.
@@ -346,11 +362,9 @@ describe('DiffChipToolbar', () => {
     })
     expect(overflowChip).toBeInTheDocument()
 
-    // Lower-priority toggles get hidden. The visible row holds chips 1-8
-    // (segmented, prev/counter/next, stage/discard/discard all + one
-    // dropdown), so the highest-priority chips stay on screen while the
-    // toggles (which sit at the bottom of the priority order) are folded
-    // into the menu trigger.
+    // Visible row holds the highest-priority chips: segmented, prev/counter
+    // /next, stage/discard/discard all, plus one dropdown. Verify the
+    // top-priority chips remain on the bar.
     expect(screen.getByRole('button', { name: 'split' })).toBeInTheDocument()
 
     expect(

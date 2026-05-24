@@ -7,6 +7,11 @@ export { Segmented } from './Segmented'
 export { Toggle } from './Toggle'
 
 export {
+  ViewSettingsDropdown,
+  type ViewSettingsDropdownProps,
+} from './ViewSettingsDropdown'
+
+export {
   DiffChipToolbar,
   type DiffChipToolbarProps,
   type DiffMode,
