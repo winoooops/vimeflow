@@ -45,6 +45,7 @@ import {
   type FocusedPaneRef,
 } from '../command-palette/hooks/usePaneRenameChord'
 import { mockNavigationItems, mockSettingsItem } from './data/mockNavigation'
+import { renameAgentSession } from '../../lib/backend'
 import { useSessionManager } from '../sessions/hooks/useSessionManager'
 import { clampSize, useResizable } from '../../hooks/useResizable'
 import { useElasticContainer } from '../../hooks/useElasticContainer'
@@ -185,11 +186,16 @@ export const WorkspaceView = (): ReactElement => {
   )
 
   // `activePane` is declared further down (after `activeSession`); resolve
-  // the active pane's ptyId inline here so the command builder has it
-  // without forcing a section-wide reshuffle.
-  const activePanePtyIdForCommands =
-    sessions.find((s) => s.id === activeSessionId)?.panes.find((p) => p.active)
-      ?.ptyId ?? null
+  // the active pane's ptyId + agentType inline here so the command builder
+  // has them without forcing a section-wide reshuffle.
+  const activePaneForCommands =
+    sessions
+      .find((s) => s.id === activeSessionId)
+      ?.panes.find((p) => p.active) ?? null
+  const activePanePtyIdForCommands = activePaneForCommands?.ptyId ?? null
+
+  const activePaneAgentTypeForCommands =
+    activePaneForCommands?.agentType ?? null
 
   const workspaceCommands = useMemo(
     () =>
@@ -197,10 +203,12 @@ export const WorkspaceView = (): ReactElement => {
         sessions,
         activeSessionId,
         activePanePtyId: activePanePtyIdForCommands,
+        activePaneAgentType: activePaneAgentTypeForCommands,
         createSession,
         removeSession,
         renameSession,
         setPaneUserLabel,
+        renameAgentSession,
         setActiveSessionId,
         notifyInfo,
       }),
@@ -212,6 +220,7 @@ export const WorkspaceView = (): ReactElement => {
       sessionsSignature,
       activeSessionId,
       activePanePtyIdForCommands,
+      activePaneAgentTypeForCommands,
       createSession,
       removeSession,
       renameSession,

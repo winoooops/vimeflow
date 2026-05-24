@@ -15,6 +15,7 @@ describe('buildWorkspaceCommands - happy paths', () => {
   let removeSession: ReturnType<typeof vi.fn>
   let renameSession: ReturnType<typeof vi.fn>
   let setPaneUserLabel: ReturnType<typeof vi.fn>
+  let renameAgentSession: ReturnType<typeof vi.fn>
   let setActiveSessionId: ReturnType<typeof vi.fn>
   let notifyInfo: ReturnType<typeof vi.fn>
 
@@ -23,6 +24,7 @@ describe('buildWorkspaceCommands - happy paths', () => {
     removeSession = vi.fn()
     renameSession = vi.fn()
     setPaneUserLabel = vi.fn()
+    renameAgentSession = vi.fn().mockResolvedValue(undefined)
     setActiveSessionId = vi.fn()
     notifyInfo = vi.fn()
   })
@@ -35,7 +37,9 @@ describe('buildWorkspaceCommands - happy paths', () => {
       removeSession,
       renameSession,
       setPaneUserLabel,
+      renameAgentSession,
       activePanePtyId: 'pty-active',
+      activePaneAgentType: 'generic',
       setActiveSessionId,
       notifyInfo,
     })
@@ -56,7 +60,9 @@ describe('buildWorkspaceCommands - happy paths', () => {
       removeSession,
       renameSession,
       setPaneUserLabel,
+      renameAgentSession,
       activePanePtyId: 'pty-active',
+      activePaneAgentType: 'generic',
       setActiveSessionId,
       notifyInfo,
     })
@@ -76,7 +82,9 @@ describe('buildWorkspaceCommands - happy paths', () => {
       removeSession,
       renameSession,
       setPaneUserLabel,
+      renameAgentSession,
       activePanePtyId: 'pty-active',
+      activePaneAgentType: 'generic',
       setActiveSessionId,
       notifyInfo,
     })
@@ -89,7 +97,7 @@ describe('buildWorkspaceCommands - happy paths', () => {
     expect(setPaneUserLabel).not.toHaveBeenCalled()
   })
 
-  test(':rename-pane command labels the active pane via setPaneUserLabel', () => {
+  test(':rename-pane on a shell pane sets label locally without calling renameAgentSession', () => {
     const commands = buildWorkspaceCommands({
       sessions: mockSessions,
       activeSessionId: 'session-1',
@@ -97,7 +105,9 @@ describe('buildWorkspaceCommands - happy paths', () => {
       removeSession,
       renameSession,
       setPaneUserLabel,
+      renameAgentSession,
       activePanePtyId: 'pty-left',
+      activePaneAgentType: 'generic',
       setActiveSessionId,
       notifyInfo,
     })
@@ -107,7 +117,52 @@ describe('buildWorkspaceCommands - happy paths', () => {
 
     renamePaneCmd?.execute?.('left')
     expect(setPaneUserLabel).toHaveBeenCalledWith('pty-left', 'left')
+    expect(renameAgentSession).not.toHaveBeenCalled()
     expect(renameSession).not.toHaveBeenCalled()
+  })
+
+  test(':rename-pane on a Claude pane ALSO writes /rename via renameAgentSession', () => {
+    const commands = buildWorkspaceCommands({
+      sessions: mockSessions,
+      activeSessionId: 'session-1',
+      createSession,
+      removeSession,
+      renameSession,
+      setPaneUserLabel,
+      renameAgentSession,
+      activePanePtyId: 'pty-claude',
+      activePaneAgentType: 'claude-code',
+      setActiveSessionId,
+      notifyInfo,
+    })
+
+    const renamePaneCmd = commands.find((c) => c.id === 'rename-pane')
+    renamePaneCmd?.execute?.('feat-x')
+
+    expect(setPaneUserLabel).toHaveBeenCalledWith('pty-claude', 'feat-x')
+    expect(renameAgentSession).toHaveBeenCalledWith('pty-claude', 'feat-x')
+  })
+
+  test(':rename-pane on a Codex pane ALSO writes /rename via renameAgentSession', () => {
+    const commands = buildWorkspaceCommands({
+      sessions: mockSessions,
+      activeSessionId: 'session-1',
+      createSession,
+      removeSession,
+      renameSession,
+      setPaneUserLabel,
+      renameAgentSession,
+      activePanePtyId: 'pty-codex',
+      activePaneAgentType: 'codex',
+      setActiveSessionId,
+      notifyInfo,
+    })
+
+    const renamePaneCmd = commands.find((c) => c.id === 'rename-pane')
+    renamePaneCmd?.execute?.('codex-task')
+
+    expect(setPaneUserLabel).toHaveBeenCalledWith('pty-codex', 'codex-task')
+    expect(renameAgentSession).toHaveBeenCalledWith('pty-codex', 'codex-task')
   })
 
   test(':rename-pane with no active pane notifies usage', () => {
@@ -118,7 +173,9 @@ describe('buildWorkspaceCommands - happy paths', () => {
       removeSession,
       renameSession,
       setPaneUserLabel,
+      renameAgentSession,
       activePanePtyId: null,
+      activePaneAgentType: null,
       setActiveSessionId,
       notifyInfo,
     })
@@ -138,7 +195,9 @@ describe('buildWorkspaceCommands - happy paths', () => {
       removeSession,
       renameSession,
       setPaneUserLabel,
+      renameAgentSession,
       activePanePtyId: 'pty-left',
+      activePaneAgentType: 'generic',
       setActiveSessionId,
       notifyInfo,
     })
@@ -158,7 +217,9 @@ describe('buildWorkspaceCommands - happy paths', () => {
       removeSession,
       renameSession,
       setPaneUserLabel,
+      renameAgentSession,
       activePanePtyId: 'pty-active',
+      activePaneAgentType: 'generic',
       setActiveSessionId,
       notifyInfo,
     })
@@ -178,7 +239,9 @@ describe('buildWorkspaceCommands - happy paths', () => {
       removeSession,
       renameSession,
       setPaneUserLabel,
+      renameAgentSession,
       activePanePtyId: 'pty-active',
+      activePaneAgentType: 'generic',
       setActiveSessionId,
       notifyInfo,
     })
@@ -196,7 +259,9 @@ describe('buildWorkspaceCommands - happy paths', () => {
       removeSession,
       renameSession,
       setPaneUserLabel,
+      renameAgentSession,
       activePanePtyId: 'pty-active',
+      activePaneAgentType: 'generic',
       setActiveSessionId,
       notifyInfo,
     })
@@ -216,7 +281,9 @@ describe('buildWorkspaceCommands - happy paths', () => {
       removeSession,
       renameSession,
       setPaneUserLabel,
+      renameAgentSession,
       activePanePtyId: 'pty-active',
+      activePaneAgentType: 'generic',
       setActiveSessionId,
       notifyInfo,
     })
@@ -234,7 +301,9 @@ describe('buildWorkspaceCommands - happy paths', () => {
       removeSession,
       renameSession,
       setPaneUserLabel,
+      renameAgentSession,
       activePanePtyId: 'pty-active',
+      activePaneAgentType: 'generic',
       setActiveSessionId,
       notifyInfo,
     })
@@ -254,7 +323,9 @@ describe('buildWorkspaceCommands - happy paths', () => {
       removeSession,
       renameSession,
       setPaneUserLabel,
+      renameAgentSession,
       activePanePtyId: 'pty-active',
+      activePaneAgentType: 'generic',
       setActiveSessionId,
       notifyInfo,
     })
@@ -273,7 +344,9 @@ describe('buildWorkspaceCommands - happy paths', () => {
       removeSession,
       renameSession,
       setPaneUserLabel,
+      renameAgentSession,
       activePanePtyId: 'pty-active',
+      activePaneAgentType: 'generic',
       setActiveSessionId,
       notifyInfo,
     })
@@ -292,7 +365,9 @@ describe('buildWorkspaceCommands - happy paths', () => {
       removeSession,
       renameSession,
       setPaneUserLabel,
+      renameAgentSession,
       activePanePtyId: 'pty-active',
+      activePaneAgentType: 'generic',
       setActiveSessionId,
       notifyInfo,
     })
@@ -318,7 +393,9 @@ describe('buildWorkspaceCommands - happy paths', () => {
       removeSession,
       renameSession,
       setPaneUserLabel,
+      renameAgentSession,
       activePanePtyId: 'pty-active',
+      activePaneAgentType: 'generic',
       setActiveSessionId,
       notifyInfo,
     })
@@ -337,7 +414,9 @@ describe('buildWorkspaceCommands - happy paths', () => {
       removeSession,
       renameSession,
       setPaneUserLabel,
+      renameAgentSession,
       activePanePtyId: 'pty-active',
+      activePaneAgentType: 'generic',
       setActiveSessionId,
       notifyInfo,
     })
@@ -357,7 +436,9 @@ describe('buildWorkspaceCommands - happy paths', () => {
       removeSession,
       renameSession,
       setPaneUserLabel,
+      renameAgentSession,
       activePanePtyId: 'pty-active',
+      activePaneAgentType: 'generic',
       setActiveSessionId,
       notifyInfo,
     })
@@ -381,6 +462,7 @@ describe('buildWorkspaceCommands - failure modes', () => {
   let removeSession: ReturnType<typeof vi.fn>
   let renameSession: ReturnType<typeof vi.fn>
   let setPaneUserLabel: ReturnType<typeof vi.fn>
+  let renameAgentSession: ReturnType<typeof vi.fn>
   let setActiveSessionId: ReturnType<typeof vi.fn>
   let notifyInfo: ReturnType<typeof vi.fn>
 
@@ -389,6 +471,7 @@ describe('buildWorkspaceCommands - failure modes', () => {
     removeSession = vi.fn()
     renameSession = vi.fn()
     setPaneUserLabel = vi.fn()
+    renameAgentSession = vi.fn().mockResolvedValue(undefined)
     setActiveSessionId = vi.fn()
     notifyInfo = vi.fn()
   })
@@ -406,7 +489,9 @@ describe('buildWorkspaceCommands - failure modes', () => {
       removeSession,
       renameSession,
       setPaneUserLabel,
+      renameAgentSession,
       activePanePtyId: 'pty-active',
+      activePaneAgentType: 'generic',
       setActiveSessionId,
       notifyInfo,
     })
@@ -426,7 +511,9 @@ describe('buildWorkspaceCommands - failure modes', () => {
       removeSession,
       renameSession,
       setPaneUserLabel,
+      renameAgentSession,
       activePanePtyId: 'pty-active',
+      activePaneAgentType: 'generic',
       setActiveSessionId,
       notifyInfo,
     })
@@ -451,7 +538,9 @@ describe('buildWorkspaceCommands - failure modes', () => {
       removeSession,
       renameSession,
       setPaneUserLabel,
+      renameAgentSession,
       activePanePtyId: 'pty-active',
+      activePaneAgentType: 'generic',
       setActiveSessionId,
       notifyInfo,
     })
@@ -471,7 +560,9 @@ describe('buildWorkspaceCommands - failure modes', () => {
       removeSession,
       renameSession,
       setPaneUserLabel,
+      renameAgentSession,
       activePanePtyId: 'pty-active',
+      activePaneAgentType: 'generic',
       setActiveSessionId,
       notifyInfo,
     })
@@ -494,7 +585,9 @@ describe('buildWorkspaceCommands - failure modes', () => {
       removeSession,
       renameSession,
       setPaneUserLabel,
+      renameAgentSession,
       activePanePtyId: 'pty-active',
+      activePaneAgentType: 'generic',
       setActiveSessionId,
       notifyInfo,
     })
@@ -519,7 +612,9 @@ describe('buildWorkspaceCommands - failure modes', () => {
       removeSession,
       renameSession,
       setPaneUserLabel,
+      renameAgentSession,
       activePanePtyId: 'pty-active',
+      activePaneAgentType: 'generic',
       setActiveSessionId,
       notifyInfo,
     })
@@ -539,7 +634,9 @@ describe('buildWorkspaceCommands - failure modes', () => {
       removeSession,
       renameSession,
       setPaneUserLabel,
+      renameAgentSession,
       activePanePtyId: 'pty-active',
+      activePaneAgentType: 'generic',
       setActiveSessionId,
       notifyInfo,
     })
@@ -563,7 +660,9 @@ describe('buildWorkspaceCommands - failure modes', () => {
       removeSession,
       renameSession,
       setPaneUserLabel,
+      renameAgentSession,
       activePanePtyId: 'pty-active',
+      activePaneAgentType: 'generic',
       setActiveSessionId,
       notifyInfo,
     })
@@ -591,7 +690,9 @@ describe('buildWorkspaceCommands - failure modes', () => {
       removeSession,
       renameSession,
       setPaneUserLabel,
+      renameAgentSession,
       activePanePtyId: 'pty-active',
+      activePaneAgentType: 'generic',
       setActiveSessionId,
       notifyInfo,
     })
@@ -617,7 +718,9 @@ describe('buildWorkspaceCommands - failure modes', () => {
       removeSession,
       renameSession,
       setPaneUserLabel,
+      renameAgentSession,
       activePanePtyId: 'pty-active',
+      activePaneAgentType: 'generic',
       setActiveSessionId,
       notifyInfo,
     })
@@ -641,7 +744,9 @@ describe('buildWorkspaceCommands - failure modes', () => {
       removeSession,
       renameSession,
       setPaneUserLabel,
+      renameAgentSession,
       activePanePtyId: 'pty-active',
+      activePaneAgentType: 'generic',
       setActiveSessionId,
       notifyInfo,
     })
@@ -665,7 +770,9 @@ describe('buildWorkspaceCommands - failure modes', () => {
       removeSession,
       renameSession,
       setPaneUserLabel,
+      renameAgentSession,
       activePanePtyId: 'pty-active',
+      activePaneAgentType: 'generic',
       setActiveSessionId,
       notifyInfo,
     })
@@ -688,7 +795,9 @@ describe('buildWorkspaceCommands - failure modes', () => {
       removeSession,
       renameSession,
       setPaneUserLabel,
+      renameAgentSession,
       activePanePtyId: 'pty-active',
+      activePaneAgentType: 'generic',
       setActiveSessionId,
       notifyInfo,
     })
@@ -716,7 +825,9 @@ describe('buildWorkspaceCommands - failure modes', () => {
       removeSession,
       renameSession,
       setPaneUserLabel,
+      renameAgentSession,
       activePanePtyId: 'pty-active',
+      activePaneAgentType: 'generic',
       setActiveSessionId,
       notifyInfo,
     })
@@ -744,7 +855,9 @@ describe('buildWorkspaceCommands - failure modes', () => {
       removeSession,
       renameSession,
       setPaneUserLabel,
+      renameAgentSession,
       activePanePtyId: 'pty-active',
+      activePaneAgentType: 'generic',
       setActiveSessionId,
       notifyInfo,
     })
@@ -767,7 +880,9 @@ describe('buildWorkspaceCommands - failure modes', () => {
       removeSession,
       renameSession,
       setPaneUserLabel,
+      renameAgentSession,
       activePanePtyId: 'pty-active',
+      activePaneAgentType: 'generic',
       setActiveSessionId,
       notifyInfo,
     })
@@ -787,7 +902,9 @@ describe('buildWorkspaceCommands - failure modes', () => {
       removeSession,
       renameSession,
       setPaneUserLabel,
+      renameAgentSession,
       activePanePtyId: 'pty-active',
+      activePaneAgentType: 'generic',
       setActiveSessionId,
       notifyInfo,
     })

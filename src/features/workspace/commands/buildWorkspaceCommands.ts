@@ -24,6 +24,15 @@ export interface WorkspaceCommandDeps {
    * via `setPaneUserLabel(ptyId, label)`.
    */
   activePanePtyId: string | null
+  /**
+   * Agent type of the active pane, or `null` if no session is active.
+   * `:rename-pane` uses this to decide whether to also round-trip the
+   * rename through the agent's `/rename` slash command via
+   * `renameAgentSession`. For `claude-code` / `codex` panes the round
+   * trip keeps the agent's transcript in sync; other types (`aider`,
+   * `generic`, bare shell) get only the local `userLabel` update.
+   */
+  activePaneAgentType: 'claude-code' | 'codex' | 'aider' | 'generic' | null
   createSession: () => void
   removeSession: (id: string) => void
   renameSession: (id: string, name: string) => void
@@ -32,6 +41,14 @@ export interface WorkspaceCommandDeps {
    * see `pane.userLabel` doc in `src/features/sessions/types/index.ts`.
    */
   setPaneUserLabel: (ptyId: string, label: string | undefined) => void
+  /**
+   * Write `/rename <label>\n` to the agent's PTY. The agent persists the
+   * new title to its transcript/index, which then re-emits through PR1's
+   * `agent-session-title` channel and the pane's `agentTitle` converges.
+   * Returns a promise that rejects on IPC failure; callers surface the
+   * error via `notifyInfo`.
+   */
+  renameAgentSession: (ptyId: string, label: string) => Promise<void>
   setActiveSessionId: (id: string) => void
   notifyInfo: (message: string) => void
 }
@@ -44,10 +61,12 @@ export const buildWorkspaceCommands = (
     sessions,
     activeSessionId,
     activePanePtyId,
+    activePaneAgentType,
     createSession,
     removeSession,
     renameSession,
     setPaneUserLabel,
+    renameAgentSession,
     setActiveSessionId,
     notifyInfo,
   } = deps
@@ -131,7 +150,29 @@ export const buildWorkspaceCommands = (
           return
         }
 
+        // Always set the local label first so the Header reflects the
+        // new name immediately, even before the agent round-trip
+        // completes (or for non-agent panes where no round-trip exists).
         setPaneUserLabel(activePanePtyId, trimmed)
+
+        // For Claude/Codex panes, also write `/rename` to the agent so
+        // its own transcript/index stays in sync. Fire-and-forget; if
+        // the IPC fails, surface a one-line notice. The local label is
+        // already set, so the user sees the new name regardless.
+        const isAgentPane =
+          activePaneAgentType === 'claude-code' ||
+          activePaneAgentType === 'codex'
+        if (isAgentPane) {
+          void (async (): Promise<void> => {
+            try {
+              await renameAgentSession(activePanePtyId, trimmed)
+            } catch (error: unknown) {
+              const message =
+                error instanceof Error ? error.message : String(error)
+              notifyInfo(`agent /rename failed: ${message}`)
+            }
+          })()
+        }
       },
     },
     {

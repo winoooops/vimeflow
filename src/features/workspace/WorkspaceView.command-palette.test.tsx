@@ -12,6 +12,18 @@ const terminalZonePropsSpy = vi.hoisted(() => vi.fn())
 
 // Mock all WorkspaceView dependencies
 vi.mock('../sessions/hooks/useSessionManager')
+vi.mock('../../lib/backend', () => ({
+  renameAgentSession: vi.fn().mockResolvedValue(undefined),
+  // Stubs for any other backend functions imported by the workspace tree.
+  // listen/invoke return inert no-ops so the WorkspaceView mount under
+  // jsdom doesn't try to reach a real bridge.
+  listen: vi.fn(() =>
+    Promise.resolve(() => {
+      /* no-op unlisten */
+    })
+  ),
+  invoke: vi.fn().mockResolvedValue(null),
+}))
 vi.mock('../../hooks/useResizable')
 vi.mock('../../hooks/useElasticContainer', () => ({
   useElasticContainer: vi.fn(() => ({
