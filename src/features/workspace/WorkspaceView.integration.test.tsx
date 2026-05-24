@@ -339,16 +339,14 @@ describe('WorkspaceView Integration Tests', () => {
 
       expect(await screen.findByTestId('agent-status-rail')).toBeInTheDocument()
 
+      // Session-scoped UI state — must NOT call the agent/PTY backend.
       const serviceResults = vi.mocked(createTerminalService).mock.results
       const serviceResult = serviceResults[serviceResults.length - 1]
 
       const service = serviceResult?.value as {
         setSessionActivityPanelCollapsed: ReturnType<typeof vi.fn>
       }
-      expect(service.setSessionActivityPanelCollapsed).toHaveBeenCalledWith({
-        id: 'sess-1',
-        collapsed: true,
-      })
+      expect(service.setSessionActivityPanelCollapsed).not.toHaveBeenCalled()
 
       await user.click(
         screen.getByRole('button', { name: /expand activity panel/i })

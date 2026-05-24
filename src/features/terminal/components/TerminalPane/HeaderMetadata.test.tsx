@@ -14,6 +14,7 @@ const session: Session = {
   workingDirectory: '/home/user/repo',
   agentType: 'claude-code',
   layout: 'single',
+  activityPanelCollapsed: false,
   panes: [
     {
       id: 'p0',
@@ -22,7 +23,6 @@ const session: Session = {
       agentType: 'claude-code',
       status: 'running',
       active: true,
-      activityPanelCollapsed: null,
     },
   ],
   createdAt: '2026-05-08T10:00:00Z',

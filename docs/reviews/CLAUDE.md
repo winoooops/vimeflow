@@ -45,7 +45,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | -------------------------------------------------------------------- | ------------------ | -------- | ---- | ------------ |
 | [Filesystem Scope](patterns/filesystem-scope.md)                     | security           | 21       | 3    | 2026-05-20   |
 | [React Lifecycle](patterns/react-lifecycle.md)                       | react-patterns     | 19       | 5    | 2026-05-20   |
-| [Resource Cleanup](patterns/resource-cleanup.md)                     | react-patterns     | 2        | 3    | 2026-05-20   |
+| [Resource Cleanup](patterns/resource-cleanup.md)                     | react-patterns     | 3        | 3    | 2026-05-24   |
 | [Cross-Platform Paths](patterns/cross-platform-paths.md)             | cross-platform     | 4        | 3    | 2026-05-07   |
 | [Debug Artifacts](patterns/debug-artifacts.md)                       | code-quality       | 5        | 0    | 2026-05-09   |
 | [Generated Artifacts](patterns/generated-artifacts.md)               | code-quality       | 2        | 0    | 2026-05-04   |
