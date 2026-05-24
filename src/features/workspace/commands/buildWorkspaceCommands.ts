@@ -53,6 +53,10 @@ export interface WorkspaceCommandDeps {
   notifyInfo: (message: string) => void
 }
 
+const isExpectedNonAgentRenameFailure = (message: string): boolean =>
+  message.includes('no live agent') ||
+  message.includes('does not support /rename')
+
 // Pure builder: closures capture `deps`, so call from a useMemo over session-manager state.
 export const buildWorkspaceCommands = (
   deps: WorkspaceCommandDeps
@@ -175,6 +179,10 @@ export const buildWorkspaceCommands = (
           } catch (error: unknown) {
             const message =
               error instanceof Error ? error.message : String(error)
+            if (isExpectedNonAgentRenameFailure(message)) {
+              return
+            }
+
             notifyInfo(`agent /rename failed: ${message}`)
           }
         })()

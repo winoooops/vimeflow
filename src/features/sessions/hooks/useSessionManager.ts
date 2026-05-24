@@ -306,15 +306,16 @@ export const useSessionManager = (
                 if (pane.ptyId !== payload.sessionId) {
                   return pane
                 }
-                // When the agent emits a NEW non-empty title, the
-                // transcript becomes the source of truth (per the
-                // spec's "transcript is single source of truth" goal)
-                // and any stale `userLabel` from a prior chord /
-                // `:rename-pane` is obsolete — clear it so the agent's
-                // value renders through the precedence chain. On a
-                // *clear* emit (agent exit / row vanish) the user's
-                // local label is preserved as the next-best name.
-                const nextUserLabel = cleared ? pane.userLabel : undefined
+
+                // A confirmed `/rename` (`user-renamed`) means the agent
+                // transcript has caught up, so clear the temporary local
+                // label and let `agentTitle` render. AI-generated updates
+                // are not user intent and must not erase an explicit local
+                // pane label.
+                const nextUserLabel =
+                  !cleared && payload.source === 'user-renamed'
+                    ? undefined
+                    : pane.userLabel
 
                 return {
                   ...pane,

@@ -244,6 +244,51 @@ describe('useSessionManager', () => {
     expect(pane?.userLabel).toBeUndefined()
   })
 
+  test('ai-generated agent-session-title preserves explicit userLabel', async () => {
+    const service = createMockService()
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: 'pty-1',
+      sessions: [
+        {
+          id: 'pty-1',
+          cwd: '/tmp',
+          status: {
+            kind: 'Alive',
+            pid: 1,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+      ],
+    })
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    await waitFor(() => expect(titleListener()).toBeDefined())
+
+    act(() => {
+      result.current.setPaneUserLabel('pty-1', 'local-name')
+    })
+
+    act(() => {
+      titleListener()?.({
+        sessionId: 'pty-1',
+        agentSessionId: 'agent-uuid',
+        title: 'agent-auto-title',
+        source: 'ai-generated',
+      })
+    })
+
+    const pane = result.current.sessions[0]?.panes.find(
+      (candidate) => candidate.ptyId === 'pty-1'
+    )
+    expect(pane?.agentTitle).toBe('agent-auto-title')
+    expect(pane?.agentTitleSource).toBe('ai-generated')
+    expect(pane?.userLabel).toBe('local-name')
+  })
+
   test('empty agent-session-title preserves userLabel as the next-best name', async () => {
     const service = createMockService()
     service.listSessions = vi.fn().mockResolvedValue({
