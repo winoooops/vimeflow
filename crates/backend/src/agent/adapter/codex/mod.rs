@@ -68,6 +68,41 @@ fn default_codex_home() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from(".codex"))
 }
 
+/// Extract the agent session UUID from a Codex rollout JSONL filename.
+pub(crate) fn parse_rollout_filename_uuid(path: &Path) -> Option<String> {
+    let file_name = path.file_name()?.to_str()?;
+    let stem = file_name.strip_suffix(".jsonl")?;
+    let after_prefix = stem.strip_prefix("rollout-")?;
+
+    if after_prefix.len() < 37 {
+        return None;
+    }
+
+    let uuid_start = after_prefix.len() - 36;
+    if after_prefix.as_bytes().get(uuid_start.checked_sub(1)?) != Some(&b'-') {
+        return None;
+    }
+
+    let uuid = &after_prefix[uuid_start..];
+    let bytes = uuid.as_bytes();
+    if bytes.len() != 36
+        || bytes[8] != b'-'
+        || bytes[13] != b'-'
+        || bytes[18] != b'-'
+        || bytes[23] != b'-'
+    {
+        return None;
+    }
+
+    if !bytes.iter().enumerate().all(|(idx, byte)| {
+        matches!(idx, 8 | 13 | 18 | 23) || byte.is_ascii_hexdigit()
+    }) {
+        return None;
+    }
+
+    Some(uuid.to_string())
+}
+
 impl AgentAdapter for CodexAdapter {
     fn agent_type(&self) -> AgentType {
         AgentType::Codex
@@ -278,6 +313,48 @@ mod retry_locator_tests {
         assert!(result.is_err());
         assert!(result.as_ref().unwrap_err().contains("codex bind fatal"));
         assert_eq!(calls.load(Ordering::SeqCst), 1);
+    }
+}
+
+#[cfg(test)]
+mod parse_rollout_uuid_tests {
+    use super::*;
+
+    #[test]
+    fn parse_rollout_uuid_valid() {
+        let path = std::path::Path::new(
+            "/home/me/.codex/sessions/2026/04/17/rollout-2026-04-17T00-48-54-019d9a6a-0d43-7e20-acdf-315ef0f7136c.jsonl",
+        );
+
+        assert_eq!(
+            parse_rollout_filename_uuid(path),
+            Some("019d9a6a-0d43-7e20-acdf-315ef0f7136c".to_string())
+        );
+    }
+
+    #[test]
+    fn parse_rollout_uuid_no_match_returns_none() {
+        let path = std::path::Path::new("/tmp/random-file.jsonl");
+
+        assert_eq!(parse_rollout_filename_uuid(path), None);
+    }
+
+    #[test]
+    fn parse_rollout_uuid_wrong_extension_returns_none() {
+        let path = std::path::Path::new(
+            "/tmp/rollout-2026-04-17T00-48-54-019d9a6a-0d43-7e20-acdf-315ef0f7136c.txt",
+        );
+
+        assert_eq!(parse_rollout_filename_uuid(path), None);
+    }
+
+    #[test]
+    fn parse_rollout_uuid_truncated_uuid_returns_none() {
+        let path = std::path::Path::new(
+            "/tmp/rollout-2026-04-17T00-48-54-019d9a6a-truncated.jsonl",
+        );
+
+        assert_eq!(parse_rollout_filename_uuid(path), None);
     }
 }
 
