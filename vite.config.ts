@@ -681,6 +681,18 @@ export default defineConfig(({ mode }) => ({
     // queries (nvim, less, htop). Terser preserves the pattern correctly.
     minify: 'terser',
   },
+  worker: {
+    // Pierre's worker entry (@pierre/diffs/worker/worker.js) is loaded by
+    // WorkerPoolContextProvider via `new Worker(new URL(..., import.meta.url))`
+    // — Vite's worker bundler emits it as a separate ESM asset so it's
+    // resolvable in both dev and production builds.
+    format: 'es',
+    rollupOptions: {
+      output: {
+        entryFileNames: 'assets/pierre-worker-[hash].js',
+      },
+    },
+  },
   server: {
     port: 5173,
     strictPort: true,
