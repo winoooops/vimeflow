@@ -202,6 +202,104 @@ describe('useSessionManager', () => {
     expect(pane?.agentTitleSource).toBeUndefined()
   })
 
+  test('agent-session-title clears stale userLabel so the agent rename takes precedence', async () => {
+    const service = createMockService()
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: 'pty-1',
+      sessions: [
+        {
+          id: 'pty-1',
+          cwd: '/tmp',
+          status: {
+            kind: 'Alive',
+            pid: 1,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+      ],
+    })
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    await waitFor(() => expect(titleListener()).toBeDefined())
+
+    // Simulate the user setting a local label via the chord / palette
+    // FIRST — this is the prior interaction the bug report described.
+    act(() => {
+      result.current.setPaneUserLabel('pty-1', 'old-local')
+    })
+
+    // Now Claude / Codex receives `/rename new-title` and emits the
+    // transcript event. The agent's value is the new source of truth;
+    // the prior `userLabel` must be cleared so the Header reflects the
+    // agent's `/rename`, not the stale local override.
+    act(() => {
+      titleListener()?.({
+        sessionId: 'pty-1',
+        agentSessionId: 'agent-uuid',
+        title: 'new-title',
+        source: 'user-renamed',
+      })
+    })
+
+    const pane = result.current.sessions[0]?.panes.find(
+      (candidate) => candidate.ptyId === 'pty-1'
+    )
+    expect(pane?.agentTitle).toBe('new-title')
+    expect(pane?.userLabel).toBeUndefined()
+  })
+
+  test('empty agent-session-title preserves userLabel as the next-best name', async () => {
+    const service = createMockService()
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: 'pty-1',
+      sessions: [
+        {
+          id: 'pty-1',
+          cwd: '/tmp',
+          status: {
+            kind: 'Alive',
+            pid: 1,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+      ],
+    })
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    await waitFor(() => expect(titleListener()).toBeDefined())
+
+    // User sets local label.
+    act(() => {
+      result.current.setPaneUserLabel('pty-1', 'my-label')
+    })
+
+    // Agent emits a "clear" event (e.g., agent exited, row vanished).
+    act(() => {
+      titleListener()?.({
+        sessionId: 'pty-1',
+        agentSessionId: 'agent-uuid',
+        title: '',
+        source: 'user-renamed',
+      })
+    })
+
+    const pane = result.current.sessions[0]?.panes.find(
+      (candidate) => candidate.ptyId === 'pty-1'
+    )
+    expect(pane?.agentTitle).toBeUndefined()
+    // userLabel survives — there's no agent value to defer to, so the
+    // user's local label remains the Header's best signal.
+    expect(pane?.userLabel).toBe('my-label')
+  })
+
   test('agent-session-title for unknown ptyId does not change state identity', async () => {
     const service = createMockService()
     service.listSessions = vi.fn().mockResolvedValue({

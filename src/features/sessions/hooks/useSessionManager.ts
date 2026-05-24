@@ -320,15 +320,27 @@ export const useSessionManager = (
 
             return prev.map((session) => ({
               ...session,
-              panes: session.panes.map((pane) =>
-                pane.ptyId === payload.sessionId
-                  ? {
-                      ...pane,
-                      agentTitle: nextTitle,
-                      agentTitleSource: nextSource,
-                    }
-                  : pane
-              ),
+              panes: session.panes.map((pane) => {
+                if (pane.ptyId !== payload.sessionId) {
+                  return pane
+                }
+                // When the agent emits a NEW non-empty title, the
+                // transcript becomes the source of truth (per the
+                // spec's "transcript is single source of truth" goal)
+                // and any stale `userLabel` from a prior chord /
+                // `:rename-pane` is obsolete — clear it so the agent's
+                // value renders through the precedence chain. On a
+                // *clear* emit (agent exit / row vanish) the user's
+                // local label is preserved as the next-best name.
+                const nextUserLabel = cleared ? pane.userLabel : undefined
+
+                return {
+                  ...pane,
+                  agentTitle: nextTitle,
+                  agentTitleSource: nextSource,
+                  userLabel: nextUserLabel,
+                }
+              }),
             }))
           })
         }
