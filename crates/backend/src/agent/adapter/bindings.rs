@@ -269,10 +269,34 @@ mod tests {
     /// `default_codex_home()` rather than failing. Pin the behavior so
     /// headless / service sessions (where `dirs::home_dir()` returns
     /// `None`) keep attaching, matching the pre-B' path through
-    /// `CodexAdapter::new` (PR #261 codex review F3). The successful
-    /// bind here proves both that the fallback fired AND that the
-    /// outer `Arc<CompositeLocator>` was constructed without panicking
-    /// on a `None`.
+    /// `CodexAdapter::new` (PR #261 codex review F3).
+    ///
+    /// Coverage scope:
+    /// - **No panic / no Err**: the successful `expect(...)` proves
+    ///   both that the `unwrap_or_else(default_codex_home)` fallback
+    ///   fired AND that both `CompositeLocator::new` and
+    ///   `CodexAdapter::with_home` accept the resulting `PathBuf`
+    ///   without panicking.
+    /// - **Dispatch hits the Codex arm**: the `agent_type` round-trip
+    ///   confirms the test exercised the `AgentType::Codex` branch
+    ///   (a regression that dropped through to `NoOpAdapter` would
+    ///   fail this assertion).
+    ///
+    /// **NOT pinned here**: that `default_codex_home()` reached BOTH
+    /// the outer `Arc<CompositeLocator>` AND
+    /// `CodexAdapter::with_home`'s internal locator (PR #261 cycle 10
+    /// review F30). The same `codex_home` binding is reused via
+    /// `clone()` between the two construction sites — a structural
+    /// guarantee at the source level, not directly observable through
+    /// the public `Arc<dyn StatusSourceLocator>` surface. Verifying it
+    /// in a unit test would require either (a) downcasting the
+    /// `Arc<dyn ...>`, (b) adding a `#[cfg(test)]` `codex_home()`
+    /// accessor on `CompositeLocator`, or (c) a locator fixture with a
+    /// seeded SQLite DB so `locate(...)` returns `Ok` with an
+    /// observable `trust_root`. None of those are worth the test-only
+    /// API surface; the cycle-1 F1 fix that introduced the shared
+    /// binding lives in the `for_attach` body at lines 138-153 and
+    /// is self-evident at code-review time.
     #[test]
     fn for_attach_codex_without_provider_home_falls_back_to_default_home() {
         let bindings =

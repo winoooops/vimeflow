@@ -37,17 +37,16 @@ pub struct CodexAdapter {
 }
 
 impl CodexAdapter {
+    /// Test-only convenience constructor. Production callers go
+    /// through `AgentBindings::for_attach` → `CodexAdapter::with_home`
+    /// (which threads `ctx.provider_home` and `ctx.proc_root` from
+    /// `AttachContext`). Hardcoding `/proc` here is safe ONLY because
+    /// the `#[cfg(test)]` gate prevents accidental production use that
+    /// would bypass `AttachContext.proc_root` injection (PR #261
+    /// cycle 10 review F29 — symmetric with the test-only
+    /// `SqliteFirstLocator::new`).
+    #[cfg(test)]
     pub fn new(pid: u32, pty_start: SystemTime) -> Self {
-        // No log here. Production Codex attaches go through
-        // `AgentBindings::for_attach` → `CodexAdapter::with_home`,
-        // and `for_attach` owns the attach-once
-        // `"codex adapter: locator initialized ..."` log so two
-        // CompositeLocator constructions per attach don't double-emit
-        // (PR #261 cycle 3 F11 + cycle 4 F13). This constructor is
-        // test-only since cycle 1's F1 fix routed all production
-        // callers through `with_home`. `/proc` is the production
-        // default; tests that need a fake proc inject it via
-        // `with_home`.
         Self {
             locator: CompositeLocator::new(
                 default_codex_home(),
