@@ -1,3 +1,5 @@
+import type { RenameAgentSessionRequest } from '../bindings'
+
 /**
  * Detach a previously-registered listener. Idempotent: a second call is
  * a no-op. The `called` guard around the transport's unlisten is the
@@ -36,6 +38,14 @@ export const invoke = async <T>(
   method: string,
   args?: Record<string, unknown>
 ): Promise<T> => requireBridge().invoke<T>(method, args)
+
+export const renameAgentSession = async (
+  ptyId: string,
+  title: string
+): Promise<void> => {
+  const request = { ptyId, title } satisfies RenameAgentSessionRequest
+  await invoke<null>('rename_agent_session', request)
+}
 
 /**
  * Subscribe to a backend event. Callback receives the bare payload. The
