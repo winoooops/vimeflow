@@ -97,7 +97,7 @@ describe('buildWorkspaceCommands - happy paths', () => {
     expect(setPaneUserLabel).not.toHaveBeenCalled()
   })
 
-  test(':rename-pane on a shell pane sets label locally without calling renameAgentSession', () => {
+  test(':rename-pane asks backend to sync even while pane type is generic', () => {
     const commands = buildWorkspaceCommands({
       sessions: mockSessions,
       activeSessionId: 'session-1',
@@ -117,8 +117,39 @@ describe('buildWorkspaceCommands - happy paths', () => {
 
     renamePaneCmd?.execute?.('left')
     expect(setPaneUserLabel).toHaveBeenCalledWith('pty-left', 'left')
-    expect(renameAgentSession).not.toHaveBeenCalled()
+    expect(renameAgentSession).toHaveBeenCalledWith('pty-left', 'left')
     expect(renameSession).not.toHaveBeenCalled()
+  })
+
+  test(':rename-pane surfaces backend rename failure after local label update', async () => {
+    renameAgentSession.mockRejectedValueOnce(new Error('no live agent'))
+
+    const commands = buildWorkspaceCommands({
+      sessions: mockSessions,
+      activeSessionId: 'session-1',
+      createSession,
+      removeSession,
+      renameSession,
+      setPaneUserLabel,
+      renameAgentSession,
+      activePanePtyId: 'pty-shell',
+      activePaneAgentType: 'generic',
+      setActiveSessionId,
+      notifyInfo,
+    })
+
+    const renamePaneCmd = commands.find((c) => c.id === 'rename-pane')
+    renamePaneCmd?.execute?.('shell-name')
+
+    expect(setPaneUserLabel).toHaveBeenCalledWith('pty-shell', 'shell-name')
+    expect(renameAgentSession).toHaveBeenCalledWith('pty-shell', 'shell-name')
+
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(notifyInfo).toHaveBeenCalledWith(
+      'agent /rename failed: no live agent'
+    )
   })
 
   test(':rename-pane on a Claude pane ALSO writes /rename via renameAgentSession', () => {
@@ -207,6 +238,76 @@ describe('buildWorkspaceCommands - happy paths', () => {
 
     expect(setPaneUserLabel).not.toHaveBeenCalled()
     expect(notifyInfo).toHaveBeenCalledWith('Usage: :rename-pane <name>')
+  })
+
+  test(':rename-pane with control character input rejects before local update', () => {
+    const commands = buildWorkspaceCommands({
+      sessions: mockSessions,
+      activeSessionId: 'session-1',
+      createSession,
+      removeSession,
+      renameSession,
+      setPaneUserLabel,
+      renameAgentSession,
+      activePanePtyId: 'pty-left',
+      activePaneAgentType: 'generic',
+      setActiveSessionId,
+      notifyInfo,
+    })
+
+    const renamePaneCmd = commands.find((c) => c.id === 'rename-pane')
+    renamePaneCmd?.execute?.('bad\nname')
+
+    expect(setPaneUserLabel).not.toHaveBeenCalled()
+    expect(renameAgentSession).not.toHaveBeenCalled()
+    expect(notifyInfo).toHaveBeenCalledWith(
+      'control characters are not allowed'
+    )
+  })
+
+  test(':rename-pane with overlong input rejects before local update', () => {
+    const commands = buildWorkspaceCommands({
+      sessions: mockSessions,
+      activeSessionId: 'session-1',
+      createSession,
+      removeSession,
+      renameSession,
+      setPaneUserLabel,
+      renameAgentSession,
+      activePanePtyId: 'pty-left',
+      activePaneAgentType: 'generic',
+      setActiveSessionId,
+      notifyInfo,
+    })
+
+    const renamePaneCmd = commands.find((c) => c.id === 'rename-pane')
+    renamePaneCmd?.execute?.('a'.repeat(201))
+
+    expect(setPaneUserLabel).not.toHaveBeenCalled()
+    expect(renameAgentSession).not.toHaveBeenCalled()
+    expect(notifyInfo).toHaveBeenCalledWith('title is too long (max 200 bytes)')
+  })
+
+  test(':rename-pane collapses whitespace before local and agent rename', () => {
+    const commands = buildWorkspaceCommands({
+      sessions: mockSessions,
+      activeSessionId: 'session-1',
+      createSession,
+      removeSession,
+      renameSession,
+      setPaneUserLabel,
+      renameAgentSession,
+      activePanePtyId: 'pty-left',
+      activePaneAgentType: 'generic',
+      setActiveSessionId,
+      notifyInfo,
+    })
+
+    const renamePaneCmd = commands.find((c) => c.id === 'rename-pane')
+    renamePaneCmd?.execute?.('  Fix    CI  ')
+
+    expect(setPaneUserLabel).toHaveBeenCalledWith('pty-left', 'Fix CI')
+    expect(renameAgentSession).toHaveBeenCalledWith('pty-left', 'Fix CI')
   })
 
   test(':next command wraps to first session', () => {

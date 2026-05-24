@@ -159,6 +159,36 @@ describe('usePaneRenameChord', () => {
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
   })
 
+  test('submit uses latest focused pane agent type instead of open-time snapshot', async () => {
+    const user = userEvent.setup()
+    mockRenameAgentSession.mockResolvedValueOnce(undefined)
+
+    let focused = makeFocusedRef({
+      ptyId: 'pty-race',
+      agentType: 'generic',
+    })
+
+    render(<Harness resolveFocusedPane={() => focused} />)
+    act(() => {
+      chordRegistry.dispatch({ key: 'r' } as KeyboardEvent)
+    })
+
+    focused = makeFocusedRef({
+      ptyId: 'pty-race',
+      agentType: 'claude-code',
+    })
+
+    const input = screen.getByRole('textbox')
+    await user.tripleClick(input)
+    await user.keyboard('race-fixed{Enter}')
+
+    expect(mockSetPaneUserLabel).toHaveBeenCalledWith('pty-race', 'race-fixed')
+    expect(mockRenameAgentSession).toHaveBeenCalledWith(
+      'pty-race',
+      'race-fixed'
+    )
+  })
+
   test('claude pane sets userLabel AND calls renameAgentSession', async () => {
     const user = userEvent.setup()
     mockRenameAgentSession.mockResolvedValueOnce(undefined)

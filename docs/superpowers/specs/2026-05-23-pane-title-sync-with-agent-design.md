@@ -154,13 +154,13 @@ The line-67 render becomes `{paneAgentTitle ?? session.name}`.
 The tab strip (`src/features/sessions/components/Tab.tsx`) is
 unchanged per non-goal §1.3 #1; it always shows `session.name`.
 
-| State                                                  | Pane Header shows | Tab strip shows |
-| ------------------------------------------------------ | ----------------- | --------------- |
-| Pane has no agent yet (agent not detected)             | `session.name`    | `session.name`  |
-| Agent detected, but no title event yet                 | `session.name`    | `session.name`  |
-| Claude has emitted `ai-title`                          | `<aiTitle>`       | `session.name`  |
-| Claude has emitted `custom-title` (`/rename`)          | `<customTitle>`   | `session.name`  |
-| Codex's `session_index.jsonl` row has `thread_name`    | `<thread_name>`   | `session.name`  |
+| State                                               | Pane Header shows | Tab strip shows |
+| --------------------------------------------------- | ----------------- | --------------- |
+| Pane has no agent yet (agent not detected)          | `session.name`    | `session.name`  |
+| Agent detected, but no title event yet              | `session.name`    | `session.name`  |
+| Claude has emitted `ai-title`                       | `<aiTitle>`       | `session.name`  |
+| Claude has emitted `custom-title` (`/rename`)       | `<customTitle>`   | `session.name`  |
+| Codex's `session_index.jsonl` row has `thread_name` | `<thread_name>`   | `session.name`  |
 
 Visual treatment: the title renders at the existing `text-[12.5px]`
 weight per D10 of
@@ -215,16 +215,16 @@ Walk-through:
    `event.sessionId` equal the adapter's known agent UUID for this
    PTY? If yes, emit `agent-session-title` with
    `{ sessionId: <ptyId>, agentSessionId: <claude-uuid>,
-   title: "...", source: "ai-generated" }`.
+title: "...", source: "ai-generated" }`.
 4. The frontend's title subscriber (see §3 for the hook shape)
    receives the event, matches it to a pane by `ptyId`
    (`event.sessionId === pane.ptyId`), sets `pane.agentTitle =
-   "Investigate slow startup"`.
+"Investigate slow startup"`.
 5. Pane Header re-renders. Total latency from Claude's `fsync` to the
    re-render: bounded by the adapter watcher cadence — see §6.
 6. User runs `/rename slow-startup-fix` in Claude. Claude writes a
    `{"type":"custom-title","customTitle":"slow-startup-fix",
-   "sessionId":"<claude-uuid>"}` event. The adapter re-emits with the
+"sessionId":"<claude-uuid>"}` event. The adapter re-emits with the
    new title and `source: "user-renamed"`. Pane Header updates to
    "slow-startup-fix".
 
@@ -235,7 +235,7 @@ For Codex: same flow, with two specifics.
   the row whose `id` equals the adapter's known agent UUID for this
   PTY. On a `thread_name` change, emit `agent-session-title` with
   `{ sessionId: <ptyId>, agentSessionId: <codex-uuid>,
-  title: <thread_name>, source: "user-renamed" }`. Codex titles
+title: <thread_name>, source: "user-renamed" }`. Codex titles
   always carry `source: "user-renamed"` because the file is **only**
   written by the thread-naming flow (per §1.1).
 - A Codex session that has **never** been `/rename`d does not appear
@@ -335,14 +335,14 @@ of PTY injection.
 Keeping the v1 surface intentionally minimal — see §6 for the full
 failure-mode contract.
 
-| What goes wrong                                             | What the user sees                                  |
-| ----------------------------------------------------------- | --------------------------------------------------- |
-| Disallowed character in rename input (e.g. paste with `\n`) | Inline error under the input; submission blocked    |
-| Submit on a pane with no live agent                         | Toast: "no agent in this pane to rename"            |
-| PTY write fails (write returns error)                       | Toast: "failed to send /rename to agent"            |
-| Agent crashes or `/rename` not supported by this CLI vers.  | Pane Header stays on prior title; no error toast    |
-| Adapter file-watcher misses an update                       | Pane Header stale until next event or reload        |
-| User reloads the app                                        | Adapter re-reads and re-emits; title restored       |
+| What goes wrong                                             | What the user sees                               |
+| ----------------------------------------------------------- | ------------------------------------------------ |
+| Disallowed character in rename input (e.g. paste with `\n`) | Inline error under the input; submission blocked |
+| Submit on a pane with no live agent                         | Toast: "no agent in this pane to rename"         |
+| PTY write fails (write returns error)                       | Toast: "failed to send /rename to agent"         |
+| Agent crashes or `/rename` not supported by this CLI vers.  | Pane Header stays on prior title; no error toast |
+| Adapter file-watcher misses an update                       | Pane Header stale until next event or reload     |
+| User reloads the app                                        | Adapter re-reads and re-emits; title restored    |
 
 The "agent crashes or `/rename` unsupported" row deliberately does NOT
 toast: we have no synchronous channel to confirm the agent accepted
@@ -484,6 +484,7 @@ Rules, applied in order:
    This guarantees `s.len() ≤ 200` (post-truncation) and `s` remains
    valid UTF-8. The 200-byte cap below the field doc is therefore
    honored exactly.
+
 5. **Empty-result rule (transition-aware).** If the sanitized result
    is empty (zero length after step 3), the adapter's behavior
    depends on whether it last emitted a non-empty title for this
@@ -496,7 +497,7 @@ Rules, applied in order:
      `Some(prior)`. **Emit `{ title: "", source: ... }`** so the
      frontend can clear the stale title; reset
      `last_emitted_title` to `None`. The frontend treats `title ===
-     ""` as `agentTitle = undefined`, restoring the
+""` as `agentTitle = undefined`, restoring the
      `session.name` fallback.
 
 This rule is the only acceptable way to handle Claude emitting an
@@ -641,20 +642,20 @@ agent to pane Header. PR2 builds on the event channel introduced here.
 
 ### 4.1 Scope of PR1 (files changed)
 
-| File                                                                  | Change                                                       |
-| --------------------------------------------------------------------- | ------------------------------------------------------------ |
-| `crates/backend/src/agent/events.rs`                                  | Add `AGENT_SESSION_TITLE` const (§3.2)                       |
-| `crates/backend/src/agent/types.rs`                                   | Add `AgentSessionTitleEvent` + `TitleSource`                 |
-| `crates/backend/src/agent/adapter/claude_code/transcript.rs`          | Extend transcript line parser to recognize `ai-title` / `custom-title` (§4.2) |
-| `crates/backend/src/agent/adapter/codex/mod.rs`                       | Spawn session-index watcher in `tail_transcript`             |
-| `crates/backend/src/agent/adapter/codex/session_index.rs` *(new)*     | `session_index.jsonl` reader + change detector               |
-| `src/bindings/AgentSessionTitleEvent.ts` *(generated)*                | Emitted by `ts-rs` on `cargo test`                           |
-| `src/bindings/TitleSource.ts` *(generated)*                           | Emitted by `ts-rs` on `cargo test`                           |
-| `src/bindings/index.ts`                                               | Add two exports (§3.5)                                        |
-| `src/features/sessions/types/index.ts`                                | Two new optional `Pane` fields (§3.1)                        |
-| `src/features/sessions/hooks/useSessionManager.ts`                    | Global `agent-session-title` listener + dispatch (§4.5)      |
-| `src/features/terminal/components/TerminalPane/Header.tsx`            | Add `paneAgentTitle?: string` prop; line 67 becomes `{paneAgentTitle ?? session.name}` |
-| `src/features/terminal/components/TerminalPane/index.tsx`             | Pass `paneAgentTitle={pane.agentTitle}` when mounting `<Header>` (line ~216) |
+| File                                                              | Change                                                                                 |
+| ----------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `crates/backend/src/agent/events.rs`                              | Add `AGENT_SESSION_TITLE` const (§3.2)                                                 |
+| `crates/backend/src/agent/types.rs`                               | Add `AgentSessionTitleEvent` + `TitleSource`                                           |
+| `crates/backend/src/agent/adapter/claude_code/transcript.rs`      | Extend transcript line parser to recognize `ai-title` / `custom-title` (§4.2)          |
+| `crates/backend/src/agent/adapter/codex/mod.rs`                   | Spawn session-index watcher in `tail_transcript`                                       |
+| `crates/backend/src/agent/adapter/codex/session_index.rs` _(new)_ | `session_index.jsonl` reader + change detector                                         |
+| `src/bindings/AgentSessionTitleEvent.ts` _(generated)_            | Emitted by `ts-rs` on `cargo test`                                                     |
+| `src/bindings/TitleSource.ts` _(generated)_                       | Emitted by `ts-rs` on `cargo test`                                                     |
+| `src/bindings/index.ts`                                           | Add two exports (§3.5)                                                                 |
+| `src/features/sessions/types/index.ts`                            | Two new optional `Pane` fields (§3.1)                                                  |
+| `src/features/sessions/hooks/useSessionManager.ts`                | Global `agent-session-title` listener + dispatch (§4.5)                                |
+| `src/features/terminal/components/TerminalPane/Header.tsx`        | Add `paneAgentTitle?: string` prop; line 67 becomes `{paneAgentTitle ?? session.name}` |
+| `src/features/terminal/components/TerminalPane/index.tsx`         | Pass `paneAgentTitle={pane.agentTitle}` when mounting `<Header>` (line ~216)           |
 
 PR1 does **not** add or modify any IPC method — read-only sync flows
 entirely over the existing event channel.
@@ -1048,7 +1049,7 @@ the source):
   polling thread sleeps up to that long before re-checking). This is
   the status-source watcher; PR1 does NOT touch it.
 - **`claude_code/transcript.rs:26`** — `POLL_INTERVAL =
-  Duration::from_millis(500)`. The transcript tail loop sleeps 500
+Duration::from_millis(500)`. The transcript tail loop sleeps 500
   ms at EOF before re-checking for new lines. Claude's title parse
   piggybacks on this loop.
 - **Codex `session_index.jsonl` watcher (new in PR1)** — 500-ms
@@ -1100,43 +1101,40 @@ regardless of focus.
 useEffect(() => {
   let cancelled = false
   let unlistenFn: UnlistenFn | undefined
-  void listen<AgentSessionTitleEvent>(
-    'agent-session-title',
-    (payload) => {
-      // Empty payload.title is the explicit "clear" signal per
-      // §3.2.1's transition-aware empty rule. Coerce both fields
-      // to undefined so the Header falls back to session.name.
-      const cleared = payload.title.length === 0
-      const nextTitle = cleared ? undefined : payload.title
-      const nextSource = cleared ? undefined : payload.source
-      setSessions((sessions) => {
-        // Early-out: if no pane in any session has ptyId ===
-        // payload.sessionId, return the same `sessions` reference
-        // so React skips the re-render. Without this guard,
-        // every event would rebuild every session/pane object,
-        // even when the event targets no pane in the current state
-        // (which happens during reload churn or for stale events).
-        const matchExists = sessions.some((s) =>
-          s.panes.some((p) => p.ptyId === payload.sessionId)
-        )
-        if (!matchExists) {
-          return sessions
-        }
-        return sessions.map((session) => ({
-          ...session,
-          panes: session.panes.map((pane) =>
-            pane.ptyId === payload.sessionId
-              ? {
-                  ...pane,
-                  agentTitle: nextTitle,
-                  agentTitleSource: nextSource,
-                }
-              : pane
-          ),
-        }))
-      })
-    }
-  ).then((fn) => {
+  void listen<AgentSessionTitleEvent>('agent-session-title', (payload) => {
+    // Empty payload.title is the explicit "clear" signal per
+    // §3.2.1's transition-aware empty rule. Coerce both fields
+    // to undefined so the Header falls back to session.name.
+    const cleared = payload.title.length === 0
+    const nextTitle = cleared ? undefined : payload.title
+    const nextSource = cleared ? undefined : payload.source
+    setSessions((sessions) => {
+      // Early-out: if no pane in any session has ptyId ===
+      // payload.sessionId, return the same `sessions` reference
+      // so React skips the re-render. Without this guard,
+      // every event would rebuild every session/pane object,
+      // even when the event targets no pane in the current state
+      // (which happens during reload churn or for stale events).
+      const matchExists = sessions.some((s) =>
+        s.panes.some((p) => p.ptyId === payload.sessionId)
+      )
+      if (!matchExists) {
+        return sessions
+      }
+      return sessions.map((session) => ({
+        ...session,
+        panes: session.panes.map((pane) =>
+          pane.ptyId === payload.sessionId
+            ? {
+                ...pane,
+                agentTitle: nextTitle,
+                agentTitleSource: nextSource,
+              }
+            : pane
+        ),
+      }))
+    })
+  }).then((fn) => {
     if (cancelled) {
       fn()
     } else {
@@ -1198,7 +1196,7 @@ write-only via the event channel.
     with `source: AiGenerated`, correct `title`, `agentSessionId`,
     `sessionId == ptyId`.
   - Feed a `custom-title` line same way → assert `source:
-    UserRenamed`.
+UserRenamed`.
   - Feed an `ai-title` with mismatched `sessionId` → no emit.
   - Feed two identical `ai-title` events back-to-back → exactly ONE
     emit (de-duplication memo).
@@ -1268,25 +1266,25 @@ persists the new title.
 
 ### 5.1 Scope of PR2 (files changed)
 
-| File                                                                  | Change                                              |
-| --------------------------------------------------------------------- | --------------------------------------------------- |
-| `src/features/command-palette/hooks/useCommandPalette.ts`             | `Ctrl+:` becomes a leader key with 500-ms window (§5.2) |
-| `src/features/command-palette/chordRegistry.ts` *(new)*               | Tiny module that lets features register follow-up handlers |
-| `src/features/command-palette/hooks/usePaneRenameChord.ts` *(new)*    | Chord state machine; owns rename modal state (§5.2) |
-| `src/features/workspace/WorkspaceView.tsx`                            | Mount `usePaneRenameChord()`; render its `renderNode` |
-| `src/features/terminal/components/PaneRenameInput.tsx` *(new)*        | Portal-mounted rename modal anchored to pane Header (§5.3) |
-| `src/features/terminal/components/TerminalPane/Header.tsx`            | Register pane-header DOM ref in `paneHeaderRefs` map for portal anchor |
-| `src/features/terminal/paneHeaderRefs.ts` *(new)*                     | Tiny module exporting a ref-map keyed by `ptyId`    |
-| `src/features/sessions/utils/sanitizeTitle.ts` *(new)*                | TS port of §3.2.1 (frontend pre-validation)         |
-| `src/lib/backend.ts`                                                  | Add `renameAgentSession({ ptyId, title })` invoke   |
-| `electron/backend-methods.ts`                                         | Allowlist `rename_agent_session` (per IPC checklist)|
-| `crates/backend/src/agent/mod.rs`                                     | Re-export `rename_agent_session` (per IPC checklist)|
-| `crates/backend/src/runtime/state.rs`                                 | New `BackendState::rename_agent_session` method (per IPC checklist) |
-| `crates/backend/src/agent/state.rs`                                   | New `AgentWatcherState::agent_type_for_pty(&str) -> Option<AgentType>` |
-| `crates/backend/src/runtime/ipc.rs`                                   | Match-arm dispatch (per IPC checklist)              |
-| `crates/backend/src/agent/types.rs`                                   | New `RenameAgentSessionRequest`                     |
-| `src/bindings/RenameAgentSessionRequest.ts` *(generated)*             | Emitted via `ts-rs` on `cargo test`                 |
-| `src/bindings/index.ts`                                               | Add export for `RenameAgentSessionRequest`          |
+| File                                                               | Change                                                                 |
+| ------------------------------------------------------------------ | ---------------------------------------------------------------------- |
+| `src/features/command-palette/hooks/useCommandPalette.ts`          | `Ctrl+:` becomes a leader key with 500-ms window (§5.2)                |
+| `src/features/command-palette/chordRegistry.ts` _(new)_            | Tiny module that lets features register follow-up handlers             |
+| `src/features/command-palette/hooks/usePaneRenameChord.ts` _(new)_ | Chord state machine; owns rename modal state (§5.2)                    |
+| `src/features/workspace/WorkspaceView.tsx`                         | Mount `usePaneRenameChord()`; render its `renderNode`                  |
+| `src/features/terminal/components/PaneRenameInput.tsx` _(new)_     | Portal-mounted rename modal anchored to pane Header (§5.3)             |
+| `src/features/terminal/components/TerminalPane/Header.tsx`         | Register pane-header DOM ref in `paneHeaderRefs` map for portal anchor |
+| `src/features/terminal/paneHeaderRefs.ts` _(new)_                  | Tiny module exporting a ref-map keyed by `ptyId`                       |
+| `src/features/sessions/utils/sanitizeTitle.ts` _(new)_             | TS port of §3.2.1 (frontend pre-validation)                            |
+| `src/lib/backend.ts`                                               | Add `renameAgentSession({ ptyId, title })` invoke                      |
+| `electron/backend-methods.ts`                                      | Allowlist `rename_agent_session` (per IPC checklist)                   |
+| `crates/backend/src/agent/mod.rs`                                  | Re-export `rename_agent_session` (per IPC checklist)                   |
+| `crates/backend/src/runtime/state.rs`                              | New `BackendState::rename_agent_session` method (per IPC checklist)    |
+| `crates/backend/src/agent/state.rs`                                | New `AgentWatcherState::agent_type_for_pty(&str) -> Option<AgentType>` |
+| `crates/backend/src/runtime/ipc.rs`                                | Match-arm dispatch (per IPC checklist)                                 |
+| `crates/backend/src/agent/types.rs`                                | New `RenameAgentSessionRequest`                                        |
+| `src/bindings/RenameAgentSessionRequest.ts` _(generated)_          | Emitted via `ts-rs` on `cargo test`                                    |
+| `src/bindings/index.ts`                                            | Add export for `RenameAgentSessionRequest`                             |
 
 ### 5.2 Chord keybinding infrastructure
 
@@ -1369,10 +1367,7 @@ on a single key:
 // src/features/command-palette/chordRegistry.ts (new)
 type ChordHandler = (event: KeyboardEvent) => boolean // true = consumed
 const handlers = new Map<string, ChordHandler>()
-export const registerChord = (
-  key: string,
-  fn: ChordHandler
-): (() => void) => {
+export const registerChord = (key: string, fn: ChordHandler): (() => void) => {
   handlers.set(key, fn)
   return () => handlers.delete(key)
 }
@@ -1524,7 +1519,7 @@ Behavior:
   `useRenameState.ts` blur behavior.
 - A small one-line tip appears under the input the first time the
   chord is used per session: `tip: make sure the agent's prompt is
-  empty before renaming` — the documented v1 known-limitation hint
+empty before renaming` — the documented v1 known-limitation hint
   from §2.3 step 5. "First time per session" can be tracked in
   `sessionStorage` (cleared on app close) so repeat users aren't
   nagged.
@@ -1592,10 +1587,10 @@ Frontend behavior on each `TitleValidation` shape:
 
 **Layered policy summary:**
 
-| Layer            | C0 / DEL  | Whitespace runs | Empty result          | Over 200 bytes |
-| ---------------- | --------- | --------------- | --------------------- | -------------- |
-| Frontend §5.4    | reject    | collapse        | reject (disable Submit) | reject       |
-| Backend §3.2.1   | replace→` `| collapse        | drop event (no emit)  | truncate to ≤200 |
+| Layer          | C0 / DEL    | Whitespace runs | Empty result            | Over 200 bytes   |
+| -------------- | ----------- | --------------- | ----------------------- | ---------------- |
+| Frontend §5.4  | reject      | collapse        | reject (disable Submit) | reject           |
+| Backend §3.2.1 | replace→` ` | collapse        | drop event (no emit)    | truncate to ≤200 |
 
 The backend layer is defensive — it never sees a malformed PR2
 write (frontend already gated), but it MUST tolerate hand-edited
@@ -1769,7 +1764,7 @@ path. Implications:
   - Mounted with `pane.agentTitle = "old"` → input value is "old",
     pre-selected.
   - Type `new` and `Enter` → `renameAgentSession({ ptyId, title:
-    "new" })` invoked.
+"new" })` invoked.
   - Type with `\n` (via paste simulation) → submit disabled,
     control-char error shown.
   - `Escape` → input closes, no IPC.
@@ -1797,20 +1792,20 @@ sections and specifies the cross-cutting races.
 
 ### 6.1 Failure-mode contract (consolidated)
 
-| # | Scenario                                                                | Behavior                                                                 | Spec ref       |
-| - | ----------------------------------------------------------------------- | ------------------------------------------------------------------------ | -------------- |
-| 1 | Agent emits no title (Claude or Codex never `/rename`d)                 | Pane Header shows `session.name` indefinitely                            | §2.1, §2.2     |
-| 2 | Claude transcript contains an `ai-title` with empty `aiTitle`           | If memo is `None` → no emit; if memo is `Some(_)` → emit clear            | §3.2.1 #5, §4.2|
-| 3 | Codex `session_index.jsonl` row vanishes (file rewrite drops it)        | If memo is `Some(_)` → emit clear; else no emit                          | §4.3 step 2    |
-| 4 | Partial / torn JSON line on `session_index.jsonl` read (write race)     | Line parse fails; watcher skips; next tick recovers                      | §4.3 cross-process race |
-| 5 | Adapter file watcher dies (panic in tail thread)                        | Claude: status + title events both stop (shared thread). Codex: title events stop; rollout-tail + status events continue (sidecar). Recovery: reload. | §6.3 below |
-| 6 | User chord-renames while typing in agent prompt                         | `/rename` concatenates with their text; agent treats as prompt; Header stays | §2.3 step 5, §5.6 |
-| 7 | User chord-renames while agent is mid-turn (busy)                       | Agent buffers input; `/rename` processed after turn finishes; Header updates with normal latency | §6.2 below |
-| 8 | PTY write fails (`PtyState::write` returns error)                       | Frontend toast: "failed to send /rename to agent"; no state change       | §2.5, §5.5     |
-| 9 | Agent CLI version doesn't support `/rename`                             | Agent ignores or treats as literal; no transcript event; Header stays    | §2.5, §6.3 below |
-| 10| App reload mid-rename (after chord submit, before transcript event)     | Reload re-attaches; adapter's initial-read picks up the new title        | §4.3 step 1, §6.5 below |
-| 11| Multiple panes for the same agent session UUID (shouldn't happen)       | Each watcher independently filters by UUID → all matching panes update   | §6.4 below     |
-| 12| Title with adversarial chars (emoji, RTL, zero-width)                   | Allowed (sanitizer only strips C0/DEL); rendered as-is; CSS `truncate` handles overflow | §3.2.1, §5.4 |
+| #   | Scenario                                                            | Behavior                                                                                                                                              | Spec ref                |
+| --- | ------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------- |
+| 1   | Agent emits no title (Claude or Codex never `/rename`d)             | Pane Header shows `session.name` indefinitely                                                                                                         | §2.1, §2.2              |
+| 2   | Claude transcript contains an `ai-title` with empty `aiTitle`       | If memo is `None` → no emit; if memo is `Some(_)` → emit clear                                                                                        | §3.2.1 #5, §4.2         |
+| 3   | Codex `session_index.jsonl` row vanishes (file rewrite drops it)    | If memo is `Some(_)` → emit clear; else no emit                                                                                                       | §4.3 step 2             |
+| 4   | Partial / torn JSON line on `session_index.jsonl` read (write race) | Line parse fails; watcher skips; next tick recovers                                                                                                   | §4.3 cross-process race |
+| 5   | Adapter file watcher dies (panic in tail thread)                    | Claude: status + title events both stop (shared thread). Codex: title events stop; rollout-tail + status events continue (sidecar). Recovery: reload. | §6.3 below              |
+| 6   | User chord-renames while typing in agent prompt                     | `/rename` concatenates with their text; agent treats as prompt; Header stays                                                                          | §2.3 step 5, §5.6       |
+| 7   | User chord-renames while agent is mid-turn (busy)                   | Agent buffers input; `/rename` processed after turn finishes; Header updates with normal latency                                                      | §6.2 below              |
+| 8   | PTY write fails (`PtyState::write` returns error)                   | Frontend toast: "failed to send /rename to agent"; no state change                                                                                    | §2.5, §5.5              |
+| 9   | Agent CLI version doesn't support `/rename`                         | Agent ignores or treats as literal; no transcript event; Header stays                                                                                 | §2.5, §6.3 below        |
+| 10  | App reload mid-rename (after chord submit, before transcript event) | Reload re-attaches; adapter's initial-read picks up the new title                                                                                     | §4.3 step 1, §6.5 below |
+| 11  | Multiple panes for the same agent session UUID (shouldn't happen)   | Each watcher independently filters by UUID → all matching panes update                                                                                | §6.4 below              |
+| 12  | Title with adversarial chars (emoji, RTL, zero-width)               | Allowed (sanitizer only strips C0/DEL); rendered as-is; CSS `truncate` handles overflow                                                               | §3.2.1, §5.4            |
 
 ### 6.2 Cross-cutting race: chord rename vs. agent auto-title
 
@@ -1989,21 +1984,21 @@ as a proxy for "user is actively renaming" — out of scope for v1.
   tests green.
 - Reviewer checklist:
   - [ ] `src/bindings/index.ts` has new exports for
-    `AgentSessionTitleEvent` and `TitleSource`.
+        `AgentSessionTitleEvent` and `TitleSource`.
   - [ ] `Header.tsx` accepts `paneAgentTitle?: string`; line 67
-    renders `{paneAgentTitle ?? session.name}`.
+        renders `{paneAgentTitle ?? session.name}`.
   - [ ] `TerminalPane/index.tsx` passes
-    `paneAgentTitle={pane.agentTitle}` to `<Header>`.
+        `paneAgentTitle={pane.agentTitle}` to `<Header>`.
   - [ ] `useSessionManager` listener has the `cancelled` race
-    guard (§4.5) and clear-on-empty interpretation (§3.2.1).
+        guard (§4.5) and clear-on-empty interpretation (§3.2.1).
   - [ ] `TranscriptHandle::Drop` flips `aux_stop` BEFORE joining
-    `aux_join` (§4.3).
+        `aux_join` (§4.3).
   - [ ] Claude transcript parser uses the filename-derived
-    `agent_session_id` as both filter and emitted value (§4.2).
+        `agent_session_id` as both filter and emitted value (§4.2).
   - [ ] Codex initial-read emits on first observation; row-missing
-    transitions emit clear (§4.3 step 2).
+        transitions emit clear (§4.3 step 2).
   - [ ] Sanitizer uses the correct char-boundary truncation
-    recipe (§3.2.1 #4).
+        recipe (§3.2.1 #4).
 
 **PR2 — chord + write-back (`feat/pane-title-sync-pr2`)**
 
@@ -2014,13 +2009,13 @@ as a proxy for "user is actively renaming" — out of scope for v1.
 - Acceptance: Manual checklist in §5.7 passes.
 - Reviewer checklist:
   - [ ] All four IPC files updated: `crates/backend/src/agent/mod.rs`,
-    `crates/backend/src/runtime/state.rs`,
-    `crates/backend/src/runtime/ipc.rs`,
-    `electron/backend-methods.ts` (§5.5; the four-files rule).
+        `crates/backend/src/runtime/state.rs`,
+        `crates/backend/src/runtime/ipc.rs`,
+        `electron/backend-methods.ts` (§5.5; the four-files rule).
   - [ ] `useCommandPalette` leader logic preserves backward-compat
-    palette-open after the 500 ms window (§5.2).
+        palette-open after the 500 ms window (§5.2).
   - [ ] `sanitizeTitle.ts` frontend rules match `sanitize_title`
-    backend rules per the §5.4 layered policy table.
+        backend rules per the §5.4 layered policy table.
   - [ ] `Escape` inside the leader window cancels cleanly (§5.2).
 
 No feature flags or staged rollout — both PRs ship to all users

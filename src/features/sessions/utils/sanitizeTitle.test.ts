@@ -17,8 +17,24 @@ test('title with newline returns kind=invalid control-char', () => {
   }
 })
 
-test('whitespace-only returns kind=empty', () => {
-  expect(validateTitle('   \t')).toEqual({ kind: 'empty' })
+test('spaces-only returns kind=empty', () => {
+  expect(validateTitle('   ')).toEqual({ kind: 'empty' })
+})
+
+test('tab returns kind=invalid control-char', () => {
+  const result = validateTitle('\t')
+
+  expect(result.kind).toBe('invalid')
+  if (result.kind === 'invalid') {
+    expect(result.reason).toBe('control-char')
+  }
+})
+
+test('valid title collapses non-control whitespace runs', () => {
+  expect(validateTitle('  Fix    CI  ')).toEqual({
+    kind: 'valid',
+    sanitized: 'Fix CI',
+  })
 })
 
 test('over 200 bytes returns kind=invalid too-long', () => {

@@ -1,4 +1,5 @@
 import type { Session } from '../../sessions/types'
+import { validateTitle } from '../../sessions/utils/sanitizeTitle'
 import type { Command } from '../../command-palette/registry/types'
 import { fuzzyMatch } from '../../command-palette/registry/fuzzyMatch'
 
@@ -26,11 +27,10 @@ export interface WorkspaceCommandDeps {
   activePanePtyId: string | null
   /**
    * Agent type of the active pane, or `null` if no session is active.
-   * `:rename-pane` uses this to decide whether to also round-trip the
-   * rename through the agent's `/rename` slash command via
-   * `renameAgentSession`. For `claude-code` / `codex` panes the round
-   * trip keeps the agent's transcript in sync; other types (`aider`,
-   * `generic`, bare shell) get only the local `userLabel` update.
+   * This value is intentionally NOT trusted for `:rename-pane` write-back:
+   * new Claude/Codex panes can report `generic` until detection catches up.
+   * The command asks the backend to sync and lets the backend's live-agent
+   * registry decide whether `/rename` is supported.
    */
   activePaneAgentType: 'claude-code' | 'codex' | 'aider' | 'generic' | null
   createSession: () => void
@@ -61,7 +61,6 @@ export const buildWorkspaceCommands = (
     sessions,
     activeSessionId,
     activePanePtyId,
-    activePaneAgentType,
     createSession,
     removeSession,
     renameSession,
@@ -142,37 +141,43 @@ export const buildWorkspaceCommands = (
           return
         }
 
-        const trimmed = args.trim()
+        const validation = validateTitle(args)
 
-        if (!trimmed) {
+        if (validation.kind === 'empty') {
           notifyInfo('Usage: :rename-pane <name>')
 
           return
         }
 
+        if (validation.kind === 'invalid') {
+          if (validation.reason === 'control-char') {
+            notifyInfo('control characters are not allowed')
+          } else {
+            notifyInfo('title is too long (max 200 bytes)')
+          }
+
+          return
+        }
+
+        const title = validation.sanitized
+
         // Always set the local label first so the Header reflects the
         // new name immediately, even before the agent round-trip
         // completes (or for non-agent panes where no round-trip exists).
-        setPaneUserLabel(activePanePtyId, trimmed)
+        setPaneUserLabel(activePanePtyId, title)
 
-        // For Claude/Codex panes, also write `/rename` to the agent so
-        // its own transcript/index stays in sync. Fire-and-forget; if
-        // the IPC fails, surface a one-line notice. The local label is
-        // already set, so the user sees the new name regardless.
-        const isAgentPane =
-          activePaneAgentType === 'claude-code' ||
-          activePaneAgentType === 'codex'
-        if (isAgentPane) {
-          void (async (): Promise<void> => {
-            try {
-              await renameAgentSession(activePanePtyId, trimmed)
-            } catch (error: unknown) {
-              const message =
-                error instanceof Error ? error.message : String(error)
-              notifyInfo(`agent /rename failed: ${message}`)
-            }
-          })()
-        }
+        // Ask the backend to sync the agent transcript even if the
+        // frontend still sees `generic`. The backend owns the live-agent
+        // registry and returns a clear error for shell / unsupported panes.
+        void (async (): Promise<void> => {
+          try {
+            await renameAgentSession(activePanePtyId, title)
+          } catch (error: unknown) {
+            const message =
+              error instanceof Error ? error.message : String(error)
+            notifyInfo(`agent /rename failed: ${message}`)
+          }
+        })()
       },
     },
     {

@@ -144,17 +144,17 @@ Run: `cat src/bindings/AgentSessionTitleEvent.ts src/bindings/TitleSource.ts`
 Expected output (shapes — exact whitespace may differ):
 
 ```typescript
-import type { TitleSource } from "./TitleSource";
+import type { TitleSource } from './TitleSource'
 export type AgentSessionTitleEvent = {
-  sessionId: string;
-  agentSessionId: string;
-  title: string;
-  source: TitleSource;
-};
+  sessionId: string
+  agentSessionId: string
+  title: string
+  source: TitleSource
+}
 ```
 
 ```typescript
-export type TitleSource = "ai-generated" | "user-renamed";
+export type TitleSource = 'ai-generated' | 'user-renamed'
 ```
 
 - [ ] **Step 4: Commit**
@@ -1356,14 +1356,23 @@ test('agent-session-title with matching ptyId updates the pane', async () => {
       source: 'ai-generated',
     })
   })
-  const pane = result.current.sessions[0]?.panes.find((p) => p.ptyId === 'pty-1')
+  const pane = result.current.sessions[0]?.panes.find(
+    (p) => p.ptyId === 'pty-1'
+  )
   expect(pane?.agentTitle).toBe('My Task')
   expect(pane?.agentTitleSource).toBe('ai-generated')
 })
 
 test('empty title clears agentTitle to undefined', async () => {
   // ... similar setup with pane.agentTitle = 'old' ...
-  act(() => titleListener!({ sessionId: 'pty-1', agentSessionId: 'x', title: '', source: 'ai-generated' }))
+  act(() =>
+    titleListener!({
+      sessionId: 'pty-1',
+      agentSessionId: 'x',
+      title: '',
+      source: 'ai-generated',
+    })
+  )
   expect(pane?.agentTitle).toBeUndefined()
 })
 
@@ -1383,28 +1392,25 @@ Add inside `useSessionManager`, sibling to any existing event-listener `useEffec
 useEffect(() => {
   let cancelled = false
   let unlistenFn: UnlistenFn | undefined
-  void listen<AgentSessionTitleEvent>(
-    'agent-session-title',
-    (payload) => {
-      const cleared = payload.title.length === 0
-      const nextTitle = cleared ? undefined : payload.title
-      const nextSource = cleared ? undefined : payload.source
-      setSessions((sessions) => {
-        const matchExists = sessions.some((s) =>
-          s.panes.some((p) => p.ptyId === payload.sessionId)
-        )
-        if (!matchExists) return sessions
-        return sessions.map((session) => ({
-          ...session,
-          panes: session.panes.map((pane) =>
-            pane.ptyId === payload.sessionId
-              ? { ...pane, agentTitle: nextTitle, agentTitleSource: nextSource }
-              : pane
-          ),
-        }))
-      })
-    }
-  ).then((fn) => {
+  void listen<AgentSessionTitleEvent>('agent-session-title', (payload) => {
+    const cleared = payload.title.length === 0
+    const nextTitle = cleared ? undefined : payload.title
+    const nextSource = cleared ? undefined : payload.source
+    setSessions((sessions) => {
+      const matchExists = sessions.some((s) =>
+        s.panes.some((p) => p.ptyId === payload.sessionId)
+      )
+      if (!matchExists) return sessions
+      return sessions.map((session) => ({
+        ...session,
+        panes: session.panes.map((pane) =>
+          pane.ptyId === payload.sessionId
+            ? { ...pane, agentTitle: nextTitle, agentTitleSource: nextSource }
+            : pane
+        ),
+      }))
+    })
+  }).then((fn) => {
     if (cancelled) {
       fn()
     } else {
@@ -1951,7 +1957,10 @@ import { test, expect } from 'vitest'
 import { validateTitle } from './sanitizeTitle'
 
 test('valid title returns kind=valid with sanitized value', () => {
-  expect(validateTitle('Fix CI')).toEqual({ kind: 'valid', sanitized: 'Fix CI' })
+  expect(validateTitle('Fix CI')).toEqual({
+    kind: 'valid',
+    sanitized: 'Fix CI',
+  })
 })
 
 test('title with newline returns kind=invalid control-char', () => {
@@ -1992,7 +2001,11 @@ const MAX_BYTES = 200
 export type TitleValidation =
   | { kind: 'valid'; sanitized: string }
   | { kind: 'empty' }
-  | { kind: 'invalid'; reason: 'control-char' | 'too-long'; offendingByte?: number }
+  | {
+      kind: 'invalid'
+      reason: 'control-char' | 'too-long'
+      offendingByte?: number
+    }
 
 export const validateTitle = (raw: string): TitleValidation => {
   for (let i = 0; i < raw.length; i++) {
@@ -2042,7 +2055,10 @@ beforeEach(() => _resetForTest())
 
 test('registerChord stores and dispatch invokes the handler', () => {
   let called = false
-  registerChord('r', () => { called = true; return true })
+  registerChord('r', () => {
+    called = true
+    return true
+  })
   const result = dispatch({ key: 'r' } as KeyboardEvent)
   expect(result).toBe(true)
   expect(called).toBe(true)
@@ -2414,7 +2430,8 @@ import { usePaneRenameChord, type FocusedPaneRef } from './usePaneRenameChord'
 
 const mockRename = vi.fn()
 vi.mock('../../../lib/backend', () => ({
-  renameAgentSession: (ptyId: string, title: string) => mockRename(ptyId, title),
+  renameAgentSession: (ptyId: string, title: string) =>
+    mockRename(ptyId, title),
 }))
 
 beforeEach(() => {
@@ -2424,8 +2441,11 @@ beforeEach(() => {
 
 test('Ctrl+: then r with focused pane opens rename input', () => {
   const focused: FocusedPaneRef = {
-    pane: { id: 'p0', ptyId: 'pty-1', /* ...other Pane fields... */ } as any,
-    session: { id: 's0', name: 'fallback-name', /* ...other Session fields... */ } as any,
+    pane: { id: 'p0', ptyId: 'pty-1' /* ...other Pane fields... */ } as any,
+    session: {
+      id: 's0',
+      name: 'fallback-name' /* ...other Session fields... */,
+    } as any,
   }
   const { result } = renderHook(() => usePaneRenameChord(() => focused))
   expect(result.current.renderNode).toBeNull()
@@ -2444,7 +2464,9 @@ test('chord with no focused pane is a no-op (renderNode stays null)', () => {
 })
 
 test('onSubmit surfaces a "does not support" error inline', async () => {
-  mockRename.mockRejectedValueOnce(new Error('agent type Aider does not support /rename'))
+  mockRename.mockRejectedValueOnce(
+    new Error('agent type Aider does not support /rename')
+  )
   const focused = makeFocusedRef()
   const { result } = renderHook(() => usePaneRenameChord(() => focused))
   act(() => chordRegistry.dispatch({ key: 'r' } as KeyboardEvent))
@@ -2591,7 +2613,10 @@ The resolver returns BOTH the focused pane and its matching session (the hook ne
 
 ```typescript
 // WorkspaceView.tsx — inside the component
-import { usePaneRenameChord, type FocusedPaneRef } from '../command-palette/hooks/usePaneRenameChord'
+import {
+  usePaneRenameChord,
+  type FocusedPaneRef,
+} from '../command-palette/hooks/usePaneRenameChord'
 
 const resolveFocusedPane = useCallback((): FocusedPaneRef | null => {
   if (activeContainerId !== TERMINAL_CONTAINER_ID) return null

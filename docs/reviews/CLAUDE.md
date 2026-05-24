@@ -50,10 +50,10 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Debug Artifacts](patterns/debug-artifacts.md)                       | code-quality       | 5        | 0    | 2026-05-09   |
 | [Generated Artifacts](patterns/generated-artifacts.md)               | code-quality       | 2        | 0    | 2026-05-04   |
 | [Testing Gaps](patterns/testing-gaps.md)                             | testing            | 53       | 24   | 2026-05-20   |
-| [Terminal Input Handling](patterns/terminal-input-handling.md)       | terminal           | 3        | 1    | 2026-04-09   |
+| [Terminal Input Handling](patterns/terminal-input-handling.md)       | terminal           | 4        | 2    | 2026-05-24   |
 | [Documentation Accuracy](patterns/documentation-accuracy.md)         | code-quality       | 73       | 22   | 2026-05-24   |
 | [Accessibility](patterns/accessibility.md)                           | a11y               | 25       | 6    | 2026-05-09   |
-| [Async Race Conditions](patterns/async-race-conditions.md)           | react-patterns     | 42       | 10   | 2026-05-21   |
+| [Async Race Conditions](patterns/async-race-conditions.md)           | react-patterns     | 43       | 11   | 2026-05-24   |
 | [Tokio Blocking On Async](patterns/tokio-blocking-on-async.md)       | backend            | 2        | 1    | 2026-05-20   |
 | [Command Injection](patterns/command-injection.md)                   | security           | 7        | 3    | 2026-05-02   |
 | [Policy Judge Hygiene](patterns/policy-judge-hygiene.md)             | security           | 15       | 2    | 2026-04-20   |

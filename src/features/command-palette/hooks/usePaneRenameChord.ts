@@ -86,7 +86,12 @@ export const usePaneRenameChord = (
       // after.
       setPaneUserLabelRef.current(target.ptyId, title)
 
-      if (!ROUND_TRIP_AGENTS.includes(target.pane.agentType)) {
+      const focused = resolverRef.current()
+
+      const paneAtSubmit =
+        focused?.pane.ptyId === target.ptyId ? focused.pane : target.pane
+
+      if (!ROUND_TRIP_AGENTS.includes(paneAtSubmit.agentType)) {
         // Non-agent pane: local update only; close the input.
         setTarget(null)
         setError(null)
