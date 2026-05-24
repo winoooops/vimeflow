@@ -152,10 +152,6 @@ impl AgentAdapter for CodexAdapter {
     ) -> Result<TranscriptHandle, String> {
         <Self as TranscriptStreamer>::tail(self, events, session_id, cwd, transcript_path)
     }
-
-    fn transcript_path_source(&self) -> &dyn TranscriptPathSource {
-        self
-    }
 }
 
 #[cfg(test)]
@@ -194,7 +190,11 @@ mod adapter_tests {
     #[test]
     fn static_hint_returns_static_transcript_hint_from_located() {
         let adapter = CodexAdapter::new(12345, SystemTime::UNIX_EPOCH);
-        let tps = adapter.transcript_path_source();
+        // Step B' (round 1 codex fix): the former
+        // `AgentAdapter::transcript_path_source` accessor was
+        // removed; tests reach the trait directly via a
+        // `&dyn TranscriptPathSource` coercion of the adapter.
+        let tps: &dyn TranscriptPathSource = &adapter;
 
         let with_hint = LocatedStatusSource {
             status_path: PathBuf::from("/home/u/.codex/sessions/r.jsonl"),
@@ -221,7 +221,11 @@ mod adapter_tests {
     #[test]
     fn dynamic_hint_is_none_for_codex_regardless_of_raw() {
         let adapter = CodexAdapter::new(12345, SystemTime::UNIX_EPOCH);
-        let tps = adapter.transcript_path_source();
+        // Step B' (round 1 codex fix): the former
+        // `AgentAdapter::transcript_path_source` accessor was
+        // removed; tests reach the trait directly via a
+        // `&dyn TranscriptPathSource` coercion of the adapter.
+        let tps: &dyn TranscriptPathSource = &adapter;
         let raw = r#"{"transcript_path":"/should/be/ignored"}"#;
         assert_eq!(tps.dynamic_hint(raw), None);
     }

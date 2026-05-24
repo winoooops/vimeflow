@@ -132,10 +132,6 @@ impl AgentAdapter for ClaudeCodeAdapter {
     ) -> Result<TranscriptHandle, String> {
         <Self as TranscriptStreamer>::tail(self, events, session_id, cwd, transcript_path)
     }
-
-    fn transcript_path_source(&self) -> &dyn TranscriptPathSource {
-        self
-    }
 }
 
 #[cfg(test)]
@@ -186,7 +182,11 @@ mod tests {
     #[test]
     fn dynamic_hint_extracts_transcript_path_when_present() {
         let adapter = ClaudeCodeAdapter;
-        let tps = adapter.transcript_path_source();
+        // Step B' (round 1 codex fix): call `TranscriptPathSource`
+        // methods directly on the adapter — the former
+        // `AgentAdapter::transcript_path_source` accessor was
+        // removed so the trait can narrow to `pub(crate)`.
+        let tps: &dyn TranscriptPathSource = &adapter;
 
         let with_path = r#"{"transcript_path":"/tmp/conv.jsonl","model":{"id":"x"}}"#;
         assert_eq!(
@@ -206,7 +206,11 @@ mod tests {
     #[test]
     fn static_hint_is_none_for_claude_regardless_of_located_value() {
         let adapter = ClaudeCodeAdapter;
-        let tps = adapter.transcript_path_source();
+        // Step B' (round 1 codex fix): call `TranscriptPathSource`
+        // methods directly on the adapter — the former
+        // `AgentAdapter::transcript_path_source` accessor was
+        // removed so the trait can narrow to `pub(crate)`.
+        let tps: &dyn TranscriptPathSource = &adapter;
         let located = LocatedStatusSource {
             status_path: PathBuf::from("/tmp/status.json"),
             trust_root: PathBuf::from("/tmp"),

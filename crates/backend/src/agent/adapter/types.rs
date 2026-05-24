@@ -95,9 +95,11 @@ pub struct ParsedStatus {
     pub event: AgentStatusEvent,
 }
 
-/// Where transcript paths come from. Broken out as a standalone trait
-/// per the v4-frozen plan so future Step B' can extract it cleanly
-/// from `AgentAdapter` without churning callers.
+/// Where transcript paths come from. Step 0c extracted this from
+/// `AgentAdapter`; step B' narrows visibility from `pub` to
+/// `pub(crate)` so it lines up with the other 4 split traits in
+/// `crate::agent::adapter::traits` (frozen constraint #3 — all five
+/// adapter-concern traits stay internal).
 ///
 /// Per-provider contract:
 ///
@@ -112,7 +114,7 @@ pub struct ParsedStatus {
 /// The runtime asks `dynamic_hint` first (fresh-per-update Claude
 /// path) and falls back to `static_hint` (steady-state Codex path).
 /// If both return `None`, no transcript is tailed.
-pub trait TranscriptPathSource: Send + Sync {
+pub(crate) trait TranscriptPathSource: Send + Sync {
     /// Transcript path known at attach time. Default returns `None`;
     /// Codex overrides to surface the rollout path stored in the
     /// supplied [`LocatedStatusSource`].

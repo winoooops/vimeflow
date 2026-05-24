@@ -5,14 +5,22 @@
 //!
 //! - [`crate::agent::adapter::codex::locator::LocatorError`] —
 //!   provider-local (Codex), lives inside the locator impl.
-//! - [`AttachError`] — attach/service-level. Wraps locator failures.
-//!   Returned from [`crate::agent::adapter::bindings::AgentBindings::for_attach`]
-//!   and propagated through `start_for` / `start_agent_watcher_inner`.
-//!   Mapped to `String` at the future `AgentWatcherService` boundary
-//!   in step D'.
+//! - [`AttachError`] — attach-level. **In B' the only wired path is
+//!   [`AgentBindings::for_attach`] returning `AttachError`, which
+//!   `start_agent_watcher_inner` maps to `String`.** Locator failures
+//!   raised by `StatusSourceLocator::locate` still surface as
+//!   `String` through `base::start_for`; the remaining variants
+//!   (`LocatorExhausted` / `LocatorFatal` / `LocatorAmbiguous` /
+//!   `ValidatorRejected` / `NoAgentDetected` / `UnsupportedAgent`)
+//!   are reserved per #246 acceptance for the future D'
+//!   `AgentWatcherService` boundary, which will retype the locator
+//!   path. Today's `LocatorFatal` use in `for_attach` is the only
+//!   live producer — see `AgentBindings::for_attach`.
 //! - [`crate::agent::adapter::types::ValidateTranscriptError`] — stays
 //!   separate because it feeds `TxOutcome` diagnostics in the runtime,
 //!   not attach failures.
+//!
+//! [`AgentBindings::for_attach`]: crate::agent::adapter::bindings::AgentBindings::for_attach
 
 use std::fmt;
 

@@ -65,15 +65,13 @@ pub trait AgentAdapter: Send + Sync + 'static {
         transcript_path: PathBuf,
     ) -> Result<TranscriptHandle, String>;
 
-    /// Return the [`TranscriptPathSource`] this adapter exposes.
-    ///
-    /// Step 0c addition: the watcher uses this accessor to resolve
-    /// transcript paths via the new trait instead of via the deprecated
-    /// `ParsedStatus.transcript_path` side channel. Step B' will pull
-    /// the trait out of `AgentAdapter` entirely; until then each
-    /// adapter implements `TranscriptPathSource` for itself and returns
-    /// `self`.
-    fn transcript_path_source(&self) -> &dyn TranscriptPathSource;
+    // Step B' (round 1 codex review fix): the
+    // `transcript_path_source` accessor was removed. The watcher
+    // reaches the trait via `AgentBindings.transcript_paths`
+    // instead (an `Arc<dyn TranscriptPathSource>` constructed by
+    // `for_attach`), and `TranscriptPathSource` itself narrowed to
+    // `pub(crate)` to match the visibility of the other 4 split
+    // traits per frozen constraint #3.
 }
 
 impl dyn AgentAdapter {
@@ -215,10 +213,6 @@ impl AgentAdapter for NoOpAdapter {
         transcript_path: PathBuf,
     ) -> Result<TranscriptHandle, String> {
         <Self as traits::TranscriptStreamer>::tail(self, events, session_id, cwd, transcript_path)
-    }
-
-    fn transcript_path_source(&self) -> &dyn TranscriptPathSource {
-        self
     }
 }
 
@@ -363,7 +357,11 @@ mod noop_tests {
     #[test]
     fn noop_transcript_path_source_returns_none_for_both_hints() {
         let adapter = NoOpAdapter::new(AgentType::Aider);
-        let tps = adapter.transcript_path_source();
+        // Step B' (round 1 codex fix): the former
+        // `AgentAdapter::transcript_path_source` accessor was
+        // removed; reach the trait via a `&dyn TranscriptPathSource`
+        // coercion of the adapter.
+        let tps: &dyn TranscriptPathSource = &adapter;
         let located = LocatedStatusSource {
             status_path: PathBuf::from("/tmp/status.json"),
             trust_root: PathBuf::from("/tmp"),
