@@ -50,6 +50,7 @@ const baseProps = {
   removed: 12,
   isFocused: true,
   isCollapsed: false,
+  ptyId: 's1',
   onToggleCollapse: vi.fn(),
 }
 
@@ -73,6 +74,7 @@ describe('Header', () => {
     expect(screen.getByTestId('terminal-pane-header')).toHaveTextContent(
       'My Agent Title'
     )
+
     expect(screen.getByTestId('terminal-pane-header')).not.toHaveTextContent(
       baseProps.session.name
     )
