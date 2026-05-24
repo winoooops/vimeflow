@@ -79,6 +79,37 @@ where
         .map(str::to_string))
 }
 
+/// Deserialize an `Option<T>` nested-struct field with wrong-type
+/// tolerance.
+///
+/// Returns `Ok(None)` when the value is missing, `null`, OR any
+/// non-object JSON type (an array, number, string, or bool sitting
+/// where the schema expects an object). Returns `Ok(Some(T))` when
+/// the value is a JSON object that successfully decodes into `T` —
+/// which itself happens via `serde_json::from_value::<T>(value)`,
+/// relying on `T`'s leaf fields to be `lenient_*`-decorated for
+/// inner wrong-type tolerance. If the inner `from_value` fails (e.g.
+/// a leaf that should be `lenient_*` was left strict), we still
+/// return `Ok(None)` — consistent with the scalar helpers' "wrong
+/// shape becomes a missing block" contract.
+///
+/// Mirrors the pre-A-status `has_<block>(value).then(|| ...)` /
+/// `is_some_and(Value::is_object)` guards that fell back to per-block
+/// defaults when an outer block was the wrong shape (rather than
+/// erroring the whole document). Closes the round-1 Claude review
+/// MEDIUM + codex connector P1/P2 on PR #257.
+pub(super) fn lenient_object<'de, T, D>(deserializer: D) -> Result<Option<T>, D::Error>
+where
+    D: Deserializer<'de>,
+    T: serde::de::DeserializeOwned,
+{
+    let value = Value::deserialize(deserializer)?;
+    if !value.is_object() {
+        return Ok(None);
+    }
+    Ok(serde_json::from_value::<T>(value).ok())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -156,5 +187,69 @@ mod tests {
         assert_eq!(p.count, None);
         assert_eq!(p.ratio, Some(0.5));
         assert_eq!(p.label.as_deref(), Some("ok"));
+    }
+
+    // ----- lenient_object tests -----
+
+    #[derive(Deserialize, Debug, PartialEq, Default)]
+    struct Inner {
+        #[serde(default, deserialize_with = "lenient_u64")]
+        n: Option<u64>,
+    }
+
+    #[derive(Deserialize, Debug, PartialEq)]
+    struct ObjectProbe {
+        #[serde(default, deserialize_with = "lenient_object")]
+        block: Option<Inner>,
+    }
+
+    #[test]
+    fn lenient_object_accepts_objects_rejects_others() {
+        // Happy path: an object decodes to Some(_).
+        let p: ObjectProbe =
+            serde_json::from_str(r#"{"block": {"n": 7}}"#).expect("object ok");
+        assert_eq!(p.block, Some(Inner { n: Some(7) }));
+
+        // Empty object → Some(default) (the block IS present).
+        let p: ObjectProbe = serde_json::from_str(r#"{"block": {}}"#).expect("empty object ok");
+        assert_eq!(p.block, Some(Inner { n: None }));
+
+        // null → None (treated identical to missing — same as the
+        // scalar helpers).
+        let p: ObjectProbe = serde_json::from_str(r#"{"block": null}"#).expect("null ok→None");
+        assert_eq!(p.block, None);
+
+        // Wrong types → None (this is the round-1 fix point — without
+        // `lenient_object` these would have errored the whole parse).
+        let p: ObjectProbe = serde_json::from_str(r#"{"block": 42}"#).expect("integer ok→None");
+        assert_eq!(p.block, None);
+
+        let p: ObjectProbe = serde_json::from_str(r#"{"block": []}"#).expect("array ok→None");
+        assert_eq!(p.block, None);
+
+        let p: ObjectProbe =
+            serde_json::from_str(r#"{"block": "string"}"#).expect("string ok→None");
+        assert_eq!(p.block, None);
+
+        let p: ObjectProbe = serde_json::from_str(r#"{}"#).expect("missing ok→None");
+        assert_eq!(p.block, None);
+    }
+
+    /// Round-1 fix invariant: a wrong-typed nested block does NOT
+    /// poison sibling fields. Mirror of the scalar-tolerance test
+    /// above, but for the new `lenient_object` helper.
+    #[test]
+    fn lenient_object_wrong_typed_block_does_not_poison_siblings() {
+        #[derive(Deserialize, PartialEq, Debug)]
+        struct MixedProbe {
+            #[serde(default, deserialize_with = "lenient_object")]
+            block: Option<Inner>,
+            #[serde(default, deserialize_with = "lenient_u64")]
+            sibling: Option<u64>,
+        }
+        let p: MixedProbe =
+            serde_json::from_str(r#"{"block": 42, "sibling": 99}"#).expect("partial degrade");
+        assert_eq!(p.block, None);
+        assert_eq!(p.sibling, Some(99));
     }
 }

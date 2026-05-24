@@ -70,3 +70,4 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Module Boundaries](patterns/module-boundaries.md)                   | code-quality       | 3        | 1    | 2026-05-07   |
 | [Diagnostic Instrumentation](patterns/diagnostic-instrumentation.md) | code-quality       | 7        | 2    | 2026-05-02   |
 | [Keyboard Shortcut Guards](patterns/keyboard-shortcut-guards.md)     | keyboard-shortcuts | 16       | 0    | 2026-05-18   |
+| [Parser Resilience](patterns/parser-resilience.md)                   | code-quality       | 1        | 1    | 2026-05-24   |

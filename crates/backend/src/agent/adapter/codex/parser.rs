@@ -27,7 +27,7 @@
 
 use serde::Deserialize;
 
-use super::super::serde_helpers::{lenient_f64, lenient_string, lenient_u64};
+use super::super::serde_helpers::{lenient_f64, lenient_object, lenient_string, lenient_u64};
 use crate::agent::adapter::types::ParsedStatus;
 use crate::agent::types::{
     AgentStatusEvent, ContextWindowStatus, CostMetrics, CurrentUsage, RateLimitInfo, RateLimits,
@@ -129,14 +129,17 @@ enum EventMsgPayloadDto {
     },
     TokenCount {
         /// Critical for the v4-frozen plan's R2.4 invariant: when this
-        /// is `None` (either field missing OR JSON null), the fold
-        /// MUST NOT clear `state.last_token_count_info`. The
+        /// is `None` (either field missing OR JSON null OR wrong-typed),
+        /// the fold MUST NOT clear `state.last_token_count_info`. The
         /// regression test `token_count_info_null_preserves_prior_context`
         /// fails if a future contributor changes the fold to overwrite
-        /// on `None`.
-        #[serde(default)]
+        /// on `None`. `lenient_object` (round-1 fix) widens "None" to
+        /// also include the wrong-typed case (e.g. `"info": 1`) — a
+        /// single malformed sub-block no longer kills the whole
+        /// `event_msg` line. Connector P2 round-1 finding.
+        #[serde(default, deserialize_with = "lenient_object")]
         info: Option<TokenCountInfoDto>,
-        #[serde(default)]
+        #[serde(default, deserialize_with = "lenient_object")]
         rate_limits: Option<RateLimitsPayloadDto>,
     },
     #[serde(other)]
@@ -145,7 +148,7 @@ enum EventMsgPayloadDto {
 
 #[derive(Deserialize, Default)]
 struct TokenCountInfoDto {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "lenient_object")]
     last_token_usage: Option<LastTokenUsageDto>,
     #[serde(default, deserialize_with = "lenient_u64")]
     model_context_window: Option<u64>,
@@ -165,9 +168,9 @@ struct LastTokenUsageDto {
 
 #[derive(Deserialize, Default)]
 struct RateLimitsPayloadDto {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "lenient_object")]
     primary: Option<RateLimitWindowDto>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "lenient_object")]
     secondary: Option<RateLimitWindowDto>,
 }
 
@@ -584,6 +587,43 @@ mod tests {
                 std::mem::discriminant(&other),
             ),
         }
+    }
+
+    /// Round-1 upsource fix (codex connector P2): a `token_count`
+    /// event with a wrong-typed `info` or `rate_limits` sub-block
+    /// must NOT cause `parse_rollout` to drop the whole event_msg
+    /// line. Before `lenient_object` landed, a strict struct
+    /// deserialize on `"info": 1` would fail the line and
+    /// `parse_rollout` would `log::warn!` + skip it, losing whatever
+    /// token-state or rate-limit-state context the line still
+    /// carried.
+    ///
+    /// Setup: feed (1) a known-good `token_count` to seed state, then
+    /// (2) a `token_count` with wrong-typed `info` paired with a
+    /// VALID `rate_limits`. The valid `rate_limits` sub-block must
+    /// still be folded; the prior `last_token_count_info` must be
+    /// preserved (Some-only invariant).
+    #[test]
+    fn wrong_typed_token_count_info_preserves_prior_state_and_sibling_rate_limits() {
+        let raw = r#"{"timestamp":"...","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":1000,"output_tokens":200,"cached_input_tokens":0,"total_tokens":1200},"model_context_window":200000}}}
+{"timestamp":"...","type":"event_msg","payload":{"type":"token_count","info":1,"rate_limits":{"primary":{"used_percent":42.5,"resets_at":1776000000}}}}
+"#;
+        let parsed = parse_rollout("pty-wrong-info", raw)
+            .expect("wrong-typed sub-block must NOT drop the line");
+        // Prior token-state preserved (the wrong-typed `info` was
+        // treated as None by `lenient_object`, then ignored by the
+        // Some-only fold).
+        assert_eq!(parsed.event.context_window.total_input_tokens, 1000);
+        assert_eq!(parsed.event.context_window.total_output_tokens, 200);
+        // Sibling rate_limits sub-block on the SAME malformed line
+        // still folded — proving per-field degradation, not
+        // whole-line drop.
+        assert!(
+            (parsed.event.rate_limits.five_hour.used_percentage - 42.5).abs() < f64::EPSILON,
+            "rate_limits.primary.used_percent should have folded; got {}",
+            parsed.event.rate_limits.five_hour.used_percentage
+        );
+        assert_eq!(parsed.event.rate_limits.five_hour.resets_at, 1776000000);
     }
 
     // Step 0c: the former `includes_transcript_path_when_provided` test

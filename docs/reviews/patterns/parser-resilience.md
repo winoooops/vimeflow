@@ -1,0 +1,76 @@
+---
+id: parser-resilience
+category: code-quality
+created: 2026-05-24
+last_updated: 2026-05-24
+ref_count: 1
+---
+
+# Parser Resilience
+
+## Summary
+
+When migrating a permissive parser (e.g. `serde_json::Value` pull-style
+extraction) to a typed-DTO shape, the strict-by-default behavior of
+`#[derive(Deserialize)]` quietly erases the "partial / wrong-typed
+input still parses something" property of the original. Catch this on
+every leaf field AND every nested-struct field separately — the two
+have different deserialization paths and different attribute fixes.
+
+For each leaf scalar field:
+
+- Use `#[serde(default)]` so `null` / missing maps to the type's
+  `Default` (typically `None` if wrapped in `Option<T>`).
+- Use `#[serde(deserialize_with = "lenient_T")]` so a wrong-typed
+  present value (e.g. a JSON string where `u64` was expected) yields
+  `None` instead of erroring the whole document.
+
+For each nested-struct field:
+
+- The above is **not enough**. `#[serde(default)]` still only handles
+  missing/null at the outer position; a present-but-wrong-type value
+  (`"context_window": 42`) makes the struct deserialize fail and
+  poisons the parent document.
+- Use `#[serde(deserialize_with = "lenient_object")]` (or equivalent)
+  to mirror the per-field tolerance at the nested-struct boundary:
+  materialize the value, check `is_object()`, then re-decode into the
+  target type.
+
+## Findings
+
+### 1. Strict nested-struct deserialization silently dropped status events on wrong-typed sub-blocks
+
+- **Source:** github-claude + github-codex-connector | PR #257 | 2026-05-24
+- **Severity:** MEDIUM
+- **File:** `crates/backend/src/agent/adapter/claude_code/statusline.rs`, `crates/backend/src/agent/adapter/codex/parser.rs`
+- **Finding:** Step A-status's initial DTO migration covered scalar
+  wrong-type tolerance via `lenient_u64` / `lenient_f64` /
+  `lenient_string` but missed nested struct fields. `ClaudeStatusDto`'s
+  nested fields (`model`, `context_window`, `cost`, `rate_limits`,
+  `current_usage`, `five_hour`, `seven_day`) and the equivalent Codex
+  positions (`info`, `rate_limits`, `last_token_usage`, `primary`,
+  `secondary`) were all `Option<NestedDto>` with only `#[serde(default)]`.
+  Behavioral regression vs. pre-A-status `is_some_and(Value::is_object)`
+  guards: a present-but-wrong-type sub-block (`"context_window": 42`,
+  `"rate_limits": []`) made the entire `parse_statusline` return
+  `Err`, and the watcher's `parse_status` match arm mapped that to
+  `TxOutcome::ParseError` — dropping the whole status event. For
+  Codex it was lower severity because `parse_rollout` already catches
+  per-line Err and skips, but the same `token_count` event still lost
+  its sibling rate-limit / token-usage data.
+- **Fix:** Added a third helper `lenient_object<T: DeserializeOwned>`
+  to `serde_helpers.rs` paralleling the scalar helpers:
+  materialize via `Value::deserialize`, check `is_object()`, then
+  `serde_json::from_value::<T>` (inner field-level helpers ensure
+  this succeeds for any object). Wrong-type / non-object → `Ok(None)`,
+  matching the scalar helpers' "wrong shape becomes a missing block"
+  contract. Applied at every nested-struct field listed by Claude +
+  codex connector. Three new parse-entry regression tests pin
+  per-block degradation; one for the Codex side proves wrong-typed
+  `info` preserves prior token state AND lets sibling `rate_limits`
+  on the same line still fold (per-field degradation, not whole-line
+  drop). **Heuristic:** when migrating a `serde_json::Value`-based
+  parser to typed DTOs, treat scalar leniency and nested-struct
+  leniency as TWO separate audits — they live in different parts of
+  the struct and have different attribute fixes.
+- **Commit:** same commit as this entry

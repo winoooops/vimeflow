@@ -11,7 +11,7 @@
 
 use serde::Deserialize;
 
-use super::super::serde_helpers::{lenient_f64, lenient_string, lenient_u64};
+use super::super::serde_helpers::{lenient_f64, lenient_object, lenient_string, lenient_u64};
 use crate::agent::types::{
     AgentStatusEvent, ContextWindowStatus, CostMetrics, CurrentUsage, RateLimitInfo, RateLimits,
 };
@@ -53,13 +53,20 @@ struct ClaudeStatusDto {
     session_id: Option<String>,
     #[serde(default, deserialize_with = "lenient_string")]
     version: Option<String>,
-    #[serde(default)]
+    // Nested struct fields use `lenient_object` so a wrong-typed
+    // block (`"context_window": 42`, `"rate_limits": []`) degrades to
+    // `None` and produces the per-block defaults the conversion layer
+    // already encodes — instead of poisoning the whole `parse_statusline`
+    // with an Err. Matches the pre-A-status `has_<block>(value)` /
+    // `is_some_and(Value::is_object)` guards. Round-1 review fix
+    // (Claude MEDIUM + codex connector P1).
+    #[serde(default, deserialize_with = "lenient_object")]
     model: Option<ClaudeModelDto>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "lenient_object")]
     context_window: Option<ClaudeContextWindowDto>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "lenient_object")]
     cost: Option<ClaudeCostDto>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "lenient_object")]
     rate_limits: Option<ClaudeRateLimitsDto>,
 }
 
@@ -83,7 +90,7 @@ struct ClaudeContextWindowDto {
     total_input_tokens: Option<u64>,
     #[serde(default, deserialize_with = "lenient_u64")]
     total_output_tokens: Option<u64>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "lenient_object")]
     current_usage: Option<ClaudeCurrentUsageDto>,
 }
 
@@ -115,9 +122,9 @@ struct ClaudeCostDto {
 
 #[derive(Deserialize, Default)]
 struct ClaudeRateLimitsDto {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "lenient_object")]
     five_hour: Option<ClaudeRateLimitInfoDto>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "lenient_object")]
     seven_day: Option<ClaudeRateLimitInfoDto>,
 }
 
@@ -668,6 +675,72 @@ mod tests {
         let event = &result.unwrap().event;
         assert_eq!(event.model_id, "claude-opus-4-20250514");
         assert_eq!(event.model_display_name, "claude-opus-4-20250514");
+    }
+
+    /// Round-1 upsource fix: a wrong-typed nested block (e.g.
+    /// `"context_window": 42`) must degrade to the per-block defaults
+    /// instead of poisoning the whole `parse_statusline` call. This
+    /// pins the `lenient_object` round of the helpers: before that
+    /// helper landed, this input made the entire status update an
+    /// `Err` and the watcher dropped the event.
+    #[test]
+    fn wrong_typed_nested_blocks_degrade_to_defaults_per_block() {
+        let json = r#"{
+            "session_id": "abc",
+            "model": {"id": "claude-x", "display_name": "X"},
+            "context_window": 42,
+            "cost": {"total_cost_usd": 1.5}
+        }"#;
+        let event = &parse_statusline("pty-wrong-ctx", json)
+            .expect("wrong-typed nested block must NOT poison parse")
+            .event;
+        assert_eq!(event.agent_session_id, "abc");
+        assert_eq!(event.model_id, "claude-x");
+        // context_window block lost → all defaults.
+        assert_eq!(event.context_window.used_percentage, None);
+        assert_eq!(event.context_window.context_window_size, 0);
+        assert!((event.context_window.remaining_percentage - 100.0).abs() < f64::EPSILON);
+        // cost block survived independently.
+        assert_eq!(event.cost.total_cost_usd, Some(1.5));
+    }
+
+    /// Companion: wrong-typed `cost` block should degrade
+    /// `cost.total_cost_usd` to `None` (block-absent semantics —
+    /// distinct from `Some(0.0)` which only fires when the block IS
+    /// present but the inner field is missing).
+    #[test]
+    fn wrong_typed_cost_block_degrades_to_none() {
+        let json = r#"{"cost": ["not", "an", "object"]}"#;
+        let event = &parse_statusline("pty-wrong-cost", json)
+            .expect("wrong-typed cost block must NOT poison parse")
+            .event;
+        assert_eq!(event.cost.total_cost_usd, None);
+        assert_eq!(event.cost.total_duration_ms, 0);
+    }
+
+    /// Companion: wrong-typed `rate_limits` + nested `current_usage`.
+    /// Pins that `lenient_object` is applied at both the top-level
+    /// `ClaudeStatusDto.rate_limits` and the nested
+    /// `ClaudeContextWindowDto.current_usage` positions.
+    #[test]
+    fn wrong_typed_rate_limits_and_current_usage_degrade() {
+        let json = r#"{
+            "context_window": {
+                "used_percentage": 25.0,
+                "context_window_size": 100,
+                "total_input_tokens": 25,
+                "current_usage": "garbage"
+            },
+            "rate_limits": 99
+        }"#;
+        let event = &parse_statusline("pty-wrong-rl-cu", json)
+            .expect("wrong-typed nested blocks must NOT poison parse")
+            .event;
+        assert_eq!(event.context_window.used_percentage, Some(25.0));
+        assert!(event.context_window.current_usage.is_none());
+        assert_eq!(event.rate_limits.five_hour.used_percentage, 0.0);
+        assert_eq!(event.rate_limits.five_hour.resets_at, 0);
+        assert!(event.rate_limits.seven_day.is_none());
     }
 
     /// Step 0c (post-upsource cycle 2): replaces the deleted
