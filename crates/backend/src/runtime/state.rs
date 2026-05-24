@@ -1,10 +1,12 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use crate::agent::{AgentWatcherState, TranscriptState};
+use crate::agent::types::{AgentType, RenameAgentSessionRequest};
+use crate::agent::{sanitize_title, AgentWatcherState, TranscriptState};
 use crate::git::watcher::GitWatcherState;
 use crate::terminal::cache::SessionCache;
 use crate::terminal::state::PtyState;
+use crate::terminal::types::SessionId;
 
 use super::event_sink::EventSink;
 
@@ -71,6 +73,27 @@ impl BackendState {
         request: crate::terminal::types::WritePtyRequest,
     ) -> Result<(), String> {
         crate::terminal::commands::write_pty_inner(&self.pty, request)
+    }
+
+    pub fn rename_agent_session(&self, request: RenameAgentSessionRequest) -> Result<(), String> {
+        let agent_type = self
+            .agents
+            .agent_type_for_pty(&request.pty_id)
+            .ok_or_else(|| format!("no live agent in pty {} to rename", request.pty_id))?;
+
+        if !matches!(agent_type, AgentType::ClaudeCode | AgentType::Codex) {
+            return Err(format!(
+                "agent type {agent_type:?} does not support /rename"
+            ));
+        }
+
+        let title = sanitize_title(&request.title)
+            .ok_or_else(|| "title is empty after sanitization".to_string())?;
+        let command = format!("/rename {title}\n");
+        let session_id = SessionId::from(request.pty_id);
+        self.pty
+            .write(&session_id, command.as_bytes())
+            .map_err(|e| format!("pty write failed: {e}"))
     }
 
     pub fn resize_pty(
@@ -202,6 +225,111 @@ impl BackendState {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Write;
+    use std::sync::atomic::AtomicBool;
+    use std::sync::Mutex;
+    use std::time::SystemTime;
+
+    use crate::terminal::state::{ManagedSession, RingBuffer};
+
+    #[derive(Clone)]
+    struct CapturingWriter {
+        writes: Arc<Mutex<Vec<u8>>>,
+    }
+
+    impl Write for CapturingWriter {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            self.writes
+                .lock()
+                .expect("failed to lock captured writes")
+                .extend_from_slice(buf);
+            Ok(buf.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[derive(Debug)]
+    struct NoopChild;
+
+    impl portable_pty::ChildKiller for NoopChild {
+        fn kill(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+
+        fn clone_killer(&self) -> Box<dyn portable_pty::ChildKiller + Send + Sync> {
+            Box::new(NoopChild)
+        }
+    }
+
+    impl portable_pty::Child for NoopChild {
+        fn try_wait(&mut self) -> std::io::Result<Option<portable_pty::ExitStatus>> {
+            Ok(None)
+        }
+
+        fn wait(&mut self) -> std::io::Result<portable_pty::ExitStatus> {
+            Ok(portable_pty::ExitStatus::with_exit_code(0))
+        }
+
+        fn process_id(&self) -> Option<u32> {
+            Some(1)
+        }
+    }
+
+    fn make_capturing_session(writes: Arc<Mutex<Vec<u8>>>) -> ManagedSession {
+        use portable_pty::{native_pty_system, PtySize};
+
+        let pty_system = native_pty_system();
+        let pty_pair = pty_system
+            .openpty(PtySize {
+                rows: 24,
+                cols: 80,
+                pixel_width: 0,
+                pixel_height: 0,
+            })
+            .expect("openpty");
+
+        ManagedSession {
+            master: pty_pair.master,
+            writer: Box::new(CapturingWriter { writes }),
+            child: Box::new(NoopChild),
+            cwd: "/tmp".into(),
+            generation: 0,
+            ring: Arc::new(Mutex::new(RingBuffer::new(64))),
+            cancelled: Arc::new(AtomicBool::new(false)),
+            started_at: SystemTime::now(),
+        }
+    }
+
+    fn seed_live_agent(state: &BackendState, agent_type: AgentType) -> Arc<Mutex<Vec<u8>>> {
+        let writes = Arc::new(Mutex::new(Vec::new()));
+        state
+            .pty
+            .insert("pty-1".to_string(), make_capturing_session(writes.clone()));
+        state
+            .agents
+            .insert_agent_type_for_test("pty-1".to_string(), agent_type);
+        writes
+    }
+
+    fn rename_request(title: &str) -> RenameAgentSessionRequest {
+        RenameAgentSessionRequest {
+            pty_id: "pty-1".to_string(),
+            title: title.to_string(),
+        }
+    }
+
+    fn captured_string(writes: &Arc<Mutex<Vec<u8>>>) -> String {
+        String::from_utf8(
+            writes
+                .lock()
+                .expect("failed to lock captured writes")
+                .clone(),
+        )
+        .expect("captured PTY write should be UTF-8")
+    }
 
     #[test]
     fn with_fake_sink_returns_arc_state_and_fake_sink() {
@@ -215,5 +343,64 @@ mod tests {
         let (state, _sink) = BackendState::with_fake_sink();
         state.shutdown();
         state.shutdown();
+    }
+
+    #[test]
+    fn rename_agent_session_writes_command_for_claude() {
+        let (state, _sink) = BackendState::with_fake_sink();
+        let writes = seed_live_agent(&state, AgentType::ClaudeCode);
+
+        let result = state.rename_agent_session(rename_request("my-feature"));
+
+        assert!(result.is_ok());
+        assert_eq!(captured_string(&writes), "/rename my-feature\n");
+    }
+
+    #[test]
+    fn rename_agent_session_writes_command_for_codex() {
+        let (state, _sink) = BackendState::with_fake_sink();
+        let writes = seed_live_agent(&state, AgentType::Codex);
+
+        let result = state.rename_agent_session(rename_request("codex-title"));
+
+        assert!(result.is_ok());
+        assert_eq!(captured_string(&writes), "/rename codex-title\n");
+    }
+
+    #[test]
+    fn rename_agent_session_rejects_aider() {
+        let (state, _sink) = BackendState::with_fake_sink();
+        let writes = seed_live_agent(&state, AgentType::Aider);
+
+        let result = state.rename_agent_session(rename_request("nope"));
+
+        assert!(matches!(
+            result,
+            Err(ref msg) if msg.contains("does not support /rename")
+        ));
+        assert_eq!(captured_string(&writes), "");
+    }
+
+    #[test]
+    fn rename_agent_session_rejects_no_live_agent() {
+        let (state, _sink) = BackendState::with_fake_sink();
+
+        let result = state.rename_agent_session(rename_request("x"));
+
+        assert!(matches!(
+            result,
+            Err(ref msg) if msg.contains("no live agent")
+        ));
+    }
+
+    #[test]
+    fn rename_agent_session_sanitizes_input() {
+        let (state, _sink) = BackendState::with_fake_sink();
+        let writes = seed_live_agent(&state, AgentType::ClaudeCode);
+
+        let result = state.rename_agent_session(rename_request("foo\nbar"));
+
+        assert!(result.is_ok());
+        assert_eq!(captured_string(&writes), "/rename foo bar\n");
     }
 }

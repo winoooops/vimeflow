@@ -378,6 +378,13 @@ mod router {
                 state.write_pty(p.request)?;
                 Ok(Value::Null)
             }
+            "rename_agent_session" => {
+                let request: crate::agent::types::RenameAgentSessionRequest =
+                    serde_json::from_value(params)
+                        .map_err(|e| format!("invalid rename request: {e}"))?;
+                state.rename_agent_session(request)?;
+                Ok(Value::Null)
+            }
             "resize_pty" => {
                 #[derive(Deserialize)]
                 #[serde(rename_all = "camelCase")]

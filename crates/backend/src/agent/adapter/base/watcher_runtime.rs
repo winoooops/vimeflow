@@ -142,6 +142,12 @@ impl AgentWatcherState {
         agent_types.get(pty_id).cloned()
     }
 
+    #[cfg(test)]
+    pub(crate) fn insert_agent_type_for_test(&self, pty_id: String, agent_type: AgentType) {
+        let mut agent_types = self.agent_types.lock().expect("failed to lock agent_types");
+        agent_types.insert(pty_id, agent_type);
+    }
+
     /// Number of active watchers across all sessions. Used for the
     /// diagnostic "active_watchers=N" log line — surfaces leaked
     /// watchers from prior sessions that are still polling old
