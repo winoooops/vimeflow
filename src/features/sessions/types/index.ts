@@ -20,6 +20,19 @@ export interface Pane {
   /** Detected agent CLI for this pane. */
   agentType: 'claude-code' | 'codex' | 'aider' | 'generic'
 
+  /**
+   * Title emitted by the agent for the agent session bound to this PTY.
+   * `undefined` when no agent has emitted a title yet for this pane.
+   * Source layer is the `agent-session-title` event.
+   */
+  agentTitle?: string
+
+  /**
+   * Where the current `agentTitle` came from. Undefined iff `agentTitle`
+   * is undefined.
+   */
+  agentTitleSource?: 'ai-generated' | 'user-renamed'
+
   /** Materialized pane status. */
   status: SessionStatus
 
