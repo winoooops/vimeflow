@@ -185,6 +185,15 @@ pub enum TitleSource {
     UserRenamed,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct RenameAgentSessionRequest {
+    pub pty_id: String,
+    pub title: String,
+}
+
 /// Event emitted when the agent's tracked working directory changes.
 ///
 /// Sourced from each adapter's structured cwd channel in its transcript
