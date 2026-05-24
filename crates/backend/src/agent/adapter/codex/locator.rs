@@ -622,6 +622,12 @@ const CODEX_BIND_RETRY_MAX_ATTEMPTS: u32 = 5;
 
 impl CompositeLocator {
     pub fn new(codex_home: PathBuf, pid: u32, pty_start: SystemTime) -> Self {
+        // No log here. PR #261 cycle 4 F13: `AgentBindings::for_attach`
+        // constructs TWO `CompositeLocator`s per Codex attach (one for
+        // `bindings.locator`, one inside `CodexAdapter::with_home` for
+        // the transitional `adapter_for_transcript_state`), so logging
+        // at this constructor would double-emit per attach. The
+        // attach-once observability lives in `for_attach` instead.
         Self {
             primary: SqliteFirstLocator::new(codex_home.clone()),
             fallback: FsScanFallback::new(codex_home.clone()),

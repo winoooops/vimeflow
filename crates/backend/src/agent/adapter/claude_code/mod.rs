@@ -24,6 +24,29 @@ mod transcript_fixture_tests;
 
 pub struct ClaudeCodeAdapter;
 
+/// Shared Claude status-file path builder.
+///
+/// Both `ClaudeStatusFileLocator::locate` (used by
+/// `AgentBindings.locator`) and `ClaudeCodeAdapter`'s
+/// `StatusSourceLocator::locate` impl (delegated to from the
+/// transitional `AgentAdapter::located_status_source` façade) need to
+/// produce the same `LocatedStatusSource`. Pre-cycle-4 they each
+/// inlined the same `cwd.join(".vimeflow")...` chain, which would
+/// silently diverge if Claude's session-path schema ever changed
+/// (PR #261 cycle 3 review F10). One pure-function helper here means
+/// any future schema change is a single-site edit.
+pub(super) fn claude_status_path(cwd: &Path, session_id: &str) -> LocatedStatusSource {
+    LocatedStatusSource {
+        status_path: cwd
+            .join(".vimeflow")
+            .join("sessions")
+            .join(session_id)
+            .join("status.json"),
+        trust_root: cwd.to_path_buf(),
+        static_transcript_hint: None,
+    }
+}
+
 impl TranscriptPathSource for ClaudeCodeAdapter {
     // `static_hint` defaults to `None` — Claude's locator has no
     // attach-time transcript knowledge; the path arrives dynamically
@@ -49,15 +72,7 @@ impl TranscriptPathSource for ClaudeCodeAdapter {
 
 impl StatusSourceLocator for ClaudeCodeAdapter {
     fn locate(&self, cwd: &Path, session_id: &str) -> Result<LocatedStatusSource, String> {
-        Ok(LocatedStatusSource {
-            status_path: cwd
-                .join(".vimeflow")
-                .join("sessions")
-                .join(session_id)
-                .join("status.json"),
-            trust_root: cwd.to_path_buf(),
-            static_transcript_hint: None,
-        })
+        Ok(claude_status_path(cwd, session_id))
     }
 }
 

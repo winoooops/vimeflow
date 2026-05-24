@@ -38,13 +38,16 @@ pub struct CodexAdapter {
 
 impl CodexAdapter {
     pub fn new(pid: u32, pty_start: SystemTime) -> Self {
-        let codex_home = default_codex_home();
-        log::info!(
-            "codex adapter: locator initialized (codex_home={})",
-            codex_home.display()
-        );
+        // No log here. Production Codex attaches go through
+        // `AgentBindings::for_attach` → `CodexAdapter::with_home`,
+        // and `for_attach` owns the attach-once
+        // `"codex adapter: locator initialized ..."` log so two
+        // CompositeLocator constructions per attach don't double-emit
+        // (PR #261 cycle 3 F11 + cycle 4 F13). This constructor is
+        // test-only since cycle 1's F1 fix routed all production
+        // callers through `with_home`.
         Self {
-            locator: CompositeLocator::new(codex_home, pid, pty_start),
+            locator: CompositeLocator::new(default_codex_home(), pid, pty_start),
         }
     }
 

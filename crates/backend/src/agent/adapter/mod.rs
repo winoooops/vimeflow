@@ -94,24 +94,18 @@ impl dyn AgentAdapter {
 /// because Claude's transcript path is purely dynamic (arrives via
 /// the statusline JSON on every update).
 ///
-/// Same body as `ClaudeCodeAdapter::located_status_source` — kept as
-/// a separate unit struct because `bindings.rs` constructs it
-/// directly (as `Arc<ClaudeStatusFileLocator>`), independent of the
-/// adapter. Future cleanup steps may collapse the duplication once
-/// `AgentAdapter::located_status_source` is removed.
+/// Kept as a separate unit struct because `bindings.rs` constructs
+/// it directly (as `Arc<ClaudeStatusFileLocator>`), independent of
+/// the adapter. Both this impl and `ClaudeCodeAdapter`'s
+/// `StatusSourceLocator::locate` impl now route through
+/// `claude_code::claude_status_path` so a future Claude session-path
+/// schema change is a single-site edit (PR #261 cycle 3 review F10
+/// — both impls were previously byte-for-byte duplicates).
 pub(crate) struct ClaudeStatusFileLocator;
 
 impl traits::StatusSourceLocator for ClaudeStatusFileLocator {
     fn locate(&self, cwd: &Path, session_id: &str) -> Result<LocatedStatusSource, String> {
-        Ok(LocatedStatusSource {
-            status_path: cwd
-                .join(".vimeflow")
-                .join("sessions")
-                .join(session_id)
-                .join("status.json"),
-            trust_root: cwd.to_path_buf(),
-            static_transcript_hint: None,
-        })
+        Ok(claude_code::claude_status_path(cwd, session_id))
     }
 }
 

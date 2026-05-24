@@ -108,6 +108,18 @@ impl AgentBindings {
                     .provider_home
                     .clone()
                     .unwrap_or_else(default_codex_home);
+                // Attach-once observability for production Codex
+                // sessions (PR #261 cycle 3 F11 + cycle 4 F13). Logging
+                // inside `CompositeLocator::new` would double-emit
+                // because this arm constructs two locators per attach
+                // (outer + adapter-internal); logging in `CodexAdapter::new`
+                // would miss the `for_attach` → `with_home` path entirely.
+                // One log here covers every production attach exactly once.
+                log::info!(
+                    "codex adapter: locator initialized (codex_home={}, pid={})",
+                    codex_home.display(),
+                    ctx.agent_pid,
+                );
                 let locator: Arc<CompositeLocator> = Arc::new(CompositeLocator::new(
                     codex_home.clone(),
                     ctx.agent_pid,

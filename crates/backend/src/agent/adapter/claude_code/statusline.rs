@@ -176,7 +176,7 @@ pub fn extract_transcript_path(raw: &str) -> Option<String> {
 pub fn parse_statusline(session_id: &str, json: &str) -> Result<ParsedStatusline, String> {
     let snapshot = parse_statusline_snapshot(json)?;
     Ok(ParsedStatusline {
-        event: snapshot_to_event(session_id, snapshot),
+        event: stamp_snapshot(session_id, snapshot),
     })
 }
 
@@ -216,10 +216,6 @@ fn dto_to_snapshot(dto: ClaudeStatusDto) -> StatusSnapshot {
         cost: cost_from_dto(dto.cost),
         rate_limits: rate_limits_from_dto(dto.rate_limits),
     }
-}
-
-fn snapshot_to_event(session_id: &str, snapshot: StatusSnapshot) -> AgentStatusEvent {
-    stamp_snapshot(session_id, snapshot)
 }
 
 fn context_window_from_dto(cw: Option<ClaudeContextWindowDto>) -> ContextWindowStatus {
