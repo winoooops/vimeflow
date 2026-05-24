@@ -19,7 +19,6 @@ const makePane = (overrides: Partial<Pane> = {}): Pane => ({
   agentType: 'claude-code',
   status: 'running',
   active: true,
-  activityPanelCollapsed: null,
   ...overrides,
 })
 
@@ -31,6 +30,7 @@ const makeSession = (pane: Pane): Session => ({
   workingDirectory: '/tmp',
   agentType: pane.agentType,
   layout: 'single',
+  activityPanelCollapsed: false,
   panes: [pane],
   createdAt: '2026-05-08T10:00:00Z',
   lastActivityAt: '2026-05-08T11:55:00Z',

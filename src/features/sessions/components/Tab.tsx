@@ -82,11 +82,7 @@ export const Tab = ({
         group relative flex h-[30px] min-w-[130px] max-w-[220px] cursor-pointer items-center gap-2
         rounded-t-lg border border-transparent pl-3 pr-2 outline-none transition-colors
         focus-visible:ring-2 focus-visible:ring-primary/50
-        ${
-          isActive
-            ? '-mb-px border-outline-variant/30 bg-surface'
-            : 'hover:bg-on-surface/[0.025]'
-        }
+        ${isActive ? '-mb-px bg-surface' : 'hover:bg-on-surface/[0.025]'}
       `}
     >
       {isActive && (

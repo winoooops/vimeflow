@@ -11,7 +11,6 @@ const makePane = (overrides: Partial<Pane> = {}): Pane => ({
   agentType: 'claude-code',
   status: 'running',
   active: true,
-  activityPanelCollapsed: null,
   ...overrides,
 })
 

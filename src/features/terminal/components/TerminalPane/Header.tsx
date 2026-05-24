@@ -13,6 +13,7 @@ export interface HeaderProps {
   pipStatus: SessionStatus
   worktreeName: string | null
   branch: string | null
+  cwd?: string
   added: number
   removed: number
   isFocused: boolean
@@ -30,6 +31,7 @@ export const Header = ({
   pipStatus,
   worktreeName,
   branch,
+  cwd = undefined,
   added,
   removed,
   isFocused,
@@ -89,6 +91,7 @@ export const Header = ({
         <HeaderMetadata
           worktreeName={worktreeName}
           branch={branch}
+          cwd={cwd}
           added={added}
           removed={removed}
           session={session}

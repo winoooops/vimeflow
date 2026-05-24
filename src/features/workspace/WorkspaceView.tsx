@@ -134,7 +134,7 @@ export const WorkspaceView = (): ReactElement => {
     reorderSessions,
     updatePaneCwd,
     updatePaneAgentType,
-    setPaneActivityPanelCollapsed,
+    setSessionActivityPanelCollapsed,
     setSessionActivePane,
     setSessionLayout,
     addPane,
@@ -241,7 +241,7 @@ export const WorkspaceView = (): ReactElement => {
   const activePanePtyId = activePane?.ptyId
 
   const agentStatus = useAgentStatus(activePanePtyId ?? null)
-  const activityPanelCollapsed = activePane?.activityPanelCollapsed ?? false
+  const activityPanelCollapsed = activeSession?.activityPanelCollapsed ?? false
 
   const activityPanelAgent = useMemo(
     () => AGENTS[agentTypeToRegistryKey(agentStatus.agentType)],
@@ -258,28 +258,13 @@ export const WorkspaceView = (): ReactElement => {
   const activityPanelStatus: SessionStatus = activePane?.status ?? 'paused'
 
   const handleActivityPanelCollapsed = useCallback(
-    async (collapsed: boolean): Promise<void> => {
-      if (!activeSessionId || !activePane) {
+    (collapsed: boolean): void => {
+      if (!activeSessionId) {
         return
       }
-
-      try {
-        await setPaneActivityPanelCollapsed(
-          activeSessionId,
-          activePane.id,
-          collapsed
-        )
-      } catch (error: unknown) {
-        const message = error instanceof Error ? error.message : String(error)
-        // 'Error: ' prefix is a minimal severity signal until the
-        // notification API gains a typed level. Without it, a banner styled
-        // identically to routine `notifyInfo` messages can be mistaken for a
-        // status update when it actually means the persist failed and the
-        // optimistic UI just snapped back.
-        notifyInfo(`Error: Couldn't update activity panel: ${message}`)
-      }
+      setSessionActivityPanelCollapsed(activeSessionId, collapsed)
     },
-    [activePane, activeSessionId, notifyInfo, setPaneActivityPanelCollapsed]
+    [activeSessionId, setSessionActivityPanelCollapsed]
   )
 
   // Bridge: keep pane chrome in sync with agent detection for the active
@@ -1088,7 +1073,7 @@ export const WorkspaceView = (): ReactElement => {
             )}
             isRunning={agentStatus.isActive}
             onExpand={() => {
-              void handleActivityPanelCollapsed(false)
+              handleActivityPanelCollapsed(false)
             }}
           />
         ) : (
@@ -1101,7 +1086,7 @@ export const WorkspaceView = (): ReactElement => {
             agent={activityPanelAgent}
             status={activityPanelStatus}
             onCollapse={() => {
-              void handleActivityPanelCollapsed(true)
+              handleActivityPanelCollapsed(true)
             }}
           />
         )}

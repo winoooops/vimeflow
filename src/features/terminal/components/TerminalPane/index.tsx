@@ -219,6 +219,7 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
           pipStatus={pipStatus}
           worktreeName={worktreeName}
           branch={branch}
+          cwd={pane.cwd}
           added={added}
           removed={removed}
           isFocused={isFocusHighlightVisible}

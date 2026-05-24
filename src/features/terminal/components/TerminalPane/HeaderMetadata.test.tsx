@@ -14,6 +14,7 @@ const session: Session = {
   workingDirectory: '/home/user/repo',
   agentType: 'claude-code',
   layout: 'single',
+  activityPanelCollapsed: false,
   panes: [
     {
       id: 'p0',
@@ -22,7 +23,6 @@ const session: Session = {
       agentType: 'claude-code',
       status: 'running',
       active: true,
-      activityPanelCollapsed: null,
     },
   ],
   createdAt: '2026-05-08T10:00:00Z',
@@ -62,11 +62,15 @@ describe('HeaderMetadata', () => {
       />
     )
 
-    expect(screen.getByText('feat/jose-auth')).toBeInTheDocument()
+    expect(screen.getByTestId('git-ref-chip-br-label')).toHaveTextContent(
+      'feat/jose-auth'
+    )
     expect(screen.getByText('+48')).toBeInTheDocument()
     expect(screen.getByText('−12')).toBeInTheDocument()
     expect(screen.getByText('5m ago')).toBeInTheDocument()
-    expect(screen.queryByTestId('worktree-chip')).not.toBeInTheDocument()
+    expect(
+      screen.queryByTestId('git-ref-chip-wt-label')
+    ).not.toBeInTheDocument()
   })
 
   test('omits branch segment when branch is null', () => {
@@ -114,10 +118,13 @@ describe('HeaderMetadata', () => {
       />
     )
 
-    expect(screen.getByTestId('worktree-chip')).toHaveTextContent(
+    expect(screen.getByTestId('git-ref-chip-wt-label')).toHaveTextContent(
       'agent-sidebar'
     )
-    expect(screen.getByText('fix/agent-sidebar')).toBeInTheDocument()
+
+    expect(screen.getByTestId('git-ref-chip-br-label')).toHaveTextContent(
+      'fix/agent-sidebar'
+    )
 
     // Visual order: chip text must appear before the branch label in the
     // rendered output. Comparing textContent positions avoids reaching into
@@ -141,13 +148,19 @@ describe('HeaderMetadata', () => {
       />
     )
 
-    expect(screen.queryByTestId('worktree-chip')).not.toBeInTheDocument()
+    expect(
+      screen.queryByTestId('git-ref-chip-wt-label')
+    ).not.toBeInTheDocument()
+
+    expect(screen.getByTestId('git-ref-chip-br-label')).toHaveTextContent(
+      'main'
+    )
   })
 
-  test('renders worktree chip with leading separator before time when it is the only leading metadata', () => {
-    const { container } = render(
+  test('suppresses chip + leading dot when worktreeName is set but branch is null', () => {
+    render(
       <HeaderMetadata
-        worktreeName="agent-sidebar"
+        worktreeName="feat-jose"
         branch={null}
         added={0}
         removed={0}
@@ -155,11 +168,25 @@ describe('HeaderMetadata', () => {
       />
     )
 
-    expect(screen.getByTestId('worktree-chip')).toBeInTheDocument()
-    // Separator before the chip + separator before time. The `[\s\S]*?` permits
-    // the leaf icon and any chrome between the dot and the basename.
-    expect(container.textContent).toMatch(
-      /·[\s\S]*?agent-sidebar[\s\S]*?·[\s\S]*?5m ago/u
+    expect(screen.queryByTestId('git-ref-chip')).toBeNull()
+    // The relative-time label still renders (last span in the JSX).
+    expect(screen.getByText(/ago|now|just/i)).toBeInTheDocument()
+    // No leading middle-dot because hasLeadingMetadata is false.
+    expect(screen.queryByText('·')).toBeNull()
+  })
+
+  test('treats branch="" the same as branch=null (chip + leading dot suppressed)', () => {
+    render(
+      <HeaderMetadata
+        worktreeName="feat-jose"
+        branch=""
+        added={0}
+        removed={0}
+        session={session}
+      />
     )
+
+    expect(screen.queryByTestId('git-ref-chip')).toBeNull()
+    expect(screen.queryByText('·')).toBeNull()
   })
 })

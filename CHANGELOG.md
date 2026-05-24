@@ -13,6 +13,7 @@ This file records the supported user-facing state of Vimeflow. For the detailed 
 
 ### Fixed
 
+- Scrollbars throughout the workspace — the editor pane, Diff Viewer, sidebar file explorer, and agent-activity code previews — now use the design-system `thin-scrollbar` treatment (6px, transparent track, `#333344` thumb that brightens to `#4a444f` on hover). Several of these surfaces previously rendered the WebKit default scrollbar.
 - Full-screen TUI applications (`nvim`, `htop`, `less`) now render correctly in the in-app terminal. Production builds previously froze on the first DECRQM mode-query escape sequence because esbuild's minifier mangled `@xterm/xterm`'s `requestMode` handler; the Vite minifier is now `terser`, which preserves the affected const-enum IIFE intact. (#249)
 
 ## [0.1.0] - Current Source-Supported Line

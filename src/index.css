@@ -163,6 +163,38 @@
   background: #4a444f;
 }
 
+/* CodeMirror's internal scroller — same treatment as @utility thin-scrollbar.
+   The utility class can't be applied to the CodeEditor container because
+   ::-webkit-scrollbar targets the element it's on, not descendants — and
+   the actual scroll container is the nested .cm-scroller (set to
+   `overflow: auto` by the catppuccin theme). The @supports gate mirrors
+   thin-scrollbar: keep the standard scrollbar-* properties Firefox-only
+   so WebKitGTK doesn't paint a second track on top of the pseudo-element. */
+.cm-editor .cm-scroller::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.cm-editor .cm-scroller::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.cm-editor .cm-scroller::-webkit-scrollbar-thumb {
+  background: #333344;
+  border-radius: 10px;
+}
+
+.cm-editor .cm-scroller::-webkit-scrollbar-thumb:hover {
+  background: #4a444f;
+}
+
+@supports (-moz-appearance: none) {
+  .cm-editor .cm-scroller {
+    scrollbar-width: thin;
+    scrollbar-color: #333344 transparent;
+  }
+}
+
 /* Liquid bucket animations (used by both Bucket and ContextBucket via
    LiquidFill). Two opposing sine-wave translations create the ripple;
    vfLiquidSlosh tilts the whole liquid mass < 1deg. Honors

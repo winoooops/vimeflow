@@ -102,6 +102,7 @@ const createMockSession = (id: string, name: string): Session => ({
   workingDirectory: '/home/user',
   agentType: 'claude-code',
   layout: 'single',
+  activityPanelCollapsed: false,
   panes: [
     {
       id: 'p0',
@@ -110,7 +111,6 @@ const createMockSession = (id: string, name: string): Session => ({
       agentType: 'claude-code',
       status: 'running',
       active: true,
-      activityPanelCollapsed: null,
     },
   ],
   createdAt: '2024-01-01T00:00:00Z',
@@ -167,7 +167,7 @@ describe('WorkspaceView - Command Palette Integration', () => {
       reorderSessions: vi.fn(),
       updatePaneCwd: vi.fn(),
       updatePaneAgentType: vi.fn(),
-      setPaneActivityPanelCollapsed: vi.fn(),
+      setSessionActivityPanelCollapsed: vi.fn(),
       updateSessionCwd: vi.fn(),
       updateSessionAgentType: vi.fn(),
       restoreData: new Map(),
