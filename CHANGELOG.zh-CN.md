@@ -13,7 +13,7 @@
 
 ### Fixed
 
-- 工作区内的滚动条（包括编辑器、Diff Viewer、侧栏文件面板以及 Agent 活动代码预览）现已统一为设计系统的 `thin-scrollbar` 样式（6px、透明 track、`#333344` 拇指，hover 时变亮）。此前部分滚动条会显示 WebKit 默认样式。
+- 工作区内的滚动条（包括编辑器、Diff Viewer、侧栏文件浏览器以及 Agent 活动代码预览）现已统一为设计系统的 `thin-scrollbar` 样式（6px、透明 track、`#333344` 拇指，hover 时变亮到 `#4a444f`）。此前部分滚动条会显示 WebKit 默认样式。
 - 应用内终端现在可以正常运行 `nvim`、`htop`、`less` 等全屏 TUI 应用程序。此前生产构建会在第一个 DECRQM 模式查询转义序列上卡住——原因是 esbuild 的压缩器破坏了 `@xterm/xterm` 中 `requestMode` 处理函数的 const-enum IIFE 片段。Vite 已切换到 `terser` 压缩器，该模式可被完整保留。(#249)
 
 ## [0.1.0] - 当前源码支持版本线

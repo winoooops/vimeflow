@@ -18,7 +18,7 @@ export const DiffViewer = ({
   focusedLineIndex,
   onLineClick = undefined,
 }: DiffViewerProps): ReactElement => (
-  <div className="thin-scrollbar h-full w-full min-w-0 overflow-auto">
+  <div className="h-full w-full min-w-0 overflow-auto">
     {viewMode === 'split' ? (
       <SplitDiffView
         diff={fileDiff}
