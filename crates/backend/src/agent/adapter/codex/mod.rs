@@ -166,9 +166,14 @@ impl AgentAdapter for CodexAdapter {
                     session_id,
                     std::sync::Arc::clone(&events),
                     std::sync::Arc::clone(&aux_stop),
-                )
-                .map_err(|err| format!("codex title watcher spawn: {}", err))?;
-                handle.attach_aux_join(aux_stop, title_join);
+                );
+                match title_join {
+                    Ok(title_join) => handle.attach_aux_join(aux_stop, title_join),
+                    Err(err) => log::warn!(
+                        "codex title sync disabled for this session: watcher spawn failed: {}",
+                        err
+                    ),
+                }
             }
             None => {
                 log::warn!(

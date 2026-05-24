@@ -6,7 +6,7 @@ export type TitleValidation =
   | {
       kind: 'invalid'
       reason: 'control-char' | 'too-long'
-      offendingByte?: number
+      offendingIndex?: number
     }
 
 export const validateTitle = (raw: string): TitleValidation => {
@@ -16,7 +16,7 @@ export const validateTitle = (raw: string): TitleValidation => {
       return {
         kind: 'invalid',
         reason: 'control-char',
-        offendingByte: index,
+        offendingIndex: index,
       }
     }
   }

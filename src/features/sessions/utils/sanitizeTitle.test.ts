@@ -30,6 +30,16 @@ test('tab returns kind=invalid control-char', () => {
   }
 })
 
+test('control-char reports UTF-16 offending index', () => {
+  const result = validateTitle('𝕏\t')
+
+  expect(result.kind).toBe('invalid')
+  if (result.kind === 'invalid') {
+    expect(result.reason).toBe('control-char')
+    expect(result.offendingIndex).toBe(2)
+  }
+})
+
 test('valid title collapses non-control whitespace runs', () => {
   expect(validateTitle('  Fix    CI  ')).toEqual({
     kind: 'valid',
