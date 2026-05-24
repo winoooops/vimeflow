@@ -211,6 +211,8 @@ fn parse_numstat(output: &[u8]) -> HashMap<String, (u32, u32)> {
 /// Diff line type — variant names match TS `DiffLine.type` via
 /// `rename_all = "lowercase"`: `Added` → `"added"`, etc.
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
 #[serde(rename_all = "lowercase")]
 pub enum DiffLineType {
     Added,
@@ -220,19 +222,26 @@ pub enum DiffLineType {
 
 /// A single line within a diff hunk
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
 #[serde(rename_all = "camelCase")]
 pub struct DiffLine {
     #[serde(rename = "type")]
+    #[cfg_attr(test, ts(rename = "type"))]
     pub line_type: DiffLineType,
     pub content: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub old_line_number: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub new_line_number: Option<u32>,
 }
 
 /// A single hunk within a file diff
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
 #[serde(rename_all = "camelCase")]
 pub struct DiffHunk {
     pub id: String,
@@ -247,12 +256,45 @@ pub struct DiffHunk {
 /// Parsed diff for a single file — field names match TS `FileDiff` via
 /// `rename_all = "camelCase"`: `file_path` → `"filePath"`, etc.
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
 #[serde(rename_all = "camelCase")]
 pub struct FileDiff {
     pub file_path: String,
     pub old_path: Option<String>,
     pub new_path: Option<String>,
     pub hunks: Vec<DiffHunk>,
+}
+
+/// Response payload for `get_git_diff` — parsed FileDiff plus the raw
+/// before/after file contents that Pierre needs to render via Shiki,
+/// plus the raw unified-diff text reused by PR2's `extractHunkPatch`.
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct GetGitDiffResponse {
+    pub file_diff: FileDiff,
+    /// Old file contents at the diff's base (HEAD or index, depending on
+    /// `staged`). Empty string when the file is untracked or newly added.
+    pub old_text: String,
+    /// New file contents at the diff's tip (index or working tree).
+    /// Empty string when the file has been deleted.
+    pub new_text: String,
+    /// The raw unified-diff text. Reused by PR2's `extractHunkPatch()`.
+    pub raw_diff: String,
+}
+
+/// Heuristic: the raw unified-diff header contains `+++ /dev/null` when
+/// git encoded a deletion. Cheaper and more deterministic than racing
+/// the filesystem.
+fn raw_diff_is_deletion(raw_diff: &str) -> bool {
+    raw_diff.lines().any(|line| line.starts_with("+++ /dev/null"))
+}
+
+/// Same heuristic for "no prior version at HEAD" — `--- /dev/null`.
+fn raw_diff_is_new_at_base(raw_diff: &str) -> bool {
+    raw_diff.lines().any(|line| line.starts_with("--- /dev/null"))
 }
 
 /// Parse git status --porcelain=v1 -z output into ChangedFile structs
@@ -908,7 +950,7 @@ pub async fn get_git_diff(
     file: String,
     staged: bool,
     untracked: Option<bool>,
-) -> Result<FileDiff, String> {
+) -> Result<GetGitDiffResponse, String> {
     get_git_diff_inner(cwd, file, staged, untracked).await
 }
 
@@ -917,11 +959,11 @@ pub(crate) async fn get_git_diff_inner(
     file: String,
     staged: bool,
     untracked: Option<bool>,
-) -> Result<FileDiff, String> {
+) -> Result<GetGitDiffResponse, String> {
     let safe_cwd = validate_cwd(&cwd)?;
     validate_file_path(&file)?;
 
-    // Resolve repo toplevel — if not in a repo, return empty hunks
+    // Resolve repo toplevel — if not in a repo, return empty response.
     let mut toplevel_cmd = Command::new("git");
     toplevel_cmd
         .arg("-C")
@@ -933,12 +975,17 @@ pub(crate) async fn get_git_diff_inner(
     let toplevel_output = run_git_with_timeout(toplevel_cmd).await?;
 
     if !toplevel_output.status.success() {
-        // Not a git repo — return empty FileDiff
-        return Ok(FileDiff {
-            file_path: file.clone(),
-            old_path: None,
-            new_path: None,
-            hunks: vec![],
+        // Not a git repo — return empty response.
+        return Ok(GetGitDiffResponse {
+            file_diff: FileDiff {
+                file_path: file.clone(),
+                old_path: None,
+                new_path: None,
+                hunks: vec![],
+            },
+            old_text: String::new(),
+            new_text: String::new(),
+            raw_diff: String::new(),
         });
     }
 
@@ -947,6 +994,14 @@ pub(crate) async fn get_git_diff_inner(
 
     // Canonicalize and validate toplevel is under $HOME
     let canonical_toplevel = validate_cwd(toplevel_path)?;
+
+    // Detect a rename touching `file`. `git diff -M -- <single path>` cannot
+    // see renames (the second endpoint is outside the path filter), so we
+    // probe the rename-status output once over the full diff scope. When
+    // `file` appears as a rename destination, we re-run `git diff` against
+    // BOTH endpoints so the unified-diff header carries `rename from <old>`
+    // and `parse_git_diff` populates `file_diff.old_path`.
+    let rename_source = detect_rename_source(&canonical_toplevel, &file, staged).await?;
 
     // Run git diff from toplevel
     let mut cmd = Command::new("git");
@@ -960,7 +1015,16 @@ pub(crate) async fn get_git_diff_inner(
         cmd.arg("--cached");
     }
 
-    cmd.arg("--").arg(&file);
+    // Rename detection needs to be on AND both endpoints must be in scope.
+    if rename_source.is_some() {
+        cmd.arg("-M");
+    }
+
+    cmd.arg("--");
+    if let Some(ref old) = rename_source {
+        cmd.arg(old);
+    }
+    cmd.arg(&file);
 
     let output = run_git_with_timeout(cmd).await?;
 
@@ -995,12 +1059,164 @@ pub(crate) async fn get_git_diff_inner(
         false
     };
 
-    if should_try_untracked_fallback {
+    let (file_diff, raw_diff, is_untracked) = if should_try_untracked_fallback {
         let untracked_stdout = get_untracked_diff(&canonical_toplevel, &file).await?;
-        return Ok(parse_git_diff(&untracked_stdout, &file));
+        let parsed_untracked = parse_git_diff(&untracked_stdout, &file);
+        (parsed_untracked, untracked_stdout, true)
+    } else {
+        (parsed, stdout.into_owned(), false)
+    };
+
+    // Resolve old/new paths with rename awareness. On rename, the diff
+    // header carries `rename from <old>` / `rename to <new>` so we can
+    // fetch each side from its actual path.
+    let new_path = file_diff
+        .new_path
+        .as_deref()
+        .unwrap_or(file_diff.file_path.as_str())
+        .to_string();
+    let old_path = file_diff
+        .old_path
+        .as_deref()
+        .unwrap_or(new_path.as_str())
+        .to_string();
+
+    // Compute old_text per the four-case table:
+    //   - Untracked (used --no-index branch) → ""
+    //   - Newly-added staged file (--- /dev/null in header AND staged=true) → ""
+    //   - staged=true → `git show HEAD:<old_path>`
+    //   - staged=false → `git show :<old_path>` (index version)
+    let is_new_at_base = raw_diff_is_new_at_base(&raw_diff);
+    let old_text = if is_untracked || (staged && is_new_at_base) {
+        String::new()
+    } else {
+        let ref_spec = if staged {
+            format!("HEAD:{}", old_path)
+        } else {
+            format!(":{}", old_path)
+        };
+        git_show_text(&canonical_toplevel, &ref_spec).await?
+    };
+
+    // Compute new_text:
+    //   - Deleted file (+++ /dev/null in header) → ""
+    //   - staged=true → `git show :<new_path>` (index version)
+    //   - else → filesystem read of `<toplevel>/<new_path>`
+    //
+    // The filesystem read maps `NotFound` to an empty string (covers a
+    // racy delete between the diff and the read), but surfaces every
+    // other error so the frontend's error card can render a real
+    // failure (permission denied, IO error, etc.) instead of silently
+    // displaying an empty diff.
+    let is_deletion = raw_diff_is_deletion(&raw_diff);
+    let new_text = if is_deletion {
+        String::new()
+    } else if staged {
+        git_show_text(&canonical_toplevel, &format!(":{}", new_path)).await?
+    } else {
+        let abs_path = canonical_toplevel.join(&new_path);
+        match std::fs::read_to_string(&abs_path) {
+            Ok(s) => s,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
+            Err(e) => return Err(format!("read {}: {}", abs_path.display(), e)),
+        }
+    };
+
+    Ok(GetGitDiffResponse {
+        file_diff,
+        old_text,
+        new_text,
+        raw_diff,
+    })
+}
+
+/// If `file` is the destination of a rename in the diff scope (HEAD→index
+/// when `staged`, index→worktree otherwise), return the source path so the
+/// caller can re-run `git diff -M` against both endpoints. Returns `None`
+/// when there is no rename involving `file`.
+///
+/// Internally runs `git diff --name-status -M -z` over the whole scope
+/// (no path filter) — single-path `git diff -M -- <file>` cannot detect
+/// renames because the second endpoint is outside the filter. The scan
+/// is bounded by the count of changed files, not the size of the repo.
+async fn detect_rename_source(
+    toplevel: &Path,
+    file: &str,
+    staged: bool,
+) -> Result<Option<String>, String> {
+    let mut cmd = Command::new("git");
+    cmd.arg("-C")
+        .arg(toplevel)
+        .arg("diff")
+        .arg("--name-status")
+        .arg("-M")
+        .arg("-z")
+        .env("GIT_TERMINAL_PROMPT", "0");
+    if staged {
+        cmd.arg("--cached");
     }
 
-    Ok(parsed)
+    let output = run_git_with_timeout(cmd).await?;
+    if !output.status.success() {
+        // Treat a failed probe as "no rename detected" rather than fatally
+        // erroring the diff — the main `git diff` call below will surface
+        // the real failure if there is one.
+        return Ok(None);
+    }
+
+    // `-z` records: status\0src\0dst\0 for renames/copies; status\0path\0
+    // for ordinary entries. Walk the tokens looking for `R<score>` /
+    // `C<score>` whose `dst` equals `file`.
+    let stdout = output.stdout;
+    let tokens: Vec<&[u8]> = stdout.split(|&b| b == b'\0').collect();
+    let mut i = 0;
+    while i < tokens.len() {
+        let tok = tokens[i];
+        if tok.is_empty() {
+            i += 1;
+            continue;
+        }
+
+        let first = tok[0];
+        if first == b'R' || first == b'C' {
+            // Rename/copy entries consume src and dst.
+            let src = tokens.get(i + 1).map(|b| String::from_utf8_lossy(b).into_owned());
+            let dst = tokens.get(i + 2).map(|b| String::from_utf8_lossy(b).into_owned());
+            if let (Some(src), Some(dst)) = (src, dst) {
+                if dst == file {
+                    return Ok(Some(src));
+                }
+            }
+            i += 3;
+        } else {
+            // Ordinary entries consume one path.
+            i += 2;
+        }
+    }
+
+    Ok(None)
+}
+
+/// Run `git show <ref>` from the given toplevel and return stdout as a
+/// String. Empty string on non-zero exit (e.g. the file doesn't exist
+/// at that ref) so callers can render an "all-new" diff without aborting.
+async fn git_show_text(toplevel: &Path, ref_spec: &str) -> Result<String, String> {
+    let mut cmd = Command::new("git");
+    cmd.arg("-C")
+        .arg(toplevel)
+        .arg("show")
+        .arg(ref_spec)
+        .env("GIT_TERMINAL_PROMPT", "0");
+
+    let output = run_git_with_timeout(cmd).await?;
+
+    if !output.status.success() {
+        // Treat "doesn't exist at ref" the same as "empty content" — happens
+        // legitimately for newly-added files where HEAD has no prior version.
+        return Ok(String::new());
+    }
+
+    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
 /// Get the current branch for a git repository.
@@ -1815,7 +2031,8 @@ copy to copy.txt
         let result = get_git_diff(subdir_str, "sub/foo.ts".to_string(), false, None).await;
 
         assert!(result.is_ok(), "get_git_diff should succeed from subdir");
-        let diff = result.unwrap();
+        let response = result.unwrap();
+        let diff = &response.file_diff;
 
         assert_eq!(diff.file_path, "sub/foo.ts");
         assert!(!diff.hunks.is_empty(), "should have populated hunks");
@@ -1842,7 +2059,8 @@ copy to copy.txt
         let result = get_git_diff(non_repo, "foo.txt".to_string(), false, None).await;
 
         assert!(result.is_ok(), "non-repo should return Ok, not error");
-        let diff = result.unwrap();
+        let response = result.unwrap();
+        let diff = &response.file_diff;
         assert_eq!(diff.file_path, "foo.txt");
         assert_eq!(diff.hunks.len(), 0, "non-repo should return empty hunks");
     }
@@ -2266,7 +2484,8 @@ copy to copy.txt
             result.is_ok(),
             "get_git_diff on untracked file should succeed (fallback to --no-index)"
         );
-        let diff = result.unwrap();
+        let response = result.unwrap();
+        let diff = &response.file_diff;
         assert_eq!(diff.file_path, "untracked.txt");
         assert_eq!(
             diff.hunks.len(),
@@ -2285,5 +2504,16 @@ copy to copy.txt
         assert_eq!(hunk.lines[0].content, "alpha");
         assert_eq!(hunk.lines[1].content, "beta");
         assert_eq!(hunk.lines[2].content, "gamma");
+
+        // Untracked files have no base content; new_text is the working-tree file.
+        assert_eq!(response.old_text, "", "untracked => old_text is empty");
+        assert_eq!(
+            response.new_text, "alpha\nbeta\ngamma\n",
+            "untracked => new_text is the working-tree contents"
+        );
+        assert!(
+            !response.raw_diff.is_empty(),
+            "raw_diff should hold the synthesized --no-index diff"
+        );
     }
 }
