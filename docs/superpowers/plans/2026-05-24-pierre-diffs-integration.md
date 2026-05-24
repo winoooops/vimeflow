@@ -317,6 +317,8 @@ Per spec Section 4.2. The biggest single piece of work in PR1 — adds a new res
 **Files:**
 
 - Modify: `crates/backend/src/git/mod.rs`
+- Modify: `crates/backend/src/runtime/state.rs` (widen the existing `get_git_diff` method's return type from `Result<FileDiff, String>` to `Result<GetGitDiffResponse, String>`)
+- Modify: `crates/backend/src/runtime/ipc.rs` (verify the existing `"get_git_diff"` arm still compiles against the widened return type)
 - Create: `src/bindings/GetGitDiffResponse.ts` (ts-rs generates)
 - Modify: `src/bindings/FileDiff.ts`, `src/bindings/DiffHunk.ts`, `src/bindings/DiffLine.ts`, `src/bindings/DiffLineType.ts` (ts-rs regenerates)
 
@@ -447,21 +449,45 @@ The matching state-layer method in `crates/backend/src/runtime/state.rs` (whatev
 
 - [ ] **Step 5: Add Rust integration tests for the four cases**
 
-Create `crates/backend/tests/git_diff_response.rs`:
+Create `crates/backend/tests/git_diff_response.rs`. The existing in-crate `test_helpers` module at `crates/backend/src/git/test_helpers.rs` is `#[cfg(test)] mod` and `git` is private — neither is reachable from `tests/` (integration tests). Two options:
+
+**Option A (recommended):** drive the test by spawning `git` directly via `std::process::Command` against a `tempfile::TempDir` git repo. No new public surface required; tests stay self-contained.
 
 ```rust
-// Test cases — use the project's existing test_helpers in
-// crates/backend/src/git/test_helpers.rs to spin up a tempdir git repo.
-//
-// 1. Modified tracked file, staged=false → old_text = index, new_text = working tree (both non-empty, different content)
-// 2. Modified tracked file, staged=true → old_text = HEAD, new_text = index
-// 3. Newly-added staged file (git add for first time), staged=true → old_text = "", new_text = index
-// 4. Untracked file → old_text = "", new_text = working tree
-// 5. Deleted file (git rm or rm + git status) → old_text = HEAD/index, new_text = ""
-// 6. Renamed file → old_text = HEAD:<oldPath>, new_text = working tree at <newPath>
+use tempfile::TempDir;
+use std::process::Command;
+
+fn init_repo() -> TempDir {
+    let dir = TempDir::new().expect("tempdir");
+    let run = |args: &[&str]| {
+        let status = Command::new("git").current_dir(dir.path()).args(args).status().expect("git");
+        assert!(status.success(), "git {:?} failed", args);
+    };
+    run(&["init", "--quiet", "--initial-branch=main"]);
+    run(&["config", "user.email", "test@vimeflow.test"]);
+    run(&["config", "user.name", "Test"]);
+    dir
+}
+
+#[tokio::test]
+async fn modified_tracked_file_unstaged() {
+    let dir = init_repo();
+    // ... create file, commit, modify, call get_git_diff_inner, assert ...
+}
 ```
 
-Write the assertions explicitly per the table in spec Section 4.2. No skip / TODO — every case has actual asserts.
+**Option B:** promote the existing helpers to a `pub mod test_helpers` gated behind a `test-helpers` feature in `crates/backend/Cargo.toml` so integration tests can import them. Requires touching the existing module's visibility — heavier change with cross-cutting implications. Skip unless Option A's setup ergonomics become painful.
+
+Use Option A. Cases to cover:
+
+1. Modified tracked file, `staged=false` → `old_text` = index content, `new_text` = working-tree content (both non-empty, different).
+2. Modified tracked file, `staged=true` → `old_text` = HEAD content, `new_text` = index content.
+3. Newly-added staged file (`git add` for first time), `staged=true` → `old_text == ""`, `new_text` = index content.
+4. Untracked file → `old_text == ""`, `new_text` = working-tree content.
+5. Deleted file (`git rm` or `rm` + `git status`) → `old_text` = HEAD/index content, `new_text == ""`.
+6. Renamed file (`git mv`) → `old_text` = `git show HEAD:<oldPath>`, `new_text` = working-tree at `<newPath>`.
+
+Every case has explicit asserts on `old_text` / `new_text` / `raw_diff`. No skips, no TODOs.
 
 - [ ] **Step 6: Run Rust tests**
 
@@ -471,24 +497,20 @@ Expected: all six cases pass. If any fail, fix the producer logic from Step 4 be
 
 - [ ] **Step 7: Regenerate TS bindings**
 
-Run: whatever command this project uses to emit ts-rs exports — verify by reading `crates/backend/Cargo.toml`'s `[features]` section. Typical:
+The actual command in this project (per `package.json`'s `scripts`):
 
 ```bash
-cd crates/backend && cargo test --features=ts-export
+npm run generate:bindings
 ```
 
-OR if the project uses a specific script:
-
-```bash
-npm run generate-bindings    # if defined in package.json
-```
+Which expands to `cargo test --manifest-path crates/backend/Cargo.toml export_bindings && prettier --write src/bindings/`. There is NO `ts-export` feature in `crates/backend/Cargo.toml` — the bindings are emitted by ts-rs-decorated structs being touched in the test build profile.
 
 Expected: `src/bindings/GetGitDiffResponse.ts` is created; `src/bindings/FileDiff.ts` / `DiffHunk.ts` / `DiffLine.ts` / `DiffLineType.ts` are regenerated. Check them in with `git status`.
 
 - [ ] **Step 8: Commit**
 
 ```bash
-git add crates/backend/src/git/mod.rs crates/backend/tests/git_diff_response.rs src/bindings/
+git add crates/backend/src/git/mod.rs crates/backend/src/runtime/state.rs crates/backend/src/runtime/ipc.rs crates/backend/tests/git_diff_response.rs src/bindings/
 git commit -m "feat(diff): extend Rust get_git_diff with oldText/newText/rawDiff"
 ```
 
@@ -1113,13 +1135,22 @@ pub enum DiscardScope {
 
 `unstage_file` reuses `StageFileRequest` (same fields, same semantics).
 
-- [ ] **Step 2: Add `run_git_apply_with_patch` helper**
+- [ ] **Step 2: Add `process` to Tokio features (required for `tokio::process::Command`)**
 
-Per spec Section 5.1 sketch:
+`crates/backend/Cargo.toml`'s `tokio` dep currently enables `sync, io-util, io-std, time, rt, rt-multi-thread, macros` but NOT `process`. The patch-applying helper needs `process` so it can spawn `git apply` with piped stdin without blocking the runtime.
+
+```toml
+# crates/backend/Cargo.toml — find the existing tokio line and add `process` to features:
+tokio = { version = "1", features = ["sync", "io-util", "io-std", "time", "rt", "rt-multi-thread", "macros", "process"] }
+```
+
+Existing `run_git_with_timeout` uses `std::process::Command` (synchronous spawn wrapped in `tokio::time::timeout`); it keeps that signature unchanged. The new helper below uses `tokio::process::Command` specifically because it needs async stdin piping — these two coexist in `mod.rs` under their full paths (`std::process::Command` is already imported at `mod.rs:8`; reference the new helper's Command as `tokio::process::Command` to avoid shadowing).
+
+- [ ] **Step 3: Add `run_git_apply_with_patch` helper**
+
+Per spec Section 5.1 sketch — note the explicit `tokio::process::Command` qualifier:
 
 ```rust
-use std::process::Stdio;
-use tokio::process::Command;
 use tokio::io::AsyncWriteExt;
 
 async fn run_git_apply_with_patch(
@@ -1127,14 +1158,19 @@ async fn run_git_apply_with_patch(
     args: &[&str],
     patch: &str,
 ) -> Result<(), String> {
-    let mut cmd = Command::new("git");
-    cmd.current_dir(cwd).args(args).stdin(Stdio::piped());
+    let mut cmd = tokio::process::Command::new("git");
+    cmd.current_dir(cwd)
+        .args(args)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
     let mut child = cmd.spawn().map_err(|e| format!("spawn failed: {e}"))?;
     if let Some(mut stdin) = child.stdin.take() {
         stdin
             .write_all(patch.as_bytes())
             .await
             .map_err(|e| format!("stdin write failed: {e}"))?;
+        // Drop stdin so git sees EOF.
     }
     let output = tokio::time::timeout(
         std::time::Duration::from_secs(30),
@@ -1150,7 +1186,7 @@ async fn run_git_apply_with_patch(
 }
 ```
 
-- [ ] **Step 3: Add `git_status_porcelain_is_untracked` helper**
+- [ ] **Step 4: Add `git_status_porcelain_is_untracked` helper**
 
 ```rust
 async fn git_status_porcelain_is_untracked(
@@ -1168,32 +1204,38 @@ async fn git_status_porcelain_is_untracked(
 }
 ```
 
-- [ ] **Step 4: Add `validate_hunk_patch` helper**
+- [ ] **Step 5: Add `validate_hunk_patch` helper (shared between Stage and Discard requests)**
+
+`StageFileRequest` and `DiscardFileRequest` have different shapes (Discard adds the `scope` field), so the validator takes the relevant fields as references rather than the whole struct — that way both call sites can use it without an artificial trait or duplicated implementation.
 
 ```rust
 /// Validates that:
-/// 1. `req.path` is repo-relative (no `..` traversal, no absolute paths).
-/// 2. `req.hunk_patch` (if Some) targets a path matching `req.path`
+/// 1. `path` is repo-relative (no `..` traversal, no absolute paths).
+/// 2. `hunk_patch` (if Some) targets a path matching `path`
 ///    (rename-aware: matches `oldPath` OR `newPath` from the header).
-/// 3. `req.hunk_patch` (if Some) is single-file (no second `diff --git` line).
-fn validate_hunk_patch(req: &StageFileRequest, cwd: &std::path::Path) -> Result<(), String> {
+/// 3. `hunk_patch` (if Some) is single-file (no second `diff --git` line).
+fn validate_hunk_patch(
+    cwd: &std::path::Path,
+    path: &str,
+    hunk_patch: Option<&str>,
+) -> Result<(), String> {
     // 1. Path validation — reuse the existing helper if it exists, else inline.
-    if std::path::Path::new(&req.path).is_absolute() {
-        return Err(format!("absolute path not allowed: {}", req.path));
+    if std::path::Path::new(path).is_absolute() {
+        return Err(format!("absolute path not allowed: {}", path));
     }
-    let resolved = cwd.join(&req.path);
+    let resolved = cwd.join(path);
     if !resolved.starts_with(cwd) {
-        return Err(format!("path escapes workspace: {}", req.path));
+        return Err(format!("path escapes workspace: {}", path));
     }
 
     // 2 + 3. Patch header check.
-    if let Some(patch) = &req.hunk_patch {
+    if let Some(patch) = hunk_patch {
         // Reject multi-file patches.
         let diff_git_count = patch.lines().filter(|l| l.starts_with("diff --git ")).count();
         if diff_git_count > 1 {
             return Err("multi-file patches not allowed".to_string());
         }
-        // The `--- a/<path>` and `+++ b/<path>` lines must match `req.path`.
+        // The `--- a/<path>` and `+++ b/<path>` lines must match `path`.
         let mut header_paths: Vec<&str> = Vec::new();
         for line in patch.lines() {
             if let Some(rest) = line.strip_prefix("--- a/") {
@@ -1202,10 +1244,10 @@ fn validate_hunk_patch(req: &StageFileRequest, cwd: &std::path::Path) -> Result<
                 header_paths.push(rest);
             }
         }
-        if !header_paths.is_empty() && !header_paths.iter().any(|&p| p == req.path) {
+        if !header_paths.is_empty() && !header_paths.iter().any(|&p| p == path) {
             return Err(format!(
                 "patch targets a different file (header paths: {:?}, req: {})",
-                header_paths, req.path
+                header_paths, path
             ));
         }
     }
@@ -1214,18 +1256,20 @@ fn validate_hunk_patch(req: &StageFileRequest, cwd: &std::path::Path) -> Result<
 }
 ```
 
-- [ ] **Step 5: Type-check Rust**
+Call sites (in Task 2.2's `*_inner` functions): `validate_hunk_patch(&cwd, &req.path, req.hunk_patch.as_deref())?;`. Same line for stage / unstage (both use `StageFileRequest`) and discard (which uses `DiscardFileRequest` — same three fields are present).
+
+- [ ] **Step 6: Type-check Rust**
 
 ```bash
 cd crates/backend && cargo check
 ```
 
-Expected: clean.
+Expected: clean. If the build complains about Tokio's `process` feature, re-check Step 2 — the `Cargo.lock` may need a manual `cargo update -p tokio` to pick up the feature change.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
-git add crates/backend/src/git/mod.rs
+git add crates/backend/Cargo.toml crates/backend/Cargo.lock crates/backend/src/git/mod.rs
 git commit -m "feat(git): add stage/unstage/discard request types and helpers"
 ```
 
@@ -1490,15 +1534,32 @@ Per spec Section 5.3 click-to-IPC flow + Section 5.4 tests.
 
 - [ ] **Step 1: Add focused-hunk state + click handlers to `DiffPanelContent`**
 
+The focused-hunk state tracks the index into the **git** hunks (`response.fileDiff.hunks`). To translate from Pierre's hunk identity to the git hunk index, use `findRawDiffHunkIndex` from `pierreAdapter` (Task 2.4) — **NOT** the focused index directly, because Pierre's diff engine (jsdiff via `oldText`/`newText`) and git's diff engine can split the same change into a different number of hunks (per spec Section 5.3 architectural correction).
+
+For PR1's prev/next chip placeholders we tracked the focused git-hunk index directly (since Pierre had no role yet). PR2 reconciles: when the user clicks a Pierre hunk row or uses prev/next, the toolbar resolves the **Pierre** hunk's range (`newStart`, `newLines`), and the chip handlers re-derive the git index at click time via `findRawDiffHunkIndex(response, { newStart, newLines })`. The chip never trusts the focused index as if it were a raw-diff index.
+
 ```ts
-const [focusedHunkIndex, setFocusedHunkIndex] = useState(0)
+import { extractHunkPatch } from '../services/gitPatch'
+import { findRawDiffHunkIndex } from '../services/pierreAdapter'
+
+const [focusedHunk, setFocusedHunk] = useState<{
+  newStart: number
+  newLines: number
+} | null>(null)
 const [staging, setStaging] = useState(false)
 
 const handleStage = useCallback(async () => {
-  if (!response || !selectedFile || staging) return
+  if (!response || !selectedFile || staging || !focusedHunk) return
   setStaging(true)
   try {
-    const hunkPatch = extractHunkPatch(response.rawDiff, focusedHunkIndex)
+    const rawIndex = findRawDiffHunkIndex(response, focusedHunk)
+    if (rawIndex === -1) {
+      showToast(
+        'Pierre split this hunk differently than git — cannot stage this region. Use Discard All or the file-level chip.'
+      )
+      return
+    }
+    const hunkPatch = extractHunkPatch(response.rawDiff, rawIndex)
     if (hunkPatch === null) {
       showToast('Could not isolate this hunk — try refreshing the diff.')
       return
@@ -1511,10 +1572,10 @@ const handleStage = useCallback(async () => {
   } finally {
     setStaging(false)
   }
-}, [response, selectedFile, focusedHunkIndex, staging, service])
+}, [response, selectedFile, focusedHunk, staging, service])
 ```
 
-Mirror for `handleUnstage` (calls `unstageFile`) and `handleDiscard` (calls `discardChanges`). For `handleDiscardAll`, no `hunkPatch`, no `extractHunkPatch`, just `await service.discardChanges(selectedFile)`.
+Mirror for `handleUnstage` (calls `unstageFile`) and `handleDiscard` (calls `discardChanges`). For `handleDiscardAll`, no `hunkPatch`, no mapping, no `extractHunkPatch` — just `await service.discardChanges(selectedFile)`.
 
 - [ ] **Step 2: Add prev/next hunk handlers**
 
@@ -1916,6 +1977,7 @@ export interface PaneCandidate {
   tabName: string
   agentLabel: string // 'Claude Code' | 'Codex' | (other adapter name)
   cwd: string
+  status: 'idle' | 'running' | 'exited' | 'error' // match the existing PTY status enum
   isFocused: boolean
 }
 
@@ -1930,16 +1992,28 @@ export type ResolveResult =
   | { kind: 'one'; pane: PaneCandidate }
   | { kind: 'many'; candidates: PaneCandidate[] }
 
+// Supported agents that the feedback dispatch knows how to format for.
+// Other adapters (some future agent we don't yet test against) are
+// filtered out until we explicitly verify the bracketed-paste flow
+// works against them in PR3's manual E2E.
+export type SupportedAgent = 'Claude Code' | 'Codex'
+const SUPPORTED_AGENTS: readonly SupportedAgent[] = ['Claude Code', 'Codex']
+
 /**
- * Per spec Section 6.3 — filter to panes in this workspace whose cwd
- * matches the diff cwd (exact or descendant) and which have a detected
- * agent. Then route by count: 0 → none; 1 → silent pick; many → picker.
+ * Per spec Section 6.3 — filter to panes in this workspace whose:
+ *  - cwd matches the diff cwd (exact or descendant), AND
+ *  - have a detected agent that's in SUPPORTED_AGENTS (Claude Code | Codex), AND
+ *  - have status === 'running' (the agent process is live).
+ * Then route by count: 0 → none; 1 → silent pick; many with focused → focused; many → picker.
  */
 export const resolveCandidatePanes = (
   args: ResolveCandidatesArgs
 ): ResolveResult => {
   const candidates = args.allPanes.filter(
-    (p) => isMatchingCwd(p.cwd, args.diffCwd) && p.agentLabel.length > 0
+    (p) =>
+      isMatchingCwd(p.cwd, args.diffCwd) &&
+      SUPPORTED_AGENTS.includes(p.agentLabel as SupportedAgent) &&
+      p.status === 'running'
   )
   if (candidates.length === 0) return { kind: 'none' }
   if (candidates.length === 1) return { kind: 'one', pane: candidates[0] }
@@ -2074,7 +2148,22 @@ Per spec Section 6.
 ```ts
 const feedback = useFeedbackBatch()
 const total = feedback.totalAnnotations()
+
+// Spec Section 6.2: clear on workspace cwd change. DiffPanelContent
+// receives `cwd` as a prop and is NOT remounted across workspace
+// switches in some flows, so we must explicitly clear the batch when
+// the cwd changes. The earliest cwd value is captured in a ref to
+// avoid clearing on the initial mount.
+const previousCwdRef = useRef(cwd)
+useEffect(() => {
+  if (previousCwdRef.current !== cwd) {
+    feedback.clearBatch()
+    previousCwdRef.current = cwd
+  }
+}, [cwd, feedback])
 ```
+
+The `clearBatch` callback inside `useFeedbackBatch` is referentially stable (wrapped in `useCallback` with an empty dep array — verify in the hook implementation from Task 3.1, fix it there if not).
 
 - [ ] **Step 2: Pass `lineAnnotations` + `renderAnnotation` to `<MultiFileDiff>`**
 
