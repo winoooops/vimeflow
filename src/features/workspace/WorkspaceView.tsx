@@ -129,6 +129,7 @@ export const WorkspaceView = (): ReactElement => {
     removeSession,
     restartSession,
     renameSession,
+    setPaneUserLabel,
     reorderSessions,
     updatePaneCwd,
     updatePaneAgentType,
@@ -518,7 +519,11 @@ export const WorkspaceView = (): ReactElement => {
 
     return { pane: activePane, session: activeSession }
   }, [activeContainerId, activePane, activeSession])
-  const { renderNode: paneRenameNode } = usePaneRenameChord(resolveFocusedPane)
+
+  const { renderNode: paneRenameNode } = usePaneRenameChord(
+    resolveFocusedPane,
+    setPaneUserLabel
+  )
 
   const requestFocus = useCallback((target: FocusTarget): void => {
     pendingFocusTarget.current = target

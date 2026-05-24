@@ -88,6 +88,36 @@ describe('Header', () => {
     )
   })
 
+  test('paneUserLabel takes precedence over paneAgentTitle and session.name', () => {
+    render(
+      <Header
+        {...baseProps}
+        paneAgentTitle="agent-title"
+        paneUserLabel="my-label"
+      />
+    )
+
+    expect(screen.getByTestId('terminal-pane-header')).toHaveTextContent(
+      'my-label'
+    )
+
+    expect(screen.getByTestId('terminal-pane-header')).not.toHaveTextContent(
+      'agent-title'
+    )
+  })
+
+  test('paneUserLabel wins over session.name when paneAgentTitle is undefined', () => {
+    render(<Header {...baseProps} paneUserLabel="my-label" />)
+
+    expect(screen.getByTestId('terminal-pane-header')).toHaveTextContent(
+      'my-label'
+    )
+
+    expect(screen.getByTestId('terminal-pane-header')).not.toHaveTextContent(
+      baseProps.session.name
+    )
+  })
+
   test('expanded header shows branch, added, and removed counts', () => {
     render(<Header {...baseProps} />)
 

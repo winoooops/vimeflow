@@ -19,6 +19,7 @@ export interface HeaderProps {
   isCollapsed: boolean
   ptyId: string
   paneAgentTitle?: string
+  paneUserLabel?: string
   onToggleCollapse: () => void
   onClose?: () => void
 }
@@ -35,6 +36,7 @@ export const Header = ({
   isCollapsed,
   ptyId,
   paneAgentTitle = undefined,
+  paneUserLabel = undefined,
   onToggleCollapse,
   onClose = undefined,
 }: HeaderProps): ReactElement => {
@@ -80,7 +82,7 @@ export const Header = ({
 
       <StatusDot status={pipStatus} size={6} aria-label={`pty ${pipStatus}`} />
       <span ref={titleRef} className="min-w-0 truncate text-on-surface">
-        {paneAgentTitle ?? session.name}
+        {paneUserLabel ?? paneAgentTitle ?? session.name}
       </span>
 
       {!isCollapsed && (

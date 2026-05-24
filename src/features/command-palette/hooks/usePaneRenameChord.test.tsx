@@ -54,12 +54,17 @@ const makeFocusedRef = (paneOverrides: Partial<Pane> = {}): FocusedPaneRef => {
   return { pane, session: makeSession(pane) }
 }
 
+const mockSetPaneUserLabel = vi.fn()
+
 const Harness = ({
   resolveFocusedPane,
 }: {
   resolveFocusedPane: () => FocusedPaneRef | null
 }): ReactElement => {
-  const { renderNode } = usePaneRenameChord(resolveFocusedPane)
+  const { renderNode } = usePaneRenameChord(
+    resolveFocusedPane,
+    mockSetPaneUserLabel
+  )
 
   return <>{renderNode}</>
 }
@@ -68,6 +73,7 @@ describe('usePaneRenameChord', () => {
   beforeEach(() => {
     chordRegistry._resetForTest()
     mockRenameAgentSession.mockReset()
+    mockSetPaneUserLabel.mockReset()
   })
 
   test('Ctrl+: then r with focused pane opens rename input', () => {
@@ -83,7 +89,9 @@ describe('usePaneRenameChord', () => {
   })
 
   test('chord with no focused pane is a no-op', () => {
-    const { result } = renderHook(() => usePaneRenameChord(() => null))
+    const { result } = renderHook(() =>
+      usePaneRenameChord(() => null, mockSetPaneUserLabel)
+    )
 
     act(() => {
       chordRegistry.dispatch({ key: 'r' } as KeyboardEvent)
@@ -127,5 +135,56 @@ describe('usePaneRenameChord', () => {
     await user.keyboard('{Escape}')
 
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
+  })
+
+  test('shell pane sets userLabel locally without calling renameAgentSession', async () => {
+    const user = userEvent.setup()
+
+    const focused = makeFocusedRef({
+      ptyId: 'pty-shell',
+      agentType: 'generic',
+    })
+
+    render(<Harness resolveFocusedPane={() => focused} />)
+    act(() => {
+      chordRegistry.dispatch({ key: 'r' } as KeyboardEvent)
+    })
+
+    const input = screen.getByRole('textbox')
+    await user.tripleClick(input)
+    await user.keyboard('add{Enter}')
+
+    expect(mockSetPaneUserLabel).toHaveBeenCalledWith('pty-shell', 'add')
+    expect(mockRenameAgentSession).not.toHaveBeenCalled()
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
+  })
+
+  test('claude pane sets userLabel AND calls renameAgentSession', async () => {
+    const user = userEvent.setup()
+    mockRenameAgentSession.mockResolvedValueOnce(undefined)
+
+    const focused = makeFocusedRef({
+      ptyId: 'pty-claude',
+      agentType: 'claude-code',
+    })
+
+    render(<Harness resolveFocusedPane={() => focused} />)
+    act(() => {
+      chordRegistry.dispatch({ key: 'r' } as KeyboardEvent)
+    })
+
+    const input = screen.getByRole('textbox')
+    await user.tripleClick(input)
+    await user.keyboard('my-feature{Enter}')
+
+    expect(mockSetPaneUserLabel).toHaveBeenCalledWith(
+      'pty-claude',
+      'my-feature'
+    )
+
+    expect(mockRenameAgentSession).toHaveBeenCalledWith(
+      'pty-claude',
+      'my-feature'
+    )
   })
 })

@@ -16,6 +16,14 @@ type RenameTarget = {
   initialValue: string
 } | null
 
+/**
+ * Pane types that round-trip the rename through the agent's `/rename`
+ * slash command via the `rename_agent_session` IPC. Other types
+ * (`aider`, `generic`, shell PTYs with no detected agent) only get the
+ * local `pane.userLabel` update — no IPC, no PTY write.
+ */
+const ROUND_TRIP_AGENTS: readonly Pane['agentType'][] = ['claude-code', 'codex']
+
 const errorMessageForRenameFailure = (error: unknown): string => {
   const message = error instanceof Error ? error.message : String(error)
 
@@ -31,12 +39,15 @@ const errorMessageForRenameFailure = (error: unknown): string => {
 }
 
 export const usePaneRenameChord = (
-  resolveFocusedPane: () => FocusedPaneRef | null
+  resolveFocusedPane: () => FocusedPaneRef | null,
+  setPaneUserLabel: (ptyId: string, label: string | undefined) => void
 ): { renderNode: ReactNode } => {
   const [target, setTarget] = useState<RenameTarget>(null)
   const [error, setError] = useState<string | null>(null)
   const resolverRef = useRef(resolveFocusedPane)
   resolverRef.current = resolveFocusedPane
+  const setPaneUserLabelRef = useRef(setPaneUserLabel)
+  setPaneUserLabelRef.current = setPaneUserLabel
 
   useEffect(
     () =>
@@ -49,7 +60,10 @@ export const usePaneRenameChord = (
         setTarget({
           ptyId: focused.pane.ptyId,
           pane: focused.pane,
-          initialValue: focused.pane.agentTitle ?? focused.session.name,
+          initialValue:
+            focused.pane.userLabel ??
+            focused.pane.agentTitle ??
+            focused.session.name,
         })
         setError(null)
 
@@ -64,11 +78,30 @@ export const usePaneRenameChord = (
         return
       }
 
+      // Always set the local label first — gives the user immediate
+      // visual confirmation regardless of agent type, and is the only
+      // path for non-`/rename`-supporting panes (aider, generic, bare
+      // shells). For Claude/Codex panes the agent-session-title round
+      // trip will converge `agentTitle` to the same value shortly
+      // after.
+      setPaneUserLabelRef.current(target.ptyId, title)
+
+      if (!ROUND_TRIP_AGENTS.includes(target.pane.agentType)) {
+        // Non-agent pane: local update only; close the input.
+        setTarget(null)
+        setError(null)
+
+        return
+      }
+
       try {
         await renameAgentSession(target.ptyId, title)
         setTarget(null)
         setError(null)
       } catch (renameError) {
+        // Local label is already set; surface the IPC failure inline
+        // so the user knows the agent's transcript was NOT updated.
+        // The header will still reflect the new label via userLabel.
         setError(errorMessageForRenameFailure(renameError))
       }
     },

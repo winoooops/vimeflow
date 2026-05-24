@@ -82,6 +82,13 @@ export interface SessionManager {
    */
   restartSession: (id: string) => void
   renameSession: (id: string, name: string) => void
+  /**
+   * Set a per-pane user label (overrides `pane.agentTitle` and
+   * `session.name` in the Header). Always in-memory; no IPC.
+   * Pass `undefined` to clear. Trims whitespace; empty post-trim
+   * input clears the label.
+   */
+  setPaneUserLabel: (ptyId: string, label: string | undefined) => void
   reorderSessions: (reordered: Session[]) => void
   /** Update a pane's live cwd and the backend PTY cwd cache. */
   updatePaneCwd: (sessionId: string, paneId: string, cwd: string) => void
@@ -1181,6 +1188,34 @@ export const useSessionManager = (
     )
   }, [])
 
+  // Set a per-pane user label — in-memory only (no IPC). The chord
+  // hook calls this for every rename; for Claude/Codex panes it ALSO
+  // dispatches the `rename_agent_session` IPC so the agent's transcript
+  // stays in sync. See `pane.userLabel` doc in `../types/index.ts`.
+  const setPaneUserLabel = useCallback(
+    (ptyId: string, label: string | undefined): void => {
+      const trimmed = label?.trim()
+      const next = trimmed && trimmed.length > 0 ? trimmed : undefined
+
+      setSessions((prev) => {
+        const matchExists = prev.some((session) =>
+          session.panes.some((pane) => pane.ptyId === ptyId)
+        )
+        if (!matchExists) {
+          return prev
+        }
+
+        return prev.map((session) => ({
+          ...session,
+          panes: session.panes.map((pane) =>
+            pane.ptyId === ptyId ? { ...pane, userLabel: next } : pane
+          ),
+        }))
+      })
+    },
+    []
+  )
+
   // Reorder sessions — optimistic update + IPC
   //
   // Round 9, Finding 5 (codex P2 / claude LOW): no rollback on IPC failure.
@@ -1482,6 +1517,7 @@ export const useSessionManager = (
     removePane,
     restartSession,
     renameSession,
+    setPaneUserLabel,
     reorderSessions,
     updatePaneCwd,
     updatePaneAgentType,
