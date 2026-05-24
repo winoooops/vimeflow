@@ -5,7 +5,12 @@ export { Dropdown, type DropdownOption } from './Dropdown'
 export { Segmented } from './Segmented'
 
 export { Toggle } from './Toggle'
-// DiffChipToolbar arrives in Task 1.8 — re-export it from this index then.
+
+export {
+  DiffChipToolbar,
+  type DiffChipToolbarProps,
+  type DiffMode,
+} from './DiffChipToolbar'
 
 // Below this many CSS pixels of diff pane width, split's two columns get
 // too cramped to read, so the renderer silently coerces to unified mode
