@@ -20,6 +20,8 @@ use crate::runtime::EventSink;
 pub struct TranscriptHandle {
     stop_flag: Arc<AtomicBool>,
     join_handle: Option<std::thread::JoinHandle<()>>,
+    aux_stop: Option<Arc<AtomicBool>>,
+    aux_join: Option<std::thread::JoinHandle<()>>,
 }
 
 impl TranscriptHandle {
@@ -30,7 +32,19 @@ impl TranscriptHandle {
         Self {
             stop_flag,
             join_handle: Some(join_handle),
+            aux_stop: None,
+            aux_join: None,
         }
+    }
+
+    /// Attach a sidecar watcher to this handle.
+    pub fn attach_aux_join(
+        &mut self,
+        stop: Arc<AtomicBool>,
+        join: std::thread::JoinHandle<()>,
+    ) {
+        self.aux_stop = Some(stop);
+        self.aux_join = Some(join);
     }
 
     /// Signal the background thread to stop and wait for it to finish.
@@ -41,7 +55,13 @@ impl TranscriptHandle {
         // with the F8 fix that already promoted `WatcherHandle`'s
         // stop_flag to Release/Acquire).
         self.stop_flag.store(true, Ordering::Release);
+        if let Some(stop) = self.aux_stop.take() {
+            stop.store(true, Ordering::Release);
+        }
         if let Some(handle) = self.join_handle.take() {
+            let _ = handle.join();
+        }
+        if let Some(handle) = self.aux_join.take() {
             let _ = handle.join();
         }
     }
@@ -51,6 +71,15 @@ impl Drop for TranscriptHandle {
     fn drop(&mut self) {
         // See `stop()` above — Release for cross-thread visibility.
         self.stop_flag.store(true, Ordering::Release);
+        if let Some(stop) = self.aux_stop.take() {
+            stop.store(true, Ordering::Release);
+        }
+        if let Some(handle) = self.join_handle.take() {
+            let _ = handle.join();
+        }
+        if let Some(handle) = self.aux_join.take() {
+            let _ = handle.join();
+        }
     }
 }
 
@@ -259,6 +288,20 @@ impl TranscriptState {
 mod tests {
     use super::*;
     use crate::runtime::FakeEventSink;
+    use std::sync::atomic::AtomicUsize;
+    use std::time::Duration;
+
+    fn spawn_loop(
+        stop: Arc<AtomicBool>,
+        counter: Arc<AtomicUsize>,
+    ) -> std::thread::JoinHandle<()> {
+        std::thread::spawn(move || {
+            while !stop.load(Ordering::Acquire) {
+                counter.fetch_add(1, Ordering::Relaxed);
+                std::thread::sleep(Duration::from_millis(10));
+            }
+        })
+    }
 
     #[test]
     fn transcript_state_contains_empty() {
@@ -407,6 +450,68 @@ mod tests {
         }
 
         assert!(stop_flag.load(Ordering::Relaxed));
+    }
+
+    #[test]
+    fn drop_joins_both_threads() {
+        let stop_a = Arc::new(AtomicBool::new(false));
+        let stop_b = Arc::new(AtomicBool::new(false));
+        let counter_a = Arc::new(AtomicUsize::new(0));
+        let counter_b = Arc::new(AtomicUsize::new(0));
+
+        let mut handle = TranscriptHandle::new(
+            Arc::clone(&stop_a),
+            spawn_loop(Arc::clone(&stop_a), Arc::clone(&counter_a)),
+        );
+        handle.attach_aux_join(
+            Arc::clone(&stop_b),
+            spawn_loop(Arc::clone(&stop_b), Arc::clone(&counter_b)),
+        );
+        std::thread::sleep(Duration::from_millis(30));
+        drop(handle);
+
+        let frozen_a = counter_a.load(Ordering::Relaxed);
+        let frozen_b = counter_b.load(Ordering::Relaxed);
+        std::thread::sleep(Duration::from_millis(50));
+        assert_eq!(counter_a.load(Ordering::Relaxed), frozen_a);
+        assert_eq!(counter_b.load(Ordering::Relaxed), frozen_b);
+    }
+
+    #[test]
+    fn stop_method_flips_both_flags_before_joining() {
+        let stop_a = Arc::new(AtomicBool::new(false));
+        let stop_b = Arc::new(AtomicBool::new(false));
+        let counter_a = Arc::new(AtomicUsize::new(0));
+        let counter_b = Arc::new(AtomicUsize::new(0));
+        let mut handle = TranscriptHandle::new(
+            Arc::clone(&stop_a),
+            spawn_loop(Arc::clone(&stop_a), Arc::clone(&counter_a)),
+        );
+
+        handle.attach_aux_join(
+            Arc::clone(&stop_b),
+            spawn_loop(Arc::clone(&stop_b), Arc::clone(&counter_b)),
+        );
+        std::thread::sleep(Duration::from_millis(30));
+        handle.stop();
+
+        assert!(stop_a.load(Ordering::Acquire));
+        assert!(stop_b.load(Ordering::Acquire));
+    }
+
+    #[test]
+    fn handle_without_aux_still_works() {
+        let stop = Arc::new(AtomicBool::new(false));
+        let counter = Arc::new(AtomicUsize::new(0));
+        let handle = TranscriptHandle::new(
+            Arc::clone(&stop),
+            spawn_loop(Arc::clone(&stop), Arc::clone(&counter)),
+        );
+
+        std::thread::sleep(Duration::from_millis(30));
+        drop(handle);
+
+        assert!(stop.load(Ordering::Acquire));
     }
 
     /// Regression test for F19 — start_or_replace on the cwd-change
