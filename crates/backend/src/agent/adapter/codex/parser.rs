@@ -31,23 +31,21 @@ use super::super::serde_helpers::{lenient_f64, lenient_object, lenient_string, l
 #[cfg(test)]
 use crate::agent::adapter::types::{stamp_snapshot, ParsedStatus};
 use crate::agent::adapter::types::StatusSnapshot;
-#[cfg(test)]
-use crate::agent::types::AgentStatusEvent;
 use crate::agent::types::{
     ContextWindowStatus, CostMetrics, CurrentUsage, RateLimitInfo, RateLimits,
 };
 
 /// Test-only convenience wrapper that pairs `parse_rollout_snapshot`
-/// with `snapshot_to_event`. Production code (the `StateDecoder` impl
-/// on `CodexAdapter`) calls `parse_rollout_snapshot` directly and the
-/// session-id stamp happens in the runtime; the test suite still
-/// asserts on the full event shape including `session_id`, so this
-/// helper stays under `#[cfg(test)]` to support those assertions.
+/// with `stamp_snapshot` so existing tests can keep asserting on the
+/// full `AgentStatusEvent` shape (including `session_id`). Production
+/// code (the `StateDecoder` impl on `CodexAdapter`) calls
+/// `parse_rollout_snapshot` directly and lets the runtime stamp the
+/// session id via `stamp_snapshot`.
 #[cfg(test)]
 pub(crate) fn parse_rollout(session_id: &str, raw: &str) -> Result<ParsedStatus, String> {
     let snapshot = parse_rollout_snapshot(Some(session_id), raw)?;
     Ok(ParsedStatus {
-        event: snapshot_to_event(session_id, snapshot),
+        event: stamp_snapshot(session_id, snapshot),
     })
 }
 
@@ -96,11 +94,6 @@ pub(crate) fn parse_rollout_snapshot(
     }
 
     Ok(state.into_snapshot())
-}
-
-#[cfg(test)]
-fn snapshot_to_event(session_id: &str, snapshot: StatusSnapshot) -> AgentStatusEvent {
-    stamp_snapshot(session_id, snapshot)
 }
 
 // -------------------------- DTO layer --------------------------
@@ -242,8 +235,9 @@ impl CodexFoldState {
     /// Step B': renamed from `into_event(session_id)` to
     /// `into_snapshot()` — the session-id stamp moved out of the
     /// decoder per the v4-frozen plan's R2.2 invariant. Composition
-    /// happens in `snapshot_to_event` above (called by `parse_rollout`
-    /// for the still-existing `AgentAdapter::parse_status` path).
+    /// happens in `stamp_snapshot` (called directly by
+    /// `parse_rollout` for the still-existing
+    /// `AgentAdapter::parse_status` path).
     fn into_snapshot(self) -> StatusSnapshot {
         let context_window_size = self
             .last_token_count_info

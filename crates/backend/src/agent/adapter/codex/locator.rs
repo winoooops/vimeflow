@@ -718,13 +718,13 @@ impl crate::agent::adapter::traits::StatusSourceLocator for CompositeLocator {
 /// Retry a codex locator resolution up to the bind budget.
 ///
 /// Moved from `codex/mod.rs` to live with the locator that uses it.
-/// `pub(super)` keeps the helper visible to the only caller that
-/// should ever invoke it directly (`StatusSourceLocator::locate`
-/// above) plus same-module tests, while denying out-of-module
-/// access so future code can't bypass the trait and reintroduce
-/// ad-hoc retry chains. PR #261 cycle 5 review F15 — was previously
-/// `pub(crate)` for no live reason.
-pub(super) fn retry_locator<F>(mut resolve: F) -> Result<RolloutLocation, String>
+/// Private — the only caller is `StatusSourceLocator::locate`
+/// above and same-file `retry_locator_tests`. Cycle 5 (F15)
+/// narrowed `pub(crate)` → `pub(super)`; cycle 9 (F25) further
+/// narrowed to plain `fn` since `codex/mod.rs` (the only sibling
+/// module) has no caller. Closes the accidental surface so future
+/// code can't bypass the trait and reintroduce ad-hoc retry chains.
+fn retry_locator<F>(mut resolve: F) -> Result<RolloutLocation, String>
 where
     F: FnMut() -> Result<RolloutLocation, LocatorError>,
 {

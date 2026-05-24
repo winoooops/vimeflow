@@ -100,11 +100,13 @@ pub struct ParsedStatus {
 /// the runtime consumes.
 ///
 /// Centralizes the eight-field copy that was originally duplicated
-/// across `base/watcher_runtime::compose_event`,
-/// `claude_code/statusline::snapshot_to_event`, and the test-only
-/// `codex/parser::snapshot_to_event` (PR #261 Claude review F2).
-/// Future `AgentStatusEvent` field additions only need to update this
-/// one mapping.
+/// across three call sites in `base/watcher_runtime`,
+/// `claude_code/statusline`, and the test-only `codex/parser` (PR #261
+/// cycle 1 review F2 introduced this helper; later cycles deleted the
+/// intermediate `compose_event` / `snapshot_to_event` shims so all
+/// three sites now call this helper directly). Future
+/// `AgentStatusEvent` field additions only need to update this one
+/// mapping.
 pub(crate) fn stamp_snapshot(session_id: &str, snapshot: StatusSnapshot) -> AgentStatusEvent {
     AgentStatusEvent {
         session_id: session_id.to_string(),
