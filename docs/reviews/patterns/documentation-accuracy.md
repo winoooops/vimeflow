@@ -2,7 +2,7 @@
 id: documentation-accuracy
 category: code-quality
 created: 2026-04-09
-last_updated: 2026-05-23
+last_updated: 2026-05-24
 ref_count: 23
 ---
 
@@ -711,3 +711,12 @@ Stale documentation misleads future contributors and review agents.
 - **Finding:** Step 0c removed `transcript_path` from the public `ParsedStatus` struct (`adapter/types.rs`) and rewired the watcher to call `extract_transcript_path` via `TranscriptPathSource::dynamic_hint`. The intent was to kill the side channel entirely — but the analogous field on the **internal** `ParsedStatusline` struct (returned by `parse_statusline`) was left intact. The only production caller (`ClaudeCodeAdapter::parse_status`) silently dropped the field. Two harms: (1) every Claude statusline update wasted a `transcript_path(&value)` JSON lookup + heap `String` allocation for a value nobody read; (2) two tests in `statusline.rs` (`parses_full_statusline_json` line 501-505, `parses_minimal_json` line 527) still asserted on the field, falsely appearing to pin transcript-path extraction behavior when in fact they exercised dead code — a real regression in `extract_transcript_path` (the live path) would not have been caught.
 - **Fix:** Removed `transcript_path: Option<String>` from `ParsedStatusline`, deleted the `let transcript_path = transcript_path(&value);` line, dropped the field from the `Ok(ParsedStatusline { ... })` literal, and deleted both test assertions. Added a new test `extract_transcript_path_returns_field_when_present_else_none` (present / absent / malformed JSON) to keep the live helper covered at the `statusline.rs` level. The adapter-level live path stays covered by `dynamic_hint_extracts_transcript_path_when_present` in `claude_code/mod.rs`. Code-review heuristic: when a public struct loses a field, sweep ALL its construction sites for parallel internal structs whose corresponding field is now dead. Rust's `dead_code` lint does not catch this case because the field is technically read by `Debug` / `Clone` derives even when no code path consumes its value.
 - **Commit:** same commit as this entry
+
+### 76. Terminology lagged behind a refactor rename — `NoOpAdapter::parse_status` error string
+
+- **Source:** github-claude | PR #261 round 2 | 2026-05-24
+- **Severity:** LOW
+- **File:** `crates/backend/src/agent/adapter/mod.rs`
+- **Finding:** Step B' renamed the concept "parse → decode" throughout the adapter stack: the trait went from `AgentAdapter::parse_status` to `StateDecoder::decode`, the helper went from `parse_status` to `decode`, the pattern-KB note for parser resilience (#5) cited the new wording. But `NoOpAdapter` ended up with TWO different phrasings in the same type: `StateDecoder::decode` returned `"{:?} adapter has no status decoder"` while `AgentAdapter::parse_status` (the transitional façade) returned `"{:?} adapter has no status parser"`. Log scrapers / SIEM rules / future telemetry consumers keying on either phrase silently miss one emission site depending on which path fires. Same finding-class as #46 (`StatusReader` rename leaving doc-comments behind) — a refactor that renames a concept has to sweep error strings, debug labels, and log lines too, not just type names and function signatures. README snippet illustrating `NoOpAdapter` also lagged.
+- **Fix:** Changed both façade error string and README snippet to "has no status decoder", matching `StateDecoder::decode`'s wording. Lesson: when grepping for a renamed concept during a refactor, include string literals (`grep -rn '"old_name"'` and `grep -rn '"\.\.\.old_name"'`) — they don't show up in `cargo check` and aren't caught by `dead_code` / type-system checks. Add a "string-literal sweep" step to the rename-refactor checklist.
+- **Commit:** _(PR #261 round 2 `/lifeline:upsource-review` cycle 2)_

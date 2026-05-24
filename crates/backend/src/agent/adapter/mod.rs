@@ -195,8 +195,13 @@ impl AgentAdapter for NoOpAdapter {
     }
 
     fn parse_status(&self, _: &str, _: &str) -> Result<ParsedStatus, String> {
+        // Wording mirrors `StateDecoder::decode`'s error string so
+        // log-based diagnostics see one consistent phrase across the
+        // façade and the split trait (PR #261 cycle 2, F6 — B' renamed
+        // the concept "parse → decode"; the façade's error string
+        // lagged).
         Err(format!(
-            "{:?} adapter has no status parser",
+            "{:?} adapter has no status decoder",
             self.agent_type
         ))
     }

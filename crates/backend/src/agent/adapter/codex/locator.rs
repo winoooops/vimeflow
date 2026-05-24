@@ -697,7 +697,16 @@ where
                     ));
                 }
             }
-            Err(LocatorError::Unresolved(reason)) | Err(LocatorError::Fatal(reason)) => {
+            // Distinct prefixes so incident triage + log scraping can
+            // tell "no unique candidate" (ambiguous) apart from
+            // "filesystem / DB really broken" (fatal). The split also
+            // lines up with the `AttachError::LocatorAmbiguous` vs
+            // `LocatorFatal` enum split in `error.rs` (PR #261
+            // Claude review cycle 2, F4).
+            Err(LocatorError::Unresolved(reason)) => {
+                return Err(format!("codex bind ambiguous: {}", reason));
+            }
+            Err(LocatorError::Fatal(reason)) => {
                 return Err(format!("codex bind fatal: {}", reason));
             }
         }
@@ -1225,7 +1234,7 @@ mod retry_locator_tests {
     }
 
     #[test]
-    fn unresolved_short_circuits_immediately() {
+    fn unresolved_short_circuits_immediately_with_ambiguous_prefix() {
         let calls = AtomicUsize::new(0);
         let result = retry_locator(|| {
             calls.fetch_add(1, Ordering::SeqCst);
@@ -1233,7 +1242,20 @@ mod retry_locator_tests {
         });
 
         assert!(result.is_err());
-        assert!(result.as_ref().unwrap_err().contains("codex bind fatal"));
+        let err = result.as_ref().unwrap_err();
+        // PR #261 cycle 2: distinct prefix so log triage can tell
+        // ambiguous (no unique candidate) apart from fatal (FS / DB
+        // broken). Was previously merged under "codex bind fatal".
+        assert!(
+            err.contains("codex bind ambiguous"),
+            "expected ambiguous prefix, got: {}",
+            err,
+        );
+        assert!(
+            !err.contains("codex bind fatal"),
+            "ambiguous error must NOT emit the fatal prefix, got: {}",
+            err,
+        );
         assert_eq!(calls.load(Ordering::SeqCst), 1);
     }
 }

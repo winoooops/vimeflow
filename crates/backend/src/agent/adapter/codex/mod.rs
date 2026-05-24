@@ -12,8 +12,8 @@ use std::time::SystemTime;
 use crate::agent::adapter::base::TranscriptHandle;
 use crate::agent::adapter::traits::{StateDecoder, TranscriptPathValidator, TranscriptStreamer};
 use crate::agent::adapter::types::{
-    LocatedStatusSource, ParsedStatus, RawPath, StatusSnapshot, TranscriptPathSource,
-    ValidateTranscriptError,
+    stamp_snapshot, LocatedStatusSource, ParsedStatus, RawPath, StatusSnapshot,
+    TranscriptPathSource, ValidateTranscriptError,
 };
 use crate::agent::adapter::AgentAdapter;
 use crate::agent::types::AgentType;
@@ -138,16 +138,7 @@ impl AgentAdapter for CodexAdapter {
     fn parse_status(&self, session_id: &str, raw: &str) -> Result<ParsedStatus, String> {
         let snapshot = <Self as StateDecoder>::decode(self, raw)?;
         Ok(ParsedStatus {
-            event: crate::agent::types::AgentStatusEvent {
-                session_id: session_id.to_string(),
-                agent_session_id: snapshot.agent_session_id,
-                model_id: snapshot.model_id,
-                model_display_name: snapshot.model_display_name,
-                version: snapshot.version,
-                context_window: snapshot.context_window,
-                cost: snapshot.cost,
-                rate_limits: snapshot.rate_limits,
-            },
+            event: stamp_snapshot(session_id, snapshot),
         })
     }
 
