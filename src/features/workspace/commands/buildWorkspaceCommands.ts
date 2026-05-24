@@ -1,6 +1,6 @@
 import type { Session } from '../../sessions/types'
 import { validateTitle } from '../../sessions/utils/sanitizeTitle'
-import { isExpectedNonAgentRenameFailure } from '../../sessions/utils/agentRenameErrors'
+import { isExpectedLocalOnlyRenameFailure } from '../../sessions/utils/agentRenameErrors'
 import type { Command } from '../../command-palette/registry/types'
 import { fuzzyMatch } from '../../command-palette/registry/fuzzyMatch'
 
@@ -26,6 +26,7 @@ export interface WorkspaceCommandDeps {
    * via `setPaneUserLabel(ptyId, label)`.
    */
   activePanePtyId: string | null
+  activePaneAgentType?: Session['agentType'] | null
   createSession: () => void
   removeSession: (id: string) => void
   renameSession: (id: string, name: string) => void
@@ -55,6 +56,7 @@ export const buildWorkspaceCommands = (
     sessions,
     activeSessionId,
     activePanePtyId,
+    activePaneAgentType = null,
     createSession,
     removeSession,
     renameSession,
@@ -165,19 +167,23 @@ export const buildWorkspaceCommands = (
         // Ask the backend to sync the agent transcript even if the
         // frontend still sees `generic`. The backend owns the live-agent
         // registry and returns a clear error for shell / unsupported panes.
-        void (async (): Promise<void> => {
+        const syncAgentRename = async (): Promise<void> => {
           try {
             await renameAgentSession(activePanePtyId, title)
           } catch (error: unknown) {
-            if (isExpectedNonAgentRenameFailure(error)) {
+            if (isExpectedLocalOnlyRenameFailure(error, activePaneAgentType)) {
               return
             }
+
+            setPaneUserLabel(activePanePtyId, undefined)
 
             const message =
               error instanceof Error ? error.message : String(error)
             notifyInfo(`agent /rename failed: ${message}`)
           }
-        })()
+        }
+
+        void syncAgentRename()
       },
     },
     {

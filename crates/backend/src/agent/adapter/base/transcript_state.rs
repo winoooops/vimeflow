@@ -42,13 +42,19 @@ impl TranscriptHandle {
         &mut self,
         stop: Arc<AtomicBool>,
         join: std::thread::JoinHandle<()>,
-    ) {
-        assert!(
-            self.aux_stop.is_none() && self.aux_join.is_none(),
-            "attach_aux_join called twice"
-        );
+    ) -> Result<(), &'static str> {
+        if self.aux_stop.is_some() || self.aux_join.is_some() {
+            log::error!("attach_aux_join called twice");
+            stop.store(true, Ordering::Release);
+            let _ = join.join();
+
+            return Err("attach_aux_join called twice");
+        }
+
         self.aux_stop = Some(stop);
         self.aux_join = Some(join);
+
+        Ok(())
     }
 
     /// Signal the background thread to stop and wait for it to finish.
@@ -295,10 +301,7 @@ mod tests {
     use std::sync::atomic::AtomicUsize;
     use std::time::Duration;
 
-    fn spawn_loop(
-        stop: Arc<AtomicBool>,
-        counter: Arc<AtomicUsize>,
-    ) -> std::thread::JoinHandle<()> {
+    fn spawn_loop(stop: Arc<AtomicBool>, counter: Arc<AtomicUsize>) -> std::thread::JoinHandle<()> {
         std::thread::spawn(move || {
             while !stop.load(Ordering::Acquire) {
                 counter.fetch_add(1, Ordering::Relaxed);
@@ -467,10 +470,12 @@ mod tests {
             Arc::clone(&stop_a),
             spawn_loop(Arc::clone(&stop_a), Arc::clone(&counter_a)),
         );
-        handle.attach_aux_join(
-            Arc::clone(&stop_b),
-            spawn_loop(Arc::clone(&stop_b), Arc::clone(&counter_b)),
-        );
+        handle
+            .attach_aux_join(
+                Arc::clone(&stop_b),
+                spawn_loop(Arc::clone(&stop_b), Arc::clone(&counter_b)),
+            )
+            .expect("attach aux join");
         std::thread::sleep(Duration::from_millis(30));
         drop(handle);
 
@@ -492,10 +497,12 @@ mod tests {
             spawn_loop(Arc::clone(&stop_a), Arc::clone(&counter_a)),
         );
 
-        handle.attach_aux_join(
-            Arc::clone(&stop_b),
-            spawn_loop(Arc::clone(&stop_b), Arc::clone(&counter_b)),
-        );
+        handle
+            .attach_aux_join(
+                Arc::clone(&stop_b),
+                spawn_loop(Arc::clone(&stop_b), Arc::clone(&counter_b)),
+            )
+            .expect("attach aux join");
         std::thread::sleep(Duration::from_millis(30));
         handle.stop();
 
@@ -504,7 +511,7 @@ mod tests {
     }
 
     #[test]
-    fn attach_aux_join_panics_when_called_twice() {
+    fn attach_aux_join_rejects_duplicate_without_panicking() {
         let stop_a = Arc::new(AtomicBool::new(false));
         let stop_b = Arc::new(AtomicBool::new(false));
         let counter_a = Arc::new(AtomicUsize::new(0));
@@ -514,19 +521,18 @@ mod tests {
             spawn_loop(Arc::clone(&stop_a), Arc::clone(&counter_a)),
         );
 
-        handle.attach_aux_join(
-            Arc::clone(&stop_b),
-            spawn_loop(Arc::clone(&stop_b), Arc::clone(&counter_b)),
-        );
+        handle
+            .attach_aux_join(
+                Arc::clone(&stop_b),
+                spawn_loop(Arc::clone(&stop_b), Arc::clone(&counter_b)),
+            )
+            .expect("attach aux join");
 
-        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            handle.attach_aux_join(
-                Arc::new(AtomicBool::new(false)),
-                std::thread::spawn(|| {}),
-            );
-        }));
+        let duplicate_stop = Arc::new(AtomicBool::new(false));
+        let result = handle.attach_aux_join(Arc::clone(&duplicate_stop), std::thread::spawn(|| {}));
 
         assert!(result.is_err());
+        assert!(duplicate_stop.load(Ordering::Acquire));
         handle.stop();
     }
 

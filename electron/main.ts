@@ -143,6 +143,7 @@ const RENDERER_DIAGNOSTIC_PREFIXES = [
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
 
+// Mirrors isStructuredBackendError in src/lib/backend.ts; keep in sync manually.
 const isStructuredBackendError = (
   value: unknown
 ): value is { message: string; reason: string } =>

@@ -202,6 +202,7 @@ describe('buildWorkspaceCommands - happy paths', () => {
       setPaneUserLabel,
       renameAgentSession,
       activePanePtyId: 'pty-agent',
+      activePaneAgentType: 'claude-code',
       setActiveSessionId,
       notifyInfo,
     })
@@ -215,8 +216,43 @@ describe('buildWorkspaceCommands - happy paths', () => {
     await Promise.resolve()
     await Promise.resolve()
 
+    expect(setPaneUserLabel).toHaveBeenCalledWith('pty-agent', undefined)
     expect(notifyInfo).toHaveBeenCalledWith(
       'agent /rename failed: pty write failed'
+    )
+  })
+
+  test(':rename-pane rolls back expected backend failure for rename-capable pane', async () => {
+    renameAgentSession.mockRejectedValueOnce(
+      new AgentRenameError('no live agent', 'no-live-agent')
+    )
+
+    const commands = buildWorkspaceCommands({
+      sessions: mockSessions,
+      activeSessionId: 'session-1',
+      createSession,
+      removeSession,
+      renameSession,
+      setPaneUserLabel,
+      renameAgentSession,
+      activePanePtyId: 'pty-agent',
+      activePaneAgentType: 'codex',
+      setActiveSessionId,
+      notifyInfo,
+    })
+
+    const renamePaneCmd = commands.find((c) => c.id === 'rename-pane')
+    renamePaneCmd?.execute?.('agent-name')
+
+    expect(setPaneUserLabel).toHaveBeenCalledWith('pty-agent', 'agent-name')
+    expect(renameAgentSession).toHaveBeenCalledWith('pty-agent', 'agent-name')
+
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(setPaneUserLabel).toHaveBeenCalledWith('pty-agent', undefined)
+    expect(notifyInfo).toHaveBeenCalledWith(
+      'agent /rename failed: no live agent'
     )
   })
 

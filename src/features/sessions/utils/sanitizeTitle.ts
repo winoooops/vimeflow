@@ -11,6 +11,8 @@ export type TitleValidation =
 const CONTROL_CHAR_PATTERN = /[\u0000-\u001f\u007f]/g
 
 export const validateTitle = (raw: string): TitleValidation => {
+  // Match the backend sanitizer: control bytes are defensive paste cleanup,
+  // not a user-facing validation error.
   const sanitized = raw
     .replace(CONTROL_CHAR_PATTERN, ' ')
     .replace(/\s+/g, ' ')

@@ -194,12 +194,16 @@ export const WorkspaceView = (): ReactElement => {
       ?.panes.find((p) => p.active) ?? null
   const activePanePtyIdForCommands = activePaneForCommands?.ptyId ?? null
 
+  const activePaneAgentTypeForCommands =
+    activePaneForCommands?.agentType ?? null
+
   const workspaceCommands = useMemo(
     () =>
       buildWorkspaceCommands({
         sessions,
         activeSessionId,
         activePanePtyId: activePanePtyIdForCommands,
+        activePaneAgentType: activePaneAgentTypeForCommands,
         createSession,
         removeSession,
         renameSession,
@@ -216,6 +220,7 @@ export const WorkspaceView = (): ReactElement => {
       sessionsSignature,
       activeSessionId,
       activePanePtyIdForCommands,
+      activePaneAgentTypeForCommands,
       createSession,
       removeSession,
       renameSession,

@@ -112,7 +112,7 @@ describe('usePaneRenameChord', () => {
     expect(result.current.renderNode).toBeNull()
   })
 
-  test('onSubmit suppresses expected unsupported-agent failure', async () => {
+  test('onSubmit suppresses expected unsupported-agent failure for local-only panes', async () => {
     const user = userEvent.setup()
     mockRenameAgentSession.mockRejectedValueOnce(
       new AgentRenameError(
@@ -120,7 +120,7 @@ describe('usePaneRenameChord', () => {
         'unsupported-agent'
       )
     )
-    const focused = makeFocusedRef()
+    const focused = makeFocusedRef({ agentType: 'aider' })
 
     render(<Harness resolveFocusedPane={() => focused} />)
     act(() => {
@@ -140,6 +140,39 @@ describe('usePaneRenameChord', () => {
     })
 
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  test('onSubmit rolls back no-live-agent failure for rename-capable panes', async () => {
+    const user = userEvent.setup()
+    mockRenameAgentSession.mockRejectedValueOnce(
+      new AgentRenameError('no live agent', 'no-live-agent')
+    )
+
+    const focused = makeFocusedRef({
+      agentType: 'claude-code',
+      ptyId: 'pty-claude',
+    })
+
+    render(<Harness resolveFocusedPane={() => focused} />)
+    act(() => {
+      chordRegistry.dispatch({ key: 'r' } as KeyboardEvent)
+    })
+
+    const input = screen.getByRole('textbox')
+    await user.clear(input)
+    await user.type(input, 'new')
+    await user.keyboard('{Enter}')
+
+    expect(mockSetPaneUserLabel).toHaveBeenCalledWith('pty-claude', 'new')
+    expect(mockRenameAgentSession).toHaveBeenCalledWith('pty-claude', 'new')
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'failed to send /rename: no live agent'
+    )
+
+    expect(mockSetPaneUserLabel).toHaveBeenLastCalledWith(
+      'pty-claude',
+      undefined
+    )
   })
 
   test('blur during pending submit preserves inline IPC failure', async () => {
@@ -178,6 +211,7 @@ describe('usePaneRenameChord', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'failed to send /rename: pty write failed'
     )
+    expect(mockSetPaneUserLabel).toHaveBeenLastCalledWith('pty-1', undefined)
 
     act(() => {
       screen.getByRole('textbox').blur()
@@ -231,6 +265,50 @@ describe('usePaneRenameChord', () => {
     })
 
     expect(screen.getByRole('textbox')).toHaveValue('second-title')
+  })
+
+  test('rejected stale submit does not clear a newer rename target', async () => {
+    const user = userEvent.setup()
+    let rejectRename: ((error: Error) => void) | null = null
+    mockRenameAgentSession.mockReturnValueOnce(
+      new Promise<void>((_resolve, reject) => {
+        rejectRename = reject
+      })
+    )
+    let focused = makeFocusedRef({
+      ptyId: 'pty-1',
+      agentTitle: 'first-title',
+    })
+
+    render(<Harness resolveFocusedPane={() => focused} />)
+    act(() => {
+      chordRegistry.dispatch({ key: 'r' } as KeyboardEvent)
+    })
+
+    const input = screen.getByRole('textbox')
+    await user.tripleClick(input)
+    await user.keyboard('submitted-title{Enter}')
+
+    focused = makeFocusedRef({
+      ptyId: 'pty-2',
+      agentTitle: 'second-title',
+    })
+
+    act(() => {
+      chordRegistry.dispatch({ key: 'r' } as KeyboardEvent)
+    })
+
+    await act(async () => {
+      if (!rejectRename) {
+        throw new Error('rename promise reject was not captured')
+      }
+      rejectRename(new Error('pty write failed'))
+      await Promise.resolve()
+    })
+
+    expect(screen.getByRole('textbox')).toHaveValue('second-title')
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(mockSetPaneUserLabel).not.toHaveBeenCalledWith('pty-1', undefined)
   })
 
   test('cancel clears the rename target', async () => {

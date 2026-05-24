@@ -2,7 +2,7 @@ import { createElement, useCallback, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { renameAgentSession } from '../../../lib/backend'
 import type { Pane, Session } from '../../sessions/types'
-import { isExpectedNonAgentRenameFailure } from '../../sessions/utils/agentRenameErrors'
+import { isExpectedLocalOnlyRenameFailure } from '../../sessions/utils/agentRenameErrors'
 import { PaneRenameInput } from '../../terminal/components/PaneRenameInput'
 import { registerChord } from '../chordRegistry'
 
@@ -104,16 +104,16 @@ export const usePaneRenameChord = (
         await renameAgentSession(target.ptyId, title)
         clearRenameTargetIfCurrent(target.requestId)
       } catch (renameError) {
-        if (isExpectedNonAgentRenameFailure(renameError)) {
+        if (
+          isExpectedLocalOnlyRenameFailure(renameError, target.pane.agentType)
+        ) {
           clearRenameTargetIfCurrent(target.requestId)
 
           return
         }
 
-        // Local label is already set; surface the IPC failure inline
-        // so the user knows the agent's transcript was NOT updated.
-        // The header will still reflect the new label via userLabel.
         if (targetRef.current?.requestId === target.requestId) {
+          setPaneUserLabelRef.current(target.ptyId, undefined)
           setRenameError(errorMessageForRenameFailure(renameError))
         }
       } finally {

@@ -95,9 +95,11 @@ pub(crate) fn parse_rollout_filename_uuid(path: &Path) -> Option<String> {
         return None;
     }
 
-    if !bytes.iter().enumerate().all(|(idx, byte)| {
-        matches!(idx, 8 | 13 | 18 | 23) || byte.is_ascii_hexdigit()
-    }) {
+    if !bytes
+        .iter()
+        .enumerate()
+        .all(|(idx, byte)| matches!(idx, 8 | 13 | 18 | 23) || byte.is_ascii_hexdigit())
+    {
         return None;
     }
 
@@ -158,8 +160,7 @@ impl AgentAdapter for CodexAdapter {
 
         match parse_rollout_filename_uuid(&transcript_path) {
             Some(agent_session_id) => {
-                let aux_stop =
-                    std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+                let aux_stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
                 let title_join = session_index::spawn_watch(
                     self.codex_home.join("session_index.jsonl"),
                     agent_session_id,
@@ -168,7 +169,11 @@ impl AgentAdapter for CodexAdapter {
                     std::sync::Arc::clone(&aux_stop),
                 );
                 match title_join {
-                    Ok(title_join) => handle.attach_aux_join(aux_stop, title_join),
+                    Ok(title_join) => {
+                        if let Err(err) = handle.attach_aux_join(aux_stop, title_join) {
+                            log::error!("codex title sync disabled for this session: {err}");
+                        }
+                    }
                     Err(err) => log::warn!(
                         "codex title sync disabled for this session: watcher spawn failed: {}",
                         err
@@ -386,9 +391,8 @@ mod parse_rollout_uuid_tests {
 
     #[test]
     fn parse_rollout_uuid_truncated_uuid_returns_none() {
-        let path = std::path::Path::new(
-            "/tmp/rollout-2026-04-17T00-48-54-019d9a6a-truncated.jsonl",
-        );
+        let path =
+            std::path::Path::new("/tmp/rollout-2026-04-17T00-48-54-019d9a6a-truncated.jsonl");
 
         assert_eq!(parse_rollout_filename_uuid(path), None);
     }
