@@ -40,6 +40,10 @@ import { UnsavedChangesDialog } from '../editor/components/UnsavedChangesDialog'
 import { InfoBanner } from './components/InfoBanner'
 import { CommandPalette } from '../command-palette/CommandPalette'
 import { useCommandPalette } from '../command-palette/hooks/useCommandPalette'
+import {
+  usePaneRenameChord,
+  type FocusedPaneRef,
+} from '../command-palette/hooks/usePaneRenameChord'
 import { mockNavigationItems, mockSettingsItem } from './data/mockNavigation'
 import { useSessionManager } from '../sessions/hooks/useSessionManager'
 import { clampSize, useResizable } from '../../hooks/useResizable'
@@ -502,6 +506,19 @@ export const WorkspaceView = (): ReactElement => {
   const pendingFocusTarget = useRef<FocusTarget | null>(null)
   const terminalZoneRef = useRef<TerminalZoneHandle>(null)
   const dockPanelRef = useRef<DockPanelHandle>(null)
+
+  const resolveFocusedPane = useCallback((): FocusedPaneRef | null => {
+    if (
+      activeContainerId !== TERMINAL_CONTAINER_ID ||
+      !activeSession ||
+      !activePane
+    ) {
+      return null
+    }
+
+    return { pane: activePane, session: activeSession }
+  }, [activeContainerId, activePane, activeSession])
+  const { renderNode: paneRenameNode } = usePaneRenameChord(resolveFocusedPane)
 
   const requestFocus = useCallback((target: FocusTarget): void => {
     pendingFocusTarget.current = target
@@ -1079,6 +1096,8 @@ export const WorkspaceView = (): ReactElement => {
 
       {/* Drag overlay — prevents iframes/xterm from stealing mouse events */}
       {isDragging && <div className="fixed inset-0 z-50 cursor-col-resize" />}
+
+      {paneRenameNode}
 
       {/* Command Palette — workspace-scoped command dispatcher */}
       <CommandPalette
