@@ -63,6 +63,10 @@ export const GitRefChip = ({
   const frameBase =
     'inline-flex items-center gap-1.5 h-[22px] pl-1.5 pr-2 rounded-chip border max-w-[340px] overflow-hidden'
 
+  // Two-tone coral when detached, per docs/design/git-chip/GitRefChip.html:
+  // worktree uses `text-error` (#ffb4ab — lighter coral), branch uses
+  // `text-tertiary` (#ff94a5 — deeper coral). Despite its name, `error` in
+  // tailwind.config.js is a coral shade, NOT Catppuccin red.
   const frameClasses = detached
     ? `${frameBase} bg-tertiary/[0.06] border-tertiary/25`
     : `${frameBase} bg-primary-container/[0.06] border-primary-container/20`
@@ -90,8 +94,8 @@ export const GitRefChip = ({
           data-testid="git-ref-chip-tooltip"
           className="flex flex-col gap-0.5 font-mono text-[11px] break-all"
         >
-          {tooltipLines.map((line, idx) => (
-            <div key={idx}>{line}</div>
+          {tooltipLines.map((line) => (
+            <div key={line}>{line}</div>
           ))}
         </div>
       }
