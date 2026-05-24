@@ -7,7 +7,7 @@ import {
   useMemo,
   useRef,
 } from 'react'
-import { MultiFileDiff } from '@pierre/diffs/react'
+import { MultiFileDiff, useWorkerPool } from '@pierre/diffs/react'
 import type { BaseDiffOptions, DiffsThemeNames } from '@pierre/diffs'
 import { useGitStatus, type UseGitStatusReturn } from '../hooks/useGitStatus'
 import { useFileDiff } from '../hooks/useFileDiff'
@@ -266,6 +266,22 @@ export const DiffPanelContent = ({
 
     return (): void => observer.disconnect()
   }, [])
+
+  // Push theme changes into the shared Pierre worker pool. The worker
+  // tokenizes off-main-thread and DiffHunksRenderer pulls its theme from
+  // `workerManager.getDiffRenderOptions().theme` (see
+  // node_modules/@pierre/diffs/dist/renderers/DiffHunksRenderer.js getOptionsWithDefaults),
+  // shadowing the per-instance `<MultiFileDiff options.theme>` prop. Without
+  // this sync, the chip-toolbar theme dropdown writes to local state but the
+  // diff keeps rendering with the pool's initial theme (the bug surfaced
+  // during PR1 QA).
+  const workerPool = useWorkerPool()
+  useEffect(() => {
+    if (!workerPool) {
+      return
+    }
+    void workerPool.setRenderOptions({ theme })
+  }, [workerPool, theme])
 
   const splitForced = diffStyle === 'split' && paneWidth < SPLIT_MIN_WIDTH_PX
   const effectiveDiffStyle: DiffStyle = splitForced ? 'unified' : diffStyle

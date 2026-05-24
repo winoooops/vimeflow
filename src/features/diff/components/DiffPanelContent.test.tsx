@@ -22,7 +22,18 @@ vi.mock('../hooks/useFileDiff')
 // supports (CSSStyleSheet.replaceSync is undefined). The stub forwards the
 // props we care about asserting through data-* attributes so tests can
 // confirm option plumbing without booting the renderer.
+// Stub worker pool so we can assert setRenderOptions is called when the
+// theme changes — that's the contract for Pierre's main-thread theme
+// switch (DiffHunksRenderer reads its theme from the pool, not the
+// per-instance prop, see useWorkerPool wiring in DiffPanelContent.tsx).
+const workerPoolSetRenderOptionsMock = vi.fn(() => Promise.resolve(undefined))
+
+const workerPoolMock = {
+  setRenderOptions: workerPoolSetRenderOptionsMock,
+}
+
 vi.mock('@pierre/diffs/react', () => ({
+  useWorkerPool: (): typeof workerPoolMock => workerPoolMock,
   MultiFileDiff: ({
     oldFile,
     newFile,
@@ -782,6 +793,32 @@ describe('DiffPanelContent', () => {
       // Last call should be with the correct file after auto-select
       const lastCall = calls[calls.length - 1]
       expect(lastCall).toEqual(['src/App.tsx', false, '/repo/b', false])
+    })
+  })
+
+  describe('worker pool theme sync', (): void => {
+    test('calls workerPool.setRenderOptions with the initial theme on mount', (): void => {
+      vi.spyOn(useGitStatusModule, 'useGitStatus').mockReturnValue({
+        files: [],
+        filesCwd: null,
+        loading: false,
+        error: null,
+        refresh: vi.fn(),
+        idle: false,
+      })
+
+      vi.spyOn(useFileDiffModule, 'useFileDiff').mockReturnValue(
+        fileDiffMock({ diff: null, loading: false, error: null })
+      )
+
+      render(<DiffPanelContent />)
+
+      // DiffPanelContent's default theme state is 'pierre-dark'; the sync
+      // effect must push that into the shared worker pool so the renderer's
+      // workerManager-driven theme path picks it up.
+      expect(workerPoolSetRenderOptionsMock).toHaveBeenCalledWith({
+        theme: 'pierre-dark',
+      })
     })
   })
 })
