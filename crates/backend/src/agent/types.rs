@@ -179,9 +179,10 @@ pub struct AgentSessionTitleEvent {
 #[cfg_attr(test, ts(export))]
 #[serde(rename_all = "kebab-case")]
 pub enum TitleSource {
-    /// Claude `ai-title` event.
+    /// Claude `ai-title` event or uncorrelated Codex `thread_name` update.
     AiGenerated,
-    /// Claude `custom-title` event or any Codex `thread_name` update.
+    /// Claude `custom-title` event or Codex `thread_name` update correlated
+    /// with a Vimeflow `/rename` write.
     UserRenamed,
 }
 

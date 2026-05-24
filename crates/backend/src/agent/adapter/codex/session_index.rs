@@ -2,8 +2,10 @@
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
-use std::time::{Duration, SystemTime};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant, SystemTime};
+
+use once_cell::sync::Lazy;
 
 use crate::agent::events::emit_agent_session_title;
 use crate::agent::sanitize_title;
@@ -12,6 +14,31 @@ use crate::runtime::EventSink;
 
 const POLL_INTERVAL: Duration = Duration::from_millis(500);
 const INTERRUPT_SLICES: u32 = 5;
+const PENDING_RENAME_TTL: Duration = Duration::from_secs(30);
+
+struct PendingRename {
+    session_id: String,
+    title: String,
+    expires_at: Instant,
+}
+
+static PENDING_RENAMES: Lazy<Mutex<Vec<PendingRename>>> =
+    Lazy::new(|| Mutex::new(Vec::new()));
+
+pub(crate) fn record_user_rename(session_id: &str, title: &str) {
+    let Ok(mut pending) = PENDING_RENAMES.lock() else {
+        log::warn!("codex title sync: pending rename lock poisoned");
+        return;
+    };
+
+    let session_id = session_id.to_string();
+    pending.retain(|rename| rename.session_id != session_id);
+    pending.push(PendingRename {
+        session_id,
+        title: title.to_string(),
+        expires_at: Instant::now() + PENDING_RENAME_TTL,
+    });
+}
 
 pub fn spawn_watch(
     path: PathBuf,
@@ -133,14 +160,12 @@ fn try_emit(
         None => return,
     };
 
+    let source = title_source_for_emit(session_id, &title);
     let payload = AgentSessionTitleEvent {
         session_id: session_id.to_string(),
         agent_session_id: agent_session_id.to_string(),
         title,
-        // Codex currently exposes `thread_name` as the persisted `/rename`
-        // value and does not include provenance for generated titles. If that
-        // changes, this watcher should mirror Claude's source split.
-        source: TitleSource::UserRenamed,
+        source,
     };
 
     if let Err(err) = emit_agent_session_title(events.as_ref(), &payload) {
@@ -149,6 +174,34 @@ fn try_emit(
     }
 
     *last_emitted_title = new_memo;
+}
+
+fn title_source_for_emit(session_id: &str, title: &str) -> TitleSource {
+    let Ok(mut pending) = PENDING_RENAMES.lock() else {
+        log::warn!("codex title sync: pending rename lock poisoned");
+        return TitleSource::AiGenerated;
+    };
+
+    let now = Instant::now();
+    pending.retain(|rename| rename.expires_at > now);
+
+    if let Some(index) = pending
+        .iter()
+        .position(|rename| rename.session_id == session_id && rename.title == title)
+    {
+        pending.remove(index);
+        TitleSource::UserRenamed
+    } else {
+        TitleSource::AiGenerated
+    }
+}
+
+#[cfg(test)]
+fn clear_pending_renames_for_test() {
+    PENDING_RENAMES
+        .lock()
+        .expect("pending rename lock")
+        .clear();
 }
 
 #[cfg(test)]
@@ -185,6 +238,7 @@ mod tests {
 
     #[test]
     fn initial_read_emits_matching_row_then_clear_on_shutdown() {
+        clear_pending_renames_for_test();
         let dir = TempDir::new().expect("tempdir");
         let path = write_index(&dir, &[("abc-uuid", "MyTask")]);
         let sink: Arc<FakeEventSink> = Arc::new(FakeEventSink::new());
@@ -198,9 +252,53 @@ mod tests {
         let titles = title_payloads(&sink);
         assert_eq!(titles.len(), 2);
         assert_eq!(titles[0]["title"], "MyTask");
-        assert_eq!(titles[0]["source"], "user-renamed");
+        assert_eq!(titles[0]["source"], "ai-generated");
         assert_eq!(titles[0]["sessionId"], "pty-1");
         assert_eq!(titles[1]["title"], "");
+    }
+
+    #[test]
+    fn pending_user_rename_marks_matching_title_once() {
+        clear_pending_renames_for_test();
+        let dir = TempDir::new().expect("tempdir");
+        let path = write_index(&dir, &[("abc-uuid", "MyTask")]);
+        let sink: Arc<FakeEventSink> = Arc::new(FakeEventSink::new());
+        let sink_dyn: Arc<dyn EventSink> = sink.clone();
+        let stop = Arc::new(AtomicBool::new(true));
+
+        record_user_rename("pty-1", "MyTask");
+        let handle = spawn_watch(
+            path.clone(),
+            "abc-uuid".into(),
+            "pty-1".into(),
+            sink_dyn,
+            stop,
+        )
+        .expect("spawn watcher");
+
+        handle.join().expect("join watcher");
+
+        let titles = title_payloads(&sink);
+        assert_eq!(titles[0]["title"], "MyTask");
+        assert_eq!(titles[0]["source"], "user-renamed");
+
+        let second_sink: Arc<FakeEventSink> = Arc::new(FakeEventSink::new());
+        let second_sink_dyn: Arc<dyn EventSink> = second_sink.clone();
+        let second_stop = Arc::new(AtomicBool::new(true));
+        let second_handle = spawn_watch(
+            path,
+            "abc-uuid".into(),
+            "pty-1".into(),
+            second_sink_dyn,
+            second_stop,
+        )
+        .expect("spawn watcher");
+
+        second_handle.join().expect("join watcher");
+
+        let second_titles = title_payloads(&second_sink);
+        assert_eq!(second_titles[0]["title"], "MyTask");
+        assert_eq!(second_titles[0]["source"], "ai-generated");
     }
 
     #[test]

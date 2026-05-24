@@ -31,6 +31,25 @@ export const useCommandPalette = (
     selectedIndex: 0,
     currentNamespace: null,
   })
+  const leaderTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const leaderActiveRef = useRef(false)
+
+  const clearLeaderWindow = useCallback((): void => {
+    if (leaderTimerRef.current) {
+      clearTimeout(leaderTimerRef.current)
+      leaderTimerRef.current = null
+    }
+    leaderActiveRef.current = false
+  }, [])
+
+  const startLeaderWindow = useCallback((): void => {
+    clearLeaderWindow()
+    leaderActiveRef.current = true
+    leaderTimerRef.current = setTimeout(() => {
+      leaderActiveRef.current = false
+      leaderTimerRef.current = null
+    }, LEADER_WINDOW_MS)
+  }, [clearLeaderWindow])
 
   // Parse query into verb and args
   const parsedQuery = useMemo(() => parseQuery(state.query), [state.query])
@@ -115,6 +134,7 @@ export const useCommandPalette = (
   }, [])
 
   const close = useCallback((): void => {
+    clearLeaderWindow()
     setState((prev) => ({
       ...prev,
       isOpen: false,
@@ -122,7 +142,7 @@ export const useCommandPalette = (
       selectedIndex: 0,
       currentNamespace: null,
     }))
-  }, [])
+  }, [clearLeaderWindow])
 
   const setQuery = useCallback((query: string): void => {
     setState((prev) => ({
@@ -253,16 +273,6 @@ export const useCommandPalette = (
 
   // Global keyboard listener — registered once for the hook's lifetime.
   useEffect(() => {
-    let leaderTimer: ReturnType<typeof setTimeout> | null = null
-    let leaderActive = false
-
-    const clearLeaderTimer = (): void => {
-      if (leaderTimer) {
-        clearTimeout(leaderTimer)
-        leaderTimer = null
-      }
-    }
-
     const handleKeyDown = (event: KeyboardEvent): void => {
       if (isPaletteToggle(event) && event.repeat) {
         event.preventDefault()
@@ -271,10 +281,9 @@ export const useCommandPalette = (
         return
       }
 
-      if (leaderActive) {
+      if (leaderActiveRef.current) {
         const consumed = chordRegistry.dispatch(event)
-        leaderActive = false
-        clearLeaderTimer()
+        clearLeaderWindow()
 
         if (consumed) {
           event.preventDefault()
@@ -302,11 +311,7 @@ export const useCommandPalette = (
           handlersRef.current.close()
         } else {
           handlersRef.current.open()
-          leaderActive = true
-          leaderTimer = setTimeout(() => {
-            leaderActive = false
-            leaderTimer = null
-          }, LEADER_WINDOW_MS)
+          startLeaderWindow()
         }
 
         return
@@ -345,10 +350,10 @@ export const useCommandPalette = (
     document.addEventListener('keydown', handleKeyDown, { capture: true })
 
     return (): void => {
-      clearLeaderTimer()
+      clearLeaderWindow()
       document.removeEventListener('keydown', handleKeyDown, { capture: true })
     }
-  }, [])
+  }, [clearLeaderWindow, startLeaderWindow])
 
   return {
     state,

@@ -282,6 +282,46 @@ describe('useCommandPalette', () => {
       expect(result.current.state.isOpen).toBe(true)
     })
 
+    test('close() clears pending leader chord window', () => {
+      vi.useFakeTimers()
+      const handler = vi.fn(() => true)
+      chordRegistry.registerChord('r', handler)
+      const { result } = renderHook(() => useCommandPalette())
+
+      act(() => {
+        const leaderEvent = new KeyboardEvent('keydown', {
+          key: ':',
+          ctrlKey: true,
+          bubbles: true,
+          cancelable: true,
+        })
+        document.dispatchEvent(leaderEvent)
+      })
+
+      expect(result.current.state.isOpen).toBe(true)
+
+      act(() => {
+        result.current.close()
+      })
+
+      const followUpEvent = new KeyboardEvent('keydown', {
+        key: 'r',
+        bubbles: true,
+        cancelable: true,
+      })
+      const preventDefaultSpy = vi.spyOn(followUpEvent, 'preventDefault')
+      const stopPropagationSpy = vi.spyOn(followUpEvent, 'stopPropagation')
+
+      act(() => {
+        document.dispatchEvent(followUpEvent)
+      })
+
+      expect(handler).not.toHaveBeenCalled()
+      expect(preventDefaultSpy).not.toHaveBeenCalled()
+      expect(stopPropagationSpy).not.toHaveBeenCalled()
+      expect(result.current.state.isOpen).toBe(false)
+    })
+
     test('Ctrl+: trigger calls preventDefault and stopPropagation when closing', async () => {
       const { result } = renderHook(() => useCommandPalette())
 

@@ -48,6 +48,7 @@ export const usePaneRenameChord = (
   resolverRef.current = resolveFocusedPane
   const setPaneUserLabelRef = useRef(setPaneUserLabel)
   setPaneUserLabelRef.current = setPaneUserLabel
+  const isSubmittingRef = useRef(false)
 
   useEffect(
     () =>
@@ -99,6 +100,8 @@ export const usePaneRenameChord = (
         return
       }
 
+      isSubmittingRef.current = true
+
       try {
         await renameAgentSession(target.ptyId, title)
         setTarget(null)
@@ -108,12 +111,18 @@ export const usePaneRenameChord = (
         // so the user knows the agent's transcript was NOT updated.
         // The header will still reflect the new label via userLabel.
         setError(errorMessageForRenameFailure(renameError))
+      } finally {
+        isSubmittingRef.current = false
       }
     },
     [target]
   )
 
   const handleCancel = useCallback((): void => {
+    if (isSubmittingRef.current) {
+      return
+    }
+
     setTarget(null)
     setError(null)
   }, [])

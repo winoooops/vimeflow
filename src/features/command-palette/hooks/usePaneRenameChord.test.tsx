@@ -122,6 +122,44 @@ describe('usePaneRenameChord', () => {
     )
   })
 
+  test('blur during pending submit preserves inline IPC failure', async () => {
+    const user = userEvent.setup()
+    let rejectRename: ((error: Error) => void) | null = null
+    mockRenameAgentSession.mockReturnValueOnce(
+      new Promise<void>((_resolve, reject) => {
+        rejectRename = reject
+      })
+    )
+    const focused = makeFocusedRef()
+
+    render(<Harness resolveFocusedPane={() => focused} />)
+    act(() => {
+      chordRegistry.dispatch({ key: 'r' } as KeyboardEvent)
+    })
+
+    const input = screen.getByRole('textbox')
+    await user.tripleClick(input)
+    await user.keyboard('new-title{Enter}')
+
+    act(() => {
+      input.blur()
+    })
+
+    expect(screen.getByRole('textbox')).toBeInTheDocument()
+
+    await act(async () => {
+      if (!rejectRename) {
+        throw new Error('rename promise reject was not captured')
+      }
+      rejectRename(new Error('pty write failed'))
+      await Promise.resolve()
+    })
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'failed to send /rename: pty write failed'
+    )
+  })
+
   test('cancel clears the rename target', async () => {
     const user = userEvent.setup()
     const focused = makeFocusedRef()

@@ -101,7 +101,16 @@ impl BackendState {
         let session_id = SessionId::from(request.pty_id);
         self.pty
             .write(&session_id, command.as_bytes())
-            .map_err(|e| format!("pty write failed: {e}"))
+            .map_err(|e| format!("pty write failed: {e}"))?;
+
+        if matches!(agent_type, AgentType::Codex) {
+            crate::agent::adapter::codex::session_index::record_user_rename(
+                session_id.as_str(),
+                &title,
+            );
+        }
+
+        Ok(())
     }
 
     pub fn resize_pty(
