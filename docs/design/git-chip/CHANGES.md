@@ -28,13 +28,13 @@ session title and the +/− change counts in the pane header.
 
 Chip composition (left → right):
 
-| Element            | Icon (Material Symbols)  | Color tokens                                  |
-|--------------------|--------------------------|-----------------------------------------------|
-| Worktree icon      | `account_tree` 13 px     | `#c39eee` (mauve)                             |
-| Worktree label     | (text)                   | `#c39eee` (mauve), JetBrains Mono 10.5 px     |
-| Chevron separator  | `›` text                 | `#4a444f`                                     |
-| Branch icon        | `fork_right` 13 px       | `#cba6f7` (lavender)                          |
-| Branch label       | (text)                   | `#e3e0f7` cream, weight 500, ellipsizes       |
+| Element           | Icon (Material Symbols) | Color tokens                              |
+| ----------------- | ----------------------- | ----------------------------------------- |
+| Worktree icon     | `account_tree` 13 px    | `#c39eee` (mauve)                         |
+| Worktree label    | (text)                  | `#c39eee` (mauve), JetBrains Mono 10.5 px |
+| Chevron separator | `›` text                | `#4a444f`                                 |
+| Branch icon       | `fork_right` 13 px      | `#cba6f7` (lavender)                      |
+| Branch label      | (text)                  | `#e3e0f7` cream, weight 500, ellipsizes   |
 
 Chip frame: `background: rgba(203,166,247,0.06)`,
 `border: 1px solid rgba(203,166,247,0.20)`, `border-radius: 6px`,
@@ -57,10 +57,10 @@ loaded in the app.
 
 ### Edge cases
 
-| State           | Chip behaviour                                                     |
-|-----------------|--------------------------------------------------------------------|
-| **No worktree** | `worktree` segment + chevron are omitted; chip becomes `⑂ main`.   |
-| **Long branch** | Branch label ellipsizes; chip caps at 340 px wide.                 |
+| State             | Chip behaviour                                                                                                                                            |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **No worktree**   | `worktree` segment + chevron are omitted; chip becomes `⑂ main`.                                                                                          |
+| **Long branch**   | Branch label ellipsizes; chip caps at 340 px wide.                                                                                                        |
 | **Detached HEAD** | `session.detached = true` flips the chip to coral: background `rgba(255,148,165,0.06)`, border `rgba(255,148,165,0.25)`, both icons + branch label coral. |
 
 ## Data shape
@@ -69,9 +69,9 @@ Session objects gain one new optional field:
 
 ```ts
 interface SessionState {
-  branch:   string;             // 'feat/jose-auth' — required
-  worktree?: string;            // 'feat-jose'      — optional
-  detached?: boolean;           // true if HEAD is detached
+  branch: string // 'feat/jose-auth' — required
+  worktree?: string // 'feat-jose'      — optional
+  detached?: boolean // true if HEAD is detached
   // ...existing fields
 }
 ```
@@ -122,7 +122,7 @@ context — keep it next to the bundle, no need to merge it anywhere.
 >
 > Chip frame: `display: inline-flex`, `align-items: center`, `gap: 6px`,
 > `height: 22px`, `padding: 0 8px 0 6px`, `background:
-> rgba(203,166,247,0.06)`, `border: 1px solid rgba(203,166,247,0.20)`,
+rgba(203,166,247,0.06)`, `border: 1px solid rgba(203,166,247,0.20)`,
 > `border-radius: 6px`, `max-width: 340px`, `overflow: hidden`. Icons +
 > worktree segment must `flex-shrink: 0` so they never collapse; only the
 > branch label ellipsizes.
@@ -148,12 +148,13 @@ context — keep it next to the bundle, no need to merge it anywhere.
 > `material-symbols-outlined`, already loaded in the project.
 >
 > Reference files:
->   - `docs/design/handoff-gitref/prototype/src/splitview.jsx` — the
->     `<GitRefChip>` component in full plus its placement inside
->     `<TerminalPane>`'s header.
->   - `docs/design/handoff-gitref/prototype/src/data.js` — example
->     session data with `worktree` populated.
->   - `docs/design/handoff-gitref/GitRefChip.html` — visual reference
->     showing all four layout options (the one to ship is Option C with
->     the `account_tree` + `fork_right` icons) and three edge-case states
->     (no-worktree, long branch, detached HEAD).
+>
+> - `docs/design/handoff-gitref/prototype/src/splitview.jsx` — the
+>   `<GitRefChip>` component in full plus its placement inside
+>   `<TerminalPane>`'s header.
+> - `docs/design/handoff-gitref/prototype/src/data.js` — example
+>   session data with `worktree` populated.
+> - `docs/design/handoff-gitref/GitRefChip.html` — visual reference
+>   showing all four layout options (the one to ship is Option C with
+>   the `account_tree` + `fork_right` icons) and three edge-case states
+>   (no-worktree, long branch, detached HEAD).

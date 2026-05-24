@@ -14,13 +14,13 @@
 
 ## File Structure
 
-| File | Action | Responsibility |
-|------|--------|----------------|
-| `src/features/terminal/components/TerminalPane/GitRefChip.tsx` | Create | Presentational chip with three render shapes (worktree+branch, branch-only, detached-coral). Pure, no hooks. |
-| `src/features/terminal/components/TerminalPane/GitRefChip.test.tsx` | Create | 10 unit tests covering null/empty normalisation, structural testids, class-presence assertions, accessibility. |
-| `src/features/terminal/components/TerminalPane/HeaderMetadata.tsx` | Modify | Drop worktree-chip + branch text + their leading dots; insert `<GitRefChip>`; simplify `hasLeadingMetadata`. |
-| `src/features/terminal/components/TerminalPane/HeaderMetadata.test.tsx` | Modify | Migrate testid assertions to `git-ref-chip*`; add worktree-without-branch + defensive empty-string cases. |
-| `src/features/terminal/components/TerminalPane/Header.test.tsx` | Modify | Shift the negative-assertion target from outer chip to `git-ref-chip-wt-label` (outer chip still renders in the branch-only case). |
+| File                                                                    | Action | Responsibility                                                                                                                     |
+| ----------------------------------------------------------------------- | ------ | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `src/features/terminal/components/TerminalPane/GitRefChip.tsx`          | Create | Presentational chip with three render shapes (worktree+branch, branch-only, detached-coral). Pure, no hooks.                       |
+| `src/features/terminal/components/TerminalPane/GitRefChip.test.tsx`     | Create | 10 unit tests covering null/empty normalisation, structural testids, class-presence assertions, accessibility.                     |
+| `src/features/terminal/components/TerminalPane/HeaderMetadata.tsx`      | Modify | Drop worktree-chip + branch text + their leading dots; insert `<GitRefChip>`; simplify `hasLeadingMetadata`.                       |
+| `src/features/terminal/components/TerminalPane/HeaderMetadata.test.tsx` | Modify | Migrate testid assertions to `git-ref-chip*`; add worktree-without-branch + defensive empty-string cases.                          |
+| `src/features/terminal/components/TerminalPane/Header.test.tsx`         | Modify | Shift the negative-assertion target from outer chip to `git-ref-chip-wt-label` (outer chip still renders in the branch-only case). |
 
 ---
 
@@ -37,6 +37,7 @@
 ### Task 1: Write the failing `GitRefChip.test.tsx` (no commit yet)
 
 **Files:**
+
 - Create: `src/features/terminal/components/TerminalPane/GitRefChip.test.tsx`
 
 Tests first — TDD. The component doesn't exist yet, so all 10 tests will fail with a module-resolution error.
@@ -66,10 +67,14 @@ test('renders all six testids when worktreeName and branch are present', () => {
   render(<GitRefChip worktreeName="feat-jose" branch="feat/jose-auth" />)
   expect(screen.getByTestId('git-ref-chip')).toBeInTheDocument()
   expect(screen.getByTestId('git-ref-chip-wt-icon')).toBeInTheDocument()
-  expect(screen.getByTestId('git-ref-chip-wt-label')).toHaveTextContent('feat-jose')
+  expect(screen.getByTestId('git-ref-chip-wt-label')).toHaveTextContent(
+    'feat-jose'
+  )
   expect(screen.getByTestId('git-ref-chip-chevron')).toBeInTheDocument()
   expect(screen.getByTestId('git-ref-chip-br-icon')).toBeInTheDocument()
-  expect(screen.getByTestId('git-ref-chip-br-label')).toHaveTextContent('feat/jose-auth')
+  expect(screen.getByTestId('git-ref-chip-br-label')).toHaveTextContent(
+    'feat/jose-auth'
+  )
 })
 
 test('renders branch-only when worktreeName is null', () => {
@@ -84,8 +89,12 @@ test('renders branch-only when worktreeName is null', () => {
 
 test('branch label has min-w-0 truncate classes', () => {
   render(<GitRefChip worktreeName="feat-jose" branch="feat/jose-auth" />)
-  expect(screen.getByTestId('git-ref-chip-br-label').className).toMatch(/min-w-0/)
-  expect(screen.getByTestId('git-ref-chip-br-label').className).toMatch(/truncate/)
+  expect(screen.getByTestId('git-ref-chip-br-label').className).toMatch(
+    /min-w-0/
+  )
+  expect(screen.getByTestId('git-ref-chip-br-label').className).toMatch(
+    /truncate/
+  )
 })
 
 test('worktree label has max-w-[120px] + truncate + shrink-0 classes', () => {
@@ -106,8 +115,12 @@ test('detached=true applies coral classes to chip frame, branch label, worktree 
   const chip = screen.getByTestId('git-ref-chip')
   expect(chip.className).toMatch(/bg-tertiary\/\[0\.06\]/)
   expect(chip.className).toMatch(/border-tertiary/)
-  expect(screen.getByTestId('git-ref-chip-br-label').className).toMatch(/text-tertiary/)
-  expect(screen.getByTestId('git-ref-chip-wt-label').className).toMatch(/text-error/)
+  expect(screen.getByTestId('git-ref-chip-br-label').className).toMatch(
+    /text-tertiary/
+  )
+  expect(screen.getByTestId('git-ref-chip-wt-label').className).toMatch(
+    /text-error/
+  )
 })
 
 test('detached=true with worktreeName=null renders coral branch-only chip', () => {
@@ -116,7 +129,9 @@ test('detached=true with worktreeName=null renders coral branch-only chip', () =
   expect(chip.className).toMatch(/bg-tertiary\/\[0\.06\]/)
   expect(screen.queryByTestId('git-ref-chip-wt-icon')).toBeNull()
   expect(screen.queryByTestId('git-ref-chip-wt-label')).toBeNull()
-  expect(screen.getByTestId('git-ref-chip-br-label')).toHaveTextContent('a7f23c')
+  expect(screen.getByTestId('git-ref-chip-br-label')).toHaveTextContent(
+    'a7f23c'
+  )
 })
 
 test('title attribute composition for all four states', () => {
@@ -168,6 +183,7 @@ Expected: all 10 fail with `Failed to resolve import "./GitRefChip"` (or equival
 ### Task 2: Implement `GitRefChip.tsx` so all 10 tests pass
 
 **Files:**
+
 - Create: `src/features/terminal/components/TerminalPane/GitRefChip.tsx`
 
 - [ ] **Step 1: Write the component**
@@ -304,6 +320,7 @@ Pre-commit `lint-staged` runs `eslint` + `tsc --noEmit` over both staged files; 
 ### Task 3: Wire `GitRefChip` into `HeaderMetadata.tsx`
 
 **Files:**
+
 - Modify: `src/features/terminal/components/TerminalPane/HeaderMetadata.tsx`
 
 This task removes the existing `worktree-chip` testid and the bare branch span. `HeaderMetadata.test.tsx` and `Header.test.tsx` will fail after this commit; Tasks 4 and 5 fix them.
@@ -391,6 +408,7 @@ Note: pre-commit lint-staged only checks the staged file, so the broken test fil
 ### Task 4: Update `HeaderMetadata.test.tsx`
 
 **Files:**
+
 - Modify: `src/features/terminal/components/TerminalPane/HeaderMetadata.test.tsx`
 
 - [ ] **Step 1: Locate the failing assertions**
@@ -412,18 +430,24 @@ Expected output (line numbers may drift; semantic matches are what matters):
 For each reference, classify by context (look at the surrounding test's `worktreeName=` / `branch=` props):
 
 - **Negative `queryByTestId('worktree-chip')` when worktreeName is null AND branch is non-empty** (branch-only render):
+
   ```tsx
   expect(screen.queryByTestId('git-ref-chip-wt-label')).not.toBeInTheDocument()
-  expect(screen.getByTestId('git-ref-chip-br-label')).toHaveTextContent('<the-branch-from-this-test>')
+  expect(screen.getByTestId('git-ref-chip-br-label')).toHaveTextContent(
+    '<the-branch-from-this-test>'
+  )
   ```
+
   Replace `'<the-branch-from-this-test>'` with the literal string the surrounding `render(<HeaderMetadata ...>)` call passes as `branch=`.
 
 - **Negative `queryByTestId('worktree-chip')` when BOTH worktreeName AND branch are null** (no chip at all):
+
   ```tsx
   expect(screen.queryByTestId('git-ref-chip')).toBeNull()
   ```
 
 - **Positive `getByTestId('worktree-chip').toHaveTextContent('<wt>')`** (test "renders worktree chip with basename before the branch chip" at line 106):
+
   ```tsx
   expect(screen.getByTestId('git-ref-chip-wt-label')).toHaveTextContent('<wt>')
   ```
@@ -431,8 +455,11 @@ For each reference, classify by context (look at the surrounding test's `worktre
 - **`test('renders worktree chip with leading separator before time when it is the only leading metadata', ...)` at line 147** — this case (`worktreeName="x"`, `branch={null}`, no deltas) is **deleted, not migrated**. Spec §4.3 documents the behaviour change: under the new chip, that state suppresses both chip AND leading dot, rendering just the relative-time label. **Delete the whole test block** (the `test(...)` plus its body). It's replaced by the new tests in Steps 3–4 below, which assert the new (suppressed) behaviour.
 
 - **Any `getByText('<branch-string>')` that checked the bare branch text** → switch to the chip's branch label:
+
   ```tsx
-  expect(screen.getByTestId('git-ref-chip-br-label')).toHaveTextContent('<branch-string>')
+  expect(screen.getByTestId('git-ref-chip-br-label')).toHaveTextContent(
+    '<branch-string>'
+  )
   ```
 
 - [ ] **Step 3: Add the §4.3 behaviour test (worktree without branch)**
@@ -498,6 +525,7 @@ git commit -m "test(terminal): migrate HeaderMetadata tests to GitRefChip"
 ### Task 5: Update `Header.test.tsx`
 
 **Files:**
+
 - Modify: `src/features/terminal/components/TerminalPane/Header.test.tsx`
 
 - [ ] **Step 1: Locate the two assertion sites**
@@ -526,7 +554,9 @@ Optional: rename the test to `'collapsed header hides the git ref chip'` so the 
 The test around line 101 — `'renders worktree chip when worktreeName is supplied'` — calls `render(<Header {...baseProps} worktreeName="agent-sidebar" />)`. Replace:
 
 ```tsx
-expect(screen.getByTestId('git-ref-chip-wt-label')).toHaveTextContent('agent-sidebar')
+expect(screen.getByTestId('git-ref-chip-wt-label')).toHaveTextContent(
+  'agent-sidebar'
+)
 ```
 
 Optional: rename the test to `'renders git ref chip with worktree label when worktreeName is supplied'`.

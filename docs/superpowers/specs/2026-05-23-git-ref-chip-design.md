@@ -192,7 +192,7 @@ export interface GitRefChipProps {
 ```
 
 **Empty-string normalisation.** The chip treats `branch === null`
-*and* `branch === ''` identically — it returns `null` (renders
+_and_ `branch === ''` identically — it returns `null` (renders
 nothing) in both cases. `useGitBranch` already maps the empty string
 to `null` before reaching the chip
 (`setBranch(trimmed === '' ? null : trimmed)`), so the
@@ -208,13 +208,13 @@ no-worktree edge case from §1.1.
 
 Composition (left → right):
 
-| Element        | Glyph                          | Token & class                                                                  | Behaviour                              |
-|----------------|--------------------------------|--------------------------------------------------------------------------------|----------------------------------------|
-| Worktree icon  | `account_tree` (Material Sym.) | `material-symbols-outlined`, `text-secondary-dim`, `text-[13px]`, `shrink-0`   | omitted when `worktreeName === null`   |
+| Element        | Glyph                          | Token & class                                                                               | Behaviour                                                                                                                |
+| -------------- | ------------------------------ | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| Worktree icon  | `account_tree` (Material Sym.) | `material-symbols-outlined`, `text-secondary-dim`, `text-[13px]`, `shrink-0`                | omitted when `worktreeName === null`                                                                                     |
 | Worktree label | text                           | `text-secondary-dim`, `font-mono`, `text-[10.5px]`, `max-w-[120px]`, `shrink-0`, `truncate` | ellipsizes only when itself > 120 px; `shrink-0` so flex doesn't compress it below content width when the chip is narrow |
-| Chevron        | `›` literal                    | `text-outline-variant`, `text-[11px]`, `shrink-0`                              | omitted when no worktree               |
-| Branch icon    | `fork_right` (Material Sym.)   | `material-symbols-outlined`, `text-primary-container`, `text-[13px]`, `shrink-0` | always present                         |
-| Branch label   | text                           | `text-on-surface`, `font-medium`, `font-mono`, `text-[10.5px]`, `min-w-0`, `truncate` | ellipsizes when long; the chip's "elastic" slot |
+| Chevron        | `›` literal                    | `text-outline-variant`, `text-[11px]`, `shrink-0`                                           | omitted when no worktree                                                                                                 |
+| Branch icon    | `fork_right` (Material Sym.)   | `material-symbols-outlined`, `text-primary-container`, `text-[13px]`, `shrink-0`            | always present                                                                                                           |
+| Branch label   | text                           | `text-on-surface`, `font-medium`, `font-mono`, `text-[10.5px]`, `min-w-0`, `truncate`       | ellipsizes when long; the chip's "elastic" slot                                                                          |
 
 The `material-symbols-outlined` class is the load-bearing one — it
 swaps the icon span's font to the Material Symbols font (loaded in
@@ -293,38 +293,42 @@ PR-A replaces the worktree-chip + branch segments in
 Removed (lines 28–48 of the current `HeaderMetadata.tsx`):
 
 ```tsx
-{hasWorktree && (
-  <>
-    <span className="text-outline-variant/60">·</span>
-    <span
-      data-testid="worktree-chip"
-      title={`worktree: ${worktreeName}`}
-      className="inline-flex min-w-0 items-center gap-1 truncate text-on-surface-muted"
-    >
-      <span aria-hidden="true">🌲</span>
-      <span className="truncate">{worktreeName}</span>
-    </span>
-  </>
-)}
-{hasBranch && (
-  <>
-    <span className="text-outline-variant/60">·</span>
-    <span className="min-w-0 truncate text-on-surface-muted">
-      {branch}
-    </span>
-  </>
-)}
+{
+  hasWorktree && (
+    <>
+      <span className="text-outline-variant/60">·</span>
+      <span
+        data-testid="worktree-chip"
+        title={`worktree: ${worktreeName}`}
+        className="inline-flex min-w-0 items-center gap-1 truncate text-on-surface-muted"
+      >
+        <span aria-hidden="true">🌲</span>
+        <span className="truncate">{worktreeName}</span>
+      </span>
+    </>
+  )
+}
+{
+  hasBranch && (
+    <>
+      <span className="text-outline-variant/60">·</span>
+      <span className="min-w-0 truncate text-on-surface-muted">{branch}</span>
+    </>
+  )
+}
 ```
 
 Added:
 
 ```tsx
-{hasGitRef && (
-  <>
-    <span className="text-outline-variant/60">·</span>
-    <GitRefChip worktreeName={worktreeName} branch={branch} />
-  </>
-)}
+{
+  hasGitRef && (
+    <>
+      <span className="text-outline-variant/60">·</span>
+      <GitRefChip worktreeName={worktreeName} branch={branch} />
+    </>
+  )
+}
 ```
 
 Where `hasGitRef = branch !== null && branch.length > 0`. The chip
@@ -346,7 +350,7 @@ const hasLeadingMetadata = hasGitRef || hasDeltas
 ```
 
 The trailing-dot logic (the `·` before the relative-time label) keeps
-its current behavior — present when *any* leading metadata renders.
+its current behavior — present when _any_ leading metadata renders.
 
 ### 4.3 Behaviour change: worktree-without-branch
 
@@ -395,14 +399,14 @@ Co-located with `GitRefChip.tsx`. Uses `@testing-library/react`'s
 `data-testid="git-ref-chip"` on the outer `<span>`; per-segment
 testids let tests assert structure without scraping class strings:
 
-| Element        | testid                   |
-|----------------|--------------------------|
-| Outer chip     | `git-ref-chip`           |
-| Worktree icon  | `git-ref-chip-wt-icon`   |
-| Worktree label | `git-ref-chip-wt-label`  |
-| Chevron        | `git-ref-chip-chevron`   |
-| Branch icon    | `git-ref-chip-br-icon`   |
-| Branch label   | `git-ref-chip-br-label`  |
+| Element        | testid                  |
+| -------------- | ----------------------- |
+| Outer chip     | `git-ref-chip`          |
+| Worktree icon  | `git-ref-chip-wt-icon`  |
+| Worktree label | `git-ref-chip-wt-label` |
+| Chevron        | `git-ref-chip-chevron`  |
+| Branch icon    | `git-ref-chip-br-icon`  |
+| Branch label   | `git-ref-chip-br-label` |
 
 Cases:
 
@@ -468,7 +472,7 @@ because the new chip still renders in the branch-only case:
   Replacement: target the worktree-segment testid, not the outer chip
   (the outer chip still renders to show the branch):
   `expect(queryByTestId('git-ref-chip-wt-label')).not.toBeInTheDocument()`
-  *and* (for explicitness)
+  _and_ (for explicitness)
   `expect(getByTestId('git-ref-chip-br-label')).toHaveTextContent('main')`.
 - Old line 101 (positive — worktree-present case):
   `expect(getByTestId('worktree-chip')).toHaveTextContent(...)`.
@@ -602,13 +606,13 @@ async fn rev_parse_short_head(safe_cwd: &Path) -> Option<String> {
 
 The four observable states map to:
 
-| State            | `branch`            | `sha`         | `detached` | How detected                                                       |
-|------------------|---------------------|---------------|------------|--------------------------------------------------------------------|
-| Normal branch    | `Some("feat/x")`    | `Some(sha)`   | `false`    | symbolic-ref succeeds; rev-parse succeeds.                         |
-| Unborn repo      | `Some("main")`      | `None`        | `false`    | symbolic-ref succeeds (HEAD ref still resolves); rev-parse fails.  |
-| Detached HEAD    | `None`              | `Some(sha)`   | `true`     | symbolic-ref fails with empty stderr; rev-parse succeeds.          |
-| Corrupt / weird  | `None`              | `None`        | `false`    | symbolic-ref fails with empty stderr; rev-parse also fails.        |
-| Real git error   | (Err propagated)    | —             | —          | symbolic-ref fails with non-empty stderr.                          |
+| State           | `branch`         | `sha`       | `detached` | How detected                                                      |
+| --------------- | ---------------- | ----------- | ---------- | ----------------------------------------------------------------- |
+| Normal branch   | `Some("feat/x")` | `Some(sha)` | `false`    | symbolic-ref succeeds; rev-parse succeeds.                        |
+| Unborn repo     | `Some("main")`   | `None`      | `false`    | symbolic-ref succeeds (HEAD ref still resolves); rev-parse fails. |
+| Detached HEAD   | `None`           | `Some(sha)` | `true`     | symbolic-ref fails with empty stderr; rev-parse succeeds.         |
+| Corrupt / weird | `None`           | `None`      | `false`    | symbolic-ref fails with empty stderr; rev-parse also fails.       |
+| Real git error  | (Err propagated) | —           | —          | symbolic-ref fails with non-empty stderr.                         |
 
 Per `reference_new_ipc_checklist`, four files change for the IPC:
 
@@ -631,7 +635,7 @@ once no caller depends on it.
 ```ts
 // PR-B return shape — additive over PR-A's
 export interface UseGitBranchReturn {
-  branch: string | null  // branch name OR short SHA when detached === true
+  branch: string | null // branch name OR short SHA when detached === true
   detached: boolean
   loading: boolean
   error: Error | null
