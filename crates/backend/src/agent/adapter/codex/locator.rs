@@ -670,7 +670,16 @@ impl crate::agent::adapter::traits::StatusSourceLocator for CompositeLocator {
             pty_start: self.pty_start,
         };
         let location = retry_locator(|| self.resolve_rollout(&ctx))?;
-        let static_transcript_hint = Some(location.rollout_path.to_string_lossy().into_owned());
+        // `to_str()` rejects non-UTF-8 paths by returning `None`,
+        // producing a clean `TxOutcome::NoPath` downstream. The
+        // previous `to_string_lossy().into_owned()` silently replaced
+        // invalid bytes with U+FFFD, yielding a "valid" String that
+        // then failed `validate_transcript_path` on every watcher tick
+        // — invisible at attach-time, noisy per-update warn spam.
+        // PR #261 cycle 6 review F18 — Codex paths under `~/.codex/`
+        // are ASCII in practice but the defensive None handles the
+        // edge case (Windows home dirs with non-UTF-8 bytes, etc.).
+        let static_transcript_hint = location.rollout_path.to_str().map(str::to_owned);
         Ok(crate::agent::adapter::types::LocatedStatusSource {
             status_path: location.rollout_path,
             trust_root: self.codex_home.clone(),

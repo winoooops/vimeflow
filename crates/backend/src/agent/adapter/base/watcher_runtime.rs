@@ -318,12 +318,17 @@ pub(super) fn start_watching(
     let events_for_cb = events.clone();
     let pty_state_for_cb = pty_state.clone();
     let transcript_state_for_cb = transcript_state.clone();
-    let sid_for_cb = sid.clone();
     // Step 0c: each watcher callback (notify / inline-init / poll)
     // needs the full `LocatedStatusSource` so it can ask the adapter's
     // `TranscriptPathSource::static_hint` for Codex's attach-time
     // rollout path. Cheap — it's two `PathBuf`s + `Option<String>`.
     let located_for_cb = located.clone();
+    // The notify closure consumes `sid` directly. Cycle 3 introduced a
+    // redundant `sid = sid.clone()` for the new
+    // `decoder.decode(Some(&sid), ...)` argument while the
+    // legacy log/record_event_diag sites still used bare `sid`, leaving
+    // two captures of the same value inside one closure (PR #261 cycle
+    // 6 review F19). The closure now uses `sid` uniformly.
 
     // Debounce interval — ignore events within 100ms of the last processed one
     let debounce_ms = 100;
@@ -384,9 +389,9 @@ pub(super) fn start_watching(
         // session-id-free per R2.2; the runtime composes the event
         // here (this was the v4-frozen plan's "runtime stamps the
         // session id" move).
-        let (outcome, tx_path) = match decoder_for_cb.decode(Some(&sid_for_cb), &contents) {
+        let (outcome, tx_path) = match decoder_for_cb.decode(Some(&sid), &contents) {
             Ok(snapshot) => {
-                let event = stamp_snapshot(&sid_for_cb, snapshot);
+                let event = stamp_snapshot(&sid, snapshot);
                 if let Err(e) = emit_agent_status(events_for_cb.as_ref(), &event) {
                     log::error!("Failed to emit agent-status event: {}", e);
                 }
@@ -400,7 +405,7 @@ pub(super) fn start_watching(
                             events_for_cb.clone(),
                             &pty_state_for_cb,
                             &transcript_state_for_cb,
-                            &sid_for_cb,
+                            &sid,
                             &path,
                         );
                         (outcome, Some(path))
@@ -411,7 +416,7 @@ pub(super) fn start_watching(
             Err(e) => {
                 log::warn!(
                     "Failed to parse statusline for session {}: {}",
-                    sid_for_cb,
+                    sid,
                     e
                 );
                 (TxOutcome::ParseError, None)
