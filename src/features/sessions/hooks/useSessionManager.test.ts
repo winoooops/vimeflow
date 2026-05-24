@@ -715,6 +715,87 @@ describe('useSessionManager', () => {
     await waitFor(() => expect(result.current.sessions).toHaveLength(0))
   })
 
+  // Replaces the implicit cleanup the Rust PTY cache used to do on session
+  // exit. Without this hook, every closed session leaked a localStorage
+  // entry forever — see PR #259 review (M1).
+  test('removeSession clears the session activityPanelCollapsed localStorage key', async () => {
+    const service = createMockService()
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: 's1',
+      sessions: [
+        {
+          id: 's1',
+          cwd: '/tmp',
+          status: {
+            kind: 'Alive',
+            pid: 1,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+      ],
+    })
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    act(() => {
+      result.current.setSessionActivityPanelCollapsed('s1', true)
+    })
+    expect(readActivityPanelCollapsed('s1')).toBe(true)
+
+    act(() => result.current.removeSession('s1'))
+
+    await waitFor(() => expect(result.current.sessions).toHaveLength(0))
+    expect(readActivityPanelCollapsed('s1')).toBe(false)
+    expect(
+      window.localStorage.getItem('vimeflow:sessions:activityPanelCollapsed:s1')
+    ).toBeNull()
+  })
+
+  // Partial-kill bail: when ANY pane's kill IPC rejects, removeSession bails
+  // BEFORE dropping bookkeeping (and now BEFORE clearing the localStorage
+  // key). The session is still visible to the user; their preference must
+  // survive so a retry doesn't reset the bar to expanded.
+  test('removeSession preserves localStorage key when kill rejects', async () => {
+    const service = createMockService()
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: 's1',
+      sessions: [
+        {
+          id: 's1',
+          cwd: '/tmp',
+          status: {
+            kind: 'Alive',
+            pid: 1,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+      ],
+    })
+    service.kill = vi.fn().mockRejectedValue(new Error('kill failed'))
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    act(() => {
+      result.current.setSessionActivityPanelCollapsed('s1', true)
+    })
+    expect(readActivityPanelCollapsed('s1')).toBe(true)
+
+    act(() => result.current.removeSession('s1'))
+
+    await waitFor(() => expect(service.kill).toHaveBeenCalled())
+    // Session stays; preference must NOT have been swept by the partial-kill bail.
+    expect(result.current.sessions).toHaveLength(1)
+    expect(readActivityPanelCollapsed('s1')).toBe(true)
+  })
+
   // Round 9, Finding 6 (claude MEDIUM): React requires functional updaters to
   // be PURE. The previous code fired `service.setActiveSession` and
   // `service.reorderSessions` from INSIDE the setSessions updater in

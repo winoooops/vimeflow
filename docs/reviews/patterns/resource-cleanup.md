@@ -2,7 +2,7 @@
 id: resource-cleanup
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-05-20
+last_updated: 2026-05-24
 ref_count: 3
 ---
 
@@ -35,3 +35,13 @@ causes listener accumulation and duplicate event handling.
 - **Fix:** Add `Drop` for `TranscriptHandle` to set the stop flag. Keep explicit `stop(self)` for paths that must also join the thread.
 - **Verification:** Added `transcript_handle_drop_sets_stop_flag`; `cargo test --lib agent::transcript -j1`.
 - **Commit:** (pending — agent-status-sidebar PR)
+
+### 3. localStorage activityPanelCollapsed key leaks on session close
+
+- **Source:** github-claude | PR #259 round 1 | 2026-05-24
+- **Severity:** MEDIUM
+- **File:** `src/features/sessions/utils/activityPanelCollapsedStore.ts`
+- **Finding:** The new UI-side store exported only `readActivityPanelCollapsed` and `writeActivityPanelCollapsed`. `removeSession` never deleted the key, so every closed session left a `vimeflow:sessions:activityPanelCollapsed:<id>` entry in localStorage forever — replacing the Rust PTY cache (auto-cleaned on PTY exit) without an equivalent cleanup hook.
+- **Fix:** Add `deleteActivityPanelCollapsed(sessionId)` to the store. Call it from `removeSession` only on the happy path (after both kill phases settle), so a partial-kill bail does not drop the preference for a session the user can still see and retry.
+- **Verification:** Targeted tests in `activityPanelCollapsedStore.test.ts` (delete removes entry, no-op when absent, isolates by id) + `useSessionManager.test.ts` (removeSession clears the key on success, preserves it when kill rejects).
+- **Commit:** same commit as this entry (see `git blame` / `git log`)

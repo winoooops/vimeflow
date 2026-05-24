@@ -49,3 +49,19 @@ export const writeActivityPanelCollapsed = (
     // Quota exceeded / private mode — UI state stays consistent in memory.
   }
 }
+
+// Replaces the implicit cleanup the Rust PTY cache used to do on
+// session exit. Call from the `removeSession` happy path so closed
+// sessions don't leak `vimeflow:sessions:activityPanelCollapsed:<id>`
+// keys into localStorage indefinitely.
+export const deleteActivityPanelCollapsed = (sessionId: string): void => {
+  const storage = getStorage()
+  if (!storage) {
+    return
+  }
+  try {
+    storage.removeItem(storageKey(sessionId))
+  } catch {
+    // Match the writer's silent-on-failure policy.
+  }
+}

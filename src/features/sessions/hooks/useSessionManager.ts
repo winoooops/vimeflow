@@ -25,7 +25,10 @@ import {
   nextFreePaneId,
 } from '../utils/paneLifecycle'
 import { deriveSessionStatus } from '../utils/sessionStatus'
-import { writeActivityPanelCollapsed } from '../utils/activityPanelCollapsedStore'
+import {
+  deleteActivityPanelCollapsed,
+  writeActivityPanelCollapsed,
+} from '../utils/activityPanelCollapsedStore'
 import { usePtyExitListener } from '../../terminal/hooks/usePtyExitListener'
 import { useAutoCreateOnEmpty } from './useAutoCreateOnEmpty'
 import { useActiveSessionController } from './useActiveSessionController'
@@ -529,6 +532,14 @@ export const useSessionManager = (
           unregisterPtySession(ptyId)
         }
         restoreDataRef.current.delete(target.id)
+
+        // Replaces the implicit cleanup the Rust PTY cache used to do on
+        // session exit. Without it, every closed session leaves a stale
+        // `vimeflow:sessions:activityPanelCollapsed:<id>` key in
+        // localStorage forever. Runs only on the happy path (after both
+        // kill phases settle) so a partial-kill bail-out doesn't drop
+        // the preference for a session the user can still see.
+        deleteActivityPanelCollapsed(target.id)
 
         const currentActiveId = activeSessionIdRef.current
         let computedFallback = null as string | null
