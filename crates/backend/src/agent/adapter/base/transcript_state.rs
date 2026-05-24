@@ -43,7 +43,7 @@ impl TranscriptHandle {
         stop: Arc<AtomicBool>,
         join: std::thread::JoinHandle<()>,
     ) {
-        debug_assert!(
+        assert!(
             self.aux_stop.is_none() && self.aux_join.is_none(),
             "attach_aux_join called twice"
         );
@@ -501,6 +501,33 @@ mod tests {
 
         assert!(stop_a.load(Ordering::Acquire));
         assert!(stop_b.load(Ordering::Acquire));
+    }
+
+    #[test]
+    fn attach_aux_join_panics_when_called_twice() {
+        let stop_a = Arc::new(AtomicBool::new(false));
+        let stop_b = Arc::new(AtomicBool::new(false));
+        let counter_a = Arc::new(AtomicUsize::new(0));
+        let counter_b = Arc::new(AtomicUsize::new(0));
+        let mut handle = TranscriptHandle::new(
+            Arc::clone(&stop_a),
+            spawn_loop(Arc::clone(&stop_a), Arc::clone(&counter_a)),
+        );
+
+        handle.attach_aux_join(
+            Arc::clone(&stop_b),
+            spawn_loop(Arc::clone(&stop_b), Arc::clone(&counter_b)),
+        );
+
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            handle.attach_aux_join(
+                Arc::new(AtomicBool::new(false)),
+                std::thread::spawn(|| {}),
+            );
+        }));
+
+        assert!(result.is_err());
+        handle.stop();
     }
 
     #[test]

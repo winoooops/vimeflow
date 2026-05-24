@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type {
+  ChangeEvent,
   CSSProperties,
   KeyboardEvent as ReactKeyboardEvent,
   ReactPortal,
@@ -15,6 +16,7 @@ interface PaneRenameInputProps {
   onSubmit: (sanitized: string) => void | Promise<void>
   onCancel: () => void
   externalError?: string | null
+  onExternalErrorDismiss?: () => void
 }
 
 const errorMessageForValue = (value: string): string | null => {
@@ -41,6 +43,7 @@ export const PaneRenameInput = ({
   onSubmit,
   onCancel,
   externalError = null,
+  onExternalErrorDismiss,
 }: PaneRenameInputProps): ReactPortal => {
   const [value, setValue] = useState(initialValue)
   const inputRef = useRef<HTMLInputElement | null>(null)
@@ -51,6 +54,13 @@ export const PaneRenameInput = ({
   useEffect(() => {
     inputRef.current?.select()
   }, [])
+
+  const handleChange = (event: ChangeEvent<HTMLInputElement>): void => {
+    setValue(event.target.value)
+    if (externalError) {
+      onExternalErrorDismiss?.()
+    }
+  }
 
   const handleKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>): void => {
     if (event.key === 'Enter' && validation.kind === 'valid') {
@@ -83,6 +93,7 @@ export const PaneRenameInput = ({
       }
 
   const errorMessage = errorMessageForValue(value)
+  const displayedError = externalError ?? errorMessage
 
   return createPortal(
     <div
@@ -93,21 +104,16 @@ export const PaneRenameInput = ({
         ref={inputRef}
         type="text"
         value={value}
-        onChange={(event) => setValue(event.target.value)}
+        onChange={handleChange}
         onBlur={onCancel}
         onKeyDown={handleKeyDown}
         aria-label="Pane name"
-        aria-invalid={validation.kind !== 'valid'}
+        aria-invalid={validation.kind !== 'valid' || Boolean(externalError)}
         className="w-full bg-transparent px-1 py-0.5 font-mono text-[12.5px] text-on-surface outline-none"
       />
-      {errorMessage && (
+      {displayedError && (
         <div role="alert" className="mt-1 text-[10px] text-error">
-          {errorMessage}
-        </div>
-      )}
-      {externalError && (
-        <div role="alert" className="mt-1 text-[10px] text-error">
-          {externalError}
+          {displayedError}
         </div>
       )}
     </div>,

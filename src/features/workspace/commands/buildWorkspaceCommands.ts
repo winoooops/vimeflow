@@ -1,5 +1,6 @@
 import type { Session } from '../../sessions/types'
 import { validateTitle } from '../../sessions/utils/sanitizeTitle'
+import { isExpectedNonAgentRenameFailure } from '../../sessions/utils/agentRenameErrors'
 import type { Command } from '../../command-palette/registry/types'
 import { fuzzyMatch } from '../../command-palette/registry/fuzzyMatch'
 
@@ -34,8 +35,9 @@ export interface WorkspaceCommandDeps {
    */
   setPaneUserLabel: (ptyId: string, label: string | undefined) => void
   /**
-   * Write `/rename <label>\n` to the agent's PTY. The agent persists the
-   * new title to its transcript/index, which then re-emits through PR1's
+   * Write `/rename <label>\r` to the agent's PTY. Raw-mode agent TUIs
+   * submit on CR (`\r`), not LF. The agent persists the new title to
+   * its transcript/index, which then re-emits through PR1's
    * `agent-session-title` channel and the pane's `agentTitle` converges.
    * Returns a promise that rejects on IPC failure; callers surface the
    * error via `notifyInfo`.
@@ -44,10 +46,6 @@ export interface WorkspaceCommandDeps {
   setActiveSessionId: (id: string) => void
   notifyInfo: (message: string) => void
 }
-
-const isExpectedNonAgentRenameFailure = (message: string): boolean =>
-  message.includes('no live agent') ||
-  message.includes('does not support /rename')
 
 // Pure builder: closures capture `deps`, so call from a useMemo over session-manager state.
 export const buildWorkspaceCommands = (

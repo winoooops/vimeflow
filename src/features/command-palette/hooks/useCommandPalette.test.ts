@@ -282,6 +282,44 @@ describe('useCommandPalette', () => {
       expect(result.current.state.isOpen).toBe(true)
     })
 
+    test('Ctrl+: then Ctrl+: cancels leader window without opening palette', () => {
+      vi.useFakeTimers()
+      const { result } = renderHook(() => useCommandPalette())
+
+      act(() => {
+        const leaderEvent = new KeyboardEvent('keydown', {
+          key: ':',
+          ctrlKey: true,
+          bubbles: true,
+          cancelable: true,
+        })
+        document.dispatchEvent(leaderEvent)
+      })
+
+      const secondLeaderEvent = new KeyboardEvent('keydown', {
+        key: ':',
+        ctrlKey: true,
+        bubbles: true,
+        cancelable: true,
+      })
+      const preventDefaultSpy = vi.spyOn(secondLeaderEvent, 'preventDefault')
+      const stopPropagationSpy = vi.spyOn(secondLeaderEvent, 'stopPropagation')
+
+      act(() => {
+        document.dispatchEvent(secondLeaderEvent)
+      })
+
+      expect(preventDefaultSpy).toHaveBeenCalled()
+      expect(stopPropagationSpy).toHaveBeenCalled()
+      expect(result.current.state.isOpen).toBe(false)
+
+      act(() => {
+        vi.advanceTimersByTime(500)
+      })
+
+      expect(result.current.state.isOpen).toBe(false)
+    })
+
     test('close() clears pending leader chord window', () => {
       vi.useFakeTimers()
       const handler = vi.fn(() => true)

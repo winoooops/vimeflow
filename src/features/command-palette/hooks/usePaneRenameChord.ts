@@ -2,6 +2,7 @@ import { createElement, useCallback, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { renameAgentSession } from '../../../lib/backend'
 import type { Pane, Session } from '../../sessions/types'
+import { isExpectedNonAgentRenameFailure } from '../../sessions/utils/agentRenameErrors'
 import { PaneRenameInput } from '../../terminal/components/PaneRenameInput'
 import { registerChord } from '../chordRegistry'
 
@@ -16,24 +17,8 @@ type RenameTarget = {
   initialValue: string
 } | null
 
-/**
- * Pane types that round-trip the rename through the agent's `/rename`
- * slash command via the `rename_agent_session` IPC. Other types
- * (`aider`, `generic`, shell PTYs with no detected agent) only get the
- * local `pane.userLabel` update — no IPC, no PTY write.
- */
-const ROUND_TRIP_AGENTS: readonly Pane['agentType'][] = ['claude-code', 'codex']
-
 const errorMessageForRenameFailure = (error: unknown): string => {
   const message = error instanceof Error ? error.message : String(error)
-
-  if (message.includes('does not support /rename')) {
-    return "this agent doesn't support /rename"
-  }
-
-  if (message.includes('no live agent')) {
-    return 'no agent in this pane to rename'
-  }
 
   return `failed to send /rename: ${message}`
 }
@@ -80,25 +65,10 @@ export const usePaneRenameChord = (
       }
 
       // Always set the local label first — gives the user immediate
-      // visual confirmation regardless of agent type, and is the only
-      // path for non-`/rename`-supporting panes (aider, generic, bare
-      // shells). For Claude/Codex panes the agent-session-title round
-      // trip will converge `agentTitle` to the same value shortly
-      // after.
+      // visual confirmation regardless of agent type. The backend owns
+      // live-agent detection, so we still ask it to write `/rename` and
+      // suppress expected shell / unsupported-agent failures below.
       setPaneUserLabelRef.current(target.ptyId, title)
-
-      const focused = resolverRef.current()
-
-      const paneAtSubmit =
-        focused?.pane.ptyId === target.ptyId ? focused.pane : target.pane
-
-      if (!ROUND_TRIP_AGENTS.includes(paneAtSubmit.agentType)) {
-        // Non-agent pane: local update only; close the input.
-        setTarget(null)
-        setError(null)
-
-        return
-      }
 
       isSubmittingRef.current = true
 
@@ -107,6 +77,17 @@ export const usePaneRenameChord = (
         setTarget(null)
         setError(null)
       } catch (renameError) {
+        const message =
+          renameError instanceof Error
+            ? renameError.message
+            : String(renameError)
+        if (isExpectedNonAgentRenameFailure(message)) {
+          setTarget(null)
+          setError(null)
+
+          return
+        }
+
         // Local label is already set; surface the IPC failure inline
         // so the user knows the agent's transcript was NOT updated.
         // The header will still reflect the new label via userLabel.
@@ -127,6 +108,10 @@ export const usePaneRenameChord = (
     setError(null)
   }, [])
 
+  const handleExternalErrorDismiss = useCallback((): void => {
+    setError(null)
+  }, [])
+
   return {
     renderNode: target
       ? createElement(PaneRenameInput, {
@@ -135,6 +120,7 @@ export const usePaneRenameChord = (
           onSubmit: handleSubmit,
           onCancel: handleCancel,
           externalError: error,
+          onExternalErrorDismiss: handleExternalErrorDismiss,
         })
       : null,
   }

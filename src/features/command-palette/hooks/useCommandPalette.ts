@@ -286,6 +286,14 @@ export const useCommandPalette = (
       }
 
       if (leaderActiveRef.current) {
+        if (isPaletteToggle(event)) {
+          clearLeaderWindow()
+          event.preventDefault()
+          event.stopPropagation()
+
+          return
+        }
+
         const consumed = chordRegistry.dispatch(event)
         clearLeaderWindow()
 

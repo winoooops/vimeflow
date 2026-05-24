@@ -1,5 +1,11 @@
 import userEvent from '@testing-library/user-event'
-import { act, render, renderHook, screen } from '@testing-library/react'
+import {
+  act,
+  render,
+  renderHook,
+  screen,
+  waitFor,
+} from '@testing-library/react'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 import type { ReactElement } from 'react'
 import type { Pane, Session } from '../../sessions/types'
@@ -100,7 +106,7 @@ describe('usePaneRenameChord', () => {
     expect(result.current.renderNode).toBeNull()
   })
 
-  test('onSubmit surfaces a does not support error inline', async () => {
+  test('onSubmit suppresses expected unsupported-agent failure', async () => {
     const user = userEvent.setup()
     mockRenameAgentSession.mockRejectedValueOnce(
       new Error('agent type Aider does not support /rename')
@@ -117,9 +123,14 @@ describe('usePaneRenameChord', () => {
     await user.type(input, 'new')
     await user.keyboard('{Enter}')
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(
-      "this agent doesn't support /rename"
-    )
+    expect(mockSetPaneUserLabel).toHaveBeenCalledWith('pty-1', 'new')
+    expect(mockRenameAgentSession).toHaveBeenCalledWith('pty-1', 'new')
+
+    await waitFor(() => {
+      expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
+    })
+
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
   test('blur during pending submit preserves inline IPC failure', async () => {
@@ -175,8 +186,9 @@ describe('usePaneRenameChord', () => {
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
   })
 
-  test('shell pane sets userLabel locally without calling renameAgentSession', async () => {
+  test('shell pane asks backend and suppresses no-live-agent failure', async () => {
     const user = userEvent.setup()
+    mockRenameAgentSession.mockRejectedValueOnce(new Error('no live agent'))
 
     const focused = makeFocusedRef({
       ptyId: 'pty-shell',
@@ -193,15 +205,20 @@ describe('usePaneRenameChord', () => {
     await user.keyboard('add{Enter}')
 
     expect(mockSetPaneUserLabel).toHaveBeenCalledWith('pty-shell', 'add')
-    expect(mockRenameAgentSession).not.toHaveBeenCalled()
-    expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
+    expect(mockRenameAgentSession).toHaveBeenCalledWith('pty-shell', 'add')
+
+    await waitFor(() => {
+      expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
+    })
+
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
-  test('submit uses latest focused pane agent type instead of open-time snapshot', async () => {
+  test('submit asks backend even while focused pane still looks generic', async () => {
     const user = userEvent.setup()
-    mockRenameAgentSession.mockResolvedValueOnce(undefined)
+    mockRenameAgentSession.mockRejectedValueOnce(new Error('no live agent'))
 
-    let focused = makeFocusedRef({
+    const focused = makeFocusedRef({
       ptyId: 'pty-race',
       agentType: 'generic',
     })
@@ -209,11 +226,6 @@ describe('usePaneRenameChord', () => {
     render(<Harness resolveFocusedPane={() => focused} />)
     act(() => {
       chordRegistry.dispatch({ key: 'r' } as KeyboardEvent)
-    })
-
-    focused = makeFocusedRef({
-      ptyId: 'pty-race',
-      agentType: 'claude-code',
     })
 
     const input = screen.getByRole('textbox')
@@ -225,6 +237,10 @@ describe('usePaneRenameChord', () => {
       'pty-race',
       'race-fixed'
     )
+
+    await waitFor(() => {
+      expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
+    })
   })
 
   test('claude pane sets userLabel AND calls renameAgentSession', async () => {

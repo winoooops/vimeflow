@@ -1,6 +1,7 @@
 import userEvent from '@testing-library/user-event'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, test, vi } from 'vitest'
+import { useState, type ReactElement } from 'react'
 import type { Pane } from '../../sessions/types'
 import { PaneRenameInput } from './PaneRenameInput'
 
@@ -81,5 +82,38 @@ describe('PaneRenameInput', () => {
 
     expect(onCancel).toHaveBeenCalled()
     expect(onSubmit).not.toHaveBeenCalled()
+  })
+
+  test('shows only one alert when editing after an external error', () => {
+    const ControlledRenameInput = (): ReactElement => {
+      const [externalError, setExternalError] = useState<string | null>(
+        'failed to send /rename: pty write failed'
+      )
+
+      return (
+        <PaneRenameInput
+          pane={makePane()}
+          initialValue="valid-title"
+          onSubmit={vi.fn()}
+          onCancel={vi.fn()}
+          externalError={externalError}
+          onExternalErrorDismiss={() => setExternalError(null)}
+        />
+      )
+    }
+
+    render(<ControlledRenameInput />)
+
+    const input = screen.getByRole('textbox')
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'failed to send /rename: pty write failed'
+    )
+
+    fireEvent.change(input, { target: { value: 'bad\u0007' } })
+
+    expect(screen.getAllByRole('alert')).toHaveLength(1)
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'control characters are not allowed'
+    )
   })
 })
