@@ -649,3 +649,5 @@ docs(spec): git-ref-chip-migration
 - **The PR-A pull request.** This plan stops at "code complete + manual QA passed on `feat/git-chip-migration`". Open the PR with `/lifeline:request-pr` (it auto-detects the integration branch as the base — see the stacked-PR pattern in CLAUDE.md / memory).
 - **Worktree-only fallback variant.** Spec §7.1 leaves this as an open question for the PR reviewer; this plan ships option B (no fallback).
 - **PR-B's typed-mock audit.** Spec §6.3 calls for an `rg "UseGitBranchReturn" src/` sweep — that's PR-B's task list, not PR-A's.
+
+<!-- codex-reviewed: 2026-05-24T03:49:39Z -->
