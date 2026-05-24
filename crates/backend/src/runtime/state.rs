@@ -89,7 +89,15 @@ impl BackendState {
 
         let title = sanitize_title(&request.title)
             .ok_or_else(|| "title is empty after sanitization".to_string())?;
-        let command = format!("/rename {title}\n");
+        // Submit byte MUST be `\r` (CR, 0x0D), not `\n` (LF, 0x0A). Both
+        // Claude Code and Codex run their TUI input boxes in raw terminal
+        // mode and capture the actual keypress. The "Enter" key produces
+        // `\r` on every Unix terminal driver; `\n` is only translated to
+        // a submit by ICRNL in *canonical* mode (line-buffered shells),
+        // which raw-mode TUIs disable. Sending `\n` was making the bytes
+        // appear in the agent's input box without ever submitting, until
+        // the user manually focused the pane and pressed Enter.
+        let command = format!("/rename {title}\r");
         let session_id = SessionId::from(request.pty_id);
         self.pty
             .write(&session_id, command.as_bytes())
@@ -353,7 +361,7 @@ mod tests {
         let result = state.rename_agent_session(rename_request("my-feature"));
 
         assert!(result.is_ok());
-        assert_eq!(captured_string(&writes), "/rename my-feature\n");
+        assert_eq!(captured_string(&writes), "/rename my-feature\r");
     }
 
     #[test]
@@ -364,7 +372,7 @@ mod tests {
         let result = state.rename_agent_session(rename_request("codex-title"));
 
         assert!(result.is_ok());
-        assert_eq!(captured_string(&writes), "/rename codex-title\n");
+        assert_eq!(captured_string(&writes), "/rename codex-title\r");
     }
 
     #[test]
@@ -401,6 +409,6 @@ mod tests {
         let result = state.rename_agent_session(rename_request("foo\nbar"));
 
         assert!(result.is_ok());
-        assert_eq!(captured_string(&writes), "/rename foo bar\n");
+        assert_eq!(captured_string(&writes), "/rename foo bar\r");
     }
 }
