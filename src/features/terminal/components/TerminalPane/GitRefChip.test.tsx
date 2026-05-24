@@ -93,28 +93,33 @@ test('composeTooltipLines produces the right lines for every state', () => {
   // through fake timers. The wording is pulled out into a pure function so
   // the contract stays locked without that machinery.
 
-  // worktree + branch (no cwd, attached)
-  expect(
-    composeTooltipLines('feat-jose', 'feat/jose-auth', null, false)
-  ).toEqual(['worktree: feat-jose', 'branch: feat/jose-auth'])
-
-  // branch only (no worktree, no cwd, attached)
+  // Branch only (no worktree, no cwd, attached) — single line.
   expect(composeTooltipLines(null, 'feat/jose-auth', null, false)).toEqual([
     'branch: feat/jose-auth',
   ])
 
-  // worktree + detached SHA
-  expect(composeTooltipLines('feat-jose', 'a7f23c', null, true)).toEqual([
-    'worktree: feat-jose',
-    'detached HEAD: a7f23c',
-  ])
+  // Branch + worktree — branch first, worktree second.
+  expect(
+    composeTooltipLines('feat-jose', 'feat/jose-auth', null, false)
+  ).toEqual(['branch: feat/jose-auth', 'worktree: feat-jose'])
 
-  // detached SHA only
+  // Detached SHA only.
   expect(composeTooltipLines(null, 'a7f23c', null, true)).toEqual([
     'detached HEAD: a7f23c',
   ])
 
-  // cwd line — Linux home is rewritten to `~/...`
+  // Detached + worktree — detached HEAD line first.
+  expect(composeTooltipLines('feat-jose', 'a7f23c', null, true)).toEqual([
+    'detached HEAD: a7f23c',
+    'worktree: feat-jose',
+  ])
+
+  // Branch + cwd (no worktree) — cwd appears verbatim on line 2.
+  expect(
+    composeTooltipLines(null, 'main', '/home/will/projects/foo', false)
+  ).toEqual(['branch: main', '/home/will/projects/foo'])
+
+  // Full three-line tooltip: branch, worktree, cwd path (verbatim, no `~`).
   expect(
     composeTooltipLines(
       'git-chip-migration',
@@ -123,17 +128,12 @@ test('composeTooltipLines produces the right lines for every state', () => {
       false
     )
   ).toEqual([
-    'worktree: git-chip-migration',
     'branch: feat/git-chip-migration',
-    '~/projects/vimeflow/.claude/worktrees/git-chip-migration',
+    'worktree: git-chip-migration',
+    '/home/will/projects/vimeflow/.claude/worktrees/git-chip-migration',
   ])
 
-  // cwd line — macOS /Users/<name> is also rewritten to `~/...`
-  expect(
-    composeTooltipLines(null, 'main', '/Users/alice/code/proj', false)
-  ).toEqual(['branch: main', '~/code/proj'])
-
-  // cwd line — non-home absolute path passes through unchanged
+  // Non-home absolute path passes through unchanged.
   expect(composeTooltipLines(null, 'main', '/opt/code/proj', false)).toEqual([
     'branch: main',
     '/opt/code/proj',

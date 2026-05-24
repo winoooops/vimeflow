@@ -7,35 +7,19 @@ export interface GitRefChipProps {
   worktreeName: string | null
   /** Branch name (PR-A) — or short SHA when HEAD is detached. */
   branch: string | null
-  /** Absolute path of the pane's cwd; rendered home-relative in the tooltip. */
+  /** Absolute path of the pane's cwd; rendered verbatim as the third tooltip line. */
   cwd?: string
   /** PR-A: optional, always defaults to false. PR-B wires the live value. */
   detached?: boolean
 }
 
 /**
- * Replace a leading `/home/<user>/` or `/Users/<user>/` prefix with `~/` so
- * the tooltip's cwd line stays readable. Anything else (relative paths,
- * Windows paths, system-root paths) passes through unchanged.
- */
-const formatCwdRelative = (cwd: string): string => {
-  // The capture group requires at least one char after the username segment
-  // (so `/home/will` with no trailing slash is left as-is, while `/home/will/`
-  // and `/home/will/foo` both produce `~/` and `~/foo`).
-  const homeMatch = /^\/(?:home|Users)\/[^/]+(\/.*)$/.exec(cwd)
-  if (homeMatch === null) {
-    return cwd
-  }
-
-  return '~' + homeMatch[1]
-}
-
-/**
- * Compose the chip's tooltip lines. Exported so the four-state wording stays
+ * Compose the chip's tooltip lines. Exported so the per-state wording stays
  * locked in via a pure-function unit test — asserting the rendered floating
  * surface would require driving floating-ui's hover state.
  *
- * Line order: worktree (if any), branch (or detached HEAD), cwd (if any).
+ * Line order: branch (or detached HEAD), worktree (if any), then the full
+ * cwd path (if any) verbatim — no home-relative substitution.
  */
 export const composeTooltipLines = (
   worktreeName: string | null,
@@ -43,13 +27,14 @@ export const composeTooltipLines = (
   cwd: string | null,
   detached: boolean
 ): string[] => {
-  const lines: string[] = []
+  const lines: string[] = [
+    `${detached ? 'detached HEAD' : 'branch'}: ${branch}`,
+  ]
   if (worktreeName !== null && worktreeName.length > 0) {
     lines.push(`worktree: ${worktreeName}`)
   }
-  lines.push(`${detached ? 'detached HEAD' : 'branch'}: ${branch}`)
   if (cwd !== null && cwd.length > 0) {
-    lines.push(formatCwdRelative(cwd))
+    lines.push(cwd)
   }
 
   return lines
