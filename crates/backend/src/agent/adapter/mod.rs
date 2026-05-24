@@ -190,16 +190,19 @@ impl AgentAdapter for NoOpAdapter {
         <Self as traits::StatusSourceLocator>::locate(self, cwd, session_id)
     }
 
-    fn parse_status(&self, _: &str, _: &str) -> Result<ParsedStatus, String> {
-        // Wording mirrors `StateDecoder::decode`'s error string so
-        // log-based diagnostics see one consistent phrase across the
-        // façade and the split trait (PR #261 cycle 2, F6 — B' renamed
-        // the concept "parse → decode"; the façade's error string
-        // lagged).
-        Err(format!(
-            "{:?} adapter has no status decoder",
-            self.agent_type
-        ))
+    fn parse_status(&self, session_id: &str, raw: &str) -> Result<ParsedStatus, String> {
+        // Delegate to `StateDecoder::decode` so the error string has a
+        // single owner — matches the delegation pattern used by
+        // `ClaudeCodeAdapter::parse_status` and `CodexAdapter::parse_status`
+        // (PR #261 cycle 14 review F38 — NoOp previously duplicated the
+        // wording inline, which would silently drift if `decode`'s
+        // message ever changed). `decode` always returns `Err` for
+        // NoOp, so this always errors too — same behavior, single
+        // source of truth for the message.
+        let snapshot = <Self as traits::StateDecoder>::decode(self, Some(session_id), raw)?;
+        Ok(ParsedStatus {
+            event: types::stamp_snapshot(session_id, snapshot),
+        })
     }
 
     fn validate_transcript(&self, raw: &str) -> Result<PathBuf, ValidateTranscriptError> {
