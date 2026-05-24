@@ -8,6 +8,7 @@ pub mod adapter;
 pub mod commands;
 pub mod detector;
 pub(crate) mod events;
+pub mod sanitize_title;
 pub mod types;
 
 // Re-export commonly used types for external modules and frontend
@@ -16,3 +17,4 @@ pub use types::{AgentDetectedEvent, AgentDisconnectedEvent, AgentType};
 
 pub use adapter::base::TranscriptState;
 pub use adapter::AgentWatcherState;
+pub use sanitize_title::sanitize_title;
