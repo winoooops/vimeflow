@@ -241,7 +241,7 @@ describe('useSessionManager', () => {
     expect(pane?.userLabel).toBeUndefined()
   })
 
-  test('mismatched user-renamed agent-session-title preserves explicit userLabel', async () => {
+  test('user-renamed agent-session-title clears normalized temporary userLabel', async () => {
     const service = createMockService()
     service.listSessions = vi.fn().mockResolvedValue({
       activeSessionId: 'pty-1',
@@ -283,7 +283,7 @@ describe('useSessionManager', () => {
     )
     expect(pane?.agentTitle).toBe('agent-title')
     expect(pane?.agentTitleSource).toBe('user-renamed')
-    expect(pane?.userLabel).toBe('local-name')
+    expect(pane?.userLabel).toBeUndefined()
   })
 
   test('ai-generated agent-session-title preserves explicit userLabel', async () => {

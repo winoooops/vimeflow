@@ -5,21 +5,16 @@ export type TitleValidation =
   | { kind: 'empty' }
   | {
       kind: 'invalid'
-      reason: 'control-char' | 'too-long'
+      reason: 'too-long'
     }
+
+const CONTROL_CHAR_PATTERN = /[\u0000-\u001f\u007f]/g
 
 export const validateTitle = (raw: string): TitleValidation => {
-  for (let index = 0; index < raw.length; index += 1) {
-    const code = raw.charCodeAt(index)
-    if (code <= 0x1f || code === 0x7f) {
-      return {
-        kind: 'invalid',
-        reason: 'control-char',
-      }
-    }
-  }
-
-  const sanitized = raw.replace(/\s+/g, ' ').trim()
+  const sanitized = raw
+    .replace(CONTROL_CHAR_PATTERN, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
   if (sanitized.length === 0) {
     return { kind: 'empty' }
   }

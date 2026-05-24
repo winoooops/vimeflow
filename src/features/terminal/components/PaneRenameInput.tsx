@@ -44,11 +44,7 @@ const errorMessageForValue = (value: string): string | null => {
     return 'title cannot be empty'
   }
 
-  if (validation.kind === 'invalid' && validation.reason === 'control-char') {
-    return 'control characters are not allowed'
-  }
-
-  if (validation.kind === 'invalid' && validation.reason === 'too-long') {
+  if (validation.kind === 'invalid') {
     return 'title is too long (max 200 bytes)'
   }
 

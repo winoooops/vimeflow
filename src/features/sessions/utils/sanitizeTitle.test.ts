@@ -8,26 +8,26 @@ test('valid title returns kind=valid with sanitized value', () => {
   })
 })
 
-test('title with newline returns kind=invalid control-char', () => {
-  const result = validateTitle('line1\nline2')
-
-  expect(result.kind).toBe('invalid')
-  if (result.kind === 'invalid') {
-    expect(result.reason).toBe('control-char')
-  }
+test('title with newline returns kind=valid with sanitized value', () => {
+  expect(validateTitle('line1\nline2')).toEqual({
+    kind: 'valid',
+    sanitized: 'line1 line2',
+  })
 })
 
 test('spaces-only returns kind=empty', () => {
   expect(validateTitle('   ')).toEqual({ kind: 'empty' })
 })
 
-test('tab returns kind=invalid control-char', () => {
-  const result = validateTitle('\t')
+test('tab-only returns kind=empty', () => {
+  expect(validateTitle('\t')).toEqual({ kind: 'empty' })
+})
 
-  expect(result.kind).toBe('invalid')
-  if (result.kind === 'invalid') {
-    expect(result.reason).toBe('control-char')
-  }
+test('DEL control character is replaced with a space', () => {
+  expect(validateTitle('bad\u007fname')).toEqual({
+    kind: 'valid',
+    sanitized: 'bad name',
+  })
 })
 
 test('valid title collapses non-control whitespace runs', () => {

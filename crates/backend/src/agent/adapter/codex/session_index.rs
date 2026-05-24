@@ -1,7 +1,7 @@
 //! Codex `session_index.jsonl` watcher.
 
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime};
 
@@ -17,13 +17,15 @@ const INTERRUPT_SLICES: u32 = 5;
 const PENDING_RENAME_TTL: Duration = Duration::from_secs(30);
 
 struct PendingRename {
+    id: u64,
     session_id: String,
     title: String,
     expires_at: Instant,
+    claimed: bool,
 }
 
-static PENDING_RENAMES: Lazy<Mutex<Vec<PendingRename>>> =
-    Lazy::new(|| Mutex::new(Vec::new()));
+static PENDING_RENAMES: Lazy<Mutex<Vec<PendingRename>>> = Lazy::new(|| Mutex::new(Vec::new()));
+static NEXT_PENDING_RENAME_ID: AtomicU64 = AtomicU64::new(1);
 
 pub(crate) fn record_user_rename(session_id: &str, title: &str) {
     let Ok(mut pending) = PENDING_RENAMES.lock() else {
@@ -34,9 +36,11 @@ pub(crate) fn record_user_rename(session_id: &str, title: &str) {
     let session_id = session_id.to_string();
     pending.retain(|rename| rename.session_id != session_id);
     pending.push(PendingRename {
+        id: NEXT_PENDING_RENAME_ID.fetch_add(1, Ordering::Relaxed),
         session_id,
         title: title.to_string(),
         expires_at: Instant::now() + PENDING_RENAME_TTL,
+        claimed: false,
     });
 }
 
@@ -153,11 +157,15 @@ fn try_emit(
     last_emitted_title: &mut Option<String>,
 ) {
     let sanitized = sanitize_title(raw_title);
-    let source = sanitized
+    let pending_rename_claim = sanitized
         .as_deref()
-        .map(|title| title_source_for_emit(session_id, title))
-        .unwrap_or(TitleSource::AiGenerated);
-    let is_user_renamed = matches!(&source, TitleSource::UserRenamed);
+        .and_then(|title| claim_pending_user_rename(session_id, title));
+    let source = if pending_rename_claim.is_some() {
+        TitleSource::UserRenamed
+    } else {
+        TitleSource::AiGenerated
+    };
+    let is_user_renamed = pending_rename_claim.is_some();
     let is_duplicate = sanitized.as_deref() == last_emitted_title.as_deref();
     let (title, new_memo) = match sanitized {
         Some(_) if is_duplicate && !is_user_renamed => return,
@@ -175,35 +183,36 @@ fn try_emit(
 
     if let Err(err) = emit_agent_session_title(events.as_ref(), &payload) {
         log::warn!("agent-session-title emit failed: {}", err);
+        if let Some(claim_id) = pending_rename_claim {
+            release_pending_user_rename(claim_id);
+        }
         return;
     }
 
-    if is_user_renamed {
-        consume_pending_user_rename(session_id, &payload.title);
+    if let Some(claim_id) = pending_rename_claim {
+        consume_pending_user_rename(claim_id);
     }
     *last_emitted_title = new_memo;
 }
 
-fn title_source_for_emit(session_id: &str, title: &str) -> TitleSource {
+fn claim_pending_user_rename(session_id: &str, title: &str) -> Option<u64> {
     let Ok(mut pending) = PENDING_RENAMES.lock() else {
         log::warn!("codex title sync: pending rename lock poisoned");
-        return TitleSource::AiGenerated;
+        return None;
     };
 
     let now = Instant::now();
     pending.retain(|rename| rename.expires_at > now);
 
-    if pending
-        .iter()
-        .any(|rename| rename.session_id == session_id && rename.title == title)
-    {
-        TitleSource::UserRenamed
-    } else {
-        TitleSource::AiGenerated
-    }
+    let rename = pending.iter().position(|rename| {
+        !rename.claimed && rename.session_id == session_id && rename.title == title
+    })?;
+    pending[rename].claimed = true;
+
+    Some(pending[rename].id)
 }
 
-fn consume_pending_user_rename(session_id: &str, title: &str) {
+fn release_pending_user_rename(claim_id: u64) {
     let Ok(mut pending) = PENDING_RENAMES.lock() else {
         log::warn!("codex title sync: pending rename lock poisoned");
         return;
@@ -212,20 +221,28 @@ fn consume_pending_user_rename(session_id: &str, title: &str) {
     let now = Instant::now();
     pending.retain(|rename| rename.expires_at > now);
 
-    if let Some(index) = pending
-        .iter()
-        .position(|rename| rename.session_id == session_id && rename.title == title)
-    {
+    if let Some(rename) = pending.iter_mut().find(|rename| rename.id == claim_id) {
+        rename.claimed = false;
+    }
+}
+
+fn consume_pending_user_rename(claim_id: u64) {
+    let Ok(mut pending) = PENDING_RENAMES.lock() else {
+        log::warn!("codex title sync: pending rename lock poisoned");
+        return;
+    };
+
+    let now = Instant::now();
+    pending.retain(|rename| rename.expires_at > now);
+
+    if let Some(index) = pending.iter().position(|rename| rename.id == claim_id) {
         pending.remove(index);
     }
 }
 
 #[cfg(test)]
 fn clear_pending_renames_for_test() {
-    PENDING_RENAMES
-        .lock()
-        .expect("pending rename lock")
-        .clear();
+    PENDING_RENAMES.lock().expect("pending rename lock").clear();
 }
 
 #[cfg(test)]
@@ -373,6 +390,22 @@ mod tests {
         assert_eq!(titles.len(), 1);
         assert_eq!(titles[0]["title"], "MyTask");
         assert_eq!(titles[0]["source"], "user-renamed");
+    }
+
+    #[test]
+    fn pending_user_rename_claim_is_atomic_until_released() {
+        let _guard = pending_rename_test_guard();
+        clear_pending_renames_for_test();
+
+        record_user_rename("pty-1", "MyTask");
+        let claim_id =
+            claim_pending_user_rename("pty-1", "MyTask").expect("first claim should succeed");
+
+        assert_eq!(claim_pending_user_rename("pty-1", "MyTask"), None);
+
+        release_pending_user_rename(claim_id);
+
+        assert!(claim_pending_user_rename("pty-1", "MyTask").is_some());
     }
 
     #[test]

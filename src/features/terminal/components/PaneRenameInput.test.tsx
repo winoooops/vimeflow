@@ -92,7 +92,7 @@ describe('PaneRenameInput', () => {
     expect(onSubmit).not.toHaveBeenCalled()
   })
 
-  test('shows only one alert when editing after an external error', () => {
+  test('dismisses external error when editing after an external error', () => {
     const ControlledRenameInput = (): ReactElement => {
       const [externalError, setExternalError] = useState<string | null>(
         'failed to send /rename: pty write failed'
@@ -119,10 +119,7 @@ describe('PaneRenameInput', () => {
 
     fireEvent.change(input, { target: { value: 'bad\u0007' } })
 
-    expect(screen.getAllByRole('alert')).toHaveLength(1)
-    expect(screen.getByRole('alert')).toHaveTextContent(
-      'control characters are not allowed'
-    )
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
   test('tracks pane header position when layout changes', () => {

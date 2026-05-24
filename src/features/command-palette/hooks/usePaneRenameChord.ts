@@ -12,6 +12,7 @@ export interface FocusedPaneRef {
 }
 
 type RenameTarget = {
+  requestId: number
   ptyId: string
   pane: Pane
   initialValue: string
@@ -29,11 +30,36 @@ export const usePaneRenameChord = (
 ): { renderNode: ReactNode } => {
   const [target, setTarget] = useState<RenameTarget>(null)
   const [error, setError] = useState<string | null>(null)
+  const targetRef = useRef<RenameTarget>(null)
+  const errorRef = useRef<string | null>(null)
+  const nextRequestIdRef = useRef(0)
   const resolverRef = useRef(resolveFocusedPane)
   resolverRef.current = resolveFocusedPane
   const setPaneUserLabelRef = useRef(setPaneUserLabel)
   setPaneUserLabelRef.current = setPaneUserLabel
-  const isSubmittingRef = useRef(false)
+  const pendingSubmitCountRef = useRef(0)
+
+  const setRenameTarget = useCallback((nextTarget: RenameTarget): void => {
+    targetRef.current = nextTarget
+    setTarget(nextTarget)
+  }, [])
+
+  const setRenameError = useCallback((nextError: string | null): void => {
+    errorRef.current = nextError
+    setError(nextError)
+  }, [])
+
+  const clearRenameTargetIfCurrent = useCallback(
+    (requestId: number): void => {
+      if (targetRef.current?.requestId !== requestId) {
+        return
+      }
+
+      setRenameTarget(null)
+      setRenameError(null)
+    },
+    [setRenameError, setRenameTarget]
+  )
 
   useEffect(
     () =>
@@ -43,7 +69,9 @@ export const usePaneRenameChord = (
           return false
         }
 
-        setTarget({
+        nextRequestIdRef.current += 1
+        setRenameTarget({
+          requestId: nextRequestIdRef.current,
           ptyId: focused.pane.ptyId,
           pane: focused.pane,
           initialValue:
@@ -51,11 +79,11 @@ export const usePaneRenameChord = (
             focused.pane.agentTitle ??
             focused.session.name,
         })
-        setError(null)
+        setRenameError(null)
 
         return true
       }),
-    []
+    [setRenameError, setRenameTarget]
   )
 
   const handleSubmit = useCallback(
@@ -70,16 +98,14 @@ export const usePaneRenameChord = (
       // suppress expected shell / unsupported-agent failures below.
       setPaneUserLabelRef.current(target.ptyId, title)
 
-      isSubmittingRef.current = true
+      pendingSubmitCountRef.current += 1
 
       try {
         await renameAgentSession(target.ptyId, title)
-        setTarget(null)
-        setError(null)
+        clearRenameTargetIfCurrent(target.requestId)
       } catch (renameError) {
         if (isExpectedNonAgentRenameFailure(renameError)) {
-          setTarget(null)
-          setError(null)
+          clearRenameTargetIfCurrent(target.requestId)
 
           return
         }
@@ -87,30 +113,36 @@ export const usePaneRenameChord = (
         // Local label is already set; surface the IPC failure inline
         // so the user knows the agent's transcript was NOT updated.
         // The header will still reflect the new label via userLabel.
-        setError(errorMessageForRenameFailure(renameError))
+        if (targetRef.current?.requestId === target.requestId) {
+          setRenameError(errorMessageForRenameFailure(renameError))
+        }
       } finally {
-        isSubmittingRef.current = false
+        pendingSubmitCountRef.current = Math.max(
+          0,
+          pendingSubmitCountRef.current - 1
+        )
       }
     },
-    [target]
+    [clearRenameTargetIfCurrent, setRenameError, target]
   )
 
   const handleCancel = useCallback((): void => {
-    if (isSubmittingRef.current) {
+    if (pendingSubmitCountRef.current > 0 || errorRef.current) {
       return
     }
 
-    setTarget(null)
-    setError(null)
-  }, [])
+    setRenameTarget(null)
+    setRenameError(null)
+  }, [setRenameError, setRenameTarget])
 
   const handleExternalErrorDismiss = useCallback((): void => {
-    setError(null)
-  }, [])
+    setRenameError(null)
+  }, [setRenameError])
 
   return {
     renderNode: target
       ? createElement(PaneRenameInput, {
+          key: target.requestId,
           pane: target.pane,
           initialValue: target.initialValue,
           onSubmit: handleSubmit,

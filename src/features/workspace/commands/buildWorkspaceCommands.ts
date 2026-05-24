@@ -112,15 +112,21 @@ export const buildWorkspaceCommands = (
           return
         }
 
-        const trimmed = args.trim()
+        const validation = validateTitle(args)
 
-        if (!trimmed) {
+        if (validation.kind === 'empty') {
           notifyInfo('Usage: :rename-session <name>')
 
           return
         }
 
-        renameSession(sessions[idx].id, trimmed)
+        if (validation.kind === 'invalid') {
+          notifyInfo('title is too long (max 200 bytes)')
+
+          return
+        }
+
+        renameSession(sessions[idx].id, validation.sanitized)
       },
     },
     {
@@ -144,11 +150,7 @@ export const buildWorkspaceCommands = (
         }
 
         if (validation.kind === 'invalid') {
-          if (validation.reason === 'control-char') {
-            notifyInfo('control characters are not allowed')
-          } else {
-            notifyInfo('title is too long (max 200 bytes)')
-          }
+          notifyInfo('title is too long (max 200 bytes)')
 
           return
         }

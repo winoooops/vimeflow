@@ -178,6 +178,59 @@ describe('usePaneRenameChord', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'failed to send /rename: pty write failed'
     )
+
+    act(() => {
+      screen.getByRole('textbox').blur()
+    })
+
+    expect(screen.getByRole('textbox')).toBeInTheDocument()
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'failed to send /rename: pty write failed'
+    )
+  })
+
+  test('resolved stale submit does not close a newer rename target', async () => {
+    const user = userEvent.setup()
+    let resolveRename: (() => void) | null = null
+    mockRenameAgentSession.mockReturnValueOnce(
+      new Promise<void>((resolve) => {
+        resolveRename = resolve
+      })
+    )
+    let focused = makeFocusedRef({
+      ptyId: 'pty-1',
+      agentTitle: 'first-title',
+    })
+
+    render(<Harness resolveFocusedPane={() => focused} />)
+    act(() => {
+      chordRegistry.dispatch({ key: 'r' } as KeyboardEvent)
+    })
+
+    const input = screen.getByRole('textbox')
+    await user.tripleClick(input)
+    await user.keyboard('submitted-title{Enter}')
+
+    focused = makeFocusedRef({
+      ptyId: 'pty-2',
+      agentTitle: 'second-title',
+    })
+
+    act(() => {
+      chordRegistry.dispatch({ key: 'r' } as KeyboardEvent)
+    })
+
+    expect(screen.getByRole('textbox')).toHaveValue('second-title')
+
+    await act(async () => {
+      if (!resolveRename) {
+        throw new Error('rename promise resolve was not captured')
+      }
+      resolveRename()
+      await Promise.resolve()
+    })
+
+    expect(screen.getByRole('textbox')).toHaveValue('second-title')
   })
 
   test('cancel clears the rename target', async () => {

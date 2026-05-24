@@ -95,6 +95,48 @@ describe('buildWorkspaceCommands - happy paths', () => {
     expect(setPaneUserLabel).not.toHaveBeenCalled()
   })
 
+  test(':rename-session sanitizes controls before renaming active session', () => {
+    const commands = buildWorkspaceCommands({
+      sessions: mockSessions,
+      activeSessionId: 'session-1',
+      createSession,
+      removeSession,
+      renameSession,
+      setPaneUserLabel,
+      renameAgentSession,
+      activePanePtyId: 'pty-active',
+      setActiveSessionId,
+      notifyInfo,
+    })
+
+    const renameCmd = commands.find((c) => c.id === 'rename-session')
+    renameCmd?.execute?.('bad\u001bname')
+
+    expect(renameSession).toHaveBeenCalledWith('session-1', 'bad name')
+    expect(notifyInfo).not.toHaveBeenCalled()
+  })
+
+  test(':rename-session rejects overlong input', () => {
+    const commands = buildWorkspaceCommands({
+      sessions: mockSessions,
+      activeSessionId: 'session-1',
+      createSession,
+      removeSession,
+      renameSession,
+      setPaneUserLabel,
+      renameAgentSession,
+      activePanePtyId: 'pty-active',
+      setActiveSessionId,
+      notifyInfo,
+    })
+
+    const renameCmd = commands.find((c) => c.id === 'rename-session')
+    renameCmd?.execute?.('a'.repeat(201))
+
+    expect(renameSession).not.toHaveBeenCalled()
+    expect(notifyInfo).toHaveBeenCalledWith('title is too long (max 200 bytes)')
+  })
+
   test(':rename-pane asks backend to sync even while pane type is generic', () => {
     const commands = buildWorkspaceCommands({
       sessions: mockSessions,
@@ -262,7 +304,7 @@ describe('buildWorkspaceCommands - happy paths', () => {
     expect(notifyInfo).toHaveBeenCalledWith('Usage: :rename-pane <name>')
   })
 
-  test(':rename-pane with control character input rejects before local update', () => {
+  test(':rename-pane with control character input sanitizes before local update', () => {
     const commands = buildWorkspaceCommands({
       sessions: mockSessions,
       activeSessionId: 'session-1',
@@ -279,11 +321,9 @@ describe('buildWorkspaceCommands - happy paths', () => {
     const renamePaneCmd = commands.find((c) => c.id === 'rename-pane')
     renamePaneCmd?.execute?.('bad\nname')
 
-    expect(setPaneUserLabel).not.toHaveBeenCalled()
-    expect(renameAgentSession).not.toHaveBeenCalled()
-    expect(notifyInfo).toHaveBeenCalledWith(
-      'control characters are not allowed'
-    )
+    expect(setPaneUserLabel).toHaveBeenCalledWith('pty-left', 'bad name')
+    expect(renameAgentSession).toHaveBeenCalledWith('pty-left', 'bad name')
+    expect(notifyInfo).not.toHaveBeenCalled()
   })
 
   test(':rename-pane with overlong input rejects before local update', () => {
