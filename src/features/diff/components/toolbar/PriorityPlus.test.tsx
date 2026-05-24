@@ -1,0 +1,286 @@
+import type { ReactElement } from 'react'
+import { act, render, screen } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
+import { PriorityPlus } from './PriorityPlus'
+
+// Capture the ResizeObserver callback so the test can flush measurements
+// synchronously. The test setup file already stubs a global ResizeObserver
+// with vi.fn() (so window does not throw), but it never invokes the
+// callback — we replace it for these tests so we can drive the measure
+// loop deterministically.
+let resizeCallback: ResizeObserverCallback | null = null
+
+class TestResizeObserver implements ResizeObserver {
+  constructor(callback: ResizeObserverCallback) {
+    resizeCallback = callback
+  }
+  observe(): void {
+    // No-op — the test fires the callback directly.
+  }
+  unobserve(): void {
+    // No-op.
+  }
+  disconnect(): void {
+    // No-op.
+  }
+}
+
+interface ItemLayout {
+  offsetTop: number
+  offsetHeight: number
+  offsetLeft: number
+  offsetWidth: number
+}
+
+// Override the layout properties on each item wrapper + the container.
+// The PriorityPlus measurement reads offsetTop/Height/Left/Width on each
+// child wrapper and clientWidth on the container; jsdom returns 0 for all
+// of those by default. We define each value explicitly via configurable
+// own-properties so subsequent re-measurements see the test's layout.
+const stubLayout = (
+  root: HTMLElement,
+  layouts: readonly ItemLayout[],
+  containerWidth: number
+): void => {
+  Object.defineProperty(root, 'clientWidth', {
+    value: containerWidth,
+    configurable: true,
+  })
+
+  // The trailing OverflowMenu trigger button has aria-label — exclude it
+  // from the wrapper list. Item wrappers are <div> with no aria-label.
+  // eslint-disable-next-line testing-library/no-node-access -- iterate PriorityPlus wrappers
+  const childNodes = root.children
+
+  const wrappers = Array.from(childNodes).filter(
+    (el): el is HTMLElement =>
+      el instanceof HTMLElement && el.getAttribute('aria-label') === null
+  )
+  layouts.forEach((layout, index) => {
+    const node = wrappers[index]
+    if (!node) {
+      return
+    }
+
+    Object.defineProperty(node, 'offsetTop', {
+      value: layout.offsetTop,
+      configurable: true,
+    })
+
+    Object.defineProperty(node, 'offsetHeight', {
+      value: layout.offsetHeight,
+      configurable: true,
+    })
+
+    Object.defineProperty(node, 'offsetLeft', {
+      value: layout.offsetLeft,
+      configurable: true,
+    })
+
+    Object.defineProperty(node, 'offsetWidth', {
+      value: layout.offsetWidth,
+      configurable: true,
+    })
+  })
+}
+
+const fireResize = (): void => {
+  act(() => {
+    resizeCallback?.([], {} as ResizeObserver)
+  })
+}
+
+const renderItems = (count: number): ReactElement[] =>
+  Array.from({ length: count }, (_, index) => (
+    <button key={index} type="button" data-testid={`item-${index}`}>
+      item {index}
+    </button>
+  ))
+
+// Returns the wrapper <div> that PriorityPlus mounts around the i-th
+// child. Using parentElement is unavoidable here: only the test's own
+// children have a queryable role; the wrappers are an implementation
+// detail and don't get one.
+const wrapperFor = (testId: string): HTMLElement => {
+  const child = screen.getByTestId(testId)
+  // eslint-disable-next-line testing-library/no-node-access -- read PriorityPlus wrapper
+  const parent = child.parentElement
+  if (!parent) {
+    throw new Error(`no parent for ${testId}`)
+  }
+
+  return parent
+}
+
+const rootContainer = (testId: string): HTMLElement => {
+  const wrapper = wrapperFor(testId)
+  // eslint-disable-next-line testing-library/no-node-access -- climb to PriorityPlus root
+  const root = wrapper.parentElement
+  if (!root) {
+    throw new Error(`no PriorityPlus root for ${testId}`)
+  }
+
+  return root
+}
+
+describe('PriorityPlus', () => {
+  beforeEach(() => {
+    resizeCallback = null
+    vi.stubGlobal('ResizeObserver', TestResizeObserver)
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    resizeCallback = null
+  })
+
+  test('renders no overflow chip when every item fits on a single row', () => {
+    render(<PriorityPlus maxRows={1}>{renderItems(3)}</PriorityPlus>)
+
+    stubLayout(
+      rootContainer('item-0'),
+      [
+        { offsetTop: 0, offsetHeight: 24, offsetLeft: 0, offsetWidth: 60 },
+        { offsetTop: 0, offsetHeight: 24, offsetLeft: 72, offsetWidth: 60 },
+        { offsetTop: 0, offsetHeight: 24, offsetLeft: 144, offsetWidth: 60 },
+      ],
+      600
+    )
+    fireResize()
+
+    expect(
+      screen.queryByRole('button', { name: /more controls/i })
+    ).not.toBeInTheDocument()
+    expect(screen.getByTestId('item-0')).toBeVisible()
+    expect(screen.getByTestId('item-2')).toBeVisible()
+  })
+
+  test('shows the overflow chip and hides items past the cutoff when half land on row 2', () => {
+    render(<PriorityPlus maxRows={1}>{renderItems(4)}</PriorityPlus>)
+
+    // Items 0 + 1 on row 1 (offsetTop 0). Items 2 + 3 on row 2 (offsetTop 30).
+    // Container is wide enough for items 0+1 + the 32px chip + 12px gap, so
+    // the chip-reservation pull-back doesn't trigger.
+    stubLayout(
+      rootContainer('item-0'),
+      [
+        { offsetTop: 0, offsetHeight: 24, offsetLeft: 0, offsetWidth: 60 },
+        { offsetTop: 0, offsetHeight: 24, offsetLeft: 72, offsetWidth: 60 },
+        { offsetTop: 30, offsetHeight: 24, offsetLeft: 0, offsetWidth: 60 },
+        { offsetTop: 30, offsetHeight: 24, offsetLeft: 72, offsetWidth: 60 },
+      ],
+      400
+    )
+    fireResize()
+
+    const chip = screen.getByRole('button', { name: /more controls/i })
+    expect(chip).toBeInTheDocument()
+    expect(chip).toHaveAttribute('aria-label', 'Show 2 more controls')
+
+    // Hidden items inherit the `hidden` Tailwind class on their wrapper.
+    expect(wrapperFor('item-2').className).toContain('hidden')
+    expect(wrapperFor('item-3').className).toContain('hidden')
+    // Visible items' wrappers stay un-hidden.
+    expect(wrapperFor('item-0').className).not.toContain('hidden')
+  })
+
+  test('reserves chip space — pulls cutoff back when the chip will not fit on the last allowed row', () => {
+    render(<PriorityPlus maxRows={1}>{renderItems(4)}</PriorityPlus>)
+
+    // We trigger the pull-back by laying out 3 items on row 1 with item 3 on
+    // row 2 — without pull-back, cutoff = 3 (last visible = item 2). The
+    // container is exactly as wide as items 0/1/2 with zero room for the
+    // 32 + 12 = 44 px chip, so the pull-back drops cutoff to 2 (item 2 also
+    // hides). Two items end up in the overflow menu.
+    stubLayout(
+      rootContainer('item-0'),
+      [
+        { offsetTop: 0, offsetHeight: 24, offsetLeft: 0, offsetWidth: 60 },
+        { offsetTop: 0, offsetHeight: 24, offsetLeft: 72, offsetWidth: 60 },
+        { offsetTop: 0, offsetHeight: 24, offsetLeft: 144, offsetWidth: 60 },
+        { offsetTop: 30, offsetHeight: 24, offsetLeft: 0, offsetWidth: 60 },
+      ],
+      // Container width = 204 — exactly enough for items 0/1/2 (right edge =
+      // 144 + 60 = 204) but with zero room left for the chip. Cutoff before
+      // pull-back is 3 (item 3 overflows). After pull-back: 2 (so item 2 is
+      // also hidden and the chip fits beside item 1).
+      204
+    )
+    fireResize()
+
+    expect(
+      screen.getByRole('button', { name: /more controls/i })
+    ).toHaveAttribute('aria-label', 'Show 2 more controls')
+
+    // Item 1 should still be visible (the pull-back stopped at index 2).
+    expect(wrapperFor('item-1').className).not.toContain('hidden')
+    // Item 2 should be hidden because of the chip-space reservation.
+    expect(wrapperFor('item-2').className).toContain('hidden')
+  })
+
+  test('children list changes trigger re-measurement', () => {
+    const { rerender } = render(
+      <PriorityPlus maxRows={1}>{renderItems(2)}</PriorityPlus>
+    )
+
+    stubLayout(
+      rootContainer('item-0'),
+      [
+        { offsetTop: 0, offsetHeight: 24, offsetLeft: 0, offsetWidth: 60 },
+        { offsetTop: 0, offsetHeight: 24, offsetLeft: 72, offsetWidth: 60 },
+      ],
+      400
+    )
+    fireResize()
+
+    expect(
+      screen.queryByRole('button', { name: /more controls/i })
+    ).not.toBeInTheDocument()
+
+    // Re-render with more items, simulating overflow on row 2. The
+    // measurement effect depends on children.length so it re-runs after the
+    // new wrappers mount.
+    rerender(<PriorityPlus maxRows={1}>{renderItems(4)}</PriorityPlus>)
+
+    stubLayout(
+      rootContainer('item-0'),
+      [
+        { offsetTop: 0, offsetHeight: 24, offsetLeft: 0, offsetWidth: 60 },
+        { offsetTop: 0, offsetHeight: 24, offsetLeft: 72, offsetWidth: 60 },
+        { offsetTop: 30, offsetHeight: 24, offsetLeft: 0, offsetWidth: 60 },
+        { offsetTop: 30, offsetHeight: 24, offsetLeft: 72, offsetWidth: 60 },
+      ],
+      400
+    )
+    // The freshly mounted wrappers need their layout stubbed before the
+    // next measurement pass — fire a resize so the effect runs again with
+    // the stubs in place.
+    fireResize()
+
+    expect(
+      screen.getByRole('button', { name: /more controls/i })
+    ).toBeInTheDocument()
+  })
+
+  test('hidden items remain in the DOM so the OverflowMenu can render them', () => {
+    render(<PriorityPlus maxRows={1}>{renderItems(3)}</PriorityPlus>)
+
+    stubLayout(
+      rootContainer('item-0'),
+      [
+        { offsetTop: 0, offsetHeight: 24, offsetLeft: 0, offsetWidth: 60 },
+        { offsetTop: 0, offsetHeight: 24, offsetLeft: 72, offsetWidth: 60 },
+        { offsetTop: 30, offsetHeight: 24, offsetLeft: 0, offsetWidth: 60 },
+      ],
+      400
+    )
+    fireResize()
+
+    expect(
+      screen.getByRole('button', { name: /more controls/i })
+    ).toHaveAttribute('aria-label', 'Show 1 more controls')
+    // The hidden item's wrapper still carries the hidden class; the
+    // OverflowMenu re-mounts the same node when opened.
+    expect(wrapperFor('item-2').className).toContain('hidden')
+  })
+})
