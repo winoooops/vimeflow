@@ -175,7 +175,7 @@ describe('usePaneRenameChord', () => {
     )
   })
 
-  test('blur during pending submit preserves inline IPC failure', async () => {
+  test('blur during pending submit preserves inline IPC failure until cancel', async () => {
     const user = userEvent.setup()
     let rejectRename: ((error: Error) => void) | null = null
     mockRenameAgentSession.mockReturnValueOnce(
@@ -213,14 +213,11 @@ describe('usePaneRenameChord', () => {
     )
     expect(mockSetPaneUserLabel).toHaveBeenLastCalledWith('pty-1', undefined)
 
-    act(() => {
-      screen.getByRole('textbox').blur()
-    })
+    screen.getByRole('textbox').focus()
+    await user.keyboard('{Escape}')
 
-    expect(screen.getByRole('textbox')).toBeInTheDocument()
-    expect(screen.getByRole('alert')).toHaveTextContent(
-      'failed to send /rename: pty write failed'
-    )
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
   test('resolved stale submit does not close a newer rename target', async () => {

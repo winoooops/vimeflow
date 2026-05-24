@@ -375,22 +375,34 @@ mod tests {
         }
     }
 
-    fn seed_live_agent(state: &BackendState, agent_type: AgentType) -> Arc<Mutex<Vec<u8>>> {
+    fn seed_live_agent_for_pty(
+        state: &BackendState,
+        pty_id: &str,
+        agent_type: AgentType,
+    ) -> Arc<Mutex<Vec<u8>>> {
         let writes = Arc::new(Mutex::new(Vec::new()));
         state
             .pty
-            .insert("pty-1".to_string(), make_capturing_session(writes.clone()));
+            .insert(pty_id.to_string(), make_capturing_session(writes.clone()));
         state
             .agents
-            .insert_agent_type_for_test("pty-1".to_string(), agent_type);
+            .insert_agent_type_for_test(pty_id.to_string(), agent_type);
         writes
     }
 
-    fn rename_request(title: &str) -> RenameAgentSessionRequest {
+    fn seed_live_agent(state: &BackendState, agent_type: AgentType) -> Arc<Mutex<Vec<u8>>> {
+        seed_live_agent_for_pty(state, "pty-1", agent_type)
+    }
+
+    fn rename_request_for_pty(pty_id: &str, title: &str) -> RenameAgentSessionRequest {
         RenameAgentSessionRequest {
-            pty_id: "pty-1".to_string(),
+            pty_id: pty_id.to_string(),
             title: title.to_string(),
         }
+    }
+
+    fn rename_request(title: &str) -> RenameAgentSessionRequest {
+        rename_request_for_pty("pty-1", title)
     }
 
     fn captured_string(writes: &Arc<Mutex<Vec<u8>>>) -> String {
@@ -431,9 +443,10 @@ mod tests {
     #[test]
     fn rename_agent_session_writes_command_for_codex() {
         let (state, _sink) = BackendState::with_fake_sink();
-        let writes = seed_live_agent(&state, AgentType::Codex);
+        let pty_id = "pty-state-codex";
+        let writes = seed_live_agent_for_pty(&state, pty_id, AgentType::Codex);
 
-        let result = state.rename_agent_session(rename_request("codex-title"));
+        let result = state.rename_agent_session(rename_request_for_pty(pty_id, "codex-title"));
 
         assert!(result.is_ok());
         assert_eq!(captured_string(&writes), "/rename codex-title\r");

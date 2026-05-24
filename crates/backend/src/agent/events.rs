@@ -5,7 +5,6 @@ use crate::agent::types::{
 };
 use crate::runtime::{serialize_event, EventSink};
 
-#[allow(dead_code)] // Used by title-sync adapters added in follow-up tasks
 pub const AGENT_SESSION_TITLE: &str = "agent-session-title";
 
 pub(crate) fn emit_agent_status(

@@ -31,7 +31,6 @@ export const usePaneRenameChord = (
   const [target, setTarget] = useState<RenameTarget>(null)
   const [error, setError] = useState<string | null>(null)
   const targetRef = useRef<RenameTarget>(null)
-  const errorRef = useRef<string | null>(null)
   const nextRequestIdRef = useRef(0)
   const resolverRef = useRef(resolveFocusedPane)
   resolverRef.current = resolveFocusedPane
@@ -45,7 +44,6 @@ export const usePaneRenameChord = (
   }, [])
 
   const setRenameError = useCallback((nextError: string | null): void => {
-    errorRef.current = nextError
     setError(nextError)
   }, [])
 
@@ -127,7 +125,7 @@ export const usePaneRenameChord = (
   )
 
   const handleCancel = useCallback((): void => {
-    if (pendingSubmitCountRef.current > 0 || errorRef.current) {
+    if (pendingSubmitCountRef.current > 0) {
       return
     }
 

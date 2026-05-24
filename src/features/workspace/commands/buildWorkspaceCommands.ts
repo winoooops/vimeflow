@@ -44,6 +44,8 @@ export interface WorkspaceCommandDeps {
    * error via `notifyInfo`.
    */
   renameAgentSession: (ptyId: string, label: string) => Promise<void>
+  nextPaneRenameRequestId?: () => number
+  isCurrentPaneRenameRequest?: (requestId: number) => boolean
   setActiveSessionId: (id: string) => void
   notifyInfo: (message: string) => void
 }
@@ -62,9 +64,30 @@ export const buildWorkspaceCommands = (
     renameSession,
     setPaneUserLabel,
     renameAgentSession,
+    nextPaneRenameRequestId,
+    isCurrentPaneRenameRequest,
     setActiveSessionId,
     notifyInfo,
   } = deps
+  let fallbackPaneRenameRequestId = 0
+
+  const claimPaneRenameRequest = (): number => {
+    if (nextPaneRenameRequestId) {
+      return nextPaneRenameRequestId()
+    }
+
+    fallbackPaneRenameRequestId += 1
+
+    return fallbackPaneRenameRequestId
+  }
+
+  const isLatestPaneRenameRequest = (requestId: number): boolean => {
+    if (isCurrentPaneRenameRequest) {
+      return isCurrentPaneRenameRequest(requestId)
+    }
+
+    return requestId === fallbackPaneRenameRequestId
+  }
 
   const findActiveIndex = (): number =>
     sessions.findIndex((s) => s.id === activeSessionId)
@@ -158,6 +181,7 @@ export const buildWorkspaceCommands = (
         }
 
         const title = validation.sanitized
+        const requestId = claimPaneRenameRequest()
 
         // Always set the local label first so the Header reflects the
         // new name immediately, even before the agent round-trip
@@ -172,6 +196,10 @@ export const buildWorkspaceCommands = (
             await renameAgentSession(activePanePtyId, title)
           } catch (error: unknown) {
             if (isExpectedLocalOnlyRenameFailure(error, activePaneAgentType)) {
+              return
+            }
+
+            if (!isLatestPaneRenameRequest(requestId)) {
               return
             }
 

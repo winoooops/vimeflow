@@ -174,6 +174,19 @@ export const WorkspaceView = (): ReactElement => {
 
   const { message: infoMessage, notifyInfo, dismiss } = useNotifyInfo()
   const { activeTab, setActiveTab } = useSidebarTab()
+  const paneRenameRequestIdRef = useRef(0)
+
+  const nextPaneRenameRequestId = useCallback((): number => {
+    paneRenameRequestIdRef.current += 1
+
+    return paneRenameRequestIdRef.current
+  }, [])
+
+  const isCurrentPaneRenameRequest = useCallback(
+    (requestId: number): boolean =>
+      requestId === paneRenameRequestIdRef.current,
+    []
+  )
 
   // Activity updates (tool calls, file changes) bump `sessions` identity
   // but no command body reads activity, so rebuilding on every PTY data
@@ -209,6 +222,8 @@ export const WorkspaceView = (): ReactElement => {
         renameSession,
         setPaneUserLabel,
         renameAgentSession,
+        nextPaneRenameRequestId,
+        isCurrentPaneRenameRequest,
         setActiveSessionId,
         notifyInfo,
       }),
@@ -225,6 +240,8 @@ export const WorkspaceView = (): ReactElement => {
       removeSession,
       renameSession,
       setPaneUserLabel,
+      nextPaneRenameRequestId,
+      isCurrentPaneRenameRequest,
       setActiveSessionId,
       notifyInfo,
     ]
