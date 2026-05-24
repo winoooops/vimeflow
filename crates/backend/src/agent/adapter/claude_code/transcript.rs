@@ -337,7 +337,7 @@ fn tail_loop(
             &session_id,
             &claude_agent_session_id,
             "",
-            TitleSource::UserRenamed,
+            TitleSource::AiGenerated,
             &mut last_title_memo,
         );
     }
@@ -997,6 +997,58 @@ mod tests {
             .expect("title event");
         assert_eq!(title.1["title"], "my-feature");
         assert_eq!(title.1["source"], "user-renamed");
+    }
+
+    #[test]
+    fn tail_loop_shutdown_clear_emits_ai_generated_source() {
+        use std::io::Write;
+
+        let agent_id = "abc-123";
+        let mut transcript = tempfile::NamedTempFile::new().expect("temp transcript");
+        let line = serde_json::to_string(&json!({
+            "type": "custom-title",
+            "customTitle": "my-feature",
+            "sessionId": agent_id,
+        }))
+        .expect("serialize title line");
+        writeln!(transcript, "{}", line).expect("write transcript");
+        transcript.flush().expect("flush transcript");
+
+        let file = std::fs::File::open(transcript.path()).expect("open transcript");
+        let (sink, sink_dyn, _) = make_sink_and_emitter();
+        let stop = Arc::new(AtomicBool::new(false));
+        let stop_clone = stop.clone();
+        let events = sink_dyn.clone();
+        let join = std::thread::spawn(move || {
+            tail_loop(
+                events,
+                "pty-1".to_string(),
+                None,
+                file,
+                stop_clone,
+                agent_id.to_string(),
+            );
+        });
+
+        for _ in 0..40 {
+            if sink.count(AGENT_SESSION_TITLE) >= 1 {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(25));
+        }
+
+        stop.store(true, Ordering::Release);
+        join.join().expect("tail loop joins");
+
+        let titles: Vec<_> = sink
+            .recorded()
+            .into_iter()
+            .filter(|(name, _)| name == AGENT_SESSION_TITLE)
+            .collect();
+        assert_eq!(titles.len(), 2);
+        assert_eq!(titles[0].1["source"], "user-renamed");
+        assert_eq!(titles[1].1["title"], "");
+        assert_eq!(titles[1].1["source"], "ai-generated");
     }
 
     #[test]

@@ -69,7 +69,7 @@ describe('useCommandPalette', () => {
   })
 
   describe('keyboard trigger - Ctrl+:', () => {
-    test('opens palette immediately and leaves it open when leader window expires', () => {
+    test('Ctrl+: opens palette after the leader window expires', () => {
       vi.useFakeTimers()
       const { result } = renderHook(() => useCommandPalette())
 
@@ -84,7 +84,7 @@ describe('useCommandPalette', () => {
         document.dispatchEvent(event)
       })
 
-      expect(result.current.state.isOpen).toBe(true)
+      expect(result.current.state.isOpen).toBe(false)
 
       act(() => {
         vi.advanceTimersByTime(500)
@@ -93,7 +93,7 @@ describe('useCommandPalette', () => {
       expect(result.current.state.isOpen).toBe(true)
     })
 
-    test('Ctrl+: with palette closed keeps palette open during leader window', () => {
+    test('Ctrl+: with palette closed keeps palette closed during leader window', () => {
       vi.useFakeTimers()
       const { result } = renderHook(() => useCommandPalette())
 
@@ -106,13 +106,13 @@ describe('useCommandPalette', () => {
         document.dispatchEvent(event)
       })
 
-      expect(result.current.state.isOpen).toBe(true)
+      expect(result.current.state.isOpen).toBe(false)
 
       act(() => {
         vi.advanceTimersByTime(499)
       })
 
-      expect(result.current.state.isOpen).toBe(true)
+      expect(result.current.state.isOpen).toBe(false)
     })
 
     test('does not open palette when bare : is pressed', async () => {
@@ -158,7 +158,7 @@ describe('useCommandPalette', () => {
       expect(result.current.state.isOpen).toBe(false)
     })
 
-    test('Ctrl+: trigger calls preventDefault and stopPropagation when opening', () => {
+    test('Ctrl+: trigger calls preventDefault and stopPropagation when starting leader', () => {
       vi.useFakeTimers()
       const { result } = renderHook(() => useCommandPalette())
 
@@ -175,7 +175,7 @@ describe('useCommandPalette', () => {
         document.dispatchEvent(event)
       })
 
-      expect(result.current.state.isOpen).toBe(true)
+      expect(result.current.state.isOpen).toBe(false)
       expect(preventDefaultSpy).toHaveBeenCalled()
       expect(stopPropagationSpy).toHaveBeenCalled()
     })
@@ -207,7 +207,7 @@ describe('useCommandPalette', () => {
       expect(result.current.state.isOpen).toBe(false)
     })
 
-    test('Ctrl+: then r within 500ms triggers chord and closes palette', () => {
+    test('Ctrl+: then r within 500ms triggers chord without opening palette', () => {
       vi.useFakeTimers()
       const handler = vi.fn(() => true)
       chordRegistry.registerChord('r', handler)
@@ -223,7 +223,7 @@ describe('useCommandPalette', () => {
         document.dispatchEvent(leaderEvent)
       })
 
-      expect(result.current.state.isOpen).toBe(true)
+      expect(result.current.state.isOpen).toBe(false)
 
       const followUpEvent = new KeyboardEvent('keydown', {
         key: 'r',
@@ -249,7 +249,7 @@ describe('useCommandPalette', () => {
       expect(result.current.state.isOpen).toBe(false)
     })
 
-    test('Ctrl+: then non-chord follow-up leaves palette open without consuming follow-up', () => {
+    test('Ctrl+: then non-chord follow-up opens palette and consumes follow-up', () => {
       vi.useFakeTimers()
       const { result } = renderHook(() => useCommandPalette())
 
@@ -263,7 +263,7 @@ describe('useCommandPalette', () => {
         document.dispatchEvent(leaderEvent)
       })
 
-      expect(result.current.state.isOpen).toBe(true)
+      expect(result.current.state.isOpen).toBe(false)
 
       const followUpEvent = new KeyboardEvent('keydown', {
         key: 'q',
@@ -277,8 +277,8 @@ describe('useCommandPalette', () => {
         document.dispatchEvent(followUpEvent)
       })
 
-      expect(preventDefaultSpy).not.toHaveBeenCalled()
-      expect(stopPropagationSpy).not.toHaveBeenCalled()
+      expect(preventDefaultSpy).toHaveBeenCalled()
+      expect(stopPropagationSpy).toHaveBeenCalled()
       expect(result.current.state.isOpen).toBe(true)
     })
 
@@ -298,7 +298,7 @@ describe('useCommandPalette', () => {
         document.dispatchEvent(leaderEvent)
       })
 
-      expect(result.current.state.isOpen).toBe(true)
+      expect(result.current.state.isOpen).toBe(false)
 
       act(() => {
         result.current.close()

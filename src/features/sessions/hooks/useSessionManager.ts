@@ -310,11 +310,12 @@ export const useSessionManager = (
                 // A matching confirmed `/rename` (`user-renamed`) means the
                 // agent transcript has caught up with the temporary local
                 // label, so let `agentTitle` render. Other title updates must
-                // not erase an explicit local pane label.
+                // not erase an explicit local pane label unless the agent
+                // watcher is clearing title state for the session lifecycle.
                 const nextUserLabel =
-                  !cleared &&
-                  payload.source === 'user-renamed' &&
-                  pane.userLabel === nextTitle
+                  cleared ||
+                  (payload.source === 'user-renamed' &&
+                    pane.userLabel === nextTitle)
                     ? undefined
                     : pane.userLabel
 

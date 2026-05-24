@@ -42,14 +42,18 @@ export const useCommandPalette = (
     leaderActiveRef.current = false
   }, [])
 
-  const startLeaderWindow = useCallback((): void => {
-    clearLeaderWindow()
-    leaderActiveRef.current = true
-    leaderTimerRef.current = setTimeout(() => {
-      leaderActiveRef.current = false
-      leaderTimerRef.current = null
-    }, LEADER_WINDOW_MS)
-  }, [clearLeaderWindow])
+  const startLeaderWindow = useCallback(
+    (onExpire: () => void): void => {
+      clearLeaderWindow()
+      leaderActiveRef.current = true
+      leaderTimerRef.current = setTimeout(() => {
+        leaderActiveRef.current = false
+        leaderTimerRef.current = null
+        onExpire()
+      }, LEADER_WINDOW_MS)
+    },
+    [clearLeaderWindow]
+  )
 
   // Parse query into verb and args
   const parsedQuery = useMemo(() => parseQuery(state.query), [state.query])
@@ -296,13 +300,20 @@ export const useCommandPalette = (
         if (event.key === 'Escape') {
           event.preventDefault()
           event.stopPropagation()
-          handlersRef.current.close()
 
           return
         }
+
+        event.preventDefault()
+        event.stopPropagation()
+        handlersRef.current.open()
+
+        return
       }
 
-      // Toggle palette on Ctrl+: (capture-phase listener)
+      // Ctrl+: starts a short leader window. If no chord consumes the
+      // follow-up key, the palette opens after the window or immediately on
+      // the non-chord key.
       if (isPaletteToggle(event)) {
         event.preventDefault()
         event.stopPropagation()
@@ -310,8 +321,9 @@ export const useCommandPalette = (
         if (stateRef.current.isOpen) {
           handlersRef.current.close()
         } else {
-          handlersRef.current.open()
-          startLeaderWindow()
+          startLeaderWindow(() => {
+            handlersRef.current.open()
+          })
         }
 
         return

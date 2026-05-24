@@ -331,7 +331,7 @@ describe('useSessionManager', () => {
     expect(pane?.userLabel).toBe('local-name')
   })
 
-  test('empty agent-session-title preserves userLabel as the next-best name', async () => {
+  test('empty agent-session-title clears userLabel', async () => {
     const service = createMockService()
     service.listSessions = vi.fn().mockResolvedValue({
       activeSessionId: 'pty-1',
@@ -366,7 +366,7 @@ describe('useSessionManager', () => {
         sessionId: 'pty-1',
         agentSessionId: 'agent-uuid',
         title: '',
-        source: 'user-renamed',
+        source: 'ai-generated',
       })
     })
 
@@ -374,9 +374,8 @@ describe('useSessionManager', () => {
       (candidate) => candidate.ptyId === 'pty-1'
     )
     expect(pane?.agentTitle).toBeUndefined()
-    // userLabel survives — there's no agent value to defer to, so the
-    // user's local label remains the Header's best signal.
-    expect(pane?.userLabel).toBe('my-label')
+    expect(pane?.agentTitleSource).toBeUndefined()
+    expect(pane?.userLabel).toBeUndefined()
   })
 
   test('agent-session-title for unknown ptyId does not change state identity', async () => {
