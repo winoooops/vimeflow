@@ -819,28 +819,56 @@ let codex_home = self.codex_home.clone(); // existing struct field
 let session_id_for_titles = session_id.clone();
 let events_for_titles = Arc::clone(&events);
 
-// Derive Codex's session UUID from the rollout filename:
-//   `rollout-<ISO-timestamp>-<uuid>.jsonl` → <uuid>
-let agent_session_id = parse_rollout_filename_uuid(&transcript_path)
-    .ok_or_else(|| "could not derive codex session id from rollout path".to_owned())?;
-
+// Start the rollout tail FIRST and unconditionally — title support
+// must never gate the status / cost / cwd channel.
 let mut handle = transcript::start_tailing(
     Arc::clone(&events_for_titles),
     session_id.clone(),
     transcript_path.clone(),
     cwd,
 )?;
-let aux_stop = Arc::new(AtomicBool::new(false));
-let title_join = session_index::spawn_watch(
-    codex_home.join("session_index.jsonl"),
-    agent_session_id,
-    session_id_for_titles,
-    events_for_titles,
-    Arc::clone(&aux_stop),
-)?;
-handle.attach_aux_join(aux_stop, title_join);
+
+// Title support is BEST-EFFORT. Attempt to derive Codex's session
+// UUID from the rollout filename — `rollout-<ISO-ts>-<uuid>.jsonl`
+// — but if the filename does not match (future Codex changes the
+// scheme, or the file came from `codex resume` with an unusual
+// path), LOG and continue without title support. The rollout tail
+// keeps running.
+match parse_rollout_filename_uuid(&transcript_path) {
+    Some(agent_session_id) => {
+        let aux_stop = Arc::new(AtomicBool::new(false));
+        let title_join = session_index::spawn_watch(
+            codex_home.join("session_index.jsonl"),
+            agent_session_id,
+            session_id_for_titles,
+            events_for_titles,
+            Arc::clone(&aux_stop),
+        )?;
+        handle.attach_aux_join(aux_stop, title_join);
+    }
+    None => {
+        log::warn!(
+            "codex title sync disabled for this session: \
+             rollout filename {:?} does not match expected \
+             `rollout-<ISO-ts>-<uuid>.jsonl` pattern",
+            transcript_path.file_name()
+        );
+        // Pane Header falls back to session.name; no agent-session-title
+        // emit ever fires for this pane. Status / cwd / cost continue.
+    }
+}
 Ok(handle)
 ```
+
+**Alternative source for `agent_session_id`.** The Codex locator
+(`crates/backend/src/agent/adapter/codex/locator/`) already resolves
+the rollout path by querying SQLite — the same query returns the
+thread `id` (the `agent_session_id`) as a sibling column. A v1.1
+refinement could plumb that id directly into `tail_transcript`
+instead of parsing the filename, eliminating the filename-parse
+failure mode entirely. Out of scope for v1 because it requires
+threading a new value through the locator API; the filename parser
+is a strict subset of work.
 
 **Adapter-state implications.** `CodexAdapter` does NOT gain a new
 `agent_session_id` field; the UUID is derived from the
@@ -958,12 +986,18 @@ Other adapters (Claude, NoOp) leave `aux_stop` / `aux_join` as
 `pub fn spawn_watch(...) -> std::io::Result<std::thread::JoinHandle<()>>`:
 
 1. **Initial read.** On thread start, open the file. If it exists,
-   parse line-by-line, locate the row whose `id` equals our
-   `agent_session_id`. **If found, emit immediately** with the
-   current `thread_name` (so a reload restores the title without
-   waiting for the next change). Set `last_emitted_title` to the
-   emitted value. If the file or row does not exist, `last_emitted_title`
-   stays `None`; no emit.
+   parse line-by-line — `session_index.jsonl` is **append+rewrite**
+   with last-write-wins semantics per `id` (§1.1). The reader MUST
+   take the **last** row whose `id` matches our `agent_session_id`,
+   not the first. Concretely, iterate every line and OVERWRITE on
+   each id match (equivalent to deserializing into a
+   `HashMap<id, row>` and reading our key); taking the first match
+   would surface stale renames after the user `/rename`d repeatedly.
+   **If found, emit immediately** with the latest `thread_name` (so
+   a reload restores the current title without waiting for the next
+   change). Set `last_emitted_title` to the emitted value. If the
+   file or our row does not exist, `last_emitted_title` stays
+   `None`; no emit.
 2. **Watch loop.** Re-check the file's mtime every 500 ms (matching
    Claude's transcript-tail EOF poll for symmetry). On mtime
    advance: re-read the file, re-locate the row.
@@ -1075,8 +1109,20 @@ useEffect(() => {
       const cleared = payload.title.length === 0
       const nextTitle = cleared ? undefined : payload.title
       const nextSource = cleared ? undefined : payload.source
-      setSessions((sessions) =>
-        sessions.map((session) => ({
+      setSessions((sessions) => {
+        // Early-out: if no pane in any session has ptyId ===
+        // payload.sessionId, return the same `sessions` reference
+        // so React skips the re-render. Without this guard,
+        // every event would rebuild every session/pane object,
+        // even when the event targets no pane in the current state
+        // (which happens during reload churn or for stale events).
+        const matchExists = sessions.some((s) =>
+          s.panes.some((p) => p.ptyId === payload.sessionId)
+        )
+        if (!matchExists) {
+          return sessions
+        }
+        return sessions.map((session) => ({
           ...session,
           panes: session.panes.map((pane) =>
             pane.ptyId === payload.sessionId
@@ -1088,7 +1134,7 @@ useEffect(() => {
               : pane
           ),
         }))
-      )
+      })
     }
   ).then((fn) => {
     if (cancelled) {
@@ -1296,6 +1342,13 @@ const handleKeyDown = (event: KeyboardEvent): void => {
   if (isPaletteToggle(event)) {
     event.preventDefault()
     event.stopPropagation()
+    // Preserve today's close-toggle: if the palette is already
+    // open, Ctrl+: closes it. No leader window engages in that
+    // case — closing a UI element should not impose latency.
+    if (stateRef.current.isOpen) {
+      handlersRef.current.close()
+      return
+    }
     leaderActive = true
     leaderTimer = setTimeout(() => {
       leaderActive = false
@@ -1339,27 +1392,54 @@ rendered `<PaneRenameInput>` when open) and a `void` API.
 // usePaneRenameChord.ts (new)
 type RenameTarget = { ptyId: string; pane: Pane } | null
 
-export const usePaneRenameChord = (): {
+// `resolveFocusedPane` is supplied by the caller (WorkspaceView),
+// which owns the focus state. The hook does not import or read
+// focus state directly — there is no global `useFocusedPane` to
+// reach for; the active-pane data lives in WorkspaceView's session/
+// pane state plus `activeContainerId` (per
+// `2026-05-17-shared-focus-highlight-design.md`).
+export const usePaneRenameChord = (
+  resolveFocusedPane: () => Pane | null
+): {
   renderNode: ReactNode
 } => {
   const [target, setTarget] = useState<RenameTarget>(null)
-  const focusedPane = useFocusedPane() // existing hook for active pane
+  // Wrap the resolver in a ref so the chord-registration effect
+  // doesn't re-bind on every WorkspaceView re-render.
+  const resolverRef = useRef(resolveFocusedPane)
+  resolverRef.current = resolveFocusedPane
 
   useEffect(() => {
     return registerChord('r', () => {
-      const pane = focusedPane()
+      const pane = resolverRef.current()
       if (!pane) return false
       setTarget({ ptyId: pane.ptyId, pane })
       return true
     })
-  }, [focusedPane])
+  }, [])
 
   const renderNode = target ? (
     <PaneRenameInput
       pane={target.pane}
-      onSubmit={(title) => {
-        void renameAgentSession(target.ptyId, title)
-        setTarget(null)
+      onSubmit={async (title) => {
+        // Await + catch so PTY-write errors / agent-type-not-supported
+        // errors surface as toasts per §2.5. The IPC throws a string
+        // error from the Result<(), String> we get back from Rust.
+        try {
+          await renameAgentSession(target.ptyId, title)
+          setTarget(null)
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err)
+          if (msg.includes('does not support /rename')) {
+            toast.error("this agent doesn't support /rename")
+          } else if (msg.includes('no live agent')) {
+            toast.error('no agent in this pane to rename')
+          } else {
+            toast.error(`failed to send /rename: ${msg}`)
+          }
+          // Leave the input open so the user can decide whether to
+          // retry or cancel.
+        }
       }}
       onCancel={() => setTarget(null)}
     />
@@ -1369,11 +1449,30 @@ export const usePaneRenameChord = (): {
 }
 ```
 
-**Mount site.** `WorkspaceView` (the top-level workspace shell) calls
-`usePaneRenameChord` ONCE and renders `renderNode` somewhere stable
-in its tree (next to `<DockPanel />`, for instance — not inside
-`TerminalPane` because the input would unmount when the user
-switches panes mid-rename).
+**Mount site.** `WorkspaceView` calls `usePaneRenameChord` ONCE,
+passing its own focused-pane resolver:
+
+```typescript
+// WorkspaceView.tsx
+const resolveFocusedPane = useCallback((): Pane | null => {
+  if (activeContainerId !== TERMINAL_CONTAINER_ID) return null
+  const session = sessions.find((s) => s.id === activeSessionId)
+  return session?.panes.find((p) => p.active) ?? null
+}, [activeContainerId, activeSessionId, sessions])
+
+const { renderNode: paneRenameNode } = usePaneRenameChord(resolveFocusedPane)
+// ...
+return (
+  <>
+    {/* ...existing tree... */}
+    {paneRenameNode}
+  </>
+)
+```
+
+`renderNode` mounts stable in the tree (sibling to `<DockPanel />`,
+not inside `TerminalPane` — otherwise the input would unmount when
+the user switches panes mid-rename).
 
 **Portal anchor.** `PaneRenameInput` uses a portal to position itself
 over the pane's Header DOM node. The pane's `ptyId` resolves to a
@@ -1784,6 +1883,48 @@ multiple emits for the same `payload.sessionId`. Since
 `payload.sessionId` is the PTY id (not the agent UUID), this only
 matches one pane in practice; PTY ids cannot collide because
 `crypto.randomUUID()` produces a 122-bit random value.
+
+### 6.5a Agent exit / PTY death — title clearing
+
+`pane.agentTitle` is owned by the agent watcher. When the watcher
+shuts down for ANY reason, the title MUST clear so the pane Header
+falls back to `session.name`. Otherwise a closed Claude session
+leaves its last title stuck on the pane.
+
+Trigger paths:
+
+1. **User-initiated stop.** Frontend calls `stop_agent_watcher`;
+   `WatcherHandle::stop` runs, the tail loop observes the stop
+   flag, exits cleanly. Before joining, the loop emits a final
+   `{ title: "", source: ... }` clear event (uses the same
+   `emit_title` helper from §3.2.1; passes the raw title as
+   empty string and relies on the transition-aware rule —
+   skips emit if memo was already `None`).
+2. **PTY exit.** When the underlying PTY dies (`PtyExitEvent` in
+   the existing terminal pipeline), the agent watcher is torn
+   down by the same shutdown path. Same clear-on-exit.
+3. **Polling-detected disconnect.** Today the frontend's
+   `useAgentStatus` polls `detect_agent_in_session` and infers
+   agent exit (sets `agentExited: true`,
+   `useAgentStatus.ts:303`). On that transition, the existing
+   call to `stop_agent_watcher` runs the same shutdown — clear
+   path covered.
+4. **Adapter panic.** Tail thread panics; no clear emit happens
+   (§6.3 — known limitation; the panic itself loses BOTH
+   status and title until reload). Pane Header stays on the
+   stale title until reload, at which point either the agent
+   re-attaches (fresh initial-read, possibly emits new title)
+   or the pane shows `session.name` (no agent re-attaches).
+
+Implementation: extend each watcher loop with a "post-stop emit"
+step before the join. For the Claude transcript tail, this lives
+at the bottom of the loop where `stop_flag` is observed. For the
+Codex session-index sidecar, same shape. The clear emit is
+idempotent (the transition-aware empty rule de-dups when memo is
+already `None`).
+
+The frontend's listener (§4.5) already coerces empty `payload.title`
+to `agentTitle: undefined`, so no frontend change is needed.
 
 ### 6.5 Reload mid-rename
 
