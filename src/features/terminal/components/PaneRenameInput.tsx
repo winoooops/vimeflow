@@ -150,7 +150,7 @@ export const PaneRenameInput = ({
         type="text"
         value={value}
         onChange={handleChange}
-        onBlur={onCancel}
+        onBlur={externalError ? undefined : onCancel}
         onKeyDown={handleKeyDown}
         aria-label="Pane name"
         aria-invalid={validation.kind !== 'valid' || Boolean(externalError)}

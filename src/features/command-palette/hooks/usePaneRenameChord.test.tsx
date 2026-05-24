@@ -213,6 +213,17 @@ describe('usePaneRenameChord', () => {
     )
     expect(mockSetPaneUserLabel).toHaveBeenLastCalledWith('pty-1', undefined)
 
+    const failedInput = screen.getByRole('textbox')
+    failedInput.focus()
+    act(() => {
+      failedInput.blur()
+    })
+
+    expect(screen.getByRole('textbox')).toBeInTheDocument()
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'failed to send /rename: pty write failed'
+    )
+
     screen.getByRole('textbox').focus()
     await user.keyboard('{Escape}')
 
@@ -264,7 +275,7 @@ describe('usePaneRenameChord', () => {
     expect(screen.getByRole('textbox')).toHaveValue('second-title')
   })
 
-  test('rejected stale submit does not clear a newer rename target', async () => {
+  test('rejected stale submit rolls back old label without clearing newer target', async () => {
     const user = userEvent.setup()
     let rejectRename: ((error: Error) => void) | null = null
     mockRenameAgentSession.mockReturnValueOnce(
@@ -305,7 +316,7 @@ describe('usePaneRenameChord', () => {
 
     expect(screen.getByRole('textbox')).toHaveValue('second-title')
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
-    expect(mockSetPaneUserLabel).not.toHaveBeenCalledWith('pty-1', undefined)
+    expect(mockSetPaneUserLabel).toHaveBeenCalledWith('pty-1', undefined)
   })
 
   test('cancel clears the rename target', async () => {

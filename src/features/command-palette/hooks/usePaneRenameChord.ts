@@ -110,8 +110,9 @@ export const usePaneRenameChord = (
           return
         }
 
+        setPaneUserLabelRef.current(target.ptyId, undefined)
+
         if (targetRef.current?.requestId === target.requestId) {
-          setPaneUserLabelRef.current(target.ptyId, undefined)
           setRenameError(errorMessageForRenameFailure(renameError))
         }
       } finally {

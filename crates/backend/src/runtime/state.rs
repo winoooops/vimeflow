@@ -126,6 +126,13 @@ impl BackendState {
         // the user manually focused the pane and pressed Enter.
         let command = format!("/rename {title}\r");
         let session_id = SessionId::from(request.pty_id);
+        if matches!(agent_type, AgentType::Codex) {
+            crate::agent::adapter::codex::session_index::record_user_rename(
+                session_id.as_str(),
+                &title,
+            );
+        }
+
         if let Err(e) = self.pty.write(&session_id, command.as_bytes()) {
             if self
                 .agents
@@ -139,19 +146,6 @@ impl BackendState {
                 RenameAgentSessionErrorReason::PtyWrite,
                 format!("pty write failed: {e}"),
             ));
-        }
-
-        let confirmed_agent_type = self
-            .agents
-            .agent_type_for_pty(session_id.as_str())
-            .ok_or_else(|| no_live_agent_error(session_id.as_str()))?;
-        ensure_rename_supported(&confirmed_agent_type)?;
-
-        if matches!(confirmed_agent_type, AgentType::Codex) {
-            crate::agent::adapter::codex::session_index::record_user_rename(
-                session_id.as_str(),
-                &title,
-            );
         }
 
         Ok(())
@@ -477,7 +471,7 @@ mod tests {
     }
 
     #[test]
-    fn rename_agent_session_rejects_agent_exit_after_write() {
+    fn rename_agent_session_allows_agent_exit_after_successful_write() {
         let (state, _sink) = BackendState::with_fake_sink();
         let writes = Arc::new(Mutex::new(Vec::new()));
         let agents = state.agents.clone();
@@ -496,8 +490,7 @@ mod tests {
 
         let result = state.rename_agent_session(rename_request("exited"));
 
-        let err = result.expect_err("agent exit after write should reject");
-        assert_eq!(err.reason, RenameAgentSessionErrorReason::NoLiveAgent);
+        assert!(result.is_ok());
         assert_eq!(captured_string(&writes), "/rename exited\r");
     }
 
