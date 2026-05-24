@@ -7,6 +7,7 @@ import { GitRefChip } from './GitRefChip'
 export interface HeaderMetadataProps {
   worktreeName: string | null
   branch: string | null
+  cwd?: string
   added: number
   removed: number
   session: Session
@@ -15,6 +16,7 @@ export interface HeaderMetadataProps {
 export const HeaderMetadata = ({
   worktreeName,
   branch,
+  cwd = undefined,
   added,
   removed,
   session,
@@ -28,7 +30,7 @@ export const HeaderMetadata = ({
       {hasGitRef && (
         <>
           <span className="text-outline-variant/60">·</span>
-          <GitRefChip worktreeName={worktreeName} branch={branch} />
+          <GitRefChip worktreeName={worktreeName} branch={branch} cwd={cwd} />
         </>
       )}
       {hasDeltas && (

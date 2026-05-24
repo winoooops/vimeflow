@@ -7,32 +7,58 @@ export interface GitRefChipProps {
   worktreeName: string | null
   /** Branch name (PR-A) — or short SHA when HEAD is detached. */
   branch: string | null
+  /** Absolute path of the pane's cwd; rendered home-relative in the tooltip. */
+  cwd?: string
   /** PR-A: optional, always defaults to false. PR-B wires the live value. */
   detached?: boolean
 }
 
 /**
- * Compose the chip's hover tooltip text. Exported so it can be unit-tested
- * as a pure function — the four-state wording is part of the chip's
- * documented contract (spec §3.5), and asserting it on the rendered DOM
- * would require driving floating-ui's hover state.
+ * Replace a leading `/home/<user>/` or `/Users/<user>/` prefix with `~/` so
+ * the tooltip's cwd line stays readable. Anything else (relative paths,
+ * Windows paths, system-root paths) passes through unchanged.
  */
-export const composeTooltipContent = (
-  worktreeName: string | null,
-  branch: string,
-  detached: boolean
-): string => {
-  const branchLabel = detached ? 'detached HEAD' : 'branch'
-  if (worktreeName !== null && worktreeName.length > 0) {
-    return `worktree: ${worktreeName} · ${branchLabel}: ${branch}`
+const formatCwdRelative = (cwd: string): string => {
+  // The capture group requires at least one char after the username segment
+  // (so `/home/will` with no trailing slash is left as-is, while `/home/will/`
+  // and `/home/will/foo` both produce `~/` and `~/foo`).
+  const homeMatch = /^\/(?:home|Users)\/[^/]+(\/.*)$/.exec(cwd)
+  if (homeMatch === null) {
+    return cwd
   }
 
-  return `${branchLabel}: ${branch}`
+  return '~' + homeMatch[1]
+}
+
+/**
+ * Compose the chip's tooltip lines. Exported so the four-state wording stays
+ * locked in via a pure-function unit test — asserting the rendered floating
+ * surface would require driving floating-ui's hover state.
+ *
+ * Line order: worktree (if any), branch (or detached HEAD), cwd (if any).
+ */
+export const composeTooltipLines = (
+  worktreeName: string | null,
+  branch: string,
+  cwd: string | null,
+  detached: boolean
+): string[] => {
+  const lines: string[] = []
+  if (worktreeName !== null && worktreeName.length > 0) {
+    lines.push(`worktree: ${worktreeName}`)
+  }
+  lines.push(`${detached ? 'detached HEAD' : 'branch'}: ${branch}`)
+  if (cwd !== null && cwd.length > 0) {
+    lines.push(formatCwdRelative(cwd))
+  }
+
+  return lines
 }
 
 export const GitRefChip = ({
   worktreeName,
   branch,
+  cwd = undefined,
   detached = false,
 }: GitRefChipProps): ReactElement | null => {
   if (branch === null || branch.length === 0) {
@@ -40,6 +66,14 @@ export const GitRefChip = ({
   }
 
   const hasWorktree = worktreeName !== null && worktreeName.length > 0
+  const tooltipCwd = cwd !== undefined && cwd.length > 0 ? cwd : null
+
+  const tooltipLines = composeTooltipLines(
+    worktreeName,
+    branch,
+    tooltipCwd,
+    detached
+  )
 
   const frameBase =
     'inline-flex items-center gap-1.5 h-[22px] pl-1.5 pr-2 rounded-chip border max-w-[340px] overflow-hidden'
@@ -66,7 +100,16 @@ export const GitRefChip = ({
 
   return (
     <Tooltip
-      content={composeTooltipContent(worktreeName, branch, detached)}
+      content={
+        <div
+          data-testid="git-ref-chip-tooltip"
+          className="flex flex-col gap-0.5 font-mono text-[11px] break-all"
+        >
+          {tooltipLines.map((line, idx) => (
+            <div key={idx}>{line}</div>
+          ))}
+        </div>
+      }
       placement="bottom"
     >
       <span data-testid="git-ref-chip" className={frameClasses}>

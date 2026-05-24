@@ -1,7 +1,7 @@
-// cspell:ignore worktree testids
+// cspell:ignore worktree testids worktrees
 import { render, screen } from '@testing-library/react'
 import { expect, test } from 'vitest'
-import { GitRefChip, composeTooltipContent } from './GitRefChip'
+import { GitRefChip, composeTooltipLines } from './GitRefChip'
 
 test('renders nothing when branch is null', () => {
   render(<GitRefChip worktreeName="feat-jose" branch={null} />)
@@ -86,27 +86,58 @@ test('detached=true with worktreeName=null renders coral branch-only chip', () =
   )
 })
 
-test('composeTooltipContent produces the right text for all four states', () => {
+test('composeTooltipLines produces the right lines for every state', () => {
   // The chip wraps its content in <Tooltip>, which only renders the floating
-  // surface on hover/focus via a portal. Asserting the four wording variants
+  // surface on hover/focus via a portal. Asserting the per-state lines
   // against the rendered DOM would require driving floating-ui's hover state
-  // through fake timers. The wording itself is pulled out into a pure
-  // function so the contract stays locked without that machinery.
-  expect(composeTooltipContent('feat-jose', 'feat/jose-auth', false)).toBe(
-    'worktree: feat-jose · branch: feat/jose-auth'
-  )
+  // through fake timers. The wording is pulled out into a pure function so
+  // the contract stays locked without that machinery.
 
-  expect(composeTooltipContent(null, 'feat/jose-auth', false)).toBe(
-    'branch: feat/jose-auth'
-  )
+  // worktree + branch (no cwd, attached)
+  expect(
+    composeTooltipLines('feat-jose', 'feat/jose-auth', null, false)
+  ).toEqual(['worktree: feat-jose', 'branch: feat/jose-auth'])
 
-  expect(composeTooltipContent('feat-jose', 'a7f23c', true)).toBe(
-    'worktree: feat-jose · detached HEAD: a7f23c'
-  )
+  // branch only (no worktree, no cwd, attached)
+  expect(composeTooltipLines(null, 'feat/jose-auth', null, false)).toEqual([
+    'branch: feat/jose-auth',
+  ])
 
-  expect(composeTooltipContent(null, 'a7f23c', true)).toBe(
-    'detached HEAD: a7f23c'
-  )
+  // worktree + detached SHA
+  expect(composeTooltipLines('feat-jose', 'a7f23c', null, true)).toEqual([
+    'worktree: feat-jose',
+    'detached HEAD: a7f23c',
+  ])
+
+  // detached SHA only
+  expect(composeTooltipLines(null, 'a7f23c', null, true)).toEqual([
+    'detached HEAD: a7f23c',
+  ])
+
+  // cwd line — Linux home is rewritten to `~/...`
+  expect(
+    composeTooltipLines(
+      'git-chip-migration',
+      'feat/git-chip-migration',
+      '/home/will/projects/vimeflow/.claude/worktrees/git-chip-migration',
+      false
+    )
+  ).toEqual([
+    'worktree: git-chip-migration',
+    'branch: feat/git-chip-migration',
+    '~/projects/vimeflow/.claude/worktrees/git-chip-migration',
+  ])
+
+  // cwd line — macOS /Users/<name> is also rewritten to `~/...`
+  expect(
+    composeTooltipLines(null, 'main', '/Users/alice/code/proj', false)
+  ).toEqual(['branch: main', '~/code/proj'])
+
+  // cwd line — non-home absolute path passes through unchanged
+  expect(composeTooltipLines(null, 'main', '/opt/code/proj', false)).toEqual([
+    'branch: main',
+    '/opt/code/proj',
+  ])
 })
 
 test('icons carry material-symbols-outlined class + aria-hidden', () => {
