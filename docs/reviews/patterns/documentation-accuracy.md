@@ -2,8 +2,8 @@
 id: documentation-accuracy
 category: code-quality
 created: 2026-04-09
-last_updated: 2026-05-20
-ref_count: 21
+last_updated: 2026-05-24
+ref_count: 22
 ---
 
 # Documentation Accuracy
@@ -683,4 +683,13 @@ Stale documentation misleads future contributors and review agents.
 - **File:** `src/features/command-palette/CommandPalette.tsx`
 - **Finding:** Cycle 1's fix for the unguarded array access (KB react-lifecycle §19) inlined the guard as an `((): \`command-${string}\` | undefined => { ... })()`IIFE inside the`activeDescendantId`JSX prop. The IIFE was needed only to attach a template-literal return type that TypeScript wouldn't infer from a bare ternary, but it pulled a 7-line rationale comment into the JSX body — violating the project's "never write multi-paragraph docstrings or multi-line comment blocks — one short line max" rule from root`CLAUDE.md`. The cognitive overhead in JSX (readers may suspect early-return semantics) compounded the style violation; module-level helpers don't have either problem.
 - **Fix:** Extracted `getActiveDescendantId(clampedSelectedIndex, filteredResults): \`command-${string}\` | undefined` to a module-level helper above the component. The JSX prop becomes a single-line helper call. The 7-line rationale collapses to a single comment line on the helper that points at the react-lifecycle pattern entry (§19) for the full reasoning. Code-review heuristic: when a JSX expression needs (a) a typed return + (b) multi-line context, the right home is a module-level helper — not an IIFE in JSX. The IIFE is a syntactic shortcut that costs the file's readability budget twice (function object per render + comment-style violation) for one type-inference convenience.
+- **Commit:** same commit as this entry
+
+### 73. CHANGELOG entry said "hover-darkening" but the CSS `:hover` rule brightens the thumb
+
+- **Source:** github-claude | PR #264 round 1 | 2026-05-24
+- **Severity:** LOW
+- **File:** `CHANGELOG.md`
+- **Finding:** The English `[Unreleased] → Fixed` entry described the new scrollbar thumb as "`#333344` thumb on hover-darkening". The corresponding `::-webkit-scrollbar-thumb:hover` rule in `src/index.css` swaps the thumb to `#4a444f` — RGB(74,68,79) is brighter than RGB(51,51,68) in all three channels, so the hover effect actually brightens. The mirrored Chinese entry in `CHANGELOG.zh-CN.md` correctly used "hover 时变亮" (brightens on hover); only the English side was wrong, so a reader cross-checking the two changelogs would have noticed the disagreement before noticing the impl mismatch.
+- **Fix:** Rewrote the English entry as "`#333344` thumb that brightens to `#4a444f` on hover" and updated the Chinese entry to cite the same target color "`#4a444f`" for parity. Code-review heuristic: when describing a hover/focus state change, name both colors explicitly rather than relying on "darkens"/"brightens" — readers can verify the direction without running a color picker, and a typo in the verb becomes immediately obvious against the surrounding context.
 - **Commit:** same commit as this entry

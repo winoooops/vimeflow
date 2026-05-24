@@ -51,7 +51,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Generated Artifacts](patterns/generated-artifacts.md)               | code-quality       | 2        | 0    | 2026-05-04   |
 | [Testing Gaps](patterns/testing-gaps.md)                             | testing            | 53       | 24   | 2026-05-20   |
 | [Terminal Input Handling](patterns/terminal-input-handling.md)       | terminal           | 3        | 1    | 2026-04-09   |
-| [Documentation Accuracy](patterns/documentation-accuracy.md)         | code-quality       | 72       | 21   | 2026-05-20   |
+| [Documentation Accuracy](patterns/documentation-accuracy.md)         | code-quality       | 73       | 22   | 2026-05-24   |
 | [Accessibility](patterns/accessibility.md)                           | a11y               | 25       | 6    | 2026-05-09   |
 | [Async Race Conditions](patterns/async-race-conditions.md)           | react-patterns     | 42       | 10   | 2026-05-21   |
 | [Tokio Blocking On Async](patterns/tokio-blocking-on-async.md)       | backend            | 2        | 1    | 2026-05-20   |
@@ -70,3 +70,4 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Module Boundaries](patterns/module-boundaries.md)                   | code-quality       | 3        | 1    | 2026-05-07   |
 | [Diagnostic Instrumentation](patterns/diagnostic-instrumentation.md) | code-quality       | 7        | 2    | 2026-05-02   |
 | [Keyboard Shortcut Guards](patterns/keyboard-shortcut-guards.md)     | keyboard-shortcuts | 16       | 0    | 2026-05-18   |
+| [Verify Render Target](patterns/verify-render-target.md)             | code-quality       | 2        | 0    | 2026-05-24   |
