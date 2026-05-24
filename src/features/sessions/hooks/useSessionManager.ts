@@ -3,6 +3,7 @@ import { flushSync } from 'react-dom'
 import type { LayoutId, Pane, Session } from '../types'
 import type { AgentSessionTitleEvent } from '../../../bindings'
 import { listen, type UnlistenFn } from '../../../lib/backend'
+import { isDesktop } from '../../../lib/environment'
 import type { ITerminalService } from '../../terminal/services/terminalService'
 import { LAYOUTS } from '../../terminal/components/SplitView/layouts'
 import type {
@@ -287,42 +288,53 @@ export const useSessionManager = (
   })
 
   useEffect(() => {
+    if (!isDesktop()) {
+      return
+    }
+
     let cancelled = false
     let unlistenFn: UnlistenFn | undefined
 
-    void listen<AgentSessionTitleEvent>('agent-session-title', (payload) => {
-      const cleared = payload.title.length === 0
-      const nextTitle = cleared ? undefined : payload.title
-      const nextSource = cleared ? undefined : payload.source
+    void (async (): Promise<void> => {
+      const fn = await listen<AgentSessionTitleEvent>(
+        'agent-session-title',
+        (payload) => {
+          const cleared = payload.title.length === 0
+          const nextTitle = cleared ? undefined : payload.title
+          const nextSource = cleared ? undefined : payload.source
 
-      setSessions((prev) => {
-        const matchExists = prev.some((session) =>
-          session.panes.some((pane) => pane.ptyId === payload.sessionId)
-        )
-        if (!matchExists) {
-          return prev
+          setSessions((prev) => {
+            const matchExists = prev.some((session) =>
+              session.panes.some((pane) => pane.ptyId === payload.sessionId)
+            )
+            if (!matchExists) {
+              return prev
+            }
+
+            return prev.map((session) => ({
+              ...session,
+              panes: session.panes.map((pane) =>
+                pane.ptyId === payload.sessionId
+                  ? {
+                      ...pane,
+                      agentTitle: nextTitle,
+                      agentTitleSource: nextSource,
+                    }
+                  : pane
+              ),
+            }))
+          })
         }
+      )
 
-        return prev.map((session) => ({
-          ...session,
-          panes: session.panes.map((pane) =>
-            pane.ptyId === payload.sessionId
-              ? {
-                  ...pane,
-                  agentTitle: nextTitle,
-                  agentTitleSource: nextSource,
-                }
-              : pane
-          ),
-        }))
-      })
-    }).then((fn) => {
+      // cancelled may flip while the listener promise is awaiting.
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
       if (cancelled) {
         fn()
       } else {
         unlistenFn = fn
       }
-    })
+    })()
 
     return (): void => {
       cancelled = true

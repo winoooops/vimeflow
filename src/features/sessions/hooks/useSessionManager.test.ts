@@ -1,5 +1,5 @@
 // cspell:ignore worktrees
-import { describe, test, expect, vi, beforeEach } from 'vitest'
+import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
 import { renderHook, act, waitFor } from '@testing-library/react'
 import { useSessionManager } from './useSessionManager'
 import type { ITerminalService } from '../../terminal/services/terminalService'
@@ -13,11 +13,15 @@ import {
 const mockListen = vi.hoisted(() =>
   vi.fn(
     (
-      _event: string,
-      _callback: (payload: unknown) => void
-    ): Promise<() => void> =>
+      event: string,
+      callback: (payload: unknown) => void
+    ): Promise<() => void> => {
+      void event
+      void callback
+
       // eslint-disable-next-line @typescript-eslint/no-empty-function
-      Promise.resolve((): void => {})
+      return Promise.resolve((): void => {})
+    }
   )
 )
 
@@ -75,7 +79,15 @@ const titleListener = ():
 describe('useSessionManager', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    window.vimeflow = {
+      invoke: vi.fn(),
+      listen: vi.fn(),
+    }
     clearPtySessionMap()
+  })
+
+  afterEach(() => {
+    delete window.vimeflow
   })
 
   test('on mount, registers global pty-data listener BEFORE calling listSessions', async () => {
@@ -173,6 +185,7 @@ describe('useSessionManager', () => {
         source: 'user-renamed',
       })
     })
+
     act(() => {
       titleListener()?.({
         sessionId: 'pty-1',
@@ -226,7 +239,7 @@ describe('useSessionManager', () => {
     expect(result.current.sessions).toBe(before)
   })
 
-  test('agent-session-title listener unlistens when listen resolves after unmount', async () => {
+  test('agent-session-title listener calls unlisten when listen resolves after unmount', async () => {
     const service = createMockService()
     const unlisten = vi.fn()
     let resolveListen: (fn: () => void) => void = vi.fn()
@@ -248,6 +261,16 @@ describe('useSessionManager', () => {
     })
 
     await waitFor(() => expect(unlisten).toHaveBeenCalled())
+  })
+
+  test('agent-session-title listener stays inactive without desktop bridge', async () => {
+    delete window.vimeflow
+    const service = createMockService()
+
+    renderHook(() => useSessionManager(service, { autoCreateOnEmpty: false }))
+
+    await waitFor(() => expect(service.listSessions).toHaveBeenCalled())
+    expect(mockListen).not.toHaveBeenCalled()
   })
 
   test('events received between listSessions call and drain land in restoreData buffer', async () => {
