@@ -276,18 +276,21 @@ export const useCommandPalette = (
         leaderActive = false
         clearLeaderTimer()
 
-        if (consumed || event.key === 'Escape') {
+        if (consumed) {
           event.preventDefault()
           event.stopPropagation()
+          handlersRef.current.close()
 
           return
         }
 
-        event.preventDefault()
-        event.stopPropagation()
-        handlersRef.current.open()
+        if (event.key === 'Escape') {
+          event.preventDefault()
+          event.stopPropagation()
+          handlersRef.current.close()
 
-        return
+          return
+        }
       }
 
       // Toggle palette on Ctrl+: (capture-phase listener)
@@ -298,11 +301,11 @@ export const useCommandPalette = (
         if (stateRef.current.isOpen) {
           handlersRef.current.close()
         } else {
+          handlersRef.current.open()
           leaderActive = true
           leaderTimer = setTimeout(() => {
             leaderActive = false
             leaderTimer = null
-            handlersRef.current.open()
           }, LEADER_WINDOW_MS)
         }
 

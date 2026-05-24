@@ -194,7 +194,7 @@ describe('useSessionManager', () => {
     expect(pane?.agentTitleSource).toBeUndefined()
   })
 
-  test('agent-session-title clears stale userLabel so the agent rename takes precedence', async () => {
+  test('matching user-renamed agent-session-title clears temporary userLabel', async () => {
     const service = createMockService()
     service.listSessions = vi.fn().mockResolvedValue({
       activeSessionId: 'pty-1',
@@ -218,16 +218,13 @@ describe('useSessionManager', () => {
     await waitFor(() => expect(result.current.loading).toBe(false))
     await waitFor(() => expect(titleListener()).toBeDefined())
 
-    // Simulate the user setting a local label via the chord / palette
-    // FIRST — this is the prior interaction the bug report described.
+    // Simulate the user setting a local label via the chord / palette.
     act(() => {
-      result.current.setPaneUserLabel('pty-1', 'old-local')
+      result.current.setPaneUserLabel('pty-1', 'new-title')
     })
 
-    // Now Claude / Codex receives `/rename new-title` and emits the
-    // transcript event. The agent's value is the new source of truth;
-    // the prior `userLabel` must be cleared so the Header reflects the
-    // agent's `/rename`, not the stale local override.
+    // Now Claude / Codex confirms the same `/rename` value. The temporary
+    // local label can clear because the transcript has caught up.
     act(() => {
       titleListener()?.({
         sessionId: 'pty-1',
@@ -242,6 +239,51 @@ describe('useSessionManager', () => {
     )
     expect(pane?.agentTitle).toBe('new-title')
     expect(pane?.userLabel).toBeUndefined()
+  })
+
+  test('mismatched user-renamed agent-session-title preserves explicit userLabel', async () => {
+    const service = createMockService()
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: 'pty-1',
+      sessions: [
+        {
+          id: 'pty-1',
+          cwd: '/tmp',
+          status: {
+            kind: 'Alive',
+            pid: 1,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+      ],
+    })
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    await waitFor(() => expect(titleListener()).toBeDefined())
+
+    act(() => {
+      result.current.setPaneUserLabel('pty-1', 'local-name')
+    })
+
+    act(() => {
+      titleListener()?.({
+        sessionId: 'pty-1',
+        agentSessionId: 'agent-uuid',
+        title: 'agent-title',
+        source: 'user-renamed',
+      })
+    })
+
+    const pane = result.current.sessions[0]?.panes.find(
+      (candidate) => candidate.ptyId === 'pty-1'
+    )
+    expect(pane?.agentTitle).toBe('agent-title')
+    expect(pane?.agentTitleSource).toBe('user-renamed')
+    expect(pane?.userLabel).toBe('local-name')
   })
 
   test('ai-generated agent-session-title preserves explicit userLabel', async () => {

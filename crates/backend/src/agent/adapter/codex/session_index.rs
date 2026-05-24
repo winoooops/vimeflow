@@ -137,6 +137,9 @@ fn try_emit(
         session_id: session_id.to_string(),
         agent_session_id: agent_session_id.to_string(),
         title,
+        // Codex currently exposes `thread_name` as the persisted `/rename`
+        // value and does not include provenance for generated titles. If that
+        // changes, this watcher should mirror Claude's source split.
         source: TitleSource::UserRenamed,
     };
 

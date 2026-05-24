@@ -195,8 +195,11 @@ fn emit_title(
     last_title_memo: &mut Option<String>,
 ) {
     let sanitized = sanitize_title(raw_title);
+    let is_user_renamed = matches!(&source, TitleSource::UserRenamed);
     let (title, new_memo) = match sanitized {
-        Some(title) if last_title_memo.as_deref() == Some(title.as_str()) => return,
+        Some(title) if last_title_memo.as_deref() == Some(title.as_str()) && !is_user_renamed => {
+            return
+        }
         Some(title) => (title.clone(), Some(title)),
         None if last_title_memo.is_some() => (String::new(), None),
         None => return,
@@ -366,9 +369,7 @@ fn process_line(
     // can mirror them into pane.cwd without depending on the interactive
     // shell emitting OSC 7.
     if let Some(observed) = value.get("cwd").and_then(Value::as_str) {
-        if !observed.is_empty()
-            && last_cwd.as_deref().map_or(true, |seen| seen != observed)
-        {
+        if !observed.is_empty() && last_cwd.as_deref().map_or(true, |seen| seen != observed) {
             let event = AgentCwdEvent {
                 session_id: session_id.to_string(),
                 cwd: observed.to_string(),
@@ -959,14 +960,7 @@ mod tests {
         }))
         .expect("serialize title line");
 
-        process_title_line(
-            &line,
-            "pty-1",
-            &sink_dyn,
-            &mut emitter,
-            agent_id,
-            &mut memo,
-        );
+        process_title_line(&line, "pty-1", &sink_dyn, &mut emitter, agent_id, &mut memo);
 
         let recorded = sink.recorded();
         let title_events: Vec<_> = recorded
@@ -994,14 +988,7 @@ mod tests {
         }))
         .expect("serialize title line");
 
-        process_title_line(
-            &line,
-            "pty-1",
-            &sink_dyn,
-            &mut emitter,
-            agent_id,
-            &mut memo,
-        );
+        process_title_line(&line, "pty-1", &sink_dyn, &mut emitter, agent_id, &mut memo);
 
         let recorded = sink.recorded();
         let title = recorded
@@ -1048,22 +1035,8 @@ mod tests {
         }))
         .expect("serialize title line");
 
-        process_title_line(
-            &line,
-            "pty-1",
-            &sink_dyn,
-            &mut emitter,
-            agent_id,
-            &mut memo,
-        );
-        process_title_line(
-            &line,
-            "pty-1",
-            &sink_dyn,
-            &mut emitter,
-            agent_id,
-            &mut memo,
-        );
+        process_title_line(&line, "pty-1", &sink_dyn, &mut emitter, agent_id, &mut memo);
+        process_title_line(&line, "pty-1", &sink_dyn, &mut emitter, agent_id, &mut memo);
 
         assert_eq!(sink.count(AGENT_SESSION_TITLE), 1);
     }
@@ -1114,6 +1087,52 @@ mod tests {
     }
 
     #[test]
+    fn matching_ai_title_followed_by_custom_title_emits_user_renamed_event() {
+        let agent_id = "abc";
+        let mut memo = None;
+        let (sink, sink_dyn, mut emitter) = make_sink_and_emitter();
+        let first = serde_json::to_string(&json!({
+            "type": "ai-title",
+            "aiTitle": "same-title",
+            "sessionId": agent_id,
+        }))
+        .expect("serialize ai title line");
+        let second = serde_json::to_string(&json!({
+            "type": "custom-title",
+            "customTitle": "same-title",
+            "sessionId": agent_id,
+        }))
+        .expect("serialize custom title line");
+
+        process_title_line(
+            &first,
+            "pty-1",
+            &sink_dyn,
+            &mut emitter,
+            agent_id,
+            &mut memo,
+        );
+        process_title_line(
+            &second,
+            "pty-1",
+            &sink_dyn,
+            &mut emitter,
+            agent_id,
+            &mut memo,
+        );
+
+        let titles: Vec<_> = sink
+            .recorded()
+            .into_iter()
+            .filter(|(name, _)| name == AGENT_SESSION_TITLE)
+            .collect();
+        assert_eq!(titles.len(), 2);
+        assert_eq!(titles[0].1["source"], "ai-generated");
+        assert_eq!(titles[1].1["title"], "same-title");
+        assert_eq!(titles[1].1["source"], "user-renamed");
+    }
+
+    #[test]
     fn ai_title_with_newline_emits_sanitized() {
         let agent_id = "abc";
         let mut memo = None;
@@ -1125,14 +1144,7 @@ mod tests {
         }))
         .expect("serialize title line");
 
-        process_title_line(
-            &line,
-            "pty-1",
-            &sink_dyn,
-            &mut emitter,
-            agent_id,
-            &mut memo,
-        );
+        process_title_line(&line, "pty-1", &sink_dyn, &mut emitter, agent_id, &mut memo);
 
         let title = sink
             .recorded()
@@ -1199,14 +1211,7 @@ mod tests {
         }))
         .expect("serialize title line");
 
-        process_title_line(
-            &line,
-            "pty-1",
-            &sink_dyn,
-            &mut emitter,
-            agent_id,
-            &mut memo,
-        );
+        process_title_line(&line, "pty-1", &sink_dyn, &mut emitter, agent_id, &mut memo);
 
         assert_eq!(sink.count(AGENT_SESSION_TITLE), 0);
     }
