@@ -525,24 +525,65 @@ mod tests {
 
     /// Step A-status: the inner `EventMsgPayloadDto::Unknown` branch
     /// (`#[serde(other)]`) covers forward-compatible `event_msg`
-    /// sub-types (e.g. when Codex grows a new payload kind alongside
-    /// `task_started` / `task_complete` / `token_count`). The outer
-    /// `unknown_event_type_ignored_without_error` only exercises the
-    /// outer `#[serde(other)]`; this test pins the inner one
-    /// independently so a future contributor cannot break the inner
-    /// catch-all without a failing test (codex review round 1, LOW).
+    /// sub-types. This test pins the BEHAVIOR (an unknown-payload line
+    /// doesn't poison the rest of the document) — paired with the
+    /// DTO-level
+    /// `inner_event_msg_unknown_payload_deserializes_to_unknown_variant`
+    /// below which pins the MECHANISM (deserialization goes through
+    /// `EventMsgPayloadDto::Unknown`, not through the per-line
+    /// deserialize-skip catch).
+    ///
+    /// Codex review round 2 (LOW): this test alone is NOT enough —
+    /// removing `#[serde(other)]` would make the first line fail to
+    /// deserialize, `parse_rollout` would skip it, and the second
+    /// line's `task_complete` would still set `total_duration_ms ==
+    /// 5000`. The DTO-level test below closes that loophole.
     #[test]
     fn unknown_event_msg_payload_type_ignored_without_error() {
-        // The `task_complete` line that follows must still be folded —
-        // proving the unknown-payload line did NOT poison the state
-        // fold (a regression would either error the whole document or
-        // mutate state in a way that breaks `total_duration_ms`).
         let raw = r#"{"timestamp":"...","type":"event_msg","payload":{"type":"future_payload_kind","extra":42}}
 {"timestamp":"...","type":"event_msg","payload":{"type":"task_complete","duration_ms":5000}}
 "#;
         let parsed = parse_rollout("pty-unknown-payload", raw)
             .expect("unknown event_msg payload type folds as no-op");
         assert_eq!(parsed.event.cost.total_duration_ms, 5000);
+    }
+
+    /// Step A-status round 2: pin the OUTER `CodexRolloutLine::Unknown`
+    /// branch at the DTO level. If `#[serde(other)]` is removed from
+    /// the outer enum, `from_str::<CodexRolloutLine>` errors and the
+    /// `.expect(...)` below panics — making the regression loud rather
+    /// than letting it hide behind `parse_rollout`'s per-line skip.
+    #[test]
+    fn outer_unknown_type_deserializes_to_unknown_variant() {
+        let line = r#"{"timestamp":"...","type":"future_event_kind","payload":{"hello":"world"}}"#;
+        let parsed: CodexRolloutLine = serde_json::from_str(line)
+            .expect("outer #[serde(other)] catches unknown type");
+        assert!(
+            matches!(parsed, CodexRolloutLine::Unknown),
+            "expected CodexRolloutLine::Unknown for an unknown outer type"
+        );
+    }
+
+    /// Step A-status round 2: pin the INNER `EventMsgPayloadDto::Unknown`
+    /// branch at the DTO level. If `#[serde(other)]` is removed from
+    /// the inner enum, `from_str::<CodexRolloutLine>` errors when it
+    /// reaches the `payload`, and the `.expect(...)` below panics —
+    /// distinguishing the `#[serde(other)]` catch from the per-line
+    /// deserialize-skip catch in `parse_rollout`.
+    #[test]
+    fn inner_event_msg_unknown_payload_deserializes_to_unknown_variant() {
+        let line = r#"{"timestamp":"...","type":"event_msg","payload":{"type":"future_payload_kind","extra":42}}"#;
+        let parsed: CodexRolloutLine = serde_json::from_str(line)
+            .expect("inner #[serde(other)] catches unknown payload type");
+        match parsed {
+            CodexRolloutLine::EventMsg {
+                payload: Some(EventMsgPayloadDto::Unknown),
+            } => {}
+            other => panic!(
+                "expected EventMsg with EventMsgPayloadDto::Unknown payload, got: {:?}",
+                std::mem::discriminant(&other),
+            ),
+        }
     }
 
     // Step 0c: the former `includes_transcript_path_when_provided` test
