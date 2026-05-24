@@ -523,6 +523,28 @@ mod tests {
         assert_eq!(parsed.event.model_id, "unknown");
     }
 
+    /// Step A-status: the inner `EventMsgPayloadDto::Unknown` branch
+    /// (`#[serde(other)]`) covers forward-compatible `event_msg`
+    /// sub-types (e.g. when Codex grows a new payload kind alongside
+    /// `task_started` / `task_complete` / `token_count`). The outer
+    /// `unknown_event_type_ignored_without_error` only exercises the
+    /// outer `#[serde(other)]`; this test pins the inner one
+    /// independently so a future contributor cannot break the inner
+    /// catch-all without a failing test (codex review round 1, LOW).
+    #[test]
+    fn unknown_event_msg_payload_type_ignored_without_error() {
+        // The `task_complete` line that follows must still be folded —
+        // proving the unknown-payload line did NOT poison the state
+        // fold (a regression would either error the whole document or
+        // mutate state in a way that breaks `total_duration_ms`).
+        let raw = r#"{"timestamp":"...","type":"event_msg","payload":{"type":"future_payload_kind","extra":42}}
+{"timestamp":"...","type":"event_msg","payload":{"type":"task_complete","duration_ms":5000}}
+"#;
+        let parsed = parse_rollout("pty-unknown-payload", raw)
+            .expect("unknown event_msg payload type folds as no-op");
+        assert_eq!(parsed.event.cost.total_duration_ms, 5000);
+    }
+
     // Step 0c: the former `includes_transcript_path_when_provided` test
     // was removed — `parse_rollout` no longer takes (or surfaces) a
     // transcript path. The adapter-level
