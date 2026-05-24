@@ -153,14 +153,22 @@ fn try_emit(
     last_emitted_title: &mut Option<String>,
 ) {
     let sanitized = sanitize_title(raw_title);
+    let is_user_renamed = sanitized
+        .as_deref()
+        .is_some_and(|title| pending_user_rename_matches(session_id, title));
+    let is_duplicate = sanitized.as_deref() == last_emitted_title.as_deref();
     let (title, new_memo) = match sanitized {
-        Some(title) if last_emitted_title.as_deref() == Some(title.as_str()) => return,
+        Some(_) if is_duplicate && !is_user_renamed => return,
         Some(title) => (title.clone(), Some(title)),
         None if last_emitted_title.is_some() => (String::new(), None),
         None => return,
     };
 
-    let source = title_source_for_emit(session_id, &title);
+    let source = if is_user_renamed {
+        title_source_for_emit(session_id, &title)
+    } else {
+        TitleSource::AiGenerated
+    };
     let payload = AgentSessionTitleEvent {
         session_id: session_id.to_string(),
         agent_session_id: agent_session_id.to_string(),
@@ -174,6 +182,19 @@ fn try_emit(
     }
 
     *last_emitted_title = new_memo;
+}
+
+fn pending_user_rename_matches(session_id: &str, title: &str) -> bool {
+    let Ok(mut pending) = PENDING_RENAMES.lock() else {
+        log::warn!("codex title sync: pending rename lock poisoned");
+        return false;
+    };
+
+    let now = Instant::now();
+    pending.retain(|rename| rename.expires_at > now);
+    pending
+        .iter()
+        .any(|rename| rename.session_id == session_id && rename.title == title)
 }
 
 fn title_source_for_emit(session_id: &str, title: &str) -> TitleSource {
@@ -214,6 +235,15 @@ mod tests {
     use std::time::Duration;
     use tempfile::TempDir;
 
+    static PENDING_RENAME_TEST_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
+
+    fn pending_rename_test_guard() -> std::sync::MutexGuard<'static, ()> {
+        // Keep tests that mutate the module-level pending registry isolated.
+        PENDING_RENAME_TEST_LOCK
+            .lock()
+            .expect("pending rename test lock")
+    }
+
     fn write_index(dir: &TempDir, rows: &[(&str, &str)]) -> PathBuf {
         let path = dir.path().join("session_index.jsonl");
         let mut file = std::fs::File::create(&path).expect("create index");
@@ -238,6 +268,7 @@ mod tests {
 
     #[test]
     fn initial_read_emits_matching_row_then_clear_on_shutdown() {
+        let _guard = pending_rename_test_guard();
         clear_pending_renames_for_test();
         let dir = TempDir::new().expect("tempdir");
         let path = write_index(&dir, &[("abc-uuid", "MyTask")]);
@@ -259,6 +290,7 @@ mod tests {
 
     #[test]
     fn pending_user_rename_marks_matching_title_once() {
+        let _guard = pending_rename_test_guard();
         clear_pending_renames_for_test();
         let dir = TempDir::new().expect("tempdir");
         let path = write_index(&dir, &[("abc-uuid", "MyTask")]);
@@ -299,6 +331,36 @@ mod tests {
         let second_titles = title_payloads(&second_sink);
         assert_eq!(second_titles[0]["title"], "MyTask");
         assert_eq!(second_titles[0]["source"], "ai-generated");
+    }
+
+    #[test]
+    fn pending_user_rename_bypasses_duplicate_title_dedup() {
+        let _guard = pending_rename_test_guard();
+        clear_pending_renames_for_test();
+        let sink: Arc<FakeEventSink> = Arc::new(FakeEventSink::new());
+        let sink_dyn: Arc<dyn EventSink> = sink.clone();
+        let mut last_emitted_title = Some("MyTask".to_string());
+
+        record_user_rename("pty-1", "MyTask");
+        try_emit(
+            &sink_dyn,
+            "pty-1",
+            "abc-uuid",
+            "MyTask",
+            &mut last_emitted_title,
+        );
+        try_emit(
+            &sink_dyn,
+            "pty-1",
+            "abc-uuid",
+            "MyTask",
+            &mut last_emitted_title,
+        );
+
+        let titles = title_payloads(&sink);
+        assert_eq!(titles.len(), 1);
+        assert_eq!(titles[0]["title"], "MyTask");
+        assert_eq!(titles[0]["source"], "user-renamed");
     }
 
     #[test]

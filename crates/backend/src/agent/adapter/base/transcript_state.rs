@@ -43,6 +43,10 @@ impl TranscriptHandle {
         stop: Arc<AtomicBool>,
         join: std::thread::JoinHandle<()>,
     ) {
+        debug_assert!(
+            self.aux_stop.is_none() && self.aux_join.is_none(),
+            "attach_aux_join called twice"
+        );
         self.aux_stop = Some(stop);
         self.aux_join = Some(join);
     }
