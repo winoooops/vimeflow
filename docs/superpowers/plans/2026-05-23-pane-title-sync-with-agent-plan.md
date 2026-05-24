@@ -2688,3 +2688,5 @@ EOF
 - **Type consistency** — `AgentSessionTitleEvent` shape matches between Task 1 (struct), Task 5 (emit), Task 10 (listener). `RenameAgentSessionRequest` matches between Task 13 (struct) and Task 15 (IPC). `validateTitle` shape matches between Task 17 (impl) and Task 21 (consumer).
 - **Test commands** are unfiltered (no `| tail`).
 - **Both PRs** have explicit verification + manual smoke + push-and-PR tasks (Task 12, Task 24).
+
+<!-- codex-reviewed: 2026-05-24T06:52:12Z -->
