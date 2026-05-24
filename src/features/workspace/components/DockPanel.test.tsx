@@ -87,6 +87,7 @@ describe('DockPanel', () => {
     })
 
     vi.spyOn(useFileDiffModule, 'useFileDiff').mockReturnValue({
+      response: null,
       diff: null,
       loading: false,
       error: null,

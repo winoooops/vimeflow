@@ -43,11 +43,22 @@ describe('MockGitService', () => {
     expect(files).toEqual(mockChangedFiles)
   })
 
-  test('getDiff returns diff for existing file', async () => {
-    const diff = await service.getDiff('src/components/NavBar.tsx')
+  test('getDiff returns GetGitDiffResponse for existing file', async () => {
+    const response = await service.getDiff('src/components/NavBar.tsx')
 
-    expect(diff).toEqual(mockFileDiffs['src/components/NavBar.tsx'])
-    expect(diff.hunks).toHaveLength(2)
+    expect(response.fileDiff).toEqual(
+      mockFileDiffs['src/components/NavBar.tsx']
+    )
+    expect(response.fileDiff.hunks).toHaveLength(2)
+    // MockGitService synthesizes oldText / newText / rawDiff from the fixture
+    expect(response.oldText).toContain(
+      "import { Link } from 'react-router-dom'"
+    )
+
+    expect(response.newText).toContain(
+      "import { Link, useLocation } from 'react-router-dom'"
+    )
+    expect(response.rawDiff).toContain('@@ -1,8 +1,10 @@')
   })
 
   test('getDiff throws error for non-existent file', async () => {
@@ -125,19 +136,25 @@ describe('HttpGitService', () => {
   describe('getDiff', () => {
     test('fetches diff from /api/git/diff with file param', async () => {
       const file = 'src/components/NavBar.tsx'
-      const mockDiff = mockFileDiffs[file]
+
+      const mockResponse = {
+        fileDiff: mockFileDiffs[file],
+        oldText: 'old',
+        newText: 'new',
+        rawDiff: '@@',
+      }
 
       fetchMock.mockResolvedValueOnce({
         ok: true,
-        json: () => Promise.resolve(mockDiff),
+        json: () => Promise.resolve(mockResponse),
       })
 
-      const diff = await service.getDiff(file)
+      const response = await service.getDiff(file)
 
       expect(fetchMock).toHaveBeenCalledWith(
         `/api/git/diff?file=${encodeURIComponent(file)}&staged=false`
       )
-      expect(diff).toEqual(mockDiff)
+      expect(response).toEqual(mockResponse)
     })
 
     test('includes staged parameter when true', async () => {
@@ -145,7 +162,13 @@ describe('HttpGitService', () => {
 
       fetchMock.mockResolvedValueOnce({
         ok: true,
-        json: () => Promise.resolve(mockFileDiffs[file]),
+        json: () =>
+          Promise.resolve({
+            fileDiff: mockFileDiffs[file],
+            oldText: '',
+            newText: '',
+            rawDiff: '',
+          }),
       })
 
       await service.getDiff(file, true)
@@ -160,7 +183,13 @@ describe('HttpGitService', () => {
 
       fetchMock.mockResolvedValueOnce({
         ok: true,
-        json: () => Promise.resolve(mockFileDiffs[file]),
+        json: () =>
+          Promise.resolve({
+            fileDiff: mockFileDiffs[file],
+            oldText: '',
+            newText: '',
+            rawDiff: '',
+          }),
       })
 
       await service.getDiff(file, false, true)
@@ -330,22 +359,31 @@ describe('DesktopGitService', () => {
 
   describe('getDiff', () => {
     test('calls invoke with get_git_diff command and correct args', async () => {
-      const mockDiff = mockFileDiffs['src/components/NavBar.tsx']
-      invokeMock.mockResolvedValueOnce(mockDiff)
+      const mockResponse = {
+        fileDiff: mockFileDiffs['src/components/NavBar.tsx'],
+        oldText: 'old',
+        newText: 'new',
+        rawDiff: '@@',
+      }
+      invokeMock.mockResolvedValueOnce(mockResponse)
 
-      const diff = await service.getDiff('src/components/NavBar.tsx', false)
+      const response = await service.getDiff('src/components/NavBar.tsx', false)
 
       expect(invokeMock).toHaveBeenCalledWith('get_git_diff', {
         cwd: '/home/user/project',
         file: 'src/components/NavBar.tsx',
         staged: false,
       })
-      expect(diff).toEqual(mockDiff)
+      expect(response).toEqual(mockResponse)
     })
 
     test('calls invoke with staged=true when requested', async () => {
-      const mockDiff = mockFileDiffs['src/components/NavBar.tsx']
-      invokeMock.mockResolvedValueOnce(mockDiff)
+      invokeMock.mockResolvedValueOnce({
+        fileDiff: mockFileDiffs['src/components/NavBar.tsx'],
+        oldText: '',
+        newText: '',
+        rawDiff: '',
+      })
 
       await service.getDiff('src/components/NavBar.tsx', true)
 
@@ -357,8 +395,12 @@ describe('DesktopGitService', () => {
     })
 
     test('passes untracked flag to get_git_diff', async () => {
-      const mockDiff = mockFileDiffs['src/components/NavBar.tsx']
-      invokeMock.mockResolvedValueOnce(mockDiff)
+      invokeMock.mockResolvedValueOnce({
+        fileDiff: mockFileDiffs['src/components/NavBar.tsx'],
+        oldText: '',
+        newText: '',
+        rawDiff: '',
+      })
 
       await service.getDiff('src/components/NavBar.tsx', false, true)
 

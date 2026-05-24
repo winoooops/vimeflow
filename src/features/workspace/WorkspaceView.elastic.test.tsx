@@ -90,7 +90,12 @@ vi.mock('../diff/hooks/useGitStatus', () => ({
 }))
 
 vi.mock('../diff/hooks/useFileDiff', () => ({
-  useFileDiff: vi.fn(() => ({ diff: null, loading: false, error: null })),
+  useFileDiff: vi.fn(() => ({
+    response: null,
+    diff: null,
+    loading: false,
+    error: null,
+  })),
 }))
 
 beforeEach(() => {

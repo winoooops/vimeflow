@@ -2,18 +2,71 @@ import type { ChangedFile, FileDiff } from '../types'
 import { mockChangedFiles, mockFileDiffs } from '../data/mockDiff'
 import { invoke } from '../../../lib/backend'
 import { isDesktop } from '../../../lib/environment'
+import type { GetGitDiffResponse } from '../../../bindings/GetGitDiffResponse'
+
+/**
+ * Synthesize a `GetGitDiffResponse` payload from a parsed `FileDiff`. Used by
+ * `MockGitService` and `HttpGitService` (legacy `/api/git/diff` shape) so
+ * callers always receive the full Pierre-ready payload (parsed FileDiff +
+ * oldText + newText + rawDiff) regardless of source. Reconstructs plausible
+ * before/after file contents from the diff's hunks; sufficient for tests and
+ * the dev fallback path.
+ */
+const synthesizeDiffResponse = (fileDiff: FileDiff): GetGitDiffResponse => {
+  const oldLines: string[] = []
+  const newLines: string[] = []
+  const rawDiffLines: string[] = []
+  const oldPath = fileDiff.oldPath ?? fileDiff.filePath
+  const newPath = fileDiff.newPath ?? fileDiff.filePath
+
+  rawDiffLines.push(`--- a/${oldPath}`)
+  rawDiffLines.push(`+++ b/${newPath}`)
+
+  for (const hunk of fileDiff.hunks) {
+    rawDiffLines.push(hunk.header)
+    for (const line of hunk.lines) {
+      if (line.type === 'context') {
+        oldLines.push(line.content)
+        newLines.push(line.content)
+        rawDiffLines.push(` ${line.content}`)
+      } else if (line.type === 'removed') {
+        oldLines.push(line.content)
+        rawDiffLines.push(`-${line.content}`)
+      } else {
+        newLines.push(line.content)
+        rawDiffLines.push(`+${line.content}`)
+      }
+    }
+  }
+
+  // Bindings `FileDiff` declares `oldPath: string | null` / `newPath: string |
+  // null`; the local `FileDiff` declares them as optional `string | undefined`.
+  // Same runtime shape (Pierre and the parser treat absent identically), but
+  // ts-rs surfaces `null` so we widen the local shape to satisfy the bindings
+  // contract. Task 1.10 collapses the two shapes into one.
+  return {
+    fileDiff: fileDiff as GetGitDiffResponse['fileDiff'],
+    oldText: oldLines.join('\n'),
+    newText: newLines.join('\n'),
+    rawDiff: rawDiffLines.join('\n'),
+  }
+}
 
 /** Git service interface for diff operations */
 export interface GitService {
   /** Get all files with git changes */
   getStatus(): Promise<ChangedFile[]>
 
-  /** Get diff for a specific file */
+  /**
+   * Get diff for a specific file. Returns the parsed `FileDiff` plus the raw
+   * before/after file contents (`oldText` / `newText`) and the unified-diff
+   * text (`rawDiff`) that Pierre's renderer / hunk extractors require.
+   */
   getDiff(
     file: string,
     staged?: boolean,
     untracked?: boolean
-  ): Promise<FileDiff>
+  ): Promise<GetGitDiffResponse>
 
   /** Stage a file or specific hunk */
   stageFile(file: string, hunkIndex?: number): Promise<void>
@@ -31,12 +84,12 @@ export class MockGitService implements GitService {
     return Promise.resolve([...mockChangedFiles])
   }
 
-  async getDiff(file: string): Promise<FileDiff> {
+  async getDiff(file: string): Promise<GetGitDiffResponse> {
     if (!(file in mockFileDiffs)) {
       throw new Error(`Diff not found for file: ${file}`)
     }
 
-    return Promise.resolve(mockFileDiffs[file])
+    return Promise.resolve(synthesizeDiffResponse(mockFileDiffs[file]))
   }
 
   async stageFile(): Promise<void> {
@@ -68,7 +121,7 @@ export class HttpGitService implements GitService {
     file: string,
     staged = false,
     untracked?: boolean
-  ): Promise<FileDiff> {
+  ): Promise<GetGitDiffResponse> {
     const params = new URLSearchParams({ file, staged: String(staged) })
     if (untracked !== undefined) {
       params.set('untracked', String(untracked))
@@ -81,7 +134,7 @@ export class HttpGitService implements GitService {
       )
     }
 
-    return response.json() as Promise<FileDiff>
+    return response.json() as Promise<GetGitDiffResponse>
   }
 
   async stageFile(file: string, hunkIndex?: number): Promise<void> {
@@ -143,7 +196,7 @@ export class DesktopGitService implements GitService {
     file: string,
     staged = false,
     untracked?: boolean
-  ): Promise<FileDiff> {
+  ): Promise<GetGitDiffResponse> {
     try {
       const args = {
         cwd: this.cwd,
@@ -152,7 +205,7 @@ export class DesktopGitService implements GitService {
         ...(untracked !== undefined ? { untracked } : {}),
       }
 
-      return await invoke<FileDiff>('get_git_diff', args)
+      return await invoke<GetGitDiffResponse>('get_git_diff', args)
     } catch (error) {
       throw new Error(`Failed to get diff for ${file}: ${String(error)}`)
     }

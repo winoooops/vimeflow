@@ -3,11 +3,46 @@ import { render, screen } from '@testing-library/react'
 import { DiffPanelContent } from './DiffPanelContent'
 import * as useGitStatusModule from '../hooks/useGitStatus'
 import * as useFileDiffModule from '../hooks/useFileDiff'
+import type { UseFileDiffReturn } from '../hooks/useFileDiff'
+import type { GetGitDiffResponse } from '../../../bindings/GetGitDiffResponse'
 import type { ChangedFile, FileDiff } from '../types'
 
 // Mock the hooks
 vi.mock('../hooks/useGitStatus')
 vi.mock('../hooks/useFileDiff')
+
+/**
+ * Build a `UseFileDiffReturn` from the legacy `{ diff, loading, error }`
+ * shape. Synthesizes a matching `response` so the hook contract widened in
+ * PR1 task 1.6 (parsed `fileDiff` + raw `oldText`/`newText`/`rawDiff`) is
+ * satisfied without rewriting every test case. Task 1.10 will collapse this
+ * helper into per-test responses with real `oldText`/`newText` fixtures.
+ */
+const fileDiffMock = ({
+  diff,
+  loading,
+  error,
+}: {
+  diff: FileDiff | null
+  loading: boolean
+  error: Error | null
+}): UseFileDiffReturn => ({
+  response:
+    diff === null
+      ? null
+      : {
+          // Cast to bridge the local `FileDiff` (oldPath?: string) → bindings
+          // `FileDiff` (oldPath: string | null). Same runtime shape; Task 1.10
+          // collapses the two into one.
+          fileDiff: diff as GetGitDiffResponse['fileDiff'],
+          oldText: '',
+          newText: '',
+          rawDiff: '',
+        },
+  diff,
+  loading,
+  error,
+})
 
 describe('DiffPanelContent', () => {
   beforeEach(() => {
@@ -24,11 +59,13 @@ describe('DiffPanelContent', () => {
       idle: false,
     })
 
-    vi.spyOn(useFileDiffModule, 'useFileDiff').mockReturnValue({
-      diff: null,
-      loading: false,
-      error: null,
-    })
+    vi.spyOn(useFileDiffModule, 'useFileDiff').mockReturnValue(
+      fileDiffMock({
+        diff: null,
+        loading: false,
+        error: null,
+      })
+    )
 
     render(<DiffPanelContent />)
 
@@ -47,11 +84,13 @@ describe('DiffPanelContent', () => {
       idle: false,
     })
 
-    vi.spyOn(useFileDiffModule, 'useFileDiff').mockReturnValue({
-      diff: null,
-      loading: false,
-      error: null,
-    })
+    vi.spyOn(useFileDiffModule, 'useFileDiff').mockReturnValue(
+      fileDiffMock({
+        diff: null,
+        loading: false,
+        error: null,
+      })
+    )
 
     render(<DiffPanelContent />)
 
@@ -71,11 +110,13 @@ describe('DiffPanelContent', () => {
       idle: false,
     })
 
-    vi.spyOn(useFileDiffModule, 'useFileDiff').mockReturnValue({
-      diff: null,
-      loading: false,
-      error: null,
-    })
+    vi.spyOn(useFileDiffModule, 'useFileDiff').mockReturnValue(
+      fileDiffMock({
+        diff: null,
+        loading: false,
+        error: null,
+      })
+    )
 
     render(<DiffPanelContent />)
 
@@ -126,11 +167,13 @@ describe('DiffPanelContent', () => {
       idle: false,
     })
 
-    vi.spyOn(useFileDiffModule, 'useFileDiff').mockReturnValue({
-      diff: mockDiff,
-      loading: false,
-      error: null,
-    })
+    vi.spyOn(useFileDiffModule, 'useFileDiff').mockReturnValue(
+      fileDiffMock({
+        diff: mockDiff,
+        loading: false,
+        error: null,
+      })
+    )
 
     render(<DiffPanelContent />)
 
@@ -158,11 +201,13 @@ describe('DiffPanelContent', () => {
 
     const useFileDiffSpy = vi
       .spyOn(useFileDiffModule, 'useFileDiff')
-      .mockReturnValue({
-        diff: null,
-        loading: false,
-        error: null,
-      })
+      .mockReturnValue(
+        fileDiffMock({
+          diff: null,
+          loading: false,
+          error: null,
+        })
+      )
 
     render(<DiffPanelContent cwd="/home/user/project" />)
 
@@ -201,16 +246,18 @@ describe('DiffPanelContent', () => {
         idle: true,
       })
 
-    vi.spyOn(useFileDiffModule, 'useFileDiff').mockReturnValue({
-      diff: {
-        filePath: 'src/App.tsx',
-        oldPath: 'src/App.tsx',
-        newPath: 'src/App.tsx',
-        hunks: [],
-      },
-      loading: false,
-      error: null,
-    })
+    vi.spyOn(useFileDiffModule, 'useFileDiff').mockReturnValue(
+      fileDiffMock({
+        diff: {
+          filePath: 'src/App.tsx',
+          oldPath: 'src/App.tsx',
+          newPath: 'src/App.tsx',
+          hunks: [],
+        },
+        loading: false,
+        error: null,
+      })
+    )
 
     render(
       <DiffPanelContent
@@ -254,11 +301,13 @@ describe('DiffPanelContent', () => {
 
       const useFileDiffSpy = vi
         .spyOn(useFileDiffModule, 'useFileDiff')
-        .mockReturnValue({
-          diff: null,
-          loading: false,
-          error: null,
-        })
+        .mockReturnValue(
+          fileDiffMock({
+            diff: null,
+            loading: false,
+            error: null,
+          })
+        )
 
       // selectedFile is from /repo/a but current cwd is /repo/b
       render(
@@ -296,11 +345,13 @@ describe('DiffPanelContent', () => {
         idle: false,
       })
 
-      vi.spyOn(useFileDiffModule, 'useFileDiff').mockReturnValue({
-        diff: null,
-        loading: false,
-        error: null,
-      })
+      vi.spyOn(useFileDiffModule, 'useFileDiff').mockReturnValue(
+        fileDiffMock({
+          diff: null,
+          loading: false,
+          error: null,
+        })
+      )
 
       const onSelectedFileChange = vi.fn()
 
@@ -338,11 +389,13 @@ describe('DiffPanelContent', () => {
         idle: false,
       })
 
-      vi.spyOn(useFileDiffModule, 'useFileDiff').mockReturnValue({
-        diff: null,
-        loading: false,
-        error: null,
-      })
+      vi.spyOn(useFileDiffModule, 'useFileDiff').mockReturnValue(
+        fileDiffMock({
+          diff: null,
+          loading: false,
+          error: null,
+        })
+      )
 
       render(
         <DiffPanelContent
@@ -386,11 +439,13 @@ describe('DiffPanelContent', () => {
         hunks: [],
       }
 
-      vi.spyOn(useFileDiffModule, 'useFileDiff').mockReturnValue({
-        diff: mockDiff,
-        loading: false,
-        error: null,
-      })
+      vi.spyOn(useFileDiffModule, 'useFileDiff').mockReturnValue(
+        fileDiffMock({
+          diff: mockDiff,
+          loading: false,
+          error: null,
+        })
+      )
 
       const onSelectedFileChange = vi.fn()
 
@@ -465,11 +520,13 @@ describe('DiffPanelContent', () => {
 
       const useFileDiffSpy = vi
         .spyOn(useFileDiffModule, 'useFileDiff')
-        .mockReturnValue({
-          diff: untrackedDiff,
-          loading: false,
-          error: null,
-        })
+        .mockReturnValue(
+          fileDiffMock({
+            diff: untrackedDiff,
+            loading: false,
+            error: null,
+          })
+        )
 
       render(
         <DiffPanelContent
@@ -514,11 +571,13 @@ describe('DiffPanelContent', () => {
 
       const useFileDiffSpy = vi
         .spyOn(useFileDiffModule, 'useFileDiff')
-        .mockReturnValue({
-          diff: null,
-          loading: false,
-          error: null,
-        })
+        .mockReturnValue(
+          fileDiffMock({
+            diff: null,
+            loading: false,
+            error: null,
+          })
+        )
 
       render(<DiffPanelContent cwd="/repo" />)
 
@@ -551,11 +610,13 @@ describe('DiffPanelContent', () => {
 
       const useFileDiffSpy = vi
         .spyOn(useFileDiffModule, 'useFileDiff')
-        .mockReturnValue({
-          diff: null,
-          loading: false,
-          error: null,
-        })
+        .mockReturnValue(
+          fileDiffMock({
+            diff: null,
+            loading: false,
+            error: null,
+          })
+        )
 
       const { rerender } = render(<DiffPanelContent cwd="/repo/a" />)
 
