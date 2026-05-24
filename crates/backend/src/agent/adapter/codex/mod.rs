@@ -2,6 +2,7 @@
 
 mod locator;
 mod parser;
+pub(crate) mod session_index;
 mod transcript;
 mod types;
 
