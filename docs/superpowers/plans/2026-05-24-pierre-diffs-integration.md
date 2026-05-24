@@ -2270,3 +2270,5 @@ Title: `feat(diff): inline review comments to active agent pane (PR3 of 3)`.
 After PR3 lands, the integration is complete per the spec. Follow-ups (optimistic UI, Catppuccin theme, virtualization, settings persistence, `@pierre/trees` swap) are tracked separately per spec Section 9.1.
 
 This plan ends at PR3 opening — DO NOT chain into execution. Control returns to `/lifeline:planner` (or to a fresh `/superpowers:executing-plans` / `/superpowers:subagent-driven-development` invocation when the operator is ready).
+
+<!-- codex-reviewed: 2026-05-24T12:50:37Z -->
