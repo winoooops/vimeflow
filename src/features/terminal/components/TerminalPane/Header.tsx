@@ -16,6 +16,7 @@ export interface HeaderProps {
   removed: number
   isFocused: boolean
   isCollapsed: boolean
+  paneAgentTitle?: string
   onToggleCollapse: () => void
   onClose?: () => void
 }
@@ -30,6 +31,7 @@ export const Header = ({
   removed,
   isFocused,
   isCollapsed,
+  paneAgentTitle = undefined,
   onToggleCollapse,
   onClose = undefined,
 }: HeaderProps): ReactElement => {
@@ -64,7 +66,9 @@ export const Header = ({
       </div>
 
       <StatusDot status={pipStatus} size={6} aria-label={`pty ${pipStatus}`} />
-      <span className="min-w-0 truncate text-on-surface">{session.name}</span>
+      <span className="min-w-0 truncate text-on-surface">
+        {paneAgentTitle ?? session.name}
+      </span>
 
       {!isCollapsed && (
         <HeaderMetadata

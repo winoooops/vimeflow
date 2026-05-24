@@ -67,6 +67,25 @@ describe('Header', () => {
     expect(screen.getByText('auth refactor')).toBeInTheDocument()
   })
 
+  test('renders paneAgentTitle when provided', () => {
+    render(<Header {...baseProps} paneAgentTitle="My Agent Title" />)
+
+    expect(screen.getByTestId('terminal-pane-header')).toHaveTextContent(
+      'My Agent Title'
+    )
+    expect(screen.getByTestId('terminal-pane-header')).not.toHaveTextContent(
+      baseProps.session.name
+    )
+  })
+
+  test('falls back to session.name when paneAgentTitle is undefined', () => {
+    render(<Header {...baseProps} paneAgentTitle={undefined} />)
+
+    expect(screen.getByTestId('terminal-pane-header')).toHaveTextContent(
+      baseProps.session.name
+    )
+  })
+
   test('expanded header shows branch, added, and removed counts', () => {
     render(<Header {...baseProps} />)
 
