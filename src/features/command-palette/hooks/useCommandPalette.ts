@@ -15,6 +15,9 @@ import { fuzzyMatch } from '../registry/fuzzyMatch'
 import { defaultCommands } from '../data/defaultCommands'
 import { getAllLeaves, traverseNamespace } from '../registry/commandTree'
 import { parseQuery } from '../registry/parseQuery'
+import * as chordRegistry from '../chordRegistry'
+
+const LEADER_WINDOW_MS = 500
 
 const isPaletteToggle = (event: KeyboardEvent): boolean =>
   event.ctrlKey && !event.metaKey && !event.altKey && event.key === ':'
@@ -250,11 +253,30 @@ export const useCommandPalette = (
 
   // Global keyboard listener — registered once for the hook's lifetime.
   useEffect(() => {
+    let leaderTimer: ReturnType<typeof setTimeout> | null = null
+    let leaderActive = false
+
+    const clearLeaderTimer = (): void => {
+      if (leaderTimer) {
+        clearTimeout(leaderTimer)
+        leaderTimer = null
+      }
+    }
+
     const handleKeyDown = (event: KeyboardEvent): void => {
-      // Toggle palette on Ctrl+: (capture-phase listener)
-      if (isPaletteToggle(event)) {
-        // Suppress repeat events
-        if (event.repeat) {
+      if (isPaletteToggle(event) && event.repeat) {
+        event.preventDefault()
+        event.stopPropagation()
+
+        return
+      }
+
+      if (leaderActive) {
+        const consumed = chordRegistry.dispatch(event)
+        leaderActive = false
+        clearLeaderTimer()
+
+        if (consumed || event.key === 'Escape') {
           event.preventDefault()
           event.stopPropagation()
 
@@ -263,11 +285,25 @@ export const useCommandPalette = (
 
         event.preventDefault()
         event.stopPropagation()
+        handlersRef.current.open()
+
+        return
+      }
+
+      // Toggle palette on Ctrl+: (capture-phase listener)
+      if (isPaletteToggle(event)) {
+        event.preventDefault()
+        event.stopPropagation()
 
         if (stateRef.current.isOpen) {
           handlersRef.current.close()
         } else {
-          handlersRef.current.open()
+          leaderActive = true
+          leaderTimer = setTimeout(() => {
+            leaderActive = false
+            leaderTimer = null
+            handlersRef.current.open()
+          }, LEADER_WINDOW_MS)
         }
 
         return
@@ -306,6 +342,7 @@ export const useCommandPalette = (
     document.addEventListener('keydown', handleKeyDown, { capture: true })
 
     return (): void => {
+      clearLeaderTimer()
       document.removeEventListener('keydown', handleKeyDown, { capture: true })
     }
   }, [])
