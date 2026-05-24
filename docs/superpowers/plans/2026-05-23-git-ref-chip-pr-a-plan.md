@@ -49,8 +49,9 @@ Tests first — TDD. The component doesn't exist yet, so all 10 tests will fail 
 Write `src/features/terminal/components/TerminalPane/GitRefChip.test.tsx`:
 
 ```tsx
-// cspell:ignore worktree
+// cspell:ignore worktree testids
 import { render, screen } from '@testing-library/react'
+import { expect, test } from 'vitest'
 import { GitRefChip } from './GitRefChip'
 
 test('renders nothing when branch is null', () => {
