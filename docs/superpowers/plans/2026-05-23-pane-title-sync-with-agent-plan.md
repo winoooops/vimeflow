@@ -135,8 +135,8 @@ pub enum TitleSource {
 
 - [ ] **Step 2: Run `cargo test` to regenerate the `ts-rs` bindings**
 
-Run: `cargo test --manifest-path crates/backend/Cargo.toml --lib types::tests::export_bindings 2>&1 | tail -20`
-Expected: tests pass; new files `src/bindings/AgentSessionTitleEvent.ts` and `src/bindings/TitleSource.ts` appear.
+Run: `cargo test --manifest-path crates/backend/Cargo.toml --lib types::tests::export_bindings`
+Expected: tests pass (look for `test result: ok.` in the unfiltered output); new files `src/bindings/AgentSessionTitleEvent.ts` and `src/bindings/TitleSource.ts` appear.
 
 - [ ] **Step 3: Verify the generated bindings**
 
@@ -175,14 +175,19 @@ git commit -m "feat(agent): add AgentSessionTitleEvent + TitleSource types"
 - [ ] **Step 1: Add the const + helper**
 
 ```rust
-// Append after the existing emit_agent_cwd function (around line 33):
+// Append after the existing emit_agent_cwd function (around line 33).
+// The pub const is referenced by both this helper AND by tests; declaring
+// it as a named constant (rather than inlining the string literal) makes
+// future renames safe and matches the spec §3.2 file-structure contract.
+
+pub const AGENT_SESSION_TITLE: &str = "agent-session-title";
 
 pub fn emit_agent_session_title(
     events: &Arc<dyn EventSink>,
     payload: &AgentSessionTitleEvent,
 ) -> Result<(), String> {
     events.emit_json(
-        "agent-session-title",
+        AGENT_SESSION_TITLE,
         serde_json::to_value(payload)
             .map_err(|e| format!("serialize AgentSessionTitleEvent: {e}"))?,
     )
@@ -193,8 +198,8 @@ Add `AgentSessionTitleEvent` to the `use crate::agent::types::{...}` import list
 
 - [ ] **Step 2: Verify `cargo check` is clean**
 
-Run: `cargo check --manifest-path crates/backend/Cargo.toml 2>&1 | tail -5`
-Expected: `Finished` line with no warnings about the new code.
+Run: `cargo check --manifest-path crates/backend/Cargo.toml`
+Expected: `Finished` line in the unfiltered output with no warnings about the new code.
 
 - [ ] **Step 3: Commit**
 
@@ -564,11 +569,37 @@ let claude_agent_session_id: String = transcript_path
 
 - [ ] **Step 3: Thread title memo + agent_session_id into `process_line`**
 
-Extend `process_line`'s signature to add `claude_agent_session_id: &str` and `last_title_memo: &mut Option<String>`. Initialize `last_title_memo` as `None` in the tail-loop owner and pass `&mut` through each call.
+Read `crates/backend/src/agent/adapter/claude_code/transcript.rs:279` to confirm the real signature:
+
+```rust
+fn process_line(
+    line: &str,
+    session_id: &str,
+    cwd: Option<&Path>,
+    events: &Arc<dyn EventSink>,
+    emitter: &mut TestRunEmitter,
+)
+```
+
+`process_line` takes the **raw line string** and does `serde_json::from_str(line)` internally. Extend the signature with two NEW parameters:
+
+```rust
+fn process_line(
+    line: &str,
+    session_id: &str,
+    cwd: Option<&Path>,
+    events: &Arc<dyn EventSink>,
+    emitter: &mut TestRunEmitter,
+    claude_agent_session_id: &str,   // NEW
+    last_title_memo: &mut Option<String>,  // NEW
+)
+```
+
+Update every call site of `process_line` in this file (tail loop + tests). Initialize `last_title_memo` as `None` in the tail-loop owner and pass `&mut` through.
 
 - [ ] **Step 4: Add the two match arms inside `process_line`**
 
-Inside the existing `match line_type(&value) { ... }`:
+Inside the existing `match line_type(&value) { ... }` (where `value` is the parsed `serde_json::Value` obtained from `serde_json::from_str(line)` near the top of `process_line`):
 
 ```rust
 "ai-title" => {
@@ -601,30 +632,61 @@ Inside the existing `match line_type(&value) { ... }`:
 
 - [ ] **Step 5: On tail loop shutdown, emit a final clear**
 
-At the bottom of the tail loop (just before joining), if `last_title_memo.is_some()`, call `emit_title(events, session_id, &claude_agent_session_id, "", TitleSource::AiGenerated, &mut last_title_memo)` — the empty `raw_title` + non-None memo triggers the transition-aware clear emit. (See spec §6.5a.)
+At the bottom of the tail loop (just after the loop exits its `while !stop_flag.load()` and before joining), if `last_title_memo.is_some()`, call `emit_title` with an empty `raw_title`:
+
+```rust
+if last_title_memo.is_some() {
+    // Empty raw_title + Some memo → transition-aware clear emit
+    // (see spec §6.5a). The TitleSource is informational on a clear
+    // emit; use UserRenamed for symmetry with the Codex sidecar's
+    // shutdown clear (which also uses UserRenamed because Codex's
+    // emits are always UserRenamed).
+    emit_title(
+        &events_arc, &session_id, &claude_agent_session_id, "",
+        TitleSource::UserRenamed, &mut last_title_memo,
+    );
+}
+```
+
+`events_arc` is whatever local binding holds the `Arc<dyn EventSink>` at the shutdown site (the tail loop's existing variable name).
 
 - [ ] **Step 6: Add 7 unit tests in the existing `#[cfg(test)] mod tests`**
 
+The tests use `FakeEventSink` from `crate::runtime::event_sink` (re-exported under `#[cfg(test)]`). Its API is `sink.recorded()` returning `Vec<(String, serde_json::Value)>` (tuple of event name + payload), and `sink.count(event_name)` for filtered counts. `process_line` takes the line as a `&str` raw JSON; tests pass JSON fragments via `serde_json::to_string` of a `json!` macro.
+
 ```rust
+use crate::runtime::event_sink::FakeEventSink;
+use serde_json::json;
+use std::sync::Arc;
+
+fn make_sink_and_emitter() -> (Arc<FakeEventSink>, Arc<dyn EventSink>, TestRunEmitter) {
+    let sink: Arc<FakeEventSink> = Arc::new(FakeEventSink::new());
+    let sink_dyn: Arc<dyn EventSink> = sink.clone();
+    let emitter = TestRunEmitter::default(); // or whatever the existing test pattern is
+    (sink, sink_dyn, emitter)
+}
+
 #[test]
 fn ai_title_matching_session_id_emits() {
-    // Use the test EventSink helpers existing in this file.
     let agent_id = "0a1b95fd-54bc-4635-9161-983f661d74da";
     let mut memo = None;
-    let events = test_events();
-    let line = json!({
+    let (sink, sink_dyn, mut emitter) = make_sink_and_emitter();
+    let line = serde_json::to_string(&json!({
         "type": "ai-title",
         "aiTitle": "Investigate slow startup",
         "sessionId": agent_id,
-    });
-    process_line(&events, "pty-1", agent_id, &mut memo, line);
-    let emitted = events.captured();
-    assert_eq!(emitted.len(), 1);
-    assert_eq!(emitted[0].event, "agent-session-title");
-    assert_eq!(emitted[0].payload["title"], "Investigate slow startup");
-    assert_eq!(emitted[0].payload["source"], "ai-generated");
-    assert_eq!(emitted[0].payload["sessionId"], "pty-1");
-    assert_eq!(emitted[0].payload["agentSessionId"], agent_id);
+    })).unwrap();
+    process_line(&line, "pty-1", None, &sink_dyn, &mut emitter, agent_id, &mut memo);
+    let recorded = sink.recorded();
+    let title_events: Vec<_> = recorded.iter()
+        .filter(|(name, _)| name == "agent-session-title")
+        .collect();
+    assert_eq!(title_events.len(), 1);
+    let payload = &title_events[0].1;
+    assert_eq!(payload["title"], "Investigate slow startup");
+    assert_eq!(payload["source"], "ai-generated");
+    assert_eq!(payload["sessionId"], "pty-1");
+    assert_eq!(payload["agentSessionId"], agent_id);
     assert_eq!(memo.as_deref(), Some("Investigate slow startup"));
 }
 
@@ -632,27 +694,25 @@ fn ai_title_matching_session_id_emits() {
 fn custom_title_matching_session_id_emits_user_renamed() {
     let agent_id = "abc-123";
     let mut memo = None;
-    let events = test_events();
-    let line = json!({
-        "type": "custom-title",
-        "customTitle": "my-feature",
-        "sessionId": agent_id,
-    });
-    process_line(&events, "pty-1", agent_id, &mut memo, line);
-    assert_eq!(events.captured()[0].payload["source"], "user-renamed");
+    let (sink, sink_dyn, mut emitter) = make_sink_and_emitter();
+    let line = serde_json::to_string(&json!({
+        "type": "custom-title", "customTitle": "my-feature", "sessionId": agent_id,
+    })).unwrap();
+    process_line(&line, "pty-1", None, &sink_dyn, &mut emitter, agent_id, &mut memo);
+    let r = sink.recorded();
+    let title = r.iter().find(|(n, _)| n == "agent-session-title").unwrap();
+    assert_eq!(title.1["source"], "user-renamed");
 }
 
 #[test]
-fn mismatched_session_id_does_not_emit() {
+fn mismatched_session_id_does_not_emit_title() {
     let mut memo = None;
-    let events = test_events();
-    let line = json!({
-        "type": "ai-title",
-        "aiTitle": "other session",
-        "sessionId": "other-uuid",
-    });
-    process_line(&events, "pty-1", "expected-uuid", &mut memo, line);
-    assert_eq!(events.captured().len(), 0);
+    let (sink, sink_dyn, mut emitter) = make_sink_and_emitter();
+    let line = serde_json::to_string(&json!({
+        "type": "ai-title", "aiTitle": "other session", "sessionId": "other-uuid",
+    })).unwrap();
+    process_line(&line, "pty-1", None, &sink_dyn, &mut emitter, "expected-uuid", &mut memo);
+    assert_eq!(sink.count("agent-session-title"), 0);
     assert!(memo.is_none());
 }
 
@@ -660,50 +720,57 @@ fn mismatched_session_id_does_not_emit() {
 fn duplicate_ai_title_emits_once() {
     let agent_id = "abc";
     let mut memo = None;
-    let events = test_events();
-    let line = json!({"type": "ai-title", "aiTitle": "T", "sessionId": agent_id});
-    process_line(&events, "pty-1", agent_id, &mut memo, line.clone());
-    process_line(&events, "pty-1", agent_id, &mut memo, line);
-    assert_eq!(events.captured().len(), 1);
+    let (sink, sink_dyn, mut emitter) = make_sink_and_emitter();
+    let line = serde_json::to_string(&json!({
+        "type": "ai-title", "aiTitle": "T", "sessionId": agent_id,
+    })).unwrap();
+    process_line(&line, "pty-1", None, &sink_dyn, &mut emitter, agent_id, &mut memo);
+    process_line(&line, "pty-1", None, &sink_dyn, &mut emitter, agent_id, &mut memo);
+    assert_eq!(sink.count("agent-session-title"), 1);
 }
 
 #[test]
 fn ai_title_followed_by_custom_title_emits_two_events() {
     let agent_id = "abc";
     let mut memo = None;
-    let events = test_events();
-    process_line(&events, "pty-1", agent_id, &mut memo,
-        json!({"type": "ai-title", "aiTitle": "ai", "sessionId": agent_id}));
-    process_line(&events, "pty-1", agent_id, &mut memo,
-        json!({"type": "custom-title", "customTitle": "user", "sessionId": agent_id}));
-    let e = events.captured();
-    assert_eq!(e.len(), 2);
-    assert_eq!(e[1].payload["title"], "user");
-    assert_eq!(e[1].payload["source"], "user-renamed");
+    let (sink, sink_dyn, mut emitter) = make_sink_and_emitter();
+    let l1 = serde_json::to_string(&json!({"type":"ai-title","aiTitle":"ai","sessionId":agent_id})).unwrap();
+    let l2 = serde_json::to_string(&json!({"type":"custom-title","customTitle":"user","sessionId":agent_id})).unwrap();
+    process_line(&l1, "pty-1", None, &sink_dyn, &mut emitter, agent_id, &mut memo);
+    process_line(&l2, "pty-1", None, &sink_dyn, &mut emitter, agent_id, &mut memo);
+    let titles: Vec<_> = sink.recorded().into_iter()
+        .filter(|(n, _)| n == "agent-session-title").collect();
+    assert_eq!(titles.len(), 2);
+    assert_eq!(titles[1].1["title"], "user");
+    assert_eq!(titles[1].1["source"], "user-renamed");
 }
 
 #[test]
 fn ai_title_with_newline_emits_sanitized() {
     let agent_id = "abc";
     let mut memo = None;
-    let events = test_events();
-    process_line(&events, "pty-1", agent_id, &mut memo,
-        json!({"type": "ai-title", "aiTitle": "Line1\nLine2", "sessionId": agent_id}));
-    assert_eq!(events.captured()[0].payload["title"], "Line1 Line2");
+    let (sink, sink_dyn, mut emitter) = make_sink_and_emitter();
+    let line = serde_json::to_string(&json!({
+        "type":"ai-title","aiTitle":"Line1\nLine2","sessionId":agent_id,
+    })).unwrap();
+    process_line(&line, "pty-1", None, &sink_dyn, &mut emitter, agent_id, &mut memo);
+    let title = sink.recorded().into_iter().find(|(n, _)| n == "agent-session-title").unwrap();
+    assert_eq!(title.1["title"], "Line1 Line2");
 }
 
 #[test]
 fn empty_ai_title_after_set_emits_clear() {
     let agent_id = "abc";
     let mut memo = None;
-    let events = test_events();
-    process_line(&events, "pty-1", agent_id, &mut memo,
-        json!({"type": "ai-title", "aiTitle": "first", "sessionId": agent_id}));
-    process_line(&events, "pty-1", agent_id, &mut memo,
-        json!({"type": "ai-title", "aiTitle": "", "sessionId": agent_id}));
-    let e = events.captured();
-    assert_eq!(e.len(), 2);
-    assert_eq!(e[1].payload["title"], "");
+    let (sink, sink_dyn, mut emitter) = make_sink_and_emitter();
+    let l1 = serde_json::to_string(&json!({"type":"ai-title","aiTitle":"first","sessionId":agent_id})).unwrap();
+    let l2 = serde_json::to_string(&json!({"type":"ai-title","aiTitle":"","sessionId":agent_id})).unwrap();
+    process_line(&l1, "pty-1", None, &sink_dyn, &mut emitter, agent_id, &mut memo);
+    process_line(&l2, "pty-1", None, &sink_dyn, &mut emitter, agent_id, &mut memo);
+    let titles: Vec<_> = sink.recorded().into_iter()
+        .filter(|(n, _)| n == "agent-session-title").collect();
+    assert_eq!(titles.len(), 2);
+    assert_eq!(titles[1].1["title"], "");
     assert!(memo.is_none());
 }
 
@@ -711,14 +778,16 @@ fn empty_ai_title_after_set_emits_clear() {
 fn empty_ai_title_without_prior_does_not_emit() {
     let agent_id = "abc";
     let mut memo = None;
-    let events = test_events();
-    process_line(&events, "pty-1", agent_id, &mut memo,
-        json!({"type": "ai-title", "aiTitle": "", "sessionId": agent_id}));
-    assert_eq!(events.captured().len(), 0);
+    let (sink, sink_dyn, mut emitter) = make_sink_and_emitter();
+    let line = serde_json::to_string(&json!({
+        "type":"ai-title","aiTitle":"","sessionId":agent_id,
+    })).unwrap();
+    process_line(&line, "pty-1", None, &sink_dyn, &mut emitter, agent_id, &mut memo);
+    assert_eq!(sink.count("agent-session-title"), 0);
 }
 ```
 
-> The test helper `test_events()` and `Captured` struct already exist in this file for the cwd-extraction tests (PR #239); reuse the same pattern. If they don't yet expose `event` / `payload` accessors, extend them in the same commit.
+> `TestRunEmitter::default()` placeholder: confirm the real constructor in `transcript.rs`'s existing tests and copy that pattern. The existing PR #239 cwd-extraction tests have the same shape and can serve as a reference.
 
 - [ ] **Step 7: Run the tests**
 
@@ -993,46 +1062,64 @@ mod tests {
         path
     }
 
+    // Helper: collect only agent-session-title events from a FakeEventSink.
+    fn title_payloads(sink: &Arc<FakeEventSink>) -> Vec<serde_json::Value> {
+        sink.recorded()
+            .into_iter()
+            .filter(|(name, _)| name == "agent-session-title")
+            .map(|(_, payload)| payload)
+            .collect()
+    }
+
     #[test]
-    fn initial_read_emits_matching_row() {
+    fn initial_read_emits_matching_row_then_clear_on_shutdown() {
+        // Per spec §6.5a, shutdown emits a final clear when memo is set.
+        // Starting with stop=true makes init run, then immediately exits
+        // the loop, then hits the shutdown-clear branch.
         let dir = TempDir::new().unwrap();
         let path = write_index(&dir, &[("abc-uuid", "MyTask")]);
-        let events: Arc<FakeEventSink> = Arc::new(FakeEventSink::new());
-        let events_dyn: Arc<dyn EventSink> = events.clone();
-        let stop = Arc::new(AtomicBool::new(true)); // Immediate stop after init.
-        let h = spawn_watch(path, "abc-uuid".into(), "pty-1".into(), events_dyn, stop).unwrap();
+        let sink: Arc<FakeEventSink> = Arc::new(FakeEventSink::new());
+        let sink_dyn: Arc<dyn EventSink> = sink.clone();
+        let stop = Arc::new(AtomicBool::new(true)); // immediate exit
+        let h = spawn_watch(path, "abc-uuid".into(), "pty-1".into(), sink_dyn, stop).unwrap();
         h.join().unwrap();
-        let captured = events.captured();
-        assert_eq!(captured.len(), 1);
-        assert_eq!(captured[0].payload["title"], "MyTask");
-        assert_eq!(captured[0].payload["source"], "user-renamed");
-        assert_eq!(captured[0].payload["sessionId"], "pty-1");
+        let titles = title_payloads(&sink);
+        // Expect TWO emits: initial "MyTask" + shutdown clear ("").
+        assert_eq!(titles.len(), 2);
+        assert_eq!(titles[0]["title"], "MyTask");
+        assert_eq!(titles[0]["source"], "user-renamed");
+        assert_eq!(titles[0]["sessionId"], "pty-1");
+        assert_eq!(titles[1]["title"], "");
     }
 
     #[test]
     fn missing_row_does_not_emit() {
         let dir = TempDir::new().unwrap();
         let path = write_index(&dir, &[("other-uuid", "OtherTask")]);
-        let events: Arc<FakeEventSink> = Arc::new(FakeEventSink::new());
-        let events_dyn: Arc<dyn EventSink> = events.clone();
+        let sink: Arc<FakeEventSink> = Arc::new(FakeEventSink::new());
+        let sink_dyn: Arc<dyn EventSink> = sink.clone();
         let stop = Arc::new(AtomicBool::new(true));
-        let h = spawn_watch(path, "abc-uuid".into(), "pty-1".into(), events_dyn, stop).unwrap();
+        let h = spawn_watch(path, "abc-uuid".into(), "pty-1".into(), sink_dyn, stop).unwrap();
         h.join().unwrap();
-        assert_eq!(events.captured().len(), 0);
+        // No initial emit (no matching row) → no shutdown clear either
+        // (memo never became Some).
+        assert_eq!(title_payloads(&sink).len(), 0);
     }
 
     #[test]
     fn last_write_wins_on_duplicate_ids() {
         let dir = TempDir::new().unwrap();
         let path = write_index(&dir, &[("abc-uuid", "first"), ("abc-uuid", "second")]);
-        let events: Arc<FakeEventSink> = Arc::new(FakeEventSink::new());
-        let events_dyn: Arc<dyn EventSink> = events.clone();
+        let sink: Arc<FakeEventSink> = Arc::new(FakeEventSink::new());
+        let sink_dyn: Arc<dyn EventSink> = sink.clone();
         let stop = Arc::new(AtomicBool::new(true));
-        let h = spawn_watch(path, "abc-uuid".into(), "pty-1".into(), events_dyn, stop).unwrap();
+        let h = spawn_watch(path, "abc-uuid".into(), "pty-1".into(), sink_dyn, stop).unwrap();
         h.join().unwrap();
-        let captured = events.captured();
-        assert_eq!(captured.len(), 1);
-        assert_eq!(captured[0].payload["title"], "second");
+        let titles = title_payloads(&sink);
+        // Initial = "second" (last-write-wins) + shutdown clear.
+        assert_eq!(titles.len(), 2);
+        assert_eq!(titles[0]["title"], "second");
+        assert_eq!(titles[1]["title"], "");
     }
 
     #[test]
@@ -1040,49 +1127,53 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("session_index.jsonl");
         std::fs::write(&path, "not-json\n").unwrap();
-        let events: Arc<FakeEventSink> = Arc::new(FakeEventSink::new());
-        let events_dyn: Arc<dyn EventSink> = events.clone();
+        let sink: Arc<FakeEventSink> = Arc::new(FakeEventSink::new());
+        let sink_dyn: Arc<dyn EventSink> = sink.clone();
         let stop = Arc::new(AtomicBool::new(true));
-        let h = spawn_watch(path, "abc-uuid".into(), "pty-1".into(), events_dyn, stop).unwrap();
+        let h = spawn_watch(path, "abc-uuid".into(), "pty-1".into(), sink_dyn, stop).unwrap();
         h.join().unwrap();
-        assert_eq!(events.captured().len(), 0);
+        // Parse fail → no match → no emit; no shutdown clear.
+        assert_eq!(title_payloads(&sink).len(), 0);
     }
 
     #[test]
     fn missing_file_does_not_panic() {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("nonexistent.jsonl");
-        let events: Arc<FakeEventSink> = Arc::new(FakeEventSink::new());
-        let events_dyn: Arc<dyn EventSink> = events.clone();
+        let sink: Arc<FakeEventSink> = Arc::new(FakeEventSink::new());
+        let sink_dyn: Arc<dyn EventSink> = sink.clone();
         let stop = Arc::new(AtomicBool::new(true));
-        let h = spawn_watch(path, "abc-uuid".into(), "pty-1".into(), events_dyn, stop).unwrap();
+        let h = spawn_watch(path, "abc-uuid".into(), "pty-1".into(), sink_dyn, stop).unwrap();
         h.join().unwrap();
-        assert_eq!(events.captured().len(), 0);
+        assert_eq!(title_payloads(&sink).len(), 0);
     }
 
     #[test]
-    fn empty_thread_name_emits_clear_after_prior() {
+    fn mtime_change_picks_up_new_thread_name() {
         let dir = TempDir::new().unwrap();
         let path = write_index(&dir, &[("abc-uuid", "first")]);
-        let events: Arc<FakeEventSink> = Arc::new(FakeEventSink::new());
-        let events_dyn: Arc<dyn EventSink> = events.clone();
+        let sink: Arc<FakeEventSink> = Arc::new(FakeEventSink::new());
+        let sink_dyn: Arc<dyn EventSink> = sink.clone();
         let stop = Arc::new(AtomicBool::new(false));
-        let stop_clone = Arc::clone(&stop);
-        let path_clone = path.clone();
-        let h = spawn_watch(path_clone, "abc-uuid".into(), "pty-1".into(), events_dyn, stop).unwrap();
+        let stop_for_thread = Arc::clone(&stop);
+        let h = spawn_watch(path.clone(), "abc-uuid".into(), "pty-1".into(), sink_dyn, stop_for_thread).unwrap();
         // Wait for initial emit.
         std::thread::sleep(Duration::from_millis(50));
-        // Rewrite with empty thread_name and bump mtime.
-        std::fs::write(&path, r#"{"id":"abc-uuid","thread_name":"","updated_at":"2026-05-23T00:00:01Z"}"#).unwrap();
-        // Wait one watcher cycle.
-        std::thread::sleep(Duration::from_millis(700));
-        stop_clone.store(true, Ordering::Release);
+        // Rewrite the file (changes mtime). On some filesystems the mtime
+        // resolution is coarse; sleep at least one second before the rewrite
+        // to guarantee a different mtime value. (Production code already
+        // tolerates this — the test just needs the watcher to observe a
+        // change at the next poll.)
+        std::thread::sleep(Duration::from_millis(1100));
+        std::fs::write(&path, r#"{"id":"abc-uuid","thread_name":"second","updated_at":"2026-05-23T00:00:01Z"}"#).unwrap();
+        std::thread::sleep(Duration::from_millis(700)); // > POLL_INTERVAL
+        stop.store(true, Ordering::Release);
         h.join().unwrap();
-        let captured = events.captured();
-        // Expect: initial emit ("first") + clear emit ("") + possibly a shutdown
-        // clear (no-op because memo is already None after the empty emit).
-        assert!(captured.iter().any(|c| c.payload["title"] == "first"));
-        assert!(captured.iter().any(|c| c.payload["title"] == ""));
+        let titles = title_payloads(&sink);
+        // Expect: "first" (initial) + "second" (mtime update) + "" (shutdown clear).
+        assert!(titles.iter().any(|p| p["title"] == "first"));
+        assert!(titles.iter().any(|p| p["title"] == "second"));
+        assert!(titles.iter().any(|p| p["title"] == ""));
     }
 }
 ```
@@ -1498,14 +1589,36 @@ EOF
 
 # Phase B — PR2 (chord + write-back, UI → agent)
 
-**Start PR2 on a fresh branch from `main`** (NOT stacked on PR1; rebase later if needed).
+**PR2 depends on PR1.** PR2 reads `pane.agentTitle` (added in PR1 Task 9), relies on the `agent-session-title` event channel (added in PR1 Task 2) to round-trip the rename back into the pane Header, and on the `paneAgentTitle` prop wiring (PR1 Task 11) to render the result. Without PR1 merged into `main` (or rebased on top of PR1's branch), Phase B's tasks WILL type-check fail at Task 22 and the smoke test in Task 24 cannot complete the round-trip.
 
-```bash
-git fetch origin
-git checkout -b feat/pane-title-sync-pr2 origin/main
-# If PR1 has merged into main, the new event channel is already there.
-# If PR1 is still pending, rebase this branch on top of PR1's merge later.
-```
+Two acceptable workflows:
+
+1. **Wait for PR1 to merge** (recommended). Then:
+
+   ```bash
+   git fetch origin
+   git checkout -b feat/pane-title-sync-pr2 origin/main
+   ```
+
+   PR2 targets `main` directly; the PR1 changes are already in.
+
+2. **Stack PR2 on PR1's branch** (only if PR1 is blocked but PR2 work is urgent):
+
+   ```bash
+   git fetch origin
+   git checkout -b feat/pane-title-sync-pr2 origin/feat/pane-title-sync-pr1
+   ```
+
+   When PR1 merges into `main`, rebase PR2 onto the merged `main`:
+
+   ```bash
+   git fetch origin
+   git rebase origin/main
+   ```
+
+   The PR2 pull request still targets `main` (NOT PR1's branch).
+
+Do NOT start Phase B from a `main` that hasn't received PR1 — it produces a non-functional partial implementation that hides bugs until the round-trip is wired.
 
 ---
 
@@ -1560,13 +1673,21 @@ git commit -m "feat(agent): add RenameAgentSessionRequest IPC type"
 
 - [ ] **Step 1: Write the failing tests**
 
-Add to the existing `#[cfg(test)] mod tests` in `watcher_runtime.rs`:
+Add to the existing `#[cfg(test)] mod tests` in `watcher_runtime.rs`. The
+existing tests for `insert` / `remove` show how to construct a real
+`WatcherHandle` for tests (typically via `WatcherHandle::new()` followed
+by joining a no-op thread). Adopt the same pattern — `agent_type_for_pty`
+does not depend on the handle's internals, so the simplest test reads
+back through `agent_types` without exercising the handle at all:
 
 ```rust
 #[test]
 fn agent_type_for_pty_returns_inserted_type() {
     let state = AgentWatcherState::new();
-    let handle = WatcherHandle::dummy_for_test();
+    // Use whichever helper the existing tests use to make a WatcherHandle.
+    // If none exists, the simplest path is to follow the existing
+    // `insert` test in this same module — copy its WatcherHandle setup.
+    let handle = make_test_handle(); // see existing test helper
     state.insert("pty-1".to_string(), handle, AgentType::ClaudeCode);
     assert_eq!(state.agent_type_for_pty("pty-1"), Some(AgentType::ClaudeCode));
 }
@@ -1576,10 +1697,32 @@ fn agent_type_for_pty_returns_none_when_absent() {
     let state = AgentWatcherState::new();
     assert_eq!(state.agent_type_for_pty("nonexistent"), None);
 }
+
+#[test]
+fn remove_clears_agent_type_lookup() {
+    let state = AgentWatcherState::new();
+    let handle = make_test_handle();
+    state.insert("pty-1".to_string(), handle, AgentType::Codex);
+    assert_eq!(state.agent_type_for_pty("pty-1"), Some(AgentType::Codex));
+    state.remove("pty-1");
+    assert_eq!(state.agent_type_for_pty("pty-1"), None);
+}
 ```
 
-Run: `cargo test --manifest-path crates/backend/Cargo.toml --lib agent_type_for_pty`
-Expected: 2 fails (method not defined; signature mismatch on insert).
+If the existing tests don't already define a `make_test_handle()` helper, factor one out in the same commit:
+
+```rust
+fn make_test_handle() -> WatcherHandle {
+    // Match the existing test pattern — typically:
+    //   let stop = Arc::new(AtomicBool::new(true));
+    //   let join = std::thread::spawn(|| {});
+    //   WatcherHandle::new(stop, join)
+    // Adjust to the real constructor signature.
+}
+```
+
+Run: `cargo test --manifest-path crates/backend/Cargo.toml --lib watcher_runtime`
+Expected: 3 fails (method not defined; signature mismatch on insert).
 
 - [ ] **Step 2: Implement**
 
@@ -2169,10 +2312,16 @@ interface PaneRenameInputProps {
   initialValue: string
   onSubmit: (sanitized: string) => void | Promise<void>
   onCancel: () => void
+  /**
+   * Error surfaced from outside (e.g. IPC failure from the chord hook).
+   * Rendered below the inline-validation error using the same
+   * `role="alert"` pattern. `null` means no external error.
+   */
+  externalError?: string | null
 }
 
 export const PaneRenameInput = ({
-  pane, initialValue, onSubmit, onCancel,
+  pane, initialValue, onSubmit, onCancel, externalError = null,
 }: PaneRenameInputProps) => {
   const [value, setValue] = useState(initialValue)
   const inputRef = useRef<HTMLInputElement | null>(null)
@@ -2221,6 +2370,9 @@ export const PaneRenameInput = ({
       {errorMsg && (
         <div role="alert" className="text-error text-[10px] mt-1">{errorMsg}</div>
       )}
+      {externalError && (
+        <div role="alert" className="text-error text-[10px] mt-1">{externalError}</div>
+      )}
     </div>,
     document.body
   )
@@ -2246,23 +2398,85 @@ git commit -m "feat(terminal): PaneRenameInput portal with validation + escape/b
 
 - [ ] **Step 1: Write the failing tests**
 
+Chord dispatch happens through `chordRegistry.dispatch`, which is called by `useCommandPalette`'s keydown handler. Two test strategies:
+
+**Strategy A (preferred — unit test via chordRegistry directly):** call `chordRegistry.dispatch({ key: 'r' } as KeyboardEvent)` after the hook mounts. This bypasses the keydown layer and tests the hook in isolation.
+
+**Strategy B (integration):** mount BOTH `useCommandPalette` and `usePaneRenameChord` in the test tree and fire real `keydown` events on `document`. Heavier but matches real flow.
+
+The tests below use Strategy A — Strategy B is reserved for the manual smoke checklist in Task 24.
+
 ```typescript
-test('Ctrl+: then r with focused pane opens rename input', async () => {
-  const focused = makePane({ ptyId: 'pty-1' })
+import { renderHook, act, waitFor } from '@testing-library/react'
+import { test, expect, vi, beforeEach } from 'vitest'
+import * as chordRegistry from '../chordRegistry'
+import { usePaneRenameChord, type FocusedPaneRef } from './usePaneRenameChord'
+
+const mockRename = vi.fn()
+vi.mock('../../../lib/backend', () => ({
+  renameAgentSession: (ptyId: string, title: string) => mockRename(ptyId, title),
+}))
+
+beforeEach(() => {
+  chordRegistry._resetForTest()
+  mockRename.mockReset()
+})
+
+test('Ctrl+: then r with focused pane opens rename input', () => {
+  const focused: FocusedPaneRef = {
+    pane: { id: 'p0', ptyId: 'pty-1', /* ...other Pane fields... */ } as any,
+    session: { id: 's0', name: 'fallback-name', /* ...other Session fields... */ } as any,
+  }
   const { result } = renderHook(() => usePaneRenameChord(() => focused))
-  // Simulate Ctrl+: then r at the document level. Expect result.current.renderNode to be non-null.
+  expect(result.current.renderNode).toBeNull()
+  act(() => {
+    chordRegistry.dispatch({ key: 'r' } as KeyboardEvent)
+  })
+  expect(result.current.renderNode).not.toBeNull()
 })
 
-test('chord with no focused pane is a no-op (renderNode stays null)', () => {})
-
-test('onSubmit catches errors and surfaces toast', async () => {
-  // Mock renameAgentSession to reject; verify toast was called.
+test('chord with no focused pane is a no-op (renderNode stays null)', () => {
+  const { result } = renderHook(() => usePaneRenameChord(() => null))
+  act(() => {
+    chordRegistry.dispatch({ key: 'r' } as KeyboardEvent)
+  })
+  expect(result.current.renderNode).toBeNull()
 })
 
-test('cancel closes the input', () => {})
+test('onSubmit surfaces a "does not support" error inline', async () => {
+  mockRename.mockRejectedValueOnce(new Error('agent type Aider does not support /rename'))
+  const focused = makeFocusedRef()
+  const { result } = renderHook(() => usePaneRenameChord(() => focused))
+  act(() => chordRegistry.dispatch({ key: 'r' } as KeyboardEvent))
+  // Submit via the rendered PaneRenameInput's onSubmit prop. The exact
+  // mechanism depends on how the test mounts the renderNode; the
+  // simplest is to grab the prop off the React element returned in
+  // result.current.renderNode and call it directly.
+  // ... call submit handler with 'new' ...
+  await waitFor(() => {
+    // PaneRenameInput should now receive externalError matching the message.
+    // Assert via rendering renderNode in a host component and querying for
+    // role="alert" with the expected text.
+  })
+})
+
+test('cancel clears the rename target', () => {
+  const focused = makeFocusedRef()
+  const { result } = renderHook(() => usePaneRenameChord(() => focused))
+  act(() => chordRegistry.dispatch({ key: 'r' } as KeyboardEvent))
+  // Call onCancel from the rendered renderNode props.
+  // ... act(() => onCancel()) ...
+  expect(result.current.renderNode).toBeNull()
+})
 ```
 
-- [ ] **Step 2: Implement** (per spec §5.2 — the full sketch):
+The test helpers `makeFocusedRef()` and the renderNode-prop extraction need small project-specific adapters (see how other hooks in this folder are tested for the pattern). Don't invent novel testing infrastructure — match what already exists in `src/features/command-palette/hooks/*.test.tsx`.
+
+- [ ] **Step 2: Implement** (per spec §5.2 — adapted to the actual project conventions):
+
+The repo does NOT yet have a toast / notification module — `WorkspaceView.tsx` (around line 250) explicitly comments that the notification API isn't built yet, and the existing pattern is an inline `role="alert"` banner driven by a local error state (see `WorkspaceView.tsx:997` for the `fileError` pattern). PR2 follows that same pattern: errors surface via a `renameError` state the chord hook exposes, rendered next to the rename input.
+
+Also: the focused-pane resolver must return both `pane` AND the matching `session` so the chord hook can compute `pane.agentTitle ?? session.name` for the prefill. Spec §5.3 requires this fallback.
 
 ```typescript
 // src/features/command-palette/hooks/usePaneRenameChord.ts
@@ -2271,57 +2485,89 @@ import type { ReactNode } from 'react'
 import { registerChord } from '../chordRegistry'
 import { PaneRenameInput } from '../../terminal/components/PaneRenameInput'
 import { renameAgentSession } from '../../../lib/backend'
-import { toast } from '../../../components/toast' // or wherever the project's toast lives
-import type { Pane } from '../../sessions/types'
+import type { Pane, Session } from '../../sessions/types'
 
-type RenameTarget = { ptyId: string; pane: Pane; initialValue: string } | null
+export interface FocusedPaneRef {
+  pane: Pane
+  session: Session
+}
+
+type RenameTarget = {
+  ptyId: string
+  pane: Pane
+  initialValue: string
+} | null
 
 export const usePaneRenameChord = (
-  resolveFocusedPane: () => Pane | null
+  resolveFocusedPane: () => FocusedPaneRef | null
 ): { renderNode: ReactNode } => {
   const [target, setTarget] = useState<RenameTarget>(null)
+  const [error, setError] = useState<string | null>(null)
   const resolverRef = useRef(resolveFocusedPane)
   resolverRef.current = resolveFocusedPane
 
   useEffect(() => {
     return registerChord('r', () => {
-      const pane = resolverRef.current()
-      if (!pane) return false
-      const initialValue = pane.agentTitle ?? '' // session.name fallback owned by caller
-      setTarget({ ptyId: pane.ptyId, pane, initialValue })
+      const ref = resolverRef.current()
+      if (!ref) return false
+      // Spec §5.3 prefill: pane.agentTitle ?? session.name.
+      const initialValue = ref.pane.agentTitle ?? ref.session.name
+      setTarget({ ptyId: ref.pane.ptyId, pane: ref.pane, initialValue })
+      setError(null)
       return true
     })
   }, [])
 
-  const handleSubmit = useCallback(async (title: string) => {
-    if (!target) return
-    try {
-      await renameAgentSession(target.ptyId, title)
-      setTarget(null)
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      if (msg.includes('does not support /rename')) {
-        toast.error("this agent doesn't support /rename")
-      } else if (msg.includes('no live agent')) {
-        toast.error('no agent in this pane to rename')
-      } else {
-        toast.error(`failed to send /rename: ${msg}`)
+  const handleSubmit = useCallback(
+    async (title: string): Promise<void> => {
+      if (!target) return
+      try {
+        await renameAgentSession(target.ptyId, title)
+        setTarget(null)
+        setError(null)
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        if (msg.includes('does not support /rename')) {
+          setError("this agent doesn't support /rename")
+        } else if (msg.includes('no live agent')) {
+          setError('no agent in this pane to rename')
+        } else {
+          setError(`failed to send /rename: ${msg}`)
+        }
+        // Leave the input open so the user can retry or cancel.
       }
-    }
-  }, [target])
+    },
+    [target]
+  )
 
   const renderNode = target ? (
-    <PaneRenameInput
-      pane={target.pane}
-      initialValue={target.initialValue}
-      onSubmit={handleSubmit}
-      onCancel={() => setTarget(null)}
-    />
+    <>
+      <PaneRenameInput
+        pane={target.pane}
+        initialValue={target.initialValue}
+        onSubmit={handleSubmit}
+        onCancel={(): void => {
+          setTarget(null)
+          setError(null)
+        }}
+        externalError={error}
+      />
+    </>
   ) : null
 
   return { renderNode }
 }
 ```
+
+`PaneRenameInput` is extended (in Task 21 — update Step 2 there to add this prop) with an `externalError?: string | null` prop. Its render adds, below the existing inline-validation `role="alert"` line:
+
+```typescript
+{externalError && (
+  <div role="alert" className="text-error text-[10px] mt-1">{externalError}</div>
+)}
+```
+
+This reuses the existing `role="alert"` + `text-error` pattern already used in `WorkspaceView.tsx:997` — no new toast/notification module is introduced. Spec §2.5's "toast" wording is satisfied by an inline alert near the input; if a future PR adds a real toast system, the chord hook can swap in that channel.
 
 - [ ] **Step 3: Run tests + commit**
 
@@ -2341,12 +2587,18 @@ git commit -m "feat(palette): usePaneRenameChord with toast error handling"
 
 - [ ] **Step 1: Add the resolver + mount**
 
+The resolver returns BOTH the focused pane and its matching session (the hook needs `session.name` for the prefill — spec §5.3).
+
 ```typescript
 // WorkspaceView.tsx — inside the component
-const resolveFocusedPane = useCallback((): Pane | null => {
+import { usePaneRenameChord, type FocusedPaneRef } from '../command-palette/hooks/usePaneRenameChord'
+
+const resolveFocusedPane = useCallback((): FocusedPaneRef | null => {
   if (activeContainerId !== TERMINAL_CONTAINER_ID) return null
   const session = sessions.find((s) => s.id === activeSessionId)
-  return session?.panes.find((p) => p.active) ?? null
+  const pane = session?.panes.find((p) => p.active)
+  if (!session || !pane) return null
+  return { pane, session }
 }, [activeContainerId, activeSessionId, sessions])
 
 const { renderNode: paneRenameNode } = usePaneRenameChord(resolveFocusedPane)
