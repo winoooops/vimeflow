@@ -149,7 +149,37 @@ impl AgentAdapter for CodexAdapter {
         cwd: Option<PathBuf>,
         transcript_path: PathBuf,
     ) -> Result<TranscriptHandle, String> {
-        transcript::start_tailing(events, session_id, transcript_path, cwd)
+        let mut handle = transcript::start_tailing(
+            std::sync::Arc::clone(&events),
+            session_id.clone(),
+            transcript_path.clone(),
+            cwd,
+        )?;
+
+        match parse_rollout_filename_uuid(&transcript_path) {
+            Some(agent_session_id) => {
+                let aux_stop =
+                    std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+                let title_join = session_index::spawn_watch(
+                    self.codex_home.join("session_index.jsonl"),
+                    agent_session_id,
+                    session_id,
+                    std::sync::Arc::clone(&events),
+                    std::sync::Arc::clone(&aux_stop),
+                )
+                .map_err(|err| format!("codex title watcher spawn: {}", err))?;
+                handle.attach_aux_join(aux_stop, title_join);
+            }
+            None => {
+                log::warn!(
+                    "codex title sync disabled for this session: rollout filename {:?} \
+                     does not match expected `rollout-<ISO-ts>-<uuid>.jsonl`",
+                    transcript_path.file_name()
+                );
+            }
+        }
+
+        Ok(handle)
     }
 }
 
