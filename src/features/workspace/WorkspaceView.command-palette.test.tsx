@@ -461,7 +461,7 @@ describe('WorkspaceView - Command Palette Integration', () => {
     })
   })
 
-  test(':rename foo command renames active session', async () => {
+  test(':rename-session foo command renames active session', async () => {
     const user = userEvent.setup()
     render(<WorkspaceView />)
 
@@ -475,7 +475,7 @@ describe('WorkspaceView - Command Palette Integration', () => {
       name: 'Command palette search',
     })
     await user.clear(input)
-    await user.type(input, ':rename foo')
+    await user.type(input, ':rename-session foo')
     await user.keyboard('{Enter}')
 
     expect(mockSessionManager.renameSession).toHaveBeenCalledWith(
@@ -486,6 +486,27 @@ describe('WorkspaceView - Command Palette Integration', () => {
     await waitFor(() => {
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     })
+  })
+
+  test(':rename-pane left labels only the active pane', async () => {
+    const user = userEvent.setup()
+    render(<WorkspaceView />)
+
+    openPalette()
+
+    await waitFor(() => {
+      expect(screen.getByRole('dialog')).toBeInTheDocument()
+    })
+
+    const input = screen.getByRole('combobox', {
+      name: 'Command palette search',
+    })
+    await user.clear(input)
+    await user.type(input, ':rename-pane left')
+    await user.keyboard('{Enter}')
+
+    expect(mockSessionManager.setPaneUserLabel).toHaveBeenCalled()
+    expect(mockSessionManager.renameSession).not.toHaveBeenCalled()
   })
 
   test(':next command switches to next session', async () => {

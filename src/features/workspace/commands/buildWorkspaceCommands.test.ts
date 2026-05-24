@@ -14,6 +14,7 @@ describe('buildWorkspaceCommands - happy paths', () => {
   let createSession: ReturnType<typeof vi.fn>
   let removeSession: ReturnType<typeof vi.fn>
   let renameSession: ReturnType<typeof vi.fn>
+  let setPaneUserLabel: ReturnType<typeof vi.fn>
   let setActiveSessionId: ReturnType<typeof vi.fn>
   let notifyInfo: ReturnType<typeof vi.fn>
 
@@ -21,6 +22,7 @@ describe('buildWorkspaceCommands - happy paths', () => {
     createSession = vi.fn()
     removeSession = vi.fn()
     renameSession = vi.fn()
+    setPaneUserLabel = vi.fn()
     setActiveSessionId = vi.fn()
     notifyInfo = vi.fn()
   })
@@ -32,6 +34,8 @@ describe('buildWorkspaceCommands - happy paths', () => {
       createSession,
       removeSession,
       renameSession,
+      setPaneUserLabel,
+      activePanePtyId: 'pty-active',
       setActiveSessionId,
       notifyInfo,
     })
@@ -51,6 +55,8 @@ describe('buildWorkspaceCommands - happy paths', () => {
       createSession,
       removeSession,
       renameSession,
+      setPaneUserLabel,
+      activePanePtyId: 'pty-active',
       setActiveSessionId,
       notifyInfo,
     })
@@ -62,22 +68,86 @@ describe('buildWorkspaceCommands - happy paths', () => {
     expect(removeSession).toHaveBeenCalledWith('session-2')
   })
 
-  test(':rename command renames active session', () => {
+  test(':rename-session command renames active session', () => {
     const commands = buildWorkspaceCommands({
       sessions: mockSessions,
       activeSessionId: 'session-1',
       createSession,
       removeSession,
       renameSession,
+      setPaneUserLabel,
+      activePanePtyId: 'pty-active',
       setActiveSessionId,
       notifyInfo,
     })
 
-    const renameCmd = commands.find((c) => c.id === 'rename')
+    const renameCmd = commands.find((c) => c.id === 'rename-session')
     expect(renameCmd).toBeDefined()
 
     renameCmd?.execute?.('new-name')
     expect(renameSession).toHaveBeenCalledWith('session-1', 'new-name')
+    expect(setPaneUserLabel).not.toHaveBeenCalled()
+  })
+
+  test(':rename-pane command labels the active pane via setPaneUserLabel', () => {
+    const commands = buildWorkspaceCommands({
+      sessions: mockSessions,
+      activeSessionId: 'session-1',
+      createSession,
+      removeSession,
+      renameSession,
+      setPaneUserLabel,
+      activePanePtyId: 'pty-left',
+      setActiveSessionId,
+      notifyInfo,
+    })
+
+    const renamePaneCmd = commands.find((c) => c.id === 'rename-pane')
+    expect(renamePaneCmd).toBeDefined()
+
+    renamePaneCmd?.execute?.('left')
+    expect(setPaneUserLabel).toHaveBeenCalledWith('pty-left', 'left')
+    expect(renameSession).not.toHaveBeenCalled()
+  })
+
+  test(':rename-pane with no active pane notifies usage', () => {
+    const commands = buildWorkspaceCommands({
+      sessions: mockSessions,
+      activeSessionId: null,
+      createSession,
+      removeSession,
+      renameSession,
+      setPaneUserLabel,
+      activePanePtyId: null,
+      setActiveSessionId,
+      notifyInfo,
+    })
+
+    const renamePaneCmd = commands.find((c) => c.id === 'rename-pane')
+    renamePaneCmd?.execute?.('foo')
+
+    expect(setPaneUserLabel).not.toHaveBeenCalled()
+    expect(notifyInfo).toHaveBeenCalledWith('No active pane to rename')
+  })
+
+  test(':rename-pane with empty input shows usage', () => {
+    const commands = buildWorkspaceCommands({
+      sessions: mockSessions,
+      activeSessionId: 'session-1',
+      createSession,
+      removeSession,
+      renameSession,
+      setPaneUserLabel,
+      activePanePtyId: 'pty-left',
+      setActiveSessionId,
+      notifyInfo,
+    })
+
+    const renamePaneCmd = commands.find((c) => c.id === 'rename-pane')
+    renamePaneCmd?.execute?.('   ')
+
+    expect(setPaneUserLabel).not.toHaveBeenCalled()
+    expect(notifyInfo).toHaveBeenCalledWith('Usage: :rename-pane <name>')
   })
 
   test(':next command wraps to first session', () => {
@@ -87,6 +157,8 @@ describe('buildWorkspaceCommands - happy paths', () => {
       createSession,
       removeSession,
       renameSession,
+      setPaneUserLabel,
+      activePanePtyId: 'pty-active',
       setActiveSessionId,
       notifyInfo,
     })
@@ -105,6 +177,8 @@ describe('buildWorkspaceCommands - happy paths', () => {
       createSession,
       removeSession,
       renameSession,
+      setPaneUserLabel,
+      activePanePtyId: 'pty-active',
       setActiveSessionId,
       notifyInfo,
     })
@@ -121,6 +195,8 @@ describe('buildWorkspaceCommands - happy paths', () => {
       createSession,
       removeSession,
       renameSession,
+      setPaneUserLabel,
+      activePanePtyId: 'pty-active',
       setActiveSessionId,
       notifyInfo,
     })
@@ -139,6 +215,8 @@ describe('buildWorkspaceCommands - happy paths', () => {
       createSession,
       removeSession,
       renameSession,
+      setPaneUserLabel,
+      activePanePtyId: 'pty-active',
       setActiveSessionId,
       notifyInfo,
     })
@@ -155,6 +233,8 @@ describe('buildWorkspaceCommands - happy paths', () => {
       createSession,
       removeSession,
       renameSession,
+      setPaneUserLabel,
+      activePanePtyId: 'pty-active',
       setActiveSessionId,
       notifyInfo,
     })
@@ -173,6 +253,8 @@ describe('buildWorkspaceCommands - happy paths', () => {
       createSession,
       removeSession,
       renameSession,
+      setPaneUserLabel,
+      activePanePtyId: 'pty-active',
       setActiveSessionId,
       notifyInfo,
     })
@@ -190,6 +272,8 @@ describe('buildWorkspaceCommands - happy paths', () => {
       createSession,
       removeSession,
       renameSession,
+      setPaneUserLabel,
+      activePanePtyId: 'pty-active',
       setActiveSessionId,
       notifyInfo,
     })
@@ -207,6 +291,8 @@ describe('buildWorkspaceCommands - happy paths', () => {
       createSession,
       removeSession,
       renameSession,
+      setPaneUserLabel,
+      activePanePtyId: 'pty-active',
       setActiveSessionId,
       notifyInfo,
     })
@@ -231,6 +317,8 @@ describe('buildWorkspaceCommands - happy paths', () => {
       createSession,
       removeSession,
       renameSession,
+      setPaneUserLabel,
+      activePanePtyId: 'pty-active',
       setActiveSessionId,
       notifyInfo,
     })
@@ -248,6 +336,8 @@ describe('buildWorkspaceCommands - happy paths', () => {
       createSession,
       removeSession,
       renameSession,
+      setPaneUserLabel,
+      activePanePtyId: 'pty-active',
       setActiveSessionId,
       notifyInfo,
     })
@@ -266,6 +356,8 @@ describe('buildWorkspaceCommands - happy paths', () => {
       createSession,
       removeSession,
       renameSession,
+      setPaneUserLabel,
+      activePanePtyId: 'pty-active',
       setActiveSessionId,
       notifyInfo,
     })
@@ -288,6 +380,7 @@ describe('buildWorkspaceCommands - failure modes', () => {
   let createSession: ReturnType<typeof vi.fn>
   let removeSession: ReturnType<typeof vi.fn>
   let renameSession: ReturnType<typeof vi.fn>
+  let setPaneUserLabel: ReturnType<typeof vi.fn>
   let setActiveSessionId: ReturnType<typeof vi.fn>
   let notifyInfo: ReturnType<typeof vi.fn>
 
@@ -295,6 +388,7 @@ describe('buildWorkspaceCommands - failure modes', () => {
     createSession = vi.fn()
     removeSession = vi.fn()
     renameSession = vi.fn()
+    setPaneUserLabel = vi.fn()
     setActiveSessionId = vi.fn()
     notifyInfo = vi.fn()
   })
@@ -311,6 +405,8 @@ describe('buildWorkspaceCommands - failure modes', () => {
       createSession,
       removeSession,
       renameSession,
+      setPaneUserLabel,
+      activePanePtyId: 'pty-active',
       setActiveSessionId,
       notifyInfo,
     })
@@ -329,11 +425,13 @@ describe('buildWorkspaceCommands - failure modes', () => {
       createSession,
       removeSession,
       renameSession,
+      setPaneUserLabel,
+      activePanePtyId: 'pty-active',
       setActiveSessionId,
       notifyInfo,
     })
 
-    const renameCmd = commands.find((c) => c.id === 'rename')
+    const renameCmd = commands.find((c) => c.id === 'rename-session')
 
     renameCmd?.execute?.('new-name')
     expect(notifyInfo).toHaveBeenCalledWith('No active tab to rename')
@@ -352,15 +450,17 @@ describe('buildWorkspaceCommands - failure modes', () => {
       createSession,
       removeSession,
       renameSession,
+      setPaneUserLabel,
+      activePanePtyId: 'pty-active',
       setActiveSessionId,
       notifyInfo,
     })
 
-    const renameCmd = commands.find((c) => c.id === 'rename')
+    const renameCmd = commands.find((c) => c.id === 'rename-session')
 
     renameCmd?.execute?.('   ')
     expect(renameSession).not.toHaveBeenCalled()
-    expect(notifyInfo).toHaveBeenCalledWith('Usage: :rename <name>')
+    expect(notifyInfo).toHaveBeenCalledWith('Usage: :rename-session <name>')
   })
 
   test(':goto with no args shows usage message', () => {
@@ -370,6 +470,8 @@ describe('buildWorkspaceCommands - failure modes', () => {
       createSession,
       removeSession,
       renameSession,
+      setPaneUserLabel,
+      activePanePtyId: 'pty-active',
       setActiveSessionId,
       notifyInfo,
     })
@@ -391,6 +493,8 @@ describe('buildWorkspaceCommands - failure modes', () => {
       createSession,
       removeSession,
       renameSession,
+      setPaneUserLabel,
+      activePanePtyId: 'pty-active',
       setActiveSessionId,
       notifyInfo,
     })
@@ -414,6 +518,8 @@ describe('buildWorkspaceCommands - failure modes', () => {
       createSession,
       removeSession,
       renameSession,
+      setPaneUserLabel,
+      activePanePtyId: 'pty-active',
       setActiveSessionId,
       notifyInfo,
     })
@@ -432,6 +538,8 @@ describe('buildWorkspaceCommands - failure modes', () => {
       createSession,
       removeSession,
       renameSession,
+      setPaneUserLabel,
+      activePanePtyId: 'pty-active',
       setActiveSessionId,
       notifyInfo,
     })
@@ -454,6 +562,8 @@ describe('buildWorkspaceCommands - failure modes', () => {
       createSession,
       removeSession,
       renameSession,
+      setPaneUserLabel,
+      activePanePtyId: 'pty-active',
       setActiveSessionId,
       notifyInfo,
     })
@@ -480,6 +590,8 @@ describe('buildWorkspaceCommands - failure modes', () => {
       createSession,
       removeSession,
       renameSession,
+      setPaneUserLabel,
+      activePanePtyId: 'pty-active',
       setActiveSessionId,
       notifyInfo,
     })
@@ -504,6 +616,8 @@ describe('buildWorkspaceCommands - failure modes', () => {
       createSession,
       removeSession,
       renameSession,
+      setPaneUserLabel,
+      activePanePtyId: 'pty-active',
       setActiveSessionId,
       notifyInfo,
     })
@@ -526,6 +640,8 @@ describe('buildWorkspaceCommands - failure modes', () => {
       createSession,
       removeSession,
       renameSession,
+      setPaneUserLabel,
+      activePanePtyId: 'pty-active',
       setActiveSessionId,
       notifyInfo,
     })
@@ -548,6 +664,8 @@ describe('buildWorkspaceCommands - failure modes', () => {
       createSession,
       removeSession,
       renameSession,
+      setPaneUserLabel,
+      activePanePtyId: 'pty-active',
       setActiveSessionId,
       notifyInfo,
     })
@@ -569,6 +687,8 @@ describe('buildWorkspaceCommands - failure modes', () => {
       createSession,
       removeSession,
       renameSession,
+      setPaneUserLabel,
+      activePanePtyId: 'pty-active',
       setActiveSessionId,
       notifyInfo,
     })
@@ -595,6 +715,8 @@ describe('buildWorkspaceCommands - failure modes', () => {
       createSession,
       removeSession,
       renameSession,
+      setPaneUserLabel,
+      activePanePtyId: 'pty-active',
       setActiveSessionId,
       notifyInfo,
     })
@@ -621,6 +743,8 @@ describe('buildWorkspaceCommands - failure modes', () => {
       createSession,
       removeSession,
       renameSession,
+      setPaneUserLabel,
+      activePanePtyId: 'pty-active',
       setActiveSessionId,
       notifyInfo,
     })
@@ -642,6 +766,8 @@ describe('buildWorkspaceCommands - failure modes', () => {
       createSession,
       removeSession,
       renameSession,
+      setPaneUserLabel,
+      activePanePtyId: 'pty-active',
       setActiveSessionId,
       notifyInfo,
     })
@@ -660,6 +786,8 @@ describe('buildWorkspaceCommands - failure modes', () => {
       createSession,
       removeSession,
       renameSession,
+      setPaneUserLabel,
+      activePanePtyId: 'pty-active',
       setActiveSessionId,
       notifyInfo,
     })

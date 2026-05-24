@@ -184,14 +184,23 @@ export const WorkspaceView = (): ReactElement => {
     sessions.map((s) => WORKSPACE_TAB_KEYS.map((k) => s[k]))
   )
 
+  // `activePane` is declared further down (after `activeSession`); resolve
+  // the active pane's ptyId inline here so the command builder has it
+  // without forcing a section-wide reshuffle.
+  const activePanePtyIdForCommands =
+    sessions.find((s) => s.id === activeSessionId)?.panes.find((p) => p.active)
+      ?.ptyId ?? null
+
   const workspaceCommands = useMemo(
     () =>
       buildWorkspaceCommands({
         sessions,
         activeSessionId,
+        activePanePtyId: activePanePtyIdForCommands,
         createSession,
         removeSession,
         renameSession,
+        setPaneUserLabel,
         setActiveSessionId,
         notifyInfo,
       }),
@@ -202,9 +211,11 @@ export const WorkspaceView = (): ReactElement => {
     [
       sessionsSignature,
       activeSessionId,
+      activePanePtyIdForCommands,
       createSession,
       removeSession,
       renameSession,
+      setPaneUserLabel,
       setActiveSessionId,
       notifyInfo,
     ]

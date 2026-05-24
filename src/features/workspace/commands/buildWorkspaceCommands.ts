@@ -18,9 +18,20 @@ export type WorkspaceTab = Pick<Session, WorkspaceTabKey>
 export interface WorkspaceCommandDeps {
   sessions: WorkspaceTab[]
   activeSessionId: string | null
+  /**
+   * PTY handle of the active pane in the active session, or `null` if no
+   * session is active. Used by `:rename-pane` to address the pane locally
+   * via `setPaneUserLabel(ptyId, label)`.
+   */
+  activePanePtyId: string | null
   createSession: () => void
   removeSession: (id: string) => void
   renameSession: (id: string, name: string) => void
+  /**
+   * Set a per-pane user label, written by `:rename-pane`. In-memory only;
+   * see `pane.userLabel` doc in `src/features/sessions/types/index.ts`.
+   */
+  setPaneUserLabel: (ptyId: string, label: string | undefined) => void
   setActiveSessionId: (id: string) => void
   notifyInfo: (message: string) => void
 }
@@ -32,9 +43,11 @@ export const buildWorkspaceCommands = (
   const {
     sessions,
     activeSessionId,
+    activePanePtyId,
     createSession,
     removeSession,
     renameSession,
+    setPaneUserLabel,
     setActiveSessionId,
     notifyInfo,
   } = deps
@@ -70,9 +83,13 @@ export const buildWorkspaceCommands = (
       },
     },
     {
-      id: 'rename',
-      label: ':rename',
-      description: 'Rename the active terminal session',
+      // `:rename` was the old single-rename command; split into two to
+      // disambiguate session-level vs per-pane intent (the previous
+      // single command always renamed the session, surprising users who
+      // wanted to label one pane in a multi-pane session).
+      id: 'rename-session',
+      label: ':rename-session',
+      description: 'Rename the active terminal session (affects all panes)',
       icon: 'edit',
       execute: (args: string): void => {
         const idx = findActiveIndex()
@@ -86,12 +103,35 @@ export const buildWorkspaceCommands = (
         const trimmed = args.trim()
 
         if (!trimmed) {
-          notifyInfo('Usage: :rename <name>')
+          notifyInfo('Usage: :rename-session <name>')
 
           return
         }
 
         renameSession(sessions[idx].id, trimmed)
+      },
+    },
+    {
+      id: 'rename-pane',
+      label: ':rename-pane',
+      description: 'Rename only the active pane (does not affect siblings)',
+      icon: 'edit',
+      execute: (args: string): void => {
+        if (!activePanePtyId) {
+          notifyInfo('No active pane to rename')
+
+          return
+        }
+
+        const trimmed = args.trim()
+
+        if (!trimmed) {
+          notifyInfo('Usage: :rename-pane <name>')
+
+          return
+        }
+
+        setPaneUserLabel(activePanePtyId, trimmed)
       },
     },
     {
