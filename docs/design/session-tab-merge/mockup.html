@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Vimeflow — Session Tab Merge Mockups</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&family=Manrope:wght@500;700&family=Material+Symbols+Outlined&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --surface: #121221;
+    --surface-container-lowest: #0d0d1c;
+    --surface-container-low: #1a1a2a;
+    --surface-container: #1e1e2e;
+    --surface-container-high: #292839;
+    --on-surface: #e3e0f7;
+    --on-surface-variant: #cdc3d1;
+    --outline-variant: #4a444f;
+    --primary: #e2c7ff;
+    --primary-container: #cba6f7;
+    --accent: #cba6f7;
+    --accent-dim: rgb(203 166 247 / 0.16);
+    --success: #50fa7b;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    background: #08081a;
+    color: var(--on-surface);
+    font-family: 'Inter', system-ui, sans-serif;
+  }
+  body { padding: 28px 32px 64px; }
+  h1 {
+    font-family: 'Manrope', sans-serif;
+    font-weight: 700;
+    font-size: 22px;
+    margin: 0 0 6px;
+  }
+  .subtitle { color: var(--on-surface-variant); font-size: 13px; margin-bottom: 28px; }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 28px;
+  }
+  .panel {
+    background: #0a0a18;
+    border-radius: 12px;
+    padding: 18px;
+    border: 1px solid rgba(255,255,255,0.04);
+  }
+  .panel h2 {
+    font-family: 'Manrope', sans-serif;
+    font-weight: 500;
+    font-size: 14px;
+    margin: 0 0 4px;
+    color: var(--on-surface);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .panel h2 .badge {
+    font-family: 'Inter', sans-serif;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: var(--surface-container-high);
+    color: var(--on-surface-variant);
+  }
+  .panel h2 .badge.rec { background: rgba(203 166 247 / 0.18); color: var(--accent); }
+  .panel p {
+    font-size: 12px;
+    color: var(--on-surface-variant);
+    margin: 0 0 14px;
+    line-height: 1.5;
+  }
+  .panel .seam-note {
+    font-size: 11px;
+    color: #ffb4ab;
+    margin-top: 8px;
+  }
+  .panel .seam-note.ok { color: var(--success); }
+
+  /* ============ Mock workspace shell ============ */
+  .mock {
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    background: var(--surface);
+  }
+  .tab-strip {
+    background: var(--surface-container-lowest);
+    display: flex;
+    align-items: flex-end;
+    gap: 2px;
+    padding: 8px 8px 0;
+    height: 38px;
+    border-bottom: 1px solid rgba(74,68,79,0.25);
+    position: relative;
+    z-index: 1;
+  }
+  .tab {
+    height: 30px;
+    min-width: 130px;
+    padding: 0 8px 0 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    border-radius: 8px 8px 0 0;
+    cursor: pointer;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12.5px;
+    border: 1px solid transparent;
+    position: relative;
+  }
+  .tab.inactive { color: var(--on-surface-variant); }
+  .tab.inactive:hover { background: rgba(227,224,247,0.025); }
+  .tab .glyph {
+    width: 16px; height: 16px;
+    border-radius: 4px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 10px; font-weight: 700;
+    background: var(--accent-dim);
+    color: var(--accent);
+  }
+  .tab .dot {
+    width: 5px; height: 5px;
+    border-radius: 50%;
+    background: var(--success);
+    margin-left: auto;
+  }
+  .tab .close {
+    width: 16px; height: 16px;
+    border-radius: 4px;
+    display: flex; align-items: center; justify-content: center;
+    color: rgba(205,195,209,0.7);
+    font-family: 'Material Symbols Outlined';
+    font-size: 11px;
+  }
+  .tab .accent-line {
+    position: absolute;
+    left: 6px; right: 6px; top: 0; height: 2px;
+    background: var(--accent);
+    border-radius: 0 0 2px 2px;
+  }
+  .new-tab {
+    width: 28px; height: 28px;
+    margin: 0 2px 1px 4px;
+    border-radius: 6px;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--on-surface-variant);
+    font-family: 'Material Symbols Outlined';
+    font-size: 16px;
+  }
+
+  /* Layout toolbar (default — option current/A/C show this) */
+  .layout-bar {
+    background: var(--surface-container);
+    padding: 8px 12px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .layout-btn {
+    width: 28px; height: 24px;
+    border-radius: 6px;
+    background: var(--surface-container-high);
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'Material Symbols Outlined';
+    font-size: 13px;
+    color: var(--on-surface-variant);
+  }
+  .layout-btn.active {
+    background: rgba(203 166 247 / 0.18);
+    color: var(--accent);
+    box-shadow: inset 0 0 0 1px rgba(203 166 247 / 0.30);
+  }
+
+  /* Terminal */
+  .terminal {
+    background: var(--surface);
+    height: 110px;
+    padding: 12px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    color: rgba(227,224,247,0.6);
+    line-height: 1.6;
+  }
+
+  /* ============ Option-specific overrides ============ */
+
+  /* CURRENT — active tab = bg-surface, layout bar is lighter → SEAM */
+  .opt-current .tab.active {
+    background: var(--surface);
+    border-color: rgba(74,68,79,0.30);
+    margin-bottom: -1px;
+  }
+
+  /* OPTION A — carved: tab strip + active tab + layout bar are one surface */
+  .opt-a .tab-strip {
+    background: var(--surface-container);
+    border-bottom: none;
+  }
+  .opt-a .tab.active {
+    background: var(--surface-container);
+    border-color: transparent;
+  }
+  .opt-a .tab.inactive {
+    background: var(--surface-container-lowest);
+    color: var(--on-surface-variant);
+  }
+  .opt-a .tab.inactive:hover {
+    background: var(--surface-container-low);
+  }
+  .opt-a .layout-bar { background: var(--surface-container); }
+
+  /* OPTION B — flatten content: tab + bar + terminal all = surface */
+  .opt-b .tab.active {
+    background: var(--surface);
+    border-color: transparent;
+    margin-bottom: -1px;
+  }
+  .opt-b .layout-bar { background: var(--surface); }
+  .opt-b .layout-btn { background: var(--surface-container); }
+
+  /* OPTION C — layout buttons folded into tab strip, no bar */
+  .opt-c .tab.active {
+    background: var(--surface);
+    border-color: rgba(74,68,79,0.30);
+    margin-bottom: -1px;
+  }
+  .opt-c .layout-bar { display: none; }
+  .opt-c .tab-strip {
+    padding-right: 0;
+  }
+  .opt-c .spacer { flex: 1; }
+  .opt-c .strip-tools {
+    display: flex; align-items: center; gap: 6px;
+    margin-bottom: 4px;
+    padding-right: 10px;
+  }
+  .opt-c .strip-tools .layout-btn {
+    background: transparent;
+  }
+  .opt-c .strip-tools .layout-btn.active {
+    background: rgba(203 166 247 / 0.18);
+  }
+
+</style>
+</head>
+<body>
+
+<h1>Session-tab merge — visual comparison</h1>
+<p class="subtitle">Catppuccin Mocha surfaces, real component metrics. Each panel renders the same two-session strip + LayoutSwitcher row + terminal stub.</p>
+
+<div class="grid">
+
+  <!-- CURRENT -->
+  <div class="panel">
+    <h2>Current <span class="badge">today</span></h2>
+    <p>Active tab uses <code>bg-surface</code> (#121221). Layout toolbar uses <code>bg-surface-container</code> (#1e1e2e). The lighter toolbar band shows as a horizontal seam under the active tab.</p>
+    <div class="mock opt-current">
+      <div class="tab-strip">
+        <div class="tab active">
+          <span class="accent-line"></span>
+          <span class="glyph">∴</span>
+          <span>session 1</span>
+          <span class="dot"></span>
+          <span class="close">close</span>
+        </div>
+        <div class="tab inactive">
+          <span class="glyph">∴</span>
+          <span>session 2</span>
+          <span class="dot"></span>
+        </div>
+        <div class="new-tab">add</div>
+      </div>
+      <div class="layout-bar">
+        <div class="layout-btn">grid_view</div>
+        <div class="layout-btn">splitscreen_vertical</div>
+        <div class="layout-btn">splitscreen</div>
+        <div class="layout-btn">view_quilt</div>
+        <div class="layout-btn active">view_compact</div>
+      </div>
+      <div class="terminal">
+        <div>$ ls ~/projects/vimeflow</div>
+        <div>CLAUDE.md  docs/  src/  ...</div>
+        <div>$ <span style="color: var(--accent);">|</span></div>
+      </div>
+    </div>
+    <div class="seam-note">⚠ Visible color seam between active tab and toolbar band.</div>
+  </div>
+
+  <!-- OPTION A -->
+  <div class="panel">
+    <h2>Option A — Carved <span class="badge rec">recommended</span></h2>
+    <p>Tab strip + active tab + layout bar are all one surface (<code>bg-surface-container</code>) with no borders between them. Inactive tabs sit as darker pills on that surface so they stay visible. No divider — active tab and toolbar feel carved from one block.</p>
+    <div class="mock opt-a">
+      <div class="tab-strip">
+        <div class="tab active">
+          <span class="accent-line"></span>
+          <span class="glyph">∴</span>
+          <span>session 1</span>
+          <span class="dot"></span>
+          <span class="close">close</span>
+        </div>
+        <div class="tab inactive">
+          <span class="glyph">∴</span>
+          <span>session 2</span>
+          <span class="dot"></span>
+        </div>
+        <div class="new-tab">add</div>
+      </div>
+      <div class="layout-bar">
+        <div class="layout-btn">grid_view</div>
+        <div class="layout-btn">splitscreen_vertical</div>
+        <div class="layout-btn">splitscreen</div>
+        <div class="layout-btn">view_quilt</div>
+        <div class="layout-btn active">view_compact</div>
+      </div>
+      <div class="terminal">
+        <div>$ ls ~/projects/vimeflow</div>
+        <div>CLAUDE.md  docs/  src/  ...</div>
+        <div>$ <span style="color: var(--accent);">|</span></div>
+      </div>
+    </div>
+    <div class="seam-note ok">✓ No divider between active tab and main view. Inactive tabs read as recessed pills.</div>
+  </div>
+
+  <!-- OPTION B -->
+  <div class="panel">
+    <h2>Option B — Flatten content surface <span class="badge rec">chosen</span></h2>
+    <p>Active tab + layout bar + terminal are all one continuous <code>bg-surface</code>. Active tab has no outline; the <code>-mb-px</code> overlap hides the tab strip's bottom border directly under it. Layout buttons keep visibility via their own <code>bg-surface-container</code> pills.</p>
+    <div class="mock opt-b">
+      <div class="tab-strip">
+        <div class="tab active">
+          <span class="accent-line"></span>
+          <span class="glyph">∴</span>
+          <span>session 1</span>
+          <span class="dot"></span>
+          <span class="close">close</span>
+        </div>
+        <div class="tab inactive">
+          <span class="glyph">∴</span>
+          <span>session 2</span>
+          <span class="dot"></span>
+        </div>
+        <div class="new-tab">add</div>
+      </div>
+      <div class="layout-bar">
+        <div class="layout-btn">grid_view</div>
+        <div class="layout-btn">splitscreen_vertical</div>
+        <div class="layout-btn">splitscreen</div>
+        <div class="layout-btn">view_quilt</div>
+        <div class="layout-btn active">view_compact</div>
+      </div>
+      <div class="terminal">
+        <div>$ ls ~/projects/vimeflow</div>
+        <div>CLAUDE.md  docs/  src/  ...</div>
+        <div>$ <span style="color: var(--accent);">|</span></div>
+      </div>
+    </div>
+    <div class="seam-note ok">✓ One continuous content surface, but layout button row is flatter.</div>
+  </div>
+
+  <!-- OPTION C -->
+  <div class="panel">
+    <h2>Option C — Fold layout into tab strip <span class="badge">restructure</span></h2>
+    <p>Layout buttons move to the right edge of the tab strip; the separate toolbar band is removed. More compact, but bigger restructure of <code>TerminalZone</code>.</p>
+    <div class="mock opt-c">
+      <div class="tab-strip">
+        <div class="tab active">
+          <span class="accent-line"></span>
+          <span class="glyph">∴</span>
+          <span>session 1</span>
+          <span class="dot"></span>
+          <span class="close">close</span>
+        </div>
+        <div class="tab inactive">
+          <span class="glyph">∴</span>
+          <span>session 2</span>
+          <span class="dot"></span>
+        </div>
+        <div class="new-tab">add</div>
+        <div class="spacer"></div>
+        <div class="strip-tools">
+          <div class="layout-btn">grid_view</div>
+          <div class="layout-btn">splitscreen_vertical</div>
+          <div class="layout-btn">splitscreen</div>
+          <div class="layout-btn">view_quilt</div>
+          <div class="layout-btn active">view_compact</div>
+        </div>
+      </div>
+      <div class="layout-bar"></div>
+      <div class="terminal">
+        <div>$ ls ~/projects/vimeflow</div>
+        <div>CLAUDE.md  docs/  src/  ...</div>
+        <div>$ <span style="color: var(--accent);">|</span></div>
+      </div>
+    </div>
+    <div class="seam-note ok">✓ Most compact. Active tab connects directly to the terminal.</div>
+  </div>
+
+</div>
+
+</body>
+</html>
