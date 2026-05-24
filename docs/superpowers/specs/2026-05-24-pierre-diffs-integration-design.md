@@ -1151,3 +1151,5 @@ A PR1 commit is mergeable when ALL of:
 - Hunk (alternative considered): <https://github.com/modem-dev/hunk>
 - IPC 4-file checklist memory: `~/.claude/projects/-home-will-projects-vimeflow/memory/reference_new_ipc_checklist.md`
 - Agent CWD detection memory: `~/.claude/projects/-home-will-projects-vimeflow/memory/feedback_widen_detection_over_changing_third_party.md`
+
+<!-- codex-reviewed: 2026-05-24T11:14:38Z -->
