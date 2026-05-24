@@ -670,6 +670,27 @@ impl CompositeLocator {
 }
 
 impl CodexSessionLocator for CompositeLocator {
+    /// Two-strategy dispatch with an INTENTIONALLY narrow fallback
+    /// gate. `FsScanFallback` runs only when `SqliteFirstLocator`
+    /// reported `Unresolved(reason)` containing `"schema drift"` —
+    /// i.e. the SQLite tables themselves are missing or renamed.
+    ///
+    /// Ambiguity-class `Unresolved` errors (`"multiple codex session
+    /// candidates matched cwd"` / `"multiple ... remained after bind
+    /// heuristics"`) propagate to the caller and bubble up as
+    /// `"codex bind ambiguous: ..."` without consulting the fallback.
+    /// This is the **mutually-exclusive** design from the original
+    /// design pass: the two strategies read different data sources
+    /// (SQLite `threads.cwd` vs. JSONL `/payload/cwd`), and an
+    /// ambiguity in one is overwhelmingly likely to also be an
+    /// ambiguity in the other; dispatching the fallback would mostly
+    /// add latency and either find the same N candidates or pick a
+    /// different one for non-principled reasons (PR #261 cycle 12
+    /// review F34 — reviewer flagged this as a potential recovery
+    /// path but rated the suggestion 72% confidence with an explicit
+    /// "the 'mutually exclusive' design rationale is legitimate"
+    /// caveat; documenting the intent so future reviewers don't
+    /// re-flag the same design choice).
     fn resolve_rollout(&self, ctx: &BindContext<'_>) -> Result<RolloutLocation, LocatorError> {
         match self.primary.resolve_rollout(ctx) {
             Ok(location) => Ok(location),
@@ -711,6 +732,17 @@ impl crate::agent::adapter::traits::StatusSourceLocator for CompositeLocator {
         // are ASCII in practice but the defensive None handles the
         // edge case (Windows home dirs with non-UTF-8 bytes, etc.).
         let static_transcript_hint = location.rollout_path.to_str().map(str::to_owned);
+        if static_transcript_hint.is_none() {
+            // Attach-time anchor so operators correlating "AgentToolCall
+            // stream is empty for this session" have a single log line
+            // to grep for rather than per-tick `TxOutcome::NoPath`
+            // sentinels (PR #261 cycle 12 review F33). Fires at most
+            // once per attach.
+            log::warn!(
+                "codex: rollout_path contains non-UTF-8 bytes — transcript tailing disabled (path={:?})",
+                location.rollout_path,
+            );
+        }
         Ok(crate::agent::adapter::types::LocatedStatusSource {
             status_path: location.rollout_path,
             trust_root: self.codex_home.clone(),
