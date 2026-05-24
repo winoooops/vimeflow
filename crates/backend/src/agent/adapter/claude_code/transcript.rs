@@ -18,8 +18,14 @@ use super::test_runners::emitter::TestRunEmitter;
 use super::test_runners::matcher::{match_command, MatchedCommand};
 use crate::agent::adapter::base::TranscriptHandle;
 use crate::agent::adapter::types::ValidateTranscriptError;
-use crate::agent::events::{emit_agent_cwd, emit_agent_tool_call, emit_agent_turn};
-use crate::agent::types::{AgentCwdEvent, AgentToolCallEvent, AgentTurnEvent, ToolCallStatus};
+use crate::agent::events::{
+    emit_agent_cwd, emit_agent_session_title, emit_agent_tool_call, emit_agent_turn,
+};
+use crate::agent::sanitize_title;
+use crate::agent::types::{
+    AgentCwdEvent, AgentSessionTitleEvent, AgentToolCallEvent, AgentTurnEvent, TitleSource,
+    ToolCallStatus,
+};
 use crate::runtime::EventSink;
 
 /// Poll interval for checking new transcript lines
@@ -180,6 +186,37 @@ fn input_pattern(input: &Value) -> Option<&str> {
     input.get("pattern").and_then(Value::as_str)
 }
 
+fn emit_title(
+    events: &Arc<dyn EventSink>,
+    session_id: &str,
+    agent_session_id: &str,
+    raw_title: &str,
+    source: TitleSource,
+    last_title_memo: &mut Option<String>,
+) {
+    let sanitized = sanitize_title(raw_title);
+    let (title, new_memo) = match sanitized {
+        Some(title) if last_title_memo.as_deref() == Some(title.as_str()) => return,
+        Some(title) => (title.clone(), Some(title)),
+        None if last_title_memo.is_some() => (String::new(), None),
+        None => return,
+    };
+
+    let payload = AgentSessionTitleEvent {
+        session_id: session_id.to_string(),
+        agent_session_id: agent_session_id.to_string(),
+        title,
+        source,
+    };
+
+    if let Err(err) = emit_agent_session_title(events.as_ref(), &payload) {
+        log::warn!("agent-session-title emit failed: {}", err);
+        return;
+    }
+
+    *last_title_memo = new_memo;
+}
+
 /// Start tailing a transcript JSONL file.
 /// Reads from the beginning to catch up on missed tool calls.
 /// Emits `agent-tool-call` backend events for each tool call detected.
@@ -189,6 +226,12 @@ pub fn start_tailing(
     transcript_path: PathBuf,
     cwd: Option<PathBuf>,
 ) -> Result<TranscriptHandle, String> {
+    let claude_agent_session_id = transcript_path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .map(str::to_string)
+        .ok_or_else(|| "could not derive claude session id from transcript path".to_string())?;
+
     let file = File::open(&transcript_path).map_err(|e| {
         format!(
             "Failed to open transcript: {}: {}",
@@ -201,7 +244,14 @@ pub fn start_tailing(
     let stop_clone = stop_flag.clone();
 
     let join_handle = std::thread::spawn(move || {
-        tail_loop(events, session_id, cwd, file, stop_clone);
+        tail_loop(
+            events,
+            session_id,
+            cwd,
+            file,
+            stop_clone,
+            claude_agent_session_id,
+        );
     });
 
     Ok(TranscriptHandle::new(stop_flag, join_handle))
@@ -214,6 +264,7 @@ fn tail_loop(
     cwd: Option<PathBuf>,
     file: File,
     stop_flag: Arc<AtomicBool>,
+    claude_agent_session_id: String,
 ) {
     let mut reader = BufReader::new(file);
 
@@ -229,6 +280,7 @@ fn tail_loop(
     // same `cwd` field don't re-emit. Initial `None` so the first observed
     // cwd always fires a transition event.
     let mut last_cwd: Option<String> = None;
+    let mut last_title_memo: Option<String> = None;
 
     // Replay-aware emitter — buffers test-run snapshots during the initial
     // catch-up read and emits the latest one (only) on the first EOF. Once
@@ -265,6 +317,8 @@ fn tail_loop(
                     &mut in_flight,
                     &mut num_turns,
                     &mut last_cwd,
+                    &claude_agent_session_id,
+                    &mut last_title_memo,
                 );
             }
             Err(e) => {
@@ -272,6 +326,17 @@ fn tail_loop(
                 std::thread::sleep(POLL_INTERVAL);
             }
         }
+    }
+
+    if last_title_memo.is_some() {
+        emit_title(
+            &events,
+            &session_id,
+            &claude_agent_session_id,
+            "",
+            TitleSource::UserRenamed,
+            &mut last_title_memo,
+        );
     }
 }
 
@@ -285,6 +350,8 @@ fn process_line(
     in_flight: &mut InFlightToolCalls,
     num_turns: &mut u32,
     last_cwd: &mut Option<String>,
+    claude_agent_session_id: &str,
+    last_title_memo: &mut Option<String>,
 ) {
     let value: Value = match serde_json::from_str(line) {
         Ok(v) => v,
@@ -315,6 +382,37 @@ fn process_line(
     }
 
     match line_type(&value) {
+        "ai-title" => {
+            let event_session_id = value.get("sessionId").and_then(Value::as_str);
+            if event_session_id == Some(claude_agent_session_id) {
+                let raw_title = value.get("aiTitle").and_then(Value::as_str).unwrap_or("");
+                emit_title(
+                    events,
+                    session_id,
+                    claude_agent_session_id,
+                    raw_title,
+                    TitleSource::AiGenerated,
+                    last_title_memo,
+                );
+            }
+        }
+        "custom-title" => {
+            let event_session_id = value.get("sessionId").and_then(Value::as_str);
+            if event_session_id == Some(claude_agent_session_id) {
+                let raw_title = value
+                    .get("customTitle")
+                    .and_then(Value::as_str)
+                    .unwrap_or("");
+                emit_title(
+                    events,
+                    session_id,
+                    claude_agent_session_id,
+                    raw_title,
+                    TitleSource::UserRenamed,
+                    last_title_memo,
+                );
+            }
+        }
         "assistant" => {
             process_assistant_message(&value, session_id, cwd, events, in_flight);
         }
@@ -786,6 +884,42 @@ fn cap_with_head_and_tail(content: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::agent::events::AGENT_SESSION_TITLE;
+    use crate::runtime::FakeEventSink;
+    use serde_json::json;
+
+    fn make_sink_and_emitter() -> (Arc<FakeEventSink>, Arc<dyn EventSink>, TestRunEmitter) {
+        let sink: Arc<FakeEventSink> = Arc::new(FakeEventSink::new());
+        let sink_dyn: Arc<dyn EventSink> = sink.clone();
+        let emitter = TestRunEmitter::new(sink_dyn.clone());
+        (sink, sink_dyn, emitter)
+    }
+
+    fn process_title_line(
+        line: &str,
+        session_id: &str,
+        events: &Arc<dyn EventSink>,
+        emitter: &mut TestRunEmitter,
+        agent_session_id: &str,
+        last_title_memo: &mut Option<String>,
+    ) {
+        let mut in_flight = InFlightToolCalls::new();
+        let mut num_turns = 0_u32;
+        let mut last_cwd = None;
+
+        process_line(
+            line,
+            session_id,
+            None,
+            events,
+            emitter,
+            &mut in_flight,
+            &mut num_turns,
+            &mut last_cwd,
+            agent_session_id,
+            last_title_memo,
+        );
+    }
 
     #[test]
     fn validate_transcript_path_rejects_path_outside_claude_root() {
@@ -811,6 +945,270 @@ mod tests {
             Err(ValidateTranscriptError::InvalidPath(message))
                 if message.contains("null byte")
         ));
+    }
+
+    #[test]
+    fn ai_title_matching_session_id_emits() {
+        let agent_id = "0a1b95fd-54bc-4635-9161-983f661d74da";
+        let mut memo = None;
+        let (sink, sink_dyn, mut emitter) = make_sink_and_emitter();
+        let line = serde_json::to_string(&json!({
+            "type": "ai-title",
+            "aiTitle": "Investigate slow startup",
+            "sessionId": agent_id,
+        }))
+        .expect("serialize title line");
+
+        process_title_line(
+            &line,
+            "pty-1",
+            &sink_dyn,
+            &mut emitter,
+            agent_id,
+            &mut memo,
+        );
+
+        let recorded = sink.recorded();
+        let title_events: Vec<_> = recorded
+            .iter()
+            .filter(|(name, _)| name == AGENT_SESSION_TITLE)
+            .collect();
+        assert_eq!(title_events.len(), 1);
+        let payload = &title_events[0].1;
+        assert_eq!(payload["title"], "Investigate slow startup");
+        assert_eq!(payload["source"], "ai-generated");
+        assert_eq!(payload["sessionId"], "pty-1");
+        assert_eq!(payload["agentSessionId"], agent_id);
+        assert_eq!(memo.as_deref(), Some("Investigate slow startup"));
+    }
+
+    #[test]
+    fn custom_title_matching_session_id_emits_user_renamed() {
+        let agent_id = "abc-123";
+        let mut memo = None;
+        let (sink, sink_dyn, mut emitter) = make_sink_and_emitter();
+        let line = serde_json::to_string(&json!({
+            "type": "custom-title",
+            "customTitle": "my-feature",
+            "sessionId": agent_id,
+        }))
+        .expect("serialize title line");
+
+        process_title_line(
+            &line,
+            "pty-1",
+            &sink_dyn,
+            &mut emitter,
+            agent_id,
+            &mut memo,
+        );
+
+        let recorded = sink.recorded();
+        let title = recorded
+            .iter()
+            .find(|(name, _)| name == AGENT_SESSION_TITLE)
+            .expect("title event");
+        assert_eq!(title.1["title"], "my-feature");
+        assert_eq!(title.1["source"], "user-renamed");
+    }
+
+    #[test]
+    fn mismatched_session_id_does_not_emit_title() {
+        let mut memo = None;
+        let (sink, sink_dyn, mut emitter) = make_sink_and_emitter();
+        let line = serde_json::to_string(&json!({
+            "type": "ai-title",
+            "aiTitle": "other session",
+            "sessionId": "other-uuid",
+        }))
+        .expect("serialize title line");
+
+        process_title_line(
+            &line,
+            "pty-1",
+            &sink_dyn,
+            &mut emitter,
+            "expected-uuid",
+            &mut memo,
+        );
+
+        assert_eq!(sink.count(AGENT_SESSION_TITLE), 0);
+        assert!(memo.is_none());
+    }
+
+    #[test]
+    fn duplicate_ai_title_emits_once() {
+        let agent_id = "abc";
+        let mut memo = None;
+        let (sink, sink_dyn, mut emitter) = make_sink_and_emitter();
+        let line = serde_json::to_string(&json!({
+            "type": "ai-title",
+            "aiTitle": "T",
+            "sessionId": agent_id,
+        }))
+        .expect("serialize title line");
+
+        process_title_line(
+            &line,
+            "pty-1",
+            &sink_dyn,
+            &mut emitter,
+            agent_id,
+            &mut memo,
+        );
+        process_title_line(
+            &line,
+            "pty-1",
+            &sink_dyn,
+            &mut emitter,
+            agent_id,
+            &mut memo,
+        );
+
+        assert_eq!(sink.count(AGENT_SESSION_TITLE), 1);
+    }
+
+    #[test]
+    fn ai_title_followed_by_custom_title_emits_two_events() {
+        let agent_id = "abc";
+        let mut memo = None;
+        let (sink, sink_dyn, mut emitter) = make_sink_and_emitter();
+        let first = serde_json::to_string(&json!({
+            "type": "ai-title",
+            "aiTitle": "ai",
+            "sessionId": agent_id,
+        }))
+        .expect("serialize ai title line");
+        let second = serde_json::to_string(&json!({
+            "type": "custom-title",
+            "customTitle": "user",
+            "sessionId": agent_id,
+        }))
+        .expect("serialize custom title line");
+
+        process_title_line(
+            &first,
+            "pty-1",
+            &sink_dyn,
+            &mut emitter,
+            agent_id,
+            &mut memo,
+        );
+        process_title_line(
+            &second,
+            "pty-1",
+            &sink_dyn,
+            &mut emitter,
+            agent_id,
+            &mut memo,
+        );
+
+        let titles: Vec<_> = sink
+            .recorded()
+            .into_iter()
+            .filter(|(name, _)| name == AGENT_SESSION_TITLE)
+            .collect();
+        assert_eq!(titles.len(), 2);
+        assert_eq!(titles[1].1["title"], "user");
+        assert_eq!(titles[1].1["source"], "user-renamed");
+    }
+
+    #[test]
+    fn ai_title_with_newline_emits_sanitized() {
+        let agent_id = "abc";
+        let mut memo = None;
+        let (sink, sink_dyn, mut emitter) = make_sink_and_emitter();
+        let line = serde_json::to_string(&json!({
+            "type": "ai-title",
+            "aiTitle": "Line1\nLine2",
+            "sessionId": agent_id,
+        }))
+        .expect("serialize title line");
+
+        process_title_line(
+            &line,
+            "pty-1",
+            &sink_dyn,
+            &mut emitter,
+            agent_id,
+            &mut memo,
+        );
+
+        let title = sink
+            .recorded()
+            .into_iter()
+            .find(|(name, _)| name == AGENT_SESSION_TITLE)
+            .expect("title event");
+        assert_eq!(title.1["title"], "Line1 Line2");
+    }
+
+    #[test]
+    fn empty_ai_title_after_set_emits_clear() {
+        let agent_id = "abc";
+        let mut memo = None;
+        let (sink, sink_dyn, mut emitter) = make_sink_and_emitter();
+        let first = serde_json::to_string(&json!({
+            "type": "ai-title",
+            "aiTitle": "first",
+            "sessionId": agent_id,
+        }))
+        .expect("serialize first title line");
+        let second = serde_json::to_string(&json!({
+            "type": "ai-title",
+            "aiTitle": "",
+            "sessionId": agent_id,
+        }))
+        .expect("serialize second title line");
+
+        process_title_line(
+            &first,
+            "pty-1",
+            &sink_dyn,
+            &mut emitter,
+            agent_id,
+            &mut memo,
+        );
+        process_title_line(
+            &second,
+            "pty-1",
+            &sink_dyn,
+            &mut emitter,
+            agent_id,
+            &mut memo,
+        );
+
+        let titles: Vec<_> = sink
+            .recorded()
+            .into_iter()
+            .filter(|(name, _)| name == AGENT_SESSION_TITLE)
+            .collect();
+        assert_eq!(titles.len(), 2);
+        assert_eq!(titles[1].1["title"], "");
+        assert!(memo.is_none());
+    }
+
+    #[test]
+    fn empty_ai_title_without_prior_does_not_emit() {
+        let agent_id = "abc";
+        let mut memo = None;
+        let (sink, sink_dyn, mut emitter) = make_sink_and_emitter();
+        let line = serde_json::to_string(&json!({
+            "type": "ai-title",
+            "aiTitle": "",
+            "sessionId": agent_id,
+        }))
+        .expect("serialize title line");
+
+        process_title_line(
+            &line,
+            "pty-1",
+            &sink_dyn,
+            &mut emitter,
+            agent_id,
+            &mut memo,
+        );
+
+        assert_eq!(sink.count(AGENT_SESSION_TITLE), 0);
     }
 
     #[test]
