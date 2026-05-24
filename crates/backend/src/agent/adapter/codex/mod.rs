@@ -7,6 +7,7 @@ mod types;
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+#[cfg(test)]
 use std::time::SystemTime;
 
 use crate::agent::adapter::base::TranscriptHandle;
@@ -23,12 +24,17 @@ pub(super) use self::locator::CompositeLocator;
 use crate::agent::adapter::traits::StatusSourceLocator as _;
 
 pub struct CodexAdapter {
-    /// Owned `CompositeLocator` (Step B' dropped the former
-    /// `locator_cache: OnceLock<...>` — the locator is constructed
-    /// once in `new` / `with_home` and never re-cached). The locator
-    /// holds its own `codex_home`, `pid`, and `pty_start`, so
-    /// `CodexAdapter` no longer needs to carry them.
-    locator: CompositeLocator,
+    /// Shared `Arc<CompositeLocator>` (PR #261 cycle 11 F31 — was
+    /// previously an owned `CompositeLocator`, which forced
+    /// `AgentBindings::for_attach` to construct TWO independent
+    /// locator instances per Codex attach: one for `bindings.locator`
+    /// and one inside `with_home`. The reviewer flagged this five
+    /// times across cycles 4/5/7/9/10/11; the structural fix —
+    /// share the same `Arc` between both — closes the loop. The
+    /// inner-locator latent retry-double risk goes away today
+    /// instead of waiting for B'' to remove
+    /// `adapter_for_transcript_state` entirely).
+    locator: Arc<CompositeLocator>,
     // Step B' removed the former `resolved_rollout_path: Mutex<Option<PathBuf>>`
     // field. 0c deprecated it; B' deletes it. The rollout path now
     // flows exclusively through
@@ -38,44 +44,32 @@ pub struct CodexAdapter {
 
 impl CodexAdapter {
     /// Test-only convenience constructor. Production callers go
-    /// through `AgentBindings::for_attach` → `CodexAdapter::with_home`
-    /// (which threads `ctx.provider_home` and `ctx.proc_root` from
-    /// `AttachContext`). Hardcoding `/proc` here is safe ONLY because
-    /// the `#[cfg(test)]` gate prevents accidental production use that
-    /// would bypass `AttachContext.proc_root` injection (PR #261
-    /// cycle 10 review F29 — symmetric with the test-only
+    /// through `AgentBindings::for_attach` → `CodexAdapter::with_locator`
+    /// (which shares the outer `Arc<CompositeLocator>`). Hardcoding
+    /// `/proc` here is safe ONLY because the `#[cfg(test)]` gate
+    /// prevents accidental production use that would bypass
+    /// `AttachContext.proc_root` injection (PR #261 cycle 10 review
+    /// F29 — symmetric with the test-only
     /// `SqliteFirstLocator::new`).
     #[cfg(test)]
     pub fn new(pid: u32, pty_start: SystemTime) -> Self {
-        Self {
-            locator: CompositeLocator::new(
-                default_codex_home(),
-                pid,
-                pty_start,
-                PathBuf::from("/proc"),
-            ),
-        }
+        Self::with_locator(Arc::new(CompositeLocator::new(
+            default_codex_home(),
+            pid,
+            pty_start,
+            PathBuf::from("/proc"),
+        )))
     }
 
-    /// Explicit-home + explicit-proc-root constructor. Used by
-    /// `AgentBindings::for_attach` so the outer
-    /// `Arc<CompositeLocator>` and the adapter's internal
-    /// `CompositeLocator` share the same `codex_home` AND
-    /// `proc_root`. Without `codex_home` alignment the two locators
-    /// could see different roots whenever `provider_home !=
-    /// default_codex_home()` (PR #261 cycle 1 F1). Without
-    /// `proc_root` alignment, `AttachContext.proc_root` injection
-    /// (used in test harnesses with tempdir-based fake `/proc`) was
-    /// dead-letter (PR #261 cycle 8 F22).
-    pub(crate) fn with_home(
-        pid: u32,
-        pty_start: SystemTime,
-        codex_home: PathBuf,
-        proc_root: PathBuf,
-    ) -> Self {
-        Self {
-            locator: CompositeLocator::new(codex_home, pid, pty_start, proc_root),
-        }
+    /// Construct a `CodexAdapter` that shares the supplied
+    /// `Arc<CompositeLocator>` with the caller. Used by
+    /// `AgentBindings::for_attach` so `bindings.locator` and
+    /// `adapter_for_transcript_state` reference the same locator
+    /// instance — eliminating the prior double-construction +
+    /// inner-locator latent retry-double risk (PR #261 cycle 11
+    /// F31).
+    pub(crate) fn with_locator(locator: Arc<CompositeLocator>) -> Self {
+        Self { locator }
     }
 
     fn locator(&self) -> &CompositeLocator {
@@ -350,12 +344,12 @@ mod status_source_tests {
         let pty_start = SystemTime::now() - Duration::from_secs(5);
         let rollout_path = seed_codex_home_with_thread(codex_home.path(), 999, pty_start);
 
-        let adapter = CodexAdapter::with_home(
+        let adapter = CodexAdapter::with_locator(Arc::new(CompositeLocator::new(
+            codex_home.path().to_path_buf(),
             999,
             pty_start,
-            codex_home.path().to_path_buf(),
             PathBuf::from("/proc"),
-        );
+        )));
         let cwd = codex_home.path().to_path_buf();
 
         let src = <CodexAdapter as AgentAdapter>::located_status_source(&adapter, &cwd, "sid")
@@ -378,12 +372,12 @@ mod status_source_tests {
     #[test]
     fn located_status_source_returns_err_on_retry_exhausted() {
         let codex_home = tempfile::tempdir().expect("tempdir");
-        let adapter = CodexAdapter::with_home(
+        let adapter = CodexAdapter::with_locator(Arc::new(CompositeLocator::new(
+            codex_home.path().to_path_buf(),
             999,
             SystemTime::now(),
-            codex_home.path().to_path_buf(),
             PathBuf::from("/proc"),
-        );
+        )));
         let cwd = codex_home.path().to_path_buf();
 
         let err = <CodexAdapter as AgentAdapter>::located_status_source(&adapter, &cwd, "sid")

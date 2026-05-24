@@ -310,10 +310,14 @@ pub(super) fn start_watching(
     // omission is intentional and listed explicitly so the B''
     // reviewer can audit the migration without re-deriving why):
     //
-    // - `bindings.locator` — already consumed by `start_for` before
-    //   this function runs (it called `bindings.locator.locate(...)`
-    //   to produce the `LocatedStatusSource` passed in as `located`).
-    //   The watcher itself doesn't need the locator again.
+    // - `bindings.locator` — already used by `start_for` before this
+    //   function runs (it borrowed `&bindings.locator` to call
+    //   `locate(...)` and produce the `LocatedStatusSource` passed in
+    //   as `located`). The `Arc` itself wasn't consumed there — it
+    //   stayed alive on `bindings` and drops with this function-local
+    //   move now (PR #261 cycle 11 review F32 — earlier comment
+    //   said "consumed" but the locator was only borrowed). The
+    //   watcher itself doesn't need the locator again.
     // - `bindings.streamer` — reserved for B'' which migrates
     //   `TranscriptState::start_or_replace` onto
     //   `Arc<dyn TranscriptStreamer>`. B'' will extract this field

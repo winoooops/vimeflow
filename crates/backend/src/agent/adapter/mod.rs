@@ -395,17 +395,17 @@ mod noop_tests {
     ///   assertion.
     ///
     /// **NOT pinned here**: the `provider_home → codex_home`
-    /// plumbing through `CodexAdapter::with_home`. Because
+    /// plumbing through the shared `Arc<CompositeLocator>`. Because
     /// `parse_status` only exercises the rollout decoder (it never
     /// touches the locator), a hypothetical regression to
     /// `CodexAdapter::new` would still pass this test. That wiring
-    /// is structurally guaranteed by the type signature of
-    /// `with_home(pid, pty_start, codex_home)` plus the
-    /// `for_attach` cycle-1 fix (the home flows through both the
-    /// outer `Arc<CompositeLocator>` and `with_home` — see
-    /// `bindings.rs` Codex arm). The locator-end of that wiring is
-    /// not unit-testable cleanly because `CompositeLocator` reaches
-    /// for SQLite/FS state that doesn't exist in the test env.
+    /// is structurally guaranteed by cycle-11 F31's `Arc::clone` in
+    /// the `for_attach` Codex arm (one `CompositeLocator` per attach,
+    /// shared between `bindings.locator` and
+    /// `adapter_for_transcript_state` via `with_locator`). The
+    /// locator-end of that wiring is not unit-testable cleanly
+    /// because `CompositeLocator` reaches for SQLite/FS state that
+    /// doesn't exist in the test env.
     /// Paired with `bindings::tests::for_attach_dispatches_by_agent_type`
     /// for dispatch shape on all three variants.
     #[test]

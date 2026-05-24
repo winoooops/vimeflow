@@ -98,55 +98,53 @@ impl AgentBindings {
                 // still works — matching the pre-B' behavior of
                 // `CodexAdapter::new` (PR #261 codex review F3).
                 //
-                // The same `codex_home` value is then passed into BOTH
-                // the outer `CompositeLocator` AND the adapter's
-                // internal locator via `CodexAdapter::with_home`. The
-                // earlier `CodexAdapter::new` re-derived its own home
-                // from `default_codex_home()`, which could diverge from
-                // `ctx.provider_home` whenever a test (or future caller)
-                // supplied a non-default value (PR #261 Claude review F1).
+                // The locator is built ONCE here and shared via `Arc`
+                // between `bindings.locator` (the outer
+                // `Arc<dyn StatusSourceLocator>`) and
+                // `adapter_for_transcript_state` (which holds an
+                // `Arc<CodexAdapter>` whose internal locator field is
+                // now `Arc<CompositeLocator>`, NOT an owned one).
+                // Pre-cycle-11 the two paths each built an independent
+                // `CompositeLocator` from the same parameters — a
+                // latent double-retry hazard if `<CodexAdapter as
+                // AgentAdapter>::located_status_source` (the
+                // transitional façade) was ever called downstream. The
+                // structural fix (PR #261 cycle 11 F31) eliminates
+                // that hazard immediately rather than waiting for B''
+                // to remove `adapter_for_transcript_state`.
                 let codex_home = ctx
                     .provider_home
                     .clone()
                     .unwrap_or_else(default_codex_home);
                 // `ctx.proc_root` carries `Some("/proc")` on Linux,
                 // `None` on non-Linux, and `Some(tempdir)` in test
-                // harnesses that inject a fake `/proc`. Both the outer
-                // and adapter-internal `CompositeLocator` need the same
-                // value so test fakes flow through to the locator's
-                // `proc` fast-paths (PR #261 cycle 8 F22 — was
-                // dead-letter pre-fix because `CompositeLocator::new`
-                // hardcoded `/proc`). The `unwrap_or_else` fallback
-                // matches the previous hardcoded default for
-                // non-Linux callers that don't supply `proc_root`.
+                // harnesses that inject a fake `/proc`. The shared
+                // `Arc<CompositeLocator>` now means the proc-root
+                // value flows through to BOTH consumer paths through
+                // ONE construction site (PR #261 cycle 8 F22).
                 let proc_root = ctx
                     .proc_root
                     .clone()
                     .unwrap_or_else(|| PathBuf::from("/proc"));
                 // Attach-once observability for production Codex
-                // sessions (PR #261 cycle 3 F11 + cycle 4 F13). Logging
-                // inside `CompositeLocator::new` would double-emit
-                // because this arm constructs two locators per attach
-                // (outer + adapter-internal); logging in `CodexAdapter::new`
-                // would miss the `for_attach` → `with_home` path entirely.
-                // One log here covers every production attach exactly once.
+                // sessions (PR #261 cycle 3 F11 + cycle 4 F13). The
+                // log site stays here at the binding boundary so it
+                // fires exactly once per attach, regardless of how
+                // many consumers hold the shared `Arc<CompositeLocator>`.
                 log::info!(
                     "codex adapter: locator initialized (codex_home={}, pid={})",
                     codex_home.display(),
                     ctx.agent_pid,
                 );
-                let locator: Arc<CompositeLocator> = Arc::new(CompositeLocator::new(
-                    codex_home.clone(),
-                    ctx.agent_pid,
-                    ctx.pty_start,
-                    proc_root.clone(),
-                ));
-                let adapter: Arc<CodexAdapter> = Arc::new(CodexAdapter::with_home(
-                    ctx.agent_pid,
-                    ctx.pty_start,
+                let composite_locator: Arc<CompositeLocator> = Arc::new(CompositeLocator::new(
                     codex_home,
+                    ctx.agent_pid,
+                    ctx.pty_start,
                     proc_root,
                 ));
+                let locator: Arc<dyn StatusSourceLocator> = composite_locator.clone();
+                let adapter: Arc<CodexAdapter> =
+                    Arc::new(CodexAdapter::with_locator(composite_locator));
                 Ok(Self {
                     agent_type: ctx.agent_type,
                     locator,
@@ -274,25 +272,23 @@ mod tests {
     /// Coverage scope:
     /// - **No panic / no Err**: the successful `expect(...)` proves
     ///   both that the `unwrap_or_else(default_codex_home)` fallback
-    ///   fired AND that both `CompositeLocator::new` and
-    ///   `CodexAdapter::with_home` accept the resulting `PathBuf`
+    ///   fired AND that `CompositeLocator::new` +
+    ///   `CodexAdapter::with_locator` accept the resulting `PathBuf`
     ///   without panicking.
     /// - **Dispatch hits the Codex arm**: the `agent_type` round-trip
     ///   confirms the test exercised the `AgentType::Codex` branch
     ///   (a regression that dropped through to `NoOpAdapter` would
     ///   fail this assertion).
     ///
-    /// **NOT pinned here**: that `default_codex_home()` reached BOTH
-    /// the outer `Arc<CompositeLocator>` AND
-    /// `CodexAdapter::with_home`'s internal locator (PR #261 cycle 10
-    /// review F30). The same `codex_home` binding is reused via
-    /// `clone()` between the two construction sites — a structural
-    /// guarantee at the source level, not directly observable through
-    /// the public `Arc<dyn StatusSourceLocator>` surface. Verifying it
-    /// in a unit test would require either (a) downcasting the
-    /// `Arc<dyn ...>`, (b) adding a `#[cfg(test)]` `codex_home()`
-    /// accessor on `CompositeLocator`, or (c) a locator fixture with a
-    /// seeded SQLite DB so `locate(...)` returns `Ok` with an
+    /// **NOT pinned here**: that `bindings.locator` and
+    /// `adapter_for_transcript_state.locator()` reference the SAME
+    /// `Arc<CompositeLocator>` instance (cycle 11 F31 made that
+    /// structural — see the `Arc::clone` line in the `for_attach`
+    /// Codex arm). Verifying via the public
+    /// `Arc<dyn StatusSourceLocator>` surface would require either
+    /// (a) downcasting, (b) adding a `#[cfg(test)]` `codex_home()`
+    /// accessor on `CompositeLocator`, or (c) a locator fixture with
+    /// a seeded SQLite DB so `locate(...)` returns `Ok` with an
     /// observable `trust_root`. None of those are worth the test-only
     /// API surface; the cycle-1 F1 fix that introduced the shared
     /// binding lives in the `for_attach` body at lines 138-153 and

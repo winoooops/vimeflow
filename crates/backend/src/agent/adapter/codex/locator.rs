@@ -649,12 +649,16 @@ impl CompositeLocator {
         pty_start: SystemTime,
         proc_root: PathBuf,
     ) -> Self {
-        // No log here. PR #261 cycle 4 F13: `AgentBindings::for_attach`
-        // constructs TWO `CompositeLocator`s per Codex attach (one for
-        // `bindings.locator`, one inside `CodexAdapter::with_home` for
-        // the transitional `adapter_for_transcript_state`), so logging
-        // at this constructor would double-emit per attach. The
-        // attach-once observability lives in `for_attach` instead.
+        // No log here. PR #261 cycle 4 F13 / cycle 11 F31:
+        // `AgentBindings::for_attach` historically constructed two
+        // `CompositeLocator`s per Codex attach (one outer, one inside
+        // `CodexAdapter`). Cycle 11 fixed that by sharing a single
+        // `Arc<CompositeLocator>` between `bindings.locator` and
+        // `CodexAdapter::with_locator`, but the log site still belongs
+        // here-or-the-caller decision stands: the attach-once
+        // observability lives in `for_attach` so it fires exactly once
+        // per attach regardless of how many adapters / consumers
+        // clone the resulting `Arc`.
         Self {
             primary: SqliteFirstLocator::with_proc_root(codex_home.clone(), proc_root),
             fallback: FsScanFallback::new(codex_home.clone()),
