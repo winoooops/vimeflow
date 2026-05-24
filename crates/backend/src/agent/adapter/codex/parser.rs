@@ -1,10 +1,37 @@
 //! Parser for Codex rollout JSONL files.
+//!
+//! Step A-status of the v4-frozen refactor plan (#246) replaced the
+//! former `serde_json::Value` pull-style fold with typed DTOs. Each
+//! rollout line deserializes through an internally-tagged enum
+//! (`CodexRolloutLine` on the outer `type` discriminator), then a
+//! second internally-tagged enum for `event_msg.payload` sub-types.
+//! Per-field `Option<T> + #[serde(default)]` + `lenient_*`
+//! deserializers preserve the pre-A-status leniency: a wrong-typed
+//! field or an unknown event tag does NOT poison the rest of the
+//! document.
+//!
+//! The two load-bearing invariants from the v4-frozen plan are
+//! structurally encoded by the DTOs:
+//!
+//! 1. **`token_count.info: Option<TokenCountInfoDto>`** — the fold
+//!    updates `state.last_token_count_info` ONLY when the deserialized
+//!    `info` is `Some(_)`. A `token_count` event with `info: null` or
+//!    `info: <missing>` preserves prior context (the
+//!    `token_count_info_null_preserves_prior_context` regression
+//!    test pins this).
+//!
+//! 2. **Unknown event tags fall through to `#[serde(other)]`** —
+//!    silently ignored, never an Err. The pre-A-status `Value`-based
+//!    matcher had the same behavior; the test
+//!    `unknown_event_type_ignored_without_error` pins it.
 
+use serde::Deserialize;
+
+use super::super::serde_helpers::{lenient_f64, lenient_string, lenient_u64};
 use crate::agent::adapter::types::ParsedStatus;
 use crate::agent::types::{
     AgentStatusEvent, ContextWindowStatus, CostMetrics, CurrentUsage, RateLimitInfo, RateLimits,
 };
-use serde_json::Value;
 
 pub fn parse_rollout(session_id: &str, raw: &str) -> Result<ParsedStatus, String> {
     let mut state = CodexFoldState::default();
@@ -20,8 +47,11 @@ pub fn parse_rollout(session_id: &str, raw: &str) -> Result<ParsedStatus, String
             continue;
         }
 
-        match serde_json::from_str::<Value>(line) {
-            Ok(value) => fold_event(&mut state, &value),
+        // Per-line deserialize: a single malformed line is logged and
+        // skipped; the rest of the document continues. Test pin:
+        // `malformed_mid_line_skipped_with_warn`.
+        match serde_json::from_str::<CodexRolloutLine>(line) {
+            Ok(parsed) => fold_event(&mut state, parsed),
             Err(_) => log::warn!(
                 "codex: skipping malformed rollout line for sid={}",
                 session_id
@@ -38,6 +68,118 @@ pub fn parse_rollout(session_id: &str, raw: &str) -> Result<ParsedStatus, String
         event: state.into_event(session_id),
     })
 }
+
+// -------------------------- DTO layer --------------------------
+
+/// One JSONL line from the rollout stream. The outer
+/// `#[serde(tag = "type")]` dispatches on the `"type"` discriminator;
+/// `#[serde(other)]` catches unknown / forward-compatible tags
+/// without erroring.
+#[derive(Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+enum CodexRolloutLine {
+    SessionMeta {
+        #[serde(default)]
+        payload: Option<SessionMetaPayloadDto>,
+    },
+    TurnContext {
+        #[serde(default)]
+        payload: Option<TurnContextPayloadDto>,
+    },
+    EventMsg {
+        #[serde(default)]
+        payload: Option<EventMsgPayloadDto>,
+    },
+    /// Forward-compatible catch-all for unknown event kinds (and the
+    /// existing `response_item`, `user_message`, etc. shapes the
+    /// status decoder doesn't fold). `#[serde(other)]` requires a
+    /// unit variant — by design.
+    #[serde(other)]
+    Unknown,
+}
+
+#[derive(Deserialize, Default)]
+struct SessionMetaPayloadDto {
+    #[serde(default, deserialize_with = "lenient_string")]
+    id: Option<String>,
+    #[serde(default, deserialize_with = "lenient_string")]
+    cli_version: Option<String>,
+}
+
+#[derive(Deserialize, Default)]
+struct TurnContextPayloadDto {
+    #[serde(default, deserialize_with = "lenient_string")]
+    model: Option<String>,
+}
+
+/// `event_msg.payload` is itself an internally-tagged variant. The
+/// status decoder cares about three of these (`task_started`,
+/// `task_complete`, `token_count`); everything else falls through to
+/// `Unknown`.
+#[derive(Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+enum EventMsgPayloadDto {
+    TaskStarted {
+        #[serde(default, deserialize_with = "lenient_u64")]
+        model_context_window: Option<u64>,
+    },
+    TaskComplete {
+        #[serde(default, deserialize_with = "lenient_u64")]
+        duration_ms: Option<u64>,
+    },
+    TokenCount {
+        /// Critical for the v4-frozen plan's R2.4 invariant: when this
+        /// is `None` (either field missing OR JSON null), the fold
+        /// MUST NOT clear `state.last_token_count_info`. The
+        /// regression test `token_count_info_null_preserves_prior_context`
+        /// fails if a future contributor changes the fold to overwrite
+        /// on `None`.
+        #[serde(default)]
+        info: Option<TokenCountInfoDto>,
+        #[serde(default)]
+        rate_limits: Option<RateLimitsPayloadDto>,
+    },
+    #[serde(other)]
+    Unknown,
+}
+
+#[derive(Deserialize, Default)]
+struct TokenCountInfoDto {
+    #[serde(default)]
+    last_token_usage: Option<LastTokenUsageDto>,
+    #[serde(default, deserialize_with = "lenient_u64")]
+    model_context_window: Option<u64>,
+}
+
+#[derive(Deserialize, Default)]
+struct LastTokenUsageDto {
+    #[serde(default, deserialize_with = "lenient_u64")]
+    input_tokens: Option<u64>,
+    #[serde(default, deserialize_with = "lenient_u64")]
+    output_tokens: Option<u64>,
+    #[serde(default, deserialize_with = "lenient_u64")]
+    cached_input_tokens: Option<u64>,
+    #[serde(default, deserialize_with = "lenient_u64")]
+    total_tokens: Option<u64>,
+}
+
+#[derive(Deserialize, Default)]
+struct RateLimitsPayloadDto {
+    #[serde(default)]
+    primary: Option<RateLimitWindowDto>,
+    #[serde(default)]
+    secondary: Option<RateLimitWindowDto>,
+}
+
+#[derive(Deserialize, Default)]
+struct RateLimitWindowDto {
+    #[serde(default, deserialize_with = "lenient_f64")]
+    used_percent: Option<f64>,
+    #[serde(default, deserialize_with = "lenient_u64")]
+    resets_at: Option<u64>,
+}
+
+// -------------------------- Fold state --------------------------
 
 #[derive(Default)]
 struct CodexFoldState {
@@ -144,123 +286,83 @@ impl CodexFoldState {
     }
 }
 
-fn fold_event(state: &mut CodexFoldState, value: &Value) {
-    match value.get("type").and_then(Value::as_str) {
-        Some("session_meta") => {
-            absorb_session_meta(state, value.get("payload").unwrap_or(&Value::Null))
-        }
-        Some("turn_context") => {
-            absorb_turn_context(state, value.get("payload").unwrap_or(&Value::Null))
-        }
-        Some("event_msg") => {
-            let payload = value.get("payload").unwrap_or(&Value::Null);
-            match payload.get("type").and_then(Value::as_str) {
-                Some("task_started") => absorb_task_started(state, payload),
-                Some("task_complete") => absorb_task_complete(state, payload),
-                Some("token_count") => absorb_token_count(state, payload),
-                _ => {}
+fn fold_event(state: &mut CodexFoldState, line: CodexRolloutLine) {
+    match line {
+        CodexRolloutLine::SessionMeta { payload } => {
+            if let Some(p) = payload {
+                if let Some(id) = p.id {
+                    state.agent_session_id = id;
+                }
+                if let Some(version) = p.cli_version {
+                    state.cli_version = version;
+                }
             }
         }
-        _ => {}
-    }
-}
-
-fn absorb_session_meta(state: &mut CodexFoldState, payload: &Value) {
-    if let Some(id) = payload.get("id").and_then(Value::as_str) {
-        state.agent_session_id = id.to_string();
-    }
-    if let Some(version) = payload.get("cli_version").and_then(Value::as_str) {
-        state.cli_version = version.to_string();
-    }
-}
-
-fn absorb_turn_context(state: &mut CodexFoldState, payload: &Value) {
-    if let Some(model) = payload.get("model").and_then(Value::as_str) {
-        state.model = model.to_string();
-    }
-}
-
-fn absorb_task_started(state: &mut CodexFoldState, payload: &Value) {
-    if let Some(size) = payload.get("model_context_window").and_then(Value::as_u64) {
-        state.last_task_started_context_window = Some(size);
-    }
-}
-
-fn absorb_task_complete(state: &mut CodexFoldState, payload: &Value) {
-    if let Some(duration_ms) = payload.get("duration_ms").and_then(Value::as_u64) {
-        state.total_duration_ms = state.total_duration_ms.saturating_add(duration_ms);
-    }
-}
-
-fn absorb_token_count(state: &mut CodexFoldState, payload: &Value) {
-    if let Some(info) = payload.get("info") {
-        if !info.is_null() {
-            state.last_token_count_info = Some(parse_token_count_info(info));
+        CodexRolloutLine::TurnContext { payload } => {
+            if let Some(p) = payload {
+                if let Some(model) = p.model {
+                    state.model = model;
+                }
+            }
         }
-    }
-
-    if let Some(rate_limits) = payload.get("rate_limits") {
-        if !rate_limits.is_null() {
-            state.last_rate_limits = Some(parse_rate_limits(rate_limits));
-        }
+        CodexRolloutLine::EventMsg { payload } => match payload {
+            Some(EventMsgPayloadDto::TaskStarted {
+                model_context_window,
+            }) => {
+                if let Some(size) = model_context_window {
+                    state.last_task_started_context_window = Some(size);
+                }
+            }
+            Some(EventMsgPayloadDto::TaskComplete { duration_ms }) => {
+                if let Some(ms) = duration_ms {
+                    state.total_duration_ms = state.total_duration_ms.saturating_add(ms);
+                }
+            }
+            Some(EventMsgPayloadDto::TokenCount { info, rate_limits }) => {
+                // R2.4 invariant: Some-only update. A `token_count`
+                // event whose `info` is null / missing preserves prior
+                // state. Test pin:
+                // `token_count_info_null_preserves_prior_context`.
+                if let Some(info) = info {
+                    state.last_token_count_info = Some(token_count_info_from_dto(info));
+                }
+                if let Some(rl) = rate_limits {
+                    state.last_rate_limits = Some(rate_limits_from_dto(rl));
+                }
+            }
+            Some(EventMsgPayloadDto::Unknown) | None => {}
+        },
+        CodexRolloutLine::Unknown => {}
     }
 }
 
-fn parse_token_count_info(info: &Value) -> TokenCountInfo {
-    let last = info.get("last_token_usage").unwrap_or(&Value::Null);
-
+fn token_count_info_from_dto(dto: TokenCountInfoDto) -> TokenCountInfo {
+    let last = dto.last_token_usage.unwrap_or_default();
     TokenCountInfo {
-        last_input_tokens: last
-            .get("input_tokens")
-            .and_then(Value::as_u64)
-            .unwrap_or(0),
-        last_output_tokens: last
-            .get("output_tokens")
-            .and_then(Value::as_u64)
-            .unwrap_or(0),
-        last_cached_input_tokens: last
-            .get("cached_input_tokens")
-            .and_then(Value::as_u64)
-            .unwrap_or(0),
-        last_total_tokens: last
-            .get("total_tokens")
-            .and_then(Value::as_u64)
-            .unwrap_or(0),
-        model_context_window: info
-            .get("model_context_window")
-            .and_then(Value::as_u64)
-            .unwrap_or(0),
+        last_input_tokens: last.input_tokens.unwrap_or(0),
+        last_output_tokens: last.output_tokens.unwrap_or(0),
+        last_cached_input_tokens: last.cached_input_tokens.unwrap_or(0),
+        last_total_tokens: last.total_tokens.unwrap_or(0),
+        model_context_window: dto.model_context_window.unwrap_or(0),
     }
 }
 
-fn parse_rate_limits(value: &Value) -> RateLimits {
-    let primary = value.get("primary").unwrap_or(&Value::Null);
+fn rate_limits_from_dto(dto: RateLimitsPayloadDto) -> RateLimits {
+    // Pre-A-status default behavior: missing/null `primary` yields a
+    // (0.0, 0) `RateLimitInfo`. The DTO field is `Option<...>` so
+    // `unwrap_or_default()` gives us the same shape.
+    let primary = dto.primary.unwrap_or_default();
     let five_hour = RateLimitInfo {
-        used_percentage: primary
-            .get("used_percent")
-            .and_then(Value::as_f64)
-            .unwrap_or(0.0),
-        resets_at: primary
-            .get("resets_at")
-            .and_then(Value::as_u64)
-            .unwrap_or(0),
+        used_percentage: primary.used_percent.unwrap_or(0.0),
+        resets_at: primary.resets_at.unwrap_or(0),
     };
 
-    let seven_day = value.get("secondary").and_then(|secondary| {
-        if secondary.is_null() {
-            None
-        } else {
-            Some(RateLimitInfo {
-                used_percentage: secondary
-                    .get("used_percent")
-                    .and_then(Value::as_f64)
-                    .unwrap_or(0.0),
-                resets_at: secondary
-                    .get("resets_at")
-                    .and_then(Value::as_u64)
-                    .unwrap_or(0),
-            })
-        }
+    // `secondary` distinguishes null/missing → `None` from
+    // present-with-fields → `Some(_)`. The DTO's
+    // `secondary: Option<RateLimitWindowDto>` does that directly.
+    let seven_day = dto.secondary.map(|s| RateLimitInfo {
+        used_percentage: s.used_percent.unwrap_or(0.0),
+        resets_at: s.resets_at.unwrap_or(0),
     });
 
     RateLimits {

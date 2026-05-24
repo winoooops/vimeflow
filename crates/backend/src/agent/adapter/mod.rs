@@ -8,6 +8,7 @@ mod attach;
 pub mod base;
 pub mod claude_code;
 pub mod codex;
+mod serde_helpers;
 pub mod types;
 
 pub(crate) use attach::AttachContext;
