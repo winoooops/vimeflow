@@ -1,130 +1,241 @@
-//! Statusline JSON parser for Claude Code agent status
+//! Statusline JSON parser for Claude Code agent status.
 //!
-//! Parses the JSON that Claude Code writes via its statusline command
-//! into typed `AgentStatusEvent` structs. Uses `serde_json::Value` for
-//! flexible parsing — gracefully handles partial/evolving JSON.
+//! Step A-status of the v4-frozen refactor plan (#246) replaced the
+//! former `serde_json::Value` pull-style extraction with typed DTOs
+//! that flow through `#[derive(Deserialize)]`. Per-field
+//! `Option<T> + #[serde(default)]` keeps the old "missing → default"
+//! and "null → default" semantics; per-field
+//! `deserialize_with = "...lenient_*"` keeps the old single-field
+//! degradation on wrong-typed inputs (a JSON string where a `u64` was
+//! expected no longer poisons the whole parse).
 
+use serde::Deserialize;
+
+use super::super::serde_helpers::{lenient_f64, lenient_object, lenient_string, lenient_u64};
 use crate::agent::types::{
     AgentStatusEvent, ContextWindowStatus, CostMetrics, CurrentUsage, RateLimitInfo, RateLimits,
 };
-use serde_json::Value;
 
 /// Parsed statusline result wrapping the typed status event.
 ///
 /// Step 0c (post-upsource review) dropped the former
-/// `transcript_path: Option<String>` field — the watcher now resolves
-/// the transcript path independently via
-/// [`extract_transcript_path`] (which `TranscriptPathSource::dynamic_hint`
-/// calls). Keeping a parallel field here was dead code:
-/// `ClaudeCodeAdapter::parse_status` discards it and no test exercises
-/// the live extraction through this path.
+/// `transcript_path: Option<String>` field — the watcher resolves the
+/// transcript path independently via [`extract_transcript_path`]
+/// (which `TranscriptPathSource::dynamic_hint` calls).
 #[derive(Debug, Clone)]
 pub struct ParsedStatusline {
-    /// The typed agent status event
+    /// The typed agent status event.
     pub event: AgentStatusEvent,
 }
+
+// -------------------------- DTO layer --------------------------
+//
+// The DTOs below are the typed shape of Claude Code's statusline
+// JSON. They are crate-private — production callers consume
+// `AgentStatusEvent` via `parse_statusline`'s conversion path; tests
+// reach behavior through the public entry points.
+//
+// Two invariants the DTO design preserves end-to-end:
+// 1. `null` and missing are indistinguishable from the caller's view —
+//    both produce `None` at the DTO level (`#[serde(default)]`), and
+//    the conversion layer maps `None` to the same domain-specific
+//    default the pull-style code used (`0` for counts, the computed
+//    fallback for `used_percentage`, etc.).
+// 2. A wrong-typed field (e.g. `"42"` for a `u64`) does NOT poison the
+//    whole parse — `lenient_*` deserializers degrade the offending
+//    field to `None` and let the rest of the document continue. This
+//    mirrors the pre-A-status behavior of
+//    `Value::as_u64().unwrap_or(0)` at every field.
+
+#[derive(Deserialize, Default)]
+struct ClaudeStatusDto {
+    #[serde(default, deserialize_with = "lenient_string")]
+    session_id: Option<String>,
+    #[serde(default, deserialize_with = "lenient_string")]
+    version: Option<String>,
+    // Nested struct fields use `lenient_object` so a wrong-typed
+    // block (`"context_window": 42`, `"rate_limits": []`) degrades to
+    // `None` and produces the per-block defaults the conversion layer
+    // already encodes — instead of poisoning the whole `parse_statusline`
+    // with an Err. Matches the pre-A-status `has_<block>(value)` /
+    // `is_some_and(Value::is_object)` guards. Round-1 review fix
+    // (Claude MEDIUM + codex connector P1).
+    #[serde(default, deserialize_with = "lenient_object")]
+    model: Option<ClaudeModelDto>,
+    #[serde(default, deserialize_with = "lenient_object")]
+    context_window: Option<ClaudeContextWindowDto>,
+    #[serde(default, deserialize_with = "lenient_object")]
+    cost: Option<ClaudeCostDto>,
+    #[serde(default, deserialize_with = "lenient_object")]
+    rate_limits: Option<ClaudeRateLimitsDto>,
+}
+
+#[derive(Deserialize, Default)]
+struct ClaudeModelDto {
+    #[serde(default, deserialize_with = "lenient_string")]
+    id: Option<String>,
+    #[serde(default, deserialize_with = "lenient_string")]
+    display_name: Option<String>,
+}
+
+#[derive(Deserialize, Default)]
+struct ClaudeContextWindowDto {
+    #[serde(default, deserialize_with = "lenient_f64")]
+    used_percentage: Option<f64>,
+    #[serde(default, deserialize_with = "lenient_f64")]
+    remaining_percentage: Option<f64>,
+    #[serde(default, deserialize_with = "lenient_u64")]
+    context_window_size: Option<u64>,
+    #[serde(default, deserialize_with = "lenient_u64")]
+    total_input_tokens: Option<u64>,
+    #[serde(default, deserialize_with = "lenient_u64")]
+    total_output_tokens: Option<u64>,
+    #[serde(default, deserialize_with = "lenient_object")]
+    current_usage: Option<ClaudeCurrentUsageDto>,
+}
+
+#[derive(Deserialize, Default)]
+struct ClaudeCurrentUsageDto {
+    #[serde(default, deserialize_with = "lenient_u64")]
+    input_tokens: Option<u64>,
+    #[serde(default, deserialize_with = "lenient_u64")]
+    output_tokens: Option<u64>,
+    #[serde(default, deserialize_with = "lenient_u64")]
+    cache_creation_input_tokens: Option<u64>,
+    #[serde(default, deserialize_with = "lenient_u64")]
+    cache_read_input_tokens: Option<u64>,
+}
+
+#[derive(Deserialize, Default)]
+struct ClaudeCostDto {
+    #[serde(default, deserialize_with = "lenient_f64")]
+    total_cost_usd: Option<f64>,
+    #[serde(default, deserialize_with = "lenient_u64")]
+    total_duration_ms: Option<u64>,
+    #[serde(default, deserialize_with = "lenient_u64")]
+    total_api_duration_ms: Option<u64>,
+    #[serde(default, deserialize_with = "lenient_u64")]
+    total_lines_added: Option<u64>,
+    #[serde(default, deserialize_with = "lenient_u64")]
+    total_lines_removed: Option<u64>,
+}
+
+#[derive(Deserialize, Default)]
+struct ClaudeRateLimitsDto {
+    #[serde(default, deserialize_with = "lenient_object")]
+    five_hour: Option<ClaudeRateLimitInfoDto>,
+    #[serde(default, deserialize_with = "lenient_object")]
+    seven_day: Option<ClaudeRateLimitInfoDto>,
+}
+
+#[derive(Deserialize, Default)]
+struct ClaudeRateLimitInfoDto {
+    #[serde(default, deserialize_with = "lenient_f64")]
+    used_percentage: Option<f64>,
+    #[serde(default, deserialize_with = "lenient_u64")]
+    resets_at: Option<u64>,
+}
+
+/// Narrow DTO for the transcript-path extractor — keeps it independent
+/// of the full statusline shape so
+/// `TranscriptPathSource::dynamic_hint` can call it without paying for
+/// the full status decode. The JSON parse itself still runs (same
+/// `serde_json::from_str` cost as `parse_statusline`), but this DTO
+/// has a single field, so serde doesn't build the rest of the
+/// `AgentStatusEvent` graph.
+#[derive(Deserialize, Default)]
+struct ClaudeTranscriptPathDto {
+    #[serde(default, deserialize_with = "lenient_string")]
+    transcript_path: Option<String>,
+}
+
+// ----------------------- Entry points -------------------------
 
 /// `transcript_path` extractor — used by
 /// `TranscriptPathSource::dynamic_hint` for the Claude adapter so the
 /// watcher can resolve a fresh transcript path on every statusline
 /// update.
 ///
-/// **What this avoids vs `parse_statusline`:** the full
-/// `AgentStatusEvent` construction (model id, context-window math,
-/// cost/rate-limit field plumbing). The JSON itself IS re-parsed —
-/// `serde_json::from_str::<Value>(raw)` runs once here and once
-/// inside `parse_statusline` against the same bytes. For
-/// kilobyte-sized statusline files that's acceptable; if profiling
-/// ever shows it matters, the caller can switch to a streaming /
-/// narrow-`Deserialize` shape.
-///
 /// Returns `None` for malformed JSON, a missing field, or any
 /// non-string value at the `transcript_path` key — the same lenience
-/// the private `transcript_path(Value)` helper applies.
+/// the pre-A-status pull-style code applied.
 pub fn extract_transcript_path(raw: &str) -> Option<String> {
-    let value: Value = serde_json::from_str(raw).ok()?;
-    transcript_path(&value)
+    serde_json::from_str::<ClaudeTranscriptPathDto>(raw)
+        .ok()
+        .and_then(|dto| dto.transcript_path)
 }
 
-/// Parse raw JSON string from the statusline file into an `AgentStatusEvent`.
+/// Parse the raw statusline JSON into an [`AgentStatusEvent`].
 ///
-/// All fields are optional — gracefully handles partial/evolving JSON.
-/// Returns `Err` only if the input is not valid JSON at all.
+/// Returns `Err` when the input is not valid JSON or its top-level
+/// shape is not a JSON object (Step A-status: serde reports the latter
+/// as `"invalid JSON: invalid type: ..., expected struct ..."` —
+/// behavior preserved, error message text different from the previous
+/// hand-written `"statusline JSON is not an object"`).
 pub fn parse_statusline(session_id: &str, json: &str) -> Result<ParsedStatusline, String> {
-    let value: Value = serde_json::from_str(json).map_err(|e| format!("invalid JSON: {}", e))?;
+    let dto: ClaudeStatusDto =
+        serde_json::from_str(json).map_err(|e| format!("invalid JSON: {}", e))?;
+    Ok(ParsedStatusline {
+        event: dto_to_event(session_id, dto),
+    })
+}
 
-    if !value.is_object() {
-        return Err("statusline JSON is not an object".to_string());
-    }
+// ------------------ DTO → AgentStatusEvent --------------------
 
-    // Extract model info
-    let model_id = model_id(&value);
-    let model_display_name = model_display_name(&value, &model_id);
+fn dto_to_event(session_id: &str, dto: ClaudeStatusDto) -> AgentStatusEvent {
+    let model_id = dto
+        .model
+        .as_ref()
+        .and_then(|m| m.id.clone())
+        .unwrap_or_else(|| "unknown".to_string());
+    let model_display_name = dto
+        .model
+        .as_ref()
+        .and_then(|m| m.display_name.clone())
+        .unwrap_or_else(|| model_id.clone());
 
-    // Extract session ID and version
-    let agent_session_id = agent_session_id(&value);
-    let version = version(&value);
-
-    // Extract context window
-    let context_window = parse_context_window(&value);
-
-    // Extract cost metrics
-    let cost = parse_cost_metrics(&value);
-
-    // Extract rate limits
-    let rate_limits = parse_rate_limits(&value);
-
-    let event = AgentStatusEvent {
+    AgentStatusEvent {
         session_id: session_id.to_string(),
-        agent_session_id,
+        agent_session_id: dto.session_id.unwrap_or_default(),
         model_id,
         model_display_name,
-        version,
-        context_window,
-        cost,
-        rate_limits,
-    };
-
-    // Note: transcript_path extraction happens via the standalone
-    // `extract_transcript_path` helper (called by
-    // `TranscriptPathSource::dynamic_hint`). Not surfaced here.
-
-    Ok(ParsedStatusline { event })
+        version: dto.version.unwrap_or_default(),
+        context_window: context_window_from_dto(dto.context_window),
+        cost: cost_from_dto(dto.cost),
+        rate_limits: rate_limits_from_dto(dto.rate_limits),
+    }
 }
 
-/// Parse context window fields from a JSON value
-fn parse_context_window(value: &Value) -> ContextWindowStatus {
-    let defaults = ContextWindowStatus {
-        used_percentage: None,
-        remaining_percentage: 100.0,
-        context_window_size: 0,
-        total_input_tokens: 0,
-        total_output_tokens: 0,
-        current_usage: None,
+fn context_window_from_dto(cw: Option<ClaudeContextWindowDto>) -> ContextWindowStatus {
+    // Block-missing short-circuit preserves the pre-A-status default of
+    // `remaining_percentage = 100.0` even when no context_window block
+    // was emitted. Test pin:
+    // `handles_missing_context_window`.
+    let cw = match cw {
+        Some(c) => c,
+        None => {
+            return ContextWindowStatus {
+                used_percentage: None,
+                remaining_percentage: 100.0,
+                context_window_size: 0,
+                total_input_tokens: 0,
+                total_output_tokens: 0,
+                current_usage: None,
+            }
+        }
     };
 
-    if !has_context_window(value) {
-        return defaults;
-    }
+    let used_raw = cw.used_percentage;
+    let context_window_size = cw.context_window_size.unwrap_or(0);
+    let total_input_tokens = cw.total_input_tokens.unwrap_or(0);
+    let total_output_tokens = cw.total_output_tokens.unwrap_or(0);
 
-    let used_percentage = used_percentage(value);
-
-    let remaining_percentage = remaining_percentage(value)
-        .unwrap_or_else(|| used_percentage.map_or(100.0, |used| 100.0 - used));
-
-    let context_window_size = context_window_size(value);
-
-    let total_input_tokens = total_input_tokens(value);
-
-    let total_output_tokens = total_output_tokens(value);
-
-    let current_usage = current_usage(value);
-
-    // If used_percentage is null (before first API response), compute it
-    // from total_input_tokens / context_window_size. Claude Code doesn't
-    // emit used_percentage during the loading phase (skills, MCPs, CLAUDE.md)
-    // but it does report total_input_tokens which reflects system prompt size.
-    let computed_percentage = used_percentage
+    // If `used_percentage` is null (Claude Code's loading phase: skills,
+    // MCPs, CLAUDE.md), compute it from
+    // `total_input_tokens / context_window_size`. Test pins:
+    // `clamps_computed_context_window_percentage`,
+    // `handles_null_used_percentage`.
+    let computed_percentage = used_raw
         .or_else(|| {
             if context_window_size > 0 && total_input_tokens > 0 {
                 Some((total_input_tokens as f64 / context_window_size as f64) * 100.0)
@@ -134,9 +245,12 @@ fn parse_context_window(value: &Value) -> ContextWindowStatus {
         })
         .map(clamp_percentage);
 
+    // `remaining_percentage` priority: computed-from-used → raw input →
+    // 100.0 default. Test pins: `computes_remaining_from_used_when_missing`,
+    // `clamps_raw_remaining_percentage_when_no_computed_fallback`.
     let computed_remaining = computed_percentage
         .map(|used| clamp_percentage(100.0 - used))
-        .unwrap_or_else(|| clamp_percentage(remaining_percentage));
+        .unwrap_or_else(|| clamp_percentage(cw.remaining_percentage.unwrap_or(100.0)));
 
     ContextWindowStatus {
         used_percentage: computed_percentage,
@@ -144,271 +258,74 @@ fn parse_context_window(value: &Value) -> ContextWindowStatus {
         context_window_size,
         total_input_tokens,
         total_output_tokens,
-        current_usage,
+        current_usage: cw.current_usage.map(|cu| CurrentUsage {
+            input_tokens: cu.input_tokens.unwrap_or(0),
+            output_tokens: cu.output_tokens.unwrap_or(0),
+            cache_creation_input_tokens: cu.cache_creation_input_tokens.unwrap_or(0),
+            cache_read_input_tokens: cu.cache_read_input_tokens.unwrap_or(0),
+        }),
+    }
+}
+
+fn cost_from_dto(cost: Option<ClaudeCostDto>) -> CostMetrics {
+    // Block-missing → `total_cost_usd = None`. Block-present-but-field-
+    // missing → `Some(0.0)`. This is a Claude-protocol distinction the
+    // pull-style code encoded via `has_cost(...)`; preserved here with
+    // the explicit `match` on `Option<ClaudeCostDto>`. Test pins:
+    // `parse_cost_metrics_returns_none_when_cost_block_missing`,
+    // `parse_cost_metrics_returns_some_zero_when_field_missing`.
+    let cost = match cost {
+        Some(c) => c,
+        None => {
+            return CostMetrics {
+                total_cost_usd: None,
+                total_duration_ms: 0,
+                total_api_duration_ms: 0,
+                total_lines_added: 0,
+                total_lines_removed: 0,
+            }
+        }
+    };
+
+    CostMetrics {
+        total_cost_usd: Some(cost.total_cost_usd.unwrap_or(0.0)),
+        total_duration_ms: cost.total_duration_ms.unwrap_or(0),
+        total_api_duration_ms: cost.total_api_duration_ms.unwrap_or(0),
+        total_lines_added: cost.total_lines_added.unwrap_or(0),
+        total_lines_removed: cost.total_lines_removed.unwrap_or(0),
+    }
+}
+
+fn rate_limits_from_dto(rl: Option<ClaudeRateLimitsDto>) -> RateLimits {
+    let rl = rl.unwrap_or_default();
+
+    // Five-hour window defaults to (0.0, 0) when missing or null —
+    // matches `parses_minimal_json`'s expectation for an empty input.
+    let five_hour = rl
+        .five_hour
+        .map(rate_limit_info_from_dto)
+        .unwrap_or(RateLimitInfo {
+            used_percentage: 0.0,
+            resets_at: 0,
+        });
+
+    // Seven-day window: `Some(_)` when present and non-null, `None`
+    // otherwise. Test pin: `handles_null_seven_day_rate_limit`.
+    RateLimits {
+        five_hour,
+        seven_day: rl.seven_day.map(rate_limit_info_from_dto),
+    }
+}
+
+fn rate_limit_info_from_dto(dto: ClaudeRateLimitInfoDto) -> RateLimitInfo {
+    RateLimitInfo {
+        used_percentage: dto.used_percentage.unwrap_or(0.0),
+        resets_at: dto.resets_at.unwrap_or(0),
     }
 }
 
 fn clamp_percentage(value: f64) -> f64 {
     value.clamp(0.0, 100.0)
-}
-
-/// Parse cost metrics from a JSON value
-fn parse_cost_metrics(value: &Value) -> CostMetrics {
-    let defaults = CostMetrics {
-        total_cost_usd: None,
-        total_duration_ms: 0,
-        total_api_duration_ms: 0,
-        total_lines_added: 0,
-        total_lines_removed: 0,
-    };
-
-    if !has_cost(value) {
-        return defaults;
-    }
-
-    CostMetrics {
-        total_cost_usd: Some(total_cost_usd(value)),
-        total_duration_ms: total_duration_ms(value),
-        total_api_duration_ms: total_api_duration_ms(value),
-        total_lines_added: total_lines_added(value),
-        total_lines_removed: total_lines_removed(value),
-    }
-}
-
-/// Parse rate limits from a JSON value
-fn parse_rate_limits(value: &Value) -> RateLimits {
-    let default_info = RateLimitInfo {
-        used_percentage: 0.0,
-        resets_at: 0,
-    };
-
-    let defaults = RateLimits {
-        five_hour: default_info.clone(),
-        seven_day: None,
-    };
-
-    if !has_rate_limits(value) {
-        return defaults;
-    }
-
-    let five_hour = five_hour_rate_limit(value).unwrap_or(RateLimitInfo {
-        used_percentage: 0.0,
-        resets_at: 0,
-    });
-
-    let seven_day = seven_day_rate_limit(value);
-
-    RateLimits {
-        five_hour,
-        seven_day,
-    }
-}
-
-fn model_id(value: &Value) -> String {
-    value
-        .get("model")
-        .and_then(|model| model.get("id"))
-        .and_then(Value::as_str)
-        .unwrap_or("unknown")
-        .to_string()
-}
-
-fn model_display_name(value: &Value, model_id: &str) -> String {
-    value
-        .get("model")
-        .and_then(|model| model.get("display_name"))
-        .and_then(Value::as_str)
-        .unwrap_or(model_id)
-        .to_string()
-}
-
-fn agent_session_id(value: &Value) -> String {
-    value
-        .get("session_id")
-        .and_then(Value::as_str)
-        .unwrap_or("")
-        .to_string()
-}
-
-fn version(value: &Value) -> String {
-    value
-        .get("version")
-        .and_then(Value::as_str)
-        .unwrap_or("")
-        .to_string()
-}
-
-fn transcript_path(value: &Value) -> Option<String> {
-    value
-        .get("transcript_path")
-        .and_then(Value::as_str)
-        .map(str::to_string)
-}
-
-fn has_context_window(value: &Value) -> bool {
-    value.get("context_window").is_some_and(Value::is_object)
-}
-
-fn used_percentage(value: &Value) -> Option<f64> {
-    value
-        .get("context_window")
-        .and_then(|context_window| context_window.get("used_percentage"))
-        .and_then(Value::as_f64)
-}
-
-fn remaining_percentage(value: &Value) -> Option<f64> {
-    value
-        .get("context_window")
-        .and_then(|context_window| context_window.get("remaining_percentage"))
-        .and_then(Value::as_f64)
-}
-
-fn context_window_size(value: &Value) -> u64 {
-    value
-        .get("context_window")
-        .and_then(|context_window| context_window.get("context_window_size"))
-        .and_then(Value::as_u64)
-        .unwrap_or(0)
-}
-
-fn total_input_tokens(value: &Value) -> u64 {
-    value
-        .get("context_window")
-        .and_then(|context_window| context_window.get("total_input_tokens"))
-        .and_then(Value::as_u64)
-        .unwrap_or(0)
-}
-
-fn total_output_tokens(value: &Value) -> u64 {
-    value
-        .get("context_window")
-        .and_then(|context_window| context_window.get("total_output_tokens"))
-        .and_then(Value::as_u64)
-        .unwrap_or(0)
-}
-
-fn current_usage(value: &Value) -> Option<CurrentUsage> {
-    has_current_usage(value).then(|| CurrentUsage {
-        input_tokens: u64_or(
-            value,
-            &["context_window", "current_usage", "input_tokens"],
-            0,
-        ),
-        output_tokens: u64_or(
-            value,
-            &["context_window", "current_usage", "output_tokens"],
-            0,
-        ),
-        cache_creation_input_tokens: u64_or(
-            value,
-            &[
-                "context_window",
-                "current_usage",
-                "cache_creation_input_tokens",
-            ],
-            0,
-        ),
-        cache_read_input_tokens: u64_or(
-            value,
-            &["context_window", "current_usage", "cache_read_input_tokens"],
-            0,
-        ),
-    })
-}
-
-fn has_current_usage(value: &Value) -> bool {
-    value
-        .get("context_window")
-        .and_then(|context_window| context_window.get("current_usage"))
-        .is_some_and(Value::is_object)
-}
-
-fn has_cost(value: &Value) -> bool {
-    value.get("cost").is_some_and(Value::is_object)
-}
-
-fn total_cost_usd(value: &Value) -> f64 {
-    value
-        .get("cost")
-        .and_then(|cost| cost.get("total_cost_usd"))
-        .and_then(Value::as_f64)
-        .unwrap_or(0.0)
-}
-
-fn total_duration_ms(value: &Value) -> u64 {
-    value
-        .get("cost")
-        .and_then(|cost| cost.get("total_duration_ms"))
-        .and_then(Value::as_u64)
-        .unwrap_or(0)
-}
-
-fn total_api_duration_ms(value: &Value) -> u64 {
-    value
-        .get("cost")
-        .and_then(|cost| cost.get("total_api_duration_ms"))
-        .and_then(Value::as_u64)
-        .unwrap_or(0)
-}
-
-fn total_lines_added(value: &Value) -> u64 {
-    value
-        .get("cost")
-        .and_then(|cost| cost.get("total_lines_added"))
-        .and_then(Value::as_u64)
-        .unwrap_or(0)
-}
-
-fn total_lines_removed(value: &Value) -> u64 {
-    value
-        .get("cost")
-        .and_then(|cost| cost.get("total_lines_removed"))
-        .and_then(Value::as_u64)
-        .unwrap_or(0)
-}
-
-fn has_rate_limits(value: &Value) -> bool {
-    value.get("rate_limits").is_some_and(Value::is_object)
-}
-
-fn five_hour_rate_limit(value: &Value) -> Option<RateLimitInfo> {
-    has_rate_limit_window(value, "five_hour").then(|| RateLimitInfo {
-        used_percentage: f64_or(value, &["rate_limits", "five_hour", "used_percentage"], 0.0),
-        resets_at: u64_or(value, &["rate_limits", "five_hour", "resets_at"], 0),
-    })
-}
-
-fn seven_day_rate_limit(value: &Value) -> Option<RateLimitInfo> {
-    has_rate_limit_window(value, "seven_day").then(|| RateLimitInfo {
-        used_percentage: f64_or(value, &["rate_limits", "seven_day", "used_percentage"], 0.0),
-        resets_at: u64_or(value, &["rate_limits", "seven_day", "resets_at"], 0),
-    })
-}
-
-fn has_rate_limit_window(value: &Value, window: &str) -> bool {
-    value
-        .get("rate_limits")
-        .and_then(|rate_limits| rate_limits.get(window))
-        .is_some_and(Value::is_object)
-}
-
-fn value_at<'a>(value: &'a Value, path: &[&str]) -> Option<&'a Value> {
-    path.iter()
-        .try_fold(value, |current, key| current.get(*key))
-}
-
-fn f64_at(value: &Value, path: &[&str]) -> Option<f64> {
-    value_at(value, path).and_then(Value::as_f64)
-}
-
-fn u64_or(value: &Value, path: &[&str], default: u64) -> u64 {
-    value_at(value, path)
-        .and_then(Value::as_u64)
-        .unwrap_or(default)
-}
-
-fn f64_or(value: &Value, path: &[&str], default: f64) -> f64 {
-    f64_at(value, path).unwrap_or(default)
 }
 
 #[cfg(test)]
@@ -606,9 +523,23 @@ mod tests {
 
     #[test]
     fn rejects_non_object_json() {
+        // Step A-status: typed-DTO migration dropped the hand-written
+        // `is_object` precheck. A non-object top-level value now fails
+        // at serde's `expected struct` step rather than at our former
+        // `"not an object"` Err. Behavior preserved (Err), error text
+        // changes from `"statusline JSON is not an object"` to
+        // `"invalid JSON: invalid type: integer ..., expected struct
+        // ClaudeStatusDto"`. No production caller string-matches on
+        // either form; the assertion below pins the `invalid JSON`
+        // prefix we still own.
         let result = parse_statusline("pty-7", "42");
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("not an object"));
+        let err = result.unwrap_err();
+        assert!(
+            err.contains("invalid JSON"),
+            "expected the `invalid JSON:` prefix, got: {}",
+            err
+        );
     }
 
     #[test]
@@ -744,6 +675,72 @@ mod tests {
         let event = &result.unwrap().event;
         assert_eq!(event.model_id, "claude-opus-4-20250514");
         assert_eq!(event.model_display_name, "claude-opus-4-20250514");
+    }
+
+    /// Round-1 upsource fix: a wrong-typed nested block (e.g.
+    /// `"context_window": 42`) must degrade to the per-block defaults
+    /// instead of poisoning the whole `parse_statusline` call. This
+    /// pins the `lenient_object` round of the helpers: before that
+    /// helper landed, this input made the entire status update an
+    /// `Err` and the watcher dropped the event.
+    #[test]
+    fn wrong_typed_nested_blocks_degrade_to_defaults_per_block() {
+        let json = r#"{
+            "session_id": "abc",
+            "model": {"id": "claude-x", "display_name": "X"},
+            "context_window": 42,
+            "cost": {"total_cost_usd": 1.5}
+        }"#;
+        let event = &parse_statusline("pty-wrong-ctx", json)
+            .expect("wrong-typed nested block must NOT poison parse")
+            .event;
+        assert_eq!(event.agent_session_id, "abc");
+        assert_eq!(event.model_id, "claude-x");
+        // context_window block lost → all defaults.
+        assert_eq!(event.context_window.used_percentage, None);
+        assert_eq!(event.context_window.context_window_size, 0);
+        assert!((event.context_window.remaining_percentage - 100.0).abs() < f64::EPSILON);
+        // cost block survived independently.
+        assert_eq!(event.cost.total_cost_usd, Some(1.5));
+    }
+
+    /// Companion: wrong-typed `cost` block should degrade
+    /// `cost.total_cost_usd` to `None` (block-absent semantics —
+    /// distinct from `Some(0.0)` which only fires when the block IS
+    /// present but the inner field is missing).
+    #[test]
+    fn wrong_typed_cost_block_degrades_to_none() {
+        let json = r#"{"cost": ["not", "an", "object"]}"#;
+        let event = &parse_statusline("pty-wrong-cost", json)
+            .expect("wrong-typed cost block must NOT poison parse")
+            .event;
+        assert_eq!(event.cost.total_cost_usd, None);
+        assert_eq!(event.cost.total_duration_ms, 0);
+    }
+
+    /// Companion: wrong-typed `rate_limits` + nested `current_usage`.
+    /// Pins that `lenient_object` is applied at both the top-level
+    /// `ClaudeStatusDto.rate_limits` and the nested
+    /// `ClaudeContextWindowDto.current_usage` positions.
+    #[test]
+    fn wrong_typed_rate_limits_and_current_usage_degrade() {
+        let json = r#"{
+            "context_window": {
+                "used_percentage": 25.0,
+                "context_window_size": 100,
+                "total_input_tokens": 25,
+                "current_usage": "garbage"
+            },
+            "rate_limits": 99
+        }"#;
+        let event = &parse_statusline("pty-wrong-rl-cu", json)
+            .expect("wrong-typed nested blocks must NOT poison parse")
+            .event;
+        assert_eq!(event.context_window.used_percentage, Some(25.0));
+        assert!(event.context_window.current_usage.is_none());
+        assert_eq!(event.rate_limits.five_hour.used_percentage, 0.0);
+        assert_eq!(event.rate_limits.five_hour.resets_at, 0);
+        assert!(event.rate_limits.seven_day.is_none());
     }
 
     /// Step 0c (post-upsource cycle 2): replaces the deleted
