@@ -29,14 +29,17 @@ pub(crate) fn start_for(
     cwd: PathBuf,
     state: AgentWatcherState,
 ) -> Result<(), String> {
-    let source = adapter.status_source(&cwd, &session_id)?;
-    path_security::ensure_status_source_under_trust_root(&source.path, &source.trust_root)?;
+    let located = adapter.located_status_source(&cwd, &session_id)?;
+    path_security::ensure_status_source_under_trust_root(
+        &located.status_path,
+        &located.trust_root,
+    )?;
 
     log::debug!(
         "Watcher startup detail: session={}, cwd={}, path={}",
         session_id,
         cwd.display(),
-        source.path.display()
+        located.status_path.display()
     );
 
     // Stop any existing watcher for this session before counting active
@@ -47,7 +50,7 @@ pub(crate) fn start_for(
     log::info!(
         "Starting agent watcher: session={}, path={}, active_watchers={}",
         session_id,
-        source.path.display(),
+        located.status_path.display(),
         state.active_count(),
     );
 
@@ -57,7 +60,7 @@ pub(crate) fn start_for(
         pty_state,
         transcript_state,
         session_id.clone(),
-        source.path,
+        located,
     )?;
     state.insert(session_id, handle);
 

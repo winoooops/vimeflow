@@ -16,11 +16,30 @@ use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use super::diagnostics::short_sid;
 use super::diagnostics::{record_event_diag, EventTiming, PathHistory, TxOutcome};
 use super::transcript_state::{TranscriptStartStatus, TranscriptState};
-use crate::agent::adapter::types::ValidateTranscriptError;
+use crate::agent::adapter::types::{LocatedStatusSource, RawPath, ValidateTranscriptError};
 use crate::agent::adapter::AgentAdapter;
 use crate::agent::events::emit_agent_status;
 use crate::runtime::EventSink;
 use crate::terminal::PtyState;
+
+/// Step 0c: resolve the transcript path by asking the adapter's
+/// `TranscriptPathSource` for a dynamic hint (Claude, fresh per
+/// update) first, then falling back to the static hint (Codex, fixed
+/// at attach time and stored on the [`LocatedStatusSource`]).
+///
+/// Replaces the former `parsed.transcript_path` side channel on
+/// [`crate::agent::adapter::types::ParsedStatus`]. The shape is the
+/// same `Option<RawPath>` the previous field carried; the difference
+/// is that `TranscriptPathSource` is the single typed origin point
+/// the watcher now consults.
+fn resolve_transcript_path(
+    adapter: &Arc<dyn AgentAdapter>,
+    raw: &str,
+    located: &LocatedStatusSource,
+) -> Option<RawPath> {
+    let tps = adapter.transcript_path_source();
+    tps.dynamic_hint(raw).or_else(|| tps.static_hint(located))
+}
 
 /// Handle to a running watcher — dropping it stops the watcher and polling thread
 pub struct WatcherHandle {
@@ -228,14 +247,25 @@ fn maybe_start_transcript(
 /// CWD is intentionally NOT captured here. `maybe_start_transcript` queries
 /// PtyState fresh on every invocation so a `cd` mid-session updates the
 /// workspace seen by the test-runner parser.
+///
+/// Step 0c: the parameter shape changed from a bare
+/// `status_file_path: PathBuf` to the full
+/// [`LocatedStatusSource`] so the per-update transcript-path lookup
+/// (which now goes through
+/// [`TranscriptPathSource`](crate::agent::adapter::types::TranscriptPathSource))
+/// can consult `static_transcript_hint` for Codex. The file watched
+/// is still `located.status_path`; the rest of the struct is cloned
+/// into each callback so they can resolve transcript paths via the
+/// new trait without re-reading from the adapter.
 pub(super) fn start_watching(
     adapter: Arc<dyn AgentAdapter>,
     events: Arc<dyn EventSink>,
     pty_state: PtyState,
     transcript_state: TranscriptState,
     session_id: String,
-    status_file_path: PathBuf,
+    located: LocatedStatusSource,
 ) -> Result<WatcherHandle, String> {
+    let status_file_path = located.status_path.clone();
     let target_path = status_file_path.clone();
     let sid = session_id.clone();
     let last_processed = Arc::new(Mutex::new(Instant::now()));
@@ -261,6 +291,11 @@ pub(super) fn start_watching(
     let events_for_cb = events.clone();
     let pty_state_for_cb = pty_state.clone();
     let transcript_state_for_cb = transcript_state.clone();
+    // Step 0c: each watcher callback (notify / inline-init / poll)
+    // needs the full `LocatedStatusSource` so it can ask the adapter's
+    // `TranscriptPathSource::static_hint` for Codex's attach-time
+    // rollout path. Cheap — it's two `PathBuf`s + `Option<String>`.
+    let located_for_cb = located.clone();
 
     // Debounce interval — ignore events within 100ms of the last processed one
     let debounce_ms = 100;
@@ -323,18 +358,22 @@ pub(super) fn start_watching(
                     log::error!("Failed to emit agent-status event: {}", e);
                 }
 
-                if let Some(ref path) = parsed.transcript_path {
-                    let outcome = maybe_start_transcript(
-                        &adapter_for_cb,
-                        events_for_cb.clone(),
-                        &pty_state_for_cb,
-                        &transcript_state_for_cb,
-                        &sid,
-                        path,
-                    );
-                    (outcome, Some(path.clone()))
-                } else {
-                    (TxOutcome::NoPath, None)
+                // Step 0c: resolve the transcript path via
+                // `TranscriptPathSource` instead of the removed
+                // `parsed.transcript_path` side channel.
+                match resolve_transcript_path(&adapter_for_cb, &contents, &located_for_cb) {
+                    Some(path) => {
+                        let outcome = maybe_start_transcript(
+                            &adapter_for_cb,
+                            events_for_cb.clone(),
+                            &pty_state_for_cb,
+                            &transcript_state_for_cb,
+                            &sid,
+                            &path,
+                        );
+                        (outcome, Some(path))
+                    }
+                    None => (TxOutcome::NoPath, None),
                 }
             }
             Err(e) => {
@@ -384,6 +423,7 @@ pub(super) fn start_watching(
         let initial_events = events.clone();
         let initial_pty_state = pty_state.clone();
         let initial_transcript_state = transcript_state.clone();
+        let initial_located = located.clone();
         let started = Instant::now();
         let mut outcome = TxOutcome::NoPath;
         let mut inline_tx_path: Option<String> = None;
@@ -393,16 +433,20 @@ pub(super) fn start_watching(
                 match initial_adapter.parse_status(&initial_sid, &contents) {
                     Ok(parsed) => {
                         let _ = emit_agent_status(initial_events.as_ref(), &parsed.event);
-                        if let Some(ref path) = parsed.transcript_path {
+                        // Step 0c: resolve via `TranscriptPathSource`
+                        // (was `parsed.transcript_path`).
+                        if let Some(path) =
+                            resolve_transcript_path(&initial_adapter, &contents, &initial_located)
+                        {
                             outcome = maybe_start_transcript(
                                 &initial_adapter,
                                 initial_events.clone(),
                                 &initial_pty_state,
                                 &initial_transcript_state,
                                 &initial_sid,
-                                path,
+                                &path,
                             );
-                            inline_tx_path = Some(path.clone());
+                            inline_tx_path = Some(path);
                         }
                     }
                     Err(e) => {
@@ -441,6 +485,10 @@ pub(super) fn start_watching(
         let poll_timing_for_thread = poll_timing.clone();
         let path_history_for_poll = path_history.clone();
         let adapter_for_poll = adapter.clone();
+        // Step 0c: poll thread also routes transcript-path lookups
+        // through `TranscriptPathSource` and so needs its own clone of
+        // the `LocatedStatusSource`.
+        let poll_located = located.clone();
         Some(std::thread::spawn(move || {
             // `poll_last` is the per-thread dedup buffer. Originally
             // wrapped in `Arc<Mutex<String>>` by analogy with the other
@@ -485,18 +533,21 @@ pub(super) fn start_watching(
                 let (outcome, tx_path) = match adapter_for_poll.parse_status(&poll_sid, &contents) {
                     Ok(parsed) => {
                         let _ = emit_agent_status(poll_events.as_ref(), &parsed.event);
-                        if let Some(ref path) = parsed.transcript_path {
-                            let outcome = maybe_start_transcript(
-                                &adapter_for_poll,
-                                poll_events.clone(),
-                                &poll_pty_state,
-                                &poll_transcript_state,
-                                &poll_sid,
-                                path,
-                            );
-                            (outcome, Some(path.clone()))
-                        } else {
-                            (TxOutcome::NoPath, None)
+                        // Step 0c: same `TranscriptPathSource` flow as
+                        // the notify and inline callbacks.
+                        match resolve_transcript_path(&adapter_for_poll, &contents, &poll_located) {
+                            Some(path) => {
+                                let outcome = maybe_start_transcript(
+                                    &adapter_for_poll,
+                                    poll_events.clone(),
+                                    &poll_pty_state,
+                                    &poll_transcript_state,
+                                    &poll_sid,
+                                    &path,
+                                );
+                                (outcome, Some(path))
+                            }
+                            None => (TxOutcome::NoPath, None),
                         }
                     }
                     Err(e) => {

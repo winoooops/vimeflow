@@ -3,7 +3,7 @@ id: documentation-accuracy
 category: code-quality
 created: 2026-04-09
 last_updated: 2026-05-23
-ref_count: 21
+ref_count: 23
 ---
 
 # Documentation Accuracy
@@ -692,4 +692,22 @@ Stale documentation misleads future contributors and review agents.
 - **File:** `crates/backend/src/agent/config.rs`
 - **Finding:** `spec_for(agent_type: AgentType)` was documented as "Panics in debug builds if the registry has drifted..." but the implementation used `unwrap_or_else(|| panic!(...))` with no `#[cfg(debug_assertions)]` guard — it panics in every build. A future contributor reading the doc might believe release builds silently fall through, or might add a release-only fallback that would be worse than the crash. The unconditional panic is the right behavior here (a programming-error invariant should fail loudly); only the doc was wrong.
 - **Fix:** Dropped "in debug builds" from the doc-comment. New wording: "Panics if the registry has drifted away from `AgentType` — the registry must cover every enum variant. The panic fires in both debug and release builds; treat it as a programming-error guard, not a recoverable runtime error." Code-review heuristic: words like "in debug builds", "in tests", "may panic" in Rust doc-comments are contracts — they imply specific `cfg()` gates or fallback paths. Use them only when those gates exist; otherwise the implementation drifts from the documentation contract.
+- **Commit:** same commit as this entry
+
+### 74. parse_status comment claimed test exercised a read path that the test bypassed
+
+- **Source:** github-claude | PR #256 | 2026-05-23
+- **Severity:** LOW
+- **File:** `crates/backend/src/agent/adapter/codex/mod.rs`
+- **Finding:** `CodexAdapter::parse_status` (Step 0c v1) contained a `let transcript_path = self.resolved_rollout_path.lock()...; let _ = transcript_path;` block — a deliberately-unused mutex read + heap `String` allocation per status update. The justifying comment claimed the deprecated mutex was kept "read" so the pinned regression test (`parse_status_includes_resolved_rollout_path_when_available`) could anchor the back-compat contract. But the test seeded the mutex directly in a separate block BEFORE calling `parse_status` and then read the mutex DIRECTLY afterwards — it never relied on `parse_status` touching the mutex at all. The comment misled future readers into thinking the read-path was load-bearing; in reality it was dead code on the hot path (every Codex statusline update paid a `Mutex::lock()` + `to_string_lossy().to_string()`).
+- **Fix:** Removed lines 136-141 (the dead `let _ = transcript_path;` block). Rewrote both (a) the `parse_status` comment to describe what's actually pinned and where (write side: `located_status_source_returns_resolved_rollout_on_happy_path`; "slot not cleared on parse" side: `parse_status_includes_resolved_rollout_path_when_available`) and (b) the regression test's own comment to admit it pre-seeds directly. Code-review heuristic: a `let _ = expr;` pattern justified ONLY by "the test reads this" is a smell — verify the test actually reaches the code path through the production entry point; if it pre-seeds and reads directly, the in-function read is dead and the comment is lying.
+- **Commit:** same commit as this entry
+
+### 75. ParsedStatusline.transcript_path field left alive after the consumer dropped it
+
+- **Source:** github-claude | PR #256 | 2026-05-23
+- **Severity:** MEDIUM
+- **File:** `crates/backend/src/agent/adapter/claude_code/statusline.rs`
+- **Finding:** Step 0c removed `transcript_path` from the public `ParsedStatus` struct (`adapter/types.rs`) and rewired the watcher to call `extract_transcript_path` via `TranscriptPathSource::dynamic_hint`. The intent was to kill the side channel entirely — but the analogous field on the **internal** `ParsedStatusline` struct (returned by `parse_statusline`) was left intact. The only production caller (`ClaudeCodeAdapter::parse_status`) silently dropped the field. Two harms: (1) every Claude statusline update wasted a `transcript_path(&value)` JSON lookup + heap `String` allocation for a value nobody read; (2) two tests in `statusline.rs` (`parses_full_statusline_json` line 501-505, `parses_minimal_json` line 527) still asserted on the field, falsely appearing to pin transcript-path extraction behavior when in fact they exercised dead code — a real regression in `extract_transcript_path` (the live path) would not have been caught.
+- **Fix:** Removed `transcript_path: Option<String>` from `ParsedStatusline`, deleted the `let transcript_path = transcript_path(&value);` line, dropped the field from the `Ok(ParsedStatusline { ... })` literal, and deleted both test assertions. Added a new test `extract_transcript_path_returns_field_when_present_else_none` (present / absent / malformed JSON) to keep the live helper covered at the `statusline.rs` level. The adapter-level live path stays covered by `dynamic_hint_extracts_transcript_path_when_present` in `claude_code/mod.rs`. Code-review heuristic: when a public struct loses a field, sweep ALL its construction sites for parallel internal structs whose corresponding field is now dead. Rust's `dead_code` lint does not catch this case because the field is technically read by `Debug` / `Clone` derives even when no code path consumes its value.
 - **Commit:** same commit as this entry
