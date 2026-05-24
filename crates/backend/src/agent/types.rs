@@ -154,6 +154,37 @@ pub struct AgentStatusEvent {
     pub rate_limits: RateLimits,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+#[serde(rename_all = "camelCase")]
+#[allow(dead_code)] // Used by frontend
+pub struct AgentSessionTitleEvent {
+    /// PTY session ID. Same shape as AgentStatusEvent.session_id;
+    /// the frontend matches on this.
+    pub session_id: String,
+    /// Agent's own session UUID (Claude transcript `sessionId` /
+    /// Codex `session_index.jsonl` `id`). Informational; frontend
+    /// does not join on this.
+    pub agent_session_id: String,
+    /// Sanitized title string. Empty string is the explicit "clear"
+    /// signal; the frontend coerces empty to `agentTitle: undefined`.
+    pub title: String,
+    /// Where the title came from.
+    pub source: TitleSource,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+#[serde(rename_all = "kebab-case")]
+pub enum TitleSource {
+    /// Claude `ai-title` event.
+    AiGenerated,
+    /// Claude `custom-title` event or any Codex `thread_name` update.
+    UserRenamed,
+}
+
 /// Event emitted when the agent's tracked working directory changes.
 ///
 /// Sourced from each adapter's structured cwd channel in its transcript
