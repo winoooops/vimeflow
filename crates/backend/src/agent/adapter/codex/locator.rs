@@ -24,6 +24,17 @@ pub enum LocatorError {
     Fatal(String),
 }
 
+/// Shared prefix tying the `SqliteFirstLocator` schema-drift producer
+/// sites to the `CompositeLocator::resolve_rollout` fallback-dispatch
+/// guard. Two producers (`"threads table not found"` and
+/// `"logs table not found"`) prepend this string; the consumer checks
+/// `reason.starts_with(SCHEMA_DRIFT_ERROR_PREFIX)`. Centralizing here
+/// gives the build a compile-time contract — renaming the constant
+/// updates all three sites in one diff (PR #261 cycle 15 review F40 —
+/// the prior bare-string-literal form left the consumer guard 350
+/// lines from the producers and trivially breakable by a rename).
+pub(super) const SCHEMA_DRIFT_ERROR_PREFIX: &str = "schema drift: ";
+
 impl std::fmt::Display for LocatorError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -358,9 +369,10 @@ impl CodexSessionLocator for SqliteFirstLocator {
         })?;
 
         let Some(state_path) = state_db else {
-            return Err(LocatorError::Unresolved(
-                "schema drift: threads table not found".to_string(),
-            ));
+            return Err(LocatorError::Unresolved(format!(
+                "{}threads table not found",
+                SCHEMA_DRIFT_ERROR_PREFIX
+            )));
         };
 
         if let Some(location) = self.resolve_from_resume_arg(&state_path, ctx)? {
@@ -371,9 +383,10 @@ impl CodexSessionLocator for SqliteFirstLocator {
         }
 
         let Some(logs_path) = logs_db else {
-            return Err(LocatorError::Unresolved(
-                "schema drift: logs table not found".to_string(),
-            ));
+            return Err(LocatorError::Unresolved(format!(
+                "{}logs table not found",
+                SCHEMA_DRIFT_ERROR_PREFIX
+            )));
         };
 
         let (pty_secs, pty_nanos) = pty_start_to_secs_nanos(ctx.pty_start)?;
@@ -695,18 +708,18 @@ impl CodexSessionLocator for CompositeLocator {
     fn resolve_rollout(&self, ctx: &BindContext<'_>) -> Result<RolloutLocation, LocatorError> {
         match self.primary.resolve_rollout(ctx) {
             Ok(location) => Ok(location),
-            // `starts_with("schema drift: ")` rather than `contains(...)`
-            // because the prefix is the structurally significant part:
-            // both producer sites in `SqliteFirstLocator` emit
-            // `"schema drift: <table> table not found"`. A future
-            // `Unresolved` message that mentions "schema drift" mid-
-            // sentence (e.g., a diagnostic about retry context) would
-            // misfire the fallback dispatch and could bind a stale
-            // rollout from a different session (PR #261 cycle 13
-            // review F35). The prefix-match makes the gate
-            // dispatch-on-class rather than substring-on-text.
+            // `starts_with(SCHEMA_DRIFT_ERROR_PREFIX)` rather than
+            // `contains(...)` because the prefix is the structurally
+            // significant part. Both producer sites in
+            // `SqliteFirstLocator` build their message via
+            // `format!("{}...", SCHEMA_DRIFT_ERROR_PREFIX)`, so a
+            // rename of the constant updates both producers AND this
+            // consumer in one diff — compile-time contract between
+            // the three sites (PR #261 cycle 13 F35 introduced the
+            // prefix match; cycle 15 F40 added the shared constant
+            // so the guard can't silently desync from the producers).
             Err(LocatorError::Unresolved(reason))
-                if reason.starts_with("schema drift: ") =>
+                if reason.starts_with(SCHEMA_DRIFT_ERROR_PREFIX) =>
             {
                 self.fallback.resolve_rollout(ctx)
             }
