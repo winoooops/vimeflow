@@ -9,7 +9,6 @@ const pane = (status: Pane['status']): Pane => ({
   agentType: 'generic',
   status,
   active: true,
-  activityPanelCollapsed: null,
 })
 
 describe('deriveSessionStatus', () => {

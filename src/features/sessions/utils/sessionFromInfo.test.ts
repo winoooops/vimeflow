@@ -1,15 +1,23 @@
-import { describe, expect, test } from 'vitest'
+import { afterEach, beforeEach, describe, expect, test } from 'vitest'
 import type { SessionInfo } from '../../../bindings'
 import { sessionFromInfo } from './sessionFromInfo'
+import { writeActivityPanelCollapsed } from './activityPanelCollapsedStore'
 
 const aliveInfo = (id: string, cwd: string): SessionInfo => ({
   id,
   cwd,
   status: { kind: 'Alive', pid: 1234, replay_data: '', replay_end_offset: 0n },
-  activityPanelCollapsed: null,
 })
 
 describe('sessionFromInfo (pre-pane shape)', () => {
+  beforeEach(() => {
+    window.localStorage.clear()
+  })
+
+  afterEach(() => {
+    window.localStorage.clear()
+  })
+
   test('produces a Session with id from info.id, status running for Alive', () => {
     const session = sessionFromInfo(aliveInfo('pty-1', '/home/will/repo'), 0)
     expect(session.id).toBe('pty-1')
@@ -24,7 +32,6 @@ describe('sessionFromInfo (pre-pane shape)', () => {
       id: 'pty-2',
       cwd: '/x',
       status: { kind: 'Exited', last_exit_code: null },
-      activityPanelCollapsed: null,
     }
     const session = sessionFromInfo(info, 0)
     expect(session.status).toBe('completed')
@@ -47,7 +54,6 @@ describe('sessionFromInfo (pre-pane shape)', () => {
       id: 'pty-2',
       cwd: '/x',
       status: { kind: 'Exited', last_exit_code: null },
-      activityPanelCollapsed: null,
     }
     const session = sessionFromInfo(info, 0)
     expect(session.panes).toHaveLength(1)
@@ -55,39 +61,14 @@ describe('sessionFromInfo (pre-pane shape)', () => {
     expect(session.panes[0].restoreData).toBeUndefined()
   })
 
-  test('reads activityPanelCollapsed from SessionInfo onto the first pane', () => {
-    const session = sessionFromInfo(
-      {
-        id: 'pty-1',
-        cwd: '/home/x',
-        status: {
-          kind: 'Alive',
-          pid: 1234,
-          replay_data: '',
-          replay_end_offset: 0n,
-        },
-        activityPanelCollapsed: true,
-      },
-      0
-    )
-    expect(session.panes[0].activityPanelCollapsed).toBe(true)
+  test('hydrates session.activityPanelCollapsed from localStorage', () => {
+    writeActivityPanelCollapsed('pty-1', true)
+    const session = sessionFromInfo(aliveInfo('pty-1', '/home/x'), 0)
+    expect(session.activityPanelCollapsed).toBe(true)
   })
 
-  test('defaults activityPanelCollapsed to null when SessionInfo carries null', () => {
-    const session = sessionFromInfo(
-      {
-        id: 'pty-2',
-        cwd: '/home/y',
-        status: {
-          kind: 'Alive',
-          pid: 5678,
-          replay_data: '',
-          replay_end_offset: 0n,
-        },
-        activityPanelCollapsed: null,
-      },
-      0
-    )
-    expect(session.panes[0].activityPanelCollapsed).toBeNull()
+  test('defaults session.activityPanelCollapsed to false when nothing persisted', () => {
+    const session = sessionFromInfo(aliveInfo('pty-2', '/home/y'), 0)
+    expect(session.activityPanelCollapsed).toBe(false)
   })
 })

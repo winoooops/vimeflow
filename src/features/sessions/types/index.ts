@@ -31,15 +31,6 @@ export interface Pane {
 
   /** Exactly one pane per session has `active === true`. */
   active: boolean
-
-  /** Per-pane collapse preference for the right activity panel.
-   *  `null` = not yet persisted (pre-feature default). `true` / `false` =
-   *  persisted state. `undefined` is NOT a valid runtime value — every
-   *  init path (`createSession`, `sessionFromInfo`) sets the field
-   *  explicitly to `null`, and the Rust IPC contract is non-optional.
-   *  See `setPaneActivityPanelCollapsed` for the existence-vs-nullish
-   *  reasoning that depends on this invariant. */
-  activityPanelCollapsed: boolean | null
 }
 
 export interface Session {
@@ -53,6 +44,11 @@ export interface Session {
   agentType: 'claude-code' | 'codex' | 'aider' | 'generic'
   /** Per-session canvas layout. Default 'single' in step 5a. */
   layout: LayoutId
+  /** Session-scoped collapse state for the right agent activity panel.
+   *  Shared by every pane so switching pane within a session never
+   *  jumps the bar. UI-only: hydrated from localStorage by session id
+   *  and persisted there on toggle. Default `false` (expanded). */
+  activityPanelCollapsed: boolean
   /** At least one pane per session. Step 5a creates single-pane sessions. */
   panes: Pane[]
   currentAction?: string // current action description (e.g., "Creating auth middleware...")
