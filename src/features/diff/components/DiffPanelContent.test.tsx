@@ -1,52 +1,110 @@
 import { describe, test, expect, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { act, render, screen } from '@testing-library/react'
+import type { ReactElement } from 'react'
 import { DiffPanelContent } from './DiffPanelContent'
 import * as useGitStatusModule from '../hooks/useGitStatus'
 import * as useFileDiffModule from '../hooks/useFileDiff'
 import type { UseFileDiffReturn } from '../hooks/useFileDiff'
 import type { GetGitDiffResponse } from '../../../bindings/GetGitDiffResponse'
 import type { ChangedFile, FileDiff } from '../types'
+import { DIFF_MIN_WIDTH_PX, SPLIT_MIN_WIDTH_PX } from './toolbar'
+import {
+  MockResizeObserver,
+  installMockResizeObserver,
+} from '../../../test/mockResizeObserver'
 
 // Mock the hooks
 vi.mock('../hooks/useGitStatus')
 vi.mock('../hooks/useFileDiff')
 
+// Stub @pierre/diffs/react: the real MultiFileDiff mounts a Pierre web
+// component and runs Shiki inside a Web Worker, neither of which jsdom
+// supports (CSSStyleSheet.replaceSync is undefined). The stub forwards the
+// props we care about asserting through data-* attributes so tests can
+// confirm option plumbing without booting the renderer.
+vi.mock('@pierre/diffs/react', () => ({
+  MultiFileDiff: ({
+    oldFile,
+    newFile,
+    options,
+  }: {
+    oldFile: { name: string; contents: string }
+    newFile: { name: string; contents: string }
+    options: { diffStyle?: string; theme?: string }
+  }): ReactElement => (
+    <div
+      data-testid="multi-file-diff"
+      data-old-name={oldFile.name}
+      data-old-contents={oldFile.contents}
+      data-new-name={newFile.name}
+      data-new-contents={newFile.contents}
+      data-diff-style={options.diffStyle}
+      data-theme={options.theme}
+    >
+      MultiFileDiff stub
+    </div>
+  ),
+}))
+
 /**
  * Build a `UseFileDiffReturn` from the legacy `{ diff, loading, error }`
  * shape. Synthesizes a matching `response` so the hook contract widened in
  * PR1 task 1.6 (parsed `fileDiff` + raw `oldText`/`newText`/`rawDiff`) is
- * satisfied without rewriting every test case. Task 1.10 will collapse this
- * helper into per-test responses with real `oldText`/`newText` fixtures.
+ * satisfied without rewriting every test case.
  */
 const fileDiffMock = ({
   diff,
   loading,
   error,
+  oldText = '',
+  newText = '',
+  rawDiff = '',
 }: {
   diff: FileDiff | null
   loading: boolean
   error: Error | null
+  oldText?: string
+  newText?: string
+  rawDiff?: string
 }): UseFileDiffReturn => ({
   response:
     diff === null
       ? null
       : {
           // Cast to bridge the local `FileDiff` (oldPath?: string) → bindings
-          // `FileDiff` (oldPath: string | null). Same runtime shape; Task 1.10
-          // collapses the two into one.
+          // `FileDiff` (oldPath: string | null). Same runtime shape.
           fileDiff: diff as GetGitDiffResponse['fileDiff'],
-          oldText: '',
-          newText: '',
-          rawDiff: '',
+          oldText,
+          newText,
+          rawDiff,
         },
   diff,
   loading,
   error,
 })
 
+// Trigger every active ResizeObserver instance with the given width.
+//
+// DiffPanelContent installs an observer on its right-pane wrapper (the one
+// the width-band logic reads), AND PriorityPlus installs its own observer
+// inside the chip toolbar. React effect ordering means the inner
+// PriorityPlus observer is created first, so `instances[0]` is NOT the
+// pane observer. Broadcasting the width to all instances is simpler and
+// equivalent — PriorityPlus accepts any width and DiffPanelContent reads
+// the one it cares about. Wrapped in `act` so React flushes the state
+// update before the next assertion runs.
+const setPaneWidth = (width: number): void => {
+  act(() => {
+    for (const instance of MockResizeObserver.instances) {
+      instance.trigger({ width, height: 800 })
+    }
+  })
+}
+
 describe('DiffPanelContent', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    installMockResizeObserver()
   })
 
   test('renders loading state while fetching', (): void => {
@@ -133,33 +191,24 @@ describe('DiffPanelContent', () => {
     expect(wrapper).toHaveClass('justify-center')
   })
 
-  test('renders ChangedFilesList and DiffViewer when changes exist', (): void => {
-    const mockFiles: ChangedFile[] = [
-      {
-        path: 'src/App.tsx',
-        status: 'modified',
-        insertions: 5,
-        deletions: 2,
-        staged: false,
-      },
-      {
-        path: 'src/lib.ts',
-        status: 'added',
-        insertions: 10,
-        deletions: 0,
-        staged: true,
-      },
-    ]
-
-    const mockDiff: FileDiff = {
-      filePath: 'src/App.tsx',
-      oldPath: 'src/App.tsx',
-      newPath: 'src/App.tsx',
-      hunks: [],
-    }
-
+  test('renders ChangedFilesList and Pierre MultiFileDiff when changes exist', (): void => {
     vi.spyOn(useGitStatusModule, 'useGitStatus').mockReturnValue({
-      files: mockFiles,
+      files: [
+        {
+          path: 'src/App.tsx',
+          status: 'modified',
+          insertions: 5,
+          deletions: 2,
+          staged: false,
+        },
+        {
+          path: 'src/lib.ts',
+          status: 'added',
+          insertions: 10,
+          deletions: 0,
+          staged: true,
+        },
+      ],
       filesCwd: '.',
       loading: false,
       error: null,
@@ -169,9 +218,17 @@ describe('DiffPanelContent', () => {
 
     vi.spyOn(useFileDiffModule, 'useFileDiff').mockReturnValue(
       fileDiffMock({
-        diff: mockDiff,
+        diff: {
+          filePath: 'src/App.tsx',
+          oldPath: 'src/App.tsx',
+          newPath: 'src/App.tsx',
+          hunks: [],
+        },
         loading: false,
         error: null,
+        oldText: 'old',
+        newText: 'new',
+        rawDiff: '',
       })
     )
 
@@ -185,6 +242,15 @@ describe('DiffPanelContent', () => {
     expect(layout).toHaveClass('w-full')
     expect(layout).toHaveClass('min-h-0')
     expect(layout).toHaveClass('min-w-0')
+
+    // Initial pane width (SPLIT_MIN_WIDTH_PX = 720) is above DIFF_MIN_WIDTH_PX
+    // so MultiFileDiff mounts immediately even before a ResizeObserver trigger.
+    expect(screen.getByTestId('multi-file-diff')).toBeInTheDocument()
+
+    // Chip toolbar (controlled component) is mounted alongside.
+    expect(
+      screen.getByRole('toolbar', { name: 'Diff toolbar' })
+    ).toBeInTheDocument()
   })
 
   test('passes cwd to useGitStatus and useFileDiff hooks', (): void => {
@@ -225,16 +291,6 @@ describe('DiffPanelContent', () => {
   })
 
   test('uses external git status without starting an internal watcher', (): void => {
-    const mockFiles: ChangedFile[] = [
-      {
-        path: 'src/App.tsx',
-        status: 'modified',
-        insertions: 5,
-        deletions: 2,
-        staged: false,
-      },
-    ]
-
     const useGitStatusSpy = vi
       .spyOn(useGitStatusModule, 'useGitStatus')
       .mockReturnValue({
@@ -263,7 +319,15 @@ describe('DiffPanelContent', () => {
       <DiffPanelContent
         cwd="/repo"
         gitStatus={{
-          files: mockFiles,
+          files: [
+            {
+              path: 'src/App.tsx',
+              status: 'modified',
+              insertions: 5,
+              deletions: 2,
+              staged: false,
+            },
+          ],
           filesCwd: '/repo',
           loading: false,
           error: null,
@@ -280,18 +344,118 @@ describe('DiffPanelContent', () => {
     expect(screen.getByTestId('diff-populated-state')).toBeInTheDocument()
   })
 
-  describe('Controlled mode', () => {
-    test('render-time cwd guard: ignores selection from different cwd', (): void => {
-      const mockFiles: ChangedFile[] = [
-        {
-          path: 'src/App.tsx',
-          status: 'modified',
-          staged: false,
-        },
-      ]
+  describe('Pierre renderer width bands', () => {
+    const mockFiles: ChangedFile[] = [
+      {
+        path: 'src/App.tsx',
+        status: 'modified',
+        staged: false,
+      },
+    ]
 
+    const mockDiff: FileDiff = {
+      filePath: 'src/App.tsx',
+      oldPath: 'src/App.tsx',
+      newPath: 'src/App.tsx',
+      hunks: [],
+    }
+
+    beforeEach(() => {
       vi.spyOn(useGitStatusModule, 'useGitStatus').mockReturnValue({
         files: mockFiles,
+        filesCwd: '/repo',
+        loading: false,
+        error: null,
+        refresh: vi.fn(),
+        idle: false,
+      })
+
+      vi.spyOn(useFileDiffModule, 'useFileDiff').mockReturnValue(
+        fileDiffMock({
+          diff: mockDiff,
+          loading: false,
+          error: null,
+          oldText: 'old',
+          newText: 'new',
+          rawDiff: '',
+        })
+      )
+    })
+
+    test('renders MultiFileDiff when paneWidth >= DIFF_MIN_WIDTH_PX', (): void => {
+      render(<DiffPanelContent cwd="/repo" />)
+
+      setPaneWidth(DIFF_MIN_WIDTH_PX + 10)
+
+      expect(screen.getByTestId('multi-file-diff')).toBeInTheDocument()
+      expect(
+        screen.queryByRole('status', {
+          name: /pane is too narrow/i,
+        })
+      ).toBeNull()
+    })
+
+    test('renders DiffNarrowPlaceholder when paneWidth < DIFF_MIN_WIDTH_PX', (): void => {
+      render(<DiffPanelContent cwd="/repo" />)
+
+      setPaneWidth(DIFF_MIN_WIDTH_PX - 1)
+
+      expect(screen.queryByTestId('multi-file-diff')).toBeNull()
+      expect(
+        screen.getByText('Pane is too narrow to render the diff.')
+      ).toBeInTheDocument()
+
+      expect(
+        screen.getByText(`Widen to ≥ ${DIFF_MIN_WIDTH_PX}px to view changes.`)
+      ).toBeInTheDocument()
+    })
+
+    test('coerces split → unified when paneWidth < SPLIT_MIN_WIDTH_PX (saved preference unchanged)', (): void => {
+      // diffStyle default is 'split'. Pane below the split threshold must
+      // render unified, but the saved preference is untouched (we cannot
+      // assert the underlying state here directly; the contract is asserted
+      // via the prop flowing into MultiFileDiff).
+      render(<DiffPanelContent cwd="/repo" />)
+
+      setPaneWidth(SPLIT_MIN_WIDTH_PX - 1)
+
+      const diff = screen.getByTestId('multi-file-diff')
+      expect(diff.getAttribute('data-diff-style')).toBe('unified')
+    })
+
+    test('renders split when paneWidth >= SPLIT_MIN_WIDTH_PX (default diffStyle)', (): void => {
+      render(<DiffPanelContent cwd="/repo" />)
+
+      setPaneWidth(SPLIT_MIN_WIDTH_PX + 1)
+
+      const diff = screen.getByTestId('multi-file-diff')
+      expect(diff.getAttribute('data-diff-style')).toBe('split')
+    })
+
+    test('passes default theme + oldFile/newFile names to MultiFileDiff', (): void => {
+      render(<DiffPanelContent cwd="/repo" />)
+
+      setPaneWidth(SPLIT_MIN_WIDTH_PX + 100)
+
+      const diff = screen.getByTestId('multi-file-diff')
+      expect(diff.getAttribute('data-theme')).toBe('pierre-dark')
+      expect(diff.getAttribute('data-old-name')).toBe('src/App.tsx')
+      expect(diff.getAttribute('data-new-name')).toBe('src/App.tsx')
+      expect(diff.getAttribute('data-old-contents')).toBe('old')
+      expect(diff.getAttribute('data-new-contents')).toBe('new')
+    })
+  })
+
+  describe('Controlled mode', () => {
+    test('render-time cwd guard: ignores selection from different cwd', (): void => {
+      vi.spyOn(useGitStatusModule, 'useGitStatus').mockReturnValue({
+        files: [
+          {
+            path: 'src/App.tsx',
+            status: 'modified',
+            staged: false,
+          },
+        ],
         filesCwd: '/repo/b',
         loading: false,
         error: null,
@@ -328,16 +492,14 @@ describe('DiffPanelContent', () => {
     })
 
     test('auto-select gated on filesCwd: only fires when filesCwd matches cwd', (): void => {
-      const mockFiles: ChangedFile[] = [
-        {
-          path: 'src/App.tsx',
-          status: 'modified',
-          staged: false,
-        },
-      ]
-
       vi.spyOn(useGitStatusModule, 'useGitStatus').mockReturnValue({
-        files: mockFiles,
+        files: [
+          {
+            path: 'src/App.tsx',
+            status: 'modified',
+            staged: false,
+          },
+        ],
         filesCwd: '/repo/a', // Fresh data
         loading: false,
         error: null,
@@ -372,16 +534,14 @@ describe('DiffPanelContent', () => {
     })
 
     test('stale rows not rendered when filesCwd !== cwd', (): void => {
-      const mockFiles: ChangedFile[] = [
-        {
-          path: 'src/OldFile.tsx',
-          status: 'modified',
-          staged: false,
-        },
-      ]
-
       vi.spyOn(useGitStatusModule, 'useGitStatus').mockReturnValue({
-        files: mockFiles,
+        files: [
+          {
+            path: 'src/OldFile.tsx',
+            status: 'modified',
+            staged: false,
+          },
+        ],
         filesCwd: '/repo/a', // Stale data from old cwd
         loading: false,
         error: null,
@@ -410,21 +570,19 @@ describe('DiffPanelContent', () => {
     })
 
     test('commitSelection tags with current cwd on click', (): void => {
-      const mockFiles: ChangedFile[] = [
-        {
-          path: 'src/App.tsx',
-          status: 'modified',
-          staged: false,
-        },
-        {
-          path: 'src/Other.tsx',
-          status: 'added',
-          staged: true,
-        },
-      ]
-
       vi.spyOn(useGitStatusModule, 'useGitStatus').mockReturnValue({
-        files: mockFiles,
+        files: [
+          {
+            path: 'src/App.tsx',
+            status: 'modified',
+            staged: false,
+          },
+          {
+            path: 'src/Other.tsx',
+            status: 'added',
+            staged: true,
+          },
+        ],
         filesCwd: '/repo/b',
         loading: false,
         error: null,
@@ -432,16 +590,14 @@ describe('DiffPanelContent', () => {
         idle: false,
       })
 
-      const mockDiff: FileDiff = {
-        filePath: 'src/App.tsx',
-        oldPath: 'src/App.tsx',
-        newPath: 'src/App.tsx',
-        hunks: [],
-      }
-
       vi.spyOn(useFileDiffModule, 'useFileDiff').mockReturnValue(
         fileDiffMock({
-          diff: mockDiff,
+          diff: {
+            filePath: 'src/App.tsx',
+            oldPath: 'src/App.tsx',
+            newPath: 'src/App.tsx',
+            hunks: [],
+          },
           loading: false,
           error: null,
         })
@@ -469,22 +625,19 @@ describe('DiffPanelContent', () => {
       })
     })
 
-    test('untracked file: renders DiffViewer with synthesized all-added content', (): void => {
-      // Backend now runs `git diff --no-index /dev/null <file>` for untracked
-      // paths, returning a real FileDiff with all-added lines. The frontend
-      // used to short-circuit to a "New file — not yet tracked" placeholder;
-      // that branch is gone. Untracked files render in DiffViewer just like
-      // modified files, so the user can actually see the content.
-      const mockFiles: ChangedFile[] = [
-        {
-          path: 'new.ts',
-          status: 'untracked',
-          staged: false,
-        },
-      ]
-
+    test('untracked file: renders Pierre MultiFileDiff with synthesized all-added content', (): void => {
+      // Backend runs `git diff --no-index /dev/null <file>` for untracked
+      // paths, returning a real FileDiff with all-added lines + newText
+      // = file contents, oldText = ''. Pierre's MultiFileDiff renders that
+      // exactly like a modified file — no placeholder branch needed.
       vi.spyOn(useGitStatusModule, 'useGitStatus').mockReturnValue({
-        files: mockFiles,
+        files: [
+          {
+            path: 'new.ts',
+            status: 'untracked',
+            staged: false,
+          },
+        ],
         filesCwd: '/repo',
         loading: false,
         error: null,
@@ -492,39 +645,39 @@ describe('DiffPanelContent', () => {
         idle: false,
       })
 
-      const untrackedDiff = {
-        filePath: 'new.ts',
-        hunks: [
-          {
-            id: 'hunk-0',
-            header: '@@ -0,0 +1,2 @@',
-            oldStart: 0,
-            oldLines: 0,
-            newStart: 1,
-            newLines: 2,
-            lines: [
-              {
-                type: 'added' as const,
-                newLineNumber: 1,
-                content: 'alpha',
-              },
-              {
-                type: 'added' as const,
-                newLineNumber: 2,
-                content: 'beta',
-              },
-            ],
-          },
-        ],
-      }
-
       const useFileDiffSpy = vi
         .spyOn(useFileDiffModule, 'useFileDiff')
         .mockReturnValue(
           fileDiffMock({
-            diff: untrackedDiff,
+            diff: {
+              filePath: 'new.ts',
+              hunks: [
+                {
+                  id: 'hunk-0',
+                  header: '@@ -0,0 +1,2 @@',
+                  oldStart: 0,
+                  oldLines: 0,
+                  newStart: 1,
+                  newLines: 2,
+                  lines: [
+                    {
+                      type: 'added',
+                      newLineNumber: 1,
+                      content: 'alpha',
+                    },
+                    {
+                      type: 'added',
+                      newLineNumber: 2,
+                      content: 'beta',
+                    },
+                  ],
+                },
+              ],
+            },
             loading: false,
             error: null,
+            oldText: '',
+            newText: 'alpha\nbeta',
           })
         )
 
@@ -536,11 +689,15 @@ describe('DiffPanelContent', () => {
         />
       )
 
-      // Placeholder is gone
+      // No legacy placeholder; the stub-rendered Pierre diff appears.
       expect(screen.queryByText('New file — not yet tracked')).toBeNull()
-      // DiffViewer (unified) is rendered instead
-      expect(screen.getByTestId('unified-pane')).toBeInTheDocument()
-      // useFileDiff was called with the path, staged flag, cwd, and status hint
+      const diff = screen.getByTestId('multi-file-diff')
+      expect(diff.getAttribute('data-old-name')).toBe('new.ts')
+      expect(diff.getAttribute('data-new-name')).toBe('new.ts')
+      expect(diff.getAttribute('data-old-contents')).toBe('')
+      expect(diff.getAttribute('data-new-contents')).toBe('alpha\nbeta')
+
+      // useFileDiff was called with the path, staged flag, cwd, and untracked hint
       expect(useFileDiffSpy).toHaveBeenCalledWith(
         'new.ts',
         false,
@@ -552,16 +709,14 @@ describe('DiffPanelContent', () => {
 
   describe('Uncontrolled mode fallback', () => {
     test('auto-select works without controlled props', (): void => {
-      const mockFiles: ChangedFile[] = [
-        {
-          path: 'src/App.tsx',
-          status: 'modified',
-          staged: false,
-        },
-      ]
-
       vi.spyOn(useGitStatusModule, 'useGitStatus').mockReturnValue({
-        files: mockFiles,
+        files: [
+          {
+            path: 'src/App.tsx',
+            status: 'modified',
+            staged: false,
+          },
+        ],
         filesCwd: '/repo',
         loading: false,
         error: null,
@@ -591,16 +746,14 @@ describe('DiffPanelContent', () => {
     })
 
     test('cwd guard works in uncontrolled mode', (): void => {
-      const mockFiles: ChangedFile[] = [
-        {
-          path: 'src/App.tsx',
-          status: 'modified',
-          staged: false,
-        },
-      ]
-
       vi.spyOn(useGitStatusModule, 'useGitStatus').mockReturnValue({
-        files: mockFiles,
+        files: [
+          {
+            path: 'src/App.tsx',
+            status: 'modified',
+            staged: false,
+          },
+        ],
         filesCwd: '/repo/b',
         loading: false,
         error: null,

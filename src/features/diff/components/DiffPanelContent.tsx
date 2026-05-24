@@ -3,13 +3,32 @@ import {
   useState,
   useEffect,
   useCallback,
+  useLayoutEffect,
   useMemo,
+  useRef,
 } from 'react'
+import { MultiFileDiff } from '@pierre/diffs/react'
+import type { BaseDiffOptions, DiffsThemeNames } from '@pierre/diffs'
 import { useGitStatus, type UseGitStatusReturn } from '../hooks/useGitStatus'
 import { useFileDiff } from '../hooks/useFileDiff'
 import { ChangedFilesList } from './ChangedFilesList'
-import { DiffViewer } from './DiffViewer'
+import { DiffNarrowPlaceholder } from './DiffNarrowPlaceholder'
+import {
+  DiffChipToolbar,
+  DIFF_MIN_WIDTH_PX,
+  SPLIT_MIN_WIDTH_PX,
+} from './toolbar'
+import { toPierreInputs } from '../services/pierreAdapter'
 import type { ChangedFile, SelectedDiffFile } from '../types'
+
+// Pierre option subtypes — derived from `BaseDiffOptions` (rather than typed as
+// the raw enum literals) so a Pierre version bump that widens or renames any
+// of these surfaces as a type error rather than a silent string-typed
+// regression.
+type DiffStyle = NonNullable<BaseDiffOptions['diffStyle']>
+type DiffIndicators = NonNullable<BaseDiffOptions['diffIndicators']>
+type Overflow = NonNullable<BaseDiffOptions['overflow']>
+type LineDiffType = NonNullable<BaseDiffOptions['lineDiffType']>
 
 /**
  * Controlled/uncontrolled selection pair as a discriminated union. Forces
@@ -37,11 +56,37 @@ interface DiffPanelContentBaseProps {
 export type DiffPanelContentProps = DiffPanelContentBaseProps &
   DiffPanelSelectionControl
 
+// Small inline status cards. They previously lived as an inline JSX ladder in
+// the right-pane block; extracting them keeps the populated-state JSX readable
+// while still avoiding their own files (each is tiny + private to this view).
+const ErrorCard = ({ message }: { message: string }): ReactElement => (
+  <div
+    className="flex h-full w-full items-center justify-center text-error"
+    role="alert"
+  >
+    <div className="text-center space-y-2">
+      <p className="text-sm font-semibold">Failed to load diff</p>
+      <p className="text-xs opacity-80">{message}</p>
+    </div>
+  </div>
+)
+
+const LoadingCard = (): ReactElement => (
+  <div
+    className="flex h-full w-full items-center justify-center text-on-surface-variant"
+    role="status"
+    aria-live="polite"
+  >
+    <p className="text-sm">Loading diff…</p>
+  </div>
+)
+
 /**
  * DiffPanelContent - Real diff viewer that replaces the placeholder
  *
- * Fetches git status and displays changed files + diff viewer.
- * Supports controlled mode for cross-component selection coordination.
+ * Fetches git status and displays changed files + Pierre's <MultiFileDiff>
+ * with the chip toolbar above it. Supports controlled mode for cross-
+ * component selection coordination.
  */
 export const DiffPanelContent = ({
   cwd = '.',
@@ -167,7 +212,7 @@ export const DiffPanelContent = ({
       : selectedFileEntry.status === 'untracked'
 
   const {
-    diff,
+    response,
     loading: diffLoading,
     error: diffError,
   } = useFileDiff(
@@ -176,6 +221,55 @@ export const DiffPanelContent = ({
     cwd,
     selectedFileUntracked
   )
+
+  // Pierre option state — every option here is a controlled-component value
+  // surfaced upward from DiffChipToolbar. The toolbar reads / writes these
+  // and the same values drive <MultiFileDiff options=...> on the next render,
+  // so the chip UI and the rendered diff can never disagree.
+  const [diffStyle, setDiffStyle] = useState<DiffStyle>('split')
+  const [theme, setTheme] = useState<DiffsThemeNames>('pierre-dark')
+
+  const [diffIndicators, setDiffIndicators] =
+    useState<DiffIndicators>('classic')
+
+  const [lineDiffType, setLineDiffType] = useState<LineDiffType>('word')
+  const [overflowOpt, setOverflowOpt] = useState<Overflow>('scroll')
+  const [disableLineNumbers, setDisableLineNumbers] = useState(false)
+  const [disableBackground, setDisableBackground] = useState(false)
+  const [disableFileHeader, setDisableFileHeader] = useState(false)
+  const [stickyHeader, setStickyHeader] = useState(true)
+
+  // Responsive width tracking. The right pane drives the two width bands:
+  //   width < SPLIT_MIN_WIDTH_PX → coerce diffStyle to 'unified' (saved
+  //                                preference preserved; coercion is read-only)
+  //   width < DIFF_MIN_WIDTH_PX  → render <DiffNarrowPlaceholder> instead
+  //                                of MultiFileDiff (toolbar stays mounted)
+  // useLayoutEffect (not useEffect) so the observer attaches before paint
+  // and the first measurement is reflected in the same commit — avoids a
+  // momentary split-rendered-at-narrow flash on initial mount.
+  const paneRef = useRef<HTMLDivElement>(null)
+  const [paneWidth, setPaneWidth] = useState(SPLIT_MIN_WIDTH_PX)
+
+  useLayoutEffect(() => {
+    const node = paneRef.current
+    if (!node) {
+      return
+    }
+
+    const observer = new ResizeObserver((entries) => {
+      // ResizeObserver fires with `entries.length >= 1` for an observed
+      // node — `entries[0]` is non-optional under our current tsconfig
+      // (no `noUncheckedIndexedAccess`).
+      setPaneWidth(entries[0].contentRect.width)
+    })
+    observer.observe(node)
+
+    return (): void => observer.disconnect()
+  }, [])
+
+  const splitForced = diffStyle === 'split' && paneWidth < SPLIT_MIN_WIDTH_PX
+  const effectiveDiffStyle: DiffStyle = splitForced ? 'unified' : diffStyle
+  const tooNarrow = paneWidth > 0 && paneWidth < DIFF_MIN_WIDTH_PX
 
   // Loading state
   if (effectiveStatusLoading) {
@@ -222,7 +316,9 @@ export const DiffPanelContent = ({
     )
   }
 
-  // Populated state (horizontal split: file list + diff viewer)
+  const pierreInputs = response ? toPierreInputs(response) : null
+
+  // Populated state (horizontal split: file list + toolbar + Pierre diff)
   return (
     <div
       data-testid="diff-populated-state"
@@ -246,37 +342,58 @@ export const DiffPanelContent = ({
         />
       </div>
 
-      {/* Right: Diff viewer (fills remaining space).
-          Untracked files used to short-circuit here to a placeholder
-          because `git diff -- <file>` returned empty. The backend now
-          falls back to `git diff --no-index /dev/null <file>` so untracked
-          files render as an all-added diff in the normal DiffViewer. */}
-      <div className="flex min-w-0 flex-1 overflow-hidden">
+      {/* Right: chip toolbar (top) + Pierre MultiFileDiff (bottom). The
+          ResizeObserver above watches THIS wrapper so both width bands
+          (SPLIT_MIN / DIFF_MIN) come from one source. */}
+      <div ref={paneRef} className="flex min-w-0 flex-1 flex-col overflow-auto">
+        <DiffChipToolbar
+          diffMode={selectedFileStaged ? 'staged' : 'unstaged'}
+          diffStyle={effectiveDiffStyle}
+          onDiffStyleChange={setDiffStyle}
+          theme={theme}
+          onThemeChange={setTheme}
+          lineDiffType={lineDiffType}
+          onLineDiffTypeChange={setLineDiffType}
+          diffIndicators={diffIndicators}
+          onDiffIndicatorsChange={setDiffIndicators}
+          overflow={overflowOpt}
+          onOverflowChange={setOverflowOpt}
+          disableLineNumbers={disableLineNumbers}
+          onDisableLineNumbersChange={setDisableLineNumbers}
+          disableBackground={disableBackground}
+          onDisableBackgroundChange={setDisableBackground}
+          disableFileHeader={disableFileHeader}
+          onDisableFileHeaderChange={setDisableFileHeader}
+          stickyHeader={stickyHeader}
+          onStickyHeaderChange={setStickyHeader}
+          totalHunks={response?.fileDiff.hunks.length ?? 0}
+          focusedHunkIndex={0}
+        />
         {diffError ? (
-          <div
-            className="flex h-full w-full items-center justify-center text-error"
-            role="alert"
-          >
-            <div className="text-center space-y-2">
-              <p className="text-sm font-semibold">Failed to load diff</p>
-              <p className="text-xs opacity-80">{diffError.message}</p>
-            </div>
-          </div>
+          <ErrorCard message={diffError.message} />
         ) : diffLoading ? (
-          <div
-            className="flex h-full w-full items-center justify-center text-on-surface-variant"
-            role="status"
-            aria-live="polite"
-          >
-            <p className="text-sm">Loading diff…</p>
-          </div>
-        ) : diff ? (
-          <DiffViewer
-            fileDiff={diff}
-            viewMode="unified"
-            focusedHunkIndex={-1}
-            focusedLineIndex={-1}
-          />
+          <LoadingCard />
+        ) : pierreInputs ? (
+          tooNarrow ? (
+            <DiffNarrowPlaceholder min={DIFF_MIN_WIDTH_PX} />
+          ) : (
+            <MultiFileDiff
+              oldFile={pierreInputs.oldFile}
+              newFile={pierreInputs.newFile}
+              options={{
+                diffStyle: effectiveDiffStyle,
+                theme,
+                diffIndicators,
+                lineDiffType,
+                overflow: overflowOpt,
+                disableLineNumbers,
+                disableBackground,
+                disableFileHeader,
+                stickyHeader,
+              }}
+              style={{ display: 'block', width: '100%' }}
+            />
+          )
         ) : null}
       </div>
     </div>
