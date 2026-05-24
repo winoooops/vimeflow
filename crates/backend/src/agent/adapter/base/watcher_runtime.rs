@@ -19,6 +19,7 @@ use super::transcript_state::{TranscriptStartStatus, TranscriptState};
 use crate::agent::adapter::types::ValidateTranscriptError;
 use crate::agent::adapter::AgentAdapter;
 use crate::agent::events::emit_agent_status;
+use crate::agent::types::AgentType;
 use crate::runtime::EventSink;
 use crate::terminal::PtyState;
 
@@ -73,6 +74,7 @@ impl Drop for WatcherHandle {
 #[derive(Default, Clone)]
 pub struct AgentWatcherState {
     watchers: Arc<Mutex<HashMap<String, WatcherHandle>>>,
+    agent_types: Arc<Mutex<HashMap<String, AgentType>>>,
 }
 
 impl AgentWatcherState {
@@ -80,6 +82,7 @@ impl AgentWatcherState {
     pub fn new() -> Self {
         Self {
             watchers: Arc::new(Mutex::new(HashMap::new())),
+            agent_types: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -92,7 +95,12 @@ impl AgentWatcherState {
     /// would block any concurrent `insert` / `remove` / `active_count`
     /// for the same duration. Same fix that was already in
     /// `TranscriptState::stop` (Claude review on PR #152, F7).
-    pub fn insert(&self, session_id: String, handle: WatcherHandle) {
+    pub fn insert(&self, session_id: String, handle: WatcherHandle, agent_type: AgentType) {
+        {
+            let mut agent_types = self.agent_types.lock().expect("failed to lock agent_types");
+            agent_types.insert(session_id.clone(), agent_type);
+        }
+
         let _displaced = {
             let mut watchers = self.watchers.lock().expect("failed to lock watchers");
             watchers.insert(session_id, handle)
@@ -108,6 +116,11 @@ impl AgentWatcherState {
     /// removed `WatcherHandle` drops outside the mutex (Claude review
     /// on PR #152, F7).
     pub fn remove(&self, session_id: &str) -> bool {
+        {
+            let mut agent_types = self.agent_types.lock().expect("failed to lock agent_types");
+            agent_types.remove(session_id);
+        }
+
         let handle = {
             let mut watchers = self.watchers.lock().expect("failed to lock watchers");
             watchers.remove(session_id)
@@ -122,6 +135,11 @@ impl AgentWatcherState {
     pub fn contains(&self, session_id: &str) -> bool {
         let watchers = self.watchers.lock().expect("failed to lock watchers");
         watchers.contains_key(session_id)
+    }
+
+    pub fn agent_type_for_pty(&self, pty_id: &str) -> Option<AgentType> {
+        let agent_types = self.agent_types.lock().expect("failed to lock agent_types");
+        agent_types.get(pty_id).cloned()
     }
 
     /// Number of active watchers across all sessions. Used for the
@@ -540,6 +558,17 @@ pub(super) fn start_watching(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::agent::types::AgentType;
+
+    fn make_test_handle() -> WatcherHandle {
+        WatcherHandle {
+            _watcher: None,
+            poll_stop: Arc::new((Mutex::new(false), Condvar::new())),
+            join_handle: Some(std::thread::spawn(|| {})),
+            transcript_state: TranscriptState::new(),
+            session_id: "pty-1".to_string(),
+        }
+    }
 
     #[test]
     fn creates_empty_watcher_state() {
@@ -551,5 +580,41 @@ mod tests {
     fn remove_returns_false_for_missing_session() {
         let state = AgentWatcherState::new();
         assert!(!state.remove("nonexistent"));
+    }
+
+    #[test]
+    fn agent_type_for_pty_returns_inserted_type() {
+        let state = AgentWatcherState::new();
+        state.insert(
+            "pty-1".to_string(),
+            make_test_handle(),
+            AgentType::ClaudeCode,
+        );
+
+        assert!(matches!(
+            state.agent_type_for_pty("pty-1"),
+            Some(AgentType::ClaudeCode)
+        ));
+    }
+
+    #[test]
+    fn agent_type_for_pty_returns_none_when_absent() {
+        let state = AgentWatcherState::new();
+
+        assert!(state.agent_type_for_pty("nonexistent").is_none());
+    }
+
+    #[test]
+    fn remove_clears_agent_type_lookup() {
+        let state = AgentWatcherState::new();
+        state.insert("pty-1".to_string(), make_test_handle(), AgentType::Codex);
+        assert!(matches!(
+            state.agent_type_for_pty("pty-1"),
+            Some(AgentType::Codex)
+        ));
+
+        state.remove("pty-1");
+
+        assert!(state.agent_type_for_pty("pty-1").is_none());
     }
 }

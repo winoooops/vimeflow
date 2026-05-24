@@ -51,6 +51,7 @@ pub(crate) fn start_for(
         state.active_count(),
     );
 
+    let agent_type = adapter.agent_type();
     let handle = watcher_runtime::start_watching(
         adapter,
         events,
@@ -59,7 +60,7 @@ pub(crate) fn start_for(
         session_id.clone(),
         source.path,
     )?;
-    state.insert(session_id, handle);
+    state.insert(session_id, handle, agent_type);
 
     Ok(())
 }
