@@ -33,8 +33,6 @@ use crate::runtime::EventSink;
 use crate::terminal::types::SessionId;
 use crate::terminal::PtyState;
 use base::{TranscriptHandle, TranscriptState};
-#[cfg(test)]
-use codex::CodexAdapter;
 use types::{LocatedStatusSource, ParsedStatus, TranscriptPathSource, ValidateTranscriptError};
 
 /// Provider hooks for one CLI coding agent.
@@ -380,22 +378,60 @@ mod noop_tests {
         assert!(<NoOpAdapter as AgentAdapter>::parse_status(&adapter, "sid", "{}").is_err());
     }
 
-    /// Step B': replaces the former
-    /// `for_attach_returns_real_codex_adapter` test that exercised
-    /// the removed `<dyn AgentAdapter>::for_attach` lifecycle method.
-    /// The equivalent path now goes through
-    /// `AgentBindings::for_attach(&AttachContext)`, with the codex
-    /// `parse_status` reachable via the bundled adapter façade.
-    /// Pinned more thoroughly by `for_attach_dispatches_by_agent_type`
-    /// in `bindings::tests`; this stays here as the codex-specific
-    /// roundtrip through the façade.
+    /// Step B': pins the end-to-end codex façade roundtrip THROUGH
+    /// `AgentBindings::for_attach` rather than constructing the
+    /// adapter directly. Cycle 7 review F20 caught that the previous
+    /// body bypassed the dispatch path entirely; this version calls
+    /// `for_attach` and reaches `parse_status` via the bundled
+    /// `adapter_for_transcript_state`.
+    ///
+    /// Coverage scope:
+    /// - **Dispatch arm**: `AgentType::Codex` → Codex bindings (not
+    ///   NoOp). A regression that hit the `_` / NoOp arm would fail
+    ///   the `bindings.agent_type` assertion.
+    /// - **Façade parser**: the bound `Arc<dyn AgentAdapter>` decodes
+    ///   real Codex rollout JSONL. A regression in `parse_status` /
+    ///   `parse_rollout_snapshot` would fail the `agent_session_id`
+    ///   assertion.
+    ///
+    /// **NOT pinned here**: the `provider_home → codex_home`
+    /// plumbing through `CodexAdapter::with_home`. Because
+    /// `parse_status` only exercises the rollout decoder (it never
+    /// touches the locator), a hypothetical regression to
+    /// `CodexAdapter::new` would still pass this test. That wiring
+    /// is structurally guaranteed by the type signature of
+    /// `with_home(pid, pty_start, codex_home)` plus the
+    /// `for_attach` cycle-1 fix (the home flows through both the
+    /// outer `Arc<CompositeLocator>` and `with_home` — see
+    /// `bindings.rs` Codex arm). The locator-end of that wiring is
+    /// not unit-testable cleanly because `CompositeLocator` reaches
+    /// for SQLite/FS state that doesn't exist in the test env.
+    /// Paired with `bindings::tests::for_attach_dispatches_by_agent_type`
+    /// for dispatch shape on all three variants.
     #[test]
     fn for_attach_returns_real_codex_adapter() {
-        let adapter = std::sync::Arc::new(CodexAdapter::new(12345, SystemTime::UNIX_EPOCH));
+        let ctx = AttachContext {
+            session_id: "pty-codex".to_string(),
+            initial_cwd: PathBuf::from("/tmp/ws"),
+            shell_pid: 1,
+            agent_pid: 12345,
+            pty_start: SystemTime::UNIX_EPOCH,
+            agent_type: AgentType::Codex,
+            provider_home: Some(PathBuf::from("/home/u/.codex")),
+            proc_root: None,
+        };
+        let bindings =
+            bindings::AgentBindings::for_attach(&ctx).expect("codex bindings construct");
+        assert!(matches!(bindings.agent_type, AgentType::Codex));
+
         let raw = r#"{"timestamp":"...","type":"session_meta","payload":{"id":"sess","cli_version":"0.128.0"}}
 "#;
-        let parsed = <CodexAdapter as AgentAdapter>::parse_status(&adapter, "pty-codex", raw)
-            .expect("real codex adapter should parse rollout JSONL");
+        let parsed = <dyn AgentAdapter>::parse_status(
+            bindings.adapter_for_transcript_state.as_ref(),
+            "pty-codex",
+            raw,
+        )
+        .expect("codex façade through bindings should parse rollout JSONL");
         assert_eq!(parsed.event.agent_session_id, "sess");
     }
 
