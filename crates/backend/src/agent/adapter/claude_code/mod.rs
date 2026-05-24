@@ -1,10 +1,15 @@
 //! Claude Code adapter implementation.
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use crate::agent::adapter::base::TranscriptHandle;
+use crate::agent::adapter::traits::{
+    StateDecoder, StatusSourceLocator, TranscriptPathValidator, TranscriptStreamer,
+};
 use crate::agent::adapter::types::{
-    LocatedStatusSource, ParsedStatus, RawPath, TranscriptPathSource, ValidateTranscriptError,
+    LocatedStatusSource, ParsedStatus, RawPath, StatusSnapshot, TranscriptPathSource,
+    ValidateTranscriptError,
 };
 use crate::agent::adapter::AgentAdapter;
 use crate::agent::types::AgentType;
@@ -29,24 +34,21 @@ impl TranscriptPathSource for ClaudeCodeAdapter {
         // win vs. calling `parse_statusline` here is skipping the
         // event construction, NOT skipping the JSON parse itself —
         // see `statusline::extract_transcript_path` docs for the
-        // detail and the deferred-optimization escape hatch. Keeps
-        // `TranscriptPathSource` honest as a standalone trait — when
-        // B' moves it off `AgentAdapter` entirely, this code path
-        // stays unchanged.
+        // detail and the deferred-optimization escape hatch.
         statusline::extract_transcript_path(raw)
     }
 }
 
-impl AgentAdapter for ClaudeCodeAdapter {
-    fn agent_type(&self) -> AgentType {
-        AgentType::ClaudeCode
-    }
+// ---------------- Step B' trait splits ----------------
+//
+// Each `impl` below is a leaf piece of the former `AgentAdapter`
+// trait, broken out per the v4-frozen plan. Bodies are unchanged vs.
+// the `impl AgentAdapter for ClaudeCodeAdapter` below — the
+// `AgentAdapter` methods now delegate to these for the duration of
+// step B' (until B'' / D' migrate the callers).
 
-    fn located_status_source(
-        &self,
-        cwd: &Path,
-        session_id: &str,
-    ) -> Result<LocatedStatusSource, String> {
+impl StatusSourceLocator for ClaudeCodeAdapter {
+    fn locate(&self, cwd: &Path, session_id: &str) -> Result<LocatedStatusSource, String> {
         Ok(LocatedStatusSource {
             status_path: cwd
                 .join(".vimeflow")
@@ -57,28 +59,78 @@ impl AgentAdapter for ClaudeCodeAdapter {
             static_transcript_hint: None,
         })
     }
+}
 
-    fn parse_status(&self, session_id: &str, raw: &str) -> Result<ParsedStatus, String> {
-        let parsed = statusline::parse_statusline(session_id, raw)?;
-        // Step 0c: `transcript_path` was removed from `ParsedStatus`;
-        // the watcher reaches it via `TranscriptPathSource::dynamic_hint`.
-        Ok(ParsedStatus {
-            event: parsed.event,
-        })
+impl StateDecoder for ClaudeCodeAdapter {
+    fn decode(&self, raw: &str) -> Result<StatusSnapshot, String> {
+        statusline::parse_statusline_snapshot(raw)
     }
+}
 
-    fn validate_transcript(&self, raw: &str) -> Result<PathBuf, ValidateTranscriptError> {
+impl TranscriptPathValidator for ClaudeCodeAdapter {
+    fn validate(&self, raw: &str) -> Result<PathBuf, ValidateTranscriptError> {
         transcript::validate_transcript_path(raw)
     }
+}
 
-    fn tail_transcript(
+impl TranscriptStreamer for ClaudeCodeAdapter {
+    fn tail(
         &self,
-        events: std::sync::Arc<dyn EventSink>,
+        events: Arc<dyn EventSink>,
         session_id: String,
         cwd: Option<PathBuf>,
         transcript_path: PathBuf,
     ) -> Result<TranscriptHandle, String> {
         transcript::start_tailing(events, session_id, transcript_path, cwd)
+    }
+}
+
+// Step B': `AgentAdapter` is the transitional façade —
+// `TranscriptState::start_or_replace` still consumes
+// `Arc<dyn AgentAdapter>` until B'' migrates it onto
+// `Arc<dyn TranscriptStreamer>`. Each method delegates to the
+// matching split-trait impl above so the bodies live in one place.
+impl AgentAdapter for ClaudeCodeAdapter {
+    fn agent_type(&self) -> AgentType {
+        AgentType::ClaudeCode
+    }
+
+    fn located_status_source(
+        &self,
+        cwd: &Path,
+        session_id: &str,
+    ) -> Result<LocatedStatusSource, String> {
+        <Self as StatusSourceLocator>::locate(self, cwd, session_id)
+    }
+
+    fn parse_status(&self, session_id: &str, raw: &str) -> Result<ParsedStatus, String> {
+        let snapshot = <Self as StateDecoder>::decode(self, raw)?;
+        Ok(ParsedStatus {
+            event: crate::agent::types::AgentStatusEvent {
+                session_id: session_id.to_string(),
+                agent_session_id: snapshot.agent_session_id,
+                model_id: snapshot.model_id,
+                model_display_name: snapshot.model_display_name,
+                version: snapshot.version,
+                context_window: snapshot.context_window,
+                cost: snapshot.cost,
+                rate_limits: snapshot.rate_limits,
+            },
+        })
+    }
+
+    fn validate_transcript(&self, raw: &str) -> Result<PathBuf, ValidateTranscriptError> {
+        <Self as TranscriptPathValidator>::validate(self, raw)
+    }
+
+    fn tail_transcript(
+        &self,
+        events: Arc<dyn EventSink>,
+        session_id: String,
+        cwd: Option<PathBuf>,
+        transcript_path: PathBuf,
+    ) -> Result<TranscriptHandle, String> {
+        <Self as TranscriptStreamer>::tail(self, events, session_id, cwd, transcript_path)
     }
 
     fn transcript_path_source(&self) -> &dyn TranscriptPathSource {

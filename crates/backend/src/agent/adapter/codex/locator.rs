@@ -589,13 +589,45 @@ impl CodexSessionLocator for FsScanFallback {
 pub struct CompositeLocator {
     primary: SqliteFirstLocator,
     fallback: FsScanFallback,
+    /// Codex home directory (`~/.codex` by default). Held here so the
+    /// `StatusSourceLocator` impl can use it as the `trust_root` for
+    /// the returned `LocatedStatusSource` without an extra clone from
+    /// the adapter.
+    codex_home: PathBuf,
+    /// PID of the detected `codex` process inside the PTY session.
+    /// Step B' moved this out of `CodexAdapter` and into the locator
+    /// per frozen constraint #2: the `StatusSourceLocator` impl
+    /// (below) needs to build the `BindContext` it forwards to the
+    /// SQLite-first / FS-scan strategies, and that context wants
+    /// pid + pty_start.
+    pid: u32,
+    /// `SystemTime` when the PTY session was spawned. Used by the
+    /// SQLite filter to exclude stale rollout rows from earlier
+    /// processes.
+    pty_start: SystemTime,
 }
 
+// ----- Step B' retry budget (moved here from `codex/mod.rs`) -----
+//
+// Per frozen constraint #2: "Codex retry lives inside
+// `CompositeLocator::resolve_rollout`'s `StatusSourceLocator` impl,
+// NOT around individual SQLite/FS strategies." The retry sits at
+// `<CompositeLocator as StatusSourceLocator>::locate` below — one
+// wrapper around the strategy chain, so a transient
+// `NotYetReady` from EITHER strategy gets retried, but each strategy
+// runs only once per retry iteration.
+
+const CODEX_BIND_RETRY_INTERVAL_MS: u64 = 100;
+const CODEX_BIND_RETRY_MAX_ATTEMPTS: u32 = 5;
+
 impl CompositeLocator {
-    pub fn new(codex_home: PathBuf) -> Self {
+    pub fn new(codex_home: PathBuf, pid: u32, pty_start: SystemTime) -> Self {
         Self {
             primary: SqliteFirstLocator::new(codex_home.clone()),
-            fallback: FsScanFallback::new(codex_home),
+            fallback: FsScanFallback::new(codex_home.clone()),
+            codex_home,
+            pid,
+            pty_start,
         }
     }
 }
@@ -610,6 +642,73 @@ impl CodexSessionLocator for CompositeLocator {
             Err(other) => Err(other),
         }
     }
+}
+
+// ----------- Step B' new trait surface -----------
+//
+// `StatusSourceLocator::locate` wraps `resolve_rollout` with the
+// codex bind retry budget (5 attempts × 100ms inter-attempt sleeps).
+// Per frozen constraint #2, the retry lives at THIS boundary — one
+// outer loop around the full primary→fallback chain, not around
+// individual strategies.
+
+impl crate::agent::adapter::traits::StatusSourceLocator for CompositeLocator {
+    fn locate(
+        &self,
+        cwd: &std::path::Path,
+        _session_id: &str,
+    ) -> Result<crate::agent::adapter::types::LocatedStatusSource, String> {
+        let ctx = BindContext {
+            cwd,
+            pid: self.pid,
+            pty_start: self.pty_start,
+        };
+        let location = retry_locator(|| self.resolve_rollout(&ctx))?;
+        let static_transcript_hint = Some(location.rollout_path.to_string_lossy().into_owned());
+        Ok(crate::agent::adapter::types::LocatedStatusSource {
+            status_path: location.rollout_path,
+            trust_root: self.codex_home.clone(),
+            static_transcript_hint,
+        })
+    }
+}
+
+/// Retry a codex locator resolution up to the bind budget.
+///
+/// Moved from `codex/mod.rs` to live with the locator that uses it.
+/// `pub(crate)` so the `StatusSourceLocator::locate` impl above and
+/// any future codex-internal caller can share the single retry
+/// implementation.
+pub(crate) fn retry_locator<F>(mut resolve: F) -> Result<RolloutLocation, String>
+where
+    F: FnMut() -> Result<RolloutLocation, LocatorError>,
+{
+    let started = std::time::Instant::now();
+    let mut last_reason = String::from("no attempts");
+
+    for attempt in 0..CODEX_BIND_RETRY_MAX_ATTEMPTS {
+        match resolve() {
+            Ok(location) => return Ok(location),
+            Err(LocatorError::NotYetReady) => {
+                last_reason = format!("not yet ready (attempt {})", attempt + 1);
+                if attempt + 1 < CODEX_BIND_RETRY_MAX_ATTEMPTS {
+                    std::thread::sleep(std::time::Duration::from_millis(
+                        CODEX_BIND_RETRY_INTERVAL_MS,
+                    ));
+                }
+            }
+            Err(LocatorError::Unresolved(reason)) | Err(LocatorError::Fatal(reason)) => {
+                return Err(format!("codex bind fatal: {}", reason));
+            }
+        }
+    }
+
+    log::warn!(
+        "codex bind retry exhausted after {} attempts (elapsed={:?})",
+        CODEX_BIND_RETRY_MAX_ATTEMPTS,
+        started.elapsed()
+    );
+    Err(format!("codex bind retry exhausted: {}", last_reason))
 }
 
 #[cfg(test)]
@@ -1041,9 +1140,100 @@ mod fs_fallback_tests {
     #[test]
     fn composite_dispatches_schema_drift_to_fs() {
         let dir = tempfile::tempdir().expect("tempdir");
-        let composite = CompositeLocator::new(dir.path().to_path_buf());
+        // Step B': `CompositeLocator::new` now also takes pid +
+        // pty_start so the locator can own them (they used to live on
+        // `CodexAdapter`). The dummy values below don't matter for
+        // this test — `resolve_rollout` is called with an explicit
+        // `BindContext` that supplies its own pid/pty_start.
+        let composite = CompositeLocator::new(dir.path().to_path_buf(), 0, SystemTime::UNIX_EPOCH);
         let result =
             composite.resolve_rollout(&ctx(std::path::Path::new("/tmp"), SystemTime::now()));
         assert!(matches!(result, Err(LocatorError::NotYetReady)));
+    }
+}
+
+#[cfg(test)]
+mod retry_locator_tests {
+    //! Step B': these tests moved here from `codex/mod.rs` alongside
+    //! `retry_locator` itself, so the helper and its regression suite
+    //! live together.
+
+    use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    #[test]
+    fn retries_on_not_yet_ready_then_succeeds() {
+        let calls = AtomicUsize::new(0);
+        let result = retry_locator(|| {
+            let n = calls.fetch_add(1, Ordering::SeqCst);
+            if n < 3 {
+                Err(LocatorError::NotYetReady)
+            } else {
+                Ok(RolloutLocation {
+                    rollout_path: PathBuf::from("/tmp/rollout.jsonl"),
+                    thread_id: "tid".to_string(),
+                    state_updated_at_ms: 0,
+                })
+            }
+        });
+
+        assert!(
+            result.is_ok(),
+            "expected Ok after 4th attempt: {:?}",
+            result
+        );
+        assert_eq!(calls.load(Ordering::SeqCst), 4);
+    }
+
+    #[test]
+    fn returns_err_when_retry_budget_exhausted() {
+        let calls = AtomicUsize::new(0);
+        let result = retry_locator(|| {
+            calls.fetch_add(1, Ordering::SeqCst);
+            Err(LocatorError::NotYetReady)
+        });
+
+        assert!(result.is_err());
+        assert!(
+            result.as_ref().unwrap_err().contains("retry exhausted"),
+            "expected 'retry exhausted' in: {:?}",
+            result
+        );
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            CODEX_BIND_RETRY_MAX_ATTEMPTS as usize,
+        );
+    }
+
+    #[test]
+    fn fatal_short_circuits_immediately() {
+        let calls = AtomicUsize::new(0);
+        let started = std::time::Instant::now();
+        let result = retry_locator(|| {
+            calls.fetch_add(1, Ordering::SeqCst);
+            Err(LocatorError::Fatal("permission denied".to_string()))
+        });
+
+        assert!(result.is_err());
+        assert!(result.as_ref().unwrap_err().contains("codex bind fatal"));
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        assert!(
+            started.elapsed() < std::time::Duration::from_millis(100),
+            "fatal should short-circuit: elapsed {:?}",
+            started.elapsed()
+        );
+    }
+
+    #[test]
+    fn unresolved_short_circuits_immediately() {
+        let calls = AtomicUsize::new(0);
+        let result = retry_locator(|| {
+            calls.fetch_add(1, Ordering::SeqCst);
+            Err(LocatorError::Unresolved("ambiguous candidates".to_string()))
+        });
+
+        assert!(result.is_err());
+        assert!(result.as_ref().unwrap_err().contains("codex bind fatal"));
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
     }
 }

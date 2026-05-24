@@ -28,12 +28,36 @@
 use serde::Deserialize;
 
 use super::super::serde_helpers::{lenient_f64, lenient_object, lenient_string, lenient_u64};
+#[cfg(test)]
 use crate::agent::adapter::types::ParsedStatus;
+use crate::agent::adapter::types::StatusSnapshot;
+#[cfg(test)]
+use crate::agent::types::AgentStatusEvent;
 use crate::agent::types::{
-    AgentStatusEvent, ContextWindowStatus, CostMetrics, CurrentUsage, RateLimitInfo, RateLimits,
+    ContextWindowStatus, CostMetrics, CurrentUsage, RateLimitInfo, RateLimits,
 };
 
-pub fn parse_rollout(session_id: &str, raw: &str) -> Result<ParsedStatus, String> {
+/// Test-only convenience wrapper that pairs `parse_rollout_snapshot`
+/// with `snapshot_to_event`. Production code (the `StateDecoder` impl
+/// on `CodexAdapter`) calls `parse_rollout_snapshot` directly and the
+/// session-id stamp happens in the runtime; the test suite still
+/// asserts on the full event shape including `session_id`, so this
+/// helper stays under `#[cfg(test)]` to support those assertions.
+#[cfg(test)]
+pub(crate) fn parse_rollout(session_id: &str, raw: &str) -> Result<ParsedStatus, String> {
+    let snapshot = parse_rollout_snapshot(raw)?;
+    Ok(ParsedStatus {
+        event: snapshot_to_event(session_id, snapshot),
+    })
+}
+
+/// Step B' decoder entry point — session-id-free. Used by the new
+/// [`crate::agent::adapter::traits::StateDecoder`] impl on
+/// `CodexAdapter`. The runtime composes
+/// `AgentStatusEvent { session_id, ...snapshot }` after the decoder
+/// returns; for now the session-id-stamping `parse_rollout` wrapper
+/// above is what `AgentAdapter::parse_status` still calls.
+pub(crate) fn parse_rollout_snapshot(raw: &str) -> Result<StatusSnapshot, String> {
     let mut state = CodexFoldState::default();
     let lines: Vec<&str> = raw.split('\n').collect();
     let trailing_complete = raw.ends_with('\n');
@@ -52,21 +76,25 @@ pub fn parse_rollout(session_id: &str, raw: &str) -> Result<ParsedStatus, String
         // `malformed_mid_line_skipped_with_warn`.
         match serde_json::from_str::<CodexRolloutLine>(line) {
             Ok(parsed) => fold_event(&mut state, parsed),
-            Err(_) => log::warn!(
-                "codex: skipping malformed rollout line for sid={}",
-                session_id
-            ),
+            Err(_) => log::warn!("codex: skipping malformed rollout line"),
         }
     }
 
-    // Step 0c: `transcript_path` was removed from `ParsedStatus`. The
-    // rollout path now reaches the watcher via
-    // `TranscriptPathSource::static_hint`, reading the value off the
-    // `LocatedStatusSource` returned by `located_status_source` at
-    // attach time.
-    Ok(ParsedStatus {
-        event: state.into_event(session_id),
-    })
+    Ok(state.into_snapshot())
+}
+
+#[cfg(test)]
+fn snapshot_to_event(session_id: &str, snapshot: StatusSnapshot) -> AgentStatusEvent {
+    AgentStatusEvent {
+        session_id: session_id.to_string(),
+        agent_session_id: snapshot.agent_session_id,
+        model_id: snapshot.model_id,
+        model_display_name: snapshot.model_display_name,
+        version: snapshot.version,
+        context_window: snapshot.context_window,
+        cost: snapshot.cost,
+        rate_limits: snapshot.rate_limits,
+    }
 }
 
 // -------------------------- DTO layer --------------------------
@@ -205,7 +233,12 @@ struct TokenCountInfo {
 }
 
 impl CodexFoldState {
-    fn into_event(self, session_id: &str) -> AgentStatusEvent {
+    /// Step B': renamed from `into_event(session_id)` to
+    /// `into_snapshot()` — the session-id stamp moved out of the
+    /// decoder per the v4-frozen plan's R2.2 invariant. Composition
+    /// happens in `snapshot_to_event` above (called by `parse_rollout`
+    /// for the still-existing `AgentAdapter::parse_status` path).
+    fn into_snapshot(self) -> StatusSnapshot {
         let context_window_size = self
             .last_token_count_info
             .as_ref()
@@ -268,19 +301,16 @@ impl CodexFoldState {
             seven_day: None,
         });
 
-        AgentStatusEvent {
-            session_id: session_id.to_string(),
+        let (model_id, model_display_name) = if self.model.is_empty() {
+            ("unknown".to_string(), "unknown".to_string())
+        } else {
+            (self.model.clone(), self.model)
+        };
+
+        StatusSnapshot {
             agent_session_id: self.agent_session_id,
-            model_id: if self.model.is_empty() {
-                "unknown".to_string()
-            } else {
-                self.model.clone()
-            },
-            model_display_name: if self.model.is_empty() {
-                "unknown".to_string()
-            } else {
-                self.model
-            },
+            model_id,
+            model_display_name,
             version: self.cli_version,
             context_window,
             cost,
@@ -559,8 +589,8 @@ mod tests {
     #[test]
     fn outer_unknown_type_deserializes_to_unknown_variant() {
         let line = r#"{"timestamp":"...","type":"future_event_kind","payload":{"hello":"world"}}"#;
-        let parsed: CodexRolloutLine = serde_json::from_str(line)
-            .expect("outer #[serde(other)] catches unknown type");
+        let parsed: CodexRolloutLine =
+            serde_json::from_str(line).expect("outer #[serde(other)] catches unknown type");
         assert!(
             matches!(parsed, CodexRolloutLine::Unknown),
             "expected CodexRolloutLine::Unknown for an unknown outer type"
@@ -576,8 +606,8 @@ mod tests {
     #[test]
     fn inner_event_msg_unknown_payload_deserializes_to_unknown_variant() {
         let line = r#"{"timestamp":"...","type":"event_msg","payload":{"type":"future_payload_kind","extra":42}}"#;
-        let parsed: CodexRolloutLine = serde_json::from_str(line)
-            .expect("inner #[serde(other)] catches unknown payload type");
+        let parsed: CodexRolloutLine =
+            serde_json::from_str(line).expect("inner #[serde(other)] catches unknown payload type");
         match parsed {
             CodexRolloutLine::EventMsg {
                 payload: Some(EventMsgPayloadDto::Unknown),

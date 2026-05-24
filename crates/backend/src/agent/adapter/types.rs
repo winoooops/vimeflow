@@ -2,9 +2,7 @@
 
 use std::path::PathBuf;
 
-use crate::agent::types::{
-    AgentStatusEvent, ContextWindowStatus, CostMetrics, RateLimits,
-};
+use crate::agent::types::{AgentStatusEvent, ContextWindowStatus, CostMetrics, RateLimits};
 
 /// Raw, untrusted, not-yet-validated transcript path emitted by either
 /// the locator at attach time (via
@@ -68,10 +66,11 @@ pub struct LocatedStatusSource {
 ///    [`TranscriptPathSource`]; the decoder never surfaces it.
 ///
 /// Field set mirrors the non-`session_id` fields of
-/// [`AgentStatusEvent`]. A future B' commit changes the conversion
-/// from "manual struct build" to a `From<StatusSnapshot> for
-/// AgentStatusEvent` plus the runtime-supplied id.
-#[allow(dead_code)]
+/// [`AgentStatusEvent`]. Step B' wired the decoder to return this
+/// type via [`crate::agent::adapter::traits::StateDecoder`] — the
+/// session-id stamp now happens in the runtime composition layer
+/// (`parse_statusline` / `parse_rollout` test wrappers for now,
+/// `AgentAdapter::parse_status` until B''/D' migrate it).
 #[derive(Debug, Clone)]
 pub struct StatusSnapshot {
     /// Agent's internal session id (distinct from the Vimeflow PTY

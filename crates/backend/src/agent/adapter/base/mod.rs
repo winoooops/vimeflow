@@ -13,15 +13,19 @@ mod watcher_runtime;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use crate::agent::adapter::AgentAdapter;
+use super::bindings::AgentBindings;
 use crate::runtime::EventSink;
 use crate::terminal::PtyState;
 
 pub use transcript_state::{TranscriptHandle, TranscriptStartStatus, TranscriptState};
 pub use watcher_runtime::{AgentWatcherState, WatcherHandle};
 
+/// Step B': `start_for` now takes the typed `AgentBindings` bundle
+/// (one trait object per concern) instead of an `Arc<dyn AgentAdapter>`.
+/// The migration was the second half of the 5-trait split — see
+/// `bindings.rs` for the bundle's construction at `AgentBindings::for_attach`.
 pub(crate) fn start_for(
-    adapter: Arc<dyn AgentAdapter>,
+    bindings: AgentBindings,
     events: Arc<dyn EventSink>,
     pty_state: PtyState,
     transcript_state: TranscriptState,
@@ -29,7 +33,7 @@ pub(crate) fn start_for(
     cwd: PathBuf,
     state: AgentWatcherState,
 ) -> Result<(), String> {
-    let located = adapter.located_status_source(&cwd, &session_id)?;
+    let located = bindings.locator.locate(&cwd, &session_id)?;
     path_security::ensure_status_source_under_trust_root(
         &located.status_path,
         &located.trust_root,
@@ -55,7 +59,7 @@ pub(crate) fn start_for(
     );
 
     let handle = watcher_runtime::start_watching(
-        adapter,
+        bindings,
         events,
         pty_state,
         transcript_state,

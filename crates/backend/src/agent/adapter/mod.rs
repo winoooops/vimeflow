@@ -6,9 +6,12 @@
 
 mod attach;
 pub mod base;
+mod bindings;
 pub mod claude_code;
 pub mod codex;
+mod error;
 mod serde_helpers;
+mod traits;
 pub mod types;
 
 pub(crate) use attach::AttachContext;
@@ -19,6 +22,7 @@ pub(crate) use attach::AttachContext;
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+#[cfg(test)]
 use std::time::SystemTime;
 
 pub use base::AgentWatcherState;
@@ -29,7 +33,7 @@ use crate::runtime::EventSink;
 use crate::terminal::types::SessionId;
 use crate::terminal::PtyState;
 use base::{TranscriptHandle, TranscriptState};
-use claude_code::ClaudeCodeAdapter;
+#[cfg(test)]
 use codex::CodexAdapter;
 use types::{LocatedStatusSource, ParsedStatus, TranscriptPathSource, ValidateTranscriptError};
 
@@ -73,40 +77,43 @@ pub trait AgentAdapter: Send + Sync + 'static {
 }
 
 impl dyn AgentAdapter {
-    pub fn for_attach(
-        agent_type: AgentType,
-        pid: u32,
-        pty_start: SystemTime,
-    ) -> Result<Arc<Self>, String> {
-        match agent_type {
-            AgentType::ClaudeCode => Ok(Arc::new(ClaudeCodeAdapter)),
-            AgentType::Codex => Ok(Arc::new(CodexAdapter::new(pid, pty_start))),
-            other => Ok(Arc::new(NoOpAdapter::new(other))),
-        }
-    }
-
-    pub fn start(
-        self: Arc<Self>,
-        events: Arc<dyn EventSink>,
-        pty_state: PtyState,
-        transcript_state: TranscriptState,
-        session_id: String,
-        cwd: PathBuf,
-        state: AgentWatcherState,
-    ) -> Result<(), String> {
-        base::start_for(
-            self,
-            events,
-            pty_state,
-            transcript_state,
-            session_id,
-            cwd,
-            state,
-        )
-    }
-
+    // Step B': `for_attach` and `start` lifecycle methods were
+    // removed alongside the watcher migration to `AgentBindings`.
+    // `start_agent_watcher_inner` now calls
+    // `AgentBindings::for_attach(&attach)` and `base::start_for(bindings, ...)`
+    // directly. `stop` stays — it's a pure lookup on
+    // `AgentWatcherState` and has no adapter-shape dependency.
     pub fn stop(state: &AgentWatcherState, session_id: &str) -> bool {
         state.remove(session_id)
+    }
+}
+
+/// Stateless `StatusSourceLocator` for Claude Code.
+///
+/// Step B' (#246): per frozen constraint #1, this type is
+/// **trivial and stateless** — no `dirs::home_dir()` lookups inside,
+/// no held fields, and `static_transcript_hint` is always `None`
+/// because Claude's transcript path is purely dynamic (arrives via
+/// the statusline JSON on every update).
+///
+/// Same body as `ClaudeCodeAdapter::located_status_source` — kept as
+/// a separate unit struct because `bindings.rs` constructs it
+/// directly (as `Arc<ClaudeStatusFileLocator>`), independent of the
+/// adapter. Future cleanup steps may collapse the duplication once
+/// `AgentAdapter::located_status_source` is removed.
+pub(crate) struct ClaudeStatusFileLocator;
+
+impl traits::StatusSourceLocator for ClaudeStatusFileLocator {
+    fn locate(&self, cwd: &Path, session_id: &str) -> Result<LocatedStatusSource, String> {
+        Ok(LocatedStatusSource {
+            status_path: cwd
+                .join(".vimeflow")
+                .join("sessions")
+                .join(session_id)
+                .join("status.json"),
+            trust_root: cwd.to_path_buf(),
+            static_transcript_hint: None,
+        })
     }
 }
 
@@ -123,16 +130,14 @@ impl NoOpAdapter {
 
 impl TranscriptPathSource for NoOpAdapter {}
 
-impl AgentAdapter for NoOpAdapter {
-    fn agent_type(&self) -> AgentType {
-        self.agent_type
-    }
+// ---------------- Step B' trait splits ----------------
 
-    fn located_status_source(
-        &self,
-        cwd: &Path,
-        session_id: &str,
-    ) -> Result<LocatedStatusSource, String> {
+impl traits::StatusSourceLocator for NoOpAdapter {
+    fn locate(&self, cwd: &Path, session_id: &str) -> Result<LocatedStatusSource, String> {
+        // Same shape as ClaudeStatusFileLocator — gives the no-op
+        // adapter a plausible status path under cwd. The watcher
+        // never actually reads it because NoOp's decoder/streamer
+        // Errs out below.
         Ok(LocatedStatusSource {
             status_path: cwd
                 .join(".vimeflow")
@@ -143,6 +148,53 @@ impl AgentAdapter for NoOpAdapter {
             static_transcript_hint: None,
         })
     }
+}
+
+impl traits::StateDecoder for NoOpAdapter {
+    fn decode(&self, _raw: &str) -> Result<crate::agent::adapter::types::StatusSnapshot, String> {
+        Err(format!(
+            "{:?} adapter has no status decoder",
+            self.agent_type
+        ))
+    }
+}
+
+impl traits::TranscriptPathValidator for NoOpAdapter {
+    fn validate(&self, _raw: &str) -> Result<PathBuf, ValidateTranscriptError> {
+        Err(ValidateTranscriptError::Other(format!(
+            "{:?} adapter has no transcript validator",
+            self.agent_type
+        )))
+    }
+}
+
+impl traits::TranscriptStreamer for NoOpAdapter {
+    fn tail(
+        &self,
+        _events: Arc<dyn EventSink>,
+        _session_id: String,
+        _cwd: Option<PathBuf>,
+        _transcript_path: PathBuf,
+    ) -> Result<TranscriptHandle, String> {
+        Err(format!(
+            "{:?} adapter has no transcript tailer",
+            self.agent_type
+        ))
+    }
+}
+
+impl AgentAdapter for NoOpAdapter {
+    fn agent_type(&self) -> AgentType {
+        self.agent_type
+    }
+
+    fn located_status_source(
+        &self,
+        cwd: &Path,
+        session_id: &str,
+    ) -> Result<LocatedStatusSource, String> {
+        <Self as traits::StatusSourceLocator>::locate(self, cwd, session_id)
+    }
 
     fn parse_status(&self, _: &str, _: &str) -> Result<ParsedStatus, String> {
         Err(format!(
@@ -151,24 +203,18 @@ impl AgentAdapter for NoOpAdapter {
         ))
     }
 
-    fn validate_transcript(&self, _: &str) -> Result<PathBuf, ValidateTranscriptError> {
-        Err(ValidateTranscriptError::Other(format!(
-            "{:?} adapter has no transcript validator",
-            self.agent_type
-        )))
+    fn validate_transcript(&self, raw: &str) -> Result<PathBuf, ValidateTranscriptError> {
+        <Self as traits::TranscriptPathValidator>::validate(self, raw)
     }
 
     fn tail_transcript(
         &self,
-        _: Arc<dyn EventSink>,
-        _: String,
-        _: Option<PathBuf>,
-        _: PathBuf,
+        events: Arc<dyn EventSink>,
+        session_id: String,
+        cwd: Option<PathBuf>,
+        transcript_path: PathBuf,
     ) -> Result<TranscriptHandle, String> {
-        Err(format!(
-            "{:?} adapter has no transcript tailer",
-            self.agent_type
-        ))
+        <Self as traits::TranscriptStreamer>::tail(self, events, session_id, cwd, transcript_path)
     }
 
     fn transcript_path_source(&self) -> &dyn TranscriptPathSource {
@@ -186,28 +232,29 @@ pub(crate) async fn start_agent_watcher_inner(
 ) -> Result<(), String> {
     let attach = resolve_bind_inputs(&pty_state, &session_id, detect_agent)?;
 
-    // `AgentType` is `Copy` so no clone needed; `initial_cwd` is cloned
-    // because the rest of `attach` is reserved for later refactor steps
-    // (B' / D') that will plumb the full context through the adapter
-    // binding chain.
-    let adapter = <dyn AgentAdapter>::for_attach(
-        attach.agent_type,
-        attach.agent_pid,
-        attach.pty_start,
-    )?;
+    // Step B': build the typed bindings (5 split-trait views) from
+    // the attach context. `AttachError` → `String` mapping happens
+    // at this seam — the watcher / `start_for` layer below speaks
+    // `String` errors, so we collapse the typed error here. The
+    // mapping point becomes the future D' `AgentWatcherService`
+    // boundary too.
+    let bindings = bindings::AgentBindings::for_attach(&attach)
+        .map_err(|e| format!("agent bindings: {}", e))?;
     let cwd_path = attach.initial_cwd.clone();
-    // `adapter.start(...)` walks into `base::start_for`, which calls
-    // `adapter.located_status_source(...)`. For codex sessions, that call runs a
-    // bounded retry (up to 5 attempts × 100 ms inter-attempt sleeps)
-    // using `std::thread::sleep` because codex commits its `logs` row
-    // ~300ms after the rollout file opens.
+
+    // `base::start_for(bindings, ...)` calls `bindings.locator.locate(...)`.
+    // For codex sessions, the locator runs a bounded retry (5 × 100 ms
+    // inter-attempt sleeps) inside its `StatusSourceLocator::locate`
+    // impl — codex commits its `logs` row ~300 ms after the rollout
+    // file opens.
     // `path_security::ensure_status_source_under_trust_root` does
     // synchronous `canonicalize` filesystem I/O. Running either on a
     // tokio worker thread starves other futures scheduled on the same
     // worker; mirror the pattern at `src/git/watcher.rs:399` and hop
     // onto the blocking pool so the async thread returns immediately.
     tokio::task::spawn_blocking(move || {
-        adapter.start(
+        base::start_for(
+            bindings,
             events,
             pty_state,
             transcript_state,
@@ -332,16 +379,21 @@ mod noop_tests {
         assert!(<NoOpAdapter as AgentAdapter>::parse_status(&adapter, "sid", "{}").is_err());
     }
 
+    /// Step B': replaces the former
+    /// `for_attach_returns_real_codex_adapter` test that exercised
+    /// the removed `<dyn AgentAdapter>::for_attach` lifecycle method.
+    /// The equivalent path now goes through
+    /// `AgentBindings::for_attach(&AttachContext)`, with the codex
+    /// `parse_status` reachable via the bundled adapter façade.
+    /// Pinned more thoroughly by `for_attach_dispatches_by_agent_type`
+    /// in `bindings::tests`; this stays here as the codex-specific
+    /// roundtrip through the façade.
     #[test]
     fn for_attach_returns_real_codex_adapter() {
-        let adapter =
-            <dyn AgentAdapter>::for_attach(AgentType::Codex, 12345, SystemTime::UNIX_EPOCH)
-                .expect("codex adapter should construct");
+        let adapter = std::sync::Arc::new(CodexAdapter::new(12345, SystemTime::UNIX_EPOCH));
         let raw = r#"{"timestamp":"...","type":"session_meta","payload":{"id":"sess","cli_version":"0.128.0"}}
 "#;
-
-        let parsed = adapter
-            .parse_status("pty-codex", raw)
+        let parsed = <CodexAdapter as AgentAdapter>::parse_status(&adapter, "pty-codex", raw)
             .expect("real codex adapter should parse rollout JSONL");
         assert_eq!(parsed.event.agent_session_id, "sess");
     }
