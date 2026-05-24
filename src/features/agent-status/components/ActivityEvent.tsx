@@ -174,7 +174,7 @@ const ActivityTooltipContent = ({
           </button>
         </div>
       </div>
-      <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-md bg-surface-container/60 px-2.5 py-2 font-mono text-[11px] leading-relaxed text-on-surface">
+      <pre className="thin-scrollbar max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-md bg-surface-container/60 px-2.5 py-2 font-mono text-[11px] leading-relaxed text-on-surface">
         {body}
       </pre>
     </div>

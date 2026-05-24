@@ -18,7 +18,7 @@ export const FilesPanel = ({
   onFileSelect = undefined,
 }: FilesPanelProps): ReactElement => (
   <div
-    className="flex flex-1 flex-col overflow-y-auto px-3 py-4"
+    className="thin-scrollbar flex flex-1 flex-col overflow-y-auto px-3 py-4"
     data-testid="files-panel"
   >
     <FileTree
