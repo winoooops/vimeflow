@@ -107,11 +107,22 @@ pub struct SqliteFirstLocator {
 }
 
 impl SqliteFirstLocator {
+    /// Default-`/proc` constructor — used by `locator` unit tests
+    /// that don't need to inject a fake proc root. Production callers
+    /// go through `CompositeLocator::new` → `with_proc_root` so
+    /// `AttachContext.proc_root` flows through.
+    #[cfg(test)]
     pub fn new(codex_home: PathBuf) -> Self {
         Self::with_proc_root(codex_home, PathBuf::from("/proc"))
     }
 
-    fn with_proc_root(codex_home: PathBuf, proc_root: PathBuf) -> Self {
+    /// Explicit `proc_root` constructor. `pub(super)` so
+    /// `CompositeLocator::new` can thread an `AttachContext`-derived
+    /// proc_root through, instead of every Codex attach hardcoding
+    /// `/proc` (PR #261 cycle 8 F22 — test harnesses that supply a
+    /// tempdir-based `proc_root` via `AttachContext` were previously
+    /// dead-letter).
+    pub(super) fn with_proc_root(codex_home: PathBuf, proc_root: PathBuf) -> Self {
         Self {
             codex_home,
             proc_root,
@@ -621,7 +632,23 @@ const CODEX_BIND_RETRY_INTERVAL_MS: u64 = 100;
 const CODEX_BIND_RETRY_MAX_ATTEMPTS: u32 = 5;
 
 impl CompositeLocator {
-    pub fn new(codex_home: PathBuf, pid: u32, pty_start: SystemTime) -> Self {
+    /// `proc_root` lets `AttachContext` inject a tempdir-based fake
+    /// `/proc` for tests (PR #261 cycle 8 F22 — was previously
+    /// hardcoded to `/proc` inside `SqliteFirstLocator::new`, leaving
+    /// `AttachContext.proc_root` as dead-letter). Production sites
+    /// pass `ctx.proc_root.clone().unwrap_or_else(|| PathBuf::from("/proc"))`
+    /// from `AgentBindings::for_attach` so the proc fast-paths
+    /// (`resume_thread_id_from_proc`, `open_rollout_paths_from_proc`)
+    /// can be redirected at attach time. The fallback default mirrors
+    /// the pre-cycle-8 behavior so direct `CompositeLocator::new`
+    /// callers (CodexAdapter::new in tests, locator unit tests)
+    /// keep working without a behavioral change.
+    pub fn new(
+        codex_home: PathBuf,
+        pid: u32,
+        pty_start: SystemTime,
+        proc_root: PathBuf,
+    ) -> Self {
         // No log here. PR #261 cycle 4 F13: `AgentBindings::for_attach`
         // constructs TWO `CompositeLocator`s per Codex attach (one for
         // `bindings.locator`, one inside `CodexAdapter::with_home` for
@@ -629,7 +656,7 @@ impl CompositeLocator {
         // at this constructor would double-emit per attach. The
         // attach-once observability lives in `for_attach` instead.
         Self {
-            primary: SqliteFirstLocator::new(codex_home.clone()),
+            primary: SqliteFirstLocator::with_proc_root(codex_home.clone(), proc_root),
             fallback: FsScanFallback::new(codex_home.clone()),
             codex_home,
             pid,
@@ -1172,7 +1199,12 @@ mod fs_fallback_tests {
         // `CodexAdapter`). The dummy values below don't matter for
         // this test — `resolve_rollout` is called with an explicit
         // `BindContext` that supplies its own pid/pty_start.
-        let composite = CompositeLocator::new(dir.path().to_path_buf(), 0, SystemTime::UNIX_EPOCH);
+        let composite = CompositeLocator::new(
+            dir.path().to_path_buf(),
+            0,
+            SystemTime::UNIX_EPOCH,
+            PathBuf::from("/proc"),
+        );
         let result =
             composite.resolve_rollout(&ctx(std::path::Path::new("/tmp"), SystemTime::now()));
         assert!(matches!(result, Err(LocatorError::NotYetReady)));

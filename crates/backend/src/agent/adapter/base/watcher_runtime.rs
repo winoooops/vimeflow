@@ -303,6 +303,28 @@ pub(super) fn start_watching(
 
     // Step B': pull the trait views out of bindings up front. Each
     // is `Arc<dyn ...>` — cheap to clone into closures and threads.
+    //
+    // Three `AgentBindings` fields are intentionally NOT destructured
+    // here and drop with the function-local move (PR #261 cycle 8
+    // review F24 — `#[allow(dead_code)]` silences these, so the
+    // omission is intentional and listed explicitly so the B''
+    // reviewer can audit the migration without re-deriving why):
+    //
+    // - `bindings.locator` — already consumed by `start_for` before
+    //   this function runs (it called `bindings.locator.locate(...)`
+    //   to produce the `LocatedStatusSource` passed in as `located`).
+    //   The watcher itself doesn't need the locator again.
+    // - `bindings.streamer` — reserved for B'' which migrates
+    //   `TranscriptState::start_or_replace` onto
+    //   `Arc<dyn TranscriptStreamer>`. B'' will extract this field
+    //   AND remove `adapter_for_transcript_state` in the same step.
+    //   The compiler currently can't catch a B'' that forgets to
+    //   extract `streamer` because the field is silenced;
+    //   compensate by keeping this comment as the human-readable
+    //   migration checkpoint.
+    // - `bindings.agent_type` — diagnostics-only; the watcher
+    //   doesn't branch on it (each adapter's split-trait impls
+    //   carry their own behavior).
     let decoder = bindings.decoder;
     let validator = bindings.validator;
     let transcript_paths = bindings.transcript_paths;

@@ -45,22 +45,37 @@ impl CodexAdapter {
         // CompositeLocator constructions per attach don't double-emit
         // (PR #261 cycle 3 F11 + cycle 4 F13). This constructor is
         // test-only since cycle 1's F1 fix routed all production
-        // callers through `with_home`.
+        // callers through `with_home`. `/proc` is the production
+        // default; tests that need a fake proc inject it via
+        // `with_home`.
         Self {
-            locator: CompositeLocator::new(default_codex_home(), pid, pty_start),
+            locator: CompositeLocator::new(
+                default_codex_home(),
+                pid,
+                pty_start,
+                PathBuf::from("/proc"),
+            ),
         }
     }
 
-    /// Explicit-home constructor. Used by `AgentBindings::for_attach`
-    /// so the outer `Arc<CompositeLocator>` and the adapter's internal
-    /// `CompositeLocator` share the same `codex_home`. Without this,
-    /// `CodexAdapter::new` would re-resolve `default_codex_home()`
-    /// and the two locators could see different roots whenever
-    /// `provider_home != default_codex_home()` (PR #261 Claude
-    /// review F1).
-    pub(crate) fn with_home(pid: u32, pty_start: SystemTime, codex_home: PathBuf) -> Self {
+    /// Explicit-home + explicit-proc-root constructor. Used by
+    /// `AgentBindings::for_attach` so the outer
+    /// `Arc<CompositeLocator>` and the adapter's internal
+    /// `CompositeLocator` share the same `codex_home` AND
+    /// `proc_root`. Without `codex_home` alignment the two locators
+    /// could see different roots whenever `provider_home !=
+    /// default_codex_home()` (PR #261 cycle 1 F1). Without
+    /// `proc_root` alignment, `AttachContext.proc_root` injection
+    /// (used in test harnesses with tempdir-based fake `/proc`) was
+    /// dead-letter (PR #261 cycle 8 F22).
+    pub(crate) fn with_home(
+        pid: u32,
+        pty_start: SystemTime,
+        codex_home: PathBuf,
+        proc_root: PathBuf,
+    ) -> Self {
         Self {
-            locator: CompositeLocator::new(codex_home, pid, pty_start),
+            locator: CompositeLocator::new(codex_home, pid, pty_start, proc_root),
         }
     }
 
@@ -336,7 +351,12 @@ mod status_source_tests {
         let pty_start = SystemTime::now() - Duration::from_secs(5);
         let rollout_path = seed_codex_home_with_thread(codex_home.path(), 999, pty_start);
 
-        let adapter = CodexAdapter::with_home(999, pty_start, codex_home.path().to_path_buf());
+        let adapter = CodexAdapter::with_home(
+            999,
+            pty_start,
+            codex_home.path().to_path_buf(),
+            PathBuf::from("/proc"),
+        );
         let cwd = codex_home.path().to_path_buf();
 
         let src = <CodexAdapter as AgentAdapter>::located_status_source(&adapter, &cwd, "sid")
@@ -359,8 +379,12 @@ mod status_source_tests {
     #[test]
     fn located_status_source_returns_err_on_retry_exhausted() {
         let codex_home = tempfile::tempdir().expect("tempdir");
-        let adapter =
-            CodexAdapter::with_home(999, SystemTime::now(), codex_home.path().to_path_buf());
+        let adapter = CodexAdapter::with_home(
+            999,
+            SystemTime::now(),
+            codex_home.path().to_path_buf(),
+            PathBuf::from("/proc"),
+        );
         let cwd = codex_home.path().to_path_buf();
 
         let err = <CodexAdapter as AgentAdapter>::located_status_source(&adapter, &cwd, "sid")

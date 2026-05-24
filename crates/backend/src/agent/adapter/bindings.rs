@@ -23,6 +23,7 @@
 //!   directly; until then bindings carry both views of the same
 //!   underlying adapter struct so the two paths agree.
 
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use super::claude_code::ClaudeCodeAdapter;
@@ -108,6 +109,20 @@ impl AgentBindings {
                     .provider_home
                     .clone()
                     .unwrap_or_else(default_codex_home);
+                // `ctx.proc_root` carries `Some("/proc")` on Linux,
+                // `None` on non-Linux, and `Some(tempdir)` in test
+                // harnesses that inject a fake `/proc`. Both the outer
+                // and adapter-internal `CompositeLocator` need the same
+                // value so test fakes flow through to the locator's
+                // `proc` fast-paths (PR #261 cycle 8 F22 — was
+                // dead-letter pre-fix because `CompositeLocator::new`
+                // hardcoded `/proc`). The `unwrap_or_else` fallback
+                // matches the previous hardcoded default for
+                // non-Linux callers that don't supply `proc_root`.
+                let proc_root = ctx
+                    .proc_root
+                    .clone()
+                    .unwrap_or_else(|| PathBuf::from("/proc"));
                 // Attach-once observability for production Codex
                 // sessions (PR #261 cycle 3 F11 + cycle 4 F13). Logging
                 // inside `CompositeLocator::new` would double-emit
@@ -124,11 +139,13 @@ impl AgentBindings {
                     codex_home.clone(),
                     ctx.agent_pid,
                     ctx.pty_start,
+                    proc_root.clone(),
                 ));
                 let adapter: Arc<CodexAdapter> = Arc::new(CodexAdapter::with_home(
                     ctx.agent_pid,
                     ctx.pty_start,
                     codex_home,
+                    proc_root,
                 ));
                 Ok(Self {
                     agent_type: ctx.agent_type,

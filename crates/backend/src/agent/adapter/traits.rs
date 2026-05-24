@@ -69,6 +69,31 @@ pub(crate) trait StatusSourceLocator: Send + Sync {
 /// for observability only). PR #261 cycle 2 review flagged the
 /// information loss: the pre-B' parser logged `for sid={session_id}`,
 /// and the refactor stripped that context.
+///
+/// **`Err` semantics — provider-specialized**. The watcher maps any
+/// `Err` to `TxOutcome::ParseError` and logs at warn level, but
+/// implementations are NOT required to return `Err` on malformed
+/// input. Two valid shapes:
+///
+/// - **Atomic decoders** (Claude statusline — one JSON object per
+///   read): `Err` on invalid JSON / wrong top-level shape. Every
+///   read is all-or-nothing.
+/// - **Streaming / line-folded decoders** (Codex rollout JSONL —
+///   accumulate across many lines): `Ok` always. A single malformed
+///   line is logged with session-id context (see the
+///   `Option<&str>` parameter rationale above) and skipped; the
+///   rest of the document folds normally. A fully-corrupt file
+///   returns `Ok` with default-initialized fields (`model_id =
+///   "unknown"`, `context_window_size = 0`).
+///
+/// Monitoring keyed on `tx_status=parse_error` therefore observes
+/// Claude corruption but not Codex corruption. Operators detecting
+/// Codex JSONL corruption need a different signal (the per-line
+/// `log::warn!("codex: skipping malformed rollout line (sid=...)")`
+/// or model-id-equals-"unknown" alerts on emitted
+/// `AgentStatusEvent`s). PR #261 cycle 8 review F23 — the
+/// distinction was implicit and led to a false "decoders must
+/// `Err`" expectation; this clause makes it explicit.
 pub(crate) trait StateDecoder: Send + Sync {
     fn decode(
         &self,
