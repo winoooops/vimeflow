@@ -225,8 +225,70 @@ function gitApiPlugin(): Plugin {
             // Parse diff into structured format
             const fileDiff = parseDiff(diff, file)
 
+            // Pierre needs raw old/new file contents alongside the parsed
+            // FileDiff. Mirror the Rust producer's 4-case detection rules
+            // (Spec Section 4.2) so dev mode and Electron production agree
+            // on the response shape.
+            const oldPath = fileDiff.oldPath ?? safePath
+            const newPath = fileDiff.newPath ?? safePath
+            const diffLines = diff.split('\n')
+
+            const isUntracked = diffLines.some((line) =>
+              line.startsWith('diff --git a//dev/null')
+            )
+
+            const isNewAtBase = diffLines.some((line) =>
+              line.startsWith('--- /dev/null')
+            )
+
+            const isDeletion = diffLines.some((line) =>
+              line.startsWith('+++ /dev/null')
+            )
+
+            const { promises: fsPromises } = await import('fs')
+
+            let oldText = ''
+            if (!isUntracked && !(staged && isNewAtBase)) {
+              try {
+                const ref = staged ? `HEAD:${oldPath}` : `:${oldPath}`
+                oldText = await git.show([ref])
+              } catch (err) {
+                res.writeHead(500, { 'Content-Type': 'application/json' })
+                res.end(
+                  JSON.stringify({
+                    error: `Failed to read ${oldPath} at base: ${err instanceof Error ? err.message : String(err)}`,
+                  })
+                )
+
+                return
+              }
+            }
+
+            let newText = ''
+            if (!isDeletion) {
+              try {
+                if (staged) {
+                  newText = await git.show([`:${newPath}`])
+                } else {
+                  const absPath = path.join(repoRoot, newPath)
+                  newText = await fsPromises.readFile(absPath, 'utf-8')
+                }
+              } catch (err) {
+                res.writeHead(500, { 'Content-Type': 'application/json' })
+                res.end(
+                  JSON.stringify({
+                    error: `Failed to read ${newPath} at tip: ${err instanceof Error ? err.message : String(err)}`,
+                  })
+                )
+
+                return
+              }
+            }
+
             res.writeHead(200, { 'Content-Type': 'application/json' })
-            res.end(JSON.stringify(fileDiff))
+            res.end(
+              JSON.stringify({ fileDiff, oldText, newText, rawDiff: diff })
+            )
 
             return
           }
