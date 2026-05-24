@@ -1,5 +1,6 @@
 // cspell:ignore worktree
 import type { ReactElement } from 'react'
+import { Tooltip } from '../../../../components/Tooltip'
 
 export interface GitRefChipProps {
   /** Linked-worktree basename, or null when on the main checkout. */
@@ -10,7 +11,13 @@ export interface GitRefChipProps {
   detached?: boolean
 }
 
-const composeTitle = (
+/**
+ * Compose the chip's hover tooltip text. Exported so it can be unit-tested
+ * as a pure function — the four-state wording is part of the chip's
+ * documented contract (spec §3.5), and asserting it on the rendered DOM
+ * would require driving floating-ui's hover state.
+ */
+export const composeTooltipContent = (
   worktreeName: string | null,
   branch: string,
   detached: boolean
@@ -58,41 +65,45 @@ export const GitRefChip = ({
   }`
 
   return (
-    <span
-      data-testid="git-ref-chip"
-      title={composeTitle(worktreeName, branch, detached)}
-      className={frameClasses}
+    <Tooltip
+      content={composeTooltipContent(worktreeName, branch, detached)}
+      placement="bottom"
     >
-      {hasWorktree && (
-        <>
-          <span
-            data-testid="git-ref-chip-wt-icon"
-            aria-hidden="true"
-            className={wtIconClasses}
-          >
-            account_tree
-          </span>
-          <span data-testid="git-ref-chip-wt-label" className={wtLabelClasses}>
-            {worktreeName}
-          </span>
-          <span
-            data-testid="git-ref-chip-chevron"
-            className="text-outline-variant text-[11px] shrink-0"
-          >
-            ›
-          </span>
-        </>
-      )}
-      <span
-        data-testid="git-ref-chip-br-icon"
-        aria-hidden="true"
-        className={brIconClasses}
-      >
-        fork_right
+      <span data-testid="git-ref-chip" className={frameClasses}>
+        {hasWorktree && (
+          <>
+            <span
+              data-testid="git-ref-chip-wt-icon"
+              aria-hidden="true"
+              className={wtIconClasses}
+            >
+              account_tree
+            </span>
+            <span
+              data-testid="git-ref-chip-wt-label"
+              className={wtLabelClasses}
+            >
+              {worktreeName}
+            </span>
+            <span
+              data-testid="git-ref-chip-chevron"
+              className="text-outline-variant text-[11px] shrink-0"
+            >
+              ›
+            </span>
+          </>
+        )}
+        <span
+          data-testid="git-ref-chip-br-icon"
+          aria-hidden="true"
+          className={brIconClasses}
+        >
+          fork_right
+        </span>
+        <span data-testid="git-ref-chip-br-label" className={brLabelClasses}>
+          {branch}
+        </span>
       </span>
-      <span data-testid="git-ref-chip-br-label" className={brLabelClasses}>
-        {branch}
-      </span>
-    </span>
+    </Tooltip>
   )
 }

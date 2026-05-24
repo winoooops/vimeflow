@@ -1,7 +1,7 @@
 // cspell:ignore worktree testids
 import { render, screen } from '@testing-library/react'
 import { expect, test } from 'vitest'
-import { GitRefChip } from './GitRefChip'
+import { GitRefChip, composeTooltipContent } from './GitRefChip'
 
 test('renders nothing when branch is null', () => {
   render(<GitRefChip worktreeName="feat-jose" branch={null} />)
@@ -86,26 +86,25 @@ test('detached=true with worktreeName=null renders coral branch-only chip', () =
   )
 })
 
-test('title attribute composition for all four states', () => {
-  const { rerender } = render(
-    <GitRefChip worktreeName="feat-jose" branch="feat/jose-auth" />
-  )
-  expect(screen.getByTestId('git-ref-chip').getAttribute('title')).toBe(
+test('composeTooltipContent produces the right text for all four states', () => {
+  // The chip wraps its content in <Tooltip>, which only renders the floating
+  // surface on hover/focus via a portal. Asserting the four wording variants
+  // against the rendered DOM would require driving floating-ui's hover state
+  // through fake timers. The wording itself is pulled out into a pure
+  // function so the contract stays locked without that machinery.
+  expect(composeTooltipContent('feat-jose', 'feat/jose-auth', false)).toBe(
     'worktree: feat-jose · branch: feat/jose-auth'
   )
 
-  rerender(<GitRefChip worktreeName={null} branch="feat/jose-auth" />)
-  expect(screen.getByTestId('git-ref-chip').getAttribute('title')).toBe(
+  expect(composeTooltipContent(null, 'feat/jose-auth', false)).toBe(
     'branch: feat/jose-auth'
   )
 
-  rerender(<GitRefChip worktreeName="feat-jose" branch="a7f23c" detached />)
-  expect(screen.getByTestId('git-ref-chip').getAttribute('title')).toBe(
+  expect(composeTooltipContent('feat-jose', 'a7f23c', true)).toBe(
     'worktree: feat-jose · detached HEAD: a7f23c'
   )
 
-  rerender(<GitRefChip worktreeName={null} branch="a7f23c" detached />)
-  expect(screen.getByTestId('git-ref-chip').getAttribute('title')).toBe(
+  expect(composeTooltipContent(null, 'a7f23c', true)).toBe(
     'detached HEAD: a7f23c'
   )
 })
