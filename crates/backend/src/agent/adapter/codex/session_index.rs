@@ -49,6 +49,7 @@ pub fn spawn_watch(
 ) -> std::io::Result<std::thread::JoinHandle<()>> {
     Ok(std::thread::spawn(move || {
         let mut last_emitted_title: Option<String> = None;
+        let mut last_mtime = modified_time(&path);
 
         if let Some(title) = read_thread_name(&path, &agent_session_id) {
             try_emit(
@@ -59,7 +60,6 @@ pub fn spawn_watch(
                 &mut last_emitted_title,
             );
         }
-        let mut last_mtime = modified_time(&path);
 
         loop {
             if stop.load(Ordering::Acquire) {
