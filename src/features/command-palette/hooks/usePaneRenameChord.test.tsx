@@ -8,15 +8,21 @@ import {
 } from '@testing-library/react'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 import type { ReactElement } from 'react'
+import { AgentRenameError } from '../../../lib/backend'
 import type { Pane, Session } from '../../sessions/types'
 import * as chordRegistry from '../chordRegistry'
 import { usePaneRenameChord, type FocusedPaneRef } from './usePaneRenameChord'
 
 const mockRenameAgentSession = vi.hoisted(() => vi.fn())
 
-vi.mock('../../../lib/backend', () => ({
-  renameAgentSession: mockRenameAgentSession,
-}))
+vi.mock('../../../lib/backend', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../lib/backend')>()
+
+  return {
+    ...actual,
+    renameAgentSession: mockRenameAgentSession,
+  }
+})
 
 const makePane = (overrides: Partial<Pane> = {}): Pane => ({
   id: 'p0',
@@ -109,7 +115,10 @@ describe('usePaneRenameChord', () => {
   test('onSubmit suppresses expected unsupported-agent failure', async () => {
     const user = userEvent.setup()
     mockRenameAgentSession.mockRejectedValueOnce(
-      new Error('agent type Aider does not support /rename')
+      new AgentRenameError(
+        'agent type Aider does not support /rename',
+        'unsupported-agent'
+      )
     )
     const focused = makeFocusedRef()
 
@@ -188,7 +197,9 @@ describe('usePaneRenameChord', () => {
 
   test('shell pane asks backend and suppresses no-live-agent failure', async () => {
     const user = userEvent.setup()
-    mockRenameAgentSession.mockRejectedValueOnce(new Error('no live agent'))
+    mockRenameAgentSession.mockRejectedValueOnce(
+      new AgentRenameError('no live agent', 'no-live-agent')
+    )
 
     const focused = makeFocusedRef({
       ptyId: 'pty-shell',
@@ -216,7 +227,9 @@ describe('usePaneRenameChord', () => {
 
   test('submit asks backend even while focused pane still looks generic', async () => {
     const user = userEvent.setup()
-    mockRenameAgentSession.mockRejectedValueOnce(new Error('no live agent'))
+    mockRenameAgentSession.mockRejectedValueOnce(
+      new AgentRenameError('no live agent', 'no-live-agent')
+    )
 
     const focused = makeFocusedRef({
       ptyId: 'pty-race',

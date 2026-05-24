@@ -4,8 +4,8 @@ import { afterEach, describe, expect, test, vi } from 'vitest'
 import { useState, type ReactElement } from 'react'
 import type { Pane } from '../../sessions/types'
 import {
+  _resetForTest as resetPaneHeaderRefsForTest,
   register as registerPaneHeaderRef,
-  unregister as unregisterPaneHeaderRef,
 } from '../paneHeaderRefs'
 import { PaneRenameInput } from './PaneRenameInput'
 
@@ -21,7 +21,7 @@ const makePane = (overrides: Partial<Pane> = {}): Pane => ({
 
 describe('PaneRenameInput', () => {
   afterEach(() => {
-    unregisterPaneHeaderRef('pty-1')
+    resetPaneHeaderRefsForTest()
   })
 
   test('renders pre-filled with pane.agentTitle when present', () => {

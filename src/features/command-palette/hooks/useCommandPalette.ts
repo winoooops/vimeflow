@@ -290,6 +290,7 @@ export const useCommandPalette = (
           clearLeaderWindow()
           event.preventDefault()
           event.stopPropagation()
+          handlersRef.current.open()
 
           return
         }

@@ -77,11 +77,7 @@ export const usePaneRenameChord = (
         setTarget(null)
         setError(null)
       } catch (renameError) {
-        const message =
-          renameError instanceof Error
-            ? renameError.message
-            : String(renameError)
-        if (isExpectedNonAgentRenameFailure(message)) {
+        if (isExpectedNonAgentRenameFailure(renameError)) {
           setTarget(null)
           setError(null)
 

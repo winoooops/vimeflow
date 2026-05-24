@@ -1,3 +1,5 @@
-export const isExpectedNonAgentRenameFailure = (message: string): boolean =>
-  message.includes('no live agent') ||
-  message.includes('does not support /rename')
+import { AgentRenameError } from '../../../lib/backend'
+
+export const isExpectedNonAgentRenameFailure = (error: unknown): boolean =>
+  error instanceof AgentRenameError &&
+  (error.reason === 'no-live-agent' || error.reason === 'unsupported-agent')

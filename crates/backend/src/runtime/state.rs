@@ -1,7 +1,9 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use crate::agent::types::{AgentType, RenameAgentSessionRequest};
+use crate::agent::types::{
+    AgentType, RenameAgentSessionError, RenameAgentSessionErrorReason, RenameAgentSessionRequest,
+};
 use crate::agent::{sanitize_title, AgentWatcherState, TranscriptState};
 use crate::git::watcher::GitWatcherState;
 use crate::terminal::cache::SessionCache;
@@ -75,20 +77,33 @@ impl BackendState {
         crate::terminal::commands::write_pty_inner(&self.pty, request)
     }
 
-    pub fn rename_agent_session(&self, request: RenameAgentSessionRequest) -> Result<(), String> {
+    pub fn rename_agent_session(
+        &self,
+        request: RenameAgentSessionRequest,
+    ) -> Result<(), RenameAgentSessionError> {
         let agent_type = self
             .agents
             .agent_type_for_pty(&request.pty_id)
-            .ok_or_else(|| format!("no live agent in pty {} to rename", request.pty_id))?;
+            .ok_or_else(|| {
+                RenameAgentSessionError::new(
+                    RenameAgentSessionErrorReason::NoLiveAgent,
+                    format!("no live agent in pty {} to rename", request.pty_id),
+                )
+            })?;
 
         if !matches!(agent_type, AgentType::ClaudeCode | AgentType::Codex) {
-            return Err(format!(
-                "agent type {agent_type:?} does not support /rename"
+            return Err(RenameAgentSessionError::new(
+                RenameAgentSessionErrorReason::UnsupportedAgent,
+                format!("agent type {agent_type:?} does not support /rename"),
             ));
         }
 
-        let title = sanitize_title(&request.title)
-            .ok_or_else(|| "title is empty after sanitization".to_string())?;
+        let title = sanitize_title(&request.title).ok_or_else(|| {
+            RenameAgentSessionError::new(
+                RenameAgentSessionErrorReason::EmptyTitle,
+                "title is empty after sanitization",
+            )
+        })?;
         // Submit byte MUST be `\r` (CR, 0x0D), not `\n` (LF, 0x0A). Both
         // Claude Code and Codex run their TUI input boxes in raw terminal
         // mode and capture the actual keypress. The "Enter" key produces
@@ -101,7 +116,12 @@ impl BackendState {
         let session_id = SessionId::from(request.pty_id);
         self.pty
             .write(&session_id, command.as_bytes())
-            .map_err(|e| format!("pty write failed: {e}"))?;
+            .map_err(|e| {
+                RenameAgentSessionError::new(
+                    RenameAgentSessionErrorReason::PtyWrite,
+                    format!("pty write failed: {e}"),
+                )
+            })?;
 
         if matches!(agent_type, AgentType::Codex) {
             crate::agent::adapter::codex::session_index::record_user_rename(
@@ -391,10 +411,9 @@ mod tests {
 
         let result = state.rename_agent_session(rename_request("nope"));
 
-        assert!(matches!(
-            result,
-            Err(ref msg) if msg.contains("does not support /rename")
-        ));
+        let err = result.expect_err("aider should not support /rename");
+        assert_eq!(err.reason, RenameAgentSessionErrorReason::UnsupportedAgent);
+        assert!(err.to_string().contains("does not support /rename"));
         assert_eq!(captured_string(&writes), "");
     }
 
@@ -404,10 +423,9 @@ mod tests {
 
         let result = state.rename_agent_session(rename_request("x"));
 
-        assert!(matches!(
-            result,
-            Err(ref msg) if msg.contains("no live agent")
-        ));
+        let err = result.expect_err("missing agent should reject");
+        assert_eq!(err.reason, RenameAgentSessionErrorReason::NoLiveAgent);
+        assert!(err.to_string().contains("no live agent"));
     }
 
     #[test]

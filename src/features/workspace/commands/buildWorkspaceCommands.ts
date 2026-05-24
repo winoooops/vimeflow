@@ -167,12 +167,12 @@ export const buildWorkspaceCommands = (
           try {
             await renameAgentSession(activePanePtyId, title)
           } catch (error: unknown) {
-            const message =
-              error instanceof Error ? error.message : String(error)
-            if (isExpectedNonAgentRenameFailure(message)) {
+            if (isExpectedNonAgentRenameFailure(error)) {
               return
             }
 
+            const message =
+              error instanceof Error ? error.message : String(error)
             notifyInfo(`agent /rename failed: ${message}`)
           }
         })()

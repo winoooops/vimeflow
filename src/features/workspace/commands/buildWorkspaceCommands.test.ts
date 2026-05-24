@@ -1,4 +1,5 @@
 import { describe, test, expect, vi, beforeEach } from 'vitest'
+import { AgentRenameError } from '../../../lib/backend'
 import {
   buildWorkspaceCommands,
   type WorkspaceTab,
@@ -118,7 +119,9 @@ describe('buildWorkspaceCommands - happy paths', () => {
   })
 
   test(':rename-pane suppresses expected non-agent backend failure after local label update', async () => {
-    renameAgentSession.mockRejectedValueOnce(new Error('no live agent'))
+    renameAgentSession.mockRejectedValueOnce(
+      new AgentRenameError('no live agent', 'no-live-agent')
+    )
 
     const commands = buildWorkspaceCommands({
       sessions: mockSessions,

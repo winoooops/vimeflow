@@ -282,7 +282,7 @@ describe('useCommandPalette', () => {
       expect(result.current.state.isOpen).toBe(true)
     })
 
-    test('Ctrl+: then Ctrl+: cancels leader window without opening palette', () => {
+    test('Ctrl+: then Ctrl+: opens palette immediately', () => {
       vi.useFakeTimers()
       const { result } = renderHook(() => useCommandPalette())
 
@@ -311,13 +311,13 @@ describe('useCommandPalette', () => {
 
       expect(preventDefaultSpy).toHaveBeenCalled()
       expect(stopPropagationSpy).toHaveBeenCalled()
-      expect(result.current.state.isOpen).toBe(false)
+      expect(result.current.state.isOpen).toBe(true)
 
       act(() => {
         vi.advanceTimersByTime(500)
       })
 
-      expect(result.current.state.isOpen).toBe(false)
+      expect(result.current.state.isOpen).toBe(true)
     })
 
     test('close() clears pending leader chord window', () => {

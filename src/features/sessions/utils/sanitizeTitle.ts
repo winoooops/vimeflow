@@ -11,7 +11,7 @@ export type TitleValidation =
 export const validateTitle = (raw: string): TitleValidation => {
   for (let index = 0; index < raw.length; index += 1) {
     const code = raw.charCodeAt(index)
-    if ((code >= 0 && code <= 0x1f) || code === 0x7f) {
+    if (code <= 0x1f || code === 0x7f) {
       return {
         kind: 'invalid',
         reason: 'control-char',

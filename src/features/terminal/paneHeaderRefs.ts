@@ -9,3 +9,7 @@ export const unregister = (ptyId: string): void => {
 }
 
 export const get = (ptyId: string): HTMLElement | undefined => refs.get(ptyId)
+
+export const _resetForTest = (): void => {
+  refs.clear()
+}

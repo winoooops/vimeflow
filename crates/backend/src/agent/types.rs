@@ -195,6 +195,51 @@ pub struct RenameAgentSessionRequest {
     pub title: String,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+#[serde(rename_all = "kebab-case")]
+pub enum RenameAgentSessionErrorReason {
+    NoLiveAgent,
+    UnsupportedAgent,
+    EmptyTitle,
+    PtyWrite,
+}
+
+impl RenameAgentSessionErrorReason {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::NoLiveAgent => "no-live-agent",
+            Self::UnsupportedAgent => "unsupported-agent",
+            Self::EmptyTitle => "empty-title",
+            Self::PtyWrite => "pty-write",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RenameAgentSessionError {
+    pub reason: RenameAgentSessionErrorReason,
+    message: String,
+}
+
+impl RenameAgentSessionError {
+    pub fn new(reason: RenameAgentSessionErrorReason, message: impl Into<String>) -> Self {
+        Self {
+            reason,
+            message: message.into(),
+        }
+    }
+}
+
+impl std::fmt::Display for RenameAgentSessionError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for RenameAgentSessionError {}
+
 /// Event emitted when the agent's tracked working directory changes.
 ///
 /// Sourced from each adapter's structured cwd channel in its transcript
