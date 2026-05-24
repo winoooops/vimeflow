@@ -51,7 +51,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Generated Artifacts](patterns/generated-artifacts.md)               | code-quality       | 2        | 0    | 2026-05-04   |
 | [Testing Gaps](patterns/testing-gaps.md)                             | testing            | 54       | 24   | 2026-05-23   |
 | [Terminal Input Handling](patterns/terminal-input-handling.md)       | terminal           | 3        | 1    | 2026-04-09   |
-| [Documentation Accuracy](patterns/documentation-accuracy.md)         | code-quality       | 76       | 23   | 2026-05-24   |
+| [Documentation Accuracy](patterns/documentation-accuracy.md)         | code-quality       | 77       | 23   | 2026-05-24   |
 | [Accessibility](patterns/accessibility.md)                           | a11y               | 25       | 6    | 2026-05-09   |
 | [Async Race Conditions](patterns/async-race-conditions.md)           | react-patterns     | 42       | 10   | 2026-05-21   |
 | [Tokio Blocking On Async](patterns/tokio-blocking-on-async.md)       | backend            | 2        | 1    | 2026-05-20   |
@@ -67,7 +67,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [File Tree Paths](patterns/file-tree-paths.md)                       | files              | 4        | 0    | 2026-04-10   |
 | [Scope Boundary](patterns/scope-boundary.md)                         | review-process     | 7        | 2    | 2026-05-12   |
 | [E2E Testing](patterns/e2e-testing.md)                               | e2e-testing        | 18       | 6    | 2026-05-20   |
-| [Module Boundaries](patterns/module-boundaries.md)                   | code-quality       | 7        | 1    | 2026-05-24   |
-| [Diagnostic Instrumentation](patterns/diagnostic-instrumentation.md) | code-quality       | 7        | 2    | 2026-05-02   |
+| [Module Boundaries](patterns/module-boundaries.md)                   | code-quality       | 8        | 1    | 2026-05-24   |
+| [Diagnostic Instrumentation](patterns/diagnostic-instrumentation.md) | code-quality       | 8        | 2    | 2026-05-24   |
 | [Keyboard Shortcut Guards](patterns/keyboard-shortcut-guards.md)     | keyboard-shortcuts | 16       | 0    | 2026-05-18   |
 | [Parser Resilience](patterns/parser-resilience.md)                   | code-quality       | 1        | 1    | 2026-05-24   |

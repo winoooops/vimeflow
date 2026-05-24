@@ -95,8 +95,18 @@ impl TranscriptPathSource for CodexAdapter {
 // ---------------- Step B' trait splits ----------------
 
 impl StateDecoder for CodexAdapter {
-    fn decode(&self, raw: &str) -> Result<StatusSnapshot, String> {
-        parser::parse_rollout_snapshot(raw)
+    /// `session_id` is threaded into `parse_rollout_snapshot` for its
+    /// per-line malformed-rollout warn site — Codex parses JSONL
+    /// line-by-line, and the pre-B' parser logged `for sid={}` so
+    /// multi-session debugging could correlate the warning to the
+    /// affected PTY session. The session id is NOT incorporated into
+    /// the returned `StatusSnapshot` (R2.2 — output is identity-free).
+    fn decode(
+        &self,
+        session_id: Option<&str>,
+        raw: &str,
+    ) -> Result<StatusSnapshot, String> {
+        parser::parse_rollout_snapshot(session_id, raw)
     }
 }
 
@@ -136,7 +146,7 @@ impl AgentAdapter for CodexAdapter {
     }
 
     fn parse_status(&self, session_id: &str, raw: &str) -> Result<ParsedStatus, String> {
-        let snapshot = <Self as StateDecoder>::decode(self, raw)?;
+        let snapshot = <Self as StateDecoder>::decode(self, Some(session_id), raw)?;
         Ok(ParsedStatus {
             event: stamp_snapshot(session_id, snapshot),
         })

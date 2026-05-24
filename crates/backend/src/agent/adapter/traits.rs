@@ -53,17 +53,28 @@ pub(crate) trait StatusSourceLocator: Send + Sync {
 /// [`StatusSnapshot`]. Replaces `AgentAdapter::parse_status` in the
 /// post-B' world.
 ///
-/// The decoder signature deliberately drops `session_id` — the
-/// snapshot is identity-free, and the runtime composes
+/// The decoder output (`StatusSnapshot`) is deliberately
+/// session-id-free — the runtime composes
 /// `AgentStatusEvent { session_id, ...snapshot }` after the decoder
 /// returns. This was R2.2 of the v4-frozen plan: "decoder
 /// session-id-free, runtime stamps the id".
 ///
-/// Errors are `String` to match the existing `parse_status` contract;
-/// the watcher treats any Err as a parse failure and emits a
-/// `TxOutcome::ParseError` diagnostic.
+/// The `session_id: Option<&str>` parameter is **diagnostic-only**:
+/// providers may attach it to per-line log messages so multi-session
+/// debugging can correlate "malformed rollout line" warnings to the
+/// affected PTY session. It does NOT appear in the returned
+/// `StatusSnapshot` and MUST NOT influence decoding semantics — same
+/// raw bytes + different session_id must yield the same snapshot. R2.2
+/// is therefore preserved (output identity-free; input is annotated
+/// for observability only). PR #261 cycle 2 review flagged the
+/// information loss: the pre-B' parser logged `for sid={session_id}`,
+/// and the refactor stripped that context.
 pub(crate) trait StateDecoder: Send + Sync {
-    fn decode(&self, raw: &str) -> Result<StatusSnapshot, String>;
+    fn decode(
+        &self,
+        session_id: Option<&str>,
+        raw: &str,
+    ) -> Result<StatusSnapshot, String>;
 }
 
 /// Validate a raw transcript path against path-security policy

@@ -2,7 +2,7 @@
 id: diagnostic-instrumentation
 category: code-quality
 created: 2026-04-30
-last_updated: 2026-04-30
+last_updated: 2026-05-24
 ref_count: 2
 ---
 
@@ -98,3 +98,12 @@ The discipline:
 - **Finding:** `spawn_trailing_debounce_thread` calls `std::thread::spawn(...)` and discards the returned `JoinHandle`. In production the emit closure only calls `emit_for_all_subscribers`, which logs errors rather than panicking, so the swallowed-panic path is unreachable. In tests, however, the closure was `move || { emitted_tx.send(()).expect("failed to record debounce emit"); }` — and if the receiver dropped first (test cleanup ordering races), `.expect` would panic inside the detached thread. The panic was invisible: the next test assertion (`recv_timeout(...).expect("debounce should emit")`) would fire instead, attributing the failure to "no emit" when the real cause was "the emit closure panicked." Same finding-class as #5 (structurally-zero `dt` produces misleading log values) — both are diagnostics that point an investigator at the wrong cause.
 - **Fix:** Tests now use `let _ = emitted_tx.send(())` instead of `.expect(...)`, swallowing send errors so the detached thread can never panic. The positive `recv_timeout(...).expect("debounce should emit")` assertion remains the canonical failure signal, with no false-attribution interference from the worker thread. Returning the `JoinHandle` and exposing it for tests was considered but rejected: the fire-and-forget API is the right shape for production callers, and `catch_unwind` machinery would be heavy for the low-risk scenario.
 - **Commit:** _(see git log for the round-2 fix commit)_
+
+### 8. Refactor stripped session_id context from per-line malformed-rollout warning
+
+- **Source:** github-claude | PR #261 round 3 | 2026-05-24
+- **Severity:** MEDIUM
+- **File:** `crates/backend/src/agent/adapter/codex/parser.rs`
+- **Finding:** Step B' of the agent-adapter refactor moved Codex statusline decoding into a session-id-free `StateDecoder::decode(&self, raw: &str) -> Result<StatusSnapshot, String>` (R2.2 invariant: decoder output is identity-free, runtime stamps the id). The implementation called `parse_rollout_snapshot(raw)`, which on a malformed JSONL line logged `"codex: skipping malformed rollout line"` — with NO session context. The pre-B' parser was `parse_rollout(session_id, raw)` and logged `for sid={session_id}`. R2.2's "decoder OUTPUT is session-id-free" was misread as "decoder INPUT must not see the session id either," and the warn-site lost its multi-session correlator. In a desktop run with two Codex windows open, `grep 'skipping malformed rollout'` returned N identical lines with no way to tell which session emitted them. Same finding-class as #5 (structurally-zero `dt` producing misleading log values) — a diagnostic that's technically present but operationally useless.
+- **Fix:** Added `session_id: Option<&str>` as an explicit diagnostic-only parameter on `StateDecoder::decode` (and `parse_rollout_snapshot`). The trait doc-comment now says: "Output (`StatusSnapshot`) stays session-id-free per R2.2; the input is annotated for observability only; same raw bytes + different session_id MUST yield the same snapshot." Claude's `decode` impl ignores the parameter (its parser is atomic, no per-line warn site). Codex's threads it to the warn site as `(sid={})`. Watcher_runtime's 3 callbacks pass `Some(&sid_for_cb)` (notify) / `Some(&initial_sid)` (inline-init) / `Some(&poll_sid)` (poll). Lesson: when a refactor enforces an output invariant (R2.2 here), check whether existing per-call observability metadata (log lines, error annotations) was implicitly load-bearing on the input parameter being removed. The fix is to keep the input but distinguish "input shapes the output" from "input annotates the call" — explicit `Option<&str>` parameters are the right idiom because they grep-able and self-documenting at every call site.
+- **Commit:** _(PR #261 round 3 `/lifeline:upsource-review` cycle 3)_

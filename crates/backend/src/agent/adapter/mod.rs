@@ -149,7 +149,11 @@ impl traits::StatusSourceLocator for NoOpAdapter {
 }
 
 impl traits::StateDecoder for NoOpAdapter {
-    fn decode(&self, _raw: &str) -> Result<crate::agent::adapter::types::StatusSnapshot, String> {
+    fn decode(
+        &self,
+        _session_id: Option<&str>,
+        _raw: &str,
+    ) -> Result<crate::agent::adapter::types::StatusSnapshot, String> {
         Err(format!(
             "{:?} adapter has no status decoder",
             self.agent_type

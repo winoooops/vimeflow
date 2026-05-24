@@ -17,18 +17,18 @@ use super::super::bindings::AgentBindings;
 use super::diagnostics::short_sid;
 use super::diagnostics::{record_event_diag, EventTiming, PathHistory, TxOutcome};
 use super::transcript_state::{TranscriptStartStatus, TranscriptState};
-// Trait imports retained as `#[allow(unused_imports)]` because
-// methods on `Arc<dyn Trait>` resolve through the type's vtable
-// without the trait needing to be in scope. Pinned here so a reader
-// can see which traits the watcher consumes via bindings.
-#[allow(unused_imports)]
-use super::super::traits::{StateDecoder, TranscriptPathValidator};
+// `TranscriptPathValidator` is referenced as `Arc<dyn TranscriptPathValidator>`
+// in `maybe_start_transcript`'s signature, so it must be in scope. `StateDecoder`
+// is consumed only via method dispatch on `Arc<dyn StateDecoder>` (vtable), so
+// it does not need to appear here. PR #261 cycle 2 review F9 — clarified
+// that the previous blanket `#[allow(unused_imports)]` on both traits was
+// only load-bearing for one (validator).
+use super::super::traits::TranscriptPathValidator;
 use crate::agent::adapter::types::{
-    LocatedStatusSource, RawPath, TranscriptPathSource, ValidateTranscriptError,
+    stamp_snapshot, LocatedStatusSource, RawPath, TranscriptPathSource, ValidateTranscriptError,
 };
 use crate::agent::adapter::AgentAdapter;
 use crate::agent::events::emit_agent_status;
-use crate::agent::types::AgentStatusEvent;
 use crate::runtime::EventSink;
 use crate::terminal::PtyState;
 
@@ -50,21 +50,6 @@ fn resolve_transcript_path(
     transcript_paths
         .dynamic_hint(raw)
         .or_else(|| transcript_paths.static_hint(located))
-}
-
-/// Step B': compose `AgentStatusEvent` from the session-id-free
-/// `StatusSnapshot` returned by `StateDecoder::decode`. The
-/// session_id stamping moved out of the decoder and into the runtime
-/// per the v4-frozen plan's R2.2 invariant. Thin wrapper around
-/// `types::stamp_snapshot`; PR #261 Claude review F2 consolidated
-/// the previously-duplicated eight-field mapping into one
-/// `pub(crate)` helper that this function (and the legacy façade
-/// `snapshot_to_event` paths) both call.
-fn compose_event(
-    session_id: &str,
-    snapshot: crate::agent::adapter::types::StatusSnapshot,
-) -> AgentStatusEvent {
-    crate::agent::adapter::types::stamp_snapshot(session_id, snapshot)
 }
 
 /// Handle to a running watcher — dropping it stops the watcher and polling thread
@@ -399,9 +384,9 @@ pub(super) fn start_watching(
         // session-id-free per R2.2; the runtime composes the event
         // here (this was the v4-frozen plan's "runtime stamps the
         // session id" move).
-        let (outcome, tx_path) = match decoder_for_cb.decode(&contents) {
+        let (outcome, tx_path) = match decoder_for_cb.decode(Some(&sid_for_cb), &contents) {
             Ok(snapshot) => {
-                let event = compose_event(&sid_for_cb, snapshot);
+                let event = stamp_snapshot(&sid_for_cb, snapshot);
                 if let Err(e) = emit_agent_status(events_for_cb.as_ref(), &event) {
                     log::error!("Failed to emit agent-status event: {}", e);
                 }
@@ -484,9 +469,9 @@ pub(super) fn start_watching(
         if let Ok(contents) = std::fs::read_to_string(&initial_path) {
             if !contents.trim().is_empty() {
                 *last_processed.lock().expect("failed to lock debounce") = Instant::now();
-                match initial_decoder.decode(&contents) {
+                match initial_decoder.decode(Some(&initial_sid), &contents) {
                     Ok(snapshot) => {
-                        let event = compose_event(&initial_sid, snapshot);
+                        let event = stamp_snapshot(&initial_sid, snapshot);
                         let _ = emit_agent_status(initial_events.as_ref(), &event);
                         if let Some(path) = resolve_transcript_path(
                             &initial_transcript_paths,
@@ -589,9 +574,9 @@ pub(super) fn start_watching(
                 }
                 poll_last = contents.clone();
 
-                let (outcome, tx_path) = match poll_decoder.decode(&contents) {
+                let (outcome, tx_path) = match poll_decoder.decode(Some(&poll_sid), &contents) {
                     Ok(snapshot) => {
-                        let event = compose_event(&poll_sid, snapshot);
+                        let event = stamp_snapshot(&poll_sid, snapshot);
                         let _ = emit_agent_status(poll_events.as_ref(), &event);
                         // Step 0c: same `TranscriptPathSource` flow as
                         // the notify and inline callbacks.

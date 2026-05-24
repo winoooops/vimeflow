@@ -62,7 +62,14 @@ impl StatusSourceLocator for ClaudeCodeAdapter {
 }
 
 impl StateDecoder for ClaudeCodeAdapter {
-    fn decode(&self, raw: &str) -> Result<StatusSnapshot, String> {
+    /// `session_id` is ignored — Claude's parser deserializes the whole
+    /// JSON document atomically (one `Result`), so there's no per-line
+    /// warn site that needs the context.
+    fn decode(
+        &self,
+        _session_id: Option<&str>,
+        raw: &str,
+    ) -> Result<StatusSnapshot, String> {
         statusline::parse_statusline_snapshot(raw)
     }
 }
@@ -104,7 +111,7 @@ impl AgentAdapter for ClaudeCodeAdapter {
     }
 
     fn parse_status(&self, session_id: &str, raw: &str) -> Result<ParsedStatus, String> {
-        let snapshot = <Self as StateDecoder>::decode(self, raw)?;
+        let snapshot = <Self as StateDecoder>::decode(self, Some(session_id), raw)?;
         Ok(ParsedStatus {
             event: stamp_snapshot(session_id, snapshot),
         })

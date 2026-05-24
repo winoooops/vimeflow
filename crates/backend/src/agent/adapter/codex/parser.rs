@@ -45,19 +45,31 @@ use crate::agent::types::{
 /// helper stays under `#[cfg(test)]` to support those assertions.
 #[cfg(test)]
 pub(crate) fn parse_rollout(session_id: &str, raw: &str) -> Result<ParsedStatus, String> {
-    let snapshot = parse_rollout_snapshot(raw)?;
+    let snapshot = parse_rollout_snapshot(Some(session_id), raw)?;
     Ok(ParsedStatus {
         event: snapshot_to_event(session_id, snapshot),
     })
 }
 
-/// Step B' decoder entry point — session-id-free. Used by the new
-/// [`crate::agent::adapter::traits::StateDecoder`] impl on
+/// Step B' decoder entry point — session-id-free *output*. Used by
+/// the new [`crate::agent::adapter::traits::StateDecoder`] impl on
 /// `CodexAdapter`. The runtime composes
 /// `AgentStatusEvent { session_id, ...snapshot }` after the decoder
 /// returns; for now the session-id-stamping `parse_rollout` wrapper
 /// above is what `AgentAdapter::parse_status` still calls.
-pub(crate) fn parse_rollout_snapshot(raw: &str) -> Result<StatusSnapshot, String> {
+///
+/// `session_id` is **diagnostic-only**: it's used to label the
+/// per-line `log::warn!` for malformed JSONL lines so multi-session
+/// debugging can correlate the warning to the affected PTY session.
+/// It does NOT influence the returned `StatusSnapshot` (R2.2 invariant
+/// — output is identity-free). PR #261 cycle 2 review flagged that
+/// the pre-B' parser logged `for sid={session_id}` and the refactor
+/// stripped that context; this parameter restores it without
+/// re-introducing the id into the output type.
+pub(crate) fn parse_rollout_snapshot(
+    session_id: Option<&str>,
+    raw: &str,
+) -> Result<StatusSnapshot, String> {
     let mut state = CodexFoldState::default();
     let lines: Vec<&str> = raw.split('\n').collect();
     let trailing_complete = raw.ends_with('\n');
@@ -76,7 +88,10 @@ pub(crate) fn parse_rollout_snapshot(raw: &str) -> Result<StatusSnapshot, String
         // `malformed_mid_line_skipped_with_warn`.
         match serde_json::from_str::<CodexRolloutLine>(line) {
             Ok(parsed) => fold_event(&mut state, parsed),
-            Err(_) => log::warn!("codex: skipping malformed rollout line"),
+            Err(_) => log::warn!(
+                "codex: skipping malformed rollout line (sid={})",
+                session_id.unwrap_or("?"),
+            ),
         }
     }
 
