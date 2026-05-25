@@ -27,7 +27,7 @@ import {
   isExpectedMissingGitShow,
   MAX_DIFF_FILE_TEXT_BYTES,
   readFileTextNoFollow,
-} from './src/features/diff/services/devFileText'
+} from './config/devFileText'
 
 const git = simpleGit()
 const repoRoot = process.cwd()

@@ -1040,6 +1040,7 @@ pub(crate) async fn get_git_diff_inner(
 
     cmd.arg("--");
     if let Some(ref old) = rename_source {
+        validate_file_path(old)?;
         cmd.arg(old);
     }
     cmd.arg(&file);

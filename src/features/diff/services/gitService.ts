@@ -6,12 +6,11 @@ import type { GetGitDiffResponse } from '../../../bindings/GetGitDiffResponse'
 
 /**
  * Synthesize a `GetGitDiffResponse` payload from a parsed `FileDiff`. Used by
- * `MockGitService` and `HttpGitService` (legacy `/api/git/diff` shape) so
- * callers always receive the full Pierre-ready payload (parsed FileDiff +
- * oldText + newText + rawDiff) regardless of source. Reconstructs plausible
- * before/after file contents from the diff's hunks, preserving explicit
- * no-newline metadata when fixtures provide it. This is intentionally hunk-only
- * content because mock fixtures do not carry complete file bodies.
+ * `MockGitService` so tests receive the full Pierre-ready payload (parsed
+ * FileDiff + oldText + newText + rawDiff). Reconstructs plausible before/after
+ * file contents from the diff's hunks, preserving explicit no-newline metadata
+ * when fixtures provide it. This is intentionally hunk-only content because
+ * mock fixtures do not carry complete file bodies.
  */
 const synthesizeDiffResponse = (fileDiff: FileDiff): GetGitDiffResponse => {
   const oldLines: DiffTextLine[] = []

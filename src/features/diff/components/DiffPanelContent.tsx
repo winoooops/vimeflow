@@ -266,9 +266,6 @@ export const DiffPanelContent = ({
     }
 
     const observer = new ResizeObserver((entries) => {
-      // ResizeObserver fires with `entries.length >= 1` for an observed
-      // node — `entries[0]` is non-optional under our current tsconfig
-      // (no `noUncheckedIndexedAccess`).
       setPaneWidth(entries[0].contentRect.width)
     })
     observer.observe(paneNode)
