@@ -3,7 +3,7 @@ id: react-lifecycle
 category: react-patterns
 created: 2026-04-09
 last_updated: 2026-05-25
-ref_count: 7
+ref_count: 8
 ---
 
 # React Lifecycle
@@ -203,4 +203,13 @@ to avoid unintended re-runs (e.g., PTY respawning on every cwd change).
 - **File:** `src/features/diff/components/DiffPanelContent.tsx`
 - **Finding:** The diff toolbar displayed coerced `unified` mode while the pane was too narrow for split view, but its change handler still wrote directly to the saved `diffStyle` state. Clicking the already-active `unified` segment permanently replaced a saved `split` preference, so widening the pane did not restore split view.
 - **Fix:** Track `paneWidth=0` as an unmeasured sentinel, derive forced-unified display state only after measurement, and ignore the no-op `unified` write while split is merely being coerced. Added a regression test that clicks forced-unified at narrow width and verifies split returns when the pane widens.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 22. Layout measurements must compare coordinates from the same origin
+
+- **Source:** github-claude | PR #263 follow-up | 2026-05-25
+- **Severity:** HIGH
+- **File:** `src/features/diff/components/toolbar/PriorityPlus.tsx`
+- **Finding:** PriorityPlus used `container.clientWidth` with `lastVisible.offsetLeft + offsetWidth` to reserve space for the overflow chip. In the docked diff panel, the wrapper's `offsetParent` is a positioned ancestor outside the toolbar, so the item coordinate included the file-list offset while the container width did not. The toolbar hid one extra chip whenever overflow started.
+- **Fix:** Measure both the container and last visible item with `getBoundingClientRect()` and subtract viewport-relative `right` values. Added a regression test that simulates a toolbar offset by the file list and proves the last fitting chip stays visible.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

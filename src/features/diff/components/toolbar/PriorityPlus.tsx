@@ -122,9 +122,9 @@ export const PriorityPlus = ({
     if (cutoff !== null && cutoff > 0) {
       const lastVisible = items[cutoff - 1]
       if (lastVisible) {
-        const containerWidth = container.clientWidth
-        const lastRight = lastVisible.offsetLeft + lastVisible.offsetWidth
-        const remaining = containerWidth - lastRight
+        const containerRect = container.getBoundingClientRect()
+        const lastVisibleRect = lastVisible.getBoundingClientRect()
+        const remaining = containerRect.right - lastVisibleRect.right
         if (remaining < chipWidthWithGap) {
           cutoff = Math.max(0, cutoff - 1)
         }

@@ -1,5 +1,6 @@
 import { describe, test, expect, vi, beforeEach } from 'vitest'
-import { act, fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import type { ReactElement } from 'react'
 import { DiffPanelContent } from './DiffPanelContent'
 import * as useGitStatusModule from '../hooks/useGitStatus'
@@ -30,6 +31,26 @@ const workerPoolSetRenderOptionsMock = vi.fn(() => Promise.resolve(undefined))
 
 const workerPoolMock = {
   setRenderOptions: workerPoolSetRenderOptionsMock,
+}
+
+const deferredWorkerOptions = (): {
+  promise: Promise<undefined>
+  resolve: () => void
+  reject: (reason?: unknown) => void
+} => {
+  let resolveDeferred!: (value: undefined) => void
+  let rejectDeferred!: (reason?: unknown) => void
+
+  const promise = new Promise<undefined>((resolve, reject) => {
+    resolveDeferred = resolve
+    rejectDeferred = reject
+  })
+
+  return {
+    promise,
+    resolve: (): void => resolveDeferred(undefined),
+    reject: rejectDeferred,
+  }
 }
 
 vi.mock('@pierre/diffs/react', () => ({
@@ -1096,6 +1117,76 @@ describe('DiffPanelContent', () => {
 
       expect(await screen.findByRole('alert')).toHaveTextContent(
         'Theme sync failed: worker failed'
+      )
+    })
+
+    test('remounts MultiFileDiff only after worker pool accepts a new theme', async (): Promise<void> => {
+      const user = userEvent.setup()
+      const pendingThemeSync = deferredWorkerOptions()
+      workerPoolSetRenderOptionsMock
+        .mockResolvedValueOnce(undefined)
+        .mockReturnValueOnce(pendingThemeSync.promise)
+
+      vi.spyOn(useGitStatusModule, 'useGitStatus').mockReturnValue({
+        files: [
+          {
+            path: 'src/App.tsx',
+            status: 'modified',
+            staged: false,
+          },
+        ],
+        filesCwd: '/repo',
+        loading: false,
+        error: null,
+        refresh: vi.fn(),
+        idle: false,
+      })
+
+      vi.spyOn(useFileDiffModule, 'useFileDiff').mockReturnValue(
+        fileDiffMock({
+          diff: {
+            filePath: 'src/App.tsx',
+            oldPath: 'src/App.tsx',
+            newPath: 'src/App.tsx',
+            hunks: [],
+          },
+          loading: false,
+          error: null,
+          oldText: 'old',
+          newText: 'new',
+        })
+      )
+
+      render(<DiffPanelContent cwd="/repo" />)
+
+      expect(screen.getByTestId('multi-file-diff')).toHaveAttribute(
+        'data-theme',
+        'pierre-dark'
+      )
+
+      await user.click(screen.getByRole('button', { name: /pierre-dark/i }))
+      const menu = await screen.findByRole('menu')
+      await user.click(
+        within(menu).getByRole('menuitem', { name: /pierre-light$/i })
+      )
+
+      expect(workerPoolSetRenderOptionsMock).toHaveBeenLastCalledWith({
+        theme: 'pierre-light',
+      })
+
+      expect(screen.getByTestId('multi-file-diff')).toHaveAttribute(
+        'data-theme',
+        'pierre-dark'
+      )
+
+      await act(async () => {
+        pendingThemeSync.resolve()
+        await pendingThemeSync.promise
+      })
+
+      expect(screen.getByTestId('multi-file-diff')).toHaveAttribute(
+        'data-theme',
+        'pierre-light'
       )
     })
   })

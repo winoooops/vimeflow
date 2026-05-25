@@ -30,7 +30,30 @@ interface ItemLayout {
   offsetHeight: number
   offsetLeft: number
   offsetWidth: number
+  rectLeft?: number
 }
+
+const rect = ({
+  left,
+  top,
+  width,
+  height,
+}: {
+  left: number
+  top: number
+  width: number
+  height: number
+}): DOMRect => ({
+  x: left,
+  y: top,
+  left,
+  top,
+  right: left + width,
+  bottom: top + height,
+  width,
+  height,
+  toJSON: () => ({}),
+})
 
 // Override the layout properties on each item wrapper + the container.
 // The PriorityPlus measurement reads offsetTop/Height/Left/Width on each
@@ -40,10 +63,22 @@ interface ItemLayout {
 const stubLayout = (
   root: HTMLElement,
   layouts: readonly ItemLayout[],
-  containerWidth: number
+  containerWidth: number,
+  containerLeft = 0
 ): void => {
   Object.defineProperty(root, 'clientWidth', {
     value: containerWidth,
+    configurable: true,
+  })
+
+  Object.defineProperty(root, 'getBoundingClientRect', {
+    value: () =>
+      rect({
+        left: containerLeft,
+        top: 0,
+        width: containerWidth,
+        height: 0,
+      }),
     configurable: true,
   })
 
@@ -79,6 +114,17 @@ const stubLayout = (
 
     Object.defineProperty(node, 'offsetWidth', {
       value: layout.offsetWidth,
+      configurable: true,
+    })
+
+    Object.defineProperty(node, 'getBoundingClientRect', {
+      value: () =>
+        rect({
+          left: containerLeft + (layout.rectLeft ?? layout.offsetLeft),
+          top: layout.offsetTop,
+          width: layout.offsetWidth,
+          height: layout.offsetHeight,
+        }),
       configurable: true,
     })
   })
@@ -252,6 +298,57 @@ describe('PriorityPlus', () => {
     expect(wrapperFor('item-1').className).not.toContain('hidden')
     // Item 2 should be hidden because of the chip-space reservation.
     expect(wrapperFor('item-2').className).toContain('hidden')
+  })
+
+  test('reserves chip space using same-origin rectangles', () => {
+    render(<PriorityPlus maxRows={1}>{renderItems(4)}</PriorityPlus>)
+
+    // Simulate a toolbar inside a positioned DockPanel section after a 240px
+    // file list. offsetLeft is section-relative, but getBoundingClientRect()
+    // keeps both container and item in viewport coordinates. Item 2 leaves
+    // enough real room for the overflow chip, so it must stay visible.
+    stubLayout(
+      rootContainer('item-0'),
+      [
+        {
+          offsetTop: 0,
+          offsetHeight: 24,
+          offsetLeft: 240,
+          offsetWidth: 60,
+          rectLeft: 0,
+        },
+        {
+          offsetTop: 0,
+          offsetHeight: 24,
+          offsetLeft: 312,
+          offsetWidth: 60,
+          rectLeft: 72,
+        },
+        {
+          offsetTop: 0,
+          offsetHeight: 24,
+          offsetLeft: 384,
+          offsetWidth: 60,
+          rectLeft: 144,
+        },
+        {
+          offsetTop: 30,
+          offsetHeight: 24,
+          offsetLeft: 240,
+          offsetWidth: 60,
+          rectLeft: 0,
+        },
+      ],
+      400,
+      240
+    )
+    fireResize()
+
+    expect(
+      screen.getByRole('button', { name: /more controls/i })
+    ).toHaveAttribute('aria-label', 'Show 1 more controls')
+    expect(wrapperFor('item-2').className).not.toContain('hidden')
+    expect(wrapperFor('item-3').className).toContain('hidden')
   })
 
   test('children list changes trigger re-measurement', () => {

@@ -223,11 +223,13 @@ export const DiffPanelContent = ({
   )
 
   // Pierre option state — every option here is a controlled-component value
-  // surfaced upward from DiffChipToolbar. The toolbar reads / writes these
-  // and the same values drive <MultiFileDiff options=...> on the next render,
-  // so the chip UI and the rendered diff can never disagree.
+  // surfaced upward from DiffChipToolbar. Most values drive <MultiFileDiff>
+  // on the next render. Theme additionally flows through `syncedTheme` so the
+  // diff remount waits for the worker pool to accept the new theme first.
   const [diffStyle, setDiffStyle] = useState<DiffStyle>('split')
   const [theme, setTheme] = useState<DiffsThemeNames>('pierre-dark')
+  const [syncedTheme, setSyncedTheme] = useState<DiffsThemeNames>(theme)
+  const syncedThemeRef = useRef<DiffsThemeNames>(theme)
 
   const [diffIndicators, setDiffIndicators] =
     useState<DiffIndicators>('classic')
@@ -248,6 +250,15 @@ export const DiffPanelContent = ({
 
     themeSyncErrorRef.current = message
     setThemeSyncErrorState(message)
+  }, [])
+
+  const commitSyncedTheme = useCallback((nextTheme: DiffsThemeNames): void => {
+    if (syncedThemeRef.current === nextTheme) {
+      return
+    }
+
+    syncedThemeRef.current = nextTheme
+    setSyncedTheme(nextTheme)
   }, [])
 
   // Responsive width tracking. The right pane drives the two width bands:
@@ -284,6 +295,8 @@ export const DiffPanelContent = ({
   const workerPool = useWorkerPool()
   useEffect(() => {
     if (!workerPool) {
+      commitSyncedTheme(theme)
+
       return
     }
 
@@ -294,6 +307,7 @@ export const DiffPanelContent = ({
         await workerPool.setRenderOptions({ theme })
         if (!cancelled) {
           setThemeSyncError(null)
+          commitSyncedTheme(theme)
         }
       } catch (err) {
         if (!cancelled) {
@@ -307,7 +321,8 @@ export const DiffPanelContent = ({
     return (): void => {
       cancelled = true
     }
-  }, [setThemeSyncError, workerPool, theme])
+  }, [commitSyncedTheme, setThemeSyncError, workerPool, theme])
+  const renderedTheme = workerPool ? syncedTheme : theme
 
   const hasMeasuredPane = paneWidth > 0
 
@@ -506,21 +521,22 @@ export const DiffPanelContent = ({
               <DiffNarrowPlaceholder min={DIFF_MIN_WIDTH_PX} />
             ) : (
               <MultiFileDiff
-                // `key={theme}` forces a clean remount on theme change.
+                // `key={renderedTheme}` forces a clean remount after the worker
+                // pool has accepted the new theme.
                 // Pierre's WorkerPoolManager-driven theme path normally
                 // rerenders via subscribeToThemeChanges, but PR1 QA observed
                 // the second theme switch sticking. Forcing a remount is a
                 // belt-and-braces remedy: a brand-new FileDiff instance
-                // requests fresh tokenization from the pool, which has the
-                // updated theme by then (our useEffect above flushed it).
+                // requests fresh tokenization from the pool only after
+                // `setRenderOptions` resolves.
                 // Cost: one extra tokenize per theme change. Acceptable for
                 // v1; revisit if perf is an issue with very large diffs.
-                key={theme}
+                key={renderedTheme}
                 oldFile={pierreInputs.oldFile}
                 newFile={pierreInputs.newFile}
                 options={{
                   diffStyle: effectiveDiffStyle,
-                  theme,
+                  theme: renderedTheme,
                   diffIndicators,
                   lineDiffType,
                   overflow: overflowOpt,
