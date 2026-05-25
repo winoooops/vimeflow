@@ -1116,7 +1116,17 @@ pub(crate) async fn get_git_diff_inner(
         } else {
             format!(":{}", old_path)
         };
-        git_show_text(&canonical_toplevel, &ref_spec).await?
+        let stage_fallback_ref = if staged {
+            None
+        } else {
+            Some(format!(":2:{}", old_path))
+        };
+        git_show_text_with_fallback(
+            &canonical_toplevel,
+            &ref_spec,
+            stage_fallback_ref.as_deref(),
+        )
+        .await?
     };
 
     // Compute new_text:
@@ -1132,7 +1142,10 @@ pub(crate) async fn get_git_diff_inner(
     let new_text = if is_deletion {
         String::new()
     } else if staged {
-        git_show_text(&canonical_toplevel, &format!(":{}", new_path)).await?
+        let ref_spec = format!(":{}", new_path);
+        let stage_fallback_ref = format!(":2:{}", new_path);
+        git_show_text_with_fallback(&canonical_toplevel, &ref_spec, Some(&stage_fallback_ref))
+            .await?
     } else {
         let abs_path = canonical_toplevel.join(&new_path);
         match std::fs::read(&abs_path) {
@@ -1234,7 +1247,33 @@ fn is_expected_missing_git_show(stderr: &str) -> bool {
 /// String. Empty string only for expected "no blob at this ref" states so
 /// callers can render all-new / conflicted files without masking genuine git
 /// failures such as missing LFS objects or corrupt packs.
-async fn git_show_text(toplevel: &Path, ref_spec: &str) -> Result<String, String> {
+async fn git_show_text_with_fallback(
+    toplevel: &Path,
+    ref_spec: &str,
+    stage_fallback_ref: Option<&str>,
+) -> Result<String, String> {
+    let output = run_git_show(toplevel, ref_spec).await?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        if stderr.contains("is in the index, but not at stage 0") {
+            if let Some(fallback_ref) = stage_fallback_ref {
+                let fallback_output = run_git_show(toplevel, fallback_ref).await?;
+                return git_show_output_to_text(fallback_ref, fallback_output);
+            }
+        }
+
+        if is_expected_missing_git_show(&stderr) {
+            return Ok(String::new());
+        }
+
+        return Err(git_show_error(ref_spec, &stderr, &output.status));
+    }
+
+    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+}
+
+async fn run_git_show(toplevel: &Path, ref_spec: &str) -> Result<std::process::Output, String> {
     let mut cmd = Command::new("git");
     cmd.arg("-C")
         .arg(toplevel)
@@ -1242,25 +1281,28 @@ async fn git_show_text(toplevel: &Path, ref_spec: &str) -> Result<String, String
         .arg(ref_spec)
         .env("GIT_TERMINAL_PROMPT", "0");
 
-    let output = run_git_with_timeout(cmd).await?;
+    run_git_with_timeout(cmd).await
+}
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        if is_expected_missing_git_show(&stderr) {
-            return Ok(String::new());
-        }
-
-        return Err(if stderr.trim().is_empty() {
-            format!(
-                "git show {} failed with exit code {}",
-                ref_spec, output.status
-            )
-        } else {
-            format!("git show {} failed: {}", ref_spec, stderr.trim())
-        });
+fn git_show_output_to_text(ref_spec: &str, output: std::process::Output) -> Result<String, String> {
+    if output.status.success() {
+        return Ok(String::from_utf8_lossy(&output.stdout).into_owned());
     }
 
-    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    if is_expected_missing_git_show(&stderr) {
+        return Ok(String::new());
+    }
+
+    Err(git_show_error(ref_spec, &stderr, &output.status))
+}
+
+fn git_show_error(ref_spec: &str, stderr: &str, status: &std::process::ExitStatus) -> String {
+    if stderr.trim().is_empty() {
+        format!("git show {} failed with exit code {}", ref_spec, status)
+    } else {
+        format!("git show {} failed: {}", ref_spec, stderr.trim())
+    }
 }
 
 /// Get the current branch for a git repository.

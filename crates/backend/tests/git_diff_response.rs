@@ -68,6 +68,22 @@ fn run_git(cwd: &Path, args: &[&str]) {
     );
 }
 
+/// Run a git command expected to fail, asserting it exits non-zero.
+fn run_git_expect_failure(cwd: &Path, args: &[&str]) {
+    let output = Command::new("git")
+        .current_dir(cwd)
+        .args(args)
+        .output()
+        .unwrap_or_else(|err| panic!("failed to spawn git {args:?}: {err}"));
+    assert!(
+        !output.status.success(),
+        "git {args:?} unexpectedly succeeded (cwd={}): stdout={} stderr={}",
+        cwd.display(),
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
 /// Write a file and stage it.
 fn write_and_add(repo: &Path, rel: &str, contents: &str) {
     let abs = repo.join(rel);
@@ -152,6 +168,39 @@ fn non_utf8_worktree_file_returns_lossy_new_text() {
     assert!(
         v["newText"].as_str().expect("newText").contains('\u{fffd}'),
         "invalid UTF-8 should be decoded lossily instead of failing the diff"
+    );
+}
+
+#[test]
+fn unmerged_unstaged_file_uses_stage_2_old_text() {
+    let (state, _app_data) = make_state();
+    let repo = init_repo();
+
+    write_and_add(repo.path(), "conflict.txt", "base\n");
+    commit(repo.path(), "seed");
+
+    run_git(repo.path(), &["checkout", "-b", "theirs", "--quiet"]);
+    write_and_add(repo.path(), "conflict.txt", "theirs\n");
+    commit(repo.path(), "theirs edit");
+
+    run_git(repo.path(), &["checkout", "main", "--quiet"]);
+    write_and_add(repo.path(), "conflict.txt", "ours\n");
+    commit(repo.path(), "ours edit");
+
+    run_git_expect_failure(repo.path(), &["merge", "theirs"]);
+
+    let v = diff_value(&state, repo.path(), "conflict.txt", false, None);
+
+    assert_eq!(
+        v["oldText"], "ours\n",
+        "unmerged unstaged old_text should fall back to the stage-2 blob"
+    );
+    assert!(
+        v["newText"]
+            .as_str()
+            .expect("newText")
+            .contains("<<<<<<< HEAD"),
+        "new_text should read the conflicted working-tree file"
     );
 }
 
