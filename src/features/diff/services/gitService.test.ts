@@ -9,6 +9,7 @@ import {
 import { mockChangedFiles, mockFileDiffs } from '../data/mockDiff'
 import { invoke } from '../../../lib/backend'
 import { isDesktop } from '../../../lib/environment'
+import type { FileDiff } from '../types'
 
 vi.mock('../../../lib/backend', () => ({
   invoke: vi.fn(),
@@ -91,6 +92,59 @@ describe('MockGitService', () => {
     expect(response.rawDiff).toContain('--- a/tsconfig.json\n')
     expect(response.rawDiff).toContain('+++ /dev/null\n')
     expect(response.rawDiff).not.toContain('b//dev/null')
+  })
+
+  test('getDiff preserves explicit no-newline markers in synthesized rawDiff', async () => {
+    const file = 'no-newline.txt'
+
+    const noNewlineDiff: FileDiff = {
+      filePath: file,
+      oldPath: file,
+      newPath: file,
+      hunks: [
+        {
+          id: 'hunk-0',
+          header: '@@ -1 +1 @@',
+          oldStart: 1,
+          oldLines: 1,
+          newStart: 1,
+          newLines: 1,
+          lines: [
+            {
+              type: 'removed',
+              oldLineNumber: 1,
+              content: 'before',
+              hasTrailingNewline: false,
+            },
+            {
+              type: 'added',
+              newLineNumber: 1,
+              content: 'after',
+              hasTrailingNewline: false,
+            },
+          ],
+        },
+      ],
+    }
+    mockFileDiffs[file] = noNewlineDiff
+
+    try {
+      const response = await service.getDiff(file)
+
+      expect(response.oldText).toBe('before')
+      expect(response.newText).toBe('after')
+      expect(response.rawDiff).toContain(
+        [
+          '-before',
+          '\\ No newline at end of file',
+          '+after',
+          '\\ No newline at end of file',
+        ].join('\n')
+      )
+      expect(response.rawDiff.endsWith('\n')).toBe(true)
+    } finally {
+      delete mockFileDiffs[file]
+    }
   })
 
   test('getDiff throws error for non-existent file', async () => {

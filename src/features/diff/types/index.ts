@@ -44,6 +44,7 @@ export interface DiffLine {
   oldLineNumber?: number // undefined for added lines
   newLineNumber?: number // undefined for removed lines
   content: string
+  hasTrailingNewline?: boolean // false when Git emitted "\ No newline at end of file"
   highlights?: LineHighlight[] // word-level diff highlights
 }
 

@@ -9,12 +9,13 @@ import type { GetGitDiffResponse } from '../../../bindings/GetGitDiffResponse'
  * `MockGitService` and `HttpGitService` (legacy `/api/git/diff` shape) so
  * callers always receive the full Pierre-ready payload (parsed FileDiff +
  * oldText + newText + rawDiff) regardless of source. Reconstructs plausible
- * before/after file contents from the diff's hunks. This is intentionally
- * hunk-only content because mock fixtures do not carry complete file bodies.
+ * before/after file contents from the diff's hunks, preserving explicit
+ * no-newline metadata when fixtures provide it. This is intentionally hunk-only
+ * content because mock fixtures do not carry complete file bodies.
  */
 const synthesizeDiffResponse = (fileDiff: FileDiff): GetGitDiffResponse => {
-  const oldLines: string[] = []
-  const newLines: string[] = []
+  const oldLines: DiffTextLine[] = []
+  const newLines: DiffTextLine[] = []
   const rawDiffLines: string[] = []
   const oldPath = fileDiff.oldPath ?? fileDiff.filePath
   const newPath = fileDiff.newPath ?? fileDiff.filePath
@@ -29,15 +30,15 @@ const synthesizeDiffResponse = (fileDiff: FileDiff): GetGitDiffResponse => {
     rawDiffLines.push(hunk.header)
     for (const line of hunk.lines) {
       if (line.type === 'context') {
-        oldLines.push(line.content)
-        newLines.push(line.content)
-        rawDiffLines.push(` ${line.content}`)
+        oldLines.push(toDiffTextLine(line))
+        newLines.push(toDiffTextLine(line))
+        appendRawDiffLine(rawDiffLines, ' ', line)
       } else if (line.type === 'removed') {
-        oldLines.push(line.content)
-        rawDiffLines.push(`-${line.content}`)
+        oldLines.push(toDiffTextLine(line))
+        appendRawDiffLine(rawDiffLines, '-', line)
       } else {
-        newLines.push(line.content)
-        rawDiffLines.push(`+${line.content}`)
+        newLines.push(toDiffTextLine(line))
+        appendRawDiffLine(rawDiffLines, '+', line)
       }
     }
   }
@@ -51,11 +52,46 @@ const synthesizeDiffResponse = (fileDiff: FileDiff): GetGitDiffResponse => {
     fileDiff: fileDiff as GetGitDiffResponse['fileDiff'],
     oldText: linesToText(oldLines),
     newText: linesToText(newLines),
-    rawDiff: linesToText(rawDiffLines),
+    rawDiff: rawLinesToText(rawDiffLines),
   }
 }
 
-const linesToText = (lines: readonly string[]): string =>
+interface DiffTextLine {
+  content: string
+  hasTrailingNewline?: boolean
+}
+
+const NO_NEWLINE_MARKER = '\\ No newline at end of file'
+
+const toDiffTextLine = (line: DiffTextLine): DiffTextLine => ({
+  content: line.content,
+  hasTrailingNewline: line.hasTrailingNewline,
+})
+
+const appendRawDiffLine = (
+  rawDiffLines: string[],
+  prefix: ' ' | '-' | '+',
+  line: DiffTextLine
+): void => {
+  rawDiffLines.push(`${prefix}${line.content}`)
+
+  if (line.hasTrailingNewline === false) {
+    rawDiffLines.push(NO_NEWLINE_MARKER)
+  }
+}
+
+const linesToText = (lines: readonly DiffTextLine[]): string => {
+  if (lines.length === 0) {
+    return ''
+  }
+
+  const text = lines.map((line) => line.content).join('\n')
+  const lastLine = lines[lines.length - 1]
+
+  return lastLine.hasTrailingNewline === false ? text : `${text}\n`
+}
+
+const rawLinesToText = (lines: readonly string[]): string =>
   lines.length > 0 ? `${lines.join('\n')}\n` : ''
 
 const patchSidePath = (prefix: 'a' | 'b', filePath: string): string =>
