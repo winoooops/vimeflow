@@ -299,6 +299,42 @@ export const DiffPanelContent = ({
     [response]
   )
 
+  // File navigation — index of the selected file within effectiveFiles, or
+  // -1 when nothing is selected. The (path, staged) pair is the identity used
+  // everywhere else in this component (auto-select, selectedFileEntry), so we
+  // match on both rather than path alone. The `=== null` guard mirrors
+  // `selectedFileEntry` above (ESLint's no-unnecessary-condition rejects
+  // optional chaining inside the predicate, since a truthy first comparison
+  // already proves the receiver non-null).
+  const currentFileIndex =
+    effectiveSelectedFile === null
+      ? -1
+      : effectiveFiles.findIndex(
+          (f) =>
+            f.path === effectiveSelectedFile.path &&
+            f.staged === effectiveSelectedFile.staged
+        )
+
+  // Step the selection by `delta` files with wrap-around. Declared BEFORE the
+  // early-return ladder below so the hook order stays stable across renders
+  // (rules-of-hooks — a recent regression added a hook after an early return
+  // and hit "rendered more hooks than during the previous render").
+  const goToFile = useCallback(
+    (delta: number): void => {
+      if (effectiveFiles.length === 0) {
+        return
+      }
+
+      const base = currentFileIndex === -1 ? 0 : currentFileIndex
+
+      const nextIndex =
+        (base + delta + effectiveFiles.length) % effectiveFiles.length
+      const file = effectiveFiles[nextIndex]
+      commitSelection({ path: file.path, staged: file.staged, cwd })
+    },
+    [effectiveFiles, currentFileIndex, commitSelection, cwd]
+  )
+
   // Loading state
   if (effectiveStatusLoading) {
     return (
@@ -394,6 +430,10 @@ export const DiffPanelContent = ({
           onStickyHeaderChange={setStickyHeader}
           totalHunks={response?.fileDiff.hunks.length ?? 0}
           focusedHunkIndex={0}
+          onPrevFile={(): void => goToFile(-1)}
+          onNextFile={(): void => goToFile(1)}
+          currentFileIndex={currentFileIndex}
+          totalFiles={effectiveFiles.length}
         />
         {diffError ? (
           <ErrorCard message={diffError.message} />

@@ -718,6 +718,129 @@ describe('DiffPanelContent', () => {
     })
   })
 
+  describe('File navigation (chip toolbar)', () => {
+    // Three changed files, mixed staged flags so the (path, staged) identity
+    // is exercised. useFileDiff returns the same stub for every selection —
+    // we only assert which file the toolbar arrows commit, not the diff body.
+    const navFiles: ChangedFile[] = [
+      { path: 'src/a.tsx', status: 'modified', staged: false },
+      { path: 'src/b.tsx', status: 'modified', staged: false },
+      { path: 'src/c.tsx', status: 'added', staged: true },
+    ]
+
+    beforeEach(() => {
+      vi.spyOn(useGitStatusModule, 'useGitStatus').mockReturnValue({
+        files: navFiles,
+        filesCwd: '/repo',
+        loading: false,
+        error: null,
+        refresh: vi.fn(),
+        idle: false,
+      })
+
+      vi.spyOn(useFileDiffModule, 'useFileDiff').mockReturnValue(
+        fileDiffMock({
+          diff: {
+            filePath: 'src/a.tsx',
+            oldPath: 'src/a.tsx',
+            newPath: 'src/a.tsx',
+            hunks: [],
+          },
+          loading: false,
+          error: null,
+        })
+      )
+    })
+
+    test('next-file selects the following file in effectiveFiles', (): void => {
+      const onSelectedFileChange = vi.fn()
+
+      render(
+        <DiffPanelContent
+          cwd="/repo"
+          selectedFile={{ path: 'src/a.tsx', staged: false, cwd: '/repo' }}
+          onSelectedFileChange={onSelectedFileChange}
+        />
+      )
+
+      // Selection is index 0; next → index 1 (src/b.tsx).
+      const nextButton = screen.getByRole('button', { name: /next file/i })
+      nextButton.click()
+
+      expect(onSelectedFileChange).toHaveBeenCalledWith({
+        path: 'src/b.tsx',
+        staged: false,
+        cwd: '/repo',
+      })
+    })
+
+    test('prev-file selects the preceding file in effectiveFiles', (): void => {
+      const onSelectedFileChange = vi.fn()
+
+      render(
+        <DiffPanelContent
+          cwd="/repo"
+          selectedFile={{ path: 'src/b.tsx', staged: false, cwd: '/repo' }}
+          onSelectedFileChange={onSelectedFileChange}
+        />
+      )
+
+      // Selection is index 1; prev → index 0 (src/a.tsx).
+      const prevButton = screen.getByRole('button', { name: /previous file/i })
+      prevButton.click()
+
+      expect(onSelectedFileChange).toHaveBeenCalledWith({
+        path: 'src/a.tsx',
+        staged: false,
+        cwd: '/repo',
+      })
+    })
+
+    test('next-file wraps from the last file to the first', (): void => {
+      const onSelectedFileChange = vi.fn()
+
+      render(
+        <DiffPanelContent
+          cwd="/repo"
+          selectedFile={{ path: 'src/c.tsx', staged: true, cwd: '/repo' }}
+          onSelectedFileChange={onSelectedFileChange}
+        />
+      )
+
+      // Selection is the last file (index 2); next wraps → index 0.
+      const nextButton = screen.getByRole('button', { name: /next file/i })
+      nextButton.click()
+
+      expect(onSelectedFileChange).toHaveBeenCalledWith({
+        path: 'src/a.tsx',
+        staged: false,
+        cwd: '/repo',
+      })
+    })
+
+    test('prev-file wraps from the first file to the last', (): void => {
+      const onSelectedFileChange = vi.fn()
+
+      render(
+        <DiffPanelContent
+          cwd="/repo"
+          selectedFile={{ path: 'src/a.tsx', staged: false, cwd: '/repo' }}
+          onSelectedFileChange={onSelectedFileChange}
+        />
+      )
+
+      // Selection is the first file (index 0); prev wraps → index 2.
+      const prevButton = screen.getByRole('button', { name: /previous file/i })
+      prevButton.click()
+
+      expect(onSelectedFileChange).toHaveBeenCalledWith({
+        path: 'src/c.tsx',
+        staged: true,
+        cwd: '/repo',
+      })
+    })
+  })
+
   describe('Uncontrolled mode fallback', () => {
     test('auto-select works without controlled props', (): void => {
       vi.spyOn(useGitStatusModule, 'useGitStatus').mockReturnValue({

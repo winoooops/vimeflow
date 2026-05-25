@@ -59,6 +59,10 @@ const renderToolbar = (
     onStickyHeaderChange: vi.fn<(next: boolean) => void>(),
     totalHunks: 3,
     focusedHunkIndex: 0,
+    onPrevFile: vi.fn<() => void>(),
+    onNextFile: vi.fn<() => void>(),
+    currentFileIndex: 1,
+    totalFiles: 9,
   }
 
   return render(<DiffChipToolbar {...baseProps} {...overrides} />)
@@ -150,15 +154,27 @@ describe('DiffChipToolbar', () => {
     resizeCallback = null
   })
 
-  test('renders the consolidated 10 functional chips on the unstaged view', () => {
+  test('renders the consolidated 13 functional chips on the unstaged view', () => {
     // After PR #263 follow-up: indicators / overflow dropdowns + the four
-    // boolean toggle chips collapsed into a single View ▾ chip, so the
-    // unstaged view ships 10 visible chips (was 15 pre-consolidation).
+    // boolean toggle chips collapsed into a single View ▾ chip. PR1 then adds
+    // the functional file-nav group (prev-file + counter + next-file), so the
+    // unstaged view ships 13 visible chips (10 + 3).
     renderToolbar({ diffMode: 'unstaged' })
 
     // Segmented: split / unified.
     expect(screen.getByRole('button', { name: 'split' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'unified' })).toBeInTheDocument()
+
+    // File navigation chips (PR1: FUNCTIONAL).
+    expect(
+      screen.getByRole('button', { name: /previous file/i })
+    ).toBeInTheDocument()
+
+    expect(
+      screen.getByRole('button', { name: /next file/i })
+    ).toBeInTheDocument()
+    // File counter — currentFileIndex 1 of 9 → "2/9".
+    expect(screen.getByLabelText(/file 2\/9/i)).toBeInTheDocument()
 
     // Hunk navigation chips (PR1: disabled placeholders).
     expect(
@@ -235,6 +251,78 @@ describe('DiffChipToolbar', () => {
     renderToolbar({ totalHunks: 5, focusedHunkIndex: 2 })
 
     expect(screen.getByLabelText(/hunk 3\/5/i)).toBeInTheDocument()
+  })
+
+  test('file counter renders currentFileIndex + 1 / totalFiles', () => {
+    renderToolbar({ currentFileIndex: 4, totalFiles: 9 })
+
+    expect(screen.getByLabelText(/file 5\/9/i)).toBeInTheDocument()
+  })
+
+  test('file counter renders 0/N when nothing is selected (index -1)', () => {
+    renderToolbar({ currentFileIndex: -1, totalFiles: 3 })
+
+    expect(screen.getByLabelText(/file 0\/3/i)).toBeInTheDocument()
+  })
+
+  test('clicking the file arrows fires onPrevFile / onNextFile', async () => {
+    const user = userEvent.setup()
+    const onPrevFile = vi.fn<() => void>()
+    const onNextFile = vi.fn<() => void>()
+
+    renderToolbar({
+      onPrevFile,
+      onNextFile,
+      currentFileIndex: 1,
+      totalFiles: 9,
+    })
+
+    await user.click(screen.getByRole('button', { name: /next file/i }))
+    expect(onNextFile).toHaveBeenCalledTimes(1)
+    expect(onPrevFile).not.toHaveBeenCalled()
+
+    await user.click(screen.getByRole('button', { name: /previous file/i }))
+    expect(onPrevFile).toHaveBeenCalledTimes(1)
+  })
+
+  test('file arrows are disabled (inert) when totalFiles === 1', async () => {
+    const user = userEvent.setup()
+    const onPrevFile = vi.fn<() => void>()
+    const onNextFile = vi.fn<() => void>()
+
+    renderToolbar({
+      onPrevFile,
+      onNextFile,
+      currentFileIndex: 0,
+      totalFiles: 1,
+    })
+
+    const prev = screen.getByRole('button', { name: /previous file/i })
+    const next = screen.getByRole('button', { name: /next file/i })
+    expect(prev).toBeDisabled()
+    expect(next).toBeDisabled()
+
+    // Clicks on a disabled button are no-ops — no wrap-around on a single file.
+    await user.click(prev)
+    await user.click(next)
+    expect(onPrevFile).not.toHaveBeenCalled()
+    expect(onNextFile).not.toHaveBeenCalled()
+
+    // Counter still shows the position.
+    expect(screen.getByLabelText(/file 1\/1/i)).toBeInTheDocument()
+  })
+
+  test('the two counter groups carry distinguishing material icons', () => {
+    // Material symbols render their ligature name as text content, so the
+    // file counter contains "description" and the hunk counter "data_object".
+    // This is what keeps the two `‹ N/M ›` arrow groups visually distinct.
+    renderToolbar({ currentFileIndex: 0, totalFiles: 2, totalHunks: 3 })
+
+    const fileCounter = screen.getByLabelText(/file 1\/2/i)
+    expect(fileCounter).toHaveTextContent('description')
+
+    const hunkCounter = screen.getByLabelText(/hunk 1\/3/i)
+    expect(hunkCounter).toHaveTextContent('data_object')
   })
 
   test('clicking split / unified fires onDiffStyleChange with the new value', async () => {
@@ -335,13 +423,13 @@ describe('DiffChipToolbar', () => {
   test('PriorityPlus collapses the lower-priority chips into the overflow menu at a narrow width', () => {
     renderToolbar({ diffMode: 'unstaged' })
 
-    // Layout: every chip is 60 px wide with 12 px gaps. With consolidation
-    // the unstaged view ships 10 chips (was 15 pre-consolidation), so the
-    // overflow threshold shifts. Width 600 px fits the first eight chips
-    // plus the 32 + 12 px overflow chip on the visible row; the trailing
-    // two (theme + View ▾) fold into the `…` menu.
+    // Layout: every chip is 60 px wide with 12 px gaps. The unstaged view
+    // ships 13 chips (10 + the PR1 functional file-nav group), so the overflow
+    // threshold shifts. Width 600 px fits the first eight chips plus the
+    // 32 + 12 px overflow chip on the visible row; the trailing five fold into
+    // the `…` menu (lowest priority overflows first).
     const layouts: ItemLayout[] = []
-    for (let i = 0; i < 10; i++) {
+    for (let i = 0; i < 13; i++) {
       // Eight chips fit on row 1 (i < 8), the rest land on row 2 (i >= 8).
       const row = i < 8 ? 0 : 1
       const colIndex = row === 0 ? i : i - 8
@@ -362,13 +450,13 @@ describe('DiffChipToolbar', () => {
     })
     expect(overflowChip).toBeInTheDocument()
 
-    // Visible row holds the highest-priority chips: segmented, prev/counter
-    // /next, stage/discard/discard all, plus one dropdown. Verify the
-    // top-priority chips remain on the bar.
+    // Visible row holds the highest-priority chips: segmented, the functional
+    // file-nav group, then hunk prev/counter/next. Verify the top-priority
+    // chips remain on the bar.
     expect(screen.getByRole('button', { name: 'split' })).toBeInTheDocument()
 
     expect(
-      screen.getByRole('button', { name: /prev hunk/i })
+      screen.getByRole('button', { name: /previous file/i })
     ).toBeInTheDocument()
   })
 })
