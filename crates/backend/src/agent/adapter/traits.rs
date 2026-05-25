@@ -116,10 +116,10 @@ pub(crate) trait TranscriptPathValidator: Send + Sync {
 /// `AgentAdapter::tail_transcript` in the post-B' world.
 ///
 /// `TranscriptHandle` (defined in `base::transcript_state`) is the
-/// per-stream stop / generation handle the watcher already owns;
-/// B'' will migrate `TranscriptState::start_or_replace` to take
-/// `Arc<dyn TranscriptStreamer>` directly instead of going through
-/// `Arc<dyn AgentAdapter>`.
+/// per-stream stop / generation handle the watcher already owns.
+/// As of step B'', `TranscriptState::start_or_replace` takes
+/// `Arc<dyn TranscriptStreamer>` directly (it previously went through
+/// the transitional `Arc<dyn AgentAdapter>` façade).
 pub(crate) trait TranscriptStreamer: Send + Sync {
     fn tail(
         &self,
