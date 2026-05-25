@@ -11,6 +11,7 @@ pub mod claude_code;
 pub mod codex;
 mod error;
 mod serde_helpers;
+mod service;
 mod traits;
 pub mod types;
 
@@ -27,7 +28,6 @@ use std::time::SystemTime;
 
 pub use base::AgentWatcherState;
 
-use crate::agent::detector::detect_agent;
 use crate::agent::types::AgentType;
 use crate::runtime::EventSink;
 use crate::terminal::types::SessionId;
@@ -72,17 +72,13 @@ pub trait AgentAdapter: Send + Sync + 'static {
     // traits per frozen constraint #3.
 }
 
-impl dyn AgentAdapter {
-    // Step B': `for_attach` and `start` lifecycle methods were
-    // removed alongside the watcher migration to `AgentBindings`.
-    // `start_agent_watcher_inner` now calls
-    // `AgentBindings::for_attach(&attach)` and `base::start_for(bindings, ...)`
-    // directly. `stop` stays — it's a pure lookup on
-    // `AgentWatcherState` and has no adapter-shape dependency.
-    pub fn stop(state: &AgentWatcherState, session_id: &str) -> bool {
-        state.remove(session_id)
-    }
-}
+// Step D': the former `impl dyn AgentAdapter { fn stop }` inherent
+// method was removed — `AgentWatcherService::stop` now calls
+// `AgentWatcherState::remove` directly, so the last `dyn AgentAdapter`
+// lifecycle entry point is gone. (`for_attach` / `start` were already
+// removed in B'.) The `AgentAdapter` trait survives only as the
+// transitional decode/locate/validate/tail façade, unused in
+// production lifecycle paths.
 
 /// Stateless `StatusSourceLocator` for Claude Code.
 ///
@@ -228,41 +224,13 @@ pub(crate) async fn start_agent_watcher_inner(
     events: Arc<dyn EventSink>,
     session_id: String,
 ) -> Result<(), String> {
-    let attach = resolve_bind_inputs(&pty_state, &session_id, detect_agent)?;
-
-    // Step B': build the typed bindings (5 split-trait views) from
-    // the attach context. `AttachError` → `String` mapping happens
-    // at this seam — the watcher / `start_for` layer below speaks
-    // `String` errors, so we collapse the typed error here. The
-    // mapping point becomes the future D' `AgentWatcherService`
-    // boundary too.
-    let bindings = bindings::AgentBindings::for_attach(&attach)
-        .map_err(|e| format!("agent bindings: {}", e))?;
-    let cwd_path = attach.initial_cwd.clone();
-
-    // `base::start_for(bindings, ...)` calls `bindings.locator.locate(...)`.
-    // For codex sessions, the locator runs a bounded retry (5 × 100 ms
-    // inter-attempt sleeps) inside its `StatusSourceLocator::locate`
-    // impl — codex commits its `logs` row ~300 ms after the rollout
-    // file opens.
-    // `path_security::ensure_status_source_under_trust_root` does
-    // synchronous `canonicalize` filesystem I/O. Running either on a
-    // tokio worker thread starves other futures scheduled on the same
-    // worker; mirror the pattern at `src/git/watcher.rs:399` and hop
-    // onto the blocking pool so the async thread returns immediately.
-    tokio::task::spawn_blocking(move || {
-        base::start_for(
-            bindings,
-            events,
-            pty_state,
-            transcript_state,
-            session_id,
-            cwd_path,
-            watcher_state,
-        )
-    })
-    .await
-    .map_err(|e| format!("start_agent_watcher task panicked: {}", e))?
+    // Step D': delegate to `AgentWatcherService`. The service owns the
+    // attach-resolution, the `AgentBindings::for_attach` +
+    // `AttachError` → `String` mapping seam, and the spawn_blocking
+    // hand-off to `base::start_for`.
+    service::AgentWatcherService::new(pty_state, watcher_state, transcript_state, events)
+        .start(session_id)
+        .await
 }
 
 fn resolve_bind_inputs<F>(
@@ -306,16 +274,22 @@ where
 }
 
 /// Stop watching an agent status source.
+///
+/// Step D': delegates to `AgentWatcherService::stop`. `stop` only
+/// needs the `AgentWatcherState`, but the service is constructed with
+/// the full collaborator set so the facade shape is uniform with
+/// `start` (all four clones are cheap `Arc`-backed). The IPC seam
+/// (`runtime/state.rs`) passes the same four it passes to `start`.
 pub(crate) async fn stop_agent_watcher_inner(
-    state: &AgentWatcherState,
+    pty_state: PtyState,
+    watcher_state: AgentWatcherState,
+    transcript_state: TranscriptState,
+    events: Arc<dyn EventSink>,
     session_id: String,
 ) -> Result<(), String> {
-    if <dyn AgentAdapter>::stop(state, &session_id) {
-        log::info!("Stopped watching statusline for session {}", session_id);
-        Ok(())
-    } else {
-        Err(format!("No active watcher for session: {}", session_id))
-    }
+    service::AgentWatcherService::new(pty_state, watcher_state, transcript_state, events)
+        .stop(session_id)
+        .await
 }
 
 #[cfg(test)]

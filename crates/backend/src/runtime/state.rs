@@ -190,7 +190,14 @@ impl BackendState {
     }
 
     pub async fn stop_agent_watcher(&self, session_id: String) -> Result<(), String> {
-        crate::agent::adapter::stop_agent_watcher_inner(&self.agents, session_id).await
+        crate::agent::adapter::stop_agent_watcher_inner(
+            self.pty.clone(),
+            self.agents.clone(),
+            self.transcripts.clone(),
+            self.events.clone(),
+            session_id,
+        )
+        .await
     }
 
     #[cfg(feature = "e2e-test")]
