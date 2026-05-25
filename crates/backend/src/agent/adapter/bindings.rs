@@ -13,15 +13,11 @@
 //! - `bindings.transcript_paths` — dynamic / static transcript hints.
 //! - `bindings.validator` — raw path → canonical path (security
 //!   check).
-//! - `bindings.streamer` — spawn the tail thread.
-//!
-//! Plus one transitional field:
-//!
-//! - `bindings.adapter_for_transcript_state` — the `Arc<dyn AgentAdapter>`
-//!   that `TranscriptState::start_or_replace` STILL takes in B'.
-//!   B'' migrates that signature onto `Arc<dyn TranscriptStreamer>`
-//!   directly; until then bindings carry both views of the same
-//!   underlying adapter struct so the two paths agree.
+//! - `bindings.streamer` — spawn the tail thread. Step B'' wired this
+//!   directly into `TranscriptState::start_or_replace`
+//!   (`Arc<dyn TranscriptStreamer>`), removing the former transitional
+//!   `adapter_for_transcript_state: Arc<dyn AgentAdapter>` field that
+//!   B' carried only because `start_or_replace` still took the façade.
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -33,25 +29,21 @@ use super::traits::{
     StateDecoder, StatusSourceLocator, TranscriptPathValidator, TranscriptStreamer,
 };
 use super::types::TranscriptPathSource;
-use super::{AgentAdapter, AttachContext, ClaudeStatusFileLocator, NoOpAdapter};
+use super::{AttachContext, ClaudeStatusFileLocator, NoOpAdapter};
 use crate::agent::types::AgentType;
 
 /// One session's typed adapter views, assembled from the
 /// [`AttachContext`] by [`AgentBindings::for_attach`].
 ///
-/// `agent_type` and `streamer` carry `#[allow(dead_code)]` for the
-/// duration of B': `agent_type` is for diagnostics / future
-/// telemetry, and `streamer` is the next-step migration target
-/// (B'' rewires `TranscriptState::start_or_replace` from
-/// `Arc<dyn AgentAdapter>` onto `Arc<dyn TranscriptStreamer>`).
-/// The bindings tests in this module read both fields via the
-/// `#[cfg(test)]` accessors below, so the `#[allow]` only suppresses
-/// the production-build warning — the compiler still tracks the
-/// fields as "live" in test builds, giving B'' a compile-time
-/// prompt if it forgets to consume `bindings.streamer` (PR #261
-/// cycle 14 review F39 — the `#[allow]` would otherwise silence
-/// the one compiler diagnostic that protects the B'' migration
-/// contract; the accessor compensates).
+/// `agent_type` carries `#[allow(dead_code)]` — it's for diagnostics
+/// / future telemetry and the watcher doesn't branch on it. Every
+/// other field has a production consumer: `locator` (in `start_for`),
+/// `decoder` / `transcript_paths` / `validator` (in the watcher
+/// callbacks), and `streamer` (in `TranscriptState::start_or_replace`,
+/// wired in step B''). The transitional `adapter_for_transcript_state:
+/// Arc<dyn AgentAdapter>` field was removed in B'' — `start_or_replace`
+/// now takes `Arc<dyn TranscriptStreamer>`, so the façade `Arc` is no
+/// longer needed.
 pub(crate) struct AgentBindings {
     #[allow(dead_code)]
     pub(crate) agent_type: AgentType,
@@ -59,27 +51,7 @@ pub(crate) struct AgentBindings {
     pub(crate) decoder: Arc<dyn StateDecoder>,
     pub(crate) transcript_paths: Arc<dyn TranscriptPathSource>,
     pub(crate) validator: Arc<dyn TranscriptPathValidator>,
-    #[allow(dead_code)]
     pub(crate) streamer: Arc<dyn TranscriptStreamer>,
-    /// Transitional: B'' migrates `TranscriptState::start_or_replace`
-    /// to take `Arc<dyn TranscriptStreamer>` directly; until then
-    /// the runtime hands it `Arc<dyn AgentAdapter>` carried here.
-    /// Removable post-B''.
-    pub(crate) adapter_for_transcript_state: Arc<dyn AgentAdapter>,
-}
-
-#[cfg(test)]
-impl AgentBindings {
-    /// Test-only accessor that reads `self.streamer`. Keeps the
-    /// compiler tracking the field as "live" in test builds so a
-    /// future B'' contributor who forgets to extract
-    /// `bindings.streamer` in `start_watching` gets a compile error
-    /// rather than the field silently disappearing (PR #261 cycle 14
-    /// review F39). Returns a typed handle so the accessor itself
-    /// can't be inlined or eliminated by the optimizer in test runs.
-    pub(crate) fn streamer_for_test(&self) -> &Arc<dyn TranscriptStreamer> {
-        &self.streamer
-    }
 }
 
 impl AgentBindings {
@@ -104,8 +76,7 @@ impl AgentBindings {
                     decoder: adapter.clone(),
                     transcript_paths: adapter.clone(),
                     validator: adapter.clone(),
-                    streamer: adapter.clone(),
-                    adapter_for_transcript_state: adapter,
+                    streamer: adapter,
                 })
             }
             AgentType::Codex => {
@@ -120,18 +91,17 @@ impl AgentBindings {
                 //
                 // The locator is built ONCE here and shared via `Arc`
                 // between `bindings.locator` (the outer
-                // `Arc<dyn StatusSourceLocator>`) and
-                // `adapter_for_transcript_state` (which holds an
-                // `Arc<CodexAdapter>` whose internal locator field is
-                // now `Arc<CompositeLocator>`, NOT an owned one).
+                // `Arc<dyn StatusSourceLocator>`) and `bindings.streamer`
+                // (the `Arc<CodexAdapter>` whose internal locator field
+                // is `Arc<CompositeLocator>`, NOT an owned one).
                 // Pre-cycle-11 the two paths each built an independent
                 // `CompositeLocator` from the same parameters — a
                 // latent double-retry hazard if `<CodexAdapter as
                 // AgentAdapter>::located_status_source` (the
                 // transitional façade) was ever called downstream. The
-                // structural fix (PR #261 cycle 11 F31) eliminates
-                // that hazard immediately rather than waiting for B''
-                // to remove `adapter_for_transcript_state`.
+                // structural fix (PR #261 cycle 11 F31) shares one
+                // `CompositeLocator`; B'' (this step) then consumes the
+                // streamer view directly in `start_or_replace`.
                 let codex_home = ctx
                     .provider_home
                     .clone()
@@ -171,8 +141,7 @@ impl AgentBindings {
                     decoder: adapter.clone(),
                     transcript_paths: adapter.clone(),
                     validator: adapter.clone(),
-                    streamer: adapter.clone(),
-                    adapter_for_transcript_state: adapter,
+                    streamer: adapter,
                 })
             }
             other => {
@@ -189,8 +158,7 @@ impl AgentBindings {
                     decoder: adapter.clone(),
                     transcript_paths: adapter.clone(),
                     validator: adapter.clone(),
-                    streamer: adapter.clone(),
-                    adapter_for_transcript_state: adapter,
+                    streamer: adapter,
                 })
             }
         }
@@ -259,39 +227,17 @@ mod tests {
         assert_eq!(noop.agent_type, AgentType::Aider);
     }
 
-    /// Read `bindings.streamer` via the `#[cfg(test)]` accessor so
-    /// the compiler keeps the field "live" in test builds. PR #261
-    /// cycle 14 review F39 — the field's `#[allow(dead_code)]`
-    /// would otherwise silence the one compile-time prompt that
-    /// surfaces the cycle-11 shared-Arc invariant when B'' lands
-    /// (see the watcher destructure-comment block in
-    /// `watcher_runtime.rs` for the human-readable B'' checkpoint).
-    /// `Arc::ptr_eq` against `adapter_for_transcript_state` proves
-    /// the shared-Arc relationship cycle 11 established for the
-    /// Codex arm.
-    #[test]
-    fn for_attach_codex_shares_arc_between_streamer_and_facade() {
-        let bindings = AgentBindings::for_attach(&codex_ctx(Some(PathBuf::from(
-            "/home/u/.codex",
-        ))))
-        .expect("codex binds");
-        let streamer = bindings.streamer_for_test();
-        let facade = &bindings.adapter_for_transcript_state;
-        // Both Arcs were minted from the same `Arc<CodexAdapter>` in
-        // `for_attach`, so the underlying allocations are identical
-        // even though the trait-object types differ
-        // (`dyn TranscriptStreamer` vs `dyn AgentAdapter`).
-        // `Arc::as_ptr` on a fat pointer cast to `*const ()` yields
-        // the thin data pointer — equal iff the two Arcs share an
-        // allocation.
-        let streamer_data = Arc::as_ptr(streamer) as *const ();
-        let facade_data = Arc::as_ptr(facade) as *const ();
-        assert_eq!(
-            streamer_data, facade_data,
-            "cycle 11 F31 invariant: bindings.streamer and bindings.adapter_for_transcript_state \
-             must be Arc::clones of the same underlying CodexAdapter allocation",
-        );
-    }
+    // NOTE: the B' shared-`Arc` regression test
+    // (`for_attach_codex_shares_arc_between_streamer_and_facade`, cycle 14
+    // F39) was removed in B''. It pinned that `bindings.streamer` and the
+    // now-deleted `bindings.adapter_for_transcript_state` were clones of
+    // the same `Arc<CodexAdapter>`. With the façade field gone, the
+    // cycle-11 F31 invariant ("one `CompositeLocator` per Codex attach,
+    // shared between the outer locator and the adapter's internal locator")
+    // is pinned at its source instead — see
+    // `codex::mod::tests::with_locator_shares_passed_locator_allocation`,
+    // which asserts `CodexAdapter::with_locator` stores the exact `Arc`
+    // it was handed rather than rebuilding one.
 
     /// Claude's locator is the stateless `ClaudeStatusFileLocator` —
     /// `locate(cwd, sid)` should return the same path shape the
@@ -335,18 +281,12 @@ mod tests {
     ///   fail this assertion).
     ///
     /// **NOT pinned here**: that `bindings.locator` and
-    /// `adapter_for_transcript_state.locator()` reference the SAME
-    /// `Arc<CompositeLocator>` instance (cycle 11 F31 made that
-    /// structural — see the `Arc::clone` line in the `for_attach`
-    /// Codex arm). Verifying via the public
-    /// `Arc<dyn StatusSourceLocator>` surface would require either
-    /// (a) downcasting, (b) adding a `#[cfg(test)]` `codex_home()`
-    /// accessor on `CompositeLocator`, or (c) a locator fixture with
-    /// a seeded SQLite DB so `locate(...)` returns `Ok` with an
-    /// observable `trust_root`. None of those are worth the test-only
-    /// API surface; the cycle-1 F1 fix that introduced the shared
-    /// binding lives in the `for_attach` body at lines 138-153 and
-    /// is self-evident at code-review time.
+    /// `bindings.streamer`'s internal locator reference the SAME
+    /// `Arc<CompositeLocator>` instance (cycle 11 F31). That
+    /// single-allocation invariant is pinned at its source in
+    /// `codex::adapter_tests::with_locator_shares_passed_locator_allocation`,
+    /// which doesn't need the test-only downcast / SQLite-fixture
+    /// machinery this bindings-level test would.
     #[test]
     fn for_attach_codex_without_provider_home_falls_back_to_default_home() {
         let bindings =

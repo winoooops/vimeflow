@@ -381,34 +381,27 @@ mod noop_tests {
         assert!(<NoOpAdapter as AgentAdapter>::parse_status(&adapter, "sid", "{}").is_err());
     }
 
-    /// Step B': pins the end-to-end codex façade roundtrip THROUGH
-    /// `AgentBindings::for_attach` rather than constructing the
-    /// adapter directly. Cycle 7 review F20 caught that the previous
-    /// body bypassed the dispatch path entirely; this version calls
-    /// `for_attach` and reaches `parse_status` via the bundled
-    /// `adapter_for_transcript_state`.
+    /// Pins the end-to-end codex decode roundtrip THROUGH
+    /// `AgentBindings::for_attach`. Cycle 7 review F20 caught that the
+    /// pre-cycle-7 body bypassed the dispatch path; B'' then removed
+    /// the `adapter_for_transcript_state` façade field, so this test
+    /// now reaches the decoder via the production `bindings.decoder`
+    /// (`Arc<dyn StateDecoder>`) surface instead of the
+    /// soon-to-be-retired `AgentAdapter::parse_status` façade.
     ///
     /// Coverage scope:
     /// - **Dispatch arm**: `AgentType::Codex` → Codex bindings (not
     ///   NoOp). A regression that hit the `_` / NoOp arm would fail
-    ///   the `bindings.agent_type` assertion.
-    /// - **Façade parser**: the bound `Arc<dyn AgentAdapter>` decodes
-    ///   real Codex rollout JSONL. A regression in `parse_status` /
-    ///   `parse_rollout_snapshot` would fail the `agent_session_id`
-    ///   assertion.
+    ///   the `bindings.agent_type` assertion (NoOp's decoder returns
+    ///   `Err`, which would also fail the decode below).
+    /// - **Decoder roundtrip**: `bindings.decoder.decode(...)` parses
+    ///   real Codex rollout JSONL into a session-id-free
+    ///   `StatusSnapshot`. A regression in `parse_rollout_snapshot`
+    ///   would fail the `agent_session_id` assertion.
     ///
-    /// **NOT pinned here**: the `provider_home → codex_home`
-    /// plumbing through the shared `Arc<CompositeLocator>`. Because
-    /// `parse_status` only exercises the rollout decoder (it never
-    /// touches the locator), a hypothetical regression to
-    /// `CodexAdapter::new` would still pass this test. That wiring
-    /// is structurally guaranteed by cycle-11 F31's `Arc::clone` in
-    /// the `for_attach` Codex arm (one `CompositeLocator` per attach,
-    /// shared between `bindings.locator` and
-    /// `adapter_for_transcript_state` via `with_locator`). The
-    /// locator-end of that wiring is not unit-testable cleanly
-    /// because `CompositeLocator` reaches for SQLite/FS state that
-    /// doesn't exist in the test env.
+    /// **NOT pinned here**: the single-`CompositeLocator` sharing
+    /// invariant — that lives in
+    /// `codex::adapter_tests::with_locator_shares_passed_locator_allocation`.
     /// Paired with `bindings::tests::for_attach_dispatches_by_agent_type`
     /// for dispatch shape on all three variants.
     #[test]
@@ -429,13 +422,11 @@ mod noop_tests {
 
         let raw = r#"{"timestamp":"...","type":"session_meta","payload":{"id":"sess","cli_version":"0.128.0"}}
 "#;
-        let parsed = <dyn AgentAdapter>::parse_status(
-            bindings.adapter_for_transcript_state.as_ref(),
-            "pty-codex",
-            raw,
-        )
-        .expect("codex façade through bindings should parse rollout JSONL");
-        assert_eq!(parsed.event.agent_session_id, "sess");
+        let snapshot = bindings
+            .decoder
+            .decode(Some("pty-codex"), raw)
+            .expect("codex decoder through bindings should parse rollout JSONL");
+        assert_eq!(snapshot.agent_session_id, "sess");
     }
 
     fn make_test_session() -> crate::terminal::state::ManagedSession {

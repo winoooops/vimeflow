@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use crate::agent::adapter::base::TranscriptState;
 use crate::agent::adapter::claude_code::ClaudeCodeAdapter;
-use crate::agent::adapter::AgentAdapter;
+use crate::agent::adapter::traits::TranscriptStreamer;
 use crate::runtime::FakeEventSink;
 
 #[test]
@@ -39,7 +39,7 @@ fn transcript_emits_turn_events_for_real_user_prompts_only() {
     .expect("write transcript fixture");
 
     let state = TranscriptState::new();
-    let adapter: Arc<dyn AgentAdapter> = Arc::new(ClaudeCodeAdapter);
+    let adapter: Arc<dyn TranscriptStreamer> = Arc::new(ClaudeCodeAdapter);
     state
         .start_or_replace(
             adapter,
@@ -74,7 +74,7 @@ fn vitest_pass_fixture_emits_one_test_run() {
     let sink = Arc::new(FakeEventSink::new());
 
     let state = TranscriptState::new();
-    let adapter: Arc<dyn AgentAdapter> = Arc::new(ClaudeCodeAdapter);
+    let adapter: Arc<dyn TranscriptStreamer> = Arc::new(ClaudeCodeAdapter);
     let fixture_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests/fixtures/transcript_vitest_pass.jsonl");
 
@@ -117,7 +117,7 @@ fn cargo_mixed_fixture_emits_test_run_with_groups() {
     let sink = Arc::new(FakeEventSink::new());
 
     let state = TranscriptState::new();
-    let adapter: Arc<dyn AgentAdapter> = Arc::new(ClaudeCodeAdapter);
+    let adapter: Arc<dyn TranscriptStreamer> = Arc::new(ClaudeCodeAdapter);
     let fixture_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests/fixtures/transcript_cargo_mixed.jsonl");
 
@@ -196,7 +196,7 @@ fn transcript_emits_agent_cwd_event_on_each_cwd_transition() {
     .expect("write transcript fixture");
 
     let state = TranscriptState::new();
-    let adapter: Arc<dyn AgentAdapter> = Arc::new(ClaudeCodeAdapter);
+    let adapter: Arc<dyn TranscriptStreamer> = Arc::new(ClaudeCodeAdapter);
     state
         .start_or_replace(
             adapter,
@@ -236,7 +236,7 @@ fn replay_emits_only_latest_snapshot() {
     let sink = Arc::new(FakeEventSink::new());
 
     let state = TranscriptState::new();
-    let adapter: Arc<dyn AgentAdapter> = Arc::new(ClaudeCodeAdapter);
+    let adapter: Arc<dyn TranscriptStreamer> = Arc::new(ClaudeCodeAdapter);
     let fixture_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests/fixtures/transcript_vitest_replay.jsonl");
 

@@ -17,17 +17,16 @@ use super::super::bindings::AgentBindings;
 use super::diagnostics::short_sid;
 use super::diagnostics::{record_event_diag, EventTiming, PathHistory, TxOutcome};
 use super::transcript_state::{TranscriptStartStatus, TranscriptState};
-// `TranscriptPathValidator` is referenced as `Arc<dyn TranscriptPathValidator>`
-// in `maybe_start_transcript`'s signature, so it must be in scope. `StateDecoder`
-// is consumed only via method dispatch on `Arc<dyn StateDecoder>` (vtable), so
-// it does not need to appear here. PR #261 cycle 2 review F9 — clarified
-// that the previous blanket `#[allow(unused_imports)]` on both traits was
-// only load-bearing for one (validator).
-use super::super::traits::TranscriptPathValidator;
+// `TranscriptPathValidator` and `TranscriptStreamer` are referenced as
+// `Arc<dyn ...>` in `maybe_start_transcript`'s signature, so both must be
+// in scope. `StateDecoder` is consumed only via method dispatch on
+// `Arc<dyn StateDecoder>` (vtable), so it does not need to appear here
+// (PR #261 cycle 2 review F9). Step B'' added `TranscriptStreamer` here
+// when `start_or_replace` migrated off `Arc<dyn AgentAdapter>`.
+use super::super::traits::{TranscriptPathValidator, TranscriptStreamer};
 use crate::agent::adapter::types::{
     stamp_snapshot, LocatedStatusSource, RawPath, TranscriptPathSource, ValidateTranscriptError,
 };
-use crate::agent::adapter::AgentAdapter;
 use crate::agent::events::emit_agent_status;
 use crate::runtime::EventSink;
 use crate::terminal::PtyState;
@@ -174,7 +173,7 @@ impl AgentWatcherState {
 /// check, a cwd change triggers a Replace of the tail thread.
 fn maybe_start_transcript(
     validator: &Arc<dyn TranscriptPathValidator>,
-    adapter_for_transcript_state: &Arc<dyn AgentAdapter>,
+    streamer: &Arc<dyn TranscriptStreamer>,
     events: Arc<dyn EventSink>,
     pty_state: &PtyState,
     transcript_state: &TranscriptState,
@@ -216,14 +215,14 @@ fn maybe_start_transcript(
         .get_cwd(&session_id.to_string())
         .map(PathBuf::from);
 
-    // Step B': `TranscriptState::start_or_replace` still takes an
-    // `Arc<dyn AgentAdapter>` until B'' migrates it onto
-    // `Arc<dyn TranscriptStreamer>`. We hand over the same façade
-    // adapter the bindings carry — the two paths agree by
-    // construction (`AgentBindings::for_attach` builds both views
-    // from the same underlying struct).
+    // Step B'': `TranscriptState::start_or_replace` now takes
+    // `Arc<dyn TranscriptStreamer>` directly (was `Arc<dyn AgentAdapter>`
+    // through B'). `bindings.streamer` is the concrete adapter's
+    // streamer view — for Codex it shares the same `Arc<CompositeLocator>`
+    // the watcher's locator uses (B' cycle 11), so there's no second
+    // locator allocation.
     match transcript_state.start_or_replace(
-        adapter_for_transcript_state.clone(),
+        streamer.clone(),
         events,
         session_id.to_string(),
         canonical.clone(),
@@ -304,50 +303,39 @@ pub(super) fn start_watching(
     // Step B': pull the trait views out of bindings up front. Each
     // is `Arc<dyn ...>` — cheap to clone into closures and threads.
     //
-    // Three `AgentBindings` fields are intentionally NOT destructured
-    // here and drop with the function-local move (PR #261 cycle 8
-    // review F24 — `#[allow(dead_code)]` silences these, so the
-    // omission is intentional and listed explicitly so the B''
-    // reviewer can audit the migration without re-deriving why):
+    // Two `AgentBindings` fields are intentionally NOT destructured
+    // here and drop with the function-local move:
     //
     // - `bindings.locator` — already used by `start_for` before this
     //   function runs (it borrowed `&bindings.locator` to call
     //   `locate(...)` and produce the `LocatedStatusSource` passed in
     //   as `located`). The `Arc` itself wasn't consumed there — it
     //   stayed alive on `bindings` and drops with this function-local
-    //   move now (PR #261 cycle 11 review F32 — earlier comment
-    //   said "consumed" but the locator was only borrowed). The
-    //   watcher itself doesn't need the locator again.
-    // - `bindings.streamer` — reserved for B'' which migrates
-    //   `TranscriptState::start_or_replace` onto
-    //   `Arc<dyn TranscriptStreamer>`. B'' MUST consume
-    //   `bindings.streamer` directly (not construct a fresh
-    //   `Arc<dyn TranscriptStreamer>` at the call site), because for
-    //   the Codex arm `bindings.streamer` and
-    //   `bindings.adapter_for_transcript_state` are clones of the
-    //   SAME `Arc<CodexAdapter>` — which holds the shared
-    //   `Arc<CompositeLocator>` from cycle 11 F31. Constructing a
-    //   fresh adapter at the B'' call site would re-introduce the
-    //   double-locator hazard cycle 11 closed. B'' will extract this
-    //   field AND remove `adapter_for_transcript_state` in the same
-    //   step. The compiler currently can't catch a B'' that forgets
-    //   to extract `streamer` because the field is silenced;
-    //   compensate by keeping this comment as the human-readable
-    //   migration checkpoint (PR #261 cycle 13 review F36).
+    //   move now (PR #261 cycle 11 review F32). The watcher itself
+    //   doesn't need the locator again.
     // - `bindings.agent_type` — diagnostics-only; the watcher
     //   doesn't branch on it (each adapter's split-trait impls
     //   carry their own behavior).
+    //
+    // Step B'' (this PR): `bindings.streamer` is now CONSUMED here and
+    // threaded into `TranscriptState::start_or_replace` (which migrated
+    // off `Arc<dyn AgentAdapter>` onto `Arc<dyn TranscriptStreamer>`).
+    // The former transitional `bindings.adapter_for_transcript_state`
+    // field was removed in this step — the cycle-11 shared-`Arc`
+    // guarantee now lives entirely in `bindings.streamer` (for Codex it
+    // is the `Arc<CodexAdapter>` that shares the same
+    // `Arc<CompositeLocator>` the locator uses).
     let decoder = bindings.decoder;
     let validator = bindings.validator;
     let transcript_paths = bindings.transcript_paths;
-    let adapter_for_transcript_state = bindings.adapter_for_transcript_state;
+    let streamer = bindings.streamer;
 
     let notify_timing_for_cb = notify_timing.clone();
     let path_history_for_cb = path_history.clone();
     let decoder_for_cb = decoder.clone();
     let validator_for_cb = validator.clone();
     let transcript_paths_for_cb = transcript_paths.clone();
-    let adapter_for_transcript_state_cb = adapter_for_transcript_state.clone();
+    let streamer_for_cb = streamer.clone();
     let last_processed_for_cb = last_processed.clone();
     let events_for_cb = events.clone();
     let pty_state_for_cb = pty_state.clone();
@@ -435,7 +423,7 @@ pub(super) fn start_watching(
                     Some(path) => {
                         let outcome = maybe_start_transcript(
                             &validator_for_cb,
-                            &adapter_for_transcript_state_cb,
+                            &streamer_for_cb,
                             events_for_cb.clone(),
                             &pty_state_for_cb,
                             &transcript_state_for_cb,
@@ -497,7 +485,7 @@ pub(super) fn start_watching(
         let initial_decoder = decoder.clone();
         let initial_validator = validator.clone();
         let initial_transcript_paths = transcript_paths.clone();
-        let initial_adapter_for_transcript_state = adapter_for_transcript_state.clone();
+        let initial_streamer = streamer.clone();
         let initial_events = events.clone();
         let initial_pty_state = pty_state.clone();
         let initial_transcript_state = transcript_state.clone();
@@ -519,7 +507,7 @@ pub(super) fn start_watching(
                         ) {
                             outcome = maybe_start_transcript(
                                 &initial_validator,
-                                &initial_adapter_for_transcript_state,
+                                &initial_streamer,
                                 initial_events.clone(),
                                 &initial_pty_state,
                                 &initial_transcript_state,
@@ -567,7 +555,7 @@ pub(super) fn start_watching(
         let poll_decoder = decoder.clone();
         let poll_validator = validator.clone();
         let poll_transcript_paths = transcript_paths.clone();
-        let poll_adapter_for_transcript_state = adapter_for_transcript_state.clone();
+        let poll_streamer = streamer.clone();
         // Step 0c: poll thread also routes transcript-path lookups
         // through `TranscriptPathSource` and so needs its own clone of
         // the `LocatedStatusSource`.
@@ -627,7 +615,7 @@ pub(super) fn start_watching(
                             Some(path) => {
                                 let outcome = maybe_start_transcript(
                                     &poll_validator,
-                                    &poll_adapter_for_transcript_state,
+                                    &poll_streamer,
                                     poll_events.clone(),
                                     &poll_pty_state,
                                     &poll_transcript_state,
