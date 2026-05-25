@@ -2,6 +2,7 @@ import type { SessionInfo } from '../../../bindings'
 import type { Pane, Session } from '../types'
 import { emptyActivity } from '../constants'
 import { tabName } from './tabName'
+import { readActivityPanelCollapsed } from './activityPanelCollapsedStore'
 
 /** Build a `Session` from a Rust `SessionInfo`. */
 export const sessionFromInfo = (info: SessionInfo, index: number): Session => {
@@ -14,7 +15,6 @@ export const sessionFromInfo = (info: SessionInfo, index: number): Session => {
     agentType: 'generic',
     status,
     active: true,
-    activityPanelCollapsed: info.activityPanelCollapsed ?? null,
   } satisfies Pane
 
   const pane: Pane =
@@ -39,6 +39,7 @@ export const sessionFromInfo = (info: SessionInfo, index: number): Session => {
     name: tabName(info.cwd, index),
     status,
     layout: 'single',
+    activityPanelCollapsed: readActivityPanelCollapsed(info.id),
     panes: [pane],
     workingDirectory: info.cwd,
     agentType: 'generic',

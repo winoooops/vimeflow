@@ -417,7 +417,7 @@ export const DiffPanelContent = ({
       className="flex h-full w-full min-h-0 min-w-0 flex-1 overflow-hidden"
     >
       {/* Left: Changed files list (~240px fixed) */}
-      <div className="w-60 shrink-0 border-r border-white/5 overflow-y-auto">
+      <div className="thin-scrollbar w-60 shrink-0 border-r border-white/5 overflow-y-auto">
         <ChangedFilesList
           files={effectiveFiles}
           selectedFile={

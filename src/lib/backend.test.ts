@@ -1,5 +1,11 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
-import { invoke, listen, type BackendApi } from './backend'
+import {
+  AgentRenameError,
+  invoke,
+  listen,
+  renameAgentSession,
+  type BackendApi,
+} from './backend'
 
 const noop = (): void => undefined
 
@@ -46,6 +52,19 @@ describe('backend (window.vimeflow bridge)', () => {
     await expect(invoke('git_status', { cwd: '/x' })).rejects.toBe(
       'sidecar error'
     )
+  })
+
+  test('renameAgentSession wraps structured backend errors', async () => {
+    mockInvoke.mockRejectedValueOnce({
+      message: 'no live agent in pty pty-1 to rename',
+      reason: 'no-live-agent',
+    })
+
+    await expect(renameAgentSession('pty-1', 'title')).rejects.toMatchObject({
+      name: 'AgentRenameError',
+      message: 'no live agent in pty pty-1 to rename',
+      reason: 'no-live-agent',
+    } satisfies Partial<AgentRenameError>)
   })
 
   test('listen delegates to window.vimeflow.listen', async () => {

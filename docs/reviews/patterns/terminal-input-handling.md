@@ -2,8 +2,8 @@
 id: terminal-input-handling
 category: terminal
 created: 2026-04-09
-last_updated: 2026-04-09
-ref_count: 1
+last_updated: 2026-05-24
+ref_count: 2
 ---
 
 # Terminal Input Handling
@@ -43,3 +43,12 @@ double execution, and paste failures.
 - **Finding:** `\r` and `\n` treated as independent Enter events — `\r\n` paste triggers two command executions
 - **Fix:** Normalize input by replacing `\r\n` with `\n` before processing, or track previous char to skip `\n` after `\r`
 - **Commit:** `6a312b3 fix: terminal rendering, WebGL, backspace, and progress tracker (#33)`
+
+### 4. Command rename path bypassed pane-title validation before terminal injection
+
+- **Source:** github-codex-connector | PR #265 | 2026-05-24
+- **Severity:** P2
+- **File:** `src/features/workspace/commands/buildWorkspaceCommands.ts` + `src/features/sessions/utils/sanitizeTitle.ts`
+- **Finding:** The `:rename-pane` command path wrote the trimmed raw argument into `userLabel` without the validation used by the chord modal. Control characters and overlong titles could persist locally; for agent panes, frontend state could diverge from the backend-sanitized `/rename` value.
+- **Fix:** Route command rename arguments through `validateTitle` before any local label or backend rename write. Control characters and over-200-byte titles are rejected consistently; valid whitespace is collapsed before both local and agent rename calls. Regression tests cover control-character rejection, byte-length rejection, and sanitized whitespace.
+- **Commit:** _(see git log for the PR #265 review-fix commit)_

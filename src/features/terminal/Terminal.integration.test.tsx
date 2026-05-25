@@ -34,6 +34,7 @@ const createTestSession = (sessionId: string, cwd: string): Session => ({
   workingDirectory: cwd,
   agentType: 'generic',
   layout: 'single',
+  activityPanelCollapsed: false,
   panes: [
     {
       id: 'p0',
@@ -42,7 +43,6 @@ const createTestSession = (sessionId: string, cwd: string): Session => ({
       agentType: 'generic',
       status: 'running',
       active: true,
-      activityPanelCollapsed: null,
     },
   ],
   createdAt: '2026-05-08T00:00:00Z',

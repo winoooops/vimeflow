@@ -219,10 +219,14 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
           pipStatus={pipStatus}
           worktreeName={worktreeName}
           branch={branch}
+          cwd={pane.cwd}
           added={added}
           removed={removed}
           isFocused={isFocusHighlightVisible}
           isCollapsed={isCollapsed}
+          ptyId={pane.ptyId}
+          paneAgentTitle={pane.agentTitle}
+          paneUserLabel={pane.userLabel}
           onToggleCollapse={handleToggleCollapse}
           onClose={onClose ? handleClose : undefined}
         />

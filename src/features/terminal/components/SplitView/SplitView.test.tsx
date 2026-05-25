@@ -71,6 +71,7 @@ const makeSession = (
   workingDirectory: '/tmp/fixture',
   agentType: 'generic',
   layout,
+  activityPanelCollapsed: false,
   panes: Array.from(
     { length: paneCount },
     (_, i): Pane => ({
@@ -80,7 +81,6 @@ const makeSession = (
       agentType: 'generic',
       status: 'running',
       active: i === activeIndex,
-      activityPanelCollapsed: null,
       pid: 1000 + i,
       restoreData: {
         sessionId: `pty-${i}`,
@@ -640,7 +640,6 @@ describe('selectVisiblePanes', () => {
     agentType: 'generic',
     status: 'running',
     active,
-    activityPanelCollapsed: null,
     pid: 1,
   })
 

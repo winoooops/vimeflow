@@ -11,6 +11,7 @@ const buildSession = (name = 'auth'): Session => ({
   workingDirectory: '~',
   agentType: 'claude-code',
   layout: 'single',
+  activityPanelCollapsed: false,
   panes: [
     {
       id: 'p0',
@@ -19,7 +20,6 @@ const buildSession = (name = 'auth'): Session => ({
       agentType: 'claude-code',
       status: 'running',
       active: true,
-      activityPanelCollapsed: null,
     },
   ],
   createdAt: '2026-05-06T00:00:00Z',

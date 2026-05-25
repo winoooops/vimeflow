@@ -161,6 +161,26 @@ describe('Sidecar invoke result and error handling', () => {
 
     await expect(promise).rejects.toBe('PTY session not found')
   })
+
+  test('ok false response with errorReason rejects with structured error', async () => {
+    const { mock, sidecar } = makeSidecar()
+    const promise = sidecar.invoke('rename_agent_session', { ptyId: 'missing' })
+
+    mock.stdout.write(
+      encodeFrame({
+        kind: 'response',
+        id: '1',
+        ok: false,
+        error: 'no live agent in pty missing to rename',
+        errorReason: 'no-live-agent',
+      })
+    )
+
+    await expect(promise).rejects.toEqual({
+      message: 'no live agent in pty missing to rename',
+      reason: 'no-live-agent',
+    })
+  })
 })
 
 describe('Sidecar exit handling', () => {

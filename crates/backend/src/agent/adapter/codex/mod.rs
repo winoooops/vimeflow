@@ -2,6 +2,7 @@
 
 mod locator;
 mod parser;
+pub(crate) mod session_index;
 mod transcript;
 mod types;
 
@@ -26,7 +27,12 @@ pub struct CodexAdapter {
     pty_start: SystemTime,
     codex_home: PathBuf,
     locator_cache: OnceLock<CompositeLocator>,
-    resolved_rollout_path: Mutex<Option<PathBuf>>,
+    resolved_rollout: Mutex<Option<ResolvedRollout>>,
+}
+
+struct ResolvedRollout {
+    path: PathBuf,
+    thread_id: String,
 }
 
 impl CodexAdapter {
@@ -36,7 +42,7 @@ impl CodexAdapter {
             pty_start,
             codex_home: default_codex_home(),
             locator_cache: OnceLock::new(),
-            resolved_rollout_path: Mutex::new(None),
+            resolved_rollout: Mutex::new(None),
         }
     }
 
@@ -47,7 +53,7 @@ impl CodexAdapter {
             pty_start,
             codex_home,
             locator_cache: OnceLock::new(),
-            resolved_rollout_path: Mutex::new(None),
+            resolved_rollout: Mutex::new(None),
         }
     }
 
@@ -82,8 +88,11 @@ impl AgentAdapter for CodexAdapter {
 
         let location = retry_locator(|| self.locator().resolve_rollout(&ctx))?;
 
-        if let Ok(mut slot) = self.resolved_rollout_path.lock() {
-            *slot = Some(location.rollout_path.clone());
+        if let Ok(mut slot) = self.resolved_rollout.lock() {
+            *slot = Some(ResolvedRollout {
+                path: location.rollout_path.clone(),
+                thread_id: location.thread_id.clone(),
+            });
         }
 
         Ok(StatusSource {
@@ -93,11 +102,10 @@ impl AgentAdapter for CodexAdapter {
     }
 
     fn parse_status(&self, session_id: &str, raw: &str) -> Result<ParsedStatus, String> {
-        let transcript_path = self
-            .resolved_rollout_path
-            .lock()
-            .ok()
-            .and_then(|slot| slot.as_ref().map(|path| path.to_string_lossy().to_string()));
+        let transcript_path = self.resolved_rollout.lock().ok().and_then(|slot| {
+            slot.as_ref()
+                .map(|rollout| rollout.path.to_string_lossy().to_string())
+        });
 
         parser::parse_rollout(session_id, raw, transcript_path)
     }
@@ -113,8 +121,57 @@ impl AgentAdapter for CodexAdapter {
         cwd: Option<PathBuf>,
         transcript_path: PathBuf,
     ) -> Result<TranscriptHandle, String> {
-        transcript::start_tailing(events, session_id, transcript_path, cwd)
+        let mut handle = transcript::start_tailing(
+            std::sync::Arc::clone(&events),
+            session_id.clone(),
+            transcript_path.clone(),
+            cwd,
+        )?;
+
+        match resolved_thread_id_for(&self.resolved_rollout, &transcript_path) {
+            Some(agent_session_id) => {
+                let aux_stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+                let title_join = session_index::spawn_watch(
+                    self.codex_home.join("session_index.jsonl"),
+                    agent_session_id,
+                    session_id,
+                    std::sync::Arc::clone(&events),
+                    std::sync::Arc::clone(&aux_stop),
+                );
+                if let Err(err) = handle.attach_aux_join(aux_stop, title_join) {
+                    log::error!("codex title sync disabled for this session: {err}");
+                }
+            }
+            None => {
+                log::warn!(
+                    "codex title sync disabled for this session: no resolved thread id for {}",
+                    transcript_path.display()
+                );
+            }
+        }
+
+        Ok(handle)
     }
+}
+
+fn resolved_thread_id_for(
+    resolved_rollout: &Mutex<Option<ResolvedRollout>>,
+    transcript_path: &Path,
+) -> Option<String> {
+    let slot = resolved_rollout.lock().ok()?;
+    let rollout = slot.as_ref()?;
+
+    if rollout.path == transcript_path {
+        return Some(rollout.thread_id.clone());
+    }
+
+    let rollout_path = std::fs::canonicalize(&rollout.path).ok()?;
+    let transcript_path = std::fs::canonicalize(transcript_path).ok()?;
+    if rollout_path == transcript_path {
+        return Some(rollout.thread_id.clone());
+    }
+
+    None
 }
 
 /// Retry a codex locator resolution up to the bind budget.
@@ -172,10 +229,13 @@ mod adapter_tests {
         let adapter = CodexAdapter::new(12345, SystemTime::UNIX_EPOCH);
         {
             let mut slot = adapter
-                .resolved_rollout_path
+                .resolved_rollout
                 .lock()
                 .expect("resolved rollout path lock");
-            *slot = Some(PathBuf::from("/tmp/codex-rollout.jsonl"));
+            *slot = Some(ResolvedRollout {
+                path: PathBuf::from("/tmp/codex-rollout.jsonl"),
+                thread_id: "thread-id".to_string(),
+            });
         }
         let raw = r#"{"timestamp":"...","type":"session_meta","payload":{"id":"sess","cli_version":"0.128.0"}}
 "#;
@@ -284,7 +344,10 @@ mod retry_locator_tests {
 #[cfg(test)]
 mod status_source_tests {
     use super::*;
+    use crate::agent::events::AGENT_SESSION_TITLE;
+    use crate::runtime::FakeEventSink;
     use rusqlite::{params, Connection};
+    use std::sync::{Arc, Mutex};
     use std::time::{Duration, SystemTime};
 
     fn seed_codex_home_with_thread(codex_home: &Path, pid: u32, pty_start: SystemTime) -> PathBuf {
@@ -365,6 +428,80 @@ mod status_source_tests {
 
         assert_eq!(src.path, rollout_path);
         assert_eq!(src.trust_root, codex_home.path());
+        assert_eq!(
+            adapter
+                .resolved_rollout
+                .lock()
+                .expect("resolved rollout lock")
+                .as_ref()
+                .map(|rollout| rollout.thread_id.as_str()),
+            Some("tid-test")
+        );
+    }
+
+    #[test]
+    fn tail_transcript_uses_resolved_thread_id_for_non_uuid_rollout_name() {
+        let codex_home = tempfile::tempdir().expect("tempdir");
+        let pty_start = SystemTime::now() - Duration::from_secs(5);
+        let rollout_path = seed_codex_home_with_thread(codex_home.path(), 999, pty_start);
+        std::fs::write(
+            codex_home.path().join("session_index.jsonl"),
+            r#"{"id":"tid-test","thread_name":"resolved title","updated_at":"2026-05-23T00:00:00Z"}"#,
+        )
+        .expect("write session index");
+
+        let adapter = CodexAdapter::with_home(999, pty_start, codex_home.path().to_path_buf());
+        let cwd = codex_home.path().to_path_buf();
+        <CodexAdapter as AgentAdapter>::status_source(&adapter, &cwd, "sid")
+            .expect("status_source should resolve");
+
+        let sink: Arc<FakeEventSink> = Arc::new(FakeEventSink::new());
+        let sink_dyn: Arc<dyn EventSink> = sink.clone();
+        let handle = <CodexAdapter as AgentAdapter>::tail_transcript(
+            &adapter,
+            sink_dyn,
+            "pty-1".into(),
+            None,
+            rollout_path,
+        )
+        .expect("tail transcript");
+
+        for _ in 0..40 {
+            if sink.count(AGENT_SESSION_TITLE) >= 1 {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(25));
+        }
+
+        handle.stop();
+
+        let titles: Vec<_> = sink
+            .recorded()
+            .into_iter()
+            .filter(|(name, _)| name == AGENT_SESSION_TITLE)
+            .map(|(_, payload)| payload)
+            .collect();
+        assert_eq!(titles.len(), 1);
+        assert_eq!(titles[0]["agentSessionId"], "tid-test");
+        assert_eq!(titles[0]["title"], "resolved title");
+    }
+
+    #[test]
+    fn resolved_thread_id_matches_canonical_transcript_path() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let rollout_path = dir.path().join("rollout.jsonl");
+        std::fs::write(&rollout_path, b"").expect("write rollout");
+        std::fs::create_dir(dir.path().join("nested")).expect("mkdir nested");
+        let transcript_path = dir.path().join("nested").join("..").join("rollout.jsonl");
+        let resolved_rollout = Mutex::new(Some(ResolvedRollout {
+            path: rollout_path,
+            thread_id: "tid-test".to_string(),
+        }));
+
+        assert_eq!(
+            resolved_thread_id_for(&resolved_rollout, &transcript_path),
+            Some("tid-test".to_string())
+        );
     }
 
     #[test]

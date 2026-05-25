@@ -1500,18 +1500,22 @@ mod tests {
         )
         .unwrap();
 
-        // Wait for read loop to process EOF (give shell a moment to exit)
-        std::thread::sleep(std::time::Duration::from_millis(500));
+        let mut exited = false;
+        for _ in 0..100 {
+            let snap = cache.snapshot();
+            let entry = snap
+                .sessions
+                .get("eof-test")
+                .expect("session should still be in cache after exit");
+            if entry.exited {
+                exited = true;
+                break;
+            }
 
-        let snap = cache.snapshot();
-        let entry = snap
-            .sessions
-            .get("eof-test")
-            .expect("session should still be in cache after exit");
-        assert!(
-            entry.exited,
-            "cache entry should be marked exited after EOF"
-        );
+            tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+        }
+
+        assert!(exited, "cache entry should be marked exited after EOF");
     }
 
     #[tokio::test]

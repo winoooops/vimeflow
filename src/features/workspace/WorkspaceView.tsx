@@ -40,7 +40,12 @@ import { UnsavedChangesDialog } from '../editor/components/UnsavedChangesDialog'
 import { InfoBanner } from './components/InfoBanner'
 import { CommandPalette } from '../command-palette/CommandPalette'
 import { useCommandPalette } from '../command-palette/hooks/useCommandPalette'
+import {
+  usePaneRenameChord,
+  type FocusedPaneRef,
+} from '../command-palette/hooks/usePaneRenameChord'
 import { mockNavigationItems, mockSettingsItem } from './data/mockNavigation'
+import { renameAgentSession } from '../../lib/backend'
 import { useSessionManager } from '../sessions/hooks/useSessionManager'
 import { clampSize, useResizable } from '../../hooks/useResizable'
 import { useElasticContainer } from '../../hooks/useElasticContainer'
@@ -125,10 +130,11 @@ export const WorkspaceView = (): ReactElement => {
     removeSession,
     restartSession,
     renameSession,
+    setPaneUserLabel,
     reorderSessions,
     updatePaneCwd,
     updatePaneAgentType,
-    setPaneActivityPanelCollapsed,
+    setSessionActivityPanelCollapsed,
     setSessionActivePane,
     setSessionLayout,
     addPane,
@@ -168,6 +174,19 @@ export const WorkspaceView = (): ReactElement => {
 
   const { message: infoMessage, notifyInfo, dismiss } = useNotifyInfo()
   const { activeTab, setActiveTab } = useSidebarTab()
+  const paneRenameRequestIdRef = useRef(0)
+
+  const nextPaneRenameRequestId = useCallback((): number => {
+    paneRenameRequestIdRef.current += 1
+
+    return paneRenameRequestIdRef.current
+  }, [])
+
+  const isCurrentPaneRenameRequest = useCallback(
+    (requestId: number): boolean =>
+      requestId === paneRenameRequestIdRef.current,
+    []
+  )
 
   // Activity updates (tool calls, file changes) bump `sessions` identity
   // but no command body reads activity, so rebuilding on every PTY data
@@ -179,14 +198,34 @@ export const WorkspaceView = (): ReactElement => {
     sessions.map((s) => WORKSPACE_TAB_KEYS.map((k) => s[k]))
   )
 
+  // `activePane` is declared further down (after `activeSession`); resolve
+  // the active pane's ptyId inline here so the command builder has it without
+  // forcing a section-wide reshuffle.
+  const activeSessionForCommands =
+    sessions.find((s) => s.id === activeSessionId) ?? null
+
+  const activePaneForCommandInputs = activeSessionForCommands
+    ? (findActivePane(activeSessionForCommands) ?? null)
+    : null
+  const activePanePtyIdForCommands = activePaneForCommandInputs?.ptyId ?? null
+
+  const activePaneAgentTypeForCommands =
+    activePaneForCommandInputs?.agentType ?? null
+
   const workspaceCommands = useMemo(
     () =>
       buildWorkspaceCommands({
         sessions,
         activeSessionId,
+        activePanePtyId: activePanePtyIdForCommands,
+        activePaneAgentType: activePaneAgentTypeForCommands,
         createSession,
         removeSession,
         renameSession,
+        setPaneUserLabel,
+        renameAgentSession,
+        nextPaneRenameRequestId,
+        isCurrentPaneRenameRequest,
         setActiveSessionId,
         notifyInfo,
       }),
@@ -197,9 +236,14 @@ export const WorkspaceView = (): ReactElement => {
     [
       sessionsSignature,
       activeSessionId,
+      activePanePtyIdForCommands,
+      activePaneAgentTypeForCommands,
       createSession,
       removeSession,
       renameSession,
+      setPaneUserLabel,
+      nextPaneRenameRequestId,
+      isCurrentPaneRenameRequest,
       setActiveSessionId,
       notifyInfo,
     ]
@@ -216,7 +260,7 @@ export const WorkspaceView = (): ReactElement => {
   const activePanePtyId = activePane?.ptyId
 
   const agentStatus = useAgentStatus(activePanePtyId ?? null)
-  const activityPanelCollapsed = activePane?.activityPanelCollapsed ?? false
+  const activityPanelCollapsed = activeSession?.activityPanelCollapsed ?? false
 
   const activityPanelAgent = useMemo(
     () => AGENTS[agentTypeToRegistryKey(agentStatus.agentType)],
@@ -233,28 +277,13 @@ export const WorkspaceView = (): ReactElement => {
   const activityPanelStatus: SessionStatus = activePane?.status ?? 'paused'
 
   const handleActivityPanelCollapsed = useCallback(
-    async (collapsed: boolean): Promise<void> => {
-      if (!activeSessionId || !activePane) {
+    (collapsed: boolean): void => {
+      if (!activeSessionId) {
         return
       }
-
-      try {
-        await setPaneActivityPanelCollapsed(
-          activeSessionId,
-          activePane.id,
-          collapsed
-        )
-      } catch (error: unknown) {
-        const message = error instanceof Error ? error.message : String(error)
-        // 'Error: ' prefix is a minimal severity signal until the
-        // notification API gains a typed level. Without it, a banner styled
-        // identically to routine `notifyInfo` messages can be mistaken for a
-        // status update when it actually means the persist failed and the
-        // optimistic UI just snapped back.
-        notifyInfo(`Error: Couldn't update activity panel: ${message}`)
-      }
+      setSessionActivityPanelCollapsed(activeSessionId, collapsed)
     },
-    [activePane, activeSessionId, notifyInfo, setPaneActivityPanelCollapsed]
+    [activeSessionId, setSessionActivityPanelCollapsed]
   )
 
   // Bridge: keep pane chrome in sync with agent detection for the active
@@ -502,6 +531,26 @@ export const WorkspaceView = (): ReactElement => {
   const pendingFocusTarget = useRef<FocusTarget | null>(null)
   const terminalZoneRef = useRef<TerminalZoneHandle>(null)
   const dockPanelRef = useRef<DockPanelHandle>(null)
+
+  const resolveFocusedPane = useCallback((): FocusedPaneRef | null => {
+    // The chord is a deliberate user gesture (`Ctrl+:` then `r`); fire
+    // it whenever the workspace has an active session + active pane.
+    // Don't gate on `activeContainerId === TERMINAL_CONTAINER_ID` —
+    // that workspace-container focus state only flips on Ctrl+B or
+    // specific shortcuts, NOT when the user clicks into a pane, so
+    // requiring it surprised the user when their visibly-focused pane
+    // dropped the chord into the palette instead.
+    if (!activeSession || !activePane) {
+      return null
+    }
+
+    return { pane: activePane, session: activeSession }
+  }, [activePane, activeSession])
+
+  const { renderNode: paneRenameNode } = usePaneRenameChord(
+    resolveFocusedPane,
+    setPaneUserLabel
+  )
 
   const requestFocus = useCallback((target: FocusTarget): void => {
     pendingFocusTarget.current = target
@@ -1043,7 +1092,7 @@ export const WorkspaceView = (): ReactElement => {
             )}
             isRunning={agentStatus.isActive}
             onExpand={() => {
-              void handleActivityPanelCollapsed(false)
+              handleActivityPanelCollapsed(false)
             }}
           />
         ) : (
@@ -1056,7 +1105,7 @@ export const WorkspaceView = (): ReactElement => {
             agent={activityPanelAgent}
             status={activityPanelStatus}
             onCollapse={() => {
-              void handleActivityPanelCollapsed(true)
+              handleActivityPanelCollapsed(true)
             }}
           />
         )}
@@ -1079,6 +1128,8 @@ export const WorkspaceView = (): ReactElement => {
 
       {/* Drag overlay — prevents iframes/xterm from stealing mouse events */}
       {isDragging && <div className="fixed inset-0 z-50 cursor-col-resize" />}
+
+      {paneRenameNode}
 
       {/* Command Palette — workspace-scoped command dispatcher */}
       <CommandPalette

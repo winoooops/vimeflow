@@ -1,7 +1,9 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 import { BACKEND_EVENT, BACKEND_INVOKE } from './ipc-channels'
 
-type InvokeEnvelope<T> = { ok: true; result: T } | { ok: false; error: string }
+type InvokeEnvelope<T> =
+  | { ok: true; result: T }
+  | { ok: false; error: string; errorReason?: string }
 
 const invoke = async <T>(
   method: string,
@@ -14,6 +16,14 @@ const invoke = async <T>(
 
   if (envelope.ok) {
     return envelope.result
+  }
+
+  if (envelope.errorReason) {
+    // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors -- Structured backend errors must cross the contextBridge as cloneable payloads.
+    return Promise.reject({
+      message: envelope.error,
+      reason: envelope.errorReason,
+    })
   }
 
   // eslint-disable-next-line @typescript-eslint/only-throw-error -- BackendApi preserves Tauri-compatible bare string rejections.
