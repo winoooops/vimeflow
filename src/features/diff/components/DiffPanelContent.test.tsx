@@ -62,7 +62,7 @@ vi.mock('@pierre/diffs/react', () => ({
   }: {
     oldFile: { name: string; contents: string }
     newFile: { name: string; contents: string }
-    options: { diffStyle?: string; theme?: string }
+    options: { diffStyle?: string; theme?: string; lineDiffType?: string }
   }): ReactElement => (
     <div
       data-testid="multi-file-diff"
@@ -72,6 +72,7 @@ vi.mock('@pierre/diffs/react', () => ({
       data-new-contents={newFile.contents}
       data-diff-style={options.diffStyle}
       data-theme={options.theme}
+      data-line-diff-type={options.lineDiffType}
     >
       MultiFileDiff stub
     </div>
@@ -1056,8 +1057,8 @@ describe('DiffPanelContent', () => {
     })
   })
 
-  describe('worker pool theme sync', (): void => {
-    test('calls workerPool.setRenderOptions with the initial theme on mount', (): void => {
+  describe('worker pool render-options sync', (): void => {
+    test('calls workerPool.setRenderOptions with the initial pool options on mount', (): void => {
       vi.spyOn(useGitStatusModule, 'useGitStatus').mockReturnValue({
         files: [],
         filesCwd: null,
@@ -1073,11 +1074,14 @@ describe('DiffPanelContent', () => {
 
       render(<DiffPanelContent />)
 
-      // DiffPanelContent's default theme state is 'pierre-dark'; the sync
-      // effect must push that into the shared worker pool so the renderer's
-      // workerManager-driven theme path picks it up.
+      // DiffPanelContent's defaults are theme 'pierre-dark' + lineDiffType
+      // 'word'; the sync effect must push BOTH into the shared worker pool so
+      // the renderer's workerManager-driven path picks them up. lineDiffType
+      // matters because setRenderOptions defaults every omitted field —
+      // leaving it out would reset the pool to Pierre's 'word-alt'.
       expect(workerPoolSetRenderOptionsMock).toHaveBeenCalledWith({
         theme: 'pierre-dark',
+        lineDiffType: 'word',
       })
     })
 
@@ -1116,7 +1120,7 @@ describe('DiffPanelContent', () => {
       render(<DiffPanelContent cwd="/repo" />)
 
       expect(await screen.findByRole('alert')).toHaveTextContent(
-        'Theme sync failed: worker failed'
+        'Diff render sync failed: worker failed'
       )
     })
 
@@ -1172,6 +1176,7 @@ describe('DiffPanelContent', () => {
 
       expect(workerPoolSetRenderOptionsMock).toHaveBeenLastCalledWith({
         theme: 'pierre-light',
+        lineDiffType: 'word',
       })
 
       expect(screen.getByTestId('multi-file-diff')).toHaveAttribute(
@@ -1187,6 +1192,82 @@ describe('DiffPanelContent', () => {
       expect(screen.getByTestId('multi-file-diff')).toHaveAttribute(
         'data-theme',
         'pierre-light'
+      )
+    })
+
+    test('remounts MultiFileDiff only after worker pool accepts a new lineDiffType', async (): Promise<void> => {
+      const user = userEvent.setup()
+      const pendingSync = deferredWorkerOptions()
+      workerPoolSetRenderOptionsMock
+        .mockResolvedValueOnce(undefined)
+        .mockReturnValueOnce(pendingSync.promise)
+
+      vi.spyOn(useGitStatusModule, 'useGitStatus').mockReturnValue({
+        files: [
+          {
+            path: 'src/App.tsx',
+            status: 'modified',
+            staged: false,
+          },
+        ],
+        filesCwd: '/repo',
+        loading: false,
+        error: null,
+        refresh: vi.fn(),
+        idle: false,
+      })
+
+      vi.spyOn(useFileDiffModule, 'useFileDiff').mockReturnValue(
+        fileDiffMock({
+          diff: {
+            filePath: 'src/App.tsx',
+            oldPath: 'src/App.tsx',
+            newPath: 'src/App.tsx',
+            hunks: [],
+          },
+          loading: false,
+          error: null,
+          oldText: 'old',
+          newText: 'new',
+        })
+      )
+
+      render(<DiffPanelContent cwd="/repo" />)
+
+      expect(screen.getByTestId('multi-file-diff')).toHaveAttribute(
+        'data-line-diff-type',
+        'word'
+      )
+
+      // HIGHLIGHT dropdown trigger shows the current value 'Word'.
+      await user.click(screen.getByRole('button', { name: 'Word' }))
+      const menu = await screen.findByRole('menu')
+      await user.click(
+        within(menu).getByRole('menuitem', { name: /character/i })
+      )
+
+      // lineDiffType MUST ride along with theme — it is a pool-owned option,
+      // so the HIGHLIGHT dropdown would be a no-op without this push.
+      expect(workerPoolSetRenderOptionsMock).toHaveBeenLastCalledWith({
+        theme: 'pierre-dark',
+        lineDiffType: 'char',
+      })
+
+      // Remount is gated on the synced value, so the diff keeps the prior
+      // highlighting until the pool resolves.
+      expect(screen.getByTestId('multi-file-diff')).toHaveAttribute(
+        'data-line-diff-type',
+        'word'
+      )
+
+      await act(async () => {
+        pendingSync.resolve()
+        await pendingSync.promise
+      })
+
+      expect(screen.getByTestId('multi-file-diff')).toHaveAttribute(
+        'data-line-diff-type',
+        'char'
       )
     })
   })
