@@ -1,9 +1,11 @@
 //! Agent event emission helpers.
 
 use crate::agent::types::{
-    AgentCwdEvent, AgentStatusEvent, AgentToolCallEvent, AgentTurnEvent,
+    AgentCwdEvent, AgentSessionTitleEvent, AgentStatusEvent, AgentToolCallEvent, AgentTurnEvent,
 };
 use crate::runtime::{serialize_event, EventSink};
+
+pub const AGENT_SESSION_TITLE: &str = "agent-session-title";
 
 pub(crate) fn emit_agent_status(
     events: &dyn EventSink,
@@ -31,4 +33,11 @@ pub(crate) fn emit_agent_cwd(
     payload: &AgentCwdEvent,
 ) -> Result<(), String> {
     events.emit_json("agent-cwd", serialize_event(payload)?)
+}
+
+pub(crate) fn emit_agent_session_title(
+    events: &dyn EventSink,
+    payload: &AgentSessionTitleEvent,
+) -> Result<(), String> {
+    events.emit_json(AGENT_SESSION_TITLE, serialize_event(payload)?)
 }

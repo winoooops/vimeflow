@@ -40,7 +40,7 @@ const COMPACT_CHUNK_THRESHOLD = 64
 
 interface Pending {
   resolve: (value: unknown) => void
-  reject: (reason: string) => void
+  reject: (reason: unknown) => void
 }
 
 const rejectBareString = (
@@ -149,6 +149,24 @@ export const createSidecar = (
 
         if (typeof parsed.error !== 'string') {
           entry.reject('malformed response frame: error not a string')
+
+          return
+        }
+
+        if (
+          parsed.errorReason !== undefined &&
+          typeof parsed.errorReason !== 'string'
+        ) {
+          entry.reject('malformed response frame: errorReason not a string')
+
+          return
+        }
+
+        if (parsed.errorReason) {
+          entry.reject({
+            message: parsed.error,
+            reason: parsed.errorReason,
+          })
 
           return
         }

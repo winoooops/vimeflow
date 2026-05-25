@@ -6,6 +6,7 @@ describe('isAllowedBackendMethod', () => {
   test.each([
     'spawn_pty',
     'write_pty',
+    'rename_agent_session',
     'resize_pty',
     'kill_pty',
     'list_sessions',

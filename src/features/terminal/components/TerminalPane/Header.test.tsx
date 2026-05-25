@@ -50,6 +50,7 @@ const baseProps = {
   removed: 12,
   isFocused: true,
   isCollapsed: false,
+  ptyId: 's1',
   onToggleCollapse: vi.fn(),
 }
 
@@ -65,6 +66,56 @@ describe('Header', () => {
     render(<Header {...baseProps} />)
 
     expect(screen.getByText('auth refactor')).toBeInTheDocument()
+  })
+
+  test('renders paneAgentTitle when provided', () => {
+    render(<Header {...baseProps} paneAgentTitle="My Agent Title" />)
+
+    expect(screen.getByTestId('terminal-pane-header')).toHaveTextContent(
+      'My Agent Title'
+    )
+
+    expect(screen.getByTestId('terminal-pane-header')).not.toHaveTextContent(
+      baseProps.session.name
+    )
+  })
+
+  test('falls back to session.name when paneAgentTitle is undefined', () => {
+    render(<Header {...baseProps} paneAgentTitle={undefined} />)
+
+    expect(screen.getByTestId('terminal-pane-header')).toHaveTextContent(
+      baseProps.session.name
+    )
+  })
+
+  test('paneUserLabel takes precedence over paneAgentTitle and session.name', () => {
+    render(
+      <Header
+        {...baseProps}
+        paneAgentTitle="agent-title"
+        paneUserLabel="my-label"
+      />
+    )
+
+    expect(screen.getByTestId('terminal-pane-header')).toHaveTextContent(
+      'my-label'
+    )
+
+    expect(screen.getByTestId('terminal-pane-header')).not.toHaveTextContent(
+      'agent-title'
+    )
+  })
+
+  test('paneUserLabel wins over session.name when paneAgentTitle is undefined', () => {
+    render(<Header {...baseProps} paneUserLabel="my-label" />)
+
+    expect(screen.getByTestId('terminal-pane-header')).toHaveTextContent(
+      'my-label'
+    )
+
+    expect(screen.getByTestId('terminal-pane-header')).not.toHaveTextContent(
+      baseProps.session.name
+    )
   })
 
   test('expanded header shows branch, added, and removed counts', () => {

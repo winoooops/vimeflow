@@ -2,8 +2,8 @@
 id: async-race-conditions
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-05-21
-ref_count: 10
+last_updated: 2026-05-24
+ref_count: 11
 ---
 
 # Async Race Conditions
@@ -421,3 +421,12 @@ prevent showing previous data.
 - **Finding:** Cycle 4 added an `isHead` guard around the rollback setSessions call but left `throw err` unconditional. A superseded call still propagated its rejection up to `handleActivityPanelCollapsed -> notifyInfo`, so the user saw an error toast for a rapid collapse-then-expand when the collapse IPC happened to fail — even though the expand had already succeeded and the UI was correct. Separately, the chain key was `${sessionId}:${paneId}`, but `nextFreePaneId` reuses freed React pane ids, so a stale persist/failure for a removed pane could either join the new pane's queue (chain key collision) or have its rollback setSessions mutate the replacement pane (paneId-match in the catch predicate). Cycle 5 partially fixed C4 by switching the chain key to `pane.ptyId` but kept paneId-based matching in setSessions; codex flagged that as still vulnerable to cross-pane contamination via the React id reuse on the state-write path.
 - **Fix:** Move `throw err` INSIDE the `if (isHead)` block so superseded calls resolve silently (matching the "silently defer" comment). Capture `const panePtyId = pane.ptyId` once at call entry and use it everywhere — chain key, optimistic setSessions predicate, and rollback setSessions predicate all compare against `panePtyId` (a per-spawn backend identifier that never recycles). The optimistic update runs in the call's sync prefix so it cannot race with pane lifecycle; the rollback runs after at least one IPC round-trip and is the path the codex finding exercised. If the original pane is gone entirely when rollback fires, both updates become no-ops. Inlined `activityPanelStatus = agentStatus.isActive ? 'running' : 'paused'` instead of useMemo + partial-dep eslint suppression — a ternary on a primitive can't stale and removes the fragility class.
 - **Commit:** _(see git log for the PR #238 upsource-review cycle 6 fix commit)_
+
+### 43. Pane rename trusted stale frontend agent classification and skipped backend sync
+
+- **Source:** github-codex-connector | PR #265 | 2026-05-24
+- **Severity:** P2
+- **File:** `src/features/workspace/commands/buildWorkspaceCommands.ts` + `src/features/command-palette/hooks/usePaneRenameChord.ts`
+- **Finding:** `:rename-pane` and the pane-rename chord decided whether to send `/rename` from frontend pane `agentType` snapshots. New Claude/Codex panes can report `generic` until detection state reaches React, so user renames in that window updated only the local `userLabel`; a later agent-title event could overwrite the local label because the agent transcript never received the rename.
+- **Fix:** `:rename-pane` now always asks the backend to sync the title and lets the backend live-agent registry reject true shell / unsupported panes. The chord re-resolves the focused pane at submit time before deciding whether to round-trip, so an open-time `generic` snapshot no longer blocks a newly-classified Claude/Codex pane. Regression tests cover both paths.
+- **Commit:** _(see git log for the PR #265 review-fix commit)_

@@ -20,6 +20,42 @@ export interface Pane {
   /** Detected agent CLI for this pane. */
   agentType: 'claude-code' | 'codex' | 'aider' | 'generic'
 
+  /**
+   * Title emitted by the agent for the agent session bound to this PTY.
+   * `undefined` when no agent has emitted a title yet for this pane.
+   * Source layer is the `agent-session-title` event.
+   */
+  agentTitle?: string
+
+  /**
+   * Where the current `agentTitle` came from. Undefined iff `agentTitle`
+   * is undefined.
+   */
+  agentTitleSource?: 'ai-generated' | 'user-renamed'
+
+  /**
+   * User-set per-pane label, written by the `Ctrl+:` → `r` chord
+   * (`usePaneRenameChord`). Always set on submit regardless of pane
+   * type:
+   *
+   * - For `claude-code` / `codex` panes the chord ALSO writes
+   *   `/rename` via the `rename_agent_session` IPC so the agent's
+   *   transcript stays in sync; both `agentTitle` and `userLabel`
+   *   converge on the new value.
+   * - For other pane types (`aider`, `generic`, shell sessions with
+   *   no detected agent) the chord ONLY sets `userLabel` — no IPC,
+   *   no PTY write. `agentTitle` stays undefined.
+   *
+   * Header precedence: `userLabel ?? agentTitle ?? session.name`.
+   * `userLabel` wins because it represents the user's explicit
+   * intent; the agent's later auto-title generations do not
+   * overwrite a user-set label.
+   *
+   * Not persisted across reload (consistent with the spec's
+   * "no persistence beyond what the agent persists" non-goal).
+   */
+  userLabel?: string
+
   /** Materialized pane status. */
   status: SessionStatus
 

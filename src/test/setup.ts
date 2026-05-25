@@ -1,5 +1,12 @@
 import '@testing-library/jest-dom/vitest'
-import { vi } from 'vitest'
+import { afterEach, vi } from 'vitest'
+import * as chordRegistry from '../features/command-palette/chordRegistry'
+import * as paneHeaderRefs from '../features/terminal/paneHeaderRefs'
+
+afterEach(() => {
+  chordRegistry._resetForTest()
+  paneHeaderRefs._resetForTest()
+})
 
 // Mock xterm.js WebGL addon to prevent WebGL errors in jsdom
 vi.mock('@xterm/addon-webgl', () => ({

@@ -130,7 +130,7 @@ interface BackendInvokePayload {
 
 type InvokeEnvelope =
   | { ok: true; result: unknown }
-  | { ok: false; error: string }
+  | { ok: false; error: string; errorReason?: string }
 
 let sidecar: Sidecar | null = null
 let quitting = false
@@ -142,6 +142,17 @@ const RENDERER_DIAGNOSTIC_PREFIXES = [
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
+
+// Mirrors isStructuredBackendError in src/lib/backend.ts; keep in sync manually.
+const isStructuredBackendError = (
+  value: unknown
+): value is { message: string; reason: string } =>
+  isRecord(value) &&
+  typeof value.message === 'string' &&
+  typeof value.reason === 'string'
+
+const supportsStructuredBackendError = (method: string): boolean =>
+  method === 'rename_agent_session'
 
 const rendererConsoleLevelName = (level: number): string => {
   switch (level) {
@@ -269,6 +280,17 @@ const setupApp = async (): Promise<void> => {
 
         return { ok: true, result }
       } catch (err) {
+        if (
+          supportsStructuredBackendError(payload.method) &&
+          isStructuredBackendError(err)
+        ) {
+          return {
+            ok: false,
+            error: err.message,
+            errorReason: err.reason,
+          }
+        }
+
         return {
           ok: false,
           error: typeof err === 'string' ? err : String(err),

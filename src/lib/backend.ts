@@ -1,3 +1,8 @@
+import type {
+  RenameAgentSessionErrorReason,
+  RenameAgentSessionRequest,
+} from '../bindings'
+
 /**
  * Detach a previously-registered listener. Idempotent: a second call is
  * a no-op. The `called` guard around the transport's unlisten is the
@@ -15,6 +20,38 @@ export interface BackendApi {
     callback: (payload: T) => void
   ) => Promise<UnlistenFn>
 }
+
+const renameAgentSessionErrorReasons: readonly RenameAgentSessionErrorReason[] =
+  ['no-live-agent', 'unsupported-agent', 'empty-title', 'pty-write']
+
+export class AgentRenameError extends Error {
+  readonly reason: RenameAgentSessionErrorReason
+
+  constructor(message: string, reason: RenameAgentSessionErrorReason) {
+    super(message)
+    this.name = 'AgentRenameError'
+    this.reason = reason
+  }
+}
+
+const isRenameAgentSessionErrorReason = (
+  value: unknown
+): value is RenameAgentSessionErrorReason =>
+  typeof value === 'string' &&
+  renameAgentSessionErrorReasons.includes(
+    value as RenameAgentSessionErrorReason
+  )
+
+const isStructuredBackendError = (
+  value: unknown
+): value is { message: string; reason: RenameAgentSessionErrorReason } =>
+  typeof value === 'object' &&
+  value !== null &&
+  !Array.isArray(value) &&
+  'message' in value &&
+  'reason' in value &&
+  typeof value.message === 'string' &&
+  isRenameAgentSessionErrorReason(value.reason)
 
 const requireBridge = (): BackendApi => {
   if (typeof window === 'undefined' || !window.vimeflow) {
@@ -36,6 +73,23 @@ export const invoke = async <T>(
   method: string,
   args?: Record<string, unknown>
 ): Promise<T> => requireBridge().invoke<T>(method, args)
+
+export const renameAgentSession = async (
+  ptyId: string,
+  title: string
+): Promise<void> => {
+  const request = { ptyId, title } satisfies RenameAgentSessionRequest
+
+  try {
+    await invoke<null>('rename_agent_session', request)
+  } catch (error) {
+    if (isStructuredBackendError(error)) {
+      throw new AgentRenameError(error.message, error.reason)
+    }
+
+    throw error
+  }
+}
 
 /**
  * Subscribe to a backend event. Callback receives the bare payload. The

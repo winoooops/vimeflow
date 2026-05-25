@@ -224,6 +224,9 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
           removed={removed}
           isFocused={isFocusHighlightVisible}
           isCollapsed={isCollapsed}
+          ptyId={pane.ptyId}
+          paneAgentTitle={pane.agentTitle}
+          paneUserLabel={pane.userLabel}
           onToggleCollapse={handleToggleCollapse}
           onClose={onClose ? handleClose : undefined}
         />

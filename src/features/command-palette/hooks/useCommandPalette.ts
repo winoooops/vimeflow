@@ -15,9 +15,25 @@ import { fuzzyMatch } from '../registry/fuzzyMatch'
 import { defaultCommands } from '../data/defaultCommands'
 import { getAllLeaves, traverseNamespace } from '../registry/commandTree'
 import { parseQuery } from '../registry/parseQuery'
+import * as chordRegistry from '../chordRegistry'
+
+const LEADER_WINDOW_MS = 500
 
 const isPaletteToggle = (event: KeyboardEvent): boolean =>
   event.ctrlKey && !event.metaKey && !event.altKey && event.key === ':'
+
+const queryForLeaderFollowUp = (event: KeyboardEvent): string | null => {
+  if (
+    event.ctrlKey ||
+    event.metaKey ||
+    event.altKey ||
+    event.key.length !== 1
+  ) {
+    return null
+  }
+
+  return `:${event.key}`
+}
 
 export const useCommandPalette = (
   commands: Command[] = defaultCommands
@@ -28,6 +44,29 @@ export const useCommandPalette = (
     selectedIndex: 0,
     currentNamespace: null,
   })
+  const leaderTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const leaderActiveRef = useRef(false)
+
+  const clearLeaderWindow = useCallback((): void => {
+    if (leaderTimerRef.current) {
+      clearTimeout(leaderTimerRef.current)
+      leaderTimerRef.current = null
+    }
+    leaderActiveRef.current = false
+  }, [])
+
+  const startLeaderWindow = useCallback(
+    (onExpire: () => void): void => {
+      clearLeaderWindow()
+      leaderActiveRef.current = true
+      leaderTimerRef.current = setTimeout(() => {
+        leaderActiveRef.current = false
+        leaderTimerRef.current = null
+        onExpire()
+      }, LEADER_WINDOW_MS)
+    },
+    [clearLeaderWindow]
+  )
 
   // Parse query into verb and args
   const parsedQuery = useMemo(() => parseQuery(state.query), [state.query])
@@ -101,17 +140,22 @@ export const useCommandPalette = (
     return Math.min(state.selectedIndex, filteredResults.length - 1)
   }, [state.selectedIndex, filteredResults.length])
 
-  const open = useCallback((): void => {
+  const openWithQuery = useCallback((query: string): void => {
     setState((prev) => ({
       ...prev,
       isOpen: true,
-      query: ':',
+      query,
       selectedIndex: 0,
       currentNamespace: null,
     }))
   }, [])
 
+  const open = useCallback((): void => {
+    openWithQuery(':')
+  }, [openWithQuery])
+
   const close = useCallback((): void => {
+    clearLeaderWindow()
     setState((prev) => ({
       ...prev,
       isOpen: false,
@@ -119,7 +163,7 @@ export const useCommandPalette = (
       selectedIndex: 0,
       currentNamespace: null,
     }))
-  }, [])
+  }, [clearLeaderWindow])
 
   const setQuery = useCallback((query: string): void => {
     setState((prev) => ({
@@ -230,6 +274,7 @@ export const useCommandPalette = (
 
   const handlersRef = useRef({
     open,
+    openWithQuery,
     close,
     navigateUp,
     navigateDown,
@@ -241,6 +286,7 @@ export const useCommandPalette = (
     stateRef.current = state
     handlersRef.current = {
       open,
+      openWithQuery,
       close,
       navigateUp,
       navigateDown,
@@ -251,10 +297,35 @@ export const useCommandPalette = (
   // Global keyboard listener — registered once for the hook's lifetime.
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent): void => {
-      // Toggle palette on Ctrl+: (capture-phase listener)
-      if (isPaletteToggle(event)) {
-        // Suppress repeat events
-        if (event.repeat) {
+      if (isPaletteToggle(event) && event.repeat) {
+        event.preventDefault()
+        event.stopPropagation()
+
+        return
+      }
+
+      if (leaderActiveRef.current) {
+        if (isPaletteToggle(event)) {
+          clearLeaderWindow()
+          event.preventDefault()
+          event.stopPropagation()
+          handlersRef.current.open()
+
+          return
+        }
+
+        const consumed = chordRegistry.dispatch(event)
+        clearLeaderWindow()
+
+        if (consumed) {
+          event.preventDefault()
+          event.stopPropagation()
+          handlersRef.current.close()
+
+          return
+        }
+
+        if (event.key === 'Escape') {
           event.preventDefault()
           event.stopPropagation()
 
@@ -263,11 +334,24 @@ export const useCommandPalette = (
 
         event.preventDefault()
         event.stopPropagation()
+        handlersRef.current.openWithQuery(queryForLeaderFollowUp(event) ?? ':')
+
+        return
+      }
+
+      // Ctrl+: starts a short leader window. If no chord consumes the
+      // follow-up key, the palette opens after the window or immediately on
+      // the non-chord key.
+      if (isPaletteToggle(event)) {
+        event.preventDefault()
+        event.stopPropagation()
 
         if (stateRef.current.isOpen) {
           handlersRef.current.close()
         } else {
-          handlersRef.current.open()
+          startLeaderWindow(() => {
+            handlersRef.current.open()
+          })
         }
 
         return
@@ -306,9 +390,10 @@ export const useCommandPalette = (
     document.addEventListener('keydown', handleKeyDown, { capture: true })
 
     return (): void => {
+      clearLeaderWindow()
       document.removeEventListener('keydown', handleKeyDown, { capture: true })
     }
-  }, [])
+  }, [clearLeaderWindow, startLeaderWindow])
 
   return {
     state,

@@ -1,15 +1,34 @@
 // cspell:ignore worktrees
-import { describe, test, expect, vi, beforeEach } from 'vitest'
+import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
 import { renderHook, act, waitFor } from '@testing-library/react'
 import { useSessionManager } from './useSessionManager'
 import type { ITerminalService } from '../../terminal/services/terminalService'
-import type { SessionList } from '../../../bindings'
+import type { AgentSessionTitleEvent, SessionList } from '../../../bindings'
 import {
   clearPtySessionMap,
   getAllPtySessionIds,
   registerPtySession,
 } from '../../terminal/ptySessionMap'
 import { readActivityPanelCollapsed } from '../utils/activityPanelCollapsedStore'
+
+const mockListen = vi.hoisted(() =>
+  vi.fn(
+    (
+      event: string,
+      callback: (payload: unknown) => void
+    ): Promise<() => void> => {
+      void event
+      void callback
+
+      // eslint-disable-next-line @typescript-eslint/no-empty-function
+      return Promise.resolve((): void => {})
+    }
+  )
+)
+
+vi.mock('../../../lib/backend', () => ({
+  listen: mockListen,
+}))
 
 const createMockService = (): ITerminalService => ({
   spawn: vi
@@ -43,11 +62,24 @@ const createMockService = (): ITerminalService => ({
   setSessionActivityPanelCollapsed: vi.fn().mockResolvedValue(undefined),
 })
 
+const titleListener = ():
+  | ((payload: AgentSessionTitleEvent) => void)
+  | undefined =>
+  mockListen.mock.calls.find(([event]) => event === 'agent-session-title')?.[1]
+
 describe('useSessionManager', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    window.vimeflow = {
+      invoke: vi.fn(),
+      listen: vi.fn(),
+    }
     clearPtySessionMap()
     window.localStorage.clear()
+  })
+
+  afterEach(() => {
+    delete window.vimeflow
   })
 
   test('on mount, registers global pty-data listener BEFORE calling listSessions', async () => {
@@ -71,6 +103,403 @@ describe('useSessionManager', () => {
 
     await waitFor(() => expect(service.listSessions).toHaveBeenCalled())
     expect(order).toEqual(['onData', 'listSessions'])
+  })
+
+  test('agent-session-title with matching ptyId updates the pane', async () => {
+    const service = createMockService()
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: 'pty-1',
+      sessions: [
+        {
+          id: 'pty-1',
+          cwd: '/tmp',
+          status: {
+            kind: 'Alive',
+            pid: 1,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+      ],
+    })
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    await waitFor(() => expect(titleListener()).toBeDefined())
+
+    act(() => {
+      titleListener()?.({
+        sessionId: 'pty-1',
+        agentSessionId: 'agent-uuid',
+        title: 'My Task',
+        source: 'ai-generated',
+      })
+    })
+
+    const pane = result.current.sessions[0]?.panes.find(
+      (candidate) => candidate.ptyId === 'pty-1'
+    )
+    expect(pane?.agentTitle).toBe('My Task')
+    expect(pane?.agentTitleSource).toBe('ai-generated')
+  })
+
+  test('empty agent-session-title clears agentTitle to undefined', async () => {
+    const service = createMockService()
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: 'pty-1',
+      sessions: [
+        {
+          id: 'pty-1',
+          cwd: '/tmp',
+          status: {
+            kind: 'Alive',
+            pid: 1,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+      ],
+    })
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    await waitFor(() => expect(titleListener()).toBeDefined())
+
+    act(() => {
+      titleListener()?.({
+        sessionId: 'pty-1',
+        agentSessionId: 'agent-uuid',
+        title: 'Old Task',
+        source: 'user-renamed',
+      })
+    })
+
+    act(() => {
+      titleListener()?.({
+        sessionId: 'pty-1',
+        agentSessionId: 'agent-uuid',
+        title: '',
+        source: 'user-renamed',
+      })
+    })
+
+    const pane = result.current.sessions[0]?.panes.find(
+      (candidate) => candidate.ptyId === 'pty-1'
+    )
+    expect(pane?.agentTitle).toBeUndefined()
+    expect(pane?.agentTitleSource).toBeUndefined()
+  })
+
+  test('matching user-renamed agent-session-title clears temporary userLabel', async () => {
+    const service = createMockService()
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: 'pty-1',
+      sessions: [
+        {
+          id: 'pty-1',
+          cwd: '/tmp',
+          status: {
+            kind: 'Alive',
+            pid: 1,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+      ],
+    })
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    await waitFor(() => expect(titleListener()).toBeDefined())
+
+    // Simulate the user setting a local label via the chord / palette.
+    act(() => {
+      result.current.setPaneUserLabel('pty-1', 'new-title')
+    })
+
+    // Now Claude / Codex confirms the same `/rename` value. The temporary
+    // local label can clear because the transcript has caught up.
+    act(() => {
+      titleListener()?.({
+        sessionId: 'pty-1',
+        agentSessionId: 'agent-uuid',
+        title: 'new-title',
+        source: 'user-renamed',
+      })
+    })
+
+    const pane = result.current.sessions[0]?.panes.find(
+      (candidate) => candidate.ptyId === 'pty-1'
+    )
+    expect(pane?.agentTitle).toBe('new-title')
+    expect(pane?.userLabel).toBeUndefined()
+  })
+
+  test('user-renamed agent-session-title preserves newer temporary userLabel', async () => {
+    const service = createMockService()
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: 'pty-1',
+      sessions: [
+        {
+          id: 'pty-1',
+          cwd: '/tmp',
+          status: {
+            kind: 'Alive',
+            pid: 1,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+      ],
+    })
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    await waitFor(() => expect(titleListener()).toBeDefined())
+
+    act(() => {
+      result.current.setPaneUserLabel('pty-1', 'local-name')
+    })
+
+    act(() => {
+      titleListener()?.({
+        sessionId: 'pty-1',
+        agentSessionId: 'agent-uuid',
+        title: 'agent-title',
+        source: 'user-renamed',
+      })
+    })
+
+    const pane = result.current.sessions[0]?.panes.find(
+      (candidate) => candidate.ptyId === 'pty-1'
+    )
+    expect(pane?.agentTitle).toBe('agent-title')
+    expect(pane?.agentTitleSource).toBe('user-renamed')
+    expect(pane?.userLabel).toBe('local-name')
+  })
+
+  test('conditional setPaneUserLabel clear preserves changed userLabel', async () => {
+    const service = createMockService()
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: 'pty-1',
+      sessions: [
+        {
+          id: 'pty-1',
+          cwd: '/tmp',
+          status: {
+            kind: 'Alive',
+            pid: 1,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+      ],
+    })
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    act(() => {
+      result.current.setPaneUserLabel('pty-1', 'old-title')
+      result.current.setPaneUserLabel('pty-1', 'new-title')
+      result.current.setPaneUserLabel('pty-1', undefined, {
+        ifCurrentLabel: 'old-title',
+      })
+    })
+
+    const pane = result.current.sessions[0]?.panes.find(
+      (candidate) => candidate.ptyId === 'pty-1'
+    )
+    expect(pane?.userLabel).toBe('new-title')
+  })
+
+  test('ai-generated agent-session-title preserves explicit userLabel', async () => {
+    const service = createMockService()
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: 'pty-1',
+      sessions: [
+        {
+          id: 'pty-1',
+          cwd: '/tmp',
+          status: {
+            kind: 'Alive',
+            pid: 1,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+      ],
+    })
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    await waitFor(() => expect(titleListener()).toBeDefined())
+
+    act(() => {
+      result.current.setPaneUserLabel('pty-1', 'local-name')
+    })
+
+    act(() => {
+      titleListener()?.({
+        sessionId: 'pty-1',
+        agentSessionId: 'agent-uuid',
+        title: 'agent-auto-title',
+        source: 'ai-generated',
+      })
+    })
+
+    const pane = result.current.sessions[0]?.panes.find(
+      (candidate) => candidate.ptyId === 'pty-1'
+    )
+    expect(pane?.agentTitle).toBe('agent-auto-title')
+    expect(pane?.agentTitleSource).toBe('ai-generated')
+    expect(pane?.userLabel).toBe('local-name')
+  })
+
+  test('empty agent-session-title clears userLabel', async () => {
+    const service = createMockService()
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: 'pty-1',
+      sessions: [
+        {
+          id: 'pty-1',
+          cwd: '/tmp',
+          status: {
+            kind: 'Alive',
+            pid: 1,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+      ],
+    })
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    await waitFor(() => expect(titleListener()).toBeDefined())
+
+    // User sets local label.
+    act(() => {
+      result.current.setPaneUserLabel('pty-1', 'my-label')
+    })
+
+    // Agent emits a "clear" event (e.g., agent exited, row vanished).
+    act(() => {
+      titleListener()?.({
+        sessionId: 'pty-1',
+        agentSessionId: 'agent-uuid',
+        title: '',
+        source: 'ai-generated',
+      })
+    })
+
+    const pane = result.current.sessions[0]?.panes.find(
+      (candidate) => candidate.ptyId === 'pty-1'
+    )
+    expect(pane?.agentTitle).toBeUndefined()
+    expect(pane?.agentTitleSource).toBeUndefined()
+    expect(pane?.userLabel).toBeUndefined()
+  })
+
+  test('agent-session-title for unknown ptyId does not change state identity', async () => {
+    const service = createMockService()
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: 'pty-1',
+      sessions: [
+        {
+          id: 'pty-1',
+          cwd: '/tmp',
+          status: {
+            kind: 'Alive',
+            pid: 1,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+      ],
+    })
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    await waitFor(() => expect(titleListener()).toBeDefined())
+
+    const before = result.current.sessions
+    act(() => {
+      titleListener()?.({
+        sessionId: 'missing-pty',
+        agentSessionId: 'agent-uuid',
+        title: 'Ignored',
+        source: 'ai-generated',
+      })
+    })
+
+    expect(result.current.sessions).toBe(before)
+  })
+
+  test('agent-session-title listener calls unlisten when listen resolves after unmount', async () => {
+    const service = createMockService()
+    const unlisten = vi.fn()
+    let resolveListen: (fn: () => void) => void = vi.fn()
+    mockListen.mockImplementationOnce(
+      (): Promise<() => void> =>
+        new Promise((resolve) => {
+          resolveListen = resolve
+        })
+    )
+
+    const { unmount } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(mockListen).toHaveBeenCalled())
+
+    unmount()
+    act(() => {
+      resolveListen(unlisten)
+    })
+
+    await waitFor(() => expect(unlisten).toHaveBeenCalled())
+  })
+
+  test('agent-session-title listener setup rejection is caught', async () => {
+    const service = createMockService()
+    mockListen.mockRejectedValueOnce(new Error('bridge unavailable'))
+
+    renderHook(() => useSessionManager(service, { autoCreateOnEmpty: false }))
+
+    await waitFor(() =>
+      expect(mockListen).toHaveBeenCalledWith(
+        'agent-session-title',
+        expect.any(Function)
+      )
+    )
+    await Promise.resolve()
+    expect(service.listSessions).toHaveBeenCalled()
+  })
+
+  test('agent-session-title listener stays inactive without desktop bridge', async () => {
+    delete window.vimeflow
+    const service = createMockService()
+
+    renderHook(() => useSessionManager(service, { autoCreateOnEmpty: false }))
+
+    await waitFor(() => expect(service.listSessions).toHaveBeenCalled())
+    expect(mockListen).not.toHaveBeenCalled()
   })
 
   test('events received between listSessions call and drain land in restoreData buffer', async () => {

@@ -1,4 +1,5 @@
 import { describe, test, expect, vi, beforeEach } from 'vitest'
+import { AgentRenameError } from '../../../lib/backend'
 import {
   buildWorkspaceCommands,
   type WorkspaceTab,
@@ -14,6 +15,8 @@ describe('buildWorkspaceCommands - happy paths', () => {
   let createSession: ReturnType<typeof vi.fn>
   let removeSession: ReturnType<typeof vi.fn>
   let renameSession: ReturnType<typeof vi.fn>
+  let setPaneUserLabel: ReturnType<typeof vi.fn>
+  let renameAgentSession: ReturnType<typeof vi.fn>
   let setActiveSessionId: ReturnType<typeof vi.fn>
   let notifyInfo: ReturnType<typeof vi.fn>
 
@@ -21,6 +24,8 @@ describe('buildWorkspaceCommands - happy paths', () => {
     createSession = vi.fn()
     removeSession = vi.fn()
     renameSession = vi.fn()
+    setPaneUserLabel = vi.fn()
+    renameAgentSession = vi.fn().mockResolvedValue(undefined)
     setActiveSessionId = vi.fn()
     notifyInfo = vi.fn()
   })
@@ -32,6 +37,9 @@ describe('buildWorkspaceCommands - happy paths', () => {
       createSession,
       removeSession,
       renameSession,
+      setPaneUserLabel,
+      renameAgentSession,
+      activePanePtyId: 'pty-active',
       setActiveSessionId,
       notifyInfo,
     })
@@ -51,6 +59,9 @@ describe('buildWorkspaceCommands - happy paths', () => {
       createSession,
       removeSession,
       renameSession,
+      setPaneUserLabel,
+      renameAgentSession,
+      activePanePtyId: 'pty-active',
       setActiveSessionId,
       notifyInfo,
     })
@@ -62,22 +73,536 @@ describe('buildWorkspaceCommands - happy paths', () => {
     expect(removeSession).toHaveBeenCalledWith('session-2')
   })
 
-  test(':rename command renames active session', () => {
+  test(':rename-session command renames active session', () => {
     const commands = buildWorkspaceCommands({
       sessions: mockSessions,
       activeSessionId: 'session-1',
       createSession,
       removeSession,
       renameSession,
+      setPaneUserLabel,
+      renameAgentSession,
+      activePanePtyId: 'pty-active',
       setActiveSessionId,
       notifyInfo,
     })
 
-    const renameCmd = commands.find((c) => c.id === 'rename')
+    const renameCmd = commands.find((c) => c.id === 'rename-session')
     expect(renameCmd).toBeDefined()
 
     renameCmd?.execute?.('new-name')
     expect(renameSession).toHaveBeenCalledWith('session-1', 'new-name')
+    expect(setPaneUserLabel).not.toHaveBeenCalled()
+  })
+
+  test(':rename-session sanitizes controls before renaming active session', () => {
+    const commands = buildWorkspaceCommands({
+      sessions: mockSessions,
+      activeSessionId: 'session-1',
+      createSession,
+      removeSession,
+      renameSession,
+      setPaneUserLabel,
+      renameAgentSession,
+      activePanePtyId: 'pty-active',
+      setActiveSessionId,
+      notifyInfo,
+    })
+
+    const renameCmd = commands.find((c) => c.id === 'rename-session')
+    renameCmd?.execute?.('bad\u001bname')
+
+    expect(renameSession).toHaveBeenCalledWith('session-1', 'bad name')
+    expect(notifyInfo).not.toHaveBeenCalled()
+  })
+
+  test(':rename-session rejects overlong input', () => {
+    const commands = buildWorkspaceCommands({
+      sessions: mockSessions,
+      activeSessionId: 'session-1',
+      createSession,
+      removeSession,
+      renameSession,
+      setPaneUserLabel,
+      renameAgentSession,
+      activePanePtyId: 'pty-active',
+      setActiveSessionId,
+      notifyInfo,
+    })
+
+    const renameCmd = commands.find((c) => c.id === 'rename-session')
+    renameCmd?.execute?.('a'.repeat(201))
+
+    expect(renameSession).not.toHaveBeenCalled()
+    expect(notifyInfo).toHaveBeenCalledWith('title is too long (max 200 bytes)')
+  })
+
+  test(':rename-pane asks backend to sync even while pane type is generic', () => {
+    const commands = buildWorkspaceCommands({
+      sessions: mockSessions,
+      activeSessionId: 'session-1',
+      createSession,
+      removeSession,
+      renameSession,
+      setPaneUserLabel,
+      renameAgentSession,
+      activePanePtyId: 'pty-left',
+      setActiveSessionId,
+      notifyInfo,
+    })
+
+    const renamePaneCmd = commands.find((c) => c.id === 'rename-pane')
+    expect(renamePaneCmd).toBeDefined()
+
+    renamePaneCmd?.execute?.('left')
+    expect(setPaneUserLabel).toHaveBeenCalledWith('pty-left', 'left')
+    expect(renameAgentSession).toHaveBeenCalledWith('pty-left', 'left')
+    expect(renameSession).not.toHaveBeenCalled()
+  })
+
+  test(':rename-pane suppresses expected non-agent backend failure after local label update', async () => {
+    renameAgentSession.mockRejectedValueOnce(
+      new AgentRenameError('no live agent', 'no-live-agent')
+    )
+
+    const commands = buildWorkspaceCommands({
+      sessions: mockSessions,
+      activeSessionId: 'session-1',
+      createSession,
+      removeSession,
+      renameSession,
+      setPaneUserLabel,
+      renameAgentSession,
+      activePanePtyId: 'pty-shell',
+      setActiveSessionId,
+      notifyInfo,
+    })
+
+    const renamePaneCmd = commands.find((c) => c.id === 'rename-pane')
+    renamePaneCmd?.execute?.('shell-name')
+
+    expect(setPaneUserLabel).toHaveBeenCalledWith('pty-shell', 'shell-name')
+    expect(renameAgentSession).toHaveBeenCalledWith('pty-shell', 'shell-name')
+
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(notifyInfo).not.toHaveBeenCalled()
+  })
+
+  test(':rename-pane surfaces unexpected backend rename failure after local label update', async () => {
+    renameAgentSession.mockRejectedValueOnce(new Error('pty write failed'))
+
+    const commands = buildWorkspaceCommands({
+      sessions: mockSessions,
+      activeSessionId: 'session-1',
+      createSession,
+      removeSession,
+      renameSession,
+      setPaneUserLabel,
+      renameAgentSession,
+      activePanePtyId: 'pty-agent',
+      activePaneAgentType: 'claude-code',
+      setActiveSessionId,
+      notifyInfo,
+    })
+
+    const renamePaneCmd = commands.find((c) => c.id === 'rename-pane')
+    renamePaneCmd?.execute?.('agent-name')
+
+    expect(setPaneUserLabel).toHaveBeenCalledWith('pty-agent', 'agent-name')
+    expect(renameAgentSession).toHaveBeenCalledWith('pty-agent', 'agent-name')
+
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(setPaneUserLabel).toHaveBeenCalledWith('pty-agent', undefined, {
+      ifCurrentLabel: 'agent-name',
+    })
+
+    expect(notifyInfo).toHaveBeenCalledWith(
+      'agent /rename failed: pty write failed'
+    )
+  })
+
+  test(':rename-pane stale backend failure does not clear newer label', async () => {
+    let rejectFirstRename: (error: Error) => void = () => {
+      throw new Error('first rename promise reject was not captured')
+    }
+    let latestRequestId = 0
+
+    const nextPaneRenameRequestId = vi.fn(() => {
+      latestRequestId += 1
+
+      return latestRequestId
+    })
+
+    const isCurrentPaneRenameRequest = vi.fn(
+      (requestId: number) => requestId === latestRequestId
+    )
+    renameAgentSession
+      .mockReturnValueOnce(
+        new Promise<void>((_resolve, reject) => {
+          rejectFirstRename = reject
+        })
+      )
+      .mockResolvedValueOnce(undefined)
+
+    const firstCommands = buildWorkspaceCommands({
+      sessions: mockSessions,
+      activeSessionId: 'session-1',
+      createSession,
+      removeSession,
+      renameSession,
+      setPaneUserLabel,
+      renameAgentSession,
+      activePanePtyId: 'pty-agent',
+      activePaneAgentType: 'claude-code',
+      nextPaneRenameRequestId,
+      isCurrentPaneRenameRequest,
+      setActiveSessionId,
+      notifyInfo,
+    })
+    firstCommands.find((c) => c.id === 'rename-pane')?.execute?.('first')
+
+    const secondCommands = buildWorkspaceCommands({
+      sessions: mockSessions,
+      activeSessionId: 'session-1',
+      createSession,
+      removeSession,
+      renameSession,
+      setPaneUserLabel,
+      renameAgentSession,
+      activePanePtyId: 'pty-agent',
+      activePaneAgentType: 'claude-code',
+      nextPaneRenameRequestId,
+      isCurrentPaneRenameRequest,
+      setActiveSessionId,
+      notifyInfo,
+    })
+    secondCommands.find((c) => c.id === 'rename-pane')?.execute?.('second')
+
+    await Promise.resolve()
+    await Promise.resolve()
+
+    rejectFirstRename(new Error('pty write failed'))
+
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(setPaneUserLabel).toHaveBeenCalledWith('pty-agent', 'first')
+    expect(setPaneUserLabel).toHaveBeenCalledWith('pty-agent', 'second')
+    expect(
+      setPaneUserLabel.mock.calls.some(
+        ([ptyId, label]) => ptyId === 'pty-agent' && label === undefined
+      )
+    ).toBe(false)
+    expect(notifyInfo).not.toHaveBeenCalled()
+  })
+
+  test(':rename-pane fallback request guard survives command rebuilds', async () => {
+    let rejectFirstRename: (error: Error) => void = () => {
+      throw new Error('first rename promise reject was not captured')
+    }
+    renameAgentSession
+      .mockReturnValueOnce(
+        new Promise<void>((_resolve, reject) => {
+          rejectFirstRename = reject
+        })
+      )
+      .mockResolvedValueOnce(undefined)
+
+    const firstCommands = buildWorkspaceCommands({
+      sessions: mockSessions,
+      activeSessionId: 'session-1',
+      createSession,
+      removeSession,
+      renameSession,
+      setPaneUserLabel,
+      renameAgentSession,
+      activePanePtyId: 'pty-agent',
+      activePaneAgentType: 'claude-code',
+      setActiveSessionId,
+      notifyInfo,
+    })
+    firstCommands.find((c) => c.id === 'rename-pane')?.execute?.('first')
+
+    const secondCommands = buildWorkspaceCommands({
+      sessions: mockSessions,
+      activeSessionId: 'session-1',
+      createSession,
+      removeSession,
+      renameSession,
+      setPaneUserLabel,
+      renameAgentSession,
+      activePanePtyId: 'pty-agent',
+      activePaneAgentType: 'claude-code',
+      setActiveSessionId,
+      notifyInfo,
+    })
+    secondCommands.find((c) => c.id === 'rename-pane')?.execute?.('second')
+
+    await Promise.resolve()
+    await Promise.resolve()
+
+    rejectFirstRename(new Error('pty write failed'))
+
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(setPaneUserLabel).toHaveBeenCalledWith('pty-agent', 'first')
+    expect(setPaneUserLabel).toHaveBeenCalledWith('pty-agent', 'second')
+    expect(
+      setPaneUserLabel.mock.calls.some(
+        ([ptyId, label]) => ptyId === 'pty-agent' && label === undefined
+      )
+    ).toBe(false)
+    expect(notifyInfo).not.toHaveBeenCalled()
+  })
+
+  test(':rename-pane fallback request guard is isolated per backend function', async () => {
+    let rejectFirstRename: (error: Error) => void = () => {
+      throw new Error('first rename promise reject was not captured')
+    }
+
+    const firstRenameAgentSession = vi.fn().mockReturnValueOnce(
+      new Promise<void>((_resolve, reject) => {
+        rejectFirstRename = reject
+      })
+    )
+    const secondRenameAgentSession = vi.fn().mockResolvedValueOnce(undefined)
+
+    const firstCommands = buildWorkspaceCommands({
+      sessions: mockSessions,
+      activeSessionId: 'session-1',
+      createSession,
+      removeSession,
+      renameSession,
+      setPaneUserLabel,
+      renameAgentSession: firstRenameAgentSession,
+      activePanePtyId: 'pty-first',
+      activePaneAgentType: 'claude-code',
+      setActiveSessionId,
+      notifyInfo,
+    })
+    firstCommands.find((c) => c.id === 'rename-pane')?.execute?.('first')
+
+    const secondCommands = buildWorkspaceCommands({
+      sessions: mockSessions,
+      activeSessionId: 'session-1',
+      createSession,
+      removeSession,
+      renameSession,
+      setPaneUserLabel,
+      renameAgentSession: secondRenameAgentSession,
+      activePanePtyId: 'pty-second',
+      activePaneAgentType: 'claude-code',
+      setActiveSessionId,
+      notifyInfo,
+    })
+    secondCommands.find((c) => c.id === 'rename-pane')?.execute?.('second')
+
+    await Promise.resolve()
+    await Promise.resolve()
+
+    rejectFirstRename(new Error('pty write failed'))
+
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(setPaneUserLabel).toHaveBeenCalledWith('pty-first', undefined, {
+      ifCurrentLabel: 'first',
+    })
+
+    expect(notifyInfo).toHaveBeenCalledWith(
+      'agent /rename failed: pty write failed'
+    )
+  })
+
+  test(':rename-pane rolls back expected backend failure for rename-capable pane', async () => {
+    renameAgentSession.mockRejectedValueOnce(
+      new AgentRenameError('no live agent', 'no-live-agent')
+    )
+
+    const commands = buildWorkspaceCommands({
+      sessions: mockSessions,
+      activeSessionId: 'session-1',
+      createSession,
+      removeSession,
+      renameSession,
+      setPaneUserLabel,
+      renameAgentSession,
+      activePanePtyId: 'pty-agent',
+      activePaneAgentType: 'codex',
+      setActiveSessionId,
+      notifyInfo,
+    })
+
+    const renamePaneCmd = commands.find((c) => c.id === 'rename-pane')
+    renamePaneCmd?.execute?.('agent-name')
+
+    expect(setPaneUserLabel).toHaveBeenCalledWith('pty-agent', 'agent-name')
+    expect(renameAgentSession).toHaveBeenCalledWith('pty-agent', 'agent-name')
+
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(setPaneUserLabel).toHaveBeenCalledWith('pty-agent', undefined, {
+      ifCurrentLabel: 'agent-name',
+    })
+
+    expect(notifyInfo).toHaveBeenCalledWith(
+      'agent /rename failed: no live agent'
+    )
+  })
+
+  test(':rename-pane on a Claude pane ALSO writes /rename via renameAgentSession', () => {
+    const commands = buildWorkspaceCommands({
+      sessions: mockSessions,
+      activeSessionId: 'session-1',
+      createSession,
+      removeSession,
+      renameSession,
+      setPaneUserLabel,
+      renameAgentSession,
+      activePanePtyId: 'pty-claude',
+      setActiveSessionId,
+      notifyInfo,
+    })
+
+    const renamePaneCmd = commands.find((c) => c.id === 'rename-pane')
+    renamePaneCmd?.execute?.('feat-x')
+
+    expect(setPaneUserLabel).toHaveBeenCalledWith('pty-claude', 'feat-x')
+    expect(renameAgentSession).toHaveBeenCalledWith('pty-claude', 'feat-x')
+  })
+
+  test(':rename-pane on a Codex pane ALSO writes /rename via renameAgentSession', () => {
+    const commands = buildWorkspaceCommands({
+      sessions: mockSessions,
+      activeSessionId: 'session-1',
+      createSession,
+      removeSession,
+      renameSession,
+      setPaneUserLabel,
+      renameAgentSession,
+      activePanePtyId: 'pty-codex',
+      setActiveSessionId,
+      notifyInfo,
+    })
+
+    const renamePaneCmd = commands.find((c) => c.id === 'rename-pane')
+    renamePaneCmd?.execute?.('codex-task')
+
+    expect(setPaneUserLabel).toHaveBeenCalledWith('pty-codex', 'codex-task')
+    expect(renameAgentSession).toHaveBeenCalledWith('pty-codex', 'codex-task')
+  })
+
+  test(':rename-pane with no active pane notifies usage', () => {
+    const commands = buildWorkspaceCommands({
+      sessions: mockSessions,
+      activeSessionId: null,
+      createSession,
+      removeSession,
+      renameSession,
+      setPaneUserLabel,
+      renameAgentSession,
+      activePanePtyId: null,
+      setActiveSessionId,
+      notifyInfo,
+    })
+
+    const renamePaneCmd = commands.find((c) => c.id === 'rename-pane')
+    renamePaneCmd?.execute?.('foo')
+
+    expect(setPaneUserLabel).not.toHaveBeenCalled()
+    expect(notifyInfo).toHaveBeenCalledWith('No active pane to rename')
+  })
+
+  test(':rename-pane with empty input shows usage', () => {
+    const commands = buildWorkspaceCommands({
+      sessions: mockSessions,
+      activeSessionId: 'session-1',
+      createSession,
+      removeSession,
+      renameSession,
+      setPaneUserLabel,
+      renameAgentSession,
+      activePanePtyId: 'pty-left',
+      setActiveSessionId,
+      notifyInfo,
+    })
+
+    const renamePaneCmd = commands.find((c) => c.id === 'rename-pane')
+    renamePaneCmd?.execute?.('   ')
+
+    expect(setPaneUserLabel).not.toHaveBeenCalled()
+    expect(notifyInfo).toHaveBeenCalledWith('Usage: :rename-pane <name>')
+  })
+
+  test(':rename-pane with control character input sanitizes before local update', () => {
+    const commands = buildWorkspaceCommands({
+      sessions: mockSessions,
+      activeSessionId: 'session-1',
+      createSession,
+      removeSession,
+      renameSession,
+      setPaneUserLabel,
+      renameAgentSession,
+      activePanePtyId: 'pty-left',
+      setActiveSessionId,
+      notifyInfo,
+    })
+
+    const renamePaneCmd = commands.find((c) => c.id === 'rename-pane')
+    renamePaneCmd?.execute?.('bad\nname')
+
+    expect(setPaneUserLabel).toHaveBeenCalledWith('pty-left', 'bad name')
+    expect(renameAgentSession).toHaveBeenCalledWith('pty-left', 'bad name')
+    expect(notifyInfo).not.toHaveBeenCalled()
+  })
+
+  test(':rename-pane with overlong input rejects before local update', () => {
+    const commands = buildWorkspaceCommands({
+      sessions: mockSessions,
+      activeSessionId: 'session-1',
+      createSession,
+      removeSession,
+      renameSession,
+      setPaneUserLabel,
+      renameAgentSession,
+      activePanePtyId: 'pty-left',
+      setActiveSessionId,
+      notifyInfo,
+    })
+
+    const renamePaneCmd = commands.find((c) => c.id === 'rename-pane')
+    renamePaneCmd?.execute?.('a'.repeat(201))
+
+    expect(setPaneUserLabel).not.toHaveBeenCalled()
+    expect(renameAgentSession).not.toHaveBeenCalled()
+    expect(notifyInfo).toHaveBeenCalledWith('title is too long (max 200 bytes)')
+  })
+
+  test(':rename-pane collapses whitespace before local and agent rename', () => {
+    const commands = buildWorkspaceCommands({
+      sessions: mockSessions,
+      activeSessionId: 'session-1',
+      createSession,
+      removeSession,
+      renameSession,
+      setPaneUserLabel,
+      renameAgentSession,
+      activePanePtyId: 'pty-left',
+      setActiveSessionId,
+      notifyInfo,
+    })
+
+    const renamePaneCmd = commands.find((c) => c.id === 'rename-pane')
+    renamePaneCmd?.execute?.('  Fix    CI  ')
+
+    expect(setPaneUserLabel).toHaveBeenCalledWith('pty-left', 'Fix CI')
+    expect(renameAgentSession).toHaveBeenCalledWith('pty-left', 'Fix CI')
   })
 
   test(':next command wraps to first session', () => {
@@ -87,6 +612,9 @@ describe('buildWorkspaceCommands - happy paths', () => {
       createSession,
       removeSession,
       renameSession,
+      setPaneUserLabel,
+      renameAgentSession,
+      activePanePtyId: 'pty-active',
       setActiveSessionId,
       notifyInfo,
     })
@@ -105,6 +633,9 @@ describe('buildWorkspaceCommands - happy paths', () => {
       createSession,
       removeSession,
       renameSession,
+      setPaneUserLabel,
+      renameAgentSession,
+      activePanePtyId: 'pty-active',
       setActiveSessionId,
       notifyInfo,
     })
@@ -121,6 +652,9 @@ describe('buildWorkspaceCommands - happy paths', () => {
       createSession,
       removeSession,
       renameSession,
+      setPaneUserLabel,
+      renameAgentSession,
+      activePanePtyId: 'pty-active',
       setActiveSessionId,
       notifyInfo,
     })
@@ -139,6 +673,9 @@ describe('buildWorkspaceCommands - happy paths', () => {
       createSession,
       removeSession,
       renameSession,
+      setPaneUserLabel,
+      renameAgentSession,
+      activePanePtyId: 'pty-active',
       setActiveSessionId,
       notifyInfo,
     })
@@ -155,6 +692,9 @@ describe('buildWorkspaceCommands - happy paths', () => {
       createSession,
       removeSession,
       renameSession,
+      setPaneUserLabel,
+      renameAgentSession,
+      activePanePtyId: 'pty-active',
       setActiveSessionId,
       notifyInfo,
     })
@@ -173,6 +713,9 @@ describe('buildWorkspaceCommands - happy paths', () => {
       createSession,
       removeSession,
       renameSession,
+      setPaneUserLabel,
+      renameAgentSession,
+      activePanePtyId: 'pty-active',
       setActiveSessionId,
       notifyInfo,
     })
@@ -190,6 +733,9 @@ describe('buildWorkspaceCommands - happy paths', () => {
       createSession,
       removeSession,
       renameSession,
+      setPaneUserLabel,
+      renameAgentSession,
+      activePanePtyId: 'pty-active',
       setActiveSessionId,
       notifyInfo,
     })
@@ -207,6 +753,9 @@ describe('buildWorkspaceCommands - happy paths', () => {
       createSession,
       removeSession,
       renameSession,
+      setPaneUserLabel,
+      renameAgentSession,
+      activePanePtyId: 'pty-active',
       setActiveSessionId,
       notifyInfo,
     })
@@ -231,6 +780,9 @@ describe('buildWorkspaceCommands - happy paths', () => {
       createSession,
       removeSession,
       renameSession,
+      setPaneUserLabel,
+      renameAgentSession,
+      activePanePtyId: 'pty-active',
       setActiveSessionId,
       notifyInfo,
     })
@@ -248,6 +800,9 @@ describe('buildWorkspaceCommands - happy paths', () => {
       createSession,
       removeSession,
       renameSession,
+      setPaneUserLabel,
+      renameAgentSession,
+      activePanePtyId: 'pty-active',
       setActiveSessionId,
       notifyInfo,
     })
@@ -266,6 +821,9 @@ describe('buildWorkspaceCommands - happy paths', () => {
       createSession,
       removeSession,
       renameSession,
+      setPaneUserLabel,
+      renameAgentSession,
+      activePanePtyId: 'pty-active',
       setActiveSessionId,
       notifyInfo,
     })
@@ -288,6 +846,8 @@ describe('buildWorkspaceCommands - failure modes', () => {
   let createSession: ReturnType<typeof vi.fn>
   let removeSession: ReturnType<typeof vi.fn>
   let renameSession: ReturnType<typeof vi.fn>
+  let setPaneUserLabel: ReturnType<typeof vi.fn>
+  let renameAgentSession: ReturnType<typeof vi.fn>
   let setActiveSessionId: ReturnType<typeof vi.fn>
   let notifyInfo: ReturnType<typeof vi.fn>
 
@@ -295,6 +855,8 @@ describe('buildWorkspaceCommands - failure modes', () => {
     createSession = vi.fn()
     removeSession = vi.fn()
     renameSession = vi.fn()
+    setPaneUserLabel = vi.fn()
+    renameAgentSession = vi.fn().mockResolvedValue(undefined)
     setActiveSessionId = vi.fn()
     notifyInfo = vi.fn()
   })
@@ -311,6 +873,9 @@ describe('buildWorkspaceCommands - failure modes', () => {
       createSession,
       removeSession,
       renameSession,
+      setPaneUserLabel,
+      renameAgentSession,
+      activePanePtyId: 'pty-active',
       setActiveSessionId,
       notifyInfo,
     })
@@ -329,11 +894,14 @@ describe('buildWorkspaceCommands - failure modes', () => {
       createSession,
       removeSession,
       renameSession,
+      setPaneUserLabel,
+      renameAgentSession,
+      activePanePtyId: 'pty-active',
       setActiveSessionId,
       notifyInfo,
     })
 
-    const renameCmd = commands.find((c) => c.id === 'rename')
+    const renameCmd = commands.find((c) => c.id === 'rename-session')
 
     renameCmd?.execute?.('new-name')
     expect(notifyInfo).toHaveBeenCalledWith('No active tab to rename')
@@ -352,15 +920,18 @@ describe('buildWorkspaceCommands - failure modes', () => {
       createSession,
       removeSession,
       renameSession,
+      setPaneUserLabel,
+      renameAgentSession,
+      activePanePtyId: 'pty-active',
       setActiveSessionId,
       notifyInfo,
     })
 
-    const renameCmd = commands.find((c) => c.id === 'rename')
+    const renameCmd = commands.find((c) => c.id === 'rename-session')
 
     renameCmd?.execute?.('   ')
     expect(renameSession).not.toHaveBeenCalled()
-    expect(notifyInfo).toHaveBeenCalledWith('Usage: :rename <name>')
+    expect(notifyInfo).toHaveBeenCalledWith('Usage: :rename-session <name>')
   })
 
   test(':goto with no args shows usage message', () => {
@@ -370,6 +941,9 @@ describe('buildWorkspaceCommands - failure modes', () => {
       createSession,
       removeSession,
       renameSession,
+      setPaneUserLabel,
+      renameAgentSession,
+      activePanePtyId: 'pty-active',
       setActiveSessionId,
       notifyInfo,
     })
@@ -391,6 +965,9 @@ describe('buildWorkspaceCommands - failure modes', () => {
       createSession,
       removeSession,
       renameSession,
+      setPaneUserLabel,
+      renameAgentSession,
+      activePanePtyId: 'pty-active',
       setActiveSessionId,
       notifyInfo,
     })
@@ -414,6 +991,9 @@ describe('buildWorkspaceCommands - failure modes', () => {
       createSession,
       removeSession,
       renameSession,
+      setPaneUserLabel,
+      renameAgentSession,
+      activePanePtyId: 'pty-active',
       setActiveSessionId,
       notifyInfo,
     })
@@ -432,6 +1012,9 @@ describe('buildWorkspaceCommands - failure modes', () => {
       createSession,
       removeSession,
       renameSession,
+      setPaneUserLabel,
+      renameAgentSession,
+      activePanePtyId: 'pty-active',
       setActiveSessionId,
       notifyInfo,
     })
@@ -454,6 +1037,9 @@ describe('buildWorkspaceCommands - failure modes', () => {
       createSession,
       removeSession,
       renameSession,
+      setPaneUserLabel,
+      renameAgentSession,
+      activePanePtyId: 'pty-active',
       setActiveSessionId,
       notifyInfo,
     })
@@ -480,6 +1066,9 @@ describe('buildWorkspaceCommands - failure modes', () => {
       createSession,
       removeSession,
       renameSession,
+      setPaneUserLabel,
+      renameAgentSession,
+      activePanePtyId: 'pty-active',
       setActiveSessionId,
       notifyInfo,
     })
@@ -504,6 +1093,9 @@ describe('buildWorkspaceCommands - failure modes', () => {
       createSession,
       removeSession,
       renameSession,
+      setPaneUserLabel,
+      renameAgentSession,
+      activePanePtyId: 'pty-active',
       setActiveSessionId,
       notifyInfo,
     })
@@ -526,6 +1118,9 @@ describe('buildWorkspaceCommands - failure modes', () => {
       createSession,
       removeSession,
       renameSession,
+      setPaneUserLabel,
+      renameAgentSession,
+      activePanePtyId: 'pty-active',
       setActiveSessionId,
       notifyInfo,
     })
@@ -548,6 +1143,9 @@ describe('buildWorkspaceCommands - failure modes', () => {
       createSession,
       removeSession,
       renameSession,
+      setPaneUserLabel,
+      renameAgentSession,
+      activePanePtyId: 'pty-active',
       setActiveSessionId,
       notifyInfo,
     })
@@ -569,6 +1167,9 @@ describe('buildWorkspaceCommands - failure modes', () => {
       createSession,
       removeSession,
       renameSession,
+      setPaneUserLabel,
+      renameAgentSession,
+      activePanePtyId: 'pty-active',
       setActiveSessionId,
       notifyInfo,
     })
@@ -595,6 +1196,9 @@ describe('buildWorkspaceCommands - failure modes', () => {
       createSession,
       removeSession,
       renameSession,
+      setPaneUserLabel,
+      renameAgentSession,
+      activePanePtyId: 'pty-active',
       setActiveSessionId,
       notifyInfo,
     })
@@ -621,6 +1225,9 @@ describe('buildWorkspaceCommands - failure modes', () => {
       createSession,
       removeSession,
       renameSession,
+      setPaneUserLabel,
+      renameAgentSession,
+      activePanePtyId: 'pty-active',
       setActiveSessionId,
       notifyInfo,
     })
@@ -642,6 +1249,9 @@ describe('buildWorkspaceCommands - failure modes', () => {
       createSession,
       removeSession,
       renameSession,
+      setPaneUserLabel,
+      renameAgentSession,
+      activePanePtyId: 'pty-active',
       setActiveSessionId,
       notifyInfo,
     })
@@ -660,6 +1270,9 @@ describe('buildWorkspaceCommands - failure modes', () => {
       createSession,
       removeSession,
       renameSession,
+      setPaneUserLabel,
+      renameAgentSession,
+      activePanePtyId: 'pty-active',
       setActiveSessionId,
       notifyInfo,
     })
