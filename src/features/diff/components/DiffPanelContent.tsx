@@ -325,10 +325,14 @@ export const DiffPanelContent = ({
         return
       }
 
-      const base = currentFileIndex === -1 ? 0 : currentFileIndex
-
       const nextIndex =
-        (base + delta + effectiveFiles.length) % effectiveFiles.length
+        currentFileIndex === -1
+          ? delta >= 0
+            ? 0
+            : effectiveFiles.length - 1
+          : (((currentFileIndex + delta) % effectiveFiles.length) +
+              effectiveFiles.length) %
+            effectiveFiles.length
       const file = effectiveFiles[nextIndex]
       commitSelection({ path: file.path, staged: file.staged, cwd })
     },
@@ -407,70 +411,81 @@ export const DiffPanelContent = ({
       {/* Right: chip toolbar (top) + Pierre MultiFileDiff (bottom). The
           ResizeObserver above watches THIS wrapper so both width bands
           (SPLIT_MIN / DIFF_MIN) come from one source. */}
-      <div ref={paneRef} className="flex min-w-0 flex-1 flex-col overflow-auto">
-        <DiffChipToolbar
-          diffMode={selectedFileStaged ? 'staged' : 'unstaged'}
-          diffStyle={effectiveDiffStyle}
-          onDiffStyleChange={setDiffStyle}
-          theme={theme}
-          onThemeChange={setTheme}
-          lineDiffType={lineDiffType}
-          onLineDiffTypeChange={setLineDiffType}
-          diffIndicators={diffIndicators}
-          onDiffIndicatorsChange={setDiffIndicators}
-          overflow={overflowOpt}
-          onOverflowChange={setOverflowOpt}
-          disableLineNumbers={disableLineNumbers}
-          onDisableLineNumbersChange={setDisableLineNumbers}
-          disableBackground={disableBackground}
-          onDisableBackgroundChange={setDisableBackground}
-          disableFileHeader={disableFileHeader}
-          onDisableFileHeaderChange={setDisableFileHeader}
-          stickyHeader={stickyHeader}
-          onStickyHeaderChange={setStickyHeader}
-          totalHunks={response?.fileDiff.hunks.length ?? 0}
-          focusedHunkIndex={0}
-          onPrevFile={(): void => goToFile(-1)}
-          onNextFile={(): void => goToFile(1)}
-          currentFileIndex={currentFileIndex}
-          totalFiles={effectiveFiles.length}
-        />
-        {diffError ? (
-          <ErrorCard message={diffError.message} />
-        ) : diffLoading ? (
-          <LoadingCard />
-        ) : pierreInputs ? (
-          tooNarrow ? (
-            <DiffNarrowPlaceholder min={DIFF_MIN_WIDTH_PX} />
-          ) : (
-            <MultiFileDiff
-              // `key={theme}` forces a clean remount on theme change.
-              // Pierre's WorkerPoolManager-driven theme path normally
-              // rerenders via subscribeToThemeChanges, but PR1 QA observed
-              // the second theme switch sticking. Forcing a remount is a
-              // belt-and-braces remedy: a brand-new FileDiff instance
-              // requests fresh tokenization from the pool, which has the
-              // updated theme by then (our useEffect above flushed it).
-              // Cost: one extra tokenize per theme change. Acceptable for
-              // v1; revisit if perf is an issue with very large diffs.
-              key={theme}
-              oldFile={pierreInputs.oldFile}
-              newFile={pierreInputs.newFile}
-              options={{
-                diffStyle: effectiveDiffStyle,
-                theme,
-                diffIndicators,
-                lineDiffType,
-                overflow: overflowOpt,
-                disableLineNumbers,
-                disableBackground,
-                disableFileHeader,
-                stickyHeader,
-              }}
-              style={{ display: 'block', width: '100%' }}
-            />
-          )
-        ) : null}
+      <div
+        ref={paneRef}
+        data-testid="diff-right-pane"
+        className="flex min-w-0 flex-1 flex-col overflow-hidden"
+      >
+        <div data-testid="diff-toolbar-shell" className="shrink-0">
+          <DiffChipToolbar
+            diffMode={selectedFileStaged ? 'staged' : 'unstaged'}
+            diffStyle={effectiveDiffStyle}
+            onDiffStyleChange={setDiffStyle}
+            theme={theme}
+            onThemeChange={setTheme}
+            lineDiffType={lineDiffType}
+            onLineDiffTypeChange={setLineDiffType}
+            diffIndicators={diffIndicators}
+            onDiffIndicatorsChange={setDiffIndicators}
+            overflow={overflowOpt}
+            onOverflowChange={setOverflowOpt}
+            disableLineNumbers={disableLineNumbers}
+            onDisableLineNumbersChange={setDisableLineNumbers}
+            disableBackground={disableBackground}
+            onDisableBackgroundChange={setDisableBackground}
+            disableFileHeader={disableFileHeader}
+            onDisableFileHeaderChange={setDisableFileHeader}
+            stickyHeader={stickyHeader}
+            onStickyHeaderChange={setStickyHeader}
+            totalHunks={response?.fileDiff.hunks.length ?? 0}
+            focusedHunkIndex={0}
+            onPrevFile={(): void => goToFile(-1)}
+            onNextFile={(): void => goToFile(1)}
+            currentFileIndex={currentFileIndex}
+            totalFiles={effectiveFiles.length}
+          />
+        </div>
+        <div
+          data-testid="diff-scroll-body"
+          className="min-h-0 flex-1 overflow-auto"
+        >
+          {diffError ? (
+            <ErrorCard message={diffError.message} />
+          ) : diffLoading ? (
+            <LoadingCard />
+          ) : pierreInputs ? (
+            tooNarrow ? (
+              <DiffNarrowPlaceholder min={DIFF_MIN_WIDTH_PX} />
+            ) : (
+              <MultiFileDiff
+                // `key={theme}` forces a clean remount on theme change.
+                // Pierre's WorkerPoolManager-driven theme path normally
+                // rerenders via subscribeToThemeChanges, but PR1 QA observed
+                // the second theme switch sticking. Forcing a remount is a
+                // belt-and-braces remedy: a brand-new FileDiff instance
+                // requests fresh tokenization from the pool, which has the
+                // updated theme by then (our useEffect above flushed it).
+                // Cost: one extra tokenize per theme change. Acceptable for
+                // v1; revisit if perf is an issue with very large diffs.
+                key={theme}
+                oldFile={pierreInputs.oldFile}
+                newFile={pierreInputs.newFile}
+                options={{
+                  diffStyle: effectiveDiffStyle,
+                  theme,
+                  diffIndicators,
+                  lineDiffType,
+                  overflow: overflowOpt,
+                  disableLineNumbers,
+                  disableBackground,
+                  disableFileHeader,
+                  stickyHeader,
+                }}
+                style={{ display: 'block', width: '100%' }}
+              />
+            )
+          ) : null}
+        </div>
       </div>
     </div>
   )

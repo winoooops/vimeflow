@@ -262,6 +262,15 @@ describe('DiffPanelContent', () => {
     expect(
       screen.getByRole('toolbar', { name: 'Diff toolbar' })
     ).toBeInTheDocument()
+
+    const rightPane = screen.getByTestId('diff-right-pane')
+    const toolbarShell = screen.getByTestId('diff-toolbar-shell')
+    const scrollBody = screen.getByTestId('diff-scroll-body')
+    const toolbar = screen.getByRole('toolbar', { name: 'Diff toolbar' })
+    expect(rightPane).toHaveClass('overflow-hidden')
+    expect(toolbarShell).toHaveClass('shrink-0')
+    expect(scrollBody).toHaveClass('overflow-auto')
+    expect(scrollBody).not.toContainElement(toolbar)
   })
 
   test('passes cwd to useGitStatus and useFileDiff hooks', (): void => {
@@ -830,6 +839,52 @@ describe('DiffPanelContent', () => {
       )
 
       // Selection is the first file (index 0); prev wraps → index 2.
+      const prevButton = screen.getByRole('button', { name: /previous file/i })
+      prevButton.click()
+
+      expect(onSelectedFileChange).toHaveBeenCalledWith({
+        path: 'src/c.tsx',
+        staged: true,
+        cwd: '/repo',
+      })
+    })
+
+    test('next-file selects the first file when no file is selected', (): void => {
+      const onSelectedFileChange = vi.fn()
+
+      render(
+        <DiffPanelContent
+          cwd="/repo"
+          selectedFile={null}
+          onSelectedFileChange={onSelectedFileChange}
+        />
+      )
+
+      onSelectedFileChange.mockClear()
+
+      const nextButton = screen.getByRole('button', { name: /next file/i })
+      nextButton.click()
+
+      expect(onSelectedFileChange).toHaveBeenCalledWith({
+        path: 'src/a.tsx',
+        staged: false,
+        cwd: '/repo',
+      })
+    })
+
+    test('prev-file selects the last file when no file is selected', (): void => {
+      const onSelectedFileChange = vi.fn()
+
+      render(
+        <DiffPanelContent
+          cwd="/repo"
+          selectedFile={null}
+          onSelectedFileChange={onSelectedFileChange}
+        />
+      )
+
+      onSelectedFileChange.mockClear()
+
       const prevButton = screen.getByRole('button', { name: /previous file/i })
       prevButton.click()
 

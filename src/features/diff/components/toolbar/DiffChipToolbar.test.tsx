@@ -259,10 +259,10 @@ describe('DiffChipToolbar', () => {
     expect(screen.getByLabelText(/file 5\/9/i)).toBeInTheDocument()
   })
 
-  test('file counter renders 0/N when nothing is selected (index -1)', () => {
+  test('file counter clamps to 1/N when nothing is selected (index -1)', () => {
     renderToolbar({ currentFileIndex: -1, totalFiles: 3 })
 
-    expect(screen.getByLabelText(/file 0\/3/i)).toBeInTheDocument()
+    expect(screen.getByLabelText(/file 1\/3/i)).toBeInTheDocument()
   })
 
   test('clicking the file arrows fires onPrevFile / onNextFile', async () => {

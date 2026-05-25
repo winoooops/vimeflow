@@ -275,10 +275,12 @@ export const DiffChipToolbar = ({
   const hunkCounterText =
     totalHunks > 0 ? `${focusedHunkIndex + 1}/${totalHunks}` : '0/0'
 
-  // File counter copy: `1/N` when a file is selected, `0/N` when nothing is
-  // selected (currentFileIndex === -1). The counter always reflects the
-  // position even on a single file (where the arrows are inert).
-  const fileCounterText = `${currentFileIndex + 1}/${totalFiles}`
+  // File counter copy: clamp the transient "nothing selected yet" state to
+  // `1/N` so users never see an invalid `0/N` position while auto-select is
+  // catching up after a status refresh.
+  const fileCounterPosition =
+    totalFiles > 0 ? Math.min(Math.max(currentFileIndex + 1, 1), totalFiles) : 0
+  const fileCounterText = `${fileCounterPosition}/${totalFiles}`
 
   // File arrows are functional only when both handlers are present AND there
   // is more than one file (no wrap-around on a single file). With <= 1 file
@@ -313,7 +315,7 @@ export const DiffChipToolbar = ({
       disabled={!fileNavEnabled}
     />,
     // 3. file N/M counter — `description` icon distinguishes it from the hunk
-    // counter. Always shows the position (`currentFileIndex + 1 / totalFiles`).
+    // counter. Always shows a valid 1-based position when files exist.
     <CounterChip
       key="file-counter"
       icon="description"
