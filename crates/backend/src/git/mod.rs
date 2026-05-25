@@ -1147,12 +1147,7 @@ pub(crate) async fn get_git_diff_inner(
         git_show_text_with_fallback(&canonical_toplevel, &ref_spec, Some(&stage_fallback_ref))
             .await?
     } else {
-        let abs_path = canonical_toplevel.join(&new_path);
-        match std::fs::read(&abs_path) {
-            Ok(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
-            Err(e) => return Err(format!("read {}: {}", abs_path.display(), e)),
-        }
+        read_worktree_text_no_follow(&canonical_toplevel, &new_path)?
     };
 
     Ok(GetGitDiffResponse {
@@ -1235,6 +1230,39 @@ async fn detect_rename_source(
     }
 
     Ok(None)
+}
+
+fn read_worktree_text_no_follow(toplevel: &Path, path: &str) -> Result<String, String> {
+    let abs_path = toplevel.join(path);
+    let metadata = match std::fs::symlink_metadata(&abs_path) {
+        Ok(metadata) => metadata,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(String::new()),
+        Err(e) => return Err(format!("stat {}: {}", abs_path.display(), e)),
+    };
+
+    if metadata.file_type().is_symlink() {
+        let target = std::fs::read_link(&abs_path)
+            .map_err(|e| format!("readlink {}: {}", abs_path.display(), e))?;
+        return Ok(path_to_lossy_text(&target));
+    }
+
+    match std::fs::read(&abs_path) {
+        Ok(bytes) => Ok(String::from_utf8_lossy(&bytes).into_owned()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
+        Err(e) => Err(format!("read {}: {}", abs_path.display(), e)),
+    }
+}
+
+#[cfg(unix)]
+fn path_to_lossy_text(path: &Path) -> String {
+    use std::os::unix::ffi::OsStrExt;
+
+    String::from_utf8_lossy(path.as_os_str().as_bytes()).into_owned()
+}
+
+#[cfg(not(unix))]
+fn path_to_lossy_text(path: &Path) -> String {
+    path.to_string_lossy().into_owned()
 }
 
 fn is_expected_missing_git_show(stderr: &str) -> bool {

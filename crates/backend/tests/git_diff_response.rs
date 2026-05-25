@@ -171,6 +171,39 @@ fn non_utf8_worktree_file_returns_lossy_new_text() {
     );
 }
 
+#[cfg(unix)]
+#[test]
+fn unstaged_symlink_returns_link_target_as_new_text() {
+    use std::os::unix::ffi::OsStrExt;
+    use std::os::unix::fs::symlink;
+
+    let (state, _app_data) = make_state();
+    let repo = init_repo();
+    let secret =
+        tempfile::NamedTempFile::new_in(dirs::home_dir().expect("home")).expect("secret temp file");
+    std::fs::write(secret.path(), "outside secret\n").expect("write secret");
+
+    symlink("old-target", repo.path().join("link.txt")).expect("create original symlink");
+    run_git(repo.path(), &["add", "link.txt"]);
+    commit(repo.path(), "seed symlink");
+
+    std::fs::remove_file(repo.path().join("link.txt")).expect("remove symlink");
+    symlink(secret.path(), repo.path().join("link.txt")).expect("replace symlink");
+
+    let v = diff_value(&state, repo.path(), "link.txt", false, None);
+    let target_text = String::from_utf8_lossy(secret.path().as_os_str().as_bytes()).into_owned();
+
+    assert_eq!(v["oldText"], "old-target");
+    assert_eq!(
+        v["newText"], target_text,
+        "unstaged symlink new_text should be the link target, not followed contents"
+    );
+    assert_ne!(
+        v["newText"], "outside secret\n",
+        "new_text must not expose the symlink target file contents"
+    );
+}
+
 #[test]
 fn unmerged_unstaged_file_uses_stage_2_old_text() {
     let (state, _app_data) = make_state();
@@ -281,6 +314,41 @@ fn untracked_file_returns_empty_old_text_and_worktree_new_text() {
     assert!(
         !v["rawDiff"].as_str().expect("rawDiff").is_empty(),
         "raw_diff should hold the synthesized --no-index diff"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn untracked_symlink_returns_link_target_as_new_text() {
+    use std::os::unix::ffi::OsStrExt;
+    use std::os::unix::fs::symlink;
+
+    let (state, _app_data) = make_state();
+    let repo = init_repo();
+    let secret =
+        tempfile::NamedTempFile::new_in(dirs::home_dir().expect("home")).expect("secret temp file");
+    std::fs::write(secret.path(), "outside secret\n").expect("write secret");
+
+    symlink(secret.path(), repo.path().join("leak.txt")).expect("create symlink");
+
+    let v = diff_value(&state, repo.path(), "leak.txt", false, Some(true));
+    let target_text = String::from_utf8_lossy(secret.path().as_os_str().as_bytes()).into_owned();
+
+    assert_eq!(v["oldText"], "", "untracked symlink => old_text empty");
+    assert_eq!(
+        v["newText"], target_text,
+        "untracked symlink new_text should be the link target, not followed contents"
+    );
+    assert_ne!(
+        v["newText"], "outside secret\n",
+        "new_text must not expose the symlink target file contents"
+    );
+    assert!(
+        v["rawDiff"]
+            .as_str()
+            .expect("rawDiff")
+            .contains(&format!("+{target_text}")),
+        "raw_diff should also describe the symlink target"
     );
 }
 
