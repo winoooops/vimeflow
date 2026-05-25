@@ -194,6 +194,49 @@ fn oversized_worktree_file_returns_empty_new_text() {
     );
 }
 
+#[test]
+fn oversized_staged_blob_returns_empty_new_text() {
+    let (state, _app_data) = make_state();
+    let repo = init_repo();
+
+    write_and_add(repo.path(), "large.bin", "small\n");
+    commit(repo.path(), "seed");
+
+    std::fs::write(repo.path().join("large.bin"), vec![0; 2 * 1024 * 1024 + 1])
+        .expect("write oversized file");
+    run_git(repo.path(), &["add", "large.bin"]);
+
+    let v = diff_value(&state, repo.path(), "large.bin", true, None);
+
+    assert_eq!(v["oldText"], "small\n");
+    assert_eq!(
+        v["newText"], "",
+        "oversized staged blobs should not be read into the diff payload"
+    );
+}
+
+#[test]
+fn oversized_index_blob_returns_empty_unstaged_old_text() {
+    let (state, _app_data) = make_state();
+    let repo = init_repo();
+
+    write_and_add(repo.path(), "large.bin", "seed\n");
+    commit(repo.path(), "seed");
+
+    std::fs::write(repo.path().join("large.bin"), vec![0; 2 * 1024 * 1024 + 1])
+        .expect("write oversized file");
+    run_git(repo.path(), &["add", "large.bin"]);
+    std::fs::write(repo.path().join("large.bin"), "small worktree\n").expect("write worktree");
+
+    let v = diff_value(&state, repo.path(), "large.bin", false, None);
+
+    assert_eq!(
+        v["oldText"], "",
+        "oversized index blobs should not be read into the diff payload"
+    );
+    assert_eq!(v["newText"], "small worktree\n");
+}
+
 #[cfg(unix)]
 #[test]
 fn unstaged_symlink_returns_link_target_as_new_text() {

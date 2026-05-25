@@ -1285,25 +1285,27 @@ async fn git_show_text_with_fallback(
     ref_spec: &str,
     stage_fallback_ref: Option<&str>,
 ) -> Result<String, String> {
-    let output = run_git_show(toplevel, ref_spec).await?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        if stderr.contains("is in the index, but not at stage 0") {
-            if let Some(fallback_ref) = stage_fallback_ref {
-                let fallback_output = run_git_show(toplevel, fallback_ref).await?;
-                return git_show_output_to_text(fallback_ref, fallback_output);
-            }
-        }
-
-        if is_expected_missing_git_show(&stderr) {
-            return Ok(String::new());
-        }
-
-        return Err(git_show_error(ref_spec, &stderr, &output.status));
+    let size = git_blob_size(toplevel, ref_spec).await?;
+    if let Some(size) = size {
+        return git_show_sized_text(toplevel, ref_spec, size).await;
     }
 
-    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+    if let Some(fallback_ref) = stage_fallback_ref {
+        if let Some(size) = git_blob_size(toplevel, fallback_ref).await? {
+            return git_show_sized_text(toplevel, fallback_ref, size).await;
+        }
+    }
+
+    Ok(String::new())
+}
+
+async fn git_show_sized_text(toplevel: &Path, ref_spec: &str, size: u64) -> Result<String, String> {
+    if size > MAX_DIFF_FILE_TEXT_BYTES {
+        return Ok(String::new());
+    }
+
+    let output = run_git_show(toplevel, ref_spec).await?;
+    git_show_output_to_text(ref_spec, output)
 }
 
 async fn run_git_show(toplevel: &Path, ref_spec: &str) -> Result<std::process::Output, String> {
@@ -1317,8 +1319,38 @@ async fn run_git_show(toplevel: &Path, ref_spec: &str) -> Result<std::process::O
     run_git_with_timeout(cmd).await
 }
 
+async fn git_blob_size(toplevel: &Path, ref_spec: &str) -> Result<Option<u64>, String> {
+    let mut cmd = Command::new("git");
+    cmd.arg("-C")
+        .arg(toplevel)
+        .arg("cat-file")
+        .arg("-s")
+        .arg(ref_spec)
+        .env("GIT_TERMINAL_PROMPT", "0");
+
+    let output = run_git_with_timeout(cmd).await?;
+    if output.status.success() {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let size = stdout
+            .trim()
+            .parse::<u64>()
+            .map_err(|e| format!("git cat-file -s {} returned invalid size: {}", ref_spec, e))?;
+        return Ok(Some(size));
+    }
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    if is_expected_missing_git_show(&stderr) {
+        return Ok(None);
+    }
+
+    Err(git_cat_file_error(ref_spec, &stderr, &output.status))
+}
+
 fn git_show_output_to_text(ref_spec: &str, output: std::process::Output) -> Result<String, String> {
     if output.status.success() {
+        if output.stdout.len() as u64 > MAX_DIFF_FILE_TEXT_BYTES {
+            return Ok(String::new());
+        }
         return Ok(String::from_utf8_lossy(&output.stdout).into_owned());
     }
 
@@ -1328,6 +1360,17 @@ fn git_show_output_to_text(ref_spec: &str, output: std::process::Output) -> Resu
     }
 
     Err(git_show_error(ref_spec, &stderr, &output.status))
+}
+
+fn git_cat_file_error(ref_spec: &str, stderr: &str, status: &std::process::ExitStatus) -> String {
+    if stderr.trim().is_empty() {
+        format!(
+            "git cat-file -s {} failed with exit code {}",
+            ref_spec, status
+        )
+    } else {
+        format!("git cat-file -s {} failed: {}", ref_spec, stderr.trim())
+    }
 }
 
 fn git_show_error(ref_spec: &str, stderr: &str, status: &std::process::ExitStatus) -> String {
