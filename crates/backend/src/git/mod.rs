@@ -1272,7 +1272,7 @@ fn path_to_lossy_text(path: &Path) -> String {
 fn is_expected_missing_git_show(stderr: &str) -> bool {
     stderr.contains("does not exist in")
         || stderr.contains("exists on disk, but not in")
-        || stderr.contains("is in the index, but not at stage 0")
+        || stderr.contains("is in the index, but not at stage ")
 }
 
 /// Run `git show <ref>` from the given toplevel and return stdout as a

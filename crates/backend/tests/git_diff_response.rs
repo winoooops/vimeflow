@@ -304,6 +304,36 @@ fn unmerged_unstaged_file_uses_stage_2_old_text() {
 }
 
 #[test]
+fn unmerged_deleted_by_us_without_stage_2_returns_empty_old_text() {
+    let (state, _app_data) = make_state();
+    let repo = init_repo();
+
+    write_and_add(repo.path(), "conflict.txt", "base\n");
+    commit(repo.path(), "seed");
+
+    run_git(repo.path(), &["checkout", "-b", "theirs", "--quiet"]);
+    write_and_add(repo.path(), "conflict.txt", "theirs\n");
+    commit(repo.path(), "theirs edit");
+
+    run_git(repo.path(), &["checkout", "main", "--quiet"]);
+    run_git(repo.path(), &["rm", "--quiet", "conflict.txt"]);
+    commit(repo.path(), "delete on ours");
+
+    run_git_expect_failure(repo.path(), &["merge", "theirs"]);
+
+    let v = diff_value(&state, repo.path(), "conflict.txt", false, None);
+
+    assert_eq!(
+        v["oldText"], "",
+        "missing stage-2 fallback should be treated as an absent old side"
+    );
+    assert_eq!(
+        v["newText"], "theirs\n",
+        "deleted-by-us conflicts keep the other side in the worktree"
+    );
+}
+
+#[test]
 fn modified_tracked_file_staged_returns_head_and_index_text() {
     let (state, _app_data) = make_state();
     let repo = init_repo();

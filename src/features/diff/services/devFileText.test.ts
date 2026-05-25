@@ -2,7 +2,11 @@ import { mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, test } from 'vitest'
-import { MAX_DIFF_FILE_TEXT_BYTES, readFileTextNoFollow } from './devFileText'
+import {
+  isExpectedMissingGitShow,
+  MAX_DIFF_FILE_TEXT_BYTES,
+  readFileTextNoFollow,
+} from './devFileText'
 
 let tempDir: string | null = null
 
@@ -54,5 +58,21 @@ describe('readFileTextNoFollow', () => {
     await writeFile(filePath, Buffer.alloc(MAX_DIFF_FILE_TEXT_BYTES + 1, 97))
 
     await expect(readFileTextNoFollow(filePath)).resolves.toBe('')
+  })
+})
+
+describe('isExpectedMissingGitShow', () => {
+  test('treats missing index stages as non-fatal git show misses', () => {
+    expect(
+      isExpectedMissingGitShow(
+        "fatal: path 'conflict.txt' is in the index, but not at stage 0"
+      )
+    ).toBe(true)
+
+    expect(
+      isExpectedMissingGitShow(
+        "fatal: path 'conflict.txt' is in the index, but not at stage 2"
+      )
+    ).toBe(true)
   })
 })

@@ -24,6 +24,7 @@ import {
   normalizeBaseBranch,
 } from './src/features/diff/services/gitPatch'
 import {
+  isExpectedMissingGitShow,
   MAX_DIFF_FILE_TEXT_BYTES,
   readFileTextNoFollow,
 } from './src/features/diff/services/devFileText'
@@ -138,11 +139,6 @@ const rawDiffFileHeaderHas = (diff: string, marker: string): boolean => {
 
 const errorMessage = (err: unknown): string =>
   err instanceof Error ? err.message : String(err)
-
-const isExpectedMissingGitShow = (message: string): boolean =>
-  message.includes('does not exist in') ||
-  message.includes('exists on disk, but not in') ||
-  message.includes('is in the index, but not at stage 0')
 
 const gitBlobSize = async (ref: string): Promise<number | null> => {
   try {
