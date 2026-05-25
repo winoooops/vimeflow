@@ -866,8 +866,6 @@ const NULL_DEVICE: &str = "/dev/null";
 /// differ (expected here since the comparison is against an empty file),
 /// and other codes for genuine errors.
 async fn get_untracked_diff(toplevel: &Path, file: &str) -> Result<String, String> {
-    let file_abs = toplevel.join(file);
-
     let mut cmd = Command::new("git");
     cmd.arg("-C")
         .arg(toplevel)
@@ -876,7 +874,7 @@ async fn get_untracked_diff(toplevel: &Path, file: &str) -> Result<String, Strin
         .arg("--no-color")
         .arg("--")
         .arg(NULL_DEVICE)
-        .arg(&file_abs)
+        .arg(file)
         .env("GIT_TERMINAL_PROMPT", "0");
 
     let output = run_git_with_timeout(cmd).await?;
@@ -1178,6 +1176,7 @@ async fn detect_rename_source(
         .arg(toplevel)
         .arg("diff")
         .arg("--name-status")
+        .arg("--diff-filter=RC")
         .arg("-M")
         .arg("-z")
         .env("GIT_TERMINAL_PROMPT", "0");

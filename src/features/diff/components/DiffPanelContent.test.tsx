@@ -402,6 +402,49 @@ describe('DiffPanelContent', () => {
       )
     })
 
+    test('attaches ResizeObserver after loading state resolves', (): void => {
+      let loading = true
+      vi.spyOn(useGitStatusModule, 'useGitStatus').mockImplementation(() => {
+        if (loading) {
+          return {
+            files: [],
+            filesCwd: null,
+            loading: true,
+            error: null,
+            refresh: vi.fn(),
+            idle: false,
+          }
+        }
+
+        return {
+          files: mockFiles,
+          filesCwd: '/repo',
+          loading: false,
+          error: null,
+          refresh: vi.fn(),
+          idle: false,
+        }
+      })
+
+      const { rerender } = render(<DiffPanelContent cwd="/repo" />)
+
+      expect(screen.getByText('Loading diff…')).toBeInTheDocument()
+      expect(screen.queryByTestId('diff-right-pane')).toBeNull()
+      expect(MockResizeObserver.instances).toHaveLength(0)
+
+      loading = false
+      rerender(<DiffPanelContent cwd="/repo" />)
+
+      expect(screen.getByTestId('diff-right-pane')).toBeInTheDocument()
+
+      setPaneWidth(DIFF_MIN_WIDTH_PX - 1)
+
+      expect(screen.queryByTestId('multi-file-diff')).toBeNull()
+      expect(
+        screen.getByText('Pane is too narrow to render the diff.')
+      ).toBeInTheDocument()
+    })
+
     test('renders MultiFileDiff when paneWidth >= DIFF_MIN_WIDTH_PX', (): void => {
       render(<DiffPanelContent cwd="/repo" />)
 
@@ -997,6 +1040,45 @@ describe('DiffPanelContent', () => {
       expect(workerPoolSetRenderOptionsMock).toHaveBeenCalledWith({
         theme: 'pierre-dark',
       })
+    })
+
+    test('surfaces workerPool.setRenderOptions failures', async (): Promise<void> => {
+      const error = new Error('worker failed')
+      workerPoolSetRenderOptionsMock.mockRejectedValueOnce(error)
+
+      vi.spyOn(useGitStatusModule, 'useGitStatus').mockReturnValue({
+        files: [
+          {
+            path: 'src/App.tsx',
+            status: 'modified',
+            staged: false,
+          },
+        ],
+        filesCwd: '/repo',
+        loading: false,
+        error: null,
+        refresh: vi.fn(),
+        idle: false,
+      })
+
+      vi.spyOn(useFileDiffModule, 'useFileDiff').mockReturnValue(
+        fileDiffMock({
+          diff: {
+            filePath: 'src/App.tsx',
+            oldPath: 'src/App.tsx',
+            newPath: 'src/App.tsx',
+            hunks: [],
+          },
+          loading: false,
+          error: null,
+        })
+      )
+
+      render(<DiffPanelContent cwd="/repo" />)
+
+      expect(await screen.findByRole('alert')).toHaveTextContent(
+        'Theme sync failed: worker failed'
+      )
     })
   })
 })

@@ -238,21 +238,30 @@ export const DiffPanelContent = ({
   const [disableBackground, setDisableBackground] = useState(false)
   const [disableFileHeader, setDisableFileHeader] = useState(false)
   const [stickyHeader, setStickyHeader] = useState(true)
+  const [themeSyncError, setThemeSyncErrorState] = useState<string | null>(null)
+  const themeSyncErrorRef = useRef<string | null>(null)
+
+  const setThemeSyncError = useCallback((message: string | null): void => {
+    if (themeSyncErrorRef.current === message) {
+      return
+    }
+
+    themeSyncErrorRef.current = message
+    setThemeSyncErrorState(message)
+  }, [])
 
   // Responsive width tracking. The right pane drives the two width bands:
   //   width < SPLIT_MIN_WIDTH_PX → coerce diffStyle to 'unified' (saved
   //                                preference preserved; coercion is read-only)
   //   width < DIFF_MIN_WIDTH_PX  → render <DiffNarrowPlaceholder> instead
   //                                of MultiFileDiff (toolbar stays mounted)
-  // useLayoutEffect (not useEffect) so the observer attaches before paint
-  // and the first measurement is reflected in the same commit — avoids a
-  // momentary split-rendered-at-narrow flash on initial mount.
-  const paneRef = useRef<HTMLDivElement>(null)
+  // Track the actual DOM node because the populated pane mounts after the
+  // loading branch. A one-shot ref read can miss that later mount entirely.
+  const [paneNode, setPaneNode] = useState<HTMLDivElement | null>(null)
   const [paneWidth, setPaneWidth] = useState(SPLIT_MIN_WIDTH_PX)
 
   useLayoutEffect(() => {
-    const node = paneRef.current
-    if (!node) {
+    if (!paneNode) {
       return
     }
 
@@ -262,10 +271,10 @@ export const DiffPanelContent = ({
       // (no `noUncheckedIndexedAccess`).
       setPaneWidth(entries[0].contentRect.width)
     })
-    observer.observe(node)
+    observer.observe(paneNode)
 
     return (): void => observer.disconnect()
-  }, [])
+  }, [paneNode])
 
   // Push theme changes into the shared Pierre worker pool. The worker
   // tokenizes off-main-thread and DiffHunksRenderer pulls its theme from
@@ -280,8 +289,28 @@ export const DiffPanelContent = ({
     if (!workerPool) {
       return
     }
-    void workerPool.setRenderOptions({ theme })
-  }, [workerPool, theme])
+
+    let cancelled = false
+
+    const syncTheme = async (): Promise<void> => {
+      try {
+        await workerPool.setRenderOptions({ theme })
+        if (!cancelled) {
+          setThemeSyncError(null)
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setThemeSyncError(err instanceof Error ? err.message : String(err))
+        }
+      }
+    }
+
+    void syncTheme()
+
+    return (): void => {
+      cancelled = true
+    }
+  }, [setThemeSyncError, workerPool, theme])
 
   const splitForced = diffStyle === 'split' && paneWidth < SPLIT_MIN_WIDTH_PX
   const effectiveDiffStyle: DiffStyle = splitForced ? 'unified' : diffStyle
@@ -412,7 +441,7 @@ export const DiffPanelContent = ({
           ResizeObserver above watches THIS wrapper so both width bands
           (SPLIT_MIN / DIFF_MIN) come from one source. */}
       <div
-        ref={paneRef}
+        ref={setPaneNode}
         data-testid="diff-right-pane"
         className="flex min-w-0 flex-1 flex-col overflow-hidden"
       >
@@ -444,6 +473,14 @@ export const DiffPanelContent = ({
             currentFileIndex={currentFileIndex}
             totalFiles={effectiveFiles.length}
           />
+          {themeSyncError !== null ? (
+            <div
+              role="alert"
+              className="px-3 pb-2 text-[11px] leading-4 text-[#f38ba8]"
+            >
+              Theme sync failed: {themeSyncError}
+            </div>
+          ) : null}
         </div>
         <div
           data-testid="diff-scroll-body"

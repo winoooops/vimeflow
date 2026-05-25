@@ -1,4 +1,5 @@
 import path from 'path'
+import type { IncomingMessage } from 'http'
 import { defineConfig, Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import electron from 'vite-plugin-electron/simple'
@@ -22,7 +23,10 @@ import {
   extractHunkPatch,
   normalizeBaseBranch,
 } from './src/features/diff/services/gitPatch'
-import { readFileTextNoFollow } from './src/features/diff/services/devFileText'
+import {
+  MAX_DIFF_FILE_TEXT_BYTES,
+  readFileTextNoFollow,
+} from './src/features/diff/services/devFileText'
 
 const git = simpleGit()
 const repoRoot = process.cwd()
@@ -105,7 +109,7 @@ const detectRenameSource = async (
   safePath: string,
   staged: boolean
 ): Promise<string | null> => {
-  const args = ['diff', '--name-status', '-M', '-z']
+  const args = ['diff', '--name-status', '--diff-filter=RC', '-M', '-z']
   if (staged) {
     args.push('--cached')
   }
@@ -140,37 +144,62 @@ const isExpectedMissingGitShow = (message: string): boolean =>
   message.includes('exists on disk, but not in') ||
   message.includes('is in the index, but not at stage 0')
 
-const gitShowText = async (
-  ref: string,
-  stageFallbackRef: string | null = null
-): Promise<string> => {
+const gitBlobSize = async (ref: string): Promise<number | null> => {
   try {
-    return await git.show([ref])
-  } catch (err) {
-    const message = errorMessage(err)
-
-    if (
-      stageFallbackRef !== null &&
-      message.includes('is in the index, but not at stage 0')
-    ) {
-      try {
-        return await git.show([stageFallbackRef])
-      } catch (fallbackErr) {
-        const fallbackMessage = errorMessage(fallbackErr)
-        if (isExpectedMissingGitShow(fallbackMessage)) {
-          return ''
-        }
-
-        throw fallbackErr
-      }
+    const output = await git.raw(['cat-file', '-s', ref])
+    const size = Number.parseInt(output.trim(), 10)
+    if (!Number.isSafeInteger(size) || size < 0) {
+      throw new Error(`git cat-file -s ${ref} returned invalid size`)
     }
 
-    if (isExpectedMissingGitShow(message)) {
-      return ''
+    return size
+  } catch (err) {
+    if (isExpectedMissingGitShow(errorMessage(err))) {
+      return null
     }
 
     throw err
   }
+}
+
+const gitShowTextForRef = async (ref: string): Promise<string | null> => {
+  const size = await gitBlobSize(ref)
+  if (size === null) {
+    return null
+  }
+
+  if (size > MAX_DIFF_FILE_TEXT_BYTES) {
+    return ''
+  }
+
+  try {
+    return await git.show([ref])
+  } catch (err) {
+    if (isExpectedMissingGitShow(errorMessage(err))) {
+      return null
+    }
+
+    throw err
+  }
+}
+
+const gitShowText = async (
+  ref: string,
+  stageFallbackRef: string | null = null
+): Promise<string> => {
+  const text = await gitShowTextForRef(ref)
+  if (text !== null) {
+    return text
+  }
+
+  if (stageFallbackRef !== null) {
+    const fallbackText = await gitShowTextForRef(stageFallbackRef)
+    if (fallbackText !== null) {
+      return fallbackText
+    }
+  }
+
+  return ''
 }
 
 /**
@@ -806,13 +835,7 @@ function parseDiff(diffText: string, filePath: string): FileDiff {
 /**
  * Read request body as string
  */
-function readBody(
-  req: NodeJS.ReadableStream & {
-    destroy?: () => void
-    on: (event: string, listener: (...args: unknown[]) => void) => void
-    resume?: () => void
-  }
-): Promise<string> {
+function readBody(req: IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
     let body = ''
     let byteLength = 0
@@ -826,11 +849,7 @@ function readBody(
       if (byteLength > MAX_REQUEST_BODY_BYTES) {
         rejected = true
         reject(new Error('Request body too large'))
-        if (req.destroy !== undefined) {
-          req.destroy()
-        } else {
-          req.resume?.()
-        }
+        req.destroy()
 
         return
       }

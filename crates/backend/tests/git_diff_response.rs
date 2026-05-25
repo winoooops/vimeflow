@@ -381,6 +381,20 @@ fn untracked_file_returns_empty_old_text_and_worktree_new_text() {
         !v["rawDiff"].as_str().expect("rawDiff").is_empty(),
         "raw_diff should hold the synthesized --no-index diff"
     );
+    assert!(
+        v["rawDiff"]
+            .as_str()
+            .expect("rawDiff")
+            .contains("+++ b/untracked.txt"),
+        "raw_diff should use a repo-relative path for hunk application"
+    );
+    assert!(
+        !v["rawDiff"]
+            .as_str()
+            .expect("rawDiff")
+            .contains(repo.path().to_string_lossy().as_ref()),
+        "raw_diff should not embed the absolute repo path"
+    );
 }
 
 #[cfg(unix)]
