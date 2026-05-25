@@ -232,7 +232,7 @@ impl AgentAdapter for NoOpAdapter {
             trust_root: cwd.to_path_buf(),
         })
     }
-    fn parse_status(&self, _, _) -> Result<ParsedStatus, String>  { Err("…no status parser".into()) }
+    fn parse_status(&self, _, _) -> Result<ParsedStatus, String>  { Err("…no status decoder".into()) }
     fn validate_transcript(&self, _) -> Result<PathBuf, ValidateTranscriptError> {
         Err(ValidateTranscriptError::Other("…no transcript validator".into()))
     }

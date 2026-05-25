@@ -1,0 +1,356 @@
+//! `AgentBindings` — the typed bundle of one session's split-trait
+//! views.
+//!
+//! Step B' of the v4-frozen refactor plan (#246). Replaces the
+//! pre-B' practice of constructing an `Arc<dyn AgentAdapter>` and
+//! plumbing it through `start_for` / `watcher_runtime`. Production
+//! callers now receive `AgentBindings` from
+//! [`AgentBindings::for_attach`] and read the trait surface they
+//! need:
+//!
+//! - `bindings.locator` — where the statusline file is.
+//! - `bindings.decoder` — raw JSON → status snapshot.
+//! - `bindings.transcript_paths` — dynamic / static transcript hints.
+//! - `bindings.validator` — raw path → canonical path (security
+//!   check).
+//! - `bindings.streamer` — spawn the tail thread.
+//!
+//! Plus one transitional field:
+//!
+//! - `bindings.adapter_for_transcript_state` — the `Arc<dyn AgentAdapter>`
+//!   that `TranscriptState::start_or_replace` STILL takes in B'.
+//!   B'' migrates that signature onto `Arc<dyn TranscriptStreamer>`
+//!   directly; until then bindings carry both views of the same
+//!   underlying adapter struct so the two paths agree.
+
+use std::path::PathBuf;
+use std::sync::Arc;
+
+use super::claude_code::ClaudeCodeAdapter;
+use super::codex::{default_codex_home, CodexAdapter, CompositeLocator};
+use super::error::AttachError;
+use super::traits::{
+    StateDecoder, StatusSourceLocator, TranscriptPathValidator, TranscriptStreamer,
+};
+use super::types::TranscriptPathSource;
+use super::{AgentAdapter, AttachContext, ClaudeStatusFileLocator, NoOpAdapter};
+use crate::agent::types::AgentType;
+
+/// One session's typed adapter views, assembled from the
+/// [`AttachContext`] by [`AgentBindings::for_attach`].
+///
+/// `agent_type` and `streamer` carry `#[allow(dead_code)]` for the
+/// duration of B': `agent_type` is for diagnostics / future
+/// telemetry, and `streamer` is the next-step migration target
+/// (B'' rewires `TranscriptState::start_or_replace` from
+/// `Arc<dyn AgentAdapter>` onto `Arc<dyn TranscriptStreamer>`).
+/// The bindings tests in this module read both fields via the
+/// `#[cfg(test)]` accessors below, so the `#[allow]` only suppresses
+/// the production-build warning — the compiler still tracks the
+/// fields as "live" in test builds, giving B'' a compile-time
+/// prompt if it forgets to consume `bindings.streamer` (PR #261
+/// cycle 14 review F39 — the `#[allow]` would otherwise silence
+/// the one compiler diagnostic that protects the B'' migration
+/// contract; the accessor compensates).
+pub(crate) struct AgentBindings {
+    #[allow(dead_code)]
+    pub(crate) agent_type: AgentType,
+    pub(crate) locator: Arc<dyn StatusSourceLocator>,
+    pub(crate) decoder: Arc<dyn StateDecoder>,
+    pub(crate) transcript_paths: Arc<dyn TranscriptPathSource>,
+    pub(crate) validator: Arc<dyn TranscriptPathValidator>,
+    #[allow(dead_code)]
+    pub(crate) streamer: Arc<dyn TranscriptStreamer>,
+    /// Transitional: B'' migrates `TranscriptState::start_or_replace`
+    /// to take `Arc<dyn TranscriptStreamer>` directly; until then
+    /// the runtime hands it `Arc<dyn AgentAdapter>` carried here.
+    /// Removable post-B''.
+    pub(crate) adapter_for_transcript_state: Arc<dyn AgentAdapter>,
+}
+
+#[cfg(test)]
+impl AgentBindings {
+    /// Test-only accessor that reads `self.streamer`. Keeps the
+    /// compiler tracking the field as "live" in test builds so a
+    /// future B'' contributor who forgets to extract
+    /// `bindings.streamer` in `start_watching` gets a compile error
+    /// rather than the field silently disappearing (PR #261 cycle 14
+    /// review F39). Returns a typed handle so the accessor itself
+    /// can't be inlined or eliminated by the optimizer in test runs.
+    pub(crate) fn streamer_for_test(&self) -> &Arc<dyn TranscriptStreamer> {
+        &self.streamer
+    }
+}
+
+impl AgentBindings {
+    /// Build a session's bindings from the attach context.
+    ///
+    /// Dispatches by `ctx.agent_type` and wires each variant to the
+    /// concrete adapter + locator. The return type is
+    /// `Result<Self, AttachError>` for forward-compatibility with the
+    /// D' service boundary, but today's implementation is
+    /// infallible — Codex with `provider_home == None` falls back to
+    /// `default_codex_home()` rather than failing (PR #261 codex
+    /// review F3). The `AttachError` variants are reserved per #246
+    /// acceptance for failure modes that become observable when D'
+    /// retypes the locator/validator path.
+    pub(crate) fn for_attach(ctx: &AttachContext) -> Result<Self, AttachError> {
+        match ctx.agent_type {
+            AgentType::ClaudeCode => {
+                let adapter: Arc<ClaudeCodeAdapter> = Arc::new(ClaudeCodeAdapter);
+                Ok(Self {
+                    agent_type: ctx.agent_type,
+                    locator: Arc::new(ClaudeStatusFileLocator),
+                    decoder: adapter.clone(),
+                    transcript_paths: adapter.clone(),
+                    validator: adapter.clone(),
+                    streamer: adapter.clone(),
+                    adapter_for_transcript_state: adapter,
+                })
+            }
+            AgentType::Codex => {
+                // Codex's locator needs `codex_home` + `pid` +
+                // `pty_start`. `ctx.provider_home` carries the typed
+                // value from the central config registry when
+                // `dirs::home_dir()` resolved successfully; in headless
+                // / service sessions where it didn't, fall back to
+                // `default_codex_home()` (relative `.codex`) so attach
+                // still works — matching the pre-B' behavior of
+                // `CodexAdapter::new` (PR #261 codex review F3).
+                //
+                // The locator is built ONCE here and shared via `Arc`
+                // between `bindings.locator` (the outer
+                // `Arc<dyn StatusSourceLocator>`) and
+                // `adapter_for_transcript_state` (which holds an
+                // `Arc<CodexAdapter>` whose internal locator field is
+                // now `Arc<CompositeLocator>`, NOT an owned one).
+                // Pre-cycle-11 the two paths each built an independent
+                // `CompositeLocator` from the same parameters — a
+                // latent double-retry hazard if `<CodexAdapter as
+                // AgentAdapter>::located_status_source` (the
+                // transitional façade) was ever called downstream. The
+                // structural fix (PR #261 cycle 11 F31) eliminates
+                // that hazard immediately rather than waiting for B''
+                // to remove `adapter_for_transcript_state`.
+                let codex_home = ctx
+                    .provider_home
+                    .clone()
+                    .unwrap_or_else(default_codex_home);
+                // `ctx.proc_root` carries `Some("/proc")` on Linux,
+                // `None` on non-Linux, and `Some(tempdir)` in test
+                // harnesses that inject a fake `/proc`. The shared
+                // `Arc<CompositeLocator>` now means the proc-root
+                // value flows through to BOTH consumer paths through
+                // ONE construction site (PR #261 cycle 8 F22).
+                let proc_root = ctx
+                    .proc_root
+                    .clone()
+                    .unwrap_or_else(|| PathBuf::from("/proc"));
+                // Attach-once observability for production Codex
+                // sessions (PR #261 cycle 3 F11 + cycle 4 F13). The
+                // log site stays here at the binding boundary so it
+                // fires exactly once per attach, regardless of how
+                // many consumers hold the shared `Arc<CompositeLocator>`.
+                log::info!(
+                    "codex adapter: locator initialized (codex_home={}, pid={})",
+                    codex_home.display(),
+                    ctx.agent_pid,
+                );
+                let composite_locator: Arc<CompositeLocator> = Arc::new(CompositeLocator::new(
+                    codex_home,
+                    ctx.agent_pid,
+                    ctx.pty_start,
+                    proc_root,
+                ));
+                let locator: Arc<dyn StatusSourceLocator> = composite_locator.clone();
+                let adapter: Arc<CodexAdapter> =
+                    Arc::new(CodexAdapter::with_locator(composite_locator));
+                Ok(Self {
+                    agent_type: ctx.agent_type,
+                    locator,
+                    decoder: adapter.clone(),
+                    transcript_paths: adapter.clone(),
+                    validator: adapter.clone(),
+                    streamer: adapter.clone(),
+                    adapter_for_transcript_state: adapter,
+                })
+            }
+            other => {
+                // NoOp adapter for Aider / Generic — covers every
+                // non-Claude / non-Codex variant. `UnsupportedAgent`
+                // is reserved per the acceptance enum for a future
+                // refusal mode; today's behavior matches the
+                // pre-B' `<dyn AgentAdapter>::for_attach` (always
+                // returns Ok with a NoOp wrapper).
+                let adapter: Arc<NoOpAdapter> = Arc::new(NoOpAdapter::new(other));
+                Ok(Self {
+                    agent_type: other,
+                    locator: adapter.clone(),
+                    decoder: adapter.clone(),
+                    transcript_paths: adapter.clone(),
+                    validator: adapter.clone(),
+                    streamer: adapter.clone(),
+                    adapter_for_transcript_state: adapter,
+                })
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::agent::adapter::types::LocatedStatusSource;
+    use std::path::PathBuf;
+    use std::time::SystemTime;
+
+    fn claude_ctx() -> AttachContext {
+        AttachContext {
+            session_id: "sid".to_string(),
+            initial_cwd: PathBuf::from("/tmp/ws"),
+            shell_pid: 1,
+            agent_pid: 2,
+            pty_start: SystemTime::UNIX_EPOCH,
+            agent_type: AgentType::ClaudeCode,
+            provider_home: Some(PathBuf::from("/home/u/.claude")),
+            proc_root: None,
+        }
+    }
+
+    fn codex_ctx(home: Option<PathBuf>) -> AttachContext {
+        AttachContext {
+            session_id: "sid".to_string(),
+            initial_cwd: PathBuf::from("/tmp/ws"),
+            shell_pid: 1,
+            agent_pid: 2,
+            pty_start: SystemTime::UNIX_EPOCH,
+            agent_type: AgentType::Codex,
+            provider_home: home,
+            proc_root: None,
+        }
+    }
+
+    fn aider_ctx() -> AttachContext {
+        AttachContext {
+            session_id: "sid".to_string(),
+            initial_cwd: PathBuf::from("/tmp/ws"),
+            shell_pid: 1,
+            agent_pid: 2,
+            pty_start: SystemTime::UNIX_EPOCH,
+            agent_type: AgentType::Aider,
+            provider_home: None,
+            proc_root: None,
+        }
+    }
+
+    /// for_attach dispatches by `ctx.agent_type` — three variants,
+    /// three branches. The `agent_type` field on the returned
+    /// bindings round-trips, proving the dispatch hit the right arm.
+    #[test]
+    fn for_attach_dispatches_by_agent_type() {
+        let claude = AgentBindings::for_attach(&claude_ctx()).expect("claude binds");
+        assert_eq!(claude.agent_type, AgentType::ClaudeCode);
+
+        let codex = AgentBindings::for_attach(&codex_ctx(Some(PathBuf::from("/home/u/.codex"))))
+            .expect("codex binds");
+        assert_eq!(codex.agent_type, AgentType::Codex);
+
+        let noop = AgentBindings::for_attach(&aider_ctx()).expect("noop binds aider");
+        assert_eq!(noop.agent_type, AgentType::Aider);
+    }
+
+    /// Read `bindings.streamer` via the `#[cfg(test)]` accessor so
+    /// the compiler keeps the field "live" in test builds. PR #261
+    /// cycle 14 review F39 — the field's `#[allow(dead_code)]`
+    /// would otherwise silence the one compile-time prompt that
+    /// surfaces the cycle-11 shared-Arc invariant when B'' lands
+    /// (see the watcher destructure-comment block in
+    /// `watcher_runtime.rs` for the human-readable B'' checkpoint).
+    /// `Arc::ptr_eq` against `adapter_for_transcript_state` proves
+    /// the shared-Arc relationship cycle 11 established for the
+    /// Codex arm.
+    #[test]
+    fn for_attach_codex_shares_arc_between_streamer_and_facade() {
+        let bindings = AgentBindings::for_attach(&codex_ctx(Some(PathBuf::from(
+            "/home/u/.codex",
+        ))))
+        .expect("codex binds");
+        let streamer = bindings.streamer_for_test();
+        let facade = &bindings.adapter_for_transcript_state;
+        // Both Arcs were minted from the same `Arc<CodexAdapter>` in
+        // `for_attach`, so the underlying allocations are identical
+        // even though the trait-object types differ
+        // (`dyn TranscriptStreamer` vs `dyn AgentAdapter`).
+        // `Arc::as_ptr` on a fat pointer cast to `*const ()` yields
+        // the thin data pointer — equal iff the two Arcs share an
+        // allocation.
+        let streamer_data = Arc::as_ptr(streamer) as *const ();
+        let facade_data = Arc::as_ptr(facade) as *const ();
+        assert_eq!(
+            streamer_data, facade_data,
+            "cycle 11 F31 invariant: bindings.streamer and bindings.adapter_for_transcript_state \
+             must be Arc::clones of the same underlying CodexAdapter allocation",
+        );
+    }
+
+    /// Claude's locator is the stateless `ClaudeStatusFileLocator` —
+    /// `locate(cwd, sid)` should return the same path shape the
+    /// pre-B' `ClaudeCodeAdapter::located_status_source` did, with
+    /// `static_transcript_hint == None`.
+    #[test]
+    fn for_attach_claude_locator_returns_static_path() {
+        let ctx = claude_ctx();
+        let bindings = AgentBindings::for_attach(&ctx).expect("claude binds");
+        let cwd = PathBuf::from("/tmp/ws");
+        let located: LocatedStatusSource = bindings
+            .locator
+            .locate(&cwd, "sess-1")
+            .expect("locator infallible for claude");
+        assert_eq!(
+            located.status_path,
+            cwd.join(".vimeflow")
+                .join("sessions")
+                .join("sess-1")
+                .join("status.json"),
+        );
+        assert_eq!(located.trust_root, cwd);
+        assert_eq!(located.static_transcript_hint, None);
+    }
+
+    /// Codex `for_attach` with `provider_home == None` falls back to
+    /// `default_codex_home()` rather than failing. Pin the behavior so
+    /// headless / service sessions (where `dirs::home_dir()` returns
+    /// `None`) keep attaching, matching the pre-B' path through
+    /// `CodexAdapter::new` (PR #261 codex review F3).
+    ///
+    /// Coverage scope:
+    /// - **No panic / no Err**: the successful `expect(...)` proves
+    ///   both that the `unwrap_or_else(default_codex_home)` fallback
+    ///   fired AND that `CompositeLocator::new` +
+    ///   `CodexAdapter::with_locator` accept the resulting `PathBuf`
+    ///   without panicking.
+    /// - **Dispatch hits the Codex arm**: the `agent_type` round-trip
+    ///   confirms the test exercised the `AgentType::Codex` branch
+    ///   (a regression that dropped through to `NoOpAdapter` would
+    ///   fail this assertion).
+    ///
+    /// **NOT pinned here**: that `bindings.locator` and
+    /// `adapter_for_transcript_state.locator()` reference the SAME
+    /// `Arc<CompositeLocator>` instance (cycle 11 F31 made that
+    /// structural — see the `Arc::clone` line in the `for_attach`
+    /// Codex arm). Verifying via the public
+    /// `Arc<dyn StatusSourceLocator>` surface would require either
+    /// (a) downcasting, (b) adding a `#[cfg(test)]` `codex_home()`
+    /// accessor on `CompositeLocator`, or (c) a locator fixture with
+    /// a seeded SQLite DB so `locate(...)` returns `Ok` with an
+    /// observable `trust_root`. None of those are worth the test-only
+    /// API surface; the cycle-1 F1 fix that introduced the shared
+    /// binding lives in the `for_attach` body at lines 138-153 and
+    /// is self-evident at code-review time.
+    #[test]
+    fn for_attach_codex_without_provider_home_falls_back_to_default_home() {
+        let bindings =
+            AgentBindings::for_attach(&codex_ctx(None)).expect("codex falls back to default home");
+        assert_eq!(bindings.agent_type, AgentType::Codex);
+    }
+}

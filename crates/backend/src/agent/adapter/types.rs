@@ -2,14 +2,12 @@
 
 use std::path::PathBuf;
 
-use crate::agent::types::{
-    AgentStatusEvent, ContextWindowStatus, CostMetrics, RateLimits,
-};
+use crate::agent::types::{AgentStatusEvent, ContextWindowStatus, CostMetrics, RateLimits};
 
 /// Raw, untrusted, not-yet-validated transcript path emitted by either
 /// the locator at attach time (via
-/// [`TranscriptPathSource::static_hint`]) or the statusline decoder at
-/// each update (via [`TranscriptPathSource::dynamic_hint`]).
+/// `TranscriptPathSource::static_hint`) or the statusline decoder at
+/// each update (via `TranscriptPathSource::dynamic_hint`).
 /// Validation through `AgentAdapter::validate_transcript` converts a
 /// `RawPath` into a canonicalized `PathBuf` before any transcript
 /// tailing happens.
@@ -24,7 +22,7 @@ pub type RawPath = String;
 ///
 /// Step 0c rename of the former `StatusSource`. The new
 /// `static_transcript_hint` field carries Codex's locator-known rollout
-/// path so the runtime can ask [`TranscriptPathSource::static_hint`]
+/// path so the runtime can ask `TranscriptPathSource::static_hint`
 /// for it without depending on the adapter-private `Mutex` side channel
 /// (deprecated in 0c, kept in place for back-compat; targeted for
 /// removal in a later step).
@@ -39,7 +37,7 @@ pub struct LocatedStatusSource {
     /// locator resolves the rollout file before any statusline update);
     /// `None` for Claude (the path is dynamic, arriving inside every
     /// statusline JSON update — see
-    /// [`TranscriptPathSource::dynamic_hint`]).
+    /// `TranscriptPathSource::dynamic_hint`).
     ///
     /// Held here so the runtime can pass a `&LocatedStatusSource` into
     /// `static_hint` instead of threading the path through
@@ -65,13 +63,14 @@ pub struct LocatedStatusSource {
 ///    return this type, and the runtime composes
 ///    `AgentStatusEvent { session_id, ..snapshot }` afterwards.
 /// 2. No transcript path — that lookup is fully owned by
-///    [`TranscriptPathSource`]; the decoder never surfaces it.
+///    `TranscriptPathSource`; the decoder never surfaces it.
 ///
 /// Field set mirrors the non-`session_id` fields of
-/// [`AgentStatusEvent`]. A future B' commit changes the conversion
-/// from "manual struct build" to a `From<StatusSnapshot> for
-/// AgentStatusEvent` plus the runtime-supplied id.
-#[allow(dead_code)]
+/// [`AgentStatusEvent`]. Step B' wired the decoder to return this
+/// type via `crate::agent::adapter::traits::StateDecoder` — the
+/// session-id stamp now happens in the runtime composition layer
+/// (`parse_statusline` / `parse_rollout` test wrappers for now,
+/// `AgentAdapter::parse_status` until B''/D' migrate it).
 #[derive(Debug, Clone)]
 pub struct StatusSnapshot {
     /// Agent's internal session id (distinct from the Vimeflow PTY
@@ -89,16 +88,43 @@ pub struct StatusSnapshot {
 /// Statusline-parser output as consumed by `base/watcher_runtime`.
 ///
 /// Step 0c removed the `transcript_path: Option<String>` field — the
-/// runtime now resolves transcript paths via [`TranscriptPathSource`]
+/// runtime now resolves transcript paths via `TranscriptPathSource`
 /// instead of via this side channel.
 #[derive(Debug, Clone)]
 pub struct ParsedStatus {
     pub event: AgentStatusEvent,
 }
 
-/// Where transcript paths come from. Broken out as a standalone trait
-/// per the v4-frozen plan so future Step B' can extract it cleanly
-/// from `AgentAdapter` without churning callers.
+/// Stamp a session-id-free [`StatusSnapshot`] with a Vimeflow PTY
+/// session id, producing the [`AgentStatusEvent`] that the rest of
+/// the runtime consumes.
+///
+/// Centralizes the eight-field copy that was originally duplicated
+/// across three call sites in `base/watcher_runtime`,
+/// `claude_code/statusline`, and the test-only `codex/parser` (PR #261
+/// cycle 1 review F2 introduced this helper; later cycles deleted the
+/// intermediate `compose_event` / `snapshot_to_event` shims so all
+/// three sites now call this helper directly). Future
+/// `AgentStatusEvent` field additions only need to update this one
+/// mapping.
+pub(crate) fn stamp_snapshot(session_id: &str, snapshot: StatusSnapshot) -> AgentStatusEvent {
+    AgentStatusEvent {
+        session_id: session_id.to_string(),
+        agent_session_id: snapshot.agent_session_id,
+        model_id: snapshot.model_id,
+        model_display_name: snapshot.model_display_name,
+        version: snapshot.version,
+        context_window: snapshot.context_window,
+        cost: snapshot.cost,
+        rate_limits: snapshot.rate_limits,
+    }
+}
+
+/// Where transcript paths come from. Step 0c extracted this from
+/// `AgentAdapter`; step B' narrows visibility from `pub` to
+/// `pub(crate)` so it lines up with the other 4 split traits in
+/// `crate::agent::adapter::traits` (frozen constraint #3 — all five
+/// adapter-concern traits stay internal).
 ///
 /// Per-provider contract:
 ///
@@ -113,7 +139,7 @@ pub struct ParsedStatus {
 /// The runtime asks `dynamic_hint` first (fresh-per-update Claude
 /// path) and falls back to `static_hint` (steady-state Codex path).
 /// If both return `None`, no transcript is tailed.
-pub trait TranscriptPathSource: Send + Sync {
+pub(crate) trait TranscriptPathSource: Send + Sync {
     /// Transcript path known at attach time. Default returns `None`;
     /// Codex overrides to surface the rollout path stored in the
     /// supplied [`LocatedStatusSource`].

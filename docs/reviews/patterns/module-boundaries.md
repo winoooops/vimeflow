@@ -2,7 +2,7 @@
 id: module-boundaries
 category: code-quality
 created: 2026-04-30
-last_updated: 2026-05-07
+last_updated: 2026-05-24
 ref_count: 1
 ---
 
@@ -51,3 +51,80 @@ Don't widen the coupling by adding a second importer.
 - **Finding:** `TerminalZone` decided whether to wire `aria-labelledby` on each panel by recomputing `isActive || status === 'running' || status === 'paused'` inline. The exact same predicate (modulo the `isActive` half) lives in `pickNextVisibleSessionId.ts` as `isOpenSessionStatus`, which `Sidebar` and `SessionTabs` both consume. Today the two are equivalent, but the moment `isOpenSessionStatus` is widened (e.g. to admit a future `suspended` status), `TerminalZone`'s `hasVisibleTab` would silently lag — panels for the new status would emit `aria-labelledby={undefined}` even though `SessionTabs` would render a visible tab for them, breaking the WAI-ARIA tablist↔tabpanel linkage with no build error and no test failure. Same finding-class as #2 above (sibling-shape mismatch is a coupling smell) but the consequence here is functional, not stylistic.
 - **Fix:** Imported `isOpenSessionStatus` from `../utils/pickNextVisibleSessionId`. Replaced the inline three-line OR with `isActive || isOpenSessionStatus(session.status)`. Updated the comment to state the canonical-predicate consumption rationale ("a future non-open status auto-flows into both visibility surfaces without TerminalZone needing a separate update"). Code-review heuristic: when two files in the same feature directory implement the same predicate inline, ONE of them should host the helper and the other(s) should consume it — and reviewers should flag the duplicate the moment the second copy lands, not after a status-set extension surfaces the drift.
 - **Commit:** _(see git log for the cycle-17 fix commit on PR #174)_
+
+---
+
+### 4. Refactor splits a constructor — internal `codex_home` derivation desyncs between adapter and outer locator
+
+- **Source:** github-claude | PR #261 round 1 | 2026-05-24
+- **Severity:** MEDIUM
+- **File:** `crates/backend/src/agent/adapter/bindings.rs`
+- **Finding:** Step B' of the agent-adapter refactor moved `CompositeLocator` construction out of `CodexAdapter::new` and into `AgentBindings::for_attach`, but kept `CodexAdapter::new(pid, pty_start)` as the way to build the transitional `adapter_for_transcript_state`. `for_attach` derived `codex_home` from `ctx.provider_home`, then constructed two locators with potentially different homes: `bindings.locator = CompositeLocator::new(codex_home, ...)` and (inside `CodexAdapter::new`) a second `CompositeLocator::new(default_codex_home(), ...)`. Whenever `ctx.provider_home != default_codex_home()` (any test passing a custom home, or a future build-time override), `adapter.located_status_source()` would silently use the wrong root. Latent in B' (no live caller reached that path) but B''/D' migrations would inherit the mismatch unnoticed.
+- **Fix:** Promoted the test-only `CodexAdapter::with_home(pid, pty_start, codex_home)` to `pub(crate)` so the adapter accepts the same `codex_home` that the outer `CompositeLocator` used. `for_attach` now computes `codex_home` once and clones it into both. Lesson: when refactoring a self-contained constructor (`CodexAdapter::new`) into a multi-site wiring (`for_attach`), every value the original constructor _derived_ internally needs to flow through the new wiring as a single source of truth — not be re-derived at each call site.
+- **Commit:** _(PR #261 round 1 `/lifeline:upsource-review` cycle 1)_
+
+---
+
+### 5. Triplicated `StatusSnapshot → AgentStatusEvent` 8-field mapping across three modules
+
+- **Source:** github-claude | PR #261 round 1 | 2026-05-24
+- **Severity:** LOW
+- **File:** `crates/backend/src/agent/adapter/base/watcher_runtime.rs` (and the duplicates in `claude_code/statusline.rs` + `codex/parser.rs`)
+- **Finding:** Three byte-for-byte identical 8-field mappings of `(session_id, StatusSnapshot) → AgentStatusEvent` lived in `base/watcher_runtime::compose_event`, `claude_code/statusline::snapshot_to_event`, and the test-only `codex/parser::snapshot_to_event`. Required-field additions to `AgentStatusEvent` would compile-error at all three sites (struct-literal syntax), but an optional-field addition could silently drift if only the watcher path was updated. Triple-duplication is the canonical cross-module DRY violation that this pattern was built for (cf. #1 and #3).
+- **Fix:** Promoted the mapping to `pub(crate) fn stamp_snapshot(session_id, StatusSnapshot) -> AgentStatusEvent` next to `StatusSnapshot` in `crate::agent::adapter::types`. All three call sites now delegate to it. Lesson: when a refactor extracts a session-id-free intermediate type (`StatusSnapshot`) deliberately to invert composition, the inverse stamping must be centralized too — otherwise every downstream call site re-implements the inversion and they drift on the next field addition.
+- **Commit:** _(PR #261 round 1 `/lifeline:upsource-review` cycle 1)_
+
+---
+
+### 6. Refactor surfaces what the old code absorbed — `dirs::home_dir() == None` becomes a hard-fail
+
+- **Source:** github-codex-connector | PR #261 round 1 | 2026-05-24
+- **Severity:** MEDIUM
+- **File:** `crates/backend/src/agent/adapter/bindings.rs`
+- **Finding:** Step B' moved `codex_home` derivation from `CodexAdapter::new` (which absorbed `dirs::home_dir() == None` via a `.codex` relative fallback) into `AgentBindings::for_attach`, which expected the typed `ctx.provider_home`. When that was `None`, `for_attach` returned `AttachError::LocatorFatal("Codex AttachContext has no provider_home")` rather than absorbing it. But `provider_home` is set via `dirs::home_dir().map(...)` in the central config registry — so it's `None` whenever the underlying call returns `None` (headless / service sessions with no resolvable `$HOME` / `/etc/passwd` entry). The refactor silently turned "works with relative `.codex`" into "Codex watcher fails to attach", a behavioral regression that disables status/transcript updates entirely in those environments. The reviewer's framing: "make sure the new wiring preserves the fallback the old constructor encapsulated, not just the happy path."
+- **Fix:** Promoted `default_codex_home()` from a module-private `fn` to `pub(crate) fn` and replaced the `ok_or_else(|| LocatorFatal(...))` with `unwrap_or_else(default_codex_home)`. Renamed the test from `..._errors_locator_fatal` to `..._falls_back_to_default_home`. Updated `error.rs`'s module doc to mark `AttachError` infallible at the `for_attach` site (variants reserved for D'). Lesson: refactors that hoist a `fn`'s body into a new module shape must preserve _every_ observable behavior that body encapsulated — not just the happy path. Convert "what does the old code do when its inputs are degenerate?" into a checklist item in the refactor design pass.
+- **Commit:** _(PR #261 round 1 `/lifeline:upsource-review` cycle 1)_
+
+---
+
+### 7. DRY-consolidation missed sibling call sites in transitional façade code
+
+- **Source:** github-claude | PR #261 round 2 | 2026-05-24
+- **Severity:** LOW
+- **File:** `crates/backend/src/agent/adapter/claude_code/mod.rs` (and the matching duplicate in `codex/mod.rs`)
+- **Finding:** Cycle-1 fix for finding #5 above (the triplicated `StatusSnapshot → AgentStatusEvent` 8-field mapping) extracted `types::stamp_snapshot` and migrated three call sites (`base/watcher_runtime::compose_event`, `claude_code/statusline::snapshot_to_event`, `codex/parser::snapshot_to_event` test-only). But the transitional `AgentAdapter::parse_status` impls for `ClaudeCodeAdapter` (line 106-120) and `CodexAdapter` (line 138-152) still built `AgentStatusEvent` with manual struct literals — those two sites are also `StatusSnapshot → AgentStatusEvent` stamps, only on the deprecated façade path. Production code uses `decoder.decode()` + `compose_event()` exclusively (so no runtime bug today), but a future optional field on `AgentStatusEvent` would compile cleanly while the two façade paths silently miss the field. Same finding-class as #5; the cycle-1 migration was incomplete.
+- **Fix:** Imported `stamp_snapshot` in both adapter modules. Replaced the manual literal in each `parse_status` with `event: stamp_snapshot(session_id, snapshot)`. Lesson: when extracting a helper for a duplicated mapping, search for _every_ site implementing the same shape — not just the obvious "watcher path" trio. `git grep "session_id: session_id.to_string()"` (or the unique signature line for the mapping) catches façade copies that pattern-matching by file name misses. Add this grep to the refactor's local-verification checklist.
+- **Commit:** _(PR #261 round 2 `/lifeline:upsource-review` cycle 2; follows-up #5 above)_
+
+---
+
+### 8. Single-line wrapper around an extracted helper is readability tax, not abstraction
+
+- **Source:** github-claude | PR #261 round 3 | 2026-05-24
+- **Severity:** LOW
+- **File:** `crates/backend/src/agent/adapter/base/watcher_runtime.rs`
+- **Finding:** Cycle 1's fix for #5 above (extract `stamp_snapshot` from the triplicated 8-field mapping) introduced a private `compose_event(session_id, snapshot) -> AgentStatusEvent` in `watcher_runtime.rs` that did nothing except call `crate::agent::adapter::types::stamp_snapshot` via a fully-qualified path. Three call sites went through it. The wrapper was intended to name the R2.2 "runtime stamps the session id" moment locally, but it added an extra grep hop (find `compose_event` → find `stamp_snapshot` → find the mapping), used non-idiomatic fully-qualified paths instead of imported names, and risked becoming a missed second-change-site if `stamp_snapshot`'s signature ever evolved.
+- **Fix:** Deleted `compose_event`. Added `stamp_snapshot` to the module's `use crate::agent::adapter::types::{...}` block. Three call sites now call `stamp_snapshot(&sid_for_cb, snapshot)` directly — self-documenting without indirection. Dropped the unused `use crate::agent::types::AgentStatusEvent` import that the wrapper kept alive. Lesson: a thin wrapper around an extracted helper is justified ONLY when it adds (a) a new name worth introducing because callers need a domain-meaningful verb, (b) a side effect the helper doesn't have (logging, metric emission), or (c) a parameter transformation. None of those applied here — the wrapper was "documentation by indirection," which is worse than direct calls + a one-line doc-comment. Pair this with the rest of the pattern's lesson: when you find such a wrapper in review, prefer deletion over keeping it for narrative reasons.
+- **Commit:** _(PR #261 round 3 `/lifeline:upsource-review` cycle 3; follows-up #5 / #7 above)_
+
+---
+
+### 9. Two structs satisfying overlapping trait surfaces with byte-for-byte identical bodies
+
+- **Source:** github-claude | PR #261 round 4 | 2026-05-24
+- **Severity:** MEDIUM
+- **File:** `crates/backend/src/agent/adapter/mod.rs` + `crates/backend/src/agent/adapter/claude_code/mod.rs`
+- **Finding:** Step B' introduced `ClaudeStatusFileLocator` (a stateless `pub(crate) struct` consumed by `AgentBindings.locator`) alongside the existing `ClaudeCodeAdapter`, both implementing `StatusSourceLocator::locate`. The two `locate` bodies were byte-for-byte identical — the same `cwd.join(".vimeflow").join("sessions")...` chain. A future Claude session-path schema change (e.g., `.vimeflow` renamed, sub-directory added) updated in one struct but not the other would compile cleanly and silently produce divergent paths from the watcher path vs the façade `AgentAdapter::located_status_source` path. Same finding-class as #1/#3/#5/#7 — two type surfaces hosting the same shape with no shared anchor. The transitional context (façade still alive in B', `ClaudeStatusFileLocator` is the future steady-state) doesn't excuse the duplication; the divergence risk applies for the whole B' → B'' → D' lifetime.
+- **Fix:** Extracted `pub(super) fn claude_status_path(cwd: &Path, session_id: &str) -> LocatedStatusSource` next to `ClaudeCodeAdapter` in `claude_code/mod.rs`. Both `StatusSourceLocator` impls now route through it: `ClaudeCodeAdapter::locate` calls `claude_status_path(cwd, session_id)` directly, `ClaudeStatusFileLocator::locate` calls `claude_code::claude_status_path(cwd, session_id)`. Future schema changes are now single-site edits. Lesson: when a refactor spins out a new type that needs the same construction logic as an existing type, the construction logic must live as a free function (or shared helper struct) BEFORE the new type lands — not "we'll dedupe later when one of them is removed." The dedupe is the prerequisite, not the cleanup. `pub(super)` visibility is the right scope because the helper is internal to one provider's module tree.
+- **Commit:** _(PR #261 round 4 `/lifeline:upsource-review` cycle 4)_
+
+---
+
+### 10. Statusline shim `snapshot_to_event` — same anti-pattern as #8 in a sibling file
+
+- **Source:** github-claude | PR #261 round 4 | 2026-05-24
+- **Severity:** LOW
+- **File:** `crates/backend/src/agent/adapter/claude_code/statusline.rs`
+- **Finding:** Cycle 3's #8 fix removed `compose_event` from `watcher_runtime.rs` but left the parallel `snapshot_to_event` shim in `claude_code/statusline.rs` — a single-expression forwarder to `stamp_snapshot` with one caller (`parse_statusline`). Pattern recurs: a "name the R2.2 boundary at every producer" instinct produces a trivial wrapper at each site. The grep-and-sweep heuristic in #5's fix (`git grep "session_id: session_id.to_string()"`) caught the _literal stamping copies_ but not these single-forwarders, which take a different syntactic shape.
+- **Fix:** Inlined `stamp_snapshot(session_id, snapshot)` at `parse_statusline`'s call site, deleted the shim. `stamp_snapshot` was already imported at the top of the file (added by cycle 1's F5 fix). Lesson: when applying #8's "delete the thin wrapper" lesson, also grep for `fn snapshot_to_event` / `fn stamp_*` / any `pub fn` that's a one-expression call. Single-forwarders are easy to miss because they don't visually pattern-match the original duplicated literal.
+- **Commit:** _(PR #261 round 4 `/lifeline:upsource-review` cycle 4; sibling of #8 above)_

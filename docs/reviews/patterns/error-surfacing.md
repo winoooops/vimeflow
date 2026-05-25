@@ -2,7 +2,7 @@
 id: error-surfacing
 category: error-handling
 created: 2026-04-10
-last_updated: 2026-05-16
+last_updated: 2026-05-24
 ref_count: 7
 ---
 
@@ -278,3 +278,12 @@ failed" must mean the editor shows the original file, not the requested one.
 - **Finding:** The first fix for `onExit()` / `onError()` listener setup caught backend `listen()` failures and logged a diagnostic, but the public methods still returned a normal unsubscribe function. Callers had no way to observe that the underlying IPC listeners were not attached, and the failed callbacks stayed registered until disposal.
 - **Fix:** Make `onExit()` and `onError()` return `Promise<unsubscribe>` like `onData()`. They now await listener attachment, reject on setup failure, and remove the just-added callback before propagating the error. React call sites track the async unsubscribe so cleanup still works if an effect unmounts before setup resolves.
 - **Commit:** _(see git log for the PR #214 listener-init propagation review-fix commit)_
+
+### 28. Distinct error categories collapsed into one prefix in `retry_locator`
+
+- **Source:** github-claude | PR #261 round 2 | 2026-05-24
+- **Severity:** LOW
+- **File:** `crates/backend/src/agent/adapter/codex/locator.rs`
+- **Finding:** `retry_locator` merged `LocatorError::Unresolved(reason) | LocatorError::Fatal(reason)` into one match arm emitting `"codex bind fatal: {reason}"`. The two variants represent fundamentally different failure modes — `Unresolved` is "no unique candidate" (the locator ran and produced an ambiguous / empty result), `Fatal` is "the filesystem or SQLite is broken." Same Display prefix → log scrapers and any future `AttachError` mapping at the D' boundary can't tell ambiguous from fatal. Same finding-class as #25 (`git_branch`): a wide arm in error mapping that conflates distinct categories. The `AttachError` enum in `error.rs` already split `LocatorAmbiguous` vs `LocatorFatal`; the `retry_locator` formatter lagged.
+- **Fix:** Split the arm into two branches: `Err(LocatorError::Unresolved(reason)) => Err(format!("codex bind ambiguous: {}", reason))` and `Err(LocatorError::Fatal(reason)) => Err(format!("codex bind fatal: {}", reason))`. Updated the `unresolved_short_circuits_immediately` test to assert the new "ambiguous" prefix is present AND the legacy "fatal" prefix is NOT present (positive + negative check) so a future regression that re-merges the arms fails loudly. Lesson: when a typed error enum has N variants representing distinct categories, every consumer that flattens them to a string should emit N distinct prefixes — otherwise the typed split is wasted at the formatter layer.
+- **Commit:** _(PR #261 round 2 `/lifeline:upsource-review` cycle 2)_

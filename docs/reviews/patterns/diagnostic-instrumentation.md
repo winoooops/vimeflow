@@ -2,7 +2,7 @@
 id: diagnostic-instrumentation
 category: code-quality
 created: 2026-04-30
-last_updated: 2026-04-30
+last_updated: 2026-05-24
 ref_count: 2
 ---
 
@@ -98,3 +98,30 @@ The discipline:
 - **Finding:** `spawn_trailing_debounce_thread` calls `std::thread::spawn(...)` and discards the returned `JoinHandle`. In production the emit closure only calls `emit_for_all_subscribers`, which logs errors rather than panicking, so the swallowed-panic path is unreachable. In tests, however, the closure was `move || { emitted_tx.send(()).expect("failed to record debounce emit"); }` — and if the receiver dropped first (test cleanup ordering races), `.expect` would panic inside the detached thread. The panic was invisible: the next test assertion (`recv_timeout(...).expect("debounce should emit")`) would fire instead, attributing the failure to "no emit" when the real cause was "the emit closure panicked." Same finding-class as #5 (structurally-zero `dt` produces misleading log values) — both are diagnostics that point an investigator at the wrong cause.
 - **Fix:** Tests now use `let _ = emitted_tx.send(())` instead of `.expect(...)`, swallowing send errors so the detached thread can never panic. The positive `recv_timeout(...).expect("debounce should emit")` assertion remains the canonical failure signal, with no false-attribution interference from the worker thread. Returning the `JoinHandle` and exposing it for tests was considered but rejected: the fire-and-forget API is the right shape for production callers, and `catch_unwind` machinery would be heavy for the low-risk scenario.
 - **Commit:** _(see git log for the round-2 fix commit)_
+
+### 8. Refactor stripped session_id context from per-line malformed-rollout warning
+
+- **Source:** github-claude | PR #261 round 3 | 2026-05-24
+- **Severity:** MEDIUM
+- **File:** `crates/backend/src/agent/adapter/codex/parser.rs`
+- **Finding:** Step B' of the agent-adapter refactor moved Codex statusline decoding into a session-id-free `StateDecoder::decode(&self, raw: &str) -> Result<StatusSnapshot, String>` (R2.2 invariant: decoder output is identity-free, runtime stamps the id). The implementation called `parse_rollout_snapshot(raw)`, which on a malformed JSONL line logged `"codex: skipping malformed rollout line"` — with NO session context. The pre-B' parser was `parse_rollout(session_id, raw)` and logged `for sid={session_id}`. R2.2's "decoder OUTPUT is session-id-free" was misread as "decoder INPUT must not see the session id either," and the warn-site lost its multi-session correlator. In a desktop run with two Codex windows open, `grep 'skipping malformed rollout'` returned N identical lines with no way to tell which session emitted them. Same finding-class as #5 (structurally-zero `dt` producing misleading log values) — a diagnostic that's technically present but operationally useless.
+- **Fix:** Added `session_id: Option<&str>` as an explicit diagnostic-only parameter on `StateDecoder::decode` (and `parse_rollout_snapshot`). The trait doc-comment now says: "Output (`StatusSnapshot`) stays session-id-free per R2.2; the input is annotated for observability only; same raw bytes + different session_id MUST yield the same snapshot." Claude's `decode` impl ignores the parameter (its parser is atomic, no per-line warn site). Codex's threads it to the warn site as `(sid={})`. Watcher_runtime's 3 callbacks pass `Some(&sid_for_cb)` (notify) / `Some(&initial_sid)` (inline-init) / `Some(&poll_sid)` (poll). Lesson: when a refactor enforces an output invariant (R2.2 here), check whether existing per-call observability metadata (log lines, error annotations) was implicitly load-bearing on the input parameter being removed. The fix is to keep the input but distinguish "input shapes the output" from "input annotates the call" — explicit `Option<&str>` parameters are the right idiom because they grep-able and self-documenting at every call site.
+- **Commit:** _(PR #261 round 3 `/lifeline:upsource-review` cycle 3)_
+
+### 9. Observability regression — production attach path silent while test-only constructor logs
+
+- **Source:** github-claude | PR #261 round 4 | 2026-05-24
+- **Severity:** LOW
+- **File:** `crates/backend/src/agent/adapter/codex/mod.rs`
+- **Finding:** Step B'/cycle-1 routed all production Codex attaches through `AgentBindings::for_attach` → `CodexAdapter::with_home`, leaving `CodexAdapter::new` as test-only. But the `log::info!("codex adapter: locator initialized ...")` line — the canonical "did Codex attach?" diagnostic — lived in `CodexAdapter::new`. Result: every production Codex attach was now silent; only test-driven calls emitted the log. Operators grepping for that exact string would see NO production hits. Same finding-class as #5 (structurally-zero `dt`) — observability that's technically present but only fires on the dead code path.
+- **Fix:** Moved the log to `AgentBindings::for_attach` itself, after resolving `codex_home`. Every production attach now emits exactly one `"codex adapter: locator initialized (codex_home={}, pid={})"` line. `CodexAdapter::new` and `CompositeLocator::new` are intentionally silent — see #10 below for why placing it in `CompositeLocator::new` was wrong. Lesson: when a refactor extracts a factory and routes production through a new entry point, audit every log line at every emit site to confirm production reaches them. Don't assume "the log is still there" without confirming "production still touches that line."
+- **Commit:** _(PR #261 round 4 `/lifeline:upsource-review` cycle 4)_
+
+### 10. Self-introduced double-log — same constructor reached twice per attach
+
+- **Source:** local-codex | PR #261 round 4 verify | 2026-05-24
+- **Severity:** LOW
+- **File:** `crates/backend/src/agent/adapter/codex/locator.rs`
+- **Finding:** Cycle 4's initial fix for #9 above moved the production Codex init log into `CompositeLocator::new`, since both `CodexAdapter::new` and `CodexAdapter::with_home` reach that constructor. But `AgentBindings::for_attach` for the Codex arm constructs `CompositeLocator::new` TWICE per attach — once for `bindings.locator` (the outer locator used by watcher*runtime) and once inside `CodexAdapter::with_home` (the adapter's internal locator for the transitional `adapter_for_transcript_state`). That meant every production attach emitted two identical init lines, weakening the observability F11 was trying to restore. Local codex verify caught this as a new LOW finding \_introduced by the F11 fix itself* before push.
+- **Fix:** Moved the log up one more level to `AgentBindings::for_attach` (single attach-once site, one log per attach regardless of how many CompositeLocator instances are constructed downstream). Reverted the log from `CompositeLocator::new`. Updated comments in both `CodexAdapter::new` and `CompositeLocator::new` to point at the actual log site. Lesson: when picking a logging site, count the call sites that reach it per logical operation, not just the number of constructors. "Shared constructor" sounds like the right place but isn't if any caller path traverses it more than once. Audit the call graph from the user-facing event (here: "Codex attach") to every emit site. Pre-push codex verify (the local layer) caught this in the same cycle that introduced it — keeping the verify gate before push paid for itself.
+- **Commit:** _(PR #261 round 4 `/lifeline:upsource-review` cycle 4)_

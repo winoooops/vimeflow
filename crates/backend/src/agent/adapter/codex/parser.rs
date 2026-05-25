@@ -28,12 +28,46 @@
 use serde::Deserialize;
 
 use super::super::serde_helpers::{lenient_f64, lenient_object, lenient_string, lenient_u64};
-use crate::agent::adapter::types::ParsedStatus;
+#[cfg(test)]
+use crate::agent::adapter::types::{stamp_snapshot, ParsedStatus};
+use crate::agent::adapter::types::StatusSnapshot;
 use crate::agent::types::{
-    AgentStatusEvent, ContextWindowStatus, CostMetrics, CurrentUsage, RateLimitInfo, RateLimits,
+    ContextWindowStatus, CostMetrics, CurrentUsage, RateLimitInfo, RateLimits,
 };
 
-pub fn parse_rollout(session_id: &str, raw: &str) -> Result<ParsedStatus, String> {
+/// Test-only convenience wrapper that pairs `parse_rollout_snapshot`
+/// with `stamp_snapshot` so existing tests can keep asserting on the
+/// full `AgentStatusEvent` shape (including `session_id`). Production
+/// code (the `StateDecoder` impl on `CodexAdapter`) calls
+/// `parse_rollout_snapshot` directly and lets the runtime stamp the
+/// session id via `stamp_snapshot`.
+#[cfg(test)]
+pub(crate) fn parse_rollout(session_id: &str, raw: &str) -> Result<ParsedStatus, String> {
+    let snapshot = parse_rollout_snapshot(Some(session_id), raw)?;
+    Ok(ParsedStatus {
+        event: stamp_snapshot(session_id, snapshot),
+    })
+}
+
+/// Step B' decoder entry point — session-id-free *output*. Used by
+/// the new [`crate::agent::adapter::traits::StateDecoder`] impl on
+/// `CodexAdapter`. The runtime composes
+/// `AgentStatusEvent { session_id, ...snapshot }` after the decoder
+/// returns; for now the session-id-stamping `parse_rollout` wrapper
+/// above is what `AgentAdapter::parse_status` still calls.
+///
+/// `session_id` is **diagnostic-only**: it's used to label the
+/// per-line `log::warn!` for malformed JSONL lines so multi-session
+/// debugging can correlate the warning to the affected PTY session.
+/// It does NOT influence the returned `StatusSnapshot` (R2.2 invariant
+/// — output is identity-free). PR #261 cycle 2 review flagged that
+/// the pre-B' parser logged `for sid={session_id}` and the refactor
+/// stripped that context; this parameter restores it without
+/// re-introducing the id into the output type.
+pub(crate) fn parse_rollout_snapshot(
+    session_id: Option<&str>,
+    raw: &str,
+) -> Result<StatusSnapshot, String> {
     let mut state = CodexFoldState::default();
     let lines: Vec<&str> = raw.split('\n').collect();
     let trailing_complete = raw.ends_with('\n');
@@ -53,20 +87,13 @@ pub fn parse_rollout(session_id: &str, raw: &str) -> Result<ParsedStatus, String
         match serde_json::from_str::<CodexRolloutLine>(line) {
             Ok(parsed) => fold_event(&mut state, parsed),
             Err(_) => log::warn!(
-                "codex: skipping malformed rollout line for sid={}",
-                session_id
+                "codex: skipping malformed rollout line (sid={})",
+                session_id.unwrap_or("?"),
             ),
         }
     }
 
-    // Step 0c: `transcript_path` was removed from `ParsedStatus`. The
-    // rollout path now reaches the watcher via
-    // `TranscriptPathSource::static_hint`, reading the value off the
-    // `LocatedStatusSource` returned by `located_status_source` at
-    // attach time.
-    Ok(ParsedStatus {
-        event: state.into_event(session_id),
-    })
+    Ok(state.into_snapshot())
 }
 
 // -------------------------- DTO layer --------------------------
@@ -205,7 +232,13 @@ struct TokenCountInfo {
 }
 
 impl CodexFoldState {
-    fn into_event(self, session_id: &str) -> AgentStatusEvent {
+    /// Step B': renamed from `into_event(session_id)` to
+    /// `into_snapshot()` — the session-id stamp moved out of the
+    /// decoder per the v4-frozen plan's R2.2 invariant. Composition
+    /// happens in `stamp_snapshot` (called directly by
+    /// `parse_rollout` for the still-existing
+    /// `AgentAdapter::parse_status` path).
+    fn into_snapshot(self) -> StatusSnapshot {
         let context_window_size = self
             .last_token_count_info
             .as_ref()
@@ -268,19 +301,16 @@ impl CodexFoldState {
             seven_day: None,
         });
 
-        AgentStatusEvent {
-            session_id: session_id.to_string(),
+        let (model_id, model_display_name) = if self.model.is_empty() {
+            ("unknown".to_string(), "unknown".to_string())
+        } else {
+            (self.model.clone(), self.model)
+        };
+
+        StatusSnapshot {
             agent_session_id: self.agent_session_id,
-            model_id: if self.model.is_empty() {
-                "unknown".to_string()
-            } else {
-                self.model.clone()
-            },
-            model_display_name: if self.model.is_empty() {
-                "unknown".to_string()
-            } else {
-                self.model
-            },
+            model_id,
+            model_display_name,
             version: self.cli_version,
             context_window,
             cost,
@@ -501,6 +531,45 @@ mod tests {
         assert_eq!(parsed.event.model_id, "gpt-5.4");
     }
 
+    /// Direct coverage for the production decoder entry point
+    /// (`parse_rollout_snapshot`) — distinct from `parse_rollout`'s
+    /// session-id-stamping wrapper. PR #261 cycle 13 review F37:
+    /// without this test, a regression that re-introduces a
+    /// `session_id` field on `StatusSnapshot` (violating R2.2) would
+    /// only be caught by integration tests; the parser unit suite
+    /// would still pass because everything else went through the
+    /// `parse_rollout` wrapper that adds the id back on top.
+    #[test]
+    fn parse_rollout_snapshot_returns_session_id_free_status() {
+        let raw = fixture("rollout-minimal.jsonl");
+        let snapshot = parse_rollout_snapshot(Some("pty-direct"), &raw)
+            .expect("snapshot should parse");
+        // R2.2: snapshot carries `agent_session_id` (from JSONL
+        // payload) but NO Vimeflow session_id field — that's stamped
+        // by the runtime via `stamp_snapshot`.
+        assert_eq!(
+            snapshot.agent_session_id,
+            "019defd8-15a1-7401-9f4f-40fe52a1c590"
+        );
+        assert_eq!(snapshot.model_id, "gpt-5.4");
+    }
+
+    /// Direct coverage for the malformed-line skip path on
+    /// `parse_rollout_snapshot` with `session_id = None`. PR #261
+    /// cycle 13 review F37 — the `session_id: Option<&str>` parameter
+    /// is diagnostic-only (cycle 3 F7); `None` is a legitimate
+    /// production call shape (e.g., a hypothetical future caller that
+    /// hasn't been wired through the runtime yet). Pins that the
+    /// fold-with-skip contract works regardless of session_id.
+    #[test]
+    fn parse_rollout_snapshot_skips_malformed_with_no_session_id() {
+        let raw = fixture("rollout-malformed-mid.jsonl");
+        let snapshot = parse_rollout_snapshot(None, &raw)
+            .expect("malformed mid skip works with session_id=None");
+        assert_eq!(snapshot.agent_session_id, "sess-malformed");
+        assert_eq!(snapshot.model_id, "gpt-5.4");
+    }
+
     #[test]
     fn task_started_fallback_for_context_window_size() {
         let raw = r#"{"timestamp":"...","type":"event_msg","payload":{"type":"task_started","model_context_window":128000}}
@@ -559,8 +628,8 @@ mod tests {
     #[test]
     fn outer_unknown_type_deserializes_to_unknown_variant() {
         let line = r#"{"timestamp":"...","type":"future_event_kind","payload":{"hello":"world"}}"#;
-        let parsed: CodexRolloutLine = serde_json::from_str(line)
-            .expect("outer #[serde(other)] catches unknown type");
+        let parsed: CodexRolloutLine =
+            serde_json::from_str(line).expect("outer #[serde(other)] catches unknown type");
         assert!(
             matches!(parsed, CodexRolloutLine::Unknown),
             "expected CodexRolloutLine::Unknown for an unknown outer type"
@@ -576,8 +645,8 @@ mod tests {
     #[test]
     fn inner_event_msg_unknown_payload_deserializes_to_unknown_variant() {
         let line = r#"{"timestamp":"...","type":"event_msg","payload":{"type":"future_payload_kind","extra":42}}"#;
-        let parsed: CodexRolloutLine = serde_json::from_str(line)
-            .expect("inner #[serde(other)] catches unknown payload type");
+        let parsed: CodexRolloutLine =
+            serde_json::from_str(line).expect("inner #[serde(other)] catches unknown payload type");
         match parsed {
             CodexRolloutLine::EventMsg {
                 payload: Some(EventMsgPayloadDto::Unknown),

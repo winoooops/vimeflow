@@ -12,6 +12,7 @@
 use serde::Deserialize;
 
 use super::super::serde_helpers::{lenient_f64, lenient_object, lenient_string, lenient_u64};
+use super::super::types::{stamp_snapshot, StatusSnapshot};
 use crate::agent::types::{
     AgentStatusEvent, ContextWindowStatus, CostMetrics, CurrentUsage, RateLimitInfo, RateLimits,
 };
@@ -173,16 +174,28 @@ pub fn extract_transcript_path(raw: &str) -> Option<String> {
 /// behavior preserved, error message text different from the previous
 /// hand-written `"statusline JSON is not an object"`).
 pub fn parse_statusline(session_id: &str, json: &str) -> Result<ParsedStatusline, String> {
-    let dto: ClaudeStatusDto =
-        serde_json::from_str(json).map_err(|e| format!("invalid JSON: {}", e))?;
+    let snapshot = parse_statusline_snapshot(json)?;
     Ok(ParsedStatusline {
-        event: dto_to_event(session_id, dto),
+        event: stamp_snapshot(session_id, snapshot),
     })
 }
 
-// ------------------ DTO → AgentStatusEvent --------------------
+/// Step B' decoder entry point — session-id-free. Used by the new
+/// [`crate::agent::adapter::traits::StateDecoder`] impl on
+/// `ClaudeCodeAdapter`. The runtime composes
+/// `AgentStatusEvent { session_id, ...snapshot }` after the decoder
+/// returns; for now the session-id-stamping `parse_statusline`
+/// wrapper above is what `AgentAdapter::parse_status` still calls
+/// (until B'' / D' migrate the parse-side runtime composition).
+pub(crate) fn parse_statusline_snapshot(json: &str) -> Result<StatusSnapshot, String> {
+    let dto: ClaudeStatusDto =
+        serde_json::from_str(json).map_err(|e| format!("invalid JSON: {}", e))?;
+    Ok(dto_to_snapshot(dto))
+}
 
-fn dto_to_event(session_id: &str, dto: ClaudeStatusDto) -> AgentStatusEvent {
+// ------------------ DTO → StatusSnapshot / AgentStatusEvent --------
+
+fn dto_to_snapshot(dto: ClaudeStatusDto) -> StatusSnapshot {
     let model_id = dto
         .model
         .as_ref()
@@ -194,8 +207,7 @@ fn dto_to_event(session_id: &str, dto: ClaudeStatusDto) -> AgentStatusEvent {
         .and_then(|m| m.display_name.clone())
         .unwrap_or_else(|| model_id.clone());
 
-    AgentStatusEvent {
-        session_id: session_id.to_string(),
+    StatusSnapshot {
         agent_session_id: dto.session_id.unwrap_or_default(),
         model_id,
         model_display_name,
@@ -752,7 +764,8 @@ mod tests {
     /// covered in `claude_code/mod.rs::dynamic_hint_extracts_transcript_path_when_present`.
     #[test]
     fn extract_transcript_path_returns_field_when_present_else_none() {
-        let with_path = r#"{"transcript_path": "/home/u/.claude/sessions/x.jsonl", "model": {"id": "x"}}"#;
+        let with_path =
+            r#"{"transcript_path": "/home/u/.claude/sessions/x.jsonl", "model": {"id": "x"}}"#;
         assert_eq!(
             extract_transcript_path(with_path).as_deref(),
             Some("/home/u/.claude/sessions/x.jsonl"),

@@ -464,12 +464,6 @@ mod tests {
                 unreachable!("validate_transcript not exercised in this test")
             }
 
-            fn transcript_path_source(
-                &self,
-            ) -> &dyn crate::agent::adapter::types::TranscriptPathSource {
-                self
-            }
-
             fn tail_transcript(
                 &self,
                 _events: Arc<dyn crate::runtime::EventSink>,
