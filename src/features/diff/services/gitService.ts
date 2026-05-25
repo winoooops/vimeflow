@@ -16,14 +16,22 @@ const synthesizeDiffResponse = (fileDiff: FileDiff): GetGitDiffResponse => {
   const oldLines: DiffTextLine[] = []
   const newLines: DiffTextLine[] = []
   const rawDiffLines: string[] = []
+  const changeKind = inferSyntheticChangeKind(fileDiff)
   const oldPath = fileDiff.oldPath ?? fileDiff.filePath
   const newPath = fileDiff.newPath ?? fileDiff.filePath
-  const diffOldPath = oldPath === '/dev/null' ? newPath : oldPath
-  const diffNewPath = newPath === '/dev/null' ? oldPath : newPath
+  const patchOldPath = changeKind === 'added' ? '/dev/null' : oldPath
+  const patchNewPath = changeKind === 'deleted' ? '/dev/null' : newPath
+  const diffOldPath = patchOldPath === '/dev/null' ? newPath : patchOldPath
+  const diffNewPath = patchNewPath === '/dev/null' ? oldPath : patchNewPath
 
   rawDiffLines.push(`diff --git a/${diffOldPath} b/${diffNewPath}`)
-  rawDiffLines.push(`--- ${patchSidePath('a', oldPath)}`)
-  rawDiffLines.push(`+++ ${patchSidePath('b', newPath)}`)
+  if (changeKind === 'added') {
+    rawDiffLines.push('new file mode 100644')
+  } else if (changeKind === 'deleted') {
+    rawDiffLines.push('deleted file mode 100644')
+  }
+  rawDiffLines.push(`--- ${patchSidePath('a', patchOldPath)}`)
+  rawDiffLines.push(`+++ ${patchSidePath('b', patchNewPath)}`)
 
   for (const hunk of fileDiff.hunks) {
     rawDiffLines.push(hunk.header)
@@ -60,7 +68,44 @@ interface DiffTextLine {
   hasTrailingNewline?: boolean
 }
 
+type SyntheticChangeKind = 'added' | 'deleted' | 'modified'
+
 const NO_NEWLINE_MARKER = '\\ No newline at end of file'
+
+const inferSyntheticChangeKind = (fileDiff: FileDiff): SyntheticChangeKind => {
+  if (fileDiff.oldPath === '/dev/null') {
+    return 'added'
+  }
+
+  if (fileDiff.newPath === '/dev/null') {
+    return 'deleted'
+  }
+
+  const lines = fileDiff.hunks.flatMap((hunk) => hunk.lines)
+  const hasAdded = lines.some((line) => line.type === 'added')
+  const hasRemoved = lines.some((line) => line.type === 'removed')
+  const hasContext = lines.some((line) => line.type === 'context')
+
+  if (
+    hasAdded &&
+    !hasRemoved &&
+    !hasContext &&
+    fileDiff.hunks.every((hunk) => hunk.oldLines === 0)
+  ) {
+    return 'added'
+  }
+
+  if (
+    hasRemoved &&
+    !hasAdded &&
+    !hasContext &&
+    fileDiff.hunks.every((hunk) => hunk.newLines === 0)
+  ) {
+    return 'deleted'
+  }
+
+  return 'modified'
+}
 
 const toDiffTextLine = (line: DiffTextLine): DiffTextLine => ({
   content: line.content,

@@ -338,7 +338,10 @@ function gitApiPlugin(): Plugin {
             // Default to the working-tree diff so displayed hunk indexes match
             // the hunk patches used by stage/discard. Branch comparison is an
             // explicit read-only mode via `base=<branch>`.
-            const renameSource = await detectRenameSource(safePath, staged)
+            const renameSource =
+              safeBaseBranch === null
+                ? await detectRenameSource(safePath, staged)
+                : null
 
             const diffPaths =
               renameSource === null ? [safePath] : [renameSource, safePath]

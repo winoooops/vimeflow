@@ -2,8 +2,8 @@
 id: git-operations
 category: correctness
 created: 2026-04-09
-last_updated: 2026-05-17
-ref_count: 8
+last_updated: 2026-05-25
+ref_count: 9
 ---
 
 # Git Operations
@@ -176,3 +176,21 @@ between display and mutation operations.
 - **Finding:** `parse_git_status` mapped every merge-conflict XY code to `Modified`/unstaged. Delete-style conflict codes (`DD`, `DU`, `UD`) can point at files missing from the worktree, so the diff sidebar showed a modified file and the viewer could try to open a path that no longer exists.
 - **Fix:** Split `DD`/`DU`/`UD` into `Deleted`/unstaged while keeping non-delete conflict codes as `Modified`. Added regression coverage for the deleted conflict mapping and a control case for `UU`.
 - **Commit:** _(see git log for the PR #214 merge-conflict status review-fix commit)_
+
+### 19. Synthetic raw diffs missed new/deleted file sentinels
+
+- **Source:** github-claude | PR #263 | 2026-05-25
+- **Severity:** MEDIUM
+- **File:** `src/features/diff/services/gitService.ts`
+- **Finding:** Mock-synthesized `rawDiff` relied on optional path fields to carry `/dev/null`, so all-added or all-removed mock fixtures without those sentinels emitted ordinary `--- a/<path>` / `+++ b/<path>` headers that future `git apply` consumers would reject for new or deleted files.
+- **Fix:** Infer synthetic added/deleted file status from explicit sentinels or all-added/all-removed hunks, emit the correct `/dev/null` side, and include the matching `new file mode` / `deleted file mode` line.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 20. Rename probes must stay in the active diff scope
+
+- **Source:** github-claude | PR #263 | 2026-05-25
+- **Severity:** MEDIUM
+- **File:** `vite.config.ts`
+- **Finding:** The dev diff middleware ran its rename-source probe against the staged/unstaged scope even when the request was a `base=<branch>` comparison, allowing unrelated local rename state to change the path list for a branch-comparison diff.
+- **Fix:** Skip the staged/unstaged rename probe when a normalized base branch is active so branch-comparison diffs use only the branch-scoped `git diff` arguments.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
