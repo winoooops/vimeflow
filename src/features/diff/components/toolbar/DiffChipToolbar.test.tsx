@@ -400,10 +400,9 @@ describe('DiffChipToolbar', () => {
     const user = userEvent.setup()
     const onDiffStyleChange = vi.fn<(next: DiffStyle) => void>()
 
-    // We don't pass click handlers to the disabled chips — they don't exist
-    // as props in PR1. userEvent.click on a `disabled` button is a no-op, so
-    // we assert nothing else fires either: the diff-style segmented control's
-    // callback stays at zero calls because we only clicked a disabled chip.
+    // We don't pass click handlers to the aria-disabled placeholder chips —
+    // they don't exist as props in PR1. Clicking them is a no-op, so the
+    // diff-style segmented callback stays at zero calls.
     renderToolbar({ onDiffStyleChange })
 
     await user.click(screen.getByRole('button', { name: /^stage$/i }))
@@ -415,9 +414,20 @@ describe('DiffChipToolbar', () => {
     renderToolbar()
 
     const stage = screen.getByRole('button', { name: /^stage$/i })
-    expect(stage).toBeDisabled()
+    expect(stage).toHaveAttribute('aria-disabled', 'true')
     expect(stage.className).toContain('cursor-not-allowed')
     expect(stage.className).toContain('text-on-surface-variant/40')
+  })
+
+  test('placeholder chips can show the PR2 tooltip on hover', async () => {
+    const user = userEvent.setup()
+    renderToolbar()
+
+    await user.hover(screen.getByRole('button', { name: /^stage$/i }))
+
+    expect(await screen.findByRole('tooltip')).toHaveTextContent(
+      'Available in PR2'
+    )
   })
 
   test('PriorityPlus collapses the lower-priority chips into the overflow menu at a narrow width', () => {

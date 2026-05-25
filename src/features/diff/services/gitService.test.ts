@@ -58,7 +58,13 @@ describe('MockGitService', () => {
     expect(response.newText).toContain(
       "import { Link, useLocation } from 'react-router-dom'"
     )
+    expect(response.oldText.endsWith('\n')).toBe(true)
+    expect(response.newText.endsWith('\n')).toBe(true)
+    expect(response.rawDiff).toMatch(
+      /^diff --git a\/src\/components\/NavBar\.tsx b\/src\/components\/NavBar\.tsx/
+    )
     expect(response.rawDiff).toContain('@@ -1,8 +1,10 @@')
+    expect(response.rawDiff.endsWith('\n')).toBe(true)
   })
 
   test('getDiff throws error for non-existent file', async () => {

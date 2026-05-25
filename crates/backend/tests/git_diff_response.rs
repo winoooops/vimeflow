@@ -61,7 +61,11 @@ fn run_git(cwd: &Path, args: &[&str]) {
         .args(args)
         .status()
         .unwrap_or_else(|err| panic!("failed to spawn git {args:?}: {err}"));
-    assert!(status.success(), "git {args:?} failed (cwd={})", cwd.display());
+    assert!(
+        status.success(),
+        "git {args:?} failed (cwd={})",
+        cwd.display()
+    );
 }
 
 /// Write a file and stage it.
@@ -129,6 +133,25 @@ fn modified_tracked_file_unstaged_returns_index_and_worktree_text() {
     assert!(
         v["rawDiff"].as_str().expect("rawDiff").contains("@@"),
         "raw_diff should contain a hunk header"
+    );
+}
+
+#[test]
+fn non_utf8_worktree_file_returns_lossy_new_text() {
+    let (state, _app_data) = make_state();
+    let repo = init_repo();
+
+    write_and_add(repo.path(), "asset.bin", "old text\n");
+    commit(repo.path(), "seed");
+
+    std::fs::write(repo.path().join("asset.bin"), [0xff, 0xfe, b'\n']).expect("write");
+
+    let v = diff_value(&state, repo.path(), "asset.bin", false, None);
+
+    assert_eq!(v["oldText"], "old text\n");
+    assert!(
+        v["newText"].as_str().expect("newText").contains('\u{fffd}'),
+        "invalid UTF-8 should be decoded lossily instead of failing the diff"
     );
 }
 

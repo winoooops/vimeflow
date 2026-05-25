@@ -44,11 +44,16 @@ async fn run_git_with_timeout(mut cmd: Command) -> Result<std::process::Output, 
             #[cfg(unix)]
             {
                 unsafe {
-                    // SAFETY: child_id is a valid PID from a process we
-                    // just spawned. SIGKILL is the only reliable way to
-                    // terminate a hung git process (SIGTERM may be ignored
-                    // by a blocking syscall on NFS).
-                    libc::kill(child_id as i32, libc::SIGKILL);
+                    // SAFETY: child_id comes from the git process spawned
+                    // above, and wait_with_output has not completed because
+                    // this branch only runs after the timeout wins the race.
+                    // There is still a theoretical PID-reuse race if git
+                    // exits at the same instant the timeout fires and the OS
+                    // immediately reuses that PID; in this desktop-sidecar
+                    // context we accept that narrow risk to avoid leaking a
+                    // hung subprocess/thread. SIGKILL is intentional because
+                    // SIGTERM may be ignored by a blocking syscall on NFS.
+                    let _ = libc::kill(child_id as i32, libc::SIGKILL);
                 }
             }
 
@@ -285,16 +290,30 @@ pub struct GetGitDiffResponse {
     pub raw_diff: String,
 }
 
-/// Heuristic: the raw unified-diff header contains `+++ /dev/null` when
-/// git encoded a deletion. Cheaper and more deterministic than racing
-/// the filesystem.
+fn raw_diff_file_header_has(raw_diff: &str, marker: &str) -> bool {
+    for line in raw_diff.lines() {
+        if line.starts_with("@@") {
+            return false;
+        }
+        if line.starts_with(marker) {
+            return true;
+        }
+    }
+
+    false
+}
+
+/// Heuristic: the raw unified-diff file header contains `+++ /dev/null` when
+/// git encoded a deletion. Cheaper and more deterministic than racing the
+/// filesystem, and scoped before the first hunk so matching file content does
+/// not look like metadata.
 fn raw_diff_is_deletion(raw_diff: &str) -> bool {
-    raw_diff.lines().any(|line| line.starts_with("+++ /dev/null"))
+    raw_diff_file_header_has(raw_diff, "+++ /dev/null")
 }
 
 /// Same heuristic for "no prior version at HEAD" — `--- /dev/null`.
 fn raw_diff_is_new_at_base(raw_diff: &str) -> bool {
-    raw_diff.lines().any(|line| line.starts_with("--- /dev/null"))
+    raw_diff_file_header_has(raw_diff, "--- /dev/null")
 }
 
 /// Parse git status --porcelain=v1 -z output into ChangedFile structs
@@ -1080,6 +1099,8 @@ pub(crate) async fn get_git_diff_inner(
         .as_deref()
         .unwrap_or(new_path.as_str())
         .to_string();
+    validate_file_path(&old_path)?;
+    validate_file_path(&new_path)?;
 
     // Compute old_text per the four-case table:
     //   - Untracked (used --no-index branch) → ""
@@ -1103,11 +1124,10 @@ pub(crate) async fn get_git_diff_inner(
     //   - staged=true → `git show :<new_path>` (index version)
     //   - else → filesystem read of `<toplevel>/<new_path>`
     //
-    // The filesystem read maps `NotFound` to an empty string (covers a
-    // racy delete between the diff and the read), but surfaces every
-    // other error so the frontend's error card can render a real
-    // failure (permission denied, IO error, etc.) instead of silently
-    // displaying an empty diff.
+    // The filesystem read maps `NotFound` to an empty string (covers a racy
+    // delete between the diff and the read), decodes invalid UTF-8 lossily so
+    // changed binary-ish files don't fail the whole diff request, and surfaces
+    // every other I/O error so the frontend can render the error card.
     let is_deletion = raw_diff_is_deletion(&raw_diff);
     let new_text = if is_deletion {
         String::new()
@@ -1115,8 +1135,8 @@ pub(crate) async fn get_git_diff_inner(
         git_show_text(&canonical_toplevel, &format!(":{}", new_path)).await?
     } else {
         let abs_path = canonical_toplevel.join(&new_path);
-        match std::fs::read_to_string(&abs_path) {
-            Ok(s) => s,
+        match std::fs::read(&abs_path) {
+            Ok(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
             Err(e) => return Err(format!("read {}: {}", abs_path.display(), e)),
         }
@@ -1156,7 +1176,10 @@ async fn detect_rename_source(
         cmd.arg("--cached");
     }
 
-    let output = run_git_with_timeout(cmd).await?;
+    let output = match run_git_with_timeout(cmd).await {
+        Ok(output) => output,
+        Err(_) => return Ok(None),
+    };
     if !output.status.success() {
         // Treat a failed probe as "no rename detected" rather than fatally
         // erroring the diff — the main `git diff` call below will surface
@@ -1180,8 +1203,12 @@ async fn detect_rename_source(
         let first = tok[0];
         if first == b'R' || first == b'C' {
             // Rename/copy entries consume src and dst.
-            let src = tokens.get(i + 1).map(|b| String::from_utf8_lossy(b).into_owned());
-            let dst = tokens.get(i + 2).map(|b| String::from_utf8_lossy(b).into_owned());
+            let src = tokens
+                .get(i + 1)
+                .map(|b| String::from_utf8_lossy(b).into_owned());
+            let dst = tokens
+                .get(i + 2)
+                .map(|b| String::from_utf8_lossy(b).into_owned());
             if let (Some(src), Some(dst)) = (src, dst) {
                 if dst == file {
                     return Ok(Some(src));
@@ -1197,9 +1224,16 @@ async fn detect_rename_source(
     Ok(None)
 }
 
+fn is_expected_missing_git_show(stderr: &str) -> bool {
+    stderr.contains("does not exist in")
+        || stderr.contains("exists on disk, but not in")
+        || stderr.contains("is in the index, but not at stage 0")
+}
+
 /// Run `git show <ref>` from the given toplevel and return stdout as a
-/// String. Empty string on non-zero exit (e.g. the file doesn't exist
-/// at that ref) so callers can render an "all-new" diff without aborting.
+/// String. Empty string only for expected "no blob at this ref" states so
+/// callers can render all-new / conflicted files without masking genuine git
+/// failures such as missing LFS objects or corrupt packs.
 async fn git_show_text(toplevel: &Path, ref_spec: &str) -> Result<String, String> {
     let mut cmd = Command::new("git");
     cmd.arg("-C")
@@ -1211,9 +1245,19 @@ async fn git_show_text(toplevel: &Path, ref_spec: &str) -> Result<String, String
     let output = run_git_with_timeout(cmd).await?;
 
     if !output.status.success() {
-        // Treat "doesn't exist at ref" the same as "empty content" — happens
-        // legitimately for newly-added files where HEAD has no prior version.
-        return Ok(String::new());
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        if is_expected_missing_git_show(&stderr) {
+            return Ok(String::new());
+        }
+
+        return Err(if stderr.trim().is_empty() {
+            format!(
+                "git show {} failed with exit code {}",
+                ref_spec, output.status
+            )
+        } else {
+            format!("git show {} failed: {}", ref_spec, stderr.trim())
+        });
     }
 
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
@@ -1317,10 +1361,7 @@ pub(crate) async fn git_worktree_name_inner(cwd: String) -> Result<Option<String
         .map_err(|e| format!("git_worktree_name show-toplevel utf8: {}", e))?;
     let top = Path::new(top_str.trim());
 
-    Ok(top
-        .file_name()
-        .and_then(|s| s.to_str())
-        .map(str::to_string))
+    Ok(top.file_name().and_then(|s| s.to_str()).map(str::to_string))
 }
 
 pub(crate) async fn git_branch_inner(cwd: String) -> Result<String, String> {
@@ -1374,10 +1415,49 @@ pub(crate) async fn git_branch_inner(cwd: String) -> Result<String, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::test_helpers::{
-        configure_test_git, create_main_repo_with_worktrees, home_tempdir,
-    };
+    use super::test_helpers::{configure_test_git, create_main_repo_with_worktrees, home_tempdir};
     use super::*;
+
+    #[test]
+    fn test_raw_diff_is_deletion_ignores_hunk_content() {
+        let raw = "\
+diff --git a/path.txt b/path.txt
+--- a/path.txt
++++ b/path.txt
+@@ -1 +1 @@
+-old
++++ /dev/null
+";
+
+        assert!(!raw_diff_is_deletion(raw));
+    }
+
+    #[test]
+    fn test_raw_diff_is_deletion_reads_file_header() {
+        let raw = "\
+diff --git a/path.txt b/path.txt
+--- a/path.txt
++++ /dev/null
+@@ -1 +0,0 @@
+-old
+";
+
+        assert!(raw_diff_is_deletion(raw));
+    }
+
+    #[test]
+    fn test_raw_diff_is_new_at_base_ignores_hunk_content() {
+        let raw = "\
+diff --git a/path.txt b/path.txt
+--- a/path.txt
++++ b/path.txt
+@@ -1 +1 @@
+--- /dev/null
++new
+";
+
+        assert!(!raw_diff_is_new_at_base(raw));
+    }
 
     // parse_numstat tests
 
@@ -2219,7 +2299,11 @@ copy to copy.txt
         let (_tmp, main, _worktrees) = create_main_repo_with_worktrees(&[]);
         let result = git_worktree_name(main.to_string_lossy().to_string()).await;
 
-        assert!(matches!(result, Ok(None)), "expected Ok(None), got {:?}", result);
+        assert!(
+            matches!(result, Ok(None)),
+            "expected Ok(None), got {:?}",
+            result
+        );
     }
 
     #[tokio::test]

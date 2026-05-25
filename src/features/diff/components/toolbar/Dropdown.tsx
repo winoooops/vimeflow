@@ -1,4 +1,4 @@
-import { useState, type ReactElement } from 'react'
+import { useEffect, useRef, useState, type ReactElement } from 'react'
 import {
   FloatingPortal,
   autoUpdate,
@@ -8,6 +8,7 @@ import {
   useDismiss,
   useFloating,
   useInteractions,
+  useListNavigation,
   useRole,
 } from '@floating-ui/react'
 
@@ -36,10 +37,24 @@ export const Dropdown = <T extends string | number>({
   width = 200,
 }: DropdownProps<T>): ReactElement => {
   const [open, setOpen] = useState(false)
+  const current = options.find((option) => option.value === value)
+
+  const selectedIndex = Math.max(
+    0,
+    options.findIndex((option) => option.value === value)
+  )
+
+  const [activeIndex, setActiveIndex] = useState<number | null>(selectedIndex)
+  const listRef = useRef<(HTMLButtonElement | null)[]>([])
+
+  const handleOpenChange = (nextOpen: boolean): void => {
+    setOpen(nextOpen)
+    setActiveIndex(nextOpen ? selectedIndex : null)
+  }
 
   const { refs, floatingStyles, context } = useFloating({
     open,
-    onOpenChange: setOpen,
+    onOpenChange: handleOpenChange,
     placement: 'bottom-start',
     middleware: [offset(4), flip(), shift({ padding: 8 })],
     whileElementsMounted: autoUpdate,
@@ -50,12 +65,30 @@ export const Dropdown = <T extends string | number>({
   const dismiss = useDismiss(context, { ancestorScroll: true })
   const role = useRole(context, { role: 'menu' })
 
-  const { getReferenceProps, getFloatingProps } = useInteractions([
-    dismiss,
-    role,
-  ])
+  const listNavigation = useListNavigation(context, {
+    activeIndex,
+    focusItemOnOpen: true,
+    listRef,
+    loop: true,
+    onNavigate: setActiveIndex,
+  })
 
-  const current = options.find((option) => option.value === value)
+  const { getReferenceProps, getFloatingProps, getItemProps } = useInteractions(
+    [dismiss, role, listNavigation]
+  )
+
+  useEffect(() => {
+    if (!open || activeIndex === null) {
+      return
+    }
+
+    listRef.current[activeIndex]?.focus()
+  }, [activeIndex, open])
+
+  const selectOption = (next: T): void => {
+    onChange(next)
+    handleOpenChange(false)
+  }
 
   return (
     <span className="inline-flex items-center gap-2">
@@ -65,10 +98,11 @@ export const Dropdown = <T extends string | number>({
       <button
         ref={refs.setReference}
         type="button"
-        onClick={(): void => setOpen((previous) => !previous)}
         className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-surface-container-high/60 hover:bg-surface-container-highest/80 text-on-surface text-xs font-medium transition-colors min-w-[6rem] justify-between"
         title={current?.label ?? String(value)}
-        {...getReferenceProps()}
+        {...getReferenceProps({
+          onClick: (): void => handleOpenChange(!open),
+        })}
       >
         <span className="truncate max-w-[7rem]">
           {current?.label ?? String(value)}
@@ -88,18 +122,21 @@ export const Dropdown = <T extends string | number>({
             className="z-50 rounded-lg bg-surface-container-high/95 backdrop-blur-md backdrop-saturate-150 border border-outline-variant/20 shadow-xl py-1 max-h-72 overflow-auto"
             {...getFloatingProps()}
           >
-            {options.map((option) => (
+            {options.map((option, index) => (
               <button
                 key={String(option.value)}
+                ref={(node): void => {
+                  listRef.current[index] = node
+                }}
                 type="button"
                 role="menuitem"
-                onClick={(): void => {
-                  onChange(option.value)
-                  setOpen(false)
-                }}
+                tabIndex={activeIndex === index ? 0 : -1}
                 className={`w-full text-left px-3 py-1.5 hover:bg-surface-container-highest transition-colors ${
                   option.value === value ? 'text-primary' : 'text-on-surface'
                 }`}
+                {...getItemProps({
+                  onClick: (): void => selectOption(option.value),
+                })}
               >
                 <div className="text-xs font-medium">{option.label}</div>
                 {option.description ? (

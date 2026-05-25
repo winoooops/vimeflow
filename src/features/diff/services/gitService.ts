@@ -9,8 +9,8 @@ import type { GetGitDiffResponse } from '../../../bindings/GetGitDiffResponse'
  * `MockGitService` and `HttpGitService` (legacy `/api/git/diff` shape) so
  * callers always receive the full Pierre-ready payload (parsed FileDiff +
  * oldText + newText + rawDiff) regardless of source. Reconstructs plausible
- * before/after file contents from the diff's hunks; sufficient for tests and
- * the dev fallback path.
+ * before/after file contents from the diff's hunks. This is intentionally
+ * hunk-only content because mock fixtures do not carry complete file bodies.
  */
 const synthesizeDiffResponse = (fileDiff: FileDiff): GetGitDiffResponse => {
   const oldLines: string[] = []
@@ -19,6 +19,7 @@ const synthesizeDiffResponse = (fileDiff: FileDiff): GetGitDiffResponse => {
   const oldPath = fileDiff.oldPath ?? fileDiff.filePath
   const newPath = fileDiff.newPath ?? fileDiff.filePath
 
+  rawDiffLines.push(`diff --git a/${oldPath} b/${newPath}`)
   rawDiffLines.push(`--- a/${oldPath}`)
   rawDiffLines.push(`+++ b/${newPath}`)
 
@@ -46,11 +47,14 @@ const synthesizeDiffResponse = (fileDiff: FileDiff): GetGitDiffResponse => {
   // contract. Task 1.10 collapses the two shapes into one.
   return {
     fileDiff: fileDiff as GetGitDiffResponse['fileDiff'],
-    oldText: oldLines.join('\n'),
-    newText: newLines.join('\n'),
-    rawDiff: rawDiffLines.join('\n'),
+    oldText: linesToText(oldLines),
+    newText: linesToText(newLines),
+    rawDiff: linesToText(rawDiffLines),
   }
 }
+
+const linesToText = (lines: readonly string[]): string =>
+  lines.length > 0 ? `${lines.join('\n')}\n` : ''
 
 /** Git service interface for diff operations */
 export interface GitService {

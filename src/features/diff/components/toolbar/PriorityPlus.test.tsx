@@ -155,6 +155,25 @@ describe('PriorityPlus', () => {
     expect(screen.getByTestId('item-2')).toBeVisible()
   })
 
+  test('defaults to a single visible row', () => {
+    render(<PriorityPlus>{renderItems(3)}</PriorityPlus>)
+
+    stubLayout(
+      rootContainer('item-0'),
+      [
+        { offsetTop: 0, offsetHeight: 24, offsetLeft: 0, offsetWidth: 60 },
+        { offsetTop: 30, offsetHeight: 24, offsetLeft: 0, offsetWidth: 60 },
+        { offsetTop: 30, offsetHeight: 24, offsetLeft: 72, offsetWidth: 60 },
+      ],
+      400
+    )
+    fireResize()
+
+    expect(
+      screen.getByRole('button', { name: /more controls/i })
+    ).toHaveAttribute('aria-label', 'Show 2 more controls')
+  })
+
   test('shows the overflow chip and hides items past the cutoff when half land on row 2', () => {
     render(<PriorityPlus maxRows={1}>{renderItems(4)}</PriorityPlus>)
 
@@ -238,8 +257,8 @@ describe('PriorityPlus', () => {
     ).not.toBeInTheDocument()
 
     // Re-render with more items, simulating overflow on row 2. The
-    // measurement effect depends on children.length so it re-runs after the
-    // new wrappers mount.
+    // A children.length change resets the measurement pass after the new
+    // wrappers mount.
     rerender(<PriorityPlus maxRows={1}>{renderItems(4)}</PriorityPlus>)
 
     stubLayout(

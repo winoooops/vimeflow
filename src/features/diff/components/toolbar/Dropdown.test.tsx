@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, test, vi } from 'vitest'
 import { Dropdown, type DropdownOption } from './Dropdown'
@@ -71,6 +71,38 @@ describe('Dropdown', () => {
     await user.click(within(menu).getByRole('menuitem', { name: /dracula/i }))
 
     expect(handleChange).toHaveBeenCalledTimes(1)
+    expect(handleChange).toHaveBeenCalledWith('dracula')
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+  })
+
+  test('supports arrow-key navigation inside the menu', async () => {
+    const user = userEvent.setup()
+    const handleChange = vi.fn<(value: Theme) => void>()
+
+    render(
+      <Dropdown
+        label="theme"
+        value="pierre-dark"
+        options={themeOptions}
+        onChange={handleChange}
+      />
+    )
+
+    await user.click(screen.getByRole('button', { name: /pierre-dark/i }))
+    const menu = await screen.findByRole('menu')
+
+    const selected = within(menu).getByRole('menuitem', {
+      name: /pierre-dark/i,
+    })
+
+    const next = within(menu).getByRole('menuitem', { name: /dracula/i })
+
+    await waitFor(() => expect(selected).toHaveFocus())
+
+    await user.keyboard('{ArrowDown}')
+    expect(next).toHaveFocus()
+
+    await user.keyboard('{Enter}')
     expect(handleChange).toHaveBeenCalledWith('dracula')
     expect(screen.queryByRole('menu')).not.toBeInTheDocument()
   })

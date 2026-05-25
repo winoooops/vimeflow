@@ -1,4 +1,5 @@
 import {
+  isValidElement,
   useEffect,
   useLayoutEffect,
   useRef,
@@ -17,6 +18,13 @@ import {
   useInteractions,
   useRole,
 } from '@floating-ui/react'
+
+// Rendered overflow chip width (`w-8 h-8` = 32 px) and toolbar `gap-x-3`
+// (= 12 px). Exported through index.ts so consumers and measurement logic keep
+// one source when chip sizing is tuned.
+export const OVERFLOW_CHIP_WIDTH_PX = 32
+
+export const OVERFLOW_GAP_PX = 12
 
 interface PriorityPlusProps {
   children: readonly ReactNode[]
@@ -38,7 +46,7 @@ interface PriorityPlusProps {
 // measurement effect would otherwise re-run with the same overflowFrom value.
 export const PriorityPlus = ({
   children,
-  maxRows = 2,
+  maxRows = 1,
   gap = 'gap-x-3 gap-y-2',
 }: PriorityPlusProps): ReactElement => {
   const containerRef = useRef<HTMLDivElement>(null)
@@ -67,6 +75,11 @@ export const PriorityPlus = ({
       observer.disconnect()
     }
   }, [])
+
+  useLayoutEffect(() => {
+    itemRefs.current.length = children.length
+    setOverflowFrom(null)
+  }, [children.length])
 
   // Measurement pass — only runs while overflowFrom is null (Phase A render).
   // Sets overflowFrom to the cutoff index (or null = nothing overflows).
@@ -105,7 +118,7 @@ export const PriorityPlus = ({
     // Phase B inserts it — pull the cutoff back by one so the chip lands on
     // the last allowed row instead of below it. Width is the rendered chip
     // (`w-8 h-8` = 32 px) plus the toolbar's `gap-x-3` (12 px).
-    const chipWidthWithGap = 44
+    const chipWidthWithGap = OVERFLOW_CHIP_WIDTH_PX + OVERFLOW_GAP_PX
     if (cutoff !== null && cutoff > 0) {
       const lastVisible = items[cutoff - 1]
       if (lastVisible) {
@@ -119,7 +132,7 @@ export const PriorityPlus = ({
     }
 
     setOverflowFrom(cutoff)
-  }, [overflowFrom, maxRows, children.length, resizeTick])
+  }, [overflowFrom, maxRows, resizeTick])
 
   const showOverflow = overflowFrom !== null && overflowFrom < children.length
   const visibleEnd = showOverflow ? overflowFrom : children.length
@@ -148,6 +161,14 @@ export const PriorityPlus = ({
       {showOverflow ? <OverflowMenu hiddenItems={hiddenItems} /> : null}
     </div>
   )
+}
+
+const stableItemKey = (item: ReactNode, index: number): string => {
+  if (isValidElement(item) && item.key !== null) {
+    return String(item.key)
+  }
+
+  return `index-${index}`
 }
 
 // Private helper — not exported. The chip + portal-rendered popover that
@@ -214,7 +235,7 @@ const OverflowMenu = ({
             {...getFloatingProps()}
           >
             {hiddenItems.map((item, index) => (
-              <div key={index}>{item}</div>
+              <div key={stableItemKey(item, index)}>{item}</div>
             ))}
           </div>
         </FloatingPortal>

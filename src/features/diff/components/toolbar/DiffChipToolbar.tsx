@@ -1,4 +1,9 @@
-import type { ReactElement, ReactNode } from 'react'
+import {
+  forwardRef,
+  type ButtonHTMLAttributes,
+  type ReactElement,
+  type ReactNode,
+} from 'react'
 import type { BaseDiffOptions, DiffsThemeNames } from '@pierre/diffs'
 import { Tooltip } from '../../../../components/Tooltip'
 import { Dropdown, type DropdownOption } from './Dropdown'
@@ -126,10 +131,10 @@ const COUNTER_CHIP_CLASSES =
   'rounded-md bg-surface-container/40 text-on-surface-variant text-[0.7rem] ' +
   'font-mono tracking-tight'
 
-// Wrap a disabled chip in a "Available in PRx" tooltip so users know the
-// placeholder will light up later. Centralized + parameterized so the copy
-// stays consistent and re-scoping a milestone is a one-line change at the
-// call site (staging chips → PR2, hunk-nav chips → PR3).
+// Wrap an aria-disabled chip in an "Available in PRx" tooltip so users know
+// the placeholder will light up later. The button stays focusable because
+// native disabled controls do not dispatch the hover/focus events Tooltip
+// needs.
 const ComingSoonTooltip = ({
   label,
   children,
@@ -140,30 +145,35 @@ const ComingSoonTooltip = ({
 
 // Small disabled icon button — the building block for prev hunk, next hunk,
 // stage, unstage, discard, discard all. The `aria-label` carries the
-// accessible name (the material icon span is decorative); the `disabled`
-// attribute lets userEvent treat clicks as no-ops and lets assistive tech
-// surface the unavailable state.
-const DisabledIconChip = ({
-  icon,
-  label,
-}: {
+// accessible name (the material icon span is decorative). Use aria-disabled
+// instead of native disabled so the surrounding Tooltip can open on
+// hover/focus while the chip remains inert (no onClick handler).
+interface DisabledIconChipProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   icon: string
   label: string
-}): ReactElement => (
-  <button
-    type="button"
-    disabled
-    aria-label={label}
-    className={DISABLED_ICON_CHIP_CLASSES}
-  >
-    <span
-      aria-hidden="true"
-      className="material-symbols-outlined text-base leading-none"
+}
+
+const DisabledIconChip = forwardRef<HTMLButtonElement, DisabledIconChipProps>(
+  ({ icon, label, ...buttonProps }, ref): ReactElement => (
+    <button
+      ref={ref}
+      type="button"
+      aria-disabled="true"
+      aria-label={label}
+      className={DISABLED_ICON_CHIP_CLASSES}
+      {...buttonProps}
     >
-      {icon}
-    </span>
-  </button>
+      <span
+        aria-hidden="true"
+        className="material-symbols-outlined text-base leading-none"
+      >
+        {icon}
+      </span>
+    </button>
+  )
 )
+
+DisabledIconChip.displayName = 'DisabledIconChip'
 
 // Icon button that toggles between the enabled + disabled styling based on
 // `disabled`. Used by the functional file-nav arrows: enabled when there is
