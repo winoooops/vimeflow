@@ -20,6 +20,7 @@ import type {
 import {
   buildGitDiffArgs,
   extractHunkPatch,
+  normalizeBaseBranch,
 } from './src/features/diff/services/gitPatch'
 
 const git = simpleGit()
@@ -137,6 +138,12 @@ const isExpectedMissingGitShow = (message: string): boolean =>
   message.includes('does not exist in') ||
   message.includes('exists on disk, but not in') ||
   message.includes('is in the index, but not at stage 0')
+
+const hasErrorCode = (err: unknown, code: string): boolean =>
+  typeof err === 'object' &&
+  err !== null &&
+  'code' in err &&
+  (err as { readonly code?: unknown }).code === code
 
 const gitShowText = async (
   ref: string,
@@ -282,6 +289,10 @@ function gitApiPlugin(): Plugin {
             const file = url.searchParams.get('file')
             const staged = url.searchParams.get('staged') === 'true'
             const baseBranch = url.searchParams.get('base')
+
+            const safeBaseBranch = staged
+              ? null
+              : normalizeBaseBranch(baseBranch)
             const untrackedParam = url.searchParams.get('untracked')
 
             const untracked =
@@ -315,7 +326,7 @@ function gitApiPlugin(): Plugin {
               buildGitDiffArgsForPaths({
                 safePath,
                 staged,
-                baseBranch,
+                baseBranch: safeBaseBranch,
                 paths: diffPaths,
                 detectRenames: renameSource !== null,
               })
@@ -394,11 +405,15 @@ function gitApiPlugin(): Plugin {
             let oldText = ''
             if (!usedUntrackedFallback && !(staged && isNewAtBase)) {
               try {
-                const ref = staged ? `HEAD:${oldPath}` : `:${oldPath}`
-                oldText = await gitShowText(
-                  ref,
-                  staged ? null : `:2:${oldPath}`
-                )
+                if (safeBaseBranch !== null) {
+                  oldText = await gitShowText(`${safeBaseBranch}:${oldPath}`)
+                } else {
+                  const ref = staged ? `HEAD:${oldPath}` : `:${oldPath}`
+                  oldText = await gitShowText(
+                    ref,
+                    staged ? null : `:2:${oldPath}`
+                  )
+                }
               } catch (err) {
                 res.writeHead(500, { 'Content-Type': 'application/json' })
                 res.end(
@@ -421,14 +436,18 @@ function gitApiPlugin(): Plugin {
                   newText = await fsPromises.readFile(absPath, 'utf-8')
                 }
               } catch (err) {
-                res.writeHead(500, { 'Content-Type': 'application/json' })
-                res.end(
-                  JSON.stringify({
-                    error: `Failed to read ${newPath} at tip: ${errorMessage(err)}`,
-                  })
-                )
+                if (!staged && hasErrorCode(err, 'ENOENT')) {
+                  newText = ''
+                } else {
+                  res.writeHead(500, { 'Content-Type': 'application/json' })
+                  res.end(
+                    JSON.stringify({
+                      error: `Failed to read ${newPath} at tip: ${errorMessage(err)}`,
+                    })
+                  )
 
-                return
+                  return
+                }
               }
             }
 
