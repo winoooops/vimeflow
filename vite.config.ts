@@ -22,6 +22,7 @@ import {
   extractHunkPatch,
   normalizeBaseBranch,
 } from './src/features/diff/services/gitPatch'
+import { readFileTextNoFollow } from './src/features/diff/services/devFileText'
 
 const git = simpleGit()
 const repoRoot = process.cwd()
@@ -138,12 +139,6 @@ const isExpectedMissingGitShow = (message: string): boolean =>
   message.includes('does not exist in') ||
   message.includes('exists on disk, but not in') ||
   message.includes('is in the index, but not at stage 0')
-
-const hasErrorCode = (err: unknown, code: string): boolean =>
-  typeof err === 'object' &&
-  err !== null &&
-  'code' in err &&
-  (err as { readonly code?: unknown }).code === code
 
 const gitShowText = async (
   ref: string,
@@ -400,8 +395,6 @@ function gitApiPlugin(): Plugin {
               return
             }
 
-            const { promises: fsPromises } = await import('fs')
-
             let oldText = ''
             if (!usedUntrackedFallback && !(staged && isNewAtBase)) {
               try {
@@ -433,21 +426,17 @@ function gitApiPlugin(): Plugin {
                   newText = await gitShowText(`:${newPath}`, `:2:${newPath}`)
                 } else {
                   const absPath = path.join(repoRoot, newPath)
-                  newText = await fsPromises.readFile(absPath, 'utf-8')
+                  newText = await readFileTextNoFollow(absPath)
                 }
               } catch (err) {
-                if (!staged && hasErrorCode(err, 'ENOENT')) {
-                  newText = ''
-                } else {
-                  res.writeHead(500, { 'Content-Type': 'application/json' })
-                  res.end(
-                    JSON.stringify({
-                      error: `Failed to read ${newPath} at tip: ${errorMessage(err)}`,
-                    })
-                  )
+                res.writeHead(500, { 'Content-Type': 'application/json' })
+                res.end(
+                  JSON.stringify({
+                    error: `Failed to read ${newPath} at tip: ${errorMessage(err)}`,
+                  })
+                )
 
-                  return
-                }
+                return
               }
             }
 
