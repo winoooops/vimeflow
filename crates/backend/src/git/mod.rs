@@ -267,7 +267,9 @@ pub struct DiffHunk {
 #[serde(rename_all = "camelCase")]
 pub struct FileDiff {
     pub file_path: String,
+    /// Intentionally serialized as a required nullable field, not omitted.
     pub old_path: Option<String>,
+    /// Intentionally serialized as a required nullable field, not omitted.
     pub new_path: Option<String>,
     pub hunks: Vec<DiffHunk>,
 }
@@ -1947,6 +1949,21 @@ diff --git a/path.txt b/path.txt
 
         assert_eq!(file_diff.file_path, "unchanged.txt");
         assert_eq!(file_diff.hunks.len(), 0);
+    }
+
+    #[test]
+    fn test_file_diff_serializes_absent_paths_as_null_keys() {
+        let file_diff = FileDiff {
+            file_path: "unchanged.txt".to_string(),
+            old_path: None,
+            new_path: None,
+            hunks: Vec::new(),
+        };
+
+        let encoded = serde_json::to_value(file_diff).expect("serialize FileDiff");
+
+        assert_eq!(encoded["oldPath"], serde_json::Value::Null);
+        assert_eq!(encoded["newPath"], serde_json::Value::Null);
     }
 
     #[test]

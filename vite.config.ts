@@ -110,10 +110,14 @@ const detectRenameSource = async (
   safePath: string,
   staged: boolean
 ): Promise<string | null> => {
-  const args = ['diff', '--name-status', '--diff-filter=RC', '-M', '-z']
-  if (staged) {
-    args.push('--cached')
-  }
+  const args = [
+    'diff',
+    '--name-status',
+    '--diff-filter=RC',
+    '-M',
+    '-z',
+    ...(staged ? ['--cached'] : []),
+  ]
 
   try {
     const output = await git.raw(args)

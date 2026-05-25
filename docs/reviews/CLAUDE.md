@@ -48,7 +48,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Resource Cleanup](patterns/resource-cleanup.md)                     | react-patterns     | 2        | 3    | 2026-05-20   |
 | [Cross-Platform Paths](patterns/cross-platform-paths.md)             | cross-platform     | 4        | 3    | 2026-05-07   |
 | [Debug Artifacts](patterns/debug-artifacts.md)                       | code-quality       | 5        | 0    | 2026-05-09   |
-| [Generated Artifacts](patterns/generated-artifacts.md)               | code-quality       | 2        | 0    | 2026-05-04   |
+| [Generated Artifacts](patterns/generated-artifacts.md)               | code-quality       | 3        | 1    | 2026-05-25   |
 | [Testing Gaps](patterns/testing-gaps.md)                             | testing            | 53       | 24   | 2026-05-20   |
 | [Terminal Input Handling](patterns/terminal-input-handling.md)       | terminal           | 3        | 1    | 2026-04-09   |
 | [Documentation Accuracy](patterns/documentation-accuracy.md)         | code-quality       | 72       | 21   | 2026-05-20   |

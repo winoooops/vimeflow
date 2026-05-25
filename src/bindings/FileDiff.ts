@@ -7,7 +7,13 @@ import type { DiffHunk } from './DiffHunk'
  */
 export type FileDiff = {
   filePath: string
+  /**
+   * Intentionally serialized as a required nullable field, not omitted.
+   */
   oldPath: string | null
+  /**
+   * Intentionally serialized as a required nullable field, not omitted.
+   */
   newPath: string | null
   hunks: Array<DiffHunk>
 }
