@@ -2,8 +2,8 @@
 id: async-race-conditions
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-05-24
-ref_count: 11
+last_updated: 2026-05-25
+ref_count: 12
 ---
 
 # Async Race Conditions
@@ -430,3 +430,12 @@ prevent showing previous data.
 - **Finding:** `:rename-pane` and the pane-rename chord decided whether to send `/rename` from frontend pane `agentType` snapshots. New Claude/Codex panes can report `generic` until detection state reaches React, so user renames in that window updated only the local `userLabel`; a later agent-title event could overwrite the local label because the agent transcript never received the rename.
 - **Fix:** `:rename-pane` now always asks the backend to sync the title and lets the backend live-agent registry reject true shell / unsupported panes. The chord re-resolves the focused pane at submit time before deciding whether to round-trip, so an open-time `generic` snapshot no longer blocks a newly-classified Claude/Codex pane. Regression tests cover both paths.
 - **Commit:** _(see git log for the PR #265 review-fix commit)_
+
+### 44. Fire-and-forget async theme sync remounted a consumer before shared state settled
+
+- **Source:** github-claude | PR #263 follow-up | 2026-05-25
+- **Severity:** MEDIUM
+- **File:** `src/features/diff/components/DiffPanelContent.tsx`
+- **Finding:** DiffPanelContent changed `theme` and remounted `<MultiFileDiff key={theme}>` in the same render where it launched `workerPool.setRenderOptions({ theme })` as a fire-and-forget effect. The remounted Pierre component could request tokenization before the worker pool had accepted the new theme, producing a first render with the previous pool theme.
+- **Fix:** Track `syncedTheme` separately from the toolbar's selected `theme`. MultiFileDiff keeps rendering with the last synced theme and only remounts after `setRenderOptions` resolves for the newest theme. Added a regression test with a deferred worker-pool promise to verify the diff stays on the previous theme until sync completes.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

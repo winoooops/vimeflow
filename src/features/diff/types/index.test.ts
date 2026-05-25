@@ -29,12 +29,13 @@ describe('Diff Types', () => {
   test('FileDiff type exports correctly', () => {
     const fileDiff: FileDiff = {
       filePath: 'src/test.ts',
-      oldPath: 'src/test.ts',
+      oldPath: null,
       newPath: 'src/test.ts',
       hunks: [],
     }
 
     expect(fileDiff.filePath).toBe('src/test.ts')
+    expect(fileDiff.oldPath).toBeNull()
     expect(fileDiff.hunks).toEqual([])
   })
 

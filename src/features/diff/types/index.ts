@@ -22,8 +22,8 @@ export interface SelectedDiffFile {
 /** Parsed diff for a single file */
 export interface FileDiff {
   filePath: string
-  oldPath?: string // for renames and copies
-  newPath?: string // for renames and copies
+  oldPath?: string | null // for renames, copies, and ts-rs nulls
+  newPath?: string | null // for renames, copies, and ts-rs nulls
   hunks: DiffHunk[]
 }
 
@@ -44,6 +44,7 @@ export interface DiffLine {
   oldLineNumber?: number // undefined for added lines
   newLineNumber?: number // undefined for removed lines
   content: string
+  hasTrailingNewline?: boolean // false when Git emitted "\ No newline at end of file"
   highlights?: LineHighlight[] // word-level diff highlights
 }
 

@@ -2,18 +2,175 @@ import type { ChangedFile, FileDiff } from '../types'
 import { mockChangedFiles, mockFileDiffs } from '../data/mockDiff'
 import { invoke } from '../../../lib/backend'
 import { isDesktop } from '../../../lib/environment'
+import type { GetGitDiffResponse } from '../../../bindings/GetGitDiffResponse'
+
+/**
+ * Synthesize a `GetGitDiffResponse` payload from a parsed `FileDiff`. Used by
+ * `MockGitService` so tests receive the full Pierre-ready payload (parsed
+ * FileDiff + oldText + newText + rawDiff). Reconstructs plausible before/after
+ * file contents from the diff's hunks, preserving explicit no-newline metadata
+ * when fixtures provide it. This is intentionally hunk-only content because
+ * mock fixtures do not carry complete file bodies.
+ */
+const synthesizeDiffResponse = (fileDiff: FileDiff): GetGitDiffResponse => {
+  const oldLines: DiffTextLine[] = []
+  const newLines: DiffTextLine[] = []
+  const rawDiffLines: string[] = []
+  const changeKind = inferSyntheticChangeKind(fileDiff)
+  const oldPath = fileDiff.oldPath ?? fileDiff.filePath
+  const newPath = fileDiff.newPath ?? fileDiff.filePath
+  const patchOldPath = changeKind === 'added' ? '/dev/null' : oldPath
+  const patchNewPath = changeKind === 'deleted' ? '/dev/null' : newPath
+  const [diffOldPath, diffNewPath] = diffHeaderPaths(oldPath, newPath)
+
+  const normalizedFileDiff: GetGitDiffResponse['fileDiff'] = {
+    ...fileDiff,
+    oldPath: fileDiff.oldPath ?? null,
+    newPath: fileDiff.newPath ?? null,
+  }
+
+  rawDiffLines.push(`diff --git ${diffOldPath} ${diffNewPath}`)
+  if (changeKind === 'added') {
+    rawDiffLines.push('new file mode 100644')
+  } else if (changeKind === 'deleted') {
+    rawDiffLines.push('deleted file mode 100644')
+  }
+  rawDiffLines.push(`--- ${patchSidePath('a', patchOldPath)}`)
+  rawDiffLines.push(`+++ ${patchSidePath('b', patchNewPath)}`)
+
+  for (const hunk of fileDiff.hunks) {
+    rawDiffLines.push(hunk.header)
+    for (const line of hunk.lines) {
+      if (line.type === 'context') {
+        oldLines.push(toDiffTextLine(line))
+        newLines.push(toDiffTextLine(line))
+        appendRawDiffLine(rawDiffLines, ' ', line)
+      } else if (line.type === 'removed') {
+        oldLines.push(toDiffTextLine(line))
+        appendRawDiffLine(rawDiffLines, '-', line)
+      } else {
+        newLines.push(toDiffTextLine(line))
+        appendRawDiffLine(rawDiffLines, '+', line)
+      }
+    }
+  }
+
+  return {
+    fileDiff: normalizedFileDiff,
+    oldText: linesToText(oldLines),
+    newText: linesToText(newLines),
+    rawDiff: rawLinesToText(rawDiffLines),
+  }
+}
+
+interface DiffTextLine {
+  content: string
+  hasTrailingNewline?: boolean
+}
+
+type SyntheticChangeKind = 'added' | 'deleted' | 'modified'
+
+const NO_NEWLINE_MARKER = '\\ No newline at end of file'
+
+const inferSyntheticChangeKind = (fileDiff: FileDiff): SyntheticChangeKind => {
+  if (fileDiff.oldPath === '/dev/null') {
+    return 'added'
+  }
+
+  if (fileDiff.newPath === '/dev/null') {
+    return 'deleted'
+  }
+
+  const lines = fileDiff.hunks.flatMap((hunk) => hunk.lines)
+  const hasAdded = lines.some((line) => line.type === 'added')
+  const hasRemoved = lines.some((line) => line.type === 'removed')
+  const hasContext = lines.some((line) => line.type === 'context')
+
+  if (
+    hasAdded &&
+    !hasRemoved &&
+    !hasContext &&
+    fileDiff.hunks.every((hunk) => hunk.oldLines === 0)
+  ) {
+    return 'added'
+  }
+
+  if (
+    hasRemoved &&
+    !hasAdded &&
+    !hasContext &&
+    fileDiff.hunks.every((hunk) => hunk.newLines === 0)
+  ) {
+    return 'deleted'
+  }
+
+  return 'modified'
+}
+
+const toDiffTextLine = (line: DiffTextLine): DiffTextLine => ({
+  content: line.content,
+  hasTrailingNewline: line.hasTrailingNewline,
+})
+
+const appendRawDiffLine = (
+  rawDiffLines: string[],
+  prefix: ' ' | '-' | '+',
+  line: DiffTextLine
+): void => {
+  rawDiffLines.push(`${prefix}${line.content}`)
+
+  if (line.hasTrailingNewline === false) {
+    rawDiffLines.push(NO_NEWLINE_MARKER)
+  }
+}
+
+const linesToText = (lines: readonly DiffTextLine[]): string => {
+  if (lines.length === 0) {
+    return ''
+  }
+
+  const text = lines.map((line) => line.content).join('\n')
+  const lastLine = lines[lines.length - 1]
+
+  return lastLine.hasTrailingNewline === false ? text : `${text}\n`
+}
+
+const rawLinesToText = (lines: readonly string[]): string =>
+  lines.length > 0 ? `${lines.join('\n')}\n` : ''
+
+const patchSidePath = (prefix: 'a' | 'b', filePath: string): string =>
+  filePath === '/dev/null' ? '/dev/null' : `${prefix}/${filePath}`
+
+const diffHeaderPaths = (
+  oldPath: string,
+  newPath: string
+): readonly [string, string] => {
+  if (oldPath === '/dev/null') {
+    return [`a/${newPath}`, `b/${newPath}`]
+  }
+
+  if (newPath === '/dev/null') {
+    return [`a/${oldPath}`, `b/${oldPath}`]
+  }
+
+  return [`a/${oldPath}`, `b/${newPath}`]
+}
 
 /** Git service interface for diff operations */
 export interface GitService {
   /** Get all files with git changes */
   getStatus(): Promise<ChangedFile[]>
 
-  /** Get diff for a specific file */
+  /**
+   * Get diff for a specific file. Returns the parsed `FileDiff` plus the raw
+   * before/after file contents (`oldText` / `newText`) and the unified-diff
+   * text (`rawDiff`) that Pierre's renderer / hunk extractors require.
+   */
   getDiff(
     file: string,
     staged?: boolean,
     untracked?: boolean
-  ): Promise<FileDiff>
+  ): Promise<GetGitDiffResponse>
 
   /** Stage a file or specific hunk */
   stageFile(file: string, hunkIndex?: number): Promise<void>
@@ -31,12 +188,12 @@ export class MockGitService implements GitService {
     return Promise.resolve([...mockChangedFiles])
   }
 
-  async getDiff(file: string): Promise<FileDiff> {
+  async getDiff(file: string): Promise<GetGitDiffResponse> {
     if (!(file in mockFileDiffs)) {
       throw new Error(`Diff not found for file: ${file}`)
     }
 
-    return Promise.resolve(mockFileDiffs[file])
+    return Promise.resolve(synthesizeDiffResponse(mockFileDiffs[file]))
   }
 
   async stageFile(): Promise<void> {
@@ -68,7 +225,7 @@ export class HttpGitService implements GitService {
     file: string,
     staged = false,
     untracked?: boolean
-  ): Promise<FileDiff> {
+  ): Promise<GetGitDiffResponse> {
     const params = new URLSearchParams({ file, staged: String(staged) })
     if (untracked !== undefined) {
       params.set('untracked', String(untracked))
@@ -81,7 +238,7 @@ export class HttpGitService implements GitService {
       )
     }
 
-    return response.json() as Promise<FileDiff>
+    return response.json() as Promise<GetGitDiffResponse>
   }
 
   async stageFile(file: string, hunkIndex?: number): Promise<void> {
@@ -143,7 +300,7 @@ export class DesktopGitService implements GitService {
     file: string,
     staged = false,
     untracked?: boolean
-  ): Promise<FileDiff> {
+  ): Promise<GetGitDiffResponse> {
     try {
       const args = {
         cwd: this.cwd,
@@ -152,7 +309,7 @@ export class DesktopGitService implements GitService {
         ...(untracked !== undefined ? { untracked } : {}),
       }
 
-      return await invoke<FileDiff>('get_git_diff', args)
+      return await invoke<GetGitDiffResponse>('get_git_diff', args)
     } catch (error) {
       throw new Error(`Failed to get diff for ${file}: ${String(error)}`)
     }

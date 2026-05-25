@@ -2,8 +2,8 @@
 id: testing-gaps
 category: testing
 created: 2026-04-09
-last_updated: 2026-05-20
-ref_count: 24
+last_updated: 2026-05-25
+ref_count: 25
 ---
 
 # Testing Gaps
@@ -535,3 +535,12 @@ filesystem scope restrictions).
 - **Finding:** PR #236 hoisted `useCommandPalette` out of `CommandPalette.tsx` and rewrote `CommandPalette.test.tsx` as a 9-test controlled-render suite. The old integration suite (15 tests, including keyboard-event-plumbing assertions) was retired correctly, and the keyboard state-transition tests were carried over to `useCommandPalette.test.ts`. But four behavioral contracts on the global capture-phase listener were left behind: (1) `preventDefault` + `stopPropagation` on open, (2) same on close, (3) `event.repeat` suppression (the key-hold flicker guard), and (4) capture-phase priority over a child element's `stopPropagation`. The hook still implements all four at `useCommandPalette.ts:256-265`, but no test exercises them. A future refactor that drops `{ capture: true }`, swaps the `event.repeat` guard for a debouncer, or removes the `preventDefault` calls would pass every test while silently allowing browser/Electron shortcut leakage or key-hold flicker.
 - **Fix:** Added four tests to the existing `describe('keyboard trigger - Ctrl+:')` block. Each dispatches a real `KeyboardEvent`, spies on the relevant event methods, and asserts the observable outcome (spy invocation + palette state). The repeat-suppression test specifically opens the palette via a non-repeat event FIRST, then dispatches the repeat event — testing only the closed-state case would let a buggy implementation that closes on repeat-while-open slip through. The capture-phase test attaches a child listener that calls `event.stopPropagation()` during bubble phase; the hook must still fire because it's registered with `{ capture: true }`. Code-review heuristic: when a refactor splits a component into a hook + render component, behavioral contracts on the hook's side-effect surface (event plumbing, listener phase, repeat guards) must migrate as tests on the hook — not implicitly assumed because "the old integration test was deleted". Audit the OLD test file's expectations before deleting it; any assertion that survives the API change but doesn't show up in the new file is a regression-window gap.
 - **Commit:** same commit as this entry
+
+### 54. Higher-level tests must mock mandatory transitive providers introduced by child components
+
+- **Source:** github-claude | PR #263 follow-up | 2026-05-25
+- **Severity:** MEDIUM
+- **File:** `src/features/workspace/components/DockPanel.test.tsx`, `src/features/workspace/WorkspaceView.elastic.test.tsx`
+- **Finding:** Workspace-level tests rendered `DiffPanelContent` through `DockPanel` / `WorkspaceView` but did not mock `@pierre/diffs/react`. The child now calls `useWorkerPool()` unconditionally, so a Pierre release that throws outside `WorkerPoolContextProvider` would break these suites even though the tests are not trying to exercise Pierre itself.
+- **Fix:** Add explicit `@pierre/diffs/react` mocks in each higher-level test that renders through the diff panel, matching the direct `DiffPanelContent.test.tsx` pattern. Code-review heuristic: when a child component gains a mandatory provider hook, update both direct tests and every integration-style test that renders the child transitively.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

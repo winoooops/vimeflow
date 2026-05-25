@@ -1,4 +1,5 @@
 import path from 'path'
+import type { IncomingMessage } from 'http'
 import { defineConfig, Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import electron from 'vite-plugin-electron/simple'
@@ -20,11 +21,19 @@ import type {
 import {
   buildGitDiffArgs,
   extractHunkPatch,
+  normalizeBaseBranch,
 } from './src/features/diff/services/gitPatch'
+import {
+  isExpectedMissingGitShow,
+  MAX_DIFF_FILE_TEXT_BYTES,
+  readFileTextNoFollow,
+} from './config/devFileText'
 
 const git = simpleGit()
 const repoRoot = process.cwd()
 const devReactRefreshNonce = ensureDevReactRefreshNonce()
+const NULL_DEVICE = process.platform === 'win32' ? 'NUL' : '/dev/null'
+const MAX_REQUEST_BODY_BYTES = 1_000_000
 
 /**
  * Validate that a file path is repo-relative and doesn't escape the repo.
@@ -44,6 +53,153 @@ function validateRepoPath(filePath: string): string | null {
   }
 
   return relative
+}
+
+const buildGitDiffArgsForPaths = ({
+  safePath,
+  staged,
+  baseBranch,
+  paths,
+  detectRenames,
+}: {
+  safePath: string
+  staged: boolean
+  baseBranch?: string | null
+  paths: readonly string[]
+  detectRenames: boolean
+}): string[] => {
+  const args = buildGitDiffArgs({ safePath, staged, baseBranch })
+  const separatorIndex = args.indexOf('--')
+  const prefix = separatorIndex === -1 ? args : args.slice(0, separatorIndex)
+
+  return [...prefix, ...(detectRenames ? ['-M'] : []), '--', ...paths]
+}
+
+const parseRenameSource = (output: string, safePath: string): string | null => {
+  const tokens = output.split('\0')
+  let index = 0
+
+  while (index < tokens.length) {
+    const status = tokens[index]
+    if (status === '') {
+      index += 1
+      continue
+    }
+
+    if (status.startsWith('R') || status.startsWith('C')) {
+      const src = tokens[index + 1]
+      const dst = tokens[index + 2]
+      const safeSrc = src === undefined ? null : validateRepoPath(src)
+      const safeDst = dst === undefined ? null : validateRepoPath(dst)
+
+      if (safeSrc !== null && safeDst === safePath) {
+        return safeSrc
+      }
+
+      index += 3
+      continue
+    }
+
+    index += 2
+  }
+
+  return null
+}
+
+const detectRenameSource = async (
+  safePath: string,
+  staged: boolean
+): Promise<string | null> => {
+  const args = [
+    'diff',
+    '--name-status',
+    '--diff-filter=RC',
+    '-M',
+    '-z',
+    ...(staged ? ['--cached'] : []),
+  ]
+
+  try {
+    const output = await git.raw(args)
+
+    return parseRenameSource(output, safePath)
+  } catch {
+    return null
+  }
+}
+
+const rawDiffFileHeaderHas = (diff: string, marker: string): boolean => {
+  for (const line of diff.split('\n')) {
+    if (line.startsWith('@@')) {
+      return false
+    }
+    if (line.startsWith(marker)) {
+      return true
+    }
+  }
+
+  return false
+}
+
+const errorMessage = (err: unknown): string =>
+  err instanceof Error ? err.message : String(err)
+
+const gitBlobSize = async (ref: string): Promise<number | null> => {
+  try {
+    const output = await git.raw(['cat-file', '-s', ref])
+    const size = Number.parseInt(output.trim(), 10)
+    if (!Number.isSafeInteger(size) || size < 0) {
+      throw new Error(`git cat-file -s ${ref} returned invalid size`)
+    }
+
+    return size
+  } catch (err) {
+    if (isExpectedMissingGitShow(errorMessage(err))) {
+      return null
+    }
+
+    throw err
+  }
+}
+
+const gitShowTextForRef = async (ref: string): Promise<string | null> => {
+  const size = await gitBlobSize(ref)
+  if (size === null) {
+    return null
+  }
+
+  if (size > MAX_DIFF_FILE_TEXT_BYTES) {
+    return ''
+  }
+
+  try {
+    return await git.show([ref])
+  } catch (err) {
+    if (isExpectedMissingGitShow(errorMessage(err))) {
+      return null
+    }
+
+    throw err
+  }
+}
+
+const gitShowText = async (
+  ref: string,
+  stageFallbackRef: string | null = null
+): Promise<string> => {
+  const text = await gitShowTextForRef(ref)
+  if (text !== null) {
+    return text
+  }
+
+  if (stageFallbackRef !== null) {
+    const fallbackText = await gitShowTextForRef(stageFallbackRef)
+    if (fallbackText !== null) {
+      return fallbackText
+    }
+  }
+
+  return ''
 }
 
 /**
@@ -157,6 +313,10 @@ function gitApiPlugin(): Plugin {
             const file = url.searchParams.get('file')
             const staged = url.searchParams.get('staged') === 'true'
             const baseBranch = url.searchParams.get('base')
+
+            const safeBaseBranch = staged
+              ? null
+              : normalizeBaseBranch(baseBranch)
             const untrackedParam = url.searchParams.get('untracked')
 
             const untracked =
@@ -182,9 +342,23 @@ function gitApiPlugin(): Plugin {
             // Default to the working-tree diff so displayed hunk indexes match
             // the hunk patches used by stage/discard. Branch comparison is an
             // explicit read-only mode via `base=<branch>`.
+            const renameSource =
+              safeBaseBranch === null
+                ? await detectRenameSource(safePath, staged)
+                : null
+
+            const diffPaths =
+              renameSource === null ? [safePath] : [renameSource, safePath]
             let diff = await git.diff(
-              buildGitDiffArgs({ safePath, staged, baseBranch })
+              buildGitDiffArgsForPaths({
+                safePath,
+                staged,
+                baseBranch: safeBaseBranch,
+                paths: diffPaths,
+                detectRenames: renameSource !== null,
+              })
             )
+            let usedUntrackedFallback = false
 
             // Handle untracked files — git diff won't show them
             if (!diff && untracked !== false) {
@@ -204,13 +378,14 @@ function gitApiPlugin(): Plugin {
 
                 const result = spawnSync(
                   'git',
-                  ['diff', '--no-index', '--', '/dev/null', safePath],
+                  ['diff', '--no-index', '--', NULL_DEVICE, safePath],
                   { cwd: repoRoot, encoding: 'utf-8' }
                 )
 
                 // git diff --no-index exits with 1 when files differ (expected)
                 if (result.stdout) {
                   diff = result.stdout
+                  usedUntrackedFallback = true
                 }
               }
             }
@@ -225,8 +400,82 @@ function gitApiPlugin(): Plugin {
             // Parse diff into structured format
             const fileDiff = parseDiff(diff, file)
 
+            // Pierre needs raw old/new file contents alongside the parsed
+            // FileDiff. Mirror the Rust producer's 4-case detection rules
+            // (Spec Section 4.2) so dev mode and Electron production agree
+            // on the response shape.
+            const isNewAtBase = rawDiffFileHeaderHas(diff, '--- /dev/null')
+            const isDeletion = rawDiffFileHeaderHas(diff, '+++ /dev/null')
+
+            const oldPath =
+              usedUntrackedFallback || (staged && isNewAtBase)
+                ? safePath
+                : validateRepoPath(fileDiff.oldPath ?? safePath)
+
+            const newPath = isDeletion
+              ? safePath
+              : validateRepoPath(fileDiff.newPath ?? safePath)
+
+            if (oldPath === null || newPath === null) {
+              res.writeHead(500, { 'Content-Type': 'application/json' })
+              res.end(
+                JSON.stringify({
+                  error: 'Diff metadata contained an invalid file path',
+                })
+              )
+
+              return
+            }
+
+            let oldText = ''
+            if (!usedUntrackedFallback && !(staged && isNewAtBase)) {
+              try {
+                if (safeBaseBranch !== null) {
+                  oldText = await gitShowText(`${safeBaseBranch}:${oldPath}`)
+                } else {
+                  const ref = staged ? `HEAD:${oldPath}` : `:${oldPath}`
+                  oldText = await gitShowText(
+                    ref,
+                    staged ? null : `:2:${oldPath}`
+                  )
+                }
+              } catch (err) {
+                res.writeHead(500, { 'Content-Type': 'application/json' })
+                res.end(
+                  JSON.stringify({
+                    error: `Failed to read ${oldPath} at base: ${errorMessage(err)}`,
+                  })
+                )
+
+                return
+              }
+            }
+
+            let newText = ''
+            if (!isDeletion) {
+              try {
+                if (staged) {
+                  newText = await gitShowText(`:${newPath}`, `:2:${newPath}`)
+                } else {
+                  const absPath = path.join(repoRoot, newPath)
+                  newText = await readFileTextNoFollow(absPath)
+                }
+              } catch (err) {
+                res.writeHead(500, { 'Content-Type': 'application/json' })
+                res.end(
+                  JSON.stringify({
+                    error: `Failed to read ${newPath} at tip: ${errorMessage(err)}`,
+                  })
+                )
+
+                return
+              }
+            }
+
             res.writeHead(200, { 'Content-Type': 'application/json' })
-            res.end(JSON.stringify(fileDiff))
+            res.end(
+              JSON.stringify({ fileDiff, oldText, newText, rawDiff: diff })
+            )
 
             return
           }
@@ -589,17 +838,33 @@ function parseDiff(diffText: string, filePath: string): FileDiff {
 /**
  * Read request body as string
  */
-function readBody(
-  req: NodeJS.ReadableStream & {
-    on: (event: string, listener: (...args: unknown[]) => void) => void
-  }
-): Promise<string> {
+function readBody(req: IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
     let body = ''
+    let byteLength = 0
+    let rejected = false
     req.on('data', (chunk: Buffer | string) => {
+      if (rejected) {
+        return
+      }
+
+      byteLength += Buffer.byteLength(chunk)
+      if (byteLength > MAX_REQUEST_BODY_BYTES) {
+        rejected = true
+        reject(new Error('Request body too large'))
+        req.destroy()
+
+        return
+      }
+
       body += chunk.toString()
     })
-    req.on('end', () => resolve(body))
+
+    req.on('end', () => {
+      if (!rejected) {
+        resolve(body)
+      }
+    })
     req.on('error', reject)
   })
 }
@@ -680,6 +945,18 @@ export default defineConfig(({ mode }) => ({
     // an undeclared `i`), throwing ReferenceError when a TUI sends DECRQM
     // queries (nvim, less, htop). Terser preserves the pattern correctly.
     minify: 'terser',
+  },
+  worker: {
+    // Pierre's worker entry (@pierre/diffs/worker/worker.js) is loaded by
+    // WorkerPoolContextProvider via `new Worker(new URL(..., import.meta.url))`
+    // — Vite's worker bundler emits it as a separate ESM asset so it's
+    // resolvable in both dev and production builds.
+    format: 'es',
+    rollupOptions: {
+      output: {
+        entryFileNames: 'assets/pierre-worker-[hash].js',
+      },
+    },
   },
   server: {
     port: 5173,

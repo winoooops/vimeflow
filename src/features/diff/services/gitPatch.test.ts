@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'vitest'
-import { buildGitDiffArgs, extractHunkPatch } from './gitPatch'
+import {
+  buildGitDiffArgs,
+  extractHunkPatch,
+  normalizeBaseBranch,
+} from './gitPatch'
 
 const diffText = [
   'diff --git a/src/App.tsx b/src/App.tsx',
@@ -18,6 +22,19 @@ const diffText = [
 ].join('\n')
 
 describe('buildGitDiffArgs', () => {
+  test('normalizes safe base branch values', () => {
+    expect(normalizeBaseBranch(' main ')).toBe('main')
+    expect(normalizeBaseBranch('feature/diff-cleanup')).toBe(
+      'feature/diff-cleanup'
+    )
+  })
+
+  test('normalizes unsafe base branch values to null', () => {
+    expect(normalizeBaseBranch('--cached')).toBeNull()
+    expect(normalizeBaseBranch('main..HEAD')).toBeNull()
+    expect(normalizeBaseBranch('origin/')).toBeNull()
+  })
+
   test('uses working tree diff by default so displayed hunks match hunk mutations', () => {
     expect(
       buildGitDiffArgs({ safePath: 'src/App.tsx', staged: false })

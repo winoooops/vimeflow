@@ -1,8 +1,16 @@
 import { useState, useEffect } from 'react'
 import { createGitService } from '../services/gitService'
 import type { FileDiff } from '../types'
+import type { GetGitDiffResponse } from '../../../bindings/GetGitDiffResponse'
 
-interface UseFileDiffReturn {
+export interface UseFileDiffReturn {
+  /**
+   * Full backend response — parsed `fileDiff` plus the raw `oldText` /
+   * `newText` (used by Pierre's Shiki renderer) and `rawDiff` (used by
+   * `extractHunkPatch` for hunk-level staging).
+   */
+  response: GetGitDiffResponse | null
+  /** Convenience derived getter for callers that only need the parsed FileDiff. */
   diff: FileDiff | null
   loading: boolean
   error: Error | null
@@ -21,13 +29,13 @@ export const useFileDiff = (
   cwd = '.',
   untracked?: boolean
 ): UseFileDiffReturn => {
-  const [diff, setDiff] = useState<FileDiff | null>(null)
+  const [response, setResponse] = useState<GetGitDiffResponse | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<Error | null>(null)
 
   useEffect(() => {
     if (!filePath) {
-      setDiff(null)
+      setResponse(null)
       setLoading(false)
       setError(null)
 
@@ -38,15 +46,15 @@ export const useFileDiff = (
 
     const fetchDiff = async (): Promise<void> => {
       try {
-        setDiff(null)
+        setResponse(null)
         setLoading(true)
         setError(null)
 
         const service = createGitService(cwd)
-        const fileDiff = await service.getDiff(filePath, staged, untracked)
+        const result = await service.getDiff(filePath, staged, untracked)
 
         if (!cancelled) {
-          setDiff(fileDiff)
+          setResponse(result)
         }
       } catch (err) {
         if (!cancelled) {
@@ -55,7 +63,7 @@ export const useFileDiff = (
               ? err
               : new Error(`Failed to fetch diff for ${filePath}`)
           )
-          setDiff(null)
+          setResponse(null)
         }
       } finally {
         if (!cancelled) {
@@ -71,8 +79,11 @@ export const useFileDiff = (
     }
   }, [filePath, staged, untracked, cwd])
 
+  const fileDiff = response?.fileDiff ?? null
+
   return {
-    diff,
+    response,
+    diff: fileDiff,
     loading,
     error,
   }

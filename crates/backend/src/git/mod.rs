@@ -15,6 +15,7 @@ use crate::filesystem::scope::{
 /// Timeout for git subprocess calls. Prevents indefinite blocking on
 /// hung NFS mounts, slow hooks, or unresponsive credential helpers.
 const GIT_TIMEOUT: Duration = Duration::from_secs(30);
+const MAX_DIFF_FILE_TEXT_BYTES: u64 = 2 * 1024 * 1024;
 
 /// Run a git command with a timeout. Spawns the process first so the
 /// child handle is available for killing on timeout — prevents orphaned
@@ -44,11 +45,16 @@ async fn run_git_with_timeout(mut cmd: Command) -> Result<std::process::Output, 
             #[cfg(unix)]
             {
                 unsafe {
-                    // SAFETY: child_id is a valid PID from a process we
-                    // just spawned. SIGKILL is the only reliable way to
-                    // terminate a hung git process (SIGTERM may be ignored
-                    // by a blocking syscall on NFS).
-                    libc::kill(child_id as i32, libc::SIGKILL);
+                    // SAFETY: child_id comes from the git process spawned
+                    // above, and wait_with_output has not completed because
+                    // this branch only runs after the timeout wins the race.
+                    // There is still a theoretical PID-reuse race if git
+                    // exits at the same instant the timeout fires and the OS
+                    // immediately reuses that PID; in this desktop-sidecar
+                    // context we accept that narrow risk to avoid leaking a
+                    // hung subprocess/thread. SIGKILL is intentional because
+                    // SIGTERM may be ignored by a blocking syscall on NFS.
+                    let _ = libc::kill(child_id as i32, libc::SIGKILL);
                 }
             }
 
@@ -211,6 +217,8 @@ fn parse_numstat(output: &[u8]) -> HashMap<String, (u32, u32)> {
 /// Diff line type — variant names match TS `DiffLine.type` via
 /// `rename_all = "lowercase"`: `Added` → `"added"`, etc.
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
 #[serde(rename_all = "lowercase")]
 pub enum DiffLineType {
     Added,
@@ -220,19 +228,26 @@ pub enum DiffLineType {
 
 /// A single line within a diff hunk
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
 #[serde(rename_all = "camelCase")]
 pub struct DiffLine {
     #[serde(rename = "type")]
+    #[cfg_attr(test, ts(rename = "type"))]
     pub line_type: DiffLineType,
     pub content: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub old_line_number: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub new_line_number: Option<u32>,
 }
 
 /// A single hunk within a file diff
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
 #[serde(rename_all = "camelCase")]
 pub struct DiffHunk {
     pub id: String,
@@ -247,12 +262,61 @@ pub struct DiffHunk {
 /// Parsed diff for a single file — field names match TS `FileDiff` via
 /// `rename_all = "camelCase"`: `file_path` → `"filePath"`, etc.
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
 #[serde(rename_all = "camelCase")]
 pub struct FileDiff {
     pub file_path: String,
+    /// Intentionally serialized as a required nullable field, not omitted.
     pub old_path: Option<String>,
+    /// Intentionally serialized as a required nullable field, not omitted.
     pub new_path: Option<String>,
     pub hunks: Vec<DiffHunk>,
+}
+
+/// Response payload for `get_git_diff` — parsed FileDiff plus the raw
+/// before/after file contents that Pierre needs to render via Shiki,
+/// plus the raw unified-diff text reused by PR2's `extractHunkPatch`.
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct GetGitDiffResponse {
+    pub file_diff: FileDiff,
+    /// Old file contents at the diff's base (HEAD or index, depending on
+    /// `staged`). Empty string when the file is untracked or newly added.
+    pub old_text: String,
+    /// New file contents at the diff's tip (index or working tree).
+    /// Empty string when the file has been deleted.
+    pub new_text: String,
+    /// The raw unified-diff text. Reused by PR2's `extractHunkPatch()`.
+    pub raw_diff: String,
+}
+
+fn raw_diff_file_header_has(raw_diff: &str, marker: &str) -> bool {
+    for line in raw_diff.lines() {
+        if line.starts_with("@@") {
+            return false;
+        }
+        if line.starts_with(marker) {
+            return true;
+        }
+    }
+
+    false
+}
+
+/// Heuristic: the raw unified-diff file header contains `+++ /dev/null` when
+/// git encoded a deletion. Cheaper and more deterministic than racing the
+/// filesystem, and scoped before the first hunk so matching file content does
+/// not look like metadata.
+fn raw_diff_is_deletion(raw_diff: &str) -> bool {
+    raw_diff_file_header_has(raw_diff, "+++ /dev/null")
+}
+
+/// Same heuristic for "no prior version at HEAD" — `--- /dev/null`.
+fn raw_diff_is_new_at_base(raw_diff: &str) -> bool {
+    raw_diff_file_header_has(raw_diff, "--- /dev/null")
 }
 
 /// Parse git status --porcelain=v1 -z output into ChangedFile structs
@@ -469,12 +533,12 @@ fn parse_git_diff(output: &str, file_path: &str) -> FileDiff {
             .strip_prefix("rename from ")
             .or_else(|| line.strip_prefix("copy from "))
         {
-            old_path = Some(path.to_string());
+            old_path = Some(decode_git_patch_path(path));
         } else if let Some(path) = line
             .strip_prefix("rename to ")
             .or_else(|| line.strip_prefix("copy to "))
         {
-            new_path = Some(path.to_string());
+            new_path = Some(decode_git_patch_path(path));
         } else if line.starts_with("@@") {
             // Save previous hunk if exists
             if let Some(hunk) = current_hunk.take() {
@@ -562,6 +626,60 @@ fn parse_git_diff(output: &str, file_path: &str) -> FileDiff {
         new_path,
         hunks,
     }
+}
+
+fn decode_git_patch_path(path: &str) -> String {
+    let Some(quoted) = path.strip_prefix('"').and_then(|s| s.strip_suffix('"')) else {
+        return path.to_string();
+    };
+
+    let mut bytes = Vec::with_capacity(quoted.len());
+    let mut chars = quoted.chars().peekable();
+
+    while let Some(ch) = chars.next() {
+        if ch != '\\' {
+            let mut buf = [0; 4];
+            bytes.extend_from_slice(ch.encode_utf8(&mut buf).as_bytes());
+            continue;
+        }
+
+        let Some(escaped) = chars.next() else {
+            bytes.push(b'\\');
+            break;
+        };
+
+        match escaped {
+            '0'..='7' => {
+                let mut value = escaped.to_digit(8).unwrap_or(0) as u16;
+                for _ in 0..2 {
+                    let Some(next) = chars.peek().copied() else {
+                        break;
+                    };
+                    let Some(digit) = next.to_digit(8) else {
+                        break;
+                    };
+                    value = (value * 8) + digit as u16;
+                    chars.next();
+                }
+                bytes.push(value as u8);
+            }
+            'a' => bytes.push(0x07),
+            'b' => bytes.push(0x08),
+            'f' => bytes.push(0x0c),
+            'n' => bytes.push(b'\n'),
+            'r' => bytes.push(b'\r'),
+            't' => bytes.push(b'\t'),
+            'v' => bytes.push(0x0b),
+            '\\' => bytes.push(b'\\'),
+            '"' => bytes.push(b'"'),
+            other => {
+                let mut buf = [0; 4];
+                bytes.extend_from_slice(other.encode_utf8(&mut buf).as_bytes());
+            }
+        }
+    }
+
+    String::from_utf8_lossy(&bytes).into_owned()
 }
 
 /// Parse hunk range like "-102,7" or "+102,6" into (start, lines)
@@ -804,8 +922,6 @@ const NULL_DEVICE: &str = "/dev/null";
 /// differ (expected here since the comparison is against an empty file),
 /// and other codes for genuine errors.
 async fn get_untracked_diff(toplevel: &Path, file: &str) -> Result<String, String> {
-    let file_abs = toplevel.join(file);
-
     let mut cmd = Command::new("git");
     cmd.arg("-C")
         .arg(toplevel)
@@ -814,7 +930,7 @@ async fn get_untracked_diff(toplevel: &Path, file: &str) -> Result<String, Strin
         .arg("--no-color")
         .arg("--")
         .arg(NULL_DEVICE)
-        .arg(&file_abs)
+        .arg(file)
         .env("GIT_TERMINAL_PROMPT", "0");
 
     let output = run_git_with_timeout(cmd).await?;
@@ -908,7 +1024,7 @@ pub async fn get_git_diff(
     file: String,
     staged: bool,
     untracked: Option<bool>,
-) -> Result<FileDiff, String> {
+) -> Result<GetGitDiffResponse, String> {
     get_git_diff_inner(cwd, file, staged, untracked).await
 }
 
@@ -917,11 +1033,11 @@ pub(crate) async fn get_git_diff_inner(
     file: String,
     staged: bool,
     untracked: Option<bool>,
-) -> Result<FileDiff, String> {
+) -> Result<GetGitDiffResponse, String> {
     let safe_cwd = validate_cwd(&cwd)?;
     validate_file_path(&file)?;
 
-    // Resolve repo toplevel — if not in a repo, return empty hunks
+    // Resolve repo toplevel — if not in a repo, return empty response.
     let mut toplevel_cmd = Command::new("git");
     toplevel_cmd
         .arg("-C")
@@ -933,12 +1049,17 @@ pub(crate) async fn get_git_diff_inner(
     let toplevel_output = run_git_with_timeout(toplevel_cmd).await?;
 
     if !toplevel_output.status.success() {
-        // Not a git repo — return empty FileDiff
-        return Ok(FileDiff {
-            file_path: file.clone(),
-            old_path: None,
-            new_path: None,
-            hunks: vec![],
+        // Not a git repo — return empty response.
+        return Ok(GetGitDiffResponse {
+            file_diff: FileDiff {
+                file_path: file.clone(),
+                old_path: None,
+                new_path: None,
+                hunks: vec![],
+            },
+            old_text: String::new(),
+            new_text: String::new(),
+            raw_diff: String::new(),
         });
     }
 
@@ -947,6 +1068,14 @@ pub(crate) async fn get_git_diff_inner(
 
     // Canonicalize and validate toplevel is under $HOME
     let canonical_toplevel = validate_cwd(toplevel_path)?;
+
+    // Detect a rename touching `file`. `git diff -M -- <single path>` cannot
+    // see renames (the second endpoint is outside the path filter), so we
+    // probe the rename-status output once over the full diff scope. When
+    // `file` appears as a rename destination, we re-run `git diff` against
+    // BOTH endpoints so the unified-diff header carries `rename from <old>`
+    // and `parse_git_diff` populates `file_diff.old_path`.
+    let rename_source = detect_rename_source(&canonical_toplevel, &file, staged).await?;
 
     // Run git diff from toplevel
     let mut cmd = Command::new("git");
@@ -960,7 +1089,17 @@ pub(crate) async fn get_git_diff_inner(
         cmd.arg("--cached");
     }
 
-    cmd.arg("--").arg(&file);
+    // Rename detection needs to be on AND both endpoints must be in scope.
+    if rename_source.is_some() {
+        cmd.arg("-M");
+    }
+
+    cmd.arg("--");
+    if let Some(ref old) = rename_source {
+        validate_file_path(old)?;
+        cmd.arg(old);
+    }
+    cmd.arg(&file);
 
     let output = run_git_with_timeout(cmd).await?;
 
@@ -995,12 +1134,307 @@ pub(crate) async fn get_git_diff_inner(
         false
     };
 
-    if should_try_untracked_fallback {
+    let (file_diff, raw_diff, is_untracked) = if should_try_untracked_fallback {
         let untracked_stdout = get_untracked_diff(&canonical_toplevel, &file).await?;
-        return Ok(parse_git_diff(&untracked_stdout, &file));
+        let parsed_untracked = parse_git_diff(&untracked_stdout, &file);
+        (parsed_untracked, untracked_stdout, true)
+    } else {
+        (parsed, stdout.into_owned(), false)
+    };
+
+    // Resolve old/new paths with rename awareness. On rename, the diff
+    // header carries `rename from <old>` / `rename to <new>` so we can
+    // fetch each side from its actual path.
+    let new_path = file_diff
+        .new_path
+        .as_deref()
+        .unwrap_or(file_diff.file_path.as_str())
+        .to_string();
+    let old_path = file_diff
+        .old_path
+        .as_deref()
+        .unwrap_or(new_path.as_str())
+        .to_string();
+    validate_file_path(&old_path)?;
+    validate_file_path(&new_path)?;
+
+    // Compute old_text per the four-case table:
+    //   - Untracked (used --no-index branch) → ""
+    //   - Newly-added staged file (--- /dev/null in header AND staged=true) → ""
+    //   - staged=true → `git show HEAD:<old_path>`
+    //   - staged=false → `git show :<old_path>` (index version)
+    let is_new_at_base = raw_diff_is_new_at_base(&raw_diff);
+    let old_text = if is_untracked || (staged && is_new_at_base) {
+        String::new()
+    } else {
+        let ref_spec = if staged {
+            format!("HEAD:{}", old_path)
+        } else {
+            format!(":{}", old_path)
+        };
+        let stage_fallback_ref = if staged {
+            None
+        } else {
+            Some(format!(":2:{}", old_path))
+        };
+        git_show_text_with_fallback(
+            &canonical_toplevel,
+            &ref_spec,
+            stage_fallback_ref.as_deref(),
+        )
+        .await?
+    };
+
+    // Compute new_text:
+    //   - Deleted file (+++ /dev/null in header) → ""
+    //   - staged=true → `git show :<new_path>` (index version)
+    //   - else → filesystem read of `<toplevel>/<new_path>`
+    //
+    // The filesystem read maps `NotFound` to an empty string (covers a racy
+    // delete between the diff and the read), decodes invalid UTF-8 lossily so
+    // changed binary-ish files don't fail the whole diff request, and surfaces
+    // every other I/O error so the frontend can render the error card.
+    let is_deletion = raw_diff_is_deletion(&raw_diff);
+    let new_text = if is_deletion {
+        String::new()
+    } else if staged {
+        let ref_spec = format!(":{}", new_path);
+        let stage_fallback_ref = format!(":2:{}", new_path);
+        git_show_text_with_fallback(&canonical_toplevel, &ref_spec, Some(&stage_fallback_ref))
+            .await?
+    } else {
+        read_worktree_text_no_follow(&canonical_toplevel, &new_path)?
+    };
+
+    Ok(GetGitDiffResponse {
+        file_diff,
+        old_text,
+        new_text,
+        raw_diff,
+    })
+}
+
+/// If `file` is the destination of a rename in the diff scope (HEAD→index
+/// when `staged`, index→worktree otherwise), return the source path so the
+/// caller can re-run `git diff -M` against both endpoints. Returns `None`
+/// when there is no rename involving `file`.
+///
+/// Internally runs `git diff --name-status -M -z` over the whole scope
+/// (no path filter) — single-path `git diff -M -- <file>` cannot detect
+/// renames because the second endpoint is outside the filter. The scan
+/// is bounded by the count of changed files, not the size of the repo.
+async fn detect_rename_source(
+    toplevel: &Path,
+    file: &str,
+    staged: bool,
+) -> Result<Option<String>, String> {
+    let mut cmd = Command::new("git");
+    cmd.arg("-C")
+        .arg(toplevel)
+        .arg("diff")
+        .arg("--name-status")
+        .arg("--diff-filter=RC")
+        .arg("-M")
+        .arg("-z")
+        .env("GIT_TERMINAL_PROMPT", "0");
+    if staged {
+        cmd.arg("--cached");
     }
 
-    Ok(parsed)
+    let output = match run_git_with_timeout(cmd).await {
+        Ok(output) => output,
+        Err(_) => return Ok(None),
+    };
+    if !output.status.success() {
+        // Treat a failed probe as "no rename detected" rather than fatally
+        // erroring the diff — the main `git diff` call below will surface
+        // the real failure if there is one.
+        return Ok(None);
+    }
+
+    // `-z` records: status\0src\0dst\0 for renames/copies; status\0path\0
+    // for ordinary entries. Walk the tokens looking for `R<score>` /
+    // `C<score>` whose `dst` equals `file`.
+    let stdout = output.stdout;
+    let tokens: Vec<&[u8]> = stdout.split(|&b| b == b'\0').collect();
+    let mut i = 0;
+    while i < tokens.len() {
+        let tok = tokens[i];
+        if tok.is_empty() {
+            i += 1;
+            continue;
+        }
+
+        let first = tok[0];
+        if first == b'R' || first == b'C' {
+            // Rename/copy entries consume src and dst.
+            let src = tokens
+                .get(i + 1)
+                .map(|b| String::from_utf8_lossy(b).into_owned());
+            let dst = tokens
+                .get(i + 2)
+                .map(|b| String::from_utf8_lossy(b).into_owned());
+            if let (Some(src), Some(dst)) = (src, dst) {
+                if dst == file {
+                    return Ok(Some(src));
+                }
+            }
+            i += 3;
+        } else {
+            // Ordinary entries consume one path.
+            i += 2;
+        }
+    }
+
+    Ok(None)
+}
+
+fn read_worktree_text_no_follow(toplevel: &Path, path: &str) -> Result<String, String> {
+    let abs_path = toplevel.join(path);
+    let metadata = match std::fs::symlink_metadata(&abs_path) {
+        Ok(metadata) => metadata,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(String::new()),
+        Err(e) => return Err(format!("stat {}: {}", abs_path.display(), e)),
+    };
+
+    if metadata.file_type().is_symlink() {
+        let target = std::fs::read_link(&abs_path)
+            .map_err(|e| format!("readlink {}: {}", abs_path.display(), e))?;
+        return Ok(path_to_lossy_text(&target));
+    }
+
+    if !metadata.is_file() || metadata.len() > MAX_DIFF_FILE_TEXT_BYTES {
+        return Ok(String::new());
+    }
+
+    match std::fs::read(&abs_path) {
+        Ok(bytes) => Ok(String::from_utf8_lossy(&bytes).into_owned()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
+        Err(e) => Err(format!("read {}: {}", abs_path.display(), e)),
+    }
+}
+
+#[cfg(unix)]
+fn path_to_lossy_text(path: &Path) -> String {
+    use std::os::unix::ffi::OsStrExt;
+
+    String::from_utf8_lossy(path.as_os_str().as_bytes()).into_owned()
+}
+
+#[cfg(not(unix))]
+fn path_to_lossy_text(path: &Path) -> String {
+    path.to_string_lossy().into_owned()
+}
+
+fn is_expected_missing_git_show(stderr: &str) -> bool {
+    stderr.contains("does not exist in")
+        || stderr.contains("exists on disk, but not in")
+        || stderr.contains("is in the index, but not at stage ")
+}
+
+/// Run `git show <ref>` from the given toplevel and return stdout as a
+/// String. Empty string only for expected "no blob at this ref" states so
+/// callers can render all-new / conflicted files without masking genuine git
+/// failures such as missing LFS objects or corrupt packs.
+async fn git_show_text_with_fallback(
+    toplevel: &Path,
+    ref_spec: &str,
+    stage_fallback_ref: Option<&str>,
+) -> Result<String, String> {
+    let size = git_blob_size(toplevel, ref_spec).await?;
+    if let Some(size) = size {
+        return git_show_sized_text(toplevel, ref_spec, size).await;
+    }
+
+    if let Some(fallback_ref) = stage_fallback_ref {
+        if let Some(size) = git_blob_size(toplevel, fallback_ref).await? {
+            return git_show_sized_text(toplevel, fallback_ref, size).await;
+        }
+    }
+
+    Ok(String::new())
+}
+
+async fn git_show_sized_text(toplevel: &Path, ref_spec: &str, size: u64) -> Result<String, String> {
+    if size > MAX_DIFF_FILE_TEXT_BYTES {
+        return Ok(String::new());
+    }
+
+    let output = run_git_show(toplevel, ref_spec).await?;
+    git_show_output_to_text(ref_spec, output)
+}
+
+async fn run_git_show(toplevel: &Path, ref_spec: &str) -> Result<std::process::Output, String> {
+    let mut cmd = Command::new("git");
+    cmd.arg("-C")
+        .arg(toplevel)
+        .arg("show")
+        .arg(ref_spec)
+        .env("GIT_TERMINAL_PROMPT", "0");
+
+    run_git_with_timeout(cmd).await
+}
+
+async fn git_blob_size(toplevel: &Path, ref_spec: &str) -> Result<Option<u64>, String> {
+    let mut cmd = Command::new("git");
+    cmd.arg("-C")
+        .arg(toplevel)
+        .arg("cat-file")
+        .arg("-s")
+        .arg(ref_spec)
+        .env("GIT_TERMINAL_PROMPT", "0");
+
+    let output = run_git_with_timeout(cmd).await?;
+    if output.status.success() {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let size = stdout
+            .trim()
+            .parse::<u64>()
+            .map_err(|e| format!("git cat-file -s {} returned invalid size: {}", ref_spec, e))?;
+        return Ok(Some(size));
+    }
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    if is_expected_missing_git_show(&stderr) {
+        return Ok(None);
+    }
+
+    Err(git_cat_file_error(ref_spec, &stderr, &output.status))
+}
+
+fn git_show_output_to_text(ref_spec: &str, output: std::process::Output) -> Result<String, String> {
+    if output.status.success() {
+        if output.stdout.len() as u64 > MAX_DIFF_FILE_TEXT_BYTES {
+            return Ok(String::new());
+        }
+        return Ok(String::from_utf8_lossy(&output.stdout).into_owned());
+    }
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    if is_expected_missing_git_show(&stderr) {
+        return Ok(String::new());
+    }
+
+    Err(git_show_error(ref_spec, &stderr, &output.status))
+}
+
+fn git_cat_file_error(ref_spec: &str, stderr: &str, status: &std::process::ExitStatus) -> String {
+    if stderr.trim().is_empty() {
+        format!(
+            "git cat-file -s {} failed with exit code {}",
+            ref_spec, status
+        )
+    } else {
+        format!("git cat-file -s {} failed: {}", ref_spec, stderr.trim())
+    }
+}
+
+fn git_show_error(ref_spec: &str, stderr: &str, status: &std::process::ExitStatus) -> String {
+    if stderr.trim().is_empty() {
+        format!("git show {} failed with exit code {}", ref_spec, status)
+    } else {
+        format!("git show {} failed: {}", ref_spec, stderr.trim())
+    }
 }
 
 /// Get the current branch for a git repository.
@@ -1101,10 +1535,7 @@ pub(crate) async fn git_worktree_name_inner(cwd: String) -> Result<Option<String
         .map_err(|e| format!("git_worktree_name show-toplevel utf8: {}", e))?;
     let top = Path::new(top_str.trim());
 
-    Ok(top
-        .file_name()
-        .and_then(|s| s.to_str())
-        .map(str::to_string))
+    Ok(top.file_name().and_then(|s| s.to_str()).map(str::to_string))
 }
 
 pub(crate) async fn git_branch_inner(cwd: String) -> Result<String, String> {
@@ -1158,10 +1589,49 @@ pub(crate) async fn git_branch_inner(cwd: String) -> Result<String, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::test_helpers::{
-        configure_test_git, create_main_repo_with_worktrees, home_tempdir,
-    };
+    use super::test_helpers::{configure_test_git, create_main_repo_with_worktrees, home_tempdir};
     use super::*;
+
+    #[test]
+    fn test_raw_diff_is_deletion_ignores_hunk_content() {
+        let raw = "\
+diff --git a/path.txt b/path.txt
+--- a/path.txt
++++ b/path.txt
+@@ -1 +1 @@
+-old
++++ /dev/null
+";
+
+        assert!(!raw_diff_is_deletion(raw));
+    }
+
+    #[test]
+    fn test_raw_diff_is_deletion_reads_file_header() {
+        let raw = "\
+diff --git a/path.txt b/path.txt
+--- a/path.txt
++++ /dev/null
+@@ -1 +0,0 @@
+-old
+";
+
+        assert!(raw_diff_is_deletion(raw));
+    }
+
+    #[test]
+    fn test_raw_diff_is_new_at_base_ignores_hunk_content() {
+        let raw = "\
+diff --git a/path.txt b/path.txt
+--- a/path.txt
++++ b/path.txt
+@@ -1 +1 @@
+--- /dev/null
++new
+";
+
+        assert!(!raw_diff_is_new_at_base(raw));
+    }
 
     // parse_numstat tests
 
@@ -1536,6 +2006,21 @@ mod tests {
     }
 
     #[test]
+    fn test_file_diff_serializes_absent_paths_as_null_keys() {
+        let file_diff = FileDiff {
+            file_path: "unchanged.txt".to_string(),
+            old_path: None,
+            new_path: None,
+            hunks: Vec::new(),
+        };
+
+        let encoded = serde_json::to_value(file_diff).expect("serialize FileDiff");
+
+        assert_eq!(encoded["oldPath"], serde_json::Value::Null);
+        assert_eq!(encoded["newPath"], serde_json::Value::Null);
+    }
+
+    #[test]
     fn test_parse_git_diff_removal_only() {
         let diff = r#"@@ -1,3 +1,2 @@
  keep this
@@ -1570,6 +2055,28 @@ rename to new_name.txt
         assert_eq!(file_diff.new_path, Some("new_name.txt".to_string()));
         assert_eq!(file_diff.hunks.len(), 1);
         assert_eq!(file_diff.hunks[0].id, "hunk-1-1");
+    }
+
+    #[test]
+    fn test_parse_git_diff_decodes_quoted_rename_metadata() {
+        let diff = r#"diff --git "a/old\tname.txt" "b/new\nname.txt"
+similarity index 88%
+rename from "old\tname.txt"
+rename to "new\nname.txt"
+@@ -1,2 +1,2 @@
+ line 1
+-old
++new
+"#;
+        let file_diff = parse_git_diff(diff, "new\nname.txt");
+
+        assert_eq!(file_diff.old_path, Some("old\tname.txt".to_string()));
+        assert_eq!(file_diff.new_path, Some("new\nname.txt".to_string()));
+    }
+
+    #[test]
+    fn test_decode_git_patch_path_handles_octal_utf8() {
+        assert_eq!(decode_git_patch_path(r#""caf\303\251.txt""#), "café.txt");
     }
 
     #[test]
@@ -1815,7 +2322,8 @@ copy to copy.txt
         let result = get_git_diff(subdir_str, "sub/foo.ts".to_string(), false, None).await;
 
         assert!(result.is_ok(), "get_git_diff should succeed from subdir");
-        let diff = result.unwrap();
+        let response = result.unwrap();
+        let diff = &response.file_diff;
 
         assert_eq!(diff.file_path, "sub/foo.ts");
         assert!(!diff.hunks.is_empty(), "should have populated hunks");
@@ -1842,7 +2350,8 @@ copy to copy.txt
         let result = get_git_diff(non_repo, "foo.txt".to_string(), false, None).await;
 
         assert!(result.is_ok(), "non-repo should return Ok, not error");
-        let diff = result.unwrap();
+        let response = result.unwrap();
+        let diff = &response.file_diff;
         assert_eq!(diff.file_path, "foo.txt");
         assert_eq!(diff.hunks.len(), 0, "non-repo should return empty hunks");
     }
@@ -2001,7 +2510,11 @@ copy to copy.txt
         let (_tmp, main, _worktrees) = create_main_repo_with_worktrees(&[]);
         let result = git_worktree_name(main.to_string_lossy().to_string()).await;
 
-        assert!(matches!(result, Ok(None)), "expected Ok(None), got {:?}", result);
+        assert!(
+            matches!(result, Ok(None)),
+            "expected Ok(None), got {:?}",
+            result
+        );
     }
 
     #[tokio::test]
@@ -2266,7 +2779,8 @@ copy to copy.txt
             result.is_ok(),
             "get_git_diff on untracked file should succeed (fallback to --no-index)"
         );
-        let diff = result.unwrap();
+        let response = result.unwrap();
+        let diff = &response.file_diff;
         assert_eq!(diff.file_path, "untracked.txt");
         assert_eq!(
             diff.hunks.len(),
@@ -2285,5 +2799,16 @@ copy to copy.txt
         assert_eq!(hunk.lines[0].content, "alpha");
         assert_eq!(hunk.lines[1].content, "beta");
         assert_eq!(hunk.lines[2].content, "gamma");
+
+        // Untracked files have no base content; new_text is the working-tree file.
+        assert_eq!(response.old_text, "", "untracked => old_text is empty");
+        assert_eq!(
+            response.new_text, "alpha\nbeta\ngamma\n",
+            "untracked => new_text is the working-tree contents"
+        );
+        assert!(
+            !response.raw_diff.is_empty(),
+            "raw_diff should hold the synthesized --no-index diff"
+        );
     }
 }

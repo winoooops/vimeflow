@@ -243,7 +243,7 @@ impl BackendState {
         file: String,
         staged: bool,
         untracked: Option<bool>,
-    ) -> Result<crate::git::FileDiff, String> {
+    ) -> Result<crate::git::GetGitDiffResponse, String> {
         crate::git::get_git_diff_inner(cwd, file, staged, untracked).await
     }
 

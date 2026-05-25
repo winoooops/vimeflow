@@ -61,6 +61,7 @@ words:
   - glassmorphism
   - catppuccin
   - Catppuccin
+  - wght # Material Symbols font-variation axis (weight)
 
   # Custom DOM events
   - vfliquidwake
