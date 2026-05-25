@@ -22,6 +22,19 @@ const LEADER_WINDOW_MS = 500
 const isPaletteToggle = (event: KeyboardEvent): boolean =>
   event.ctrlKey && !event.metaKey && !event.altKey && event.key === ':'
 
+const queryForLeaderFollowUp = (event: KeyboardEvent): string | null => {
+  if (
+    event.ctrlKey ||
+    event.metaKey ||
+    event.altKey ||
+    event.key.length !== 1
+  ) {
+    return null
+  }
+
+  return `:${event.key}`
+}
+
 export const useCommandPalette = (
   commands: Command[] = defaultCommands
 ): UseCommandPaletteReturn => {
@@ -127,15 +140,19 @@ export const useCommandPalette = (
     return Math.min(state.selectedIndex, filteredResults.length - 1)
   }, [state.selectedIndex, filteredResults.length])
 
-  const open = useCallback((): void => {
+  const openWithQuery = useCallback((query: string): void => {
     setState((prev) => ({
       ...prev,
       isOpen: true,
-      query: ':',
+      query,
       selectedIndex: 0,
       currentNamespace: null,
     }))
   }, [])
+
+  const open = useCallback((): void => {
+    openWithQuery(':')
+  }, [openWithQuery])
 
   const close = useCallback((): void => {
     clearLeaderWindow()
@@ -257,6 +274,7 @@ export const useCommandPalette = (
 
   const handlersRef = useRef({
     open,
+    openWithQuery,
     close,
     navigateUp,
     navigateDown,
@@ -268,6 +286,7 @@ export const useCommandPalette = (
     stateRef.current = state
     handlersRef.current = {
       open,
+      openWithQuery,
       close,
       navigateUp,
       navigateDown,
@@ -315,7 +334,7 @@ export const useCommandPalette = (
 
         event.preventDefault()
         event.stopPropagation()
-        handlersRef.current.open()
+        handlersRef.current.openWithQuery(queryForLeaderFollowUp(event) ?? ':')
 
         return
       }

@@ -249,7 +249,7 @@ describe('useCommandPalette', () => {
       expect(result.current.state.isOpen).toBe(false)
     })
 
-    test('Ctrl+: then non-chord follow-up opens palette and consumes follow-up', () => {
+    test('Ctrl+: then non-chord follow-up opens palette with follow-up query', () => {
       vi.useFakeTimers()
       const { result } = renderHook(() => useCommandPalette())
 
@@ -280,6 +280,7 @@ describe('useCommandPalette', () => {
       expect(preventDefaultSpy).toHaveBeenCalled()
       expect(stopPropagationSpy).toHaveBeenCalled()
       expect(result.current.state.isOpen).toBe(true)
+      expect(result.current.state.query).toBe(':q')
     })
 
     test('Ctrl+: then Ctrl+: opens palette immediately', () => {

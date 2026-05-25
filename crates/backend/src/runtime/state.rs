@@ -142,7 +142,13 @@ impl BackendState {
             ));
         }
 
-        if matches!(agent_type, AgentType::Codex) {
+        let current_agent_type = self
+            .agents
+            .agent_type_for_pty(session_id.as_str())
+            .ok_or_else(|| no_live_agent_error(session_id.as_str()))?;
+        ensure_rename_supported(&current_agent_type)?;
+
+        if matches!(current_agent_type, AgentType::Codex) {
             crate::agent::adapter::codex::session_index::record_user_rename(
                 session_id.as_str(),
                 &title,
@@ -546,7 +552,7 @@ mod tests {
     }
 
     #[test]
-    fn rename_agent_session_allows_agent_exit_after_successful_write() {
+    fn rename_agent_session_rejects_agent_exit_after_successful_write() {
         let (state, _sink) = BackendState::with_fake_sink();
         let writes = Arc::new(Mutex::new(Vec::new()));
         let agents = state.agents.clone();
@@ -565,8 +571,65 @@ mod tests {
 
         let result = state.rename_agent_session(rename_request("exited"));
 
-        assert!(result.is_ok());
+        let err = result.expect_err("missing agent after write should reject");
+        assert_eq!(err.reason, RenameAgentSessionErrorReason::NoLiveAgent);
         assert_eq!(captured_string(&writes), "/rename exited\r");
+    }
+
+    #[test]
+    fn rename_agent_session_does_not_record_codex_pending_rename_after_exit() {
+        let (state, _sink) = BackendState::with_fake_sink();
+        let pty_id = "pty-codex-exit-after-write";
+        let writes = Arc::new(Mutex::new(Vec::new()));
+        let agents = state.agents.clone();
+        state.pty.insert(
+            pty_id.to_string(),
+            make_capturing_session_with_hook(
+                writes.clone(),
+                Some(Arc::new(move || {
+                    agents.remove(pty_id);
+                })),
+            ),
+        );
+        state
+            .agents
+            .insert_agent_type_for_test(pty_id.to_string(), AgentType::Codex);
+
+        let result = state.rename_agent_session(rename_request_for_pty(pty_id, "exited-codex"));
+
+        let err = result.expect_err("missing Codex after write should reject");
+        assert_eq!(err.reason, RenameAgentSessionErrorReason::NoLiveAgent);
+        assert_eq!(captured_string(&writes), "/rename exited-codex\r");
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let index_path = dir.path().join("session_index.jsonl");
+        std::fs::write(
+            &index_path,
+            r#"{"id":"thread-id","thread_name":"exited-codex","updated_at":"2026-05-23T00:00:00Z"}"#,
+        )
+        .expect("write session index");
+        let sink: Arc<crate::runtime::FakeEventSink> =
+            Arc::new(crate::runtime::FakeEventSink::new());
+        let sink_dyn: Arc<dyn EventSink> = sink.clone();
+        let stop = Arc::new(AtomicBool::new(true));
+
+        let handle = crate::agent::adapter::codex::session_index::spawn_watch(
+            index_path,
+            "thread-id".into(),
+            pty_id.to_string(),
+            sink_dyn,
+            stop,
+        );
+        handle.join().expect("join watcher");
+
+        let titles: Vec<_> = sink
+            .recorded()
+            .into_iter()
+            .filter(|(name, _)| name == AGENT_SESSION_TITLE)
+            .map(|(_, payload)| payload)
+            .collect();
+        assert_eq!(titles.len(), 1);
+        assert_eq!(titles[0]["source"], "ai-generated");
     }
 
     #[test]
