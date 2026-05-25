@@ -32,6 +32,7 @@ pub fn sanitize_title(raw: &str) -> Option<String> {
             cut -= 1;
         }
         sanitized.truncate(cut);
+        sanitized = sanitized.trim_end().to_string();
     }
 
     Some(sanitized)
@@ -79,5 +80,13 @@ mod tests {
 
         assert!(result.len() <= CAP_BYTES, "len was {}", result.len());
         assert!(result.is_char_boundary(result.len()));
+    }
+
+    #[test]
+    fn sanitize_trims_space_left_by_truncation() {
+        let raw = format!("{} b", "a".repeat(CAP_BYTES - 1));
+        let result = sanitize_title(&raw).expect("non-empty");
+
+        assert_eq!(result, "a".repeat(CAP_BYTES - 1));
     }
 }

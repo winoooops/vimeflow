@@ -50,6 +50,19 @@ export interface WorkspaceCommandDeps {
   notifyInfo: (message: string) => void
 }
 
+// Fallback is test-only in production today, but it must outlive a single
+// builder call because async rename failures can resolve after a useMemo rebuild.
+let fallbackPaneRenameRequestId = 0
+
+const claimFallbackPaneRenameRequest = (): number => {
+  fallbackPaneRenameRequestId += 1
+
+  return fallbackPaneRenameRequestId
+}
+
+const isCurrentFallbackPaneRenameRequest = (requestId: number): boolean =>
+  requestId === fallbackPaneRenameRequestId
+
 // Pure builder: closures capture `deps`, so call from a useMemo over session-manager state.
 export const buildWorkspaceCommands = (
   deps: WorkspaceCommandDeps
@@ -69,16 +82,13 @@ export const buildWorkspaceCommands = (
     setActiveSessionId,
     notifyInfo,
   } = deps
-  let fallbackPaneRenameRequestId = 0
 
   const claimPaneRenameRequest = (): number => {
     if (nextPaneRenameRequestId) {
       return nextPaneRenameRequestId()
     }
 
-    fallbackPaneRenameRequestId += 1
-
-    return fallbackPaneRenameRequestId
+    return claimFallbackPaneRenameRequest()
   }
 
   const isLatestPaneRenameRequest = (requestId: number): boolean => {
@@ -86,7 +96,7 @@ export const buildWorkspaceCommands = (
       return isCurrentPaneRenameRequest(requestId)
     }
 
-    return requestId === fallbackPaneRenameRequestId
+    return isCurrentFallbackPaneRenameRequest(requestId)
   }
 
   const findActiveIndex = (): number =>

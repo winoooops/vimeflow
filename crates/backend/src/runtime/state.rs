@@ -508,8 +508,7 @@ mod tests {
             pty_id.to_string(),
             sink_dyn,
             stop,
-        )
-        .expect("spawn watcher");
+        );
         handle.join().expect("join watcher");
 
         let titles: Vec<_> = sink

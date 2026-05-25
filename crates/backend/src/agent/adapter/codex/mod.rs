@@ -138,16 +138,8 @@ impl AgentAdapter for CodexAdapter {
                     std::sync::Arc::clone(&events),
                     std::sync::Arc::clone(&aux_stop),
                 );
-                match title_join {
-                    Ok(title_join) => {
-                        if let Err(err) = handle.attach_aux_join(aux_stop, title_join) {
-                            log::error!("codex title sync disabled for this session: {err}");
-                        }
-                    }
-                    Err(err) => log::warn!(
-                        "codex title sync disabled for this session: watcher spawn failed: {}",
-                        err
-                    ),
+                if let Err(err) = handle.attach_aux_join(aux_stop, title_join) {
+                    log::error!("codex title sync disabled for this session: {err}");
                 }
             }
             None => {
@@ -173,8 +165,9 @@ fn resolved_thread_id_for(
         return Some(rollout.thread_id.clone());
     }
 
-    let canonical = std::fs::canonicalize(&rollout.path).ok()?;
-    if canonical == transcript_path {
+    let rollout_path = std::fs::canonicalize(&rollout.path).ok()?;
+    let transcript_path = std::fs::canonicalize(transcript_path).ok()?;
+    if rollout_path == transcript_path {
         return Some(rollout.thread_id.clone());
     }
 
@@ -354,7 +347,7 @@ mod status_source_tests {
     use crate::agent::events::AGENT_SESSION_TITLE;
     use crate::runtime::FakeEventSink;
     use rusqlite::{params, Connection};
-    use std::sync::Arc;
+    use std::sync::{Arc, Mutex};
     use std::time::{Duration, SystemTime};
 
     fn seed_codex_home_with_thread(codex_home: &Path, pid: u32, pty_start: SystemTime) -> PathBuf {
@@ -491,6 +484,24 @@ mod status_source_tests {
         assert_eq!(titles.len(), 1);
         assert_eq!(titles[0]["agentSessionId"], "tid-test");
         assert_eq!(titles[0]["title"], "resolved title");
+    }
+
+    #[test]
+    fn resolved_thread_id_matches_canonical_transcript_path() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let rollout_path = dir.path().join("rollout.jsonl");
+        std::fs::write(&rollout_path, b"").expect("write rollout");
+        std::fs::create_dir(dir.path().join("nested")).expect("mkdir nested");
+        let transcript_path = dir.path().join("nested").join("..").join("rollout.jsonl");
+        let resolved_rollout = Mutex::new(Some(ResolvedRollout {
+            path: rollout_path,
+            thread_id: "tid-test".to_string(),
+        }));
+
+        assert_eq!(
+            resolved_thread_id_for(&resolved_rollout, &transcript_path),
+            Some("tid-test".to_string())
+        );
     }
 
     #[test]

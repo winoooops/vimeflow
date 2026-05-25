@@ -293,6 +293,62 @@ describe('buildWorkspaceCommands - happy paths', () => {
     expect(notifyInfo).not.toHaveBeenCalled()
   })
 
+  test(':rename-pane fallback request guard survives command rebuilds', async () => {
+    let rejectFirstRename: (error: Error) => void = () => {
+      throw new Error('first rename promise reject was not captured')
+    }
+    renameAgentSession
+      .mockReturnValueOnce(
+        new Promise<void>((_resolve, reject) => {
+          rejectFirstRename = reject
+        })
+      )
+      .mockResolvedValueOnce(undefined)
+
+    const firstCommands = buildWorkspaceCommands({
+      sessions: mockSessions,
+      activeSessionId: 'session-1',
+      createSession,
+      removeSession,
+      renameSession,
+      setPaneUserLabel,
+      renameAgentSession,
+      activePanePtyId: 'pty-agent',
+      activePaneAgentType: 'claude-code',
+      setActiveSessionId,
+      notifyInfo,
+    })
+    firstCommands.find((c) => c.id === 'rename-pane')?.execute?.('first')
+
+    const secondCommands = buildWorkspaceCommands({
+      sessions: mockSessions,
+      activeSessionId: 'session-1',
+      createSession,
+      removeSession,
+      renameSession,
+      setPaneUserLabel,
+      renameAgentSession,
+      activePanePtyId: 'pty-agent',
+      activePaneAgentType: 'claude-code',
+      setActiveSessionId,
+      notifyInfo,
+    })
+    secondCommands.find((c) => c.id === 'rename-pane')?.execute?.('second')
+
+    await Promise.resolve()
+    await Promise.resolve()
+
+    rejectFirstRename(new Error('pty write failed'))
+
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(setPaneUserLabel).toHaveBeenCalledWith('pty-agent', 'first')
+    expect(setPaneUserLabel).toHaveBeenCalledWith('pty-agent', 'second')
+    expect(setPaneUserLabel).not.toHaveBeenCalledWith('pty-agent', undefined)
+    expect(notifyInfo).not.toHaveBeenCalled()
+  })
+
   test(':rename-pane rolls back expected backend failure for rename-capable pane', async () => {
     renameAgentSession.mockRejectedValueOnce(
       new AgentRenameError('no live agent', 'no-live-agent')

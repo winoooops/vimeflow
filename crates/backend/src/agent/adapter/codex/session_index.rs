@@ -50,8 +50,8 @@ pub fn spawn_watch(
     session_id: String,
     events: Arc<dyn EventSink>,
     stop: Arc<AtomicBool>,
-) -> std::io::Result<std::thread::JoinHandle<()>> {
-    Ok(std::thread::spawn(move || {
+) -> std::thread::JoinHandle<()> {
+    std::thread::spawn(move || {
         let mut last_emitted_title: Option<String> = None;
         let mut last_mtime = modified_time(&path);
 
@@ -107,7 +107,7 @@ pub fn spawn_watch(
                 None => {}
             }
         }
-    }))
+    })
 }
 
 fn modified_time(path: &std::path::Path) -> Option<SystemTime> {
@@ -294,8 +294,7 @@ mod tests {
         let sink: Arc<FakeEventSink> = Arc::new(FakeEventSink::new());
         let sink_dyn: Arc<dyn EventSink> = sink.clone();
         let stop = Arc::new(AtomicBool::new(true));
-        let handle = spawn_watch(path, "abc-uuid".into(), "pty-1".into(), sink_dyn, stop)
-            .expect("spawn watcher");
+        let handle = spawn_watch(path, "abc-uuid".into(), "pty-1".into(), sink_dyn, stop);
 
         handle.join().expect("join watcher");
 
@@ -323,8 +322,7 @@ mod tests {
             "pty-1".into(),
             sink_dyn,
             stop,
-        )
-        .expect("spawn watcher");
+        );
 
         handle.join().expect("join watcher");
 
@@ -341,8 +339,7 @@ mod tests {
             "pty-1".into(),
             second_sink_dyn,
             second_stop,
-        )
-        .expect("spawn watcher");
+        );
 
         second_handle.join().expect("join watcher");
 
@@ -435,8 +432,7 @@ mod tests {
         let sink: Arc<FakeEventSink> = Arc::new(FakeEventSink::new());
         let sink_dyn: Arc<dyn EventSink> = sink.clone();
         let stop = Arc::new(AtomicBool::new(true));
-        let handle = spawn_watch(path, "abc-uuid".into(), "pty-1".into(), sink_dyn, stop)
-            .expect("spawn watcher");
+        let handle = spawn_watch(path, "abc-uuid".into(), "pty-1".into(), sink_dyn, stop);
 
         handle.join().expect("join watcher");
 
@@ -450,8 +446,7 @@ mod tests {
         let sink: Arc<FakeEventSink> = Arc::new(FakeEventSink::new());
         let sink_dyn: Arc<dyn EventSink> = sink.clone();
         let stop = Arc::new(AtomicBool::new(true));
-        let handle = spawn_watch(path, "abc-uuid".into(), "pty-1".into(), sink_dyn, stop)
-            .expect("spawn watcher");
+        let handle = spawn_watch(path, "abc-uuid".into(), "pty-1".into(), sink_dyn, stop);
 
         handle.join().expect("join watcher");
 
@@ -468,8 +463,7 @@ mod tests {
         let sink: Arc<FakeEventSink> = Arc::new(FakeEventSink::new());
         let sink_dyn: Arc<dyn EventSink> = sink.clone();
         let stop = Arc::new(AtomicBool::new(true));
-        let handle = spawn_watch(path, "abc-uuid".into(), "pty-1".into(), sink_dyn, stop)
-            .expect("spawn watcher");
+        let handle = spawn_watch(path, "abc-uuid".into(), "pty-1".into(), sink_dyn, stop);
 
         handle.join().expect("join watcher");
 
@@ -483,8 +477,7 @@ mod tests {
         let sink: Arc<FakeEventSink> = Arc::new(FakeEventSink::new());
         let sink_dyn: Arc<dyn EventSink> = sink.clone();
         let stop = Arc::new(AtomicBool::new(true));
-        let handle = spawn_watch(path, "abc-uuid".into(), "pty-1".into(), sink_dyn, stop)
-            .expect("spawn watcher");
+        let handle = spawn_watch(path, "abc-uuid".into(), "pty-1".into(), sink_dyn, stop);
 
         handle.join().expect("join watcher");
 
@@ -504,8 +497,7 @@ mod tests {
             "pty-1".into(),
             sink_dyn,
             Arc::clone(&stop),
-        )
-        .expect("spawn watcher");
+        );
 
         std::thread::sleep(Duration::from_millis(50));
         std::thread::sleep(Duration::from_millis(1100));
