@@ -327,6 +327,15 @@ export const DiffPanelContent = ({
   // so theme and lineDiffType must be pushed together — passing only `theme`
   // silently reset lineDiffType back to Pierre's `word-alt` default.
   const workerPool = useWorkerPool()
+
+  // Serialize writes to the shared pool. `setRenderOptions` assigns the pool's
+  // internal `this.renderOptions` only AFTER awaiting theme resolution + the
+  // worker round-trip (node_modules/@pierre/diffs/dist/worker/WorkerPoolManager.js
+  // ~L124), so two overlapping calls can finish out of order and leave the pool
+  // on the OLDER value while the UI shows the newer one. Chaining each write
+  // after the previous guarantees the last-requested options win; the per-run
+  // `cancelled` flag then ensures only the latest run commits the synced value.
+  const poolWriteChainRef = useRef<Promise<unknown>>(Promise.resolve())
   useEffect(() => {
     const next: PoolRenderOptions = { theme, lineDiffType }
 
@@ -337,8 +346,17 @@ export const DiffPanelContent = ({
     }
 
     let cancelled = false
+    const previousWrite = poolWriteChainRef.current
 
-    const syncRenderOptions = async (): Promise<void> => {
+    const run = async (): Promise<void> => {
+      // Wait for the previous write so overlapping calls can't land out of
+      // order. A prior failure is irrelevant here — its own run reported it.
+      try {
+        await previousWrite
+      } catch {
+        // ignore the previous write's rejection; proceed with this one
+      }
+
       try {
         await workerPool.setRenderOptions(next)
         if (!cancelled) {
@@ -352,7 +370,9 @@ export const DiffPanelContent = ({
       }
     }
 
-    void syncRenderOptions()
+    const writePromise = run()
+    poolWriteChainRef.current = writePromise
+    void writePromise
 
     return (): void => {
       cancelled = true

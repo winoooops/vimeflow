@@ -1,5 +1,12 @@
 import { describe, test, expect, vi, beforeEach } from 'vitest'
-import { act, fireEvent, render, screen, within } from '@testing-library/react'
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ReactElement } from 'react'
 import { DiffPanelContent } from './DiffPanelContent'
@@ -1058,7 +1065,7 @@ describe('DiffPanelContent', () => {
   })
 
   describe('worker pool render-options sync', (): void => {
-    test('calls workerPool.setRenderOptions with the initial pool options on mount', (): void => {
+    test('calls workerPool.setRenderOptions with the initial pool options on mount', async (): Promise<void> => {
       vi.spyOn(useGitStatusModule, 'useGitStatus').mockReturnValue({
         files: [],
         filesCwd: null,
@@ -1078,11 +1085,15 @@ describe('DiffPanelContent', () => {
       // 'word'; the sync effect must push BOTH into the shared worker pool so
       // the renderer's workerManager-driven path picks them up. lineDiffType
       // matters because setRenderOptions defaults every omitted field —
-      // leaving it out would reset the pool to Pierre's 'word-alt'.
-      expect(workerPoolSetRenderOptionsMock).toHaveBeenCalledWith({
-        theme: 'pierre-dark',
-        lineDiffType: 'word',
-      })
+      // leaving it out would reset the pool to Pierre's 'word-alt'. Writes are
+      // serialized through a promise chain, so the call is scheduled a
+      // microtask later — await it.
+      await waitFor(() =>
+        expect(workerPoolSetRenderOptionsMock).toHaveBeenCalledWith({
+          theme: 'pierre-dark',
+          lineDiffType: 'word',
+        })
+      )
     })
 
     test('surfaces workerPool.setRenderOptions failures', async (): Promise<void> => {
@@ -1174,10 +1185,12 @@ describe('DiffPanelContent', () => {
         within(menu).getByRole('menuitem', { name: /pierre-light$/i })
       )
 
-      expect(workerPoolSetRenderOptionsMock).toHaveBeenLastCalledWith({
-        theme: 'pierre-light',
-        lineDiffType: 'word',
-      })
+      await waitFor(() =>
+        expect(workerPoolSetRenderOptionsMock).toHaveBeenLastCalledWith({
+          theme: 'pierre-light',
+          lineDiffType: 'word',
+        })
+      )
 
       expect(screen.getByTestId('multi-file-diff')).toHaveAttribute(
         'data-theme',
@@ -1248,10 +1261,12 @@ describe('DiffPanelContent', () => {
 
       // lineDiffType MUST ride along with theme — it is a pool-owned option,
       // so the HIGHLIGHT dropdown would be a no-op without this push.
-      expect(workerPoolSetRenderOptionsMock).toHaveBeenLastCalledWith({
-        theme: 'pierre-dark',
-        lineDiffType: 'char',
-      })
+      await waitFor(() =>
+        expect(workerPoolSetRenderOptionsMock).toHaveBeenLastCalledWith({
+          theme: 'pierre-dark',
+          lineDiffType: 'char',
+        })
+      )
 
       // Remount is gated on the synced value, so the diff keeps the prior
       // highlighting until the pool resolves.
@@ -1269,6 +1284,80 @@ describe('DiffPanelContent', () => {
         'data-line-diff-type',
         'char'
       )
+    })
+
+    test('serializes pool writes so a newer change waits for the prior write', async (): Promise<void> => {
+      const user = userEvent.setup()
+      const firstWrite = deferredWorkerOptions()
+      const secondWrite = deferredWorkerOptions()
+      workerPoolSetRenderOptionsMock
+        .mockReturnValueOnce(firstWrite.promise) // mount sync — left pending
+        .mockReturnValueOnce(secondWrite.promise) // theme change
+
+      vi.spyOn(useGitStatusModule, 'useGitStatus').mockReturnValue({
+        files: [
+          {
+            path: 'src/App.tsx',
+            status: 'modified',
+            staged: false,
+          },
+        ],
+        filesCwd: '/repo',
+        loading: false,
+        error: null,
+        refresh: vi.fn(),
+        idle: false,
+      })
+
+      vi.spyOn(useFileDiffModule, 'useFileDiff').mockReturnValue(
+        fileDiffMock({
+          diff: {
+            filePath: 'src/App.tsx',
+            oldPath: 'src/App.tsx',
+            newPath: 'src/App.tsx',
+            hunks: [],
+          },
+          loading: false,
+          error: null,
+          oldText: 'old',
+          newText: 'new',
+        })
+      )
+
+      render(<DiffPanelContent cwd="/repo" />)
+
+      // The mount write fires and is left pending (unresolved).
+      await waitFor(() =>
+        expect(workerPoolSetRenderOptionsMock).toHaveBeenCalledTimes(1)
+      )
+
+      // Change the theme while the mount write is still in flight.
+      await user.click(screen.getByRole('button', { name: /pierre-dark/i }))
+      const menu = await screen.findByRole('menu')
+      await user.click(
+        within(menu).getByRole('menuitem', { name: /pierre-light$/i })
+      )
+
+      // Serialization: the second write MUST NOT start until the first
+      // resolves. Overlapping `setRenderOptions` calls can land out of order
+      // and leave the shared pool on the stale value (WorkerPoolManager assigns
+      // `this.renderOptions` only after its awaits).
+      expect(workerPoolSetRenderOptionsMock).toHaveBeenCalledTimes(1)
+
+      // Resolve the first write; the chained second write then runs.
+      await act(async () => {
+        firstWrite.resolve()
+        await firstWrite.promise
+      })
+
+      await waitFor(() =>
+        expect(workerPoolSetRenderOptionsMock).toHaveBeenCalledTimes(2)
+      )
+
+      expect(workerPoolSetRenderOptionsMock).toHaveBeenLastCalledWith({
+        theme: 'pierre-light',
+        lineDiffType: 'word',
+      })
     })
   })
 })
