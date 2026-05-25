@@ -119,13 +119,13 @@ Starts the watcher pipeline for a PTY session. **Owns the full lifecycle:** remo
 
 `pid` is the detected agent PID (returned by `detector::detect_agent`), not the shell PID at the PTY root — Codex's `logs.process_uuid` indexes by the codex child PID. `pty_start` is captured at PTY spawn (`ManagedSession.started_at`) so the logs query can filter out PID-reuse and stale-loaded-thread matches. Both arguments are stored on `CodexAdapter` at construction (`CodexAdapter::new(pid, pty_start)` via the `for_attach(agent_type, pid, pty_start)` factory). The codex adapter wraps them in a private `BindContext` for its locator on each `status_source` call. `base::start_for` invokes `adapter.status_source(cwd, session_id)` once and codex's internal retry lives in `retry_locator` (5 attempts, 4 × 100ms inter-attempt sleeps, 400ms sleep budget on full exhaustion). Claude's impl ignores these fields — Claude's `status_source(cwd, sid)` is infallible.
 
-### `<dyn AgentAdapter>::stop`
+### `AgentWatcherService::stop`
 
 ```rust
-pub fn stop(state: &AgentWatcherState, session_id: &str) -> bool
+pub(crate) async fn stop(&self, session_id: String) -> Result<(), String>
 ```
 
-Stops the pipeline by dropping the `WatcherHandle` for `session_id`. Returns `true` if a handle was removed. The handle's `Drop` cascades — see [Lifecycle section](#lifecycle-watcherhandle-drop-cascade) below.
+Step D' moved stop onto the `AgentWatcherService` facade (`adapter/service.rs`); the former `<dyn AgentAdapter>::stop` inherent method was removed. `stop` calls `AgentWatcherState::remove(session_id)` directly — dropping the `WatcherHandle` whose `Drop` cascades the transcript-tail teardown (see [Lifecycle section](#lifecycle-watcherhandle-drop-cascade) below) — and returns `Err` when no handle was present.
 
 ### BackendState / IPC entry point
 
