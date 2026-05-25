@@ -287,7 +287,7 @@ The runtime details are split by responsibility:
 1. `base/path_security.rs` canonicalizes `trust_root`, walks to the deepest existing ancestor of `src.path`, asserts under `trust_root`, creates the parent, then re-canonicalizes and re-asserts.
 2. `base/watcher_runtime.rs` builds the `notify` watcher with a 100ms debounce, filters events on the target file, performs the inline-init read, and spawns the 3s polling fallback for WSL2/inotify gaps and atomic-write rename patterns.
 3. `base/diagnostics.rs` owns `watcher.event` / `watcher.slow_event` / `watcher.tx_path_change` support types: `EventTiming`, `PathHistory`, and `TxOutcome`.
-4. `base/transcript_state.rs` owns the transcript registry. When `parse_status` yields a transcript path, the watcher runtime routes through `TranscriptState::start_or_replace(adapter.clone(), …)`, which owns the `(transcript_path, cwd)` identity check, `Replaced` / `AlreadyRunning` short-circuit, and previous-handle cleanup.
+4. `base/transcript_state.rs` owns the transcript registry. When the watcher resolves a transcript path (via `TranscriptPathSource`), it routes through `TranscriptState::start_or_replace(streamer.clone(), …)` — `pub(crate)`, taking `Arc<dyn TranscriptStreamer>` as of step B'' (was `Arc<dyn AgentAdapter>`) — which owns the `(transcript_path, cwd)` identity check, `Replaced` / `AlreadyRunning` short-circuit, and previous-handle cleanup.
 5. `base/watcher_runtime.rs` constructs the `WatcherHandle` with `_watcher: Some(...)`, `transcript_state: state.clone()`, and `session_id: sid.clone()` so its `Drop` can cascade.
 
 ---
@@ -371,7 +371,7 @@ pub enum TranscriptStartStatus { Started, Replaced, AlreadyRunning }
 
 Constructed once inside `BackendState` and passed into watcher startup. **Visibility:** `pub #[doc(hidden)]` — production code goes through the trait surface (`AgentAdapter::start`), but `crates/backend/tests/transcript_*.rs` integration tests drive `TranscriptState::start_or_replace` directly to isolate transcript-parsing assertions from watcher-orchestration assertions. `#[doc(hidden)]` keeps it out of generated docs; a doc-comment on each pub item warns "Test-only public surface — production code MUST use AgentAdapter::start instead."
 
-`start_or_replace` takes `Arc<dyn AgentAdapter>` so the registry can route the spawn through `adapter.tail_transcript(…)` without re-coupling `base` to any specific adapter. The replace-vs-keep identity check on `(transcript_path, cwd)` is unchanged — only the spawn site changes.
+As of step B'', `start_or_replace` is `pub(crate)` and takes `Arc<dyn TranscriptStreamer>` (B' had it on the transitional `Arc<dyn AgentAdapter>` façade), so the registry routes the spawn through `streamer.tail(…)` without re-coupling `base` to any specific adapter or to the broader `AgentAdapter` surface. The replace-vs-keep identity check on `(transcript_path, cwd)` is unchanged — only the spawn site changes. (Surrounding `Arc<dyn AgentAdapter>` snippets in this section pre-date the split and describe the legacy monolithic shape; the live signature is the B'' one.)
 
 ---
 

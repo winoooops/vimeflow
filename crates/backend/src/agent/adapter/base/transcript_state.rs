@@ -5,16 +5,17 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
-use crate::agent::adapter::AgentAdapter;
+use crate::agent::adapter::traits::TranscriptStreamer;
 use crate::runtime::EventSink;
 
-/// Internal lifecycle type — created by adapter `tail_transcript`
+/// Internal lifecycle type — created by `TranscriptStreamer::tail`
 /// implementations (e.g., `claude_code::transcript::start_tailing` via
 /// `TranscriptHandle::new`, which is `pub(crate)`) and owned by
 /// `TranscriptState`'s internal `TranscriptWatcher` map. The type
 /// itself must remain `pub` because it appears in the
-/// `AgentAdapter::tail_transcript` trait signature, which is publicly
-/// visible from `agent::adapter::mod`. Construction is gated to the
+/// `TranscriptStreamer::tail` trait signature (and, until D' removes
+/// it, the transitional `AgentAdapter::tail_transcript` façade), which
+/// is visible from `agent::adapter`. Construction is gated to the
 /// crate via `pub(crate) fn new`; do not bypass that path.
 #[doc(hidden)]
 pub struct TranscriptHandle {
@@ -70,7 +71,7 @@ struct TranscriptWatcher {
 
 /// Runtime-managed registry of in-flight transcript tailers, one per
 /// session. Constructed once as part of `BackendState` and passed to the
-/// watcher runtime and adapter `tail_transcript` impls. `pub` supports
+/// watcher runtime and `TranscriptStreamer::tail` impls. `pub` supports
 /// direct instantiation in `#[cfg(test)]` integration tests under
 /// `crates/backend/tests/transcript_*.rs`; do not construct ad hoc instances
 /// in production code paths.
@@ -78,7 +79,7 @@ struct TranscriptWatcher {
 #[derive(Default, Clone)]
 pub struct TranscriptState {
     watchers: Arc<Mutex<HashMap<String, TranscriptWatcher>>>,
-    /// Per-session "start gate" — held across `tail_transcript` so the
+    /// Per-session "start gate" — held across `tail` so the
     /// notify callback and the 3s poll thread can't both pass the
     /// AlreadyRunning check, both spawn, and both emit duplicate
     /// `agent-tool-call` / `agent-turn` events from byte 0 of the
@@ -98,9 +99,18 @@ impl TranscriptState {
 
     /// Start tailing when none is active, or switch to a newer transcript
     /// path or workspace cwd.
-    pub fn start_or_replace(
+    ///
+    /// Step B'' narrowed the parameter from `Arc<dyn AgentAdapter>` to
+    /// `Arc<dyn TranscriptStreamer>` — `base` only ever needed the
+    /// `tail` spawn method, never the full adapter façade — and
+    /// narrowed visibility to `pub(crate)` (the only callers are the
+    /// watcher runtime + same-crate tests). The shared
+    /// `Arc<CompositeLocator>` plumbing from B' cycle 11 means
+    /// `bindings.streamer` already references the same allocation the
+    /// watcher's locator does.
+    pub(crate) fn start_or_replace(
         &self,
-        adapter: Arc<dyn AgentAdapter>,
+        streamer: Arc<dyn TranscriptStreamer>,
         events: Arc<dyn EventSink>,
         session_id: String,
         transcript_path: PathBuf,
@@ -110,7 +120,7 @@ impl TranscriptState {
         // one start_or_replace call per session can be inside the
         // check + spawn + insert critical section at a time. Without
         // this, the notify callback and 3s poll thread can both pass
-        // the AlreadyRunning check, both call adapter.tail_transcript,
+        // the AlreadyRunning check, both call streamer.tail,
         // and both emit events from byte 0 of the JSONL during the
         // tens-of-ms thread-spawn window before the loser's handle is
         // stopped (Claude review on PR #152, F2).
@@ -142,10 +152,10 @@ impl TranscriptState {
         // `start_or_replace` or `stop()` for this session can observe that
         // gap (both acquire the gate first, F4).
         //
-        // Trade-off: if `adapter.tail_transcript` fails AFTER the old
+        // Trade-off: if `streamer.tail` fails AFTER the old
         // watcher is stopped, the caller gets the error AND the session is
         // left with no active watcher. Previously (spawn-first order) a
-        // tail_transcript failure preserved the old watcher. The new
+        // tail failure preserved the old watcher. The new
         // behaviour is intentional for the Replaced path: a cwd change
         // means the old cwd is no longer the correct routing context, so a
         // failed swap should fail loudly rather than silently keep a
@@ -165,7 +175,7 @@ impl TranscriptState {
             handle.stop();
         }
 
-        let new_handle = adapter.tail_transcript(
+        let new_handle = streamer.tail(
             events,
             session_id.clone(),
             cwd.clone(),
@@ -211,7 +221,7 @@ impl TranscriptState {
         // Acquire the per-session start gate before touching `watchers`
         // (Claude review on PR #152, F4). Without this, an in-flight
         // `start_or_replace` could be between its drop-watchers-lock /
-        // tail_transcript-spawn / re-acquire-watchers steps when stop()
+        // tail-spawn / re-acquire-watchers steps when stop()
         // ran concurrently and removed the entry. `start_or_replace`
         // would then insert the freshly-spawned T1 as `Started` even
         // though `stop()` already ran — leaving T1 as a zombie tail
@@ -226,7 +236,7 @@ impl TranscriptState {
         // Intentionally do NOT remove this session's entry from
         // `start_gates`. If we deleted the gate after releasing it, a
         // subsequent `start_or_replace` would lookup the empty map
-        // slot, create a NEW gate, and enter `tail_transcript`
+        // slot, create a NEW gate, and enter `tail`
         // concurrently with another already-in-flight start that still
         // holds a clone of the OLD gate. Gates are ~56 bytes each
         // (`String` key + `Arc<Mutex<()>>` value); leaving them for
@@ -277,7 +287,7 @@ mod tests {
 
         let state = TranscriptState::new();
         let session_id = "session-1".to_string();
-        let adapter: Arc<dyn AgentAdapter> =
+        let adapter: Arc<dyn TranscriptStreamer> =
             Arc::new(crate::agent::adapter::claude_code::ClaudeCodeAdapter);
 
         let first_status = state
@@ -319,7 +329,7 @@ mod tests {
         let cwd = tmp.path().to_path_buf();
 
         let state = TranscriptState::new();
-        let adapter: Arc<dyn AgentAdapter> =
+        let adapter: Arc<dyn TranscriptStreamer> =
             Arc::new(crate::agent::adapter::claude_code::ClaudeCodeAdapter);
 
         let status = state
@@ -347,7 +357,7 @@ mod tests {
 
         let state = TranscriptState::new();
         let session_id = "session-cwd-change".to_string();
-        let adapter: Arc<dyn AgentAdapter> =
+        let adapter: Arc<dyn TranscriptStreamer> =
             Arc::new(crate::agent::adapter::claude_code::ClaudeCodeAdapter);
 
         let first = state
@@ -416,55 +426,28 @@ mod tests {
     /// produced duplicate `agent-tool-call` / `agent-turn` events on the
     /// frontend.
     ///
-    /// The invariant is observed via a custom adapter that records the
-    /// order of `tail_transcript` calls AND the order of stop-flag flips
+    /// The invariant is observed via a custom streamer that records the
+    /// order of `tail` calls AND the order of stop-flag flips
     /// on the handles it returns. After two `start_or_replace` calls (cwd
     /// A then cwd B on the same transcript_path), the recorded sequence
     /// must be: `spawn(A)`, `stop(A)`, `spawn(B)` — NOT `spawn(A)`,
     /// `spawn(B)`, `stop(A)`.
     ///
-    /// Claude review on PR #152, F19.
+    /// Claude review on PR #152, F19. Step B'' retyped the mock from a
+    /// full `AgentAdapter` (4 `unreachable!()` stubs + the real
+    /// `tail_transcript`) to a lean `TranscriptStreamer` — the only
+    /// trait `start_or_replace` now needs.
     #[test]
     fn replace_on_cwd_change_stops_old_before_spawning_new() {
         use std::sync::Mutex;
 
-        struct OrderingAdapter {
+        struct OrderingStreamer {
             events: Arc<Mutex<Vec<String>>>,
             stop_flags: Arc<Mutex<Vec<Arc<AtomicBool>>>>,
         }
 
-        impl crate::agent::adapter::types::TranscriptPathSource for OrderingAdapter {}
-
-        impl AgentAdapter for OrderingAdapter {
-            fn agent_type(&self) -> crate::agent::types::AgentType {
-                crate::agent::types::AgentType::ClaudeCode
-            }
-
-            fn located_status_source(
-                &self,
-                _cwd: &std::path::Path,
-                _session_id: &str,
-            ) -> Result<crate::agent::adapter::types::LocatedStatusSource, String> {
-                unreachable!("located_status_source not exercised in this test")
-            }
-
-            fn parse_status(
-                &self,
-                _session_id: &str,
-                _raw: &str,
-            ) -> Result<crate::agent::adapter::types::ParsedStatus, String> {
-                unreachable!("parse_status not exercised in this test")
-            }
-
-            fn validate_transcript(
-                &self,
-                _raw: &str,
-            ) -> Result<PathBuf, crate::agent::adapter::types::ValidateTranscriptError>
-            {
-                unreachable!("validate_transcript not exercised in this test")
-            }
-
-            fn tail_transcript(
+        impl TranscriptStreamer for OrderingStreamer {
+            fn tail(
                 &self,
                 _events: Arc<dyn crate::runtime::EventSink>,
                 _session_id: String,
@@ -516,7 +499,7 @@ mod tests {
 
         let events = Arc::new(Mutex::new(Vec::<String>::new()));
         let stop_flags = Arc::new(Mutex::new(Vec::<Arc<AtomicBool>>::new()));
-        let adapter: Arc<dyn AgentAdapter> = Arc::new(OrderingAdapter {
+        let adapter: Arc<dyn TranscriptStreamer> = Arc::new(OrderingStreamer {
             events: Arc::clone(&events),
             stop_flags: Arc::clone(&stop_flags),
         });

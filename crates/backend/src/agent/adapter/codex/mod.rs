@@ -64,16 +64,27 @@ impl CodexAdapter {
     /// Construct a `CodexAdapter` that shares the supplied
     /// `Arc<CompositeLocator>` with the caller. Used by
     /// `AgentBindings::for_attach` so `bindings.locator` and
-    /// `adapter_for_transcript_state` reference the same locator
-    /// instance — eliminating the prior double-construction +
-    /// inner-locator latent retry-double risk (PR #261 cycle 11
-    /// F31).
+    /// `bindings.streamer`'s internal locator reference the same
+    /// `Arc<CompositeLocator>` instance — eliminating the prior
+    /// double-construction + inner-locator latent retry-double risk
+    /// (PR #261 cycle 11 F31).
     pub(crate) fn with_locator(locator: Arc<CompositeLocator>) -> Self {
         Self { locator }
     }
 
     fn locator(&self) -> &CompositeLocator {
         &self.locator
+    }
+
+    /// Test-only: thin data pointer of the internal
+    /// `Arc<CompositeLocator>`. Lets `with_locator_shares_passed_locator_allocation`
+    /// assert that `with_locator` stores the exact `Arc` it was handed
+    /// (the cycle-11 F31 single-allocation invariant), now that the
+    /// B'-era bindings-level shared-`Arc` test was retired in B''
+    /// alongside `adapter_for_transcript_state`.
+    #[cfg(test)]
+    pub(crate) fn locator_data_ptr(&self) -> *const () {
+        Arc::as_ptr(&self.locator) as *const ()
     }
 }
 
@@ -182,6 +193,31 @@ impl AgentAdapter for CodexAdapter {
 mod adapter_tests {
     use super::*;
     use std::time::SystemTime;
+
+    /// Cycle-11 F31 single-allocation invariant, pinned at its source.
+    /// `with_locator` must STORE the `Arc<CompositeLocator>` it is
+    /// handed — not rebuild one — so `AgentBindings::for_attach` can
+    /// share a single locator between `bindings.locator` and
+    /// `bindings.streamer`. B'' relocated this guard here from the
+    /// bindings-level shared-`Arc` test that was retired alongside
+    /// `adapter_for_transcript_state`.
+    #[test]
+    fn with_locator_shares_passed_locator_allocation() {
+        let locator = Arc::new(CompositeLocator::new(
+            default_codex_home(),
+            12345,
+            SystemTime::UNIX_EPOCH,
+            PathBuf::from("/proc"),
+        ));
+        let expected_ptr = Arc::as_ptr(&locator) as *const ();
+        let adapter = CodexAdapter::with_locator(locator);
+        assert_eq!(
+            adapter.locator_data_ptr(),
+            expected_ptr,
+            "with_locator must store the passed Arc<CompositeLocator>, not rebuild one \
+             (cycle 11 F31 single-allocation invariant)",
+        );
+    }
 
     #[test]
     fn parse_status_returns_event_without_transcript_path_field() {

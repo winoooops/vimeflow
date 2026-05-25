@@ -17,13 +17,14 @@
 //! - [`TranscriptStreamer`] — "spawn a thread that emits events from
 //!   this JSONL" (former `AgentAdapter::tail_transcript`).
 //!
-//! All four are `pub(crate)` per frozen constraint #3. The existing
-//! `AgentAdapter` trait stays alive in B' as a transitional façade —
-//! `TranscriptState::start_or_replace` still takes `Arc<dyn AgentAdapter>`
-//! and B'' (the next step) is where it migrates onto
-//! `Arc<dyn TranscriptStreamer>`. Until then, each adapter struct
-//! implements both `AgentAdapter` and the four split traits side by
-//! side.
+//! All four are `pub(crate)` per frozen constraint #3. As of step
+//! B'', `TranscriptState::start_or_replace` takes
+//! `Arc<dyn TranscriptStreamer>` directly (B' had it on the
+//! transitional `Arc<dyn AgentAdapter>` façade). The `AgentAdapter`
+//! trait stays alive only as the not-yet-removed façade — D' deletes
+//! it with the `AgentWatcherService` boundary. Until then, each
+//! adapter struct implements both `AgentAdapter` and the split traits
+//! side by side.
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -115,10 +116,10 @@ pub(crate) trait TranscriptPathValidator: Send + Sync {
 /// `AgentAdapter::tail_transcript` in the post-B' world.
 ///
 /// `TranscriptHandle` (defined in `base::transcript_state`) is the
-/// per-stream stop / generation handle the watcher already owns;
-/// B'' will migrate `TranscriptState::start_or_replace` to take
-/// `Arc<dyn TranscriptStreamer>` directly instead of going through
-/// `Arc<dyn AgentAdapter>`.
+/// per-stream stop / generation handle the watcher already owns.
+/// As of step B'', `TranscriptState::start_or_replace` takes
+/// `Arc<dyn TranscriptStreamer>` directly (it previously went through
+/// the transitional `Arc<dyn AgentAdapter>` façade).
 pub(crate) trait TranscriptStreamer: Send + Sync {
     fn tail(
         &self,
