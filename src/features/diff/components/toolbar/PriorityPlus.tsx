@@ -145,7 +145,7 @@ export const PriorityPlus = ({
 
         return (
           <div
-            key={index}
+            key={stableItemKey(child, index)}
             ref={(el): void => {
               itemRefs.current[index] = el
             }}

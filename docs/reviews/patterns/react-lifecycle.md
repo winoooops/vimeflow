@@ -2,8 +2,8 @@
 id: react-lifecycle
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-05-20
-ref_count: 5
+last_updated: 2026-05-25
+ref_count: 6
 ---
 
 # React Lifecycle
@@ -186,3 +186,12 @@ to avoid unintended re-runs (e.g., PTY respawning on every cwd change).
 - **Finding:** Hoisting `useCommandPalette` out of `CommandPalette.tsx` and into `WorkspaceView` turned `clampedSelectedIndex` and `filteredResults` from internally-derived state into independent props. The activeDescendantId expression `filteredResults[clampedSelectedIndex].id` was preserved verbatim from the pre-hoist code because the hook still guarantees the joint invariant `clampedSelectedIndex === -1 ⟺ filteredResults.length === 0`. Inside the hook, the invariant was automatic; across the prop boundary, it became an unstated contract — any future caller wiring `CommandPalette` directly (without `useCommandPalette`) can supply a mismatched pair (e.g. `clampedSelectedIndex=0`, `filteredResults=[]`) and crash the workspace error boundary with `TypeError: Cannot read properties of undefined (reading 'id')`. Class of bug: when a component's internal invariant gets externalized into prop space, the expressions that depended on the encapsulated form must be re-defended at the new boundary.
 - **Fix:** Guarded the lookup: compute `activeCommand = clampedSelectedIndex >= 0 ? filteredResults[clampedSelectedIndex] : undefined` first, then return `activeCommand ? \`command-${activeCommand.id}\` : undefined`. A mismatched-pair input now degrades to "no active descendant" instead of crashing. Added a regression test in `CommandPalette.test.tsx` that drives the unsafe input (`filteredResults: [], clampedSelectedIndex: 0`) and asserts the input has no `aria-activedescendant` attribute. Code-review heuristic: when a hook moves up a level via the controlled-component pattern, sweep every expression in the component that depended on co-derived state for an implicit invariant — and either defend it at the new prop boundary or encode the invariant in the type signature.
 - **Commit:** same commit as this entry
+
+### 20. Positional wrapper keys migrate state when keyed children move
+
+- **Source:** github-codex-connector | PR #263 | 2026-05-25
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/diff/components/toolbar/PriorityPlus.tsx`
+- **Finding:** `PriorityPlus` wrapped each keyed toolbar chip in a `<div key={index}>`. When a chip was inserted or removed before stateful controls such as dropdowns, React reused the wrapper at the same index for a different logical child, allowing open/active state to migrate to the wrong chip.
+- **Fix:** Key wrapper nodes from each child's stable React key, falling back to the index only for unkeyed children. Added a regression test with a stateful keyed child that preserves state when another child is inserted before it.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

@@ -183,7 +183,7 @@ between display and mutation operations.
 - **Severity:** MEDIUM
 - **File:** `src/features/diff/services/gitService.ts`
 - **Finding:** Mock-synthesized `rawDiff` relied on optional path fields to carry `/dev/null`, so all-added or all-removed mock fixtures without those sentinels emitted ordinary `--- a/<path>` / `+++ b/<path>` headers that future `git apply` consumers would reject for new or deleted files.
-- **Fix:** Infer synthetic added/deleted file status from explicit sentinels or all-added/all-removed hunks, emit the correct `/dev/null` side, and include the matching `new file mode` / `deleted file mode` line.
+- **Fix:** Infer synthetic added/deleted file status from explicit sentinels or all-added/all-removed hunks, emit the correct `/dev/null` side in both the `diff --git` and `---`/`+++` headers, and include the matching `new file mode` / `deleted file mode` line.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
 
 ### 20. Rename probes must stay in the active diff scope

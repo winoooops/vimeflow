@@ -79,17 +79,11 @@ export const useFileDiff = (
     }
   }, [filePath, staged, untracked, cwd])
 
-  // `response.fileDiff` uses the ts-rs `bindings/FileDiff` shape
-  // (`oldPath: string | null`), while the local `FileDiff` exposed via the
-  // derived `diff` getter still uses `oldPath?: string`. The two shapes are
-  // structurally identical at runtime; the cast just bridges the historical
-  // `null` vs `undefined` divergence so the back-compat getter keeps the
-  // local-API contract until Task 1.10 collapses them.
   const fileDiff = response?.fileDiff ?? null
 
   return {
     response,
-    diff: fileDiff as FileDiff | null,
+    diff: fileDiff,
     loading,
     error,
   }

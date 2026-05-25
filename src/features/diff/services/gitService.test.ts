@@ -74,7 +74,7 @@ describe('MockGitService', () => {
     expect(response.oldText).toBe('')
     expect(response.newText).toContain('use reqwest::Client;')
     expect(response.rawDiff).toContain(
-      'diff --git a/src/utils/api-helper.rs b/src/utils/api-helper.rs'
+      'diff --git a/dev/null b/src/utils/api-helper.rs'
     )
     expect(response.rawDiff).toContain('new file mode 100644\n')
     expect(response.rawDiff).toContain('--- /dev/null\n')
@@ -110,7 +110,7 @@ describe('MockGitService', () => {
 
       expect(response.oldText).toBe('')
       expect(response.newText).toBe('export const x = 1\n\n')
-      expect(response.rawDiff).toContain(`diff --git a/${file} b/${file}`)
+      expect(response.rawDiff).toContain(`diff --git a/dev/null b/${file}`)
       expect(response.rawDiff).toContain('new file mode 100644\n')
       expect(response.rawDiff).toContain('--- /dev/null\n')
       expect(response.rawDiff).toContain(`+++ b/${file}\n`)
@@ -124,9 +124,7 @@ describe('MockGitService', () => {
 
     expect(response.oldText).toContain('"compilerOptions"')
     expect(response.newText).toBe('')
-    expect(response.rawDiff).toContain(
-      'diff --git a/tsconfig.json b/tsconfig.json'
-    )
+    expect(response.rawDiff).toContain('diff --git a/tsconfig.json b/dev/null')
     expect(response.rawDiff).toContain('deleted file mode 100644\n')
     expect(response.rawDiff).toContain('--- a/tsconfig.json\n')
     expect(response.rawDiff).toContain('+++ /dev/null\n')
@@ -165,7 +163,7 @@ describe('MockGitService', () => {
 
       expect(response.oldText).toBe('export const x = 1\n\n')
       expect(response.newText).toBe('')
-      expect(response.rawDiff).toContain(`diff --git a/${file} b/${file}`)
+      expect(response.rawDiff).toContain(`diff --git a/${file} b/dev/null`)
       expect(response.rawDiff).toContain('deleted file mode 100644\n')
       expect(response.rawDiff).toContain(`--- a/${file}\n`)
       expect(response.rawDiff).toContain('+++ /dev/null\n')

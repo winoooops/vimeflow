@@ -21,10 +21,10 @@ const synthesizeDiffResponse = (fileDiff: FileDiff): GetGitDiffResponse => {
   const newPath = fileDiff.newPath ?? fileDiff.filePath
   const patchOldPath = changeKind === 'added' ? '/dev/null' : oldPath
   const patchNewPath = changeKind === 'deleted' ? '/dev/null' : newPath
-  const diffOldPath = patchOldPath === '/dev/null' ? newPath : patchOldPath
-  const diffNewPath = patchNewPath === '/dev/null' ? oldPath : patchNewPath
+  const diffOldPath = diffHeaderPath('a', patchOldPath)
+  const diffNewPath = diffHeaderPath('b', patchNewPath)
 
-  rawDiffLines.push(`diff --git a/${diffOldPath} b/${diffNewPath}`)
+  rawDiffLines.push(`diff --git ${diffOldPath} ${diffNewPath}`)
   if (changeKind === 'added') {
     rawDiffLines.push('new file mode 100644')
   } else if (changeKind === 'deleted') {
@@ -50,11 +50,8 @@ const synthesizeDiffResponse = (fileDiff: FileDiff): GetGitDiffResponse => {
     }
   }
 
-  // Bindings `FileDiff` declares `oldPath: string | null` / `newPath: string |
-  // null`; the local `FileDiff` declares them as optional `string | undefined`.
-  // Same runtime shape (Pierre and the parser treat absent identically), but
-  // ts-rs surfaces `null` so we widen the local shape to satisfy the bindings
-  // contract. Task 1.10 collapses the two shapes into one.
+  // Bindings `FileDiff` requires `oldPath` / `newPath` keys while the local
+  // `FileDiff` permits them to be absent. Task 1.10 collapses the two shapes.
   return {
     fileDiff: fileDiff as GetGitDiffResponse['fileDiff'],
     oldText: linesToText(oldLines),
@@ -140,6 +137,9 @@ const rawLinesToText = (lines: readonly string[]): string =>
 
 const patchSidePath = (prefix: 'a' | 'b', filePath: string): string =>
   filePath === '/dev/null' ? '/dev/null' : `${prefix}/${filePath}`
+
+const diffHeaderPath = (prefix: 'a' | 'b', filePath: string): string =>
+  filePath === '/dev/null' ? `${prefix}/dev/null` : `${prefix}/${filePath}`
 
 /** Git service interface for diff operations */
 export interface GitService {

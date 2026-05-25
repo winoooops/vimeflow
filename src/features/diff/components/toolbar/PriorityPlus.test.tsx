@@ -1,5 +1,5 @@
-import type { ReactElement } from 'react'
-import { act, render, screen } from '@testing-library/react'
+import { useState, type ReactElement } from 'react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { PriorityPlus } from './PriorityPlus'
 
@@ -96,6 +96,23 @@ const renderItems = (count: number): ReactElement[] =>
       item {index}
     </button>
   ))
+
+const StatefulChip = ({ label }: { label: string }): ReactElement => {
+  const [open, setOpen] = useState(false)
+
+  return (
+    <button
+      type="button"
+      data-testid={`stateful-${label}`}
+      onClick={(): void => setOpen((current) => !current)}
+    >
+      {label} {open ? 'open' : 'closed'}
+    </button>
+  )
+}
+
+const renderStatefulItems = (labels: readonly string[]): ReactElement[] =>
+  labels.map((label) => <StatefulChip key={label} label={label} />)
 
 // Returns the wrapper <div> that PriorityPlus mounts around the i-th
 // child. Using parentElement is unavoidable here: only the test's own
@@ -279,6 +296,22 @@ describe('PriorityPlus', () => {
     expect(
       screen.getByRole('button', { name: /more controls/i })
     ).toBeInTheDocument()
+  })
+
+  test('uses child keys for wrappers so state follows inserted items', () => {
+    const { rerender } = render(
+      <PriorityPlus>{renderStatefulItems(['a', 'b', 'c'])}</PriorityPlus>
+    )
+
+    fireEvent.click(screen.getByTestId('stateful-b'))
+
+    expect(screen.getByTestId('stateful-b')).toHaveTextContent('b open')
+
+    rerender(
+      <PriorityPlus>{renderStatefulItems(['a', 'x', 'b', 'c'])}</PriorityPlus>
+    )
+
+    expect(screen.getByTestId('stateful-b')).toHaveTextContent('b open')
   })
 
   test('hidden items remain in the DOM so the OverflowMenu can render them', () => {

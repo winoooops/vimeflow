@@ -82,8 +82,7 @@ const fileDiffMock = ({
     diff === null
       ? null
       : {
-          // Cast to bridge the local `FileDiff` (oldPath?: string) → bindings
-          // `FileDiff` (oldPath: string | null). Same runtime shape.
+          // Local FileDiff permits absent path keys; bindings require them.
           fileDiff: diff as GetGitDiffResponse['fileDiff'],
           oldText,
           newText,
