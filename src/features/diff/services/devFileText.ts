@@ -1,5 +1,7 @@
 import { lstat, readFile, readlink } from 'node:fs/promises'
 
+export const MAX_DIFF_FILE_TEXT_BYTES = 2 * 1024 * 1024
+
 const hasFsErrorCode = (err: unknown, code: string): boolean =>
   typeof err === 'object' &&
   err !== null &&
@@ -14,6 +16,10 @@ export const readFileTextNoFollow = async (
 
     if (metadata.isSymbolicLink()) {
       return await readlink(filePath)
+    }
+
+    if (!metadata.isFile() || metadata.size > MAX_DIFF_FILE_TEXT_BYTES) {
+      return ''
     }
 
     return await readFile(filePath, 'utf-8')

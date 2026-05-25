@@ -2,7 +2,7 @@ import { mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, test } from 'vitest'
-import { readFileTextNoFollow } from './devFileText'
+import { MAX_DIFF_FILE_TEXT_BYTES, readFileTextNoFollow } from './devFileText'
 
 let tempDir: string | null = null
 
@@ -46,5 +46,13 @@ describe('readFileTextNoFollow', () => {
     await symlink(targetPath, linkPath)
 
     await expect(readFileTextNoFollow(linkPath)).resolves.toBe(targetPath)
+  })
+
+  test('returns empty text for oversized regular files', async () => {
+    const dir = await makeTempDir()
+    const filePath = path.join(dir, 'large.bin')
+    await writeFile(filePath, Buffer.alloc(MAX_DIFF_FILE_TEXT_BYTES + 1, 97))
+
+    await expect(readFileTextNoFollow(filePath)).resolves.toBe('')
   })
 })

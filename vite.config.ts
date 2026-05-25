@@ -808,7 +808,9 @@ function parseDiff(diffText: string, filePath: string): FileDiff {
  */
 function readBody(
   req: NodeJS.ReadableStream & {
+    destroy?: () => void
     on: (event: string, listener: (...args: unknown[]) => void) => void
+    resume?: () => void
   }
 ): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -824,6 +826,11 @@ function readBody(
       if (byteLength > MAX_REQUEST_BODY_BYTES) {
         rejected = true
         reject(new Error('Request body too large'))
+        if (req.destroy !== undefined) {
+          req.destroy()
+        } else {
+          req.resume?.()
+        }
 
         return
       }

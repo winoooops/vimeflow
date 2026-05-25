@@ -15,6 +15,7 @@ use crate::filesystem::scope::{
 /// Timeout for git subprocess calls. Prevents indefinite blocking on
 /// hung NFS mounts, slow hooks, or unresponsive credential helpers.
 const GIT_TIMEOUT: Duration = Duration::from_secs(30);
+const MAX_DIFF_FILE_TEXT_BYTES: u64 = 2 * 1024 * 1024;
 
 /// Run a git command with a timeout. Spawns the process first so the
 /// child handle is available for killing on timeout — prevents orphaned
@@ -1244,6 +1245,10 @@ fn read_worktree_text_no_follow(toplevel: &Path, path: &str) -> Result<String, S
         let target = std::fs::read_link(&abs_path)
             .map_err(|e| format!("readlink {}: {}", abs_path.display(), e))?;
         return Ok(path_to_lossy_text(&target));
+    }
+
+    if !metadata.is_file() || metadata.len() > MAX_DIFF_FILE_TEXT_BYTES {
+        return Ok(String::new());
     }
 
     match std::fs::read(&abs_path) {

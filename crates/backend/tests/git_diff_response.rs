@@ -171,6 +171,29 @@ fn non_utf8_worktree_file_returns_lossy_new_text() {
     );
 }
 
+#[test]
+fn oversized_worktree_file_returns_empty_new_text() {
+    let (state, _app_data) = make_state();
+    let repo = init_repo();
+
+    write_and_add(repo.path(), "large.txt", "small\n");
+    commit(repo.path(), "seed");
+
+    std::fs::write(
+        repo.path().join("large.txt"),
+        vec![b'x'; 2 * 1024 * 1024 + 1],
+    )
+    .expect("write oversized file");
+
+    let v = diff_value(&state, repo.path(), "large.txt", false, None);
+
+    assert_eq!(v["oldText"], "small\n");
+    assert_eq!(
+        v["newText"], "",
+        "oversized working-tree files should not be read into the diff payload"
+    );
+}
+
 #[cfg(unix)]
 #[test]
 fn unstaged_symlink_returns_link_target_as_new_text() {
