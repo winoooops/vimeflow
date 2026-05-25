@@ -3,7 +3,7 @@ id: react-lifecycle
 category: react-patterns
 created: 2026-04-09
 last_updated: 2026-05-25
-ref_count: 6
+ref_count: 7
 ---
 
 # React Lifecycle
@@ -194,4 +194,13 @@ to avoid unintended re-runs (e.g., PTY respawning on every cwd change).
 - **File:** `src/features/diff/components/toolbar/PriorityPlus.tsx`
 - **Finding:** `PriorityPlus` wrapped each keyed toolbar chip in a `<div key={index}>`. When a chip was inserted or removed before stateful controls such as dropdowns, React reused the wrapper at the same index for a different logical child, allowing open/active state to migrate to the wrong chip.
 - **Fix:** Key wrapper nodes from each child's stable React key, falling back to the index only for unkeyed children. Added a regression test with a stateful keyed child that preserves state when another child is inserted before it.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 21. Responsive coercion display state overwrote the saved user preference
+
+- **Source:** github-claude | PR #263 follow-up | 2026-05-25
+- **Severity:** MEDIUM
+- **File:** `src/features/diff/components/DiffPanelContent.tsx`
+- **Finding:** The diff toolbar displayed coerced `unified` mode while the pane was too narrow for split view, but its change handler still wrote directly to the saved `diffStyle` state. Clicking the already-active `unified` segment permanently replaced a saved `split` preference, so widening the pane did not restore split view.
+- **Fix:** Track `paneWidth=0` as an unmeasured sentinel, derive forced-unified display state only after measurement, and ignore the no-op `unified` write while split is merely being coerced. Added a regression test that clicks forced-unified at narrow width and verifies split returns when the pane widens.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

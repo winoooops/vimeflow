@@ -533,12 +533,12 @@ fn parse_git_diff(output: &str, file_path: &str) -> FileDiff {
             .strip_prefix("rename from ")
             .or_else(|| line.strip_prefix("copy from "))
         {
-            old_path = Some(path.to_string());
+            old_path = Some(decode_git_patch_path(path));
         } else if let Some(path) = line
             .strip_prefix("rename to ")
             .or_else(|| line.strip_prefix("copy to "))
         {
-            new_path = Some(path.to_string());
+            new_path = Some(decode_git_patch_path(path));
         } else if line.starts_with("@@") {
             // Save previous hunk if exists
             if let Some(hunk) = current_hunk.take() {
@@ -626,6 +626,60 @@ fn parse_git_diff(output: &str, file_path: &str) -> FileDiff {
         new_path,
         hunks,
     }
+}
+
+fn decode_git_patch_path(path: &str) -> String {
+    let Some(quoted) = path.strip_prefix('"').and_then(|s| s.strip_suffix('"')) else {
+        return path.to_string();
+    };
+
+    let mut bytes = Vec::with_capacity(quoted.len());
+    let mut chars = quoted.chars().peekable();
+
+    while let Some(ch) = chars.next() {
+        if ch != '\\' {
+            let mut buf = [0; 4];
+            bytes.extend_from_slice(ch.encode_utf8(&mut buf).as_bytes());
+            continue;
+        }
+
+        let Some(escaped) = chars.next() else {
+            bytes.push(b'\\');
+            break;
+        };
+
+        match escaped {
+            '0'..='7' => {
+                let mut value = escaped.to_digit(8).unwrap_or(0) as u16;
+                for _ in 0..2 {
+                    let Some(next) = chars.peek().copied() else {
+                        break;
+                    };
+                    let Some(digit) = next.to_digit(8) else {
+                        break;
+                    };
+                    value = (value * 8) + digit as u16;
+                    chars.next();
+                }
+                bytes.push(value as u8);
+            }
+            'a' => bytes.push(0x07),
+            'b' => bytes.push(0x08),
+            'f' => bytes.push(0x0c),
+            'n' => bytes.push(b'\n'),
+            'r' => bytes.push(b'\r'),
+            't' => bytes.push(b'\t'),
+            'v' => bytes.push(0x0b),
+            '\\' => bytes.push(b'\\'),
+            '"' => bytes.push(b'"'),
+            other => {
+                let mut buf = [0; 4];
+                bytes.extend_from_slice(other.encode_utf8(&mut buf).as_bytes());
+            }
+        }
+    }
+
+    String::from_utf8_lossy(&bytes).into_owned()
 }
 
 /// Parse hunk range like "-102,7" or "+102,6" into (start, lines)
@@ -2001,6 +2055,28 @@ rename to new_name.txt
         assert_eq!(file_diff.new_path, Some("new_name.txt".to_string()));
         assert_eq!(file_diff.hunks.len(), 1);
         assert_eq!(file_diff.hunks[0].id, "hunk-1-1");
+    }
+
+    #[test]
+    fn test_parse_git_diff_decodes_quoted_rename_metadata() {
+        let diff = r#"diff --git "a/old\tname.txt" "b/new\nname.txt"
+similarity index 88%
+rename from "old\tname.txt"
+rename to "new\nname.txt"
+@@ -1,2 +1,2 @@
+ line 1
+-old
++new
+"#;
+        let file_diff = parse_git_diff(diff, "new\nname.txt");
+
+        assert_eq!(file_diff.old_path, Some("old\tname.txt".to_string()));
+        assert_eq!(file_diff.new_path, Some("new\nname.txt".to_string()));
+    }
+
+    #[test]
+    fn test_decode_git_patch_path_handles_octal_utf8() {
+        assert_eq!(decode_git_patch_path(r#""caf\303\251.txt""#), "café.txt");
     }
 
     #[test]

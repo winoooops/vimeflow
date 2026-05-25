@@ -68,21 +68,23 @@ describe('MockGitService', () => {
     expect(response.rawDiff.endsWith('\n')).toBe(true)
   })
 
-  test('getDiff synthesizes /dev/null old header for new files', async () => {
+  test('getDiff keeps real paths in diff --git header for new files', async () => {
     const response = await service.getDiff('src/utils/api-helper.rs')
 
     expect(response.oldText).toBe('')
     expect(response.newText).toContain('use reqwest::Client;')
     expect(response.rawDiff).toContain(
-      'diff --git a/dev/null b/src/utils/api-helper.rs'
+      'diff --git a/src/utils/api-helper.rs b/src/utils/api-helper.rs'
     )
     expect(response.rawDiff).toContain('new file mode 100644\n')
     expect(response.rawDiff).toContain('--- /dev/null\n')
     expect(response.rawDiff).toContain('+++ b/src/utils/api-helper.rs\n')
-    expect(response.rawDiff).not.toContain('a//dev/null')
+    expect(response.rawDiff).not.toContain('a/dev/null')
+    expect(response.fileDiff.oldPath).toBe('/dev/null')
+    expect(response.fileDiff.newPath).toBe('src/utils/api-helper.rs')
   })
 
-  test('getDiff infers new-file /dev/null headers from all-added hunks', async () => {
+  test('getDiff infers new-file patch header from all-added hunks', async () => {
     const file = 'src/new-from-hunks.ts'
 
     const addedDiff: FileDiff = {
@@ -110,28 +112,34 @@ describe('MockGitService', () => {
 
       expect(response.oldText).toBe('')
       expect(response.newText).toBe('export const x = 1\n\n')
-      expect(response.rawDiff).toContain(`diff --git a/dev/null b/${file}`)
+      expect(response.rawDiff).toContain(`diff --git a/${file} b/${file}`)
       expect(response.rawDiff).toContain('new file mode 100644\n')
       expect(response.rawDiff).toContain('--- /dev/null\n')
       expect(response.rawDiff).toContain(`+++ b/${file}\n`)
+      expect(response.fileDiff.oldPath).toBeNull()
+      expect(response.fileDiff.newPath).toBeNull()
     } finally {
       delete mockFileDiffs[file]
     }
   })
 
-  test('getDiff synthesizes /dev/null new header for deleted files', async () => {
+  test('getDiff keeps real paths in diff --git header for deleted files', async () => {
     const response = await service.getDiff('tsconfig.json')
 
     expect(response.oldText).toContain('"compilerOptions"')
     expect(response.newText).toBe('')
-    expect(response.rawDiff).toContain('diff --git a/tsconfig.json b/dev/null')
+    expect(response.rawDiff).toContain(
+      'diff --git a/tsconfig.json b/tsconfig.json'
+    )
     expect(response.rawDiff).toContain('deleted file mode 100644\n')
     expect(response.rawDiff).toContain('--- a/tsconfig.json\n')
     expect(response.rawDiff).toContain('+++ /dev/null\n')
-    expect(response.rawDiff).not.toContain('b//dev/null')
+    expect(response.rawDiff).not.toContain('b/dev/null')
+    expect(response.fileDiff.oldPath).toBe('tsconfig.json')
+    expect(response.fileDiff.newPath).toBe('/dev/null')
   })
 
-  test('getDiff infers deleted-file /dev/null headers from all-removed hunks', async () => {
+  test('getDiff infers deleted-file patch header from all-removed hunks', async () => {
     const file = 'src/deleted-from-hunks.ts'
 
     const deletedDiff: FileDiff = {
@@ -163,10 +171,12 @@ describe('MockGitService', () => {
 
       expect(response.oldText).toBe('export const x = 1\n\n')
       expect(response.newText).toBe('')
-      expect(response.rawDiff).toContain(`diff --git a/${file} b/dev/null`)
+      expect(response.rawDiff).toContain(`diff --git a/${file} b/${file}`)
       expect(response.rawDiff).toContain('deleted file mode 100644\n')
       expect(response.rawDiff).toContain(`--- a/${file}\n`)
       expect(response.rawDiff).toContain('+++ /dev/null\n')
+      expect(response.fileDiff.oldPath).toBeNull()
+      expect(response.fileDiff.newPath).toBeNull()
     } finally {
       delete mockFileDiffs[file]
     }

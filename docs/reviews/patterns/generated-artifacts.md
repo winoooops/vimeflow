@@ -3,7 +3,7 @@ id: generated-artifacts
 category: code-quality
 created: 2026-04-14
 last_updated: 2026-05-25
-ref_count: 1
+ref_count: 2
 ---
 
 # Generated Artifacts

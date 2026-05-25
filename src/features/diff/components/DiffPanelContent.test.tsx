@@ -1,5 +1,5 @@
 import { describe, test, expect, vi, beforeEach } from 'vitest'
-import { act, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import type { ReactElement } from 'react'
 import { DiffPanelContent } from './DiffPanelContent'
 import * as useGitStatusModule from '../hooks/useGitStatus'
@@ -253,8 +253,8 @@ describe('DiffPanelContent', () => {
     expect(layout).toHaveClass('min-h-0')
     expect(layout).toHaveClass('min-w-0')
 
-    // Initial pane width (SPLIT_MIN_WIDTH_PX = 720) is above DIFF_MIN_WIDTH_PX
-    // so MultiFileDiff mounts immediately even before a ResizeObserver trigger.
+    // Initial pane width is the unmeasured sentinel, so MultiFileDiff mounts
+    // immediately before a ResizeObserver trigger without forcing narrow mode.
     expect(screen.getByTestId('multi-file-diff')).toBeInTheDocument()
 
     // Chip toolbar (controlled component) is mounted alongside.
@@ -483,6 +483,25 @@ describe('DiffPanelContent', () => {
 
       const diff = screen.getByTestId('multi-file-diff')
       expect(diff.getAttribute('data-diff-style')).toBe('unified')
+    })
+
+    test('keeps split preference when clicking forced unified below split width', (): void => {
+      render(<DiffPanelContent cwd="/repo" />)
+
+      setPaneWidth(SPLIT_MIN_WIDTH_PX - 1)
+
+      expect(screen.getByTestId('multi-file-diff')).toHaveAttribute(
+        'data-diff-style',
+        'unified'
+      )
+
+      fireEvent.click(screen.getByRole('button', { name: 'unified' }))
+      setPaneWidth(SPLIT_MIN_WIDTH_PX + 1)
+
+      expect(screen.getByTestId('multi-file-diff')).toHaveAttribute(
+        'data-diff-style',
+        'split'
+      )
     })
 
     test('renders split when paneWidth >= SPLIT_MIN_WIDTH_PX (default diffStyle)', (): void => {

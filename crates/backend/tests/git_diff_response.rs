@@ -526,6 +526,30 @@ fn renamed_file_resolves_old_and_new_paths_independently() {
     assert_eq!(parsed["newPath"], "new_name.txt");
 }
 
+#[test]
+fn quoted_rename_paths_resolve_old_and_new_text() {
+    let (state, _app_data) = make_state();
+    let repo = init_repo();
+
+    write_and_add(repo.path(), "old\tname.txt", "shared body\n");
+    commit(repo.path(), "seed");
+
+    run_git(repo.path(), &["mv", "old\tname.txt", "new\tname.txt"]);
+
+    let v = diff_value(&state, repo.path(), "new\tname.txt", true, None);
+
+    assert_eq!(
+        v["oldText"], "shared body\n",
+        "quoted rename old path should resolve HEAD:<oldPath>"
+    );
+    assert_eq!(
+        v["newText"], "shared body\n",
+        "quoted rename new path should resolve :<newPath>"
+    );
+    assert_eq!(v["fileDiff"]["oldPath"], "old\tname.txt");
+    assert_eq!(v["fileDiff"]["newPath"], "new\tname.txt");
+}
+
 // Unused helper kept for symmetry with future tests that need a tracked
 // working-tree edit; silences `dead_code` if any test stops using it later.
 #[allow(dead_code)]

@@ -21,8 +21,13 @@ const synthesizeDiffResponse = (fileDiff: FileDiff): GetGitDiffResponse => {
   const newPath = fileDiff.newPath ?? fileDiff.filePath
   const patchOldPath = changeKind === 'added' ? '/dev/null' : oldPath
   const patchNewPath = changeKind === 'deleted' ? '/dev/null' : newPath
-  const diffOldPath = diffHeaderPath('a', patchOldPath)
-  const diffNewPath = diffHeaderPath('b', patchNewPath)
+  const [diffOldPath, diffNewPath] = diffHeaderPaths(oldPath, newPath)
+
+  const normalizedFileDiff: GetGitDiffResponse['fileDiff'] = {
+    ...fileDiff,
+    oldPath: fileDiff.oldPath ?? null,
+    newPath: fileDiff.newPath ?? null,
+  }
 
   rawDiffLines.push(`diff --git ${diffOldPath} ${diffNewPath}`)
   if (changeKind === 'added') {
@@ -50,10 +55,8 @@ const synthesizeDiffResponse = (fileDiff: FileDiff): GetGitDiffResponse => {
     }
   }
 
-  // Bindings `FileDiff` requires `oldPath` / `newPath` keys while the local
-  // `FileDiff` permits them to be absent. Task 1.10 collapses the two shapes.
   return {
-    fileDiff: fileDiff as GetGitDiffResponse['fileDiff'],
+    fileDiff: normalizedFileDiff,
     oldText: linesToText(oldLines),
     newText: linesToText(newLines),
     rawDiff: rawLinesToText(rawDiffLines),
@@ -138,8 +141,20 @@ const rawLinesToText = (lines: readonly string[]): string =>
 const patchSidePath = (prefix: 'a' | 'b', filePath: string): string =>
   filePath === '/dev/null' ? '/dev/null' : `${prefix}/${filePath}`
 
-const diffHeaderPath = (prefix: 'a' | 'b', filePath: string): string =>
-  filePath === '/dev/null' ? `${prefix}/dev/null` : `${prefix}/${filePath}`
+const diffHeaderPaths = (
+  oldPath: string,
+  newPath: string
+): readonly [string, string] => {
+  if (oldPath === '/dev/null') {
+    return [`a/${newPath}`, `b/${newPath}`]
+  }
+
+  if (newPath === '/dev/null') {
+    return [`a/${oldPath}`, `b/${oldPath}`]
+  }
+
+  return [`a/${oldPath}`, `b/${newPath}`]
+}
 
 /** Git service interface for diff operations */
 export interface GitService {

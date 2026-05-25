@@ -98,6 +98,11 @@ vi.mock('../diff/hooks/useFileDiff', () => ({
   })),
 }))
 
+vi.mock('@pierre/diffs/react', () => ({
+  useWorkerPool: vi.fn(() => null),
+  MultiFileDiff: vi.fn(() => <div data-testid="multi-file-diff" />),
+}))
+
 beforeEach(() => {
   vi.stubGlobal(
     'ResizeObserver',

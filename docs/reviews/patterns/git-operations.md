@@ -3,7 +3,7 @@ id: git-operations
 category: correctness
 created: 2026-04-09
 last_updated: 2026-05-25
-ref_count: 9
+ref_count: 10
 ---
 
 # Git Operations
@@ -183,7 +183,7 @@ between display and mutation operations.
 - **Severity:** MEDIUM
 - **File:** `src/features/diff/services/gitService.ts`
 - **Finding:** Mock-synthesized `rawDiff` relied on optional path fields to carry `/dev/null`, so all-added or all-removed mock fixtures without those sentinels emitted ordinary `--- a/<path>` / `+++ b/<path>` headers that future `git apply` consumers would reject for new or deleted files.
-- **Fix:** Infer synthetic added/deleted file status from explicit sentinels or all-added/all-removed hunks, emit the correct `/dev/null` side in both the `diff --git` and `---`/`+++` headers, and include the matching `new file mode` / `deleted file mode` line.
+- **Fix:** Infer synthetic added/deleted file status from explicit sentinels or all-added/all-removed hunks, emit the correct `/dev/null` side in `---` / `+++`, and include the matching `new file mode` / `deleted file mode` line. A later follow-up corrected the separate `diff --git` header convention; see finding 22.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
 
 ### 20. Rename probes must stay in the active diff scope
@@ -193,4 +193,22 @@ between display and mutation operations.
 - **File:** `vite.config.ts`
 - **Finding:** The dev diff middleware ran its rename-source probe against the staged/unstaged scope even when the request was a `base=<branch>` comparison, allowing unrelated local rename state to change the path list for a branch-comparison diff.
 - **Fix:** Skip the staged/unstaged rename probe when a normalized base branch is active so branch-comparison diffs use only the branch-scoped `git diff` arguments.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 21. Git patch-format paths must be decoded before blob refs are built
+
+- **Source:** github-codex-connector | PR #263 | 2026-05-25
+- **Severity:** P2 / MEDIUM
+- **File:** `crates/backend/src/git/mod.rs`
+- **Finding:** `parse_git_diff` stored quoted `rename from` / `rename to` paths verbatim. Filenames containing tabs, newlines, quotes, or octal-escaped UTF-8 bytes therefore produced `oldPath` / `newPath` values like `"old\tname.txt"`, and later blob refs such as `HEAD:"old\tname.txt"` failed to resolve.
+- **Fix:** Decode Git's patch-format quoted paths before storing rename/copy metadata, including common C escapes and octal byte escapes. Added parser-level coverage for quoted tabs/newlines and octal UTF-8, plus an end-to-end staged rename test proving `oldText` / `newText` resolve for a tab-containing filename.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 22. Synthetic `diff --git` headers must keep real paths for new/deleted files
+
+- **Source:** github-claude | PR #263 follow-up | 2026-05-25
+- **Severity:** MEDIUM
+- **File:** `src/features/diff/services/gitService.ts`
+- **Finding:** The mock `rawDiff` synthesizer used `a/dev/null` or `b/dev/null` in the leading `diff --git` header for added/deleted files. Git uses the real file path on both sides of that header and reserves `/dev/null` for the subsequent `---` / `+++` patch-side lines, so future `git apply` consumers would interpret `dev/null` as a literal path.
+- **Fix:** Build `diff --git` sides from the real non-null path for added/deleted files while preserving `/dev/null` only in `---` / `+++`. Regression tests cover explicit `/dev/null` fixture metadata and inferred all-added/all-removed hunks.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

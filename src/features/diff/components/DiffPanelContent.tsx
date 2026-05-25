@@ -258,7 +258,7 @@ export const DiffPanelContent = ({
   // Track the actual DOM node because the populated pane mounts after the
   // loading branch. A one-shot ref read can miss that later mount entirely.
   const [paneNode, setPaneNode] = useState<HTMLDivElement | null>(null)
-  const [paneWidth, setPaneWidth] = useState(SPLIT_MIN_WIDTH_PX)
+  const [paneWidth, setPaneWidth] = useState(0)
 
   useLayoutEffect(() => {
     if (!paneNode) {
@@ -309,9 +309,23 @@ export const DiffPanelContent = ({
     }
   }, [setThemeSyncError, workerPool, theme])
 
-  const splitForced = diffStyle === 'split' && paneWidth < SPLIT_MIN_WIDTH_PX
+  const hasMeasuredPane = paneWidth > 0
+
+  const splitForced =
+    hasMeasuredPane && diffStyle === 'split' && paneWidth < SPLIT_MIN_WIDTH_PX
   const effectiveDiffStyle: DiffStyle = splitForced ? 'unified' : diffStyle
-  const tooNarrow = paneWidth > 0 && paneWidth < DIFF_MIN_WIDTH_PX
+  const tooNarrow = hasMeasuredPane && paneWidth < DIFF_MIN_WIDTH_PX
+
+  const handleDiffStyleChange = useCallback(
+    (next: DiffStyle): void => {
+      if (splitForced && next === 'unified') {
+        return
+      }
+
+      setDiffStyle(next)
+    },
+    [splitForced]
+  )
 
   // Memoize the Pierre input pair on response identity. Without this,
   // `toPierreInputs(response)` would mint fresh { oldFile, newFile } object
@@ -446,7 +460,7 @@ export const DiffPanelContent = ({
           <DiffChipToolbar
             diffMode={selectedFileStaged ? 'staged' : 'unstaged'}
             diffStyle={effectiveDiffStyle}
-            onDiffStyleChange={setDiffStyle}
+            onDiffStyleChange={handleDiffStyleChange}
             theme={theme}
             onThemeChange={setTheme}
             lineDiffType={lineDiffType}
