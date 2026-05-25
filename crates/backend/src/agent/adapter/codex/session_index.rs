@@ -129,10 +129,10 @@ fn read_thread_name(path: &std::path::Path, agent_session_id: &str) -> Option<St
             Err(_) => continue,
         };
         if value.get("id").and_then(serde_json::Value::as_str) == Some(agent_session_id) {
-            result = value
-                .get("thread_name")
-                .and_then(serde_json::Value::as_str)
-                .map(str::to_string);
+            if let Some(thread_name) = value.get("thread_name").and_then(serde_json::Value::as_str)
+            {
+                result = Some(thread_name.to_string());
+            }
         }
     }
 
@@ -453,6 +453,32 @@ mod tests {
         let titles = title_payloads(&sink);
         assert_eq!(titles.len(), 1);
         assert_eq!(titles[0]["title"], "second");
+    }
+
+    #[test]
+    fn matching_row_without_thread_name_does_not_clear_previous_title() {
+        let dir = TempDir::new().expect("tempdir");
+        let path = dir.path().join("session_index.jsonl");
+        std::fs::write(
+            &path,
+            concat!(
+                r#"{"id":"abc-uuid","thread_name":"first","updated_at":"2026-05-23T00:00:00Z"}"#,
+                "\n",
+                r#"{"id":"abc-uuid","updated_at":"2026-05-23T00:00:01Z"}"#,
+                "\n"
+            ),
+        )
+        .expect("write index");
+        let sink: Arc<FakeEventSink> = Arc::new(FakeEventSink::new());
+        let sink_dyn: Arc<dyn EventSink> = sink.clone();
+        let stop = Arc::new(AtomicBool::new(true));
+        let handle = spawn_watch(path, "abc-uuid".into(), "pty-1".into(), sink_dyn, stop);
+
+        handle.join().expect("join watcher");
+
+        let titles = title_payloads(&sink);
+        assert_eq!(titles.len(), 1);
+        assert_eq!(titles[0]["title"], "first");
     }
 
     #[test]

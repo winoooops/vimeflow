@@ -34,7 +34,11 @@ export interface WorkspaceCommandDeps {
    * Set a per-pane user label, written by `:rename-pane`. In-memory only;
    * see `pane.userLabel` doc in `src/features/sessions/types/index.ts`.
    */
-  setPaneUserLabel: (ptyId: string, label: string | undefined) => void
+  setPaneUserLabel: (
+    ptyId: string,
+    label: string | undefined,
+    options?: { ifCurrentLabel?: string | undefined }
+  ) => void
   /**
    * Write `/rename <label>\r` to the agent's PTY. Raw-mode agent TUIs
    * submit on CR (`\r`), not LF. The agent persists the new title to
@@ -50,18 +54,31 @@ export interface WorkspaceCommandDeps {
   notifyInfo: (message: string) => void
 }
 
-// Fallback is test-only in production today, but it must outlive a single
-// builder call because async rename failures can resolve after a useMemo rebuild.
-let fallbackPaneRenameRequestId = 0
-
-const claimFallbackPaneRenameRequest = (): number => {
-  fallbackPaneRenameRequestId += 1
-
-  return fallbackPaneRenameRequestId
+interface FallbackPaneRenameRequestState {
+  current: number
 }
 
-const isCurrentFallbackPaneRenameRequest = (requestId: number): boolean =>
-  requestId === fallbackPaneRenameRequestId
+const fallbackPaneRenameRequestStates = new WeakMap<
+  WorkspaceCommandDeps['renameAgentSession'],
+  FallbackPaneRenameRequestState
+>()
+
+// Production injects a WorkspaceView-owned request guard. The fallback is for
+// direct builder tests and is keyed by the backend function so command rebuilds
+// share state without leaking across unrelated tests/callers.
+const fallbackPaneRenameRequestStateFor = (
+  renameAgentSession: WorkspaceCommandDeps['renameAgentSession']
+): FallbackPaneRenameRequestState => {
+  const existing = fallbackPaneRenameRequestStates.get(renameAgentSession)
+  if (existing) {
+    return existing
+  }
+
+  const created = { current: 0 }
+  fallbackPaneRenameRequestStates.set(renameAgentSession, created)
+
+  return created
+}
 
 // Pure builder: closures capture `deps`, so call from a useMemo over session-manager state.
 export const buildWorkspaceCommands = (
@@ -83,20 +100,29 @@ export const buildWorkspaceCommands = (
     notifyInfo,
   } = deps
 
+  const fallbackPaneRenameRequestState =
+    fallbackPaneRenameRequestStateFor(renameAgentSession)
+
+  const hasInjectedPaneRenameRequestGuard =
+    nextPaneRenameRequestId !== undefined &&
+    isCurrentPaneRenameRequest !== undefined
+
   const claimPaneRenameRequest = (): number => {
-    if (nextPaneRenameRequestId) {
+    if (hasInjectedPaneRenameRequestGuard) {
       return nextPaneRenameRequestId()
     }
 
-    return claimFallbackPaneRenameRequest()
+    fallbackPaneRenameRequestState.current += 1
+
+    return fallbackPaneRenameRequestState.current
   }
 
   const isLatestPaneRenameRequest = (requestId: number): boolean => {
-    if (isCurrentPaneRenameRequest) {
+    if (hasInjectedPaneRenameRequestGuard) {
       return isCurrentPaneRenameRequest(requestId)
     }
 
-    return isCurrentFallbackPaneRenameRequest(requestId)
+    return requestId === fallbackPaneRenameRequestState.current
   }
 
   const findActiveIndex = (): number =>
@@ -213,7 +239,9 @@ export const buildWorkspaceCommands = (
               return
             }
 
-            setPaneUserLabel(activePanePtyId, undefined)
+            setPaneUserLabel(activePanePtyId, undefined, {
+              ifCurrentLabel: title,
+            })
 
             const message =
               error instanceof Error ? error.message : String(error)

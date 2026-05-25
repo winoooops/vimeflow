@@ -241,7 +241,7 @@ describe('useSessionManager', () => {
     expect(pane?.userLabel).toBeUndefined()
   })
 
-  test('user-renamed agent-session-title clears normalized temporary userLabel', async () => {
+  test('user-renamed agent-session-title preserves newer temporary userLabel', async () => {
     const service = createMockService()
     service.listSessions = vi.fn().mockResolvedValue({
       activeSessionId: 'pty-1',
@@ -283,7 +283,44 @@ describe('useSessionManager', () => {
     )
     expect(pane?.agentTitle).toBe('agent-title')
     expect(pane?.agentTitleSource).toBe('user-renamed')
-    expect(pane?.userLabel).toBeUndefined()
+    expect(pane?.userLabel).toBe('local-name')
+  })
+
+  test('conditional setPaneUserLabel clear preserves changed userLabel', async () => {
+    const service = createMockService()
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: 'pty-1',
+      sessions: [
+        {
+          id: 'pty-1',
+          cwd: '/tmp',
+          status: {
+            kind: 'Alive',
+            pid: 1,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+      ],
+    })
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    act(() => {
+      result.current.setPaneUserLabel('pty-1', 'old-title')
+      result.current.setPaneUserLabel('pty-1', 'new-title')
+      result.current.setPaneUserLabel('pty-1', undefined, {
+        ifCurrentLabel: 'old-title',
+      })
+    })
+
+    const pane = result.current.sessions[0]?.panes.find(
+      (candidate) => candidate.ptyId === 'pty-1'
+    )
+    expect(pane?.userLabel).toBe('new-title')
   })
 
   test('ai-generated agent-session-title preserves explicit userLabel', async () => {

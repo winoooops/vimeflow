@@ -65,9 +65,14 @@ export interface SessionManager {
    * Set a per-pane user label (overrides `pane.agentTitle` and
    * `session.name` in the Header). Always in-memory; no IPC.
    * Pass `undefined` to clear. Trims whitespace; empty post-trim
-   * input clears the label.
+   * input clears the label. `ifCurrentLabel` makes the update conditional,
+   * used by async rollback paths so newer labels survive stale failures.
    */
-  setPaneUserLabel: (ptyId: string, label: string | undefined) => void
+  setPaneUserLabel: (
+    ptyId: string,
+    label: string | undefined,
+    options?: SetPaneUserLabelOptions
+  ) => void
   reorderSessions: (reordered: Session[]) => void
   /** Update a pane's live cwd and the backend PTY cwd cache. */
   updatePaneCwd: (sessionId: string, paneId: string, cwd: string) => void
@@ -121,6 +126,18 @@ export interface SessionManager {
     ptyId: string,
     handler: PaneEventHandler
   ) => NotifyPaneReadyResult
+}
+
+export interface SetPaneUserLabelOptions {
+  ifCurrentLabel?: string | undefined
+}
+
+const normalizePaneUserLabel = (
+  label: string | undefined
+): string | undefined => {
+  const trimmed = label?.trim()
+
+  return trimmed && trimmed.length > 0 ? trimmed : undefined
 }
 
 /**
@@ -309,13 +326,17 @@ export const useSessionManager = (
                     return pane
                   }
 
-                  // A confirmed `/rename` (`user-renamed`) means the
+                  // A matching confirmed `/rename` (`user-renamed`) means the
                   // agent transcript has caught up with the temporary local
                   // label, so let `agentTitle` render. Other title updates must
                   // not erase an explicit local pane label unless the agent
                   // watcher is clearing title state for the session lifecycle.
+                  const confirmedCurrentUserLabel =
+                    payload.source === 'user-renamed' &&
+                    pane.userLabel === payload.title
+
                   const nextUserLabel =
-                    cleared || payload.source === 'user-renamed'
+                    cleared || confirmedCurrentUserLabel
                       ? undefined
                       : pane.userLabel
 
@@ -1193,9 +1214,19 @@ export const useSessionManager = (
   // dispatches the `rename_agent_session` IPC so the agent's transcript
   // stays in sync. See `pane.userLabel` doc in `../types/index.ts`.
   const setPaneUserLabel = useCallback(
-    (ptyId: string, label: string | undefined): void => {
-      const trimmed = label?.trim()
-      const next = trimmed && trimmed.length > 0 ? trimmed : undefined
+    (
+      ptyId: string,
+      label: string | undefined,
+      setOptions?: SetPaneUserLabelOptions
+    ): void => {
+      const next = normalizePaneUserLabel(label)
+
+      const hasExpectedCurrentLabel =
+        setOptions !== undefined && 'ifCurrentLabel' in setOptions
+
+      const expectedCurrentLabel = hasExpectedCurrentLabel
+        ? normalizePaneUserLabel(setOptions.ifCurrentLabel)
+        : undefined
 
       setSessions((prev) => {
         const matchExists = prev.some((session) =>
@@ -1207,9 +1238,20 @@ export const useSessionManager = (
 
         return prev.map((session) => ({
           ...session,
-          panes: session.panes.map((pane) =>
-            pane.ptyId === ptyId ? { ...pane, userLabel: next } : pane
-          ),
+          panes: session.panes.map((pane) => {
+            if (pane.ptyId !== ptyId) {
+              return pane
+            }
+
+            if (
+              hasExpectedCurrentLabel &&
+              pane.userLabel !== expectedCurrentLabel
+            ) {
+              return pane
+            }
+
+            return { ...pane, userLabel: next }
+          }),
         }))
       })
     },

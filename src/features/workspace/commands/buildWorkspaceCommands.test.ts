@@ -216,7 +216,10 @@ describe('buildWorkspaceCommands - happy paths', () => {
     await Promise.resolve()
     await Promise.resolve()
 
-    expect(setPaneUserLabel).toHaveBeenCalledWith('pty-agent', undefined)
+    expect(setPaneUserLabel).toHaveBeenCalledWith('pty-agent', undefined, {
+      ifCurrentLabel: 'agent-name',
+    })
+
     expect(notifyInfo).toHaveBeenCalledWith(
       'agent /rename failed: pty write failed'
     )
@@ -289,7 +292,11 @@ describe('buildWorkspaceCommands - happy paths', () => {
 
     expect(setPaneUserLabel).toHaveBeenCalledWith('pty-agent', 'first')
     expect(setPaneUserLabel).toHaveBeenCalledWith('pty-agent', 'second')
-    expect(setPaneUserLabel).not.toHaveBeenCalledWith('pty-agent', undefined)
+    expect(
+      setPaneUserLabel.mock.calls.some(
+        ([ptyId, label]) => ptyId === 'pty-agent' && label === undefined
+      )
+    ).toBe(false)
     expect(notifyInfo).not.toHaveBeenCalled()
   })
 
@@ -345,8 +352,71 @@ describe('buildWorkspaceCommands - happy paths', () => {
 
     expect(setPaneUserLabel).toHaveBeenCalledWith('pty-agent', 'first')
     expect(setPaneUserLabel).toHaveBeenCalledWith('pty-agent', 'second')
-    expect(setPaneUserLabel).not.toHaveBeenCalledWith('pty-agent', undefined)
+    expect(
+      setPaneUserLabel.mock.calls.some(
+        ([ptyId, label]) => ptyId === 'pty-agent' && label === undefined
+      )
+    ).toBe(false)
     expect(notifyInfo).not.toHaveBeenCalled()
+  })
+
+  test(':rename-pane fallback request guard is isolated per backend function', async () => {
+    let rejectFirstRename: (error: Error) => void = () => {
+      throw new Error('first rename promise reject was not captured')
+    }
+
+    const firstRenameAgentSession = vi.fn().mockReturnValueOnce(
+      new Promise<void>((_resolve, reject) => {
+        rejectFirstRename = reject
+      })
+    )
+    const secondRenameAgentSession = vi.fn().mockResolvedValueOnce(undefined)
+
+    const firstCommands = buildWorkspaceCommands({
+      sessions: mockSessions,
+      activeSessionId: 'session-1',
+      createSession,
+      removeSession,
+      renameSession,
+      setPaneUserLabel,
+      renameAgentSession: firstRenameAgentSession,
+      activePanePtyId: 'pty-first',
+      activePaneAgentType: 'claude-code',
+      setActiveSessionId,
+      notifyInfo,
+    })
+    firstCommands.find((c) => c.id === 'rename-pane')?.execute?.('first')
+
+    const secondCommands = buildWorkspaceCommands({
+      sessions: mockSessions,
+      activeSessionId: 'session-1',
+      createSession,
+      removeSession,
+      renameSession,
+      setPaneUserLabel,
+      renameAgentSession: secondRenameAgentSession,
+      activePanePtyId: 'pty-second',
+      activePaneAgentType: 'claude-code',
+      setActiveSessionId,
+      notifyInfo,
+    })
+    secondCommands.find((c) => c.id === 'rename-pane')?.execute?.('second')
+
+    await Promise.resolve()
+    await Promise.resolve()
+
+    rejectFirstRename(new Error('pty write failed'))
+
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(setPaneUserLabel).toHaveBeenCalledWith('pty-first', undefined, {
+      ifCurrentLabel: 'first',
+    })
+
+    expect(notifyInfo).toHaveBeenCalledWith(
+      'agent /rename failed: pty write failed'
+    )
   })
 
   test(':rename-pane rolls back expected backend failure for rename-capable pane', async () => {
@@ -377,7 +447,10 @@ describe('buildWorkspaceCommands - happy paths', () => {
     await Promise.resolve()
     await Promise.resolve()
 
-    expect(setPaneUserLabel).toHaveBeenCalledWith('pty-agent', undefined)
+    expect(setPaneUserLabel).toHaveBeenCalledWith('pty-agent', undefined, {
+      ifCurrentLabel: 'agent-name',
+    })
+
     expect(notifyInfo).toHaveBeenCalledWith(
       'agent /rename failed: no live agent'
     )

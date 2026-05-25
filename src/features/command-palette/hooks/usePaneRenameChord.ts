@@ -18,6 +18,12 @@ type RenameTarget = {
   initialValue: string
 } | null
 
+type SetPaneUserLabel = (
+  ptyId: string,
+  label: string | undefined,
+  options?: { ifCurrentLabel?: string | undefined }
+) => void
+
 const errorMessageForRenameFailure = (error: unknown): string => {
   const message = error instanceof Error ? error.message : String(error)
 
@@ -26,7 +32,7 @@ const errorMessageForRenameFailure = (error: unknown): string => {
 
 export const usePaneRenameChord = (
   resolveFocusedPane: () => FocusedPaneRef | null,
-  setPaneUserLabel: (ptyId: string, label: string | undefined) => void
+  setPaneUserLabel: SetPaneUserLabel
 ): { renderNode: ReactNode } => {
   const [target, setTarget] = useState<RenameTarget>(null)
   const [error, setError] = useState<string | null>(null)
@@ -62,6 +68,10 @@ export const usePaneRenameChord = (
   useEffect(
     () =>
       registerChord('r', () => {
+        if (pendingSubmitCountRef.current > 0) {
+          return false
+        }
+
         const focused = resolverRef.current()
         if (!focused) {
           return false
@@ -110,9 +120,10 @@ export const usePaneRenameChord = (
           return
         }
 
-        setPaneUserLabelRef.current(target.ptyId, undefined)
-
         if (targetRef.current?.requestId === target.requestId) {
+          setPaneUserLabelRef.current(target.ptyId, undefined, {
+            ifCurrentLabel: title,
+          })
           setRenameError(errorMessageForRenameFailure(renameError))
         }
       } finally {

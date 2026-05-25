@@ -68,14 +68,26 @@ const makeFocusedRef = (paneOverrides: Partial<Pane> = {}): FocusedPaneRef => {
 
 const mockSetPaneUserLabel = vi.fn()
 
+interface SetPaneUserLabelOptions {
+  ifCurrentLabel?: string | undefined
+}
+
+type SetPaneUserLabel = (
+  ptyId: string,
+  label: string | undefined,
+  options?: SetPaneUserLabelOptions
+) => void
+
 const Harness = ({
   resolveFocusedPane,
+  setPaneUserLabel = mockSetPaneUserLabel,
 }: {
   resolveFocusedPane: () => FocusedPaneRef | null
+  setPaneUserLabel?: SetPaneUserLabel
 }): ReactElement => {
   const { renderNode } = usePaneRenameChord(
     resolveFocusedPane,
-    mockSetPaneUserLabel
+    setPaneUserLabel
   )
 
   return <>{renderNode}</>
@@ -171,7 +183,8 @@ describe('usePaneRenameChord', () => {
 
     expect(mockSetPaneUserLabel).toHaveBeenLastCalledWith(
       'pty-claude',
-      undefined
+      undefined,
+      { ifCurrentLabel: 'new' }
     )
   })
 
@@ -211,7 +224,10 @@ describe('usePaneRenameChord', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'failed to send /rename: pty write failed'
     )
-    expect(mockSetPaneUserLabel).toHaveBeenLastCalledWith('pty-1', undefined)
+
+    expect(mockSetPaneUserLabel).toHaveBeenLastCalledWith('pty-1', undefined, {
+      ifCurrentLabel: 'new-title',
+    })
 
     const failedInput = screen.getByRole('textbox')
     failedInput.focus()
@@ -264,7 +280,7 @@ describe('usePaneRenameChord', () => {
     })
   })
 
-  test('resolved stale submit does not close a newer rename target', async () => {
+  test('chord during pending submit does not switch rename targets', async () => {
     const user = userEvent.setup()
     let resolveRename: (() => void) | null = null
     mockRenameAgentSession.mockReturnValueOnce(
@@ -291,11 +307,13 @@ describe('usePaneRenameChord', () => {
       agentTitle: 'second-title',
     })
 
+    let wasHandled = true
     act(() => {
-      chordRegistry.dispatch({ key: 'r' } as KeyboardEvent)
+      wasHandled = chordRegistry.dispatch({ key: 'r' } as KeyboardEvent)
     })
 
-    expect(screen.getByRole('textbox')).toHaveValue('second-title')
+    expect(wasHandled).toBe(false)
+    expect(screen.getByRole('textbox')).toHaveValue('submitted-title')
 
     await act(async () => {
       if (!resolveRename) {
@@ -305,23 +323,48 @@ describe('usePaneRenameChord', () => {
       await Promise.resolve()
     })
 
-    expect(screen.getByRole('textbox')).toHaveValue('second-title')
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
   })
 
-  test('rejected stale submit rolls back old label without clearing newer target', async () => {
+  test('rejected submit does not clear a newer user label', async () => {
     const user = userEvent.setup()
     let rejectRename: ((error: Error) => void) | null = null
+    let currentLabel: string | undefined
+
+    const setPaneUserLabel = vi.fn<SetPaneUserLabel>(
+      (ptyId, label, options): void => {
+        void ptyId
+        if (
+          options !== undefined &&
+          'ifCurrentLabel' in options &&
+          currentLabel !== options.ifCurrentLabel
+        ) {
+          return
+        }
+
+        const trimmed = label?.trim()
+        currentLabel = trimmed && trimmed.length > 0 ? trimmed : undefined
+      }
+    )
+
     mockRenameAgentSession.mockReturnValueOnce(
       new Promise<void>((_resolve, reject) => {
         rejectRename = reject
       })
     )
-    let focused = makeFocusedRef({
+
+    const focused = makeFocusedRef({
       ptyId: 'pty-1',
       agentTitle: 'first-title',
     })
 
-    render(<Harness resolveFocusedPane={() => focused} />)
+    render(
+      <Harness
+        resolveFocusedPane={() => focused}
+        setPaneUserLabel={setPaneUserLabel}
+      />
+    )
+
     act(() => {
       chordRegistry.dispatch({ key: 'r' } as KeyboardEvent)
     })
@@ -330,14 +373,8 @@ describe('usePaneRenameChord', () => {
     await user.tripleClick(input)
     await user.keyboard('submitted-title{Enter}')
 
-    focused = makeFocusedRef({
-      ptyId: 'pty-2',
-      agentTitle: 'second-title',
-    })
-
-    act(() => {
-      chordRegistry.dispatch({ key: 'r' } as KeyboardEvent)
-    })
+    expect(currentLabel).toBe('submitted-title')
+    currentLabel = 'palette-title'
 
     await act(async () => {
       if (!rejectRename) {
@@ -347,9 +384,14 @@ describe('usePaneRenameChord', () => {
       await Promise.resolve()
     })
 
-    expect(screen.getByRole('textbox')).toHaveValue('second-title')
-    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
-    expect(mockSetPaneUserLabel).toHaveBeenCalledWith('pty-1', undefined)
+    expect(currentLabel).toBe('palette-title')
+    expect(setPaneUserLabel).toHaveBeenLastCalledWith('pty-1', undefined, {
+      ifCurrentLabel: 'submitted-title',
+    })
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'failed to send /rename: pty write failed'
+    )
   })
 
   test('cancel clears the rename target', async () => {
