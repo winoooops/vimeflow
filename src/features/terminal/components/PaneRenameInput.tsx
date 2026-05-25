@@ -61,6 +61,7 @@ export const PaneRenameInput = ({
 }: PaneRenameInputProps): ReactPortal => {
   const [value, setValue] = useState(initialValue)
   const [anchorRect, setAnchorRect] = useState<AnchorRect | null>(null)
+  const frameRef = useRef<HTMLDivElement | null>(null)
   const inputRef = useRef<HTMLInputElement | null>(null)
   const validation = validateTitle(value)
 
@@ -98,6 +99,27 @@ export const PaneRenameInput = ({
       window.removeEventListener('scroll', updateRect, true)
     }
   }, [pane.ptyId])
+
+  useEffect(() => {
+    if (!externalError) {
+      return
+    }
+
+    const handlePointerDown = (event: PointerEvent): void => {
+      const target = event.target
+      if (target instanceof Node && frameRef.current?.contains(target)) {
+        return
+      }
+
+      onCancel()
+    }
+
+    document.addEventListener('pointerdown', handlePointerDown, true)
+
+    return (): void => {
+      document.removeEventListener('pointerdown', handlePointerDown, true)
+    }
+  }, [externalError, onCancel])
 
   const handleChange = (event: ChangeEvent<HTMLInputElement>): void => {
     setValue(event.target.value)
@@ -141,6 +163,7 @@ export const PaneRenameInput = ({
 
   return createPortal(
     <div
+      ref={frameRef}
       data-testid="pane-rename-frame"
       style={style}
       className="z-50 rounded-md bg-surface-container/90 p-1 shadow-[0_12px_40px_rgba(0,0,0,0.42)] backdrop-blur-md"

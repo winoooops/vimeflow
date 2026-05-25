@@ -330,17 +330,6 @@ fn tail_loop(
             }
         }
     }
-
-    if last_title_memo.is_some() {
-        emit_title(
-            &events,
-            &session_id,
-            &claude_agent_session_id,
-            "",
-            TitleSource::AiGenerated,
-            &mut last_title_memo,
-        );
-    }
 }
 
 /// Process a single JSONL line and emit events if it's a tool call
@@ -1000,7 +989,7 @@ mod tests {
     }
 
     #[test]
-    fn tail_loop_shutdown_clear_emits_ai_generated_source() {
+    fn tail_loop_shutdown_does_not_clear_title() {
         use std::io::Write;
 
         let agent_id = "abc-123";
@@ -1045,10 +1034,8 @@ mod tests {
             .into_iter()
             .filter(|(name, _)| name == AGENT_SESSION_TITLE)
             .collect();
-        assert_eq!(titles.len(), 2);
+        assert_eq!(titles.len(), 1);
         assert_eq!(titles[0].1["source"], "user-renamed");
-        assert_eq!(titles[1].1["title"], "");
-        assert_eq!(titles[1].1["source"], "ai-generated");
     }
 
     #[test]

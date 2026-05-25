@@ -151,6 +151,9 @@ const isStructuredBackendError = (
   typeof value.message === 'string' &&
   typeof value.reason === 'string'
 
+const supportsStructuredBackendError = (method: string): boolean =>
+  method === 'rename_agent_session'
+
 const rendererConsoleLevelName = (level: number): string => {
   switch (level) {
     case 0:
@@ -277,7 +280,10 @@ const setupApp = async (): Promise<void> => {
 
         return { ok: true, result }
       } catch (err) {
-        if (isStructuredBackendError(err)) {
+        if (
+          supportsStructuredBackendError(payload.method) &&
+          isStructuredBackendError(err)
+        ) {
           return {
             ok: false,
             error: err.message,

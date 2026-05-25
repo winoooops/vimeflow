@@ -126,12 +126,6 @@ impl BackendState {
         // the user manually focused the pane and pressed Enter.
         let command = format!("/rename {title}\r");
         let session_id = SessionId::from(request.pty_id);
-        if matches!(agent_type, AgentType::Codex) {
-            crate::agent::adapter::codex::session_index::record_user_rename(
-                session_id.as_str(),
-                &title,
-            );
-        }
 
         if let Err(e) = self.pty.write(&session_id, command.as_bytes()) {
             if self
@@ -146,6 +140,13 @@ impl BackendState {
                 RenameAgentSessionErrorReason::PtyWrite,
                 format!("pty write failed: {e}"),
             ));
+        }
+
+        if matches!(agent_type, AgentType::Codex) {
+            crate::agent::adapter::codex::session_index::record_user_rename(
+                session_id.as_str(),
+                &title,
+            );
         }
 
         Ok(())
@@ -285,16 +286,25 @@ mod tests {
     use std::sync::Mutex;
     use std::time::SystemTime;
 
+    use crate::agent::events::AGENT_SESSION_TITLE;
     use crate::terminal::state::{ManagedSession, RingBuffer};
 
     #[derive(Clone)]
     struct CapturingWriter {
         writes: Arc<Mutex<Vec<u8>>>,
         on_write: Option<Arc<dyn Fn() + Send + Sync>>,
+        fail: bool,
     }
 
     impl Write for CapturingWriter {
         fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            if self.fail {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    "write failed",
+                ));
+            }
+
             self.writes
                 .lock()
                 .expect("failed to lock captured writes")
@@ -345,6 +355,18 @@ mod tests {
         writes: Arc<Mutex<Vec<u8>>>,
         on_write: Option<Arc<dyn Fn() + Send + Sync>>,
     ) -> ManagedSession {
+        make_capturing_session_with_options(writes, on_write, false)
+    }
+
+    fn make_failing_session(writes: Arc<Mutex<Vec<u8>>>) -> ManagedSession {
+        make_capturing_session_with_options(writes, None, true)
+    }
+
+    fn make_capturing_session_with_options(
+        writes: Arc<Mutex<Vec<u8>>>,
+        on_write: Option<Arc<dyn Fn() + Send + Sync>>,
+        fail: bool,
+    ) -> ManagedSession {
         use portable_pty::{native_pty_system, PtySize};
 
         let pty_system = native_pty_system();
@@ -359,7 +381,11 @@ mod tests {
 
         ManagedSession {
             master: pty_pair.master,
-            writer: Box::new(CapturingWriter { writes, on_write }),
+            writer: Box::new(CapturingWriter {
+                writes,
+                on_write,
+                fail,
+            }),
             child: Box::new(NoopChild),
             cwd: "/tmp".into(),
             generation: 0,
@@ -444,6 +470,56 @@ mod tests {
 
         assert!(result.is_ok());
         assert_eq!(captured_string(&writes), "/rename codex-title\r");
+    }
+
+    #[test]
+    fn rename_agent_session_does_not_record_codex_pending_rename_on_write_failure() {
+        let (state, _sink) = BackendState::with_fake_sink();
+        let pty_id = "pty-state-codex-write-fail";
+        let writes = Arc::new(Mutex::new(Vec::new()));
+        state
+            .pty
+            .insert(pty_id.to_string(), make_failing_session(writes.clone()));
+        state
+            .agents
+            .insert_agent_type_for_test(pty_id.to_string(), AgentType::Codex);
+
+        let result = state.rename_agent_session(rename_request_for_pty(pty_id, "failed-title"));
+
+        let err = result.expect_err("failed PTY write should reject");
+        assert_eq!(err.reason, RenameAgentSessionErrorReason::PtyWrite);
+        assert_eq!(captured_string(&writes), "");
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let index_path = dir.path().join("session_index.jsonl");
+        std::fs::write(
+            &index_path,
+            r#"{"id":"thread-id","thread_name":"failed-title","updated_at":"2026-05-23T00:00:00Z"}"#,
+        )
+        .expect("write session index");
+        let sink: Arc<crate::runtime::FakeEventSink> =
+            Arc::new(crate::runtime::FakeEventSink::new());
+        let sink_dyn: Arc<dyn EventSink> = sink.clone();
+        let stop = Arc::new(AtomicBool::new(true));
+
+        let handle = crate::agent::adapter::codex::session_index::spawn_watch(
+            index_path,
+            "thread-id".into(),
+            pty_id.to_string(),
+            sink_dyn,
+            stop,
+        )
+        .expect("spawn watcher");
+        handle.join().expect("join watcher");
+
+        let titles: Vec<_> = sink
+            .recorded()
+            .into_iter()
+            .filter(|(name, _)| name == AGENT_SESSION_TITLE)
+            .map(|(_, payload)| payload)
+            .collect();
+        assert_eq!(titles.len(), 1);
+        assert_eq!(titles[0]["source"], "ai-generated");
     }
 
     #[test]

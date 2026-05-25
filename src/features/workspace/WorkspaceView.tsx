@@ -201,14 +201,16 @@ export const WorkspaceView = (): ReactElement => {
   // `activePane` is declared further down (after `activeSession`); resolve
   // the active pane's ptyId inline here so the command builder has it without
   // forcing a section-wide reshuffle.
-  const activePaneForCommands =
-    sessions
-      .find((s) => s.id === activeSessionId)
-      ?.panes.find((p) => p.active) ?? null
-  const activePanePtyIdForCommands = activePaneForCommands?.ptyId ?? null
+  const activeSessionForCommands =
+    sessions.find((s) => s.id === activeSessionId) ?? null
+
+  const activePaneForCommandInputs = activeSessionForCommands
+    ? (findActivePane(activeSessionForCommands) ?? null)
+    : null
+  const activePanePtyIdForCommands = activePaneForCommandInputs?.ptyId ?? null
 
   const activePaneAgentTypeForCommands =
-    activePaneForCommands?.agentType ?? null
+    activePaneForCommandInputs?.agentType ?? null
 
   const workspaceCommands = useMemo(
     () =>

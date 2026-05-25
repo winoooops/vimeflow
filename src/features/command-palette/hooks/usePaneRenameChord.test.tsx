@@ -231,6 +231,39 @@ describe('usePaneRenameChord', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
+  test('duplicate submit while rename is pending sends one backend request', async () => {
+    const user = userEvent.setup()
+    let resolveRename: (() => void) | null = null
+    mockRenameAgentSession.mockReturnValueOnce(
+      new Promise<void>((resolve) => {
+        resolveRename = resolve
+      })
+    )
+    const focused = makeFocusedRef()
+
+    render(<Harness resolveFocusedPane={() => focused} />)
+    act(() => {
+      chordRegistry.dispatch({ key: 'r' } as KeyboardEvent)
+    })
+
+    const input = screen.getByRole('textbox')
+    await user.tripleClick(input)
+    await user.keyboard('new-title{Enter}{Enter}')
+
+    expect(mockSetPaneUserLabel).toHaveBeenCalledTimes(1)
+    expect(mockSetPaneUserLabel).toHaveBeenCalledWith('pty-1', 'new-title')
+    expect(mockRenameAgentSession).toHaveBeenCalledTimes(1)
+    expect(mockRenameAgentSession).toHaveBeenCalledWith('pty-1', 'new-title')
+
+    await act(async () => {
+      if (!resolveRename) {
+        throw new Error('rename promise resolve was not captured')
+      }
+      resolveRename()
+      await Promise.resolve()
+    })
+  })
+
   test('resolved stale submit does not close a newer rename target', async () => {
     const user = userEvent.setup()
     let resolveRename: (() => void) | null = null

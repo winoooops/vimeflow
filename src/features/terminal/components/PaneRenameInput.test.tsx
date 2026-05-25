@@ -122,6 +122,40 @@ describe('PaneRenameInput', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
+  test('clicking outside cancels when an external error is visible', () => {
+    const onCancel = vi.fn()
+    render(
+      <PaneRenameInput
+        pane={makePane()}
+        initialValue="valid-title"
+        onSubmit={vi.fn()}
+        onCancel={onCancel}
+        externalError="failed to send /rename: pty write failed"
+      />
+    )
+
+    fireEvent.pointerDown(document.body)
+
+    expect(onCancel).toHaveBeenCalled()
+  })
+
+  test('clicking inside does not cancel when an external error is visible', () => {
+    const onCancel = vi.fn()
+    render(
+      <PaneRenameInput
+        pane={makePane()}
+        initialValue="valid-title"
+        onSubmit={vi.fn()}
+        onCancel={onCancel}
+        externalError="failed to send /rename: pty write failed"
+      />
+    )
+
+    fireEvent.pointerDown(screen.getByRole('textbox'))
+
+    expect(onCancel).not.toHaveBeenCalled()
+  })
+
   test('tracks pane header position when layout changes', () => {
     const anchor = document.createElement('div')
 

@@ -107,16 +107,6 @@ pub fn spawn_watch(
                 None => {}
             }
         }
-
-        if last_emitted_title.is_some() {
-            try_emit(
-                &events,
-                &session_id,
-                &agent_session_id,
-                "",
-                &mut last_emitted_title,
-            );
-        }
     }))
 }
 
@@ -241,7 +231,7 @@ fn consume_pending_user_rename(claim_id: u64) {
 }
 
 #[cfg(test)]
-fn clear_pending_renames_for_test() {
+pub(crate) fn clear_pending_renames_for_test() {
     PENDING_RENAMES.lock().expect("pending rename lock").clear();
 }
 
@@ -296,7 +286,7 @@ mod tests {
     }
 
     #[test]
-    fn initial_read_emits_matching_row_then_clear_on_shutdown() {
+    fn initial_read_emits_matching_row_without_shutdown_clear() {
         let _guard = pending_rename_test_guard();
         clear_pending_renames_for_test();
         let dir = TempDir::new().expect("tempdir");
@@ -310,11 +300,10 @@ mod tests {
         handle.join().expect("join watcher");
 
         let titles = title_payloads(&sink);
-        assert_eq!(titles.len(), 2);
+        assert_eq!(titles.len(), 1);
         assert_eq!(titles[0]["title"], "MyTask");
         assert_eq!(titles[0]["source"], "ai-generated");
         assert_eq!(titles[0]["sessionId"], "pty-1");
-        assert_eq!(titles[1]["title"], "");
     }
 
     #[test]
@@ -467,9 +456,8 @@ mod tests {
         handle.join().expect("join watcher");
 
         let titles = title_payloads(&sink);
-        assert_eq!(titles.len(), 2);
+        assert_eq!(titles.len(), 1);
         assert_eq!(titles[0]["title"], "second");
-        assert_eq!(titles[1]["title"], "");
     }
 
     #[test]
@@ -533,6 +521,6 @@ mod tests {
         let titles = title_payloads(&sink);
         assert!(titles.iter().any(|payload| payload["title"] == "first"));
         assert!(titles.iter().any(|payload| payload["title"] == "second"));
-        assert!(titles.iter().any(|payload| payload["title"] == ""));
+        assert!(!titles.iter().any(|payload| payload["title"] == ""));
     }
 }

@@ -439,6 +439,22 @@ describe('useSessionManager', () => {
     await waitFor(() => expect(unlisten).toHaveBeenCalled())
   })
 
+  test('agent-session-title listener setup rejection is caught', async () => {
+    const service = createMockService()
+    mockListen.mockRejectedValueOnce(new Error('bridge unavailable'))
+
+    renderHook(() => useSessionManager(service, { autoCreateOnEmpty: false }))
+
+    await waitFor(() =>
+      expect(mockListen).toHaveBeenCalledWith(
+        'agent-session-title',
+        expect.any(Function)
+      )
+    )
+    await Promise.resolve()
+    expect(service.listSessions).toHaveBeenCalled()
+  })
+
   test('agent-session-title listener stays inactive without desktop bridge', async () => {
     delete window.vimeflow
     const service = createMockService()

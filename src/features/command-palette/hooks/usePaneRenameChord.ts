@@ -86,7 +86,7 @@ export const usePaneRenameChord = (
 
   const handleSubmit = useCallback(
     async (title: string): Promise<void> => {
-      if (!target) {
+      if (!target || pendingSubmitCountRef.current > 0) {
         return
       }
 

@@ -285,49 +285,54 @@ export const useSessionManager = (
     let unlistenFn: UnlistenFn | undefined
 
     void (async (): Promise<void> => {
-      const fn = await listen<AgentSessionTitleEvent>(
-        'agent-session-title',
-        (payload) => {
-          const cleared = payload.title.length === 0
-          const nextTitle = cleared ? undefined : payload.title
-          const nextSource = cleared ? undefined : payload.source
+      let fn: UnlistenFn
+      try {
+        fn = await listen<AgentSessionTitleEvent>(
+          'agent-session-title',
+          (payload) => {
+            const cleared = payload.title.length === 0
+            const nextTitle = cleared ? undefined : payload.title
+            const nextSource = cleared ? undefined : payload.source
 
-          setSessions((prev) => {
-            const matchExists = prev.some((session) =>
-              session.panes.some((pane) => pane.ptyId === payload.sessionId)
-            )
-            if (!matchExists) {
-              return prev
-            }
+            setSessions((prev) => {
+              const matchExists = prev.some((session) =>
+                session.panes.some((pane) => pane.ptyId === payload.sessionId)
+              )
+              if (!matchExists) {
+                return prev
+              }
 
-            return prev.map((session) => ({
-              ...session,
-              panes: session.panes.map((pane) => {
-                if (pane.ptyId !== payload.sessionId) {
-                  return pane
-                }
+              return prev.map((session) => ({
+                ...session,
+                panes: session.panes.map((pane) => {
+                  if (pane.ptyId !== payload.sessionId) {
+                    return pane
+                  }
 
-                // A confirmed `/rename` (`user-renamed`) means the
-                // agent transcript has caught up with the temporary local
-                // label, so let `agentTitle` render. Other title updates must
-                // not erase an explicit local pane label unless the agent
-                // watcher is clearing title state for the session lifecycle.
-                const nextUserLabel =
-                  cleared || payload.source === 'user-renamed'
-                    ? undefined
-                    : pane.userLabel
+                  // A confirmed `/rename` (`user-renamed`) means the
+                  // agent transcript has caught up with the temporary local
+                  // label, so let `agentTitle` render. Other title updates must
+                  // not erase an explicit local pane label unless the agent
+                  // watcher is clearing title state for the session lifecycle.
+                  const nextUserLabel =
+                    cleared || payload.source === 'user-renamed'
+                      ? undefined
+                      : pane.userLabel
 
-                return {
-                  ...pane,
-                  agentTitle: nextTitle,
-                  agentTitleSource: nextSource,
-                  userLabel: nextUserLabel,
-                }
-              }),
-            }))
-          })
-        }
-      )
+                  return {
+                    ...pane,
+                    agentTitle: nextTitle,
+                    agentTitleSource: nextSource,
+                    userLabel: nextUserLabel,
+                  }
+                }),
+              }))
+            })
+          }
+        )
+      } catch {
+        return
+      }
 
       // cancelled may flip while the listener promise is awaiting.
       // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition

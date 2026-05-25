@@ -27,7 +27,12 @@ pub struct CodexAdapter {
     pty_start: SystemTime,
     codex_home: PathBuf,
     locator_cache: OnceLock<CompositeLocator>,
-    resolved_rollout_path: Mutex<Option<PathBuf>>,
+    resolved_rollout: Mutex<Option<ResolvedRollout>>,
+}
+
+struct ResolvedRollout {
+    path: PathBuf,
+    thread_id: String,
 }
 
 impl CodexAdapter {
@@ -37,7 +42,7 @@ impl CodexAdapter {
             pty_start,
             codex_home: default_codex_home(),
             locator_cache: OnceLock::new(),
-            resolved_rollout_path: Mutex::new(None),
+            resolved_rollout: Mutex::new(None),
         }
     }
 
@@ -48,7 +53,7 @@ impl CodexAdapter {
             pty_start,
             codex_home,
             locator_cache: OnceLock::new(),
-            resolved_rollout_path: Mutex::new(None),
+            resolved_rollout: Mutex::new(None),
         }
     }
 
@@ -69,43 +74,6 @@ fn default_codex_home() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from(".codex"))
 }
 
-/// Extract the agent session UUID from a Codex rollout JSONL filename.
-pub(crate) fn parse_rollout_filename_uuid(path: &Path) -> Option<String> {
-    let file_name = path.file_name()?.to_str()?;
-    let stem = file_name.strip_suffix(".jsonl")?;
-    let after_prefix = stem.strip_prefix("rollout-")?;
-
-    if after_prefix.len() < 37 {
-        return None;
-    }
-
-    let uuid_start = after_prefix.len() - 36;
-    if after_prefix.as_bytes().get(uuid_start.checked_sub(1)?) != Some(&b'-') {
-        return None;
-    }
-
-    let uuid = &after_prefix[uuid_start..];
-    let bytes = uuid.as_bytes();
-    if bytes.len() != 36
-        || bytes[8] != b'-'
-        || bytes[13] != b'-'
-        || bytes[18] != b'-'
-        || bytes[23] != b'-'
-    {
-        return None;
-    }
-
-    if !bytes
-        .iter()
-        .enumerate()
-        .all(|(idx, byte)| matches!(idx, 8 | 13 | 18 | 23) || byte.is_ascii_hexdigit())
-    {
-        return None;
-    }
-
-    Some(uuid.to_string())
-}
-
 impl AgentAdapter for CodexAdapter {
     fn agent_type(&self) -> AgentType {
         AgentType::Codex
@@ -120,8 +88,11 @@ impl AgentAdapter for CodexAdapter {
 
         let location = retry_locator(|| self.locator().resolve_rollout(&ctx))?;
 
-        if let Ok(mut slot) = self.resolved_rollout_path.lock() {
-            *slot = Some(location.rollout_path.clone());
+        if let Ok(mut slot) = self.resolved_rollout.lock() {
+            *slot = Some(ResolvedRollout {
+                path: location.rollout_path.clone(),
+                thread_id: location.thread_id.clone(),
+            });
         }
 
         Ok(StatusSource {
@@ -131,11 +102,10 @@ impl AgentAdapter for CodexAdapter {
     }
 
     fn parse_status(&self, session_id: &str, raw: &str) -> Result<ParsedStatus, String> {
-        let transcript_path = self
-            .resolved_rollout_path
-            .lock()
-            .ok()
-            .and_then(|slot| slot.as_ref().map(|path| path.to_string_lossy().to_string()));
+        let transcript_path = self.resolved_rollout.lock().ok().and_then(|slot| {
+            slot.as_ref()
+                .map(|rollout| rollout.path.to_string_lossy().to_string())
+        });
 
         parser::parse_rollout(session_id, raw, transcript_path)
     }
@@ -158,7 +128,7 @@ impl AgentAdapter for CodexAdapter {
             cwd,
         )?;
 
-        match parse_rollout_filename_uuid(&transcript_path) {
+        match resolved_thread_id_for(&self.resolved_rollout, &transcript_path) {
             Some(agent_session_id) => {
                 let aux_stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
                 let title_join = session_index::spawn_watch(
@@ -182,15 +152,33 @@ impl AgentAdapter for CodexAdapter {
             }
             None => {
                 log::warn!(
-                    "codex title sync disabled for this session: rollout filename {:?} \
-                     does not match expected `rollout-<ISO-ts>-<uuid>.jsonl`",
-                    transcript_path.file_name()
+                    "codex title sync disabled for this session: no resolved thread id for {}",
+                    transcript_path.display()
                 );
             }
         }
 
         Ok(handle)
     }
+}
+
+fn resolved_thread_id_for(
+    resolved_rollout: &Mutex<Option<ResolvedRollout>>,
+    transcript_path: &Path,
+) -> Option<String> {
+    let slot = resolved_rollout.lock().ok()?;
+    let rollout = slot.as_ref()?;
+
+    if rollout.path == transcript_path {
+        return Some(rollout.thread_id.clone());
+    }
+
+    let canonical = std::fs::canonicalize(&rollout.path).ok()?;
+    if canonical == transcript_path {
+        return Some(rollout.thread_id.clone());
+    }
+
+    None
 }
 
 /// Retry a codex locator resolution up to the bind budget.
@@ -248,10 +236,13 @@ mod adapter_tests {
         let adapter = CodexAdapter::new(12345, SystemTime::UNIX_EPOCH);
         {
             let mut slot = adapter
-                .resolved_rollout_path
+                .resolved_rollout
                 .lock()
                 .expect("resolved rollout path lock");
-            *slot = Some(PathBuf::from("/tmp/codex-rollout.jsonl"));
+            *slot = Some(ResolvedRollout {
+                path: PathBuf::from("/tmp/codex-rollout.jsonl"),
+                thread_id: "thread-id".to_string(),
+            });
         }
         let raw = r#"{"timestamp":"...","type":"session_meta","payload":{"id":"sess","cli_version":"0.128.0"}}
 "#;
@@ -358,50 +349,12 @@ mod retry_locator_tests {
 }
 
 #[cfg(test)]
-mod parse_rollout_uuid_tests {
-    use super::*;
-
-    #[test]
-    fn parse_rollout_uuid_valid() {
-        let path = std::path::Path::new(
-            "/home/me/.codex/sessions/2026/04/17/rollout-2026-04-17T00-48-54-019d9a6a-0d43-7e20-acdf-315ef0f7136c.jsonl",
-        );
-
-        assert_eq!(
-            parse_rollout_filename_uuid(path),
-            Some("019d9a6a-0d43-7e20-acdf-315ef0f7136c".to_string())
-        );
-    }
-
-    #[test]
-    fn parse_rollout_uuid_no_match_returns_none() {
-        let path = std::path::Path::new("/tmp/random-file.jsonl");
-
-        assert_eq!(parse_rollout_filename_uuid(path), None);
-    }
-
-    #[test]
-    fn parse_rollout_uuid_wrong_extension_returns_none() {
-        let path = std::path::Path::new(
-            "/tmp/rollout-2026-04-17T00-48-54-019d9a6a-0d43-7e20-acdf-315ef0f7136c.txt",
-        );
-
-        assert_eq!(parse_rollout_filename_uuid(path), None);
-    }
-
-    #[test]
-    fn parse_rollout_uuid_truncated_uuid_returns_none() {
-        let path =
-            std::path::Path::new("/tmp/rollout-2026-04-17T00-48-54-019d9a6a-truncated.jsonl");
-
-        assert_eq!(parse_rollout_filename_uuid(path), None);
-    }
-}
-
-#[cfg(test)]
 mod status_source_tests {
     use super::*;
+    use crate::agent::events::AGENT_SESSION_TITLE;
+    use crate::runtime::FakeEventSink;
     use rusqlite::{params, Connection};
+    use std::sync::Arc;
     use std::time::{Duration, SystemTime};
 
     fn seed_codex_home_with_thread(codex_home: &Path, pid: u32, pty_start: SystemTime) -> PathBuf {
@@ -482,6 +435,62 @@ mod status_source_tests {
 
         assert_eq!(src.path, rollout_path);
         assert_eq!(src.trust_root, codex_home.path());
+        assert_eq!(
+            adapter
+                .resolved_rollout
+                .lock()
+                .expect("resolved rollout lock")
+                .as_ref()
+                .map(|rollout| rollout.thread_id.as_str()),
+            Some("tid-test")
+        );
+    }
+
+    #[test]
+    fn tail_transcript_uses_resolved_thread_id_for_non_uuid_rollout_name() {
+        let codex_home = tempfile::tempdir().expect("tempdir");
+        let pty_start = SystemTime::now() - Duration::from_secs(5);
+        let rollout_path = seed_codex_home_with_thread(codex_home.path(), 999, pty_start);
+        std::fs::write(
+            codex_home.path().join("session_index.jsonl"),
+            r#"{"id":"tid-test","thread_name":"resolved title","updated_at":"2026-05-23T00:00:00Z"}"#,
+        )
+        .expect("write session index");
+
+        let adapter = CodexAdapter::with_home(999, pty_start, codex_home.path().to_path_buf());
+        let cwd = codex_home.path().to_path_buf();
+        <CodexAdapter as AgentAdapter>::status_source(&adapter, &cwd, "sid")
+            .expect("status_source should resolve");
+
+        let sink: Arc<FakeEventSink> = Arc::new(FakeEventSink::new());
+        let sink_dyn: Arc<dyn EventSink> = sink.clone();
+        let handle = <CodexAdapter as AgentAdapter>::tail_transcript(
+            &adapter,
+            sink_dyn,
+            "pty-1".into(),
+            None,
+            rollout_path,
+        )
+        .expect("tail transcript");
+
+        for _ in 0..40 {
+            if sink.count(AGENT_SESSION_TITLE) >= 1 {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(25));
+        }
+
+        handle.stop();
+
+        let titles: Vec<_> = sink
+            .recorded()
+            .into_iter()
+            .filter(|(name, _)| name == AGENT_SESSION_TITLE)
+            .map(|(_, payload)| payload)
+            .collect();
+        assert_eq!(titles.len(), 1);
+        assert_eq!(titles[0]["agentSessionId"], "tid-test");
+        assert_eq!(titles[0]["title"], "resolved title");
     }
 
     #[test]
