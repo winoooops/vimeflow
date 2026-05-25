@@ -67,6 +67,32 @@ describe('MockGitService', () => {
     expect(response.rawDiff.endsWith('\n')).toBe(true)
   })
 
+  test('getDiff synthesizes /dev/null old header for new files', async () => {
+    const response = await service.getDiff('src/utils/api-helper.rs')
+
+    expect(response.oldText).toBe('')
+    expect(response.newText).toContain('use reqwest::Client;')
+    expect(response.rawDiff).toContain(
+      'diff --git a/src/utils/api-helper.rs b/src/utils/api-helper.rs'
+    )
+    expect(response.rawDiff).toContain('--- /dev/null\n')
+    expect(response.rawDiff).toContain('+++ b/src/utils/api-helper.rs\n')
+    expect(response.rawDiff).not.toContain('a//dev/null')
+  })
+
+  test('getDiff synthesizes /dev/null new header for deleted files', async () => {
+    const response = await service.getDiff('tsconfig.json')
+
+    expect(response.oldText).toContain('"compilerOptions"')
+    expect(response.newText).toBe('')
+    expect(response.rawDiff).toContain(
+      'diff --git a/tsconfig.json b/tsconfig.json'
+    )
+    expect(response.rawDiff).toContain('--- a/tsconfig.json\n')
+    expect(response.rawDiff).toContain('+++ /dev/null\n')
+    expect(response.rawDiff).not.toContain('b//dev/null')
+  })
+
   test('getDiff throws error for non-existent file', async () => {
     await expect(service.getDiff('non-existent.ts')).rejects.toThrow(
       'Diff not found for file: non-existent.ts'

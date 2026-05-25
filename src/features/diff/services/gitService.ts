@@ -18,10 +18,12 @@ const synthesizeDiffResponse = (fileDiff: FileDiff): GetGitDiffResponse => {
   const rawDiffLines: string[] = []
   const oldPath = fileDiff.oldPath ?? fileDiff.filePath
   const newPath = fileDiff.newPath ?? fileDiff.filePath
+  const diffOldPath = oldPath === '/dev/null' ? newPath : oldPath
+  const diffNewPath = newPath === '/dev/null' ? oldPath : newPath
 
-  rawDiffLines.push(`diff --git a/${oldPath} b/${newPath}`)
-  rawDiffLines.push(`--- a/${oldPath}`)
-  rawDiffLines.push(`+++ b/${newPath}`)
+  rawDiffLines.push(`diff --git a/${diffOldPath} b/${diffNewPath}`)
+  rawDiffLines.push(`--- ${patchSidePath('a', oldPath)}`)
+  rawDiffLines.push(`+++ ${patchSidePath('b', newPath)}`)
 
   for (const hunk of fileDiff.hunks) {
     rawDiffLines.push(hunk.header)
@@ -55,6 +57,9 @@ const synthesizeDiffResponse = (fileDiff: FileDiff): GetGitDiffResponse => {
 
 const linesToText = (lines: readonly string[]): string =>
   lines.length > 0 ? `${lines.join('\n')}\n` : ''
+
+const patchSidePath = (prefix: 'a' | 'b', filePath: string): string =>
+  filePath === '/dev/null' ? '/dev/null' : `${prefix}/${filePath}`
 
 /** Git service interface for diff operations */
 export interface GitService {
