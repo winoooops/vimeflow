@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { createGitService } from '../services/gitService'
 import type { FileDiff } from '../types'
 import type { GetGitDiffResponse } from '../../../bindings/GetGitDiffResponse'
@@ -14,6 +14,8 @@ export interface UseFileDiffReturn {
   diff: FileDiff | null
   loading: boolean
   error: Error | null
+  /** Trigger a manual re-fetch of the diff (e.g. after a stage/discard action). */
+  refetch: () => void
 }
 
 /**
@@ -32,6 +34,11 @@ export const useFileDiff = (
   const [response, setResponse] = useState<GetGitDiffResponse | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<Error | null>(null)
+  const [refetchKey, setRefetchKey] = useState(0)
+
+  const refetch = useCallback((): void => {
+    setRefetchKey((k) => k + 1)
+  }, [])
 
   useEffect(() => {
     if (!filePath) {
@@ -77,7 +84,7 @@ export const useFileDiff = (
     return (): void => {
       cancelled = true
     }
-  }, [filePath, staged, untracked, cwd])
+  }, [filePath, staged, untracked, cwd, refetchKey])
 
   const fileDiff = response?.fileDiff ?? null
 
@@ -86,5 +93,6 @@ export const useFileDiff = (
     diff: fileDiff,
     loading,
     error,
+    refetch,
   }
 }

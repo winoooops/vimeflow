@@ -241,29 +241,36 @@ describe('MockGitService', () => {
     )
   })
 
-  test('stageFile resolves successfully', async () => {
+  test('stageFile resolves successfully (whole file)', async () => {
     await expect(service.stageFile('src/test.ts')).resolves.toBeUndefined()
   })
 
-  test('stageFile with hunk index resolves successfully', async () => {
-    await expect(service.stageFile('src/test.ts', 0)).resolves.toBeUndefined()
+  test('stageFile with hunk patch resolves successfully', async () => {
+    await expect(
+      service.stageFile('src/test.ts', '@@ -1,3 +1,4 @@\n context\n+added\n')
+    ).resolves.toBeUndefined()
   })
 
-  test('unstageFile resolves successfully', async () => {
+  test('unstageFile resolves successfully (whole file)', async () => {
     await expect(service.unstageFile('src/test.ts')).resolves.toBeUndefined()
   })
 
-  test('unstageFile with hunk index resolves successfully', async () => {
-    await expect(service.unstageFile('src/test.ts', 0)).resolves.toBeUndefined()
+  test('unstageFile with hunk patch resolves successfully', async () => {
+    await expect(
+      service.unstageFile('src/test.ts', '@@ -1,3 +1,4 @@\n context\n+added\n')
+    ).resolves.toBeUndefined()
   })
 
-  test('discardChanges resolves successfully', async () => {
+  test('discardChanges resolves successfully (whole file)', async () => {
     await expect(service.discardChanges('src/test.ts')).resolves.toBeUndefined()
   })
 
-  test('discardChanges with hunk index resolves successfully', async () => {
+  test('discardChanges with hunk patch resolves successfully', async () => {
     await expect(
-      service.discardChanges('src/test.ts', 0)
+      service.discardChanges(
+        'src/test.ts',
+        '@@ -1,3 +1,4 @@\n context\n+added\n'
+      )
     ).resolves.toBeUndefined()
   })
 })
@@ -386,7 +393,7 @@ describe('HttpGitService', () => {
   })
 
   describe('stageFile', () => {
-    test('posts to /api/git/stage with file', async () => {
+    test('posts to /api/git/stage with file only (whole file)', async () => {
       fetchMock.mockResolvedValueOnce({ ok: true })
 
       await service.stageFile('src/test.ts')
@@ -398,15 +405,16 @@ describe('HttpGitService', () => {
       })
     })
 
-    test('posts to /api/git/stage with file and hunk index', async () => {
+    test('posts to /api/git/stage with file and hunk patch', async () => {
       fetchMock.mockResolvedValueOnce({ ok: true })
 
-      await service.stageFile('src/test.ts', 2)
+      const patch = '@@ -1,3 +1,4 @@\n context\n+added\n'
+      await service.stageFile('src/test.ts', patch)
 
       expect(fetchMock).toHaveBeenCalledWith('/api/git/stage', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ file: 'src/test.ts', hunkIndex: 2 }),
+        body: JSON.stringify({ file: 'src/test.ts', hunkPatch: patch }),
       })
     })
 
@@ -423,7 +431,7 @@ describe('HttpGitService', () => {
   })
 
   describe('unstageFile', () => {
-    test('posts to /api/git/unstage with file', async () => {
+    test('posts to /api/git/unstage with file only (whole file)', async () => {
       fetchMock.mockResolvedValueOnce({ ok: true })
 
       await service.unstageFile('src/test.ts')
@@ -435,15 +443,16 @@ describe('HttpGitService', () => {
       })
     })
 
-    test('posts to /api/git/unstage with file and hunk index', async () => {
+    test('posts to /api/git/unstage with file and hunk patch', async () => {
       fetchMock.mockResolvedValueOnce({ ok: true })
 
-      await service.unstageFile('src/test.ts', 1)
+      const patch = '@@ -1,4 +1,3 @@\n context\n-removed\n'
+      await service.unstageFile('src/test.ts', patch)
 
       expect(fetchMock).toHaveBeenCalledWith('/api/git/unstage', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ file: 'src/test.ts', hunkIndex: 1 }),
+        body: JSON.stringify({ file: 'src/test.ts', hunkPatch: patch }),
       })
     })
 
@@ -460,7 +469,7 @@ describe('HttpGitService', () => {
   })
 
   describe('discardChanges', () => {
-    test('posts to /api/git/discard with file', async () => {
+    test('posts to /api/git/discard with file and scope (whole file)', async () => {
       fetchMock.mockResolvedValueOnce({ ok: true })
 
       await service.discardChanges('src/test.ts')
@@ -468,19 +477,24 @@ describe('HttpGitService', () => {
       expect(fetchMock).toHaveBeenCalledWith('/api/git/discard', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ file: 'src/test.ts' }),
+        body: JSON.stringify({ file: 'src/test.ts', scope: 'unstaged' }),
       })
     })
 
-    test('posts to /api/git/discard with file and hunk index', async () => {
+    test('posts to /api/git/discard with file and hunk patch', async () => {
       fetchMock.mockResolvedValueOnce({ ok: true })
 
-      await service.discardChanges('src/test.ts', 3)
+      const patch = '@@ -1,3 +1,4 @@\n context\n+added\n'
+      await service.discardChanges('src/test.ts', patch)
 
       expect(fetchMock).toHaveBeenCalledWith('/api/git/discard', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ file: 'src/test.ts', hunkIndex: 3 }),
+        body: JSON.stringify({
+          file: 'src/test.ts',
+          scope: 'unstaged',
+          hunkPatch: patch,
+        }),
       })
     })
 
@@ -598,25 +612,108 @@ describe('DesktopGitService', () => {
   })
 
   describe('stageFile', () => {
-    test('throws not implemented error', async () => {
+    test('calls invoke with stage_file and cwd + path (whole file)', async () => {
+      invokeMock.mockResolvedValueOnce(undefined)
+
+      await service.stageFile('src/test.ts')
+
+      expect(invokeMock).toHaveBeenCalledWith('stage_file', {
+        cwd: '/home/user/project',
+        path: 'src/test.ts',
+        hunkPatch: undefined,
+      })
+    })
+
+    test('calls invoke with stage_file and hunk patch', async () => {
+      invokeMock.mockResolvedValueOnce(undefined)
+
+      const patch = '@@ -1,3 +1,4 @@\n context\n+added\n'
+      await service.stageFile('src/test.ts', patch)
+
+      expect(invokeMock).toHaveBeenCalledWith('stage_file', {
+        cwd: '/home/user/project',
+        path: 'src/test.ts',
+        hunkPatch: patch,
+      })
+    })
+
+    test('throws error on invoke failure', async () => {
+      invokeMock.mockRejectedValueOnce(new Error('apply failed'))
+
       await expect(service.stageFile('src/test.ts')).rejects.toThrow(
-        'stageFile not implemented'
+        'Failed to stage src/test.ts: Error: apply failed'
       )
     })
   })
 
   describe('unstageFile', () => {
-    test('throws not implemented error', async () => {
+    test('calls invoke with unstage_file and cwd + path (whole file)', async () => {
+      invokeMock.mockResolvedValueOnce(undefined)
+
+      await service.unstageFile('src/test.ts')
+
+      expect(invokeMock).toHaveBeenCalledWith('unstage_file', {
+        cwd: '/home/user/project',
+        path: 'src/test.ts',
+        hunkPatch: undefined,
+      })
+    })
+
+    test('calls invoke with unstage_file and hunk patch', async () => {
+      invokeMock.mockResolvedValueOnce(undefined)
+
+      const patch = '@@ -1,4 +1,3 @@\n context\n-removed\n'
+      await service.unstageFile('src/test.ts', patch)
+
+      expect(invokeMock).toHaveBeenCalledWith('unstage_file', {
+        cwd: '/home/user/project',
+        path: 'src/test.ts',
+        hunkPatch: patch,
+      })
+    })
+
+    test('throws error on invoke failure', async () => {
+      invokeMock.mockRejectedValueOnce(new Error('reset failed'))
+
       await expect(service.unstageFile('src/test.ts')).rejects.toThrow(
-        'unstageFile not implemented'
+        'Failed to unstage src/test.ts: Error: reset failed'
       )
     })
   })
 
   describe('discardChanges', () => {
-    test('throws not implemented error', async () => {
+    test('calls invoke with discard_file and cwd + path + scope (whole file)', async () => {
+      invokeMock.mockResolvedValueOnce(undefined)
+
+      await service.discardChanges('src/test.ts')
+
+      expect(invokeMock).toHaveBeenCalledWith('discard_file', {
+        cwd: '/home/user/project',
+        path: 'src/test.ts',
+        hunkPatch: undefined,
+        scope: 'unstaged',
+      })
+    })
+
+    test('calls invoke with discard_file and hunk patch', async () => {
+      invokeMock.mockResolvedValueOnce(undefined)
+
+      const patch = '@@ -1,3 +1,4 @@\n context\n+added\n'
+      await service.discardChanges('src/test.ts', patch)
+
+      expect(invokeMock).toHaveBeenCalledWith('discard_file', {
+        cwd: '/home/user/project',
+        path: 'src/test.ts',
+        hunkPatch: patch,
+        scope: 'unstaged',
+      })
+    })
+
+    test('throws error on invoke failure', async () => {
+      invokeMock.mockRejectedValueOnce(new Error('checkout failed'))
+
       await expect(service.discardChanges('src/test.ts')).rejects.toThrow(
-        'discardChanges not implemented'
+        'Failed to discard changes to src/test.ts: Error: checkout failed'
       )
     })
   })

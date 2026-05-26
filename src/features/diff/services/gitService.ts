@@ -172,14 +172,26 @@ export interface GitService {
     untracked?: boolean
   ): Promise<GetGitDiffResponse>
 
-  /** Stage a file or specific hunk */
-  stageFile(file: string, hunkIndex?: number): Promise<void>
+  /**
+   * Stage a file or a specific hunk. When `hunkPatch` is provided it must be
+   * the full unified-diff text for a single hunk (header + diff lines) as
+   * produced by `extractHunkPatch`. Omitting it stages the entire file.
+   */
+  stageFile(file: string, hunkPatch?: string): Promise<void>
 
-  /** Unstage a file or specific hunk */
-  unstageFile(file: string, hunkIndex?: number): Promise<void>
+  /**
+   * Unstage a file or a specific hunk. When `hunkPatch` is provided it is
+   * applied in reverse to the index. Omitting it removes the entire file from
+   * the index.
+   */
+  unstageFile(file: string, hunkPatch?: string): Promise<void>
 
-  /** Discard changes to a file or hunk */
-  discardChanges(file: string, hunkIndex?: number): Promise<void>
+  /**
+   * Discard working-tree changes to a file or a specific hunk. When
+   * `hunkPatch` is provided it is applied in reverse to the working tree.
+   * Omitting it discards all changes to the file (scope: 'unstaged').
+   */
+  discardChanges(file: string, hunkPatch?: string): Promise<void>
 }
 
 /** Mock implementation using static mock data (for tests) */
@@ -241,11 +253,16 @@ export class HttpGitService implements GitService {
     return response.json() as Promise<GetGitDiffResponse>
   }
 
-  async stageFile(file: string, hunkIndex?: number): Promise<void> {
+  async stageFile(file: string, hunkPatch?: string): Promise<void> {
+    const body: Record<string, unknown> = { file }
+    if (hunkPatch !== undefined) {
+      body.hunkPatch = hunkPatch
+    }
+
     const response = await fetch('/api/git/stage', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ file, hunkIndex }),
+      body: JSON.stringify(body),
     })
 
     if (!response.ok) {
@@ -253,11 +270,16 @@ export class HttpGitService implements GitService {
     }
   }
 
-  async unstageFile(file: string, hunkIndex?: number): Promise<void> {
+  async unstageFile(file: string, hunkPatch?: string): Promise<void> {
+    const body: Record<string, unknown> = { file }
+    if (hunkPatch !== undefined) {
+      body.hunkPatch = hunkPatch
+    }
+
     const response = await fetch('/api/git/unstage', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ file, hunkIndex }),
+      body: JSON.stringify(body),
     })
 
     if (!response.ok) {
@@ -265,11 +287,16 @@ export class HttpGitService implements GitService {
     }
   }
 
-  async discardChanges(file: string, hunkIndex?: number): Promise<void> {
+  async discardChanges(file: string, hunkPatch?: string): Promise<void> {
+    const body: Record<string, unknown> = { file, scope: 'unstaged' }
+    if (hunkPatch !== undefined) {
+      body.hunkPatch = hunkPatch
+    }
+
     const response = await fetch('/api/git/discard', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ file, hunkIndex }),
+      body: JSON.stringify(body),
     })
 
     if (!response.ok) {
@@ -315,16 +342,41 @@ export class DesktopGitService implements GitService {
     }
   }
 
-  stageFile(): Promise<void> {
-    return Promise.reject(new Error('stageFile not implemented'))
+  async stageFile(file: string, hunkPatch?: string): Promise<void> {
+    try {
+      await invoke<void>('stage_file', {
+        cwd: this.cwd,
+        path: file,
+        hunkPatch,
+      })
+    } catch (error) {
+      throw new Error(`Failed to stage ${file}: ${String(error)}`)
+    }
   }
 
-  unstageFile(): Promise<void> {
-    return Promise.reject(new Error('unstageFile not implemented'))
+  async unstageFile(file: string, hunkPatch?: string): Promise<void> {
+    try {
+      await invoke<void>('unstage_file', {
+        cwd: this.cwd,
+        path: file,
+        hunkPatch,
+      })
+    } catch (error) {
+      throw new Error(`Failed to unstage ${file}: ${String(error)}`)
+    }
   }
 
-  discardChanges(): Promise<void> {
-    return Promise.reject(new Error('discardChanges not implemented'))
+  async discardChanges(file: string, hunkPatch?: string): Promise<void> {
+    try {
+      await invoke<void>('discard_file', {
+        cwd: this.cwd,
+        path: file,
+        hunkPatch,
+        scope: 'unstaged',
+      })
+    } catch (error) {
+      throw new Error(`Failed to discard changes to ${file}: ${String(error)}`)
+    }
   }
 }
 
