@@ -24,7 +24,7 @@ vi.mock('../../lib/backend', () => ({
     })
   ),
   invoke: vi.fn().mockResolvedValue(null),
-  // useCommandPalette subscribes to the Electron main-process Ctrl+:
+  // useCommandPalette subscribes to the Electron main-process palette toggle
   // override on mount; return a synchronous no-op unlisten so the
   // WorkspaceView tree mounts without reaching a real bridge.
   listenCommandPaletteToggle: vi.fn(() => (): void => {
@@ -168,6 +168,10 @@ describe('WorkspaceView - Command Palette Integration', () => {
   let mockSessions: Session[]
 
   beforeEach(async () => {
+    Object.defineProperty(navigator, 'platform', {
+      value: 'Linux x86_64',
+      configurable: true,
+    })
     // Reset all mocks
     vi.clearAllMocks()
     terminalZonePropsSpy.mockClear()
@@ -297,7 +301,7 @@ describe('WorkspaceView - Command Palette Integration', () => {
   const openPalette = (): void => {
     act(() => {
       const event = new KeyboardEvent('keydown', {
-        key: ':',
+        key: ';',
         ctrlKey: true,
         bubbles: true,
       })

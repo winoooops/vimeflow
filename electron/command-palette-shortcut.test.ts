@@ -2,6 +2,7 @@ import { describe, expect, test, vi } from 'vitest'
 import { COMMAND_PALETTE_TOGGLE } from './ipc-channels'
 import {
   COMMAND_PALETTE_GLOBAL_ACCELERATORS,
+  commandPaletteShortcutConfigForPlatform,
   type CommandPaletteShortcutOverrideOptions,
   installCommandPaletteShortcutOverride,
   isCommandPaletteShortcutInput,
@@ -93,47 +94,122 @@ const emitWindowEvent = (
 }
 
 describe('command palette shortcut override', () => {
-  test('matches Ctrl+: keydown without meta or alt modifiers', () => {
+  test('selects Command on macOS and Control elsewhere', () => {
+    expect(commandPaletteShortcutConfigForPlatform('darwin').modifier).toBe(
+      'command'
+    )
+
+    expect(commandPaletteShortcutConfigForPlatform('linux').modifier).toBe(
+      'control'
+    )
+
+    expect(commandPaletteShortcutConfigForPlatform('win32').modifier).toBe(
+      'control'
+    )
+  })
+
+  test('matches Ctrl+; keydown on Linux without meta or alt modifiers', () => {
     expect(
-      isCommandPaletteShortcutInput({
-        type: 'keyDown',
-        key: ':',
-        control: true,
-        meta: false,
-        alt: false,
-      })
+      isCommandPaletteShortcutInput(
+        {
+          type: 'keyDown',
+          key: ';',
+          control: true,
+          meta: false,
+          alt: false,
+        },
+        commandPaletteShortcutConfigForPlatform('linux')
+      )
     ).toBe(true)
   })
 
+  test('ignores Ctrl+Shift+; keydown on Linux', () => {
+    expect(
+      isCommandPaletteShortcutInput(
+        {
+          type: 'keyDown',
+          key: ';',
+          control: true,
+          meta: false,
+          alt: false,
+          shift: true,
+        },
+        commandPaletteShortcutConfigForPlatform('linux')
+      )
+    ).toBe(false)
+  })
+
+  test('matches Cmd+; keydown on macOS without control or alt modifiers', () => {
+    expect(
+      isCommandPaletteShortcutInput(
+        {
+          type: 'keyDown',
+          key: ';',
+          control: false,
+          meta: true,
+          alt: false,
+        },
+        commandPaletteShortcutConfigForPlatform('darwin')
+      )
+    ).toBe(true)
+  })
+
+  test('ignores Cmd+Shift+; keydown on macOS', () => {
+    expect(
+      isCommandPaletteShortcutInput(
+        {
+          type: 'keyDown',
+          key: ';',
+          control: false,
+          meta: true,
+          alt: false,
+          shift: true,
+        },
+        commandPaletteShortcutConfigForPlatform('darwin')
+      )
+    ).toBe(false)
+  })
+
   test('ignores non-toggle inputs', () => {
+    const linuxConfig = commandPaletteShortcutConfigForPlatform('linux')
+
     expect(
-      isCommandPaletteShortcutInput({
-        type: 'keyUp',
-        key: ':',
-        control: true,
-        meta: false,
-        alt: false,
-      })
+      isCommandPaletteShortcutInput(
+        {
+          type: 'keyUp',
+          key: ';',
+          control: true,
+          meta: false,
+          alt: false,
+        },
+        linuxConfig
+      )
     ).toBe(false)
 
     expect(
-      isCommandPaletteShortcutInput({
-        type: 'keyDown',
-        key: ':',
-        control: true,
-        meta: true,
-        alt: false,
-      })
+      isCommandPaletteShortcutInput(
+        {
+          type: 'keyDown',
+          key: ';',
+          control: true,
+          meta: true,
+          alt: false,
+        },
+        linuxConfig
+      )
     ).toBe(false)
 
     expect(
-      isCommandPaletteShortcutInput({
-        type: 'keyDown',
-        key: ';',
-        control: true,
-        meta: false,
-        alt: false,
-      })
+      isCommandPaletteShortcutInput(
+        {
+          type: 'keyDown',
+          key: ':',
+          control: true,
+          meta: false,
+          alt: false,
+        },
+        linuxConfig
+      )
     ).toBe(false)
   })
 
@@ -143,24 +219,27 @@ describe('command palette shortcut override', () => {
     // the packaged app (event.preventDefault suppresses the renderer keydown),
     // so the main-process matcher must reject auto-repeat itself — otherwise
     // the 100 ms deduplication dispatcher still leaks one toggle every
-    // ~100 ms, flickering the palette open/closed while Ctrl+: is held.
+    // ~100 ms, flickering the palette open/closed while Ctrl+; is held.
     expect(
-      isCommandPaletteShortcutInput({
-        type: 'keyDown',
-        key: ':',
-        control: true,
-        meta: false,
-        alt: false,
-        isAutoRepeat: true,
-      })
+      isCommandPaletteShortcutInput(
+        {
+          type: 'keyDown',
+          key: ';',
+          control: true,
+          meta: false,
+          alt: false,
+          isAutoRepeat: true,
+        },
+        commandPaletteShortcutConfigForPlatform('linux')
+      )
     ).toBe(false)
   })
 
-  test('prevents renderer keydown and sends palette toggle IPC', () => {
+  test('prevents renderer Ctrl+; keydown and sends palette toggle IPC on Linux', () => {
     const { beforeInputHandlers, send, win } = createFakeWindow()
     const preventDefault = vi.fn()
 
-    installCommandPaletteShortcutOverride(win, { platform: 'darwin' })
+    installCommandPaletteShortcutOverride(win, { platform: 'linux' })
 
     const handler = beforeInputHandlers[0]
 
@@ -172,7 +251,7 @@ describe('command palette shortcut override', () => {
       { preventDefault },
       {
         type: 'keyDown',
-        key: ':',
+        key: ';',
         control: true,
         meta: false,
         alt: false,
@@ -183,7 +262,7 @@ describe('command palette shortcut override', () => {
     expect(send).toHaveBeenCalledWith(COMMAND_PALETTE_TOGGLE)
   })
 
-  test('does not toggle on auto-repeat before-input-event keydown', () => {
+  test('prevents renderer Cmd+; keydown and sends palette toggle IPC on macOS', () => {
     const { beforeInputHandlers, send, win } = createFakeWindow()
     const preventDefault = vi.fn()
 
@@ -199,7 +278,62 @@ describe('command palette shortcut override', () => {
       { preventDefault },
       {
         type: 'keyDown',
-        key: ':',
+        key: ';',
+        control: false,
+        meta: true,
+        alt: false,
+      }
+    )
+
+    expect(preventDefault).toHaveBeenCalledOnce()
+    expect(send).toHaveBeenCalledWith(COMMAND_PALETTE_TOGGLE)
+  })
+
+  test('does not prevent renderer Cmd+Shift+; keydown on macOS', () => {
+    const { beforeInputHandlers, send, win } = createFakeWindow()
+    const preventDefault = vi.fn()
+
+    installCommandPaletteShortcutOverride(win, { platform: 'darwin' })
+
+    const handler = beforeInputHandlers[0]
+
+    if (handler === undefined) {
+      throw new Error('before-input-event handler was not registered')
+    }
+
+    handler(
+      { preventDefault },
+      {
+        type: 'keyDown',
+        key: ';',
+        control: false,
+        meta: true,
+        alt: false,
+        shift: true,
+      }
+    )
+
+    expect(preventDefault).not.toHaveBeenCalled()
+    expect(send).not.toHaveBeenCalled()
+  })
+
+  test('does not toggle on auto-repeat before-input-event keydown', () => {
+    const { beforeInputHandlers, send, win } = createFakeWindow()
+    const preventDefault = vi.fn()
+
+    installCommandPaletteShortcutOverride(win, { platform: 'linux' })
+
+    const handler = beforeInputHandlers[0]
+
+    if (handler === undefined) {
+      throw new Error('before-input-event handler was not registered')
+    }
+
+    handler(
+      { preventDefault },
+      {
+        type: 'keyDown',
+        key: ';',
         control: true,
         meta: false,
         alt: false,
@@ -262,7 +396,7 @@ describe('command palette shortcut override', () => {
         { preventDefault },
         {
           type: 'keyDown',
-          key: ':',
+          key: ';',
           control: true,
           meta: false,
           alt: false,
@@ -278,7 +412,7 @@ describe('command palette shortcut override', () => {
         { preventDefault },
         {
           type: 'keyDown',
-          key: ':',
+          key: ';',
           control: true,
           meta: false,
           alt: false,

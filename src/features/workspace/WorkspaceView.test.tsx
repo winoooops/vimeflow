@@ -144,6 +144,10 @@ vi.mock('../terminal/services/terminalService', () => ({
 
 describe('WorkspaceView', () => {
   beforeEach(() => {
+    Object.defineProperty(navigator, 'platform', {
+      value: 'Linux x86_64',
+      configurable: true,
+    })
     capturedAgentStatusPanelProps.onOpenFile = undefined
     capturedAgentStatusPanelProps.onOpenDiff = undefined
     capturedAgentStatusPanelProps.agentStatus = undefined
@@ -916,7 +920,7 @@ describe('WorkspaceView', () => {
     act(() => {
       document.dispatchEvent(
         new KeyboardEvent('keydown', {
-          key: ':',
+          key: ';',
           ctrlKey: true,
           bubbles: true,
         })

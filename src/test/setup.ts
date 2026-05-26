@@ -8,6 +8,42 @@ afterEach(() => {
   paneHeaderRefs._resetForTest()
 })
 
+const createMemoryStorage = (): Storage => {
+  const store = new Map<string, string>()
+
+  return {
+    get length(): number {
+      return store.size
+    },
+    clear: (): void => {
+      store.clear()
+    },
+    getItem: (key: string): string | null => store.get(key) ?? null,
+    key: (index: number): string | null =>
+      Array.from(store.keys())[index] ?? null,
+    removeItem: (key: string): void => {
+      store.delete(key)
+    },
+    setItem: (key: string, value: string): void => {
+      store.set(key, value)
+    },
+  }
+}
+
+if (typeof window.localStorage.clear !== 'function') {
+  const storage = createMemoryStorage()
+
+  Object.defineProperty(window, 'localStorage', {
+    configurable: true,
+    value: storage,
+  })
+
+  Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true,
+    value: storage,
+  })
+}
+
 // Mock xterm.js WebGL addon to prevent WebGL errors in jsdom
 vi.mock('@xterm/addon-webgl', () => ({
   WebglAddon: vi.fn(() => ({

@@ -277,7 +277,7 @@ mod noop_tests {
             .expect("openpty");
         let child = pty_pair
             .slave
-            .spawn_command(CommandBuilder::new("/bin/true"))
+            .spawn_command(CommandBuilder::new("/usr/bin/true"))
             .expect("spawn");
         let writer = pty_pair.master.take_writer().expect("take_writer");
 
