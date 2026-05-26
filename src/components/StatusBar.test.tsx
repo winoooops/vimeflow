@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, test, vi } from 'vitest'
+import { beforeEach, describe, expect, test, vi } from 'vitest'
 import { StatusBar, type StatusBarProps } from './StatusBar'
 
 const defaultProps = {
@@ -11,7 +11,7 @@ const defaultProps = {
     changes: { added: 212, removed: 188 },
   },
   contextPct: 74,
-  paletteShortcut: ['Ctrl', ':'],
+  paletteShortcut: ['Mod', ';'],
   onOpenPalette: vi.fn(),
 } satisfies StatusBarProps
 
@@ -21,6 +21,13 @@ const renderStatusBar = (
   render(<StatusBar {...defaultProps} {...overrides} />)
 
 describe('StatusBar', () => {
+  beforeEach(() => {
+    Object.defineProperty(navigator, 'platform', {
+      value: 'Linux x86_64',
+      configurable: true,
+    })
+  })
+
   test('renders the running session state with every segment', () => {
     renderStatusBar()
 
@@ -42,7 +49,19 @@ describe('StatusBar', () => {
       screen.getByRole('button', { name: /open command palette/i })
     ).toBeInTheDocument()
     expect(screen.getByText('Ctrl')).toBeInTheDocument()
-    expect(screen.getByText(':')).toBeInTheDocument()
+    expect(screen.getByText(';')).toBeInTheDocument()
+  })
+
+  test('renders the platform command key on macOS', () => {
+    Object.defineProperty(navigator, 'platform', {
+      value: 'MacIntel',
+      configurable: true,
+    })
+
+    renderStatusBar()
+
+    expect(screen.getByText('⌘')).toBeInTheDocument()
+    expect(screen.getByText(';')).toBeInTheDocument()
   })
 
   test('omits duration cache and diff segments without orphan separators', () => {

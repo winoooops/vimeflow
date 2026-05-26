@@ -10,6 +10,10 @@ import type { BackendApi } from '../../../lib/backend'
 
 describe('useCommandPalette', () => {
   beforeEach(() => {
+    Object.defineProperty(navigator, 'platform', {
+      value: 'Linux x86_64',
+      configurable: true,
+    })
     chordRegistry._resetForTest()
     // Clear any focused elements before each test
     document.body.innerHTML = ''
@@ -72,12 +76,12 @@ describe('useCommandPalette', () => {
     })
   })
 
-  describe('keyboard trigger - Ctrl+:', () => {
+  describe('keyboard trigger', () => {
     test('exports the displayed command-palette shortcut', () => {
-      expect(COMMAND_PALETTE_SHORTCUT_KEYS).toEqual(['Ctrl', ':'])
+      expect(COMMAND_PALETTE_SHORTCUT_KEYS).toEqual(['Mod', ';'])
     })
 
-    test('Ctrl+: opens palette after the leader window expires', () => {
+    test('Ctrl+; opens palette after the leader window expires', () => {
       vi.useFakeTimers()
       const { result } = renderHook(() => useCommandPalette())
 
@@ -85,7 +89,7 @@ describe('useCommandPalette', () => {
 
       act(() => {
         const event = new KeyboardEvent('keydown', {
-          key: ':',
+          key: ';',
           ctrlKey: true,
           bubbles: true,
         })
@@ -101,13 +105,39 @@ describe('useCommandPalette', () => {
       expect(result.current.state.isOpen).toBe(true)
     })
 
-    test('Ctrl+: with palette closed keeps palette closed during leader window', () => {
+    test('Cmd+; opens palette on macOS after the leader window expires', () => {
+      Object.defineProperty(navigator, 'platform', {
+        value: 'MacIntel',
+        configurable: true,
+      })
       vi.useFakeTimers()
       const { result } = renderHook(() => useCommandPalette())
 
       act(() => {
         const event = new KeyboardEvent('keydown', {
-          key: ':',
+          key: ';',
+          metaKey: true,
+          bubbles: true,
+        })
+        document.dispatchEvent(event)
+      })
+
+      expect(result.current.state.isOpen).toBe(false)
+
+      act(() => {
+        vi.advanceTimersByTime(500)
+      })
+
+      expect(result.current.state.isOpen).toBe(true)
+    })
+
+    test('Ctrl+; with palette closed keeps palette closed during leader window', () => {
+      vi.useFakeTimers()
+      const { result } = renderHook(() => useCommandPalette())
+
+      act(() => {
+        const event = new KeyboardEvent('keydown', {
+          key: ';',
           ctrlKey: true,
           bubbles: true,
         })
@@ -123,13 +153,13 @@ describe('useCommandPalette', () => {
       expect(result.current.state.isOpen).toBe(false)
     })
 
-    test('does not open palette when bare : is pressed', async () => {
+    test('does not open palette when bare semicolon is pressed', async () => {
       const { result } = renderHook(() => useCommandPalette())
 
       expect(result.current.state.isOpen).toBe(false)
 
       act(() => {
-        const event = new KeyboardEvent('keydown', { key: ':' })
+        const event = new KeyboardEvent('keydown', { key: ';' })
         document.dispatchEvent(event)
       })
 
@@ -138,7 +168,7 @@ describe('useCommandPalette', () => {
       })
     })
 
-    test('toggles palette closed when Ctrl+: pressed while open', () => {
+    test('toggles palette closed when Ctrl+; pressed while open', () => {
       vi.useFakeTimers()
       const { result } = renderHook(() => useCommandPalette())
 
@@ -150,7 +180,7 @@ describe('useCommandPalette', () => {
 
       act(() => {
         const event = new KeyboardEvent('keydown', {
-          key: ':',
+          key: ';',
           ctrlKey: true,
           bubbles: true,
         })
@@ -166,12 +196,12 @@ describe('useCommandPalette', () => {
       expect(result.current.state.isOpen).toBe(false)
     })
 
-    test('Ctrl+: trigger consumes the event when starting the leader window', () => {
+    test('Ctrl+; trigger consumes the event when starting the leader window', () => {
       vi.useFakeTimers()
       const { result } = renderHook(() => useCommandPalette())
 
       const event = new KeyboardEvent('keydown', {
-        key: ':',
+        key: ';',
         ctrlKey: true,
         bubbles: true,
         cancelable: true,
@@ -194,7 +224,7 @@ describe('useCommandPalette', () => {
       expect(stopImmediatePropagationSpy).toHaveBeenCalled()
     })
 
-    test('Ctrl+: while palette is open closes it immediately without leader delay', () => {
+    test('Ctrl+; while palette is open closes it immediately without leader delay', () => {
       vi.useFakeTimers()
       const { result } = renderHook(() => useCommandPalette())
 
@@ -204,7 +234,7 @@ describe('useCommandPalette', () => {
 
       act(() => {
         const event = new KeyboardEvent('keydown', {
-          key: ':',
+          key: ';',
           ctrlKey: true,
           bubbles: true,
           cancelable: true,
@@ -221,7 +251,7 @@ describe('useCommandPalette', () => {
       expect(result.current.state.isOpen).toBe(false)
     })
 
-    test('Ctrl+: then r within 500ms triggers chord without opening palette', () => {
+    test('Ctrl+; then r within 500ms triggers chord without opening palette', () => {
       vi.useFakeTimers()
       const handler = vi.fn(() => true)
       chordRegistry.registerChord('r', handler)
@@ -229,7 +259,7 @@ describe('useCommandPalette', () => {
 
       act(() => {
         const leaderEvent = new KeyboardEvent('keydown', {
-          key: ':',
+          key: ';',
           ctrlKey: true,
           bubbles: true,
           cancelable: true,
@@ -263,13 +293,13 @@ describe('useCommandPalette', () => {
       expect(result.current.state.isOpen).toBe(false)
     })
 
-    test('Ctrl+: then non-chord follow-up opens palette with follow-up query', () => {
+    test('Ctrl+; then non-chord follow-up opens palette with follow-up query', () => {
       vi.useFakeTimers()
       const { result } = renderHook(() => useCommandPalette())
 
       act(() => {
         const leaderEvent = new KeyboardEvent('keydown', {
-          key: ':',
+          key: ';',
           ctrlKey: true,
           bubbles: true,
           cancelable: true,
@@ -297,13 +327,13 @@ describe('useCommandPalette', () => {
       expect(result.current.state.query).toBe(':q')
     })
 
-    test('Ctrl+: then Ctrl+: opens palette immediately', () => {
+    test('Ctrl+; then Ctrl+; opens palette immediately', () => {
       vi.useFakeTimers()
       const { result } = renderHook(() => useCommandPalette())
 
       act(() => {
         const leaderEvent = new KeyboardEvent('keydown', {
-          key: ':',
+          key: ';',
           ctrlKey: true,
           bubbles: true,
           cancelable: true,
@@ -312,7 +342,7 @@ describe('useCommandPalette', () => {
       })
 
       const secondLeaderEvent = new KeyboardEvent('keydown', {
-        key: ':',
+        key: ';',
         ctrlKey: true,
         bubbles: true,
         cancelable: true,
@@ -343,7 +373,7 @@ describe('useCommandPalette', () => {
 
       act(() => {
         const leaderEvent = new KeyboardEvent('keydown', {
-          key: ':',
+          key: ';',
           ctrlKey: true,
           bubbles: true,
           cancelable: true,
@@ -375,7 +405,7 @@ describe('useCommandPalette', () => {
       expect(result.current.state.isOpen).toBe(false)
     })
 
-    test('Ctrl+: trigger calls preventDefault and stops propagation when closing', async () => {
+    test('Ctrl+; trigger calls preventDefault and stops propagation when closing', async () => {
       const { result } = renderHook(() => useCommandPalette())
 
       act(() => {
@@ -385,7 +415,7 @@ describe('useCommandPalette', () => {
       expect(result.current.state.isOpen).toBe(true)
 
       const event = new KeyboardEvent('keydown', {
-        key: ':',
+        key: ';',
         ctrlKey: true,
         bubbles: true,
         cancelable: true,
@@ -411,7 +441,7 @@ describe('useCommandPalette', () => {
       expect(stopImmediatePropagationSpy).toHaveBeenCalled()
     })
 
-    test('Ctrl+: trigger overrides later document-level global shortcuts', async () => {
+    test('Ctrl+; trigger overrides later document-level global shortcuts', async () => {
       const { result } = renderHook(() => useCommandPalette())
       const globalShortcut = vi.fn()
       document.addEventListener('keydown', globalShortcut, { capture: true })
@@ -419,7 +449,7 @@ describe('useCommandPalette', () => {
       try {
         act(() => {
           const event = new KeyboardEvent('keydown', {
-            key: ':',
+            key: ';',
             ctrlKey: true,
             bubbles: true,
             cancelable: true,
@@ -481,7 +511,7 @@ describe('useCommandPalette', () => {
       }
     })
 
-    test('Ctrl+: trigger suppresses repeat events (key-hold flickering guard)', () => {
+    test('Ctrl+; trigger suppresses repeat events (key-hold flickering guard)', () => {
       vi.useFakeTimers()
       // Real-world hardware sends repeat=true events while a key is held.
       // The hook must short-circuit these via the `event.repeat` guard so
@@ -495,7 +525,7 @@ describe('useCommandPalette', () => {
 
       act(() => {
         const initialEvent = new KeyboardEvent('keydown', {
-          key: ':',
+          key: ';',
           ctrlKey: true,
           bubbles: true,
           cancelable: true,
@@ -510,7 +540,7 @@ describe('useCommandPalette', () => {
       expect(result.current.state.isOpen).toBe(true)
 
       const repeatEvent = new KeyboardEvent('keydown', {
-        key: ':',
+        key: ';',
         ctrlKey: true,
         bubbles: true,
         cancelable: true,
@@ -540,7 +570,7 @@ describe('useCommandPalette', () => {
     test('capture-phase listener wins over child stopPropagation', () => {
       vi.useFakeTimers()
       // A child element calling event.stopPropagation() during the bubbling
-      // phase must NOT prevent the global Ctrl+: toggle. The hook attaches
+      // phase must NOT prevent the global Ctrl+; toggle. The hook attaches
       // with { capture: true } so it runs during the capture phase, before
       // any descendant bubble-phase listener can interfere.
       const { result } = renderHook(() => useCommandPalette())
@@ -555,7 +585,7 @@ describe('useCommandPalette', () => {
 
       act(() => {
         const event = new KeyboardEvent('keydown', {
-          key: ':',
+          key: ';',
           ctrlKey: true,
           bubbles: true,
           cancelable: true,

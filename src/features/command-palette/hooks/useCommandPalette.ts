@@ -17,11 +17,12 @@ import { getAllLeaves, traverseNamespace } from '../registry/commandTree'
 import { parseQuery } from '../registry/parseQuery'
 import * as chordRegistry from '../chordRegistry'
 import { listenCommandPaletteToggle } from '../../../lib/backend'
+import {
+  COMMAND_PALETTE_SHORTCUT_KEYS,
+  isCommandPaletteToggle,
+} from '../shortcutConfig'
 
 const LEADER_WINDOW_MS = 500
-
-const isPaletteToggle = (event: KeyboardEvent): boolean =>
-  event.ctrlKey && !event.metaKey && !event.altKey && event.key === ':'
 
 const queryForLeaderFollowUp = (event: KeyboardEvent): string | null => {
   if (
@@ -47,7 +48,7 @@ const fullyConsumeEvent = (event: KeyboardEvent): void => {
   event.stopImmediatePropagation()
 }
 
-export const COMMAND_PALETTE_SHORTCUT_KEYS = ['Ctrl', ':'] as const
+export { COMMAND_PALETTE_SHORTCUT_KEYS }
 
 export const useCommandPalette = (
   commands: Command[] = defaultCommands
@@ -310,9 +311,9 @@ export const useCommandPalette = (
 
   // Global keyboard listener — registered once for the hook's lifetime.
   useEffect(() => {
-    // Ctrl+: handling shared by the renderer keydown path and the Electron
+    // Platform command-palette toggle handling shared by the renderer keydown path and the Electron
     // before-input-event override. In the packaged app Electron owns the
-    // Ctrl+: binding and consumes it before the renderer sees it, dispatching
+    // toggle binding and consumes it before the renderer sees it, dispatching
     // an IPC toggle instead; this callback drives the same leader window so
     // the follow-up chord key (NOT intercepted) still reaches handleKeyDown
     // below and routes through chordRegistry / usePaneRenameChord.
@@ -334,14 +335,14 @@ export const useCommandPalette = (
     }
 
     const handleKeyDown = (event: KeyboardEvent): void => {
-      if (isPaletteToggle(event) && event.repeat) {
+      if (isCommandPaletteToggle(event) && event.repeat) {
         fullyConsumeEvent(event)
 
         return
       }
 
       if (leaderActiveRef.current) {
-        if (isPaletteToggle(event)) {
+        if (isCommandPaletteToggle(event)) {
           fullyConsumeEvent(event)
           clearLeaderWindow()
           handlersRef.current.open()
@@ -371,10 +372,10 @@ export const useCommandPalette = (
         return
       }
 
-      // Ctrl+: starts a short leader window. If no chord consumes the
+      // The palette toggle starts a short leader window. If no chord consumes the
       // follow-up key, the palette opens after the window or immediately on
       // the non-chord key.
-      if (isPaletteToggle(event)) {
+      if (isCommandPaletteToggle(event)) {
         fullyConsumeEvent(event)
         handlePaletteShortcut()
 

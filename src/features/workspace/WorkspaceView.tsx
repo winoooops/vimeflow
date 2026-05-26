@@ -576,7 +576,7 @@ export const WorkspaceView = (): ReactElement => {
   const dockPanelRef = useRef<DockPanelHandle>(null)
 
   const resolveFocusedPane = useCallback((): FocusedPaneRef | null => {
-    // The chord is a deliberate user gesture (`Ctrl+:` then `r`); fire
+    // The chord is a deliberate user gesture (palette toggle then `r`); fire
     // it whenever the workspace has an active session + active pane.
     // Don't gate on `activeContainerId === TERMINAL_CONTAINER_ID` —
     // that workspace-container focus state only flips on Ctrl+B or

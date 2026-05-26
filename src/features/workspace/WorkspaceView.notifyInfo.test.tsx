@@ -37,6 +37,10 @@ vi.mock('../../hooks/useElasticContainer', () => ({
 
 describe('WorkspaceView × notifyInfo banner', () => {
   beforeEach(() => {
+    Object.defineProperty(navigator, 'platform', {
+      value: 'Linux x86_64',
+      configurable: true,
+    })
     vi.useFakeTimers({ shouldAdvanceTime: true })
   })
 
@@ -48,7 +52,7 @@ describe('WorkspaceView × notifyInfo banner', () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
     act(() => {
       document.dispatchEvent(
-        new KeyboardEvent('keydown', { key: ':', ctrlKey: true })
+        new KeyboardEvent('keydown', { key: ';', ctrlKey: true })
       )
     })
     await screen.findByRole('dialog')

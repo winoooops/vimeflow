@@ -7,6 +7,7 @@ interface ShortcutInput {
   control: boolean
   meta: boolean
   alt: boolean
+  shift?: boolean
   isAutoRepeat?: boolean
 }
 
@@ -20,21 +21,43 @@ export interface CommandPaletteShortcutOverrideOptions {
   shortcutRegistry?: ShortcutRegistry
 }
 
-export const COMMAND_PALETTE_GLOBAL_ACCELERATORS = [
-  'Control+:',
-  'Control+Shift+;',
-  'Control+;',
-] as const
+type CommandPaletteShortcutModifier = 'control' | 'command'
+
+export interface CommandPaletteShortcutConfig {
+  modifier: CommandPaletteShortcutModifier
+  globalAccelerators: readonly string[]
+}
+
+const CONTROL_ACCELERATORS = ['Control+;'] as const
+
+const COMMAND_ACCELERATORS = ['Command+;'] as const
+
+export const commandPaletteShortcutConfigForPlatform = (
+  platform: NodeJS.Platform
+): CommandPaletteShortcutConfig =>
+  platform === 'darwin'
+    ? { modifier: 'command', globalAccelerators: COMMAND_ACCELERATORS }
+    : { modifier: 'control', globalAccelerators: CONTROL_ACCELERATORS }
+
+export const COMMAND_PALETTE_GLOBAL_ACCELERATORS =
+  commandPaletteShortcutConfigForPlatform('linux').globalAccelerators
 
 const SHORTCUT_TOGGLE_DEDUPLICATION_MS = 100
 
-export const isCommandPaletteShortcutInput = (input: ShortcutInput): boolean =>
+export const isCommandPaletteShortcutInput = (
+  input: ShortcutInput,
+  config: CommandPaletteShortcutConfig = commandPaletteShortcutConfigForPlatform(
+    process.platform
+  )
+): boolean =>
   input.type === 'keyDown' &&
-  input.control &&
-  !input.meta &&
+  (config.modifier === 'command'
+    ? input.meta && !input.control
+    : input.control && !input.meta) &&
   !input.alt &&
+  input.shift !== true &&
   !input.isAutoRepeat &&
-  input.key === ':'
+  input.key === ';'
 
 const sendCommandPaletteToggle = (win: BrowserWindow): void => {
   if (win.isDestroyed()) {
@@ -67,6 +90,7 @@ export const installCommandPaletteShortcutOverride = (
 ): void => {
   const platform = options.platform ?? process.platform
   const shortcutRegistry = options.shortcutRegistry ?? globalShortcut
+  const shortcutConfig = commandPaletteShortcutConfigForPlatform(platform)
   const dispatchCommandPaletteToggle = createCommandPaletteToggleDispatcher(win)
   let registeredAccelerators: string[] = []
 
@@ -75,7 +99,7 @@ export const installCommandPaletteShortcutOverride = (
       return
     }
 
-    registeredAccelerators = COMMAND_PALETTE_GLOBAL_ACCELERATORS.filter(
+    registeredAccelerators = shortcutConfig.globalAccelerators.filter(
       (accelerator) =>
         shortcutRegistry.register(accelerator, dispatchCommandPaletteToggle)
     )
@@ -93,7 +117,7 @@ export const installCommandPaletteShortcutOverride = (
   }
 
   win.webContents.on('before-input-event', (event, input) => {
-    if (!isCommandPaletteShortcutInput(input)) {
+    if (!isCommandPaletteShortcutInput(input, shortcutConfig)) {
       return
     }
 

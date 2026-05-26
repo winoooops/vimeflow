@@ -282,6 +282,7 @@ mod tests {
         assert!(detect_agent_with_source(10, &source).is_none());
     }
 
+    #[cfg(target_os = "linux")]
     #[test]
     fn reads_self_cmdline() {
         let cmdline = read_platform_cmdline(std::process::id());
