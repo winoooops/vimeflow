@@ -11,7 +11,8 @@
 **Conventions for every task:**
 - Commit type `test:` for Phase 0, `feat:`/`refactor:` for Phase 1/2, per commitlint. End commit bodies with `Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>`.
 - After any `cargo test`, if `git status` shows `src/bindings/` churn, `git restore src/bindings/` before committing (ts-rs regenerates raw files; F-BINDINGS).
-- Run a single Rust test with `cargo test -p vimeflow-backend <test_name> -- --nocapture`. Cargo accepts only **one** filter before `--`; run multiple test names as separate commands.
+- The crate's **package name is `vimeflow`** (`crates/backend/Cargo.toml`); `vimeflow-backend` is only the *binary target*. So all Cargo commands use `-p vimeflow` (never `-p vimeflow-backend`).
+- Run a single Rust test with `cargo test -p vimeflow <test_name> -- --nocapture`. Cargo accepts only **one** filter before `--`; run multiple test names as separate commands.
 - For any task that **creates** a new file, `git add <path>` before committing — `git commit -am` stages only already-tracked files.
 
 ---
@@ -93,7 +94,7 @@ Add a small file-local `append_lines(path, lines)` helper that opens with `OpenO
 
 - [ ] **Step 3: Run it — expect PASS.**
 
-Run: `cargo test -p vimeflow-backend transcript_replay_collapses_then_live_test_run_emits -- --nocapture`
+Run: `cargo test -p vimeflow transcript_replay_collapses_then_live_test_run_emits -- --nocapture`
 Expected: PASS (current Claude already collapses replay + tails live). If FAIL, investigate before proceeding.
 
 - [ ] **Step 4: Commit.**
@@ -145,7 +146,7 @@ fn rollout_replay_collapses_then_live_test_run_emits() {
 
 - [ ] **Step 3: Run it — expect PASS.**
 
-Run: `cargo test -p vimeflow-backend rollout_replay_collapses_then_live_test_run_emits -- --nocapture`
+Run: `cargo test -p vimeflow rollout_replay_collapses_then_live_test_run_emits -- --nocapture`
 Expected: PASS. If FAIL, investigate.
 
 - [ ] **Step 4: Commit.**
@@ -157,7 +158,7 @@ git commit -m "test(transcript): pin Codex replay-collapse then live test-run"
 
 ### Task 0.3: Phase 0 gate
 
-- [ ] **Step 1:** Run the full backend suite: `cargo test -p vimeflow-backend`. Expected: all green.
+- [ ] **Step 1:** Run the full backend suite: `cargo test -p vimeflow`. Expected: all green.
 - [ ] **Step 2:** `git diff refactor/agent-adapter --stat` — confirm only test files changed (no production change). Open PR 1 → `refactor/agent-adapter`; local `codex exec` to zero findings before push (per the #246 cadence). **Do not start Phase 1 until PR 1 is green + merged.**
 
 ---
@@ -196,8 +197,8 @@ fn lenient_i64_accepts_ints_rejects_others() {
 - [ ] **Step 2: Run — expect FAIL** (`lenient_bool` / `lenient_i64` not defined).
 
 Run (Cargo takes only one filter before `--`, so run separately):
-`cargo test -p vimeflow-backend lenient_bool_accepts_bools_rejects_others`
-then `cargo test -p vimeflow-backend lenient_i64_accepts_ints_rejects_others`
+`cargo test -p vimeflow lenient_bool_accepts_bools_rejects_others`
+then `cargo test -p vimeflow lenient_i64_accepts_ints_rejects_others`
 Expected: FAIL (test binary won't compile — unresolved `lenient_bool` / `lenient_i64`).
 
 - [ ] **Step 3: Implement the two helpers** (mirror `lenient_u64`'s exact one-liner style).
@@ -222,7 +223,7 @@ where
 }
 ```
 
-- [ ] **Step 4: Run — expect PASS.** `cargo test -p vimeflow-backend lenient_bool_accepts_bools_rejects_others` and `cargo test -p vimeflow-backend lenient_i64_accepts_ints_rejects_others` (separately) → PASS.
+- [ ] **Step 4: Run — expect PASS.** `cargo test -p vimeflow lenient_bool_accepts_bools_rejects_others` and `cargo test -p vimeflow lenient_i64_accepts_ints_rejects_others` (separately) → PASS.
 
 - [ ] **Step 5: Commit.**
 
@@ -240,7 +241,7 @@ git commit -m "feat(transcript): add lenient_bool and lenient_i64 deserializers"
 
 **Reference:** spec § 4 "Claude shapes" — typed scalars via lenient fields; `content` raw; `tool_use.input` via `#[serde(flatten)] rest` (presence-sensitive); `tool_result.content` raw + `extract_tool_result_content` retargeted to take the `content` value. Top-level envelope must carry `cwd` and the top-level `tool_result` shape (`claude:301`, `:326`).
 
-- [ ] **Step 1: Write DTO unit tests first** (shape + lenient behavior).
+- [ ] **Step 1: Create `transcript_dto.rs` with the failing tests AND wire the module** — write the `#[cfg(test)] mod tests` below into the new file, declare `mod transcript_dto;` in `claude_code/mod.rs`, and `use super::transcript_dto::…` in `transcript.rs`. (The module **must** be declared now: Rust ignores undeclared sibling files, so without the `mod` decl the red run finds zero tests and false-passes. With it declared, the tests reference not-yet-defined DTO types → the crate fails to compile = the real red.)
 
 ```rust
 #[test]
@@ -266,9 +267,9 @@ fn claude_tool_use_dto_distinguishes_absent_vs_null_input() {
 }
 ```
 
-- [ ] **Step 2: Run — expect FAIL** (DTOs undefined). `cargo test -p vimeflow-backend transcript_dto` → FAIL (won't compile).
+- [ ] **Step 2: Run — expect FAIL** (DTOs undefined). `cargo test -p vimeflow transcript_dto` → FAIL (won't compile).
 
-- [ ] **Step 3: Wire + define.** Declare `mod transcript_dto;` in `claude_code/mod.rs` and `use super::transcript_dto::…` in `transcript.rs`, then define the DTOs:
+- [ ] **Step 3: Define the DTOs** (the module + imports were wired in Step 1):
 
 ```rust
 use serde::Deserialize;
@@ -325,7 +326,7 @@ pub(super) struct ClaudeToolResultDto {
 }
 ```
 
-- [ ] **Step 4: Run — expect PASS.** `cargo test -p vimeflow-backend transcript_dto` → PASS. Fix field/visibility issues until green.
+- [ ] **Step 4: Run — expect PASS.** `cargo test -p vimeflow transcript_dto` → PASS. Fix field/visibility issues until green.
 
 - [ ] **Step 5: Commit.**
 
@@ -345,7 +346,7 @@ This is a **pure refactor done *before* the DTO migration** — it still operate
 
 - [ ] **Step 1: Change the signature** to `fn extract_tool_result_content(content: &Value) -> String`, deleting its internal `value.get("content")` lookup (the former `raw` becomes the `content` arg, `claude:686`).
 - [ ] **Step 2: Update *all* call sites** to pass the content value: (a) the production `process_tool_result` (still on the raw block) → `extract_tool_result_content(block.get("content").unwrap_or(&Value::Null))`; (b) the **existing `extract_tool_result_content_*` tests** (F15/F1), which currently build an enclosing `serde_json::json!({ "content": … })` and pass the whole object → change them to pass the content value directly (`&value["content"]`). Both are behavior-neutral (absent and `null` both yield `""`). Missing (b) is the trap: the helper would otherwise receive `{"content": …}` and see no `content` field.
-- [ ] **Step 3: Run — expect PASS.** `cargo test -p vimeflow-backend extract_tool_result_content` (the updated F15/F1 tests) → PASS.
+- [ ] **Step 3: Run — expect PASS.** `cargo test -p vimeflow extract_tool_result_content` (the updated F15/F1 tests) → PASS.
 - [ ] **Step 4: Commit.** `git commit -am "refactor(transcript): extract_tool_result_content takes the content value"`
 
 ### Task 1.4: Migrate Claude `process_line` to DTOs + regression tests
@@ -382,7 +383,7 @@ fn summarize_input_preserves_absent_vs_null() {
 
 **Reference:** spec § 4 "Codex shapes" — `{timestamp, type, payload}` envelope; **two-level dispatch** (top-level `type`: `session_meta`/`response_item`/`event_msg`; inner `payload.type` for BOTH `response_item` *and* `event_msg`, `codex:347`). Each dispatch is a **manual classifier over `Option<String>`** (read the tag with `lenient_string`, `match tag.as_deref()` with an `Other` default) — **not** a `#[serde(tag="type")]` + `#[serde(other)]` enum, which *errors* on a missing or non-string tag rather than falling through. Payload scalars typed lenient (`call_id`/`name`/`status`/`message`/`aggregated_output` via `lenient_string`; `success` via `lenient_bool`; `exit_code` via `lenient_i64`, `codex:571`/`:595`). Raw carve-outs: `arguments`/`output`/custom-tool `input` as `Option<String>` (`lenient_string`) re-parsed by ported helpers; `duration` via `#[serde(flatten)] rest` presence (`codex:765`). Two cwd sources preserved in order (`session_meta.cwd` then `exec_command.arguments.workdir`, `codex:100`); `turn_context.cwd` NOT a source.
 
-- [ ] **Step 1: Write DTO tests first** — top-level + inner dispatch fall-through, `exit_code`/`success` lenient, `duration` presence (absent vs null vs object), inner `arguments` re-parse.
+- [ ] **Step 1: Create `transcript_dto.rs` with the failing tests AND wire the module** — write the tests below into the new file, declare `mod transcript_dto;` in `codex/mod.rs`, and `use super::transcript_dto::…` in `transcript.rs`. (Declare the module now — an undeclared sibling file is ignored, so the red run would find zero tests; with it declared, the tests reference not-yet-defined DTOs → compile FAIL = the real red.) Tests: top-level + inner dispatch fall-through (incl. missing/non-string `type`), `exit_code`/`success` lenient, `duration` presence (absent vs null vs object), inner `arguments` re-parse.
 
 ```rust
 #[test]
@@ -406,9 +407,9 @@ fn codex_exec_end_exit_code_is_lenient_and_duration_presence_preserved() {
 }
 ```
 
-- [ ] **Step 2: Run — expect FAIL.** `cargo test -p vimeflow-backend codex_record_type` and `cargo test -p vimeflow-backend codex_exec_end` → FAIL (won't compile).
-- [ ] **Step 3: Wire + define.** Declare `mod transcript_dto;` in `codex/mod.rs` and `use super::transcript_dto::…` in `transcript.rs`, then define (a) the envelope `CodexLineDto { #[serde(rename = "type", default, deserialize_with = "lenient_string")] type_tag: Option<String>, #[serde(default, deserialize_with = "lenient_string")] timestamp: Option<String>, #[serde(default)] payload: Value }` — `timestamp` MUST be `lenient_string` (a non-string timestamp degrades to `None` → the conversion's `unwrap_or_else(now_iso8601)` fallback fires, matching `extract_timestamp`; a plain `Option<String>` would error and drop the event) — with a manual `record_type(&self) -> CodexRecordType` matching `type_tag.as_deref()` (default `Other`); (b) the inner payload-type classifier the same way (over the payload's `type`, for both `response_item` and `event_msg`); (c) the per-`type` payload DTOs (scalars lenient; `#[serde(flatten)] rest: Map<String,Value>` on payloads that need `duration`; `arguments`/`output`/`input` as `Option<String>` via `lenient_string`; inner `CodexExecArgsDto`/`CodexCustomToolOutputDto` for the re-parsed JSON strings, `metadata.exit_code` via `lenient_i64`). Wrong-shaped payloads degrade via the `Other`/classifier path, not a hard parse error. Follow the exact field set in spec § 4.
-- [ ] **Step 4: Run — expect PASS.** `cargo test -p vimeflow-backend codex_record_type` and `cargo test -p vimeflow-backend codex_exec_end` → PASS.
+- [ ] **Step 2: Run — expect FAIL.** `cargo test -p vimeflow codex_record_type` and `cargo test -p vimeflow codex_exec_end` → FAIL (won't compile).
+- [ ] **Step 3: Define the DTOs** (module + imports wired in Step 1): (a) the envelope `CodexLineDto { #[serde(rename = "type", default, deserialize_with = "lenient_string")] type_tag: Option<String>, #[serde(default, deserialize_with = "lenient_string")] timestamp: Option<String>, #[serde(default)] payload: Value }` — `timestamp` MUST be `lenient_string` (a non-string timestamp degrades to `None` → the conversion's `unwrap_or_else(now_iso8601)` fallback fires, matching `extract_timestamp`; a plain `Option<String>` would error and drop the event) — with a manual `record_type(&self) -> CodexRecordType` matching `type_tag.as_deref()` (default `Other`); (b) the inner payload-type classifier the same way (over the payload's `type`, for both `response_item` and `event_msg`); (c) the per-`type` payload DTOs (scalars lenient; `#[serde(flatten)] rest: Map<String,Value>` on payloads that need `duration`; `arguments`/`output`/`input` as `Option<String>` via `lenient_string`; inner `CodexExecArgsDto`/`CodexCustomToolOutputDto` for the re-parsed JSON strings, `metadata.exit_code` via `lenient_i64`). Wrong-shaped payloads degrade via the `Other`/classifier path, not a hard parse error. Follow the exact field set in spec § 4.
+- [ ] **Step 4: Run — expect PASS.** `cargo test -p vimeflow codex_record_type` and `cargo test -p vimeflow codex_exec_end` → PASS.
 - [ ] **Step 5: Commit.** `git add crates/backend/src/agent/adapter/codex/transcript_dto.rs crates/backend/src/agent/adapter/codex/mod.rs crates/backend/src/agent/adapter/codex/transcript.rs && git commit -m "feat(transcript): add Codex transcript DTOs"`
 
 ### Task 1.6: Migrate Codex `process_line` / `process_event_msg` / `process_response_item` to DTOs
@@ -424,7 +425,7 @@ fn codex_exec_end_exit_code_is_lenient_and_duration_presence_preserved() {
 
 ### Task 1.7: Phase 1 gate
 
-- [ ] **Step 1:** `cargo test -p vimeflow-backend` — all green (existing parse tests, Phase 0 `T-replay`, new lenient + DTO/event + presence-sensitive regression tests).
+- [ ] **Step 1:** `cargo test -p vimeflow` — all green (existing parse tests, Phase 0 `T-replay`, new lenient + DTO/event + presence-sensitive regression tests).
 - [ ] **Step 2:** `git restore src/bindings/` if needed; confirm `git diff` scope matches spec § 4 acceptance (parse paths + DTO files + 2 helpers + retargets + tests). Open PR 2 → `refactor/agent-adapter`; local codex to zero findings; merge before Phase 2.
 
 ---
@@ -492,7 +493,7 @@ impl TranscriptTailService {
 ```
 
 - [ ] **Step 2: Wire `base/mod.rs`** — add `mod transcript_tail_service;` and `pub(crate) use transcript_tail_service::{TranscriptDecoder, TranscriptTailService};` (mirroring the `transcript_state` re-export). **Do not** add the `#[cfg(test)]` test-helper re-export yet — those items don't exist until Task 2.2, so referencing them now would leave a committed state where `cargo test` fails to compile. (Task 2.2 adds both the helpers and their re-export together.)
-- [ ] **Step 3: Build.** `cargo build -p vimeflow-backend` → compiles (unused warnings OK until wired).
+- [ ] **Step 3: Build.** `cargo build -p vimeflow` → compiles (unused warnings OK until wired).
 - [ ] **Step 4: Commit.** `git add crates/backend/src/agent/adapter/base/transcript_tail_service.rs crates/backend/src/agent/adapter/base/mod.rs && git commit -m "feat(transcript): add TranscriptTailService + TranscriptDecoder skeleton"`
 
 ### Task 2.2: Deterministic engine buffering tests (`ScriptedBufRead` + recording decoder)
@@ -546,7 +547,7 @@ impl TranscriptDecoder for RecordingDecoder {
   - **CRLF:** `[Chunk("{\"a\":1}\r\n"), EofStop]` → assert `lines == ["{\"a\":1}"]` (no trailing `\r`).
   - **blank skip:** `[Chunk("   \n"), EofStop]` → assert `lines` empty.
 
-- [ ] **Step 3: Run — expect PASS** — `cargo test -p vimeflow-backend transcript_tail_service` (the `run` impl from Task 2.1 satisfies these). Fix `run` if any fail.
+- [ ] **Step 3: Run — expect PASS** — `cargo test -p vimeflow transcript_tail_service` (the `run` impl from Task 2.1 satisfies these). Fix `run` if any fail.
 - [ ] **Step 4: Commit.** `git commit -am "test(transcript): deterministic engine buffering + EOF/normalization"` (the new structs live in the already-tracked `transcript_tail_service.rs`, so `-am` is fine here).
 
 ### Task 2.3: `ClaudeTranscriptDecoder` + thin `start_tailing` (Claude)
@@ -556,8 +557,8 @@ impl TranscriptDecoder for RecordingDecoder {
 
 - [ ] **Step 1: Define `ClaudeTranscriptDecoder`** owning `events: Arc<dyn EventSink>`, `session_id: String`, `cwd: Option<PathBuf>`, `in_flight`, `num_turns`, `last_cwd`, `emitter: TestRunEmitter`. `new(events, session_id, cwd)` constructs it. Move the (Phase-1-typed) `process_line` body into `decode_line(&mut self, line: &str)`; `on_caught_up(&mut self)` calls `self.emitter.finish_replay()`.
 - [ ] **Step 2: Rewrite `start_tailing`** to: open the (already-validated) file, build `ClaudeTranscriptDecoder::new(...)`, `TranscriptTailService::new(decoder, "transcript")`, spawn `move || svc.run(BufReader::new(file), stop_clone)`, return `TranscriptHandle::new(stop, join)`. Delete the old `tail_loop`. (`tail()` in `mod.rs` is unchanged — it already delegates here.)
-- [ ] **Step 3: Run all Claude transcript tests + Phase 0 `T-replay`** — `cargo test -p vimeflow-backend claude_code::transcript` → green.
-- [ ] **Step 4: Add the end-to-end G3-fix test** (spec § 5) in this module's `mod tests`, importing the shared harness via the `base` re-export: `use crate::agent::adapter::base::{ScriptedBufRead, Step};`. Build the real `ClaudeTranscriptDecoder::new(events, sid, cwd)` (with a `FakeEventSink`), wrap in `TranscriptTailService::new(Box::new(dec), "transcript").with_poll_interval(Duration::ZERO)`, and `run(ScriptedBufRead { steps: vec![Step::Chunk(<first half>), Step::Eof, Step::Chunk(<second half + "\n">), Step::EofStop].into_iter(), stop: stop.clone() }, stop)` — splitting a real Claude `tool_use` line where neither half is valid JSON. Assert `FakeEventSink` records `agent-tool-call`. Run that test (`cargo test -p vimeflow-backend claude_code::transcript`, which includes it) — expect PASS (the fix works; pre-C this event was dropped).
+- [ ] **Step 3: Run all Claude transcript tests + Phase 0 `T-replay`** — `cargo test -p vimeflow claude_code::transcript` → green.
+- [ ] **Step 4: Add the end-to-end G3-fix test** (spec § 5) in this module's `mod tests`, importing the shared harness via the `base` re-export: `use crate::agent::adapter::base::{ScriptedBufRead, Step};`. Build the real `ClaudeTranscriptDecoder::new(events, sid, cwd)` (with a `FakeEventSink`), wrap in `TranscriptTailService::new(Box::new(dec), "transcript").with_poll_interval(Duration::ZERO)`, and `run(ScriptedBufRead { steps: vec![Step::Chunk(<first half>), Step::Eof, Step::Chunk(<second half + "\n">), Step::EofStop].into_iter(), stop: stop.clone() }, stop)` — splitting a real Claude `tool_use` line where neither half is valid JSON. Assert `FakeEventSink` records `agent-tool-call`. Run that test (`cargo test -p vimeflow claude_code::transcript`, which includes it) — expect PASS (the fix works; pre-C this event was dropped).
 - [ ] **Step 5: Commit.** `git commit -am "refactor(transcript): Claude tail via TranscriptTailService + decoder"`
 
 ### Task 2.4: `CodexTranscriptDecoder` + thin `start_tailing` (Codex)
@@ -567,12 +568,12 @@ impl TranscriptDecoder for RecordingDecoder {
 
 - [ ] **Step 1:** Define `CodexTranscriptDecoder` (same shape; `in_flight` carries `CompletionMode`); move the typed `process_line` body into `decode_line`; `on_caught_up` → `finish_replay`.
 - [ ] **Step 2:** Rewrite `start_tailing` to build the decoder + `TranscriptTailService::new(decoder, "Codex rollout transcript")` + spawn `run`. Delete the old `tail_loop`. Delete the now-unused per-provider `POLL_INTERVAL` const (use the `base` one).
-- [ ] **Step 3: Run all Codex transcript tests + Phase 0 `T-replay`** — `cargo test -p vimeflow-backend codex::transcript` → green.
+- [ ] **Step 3: Run all Codex transcript tests + Phase 0 `T-replay`** — `cargo test -p vimeflow codex::transcript` → green.
 - [ ] **Step 4: Commit.** `git commit -am "refactor(transcript): Codex tail via TranscriptTailService + decoder"`
 
 ### Task 2.5: Phase 2 gate
 
-- [ ] **Step 1:** `cargo test -p vimeflow-backend` — all green (engine buffering tests, Phase 0 `T-replay` unchanged, end-to-end G3 test, all parse tests). Confirm both `tail_loop`s are gone (`grep -rn "fn tail_loop" crates/backend/src` → no matches).
+- [ ] **Step 1:** `cargo test -p vimeflow` — all green (engine buffering tests, Phase 0 `T-replay` unchanged, end-to-end G3 test, all parse tests). Confirm both `tail_loop`s are gone (`grep -rn "fn tail_loop" crates/backend/src` → no matches).
 - [ ] **Step 2:** `git restore src/bindings/` if needed. Verify frozen constraints hold: events shape/deterministic-field equivalent (+ the two-sided G3 carve-out); `Ordering::Acquire` stop, `POLL_INTERVAL`, first-EOF `on_caught_up`, error→warn→sleep preserved. Open PR 3 → `refactor/agent-adapter`; local codex to zero findings; merge.
 - [ ] **Step 3:** Update #246: tick **A-transcript** + **C**; add **Step F** (spec § 6) as a deferred-capstone line.
 
