@@ -937,6 +937,157 @@ describe('useAgentStatus', () => {
     expect(result.current.agentType).toBe('claude-code')
   })
 
+  test('restarts watcher and clears run state when detected agent pid changes in same pane', async () => {
+    let detectedPid = 111
+
+    vi.mocked(invoke).mockImplementation(((cmd: string) => {
+      if (cmd === 'detect_agent_in_session') {
+        return Promise.resolve({
+          sessionId: 'pty-session-1',
+          agentType: 'codex',
+          pid: detectedPid,
+        })
+      }
+
+      return Promise.resolve(null)
+    }) as unknown as typeof invoke)
+
+    const { result } = renderHook(() => useAgentStatus('session-1'))
+
+    await vi.waitFor(() => {
+      expect(result.current.isActive).toBe(true)
+      expect(result.current.agentType).toBe('codex')
+      expect(invoke).toHaveBeenCalledWith('start_agent_watcher', {
+        sessionId: 'pty-session-1',
+      })
+    })
+
+    await vi.waitFor(() => {
+      expect(eventListeners.get('agent-status')?.length).toBe(1)
+      expect(eventListeners.get('agent-tool-call')?.length).toBe(1)
+    })
+
+    act(() => {
+      emit('agent-status', {
+        sessionId: 'pty-session-1',
+        modelId: 'gpt-5.5',
+        modelDisplayName: 'GPT-5.5',
+        version: '0.133.0',
+        agentSessionId: 'codex-old',
+        contextWindow: {
+          usedPercentage: 77,
+          remainingPercentage: 23,
+          contextWindowSize: 258000,
+          totalInputTokens: 198000,
+          totalOutputTokens: 0,
+          currentUsage: {
+            inputTokens: 198000,
+            outputTokens: 0,
+            cacheCreationInputTokens: 0,
+            cacheReadInputTokens: 198000,
+          },
+        },
+        cost: null,
+        rateLimits: null,
+      })
+
+      emit('agent-tool-call', {
+        sessionId: 'pty-session-1',
+        toolUseId: 'toolu_old',
+        tool: 'exec_command',
+        args: '{"cmd":"old"}',
+        status: 'done',
+        timestamp: '2026-05-26T00:00:00Z',
+        durationMs: 10,
+      })
+    })
+
+    expect(result.current.agentSessionId).toBe('codex-old')
+    expect(result.current.contextWindow?.usedPercentage).toBe(77)
+    expect(result.current.toolCalls.total).toBe(1)
+
+    detectedPid = 222
+
+    await act(async () => {
+      vi.advanceTimersByTime(500)
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    await vi.waitFor(() => {
+      const startCalls = vi
+        .mocked(invoke)
+        .mock.calls.filter(([cmd]) => cmd === 'start_agent_watcher')
+      expect(startCalls).toHaveLength(2)
+    })
+
+    expect(invoke).toHaveBeenCalledWith('stop_agent_watcher', {
+      sessionId: 'pty-session-1',
+    })
+    expect(result.current.isActive).toBe(true)
+    expect(result.current.agentType).toBe('codex')
+    expect(result.current.agentSessionId).toBeNull()
+    expect(result.current.contextWindow).toBeNull()
+    expect(result.current.toolCalls.total).toBe(0)
+    expect(result.current.recentToolCalls).toEqual([])
+  })
+
+  test('clears run-scoped status when agentSessionId changes on same pane', async () => {
+    const { result } = renderHook(() => useAgentStatus('session-1'))
+
+    await vi.waitFor(() => {
+      expect(eventListeners.get('agent-status')?.length).toBe(1)
+    })
+
+    act(() => {
+      emit('agent-status', {
+        sessionId: 'pty-session-1',
+        modelId: 'gpt-5.5',
+        modelDisplayName: 'GPT-5.5',
+        version: '0.133.0',
+        agentSessionId: 'codex-old',
+        contextWindow: {
+          usedPercentage: 77,
+          remainingPercentage: 23,
+          contextWindowSize: 258000,
+          totalInputTokens: 198000,
+          totalOutputTokens: 0,
+          currentUsage: null,
+        },
+        cost: {
+          totalCostUsd: null,
+          totalDurationMs: 5000,
+          totalApiDurationMs: 4000,
+          totalLinesAdded: 851,
+          totalLinesRemoved: 537,
+        },
+        rateLimits: null,
+      })
+    })
+
+    expect(result.current.agentSessionId).toBe('codex-old')
+    expect(result.current.contextWindow?.usedPercentage).toBe(77)
+    expect(result.current.cost?.totalLinesAdded).toBe(851)
+
+    act(() => {
+      emit('agent-status', {
+        sessionId: 'pty-session-1',
+        modelId: 'gpt-5.5',
+        modelDisplayName: 'GPT-5.5',
+        version: '0.133.0',
+        agentSessionId: 'codex-new',
+        contextWindow: null,
+        cost: null,
+        rateLimits: null,
+      })
+    })
+
+    expect(result.current.agentSessionId).toBe('codex-new')
+    expect(result.current.contextWindow).toBeNull()
+    expect(result.current.cost).toBeNull()
+    expect(result.current.toolCalls.total).toBe(0)
+  })
+
   test('does not invoke start_agent_watcher again while a prior start is in flight', async () => {
     let resolveStart: (() => void) | undefined
 

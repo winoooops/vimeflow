@@ -275,9 +275,14 @@ mod noop_tests {
                 pixel_height: 0,
             })
             .expect("openpty");
+        let true_path = if cfg!(target_os = "macos") {
+            "/usr/bin/true"
+        } else {
+            "/bin/true"
+        };
         let child = pty_pair
             .slave
-            .spawn_command(CommandBuilder::new("/bin/true"))
+            .spawn_command(CommandBuilder::new(true_path))
             .expect("spawn");
         let writer = pty_pair.master.take_writer().expect("take_writer");
 

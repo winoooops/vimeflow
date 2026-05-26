@@ -598,25 +598,100 @@ describe('DesktopGitService', () => {
   })
 
   describe('stageFile', () => {
-    test('throws not implemented error', async () => {
+    test('calls invoke with stage_file command and correct args', async () => {
+      invokeMock.mockResolvedValueOnce(undefined)
+
+      await service.stageFile('src/test.ts')
+
+      expect(invokeMock).toHaveBeenCalledWith('stage_file', {
+        cwd: '/home/user/project',
+        file: 'src/test.ts',
+      })
+    })
+
+    test('passes hunk index to stage_file when provided', async () => {
+      invokeMock.mockResolvedValueOnce(undefined)
+
+      await service.stageFile('src/test.ts', 2)
+
+      expect(invokeMock).toHaveBeenCalledWith('stage_file', {
+        cwd: '/home/user/project',
+        file: 'src/test.ts',
+        hunkIndex: 2,
+      })
+    })
+
+    test('throws error on stage_file invoke failure', async () => {
+      invokeMock.mockRejectedValueOnce(new Error('stage failed'))
+
       await expect(service.stageFile('src/test.ts')).rejects.toThrow(
-        'stageFile not implemented'
+        'Failed to stage src/test.ts: Error: stage failed'
       )
     })
   })
 
   describe('unstageFile', () => {
-    test('throws not implemented error', async () => {
+    test('calls invoke with unstage_file command and correct args', async () => {
+      invokeMock.mockResolvedValueOnce(undefined)
+
+      await service.unstageFile('src/test.ts')
+
+      expect(invokeMock).toHaveBeenCalledWith('unstage_file', {
+        cwd: '/home/user/project',
+        file: 'src/test.ts',
+      })
+    })
+
+    test('passes hunk index to unstage_file when provided', async () => {
+      invokeMock.mockResolvedValueOnce(undefined)
+
+      await service.unstageFile('src/test.ts', 1)
+
+      expect(invokeMock).toHaveBeenCalledWith('unstage_file', {
+        cwd: '/home/user/project',
+        file: 'src/test.ts',
+        hunkIndex: 1,
+      })
+    })
+
+    test('throws error on unstage_file invoke failure', async () => {
+      invokeMock.mockRejectedValueOnce(new Error('unstage failed'))
+
       await expect(service.unstageFile('src/test.ts')).rejects.toThrow(
-        'unstageFile not implemented'
+        'Failed to unstage src/test.ts: Error: unstage failed'
       )
     })
   })
 
   describe('discardChanges', () => {
-    test('throws not implemented error', async () => {
+    test('calls invoke with discard_file command and correct args', async () => {
+      invokeMock.mockResolvedValueOnce(undefined)
+
+      await service.discardChanges('src/test.ts')
+
+      expect(invokeMock).toHaveBeenCalledWith('discard_file', {
+        cwd: '/home/user/project',
+        file: 'src/test.ts',
+      })
+    })
+
+    test('passes hunk index to discard_file when provided', async () => {
+      invokeMock.mockResolvedValueOnce(undefined)
+
+      await service.discardChanges('src/test.ts', 3)
+
+      expect(invokeMock).toHaveBeenCalledWith('discard_file', {
+        cwd: '/home/user/project',
+        file: 'src/test.ts',
+        hunkIndex: 3,
+      })
+    })
+
+    test('throws error on discard_file invoke failure', async () => {
+      invokeMock.mockRejectedValueOnce(new Error('discard failed'))
+
       await expect(service.discardChanges('src/test.ts')).rejects.toThrow(
-        'discardChanges not implemented'
+        'Failed to discard changes to src/test.ts: Error: discard failed'
       )
     })
   })

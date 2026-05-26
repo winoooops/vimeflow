@@ -4,6 +4,7 @@ pub mod watcher;
 
 use serde::Serialize;
 use std::collections::HashMap;
+use std::io::Write;
 use std::path::Path;
 use std::process::Command;
 use std::time::Duration;
@@ -54,6 +55,63 @@ async fn run_git_with_timeout(mut cmd: Command) -> Result<std::process::Output, 
                     // context we accept that narrow risk to avoid leaking a
                     // hung subprocess/thread. SIGKILL is intentional because
                     // SIGTERM may be ignored by a blocking syscall on NFS.
+                    let _ = libc::kill(child_id as i32, libc::SIGKILL);
+                }
+            }
+
+            #[cfg(windows)]
+            {
+                let _ = tokio::task::spawn_blocking(move || {
+                    let _ = Command::new("taskkill")
+                        .args(["/F", "/PID", &child_id.to_string()])
+                        .status();
+                });
+            }
+
+            Err(format!(
+                "git command timed out after {}s",
+                GIT_TIMEOUT.as_secs()
+            ))
+        }
+    }
+}
+
+/// Run a git command with stdin and the same timeout/kill semantics as
+/// `run_git_with_timeout`. Used for `git apply -` hunk operations.
+async fn run_git_with_stdin_timeout(
+    mut cmd: Command,
+    input: String,
+) -> Result<std::process::Output, String> {
+    let mut child = cmd
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("Failed to spawn git: {}", e))?;
+
+    let child_id = child.id();
+    let result = tokio::time::timeout(
+        GIT_TIMEOUT,
+        tokio::task::spawn_blocking(move || {
+            if let Some(mut stdin) = child.stdin.take() {
+                stdin.write_all(input.as_bytes())?;
+            }
+            child.wait_with_output()
+        }),
+    )
+    .await;
+
+    match result {
+        Ok(Ok(Ok(output))) => Ok(output),
+        Ok(Ok(Err(e))) => Err(format!("Failed to run git: {}", e)),
+        Ok(Err(e)) => Err(format!("git task failed: {}", e)),
+        Err(_) => {
+            #[cfg(unix)]
+            {
+                unsafe {
+                    // SAFETY: child_id comes from the git process spawned
+                    // above. See `run_git_with_timeout` for the same bounded
+                    // timeout tradeoff.
                     let _ = libc::kill(child_id as i32, libc::SIGKILL);
                 }
             }
@@ -317,6 +375,31 @@ fn raw_diff_is_deletion(raw_diff: &str) -> bool {
 /// Same heuristic for "no prior version at HEAD" — `--- /dev/null`.
 fn raw_diff_is_new_at_base(raw_diff: &str) -> bool {
     raw_diff_file_header_has(raw_diff, "--- /dev/null")
+}
+
+fn extract_hunk_patch(diff_text: &str, hunk_index: u32) -> Option<String> {
+    if diff_text.is_empty() {
+        return None;
+    }
+
+    let mut hunk_start_offsets = Vec::new();
+    for (index, _) in diff_text.match_indices("\n@@ ") {
+        hunk_start_offsets.push(index + 1);
+    }
+    if diff_text.starts_with("@@ ") {
+        hunk_start_offsets.insert(0, 0);
+    }
+
+    let header_end = *hunk_start_offsets.first()?;
+    let target = *hunk_start_offsets.get(hunk_index as usize)?;
+    let next = hunk_start_offsets
+        .get(hunk_index as usize + 1)
+        .copied()
+        .unwrap_or(diff_text.len());
+    let header = &diff_text[..header_end];
+    let hunk = &diff_text[target..next];
+
+    Some(format!("{header}{hunk}"))
 }
 
 /// Parse git status --porcelain=v1 -z output into ChangedFile structs
@@ -1212,6 +1295,222 @@ pub(crate) async fn get_git_diff_inner(
         new_text,
         raw_diff,
     })
+}
+
+pub(crate) async fn stage_file_inner(
+    cwd: String,
+    file: String,
+    hunk_index: Option<u32>,
+) -> Result<(), String> {
+    let safe_cwd = validate_cwd(&cwd)?;
+    validate_file_path(&file)?;
+
+    if let Some(index) = hunk_index {
+        let patch = working_tree_hunk_patch(&safe_cwd, &file, index).await?;
+        apply_patch(&safe_cwd, &patch, &["--cached"]).await?;
+
+        return Ok(());
+    }
+
+    let mut cmd = Command::new("git");
+    cmd.arg("-C")
+        .arg(&safe_cwd)
+        .arg("add")
+        .arg("--")
+        .arg(&file)
+        .env("GIT_TERMINAL_PROMPT", "0");
+    run_git_success(cmd, "git add").await
+}
+
+pub(crate) async fn unstage_file_inner(
+    cwd: String,
+    file: String,
+    hunk_index: Option<u32>,
+) -> Result<(), String> {
+    let safe_cwd = validate_cwd(&cwd)?;
+    validate_file_path(&file)?;
+
+    if let Some(index) = hunk_index {
+        let patch = staged_hunk_patch(&safe_cwd, &file, index).await?;
+        apply_patch(&safe_cwd, &patch, &["--cached", "-R"]).await?;
+
+        return Ok(());
+    }
+
+    let mut cmd = Command::new("git");
+    cmd.arg("-C")
+        .arg(&safe_cwd)
+        .arg("reset")
+        .arg("HEAD")
+        .arg("--")
+        .arg(&file)
+        .env("GIT_TERMINAL_PROMPT", "0");
+    run_git_success(cmd, "git reset").await
+}
+
+pub(crate) async fn discard_file_inner(
+    cwd: String,
+    file: String,
+    hunk_index: Option<u32>,
+) -> Result<(), String> {
+    let safe_cwd = validate_cwd(&cwd)?;
+    validate_file_path(&file)?;
+
+    if let Some(index) = hunk_index {
+        let patch = working_tree_hunk_patch(&safe_cwd, &file, index).await?;
+        apply_patch(&safe_cwd, &patch, &["-R"]).await?;
+
+        return Ok(());
+    }
+
+    let status = file_status_xy(&safe_cwd, &file).await?;
+    if status.as_deref() == Some("??") {
+        let mut cmd = Command::new("git");
+        cmd.arg("-C")
+            .arg(&safe_cwd)
+            .arg("clean")
+            .arg("-f")
+            .arg("--")
+            .arg(&file)
+            .env("GIT_TERMINAL_PROMPT", "0");
+        return run_git_success(cmd, "git clean").await;
+    }
+
+    if status
+        .as_deref()
+        .is_some_and(|xy| xy.as_bytes().first().copied() == Some(b'A'))
+    {
+        let mut reset_cmd = Command::new("git");
+        reset_cmd
+            .arg("-C")
+            .arg(&safe_cwd)
+            .arg("reset")
+            .arg("HEAD")
+            .arg("--")
+            .arg(&file)
+            .env("GIT_TERMINAL_PROMPT", "0");
+        run_git_success(reset_cmd, "git reset").await?;
+
+        let mut clean_cmd = Command::new("git");
+        clean_cmd
+            .arg("-C")
+            .arg(&safe_cwd)
+            .arg("clean")
+            .arg("-f")
+            .arg("--")
+            .arg(&file)
+            .env("GIT_TERMINAL_PROMPT", "0");
+        return run_git_success(clean_cmd, "git clean").await;
+    }
+
+    let mut cmd = Command::new("git");
+    cmd.arg("-C")
+        .arg(&safe_cwd)
+        .arg("checkout")
+        .arg("--")
+        .arg(&file)
+        .env("GIT_TERMINAL_PROMPT", "0");
+    run_git_success(cmd, "git checkout").await
+}
+
+async fn working_tree_hunk_patch(
+    toplevel: &Path,
+    file: &str,
+    hunk_index: u32,
+) -> Result<String, String> {
+    let mut cmd = Command::new("git");
+    cmd.arg("-C")
+        .arg(toplevel)
+        .arg("diff")
+        .arg("--no-color")
+        .arg("--")
+        .arg(file)
+        .env("GIT_TERMINAL_PROMPT", "0");
+    let output = run_git_with_timeout(cmd).await?;
+    if !output.status.success() {
+        return Err(git_command_error("git diff", &output));
+    }
+
+    let diff = String::from_utf8_lossy(&output.stdout);
+    extract_hunk_patch(&diff, hunk_index)
+        .ok_or_else(|| "requested hunk no longer exists".to_string())
+}
+
+async fn staged_hunk_patch(toplevel: &Path, file: &str, hunk_index: u32) -> Result<String, String> {
+    let mut cmd = Command::new("git");
+    cmd.arg("-C")
+        .arg(toplevel)
+        .arg("diff")
+        .arg("--cached")
+        .arg("--no-color")
+        .arg("--")
+        .arg(file)
+        .env("GIT_TERMINAL_PROMPT", "0");
+    let output = run_git_with_timeout(cmd).await?;
+    if !output.status.success() {
+        return Err(git_command_error("git diff --cached", &output));
+    }
+
+    let diff = String::from_utf8_lossy(&output.stdout);
+    extract_hunk_patch(&diff, hunk_index)
+        .ok_or_else(|| "requested hunk no longer exists".to_string())
+}
+
+async fn apply_patch(toplevel: &Path, patch: &str, args: &[&str]) -> Result<(), String> {
+    let mut cmd = Command::new("git");
+    cmd.arg("-C")
+        .arg(toplevel)
+        .arg("apply")
+        .args(args)
+        .arg("-")
+        .env("GIT_TERMINAL_PROMPT", "0");
+    let output = run_git_with_stdin_timeout(cmd, patch.to_string()).await?;
+    if output.status.success() {
+        return Ok(());
+    }
+
+    Err(git_command_error("git apply", &output))
+}
+
+async fn file_status_xy(toplevel: &Path, file: &str) -> Result<Option<String>, String> {
+    let mut cmd = Command::new("git");
+    cmd.arg("-C")
+        .arg(toplevel)
+        .arg("status")
+        .arg("--porcelain=v1")
+        .arg("-z")
+        .arg("--")
+        .arg(file)
+        .env("GIT_TERMINAL_PROMPT", "0");
+    let output = run_git_with_timeout(cmd).await?;
+    if !output.status.success() {
+        return Err(git_command_error("git status", &output));
+    }
+
+    let first = output.stdout.split(|&b| b == b'\0').next().unwrap_or(&[]);
+    if first.len() < 2 {
+        return Ok(None);
+    }
+
+    Ok(Some(String::from_utf8_lossy(&first[..2]).to_string()))
+}
+
+async fn run_git_success(cmd: Command, label: &str) -> Result<(), String> {
+    let output = run_git_with_timeout(cmd).await?;
+    if output.status.success() {
+        return Ok(());
+    }
+
+    Err(git_command_error(label, &output))
+}
+
+fn git_command_error(label: &str, output: &std::process::Output) -> String {
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    if stderr.trim().is_empty() {
+        format!("{label} failed with exit code {}", output.status)
+    } else {
+        format!("{label} failed: {}", stderr.trim())
+    }
 }
 
 /// If `file` is the destination of a rename in the diff scope (HEAD→index
@@ -2810,5 +3109,153 @@ copy to copy.txt
             !response.raw_diff.is_empty(),
             "raw_diff should hold the synthesized --no-index diff"
         );
+    }
+
+    #[tokio::test]
+    async fn test_stage_file_inner_stages_single_hunk() {
+        use std::fs;
+        use std::process::Command;
+
+        let tmp = home_tempdir();
+        let repo_path = tmp.path();
+        init_hunk_test_repo(repo_path);
+        let file = repo_path.join("sample.txt");
+        fs::write(&file, hunk_test_text("changed-a", "changed-b")).expect("write changes");
+
+        stage_file_inner(
+            repo_path.to_string_lossy().to_string(),
+            "sample.txt".to_string(),
+            Some(0),
+        )
+        .await
+        .expect("stage first hunk");
+
+        let cached = Command::new("git")
+            .args(["diff", "--cached", "--", "sample.txt"])
+            .current_dir(repo_path)
+            .output()
+            .expect("git diff cached");
+        let cached = String::from_utf8_lossy(&cached.stdout);
+        assert!(cached.contains("changed-a"));
+        assert!(!cached.contains("changed-b"));
+
+        let worktree = Command::new("git")
+            .args(["diff", "--", "sample.txt"])
+            .current_dir(repo_path)
+            .output()
+            .expect("git diff worktree");
+        let worktree = String::from_utf8_lossy(&worktree.stdout);
+        assert!(!worktree.contains("changed-a"));
+        assert!(worktree.contains("changed-b"));
+    }
+
+    #[tokio::test]
+    async fn test_unstage_file_inner_unstages_single_hunk() {
+        use std::fs;
+        use std::process::Command;
+
+        let tmp = home_tempdir();
+        let repo_path = tmp.path();
+        init_hunk_test_repo(repo_path);
+        let file = repo_path.join("sample.txt");
+        fs::write(&file, hunk_test_text("changed-a", "changed-b")).expect("write changes");
+        Command::new("git")
+            .args(["add", "sample.txt"])
+            .current_dir(repo_path)
+            .output()
+            .expect("git add");
+
+        unstage_file_inner(
+            repo_path.to_string_lossy().to_string(),
+            "sample.txt".to_string(),
+            Some(1),
+        )
+        .await
+        .expect("unstage second hunk");
+
+        let cached = Command::new("git")
+            .args(["diff", "--cached", "--", "sample.txt"])
+            .current_dir(repo_path)
+            .output()
+            .expect("git diff cached");
+        let cached = String::from_utf8_lossy(&cached.stdout);
+        assert!(cached.contains("changed-a"));
+        assert!(!cached.contains("changed-b"));
+
+        let worktree = Command::new("git")
+            .args(["diff", "--", "sample.txt"])
+            .current_dir(repo_path)
+            .output()
+            .expect("git diff worktree");
+        let worktree = String::from_utf8_lossy(&worktree.stdout);
+        assert!(!worktree.contains("changed-a"));
+        assert!(worktree.contains("changed-b"));
+    }
+
+    #[tokio::test]
+    async fn test_discard_file_inner_discards_single_hunk() {
+        use std::fs;
+
+        let tmp = home_tempdir();
+        let repo_path = tmp.path();
+        init_hunk_test_repo(repo_path);
+        let file = repo_path.join("sample.txt");
+        fs::write(&file, hunk_test_text("changed-a", "changed-b")).expect("write changes");
+
+        discard_file_inner(
+            repo_path.to_string_lossy().to_string(),
+            "sample.txt".to_string(),
+            Some(0),
+        )
+        .await
+        .expect("discard first hunk");
+
+        let contents = fs::read_to_string(file).expect("read sample");
+        assert!(contents.contains("line 02"));
+        assert!(contents.contains("changed-b"));
+    }
+
+    fn init_hunk_test_repo(repo_path: &Path) {
+        use std::fs;
+        use std::process::Command;
+
+        Command::new("git")
+            .args(["init"])
+            .current_dir(repo_path)
+            .output()
+            .expect("git init failed");
+        configure_test_git(repo_path);
+        fs::write(
+            repo_path.join("sample.txt"),
+            hunk_test_text("line 02", "line 18"),
+        )
+        .expect("write seed");
+        Command::new("git")
+            .args(["add", "sample.txt"])
+            .current_dir(repo_path)
+            .output()
+            .expect("git add failed");
+        let commit = Command::new("git")
+            .args(["commit", "-m", "initial"])
+            .current_dir(repo_path)
+            .output()
+            .expect("git commit failed");
+        assert!(
+            commit.status.success(),
+            "git commit failed: {}",
+            String::from_utf8_lossy(&commit.stderr)
+        );
+    }
+
+    fn hunk_test_text(line_two: &str, line_eighteen: &str) -> String {
+        (1..=20)
+            .map(|line| match line {
+                2 => line_two.to_string(),
+                18 => line_eighteen.to_string(),
+                other => format!("line {other:02}"),
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+            + "\n"
     }
 }
