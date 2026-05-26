@@ -121,8 +121,8 @@ export function formatCommand([command, args]) {
   return [command, ...args].map(quoteArg).join(' ')
 }
 
-const runCommand = ([command, args]) => {
-  const result = spawnSync(command, args, { stdio: 'inherit' })
+export const runCommand = ([command, args], spawner = spawnSync) => {
+  const result = spawner(command, args, { stdio: 'inherit' })
 
   if (result.error) {
     throw result.error

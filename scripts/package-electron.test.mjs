@@ -8,11 +8,15 @@ import {
   main,
   parseArgs,
   resolveTarget,
+  runCommand,
 } from './package-electron.mjs'
 
 describe('package-electron script', () => {
+  const originalExitCode = process.exitCode
+
   afterEach(() => {
     vi.restoreAllMocks()
+    process.exitCode = originalExitCode
   })
 
   test('parses auto dry-run syntax before or after the target', () => {
@@ -191,5 +195,38 @@ describe('package-electron script', () => {
       'Packaging Vimeflow for linux-x64 on linux/x64\n'
     )
     expect(runner).toHaveBeenCalledTimes(1)
+  })
+
+  test('runCommand reports and re-raises signaled subprocesses', () => {
+    const write = vi
+      .spyOn(process.stderr, 'write')
+      .mockImplementation(() => true)
+    const kill = vi.spyOn(process, 'kill').mockImplementation(() => true)
+
+    const spawner = vi.fn(() => ({
+      error: null,
+      signal: 'SIGTERM',
+      status: null,
+    }))
+
+    process.exitCode = undefined
+
+    const result = runCommand(
+      ['electron-builder', ['--mac', 'dmg', '--arm64']],
+      spawner
+    )
+
+    expect(result).toBe(false)
+    expect(spawner).toHaveBeenCalledWith(
+      'electron-builder',
+      ['--mac', 'dmg', '--arm64'],
+      { stdio: 'inherit' }
+    )
+
+    expect(write).toHaveBeenCalledWith(
+      'package-electron: electron-builder --mac dmg --arm64 killed by signal SIGTERM\n'
+    )
+    expect(process.exitCode).toBe(1)
+    expect(kill).toHaveBeenCalledWith(process.pid, 'SIGTERM')
   })
 })
