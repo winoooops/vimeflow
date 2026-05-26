@@ -57,7 +57,8 @@ describe('useSplitDivider', () => {
     const onRatioChange = vi.fn()
     render(<Harness active onRatioChange={onRatioChange} />)
     fireEvent.keyDown(screen.getByTestId('handle'), { key: 'ArrowRight' })
-    const ratio = onRatioChange.mock.calls.at(-1)?.[0] as number
+    const calls = onRatioChange.mock.calls
+    const ratio = calls[calls.length - 1]?.[0] as number
     expect(ratio).toBeGreaterThanOrEqual(0.15)
     expect(ratio).toBeLessThanOrEqual(0.85)
     expect(
