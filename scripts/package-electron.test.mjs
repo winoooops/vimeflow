@@ -35,6 +35,22 @@ describe('package-electron script', () => {
     })
   })
 
+  test('parses help flags only when used alone', () => {
+    expect(parseArgs(['-h'])).toEqual({
+      target: 'auto',
+      dryRun: false,
+      help: true,
+    })
+
+    expect(parseArgs(['--help'])).toEqual({
+      target: 'auto',
+      dryRun: false,
+      help: true,
+    })
+
+    expect(() => parseArgs(['-h', 'linux-x64'])).toThrow(UsageError)
+  })
+
   test('rejects unknown targets with usage text', () => {
     expect(() => parseArgs(['win-x64'])).toThrow(UsageError)
     expect(() => parseArgs(['win-x64'])).toThrow(USAGE)
@@ -64,6 +80,20 @@ describe('package-electron script', () => {
     expect(() =>
       resolveTarget('mac-arm64', { platform: 'linux', arch: 'x64' })
     ).toThrow(/Mach-O arm64/)
+  })
+
+  test('target helpers reject unrecognized targets with diagnostic errors', () => {
+    expect(() =>
+      resolveTarget('linux-arm64', { platform: 'linux', arch: 'arm64' })
+    ).toThrow(TargetError)
+
+    expect(() =>
+      resolveTarget('linux-arm64', { platform: 'linux', arch: 'arm64' })
+    ).toThrow(/unrecognized target/)
+
+    expect(() => buildCommands('linux-arm64')).toThrow(
+      /unrecognized package target/
+    )
   })
 
   test('build commands pin the requested Electron Builder platform and arch', () => {

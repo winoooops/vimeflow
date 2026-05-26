@@ -27,6 +27,7 @@ linux:
   icon: build/icon.png
 
 mac:
+  identity: null
   target:
     - dmg
   category: public.app-category.developer-tools

@@ -86,7 +86,7 @@ export function resolveTarget(target, host) {
     )
   }
 
-  throw new UsageError(USAGE)
+  throw new TargetError(`unrecognized target: ${target}`)
 }
 
 export function buildCommands(target) {
@@ -104,7 +104,7 @@ export function buildCommands(target) {
     return [...commands, ['electron-builder', ['--mac', 'dmg', '--arm64']]]
   }
 
-  throw new UsageError(USAGE)
+  throw new Error(`unrecognized package target: ${target}`)
 }
 
 const quoteArg = (arg) => {
