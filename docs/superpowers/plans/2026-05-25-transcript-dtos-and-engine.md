@@ -267,7 +267,7 @@ fn claude_tool_use_dto_distinguishes_absent_vs_null_input() {
 }
 ```
 
-- [ ] **Step 2: Run — expect FAIL** (DTOs undefined). `cargo test -p vimeflow transcript_dto` → FAIL (won't compile).
+- [ ] **Step 2: Run — expect FAIL** (DTOs undefined). `cargo test -p vimeflow claude_code::transcript_dto` (module-path filter — guaranteed to match the new module's tests; a bare `transcript_dto` would also match the Codex module) → FAIL (won't compile).
 
 - [ ] **Step 3: Define the DTOs** (the module + imports were wired in Step 1):
 
@@ -326,7 +326,7 @@ pub(super) struct ClaudeToolResultDto {
 }
 ```
 
-- [ ] **Step 4: Run — expect PASS.** `cargo test -p vimeflow transcript_dto` → PASS. Fix field/visibility issues until green.
+- [ ] **Step 4: Run — expect PASS.** `cargo test -p vimeflow claude_code::transcript_dto` → PASS; **confirm the summary reports the 3 new tests ran (not `0 passed`)** — a no-op filter is a false green. Fix field/visibility issues until green.
 
 - [ ] **Step 5: Commit.**
 
@@ -481,7 +481,7 @@ impl TranscriptTailService {
                     if !line_buf.ends_with('\n') { partial.push_str(&line_buf); continue; }
                     let full = if partial.is_empty() { line_buf.as_str() }
                                else { partial.push_str(&line_buf); partial.as_str() };
-                    let trimmed = full.trim_end_matches(['\r', '\n']);
+                    let trimmed = full.trim_end_matches(['\r', '\n']); // char-array Pattern; already used at runtime/ipc.rs:275, so it compiles on this repo's toolchain (use `&['\r','\n'][..]` only if MSRV ever regresses)
                     if !trimmed.trim().is_empty() { self.decoder.decode_line(trimmed); }
                     partial.clear();
                 }
@@ -541,13 +541,13 @@ impl TranscriptDecoder for RecordingDecoder {
 }
 ```
 
-- [ ] **Step 2: Write the four cases** in `#[cfg(test)] mod tests`, each driving `TranscriptTailService::new(Box::new(dec), "t").with_poll_interval(Duration::ZERO).run(ScriptedBufRead { steps, stop }, stop_clone)`, keeping `let lines = dec.lines.clone(); let caught = dec.caught_up.clone();` before the move:
-  - **assembly + EOF-survival:** `[Chunk("{\"a\":1"), Eof, Chunk("23}\n"), EofStop]` → assert `*lines.lock().unwrap() == ["{\"a\":123}"]` (partial survived the non-terminal `Eof`).
-  - **truncated never emits + on_caught_up pinned:** `[Chunk("{\"a\":1"), EofStop]` → assert `lines` empty AND `caught.load(Ordering::Acquire) == 1` (the partial-EOF arm ran once).
-  - **CRLF:** `[Chunk("{\"a\":1}\r\n"), EofStop]` → assert `lines == ["{\"a\":1}"]` (no trailing `\r`).
-  - **blank skip:** `[Chunk("   \n"), EofStop]` → assert `lines` empty.
+- [ ] **Step 2: Write the four cases** as named `#[test] fn`s in `#[cfg(test)] mod tests`, each driving `TranscriptTailService::new(Box::new(dec), "t").with_poll_interval(Duration::ZERO).run(ScriptedBufRead { steps, stop }, stop_clone)`, keeping `let lines = dec.lines.clone(); let caught = dec.caught_up.clone();` before the move:
+  - `engine_partial_survives_eof_then_completes`: `[Chunk("{\"a\":1"), Eof, Chunk("23}\n"), EofStop]` → assert `*lines.lock().unwrap() == ["{\"a\":123}"]` (partial survived the non-terminal `Eof`).
+  - `engine_truncated_partial_never_emits`: `[Chunk("{\"a\":1"), EofStop]` → assert `lines` empty AND `caught.load(Ordering::Acquire) == 1` (the partial-EOF arm ran once).
+  - `engine_strips_crlf`: `[Chunk("{\"a\":1}\r\n"), EofStop]` → assert `lines == ["{\"a\":1}"]` (no trailing `\r`).
+  - `engine_skips_blank_line`: `[Chunk("   \n"), EofStop]` → assert `lines` empty.
 
-- [ ] **Step 3: Run — expect PASS** — `cargo test -p vimeflow transcript_tail_service` (the `run` impl from Task 2.1 satisfies these). Fix `run` if any fail.
+- [ ] **Step 3: Run — expect PASS** — `cargo test -p vimeflow base::transcript_tail_service` (module-path filter); **confirm all four named tests ran** (not `0 passed`). Fix `run` if any fail.
 - [ ] **Step 4: Commit.** `git commit -am "test(transcript): deterministic engine buffering + EOF/normalization"` (the new structs live in the already-tracked `transcript_tail_service.rs`, so `-am` is fine here).
 
 ### Task 2.3: `ClaudeTranscriptDecoder` + thin `start_tailing` (Claude)
