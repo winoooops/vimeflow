@@ -1,7 +1,9 @@
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 
-export const USAGE = `Usage: scripts/package-electron.mjs [-h|--help] [auto|linux-x64|mac-arm64] [--dry-run]
+export const USAGE = `Usage:
+  scripts/package-electron.mjs [-h|--help]
+  scripts/package-electron.mjs [--dry-run] [auto|linux-x64|mac-arm64]
 
 Targets:
   auto       Build linux-x64 on Linux x64, mac-arm64 on macOS Apple Silicon.
