@@ -17,12 +17,12 @@ Vimeflow 是一个 Electron 桌面应用，使用 Rust `vimeflow-backend` 旁路
 Vimeflow 目前**仅支持从源码构建和使用 0.1.0 版本**。
 
 - 支持的版本线：`0.1.0`
-- 支持的打包目标：在本地从源码构建 Linux AppImage
+- 支持的打包目标：在本地从源码构建 Linux x64 AppImage 和 macOS arm64 DMG
 - 桌面运行时：Electron 42 + Rust 旁路，通过 LSP 帧 JSON IPC 通信
 - 代理可观测性：Claude Code 和 Codex
-- 暂不支持：托管二进制发布、macOS / Windows 打包、签名、自动更新
+- 暂不支持：托管二进制发布、Windows 打包、生产签名/公证、自动更新
 
-非 Linux 系统上的开发流程可能可用，但当前受支持的构建路径是源码检出加 Linux AppImage 目标。
+打包路径与主机相关：Linux x64 AppImage 需要在 Linux x64 主机上构建，macOS arm64 DMG 需要在 Apple Silicon Mac 上构建。
 
 ## 从源码构建和运行
 
@@ -32,7 +32,7 @@ Vimeflow 目前**仅支持从源码构建和使用 0.1.0 版本**。
 - `nvm` 是可选但推荐的 `.nvmrc` 读取工具；如果已通过其他工具启用 Node 24，可跳过 `nvm use`
 - Rust stable 工具链
 - Git
-- Linux（用于当前受支持的 AppImage 打包路径）
+- Linux x64 或 Apple Silicon macOS（用于受支持的打包路径）
 
 ```bash
 git clone https://github.com/winoooops/vimeflow.git
@@ -53,10 +53,22 @@ npm run electron:dev
 VIMEFLOW_NO_SANDBOX=1 npm run electron:dev
 ```
 
-构建受支持的 `0.1.0` AppImage：
+为当前主机构建受支持的安装包：
 
 ```bash
 npm run electron:build
+```
+
+也可以显式选择打包目标：
+
+```bash
+npm run electron:build:linux:x64
+npm run electron:build:mac:arm64
+```
+
+运行 Linux AppImage：
+
+```bash
 chmod +x release/vimeflow-*.AppImage
 ./release/vimeflow-*.AppImage --no-sandbox
 ```
@@ -67,9 +79,11 @@ chmod +x release/vimeflow-*.AppImage
 ./release/vimeflow-*.AppImage --appimage-extract-and-run --no-sandbox
 ```
 
+macOS DMG 会写入 `release/vimeflow-*-arm64.dmg`。它面向本地源码构建，尚未公证。
+
 ## 使用 Vimeflow
 
-1. 使用 `npm run electron:dev` 或本地构建的 AppImage 启动 Vimeflow。
+1. 使用 `npm run electron:dev` 或本地构建的安装包启动 Vimeflow。
 2. 打开终端 pane，并运行 `claude` 或 `codex`。
 3. 在工作空间中拆分 pane、浏览文件、编辑代码并审查 Git Diff。
 4. 检测到受支持代理后，代理状态面板会自动显示。
