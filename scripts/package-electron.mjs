@@ -1,8 +1,7 @@
-#!/usr/bin/env node
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 
-export const USAGE = `Usage: scripts/package-electron.mjs [auto|linux-x64|mac-arm64] [--dry-run]
+export const USAGE = `Usage: scripts/package-electron.mjs [-h|--help] [auto|linux-x64|mac-arm64] [--dry-run]
 
 Targets:
   auto       Build linux-x64 on Linux x64, mac-arm64 on macOS Apple Silicon.
@@ -131,9 +130,11 @@ const runCommand = ([command, args]) => {
     process.stderr.write(
       `package-electron: ${formatCommand([command, args])} killed by signal ${result.signal}\n`
     )
+    process.kill(process.pid, result.signal)
+    process.exit(1)
   }
 
-  if (result.status !== 0 || result.signal) {
+  if (result.status !== 0) {
     process.exit(result.status ?? 1)
   }
 }
