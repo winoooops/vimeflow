@@ -21,6 +21,7 @@ import {
 import { toPierreInputs, findRawDiffHunkIndex } from '../services/pierreAdapter'
 import { extractHunkPatch } from '../services/gitPatch'
 import { createGitService } from '../services/gitService'
+import { enqueuePoolWrite } from '../services/workerPoolWrites'
 import { useNotifyInfo } from '../../workspace/hooks/useNotifyInfo'
 import type { ChangedFile, SelectedDiffFile } from '../types'
 
@@ -460,21 +461,22 @@ export const DiffPanelContent = ({
   // silently reset lineDiffType back to Pierre's `word-alt` default.
   const workerPool = useWorkerPool()
 
-  // Serialize writes to the shared pool. `setRenderOptions` assigns the pool's
-  // internal `this.renderOptions` only AFTER awaiting theme resolution + the
-  // worker round-trip (node_modules/@pierre/diffs/dist/worker/WorkerPoolManager.js
-  // ~L124), so two overlapping calls can finish out of order and leave the pool
-  // on the OLDER value while the UI shows the newer one. Chaining each write
-  // after the previous guarantees the last-requested options win; the per-run
-  // `cancelled` flag then ensures only the latest run commits the synced value.
+  // Push pool-owned render options (theme + lineDiffType) into the shared
+  // Pierre worker pool via module-level pool-keyed serialization. Each write
+  // is enqueued after the pool's previous pending write so submissions land in
+  // order across ALL DiffPanelContent instances that share the same pool — the
+  // per-instance chain from #276 only serialized within one instance and left
+  // a race window when two panes (split layout) or an unmount/remount overlapped
+  // on the app-wide pool singleton.
   //
-  // LIMITATION (deferred to PR2): this chain is per component instance, but the
-  // worker pool is an app-wide singleton. Two DiffPanelContent instances (split
-  // layout) — or an unmount overlapping a remount — have independent chains and
-  // can still race on the shared pool. Pool-keyed (module-level) serialization,
-  // plus the deeper "one shared pool can only hold one theme/lineDiffType"
-  // question, are handled in PR2 (staging).
-  const poolWriteChainRef = useRef<Promise<unknown>>(Promise.resolve())
+  // theme and lineDiffType are intentionally app-wide for v1: the app mounts
+  // ONE <WorkerPoolContextProvider>, so all diff panes share one pool instance
+  // which holds one set of render options. Per-pane independent themes are out
+  // of scope and would require per-pane pool topology changes.
+  //
+  // The per-run `cancelled` flag (set by the effect cleanup) is passed as the
+  // `shouldSkip` predicate so a superseded effect run silently skips its write
+  // while still letting subsequent runs proceed through the chain.
   useEffect(() => {
     const next: PoolRenderOptions = { theme, lineDiffType }
 
@@ -485,19 +487,11 @@ export const DiffPanelContent = ({
     }
 
     let cancelled = false
-    const previousWrite = poolWriteChainRef.current
 
     const run = async (): Promise<void> => {
-      // Wait for the previous write so overlapping calls can't land out of
-      // order. A prior failure is irrelevant here — its own run reported it.
       try {
-        await previousWrite
-      } catch {
-        // ignore the previous write's rejection; proceed with this one
-      }
+        await enqueuePoolWrite(workerPool, next, () => cancelled)
 
-      try {
-        await workerPool.setRenderOptions(next)
         if (!cancelled) {
           setRenderSyncError(null)
           commitSyncedRenderOptions(next)
@@ -509,9 +503,7 @@ export const DiffPanelContent = ({
       }
     }
 
-    const writePromise = run()
-    poolWriteChainRef.current = writePromise
-    void writePromise
+    void run()
 
     return (): void => {
       cancelled = true
