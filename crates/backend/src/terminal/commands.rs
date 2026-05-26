@@ -1240,10 +1240,10 @@ mod tests {
                 pixel_height: 0,
             })
             .expect("openpty");
-        // Spawn /bin/true and reap immediately. We only need the pair to
+        // Spawn /usr/bin/true and reap immediately. We only need the pair to
         // source a real master + writer of the correct trait-object types;
         // the synthetic child below replaces the real one for the kill path.
-        let cmd = CommandBuilder::new("/bin/true");
+        let cmd = CommandBuilder::new("/usr/bin/true");
         let mut helper_child = pty_pair.slave.spawn_command(cmd).expect("spawn");
         let _ = helper_child.wait();
         let writer = pty_pair.master.take_writer().expect("take_writer");

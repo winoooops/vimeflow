@@ -1,5 +1,7 @@
 import type { ReactElement } from 'react'
 import { Tooltip } from '../../../components/Tooltip'
+import { formatShortcut } from '../../../lib/formatShortcut'
+import { COMMAND_PALETTE_SHORTCUT_KEYS } from '../../command-palette/shortcutConfig'
 import type { NavigationItem } from '../types'
 
 export interface IconRailIdentity {
@@ -97,6 +99,10 @@ export const IconRail = ({
 
   const settingsTooltip = `Settings panel coming — see issue #${settingsIssueNumber}`
 
+  const commandPaletteTooltip = `Command Palette (${formatShortcut(
+    COMMAND_PALETTE_SHORTCUT_KEYS
+  )})`
+
   return (
     <nav
       data-testid="icon-rail"
@@ -128,7 +134,7 @@ export const IconRail = ({
         <RailBtn
           icon="search"
           accessibleName="Command Palette"
-          tooltipContent="Command Palette (Ctrl+:)"
+          tooltipContent={commandPaletteTooltip}
           onClick={onCommand}
         />
         <RailBtn

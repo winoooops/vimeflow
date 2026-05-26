@@ -207,6 +207,7 @@ mod tests {
         assert!(detect_agent_with_source(10, &source).is_none());
     }
 
+    #[cfg(target_os = "linux")]
     #[test]
     fn reads_self_cmdline() {
         // /proc/self always exists and points to our own process
