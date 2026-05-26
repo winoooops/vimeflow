@@ -1,8 +1,12 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { renderHook, act, waitFor } from '@testing-library/react'
-import { useCommandPalette } from './useCommandPalette'
+import {
+  COMMAND_PALETTE_SHORTCUT_KEYS,
+  useCommandPalette,
+} from './useCommandPalette'
 import type { Command } from '../registry/types'
 import * as chordRegistry from '../chordRegistry'
+import type { BackendApi } from '../../../lib/backend'
 
 describe('useCommandPalette', () => {
   beforeEach(() => {
@@ -69,6 +73,10 @@ describe('useCommandPalette', () => {
   })
 
   describe('keyboard trigger - Ctrl+:', () => {
+    test('exports the displayed command-palette shortcut', () => {
+      expect(COMMAND_PALETTE_SHORTCUT_KEYS).toEqual(['Ctrl', ':'])
+    })
+
     test('Ctrl+: opens palette after the leader window expires', () => {
       vi.useFakeTimers()
       const { result } = renderHook(() => useCommandPalette())
@@ -158,7 +166,7 @@ describe('useCommandPalette', () => {
       expect(result.current.state.isOpen).toBe(false)
     })
 
-    test('Ctrl+: trigger calls preventDefault and stopPropagation when starting leader', () => {
+    test('Ctrl+: trigger consumes the event when starting the leader window', () => {
       vi.useFakeTimers()
       const { result } = renderHook(() => useCommandPalette())
 
@@ -171,6 +179,11 @@ describe('useCommandPalette', () => {
       const preventDefaultSpy = vi.spyOn(event, 'preventDefault')
       const stopPropagationSpy = vi.spyOn(event, 'stopPropagation')
 
+      const stopImmediatePropagationSpy = vi.spyOn(
+        event,
+        'stopImmediatePropagation'
+      )
+
       act(() => {
         document.dispatchEvent(event)
       })
@@ -178,6 +191,7 @@ describe('useCommandPalette', () => {
       expect(result.current.state.isOpen).toBe(false)
       expect(preventDefaultSpy).toHaveBeenCalled()
       expect(stopPropagationSpy).toHaveBeenCalled()
+      expect(stopImmediatePropagationSpy).toHaveBeenCalled()
     })
 
     test('Ctrl+: while palette is open closes it immediately without leader delay', () => {
@@ -361,7 +375,7 @@ describe('useCommandPalette', () => {
       expect(result.current.state.isOpen).toBe(false)
     })
 
-    test('Ctrl+: trigger calls preventDefault and stopPropagation when closing', async () => {
+    test('Ctrl+: trigger calls preventDefault and stops propagation when closing', async () => {
       const { result } = renderHook(() => useCommandPalette())
 
       act(() => {
@@ -379,6 +393,11 @@ describe('useCommandPalette', () => {
       const preventDefaultSpy = vi.spyOn(event, 'preventDefault')
       const stopPropagationSpy = vi.spyOn(event, 'stopPropagation')
 
+      const stopImmediatePropagationSpy = vi.spyOn(
+        event,
+        'stopImmediatePropagation'
+      )
+
       act(() => {
         document.dispatchEvent(event)
       })
@@ -389,6 +408,77 @@ describe('useCommandPalette', () => {
 
       expect(preventDefaultSpy).toHaveBeenCalled()
       expect(stopPropagationSpy).toHaveBeenCalled()
+      expect(stopImmediatePropagationSpy).toHaveBeenCalled()
+    })
+
+    test('Ctrl+: trigger overrides later document-level global shortcuts', async () => {
+      const { result } = renderHook(() => useCommandPalette())
+      const globalShortcut = vi.fn()
+      document.addEventListener('keydown', globalShortcut, { capture: true })
+
+      try {
+        act(() => {
+          const event = new KeyboardEvent('keydown', {
+            key: ':',
+            ctrlKey: true,
+            bubbles: true,
+            cancelable: true,
+          })
+          document.dispatchEvent(event)
+        })
+
+        await waitFor(() => {
+          expect(result.current.state.isOpen).toBe(true)
+        })
+
+        expect(globalShortcut).not.toHaveBeenCalled()
+      } finally {
+        document.removeEventListener('keydown', globalShortcut, {
+          capture: true,
+        })
+      }
+    })
+
+    test('toggles from the Electron main-process shortcut override', async () => {
+      let toggleFromMain: (() => void) | null = null
+      const unlisten = vi.fn()
+
+      window.vimeflow = {
+        invoke: vi.fn(),
+        listen: vi.fn(),
+        onCommandPaletteToggle: (callback: () => void): (() => void) => {
+          toggleFromMain = callback
+
+          return unlisten
+        },
+      } as unknown as BackendApi
+
+      const { result, unmount } = renderHook(() => useCommandPalette())
+
+      try {
+        expect(result.current.state.isOpen).toBe(false)
+
+        act(() => {
+          toggleFromMain?.()
+        })
+
+        await waitFor(() => {
+          expect(result.current.state.isOpen).toBe(true)
+        })
+
+        act(() => {
+          toggleFromMain?.()
+        })
+
+        await waitFor(() => {
+          expect(result.current.state.isOpen).toBe(false)
+        })
+
+        unmount()
+        expect(unlisten).toHaveBeenCalledOnce()
+      } finally {
+        delete window.vimeflow
+      }
     })
 
     test('Ctrl+: trigger suppresses repeat events (key-hold flickering guard)', () => {
@@ -429,6 +519,11 @@ describe('useCommandPalette', () => {
       const preventDefaultSpy = vi.spyOn(repeatEvent, 'preventDefault')
       const stopPropagationSpy = vi.spyOn(repeatEvent, 'stopPropagation')
 
+      const stopImmediatePropagationSpy = vi.spyOn(
+        repeatEvent,
+        'stopImmediatePropagation'
+      )
+
       act(() => {
         document.dispatchEvent(repeatEvent)
       })
@@ -438,6 +533,7 @@ describe('useCommandPalette', () => {
       // other listeners) but does NOT toggle the palette closed.
       expect(preventDefaultSpy).toHaveBeenCalled()
       expect(stopPropagationSpy).toHaveBeenCalled()
+      expect(stopImmediatePropagationSpy).toHaveBeenCalled()
       expect(result.current.state.isOpen).toBe(true)
     })
 

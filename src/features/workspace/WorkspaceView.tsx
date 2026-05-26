@@ -15,10 +15,10 @@ import {
   SidebarTabs,
   type SidebarTabItem,
 } from '../../components/sidebar/SidebarTabs'
+import { StatusBar, type StatusBarSession } from '../../components/StatusBar'
 import { SidebarStatusHeader } from './components/SidebarStatusHeader'
 import { FilesView } from './components/FilesView'
 import { SessionsView } from './components/SessionsView'
-import { StatusBar } from './components/StatusBar'
 import {
   TerminalZone,
   type TerminalZoneHandle,
@@ -39,7 +39,10 @@ import type { CurrentUsageState } from '../agent-status/types'
 import { UnsavedChangesDialog } from '../editor/components/UnsavedChangesDialog'
 import { InfoBanner } from './components/InfoBanner'
 import { CommandPalette } from '../command-palette/CommandPalette'
-import { useCommandPalette } from '../command-palette/hooks/useCommandPalette'
+import {
+  COMMAND_PALETTE_SHORTCUT_KEYS,
+  useCommandPalette,
+} from '../command-palette/hooks/useCommandPalette'
 import {
   usePaneRenameChord,
   type FocusedPaneRef,
@@ -61,7 +64,9 @@ import { useDockShortcuts } from './hooks/useDockShortcuts'
 import { useEditorBuffer } from '../editor/hooks/useEditorBuffer'
 import { useAgentStatus } from '../agent-status/hooks/useAgentStatus'
 import { useGitStatus } from '../diff/hooks/useGitStatus'
+import { sumLines } from '../diff/utils/sumLines'
 import { findActivePane } from '../sessions/utils/activeSessionPane'
+import { lineDelta } from '../sessions/utils/lineDelta'
 import { AGENTS, agentTypeToRegistryKey } from '../../agents/registry'
 import type { SessionStatus } from '../sessions/types'
 import {
@@ -85,6 +90,32 @@ const cacheHitPercentage = (
   const rate = cacheHitRate(usage)
 
   return rate === null ? null : Math.round(rate * 100)
+}
+
+const formatStatusDuration = (durationMs: number): string | undefined => {
+  if (!Number.isFinite(durationMs) || durationMs <= 0) {
+    return undefined
+  }
+
+  const totalMinutes = Math.floor(durationMs / 60_000)
+
+  if (totalMinutes <= 0) {
+    return undefined
+  }
+
+  const days = Math.floor(totalMinutes / 1440)
+  const hours = Math.floor((totalMinutes % 1440) / 60)
+  const minutes = totalMinutes % 60
+
+  if (days > 0) {
+    return `${days}d ${hours.toString().padStart(2, '0')}h`
+  }
+
+  if (hours > 0) {
+    return `${hours}h ${minutes.toString().padStart(2, '0')}m`
+  }
+
+  return `${minutes}m`
 }
 
 // Follow-up tracked at https://github.com/winoooops/vimeflow/issues/252
@@ -298,6 +329,14 @@ export const WorkspaceView = (): ReactElement => {
   // path; without this guard, a delayed status update could re-stamp stale
   // agent chrome onto a completed session.
   const activeSessionStatus = activeSession?.status
+
+  const isStatusBarAgentActive =
+    activePanePtyId !== undefined &&
+    agentStatus.sessionId === activePanePtyId &&
+    agentStatus.isActive &&
+    !agentStatus.agentExited &&
+    (activeSessionStatus === 'running' || activeSessionStatus === 'paused')
+
   useEffect(() => {
     if (!activeSessionId) {
       return
@@ -667,6 +706,46 @@ export const WorkspaceView = (): ReactElement => {
     watch: true,
     enabled: agentStatus.isActive || (isDockOpen && dockTab === 'diff'),
   })
+
+  const statusBarSession = useMemo<StatusBarSession | null>(() => {
+    if (!activeSession || !isStatusBarAgentActive) {
+      return null
+    }
+
+    const usage = agentStatus.contextWindow?.currentUsage
+
+    const cache = usage
+      ? {
+          cached: usage.cacheReadInputTokens,
+          wrote: usage.cacheCreationInputTokens,
+          fresh: usage.inputTokens,
+        }
+      : undefined
+
+    const gitLineTotals =
+      gitStatus.filesCwd === activeCwd ? sumLines(gitStatus.files) : null
+    const changes = gitLineTotals ?? lineDelta(activeSession)
+
+    return {
+      startedAgo: formatStatusDuration(agentStatus.cost?.totalDurationMs ?? 0),
+      turns: agentStatus.numTurns,
+      cache,
+      changes,
+    }
+  }, [
+    activeCwd,
+    activeSession,
+    agentStatus.contextWindow?.currentUsage,
+    agentStatus.cost?.totalDurationMs,
+    agentStatus.numTurns,
+    gitStatus.files,
+    gitStatus.filesCwd,
+    isStatusBarAgentActive,
+  ])
+
+  const statusBarContextPct = isStatusBarAgentActive
+    ? (agentStatus.contextWindow?.usedPercentage ?? 0)
+    : 0
 
   // Open a file directly (no unsaved-changes guard). Errors were previously
   // swallowed via `void editorBuffer.openFile(...)`, leaving the user with
@@ -1071,7 +1150,12 @@ export const WorkspaceView = (): ReactElement => {
           </div>
         )}
 
-        <StatusBar />
+        <StatusBar
+          session={statusBarSession}
+          contextPct={statusBarContextPct}
+          paletteShortcut={COMMAND_PALETTE_SHORTCUT_KEYS}
+          onOpenPalette={commandPalette.open}
+        />
       </div>
 
       <div

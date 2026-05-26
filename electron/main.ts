@@ -6,6 +6,7 @@ import {
   developmentContentSecurityPolicy,
   packagedContentSecurityPolicy,
 } from './csp'
+import { installCommandPaletteShortcutOverride } from './command-palette-shortcut'
 import { BACKEND_EVENT, BACKEND_INVOKE } from './ipc-channels'
 import { spawnSidecar, type Sidecar } from './sidecar'
 
@@ -226,6 +227,7 @@ const createWindow = (): void => {
   })
 
   installRendererDiagnosticLogging(win)
+  installCommandPaletteShortcutOverride(win)
 
   const devUrl = process.env.VITE_DEV_SERVER_URL
 

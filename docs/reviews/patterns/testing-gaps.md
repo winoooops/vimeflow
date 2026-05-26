@@ -129,8 +129,8 @@ filesystem scope restrictions).
 
 - **Source:** github-claude | PR #122 round 3 | 2026-05-01
 - **Severity:** MEDIUM
-- **File:** `src/features/agent-status/components/ActivityFooter.test.tsx`
-- **Finding:** The PR refactored `ActivityFooter` from a conditional-render pattern (no cell when `numTurns=0`) to an always-render pattern (`{n} turn|turns`). The pre-existing test `does not render a turns cell` was deleted and replaced with `renders singular turn label` (numTurns=1) plus a localized 1,234 case. No test exercised `numTurns=0` — the initial value of `createDefaultStatus().numTurns`, visible to users during the pre-activity window between agent detection and the first `agent-turn` replay event. Without a test, the contract was undocumented: a future contributor could re-add a `{numTurns > 0 && …}` guard thinking it's "what was meant" and silently regress the always-render intent.
+- **File:** former agent-status footer test
+- **Finding:** A past PR refactored the agent-status footer from a conditional-render pattern (no cell when `numTurns=0`) to an always-render pattern (`{n} turn|turns`). The pre-existing test `does not render a turns cell` was deleted and replaced with `renders singular turn label` (numTurns=1) plus a localized 1,234 case. No test exercised `numTurns=0` — the initial value of `createDefaultStatus().numTurns`, visible to users during the pre-activity window between agent detection and the first `agent-turn` replay event. Without a test, the contract was undocumented: a future contributor could re-add a `{numTurns > 0 && …}` guard thinking it's "what was meant" and silently regress the always-render intent. The footer has since been removed; this entry remains as a general conditional-render test-gap pattern.
 - **Fix:** Added `renders 0 turns during the pre-activity window before the first agent-turn event` test that locks the always-render-with-zero contract. The test comment also documents the alternative path: if the design intent is to hide the cell pre-activity, both the test and the component must change together — not one without the other.
 - **Commit:** _(see git log for the round-3 fix commit)_
 

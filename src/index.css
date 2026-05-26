@@ -1,3 +1,4 @@
+@import '../docs/design/tokens.css';
 @import 'tailwindcss';
 @config '../tailwind.config.js';
 
