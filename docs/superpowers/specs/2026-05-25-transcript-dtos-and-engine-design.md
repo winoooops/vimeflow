@@ -849,3 +849,5 @@ typed (option B). #246's **A-transcript** and **C** boxes tick.
 **#246 checklist update.** On completion, tick **A-transcript** and **C**,
 and **add Step F** (§ 6) as a new deferred-capstone line with its own
 future go/no-go — recorded now so the intent isn't lost once A + C land.
+
+<!-- codex-reviewed: 2026-05-26T03:41:38Z -->
