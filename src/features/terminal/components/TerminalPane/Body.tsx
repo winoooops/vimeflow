@@ -34,6 +34,11 @@ import {
 } from './agentCwdGuard'
 import { parseAgentCwdHint } from './agentCwdHint'
 import { parseOsc7Cwd, WINDOWS_DRIVE_PATH } from './osc7'
+import {
+  TERMINAL_FONT_FAMILY,
+  TERMINAL_FONT_SIZE,
+  loadTerminalFonts,
+} from './terminalFont'
 import '@xterm/xterm/css/xterm.css'
 
 const AGENT_CWD_HINT_BUFFER_SIZE = 4096
@@ -496,6 +501,7 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
     let canvasAddon: CanvasAddon | null = null
     let fitFrameId: number | null = null
     let lastFitSize: { width: number; height: number } | null = null
+    let disposed = false
 
     const cancelScheduledFit = (): void => {
       if (fitFrameId !== null) {
@@ -545,7 +551,10 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
       })
     }
 
-    const flushFit = (targetFitAddon: FitAddon): void => {
+    const flushFit = (
+      targetFitAddon: FitAddon,
+      options: { force?: boolean; afterFit?: () => void } = {}
+    ): void => {
       cancelScheduledFit()
 
       fitFrameId = window.requestAnimationFrame(() => {
@@ -553,7 +562,10 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
         if (deferFitRef.current) {
           return
         }
-        fitIfNeeded(targetFitAddon)
+        const didFit = fitIfNeeded(targetFitAddon, options.force ?? false)
+        if (didFit) {
+          options.afterFit?.()
+        }
       })
     }
 
@@ -584,9 +596,8 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
       // Create new terminal instance
       newTerminal = new Terminal({
         cursorBlink: true,
-        fontSize: 14,
-        fontFamily:
-          '"JetBrains Mono", "JetBrainsMono Nerd Font", "Pure Nerd Font", "Courier New", Courier, monospace',
+        fontSize: TERMINAL_FONT_SIZE,
+        fontFamily: TERMINAL_FONT_FAMILY,
         theme: toXtermTheme(catppuccinMocha),
         scrollback: 10000,
         allowProposedApi: true,
@@ -684,6 +695,44 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
       terminalCache.set(sessionId, { terminal: newTerminal, fitAddon })
     }
 
+    const refreshAfterFontFit = (): void => {
+      newTerminal.refresh(0, Math.max(newTerminal.rows - 1, 0))
+    }
+
+    const refitAfterTerminalFontsSettle = (): void => {
+      if (disposed) {
+        return
+      }
+
+      lastFitSize = null
+
+      if (deferFitRef.current) {
+        pendingDeferredFitFlushRef.current = true
+
+        return
+      }
+
+      flushFit(fitAddon, { force: true, afterFit: refreshAfterFontFit })
+    }
+
+    const refitWhenTerminalFontsSettle = async (): Promise<void> => {
+      const terminalFontsLoaded = loadTerminalFonts()
+
+      if (!terminalFontsLoaded) {
+        return
+      }
+
+      try {
+        await terminalFontsLoaded
+      } catch {
+        // Fall back to the available system stack, then remeasure whatever loaded.
+      }
+
+      refitAfterTerminalFontsSettle()
+    }
+
+    void refitWhenTerminalFontsSettle()
+
     cancelScheduledFitRef.current = cancelScheduledFit
     flushFitRef.current = (): void => {
       flushFit(fitAddon)
@@ -757,6 +806,7 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
     // Cleanup: disconnect observers and dispose terminal from cache
     // When Body unmounts, the session is closed — free resources
     return (): void => {
+      disposed = true
       cancelScheduledFit()
       if (flushFitSessionIdRef.current === sessionId) {
         cancelScheduledFitRef.current = null

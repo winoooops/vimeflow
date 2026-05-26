@@ -11,6 +11,7 @@ import {
   terminalCache,
   type BodyHandle,
 } from './Body'
+import { TERMINAL_FONT_FAMILY } from './terminalFont'
 import { useTerminal, type UseTerminalReturn } from '../../hooks/useTerminal'
 import type { ITerminalService } from '../../services/terminalService'
 
@@ -83,6 +84,9 @@ describe('Body', () => {
     focus: ReturnType<typeof vi.fn>
     onResize: ReturnType<typeof vi.fn>
     parser: { registerOscHandler: ReturnType<typeof vi.fn> }
+    refresh: ReturnType<typeof vi.fn>
+    cols: number
+    rows: number
     options: Record<string, unknown>
   }
   let mockFitAddon: { fit: ReturnType<typeof vi.fn> }
@@ -109,6 +113,9 @@ describe('Body', () => {
       parser: {
         registerOscHandler: vi.fn(() => ({ dispose: vi.fn() })),
       },
+      refresh: vi.fn(),
+      cols: 80,
+      rows: 24,
       options: {},
     }
 
@@ -193,7 +200,7 @@ describe('Body', () => {
         expect.objectContaining({
           cursorBlink: true,
           fontSize: 14,
-          fontFamily: expect.stringContaining('JetBrains Mono'),
+          fontFamily: TERMINAL_FONT_FAMILY,
         })
       )
     })
@@ -219,6 +226,79 @@ describe('Body', () => {
         })
       )
     })
+  })
+
+  test('refits terminal after bundled terminal fonts load', async () => {
+    let resolveFonts: () => void = (): void => undefined
+
+    const fontsLoaded = new Promise<FontFace[]>((resolve) => {
+      resolveFonts = (): void => resolve([])
+    })
+
+    const load = vi.fn<FontFaceSet['load']>().mockReturnValue(fontsLoaded)
+    const originalFonts = document.fonts
+    const frameCallbacks: FrameRequestCallback[] = []
+
+    Object.defineProperty(document, 'fonts', {
+      configurable: true,
+      value: { load },
+    })
+
+    const requestAnimationFrameSpy = vi
+      .spyOn(window, 'requestAnimationFrame')
+      .mockImplementation((callback: FrameRequestCallback): number => {
+        frameCallbacks.push(callback)
+
+        return frameCallbacks.length
+      })
+
+    const offsetWidthSpy = vi
+      .spyOn(HTMLElement.prototype, 'offsetWidth', 'get')
+      .mockReturnValue(840)
+
+    const offsetHeightSpy = vi
+      .spyOn(HTMLElement.prototype, 'offsetHeight', 'get')
+      .mockReturnValue(600)
+
+    try {
+      render(
+        <Body
+          sessionId="test-session"
+          cwd="/home/user"
+          service={defaultMockService}
+        />
+      )
+
+      await waitFor(() => {
+        expect(load).toHaveBeenCalledTimes(2)
+      })
+
+      mockFitAddon.fit.mockClear()
+
+      await act(async () => {
+        resolveFonts()
+        await fontsLoaded
+      })
+
+      await waitFor(() => {
+        expect(requestAnimationFrameSpy).toHaveBeenCalledTimes(1)
+      })
+
+      act(() => {
+        frameCallbacks[0](16)
+      })
+
+      expect(mockFitAddon.fit).toHaveBeenCalledTimes(1)
+      expect(mockTerminal.refresh).toHaveBeenCalledWith(0, 23)
+    } finally {
+      Object.defineProperty(document, 'fonts', {
+        configurable: true,
+        value: originalFonts,
+      })
+      requestAnimationFrameSpy.mockRestore()
+      offsetWidthSpy.mockRestore()
+      offsetHeightSpy.mockRestore()
+    }
   })
 
   test('loads fit addon', async () => {
