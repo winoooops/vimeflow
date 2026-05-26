@@ -411,8 +411,16 @@ pub(crate) async fn unstage_file_inner(req: StageFileRequest) -> Result<(), Stri
 /// - Untracked: `git clean -f -- <path>` (removes the file).
 /// - Tracked + `DiscardScope::Unstaged`: `git checkout -- <path>` (restores
 ///   working-tree content from the index; staged changes are preserved).
-/// - Tracked + `DiscardScope::Both`: `git reset HEAD -- <path>` then
-///   `git checkout -- <path>` (unstages and discards, returning to HEAD).
+/// - Tracked + `DiscardScope::Both`:
+///   1. `git reset HEAD -- <path>` (unstage).
+///   2. Re-evaluate working-tree state via `git status --porcelain`:
+///      - If the path is now untracked (was a staged-new file with no
+///        prior HEAD version): `git clean -f -- <path>` to remove it.
+///      - Otherwise (was a tracked file modified or deleted in the index):
+///        `git checkout -- <path>` to restore working-tree to HEAD.
+///
+///   This correctly handles the `A ` (staged-new) case where `git checkout`
+///   would be a no-op after the reset.
 ///
 /// Per-hunk: `git apply --reverse --whitespace=nowarn` (reverses the hunk
 /// in the working tree; scope is ignored because per-hunk discard always
@@ -427,14 +435,28 @@ pub(crate) async fn discard_file_inner(req: DiscardFileRequest) -> Result<(), St
                 let mut cmd = Command::new("git");
                 cmd.current_dir(&cwd).args(["clean", "-f", "--", &req.path]);
                 run_git_with_timeout(cmd).await.map(|_| ())?;
-            } else {
-                if matches!(req.scope, DiscardScope::Both) {
-                    // Unstage first so checkout restores to HEAD content.
+            } else if matches!(req.scope, DiscardScope::Both) {
+                // Step 1: unstage any staged changes.
+                let mut cmd = Command::new("git");
+                cmd.current_dir(&cwd)
+                    .args(["reset", "HEAD", "--", &req.path]);
+                run_git_with_timeout(cmd).await.map(|_| ())?;
+                // Step 2: re-evaluate — after unstaging a NEW file the path
+                // becomes untracked; after unstaging a modified tracked file
+                // the path remains tracked (working-tree edits vs HEAD).
+                let now_untracked = git_status_porcelain_is_untracked(&cwd, &req.path).await?;
+                if now_untracked {
+                    // Staged-new file: no HEAD version → remove from disk.
                     let mut cmd = Command::new("git");
-                    cmd.current_dir(&cwd)
-                        .args(["reset", "HEAD", "--", &req.path]);
+                    cmd.current_dir(&cwd).args(["clean", "-f", "--", &req.path]);
+                    run_git_with_timeout(cmd).await.map(|_| ())?;
+                } else {
+                    // Tracked file: restore working tree to HEAD.
+                    let mut cmd = Command::new("git");
+                    cmd.current_dir(&cwd).args(["checkout", "--", &req.path]);
                     run_git_with_timeout(cmd).await.map(|_| ())?;
                 }
+            } else {
                 let mut cmd = Command::new("git");
                 cmd.current_dir(&cwd).args(["checkout", "--", &req.path]);
                 run_git_with_timeout(cmd).await.map(|_| ())?;

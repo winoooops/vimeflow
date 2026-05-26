@@ -467,6 +467,108 @@ fn whole_file_discard_tracked_restores_head() {
     );
 }
 
+// ── Test 9: discard scope=Both of a staged-new file → removed from disk ──────
+//
+// Scenario: a brand-new file is created and `git add`-ed so it shows as
+// `A ` in `git status`.  When the user discards with `scope = Both` the
+// expected outcome is:
+//   - the file no longer exists on disk
+//   - `git status --short` is clean (no staged diff, no untracked entry)
+
+#[test]
+fn discard_scope_both_staged_new_file_removes_it() {
+    let (state, _app_data) = make_state();
+    let repo = init_repo();
+    initial_commit(&repo);
+
+    // Create a new file and stage it (index shows "A ").
+    write_file(repo.path(), "new_file.txt", "brand new content\n");
+    run_git(repo.path(), &["add", "new_file.txt"]);
+
+    // Sanity: confirm it is staged as added.
+    let status_before = git_status_short(&repo);
+    assert!(
+        status_before.contains("A  new_file.txt"),
+        "expected 'A  new_file.txt' staged before discard, got: {status_before}"
+    );
+
+    let req = DiscardFileRequest {
+        cwd: cwd_str(&repo),
+        path: "new_file.txt".to_string(),
+        hunk_patch: None,
+        scope: DiscardScope::Both,
+    };
+
+    rt().block_on(state.discard_file(req))
+        .expect("discard staged-new file with scope=Both should succeed");
+
+    // File must be gone from disk.
+    assert!(
+        !repo.path().join("new_file.txt").exists(),
+        "new_file.txt should be removed from disk after scope=Both discard"
+    );
+
+    // Index must be clean.
+    let status_after = git_status_short(&repo);
+    assert!(
+        status_after.trim().is_empty(),
+        "git status should be clean after discarding staged-new file, got: {status_after}"
+    );
+}
+
+// ── Test 10: discard scope=Both of a staged modified tracked file → HEAD ──────
+//
+// Scenario: a tracked file is modified AND staged (shows as `M `).  Discarding
+// with `scope = Both` should:
+//   - restore the working-tree content to HEAD
+//   - remove the staged diff (clean index)
+
+#[test]
+fn discard_scope_both_staged_modified_tracked_restores_head() {
+    let (state, _app_data) = make_state();
+    let repo = init_repo();
+    initial_commit(&repo);
+
+    // Confirm the initial content.
+    let original = std::fs::read_to_string(repo.path().join("init.txt")).expect("read");
+    assert_eq!(original, "initial\n");
+
+    // Stage a modification.
+    write_file(repo.path(), "init.txt", "staged modification\n");
+    run_git(repo.path(), &["add", "init.txt"]);
+
+    // Sanity: "M " means staged modification.
+    let status_before = git_status_short(&repo);
+    assert!(
+        status_before.contains("M  init.txt"),
+        "expected 'M  init.txt' before discard, got: {status_before}"
+    );
+
+    let req = DiscardFileRequest {
+        cwd: cwd_str(&repo),
+        path: "init.txt".to_string(),
+        hunk_patch: None,
+        scope: DiscardScope::Both,
+    };
+
+    rt().block_on(state.discard_file(req))
+        .expect("discard staged-modified tracked file with scope=Both should succeed");
+
+    // Working-tree content must be HEAD content.
+    let after = std::fs::read_to_string(repo.path().join("init.txt")).expect("read after");
+    assert_eq!(
+        after, "initial\n",
+        "init.txt should be restored to HEAD content after scope=Both discard"
+    );
+
+    // Index must be clean.
+    let status_after = git_status_short(&repo);
+    assert!(
+        status_after.trim().is_empty(),
+        "git status should be clean after scope=Both discard of staged-modified file, got: {status_after}"
+    );
+}
+
 // ── Test 8: unstage of a per-hunk stage restores the delta to working tree ────
 
 #[test]

@@ -189,9 +189,21 @@ export interface GitService {
   /**
    * Discard working-tree changes to a file or a specific hunk. When
    * `hunkPatch` is provided it is applied in reverse to the working tree.
-   * Omitting it discards all changes to the file (scope: 'unstaged').
+   * Omitting it discards all changes to the file.
+   *
+   * `scope` controls how much of the file's history is discarded:
+   * - `'unstaged'` (default): only the working-tree edits are reverted
+   *   (`git checkout -- <file>` or reverse-patch). Staged changes are kept.
+   * - `'both'`: staged changes are also dropped (`git reset HEAD <file>`
+   *   followed by the working-tree discard). Use this when the user
+   *   discards from the STAGED view so the file returns fully to HEAD.
+   *   A staged-new file (`A ` status) is removed from disk entirely.
    */
-  discardChanges(file: string, hunkPatch?: string): Promise<void>
+  discardChanges(
+    file: string,
+    hunkPatch?: string,
+    scope?: 'unstaged' | 'both'
+  ): Promise<void>
 }
 
 /** Mock implementation using static mock data (for tests) */
@@ -287,8 +299,12 @@ export class HttpGitService implements GitService {
     }
   }
 
-  async discardChanges(file: string, hunkPatch?: string): Promise<void> {
-    const body: Record<string, unknown> = { file, scope: 'unstaged' }
+  async discardChanges(
+    file: string,
+    hunkPatch?: string,
+    scope: 'unstaged' | 'both' = 'unstaged'
+  ): Promise<void> {
+    const body: Record<string, unknown> = { file, scope }
     if (hunkPatch !== undefined) {
       body.hunkPatch = hunkPatch
     }
@@ -366,13 +382,17 @@ export class DesktopGitService implements GitService {
     }
   }
 
-  async discardChanges(file: string, hunkPatch?: string): Promise<void> {
+  async discardChanges(
+    file: string,
+    hunkPatch?: string,
+    scope: 'unstaged' | 'both' = 'unstaged'
+  ): Promise<void> {
     try {
       await invoke<void>('discard_file', {
         cwd: this.cwd,
         path: file,
         hunkPatch,
-        scope: 'unstaged',
+        scope,
       })
     } catch (error) {
       throw new Error(`Failed to discard changes to ${file}: ${String(error)}`)

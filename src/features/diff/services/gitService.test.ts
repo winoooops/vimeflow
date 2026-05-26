@@ -469,7 +469,7 @@ describe('HttpGitService', () => {
   })
 
   describe('discardChanges', () => {
-    test('posts to /api/git/discard with file and scope (whole file)', async () => {
+    test('posts to /api/git/discard with file and default scope=unstaged (whole file)', async () => {
       fetchMock.mockResolvedValueOnce({ ok: true })
 
       await service.discardChanges('src/test.ts')
@@ -481,7 +481,19 @@ describe('HttpGitService', () => {
       })
     })
 
-    test('posts to /api/git/discard with file and hunk patch', async () => {
+    test('posts to /api/git/discard with scope=both when requested', async () => {
+      fetchMock.mockResolvedValueOnce({ ok: true })
+
+      await service.discardChanges('src/test.ts', undefined, 'both')
+
+      expect(fetchMock).toHaveBeenCalledWith('/api/git/discard', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ file: 'src/test.ts', scope: 'both' }),
+      })
+    })
+
+    test('posts to /api/git/discard with file and hunk patch (unstaged scope)', async () => {
       fetchMock.mockResolvedValueOnce({ ok: true })
 
       const patch = '@@ -1,3 +1,4 @@\n context\n+added\n'
@@ -493,6 +505,23 @@ describe('HttpGitService', () => {
         body: JSON.stringify({
           file: 'src/test.ts',
           scope: 'unstaged',
+          hunkPatch: patch,
+        }),
+      })
+    })
+
+    test('posts to /api/git/discard with hunk patch and scope=both for staged discard', async () => {
+      fetchMock.mockResolvedValueOnce({ ok: true })
+
+      const patch = '@@ -1,3 +1,4 @@\n context\n+added\n'
+      await service.discardChanges('src/test.ts', patch, 'both')
+
+      expect(fetchMock).toHaveBeenCalledWith('/api/git/discard', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          file: 'src/test.ts',
+          scope: 'both',
           hunkPatch: patch,
         }),
       })
@@ -682,7 +711,7 @@ describe('DesktopGitService', () => {
   })
 
   describe('discardChanges', () => {
-    test('calls invoke with discard_file and cwd + path + scope (whole file)', async () => {
+    test('calls invoke with discard_file and default scope=unstaged (whole file)', async () => {
       invokeMock.mockResolvedValueOnce(undefined)
 
       await service.discardChanges('src/test.ts')
@@ -695,7 +724,20 @@ describe('DesktopGitService', () => {
       })
     })
 
-    test('calls invoke with discard_file and hunk patch', async () => {
+    test('calls invoke with discard_file and scope=both for staged discard', async () => {
+      invokeMock.mockResolvedValueOnce(undefined)
+
+      await service.discardChanges('src/test.ts', undefined, 'both')
+
+      expect(invokeMock).toHaveBeenCalledWith('discard_file', {
+        cwd: '/home/user/project',
+        path: 'src/test.ts',
+        hunkPatch: undefined,
+        scope: 'both',
+      })
+    })
+
+    test('calls invoke with discard_file and hunk patch (unstaged scope)', async () => {
       invokeMock.mockResolvedValueOnce(undefined)
 
       const patch = '@@ -1,3 +1,4 @@\n context\n+added\n'
@@ -706,6 +748,20 @@ describe('DesktopGitService', () => {
         path: 'src/test.ts',
         hunkPatch: patch,
         scope: 'unstaged',
+      })
+    })
+
+    test('calls invoke with discard_file and hunk patch with scope=both', async () => {
+      invokeMock.mockResolvedValueOnce(undefined)
+
+      const patch = '@@ -1,3 +1,4 @@\n context\n+added\n'
+      await service.discardChanges('src/test.ts', patch, 'both')
+
+      expect(invokeMock).toHaveBeenCalledWith('discard_file', {
+        cwd: '/home/user/project',
+        path: 'src/test.ts',
+        hunkPatch: patch,
+        scope: 'both',
       })
     })
 

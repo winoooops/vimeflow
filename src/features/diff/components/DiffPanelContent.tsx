@@ -329,15 +329,23 @@ export const DiffPanelContent = ({
   )
 
   // Discard the currently focused hunk.
+  // When viewing the STAGED diff the user expects both the staged and
+  // working-tree changes to be removed, so pass scope='both'.
   const handleDiscard = useCallback(
     (): Promise<void> =>
       runHunkStaging('discard', (f, p) =>
-        createGitService(cwd).discardChanges(f, p)
+        createGitService(cwd).discardChanges(
+          f,
+          p,
+          selectedFileStaged ? 'both' : 'unstaged'
+        )
       ),
-    [runHunkStaging, cwd]
+    [runHunkStaging, cwd, selectedFileStaged]
   )
 
   // Discard ALL changes to the selected file (no hunk patch — whole file).
+  // When viewing the STAGED diff use scope='both' so staged-new files are
+  // removed from disk and staged modifications are fully reverted to HEAD.
   const handleDiscardAll = useCallback(async (): Promise<void> => {
     if (staging || !selectedFilePath) {
       return
@@ -347,7 +355,12 @@ export const DiffPanelContent = ({
     setStaging(true)
 
     try {
-      await service.discardChanges(selectedFilePath)
+      await service.discardChanges(
+        selectedFilePath,
+        undefined,
+        selectedFileStaged ? 'both' : 'unstaged'
+      )
+
       refetchDiff()
       ;(gitStatus ?? internalGitStatus).refresh()
     } catch (err) {
@@ -360,6 +373,7 @@ export const DiffPanelContent = ({
   }, [
     staging,
     selectedFilePath,
+    selectedFileStaged,
     cwd,
     notifyInfo,
     refetchDiff,
