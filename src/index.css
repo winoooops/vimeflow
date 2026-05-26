@@ -38,21 +38,17 @@
 }
 
 @font-face {
-  font-family: 'Pure Nerd Font';
+  font-family: 'Vimeflow Nerd Symbols';
   font-style: normal;
   font-display: block;
   font-weight: 400;
   src: url('@azurity/pure-nerd-font/PureNerdFont.woff2') format('woff2');
-  /* Match JetBrains Mono's em metrics so Nerd Font icons (e.g. md-cat
-     U+F011B used in shell prompts) render at full cell size instead of
-     as tiny specks. PNF's natural ascent/descent (711/-45 in a 1000-unit
-     em = 75.6% content) is much smaller than JBM's (1020/-300 = 132%);
-     when the browser substitutes a PNF glyph into an xterm cell sized by
-     JBM, the glyph renders at ~57% scale and looks invisible. size-adjust
-     scales the glyph outlines, and the *-override descriptors align the
-     baseline so substituted icons share the same vertical centerline as
-     JBM characters in the same line. */
-  size-adjust: 174%;
+  /* Isolated alias for the bundled Nerd Font symbol face. Keep this after full
+     patched Nerd Font families in the xterm stack: the symbol-only face is a
+     missing-glyph safety net, not a replacement for one monospaced patched
+     terminal font. Avoid size-adjust here because scaling the fallback face
+     also scales glyph advances, which makes Powerline prompt icons overrun
+     xterm cells on macOS. */
   ascent-override: 102%;
   descent-override: 30%;
 }

@@ -107,6 +107,11 @@ words:
   - statusline
   - nvim
   - DECRQM
+  - JetBrainsMono
+  - MesloLGS
+  - FiraCode
+  - Cascadia
+  - Menlo
 
 ignorePaths:
   - node_modules
