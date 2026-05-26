@@ -700,6 +700,11 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
       newTerminal.refresh(0, Math.max(newTerminal.rows - 1, 0))
     }
 
+    const clearPendingDeferredFit = (): void => {
+      pendingDeferredFitFlushRef.current = false
+      pendingDeferredRefreshAfterFitRef.current = false
+    }
+
     const refitAfterTerminalFontsSettle = (): void => {
       if (disposed) {
         return
@@ -714,7 +719,14 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
         return
       }
 
-      flushFit(fitAddon, { force: true, afterFit: refreshAfterFontFit })
+      pendingDeferredRefreshAfterFitRef.current = true
+      flushFit(fitAddon, {
+        force: true,
+        afterFit: (): void => {
+          clearPendingDeferredFit()
+          refreshAfterFontFit()
+        },
+      })
     }
 
     const refitWhenTerminalFontsSettle = async (): Promise<void> => {
@@ -734,11 +746,6 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
     }
 
     void refitWhenTerminalFontsSettle()
-
-    const clearPendingDeferredFit = (): void => {
-      pendingDeferredFitFlushRef.current = false
-      pendingDeferredRefreshAfterFitRef.current = false
-    }
 
     const flushDeferredFit = (): void => {
       if (pendingDeferredRefreshAfterFitRef.current) {
