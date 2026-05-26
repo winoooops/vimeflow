@@ -42,6 +42,11 @@ describe('terminalFont', () => {
       `${TERMINAL_FONT_SIZE}px "Vimeflow Nerd Symbols"`,
       expect.stringContaining('\ue0b0')
     )
+
+    expect(load).toHaveBeenCalledWith(
+      `${TERMINAL_FONT_SIZE}px "Vimeflow Nerd Symbols"`,
+      expect.stringContaining(String.fromCodePoint(0xf011b))
+    )
   })
 
   test('skips loading when the Font Loading API is unavailable', () => {

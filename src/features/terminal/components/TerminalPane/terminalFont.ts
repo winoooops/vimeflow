@@ -21,7 +21,7 @@ export type TerminalFontLoader = Pick<FontFaceSet, 'load'>
 
 const TERMINAL_TEXT_FONT_SPEC = `${TERMINAL_FONT_SIZE}px "JetBrains Mono"`
 const TERMINAL_SYMBOL_FONT_SPEC = `${TERMINAL_FONT_SIZE}px "Vimeflow Nerd Symbols"`
-const TERMINAL_SYMBOL_SAMPLE = '\ue0b0\ue0b1\ue0b2\ue0b3\uf011b\uf303'
+const TERMINAL_SYMBOL_SAMPLE = '\ue0b0\ue0b1\ue0b2\ue0b3\u{f011b}\uf303'
 
 const currentFontLoader = (): TerminalFontLoader | null => {
   if (typeof document === 'undefined') {

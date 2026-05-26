@@ -219,6 +219,7 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
   const flushFitRef = useRef<(() => void) | null>(null)
   const flushFitSessionIdRef = useRef<string | null>(null)
   const pendingDeferredFitFlushRef = useRef(false)
+  const pendingDeferredRefreshAfterFitRef = useRef(false)
   const agentCwdOutputBufferRef = useRef('')
   const agentCwdHintContextRef = useRef('')
   const isRestoringOutputRef = useRef(false)
@@ -708,6 +709,7 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
 
       if (deferFitRef.current) {
         pendingDeferredFitFlushRef.current = true
+        pendingDeferredRefreshAfterFitRef.current = true
 
         return
       }
@@ -733,17 +735,53 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
 
     void refitWhenTerminalFontsSettle()
 
-    cancelScheduledFitRef.current = cancelScheduledFit
-    flushFitRef.current = (): void => {
+    const clearPendingDeferredFit = (): void => {
+      pendingDeferredFitFlushRef.current = false
+      pendingDeferredRefreshAfterFitRef.current = false
+    }
+
+    const flushDeferredFit = (): void => {
+      if (pendingDeferredRefreshAfterFitRef.current) {
+        pendingDeferredFitFlushRef.current = false
+        flushFit(fitAddon, {
+          force: true,
+          afterFit: (): void => {
+            clearPendingDeferredFit()
+            refreshAfterFontFit()
+          },
+        })
+
+        return
+      }
+
+      pendingDeferredFitFlushRef.current = false
       flushFit(fitAddon)
     }
+
+    const refreshAfterPendingInitialFit = (): void => {
+      if (!pendingDeferredRefreshAfterFitRef.current) {
+        pendingDeferredFitFlushRef.current = false
+
+        return
+      }
+
+      clearPendingDeferredFit()
+      refreshAfterFontFit()
+    }
+
+    cancelScheduledFitRef.current = cancelScheduledFit
+    flushFitRef.current = flushDeferredFit
     flushFitSessionIdRef.current = sessionId
 
-    if (pendingDeferredFitFlushRef.current && !deferFitRef.current) {
-      pendingDeferredFitFlushRef.current = false
-
+    if (
+      (pendingDeferredFitFlushRef.current ||
+        pendingDeferredRefreshAfterFitRef.current) &&
+      !deferFitRef.current
+    ) {
       if (!didInitialFit) {
-        flushFit(fitAddon)
+        flushDeferredFit()
+      } else {
+        refreshAfterPendingInitialFit()
       }
     }
 

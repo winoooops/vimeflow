@@ -301,6 +301,193 @@ describe('Body', () => {
     }
   })
 
+  test('refreshes terminal after deferred terminal font refit flushes', async () => {
+    let resolveFonts: () => void = (): void => undefined
+
+    const fontsLoaded = new Promise<FontFace[]>((resolve) => {
+      resolveFonts = (): void => resolve([])
+    })
+
+    const load = vi.fn<FontFaceSet['load']>().mockReturnValue(fontsLoaded)
+    const originalFonts = document.fonts
+    const frameCallbacks: FrameRequestCallback[] = []
+
+    Object.defineProperty(document, 'fonts', {
+      configurable: true,
+      value: { load },
+    })
+
+    const requestAnimationFrameSpy = vi
+      .spyOn(window, 'requestAnimationFrame')
+      .mockImplementation((callback: FrameRequestCallback): number => {
+        frameCallbacks.push(callback)
+
+        return frameCallbacks.length
+      })
+
+    const offsetWidthSpy = vi
+      .spyOn(HTMLElement.prototype, 'offsetWidth', 'get')
+      .mockReturnValue(840)
+
+    const offsetHeightSpy = vi
+      .spyOn(HTMLElement.prototype, 'offsetHeight', 'get')
+      .mockReturnValue(600)
+
+    try {
+      const { rerender } = render(
+        <Body
+          sessionId="test-session"
+          cwd="/home/user"
+          service={defaultMockService}
+          deferFit
+        />
+      )
+
+      await waitFor(() => {
+        expect(load).toHaveBeenCalledTimes(2)
+      })
+
+      await act(async () => {
+        resolveFonts()
+        await fontsLoaded
+      })
+
+      expect(requestAnimationFrameSpy).not.toHaveBeenCalled()
+
+      mockFitAddon.fit.mockClear()
+      mockTerminal.refresh.mockClear()
+
+      rerender(
+        <Body
+          sessionId="test-session"
+          cwd="/home/user"
+          service={defaultMockService}
+        />
+      )
+
+      expect(requestAnimationFrameSpy).toHaveBeenCalledTimes(1)
+
+      act(() => {
+        frameCallbacks[0](16)
+      })
+
+      expect(mockFitAddon.fit).toHaveBeenCalledTimes(1)
+      expect(mockTerminal.refresh).toHaveBeenCalledWith(0, 23)
+    } finally {
+      Object.defineProperty(document, 'fonts', {
+        configurable: true,
+        value: originalFonts,
+      })
+      requestAnimationFrameSpy.mockRestore()
+      offsetWidthSpy.mockRestore()
+      offsetHeightSpy.mockRestore()
+    }
+  })
+
+  test('keeps deferred terminal font refresh pending when drag restarts before flush', async () => {
+    let resolveFonts: () => void = (): void => undefined
+
+    const fontsLoaded = new Promise<FontFace[]>((resolve) => {
+      resolveFonts = (): void => resolve([])
+    })
+
+    const load = vi.fn<FontFaceSet['load']>().mockReturnValue(fontsLoaded)
+    const originalFonts = document.fonts
+    const frameCallbacks: FrameRequestCallback[] = []
+
+    Object.defineProperty(document, 'fonts', {
+      configurable: true,
+      value: { load },
+    })
+
+    const requestAnimationFrameSpy = vi
+      .spyOn(window, 'requestAnimationFrame')
+      .mockImplementation((callback: FrameRequestCallback): number => {
+        frameCallbacks.push(callback)
+
+        return frameCallbacks.length
+      })
+
+    const offsetWidthSpy = vi
+      .spyOn(HTMLElement.prototype, 'offsetWidth', 'get')
+      .mockReturnValue(840)
+
+    const offsetHeightSpy = vi
+      .spyOn(HTMLElement.prototype, 'offsetHeight', 'get')
+      .mockReturnValue(600)
+
+    try {
+      const { rerender } = render(
+        <Body
+          sessionId="test-session"
+          cwd="/home/user"
+          service={defaultMockService}
+          deferFit
+        />
+      )
+
+      await waitFor(() => {
+        expect(load).toHaveBeenCalledTimes(2)
+      })
+
+      await act(async () => {
+        resolveFonts()
+        await fontsLoaded
+      })
+
+      rerender(
+        <Body
+          sessionId="test-session"
+          cwd="/home/user"
+          service={defaultMockService}
+        />
+      )
+
+      expect(requestAnimationFrameSpy).toHaveBeenCalledTimes(1)
+
+      rerender(
+        <Body
+          sessionId="test-session"
+          cwd="/home/user"
+          service={defaultMockService}
+          deferFit
+        />
+      )
+
+      act(() => {
+        frameCallbacks[0](16)
+      })
+
+      expect(mockFitAddon.fit).not.toHaveBeenCalled()
+      expect(mockTerminal.refresh).not.toHaveBeenCalled()
+
+      rerender(
+        <Body
+          sessionId="test-session"
+          cwd="/home/user"
+          service={defaultMockService}
+        />
+      )
+
+      expect(requestAnimationFrameSpy).toHaveBeenCalledTimes(2)
+
+      act(() => {
+        frameCallbacks[1](32)
+      })
+
+      expect(mockFitAddon.fit).toHaveBeenCalledTimes(1)
+      expect(mockTerminal.refresh).toHaveBeenCalledWith(0, 23)
+    } finally {
+      Object.defineProperty(document, 'fonts', {
+        configurable: true,
+        value: originalFonts,
+      })
+      requestAnimationFrameSpy.mockRestore()
+      offsetWidthSpy.mockRestore()
+      offsetHeightSpy.mockRestore()
+    }
+  })
+
   test('loads fit addon', async () => {
     render(
       <Body
