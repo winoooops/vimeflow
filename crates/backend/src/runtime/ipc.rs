@@ -622,6 +622,24 @@ mod router {
                     .await?;
                 encode_result(diff)
             }
+            "stage_file" => {
+                let req: crate::git::StageFileRequest =
+                    serde_json::from_value(params).map_err(|e| format!("invalid params: {e}"))?;
+                state.stage_file(req).await?;
+                Ok(Value::Null)
+            }
+            "unstage_file" => {
+                let req: crate::git::StageFileRequest =
+                    serde_json::from_value(params).map_err(|e| format!("invalid params: {e}"))?;
+                state.unstage_file(req).await?;
+                Ok(Value::Null)
+            }
+            "discard_file" => {
+                let req: crate::git::DiscardFileRequest =
+                    serde_json::from_value(params).map_err(|e| format!("invalid params: {e}"))?;
+                state.discard_file(req).await?;
+                Ok(Value::Null)
+            }
             "start_git_watcher" => {
                 #[derive(Deserialize)]
                 #[serde(rename_all = "camelCase")]

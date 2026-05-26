@@ -247,6 +247,18 @@ impl BackendState {
         crate::git::get_git_diff_inner(cwd, file, staged, untracked).await
     }
 
+    pub async fn stage_file(&self, req: crate::git::StageFileRequest) -> Result<(), String> {
+        crate::git::stage_file_inner(req).await
+    }
+
+    pub async fn unstage_file(&self, req: crate::git::StageFileRequest) -> Result<(), String> {
+        crate::git::unstage_file_inner(req).await
+    }
+
+    pub async fn discard_file(&self, req: crate::git::DiscardFileRequest) -> Result<(), String> {
+        crate::git::discard_file_inner(req).await
+    }
+
     pub async fn start_git_watcher(&self, cwd: String) -> Result<(), String> {
         crate::git::watcher::start_git_watcher_backend(cwd, self.events.clone(), self.git.clone())
             .await
