@@ -43,8 +43,11 @@ inventing a parallel system.
   container dimension and converts pixel↔percent, restoring the user's intended
   proportion across window shrink→expand via `desiredPercentRef`. Returns
   `size` (px), `pixelMin`/`pixelMax`, `handleMouseDown`, `adjustBy`,
-  `isDragging`. **A split divider's position is "X% of the container along one
-  axis" — exactly what this hook models.** One instance per divider.
+  `isDragging`. **A split divider's position is "X% of the pane space along one
+  axis" — close to what this hook models, but the divider track and the grid's
+  padding must be subtracted from the measured box first (see Step 2 §"Grid
+  model").** We add a small backward-compatible `reservedPx` option to the hook
+  to do exactly that. One instance per divider.
 - The dock's resize-handle markup is currently inlined twice in
   `DockPanel.tsx` (lines ~269–305): `role="separator"`, `aria-orientation`,
   `aria-value*`, `tabIndex={0}`, `data-testid="resize-handle"`, hover/focus/
@@ -131,9 +134,10 @@ This step is a pure refactor: identical rendered output and behavior.
 Rather than overlay handles and compute their position from container width
 minus padding/gap (fragile), we make the **border itself a grid track**. The
 inter-pane gap is replaced by an explicit divider track that holds the
-`ResizeHandle`; the browser's grid engine positions it exactly, with no
-padding/gap math. This also matches the user's mental model literally — "drag
-the border."
+`ResizeHandle`; the browser's grid engine positions the handle exactly, with no
+offset math for placement. (Pane *sizing* still needs a one-time reconciliation
+for the divider width + padding — see "Sizing math" below.) This also matches
+the user's mental model literally — "drag the border."
 
 The first track's size comes straight from the elastic hook in pixels (the dock
 pattern: dock sets `width: ${size}px`), the divider track is a fixed ~8px (≈
@@ -172,9 +176,29 @@ minmax(0,1fr)`) so the live drag preview just rewrites the variable.
 A small helper colocated with `layouts.ts`, e.g.
 `resolveGrid(layoutId, sizes): { cols, rows, areas }`, produces the
 divider-aware template from the existing `LAYOUTS` geometry plus the current
-`{ colSize, rowSize }`. `LAYOUTS` stays the single source of geometry; default
-sizes reproduce today's exact proportions (so a freshly-opened layout renders
-pixel-identical to current `main`).
+`{ colSize, rowSize }`. `LAYOUTS` stays the single source of geometry.
+
+**Sizing math (reconciling the divider track + padding).** Two corrections make
+the px tracks behave and keep the defaults honest:
+
+1. **Measure the content box, not the padded box.** `useElasticContainer`
+   measures `getBoundingClientRect()`, which includes the grid's `p-2.5`
+   padding. So the divider layer measures the _inner_ grid: padding moves to an
+   outer wrapper and the measured grid div carries no padding, making its box
+   exactly the pane content width `Wc`.
+2. **Reserve the divider width.** Add an optional `reservedPx` to
+   `useElasticContainer` (default `0`, so the dock is unchanged). With
+   `reservedPx = 8`, the hook applies its min/max/initial percentages to the
+   _pane space_ `Wp = Wc − 8` rather than `Wc`, and also returns `Wp` so callers
+   can convert between the hook's pixel `size` and a stored ratio.
+
+With both in place, the template `${colSize}px 8px minmax(0,1fr)` gives
+`track1 = colSize` and `track2 = Wc − colSize − 8 = Wp − colSize`. At the
+default `colSize = 0.5·Wp` both panes are `0.5·Wp` — **symmetric, and
+pixel-identical to `main`** (today's `1fr 1fr` + `gap-2` is also `(Wc − 8) / 2`
+per pane). The 15–85% bounds (over `Wp`) then hold for _both_ panes, since
+`track2 = Wp − track1 ∈ [0.15, 0.85]·Wp` whenever `track1 ∈ [0.15, 0.85]·Wp`.
+`threeRight`'s default `colSize = 0.583·Wp` reproduces its current `1.4 : 1`.
 
 ### Ratio state + remember-within-session (D2)
 
@@ -198,34 +222,58 @@ free. It resets only on reload (the `hidden` SplitView still unmounts then).
 
 The hooks live in a child `<SplitDividers>` that `SplitView` renders **only when
 `isActive`** (and therefore visible/non-zero). This sidesteps the
-`useElasticContainer` zero-dimension DEV throw for hidden sessions. Because the
-divider set differs per layout (rules-of-hooks forbids a variable hook count),
-`<SplitDividers key={session.layout}>` remounts cleanly on layout change,
-re-instantiating the correct hooks seeded (`initialPercent`) from the remembered
-ratio for that layout.
+`useElasticContainer` zero-dimension DEV throw for hidden sessions.
+
+`<SplitDividers>` does **not** call a variable number of hooks itself — that
+would trip `react-hooks/rules-of-hooks`. Instead it switches on the layout and
+renders a **per-layout subcomponent with a fixed hook count**, so each component
+calls exactly the hooks it always needs:
+
+- `VSplitDividers` / `HSplitDividers` — exactly **one** `useElasticContainer`.
+- `ThreeRightDividers` / `QuadDividers` — exactly **two** (one per axis).
+
+Each subcomponent is keyed by layout (`key={session.layout}`) so switching
+layouts unmounts the old subcomponent and mounts the new one cleanly, seeding
+each hook's `initialPercent` from the remembered ratio for that layout. (The key
+governs _state reset on layout change_; the per-layout components are what keep
+the hook calls unconditional.)
 
 Inactive sessions render their grid from the remembered ratios directly (no
 hooks, no handles) so revealing them shows the right proportions with no flash.
 
 ### Data flow
 
+`useElasticContainer` has no `onCommit` callback — its **`size` (React state)**
+is the committed value, and it updates on every path that matters: drag end,
+keyboard `adjustBy`, and `ResizeObserver`. `onDragPreview` fires _only_ during a
+mouse drag (in `commit-on-end` mode) and _not_ on the keyboard/observer paths.
+The bridge is built around those two facts:
+
 ```
-SplitView (owns ratios, always mounted)
-  ├─ computes grid template via resolveGrid(layout, sizes-from-ratios)
-  └─ when isActive: <SplitDividers key={layout}
-                       containerRef={outerDivRef}
-                       layout={layout}
-                       ratios={ratios[layout] ?? default}
-                       onCommit={(next) => setRatios(...)} />
-        ├─ useElasticContainer per divider (axis, SPLIT_ELASTIC_CONFIG, initialPercent=ratio)
-        ├─ live drag: onDragPreview writes the px size onto the grid template
-        │   (CSS variable on the outer div) — no full re-render mid-drag
-        └─ mouseup: onCommit(ratio) → SplitView state → committed template
+SplitView (owns remembered ratios + the grid template, always mounted)
+  ├─ grid-template-*: var(--split-col, <remembered px>) 8px minmax(0,1fr)
+  │     (the CSS var is the live driver; the fallback = remembered ratio)
+  └─ when isActive: <SplitDividers> → per-layout subcomponent
+        owns useElasticContainer per divider
+          (axis, SPLIT_ELASTIC_CONFIG, reservedPx=8, initialPercent=remembered)
+        ├─ during drag (commit-on-end): onDragPreview(px) writes --split-col on
+        │    the outer div — smooth, no React re-render
+        ├─ on every committed `size` change (drag end | keyboard | resize), a
+        │    useEffect on `size`:
+        │      • writes --split-col = `${size}px` (keeps the var current on the
+        │        paths onDragPreview skips — keyboard + observer)
+        │      • calls onRatioChange(layout, axis, size/Wp) so SplitView updates
+        │        its remembered ratio (seeds the fallback + future remounts)
+        └─ on unmount (session deactivates): clears --split-col so the
+             remembered-ratio fallback drives the now-hidden session
 ```
 
-This mirrors the dock's `commit-on-end` + `onDragPreview` flow. Window resizes
-are handled by each hook's `ResizeObserver`/`desiredPercentRef`, same as the
-dock.
+Single writer of the live value: `SplitDividers` owns `--split-col` while
+mounted; `SplitView`'s remembered ratio only seeds the fallback and survives
+remounts. They can't drift, because the effect re-derives the ratio from the
+same `size` it writes to the var. Window resizes ride the hook's
+`ResizeObserver`/`desiredPercentRef` exactly like the dock, and `aria-valuenow`
+tracks `size` on every path.
 
 ### Bounds config
 
@@ -233,13 +281,16 @@ Add to `src/features/workspace/panelConfig.ts` (where the dock configs live):
 
 ```ts
 export const SPLIT_ELASTIC_CONFIG = {
-  minPercent: 0.15, // a pane can't shrink below 15% of its axis
+  minPercent: 0.15, // a pane can't shrink below 15% of the pane space Wp
   maxPercent: 0.85,
-  // initialPercent supplied per-divider from remembered/default ratio
+  // initialPercent supplied per-divider from the remembered/default ratio
 } as const
 ```
 
-Keyboard step reuses the shared `KEYBOARD_STEP_PX` / `KEYBOARD_STEP_SHIFT_PX`.
+The percentages apply to the pane space `Wp = Wc − 8` (via the hook's
+`reservedPx`), so both the leading and trailing pane stay within 15–85% (see the
+sizing math above). Keyboard step reuses the shared `KEYBOARD_STEP_PX` /
+`KEYBOARD_STEP_SHIFT_PX`.
 
 ### Alternative considered — overlay handles (rejected)
 
@@ -260,9 +311,11 @@ Co-located, TDD, `import { test, expect } from 'vitest'` in every new test file
   `onMouseDown`/`onKeyDown` fire; consumer `className`/`style` pass through.
 - `DockPanel.test.tsx`: unchanged assertions must still pass (regression net for
   Step 1).
-- `SplitDividers.test.tsx`: divider count per layout matches the map
-  (0/1/1/2/3 elements); `quad` exposes two column-handle elements bound to one
-  hook; commit calls `onCommit` with a clamped ratio; keyboard `adjustBy` works.
+- `SplitDividers.test.tsx`: each per-layout subcomponent calls a fixed hook
+  count; the divider element count per layout matches the map (0/1/1/2/3);
+  `quad` exposes two column-handle elements bound to one hook; a committed drag
+  updates `--split-col` and calls `onRatioChange` with a clamped ratio; keyboard
+  `adjustBy` updates the var + ratio on a path where `onDragPreview` never fires.
 - `SplitView.test.tsx`: additions — `single` renders no dividers; dividers are
   absent when `isActive={false}`; a committed ratio changes the grid template;
   cycling layout and returning restores the remembered ratio (D2); switching the
@@ -274,8 +327,8 @@ Co-located, TDD, `import { test, expect } from 'vitest'` in every new test file
 ## Risks / edge cases
 
 - **Zero-dimension throw** for hidden sessions → handled by active-only mounting.
-- **Rules-of-hooks** with variable divider counts → handled by
-  `key={layout}` remount of `SplitDividers`.
+- **Rules-of-hooks** with variable divider counts → handled by per-layout
+  subcomponents with fixed hook counts (the `key={layout}` only resets state).
 - **Pane capacity vs. visible panes:** `selectVisiblePanes` can rescue an
   over-capacity active pane into the last slot; dividers key off the *layout*
   (fixed track structure), not the live pane list, so this is unaffected.
@@ -287,8 +340,11 @@ Co-located, TDD, `import { test, expect } from 'vitest'` in every new test file
 
 1. **Step 1** — `ResizeHandle` extraction + DockPanel migration (refactor;
    `DockPanel.test.tsx` green).
-2. **Step 2** — `SPLIT_ELASTIC_CONFIG`, `resolveGrid`, `SplitDividers`,
-   `SplitView` ratio state + active-only mounting, tests.
+2. **Step 2** — extend `useElasticContainer` with `reservedPx` (+ expose `Wp`;
+   default `0` keeps the dock unchanged), `SPLIT_ELASTIC_CONFIG`, `resolveGrid`,
+   the per-layout `SplitDividers` subcomponents, the `SplitView` padding-wrapper
+   refactor + remembered-ratio state + active-only mounting, and tests
+   (including a dock regression pass for the `reservedPx = 0` path).
 
 Each step is independently reviewable and shippable; Step 2 depends on Step 1.
 Exact branch/PR strategy (single PR with two commits vs. two stacked PRs on a
