@@ -17,12 +17,12 @@ Vimeflow is an Electron desktop app with a Rust `vimeflow-backend` sidecar. It b
 Vimeflow currently supports **version 0.1.0 from source code only**.
 
 - Supported release line: `0.1.0`
-- Supported packaged target: Linux AppImage built locally from source
+- Supported packaged targets: Linux x64 AppImage and macOS arm64 DMG built locally from source
 - Desktop runtime: Electron 42 + Rust sidecar over LSP-framed JSON IPC
 - Agent observability: Claude Code and Codex
-- Not yet supported: hosted binary releases, macOS / Windows packaging, signing, or auto-update
+- Not yet supported: hosted binary releases, Windows packaging, production signing/notarization, or auto-update
 
-Development on non-Linux systems may work, but the current supported build path is source checkout plus the Linux AppImage target.
+Packaging is host-specific: build the Linux x64 AppImage on Linux x64, and build the macOS arm64 DMG on an Apple Silicon Mac.
 
 ## Build And Run From Source
 
@@ -32,7 +32,7 @@ Prerequisites:
 - `nvm` is optional but recommended for using `.nvmrc`; skip `nvm use` if Node 24 is already active through another manager
 - Rust stable toolchain
 - Git
-- Linux for the supported AppImage packaging path
+- Linux x64 or Apple Silicon macOS for supported package builds
 
 ```bash
 git clone https://github.com/winoooops/vimeflow.git
@@ -53,10 +53,22 @@ On Linux hosts without a working Chromium sandbox:
 VIMEFLOW_NO_SANDBOX=1 npm run electron:dev
 ```
 
-Build the supported `0.1.0` AppImage:
+Build the supported package for the current host:
 
 ```bash
 npm run electron:build
+```
+
+Explicit package targets are also available:
+
+```bash
+npm run electron:build:linux:x64
+npm run electron:build:mac:arm64
+```
+
+Run the Linux AppImage:
+
+```bash
 chmod +x release/vimeflow-*.AppImage
 ./release/vimeflow-*.AppImage --no-sandbox
 ```
@@ -67,9 +79,11 @@ If the host does not provide `libfuse2`, use AppImage's fallback:
 ./release/vimeflow-*.AppImage --appimage-extract-and-run --no-sandbox
 ```
 
+The macOS DMG is written to `release/vimeflow-*-arm64.dmg`. It is intended for local source builds and is not notarized.
+
 ## Use Vimeflow
 
-1. Start Vimeflow with `npm run electron:dev` or the locally built AppImage.
+1. Start Vimeflow with `npm run electron:dev` or a locally built package.
 2. Open a terminal pane and run `claude` or `codex`.
 3. Use the workspace to split panes, browse files, edit code, and review git diffs.
 4. The agent status panel appears when a supported agent is detected.
