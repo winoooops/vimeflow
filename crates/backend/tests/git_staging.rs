@@ -1,15 +1,45 @@
 //! Integration tests for the stage/unstage/discard handlers.
 //!
 //! Every test creates a real git repo inside `$HOME` (matching the production
-//! `validate_cwd` scope) via `init_repo()` and drives the handlers end-to-end.
+//! `validate_cwd` scope) via `init_repo()` and drives the handlers end-to-end
+//! through `BackendState` — mirroring how `git_diff_response.rs` exercises
+//! `get_git_diff`.
 //!
 //! Run with: `cargo test --test git_staging`
 
 use std::path::Path;
 use std::process::Command;
+use std::sync::Arc;
 
+use serde_json::Value;
 use tempfile::TempDir;
-use vimeflow_lib::git::{DiscardFileRequest, DiscardScope, StageFileRequest};
+use vimeflow_lib::runtime::{
+    BackendState, DiscardFileRequest, DiscardScope, EventSink, StageFileRequest,
+};
+
+// ── NullEventSink (mirrors git_diff_response.rs) ─────────────────────────────
+
+/// No-op EventSink — staging tests don't assert on events.
+struct NullEventSink;
+
+impl EventSink for NullEventSink {
+    fn emit_json(&self, _event: &str, _payload: Value) -> Result<(), String> {
+        Ok(())
+    }
+}
+
+/// Build a `BackendState` rooted at a tempdir inside `$HOME`. Returning the
+/// `TempDir` keeps it alive for the lifetime of the test.
+fn make_state() -> (Arc<BackendState>, TempDir) {
+    let home = dirs::home_dir().expect("no home directory");
+    let app_data_dir = tempfile::Builder::new()
+        .prefix("vimeflow-git-staging-state-")
+        .tempdir_in(&home)
+        .expect("failed to create app_data tempdir under $HOME");
+    let sink: Arc<dyn EventSink> = Arc::new(NullEventSink);
+    let state = Arc::new(BackendState::new(app_data_dir.path().to_path_buf(), sink));
+    (state, app_data_dir)
+}
 
 // ── repo helpers ─────────────────────────────────────────────────────────────
 
@@ -142,6 +172,7 @@ fn rt() -> tokio::runtime::Runtime {
 
 #[test]
 fn whole_file_stage_shows_staged_in_status() {
+    let (state, _app_data) = make_state();
     let repo = init_repo();
     initial_commit(&repo);
 
@@ -154,8 +185,8 @@ fn whole_file_stage_shows_staged_in_status() {
         hunk_patch: None,
     };
 
-    rt().block_on(vimeflow_lib::git::stage_file_inner(req))
-        .expect("stage_file_inner should succeed");
+    rt().block_on(state.stage_file(req))
+        .expect("stage_file should succeed");
 
     // "M " means the modification is staged (index ≠ HEAD, working tree = index).
     let status = git_status_short(&repo);
@@ -169,6 +200,7 @@ fn whole_file_stage_shows_staged_in_status() {
 
 #[test]
 fn per_hunk_stage_only_that_hunk_in_diff_cached() {
+    let (state, _app_data) = make_state();
     let repo = init_repo();
 
     // Commit a file with two blocks far enough apart that git produces two
@@ -212,7 +244,7 @@ fn per_hunk_stage_only_that_hunk_in_diff_cached() {
         hunk_patch: Some(patch),
     };
 
-    rt().block_on(vimeflow_lib::git::stage_file_inner(req))
+    rt().block_on(state.stage_file(req))
         .expect("per-hunk stage should succeed");
 
     let cached = git_diff_cached(&repo);
@@ -246,6 +278,7 @@ fn per_hunk_stage_only_that_hunk_in_diff_cached() {
 
 #[test]
 fn per_hunk_stage_stale_patch_returns_err() {
+    let (state, _app_data) = make_state();
     let repo = init_repo();
 
     write_file(repo.path(), "stale.txt", "line1\nline2\n");
@@ -272,7 +305,7 @@ fn per_hunk_stage_stale_patch_returns_err() {
         hunk_patch: Some(stale_patch),
     };
 
-    let result = rt().block_on(vimeflow_lib::git::stage_file_inner(req));
+    let result = rt().block_on(state.stage_file(req));
     assert!(
         result.is_err(),
         "applying a stale patch against a changed index should fail, got Ok"
@@ -283,6 +316,7 @@ fn per_hunk_stage_stale_patch_returns_err() {
 
 #[test]
 fn per_hunk_stage_multi_file_patch_rejected_before_git() {
+    let (state, _app_data) = make_state();
     let repo = init_repo();
     initial_commit(&repo);
 
@@ -308,7 +342,7 @@ fn per_hunk_stage_multi_file_patch_rejected_before_git() {
         hunk_patch: Some(bad_patch.to_string()),
     };
 
-    let result = rt().block_on(vimeflow_lib::git::stage_file_inner(req));
+    let result = rt().block_on(state.stage_file(req));
     assert!(
         result.is_err(),
         "multi-file patch should be rejected before git"
@@ -318,12 +352,20 @@ fn per_hunk_stage_multi_file_patch_rejected_before_git() {
         err.contains("multi-file"),
         "error should mention multi-file, got: {err}"
     );
+
+    // No git side-effect: the index must still be clean (only init.txt committed).
+    let cached = git_diff_cached(&repo);
+    assert!(
+        cached.trim().is_empty(),
+        "rejected multi-file patch must not stage anything, got: {cached}"
+    );
 }
 
 // ── Test 5: patch whose header names a different file is rejected ─────────────
 
 #[test]
 fn per_hunk_stage_patch_for_wrong_file_rejected() {
+    let (state, _app_data) = make_state();
     let repo = init_repo();
     initial_commit(&repo);
 
@@ -343,7 +385,7 @@ fn per_hunk_stage_patch_for_wrong_file_rejected() {
         hunk_patch: Some(bad_patch.to_string()),
     };
 
-    let result = rt().block_on(vimeflow_lib::git::stage_file_inner(req));
+    let result = rt().block_on(state.stage_file(req));
     assert!(
         result.is_err(),
         "patch targeting wrong file should be rejected"
@@ -353,12 +395,20 @@ fn per_hunk_stage_patch_for_wrong_file_rejected() {
         err.contains("different file") || err.contains("targets"),
         "error should mention file mismatch, got: {err}"
     );
+
+    // No git side-effect: init.txt must still be clean in the index.
+    let cached = git_diff_cached(&repo);
+    assert!(
+        cached.trim().is_empty(),
+        "rejected mismatched-header patch must not stage anything, got: {cached}"
+    );
 }
 
 // ── Test 6: discard of an untracked file removes it from disk ─────────────────
 
 #[test]
 fn discard_untracked_file_removes_it() {
+    let (state, _app_data) = make_state();
     let repo = init_repo();
     initial_commit(&repo);
 
@@ -376,7 +426,7 @@ fn discard_untracked_file_removes_it() {
         scope: DiscardScope::Unstaged,
     };
 
-    rt().block_on(vimeflow_lib::git::discard_file_inner(req))
+    rt().block_on(state.discard_file(req))
         .expect("discard untracked should succeed");
 
     assert!(
@@ -389,6 +439,7 @@ fn discard_untracked_file_removes_it() {
 
 #[test]
 fn whole_file_discard_tracked_restores_head() {
+    let (state, _app_data) = make_state();
     let repo = init_repo();
     initial_commit(&repo);
 
@@ -406,7 +457,7 @@ fn whole_file_discard_tracked_restores_head() {
         scope: DiscardScope::Unstaged,
     };
 
-    rt().block_on(vimeflow_lib::git::discard_file_inner(req))
+    rt().block_on(state.discard_file(req))
         .expect("discard modified tracked file should succeed");
 
     let after = std::fs::read_to_string(repo.path().join("init.txt")).expect("read after");
@@ -420,6 +471,7 @@ fn whole_file_discard_tracked_restores_head() {
 
 #[test]
 fn unstage_per_hunk_restores_delta_to_working_tree() {
+    let (state, _app_data) = make_state();
     let repo = init_repo();
 
     // Commit a single-change file so the diff has exactly one hunk.
@@ -443,7 +495,7 @@ fn unstage_per_hunk_restores_delta_to_working_tree() {
         path: "one_hunk.txt".to_string(),
         hunk_patch: Some(patch.clone()),
     };
-    rt().block_on(vimeflow_lib::git::stage_file_inner(stage_req))
+    rt().block_on(state.stage_file(stage_req))
         .expect("stage should succeed");
 
     // Confirm it's staged.
@@ -463,7 +515,7 @@ fn unstage_per_hunk_restores_delta_to_working_tree() {
         path: "one_hunk.txt".to_string(),
         hunk_patch: Some(cached_patch),
     };
-    rt().block_on(vimeflow_lib::git::unstage_file_inner(unstage_req))
+    rt().block_on(state.unstage_file(unstage_req))
         .expect("unstage should succeed");
 
     // Index should now match HEAD (no staged diff).

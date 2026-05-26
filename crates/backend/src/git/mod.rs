@@ -359,7 +359,7 @@ fn validate_hunk_patch(
 ///
 /// Validation (`validate_cwd` + `validate_hunk_patch`) runs before any git
 /// invocation so a bad caller cannot mutate paths outside the workspace.
-pub async fn stage_file_inner(req: StageFileRequest) -> Result<(), String> {
+pub(crate) async fn stage_file_inner(req: StageFileRequest) -> Result<(), String> {
     let cwd = validate_cwd(&req.cwd)?;
     validate_hunk_patch(&cwd, &req.path, req.hunk_patch.as_deref())?;
     match &req.hunk_patch {
@@ -383,7 +383,7 @@ pub async fn stage_file_inner(req: StageFileRequest) -> Result<(), String> {
 ///   the working tree without touching the working-tree content).
 /// - Per-hunk: `git apply --cached --reverse --whitespace=nowarn` (reverses
 ///   only the hunk delta in the index).
-pub async fn unstage_file_inner(req: StageFileRequest) -> Result<(), String> {
+pub(crate) async fn unstage_file_inner(req: StageFileRequest) -> Result<(), String> {
     let cwd = validate_cwd(&req.cwd)?;
     validate_hunk_patch(&cwd, &req.path, req.hunk_patch.as_deref())?;
     match &req.hunk_patch {
@@ -417,7 +417,7 @@ pub async fn unstage_file_inner(req: StageFileRequest) -> Result<(), String> {
 /// Per-hunk: `git apply --reverse --whitespace=nowarn` (reverses the hunk
 /// in the working tree; scope is ignored because per-hunk discard always
 /// targets the diff the hunk came from).
-pub async fn discard_file_inner(req: DiscardFileRequest) -> Result<(), String> {
+pub(crate) async fn discard_file_inner(req: DiscardFileRequest) -> Result<(), String> {
     let cwd = validate_cwd(&req.cwd)?;
     validate_hunk_patch(&cwd, &req.path, req.hunk_patch.as_deref())?;
     match &req.hunk_patch {
