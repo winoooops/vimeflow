@@ -130,4 +130,36 @@ describe('package-electron script', () => {
       buildCommands('mac-arm64')
     )
   })
+
+  test('main rejects targets that do not match the host before running commands', () => {
+    const runner = vi.fn()
+
+    expect(() =>
+      main(['linux-x64'], { platform: 'darwin', arch: 'arm64' }, runner)
+    ).toThrow(TargetError)
+
+    expect(() =>
+      main(['mac-arm64'], { platform: 'linux', arch: 'x64' }, runner)
+    ).toThrow(TargetError)
+
+    expect(() =>
+      main(['auto'], { platform: 'win32', arch: 'x64' }, runner)
+    ).toThrow(TargetError)
+
+    expect(runner).not.toHaveBeenCalled()
+  })
+
+  test('main stops running build commands when the runner requests it', () => {
+    const write = vi
+      .spyOn(process.stdout, 'write')
+      .mockImplementation(() => true)
+    const runner = vi.fn(() => false)
+
+    main(['linux-x64'], { platform: 'linux', arch: 'x64' }, runner)
+
+    expect(write).toHaveBeenCalledWith(
+      'Packaging Vimeflow for linux-x64 on linux/x64\n'
+    )
+    expect(runner).toHaveBeenCalledTimes(1)
+  })
 })
