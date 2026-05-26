@@ -1286,3 +1286,5 @@ Expected: all green. Fix any fallout in the touched files only.
 **Type consistency:** `LayoutRatios { col, row }`, `resolveGrid(layoutId, ratios)`, `SPLIT_DIVIDER_PX`, `SPLIT_ELASTIC_CONFIG`, `effectiveDimension`, `useSplitDivider` args/return, `--split-col`/`--split-row`, `split-resize-handle` testid, grid areas (`vdiv`/`hdiv`/`vdiv0`/`vdiv1`) — all consistent across Tasks 3–7.
 
 **One spec refinement (documented):** the committed template uses an **fr fallback** (`var(--split-col, ${col}fr) 8px ${1-col}fr`) rather than a px fallback. This lets an inactive session render correct proportions with no measurement, while the active drag overrides the leading track via the px var. Symmetry/identical-defaults math is unchanged (the trailing `fr` is the sole remaining `fr`, so it always absorbs the remainder).
+
+<!-- codex-reviewed: 2026-05-26T07:24:18Z -->
