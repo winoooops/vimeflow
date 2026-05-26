@@ -106,8 +106,6 @@ fn validate_file_path(file: &str) -> Result<(), String> {
 ///
 /// Also reused as the request type for `unstage_file` — same fields,
 /// same semantics (the handler logic differs, not the request shape).
-// Task 2.2 adds the handler call sites; until then suppress the lint.
-#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[cfg_attr(test, ts(export))]
@@ -121,8 +119,6 @@ pub struct StageFileRequest {
 }
 
 /// Request type for discarding working-tree changes (whole-file or per-hunk).
-// Task 2.2 adds the handler call sites; until then suppress the lint.
-#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[cfg_attr(test, ts(export))]
@@ -141,8 +137,6 @@ pub struct DiscardFileRequest {
 ///   (`git checkout -- <file>` or `git apply -R`).
 /// - `Both`: staged changes are also dropped (`git reset HEAD <file>` followed
 ///   by the unstaged discard), effectively returning the file to HEAD.
-// Task 2.2 adds the handler call sites; until then suppress the lint.
-#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Default)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[cfg_attr(test, ts(export))]
@@ -159,8 +153,6 @@ pub enum DiscardScope {
 ///
 /// Intended for `git apply --cached` and `git apply -R` which consume a
 /// unified-diff patch on stdin.
-// Task 2.2 adds the handler call sites; until then suppress the lint.
-#[allow(dead_code)]
 async fn run_git_apply_with_patch(
     cwd: &std::path::Path,
     args: &[&str],
@@ -200,8 +192,6 @@ async fn run_git_apply_with_patch(
 ///
 /// Uses the sync `Command` alias (= `std::process::Command`) already imported
 /// at the top of this file, wrapped through `run_git_with_timeout`.
-// Task 2.2 adds the handler call sites; until then suppress the lint.
-#[allow(dead_code)]
 async fn git_status_porcelain_is_untracked(
     cwd: &std::path::Path,
     path: &str,
@@ -238,8 +228,6 @@ async fn git_status_porcelain_is_untracked(
 /// The residual case (an internally-consistent rename `evil.rs` → `path`) is
 /// backstopped by `git apply --cached` itself — the OLD file must exist in the
 /// index — and is acceptable for this defense-in-depth layer.
-// Task 2.2 adds the handler call sites; until then suppress the lint.
-#[allow(dead_code)]
 fn validate_hunk_patch(
     cwd: &std::path::Path,
     path: &str,
@@ -358,6 +346,103 @@ fn validate_hunk_patch(
                     }
                 }
             }
+        }
+    }
+    Ok(())
+}
+
+/// Stage a file (whole-file or per-hunk) into the git index.
+///
+/// - Whole-file (`hunk_patch == None`): runs `git add -- <path>`.
+/// - Per-hunk (`hunk_patch == Some`): pipes the patch to
+///   `git apply --cached --whitespace=nowarn`.
+///
+/// Validation (`validate_cwd` + `validate_hunk_patch`) runs before any git
+/// invocation so a bad caller cannot mutate paths outside the workspace.
+pub async fn stage_file_inner(req: StageFileRequest) -> Result<(), String> {
+    let cwd = validate_cwd(&req.cwd)?;
+    validate_hunk_patch(&cwd, &req.path, req.hunk_patch.as_deref())?;
+    match &req.hunk_patch {
+        None => {
+            let mut cmd = Command::new("git");
+            cmd.current_dir(&cwd).args(["add", "--", &req.path]);
+            run_git_with_timeout(cmd).await.map(|_| ())?;
+        }
+        Some(patch) => {
+            run_git_apply_with_patch(&cwd, &["apply", "--cached", "--whitespace=nowarn"], patch)
+                .await?;
+        }
+    }
+    Ok(())
+}
+
+/// Unstage a file (whole-file or per-hunk) from the git index back to the
+/// working tree.
+///
+/// - Whole-file: `git reset HEAD -- <path>` (moves staged changes back to
+///   the working tree without touching the working-tree content).
+/// - Per-hunk: `git apply --cached --reverse --whitespace=nowarn` (reverses
+///   only the hunk delta in the index).
+pub async fn unstage_file_inner(req: StageFileRequest) -> Result<(), String> {
+    let cwd = validate_cwd(&req.cwd)?;
+    validate_hunk_patch(&cwd, &req.path, req.hunk_patch.as_deref())?;
+    match &req.hunk_patch {
+        None => {
+            let mut cmd = Command::new("git");
+            cmd.current_dir(&cwd)
+                .args(["reset", "HEAD", "--", &req.path]);
+            run_git_with_timeout(cmd).await.map(|_| ())?;
+        }
+        Some(patch) => {
+            run_git_apply_with_patch(
+                &cwd,
+                &["apply", "--cached", "--reverse", "--whitespace=nowarn"],
+                patch,
+            )
+            .await?;
+        }
+    }
+    Ok(())
+}
+
+/// Discard working-tree changes for a file (whole-file or per-hunk).
+///
+/// Whole-file branches on tracked vs untracked:
+/// - Untracked: `git clean -f -- <path>` (removes the file).
+/// - Tracked + `DiscardScope::Unstaged`: `git checkout -- <path>` (restores
+///   working-tree content from the index; staged changes are preserved).
+/// - Tracked + `DiscardScope::Both`: `git reset HEAD -- <path>` then
+///   `git checkout -- <path>` (unstages and discards, returning to HEAD).
+///
+/// Per-hunk: `git apply --reverse --whitespace=nowarn` (reverses the hunk
+/// in the working tree; scope is ignored because per-hunk discard always
+/// targets the diff the hunk came from).
+pub async fn discard_file_inner(req: DiscardFileRequest) -> Result<(), String> {
+    let cwd = validate_cwd(&req.cwd)?;
+    validate_hunk_patch(&cwd, &req.path, req.hunk_patch.as_deref())?;
+    match &req.hunk_patch {
+        None => {
+            let is_untracked = git_status_porcelain_is_untracked(&cwd, &req.path).await?;
+            if is_untracked {
+                let mut cmd = Command::new("git");
+                cmd.current_dir(&cwd).args(["clean", "-f", "--", &req.path]);
+                run_git_with_timeout(cmd).await.map(|_| ())?;
+            } else {
+                if matches!(req.scope, DiscardScope::Both) {
+                    // Unstage first so checkout restores to HEAD content.
+                    let mut cmd = Command::new("git");
+                    cmd.current_dir(&cwd)
+                        .args(["reset", "HEAD", "--", &req.path]);
+                    run_git_with_timeout(cmd).await.map(|_| ())?;
+                }
+                let mut cmd = Command::new("git");
+                cmd.current_dir(&cwd).args(["checkout", "--", &req.path]);
+                run_git_with_timeout(cmd).await.map(|_| ())?;
+            }
+        }
+        Some(patch) => {
+            run_git_apply_with_patch(&cwd, &["apply", "--reverse", "--whitespace=nowarn"], patch)
+                .await?;
         }
     }
     Ok(())
