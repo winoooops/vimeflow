@@ -371,7 +371,7 @@ fn summarize_input_preserves_absent_vs_null() {
 
 - [ ] **Step 2: Run — confirm the presence test PASSES against current `summarize_input`** (it documents the contract the DTO must preserve), and the wrong-typed test FAILS only if the migration regresses.
 - [ ] **Step 3: Migrate the `process_line` body**, shape-by-shape (spec § 4 enumerates every field + its consumer). For each former `value.get("...")` walk: `serde_json::from_value::<DtoType>(...)` (or `from_str` on the line) then read typed fields; classify `message.content` items with the existing ported predicates (`is_user_prompt`, `is_non_empty_user_block`, `line_type`); feed `summarize_input` / `bash_command` / `tool_file_path` the preserved raw `input`. Keep the emitted events byte-for-byte for deterministic fields.
-- [ ] **Step 4: Run the full Claude transcript tests + Phase 0 `T-replay`** — all green. Restore `src/bindings/` if perturbed.
+- [ ] **Step 4: Run the full Claude transcript tests + Phase 0 `T-replay`** — `cargo test -p vimeflow claude_code` (the module-root filter covers `transcript`, `transcript_dto`, **and** the Phase 0 `transcript_fixture_tests`) → all green. Restore `src/bindings/` if perturbed.
 - [ ] **Step 5: Commit.** `git commit -am "refactor(transcript): migrate Claude process_line to typed DTOs"`
 
 ### Task 1.5: Codex transcript DTOs (`transcript_dto.rs`)
@@ -418,7 +418,7 @@ fn codex_exec_end_exit_code_is_lenient_and_duration_presence_preserved() {
 - Modify: `codex/transcript.rs`
 
 - [ ] **Step 1: Write a Codex regression test** — a record with wrong-typed `exit_code` / `success` still emits the correct completion event; a `duration:null` exec_command_end still yields the `Some(0)` duration (per `exec_command_duration_ms`); a **non-string `timestamp`** still emits (falls back to `now_iso8601`, not dropped); `session_meta` AND mid-session `exec_command.arguments.workdir` both emit `agent-cwd` in order.
-- [ ] **Step 2: Run — establish current behavior (PASS).**
+- [ ] **Step 2: Run — establish current behavior (PASS).** `cargo test -p vimeflow codex` (module-root filter; the regression test + existing Codex tests run green against the pre-migration code — this is the baseline).
 - [ ] **Step 3: Migrate** the top-level dispatch + `process_event_msg` (inner dispatch) + `process_response_item` to the DTO enums; read scalars off the typed payloads; feed the ported helpers (`exec_command_duration_ms`, `summarize_function_call_args`, `custom_tool_output_failed`, `summarize_custom_tool_input`, `custom_tool_is_test_file`) the raw values (`rest.get("duration")`, the `Option<String>` arguments/output/input). Preserve both cwd sources + order.
 - [ ] **Step 4: Run full Codex transcript tests + Phase 0 `T-replay`** — green. Restore `src/bindings/` if perturbed.
 - [ ] **Step 5: Commit.** `git commit -am "refactor(transcript): migrate Codex process_line to typed DTOs"`
@@ -557,8 +557,8 @@ impl TranscriptDecoder for RecordingDecoder {
 
 - [ ] **Step 1: Define `ClaudeTranscriptDecoder`** owning `events: Arc<dyn EventSink>`, `session_id: String`, `cwd: Option<PathBuf>`, `in_flight`, `num_turns`, `last_cwd`, `emitter: TestRunEmitter`. `new(events, session_id, cwd)` constructs it. Move the (Phase-1-typed) `process_line` body into `decode_line(&mut self, line: &str)`; `on_caught_up(&mut self)` calls `self.emitter.finish_replay()`.
 - [ ] **Step 2: Rewrite `start_tailing`** to: open the (already-validated) file, build `ClaudeTranscriptDecoder::new(...)`, `TranscriptTailService::new(decoder, "transcript")`, spawn `move || svc.run(BufReader::new(file), stop_clone)`, return `TranscriptHandle::new(stop, join)`. Delete the old `tail_loop`. (`tail()` in `mod.rs` is unchanged — it already delegates here.)
-- [ ] **Step 3: Run all Claude transcript tests + Phase 0 `T-replay`** — `cargo test -p vimeflow claude_code::transcript` → green.
-- [ ] **Step 4: Add the end-to-end G3-fix test** (spec § 5) in this module's `mod tests`, importing the shared harness via the `base` re-export: `use crate::agent::adapter::base::{ScriptedBufRead, Step};`. Build the real `ClaudeTranscriptDecoder::new(events, sid, cwd)` (with a `FakeEventSink`), wrap in `TranscriptTailService::new(Box::new(dec), "transcript").with_poll_interval(Duration::ZERO)`, and `run(ScriptedBufRead { steps: vec![Step::Chunk(<first half>), Step::Eof, Step::Chunk(<second half + "\n">), Step::EofStop].into_iter(), stop: stop.clone() }, stop)` — splitting a real Claude `tool_use` line where neither half is valid JSON. Assert `FakeEventSink` records `agent-tool-call`. Run that test (`cargo test -p vimeflow claude_code::transcript`, which includes it) — expect PASS (the fix works; pre-C this event was dropped).
+- [ ] **Step 3: Run all Claude transcript tests + Phase 0 `T-replay`** — `cargo test -p vimeflow claude_code` → green.
+- [ ] **Step 4: Add the end-to-end G3-fix test** (spec § 5) in this module's `mod tests`, importing the shared harness via the `base` re-export: `use crate::agent::adapter::base::{ScriptedBufRead, Step};`. Build the real `ClaudeTranscriptDecoder::new(events, sid, cwd)` (with a `FakeEventSink`), wrap in `TranscriptTailService::new(Box::new(dec), "transcript").with_poll_interval(Duration::ZERO)`, and `run(ScriptedBufRead { steps: vec![Step::Chunk(<first half>), Step::Eof, Step::Chunk(<second half + "\n">), Step::EofStop].into_iter(), stop: stop.clone() }, stop)` — splitting a real Claude `tool_use` line where neither half is valid JSON. Assert `FakeEventSink` records `agent-tool-call`. Run that test (`cargo test -p vimeflow claude_code`, which includes it) — expect PASS (the fix works; pre-C this event was dropped).
 - [ ] **Step 5: Commit.** `git commit -am "refactor(transcript): Claude tail via TranscriptTailService + decoder"`
 
 ### Task 2.4: `CodexTranscriptDecoder` + thin `start_tailing` (Codex)
@@ -568,7 +568,7 @@ impl TranscriptDecoder for RecordingDecoder {
 
 - [ ] **Step 1:** Define `CodexTranscriptDecoder` (same shape; `in_flight` carries `CompletionMode`); move the typed `process_line` body into `decode_line`; `on_caught_up` → `finish_replay`.
 - [ ] **Step 2:** Rewrite `start_tailing` to build the decoder + `TranscriptTailService::new(decoder, "Codex rollout transcript")` + spawn `run`. Delete the old `tail_loop`. Delete the now-unused per-provider `POLL_INTERVAL` const (use the `base` one).
-- [ ] **Step 3: Run all Codex transcript tests + Phase 0 `T-replay`** — `cargo test -p vimeflow codex::transcript` → green.
+- [ ] **Step 3: Run all Codex transcript tests + Phase 0 `T-replay`** — `cargo test -p vimeflow codex` (module-root filter covers `transcript` + `transcript_dto`; the Codex Phase 0 `T-replay` lives in `codex::transcript`) → green.
 - [ ] **Step 4: Commit.** `git commit -am "refactor(transcript): Codex tail via TranscriptTailService + decoder"`
 
 ### Task 2.5: Phase 2 gate
