@@ -1,4 +1,9 @@
-import type { CSSProperties, KeyboardEvent, MouseEvent, ReactElement } from 'react'
+import type {
+  CSSProperties,
+  KeyboardEvent,
+  MouseEvent,
+  ReactElement,
+} from 'react'
 
 export interface ResizeHandleProps {
   /** aria-orientation. 'horizontal' separator → ns-resize; 'vertical' → col-resize. */

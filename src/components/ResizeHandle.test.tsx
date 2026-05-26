@@ -1,3 +1,4 @@
+// cspell:ignore vdiv hdiv
 import { render, screen, fireEvent } from '@testing-library/react'
 import { test, expect, vi, describe } from 'vitest'
 import { ResizeHandle, type ResizeHandleProps } from './ResizeHandle'
@@ -21,14 +22,27 @@ describe('ResizeHandle', () => {
   })
 
   test('horizontal orientation uses ns-resize, vertical uses col-resize', () => {
-    const { rerender } = render(<ResizeHandle {...baseProps} orientation="horizontal" />)
-    expect(screen.getByTestId('resize-handle').className).toMatch(/cursor-ns-resize/)
+    const { rerender } = render(
+      <ResizeHandle {...baseProps} orientation="horizontal" />
+    )
+    expect(screen.getByTestId('resize-handle').className).toMatch(
+      /cursor-ns-resize/
+    )
     rerender(<ResizeHandle {...baseProps} orientation="vertical" />)
-    expect(screen.getByTestId('resize-handle').className).toMatch(/cursor-col-resize/)
+    expect(screen.getByTestId('resize-handle').className).toMatch(
+      /cursor-col-resize/
+    )
   })
 
   test('exposes aria value range', () => {
-    render(<ResizeHandle {...baseProps} ariaValueNow={120} ariaValueMin={50} ariaValueMax={900} />)
+    render(
+      <ResizeHandle
+        {...baseProps}
+        ariaValueNow={120}
+        ariaValueMin={50}
+        ariaValueMax={900}
+      />
+    )
     const handle = screen.getByTestId('resize-handle')
     expect(handle).toHaveAttribute('aria-valuenow', '120')
     expect(handle).toHaveAttribute('aria-valuemin', '50')
@@ -36,16 +50,26 @@ describe('ResizeHandle', () => {
   })
 
   test('applies the active background only while dragging', () => {
-    const { rerender } = render(<ResizeHandle {...baseProps} isDragging={false} />)
-    expect(screen.getByTestId('resize-handle').className).not.toMatch(/bg-primary\/30/)
+    const { rerender } = render(<ResizeHandle {...baseProps} />)
+    expect(screen.getByTestId('resize-handle').className).not.toMatch(
+      /bg-primary\/30/
+    )
     rerender(<ResizeHandle {...baseProps} isDragging />)
-    expect(screen.getByTestId('resize-handle').className).toMatch(/bg-primary\/30/)
+    expect(screen.getByTestId('resize-handle').className).toMatch(
+      /bg-primary\/30/
+    )
   })
 
   test('forwards mouse + keyboard events', () => {
     const onMouseDown = vi.fn()
     const onKeyDown = vi.fn()
-    render(<ResizeHandle {...baseProps} onMouseDown={onMouseDown} onKeyDown={onKeyDown} />)
+    render(
+      <ResizeHandle
+        {...baseProps}
+        onMouseDown={onMouseDown}
+        onKeyDown={onKeyDown}
+      />
+    )
     const handle = screen.getByTestId('resize-handle')
     fireEvent.mouseDown(handle)
     fireEvent.keyDown(handle, { key: 'ArrowUp' })

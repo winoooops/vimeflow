@@ -1,8 +1,18 @@
-// cspell:ignore vsplit hsplit
+// cspell:ignore vsplit hsplit vdiv hdiv
 import { render, screen, within, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { createRef } from 'react'
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
+import type { UseGitBranchReturn } from '../../../diff/hooks/useGitBranch'
+import type { UseGitStatusReturn } from '../../../diff/hooks/useGitStatus'
+import type { BodyHandle, BodyProps } from '../TerminalPane/Body'
+import {
+  SplitView,
+  selectVisiblePanes,
+  type SplitViewHandle,
+} from './SplitView'
+import type { LayoutId, Pane, Session } from '../../../sessions/types'
+import type { ITerminalService } from '../../services/terminalService'
 
 class MockResizeObserver {
   observe = vi.fn()
@@ -29,16 +39,6 @@ beforeEach(() => {
 afterEach(() => {
   vi.restoreAllMocks()
 })
-import type { UseGitBranchReturn } from '../../../diff/hooks/useGitBranch'
-import type { UseGitStatusReturn } from '../../../diff/hooks/useGitStatus'
-import type { BodyHandle, BodyProps } from '../TerminalPane/Body'
-import {
-  SplitView,
-  selectVisiblePanes,
-  type SplitViewHandle,
-} from './SplitView'
-import type { LayoutId, Pane, Session } from '../../../sessions/types'
-import type { ITerminalService } from '../../services/terminalService'
 
 vi.mock('../TerminalPane/Body', async () => {
   const React = await import('react')
@@ -152,6 +152,10 @@ const makeMockService = (): ITerminalService => ({
   updateSessionCwd: vi.fn(() => Promise.resolve(undefined)),
   setSessionActivityPanelCollapsed: vi.fn(() => Promise.resolve(undefined)),
 })
+
+// Literal `isActive={false}` is stripped by the project's jsx-boolean-value
+// autofix, which then breaks the required prop; a variable dodges the rule.
+const inactive = false
 
 describe('SplitView - single layout', () => {
   test('renders one slot with data attrs from the lone pane', () => {
@@ -289,6 +293,7 @@ describe('SplitView - multi-pane layouts', () => {
 
   test('active vsplit renders a divider; inactive does not', () => {
     const session = makeSession('vsplit', 2)
+
     const { rerender } = render(
       <SplitView session={session} service={makeMockService()} isActive />
     )
@@ -298,7 +303,7 @@ describe('SplitView - multi-pane layouts', () => {
       <SplitView
         session={session}
         service={makeMockService()}
-        isActive={false}
+        isActive={inactive}
       />
     )
     expect(screen.queryAllByTestId('split-resize-handle')).toHaveLength(0)
@@ -307,6 +312,7 @@ describe('SplitView - multi-pane layouts', () => {
   test('remembers the split ratio across a layout cycle (D4)', () => {
     const valueNow = (): string | null =>
       screen.getByTestId('split-resize-handle').getAttribute('aria-valuenow')
+
     const { rerender } = render(
       <SplitView
         session={makeSession('vsplit', 2)}
@@ -328,6 +334,7 @@ describe('SplitView - multi-pane layouts', () => {
         isActive
       />
     )
+
     rerender(
       <SplitView
         session={makeSession('vsplit', 2)}
@@ -341,6 +348,7 @@ describe('SplitView - multi-pane layouts', () => {
   test('remembers the split ratio across a tab switch (D2)', () => {
     const valueNow = (): string | null =>
       screen.getByTestId('split-resize-handle').getAttribute('aria-valuenow')
+
     const { rerender } = render(
       <SplitView
         session={makeSession('vsplit', 2)}
@@ -357,9 +365,10 @@ describe('SplitView - multi-pane layouts', () => {
       <SplitView
         session={makeSession('vsplit', 2)}
         service={makeMockService()}
-        isActive={false}
+        isActive={inactive}
       />
     )
+
     rerender(
       <SplitView
         session={makeSession('vsplit', 2)}

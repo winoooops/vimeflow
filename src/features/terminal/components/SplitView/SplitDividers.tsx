@@ -1,4 +1,4 @@
-// cspell:ignore vsplit hsplit
+// cspell:ignore vsplit hsplit vdiv hdiv
 import { Fragment, type ReactElement, type RefObject } from 'react'
 import { ResizeHandle } from '../../../../components/ResizeHandle'
 import type { LayoutId } from '../../../sessions/types'
@@ -86,6 +86,7 @@ const ThreeRightDividers = ({
     initialRatio: ratios.col,
     onRatioChange: (r) => onRatioChange('col', r),
   })
+
   const row = useSplitDivider({
     containerRef,
     axis: 'vertical',
@@ -138,6 +139,7 @@ const QuadDividers = ({
     initialRatio: ratios.col,
     onRatioChange: (r) => onRatioChange('col', r),
   })
+
   const row = useSplitDivider({
     containerRef,
     axis: 'vertical',

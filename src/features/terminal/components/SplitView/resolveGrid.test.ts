@@ -1,3 +1,4 @@
+// cspell:ignore vdiv hdiv
 import { test, expect, describe } from 'vitest'
 import { resolveGrid, DEFAULT_RATIOS, SPLIT_DIVIDER_PX } from './resolveGrid'
 

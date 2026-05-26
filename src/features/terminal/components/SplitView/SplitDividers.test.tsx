@@ -36,6 +36,7 @@ afterEach(() => {
 
 const Harness = ({ layout }: { layout: LayoutId }): React.ReactElement => {
   const ref = useRef<HTMLDivElement>(document.createElement('div'))
+
   return (
     <div ref={ref} style={{ width: 1200, height: 800 }}>
       <SplitDividers

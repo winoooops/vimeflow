@@ -112,6 +112,7 @@ export const useElasticContainer = ({
     pendingClampRef.current = false
 
     const effective = Math.max(1, dimensionRef.current - reservedPxRef.current)
+
     const targetPx =
       dimensionRef.current > 0
         ? Math.round(effective * desiredPercentRef.current)
@@ -217,8 +218,8 @@ export const useElasticContainer = ({
       }
 
       dimensionRef.current = nextDimension
-      const effective = Math.max(1, nextDimension - reservedPxRef.current)
-      setEffectiveDimension(effective)
+      const nextEffective = Math.max(1, nextDimension - reservedPxRef.current)
+      setEffectiveDimension(nextEffective)
 
       const { newMin: resizedMin, newMax: resizedMax } =
         computeBounds(nextDimension)
@@ -238,7 +239,7 @@ export const useElasticContainer = ({
       // Use desiredPercentRef so shrink→expand cycles restore the user's
       // original proportion rather than anchoring to a clamped pixel value.
       const proportionalPx = Math.round(
-        effective * desiredPercentRef.current
+        nextEffective * desiredPercentRef.current
       )
       resetToSize(proportionalPx, resizedMin, resizedMax)
     })

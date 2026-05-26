@@ -1,4 +1,4 @@
-// cspell:ignore vsplit hsplit
+// cspell:ignore vsplit hsplit vdiv hdiv
 import type { LayoutId } from '../../../sessions/types'
 
 /** Width of the divider track that replaces the inter-pane gap (px). */
@@ -42,7 +42,11 @@ export const resolveGrid = (
     case 'vsplit':
       return { cols: col, rows: 'minmax(0,1fr)', areas: [['p0', 'vdiv', 'p1']] }
     case 'hsplit':
-      return { cols: 'minmax(0,1fr)', rows: row, areas: [['p0'], ['hdiv'], ['p1']] }
+      return {
+        cols: 'minmax(0,1fr)',
+        rows: row,
+        areas: [['p0'], ['hdiv'], ['p1']],
+      }
     case 'threeRight':
       return {
         cols: col,

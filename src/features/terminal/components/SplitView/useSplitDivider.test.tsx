@@ -12,8 +12,15 @@ vi.stubGlobal('ResizeObserver', MockResizeObserver)
 
 beforeEach(() => {
   vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue({
-    width: 1200, height: 800, top: 0, left: 0, right: 1200, bottom: 800,
-    x: 0, y: 0, toJSON: (): undefined => undefined,
+    width: 1200,
+    height: 800,
+    top: 0,
+    left: 0,
+    right: 1200,
+    bottom: 800,
+    x: 0,
+    y: 0,
+    toJSON: (): undefined => undefined,
   } as DOMRect)
 })
 afterEach(() => vi.restoreAllMocks())
@@ -32,17 +39,19 @@ const DividerChild = ({
     initialRatio: 0.5,
     onRatioChange,
   })
+
   return <div data-testid="handle" tabIndex={0} onKeyDown={divider.onKeyDown} />
 }
 
 const Harness = ({
-  active,
+  active = false,
   onRatioChange,
 }: {
-  active: boolean
+  active?: boolean
   onRatioChange: (r: number) => void
 }): React.ReactElement => {
   const ref = useRef<HTMLDivElement>(document.createElement('div'))
+
   return (
     <div ref={ref} data-testid="container" style={{ width: 1200, height: 800 }}>
       {active ? (
@@ -70,7 +79,7 @@ describe('useSplitDivider', () => {
     const { rerender } = render(<Harness active onRatioChange={vi.fn()} />)
     const container = screen.getByTestId('container')
     expect(container.style.getPropertyValue('--split-col')).toMatch(/px$/)
-    rerender(<Harness active={false} onRatioChange={vi.fn()} />)
+    rerender(<Harness onRatioChange={vi.fn()} />)
     expect(container.style.getPropertyValue('--split-col')).toBe('')
   })
 })

@@ -223,7 +223,10 @@ describe('useElasticContainer', () => {
   })
 
   test('reservedPx defaults to 0 (dock behavior unchanged)', () => {
-    const { result } = renderElastic({ axis: 'horizontal', initialPercent: 0.3 })
+    const { result } = renderElastic({
+      axis: 'horizontal',
+      initialPercent: 0.3,
+    })
     expect(result.current.size).toBe(360)
     expect(result.current.effectiveDimension).toBe(1200)
   })
