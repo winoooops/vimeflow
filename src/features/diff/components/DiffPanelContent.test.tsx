@@ -120,6 +120,7 @@ const fileDiffMock = ({
   diff,
   loading,
   error,
+  refetch: vi.fn(),
 })
 
 // Trigger every active ResizeObserver instance with the given width.

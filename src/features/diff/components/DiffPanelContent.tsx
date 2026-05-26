@@ -18,7 +18,10 @@ import {
   DIFF_MIN_WIDTH_PX,
   SPLIT_MIN_WIDTH_PX,
 } from './toolbar'
-import { toPierreInputs } from '../services/pierreAdapter'
+import { toPierreInputs, findRawDiffHunkIndex } from '../services/pierreAdapter'
+import { extractHunkPatch } from '../services/gitPatch'
+import { createGitService } from '../services/gitService'
+import { useNotifyInfo } from '../../workspace/hooks/useNotifyInfo'
 import type { ChangedFile, SelectedDiffFile } from '../types'
 
 // Pierre option subtypes — derived from `BaseDiffOptions` (rather than typed as
@@ -227,12 +230,235 @@ export const DiffPanelContent = ({
     response,
     loading: diffLoading,
     error: diffError,
+    refetch: refetchDiff,
   } = useFileDiff(
     selectedFilePath,
     selectedFileStaged,
     cwd,
     selectedFileUntracked
   )
+
+  // Notification hook — reused for the "Pierre split differently" and
+  // "could not isolate hunk" informational messages.
+  const { message: notifyMessage, notifyInfo } = useNotifyInfo()
+
+  // Single-flight staging flag — drops clicks while an IPC is in flight.
+  const [staging, setStaging] = useState(false)
+
+  // PR2: focusedHunk defaults to the first hunk until PR3 wires prev/next
+  // navigation. Null when there are no hunks (whole-file operations only).
+  const focusedHunk = response?.fileDiff.hunks[0] ?? null
+
+  // Stage the currently focused hunk (or whole file if no hunk).
+  const handleStage = useCallback(async (): Promise<void> => {
+    if (staging || !selectedFilePath) {
+      return
+    }
+
+    const service = createGitService(cwd)
+    let hunkPatch: string | undefined
+
+    if (focusedHunk !== null && response !== null) {
+      const rawIndex = findRawDiffHunkIndex(response, focusedHunk)
+      if (rawIndex === -1) {
+        notifyInfo(
+          'Pierre split this hunk differently than git — cannot stage this region; use Discard All or the file-level chip'
+        )
+
+        return
+      }
+
+      const extracted = extractHunkPatch(response.rawDiff, rawIndex)
+      if (extracted === null) {
+        notifyInfo('Could not isolate this hunk — try refreshing the diff')
+
+        return
+      }
+
+      hunkPatch = extracted
+    }
+
+    setStaging(true)
+
+    try {
+      await service.stageFile(selectedFilePath, hunkPatch)
+      await Promise.all([
+        new Promise<void>((resolve) => {
+          refetchDiff()
+          resolve()
+        }),
+        new Promise<void>((resolve) => {
+          const { refresh: refreshStatus } = gitStatus ?? internalGitStatus
+          refreshStatus()
+          resolve()
+        }),
+      ])
+    } finally {
+      setStaging(false)
+    }
+  }, [
+    staging,
+    selectedFilePath,
+    focusedHunk,
+    response,
+    cwd,
+    notifyInfo,
+    refetchDiff,
+    gitStatus,
+    internalGitStatus,
+  ])
+
+  // Unstage the currently focused hunk (or whole file if no hunk).
+  const handleUnstage = useCallback(async (): Promise<void> => {
+    if (staging || !selectedFilePath) {
+      return
+    }
+
+    const service = createGitService(cwd)
+    let hunkPatch: string | undefined
+
+    if (focusedHunk !== null && response !== null) {
+      const rawIndex = findRawDiffHunkIndex(response, focusedHunk)
+      if (rawIndex === -1) {
+        notifyInfo(
+          'Pierre split this hunk differently than git — cannot stage this region; use Discard All or the file-level chip'
+        )
+
+        return
+      }
+
+      const extracted = extractHunkPatch(response.rawDiff, rawIndex)
+      if (extracted === null) {
+        notifyInfo('Could not isolate this hunk — try refreshing the diff')
+
+        return
+      }
+
+      hunkPatch = extracted
+    }
+
+    setStaging(true)
+
+    try {
+      await service.unstageFile(selectedFilePath, hunkPatch)
+      await Promise.all([
+        new Promise<void>((resolve) => {
+          refetchDiff()
+          resolve()
+        }),
+        new Promise<void>((resolve) => {
+          const { refresh: refreshStatus } = gitStatus ?? internalGitStatus
+          refreshStatus()
+          resolve()
+        }),
+      ])
+    } finally {
+      setStaging(false)
+    }
+  }, [
+    staging,
+    selectedFilePath,
+    focusedHunk,
+    response,
+    cwd,
+    notifyInfo,
+    refetchDiff,
+    gitStatus,
+    internalGitStatus,
+  ])
+
+  // Discard the currently focused hunk.
+  const handleDiscard = useCallback(async (): Promise<void> => {
+    if (staging || !selectedFilePath) {
+      return
+    }
+
+    const service = createGitService(cwd)
+    let hunkPatch: string | undefined
+
+    if (focusedHunk !== null && response !== null) {
+      const rawIndex = findRawDiffHunkIndex(response, focusedHunk)
+      if (rawIndex === -1) {
+        notifyInfo(
+          'Pierre split this hunk differently than git — cannot stage this region; use Discard All or the file-level chip'
+        )
+
+        return
+      }
+
+      const extracted = extractHunkPatch(response.rawDiff, rawIndex)
+      if (extracted === null) {
+        notifyInfo('Could not isolate this hunk — try refreshing the diff')
+
+        return
+      }
+
+      hunkPatch = extracted
+    }
+
+    setStaging(true)
+
+    try {
+      await service.discardChanges(selectedFilePath, hunkPatch)
+      await Promise.all([
+        new Promise<void>((resolve) => {
+          refetchDiff()
+          resolve()
+        }),
+        new Promise<void>((resolve) => {
+          const { refresh: refreshStatus } = gitStatus ?? internalGitStatus
+          refreshStatus()
+          resolve()
+        }),
+      ])
+    } finally {
+      setStaging(false)
+    }
+  }, [
+    staging,
+    selectedFilePath,
+    focusedHunk,
+    response,
+    cwd,
+    notifyInfo,
+    refetchDiff,
+    gitStatus,
+    internalGitStatus,
+  ])
+
+  // Discard ALL changes to the selected file (no hunk patch — whole file).
+  const handleDiscardAll = useCallback(async (): Promise<void> => {
+    if (staging || !selectedFilePath) {
+      return
+    }
+
+    const service = createGitService(cwd)
+    setStaging(true)
+
+    try {
+      await service.discardChanges(selectedFilePath)
+      await Promise.all([
+        new Promise<void>((resolve) => {
+          refetchDiff()
+          resolve()
+        }),
+        new Promise<void>((resolve) => {
+          const { refresh: refreshStatus } = gitStatus ?? internalGitStatus
+          refreshStatus()
+          resolve()
+        }),
+      ])
+    } finally {
+      setStaging(false)
+    }
+  }, [
+    staging,
+    selectedFilePath,
+    cwd,
+    refetchDiff,
+    gitStatus,
+    internalGitStatus,
+  ])
 
   // Pierre option state — every option here is a controlled-component value
   // surfaced upward from DiffChipToolbar. Most values drive <MultiFileDiff>
@@ -571,6 +797,12 @@ export const DiffPanelContent = ({
             onNextFile={(): void => goToFile(1)}
             currentFileIndex={currentFileIndex}
             totalFiles={effectiveFiles.length}
+            onStage={handleStage}
+            onUnstage={handleUnstage}
+            onDiscard={handleDiscard}
+            onDiscardAll={handleDiscardAll}
+            staging={staging}
+            selectedFileName={selectedFilePath ?? undefined}
           />
           {renderSyncError !== null ? (
             <div
@@ -578,6 +810,15 @@ export const DiffPanelContent = ({
               className="px-3 pb-2 text-[11px] leading-4 text-[#f38ba8]"
             >
               Diff render sync failed: {renderSyncError}
+            </div>
+          ) : null}
+          {notifyMessage !== null ? (
+            <div
+              role="status"
+              aria-live="polite"
+              className="px-3 pb-2 text-[11px] leading-4 text-on-surface-variant"
+            >
+              {notifyMessage}
             </div>
           ) : null}
         </div>

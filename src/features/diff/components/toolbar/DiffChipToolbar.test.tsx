@@ -401,8 +401,8 @@ describe('DiffChipToolbar', () => {
     const onDiffStyleChange = vi.fn<(next: DiffStyle) => void>()
 
     // We don't pass click handlers to the aria-disabled placeholder chips —
-    // they don't exist as props in PR1. Clicking them is a no-op, so the
-    // diff-style segmented callback stays at zero calls.
+    // they don't exist as props without onStage/onDiscard. Clicking them is a
+    // no-op, so the diff-style segmented callback stays at zero calls.
     renderToolbar({ onDiffStyleChange })
 
     await user.click(screen.getByRole('button', { name: /^stage$/i }))
@@ -410,7 +410,7 @@ describe('DiffChipToolbar', () => {
     expect(onDiffStyleChange).not.toHaveBeenCalled()
   })
 
-  test('staging chips render with the disabled-placeholder styling', () => {
+  test('staging chips render with the disabled-placeholder styling when no handlers provided', () => {
     renderToolbar()
 
     const stage = screen.getByRole('button', { name: /^stage$/i })
@@ -428,6 +428,114 @@ describe('DiffChipToolbar', () => {
     expect(await screen.findByRole('tooltip')).toHaveTextContent(
       'Available in PR2'
     )
+  })
+
+  describe('Staging chips — PR2 functional mode', () => {
+    test('clicking the stage chip calls onStage once', async () => {
+      const user = userEvent.setup()
+      const onStage = vi.fn<() => Promise<void>>().mockResolvedValue(undefined)
+
+      renderToolbar({ onStage })
+
+      await user.click(screen.getByRole('button', { name: /^stage$/i }))
+      expect(onStage).toHaveBeenCalledTimes(1)
+    })
+
+    test('clicking the discard chip calls onDiscard once', async () => {
+      const user = userEvent.setup()
+
+      const onDiscard = vi
+        .fn<() => Promise<void>>()
+        .mockResolvedValue(undefined)
+
+      renderToolbar({ onDiscard })
+
+      await user.click(screen.getByRole('button', { name: /^discard$/i }))
+      expect(onDiscard).toHaveBeenCalledTimes(1)
+    })
+
+    test('clicking the unstage chip on staged view calls onUnstage once', async () => {
+      const user = userEvent.setup()
+
+      const onUnstage = vi
+        .fn<() => Promise<void>>()
+        .mockResolvedValue(undefined)
+
+      renderToolbar({ diffMode: 'staged', onUnstage })
+
+      await user.click(screen.getByRole('button', { name: /^unstage$/i }))
+      expect(onUnstage).toHaveBeenCalledTimes(1)
+    })
+
+    test('staging === true disables all staging chips', () => {
+      renderToolbar({
+        onStage: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
+        onDiscard: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
+        onDiscardAll: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
+        staging: true,
+      })
+
+      expect(screen.getByRole('button', { name: /^stage$/i })).toBeDisabled()
+      expect(screen.getByRole('button', { name: /^discard$/i })).toBeDisabled()
+      expect(
+        screen.getByRole('button', { name: /^discard all$/i })
+      ).toBeDisabled()
+    })
+
+    test('Discard All shows confirmation popover on click', async () => {
+      const user = userEvent.setup()
+
+      const onDiscardAll = vi
+        .fn<() => Promise<void>>()
+        .mockResolvedValue(undefined)
+
+      renderToolbar({ onDiscardAll, selectedFileName: 'src/App.tsx' })
+
+      await user.click(screen.getByRole('button', { name: /^discard all$/i }))
+
+      // Confirmation popover should appear
+      expect(
+        await screen.findByText(/discard all changes to/i)
+      ).toBeInTheDocument()
+    })
+
+    test('Discard All confirmation: Confirm calls onDiscardAll', async () => {
+      const user = userEvent.setup()
+
+      const onDiscardAll = vi
+        .fn<() => Promise<void>>()
+        .mockResolvedValue(undefined)
+
+      renderToolbar({ onDiscardAll, selectedFileName: 'src/App.tsx' })
+
+      await user.click(screen.getByRole('button', { name: /^discard all$/i }))
+
+      // The popover renders in a FloatingPortal. Locate it by the
+      // dialog role that useRole(context, {role:'dialog'}) sets.
+      const dialog = await screen.findByRole('dialog')
+      await user.click(
+        within(dialog).getByRole('button', { name: /^discard$/i })
+      )
+
+      expect(onDiscardAll).toHaveBeenCalledTimes(1)
+    })
+
+    test('Discard All confirmation: Cancel does not call onDiscardAll', async () => {
+      const user = userEvent.setup()
+
+      const onDiscardAll = vi
+        .fn<() => Promise<void>>()
+        .mockResolvedValue(undefined)
+
+      renderToolbar({ onDiscardAll, selectedFileName: 'src/App.tsx' })
+
+      await user.click(screen.getByRole('button', { name: /^discard all$/i }))
+
+      const dialog = await screen.findByRole('dialog')
+      await user.click(within(dialog).getByRole('button', { name: /cancel/i }))
+
+      expect(onDiscardAll).not.toHaveBeenCalled()
+    })
   })
 
   test('PriorityPlus collapses the lower-priority chips into the overflow menu at a narrow width', () => {
