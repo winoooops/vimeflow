@@ -488,6 +488,71 @@ describe('Body', () => {
     }
   })
 
+  test('clears pending deferred terminal font refresh when switching sessions', async () => {
+    let resolveFonts: () => void = (): void => undefined
+
+    const fontsLoaded = new Promise<FontFace[]>((resolve) => {
+      resolveFonts = (): void => resolve([])
+    })
+
+    const load = vi.fn<FontFaceSet['load']>().mockReturnValue(fontsLoaded)
+    const originalFonts = document.fonts
+
+    Object.defineProperty(document, 'fonts', {
+      configurable: true,
+      value: { load },
+    })
+
+    const offsetWidthSpy = vi
+      .spyOn(HTMLElement.prototype, 'offsetWidth', 'get')
+      .mockReturnValue(840)
+
+    const offsetHeightSpy = vi
+      .spyOn(HTMLElement.prototype, 'offsetHeight', 'get')
+      .mockReturnValue(600)
+
+    try {
+      const { rerender } = render(
+        <Body
+          sessionId="session-a"
+          cwd="/home/user"
+          service={defaultMockService}
+          deferFit
+        />
+      )
+
+      await waitFor(() => {
+        expect(load).toHaveBeenCalledTimes(2)
+      })
+
+      await act(async () => {
+        resolveFonts()
+        await fontsLoaded
+      })
+
+      mockFitAddon.fit.mockClear()
+      mockTerminal.refresh.mockClear()
+
+      rerender(
+        <Body
+          sessionId="session-b"
+          cwd="/home/user"
+          service={defaultMockService}
+        />
+      )
+
+      expect(mockFitAddon.fit).toHaveBeenCalledTimes(1)
+      expect(mockTerminal.refresh).not.toHaveBeenCalled()
+    } finally {
+      Object.defineProperty(document, 'fonts', {
+        configurable: true,
+        value: originalFonts,
+      })
+      offsetWidthSpy.mockRestore()
+      offsetHeightSpy.mockRestore()
+    }
+  })
+
   test('loads fit addon', async () => {
     render(
       <Body

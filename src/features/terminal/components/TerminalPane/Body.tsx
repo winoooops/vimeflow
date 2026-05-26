@@ -845,6 +845,8 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
     // When Body unmounts, the session is closed — free resources
     return (): void => {
       disposed = true
+      pendingDeferredFitFlushRef.current = false
+      pendingDeferredRefreshAfterFitRef.current = false
       cancelScheduledFit()
       if (flushFitSessionIdRef.current === sessionId) {
         cancelScheduledFitRef.current = null
