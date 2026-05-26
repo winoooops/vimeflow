@@ -4,11 +4,13 @@ import {
   forwardRef,
   useCallback,
   useImperativeHandle,
+  useLayoutEffect,
   useRef,
+  useState,
   type ReactElement,
 } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import type { Pane, Session } from '../../../sessions/types'
+import type { LayoutId, Pane, Session } from '../../../sessions/types'
 import type { NotifyPaneReady } from '../../hooks/useTerminal'
 import type { ITerminalService } from '../../services/terminalService'
 import {
@@ -19,6 +21,8 @@ import {
 import { EmptySlot } from './EmptySlot'
 import { LAYOUTS } from './layouts'
 import { Tooltip } from '../../../../components/Tooltip'
+import { SplitDividers } from './SplitDividers'
+import { resolveGrid, DEFAULT_RATIOS, type LayoutRatios } from './resolveGrid'
 
 const SLOT_FADE_TRANSITION = { duration: 0.08, ease: 'easeOut' } as const
 
@@ -92,6 +96,31 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
     const layout = LAYOUTS[session.layout]
     const outerDivRef = useRef<HTMLDivElement>(null)
 
+    const [ratios, setRatios] = useState<
+      Partial<Record<LayoutId, LayoutRatios>>
+    >({})
+    const currentRatios =
+      ratios[session.layout] ?? DEFAULT_RATIOS[session.layout]
+    const grid = resolveGrid(session.layout, currentRatios)
+
+    const handleRatioChange = useCallback(
+      (axis: 'col' | 'row', value: number): void => {
+        setRatios((prev) => {
+          const base = prev[session.layout] ?? DEFAULT_RATIOS[session.layout]
+          if (base[axis] === value) {
+            return prev
+          }
+          return { ...prev, [session.layout]: { ...base, [axis]: value } }
+        })
+      },
+      [session.layout]
+    )
+
+    const [gridReady, setGridReady] = useState(false)
+    useLayoutEffect(() => {
+      setGridReady(true)
+    }, [])
+
     const paneHandleRefs = useRef<Map<string, TerminalPaneHandle | null>>(
       new Map()
     )
@@ -155,24 +184,28 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
           )
         : []
 
-    const gridTemplateAreas = layout.areas
+    const gridTemplateAreas = grid.areas
       .map((row) => `"${row.join(' ')}"`)
       .join(' ')
 
     return (
       <div
-        ref={outerDivRef}
-        data-testid="split-view"
-        data-session-id={session.id}
-        data-layout={session.layout}
-        tabIndex={-1}
-        className="grid h-full w-full gap-2 bg-surface p-2.5"
-        style={{
-          gridTemplateColumns: layout.cols,
-          gridTemplateRows: layout.rows,
-          gridTemplateAreas,
-        }}
+        data-testid="split-view-canvas"
+        className="h-full w-full bg-surface p-2.5"
       >
+        <div
+          ref={outerDivRef}
+          data-testid="split-view"
+          data-session-id={session.id}
+          data-layout={session.layout}
+          tabIndex={-1}
+          className="grid h-full w-full gap-0"
+          style={{
+            gridTemplateColumns: grid.cols,
+            gridTemplateRows: grid.rows,
+            gridTemplateAreas,
+          }}
+        >
         {/* eslint-disable-next-line react/jsx-boolean-value -- framer-motion: `initial={false}` skips the entry animation for children already mounted. Omitting `initial` reverts to the default (animate on mount) — semantically distinct. */}
         <AnimatePresence initial={false}>
           {visiblePanes.map((pane, i) => {
@@ -276,7 +309,16 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
               ))
             : null}
         </AnimatePresence>
+        {isActive && gridReady ? (
+          <SplitDividers
+            layout={session.layout}
+            containerRef={outerDivRef}
+            ratios={currentRatios}
+            onRatioChange={handleRatioChange}
+          />
+        ) : null}
       </div>
-    )
-  }
+    </div>
+  )
+}
 )
