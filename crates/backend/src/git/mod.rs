@@ -2,11 +2,12 @@
 mod test_helpers;
 pub mod watcher;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
 use std::process::Command;
 use std::time::Duration;
+use tokio::io::AsyncWriteExt;
 
 use crate::filesystem::scope::{
     ensure_within_home, expand_home, home_canonical, reject_parent_refs,
@@ -99,6 +100,267 @@ fn validate_file_path(file: &str) -> Result<(), String> {
         ));
     }
     reject_parent_refs(path)
+}
+
+/// Request type for staging a file (whole-file or per-hunk).
+///
+/// Also reused as the request type for `unstage_file` — same fields,
+/// same semantics (the handler logic differs, not the request shape).
+// Task 2.2 adds the handler call sites; until then suppress the lint.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct StageFileRequest {
+    pub cwd: String,
+    pub path: String,
+    /// Unified-diff hunk patch. `None` ⇒ whole-file stage; `Some` ⇒
+    /// per-hunk stage applied via `git apply --cached`.
+    pub hunk_patch: Option<String>,
+}
+
+/// Request type for discarding working-tree changes (whole-file or per-hunk).
+// Task 2.2 adds the handler call sites; until then suppress the lint.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct DiscardFileRequest {
+    pub cwd: String,
+    pub path: String,
+    pub hunk_patch: Option<String>,
+    #[serde(default)]
+    pub scope: DiscardScope,
+}
+
+/// Controls which half of the working-tree change `discard_file` removes.
+///
+/// - `Unstaged` (default): only the unstaged working-tree edits are reverted
+///   (`git checkout -- <file>` or `git apply -R`).
+/// - `Both`: staged changes are also dropped (`git reset HEAD <file>` followed
+///   by the unstaged discard), effectively returning the file to HEAD.
+// Task 2.2 adds the handler call sites; until then suppress the lint.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+#[serde(rename_all = "lowercase")]
+pub enum DiscardScope {
+    #[default]
+    Unstaged,
+    Both,
+}
+
+/// Spawn `git` with the given args, pipe `patch` to its stdin, and wait for
+/// it to exit. Uses `tokio::process::Command` for non-blocking stdin writes;
+/// fully-qualified to avoid shadowing `std::process::Command` already in scope.
+///
+/// Intended for `git apply --cached` and `git apply -R` which consume a
+/// unified-diff patch on stdin.
+// Task 2.2 adds the handler call sites; until then suppress the lint.
+#[allow(dead_code)]
+async fn run_git_apply_with_patch(
+    cwd: &std::path::Path,
+    args: &[&str],
+    patch: &str,
+) -> Result<(), String> {
+    let mut cmd = tokio::process::Command::new("git");
+    cmd.current_dir(cwd)
+        .args(args)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    let mut child = cmd.spawn().map_err(|e| format!("spawn failed: {e}"))?;
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin
+            .write_all(patch.as_bytes())
+            .await
+            .map_err(|e| format!("stdin write failed: {e}"))?;
+        // Drop stdin so git sees EOF.
+    }
+    let output = tokio::time::timeout(std::time::Duration::from_secs(30), child.wait_with_output())
+        .await
+        .map_err(|_| "git apply timed out after 30s".to_string())?
+        .map_err(|e| format!("git apply wait failed: {e}"))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(if stderr.trim().is_empty() {
+            format!("git apply failed with status {}", output.status)
+        } else {
+            stderr.into_owned()
+        });
+    }
+    Ok(())
+}
+
+/// Run `git status --porcelain=v1 -z -- <path>` and return `true` when the
+/// first status record starts with `??` (i.e. the path is untracked).
+///
+/// Uses the sync `Command` alias (= `std::process::Command`) already imported
+/// at the top of this file, wrapped through `run_git_with_timeout`.
+// Task 2.2 adds the handler call sites; until then suppress the lint.
+#[allow(dead_code)]
+async fn git_status_porcelain_is_untracked(
+    cwd: &std::path::Path,
+    path: &str,
+) -> Result<bool, String> {
+    let mut cmd = Command::new("git");
+    cmd.current_dir(cwd)
+        .args(["status", "--porcelain=v1", "-z", "--", path]);
+    let out = run_git_with_timeout(cmd).await?;
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    Ok(stdout.starts_with("??"))
+}
+
+/// Validate that a file path and its optional hunk patch are safe to pass to
+/// git staging/discarding operations.
+///
+/// Checks:
+/// 1. `path` is repo-relative (no absolute paths, no `..` traversal) — reuses
+///    the existing `validate_file_path` helper.
+/// 2. `path` resolves to a location inside `cwd` when joined (belt-and-braces
+///    against any edge cases `validate_file_path` does not cover).
+/// 3. `hunk_patch`, when present, targets only a single file (no second
+///    `diff --git` header).
+/// 4. Header consistency — anchored on the `diff --git a/OLD b/NEW` line:
+///    - Every `--- a/` path must equal OLD or `/dev/null`.
+///    - Every `+++ b/` path must equal NEW or `/dev/null`.
+///    - `path` must equal OLD or NEW (rename-aware: normally `path == NEW`,
+///      the file being staged; `path == OLD` covers the deletion side).
+///    - Fallback when no `diff --git` line is present: every `--- a/` and
+///      `+++ b/` header path (excluding `/dev/null`) must equal `path`
+///      (strict non-rename).
+///    - If the `diff --git` line is present but its paths cannot be parsed
+///      (e.g. quoted paths with spaces), the fallback strict rule applies.
+///
+/// The residual case (an internally-consistent rename `evil.rs` → `path`) is
+/// backstopped by `git apply --cached` itself — the OLD file must exist in the
+/// index — and is acceptable for this defense-in-depth layer.
+// Task 2.2 adds the handler call sites; until then suppress the lint.
+#[allow(dead_code)]
+fn validate_hunk_patch(
+    cwd: &std::path::Path,
+    path: &str,
+    hunk_patch: Option<&str>,
+) -> Result<(), String> {
+    // Reuse the existing repo-relative path validator (rejects empty, absolute,
+    // and `..` traversal paths).
+    validate_file_path(path)?;
+
+    // Belt-and-braces: ensure the joined result stays inside cwd.
+    let resolved = cwd.join(path);
+    if !resolved.starts_with(cwd) {
+        return Err(format!("path escapes workspace: {}", path));
+    }
+
+    if let Some(patch) = hunk_patch {
+        let diff_git_lines: Vec<&str> = patch
+            .lines()
+            .filter(|l| l.starts_with("diff --git "))
+            .collect();
+        if diff_git_lines.len() > 1 {
+            return Err("multi-file patches not allowed".to_string());
+        }
+
+        // Collect the body `--- a/` / `+++ b/` header paths (stop at first @@).
+        let mut minus_paths: Vec<&str> = Vec::new();
+        let mut plus_paths: Vec<&str> = Vec::new();
+        for line in patch.lines() {
+            if line.starts_with("@@") {
+                break;
+            }
+            if let Some(rest) = line.strip_prefix("--- a/") {
+                minus_paths.push(rest);
+            } else if line.starts_with("--- /dev/null") {
+                minus_paths.push("/dev/null");
+            } else if let Some(rest) = line.strip_prefix("+++ b/") {
+                plus_paths.push(rest);
+            } else if line.starts_with("+++ /dev/null") {
+                plus_paths.push("/dev/null");
+            }
+        }
+
+        // Try to parse (OLD, NEW) from the `diff --git a/OLD b/NEW` line.
+        // Only handles the common unquoted case. Quoted paths (with spaces or
+        // special chars) are deliberately not parsed here — fall through to the
+        // strict fallback below to avoid a mis-parse being exploited.
+        let diff_git_parsed: Option<(&str, &str)> = diff_git_lines.first().and_then(|line| {
+            // line is "diff --git a/OLD b/NEW"
+            let rest = line.strip_prefix("diff --git ")?;
+            // If the line contains quotes we can't safely split on " b/" because
+            // the paths themselves may contain that literal string. Bail out.
+            if rest.starts_with('"') {
+                return None;
+            }
+            // Find " b/" after the "a/" prefix. Split on the LAST occurrence
+            // of " b/" so paths containing " b/" sub-strings (unusual but
+            // possible) are handled conservatively: we'd get a wrong split, but
+            // the subsequent consistency check would then reject the patch,
+            // which is the safe direction.
+            let a_rest = rest.strip_prefix("a/")?;
+            // Walk through looking for " b/" — use rfind so the split point is
+            // as far right as possible (handles paths with " b" sub-strings
+            // better than splitting at the first occurrence).
+            let b_marker = " b/";
+            let split_pos = a_rest.rfind(b_marker)?;
+            let old_path = &a_rest[..split_pos];
+            let new_path = &a_rest[split_pos + b_marker.len()..];
+            if old_path.is_empty() || new_path.is_empty() {
+                return None;
+            }
+            Some((old_path, new_path))
+        });
+
+        if let Some((old_path, new_path)) = diff_git_parsed {
+            // Strict consistency: every body `--- a/` path must equal OLD or
+            // /dev/null, and every `+++ b/` path must equal NEW or /dev/null.
+            for &mp in &minus_paths {
+                if mp != "/dev/null" && mp != old_path {
+                    return Err(format!(
+                        "patch header inconsistency: '--- a/{}' does not match diff --git OLD path '{}'",
+                        mp, old_path
+                    ));
+                }
+            }
+            for &pp in &plus_paths {
+                if pp != "/dev/null" && pp != new_path {
+                    return Err(format!(
+                        "patch header inconsistency: '+++ b/{}' does not match diff --git NEW path '{}'",
+                        pp, new_path
+                    ));
+                }
+            }
+            // Rename-aware: path must be the OLD or NEW endpoint.
+            if path != old_path && path != new_path {
+                return Err(format!(
+                    "patch targets a different file (diff --git OLD='{}' NEW='{}', req: {})",
+                    old_path, new_path, path
+                ));
+            }
+        } else {
+            // Fallback: no parseable `diff --git` line — apply the strict rule
+            // that every body header path (excluding /dev/null) must equal path.
+            let all_header_paths: Vec<&str> = minus_paths
+                .iter()
+                .chain(plus_paths.iter())
+                .copied()
+                .filter(|&p| p != "/dev/null")
+                .collect();
+            if !all_header_paths.is_empty() {
+                for &hp in &all_header_paths {
+                    if hp != path {
+                        return Err(format!(
+                            "patch targets a different file (header paths: {:?}, req: {})",
+                            all_header_paths, path
+                        ));
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Git file status matching TypeScript's ChangedFileStatus type
@@ -2809,6 +3071,154 @@ copy to copy.txt
         assert!(
             !response.raw_diff.is_empty(),
             "raw_diff should hold the synthesized --no-index diff"
+        );
+    }
+
+    // Unit tests for validate_hunk_patch (pure logic, no git subprocess needed).
+
+    #[test]
+    fn test_validate_hunk_patch_rejects_absolute_path() {
+        let cwd = std::path::Path::new("/home/user/repo");
+        let result = validate_hunk_patch(cwd, "/etc/passwd", None);
+        assert!(result.is_err());
+        let msg = result.unwrap_err();
+        assert!(
+            msg.contains("repo-relative") || msg.contains("absolute"),
+            "unexpected error message: {msg}"
+        );
+    }
+
+    #[test]
+    fn test_validate_hunk_patch_rejects_parent_traversal() {
+        let cwd = std::path::Path::new("/home/user/repo");
+        let result = validate_hunk_patch(cwd, "../../etc/passwd", None);
+        assert!(result.is_err());
+        let msg = result.unwrap_err();
+        assert!(
+            msg.contains("traversal") || msg.contains("parent") || msg.contains("denied"),
+            "unexpected error message: {msg}"
+        );
+    }
+
+    #[test]
+    fn test_validate_hunk_patch_accepts_valid_path_no_patch() {
+        let cwd = std::path::Path::new("/home/user/repo");
+        let result = validate_hunk_patch(cwd, "src/main.rs", None);
+        assert!(
+            result.is_ok(),
+            "valid repo-relative path should be accepted"
+        );
+    }
+
+    #[test]
+    fn test_validate_hunk_patch_rejects_multi_file_patch() {
+        let cwd = std::path::Path::new("/home/user/repo");
+        let patch = "\
+diff --git a/src/a.rs b/src/a.rs
+--- a/src/a.rs
++++ b/src/a.rs
+@@ -1 +1 @@
+-old
++new
+diff --git a/src/b.rs b/src/b.rs
+--- a/src/b.rs
++++ b/src/b.rs
+@@ -1 +1 @@
+-old
++new
+";
+        let result = validate_hunk_patch(cwd, "src/a.rs", Some(patch));
+        assert!(result.is_err());
+        assert!(
+            result.unwrap_err().contains("multi-file"),
+            "should report multi-file error"
+        );
+    }
+
+    #[test]
+    fn test_validate_hunk_patch_rejects_mismatched_path() {
+        let cwd = std::path::Path::new("/home/user/repo");
+        let patch = "\
+diff --git a/src/other.rs b/src/other.rs
+--- a/src/other.rs
++++ b/src/other.rs
+@@ -1 +1 @@
+-old
++new
+";
+        let result = validate_hunk_patch(cwd, "src/main.rs", Some(patch));
+        assert!(result.is_err());
+        let msg = result.unwrap_err();
+        assert!(
+            msg.contains("different file") || msg.contains("header paths"),
+            "unexpected error message: {msg}"
+        );
+    }
+
+    #[test]
+    fn test_validate_hunk_patch_accepts_matching_single_file_patch() {
+        let cwd = std::path::Path::new("/home/user/repo");
+        let patch = "\
+diff --git a/src/main.rs b/src/main.rs
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -1 +1 @@
+-old
++new
+";
+        let result = validate_hunk_patch(cwd, "src/main.rs", Some(patch));
+        assert!(
+            result.is_ok(),
+            "matching single-file patch should be accepted"
+        );
+    }
+
+    #[test]
+    fn test_validate_hunk_patch_accepts_new_file_patch() {
+        // A real new-file patch: `--- /dev/null` + `+++ b/src/new.rs`.
+        // The diff --git OLD is the same as the path and NEW matches path too.
+        let cwd = std::path::Path::new("/home/user/repo");
+        let patch = "\
+diff --git a/src/new.rs b/src/new.rs
+new file mode 100644
+--- /dev/null
++++ b/src/new.rs
+@@ -0,0 +1 @@
++hello
+";
+        let result = validate_hunk_patch(cwd, "src/new.rs", Some(patch));
+        assert!(
+            result.is_ok(),
+            "new-file patch (--- /dev/null / +++ b/path) should be accepted: {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_validate_hunk_patch_rejects_inconsistent_header_paths() {
+        // Smuggled patch: the `diff --git` declaration says src/main.rs → src/main.rs
+        // but the body headers say `--- a/evil.rs` / `+++ b/src/main.rs`.
+        // The body `--- a/evil.rs` is inconsistent with the `diff --git` OLD path
+        // `src/main.rs`, so this must be rejected even though `src/main.rs` appears
+        // in the set of header paths.
+        let cwd = std::path::Path::new("/home/user/repo");
+        let patch = "\
+diff --git a/src/main.rs b/src/main.rs
+--- a/evil.rs
++++ b/src/main.rs
+@@ -1 +1 @@
+-old
++new
+";
+        let result = validate_hunk_patch(cwd, "src/main.rs", Some(patch));
+        assert!(
+            result.is_err(),
+            "patch with inconsistent --- header must be rejected"
+        );
+        let msg = result.unwrap_err();
+        assert!(
+            msg.contains("inconsistency") || msg.contains("does not match"),
+            "unexpected error message: {msg}"
         );
     }
 }
