@@ -19,6 +19,8 @@ export interface BackendApi {
     event: string,
     callback: (payload: T) => void
   ) => Promise<UnlistenFn>
+
+  onCommandPaletteToggle?: (callback: () => void) => UnlistenFn
 }
 
 const renameAgentSessionErrorReasons: readonly RenameAgentSessionErrorReason[] =
@@ -52,6 +54,8 @@ const isStructuredBackendError = (
   'reason' in value &&
   typeof value.message === 'string' &&
   isRenameAgentSessionErrorReason(value.reason)
+
+const noop = (): void => undefined
 
 const requireBridge = (): BackendApi => {
   if (typeof window === 'undefined' || !window.vimeflow) {
@@ -114,4 +118,14 @@ export const listen = async <T>(
     called = true
     rawUnlisten()
   }
+}
+
+export const listenCommandPaletteToggle = (
+  callback: () => void
+): UnlistenFn => {
+  if (typeof window === 'undefined') {
+    return noop
+  }
+
+  return window.vimeflow?.onCommandPaletteToggle?.(callback) ?? noop
 }

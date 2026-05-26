@@ -227,7 +227,7 @@ Layout is 4 zones:
    - Context window: smiley face emoji (😊) with label "Context".
    - 5-hour usage: "142 / 200 messages" with a thin progress bar (purple gradient).
    - Collapsible sections with chevron toggles: "Files Changed" (expanded, showing green "+file" entries), "Tool Calls" (collapsed, showing count badge), "Tests" (collapsed, showing "4/5" badge), "Usage Details" (collapsed).
-   - Footer: session time, turn count, lines added/removed in muted text.
+   - Ambient session metrics: session time, turn count, and line deltas live in the global bottom status bar.
 
 No visible borders — use background color shifts only. Glassmorphism on floating elements. Rounded corners (cards: 1rem, buttons: 0.75rem). Fonts: Manrope for headings, Inter for body, JetBrains Mono for terminal/code.
 ```

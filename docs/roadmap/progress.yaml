@@ -350,7 +350,7 @@ phases:
         pr: 57
         notes: null
       - id: p4-s7
-        name: 'ContextBucket, ToolCallSummary, RecentToolCalls, FilesChanged, TestResults, ActivityFooter'
+        name: 'ContextBucket, ToolCallSummary, RecentToolCalls, FilesChanged, TestResults'
         status: done
         commit: de43dfc
         pr: 57

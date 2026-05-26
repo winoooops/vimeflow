@@ -1736,12 +1736,6 @@ const events = useActivityEvents(status)
           total={placeholderTests.total}
         />
       </div>
-      <ActivityFooter
-        totalDurationMs={status.cost?.totalDurationMs ?? 0}
-        turnCount={0}
-        linesAdded={status.cost?.totalLinesAdded ?? 0}
-        linesRemoved={status.cost?.totalLinesRemoved ?? 0}
-      />
     </>
   ) : null
 }
@@ -1808,7 +1802,7 @@ recent list) by design."
 
 **Out of scope (recorded for future PRs):**
 
-- `StatusCard` / `ContextBucket` / `FilesChanged` / `TestResults` / `ActivityFooter` redesigns.
+- `StatusCard` / `ContextBucket` / `FilesChanged` / `TestResults` redesigns.
 - Claude Design's top-of-panel session header + CONTEXT / 5-HOUR USAGE / TURNS bars.
 - Rust transcript parser extensions for `diff`, `bashResult`, `think`, `user`.
 - Pixel-level visual regression (issue #76 Tier 5).

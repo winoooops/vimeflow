@@ -146,7 +146,7 @@ describe('AgentStatusPanel', () => {
     expect(screen.queryByTestId('agent-status-card')).not.toBeInTheDocument()
   })
 
-  test('footer renders aggregated git-diff line totals', () => {
+  test('does not render the deprecated bottom metrics strip', () => {
     render(
       <AgentStatusPanel
         {...defaultProps}
@@ -156,9 +156,9 @@ describe('AgentStatusPanel', () => {
       />
     )
 
-    // From the useGitStatus mock above: 5+7 added, 2+1 removed.
-    expect(screen.getByText('4 turns')).toBeInTheDocument()
-    expect(screen.getByText('+12 / -3')).toBeInTheDocument()
+    expect(screen.queryByText('4 turns')).not.toBeInTheDocument()
+    expect(screen.queryByText('1m')).not.toBeInTheDocument()
+    expect(screen.queryByText('+12 / -3')).not.toBeInTheDocument()
   })
 
   test('uses shared git status when provided by the parent', () => {
@@ -198,7 +198,7 @@ describe('AgentStatusPanel', () => {
         />
       )
 
-      expect(screen.getAllByText('+20 / -4')).toHaveLength(2)
+      expect(screen.getByText('+20 / -4')).toBeInTheDocument()
       // Watcher-deduplication invariant: when parent injects gitStatus,
       // the internal hook must run with enabled: false so no duplicate
       // start_git_watcher IPC fires.

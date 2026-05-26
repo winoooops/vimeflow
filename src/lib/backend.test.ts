@@ -3,6 +3,7 @@ import {
   AgentRenameError,
   invoke,
   listen,
+  listenCommandPaletteToggle,
   renameAgentSession,
   type BackendApi,
 } from './backend'
@@ -132,6 +133,34 @@ describe('backend (window.vimeflow bridge)', () => {
 
     expect(rawUnlisten).toHaveBeenCalledTimes(1)
   })
+
+  test('listenCommandPaletteToggle delegates to optional bridge hook', () => {
+    const rawUnlisten = vi.fn()
+    const callback = vi.fn()
+    const onCommandPaletteToggle = vi.fn(() => rawUnlisten)
+
+    window.vimeflow = {
+      invoke: mockInvoke,
+      listen: mockListen,
+      onCommandPaletteToggle,
+    } as unknown as BackendApi
+
+    const unlisten = listenCommandPaletteToggle(callback)
+
+    expect(onCommandPaletteToggle).toHaveBeenCalledWith(callback)
+
+    unlisten()
+    expect(rawUnlisten).toHaveBeenCalledOnce()
+  })
+
+  test('listenCommandPaletteToggle is a no-op when bridge hook is absent', () => {
+    const callback = vi.fn()
+    const unlisten = listenCommandPaletteToggle(callback)
+
+    expect(() => {
+      unlisten()
+    }).not.toThrow()
+  })
 })
 
 describe('backend (missing bridge)', () => {
@@ -149,5 +178,14 @@ describe('backend (missing bridge)', () => {
     await expect(listen('x', noop)).rejects.toThrow(
       'window.vimeflow is not available'
     )
+  })
+
+  test('listenCommandPaletteToggle is a no-op when bridge is unset', () => {
+    const callback = vi.fn()
+    const unlisten = listenCommandPaletteToggle(callback)
+
+    expect(() => {
+      unlisten()
+    }).not.toThrow()
   })
 })

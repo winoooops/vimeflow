@@ -7,14 +7,12 @@ import { TokenCache } from '../TokenCache'
 import { ToolCallSummary } from '../ToolCallSummary'
 import { FilesChanged } from '../FilesChanged'
 import { TestResults } from '../TestResults'
-import { ActivityFooter } from '../ActivityFooter'
 import { ActivityFeed } from '../ActivityFeed'
 import { useActivityEvents } from '../../hooks/useActivityEvents'
 import {
   useGitStatus,
   type UseGitStatusReturn,
 } from '../../../diff/hooks/useGitStatus'
-import { sumLines } from '../../../diff/utils/sumLines'
 import type { ChangedFile } from '../../../diff/types'
 import { AgentStatusPanelHeader } from './Header'
 
@@ -59,10 +57,6 @@ export const AgentStatusPanel = ({
 
   const filesAreFresh = filesCwd === cwd
 
-  // Memoize the effective files array so its identity is stable across
-  // renders when the underlying data didn't change. Without this, the
-  // ternary creates a fresh array literal on every render and downstream
-  // useMemos depending on it (lineTotals) re-run unnecessarily.
   const effectiveFiles = useMemo(
     () => (filesAreFresh ? files : []),
     [filesAreFresh, files]
@@ -70,8 +64,6 @@ export const AgentStatusPanel = ({
 
   const effectiveLoading =
     !idle && (loading || (!filesAreFresh && error === null))
-
-  const lineTotals = useMemo(() => sumLines(effectiveFiles), [effectiveFiles])
 
   return (
     <div
@@ -116,12 +108,6 @@ export const AgentStatusPanel = ({
         />
         <TestResults snapshot={status.testRun} onOpenFile={onOpenFile} />
       </div>
-      <ActivityFooter
-        totalDurationMs={status.cost?.totalDurationMs ?? 0}
-        numTurns={status.numTurns}
-        linesAdded={lineTotals.added}
-        linesRemoved={lineTotals.removed}
-      />
     </div>
   )
 }
