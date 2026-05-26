@@ -30,6 +30,18 @@ type DiffIndicators = NonNullable<BaseDiffOptions['diffIndicators']>
 type Overflow = NonNullable<BaseDiffOptions['overflow']>
 type LineDiffType = NonNullable<BaseDiffOptions['lineDiffType']>
 
+// The subset of Pierre options the worker pool OWNS once a pool is active:
+// the Shiki `theme` and the intra-line word-diff algorithm (`lineDiffType`).
+// `DiffHunksRenderer.getRenderOptions()` returns
+// `workerManager.getDiffRenderOptions()` wholesale under a pool (see
+// node_modules/@pierre/diffs/dist/renderers/DiffHunksRenderer.js), so the
+// per-instance `<MultiFileDiff options>` props for these two are ignored —
+// they must be pushed into the pool via `setRenderOptions` instead.
+interface PoolRenderOptions {
+  theme: DiffsThemeNames
+  lineDiffType: LineDiffType
+}
+
 /**
  * Controlled/uncontrolled selection pair as a discriminated union. Forces
  * callers to pass BOTH `selectedFile` + `onSelectedFileChange` (controlled
@@ -224,42 +236,60 @@ export const DiffPanelContent = ({
 
   // Pierre option state — every option here is a controlled-component value
   // surfaced upward from DiffChipToolbar. Most values drive <MultiFileDiff>
-  // on the next render. Theme additionally flows through `syncedTheme` so the
-  // diff remount waits for the worker pool to accept the new theme first.
+  // on the next render. `theme` and `lineDiffType` are special: the worker
+  // pool owns them (see the render-options sync effect below), so they flow
+  // through `syncedRenderOptions` and the diff remount waits for the pool to
+  // accept the new value first.
   const [diffStyle, setDiffStyle] = useState<DiffStyle>('split')
   const [theme, setTheme] = useState<DiffsThemeNames>('pierre-dark')
-  const [syncedTheme, setSyncedTheme] = useState<DiffsThemeNames>(theme)
-  const syncedThemeRef = useRef<DiffsThemeNames>(theme)
+  const [lineDiffType, setLineDiffType] = useState<LineDiffType>('word')
 
   const [diffIndicators, setDiffIndicators] =
     useState<DiffIndicators>('classic')
 
-  const [lineDiffType, setLineDiffType] = useState<LineDiffType>('word')
   const [overflowOpt, setOverflowOpt] = useState<Overflow>('scroll')
   const [disableLineNumbers, setDisableLineNumbers] = useState(false)
   const [disableBackground, setDisableBackground] = useState(false)
   const [disableFileHeader, setDisableFileHeader] = useState(false)
   const [stickyHeader, setStickyHeader] = useState(true)
-  const [themeSyncError, setThemeSyncErrorState] = useState<string | null>(null)
-  const themeSyncErrorRef = useRef<string | null>(null)
 
-  const setThemeSyncError = useCallback((message: string | null): void => {
-    if (themeSyncErrorRef.current === message) {
+  // Pool-owned render options, gated behind the worker-pool sync below so the
+  // diff remount waits until the pool actually accepts the new value.
+  // `renderedTheme` / `renderedLineDiffType` read from HERE (not from `theme` /
+  // `lineDiffType` directly) whenever a pool is present.
+  const [syncedRenderOptions, setSyncedRenderOptions] =
+    useState<PoolRenderOptions>({ theme, lineDiffType })
+  const syncedRenderOptionsRef = useRef<PoolRenderOptions>(syncedRenderOptions)
+
+  const [renderSyncError, setRenderSyncErrorState] = useState<string | null>(
+    null
+  )
+  const renderSyncErrorRef = useRef<string | null>(null)
+
+  const setRenderSyncError = useCallback((message: string | null): void => {
+    if (renderSyncErrorRef.current === message) {
       return
     }
 
-    themeSyncErrorRef.current = message
-    setThemeSyncErrorState(message)
+    renderSyncErrorRef.current = message
+    setRenderSyncErrorState(message)
   }, [])
 
-  const commitSyncedTheme = useCallback((nextTheme: DiffsThemeNames): void => {
-    if (syncedThemeRef.current === nextTheme) {
-      return
-    }
+  const commitSyncedRenderOptions = useCallback(
+    (next: PoolRenderOptions): void => {
+      const prev = syncedRenderOptionsRef.current
+      if (
+        prev.theme === next.theme &&
+        prev.lineDiffType === next.lineDiffType
+      ) {
+        return
+      }
 
-    syncedThemeRef.current = nextTheme
-    setSyncedTheme(nextTheme)
-  }, [])
+      syncedRenderOptionsRef.current = next
+      setSyncedRenderOptions(next)
+    },
+    []
+  )
 
   // Responsive width tracking. The right pane drives the two width bands:
   //   width < SPLIT_MIN_WIDTH_PX → coerce diffStyle to 'unified' (saved
@@ -284,45 +314,88 @@ export const DiffPanelContent = ({
     return (): void => observer.disconnect()
   }, [paneNode])
 
-  // Push theme changes into the shared Pierre worker pool. The worker
-  // tokenizes off-main-thread and DiffHunksRenderer pulls its theme from
-  // `workerManager.getDiffRenderOptions().theme` (see
-  // node_modules/@pierre/diffs/dist/renderers/DiffHunksRenderer.js getOptionsWithDefaults),
-  // shadowing the per-instance `<MultiFileDiff options.theme>` prop. Without
-  // this sync, the chip-toolbar theme dropdown writes to local state but the
-  // diff keeps rendering with the pool's initial theme (the bug surfaced
-  // during PR1 QA).
+  // Push pool-owned render options (theme + lineDiffType) into the shared
+  // Pierre worker pool. The worker tokenizes off-main-thread AND computes
+  // word-level intra-line decorations there, and
+  // `DiffHunksRenderer.getRenderOptions()` returns
+  // `workerManager.getDiffRenderOptions()` wholesale when a pool is active (see
+  // node_modules/@pierre/diffs/dist/renderers/DiffHunksRenderer.js), shadowing
+  // the per-instance `<MultiFileDiff options>` props. Without this sync the
+  // toolbar's THEME and HIGHLIGHT dropdowns write local state but the diff
+  // keeps rendering with the pool's initial values (both surfaced during PR1
+  // QA). NOTE: `setRenderOptions` resets every omitted field to its default,
+  // so theme and lineDiffType must be pushed together — passing only `theme`
+  // silently reset lineDiffType back to Pierre's `word-alt` default.
   const workerPool = useWorkerPool()
+
+  // Serialize writes to the shared pool. `setRenderOptions` assigns the pool's
+  // internal `this.renderOptions` only AFTER awaiting theme resolution + the
+  // worker round-trip (node_modules/@pierre/diffs/dist/worker/WorkerPoolManager.js
+  // ~L124), so two overlapping calls can finish out of order and leave the pool
+  // on the OLDER value while the UI shows the newer one. Chaining each write
+  // after the previous guarantees the last-requested options win; the per-run
+  // `cancelled` flag then ensures only the latest run commits the synced value.
+  //
+  // LIMITATION (deferred to PR2): this chain is per component instance, but the
+  // worker pool is an app-wide singleton. Two DiffPanelContent instances (split
+  // layout) — or an unmount overlapping a remount — have independent chains and
+  // can still race on the shared pool. Pool-keyed (module-level) serialization,
+  // plus the deeper "one shared pool can only hold one theme/lineDiffType"
+  // question, are handled in PR2 (staging).
+  const poolWriteChainRef = useRef<Promise<unknown>>(Promise.resolve())
   useEffect(() => {
+    const next: PoolRenderOptions = { theme, lineDiffType }
+
     if (!workerPool) {
-      commitSyncedTheme(theme)
+      commitSyncedRenderOptions(next)
 
       return
     }
 
     let cancelled = false
+    const previousWrite = poolWriteChainRef.current
 
-    const syncTheme = async (): Promise<void> => {
+    const run = async (): Promise<void> => {
+      // Wait for the previous write so overlapping calls can't land out of
+      // order. A prior failure is irrelevant here — its own run reported it.
       try {
-        await workerPool.setRenderOptions({ theme })
+        await previousWrite
+      } catch {
+        // ignore the previous write's rejection; proceed with this one
+      }
+
+      try {
+        await workerPool.setRenderOptions(next)
         if (!cancelled) {
-          setThemeSyncError(null)
-          commitSyncedTheme(theme)
+          setRenderSyncError(null)
+          commitSyncedRenderOptions(next)
         }
       } catch (err) {
         if (!cancelled) {
-          setThemeSyncError(err instanceof Error ? err.message : String(err))
+          setRenderSyncError(err instanceof Error ? err.message : String(err))
         }
       }
     }
 
-    void syncTheme()
+    const writePromise = run()
+    poolWriteChainRef.current = writePromise
+    void writePromise
 
     return (): void => {
       cancelled = true
     }
-  }, [commitSyncedTheme, setThemeSyncError, workerPool, theme])
-  const renderedTheme = workerPool ? syncedTheme : theme
+  }, [
+    commitSyncedRenderOptions,
+    setRenderSyncError,
+    workerPool,
+    theme,
+    lineDiffType,
+  ])
+  const renderedTheme = workerPool ? syncedRenderOptions.theme : theme
+
+  const renderedLineDiffType = workerPool
+    ? syncedRenderOptions.lineDiffType
+    : lineDiffType
 
   const hasMeasuredPane = paneWidth > 0
 
@@ -499,12 +572,12 @@ export const DiffPanelContent = ({
             currentFileIndex={currentFileIndex}
             totalFiles={effectiveFiles.length}
           />
-          {themeSyncError !== null ? (
+          {renderSyncError !== null ? (
             <div
               role="alert"
               className="px-3 pb-2 text-[11px] leading-4 text-[#f38ba8]"
             >
-              Theme sync failed: {themeSyncError}
+              Diff render sync failed: {renderSyncError}
             </div>
           ) : null}
         </div>
@@ -521,24 +594,27 @@ export const DiffPanelContent = ({
               <DiffNarrowPlaceholder min={DIFF_MIN_WIDTH_PX} />
             ) : (
               <MultiFileDiff
-                // `key={renderedTheme}` forces a clean remount after the worker
-                // pool has accepted the new theme.
-                // Pierre's WorkerPoolManager-driven theme path normally
-                // rerenders via subscribeToThemeChanges, but PR1 QA observed
-                // the second theme switch sticking. Forcing a remount is a
-                // belt-and-braces remedy: a brand-new FileDiff instance
-                // requests fresh tokenization from the pool only after
-                // `setRenderOptions` resolves.
-                // Cost: one extra tokenize per theme change. Acceptable for
-                // v1; revisit if perf is an issue with very large diffs.
-                key={renderedTheme}
+                // `key` forces a clean remount after the worker pool has
+                // accepted new pool-owned options (theme + lineDiffType).
+                // Pierre's WorkerPoolManager path normally rerenders via its
+                // theme subscribers, but PR1 QA observed the second theme
+                // switch sticking. Forcing a remount is a belt-and-braces
+                // remedy: a brand-new FileDiff instance requests fresh
+                // tokenization from the pool only after `setRenderOptions`
+                // resolves. The key is built from the SYNCED values so it only
+                // changes once the pool has the new option — no flash of the
+                // prior highlighting.
+                // Cost: one extra tokenize per theme/highlight change.
+                // Acceptable for v1; revisit if perf is an issue with very
+                // large diffs.
+                key={`${renderedTheme}:${renderedLineDiffType}`}
                 oldFile={pierreInputs.oldFile}
                 newFile={pierreInputs.newFile}
                 options={{
                   diffStyle: effectiveDiffStyle,
                   theme: renderedTheme,
                   diffIndicators,
-                  lineDiffType,
+                  lineDiffType: renderedLineDiffType,
                   overflow: overflowOpt,
                   disableLineNumbers,
                   disableBackground,
