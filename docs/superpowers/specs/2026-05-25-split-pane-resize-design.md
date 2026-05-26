@@ -349,3 +349,5 @@ Co-located, TDD, `import { test, expect } from 'vitest'` in every new test file
 Each step is independently reviewable and shippable; Step 2 depends on Step 1.
 Exact branch/PR strategy (single PR with two commits vs. two stacked PRs on a
 `feat/` integration branch) is deferred to the implementation plan.
+
+<!-- codex-reviewed: 2026-05-26T04:27:36Z -->
