@@ -11,7 +11,8 @@
 **Conventions for every task:**
 - Commit type `test:` for Phase 0, `feat:`/`refactor:` for Phase 1/2, per commitlint. End commit bodies with `Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>`.
 - After any `cargo test`, if `git status` shows `src/bindings/` churn, `git restore src/bindings/` before committing (ts-rs regenerates raw files; F-BINDINGS).
-- Run a single Rust test with `cargo test -p vimeflow-backend <test_name> -- --nocapture`.
+- Run a single Rust test with `cargo test -p vimeflow-backend <test_name> -- --nocapture`. Cargo accepts only **one** filter before `--`; run multiple test names as separate commands.
+- For any task that **creates** a new file, `git add <path>` before committing — `git commit -am` stages only already-tracked files.
 
 ---
 
@@ -25,8 +26,8 @@
 - Modify: `crates/backend/src/agent/adapter/serde_helpers.rs` — add `lenient_bool`, `lenient_i64` (+ tests).
 - Create: `crates/backend/src/agent/adapter/claude_code/transcript_dto.rs` — Claude line/message/block DTOs.
 - Create: `crates/backend/src/agent/adapter/codex/transcript_dto.rs` — Codex envelope + per-`type` payload DTOs + inner arg/output DTOs.
-- Modify: `claude_code/transcript.rs`, `codex/transcript.rs` — migrate `process_line` bodies to DTOs; retarget helpers; declare the new `mod transcript_dto;`.
-- Modify: `claude_code/mod.rs`, `codex/mod.rs` — only if a `mod` declaration is needed.
+- Modify: `claude_code/transcript.rs`, `codex/transcript.rs` — migrate `process_line` bodies to DTOs; retarget helpers; `use super::transcript_dto::…`.
+- Modify: `claude_code/mod.rs`, `codex/mod.rs` — declare `mod transcript_dto;` here. **A sibling-module declaration must live in the parent `mod.rs`** (exactly like the existing `mod statusline;`); declaring `mod transcript_dto;` *inside* `transcript.rs` would resolve to `transcript/transcript_dto.rs` and fail to find the sibling file.
 
 **Phase 2 (C engine):**
 - Create: `crates/backend/src/agent/adapter/base/transcript_tail_service.rs` — `TranscriptDecoder` trait + `TranscriptTailService` + `POLL_INTERVAL`.
@@ -194,8 +195,10 @@ fn lenient_i64_accepts_ints_rejects_others() {
 
 - [ ] **Step 2: Run — expect FAIL** (`lenient_bool` / `lenient_i64` not defined).
 
-Run: `cargo test -p vimeflow-backend lenient_bool_accepts lenient_i64_accepts`
-Expected: FAIL (unresolved name).
+Run (Cargo takes only one filter before `--`, so run separately):
+`cargo test -p vimeflow-backend lenient_bool_accepts_bools_rejects_others`
+then `cargo test -p vimeflow-backend lenient_i64_accepts_ints_rejects_others`
+Expected: FAIL (test binary won't compile — unresolved `lenient_bool` / `lenient_i64`).
 
 - [ ] **Step 3: Implement the two helpers** (mirror `lenient_u64`'s exact one-liner style).
 
@@ -219,7 +222,7 @@ where
 }
 ```
 
-- [ ] **Step 4: Run — expect PASS.** `cargo test -p vimeflow-backend lenient_bool_accepts lenient_i64_accepts` → PASS.
+- [ ] **Step 4: Run — expect PASS.** `cargo test -p vimeflow-backend lenient_bool_accepts_bools_rejects_others` and `cargo test -p vimeflow-backend lenient_i64_accepts_ints_rejects_others` (separately) → PASS.
 
 - [ ] **Step 5: Commit.**
 
@@ -232,7 +235,8 @@ git commit -m "feat(transcript): add lenient_bool and lenient_i64 deserializers"
 
 **Files:**
 - Create: `crates/backend/src/agent/adapter/claude_code/transcript_dto.rs`
-- Modify: `claude_code/transcript.rs` (add `mod transcript_dto;` / `use` it)
+- Modify: `claude_code/mod.rs` (add `mod transcript_dto;` — sibling decl lives in the parent `mod.rs`, like `mod statusline;`)
+- Modify: `claude_code/transcript.rs` (`use super::transcript_dto::…`)
 
 **Reference:** spec § 4 "Claude shapes" — typed scalars via lenient fields; `content` raw; `tool_use.input` via `#[serde(flatten)] rest` (presence-sensitive); `tool_result.content` raw + `extract_tool_result_content` retargeted to take the `content` value. Top-level envelope must carry `cwd` and the top-level `tool_result` shape (`claude:301`, `:326`).
 
@@ -269,7 +273,10 @@ fn claude_tool_use_dto_distinguishes_absent_vs_null_input() {
 ```rust
 use serde::Deserialize;
 use serde_json::{Map, Value};
-use crate::agent::adapter::serde_helpers::{lenient_bool, lenient_string};
+use crate::agent::adapter::serde_helpers::{lenient_bool, lenient_object, lenient_string};
+// Every `Option<NestedDto>` field uses `lenient_object` (spec §4) so a
+// wrong-shaped nested object (e.g. `"message": 42`) degrades to `None`
+// instead of failing the whole line parse.
 
 #[derive(Deserialize, Default)]
 pub(super) struct ClaudeTranscriptLineDto {
@@ -279,7 +286,7 @@ pub(super) struct ClaudeTranscriptLineDto {
     pub cwd: Option<String>,
     #[serde(default, deserialize_with = "lenient_string")]
     pub timestamp: Option<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "lenient_object")]
     pub message: Option<ClaudeMessageDto>,
     // Top-level tool_result lines carry these at the top level (claude:326):
     #[serde(default, deserialize_with = "lenient_string")]
@@ -323,7 +330,9 @@ pub(super) struct ClaudeToolResultDto {
 - [ ] **Step 5: Commit.**
 
 ```bash
-git add crates/backend/src/agent/adapter/claude_code/transcript_dto.rs crates/backend/src/agent/adapter/claude_code/transcript.rs
+git add crates/backend/src/agent/adapter/claude_code/transcript_dto.rs \
+        crates/backend/src/agent/adapter/claude_code/mod.rs \
+        crates/backend/src/agent/adapter/claude_code/transcript.rs
 git commit -m "feat(transcript): add Claude transcript DTOs"
 ```
 
@@ -368,15 +377,21 @@ fn summarize_input_preserves_absent_vs_null() {
 - Create: `crates/backend/src/agent/adapter/codex/transcript_dto.rs`
 - Modify: `codex/transcript.rs`
 
-**Reference:** spec § 4 "Codex shapes" — `{timestamp, type, payload}` envelope; **two-level dispatch** (top-level `type` enum: `session_meta`/`response_item`/`event_msg`; inner `payload.type` enum for BOTH `response_item` *and* `event_msg`, `codex:347`), each with an `#[serde(other)]` fall-through. Payload scalars typed lenient (`call_id`/`name`/`status`/`message`/`aggregated_output` via `lenient_string`; `success` via `lenient_bool`; `exit_code` via `lenient_i64`, `codex:571`/`:595`). Raw carve-outs: `arguments`/`output`/custom-tool `input` as `Option<String>` (`lenient_string`) re-parsed by ported helpers; `duration` via `#[serde(flatten)] rest` presence (`codex:765`). Two cwd sources preserved in order (`session_meta.cwd` then `exec_command.arguments.workdir`, `codex:100`); `turn_context.cwd` NOT a source.
+**Reference:** spec § 4 "Codex shapes" — `{timestamp, type, payload}` envelope; **two-level dispatch** (top-level `type`: `session_meta`/`response_item`/`event_msg`; inner `payload.type` for BOTH `response_item` *and* `event_msg`, `codex:347`). Each dispatch is a **manual classifier over `Option<String>`** (read the tag with `lenient_string`, `match tag.as_deref()` with an `Other` default) — **not** a `#[serde(tag="type")]` + `#[serde(other)]` enum, which *errors* on a missing or non-string tag rather than falling through. Payload scalars typed lenient (`call_id`/`name`/`status`/`message`/`aggregated_output` via `lenient_string`; `success` via `lenient_bool`; `exit_code` via `lenient_i64`, `codex:571`/`:595`). Raw carve-outs: `arguments`/`output`/custom-tool `input` as `Option<String>` (`lenient_string`) re-parsed by ported helpers; `duration` via `#[serde(flatten)] rest` presence (`codex:765`). Two cwd sources preserved in order (`session_meta.cwd` then `exec_command.arguments.workdir`, `codex:100`); `turn_context.cwd` NOT a source.
 
 - [ ] **Step 1: Write DTO tests first** — top-level + inner dispatch fall-through, `exit_code`/`success` lenient, `duration` presence (absent vs null vs object), inner `arguments` re-parse.
 
 ```rust
 #[test]
-fn codex_record_type_falls_through_on_unknown() {
-    let dto: CodexLineDto = serde_json::from_str(r#"{"type":"brand_new_kind","payload":{}}"#).unwrap();
-    assert!(matches!(dto.record_type(), CodexRecordType::Other));
+fn codex_record_type_falls_through_on_unknown_missing_or_non_string() {
+    // record_type() is a MANUAL classifier over Option<String>; a strict
+    // #[serde(tag="type")] enum would ERROR on a missing/non-string tag.
+    let unknown: CodexLineDto = serde_json::from_str(r#"{"type":"brand_new_kind","payload":{}}"#).unwrap();
+    assert!(matches!(unknown.record_type(), CodexRecordType::Other));
+    let missing: CodexLineDto = serde_json::from_str(r#"{"payload":{}}"#).unwrap();         // typeless
+    assert!(matches!(missing.record_type(), CodexRecordType::Other));
+    let nonstring: CodexLineDto = serde_json::from_str(r#"{"type":42,"payload":{}}"#).unwrap(); // non-string
+    assert!(matches!(nonstring.record_type(), CodexRecordType::Other));
 }
 #[test]
 fn codex_exec_end_exit_code_is_lenient_and_duration_presence_preserved() {
@@ -389,9 +404,9 @@ fn codex_exec_end_exit_code_is_lenient_and_duration_presence_preserved() {
 ```
 
 - [ ] **Step 2: Run — expect FAIL.**
-- [ ] **Step 3: Define the envelope, the two dispatch enums (with `#[serde(other)] Other`), and the per-`type` payload DTOs** (scalars lenient; `#[serde(flatten)] rest: Map<String,Value>` on payloads that need `duration`; `arguments`/`output`/`input` as `Option<String>` via `lenient_string`; inner `CodexExecArgsDto`/`CodexCustomToolOutputDto` for the re-parsed JSON strings, with `metadata.exit_code` via `lenient_i64`). Follow the exact field set in spec § 4.
+- [ ] **Step 3: Define** (a) the envelope `CodexLineDto { #[serde(rename = "type", default, deserialize_with = "lenient_string")] type_tag: Option<String>, timestamp: Option<String>, #[serde(default)] payload: Value }` with a manual `record_type(&self) -> CodexRecordType` matching `type_tag.as_deref()` (default `Other`); (b) the inner payload-type classifier the same way (over the payload's `type`, for both `response_item` and `event_msg`); (c) the per-`type` payload DTOs (scalars lenient; `#[serde(flatten)] rest: Map<String,Value>` on payloads that need `duration`; `arguments`/`output`/`input` as `Option<String>` via `lenient_string`; inner `CodexExecArgsDto`/`CodexCustomToolOutputDto` for the re-parsed JSON strings, `metadata.exit_code` via `lenient_i64`). Wrong-shaped payloads degrade via the `Other`/classifier path, not a hard parse error. Follow the exact field set in spec § 4.
 - [ ] **Step 4: Run — expect PASS.**
-- [ ] **Step 5: Commit.** `git commit -m "feat(transcript): add Codex transcript DTOs"`
+- [ ] **Step 5: Commit.** `git add crates/backend/src/agent/adapter/codex/transcript_dto.rs crates/backend/src/agent/adapter/codex/mod.rs crates/backend/src/agent/adapter/codex/transcript.rs && git commit -m "feat(transcript): add Codex transcript DTOs"`
 
 ### Task 1.6: Migrate Codex `process_line` / `process_event_msg` / `process_response_item` to DTOs
 
@@ -475,47 +490,61 @@ impl TranscriptTailService {
 
 - [ ] **Step 2: Wire `base/mod.rs`** — add `mod transcript_tail_service;` and `pub(crate) use transcript_tail_service::{TranscriptDecoder, TranscriptTailService};` (mirroring the `transcript_state` re-export).
 - [ ] **Step 3: Build.** `cargo build -p vimeflow-backend` → compiles (unused warnings OK until wired).
-- [ ] **Step 4: Commit.** `git commit -am "feat(transcript): add TranscriptTailService + TranscriptDecoder skeleton"`
+- [ ] **Step 4: Commit.** `git add crates/backend/src/agent/adapter/base/transcript_tail_service.rs crates/backend/src/agent/adapter/base/mod.rs && git commit -m "feat(transcript): add TranscriptTailService + TranscriptDecoder skeleton"`
 
 ### Task 2.2: Deterministic engine buffering tests (`ScriptedBufRead` + recording decoder)
 
 **Files:**
 - Modify: `base/transcript_tail_service.rs` (`#[cfg(test)] mod tests`)
 
-- [ ] **Step 1: Write the `ScriptedBufRead` + recording decoder + the buffering tests** (spec § 5). `ScriptedBufRead` **overrides `read_line`** to emit a scripted sequence (each entry appends bytes + returns `Ok(len)`, or appends nothing + returns `Ok(0)`); flip `stop` at the final `Ok(0)`. Recording decoder captures `decode_line` / `on_caught_up` calls.
+- [ ] **Step 1: Add cross-module test support** — define `ScriptedBufRead`, `Step`, and `RecordingDecoder` as **`#[cfg(test)] pub(crate)`** items at **module level** in `transcript_tail_service.rs` (NOT inside a private `mod tests`), so Task 2.3's `claude_code` test can `use crate::agent::adapter::base::transcript_tail_service::{ScriptedBufRead, Step, RecordingDecoder}`.
 
 ```rust
-struct ScriptedBufRead { steps: std::vec::IntoIter<Option<&'static str>>, stop: Arc<AtomicBool> }
-impl std::io::Read for ScriptedBufRead { fn read(&mut self, _: &mut [u8]) -> std::io::Result<usize> { unreachable!() } }
+#[cfg(test)]
+pub(crate) enum Step { Chunk(&'static str), Eof, EofStop } // Eof = non-terminal Ok(0); EofStop also flips `stop`
+
+#[cfg(test)]
+pub(crate) struct ScriptedBufRead { pub steps: std::vec::IntoIter<Step>, pub stop: Arc<AtomicBool> }
+
+#[cfg(test)]
+impl std::io::Read for ScriptedBufRead {
+    fn read(&mut self, _: &mut [u8]) -> std::io::Result<usize> { unreachable!("run only calls read_line") }
+}
+#[cfg(test)]
 impl std::io::BufRead for ScriptedBufRead {
     fn fill_buf(&mut self) -> std::io::Result<&[u8]> { unreachable!() }
-    fn consume(&mut self, _: usize) { unreachable!() }
+    fn consume(&mut self, _: usize) {}
     fn read_line(&mut self, buf: &mut String) -> std::io::Result<usize> {
-        match self.steps.next().flatten() {
-            Some(s) => { buf.push_str(s); Ok(s.len()) }
-            None => { self.stop.store(true, Ordering::Release); Ok(0) } // EOF + stop
+        match self.steps.next() {
+            Some(Step::Chunk(s)) => { buf.push_str(s); Ok(s.len()) }
+            Some(Step::Eof) => Ok(0),                                       // service EOF arm; loop continues
+            Some(Step::EofStop) | None => { self.stop.store(true, Ordering::Release); Ok(0) } // EOF arm, then loop exits
         }
     }
 }
 
-#[derive(Default)]
-struct RecordingDecoder { lines: Vec<String>, caught_up: usize }
+// Shared Arc state: `run` MOVES the decoder, so the test keeps clones to inspect afterward.
+#[cfg(test)]
+#[derive(Clone, Default)]
+pub(crate) struct RecordingDecoder {
+    pub lines: Arc<std::sync::Mutex<Vec<String>>>,
+    pub caught_up: Arc<std::sync::atomic::AtomicUsize>,
+}
+#[cfg(test)]
 impl TranscriptDecoder for RecordingDecoder {
-    fn decode_line(&mut self, line: &str) { self.lines.push(line.to_string()); }
-    fn on_caught_up(&mut self) { self.caught_up += 1; }
+    fn decode_line(&mut self, line: &str) { self.lines.lock().unwrap().push(line.to_string()); }
+    fn on_caught_up(&mut self) { self.caught_up.fetch_add(1, Ordering::Release); }
 }
 ```
 
-Then four cases (drive `run` with `with_poll_interval(Duration::ZERO)`):
-- **assembly / EOF-survival:** steps `[Some("{\"a\":1"), Some_eof(Ok 0), Some("23}\n"), eof→stop]` (use `None` markers / a small enum to express the mid-script `Ok(0)`); assert one `decode_line` == `{"a":123}`.
-- **truncated never emits + on_caught_up pinned:** `[Some("{\"a\":1"), eof, eof→stop]`; assert `decode_line` empty AND `caught_up == 1`.
-- **CRLF:** `[Some("{\"a\":1}\r\n"), eof→stop]`; assert `decode_line[0] == "{\"a\":1}"` (no `\r`).
-- **blank skip:** `[Some("   \n"), eof→stop]`; assert `decode_line` empty.
+- [ ] **Step 2: Write the four cases** in `#[cfg(test)] mod tests`, each driving `TranscriptTailService::new(Box::new(dec), "t").with_poll_interval(Duration::ZERO).run(ScriptedBufRead { steps, stop }, stop_clone)`, keeping `let lines = dec.lines.clone(); let caught = dec.caught_up.clone();` before the move:
+  - **assembly + EOF-survival:** `[Chunk("{\"a\":1"), Eof, Chunk("23}\n"), EofStop]` → assert `*lines.lock().unwrap() == ["{\"a\":123}"]` (partial survived the non-terminal `Eof`).
+  - **truncated never emits + on_caught_up pinned:** `[Chunk("{\"a\":1"), EofStop]` → assert `lines` empty AND `caught.load(Ordering::Acquire) == 1` (the partial-EOF arm ran once).
+  - **CRLF:** `[Chunk("{\"a\":1}\r\n"), EofStop]` → assert `lines == ["{\"a\":1}"]` (no trailing `\r`).
+  - **blank skip:** `[Chunk("   \n"), EofStop]` → assert `lines` empty.
 
-(Represent the script as `Vec<Step>` where `Step` is `Chunk(&str)` or `Eof`; `read_line` returns `Ok(0)` on `Eof` and flips `stop` on the terminal `Eof`.)
-
-- [ ] **Step 2: Run — expect PASS** (the `run` impl from Task 2.1 satisfies them). Fix `run` if any fail.
-- [ ] **Step 3: Commit.** `git commit -am "test(transcript): deterministic engine buffering + EOF/normalization"`
+- [ ] **Step 3: Run — expect PASS** (the `run` impl from Task 2.1 satisfies them). Fix `run` if any fail.
+- [ ] **Step 4: Commit.** `git commit -am "test(transcript): deterministic engine buffering + EOF/normalization"` (the new structs live in the already-tracked `transcript_tail_service.rs`, so `-am` is fine here).
 
 ### Task 2.3: `ClaudeTranscriptDecoder` + thin `start_tailing` (Claude)
 
@@ -525,7 +554,7 @@ Then four cases (drive `run` with `with_poll_interval(Duration::ZERO)`):
 - [ ] **Step 1: Define `ClaudeTranscriptDecoder`** owning `events: Arc<dyn EventSink>`, `session_id: String`, `cwd: Option<PathBuf>`, `in_flight`, `num_turns`, `last_cwd`, `emitter: TestRunEmitter`. `new(events, session_id, cwd)` constructs it. Move the (Phase-1-typed) `process_line` body into `decode_line(&mut self, line: &str)`; `on_caught_up(&mut self)` calls `self.emitter.finish_replay()`.
 - [ ] **Step 2: Rewrite `start_tailing`** to: open the (already-validated) file, build `ClaudeTranscriptDecoder::new(...)`, `TranscriptTailService::new(decoder, "transcript")`, spawn `move || svc.run(BufReader::new(file), stop_clone)`, return `TranscriptHandle::new(stop, join)`. Delete the old `tail_loop`. (`tail()` in `mod.rs` is unchanged — it already delegates here.)
 - [ ] **Step 3: Run all Claude transcript tests + Phase 0 `T-replay`** — green.
-- [ ] **Step 4: Add the end-to-end G3-fix test** (spec § 5) in this module's `mod tests`: real `ClaudeTranscriptDecoder` + `FakeEventSink`, driven through `TranscriptTailService::new(...).with_poll_interval(Duration::ZERO).run(ScriptedBufRead{...}, stop)` with a real Claude `tool_use` line split where neither half is valid JSON; assert `FakeEventSink` records `agent-tool-call`. Run — expect PASS (the fix works).
+- [ ] **Step 4: Add the end-to-end G3-fix test** (spec § 5) in this module's `mod tests`, importing the shared harness: `use crate::agent::adapter::base::transcript_tail_service::{ScriptedBufRead, Step};`. Build the real `ClaudeTranscriptDecoder::new(events, sid, cwd)` (with a `FakeEventSink`), wrap in `TranscriptTailService::new(Box::new(dec), "transcript").with_poll_interval(Duration::ZERO)`, and `run(ScriptedBufRead { steps: vec![Step::Chunk(<first half>), Step::Eof, Step::Chunk(<second half + "\n">), Step::EofStop].into_iter(), stop: stop.clone() }, stop)` — splitting a real Claude `tool_use` line where neither half is valid JSON. Assert `FakeEventSink` records `agent-tool-call`. Run — expect PASS (the fix works; pre-C this event was dropped).
 - [ ] **Step 5: Commit.** `git commit -am "refactor(transcript): Claude tail via TranscriptTailService + decoder"`
 
 ### Task 2.4: `CodexTranscriptDecoder` + thin `start_tailing` (Codex)
