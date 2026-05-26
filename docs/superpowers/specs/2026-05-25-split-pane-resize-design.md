@@ -15,12 +15,12 @@ inventing a parallel system.
 
 ## Decisions locked
 
-| # | Decision | Source |
-| - | -------- | ------ |
-| D1 | Extract the dock's inline resize-handle markup into a shared `ResizeHandle` primitive **first**, as its own step. | user |
-| D2 | Split ratios are **remembered within the session** (survive layout cycling and tab switches) but **not persisted across reload** — matching the existing non-persistence stance for `Pane.userLabel`. | user |
-| D3 | `quad` uses a **shared cross**: one column split shared by both rows, one row split shared by both columns (2 logical dividers). Not independent per-quadrant tiling. | recommended default — flagged for veto |
-| D4 | Cycling layouts (e.g. `vsplit → single → vsplit`) **keeps** each layout's remembered ratio rather than resetting to the default split. | recommended default — flagged for veto |
+| #   | Decision                                                                                                                                                                                              | Source                                 |
+| --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
+| D1  | Extract the dock's inline resize-handle markup into a shared `ResizeHandle` primitive **first**, as its own step.                                                                                     | user                                   |
+| D2  | Split ratios are **remembered within the session** (survive layout cycling and tab switches) but **not persisted across reload** — matching the existing non-persistence stance for `Pane.userLabel`. | user                                   |
+| D3  | `quad` uses a **shared cross**: one column split shared by both rows, one row split shared by both columns (2 logical dividers). Not independent per-quadrant tiling.                                 | recommended default — flagged for veto |
+| D4  | Cycling layouts (e.g. `vsplit → single → vsplit`) **keeps** each layout's remembered ratio rather than resetting to the default split.                                                                | recommended default — flagged for veto |
 
 ## Non-goals
 
@@ -71,7 +71,7 @@ session** (see Step 2 §"Active-only mounting").
 
 New cross-feature primitive at `src/components/ResizeHandle.tsx` (sibling
 `ResizeHandle.test.tsx`), alongside the existing `Tooltip` precedent. It owns
-the *affordance*; the *consumer* owns *placement*.
+the _affordance_; the _consumer_ owns _placement_.
 
 **Owns (the primitive):** `role="separator"`, `aria-orientation`,
 `aria-label` (default `"Resize panel"`), `aria-valuenow/min/max`,
@@ -86,8 +86,8 @@ plus `bg-primary/30` while `isDragging`).
 (`left-0 right-0 h-1`, or `h-full w-full` to fill a track), and `z-index`.
 
 Splitting responsibilities this way avoids the Tailwind merge footgun: the
-primitive sets *cursor / background / transition*; the consumer sets
-*position / size / z* — disjoint properties, so class order never matters.
+primitive sets _cursor / background / transition_; the consumer sets
+_position / size / z_ — disjoint properties, so class order never matters.
 
 ```ts
 interface ResizeHandleProps {
@@ -121,21 +121,21 @@ This step is a pure refactor: identical rendered output and behavior.
 
 ### Divider map per layout
 
-| Layout | Logical dividers | Handle elements | Notes |
-| ------ | ---------------- | --------------- | ----- |
-| `single` | 0 | 0 | nothing to resize |
-| `vsplit` | 1 column (p0 \| p1) | 1 | full-height vertical bar, `col-resize` |
-| `hsplit` | 1 row (p0 / p1) | 1 | full-width horizontal bar, `ns-resize` |
-| `threeRight` | 1 column (p0 \| right) + 1 row (p1 / p2) | 2 | row divider spans the right column only |
-| `quad` | 1 column + 1 row (shared cross) | 3 | column bar is segmented by the row bar (two elements, one hook); see below |
+| Layout       | Logical dividers                         | Handle elements | Notes                                                                      |
+| ------------ | ---------------------------------------- | --------------- | -------------------------------------------------------------------------- |
+| `single`     | 0                                        | 0               | nothing to resize                                                          |
+| `vsplit`     | 1 column (p0 \| p1)                      | 1               | full-height vertical bar, `col-resize`                                     |
+| `hsplit`     | 1 row (p0 / p1)                          | 1               | full-width horizontal bar, `ns-resize`                                     |
+| `threeRight` | 1 column (p0 \| right) + 1 row (p1 / p2) | 2               | row divider spans the right column only                                    |
+| `quad`       | 1 column + 1 row (shared cross)          | 3               | column bar is segmented by the row bar (two elements, one hook); see below |
 
-### Grid model: the draggable border *is* a grid track
+### Grid model: the draggable border _is_ a grid track
 
 Rather than overlay handles and compute their position from container width
 minus padding/gap (fragile), we make the **border itself a grid track**. The
 inter-pane gap is replaced by an explicit divider track that holds the
 `ResizeHandle`; the browser's grid engine positions the handle exactly, with no
-offset math for placement. (Pane *sizing* still needs a one-time reconciliation
+offset math for placement. (Pane _sizing_ still needs a one-time reconciliation
 for the divider width + padding — see "Sizing math" below.) This also matches
 the user's mental model literally — "drag the border."
 
@@ -165,7 +165,7 @@ the rest:
 The outer grid drops its inter-pane `gap` along divider axes (the divider track
 replaces it); `single` is unchanged. Net visual spacing stays ~8px.
 
-Because the handles are placed by grid *area*, they must be **direct grid
+Because the handles are placed by grid _area_, they must be **direct grid
 children** of `SplitView`'s outer grid div. `SplitDividers` therefore returns a
 fragment of `<ResizeHandle style={{ gridArea: 'vdiv' }} … />` elements rendered
 directly inside the grid (no wrapping `<div>`, which would break area
@@ -330,7 +330,7 @@ Co-located, TDD, `import { test, expect } from 'vitest'` in every new test file
 - **Rules-of-hooks** with variable divider counts → handled by per-layout
   subcomponents with fixed hook counts (the `key={layout}` only resets state).
 - **Pane capacity vs. visible panes:** `selectVisiblePanes` can rescue an
-  over-capacity active pane into the last slot; dividers key off the *layout*
+  over-capacity active pane into the last slot; dividers key off the _layout_
   (fixed track structure), not the live pane list, so this is unaffected.
 - **Spacing parity:** replacing `gap` with an 8px divider track must keep the
   current visual rhythm; `single` keeps no divider and is byte-identical.

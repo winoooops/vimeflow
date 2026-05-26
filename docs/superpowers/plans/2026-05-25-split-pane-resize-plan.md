@@ -44,6 +44,7 @@
 ### Task 1: `ResizeHandle` component
 
 **Files:**
+
 - Create: `src/components/ResizeHandle.tsx`
 - Test: `src/components/ResizeHandle.test.tsx`
 
@@ -73,14 +74,27 @@ describe('ResizeHandle', () => {
   })
 
   test('horizontal orientation uses ns-resize, vertical uses col-resize', () => {
-    const { rerender } = render(<ResizeHandle {...baseProps} orientation="horizontal" />)
-    expect(screen.getByTestId('resize-handle').className).toMatch(/cursor-ns-resize/)
+    const { rerender } = render(
+      <ResizeHandle {...baseProps} orientation="horizontal" />
+    )
+    expect(screen.getByTestId('resize-handle').className).toMatch(
+      /cursor-ns-resize/
+    )
     rerender(<ResizeHandle {...baseProps} orientation="vertical" />)
-    expect(screen.getByTestId('resize-handle').className).toMatch(/cursor-col-resize/)
+    expect(screen.getByTestId('resize-handle').className).toMatch(
+      /cursor-col-resize/
+    )
   })
 
   test('exposes aria value range', () => {
-    render(<ResizeHandle {...baseProps} ariaValueNow={120} ariaValueMin={50} ariaValueMax={900} />)
+    render(
+      <ResizeHandle
+        {...baseProps}
+        ariaValueNow={120}
+        ariaValueMin={50}
+        ariaValueMax={900}
+      />
+    )
     const handle = screen.getByTestId('resize-handle')
     expect(handle).toHaveAttribute('aria-valuenow', '120')
     expect(handle).toHaveAttribute('aria-valuemin', '50')
@@ -88,16 +102,28 @@ describe('ResizeHandle', () => {
   })
 
   test('applies the active background only while dragging', () => {
-    const { rerender } = render(<ResizeHandle {...baseProps} isDragging={false} />)
-    expect(screen.getByTestId('resize-handle').className).not.toMatch(/bg-primary\/30/)
+    const { rerender } = render(
+      <ResizeHandle {...baseProps} isDragging={false} />
+    )
+    expect(screen.getByTestId('resize-handle').className).not.toMatch(
+      /bg-primary\/30/
+    )
     rerender(<ResizeHandle {...baseProps} isDragging />)
-    expect(screen.getByTestId('resize-handle').className).toMatch(/bg-primary\/30/)
+    expect(screen.getByTestId('resize-handle').className).toMatch(
+      /bg-primary\/30/
+    )
   })
 
   test('forwards mouse + keyboard events', () => {
     const onMouseDown = vi.fn()
     const onKeyDown = vi.fn()
-    render(<ResizeHandle {...baseProps} onMouseDown={onMouseDown} onKeyDown={onKeyDown} />)
+    render(
+      <ResizeHandle
+        {...baseProps}
+        onMouseDown={onMouseDown}
+        onKeyDown={onKeyDown}
+      />
+    )
     const handle = screen.getByTestId('resize-handle')
     fireEvent.mouseDown(handle)
     fireEvent.keyDown(handle, { key: 'ArrowUp' })
@@ -130,7 +156,12 @@ Expected: FAIL — `Cannot find module './ResizeHandle'`.
 - [ ] **Step 3: Write minimal implementation**
 
 ```tsx
-import type { CSSProperties, KeyboardEvent, MouseEvent, ReactElement } from 'react'
+import type {
+  CSSProperties,
+  KeyboardEvent,
+  MouseEvent,
+  ReactElement,
+} from 'react'
 
 export interface ResizeHandleProps {
   /** aria-orientation. 'horizontal' separator → ns-resize; 'vertical' → col-resize. */
@@ -202,6 +233,7 @@ git -C "$WT" commit -m "refactor: extract shared ResizeHandle primitive"
 ### Task 2: Migrate `DockPanel` to `ResizeHandle`
 
 **Files:**
+
 - Modify: `src/features/workspace/components/DockPanel.tsx` (the two handle `<div>`s, ~269–305; add import)
 - Regression net: `src/features/workspace/components/DockPanel.test.tsx` (unchanged)
 
@@ -272,6 +304,7 @@ git -C "$WT" commit -m "refactor: migrate DockPanel handles to ResizeHandle"
 `reservedPx` (default `0`) subtracts a fixed amount (the divider track) from the measured dimension before computing percentages, and the hook exposes the resulting `effectiveDimension` so callers can convert `size ↔ ratio`. Default `0` leaves the dock unchanged.
 
 **Files:**
+
 - Modify: `src/hooks/useElasticContainer.ts`
 - Test: `src/hooks/useElasticContainer.test.ts`
 
@@ -323,73 +356,74 @@ In `UseElasticContainerOptions` add:
 Destructure it with a default in the hook signature: `reservedPx = 0,`. Add a ref and an exposed state:
 
 ```ts
-  const reservedPxRef = useRef(reservedPx)
-  const [effectiveDimension, setEffectiveDimension] = useState(0)
+const reservedPxRef = useRef(reservedPx)
+const [effectiveDimension, setEffectiveDimension] = useState(0)
 ```
 
 Add to `UseElasticContainerResult`:
 
 ```ts
-  effectiveDimension: number
+effectiveDimension: number
 ```
 
 In `computeBounds`, compute against the reserved-adjusted dimension:
 
 ```ts
-  const effective = Math.max(1, dimension - reservedPxRef.current)
-  const newMin = Math.ceil(effective * configuredMin)
-  let newMax = Math.floor(effective * configuredMax)
+const effective = Math.max(1, dimension - reservedPxRef.current)
+const newMin = Math.ceil(effective * configuredMin)
+let newMax = Math.floor(effective * configuredMax)
 ```
 
 In the mount `useLayoutEffect`, replace the `dimension`-based initial sizing with the effective value and publish it:
 
 ```ts
-  const effective = Math.max(1, dimension - reservedPxRef.current)
-  dimensionRef.current = dimension
-  setEffectiveDimension(effective)
-  const { newMin, newMax } = computeBounds(dimension)
-  const effectiveInitial =
-    initialPercentRef.current ?? (minPercentRef.current + maxPercentRef.current) / 2
-  const nextInitial = clampSize(effective * effectiveInitial, newMin, newMax)
+const effective = Math.max(1, dimension - reservedPxRef.current)
+dimensionRef.current = dimension
+setEffectiveDimension(effective)
+const { newMin, newMax } = computeBounds(dimension)
+const effectiveInitial =
+  initialPercentRef.current ??
+  (minPercentRef.current + maxPercentRef.current) / 2
+const nextInitial = clampSize(effective * effectiveInitial, newMin, newMax)
 ```
 
 In the `ResizeObserver` callback, mirror the same adjustment:
 
 ```ts
-  dimensionRef.current = nextDimension
-  const effective = Math.max(1, nextDimension - reservedPxRef.current)
-  setEffectiveDimension(effective)
-  const { newMin: resizedMin, newMax: resizedMax } = computeBounds(nextDimension)
-  // …unchanged clamp/restore, but proportional restore uses `effective`:
-  const proportionalPx = Math.round(effective * desiredPercentRef.current)
+dimensionRef.current = nextDimension
+const effective = Math.max(1, nextDimension - reservedPxRef.current)
+setEffectiveDimension(effective)
+const { newMin: resizedMin, newMax: resizedMax } = computeBounds(nextDimension)
+// …unchanged clamp/restore, but proportional restore uses `effective`:
+const proportionalPx = Math.round(effective * desiredPercentRef.current)
 ```
 
 In the `desiredPercentRef` update effect, divide by the effective dimension:
 
 ```ts
-  const effective = Math.max(1, dimensionRef.current - reservedPxRef.current)
-  if (dimensionRef.current > 0) {
-    desiredPercentRef.current = Math.min(
-      Math.max(sizeRef.current / effective, minPercentRef.current),
-      maxPercentRef.current
-    )
-  }
+const effective = Math.max(1, dimensionRef.current - reservedPxRef.current)
+if (dimensionRef.current > 0) {
+  desiredPercentRef.current = Math.min(
+    Math.max(sizeRef.current / effective, minPercentRef.current),
+    maxPercentRef.current
+  )
+}
 ```
 
 And in the pending-clamp effect, target the effective dimension:
 
 ```ts
-  const effective = Math.max(1, dimensionRef.current - reservedPxRef.current)
-  const targetPx =
-    dimensionRef.current > 0
-      ? Math.round(effective * desiredPercentRef.current)
-      : sizeRef.current
+const effective = Math.max(1, dimensionRef.current - reservedPxRef.current)
+const targetPx =
+  dimensionRef.current > 0
+    ? Math.round(effective * desiredPercentRef.current)
+    : sizeRef.current
 ```
 
 Finally add `effectiveDimension` to the returned object:
 
 ```ts
-  return { ...resizable, pixelMin, pixelMax, effectiveDimension }
+return { ...resizable, pixelMin, pixelMax, effectiveDimension }
 ```
 
 - [ ] **Step 4: Run to verify it passes**
@@ -411,6 +445,7 @@ git -C "$WT" commit -m "feat(resize): add reservedPx + effectiveDimension to use
 The committed/fallback template uses **fr ratios** (need no measurement — an inactive session renders correct proportions), and the live drag overrides the leading track via a **px CSS variable**. The trailing track is the only remaining `fr`, so it always absorbs "the rest" whether the leading track is `fr` (inactive) or `px` (active). This reproduces the spec's symmetry math.
 
 **Files:**
+
 - Create: `src/features/terminal/components/SplitView/resolveGrid.ts`
 - Test: `src/features/terminal/components/SplitView/resolveGrid.test.ts`
 - Modify: `src/features/workspace/panelConfig.ts`
@@ -519,7 +554,11 @@ export const resolveGrid = (
     case 'vsplit':
       return { cols: col, rows: 'minmax(0,1fr)', areas: [['p0', 'vdiv', 'p1']] }
     case 'hsplit':
-      return { cols: 'minmax(0,1fr)', rows: row, areas: [['p0'], ['hdiv'], ['p1']] }
+      return {
+        cols: 'minmax(0,1fr)',
+        rows: row,
+        areas: [['p0'], ['hdiv'], ['p1']],
+      }
     case 'threeRight':
       return {
         cols: col,
@@ -576,12 +615,13 @@ git -C "$WT" commit -m "feat(split-view): add resolveGrid template helper + spli
 Wraps one `useElasticContainer` and bridges it to the grid: live drag writes the px CSS var; an effect on the committed `size` keeps the var current on the keyboard/observer paths (where `onDragPreview` is silent) and mirrors the ratio up; unmount clears the var so the fr fallback drives the hidden session.
 
 **Files:**
+
 - Create: `src/features/terminal/components/SplitView/useSplitDivider.ts`
 - Test: `src/features/terminal/components/SplitView/useSplitDivider.test.tsx`
 
 - [ ] **Step 1: Write the failing bridge test**
 
-Task 6 only asserts divider *counts*; this test pins the bridge behavior the
+Task 6 only asserts divider _counts_; this test pins the bridge behavior the
 components rely on — the ratio mirrored up, the px CSS var written on the
 **keyboard** path (where `onDragPreview` never fires), and the var removed on
 unmount. The container lives in a parent that stays mounted while the divider
@@ -603,8 +643,15 @@ vi.stubGlobal('ResizeObserver', MockResizeObserver)
 
 beforeEach(() => {
   vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue({
-    width: 1200, height: 800, top: 0, left: 0, right: 1200, bottom: 800,
-    x: 0, y: 0, toJSON: (): undefined => undefined,
+    width: 1200,
+    height: 800,
+    top: 0,
+    left: 0,
+    right: 1200,
+    bottom: 800,
+    x: 0,
+    y: 0,
+    toJSON: (): undefined => undefined,
   } as DOMRect)
 })
 afterEach(() => vi.restoreAllMocks())
@@ -674,7 +721,12 @@ Expected: FAIL — module not found.
 - [ ] **Step 3: Implement `useSplitDivider.ts`**
 
 ```ts
-import { useCallback, useEffect, type KeyboardEvent, type RefObject } from 'react'
+import {
+  useCallback,
+  useEffect,
+  type KeyboardEvent,
+  type RefObject,
+} from 'react'
 import { useElasticContainer } from '../../../../hooks/useElasticContainer'
 import {
   KEYBOARD_STEP_PX,
@@ -802,6 +854,7 @@ git -C "$WT" commit -m "feat(split-view): useSplitDivider bridge (CSS var + rati
 Each per-layout subcomponent calls a **fixed** number of `useSplitDivider` hooks (no conditional hooks). Handles are direct children (returned as a fragment) so grid-area placement works.
 
 **Files:**
+
 - Create: `src/features/terminal/components/SplitView/SplitDividers.tsx`
 - Test: `src/features/terminal/components/SplitView/SplitDividers.test.tsx`
 
@@ -1090,6 +1143,7 @@ git -C "$WT" commit -m "feat(split-view): per-layout SplitDividers components"
 Move padding to an outer `split-view-canvas` wrapper; the inner measured grid carries the `resolveGrid` template and hosts panes + the active-only dividers; `SplitView` owns remembered ratios.
 
 **Files:**
+
 - Modify: `src/features/terminal/components/SplitView/SplitView.tsx`
 - Modify: `src/features/terminal/components/SplitView/SplitView.test.tsx`
 
@@ -1106,7 +1160,9 @@ import { resolveGrid, DEFAULT_RATIOS, type LayoutRatios } from './resolveGrid'
 Inside the component, replace `const layout = LAYOUTS[session.layout]` usage for capacity with ratio state + resolved grid:
 
 ```tsx
-const [ratios, setRatios] = useState<Partial<Record<LayoutId, LayoutRatios>>>({})
+const [ratios, setRatios] = useState<Partial<Record<LayoutId, LayoutRatios>>>(
+  {}
+)
 const currentRatios = ratios[session.layout] ?? DEFAULT_RATIOS[session.layout]
 const grid = resolveGrid(session.layout, currentRatios)
 
@@ -1166,6 +1222,7 @@ return (
 ```
 
 Notes:
+
 - `outerDivRef` is the existing ref; it now points at the padding-free inner grid, so `useElasticContainer` measures the content box `Wc`.
 - `gap-2` → `gap-0`: the divider track now provides the 8px separation (`single` has nothing to separate, so it is byte-identical).
 - The `<SplitDividers>` fragment renders handle elements as **direct grid children** of the inner grid — no wrapper div.
@@ -1178,6 +1235,7 @@ Run the suite first to see what the refactor breaks:
 Run: `npx vitest run src/features/terminal/components/SplitView/SplitView.test.tsx`
 
 Then:
+
 - Any assertion that checked `bg-surface` / `p-2.5` on `split-view` → assert on `split-view-canvas` instead.
 - Any assertion on `gridTemplateColumns`/`gridTemplateRows` literal `fr` strings → update to the `resolveGrid` output for that layout (e.g. `vsplit` cols = `var(--split-col, 0.5fr) 8px 0.5fr`). For `single` the template is unchanged (`minmax(0,1fr)`).
 - Add these new tests:
@@ -1203,25 +1261,33 @@ test('remembers the split ratio across a layout cycle', () => {
   const grid = screen.getByTestId('split-view')
   const pristine = grid.style.gridTemplateColumns
 
-  fireEvent.keyDown(screen.getByTestId('split-resize-handle'), { key: 'ArrowRight' })
+  fireEvent.keyDown(screen.getByTestId('split-resize-handle'), {
+    key: 'ArrowRight',
+  })
   const resized = screen.getByTestId('split-view').style.gridTemplateColumns
   expect(resized).not.toBe(pristine) // ratio fallback changed
 
   rerender(/* same session, layout: 'single', isActive: true */)
   rerender(/* same session, layout: 'vsplit', isActive: true */)
-  expect(screen.getByTestId('split-view').style.gridTemplateColumns).toBe(resized)
+  expect(screen.getByTestId('split-view').style.gridTemplateColumns).toBe(
+    resized
+  )
 })
 
 // D2: a resized ratio survives a tab switch (isActive false → true). SplitView
 // stays mounted while hidden, so its ratio state persists.
 test('remembers the split ratio across a tab switch', () => {
   const { rerender } = renderSplitView({ layout: 'vsplit', isActive: true })
-  fireEvent.keyDown(screen.getByTestId('split-resize-handle'), { key: 'ArrowRight' })
+  fireEvent.keyDown(screen.getByTestId('split-resize-handle'), {
+    key: 'ArrowRight',
+  })
   const resized = screen.getByTestId('split-view').style.gridTemplateColumns
 
   rerender(/* same session, isActive: false */)
   rerender(/* same session, isActive: true */)
-  expect(screen.getByTestId('split-view').style.gridTemplateColumns).toBe(resized)
+  expect(screen.getByTestId('split-view').style.gridTemplateColumns).toBe(
+    resized
+  )
 })
 ```
 
@@ -1271,6 +1337,7 @@ Expected: all green. Fix any fallout in the touched files only.
 ## Self-Review
 
 **Spec coverage:**
+
 - D1 (ResizeHandle first) → Tasks 1–2. ✓
 - D2 (remember-within-session, not across reload) → `SplitView` `ratios` state (Task 7); reset-on-reload is inherent (component state). ✓
 - D3 (quad shared cross) → `QuadDividers` two hooks / three elements (Task 6). ✓
