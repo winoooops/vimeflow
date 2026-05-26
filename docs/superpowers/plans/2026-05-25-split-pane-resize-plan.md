@@ -314,7 +314,9 @@ In `UseElasticContainerOptions` add:
 ```ts
   /** Fixed pixels removed from the measured dimension before percentages apply
    *  (e.g. a divider track that sits between the two resizable regions).
-   *  Default 0 — leaves single-panel consumers (the dock) unchanged. */
+   *  Default 0 — leaves single-panel consumers (the dock) unchanged.
+   *  Mount-time constant by contract, like `axis` / `minPercent` / `maxPercent`:
+   *  captured once into a ref; changing it after mount does NOT re-derive bounds. */
   reservedPx?: number
 ```
 
@@ -575,9 +577,101 @@ Wraps one `useElasticContainer` and bridges it to the grid: live drag writes the
 
 **Files:**
 - Create: `src/features/terminal/components/SplitView/useSplitDivider.ts`
-- Test: covered via `SplitDividers.test.tsx` (Task 6) — this hook is exercised through the components.
+- Test: `src/features/terminal/components/SplitView/useSplitDivider.test.tsx`
 
-- [ ] **Step 1: Implement `useSplitDivider.ts`**
+- [ ] **Step 1: Write the failing bridge test**
+
+Task 6 only asserts divider *counts*; this test pins the bridge behavior the
+components rely on — the ratio mirrored up, the px CSS var written on the
+**keyboard** path (where `onDragPreview` never fires), and the var removed on
+unmount. The container lives in a parent that stays mounted while the divider
+child unmounts — mirroring active-only mounting, so `containerRef.current` is
+still valid when the cleanup effect runs.
+
+```tsx
+import { render, screen, fireEvent } from '@testing-library/react'
+import { test, expect, describe, vi, beforeEach, afterEach } from 'vitest'
+import { useRef } from 'react'
+import { useSplitDivider } from './useSplitDivider'
+
+class MockResizeObserver {
+  observe = vi.fn()
+  disconnect = vi.fn()
+  unobserve = vi.fn()
+}
+vi.stubGlobal('ResizeObserver', MockResizeObserver)
+
+beforeEach(() => {
+  vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue({
+    width: 1200, height: 800, top: 0, left: 0, right: 1200, bottom: 800,
+    x: 0, y: 0, toJSON: (): undefined => undefined,
+  } as DOMRect)
+})
+afterEach(() => vi.restoreAllMocks())
+
+const DividerChild = ({
+  containerRef,
+  onRatioChange,
+}: {
+  containerRef: React.RefObject<HTMLElement | null>
+  onRatioChange: (r: number) => void
+}): React.ReactElement => {
+  const divider = useSplitDivider({
+    containerRef,
+    axis: 'horizontal',
+    cssVar: '--split-col',
+    initialRatio: 0.5,
+    onRatioChange,
+  })
+  return <div data-testid="handle" tabIndex={0} onKeyDown={divider.onKeyDown} />
+}
+
+const Harness = ({
+  active,
+  onRatioChange,
+}: {
+  active: boolean
+  onRatioChange: (r: number) => void
+}): React.ReactElement => {
+  const ref = useRef<HTMLDivElement>(null)
+  return (
+    <div ref={ref} data-testid="container" style={{ width: 1200, height: 800 }}>
+      {active ? (
+        <DividerChild containerRef={ref} onRatioChange={onRatioChange} />
+      ) : null}
+    </div>
+  )
+}
+
+describe('useSplitDivider', () => {
+  test('keyboard resize mirrors a clamped ratio up and writes the px var', () => {
+    const onRatioChange = vi.fn()
+    render(<Harness active onRatioChange={onRatioChange} />)
+    fireEvent.keyDown(screen.getByTestId('handle'), { key: 'ArrowRight' })
+    const ratio = onRatioChange.mock.calls.at(-1)?.[0] as number
+    expect(ratio).toBeGreaterThanOrEqual(0.15)
+    expect(ratio).toBeLessThanOrEqual(0.85)
+    expect(
+      screen.getByTestId('container').style.getPropertyValue('--split-col')
+    ).toMatch(/px$/)
+  })
+
+  test('removes the CSS var on unmount (container stays mounted)', () => {
+    const { rerender } = render(<Harness active onRatioChange={vi.fn()} />)
+    const container = screen.getByTestId('container')
+    expect(container.style.getPropertyValue('--split-col')).toMatch(/px$/)
+    rerender(<Harness active={false} onRatioChange={vi.fn()} />)
+    expect(container.style.getPropertyValue('--split-col')).toBe('')
+  })
+})
+```
+
+- [ ] **Step 2: Run to verify it fails**
+
+Run: `npx vitest run src/features/terminal/components/SplitView/useSplitDivider.test.tsx`
+Expected: FAIL — module not found.
+
+- [ ] **Step 3: Implement `useSplitDivider.ts`**
 
 ```ts
 import { useCallback, useEffect, type KeyboardEvent, type RefObject } from 'react'
@@ -688,9 +782,20 @@ export const useSplitDivider = ({
 }
 ```
 
-- [ ] **Step 2: Commit** (verified by Task 6 tests; commit together with Task 6)
+- [ ] **Step 4: Run to verify it passes**
 
-No standalone test run — proceed to Task 6 which exercises this hook through the components, then commit both.
+Run: `npx vitest run src/features/terminal/components/SplitView/useSplitDivider.test.tsx`
+Expected: PASS (2 tests — keyboard mirror + unmount cleanup).
+
+- [ ] **Step 5: Commit**
+
+```bash
+WT=/home/will/projects/vimeflow/.claude/worktrees/split-pane-resize
+npx vitest run src/features/terminal/components/SplitView/useSplitDivider.test.tsx
+git -C "$WT" add src/features/terminal/components/SplitView/useSplitDivider.ts \
+  src/features/terminal/components/SplitView/useSplitDivider.test.tsx
+git -C "$WT" commit -m "feat(split-view): useSplitDivider bridge (CSS var + ratio mirror)"
+```
 
 ### Task 6: `SplitDividers` per-layout components
 
@@ -970,15 +1075,14 @@ export const SplitDividers = ({
 Run: `npx vitest run src/features/terminal/components/SplitView/SplitDividers.test.tsx`
 Expected: PASS (6 cases: counts 0/1/1/2/3 + the vsplit orientation check).
 
-- [ ] **Step 5: Commit** (includes Task 5's hook)
+- [ ] **Step 5: Commit**
 
 ```bash
 WT=/home/will/projects/vimeflow/.claude/worktrees/split-pane-resize
 npx vitest run src/features/terminal/components/SplitView/SplitDividers.test.tsx
-git -C "$WT" add src/features/terminal/components/SplitView/useSplitDivider.ts \
-  src/features/terminal/components/SplitView/SplitDividers.tsx \
+git -C "$WT" add src/features/terminal/components/SplitView/SplitDividers.tsx \
   src/features/terminal/components/SplitView/SplitDividers.test.tsx
-git -C "$WT" commit -m "feat(split-view): per-layout SplitDividers + useSplitDivider bridge"
+git -C "$WT" commit -m "feat(split-view): per-layout SplitDividers components"
 ```
 
 ### Task 7: Wire `SplitDividers` into `SplitView`
@@ -1089,6 +1193,35 @@ test('active vsplit renders a divider; inactive does not', () => {
   expect(screen.getAllByTestId('split-resize-handle')).toHaveLength(1)
   rerender(/* same session, isActive: false */)
   expect(screen.queryAllByTestId('split-resize-handle')).toHaveLength(0)
+})
+
+// D4: a resized ratio survives cycling the layout away and back. The
+// grid-template's `fr` fallback encodes the remembered ratio, so comparing the
+// gridTemplateColumns string before/after the cycle proves persistence.
+test('remembers the split ratio across a layout cycle', () => {
+  const { rerender } = renderSplitView({ layout: 'vsplit', isActive: true })
+  const grid = screen.getByTestId('split-view')
+  const pristine = grid.style.gridTemplateColumns
+
+  fireEvent.keyDown(screen.getByTestId('split-resize-handle'), { key: 'ArrowRight' })
+  const resized = screen.getByTestId('split-view').style.gridTemplateColumns
+  expect(resized).not.toBe(pristine) // ratio fallback changed
+
+  rerender(/* same session, layout: 'single', isActive: true */)
+  rerender(/* same session, layout: 'vsplit', isActive: true */)
+  expect(screen.getByTestId('split-view').style.gridTemplateColumns).toBe(resized)
+})
+
+// D2: a resized ratio survives a tab switch (isActive false → true). SplitView
+// stays mounted while hidden, so its ratio state persists.
+test('remembers the split ratio across a tab switch', () => {
+  const { rerender } = renderSplitView({ layout: 'vsplit', isActive: true })
+  fireEvent.keyDown(screen.getByTestId('split-resize-handle'), { key: 'ArrowRight' })
+  const resized = screen.getByTestId('split-view').style.gridTemplateColumns
+
+  rerender(/* same session, isActive: false */)
+  rerender(/* same session, isActive: true */)
+  expect(screen.getByTestId('split-view').style.gridTemplateColumns).toBe(resized)
 })
 ```
 
