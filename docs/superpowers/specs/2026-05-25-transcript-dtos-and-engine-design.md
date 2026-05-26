@@ -552,11 +552,19 @@ regression cases** that feed a transcript line carrying a wrong-typed
 the defaulted value — proving each DTO field actually carries
 `deserialize_with = "lenient_*"` (a field that silently omits the
 attribute still compiles and passes the standalone helper tests, but would
-error or misclassify on real wrong-typed input). `git diff` touches only
-the two parse paths + new DTO definitions + the two new helpers + the
-behavior-neutral helper retargets (`extract_tool_result_content`, …) + the
-new tests (the `lenient_bool` / `lenient_i64` unit tests and the DTO/event
-regression cases). Emitted events are identical to pre-Phase-1.
+error or misclassify on real wrong-typed input). **Plus presence-sensitive
+cases** pinning the `#[serde(flatten)]` handling: `tool_use.input` absent →
+args `""` vs present-`null` → `"null"`; `payload.duration` absent → `None`
+(computed-duration fallback) vs present-`null` / non-object → `Some(0)`.
+Without these, an implementation could use a collapsing `Value
+(#[serde(default)])` / `Option<Value>`, pass every other gate, and still
+change args or duration. `git diff` touches only the two parse paths + new
+DTO definitions + the two new helpers + the behavior-neutral helper
+retargets (`extract_tool_result_content`, …) + the new tests. Emitted
+events are **shape- and deterministic-field-equivalent** to pre-Phase-1:
+identical variants and shapes, identical deterministic fields; the
+nondeterministic ones (e.g. `duration_ms`, timestamp fallbacks) are
+asserted by contract, not exact bytes.
 
 ## 5. Phase 2 — C: shared `TranscriptTailService` + injected `TranscriptDecoder`
 
@@ -802,7 +810,7 @@ implement → local `codex exec` to zero findings → push → PR →
 | PR                       | Scope                                                                                                                                          | Gate                                                                          |
 | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
 | **Phase 0 — tests**      | `T-replay` (both adapters): ≥3 replay pairs, catch-up + drain barriers, `Some(cwd)`. **No production change.**                                  | both transcript suites green; `git diff` = test code only                     |
-| **Phase 1 — A-transcript** | typed DTOs + `lenient_bool` / `lenient_i64` in both `process_line` paths (option B); behavior-neutral helper retargets; DTO/event regression tests | existing parse + Phase 0 tests green; emitted events byte-identical            |
+| **Phase 1 — A-transcript** | typed DTOs + `lenient_bool` / `lenient_i64` in both `process_line` paths (option B); behavior-neutral helper retargets; DTO/event regression tests (incl. presence-sensitive `input` / `duration`) | existing parse + Phase 0 tests green; events shape- and deterministic-field-equivalent (nondeterministic fields by contract) |
 | **Phase 2 — C**          | `TranscriptTailService` + `TranscriptDecoder` in `base`; both `start_tailing` delegate; the two `tail_loop`s deleted; deterministic `ScriptedBufRead` buffering test | Phase 0 tests green **unchanged**; buffering test green; G3 effects realized   |
 
 The order is forced: Phase 0 builds the regression net before Phase 1/2
