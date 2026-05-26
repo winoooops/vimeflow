@@ -370,7 +370,7 @@ fn summarize_input_preserves_absent_vs_null() {
 ```
 
 - [ ] **Step 2: Run — confirm the presence test PASSES against current `summarize_input`** (it documents the contract the DTO must preserve), and the wrong-typed test FAILS only if the migration regresses.
-- [ ] **Step 3: Migrate the `process_line` body**, shape-by-shape (spec § 4 enumerates every field + its consumer). For each former `value.get("...")` walk: `serde_json::from_value::<DtoType>(...)` (or `from_str` on the line) then read typed fields; classify `message.content` items with the existing ported predicates (`is_user_prompt`, `is_non_empty_user_block`, `line_type`); feed `summarize_input` / `bash_command` / `tool_file_path` the preserved raw `input`. Keep the emitted events byte-for-byte for deterministic fields.
+- [ ] **Step 3: Migrate the `process_line` body**, shape-by-shape (spec § 4 enumerates every field + its consumer). Parse each line once via `serde_json::from_str::<ClaudeTranscriptLineDto>(line)`. **Invariant — no line ever deserialize-fails:** every `ClaudeTranscriptLineDto` field is `#[serde(default)]`/lenient, so a non-`tool_result` line simply gets `content = Value::Null`, `tool_use_id`/`is_error = None`, and a wrong-shaped `message` degrades to `None` via `lenient_object`; the DTO is therefore safe to apply to *all* line types, not just `tool_result`. Then read typed fields; classify `message.content` items with the existing ported predicates (`is_user_prompt`, `is_non_empty_user_block`, `line_type`); feed `summarize_input` / `bash_command` / `tool_file_path` the preserved raw `input`. Keep the emitted events byte-for-byte for deterministic fields.
 - [ ] **Step 4: Run the full Claude transcript tests + Phase 0 `T-replay`** — `cargo test -p vimeflow claude_code` (the module-root filter covers `transcript`, `transcript_dto`, **and** the Phase 0 `transcript_fixture_tests`) → all green. Restore `src/bindings/` if perturbed.
 - [ ] **Step 5: Commit.** `git commit -am "refactor(transcript): migrate Claude process_line to typed DTOs"`
 
@@ -505,7 +505,7 @@ impl TranscriptTailService {
 
 ```rust
 #[cfg(test)]
-pub(crate) enum Step { Chunk(&'static str), Eof, EofStop } // Eof = non-terminal Ok(0); EofStop also flips `stop`
+pub(crate) enum Step { Chunk(&'static str), Eof, EofStop, Err } // Eof = non-terminal Ok(0); EofStop also flips `stop`; Err = one read failure
 
 #[cfg(test)]
 pub(crate) struct ScriptedBufRead { pub steps: std::vec::IntoIter<Step>, pub stop: Arc<AtomicBool> }
@@ -521,6 +521,7 @@ impl std::io::BufRead for ScriptedBufRead {
     fn read_line(&mut self, buf: &mut String) -> std::io::Result<usize> {
         match self.steps.next() {
             Some(Step::Chunk(s)) => { buf.push_str(s); Ok(s.len()) }
+            Some(Step::Err) => Err(std::io::Error::new(std::io::ErrorKind::Other, "scripted read error")), // service warn→sleep→continue
             Some(Step::Eof) => Ok(0),                                       // service EOF arm; loop continues
             Some(Step::EofStop) | None => { self.stop.store(true, Ordering::Release); Ok(0) } // EOF arm, then loop exits
         }
@@ -541,11 +542,12 @@ impl TranscriptDecoder for RecordingDecoder {
 }
 ```
 
-- [ ] **Step 2: Write the four cases** as named `#[test] fn`s in `#[cfg(test)] mod tests`, each driving `TranscriptTailService::new(Box::new(dec), "t").with_poll_interval(Duration::ZERO).run(ScriptedBufRead { steps, stop }, stop_clone)`, keeping `let lines = dec.lines.clone(); let caught = dec.caught_up.clone();` before the move:
+- [ ] **Step 2: Write the five cases** as named `#[test] fn`s in `#[cfg(test)] mod tests`, each driving `TranscriptTailService::new(Box::new(dec), "t").with_poll_interval(Duration::ZERO).run(ScriptedBufRead { steps, stop }, stop_clone)`, keeping `let lines = dec.lines.clone(); let caught = dec.caught_up.clone();` before the move:
   - `engine_partial_survives_eof_then_completes`: `[Chunk("{\"a\":1"), Eof, Chunk("23}\n"), EofStop]` → assert `*lines.lock().unwrap() == ["{\"a\":123}"]` (partial survived the non-terminal `Eof`).
   - `engine_truncated_partial_never_emits`: `[Chunk("{\"a\":1"), EofStop]` → assert `lines` empty AND `caught.load(Ordering::Acquire) == 1` (the partial-EOF arm ran once).
   - `engine_strips_crlf`: `[Chunk("{\"a\":1}\r\n"), EofStop]` → assert `lines == ["{\"a\":1}"]` (no trailing `\r`).
   - `engine_skips_blank_line`: `[Chunk("   \n"), EofStop]` → assert `lines` empty.
+  - `engine_read_error_warns_and_continues`: `[Chunk("{\"a\":1}\n"), Err, Chunk("{\"b\":2}\n"), EofStop]` → assert `lines == ["{\"a\":1}", "{\"b\":2}"]` — the loop warns + sleeps + **continues** past the read error (pinning the frozen `error→warn→sleep` contract that Task 2.5 requires; `poll_interval` is `ZERO` so the sleep is a no-op).
 
 - [ ] **Step 3: Run — expect PASS** — `cargo test -p vimeflow base::transcript_tail_service` (module-path filter); **confirm all four named tests ran** (not `0 passed`). Fix `run` if any fail.
 - [ ] **Step 4: Commit.** `git commit -am "test(transcript): deterministic engine buffering + EOF/normalization"` (the new structs live in the already-tracked `transcript_tail_service.rs`, so `-am` is fine here).
@@ -574,7 +576,7 @@ impl TranscriptDecoder for RecordingDecoder {
 ### Task 2.5: Phase 2 gate
 
 - [ ] **Step 1:** `cargo test -p vimeflow` — all green (engine buffering tests, Phase 0 `T-replay` unchanged, end-to-end G3 test, all parse tests). Confirm both `tail_loop`s are gone (`grep -rn "fn tail_loop" crates/backend/src` → no matches).
-- [ ] **Step 2:** `git restore src/bindings/` if needed. Verify frozen constraints hold: events shape/deterministic-field equivalent (+ the two-sided G3 carve-out); `Ordering::Acquire` stop, `POLL_INTERVAL`, first-EOF `on_caught_up`, error→warn→sleep preserved. Open PR 3 → `refactor/agent-adapter`; local codex to zero findings; merge.
+- [ ] **Step 2:** `git restore src/bindings/` if needed. Verify frozen constraints hold: events shape/deterministic-field equivalent (+ the two-sided G3 carve-out); `Ordering::Acquire` stop, `POLL_INTERVAL`, first-EOF `on_caught_up`, and `error→warn→sleep` (pinned by `engine_read_error_warns_and_continues`, Task 2.2) preserved. Open PR 3 → `refactor/agent-adapter`; local codex to zero findings; merge.
 - [ ] **Step 3:** Update #246: tick **A-transcript** + **C**; add **Step F** (spec § 6) as a deferred-capstone line.
 
 ---
