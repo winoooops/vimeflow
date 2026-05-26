@@ -335,6 +335,13 @@ export const DiffPanelContent = ({
   // on the OLDER value while the UI shows the newer one. Chaining each write
   // after the previous guarantees the last-requested options win; the per-run
   // `cancelled` flag then ensures only the latest run commits the synced value.
+  //
+  // LIMITATION (deferred to PR2): this chain is per component instance, but the
+  // worker pool is an app-wide singleton. Two DiffPanelContent instances (split
+  // layout) — or an unmount overlapping a remount — have independent chains and
+  // can still race on the shared pool. Pool-keyed (module-level) serialization,
+  // plus the deeper "one shared pool can only hold one theme/lineDiffType"
+  // question, are handled in PR2 (staging).
   const poolWriteChainRef = useRef<Promise<unknown>>(Promise.resolve())
   useEffect(() => {
     const next: PoolRenderOptions = { theme, lineDiffType }
