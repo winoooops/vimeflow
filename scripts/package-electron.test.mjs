@@ -1,15 +1,20 @@
-import { describe, expect, test } from 'vitest'
+import { afterEach, describe, expect, test, vi } from 'vitest'
 import {
   USAGE,
   UsageError,
   TargetError,
   buildCommands,
   formatCommand,
+  main,
   parseArgs,
   resolveTarget,
 } from './package-electron.mjs'
 
 describe('package-electron script', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
   test('parses auto dry-run syntax before or after the target', () => {
     expect(parseArgs(['--dry-run'])).toEqual({
       target: 'auto',
@@ -76,6 +81,53 @@ describe('package-electron script', () => {
   test('dry-run formatting quotes arguments that need shell escaping', () => {
     expect(formatCommand(['echo', ['hello world', "it's"]])).toBe(
       "echo 'hello world' 'it'\\''s'"
+    )
+  })
+
+  test('main prints usage for help without running build commands', () => {
+    const write = vi
+      .spyOn(process.stdout, 'write')
+      .mockImplementation(() => true)
+    const runner = vi.fn()
+
+    main(['--help'], { platform: 'linux', arch: 'x64' }, runner)
+
+    expect(write).toHaveBeenCalledWith(USAGE)
+    expect(runner).not.toHaveBeenCalled()
+  })
+
+  test('main dry-run prints commands in order without executing them', () => {
+    const write = vi
+      .spyOn(process.stdout, 'write')
+      .mockImplementation(() => true)
+    const runner = vi.fn()
+
+    main(['linux-x64', '--dry-run'], { platform: 'linux', arch: 'x64' }, runner)
+
+    expect(runner).not.toHaveBeenCalled()
+    expect(write.mock.calls.map(([line]) => line)).toEqual([
+      'Packaging Vimeflow for linux-x64 on linux/x64\n',
+      '+ npm run type-check\n',
+      '+ vite build --mode electron\n',
+      '+ npm run backend:build:release\n',
+      '+ electron-builder --linux AppImage --x64\n',
+    ])
+  })
+
+  test('main runs build commands in order for the resolved target', () => {
+    const write = vi
+      .spyOn(process.stdout, 'write')
+      .mockImplementation(() => true)
+    const runner = vi.fn()
+
+    main(['mac-arm64'], { platform: 'darwin', arch: 'arm64' }, runner)
+
+    expect(write).toHaveBeenCalledWith(
+      'Packaging Vimeflow for mac-arm64 on darwin/arm64\n'
+    )
+
+    expect(runner.mock.calls.map(([command]) => command)).toEqual(
+      buildCommands('mac-arm64')
     )
   })
 })

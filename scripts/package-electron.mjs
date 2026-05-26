@@ -127,12 +127,18 @@ const runCommand = ([command, args]) => {
     throw result.error
   }
 
-  if (result.status !== 0) {
+  if (result.signal) {
+    process.stderr.write(
+      `package-electron: ${formatCommand([command, args])} killed by signal ${result.signal}\n`
+    )
+  }
+
+  if (result.status !== 0 || result.signal) {
     process.exit(result.status ?? 1)
   }
 }
 
-export function main(argv, host = process) {
+export function main(argv, host = process, runner = runCommand) {
   const parsed = parseArgs(argv)
 
   if (parsed.help) {
@@ -152,7 +158,7 @@ export function main(argv, host = process) {
       continue
     }
 
-    runCommand(command)
+    runner(command)
   }
 }
 
