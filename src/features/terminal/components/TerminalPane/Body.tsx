@@ -558,16 +558,26 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
     ): void => {
       cancelScheduledFit()
 
-      fitFrameId = window.requestAnimationFrame(() => {
-        fitFrameId = null
-        if (deferFitRef.current) {
-          return
-        }
-        const didFit = fitIfNeeded(targetFitAddon, options.force ?? false)
-        if (didFit) {
-          options.afterFit?.()
-        }
-      })
+      const flushWithRetry = (): void => {
+        fitFrameId = window.requestAnimationFrame(() => {
+          fitFrameId = null
+          if (deferFitRef.current) {
+            return
+          }
+          const width = node.offsetWidth
+          const didFit = fitIfNeeded(targetFitAddon, options.force ?? false)
+          if (!didFit && width <= 0 && options.afterFit) {
+            flushWithRetry()
+
+            return
+          }
+          if (didFit) {
+            options.afterFit?.()
+          }
+        })
+      }
+
+      flushWithRetry()
     }
 
     const fitInitialWhenReady = (targetFitAddon: FitAddon): boolean => {
@@ -745,7 +755,9 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
       refitAfterTerminalFontsSettle()
     }
 
-    void refitWhenTerminalFontsSettle()
+    if (!cached) {
+      void refitWhenTerminalFontsSettle()
+    }
 
     const flushDeferredFit = (): void => {
       if (pendingDeferredRefreshAfterFitRef.current) {

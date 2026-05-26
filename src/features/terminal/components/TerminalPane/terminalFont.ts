@@ -1,14 +1,18 @@
 export const TERMINAL_FONT_SIZE = 14
 
+// cspell:ignore CaskaydiaCove
 export const TERMINAL_FONT_FAMILY = [
   '"JetBrainsMono Nerd Font"',
   '"MesloLGS NF"',
   '"Hack Nerd Font"',
   '"FiraCode Nerd Font"',
+  '"CaskaydiaCove NF"',
+  '"Cascadia Code NF"',
   '"JetBrains Mono"',
   '"Symbols Nerd Font Mono"',
   '"Symbols Nerd Font"',
   '"Vimeflow Nerd Symbols"',
+  '"Cascadia Code"',
   '"Cascadia Mono"',
   'Menlo',
   'Monaco',
