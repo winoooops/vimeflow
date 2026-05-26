@@ -7,6 +7,7 @@ interface ShortcutInput {
   control: boolean
   meta: boolean
   alt: boolean
+  isAutoRepeat?: boolean
 }
 
 interface ShortcutRegistry {
@@ -32,6 +33,7 @@ export const isCommandPaletteShortcutInput = (input: ShortcutInput): boolean =>
   input.control &&
   !input.meta &&
   !input.alt &&
+  !input.isAutoRepeat &&
   input.key === ':'
 
 const sendCommandPaletteToggle = (win: BrowserWindow): void => {

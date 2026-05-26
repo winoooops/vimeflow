@@ -36,7 +36,12 @@ const queryForLeaderFollowUp = (event: KeyboardEvent): string | null => {
   return `:${event.key}`
 }
 
-const consumePaletteToggleEvent = (event: KeyboardEvent): void => {
+// Fully swallow a keydown: preventDefault + stopPropagation +
+// stopImmediatePropagation. Applied to the palette toggle AND to Escape /
+// leader follow-up keys, so the name describes the full-consume contract
+// rather than any single call site (stopImmediatePropagation also blocks
+// same-target capture-phase listeners in the Electron IPC path).
+const fullyConsumeEvent = (event: KeyboardEvent): void => {
   event.preventDefault()
   event.stopPropagation()
   event.stopImmediatePropagation()
@@ -330,14 +335,14 @@ export const useCommandPalette = (
 
     const handleKeyDown = (event: KeyboardEvent): void => {
       if (isPaletteToggle(event) && event.repeat) {
-        consumePaletteToggleEvent(event)
+        fullyConsumeEvent(event)
 
         return
       }
 
       if (leaderActiveRef.current) {
         if (isPaletteToggle(event)) {
-          consumePaletteToggleEvent(event)
+          fullyConsumeEvent(event)
           clearLeaderWindow()
           handlersRef.current.open()
 
@@ -348,19 +353,19 @@ export const useCommandPalette = (
         clearLeaderWindow()
 
         if (consumed) {
-          consumePaletteToggleEvent(event)
+          fullyConsumeEvent(event)
           handlersRef.current.close()
 
           return
         }
 
         if (event.key === 'Escape') {
-          consumePaletteToggleEvent(event)
+          fullyConsumeEvent(event)
 
           return
         }
 
-        consumePaletteToggleEvent(event)
+        fullyConsumeEvent(event)
         handlersRef.current.openWithQuery(queryForLeaderFollowUp(event) ?? ':')
 
         return
@@ -370,7 +375,7 @@ export const useCommandPalette = (
       // follow-up key, the palette opens after the window or immediately on
       // the non-chord key.
       if (isPaletteToggle(event)) {
-        consumePaletteToggleEvent(event)
+        fullyConsumeEvent(event)
         handlePaletteShortcut()
 
         return

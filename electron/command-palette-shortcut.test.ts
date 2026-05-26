@@ -137,6 +137,25 @@ describe('command palette shortcut override', () => {
     ).toBe(false)
   })
 
+  test('ignores auto-repeat keydown (held-key flicker guard)', () => {
+    // Electron's before-input-event fires isAutoRepeat=true keydown events
+    // while a key is held. The renderer-side event.repeat guard never runs in
+    // the packaged app (event.preventDefault suppresses the renderer keydown),
+    // so the main-process matcher must reject auto-repeat itself — otherwise
+    // the 100 ms deduplication dispatcher still leaks one toggle every
+    // ~100 ms, flickering the palette open/closed while Ctrl+: is held.
+    expect(
+      isCommandPaletteShortcutInput({
+        type: 'keyDown',
+        key: ':',
+        control: true,
+        meta: false,
+        alt: false,
+        isAutoRepeat: true,
+      })
+    ).toBe(false)
+  })
+
   test('prevents renderer keydown and sends palette toggle IPC', () => {
     const { beforeInputHandlers, send, win } = createFakeWindow()
     const preventDefault = vi.fn()
@@ -162,6 +181,37 @@ describe('command palette shortcut override', () => {
 
     expect(preventDefault).toHaveBeenCalledOnce()
     expect(send).toHaveBeenCalledWith(COMMAND_PALETTE_TOGGLE)
+  })
+
+  test('does not toggle on auto-repeat before-input-event keydown', () => {
+    const { beforeInputHandlers, send, win } = createFakeWindow()
+    const preventDefault = vi.fn()
+
+    installCommandPaletteShortcutOverride(win, { platform: 'darwin' })
+
+    const handler = beforeInputHandlers[0]
+
+    if (handler === undefined) {
+      throw new Error('before-input-event handler was not registered')
+    }
+
+    handler(
+      { preventDefault },
+      {
+        type: 'keyDown',
+        key: ':',
+        control: true,
+        meta: false,
+        alt: false,
+        isAutoRepeat: true,
+      }
+    )
+
+    // Auto-repeat must fall through the matcher: no preventDefault (so the
+    // renderer still receives the event and its own repeat guard consumes it)
+    // and no IPC toggle dispatched.
+    expect(preventDefault).not.toHaveBeenCalled()
+    expect(send).not.toHaveBeenCalled()
   })
 
   test('registers the Linux global override while the window is focused', () => {
