@@ -4,7 +4,9 @@
 
 **Goal:** Replace the in-app diff renderer (`src/features/diff/components/DiffViewer.tsx` + its split / unified / line / hunk-header subtree) with `@pierre/diffs/react`'s `<MultiFileDiff>`, grow the missing Rust hunk-staging IPC, and add an inline review-comment loop that ships per-line user feedback to the focused agent pane's PTY via bracketed-paste.
 
-**Architecture:** Three sequential PRs on the `feat/pierre-diffs-integration` branch. PR1 swaps the renderer + introduces the chip toolbar + tears down the spike. PR2 wires the three new Rust IPC handlers + activates the staging chips. PR3 layers annotations on Pierre and routes the batch to the focused agent pane. Each PR is independently shippable. The spec at `docs/superpowers/specs/2026-05-24-pierre-diffs-integration-design.md` is the single source of truth for design decisions — this plan implements it.
+**Architecture:** Four sequential PRs on the `feat/pierre-diffs-integration` branch. PR1 swaps the renderer + introduces the chip toolbar + tears down the spike (it also shipped functional prev/next **file** navigation and kept hunk-nav + stage/unstage/discard chips as disabled placeholders). PR2 wires the three new Rust IPC handlers + activates the staging chips + serializes worker-pool option writes across instances. PR3 makes hunk navigation functional (prev/next-hunk chips driving Pierre's viewport). PR4 layers annotations on Pierre and routes the batch to the focused agent pane. Each PR is independently shippable. The spec at `docs/superpowers/specs/2026-05-24-pierre-diffs-integration-design.md` is the single source of truth for design decisions — this plan implements it.
+
+**Status:** **PR1 is MERGED — GitHub [#263](https://github.com/winoooops/vimeflow/pull/263)** (squash-merged). A follow-up hotfix, [#276](https://github.com/winoooops/vimeflow/pull/276), fixed the HIGHLIGHT / `lineDiffType` dropdown no-op: `lineDiffType`, like `theme`, is a **pool-owned worker option** that must be pushed via `WorkerPoolManager.setRenderOptions`, not the per-instance `<MultiFileDiff>` prop. PR2 / PR3 / PR4 are not yet started.
 
 **Tech Stack:** React 19 + TypeScript + Vite (frontend), Electron 42 + Rust sidecar via tokio (backend), `@pierre/diffs@^1.2.2` (Apache-2.0) for diff rendering, `@floating-ui/react` (already a project dep) for dropdown popovers, `ts-rs` (test-gated) for Rust→TS bindings, `simple-git` for the Vite dev middleware.
 
@@ -18,13 +20,24 @@
 
 ## Scope and PR strategy
 
-Three PRs, **sequential** — PR2 depends on PR1's response shape changes; PR3 depends on PR1's `<MultiFileDiff>` mount. Each PR opens against `main`, lands its own commits on `feat/pierre-diffs-integration` (or a fresh branch off `main` per PR if reviewers prefer cleaner history), and is reviewable in isolation. A merged PR1 is a strict UX improvement even if PR2 / PR3 never land — Stage / Discard chips are visible but `disabled` with tooltips noting "Available in PR2".
+Four PRs, **sequential** — PR2 depends on PR1's response shape changes; PR3 (hunk navigation) depends on PR1's `<MultiFileDiff>` mount and PR2's `findRawDiffHunkIndex` mapping + staging chips; PR4 (inline review comments) depends on PR1's `<MultiFileDiff>` mount. Each PR opens against `main`, lands its own commits on `feat/pierre-diffs-integration` (or a fresh branch off `main` per PR if reviewers prefer cleaner history), and is reviewable in isolation.
 
-After all three PRs merge, the spike scaffolding currently on this branch (`src/spikes/`, the `SPIKE_PIERRE_DIFFS` flag in `DiffPanelContent.tsx`, the `?spike=pierre-diffs` URL gate in `App.tsx`) is gone — it is torn down inside PR1.
+| PR  | Scope                                                                                                                                                                                             | Status                                                                                                                                                          |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| PR1 | Renderer replacement — `<MultiFileDiff>`, chip toolbar, spike teardown. Shipped functional prev/next **file** navigation; hunk-nav + stage/unstage/discard chips left as disabled placeholders.   | ✅ **MERGED** [#263](https://github.com/winoooops/vimeflow/pull/263); HIGHLIGHT dropdown fixed in hotfix [#276](https://github.com/winoooops/vimeflow/pull/276) |
+| PR2 | Hunk-staging IPC + chip wiring (3 Rust handlers, 4-file IPC checklist, `gitService` unstub, `extractHunkPatch` reuse, refresh-on-success) **+ worker-pool write serialization (cross-instance)**. | Not started                                                                                                                                                     |
+| PR3 | Hunk navigation — prev/next-hunk chips drive Pierre's viewport via the `selectedLines` controlled prop; focused-hunk index as toolbar state; Pierre `HunkData` → raw-diff hunk-index mapping.     | Not started                                                                                                                                                     |
+| PR4 | Inline review comments → active agent panel (per-line annotations, feedback batch, `write_pty` dispatch). _(Formerly PR3 — renumbered; tasks unchanged.)_                                         | Not started                                                                                                                                                     |
+
+A merged PR1 is a strict UX improvement even if PR2 / PR3 / PR4 never land — Stage / Discard / hunk-nav chips are visible but `disabled` with tooltips noting "Available in a follow-up PR".
+
+The spike scaffolding (`src/spikes/`, the `SPIKE_PIERRE_DIFFS` flag in `DiffPanelContent.tsx`, the `?spike=pierre-diffs` URL gate in `App.tsx`) was torn down inside PR1 (#263) — it is gone as of that merge.
 
 ## File structure
 
-### PR1 — Renderer replacement
+### PR1 — Renderer replacement — ✅ MERGED in [#263](https://github.com/winoooops/vimeflow/pull/263)
+
+> Historical record. All file changes below shipped in #263. PR1 also added functional prev/next **file** navigation (file chips) and left hunk-nav + stage/unstage/discard chips as disabled placeholders. The HIGHLIGHT / `lineDiffType` dropdown was wired but inert; the fix shipped separately as hotfix [#276](https://github.com/winoooops/vimeflow/pull/276) (push `lineDiffType` through `WorkerPoolManager.setRenderOptions`, not the per-instance prop) and was **not** part of this original PR1 task list.
 
 **Create:**
 
@@ -72,6 +85,8 @@ After all three PRs merge, the spike scaffolding currently on this branch (`src/
 
 - `src/bindings/StageFileRequest.ts`, `src/bindings/DiscardFileRequest.ts`, `src/bindings/DiscardScope.ts` — generated bindings
 - `crates/backend/tests/git_staging.rs` — Rust integration tests for the three IPC handlers
+- `src/features/diff/services/workerPoolWrites.ts` — module-level, pool-keyed serialization of `WorkerPoolManager.setRenderOptions` writes (`WeakMap<pool, Promise>`) for `theme` + `lineDiffType` (extracted + generalized from the per-instance `useEffect` PR1 shipped)
+- `src/features/diff/services/workerPoolWrites.test.ts`
 
 **Modify:**
 
@@ -81,14 +96,24 @@ After all three PRs merge, the spike scaffolding currently on this branch (`src/
 - `electron/backend-methods.ts` — append `'stage_file'` / `'unstage_file'` / `'discard_file'` to the allowlist
 - `src/features/diff/services/gitService.ts` — unstub all three methods; signature changes to `(file, hunkPatch?: string)`
 - `src/features/diff/services/gitService.test.ts` — unstub the skipped tests
-- `src/features/diff/services/pierreAdapter.ts` — add `findRawDiffHunkIndex(response, pierreHunk)` helper for the line-range match
+- `src/features/diff/services/pierreAdapter.ts` — add `findRawDiffHunkIndex(response, pierreHunk)` helper for the line-range match _(used by per-hunk staging; the prev/next navigation that drives the focused hunk lands in PR3)_
 - `src/features/diff/services/pierreAdapter.test.ts` — extend with mapping tests
-- `src/features/diff/components/DiffPanelContent.tsx` — wire chip click handlers (extract patch → null check → IPC → refetch)
+- `src/features/diff/components/DiffPanelContent.tsx` — wire staging chip click handlers (extract patch → null check → IPC → refetch); migrate the per-instance `setRenderOptions` theme `useEffect` (PR1) to the new pool-keyed `workerPoolWrites` serializer and route `lineDiffType` through it too
 - `src/features/diff/components/toolbar/DiffChipToolbar.tsx` — lift `disabled` styling on staging chips; add `staging` boolean per-file state for single-flight; add unstage chip (staged view only); add Discard All confirmation popover
 - `src/features/diff/components/toolbar/DiffChipToolbar.test.tsx` — extend with dispatch + refetch assertions
 - `vite.config.ts` — finish the `gitApiPlugin` `/api/git/stage` / `/api/git/unstage` / `/api/git/discard` routes via `child_process.spawn` + stdin
 
-### PR3 — Inline review comments
+### PR3 — Hunk navigation
+
+**Modify:**
+
+- `src/features/diff/components/DiffPanelContent.tsx` — add focused-hunk state (`{ newStart, newLines }` or git-hunk index); add `onPrevHunk` / `onNextHunk` handlers that cycle the focused hunk; compute the `selectedLines` controlled prop from the focused hunk and pass it to `<MultiFileDiff>`; (optional follow-up) `scrollIntoView` the selected hunk if Pierre doesn't auto-scroll
+- `src/features/diff/components/toolbar/DiffChipToolbar.tsx` — make the prev/next-hunk chips + `${focusedHunkIndex + 1}/${totalHunks}` counter functional (lift `disabled`, wire `onPrevHunk` / `onNextHunk` / `focusedHunkIndex` / `totalHunks` props)
+- `src/features/diff/components/toolbar/DiffChipToolbar.test.tsx` — extend with prev/next wrap-around assertions
+- `src/features/diff/components/DiffPanelContent.test.tsx` — assert `selectedLines` is derived from the focused hunk and passed to `<MultiFileDiff>`
+- `src/features/diff/services/pierreAdapter.ts` / `pierreAdapter.test.ts` — Pierre `HunkData` → raw-diff hunk-index mapping (shared with PR2's `findRawDiffHunkIndex`); add any nav-specific `(newStart, newLines)` range tests not already covered in PR2
+
+### PR4 — Inline review comments
 
 **Create:**
 
@@ -102,7 +127,7 @@ After all three PRs merge, the spike scaffolding currently on this branch (`src/
 - `src/features/diff/hooks/useFeedbackBatch.test.ts`
 - `src/features/diff/services/feedbackDispatch.ts` — `dispatchFeedbackBatch(batch, paneId)` formatter + write_pty caller
 - `src/features/diff/services/feedbackDispatch.test.ts`
-- `src/features/diff/services/activePanePicker.ts` — `resolveCandidatePanes(workspace, cwd, focusedPaneId)` per Section 6.3 rule
+- `src/features/diff/services/activePanePicker.ts` — `resolveCandidatePanes(workspace, cwd, focusedPaneId)` per spec Section 7.3 rule
 - `src/features/diff/services/activePanePicker.test.ts`
 
 **Modify:**
@@ -113,7 +138,11 @@ After all three PRs merge, the spike scaffolding currently on this branch (`src/
 
 ---
 
-## PR1 — Renderer Replacement
+## PR1 — Renderer Replacement — ✅ MERGED in [#263](https://github.com/winoooops/vimeflow/pull/263)
+
+> **PR1 is complete and squash-merged (#263).** All Task 1.x steps below are kept verbatim as the historical execution record — do not re-run them. PR1 also shipped functional prev/next **file** navigation and left hunk-nav + stage/unstage/discard chips as disabled placeholders.
+>
+> **Post-merge hotfix [#276](https://github.com/winoooops/vimeflow/pull/276):** the HIGHLIGHT / `lineDiffType` dropdown built in Task 1.8 was wired to local state but rendered as a no-op, because `lineDiffType` — like `theme` — is a **pool-owned worker option** and must be pushed through `WorkerPoolManager.setRenderOptions`, not the per-instance `<MultiFileDiff options.lineDiffType>` prop. The fix was NOT part of the original PR1 task list; PR2's worker-pool write-serialization task (Task 2.6) generalizes it.
 
 ### Task 1.1 — Verify the spike's expectations against real installed APIs
 
@@ -161,7 +190,7 @@ If any of the above checks fail, STOP and update the spec before continuing — 
 
 ### Task 1.2 — Add `THIRD_PARTY.md` and `@pierre/diffs` attribution
 
-Land the Apache-2.0 NOTICE preservation up front (Section 8.2 of the spec) so license review can happen in parallel with the rest of PR1.
+Land the Apache-2.0 NOTICE preservation up front (Section 9.2 of the spec) so license review can happen in parallel with the rest of PR1.
 
 **Files:**
 
@@ -718,6 +747,8 @@ git commit -m "feat(diff): add chip-toolbar primitives (PriorityPlus, Dropdown, 
 
 Per spec Section 4.6 + 4.7. The composed toolbar. Holds state for every Pierre option + the hunk-nav + the staging chips (disabled placeholders in PR1).
 
+> **Post-merge note (hotfix [#276](https://github.com/winoooops/vimeflow/pull/276)):** the HIGHLIGHT dropdown added here drives Pierre's `lineDiffType`. PR1 wired it to local state via the per-instance `<MultiFileDiff options.lineDiffType>` prop, which is a no-op — `lineDiffType` is a pool-owned worker option (same class as `theme`) and must be pushed through `WorkerPoolManager.setRenderOptions`. Fixed after merge in #276 and generalized in PR2 Task 2.6. Not part of the original PR1 work.
+
 **Files:**
 
 - Create: `src/features/diff/components/toolbar/DiffChipToolbar.tsx`
@@ -1056,7 +1087,7 @@ git commit -m "chore(diff): delete superseded React diff components (replaced by
 
 - [ ] **Step 1: Run the full PR1 acceptance checklist**
 
-Walk through spec Section 10.1. Every checkbox must be checkable.
+Walk through spec Section 11.1. Every checkbox must be checkable.
 
 - [ ] **Step 2: Full local verification**
 
@@ -1067,19 +1098,19 @@ npm run test
 npm run build
 ```
 
-Expected: all green. Check `dist/assets/*.js` total size in the PR description (per spec Section 9 risk).
+Expected: all green. Check `dist/assets/*.js` total size in the PR description (per spec Section 10 risk).
 
 - [ ] **Step 3: Manual regression for #249**
 
 Run `npm run electron:dev` (or build + run AppImage). Open a terminal pane. Run `nvim` and `htop`. Expected: both render correctly (PR1 must not regress the terser-minifier fix from #249).
 
-- [ ] **Step 4: Open PR1**
+- [x] **Step 4: Open PR1** — done; merged as [#263](https://github.com/winoooops/vimeflow/pull/263).
 
 ```bash
 /lifeline:request-pr
 ```
 
-Title: `feat(diff): replace renderer with @pierre/diffs (PR1 of 3)`. Body: link the spec + decision record + issue #255 + PR1 acceptance checklist from spec Section 10.1.
+Title: `feat(diff): replace renderer with @pierre/diffs (PR1 of 4)`. Body: link the spec + decision record + issue #255 + PR1 acceptance checklist from spec Section 11.1.
 
 ---
 
@@ -1286,7 +1317,7 @@ Per spec Section 5.1 sketches. Each starts with `validate_cwd` + `validate_hunk_
 
 - [ ] **Step 2: Write `crates/backend/tests/git_staging.rs`**
 
-Cover each Section 10.2 acceptance bullet:
+Cover each Section 11.2 acceptance bullet:
 
 - Whole-file stage of a modified tracked file → `git status --short` confirms the staging.
 - Per-hunk stage with a valid patch → only the staged hunk shows in `git diff --cached`; the other hunks remain in the working tree.
@@ -1522,9 +1553,11 @@ git add src/features/diff/services/ vite.config.ts
 git commit -m "feat(diff): unstub gitService + add Pierre hunk-index mapper"
 ```
 
-### Task 2.5 — Wire chip handlers in `DiffPanelContent` + `DiffChipToolbar`
+### Task 2.5 — Wire staging chip handlers in `DiffPanelContent` + `DiffChipToolbar`
 
 Per spec Section 5.3 click-to-IPC flow + Section 5.4 tests.
+
+> **Scope note (4-PR re-scope):** This task wires only the **staging** chips (stage / unstage / discard / discard-all). The prev/next-**hunk** navigation chips that _set_ the focused hunk move to **PR3 (Task 3.1)**. In PR2 the focused hunk is established by clicking a Pierre hunk row (Pierre's interaction layer); the prev/next-hunk chips remain disabled placeholders (as PR1 shipped them) until PR3. Per-hunk staging still depends on the `findRawDiffHunkIndex` mapping added in Task 2.4 — that mapping stays in PR2 because staging needs it.
 
 **Files:**
 
@@ -1532,11 +1565,11 @@ Per spec Section 5.3 click-to-IPC flow + Section 5.4 tests.
 - Modify: `src/features/diff/components/toolbar/DiffChipToolbar.tsx`
 - Modify: `src/features/diff/components/toolbar/DiffChipToolbar.test.tsx`
 
-- [ ] **Step 1: Add focused-hunk state + click handlers to `DiffPanelContent`**
+- [ ] **Step 1: Add focused-hunk state + staging click handlers to `DiffPanelContent`**
 
-The focused-hunk state tracks the index into the **git** hunks (`response.fileDiff.hunks`). To translate from Pierre's hunk identity to the git hunk index, use `findRawDiffHunkIndex` from `pierreAdapter` (Task 2.4) — **NOT** the focused index directly, because Pierre's diff engine (jsdiff via `oldText`/`newText`) and git's diff engine can split the same change into a different number of hunks (per spec Section 5.3 architectural correction).
+The focused-hunk state tracks the **Pierre** hunk's range (`newStart`, `newLines`). To translate it to the git hunk index, use `findRawDiffHunkIndex` from `pierreAdapter` (Task 2.4) — **NOT** the focused index directly, because Pierre's diff engine (jsdiff via `oldText`/`newText`) and git's diff engine can split the same change into a different number of hunks (per spec Section 5.3 architectural correction).
 
-For PR1's prev/next chip placeholders we tracked the focused git-hunk index directly (since Pierre had no role yet). PR2 reconciles: when the user clicks a Pierre hunk row or uses prev/next, the toolbar resolves the **Pierre** hunk's range (`newStart`, `newLines`), and the chip handlers re-derive the git index at click time via `findRawDiffHunkIndex(response, { newStart, newLines })`. The chip never trusts the focused index as if it were a raw-diff index.
+In PR2 the focused hunk is set when the user clicks a Pierre hunk row; the chip handlers re-derive the git index at click time via `findRawDiffHunkIndex(response, { newStart, newLines })`. The chip never trusts the focused index as if it were a raw-diff index. (PR3's prev/next-hunk handlers are the other writer of `focusedHunk`; until PR3 lands, click-to-focus is the only source.)
 
 ```ts
 import { extractHunkPatch } from '../services/gitPatch'
@@ -1577,7 +1610,167 @@ const handleStage = useCallback(async () => {
 
 Mirror for `handleUnstage` (calls `unstageFile`) and `handleDiscard` (calls `discardChanges`). For `handleDiscardAll`, no `hunkPatch`, no mapping, no `extractHunkPatch` — just `await service.discardChanges(selectedFile)`.
 
-- [ ] **Step 2: Add prev/next hunk handlers**
+- [ ] **Step 2: Wire staging handlers into `<DiffChipToolbar>`**
+
+Add the staging props to `DiffChipToolbarProps`: `onStage`, `onUnstage`, `onDiscard`, `onDiscardAll`, `staging`. Inside the toolbar, lift the `disabled` styling on the **staging** chips when the corresponding handler prop is provided AND `staging === false`. (The prev/next-hunk chips + `${focusedHunkIndex + 1}/${totalHunks}` counter stay disabled placeholders here — PR3 Task 3.1 lifts them and adds the `onPrevHunk` / `onNextHunk` / `focusedHunkIndex` / `totalHunks` props.)
+
+Discard All adds a confirmation popover (the `<Tooltip interactive>` pattern from the existing `<Tooltip>` primitive — or a small inline `<Popover>` if Tooltip's `interactive` mode doesn't support buttons): "Discard all changes to `<filename>`? This cannot be undone." with `Confirm` / `Cancel` buttons.
+
+- [ ] **Step 3: Extend `DiffChipToolbar.test.tsx`**
+
+- Click each staging chip → corresponding handler is called once with no arguments.
+- `staging === true` → all staging chips are disabled.
+- Click Discard All → confirmation popover appears; click Confirm → `onDiscardAll` is called; click Cancel → handler is NOT called.
+
+(prev/next-hunk wrap-around assertions are added in PR3 Task 3.1.)
+
+- [ ] **Step 4: Run tests + manual E2E**
+
+```bash
+npx vitest run src/features/diff/
+```
+
+Manual E2E: `npm run electron:dev`. Modify a tracked file with at least 2 distinct hunks. In the diff pane, click a hunk row to focus it. Click `stage`. Verify in a shell: `git status --short` shows partial staging; `git diff --cached` shows only the staged hunk. Unstage it back. Discard a hunk. Verify the working tree updates and the diff refreshes automatically. (prev/next-hunk chip navigation is exercised in PR3.)
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/features/diff/
+git commit -m "feat(diff): wire staging chip handlers for stage/unstage/discard"
+```
+
+### Task 2.6 — Worker-pool write serialization (cross-instance)
+
+Generalizes the hotfix that shipped as [#276](https://github.com/winoooops/vimeflow/pull/276). PR1 synced `theme` to the worker pool via a **per-instance** `useEffect` in `DiffPanelContent` (with a local `cancelled` flag). That has two problems the hotfix surfaced: (1) `lineDiffType` — the HIGHLIGHT dropdown — was never pushed through `WorkerPoolManager.setRenderOptions` at all (it was wired only to the inert per-instance prop), so the dropdown was a no-op; and (2) the serialization guard was per-component-instance, so two diff panes sharing the same pool could interleave/clobber each other's writes. This task moves serialization to **module-level, pool-keyed state** so all instances writing to the same pool share one in-order write chain.
+
+**Files:**
+
+- Create: `src/features/diff/services/workerPoolWrites.ts`
+- Create: `src/features/diff/services/workerPoolWrites.test.ts`
+- Modify: `src/features/diff/components/DiffPanelContent.tsx`
+
+- [ ] **Step 1: Write `workerPoolWrites.ts`**
+
+Module-level `WeakMap<WorkerPool, Promise<void>>` keyed by the pool instance. Each `setRenderOptions` call appends to the pool's chain so writes land in order across instances:
+
+```ts
+// Pool-keyed serialization chain. A WeakMap means a pool's chain is GC'd
+// with the pool — no manual teardown, no leak across workspaces.
+const chains = new WeakMap<object, Promise<void>>()
+
+export interface PoolRenderOptions {
+  theme?: string
+  lineDiffType?: string
+}
+
+/**
+ * Serialize a setRenderOptions write against all other writes to the same
+ * pool. `shouldSkip` lets a queued write bail if it was superseded (e.g. the
+ * user toggled the dropdown again before this write ran) — cancelled queued
+ * writes are skipped rather than applied stale.
+ */
+export const enqueuePoolWrite = (
+  pool: { setRenderOptions: (o: PoolRenderOptions) => Promise<void> },
+  options: PoolRenderOptions,
+  shouldSkip?: () => boolean
+): Promise<void> => {
+  const prev = chains.get(pool) ?? Promise.resolve()
+  const next = prev
+    .catch(() => undefined) // a failed prior write must not poison the chain
+    .then(async () => {
+      if (shouldSkip?.()) return
+      await pool.setRenderOptions(options)
+    })
+  chains.set(pool, next)
+  return next
+}
+
+// Test-only: reset the module chain so a pool stub from one test does not
+// leak its pending promise into the next test.
+export const __resetPoolWritesForTest = (): void => {
+  // WeakMap has no clear(); rebinding is the simplest reset. Implementations
+  // may instead expose a `deleteChain(pool)` if a full rebind is awkward —
+  // the contract is "no cross-test leakage of the module-level chain".
+}
+```
+
+Implementation note: because `WeakMap` has no `clear()`, expose whatever reset shape is cleanest (rebinding a `let`-bound map, or a `deleteChain(pool)` helper). The hard requirement is that `workerPoolWrites.test.ts` can reset module state between tests so a pending promise from one test's pool stub never leaks into the next.
+
+- [ ] **Step 2: Write `workerPoolWrites.test.ts`**
+
+- Two interleaved `enqueuePoolWrite` calls on the **same** pool stub resolve in submission order (assert the stub's `setRenderOptions` was called in the order enqueued, not racing).
+- A queued write whose `shouldSkip()` returns `true` does NOT call `setRenderOptions`.
+- A rejected earlier write does not prevent a later queued write from running (chain `.catch` swallows the failure).
+- Writes to two **different** pool stubs are independent (no shared chain).
+- `beforeEach` calls the reset helper; assert no leakage (a fresh pool stub starts with an empty chain).
+
+- [ ] **Step 3: Migrate `DiffPanelContent` to the serializer**
+
+Replace the per-instance theme `useEffect` (the `syncTheme` block) with `enqueuePoolWrite(workerPool, { theme, lineDiffType }, …)`, driven by a single effect that depends on `[workerPool, theme, lineDiffType]`. Push **both** `theme` and `lineDiffType` through the pool — this is the actual #276 fix (the HIGHLIGHT dropdown now takes effect). Keep the existing `themeSyncError` surface for the failure path. Use the `shouldSkip` hook (or the existing `cancelled` pattern, hoisted to the serializer) so a superseded write is skipped rather than applied stale.
+
+- [ ] **Step 4: Open UX design point — single shared pool holds ONE theme / lineDiffType**
+
+⚠️ **To be decided during PR2.** The app currently mounts ONE `<WorkerPoolContextProvider>` (Task 1.3), so `setRenderOptions` is global to the pool: every diff instance sharing that pool renders with the same `theme` and `lineDiffType`. **Two diff panes cannot show independent themes (or independent HIGHLIGHT modes).** Options to weigh before finalizing PR2:
+
+- **(a) Accept the global** — document that theme / lineDiffType are app-wide diff settings (simplest; matches today's single-provider mount). Likely the v1 answer.
+- **(b) Per-pane pool** — mount a pool per diff pane so each can hold its own options (more workers, more memory; revisits the Task 1.3 singleton decision).
+- **(c) Lift to a single source of truth** — keep one pool but make theme / lineDiffType app-level settings with one control, removing the _expectation_ of per-pane independence.
+
+Record the decision in the PR2 description (and, if it changes the provider topology, in a short decision note under `docs/decisions/`).
+
+- [ ] **Step 5: Run tests + type-check + manual E2E**
+
+```bash
+npx vitest run src/features/diff/services/workerPoolWrites.test.ts src/features/diff/components/DiffPanelContent.test.tsx
+npm run type-check
+```
+
+Manual E2E: `npm run electron:dev`. Open a diff. Toggle the HIGHLIGHT dropdown rapidly between `word` / `char` / `line` — the rendered intra-line diff must actually change (the #276 regression). Toggle the theme dropdown; confirm it still applies. If two diff panes can be opened against the same pool, confirm writes don't clobber.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add src/features/diff/services/workerPoolWrites.ts src/features/diff/services/workerPoolWrites.test.ts src/features/diff/components/DiffPanelContent.tsx
+git commit -m "feat(diff): serialize worker-pool option writes across instances (theme + lineDiffType)"
+```
+
+### Task 2.7 — PR2 final verification + open PR
+
+- [ ] **Step 1: Run spec Section 11.2 acceptance checklist**
+- [ ] **Step 2: Local verification**
+
+```bash
+npm run type-check && npm run lint && npm run test && npm run build && (cd crates/backend && cargo test)
+```
+
+- [ ] **Step 3: Open PR2**
+
+```bash
+/lifeline:request-pr
+```
+
+Title: `feat(diff): hunk staging IPC + chip wiring + worker-pool write serialization (PR2 of 4)`.
+
+---
+
+## PR3 — Hunk Navigation
+
+> **New PR in the 4-PR re-scope.** These tasks were extracted from the old combined PR2 staging-and-navigation task. PR3 makes the prev/next-hunk chips (disabled placeholders since PR1) functional: they drive Pierre's viewport via the `selectedLines` controlled prop and track the focused hunk as toolbar state. Depends on PR1's `<MultiFileDiff>` mount and PR2's `findRawDiffHunkIndex` mapping + lifted staging chips.
+
+### Task 3.1 — Functional prev/next-hunk navigation in `DiffPanelContent` + `DiffChipToolbar`
+
+Per spec Section 6 (hunk navigation).
+
+**Files:**
+
+- Modify: `src/features/diff/components/DiffPanelContent.tsx`
+- Modify: `src/features/diff/components/toolbar/DiffChipToolbar.tsx`
+- Modify: `src/features/diff/components/toolbar/DiffChipToolbar.test.tsx`
+- Modify: `src/features/diff/components/DiffPanelContent.test.tsx`
+
+- [ ] **Step 1: Add prev/next hunk handlers**
+
+These cycle the focused hunk index over `response.fileDiff.hunks` and feed the same `focusedHunk` state that PR2's staging chips read (Task 2.5 Step 1). Until now (PR2) `focusedHunk` was only set by clicking a Pierre hunk row; PR3 adds the prev/next chip writers.
 
 ```ts
 const onPrevHunk = useCallback(() => {
@@ -1594,7 +1787,9 @@ const onNextHunk = useCallback(() => {
 }, [response])
 ```
 
-- [ ] **Step 3: Compute `selectedLines` for Pierre from the focused hunk**
+- [ ] **Step 2: Compute `selectedLines` for Pierre from the focused hunk**
+
+Pierre exposes no imperative `setSelectedLines` on the React handle — drive its viewport via the **`selectedLines` controlled prop** on `<MultiFileDiff>`.
 
 ```ts
 const focusedHunk = response?.fileDiff.hunks[focusedHunkIndex]
@@ -1621,58 +1816,64 @@ const selectedLines: SelectedLineRange | null = focusedHunk
 
 Pass `selectedLines` to `<MultiFileDiff>`.
 
-- [ ] **Step 4: Wire handlers into `<DiffChipToolbar>`**
+- [ ] **Step 3: Map Pierre `HunkData` → raw-diff hunk index by line range**
 
-Add the new props to `DiffChipToolbarProps`: `onPrevHunk`, `onNextHunk`, `onStage`, `onUnstage`, `onDiscard`, `onDiscardAll`, `staging`, `focusedHunkIndex`, `totalHunks`. Inside the toolbar, lift the `disabled` styling on the staging chips when the corresponding handler prop is provided AND `staging === false`. Hunk counter chip reads `${focusedHunkIndex + 1}/${totalHunks}`.
+Reuse `findRawDiffHunkIndex` (added in PR2 Task 2.4) — the mapping is by `(newStart, newLines)` line-range match against `response.fileDiff.hunks`, because Pierre's jsdiff engine and git can split hunks differently. The chip's "focused" identity is always the Pierre hunk's range; navigation and staging both resolve the git index from that range at the moment of action, never trusting a stored index as if it were a raw-diff index. Add any nav-specific range tests in `pierreAdapter.test.ts` not already covered by PR2's staging tests.
 
-Discard All adds a confirmation popover (the `<Tooltip interactive>` pattern from the existing `<Tooltip>` primitive — or a small inline `<Popover>` if Tooltip's `interactive` mode doesn't support buttons): "Discard all changes to `<filename>`? This cannot be undone." with `Confirm` / `Cancel` buttons.
+- [ ] **Step 4: Wire prev/next + counter into `<DiffChipToolbar>`**
 
-- [ ] **Step 5: Extend `DiffChipToolbar.test.tsx`**
+Add `onPrevHunk`, `onNextHunk`, `focusedHunkIndex`, `totalHunks` to `DiffChipToolbarProps`. Lift the `disabled` styling on the prev/next-hunk chips and the `${focusedHunkIndex + 1}/${totalHunks}` counter chip (they were placeholders through PR1 and PR2).
 
-- Click each staging chip → corresponding handler is called once with no arguments.
-- `staging === true` → all staging chips are disabled.
-- Click Discard All → confirmation popover appears; click Confirm → `onDiscardAll` is called; click Cancel → handler is NOT called.
-- Click next hunk twice with 3 hunks → `setFocusedHunkIndex` called with 1 then 2; with 3 hunks and `focusedHunkIndex===2`, next wraps to 0.
+- [ ] **Step 5: Caveat on scroll behavior**
 
-- [ ] **Step 6: Run tests + manual E2E**
+Pierre's `selectedLines` prop sets the selection (the row gets a highlight ring); whether the change triggers a viewport scroll-into-view depends on Pierre's internal behavior, which v1 does not assume. If the selected hunk is off-screen and Pierre does not auto-scroll, surface it in this task's manual E2E and add a follow-up that explicitly scrolls the diff container to the selected element via DOM `Element.scrollIntoView({ behavior: 'smooth', block: 'center' })` once Pierre's render has settled. The selection itself is the source-of-truth "focused hunk" state; the scroll is presentation polish.
+
+- [ ] **Step 6: Extend tests**
+
+- `DiffChipToolbar.test.tsx`: click next hunk twice with 3 hunks → `setFocusedHunkIndex` called with 1 then 2; with 3 hunks and `focusedHunkIndex===2`, next wraps to 0; prev from 0 wraps to 2.
+- `DiffPanelContent.test.tsx`: assert `selectedLines` is derived from the focused hunk and passed to `<MultiFileDiff>`; assert a deletion-only hunk (`newLines === 0`) maps to `side: 'deletions'`.
+
+- [ ] **Step 7: Run tests + manual E2E**
 
 ```bash
 npx vitest run src/features/diff/
 ```
 
-Manual E2E: `npm run electron:dev`. Modify a tracked file with at least 3 distinct hunks. In the diff pane, click `next hunk` until hunk 2 is focused (counter shows `2/3`). Click `stage`. Verify in a shell: `git status --short` shows partial staging; `git diff --cached` shows only the staged hunk. Unstage it back. Discard hunk 1. Verify the working tree updates and the diff refreshes automatically.
+Manual E2E: `npm run electron:dev`. Modify a tracked file with at least 3 distinct hunks. In the diff pane, click `next hunk` until hunk 2 is focused (counter shows `2/3`); confirm the selection highlight moves (and note whether the viewport scrolls — Step 5 caveat). Click `stage` and confirm PR2's per-hunk staging still operates on the now-navigated hunk.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
 git add src/features/diff/
-git commit -m "feat(diff): wire chip handlers for stage/unstage/discard + hunk navigation"
+git commit -m "feat(diff): functional prev/next-hunk navigation via Pierre selectedLines"
 ```
 
-### Task 2.6 — PR2 final verification + open PR
+### Task 3.2 — PR3 final verification + open PR
 
-- [ ] **Step 1: Run spec Section 10.2 acceptance checklist**
+- [ ] **Step 1: Run spec Section 11.3 acceptance checklist (hunk navigation)**
 - [ ] **Step 2: Local verification**
 
 ```bash
 npm run type-check && npm run lint && npm run test && npm run build && (cd crates/backend && cargo test)
 ```
 
-- [ ] **Step 3: Open PR2**
+- [ ] **Step 3: Open PR3**
 
 ```bash
 /lifeline:request-pr
 ```
 
-Title: `feat(diff): hunk staging IPC + chip wiring (PR2 of 3)`.
+Title: `feat(diff): functional hunk navigation (PR3 of 4)`.
 
 ---
 
-## PR3 — Inline Review Comments
+## PR4 — Inline Review Comments
 
-### Task 3.1 — Build the feedback batch hook
+> **Formerly PR3** in the 3-PR plan; renumbered to PR4 in the 4-PR re-scope. Task content is unchanged — only the PR/Task numbering and spec cross-references were updated (old spec §6 → §7). Depends on PR1's `<MultiFileDiff>` mount.
 
-Per spec Section 6.2.
+### Task 4.1 — Build the feedback batch hook
+
+Per spec Section 7.2.
 
 **Files:**
 
@@ -1750,7 +1951,7 @@ export const useFeedbackBatch = (): UseFeedbackBatchReturn => {
 
   // updateAnnotation, removeAnnotation, clearBatch follow the same Map-clone pattern.
   // removeAnnotation: if the file's list becomes empty after removal, delete
-  // the Map key entirely (per spec Section 6.2 housekeeping rule).
+  // the Map key entirely (per spec Section 7.2 housekeeping rule).
 
   // ... full impl ...
   return {
@@ -1782,9 +1983,9 @@ git add src/features/diff/hooks/useFeedbackBatch.ts src/features/diff/hooks/useF
 git commit -m "feat(diff): add useFeedbackBatch hook with soft cap"
 ```
 
-### Task 3.2 — Build `ReviewCommentRow` + `ReviewCommentComposer`
+### Task 4.2 — Build `ReviewCommentRow` + `ReviewCommentComposer`
 
-Per spec Section 6.1.
+Per spec Section 7.1.
 
 **Files:**
 
@@ -1957,9 +2158,9 @@ git add src/features/diff/components/ReviewCommentRow.tsx src/features/diff/comp
 git commit -m "feat(diff): add ReviewCommentRow + ReviewCommentComposer"
 ```
 
-### Task 3.3 — Build `activePanePicker` + `feedbackDispatch`
+### Task 4.3 — Build `activePanePicker` + `feedbackDispatch`
 
-Per spec Section 6.3 + 6.4.
+Per spec Section 7.3 + 7.4.
 
 **Files:**
 
@@ -1995,12 +2196,12 @@ export type ResolveResult =
 // Supported agents that the feedback dispatch knows how to format for.
 // Other adapters (some future agent we don't yet test against) are
 // filtered out until we explicitly verify the bracketed-paste flow
-// works against them in PR3's manual E2E.
+// works against them in PR4's manual E2E.
 export type SupportedAgent = 'Claude Code' | 'Codex'
 const SUPPORTED_AGENTS: readonly SupportedAgent[] = ['Claude Code', 'Codex']
 
 /**
- * Per spec Section 6.3 — filter to panes in this workspace whose:
+ * Per spec Section 7.3 — filter to panes in this workspace whose:
  *  - cwd matches the diff cwd (exact or descendant), AND
  *  - have a detected agent that's in SUPPORTED_AGENTS (Claude Code | Codex), AND
  *  - have status === 'running' (the agent process is live).
@@ -2100,9 +2301,9 @@ git add src/features/diff/services/activePanePicker.ts src/features/diff/service
 git commit -m "feat(diff): add activePanePicker + feedbackDispatch services"
 ```
 
-### Task 3.4 — Build `FinishFeedbackPopover` (send-confirmation + multi-pane picker)
+### Task 4.4 — Build `FinishFeedbackPopover` (send-confirmation + multi-pane picker)
 
-Per spec Section 6.2 + 6.3.
+Per spec Section 7.2 + 7.3.
 
 **Files:**
 
@@ -2133,9 +2334,9 @@ git add src/features/diff/components/FinishFeedbackPopover.tsx src/features/diff
 git commit -m "feat(diff): add FinishFeedbackPopover (send + pick agent pane)"
 ```
 
-### Task 3.5 — Integrate annotations into `DiffPanelContent` + `DiffChipToolbar`
+### Task 4.5 — Integrate annotations into `DiffPanelContent` + `DiffChipToolbar`
 
-Per spec Section 6.
+Per spec Section 7.
 
 **Files:**
 
@@ -2149,7 +2350,7 @@ Per spec Section 6.
 const feedback = useFeedbackBatch()
 const total = feedback.totalAnnotations()
 
-// Spec Section 6.2: clear on workspace cwd change. DiffPanelContent
+// Spec Section 7.2: clear on workspace cwd change. DiffPanelContent
 // receives `cwd` as a prop and is NOT remounted across workspace
 // switches in some flows, so we must explicitly clear the batch when
 // the cwd changes. The earliest cwd value is captured in a ref to
@@ -2163,7 +2364,7 @@ useEffect(() => {
 }, [cwd, feedback])
 ```
 
-The `clearBatch` callback inside `useFeedbackBatch` is referentially stable (wrapped in `useCallback` with an empty dep array — verify in the hook implementation from Task 3.1, fix it there if not).
+The `clearBatch` callback inside `useFeedbackBatch` is referentially stable (wrapped in `useCallback` with an empty dep array — verify in the hook implementation from Task 4.1, fix it there if not).
 
 - [ ] **Step 2: Pass `lineAnnotations` + `renderAnnotation` to `<MultiFileDiff>`**
 
@@ -2246,29 +2447,29 @@ git add src/features/diff/
 git commit -m "feat(diff): inline review comments → write_pty to active agent pane"
 ```
 
-### Task 3.6 — PR3 final verification + open PR
+### Task 4.6 — PR4 final verification + open PR
 
-- [ ] **Step 1: Run spec Section 10.3 acceptance checklist**
+- [ ] **Step 1: Run spec Section 11.4 acceptance checklist**
 - [ ] **Step 2: Local verification**
 
 ```bash
 npm run type-check && npm run lint && npm run test && npm run build && (cd crates/backend && cargo test)
 ```
 
-- [ ] **Step 3: Open PR3**
+- [ ] **Step 3: Open PR4**
 
 ```bash
 /lifeline:request-pr
 ```
 
-Title: `feat(diff): inline review comments to active agent pane (PR3 of 3)`.
+Title: `feat(diff): inline review comments to active agent pane (PR4 of 4)`.
 
 ---
 
 ## Stop here
 
-After PR3 lands, the integration is complete per the spec. Follow-ups (optimistic UI, Catppuccin theme, virtualization, settings persistence, `@pierre/trees` swap) are tracked separately per spec Section 9.1.
+After PR4 lands, the integration is complete per the spec. Follow-ups (optimistic UI, Catppuccin theme, virtualization, settings persistence, `@pierre/trees` swap) are tracked separately per spec Section 10.1.
 
-This plan ends at PR3 opening — DO NOT chain into execution. Control returns to `/lifeline:planner` (or to a fresh `/superpowers:executing-plans` / `/superpowers:subagent-driven-development` invocation when the operator is ready).
+This plan ends at PR4 opening — DO NOT chain into execution. Control returns to `/lifeline:planner` (or to a fresh `/superpowers:executing-plans` / `/superpowers:subagent-driven-development` invocation when the operator is ready).
 
 <!-- codex-reviewed: 2026-05-24T12:50:37Z -->
