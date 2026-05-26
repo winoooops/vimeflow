@@ -268,7 +268,7 @@ fn claude_tool_use_dto_distinguishes_absent_vs_null_input() {
 
 - [ ] **Step 2: Run — expect FAIL** (DTOs undefined). `cargo test -p vimeflow-backend transcript_dto` → FAIL (won't compile).
 
-- [ ] **Step 3: Define the DTOs.**
+- [ ] **Step 3: Wire + define.** Declare `mod transcript_dto;` in `claude_code/mod.rs` and `use super::transcript_dto::…` in `transcript.rs`, then define the DTOs:
 
 ```rust
 use serde::Deserialize;
@@ -344,8 +344,8 @@ git commit -m "feat(transcript): add Claude transcript DTOs"
 This is a **pure refactor done *before* the DTO migration** — it still operates on raw `Value`, so it compiles and stays green standalone (Task 1.4 later feeds it `&dto.content`). `summarize_input` already takes the input *value* and the three `input` consumers (`bash_command`/`tool_file_path`/`summarize_input`, `claude:378`) keep their current args here — only `extract_tool_result_content` is retargeted.
 
 - [ ] **Step 1: Change the signature** to `fn extract_tool_result_content(content: &Value) -> String`, deleting its internal `value.get("content")` lookup (the former `raw` becomes the `content` arg, `claude:686`).
-- [ ] **Step 2: Update the current call site** (`process_tool_result`, still on the raw block) to extract + pass the content sub-value: `extract_tool_result_content(block.get("content").unwrap_or(&Value::Null))` — behavior-neutral (absent and `null` both yield `""`).
-- [ ] **Step 3: Run — expect PASS.** `cargo test -p vimeflow-backend extract_tool_result_content` (the existing F15/F1 tests) → PASS.
+- [ ] **Step 2: Update *all* call sites** to pass the content value: (a) the production `process_tool_result` (still on the raw block) → `extract_tool_result_content(block.get("content").unwrap_or(&Value::Null))`; (b) the **existing `extract_tool_result_content_*` tests** (F15/F1), which currently build an enclosing `serde_json::json!({ "content": … })` and pass the whole object → change them to pass the content value directly (`&value["content"]`). Both are behavior-neutral (absent and `null` both yield `""`). Missing (b) is the trap: the helper would otherwise receive `{"content": …}` and see no `content` field.
+- [ ] **Step 3: Run — expect PASS.** `cargo test -p vimeflow-backend extract_tool_result_content` (the updated F15/F1 tests) → PASS.
 - [ ] **Step 4: Commit.** `git commit -am "refactor(transcript): extract_tool_result_content takes the content value"`
 
 ### Task 1.4: Migrate Claude `process_line` to DTOs + regression tests
@@ -377,7 +377,8 @@ fn summarize_input_preserves_absent_vs_null() {
 
 **Files:**
 - Create: `crates/backend/src/agent/adapter/codex/transcript_dto.rs`
-- Modify: `codex/transcript.rs`
+- Modify: `codex/mod.rs` (declare `mod transcript_dto;` — sibling decl lives in the parent `mod.rs`, like `mod statusline;`/`mod parser;`)
+- Modify: `codex/transcript.rs` (`use super::transcript_dto::…`)
 
 **Reference:** spec § 4 "Codex shapes" — `{timestamp, type, payload}` envelope; **two-level dispatch** (top-level `type`: `session_meta`/`response_item`/`event_msg`; inner `payload.type` for BOTH `response_item` *and* `event_msg`, `codex:347`). Each dispatch is a **manual classifier over `Option<String>`** (read the tag with `lenient_string`, `match tag.as_deref()` with an `Other` default) — **not** a `#[serde(tag="type")]` + `#[serde(other)]` enum, which *errors* on a missing or non-string tag rather than falling through. Payload scalars typed lenient (`call_id`/`name`/`status`/`message`/`aggregated_output` via `lenient_string`; `success` via `lenient_bool`; `exit_code` via `lenient_i64`, `codex:571`/`:595`). Raw carve-outs: `arguments`/`output`/custom-tool `input` as `Option<String>` (`lenient_string`) re-parsed by ported helpers; `duration` via `#[serde(flatten)] rest` presence (`codex:765`). Two cwd sources preserved in order (`session_meta.cwd` then `exec_command.arguments.workdir`, `codex:100`); `turn_context.cwd` NOT a source.
 
@@ -406,7 +407,7 @@ fn codex_exec_end_exit_code_is_lenient_and_duration_presence_preserved() {
 ```
 
 - [ ] **Step 2: Run — expect FAIL.** `cargo test -p vimeflow-backend codex_record_type` and `cargo test -p vimeflow-backend codex_exec_end` → FAIL (won't compile).
-- [ ] **Step 3: Define** (a) the envelope `CodexLineDto { #[serde(rename = "type", default, deserialize_with = "lenient_string")] type_tag: Option<String>, #[serde(default, deserialize_with = "lenient_string")] timestamp: Option<String>, #[serde(default)] payload: Value }` — `timestamp` MUST be `lenient_string` (a non-string timestamp degrades to `None` → the conversion's `unwrap_or_else(now_iso8601)` fallback fires, matching `extract_timestamp`; a plain `Option<String>` would error and drop the event) — with a manual `record_type(&self) -> CodexRecordType` matching `type_tag.as_deref()` (default `Other`); (b) the inner payload-type classifier the same way (over the payload's `type`, for both `response_item` and `event_msg`); (c) the per-`type` payload DTOs (scalars lenient; `#[serde(flatten)] rest: Map<String,Value>` on payloads that need `duration`; `arguments`/`output`/`input` as `Option<String>` via `lenient_string`; inner `CodexExecArgsDto`/`CodexCustomToolOutputDto` for the re-parsed JSON strings, `metadata.exit_code` via `lenient_i64`). Wrong-shaped payloads degrade via the `Other`/classifier path, not a hard parse error. Follow the exact field set in spec § 4.
+- [ ] **Step 3: Wire + define.** Declare `mod transcript_dto;` in `codex/mod.rs` and `use super::transcript_dto::…` in `transcript.rs`, then define (a) the envelope `CodexLineDto { #[serde(rename = "type", default, deserialize_with = "lenient_string")] type_tag: Option<String>, #[serde(default, deserialize_with = "lenient_string")] timestamp: Option<String>, #[serde(default)] payload: Value }` — `timestamp` MUST be `lenient_string` (a non-string timestamp degrades to `None` → the conversion's `unwrap_or_else(now_iso8601)` fallback fires, matching `extract_timestamp`; a plain `Option<String>` would error and drop the event) — with a manual `record_type(&self) -> CodexRecordType` matching `type_tag.as_deref()` (default `Other`); (b) the inner payload-type classifier the same way (over the payload's `type`, for both `response_item` and `event_msg`); (c) the per-`type` payload DTOs (scalars lenient; `#[serde(flatten)] rest: Map<String,Value>` on payloads that need `duration`; `arguments`/`output`/`input` as `Option<String>` via `lenient_string`; inner `CodexExecArgsDto`/`CodexCustomToolOutputDto` for the re-parsed JSON strings, `metadata.exit_code` via `lenient_i64`). Wrong-shaped payloads degrade via the `Other`/classifier path, not a hard parse error. Follow the exact field set in spec § 4.
 - [ ] **Step 4: Run — expect PASS.** `cargo test -p vimeflow-backend codex_record_type` and `cargo test -p vimeflow-backend codex_exec_end` → PASS.
 - [ ] **Step 5: Commit.** `git add crates/backend/src/agent/adapter/codex/transcript_dto.rs crates/backend/src/agent/adapter/codex/mod.rs crates/backend/src/agent/adapter/codex/transcript.rs && git commit -m "feat(transcript): add Codex transcript DTOs"`
 
