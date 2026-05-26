@@ -346,7 +346,7 @@ This is a **pure refactor done *before* the DTO migration** — it still operate
 
 - [ ] **Step 1: Change the signature** to `fn extract_tool_result_content(content: &Value) -> String`, deleting its internal `value.get("content")` lookup (the former `raw` becomes the `content` arg, `claude:686`).
 - [ ] **Step 2: Update *all* call sites** to pass the content value: (a) the production `process_tool_result` (still on the raw block) → `extract_tool_result_content(block.get("content").unwrap_or(&Value::Null))`; (b) the **existing `extract_tool_result_content_*` tests** (F15/F1), which currently build an enclosing `serde_json::json!({ "content": … })` and pass the whole object → change them to pass the content value directly (`&value["content"]`). Both are behavior-neutral (absent and `null` both yield `""`). Missing (b) is the trap: the helper would otherwise receive `{"content": …}` and see no `content` field.
-- [ ] **Step 3: Run — expect PASS.** `cargo test -p vimeflow extract_tool_result_content` (the updated F15/F1 tests) → PASS.
+- [ ] **Step 3: Run — expect PASS.** `cargo test -p vimeflow extract_tool_result_content` (matches the F15/F1 test fns by name) → PASS; **confirm the summary reports those tests ran (not `0 passed`)**.
 - [ ] **Step 4: Commit.** `git commit -am "refactor(transcript): extract_tool_result_content takes the content value"`
 
 ### Task 1.4: Migrate Claude `process_line` to DTOs + regression tests
@@ -369,7 +369,7 @@ fn summarize_input_preserves_absent_vs_null() {
 }
 ```
 
-- [ ] **Step 2: Run — confirm the presence test PASSES against current `summarize_input`** (it documents the contract the DTO must preserve), and the wrong-typed test FAILS only if the migration regresses.
+- [ ] **Step 2: Run the baseline — expect PASS.** `cargo test -p vimeflow summarize_input_preserves_absent_vs_null` and `cargo test -p vimeflow process_line_emits_with_wrong_typed_is_error` (separately) → both PASS against the *current* code (the current `.and_then(as_bool).unwrap_or(false)` / `summarize_input` already degrade gracefully). They are the regression net: the Step 3 migration must keep them green. **Confirm each reports 1 test ran (not `0`).**
 - [ ] **Step 3: Migrate the `process_line` body**, shape-by-shape (spec § 4 enumerates every field + its consumer). Parse each line once via `serde_json::from_str::<ClaudeTranscriptLineDto>(line)`. **Invariant — no line ever deserialize-fails:** every `ClaudeTranscriptLineDto` field is `#[serde(default)]`/lenient, so a non-`tool_result` line simply gets `content = Value::Null`, `tool_use_id`/`is_error = None`, and a wrong-shaped `message` degrades to `None` via `lenient_object`; the DTO is therefore safe to apply to *all* line types, not just `tool_result`. Then read typed fields; classify `message.content` items with the existing ported predicates (`is_user_prompt`, `is_non_empty_user_block`, `line_type`); feed `summarize_input` / `bash_command` / `tool_file_path` the preserved raw `input`. Keep the emitted events byte-for-byte for deterministic fields.
 - [ ] **Step 4: Run the full Claude transcript tests + Phase 0 `T-replay`** — `cargo test -p vimeflow claude_code` (the module-root filter covers `transcript`, `transcript_dto`, **and** the Phase 0 `transcript_fixture_tests`) → all green. Restore `src/bindings/` if perturbed.
 - [ ] **Step 5: Commit.** `git commit -am "refactor(transcript): migrate Claude process_line to typed DTOs"`
@@ -549,7 +549,7 @@ impl TranscriptDecoder for RecordingDecoder {
   - `engine_skips_blank_line`: `[Chunk("   \n"), EofStop]` → assert `lines` empty.
   - `engine_read_error_warns_and_continues`: `[Chunk("{\"a\":1}\n"), Err, Chunk("{\"b\":2}\n"), EofStop]` → assert `lines == ["{\"a\":1}", "{\"b\":2}"]` — the loop warns + sleeps + **continues** past the read error (pinning the frozen `error→warn→sleep` contract that Task 2.5 requires; `poll_interval` is `ZERO` so the sleep is a no-op).
 
-- [ ] **Step 3: Run — expect PASS** — `cargo test -p vimeflow base::transcript_tail_service` (module-path filter); **confirm all four named tests ran** (not `0 passed`). Fix `run` if any fail.
+- [ ] **Step 3: Run — expect PASS** — `cargo test -p vimeflow base::transcript_tail_service` (module-path filter); **confirm all five named tests ran** (not `0 passed`). Fix `run` if any fail.
 - [ ] **Step 4: Commit.** `git commit -am "test(transcript): deterministic engine buffering + EOF/normalization"` (the new structs live in the already-tracked `transcript_tail_service.rs`, so `-am` is fine here).
 
 ### Task 2.3: `ClaudeTranscriptDecoder` + thin `start_tailing` (Claude)
