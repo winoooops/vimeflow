@@ -1016,6 +1016,113 @@ mod tests {
         assert_eq!(test_run_payloads[0]["summary"]["failed"], 0);
     }
 
+    /// Append `\n`-terminated JSONL records to an existing rollout (live-tail tests).
+    fn append_rollout(path: &Path, lines: &[Value]) {
+        use std::io::Write;
+        let mut file = std::fs::OpenOptions::new()
+            .append(true)
+            .open(path)
+            .expect("open rollout for append");
+        for line in lines {
+            let serialized = serde_json::to_string(line).expect("serialize rollout line");
+            writeln!(file, "{serialized}").expect("append rollout line");
+        }
+    }
+
+    /// An `exec_command` `function_call` + its `exec_command_end` (a passing
+    /// `cargo test` run → one `test-run` snapshot), matched by `call_id`.
+    fn exec_test_pair(call_id: &str, ts_start: &str, ts_end: &str) -> [Value; 2] {
+        [
+            json!({
+                "timestamp": ts_start,
+                "type": "response_item",
+                "payload": {
+                    "type": "function_call",
+                    "name": "exec_command",
+                    "arguments": "{\"cmd\":\"cargo test\",\"workdir\":\"/tmp/ws\"}",
+                    "call_id": call_id
+                }
+            }),
+            json!({
+                "timestamp": ts_end,
+                "type": "event_msg",
+                "payload": {
+                    "type": "exec_command_end",
+                    "call_id": call_id,
+                    "command": ["/bin/bash", "-lc", "cargo test"],
+                    "aggregated_output": "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out\n",
+                    "exit_code": 0,
+                    "duration": { "secs": 1, "nanos": 0 },
+                    "status": "completed"
+                }
+            }),
+        ]
+    }
+
+    /// Phase 0 (Task 0.2): pin the replay→live boundary via `test-run` (Codex).
+    ///
+    /// Characterization test — it must PASS against current code. Three
+    /// `exec_command` test-run pairs replay-collapse to one `test-run` at
+    /// `finish_replay`; a fourth pair appended *after* catch-up emits a second,
+    /// live `test-run`. A sentinel `user_message` (→ agent-turn) is the drain
+    /// barrier. We author >=3 pairs (the existing fixture has only one) so the
+    /// collapse is observable: `count(test-run) == 2` uniquely means
+    /// "1 collapsed + 1 live" (an uncollapsed replay would total >=3).
+    #[test]
+    fn rollout_replay_collapses_then_live_test_run_emits() {
+        let sink = Arc::new(FakeEventSink::new());
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let workspace = tmp.path().join("workspace");
+        std::fs::create_dir_all(&workspace).expect("workspace dir");
+        let transcript_path = tmp.path().join("rollout.jsonl");
+
+        let mut records = Vec::new();
+        records.extend(exec_test_pair("call_exec1", "2026-05-04T10:00:00Z", "2026-05-04T10:00:01Z"));
+        records.extend(exec_test_pair("call_exec2", "2026-05-04T10:00:02Z", "2026-05-04T10:00:03Z"));
+        records.extend(exec_test_pair("call_exec3", "2026-05-04T10:00:04Z", "2026-05-04T10:00:05Z"));
+        write_rollout(&transcript_path, &records);
+
+        let handle = start_tailing(
+            sink.clone(),
+            "sid-replay-live".to_string(),
+            transcript_path.clone(),
+            Some(workspace.clone()), // cwd: test-run snapshot is skipped when None
+        )
+        .expect("tailing should start");
+
+        // (a) Catch-up barrier: replay collapses the 3 snapshots to one test-run.
+        assert!(
+            sink.wait_for_count("test-run", 1, Duration::from_secs(5)),
+            "replay should emit one collapsed test-run",
+        );
+
+        // (b) Append a NEW live pair (call_exec4).
+        append_rollout(
+            &transcript_path,
+            &exec_test_pair("call_exec4", "2026-05-04T10:00:06Z", "2026-05-04T10:00:07Z"),
+        );
+
+        // (c) Drain barrier: a sentinel user_message -> agent-turn (baseline-relative).
+        let turns_before = sink.count("agent-turn");
+        append_rollout(
+            &transcript_path,
+            &[json!({
+                "timestamp": "2026-05-04T10:00:08Z",
+                "type": "event_msg",
+                "payload": { "type": "user_message", "message": "sentinel" }
+            })],
+        );
+        assert!(
+            sink.wait_for_count("agent-turn", turns_before + 1, Duration::from_secs(5)),
+            "sentinel agent-turn should drain past the live pair",
+        );
+
+        handle.stop();
+
+        // (d) Exactly two test-runs: 1 replay-collapsed + 1 live.
+        assert_eq!(sink.count("test-run"), 2, "1 replay-collapsed + 1 live");
+    }
+
     #[test]
     fn summarize_function_call_args_prefers_exec_command_cmd() {
         let payload = json!({

@@ -270,3 +270,90 @@ fn replay_emits_only_latest_snapshot() {
     assert_eq!(events.len(), 1, "expected exactly one emit after replay");
     assert_eq!(events[0].1["summary"]["passed"], 3);
 }
+
+/// Append `\n`-terminated lines to an existing transcript file (live-tail tests).
+fn append_lines(path: &std::path::Path, lines: &[&str]) {
+    use std::io::Write;
+    let mut file = std::fs::OpenOptions::new()
+        .append(true)
+        .open(path)
+        .expect("open transcript for append");
+    for line in lines {
+        writeln!(file, "{line}").expect("append transcript line");
+    }
+}
+
+/// Phase 0 (Task 0.1): pin the replay→live boundary via `test-run`.
+///
+/// Characterization test — it must PASS against current code. Replay collapses
+/// the fixture's 3 test-run pairs to one `test-run` at `finish_replay`; a pair
+/// appended *after* catch-up emits a second, live `test-run`. A sentinel
+/// `agent-turn` is the drain barrier: observing it proves the live pair was
+/// processed before the exact-count assertion (a bare `wait_for_count(test-run,
+/// N)` only proves "≥N arrived"). The fixture is copied into a temp file so the
+/// live appends never mutate the checked-in fixture.
+#[test]
+fn replay_collapses_then_live_test_run_emits() {
+    let sink = Arc::new(FakeEventSink::new());
+    let tmp = tempfile::tempdir().expect("temp transcript dir");
+    let transcript_path = tmp.path().join("replay.jsonl");
+
+    let fixture_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/transcript_vitest_replay.jsonl");
+    let fixture = std::fs::read_to_string(&fixture_path).expect("read replay fixture");
+    std::fs::write(&transcript_path, fixture).expect("seed temp transcript");
+
+    let state = TranscriptState::new();
+    let adapter: Arc<dyn TranscriptStreamer> = Arc::new(ClaudeCodeAdapter);
+    state
+        .start_or_replace(
+            adapter,
+            sink.clone(),
+            "session-replay-live".to_string(),
+            transcript_path.clone(),
+            // Some(cwd) REQUIRED: process_tool_result skips test-run when cwd is None.
+            Some(tmp.path().to_path_buf()),
+        )
+        .expect("start watcher");
+
+    // (a) Catch-up barrier: replay buffers the 3 snapshots; finish_replay emits
+    //     exactly one collapsed test-run (passed=3).
+    assert!(
+        sink.wait_for_count("test-run", 1, Duration::from_secs(5)),
+        "replay should emit one collapsed test-run",
+    );
+
+    // (b) Append a NEW live test-run pair (vitest Bash tool_use + tool_result),
+    //     mirroring the fixture shapes (passed=4).
+    append_lines(
+        &transcript_path,
+        &[
+            r#"{"type":"assistant","timestamp":"2026-04-28T11:03:00.000Z","message":{"content":[{"type":"tool_use","id":"r4","name":"Bash","input":{"command":"vitest run"}}]}}"#,
+            r#"{"type":"user","timestamp":"2026-04-28T11:03:01.000Z","message":{"content":[{"type":"tool_result","tool_use_id":"r4","is_error":false,"content":"     Tests  4 passed (4)\n"}]}}"#,
+        ],
+    );
+
+    // (c) Drain barrier: a sentinel user prompt → agent-turn (baseline-relative).
+    //     Observing it proves every prior line — incl. the live pair — was read.
+    let turns_before = sink.count("agent-turn");
+    append_lines(
+        &transcript_path,
+        &[r#"{"type":"user","timestamp":"2026-04-28T11:03:02.000Z","message":{"content":"sentinel prompt"}}"#],
+    );
+    assert!(
+        sink.wait_for_count("agent-turn", turns_before + 1, Duration::from_secs(5)),
+        "sentinel agent-turn should drain past the live pair",
+    );
+
+    state.stop("session-replay-live").ok();
+
+    // (d) Exactly two test-runs: 1 replay-collapsed (passed=3) + 1 live (passed=4).
+    let runs: Vec<_> = sink
+        .recorded()
+        .into_iter()
+        .filter(|(event, _)| event == "test-run")
+        .collect();
+    assert_eq!(runs.len(), 2, "1 replay-collapsed + 1 live");
+    assert_eq!(runs[0].1["summary"]["passed"], 3, "collapsed replay = latest of 3");
+    assert_eq!(runs[1].1["summary"]["passed"], 4, "live pair");
+}
