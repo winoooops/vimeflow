@@ -97,6 +97,50 @@ describe('StatusBar', () => {
     expect(screen.getByTestId('status-bar-diff')).toHaveTextContent('+540−1.2k')
   })
 
+  test('renders only the additions span when nothing was removed', () => {
+    renderStatusBar({
+      session: {
+        startedAgo: '2m',
+        turns: 5,
+        changes: { added: 500, removed: 0 },
+      },
+      contextPct: 20,
+    })
+
+    // Must not show a misleading −0 in the tertiary (orange) tone.
+    expect(screen.getByTestId('status-bar-diff').textContent).toBe('+500')
+  })
+
+  test('renders only the removals span when nothing was added', () => {
+    renderStatusBar({
+      session: {
+        startedAgo: '2m',
+        turns: 5,
+        changes: { added: 0, removed: 300 },
+      },
+      contextPct: 20,
+    })
+
+    // Must not show a misleading +0 in the success (green) tone.
+    expect(screen.getByTestId('status-bar-diff').textContent).toBe('−300')
+  })
+
+  test('suppresses the context segment when contextPct is null', () => {
+    renderStatusBar({
+      session: {
+        startedAgo: '2m',
+        turns: 5,
+        changes: { added: 1, removed: 1 },
+      },
+      contextPct: null,
+    })
+
+    // Agent is active (turns render) but no context reading has arrived yet, so
+    // the segment is omitted rather than shown as a misleading 😊0%.
+    expect(screen.queryByTestId('status-bar-context')).not.toBeInTheDocument()
+    expect(screen.getByTestId('status-bar-turns')).toHaveTextContent('5 turns')
+  })
+
   test('opens the command palette from the keyboard hint only', async () => {
     const user = userEvent.setup()
     const onOpenPalette = vi.fn()

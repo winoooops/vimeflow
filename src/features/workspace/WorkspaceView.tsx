@@ -99,8 +99,12 @@ const formatStatusDuration = (durationMs: number): string | undefined => {
 
   const totalMinutes = Math.floor(durationMs / 60_000)
 
+  // 0 < durationMs < 60s: show "<1m" rather than hiding the segment, so a
+  // freshly started agent still gets an elapsed-time indicator instead of a
+  // blank bar for its first minute. (durationMs <= 0 returned undefined
+  // above — that is "no data yet", semantically distinct from "<1m".)
   if (totalMinutes <= 0) {
-    return undefined
+    return '<1m'
   }
 
   const days = Math.floor(totalMinutes / 1440)
@@ -743,9 +747,12 @@ export const WorkspaceView = (): ReactElement => {
     isStatusBarAgentActive,
   ])
 
+  // null (not 0) when the agent is active but has not yet reported a context
+  // window — StatusBar suppresses the segment so the user never sees a
+  // misleading 😊0% that implies a healthy reading before any data arrives.
   const statusBarContextPct = isStatusBarAgentActive
-    ? (agentStatus.contextWindow?.usedPercentage ?? 0)
-    : 0
+    ? (agentStatus.contextWindow?.usedPercentage ?? null)
+    : null
 
   // Open a file directly (no unsaved-changes guard). Errors were previously
   // swallowed via `void editorBuffer.openFile(...)`, leaving the user with

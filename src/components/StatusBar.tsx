@@ -26,7 +26,9 @@ export interface StatusBarSession {
 
 export interface StatusBarProps {
   session: StatusBarSession | null
-  contextPct: number
+  // null = the agent is active but has not reported a context window yet;
+  // the segment is suppressed rather than shown as a misleading 0%.
+  contextPct: number | null
   paletteShortcut: readonly ShortcutKey[]
   onOpenPalette: () => void
 }
@@ -211,10 +213,12 @@ const buildSegments = ({
     })
   }
 
-  segments.push({
-    id: 'context',
-    node: <ContextSmiley pct={contextPct} />,
-  })
+  if (contextPct !== null) {
+    segments.push({
+      id: 'context',
+      node: <ContextSmiley pct={contextPct} />,
+    })
+  }
 
   const rate = cacheRate(session.cache)
 
@@ -263,12 +267,16 @@ const buildSegments = ({
           data-testid="status-bar-diff"
           className="inline-flex whitespace-nowrap font-semibold tabular-nums"
         >
-          <span className="text-[var(--success)]">
-            +{formatCompactCount(session.changes.added)}
-          </span>
-          <span className="text-[var(--tertiary)]">
-            −{formatCompactCount(session.changes.removed)}
-          </span>
+          {session.changes.added > 0 && (
+            <span className="text-[var(--success)]">
+              +{formatCompactCount(session.changes.added)}
+            </span>
+          )}
+          {session.changes.removed > 0 && (
+            <span className="text-[var(--tertiary)]">
+              −{formatCompactCount(session.changes.removed)}
+            </span>
+          )}
         </span>
       ),
     })

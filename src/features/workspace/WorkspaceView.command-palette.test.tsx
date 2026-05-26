@@ -536,6 +536,55 @@ describe('WorkspaceView - Command Palette Integration', () => {
     expect(screen.queryByTestId('status-bar-turns')).not.toBeInTheDocument()
   })
 
+  test('hides the status bar context before the first contextWindow payload', async () => {
+    const { useAgentStatus } =
+      await import('../agent-status/hooks/useAgentStatus')
+    vi.mocked(useAgentStatus).mockReturnValue(
+      createAgentStatus({
+        isActive: true,
+        agentExited: false,
+        agentType: 'claude-code',
+        sessionId: 'pty-session-1',
+        // Agent has started but has not reported a context window yet.
+        contextWindow: null,
+        numTurns: 12,
+      })
+    )
+
+    render(<WorkspaceView />)
+
+    // Turns render (agent active on the selected pane) but the context segment
+    // is omitted rather than shown as a misleading 😊0%.
+    expect(screen.getByTestId('status-bar-turns')).toHaveTextContent('12 turns')
+    expect(screen.queryByTestId('status-bar-context')).not.toBeInTheDocument()
+  })
+
+  test('shows a <1m duration for a sub-minute agent session', async () => {
+    const { useAgentStatus } =
+      await import('../agent-status/hooks/useAgentStatus')
+    vi.mocked(useAgentStatus).mockReturnValue(
+      createAgentStatus({
+        isActive: true,
+        agentExited: false,
+        agentType: 'claude-code',
+        sessionId: 'pty-session-1',
+        cost: {
+          totalCostUsd: null,
+          totalDurationMs: 30_000,
+          totalApiDurationMs: 0,
+          totalLinesAdded: 0,
+          totalLinesRemoved: 0,
+        },
+        numTurns: 1,
+      })
+    )
+
+    render(<WorkspaceView />)
+
+    // A freshly started agent (30s elapsed) shows <1m instead of a blank bar.
+    expect(screen.getByTestId('status-bar-duration')).toHaveTextContent('<1m')
+  })
+
   test(':close command removes active session', async () => {
     const user = userEvent.setup()
     render(<WorkspaceView />)
