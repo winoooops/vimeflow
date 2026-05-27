@@ -498,7 +498,7 @@ fn process_tool_result(
 
     if let Some(matched) = call.test_match {
         // Pull the captured Bash output content.
-        let content = extract_tool_result_content(value);
+        let content = extract_tool_result_content(value.get("content").unwrap_or(&Value::Null));
         let captured = super::test_runners::types::CapturedOutput { content, is_error };
         // Build the snapshot only when we have a workspace cwd. Falling
         // back to `Path::new(".")` would canonicalise to the backend
@@ -683,11 +683,12 @@ fn days_to_date(days: u64) -> (u64, u64, u64) {
 /// Pull the textual `content` out of a tool_result JSON value.
 /// Handles both the simple-string shape and the array-of-blocks shape
 /// (where each block may carry `{type:"text", text:"..."}` payloads).
-fn extract_tool_result_content(value: &Value) -> String {
-    let raw = match value.get("content") {
-        Some(c) => c,
-        None => return String::new(),
-    };
+fn extract_tool_result_content(content: &Value) -> String {
+    // Takes the `content` *value* directly (not the enclosing block) so the
+    // A-transcript migration can pass `&dto.content`. Absent `content` (passed
+    // as `Value::Null` by callers) and `null` both miss the str/array arms and
+    // fall through to `""` — behavior-neutral with the prior `.get("content")`.
+    let raw = content;
     if let Some(s) = raw.as_str() {
         return cap_with_head_and_tail(s);
     }
@@ -852,7 +853,7 @@ mod tests {
             "content": "a".repeat(MAX_TOOL_RESULT_CONTENT_LEN + 1024)
         });
 
-        let content = extract_tool_result_content(&value);
+        let content = extract_tool_result_content(&value["content"]);
 
         assert!(content.len() < MAX_TOOL_RESULT_CONTENT_LEN + 1024);
         assert!(content.contains(TOOL_RESULT_TRUNCATED_MARKER));
@@ -881,7 +882,7 @@ mod tests {
             ]
         });
 
-        let content = extract_tool_result_content(&value);
+        let content = extract_tool_result_content(&value["content"]);
 
         assert!(content.contains(TOOL_RESULT_TRUNCATED_MARKER));
         assert!(
@@ -915,7 +916,7 @@ mod tests {
             ]
         });
 
-        let content = extract_tool_result_content(&value);
+        let content = extract_tool_result_content(&value["content"]);
 
         assert_eq!(content.len(), MAX_TOOL_RESULT_CONTENT_LEN);
         assert!(
@@ -944,7 +945,7 @@ mod tests {
             "content": &combined
         });
 
-        let content = extract_tool_result_content(&value);
+        let content = extract_tool_result_content(&value["content"]);
 
         assert!(
             content.contains(summary_line),
@@ -984,7 +985,7 @@ mod tests {
             ]
         });
 
-        let content = extract_tool_result_content(&value);
+        let content = extract_tool_result_content(&value["content"]);
 
         assert_eq!(content.len(), MAX_TOOL_RESULT_CONTENT_LEN);
         assert!(
