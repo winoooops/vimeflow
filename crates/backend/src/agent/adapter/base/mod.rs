@@ -8,6 +8,7 @@
 mod diagnostics;
 mod path_security;
 mod transcript_state;
+mod transcript_tail_service;
 mod watcher_runtime;
 
 use std::path::PathBuf;
@@ -18,6 +19,7 @@ use crate::runtime::EventSink;
 use crate::terminal::PtyState;
 
 pub use transcript_state::{TranscriptHandle, TranscriptStartStatus, TranscriptState};
+pub(crate) use transcript_tail_service::{TranscriptDecoder, TranscriptTailService};
 pub use watcher_runtime::{AgentWatcherState, WatcherHandle};
 
 /// Step B': `start_for` now takes the typed `AgentBindings` bundle
