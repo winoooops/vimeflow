@@ -315,16 +315,40 @@ export class DesktopGitService implements GitService {
     }
   }
 
-  stageFile(): Promise<void> {
-    return Promise.reject(new Error('stageFile not implemented'))
+  async stageFile(file: string, hunkIndex?: number): Promise<void> {
+    try {
+      await invoke('stage_file', {
+        cwd: this.cwd,
+        file,
+        ...(hunkIndex !== undefined ? { hunkIndex } : {}),
+      })
+    } catch (error) {
+      throw new Error(`Failed to stage ${file}: ${String(error)}`)
+    }
   }
 
-  unstageFile(): Promise<void> {
-    return Promise.reject(new Error('unstageFile not implemented'))
+  async unstageFile(file: string, hunkIndex?: number): Promise<void> {
+    try {
+      await invoke('unstage_file', {
+        cwd: this.cwd,
+        file,
+        ...(hunkIndex !== undefined ? { hunkIndex } : {}),
+      })
+    } catch (error) {
+      throw new Error(`Failed to unstage ${file}: ${String(error)}`)
+    }
   }
 
-  discardChanges(): Promise<void> {
-    return Promise.reject(new Error('discardChanges not implemented'))
+  async discardChanges(file: string, hunkIndex?: number): Promise<void> {
+    try {
+      await invoke('discard_file', {
+        cwd: this.cwd,
+        file,
+        ...(hunkIndex !== undefined ? { hunkIndex } : {}),
+      })
+    } catch (error) {
+      throw new Error(`Failed to discard changes to ${file}: ${String(error)}`)
+    }
   }
 }
 

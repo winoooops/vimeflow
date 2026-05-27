@@ -3,6 +3,39 @@ import { afterEach, vi } from 'vitest'
 import * as chordRegistry from '../features/command-palette/chordRegistry'
 import * as paneHeaderRefs from '../features/terminal/paneHeaderRefs'
 
+const ensureLocalStorageClear = (): void => {
+  if (typeof window.localStorage.clear === 'function') {
+    return
+  }
+
+  const values = new Map<string, string>()
+
+  const storage: Storage = {
+    get length(): number {
+      return values.size
+    },
+    clear: (): void => {
+      values.clear()
+    },
+    getItem: (key: string): string | null => values.get(key) ?? null,
+    key: (index: number): string | null =>
+      Array.from(values.keys())[index] ?? null,
+    removeItem: (key: string): void => {
+      values.delete(key)
+    },
+    setItem: (key: string, value: string): void => {
+      values.set(key, value)
+    },
+  }
+
+  Object.defineProperty(window, 'localStorage', {
+    configurable: true,
+    value: storage,
+  })
+}
+
+ensureLocalStorageClear()
+
 afterEach(() => {
   chordRegistry._resetForTest()
   paneHeaderRefs._resetForTest()
