@@ -32,11 +32,18 @@ export interface UseElasticContainerOptions {
   invert?: boolean
   updateMode?: 'live' | 'commit-on-end'
   onDragPreview?: (size: number) => void
+  /** Fixed pixels removed from the measured dimension before percentages apply
+   *  (e.g. a divider track that sits between the two resizable regions).
+   *  Default 0 — leaves single-panel consumers (the dock) unchanged.
+   *  Mount-time constant by contract, like `axis` / `minPercent` / `maxPercent`:
+   *  captured once into a ref; changing it after mount does NOT re-derive bounds. */
+  reservedPx?: number
 }
 
 export interface UseElasticContainerResult extends UseResizableResult {
   pixelMin: number
   pixelMax: number
+  effectiveDimension: number
 }
 
 export const useElasticContainer = ({
@@ -48,13 +55,16 @@ export const useElasticContainer = ({
   invert = false,
   updateMode = 'live',
   onDragPreview = undefined,
+  reservedPx = 0,
 }: UseElasticContainerOptions): UseElasticContainerResult => {
   const minPercentRef = useRef(minPercent)
   const maxPercentRef = useRef(maxPercent)
   const initialPercentRef = useRef(initialPercent)
+  const reservedPxRef = useRef(reservedPx)
 
   const [pixelMin, setPixelMin] = useState(0)
   const [pixelMax, setPixelMax] = useState(Number.MAX_SAFE_INTEGER)
+  const [effectiveDimension, setEffectiveDimension] = useState(0)
 
   const pixelMinRef = useRef(0)
   const pixelMaxRef = useRef(Number.MAX_SAFE_INTEGER)
@@ -101,9 +111,11 @@ export const useElasticContainer = ({
 
     pendingClampRef.current = false
 
+    const effective = Math.max(1, dimensionRef.current - reservedPxRef.current)
+
     const targetPx =
       dimensionRef.current > 0
-        ? Math.round(dimensionRef.current * desiredPercentRef.current)
+        ? Math.round(effective * desiredPercentRef.current)
         : sizeRef.current
     resetToSize(targetPx, pixelMinRef.current, pixelMaxRef.current)
   }, [isDragging, resetToSize])
@@ -117,9 +129,10 @@ export const useElasticContainer = ({
 
       return
     }
+    const effective = Math.max(1, dimensionRef.current - reservedPxRef.current)
     if (dimensionRef.current > 0) {
       desiredPercentRef.current = Math.min(
-        Math.max(sizeRef.current / dimensionRef.current, minPercentRef.current),
+        Math.max(sizeRef.current / effective, minPercentRef.current),
         maxPercentRef.current
       )
     }
@@ -141,8 +154,9 @@ export const useElasticContainer = ({
         )
       }
 
-      const newMin = Math.ceil(dimension * configuredMin)
-      let newMax = Math.floor(dimension * configuredMax)
+      const effective = Math.max(1, dimension - reservedPxRef.current)
+      const newMin = Math.ceil(effective * configuredMin)
+      let newMax = Math.floor(effective * configuredMax)
 
       if (newMin >= newMax) {
         newMax = newMin + 1
@@ -173,14 +187,16 @@ export const useElasticContainer = ({
       )
     }
 
+    const effective = Math.max(1, dimension - reservedPxRef.current)
     dimensionRef.current = dimension
+    setEffectiveDimension(effective)
 
     const { newMin, newMax } = computeBounds(dimension)
 
     const effectiveInitial =
       initialPercentRef.current ??
       (minPercentRef.current + maxPercentRef.current) / 2
-    const nextInitial = clampSize(dimension * effectiveInitial, newMin, newMax)
+    const nextInitial = clampSize(effective * effectiveInitial, newMin, newMax)
     desiredPercentRef.current = effectiveInitial
 
     pixelMinRef.current = newMin
@@ -202,6 +218,8 @@ export const useElasticContainer = ({
       }
 
       dimensionRef.current = nextDimension
+      const nextEffective = Math.max(1, nextDimension - reservedPxRef.current)
+      setEffectiveDimension(nextEffective)
 
       const { newMin: resizedMin, newMax: resizedMax } =
         computeBounds(nextDimension)
@@ -221,7 +239,7 @@ export const useElasticContainer = ({
       // Use desiredPercentRef so shrink→expand cycles restore the user's
       // original proportion rather than anchoring to a clamped pixel value.
       const proportionalPx = Math.round(
-        nextDimension * desiredPercentRef.current
+        nextEffective * desiredPercentRef.current
       )
       resetToSize(proportionalPx, resizedMin, resizedMax)
     })
@@ -240,5 +258,6 @@ export const useElasticContainer = ({
     ...resizable,
     pixelMin,
     pixelMax,
+    effectiveDimension,
   }
 }
