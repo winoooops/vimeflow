@@ -62,7 +62,7 @@ const Harness = ({
 }
 
 describe('useSplitDivider', () => {
-  test('keyboard resize mirrors a clamped ratio up and writes the px var', () => {
+  test('keyboard resize mirrors a clamped ratio up and writes both fr vars', () => {
     const onRatioChange = vi.fn()
     render(<Harness active onRatioChange={onRatioChange} />)
     fireEvent.keyDown(screen.getByTestId('handle'), { key: 'ArrowRight' })
@@ -70,15 +70,16 @@ describe('useSplitDivider', () => {
     const ratio = calls[calls.length - 1]?.[0] as number
     expect(ratio).toBeGreaterThanOrEqual(0.15)
     expect(ratio).toBeLessThanOrEqual(0.85)
-    expect(
-      screen.getByTestId('container').style.getPropertyValue('--split-col')
-    ).toMatch(/px$/)
+    // Both fr tracks are set (summing to 1) so the grid always fills.
+    const container = screen.getByTestId('container')
+    expect(container.style.getPropertyValue('--split-col')).toMatch(/fr$/)
+    expect(container.style.getPropertyValue('--split-col-end')).toMatch(/fr$/)
   })
 
   test('removes the CSS var on unmount (container stays mounted)', () => {
     const { rerender } = render(<Harness active onRatioChange={vi.fn()} />)
     const container = screen.getByTestId('container')
-    expect(container.style.getPropertyValue('--split-col')).toMatch(/px$/)
+    expect(container.style.getPropertyValue('--split-col')).toMatch(/fr$/)
     rerender(<Harness onRatioChange={vi.fn()} />)
     expect(container.style.getPropertyValue('--split-col')).toBe('')
   })

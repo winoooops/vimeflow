@@ -10,16 +10,20 @@ describe('resolveGrid', () => {
     expect(g.areas).toEqual([['p0']])
   })
 
-  test('vsplit emits one column divider track + var fallback', () => {
+  test('vsplit emits two column fr vars summing to 1 (grid always fills)', () => {
     const g = resolveGrid('vsplit', { col: 0.5, row: 0.5 })
-    expect(g.cols).toBe(`var(--split-col, 0.5fr) ${SPLIT_DIVIDER_PX}px 0.5fr`)
+    expect(g.cols).toBe(
+      `var(--split-col, 0.5fr) ${SPLIT_DIVIDER_PX}px var(--split-col-end, 0.5fr)`
+    )
     expect(g.rows).toBe('minmax(0,1fr)')
     expect(g.areas).toEqual([['p0', 'vdiv', 'p1']])
   })
 
-  test('hsplit emits one row divider track', () => {
+  test('hsplit emits two row fr vars summing to 1', () => {
     const g = resolveGrid('hsplit', { col: 0.5, row: 0.4 })
-    expect(g.rows).toBe(`var(--split-row, 0.4fr) ${SPLIT_DIVIDER_PX}px 0.6fr`)
+    expect(g.rows).toBe(
+      `var(--split-row, 0.4fr) ${SPLIT_DIVIDER_PX}px var(--split-row-end, 0.6fr)`
+    )
     expect(g.areas).toEqual([['p0'], ['hdiv'], ['p1']])
   })
 

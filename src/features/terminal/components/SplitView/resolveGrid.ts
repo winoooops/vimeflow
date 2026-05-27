@@ -27,7 +27,7 @@ export const DEFAULT_RATIOS: Record<LayoutId, LayoutRatios> = {
 }
 
 const axisTemplate = (cssVar: string, ratio: number): string =>
-  `var(${cssVar}, ${ratio}fr) ${SPLIT_DIVIDER_PX}px ${1 - ratio}fr`
+  `var(${cssVar}, ${ratio}fr) ${SPLIT_DIVIDER_PX}px var(${cssVar}-end, ${1 - ratio}fr)`
 
 export const resolveGrid = (
   layoutId: LayoutId,
