@@ -331,15 +331,21 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
           prev.sessionId === sid ? { ...prev, agentExited: true } : prev
         )
 
-        // Hold final state for 5s, then collapse. Runs regardless of
-        // watcherStartedRef — that's the F1 fix: a transient
-        // start_agent_watcher failure no longer blocks collapse.
+        // Hold the final snapshot for 5s, then reset the panel to a clean
+        // idle state. Reset to the full default rather than only flipping
+        // isActive/agentExited: the panel renders run-scoped metrics
+        // (context window, tool calls, activity feed, tests, turns)
+        // unconditionally, so retaining them here leaves a dead agent's
+        // frozen snapshot painting the panel forever while the PTY/pane
+        // stays alive (agent exited without closing the pane). Mirrors the
+        // session-change and agent-process-change resets above.
+        //
+        // Runs regardless of watcherStartedRef — that's the F1 fix: a
+        // transient start_agent_watcher failure no longer blocks collapse.
         collapseTimeoutRef.current = setTimeout(() => {
           collapseTimeoutRef.current = null
           setStatus((prev) =>
-            prev.sessionId === sid
-              ? { ...prev, isActive: false, agentExited: false }
-              : prev
+            prev.sessionId === sid ? createDefaultStatus(sid) : prev
           )
         }, EXIT_HOLD_MS)
       }
