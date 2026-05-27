@@ -264,7 +264,29 @@ export const DiffPanelContent = ({
     setFocusedHunkIndex(0)
   }, [selectedFilePath, selectedFileStaged])
 
-  const focusedHunk = response?.fileDiff.hunks[focusedHunkIndex] ?? null
+  const hunkCount = response?.fileDiff.hunks.length ?? 0
+
+  // Clamp focusedHunkIndex when the hunk array shrinks WITHOUT a file change.
+  // Staging/discarding a hunk reloads the SAME file with fewer hunks, so the
+  // file-change reset above does not fire (path + staged are unchanged). A
+  // stale index would then point out of range: focusedHunk goes null, the
+  // counter renders an invalid value (e.g. "3/2"), and stage/unstage/discard
+  // silently no-op until the user manually navigates. Clamp to the last valid
+  // index — preserves position for middle-hunk staging, only adjusting at the
+  // boundary. (PR3 review: Claude HIGH + codex P2.)
+  useEffect(() => {
+    if (hunkCount > 0) {
+      setFocusedHunkIndex((prev) => Math.min(prev, hunkCount - 1))
+    }
+  }, [hunkCount])
+
+  // Read the index through a clamp so the single render between a hunk-count
+  // shrink and the effect above can't surface a stale/out-of-range value — the
+  // counter, focused hunk, and selection all stay valid even on that frame.
+  const clampedHunkIndex =
+    hunkCount > 0 ? Math.min(focusedHunkIndex, hunkCount - 1) : 0
+
+  const focusedHunk = response?.fileDiff.hunks[clampedHunkIndex] ?? null
 
   const onPrevHunk = useCallback((): void => {
     if (!response) {
@@ -297,7 +319,7 @@ export const DiffPanelContent = ({
   // deletions column; all other hunks use the new-side (additions).
   const selectedLines: SelectedLineRange | null =
     useMemo((): SelectedLineRange | null => {
-      const hunk = response?.fileDiff.hunks[focusedHunkIndex]
+      const hunk = response?.fileDiff.hunks[clampedHunkIndex]
       if (!hunk) {
         return null
       }
@@ -315,7 +337,7 @@ export const DiffPanelContent = ({
         end: lineStart + Math.max(lineCount - 1, 0),
         side,
       }
-    }, [response, focusedHunkIndex])
+    }, [response, clampedHunkIndex])
 
   // Shared helper for all three hunk-based staging operations. Extracts the
   // focused hunk patch, calls the provided service operation, then refreshes
@@ -770,8 +792,8 @@ export const DiffPanelContent = ({
             onDisableFileHeaderChange={setDisableFileHeader}
             stickyHeader={stickyHeader}
             onStickyHeaderChange={setStickyHeader}
-            totalHunks={response?.fileDiff.hunks.length ?? 0}
-            focusedHunkIndex={focusedHunkIndex}
+            totalHunks={hunkCount}
+            focusedHunkIndex={clampedHunkIndex}
             onPrevHunk={onPrevHunk}
             onNextHunk={onNextHunk}
             onPrevFile={(): void => goToFile(-1)}

@@ -1943,5 +1943,59 @@ describe('DiffPanelContent', () => {
       // Focus must reset to 0: counter shows 1/1 (not 3/3 or out-of-range)
       expect(screen.getByLabelText(/hunk 1\/1/i)).toBeInTheDocument()
     })
+
+    test('clamp-on-shrink: same-file refetch with fewer hunks clamps focus (valid counter, staging not blocked)', async (): Promise<void> => {
+      const user = userEvent.setup()
+
+      const { rerender } = render(
+        <DiffPanelContent
+          cwd="/repo"
+          selectedFile={{ path: 'src/multi.ts', staged: false, cwd: '/repo' }}
+          onSelectedFileChange={vi.fn()}
+        />
+      )
+
+      // Focus the last hunk of the 3-hunk file (prev from hunk 0 wraps to 3/3).
+      await user.click(screen.getByRole('button', { name: /prev hunk/i }))
+      expect(screen.getByLabelText(/hunk 3\/3/i)).toBeInTheDocument()
+
+      // Simulate a stage/discard refetch: SAME file (path + staged unchanged)
+      // but the hunk array shrank 3 → 2 (the focused last hunk was discarded).
+      // The file-change reset must NOT fire here; only the hunk-count clamp.
+      const twoHunkDiff: FileDiff = {
+        filePath: 'src/multi.ts',
+        oldPath: 'src/multi.ts',
+        newPath: 'src/multi.ts',
+        hunks: [threeHunkDiff.hunks[0], threeHunkDiff.hunks[1]],
+      }
+      vi.spyOn(useFileDiffModule, 'useFileDiff').mockReturnValue(
+        fileDiffMock({
+          diff: twoHunkDiff,
+          loading: false,
+          error: null,
+          oldText: 'old',
+          newText: 'new',
+          rawDiff: '',
+        })
+      )
+
+      rerender(
+        <DiffPanelContent
+          cwd="/repo"
+          selectedFile={{ path: 'src/multi.ts', staged: false, cwd: '/repo' }}
+          onSelectedFileChange={vi.fn()}
+        />
+      )
+
+      // Index 2 clamps to 1: counter is the valid "2/2", never the invalid "3/2".
+      expect(screen.getByLabelText(/hunk 2\/2/i)).toBeInTheDocument()
+      expect(screen.queryByLabelText(/hunk 3\/2/i)).not.toBeInTheDocument()
+
+      // focusedHunk resolves to the now-last hunk (index 1) — selectedLines is
+      // non-null, so per-hunk staging is not silently blocked.
+      const diff = screen.getByTestId('multi-file-diff')
+      expect(diff.getAttribute('data-selected-lines-start')).toBe('20')
+      expect(diff.getAttribute('data-selected-lines-side')).toBe('additions')
+    })
   })
 })
