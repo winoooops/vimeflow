@@ -1,6 +1,7 @@
 import { describe, test, expect } from 'vitest'
 import type { GetGitDiffResponse } from '../../../bindings/GetGitDiffResponse'
-import { toPierreInputs } from './pierreAdapter'
+import type { DiffHunk } from '../types'
+import { toPierreInputs, findRawDiffHunkIndex } from './pierreAdapter'
 
 const baseFileDiff = {
   filePath: 'src/foo.ts',
@@ -61,5 +62,80 @@ describe('toPierreInputs', (): void => {
     expect(result.oldFile.contents).toBe('')
     expect(result.newFile.name).toBe('src/untracked.ts')
     expect(result.newFile.contents).toBe('new content')
+  })
+})
+
+describe('findRawDiffHunkIndex', (): void => {
+  const makeHunk = (
+    newStart: number,
+    newLines: number,
+    id = `hunk-${newStart}`
+  ): DiffHunk => ({
+    id,
+    header: `@@ -${newStart},${newLines} +${newStart},${newLines} @@`,
+    oldStart: newStart,
+    oldLines: newLines,
+    newStart,
+    newLines,
+    lines: [],
+  })
+
+  test('returns 0 for the first hunk when newStart + newLines match', (): void => {
+    const response = makeResponse({
+      fileDiff: {
+        ...baseFileDiff,
+        hunks: [makeHunk(1, 4), makeHunk(20, 6)],
+      },
+    })
+
+    expect(findRawDiffHunkIndex(response, { newStart: 1, newLines: 4 })).toBe(0)
+  })
+
+  test('returns the correct index for a later hunk in a multi-hunk diff', (): void => {
+    const response = makeResponse({
+      fileDiff: {
+        ...baseFileDiff,
+        hunks: [makeHunk(1, 4), makeHunk(20, 6), makeHunk(50, 3)],
+      },
+    })
+
+    expect(findRawDiffHunkIndex(response, { newStart: 50, newLines: 3 })).toBe(
+      2
+    )
+  })
+
+  test('returns -1 when newLines does not match (Pierre split differently)', (): void => {
+    const response = makeResponse({
+      fileDiff: {
+        ...baseFileDiff,
+        hunks: [makeHunk(1, 4)],
+      },
+    })
+
+    // Same newStart but different newLines — Pierre split this region differently
+    expect(findRawDiffHunkIndex(response, { newStart: 1, newLines: 2 })).toBe(
+      -1
+    )
+  })
+
+  test('returns -1 when newStart does not match', (): void => {
+    const response = makeResponse({
+      fileDiff: {
+        ...baseFileDiff,
+        hunks: [makeHunk(1, 4), makeHunk(20, 6)],
+      },
+    })
+
+    expect(findRawDiffHunkIndex(response, { newStart: 5, newLines: 4 })).toBe(
+      -1
+    )
+  })
+
+  test('returns -1 on an empty hunks list', (): void => {
+    const response = makeResponse()
+
+    expect(findRawDiffHunkIndex(response, { newStart: 1, newLines: 4 })).toBe(
+      -1
+    )
   })
 })

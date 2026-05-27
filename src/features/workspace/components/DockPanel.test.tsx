@@ -95,6 +95,7 @@ describe('DockPanel', () => {
       diff: null,
       loading: false,
       error: null,
+      refetch: vi.fn(),
     })
   })
 

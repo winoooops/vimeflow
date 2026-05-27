@@ -25,6 +25,9 @@ const backendMethods = new Set([
   'discard_file',
   'start_git_watcher',
   'stop_git_watcher',
+  'stage_file',
+  'unstage_file',
+  'discard_file',
 ])
 
 const e2eBackendMethods = new Set(['list_active_pty_sessions'])

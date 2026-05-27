@@ -36,6 +36,122 @@ const NULL_DEVICE = process.platform === 'win32' ? 'NUL' : '/dev/null'
 const MAX_REQUEST_BODY_BYTES = 1_000_000
 
 /**
+ * Validate that a hunk patch is safe to pass to `git apply`.
+ *
+ * Mirrors the Rust `validate_hunk_patch` logic for dev/prod parity:
+ * 1. Reject patches containing more than one `diff --git` header
+ *    (multi-file patches).
+ * 2. Parse `diff --git a/OLD b/NEW` if present and verify that:
+ *    - All `--- a/` body paths equal OLD (or /dev/null).
+ *    - All `+++ b/` body paths equal NEW (or /dev/null).
+ *    - The request `file` equals OLD or NEW (rename-aware).
+ * 3. Fallback when no parseable `diff --git` line is present: every body
+ *    header path (excluding /dev/null) must equal `file`.
+ *
+ * Returns null on success, or an error string on failure.
+ */
+function validateHunkPatch(
+  file: string,
+  hunkPatch: string | undefined
+): string | null {
+  if (hunkPatch === undefined) {
+    return null
+  }
+
+  const lines = hunkPatch.split('\n')
+
+  // Rule 1: reject multi-file patches.
+  const diffGitLines = lines.filter((l) => l.startsWith('diff --git '))
+  if (diffGitLines.length > 1) {
+    return 'multi-file patches not allowed'
+  }
+
+  // Collect body `--- a/` / `+++ b/` header paths (stop at first @@).
+  const minusPaths: string[] = []
+  const plusPaths: string[] = []
+  for (const line of lines) {
+    if (line.startsWith('@@')) {
+      break
+    }
+
+    const minusMatch = line.startsWith('--- a/')
+      ? line.slice('--- a/'.length)
+      : null
+
+    const plusMatch = line.startsWith('+++ b/')
+      ? line.slice('+++ b/'.length)
+      : null
+
+    if (minusMatch !== null) {
+      minusPaths.push(minusMatch)
+    } else if (line === '--- /dev/null') {
+      minusPaths.push('/dev/null')
+    } else if (plusMatch !== null) {
+      plusPaths.push(plusMatch)
+    } else if (line === '+++ /dev/null') {
+      plusPaths.push('/dev/null')
+    }
+  }
+
+  // Rule 2/3: check header consistency.
+  const firstDiffGit = diffGitLines[0] ?? null
+  let oldPath: string | null = null
+  let newPath: string | null = null
+
+  if (firstDiffGit !== null) {
+    // Try to parse "diff --git a/OLD b/NEW" (unquoted paths only).
+    const rest = firstDiffGit.slice('diff --git '.length)
+    if (!rest.startsWith('"') && rest.startsWith('a/')) {
+      const aRest = rest.slice('a/'.length)
+      // Use lastIndexOf of " b/" to split OLD from NEW.
+      const bMarker = ' b/'
+      const splitPos = aRest.lastIndexOf(bMarker)
+      if (splitPos !== -1) {
+        const candidate_old = aRest.slice(0, splitPos)
+        const candidate_new = aRest.slice(splitPos + bMarker.length)
+        if (candidate_old.length > 0 && candidate_new.length > 0) {
+          oldPath = candidate_old
+          newPath = candidate_new
+        }
+      }
+    }
+  }
+
+  if (oldPath !== null && newPath !== null) {
+    // Strict consistency against parsed (OLD, NEW).
+    for (const mp of minusPaths) {
+      if (mp !== '/dev/null' && mp !== oldPath) {
+        return `patch header inconsistency: '--- a/${mp}' does not match diff --git OLD path '${oldPath}'`
+      }
+    }
+
+    for (const pp of plusPaths) {
+      if (pp !== '/dev/null' && pp !== newPath) {
+        return `patch header inconsistency: '+++ b/${pp}' does not match diff --git NEW path '${newPath}'`
+      }
+    }
+
+    // Rename-aware: request file must be OLD or NEW.
+    if (file !== oldPath && file !== newPath) {
+      return `patch targets a different file (diff --git OLD='${oldPath}' NEW='${newPath}', req: ${file})`
+    }
+  } else {
+    // Fallback: every body header path (excluding /dev/null) must equal file.
+    const allHeaderPaths = [...minusPaths, ...plusPaths].filter(
+      (p) => p !== '/dev/null'
+    )
+
+    for (const hp of allHeaderPaths) {
+      if (hp !== file) {
+        return `patch targets a different file (header paths: [${allHeaderPaths.join(', ')}], req: ${file})`
+      }
+    }
+  }
+
+  return null
+}
+
+/**
  * Validate that a file path is repo-relative and doesn't escape the repo.
  * Rejects absolute paths, path traversal, and symlinks outside the repo.
  */
@@ -483,7 +599,7 @@ function gitApiPlugin(): Plugin {
           // POST /api/git/stage
           if (pathname === '/api/git/stage' && req.method === 'POST') {
             const body = await readBody(req)
-            const { file, hunkIndex, base } = JSON.parse(body)
+            const { file, hunkPatch, hunkIndex, base } = JSON.parse(body)
 
             if (!file) {
               res.writeHead(400, { 'Content-Type': 'application/json' })
@@ -513,7 +629,8 @@ function gitApiPlugin(): Plugin {
             // whitespace-only strings produce a working-tree diff there,
             // so they must not trigger this rejection here either.
             if (
-              typeof hunkIndex === 'number' &&
+              (typeof hunkPatch === 'string' ||
+                typeof hunkIndex === 'number') &&
               typeof base === 'string' &&
               base.trim() !== ''
             ) {
@@ -528,8 +645,48 @@ function gitApiPlugin(): Plugin {
               return
             }
 
-            if (typeof hunkIndex === 'number') {
-              // Stage a specific hunk by extracting the patch and applying it
+            if (typeof hunkPatch === 'string') {
+              // PR2+: client pre-extracted the patch and sends it directly.
+              // Validate patch-vs-file consistency before spawning git.
+              const patchErr = validateHunkPatch(safePath, hunkPatch)
+              if (patchErr !== null) {
+                res.writeHead(400, { 'Content-Type': 'application/json' })
+                res.end(JSON.stringify({ error: patchErr }))
+
+                return
+              }
+
+              const { spawnSync } = await import('child_process')
+
+              // encoding: 'utf-8' so result.stderr is a string we can
+              // forward verbatim. `git apply` failures often carry
+              // actionable detail ("error: patch does not apply",
+              // "corrupt patch at line N", context mismatch); swallowing
+              // them turns every dev-time apply error into a generic 409
+              // with no path forward for the developer.
+              const result = spawnSync(
+                'git',
+                ['apply', '--cached', '--whitespace=nowarn', '-'],
+                {
+                  input: hunkPatch,
+                  cwd: repoRoot,
+                  encoding: 'utf-8',
+                }
+              )
+
+              if (result.status !== 0) {
+                res.writeHead(409, { 'Content-Type': 'application/json' })
+                res.end(
+                  JSON.stringify({
+                    error: 'Failed to stage hunk patch',
+                    detail: result.stderr ?? '',
+                  })
+                )
+
+                return
+              }
+            } else if (typeof hunkIndex === 'number') {
+              // Legacy: stage a specific hunk by extracting the patch and applying it
               const fullDiff = await git.diff(
                 buildGitDiffArgs({ safePath, staged: false })
               )
@@ -546,12 +703,6 @@ function gitApiPlugin(): Plugin {
 
               const { spawnSync } = await import('child_process')
 
-              // encoding: 'utf-8' so result.stderr is a string we can
-              // forward verbatim. `git apply` failures often carry
-              // actionable detail ("error: patch does not apply",
-              // "corrupt patch at line N", context mismatch); swallowing
-              // them turns every dev-time apply error into a generic 409
-              // with no path forward for the developer.
               const result = spawnSync('git', ['apply', '--cached', '-'], {
                 input: patch,
                 cwd: repoRoot,
@@ -595,7 +746,7 @@ function gitApiPlugin(): Plugin {
           // POST /api/git/unstage
           if (pathname === '/api/git/unstage' && req.method === 'POST') {
             const body = await readBody(req)
-            const { file } = JSON.parse(body)
+            const { file, hunkPatch } = JSON.parse(body)
 
             if (!file) {
               res.writeHead(400, { 'Content-Type': 'application/json' })
@@ -613,7 +764,43 @@ function gitApiPlugin(): Plugin {
               return
             }
 
-            await git.reset(['HEAD', '--', safePath])
+            if (typeof hunkPatch === 'string') {
+              // PR2+: unstage a specific hunk by applying the patch in reverse
+              // to the index. Validate patch-vs-file consistency first.
+              const patchErr = validateHunkPatch(safePath, hunkPatch)
+              if (patchErr !== null) {
+                res.writeHead(400, { 'Content-Type': 'application/json' })
+                res.end(JSON.stringify({ error: patchErr }))
+
+                return
+              }
+
+              const { spawnSync } = await import('child_process')
+
+              const result = spawnSync(
+                'git',
+                ['apply', '--cached', '--reverse', '--whitespace=nowarn', '-'],
+                {
+                  input: hunkPatch,
+                  cwd: repoRoot,
+                  encoding: 'utf-8',
+                }
+              )
+
+              if (result.status !== 0) {
+                res.writeHead(409, { 'Content-Type': 'application/json' })
+                res.end(
+                  JSON.stringify({
+                    error: 'Failed to unstage hunk patch',
+                    detail: result.stderr ?? '',
+                  })
+                )
+
+                return
+              }
+            } else {
+              await git.reset(['HEAD', '--', safePath])
+            }
 
             res.writeHead(200, { 'Content-Type': 'application/json' })
             res.end(JSON.stringify({ ok: true }))
@@ -624,7 +811,7 @@ function gitApiPlugin(): Plugin {
           // POST /api/git/discard
           if (pathname === '/api/git/discard' && req.method === 'POST') {
             const body = await readBody(req)
-            const { file, hunkIndex, base } = JSON.parse(body)
+            const { file, hunkPatch, hunkIndex, base, scope } = JSON.parse(body)
 
             if (!file) {
               res.writeHead(400, { 'Content-Type': 'application/json' })
@@ -650,15 +837,51 @@ function gitApiPlugin(): Plugin {
               fileStatus &&
               (fileStatus.index === '?' || fileStatus.working_dir === '?')
             ) {
-              // Untracked file — remove from disk. `hunkIndex` is
+              // Untracked file — remove from disk. `hunkPatch`/`hunkIndex` is
               // irrelevant for this branch (git.clean takes the whole
               // file), so the base= guard does not apply here.
               await git.clean('f', ['--', safePath])
             } else if (fileStatus && fileStatus.index === 'A') {
-              // Staged new file — unstage then remove. Same: `hunkIndex`
+              // Staged new file — unstage then remove. Same: `hunkPatch`/`hunkIndex`
               // is irrelevant for this branch.
               await git.reset(['HEAD', '--', safePath])
               await git.clean('f', ['--', safePath])
+            } else if (typeof hunkPatch === 'string') {
+              // PR2+: discard a specific hunk by applying the patch in reverse
+              // to the working tree. Validate patch-vs-file consistency first.
+              const patchErr = validateHunkPatch(safePath, hunkPatch)
+              if (patchErr !== null) {
+                res.writeHead(400, { 'Content-Type': 'application/json' })
+                res.end(JSON.stringify({ error: patchErr }))
+
+                return
+              }
+
+              const { spawnSync } = await import('child_process')
+
+              // Same encoding+stderr-forward as /api/git/stage so a
+              // failed reverse-apply surfaces git's actual error text.
+              const result = spawnSync(
+                'git',
+                ['apply', '--reverse', '--whitespace=nowarn', '-'],
+                {
+                  input: hunkPatch,
+                  cwd: repoRoot,
+                  encoding: 'utf-8',
+                }
+              )
+
+              if (result.status !== 0) {
+                res.writeHead(409, { 'Content-Type': 'application/json' })
+                res.end(
+                  JSON.stringify({
+                    error: 'Failed to discard hunk patch',
+                    detail: result.stderr ?? '',
+                  })
+                )
+
+                return
+              }
             } else if (typeof hunkIndex === 'number') {
               // Belt-and-braces guard inside the hunk branch only.
               // Refuse hunk-level discard when a base= comparison is
@@ -699,8 +922,6 @@ function gitApiPlugin(): Plugin {
 
               const { spawnSync } = await import('child_process')
 
-              // Same encoding+stderr-forward as /api/git/stage so a
-              // failed reverse-apply surfaces git's actual error text.
               const result = spawnSync('git', ['apply', '-R', '-'], {
                 input: patch,
                 cwd: repoRoot,
@@ -731,7 +952,14 @@ function gitApiPlugin(): Plugin {
 
               return
             } else {
-              // Full file discard — restore from HEAD
+              // Full file discard.
+              // scope='both': unstage any staged modifications first so the
+              // subsequent checkout restores the file fully to HEAD.
+              // scope='unstaged' (default): only discard working-tree edits.
+              if (scope === 'both') {
+                await git.reset(['HEAD', '--', safePath])
+              }
+
               await git.checkout(['--', safePath])
             }
 

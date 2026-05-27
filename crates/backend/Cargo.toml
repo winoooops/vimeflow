@@ -22,7 +22,7 @@ log = "0.4"
 portable-pty = "0.8"
 anyhow = "1.0"
 thiserror = "2.0"
-tokio = { version = "1", features = ["sync", "io-util", "io-std", "time", "rt", "rt-multi-thread", "macros"] }
+tokio = { version = "1", features = ["sync", "io-util", "io-std", "time", "rt", "rt-multi-thread", "macros", "process"] }
 tokio-util = { version = "0.7", features = ["rt"] }
 notify = "6"
 dirs = "6"

@@ -20,6 +20,10 @@ import {
   MockResizeObserver,
   installMockResizeObserver,
 } from '../../../test/mockResizeObserver'
+import type { GitService } from '../services/gitService'
+import * as gitServiceModule from '../services/gitService'
+import * as pierreAdapterModule from '../services/pierreAdapter'
+import type { MockInstance } from 'vitest'
 
 // Mock the hooks
 vi.mock('../hooks/useGitStatus')
@@ -120,6 +124,7 @@ const fileDiffMock = ({
   diff,
   loading,
   error,
+  refetch: vi.fn(),
 })
 
 // Trigger every active ResizeObserver instance with the given width.
@@ -1358,6 +1363,322 @@ describe('DiffPanelContent', () => {
         theme: 'pierre-light',
         lineDiffType: 'word',
       })
+    })
+  })
+
+  describe('Staging handlers (§5.3)', () => {
+    // Shared hunk fixture. The rawDiff is real unified-diff text so
+    // extractHunkPatch(rawDiff, 0) returns a non-null patch. The FileDiff
+    // carries matching (newStart, newLines) coordinates so
+    // findRawDiffHunkIndex also resolves to index 0 on the clean path.
+    const hunkRawDiff =
+      [
+        'diff --git a/src/foo.ts b/src/foo.ts',
+        '--- a/src/foo.ts',
+        '+++ b/src/foo.ts',
+        '@@ -5,3 +5,3 @@',
+        ' context',
+        '-removed',
+        '+added',
+      ].join('\n') + '\n'
+
+    const hunkFileDiff: FileDiff = {
+      filePath: 'src/foo.ts',
+      oldPath: 'src/foo.ts',
+      newPath: 'src/foo.ts',
+      hunks: [
+        {
+          id: 'hunk-0',
+          header: '@@ -5,3 +5,3 @@',
+          oldStart: 5,
+          oldLines: 3,
+          newStart: 5,
+          newLines: 3,
+          lines: [
+            { type: 'context', content: 'context' },
+            { type: 'removed', content: 'removed' },
+            { type: 'added', content: 'added' },
+          ],
+        },
+      ],
+    }
+
+    // Spy-based GitService that resolves by default on all staging methods.
+    // The returned service satisfies the GitService interface; the spies are
+    // also returned separately so callers can assert on .mock.calls without
+    // unsafe member-access on the untyped vi.fn() return value.
+    interface ServiceSpies {
+      service: GitService
+      stageFile: MockInstance<(file: string, patch?: string) => Promise<void>>
+      unstageFile: MockInstance<(file: string, patch?: string) => Promise<void>>
+      discardChanges: MockInstance<
+        (file: string, patch?: string) => Promise<void>
+      >
+    }
+
+    const makeServiceSpy = (): ServiceSpies => {
+      const stageFile = vi
+        .fn<(file: string, patch?: string) => Promise<void>>()
+        .mockResolvedValue(undefined)
+
+      const unstageFile = vi
+        .fn<(file: string, patch?: string) => Promise<void>>()
+        .mockResolvedValue(undefined)
+
+      const discardChanges = vi
+        .fn<(file: string, patch?: string) => Promise<void>>()
+        .mockResolvedValue(undefined)
+
+      const service: GitService = {
+        getStatus: vi.fn().mockResolvedValue([]),
+        getDiff: vi.fn().mockResolvedValue({
+          fileDiff: hunkFileDiff,
+          oldText: '',
+          newText: '',
+          rawDiff: hunkRawDiff,
+        }),
+        stageFile,
+        unstageFile,
+        discardChanges,
+      }
+
+      return { service, stageFile, unstageFile, discardChanges }
+    }
+
+    beforeEach(() => {
+      vi.spyOn(useGitStatusModule, 'useGitStatus').mockReturnValue({
+        files: [{ path: 'src/foo.ts', status: 'modified', staged: false }],
+        filesCwd: '/repo',
+        loading: false,
+        error: null,
+        refresh: vi.fn(),
+        idle: false,
+      })
+    })
+
+    test('stage: calls stageFile with extracted hunk patch; refetch and status refresh fire on success', async (): Promise<void> => {
+      const user = userEvent.setup()
+      const { service, stageFile } = makeServiceSpy()
+      const refetchSpy = vi.fn()
+      const refreshSpy = vi.fn()
+      vi.spyOn(gitServiceModule, 'createGitService').mockReturnValue(service)
+      vi.spyOn(useGitStatusModule, 'useGitStatus').mockReturnValue({
+        files: [{ path: 'src/foo.ts', status: 'modified', staged: false }],
+        filesCwd: '/repo',
+        loading: false,
+        error: null,
+        refresh: refreshSpy,
+        idle: false,
+      })
+
+      vi.spyOn(useFileDiffModule, 'useFileDiff').mockReturnValue({
+        response: {
+          fileDiff: hunkFileDiff as GetGitDiffResponse['fileDiff'],
+          oldText: '',
+          newText: '',
+          rawDiff: hunkRawDiff,
+        },
+        diff: hunkFileDiff,
+        loading: false,
+        error: null,
+        refetch: refetchSpy,
+      })
+
+      render(
+        <DiffPanelContent
+          cwd="/repo"
+          selectedFile={{ path: 'src/foo.ts', staged: false, cwd: '/repo' }}
+          onSelectedFileChange={vi.fn()}
+        />
+      )
+
+      await user.click(screen.getByRole('button', { name: 'stage' }))
+
+      await waitFor(() => expect(stageFile).toHaveBeenCalledTimes(1))
+
+      const [calledFile, calledPatch] = stageFile.mock.calls[0]
+      expect(calledFile).toBe('src/foo.ts')
+      expect(typeof calledPatch).toBe('string')
+      expect(calledPatch!.length).toBeGreaterThan(0)
+      expect(refetchSpy).toHaveBeenCalledTimes(1)
+      expect(refreshSpy).toHaveBeenCalledTimes(1)
+    })
+
+    test('stage: shows "Pierre split" notice and skips service call when findRawDiffHunkIndex returns -1', async (): Promise<void> => {
+      const user = userEvent.setup()
+      const { service, stageFile } = makeServiceSpy()
+      vi.spyOn(gitServiceModule, 'createGitService').mockReturnValue(service)
+      // Force the mapping to fail — simulates Pierre splitting one git hunk
+      // into two Pierre hunks so the focused Pierre hunk has coordinates that
+      // don't appear in git's hunk list.
+      vi.spyOn(pierreAdapterModule, 'findRawDiffHunkIndex').mockReturnValueOnce(
+        -1
+      )
+
+      vi.spyOn(useFileDiffModule, 'useFileDiff').mockReturnValue({
+        response: {
+          fileDiff: hunkFileDiff as GetGitDiffResponse['fileDiff'],
+          oldText: '',
+          newText: '',
+          rawDiff: hunkRawDiff,
+        },
+        diff: hunkFileDiff,
+        loading: false,
+        error: null,
+        refetch: vi.fn(),
+      })
+
+      render(
+        <DiffPanelContent
+          cwd="/repo"
+          selectedFile={{ path: 'src/foo.ts', staged: false, cwd: '/repo' }}
+          onSelectedFileChange={vi.fn()}
+        />
+      )
+
+      await user.click(screen.getByRole('button', { name: 'stage' }))
+
+      expect(
+        await screen.findByText(
+          /Pierre split this hunk differently than git — cannot stage this region/
+        )
+      ).toBeInTheDocument()
+
+      expect(stageFile).not.toHaveBeenCalled()
+    })
+
+    test('stage: shows "Could not isolate" notice and skips service call when extractHunkPatch returns null', async (): Promise<void> => {
+      const user = userEvent.setup()
+      const { service, stageFile } = makeServiceSpy()
+      vi.spyOn(gitServiceModule, 'createGitService').mockReturnValue(service)
+      // rawDiff is empty — extractHunkPatch('', 0) returns null because there
+      // are no @@ sections to split on, even though index 0 would be in range.
+      vi.spyOn(useFileDiffModule, 'useFileDiff').mockReturnValue({
+        response: {
+          fileDiff: hunkFileDiff as GetGitDiffResponse['fileDiff'],
+          oldText: '',
+          newText: '',
+          rawDiff: '',
+        },
+        diff: hunkFileDiff,
+        loading: false,
+        error: null,
+        refetch: vi.fn(),
+      })
+
+      render(
+        <DiffPanelContent
+          cwd="/repo"
+          selectedFile={{ path: 'src/foo.ts', staged: false, cwd: '/repo' }}
+          onSelectedFileChange={vi.fn()}
+        />
+      )
+
+      await user.click(screen.getByRole('button', { name: 'stage' }))
+
+      expect(
+        await screen.findByText(
+          /Could not isolate this hunk — try refreshing the diff/
+        )
+      ).toBeInTheDocument()
+
+      expect(stageFile).not.toHaveBeenCalled()
+    })
+
+    test('stage: shows "Failed to stage hunk" notice when service rejects, and staging flag clears', async (): Promise<void> => {
+      const user = userEvent.setup()
+      const { service, stageFile } = makeServiceSpy()
+      stageFile.mockRejectedValue(new Error('patch does not apply'))
+      vi.spyOn(gitServiceModule, 'createGitService').mockReturnValue(service)
+      vi.spyOn(useFileDiffModule, 'useFileDiff').mockReturnValue({
+        response: {
+          fileDiff: hunkFileDiff as GetGitDiffResponse['fileDiff'],
+          oldText: '',
+          newText: '',
+          rawDiff: hunkRawDiff,
+        },
+        diff: hunkFileDiff,
+        loading: false,
+        error: null,
+        refetch: vi.fn(),
+      })
+
+      render(
+        <DiffPanelContent
+          cwd="/repo"
+          selectedFile={{ path: 'src/foo.ts', staged: false, cwd: '/repo' }}
+          onSelectedFileChange={vi.fn()}
+        />
+      )
+
+      await user.click(screen.getByRole('button', { name: 'stage' }))
+
+      expect(
+        await screen.findByText(/Failed to stage hunk: patch does not apply/)
+      ).toBeInTheDocument()
+
+      // staging flag must clear in finally — chip re-enabled after failure
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: 'stage' })).not.toBeDisabled()
+      )
+    })
+
+    test('unstage/discard notice messages contain the correct verb (I1 regression guard)', async (): Promise<void> => {
+      const user = userEvent.setup()
+      const { service, unstageFile, discardChanges } = makeServiceSpy()
+      // Trigger IPC-failure path so each handler emits `Failed to ${verb} hunk`.
+      // A copy-paste bug (I1) would make all three say "stage" — this catches it.
+      unstageFile.mockRejectedValue(new Error('unstage err'))
+      discardChanges.mockRejectedValue(new Error('discard err'))
+      vi.spyOn(gitServiceModule, 'createGitService').mockReturnValue(service)
+
+      // Staged file so the unstage chip renders (spec Section 4.7).
+      vi.spyOn(useGitStatusModule, 'useGitStatus').mockReturnValue({
+        files: [{ path: 'src/foo.ts', status: 'modified', staged: true }],
+        filesCwd: '/repo',
+        loading: false,
+        error: null,
+        refresh: vi.fn(),
+        idle: false,
+      })
+
+      vi.spyOn(useFileDiffModule, 'useFileDiff').mockReturnValue({
+        response: {
+          fileDiff: hunkFileDiff as GetGitDiffResponse['fileDiff'],
+          oldText: '',
+          newText: '',
+          rawDiff: hunkRawDiff,
+        },
+        diff: hunkFileDiff,
+        loading: false,
+        error: null,
+        refetch: vi.fn(),
+      })
+
+      render(
+        <DiffPanelContent
+          cwd="/repo"
+          selectedFile={{ path: 'src/foo.ts', staged: true, cwd: '/repo' }}
+          onSelectedFileChange={vi.fn()}
+        />
+      )
+
+      await user.click(screen.getByRole('button', { name: 'unstage' }))
+      expect(
+        await screen.findByText(/Failed to unstage hunk: unstage err/)
+      ).toBeInTheDocument()
+
+      // Wait for staging flag to clear before the next action.
+      await waitFor(() =>
+        expect(
+          screen.getByRole('button', { name: 'discard' })
+        ).not.toBeDisabled()
+      )
+
+      await user.click(screen.getByRole('button', { name: 'discard' }))
+      expect(
+        await screen.findByText(/Failed to discard hunk: discard err/)
+      ).toBeInTheDocument()
     })
   })
 })

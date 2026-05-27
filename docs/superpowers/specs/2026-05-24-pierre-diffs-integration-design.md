@@ -4,13 +4,14 @@
 
 The in-app git diff renderer at `src/features/diff/components/` (`DiffViewer.tsx`, `SplitDiffView.tsx`, `UnifiedDiffView.tsx`, `DiffLine.tsx`, `DiffHunkHeader.tsx` — ~900 LOC of components, ~7.7 k LOC across the whole feature including tests) is hand-rolled. Rust parses (`crates/backend/src/git/mod.rs:459` `parse_git_diff()`) and React renders. It is missing two diff-renderer table stakes — Shiki syntax highlighting and a word-level intra-line diff producer — and it ships UI scaffolding for hunk stage / unstage / discard that is wired to `Promise.reject('not implemented')` stubs (buttons exist in `src/features/diff/components/DiffToolbar.tsx`, `gitService.stageFile()` exists at `src/features/diff/services/gitService.ts:161–171`, but no Rust handler grows them under `crates/backend/src/git/`).
 
-This spec describes a **three-PR integration** that replaces the rendering layer with [`@pierre/diffs@^1.2.2`](https://www.npmjs.com/package/@pierre/diffs) (Apache-2.0; see [`docs/decisions/2026-05-23-pierre-diffs-renderer.md`](../../decisions/2026-05-23-pierre-diffs-renderer.md) for the library-choice rationale) while keeping the Rust git source, `ChangedFilesList` sidebar, and `CommitInfoPanel` chrome.
+This spec describes a **four-PR integration** that replaces the rendering layer with [`@pierre/diffs@^1.2.2`](https://www.npmjs.com/package/@pierre/diffs) (Apache-2.0; see [`docs/decisions/2026-05-23-pierre-diffs-renderer.md`](../../decisions/2026-05-23-pierre-diffs-renderer.md) for the library-choice rationale) while keeping the Rust git source, `ChangedFilesList` sidebar, and `CommitInfoPanel` chrome. PR1 has shipped ([#263](https://github.com/winoooops/vimeflow/pull/263), squash-merged); a follow-up hotfix ([#276](https://github.com/winoooops/vimeflow/pull/276)) corrected a worker-pool option-sync gotcha found in PR1 QA (Section 4.11).
 
-- **PR1 — Renderer replacement.** Ship `<MultiFileDiff>` from `@pierre/diffs/react` driven by an extended Rust `get_git_diff` IPC that returns raw `oldText` / `newText` alongside the parsed `FileDiff`. The Vite dev-mode middleware `gitApiPlugin` in `vite.config.ts` is updated to return the same `oldText` / `newText` payload (via `simple-git.show()` for the indexed/HEAD version plus a filesystem read of the working tree) so PR1 is independently shippable in both Electron production and Vite dev modes. Introduce the chip-style toolbar (PriorityPlus + Dropdown + Segmented + Toggle primitives under `src/features/diff/components/toolbar/`) as the replacement for `DiffToolbar.tsx`. Mount Pierre's `<WorkerPoolContextProvider>` so Shiki tokenization runs off-main-thread from day one. Tear down all spike scaffolding (`src/spikes/`, the `SPIKE_PIERRE_DIFFS` flag in `DiffPanelContent.tsx`, the `?spike=pierre-diffs` gate in `src/App.tsx`).
-- **PR2 — Hunk staging IPC + wiring.** Grow three new Rust IPC handlers — `stage_file(path, hunkPatch?)`, `unstage_file(path, hunkPatch?)`, `discard_file(path, hunkPatch?)` — each accepting an optional unified-diff hunk patch so the same handler covers whole-file (omit `hunkPatch`) and per-hunk (provide `hunkPatch`) operations. The whole-file branch mirrors the existing `gitService` contract at `src/features/diff/services/gitService.ts:161–171`. Land them per the 4-file IPC checklist (`mod.rs` + `runtime/state.rs` + `runtime/ipc.rs` + `electron/backend-methods.ts`). Unstub the matching frontend `gitService` methods and reuse the existing `extractHunkPatch()` utility at `src/features/diff/services/gitPatch.ts:56–77` to derive the hunk patch at the call site. **v1 ships refresh-on-success only** (click → IPC → `useFileDiff` / `useGitStatus` refetch → `<MultiFileDiff>` re-renders). Optimistic UI via Pierre's `diffAcceptRejectHunk` requires switching to `<FileDiff>` with controlled `FileDiffMetadata` and is deferred to a v2 follow-up listed in Section 9. The "Discard All" chip dispatches `discard_file(path)` with no `hunkPatch`. Section 5.3 details the full click-to-IPC flow + the Pierre→raw-diff hunk-index mapping (identity, since both produce hunks in source order).
-- **PR3 — Inline review comments → active agent panel.** Capture per-line user comments through Pierre's `DiffLineAnnotation<T>` + `renderAnnotation`. Hold them in a per-workspace feedback batch with a "Finish feedback" action that ships the batch to the currently-active coding agent's terminal session **by reusing the existing `write_pty` IPC** — no new agent-bridge IPC is added, because Vimeflow agents are CLI processes whose stdin is already exposed. No receiver UI is added on the agent-status side; the formatted feedback message appears in the existing terminal scrollback and the agent reacts via its usual reply path. Section 6 details the active-agent resolution rule, the message format, and the v1 scope limits.
+- **PR1 — Renderer replacement (MERGED — [#263](https://github.com/winoooops/vimeflow/pull/263)).** Ship `<MultiFileDiff>` from `@pierre/diffs/react` driven by an extended Rust `get_git_diff` IPC that returns raw `oldText` / `newText` alongside the parsed `FileDiff`. The Vite dev-mode middleware `gitApiPlugin` in `vite.config.ts` returns the same payload so PR1 is shippable in both Electron production and Vite dev. Introduce the chip-style toolbar (PriorityPlus + Dropdown + Segmented + Toggle primitives under `src/features/diff/components/toolbar/`) replacing `DiffToolbar.tsx`. Mount Pierre's `<WorkerPoolContextProvider>` so Shiki tokenization runs off-main-thread from day one. Tear down all spike scaffolding. **PR1 also lands functional file navigation** (prev/next-file chips) and keeps the hunk-nav chips (PR3) and stage / unstage / discard chips (PR2) as **disabled placeholders**. A follow-up hotfix ([#276](https://github.com/winoooops/vimeflow/pull/276)) fixed the HIGHLIGHT (`lineDiffType`) dropdown: like `theme`, `lineDiffType` is a _pool-owned_ worker option that must be pushed via `WorkerPoolManager.setRenderOptions`, not the per-instance `<MultiFileDiff>` prop (Section 4.11).
+- **PR2 — Hunk staging IPC + wiring + worker-pool write serialization.** Grow three new Rust IPC handlers — `stage_file(path, hunkPatch?)`, `unstage_file(path, hunkPatch?)`, `discard_file(path, hunkPatch?)` — each accepting an optional unified-diff hunk patch so one handler covers whole-file (omit `hunkPatch`) and per-hunk (provide `hunkPatch`) operations. Land them per the 4-file IPC checklist (`mod.rs` + `runtime/state.rs` + `runtime/ipc.rs` + `electron/backend-methods.ts`). Unstub the matching frontend `gitService` methods and reuse the existing `extractHunkPatch()` utility to derive the hunk patch at the call site. **v1 ships refresh-on-success only** (click → IPC → `useFileDiff` / `useGitStatus` refetch → `<MultiFileDiff>` re-renders). Optimistic UI via Pierre's `diffAcceptRejectHunk` is deferred to a v2 follow-up listed in Section 10. The "Discard All" chip dispatches `discard_file(path)` with no `hunkPatch`. Section 5.3 details the full click-to-IPC flow. **PR2 also hardens the worker-pool render-option sync** (Section 5.5): the #276 hotfix serialized `setRenderOptions` writes _per component instance_, but the pool is an app-wide singleton, so multiple `DiffPanelContent` instances can still race; PR2 moves serialization to module-level pool-keyed state.
+- **PR3 — Hunk navigation.** Wire the prev/next-hunk chips (disabled placeholders since PR1) to drive Pierre's viewport via the `selectedLines` controlled prop on `<MultiFileDiff>`, tracking the focused hunk index as toolbar state. Includes the Pierre→raw-diff hunk-index mapping (identity, since both produce hunks in source order). Section 6 details the flow. (Extracted from the original PR2 scope so PR2 stays staging-only.)
+- **PR4 — Inline review comments → active agent panel.** Capture per-line user comments through Pierre's `DiffLineAnnotation<T>` + `renderAnnotation`. Hold them in a per-workspace feedback batch with a "Finish feedback" action that ships the batch to the currently-active coding agent's terminal session **by reusing the existing `write_pty` IPC** — no new agent-bridge IPC. The formatted feedback appears in the existing terminal scrollback and the agent reacts via its usual reply path. Section 7 details the active-agent resolution rule, the message format, and the v1 scope limits.
 
-The visual language is anchored on `pierre-dark` as the default Shiki theme (closest fit to the Obsidian Lens out of the box; long-term we register a custom theme derived from `tailwind.config.js` Catppuccin tokens — see Section 7). The new chip toolbar collapses to a single visible row at any width: Priority+ overflow folds chips into a trailing `…` portal-rendered menu via `@floating-ui/react` (same primitive as our `Tooltip` per [`docs/decisions/2026-04-22-tooltip-library.md`](../../decisions/2026-04-22-tooltip-library.md)). Below `DIFF_MIN_WIDTH_PX = 360` the diff body is replaced with a "pane too narrow" placeholder while the toolbar stays interactive. Between `DIFF_MIN_WIDTH_PX` and `SPLIT_MIN_WIDTH_PX = 720` the `diffStyle: 'split'` preference is silently coerced to `'unified'` without overwriting the saved preference, so widening the pane back restores split.
+The visual language is anchored on `pierre-dark` as the default Shiki theme (closest fit to the Obsidian Lens out of the box; long-term we register a custom theme derived from `tailwind.config.js` Catppuccin tokens — see Section 8). The new chip toolbar collapses to a single visible row at any width: Priority+ overflow folds chips into a trailing `…` portal-rendered menu via `@floating-ui/react` (same primitive as our `Tooltip` per [`docs/decisions/2026-04-22-tooltip-library.md`](../../decisions/2026-04-22-tooltip-library.md)). Below `DIFF_MIN_WIDTH_PX = 360` the diff body is replaced with a "pane too narrow" placeholder while the toolbar stays interactive. Between `DIFF_MIN_WIDTH_PX` and `SPLIT_MIN_WIDTH_PX = 720` the `diffStyle: 'split'` preference is silently coerced to `'unified'` without overwriting the saved preference, so widening the pane back restores split.
 
 No persistence is introduced for v1 — every toolbar knob (theme / highlight / indicators / overflow / line numbers / background tint / file header / sticky header) lives in component state. A future settings-dialog spec ([#252](https://github.com/winoooops/vimeflow/issues/252)) can persist these per-workspace.
 
@@ -74,13 +75,13 @@ Pierre's `<MultiFileDiff>` consumes a different shape — raw `oldFile: FileCont
 | Merge-conflict resolver UI                 | ❌ Absent                          | Hand-rolled parser does not surface conflict regions.                     |
 | Inline reviewer comments / annotations     | ❌ Absent                          | No annotation surface exists.                                             |
 
-PR1 closes the first two via Pierre's defaults. PR2 closes the third by growing the missing Rust IPC. PR3 closes the last one. Virtualization and merge-conflict UI remain explicit non-goals for v1 (Section 3.2).
+PR1 closes the first two via Pierre's defaults. PR2 closes the third by growing the missing Rust IPC. PR4 closes the last one (PR3 adds hunk navigation, which is not in the gap list — it is parity work). Virtualization and merge-conflict UI remain explicit non-goals for v1 (Section 3.2).
 
 ### 2.3 Spike-validated direction
 
 A spike on this branch (`feat/pierre-diffs-integration`) validated `@pierre/diffs/react`'s `<MultiFileDiff>` rendering inside the actual `DiffPanelContent` right slot. The spike uses machine-local fixtures under `docs/spikes/pierre-diffs/` (excluded from git via the worktree's common-dir `info/exclude`) and a `SPIKE_PIERRE_DIFFS` env-gated branch in `DiffPanelContent.tsx:21` that swaps `<PierreDiffsDemo />` in for the real `<DiffViewer />`. The spike also produced the chip-style toolbar prototype (PriorityPlus overflow with single-row `maxRows`, floating-ui Dropdown / Segmented / Toggle primitives, responsive width bands at 720 / 360 px) that this spec promotes to feature-local primitives under `src/features/diff/components/toolbar/`. All spike scaffolding is deleted in PR1 (Section 4.9).
 
-The decision record [`docs/decisions/2026-05-23-pierre-diffs-renderer.md`](../../decisions/2026-05-23-pierre-diffs-renderer.md) captures every option considered (in-house build, `modem-dev/hunk` CLI in a terminal pane, `@pierre/diffs` lib), why Pierre wins (library not CLI; Bootstrap-creator maintainers; multiple independent adopters in the wild; Apache-2.0 compatible; unlocks Shiki + word-diff + virtualization + merge-conflict + annotation framework in one move), and the locked design choices (default option states, responsive bands, toolbar priority order, primitive selection). This spec executes that decision and adds inline-review-comments as PR3 — a feature not contemplated in the decision record but landing on the same renderer.
+The decision record [`docs/decisions/2026-05-23-pierre-diffs-renderer.md`](../../decisions/2026-05-23-pierre-diffs-renderer.md) captures every option considered (in-house build, `modem-dev/hunk` CLI in a terminal pane, `@pierre/diffs` lib), why Pierre wins (library not CLI; Bootstrap-creator maintainers; multiple independent adopters in the wild; Apache-2.0 compatible; unlocks Shiki + word-diff + virtualization + merge-conflict + annotation framework in one move), and the locked design choices (default option states, responsive bands, toolbar priority order, primitive selection). This spec executes that decision and adds inline-review-comments as PR4 — a feature not contemplated in the decision record but landing on the same renderer.
 
 ## 3. Goals & non-goals
 
@@ -89,24 +90,25 @@ The decision record [`docs/decisions/2026-05-23-pierre-diffs-renderer.md`](../..
 1. **Replace the React rendering layer** at `src/features/diff/components/` (`DiffViewer.tsx`, `SplitDiffView.tsx`, `UnifiedDiffView.tsx`, `DiffLine.tsx`, `DiffHunkHeader.tsx`) with `@pierre/diffs/react`'s `<MultiFileDiff>`. Restore feature parity for split / unified rendering and gain Shiki syntax highlighting + word-level intra-line diff + sticky file headers + theme integration with zero net loss against current behavior.
 2. **Run Pierre's Shiki tokenization off the main thread from day one** via `<WorkerPoolContextProvider>`. Target: a ≥ 1 000-line diff opens without blocking the main thread for the 100–500 ms tokenize window.
 3. **Ship the chip-style toolbar** (PriorityPlus overflow, single visible row at any width, portal-rendered dropdowns) as the replacement for `DiffToolbar.tsx`. Promote the spike's `PriorityPlus` / `Dropdown` / `Segmented` / `Toggle` primitives to feature-local files under `src/features/diff/components/toolbar/` (decision: feature-local rather than `src/components/` until a second consumer appears). Preserve the spike's responsive width bands: `SPLIT_MIN_WIDTH_PX = 720` silently coerces split → unified; `DIFF_MIN_WIDTH_PX = 360` replaces the diff body with a placeholder while the toolbar remains interactive.
-4. **Wire the missing Rust IPC handlers** in PR2 — `stage_file` / `unstage_file` / `discard_file`, each accepting an optional unified-diff hunk patch so the same handler serves whole-file and per-hunk operations. Land per the 4-file IPC checklist (`mod.rs` + `runtime/state.rs` + `runtime/ipc.rs` + `electron/backend-methods.ts`). v1 dispatches the IPC on chip click and refreshes the diff + git-status on success — no Pierre-side optimistic UI in v1 (deferred to v2 per Section 9). The `hunkPatch` string is extracted at the consumer (`DiffPanelContent` holds `response.rawDiff`) via the existing `extractHunkPatch()` utility at `src/features/diff/services/gitPatch.ts:56–77` and passed to the service. The "Discard All" chip stays as a whole-file operation (`discard_file` with no `hunkPatch`).
-5. **Add inline review comments** in PR3: per-line annotations via Pierre's `DiffLineAnnotation<T>`, a per-workspace feedback batch, a "Finish feedback" action that surfaces the batch into the currently-focused coding agent's terminal session by **reusing the existing `write_pty` IPC** (no new agent-bridge IPC, no receiver UI — the formatted message appears in the agent's terminal scrollback and the agent reacts via its usual reply path).
-6. **Each PR is independently reviewable and shippable.** A merged PR1 is a strict improvement on what we ship today even if PR2 / PR3 never land.
+4. **Wire the missing Rust IPC handlers** in PR2 — `stage_file` / `unstage_file` / `discard_file`, each accepting an optional unified-diff hunk patch so the same handler serves whole-file and per-hunk operations. Land per the 4-file IPC checklist (`mod.rs` + `runtime/state.rs` + `runtime/ipc.rs` + `electron/backend-methods.ts`). v1 dispatches the IPC on chip click and refreshes the diff + git-status on success — no Pierre-side optimistic UI in v1 (deferred to v2 per Section 10). The `hunkPatch` string is extracted at the consumer (`DiffPanelContent` holds `response.rawDiff`) via the existing `extractHunkPatch()` utility at `src/features/diff/services/gitPatch.ts:56–77` and passed to the service. The "Discard All" chip stays as a whole-file operation (`discard_file` with no `hunkPatch`).
+5. **Add hunk navigation** in PR3: wire the prev/next-hunk chips (disabled placeholders since PR1) to track the focused hunk index as toolbar state and drive Pierre's viewport via the `selectedLines` controlled prop on `<MultiFileDiff>`. No new IPC and no renderer swap — pure toolbar state plus Pierre's controlled selection.
+6. **Add inline review comments** in PR4: per-line annotations via Pierre's `DiffLineAnnotation<T>`, a per-workspace feedback batch, a "Finish feedback" action that surfaces the batch into the currently-focused coding agent's terminal session by **reusing the existing `write_pty` IPC** (no new agent-bridge IPC, no receiver UI — the formatted message appears in the agent's terminal scrollback and the agent reacts via its usual reply path).
+7. **Each PR is independently reviewable and shippable.** A merged PR1 is a strict improvement on what we ship today even if PR2 / PR3 / PR4 never land.
 
 ### 3.2 Non-goals
 
-1. **Theme drift.** v1 ships with `pierre-dark` as the default theme. Registering a custom Shiki theme derived from `tailwind.config.js` Catppuccin tokens is a separate follow-up (Section 7); this spec does not block on theme-token plumbing.
+1. **Theme drift.** v1 ships with `pierre-dark` as the default theme. Registering a custom Shiki theme derived from `tailwind.config.js` Catppuccin tokens is a separate follow-up (Section 8); this spec does not block on theme-token plumbing.
 2. **Virtualization.** Pierre offers virtualization in React by wrapping `<MultiFileDiff>` in a `<Virtualizer>` context provider (the core-side `VirtualizedFileDiff` class is not exported from `@pierre/diffs/react` as a JSX component). v1 renders without the `<Virtualizer>` wrapper. We add it only when a measured frame-budget regression or a concrete large-file complaint appears.
 3. **Replacing `ChangedFilesList`.** Pierre's sister library `@pierre/trees` is a future possible swap for the file-list sidebar; that is a separate decision and out of scope here.
 4. **Persisting toolbar preferences.** Theme / highlight / split-vs-unified / boolean toggles all live in component state for v1. Persisting to settings ([#252](https://github.com/winoooops/vimeflow/issues/252)) is a separate spec.
 5. **CLI launcher to `modem-dev/hunk`.** The decision record's Path C ("open in hunk" power-user shortcut) is explicitly deferred and not part of this integration.
 6. **Settings dialog integration.** The new chip toolbar is the only surface for these options in v1. A future settings-dialog page that mirrors or overrides them is out of scope.
 7. **i18n.** Chinese strings for the new toolbar / placeholder / feedback UI are deferred to a sweep; English-only for v1.
-8. **PR3 v2 niceties.** Inline-review v1 captures plain-text comments only — no attachments, no threaded replies, no rich-text formatting, no batch-size cap UI. Soft cap of 50 comments per batch is enforced silently; UI for that comes in a future spec if needed.
+8. **PR4 v2 niceties.** Inline-review v1 captures plain-text comments only — no attachments, no threaded replies, no rich-text formatting, no batch-size cap UI. Soft cap of 50 comments per batch is enforced silently; UI for that comes in a future spec if needed.
 
-## 4. PR1 — Renderer replacement
+## 4. PR1 — Renderer replacement (MERGED — #263)
 
-PR1 is the single largest unit of work. It replaces the React rendering layer end-to-end, extends the Rust git source so Pierre has what it needs, ships the new chip toolbar, and tears down the spike. After PR1 lands, the diff pane renders with Shiki syntax highlighting and word-level intra-line diffs; the toolbar collapses responsively into a Priority+ overflow menu; the spike scaffolding is gone. Stage / Discard chips are visible but no-op (placeholders for PR2). Inline annotations are not present (PR3).
+PR1 was the single largest unit of work. It replaces the React rendering layer end-to-end, extends the Rust git source so Pierre has what it needs, ships the new chip toolbar, and tears down the spike. After PR1 landed, the diff pane renders with Shiki syntax highlighting and word-level intra-line diffs; the toolbar collapses responsively into a Priority+ overflow menu; the spike scaffolding is gone. **PR1 also shipped functional file navigation** (prev/next-file chips); hunk-nav chips (PR3) and Stage / Discard chips (PR2) are visible but no-op (disabled placeholders). Inline annotations are not present (PR4). A follow-up hotfix shipped as [#276](https://github.com/winoooops/vimeflow/pull/276) fixed the HIGHLIGHT (`lineDiffType`) dropdown found in PR1 QA (see Section 4.11).
 
 ### 4.1 Pierre setup: `WorkerPoolContextProvider` mount + Vite worker asset
 
@@ -178,7 +180,7 @@ worker: {
 },
 ```
 
-Verify with `npm run build` that `dist/assets/pierre-worker-*.js` exists and is referenced from the worker provider, not inlined into the renderer bundle. Bundle-size impact is tracked under the risks table in Section 9.
+Verify with `npm run build` that `dist/assets/pierre-worker-*.js` exists and is referenced from the worker provider, not inlined into the renderer bundle. Bundle-size impact is tracked under the risks table in Section 10.
 
 ### 4.2 Rust: extend `get_git_diff` with `oldText` / `newText`
 
@@ -428,19 +430,19 @@ Hunk navigation + Stage/Discard chips (Section 4.7) interleave at fixed position
 
 ### 4.7 Hunk navigation + Stage / Discard chip placeholders
 
-The existing `DiffToolbar.tsx` ships prev/next hunk arrows, a `X HUNKS` counter, and Stage / Discard / Discard All buttons. PR1 reproduces these as chips on `DiffChipToolbar` so visual parity is preserved when PR1 lands without PR2; they are non-functional placeholders until PR2 wires the IPC.
+The existing `DiffToolbar.tsx` ships prev/next hunk arrows, a `X HUNKS` counter, and Stage / Discard / Discard All buttons. PR1 reproduces these as chips on `DiffChipToolbar` so visual parity is preserved when PR1 lands alone; they are non-functional placeholders until the staging chips are wired in **PR2** and the hunk-nav chips in **PR3**.
 
-**Chips and PriorityPlus positions** (interleaved into the list from Section 4.6):
+**Chips and PriorityPlus positions** (interleaved into the list from Section 4.6). The "Functional behavior" column tags the PR that wires each chip — staging chips land in PR2, hunk-navigation chips in PR3:
 
-| Position | Chip          | Type                                    | PR1 behavior                                                           | PR2 behavior                                                                                                                                                                                     |
-| -------- | ------------- | --------------------------------------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 2        | `prev hunk`   | icon button (`chevron_left`)            | `disabled` (no-op)                                                     | walks `(focusedHunkIndex - 1) mod hunks.length` and updates `selectedLines` to scroll Pierre                                                                                                     |
-| 3        | `hunk N/M`    | counter chip (text)                     | reads `M = fileDiff.hunks.length` from `response`, `N = 1` placeholder | `N` tracks current focused hunk                                                                                                                                                                  |
-| 4        | `next hunk`   | icon button (`chevron_right`)           | `disabled`                                                             | walks `(focusedHunkIndex + 1) mod hunks.length`                                                                                                                                                  |
-| 5        | `stage`       | icon button (`add_box`)                 | `disabled` + tooltip "Available in PR2"                                | dispatches `stage_file(path, hunkPatch)`                                                                                                                                                         |
-| 6        | `unstage`     | icon button (`indeterminate_check_box`) | `disabled` + tooltip "Available in PR2"                                | dispatches `unstage_file(path, hunkPatch)` — visible only on the **staged** diff view; on unstaged diffs this chip is omitted entirely (the unstage operation doesn't apply to unstaged changes) |
-| 7        | `discard`     | icon button (`backspace`)               | `disabled` + tooltip "Available in PR2"                                | dispatches `discard_file(path, hunkPatch, scope=Unstaged)`                                                                                                                                       |
-| 8        | `discard all` | icon button (`delete_sweep`)            | `disabled` + tooltip "Available in PR2"                                | dispatches `discard_file(path, scope=Unstaged)` (no `hunkPatch`); confirmation popover required                                                                                                  |
+| Position | Chip          | Type                                    | PR1 behavior                                                           | Functional behavior                                                                                                                                                                                      |
+| -------- | ------------- | --------------------------------------- | ---------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2        | `prev hunk`   | icon button (`chevron_left`)            | `disabled` + tooltip "Available in PR3"                                | _(PR3)_ walks `(focusedHunkIndex - 1) mod hunks.length` and updates `selectedLines` to scroll Pierre                                                                                                     |
+| 3        | `hunk N/M`    | counter chip (text)                     | reads `M = fileDiff.hunks.length` from `response`, `N = 1` placeholder | _(PR3)_ `N` tracks current focused hunk                                                                                                                                                                  |
+| 4        | `next hunk`   | icon button (`chevron_right`)           | `disabled` + tooltip "Available in PR3"                                | _(PR3)_ walks `(focusedHunkIndex + 1) mod hunks.length`                                                                                                                                                  |
+| 5        | `stage`       | icon button (`add_box`)                 | `disabled` + tooltip "Available in PR2"                                | _(PR2)_ dispatches `stage_file(path, hunkPatch)`                                                                                                                                                         |
+| 6        | `unstage`     | icon button (`indeterminate_check_box`) | `disabled` + tooltip "Available in PR2"                                | _(PR2)_ dispatches `unstage_file(path, hunkPatch)` — visible only on the **staged** diff view; on unstaged diffs this chip is omitted entirely (the unstage operation doesn't apply to unstaged changes) |
+| 7        | `discard`     | icon button (`backspace`)               | `disabled` + tooltip "Available in PR2"                                | _(PR2)_ dispatches `discard_file(path, hunkPatch, scope=Unstaged)`                                                                                                                                       |
+| 8        | `discard all` | icon button (`delete_sweep`)            | `disabled` + tooltip "Available in PR2"                                | _(PR2)_ dispatches `discard_file(path, scope=Unstaged)` (no `hunkPatch`); confirmation popover required                                                                                                  |
 
 These slot into the priority order from Section 4.6 BEFORE the option dropdowns / toggles — hunk-level controls outrank options when space is scarce. Updated full priority order:
 
@@ -460,7 +462,7 @@ These slot into the priority order from Section 4.6 BEFORE the option dropdowns 
 14. `file header` toggle
 15. `sticky header` toggle
 
-**Disabled chip styling.** `bg-surface-container/20 text-on-surface-variant/40 cursor-not-allowed`. Tooltip on hover (via existing `<Tooltip>`) carries the "Available in PR2" copy. This keeps the UI visually complete from PR1's first commit; users see what's coming.
+**Disabled chip styling.** `bg-surface-container/20 text-on-surface-variant/40 cursor-not-allowed`. Tooltip on hover (via existing `<Tooltip>`) carries an "Available in PR2" copy for the staging chips and "Available in PR3" for the hunk-nav chips. This keeps the UI visually complete from PR1's first commit; users see what's coming.
 
 ### 4.8 Responsive width bands + auto split→unified coercion
 
@@ -549,9 +551,13 @@ Verify after teardown: `npm run type-check` clean, `npm run build` clean (produc
 
 **E2E.** The WebdriverIO suite at `tests/e2e/` exercises the diff pane indirectly via the workspace flow. PR1 verifies the spec by hand (start `npm run electron:dev`, open a repo, click a changed file, confirm Pierre renders with Shiki highlighting) — no new E2E added. A later PR may add a diff-pane-specific spec; it is not a PR1 gate.
 
-## 5. PR2 — Hunk staging IPC + wiring
+### 4.11 Worker-pool option sync (PR1 QA fix — shipped as #276)
 
-PR2 grows the three missing Rust IPC handlers, unstubs the frontend `gitService` methods, and wires Pierre's `diffAcceptRejectHunk` into the chip toolbar so the Stage / Discard chips (placeholders in PR1) become functional. No renderer changes; no toolbar restructure beyond removing the `disabled` styling on the staging chips.
+`theme` and `lineDiffType` are _pool-owned_ render options. When a `WorkerPoolContextProvider` is mounted, `DiffHunksRenderer.getRenderOptions()` returns `workerManager.getDiffRenderOptions()` wholesale, so the per-instance `<MultiFileDiff options>` props for those two are ignored — they must be pushed into the pool via `WorkerPoolManager.setRenderOptions`. PR1 initially synced only `theme`, and because `setRenderOptions` resets every omitted field to its default, that silently reset `lineDiffType` to Pierre's `word-alt` on every theme change and left the HIGHLIGHT dropdown a no-op. The hotfix ([#276](https://github.com/winoooops/vimeflow/pull/276)) pushes `{ theme, lineDiffType }` together, gates the diff remount on the synced values (so there is no flash of stale highlighting), and serializes `setRenderOptions` writes per component instance so rapid changes cannot land out of order. The remaining cross-instance race — the serialization chain is per-instance but the pool is app-wide shared — is hardened in PR2 (Section 5.5).
+
+## 5. PR2 — Hunk staging IPC + wiring + worker-pool write serialization
+
+PR2 grows the three missing Rust IPC handlers, unstubs the frontend `gitService` methods, and wires the Stage / Discard chips (placeholders in PR1) to dispatch those IPCs with refresh-on-success. It also hardens the worker-pool render-option sync across instances (Section 5.5). No renderer changes; no toolbar restructure beyond removing the `disabled` styling on the staging chips. Hunk navigation is **not** part of PR2 — it is extracted into PR3 (Section 6) so PR2 stays staging-only.
 
 ### 5.1 Rust IPC handlers: `stage_file` / `unstage_file` / `discard_file`
 
@@ -761,11 +767,11 @@ Whole-file operation = omit `hunkPatch`; per-hunk = pass the unified-diff string
 
 **No optimistic UI in v1.** Pierre's `<MultiFileDiff>` accepts `oldFile` / `newFile` as inputs and computes its own `FileDiffMetadata` internally — it does NOT accept a controlled `FileDiffMetadata` prop. (`<FileDiff>` from `@pierre/diffs/react` does, but switching from `<MultiFileDiff>` to `<FileDiff>` for the controlled-metadata path adds the burden of computing the metadata via `parseDiffFromFile` ourselves on every change.) Pierre's `diffAcceptRejectHunk(diff, hunkIndex, options)` helper at `node_modules/@pierre/diffs/dist/utils/diffAcceptRejectHunk.d.ts` returns updated metadata for the _visual_ accept/reject state — useful for an optimistic UI flow but not load-bearing for v1 correctness.
 
-PR2 v1 uses the simpler refresh-on-success pattern: click fires the IPC, on success the existing `useFileDiff` / `useGitStatus` data layer refetches and `<MultiFileDiff>` re-renders with the new content. Perceived latency is the IPC round-trip + the git operation (~150–500 ms in profiling). The chip shows a small spinner during the await. Optimistic-UI integration (via `<FileDiff>` + `diffAcceptRejectHunk`) is a v2 enhancement listed in Section 9 risks/follow-ups.
+PR2 v1 uses the simpler refresh-on-success pattern: click fires the IPC, on success the existing `useFileDiff` / `useGitStatus` data layer refetches and `<MultiFileDiff>` re-renders with the new content. Perceived latency is the IPC round-trip + the git operation (~150–500 ms in profiling). The chip shows a small spinner during the await. Optimistic-UI integration (via `<FileDiff>` + `diffAcceptRejectHunk`) is a v2 enhancement listed in Section 10 risks/follow-ups.
 
 **Flow on Stage chip click for a specific hunk:**
 
-1. User clicks the `stage` chip while a hunk is focused (focus index tracked by `DiffChipToolbar` state, set by the prev/next chip handlers from Section 4.7).
+1. User clicks the `stage` chip while a hunk is focused (focus index tracked by `DiffChipToolbar` state, set by the prev/next-hunk chip handlers introduced in PR3 — Section 6).
 2. **Map Pierre's hunk to a raw-diff hunk by line range, NOT by index.** Pierre internally uses the bundled `diff` package (jsdiff) to compute hunks from `oldText` / `newText`; the Rust git source produces hunks via the system `git diff` algorithm. The two engines can split the same change into a different number of hunks (different context-line grouping, different rename detection), so `pierreHunkIndex` is NOT guaranteed to equal the index into `response.fileDiff.hunks`. The mapping is by line range:
    ```ts
    const pierreHunk = /* current focused Pierre hunk; see "focused hunk tracking" below */
@@ -777,7 +783,7 @@ PR2 v1 uses the simpler refresh-on-success pattern: click fires the IPC, on succ
      // contains an unchanged interior gap of length below git's
      // context-line threshold. v1 surfaces a toast and asks the user to
      // pick a different operation; v2 may generate the patch from the
-     // pierreHunk's range directly (see Section 9.1 follow-up).
+     // pierreHunk's range directly (see Section 10.1 follow-up).
      showToast('Pierre split this hunk differently than git — cannot stage this region with the per-hunk button. Use Discard All or the file-level chip.')
      return
    }
@@ -813,7 +819,34 @@ PR2 v1 uses the simpler refresh-on-success pattern: click fires the IPC, on succ
 
 **Discard All** (whole-file) calls `gitService.discardChanges(file)` (omitting `hunkPatch`). For safety, this chip prompts a confirmation in a `<Tooltip interactive>` popover before dispatching — "Discard all changes to `<filename>`? This cannot be undone." with `Confirm` / `Cancel` buttons. The other chips have no confirmation (consistent with git's CLI behavior — `git reset`, `git apply --cached` are reversible).
 
-**Per-hunk `prev` / `next` navigation** (the chips placeholder-disabled in PR1) becomes functional in PR2 by tracking the focused hunk index as toolbar state and driving Pierre's viewport via the **`selectedLines` controlled prop** on `<MultiFileDiff>` (Pierre does not expose an imperative `setSelectedLines` on the React `useFileDiffInstance` handle — it only returns `{ ref, getHoveredLine }` per `node_modules/@pierre/diffs/dist/react/utils/useFileDiffInstance.d.ts`). Flow:
+The per-hunk operations above need a notion of "which hunk is focused" — that focus state and the prev/next-hunk chips that drive it are owned by PR3 (Section 6). In PR2 the staging chips operate on the hunk that PR3's navigation focuses; PR2 lands on top of (or alongside) PR3's focus state, or — if PR2 ships first — defaults to the first hunk until PR3 wires navigation.
+
+**Unstage flow** uses the same `extractHunkPatch` → null-check → `gitService.unstageFile(file, hunkPatch)` → refetch-on-success pattern. The chip is omitted entirely on the unstaged diff view (per the chip table above — there is nothing to "unstage" on an unstaged change). On the staged diff view, the staging chips render `unstage` instead of `stage`; `discard` and `discard all` retain their semantics but operate against the staged side (`DiscardScope::Both` — unstage + discard — is the natural mapping; v1 specifies `Both` for the staged-diff chip).
+
+### 5.4 Tests
+
+- `crates/backend/tests/`: add integration tests for each of the three new IPC handlers, covering:
+  - Whole-file stage of a modified tracked file.
+  - Per-hunk stage with a valid patch.
+  - Per-hunk stage with a stale patch (e.g. the working tree changed after the diff was captured) — assert the `Err(String)` is surfaced cleanly.
+  - Discard of an untracked file (uses `git clean` branch, not `git checkout`).
+  - Whole-file discard of a modified tracked file.
+- `src/features/diff/services/gitService.test.ts`: unstub the existing skipped tests; assert each service method routes to the right IPC method name with the right payload shape.
+- `src/features/diff/services/pierreAdapter.test.ts` (extend from PR1): add tests that verify the `HunkData.startLine → DiffHunk.newStart` mapping function handles renames, multi-hunk files, and the `rawIndex === -1` defensive path.
+- `DiffChipToolbar.test.tsx` (extend): the previously-disabled Stage / Discard / Discard All chips now invoke service methods; assert dispatch happens with the expected arguments. Assert that on resolved-success the `staging` boolean clears AND `refetchDiff` / `refetchGitStatus` are called once. (No optimistic-UI assertion in v1 — Pierre re-renders after the refetch completes; the flip is data-driven not optimistic.)
+- Manual E2E (no automation gate): run `npm run electron:dev`, modify a tracked file with multiple distinct hunks, stage one hunk via the chip, verify `git status --short` shows partial staging, unstage it back, discard one hunk, verify the working tree updates.
+
+### 5.5 Worker-pool write serialization (cross-instance)
+
+The #276 hotfix (Section 4.11) serialized `setRenderOptions` writes through a per-component-instance promise chain. But the worker pool is an app-wide singleton: two `DiffPanelContent` instances (a split layout with two diff panes), or an unmounting instance overlapping a remounting one, hold independent chains and can still issue overlapping writes that land out of order, leaving the shared pool on a stale `theme` / `lineDiffType`. PR2 moves the serialization to module-level state keyed by the pool object (a `WeakMap<pool, Promise>`) and skips queued writes that were cancelled before they were issued, so every writer to a given pool is serialized regardless of which instance owns it. Tests must reset the module-level chain between cases to avoid cross-test leakage.
+
+**Open design point (resolve during PR2 planning).** A single shared pool can hold only one `theme` / `lineDiffType` at a time, so two diff panes cannot show independent themes — changing one panel's theme restyles the other. PR2 must pick one of: (a) accept a single global diff theme/highlight (writes coalesce to the last change; simplest), or (b) lift theme/highlight to app-level shared state so the toolbar reflects the shared value rather than per-panel state. This is a UX decision, not just an implementation detail; flag it for the user before building.
+
+## 6. PR3 — Hunk navigation
+
+PR3 wires the prev/next-hunk chips — disabled placeholders since PR1 — to move the viewport between hunks in the focused file. No new IPC and no renderer swap; this is pure toolbar state plus Pierre's controlled selection prop. (Originally bundled into the PR2 scope; split out so PR2 stays staging-only and each PR is independently reviewable.)
+
+**Per-hunk `prev` / `next` navigation** (the chips placeholder-disabled in PR1) becomes functional in PR3 by tracking the focused hunk index as toolbar state and driving Pierre's viewport via the **`selectedLines` controlled prop** on `<MultiFileDiff>` (Pierre does not expose an imperative `setSelectedLines` on the React `useFileDiffInstance` handle — it only returns `{ ref, getHoveredLine }` per `node_modules/@pierre/diffs/dist/react/utils/useFileDiffInstance.d.ts`). Flow:
 
 ```ts
 const focusedHunk = response.fileDiff.hunks[focusedHunkIndex]
@@ -836,30 +869,17 @@ const selectedLines: SelectedLineRange = {
 <MultiFileDiff ... selectedLines={selectedLines} />
 ```
 
-**Caveat on scroll behavior.** Pierre's `selectedLines` prop sets the selection (the row gets a highlight ring); whether the change causes a viewport scroll-into-view depends on Pierre's internal behavior, which v1 does not assume. If the selected hunk is off-screen and Pierre does not auto-scroll, PR2's manual E2E surfaces it and we add a follow-up that explicitly scrolls the diff container to the selected element via DOM `Element.scrollIntoView({ behavior: 'smooth', block: 'center' })` once Pierre's render has settled. The selection itself is the source-of-truth state for the "focused hunk"; the scroll is presentation polish.
+**Caveat on scroll behavior.** Pierre's `selectedLines` prop sets the selection (the row gets a highlight ring); whether the change causes a viewport scroll-into-view depends on Pierre's internal behavior, which v1 does not assume. If the selected hunk is off-screen and Pierre does not auto-scroll, PR3's manual E2E surfaces it and we add a follow-up that explicitly scrolls the diff container to the selected element via DOM `Element.scrollIntoView({ behavior: 'smooth', block: 'center' })` once Pierre's render has settled. The selection itself is the source-of-truth state for the "focused hunk"; the scroll is presentation polish.
 
 The prev/next chips update `focusedHunkIndex` via state — `(prev + hunks.length - 1) % hunks.length` and `(prev + 1) % hunks.length`. Hunk counter chip displays `${focusedHunkIndex + 1}/${hunks.length}`.
 
-**Unstage flow** uses the same `extractHunkPatch` → null-check → `gitService.unstageFile(file, hunkPatch)` → refetch-on-success pattern. The chip is omitted entirely on the unstaged diff view (per the chip table above — there is nothing to "unstage" on an unstaged change). On the staged diff view, the same prev/next/counter chips apply with `unstage` instead of `stage`; `discard` and `discard all` retain their semantics but operate against the staged side (`DiscardScope::Both` — unstage + discard — is the natural mapping; v1 specifies `Both` for the staged-diff chip).
+The Pierre→raw-diff hunk-index mapping (matching `pierreHunk.newStart` / `newLines` against `response.fileDiff.hunks`, used by PR2's staging chips to locate the hunk patch — Section 5.3 step 2) is identity in the common case, since both engines produce hunks in source order. PR3 owns the focused-hunk state that PR2's staging chips consume.
 
-### 5.4 Tests
+## 7. PR4 — Inline review comments → active agent panel
 
-- `crates/backend/tests/`: add integration tests for each of the three new IPC handlers, covering:
-  - Whole-file stage of a modified tracked file.
-  - Per-hunk stage with a valid patch.
-  - Per-hunk stage with a stale patch (e.g. the working tree changed after the diff was captured) — assert the `Err(String)` is surfaced cleanly.
-  - Discard of an untracked file (uses `git clean` branch, not `git checkout`).
-  - Whole-file discard of a modified tracked file.
-- `src/features/diff/services/gitService.test.ts`: unstub the existing skipped tests; assert each service method routes to the right IPC method name with the right payload shape.
-- `src/features/diff/services/pierreAdapter.test.ts` (extend from PR1): add tests that verify the `HunkData.startLine → DiffHunk.newStart` mapping function handles renames, multi-hunk files, and the `rawIndex === -1` defensive path.
-- `DiffChipToolbar.test.tsx` (extend): the previously-disabled Stage / Discard / Discard All chips now invoke service methods; assert dispatch happens with the expected arguments. Assert that on resolved-success the `staging` boolean clears AND `refetchDiff` / `refetchGitStatus` are called once. (No optimistic-UI assertion in v1 — Pierre re-renders after the refetch completes; the flip is data-driven not optimistic.)
-- Manual E2E (no automation gate): run `npm run electron:dev`, modify a tracked file with multiple distinct hunks, stage one hunk via the chip, verify `git status --short` shows partial staging, unstage it back, discard one hunk, verify the working tree updates.
+PR4 adds the fourth user-visible capability: clicking on a diff row opens a small composer; user types a comment; the comment renders inline as an annotation on Pierre's diff; user accumulates multiple comments across files; clicking "Finish feedback" sends the batch into the currently-focused coding agent's terminal session as a formatted prompt. The mechanism reuses the existing `write_pty` IPC — no new agent-bridge IPC is added, because agents in Vimeflow are CLI processes running in PTY sessions whose stdin is already exposed to the frontend.
 
-## 6. PR3 — Inline review comments → active agent panel
-
-PR3 adds the third user-visible capability: clicking on a diff row opens a small composer; user types a comment; the comment renders inline as an annotation on Pierre's diff; user accumulates multiple comments across files; clicking "Finish feedback" sends the batch into the currently-focused coding agent's terminal session as a formatted prompt. The mechanism reuses the existing `write_pty` IPC — no new agent-bridge IPC is added, because agents in Vimeflow are CLI processes running in PTY sessions whose stdin is already exposed to the frontend.
-
-### 6.1 Pierre `DiffLineAnnotation<T>` + `renderAnnotation` integration
+### 7.1 Pierre `DiffLineAnnotation<T>` + `renderAnnotation` integration
 
 Pierre's React types expose two shapes (`node_modules/@pierre/diffs/dist/types.d.ts`):
 
@@ -876,7 +896,7 @@ interface DiffBasePropsReact<LAnnotation> {
 }
 ```
 
-We pick our own `T` for the metadata payload — Pierre carries it back to us in the `renderAnnotation` callback. PR3's `T` is:
+We pick our own `T` for the metadata payload — Pierre carries it back to us in the `renderAnnotation` callback. PR4's `T` is:
 
 ```ts
 interface ReviewComment {
@@ -891,7 +911,7 @@ interface ReviewComment {
 }
 ```
 
-`<MultiFileDiff>` receives `lineAnnotations: DiffLineAnnotation<ReviewComment>[]` and `renderAnnotation` from the toolbar layer (state owner — Section 6.2). The callback renders a small chip below the affected line:
+`<MultiFileDiff>` receives `lineAnnotations: DiffLineAnnotation<ReviewComment>[]` and `renderAnnotation` from the toolbar layer (state owner — Section 7.2). The callback renders a small chip below the affected line:
 
 ```tsx
 const renderAnnotation = (
@@ -908,12 +928,12 @@ const renderAnnotation = (
 **Capturing new comments.** Pierre exposes line click events via the `InteractionManager` (per `node_modules/@pierre/diffs/dist/managers/InteractionManager.d.ts`). We attach a `onDiffLineClick` handler that opens a small popover composer anchored to the clicked line:
 
 - User clicks any line on the additions or deletions side → popover opens with a textarea and `Add comment` button.
-- Confirm → push a new `DiffLineAnnotation<ReviewComment>` onto the per-diff state (Section 6.2). Pierre re-renders with the new annotation row visible.
+- Confirm → push a new `DiffLineAnnotation<ReviewComment>` onto the per-diff state (Section 7.2). Pierre re-renders with the new annotation row visible.
 - Cancel → close, no state change.
 
 `ReviewCommentRow` (a new component under `src/features/diff/components/`) renders the comment text + small `edit` / `delete` icon buttons + a faint timestamp. Edit opens the same popover composer pre-filled; Delete removes the annotation from state immediately (no confirmation — comments are pre-send, low-stakes).
 
-### 6.2 Feedback batch state + "Finish feedback" UI
+### 7.2 Feedback batch state + "Finish feedback" UI
 
 State lives at `DiffPanelContent` (it already owns `useFileDiff` and the toolbar state; annotations are per-`(cwd, file)` key just like the diff itself):
 
@@ -938,14 +958,14 @@ The batch is **per-workspace**, not per-file — switching between changed files
 | State                           | Chip label                                                | Disabled? | Action                                           |
 | ------------------------------- | --------------------------------------------------------- | --------- | ------------------------------------------------ |
 | `totalAnnotations(batch) === 0` | —                                                         | hidden    | not in toolbar                                   |
-| `totalAnnotations(batch) > 0`   | `Finish feedback (N)` where `N = totalAnnotations(batch)` | enabled   | open the send-confirmation popover (Section 6.3) |
+| `totalAnnotations(batch) > 0`   | `Finish feedback (N)` where `N = totalAnnotations(batch)` | enabled   | open the send-confirmation popover (Section 7.3) |
 | Sending                         | `Sending…`                                                | disabled  | spinner via `progress_activity` icon             |
 
 A second small chip `Discard feedback` (low priority — last in toolbar, first to overflow into `…`) shows whenever `totalAnnotations(batch) > 0`. Click → confirmation popover ("Discard all N comments?") → clears the batch.
 
 **Soft cap.** Section 3.2 #8 caps a batch at 50 comments silently. Implementation: when an "Add comment" submission would push the batch past 50, the popover's `Add` button is disabled with a tooltip "Batch limit reached — finish or discard the current feedback before adding more." The cap is per-batch (across all files), not per-file.
 
-### 6.3 Active agent identification — which **pane** owns the diff?
+### 7.3 Active agent identification — which **pane** owns the diff?
 
 The receiver is a **pane**, not a session. Vimeflow's workspace model puts cwd / agent-detection / PTY identity on panes (sessions contain a pane graph). `write_pty` targets a PTY id, which is a pane-level identifier. A session with multiple panes can host multiple agents, each on its own pane PTY — feedback must land on the right one.
 
@@ -954,7 +974,7 @@ The receiver is a **pane**, not a session. Vimeflow's workspace model puts cwd /
 ```
 candidate panes = panes within the current workspace's session set where:
   - pane.cwd matches diff.cwd (exact match or descendant per agentCwdHint
-    — same rule as the Section 6.3 spike's session-level draft)
+    — same rule as the Section 7.3 spike's session-level draft)
   - AND pane has a detected agent (Claude Code or Codex) per the per-pane
     agent watcher (`useAgentStatus` is per-pane today; verify the hook's
     actual scope at planner-time implementation)
@@ -973,9 +993,9 @@ if candidates contains multiple →
 
 The rule is stable and explainable. No new IPC is needed for resolution — both the pane graph and the focus index are already in frontend state under `src/features/sessions/` and `src/features/workspace/`.
 
-### 6.4 Send mechanism — reuse `write_pty`, no new IPC
+### 7.4 Send mechanism — reuse `write_pty`, no new IPC
 
-The terminal feature exposes `write_pty(sessionId, data)` over IPC — the same channel that user keystrokes flow through (`src/features/terminal/`). For PR3 we format the feedback batch into a markdown-shaped prompt and write it as a single chunk:
+The terminal feature exposes `write_pty(sessionId, data)` over IPC — the same channel that user keystrokes flow through (`src/features/terminal/`). For PR4 we format the feedback batch into a markdown-shaped prompt and write it as a single chunk:
 
 ```
 > Inline review feedback (3 comments across 2 files):
@@ -1004,16 +1024,16 @@ const payload = `${PASTE_START}${formattedBatch}${PASTE_END}\n`
 await writePty(paneId, payload)
 ```
 
-The trailing `\n` after `PASTE_END` is the single submit. If a future agent surfaces that doesn't honor bracketed paste (untested at spec-time), the dispatch grows an adapter switch per `crates/backend/src/agent/adapter/`: the adapter declares its preferred submission encoding (`bracketed-paste` / `line-by-line` / `none`) and the dispatch picks the matching path. v1 only ships the bracketed-paste path because both supported agents (Claude Code, Codex) handle it; the manual E2E in Section 10.3 verifies both empirically before merge.
+The trailing `\n` after `PASTE_END` is the single submit. If a future agent surfaces that doesn't honor bracketed paste (untested at spec-time), the dispatch grows an adapter switch per `crates/backend/src/agent/adapter/`: the adapter declares its preferred submission encoding (`bracketed-paste` / `line-by-line` / `none`) and the dispatch picks the matching path. v1 only ships the bracketed-paste path because both supported agents (Claude Code, Codex) handle it; the manual E2E in Section 11.4 verifies both empirically before merge.
 
 **Receiver UI.** No new UI is added on the receiver side — the message simply appears in the existing terminal scrollback. The agent reads it via the agent watcher's existing transcript-parsing path (`crates/backend/src/agent/`) and reacts in its own UI. The agent-status panel does not need a special "received feedback" view in v1 — the existing tool-call / response stream surfaces the agent's reply.
 
 **Failure modes:**
 
 - Session was killed between batch start and `Finish feedback` click → `write_pty` returns an error → toast "Terminal session ended; feedback not sent." Batch is preserved so user can resend after starting a new agent.
-- Agent crashed but session is alive → bytes get written into the dead shell; nothing parses them. Treat as success at the IPC layer (we did write them); user sees no agent reply and figures out the agent died. This is a known v1 limitation (Section 6.5).
+- Agent crashed but session is alive → bytes get written into the dead shell; nothing parses them. Treat as success at the IPC layer (we did write them); user sees no agent reply and figures out the agent died. This is a known v1 limitation (Section 7.5).
 
-### 6.5 v1 scope limits
+### 7.5 v1 scope limits
 
 | Capability                  | v1                                                                                                  | Future                                                             |
 | --------------------------- | --------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
@@ -1028,23 +1048,23 @@ The trailing `\n` after `PASTE_END` is the single submit. If a future agent surf
 | Read-receipt / agent ack    | No (fire-and-forget)                                                                                | The active agent emits an acknowledgement event the panel consumes |
 | Internationalization        | English-only strings                                                                                | i18n sweep (deferred per Section 3.2 #7)                           |
 
-## 7. Theme strategy
+## 8. Theme strategy
 
-### 7.1 v1 — `pierre-dark` everywhere
+### 8.1 v1 — `pierre-dark` everywhere
 
 v1 ships `pierre-dark` as the only registered Shiki theme. The chip-toolbar theme dropdown still lists the Pierre + Shiki bundled themes (`pierre-dark`, `pierre-dark-soft`, `pierre-light`, `pierre-light-soft`, `catppuccin-mocha`, `dracula`, `github-dark`, `one-dark-pro`) so users can switch live, but the default and the worker pre-load only include `pierre-dark` — switching to a non-pre-loaded theme triggers Pierre's on-demand load and a brief shimmer the first time. Acceptable for v1; pre-loading all eight themes would multiply the worker initialization cost for no proven benefit.
 
-### 7.2 Follow-up — Catppuccin-from-tokens Shiki theme
+### 8.2 Follow-up — Catppuccin-from-tokens Shiki theme
 
 `pierre-dark` is the closest pre-built fit to the Obsidian Lens but is not the same palette. The follow-up (separate spec, not blocked on this integration) derives a custom Shiki theme JSON from the `tailwind.config.js` Catppuccin Mocha token map and registers it at provider boot via Pierre's `registerCustomTheme` (or `registerCustomCSSVariableTheme` for runtime-themeable variant). Acceptance: side-by-side comparison of the custom theme vs. `pierre-dark` on representative TS / Rust / CSS / Markdown samples shows the custom theme matches the rest of the Vimeflow UI (file explorer, agent panel, code editor) within a perceptible drift budget.
 
-### 7.3 Light-mode handoff
+### 8.3 Light-mode handoff
 
 Pierre's `theme` option accepts `ThemesType = { dark: DiffsThemeNames; light: DiffsThemeNames }` for paired dark/light themes. v1 hard-codes the single dark theme — there is no light theme work in this spec because Vimeflow has no light-mode toggle today. When a light mode lands (future spec), the chip-toolbar's theme dropdown gets a new "auto" option that flips to passing the `{ dark, light }` pair, and the worker pre-load grows to both themes.
 
-## 8. License and attribution
+## 9. License and attribution
 
-### 8.1 License inventory for the new dependency chain
+### 9.1 License inventory for the new dependency chain
 
 | Package                      | License      | Source                                                              |
 | ---------------------------- | ------------ | ------------------------------------------------------------------- |
@@ -1058,47 +1078,47 @@ Pierre's `theme` option accepts `ThemesType = { dark: DiffsThemeNames; light: Di
 
 No copyleft anywhere. Apache-2.0 is the only non-MIT/BSD entry and it adds the standard patent-grant clause plus the NOTICE-preservation requirement on redistribution. Vimeflow's own license (verify against `LICENSE` at the repo root at planner-time implementation; the integration does not change that license) is permissive and compatible.
 
-### 8.2 Attribution mechanics
+### 9.2 Attribution mechanics
 
 - **Development.** `node_modules/@pierre/diffs/LICENSE.md` is preserved by `npm install` — no action needed for `npm run electron:dev` or contributor workflow.
 - **Packaged AppImage release** (when the project ships a binary). PR1 adds a `THIRD_PARTY.md` at the repo root that lists the direct + transitive license-relevant deps with their copyright lines. The AppImage build pipeline copies that file into the bundle (path TBD per the existing `electron-builder` config). For Apache-2.0 packages specifically, the upstream `NOTICE` file (if present) gets included verbatim alongside.
 - **Source distribution / GitHub release tarball.** Same `THIRD_PARTY.md` is part of the tracked repo; no extra build step.
 
-### 8.3 No CLA / copyright assignment
+### 9.3 No CLA / copyright assignment
 
 `@pierre/diffs` is consumed via npm. There is no Contributor License Agreement to sign and no copyright assignment back to Pierre Computer Company.
 
-## 9. Risks and mitigations
+## 10. Risks and mitigations
 
-| Risk                                                                                                                                                                         | Likelihood | Impact                       | Mitigation                                                                                                                                                                                                                                                |
-| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- | ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Pierre minor-version API change between `^1.2.2` and a future install breaks toolbar / nav code                                                                              | Medium     | Medium (compile errors)      | Pin to `~1.2.2` (only patch updates allowed) during PR1; widen to `^1` after a stable usage period. Renovate / dependabot picks up breaking updates with explicit human review.                                                                           |
-| `<MultiFileDiff>` re-render on every diff refetch causes visible flicker                                                                                                     | Medium     | Low–Medium (UX polish)       | `<MultiFileDiff>` memo-stable across same-input renders. Pass `cacheKey` derived from `(filePath, gitObjectId)` in `FileContents` so Pierre can skip re-tokenization. Profile in PR1 — if perceptible, add a small fade-transition.                       |
-| Worker pool cold-start adds noticeable delay on first file open                                                                                                              | Medium     | Low                          | The pool initializes once at provider mount (App boot). By the time the user clicks a file, the worker is warm. Profile cold-start; if > 500 ms, pre-warm with an empty tokenize at boot.                                                                 |
-| Production bundle weight grows beyond AppImage size budget                                                                                                                   | Low–Medium | Medium                       | Pierre's worker bundle is a separate Vite asset (Section 4.1) so it doesn't bloat the main chunk. Track `dist/assets/*.js` byte size in the PR1 description; if total grows > 1 MB, escalate to a separate bundle-size optimization task.                 |
-| Theme drift — `pierre-dark` looks subtly off against the rest of Vimeflow                                                                                                    | Medium     | Low (cosmetic)               | Tracked as the Section 7.2 follow-up. Not a v1 blocker.                                                                                                                                                                                                   |
-| Pierre re-renders blow main-thread budget on the largest files in a real repo                                                                                                | Low        | Medium                       | Pierre offers `<Virtualizer>` (Section 3.2 #2). Add it as a small follow-up when a measured regression appears — `<MultiFileDiff>` props are the same shape, the wrapper is mechanical.                                                                   |
-| Existing component tests (`DiffLine` / `SplitDiffView` / `UnifiedDiffView` / `DiffHunkHeader` / `DiffViewer` / `DiffToolbar`) deletion churn-hides bugs in their replacement | Low        | Medium                       | The new primitive tests (Section 4.5 + 4.10) cover the same behaviors at the primitive layer. Coverage report comparison in the PR1 description shows total coverage delta.                                                                               |
-| `extractHunkPatch` returns `null` more often than expected with Pierre's reformulated diff                                                                                   | Low        | Low                          | The consumer's null branch (Section 5.3 step 3) surfaces a non-fatal toast; user retries by refreshing the diff. Add a Sentry-style log if we ever instrument production.                                                                                 |
-| Optimistic UI is missed by users who expected an instant chip flip                                                                                                           | Low–Medium | Low (perceived sluggishness) | Section 9 follow-up: switch `<MultiFileDiff>` to `<FileDiff>` with controlled `FileDiffMetadata`, drive optimistic flips via `diffAcceptRejectHunk`, parallel-call the IPC; revert metadata on IPC failure. Estimated 1–2 days of work; not a v1 blocker. |
-| Agent feedback message format is interpreted as code by the agent's REPL parser (e.g. the leading `>` lines trigger a quote-block edit mode)                                 | Low        | Medium                       | Test with both Claude Code and Codex; if either interprets `> ` as a special prefix, switch to a different framing (e.g. `[REVIEW]` lines). Caught by the manual E2E in Section 5.4 + PR3's own E2E.                                                      |
-| `write_pty` race — terminal session dies between batch open and "Finish feedback" click                                                                                      | Low        | Low                          | Section 6.4 already specifies the toast on `write_pty` error and preserves the batch for resend.                                                                                                                                                          |
-| Settings / persistence will need to migrate this spec's in-memory state into the settings dialog (#252)                                                                      | Certain    | Low                          | This spec deliberately stays in component state to avoid blocking on #252. Migration is a small wrap-with-persistence task whenever #252 lands.                                                                                                           |
+| Risk                                                                                                                                                                         | Likelihood | Impact                       | Mitigation                                                                                                                                                                                                                                                 |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- | ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Pierre minor-version API change between `^1.2.2` and a future install breaks toolbar / nav code                                                                              | Medium     | Medium (compile errors)      | Pin to `~1.2.2` (only patch updates allowed) during PR1; widen to `^1` after a stable usage period. Renovate / dependabot picks up breaking updates with explicit human review.                                                                            |
+| `<MultiFileDiff>` re-render on every diff refetch causes visible flicker                                                                                                     | Medium     | Low–Medium (UX polish)       | `<MultiFileDiff>` memo-stable across same-input renders. Pass `cacheKey` derived from `(filePath, gitObjectId)` in `FileContents` so Pierre can skip re-tokenization. Profile in PR1 — if perceptible, add a small fade-transition.                        |
+| Worker pool cold-start adds noticeable delay on first file open                                                                                                              | Medium     | Low                          | The pool initializes once at provider mount (App boot). By the time the user clicks a file, the worker is warm. Profile cold-start; if > 500 ms, pre-warm with an empty tokenize at boot.                                                                  |
+| Production bundle weight grows beyond AppImage size budget                                                                                                                   | Low–Medium | Medium                       | Pierre's worker bundle is a separate Vite asset (Section 4.1) so it doesn't bloat the main chunk. Track `dist/assets/*.js` byte size in the PR1 description; if total grows > 1 MB, escalate to a separate bundle-size optimization task.                  |
+| Theme drift — `pierre-dark` looks subtly off against the rest of Vimeflow                                                                                                    | Medium     | Low (cosmetic)               | Tracked as the Section 8.2 follow-up. Not a v1 blocker.                                                                                                                                                                                                    |
+| Pierre re-renders blow main-thread budget on the largest files in a real repo                                                                                                | Low        | Medium                       | Pierre offers `<Virtualizer>` (Section 3.2 #2). Add it as a small follow-up when a measured regression appears — `<MultiFileDiff>` props are the same shape, the wrapper is mechanical.                                                                    |
+| Existing component tests (`DiffLine` / `SplitDiffView` / `UnifiedDiffView` / `DiffHunkHeader` / `DiffViewer` / `DiffToolbar`) deletion churn-hides bugs in their replacement | Low        | Medium                       | The new primitive tests (Section 4.5 + 4.10) cover the same behaviors at the primitive layer. Coverage report comparison in the PR1 description shows total coverage delta.                                                                                |
+| `extractHunkPatch` returns `null` more often than expected with Pierre's reformulated diff                                                                                   | Low        | Low                          | The consumer's null branch (Section 5.3 step 3) surfaces a non-fatal toast; user retries by refreshing the diff. Add a Sentry-style log if we ever instrument production.                                                                                  |
+| Optimistic UI is missed by users who expected an instant chip flip                                                                                                           | Low–Medium | Low (perceived sluggishness) | Section 10 follow-up: switch `<MultiFileDiff>` to `<FileDiff>` with controlled `FileDiffMetadata`, drive optimistic flips via `diffAcceptRejectHunk`, parallel-call the IPC; revert metadata on IPC failure. Estimated 1–2 days of work; not a v1 blocker. |
+| Agent feedback message format is interpreted as code by the agent's REPL parser (e.g. the leading `>` lines trigger a quote-block edit mode)                                 | Low        | Medium                       | Test with both Claude Code and Codex; if either interprets `> ` as a special prefix, switch to a different framing (e.g. `[REVIEW]` lines). Caught by the manual E2E in Section 5.4 + PR4's own E2E.                                                       |
+| `write_pty` race — terminal session dies between batch open and "Finish feedback" click                                                                                      | Low        | Low                          | Section 7.4 already specifies the toast on `write_pty` error and preserves the batch for resend.                                                                                                                                                           |
+| Settings / persistence will need to migrate this spec's in-memory state into the settings dialog (#252)                                                                      | Certain    | Low                          | This spec deliberately stays in component state to avoid blocking on #252. Migration is a small wrap-with-persistence task whenever #252 lands.                                                                                                            |
 
-### 9.1 Known follow-up specs (deferred, not blocking)
+### 10.1 Known follow-up specs (deferred, not blocking)
 
 1. **Optimistic UI for Stage / Discard.** Switch `<MultiFileDiff>` → `<FileDiff>` with controlled `FileDiffMetadata`. Wire `diffAcceptRejectHunk` for the flip; revert on IPC failure.
-2. **Catppuccin-from-tokens Shiki theme.** Per Section 7.2.
+2. **Catppuccin-from-tokens Shiki theme.** Per Section 8.2.
 3. **Virtualization wrapper for large files.** Per Section 3.2 #2.
 4. **Settings-dialog integration.** Persist toolbar prefs (#252).
 5. **Agent reply acknowledgement.** Receiver UI in agent-status panel that surfaces "agent received your feedback at HH:MM:SS" once the agent emits a known ack token.
 6. **`@pierre/trees` swap** for `ChangedFilesList`. Per the decision record.
 
-## 10. Acceptance criteria
+## 11. Acceptance criteria
 
-### 10.1 PR1 — Renderer replacement
+### 11.1 PR1 — Renderer replacement (MERGED — #263)
 
-A PR1 commit is mergeable when ALL of:
+PR1 has merged ([#263](https://github.com/winoooops/vimeflow/pull/263)); this checklist is retained as a historical record of what shipped. A PR1 commit was mergeable when ALL of:
 
 - [ ] `<MultiFileDiff>` from `@pierre/diffs/react` renders against real `useFileDiff` data inside `DiffPanelContent`'s right pane (no `<DiffViewer>` / `<SplitDiffView>` / `<UnifiedDiffView>` / `<DiffLine>` / `<DiffHunkHeader>` remains in the codebase).
 - [ ] Shiki syntax highlighting is visible on a TS file diff (the most common file type) — colors per the `pierre-dark` theme.
@@ -1117,29 +1137,38 @@ A PR1 commit is mergeable when ALL of:
 - [ ] Manual E2E: open a repo with at least one renamed file in the diff; confirm Pierre renders it correctly using the rename-aware `oldPath` → `git show HEAD:<oldPath>` lookup.
 - [ ] No production-build regression — `nvim` / `htop` still render in the terminal pane (sanity-check that PR1 didn't undo PR [#249](https://github.com/winoooops/vimeflow/pull/249)).
 
-### 10.2 PR2 — Hunk staging IPC + wiring
+### 11.2 PR2 — Hunk staging IPC + wiring + worker-pool write serialization
 
 - [ ] Three new Rust IPC handlers (`stage_file` / `unstage_file` / `discard_file`) per the 4-file checklist; integration tests assert correct behavior for whole-file + per-hunk + untracked + deleted + rename scenarios.
 - [ ] Frontend `gitService.stageFile / unstageFile / discardChanges` unstubbed; signature changed to `(file, hunkPatch?: string)`; existing call sites updated; new tests cover dispatch with both shapes.
-- [ ] Chip toolbar's `disabled` styling lifts on Stage / Discard / Discard All / prev hunk / next hunk / hunk counter. All five become functional.
+- [ ] Chip toolbar's `disabled` styling lifts on Stage / Discard / Discard All. The three staging chips become functional (the prev/next-hunk + counter chips are PR3's scope — Section 11.3).
 - [ ] `extractHunkPatch` null-branch is exercised (test fakes a returned `null`; consumer surfaces toast; no IPC call).
+- [ ] Worker-pool render-option writes are serialized at module level keyed by the pool object (Section 5.5); two `DiffPanelContent` instances cannot leave the shared pool on a stale `theme` / `lineDiffType`; tests reset the module-level chain between cases.
 - [ ] Manual E2E: modify a tracked TS file with 3 distinct hunks; stage hunk #2 via the chip; `git status --short` shows partial staging; unstage; discard hunk #1; working tree updates.
 - [ ] Discard All chip prompts the confirmation popover; cancel preserves the working tree; confirm dispatches `discard_file(path, scope=Unstaged)`.
 - [ ] `npm run type-check`, `lint`, `test`, `build` green.
 
-### 10.3 PR3 — Inline review comments → active agent panel
+### 11.3 PR3 — Hunk navigation
+
+- [ ] Chip toolbar's `disabled` styling lifts on prev hunk / next hunk / hunk counter; all three become functional.
+- [ ] Clicking next / prev moves the focused hunk index and updates Pierre's `selectedLines` to the corresponding hunk's line range.
+- [ ] Navigation wraps around: `next` from the last hunk lands on the first; `prev` from the first lands on the last.
+- [ ] The hunk counter chip reflects the focused index (`${focusedHunkIndex + 1}/${hunks.length}`).
+- [ ] `npm run type-check`, `lint`, `test`, `build` green.
+
+### 11.4 PR4 — Inline review comments → active agent panel
 
 - [ ] Clicking a diff row opens the inline composer; submitting adds a `ReviewComment` annotation that renders below the row.
 - [ ] Edit / delete on an existing annotation works inline.
 - [ ] Toolbar "Finish feedback (N)" chip appears when `totalAnnotations(batch) > 0`, hides when 0, shows correct `N`.
 - [ ] "Finish feedback" send-confirmation popover shows "N comments across M files" with the correct counts (M never includes empty-list keys).
-- [ ] Active-agent identification rule (Section 6.3) resolves correctly across the three cases: no candidates → toast; one candidate → silent; multiple → picker.
+- [ ] Active-agent identification rule (Section 7.3) resolves correctly across the three cases: no candidates → toast; one candidate → silent; multiple → picker.
 - [ ] Send dispatches `write_pty` with the formatted message + trailing `\n`. Manual E2E: run `claude` in a terminal, add comments, finish feedback, confirm message appears in scrollback and Claude responds.
 - [ ] Failure mode: kill the agent terminal between batch and send; chip surfaces "Terminal session ended; feedback not sent." and the batch is preserved.
 - [ ] Soft cap: 50th comment can be added; 51st attempt has `Add` disabled with the explanatory tooltip.
 - [ ] `npm run type-check`, `lint`, `test`, `build` green.
 
-## 11. References
+## 12. References
 
 - Decision record: [`docs/decisions/2026-05-23-pierre-diffs-renderer.md`](../../decisions/2026-05-23-pierre-diffs-renderer.md) — library choice, options rejected, locked design.
 - Tracking issue: [#255](https://github.com/winoooops/vimeflow/issues/255) — original integration ticket.

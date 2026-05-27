@@ -623,45 +623,21 @@ mod router {
                 encode_result(diff)
             }
             "stage_file" => {
-                #[derive(Deserialize)]
-                #[serde(rename_all = "camelCase")]
-                struct P {
-                    cwd: String,
-                    file: String,
-                    #[serde(default)]
-                    hunk_index: Option<u32>,
-                }
-
-                let p: P = serde_json::from_value(params).map_err(|e| format!("params: {e}"))?;
-                state.stage_file(p.cwd, p.file, p.hunk_index).await?;
+                let req: crate::git::StageFileRequest =
+                    serde_json::from_value(params).map_err(|e| format!("invalid params: {e}"))?;
+                state.stage_file(req).await?;
                 Ok(Value::Null)
             }
             "unstage_file" => {
-                #[derive(Deserialize)]
-                #[serde(rename_all = "camelCase")]
-                struct P {
-                    cwd: String,
-                    file: String,
-                    #[serde(default)]
-                    hunk_index: Option<u32>,
-                }
-
-                let p: P = serde_json::from_value(params).map_err(|e| format!("params: {e}"))?;
-                state.unstage_file(p.cwd, p.file, p.hunk_index).await?;
+                let req: crate::git::StageFileRequest =
+                    serde_json::from_value(params).map_err(|e| format!("invalid params: {e}"))?;
+                state.unstage_file(req).await?;
                 Ok(Value::Null)
             }
             "discard_file" => {
-                #[derive(Deserialize)]
-                #[serde(rename_all = "camelCase")]
-                struct P {
-                    cwd: String,
-                    file: String,
-                    #[serde(default)]
-                    hunk_index: Option<u32>,
-                }
-
-                let p: P = serde_json::from_value(params).map_err(|e| format!("params: {e}"))?;
-                state.discard_file(p.cwd, p.file, p.hunk_index).await?;
+                let req: crate::git::DiscardFileRequest =
+                    serde_json::from_value(params).map_err(|e| format!("invalid params: {e}"))?;
+                state.discard_file(req).await?;
                 Ok(Value::Null)
             }
             "start_git_watcher" => {
@@ -1914,34 +1890,6 @@ mod tests {
             matches!(&r_min, Err(err) if !err.message.starts_with("params:")),
             "expected non-params error, got {r_min:?}"
         );
-    }
-
-    #[tokio::test]
-    async fn dispatch_hunk_methods_decode_optional_hunk_index() {
-        let (state, _sink) = crate::runtime::BackendState::with_fake_sink();
-
-        for method in ["stage_file", "unstage_file", "discard_file"] {
-            let p_full = serde_json::json!({
-                "cwd": "/tmp/nope",
-                "file": "README.md",
-                "hunkIndex": 1,
-            });
-            let r_full = super::router::dispatch(state.clone(), method, p_full).await;
-            assert!(
-                matches!(&r_full, Err(err) if !err.message.starts_with("params:")),
-                "expected {method} hunkIndex params to decode, got {r_full:?}"
-            );
-
-            let p_min = serde_json::json!({
-                "cwd": "/tmp/nope",
-                "file": "README.md",
-            });
-            let r_min = super::router::dispatch(state.clone(), method, p_min).await;
-            assert!(
-                matches!(&r_min, Err(err) if !err.message.starts_with("params:")),
-                "expected {method} missing hunkIndex params to decode, got {r_min:?}"
-            );
-        }
     }
 
     #[tokio::test]

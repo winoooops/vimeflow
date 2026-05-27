@@ -18,7 +18,11 @@ import {
   DIFF_MIN_WIDTH_PX,
   SPLIT_MIN_WIDTH_PX,
 } from './toolbar'
-import { toPierreInputs } from '../services/pierreAdapter'
+import { toPierreInputs, findRawDiffHunkIndex } from '../services/pierreAdapter'
+import { extractHunkPatch } from '../services/gitPatch'
+import { createGitService } from '../services/gitService'
+import { enqueuePoolWrite } from '../services/workerPoolWrites'
+import { useNotifyInfo } from '../../workspace/hooks/useNotifyInfo'
 import type { ChangedFile, SelectedDiffFile } from '../types'
 
 // Pierre option subtypes — derived from `BaseDiffOptions` (rather than typed as
@@ -227,12 +231,155 @@ export const DiffPanelContent = ({
     response,
     loading: diffLoading,
     error: diffError,
+    refetch: refetchDiff,
   } = useFileDiff(
     selectedFilePath,
     selectedFileStaged,
     cwd,
     selectedFileUntracked
   )
+
+  // Notification hook — reused for the "Pierre split differently" and
+  // "could not isolate hunk" informational messages.
+  const { message: notifyMessage, notifyInfo } = useNotifyInfo()
+
+  // Single-flight staging flag — drops clicks while an IPC is in flight.
+  const [staging, setStaging] = useState(false)
+
+  // PR2: focusedHunk defaults to the first hunk until PR3 wires prev/next
+  // navigation. Null when there are no hunks (whole-file operations only).
+  const focusedHunk = response?.fileDiff.hunks[0] ?? null
+
+  // Shared helper for all three hunk-based staging operations. Extracts the
+  // focused hunk patch, calls the provided service operation, then refreshes
+  // the diff and git status. Surfaces any IPC failure via notifyInfo so the
+  // chip caller (void onStage()) sees user feedback instead of an unhandled
+  // rejection. The single-flight `staging` flag is set/cleared in try/finally
+  // so it clears even when the service call rejects.
+  const runHunkStaging = useCallback(
+    async (
+      verb: 'stage' | 'unstage' | 'discard',
+      op: (file: string, patch: string) => Promise<void>
+    ): Promise<void> => {
+      if (
+        staging ||
+        !selectedFilePath ||
+        response === null ||
+        focusedHunk === null
+      ) {
+        return
+      }
+
+      const rawIndex = findRawDiffHunkIndex(response, focusedHunk)
+      if (rawIndex === -1) {
+        notifyInfo(
+          `Pierre split this hunk differently than git — cannot ${verb} this region; use Discard All or the file-level chip`
+        )
+
+        return
+      }
+
+      const hunkPatch = extractHunkPatch(response.rawDiff, rawIndex)
+      if (hunkPatch === null) {
+        notifyInfo('Could not isolate this hunk — try refreshing the diff')
+
+        return
+      }
+
+      setStaging(true)
+
+      try {
+        await op(selectedFilePath, hunkPatch)
+        refetchDiff()
+        ;(gitStatus ?? internalGitStatus).refresh()
+      } catch (err) {
+        notifyInfo(
+          `Failed to ${verb} hunk: ${err instanceof Error ? err.message : String(err)}`
+        )
+      } finally {
+        setStaging(false)
+      }
+    },
+    [
+      staging,
+      selectedFilePath,
+      response,
+      focusedHunk,
+      notifyInfo,
+      refetchDiff,
+      gitStatus,
+      internalGitStatus,
+    ]
+  )
+
+  // Stage the currently focused hunk.
+  const handleStage = useCallback(
+    (): Promise<void> =>
+      runHunkStaging('stage', (f, p) => createGitService(cwd).stageFile(f, p)),
+    [runHunkStaging, cwd]
+  )
+
+  // Unstage the currently focused hunk.
+  const handleUnstage = useCallback(
+    (): Promise<void> =>
+      runHunkStaging('unstage', (f, p) =>
+        createGitService(cwd).unstageFile(f, p)
+      ),
+    [runHunkStaging, cwd]
+  )
+
+  // Discard the currently focused hunk.
+  // When viewing the STAGED diff the user expects both the staged and
+  // working-tree changes to be removed, so pass scope='both'.
+  const handleDiscard = useCallback(
+    (): Promise<void> =>
+      runHunkStaging('discard', (f, p) =>
+        createGitService(cwd).discardChanges(
+          f,
+          p,
+          selectedFileStaged ? 'both' : 'unstaged'
+        )
+      ),
+    [runHunkStaging, cwd, selectedFileStaged]
+  )
+
+  // Discard ALL changes to the selected file (no hunk patch — whole file).
+  // When viewing the STAGED diff use scope='both' so staged-new files are
+  // removed from disk and staged modifications are fully reverted to HEAD.
+  const handleDiscardAll = useCallback(async (): Promise<void> => {
+    if (staging || !selectedFilePath) {
+      return
+    }
+
+    const service = createGitService(cwd)
+    setStaging(true)
+
+    try {
+      await service.discardChanges(
+        selectedFilePath,
+        undefined,
+        selectedFileStaged ? 'both' : 'unstaged'
+      )
+
+      refetchDiff()
+      ;(gitStatus ?? internalGitStatus).refresh()
+    } catch (err) {
+      notifyInfo(
+        `Failed to discard all changes: ${err instanceof Error ? err.message : String(err)}`
+      )
+    } finally {
+      setStaging(false)
+    }
+  }, [
+    staging,
+    selectedFilePath,
+    selectedFileStaged,
+    cwd,
+    notifyInfo,
+    refetchDiff,
+    gitStatus,
+    internalGitStatus,
+  ])
 
   // Pierre option state — every option here is a controlled-component value
   // surfaced upward from DiffChipToolbar. Most values drive <MultiFileDiff>
@@ -328,21 +475,22 @@ export const DiffPanelContent = ({
   // silently reset lineDiffType back to Pierre's `word-alt` default.
   const workerPool = useWorkerPool()
 
-  // Serialize writes to the shared pool. `setRenderOptions` assigns the pool's
-  // internal `this.renderOptions` only AFTER awaiting theme resolution + the
-  // worker round-trip (node_modules/@pierre/diffs/dist/worker/WorkerPoolManager.js
-  // ~L124), so two overlapping calls can finish out of order and leave the pool
-  // on the OLDER value while the UI shows the newer one. Chaining each write
-  // after the previous guarantees the last-requested options win; the per-run
-  // `cancelled` flag then ensures only the latest run commits the synced value.
+  // Push pool-owned render options (theme + lineDiffType) into the shared
+  // Pierre worker pool via module-level pool-keyed serialization. Each write
+  // is enqueued after the pool's previous pending write so submissions land in
+  // order across ALL DiffPanelContent instances that share the same pool — the
+  // per-instance chain from #276 only serialized within one instance and left
+  // a race window when two panes (split layout) or an unmount/remount overlapped
+  // on the app-wide pool singleton.
   //
-  // LIMITATION (deferred to PR2): this chain is per component instance, but the
-  // worker pool is an app-wide singleton. Two DiffPanelContent instances (split
-  // layout) — or an unmount overlapping a remount — have independent chains and
-  // can still race on the shared pool. Pool-keyed (module-level) serialization,
-  // plus the deeper "one shared pool can only hold one theme/lineDiffType"
-  // question, are handled in PR2 (staging).
-  const poolWriteChainRef = useRef<Promise<unknown>>(Promise.resolve())
+  // theme and lineDiffType are intentionally app-wide for v1: the app mounts
+  // ONE <WorkerPoolContextProvider>, so all diff panes share one pool instance
+  // which holds one set of render options. Per-pane independent themes are out
+  // of scope and would require per-pane pool topology changes.
+  //
+  // The per-run `cancelled` flag (set by the effect cleanup) is passed as the
+  // `shouldSkip` predicate so a superseded effect run silently skips its write
+  // while still letting subsequent runs proceed through the chain.
   useEffect(() => {
     const next: PoolRenderOptions = { theme, lineDiffType }
 
@@ -353,19 +501,11 @@ export const DiffPanelContent = ({
     }
 
     let cancelled = false
-    const previousWrite = poolWriteChainRef.current
 
     const run = async (): Promise<void> => {
-      // Wait for the previous write so overlapping calls can't land out of
-      // order. A prior failure is irrelevant here — its own run reported it.
       try {
-        await previousWrite
-      } catch {
-        // ignore the previous write's rejection; proceed with this one
-      }
+        await enqueuePoolWrite(workerPool, next, () => cancelled)
 
-      try {
-        await workerPool.setRenderOptions(next)
         if (!cancelled) {
           setRenderSyncError(null)
           commitSyncedRenderOptions(next)
@@ -377,9 +517,7 @@ export const DiffPanelContent = ({
       }
     }
 
-    const writePromise = run()
-    poolWriteChainRef.current = writePromise
-    void writePromise
+    void run()
 
     return (): void => {
       cancelled = true
@@ -571,6 +709,12 @@ export const DiffPanelContent = ({
             onNextFile={(): void => goToFile(1)}
             currentFileIndex={currentFileIndex}
             totalFiles={effectiveFiles.length}
+            onStage={handleStage}
+            onUnstage={handleUnstage}
+            onDiscard={handleDiscard}
+            onDiscardAll={handleDiscardAll}
+            staging={staging}
+            selectedFileName={selectedFilePath ?? undefined}
           />
           {renderSyncError !== null ? (
             <div
@@ -578,6 +722,15 @@ export const DiffPanelContent = ({
               className="px-3 pb-2 text-[11px] leading-4 text-[#f38ba8]"
             >
               Diff render sync failed: {renderSyncError}
+            </div>
+          ) : null}
+          {notifyMessage !== null ? (
+            <div
+              role="status"
+              aria-live="polite"
+              className="px-3 pb-2 text-[11px] leading-4 text-on-surface-variant"
+            >
+              {notifyMessage}
             </div>
           ) : null}
         </div>

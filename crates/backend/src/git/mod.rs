@@ -2,12 +2,12 @@
 mod test_helpers;
 pub mod watcher;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::io::Write;
 use std::path::Path;
 use std::process::Command;
 use std::time::Duration;
+use tokio::io::AsyncWriteExt;
 
 use crate::filesystem::scope::{
     ensure_within_home, expand_home, home_canonical, reject_parent_refs,
@@ -76,63 +76,6 @@ async fn run_git_with_timeout(mut cmd: Command) -> Result<std::process::Output, 
     }
 }
 
-/// Run a git command with stdin and the same timeout/kill semantics as
-/// `run_git_with_timeout`. Used for `git apply -` hunk operations.
-async fn run_git_with_stdin_timeout(
-    mut cmd: Command,
-    input: String,
-) -> Result<std::process::Output, String> {
-    let mut child = cmd
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-        .map_err(|e| format!("Failed to spawn git: {}", e))?;
-
-    let child_id = child.id();
-    let result = tokio::time::timeout(
-        GIT_TIMEOUT,
-        tokio::task::spawn_blocking(move || {
-            if let Some(mut stdin) = child.stdin.take() {
-                stdin.write_all(input.as_bytes())?;
-            }
-            child.wait_with_output()
-        }),
-    )
-    .await;
-
-    match result {
-        Ok(Ok(Ok(output))) => Ok(output),
-        Ok(Ok(Err(e))) => Err(format!("Failed to run git: {}", e)),
-        Ok(Err(e)) => Err(format!("git task failed: {}", e)),
-        Err(_) => {
-            #[cfg(unix)]
-            {
-                unsafe {
-                    // SAFETY: child_id comes from the git process spawned
-                    // above. See `run_git_with_timeout` for the same bounded
-                    // timeout tradeoff.
-                    let _ = libc::kill(child_id as i32, libc::SIGKILL);
-                }
-            }
-
-            #[cfg(windows)]
-            {
-                let _ = tokio::task::spawn_blocking(move || {
-                    let _ = Command::new("taskkill")
-                        .args(["/F", "/PID", &child_id.to_string()])
-                        .status();
-                });
-            }
-
-            Err(format!(
-                "git command timed out after {}s",
-                GIT_TIMEOUT.as_secs()
-            ))
-        }
-    }
-}
-
 /// Validate that `cwd` resolves to a path inside the user's home directory.
 pub(crate) fn validate_cwd(cwd: &str) -> Result<std::path::PathBuf, String> {
     let expanded = expand_home(cwd);
@@ -157,6 +100,374 @@ fn validate_file_path(file: &str) -> Result<(), String> {
         ));
     }
     reject_parent_refs(path)
+}
+
+/// Request type for staging a file (whole-file or per-hunk).
+///
+/// Also reused as the request type for `unstage_file` — same fields,
+/// same semantics (the handler logic differs, not the request shape).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct StageFileRequest {
+    pub cwd: String,
+    pub path: String,
+    /// Unified-diff hunk patch. `None` ⇒ whole-file stage; `Some` ⇒
+    /// per-hunk stage applied via `git apply --cached`.
+    pub hunk_patch: Option<String>,
+}
+
+/// Request type for discarding working-tree changes (whole-file or per-hunk).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct DiscardFileRequest {
+    pub cwd: String,
+    pub path: String,
+    pub hunk_patch: Option<String>,
+    #[serde(default)]
+    pub scope: DiscardScope,
+}
+
+/// Controls which half of the working-tree change `discard_file` removes.
+///
+/// - `Unstaged` (default): only the unstaged working-tree edits are reverted
+///   (`git checkout -- <file>` or `git apply -R`).
+/// - `Both`: staged changes are also dropped (`git reset HEAD <file>` followed
+///   by the unstaged discard), effectively returning the file to HEAD.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+#[serde(rename_all = "lowercase")]
+pub enum DiscardScope {
+    #[default]
+    Unstaged,
+    Both,
+}
+
+/// Spawn `git` with the given args, pipe `patch` to its stdin, and wait for
+/// it to exit. Uses `tokio::process::Command` for non-blocking stdin writes;
+/// fully-qualified to avoid shadowing `std::process::Command` already in scope.
+///
+/// Intended for `git apply --cached` and `git apply -R` which consume a
+/// unified-diff patch on stdin.
+async fn run_git_apply_with_patch(
+    cwd: &std::path::Path,
+    args: &[&str],
+    patch: &str,
+) -> Result<(), String> {
+    let mut cmd = tokio::process::Command::new("git");
+    cmd.current_dir(cwd)
+        .args(args)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    let mut child = cmd.spawn().map_err(|e| format!("spawn failed: {e}"))?;
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin
+            .write_all(patch.as_bytes())
+            .await
+            .map_err(|e| format!("stdin write failed: {e}"))?;
+        // Drop stdin so git sees EOF.
+    }
+    let output = tokio::time::timeout(std::time::Duration::from_secs(30), child.wait_with_output())
+        .await
+        .map_err(|_| "git apply timed out after 30s".to_string())?
+        .map_err(|e| format!("git apply wait failed: {e}"))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(if stderr.trim().is_empty() {
+            format!("git apply failed with status {}", output.status)
+        } else {
+            stderr.into_owned()
+        });
+    }
+    Ok(())
+}
+
+/// Run `git status --porcelain=v1 -z -- <path>` and return `true` when the
+/// first status record starts with `??` (i.e. the path is untracked).
+///
+/// Uses the sync `Command` alias (= `std::process::Command`) already imported
+/// at the top of this file, wrapped through `run_git_with_timeout`.
+async fn git_status_porcelain_is_untracked(
+    cwd: &std::path::Path,
+    path: &str,
+) -> Result<bool, String> {
+    let mut cmd = Command::new("git");
+    cmd.current_dir(cwd)
+        .args(["status", "--porcelain=v1", "-z", "--", path]);
+    let out = run_git_with_timeout(cmd).await?;
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    Ok(stdout.starts_with("??"))
+}
+
+/// Validate that a file path and its optional hunk patch are safe to pass to
+/// git staging/discarding operations.
+///
+/// Checks:
+/// 1. `path` is repo-relative (no absolute paths, no `..` traversal) — reuses
+///    the existing `validate_file_path` helper.
+/// 2. `path` resolves to a location inside `cwd` when joined (belt-and-braces
+///    against any edge cases `validate_file_path` does not cover).
+/// 3. `hunk_patch`, when present, targets only a single file (no second
+///    `diff --git` header).
+/// 4. Header consistency — anchored on the `diff --git a/OLD b/NEW` line:
+///    - Every `--- a/` path must equal OLD or `/dev/null`.
+///    - Every `+++ b/` path must equal NEW or `/dev/null`.
+///    - `path` must equal OLD or NEW (rename-aware: normally `path == NEW`,
+///      the file being staged; `path == OLD` covers the deletion side).
+///    - Fallback when no `diff --git` line is present: every `--- a/` and
+///      `+++ b/` header path (excluding `/dev/null`) must equal `path`
+///      (strict non-rename).
+///    - If the `diff --git` line is present but its paths cannot be parsed
+///      (e.g. quoted paths with spaces), the fallback strict rule applies.
+///
+/// The residual case (an internally-consistent rename `evil.rs` → `path`) is
+/// backstopped by `git apply --cached` itself — the OLD file must exist in the
+/// index — and is acceptable for this defense-in-depth layer.
+fn validate_hunk_patch(
+    cwd: &std::path::Path,
+    path: &str,
+    hunk_patch: Option<&str>,
+) -> Result<(), String> {
+    // Reuse the existing repo-relative path validator (rejects empty, absolute,
+    // and `..` traversal paths).
+    validate_file_path(path)?;
+
+    // Belt-and-braces: ensure the joined result stays inside cwd.
+    let resolved = cwd.join(path);
+    if !resolved.starts_with(cwd) {
+        return Err(format!("path escapes workspace: {}", path));
+    }
+
+    if let Some(patch) = hunk_patch {
+        let diff_git_lines: Vec<&str> = patch
+            .lines()
+            .filter(|l| l.starts_with("diff --git "))
+            .collect();
+        if diff_git_lines.len() > 1 {
+            return Err("multi-file patches not allowed".to_string());
+        }
+
+        // Collect the body `--- a/` / `+++ b/` header paths (stop at first @@).
+        let mut minus_paths: Vec<&str> = Vec::new();
+        let mut plus_paths: Vec<&str> = Vec::new();
+        for line in patch.lines() {
+            if line.starts_with("@@") {
+                break;
+            }
+            if let Some(rest) = line.strip_prefix("--- a/") {
+                minus_paths.push(rest);
+            } else if line.starts_with("--- /dev/null") {
+                minus_paths.push("/dev/null");
+            } else if let Some(rest) = line.strip_prefix("+++ b/") {
+                plus_paths.push(rest);
+            } else if line.starts_with("+++ /dev/null") {
+                plus_paths.push("/dev/null");
+            }
+        }
+
+        // Try to parse (OLD, NEW) from the `diff --git a/OLD b/NEW` line.
+        // Only handles the common unquoted case. Quoted paths (with spaces or
+        // special chars) are deliberately not parsed here — fall through to the
+        // strict fallback below to avoid a mis-parse being exploited.
+        let diff_git_parsed: Option<(&str, &str)> = diff_git_lines.first().and_then(|line| {
+            // line is "diff --git a/OLD b/NEW"
+            let rest = line.strip_prefix("diff --git ")?;
+            // If the line contains quotes we can't safely split on " b/" because
+            // the paths themselves may contain that literal string. Bail out.
+            if rest.starts_with('"') {
+                return None;
+            }
+            // Find " b/" after the "a/" prefix. Split on the LAST occurrence
+            // of " b/" so paths containing " b/" sub-strings (unusual but
+            // possible) are handled conservatively: we'd get a wrong split, but
+            // the subsequent consistency check would then reject the patch,
+            // which is the safe direction.
+            let a_rest = rest.strip_prefix("a/")?;
+            // Walk through looking for " b/" — use rfind so the split point is
+            // as far right as possible (handles paths with " b" sub-strings
+            // better than splitting at the first occurrence).
+            let b_marker = " b/";
+            let split_pos = a_rest.rfind(b_marker)?;
+            let old_path = &a_rest[..split_pos];
+            let new_path = &a_rest[split_pos + b_marker.len()..];
+            if old_path.is_empty() || new_path.is_empty() {
+                return None;
+            }
+            Some((old_path, new_path))
+        });
+
+        if let Some((old_path, new_path)) = diff_git_parsed {
+            // Strict consistency: every body `--- a/` path must equal OLD or
+            // /dev/null, and every `+++ b/` path must equal NEW or /dev/null.
+            for &mp in &minus_paths {
+                if mp != "/dev/null" && mp != old_path {
+                    return Err(format!(
+                        "patch header inconsistency: '--- a/{}' does not match diff --git OLD path '{}'",
+                        mp, old_path
+                    ));
+                }
+            }
+            for &pp in &plus_paths {
+                if pp != "/dev/null" && pp != new_path {
+                    return Err(format!(
+                        "patch header inconsistency: '+++ b/{}' does not match diff --git NEW path '{}'",
+                        pp, new_path
+                    ));
+                }
+            }
+            // Rename-aware: path must be the OLD or NEW endpoint.
+            if path != old_path && path != new_path {
+                return Err(format!(
+                    "patch targets a different file (diff --git OLD='{}' NEW='{}', req: {})",
+                    old_path, new_path, path
+                ));
+            }
+        } else {
+            // Fallback: no parseable `diff --git` line — apply the strict rule
+            // that every body header path (excluding /dev/null) must equal path.
+            let all_header_paths: Vec<&str> = minus_paths
+                .iter()
+                .chain(plus_paths.iter())
+                .copied()
+                .filter(|&p| p != "/dev/null")
+                .collect();
+            if !all_header_paths.is_empty() {
+                for &hp in &all_header_paths {
+                    if hp != path {
+                        return Err(format!(
+                            "patch targets a different file (header paths: {:?}, req: {})",
+                            all_header_paths, path
+                        ));
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Stage a file (whole-file or per-hunk) into the git index.
+///
+/// - Whole-file (`hunk_patch == None`): runs `git add -- <path>`.
+/// - Per-hunk (`hunk_patch == Some`): pipes the patch to
+///   `git apply --cached --whitespace=nowarn`.
+///
+/// Validation (`validate_cwd` + `validate_hunk_patch`) runs before any git
+/// invocation so a bad caller cannot mutate paths outside the workspace.
+pub(crate) async fn stage_file_inner(req: StageFileRequest) -> Result<(), String> {
+    let cwd = validate_cwd(&req.cwd)?;
+    validate_hunk_patch(&cwd, &req.path, req.hunk_patch.as_deref())?;
+    match &req.hunk_patch {
+        None => {
+            let mut cmd = Command::new("git");
+            cmd.current_dir(&cwd).args(["add", "--", &req.path]);
+            run_git_with_timeout(cmd).await.map(|_| ())?;
+        }
+        Some(patch) => {
+            run_git_apply_with_patch(&cwd, &["apply", "--cached", "--whitespace=nowarn"], patch)
+                .await?;
+        }
+    }
+    Ok(())
+}
+
+/// Unstage a file (whole-file or per-hunk) from the git index back to the
+/// working tree.
+///
+/// - Whole-file: `git reset HEAD -- <path>` (moves staged changes back to
+///   the working tree without touching the working-tree content).
+/// - Per-hunk: `git apply --cached --reverse --whitespace=nowarn` (reverses
+///   only the hunk delta in the index).
+pub(crate) async fn unstage_file_inner(req: StageFileRequest) -> Result<(), String> {
+    let cwd = validate_cwd(&req.cwd)?;
+    validate_hunk_patch(&cwd, &req.path, req.hunk_patch.as_deref())?;
+    match &req.hunk_patch {
+        None => {
+            let mut cmd = Command::new("git");
+            cmd.current_dir(&cwd)
+                .args(["reset", "HEAD", "--", &req.path]);
+            run_git_with_timeout(cmd).await.map(|_| ())?;
+        }
+        Some(patch) => {
+            run_git_apply_with_patch(
+                &cwd,
+                &["apply", "--cached", "--reverse", "--whitespace=nowarn"],
+                patch,
+            )
+            .await?;
+        }
+    }
+    Ok(())
+}
+
+/// Discard working-tree changes for a file (whole-file or per-hunk).
+///
+/// Whole-file branches on tracked vs untracked:
+/// - Untracked: `git clean -f -- <path>` (removes the file).
+/// - Tracked + `DiscardScope::Unstaged`: `git checkout -- <path>` (restores
+///   working-tree content from the index; staged changes are preserved).
+/// - Tracked + `DiscardScope::Both`:
+///   1. `git reset HEAD -- <path>` (unstage).
+///   2. Re-evaluate working-tree state via `git status --porcelain`:
+///      - If the path is now untracked (was a staged-new file with no
+///        prior HEAD version): `git clean -f -- <path>` to remove it.
+///      - Otherwise (was a tracked file modified or deleted in the index):
+///        `git checkout -- <path>` to restore working-tree to HEAD.
+///
+///   This correctly handles the `A ` (staged-new) case where `git checkout`
+///   would be a no-op after the reset.
+///
+/// Per-hunk: `git apply --reverse --whitespace=nowarn` (reverses the hunk
+/// in the working tree; scope is ignored because per-hunk discard always
+/// targets the diff the hunk came from).
+pub(crate) async fn discard_file_inner(req: DiscardFileRequest) -> Result<(), String> {
+    let cwd = validate_cwd(&req.cwd)?;
+    validate_hunk_patch(&cwd, &req.path, req.hunk_patch.as_deref())?;
+    match &req.hunk_patch {
+        None => {
+            let is_untracked = git_status_porcelain_is_untracked(&cwd, &req.path).await?;
+            if is_untracked {
+                let mut cmd = Command::new("git");
+                cmd.current_dir(&cwd).args(["clean", "-f", "--", &req.path]);
+                run_git_with_timeout(cmd).await.map(|_| ())?;
+            } else if matches!(req.scope, DiscardScope::Both) {
+                // Step 1: unstage any staged changes.
+                let mut cmd = Command::new("git");
+                cmd.current_dir(&cwd)
+                    .args(["reset", "HEAD", "--", &req.path]);
+                run_git_with_timeout(cmd).await.map(|_| ())?;
+                // Step 2: re-evaluate — after unstaging a NEW file the path
+                // becomes untracked; after unstaging a modified tracked file
+                // the path remains tracked (working-tree edits vs HEAD).
+                let now_untracked = git_status_porcelain_is_untracked(&cwd, &req.path).await?;
+                if now_untracked {
+                    // Staged-new file: no HEAD version → remove from disk.
+                    let mut cmd = Command::new("git");
+                    cmd.current_dir(&cwd).args(["clean", "-f", "--", &req.path]);
+                    run_git_with_timeout(cmd).await.map(|_| ())?;
+                } else {
+                    // Tracked file: restore working tree to HEAD.
+                    let mut cmd = Command::new("git");
+                    cmd.current_dir(&cwd).args(["checkout", "--", &req.path]);
+                    run_git_with_timeout(cmd).await.map(|_| ())?;
+                }
+            } else {
+                let mut cmd = Command::new("git");
+                cmd.current_dir(&cwd).args(["checkout", "--", &req.path]);
+                run_git_with_timeout(cmd).await.map(|_| ())?;
+            }
+        }
+        Some(patch) => {
+            run_git_apply_with_patch(&cwd, &["apply", "--reverse", "--whitespace=nowarn"], patch)
+                .await?;
+        }
+    }
+    Ok(())
 }
 
 /// Git file status matching TypeScript's ChangedFileStatus type
@@ -375,31 +686,6 @@ fn raw_diff_is_deletion(raw_diff: &str) -> bool {
 /// Same heuristic for "no prior version at HEAD" — `--- /dev/null`.
 fn raw_diff_is_new_at_base(raw_diff: &str) -> bool {
     raw_diff_file_header_has(raw_diff, "--- /dev/null")
-}
-
-fn extract_hunk_patch(diff_text: &str, hunk_index: u32) -> Option<String> {
-    if diff_text.is_empty() {
-        return None;
-    }
-
-    let mut hunk_start_offsets = Vec::new();
-    for (index, _) in diff_text.match_indices("\n@@ ") {
-        hunk_start_offsets.push(index + 1);
-    }
-    if diff_text.starts_with("@@ ") {
-        hunk_start_offsets.insert(0, 0);
-    }
-
-    let header_end = *hunk_start_offsets.first()?;
-    let target = *hunk_start_offsets.get(hunk_index as usize)?;
-    let next = hunk_start_offsets
-        .get(hunk_index as usize + 1)
-        .copied()
-        .unwrap_or(diff_text.len());
-    let header = &diff_text[..header_end];
-    let hunk = &diff_text[target..next];
-
-    Some(format!("{header}{hunk}"))
 }
 
 /// Parse git status --porcelain=v1 -z output into ChangedFile structs
@@ -1295,222 +1581,6 @@ pub(crate) async fn get_git_diff_inner(
         new_text,
         raw_diff,
     })
-}
-
-pub(crate) async fn stage_file_inner(
-    cwd: String,
-    file: String,
-    hunk_index: Option<u32>,
-) -> Result<(), String> {
-    let safe_cwd = validate_cwd(&cwd)?;
-    validate_file_path(&file)?;
-
-    if let Some(index) = hunk_index {
-        let patch = working_tree_hunk_patch(&safe_cwd, &file, index).await?;
-        apply_patch(&safe_cwd, &patch, &["--cached"]).await?;
-
-        return Ok(());
-    }
-
-    let mut cmd = Command::new("git");
-    cmd.arg("-C")
-        .arg(&safe_cwd)
-        .arg("add")
-        .arg("--")
-        .arg(&file)
-        .env("GIT_TERMINAL_PROMPT", "0");
-    run_git_success(cmd, "git add").await
-}
-
-pub(crate) async fn unstage_file_inner(
-    cwd: String,
-    file: String,
-    hunk_index: Option<u32>,
-) -> Result<(), String> {
-    let safe_cwd = validate_cwd(&cwd)?;
-    validate_file_path(&file)?;
-
-    if let Some(index) = hunk_index {
-        let patch = staged_hunk_patch(&safe_cwd, &file, index).await?;
-        apply_patch(&safe_cwd, &patch, &["--cached", "-R"]).await?;
-
-        return Ok(());
-    }
-
-    let mut cmd = Command::new("git");
-    cmd.arg("-C")
-        .arg(&safe_cwd)
-        .arg("reset")
-        .arg("HEAD")
-        .arg("--")
-        .arg(&file)
-        .env("GIT_TERMINAL_PROMPT", "0");
-    run_git_success(cmd, "git reset").await
-}
-
-pub(crate) async fn discard_file_inner(
-    cwd: String,
-    file: String,
-    hunk_index: Option<u32>,
-) -> Result<(), String> {
-    let safe_cwd = validate_cwd(&cwd)?;
-    validate_file_path(&file)?;
-
-    if let Some(index) = hunk_index {
-        let patch = working_tree_hunk_patch(&safe_cwd, &file, index).await?;
-        apply_patch(&safe_cwd, &patch, &["-R"]).await?;
-
-        return Ok(());
-    }
-
-    let status = file_status_xy(&safe_cwd, &file).await?;
-    if status.as_deref() == Some("??") {
-        let mut cmd = Command::new("git");
-        cmd.arg("-C")
-            .arg(&safe_cwd)
-            .arg("clean")
-            .arg("-f")
-            .arg("--")
-            .arg(&file)
-            .env("GIT_TERMINAL_PROMPT", "0");
-        return run_git_success(cmd, "git clean").await;
-    }
-
-    if status
-        .as_deref()
-        .is_some_and(|xy| xy.as_bytes().first().copied() == Some(b'A'))
-    {
-        let mut reset_cmd = Command::new("git");
-        reset_cmd
-            .arg("-C")
-            .arg(&safe_cwd)
-            .arg("reset")
-            .arg("HEAD")
-            .arg("--")
-            .arg(&file)
-            .env("GIT_TERMINAL_PROMPT", "0");
-        run_git_success(reset_cmd, "git reset").await?;
-
-        let mut clean_cmd = Command::new("git");
-        clean_cmd
-            .arg("-C")
-            .arg(&safe_cwd)
-            .arg("clean")
-            .arg("-f")
-            .arg("--")
-            .arg(&file)
-            .env("GIT_TERMINAL_PROMPT", "0");
-        return run_git_success(clean_cmd, "git clean").await;
-    }
-
-    let mut cmd = Command::new("git");
-    cmd.arg("-C")
-        .arg(&safe_cwd)
-        .arg("checkout")
-        .arg("--")
-        .arg(&file)
-        .env("GIT_TERMINAL_PROMPT", "0");
-    run_git_success(cmd, "git checkout").await
-}
-
-async fn working_tree_hunk_patch(
-    toplevel: &Path,
-    file: &str,
-    hunk_index: u32,
-) -> Result<String, String> {
-    let mut cmd = Command::new("git");
-    cmd.arg("-C")
-        .arg(toplevel)
-        .arg("diff")
-        .arg("--no-color")
-        .arg("--")
-        .arg(file)
-        .env("GIT_TERMINAL_PROMPT", "0");
-    let output = run_git_with_timeout(cmd).await?;
-    if !output.status.success() {
-        return Err(git_command_error("git diff", &output));
-    }
-
-    let diff = String::from_utf8_lossy(&output.stdout);
-    extract_hunk_patch(&diff, hunk_index)
-        .ok_or_else(|| "requested hunk no longer exists".to_string())
-}
-
-async fn staged_hunk_patch(toplevel: &Path, file: &str, hunk_index: u32) -> Result<String, String> {
-    let mut cmd = Command::new("git");
-    cmd.arg("-C")
-        .arg(toplevel)
-        .arg("diff")
-        .arg("--cached")
-        .arg("--no-color")
-        .arg("--")
-        .arg(file)
-        .env("GIT_TERMINAL_PROMPT", "0");
-    let output = run_git_with_timeout(cmd).await?;
-    if !output.status.success() {
-        return Err(git_command_error("git diff --cached", &output));
-    }
-
-    let diff = String::from_utf8_lossy(&output.stdout);
-    extract_hunk_patch(&diff, hunk_index)
-        .ok_or_else(|| "requested hunk no longer exists".to_string())
-}
-
-async fn apply_patch(toplevel: &Path, patch: &str, args: &[&str]) -> Result<(), String> {
-    let mut cmd = Command::new("git");
-    cmd.arg("-C")
-        .arg(toplevel)
-        .arg("apply")
-        .args(args)
-        .arg("-")
-        .env("GIT_TERMINAL_PROMPT", "0");
-    let output = run_git_with_stdin_timeout(cmd, patch.to_string()).await?;
-    if output.status.success() {
-        return Ok(());
-    }
-
-    Err(git_command_error("git apply", &output))
-}
-
-async fn file_status_xy(toplevel: &Path, file: &str) -> Result<Option<String>, String> {
-    let mut cmd = Command::new("git");
-    cmd.arg("-C")
-        .arg(toplevel)
-        .arg("status")
-        .arg("--porcelain=v1")
-        .arg("-z")
-        .arg("--")
-        .arg(file)
-        .env("GIT_TERMINAL_PROMPT", "0");
-    let output = run_git_with_timeout(cmd).await?;
-    if !output.status.success() {
-        return Err(git_command_error("git status", &output));
-    }
-
-    let first = output.stdout.split(|&b| b == b'\0').next().unwrap_or(&[]);
-    if first.len() < 2 {
-        return Ok(None);
-    }
-
-    Ok(Some(String::from_utf8_lossy(&first[..2]).to_string()))
-}
-
-async fn run_git_success(cmd: Command, label: &str) -> Result<(), String> {
-    let output = run_git_with_timeout(cmd).await?;
-    if output.status.success() {
-        return Ok(());
-    }
-
-    Err(git_command_error(label, &output))
-}
-
-fn git_command_error(label: &str, output: &std::process::Output) -> String {
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    if stderr.trim().is_empty() {
-        format!("{label} failed with exit code {}", output.status)
-    } else {
-        format!("{label} failed: {}", stderr.trim())
-    }
 }
 
 /// If `file` is the destination of a rename in the diff scope (HEAD→index
@@ -3111,151 +3181,151 @@ copy to copy.txt
         );
     }
 
-    #[tokio::test]
-    async fn test_stage_file_inner_stages_single_hunk() {
-        use std::fs;
-        use std::process::Command;
+    // Unit tests for validate_hunk_patch (pure logic, no git subprocess needed).
 
-        let tmp = home_tempdir();
-        let repo_path = tmp.path();
-        init_hunk_test_repo(repo_path);
-        let file = repo_path.join("sample.txt");
-        fs::write(&file, hunk_test_text("changed-a", "changed-b")).expect("write changes");
-
-        stage_file_inner(
-            repo_path.to_string_lossy().to_string(),
-            "sample.txt".to_string(),
-            Some(0),
-        )
-        .await
-        .expect("stage first hunk");
-
-        let cached = Command::new("git")
-            .args(["diff", "--cached", "--", "sample.txt"])
-            .current_dir(repo_path)
-            .output()
-            .expect("git diff cached");
-        let cached = String::from_utf8_lossy(&cached.stdout);
-        assert!(cached.contains("changed-a"));
-        assert!(!cached.contains("changed-b"));
-
-        let worktree = Command::new("git")
-            .args(["diff", "--", "sample.txt"])
-            .current_dir(repo_path)
-            .output()
-            .expect("git diff worktree");
-        let worktree = String::from_utf8_lossy(&worktree.stdout);
-        assert!(!worktree.contains("changed-a"));
-        assert!(worktree.contains("changed-b"));
-    }
-
-    #[tokio::test]
-    async fn test_unstage_file_inner_unstages_single_hunk() {
-        use std::fs;
-        use std::process::Command;
-
-        let tmp = home_tempdir();
-        let repo_path = tmp.path();
-        init_hunk_test_repo(repo_path);
-        let file = repo_path.join("sample.txt");
-        fs::write(&file, hunk_test_text("changed-a", "changed-b")).expect("write changes");
-        Command::new("git")
-            .args(["add", "sample.txt"])
-            .current_dir(repo_path)
-            .output()
-            .expect("git add");
-
-        unstage_file_inner(
-            repo_path.to_string_lossy().to_string(),
-            "sample.txt".to_string(),
-            Some(1),
-        )
-        .await
-        .expect("unstage second hunk");
-
-        let cached = Command::new("git")
-            .args(["diff", "--cached", "--", "sample.txt"])
-            .current_dir(repo_path)
-            .output()
-            .expect("git diff cached");
-        let cached = String::from_utf8_lossy(&cached.stdout);
-        assert!(cached.contains("changed-a"));
-        assert!(!cached.contains("changed-b"));
-
-        let worktree = Command::new("git")
-            .args(["diff", "--", "sample.txt"])
-            .current_dir(repo_path)
-            .output()
-            .expect("git diff worktree");
-        let worktree = String::from_utf8_lossy(&worktree.stdout);
-        assert!(!worktree.contains("changed-a"));
-        assert!(worktree.contains("changed-b"));
-    }
-
-    #[tokio::test]
-    async fn test_discard_file_inner_discards_single_hunk() {
-        use std::fs;
-
-        let tmp = home_tempdir();
-        let repo_path = tmp.path();
-        init_hunk_test_repo(repo_path);
-        let file = repo_path.join("sample.txt");
-        fs::write(&file, hunk_test_text("changed-a", "changed-b")).expect("write changes");
-
-        discard_file_inner(
-            repo_path.to_string_lossy().to_string(),
-            "sample.txt".to_string(),
-            Some(0),
-        )
-        .await
-        .expect("discard first hunk");
-
-        let contents = fs::read_to_string(file).expect("read sample");
-        assert!(contents.contains("line 02"));
-        assert!(contents.contains("changed-b"));
-    }
-
-    fn init_hunk_test_repo(repo_path: &Path) {
-        use std::fs;
-        use std::process::Command;
-
-        Command::new("git")
-            .args(["init"])
-            .current_dir(repo_path)
-            .output()
-            .expect("git init failed");
-        configure_test_git(repo_path);
-        fs::write(
-            repo_path.join("sample.txt"),
-            hunk_test_text("line 02", "line 18"),
-        )
-        .expect("write seed");
-        Command::new("git")
-            .args(["add", "sample.txt"])
-            .current_dir(repo_path)
-            .output()
-            .expect("git add failed");
-        let commit = Command::new("git")
-            .args(["commit", "-m", "initial"])
-            .current_dir(repo_path)
-            .output()
-            .expect("git commit failed");
+    #[test]
+    fn test_validate_hunk_patch_rejects_absolute_path() {
+        let cwd = std::path::Path::new("/home/user/repo");
+        let result = validate_hunk_patch(cwd, "/etc/passwd", None);
+        assert!(result.is_err());
+        let msg = result.unwrap_err();
         assert!(
-            commit.status.success(),
-            "git commit failed: {}",
-            String::from_utf8_lossy(&commit.stderr)
+            msg.contains("repo-relative") || msg.contains("absolute"),
+            "unexpected error message: {msg}"
         );
     }
 
-    fn hunk_test_text(line_two: &str, line_eighteen: &str) -> String {
-        (1..=20)
-            .map(|line| match line {
-                2 => line_two.to_string(),
-                18 => line_eighteen.to_string(),
-                other => format!("line {other:02}"),
-            })
-            .collect::<Vec<_>>()
-            .join("\n")
-            + "\n"
+    #[test]
+    fn test_validate_hunk_patch_rejects_parent_traversal() {
+        let cwd = std::path::Path::new("/home/user/repo");
+        let result = validate_hunk_patch(cwd, "../../etc/passwd", None);
+        assert!(result.is_err());
+        let msg = result.unwrap_err();
+        assert!(
+            msg.contains("traversal") || msg.contains("parent") || msg.contains("denied"),
+            "unexpected error message: {msg}"
+        );
+    }
+
+    #[test]
+    fn test_validate_hunk_patch_accepts_valid_path_no_patch() {
+        let cwd = std::path::Path::new("/home/user/repo");
+        let result = validate_hunk_patch(cwd, "src/main.rs", None);
+        assert!(
+            result.is_ok(),
+            "valid repo-relative path should be accepted"
+        );
+    }
+
+    #[test]
+    fn test_validate_hunk_patch_rejects_multi_file_patch() {
+        let cwd = std::path::Path::new("/home/user/repo");
+        let patch = "\
+diff --git a/src/a.rs b/src/a.rs
+--- a/src/a.rs
++++ b/src/a.rs
+@@ -1 +1 @@
+-old
++new
+diff --git a/src/b.rs b/src/b.rs
+--- a/src/b.rs
++++ b/src/b.rs
+@@ -1 +1 @@
+-old
++new
+";
+        let result = validate_hunk_patch(cwd, "src/a.rs", Some(patch));
+        assert!(result.is_err());
+        assert!(
+            result.unwrap_err().contains("multi-file"),
+            "should report multi-file error"
+        );
+    }
+
+    #[test]
+    fn test_validate_hunk_patch_rejects_mismatched_path() {
+        let cwd = std::path::Path::new("/home/user/repo");
+        let patch = "\
+diff --git a/src/other.rs b/src/other.rs
+--- a/src/other.rs
++++ b/src/other.rs
+@@ -1 +1 @@
+-old
++new
+";
+        let result = validate_hunk_patch(cwd, "src/main.rs", Some(patch));
+        assert!(result.is_err());
+        let msg = result.unwrap_err();
+        assert!(
+            msg.contains("different file") || msg.contains("header paths"),
+            "unexpected error message: {msg}"
+        );
+    }
+
+    #[test]
+    fn test_validate_hunk_patch_accepts_matching_single_file_patch() {
+        let cwd = std::path::Path::new("/home/user/repo");
+        let patch = "\
+diff --git a/src/main.rs b/src/main.rs
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -1 +1 @@
+-old
++new
+";
+        let result = validate_hunk_patch(cwd, "src/main.rs", Some(patch));
+        assert!(
+            result.is_ok(),
+            "matching single-file patch should be accepted"
+        );
+    }
+
+    #[test]
+    fn test_validate_hunk_patch_accepts_new_file_patch() {
+        // A real new-file patch: `--- /dev/null` + `+++ b/src/new.rs`.
+        // The diff --git OLD is the same as the path and NEW matches path too.
+        let cwd = std::path::Path::new("/home/user/repo");
+        let patch = "\
+diff --git a/src/new.rs b/src/new.rs
+new file mode 100644
+--- /dev/null
++++ b/src/new.rs
+@@ -0,0 +1 @@
++hello
+";
+        let result = validate_hunk_patch(cwd, "src/new.rs", Some(patch));
+        assert!(
+            result.is_ok(),
+            "new-file patch (--- /dev/null / +++ b/path) should be accepted: {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_validate_hunk_patch_rejects_inconsistent_header_paths() {
+        // Smuggled patch: the `diff --git` declaration says src/main.rs → src/main.rs
+        // but the body headers say `--- a/evil.rs` / `+++ b/src/main.rs`.
+        // The body `--- a/evil.rs` is inconsistent with the `diff --git` OLD path
+        // `src/main.rs`, so this must be rejected even though `src/main.rs` appears
+        // in the set of header paths.
+        let cwd = std::path::Path::new("/home/user/repo");
+        let patch = "\
+diff --git a/src/main.rs b/src/main.rs
+--- a/evil.rs
++++ b/src/main.rs
+@@ -1 +1 @@
+-old
++new
+";
+        let result = validate_hunk_patch(cwd, "src/main.rs", Some(patch));
+        assert!(
+            result.is_err(),
+            "patch with inconsistent --- header must be rejected"
+        );
+        let msg = result.unwrap_err();
+        assert!(
+            msg.contains("inconsistency") || msg.contains("does not match"),
+            "unexpected error message: {msg}"
+        );
     }
 }
