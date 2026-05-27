@@ -9,9 +9,10 @@
 **Tech Stack:** Rust (`crates/backend`), `serde` / `serde_json`, `cargo test`. Frontend untouched (transcript DTOs are internal — no `#[derive(TS)]`).
 
 **Conventions for every task:**
+
 - Commit type `test:` for Phase 0, `feat:`/`refactor:` for Phase 1/2, per commitlint. End commit bodies with `Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>`.
 - After any `cargo test`, if `git status` shows `src/bindings/` churn, `git restore src/bindings/` before committing (ts-rs regenerates raw files; F-BINDINGS).
-- The crate's **package name is `vimeflow`** (`crates/backend/Cargo.toml`); `vimeflow-backend` is only the *binary target*. So all Cargo commands use `-p vimeflow` (never `-p vimeflow-backend`).
+- The crate's **package name is `vimeflow`** (`crates/backend/Cargo.toml`); `vimeflow-backend` is only the _binary target_. So all Cargo commands use `-p vimeflow` (never `-p vimeflow-backend`).
 - Run a single Rust test with `cargo test -p vimeflow <test_name> -- --nocapture`. Cargo accepts only **one** filter before `--`; run multiple test names as separate commands.
 - For any task that **creates** a new file, `git add <path>` before committing — `git commit -am` stages only already-tracked files.
 
@@ -20,17 +21,20 @@
 ## File Structure
 
 **Phase 0 (tests only):**
+
 - Modify: `crates/backend/src/agent/adapter/claude_code/transcript_fixture_tests.rs` — add Claude `T-replay`.
 - Modify: `crates/backend/src/agent/adapter/codex/transcript.rs` (`#[cfg(test)] mod tests`) — add Codex `T-replay`.
 
 **Phase 1 (A-transcript):**
+
 - Modify: `crates/backend/src/agent/adapter/serde_helpers.rs` — add `lenient_bool`, `lenient_i64` (+ tests).
 - Create: `crates/backend/src/agent/adapter/claude_code/transcript_dto.rs` — Claude line/message/block DTOs.
 - Create: `crates/backend/src/agent/adapter/codex/transcript_dto.rs` — Codex envelope + per-`type` payload DTOs + inner arg/output DTOs.
 - Modify: `claude_code/transcript.rs`, `codex/transcript.rs` — migrate `process_line` bodies to DTOs; retarget helpers; `use super::transcript_dto::…`.
-- Modify: `claude_code/mod.rs`, `codex/mod.rs` — declare `mod transcript_dto;` here. **A sibling-module declaration must live in the parent `mod.rs`** (exactly like the existing `mod statusline;`); declaring `mod transcript_dto;` *inside* `transcript.rs` would resolve to `transcript/transcript_dto.rs` and fail to find the sibling file.
+- Modify: `claude_code/mod.rs`, `codex/mod.rs` — declare `mod transcript_dto;` here. **A sibling-module declaration must live in the parent `mod.rs`** (exactly like the existing `mod statusline;`); declaring `mod transcript_dto;` _inside_ `transcript.rs` would resolve to `transcript/transcript_dto.rs` and fail to find the sibling file.
 
 **Phase 2 (C engine):**
+
 - Create: `crates/backend/src/agent/adapter/base/transcript_tail_service.rs` — `TranscriptDecoder` trait + `TranscriptTailService` + `POLL_INTERVAL`.
 - Modify: `crates/backend/src/agent/adapter/base/mod.rs` — wire + re-export.
 - Create/Modify: `claude_code/transcript.rs`, `codex/transcript.rs` — `<Provider>TranscriptDecoder` (move `process_line` + per-session state); thin `start_tailing`; delete `tail_loop`; add the deterministic + end-to-end buffering tests.
@@ -39,11 +43,12 @@
 
 ## Phase 0 — Characterization tests (PR 1, no production change)
 
-> **Note — these are characterization tests, not classic TDD.** They pin *current* behavior, so they must **PASS against the current code**. "Expected: PASS" below means the existing behavior already satisfies the assertion; a FAIL means current behavior differs from the spec's assumption — stop and investigate, do not "fix" the test to be green. Harness: `FakeEventSink` (`runtime::FakeEventSink`) — `wait_for_count(event, count, timeout) -> bool`, `count(event) -> usize`, `recorded() -> Vec<(String, Value)>`. (Spec § 3.)
+> **Note — these are characterization tests, not classic TDD.** They pin _current_ behavior, so they must **PASS against the current code**. "Expected: PASS" below means the existing behavior already satisfies the assertion; a FAIL means current behavior differs from the spec's assumption — stop and investigate, do not "fix" the test to be green. Harness: `FakeEventSink` (`runtime::FakeEventSink`) — `wait_for_count(event, count, timeout) -> bool`, `count(event) -> usize`, `recorded() -> Vec<(String, Value)>`. (Spec § 3.)
 
 ### Task 0.1: Claude `T-replay` (replay→live boundary via `test-run`)
 
 **Files:**
+
 - Test: `crates/backend/src/agent/adapter/claude_code/transcript_fixture_tests.rs`
 
 - [ ] **Step 1: Read the existing harness + the replay fixture.**
@@ -107,6 +112,7 @@ git commit -m "test(transcript): pin Claude replay-collapse then live test-run"
 ### Task 0.2: Codex `T-replay`
 
 **Files:**
+
 - Test: `crates/backend/src/agent/adapter/codex/transcript.rs` (`#[cfg(test)] mod tests`)
 
 - [ ] **Step 1: Read the existing Codex loop test.**
@@ -168,6 +174,7 @@ git commit -m "test(transcript): pin Codex replay-collapse then live test-run"
 ### Task 1.1: Add `lenient_bool` + `lenient_i64` helpers
 
 **Files:**
+
 - Modify: `crates/backend/src/agent/adapter/serde_helpers.rs`
 
 - [ ] **Step 1: Write the failing helper tests** (mirror `lenient_string_accepts_strings_rejects_others`).
@@ -235,6 +242,7 @@ git commit -m "feat(transcript): add lenient_bool and lenient_i64 deserializers"
 ### Task 1.2: Claude transcript DTOs (`transcript_dto.rs`)
 
 **Files:**
+
 - Create: `crates/backend/src/agent/adapter/claude_code/transcript_dto.rs`
 - Modify: `claude_code/mod.rs` (add `mod transcript_dto;` — sibling decl lives in the parent `mod.rs`, like `mod statusline;`)
 - Modify: `claude_code/transcript.rs` (`use super::transcript_dto::…`)
@@ -340,18 +348,20 @@ git commit -m "feat(transcript): add Claude transcript DTOs"
 ### Task 1.3: Retarget `extract_tool_result_content` to take the content value (Claude)
 
 **Files:**
+
 - Modify: `claude_code/transcript.rs`
 
-This is a **pure refactor done *before* the DTO migration** — it still operates on raw `Value`, so it compiles and stays green standalone (Task 1.4 later feeds it `&dto.content`). `summarize_input` already takes the input *value* and the three `input` consumers (`bash_command`/`tool_file_path`/`summarize_input`, `claude:378`) keep their current args here — only `extract_tool_result_content` is retargeted.
+This is a **pure refactor done _before_ the DTO migration** — it still operates on raw `Value`, so it compiles and stays green standalone (Task 1.4 later feeds it `&dto.content`). `summarize_input` already takes the input _value_ and the three `input` consumers (`bash_command`/`tool_file_path`/`summarize_input`, `claude:378`) keep their current args here — only `extract_tool_result_content` is retargeted.
 
 - [ ] **Step 1: Change the signature** to `fn extract_tool_result_content(content: &Value) -> String`, deleting its internal `value.get("content")` lookup (the former `raw` becomes the `content` arg, `claude:686`).
-- [ ] **Step 2: Update *all* call sites** to pass the content value: (a) the production `process_tool_result` (still on the raw block) → `extract_tool_result_content(block.get("content").unwrap_or(&Value::Null))`; (b) the **existing `extract_tool_result_content_*` tests** (F15/F1), which currently build an enclosing `serde_json::json!({ "content": … })` and pass the whole object → change them to pass the content value directly (`&value["content"]`). Both are behavior-neutral (absent and `null` both yield `""`). Missing (b) is the trap: the helper would otherwise receive `{"content": …}` and see no `content` field.
+- [ ] **Step 2: Update _all_ call sites** to pass the content value: (a) the production `process_tool_result` (still on the raw block) → `extract_tool_result_content(block.get("content").unwrap_or(&Value::Null))`; (b) the **existing `extract_tool_result_content_*` tests** (F15/F1), which currently build an enclosing `serde_json::json!({ "content": … })` and pass the whole object → change them to pass the content value directly (`&value["content"]`). Both are behavior-neutral (absent and `null` both yield `""`). Missing (b) is the trap: the helper would otherwise receive `{"content": …}` and see no `content` field.
 - [ ] **Step 3: Run — expect PASS.** `cargo test -p vimeflow extract_tool_result_content` (matches the F15/F1 test fns by name) → PASS; **confirm the summary reports those tests ran (not `0 passed`)**.
 - [ ] **Step 4: Commit.** `git commit -am "refactor(transcript): extract_tool_result_content takes the content value"`
 
 ### Task 1.4: Migrate Claude `process_line` to DTOs + regression tests
 
 **Files:**
+
 - Modify: `claude_code/transcript.rs`
 
 - [ ] **Step 1: Write the DTO/event regression tests** (drive `process_line` / `tail` and assert events survive wrong-typed + presence-sensitive inputs).
@@ -369,19 +379,20 @@ fn summarize_input_preserves_absent_vs_null() {
 }
 ```
 
-- [ ] **Step 2: Run the baseline — expect PASS.** `cargo test -p vimeflow summarize_input_preserves_absent_vs_null` and `cargo test -p vimeflow process_line_emits_with_wrong_typed_is_error` (separately) → both PASS against the *current* code (the current `.and_then(as_bool).unwrap_or(false)` / `summarize_input` already degrade gracefully). They are the regression net: the Step 3 migration must keep them green. **Confirm each reports 1 test ran (not `0`).**
-- [ ] **Step 3: Migrate the `process_line` body**, shape-by-shape (spec § 4 enumerates every field + its consumer). Parse each line once via `serde_json::from_str::<ClaudeTranscriptLineDto>(line)`. **Invariant — no line ever deserialize-fails:** every `ClaudeTranscriptLineDto` field is `#[serde(default)]`/lenient, so a non-`tool_result` line simply gets `content = Value::Null`, `tool_use_id`/`is_error = None`, and a wrong-shaped `message` degrades to `None` via `lenient_object`; the DTO is therefore safe to apply to *all* line types, not just `tool_result`. Then read typed fields; classify `message.content` items with the existing ported predicates (`is_user_prompt`, `is_non_empty_user_block`, `line_type`); feed `summarize_input` / `bash_command` / `tool_file_path` the preserved raw `input`. Keep the emitted events byte-for-byte for deterministic fields.
+- [ ] **Step 2: Run the baseline — expect PASS.** `cargo test -p vimeflow summarize_input_preserves_absent_vs_null` and `cargo test -p vimeflow process_line_emits_with_wrong_typed_is_error` (separately) → both PASS against the _current_ code (the current `.and_then(as_bool).unwrap_or(false)` / `summarize_input` already degrade gracefully). They are the regression net: the Step 3 migration must keep them green. **Confirm each reports 1 test ran (not `0`).**
+- [ ] **Step 3: Migrate the `process_line` body**, shape-by-shape (spec § 4 enumerates every field + its consumer). Parse each line once via `serde_json::from_str::<ClaudeTranscriptLineDto>(line)`. **Invariant — no line ever deserialize-fails:** every `ClaudeTranscriptLineDto` field is `#[serde(default)]`/lenient, so a non-`tool_result` line simply gets `content = Value::Null`, `tool_use_id`/`is_error = None`, and a wrong-shaped `message` degrades to `None` via `lenient_object`; the DTO is therefore safe to apply to _all_ line types, not just `tool_result`. Then read typed fields; classify `message.content` items with the existing ported predicates (`is_user_prompt`, `is_non_empty_user_block`, `line_type`); feed `summarize_input` / `bash_command` / `tool_file_path` the preserved raw `input`. Keep the emitted events byte-for-byte for deterministic fields.
 - [ ] **Step 4: Run the full Claude transcript tests + Phase 0 `T-replay`** — `cargo test -p vimeflow claude_code` (the module-root filter covers `transcript`, `transcript_dto`, **and** the Phase 0 `transcript_fixture_tests`) → all green. Restore `src/bindings/` if perturbed.
 - [ ] **Step 5: Commit.** `git commit -am "refactor(transcript): migrate Claude process_line to typed DTOs"`
 
 ### Task 1.5: Codex transcript DTOs (`transcript_dto.rs`)
 
 **Files:**
+
 - Create: `crates/backend/src/agent/adapter/codex/transcript_dto.rs`
 - Modify: `codex/mod.rs` (declare `mod transcript_dto;` — sibling decl lives in the parent `mod.rs`, like `mod statusline;`/`mod parser;`)
 - Modify: `codex/transcript.rs` (`use super::transcript_dto::…`)
 
-**Reference:** spec § 4 "Codex shapes" — `{timestamp, type, payload}` envelope; **two-level dispatch** (top-level `type`: `session_meta`/`response_item`/`event_msg`; inner `payload.type` for BOTH `response_item` *and* `event_msg`, `codex:347`). Each dispatch is a **manual classifier over `Option<String>`** (read the tag with `lenient_string`, `match tag.as_deref()` with an `Other` default) — **not** a `#[serde(tag="type")]` + `#[serde(other)]` enum, which *errors* on a missing or non-string tag rather than falling through. Payload scalars typed lenient (`call_id`/`name`/`status`/`message`/`aggregated_output` via `lenient_string`; `success` via `lenient_bool`; `exit_code` via `lenient_i64`, `codex:571`/`:595`). Raw carve-outs: `arguments`/`output`/custom-tool `input` as `Option<String>` (`lenient_string`) re-parsed by ported helpers; `duration` via `#[serde(flatten)] rest` presence (`codex:765`). Two cwd sources preserved in order (`session_meta.cwd` then `exec_command.arguments.workdir`, `codex:100`); `turn_context.cwd` NOT a source.
+**Reference:** spec § 4 "Codex shapes" — `{timestamp, type, payload}` envelope; **two-level dispatch** (top-level `type`: `session_meta`/`response_item`/`event_msg`; inner `payload.type` for BOTH `response_item` _and_ `event_msg`, `codex:347`). Each dispatch is a **manual classifier over `Option<String>`** (read the tag with `lenient_string`, `match tag.as_deref()` with an `Other` default) — **not** a `#[serde(tag="type")]` + `#[serde(other)]` enum, which _errors_ on a missing or non-string tag rather than falling through. Payload scalars typed lenient (`call_id`/`name`/`status`/`message`/`aggregated_output` via `lenient_string`; `success` via `lenient_bool`; `exit_code` via `lenient_i64`, `codex:571`/`:595`). Raw carve-outs: `arguments`/`output`/custom-tool `input` as `Option<String>` (`lenient_string`) re-parsed by ported helpers; `duration` via `#[serde(flatten)] rest` presence (`codex:765`). Two cwd sources preserved in order (`session_meta.cwd` then `exec_command.arguments.workdir`, `codex:100`); `turn_context.cwd` NOT a source.
 
 - [ ] **Step 1: Create `transcript_dto.rs` with the failing tests AND wire the module** — write the tests below into the new file, declare `mod transcript_dto;` in `codex/mod.rs`, and `use super::transcript_dto::…` in `transcript.rs`. (Declare the module now — an undeclared sibling file is ignored, so the red run would find zero tests; with it declared, the tests reference not-yet-defined DTOs → compile FAIL = the real red.) Tests: top-level + inner dispatch fall-through (incl. missing/non-string `type`), `exit_code`/`success` lenient, `duration` presence (absent vs null vs object), inner `arguments` re-parse.
 
@@ -415,6 +426,7 @@ fn codex_exec_end_exit_code_is_lenient_and_duration_presence_preserved() {
 ### Task 1.6: Migrate Codex `process_line` / `process_event_msg` / `process_response_item` to DTOs
 
 **Files:**
+
 - Modify: `codex/transcript.rs`
 
 - [ ] **Step 1: Write a Codex regression test** — a record with wrong-typed `exit_code` / `success` still emits the correct completion event; a `duration:null` exec_command_end still yields the `Some(0)` duration (per `exec_command_duration_ms`); a **non-string `timestamp`** still emits (falls back to `now_iso8601`, not dropped); `session_meta` AND mid-session `exec_command.arguments.workdir` both emit `agent-cwd` in order.
@@ -435,6 +447,7 @@ fn codex_exec_end_exit_code_is_lenient_and_duration_presence_preserved() {
 ### Task 2.1: Define the engine + wire the module
 
 **Files:**
+
 - Create: `crates/backend/src/agent/adapter/base/transcript_tail_service.rs`
 - Modify: `crates/backend/src/agent/adapter/base/mod.rs`
 
@@ -499,6 +512,7 @@ impl TranscriptTailService {
 ### Task 2.2: Deterministic engine buffering tests (`ScriptedBufRead` + recording decoder)
 
 **Files:**
+
 - Modify: `base/transcript_tail_service.rs` (`#[cfg(test)] mod tests`)
 
 - [ ] **Step 1: Add cross-module test support** — define `ScriptedBufRead`, `Step`, and `RecordingDecoder` as **`#[cfg(test)] pub(crate)`** items at **module level** in `transcript_tail_service.rs` (NOT inside a private `mod tests`), **and add the re-export to `base/mod.rs`** in this same task: `#[cfg(test)] pub(crate) use transcript_tail_service::{ScriptedBufRead, Step, RecordingDecoder};`. (Both land here together so no intermediate commit references missing items.) Task 2.3's `claude_code` test then imports `crate::agent::adapter::base::{ScriptedBufRead, Step, RecordingDecoder}` through the re-export — the private module path is not reachable from a sibling.
@@ -555,6 +569,7 @@ impl TranscriptDecoder for RecordingDecoder {
 ### Task 2.3: `ClaudeTranscriptDecoder` + thin `start_tailing` (Claude)
 
 **Files:**
+
 - Modify: `claude_code/transcript.rs`
 
 - [ ] **Step 1: Define `ClaudeTranscriptDecoder`** owning `events: Arc<dyn EventSink>`, `session_id: String`, `cwd: Option<PathBuf>`, `in_flight`, `num_turns`, `last_cwd`, `emitter: TestRunEmitter`. `new(events, session_id, cwd)` constructs it. Move the (Phase-1-typed) `process_line` body into `decode_line(&mut self, line: &str)`; `on_caught_up(&mut self)` calls `self.emitter.finish_replay()`.
@@ -566,6 +581,7 @@ impl TranscriptDecoder for RecordingDecoder {
 ### Task 2.4: `CodexTranscriptDecoder` + thin `start_tailing` (Codex)
 
 **Files:**
+
 - Modify: `codex/transcript.rs`
 
 - [ ] **Step 1:** Define `CodexTranscriptDecoder` (same shape; `in_flight` carries `CompletionMode`); move the typed `process_line` body into `decode_line`; `on_caught_up` → `finish_replay`.
@@ -584,7 +600,7 @@ impl TranscriptDecoder for RecordingDecoder {
 ## Self-Review notes (for the author before execution)
 
 - **Spec coverage:** Phase 0 (§ 3) → Tasks 0.1–0.3; Phase 1 (§ 4) → 1.1–1.7 (lenient helpers, both DTO files, retargets, both migrations, presence-sensitive + wrong-typed regression tests); Phase 2 (§ 5) → 2.1–2.5 (engine, deterministic tests, both decoders, thin `start_tailing`, end-to-end G3, `tail_loop` deletion); Step F (§ 6) is deferred (no task — only the #246 note in 2.5). Frozen constraints (§ 2) are gate checks in 0.3 / 1.7 / 2.5.
-- **Known under-specification (intentional):** the per-site `process_line` migrations (Tasks 1.4 / 1.6) give the transformation *pattern* + the typed DTOs + the regression test net rather than enumerating all ~46/~55 sites verbatim — the spec § 4 is the exhaustive field reference, and the existing parse tests + new regression tests catch any missed site. The `ScriptedBufRead` script representation (Task 2.2) is sketched as a `Vec<Step>` enum; the author finalizes the exact enum.
+- **Known under-specification (intentional):** the per-site `process_line` migrations (Tasks 1.4 / 1.6) give the transformation _pattern_ + the typed DTOs + the regression test net rather than enumerating all ~46/~55 sites verbatim — the spec § 4 is the exhaustive field reference, and the existing parse tests + new regression tests catch any missed site. The `ScriptedBufRead` script representation (Task 2.2) is sketched as a `Vec<Step>` enum; the author finalizes the exact enum.
 - **Type consistency:** decoder API is `decode_line(&mut self, line: &str)` / `on_caught_up(&mut self)` everywhere; service is `TranscriptTailService::new(decoder, label)` + `run<R: BufRead>(mut self, reader, stop)`; provider labels `"transcript"` (Claude) / `"Codex rollout transcript"` (Codex) feed `"Error reading {label} line: {e}"`.
 
 <!-- codex-reviewed: 2026-05-26T07:33:56Z -->
