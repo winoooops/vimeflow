@@ -110,6 +110,36 @@ where
     Ok(serde_json::from_value::<T>(value).ok())
 }
 
+/// Deserialize an `Option<bool>` field with wrong-type tolerance.
+///
+/// Returns `Ok(None)` for missing / `null` / non-bool inputs (a `"true"`
+/// string or a number is NOT a bool). Returns `Ok(Some(_))` for JSON
+/// booleans.
+///
+/// Mirrors the pre-A-transcript behavior of
+/// `value.get(key).and_then(Value::as_bool)`.
+pub(super) fn lenient_bool<'de, D>(deserializer: D) -> Result<Option<bool>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Ok(Value::deserialize(deserializer)?.as_bool())
+}
+
+/// Deserialize an `Option<i64>` field with wrong-type tolerance.
+///
+/// Returns `Ok(None)` for missing / `null` / non-integer inputs (a numeric
+/// string or a non-integer float is NOT an i64). Returns `Ok(Some(_))` for
+/// JSON integers in i64 range.
+///
+/// Mirrors the pre-A-transcript behavior of
+/// `value.get(key).and_then(Value::as_i64)`.
+pub(super) fn lenient_i64<'de, D>(deserializer: D) -> Result<Option<i64>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Ok(Value::deserialize(deserializer)?.as_i64())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -123,6 +153,10 @@ mod tests {
         ratio: Option<f64>,
         #[serde(default, deserialize_with = "lenient_string")]
         label: Option<String>,
+        #[serde(default, deserialize_with = "lenient_bool")]
+        flag: Option<bool>,
+        #[serde(default, deserialize_with = "lenient_i64")]
+        code: Option<i64>,
     }
 
     #[test]
@@ -175,6 +209,47 @@ mod tests {
 
         let p: Probe = serde_json::from_str(r#"{"label": null}"#).expect("null ok→None");
         assert_eq!(p.label, None);
+    }
+
+    #[test]
+    fn lenient_bool_accepts_bools_rejects_others() {
+        let p: Probe = serde_json::from_str(r#"{"flag": true}"#).expect("bool ok");
+        assert_eq!(p.flag, Some(true));
+
+        // Wrong types → None (matches `Value::as_bool`): a "true" string or 1 is not a bool.
+        let p: Probe = serde_json::from_str(r#"{"flag": "true"}"#).expect("string ok→None");
+        assert_eq!(p.flag, None);
+
+        let p: Probe = serde_json::from_str(r#"{"flag": 1}"#).expect("number ok→None");
+        assert_eq!(p.flag, None);
+
+        let p: Probe = serde_json::from_str(r#"{"flag": null}"#).expect("null ok→None");
+        assert_eq!(p.flag, None);
+
+        let p: Probe = serde_json::from_str(r#"{}"#).expect("missing ok→None");
+        assert_eq!(p.flag, None);
+    }
+
+    #[test]
+    fn lenient_i64_accepts_ints_rejects_others() {
+        let p: Probe = serde_json::from_str(r#"{"code": -3}"#).expect("negative int ok");
+        assert_eq!(p.code, Some(-3));
+
+        let p: Probe = serde_json::from_str(r#"{"code": 0}"#).expect("zero ok");
+        assert_eq!(p.code, Some(0));
+
+        // Wrong types → None (matches `Value::as_i64`): strings and non-integer floats.
+        let p: Probe = serde_json::from_str(r#"{"code": "3"}"#).expect("string ok→None");
+        assert_eq!(p.code, None);
+
+        let p: Probe = serde_json::from_str(r#"{"code": 1.5}"#).expect("float ok→None");
+        assert_eq!(p.code, None);
+
+        let p: Probe = serde_json::from_str(r#"{"code": null}"#).expect("null ok→None");
+        assert_eq!(p.code, None);
+
+        let p: Probe = serde_json::from_str(r#"{}"#).expect("missing ok→None");
+        assert_eq!(p.code, None);
     }
 
     /// Per-field tolerance — one wrong-typed field does NOT poison
