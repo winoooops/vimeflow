@@ -18,6 +18,7 @@ use crate::runtime::EventSink;
 pub mod statusline;
 pub mod test_runners;
 pub mod transcript;
+mod transcript_dto;
 
 #[cfg(test)]
 mod transcript_fixture_tests;

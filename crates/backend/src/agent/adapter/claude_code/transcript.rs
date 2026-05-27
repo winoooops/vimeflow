@@ -16,6 +16,7 @@ use serde_json::Value;
 
 use super::test_runners::emitter::TestRunEmitter;
 use super::test_runners::matcher::{match_command, MatchedCommand};
+use super::transcript_dto::{ClaudeToolResultDto, ClaudeToolUseDto, ClaudeTranscriptLineDto};
 use crate::agent::adapter::base::TranscriptHandle;
 use crate::agent::adapter::types::ValidateTranscriptError;
 use crate::agent::events::{emit_agent_cwd, emit_agent_tool_call, emit_agent_turn};
@@ -123,41 +124,15 @@ fn tool_block_type(item: &Value) -> &str {
     line_type(item)
 }
 
-fn tool_use_id(item: &Value) -> Option<&str> {
-    item.get("id").and_then(Value::as_str)
-}
-
-fn tool_name(item: &Value) -> &str {
-    item.get("name")
-        .and_then(Value::as_str)
-        .unwrap_or("unknown")
-}
-
-fn bash_command(item: &Value) -> Option<&str> {
-    if tool_name(item) != "Bash" {
+fn bash_command<'a>(name: &'a str, input: Option<&'a Value>) -> Option<&'a str> {
+    if name != "Bash" {
         return None;
     }
-
-    item.get("input")
-        .and_then(|input| input.get("command"))
-        .and_then(Value::as_str)
+    input?.get("command").and_then(Value::as_str)
 }
 
-fn tool_file_path(item: &Value) -> Option<&str> {
-    item.get("input")
-        .and_then(|input| input.get("file_path"))
-        .and_then(Value::as_str)
-}
-
-fn tool_result_id(value: &Value) -> Option<&str> {
-    value.get("tool_use_id").and_then(Value::as_str)
-}
-
-fn tool_result_is_error(value: &Value) -> bool {
-    value
-        .get("is_error")
-        .and_then(Value::as_bool)
-        .unwrap_or(false)
+fn tool_file_path<'a>(input: Option<&'a Value>) -> Option<&'a str> {
+    input?.get("file_path").and_then(Value::as_str)
 }
 
 fn text_block_type(block: &Value) -> Option<&str> {
@@ -286,7 +261,7 @@ fn process_line(
     num_turns: &mut u32,
     last_cwd: &mut Option<String>,
 ) {
-    let value: Value = match serde_json::from_str(line) {
+    let dto: ClaudeTranscriptLineDto = match serde_json::from_str(line) {
         Ok(v) => v,
         Err(_) => {
             // Malformed JSON — skip silently
@@ -298,7 +273,7 @@ fn process_line(
     // tracking. Surface transitions through `agent-cwd` so the frontend
     // can mirror them into pane.cwd without depending on the interactive
     // shell emitting OSC 7.
-    if let Some(observed) = value.get("cwd").and_then(Value::as_str) {
+    if let Some(observed) = dto.cwd.as_deref() {
         if !observed.is_empty()
             && last_cwd.as_deref().map_or(true, |seen| seen != observed)
         {
@@ -314,19 +289,27 @@ fn process_line(
         }
     }
 
-    match line_type(&value) {
+    match dto.line_type.as_deref().unwrap_or("") {
         "assistant" => {
-            process_assistant_message(&value, session_id, cwd, events, in_flight);
+            process_assistant_message(&dto, session_id, cwd, events, in_flight);
         }
         "user" => {
             process_user_message(
-                &value, session_id, cwd, events, emitter, in_flight, num_turns,
+                &dto, session_id, cwd, events, emitter, in_flight, num_turns,
             );
         }
         "tool_result" => {
-            let timestamp = extract_timestamp(&value);
+            let timestamp = extract_timestamp(dto.timestamp.as_deref());
             process_tool_result(
-                &value, session_id, cwd, events, emitter, in_flight, &timestamp,
+                dto.tool_use_id.as_deref(),
+                dto.is_error,
+                &dto.content,
+                session_id,
+                cwd,
+                events,
+                emitter,
+                in_flight,
+                &timestamp,
             );
         }
         _ => {
@@ -335,58 +318,60 @@ fn process_line(
     }
 }
 
-/// Extract tool_use entries from an assistant message
 /// Pull the top-level `timestamp` field off a transcript line, or fall back
 /// to the current clock. Claude Code JSONL lines carry the real event time —
 /// `now_iso8601()` would otherwise stamp every event parsed in a single tick
 /// (e.g. initial watch / batch catch-up) with the same "now", making the UI
 /// feed look as if everything happened at once.
-fn extract_timestamp(value: &Value) -> String {
-    value
-        .get("timestamp")
-        .and_then(Value::as_str)
-        .map(str::to_string)
-        .unwrap_or_else(now_iso8601)
+fn extract_timestamp(timestamp: Option<&str>) -> String {
+    timestamp.map(str::to_string).unwrap_or_else(now_iso8601)
 }
 
+/// Extract tool_use entries from an assistant message.
 fn process_assistant_message(
-    value: &Value,
+    dto: &ClaudeTranscriptLineDto,
     session_id: &str,
     cwd: Option<&Path>,
     events: &Arc<dyn EventSink>,
     in_flight: &mut InFlightToolCalls,
 ) {
-    let content = match message_content_items(value) {
+    let content = match message_content_items(dto) {
         Some(arr) => arr,
         None => return,
     };
 
-    let timestamp = extract_timestamp(value);
+    let timestamp = extract_timestamp(dto.timestamp.as_deref());
 
     for item in content {
         if tool_block_type(item) != "tool_use" {
             continue;
         }
 
-        let id = match tool_use_id(item) {
+        let tool_use_dto: ClaudeToolUseDto = match serde_json::from_value(item.clone()) {
+            Ok(d) => d,
+            Err(_) => continue,
+        };
+
+        let id = match tool_use_dto.id.as_deref() {
             Some(id) => id.to_string(),
             None => continue,
         };
 
-        let name = tool_name(item).to_string();
+        let name = tool_use_dto.name.as_deref().unwrap_or("unknown");
+        let input_value = tool_use_dto.rest.get("input");
 
         // Run the matcher BEFORE summarize_input truncates — the matcher
         // needs the full untruncated command to tokenize correctly.
-        let test_match = bash_command(item).and_then(|cmd| match_command(cmd, cwd));
+        let test_match = bash_command(name, input_value).and_then(|cmd| match_command(cmd, cwd));
 
-        let args = summarize_input(item.get("input"));
+        let args = summarize_input(input_value);
 
         // Tag Write/Edit on test files. Use the FULL untruncated
         // input.file_path — `args` is summarized to MAX_ARGS_LEN and
         // long workspace paths could otherwise drop the suffix that
         // makes a file recognizable as a test (e.g. `…ndle.test.ts`).
-        let is_test_file = if matches!(name.as_str(), "Write" | "Edit") {
-            tool_file_path(item)
+        let is_test_file = if matches!(name, "Write" | "Edit") {
+            tool_file_path(input_value)
                 .map(super::test_runners::test_file_patterns::is_test_file)
                 .unwrap_or(false)
         } else {
@@ -399,7 +384,7 @@ fn process_assistant_message(
             InFlightToolCall {
                 started_at: now,
                 started_at_iso: timestamp.clone(),
-                tool: name.clone(),
+                tool: name.to_string(),
                 args: args.clone(),
                 is_test_file,
                 test_match,
@@ -409,7 +394,7 @@ fn process_assistant_message(
         let event = AgentToolCallEvent {
             session_id: session_id.to_string(),
             tool_use_id: id,
-            tool: name,
+            tool: name.to_string(),
             args,
             status: ToolCallStatus::Running,
             timestamp: timestamp.clone(),
@@ -425,7 +410,7 @@ fn process_assistant_message(
 
 /// Extract tool_result entries from a user message.
 fn process_user_message(
-    value: &Value,
+    dto: &ClaudeTranscriptLineDto,
     session_id: &str,
     cwd: Option<&Path>,
     events: &Arc<dyn EventSink>,
@@ -433,18 +418,30 @@ fn process_user_message(
     in_flight: &mut InFlightToolCalls,
     num_turns: &mut u32,
 ) {
-    let content = match message_content(value) {
+    let content = match dto.message.as_ref().map(|m| &m.content) {
         Some(content) => content,
         None => return,
     };
 
-    let timestamp = extract_timestamp(value);
+    let timestamp = extract_timestamp(dto.timestamp.as_deref());
 
     if let Some(items) = content.as_array() {
         for item in items {
             if is_tool_result_block(item) {
+                let block_dto: ClaudeToolResultDto = match serde_json::from_value(item.clone()) {
+                    Ok(d) => d,
+                    Err(_) => continue,
+                };
                 process_tool_result(
-                    item, session_id, cwd, events, emitter, in_flight, &timestamp,
+                    block_dto.tool_use_id.as_deref(),
+                    block_dto.is_error,
+                    &block_dto.content,
+                    session_id,
+                    cwd,
+                    events,
+                    emitter,
+                    in_flight,
+                    &timestamp,
                 );
             }
         }
@@ -465,7 +462,9 @@ fn process_user_message(
 
 /// Process a tool_result line and emit Done/Failed event
 fn process_tool_result(
-    value: &Value,
+    tool_use_id: Option<&str>,
+    is_error: Option<bool>,
+    content: &Value,
     session_id: &str,
     cwd: Option<&Path>,
     events: &Arc<dyn EventSink>,
@@ -473,12 +472,12 @@ fn process_tool_result(
     in_flight: &mut InFlightToolCalls,
     timestamp: &str,
 ) {
-    let tool_use_id = match tool_result_id(value) {
+    let tool_use_id = match tool_use_id {
         Some(id) => id.to_string(),
         None => return,
     };
 
-    let is_error = tool_result_is_error(value);
+    let is_error = is_error.unwrap_or(false);
 
     // An orphaned tool_result — a tool_result whose parent tool_use was
     // never recorded in_flight — arrives most often when a Claude Code
@@ -498,8 +497,11 @@ fn process_tool_result(
 
     if let Some(matched) = call.test_match {
         // Pull the captured Bash output content.
-        let content = extract_tool_result_content(value);
-        let captured = super::test_runners::types::CapturedOutput { content, is_error };
+        let content_str = extract_tool_result_content(content);
+        let captured = super::test_runners::types::CapturedOutput {
+            content: content_str,
+            is_error,
+        };
         // Build the snapshot only when we have a workspace cwd. Falling
         // back to `Path::new(".")` would canonicalise to the backend
         // process's cwd — NOT the user's workspace — so test-file groups
@@ -555,14 +557,8 @@ fn process_tool_result(
     }
 }
 
-fn message_content_items(value: &Value) -> Option<&[Value]> {
-    message_content(value)
-        .and_then(|c| c.as_array())
-        .map(Vec::as_slice)
-}
-
-fn message_content(value: &Value) -> Option<&Value> {
-    value.get("message").and_then(|m| m.get("content"))
+fn message_content_items(dto: &ClaudeTranscriptLineDto) -> Option<&[Value]> {
+    dto.message.as_ref()?.content.as_array().map(Vec::as_slice)
 }
 
 fn is_tool_result_block(value: &Value) -> bool {
@@ -683,15 +679,15 @@ fn days_to_date(days: u64) -> (u64, u64, u64) {
 /// Pull the textual `content` out of a tool_result JSON value.
 /// Handles both the simple-string shape and the array-of-blocks shape
 /// (where each block may carry `{type:"text", text:"..."}` payloads).
-fn extract_tool_result_content(value: &Value) -> String {
-    let raw = match value.get("content") {
-        Some(c) => c,
-        None => return String::new(),
-    };
-    if let Some(s) = raw.as_str() {
+fn extract_tool_result_content(content: &Value) -> String {
+    // Takes the `content` *value* directly (not the enclosing block) so the
+    // A-transcript migration can pass `&dto.content`. Absent `content` (passed
+    // as `Value::Null` by callers) and `null` both miss the str/array arms and
+    // fall through to `""` — behavior-neutral with the prior `.get("content")`.
+    if let Some(s) = content.as_str() {
         return cap_with_head_and_tail(s);
     }
-    if let Some(arr) = raw.as_array() {
+    if let Some(arr) = content.as_array() {
         let memory_cap = MAX_TOOL_RESULT_CONTENT_LEN + TOOL_RESULT_TAIL_LEN;
         let prune_threshold = memory_cap * 2;
         let mut buf = String::new();
@@ -852,7 +848,7 @@ mod tests {
             "content": "a".repeat(MAX_TOOL_RESULT_CONTENT_LEN + 1024)
         });
 
-        let content = extract_tool_result_content(&value);
+        let content = extract_tool_result_content(&value["content"]);
 
         assert!(content.len() < MAX_TOOL_RESULT_CONTENT_LEN + 1024);
         assert!(content.contains(TOOL_RESULT_TRUNCATED_MARKER));
@@ -881,7 +877,7 @@ mod tests {
             ]
         });
 
-        let content = extract_tool_result_content(&value);
+        let content = extract_tool_result_content(&value["content"]);
 
         assert!(content.contains(TOOL_RESULT_TRUNCATED_MARKER));
         assert!(
@@ -915,7 +911,7 @@ mod tests {
             ]
         });
 
-        let content = extract_tool_result_content(&value);
+        let content = extract_tool_result_content(&value["content"]);
 
         assert_eq!(content.len(), MAX_TOOL_RESULT_CONTENT_LEN);
         assert!(
@@ -944,7 +940,7 @@ mod tests {
             "content": &combined
         });
 
-        let content = extract_tool_result_content(&value);
+        let content = extract_tool_result_content(&value["content"]);
 
         assert!(
             content.contains(summary_line),
@@ -984,7 +980,7 @@ mod tests {
             ]
         });
 
-        let content = extract_tool_result_content(&value);
+        let content = extract_tool_result_content(&value["content"]);
 
         assert_eq!(content.len(), MAX_TOOL_RESULT_CONTENT_LEN);
         assert!(
@@ -996,9 +992,9 @@ mod tests {
     #[test]
     fn parse_nested_tool_result_from_user_message() {
         let line = r#"{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_abc","content":"file contents...","is_error":false}]}}"#;
-        let value: Value = serde_json::from_str(line).unwrap();
+        let dto: ClaudeTranscriptLineDto = serde_json::from_str(line).unwrap();
 
-        let content = message_content_items(&value).unwrap();
+        let content = message_content_items(&dto).unwrap();
         let result = content
             .iter()
             .find(|item| is_tool_result_block(item))
@@ -1021,18 +1017,17 @@ mod tests {
             r#"{"type":"tool_result"}"#, // missing tool_use_id
         ];
 
-        // process_line requires app_handle — test the parsing path directly
+        // Every line shape must deserialize without error (DTO fields are
+        // all defaulted/lenient). Lines that are not valid JSON at all are
+        // skipped silently by process_line.
         for line in &bad_lines {
-            let result: Result<Value, _> = serde_json::from_str(line);
-            // Should either fail to parse or produce a Value we can handle
-            if let Ok(value) = result {
-                // These should not cause panics in extraction logic
-                let _ = line_type(&value);
-                let _ = value
-                    .get("message")
-                    .and_then(|m| m.get("content"))
-                    .and_then(|c| c.as_array());
-                let _ = tool_result_id(&value);
+            let result: Result<ClaudeTranscriptLineDto, _> = serde_json::from_str(line);
+            if let Ok(dto) = result {
+                let _ = dto.line_type.as_deref().unwrap_or("");
+                let _ = dto.message.as_ref().map(|m| m.content.as_array());
+                let _ = dto.tool_use_id.as_deref();
+                let _ = dto.is_error;
+                let _ = &dto.content;
             }
         }
     }
@@ -1242,19 +1237,12 @@ mod tests {
     // contract so future refactors can't silently regress it.
     #[test]
     fn extract_timestamp_uses_transcript_field_when_present() {
-        let line =
-            r#"{"type":"assistant","timestamp":"2026-04-22T10:30:00Z","message":{"content":[]}}"#;
-        let value: Value = serde_json::from_str(line).unwrap();
-
-        assert_eq!(extract_timestamp(&value), "2026-04-22T10:30:00Z");
+        assert_eq!(extract_timestamp(Some("2026-04-22T10:30:00Z")), "2026-04-22T10:30:00Z");
     }
 
     #[test]
     fn extract_timestamp_falls_back_to_now_when_absent() {
-        let line = r#"{"type":"assistant","message":{"content":[]}}"#;
-        let value: Value = serde_json::from_str(line).unwrap();
-
-        let ts = extract_timestamp(&value);
+        let ts = extract_timestamp(None);
 
         // Shape check against now_iso8601 — same ISO-8601 UTC format
         // (YYYY-MM-DDTHH:MM:SSZ). We can't compare exact values because
@@ -1266,14 +1254,21 @@ mod tests {
 
     #[test]
     fn extract_timestamp_ignores_non_string_field() {
-        // If a malformed line has a non-string timestamp (e.g. a number
-        // or null), we should fall back rather than coerce.
-        let line = r#"{"type":"assistant","timestamp":1234567890,"message":{"content":[]}}"#;
-        let value: Value = serde_json::from_str(line).unwrap();
+        // Integration guard for the full JSONL → DTO → fallback path: a
+        // non-string `timestamp` degrades to None via the DTO's lenient_string
+        // deserializer, so extract_timestamp falls back to now_iso8601 (this is
+        // the round-trip the migration must not lose — distinct from the
+        // extract_timestamp(None) unit case above).
+        let dto: ClaudeTranscriptLineDto = serde_json::from_str(
+            r#"{"type":"assistant","timestamp":1234567890,"message":{"content":[]}}"#,
+        )
+        .expect("line with non-string timestamp still parses");
+        assert!(
+            dto.timestamp.is_none(),
+            "non-string timestamp degrades to None via lenient_string"
+        );
 
-        let ts = extract_timestamp(&value);
-
-        // Falls back to now_iso8601 format (not the numeric literal).
+        let ts = extract_timestamp(dto.timestamp.as_deref());
         assert!(ts.ends_with('Z'));
         assert_eq!(ts.len(), 20);
     }
@@ -1282,11 +1277,10 @@ mod tests {
     fn extract_timestamp_preserves_full_iso_string_exactly() {
         // Sub-second precision and timezone offsets should pass through
         // untouched — the frontend parses whatever we emit.
-        let line =
-            r#"{"type":"user","timestamp":"2026-04-22T10:30:45.123Z","message":{"content":[]}}"#;
-        let value: Value = serde_json::from_str(line).unwrap();
-
-        assert_eq!(extract_timestamp(&value), "2026-04-22T10:30:45.123Z");
+        assert_eq!(
+            extract_timestamp(Some("2026-04-22T10:30:45.123Z")),
+            "2026-04-22T10:30:45.123Z"
+        );
     }
 
     // is_user_prompt / is_non_empty_user_block — direct in-module coverage.
@@ -1390,5 +1384,56 @@ mod tests {
 
         let null_type: Value = serde_json::from_str(r#"{"type":null,"text":"hello"}"#).unwrap();
         assert!(is_non_empty_user_block(&null_type));
+    }
+
+    /// Regression: a tool_result line with a wrong-typed `is_error` must
+    /// still emit the `agent-tool-call` event (lenient degradation, not a
+    /// silent drop). The DTO's `lenient_bool` turns `"oops"` → `None`,
+    /// which `process_tool_result` maps to `false` → `Done` status.
+    #[test]
+    fn process_line_emits_with_wrong_typed_is_error() {
+        let concrete = Arc::new(crate::runtime::FakeEventSink::new());
+        let events: Arc<dyn EventSink> = concrete.clone();
+        let mut emitter = TestRunEmitter::new(events.clone());
+        let mut in_flight: InFlightToolCalls = HashMap::new();
+        let mut num_turns = 0;
+        let mut last_cwd = None;
+
+        // Seed in_flight so the tool_result has a match
+        in_flight.insert(
+            "toolu_xyz".to_string(),
+            InFlightToolCall {
+                started_at: Instant::now(),
+                started_at_iso: "2026-04-28T12:00:00Z".to_string(),
+                tool: "Bash".to_string(),
+                args: "echo hi".to_string(),
+                is_test_file: false,
+                test_match: None,
+            },
+        );
+
+        let line = r#"{"type":"tool_result","tool_use_id":"toolu_xyz","content":"ok","is_error":"oops"}"#;
+        process_line(
+            line,
+            "sess-1",
+            None,
+            &events,
+            &mut emitter,
+            &mut in_flight,
+            &mut num_turns,
+            &mut last_cwd,
+        );
+
+        assert_eq!(concrete.count("agent-tool-call"), 1);
+        assert!(in_flight.is_empty(), "matched tool_use should be removed");
+    }
+
+    /// Regression: `summarize_input` must preserve the absent vs present-null
+    /// distinction ("" vs "null") that the DTO's `#[serde(flatten)] rest`
+    /// map preserves for `tool_use.input`.
+    #[test]
+    fn summarize_input_preserves_absent_vs_null() {
+        assert_eq!(summarize_input(None), "");
+        assert_eq!(summarize_input(Some(&serde_json::Value::Null)), "null");
     }
 }

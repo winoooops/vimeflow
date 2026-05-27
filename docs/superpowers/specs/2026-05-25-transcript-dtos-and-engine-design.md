@@ -21,11 +21,11 @@ rollout-status parsers with typed `#[derive(Deserialize)]` DTOs +
 `lenient_*` deserializers (see
 [`docs/reviews/patterns/parser-resilience.md`](../../reviews/patterns/parser-resilience.md)).
 Separately, both tailers independently re-implement near-identical
-streaming *mechanics* — the `BufReader`/`read_line` loop, `stop_flag`,
+streaming _mechanics_ — the `BufReader`/`read_line` loop, `stop_flag`,
 `POLL_INTERVAL`, and the `TestRunEmitter` replay boundary. Each also
-declares the same *shape* of per-session state
+declares the same _shape_ of per-session state
 (`in_flight`/`num_turns`/`last_cwd`), threaded identically through the
-loop — but the state's *type* is provider-specific (Codex's
+loop — but the state's _type_ is provider-specific (Codex's
 `InFlightToolCall` carries `CompletionMode`, Claude's does not). That
 split is precisely why C keeps the loop mechanics in the shared service
 while the state itself lives in the provider decoder (§ 2 G2). The two
@@ -33,23 +33,23 @@ behavioral divergences are:
 
 - the per-line `process_line` body — the genuinely provider-specific
   part (Claude content-blocks vs Codex `response_item` / `function_call`
-  + `CompletionMode`); and
+  - `CompletionMode`); and
 - **partial-line buffering** — Codex buffers a JSONL line split across
   read boundaries until its trailing `\n`
   (`codex/transcript.rs`), while Claude processes each `read_line`
   result immediately (`claude_code/transcript.rs`) and therefore
-  *silently drops* events on a split line. This is a behavioral
+  _silently drops_ events on a split line. This is a behavioral
   divergence, not shared scaffolding — see the standardization
   decision below.
 
 **Why now / why paired.** A-transcript makes the implicit `Value`-pull
-tolerance explicit, centralized, and test-pinned. It does *not* by itself
+tolerance explicit, centralized, and test-pinned. It does _not_ by itself
 convert an upstream field rename into a failure — lenient parsing still
 deserializes a missing/renamed field to `None`, exactly as the `Value`
 walk did — but it collapses the ~100 scattered `.get("x") → None` no-ops
 into one declared per-message contract whose tolerance is reviewable in
 one place and exercised by fixtures, so field-shape drift becomes
-*detectable under test* instead of an invisible no-emit. C removes the
+_detectable under test_ instead of an invisible no-emit. C removes the
 duplication so future tailer changes happen once instead of twice. They
 are paired because:
 
@@ -59,7 +59,7 @@ are paired because:
   decoder's `decode_line` would still hold a `Value`-pull body — the seam
   lands while the ~100 fragile extraction sites stay untyped, and you'd
   rewrite those same bodies again when A-transcript follows. Pairing
-  rewrites each body *once*: typed as it moves into its decoder.
+  rewrites each body _once_: typed as it moves into its decoder.
 
 **Why gated behind a test-hardening Phase 0.** A coverage audit (2026-05-25)
 found the transcript test suites are strong on per-line parsing (which
@@ -67,11 +67,11 @@ de-risks A-transcript) but have two gaps on exactly the streaming-engine
 behaviors C extracts:
 
 1. **Partial-line buffering** — Codex has it, Claude doesn't, and
-   *neither* is tested at the tailer level (the integration tests
+   _neither_ is tested at the tailer level (the integration tests
    `fs::write` the whole file once, so the split-line path never runs).
    **Decision: C standardizes on Codex-style buffering for both.** For
-   Codex this is preservation; for Claude it is an *intentional behavior
-   change* that fixes the latent split-line event drop (buffering is
+   Codex this is preservation; for Claude it is an _intentional behavior
+   change_ that fixes the latent split-line event drop (buffering is
    ~free: two byte-compares per complete line, one reused buffer, no
    steady-state allocation — the per-line JSON parse dwarfs it). The
    exact buffering contract — EOF with a pending non-`\n`-terminated
@@ -82,21 +82,22 @@ behaviors C extracts:
 
    **Sequencing (important):** Phase 0 pins only the **replay→live
    boundary** (deterministically, via `test-run` counts — see § 3); it
-   does *not* add a split-line buffering test. A buffering test can be made
+   does _not_ add a split-line buffering test. A buffering test can be made
    deterministic only by feeding bytes to the extracted buffering
-   *synchronously*, which is impossible while buffering is inlined in
-   `tail_loop` (a poll-loop integration test cannot prove a *buffered*
+   _synchronously_, which is impossible while buffering is inlined in
+   `tail_loop` (a poll-loop integration test cannot prove a _buffered_
    partial was read before the line completed). So **both** buffering
-   tests — Codex's preserved behavior *and* Claude's newly-added behavior —
+   tests — Codex's preserved behavior _and_ Claude's newly-added behavior —
    land in C (§ 5) as one synchronous unit test on `TranscriptTailService`:
-   where the test can be deterministic *and* where buffering could actually
+   where the test can be deterministic _and_ where buffering could actually
    regress. Phase 0 = "pin (only) what can be deterministically pinned
    before extraction."
-2. **Replay → live boundary** — no test appends a line *after* the initial
+
+2. **Replay → live boundary** — no test appends a line _after_ the initial
    EOF / `finish_replay` to assert live emission. Pure preservation for
    both adapters → fully covered in Phase 0.
 
-Net: Phase 0 lands all-green against *current* behavior (both adapters'
+Net: Phase 0 lands all-green against _current_ behavior (both adapters'
 replay→live) before any refactor touches the code it protects. Buffering —
 Codex's preserved behavior and Claude's new behavior alike — is pinned
 deterministically in C (§ 5), the same PR that extracts and changes it.
@@ -119,33 +120,33 @@ design + go/no-go after A-transcript + C land.
   DTOs + `lenient_*` deserializers, mirroring A-status (#257) and
   [`parser-resilience.md`](../../reviews/patterns/parser-resilience.md).
   Outcome: the parse contract becomes explicit, centralized, and
-  test-pinned. This does *not* make an upstream field rename a compile
+  test-pinned. This does _not_ make an upstream field rename a compile
   failure — `Option<T>` / `#[serde(default)]` / `lenient_*` deserialize a
   missing or renamed field to `None`, exactly as the `Value` walk did.
   The win is that the ~100 scattered implicit `.get("x") → None` no-ops
   collapse into one declared per-message DTO whose tolerance is reviewable
   in one place and exercised by fixtures, so field-shape drift is
-  *detectable under test* (a fixture-covered event stops emitting) instead
+  _detectable under test_ (a fixture-covered event stops emitting) instead
   of an invisible silent drop.
 - **G2 (C).** Hoist the duplicated tail scaffolding — the near-identical
   `tail_loop` in both `claude_code/transcript.rs:211` and
   `codex/transcript.rs:190` — into one `TranscriptTailService` that owns
-  exactly the provider-*agnostic* loop mechanics: the
+  exactly the provider-_agnostic_ loop mechanics: the
   `BufReader`/`read_line` loop, `stop_flag`, `POLL_INTERVAL`, partial-line
-  buffering, the read-error branch, and the *trigger* for the replay→live
-  boundary: it calls `decoder.on_caught_up()` on *each* EOF — like the
+  buffering, the read-error branch, and the _trigger_ for the replay→live
+  boundary: it calls `decoder.on_caught_up()` on _each_ EOF — like the
   current `finish_replay()` this is idempotent, so only the first call
   (the replay→live transition) has an observable effect. Everything
   provider-shaped — the per-session `in_flight` (whose value type
   differs: Codex carries `CompletionMode`, Claude does not), `num_turns`,
   `last_cwd`, and the `TestRunEmitter` — lives **inside** the injected
-  `TranscriptDecoder`, which is *constructed* with the per-session context
+  `TranscriptDecoder`, which is _constructed_ with the per-session context
   it needs (the `EventSink`, `session_id`, and `cwd`) and then exposes
   only `decode_line(&mut self, line: &str)` and `on_caught_up(&mut self)`
   (the `finish_replay` flush). Because that context is owned by the
   decoder, no per-line context struct is passed. The service therefore holds no provider state
   and needs no generic parameter — it is constructed from a `Box<dyn
-  TranscriptDecoder>` plus a `&'static str` provider label (used only for
+TranscriptDecoder>` plus a `&'static str` provider label (used only for
   the unified read-error log line required by F-CONCURRENCY). The trait
   carries a `Send` supertrait bound (`trait TranscriptDecoder: Send`) so
   the `Box<dyn TranscriptDecoder>` — already `'static` by the
@@ -153,9 +154,9 @@ design + go/no-go after A-transcript + C land.
   that G4 describes. § C specifies this boundary in full.
 - **G3 (consequence of G2).** Because the shared service has exactly one
   buffering implementation, **Claude adopts Codex-style buffering**. That
-  single change has two observable effects: it *fixes* the latent
+  single change has two observable effects: it _fixes_ the latent
   split-line event drop (Claude now emits those records), and a
-  *permanently* newline-less **final** record is no longer emitted — it
+  _permanently_ newline-less **final** record is no longer emitted — it
   stays buffered, matching Codex, where Claude today processes the no-`\n`
   `read_line` result immediately. Both effects are bounded by Phase-2
   tests (§ 5) and reflected in the F-EVENTS carve-out below.
@@ -169,10 +170,10 @@ design + go/no-go after A-transcript + C land.
 
 - **The rollout-locator subsystem** (`CompositeLocator` / `SqliteFirst` /
   `FsScan` and its ~8 supporting types) is **untouched**. A-transcript + C
-  scope is the transcript *parse* + *tail* path only — the locator is a
+  scope is the transcript _parse_ + _tail_ path only — the locator is a
   separate step-9 concern.
 - **A-status is not re-done.** It already shipped (#257); this effort
-  *reuses* its `lenient_*` helpers rather than re-deriving them.
+  _reuses_ its `lenient_*` helpers rather than re-deriving them.
 - **Step F** (the single-class session-lifecycle capstone) is **deferred**
   — see § 6. It reshapes `watcher_runtime` / the D' `AgentWatcherService`
   and earns its own design + go/no-go after A-transcript + C land.
@@ -182,25 +183,25 @@ design + go/no-go after A-transcript + C land.
 
 ### Frozen constraints (v4-frozen — must hold across A-transcript + C)
 
-- **F-EVENTS** — the emitted `AgentEvent` *variants and their shapes* are
+- **F-EVENTS** — the emitted `AgentEvent` _variants and their shapes_ are
   frozen; DTOs are an internal parse layer producing the same
   variants/shapes from the same bytes. **G3 carve-out (two sides of one
   change — Claude adopting Codex-style buffering):** (a) Claude now
-  *emits* the event for a split-line input it currently drops; (b) Claude
-  no longer *emits* a permanently newline-less *final* record (it stays
+  _emits_ the event for a split-line input it currently drops; (b) Claude
+  no longer _emits_ a permanently newline-less _final_ record (it stays
   buffered, matching Codex, where Claude today processes the no-`\n`
   `read_line` result immediately). (a) is the fix; (b) is benign — a
   newline-less final line is malformed/incomplete and both writers
   newline-terminate records — and is pinned by § 5's truncated-final test.
   No other byte→event mapping changes.
 - **F-TRAIT** — `TranscriptStreamer::tail(&self, events, session_id,
-  cwd, transcript_path) -> Result<TranscriptHandle, String>`
+cwd, transcript_path) -> Result<TranscriptHandle, String>`
   (`traits.rs:123`) is frozen, and its one-line delegation to
   `transcript::start_tailing` is unchanged; the body that changes is
   `start_tailing`'s (to construct a decoder + service — § 5).
   `TranscriptState::start_or_replace` is likewise
   unchanged — the shorthand "`Arc<dyn TranscriptStreamer>`" means its
-  *streamer* parameter stays `Arc<dyn TranscriptStreamer>`; its full B''
+  _streamer_ parameter stays `Arc<dyn TranscriptStreamer>`; its full B''
   signature (`streamer`, `events`, `session_id`, `transcript_path`,
   `cwd`) is untouched.
 - **F-CONCURRENCY** — `stop_flag` as `AtomicBool` read with
@@ -208,7 +209,7 @@ design + go/no-go after A-transcript + C land.
   `TranscriptHandle::stop` / `Drop`, PR #152 F12), `POLL_INTERVAL`
   (500 ms), and the first-EOF `finish_replay()` boundary are preserved
   verbatim by the shared service. The read-error → `warn` → sleep
-  *behavior* is preserved too, but the warning *text* is not a frozen
+  _behavior_ is preserved too, but the warning _text_ is not a frozen
   contract: the providers log different literals today
   (`codex/transcript.rs:251` "Error reading Codex rollout transcript
   line" vs `claude_code/transcript.rs:272` "Error reading transcript
@@ -228,36 +229,36 @@ design + go/no-go after A-transcript + C land.
 ## 3. Phase 0 — test hardening (lands first, all-green, no production change)
 
 **Purpose.** Build the regression net for the loop-level behaviors C
-extracts, *before* C touches them. Phase 0 adds tests only — zero
+extracts, _before_ C touches them. Phase 0 adds tests only — zero
 production changes — and is all-green against the current branch tip.
 
 **Existing coverage (do not redo).** Two layers already exist:
 
-- *Per-line parsing* — `parse_tool_use_from_assistant_line`,
+- _Per-line parsing_ — `parse_tool_use_from_assistant_line`,
   `extract_tool_result_content_*`, and the Codex `response_item` /
   `CompletionMode` tests are pure functions over a single JSON line.
   A-transcript (Phase 1) leans on these.
-- *End-to-end replay* — both adapters already drive the full loop with
+- _End-to-end replay_ — both adapters already drive the full loop with
   `FakeEventSink`, in different homes (detailed under **Harness** below):
   Claude via `transcript_fixture_tests.rs` (`start_or_replace`), Codex via
   the in-module `mod tests` in `codex/transcript.rs` (`start_tailing`).
-  Both write a whole fixture up front, so the loop *is* exercised — but
-  only in the **replay** direction (whole file written *before* start) and
+  Both write a whole fixture up front, so the loop _is_ exercised — but
+  only in the **replay** direction (whole file written _before_ start) and
   only on `\n`-terminated lines.
 
 **The gap (confirmed).** Because those fixtures write the file once up
 front, two behaviors C must preserve are never exercised: (1) a JSONL
 line **split across reads** (no test writes partial bytes then completes
 them); and (2) a line **appended after catch-up** (no test writes to the
-file *after* `start_or_replace`, so the post-first-EOF live-tail path and
+file _after_ `start_or_replace`, so the post-first-EOF live-tail path and
 the `finish_replay` boundary go untested). **Phase 0 closes only gap (2),
 the replay→live boundary.** Gap (1), split-line buffering, is real but
 cannot be pinned deterministically before extraction, so it is closed in C
 (§ 5) — see "Split-line buffering is pinned in C" below. Phase 0 does
-*not* re-cover replay or per-line parsing.
+_not_ re-cover replay or per-line parsing.
 
 **Harness — reuse each adapter's existing pattern.** The two adapters
-already test the loop end-to-end in *different* homes, and Phase 0 extends
+already test the loop end-to-end in _different_ homes, and Phase 0 extends
 each in place rather than inventing a shared one:
 
 - **Claude** — `claude_code/transcript_fixture_tests.rs`, driving
@@ -266,7 +267,7 @@ each in place rather than inventing a shared one:
   `codex/transcript.rs` (mirroring `start_tailing_replays_…` at
   `transcript.rs:878`), driving `start_tailing(...)`.
 
-Both entry points' *signatures* are preserved across C — the rewrite
+Both entry points' _signatures_ are preserved across C — the rewrite
 changes their bodies to build a decoder + `TranscriptTailService`, not
 their call shape — so tests written against them exercise today's
 `tail_loop` and tomorrow's `TranscriptTailService::run` **unchanged**,
@@ -282,7 +283,7 @@ split-write is a § 5 / C concern, not Phase 0.
 **Tests to add — T-replay (replay→live boundary via `test-run`, both
 adapters).** Only `test-run` events flow through `TestRunEmitter` /
 `finish_replay`; `agent-tool-call` / `agent-turn` / `agent-cwd` emit
-*independently* of the boundary and so cannot pin it. A `test-run` is
+_independently_ of the boundary and so cannot pin it. A `test-run` is
 built only when a test-runner tool **start** (registered in `in_flight`)
 is matched by its **completion** — an orphan completion returns `None` and
 never `submit`s — so the fixture uses start+completion **pairs**; and the
@@ -292,30 +293,30 @@ existing turn fixtures pass. Recipe:
 
 1. Pre-write **≥3** test-run-producing pairs. (≥3, not ≥2: the final
    assertion is `test-run == 2` = 1 replay-collapsed + 1 live; with only
-   *2* replay pairs, a regression that fails to collapse *and* drops the
+   _2_ replay pairs, a regression that fails to collapse _and_ drops the
    live snapshot would also total 2 — `2 uncollapsed + 0 live`. With ≥3,
    no-collapse totals ≥3 and missing-live totals 1, so `== 2` uniquely
    means "collapsed + live".) Claude already has this —
-   `transcript_vitest_replay.jsonl` carries *three* vitest pairs and
+   `transcript_vitest_replay.jsonl` carries _three_ vitest pairs and
    `replay_emits_only_latest_snapshot` already asserts the 3→1 collapse —
    so Claude's T-replay reuses that fixture and adds only the live half.
-   Codex's `start_tailing_replays_…` has just *one* `exec_command`
+   Codex's `start_tailing_replays_…` has just _one_ `exec_command`
    "cargo test" pair (`codex:898`; the apply-patch pair is not a
    test-runner pair), so the Codex test **authors two more pairs** from
    the same shape. **Copy** the fixture lines into a tempdir transcript and
-   tail *that* path — never the checked-in fixture, since the live appends
+   tail _that_ path — never the checked-in fixture, since the live appends
    in steps 3–4 would otherwise mutate it and skew future replay counts.
    Start the tail with `Some(cwd)`.
 2. **Catch-up barrier:** `wait_for_count("test-run", 1, 5s)`. With
    buffering, replay holds all snapshots and emits exactly one at
    `finish_replay` (first EOF), so the `test-run` count is `0` until then —
-   this wait proves replay is done, and only *now* is an append genuinely
+   this wait proves replay is done, and only _now_ is an append genuinely
    "live". Appending earlier would fold the new pair into replay and
    collapse it, making the final count scheduling-dependent.
-3. Append a *new* full pair **live** (start line, then completion line).
+3. Append a _new_ full pair **live** (start line, then completion line).
 4. **Drain barrier:** append a **sentinel** line emitting a distinct
    non-`test-run` event (a user prompt → `agent-turn`). Capture
-   `n0 = sink.count("agent-turn")` *before* the append, then
+   `n0 = sink.count("agent-turn")` _before_ the append, then
    `wait_for_count("agent-turn", n0 + 1, 5s)` — baseline-relative because
    the replay fixture already emits an `agent-turn` (`codex:893`), so an
    absolute `wait_for_count(.., 1)` would return immediately. Being last,
@@ -333,23 +334,23 @@ One test per adapter — both share the same `TestRunEmitter` and call
 `finish_replay()` (`claude:251`, `codex:209`).
 
 **Split-line buffering is pinned in C, not Phase 0.** A deterministic
-split-line test must feed bytes to the buffering logic *synchronously* —
+split-line test must feed bytes to the buffering logic _synchronously_ —
 impossible while buffering is inlined in `tail_loop`: an integration test
-through the real poll loop cannot prove a *buffered* partial was read
+through the real poll loop cannot prove a _buffered_ partial was read
 before the line completed, because a buffered partial emits no signal (any
 timing-based attempt either races or can false-pass). The authoritative
 pin therefore lands in C (§ 5) as a synchronous unit test on the extracted
-`TranscriptTailService` — both where the test *can* be deterministic and
+`TranscriptTailService` — both where the test _can_ be deterministic and
 where buffering could actually regress. That one C test covers Codex's
 preserved buffering **and** Claude's newly-added buffering (§ 1 G3).
 
 **Acceptance (Phase 0 gate).** Both transcript suites green with T-replay
 added (one per adapter); `git diff` touches test code only (no production
-change); the new tests pass against the *pre-refactor* `tail_loop`.
+change); the new tests pass against the _pre-refactor_ `tail_loop`.
 A-transcript and C do not start until Phase 0 is green and committed.
 
 **Out of scope for Phase 0.** The EOF-with-pending-partial edge (file
-ends mid-line, `\n` never arrives) is *not* pinned here — current Codex
+ends mid-line, `\n` never arrives) is _not_ pinned here — current Codex
 holds such a partial buffered indefinitely. That behavior and the
 standardized policy are defined and tested in § C (the deferred
 engine-contract decision), where the Claude change is introduced.
@@ -358,14 +359,14 @@ engine-contract decision), where the Claude change is introduced.
 
 **Precedent (follow exactly).** A-status (#257) already ran this play for
 the statusline / rollout-status parsers. A-transcript applies the
-*identical* recipe to the transcript `process_line` paths — it is a
+_identical_ recipe to the transcript `process_line` paths — it is a
 representation swap, not a behavior change.
 
 - **Reuse the shared deserializers** in `agent/adapter/serde_helpers.rs`:
   `lenient_string`, `lenient_u64`, `lenient_f64`, `lenient_object` (each
   returns `Option<T>` and degrades a wrong-typed field to `None` rather
   than erroring the parse). They are `pub(super)` = `pub(in
-  agent::adapter)`, and `statusline.rs` — a sibling at the same module
+agent::adapter)`, and `statusline.rs` — a sibling at the same module
   depth as `transcript.rs` — already calls them, so the transcript
   parsers reach them with **no visibility change**.
 - **Add two new lenient helpers** alongside them: `lenient_bool` and
@@ -375,7 +376,7 @@ representation swap, not a behavior change.
   custom-tool-output metadata path, `Value::as_i64`) — bool/signed-int
   fields A-status never needed, so `serde_helpers` has no helper for them
   yet. Without lenient versions, a wrong-typed `is_error` / `exit_code`
-  would *error* the DTO parse instead of degrading to `None` (changing
+  would _error_ the DTO parse instead of degrading to `None` (changing
   the current `.unwrap_or(false)` / `.is_some_and(..)` semantics). The two
   are a one-for-one extension of the existing precedent (same `Option<T>`
   / wrong-type→`None` shape).
@@ -391,35 +392,35 @@ representation swap, not a behavior change.
   DTO types + their fields (or the conversion fns over them) must be
   `pub(super)` so `transcript.rs` reads them as typed field access — a
   private DTO in a sibling/child module is not visible to the parser. Raw
-  `Value` carve-out **subfields** (Claude `tool_result.content`; *not* the
+  `Value` carve-out **subfields** (Claude `tool_result.content`; _not_ the
   whole Codex `payload`, which is a typed per-`type` DTO — only specific
-  subfields stay raw) carry `#[serde(default)]` so a *missing* field
+  subfields stay raw) carry `#[serde(default)]` so a _missing_ field
   deserializes to `Value::Null` rather than erroring — the ported helpers
   already treat Null/absent as the empty/`None` case (a `tool_result`
   missing `content` → `extract_tool_result_content` returns `""`), exactly
   as the current `.get(..) → None`. (An `Option<Value>` field instead defaults to `None`
-  *and* maps JSON `null` → `None`, collapsing the two — which is why
+  _and_ maps JSON `null` → `None`, collapsing the two — which is why
   presence-sensitive `duration` can use neither; see its Codex bullet.)
 
-**Claude shapes (~46 sites).** Type the *envelope*
+**Claude shapes (~46 sites).** Type the _envelope_
 (`ClaudeTranscriptLineDto` / `ClaudeMessageDto`), which must carry **all**
 top-level fields `process_line` reads — not just `{type, message,
-timestamp}` but also the top-level **`cwd`** (emits `agent-cwd` *before*
+timestamp}` but also the top-level **`cwd`** (emits `agent-cwd` _before_
 the `line_type` dispatch, `claude:301`) and the top-level **`tool_result`**
 shape (`tool_use_id` / `is_error` / `content`), since `tool_result` is one
 of the top-level `line_type` arms alongside `assistant` / `user`
 (`claude:326`) — not only a nested block. The per-content layer stays
-deliberately loose, because the current tolerance is *wider than derive
-can express*:
+deliberately loose, because the current tolerance is _wider than derive
+can express_:
 
 - **Content + block classification are not a derivable tagged enum.**
   `message.content` is string | array | (object/number/null), and the
-  last case must read as *no prompt* — never a line parse failure
+  last case must read as _no prompt_ — never a line parse failure
   (`is_user_prompt`, `claude:589`; test `:1343`). Within an array, a block
   with a **missing or non-string `type`** counts as user content
   (explicit test `…falls_through_to_content`, `claude:1376`), which a
   `#[serde(tag = "type")]` + `#[serde(other)]` enum cannot express (it
-  catches only unknown *string* tags and would fail on a typeless / non-
+  catches only unknown _string_ tags and would fail on a typeless / non-
   object item). So keep `content` raw (`Value`, or `Vec<Value>` for the
   array case) and **port the existing predicates** (`is_user_prompt`,
   `is_non_empty_user_block`, `is_tool_result_block`, `line_type`)
@@ -430,7 +431,7 @@ can express*:
   it is `from_value`'d into a typed block DTO whose **scalars** are lenient
   fields — `tool_use` → `{ id, name: Option<String> via lenient_string }`;
   `tool_result` → `{ tool_use_id: Option<String> (lenient_string),
-  is_error: Option<bool> (lenient_bool) }`. (`is_error` is where
+is_error: Option<bool> (lenient_bool) }`. (`is_error` is where
   `lenient_bool` earns its place.) The union/arbitrary fields stay raw and
   keep their helpers:
   - `tool_result.content` → plain raw `Value (#[serde(default)])`;
@@ -439,8 +440,8 @@ can express*:
     `claude:686`) — a one-line, behavior-neutral change (absent and `null`
     both yield `""` today, so `#[serde(default)]` → `Value::Null` matches).
   - `tool_use.input` is **presence-sensitive** like Codex's `duration`:
-    `summarize_input` returns `""` for *absent* but `"null"` for
-    *present-`null`* (`claude:602`), which a plain `Value (#[serde(default)])`
+    `summarize_input` returns `""` for _absent_ but `"null"` for
+    _present-`null`_ (`claude:602`), which a plain `Value (#[serde(default)])`
     (absent → `Value::Null`) would conflate. Read it via the block DTO's
     `#[serde(flatten)] rest` map — `rest.get("input")` gives the
     `Option<&Value>` `summarize_input` already expects (`None` = absent →
@@ -464,12 +465,12 @@ predicates.
 contract points the DTO must honor:
 
 - **Two cwd sources, in order.** `agent-cwd` comes from `session_meta`'s
-  `payload.cwd` (`extract_session_cwd`, `codex:53`) *and*, mid-session,
+  `payload.cwd` (`extract_session_cwd`, `codex:53`) _and_, mid-session,
   from an `exec_command` `function_call`'s `arguments.workdir`
   (`extract_exec_workdir`, `codex:76`); the dispatcher tries `session_meta`
   first, then the workdir fallback (`extract_codex_cwd`, `codex:100`).
   Both must be preserved, in that order — dropping or reordering either is
-  an F-EVENTS / ordering regression. `turn_context.cwd` remains *not* a
+  an F-EVENTS / ordering regression. `turn_context.cwd` remains _not_ a
   source (it just repeats `session_meta.cwd`; matching it causes false
   reverts — `codex:48`).
 - **Typed payload scalars; raw carve-outs.** Each record's `payload` is a
@@ -486,7 +487,7 @@ contract points the DTO must honor:
     those helpers (or read from the flattened raw map if presence-
     sensitive), never narrowed to a fixed struct.
   - `function_call.arguments` and custom-tool `payload.output` are
-    *JSON-encoded strings* (`codex:87`, `:679`, `:752`) — typed as
+    _JSON-encoded strings_ (`codex:87`, `:679`, `:752`) — typed as
     `Option<String>` (`lenient_string`, so a non-string degrades to
     `None`), then **re-parsed** in conversion: `arguments` → `workdir`
     (cwd), `cmd` || `command` (match), `path` || `file_path` (arg
@@ -500,23 +501,23 @@ contract points the DTO must honor:
     `exec_command_duration_ms`, `codex:765`). No `Option` field captures
     this (`Option<DurationDto>` / `Option<Value>` both coerce JSON `null`
     → `None`). Realize it with `#[serde(flatten)] rest: serde_json::Map<
-    String, Value>` on that payload DTO — presence is
+String, Value>` on that payload DTO — presence is
     `rest.contains_key("duration")`, the value `rest.get("duration")`, fed
     to the ported `exec_command_duration_ms` exactly as today. This is the
     one field needing the flattened raw map; the scalars above are
     ordinary typed fields.
 - **Two-level dispatch, each with a fall-through.** Codex dispatches
-  *twice*: the top-level `type` (`session_meta` / `response_item` /
+  _twice_: the top-level `type` (`session_meta` / `response_item` /
   `event_msg`) selects the record, then an inner `payload.type` selects
   the payload variant — for `response_item` that is `function_call` /
   `function_call_output` / …, and for **`event_msg`** it is `user_message`
   / `exec_command_end` / `patch_apply_end` (`process_event_msg`,
   `codex:347`). All of these become typed enums (replacing the
   `value.get("type")` / `payload.get("type")` string compares), and
-  **each** dispatch — top-level *and* both inner ones — needs an explicit
+  **each** dispatch — top-level _and_ both inner ones — needs an explicit
   unknown/typeless fall-through (a `#[serde(other)]` tagged enum where
   `type` is always a present string; otherwise a small classifier), so an
-  unrecognized record *or* payload degrades rather than fails (dropping
+  unrecognized record _or_ payload degrades rather than fails (dropping
   the `event_msg` fall-through would lose turns / test-run completions /
   patch completions). The `CompletionMode`-bearing `function_call` /
   output records are retained.
@@ -534,9 +535,9 @@ enclosing block); `summarize_input` already takes the `input` value. The
 C later relocates the body into the decoder.
 
 **Risk + mitigation.** The one risk is a `lenient_*` deserializer being
-*stricter* than the old `.get()` walk and silently dropping an event.
-Mitigations: (1) the *reused* helpers are the same ones A-status
-validated against precisely this failure mode, and the two *new* ones
+_stricter_ than the old `.get()` walk and silently dropping an event.
+Mitigations: (1) the _reused_ helpers are the same ones A-status
+validated against precisely this failure mode, and the two _new_ ones
 (`lenient_bool` / `lenient_i64`) get their own unit tests (acceptance
 below); (2) the existing per-line parse tests (§ 3 "existing coverage")
 pin the shapes and run unchanged; (3) migrate shape-by-shape, each
@@ -626,30 +627,30 @@ while !stop.load(Ordering::Acquire) {            // unchanged stop semantics
    `trim_end_matches('\n')`. The shared `normalize(full)` strips the line
    terminator CRLF-safely — `trim_end_matches(['\r', '\n'])` (the same
    char-array pattern already used at `runtime/ipc.rs:275`) — and returns
-   `None` when the remainder is blank *after a full `.trim()`*. For Claude
+   `None` when the remainder is blank _after a full `.trim()`_. For Claude
    the **blank-line skip is exact** (both skip a line blank after `.trim()`),
    while a **non-blank line is event-equivalent**: the engine strips only
    the terminator and leaves any surrounding whitespace Claude's `.trim()`
    would have removed, which `serde_json::from_str` tolerates identically.
    For Codex it is likewise **event-equivalent, not verbatim**: Codex today
    skips only the
-   *exactly* empty line (after `trim_end_matches('\n')`) and lets a
+   _exactly_ empty line (after `trim_end_matches('\n')`) and lets a
    whitespace-only line fall through to `process_line`, where it is a no-op
    parse failure (`codex:234`) — so no event either way, but the engine now
-   skips it *before* `decode_line` instead of after a failed parse. The
+   skips it _before_ `decode_line` instead of after a failed parse. The
    engine does **not** strip leading/interior whitespace from a non-blank
    line: JSONL records start with `{` and `serde_json::from_str` tolerates
    incidental surrounding whitespace, so a record that parsed before still
    parses. (The content-level trims inside the decoder predicates — e.g.
    `is_user_prompt`'s `.trim()` on text — are unchanged; they run on parsed
    values, not the raw line.)
-2. **EOF with a pending partial → keep buffering, do *not* flush.** When
+2. **EOF with a pending partial → keep buffering, do _not_ flush.** When
    `read_line` returns `Ok(0)` while `partial` is non-empty (the file ends
    mid-line, no `\n`), the engine calls `on_caught_up` + sleeps and leaves
    `partial` buffered for when the line completes — matching Codex today
    (the partial sits until a `\n` arrives). Rationale: during live tailing
    a newline-less tail means the record is still being written; emitting it
-   would parse a truncated line. The only cost — a *permanently*
+   would parse a truncated line. The only cost — a _permanently_
    newline-less final record (finished session whose last line lacks `\n`)
    never emits — is a non-case in practice (both writers newline-terminate
    records) and is exactly today's Codex behavior, so no regression. For
@@ -664,7 +665,7 @@ other `Read` / `BufRead` methods are unreachable — `run` only calls
 signature `read_line(&mut self, buf: &mut String) -> io::Result<usize>`:
 the entry **appends** its bytes to `buf` and returns `Ok(len)`, or appends
 nothing and returns `Ok(0)` to signal EOF. The script must route the
-service *through its own `Ok(0)` arm while `partial` is non-empty* — the
+service _through its own `Ok(0)` arm while `partial` is non-empty_ — the
 contract under test. Cases (each "→" is one `read_line` call):
 
 - **Partial survives a service-level EOF, then completes.** appends
@@ -686,9 +687,9 @@ contract under test. Cases (each "→" is one `read_line` call):
   `stop` → `decode_line` is **not** called (blank-line skip). (Each case
   ends with the terminating `Ok(0)`/`stop` flip so `run` returns.) Pins
   the § 5 normalization contract.
-- **Claude split-line *fix*, end-to-end (the G3 proof).** The cases above
-  use a *recording* decoder, so they prove **engine** assembly + the EOF
-  policy provider-agnostically — not that any provider then *emits*. To
+- **Claude split-line _fix_, end-to-end (the G3 proof).** The cases above
+  use a _recording_ decoder, so they prove **engine** assembly + the EOF
+  policy provider-agnostically — not that any provider then _emits_. To
   prove the G3 fix (Claude now emits the previously-dropped split-line
   event), run the **real** `ClaudeTranscriptDecoder` + `FakeEventSink`
   through the service with a `ScriptedBufRead` that splits a real Claude
@@ -699,23 +700,23 @@ contract under test. Cases (each "→" is one `read_line` call):
   `ClaudeTranscriptDecoder::new` is in scope) and reaches the base
   service's override via its `pub(crate)` `with_poll_interval`. (A Codex
   end-to-end analogue is optional — the engine assembly case + the
-  existing Codex tests cover its *preserved* buffering.)
+  existing Codex tests cover its _preserved_ buffering.)
 
 This exercises the real service wiring — not a detached helper — keeping
 the inline reused-buffer assembly (no per-line owned-`String` allocation).
 The engine cases pin assembly + the EOF policy (Codex's buffering is thus
-*preserved*); the Claude split-line **fix** (§ 1 G3) is proven end-to-end
+_preserved_); the Claude split-line **fix** (§ 1 G3) is proven end-to-end
 by the real-decoder case. Together they replace the timing-based attempt
 Phase 0 could not make deterministic. (The test builds the service with
 `with_poll_interval(Duration::ZERO)` so the post-EOF sleep — which runs
-*before* the loop re-checks `stop` — is a no-op and the test is instant.)
+_before_ the loop re-checks `stop` — is a no-op and the test is instant.)
 
 **The spawn site collapses (G4).** Both adapters' `TranscriptStreamer::tail()`
 already delegate to `transcript::start_tailing(events, session_id,
 transcript_path, cwd)` (`claude_code/mod.rs:106`, `codex/mod.rs:149`), and
 the Codex Phase 0 tests call `start_tailing` directly — so `start_tailing`
 (in each `transcript.rs`) is the spawn site that changes; `tail()` stays a
-one-line delegator. Validation is *not* here: it is the separate
+one-line delegator. Validation is _not_ here: it is the separate
 `TranscriptPathValidator::validate` method, so `start_tailing` just opens
 the already-validated path (temp-path fixtures keep working). The body
 becomes, identically for both adapters bar the decoder type + label:
@@ -766,7 +767,7 @@ both provider decoders can implement the trait and build the service.
   newline-less final record); F-CONCURRENCY (`Acquire` stop,
   `POLL_INTERVAL`, first-EOF `on_caught_up`, error→warn→sleep) preserved;
   the two duplicated `tail_loop`s collapse to one shared loop (the
-  production scaffolding shrinks — the effort *adds* DTOs/service/tests
+  production scaffolding shrinks — the effort _adds_ DTOs/service/tests
   overall, so this is a dedup, not a net-LOC claim).
 
 ## 6. Step F — single-class session lifecycle (deferred capstone, NOT in this effort)
@@ -775,7 +776,7 @@ both provider decoders can implement the trait and build the service.
 and several state holders: `base::start_for`, `AgentWatcherState` /
 `WatcherHandle`, `TranscriptState` / the D' `AgentWatcherService`, the
 locator, and — after C — `TranscriptTailService`. These pieces are
-*temporally driven*: per session they fire in a fixed order (locate →
+_temporally driven_: per session they fire in a fixed order (locate →
 validate → start watcher → start tail → … → stop). Step F would hoist that
 sequence behind a **single class with a minimal surface** — the caller
 sees only the lifecycle verbs (`start(session)`, `stop(session)`, …) and
@@ -785,7 +786,7 @@ that C / D' / the locator already provide.
 
 **Why deferred (explicitly out of A-transcript + C).** It reshapes
 `watcher_runtime` / the D' `AgentWatcherService` — a wider blast radius
-than the transcript-only A + C — and only pays off *once C exists*
+than the transcript-only A + C — and only pays off _once C exists_
 (`TranscriptTailService` is one of the services it would delegate to). So
 it earns its own spec + go/no-go **after** A-transcript + C land, and is
 recorded on #246 as the deferred capstone. Nothing in A-transcript or C
@@ -807,11 +808,11 @@ forward unchanged into that effort.
 implement → local `codex exec` to zero findings → push → PR →
 `/lifeline:upsource-review` → `/approve-pr`):
 
-| PR                       | Scope                                                                                                                                          | Gate                                                                          |
-| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
-| **Phase 0 — tests**      | `T-replay` (both adapters): ≥3 replay pairs, catch-up + drain barriers, `Some(cwd)`. **No production change.**                                  | both transcript suites green; `git diff` = test code only                     |
+| PR                         | Scope                                                                                                                                                                                              | Gate                                                                                                                         |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| **Phase 0 — tests**        | `T-replay` (both adapters): ≥3 replay pairs, catch-up + drain barriers, `Some(cwd)`. **No production change.**                                                                                     | both transcript suites green; `git diff` = test code only                                                                    |
 | **Phase 1 — A-transcript** | typed DTOs + `lenient_bool` / `lenient_i64` in both `process_line` paths (option B); behavior-neutral helper retargets; DTO/event regression tests (incl. presence-sensitive `input` / `duration`) | existing parse + Phase 0 tests green; events shape- and deterministic-field-equivalent (nondeterministic fields by contract) |
-| **Phase 2 — C**          | `TranscriptTailService` + `TranscriptDecoder` in `base`; both `start_tailing` delegate; the two `tail_loop`s deleted; deterministic `ScriptedBufRead` buffering test | Phase 0 tests green **unchanged**; buffering test green; G3 effects realized   |
+| **Phase 2 — C**            | `TranscriptTailService` + `TranscriptDecoder` in `base`; both `start_tailing` delegate; the two `tail_loop`s deleted; deterministic `ScriptedBufRead` buffering test                               | Phase 0 tests green **unchanged**; buffering test green; G3 effects realized                                                 |
 
 The order is forced: Phase 0 builds the regression net before Phase 1/2
 touch the code it guards; Phase 1 types the bodies before Phase 2 relocates
@@ -832,7 +833,7 @@ green and revertable.
   `output` / `duration`) — the § 4 boundary keeps them raw + ported
   helpers; present-vs-absent (`input`, `duration`) is handled by the
   `#[serde(flatten)]` raw map, not a collapsing `Option`.
-- **Two-level Codex dispatch** — top-level `type` *and* both inner
+- **Two-level Codex dispatch** — top-level `type` _and_ both inner
   `payload.type` dispatches (`response_item`, `event_msg`) need
   fall-throughs, or turns / test-run / patch completions drop (§ 4).
 - **ts-rs drift** — transcript DTOs are internal (no `#[derive(TS)]`); if
@@ -843,7 +844,7 @@ green and revertable.
 F-EVENTS (+ the two-sided G3 carve-out), F-CONCURRENCY, F-ATTACH, and
 F-BINDINGS hold; the two duplicated `tail_loop`s collapse to one shared
 loop (production-scaffolding dedup — the effort adds DTOs/service/tests
-overall, so it is *not* a net-LOC reduction); both transcript parsers are
+overall, so it is _not_ a net-LOC reduction); both transcript parsers are
 typed (option B). #246's **A-transcript** and **C** boxes tick.
 
 **#246 checklist update.** On completion, tick **A-transcript** and **C**,
