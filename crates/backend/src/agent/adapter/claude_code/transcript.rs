@@ -6,25 +6,22 @@
 
 use std::collections::HashMap;
 use std::fs::{self, File};
-use std::io::{self, BufRead, BufReader};
+use std::io::{self, BufReader};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use serde_json::Value;
 
 use super::test_runners::emitter::TestRunEmitter;
 use super::test_runners::matcher::{match_command, MatchedCommand};
 use super::transcript_dto::{ClaudeToolResultDto, ClaudeToolUseDto, ClaudeTranscriptLineDto};
-use crate::agent::adapter::base::TranscriptHandle;
+use crate::agent::adapter::base::{TranscriptDecoder, TranscriptHandle, TranscriptTailService};
 use crate::agent::adapter::types::ValidateTranscriptError;
 use crate::agent::events::{emit_agent_cwd, emit_agent_tool_call, emit_agent_turn};
 use crate::agent::types::{AgentCwdEvent, AgentToolCallEvent, AgentTurnEvent, ToolCallStatus};
 use crate::runtime::EventSink;
-
-/// Poll interval for checking new transcript lines
-const POLL_INTERVAL: Duration = Duration::from_millis(500);
 
 /// Maximum length for the args summary string
 const MAX_ARGS_LEN: usize = 100;
@@ -175,78 +172,74 @@ pub fn start_tailing(
     let stop_flag = Arc::new(AtomicBool::new(false));
     let stop_clone = stop_flag.clone();
 
+    // Read from the beginning — each Claude Code session gets a unique JSONL
+    // file, so all lines belong to the current session. Replay catches any
+    // tool calls written before tailing started (the transcript file is often
+    // created seconds after the statusline first reports its path).
+    let decoder = ClaudeTranscriptDecoder::new(events, session_id, cwd);
+    let service = TranscriptTailService::new(Box::new(decoder), "transcript");
+
     let join_handle = std::thread::spawn(move || {
-        tail_loop(events, session_id, cwd, file, stop_clone);
+        service.run(BufReader::new(file), stop_clone);
     });
 
     Ok(TranscriptHandle::new(stop_flag, join_handle))
 }
 
-/// Background loop that tails the transcript file
-fn tail_loop(
+/// Per-session Claude Code decoder: owns the in-flight tool-call map, turn
+/// count, last-seen cwd, and the replay-aware emitter, and turns each complete
+/// transcript line into `agent-*` events. Driven by [`TranscriptTailService`],
+/// which owns the read/buffer/poll loop.
+struct ClaudeTranscriptDecoder {
     events: Arc<dyn EventSink>,
     session_id: String,
     cwd: Option<PathBuf>,
-    file: File,
-    stop_flag: Arc<AtomicBool>,
-) {
-    let mut reader = BufReader::new(file);
+    /// In-flight tool calls: tool_use_id -> call details.
+    in_flight: InFlightToolCalls,
+    num_turns: u32,
+    /// Last agent-reported cwd. Tracked so consecutive lines that share the
+    /// same `cwd` field don't re-emit. Initial `None` so the first observed
+    /// cwd always fires a transition event.
+    last_cwd: Option<String>,
+    /// Replay-aware emitter — buffers test-run snapshots during the initial
+    /// catch-up read and emits the latest one (only) on the first EOF. Once
+    /// we're tailing live, every snapshot emits immediately.
+    emitter: TestRunEmitter,
+}
 
-    // Read from the beginning — each Claude Code session gets a unique JSONL
-    // file, so all lines belong to the current session. Replay catches any
-    // tool calls written before tailing started (the transcript file is often
-    // created seconds after the statusline first reports its path).
-
-    // In-flight tool calls: tool_use_id -> call details
-    let mut in_flight: InFlightToolCalls = HashMap::new();
-    let mut num_turns = 0_u32;
-    // Last agent-reported cwd. Tracked so consecutive lines that share the
-    // same `cwd` field don't re-emit. Initial `None` so the first observed
-    // cwd always fires a transition event.
-    let mut last_cwd: Option<String> = None;
-
-    // Replay-aware emitter — buffers test-run snapshots during the initial
-    // catch-up read and emits the latest one (only) on the first EOF. Once
-    // we're tailing live, every snapshot emits immediately.
-    let mut emitter = TestRunEmitter::new(events.clone());
-
-    // Buffer for partial lines
-    let mut line_buf = String::new();
-
-    // Acquire pairs with the Release in `TranscriptHandle::stop` /
-    // `Drop` (Claude review on PR #152, F12) so the stop signal is
-    // observed promptly on weakly-ordered architectures. Same pattern
-    // applied to `WatcherHandle`'s stop_flag in F8.
-    while !stop_flag.load(Ordering::Acquire) {
-        line_buf.clear();
-        match reader.read_line(&mut line_buf) {
-            Ok(0) => {
-                // First EOF marks the end of replay; subsequent EOFs are
-                // idempotent. After this, every submit emits live.
-                emitter.finish_replay();
-                std::thread::sleep(POLL_INTERVAL);
-            }
-            Ok(_) => {
-                let line = line_buf.trim();
-                if line.is_empty() {
-                    continue;
-                }
-                process_line(
-                    line,
-                    &session_id,
-                    cwd.as_deref(),
-                    &events,
-                    &mut emitter,
-                    &mut in_flight,
-                    &mut num_turns,
-                    &mut last_cwd,
-                );
-            }
-            Err(e) => {
-                log::warn!("Error reading transcript line: {}", e);
-                std::thread::sleep(POLL_INTERVAL);
-            }
+impl ClaudeTranscriptDecoder {
+    fn new(events: Arc<dyn EventSink>, session_id: String, cwd: Option<PathBuf>) -> Self {
+        let emitter = TestRunEmitter::new(events.clone());
+        Self {
+            events,
+            session_id,
+            cwd,
+            in_flight: HashMap::new(),
+            num_turns: 0,
+            last_cwd: None,
+            emitter,
         }
+    }
+}
+
+impl TranscriptDecoder for ClaudeTranscriptDecoder {
+    fn decode_line(&mut self, line: &str) {
+        process_line(
+            line,
+            &self.session_id,
+            self.cwd.as_deref(),
+            &self.events,
+            &mut self.emitter,
+            &mut self.in_flight,
+            &mut self.num_turns,
+            &mut self.last_cwd,
+        );
+    }
+
+    /// First EOF marks the end of replay; subsequent EOFs are idempotent.
+    /// After this, every submit emits live.
+    fn on_caught_up(&mut self) {
+        self.emitter.finish_replay();
     }
 }
 
@@ -1435,5 +1428,51 @@ mod tests {
     fn summarize_input_preserves_absent_vs_null() {
         assert_eq!(summarize_input(None), "");
         assert_eq!(summarize_input(Some(&serde_json::Value::Null)), "null");
+    }
+
+    /// End-to-end G3 carve-out: a real `tool_use` line split across the
+    /// replay→live EOF boundary — where *neither half is valid JSON* — must
+    /// still emit `agent-tool-call`. The old per-provider `tail_loop` handed
+    /// each partial to the parser as if it were a complete line (both halves
+    /// failed `from_str`, so the event was silently dropped); the shared
+    /// `TranscriptTailService` buffers the partial across the non-terminal EOF
+    /// and rejoins it. This is the sanctioned Phase 2 behavior change
+    /// (F-EVENTS two-sided G3 carve-out), so the assertion is PASS, not the
+    /// pre-C drop.
+    #[test]
+    fn split_tool_use_line_across_eof_still_emits() {
+        use crate::agent::adapter::base::{ScriptedBufRead, Step};
+
+        let concrete = Arc::new(crate::runtime::FakeEventSink::new());
+        let events: Arc<dyn EventSink> = concrete.clone();
+        let decoder = ClaudeTranscriptDecoder::new(events, "sess-g3".to_string(), None);
+
+        // One valid tool_use assistant line, split mid-string-value so neither
+        // side parses on its own: `..."tool_us` | `e"...`.
+        let first = r#"{"type":"assistant","message":{"content":[{"type":"tool_us"#;
+        let second = "e\",\"id\":\"toolu_g3\",\"name\":\"Read\",\"input\":{\"file_path\":\"/a.ts\"}}]}}\n";
+
+        let stop = Arc::new(AtomicBool::new(false));
+        TranscriptTailService::new(Box::new(decoder), "transcript")
+            .with_poll_interval(std::time::Duration::ZERO)
+            .run(
+                ScriptedBufRead {
+                    steps: vec![
+                        Step::Chunk(first),
+                        Step::Eof,
+                        Step::Chunk(second),
+                        Step::EofStop,
+                    ]
+                    .into_iter(),
+                    stop: stop.clone(),
+                },
+                stop,
+            );
+
+        assert_eq!(
+            concrete.count("agent-tool-call"),
+            1,
+            "split tool_use line must rejoin across EOF and emit exactly one event"
+        );
     }
 }
