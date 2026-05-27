@@ -2,15 +2,15 @@
 
 use std::collections::HashMap;
 use std::fs::{self, File};
-use std::io::{self, BufRead, BufReader};
+use std::io::{self, BufReader};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use serde_json::Value;
 
-use crate::agent::adapter::base::TranscriptHandle;
+use crate::agent::adapter::base::{TranscriptDecoder, TranscriptHandle, TranscriptTailService};
 use crate::agent::adapter::claude_code::test_runners::build::{maybe_build_snapshot, BuildArgs};
 use crate::agent::adapter::claude_code::test_runners::emitter::TestRunEmitter;
 use crate::agent::adapter::claude_code::test_runners::matcher::{match_command, MatchedCommand};
@@ -27,7 +27,6 @@ use super::transcript_dto::{
     CodexRecordType,
 };
 
-const POLL_INTERVAL: Duration = Duration::from_millis(500);
 const MAX_ARGS_LEN: usize = 100;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -58,13 +57,11 @@ type InFlightToolCalls = HashMap<String, InFlightToolCall>;
 /// would cause false reverts on reasoning-only turns after an
 /// `exec_command.workdir` transition has already moved us to a new
 /// directory. See spec section 1.
-fn extract_session_cwd(dto: &CodexLineDto) -> Option<String> {
-    if !matches!(dto.record_type(), CodexRecordType::SessionMeta) {
+fn extract_session_cwd(record_type: CodexRecordType, payload: &CodexPayloadDto) -> Option<String> {
+    if !matches!(record_type, CodexRecordType::SessionMeta) {
         return None;
     }
-    let payload =
-        serde_json::from_value::<CodexPayloadDto>(dto.payload.clone()).unwrap_or_default();
-    payload.cwd.filter(|s| !s.is_empty())
+    payload.cwd.clone().filter(|s| !s.is_empty())
 }
 
 /// Pull the mid-session workdir off a Codex `exec_command` function-call
@@ -75,20 +72,18 @@ fn extract_session_cwd(dto: &CodexLineDto) -> Option<String> {
 /// `arguments` is a JSON-encoded string per Codex's rollout schema —
 /// it must be parsed before reading `workdir`. Malformed JSON, missing
 /// fields, or empty strings all short-circuit to `None`.
-fn extract_exec_workdir(dto: &CodexLineDto) -> Option<String> {
-    if !matches!(dto.record_type(), CodexRecordType::ResponseItem) {
+fn extract_exec_workdir(record_type: CodexRecordType, payload: &CodexPayloadDto) -> Option<String> {
+    if !matches!(record_type, CodexRecordType::ResponseItem) {
         return None;
     }
-    let payload =
-        serde_json::from_value::<CodexPayloadDto>(dto.payload.clone()).unwrap_or_default();
     if payload.payload_type() != CodexPayloadType::FunctionCall {
         return None;
     }
     if payload.name.as_deref() != Some("exec_command") {
         return None;
     }
-    let raw = payload.arguments?;
-    let args: CodexExecArgsDto = serde_json::from_str(&raw).ok()?;
+    let raw = payload.arguments.as_deref()?;
+    let args: CodexExecArgsDto = serde_json::from_str(raw).ok()?;
     args.workdir.filter(|s| !s.is_empty())
 }
 
@@ -97,11 +92,11 @@ fn extract_exec_workdir(dto: &CodexLineDto) -> Option<String> {
 /// falls back to the exec_command workdir path. Returns
 /// `Option<String>` because the workdir path must return owned strings
 /// (parsed JSON allocates).
-fn extract_codex_cwd(dto: &CodexLineDto) -> Option<String> {
-    if let Some(cwd) = extract_session_cwd(dto) {
+fn extract_codex_cwd(record_type: CodexRecordType, payload: &CodexPayloadDto) -> Option<String> {
+    if let Some(cwd) = extract_session_cwd(record_type, payload) {
         return Some(cwd);
     }
-    extract_exec_workdir(dto)
+    extract_exec_workdir(record_type, payload)
 }
 
 pub(super) fn validate_transcript_path(
@@ -180,78 +175,64 @@ pub(super) fn start_tailing(
     let stop_flag = Arc::new(AtomicBool::new(false));
     let stop_clone = stop_flag.clone();
 
+    let decoder = CodexTranscriptDecoder::new(events, session_id, cwd);
+    let service = TranscriptTailService::new(Box::new(decoder), "Codex rollout transcript");
+
     let join_handle = std::thread::spawn(move || {
-        tail_loop(events, session_id, cwd, file, stop_clone);
+        service.run(BufReader::new(file), stop_clone);
     });
 
     Ok(TranscriptHandle::new(stop_flag, join_handle))
 }
 
-fn tail_loop(
+/// Per-session Codex decoder: owns the in-flight tool-call map (each entry
+/// carrying its `CompletionMode`), turn count, last-seen cwd, and the
+/// replay-aware emitter, and turns each complete rollout line into `agent-*`
+/// events. Driven by [`TranscriptTailService`], which owns the
+/// read/buffer/poll loop (including the partial-line buffering Codex's old
+/// `tail_loop` did inline).
+struct CodexTranscriptDecoder {
     events: Arc<dyn EventSink>,
     session_id: String,
     cwd: Option<PathBuf>,
-    file: File,
-    stop_flag: Arc<AtomicBool>,
-) {
-    let mut reader = BufReader::new(file);
-    let mut line_buf = String::new();
-    let mut partial_line = String::new();
-    let mut in_flight: InFlightToolCalls = HashMap::new();
-    let mut num_turns = 0_u32;
-    let mut last_cwd: Option<String> = None;
-    let mut emitter = TestRunEmitter::new(events.clone());
+    in_flight: InFlightToolCalls,
+    num_turns: u32,
+    last_cwd: Option<String>,
+    emitter: TestRunEmitter,
+}
 
-    while !stop_flag.load(Ordering::Acquire) {
-        line_buf.clear();
-        match reader.read_line(&mut line_buf) {
-            Ok(0) => {
-                emitter.finish_replay();
-                std::thread::sleep(POLL_INTERVAL);
-            }
-            Ok(_) => {
-                if !line_buf.ends_with('\n') {
-                    partial_line.push_str(&line_buf);
-                    continue;
-                }
-
-                if !partial_line.is_empty() {
-                    partial_line.push_str(&line_buf);
-                    process_line(
-                        partial_line.trim_end_matches('\n'),
-                        &session_id,
-                        cwd.as_deref(),
-                        &events,
-                        &mut emitter,
-                        &mut in_flight,
-                        &mut num_turns,
-                        &mut last_cwd,
-                    );
-                    partial_line.clear();
-                    continue;
-                }
-
-                let line = line_buf.trim_end_matches('\n');
-                if line.is_empty() {
-                    continue;
-                }
-
-                process_line(
-                    line,
-                    &session_id,
-                    cwd.as_deref(),
-                    &events,
-                    &mut emitter,
-                    &mut in_flight,
-                    &mut num_turns,
-                    &mut last_cwd,
-                );
-            }
-            Err(e) => {
-                log::warn!("Error reading Codex rollout transcript line: {}", e);
-                std::thread::sleep(POLL_INTERVAL);
-            }
+impl CodexTranscriptDecoder {
+    fn new(events: Arc<dyn EventSink>, session_id: String, cwd: Option<PathBuf>) -> Self {
+        let emitter = TestRunEmitter::new(events.clone());
+        Self {
+            events,
+            session_id,
+            cwd,
+            in_flight: HashMap::new(),
+            num_turns: 0,
+            last_cwd: None,
+            emitter,
         }
+    }
+}
+
+impl TranscriptDecoder for CodexTranscriptDecoder {
+    fn decode_line(&mut self, line: &str) {
+        process_line(
+            line,
+            &self.session_id,
+            self.cwd.as_deref(),
+            &self.events,
+            &mut self.emitter,
+            &mut self.in_flight,
+            &mut self.num_turns,
+            &mut self.last_cwd,
+        );
+    }
+
+    /// First EOF marks the end of replay; subsequent EOFs are idempotent.
+    fn on_caught_up(&mut self) {
+        self.emitter.finish_replay();
     }
 }
 
@@ -269,6 +250,19 @@ fn process_line(
         Ok(dto) => dto,
         Err(_) => return,
     };
+    let record_type = dto.record_type();
+
+    // Unknown record types carry nothing we consume — skip the payload parse
+    // entirely (pre-C never parsed the payload for them either).
+    if matches!(record_type, CodexRecordType::Other) {
+        return;
+    }
+
+    // Parse the payload ONCE per line; the cwd transition and the dispatch
+    // share it. Pre-C, response_item lines parsed this twice — extract_exec_
+    // workdir for the cwd, then process_response_item for the dispatch.
+    let payload =
+        serde_json::from_value::<CodexPayloadDto>(dto.payload.clone()).unwrap_or_default();
 
     // Emit agent-cwd on transitions only. Codex's two cwd sources are
     // session_meta.payload.cwd (session start) and
@@ -276,7 +270,7 @@ fn process_line(
     // calls (mid-session). turn_context.cwd is intentionally NOT a
     // source — see spec section 1 and the regression test
     // `process_line_turn_context_after_exec_command_does_not_revert`.
-    if let Some(observed) = extract_codex_cwd(&dto) {
+    if let Some(observed) = extract_codex_cwd(record_type, &payload) {
         if last_cwd
             .as_deref()
             .map_or(true, |seen| seen != observed.as_str())
@@ -292,13 +286,13 @@ fn process_line(
         }
     }
 
-    match dto.record_type() {
+    match record_type {
         CodexRecordType::ResponseItem => {
-            process_response_item(&dto, session_id, cwd, events, in_flight);
+            process_response_item(&dto, &payload, session_id, cwd, events, in_flight);
         }
         CodexRecordType::EventMsg => {
             process_event_msg(
-                &dto, session_id, cwd, events, emitter, in_flight, num_turns,
+                &dto, &payload, session_id, cwd, events, emitter, in_flight, num_turns,
             );
         }
         _ => {}
@@ -307,27 +301,26 @@ fn process_line(
 
 fn process_response_item(
     dto: &CodexLineDto,
+    payload: &CodexPayloadDto,
     session_id: &str,
     cwd: Option<&Path>,
     events: &Arc<dyn EventSink>,
     in_flight: &mut InFlightToolCalls,
 ) {
-    let payload =
-        serde_json::from_value::<CodexPayloadDto>(dto.payload.clone()).unwrap_or_default();
     let timestamp = dto.timestamp.clone().unwrap_or_else(now_iso8601);
 
     match payload.payload_type() {
         CodexPayloadType::FunctionCall => {
-            start_function_call(&payload, session_id, cwd, events, in_flight, &timestamp);
+            start_function_call(payload, session_id, cwd, events, in_flight, &timestamp);
         }
         CodexPayloadType::CustomToolCall => {
-            start_custom_tool_call(&payload, session_id, events, in_flight, &timestamp);
+            start_custom_tool_call(payload, session_id, events, in_flight, &timestamp);
         }
         CodexPayloadType::FunctionCallOutput => {
-            process_output_completion(&payload, session_id, events, in_flight, &timestamp, false);
+            process_output_completion(payload, session_id, events, in_flight, &timestamp, false);
         }
         CodexPayloadType::CustomToolCallOutput => {
-            process_output_completion(&payload, session_id, events, in_flight, &timestamp, true);
+            process_output_completion(payload, session_id, events, in_flight, &timestamp, true);
         }
         _ => {}
     }
@@ -335,6 +328,7 @@ fn process_response_item(
 
 fn process_event_msg(
     dto: &CodexLineDto,
+    payload: &CodexPayloadDto,
     session_id: &str,
     cwd: Option<&Path>,
     events: &Arc<dyn EventSink>,
@@ -342,21 +336,19 @@ fn process_event_msg(
     in_flight: &mut InFlightToolCalls,
     num_turns: &mut u32,
 ) {
-    let payload =
-        serde_json::from_value::<CodexPayloadDto>(dto.payload.clone()).unwrap_or_default();
     let timestamp = dto.timestamp.clone().unwrap_or_else(now_iso8601);
 
     match payload.payload_type() {
         CodexPayloadType::UserMessage => {
-            process_user_message(&payload, session_id, events, num_turns);
+            process_user_message(payload, session_id, events, num_turns);
         }
         CodexPayloadType::ExecCommandEnd => {
             process_exec_command_end(
-                &payload, session_id, cwd, events, emitter, in_flight, &timestamp,
+                payload, session_id, cwd, events, emitter, in_flight, &timestamp,
             );
         }
         CodexPayloadType::PatchApplyEnd => {
-            process_patch_apply_end(&payload, session_id, events, in_flight, &timestamp);
+            process_patch_apply_end(payload, session_id, events, in_flight, &timestamp);
         }
         _ => {}
     }
@@ -1085,10 +1077,19 @@ mod tests {
 
     // ---- extract_session_cwd unit tests (v2: session_meta ONLY) ----
 
+    /// Parse a rollout line into the payload the cwd extractors now take —
+    /// mirrors the single parse `process_line` does before calling them.
+    fn payload_of(dto: &CodexLineDto) -> CodexPayloadDto {
+        serde_json::from_value::<CodexPayloadDto>(dto.payload.clone()).unwrap_or_default()
+    }
+
     #[test]
     fn extract_session_cwd_session_meta_returns_cwd() {
         let dto: CodexLineDto = serde_json::from_str(r#"{"type":"session_meta","payload":{"cwd":"/workspace/A"}}"#).unwrap();
-        assert_eq!(extract_session_cwd(&dto), Some("/workspace/A".to_string()));
+        assert_eq!(
+            extract_session_cwd(dto.record_type(), &payload_of(&dto)),
+            Some("/workspace/A".to_string())
+        );
     }
 
     #[test]
@@ -1098,19 +1099,19 @@ mod tests {
         // it as live would cause false reverts after exec_command transitions.
         // This test is a defensive guard against re-introduction.
         let dto: CodexLineDto = serde_json::from_str(r#"{"type":"turn_context","payload":{"cwd":"/workspace/A"}}"#).unwrap();
-        assert_eq!(extract_session_cwd(&dto), None);
+        assert_eq!(extract_session_cwd(dto.record_type(), &payload_of(&dto)), None);
     }
 
     #[test]
     fn extract_session_cwd_other_type_returns_none() {
         let dto: CodexLineDto = serde_json::from_str(r#"{"type":"event_msg","payload":{"cwd":"/workspace/A"}}"#).unwrap();
-        assert_eq!(extract_session_cwd(&dto), None);
+        assert_eq!(extract_session_cwd(dto.record_type(), &payload_of(&dto)), None);
     }
 
     #[test]
     fn extract_session_cwd_empty_string_returns_none() {
         let dto: CodexLineDto = serde_json::from_str(r#"{"type":"session_meta","payload":{"cwd":""}}"#).unwrap();
-        assert_eq!(extract_session_cwd(&dto), None);
+        assert_eq!(extract_session_cwd(dto.record_type(), &payload_of(&dto)), None);
     }
 
     // ---- extract_exec_workdir unit tests (the mid-session signal) ----
@@ -1118,7 +1119,10 @@ mod tests {
     #[test]
     fn extract_exec_workdir_happy_path() {
         let dto: CodexLineDto = serde_json::from_str(r#"{"type":"response_item","payload":{"type":"function_call","name":"exec_command","call_id":"c1","arguments":"{\"cmd\":\"ls\",\"workdir\":\"/workspace/B\"}"}}"#).unwrap();
-        assert_eq!(extract_exec_workdir(&dto).as_deref(), Some("/workspace/B"));
+        assert_eq!(
+            extract_exec_workdir(dto.record_type(), &payload_of(&dto)).as_deref(),
+            Some("/workspace/B")
+        );
     }
 
     #[test]
@@ -1126,31 +1130,31 @@ mod tests {
         // event_msg carrying a function_call-shaped payload should still
         // be rejected — the outer event type gate is response_item.
         let dto: CodexLineDto = serde_json::from_str(r#"{"type":"event_msg","payload":{"type":"function_call","name":"exec_command","arguments":"{\"workdir\":\"/x\"}"}}"#).unwrap();
-        assert_eq!(extract_exec_workdir(&dto), None);
+        assert_eq!(extract_exec_workdir(dto.record_type(), &payload_of(&dto)), None);
     }
 
     #[test]
     fn extract_exec_workdir_non_function_call_returns_none() {
         let dto: CodexLineDto = serde_json::from_str(r#"{"type":"response_item","payload":{"type":"custom_tool_call","name":"exec_command","input":"{\"workdir\":\"/x\"}"}}"#).unwrap();
-        assert_eq!(extract_exec_workdir(&dto), None);
+        assert_eq!(extract_exec_workdir(dto.record_type(), &payload_of(&dto)), None);
     }
 
     #[test]
     fn extract_exec_workdir_non_exec_command_returns_none() {
         let dto: CodexLineDto = serde_json::from_str(r#"{"type":"response_item","payload":{"type":"function_call","name":"read_file","arguments":"{\"path\":\"/x\"}"}}"#).unwrap();
-        assert_eq!(extract_exec_workdir(&dto), None);
+        assert_eq!(extract_exec_workdir(dto.record_type(), &payload_of(&dto)), None);
     }
 
     #[test]
     fn extract_exec_workdir_malformed_arguments_json_returns_none() {
         let dto: CodexLineDto = serde_json::from_str(r#"{"type":"response_item","payload":{"type":"function_call","name":"exec_command","arguments":"{not json"}}"#).unwrap();
-        assert_eq!(extract_exec_workdir(&dto), None);
+        assert_eq!(extract_exec_workdir(dto.record_type(), &payload_of(&dto)), None);
     }
 
     #[test]
     fn extract_exec_workdir_missing_workdir_field_returns_none() {
         let dto: CodexLineDto = serde_json::from_str(r#"{"type":"response_item","payload":{"type":"function_call","name":"exec_command","arguments":"{\"cmd\":\"ls\"}"}}"#).unwrap();
-        assert_eq!(extract_exec_workdir(&dto), None);
+        assert_eq!(extract_exec_workdir(dto.record_type(), &payload_of(&dto)), None);
     }
 
     // ---- process_line transition-semantics tests ----
