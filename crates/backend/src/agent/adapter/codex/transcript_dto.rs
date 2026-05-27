@@ -71,9 +71,6 @@ pub(super) struct CodexPayloadDto {
     pub call_id: Option<String>,
     #[serde(default, deserialize_with = "lenient_string")]
     pub name: Option<String>,
-    #[allow(dead_code)]
-    #[serde(default, deserialize_with = "lenient_string")]
-    pub status: Option<String>,
     #[serde(default, deserialize_with = "lenient_string")]
     pub message: Option<String>,
     #[serde(default, deserialize_with = "lenient_string")]

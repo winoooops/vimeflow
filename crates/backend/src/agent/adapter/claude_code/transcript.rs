@@ -318,7 +318,6 @@ fn process_line(
     }
 }
 
-/// Extract tool_use entries from an assistant message
 /// Pull the top-level `timestamp` field off a transcript line, or fall back
 /// to the current clock. Claude Code JSONL lines carry the real event time —
 /// `now_iso8601()` would otherwise stamp every event parsed in a single tick
@@ -328,6 +327,7 @@ fn extract_timestamp(timestamp: Option<&str>) -> String {
     timestamp.map(str::to_string).unwrap_or_else(now_iso8601)
 }
 
+/// Extract tool_use entries from an assistant message.
 fn process_assistant_message(
     dto: &ClaudeTranscriptLineDto,
     session_id: &str,
@@ -684,11 +684,10 @@ fn extract_tool_result_content(content: &Value) -> String {
     // A-transcript migration can pass `&dto.content`. Absent `content` (passed
     // as `Value::Null` by callers) and `null` both miss the str/array arms and
     // fall through to `""` — behavior-neutral with the prior `.get("content")`.
-    let raw = content;
-    if let Some(s) = raw.as_str() {
+    if let Some(s) = content.as_str() {
         return cap_with_head_and_tail(s);
     }
-    if let Some(arr) = raw.as_array() {
+    if let Some(arr) = content.as_array() {
         let memory_cap = MAX_TOOL_RESULT_CONTENT_LEN + TOOL_RESULT_TAIL_LEN;
         let prune_threshold = memory_cap * 2;
         let mut buf = String::new();
@@ -1255,12 +1254,21 @@ mod tests {
 
     #[test]
     fn extract_timestamp_ignores_non_string_field() {
-        // If a malformed line has a non-string timestamp (e.g. a number
-        // or null), the DTO's lenient_string deserializer degrades it to
-        // None, and extract_timestamp falls back to now_iso8601.
-        let ts = extract_timestamp(None);
+        // Integration guard for the full JSONL → DTO → fallback path: a
+        // non-string `timestamp` degrades to None via the DTO's lenient_string
+        // deserializer, so extract_timestamp falls back to now_iso8601 (this is
+        // the round-trip the migration must not lose — distinct from the
+        // extract_timestamp(None) unit case above).
+        let dto: ClaudeTranscriptLineDto = serde_json::from_str(
+            r#"{"type":"assistant","timestamp":1234567890,"message":{"content":[]}}"#,
+        )
+        .expect("line with non-string timestamp still parses");
+        assert!(
+            dto.timestamp.is_none(),
+            "non-string timestamp degrades to None via lenient_string"
+        );
 
-        // Falls back to now_iso8601 format (not the numeric literal).
+        let ts = extract_timestamp(dto.timestamp.as_deref());
         assert!(ts.ends_with('Z'));
         assert_eq!(ts.len(), 20);
     }
