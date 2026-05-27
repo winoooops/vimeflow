@@ -18,6 +18,41 @@ fn cleanup_generated_bridge_dir(dir: Option<&std::path::Path>) {
     }
 }
 
+/// `LC_CTYPE` injected into a spawned shell when the inherited environment
+/// selects no UTF-8 locale. A non-UTF-8 (or empty) locale makes the shell
+/// byte-count multibyte glyphs, so this picks the most broadly available UTF-8
+/// character map per platform.
+#[cfg(target_os = "macos")]
+const DEFAULT_UTF8_CTYPE: &str = "en_US.UTF-8";
+#[cfg(not(target_os = "macos"))]
+const DEFAULT_UTF8_CTYPE: &str = "C.UTF-8";
+
+fn is_utf8_locale(value: &str) -> bool {
+    let lower = value.to_ascii_lowercase();
+    lower.contains("utf-8") || lower.contains("utf8")
+}
+
+/// Decide which `LC_CTYPE` to inject into a spawned shell from the inherited
+/// locale env, evaluated in POSIX precedence order (`LC_ALL` > `LC_CTYPE` >
+/// `LANG`). Returns `Some` only when no UTF-8 locale is inherited — an explicit
+/// UTF-8 locale is left untouched. Targets `LC_CTYPE` (character handling)
+/// rather than `LANG` so the user's message/collation language is preserved.
+fn utf8_ctype_override(
+    lc_all: Option<&str>,
+    lc_ctype: Option<&str>,
+    lang: Option<&str>,
+) -> Option<&'static str> {
+    let effective = [lc_all, lc_ctype, lang]
+        .into_iter()
+        .flatten()
+        .find(|value| !value.is_empty());
+
+    match effective {
+        Some(value) if is_utf8_locale(value) => None,
+        _ => Some(DEFAULT_UTF8_CTYPE),
+    }
+}
+
 /// Spawn a new PTY session with a shell
 pub(crate) async fn spawn_pty_inner(
     state: PtyState,
@@ -142,6 +177,24 @@ pub(crate) async fn spawn_pty_inner(
     // contract to child TUIs without accepting arbitrary env from IPC.
     cmd.env("TERM", "xterm-256color");
     cmd.env("COLORTERM", "truecolor");
+
+    // Ensure a UTF-8 locale for character handling. GUI launches frequently
+    // inherit no LANG/LC_* (Terminal.app/iTerm2 set them; a dock/Finder or
+    // `electron:dev` launch does not), so the shell falls back to the C locale
+    // and byte-counts multibyte Powerline/Nerd Font glyphs — miscomputing line
+    // width and desyncing the cursor during line editing (autocomplete,
+    // redisplay). Inject LC_CTYPE only when no UTF-8 locale is inherited, so an
+    // explicit user locale is preserved.
+    let inherited_lc_all = std::env::var("LC_ALL").ok();
+    let inherited_lc_ctype = std::env::var("LC_CTYPE").ok();
+    let inherited_lang = std::env::var("LANG").ok();
+    if let Some(ctype) = utf8_ctype_override(
+        inherited_lc_all.as_deref(),
+        inherited_lc_ctype.as_deref(),
+        inherited_lang.as_deref(),
+    ) {
+        cmd.env("LC_CTYPE", ctype);
+    }
 
     // Inject a `claude` wrapper function into the interactive shell.
     //
@@ -833,6 +886,47 @@ mod tests {
         let events = Arc::new(crate::runtime::FakeEventSink::new());
 
         (PtyState::new(), cache, events, temp_dir)
+    }
+
+    #[test]
+    fn utf8_ctype_override_injects_default_when_locale_unset() {
+        assert_eq!(
+            utf8_ctype_override(None, None, None),
+            Some(DEFAULT_UTF8_CTYPE)
+        );
+    }
+
+    #[test]
+    fn utf8_ctype_override_injects_for_non_utf8_or_empty_locale() {
+        assert_eq!(
+            utf8_ctype_override(None, None, Some("C")),
+            Some(DEFAULT_UTF8_CTYPE)
+        );
+        assert_eq!(
+            utf8_ctype_override(None, None, Some("")),
+            Some(DEFAULT_UTF8_CTYPE)
+        );
+    }
+
+    #[test]
+    fn utf8_ctype_override_preserves_inherited_utf8_locale() {
+        assert_eq!(utf8_ctype_override(None, None, Some("en_US.UTF-8")), None);
+        assert_eq!(utf8_ctype_override(None, Some("zh_CN.UTF-8"), None), None);
+        assert_eq!(utf8_ctype_override(Some("en_US.utf8"), None, None), None);
+    }
+
+    #[test]
+    fn utf8_ctype_override_follows_posix_precedence() {
+        // LC_ALL (UTF-8) wins even when LANG is non-UTF-8.
+        assert_eq!(
+            utf8_ctype_override(Some("en_US.UTF-8"), None, Some("C")),
+            None
+        );
+        // A non-UTF-8 LC_CTYPE overrides a UTF-8 LANG, so injection still wins.
+        assert_eq!(
+            utf8_ctype_override(None, Some("C"), Some("en_US.UTF-8")),
+            Some(DEFAULT_UTF8_CTYPE)
+        );
     }
 
     #[tokio::test]
