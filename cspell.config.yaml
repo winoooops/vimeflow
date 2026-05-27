@@ -112,6 +112,7 @@ words:
   - FiraCode
   - Cascadia
   - Menlo
+  - backgrounding
 
 ignorePaths:
   - node_modules
