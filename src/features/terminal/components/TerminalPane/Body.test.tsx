@@ -228,6 +228,30 @@ describe('Body', () => {
     })
   })
 
+  test('repaints the terminal when the window regains focus', async () => {
+    render(
+      <Body
+        sessionId="test-session"
+        cwd="/home/user"
+        service={defaultMockService}
+      />
+    )
+
+    await waitFor(() => {
+      expect(mockTerminal.open).toHaveBeenCalled()
+    })
+
+    mockTerminal.refresh.mockClear()
+
+    // Root cause B: the render loop stalls while the window is covered;
+    // regaining focus must force a full repaint to flush stale rows.
+    act(() => {
+      window.dispatchEvent(new Event('focus'))
+    })
+
+    expect(mockTerminal.refresh).toHaveBeenCalledWith(0, 23)
+  })
+
   test('refits terminal after bundled terminal fonts load', async () => {
     let resolveFonts: () => void = (): void => undefined
 
