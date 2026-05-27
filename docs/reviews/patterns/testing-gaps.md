@@ -2,7 +2,7 @@
 id: testing-gaps
 category: testing
 created: 2026-04-09
-last_updated: 2026-05-25
+last_updated: 2026-05-28
 ref_count: 25
 ---
 
@@ -544,3 +544,12 @@ filesystem scope restrictions).
 - **Finding:** Workspace-level tests rendered `DiffPanelContent` through `DockPanel` / `WorkspaceView` but did not mock `@pierre/diffs/react`. The child now calls `useWorkerPool()` unconditionally, so a Pierre release that throws outside `WorkerPoolContextProvider` would break these suites even though the tests are not trying to exercise Pierre itself.
 - **Fix:** Add explicit `@pierre/diffs/react` mocks in each higher-level test that renders through the diff panel, matching the direct `DiffPanelContent.test.tsx` pattern. Code-review heuristic: when a child component gains a mandatory provider hook, update both direct tests and every integration-style test that renders the child transitively.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 55. Event-listener guard branches need a test for both the fire and the suppress path
+
+- **Source:** github-claude | PR #288 cycle 1 | 2026-05-28
+- **Severity:** MEDIUM
+- **File:** `src/features/terminal/components/TerminalPane/Body.test.tsx`
+- **Finding:** The focus-repaint fix registered two listeners that share one guarded handler — `window 'focus'` and `document 'visibilitychange'` — where the handler early-returns unless `document.visibilityState === 'visible'`. The new regression test only dispatched `window.focus` (which in jsdom runs with the default `visibilityState === 'visible'`, so the guard always passes). The `visibilitychange` path was never exercised, leaving the non-trivial branch untested: a future edit that inverts or drops the `visibilityState !== 'visible'` guard would still pass every test while silently repainting a hidden terminal (or suppressing a needed repaint on minimized-window restore — the primary scenario the fix targets).
+- **Fix:** Added a test that shadows the read-only `document.visibilityState` getter via `Object.defineProperty(document, 'visibilityState', { configurable: true, get })`, dispatches `visibilitychange` once with `'hidden'` (asserts `refresh` NOT called) and once with `'visible'` (asserts `refresh` called), and restores the prototype getter in a `finally` by `delete`-ing the instance override. Code-review heuristic: when one handler guards on a runtime condition, the test must drive BOTH branches — the condition-true (fires) and condition-false (suppressed) paths. Asserting only the happy path lets a guard regression pass silently. When two events share a guarded handler, test the event whose default test-environment state actually exercises the guard (here `visibilitychange`), not just the one where the guard is incidentally always-true (`focus`).
+- **Commit:** same commit as this entry

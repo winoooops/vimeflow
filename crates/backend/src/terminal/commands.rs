@@ -53,6 +53,35 @@ fn utf8_ctype_override(
     }
 }
 
+/// The locale env mutations to apply to a spawned shell, derived from the
+/// inherited locale env in POSIX precedence order.
+struct LocaleEnvPlan {
+    /// `LC_CTYPE` to inject, or `None` when an inherited UTF-8 locale is kept.
+    ctype: Option<&'static str>,
+    /// Whether to drop `LC_ALL` from the child env. A non-empty `LC_ALL`
+    /// overrides `LC_CTYPE` under POSIX precedence, so injecting `LC_CTYPE`
+    /// alone would be ignored and the shell would keep byte-counting glyphs.
+    clear_lc_all: bool,
+}
+
+/// Plan the locale env mutations for a spawned shell. When a UTF-8 override is
+/// needed but `LC_ALL` is set to a non-empty (non-UTF-8) locale — the very
+/// reason the override fired — `LC_ALL` is cleared so the injected `LC_CTYPE`
+/// governs character handling; individual `LC_*`/`LANG` still drive the user's
+/// message/collation language.
+fn locale_env_plan(
+    lc_all: Option<&str>,
+    lc_ctype: Option<&str>,
+    lang: Option<&str>,
+) -> LocaleEnvPlan {
+    let ctype = utf8_ctype_override(lc_all, lc_ctype, lang);
+    let clear_lc_all = ctype.is_some() && matches!(lc_all, Some(value) if !value.is_empty());
+    LocaleEnvPlan {
+        ctype,
+        clear_lc_all,
+    }
+}
+
 /// Spawn a new PTY session with a shell
 pub(crate) async fn spawn_pty_inner(
     state: PtyState,
@@ -188,11 +217,15 @@ pub(crate) async fn spawn_pty_inner(
     let inherited_lc_all = std::env::var("LC_ALL").ok();
     let inherited_lc_ctype = std::env::var("LC_CTYPE").ok();
     let inherited_lang = std::env::var("LANG").ok();
-    if let Some(ctype) = utf8_ctype_override(
+    let locale_plan = locale_env_plan(
         inherited_lc_all.as_deref(),
         inherited_lc_ctype.as_deref(),
         inherited_lang.as_deref(),
-    ) {
+    );
+    if locale_plan.clear_lc_all {
+        cmd.env_remove("LC_ALL");
+    }
+    if let Some(ctype) = locale_plan.ctype {
         cmd.env("LC_CTYPE", ctype);
     }
 
@@ -927,6 +960,42 @@ mod tests {
             utf8_ctype_override(None, Some("C"), Some("en_US.UTF-8")),
             Some(DEFAULT_UTF8_CTYPE)
         );
+    }
+
+    #[test]
+    fn locale_env_plan_clears_non_utf8_lc_all_when_injecting() {
+        // A non-UTF-8 LC_ALL is effective and would override an injected
+        // LC_CTYPE, so it must be cleared alongside the injection.
+        let plan = locale_env_plan(Some("C"), None, None);
+        assert_eq!(plan.ctype, Some(DEFAULT_UTF8_CTYPE));
+        assert!(plan.clear_lc_all);
+
+        // Even when a lower-precedence UTF-8 locale exists, the non-UTF-8
+        // LC_ALL still wins, so both the injection and the clear must happen.
+        let plan = locale_env_plan(Some("POSIX"), None, Some("de_DE.UTF-8"));
+        assert_eq!(plan.ctype, Some(DEFAULT_UTF8_CTYPE));
+        assert!(plan.clear_lc_all);
+    }
+
+    #[test]
+    fn locale_env_plan_keeps_lc_all_when_no_override() {
+        // A UTF-8 LC_ALL needs no override and must not be cleared.
+        let plan = locale_env_plan(Some("en_US.UTF-8"), None, Some("C"));
+        assert_eq!(plan.ctype, None);
+        assert!(!plan.clear_lc_all);
+    }
+
+    #[test]
+    fn locale_env_plan_does_not_clear_unset_or_empty_lc_all() {
+        // No LC_ALL: inject LC_CTYPE only, nothing to clear.
+        let plan = locale_env_plan(None, None, Some("C"));
+        assert_eq!(plan.ctype, Some(DEFAULT_UTF8_CTYPE));
+        assert!(!plan.clear_lc_all);
+
+        // Empty LC_ALL behaves as unset under POSIX, so it need not be cleared.
+        let plan = locale_env_plan(Some(""), None, Some("C"));
+        assert_eq!(plan.ctype, Some(DEFAULT_UTF8_CTYPE));
+        assert!(!plan.clear_lc_all);
     }
 
     #[tokio::test]

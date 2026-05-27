@@ -252,6 +252,51 @@ describe('Body', () => {
     expect(mockTerminal.refresh).toHaveBeenCalledWith(0, 23)
   })
 
+  test('repaints on visibilitychange only when the document is visible', async () => {
+    render(
+      <Body
+        sessionId="test-session"
+        cwd="/home/user"
+        service={defaultMockService}
+      />
+    )
+
+    await waitFor(() => {
+      expect(mockTerminal.open).toHaveBeenCalled()
+    })
+
+    // jsdom exposes a read-only visibilityState getter on Document.prototype;
+    // shadow it on the instance so we can exercise both branches of the guard.
+    const setVisibility = (state: DocumentVisibilityState): void => {
+      Object.defineProperty(document, 'visibilityState', {
+        configurable: true,
+        get: () => state,
+      })
+    }
+
+    try {
+      mockTerminal.refresh.mockClear()
+
+      // Hidden: the guard must suppress repainting an invisible terminal.
+      setVisibility('hidden')
+      act(() => {
+        document.dispatchEvent(new Event('visibilitychange'))
+      })
+      expect(mockTerminal.refresh).not.toHaveBeenCalled()
+
+      // Visible: the minimized-window restore path must flush stale rows.
+      setVisibility('visible')
+      act(() => {
+        document.dispatchEvent(new Event('visibilitychange'))
+      })
+      expect(mockTerminal.refresh).toHaveBeenCalledWith(0, 23)
+    } finally {
+      // Drop the instance override so jsdom's prototype getter is restored.
+      delete (document as { visibilityState?: DocumentVisibilityState })
+        .visibilityState
+    }
+  })
+
   test('refits terminal after bundled terminal fonts load', async () => {
     let resolveFonts: () => void = (): void => undefined
 
