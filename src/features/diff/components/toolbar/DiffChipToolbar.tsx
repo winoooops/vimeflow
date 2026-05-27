@@ -117,6 +117,12 @@ export interface DiffChipToolbarProps {
   // counter always renders the position as `currentFileIndex + 1 / totalFiles`.
   currentFileIndex: number
   totalFiles: number
+  // Hunk navigation handlers — FUNCTIONAL in PR3. When provided the prev/next
+  // hunk chips become interactive; omitting them leaves them disabled. Both
+  // must be provided together for the chips to enable (mirrors the file-nav
+  // pattern).
+  onPrevHunk?: () => void
+  onNextHunk?: () => void
   // Staging actions — FUNCTIONAL in PR2. When provided the staging chips
   // become interactive; omitting them (or passing `staging === true`) leaves
   // the chips disabled so pre-PR2 callers remain unaffected.
@@ -308,7 +314,8 @@ const DiscardAllConfirm = ({
 // it only changes which file is selected, so no Rust backend is needed.
 // Staging chips (stage / unstage / discard / discard all) are FUNCTIONAL
 // in PR2 when the on* handlers are provided. Hunk prev/next/counter chips
-// remain disabled placeholders until PR3.
+// are FUNCTIONAL in PR3 when onPrevHunk/onNextHunk are provided and there
+// is more than one hunk.
 export const DiffChipToolbar = ({
   diffMode,
   diffStyle,
@@ -331,6 +338,8 @@ export const DiffChipToolbar = ({
   onStickyHeaderChange,
   totalHunks = 0,
   focusedHunkIndex = 0,
+  onPrevHunk = undefined,
+  onNextHunk = undefined,
   onPrevFile = undefined,
   onNextFile = undefined,
   currentFileIndex,
@@ -387,6 +396,11 @@ export const DiffChipToolbar = ({
   const fileNavEnabled =
     onPrevFile !== undefined && onNextFile !== undefined && totalFiles > 1
 
+  // Hunk arrows are functional when both handlers are present AND there is
+  // more than one hunk to navigate. With <= 1 hunk they render disabled.
+  const hunkNavEnabled =
+    onPrevHunk !== undefined && onNextHunk !== undefined && totalHunks > 1
+
   // Build the chip list in priority order. Highest priority first → last to
   // overflow into the `…` menu when the toolbar is narrow.
   //
@@ -428,23 +442,32 @@ export const DiffChipToolbar = ({
       onClick={onNextFile}
       disabled={!fileNavEnabled}
     />,
-    // 5. prev hunk — disabled placeholder in PR1; PR3 wires the click.
-    <ComingSoonTooltip key="prev-hunk" label="Available in PR3">
-      <DisabledIconChip icon="chevron_left" label="prev hunk" />
-    </ComingSoonTooltip>,
+    // 5. prev hunk — FUNCTIONAL in PR3 when onPrevHunk is provided and
+    // totalHunks > 1. Disabled (inert, no tooltip) when only one hunk.
+    <IconChip
+      key="prev-hunk"
+      icon="chevron_left"
+      label="prev hunk"
+      onClick={onPrevHunk}
+      disabled={!hunkNavEnabled}
+    />,
     // 6. hunk N/M counter — text chip with the `data_object` icon (code/hunks)
-    // so it reads distinctly from the file counter. Reads `1/totalHunks` until
-    // PR3 starts mutating the focus index.
+    // so it reads distinctly from the file counter. Now shows the real
+    // focusedHunkIndex once PR3 wires the navigation state.
     <CounterChip
       key="hunk-counter"
       icon="data_object"
       label={`hunk ${hunkCounterText}`}
       text={hunkCounterText}
     />,
-    // 7. next hunk — disabled placeholder in PR1; PR3 wires the click.
-    <ComingSoonTooltip key="next-hunk" label="Available in PR3">
-      <DisabledIconChip icon="chevron_right" label="next hunk" />
-    </ComingSoonTooltip>,
+    // 7. next hunk — FUNCTIONAL in PR3 counterpart to prev hunk.
+    <IconChip
+      key="next-hunk"
+      icon="chevron_right"
+      label="next hunk"
+      onClick={onNextHunk}
+      disabled={!hunkNavEnabled}
+    />,
     // 8. stage — FUNCTIONAL in PR2 when onStage is provided.
     onStage !== undefined ? (
       <IconChip

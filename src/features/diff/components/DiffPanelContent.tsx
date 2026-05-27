@@ -8,7 +8,11 @@ import {
   useRef,
 } from 'react'
 import { MultiFileDiff, useWorkerPool } from '@pierre/diffs/react'
-import type { BaseDiffOptions, DiffsThemeNames } from '@pierre/diffs'
+import type {
+  BaseDiffOptions,
+  DiffsThemeNames,
+  SelectedLineRange,
+} from '@pierre/diffs'
 import { useGitStatus, type UseGitStatusReturn } from '../hooks/useGitStatus'
 import { useFileDiff } from '../hooks/useFileDiff'
 import { ChangedFilesList } from './ChangedFilesList'
@@ -246,9 +250,72 @@ export const DiffPanelContent = ({
   // Single-flight staging flag — drops clicks while an IPC is in flight.
   const [staging, setStaging] = useState(false)
 
-  // PR2: focusedHunk defaults to the first hunk until PR3 wires prev/next
-  // navigation. Null when there are no hunks (whole-file operations only).
-  const focusedHunk = response?.fileDiff.hunks[0] ?? null
+  // PR3: focusedHunkIndex is the 0-based index into response.fileDiff.hunks.
+  // Replaced the PR2 hardcoded `[0]` so prev/next navigation can step through
+  // hunks. Null when there are no hunks (whole-file operations only).
+  const [focusedHunkIndex, setFocusedHunkIndex] = useState(0)
+
+  // Reset focusedHunkIndex to 0 when the selected file changes. Without this,
+  // a stale index (e.g. 2) would point out of range when switching to a file
+  // with fewer hunks — focusedHunk would be undefined and staging would no-op.
+  // Key off the (path, staged) pair that uniquely identifies the file, matching
+  // how useFileDiff and selectedFileEntry are driven.
+  useEffect(() => {
+    setFocusedHunkIndex(0)
+  }, [selectedFilePath, selectedFileStaged])
+
+  const focusedHunk = response?.fileDiff.hunks[focusedHunkIndex] ?? null
+
+  const onPrevHunk = useCallback((): void => {
+    if (!response) {
+      return
+    }
+
+    const len = response.fileDiff.hunks.length
+    if (len === 0) {
+      return
+    }
+
+    setFocusedHunkIndex((prev) => (prev + len - 1) % len)
+  }, [response])
+
+  const onNextHunk = useCallback((): void => {
+    if (!response) {
+      return
+    }
+
+    const len = response.fileDiff.hunks.length
+    if (len === 0) {
+      return
+    }
+
+    setFocusedHunkIndex((prev) => (prev + 1) % len)
+  }, [response])
+
+  // Derive the Pierre selectedLines from the focused hunk. Deletion-only hunks
+  // (newLines === 0) use the old-side coordinates so the highlight lands on the
+  // deletions column; all other hunks use the new-side (additions).
+  const selectedLines: SelectedLineRange | null =
+    useMemo((): SelectedLineRange | null => {
+      const hunk = response?.fileDiff.hunks[focusedHunkIndex]
+      if (!hunk) {
+        return null
+      }
+
+      const isDeletionOnly = hunk.newLines === 0
+      const lineStart = isDeletionOnly ? hunk.oldStart : hunk.newStart
+      const lineCount = isDeletionOnly ? hunk.oldLines : hunk.newLines
+
+      const side = isDeletionOnly
+        ? ('deletions' as const)
+        : ('additions' as const)
+
+      return {
+        start: lineStart,
+        end: lineStart + Math.max(lineCount - 1, 0),
+        side,
+      }
+    }, [response, focusedHunkIndex])
 
   // Shared helper for all three hunk-based staging operations. Extracts the
   // focused hunk patch, calls the provided service operation, then refreshes
@@ -704,7 +771,9 @@ export const DiffPanelContent = ({
             stickyHeader={stickyHeader}
             onStickyHeaderChange={setStickyHeader}
             totalHunks={response?.fileDiff.hunks.length ?? 0}
-            focusedHunkIndex={0}
+            focusedHunkIndex={focusedHunkIndex}
+            onPrevHunk={onPrevHunk}
+            onNextHunk={onNextHunk}
             onPrevFile={(): void => goToFile(-1)}
             onNextFile={(): void => goToFile(1)}
             currentFileIndex={currentFileIndex}
@@ -763,6 +832,7 @@ export const DiffPanelContent = ({
                 key={`${renderedTheme}:${renderedLineDiffType}`}
                 oldFile={pierreInputs.oldFile}
                 newFile={pierreInputs.newFile}
+                selectedLines={selectedLines}
                 options={{
                   diffStyle: effectiveDiffStyle,
                   theme: renderedTheme,

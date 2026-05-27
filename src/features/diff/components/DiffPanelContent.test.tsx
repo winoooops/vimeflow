@@ -70,10 +70,16 @@ vi.mock('@pierre/diffs/react', () => ({
     oldFile,
     newFile,
     options,
+    selectedLines = undefined,
   }: {
     oldFile: { name: string; contents: string }
     newFile: { name: string; contents: string }
     options: { diffStyle?: string; theme?: string; lineDiffType?: string }
+    selectedLines?: {
+      start: number
+      end: number
+      side?: string
+    } | null
   }): ReactElement => (
     <div
       data-testid="multi-file-diff"
@@ -84,6 +90,13 @@ vi.mock('@pierre/diffs/react', () => ({
       data-diff-style={options.diffStyle}
       data-theme={options.theme}
       data-line-diff-type={options.lineDiffType}
+      data-selected-lines-start={
+        selectedLines != null ? String(selectedLines.start) : undefined
+      }
+      data-selected-lines-end={
+        selectedLines != null ? String(selectedLines.end) : undefined
+      }
+      data-selected-lines-side={selectedLines?.side ?? undefined}
     >
       MultiFileDiff stub
     </div>
@@ -1679,6 +1692,256 @@ describe('DiffPanelContent', () => {
       expect(
         await screen.findByText(/Failed to discard hunk: discard err/)
       ).toBeInTheDocument()
+    })
+  })
+
+  describe('Hunk navigation (PR3)', () => {
+    // Three-hunk fixture:
+    //   hunk 0: additions, newStart=1, newLines=3   → selectedLines: start=1,end=3,side=additions
+    //   hunk 1: additions, newStart=20, newLines=4  → selectedLines: start=20,end=23,side=additions
+    //   hunk 2: deletion-only, oldStart=50, oldLines=2, newLines=0
+    //                                               → selectedLines: start=50,end=51,side=deletions
+    const threeHunkDiff: FileDiff = {
+      filePath: 'src/multi.ts',
+      oldPath: 'src/multi.ts',
+      newPath: 'src/multi.ts',
+      hunks: [
+        {
+          id: 'hunk-0',
+          header: '@@ -1,3 +1,3 @@',
+          oldStart: 1,
+          oldLines: 3,
+          newStart: 1,
+          newLines: 3,
+          lines: [],
+        },
+        {
+          id: 'hunk-1',
+          header: '@@ -20,4 +20,4 @@',
+          oldStart: 20,
+          oldLines: 4,
+          newStart: 20,
+          newLines: 4,
+          lines: [],
+        },
+        {
+          id: 'hunk-2',
+          header: '@@ -50,2 +50,0 @@',
+          oldStart: 50,
+          oldLines: 2,
+          newStart: 50,
+          newLines: 0,
+          lines: [],
+        },
+      ],
+    }
+
+    beforeEach(() => {
+      vi.spyOn(useGitStatusModule, 'useGitStatus').mockReturnValue({
+        files: [{ path: 'src/multi.ts', status: 'modified', staged: false }],
+        filesCwd: '/repo',
+        loading: false,
+        error: null,
+        refresh: vi.fn(),
+        idle: false,
+      })
+
+      vi.spyOn(useFileDiffModule, 'useFileDiff').mockReturnValue(
+        fileDiffMock({
+          diff: threeHunkDiff,
+          loading: false,
+          error: null,
+          oldText: 'old',
+          newText: 'new',
+          rawDiff: '',
+        })
+      )
+    })
+
+    test('initial render: selectedLines derived from hunk 0 (additions)', (): void => {
+      render(
+        <DiffPanelContent
+          cwd="/repo"
+          selectedFile={{ path: 'src/multi.ts', staged: false, cwd: '/repo' }}
+          onSelectedFileChange={vi.fn()}
+        />
+      )
+
+      const diff = screen.getByTestId('multi-file-diff')
+      expect(diff.getAttribute('data-selected-lines-start')).toBe('1')
+      expect(diff.getAttribute('data-selected-lines-end')).toBe('3')
+      expect(diff.getAttribute('data-selected-lines-side')).toBe('additions')
+    })
+
+    test('counter shows 1/3 on initial render', (): void => {
+      render(
+        <DiffPanelContent
+          cwd="/repo"
+          selectedFile={{ path: 'src/multi.ts', staged: false, cwd: '/repo' }}
+          onSelectedFileChange={vi.fn()}
+        />
+      )
+
+      expect(screen.getByLabelText(/hunk 1\/3/i)).toBeInTheDocument()
+    })
+
+    test('clicking next-hunk advances focus: counter 2/3 and selectedLines from hunk 1', async (): Promise<void> => {
+      const user = userEvent.setup()
+
+      render(
+        <DiffPanelContent
+          cwd="/repo"
+          selectedFile={{ path: 'src/multi.ts', staged: false, cwd: '/repo' }}
+          onSelectedFileChange={vi.fn()}
+        />
+      )
+
+      await user.click(screen.getByRole('button', { name: /next hunk/i }))
+
+      expect(screen.getByLabelText(/hunk 2\/3/i)).toBeInTheDocument()
+
+      const diff = screen.getByTestId('multi-file-diff')
+      expect(diff.getAttribute('data-selected-lines-start')).toBe('20')
+      expect(diff.getAttribute('data-selected-lines-end')).toBe('23')
+      expect(diff.getAttribute('data-selected-lines-side')).toBe('additions')
+    })
+
+    test('clicking next-hunk three times wraps from last hunk back to first', async (): Promise<void> => {
+      const user = userEvent.setup()
+
+      render(
+        <DiffPanelContent
+          cwd="/repo"
+          selectedFile={{ path: 'src/multi.ts', staged: false, cwd: '/repo' }}
+          onSelectedFileChange={vi.fn()}
+        />
+      )
+
+      // Advance to hunk 2 (index 2)
+      await user.click(screen.getByRole('button', { name: /next hunk/i }))
+      await user.click(screen.getByRole('button', { name: /next hunk/i }))
+      // Wrap around to hunk 0 (index 0)
+      await user.click(screen.getByRole('button', { name: /next hunk/i }))
+
+      expect(screen.getByLabelText(/hunk 1\/3/i)).toBeInTheDocument()
+
+      const diff = screen.getByTestId('multi-file-diff')
+      expect(diff.getAttribute('data-selected-lines-start')).toBe('1')
+      expect(diff.getAttribute('data-selected-lines-side')).toBe('additions')
+    })
+
+    test('clicking prev-hunk from first hunk wraps to last hunk', async (): Promise<void> => {
+      const user = userEvent.setup()
+
+      render(
+        <DiffPanelContent
+          cwd="/repo"
+          selectedFile={{ path: 'src/multi.ts', staged: false, cwd: '/repo' }}
+          onSelectedFileChange={vi.fn()}
+        />
+      )
+
+      await user.click(screen.getByRole('button', { name: /prev hunk/i }))
+
+      expect(screen.getByLabelText(/hunk 3\/3/i)).toBeInTheDocument()
+
+      const diff = screen.getByTestId('multi-file-diff')
+      // Hunk 2 is deletion-only: oldStart=50, oldLines=2 → side=deletions, start=50, end=51
+      expect(diff.getAttribute('data-selected-lines-start')).toBe('50')
+      expect(diff.getAttribute('data-selected-lines-end')).toBe('51')
+      expect(diff.getAttribute('data-selected-lines-side')).toBe('deletions')
+    })
+
+    test('deletion-only hunk yields side=deletions using old-side coordinates', async (): Promise<void> => {
+      const user = userEvent.setup()
+
+      render(
+        <DiffPanelContent
+          cwd="/repo"
+          selectedFile={{ path: 'src/multi.ts', staged: false, cwd: '/repo' }}
+          onSelectedFileChange={vi.fn()}
+        />
+      )
+
+      // Advance to hunk 2 (the deletion-only one)
+      await user.click(screen.getByRole('button', { name: /next hunk/i }))
+      await user.click(screen.getByRole('button', { name: /next hunk/i }))
+
+      expect(screen.getByLabelText(/hunk 3\/3/i)).toBeInTheDocument()
+
+      const diff = screen.getByTestId('multi-file-diff')
+      expect(diff.getAttribute('data-selected-lines-start')).toBe('50')
+      expect(diff.getAttribute('data-selected-lines-end')).toBe('51')
+      expect(diff.getAttribute('data-selected-lines-side')).toBe('deletions')
+    })
+
+    test('reset-on-file-change: focus resets to hunk 0 when selected file changes', async (): Promise<void> => {
+      const user = userEvent.setup()
+      const onSelectedFileChange = vi.fn()
+
+      // Two files: multi.ts (3 hunks) and other.ts (1 hunk)
+      vi.spyOn(useGitStatusModule, 'useGitStatus').mockReturnValue({
+        files: [
+          { path: 'src/multi.ts', status: 'modified', staged: false },
+          { path: 'src/other.ts', status: 'modified', staged: false },
+        ],
+        filesCwd: '/repo',
+        loading: false,
+        error: null,
+        refresh: vi.fn(),
+        idle: false,
+      })
+
+      const { rerender } = render(
+        <DiffPanelContent
+          cwd="/repo"
+          selectedFile={{ path: 'src/multi.ts', staged: false, cwd: '/repo' }}
+          onSelectedFileChange={onSelectedFileChange}
+        />
+      )
+
+      // Advance to hunk 2 on multi.ts
+      await user.click(screen.getByRole('button', { name: /next hunk/i }))
+      await user.click(screen.getByRole('button', { name: /next hunk/i }))
+      expect(screen.getByLabelText(/hunk 3\/3/i)).toBeInTheDocument()
+
+      // Switch to a different file (1 hunk only)
+      vi.spyOn(useFileDiffModule, 'useFileDiff').mockReturnValue(
+        fileDiffMock({
+          diff: {
+            filePath: 'src/other.ts',
+            oldPath: 'src/other.ts',
+            newPath: 'src/other.ts',
+            hunks: [
+              {
+                id: 'hunk-0',
+                header: '@@ -5,2 +5,2 @@',
+                oldStart: 5,
+                oldLines: 2,
+                newStart: 5,
+                newLines: 2,
+                lines: [],
+              },
+            ],
+          },
+          loading: false,
+          error: null,
+          oldText: 'old',
+          newText: 'new',
+          rawDiff: '',
+        })
+      )
+
+      rerender(
+        <DiffPanelContent
+          cwd="/repo"
+          selectedFile={{ path: 'src/other.ts', staged: false, cwd: '/repo' }}
+          onSelectedFileChange={onSelectedFileChange}
+        />
+      )
+
+      // Focus must reset to 0: counter shows 1/1 (not 3/3 or out-of-range)
+      expect(screen.getByLabelText(/hunk 1\/1/i)).toBeInTheDocument()
     })
   })
 })
