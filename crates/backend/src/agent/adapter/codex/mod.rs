@@ -3,6 +3,7 @@
 mod locator;
 mod parser;
 mod transcript;
+mod transcript_dto;
 mod types;
 
 use std::path::{Path, PathBuf};
