@@ -20,6 +20,10 @@ use crate::terminal::PtyState;
 
 pub use transcript_state::{TranscriptHandle, TranscriptStartStatus, TranscriptState};
 pub(crate) use transcript_tail_service::{TranscriptDecoder, TranscriptTailService};
+// `RecordingDecoder` stays module-private to `transcript_tail_service` (only its
+// own tests use it); 2.3's Claude end-to-end test imports these two.
+#[cfg(test)]
+pub(crate) use transcript_tail_service::{ScriptedBufRead, Step};
 pub use watcher_runtime::{AgentWatcherState, WatcherHandle};
 
 /// Step B': `start_for` now takes the typed `AgentBindings` bundle
