@@ -2,7 +2,7 @@
 id: react-lifecycle
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-05-25
+last_updated: 2026-05-27
 ref_count: 8
 ---
 
@@ -212,4 +212,13 @@ to avoid unintended re-runs (e.g., PTY respawning on every cwd change).
 - **File:** `src/features/diff/components/toolbar/PriorityPlus.tsx`
 - **Finding:** PriorityPlus used `container.clientWidth` with `lastVisible.offsetLeft + offsetWidth` to reserve space for the overflow chip. In the docked diff panel, the wrapper's `offsetParent` is a positioned ancestor outside the toolbar, so the item coordinate included the file-list offset while the container width did not. The toolbar hid one extra chip whenever overflow started.
 - **Fix:** Measure both the container and last visible item with `getBoundingClientRect()` and subtract viewport-relative `right` values. Added a regression test that simulates a toolbar offset by the file list and proves the last fitting chip stays visible.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 23. Index-into-data reset effect missed the same-collection shrink case
+
+- **Source:** github-claude + github-codex-connector | PR #284 | 2026-05-27
+- **Severity:** HIGH
+- **File:** `src/features/diff/components/DiffPanelContent.tsx`
+- **Finding:** `focusedHunkIndex` was reset to 0 only on `[selectedFilePath, selectedFileStaged]` change. Staging/discarding a hunk reloads the SAME file with fewer hunks (path + staged unchanged), so the reset never fired — the stale index pointed out of range, the hunk counter rendered an invalid value (e.g. "3/2", with no `Math.min` clamp unlike the sibling file counter), and per-hunk stage/unstage/discard silently no-op'd via the `focusedHunk === null` guard until the user manually navigated. The reset effect's dependency set covered file-identity changes but not the equivalent "the indexed collection shrank under a held index" case.
+- **Fix:** Added a clamp effect keyed on `hunkCount` (`setFocusedHunkIndex((prev) => Math.min(prev, hunkCount - 1))`) plus a derived `clampedHunkIndex` (`hunkCount > 0 ? Math.min(focusedHunkIndex, hunkCount - 1) : 0`) used for the focused hunk, `selectedLines`, and the toolbar counter — so the single render between the shrink and the effect firing also stays in range. Lesson: when state holds an index/cursor into a refetchable collection, the clamp must key on the collection length, not only on the identity that selected it. Regression test: focus the last of 3 hunks, reload the same file with 2 hunks, assert the counter clamps to "2/2" (never "3/2") and `selectedLines` stays non-null.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

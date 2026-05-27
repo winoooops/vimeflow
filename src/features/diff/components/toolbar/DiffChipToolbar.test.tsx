@@ -538,6 +538,74 @@ describe('DiffChipToolbar', () => {
     })
   })
 
+  describe('Hunk navigation chips — PR3 functional mode', () => {
+    test('clicking next-hunk chip calls onNextHunk', async () => {
+      const user = userEvent.setup()
+      const onNextHunk = vi.fn<() => void>()
+
+      renderToolbar({ onNextHunk, onPrevHunk: vi.fn(), totalHunks: 3 })
+
+      await user.click(screen.getByRole('button', { name: /next hunk/i }))
+      expect(onNextHunk).toHaveBeenCalledTimes(1)
+    })
+
+    test('clicking prev-hunk chip calls onPrevHunk', async () => {
+      const user = userEvent.setup()
+      const onPrevHunk = vi.fn<() => void>()
+
+      renderToolbar({ onPrevHunk, onNextHunk: vi.fn(), totalHunks: 3 })
+
+      await user.click(screen.getByRole('button', { name: /prev hunk/i }))
+      expect(onPrevHunk).toHaveBeenCalledTimes(1)
+    })
+
+    test('hunk chips are enabled when totalHunks > 1 and handlers provided', () => {
+      renderToolbar({
+        onPrevHunk: vi.fn(),
+        onNextHunk: vi.fn(),
+        totalHunks: 3,
+        focusedHunkIndex: 1,
+      })
+
+      expect(
+        screen.getByRole('button', { name: /prev hunk/i })
+      ).not.toBeDisabled()
+
+      expect(
+        screen.getByRole('button', { name: /next hunk/i })
+      ).not.toBeDisabled()
+    })
+
+    test('hunk chips are disabled when totalHunks <= 1', async () => {
+      const user = userEvent.setup()
+      const onPrevHunk = vi.fn<() => void>()
+      const onNextHunk = vi.fn<() => void>()
+
+      renderToolbar({
+        onPrevHunk,
+        onNextHunk,
+        totalHunks: 1,
+        focusedHunkIndex: 0,
+      })
+
+      const prev = screen.getByRole('button', { name: /prev hunk/i })
+      const next = screen.getByRole('button', { name: /next hunk/i })
+      expect(prev).toBeDisabled()
+      expect(next).toBeDisabled()
+
+      await user.click(prev)
+      await user.click(next)
+      expect(onPrevHunk).not.toHaveBeenCalled()
+      expect(onNextHunk).not.toHaveBeenCalled()
+    })
+
+    test('counter shows focusedHunkIndex + 1 / totalHunks', () => {
+      renderToolbar({ totalHunks: 3, focusedHunkIndex: 1 })
+
+      expect(screen.getByLabelText(/hunk 2\/3/i)).toBeInTheDocument()
+    })
+  })
+
   test('PriorityPlus collapses the lower-priority chips into the overflow menu at a narrow width', () => {
     renderToolbar({ diffMode: 'unstaged' })
 
