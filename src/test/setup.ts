@@ -3,10 +3,79 @@ import { afterEach, vi } from 'vitest'
 import * as chordRegistry from '../features/command-palette/chordRegistry'
 import * as paneHeaderRefs from '../features/terminal/paneHeaderRefs'
 
+const ensureLocalStorageClear = (): void => {
+  if (typeof window.localStorage.clear === 'function') {
+    return
+  }
+
+  const values = new Map<string, string>()
+
+  const storage: Storage = {
+    get length(): number {
+      return values.size
+    },
+    clear: (): void => {
+      values.clear()
+    },
+    getItem: (key: string): string | null => values.get(key) ?? null,
+    key: (index: number): string | null =>
+      Array.from(values.keys())[index] ?? null,
+    removeItem: (key: string): void => {
+      values.delete(key)
+    },
+    setItem: (key: string, value: string): void => {
+      values.set(key, value)
+    },
+  }
+
+  Object.defineProperty(window, 'localStorage', {
+    configurable: true,
+    value: storage,
+  })
+}
+
+ensureLocalStorageClear()
+
 afterEach(() => {
   chordRegistry._resetForTest()
   paneHeaderRefs._resetForTest()
 })
+
+const createMemoryStorage = (): Storage => {
+  const store = new Map<string, string>()
+
+  return {
+    get length(): number {
+      return store.size
+    },
+    clear: (): void => {
+      store.clear()
+    },
+    getItem: (key: string): string | null => store.get(key) ?? null,
+    key: (index: number): string | null =>
+      Array.from(store.keys())[index] ?? null,
+    removeItem: (key: string): void => {
+      store.delete(key)
+    },
+    setItem: (key: string, value: string): void => {
+      store.set(key, value)
+    },
+  }
+}
+
+if (typeof window.localStorage.clear !== 'function') {
+  const storage = createMemoryStorage()
+
+  Object.defineProperty(window, 'localStorage', {
+    configurable: true,
+    value: storage,
+  })
+
+  Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true,
+    value: storage,
+  })
+}
 
 // Mock xterm.js WebGL addon to prevent WebGL errors in jsdom
 vi.mock('@xterm/addon-webgl', () => ({

@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import type { ReactElement } from 'react'
 import { WorkspaceView } from './WorkspaceView'
 import type { SessionManager } from '../sessions/hooks/useSessionManager'
+import type { AgentStatus } from '../agent-status/types'
 import type { Session } from '../sessions/types'
 import { AGENTS } from '../../agents/registry'
 import type { TerminalZoneProps } from './components/TerminalZone'
@@ -23,6 +24,12 @@ vi.mock('../../lib/backend', () => ({
     })
   ),
   invoke: vi.fn().mockResolvedValue(null),
+  // useCommandPalette subscribes to the Electron main-process palette toggle
+  // override on mount; return a synchronous no-op unlisten so the
+  // WorkspaceView tree mounts without reaching a real bridge.
+  listenCommandPaletteToggle: vi.fn(() => (): void => {
+    /* no-op unlisten */
+  }),
 }))
 vi.mock('../../hooks/useResizable')
 vi.mock('../../hooks/useElasticContainer', () => ({
@@ -134,11 +141,37 @@ const createMockSession = (id: string, name: string): Session => ({
   },
 })
 
+const createAgentStatus = (
+  overrides: Partial<AgentStatus> = {}
+): AgentStatus => ({
+  isActive: false,
+  agentExited: false,
+  agentType: null,
+  modelId: null,
+  modelDisplayName: null,
+  version: null,
+  sessionId: null,
+  agentSessionId: null,
+  cwd: null,
+  contextWindow: null,
+  cost: null,
+  rateLimits: null,
+  numTurns: 0,
+  toolCalls: { total: 0, byType: {}, active: null },
+  recentToolCalls: [],
+  testRun: null,
+  ...overrides,
+})
+
 describe('WorkspaceView - Command Palette Integration', () => {
   let mockSessionManager: SessionManager
   let mockSessions: Session[]
 
   beforeEach(async () => {
+    Object.defineProperty(navigator, 'platform', {
+      value: 'Linux x86_64',
+      configurable: true,
+    })
     // Reset all mocks
     vi.clearAllMocks()
     terminalZonePropsSpy.mockClear()
@@ -202,24 +235,9 @@ describe('WorkspaceView - Command Palette Integration', () => {
     // Mock useAgentStatus
     const { useAgentStatus } =
       await import('../agent-status/hooks/useAgentStatus')
-    vi.mocked(useAgentStatus).mockReturnValue({
-      isActive: false,
-      agentExited: false,
-      agentType: null,
-      modelId: null,
-      modelDisplayName: null,
-      version: null,
-      sessionId: 'pty-session-1',
-      agentSessionId: null,
-      cwd: null,
-      contextWindow: null,
-      cost: null,
-      rateLimits: null,
-      numTurns: 0,
-      toolCalls: { total: 0, byType: {}, active: null },
-      recentToolCalls: [],
-      testRun: null,
-    })
+    vi.mocked(useAgentStatus).mockReturnValue(
+      createAgentStatus({ sessionId: 'pty-session-1' })
+    )
 
     // Mock useGitStatus
     const { useGitStatus } = await import('../diff/hooks/useGitStatus')
@@ -283,7 +301,7 @@ describe('WorkspaceView - Command Palette Integration', () => {
   const openPalette = (): void => {
     act(() => {
       const event = new KeyboardEvent('keydown', {
-        key: ':',
+        key: ';',
         ctrlKey: true,
         bubbles: true,
       })
@@ -447,6 +465,128 @@ describe('WorkspaceView - Command Palette Integration', () => {
     const activeTab = screen.getByRole('tab', { name: 'feature' })
     expect(within(activeTab).getByText(AGENTS.shell.glyph)).toBeInTheDocument()
     expect(mockSessionManager.updatePaneAgentType).not.toHaveBeenCalled()
+  })
+
+  test('hides status bar context and turns when selected pane has no active agent', () => {
+    render(<WorkspaceView />)
+
+    expect(screen.queryByTestId('status-bar-context')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('status-bar-turns')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('status-bar-cache')).not.toBeInTheDocument()
+    expect(screen.getByTestId('status-bar-palette')).toBeInTheDocument()
+  })
+
+  test('shows status bar context and turns for the selected pane active agent', async () => {
+    const { useAgentStatus } =
+      await import('../agent-status/hooks/useAgentStatus')
+    vi.mocked(useAgentStatus).mockReturnValue(
+      createAgentStatus({
+        isActive: true,
+        agentExited: false,
+        agentType: 'claude-code',
+        sessionId: 'pty-session-1',
+        contextWindow: {
+          usedPercentage: 66,
+          contextWindowSize: 200000,
+          totalInputTokens: 120000,
+          totalOutputTokens: 12000,
+          currentUsage: {
+            inputTokens: 2500,
+            outputTokens: 500,
+            cacheCreationInputTokens: 1000,
+            cacheReadInputTokens: 7000,
+          },
+        },
+        cost: {
+          totalCostUsd: null,
+          totalDurationMs: 4 * 60 * 60 * 1000,
+          totalApiDurationMs: 0,
+          totalLinesAdded: 0,
+          totalLinesRemoved: 0,
+        },
+        numTurns: 28,
+      })
+    )
+
+    render(<WorkspaceView />)
+
+    expect(screen.getByTestId('status-bar-context')).toHaveTextContent('66%')
+    expect(screen.getByTestId('status-bar-turns')).toHaveTextContent('28 turns')
+  })
+
+  test('hides status bar context and turns for active agent status from another pane', async () => {
+    const { useAgentStatus } =
+      await import('../agent-status/hooks/useAgentStatus')
+    vi.mocked(useAgentStatus).mockReturnValue(
+      createAgentStatus({
+        isActive: true,
+        agentExited: false,
+        agentType: 'claude-code',
+        sessionId: 'pty-session-2',
+        contextWindow: {
+          usedPercentage: 92,
+          contextWindowSize: 200000,
+          totalInputTokens: 180000,
+          totalOutputTokens: 4000,
+          currentUsage: null,
+        },
+        numTurns: 99,
+      })
+    )
+
+    render(<WorkspaceView />)
+
+    expect(screen.queryByTestId('status-bar-context')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('status-bar-turns')).not.toBeInTheDocument()
+  })
+
+  test('hides the status bar context before the first contextWindow payload', async () => {
+    const { useAgentStatus } =
+      await import('../agent-status/hooks/useAgentStatus')
+    vi.mocked(useAgentStatus).mockReturnValue(
+      createAgentStatus({
+        isActive: true,
+        agentExited: false,
+        agentType: 'claude-code',
+        sessionId: 'pty-session-1',
+        // Agent has started but has not reported a context window yet.
+        contextWindow: null,
+        numTurns: 12,
+      })
+    )
+
+    render(<WorkspaceView />)
+
+    // Turns render (agent active on the selected pane) but the context segment
+    // is omitted rather than shown as a misleading 😊0%.
+    expect(screen.getByTestId('status-bar-turns')).toHaveTextContent('12 turns')
+    expect(screen.queryByTestId('status-bar-context')).not.toBeInTheDocument()
+  })
+
+  test('shows a <1m duration for a sub-minute agent session', async () => {
+    const { useAgentStatus } =
+      await import('../agent-status/hooks/useAgentStatus')
+    vi.mocked(useAgentStatus).mockReturnValue(
+      createAgentStatus({
+        isActive: true,
+        agentExited: false,
+        agentType: 'claude-code',
+        sessionId: 'pty-session-1',
+        cost: {
+          totalCostUsd: null,
+          totalDurationMs: 30_000,
+          totalApiDurationMs: 0,
+          totalLinesAdded: 0,
+          totalLinesRemoved: 0,
+        },
+        numTurns: 1,
+      })
+    )
+
+    render(<WorkspaceView />)
+
+    // A freshly started agent (30s elapsed) shows <1m instead of a blank bar.
+    expect(screen.getByTestId('status-bar-duration')).toHaveTextContent('<1m')
   })
 
   test(':close command removes active session', async () => {

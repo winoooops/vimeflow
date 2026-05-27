@@ -147,14 +147,16 @@ pub(crate) async fn spawn_pty_inner(
     //
     // We do NOT set CLAUDE_CONFIG_DIR — that would replace the user's
     // entire config directory, breaking auth, plugins, and hooks.
-    // Instead, we set ENV/BASH_ENV (sourced by non-interactive shells)
-    // and use --rcfile (for interactive bash) to source both the user's
-    // rc file and our init script.
+    // Instead, we set shell startup hooks to source our generated init script:
+    // BASH_ENV/--rcfile for bash and ZDOTDIR for zsh, while preserving the
+    // user's HOME-level startup files.
     if let Some(ref files) = bridge_files {
-        // Pass paths via env vars — the scripts reference $VIMEFLOW_STATUS_FILE
-        // and $VIMEFLOW_CLAUDE_SETTINGS instead of embedding paths directly,
-        // which avoids injection from paths containing quotes or metacharacters.
+        // Pass paths via env vars — the scripts reference these variables
+        // instead of embedding paths directly, which avoids injection from
+        // paths containing quotes or metacharacters.
         cmd.env("BASH_ENV", files.shell_init_path.as_os_str());
+        cmd.env("ENV", files.shell_init_path.as_os_str());
+        cmd.env("VIMEFLOW_AGENT_INIT", files.shell_init_path.as_os_str());
         cmd.env("VIMEFLOW_CLAUDE_SETTINGS", files.settings_path.as_os_str());
         cmd.env("VIMEFLOW_STATUS_FILE", files.status_file_path.as_os_str());
 
@@ -174,6 +176,10 @@ pub(crate) async fn spawn_pty_inner(
         } else if shell.contains("bash") {
             cmd.arg("--rcfile");
             cmd.arg(rcfile_path.as_os_str());
+        }
+
+        if shell.contains("zsh") {
+            cmd.env("ZDOTDIR", init_dir.as_os_str());
         }
 
         log::info!("Injected claude wrapper for session {}", request.session_id);
@@ -862,6 +868,65 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn spawn_pty_agent_bridge_env_writes_status_file_with_path_chars() {
+        let (state, cache, events, temp_dir) = create_test_state_with_cache();
+        let cwd = temp_dir.path().join("workspace with spaces and quote's");
+        std::fs::create_dir_all(&cwd).expect("create cwd");
+        let session_id = "bridge-live-test".to_string();
+        let status_path = cwd
+            .join(".vimeflow")
+            .join("sessions")
+            .join(&session_id)
+            .join("status.json");
+
+        let request = SpawnPtyRequest {
+            session_id: session_id.clone(),
+            cwd: cwd.to_string_lossy().to_string(),
+            shell: None,
+            env: None,
+            enable_agent_bridge: true,
+        };
+
+        let result = spawn_pty_inner(state.clone(), cache.clone(), events.clone(), request).await;
+
+        assert!(result.is_ok(), "spawn_pty should succeed: {result:?}");
+        assert!(
+            status_path.parent().expect("status parent").exists(),
+            "spawn_pty should create the bridge session directory"
+        );
+
+        write_pty_inner(
+            &state,
+            WritePtyRequest {
+                session_id: session_id.clone(),
+                data: "printf '%s' '{\"ok\":true}' > \"$VIMEFLOW_STATUS_FILE\"\n".to_string(),
+            },
+        )
+        .expect("write status command");
+
+        let written = (0..160)
+            .find_map(|_| match std::fs::read_to_string(&status_path) {
+                Ok(value) if value == "{\"ok\":true}" => Some(value),
+                _ => {
+                    std::thread::sleep(std::time::Duration::from_millis(25));
+                    None
+                }
+            })
+            .expect("shell should write the configured VIMEFLOW_STATUS_FILE");
+
+        assert_eq!(written, "{\"ok\":true}");
+
+        kill_pty_inner(
+            &state,
+            &cache,
+            KillPtyRequest {
+                session_id: session_id.clone(),
+            },
+        )
+        .expect("kill bridge test session");
+    }
+
+    #[tokio::test]
     async fn write_pty_fails_for_nonexistent_session() {
         let (state, _cache, _events, _temp_dir) = create_test_state_with_cache();
 
@@ -1240,10 +1305,10 @@ mod tests {
                 pixel_height: 0,
             })
             .expect("openpty");
-        // Spawn /bin/true and reap immediately. We only need the pair to
+        // Spawn a no-op child and reap immediately. We only need the pair to
         // source a real master + writer of the correct trait-object types;
         // the synthetic child below replaces the real one for the kill path.
-        let cmd = CommandBuilder::new("/bin/true");
+        let cmd = CommandBuilder::new(test_true_path());
         let mut helper_child = pty_pair.slave.spawn_command(cmd).expect("spawn");
         let _ = helper_child.wait();
         let writer = pty_pair.master.take_writer().expect("take_writer");
@@ -1256,6 +1321,14 @@ mod tests {
             ring: Arc::new(Mutex::new(RingBuffer::new(64))),
             cancelled: Arc::new(AtomicBool::new(false)),
             started_at: std::time::SystemTime::now(),
+        }
+    }
+
+    fn test_true_path() -> &'static str {
+        if cfg!(target_os = "macos") {
+            "/usr/bin/true"
+        } else {
+            "/bin/true"
         }
     }
 

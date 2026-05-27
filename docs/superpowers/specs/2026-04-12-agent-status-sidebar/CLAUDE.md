@@ -162,7 +162,6 @@ src/features/agent-status/
 │   ├── RecentToolCalls.tsx       // Collapsible list of last 5-10 calls
 │   ├── FilesChanged.tsx          // File list with new/modified/deleted badges
 │   ├── TestResults.tsx           // Pass/fail segmented bar
-│   └── ActivityFooter.tsx        // Session time, turns, lines
 ├── hooks/
 │   └── useAgentStatus.ts         // Subscribes to Tauri agent-* events, manages state
 └── types/
@@ -240,10 +239,8 @@ Detection priority: check `rate_limits` first (present = subscriber), then assum
 - Pass/fail count: "4/5 PASSED"
 - Segmented color bar: green segments for passes, red for failures
 
-#### 8. Footer
-
-- Compact single row: session time, turn count, lines added/removed
-- Muted styling (smallest text, lowest contrast)
+Session time, turn count, and line deltas are now surfaced in the global
+bottom `StatusBar`, not in a footer inside the activity panel.
 
 ### Design Tokens
 

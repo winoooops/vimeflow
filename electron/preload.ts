@@ -1,5 +1,9 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
-import { BACKEND_EVENT, BACKEND_INVOKE } from './ipc-channels'
+import {
+  BACKEND_EVENT,
+  BACKEND_INVOKE,
+  COMMAND_PALETTE_TOGGLE,
+} from './ipc-channels'
 
 type InvokeEnvelope<T> =
   | { ok: true; result: T }
@@ -52,4 +56,20 @@ const listen = <T>(
   return Promise.resolve(unlisten)
 }
 
-contextBridge.exposeInMainWorld('vimeflow', { invoke, listen })
+const onCommandPaletteToggle = (callback: () => void): (() => void) => {
+  const handler = (): void => {
+    callback()
+  }
+
+  ipcRenderer.on(COMMAND_PALETTE_TOGGLE, handler)
+
+  return (): void => {
+    ipcRenderer.off(COMMAND_PALETTE_TOGGLE, handler)
+  }
+}
+
+contextBridge.exposeInMainWorld('vimeflow', {
+  invoke,
+  listen,
+  onCommandPaletteToggle,
+})

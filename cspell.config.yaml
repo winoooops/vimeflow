@@ -107,6 +107,11 @@ words:
   - statusline
   - nvim
   - DECRQM
+  - JetBrainsMono
+  - MesloLGS
+  - FiraCode
+  - Cascadia
+  - Menlo
 
   # Git apply flag — `--whitespace=nowarn` suppresses whitespace warnings
   - nowarn

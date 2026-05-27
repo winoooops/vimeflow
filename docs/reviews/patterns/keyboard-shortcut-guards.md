@@ -2,7 +2,7 @@
 id: keyboard-shortcut-guards
 category: keyboard-shortcuts
 created: 2026-05-18
-last_updated: 2026-05-18
+last_updated: 2026-05-26
 ref_count: 0
 ---
 
@@ -23,6 +23,12 @@ against three classes of false-fire:
    should be exported from a single source-of-truth module (e.g. `containerIds.ts`)
    and imported by each hook; duplication causes divergence when the guard needs
    updating.
+4. **Main-process / renderer guard parity** — when a shortcut is handled in BOTH
+   the Electron main process (`before-input-event`) and the renderer (`keydown`),
+   a guard added to only one path is silently bypassed in the packaged app:
+   `event.preventDefault()` in the main process suppresses the renderer `keydown`,
+   so a renderer-only guard (e.g. `event.repeat`) never runs. The main-process
+   matcher must replicate the guard itself (filter `input.isAutoRepeat`).
 
 ## Findings
 
@@ -234,3 +240,33 @@ against three classes of false-fire:
   focus outline; (2) clicking dock claims dock focus (terminal dims); (3) closing dock
   returns container focus to terminal.
 - **Commit:** `fix(workspace): address round-8 Claude review findings on focus highlight PR`
+
+### 17. Auto-repeat not filtered in main-process command-palette shortcut matcher
+
+- **Source:** github-codex-connector + github-claude | PR #277 round 1 | 2026-05-26
+- **Severity:** P1 (Codex) / MEDIUM (Claude)
+- **File:** `electron/command-palette-shortcut.ts`
+- **Finding:** `ShortcutInput` omitted `isAutoRepeat`, so `isCommandPaletteShortcutInput`
+  matched every auto-repeat `before-input-event` keydown. In packaged Electron builds the
+  renderer-side `event.repeat` guard never runs — the main process calls
+  `event.preventDefault()`, suppressing the renderer keydown — so holding `Ctrl+:` past the
+  OS auto-repeat threshold leaked one IPC toggle every ~100 ms through the
+  deduplication-rate-limited dispatcher, flickering the palette open/closed.
+- **Fix:** Added `isAutoRepeat?: boolean` to `ShortcutInput` and gated the matcher with
+  `&& !input.isAutoRepeat`, achieving parity with the renderer's `event.repeat` guard (Summary
+  class 4). Added a predicate test and a `before-input-event` integration test asserting no
+  toggle on auto-repeat.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 18. consumePaletteToggleEvent named for one of four call sites
+
+- **Source:** github-claude | PR #277 round 1 | 2026-05-26
+- **Severity:** LOW
+- **File:** `src/features/command-palette/hooks/useCommandPalette.ts`
+- **Finding:** `consumePaletteToggleEvent` (preventDefault + stopPropagation +
+  stopImmediatePropagation) was called on Escape and leader follow-up keys too, not only the
+  palette toggle shortcut. The name implied a narrower scope, risking a future dev narrowing
+  or dropping `stopImmediatePropagation` for the non-toggle paths based on the name alone.
+- **Fix:** Renamed the module-local helper to `fullyConsumeEvent` (def + 6 call sites) and added
+  a contract comment documenting the full-consume behavior across all call sites. No logic change.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

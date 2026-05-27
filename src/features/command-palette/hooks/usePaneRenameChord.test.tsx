@@ -100,7 +100,7 @@ describe('usePaneRenameChord', () => {
     mockSetPaneUserLabel.mockReset()
   })
 
-  test('Ctrl+: then r with focused pane opens rename input', () => {
+  test('palette toggle then r with focused pane opens rename input', () => {
     const focused = makeFocusedRef({ agentTitle: 'old title' })
 
     render(<Harness resolveFocusedPane={() => focused} />)

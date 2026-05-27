@@ -30,7 +30,7 @@ The prior activity-panel refactor session (see `docs/reviews/retrospectives/2026
 
 ## Non-goals
 
-- Redesign of `StatusCard`, `ContextBucket`, `FilesChanged`, `TestResults`, or `ActivityFooter` — each is its own follow-up PR.
+- Redesign of `StatusCard`, `ContextBucket`, `FilesChanged`, or `TestResults` — each is its own follow-up PR.
 - Claude Design's top-of-panel "session header + CONTEXT / 5-HOUR USAGE / TURNS bars" — separate PR.
 - Transcript parser **feature** work. `diff` (from `git status` after edits) and `bashResult` (from a test-script watcher) still land in future PRs; the fields are declared optionally today and populated later.
 - Persistent cross-session tool-call history. The 50-event buffer lives in memory per session; a sqlite/indexeddb store is its own project.
@@ -44,7 +44,7 @@ The prior activity-panel refactor session (see `docs/reviews/retrospectives/2026
 ```
 src/features/workspace/components/AgentActivity/          ← whole orphaned directory
   ├── AgentActivity.tsx / .test.tsx
-  ├── ActivityFooter.tsx / .test.tsx
+  ├── Footer.tsx / .test.tsx
   ├── CollapsibleSection.tsx / .test.tsx
   ├── FilesChanged.tsx / .test.tsx
   ├── PinnedMetrics.tsx / .test.tsx
@@ -104,7 +104,7 @@ src-tauri/src/agent/transcript.rs                         ← new extract_timest
 
 ### Files untouched (explicit)
 
-`StatusCard`, `ContextBucket`, `FilesChanged`, `TestResults`, `ActivityFooter`, and all tests for them — behavior is unchanged.
+`StatusCard`, `ContextBucket`, `FilesChanged`, `TestResults`, and all tests for them — behavior is unchanged. The former activity-panel footer has since been removed; its ambient session metrics now live in the global bottom `StatusBar`.
 
 ## Architecture
 
@@ -119,7 +119,6 @@ AgentStatusPanel
 │   ├── ActivityFeed        (wrapped in CollapsibleSection "Activity",   default expanded)
 │   ├── FilesChanged        (kept, untouched — CollapsibleSection, default collapsed)
 │   └── TestResults         (kept, untouched — CollapsibleSection, default collapsed)
-└── ActivityFooter          (kept, untouched)
 ```
 
 Tool-call data now reaches the user through two lenses: the `ToolCallSummary` chip-and-running-indicator view (by-type analytics + current tool), and the `ActivityFeed` narrative view (per-event timeline with types, relative timestamps, status chips). `RecentToolCalls`, which showed a raw list of the last 10 calls, was removed — it duplicated what the feed already displays better.
@@ -339,7 +338,6 @@ return (
       <TestResults {...} />
     </div>
 
-    <ActivityFooter {...} />
   </aside>
 )
 ```

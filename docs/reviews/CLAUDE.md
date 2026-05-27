@@ -69,5 +69,6 @@ When appending findings to a pattern file, label the source so future readers ca
 | [E2E Testing](patterns/e2e-testing.md)                               | e2e-testing        | 18       | 6    | 2026-05-20   |
 | [Module Boundaries](patterns/module-boundaries.md)                   | code-quality       | 3        | 1    | 2026-05-07   |
 | [Diagnostic Instrumentation](patterns/diagnostic-instrumentation.md) | code-quality       | 7        | 2    | 2026-05-02   |
-| [Keyboard Shortcut Guards](patterns/keyboard-shortcut-guards.md)     | keyboard-shortcuts | 16       | 0    | 2026-05-18   |
+| [Keyboard Shortcut Guards](patterns/keyboard-shortcut-guards.md)     | keyboard-shortcuts | 18       | 0    | 2026-05-26   |
 | [Verify Render Target](patterns/verify-render-target.md)             | code-quality       | 2        | 0    | 2026-05-24   |
+| [Status Indicator Display](patterns/status-indicator-display.md)     | code-quality       | 3        | 0    | 2026-05-26   |

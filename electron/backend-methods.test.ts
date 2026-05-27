@@ -24,6 +24,9 @@ describe('isAllowedBackendMethod', () => {
     'git_branch',
     'git_worktree_name',
     'get_git_diff',
+    'stage_file',
+    'unstage_file',
+    'discard_file',
     'start_git_watcher',
     'stop_git_watcher',
   ])('allows %s', (method) => {
