@@ -52,12 +52,14 @@ interface GroupedEntry {
   grouping: PaneGrouping
 }
 
-interface Bucket {
-  kind: 'grouped' | 'ungrouped'
-  id: string
-  entries: GroupedEntry[] | SessionInfo[]
-  layout: LayoutId
-}
+// Discriminated union: `kind` is the discriminator, `entries` carries the
+// matching element type per arm. With this shape, narrowing on `bucket.kind`
+// also narrows `bucket.entries`, so the call sites need no `as` casts and a
+// future refactor that adds a new `kind` or reorders arms fails at compile
+// time instead of silently widening into wrong-shape entries at runtime.
+type Bucket =
+  | { kind: 'grouped'; id: string; entries: GroupedEntry[]; layout: LayoutId }
+  | { kind: 'ungrouped'; id: string; entries: SessionInfo[]; layout: LayoutId }
 
 const buildPane = (
   info: SessionInfo,
@@ -171,7 +173,7 @@ export const groupSessionsFromInfos = (
       }
       const bucket = buckets.get(key)
       if (bucket?.kind === 'grouped') {
-        ;(bucket.entries as GroupedEntry[]).push({ info, grouping })
+        bucket.entries.push({ info, grouping })
         // Self-healing: the layout recorded on any pane wins. If different
         // panes disagree (rare race), the first non-`single` wins so a quad
         // workspace doesn't collapse to single because one pane was pushed
@@ -199,14 +201,9 @@ export const groupSessionsFromInfos = (
     }
     if (bucket.kind === 'ungrouped') {
       // Preserve the exact legacy single-pane shape via the existing helper.
-      return sessionFromInfo((bucket.entries as SessionInfo[])[0], index)
+      return sessionFromInfo(bucket.entries[0], index)
     }
 
-    return buildGroupedSession(
-      bucket.id,
-      bucket.layout,
-      bucket.entries as GroupedEntry[],
-      index
-    )
+    return buildGroupedSession(bucket.id, bucket.layout, bucket.entries, index)
   })
 }
