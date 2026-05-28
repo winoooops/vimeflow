@@ -51,44 +51,6 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # `electron/command-palette-shortcut.test.ts` imports the `electron`
-      # package, which reads `node_modules/electron/path.txt` to locate the
-      # prebuilt binary. setup-node@v4's `cache: 'npm'` caches `~/.npm`,
-      # NOT `node_modules`, so `npm ci` reinstalls — and the electron
-      # postinstall download has been observed to leave `path.txt`
-      # missing on a non-trivial fraction of runs (the same fail-mode hit
-      # f893644, 643f074, 3d908dd; only 36fb6c8 and 9a53a21 happened to
-      # win the race). When the file is missing the next test that
-      # imports electron triggers an in-process download, which races
-      # parallel vitest workers and fails with `ENOENT path.txt`.
-      #
-      # Electron 42.x's `package.json` has no `install` / `postinstall`
-      # script — the binary download has to be triggered explicitly by
-      # running `install.js`. Without this, `npm ci` populates
-      # `node_modules/electron/` but leaves no binary and no `path.txt`,
-      # so the first test that imports electron triggers an in-process
-      # download and races parallel vitest workers (ENOENT on path.txt).
-      #
-      # Wipe any partial state first. Observed in CI: `dist/` from a
-      # previous (incomplete) download can persist while `path.txt` is
-      # absent — `install.js`'s `isInstalled()` short-circuit can still
-      # exit early in that state, never writing `path.txt`. Forcing a
-      # clean download every run is cheap (one ~80MB fetch, cached by
-      # @electron/get's own cacheRoot under ~/.cache/electron).
-      - name: Ensure Electron binary is installed
-        run: |
-          rm -rf node_modules/electron/dist node_modules/electron/path.txt
-          node node_modules/electron/install.js
-          if [ ! -f node_modules/electron/path.txt ]; then
-            echo "ERROR: electron/path.txt missing after install.js" >&2
-            echo "--- node_modules/electron contents ---" >&2
-            ls -la node_modules/electron/ >&2 || true
-            echo "--- node_modules/electron/dist contents ---" >&2
-            ls -la node_modules/electron/dist/ >&2 || true
-            exit 1
-          fi
-          echo "electron binary: $(cat node_modules/electron/path.txt)"
-
       - name: Run tests
         run: npm test
 
