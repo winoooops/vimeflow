@@ -1,0 +1,896 @@
+<!doctype html>
+<!--
+  ========================================================================
+  REVIEW NOTE — for human and agent (Codex / Claude) reviewers
+  ========================================================================
+  This file is a STATIC, hand-authored explainer/diagram document. It holds
+  no application logic, no runtime code, no imports, and no tests — only
+  prose, inline CSS, and inline SVG, for illustration.
+
+  It is documentation, NOT code. Please do not line-by-line review it, chase
+  CSS/SVG nits, or treat it as part of the app's behavioral surface. To
+  verify it, open it in a browser and confirm it renders. It is excluded
+  from Prettier via .prettierignore for the same reason.
+
+  Reviewable companions (the real artifacts):
+    - docs/decisions/2026-05-27-terminal-rendering-fixes.md
+    - docs/superpowers/retros/2026-05-27-terminal-rendering-investigation.md
+  ========================================================================
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Anatomy of a Ghost — Debugging the Vimeflow Terminal</title>
+    <style>
+      :root {
+        --base: #1e1e2e;
+        --mantle: #181825;
+        --crust: #11111b;
+        --surface0: #313244;
+        --surface1: #45475a;
+        --surface2: #585b70;
+        --text: #cdd6f4;
+        --subtext1: #bac2de;
+        --subtext0: #a6adc8;
+        --overlay0: #6c7086;
+        --overlay1: #7f849c;
+        --blue: #89b4fa;
+        --lavender: #b4befe;
+        --sapphire: #74c7ec;
+        --teal: #94e2d5;
+        --green: #a6e3a1;
+        --yellow: #f9e2af;
+        --peach: #fab387;
+        --red: #f38ba8;
+        --maroon: #eba0ac;
+        --mauve: #cba6f7;
+        --pink: #f5c2e7;
+        --c-font: var(--peach);
+        --c-locale: var(--yellow);
+        --c-gpu: var(--red);
+        --c-raf: var(--mauve);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html {
+        scroll-behavior: smooth;
+      }
+
+      body {
+        margin: 0;
+        background:
+          radial-gradient(
+            1200px 800px at 80% -10%,
+            rgba(137, 180, 250, 0.08),
+            transparent 60%
+          ),
+          radial-gradient(
+            1000px 700px at -10% 20%,
+            rgba(203, 166, 247, 0.07),
+            transparent 55%
+          ),
+          var(--base);
+        color: var(--text);
+        font-family:
+          "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        line-height: 1.65;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      .wrap {
+        max-width: 980px;
+        margin: 0 auto;
+        padding: 0 24px 120px;
+      }
+
+      code,
+      .mono {
+        font-family:
+          "JetBrains Mono", "SF Mono", ui-monospace, "Cascadia Code", monospace;
+        font-size: 0.88em;
+        background: rgba(17, 17, 27, 0.6);
+        padding: 0.12em 0.4em;
+        border-radius: 5px;
+        color: var(--sapphire);
+      }
+
+      h1,
+      h2,
+      h3 {
+        font-family:
+          "Manrope", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        line-height: 1.2;
+        letter-spacing: -0.02em;
+      }
+
+      /* ---------- Hero ---------- */
+      header.hero {
+        padding: 96px 24px 64px;
+        max-width: 980px;
+        margin: 0 auto;
+        text-align: center;
+      }
+
+      .kicker {
+        text-transform: uppercase;
+        letter-spacing: 0.32em;
+        font-size: 12px;
+        color: var(--overlay1);
+        font-weight: 600;
+      }
+
+      header.hero h1 {
+        font-size: clamp(38px, 7vw, 68px);
+        margin: 18px 0 10px;
+        background: linear-gradient(120deg, var(--lavender), var(--sapphire), var(--teal));
+        -webkit-background-clip: text;
+        background-clip: text;
+        -webkit-text-fill-color: transparent;
+      }
+
+      header.hero p.sub {
+        font-size: clamp(16px, 2.2vw, 21px);
+        color: var(--subtext0);
+        max-width: 660px;
+        margin: 0 auto;
+      }
+
+      .pills {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        justify-content: center;
+        margin-top: 34px;
+      }
+
+      .pill {
+        font-size: 13px;
+        padding: 7px 14px;
+        border-radius: 999px;
+        background: rgba(49, 50, 68, 0.55);
+        border: 1px solid rgba(127, 132, 156, 0.25);
+        color: var(--subtext1);
+        backdrop-filter: blur(8px);
+      }
+
+      .pill b {
+        color: var(--text);
+      }
+
+      /* ---------- Sections ---------- */
+      section {
+        margin-top: 72px;
+      }
+
+      h2 {
+        font-size: clamp(24px, 4vw, 34px);
+        margin: 0 0 6px;
+      }
+
+      .lede {
+        color: var(--subtext0);
+        font-size: 17px;
+        margin: 0 0 28px;
+      }
+
+      .num {
+        color: var(--overlay0);
+        font-variant-numeric: tabular-nums;
+        margin-right: 10px;
+      }
+
+      p {
+        color: var(--subtext1);
+      }
+
+      a {
+        color: var(--blue);
+        text-decoration: none;
+        border-bottom: 1px solid rgba(137, 180, 250, 0.35);
+      }
+      a:hover {
+        color: var(--sapphire);
+      }
+
+      .card {
+        background: linear-gradient(
+          180deg,
+          rgba(49, 50, 68, 0.45),
+          rgba(24, 24, 37, 0.55)
+        );
+        border: 1px solid rgba(127, 132, 156, 0.18);
+        border-radius: 18px;
+        padding: 26px 28px;
+        backdrop-filter: blur(10px);
+      }
+
+      .figure {
+        background: rgba(17, 17, 27, 0.45);
+        border: 1px solid rgba(127, 132, 156, 0.15);
+        border-radius: 18px;
+        padding: 22px;
+        margin: 8px 0 6px;
+        overflow-x: auto;
+      }
+      .figcap {
+        color: var(--overlay1);
+        font-size: 13.5px;
+        text-align: center;
+        margin-top: 10px;
+      }
+      svg {
+        display: block;
+        margin: 0 auto;
+        max-width: 100%;
+        height: auto;
+      }
+
+      /* ---------- Cause cards ---------- */
+      .cause {
+        border-radius: 18px;
+        padding: 26px 28px;
+        margin-bottom: 22px;
+        border: 1px solid rgba(127, 132, 156, 0.18);
+        background: rgba(24, 24, 37, 0.5);
+        border-left: 4px solid var(--accent);
+      }
+      .cause .tag {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 12px;
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--accent);
+      }
+      .cause h3 {
+        font-size: 22px;
+        margin: 10px 0 4px;
+      }
+      .cause .layer {
+        font-size: 13px;
+        color: var(--overlay1);
+        margin-bottom: 16px;
+      }
+      .cause .layer b {
+        color: var(--subtext0);
+      }
+      .grid2 {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 18px;
+      }
+      @media (max-width: 720px) {
+        .grid2 {
+          grid-template-columns: 1fr;
+        }
+      }
+      .block h4 {
+        margin: 0 0 6px;
+        font-size: 12px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--overlay1);
+        font-family: "Manrope", sans-serif;
+      }
+      .block p {
+        margin: 0;
+        font-size: 15px;
+      }
+      .fixline {
+        margin-top: 16px;
+        padding-top: 14px;
+        border-top: 1px dashed rgba(127, 132, 156, 0.22);
+        font-size: 14.5px;
+        color: var(--subtext0);
+      }
+      .commit {
+        font-family: "JetBrains Mono", monospace;
+        font-size: 12px;
+        color: var(--green);
+        background: rgba(166, 227, 161, 0.1);
+        padding: 2px 8px;
+        border-radius: 6px;
+      }
+
+      /* ---------- Table ---------- */
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 14.5px;
+      }
+      th,
+      td {
+        text-align: left;
+        padding: 13px 14px;
+        border-bottom: 1px solid rgba(127, 132, 156, 0.14);
+        vertical-align: top;
+      }
+      th {
+        color: var(--subtext0);
+        font-weight: 600;
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+      }
+      td:first-child {
+        color: var(--text);
+        font-weight: 500;
+      }
+      .verdict {
+        font-weight: 700;
+        white-space: nowrap;
+      }
+      .ok {
+        color: var(--green);
+      }
+      .no {
+        color: var(--red);
+      }
+      .diag {
+        color: var(--yellow);
+      }
+
+      .callout {
+        border-radius: 16px;
+        padding: 22px 26px;
+        background: linear-gradient(
+          135deg,
+          rgba(137, 180, 250, 0.12),
+          rgba(203, 166, 247, 0.1)
+        );
+        border: 1px solid rgba(180, 190, 254, 0.25);
+        margin: 26px 0;
+      }
+      .callout b {
+        color: var(--lavender);
+      }
+
+      footer {
+        margin-top: 90px;
+        padding-top: 28px;
+        border-top: 1px solid rgba(127, 132, 156, 0.18);
+        color: var(--overlay0);
+        font-size: 14px;
+      }
+      footer a {
+        margin-right: 18px;
+      }
+      .legend {
+        display: flex;
+        gap: 18px;
+        flex-wrap: wrap;
+        justify-content: center;
+        margin-top: 14px;
+        font-size: 13px;
+        color: var(--subtext0);
+      }
+      .dot {
+        display: inline-block;
+        width: 11px;
+        height: 11px;
+        border-radius: 3px;
+        margin-right: 6px;
+        vertical-align: middle;
+      }
+    </style>
+  </head>
+  <body>
+    <header class="hero">
+      <div class="kicker">Vimeflow · Root-Cause Investigation</div>
+      <h1>Anatomy of a Ghost</h1>
+      <p class="sub">
+        Three terminal glitches that looked like one bug were really four,
+        living in four different layers of the stack. Here is how the theory was
+        built — and why the fix that <em>proved</em> the cause was deliberately
+        not the fix that shipped.
+      </p>
+      <div class="pills">
+        <span class="pill"><b>4</b> root causes</span>
+        <span class="pill"><b>6</b> hypotheses tested</span>
+        <span class="pill"><b>2</b> independent analyses (Claude + Codex)</span>
+        <span class="pill"><b>WebGL</b> preserved</span>
+      </div>
+    </header>
+
+    <div class="wrap">
+      <!-- ===================== THE SYMPTOMS ===================== -->
+      <section>
+        <h2><span class="num">01</span>One symptom name, four real bugs</h2>
+        <p class="lede">
+          Everything showed up as “the terminal renders wrong.” That framing is
+          a trap: it invites a single fix for what are actually independent
+          faults. The first job was to <strong>split the symptom</strong> into
+          distinct, separately-triggered behaviours.
+        </p>
+
+        <div class="figure">
+          <svg viewBox="0 0 900 470" role="img" aria-label="The terminal rendering stack with four bugs pinned to their layers">
+            <defs>
+              <marker id="arrow" markerWidth="10" markerHeight="10" refX="7" refY="3" orient="auto">
+                <path d="M0,0 L7,3 L0,6 Z" fill="#7f849c" />
+              </marker>
+              <linearGradient id="layerg" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0" stop-color="#313244" stop-opacity="0.75" />
+                <stop offset="1" stop-color="#181825" stop-opacity="0.85" />
+              </linearGradient>
+            </defs>
+
+            <!-- layers -->
+            <g font-family="Manrope, sans-serif">
+              <!-- helper: each layer row -->
+              <!-- 1 zsh -->
+              <rect x="60" y="20" width="430" height="46" rx="10" fill="url(#layerg)" stroke="#45475a"/>
+              <text x="80" y="48" fill="#cdd6f4" font-size="15" font-weight="600">zsh + Powerline / p10k prompt</text>
+              <text x="80" y="62" fill="#6c7086" font-size="11" font-family="JetBrains Mono, monospace">emits bytes · measures glyph width</text>
+
+              <!-- 2 PTY -->
+              <rect x="60" y="78" width="430" height="46" rx="10" fill="url(#layerg)" stroke="#45475a"/>
+              <text x="80" y="106" fill="#cdd6f4" font-size="15" font-weight="600">Rust PTY backend</text>
+              <text x="80" y="120" fill="#6c7086" font-size="11" font-family="JetBrains Mono, monospace">commands.rs · spawn env · read loop</text>
+
+              <!-- 3 IPC -->
+              <rect x="60" y="136" width="430" height="40" rx="10" fill="url(#layerg)" stroke="#45475a"/>
+              <text x="80" y="161" fill="#bac2de" font-size="14">LSP-framed IPC over stdio → Electron main</text>
+
+              <!-- 4 renderer -->
+              <rect x="60" y="188" width="430" height="40" rx="10" fill="url(#layerg)" stroke="#45475a"/>
+              <text x="80" y="213" fill="#bac2de" font-size="14">Electron renderer (React)</text>
+
+              <!-- 5 xterm -->
+              <rect x="60" y="240" width="430" height="56" rx="10" fill="url(#layerg)" stroke="#45475a"/>
+              <text x="80" y="266" fill="#cdd6f4" font-size="15" font-weight="600">xterm.js</text>
+              <text x="80" y="282" fill="#6c7086" font-size="11" font-family="JetBrains Mono, monospace">parser → buffer → RenderDebouncer → rAF → refreshRows</text>
+
+              <!-- 6 webgl -->
+              <rect x="60" y="308" width="430" height="40" rx="10" fill="url(#layerg)" stroke="#45475a"/>
+              <text x="80" y="333" fill="#bac2de" font-size="14">@xterm/addon-webgl · glyph texture atlas</text>
+
+              <!-- 7 gpu -->
+              <rect x="60" y="360" width="430" height="46" rx="10" fill="url(#layerg)" stroke="#45475a"/>
+              <text x="80" y="388" fill="#cdd6f4" font-size="15" font-weight="600">Chromium GPU process</text>
+              <text x="80" y="402" fill="#6c7086" font-size="11" font-family="JetBrains Mono, monospace">textures · compositing · occlusion mgmt</text>
+
+              <!-- screen -->
+              <rect x="60" y="420" width="430" height="34" rx="10" fill="#11111b" stroke="#313244"/>
+              <text x="80" y="442" fill="#a6adc8" font-size="13">🖥  Screen</text>
+
+              <!-- flow arrows down the left -->
+              <line x1="48" y1="20" x2="48" y2="454" stroke="#45475a" stroke-width="2"/>
+              <polygon points="44,448 52,448 48,456" fill="#45475a"/>
+              <text x="20" y="240" fill="#6c7086" font-size="11" transform="rotate(-90 20 240)">data flow</text>
+            </g>
+
+            <!-- bug callouts on the right -->
+            <g font-family="Inter, sans-serif" font-size="12.5">
+              <!-- cause 2 locale -> zsh + PTY -->
+              <line x1="490" y1="100" x2="560" y2="60" stroke="#7f849c" stroke-dasharray="3 3" marker-end="url(#arrow)"/>
+              <rect x="560" y="38" width="320" height="46" rx="9" fill="rgba(249,226,175,0.10)" stroke="#f9e2af"/>
+              <text x="574" y="58" fill="#f9e2af" font-weight="700">② Cursor desync</text>
+              <text x="574" y="74" fill="#bac2de" font-size="11.5">C-locale → glyph width mis-measured</text>
+
+              <!-- cause 1 font -> xterm css -->
+              <line x1="490" y1="262" x2="560" y2="172" stroke="#7f849c" stroke-dasharray="3 3" marker-end="url(#arrow)"/>
+              <rect x="560" y="150" width="320" height="46" rx="9" fill="rgba(250,179,135,0.10)" stroke="#fab387"/>
+              <text x="574" y="170" fill="#fab387" font-weight="700">① Prompt misalignment</text>
+              <text x="574" y="186" fill="#bac2de" font-size="11.5">font stack sourced glyphs unevenly</text>
+
+              <!-- cause 4 raf -> xterm -->
+              <line x1="490" y1="270" x2="560" y2="262" stroke="#7f849c" stroke-dasharray="3 3" marker-end="url(#arrow)"/>
+              <rect x="560" y="240" width="320" height="46" rx="9" fill="rgba(203,166,247,0.10)" stroke="#cba6f7"/>
+              <text x="574" y="260" fill="#cba6f7" font-weight="700">④ Duplicate / overlapping rows</text>
+              <text x="574" y="276" fill="#bac2de" font-size="11.5">throttled rAF never repaints on return</text>
+
+              <!-- cause 3 gpu -->
+              <line x1="490" y1="383" x2="560" y2="360" stroke="#7f849c" stroke-dasharray="3 3" marker-end="url(#arrow)"/>
+              <rect x="560" y="338" width="320" height="46" rx="9" fill="rgba(243,139,168,0.10)" stroke="#f38ba8"/>
+              <text x="574" y="358" fill="#f38ba8" font-weight="700">③ “Alien” glyph corruption</text>
+              <text x="574" y="374" fill="#bac2de" font-size="11.5">occlusion reclaims GPU glyph textures</text>
+            </g>
+          </svg>
+          <div class="legend">
+            <span><span class="dot" style="background: var(--c-font)"></span>① Font</span>
+            <span><span class="dot" style="background: var(--c-locale)"></span>② Locale</span>
+            <span><span class="dot" style="background: var(--c-gpu)"></span>③ GPU</span>
+            <span><span class="dot" style="background: var(--c-raf)"></span>④ rAF</span>
+          </div>
+          <p class="figcap">
+            The same pixels, four different points of failure — from the shell
+            that emits the bytes down to the GPU process that paints them.
+          </p>
+        </div>
+      </section>
+
+      <!-- ===================== METHOD ===================== -->
+      <section>
+        <h2><span class="num">02</span>The method: theory before patch</h2>
+        <p class="lede">
+          The investigation opened with a deliberately humbling rule, because
+          the early days had been a guess-and-ship loop that fixed nothing.
+        </p>
+
+        <div class="callout">
+          <b>The hard gate.</b> Write no fix until two independent analyses —
+          Claude’s and an independent <code>codex exec</code> reading the same
+          evidence — agree on the mechanism. Every earlier “fix” (a Canvas2D
+          swap, <code>clearTextureAtlas()</code>, <code>backgroundThrottling</code>,
+          a premature focus-repaint) was demoted to an
+          <em>unverified guess</em> and had to be confirmed or refuted with
+          evidence, not asserted.
+        </div>
+
+        <div class="grid2">
+          <div class="card">
+            <h4 style="color: var(--sapphire); margin-top: 0">Triage by trigger, not by looks</h4>
+            <p>
+              The breakthrough wasn’t staring at screenshots — it was asking
+              <em>“what makes each artifact disappear?”</em> Two glitches shared
+              one trigger (a window switch) but had opposite survival
+              characteristics under software rendering. That split one apparent
+              bug into two causes.
+            </p>
+          </div>
+          <div class="card">
+            <h4 style="color: var(--teal); margin-top: 0">A diagnostic is not a fix</h4>
+            <p>
+              Disabling hardware acceleration made the corruption vanish — a
+              perfect <em>proof</em> of where the fault lived. Shipping it would
+              have thrown away GPU rendering app-wide and reversed a documented
+              decision. The proof and the cure are different objects.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===================== GHOSTING DEEP DIVE ===================== -->
+      <section>
+        <h2><span class="num">03</span>Splitting the ghost in two</h2>
+        <p class="lede">
+          “Ghosting” after switching windows mid-stream was the hardest report.
+          It turned out to be <strong>two causes wearing one costume</strong>.
+          The decisive experiment was running the exact same session under
+          software rendering.
+        </p>
+
+        <div class="figure">
+          <svg viewBox="0 0 880 360" role="img" aria-label="Bifurcation of the ghosting artifact by the software-render survival test">
+            <defs>
+              <marker id="arrow2" markerWidth="10" markerHeight="10" refX="7" refY="3" orient="auto">
+                <path d="M0,0 L7,3 L0,6 Z" fill="#7f849c" />
+              </marker>
+            </defs>
+            <g font-family="Inter, sans-serif">
+              <!-- trigger -->
+              <rect x="40" y="150" width="190" height="64" rx="12" fill="rgba(137,180,250,0.10)" stroke="#89b4fa"/>
+              <text x="135" y="178" text-anchor="middle" fill="#cdd6f4" font-size="14" font-weight="700">“Ghosting”</text>
+              <text x="135" y="197" text-anchor="middle" fill="#a6adc8" font-size="11.5">switch window mid-stream</text>
+
+              <!-- test node -->
+              <line x1="230" y1="182" x2="300" y2="182" stroke="#7f849c" stroke-width="2" marker-end="url(#arrow2)"/>
+              <rect x="300" y="148" width="200" height="68" rx="12" fill="rgba(249,226,175,0.10)" stroke="#f9e2af"/>
+              <text x="400" y="174" text-anchor="middle" fill="#f9e2af" font-size="13" font-weight="700">EXPERIMENT</text>
+              <text x="400" y="193" text-anchor="middle" fill="#bac2de" font-size="11.5">disable HW acceleration</text>
+              <text x="400" y="208" text-anchor="middle" fill="#6c7086" font-size="10.5">(software rendering)</text>
+
+              <!-- branch up: vanishes -->
+              <path d="M500,168 C560,168 560,80 620,80" fill="none" stroke="#a6e3a1" stroke-width="2" marker-end="url(#arrow2)"/>
+              <rect x="620" y="46" width="220" height="74" rx="12" fill="rgba(243,139,168,0.10)" stroke="#f38ba8"/>
+              <text x="730" y="70" text-anchor="middle" fill="#f38ba8" font-size="13" font-weight="700">Alien glyphs VANISH</text>
+              <text x="730" y="89" text-anchor="middle" fill="#bac2de" font-size="11">⇒ lives in the GPU layer</text>
+              <text x="730" y="106" text-anchor="middle" fill="#6c7086" font-size="10.5">cause ③ · texture reclaim</text>
+
+              <!-- branch down: survives -->
+              <path d="M500,196 C560,196 560,290 620,290" fill="none" stroke="#f38ba8" stroke-width="2" marker-end="url(#arrow2)"/>
+              <rect x="620" y="256" width="220" height="74" rx="12" fill="rgba(203,166,247,0.10)" stroke="#cba6f7"/>
+              <text x="730" y="280" text-anchor="middle" fill="#cba6f7" font-size="13" font-weight="700">Duplicate rows SURVIVE</text>
+              <text x="730" y="299" text-anchor="middle" fill="#bac2de" font-size="11">⇒ not the GPU — it’s the paint loop</text>
+              <text x="730" y="316" text-anchor="middle" fill="#6c7086" font-size="10.5">cause ④ · rAF throttle</text>
+
+              <!-- labels on branches -->
+              <text x="560" y="120" fill="#a6e3a1" font-size="11" font-weight="600">no GPU →</text>
+              <text x="540" y="250" fill="#f38ba8" font-size="11" font-weight="600">no GPU, still broken →</text>
+            </g>
+          </svg>
+          <p class="figcap">
+            One experiment, a clean fork. What dies without a GPU was a GPU bug;
+            what lives without a GPU was never about the GPU at all.
+          </p>
+        </div>
+
+        <p>
+          A second tell corroborated cause ④: selecting text with the mouse made
+          the duplicate rows snap clean. A selection forces a repaint — so the
+          <em>buffer was always correct</em>; only the <em>paint</em> was stale.
+          That pointed straight at xterm’s render scheduler.
+        </p>
+      </section>
+
+      <!-- ===================== THE FOUR CAUSES ===================== -->
+      <section>
+        <h2><span class="num">04</span>The four causes, end to end</h2>
+        <p class="lede">
+          For each: the symptom, the layer it lived in, the path from
+          observation to theory, the evidence that nailed it, and the smallest
+          reversible fix that followed.
+        </p>
+
+        <!-- Cause 1 -->
+        <div class="cause" style="--accent: var(--c-font)">
+          <span class="tag">① Font · renderer CSS</span>
+          <h3>Prompt glyphs misaligned, text shoved right</h3>
+          <div class="layer">Layer: <b>renderer font stack</b> · <code>terminalFont.ts</code>, <code>index.css</code></div>
+          <div class="grid2">
+            <div class="block">
+              <h4>How the theory formed</h4>
+              <p>
+                Measured the actual glyph advances. The installed
+                <code>Hack Nerd Font</code> is a <em>non-Mono</em> variant — its
+                Powerline glyphs ink wider than one cell — and the font stack
+                leaned on whatever Nerd Font happened to be installed, so the
+                source varied machine to machine. Cross-referenced how kitty
+                (<code>symbol_map</code>), Ghostty and Windows Terminal solve it:
+                map a codepoint range to one dedicated face.
+              </p>
+            </div>
+            <div class="block">
+              <h4>Evidence</h4>
+              <p>
+                Glyphs only misaligned for the Powerline / Nerd codepoint range;
+                ordinary text was fine. The advance differed across machines with
+                different fonts installed — a sourcing problem, not a layout one.
+              </p>
+            </div>
+          </div>
+          <div class="fixline">
+            <strong>Fix →</strong> bundle a <code>Vimeflow Nerd Symbols</code>
+            face and scope it with CSS <code>unicode-range</code> (the web
+            equivalent of <code>symbol_map</code>); reorder the stack to put it
+            first. <span class="commit">76d1524</span>
+          </div>
+        </div>
+
+        <!-- Cause 2 -->
+        <div class="cause" style="--accent: var(--c-locale)">
+          <span class="tag">② Locale · Rust PTY spawn</span>
+          <h3>Cursor flung to the far right while editing</h3>
+          <div class="layer">Layer: <b>PTY spawn environment</b> · <code>commands.rs</code></div>
+          <div class="grid2">
+            <div class="block">
+              <h4>How the theory formed</h4>
+              <p>
+                Noticed it only happened in GUI launches (dock / Finder /
+                <code>electron:dev</code>), never in Terminal.app. Those GUI
+                launches inherit <em>no</em> <code>LANG</code> / <code>LC_*</code>,
+                so the shell runs in the <strong>C locale</strong> and
+                byte-counts multibyte glyphs. zsh then measures each Powerline /
+                Nerd glyph as ~3 cells, mis-computes the line width, and desyncs
+                the cursor.
+              </p>
+            </div>
+            <div class="block">
+              <h4>Evidence</h4>
+              <p>
+                <code>wcwidth</code> returns the wrong width for these codepoints
+                only in the C locale; Terminal.app and iTerm2 set a UTF-8 locale
+                and never exhibit it. The fault is environmental, upstream of any
+                rendering.
+              </p>
+            </div>
+          </div>
+          <div class="fixline">
+            <strong>Fix →</strong> inject <code>LC_CTYPE</code> (only the
+            character-width knob, leaving message/collation language alone) when
+            no UTF-8 locale is inherited — <code>en_US.UTF-8</code> on macOS,
+            <code>C.UTF-8</code> elsewhere. <span class="commit">717cc9a</span>
+          </div>
+        </div>
+
+        <!-- Cause 3 -->
+        <div class="cause" style="--accent: var(--c-gpu)">
+          <span class="tag">③ GPU · Chromium GPU process</span>
+          <h3>Garbled “alien” glyphs after a window switch</h3>
+          <div class="layer">Layer: <b>Chromium GPU process</b> · <code>electron/main.ts</code></div>
+          <div class="grid2">
+            <div class="block">
+              <h4>How the theory formed</h4>
+              <p>
+                Ran the hypothesis gauntlet. A Canvas2D swap didn’t help (same
+                GPU process). Clearing the texture atlas didn’t help. The
+                addon/version pairing was correct. Then disabling hardware
+                acceleration made the corruption <strong>vanish entirely</strong>
+                — isolating the fault to the GPU layer: Chromium reclaims an
+                occluded window’s GPU resources and scrambles xterm’s cached
+                glyph textures.
+              </p>
+            </div>
+            <div class="block">
+              <h4>Evidence</h4>
+              <p>
+                Corruption present under WebGL <em>and</em> Canvas (both paint
+                through the GPU process); gone under software rendering. The
+                trigger is occlusion — covering the window — which is exactly
+                when Chromium backgrounds it.
+              </p>
+            </div>
+          </div>
+          <div class="fixline">
+            <strong>Fix →</strong> keep WebGL + hardware acceleration, but stop
+            the reclaim with <code>disable-backgrounding-occluded-windows</code>
+            + <code>disable-renderer-backgrounding</code>.
+            <span class="commit">f99742c</span>
+          </div>
+        </div>
+
+        <!-- Cause 4 -->
+        <div class="cause" style="--accent: var(--c-raf)">
+          <span class="tag">④ rAF · xterm render scheduler</span>
+          <h3>Duplicate / overlapping rows + stray “?”</h3>
+          <div class="layer">Layer: <b>xterm render loop</b> · <code>Body.tsx</code></div>
+          <div class="grid2">
+            <div class="block">
+              <h4>How the theory formed</h4>
+              <p>
+                Read <code>@xterm/xterm@6.0.0</code> directly: rendering runs on
+                a debounced <code>requestAnimationFrame</code> loop
+                (<code>RenderDebouncer → rAF → refreshRows</code>), and xterm
+                listens only for <code>pagehide</code> — never
+                <code>visibilitychange</code>. Chromium throttles rAF for an
+                occluded window, so rows that streamed in while you were away
+                never flush, and nothing repaints them on return.
+              </p>
+            </div>
+            <div class="block">
+              <h4>Evidence</h4>
+              <p>
+                Renderer-agnostic and survives software rendering (so: not the
+                GPU). A text selection clears it instantly — proof the buffer is
+                right and only the paint is stale.
+              </p>
+            </div>
+          </div>
+          <div class="fixline">
+            <strong>Fix →</strong> force a full <code>refresh(0, rows-1)</code> on
+            <code>window</code> focus and on <code>document</code>
+            visibilitychange → visible — flush the stale rows on the exact event
+            xterm ignores. <span class="commit">f8a8577</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===================== HYPOTHESIS LEDGER ===================== -->
+      <section>
+        <h2><span class="num">05</span>The hypothesis ledger</h2>
+        <p class="lede">
+          Every candidate was marked <span class="ok">confirmed</span>,
+          <span class="no">refuted</span>, or <span class="diag">diagnostic-only</span>
+          with evidence — not opinion. Claude and an independent
+          <code>codex exec</code> reached the same conclusions before any fix
+          was written.
+        </p>
+        <div class="figure" style="padding: 6px 18px">
+          <table>
+            <thead>
+              <tr>
+                <th>Hypothesis</th>
+                <th>Verdict</th>
+                <th>Basis</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>GPU texture reclaim on occlusion</td>
+                <td class="verdict ok">Confirmed</td>
+                <td>Vanishes under software rendering; renderer-agnostic.</td>
+              </tr>
+              <tr>
+                <td>rAF render-throttle, no visibility repaint</td>
+                <td class="verdict ok">Confirmed</td>
+                <td>xterm source: rAF loop + no <code>visibilitychange</code>; survives software render; selection clears it.</td>
+              </tr>
+              <tr>
+                <td>C-locale glyph-width miscount</td>
+                <td class="verdict ok">Confirmed</td>
+                <td>GUI launch inherits no UTF-8 locale; <code>wcwidth</code> wrong in C locale.</td>
+              </tr>
+              <tr>
+                <td>Nerd Font glyph sourcing</td>
+                <td class="verdict ok">Confirmed</td>
+                <td>Misalign scoped to symbol codepoints; advance varies by machine.</td>
+              </tr>
+              <tr>
+                <td>Canvas2D-vs-WebGL renderer swap</td>
+                <td class="verdict no">Refuted</td>
+                <td>Canvas paints through the same GPU process — corrupts identically.</td>
+              </tr>
+              <tr>
+                <td>Texture-atlas corruption (<code>clearTextureAtlas</code>)</td>
+                <td class="verdict no">Refuted</td>
+                <td>Residual survives software rendering, where there is no atlas to clear.</td>
+              </tr>
+              <tr>
+                <td>Renderer addon / version mismatch</td>
+                <td class="verdict no">Refuted</td>
+                <td><code>webgl 0.19.0</code> is the stable pair for xterm 6.0.0.</td>
+              </tr>
+              <tr>
+                <td>PTY → xterm data-path double-write</td>
+                <td class="verdict no">Refuted</td>
+                <td>Drain is mount-time only; “selection fixes it” ⇒ buffer correct.</td>
+              </tr>
+              <tr>
+                <td>Disable hardware acceleration</td>
+                <td class="verdict diag">Diagnostic</td>
+                <td>Proves the GPU layer — but reverses the documented WebGL decision, so rejected as a fix.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ===================== LANDING THE FIX ===================== -->
+      <section>
+        <h2><span class="num">06</span>Intentionally landing the fix</h2>
+        <p class="lede">
+          With the mechanism agreed, the rule was: the
+          <strong>smallest reversible change that follows directly</strong> from
+          each cause — and not one that contradicts the architecture.
+        </p>
+        <div class="card">
+          <p style="margin-top: 0">
+            <b style="color: var(--lavender)">WebGL stays primary.</b> The
+            roadmap documents WebGL as the renderer of choice for
+            large-agent-output throughput. The diagnostic that proved cause ③
+            (disabling hardware acceleration) was therefore explicitly
+            <em>not</em> shipped; the two occlusion switches keep WebGL and
+            remove only the reclaim that corrupts the cache.
+          </p>
+          <p>
+            <b style="color: var(--lavender)">Four atomic commits, not one
+            mega-fix.</b> Each cause is independently testable and revertable —
+            a direct product of isolating each mechanism before touching code.
+          </p>
+          <p style="margin-bottom: 0">
+            <b style="color: var(--lavender)">One honest deferral.</b> The backend
+            decodes each PTY read with <code>String::from_utf8_lossy</code>,
+            which can split a multibyte glyph across read boundaries and emit a
+            stray <code>?</code> (<code>U+FFFD</code>). Codex flagged it as a
+            third contributor to the stray-<code>?</code> artifact. It is logged
+            as a follow-up — a carry-over decoder — rather than rushed.
+          </p>
+        </div>
+
+        <div class="callout">
+          <b>What only a human can close.</b> The fixes verify green across lint,
+          type-check, and the full unit + Rust suites. But the final
+          before/after under <em>real</em> OS-window occlusion can’t be staged by
+          automation — CDP can’t occlude one native window with another, and the
+          shipped switches suppress the very throttle that produces the artifact.
+          That last observation is, by its nature, a person at the machine
+          switching windows while output streams.
+        </div>
+      </section>
+
+      <footer>
+        <div style="margin-bottom: 14px">
+          <a href="../decisions/2026-05-27-terminal-rendering-fixes.md">Decision record</a>
+          <a href="../superpowers/retros/2026-05-27-terminal-rendering-investigation.md">Investigation retro</a>
+          <a href="https://github.com/winoooops/vimeflow/pull/288">PR #288</a>
+        </div>
+        Commits ·
+        <span class="mono" style="color: var(--green); background: none">76d1524</span> font ·
+        <span class="mono" style="color: var(--green); background: none">717cc9a</span> locale ·
+        <span class="mono" style="color: var(--green); background: none">f99742c</span> GPU ·
+        <span class="mono" style="color: var(--green); background: none">f8a8577</span> rAF
+        <div style="margin-top: 16px; color: var(--surface2)">
+          Vimeflow · root-cause investigation · the WebGL renderer is the
+          documented primary, preserved throughout.
+        </div>
+      </footer>
+    </div>
+  </body>
+</html>

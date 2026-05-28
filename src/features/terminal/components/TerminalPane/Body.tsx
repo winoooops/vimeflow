@@ -847,6 +847,24 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
     node.addEventListener('focusin', handleFocusIn)
     node.addEventListener('focusout', handleFocusOut)
 
+    // Root cause B (Claude + Codex consensus): xterm renders on a debounced
+    // animation-frame loop and never forces a repaint when the OS window
+    // regains focus or visibility. The browser throttles that loop while the
+    // window is covered or unfocused, so rows that streamed in while we were
+    // away stay stale until something forces a repaint (the buffer is correct
+    // — a text selection fixes only the pixels). Repaint on focus/visibility
+    // recovery to flush them.
+    const repaintOnWindowVisible = (): void => {
+      if (document.visibilityState !== 'visible') {
+        return
+      }
+
+      newTerminal.refresh(0, Math.max(newTerminal.rows - 1, 0))
+    }
+
+    window.addEventListener('focus', repaintOnWindowVisible)
+    document.addEventListener('visibilitychange', repaintOnWindowVisible)
+
     // P2 Fix: Add ResizeObserver to detect container size changes
     // When the container resizes (e.g., window resize, panel collapse),
     // fit the terminal which will trigger the onResize event above.
@@ -876,6 +894,8 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
       resizeDisposable.dispose()
       node.removeEventListener('focusin', handleFocusIn)
       node.removeEventListener('focusout', handleFocusOut)
+      window.removeEventListener('focus', repaintOnWindowVisible)
+      document.removeEventListener('visibilitychange', repaintOnWindowVisible)
       // Dispose the renderer addon (and any WebGL context-loss subscription)
       // before the terminal itself — order matters: the addon holds
       // references to the terminal's renderer state and must clean up while
