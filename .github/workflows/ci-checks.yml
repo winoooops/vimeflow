@@ -52,15 +52,26 @@ jobs:
         run: npm ci
 
       # `electron/command-palette-shortcut.test.ts` imports the `electron`
-      # package, which lazily downloads its prebuilt binary on first import
-      # if `electron/path.txt` is absent. When vitest's parallel workers
-      # both import it, the download races and one worker reads `path.txt`
-      # before it's written — surfacing as `ENOENT … node_modules/electron/path.txt`.
-      # Force the binary to install eagerly here so vitest never triggers
-      # the download itself. Safe under restored npm caches: install.js
-      # short-circuits when the binary is already present.
+      # package, which reads `node_modules/electron/path.txt` to locate the
+      # prebuilt binary. setup-node@v4's `cache: 'npm'` caches `~/.npm`,
+      # NOT `node_modules`, so `npm ci` reinstalls — and the electron
+      # postinstall download has been observed to leave `path.txt`
+      # missing on a non-trivial fraction of runs (the same fail-mode hit
+      # f893644, 643f074, 3d908dd; only 36fb6c8 and 9a53a21 happened to
+      # win the race). When the file is missing the next test that
+      # imports electron triggers an in-process download, which races
+      # parallel vitest workers and fails with `ENOENT path.txt`.
+      #
+      # Force a full rebuild here so the binary AND `path.txt` are
+      # guaranteed present before vitest spawns its workers. `npm rebuild
+      # electron` is idempotent and runs only the electron postinstall —
+      # not the whole tree — so the CI cost is small.
       - name: Ensure Electron binary is installed
-        run: node node_modules/electron/install.js
+        run: |
+          npm rebuild electron
+          test -f node_modules/electron/path.txt \
+            || (echo "ERROR: electron/path.txt missing after rebuild" >&2; exit 1)
+          echo "electron path: $(cat node_modules/electron/path.txt)"
 
       - name: Run tests
         run: npm test
