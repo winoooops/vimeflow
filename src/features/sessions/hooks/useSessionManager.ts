@@ -1266,7 +1266,19 @@ export const useSessionManager = (
     setSessions((prev) => {
       const prevById = new Map(prev.map((s) => [s.id, s]))
       const reorderedIds = new Set(reordered.map((s) => s.id))
-      const ordered = reordered.map((s) => prevById.get(s.id) ?? s)
+
+      // DROP, don't fall back to the stale `s`, when `reordered` references
+      // a session no longer present in `prev`. A `removeSession` (or a
+      // pty-exit-driven cleanup) that committed during the drag would have
+      // evicted that id from `prev`; restoring the stale snapshot here
+      // would resurrect a zombie session whose PTY is already dead and the
+      // tab can no longer be closed (kill_pty rejects "session not found"
+      // and React filters can't find the id).
+      const ordered = reordered.flatMap((s) => {
+        const live = prevById.get(s.id)
+
+        return live ? [live] : []
+      })
       const extras = prev.filter((s) => !reorderedIds.has(s.id))
 
       return [...ordered, ...extras]

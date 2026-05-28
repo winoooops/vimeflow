@@ -2516,6 +2516,77 @@ describe('useSessionManager', () => {
     ])
   })
 
+  // PR #290 cycle 5: Claude HIGH — the cycle-4 functional updater used
+  // `prevById.get(s.id) ?? s`, which falls back to the STALE `s` when
+  // `removeSession` evicted the id during the drag. That resurrects a
+  // dead PTY back into React state, leaving a zombie tab that
+  // kill_pty cannot close ("session not found"). The fix filters
+  // missing-from-prev ids out instead of falling back.
+  test('reorderSessions drops sessions removed during the reorder window (no zombie resurrection)', async () => {
+    const service = createMockService()
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: 'a',
+      sessions: [
+        {
+          id: 'a',
+          cwd: '/tmp',
+          status: {
+            kind: 'Alive',
+            pid: 1,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+        {
+          id: 'b',
+          cwd: '/tmp',
+          status: {
+            kind: 'Alive',
+            pid: 2,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+        {
+          id: 'c',
+          cwd: '/tmp',
+          status: {
+            kind: 'Alive',
+            pid: 3,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+      ],
+    })
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.sessions.map((s) => s.id)).toEqual(['a', 'b', 'c'])
+
+    // Snapshot at drag-start: user is reordering to [c, b, a].
+    const reorderedAtDragStart = [
+      result.current.sessions[2],
+      result.current.sessions[1],
+      result.current.sessions[0],
+    ]
+
+    // While the drag is in flight, session 'b' is removed.
+    act(() => result.current.removeSession('b'))
+    await waitFor(() => expect(result.current.sessions).toHaveLength(2))
+
+    // Reorder lands with its stale 3-session snapshot — must NOT
+    // resurrect 'b'. Order should be [c, a] (drop 'b' from the
+    // reordered list).
+    act(() => result.current.reorderSessions(reorderedAtDragStart))
+
+    await waitFor(() => {
+      expect(result.current.sessions.map((s) => s.id)).toEqual(['c', 'a'])
+    })
+  })
+
   test('updateSessionCwd updates session cwd without touching pane cwd', async () => {
     const service = createMockService()
     service.listSessions = vi.fn().mockResolvedValue({

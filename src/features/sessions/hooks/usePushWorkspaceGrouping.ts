@@ -128,6 +128,20 @@ export const usePushWorkspaceGrouping = ({
           await service.setWorkspaceSessions(next)
         } catch (err) {
           log.warn('setWorkspaceSessions IPC failed', err)
+
+          // Restore the failed snapshot so the next `sessions` change (or
+          // any other call into `drain`) retries it instead of silently
+          // dropping it. Without this restore a sidecar crash or transient
+          // IPC error mid-push would leave the cache permanently out of
+          // sync with React — the layout would fragment back to single-
+          // pane on the next reload with no visible signal beyond the
+          // console warn.
+          //
+          // Only restore when no newer snapshot has arrived during the
+          // await. `??=` only assigns when the left-hand side is
+          // null/undefined, so a concurrent effect re-run that populated
+          // `pending` with a newer snapshot wins ("latest wins").
+          queueRef.current.pending ??= next
         } finally {
           queueRef.current.inFlight = false
         }

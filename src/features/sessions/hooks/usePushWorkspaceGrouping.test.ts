@@ -211,6 +211,58 @@ describe('usePushWorkspaceGrouping', () => {
     ])
   })
 
+  // PR #290 cycle 5: Claude MEDIUM — the cycle-1 drain cleared `pending`
+  // before the try block. On IPC failure it logged a warning but didn't
+  // restore `pending`, so a sidecar crash mid-push would permanently drop
+  // that snapshot. The next `sessions` change would enqueue a NEW snapshot
+  // and recover, but if the user stopped interacting (or the app exited)
+  // the cache stays stale and the next reload fragments. The fix restores
+  // `pending` in the catch when no newer snapshot arrived during the await.
+  test('restores the snapshot for retry when the IPC fails', async () => {
+    let firstCallReject: ((err: unknown) => void) | undefined
+
+    const setWorkspaceSessions = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise<void>((_resolve, reject) => {
+            firstCallReject = reject
+          })
+      )
+      .mockResolvedValue(undefined)
+    const service = { setWorkspaceSessions } as unknown as ITerminalService
+
+    const initial = [
+      session('ws-1', 'vsplit', [
+        pane({ id: 'p0', ptyId: 'pty-a', active: true }),
+        pane({ id: 'p1', ptyId: 'pty-b', active: false }),
+      ]),
+    ]
+
+    const { rerender } = renderHook(
+      ({ sessions }) =>
+        usePushWorkspaceGrouping({ service, loading: false, sessions }),
+      { initialProps: { sessions: initial as readonly Session[] } }
+    )
+
+    // The first push is in flight.
+    await waitFor(() => expect(setWorkspaceSessions).toHaveBeenCalledTimes(1))
+
+    // Reject the in-flight IPC.
+    firstCallReject?.(new Error('sidecar crashed'))
+
+    // Trigger another `sessions` change (equivalent shape but a new array
+    // reference) so the effect re-runs and calls `drain` again. Without
+    // the cycle-5 fix `pending` would be null and no second IPC fires;
+    // with the fix the failed snapshot is restored and the next drain
+    // pushes it through.
+    rerender({ sessions: [...initial] as readonly Session[] })
+
+    await waitFor(() => {
+      expect(setWorkspaceSessions).toHaveBeenCalledTimes(2)
+    })
+  })
+
   // Latest-wins coalesce: when several sessions changes pile up during one
   // in-flight push, only the MOST RECENT snapshot is sent next — intermediate
   // ones are dropped (the cache replaces its groupings map on every push, so
