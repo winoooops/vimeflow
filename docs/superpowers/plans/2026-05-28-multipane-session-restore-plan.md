@@ -166,22 +166,65 @@ verification script (reload, not quit — see C1) is included for the operator.
 
 ## Phase D — Survive a graceful quit (deferred design)
 
-Requires a product decision on C1. Options:
+**Decision (2026-05-28):** **D2 — sibling store, no wipe change.** Persist the
+workspace shape (sessions list + per-session layout + per-pane cwd + agent
+type) to a SEPARATE durable store that survives `clear_all()`. The live PTY
+cache (`sessions.json`) keeps being wiped on graceful quit — the ghost-tab UX
+that motivated the wipe stays untouched. On launch:
 
-- **D1 — Stop wiping; restore as Exited "Restart" tabs.** Keep grouping +
-  layout; show panes as `completed`; add a per-session "Restart all panes"
-  affordance. Reintroduces the ghost-tab UX `clear_all` was added to avoid —
-  needs a clear visual treatment.
-- **D2 — Persist grouping to a SEPARATE store that survives the wipe** (e.g. a
-  `layouts.json` keyed by workspace id, or localStorage like
-  `activityPanelCollapsed`), while still wiping live PTY state. Restore rebuilds
-  the layout shell and respawns shells/agents fresh.
-- **D3 — Opt-in "remember layout on quit"** preference.
+1. Load the sibling store -> reconstruct the workspace shell (tabs, layouts,
+   pane positions) as `completed` panes seeded with cwd + agent type.
+2. Either auto-respawn each pane fresh (preferred default) or render Restart
+   affordances per pane (lower-friction fallback if respawn would slow launch).
+3. Agents come up fresh — Phase E layers on top to additionally `--resume` the
+   prior conversation when an agent session id is available.
 
-Recommendation: D2 for the layout shell + D-phase respawn, because it cleanly
-separates "remember the workspace shape" (durable) from "remember the live
-process" (ephemeral) and does not regress the ghost-tab UX for users who do not
-opt in.
+**Storage shape (sketch):**
+
+```jsonc
+// app_data_dir/workspace-layouts.json — never cleared by clear_all
+{
+  "version": 1,
+  "sessions": [
+    {
+      "id": "<workspace uuid>",
+      "layout": "quad",
+      "panes": [
+        {
+          "paneId": "p0",
+          "paneIndex": 0,
+          "cwd": "/repo",
+          "agentType": "claude-code",
+          "active": true,
+        },
+        // ...
+      ],
+    },
+  ],
+}
+```
+
+Rust side: a new `WorkspaceLayoutsCache` next to `SessionCache`, written by a
+new IPC (`set_workspace_layouts(snapshot)`) on the same debounced trigger that
+already pushes `set_workspace_sessions`. Read on launch BEFORE `list_sessions`:
+seed React state with the durable layouts so the UI is rendered immediately as
+`completed`/`pending`; once `list_sessions` returns, any pane whose `ptyId`
+matches a live PTY (cache-intact reload) is upgraded in place to the live PTY
+binding via the existing replay protocol. Mismatches (cache wiped on quit) keep
+the `completed` shape and respawn / Restart wins.
+
+Open questions to settle in the Phase D PR:
+
+- Auto-respawn vs. explicit Restart by default.
+- Eviction policy for the sibling store (keep the last N quits? all?).
+- Migration: do we backfill the sibling store from live React state on first
+  push after this lands, or wait for the user's next structural mutation?
+
+Out of scope (intentional, retained as non-goals):
+
+- Recreating the live PTY processes themselves across a quit (impossible).
+- Persisting in-pane terminal scrollback across a quit (huge state, low value
+  given the existing replay buffer is per-PTY-lifetime).
 
 ---
 
