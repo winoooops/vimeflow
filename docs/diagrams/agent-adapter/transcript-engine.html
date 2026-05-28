@@ -1,0 +1,662 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>
+      One Tail Loop, Two Agents — Vimeflow's shared transcript engine
+    </title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --base: #1e1e2e;
+        --mantle: #181825;
+        --crust: #11111b;
+        --surface0: #313244;
+        --surface1: #45475a;
+        --surface2: #585b70;
+        --text: #cdd6f4;
+        --subtext1: #bac2de;
+        --subtext0: #a6adc8;
+        --overlay: #9399b2;
+        --mauve: #cba6f7;
+        --blue: #89b4fa;
+        --sapphire: #74c7ec;
+        --green: #a6e3a1;
+        --peach: #fab387;
+        --yellow: #f9e2af;
+        --red: #f38ba8;
+        --teal: #94e2d5;
+        --pink: #f5c2e7;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html {
+        scroll-behavior: smooth;
+      }
+      body {
+        margin: 0;
+        background:
+          radial-gradient(
+            1200px 600px at 80% -10%,
+            #2a2a45 0%,
+            transparent 60%
+          ),
+          radial-gradient(900px 500px at -10% 10%, #2c2440 0%, transparent 55%),
+          var(--base);
+        color: var(--text);
+        font-family: 'Inter', system-ui, sans-serif;
+        line-height: 1.7;
+        font-size: 17px;
+        -webkit-font-smoothing: antialiased;
+      }
+      .wrap {
+        max-width: 880px;
+        margin: 0 auto;
+        padding: 64px 24px 120px;
+      }
+      header.hero {
+        margin-bottom: 56px;
+      }
+      .eyebrow {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 12.5px;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        color: var(--mauve);
+        margin-bottom: 18px;
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      .eyebrow .dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--mauve);
+        box-shadow: 0 0 12px var(--mauve);
+      }
+      h1 {
+        font-family: 'Manrope', sans-serif;
+        font-weight: 800;
+        font-size: 44px;
+        line-height: 1.1;
+        margin: 0 0 18px;
+        letter-spacing: -0.02em;
+        background: linear-gradient(
+          120deg,
+          #fff 10%,
+          var(--mauve) 60%,
+          var(--blue) 100%
+        );
+        -webkit-background-clip: text;
+        background-clip: text;
+        -webkit-text-fill-color: transparent;
+      }
+      .lede {
+        font-size: 20px;
+        color: var(--subtext1);
+        margin: 0 0 24px;
+      }
+      .meta {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 13px;
+        color: var(--overlay);
+        display: flex;
+        gap: 18px;
+        flex-wrap: wrap;
+      }
+      .meta a {
+        color: var(--sapphire);
+        text-decoration: none;
+      }
+      .meta a:hover {
+        text-decoration: underline;
+      }
+
+      h2 {
+        font-family: 'Manrope', sans-serif;
+        font-weight: 700;
+        font-size: 28px;
+        letter-spacing: -0.01em;
+        margin: 64px 0 8px;
+        padding-top: 18px;
+      }
+      h2 .num {
+        color: var(--surface2);
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 18px;
+        margin-right: 12px;
+      }
+      h3 {
+        font-family: 'Manrope', sans-serif;
+        font-weight: 700;
+        font-size: 19px;
+        margin: 32px 0 6px;
+        color: var(--subtext1);
+      }
+      p {
+        margin: 14px 0;
+      }
+      a.inline {
+        color: var(--blue);
+        text-decoration: none;
+        border-bottom: 1px solid rgba(137, 180, 250, 0.35);
+      }
+      strong {
+        color: #fff;
+        font-weight: 600;
+      }
+      code {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 0.86em;
+        background: var(--surface0);
+        color: var(--peach);
+        padding: 2px 6px;
+        border-radius: 5px;
+      }
+
+      .tldr {
+        border-left: 3px solid var(--mauve);
+        background: linear-gradient(
+          90deg,
+          rgba(203, 166, 247, 0.1),
+          transparent 80%
+        );
+        padding: 20px 24px;
+        border-radius: 0 12px 12px 0;
+        margin: 36px 0;
+      }
+      .tldr h4 {
+        margin: 0 0 8px;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 12.5px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: var(--mauve);
+      }
+      .tldr p {
+        margin: 6px 0;
+        color: var(--subtext1);
+      }
+
+      figure {
+        margin: 32px 0;
+      }
+      figure img {
+        width: 100%;
+        height: auto;
+        display: block;
+        border-radius: 14px;
+        background: #fafafa;
+        padding: 18px;
+        border: 1px solid var(--surface1);
+        box-shadow: 0 24px 60px -24px rgba(0, 0, 0, 0.7);
+      }
+      figcaption {
+        font-size: 14px;
+        color: var(--overlay);
+        margin-top: 12px;
+        text-align: center;
+        font-style: italic;
+      }
+      figcaption b {
+        color: var(--subtext0);
+        font-style: normal;
+      }
+
+      pre {
+        background: var(--crust);
+        border: 1px solid var(--surface0);
+        border-radius: 12px;
+        padding: 18px 20px;
+        overflow-x: auto;
+        margin: 20px 0;
+        font-size: 13.5px;
+        line-height: 1.6;
+      }
+      pre code {
+        background: none;
+        color: var(--subtext1);
+        padding: 0;
+        font-size: inherit;
+      }
+      .k {
+        color: var(--mauve);
+      }
+      .f {
+        color: var(--blue);
+      }
+      .t {
+        color: var(--yellow);
+      }
+      .s {
+        color: var(--green);
+      }
+      .c {
+        color: var(--overlay);
+        font-style: italic;
+      }
+      .n {
+        color: var(--peach);
+      }
+
+      .cards {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+        margin: 28px 0;
+      }
+      .card {
+        background: rgba(49, 50, 68, 0.5);
+        border: 1px solid var(--surface0);
+        border-radius: 14px;
+        padding: 20px 22px;
+      }
+      .card.full {
+        grid-column: 1 / -1;
+      }
+      .card .tag {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 11px;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+      }
+      .card h4 {
+        margin: 8px 0 6px;
+        font-family: 'Manrope', sans-serif;
+        font-size: 18px;
+        color: #fff;
+      }
+      .card p {
+        margin: 0;
+        font-size: 15px;
+        color: var(--subtext0);
+      }
+      .tag.green {
+        color: var(--green);
+      }
+      .tag.blue {
+        color: var(--blue);
+      }
+      .tag.peach {
+        color: var(--peach);
+      }
+      .tag.mauve {
+        color: var(--mauve);
+      }
+      .tag.teal {
+        color: var(--teal);
+      }
+
+      .stats {
+        display: flex;
+        gap: 14px;
+        flex-wrap: wrap;
+        margin: 28px 0;
+      }
+      .stat {
+        flex: 1 1 150px;
+        background: var(--mantle);
+        border: 1px solid var(--surface0);
+        border-radius: 12px;
+        padding: 18px 20px;
+      }
+      .stat .big {
+        font-family: 'Manrope', sans-serif;
+        font-weight: 800;
+        font-size: 32px;
+        line-height: 1;
+        color: var(--text);
+      }
+      .stat .big.win {
+        color: var(--green);
+      }
+      .stat .lbl {
+        font-size: 13px;
+        color: var(--overlay);
+        margin-top: 8px;
+      }
+
+      .ba {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+        margin: 22px 0;
+      }
+      .ba > div {
+        border-radius: 12px;
+        padding: 16px 18px;
+        border: 1px solid var(--surface0);
+      }
+      .ba .before {
+        background: rgba(243, 139, 168, 0.07);
+        border-color: rgba(243, 139, 168, 0.3);
+      }
+      .ba .after {
+        background: rgba(166, 227, 161, 0.07);
+        border-color: rgba(166, 227, 161, 0.3);
+      }
+      .ba h4 {
+        margin: 0 0 8px;
+        font-size: 13px;
+        font-family: 'JetBrains Mono', monospace;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+      }
+      .ba .before h4 {
+        color: var(--red);
+      }
+      .ba .after h4 {
+        color: var(--green);
+      }
+      .ba ul {
+        margin: 0;
+        padding-left: 18px;
+        font-size: 14.5px;
+        color: var(--subtext0);
+      }
+      .ba li {
+        margin: 6px 0;
+      }
+
+      hr {
+        border: none;
+        border-top: 1px solid var(--surface0);
+        margin: 56px 0;
+      }
+      footer {
+        color: var(--overlay);
+        font-size: 13.5px;
+        font-family: 'JetBrains Mono', monospace;
+      }
+      @media (max-width: 680px) {
+        .cards,
+        .ba {
+          grid-template-columns: 1fr;
+        }
+        h1 {
+          font-size: 34px;
+        }
+        body {
+          font-size: 16px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <header class="hero">
+        <div class="eyebrow">
+          <span class="dot"></span> Vimeflow · agent-adapter · step C
+        </div>
+        <h1>One tail loop, two agents</h1>
+        <p class="lede">
+          How the duplicated transcript watchers for Claude Code and Codex
+          collapsed into a single shared engine — and quietly fixed a
+          dropped-event bug and a replay-time slowdown on the way.
+        </p>
+        <div class="meta">
+          <span>2026-05-27</span>
+          <span>PRs #279 → #286 → #287</span>
+          <span
+            >tracks
+            <a href="https://github.com/winoooops/vimeflow/issues/246"
+              >#246</a
+            ></span
+          >
+          <span>4 files · +466 / −171</span>
+        </div>
+      </header>
+
+      <div class="tldr">
+        <h4>TL;DR</h4>
+        <p>
+          Both agents tail a growing JSONL transcript to surface live activity.
+          Each had its
+          <em>own</em> ~70-line read-loop, and they had drifted apart. We
+          hoisted that loop into one <code>TranscriptTailService</code> driven
+          by an injected <code>TranscriptDecoder</code> — the
+          <strong>only</strong> provider-specific seam.
+        </p>
+        <p>
+          Net result: one set of buffering rules instead of two, a Claude bug
+          fixed (split lines no longer dropped), and Codex's per-line work cut
+          from two JSON parses to one — all behavior-neutral and pinned by
+          deterministic tests.
+        </p>
+      </div>
+
+      <h2><span class="num">01</span>The problem: two loops that drifted</h2>
+      <p>
+        Vimeflow watches each agent's transcript file and emits
+        <code>agent-tool-call</code>, <code>agent-turn</code>, and
+        <code>agent-cwd</code> events as the agent works. The mechanics are
+        identical in spirit: open the file, read it line by line, and since the
+        file is still being written, buffer a trailing partial line across the
+        end-of-file boundary, strip CRLF, skip blanks, and re-poll every
+        500&nbsp;ms.
+      </p>
+      <p>
+        That logic lived <strong>twice</strong> — once in
+        <code>claude_code/transcript.rs</code>, once in
+        <code>codex/transcript.rs</code> — and the two copies had quietly
+        diverged into two real bugs:
+      </p>
+
+      <div class="ba">
+        <div class="before">
+          <h4>Claude's loop</h4>
+          <ul>
+            <li>
+              Did <b>not</b> buffer partial lines. If a
+              <code>tool_use</code> line was split across a read boundary, each
+              half failed JSON parsing and the event was
+              <b>silently dropped</b>.
+            </li>
+          </ul>
+        </div>
+        <div class="before">
+          <h4>Codex's loop</h4>
+          <ul>
+            <li>
+              Parsed each <code>response_item</code> line's payload
+              <b>twice</b> — once to derive the cwd, again to dispatch —
+              doubling serde cost on the most numerous lines during replay.
+            </li>
+          </ul>
+        </div>
+      </div>
+      <p>
+        Two copies of "the same" loop is exactly where bugs like these hide. The
+        fix is structural: have <em>one</em> loop, and let each agent contribute
+        only the part that's genuinely different.
+      </p>
+
+      <h2>
+        <span class="num">02</span>The shape: a service + an injected decoder
+      </h2>
+      <p>
+        The loop becomes <code>TranscriptTailService</code>. Everything
+        provider-specific — how a single line turns into events, and what to do
+        at the replay&rarr;live boundary — moves behind one tiny trait,
+        <code>TranscriptDecoder</code>:
+      </p>
+
+      <pre><code><span class="k">pub(crate) trait</span> <span class="t">TranscriptDecoder</span>: Send {
+    <span class="c">/// Decode one complete (newline-stripped, non-blank) line.</span>
+    <span class="k">fn</span> <span class="f">decode_line</span>(&<span class="k">mut</span> self, line: &str);
+    <span class="c">/// First EOF of each catch-up = the replay&rarr;live boundary.</span>
+    <span class="k">fn</span> <span class="f">on_caught_up</span>(&<span class="k">mut</span> self);
+}</code></pre>
+
+      <p>
+        The service owns the read/buffer/normalize/poll loop and holds a
+        <code>Box&lt;dyn TranscriptDecoder&gt;</code>. Each provider supplies a
+        decoder that owns its per-session state (in-flight tool calls, turn
+        count, last cwd, the replay-aware emitter).
+        <code>start_tailing</code> shrinks to almost nothing:
+      </p>
+
+      <pre><code><span class="k">let</span> decoder = <span class="t">CodexTranscriptDecoder</span>::<span class="f">new</span>(events, session_id, cwd);
+<span class="k">let</span> service = <span class="t">TranscriptTailService</span>::<span class="f">new</span>(<span class="t">Box</span>::<span class="f">new</span>(decoder), <span class="s">"Codex rollout transcript"</span>);
+std::thread::<span class="f">spawn</span>(<span class="k">move</span> || service.<span class="f">run</span>(<span class="t">BufReader</span>::<span class="f">new</span>(file), stop_clone));</code></pre>
+
+      <figure>
+        <img
+          src="06-transcript-engine.png"
+          alt="Class diagram of the transcript tail engine"
+        />
+        <figcaption>
+          <b>Diagram 6 — the engine.</b> One
+          <code>TranscriptTailService</code> owns the loop;
+          <code>TranscriptDecoder</code> is the single provider seam; the two
+          decoders implement it and parse the Phase-1 typed DTOs.
+          <code>start_tailing</code> just builds and spawns.
+        </figcaption>
+      </figure>
+
+      <h2><span class="num">03</span>The flow: one line, end to end</h2>
+      <p>
+        The service reads a line and dispatches on exactly one of four outcomes
+        — EOF, a partial line, a complete line, or a read error. Complete lines
+        go to <code>decode_line</code>; the first EOF of each pass calls
+        <code>on_caught_up</code>, which is how the emitter knows replay is over
+        and live tailing has begun.
+      </p>
+
+      <figure>
+        <img
+          src="07-transcript-tail-workflow.png"
+          alt="Sequence diagram of tailing a transcript line"
+        />
+        <figcaption>
+          <b>Diagram 7 — the workflow.</b> The read loop, the four-way dispatch,
+          the replay&rarr;live boundary, and the two callouts where the bugs got
+          fixed: the
+          <span style="color: #fab387">single-parse dispatch</span> and the
+          <span style="color: #fab387">buffered-and-rejoined split line</span>.
+        </figcaption>
+      </figure>
+
+      <h2><span class="num">04</span>What it delivers</h2>
+      <div class="cards">
+        <div class="card">
+          <div class="tag blue">Consolidation</div>
+          <h4>One loop, not two</h4>
+          <p>
+            The buffering, CRLF stripping, blank-skipping, poll cadence, and
+            stop semantics live in exactly one place. Both
+            <code>tail_loop</code>s are deleted.
+          </p>
+        </div>
+        <div class="card">
+          <div class="tag green">Correctness · G3</div>
+          <h4>Split lines no longer vanish</h4>
+          <p>
+            A <code>tool_use</code> line split across the EOF boundary is now
+            buffered and rejoined, so it emits. An end-to-end test splits a real
+            line where neither half is valid JSON and asserts the event still
+            fires.
+          </p>
+        </div>
+        <div class="card">
+          <div class="tag peach">Performance · the delay</div>
+          <h4>Half the parsing on replay</h4>
+          <p>
+            Codex's <code>process_line</code> now parses each line's payload
+            <strong>once</strong> and threads it to both the cwd check and the
+            dispatch. A <code>response_item</code> line went from 2 serde parses
+            to 1 — on the most numerous lines, during the heaviest moment
+            (catch-up replay).
+          </p>
+        </div>
+        <div class="card">
+          <div class="tag mauve">Extensibility</div>
+          <h4>A new agent = one decoder</h4>
+          <p>
+            Adding Aider or Cursor no longer means re-implementing a tail loop
+            with its own buffering edge cases — just a
+            <code>TranscriptDecoder</code> with two methods. The hard, shared
+            part is already solved and tested.
+          </p>
+        </div>
+        <div class="card full">
+          <div class="tag teal">Testability</div>
+          <h4>The buffering contract is pinned deterministically</h4>
+          <p>
+            A scripted <code>BufRead</code> drives the service through
+            partial-survives-EOF, truncated-never-emits, CRLF stripping,
+            blank-skipping, and read-error-recovery —
+            <strong>no real files, threads, or sleeps</strong>. The frozen
+            invariants (replay&rarr;live boundary,
+            <code>error&rarr;warn&rarr;sleep&rarr;continue</code>) are now
+            regression-locked rather than implied by two hand-rolled loops.
+          </p>
+        </div>
+      </div>
+
+      <h2><span class="num">05</span>By the numbers</h2>
+      <div class="stats">
+        <div class="stat">
+          <div class="big win">2 &rarr; 1</div>
+          <div class="lbl">
+            payload parses per Codex <code>response_item</code> line
+          </div>
+        </div>
+        <div class="stat">
+          <div class="big win">2 &rarr; 1</div>
+          <div class="lbl">copies of the tail loop</div>
+        </div>
+        <div class="stat">
+          <div class="big">5</div>
+          <div class="lbl">deterministic engine tests</div>
+        </div>
+        <div class="stat">
+          <div class="big">248</div>
+          <div class="lbl">Claude + Codex transcript tests still green</div>
+        </div>
+      </div>
+      <p>
+        Behavior-neutral everywhere except the one sanctioned change (the G3
+        split-line fix). The frozen constraints from the original design — event
+        shape, concurrency ordering, the
+        <code>Ordering::Acquire</code> stop signal, the 500&nbsp;ms poll,
+        first-EOF replay flush — all carry forward unchanged. A local Codex
+        review found no correctness regression.
+      </p>
+
+      <hr />
+      <h3>Where this sits</h3>
+      <p>
+        This is step <strong>C</strong> of the
+        <code>agent::adapter</code> refactor (<a
+          class="inline"
+          href="https://github.com/winoooops/vimeflow/issues/246"
+          >#246</a
+        >): the monolithic <code>AgentAdapter</code> trait became five focused
+        <code>pub(crate)</code> traits, the status and transcript parsers gained
+        typed lenient DTOs (step A), and the two transcript loops became this
+        one engine. The only remaining piece is the deferred
+        <strong>Step F</strong> capstone — hoisting the whole session lifecycle
+        behind a single class — which earns its own spec now that the services
+        it would orchestrate exist.
+      </p>
+
+      <footer>
+        Diagrams generated with PlantUML &middot; sources in
+        <code>docs/diagrams/agent-adapter/06–07.puml</code> &middot; engine at
+        <code
+          >crates/backend/src/agent/adapter/base/transcript_tail_service.rs</code
+        >
+      </footer>
+    </div>
+  </body>
+</html>
