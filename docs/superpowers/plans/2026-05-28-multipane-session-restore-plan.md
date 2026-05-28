@@ -120,6 +120,12 @@ pub struct PaneGrouping {
 - Add `#[serde(default)] pub grouping: Option<PaneGrouping>` to `CachedSession`.
 - Add `grouping: Option<PaneGrouping>` to `SessionInfo`; populate it from the
   cached value in `list_sessions_inner`.
+- **Allowlist the new method in `electron/backend-methods.ts`.** The
+  Electron preload bridge gatekeeps every renderer→sidecar IPC against
+  `isAllowedBackendMethod`; a method missing from that set is rejected by
+  `electron/main.ts` with the error `"unknown backend method"` BEFORE
+  the request ever reaches Rust. Every new IPC command in this plan must
+  be added to both `electron/backend-methods.ts` and its test.
 - New command `set_workspace_sessions` (request:
   `Vec<WorkspaceSessionSnapshot>`, each `{ id, layout, panes: [{ ptyId,
 paneId, paneIndex, agentType, active }] }`). Under one `cache.mutate`: for
