@@ -138,6 +138,33 @@ pub enum SessionStatus {
     },
 }
 
+/// Grouping metadata tying a PTY to its owning frontend workspace session,
+/// its position in that session's layout, and its detected agent. Persisted
+/// in the session cache (`SessionCacheData.groupings`, keyed by PTY id) and
+/// surfaced per-PTY on `SessionInfo` so the frontend can reconstruct the
+/// original multi-pane layout on restore instead of fragmenting each PTY into
+/// its own single-pane session. `None` for any PTY the frontend never grouped
+/// (back-compat: restores as a single-pane session, the pre-grouping behavior).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct PaneGrouping {
+    /// The frontend `Session.id` (an independent React UUID) this PTY belongs
+    /// to. PTYs sharing this value were panes of one workspace session.
+    pub workspace_session_id: String,
+    /// `LayoutId` of the owning workspace: single|vsplit|hsplit|threeRight|quad.
+    pub layout: String,
+    /// Session-scoped pane id, e.g. `"p0"`.
+    pub pane_id: String,
+    /// Stable pane order within the workspace session.
+    pub pane_index: u32,
+    /// Detected agent CLI: claude-code|codex|aider|generic.
+    pub agent_type: String,
+    /// Whether this pane is the workspace session's active pane.
+    pub active: bool,
+}
+
 /// Single session info returned by list_sessions
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
@@ -150,6 +177,9 @@ pub struct SessionInfo {
     #[cfg_attr(test, ts(optional))]
     #[cfg_attr(test, ts(type = "boolean | null"))]
     pub activity_panel_collapsed: Option<bool>,
+    /// Workspace grouping for this PTY, or `None` if it was never grouped.
+    #[cfg_attr(test, ts(optional))]
+    pub grouping: Option<PaneGrouping>,
 }
 
 /// Response payload for list_sessions command
@@ -196,4 +226,46 @@ pub struct UpdateSessionCwdRequest {
 pub struct SetSessionActivityPanelCollapsedRequest {
     pub id: String,
     pub collapsed: bool,
+}
+
+/// One pane within a workspace session snapshot pushed by the frontend.
+#[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspacePaneSnapshot {
+    /// The PTY id this pane is bound to (frontend `Pane.ptyId`).
+    pub pty_id: String,
+    /// Session-scoped pane id, e.g. `"p0"`.
+    pub pane_id: String,
+    /// Stable pane order within the workspace session.
+    pub pane_index: u32,
+    /// Detected agent CLI: claude-code|codex|aider|generic.
+    pub agent_type: String,
+    /// Whether this pane is the workspace session's active pane.
+    pub active: bool,
+}
+
+/// One workspace session (a frontend `Session`) in a grouping snapshot.
+#[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceSessionSnapshot {
+    /// The frontend `Session.id` (React UUID).
+    pub id: String,
+    /// `LayoutId`: single|vsplit|hsplit|threeRight|quad.
+    pub layout: String,
+    pub panes: Vec<WorkspacePaneSnapshot>,
+}
+
+/// Request payload for set_workspace_sessions — the full current set of
+/// workspace sessions and their panes. The backend rebuilds its grouping map
+/// from this snapshot (entries for PTYs no longer present are dropped).
+#[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct SetWorkspaceSessionsRequest {
+    pub sessions: Vec<WorkspaceSessionSnapshot>,
 }

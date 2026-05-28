@@ -529,6 +529,9 @@ pub(crate) fn kill_pty_inner(
         .mutate(|data| {
             data.sessions.remove(&request.session_id);
             data.session_order.retain(|id| id != &request.session_id);
+            // Drop any workspace grouping for this PTY — the pane no longer
+            // exists, so it must not be reconstructed on the next restore.
+            data.groupings.remove(&request.session_id);
 
             // Clear active_session_id if the killed session was active.
             // The frontend owns tab-neighbor selection and persists the
@@ -614,6 +617,7 @@ pub(crate) fn list_sessions_inner(
             cwd: cached.cwd,
             status,
             activity_panel_collapsed: cached.activity_panel_collapsed,
+            grouping: snapshot.groupings.get(id).cloned(),
         });
     }
 
@@ -820,6 +824,45 @@ pub(crate) fn set_session_activity_panel_collapsed_inner(
             .get_mut(&request.id)
             .ok_or_else(|| format!("session not found: {}", request.id))?;
         session.activity_panel_collapsed = Some(request.collapsed);
+        Ok(())
+    })
+}
+
+/// Persist the frontend's full workspace-session grouping snapshot so a later
+/// restore can reconstruct the multi-pane layout instead of fragmenting each
+/// PTY into its own single-pane session.
+///
+/// The cache `groupings` map is rebuilt from scratch on every call — the
+/// frontend always sends the complete current set, so a pane closed since the
+/// last snapshot simply doesn't appear and its grouping is dropped. Panes
+/// whose `pty_id` is not in the cache `sessions` map (a spawn/kill race) are
+/// skipped: grouping for a PTY the backend doesn't know about would be a
+/// dangling entry that `list_sessions` never surfaces anyway.
+pub(crate) fn set_workspace_sessions_inner(
+    cache: &Arc<crate::terminal::cache::SessionCache>,
+    request: SetWorkspaceSessionsRequest,
+) -> Result<(), String> {
+    cache.mutate(|d| {
+        let mut groupings = std::collections::HashMap::new();
+        for session in &request.sessions {
+            for pane in &session.panes {
+                if !d.sessions.contains_key(&pane.pty_id) {
+                    continue;
+                }
+                groupings.insert(
+                    pane.pty_id.clone(),
+                    PaneGrouping {
+                        workspace_session_id: session.id.clone(),
+                        layout: session.layout.clone(),
+                        pane_id: pane.pane_id.clone(),
+                        pane_index: pane.pane_index,
+                        agent_type: pane.agent_type.clone(),
+                        active: pane.active,
+                    },
+                );
+            }
+        }
+        d.groupings = groupings;
         Ok(())
     })
 }
@@ -2670,5 +2713,157 @@ mod tests {
             post_snapshot.active_session_id,
             pre_snapshot.active_session_id
         );
+    }
+
+    /// `set_workspace_sessions` persists pane grouping for every PTY in the
+    /// snapshot that the cache still knows about, and `list_sessions` then
+    /// surfaces it on each `SessionInfo`. PTYs not mentioned in the snapshot
+    /// have their grouping dropped (e.g. a pane that was closed since the last
+    /// push). PTYs referenced by the snapshot but not in cache (spawn/kill
+    /// race) are silently skipped — no dangling entries.
+    #[tokio::test]
+    async fn set_workspace_sessions_persists_grouping_and_list_sessions_surfaces_it() {
+        let (state, cache, events, _temp_dir) = create_test_state_with_cache();
+        let cwd = std::env::current_dir()
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
+
+        // Spawn two PTYs that will be the panes of one workspace session, plus
+        // a third PTY that simulates a separate single-pane session.
+        for id in &["pty-a", "pty-b", "pty-solo"] {
+            spawn_pty_inner(
+                state.clone(),
+                cache.clone(),
+                events.clone(),
+                SpawnPtyRequest {
+                    session_id: id.to_string(),
+                    cwd: cwd.clone(),
+                    shell: None,
+                    env: None,
+                    enable_agent_bridge: false,
+                },
+            )
+            .await
+            .expect("spawn should succeed");
+        }
+
+        // Push a snapshot: pty-a + pty-b form a vsplit workspace; pty-solo is
+        // a single. Also include a phantom pty-id the backend doesn't know
+        // about — must be skipped without error.
+        set_workspace_sessions_inner(
+            &cache,
+            SetWorkspaceSessionsRequest {
+                sessions: vec![
+                    WorkspaceSessionSnapshot {
+                        id: "ws-quad".into(),
+                        layout: "vsplit".into(),
+                        panes: vec![
+                            WorkspacePaneSnapshot {
+                                pty_id: "pty-a".into(),
+                                pane_id: "p0".into(),
+                                pane_index: 0,
+                                agent_type: "claude-code".into(),
+                                active: true,
+                            },
+                            WorkspacePaneSnapshot {
+                                pty_id: "pty-b".into(),
+                                pane_id: "p1".into(),
+                                pane_index: 1,
+                                agent_type: "generic".into(),
+                                active: false,
+                            },
+                            WorkspacePaneSnapshot {
+                                pty_id: "pty-ghost".into(), // unknown to cache
+                                pane_id: "p2".into(),
+                                pane_index: 2,
+                                agent_type: "generic".into(),
+                                active: false,
+                            },
+                        ],
+                    },
+                    WorkspaceSessionSnapshot {
+                        id: "ws-solo".into(),
+                        layout: "single".into(),
+                        panes: vec![WorkspacePaneSnapshot {
+                            pty_id: "pty-solo".into(),
+                            pane_id: "p0".into(),
+                            pane_index: 0,
+                            agent_type: "generic".into(),
+                            active: true,
+                        }],
+                    },
+                ],
+            },
+        )
+        .expect("set_workspace_sessions should succeed");
+
+        // list_sessions surfaces the grouping on the right PTYs.
+        let list = list_sessions_inner(&state, &cache).expect("list_sessions");
+        let by_id: std::collections::HashMap<_, _> =
+            list.sessions.iter().map(|s| (s.id.clone(), s)).collect();
+
+        let a = by_id.get("pty-a").expect("pty-a");
+        let a_group = a.grouping.as_ref().expect("pty-a grouping");
+        assert_eq!(a_group.workspace_session_id, "ws-quad");
+        assert_eq!(a_group.layout, "vsplit");
+        assert_eq!(a_group.pane_id, "p0");
+        assert_eq!(a_group.pane_index, 0);
+        assert!(a_group.active);
+        assert_eq!(a_group.agent_type, "claude-code");
+
+        let b_group = by_id
+            .get("pty-b")
+            .and_then(|s| s.grouping.as_ref())
+            .expect("pty-b grouping");
+        assert_eq!(b_group.workspace_session_id, "ws-quad");
+        assert!(!b_group.active);
+
+        let solo_group = by_id
+            .get("pty-solo")
+            .and_then(|s| s.grouping.as_ref())
+            .expect("pty-solo grouping");
+        assert_eq!(solo_group.workspace_session_id, "ws-solo");
+        assert_eq!(solo_group.layout, "single");
+
+        // The phantom pty was skipped: no entry in the cache groupings map.
+        assert!(!cache.snapshot().groupings.contains_key("pty-ghost"));
+
+        // Push a NEW snapshot that drops pty-b — its grouping must be cleared.
+        set_workspace_sessions_inner(
+            &cache,
+            SetWorkspaceSessionsRequest {
+                sessions: vec![WorkspaceSessionSnapshot {
+                    id: "ws-quad".into(),
+                    layout: "single".into(),
+                    panes: vec![WorkspacePaneSnapshot {
+                        pty_id: "pty-a".into(),
+                        pane_id: "p0".into(),
+                        pane_index: 0,
+                        agent_type: "claude-code".into(),
+                        active: true,
+                    }],
+                }],
+            },
+        )
+        .expect("second snapshot should succeed");
+
+        let list = list_sessions_inner(&state, &cache).expect("list_sessions");
+        let by_id: std::collections::HashMap<_, _> =
+            list.sessions.iter().map(|s| (s.id.clone(), s)).collect();
+        assert!(
+            by_id.get("pty-b").unwrap().grouping.is_none(),
+            "pty-b grouping must be dropped after the next snapshot omits it"
+        );
+        assert!(
+            by_id.get("pty-solo").unwrap().grouping.is_none(),
+            "pty-solo grouping must be dropped too"
+        );
+        assert!(by_id.get("pty-a").unwrap().grouping.is_some());
+
+        // Cleanup
+        for id in &["pty-a", "pty-b", "pty-solo"] {
+            let _ = state.remove(&id.to_string());
+        }
     }
 }
