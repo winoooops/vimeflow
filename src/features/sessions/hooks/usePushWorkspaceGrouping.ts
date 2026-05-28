@@ -23,8 +23,6 @@ import type { Session } from '../types'
 
 const log = createLogger('grouping')
 
-const PUSH_DEBOUNCE_MS = 100
-
 /**
  * Pure conversion of the in-memory `Session[]` shape into the IPC payload.
  * Exposed for testability — call sites should use the hook below.
@@ -72,16 +70,32 @@ export const usePushWorkspaceGrouping = ({
       return
     }
 
-    const handle = setTimeout(() => {
-      const snapshot = buildGroupingSnapshot(sessions)
-      // eslint-disable-next-line promise/prefer-await-to-then
-      service.setWorkspaceSessions(snapshot).catch((err) => {
-        log.warn('setWorkspaceSessions IPC failed', err)
-      })
-    }, PUSH_DEBOUNCE_MS)
+    // Fire immediately, no debounce. A timer-based debounce can be cancelled
+    // by an unmount that happens before it fires (e.g. the user adds a pane
+    // and hits Cmd+R within the debounce window), which would leave the cache
+    // without the grouping for that last pane and reload would fragment it
+    // back into a single-pane session. Pushing on every `sessions` change is
+    // idempotent on the backend and only fires on structural mutations + a
+    // handful of low-frequency UI updates — well within IPC headroom.
+    const snapshot = buildGroupingSnapshot(sessions)
+    log.info(
+      `pushing grouping snapshot: ${snapshot.sessions.length} workspace ` +
+        `session(s), ${snapshot.sessions.reduce(
+          (n, s) => n + s.panes.length,
+          0
+        )} pane(s)`,
+      {
+        workspaces: snapshot.sessions.map((s) => ({
+          id: s.id,
+          layout: s.layout,
+          panes: s.panes.length,
+        })),
+      }
+    )
 
-    return (): void => {
-      clearTimeout(handle)
-    }
+    // eslint-disable-next-line promise/prefer-await-to-then
+    service.setWorkspaceSessions(snapshot).catch((err) => {
+      log.warn('setWorkspaceSessions IPC failed', err)
+    })
   }, [service, sessions, loading])
 }

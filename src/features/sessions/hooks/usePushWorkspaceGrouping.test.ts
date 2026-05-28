@@ -1,4 +1,4 @@
-import { renderHook, waitFor } from '@testing-library/react'
+import { renderHook } from '@testing-library/react'
 import { describe, expect, test, vi } from 'vitest'
 import type { ITerminalService } from '../../terminal/services/terminalService'
 import { emptyActivity } from '../constants'
@@ -75,7 +75,6 @@ describe('buildGroupingSnapshot', () => {
 
 describe('usePushWorkspaceGrouping', () => {
   test('does not push while loading', () => {
-    vi.useFakeTimers()
     const setWorkspaceSessions = vi.fn().mockResolvedValue(undefined)
     const service = { setWorkspaceSessions } as unknown as ITerminalService
 
@@ -90,25 +89,27 @@ describe('usePushWorkspaceGrouping', () => {
         ],
       })
     )
-    vi.advanceTimersByTime(500)
+
     expect(setWorkspaceSessions).not.toHaveBeenCalled()
-    vi.useRealTimers()
   })
 
   test('does not push when there are no sessions (per-pty kill cleanup handles drops)', () => {
-    vi.useFakeTimers()
     const setWorkspaceSessions = vi.fn().mockResolvedValue(undefined)
     const service = { setWorkspaceSessions } as unknown as ITerminalService
 
     renderHook(() =>
       usePushWorkspaceGrouping({ service, loading: false, sessions: [] })
     )
-    vi.advanceTimersByTime(500)
+
     expect(setWorkspaceSessions).not.toHaveBeenCalled()
-    vi.useRealTimers()
   })
 
-  test('pushes a snapshot after a brief debounce when sessions change', async () => {
+  // Push fires SYNCHRONOUSLY on each `sessions` change. A debounced timer was
+  // observed to be cancelled by an unmount (e.g. Cmd+R within ~100ms of the
+  // last pane addition) before it could fire, leaving the cache without
+  // grouping for the last pane — exactly the symptom that reintroduced
+  // fragmentation in the real dev build.
+  test('pushes the snapshot immediately when sessions change', () => {
     const setWorkspaceSessions = vi.fn().mockResolvedValue(undefined)
     const service = { setWorkspaceSessions } as unknown as ITerminalService
 
@@ -125,7 +126,7 @@ describe('usePushWorkspaceGrouping', () => {
       })
     )
 
-    await waitFor(() => expect(setWorkspaceSessions).toHaveBeenCalledTimes(1))
+    expect(setWorkspaceSessions).toHaveBeenCalledTimes(1)
 
     const payload = setWorkspaceSessions.mock.calls[0]?.[0] as
       | { sessions: { id: string; layout: string; panes: unknown[] }[] }
