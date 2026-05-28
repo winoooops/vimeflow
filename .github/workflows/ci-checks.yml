@@ -69,18 +69,22 @@ jobs:
       # so the first test that imports electron triggers an in-process
       # download and races parallel vitest workers (ENOENT on path.txt).
       #
-      # Run `install.js` explicitly. It is idempotent — `isInstalled()`
-      # short-circuits if both `dist/version` matches the package version
-      # AND `path.txt` already holds the expected platform path; either
-      # condition missing triggers a fresh download. Verify the file
-      # exists afterwards so a silent failure cannot reach the tests.
+      # Wipe any partial state first. Observed in CI: `dist/` from a
+      # previous (incomplete) download can persist while `path.txt` is
+      # absent — `install.js`'s `isInstalled()` short-circuit can still
+      # exit early in that state, never writing `path.txt`. Forcing a
+      # clean download every run is cheap (one ~80MB fetch, cached by
+      # @electron/get's own cacheRoot under ~/.cache/electron).
       - name: Ensure Electron binary is installed
         run: |
+          rm -rf node_modules/electron/dist node_modules/electron/path.txt
           node node_modules/electron/install.js
           if [ ! -f node_modules/electron/path.txt ]; then
             echo "ERROR: electron/path.txt missing after install.js" >&2
             echo "--- node_modules/electron contents ---" >&2
             ls -la node_modules/electron/ >&2 || true
+            echo "--- node_modules/electron/dist contents ---" >&2
+            ls -la node_modules/electron/dist/ >&2 || true
             exit 1
           fi
           echo "electron binary: $(cat node_modules/electron/path.txt)"
