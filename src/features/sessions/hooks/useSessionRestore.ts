@@ -3,7 +3,10 @@ import type { Session } from '../types'
 import type { ITerminalService } from '../../terminal/services/terminalService'
 import type { PtyBufferDrain } from '../../terminal/orchestration/usePtyBufferDrain'
 import { registerPtySession } from '../../terminal/ptySessionMap'
+import { createLogger } from '../../../lib/log'
 import { sessionFromInfo } from '../utils/sessionFromInfo'
+
+const log = createLogger('restore')
 
 export interface UseSessionRestoreOptions {
   service: ITerminalService
@@ -60,6 +63,14 @@ export const useSessionRestore = ({
           return
         }
 
+        log.info(
+          `listSessions returned ${list.sessions.length} PTY session(s)`,
+          {
+            ptySessionIds: list.sessions.map((info) => info.id),
+            activeSessionId: list.activeSessionId,
+          }
+        )
+
         const restored = list.sessions.map((info, index) => {
           const session = sessionFromInfo(info, index)
           if (info.status.kind !== 'Alive') {
@@ -90,6 +101,25 @@ export const useSessionRestore = ({
           } satisfies Session
         })
 
+        // Observability for the fragmentation bug: compare PTY count to the
+        // number of reconstructed workspace sessions. While the cache stores
+        // no pane grouping, this is 1:1 (every PTY becomes its own single-pane
+        // session) — which is exactly the symptom. Once grouping is persisted
+        // and reconstructed, a quad session of 4 PTYs collapses back to 1
+        // workspace session and this line shows `4 PTY → 1 workspace`.
+        log.info(
+          `reconstructed ${restored.length} workspace session(s) from ` +
+            `${list.sessions.length} PTY session(s)`,
+          {
+            workspaceSessions: restored.map((session) => ({
+              id: session.id,
+              layout: session.layout,
+              paneCount: session.panes.length,
+              paneIds: session.panes.map((pane) => pane.id),
+            })),
+          }
+        )
+
         onRestoreRef.current(restored)
 
         if (list.activeSessionId !== null) {
@@ -107,8 +137,7 @@ export const useSessionRestore = ({
 
         setLoading(false)
       } catch (err) {
-        // eslint-disable-next-line no-console
-        console.warn('listSessions failed; starting empty', err)
+        log.error('listSessions failed; starting empty', err)
         // F15 (claude LOW): intentionally do NOT call stopBuffering() here.
         // The pty-data buffering listener stays alive for the lifetime of
         // useSessionManager so createSession (post-restore) still benefits

@@ -676,6 +676,33 @@ pub(crate) fn list_sessions_inner(
         })?;
     }
 
+    // Restore observability: one summary line per list_sessions call. This is
+    // the backend half of the fragmentation trace (the frontend logs how many
+    // workspace sessions it reconstructs from these PTYs). `reconciled` counts
+    // entries the cache had marked alive but PtyState no longer holds — the
+    // post-crash path that flips them to Exited.
+    let alive = session_infos
+        .iter()
+        .filter(|info| matches!(info.status, SessionStatus::Alive { .. }))
+        .count();
+    log::info!(
+        "list_sessions: {} PTY session(s) ({} alive, {} reconciled-to-exited), active={:?}",
+        session_infos.len(),
+        alive,
+        reconciled_to_exited.len(),
+        active_session_id
+    );
+    debug_log(
+        "restore",
+        &format!(
+            "list_sessions: total={}, alive={}, reconciled={}, order={:?}",
+            session_infos.len(),
+            alive,
+            reconciled_to_exited.len(),
+            snapshot.session_order
+        ),
+    );
+
     Ok(SessionList {
         active_session_id,
         sessions: session_infos,
