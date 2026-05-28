@@ -16,8 +16,7 @@ export type SessionInfo = {
    * IPC JSON when None instead of emitting `null`, so the generated TS
    * `grouping?: PaneGrouping` accurately matches the runtime shape —
    * a consumer that checks for `undefined` will never see a `null`
-   * that the type system claims is `PaneGrouping`. Codex review on
-   * PR #290 flagged the previous null/undefined divergence (P2).
+   * that the type system claims is `PaneGrouping`.
    */
   grouping?: PaneGrouping
 }

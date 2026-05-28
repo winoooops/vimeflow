@@ -5,6 +5,7 @@ import type { PtyBufferDrain } from '../../terminal/orchestration/usePtyBufferDr
 import { registerPtySession } from '../../terminal/ptySessionMap'
 import { createLogger } from '../../../lib/log'
 import { groupSessionsFromInfos } from '../utils/groupSessionsFromInfos'
+import { tabName } from '../utils/tabName'
 
 const log = createLogger('restore')
 
@@ -85,15 +86,21 @@ export const useSessionRestore = ({
         // flags. After a reload, `list.activeSessionId` holds the canonical
         // active PTY while the grouping says otherwise. Trust the backend's
         // `activeSessionId` as the source of truth for which pane is focused
-        // within the workspace it belongs to. Codex review on PR #290 (P2).
+        // within the workspace it belongs to.
+        //
+        // Recompute every session-level field that was derived from the
+        // previous active pane in `groupSessionsFromInfos`: `agentType`,
+        // `workingDirectory`, and the fallback `name`. Without this,
+        // `addPane` later spawns from the stale `workingDirectory` and new
+        // panes open in the wrong directory.
         const activePtyId = list.activeSessionId
 
         const reconciled = activePtyId
-          ? grouped.map((session) => {
-              const matchesActive = session.panes.some(
+          ? grouped.map((session, idx) => {
+              const newActivePane = session.panes.find(
                 (pane) => pane.ptyId === activePtyId
               )
-              if (!matchesActive) {
+              if (!newActivePane) {
                 return session
               }
 
@@ -103,9 +110,9 @@ export const useSessionRestore = ({
                   ...pane,
                   active: pane.ptyId === activePtyId,
                 })),
-                agentType:
-                  session.panes.find((pane) => pane.ptyId === activePtyId)
-                    ?.agentType ?? session.agentType,
+                agentType: newActivePane.agentType,
+                workingDirectory: newActivePane.cwd,
+                name: tabName(newActivePane.cwd, idx),
               }
             })
           : grouped

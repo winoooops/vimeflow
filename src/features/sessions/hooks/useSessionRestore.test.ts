@@ -246,15 +246,21 @@ describe('useSessionRestore', () => {
   test('reconciles pane.active from list.activeSessionId when grouping is stale', async () => {
     const ws = 'workspace-uuid-active-mismatch'
 
-    const grouped = (
+    // Grouping claims pty-a is active; cache's activeSessionId says pty-b
+    // (e.g. the user switched the active pane and Cmd+R'd before the
+    // grouping snapshot push completed). pty-a and pty-b live in
+    // different cwds so the reconciler's `workingDirectory` /
+    // `name` recompute is observable.
+    const aliveAt = (
       id: string,
+      cwd: string,
       paneIndex: number,
       paneId: string,
       groupingActive: boolean,
       agentType: string
     ): unknown => ({
       id,
-      cwd: '/home/will/repo',
+      cwd,
       status: {
         kind: 'Alive',
         pid: 1000 + paneIndex,
@@ -271,15 +277,12 @@ describe('useSessionRestore', () => {
       },
     })
 
-    // Grouping claims pty-a is active; cache's activeSessionId says pty-b
-    // (e.g. the user switched the active pane and Cmd+R'd before the
-    // grouping snapshot push completed).
     const service = {
       onData: vi.fn().mockResolvedValue(() => undefined),
       listSessions: vi.fn().mockResolvedValue({
         sessions: [
-          grouped('pty-a', 0, 'p0', true, 'claude-code'),
-          grouped('pty-b', 1, 'p1', false, 'codex'),
+          aliveAt('pty-a', '/home/will/repo-a', 0, 'p0', true, 'claude-code'),
+          aliveAt('pty-b', '/home/will/repo-b', 1, 'p1', false, 'codex'),
         ],
         activeSessionId: 'pty-b',
       }),
@@ -310,6 +313,11 @@ describe('useSessionRestore', () => {
     expect(ws1.panes.find((pane) => pane.active)?.ptyId).toBe('pty-b')
     // The session's derived agentType follows the new active pane.
     expect(ws1.agentType).toBe('codex')
+    // Every session-level field derived from the active pane in
+    // groupSessionsFromInfos must be recomputed in the reconcile pass —
+    // otherwise addPane later spawns from the stale cwd.
+    expect(ws1.workingDirectory).toBe('/home/will/repo-b')
+    expect(ws1.name).toBe('repo-b')
     // Active session resolved to the workspace id, not the PTY.
     expect(onActiveResolved).toHaveBeenCalledWith(ws)
   })
