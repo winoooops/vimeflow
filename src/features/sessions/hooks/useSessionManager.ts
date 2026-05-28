@@ -1234,11 +1234,19 @@ export const useSessionManager = (
   // every `sessions[]` change and pushes the full snapshot via
   // `set_workspace_sessions`; that IPC now rebuilds `session_order` from the
   // snapshot's workspace * pane-index ordering, atomically with the grouping
-  // write. So the legacy `reorder_sessions` IPC is redundant here AND was
-  // incorrect once multi-pane workspaces existed: its permutation check
-  // expected ALL PTY ids while this site sent only active-per-workspace ids,
-  // which silently rejected as soon as any workspace had >1 pane and left
-  // the cache's order out of sync with the UI on reload (PR #290 review).
+  // write. So the legacy `reorder_sessions` IPC is redundant here.
+  //
+  // Use a FUNCTIONAL updater that merges the incoming order against the
+  // latest committed `prev` rather than overwriting it. The caller passes a
+  // snapshot built at drag-start; if an `addPane` (or `restartSession`,
+  // `removePane`, `createSession`) commits between drag-start and
+  // setSessions landing — a real ~50–500 ms window for the spawn IPC —
+  // overwriting with the stale snapshot would silently erase the new pane
+  // from React state while its PTY stays alive in Rust. Merge keys: take
+  // `reordered`'s ORDER but each session's CONTENTS from `prev` (lookup by
+  // session id). Sessions present in `prev` but absent from `reordered`
+  // (e.g. a `createSession` that landed during the reorder) are appended
+  // at the end so they survive the merge instead of disappearing.
   //
   // The active-pane invariant check is preserved — committing a session
   // without an active pane would trip the SplitView's `getActivePane` on
@@ -1255,7 +1263,14 @@ export const useSessionManager = (
 
       return
     }
-    setSessions(reordered)
+    setSessions((prev) => {
+      const prevById = new Map(prev.map((s) => [s.id, s]))
+      const reorderedIds = new Set(reordered.map((s) => s.id))
+      const ordered = reordered.map((s) => prevById.get(s.id) ?? s)
+      const extras = prev.filter((s) => !reorderedIds.has(s.id))
+
+      return [...ordered, ...extras]
+    })
   }, [])
 
   const updatePaneCwd = useCallback(

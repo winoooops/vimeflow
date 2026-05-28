@@ -2445,6 +2445,77 @@ describe('useSessionManager', () => {
     })
   })
 
+  // PR #290 cycle 4: Claude HIGH — `reorderSessions` was using a plain
+  // `setSessions(reordered)` overwrite, so a drag-reorder that races an
+  // in-flight `addPane` would clobber the new pane (the reorder snapshot
+  // was built before the pane existed). The functional updater merges
+  // `reordered`'s order against the latest `prev` by session id, so any
+  // panes (or sessions) committed during the race window survive.
+  test('reorderSessions preserves a session committed during the reorder window', async () => {
+    const service = createMockService()
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: 'a',
+      sessions: [
+        {
+          id: 'a',
+          cwd: '/tmp',
+          status: {
+            kind: 'Alive',
+            pid: 1,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+        {
+          id: 'b',
+          cwd: '/tmp',
+          status: {
+            kind: 'Alive',
+            pid: 2,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+      ],
+    })
+
+    service.spawn = vi
+      .fn()
+      .mockResolvedValue({ sessionId: 'c-pty', pid: 3, cwd: '/tmp' })
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    // Snapshot the initial 2 sessions at "drag start".
+    const reorderedAtDragStart = [...result.current.sessions].reverse()
+
+    // While the drag was in flight, a third session is created. This
+    // simulates the createSession spawn completing between drag-start and
+    // setSessions landing.
+    await act(async () => {
+      result.current.createSession()
+      // Give createSession a tick to spawn + setSessions.
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    await waitFor(() => expect(result.current.sessions).toHaveLength(3))
+    const newlyCreatedId = result.current.sessions[2].id
+
+    // NOW the reorder lands with its stale snapshot of 2 sessions.
+    act(() => result.current.reorderSessions(reorderedAtDragStart))
+
+    // Functional updater: the 3rd session committed during the race is
+    // appended at the tail rather than being silently erased.
+    await waitFor(() => expect(result.current.sessions).toHaveLength(3))
+    expect(result.current.sessions.map((s) => s.id)).toEqual([
+      'b',
+      'a',
+      newlyCreatedId,
+    ])
+  })
+
   test('updateSessionCwd updates session cwd without touching pane cwd', async () => {
     const service = createMockService()
     service.listSessions = vi.fn().mockResolvedValue({

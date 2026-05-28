@@ -883,10 +883,17 @@ pub(crate) fn set_workspace_sessions_inner(
 
         // Preserve PTYs in cache that the snapshot didn't mention — appended
         // in their existing relative order so a transient race window cannot
-        // drop a session.
+        // drop a session. Symmetrically preserve their grouping entry too:
+        // wiping `d.groupings` while keeping the PTY alive in `session_order`
+        // would surface those panes as solo single-pane sessions on the next
+        // `list_sessions`, peeling them out of their original workspace
+        // (caught by Claude reviewer as a MEDIUM during PR #290 cycle 3).
         for pty_id in &d.session_order {
             if !seen.contains(pty_id) && d.sessions.contains_key(pty_id) {
                 new_order.push(pty_id.clone());
+                if let Some(existing) = d.groupings.get(pty_id) {
+                    groupings.insert(pty_id.clone(), existing.clone());
+                }
             }
         }
 
@@ -2913,7 +2920,14 @@ mod tests {
             vec!["pty-solo".to_string(), "pty-a".into(), "pty-b".into()],
         );
 
-        // Push a NEW snapshot that drops pty-b — its grouping must be cleared.
+        // Push a third snapshot that omits both pty-b and pty-solo. They
+        // are still alive in cache (kill_pty wasn't called for them), so
+        // the preservation loop must keep BOTH `session_order` AND
+        // `groupings` for them — see the dedicated
+        // `set_workspace_sessions_preserves_grouping_for_race_window_ptys`
+        // test below for why dropping the grouping here would incorrectly
+        // peel race-window panes out of their original workspace on
+        // the next restore.
         set_workspace_sessions_inner(
             &cache,
             SetWorkspaceSessionsRequest {
@@ -2930,23 +2944,128 @@ mod tests {
                 }],
             },
         )
-        .expect("second snapshot should succeed");
+        .expect("third snapshot should succeed");
 
         let list = list_sessions_inner(&state, &cache).expect("list_sessions");
         let by_id: std::collections::HashMap<_, _> =
             list.sessions.iter().map(|s| (s.id.clone(), s)).collect();
-        assert!(
-            by_id.get("pty-b").unwrap().grouping.is_none(),
-            "pty-b grouping must be dropped after the next snapshot omits it"
-        );
-        assert!(
-            by_id.get("pty-solo").unwrap().grouping.is_none(),
-            "pty-solo grouping must be dropped too"
-        );
+        // Omitted-but-alive PTYs keep their grouping from the previous push.
         assert!(by_id.get("pty-a").unwrap().grouping.is_some());
+        assert!(
+            by_id.get("pty-b").unwrap().grouping.is_some(),
+            "pty-b grouping must be preserved across a race-window omission"
+        );
+        assert!(
+            by_id.get("pty-solo").unwrap().grouping.is_some(),
+            "pty-solo grouping must be preserved across a race-window omission"
+        );
 
         // Cleanup
         for id in &["pty-a", "pty-b", "pty-solo"] {
+            let _ = state.remove(&id.to_string());
+        }
+    }
+
+    /// Claude reviewer MEDIUM on PR #290 cycle 3: the preservation loop for
+    /// race-window PTYs writes back to `session_order` but not to
+    /// `groupings`. That asymmetry would peel a race-window pane out of its
+    /// original workspace on the next restore (grouping `None` → solo
+    /// single-pane session). Both must be preserved symmetrically.
+    #[tokio::test]
+    async fn set_workspace_sessions_preserves_grouping_for_race_window_ptys() {
+        let (state, cache, events, _temp_dir) = create_test_state_with_cache();
+        let cwd = std::env::current_dir()
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
+
+        // Spawn two PTYs that form a vsplit workspace.
+        for id in &["pty-1", "pty-2"] {
+            spawn_pty_inner(
+                state.clone(),
+                cache.clone(),
+                events.clone(),
+                SpawnPtyRequest {
+                    session_id: id.to_string(),
+                    cwd: cwd.clone(),
+                    shell: None,
+                    env: None,
+                    enable_agent_bridge: false,
+                },
+            )
+            .await
+            .expect("spawn");
+        }
+
+        // First snapshot groups both into one workspace.
+        set_workspace_sessions_inner(
+            &cache,
+            SetWorkspaceSessionsRequest {
+                sessions: vec![WorkspaceSessionSnapshot {
+                    id: "ws-1".into(),
+                    layout: "vsplit".into(),
+                    panes: vec![
+                        WorkspacePaneSnapshot {
+                            pty_id: "pty-1".into(),
+                            pane_id: "p0".into(),
+                            pane_index: 0,
+                            agent_type: "claude-code".into(),
+                            active: true,
+                        },
+                        WorkspacePaneSnapshot {
+                            pty_id: "pty-2".into(),
+                            pane_id: "p1".into(),
+                            pane_index: 1,
+                            agent_type: "generic".into(),
+                            active: false,
+                        },
+                    ],
+                }],
+            },
+        )
+        .expect("initial snapshot");
+        assert!(cache.snapshot().groupings.contains_key("pty-2"));
+
+        // A second snapshot lands that — because of a race — omits pty-2
+        // (e.g. an addPane was in flight when the push was built). The
+        // preservation loop must keep pty-2 in BOTH session_order AND the
+        // groupings map. Without the symmetric preservation, pty-2 would
+        // survive in session_order but lose grouping and restore as a solo
+        // single-pane session on the next reload.
+        set_workspace_sessions_inner(
+            &cache,
+            SetWorkspaceSessionsRequest {
+                sessions: vec![WorkspaceSessionSnapshot {
+                    id: "ws-1".into(),
+                    layout: "vsplit".into(),
+                    panes: vec![WorkspacePaneSnapshot {
+                        pty_id: "pty-1".into(),
+                        pane_id: "p0".into(),
+                        pane_index: 0,
+                        agent_type: "claude-code".into(),
+                        active: true,
+                    }],
+                }],
+            },
+        )
+        .expect("race-window snapshot");
+
+        let snap = cache.snapshot();
+        // Both PTYs survive in order.
+        assert_eq!(
+            snap.session_order,
+            vec!["pty-1".to_string(), "pty-2".into()]
+        );
+        // Both groupings survive — pty-2's original entry is preserved.
+        let pty_2_grouping = snap
+            .groupings
+            .get("pty-2")
+            .expect("pty-2 grouping must be preserved across the race window");
+        assert_eq!(pty_2_grouping.workspace_session_id, "ws-1");
+        assert_eq!(pty_2_grouping.pane_id, "p1");
+
+        // Cleanup
+        for id in &["pty-1", "pty-2"] {
             let _ = state.remove(&id.to_string());
         }
     }
