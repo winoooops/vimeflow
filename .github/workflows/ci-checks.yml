@@ -62,16 +62,28 @@ jobs:
       # imports electron triggers an in-process download, which races
       # parallel vitest workers and fails with `ENOENT path.txt`.
       #
-      # Force a full rebuild here so the binary AND `path.txt` are
-      # guaranteed present before vitest spawns its workers. `npm rebuild
-      # electron` is idempotent and runs only the electron postinstall —
-      # not the whole tree — so the CI cost is small.
+      # Electron 42.x's `package.json` has no `install` / `postinstall`
+      # script — the binary download has to be triggered explicitly by
+      # running `install.js`. Without this, `npm ci` populates
+      # `node_modules/electron/` but leaves no binary and no `path.txt`,
+      # so the first test that imports electron triggers an in-process
+      # download and races parallel vitest workers (ENOENT on path.txt).
+      #
+      # Run `install.js` explicitly. It is idempotent — `isInstalled()`
+      # short-circuits if both `dist/version` matches the package version
+      # AND `path.txt` already holds the expected platform path; either
+      # condition missing triggers a fresh download. Verify the file
+      # exists afterwards so a silent failure cannot reach the tests.
       - name: Ensure Electron binary is installed
         run: |
-          npm rebuild electron
-          test -f node_modules/electron/path.txt \
-            || (echo "ERROR: electron/path.txt missing after rebuild" >&2; exit 1)
-          echo "electron path: $(cat node_modules/electron/path.txt)"
+          node node_modules/electron/install.js
+          if [ ! -f node_modules/electron/path.txt ]; then
+            echo "ERROR: electron/path.txt missing after install.js" >&2
+            echo "--- node_modules/electron contents ---" >&2
+            ls -la node_modules/electron/ >&2 || true
+            exit 1
+          fi
+          echo "electron binary: $(cat node_modules/electron/path.txt)"
 
       - name: Run tests
         run: npm test
