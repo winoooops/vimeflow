@@ -161,6 +161,7 @@ const createService = (): ControlledTerminalService => {
     reorderSessions: vi.fn().mockResolvedValue(undefined),
     updateSessionCwd: vi.fn().mockResolvedValue(undefined),
     setSessionActivityPanelCollapsed: vi.fn().mockResolvedValue(undefined),
+    setWorkspaceSessions: vi.fn().mockResolvedValue(undefined),
     emitData(sessionId: string, data: string, offsetStart?: number): void {
       const offset = offsetStart ?? nextOffsets.get(sessionId) ?? 0
       const byteLen = new TextEncoder().encode(data).length

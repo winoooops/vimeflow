@@ -35,6 +35,7 @@ import {
 import { usePtyExitListener } from '../../terminal/hooks/usePtyExitListener'
 import { useAutoCreateOnEmpty } from './useAutoCreateOnEmpty'
 import { useActiveSessionController } from './useActiveSessionController'
+import { usePushWorkspaceGrouping } from './usePushWorkspaceGrouping'
 import { useSessionRestore } from './useSessionRestore'
 
 export type { RestoreData, PaneEventHandler, NotifyPaneReadyResult }
@@ -546,6 +547,12 @@ export const useSessionManager = (
     pendingSpawns,
     createSession,
   })
+
+  // Push pane grouping (workspace id + layout + pane shape) to the Rust
+  // cache whenever the React `sessions[]` structure changes, so a later
+  // restore can reconstruct the multi-pane layout instead of fragmenting
+  // each PTY into its own single-pane session. Debounced inside the hook.
+  usePushWorkspaceGrouping({ service, sessions, loading })
 
   // Remove session — kill + filter + advance active
   const removeSession = useCallback(

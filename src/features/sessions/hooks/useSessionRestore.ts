@@ -4,7 +4,7 @@ import type { ITerminalService } from '../../terminal/services/terminalService'
 import type { PtyBufferDrain } from '../../terminal/orchestration/usePtyBufferDrain'
 import { registerPtySession } from '../../terminal/ptySessionMap'
 import { createLogger } from '../../../lib/log'
-import { sessionFromInfo } from '../utils/sessionFromInfo'
+import { groupSessionsFromInfos } from '../utils/groupSessionsFromInfos'
 
 const log = createLogger('restore')
 
@@ -71,35 +71,37 @@ export const useSessionRestore = ({
           }
         )
 
-        const restored = list.sessions.map((info, index) => {
-          const session = sessionFromInfo(info, index)
-          if (info.status.kind !== 'Alive') {
-            return session
-          }
+        // Reconstruct workspace sessions, collapsing grouped PTYs back into
+        // the multi-pane shape they had before the reload. Ungrouped PTYs
+        // (legacy cache entries) keep the single-pane shape via
+        // `groupSessionsFromInfos` -> `sessionFromInfo`.
+        const grouped = groupSessionsFromInfos(list.sessions)
 
-          const pane = session.panes[0]
-          if (!pane.restoreData) {
-            return session
-          }
+        // Register the buffer + ptySessionMap side effects for every Alive
+        // pane, then attach the buffered-events snapshot to each pane's
+        // restoreData. Doing this AFTER reconstruction (instead of inline as
+        // the previous one-pass map did) keeps `groupSessionsFromInfos` pure
+        // and testable, and naturally extends to multi-pane sessions.
+        const restored = grouped.map((session) => ({
+          ...session,
+          panes: session.panes.map((pane) => {
+            if (!pane.restoreData) {
+              return pane
+            }
+            bufferRef.current.registerPending(pane.ptyId)
+            registerPtySession(pane.ptyId, pane.ptyId, pane.cwd)
 
-          bufferRef.current.registerPending(info.id)
-          registerPtySession(info.id, info.id, info.cwd)
-
-          return {
-            ...session,
-            panes: [
-              {
-                ...pane,
-                restoreData: {
-                  ...pane.restoreData,
-                  bufferedEvents: bufferRef.current.getBufferedSnapshot(
-                    info.id
-                  ),
-                },
+            return {
+              ...pane,
+              restoreData: {
+                ...pane.restoreData,
+                bufferedEvents: bufferRef.current.getBufferedSnapshot(
+                  pane.ptyId
+                ),
               },
-            ],
-          } satisfies Session
-        })
+            }
+          }),
+        })) satisfies Session[]
 
         // Observability for the fragmentation bug: compare PTY count to the
         // number of reconstructed workspace sessions. While the cache stores

@@ -155,6 +155,89 @@ describe('useSessionRestore', () => {
     // owning all four panes.
   })
 
+  // The flip side of the FRAGMENTS test: once the backend persists pane
+  // grouping (and lists it on each SessionInfo), four PTYs that belonged to
+  // one quad workspace must restore as ONE quad session with four panes —
+  // not four single-pane sessions.
+  test('reconstructs ONE multi-pane session from grouped PTY infos (fix)', async () => {
+    const ws = 'workspace-uuid-quad'
+
+    const grouped = (
+      id: string,
+      paneIndex: number,
+      paneId: string,
+      active: boolean,
+      agentType: string
+    ): unknown => ({
+      id,
+      cwd: '/home/will/repo',
+      status: {
+        kind: 'Alive',
+        pid: 1000 + paneIndex,
+        replay_data: '',
+        replay_end_offset: BigInt(0),
+      },
+      grouping: {
+        workspaceSessionId: ws,
+        layout: 'quad',
+        paneId,
+        paneIndex,
+        agentType,
+        active,
+      },
+    })
+
+    const service = {
+      onData: vi.fn().mockResolvedValue(() => undefined),
+      listSessions: vi.fn().mockResolvedValue({
+        sessions: [
+          // Intentionally NOT in paneIndex order — reconstruction must sort.
+          grouped('pty-c', 2, 'p2', false, 'generic'),
+          grouped('pty-a', 0, 'p0', true, 'claude-code'),
+          grouped('pty-d', 3, 'p3', false, 'generic'),
+          grouped('pty-b', 1, 'p1', false, 'codex'),
+        ],
+        activeSessionId: 'pty-a',
+      }),
+    } as unknown as ITerminalService
+    const onRestore = vi.fn<(sessions: Session[]) => void>()
+    const onActiveResolved = vi.fn<(id: string) => void>()
+
+    const { result } = renderHook(() =>
+      useSessionRestore({
+        service,
+        buffer: buildBuffer(),
+        onRestore,
+        onActiveResolved,
+      })
+    )
+
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    const restoredSessions = onRestore.mock.calls[0]?.[0]
+    if (!restoredSessions) {
+      throw new Error('expected onRestore to be called')
+    }
+
+    // 4 grouped PTYs collapse to ONE quad session — the inverse of the
+    // FRAGMENTS test above.
+    expect(restoredSessions).toHaveLength(1)
+    const restored = restoredSessions[0]
+    expect(restored.id).toBe(ws)
+    expect(restored.layout).toBe('quad')
+    expect(restored.panes).toHaveLength(4)
+    expect(restored.panes.map((pane) => pane.ptyId)).toEqual([
+      'pty-a',
+      'pty-b',
+      'pty-c',
+      'pty-d',
+    ])
+    expect(restored.panes.filter((pane) => pane.active)).toHaveLength(1)
+    expect(restored.panes.find((pane) => pane.active)?.ptyId).toBe('pty-a')
+    // Active session resolved to the workspace session id (not a pty id).
+    expect(onActiveResolved).toHaveBeenCalledWith(ws)
+  })
+
   test('null active id with no sessions leaves activeSessionId null', async () => {
     const service = {
       onData: vi.fn().mockResolvedValue(() => undefined),
