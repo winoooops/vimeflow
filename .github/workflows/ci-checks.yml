@@ -51,6 +51,17 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # `electron/command-palette-shortcut.test.ts` imports the `electron`
+      # package, which lazily downloads its prebuilt binary on first import
+      # if `electron/path.txt` is absent. When vitest's parallel workers
+      # both import it, the download races and one worker reads `path.txt`
+      # before it's written — surfacing as `ENOENT … node_modules/electron/path.txt`.
+      # Force the binary to install eagerly here so vitest never triggers
+      # the download itself. Safe under restored npm caches: install.js
+      # short-circuits when the binary is already present.
+      - name: Ensure Electron binary is installed
+        run: node node_modules/electron/install.js
+
       - name: Run tests
         run: npm test
 
