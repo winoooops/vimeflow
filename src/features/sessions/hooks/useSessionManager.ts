@@ -440,7 +440,6 @@ export const useSessionManager = (
         restoreDataRef.current.set(newSessionId, restoreData)
         registerPending(result.sessionId)
 
-        let computedNewOrder = null as string[] | null
         flushSync(() => {
           setSessions((prev) => {
             const newSession: Session = {
@@ -469,36 +468,18 @@ export const useSessionManager = (
               activity: { ...emptyActivity },
             }
 
-            const next = [...prev, newSession]
-            // F13 (claude MEDIUM): do NOT call the throwing getActivePane
-            // inside the setSessions updater — a transient invariant
-            // violation (5b multi-pane edits) would abort the React state
-            // commit and orphan the freshly-spawned Rust PTY. Compute the
-            // reorder payload AFTER flushSync returns using findActivePane.
-
-            return next
+            return [...prev, newSession]
           })
         })
 
-        // F13: derive the reorder payload OUTSIDE the updater using the
-        // non-throwing findActivePane. sessionsRef.current was updated by
-        // the flushSync above. If any session lacks an active pane (5b
-        // bug), skip the IPC — React state stays, Rust order will catch
-        // up on the next reorder.
-        const orderIds = sessionsRef.current
-          .map((s) => findActivePane(s)?.ptyId)
-          .filter((ptyId): ptyId is string => ptyId !== undefined)
-        if (orderIds.length === sessionsRef.current.length) {
-          computedNewOrder = orderIds
-        }
-
-        if (computedNewOrder !== null) {
-          // eslint-disable-next-line promise/prefer-await-to-then
-          service.reorderSessions(computedNewOrder).catch((err) => {
-            // eslint-disable-next-line no-console
-            console.warn('createSession: reorderSessions failed', err)
-          })
-        }
+        // Cache ordering is persisted by `usePushWorkspaceGrouping` on the
+        // sessions[] change above — `set_workspace_sessions` now rebuilds
+        // `session_order` atomically with the grouping write, so we no
+        // longer need (and previously erroneously used) the legacy
+        // `reorder_sessions` IPC here. That IPC's permutation check
+        // expected ALL PTY ids while this site sent only active-per-
+        // workspace ids, which silently rejected as soon as any other
+        // workspace had >1 pane — see PR #290 review thread.
 
         setActiveSessionId(newSessionId)
         registerPtySession(result.sessionId, result.sessionId, result.cwd)
@@ -1122,7 +1103,6 @@ export const useSessionManager = (
         registerPending(result.sessionId)
         registerPtySession(result.sessionId, result.sessionId, result.cwd)
 
-        let computedNewOrder = null as string[] | null
         let orphanedSessionId = null as string | null
         flushSync(() => {
           setSessions((prev) => {
@@ -1157,22 +1137,9 @@ export const useSessionManager = (
               lastActivityAt: new Date().toISOString(),
             }
 
-            // F13: defer the throw-prone getActivePane(s).ptyId map to
-            // OUTSIDE the updater (see createSession for the rationale).
-
             return next
           })
         })
-
-        // F13: compute ids OUTSIDE the updater with findActivePane. If any
-        // session lacks an active pane (5b transient state), skip the IPC
-        // — Rust order will catch up on the next successful reorder.
-        const orderIdsAfter = sessionsRef.current
-          .map((s) => findActivePane(s)?.ptyId)
-          .filter((ptyId): ptyId is string => ptyId !== undefined)
-        if (orderIdsAfter.length === sessionsRef.current.length) {
-          computedNewOrder = orderIdsAfter
-        }
 
         if (orphanedSessionId !== null) {
           // eslint-disable-next-line promise/prefer-await-to-then,@typescript-eslint/no-empty-function
@@ -1182,13 +1149,9 @@ export const useSessionManager = (
           dropAllForPty(orphanedSessionId)
           unregisterPtySession(orphanedSessionId)
         }
-        if (computedNewOrder !== null) {
-          // eslint-disable-next-line promise/prefer-await-to-then
-          service.reorderSessions(computedNewOrder).catch((err) => {
-            // eslint-disable-next-line no-console
-            console.warn('restartSession: reorderSessions failed', err)
-          })
-        }
+
+        // Cache ordering is persisted by `usePushWorkspaceGrouping` on the
+        // sessions[] change above (see createSession for the rationale).
 
         if (activeSessionIdRef.current === sessionId) {
           setActiveSessionId(sessionId)
@@ -1265,59 +1228,35 @@ export const useSessionManager = (
     []
   )
 
-  // Reorder sessions — optimistic update + IPC
+  // Reorder sessions — purely a React-state update.
   //
-  // Round 9, Finding 5 (codex P2 / claude LOW): no rollback on IPC failure.
-  // The previous code captured `prev = sessions` at call time and called
-  // `setSessions(prev)` from the catch handler — a render-time snapshot
-  // that overwrote any concurrent createSession / removeSession updates
-  // that committed during the IPC roundtrip. Rust's reorder_sessions
-  // already validates the input is a permutation of the current set, so
-  // a rejected call leaves the cache untouched. Without rolling back the
-  // UI here, the in-memory order may briefly diverge from the cache;
-  // the next reload merges via list_sessions and reconciles. The cost is
-  // tiny (a refresh window where the tab strip shows the user's intent
-  // even though the cache holds the prior order) and the win is large
-  // (no clobbering of unrelated concurrent state).
-  const reorderSessions = useCallback(
-    (reordered: Session[]): void => {
-      // F14 (claude MEDIUM): compute the Rust IPC payload BEFORE
-      // committing React state. Previously: setSessions fired, then
-      // getActivePane(s).ptyId mapped — a throw would leave React
-      // showing the new order while Rust kept the old, diverging
-      // permanently until the next reload. Now: derive ids first via
-      // findActivePane (non-throwing); if any session is missing an
-      // active pane (5b transient state), bail BEFORE setSessions so
-      // React and Rust stay aligned.
-      const ids = reordered
-        .map((s) => findActivePane(s)?.ptyId)
-        .filter((ptyId): ptyId is string => ptyId !== undefined)
-      if (ids.length !== reordered.length) {
-        // eslint-disable-next-line no-console
-        console.warn(
-          'reorderSessions: skipping — at least one session has no active pane'
-        )
+  // Cache persistence is owned by `usePushWorkspaceGrouping`, which fires on
+  // every `sessions[]` change and pushes the full snapshot via
+  // `set_workspace_sessions`; that IPC now rebuilds `session_order` from the
+  // snapshot's workspace * pane-index ordering, atomically with the grouping
+  // write. So the legacy `reorder_sessions` IPC is redundant here AND was
+  // incorrect once multi-pane workspaces existed: its permutation check
+  // expected ALL PTY ids while this site sent only active-per-workspace ids,
+  // which silently rejected as soon as any workspace had >1 pane and left
+  // the cache's order out of sync with the UI on reload (PR #290 review).
+  //
+  // The active-pane invariant check is preserved — committing a session
+  // without an active pane would trip the SplitView's `getActivePane` on
+  // the next render.
+  const reorderSessions = useCallback((reordered: Session[]): void => {
+    const hasInvariantHole = reordered.some(
+      (s) => findActivePane(s) === undefined
+    )
+    if (hasInvariantHole) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        'reorderSessions: skipping — at least one session has no active pane'
+      )
 
-        return
-      }
-      setSessions(reordered)
-      // eslint-disable-next-line promise/prefer-await-to-then
-      service.reorderSessions(ids).catch((err) => {
-        // eslint-disable-next-line no-console
-        console.warn(
-          'reorderSessions IPC failed; cache untouched, UI may diverge until next reload',
-          err
-        )
-        // No rollback: setSessions(prev) with a render-time snapshot
-        // would discard concurrent create/remove updates that commit
-        // during the IPC roundtrip. The Rust side rejected the write so
-        // the cache retains the prior order; on next reload the merge
-        // logic in the orchestrator reconciles in-memory React state
-        // with the cached order.
-      })
-    },
-    [service]
-  )
+      return
+    }
+    setSessions(reordered)
+  }, [])
 
   const updatePaneCwd = useCallback(
     (sessionId: string, paneId: string, cwd: string): void => {

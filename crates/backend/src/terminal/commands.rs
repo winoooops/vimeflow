@@ -832,18 +832,33 @@ pub(crate) fn set_session_activity_panel_collapsed_inner(
 /// restore can reconstruct the multi-pane layout instead of fragmenting each
 /// PTY into its own single-pane session.
 ///
-/// The cache `groupings` map is rebuilt from scratch on every call — the
-/// frontend always sends the complete current set, so a pane closed since the
-/// last snapshot simply doesn't appear and its grouping is dropped. Panes
-/// whose `pty_id` is not in the cache `sessions` map (a spawn/kill race) are
-/// skipped: grouping for a PTY the backend doesn't know about would be a
-/// dangling entry that `list_sessions` never surfaces anyway.
+/// Two cache fields are rebuilt under one `mutate`:
+///
+/// 1. `groupings` — keyed by PTY id; rewritten from scratch from the snapshot.
+///    Panes closed since the previous push simply don't appear and their
+///    grouping is dropped. PTYs the snapshot references but the cache does
+///    not know about (spawn/kill race) are skipped — they would be dangling
+///    grouping entries that `list_sessions` could never surface anyway.
+///
+/// 2. `session_order` — the canonical PTY display order. Pre-multi-pane this
+///    field was owned by `reorder_sessions`, but that IPC validates against a
+///    permutation of all PTYs while the frontend's reorder payload contains
+///    only one active PTY per workspace; for any workspace with >1 pane the
+///    permutation check rejects the request and the cache's order silently
+///    diverges from the UI. Rebuilding `session_order` here closes that gap
+///    atomically with the grouping write. PTYs that exist in the cache but
+///    were absent from the snapshot (spawn/kill race, or any never-grouped
+///    legacy PTY) keep their existing relative order and are appended after
+///    the snapshot's ordering, so a transient race never drops a tab.
 pub(crate) fn set_workspace_sessions_inner(
     cache: &Arc<crate::terminal::cache::SessionCache>,
     request: SetWorkspaceSessionsRequest,
 ) -> Result<(), String> {
     cache.mutate(|d| {
         let mut groupings = std::collections::HashMap::new();
+        let mut new_order: Vec<String> = Vec::new();
+        let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+
         for session in &request.sessions {
             for pane in &session.panes {
                 if !d.sessions.contains_key(&pane.pty_id) {
@@ -860,9 +875,23 @@ pub(crate) fn set_workspace_sessions_inner(
                         active: pane.active,
                     },
                 );
+                if seen.insert(pane.pty_id.clone()) {
+                    new_order.push(pane.pty_id.clone());
+                }
             }
         }
+
+        // Preserve PTYs in cache that the snapshot didn't mention — appended
+        // in their existing relative order so a transient race window cannot
+        // drop a session.
+        for pty_id in &d.session_order {
+            if !seen.contains(pty_id) && d.sessions.contains_key(pty_id) {
+                new_order.push(pty_id.clone());
+            }
+        }
+
         d.groupings = groupings;
+        d.session_order = new_order;
         Ok(())
     })
 }
@@ -2828,6 +2857,61 @@ mod tests {
 
         // The phantom pty was skipped: no entry in the cache groupings map.
         assert!(!cache.snapshot().groupings.contains_key("pty-ghost"));
+
+        // session_order now reflects the snapshot's workspace * pane-index
+        // ordering, atomically with the grouping write. This is what closes
+        // the multi-pane reorder bug: the legacy `reorder_sessions` IPC could
+        // only express active-pane-per-workspace and silently rejected for
+        // multi-pane workspaces; `set_workspace_sessions` is now the canonical
+        // owner of session_order.
+        assert_eq!(
+            cache.snapshot().session_order,
+            vec!["pty-a".to_string(), "pty-b".into(), "pty-solo".into()],
+        );
+
+        // Push a NEW snapshot that REORDERS the workspaces (ws-solo first,
+        // then ws-quad) AND drops pty-b — verifies (a) session_order follows
+        // the new snapshot order, (b) PTYs the snapshot omits keep their
+        // grouping cleared, and (c) PTYs omitted but still alive in cache
+        // are appended in their existing relative order rather than dropped.
+        set_workspace_sessions_inner(
+            &cache,
+            SetWorkspaceSessionsRequest {
+                sessions: vec![
+                    WorkspaceSessionSnapshot {
+                        id: "ws-solo".into(),
+                        layout: "single".into(),
+                        panes: vec![WorkspacePaneSnapshot {
+                            pty_id: "pty-solo".into(),
+                            pane_id: "p0".into(),
+                            pane_index: 0,
+                            agent_type: "generic".into(),
+                            active: true,
+                        }],
+                    },
+                    WorkspaceSessionSnapshot {
+                        id: "ws-quad".into(),
+                        layout: "single".into(),
+                        panes: vec![WorkspacePaneSnapshot {
+                            pty_id: "pty-a".into(),
+                            pane_id: "p0".into(),
+                            pane_index: 0,
+                            agent_type: "claude-code".into(),
+                            active: true,
+                        }],
+                    },
+                ],
+            },
+        )
+        .expect("reorder snapshot should succeed");
+
+        assert_eq!(
+            cache.snapshot().session_order,
+            // ws-solo first, then ws-quad (snapshot order); pty-b not in the
+            // snapshot but still in cache — appended last preserving its
+            // existing relative order from the previous session_order.
+            vec!["pty-solo".to_string(), "pty-a".into(), "pty-b".into()],
+        );
 
         // Push a NEW snapshot that drops pty-b — its grouping must be cleared.
         set_workspace_sessions_inner(

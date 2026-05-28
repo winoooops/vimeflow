@@ -1000,9 +1000,25 @@ describe('useSessionManager', () => {
       expect(service.setActiveSession).toHaveBeenCalledWith('new-id')
     )
 
-    await waitFor(() =>
-      expect(service.reorderSessions).toHaveBeenCalledWith(['new-id'])
-    )
+    // Cache order persistence is now owned by `set_workspace_sessions`
+    // (see PR #290 — it rebuilds session_order from the snapshot atomically
+    // with the grouping write). Assert the push reached the backend with
+    // the new session in the snapshot.
+    await waitFor(() => {
+      expect(service.setWorkspaceSessions).toHaveBeenCalled()
+
+      const calls = (service.setWorkspaceSessions as ReturnType<typeof vi.fn>)
+        .mock.calls
+
+      const lastPayload = calls[calls.length - 1]?.[0] as
+        | { sessions: { panes: { ptyId: string }[] }[] }
+        | undefined
+
+      const ptyIds = lastPayload?.sessions.flatMap((s) =>
+        s.panes.map((p) => p.ptyId)
+      )
+      expect(ptyIds).toContain('new-id')
+    })
   })
 
   // Round 5 regression: createSession must seed sessions[i].workingDirectory
@@ -1105,13 +1121,21 @@ describe('useSessionManager', () => {
 
     // Order: existing tabs keep their original order, then the new tab
     // lands at the bottom (matches the [...prev, newSession] append).
-    await waitFor(() =>
-      expect(service.reorderSessions).toHaveBeenCalledWith([
-        'existing-1',
-        'existing-2',
-        'new-tab',
-      ])
-    )
+    // Persistence is via `set_workspace_sessions` now (see PR #290):
+    // assert the latest snapshot's flattened pty order matches.
+    await waitFor(() => {
+      const calls = (service.setWorkspaceSessions as ReturnType<typeof vi.fn>)
+        .mock.calls
+
+      const lastPayload = calls[calls.length - 1]?.[0] as
+        | { sessions: { panes: { ptyId: string }[] }[] }
+        | undefined
+
+      const ptyIds = lastPayload?.sessions.flatMap((s) =>
+        s.panes.map((p) => p.ptyId)
+      )
+      expect(ptyIds).toEqual(['existing-1', 'existing-2', 'new-tab'])
+    })
   })
 
   test('removeSession kills PTY and filters from state', async () => {
@@ -1227,15 +1251,17 @@ describe('useSessionManager', () => {
   })
 
   // Round 9, Finding 6 (claude MEDIUM): React requires functional updaters to
-  // be PURE. The previous code fired `service.setActiveSession` and
-  // `service.reorderSessions` from INSIDE the setSessions updater in
-  // createSession, so StrictMode dev double-invoked them. After the fix
-  // (capture inside, fire outside via flushSync), each IPC fires EXACTLY
-  // once per createSession call.
+  // be PURE. The previous code fired `service.setActiveSession` from INSIDE
+  // the setSessions updater in createSession, so StrictMode dev
+  // double-invoked it. After the fix (capture inside, fire outside via
+  // flushSync), each IPC fires EXACTLY once per createSession call.
   //
-  // This test asserts that mock-call counts match the user-visible action
-  // count (1 click = 1 IPC), with no doubling under StrictMode.
-  test('round 9 F6: createSession fires setActiveSession + reorderSessions exactly once each (no StrictMode double)', async () => {
+  // PR #290 follow-up: the `service.reorderSessions` IPC was removed from
+  // createSession — cache order is now persisted via `set_workspace_sessions`
+  // (in `usePushWorkspaceGrouping`). This test still asserts the EXACTLY-once
+  // semantics for setActiveSession; the order-IPC half of the original
+  // assertion is dropped as no longer applicable.
+  test('round 9 F6: createSession fires setActiveSession exactly once (no StrictMode double)', async () => {
     const service = createMockService()
     service.listSessions = vi.fn().mockResolvedValue({
       activeSessionId: null,
@@ -1253,22 +1279,15 @@ describe('useSessionManager', () => {
 
     // Reset spies so the restore-time auto-create (if any) doesn't leak in.
     ;(service.setActiveSession as ReturnType<typeof vi.fn>).mockClear()
-    ;(service.reorderSessions as ReturnType<typeof vi.fn>).mockClear()
 
     act(() => result.current.createSession())
-
-    // Wait for the spawn + setSessions cascade to settle.
-    await waitFor(() =>
-      expect(service.reorderSessions).toHaveBeenCalledWith(['fresh'])
-    )
 
     await waitFor(() =>
       expect(service.setActiveSession).toHaveBeenCalledWith('fresh')
     )
 
-    // Each IPC fires EXACTLY once. Pre-fix (IPCs inside setSessions
+    // setActiveSession fires EXACTLY once. Pre-fix (IPC inside setSessions
     // updater), StrictMode dev's double-invoke would push the count to 2.
-    expect(service.reorderSessions).toHaveBeenCalledTimes(1)
     expect(service.setActiveSession).toHaveBeenCalledTimes(1)
   })
 
@@ -2050,10 +2069,16 @@ describe('useSessionManager', () => {
 
   // Round 3, Finding 2 (codex P1): kill_pty in Rust REMOVES the old id from
   // cache.session_order and spawn_pty APPENDS the new id. Without an
-  // explicit reorderSessions IPC, a restarted MIDDLE tab persists as
+  // explicit order push, a restarted MIDDLE tab persists as
   // [A, C, fresh] in cache.session_order while the live UI shows
   // [A, fresh, C]. After a reload the restored order would diverge.
-  test('F5 (round 3): restartSession persists the new tab order via reorderSessions', async () => {
+  //
+  // PR #290: ordering persistence moved from the legacy `reorder_sessions`
+  // IPC to `set_workspace_sessions` (which rebuilds session_order from the
+  // snapshot atomically with grouping). The assertion shape changes
+  // accordingly; the underlying invariant ([a, fresh, c] reaches the cache)
+  // is unchanged.
+  test('F5 (round 3): restartSession persists the new tab order via the workspace snapshot', async () => {
     const service = createMockService()
     service.listSessions = vi.fn().mockResolvedValue({
       activeSessionId: 'a',
@@ -2097,8 +2122,9 @@ describe('useSessionManager', () => {
     await waitFor(() => expect(result.current.loading).toBe(false))
 
     expect(result.current.sessions.map((s) => s.id)).toEqual(['a', 'b', 'c'])
+
     // Clear any IPC calls from listSessions / restore.
-    ;(service.reorderSessions as ReturnType<typeof vi.fn>).mockClear()
+    ;(service.setWorkspaceSessions as ReturnType<typeof vi.fn>).mockClear()
 
     act(() => result.current.restartSession('b'))
 
@@ -2110,10 +2136,21 @@ describe('useSessionManager', () => {
 
     // Rust cache must learn the in-memory order [a, fresh, c] — otherwise
     // kill+spawn would leave session_order at [a, c, fresh] and a reload
-    // would render the tabs in the wrong order.
-    await waitFor(() =>
-      expect(service.reorderSessions).toHaveBeenCalledWith(['a', 'fresh', 'c'])
-    )
+    // would render the tabs in the wrong order. The latest grouping
+    // snapshot push carries it.
+    await waitFor(() => {
+      const calls = (service.setWorkspaceSessions as ReturnType<typeof vi.fn>)
+        .mock.calls
+
+      const lastPayload = calls[calls.length - 1]?.[0] as
+        | { sessions: { panes: { ptyId: string }[] }[] }
+        | undefined
+
+      const ptyIds = lastPayload?.sessions.flatMap((s) =>
+        s.panes.map((p) => p.ptyId)
+      )
+      expect(ptyIds).toEqual(['a', 'fresh', 'c'])
+    })
   })
 
   // Round 3 codex P2 (gap in Finding 3): the orchestrator must mark sessions
@@ -2354,7 +2391,9 @@ describe('useSessionManager', () => {
     expect(result.current.sessions.map((s) => s.id)).toEqual(['b', 'a'])
   })
 
-  test('reorderSessions calls IPC', async () => {
+  // PR #290: cache persistence moved from `reorder_sessions` to the
+  // grouping snapshot push. Assert the new path carries the reversed order.
+  test('reorderSessions pushes the new order via the workspace snapshot', async () => {
     const service = createMockService()
     service.listSessions = vi.fn().mockResolvedValue({
       activeSessionId: 'a',
@@ -2391,9 +2430,19 @@ describe('useSessionManager', () => {
 
     act(() => result.current.reorderSessions(reversed))
 
-    await waitFor(() =>
-      expect(service.reorderSessions).toHaveBeenCalledWith(['b', 'a'])
-    )
+    await waitFor(() => {
+      const calls = (service.setWorkspaceSessions as ReturnType<typeof vi.fn>)
+        .mock.calls
+
+      const lastPayload = calls[calls.length - 1]?.[0] as
+        | { sessions: { panes: { ptyId: string }[] }[] }
+        | undefined
+
+      const ptyIds = lastPayload?.sessions.flatMap((s) =>
+        s.panes.map((p) => p.ptyId)
+      )
+      expect(ptyIds).toEqual(['b', 'a'])
+    })
   })
 
   test('updateSessionCwd updates session cwd without touching pane cwd', async () => {
@@ -2819,12 +2868,16 @@ describe('useSessionManager', () => {
   })
 
   // F3 (round 2): two rapid createSession() calls before either spawn()
-  // resolves must produce a reorderSessions IPC payload that includes BOTH
-  // new tab ids. The previous code closed over the render-time `sessions`
-  // array; the second async closure therefore omitted the first new tab,
-  // and reorderSessions persisted an order that no longer matched the live
-  // tab strip after reload (or rejected as a non-permutation).
-  test('F3 (round 2): two rapid createSession calls persist both new tabs in reorderSessions', async () => {
+  // resolves must produce a persisted order that includes BOTH new tab ids.
+  // The previous code closed over the render-time `sessions` array; the
+  // second async closure therefore omitted the first new tab, and the cache
+  // persisted an order that no longer matched the live tab strip after
+  // reload (or rejected as a non-permutation).
+  //
+  // PR #290: persistence moved from `reorder_sessions` to the grouping
+  // snapshot push; the F3 invariant is unchanged but the assertion shape
+  // updates accordingly.
+  test('F3 (round 2): two rapid createSession calls persist both new tabs in the workspace snapshot', async () => {
     const service = createMockService()
     service.listSessions = vi
       .fn()
@@ -2873,16 +2926,22 @@ describe('useSessionManager', () => {
 
     await waitFor(() => expect(result.current.sessions).toHaveLength(2))
 
-    // The second reorderSessions call must include BOTH tab ids — not just
-    // tab-2. This is the F3 invariant: the order is derived from the latest
-    // setSessions state, not the closure's stale `sessions`.
-    const reorderCalls = (
-      service.reorderSessions as ReturnType<typeof vi.fn>
-    ).mock.calls.map((call) => call[0] as string[])
+    // The latest grouping snapshot must include BOTH tab ids — not just
+    // tab-2. This is the F3 invariant: the persisted order is derived from
+    // the latest setSessions state, not from any closure's stale view.
+    await waitFor(() => {
+      const calls = (service.setWorkspaceSessions as ReturnType<typeof vi.fn>)
+        .mock.calls
 
-    // The most recent reorder must contain both ids in append order.
-    const lastReorder = reorderCalls[reorderCalls.length - 1]
-    expect(lastReorder).toEqual(['tab-1', 'tab-2'])
+      const lastPayload = calls[calls.length - 1]?.[0] as
+        | { sessions: { panes: { ptyId: string }[] }[] }
+        | undefined
+
+      const ptyIds = lastPayload?.sessions.flatMap((s) =>
+        s.panes.map((p) => p.ptyId)
+      )
+      expect(ptyIds).toEqual(['tab-1', 'tab-2'])
+    })
   })
 
   // F2 (round 2): if the user creates a tab via createSession while the
@@ -2991,14 +3050,16 @@ describe('useSessionManager', () => {
       expect.objectContaining({ cwd: '~' })
     )
 
-    // setActiveSession + reorderSessions also hit the shared instance —
-    // catches a partial regression where only spawn was wired through.
+    // setActiveSession + setWorkspaceSessions also hit the shared instance
+    // — catches a partial regression where only spawn was wired through.
+    // (Pre PR #290 this checked reorderSessions; cache order persistence
+    // moved to the grouping snapshot push, see PR #290 review.)
     await waitFor(() =>
       expect(sharedService.setActiveSession).toHaveBeenCalledWith('spawned')
     )
 
     await waitFor(() =>
-      expect(sharedService.reorderSessions).toHaveBeenCalledWith(['spawned'])
+      expect(sharedService.setWorkspaceSessions).toHaveBeenCalled()
     )
   })
 
