@@ -77,12 +77,45 @@ export const useSessionRestore = ({
         // `groupSessionsFromInfos` -> `sessionFromInfo`.
         const grouped = groupSessionsFromInfos(list.sessions)
 
+        // Reconcile the active pane against `list.activeSessionId`. Two
+        // cache fields can disagree on which pane is active when the
+        // grouping-snapshot push and `set_active_session` IPCs interleave
+        // (or when the snapshot push fails): `set_active_session` lands
+        // immediately, but the grouping snapshot carries the old pane.active
+        // flags. After a reload, `list.activeSessionId` holds the canonical
+        // active PTY while the grouping says otherwise. Trust the backend's
+        // `activeSessionId` as the source of truth for which pane is focused
+        // within the workspace it belongs to. Codex review on PR #290 (P2).
+        const activePtyId = list.activeSessionId
+
+        const reconciled = activePtyId
+          ? grouped.map((session) => {
+              const matchesActive = session.panes.some(
+                (pane) => pane.ptyId === activePtyId
+              )
+              if (!matchesActive) {
+                return session
+              }
+
+              return {
+                ...session,
+                panes: session.panes.map((pane) => ({
+                  ...pane,
+                  active: pane.ptyId === activePtyId,
+                })),
+                agentType:
+                  session.panes.find((pane) => pane.ptyId === activePtyId)
+                    ?.agentType ?? session.agentType,
+              }
+            })
+          : grouped
+
         // Register the buffer + ptySessionMap side effects for every Alive
         // pane, then attach the buffered-events snapshot to each pane's
         // restoreData. Doing this AFTER reconstruction (instead of inline as
         // the previous one-pass map did) keeps `groupSessionsFromInfos` pure
         // and testable, and naturally extends to multi-pane sessions.
-        const restored = grouped.map((session) => ({
+        const restored = reconciled.map((session) => ({
           ...session,
           panes: session.panes.map((pane) => {
             if (!pane.restoreData) {

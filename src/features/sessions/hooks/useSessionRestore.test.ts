@@ -238,6 +238,82 @@ describe('useSessionRestore', () => {
     expect(onActiveResolved).toHaveBeenCalledWith(ws)
   })
 
+  // Codex P2 (PR #290 cycle 2): `set_active_session` lands immediately,
+  // but the grouping-snapshot push can land later (or fail), so the
+  // restored grouping's `pane.active` flags may not match
+  // `list.activeSessionId`. Trust `activeSessionId` and reconcile the
+  // pane.active flag on the workspace it belongs to.
+  test('reconciles pane.active from list.activeSessionId when grouping is stale', async () => {
+    const ws = 'workspace-uuid-active-mismatch'
+
+    const grouped = (
+      id: string,
+      paneIndex: number,
+      paneId: string,
+      groupingActive: boolean,
+      agentType: string
+    ): unknown => ({
+      id,
+      cwd: '/home/will/repo',
+      status: {
+        kind: 'Alive',
+        pid: 1000 + paneIndex,
+        replay_data: '',
+        replay_end_offset: BigInt(0),
+      },
+      grouping: {
+        workspaceSessionId: ws,
+        layout: 'vsplit',
+        paneId,
+        paneIndex,
+        agentType,
+        active: groupingActive,
+      },
+    })
+
+    // Grouping claims pty-a is active; cache's activeSessionId says pty-b
+    // (e.g. the user switched the active pane and Cmd+R'd before the
+    // grouping snapshot push completed).
+    const service = {
+      onData: vi.fn().mockResolvedValue(() => undefined),
+      listSessions: vi.fn().mockResolvedValue({
+        sessions: [
+          grouped('pty-a', 0, 'p0', true, 'claude-code'),
+          grouped('pty-b', 1, 'p1', false, 'codex'),
+        ],
+        activeSessionId: 'pty-b',
+      }),
+    } as unknown as ITerminalService
+    const onRestore = vi.fn<(sessions: Session[]) => void>()
+    const onActiveResolved = vi.fn<(id: string) => void>()
+
+    const { result } = renderHook(() =>
+      useSessionRestore({
+        service,
+        buffer: buildBuffer(),
+        onRestore,
+        onActiveResolved,
+      })
+    )
+
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    const restored = onRestore.mock.calls[0]?.[0]
+    if (!restored) {
+      throw new Error('expected onRestore to be called')
+    }
+    expect(restored).toHaveLength(1)
+    const ws1 = restored[0]
+    // Exactly one active pane after reconciliation, and it's pty-b
+    // (the one backend.activeSessionId pointed at), not pty-a (stale flag).
+    expect(ws1.panes.filter((pane) => pane.active)).toHaveLength(1)
+    expect(ws1.panes.find((pane) => pane.active)?.ptyId).toBe('pty-b')
+    // The session's derived agentType follows the new active pane.
+    expect(ws1.agentType).toBe('codex')
+    // Active session resolved to the workspace id, not the PTY.
+    expect(onActiveResolved).toHaveBeenCalledWith(ws)
+  })
+
   test('null active id with no sessions leaves activeSessionId null', async () => {
     const service = {
       onData: vi.fn().mockResolvedValue(() => undefined),
