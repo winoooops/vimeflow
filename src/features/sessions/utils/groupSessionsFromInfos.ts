@@ -159,7 +159,10 @@ export const groupSessionsFromInfos = (
   const buckets = new Map<string, Bucket>()
 
   for (const info of infos) {
-    const grouping = info.grouping ?? undefined
+    // `info.grouping` is `PaneGrouping | undefined` at runtime — the IPC
+    // emits the field omitted (not `null`) when ungrouped, thanks to
+    // `serde(skip_serializing_if = "Option::is_none")` in `types.rs`.
+    const { grouping } = info
     if (grouping) {
       const key = grouping.workspaceSessionId
       if (!buckets.has(key)) {

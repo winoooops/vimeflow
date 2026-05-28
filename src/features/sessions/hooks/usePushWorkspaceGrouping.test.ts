@@ -1,4 +1,4 @@
-import { renderHook } from '@testing-library/react'
+import { renderHook, waitFor } from '@testing-library/react'
 import { describe, expect, test, vi } from 'vitest'
 import type { ITerminalService } from '../../terminal/services/terminalService'
 import { emptyActivity } from '../constants'
@@ -134,5 +134,146 @@ describe('usePushWorkspaceGrouping', () => {
     expect(payload?.sessions[0]?.id).toBe('ws-1')
     expect(payload?.sessions[0]?.layout).toBe('vsplit')
     expect(payload?.sessions[0]?.panes).toHaveLength(2)
+  })
+
+  // Codex P2 (PR #290): fire-and-forget pushes could overlap two snapshots
+  // in flight at the sidecar, and the older one's mutate could win last,
+  // dropping the newer pane/layout. The single-flight queue ensures the
+  // SECOND push only starts after the FIRST resolves, and intermediate
+  // snapshots collapse into one (latest wins).
+  test('serializes concurrent pushes: second snapshot waits for the first to resolve', async () => {
+    // The first push hangs until we release it; the second push must NOT
+    // start until then.
+    let releaseFirst: (() => void) | undefined
+    const firstStarted = vi.fn()
+    const secondStarted = vi.fn()
+
+    const setWorkspaceSessions = vi
+      .fn()
+      .mockImplementationOnce(async () => {
+        firstStarted()
+        await new Promise<void>((resolve) => {
+          releaseFirst = resolve
+        })
+      })
+      .mockImplementationOnce(() => {
+        secondStarted()
+
+        return Promise.resolve()
+      })
+    const service = { setWorkspaceSessions } as unknown as ITerminalService
+
+    const first = [
+      session('ws-1', 'single', [
+        pane({ id: 'p0', ptyId: 'pty-a', active: true }),
+      ]),
+    ]
+
+    const second = [
+      session('ws-1', 'vsplit', [
+        pane({ id: 'p0', ptyId: 'pty-a', active: true }),
+        pane({ id: 'p1', ptyId: 'pty-b', active: false }),
+      ]),
+    ]
+
+    const { rerender } = renderHook(
+      ({ sessions }) =>
+        usePushWorkspaceGrouping({ service, loading: false, sessions }),
+      { initialProps: { sessions: first as readonly Session[] } }
+    )
+
+    // First push started but is held mid-flight.
+    await waitFor(() => expect(firstStarted).toHaveBeenCalled())
+    expect(setWorkspaceSessions).toHaveBeenCalledTimes(1)
+    expect(secondStarted).not.toHaveBeenCalled()
+
+    // While the first is in flight, mutate sessions; the second push must
+    // queue, not race the first.
+    rerender({ sessions: second as readonly Session[] })
+
+    // Confirm the second push didn't start eagerly.
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(secondStarted).not.toHaveBeenCalled()
+
+    // Release the first push; the queued second one drains next.
+    releaseFirst?.()
+
+    await waitFor(() => expect(secondStarted).toHaveBeenCalled())
+    expect(setWorkspaceSessions).toHaveBeenCalledTimes(2)
+
+    // Second call carries the latest snapshot (2 panes), not the stale one.
+    const secondPayload = setWorkspaceSessions.mock.calls[1]?.[0] as
+      | { sessions: { panes: { ptyId: string }[] }[] }
+      | undefined
+    expect(secondPayload?.sessions[0]?.panes.map((p) => p.ptyId)).toEqual([
+      'pty-a',
+      'pty-b',
+    ])
+  })
+
+  // Latest-wins coalesce: when several sessions changes pile up during one
+  // in-flight push, only the MOST RECENT snapshot is sent next — intermediate
+  // ones are dropped (the cache replaces its groupings map on every push, so
+  // intermediates would be overwritten anyway).
+  test('coalesces intermediate snapshots while a push is in flight (latest wins)', async () => {
+    let releaseFirst: (() => void) | undefined
+
+    const setWorkspaceSessions = vi
+      .fn()
+      .mockImplementationOnce(async () => {
+        await new Promise<void>((resolve) => {
+          releaseFirst = resolve
+        })
+      })
+      .mockResolvedValue(undefined)
+    const service = { setWorkspaceSessions } as unknown as ITerminalService
+
+    const v1 = [
+      session('ws-1', 'single', [
+        pane({ id: 'p0', ptyId: 'pty-a', active: true }),
+      ]),
+    ]
+
+    const v2 = [
+      session('ws-1', 'vsplit', [
+        pane({ id: 'p0', ptyId: 'pty-a', active: true }),
+        pane({ id: 'p1', ptyId: 'pty-b', active: false }),
+      ]),
+    ]
+
+    const v3 = [
+      session('ws-1', 'quad', [
+        pane({ id: 'p0', ptyId: 'pty-a', active: true }),
+        pane({ id: 'p1', ptyId: 'pty-b', active: false }),
+        pane({ id: 'p2', ptyId: 'pty-c', active: false }),
+      ]),
+    ]
+
+    const { rerender } = renderHook(
+      ({ sessions }) =>
+        usePushWorkspaceGrouping({ service, loading: false, sessions }),
+      { initialProps: { sessions: v1 as readonly Session[] } }
+    )
+
+    await waitFor(() => expect(setWorkspaceSessions).toHaveBeenCalledTimes(1))
+
+    // Stack two more updates while the first is still pending.
+    rerender({ sessions: v2 as readonly Session[] })
+    rerender({ sessions: v3 as readonly Session[] })
+
+    // Release the first; the queue drains the latest pending snapshot (v3)
+    // and skips v2 entirely.
+    releaseFirst?.()
+
+    await waitFor(() => expect(setWorkspaceSessions).toHaveBeenCalledTimes(2))
+
+    const secondPayload = setWorkspaceSessions.mock.calls[1]?.[0] as
+      | { sessions: { panes: { ptyId: string }[] }[] }
+      | undefined
+    expect(secondPayload?.sessions[0]?.panes.map((p) => p.ptyId)).toEqual([
+      'pty-a',
+      'pty-b',
+      'pty-c',
+    ])
   })
 })

@@ -1,18 +1,19 @@
 // Push the current workspace-session grouping to the Rust cache whenever the
 // React `sessions[]` shape changes. The backend rebuilds its `groupings` map
-// from each snapshot, so the cache mirrors the live React structure with at
-// most one short debounce of lag — and a later restore can reconstruct the
-// multi-pane layout instead of fragmenting each PTY into its own single-pane
-// session (see useSessionRestore + groupSessionsFromInfos for the read side).
+// (and `session_order`) from each snapshot, so the cache mirrors the live
+// React structure and a later restore can reconstruct the multi-pane layout
+// instead of fragmenting each PTY into its own single-pane session (see
+// useSessionRestore + groupSessionsFromInfos for the read side).
 //
 // Deliberately ONE integration point instead of threading the snapshot push
 // through every structural mutation (createSession / addPane / removePane /
 // setSessionLayout / setSessionActivePane / reorderSessions / restartSession).
-// The cost is a few extra writes when unrelated fields update (cwd, agent
-// type, activity feed) — harmless because `set_workspace_sessions` is
-// idempotent, and the debounce coalesces bursts.
+// React commit batching means most synchronous bursts coalesce into one
+// render and one effect run; bursts that cross render boundaries are handled
+// by the single-flight queue below, so the backend never sees an older
+// snapshot persist after a newer one.
 
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import type {
   SetWorkspaceSessionsRequest,
   WorkspaceSessionSnapshot,
@@ -54,29 +55,45 @@ export interface UsePushWorkspaceGroupingOptions {
   loading: boolean
 }
 
+interface PushQueueState {
+  inFlight: boolean
+  pending: SetWorkspaceSessionsRequest | null
+}
+
 export const usePushWorkspaceGrouping = ({
   service,
   sessions,
   loading,
 }: UsePushWorkspaceGroupingOptions): void => {
+  // Single-flight queue: only one `set_workspace_sessions` IPC is in flight
+  // at a time, and intermediate snapshots that arrive while one is running
+  // collapse into the next push (latest wins).
+  //
+  // Why this matters: the previous fire-and-forget `service.setWorkspaceSessions(snapshot)`
+  // could overlap two snapshots over the wire. The sidecar's IPC router
+  // spawns each request into its own handler — two concurrent handlers
+  // acquire the cache mutex in whichever order they reach it, so the older
+  // snapshot can win last and silently drop the newer pane/layout shape.
+  // The next restore would then read the stale cache and fragment back to
+  // the older layout. Codex review on PR #290 (P2) flagged this race.
+  //
+  // Refs (not state): the queue is a side-channel; pushes should not
+  // schedule additional renders. The effect re-runs on every sessions
+  // change, mutating `queue.current.pending` to the latest snapshot.
+  const queueRef = useRef<PushQueueState>({ inFlight: false, pending: null })
+
   useEffect(() => {
     if (loading) {
       return
     }
-    // No live sessions in React state: rely on per-PTY kill_pty cleanup that
-    // already drops grouping entries individually. Pushing an empty snapshot
-    // here would race the restore window if `sessions` is transiently empty.
+    // No live sessions in React state: rely on per-PTY kill_pty cleanup
+    // that already drops grouping entries individually. Pushing an empty
+    // snapshot here would race the restore window if `sessions` is
+    // transiently empty.
     if (sessions.length === 0) {
       return
     }
 
-    // Fire immediately, no debounce. A timer-based debounce can be cancelled
-    // by an unmount that happens before it fires (e.g. the user adds a pane
-    // and hits Cmd+R within the debounce window), which would leave the cache
-    // without the grouping for that last pane and reload would fragment it
-    // back into a single-pane session. Pushing on every `sessions` change is
-    // idempotent on the backend and only fires on structural mutations + a
-    // handful of low-frequency UI updates — well within IPC headroom.
     const snapshot = buildGroupingSnapshot(sessions)
     log.info(
       `pushing grouping snapshot: ${snapshot.sessions.length} workspace ` +
@@ -93,9 +110,29 @@ export const usePushWorkspaceGrouping = ({
       }
     )
 
-    // eslint-disable-next-line promise/prefer-await-to-then
-    service.setWorkspaceSessions(snapshot).catch((err) => {
-      log.warn('setWorkspaceSessions IPC failed', err)
-    })
+    // Latest wins: overwrite whatever pending snapshot was there.
+    queueRef.current.pending = snapshot
+
+    // Drain the queue if no push is currently in flight. JS is
+    // single-threaded; the `inFlight` check and set are atomic within a
+    // microtask, so two concurrent drain calls cannot both pass the guard.
+    const drain = async (): Promise<void> => {
+      if (queueRef.current.inFlight) {
+        return
+      }
+      while (queueRef.current.pending !== null) {
+        const next = queueRef.current.pending
+        queueRef.current.pending = null
+        queueRef.current.inFlight = true
+        try {
+          await service.setWorkspaceSessions(next)
+        } catch (err) {
+          log.warn('setWorkspaceSessions IPC failed', err)
+        } finally {
+          queueRef.current.inFlight = false
+        }
+      }
+    }
+    void drain()
   }, [service, sessions, loading])
 }
