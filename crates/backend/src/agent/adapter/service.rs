@@ -44,6 +44,18 @@ pub(crate) struct AgentWatcherService {
     events: Arc<dyn EventSink>,
 }
 
+#[cfg(test)]
+mod tests {
+    use crate::agent::adapter::bindings::AgentBindings;
+
+    fn _assert_send_sync_static<T: Send + Sync + 'static>() {}
+
+    #[test]
+    fn t_lifecycle_4_agent_bindings_is_send_sync_static() {
+        _assert_send_sync_static::<AgentBindings>();
+    }
+}
+
 impl AgentWatcherService {
     pub(crate) fn new(
         pty_state: PtyState,

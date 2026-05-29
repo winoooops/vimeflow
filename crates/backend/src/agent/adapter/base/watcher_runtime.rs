@@ -666,8 +666,25 @@ pub(super) fn start_watching(
 }
 
 #[cfg(test)]
+impl WatcherHandle {
+    pub(crate) fn new_for_test(
+        transcript_state: TranscriptState,
+        session_id: String,
+    ) -> Self {
+        WatcherHandle {
+            _watcher: None,
+            poll_stop: Arc::new((Mutex::new(false), Condvar::new())),
+            join_handle: None,
+            transcript_state,
+            session_id,
+        }
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
+    use crate::runtime::FakeEventSink;
 
     #[test]
     fn creates_empty_watcher_state() {
@@ -679,5 +696,39 @@ mod tests {
     fn remove_returns_false_for_missing_session() {
         let state = AgentWatcherState::new();
         assert!(!state.remove("nonexistent"));
+    }
+
+    #[test]
+    fn t_lifecycle_3_watcher_handle_drop_cascades_transcript_stop() {
+        let tmp = tempfile::tempdir().expect("failed to create temp dir");
+        let transcript_path = tmp.path().join("t.jsonl");
+        std::fs::write(&transcript_path, "").expect("failed to write transcript");
+
+        let transcript_state = TranscriptState::new();
+        let sid = "test-sid".to_string();
+        let adapter: Arc<dyn TranscriptStreamer> =
+            Arc::new(crate::agent::adapter::claude_code::ClaudeCodeAdapter);
+        let sink = Arc::new(FakeEventSink::new());
+
+        let status = transcript_state
+            .start_or_replace(adapter, sink, sid.clone(), transcript_path, None)
+            .expect("failed to start transcript watcher");
+        assert_eq!(status, TranscriptStartStatus::Started);
+
+        let handle = WatcherHandle::new_for_test(transcript_state.clone(), sid.clone());
+        let watcher_state = AgentWatcherState::new();
+        watcher_state.insert(sid.clone(), handle);
+
+        assert!(
+            transcript_state.contains(&sid),
+            "transcript should be tracked before remove"
+        );
+
+        watcher_state.remove(&sid);
+
+        assert!(
+            !transcript_state.contains(&sid),
+            "transcript should be stopped after handle drop"
+        );
     }
 }
