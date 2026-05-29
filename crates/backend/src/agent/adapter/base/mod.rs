@@ -21,6 +21,7 @@ use crate::terminal::PtyState;
 pub use transcript_state::{TranscriptHandle, TranscriptStartStatus, TranscriptState};
 pub(crate) use transcript_tail_service::{TranscriptDecoder, TranscriptTailService};
 pub(crate) use path_security::ensure_status_source_under_trust_root;
+pub(crate) use watcher_runtime::start_watching;
 // `RecordingDecoder` stays module-private to `transcript_tail_service` (only its
 // own tests use it); 2.3's Claude end-to-end test imports these two.
 #[cfg(test)]
