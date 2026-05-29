@@ -255,3 +255,5 @@ PR2 is purely additive: reverting it returns `resultPreview` to always-`undefine
 - A "show full output" affordance (expand beyond the preview) is explicitly out of scope; revisit if the preview proves too small.
 - Codex result-preview extraction and live producers for diff/bashResult/think/user (D6) are tracked follow-ups, not part of this migration.
 - The catch-up preview burst (R2) is accepted as a one-time cost; if profiling shows event-queue backpressure on very long transcripts, switch to replay-aware emission (live-only previews) — at the cost of preview-less rows on first open.
+
+<!-- codex-reviewed: 2026-05-29T10:27:56Z -->
