@@ -1154,6 +1154,14 @@ export const DiffPanelContent = ({
                   if (isDraft || isEditing) {
                     return (
                       <ReviewCommentComposer
+                        // Key by target identity so switching the gutter `+` to
+                        // another line (the draft stays at the same annotation
+                        // index, so React would otherwise reuse this instance
+                        // and carry the old textarea text to the new line)
+                        // forces a remount with fresh state.
+                        key={`${annotation.lineNumber}:${annotation.side}:${
+                          isEditing ? annotation.metadata.id : 'draft'
+                        }`}
                         lineNumber={annotation.lineNumber}
                         side={annotation.side}
                         initialText={isEditing ? annotation.metadata.text : ''}
