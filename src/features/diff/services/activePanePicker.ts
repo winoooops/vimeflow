@@ -11,7 +11,6 @@ export interface PaneCandidate {
 export interface ResolveCandidatesArgs {
   allPanes: PaneCandidate[]
   diffCwd: string
-  focusedPaneId: string | null
 }
 
 export type ResolveResult =
@@ -51,7 +50,7 @@ export const resolveCandidatePanes = (
     return { kind: 'one', pane: candidates[0] }
   }
 
-  const focused = candidates.find((p) => p.paneId === args.focusedPaneId)
+  const focused = candidates.find((p) => p.isFocused)
 
   if (focused) {
     return { kind: 'one', pane: focused }

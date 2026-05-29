@@ -5,15 +5,8 @@ const PASTE_START = '\x1b[200~'
 const PASTE_END = '\x1b[201~'
 
 export interface DispatchEntry {
-  cwd: string
   filePath: string
   annotations: DiffLineAnnotation<ReviewComment>[]
-}
-
-const joinPath = (cwd: string, filePath: string): string => {
-  const base = cwd.endsWith('/') ? cwd.slice(0, -1) : cwd
-
-  return `${base}/${filePath}`
 }
 
 export const formatFeedbackPayload = (entries: DispatchEntry[]): string => {
@@ -27,7 +20,7 @@ export const formatFeedbackPayload = (entries: DispatchEntry[]): string => {
         const lines = a.metadata.text.split('\n').map((line) => `> ─ ${line}`)
 
         return [
-          `> ${joinPath(entry.cwd, entry.filePath)}:${a.lineNumber} (${a.side})`,
+          `> ${entry.filePath}:${a.lineNumber} (${a.side})`,
           ...lines,
           '>',
         ].join('\n')

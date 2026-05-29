@@ -399,17 +399,22 @@ export const DiffPanelContent = ({
     setComposerTarget(null)
   }, [])
 
+  const sendingFeedbackRef = useRef(false)
+
   const handleSendFeedback = useCallback(
     (pane: PaneCandidate): void => {
+      if (sendingFeedbackRef.current) {
+        return
+      }
+      sendingFeedbackRef.current = true
       void (async (): Promise<void> => {
         const entries: DispatchEntry[] = []
         for (const [key, annotations] of feedback.batch) {
           const firstSep = key.indexOf('::')
-          const entryCwd = key.slice(0, firstSep)
           const remainder = key.slice(firstSep + 2)
           const lastSep = remainder.lastIndexOf('::')
           const filePath = remainder.slice(0, lastSep)
-          entries.push({ cwd: entryCwd, filePath, annotations })
+          entries.push({ filePath, annotations })
         }
 
         try {
@@ -425,6 +430,8 @@ export const DiffPanelContent = ({
           setFinishOpen(false)
         } catch {
           notifyInfo('Terminal session ended; feedback not sent.')
+        } finally {
+          sendingFeedbackRef.current = false
         }
       })()
     },
@@ -1030,9 +1037,6 @@ export const DiffPanelContent = ({
               result={resolveCandidatePanes({
                 allPanes: feedbackDispatch?.candidates ?? [],
                 diffCwd: cwd,
-                focusedPaneId:
-                  feedbackDispatch?.candidates.find((c) => c.isFocused)
-                    ?.paneId ?? null,
               })}
               commentCount={feedback.totalAnnotations()}
               fileCount={feedback.batch.size}

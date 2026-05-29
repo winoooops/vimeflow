@@ -17,7 +17,6 @@ test('0 candidates -> { kind: none }', () => {
   const result = resolveCandidatePanes({
     allPanes: [],
     diffCwd: '/repo',
-    focusedPaneId: null,
   })
 
   expect(result).toEqual({ kind: 'none' })
@@ -29,33 +28,30 @@ test('exactly 1 matching -> { kind: one, pane }', () => {
   const result = resolveCandidatePanes({
     allPanes: [pane],
     diffCwd: '/repo',
-    focusedPaneId: null,
   })
 
   expect(result).toEqual({ kind: 'one', pane })
 })
 
-test('2+ matching with focusedPaneId matching one -> { kind: one, pane: the focused }', () => {
+test('2+ matching with isFocused true on one -> { kind: one, pane: the focused }', () => {
   const paneA = makePane({ paneId: 'p1' })
-  const paneB = makePane({ paneId: 'p2' })
+  const paneB = makePane({ paneId: 'p2', isFocused: true })
 
   const result = resolveCandidatePanes({
     allPanes: [paneA, paneB],
     diffCwd: '/repo',
-    focusedPaneId: 'p2',
   })
 
   expect(result).toEqual({ kind: 'one', pane: paneB })
 })
 
-test('2+ matching with focusedPaneId not in set -> { kind: many, candidates }', () => {
+test('2+ matching with no isFocused pane -> { kind: many, candidates }', () => {
   const paneA = makePane({ paneId: 'p1' })
   const paneB = makePane({ paneId: 'p2' })
 
   const result = resolveCandidatePanes({
     allPanes: [paneA, paneB],
     diffCwd: '/repo',
-    focusedPaneId: 'p3',
   })
 
   expect(result).toEqual({ kind: 'many', candidates: [paneA, paneB] })
@@ -67,7 +63,6 @@ test('a pane with cwd /repo/sub matches diffCwd /repo (descendant)', () => {
   const result = resolveCandidatePanes({
     allPanes: [pane],
     diffCwd: '/repo',
-    focusedPaneId: null,
   })
 
   expect(result).toEqual({ kind: 'one', pane })
@@ -81,7 +76,6 @@ test('panes filtered out when status !== running', () => {
   const result = resolveCandidatePanes({
     allPanes: [idle, exited, error],
     diffCwd: '/repo',
-    focusedPaneId: null,
   })
 
   expect(result).toEqual({ kind: 'none' })
@@ -93,8 +87,19 @@ test('panes filtered out when agentLabel not in { Claude Code, Codex }', () => {
   const result = resolveCandidatePanes({
     allPanes: [pane],
     diffCwd: '/repo',
-    focusedPaneId: null,
   })
 
   expect(result).toEqual({ kind: 'none' })
+})
+
+test('resolves focused pane correctly even when multiple panes share the same paneId', () => {
+  const paneA = makePane({ paneId: 'p0', ptyId: 'pty-a', isFocused: false })
+  const paneB = makePane({ paneId: 'p0', ptyId: 'pty-b', isFocused: true })
+
+  const result = resolveCandidatePanes({
+    allPanes: [paneA, paneB],
+    diffCwd: '/repo',
+  })
+
+  expect(result).toEqual({ kind: 'one', pane: paneB })
 })
