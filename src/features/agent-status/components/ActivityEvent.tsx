@@ -271,7 +271,7 @@ export const ActivityEvent = ({
         tabIndex={tabIndex}
         onFocus={onFocus}
         onKeyDown={onKeyDown}
-        className="flex items-start gap-2 rounded-md py-1 outline-none focus-visible:ring-1 focus-visible:ring-primary-container"
+        className="flex items-start gap-2 rounded-md py-1 cursor-default select-none outline-none focus-visible:ring-1 focus-visible:ring-primary-container"
       >
         <div className="relative">
           <span

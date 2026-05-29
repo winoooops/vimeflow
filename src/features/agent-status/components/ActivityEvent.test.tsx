@@ -184,6 +184,14 @@ describe('ActivityEvent — basic row', () => {
 
     expect(body).not.toHaveClass('font-mono')
   })
+
+  test('activity row uses a default cursor and is not text-selectable', () => {
+    render(<ActivityEvent event={toolEvent()} now={now} />)
+    const row = screen.getByRole('article', { name: 'EDIT' })
+
+    expect(row).toHaveClass('cursor-default')
+    expect(row).toHaveClass('select-none')
+  })
 })
 
 describe('ActivityEvent — diff chips (EDIT/WRITE)', () => {
