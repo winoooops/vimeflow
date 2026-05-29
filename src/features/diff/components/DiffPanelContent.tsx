@@ -285,12 +285,27 @@ export const DiffPanelContent = ({
   // previous workspace do not leak into the new one.
   const previousCwdRef = useRef(cwd)
 
+  // Last non-empty git repo root seen for the current cwd. `response.repoRoot`
+  // goes transiently null whenever the user selects another file (useFileDiff
+  // clears `response` while the next diff loads or if it errors); without this,
+  // an in-flight feedback batch sent during that window would fall back to
+  // repo-relative paths and mis-resolve for agents in a repo subdirectory.
+  // Reset on cwd change below (a new repo invalidates the old root).
+  const lastRepoRootRef = useRef('')
+
   useEffect(() => {
     if (previousCwdRef.current !== cwd) {
       previousCwdRef.current = cwd
+      lastRepoRootRef.current = ''
       feedback.clearBatch()
     }
   }, [cwd, feedback, feedback.clearBatch])
+
+  useEffect(() => {
+    if (response?.repoRoot) {
+      lastRepoRootRef.current = response.repoRoot
+    }
+  }, [response])
 
   // Composer target state: which line currently has an open composer.
   // `editId` set => editing an existing comment in place; absent => a new
@@ -415,7 +430,12 @@ export const DiffPanelContent = ({
         // entries share one repo (the batch is cleared on cwd change), so the
         // current diff's repoRoot applies to every file. Falls back to the
         // repo-relative path if the root is unavailable (not in a git repo).
-        const repoRoot = response?.repoRoot ?? ''
+        // Prefer the current diff's root; fall back to the last-known root when
+        // `response` is transiently null (file-switch loading/error) so an
+        // in-flight batch keeps absolute paths. The empty-string (non-repo)
+        // case needs no fallback — the ref is empty there too — so `??` (null/
+        // undefined only) is exactly right.
+        const repoRoot = response?.repoRoot ?? lastRepoRootRef.current
         const entries: DispatchEntry[] = []
         for (const [key, annotations] of feedback.batch) {
           const firstSep = key.indexOf('::')
