@@ -582,3 +582,187 @@ describe('ActivityEvent — test-file verb prefix', () => {
     expect(screen.getByText(/^WRITE$/)).toBeInTheDocument()
   })
 })
+
+describe('ActivityEvent — copy with resultPreview', () => {
+  test('Copy copies body alone when there is no resultPreview', async () => {
+    const user = userEvent.setup()
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    setClipboard({ writeText })
+
+    render(
+      <ActivityEvent
+        event={toolEvent({ kind: 'bash', tool: 'Bash', body: 'pnpm test' })}
+        now={now}
+      />
+    )
+    fireEvent.focus(screen.getByRole('article', { name: 'BASH' }))
+
+    const details = await screen.findByRole('dialog', {
+      name: 'BASH activity details',
+    })
+    await user.click(
+      within(details).getByRole('button', { name: 'Copy activity details' })
+    )
+
+    expect(writeText).toHaveBeenCalledWith('pnpm test')
+  })
+
+  test('Copy joins body and resultPreview when present', async () => {
+    const user = userEvent.setup()
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    setClipboard({ writeText })
+
+    render(
+      <ActivityEvent
+        event={toolEvent({
+          kind: 'bash',
+          tool: 'Bash',
+          body: 'pnpm test',
+          resultPreview: '✓ 4 passed',
+        })}
+        now={now}
+      />
+    )
+    fireEvent.focus(screen.getByRole('article', { name: 'BASH' }))
+
+    const details = await screen.findByRole('dialog', {
+      name: 'BASH activity details',
+    })
+    await user.click(
+      within(details).getByRole('button', { name: 'Copy activity details' })
+    )
+
+    expect(writeText).toHaveBeenCalledWith('pnpm test\n\n✓ 4 passed')
+  })
+})
+
+describe('ActivityEvent — structured tooltip', () => {
+  test('tooltip header shows the kind tag and an OK chip for a done tool call', async () => {
+    render(
+      <ActivityEvent
+        event={toolEvent({ kind: 'bash', tool: 'Bash', status: 'done' })}
+        now={now}
+      />
+    )
+    fireEvent.focus(screen.getByRole('article', { name: 'BASH' }))
+
+    const details = await screen.findByRole('dialog', {
+      name: 'BASH activity details',
+    })
+
+    expect(within(details).getByText('BASH')).toBeInTheDocument()
+    expect(within(details).getByText('OK')).toBeInTheDocument()
+  })
+
+  test('failed tool call shows FAILED; running shows RUNNING (in the tooltip)', async () => {
+    const { rerender } = render(
+      <ActivityEvent
+        event={toolEvent({ kind: 'bash', tool: 'Bash', status: 'failed' })}
+        now={now}
+      />
+    )
+    fireEvent.focus(screen.getByRole('article', { name: 'BASH' }))
+
+    // Scope to the dialog: the row's own status pill also renders "FAILED".
+    const failed = await screen.findByRole('dialog', {
+      name: 'BASH activity details',
+    })
+    expect(within(failed).getByText('FAILED')).toBeInTheDocument()
+
+    rerender(
+      <ActivityEvent
+        event={{
+          id: 'r',
+          kind: 'bash',
+          tool: 'Bash',
+          body: 'pnpm test',
+          timestamp: '2026-04-22T11:59:52Z',
+          status: 'running',
+          durationMs: null,
+        }}
+        now={now}
+      />
+    )
+    fireEvent.focus(screen.getByRole('article', { name: 'BASH' }))
+
+    const running = await screen.findByRole('dialog', {
+      name: 'BASH activity details',
+    })
+    expect(within(running).getByText('RUNNING')).toBeInTheDocument()
+  })
+
+  test('bash card appends passed/total when bashResult is present', async () => {
+    render(
+      <ActivityEvent
+        event={toolEvent({
+          kind: 'bash',
+          tool: 'Bash',
+          status: 'done',
+          bashResult: { passed: 4, total: 4 },
+        })}
+        now={now}
+      />
+    )
+    fireEvent.focus(screen.getByRole('article', { name: 'BASH' }))
+
+    // Scope to the dialog: the row's own status pill also renders "OK 4/4".
+    const details = await screen.findByRole('dialog', {
+      name: 'BASH activity details',
+    })
+    expect(within(details).getByText('OK 4/4')).toBeInTheDocument()
+  })
+
+  test('think card renders no status chip', async () => {
+    render(
+      <ActivityEvent
+        event={{
+          id: 'th',
+          kind: 'think',
+          body: 'considering options',
+          timestamp: '2026-04-22T11:59:42Z',
+          status: 'done',
+        }}
+        now={now}
+      />
+    )
+    fireEvent.focus(screen.getByRole('article', { name: 'THINK' }))
+
+    const details = await screen.findByRole('dialog', {
+      name: 'THINK activity details',
+    })
+    expect(within(details).queryByText('OK')).not.toBeInTheDocument()
+    expect(within(details).getByText('considering options')).toBeInTheDocument()
+  })
+
+  test('no resultPreview → no output pre block', async () => {
+    render(
+      <ActivityEvent
+        event={toolEvent({ kind: 'read', tool: 'Read', body: 'src/x.ts' })}
+        now={now}
+      />
+    )
+    fireEvent.focus(screen.getByRole('article', { name: 'READ' }))
+
+    const details = await screen.findByRole('dialog', {
+      name: 'READ activity details',
+    })
+    // eslint-disable-next-line testing-library/no-node-access -- assert the <pre> output block is absent
+    expect(details.querySelector('pre')).toBeNull()
+  })
+
+  test('renders 0s for a 0 ms completed tool call', async () => {
+    render(
+      <ActivityEvent
+        event={toolEvent({
+          kind: 'bash',
+          tool: 'Bash',
+          status: 'done',
+          durationMs: 0,
+        })}
+        now={now}
+      />
+    )
+    fireEvent.focus(screen.getByRole('article', { name: 'BASH' }))
+    expect(await screen.findByText('0s')).toBeInTheDocument()
+  })
+})

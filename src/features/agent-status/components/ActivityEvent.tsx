@@ -12,6 +12,7 @@ import { formatRelativeTime, formatDuration } from '../utils/relativeTime'
 import type {
   ActivityEvent as ActivityEventType,
   ActivityEventKind,
+  ToolActivityEvent,
 } from '../types/activityEvent'
 
 interface ActivityEventProps {
@@ -99,26 +100,86 @@ const writeClipboardText = async (text: string): Promise<void> => {
   await clipboard.writeText(text)
 }
 
+const isToolEvent = (event: ActivityEventType): event is ToolActivityEvent =>
+  'tool' in event
+
+const buildCopyText = (event: ActivityEventType): string =>
+  'resultPreview' in event && event.resultPreview
+    ? `${event.body}\n\n${event.resultPreview}`
+    : event.body
+
 interface ActivityTooltipContentProps {
-  body: string
+  event: ActivityEventType
   label: string
+  now: Date
+}
+
+const StatusChip = ({ event }: { event: ToolActivityEvent }): ReactElement => {
+  if (event.status === 'running') {
+    return (
+      <span className="rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-on-surface-variant">
+        RUNNING
+      </span>
+    )
+  }
+  const ok = event.status === 'done'
+
+  const counts =
+    event.kind === 'bash' && event.bashResult
+      ? ` ${event.bashResult.passed}/${event.bashResult.total}`
+      : ''
+
+  const palette = ok
+    ? 'bg-success/[0.12] text-success'
+    : 'bg-error/[0.12] text-error'
+
+  return (
+    <span
+      className={`rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] ${palette}`}
+    >
+      {(ok ? 'OK' : 'FAILED') + counts}
+    </span>
+  )
+}
+
+const TooltipBody = ({ event }: { event: ActivityEventType }): ReactElement => {
+  const preview = isToolEvent(event) ? event.resultPreview : undefined
+
+  const bodyClass =
+    event.kind === 'think'
+      ? 'text-xs text-on-surface italic'
+      : event.kind === 'user'
+        ? 'text-xs text-on-surface'
+        : 'text-xs text-on-surface font-mono break-words'
+
+  return (
+    <div className="flex flex-col gap-2">
+      <span className={bodyClass}>{event.body}</span>
+      {preview ? (
+        <pre className="thin-scrollbar max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-md bg-surface-container/60 px-2.5 py-2 font-mono text-[11px] leading-relaxed text-on-surface">
+          {preview}
+        </pre>
+      ) : null}
+    </div>
+  )
 }
 
 const ActivityTooltipContent = ({
-  body,
+  event,
   label,
+  now,
 }: ActivityTooltipContentProps): ReactElement => {
   const [copyState, setCopyState] = useState<CopyState>('idle')
+  const copyText = buildCopyText(event)
 
   useEffect(() => {
     setCopyState('idle')
-  }, [body])
+  }, [copyText])
 
   useEffect(() => {
     if (copyState === 'idle') {
       return
     }
-
     const id = window.setTimeout(() => setCopyState('idle'), COPY_FEEDBACK_MS)
 
     return (): void => window.clearTimeout(id)
@@ -126,12 +187,12 @@ const ActivityTooltipContent = ({
 
   const handleCopy = useCallback(async (): Promise<void> => {
     try {
-      await writeClipboardText(body)
+      await writeClipboardText(copyText)
       setCopyState('copied')
     } catch {
       setCopyState('failed')
     }
-  }, [body])
+  }, [copyText])
 
   const copyButtonLabel =
     copyState === 'copied'
@@ -143,12 +204,43 @@ const ActivityTooltipContent = ({
   const copyFeedback =
     copyState === 'copied' ? 'Copied' : copyState === 'failed' ? 'Failed' : ''
 
+  const isRunning = event.status === 'running'
+
+  const ago = isRunning
+    ? `running ${formatDuration(Math.max(0, now.getTime() - new Date(event.timestamp).getTime()))}`
+    : formatRelativeTime(event.timestamp, now)
+
+  const duration =
+    isToolEvent(event) && !isRunning && event.durationMs != null
+      ? formatDuration(event.durationMs)
+      : null
+
+  const diff =
+    (event.kind === 'edit' || event.kind === 'write') && event.diff
+      ? event.diff
+      : null
+
   return (
     <div className="w-[min(30rem,calc(100vw-2rem))]">
       <div className="mb-2 flex items-center justify-between gap-3">
-        <span className="min-w-0 text-[10px] font-bold uppercase tracking-[0.12em] text-on-surface-variant">
-          {label}
-        </span>
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-on-surface-variant">
+            {label}
+          </span>
+          <span className="text-[9px] font-mono text-outline">{ago}</span>
+          {duration ? (
+            <span className="text-[9px] font-mono text-outline">
+              {duration}
+            </span>
+          ) : null}
+          {isToolEvent(event) ? <StatusChip event={event} /> : null}
+          {diff ? (
+            <span className="flex items-center gap-1.5 text-[9px] font-mono">
+              <span className="text-success">+{diff.added}</span>
+              <span className="text-error">−{diff.removed}</span>
+            </span>
+          ) : null}
+        </div>
         <div className="flex shrink-0 items-center gap-2">
           <span
             aria-live="polite"
@@ -174,9 +266,7 @@ const ActivityTooltipContent = ({
           </button>
         </div>
       </div>
-      <pre className="thin-scrollbar max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-md bg-surface-container/60 px-2.5 py-2 font-mono text-[11px] leading-relaxed text-on-surface">
-        {body}
-      </pre>
+      <TooltipBody event={event} />
     </div>
   )
 }
@@ -256,7 +346,7 @@ export const ActivityEvent = ({
 
   return (
     <Tooltip
-      content={<ActivityTooltipContent body={event.body} label={label} />}
+      content={<ActivityTooltipContent event={event} label={label} now={now} />}
       placement="left"
       maxWidth={520}
       interactive
