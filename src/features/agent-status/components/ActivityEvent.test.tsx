@@ -637,7 +637,7 @@ describe('ActivityEvent — copy with resultPreview', () => {
 })
 
 describe('ActivityEvent — structured tooltip', () => {
-  test('tooltip header shows the kind tag and an OK chip for a done tool call', async () => {
+  test('tooltip header shows the lowercase kind chip for a done tool call', async () => {
     render(
       <ActivityEvent
         event={toolEvent({ kind: 'bash', tool: 'Bash', status: 'done' })}
@@ -650,11 +650,12 @@ describe('ActivityEvent — structured tooltip', () => {
       name: 'BASH activity details',
     })
 
-    expect(within(details).getByText('BASH')).toBeInTheDocument()
-    expect(within(details).getByText('OK')).toBeInTheDocument()
+    expect(within(details).getByText('bash')).toBeInTheDocument()
+    expect(within(details).queryByText('OK')).not.toBeInTheDocument()
+    expect(within(details).queryByText('exit')).not.toBeInTheDocument()
   })
 
-  test('failed tool call shows FAILED; running shows RUNNING (in the tooltip)', async () => {
+  test('failed and running tool calls show no status chip in the tooltip', async () => {
     const { rerender } = render(
       <ActivityEvent
         event={toolEvent({ kind: 'bash', tool: 'Bash', status: 'failed' })}
@@ -663,11 +664,11 @@ describe('ActivityEvent — structured tooltip', () => {
     )
     fireEvent.focus(screen.getByRole('article', { name: 'BASH' }))
 
-    // Scope to the dialog: the row's own status pill also renders "FAILED".
     const failed = await screen.findByRole('dialog', {
       name: 'BASH activity details',
     })
-    expect(within(failed).getByText('FAILED')).toBeInTheDocument()
+    expect(within(failed).queryByText('FAILED')).not.toBeInTheDocument()
+    expect(within(failed).queryByText('RUNNING')).not.toBeInTheDocument()
 
     rerender(
       <ActivityEvent
@@ -688,10 +689,10 @@ describe('ActivityEvent — structured tooltip', () => {
     const running = await screen.findByRole('dialog', {
       name: 'BASH activity details',
     })
-    expect(within(running).getByText('RUNNING')).toBeInTheDocument()
+    expect(within(running).queryByText('RUNNING')).not.toBeInTheDocument()
   })
 
-  test('bash card appends passed/total when bashResult is present', async () => {
+  test('bash card shows no passed/total status chip even when bashResult is present', async () => {
     render(
       <ActivityEvent
         event={toolEvent({
@@ -705,14 +706,14 @@ describe('ActivityEvent — structured tooltip', () => {
     )
     fireEvent.focus(screen.getByRole('article', { name: 'BASH' }))
 
-    // Scope to the dialog: the row's own status pill also renders "OK 4/4".
     const details = await screen.findByRole('dialog', {
       name: 'BASH activity details',
     })
-    expect(within(details).getByText('OK 4/4')).toBeInTheDocument()
+    expect(within(details).queryByText('OK 4/4')).not.toBeInTheDocument()
+    expect(within(details).getByText('bash')).toBeInTheDocument()
   })
 
-  test('think card renders no status chip', async () => {
+  test('think card renders no status chip and body in italic', async () => {
     render(
       <ActivityEvent
         event={{
@@ -731,7 +732,8 @@ describe('ActivityEvent — structured tooltip', () => {
       name: 'THINK activity details',
     })
     expect(within(details).queryByText('OK')).not.toBeInTheDocument()
-    expect(within(details).getByText('considering options')).toBeInTheDocument()
+    const body = within(details).getByText('considering options')
+    expect(body).toHaveClass('italic')
   })
 
   test('no resultPreview → no output pre block', async () => {
@@ -764,5 +766,89 @@ describe('ActivityEvent — structured tooltip', () => {
     )
     fireEvent.focus(screen.getByRole('article', { name: 'BASH' }))
     expect(await screen.findByText('0s')).toBeInTheDocument()
+  })
+
+  test('bash card shows its command in a $ block', async () => {
+    render(
+      <ActivityEvent
+        event={toolEvent({
+          kind: 'bash',
+          tool: 'Bash',
+          body: 'pnpm test',
+          status: 'done',
+        })}
+        now={now}
+      />
+    )
+    fireEvent.focus(screen.getByRole('article', { name: 'BASH' }))
+
+    const details = await screen.findByRole('dialog', {
+      name: 'BASH activity details',
+    })
+    expect(within(details).getByText('pnpm test')).toBeInTheDocument()
+    expect(within(details).getByText('$')).toBeInTheDocument()
+  })
+
+  test('edit card shows the FilePathChip filename', async () => {
+    render(
+      <ActivityEvent
+        event={toolEvent({
+          kind: 'edit',
+          tool: 'Edit',
+          body: 'src/components/Button.tsx',
+          status: 'done',
+        })}
+        now={now}
+      />
+    )
+    fireEvent.focus(screen.getByRole('article', { name: 'EDIT' }))
+
+    const details = await screen.findByRole('dialog', {
+      name: 'EDIT activity details',
+    })
+    expect(within(details).getByText('Button.tsx')).toBeInTheDocument()
+  })
+
+  test('footer hints render for bash and are static', async () => {
+    render(
+      <ActivityEvent
+        event={toolEvent({
+          kind: 'bash',
+          tool: 'Bash',
+          body: 'pnpm test',
+          status: 'done',
+        })}
+        now={now}
+      />
+    )
+    fireEvent.focus(screen.getByRole('article', { name: 'BASH' }))
+
+    const details = await screen.findByRole('dialog', {
+      name: 'BASH activity details',
+    })
+    expect(within(details).getByText(/rerun/)).toBeInTheDocument()
+    expect(within(details).getByText(/open in terminal/)).toBeInTheDocument()
+  })
+
+  test('user card renders body as plain text', async () => {
+    render(
+      <ActivityEvent
+        event={{
+          id: 'u-1',
+          kind: 'user',
+          body: 'refactor this',
+          timestamp: '2026-04-22T11:59:42Z',
+          status: 'done',
+        }}
+        now={now}
+      />
+    )
+    fireEvent.focus(screen.getByRole('article', { name: 'USER' }))
+
+    const details = await screen.findByRole('dialog', {
+      name: 'USER activity details',
+    })
+    const body = within(details).getByText('refactor this')
+    expect(body).not.toHaveClass('italic')
   })
 })

@@ -5,6 +5,7 @@ import {
   type FocusEventHandler,
   type KeyboardEventHandler,
   type ReactElement,
+  type ReactNode,
   type Ref,
 } from 'react'
 import { Tooltip } from '../../../components/Tooltip'
@@ -114,61 +115,83 @@ interface ActivityTooltipContentProps {
   now: Date
 }
 
-const StatusChip = ({ event }: { event: ToolActivityEvent }): ReactElement => {
-  if (event.status === 'running') {
-    return (
-      <span className="rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-on-surface-variant">
-        RUNNING
-      </span>
-    )
-  }
-  const ok = event.status === 'done'
-
-  const counts =
-    event.kind === 'bash' && event.bashResult
-      ? ` ${event.bashResult.passed}/${event.bashResult.total}`
-      : ''
-
-  const palette = ok
-    ? 'bg-success/[0.12] text-success'
-    : 'bg-error/[0.12] text-error'
-
-  return (
-    <span
-      className={`rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] ${palette}`}
-    >
-      {(ok ? 'OK' : 'FAILED') + counts}
-    </span>
-  )
+const KIND_ACCENT: Record<ActivityEventKind, string> = {
+  bash: '#a8c8ff',
+  edit: '#e2c7ff',
+  write: '#e2c7ff',
+  read: '#8a8299',
+  grep: '#a8c8ff',
+  glob: '#a8c8ff',
+  meta: '#a8c8ff',
+  think: '#c39eee',
+  user: '#f0c674',
 }
 
-const TooltipBody = ({ event }: { event: ActivityEventType }): ReactElement => {
-  const preview = isToolEvent(event) ? event.resultPreview : undefined
+const Pip = ({ children }: { children: ReactNode }): ReactElement => (
+  <span className="inline-flex items-center gap-[3px] whitespace-nowrap font-mono text-[10px] text-[#8a8299]">
+    {children}
+  </span>
+)
 
-  const bodyClass =
-    event.kind === 'think'
-      ? 'text-xs text-on-surface italic'
-      : event.kind === 'user'
-        ? 'text-xs text-on-surface'
-        : 'text-xs text-on-surface font-mono break-words'
+const Dot = (): ReactElement => <span className="mr-px text-[#4a444f]">·</span>
+
+const CommandBlock = ({
+  cmd,
+  accent,
+}: {
+  cmd: string
+  accent: string
+}): ReactElement => (
+  <pre className="relative m-0 overflow-hidden rounded-md border border-[rgba(74,68,79,0.3)] bg-[rgba(13,13,28,0.55)] p-2 pl-6 font-mono text-[11px] leading-[1.55] text-[#cdc3d1]">
+    <span
+      className="absolute left-[10px] top-2 text-sm"
+      style={{ color: accent, opacity: 0.8 }}
+    >
+      $
+    </span>
+    <span className="whitespace-pre-wrap break-all text-[#e3e0f7]">{cmd}</span>
+  </pre>
+)
+
+const FilePathChip = ({
+  path,
+  accent,
+}: {
+  path: string
+  accent: string
+}): ReactElement => {
+  const parts = path.split('/')
+  const file = parts.pop() ?? ''
+  const dir = parts.join('/') + (parts.length > 0 ? '/' : '')
 
   return (
-    <div className="flex flex-col gap-2">
-      <span className={bodyClass}>{event.body}</span>
-      {preview ? (
-        <pre className="thin-scrollbar max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-md bg-surface-container/60 px-2.5 py-2 font-mono text-[11px] leading-relaxed text-on-surface">
-          {preview}
-        </pre>
-      ) : null}
+    <div className="flex items-baseline gap-px rounded-md border border-[rgba(74,68,79,0.3)] bg-[rgba(13,13,28,0.55)] px-2.5 py-2 font-mono text-[11.5px]">
+      <span
+        className="material-symbols-outlined mr-1.5 text-xs"
+        style={{ color: accent, transform: 'translateY(2px)' }}
+        aria-hidden="true"
+      >
+        draft
+      </span>
+      <span className="text-[#6c7086]">{dir}</span>
+      <span className="font-semibold text-[#e3e0f7]">{file}</span>
     </div>
   )
 }
+
+const Kbd = ({ children }: { children: ReactNode }): ReactElement => (
+  <span className="inline-flex items-center justify-center rounded border border-[rgba(74,68,79,0.35)] bg-[rgba(13,13,28,0.5)] px-1 py-px font-mono text-[9.5px] text-[#6c7086]">
+    {children}
+  </span>
+)
 
 const ActivityTooltipContent = ({
   event,
   label,
   now,
 }: ActivityTooltipContentProps): ReactElement => {
+  void label // consumed by Tooltip aria-label; kept for signature compatibility
+
   const [copyState, setCopyState] = useState<CopyState>('idle')
   const copyText = buildCopyText(event)
 
@@ -215,36 +238,59 @@ const ActivityTooltipContent = ({
       ? formatDuration(event.durationMs)
       : null
 
-  const diff =
-    (event.kind === 'edit' || event.kind === 'write') && event.diff
-      ? event.diff
-      : null
+  const accent = KIND_ACCENT[event.kind]
+  const kindLabel = event.kind.toLowerCase()
+
+  const showFooter =
+    event.kind === 'bash' ||
+    event.kind === 'edit' ||
+    event.kind === 'write' ||
+    event.kind === 'read'
 
   return (
-    <div className="w-[min(30rem,calc(100vw-2rem))]">
-      <div className="mb-2 flex items-center justify-between gap-3">
-        <div className="flex min-w-0 items-center gap-2">
-          <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-on-surface-variant">
-            {label}
+    <div className="relative w-[min(24rem,calc(100vw-2rem))] overflow-hidden rounded-[10px] border border-[rgba(74,68,79,0.45)] bg-[rgba(20,18,32,0.96)] font-sans shadow-[0_16px_48px_rgba(0,0,0,0.55),0_0_0_1px_rgba(203,166,247,0.04)] backdrop-blur-[20px] backdrop-saturate-[150%]">
+      {/* Accent stripe */}
+      <span
+        className="absolute left-3 right-3 top-0 h-[2px] opacity-[0.55]"
+        style={{
+          background: `linear-gradient(90deg, transparent, ${accent}, transparent)`,
+        }}
+      />
+
+      {/* Header */}
+      <div className="flex items-center gap-2 px-3 pt-2.5 pb-2">
+        {/* Kind chip */}
+        <div
+          className="inline-flex h-5 items-center gap-[5px] rounded-[5px] border px-2 pl-1.5 font-mono text-[10px] font-semibold lowercase tracking-[0.06em]"
+          style={{
+            backgroundColor: `${accent}1f`,
+            borderColor: `${accent}3d`,
+            color: accent,
+          }}
+        >
+          <span
+            className="material-symbols-outlined text-[11px]"
+            aria-hidden="true"
+          >
+            {KIND_ICON[event.kind]}
           </span>
-          <span className="text-[9px] font-mono text-outline">{ago}</span>
-          {duration ? (
-            <span className="text-[9px] font-mono text-outline">
-              {duration}
-            </span>
-          ) : null}
-          {isToolEvent(event) ? <StatusChip event={event} /> : null}
-          {diff ? (
-            <span className="flex items-center gap-1.5 text-[9px] font-mono">
-              <span className="text-success">+{diff.added}</span>
-              <span className="text-error">−{diff.removed}</span>
-            </span>
-          ) : null}
+          {kindLabel}
         </div>
+
+        {/* Meta pips */}
+        <Pip>
+          <Dot />
+          {ago}
+        </Pip>
+        {duration ? <Pip>{duration}</Pip> : null}
+
+        <span className="flex-1" />
+
+        {/* Copy */}
         <div className="flex shrink-0 items-center gap-2">
           <span
             aria-live="polite"
-            className="min-w-10 text-right text-[10px] font-semibold uppercase tracking-[0.08em] text-on-surface-variant"
+            className="min-w-10 text-right text-[10px] font-semibold uppercase tracking-[0.08em] text-[#8a8299]"
           >
             {copyFeedback}
           </span>
@@ -254,19 +300,90 @@ const ActivityTooltipContent = ({
             onClick={(): void => {
               void handleCopy()
             }}
-            className="inline-flex h-6 items-center gap-1 rounded-md bg-on-surface/10 px-1.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-on-surface-variant transition-colors hover:bg-on-surface/15 hover:text-on-surface focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary-container"
+            className="grid h-[22px] w-[22px] place-items-center rounded border-none bg-transparent transition-colors duration-[160ms] ease-in-out"
+            style={{
+              color: copyState === 'copied' ? '#7defa1' : '#8a8299',
+            }}
+            onMouseEnter={(e) => {
+              if (copyState !== 'copied') {
+                e.currentTarget.style.background = 'rgba(255,255,255,0.05)'
+                e.currentTarget.style.color = '#e2c7ff'
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (copyState !== 'copied') {
+                e.currentTarget.style.background = 'transparent'
+                e.currentTarget.style.color = '#8a8299'
+              }
+            }}
           >
             <span
-              className="material-symbols-outlined text-sm"
+              className="material-symbols-outlined text-xs"
               aria-hidden="true"
             >
               {copyState === 'copied' ? 'check' : 'content_copy'}
             </span>
-            Copy
           </button>
         </div>
       </div>
-      <TooltipBody event={event} />
+
+      {/* Body */}
+      <div className="px-3.5 py-1 pb-3">
+        {event.kind === 'bash' ||
+        event.kind === 'grep' ||
+        event.kind === 'glob' ||
+        event.kind === 'meta' ? (
+          <CommandBlock cmd={event.body} accent={accent} />
+        ) : null}
+
+        {event.kind === 'edit' ||
+        event.kind === 'write' ||
+        event.kind === 'read' ? (
+          <FilePathChip path={event.body} accent={accent} />
+        ) : null}
+
+        {event.kind === 'think' ? (
+          <div
+            className="border-l-2 pl-3 text-[13px] leading-[1.55] italic text-[#cdc3d1]"
+            style={{ borderColor: `${accent}66` }}
+          >
+            {event.body}
+          </div>
+        ) : null}
+
+        {event.kind === 'user' ? (
+          <div className="text-[13px] leading-[1.55] text-[#e3e0f7]">
+            {event.body}
+          </div>
+        ) : null}
+      </div>
+
+      {/* Footer */}
+      {showFooter ? (
+        <div className="flex items-center gap-2 border-t border-[rgba(74,68,79,0.25)] bg-[rgba(13,13,28,0.6)] px-3.5 py-[7px] font-mono text-[9.5px] tracking-[0.04em] text-[#6c7086]">
+          {event.kind === 'bash' && (
+            <>
+              <Kbd>↵</Kbd> rerun <Kbd>⌘</Kbd>
+              <Kbd>O</Kbd> open in terminal
+            </>
+          )}
+          {(event.kind === 'edit' || event.kind === 'write') && (
+            <>
+              <Kbd>⌘</Kbd>
+              <Kbd>O</Kbd> open file <Kbd>⌘</Kbd>
+              <Kbd>D</Kbd> view diff
+            </>
+          )}
+          {event.kind === 'read' && (
+            <>
+              <Kbd>⌘</Kbd>
+              <Kbd>O</Kbd> open file
+            </>
+          )}
+          <span className="flex-1" />
+          <span className="text-[#4a444f]">esc</span>
+        </div>
+      ) : null}
     </div>
   )
 }
