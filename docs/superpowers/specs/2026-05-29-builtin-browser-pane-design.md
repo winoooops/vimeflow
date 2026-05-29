@@ -1,6 +1,6 @@
 # Built-in browser pane — design spec (Phase 1: stabilize the spike)
 
-Status: draft — codex review in progress
+Status: codex-reviewed
 Date: 2026-05-29
 Owner: Vimeflow
 Source: formalizes `docs/exploration/2026-05-28-builtin-browser/official-spec-and-plan.md`. The
@@ -56,9 +56,12 @@ Two security behaviors must hold in Phase 1 even though their richer UX is defer
   so playback that requires Widevine still fails), `storage-access`, and `top-level-storage-access`
   (so SaaS / OAuth flows that rely on the Storage Access API work). Camera, microphone,
   geolocation, and notifications are **denied** with no prompt, in both the request and check
-  paths. The user-facing permission prompts that would allow these are Phase 2. WebAuthn account
-  selection auto-selects the first credential. (The spike installs the request handler today; the
-  matching check handler is a Phase-1 gap — Section 5.)
+  paths (camera / microphone arrive as Electron's `media` permission with media-type details, not
+  separate strings). The user-facing permission prompts that would allow these are Phase 2. WebAuthn account
+  selection picks the sole credential when exactly one exists and otherwise cancels (falling back to
+  non-passkey sign-in) rather than guessing among several — Section 5, task 9. (The spike installs
+  the request handler today; the matching check handler and the safe account-selection behavior are
+  Phase-1 gaps — Section 5.)
 - **CDP access boundary.** The pane-scoped CDP proxy is reachable on loopback only, requires a
   per-pane capability token plus an origin check on the WebSocket upgrade, lists only
   registered browser-pane targets (never the trusted Vimeflow shell `webContents`), and forwards
@@ -70,9 +73,15 @@ Explicitly **out of scope** for Phase 1 (tracked for later phases in the source 
 
 - Productized browser chrome — favicons, loading / stop / reload, back / forward,
   clear-site-data, and user-facing permission prompts (Phase 2).
-- Cross-restart **tab-metadata** persistence, reconnect-to-active-tab after renderer refresh, and
-  crash-recovery UI (Phase 3). Note: partition-level cache / cookie / session persistence is in
-  Phase 1 and already works; only restoration of the **tab list** is deferred.
+- Restoring the **multi-tab list and prior active-tab selection within a pane** (a recreated pane
+  re-seeds to a single tab), and crash-recovery UI (Phase 3). Note: a renderer **refresh** already
+  preserves the tab list in Phase 1 (the native record survives and `createPane` returns its full
+  `tabs[]` — Section 2). Reliable browser-pane restore across a **graceful** app restart is **not** a
+  Phase-1 guarantee: the backend clears its session cache on shutdown (`state.rs:76` via
+  `main.ts:344-363`), so the owning session — and the pane that references its `browserSessionId` —
+  is not recreated, and the on-disk partition cookies / cache persist but sit unreferenced. Making
+  sessions (and thus login) survive a graceful quit belongs to the terminal-session lifecycle, not
+  this browser-pane milestone.
 - The automation-API registration contract and pane-level grant UI (Phase 4).
 - CDM / Widevine and signed / platform WebAuthn distribution decisions (Phase 5).
 
@@ -106,20 +115,53 @@ The session is created with `session.fromPartition(partition, { cache: true })`
 `sanitizePartitionSegment` (`[^a-zA-Z0-9._-] → '-'`, truncated to 96 chars, `:187-188`) so the
 partition name stays Electron-safe.
 
-**Isolation does not depend on that sanitization.** `<sessionId>` is a per-session
-`crypto.randomUUID()` (`useSessionManager.ts`) and `<workspaceId>` is the session's `projectId`, so
-the full key is unique per session even if two `projectId`s sanitize or truncate to the same string
-— the unique, `:`-free UUID segment disambiguates. A partition is therefore shared only by the tabs
-of one pane within one session; it is never shared across sessions, so there is no cross-project
-cookie / cache leakage. (If a future phase keys partitions on `workspaceId` alone — to share a login
-across a workspace's sessions — it must hash or escape the raw id rather than rely on
-`sanitizePartitionSegment`, whose lossy mapping could otherwise collide distinct workspaces.)
+**Isolation and the `<sessionId>` segment.** The `<sessionId>` segment is the pane's
+`browserSessionId` (`BrowserPane.tsx:179`), resolved by `browserSessionIdForSession` to
+`session.browserSessionId ?? <shell pane ptyId> ?? session.id` (`useSessionManager.ts:160-163`). That
+value is `:`-free (so the composite key is unambiguous) and is **persisted** in the pane store (see
+"Persistence & reconnect" below for what that does and does not recover across a restart).
+`<workspaceId>` is the session's `projectId`. The key contains no `paneId`, so **all browser panes —
+and all their tabs — within one session share a single partition**; partitions are never shared
+across sessions, so there is no cross-session cookie / cache leakage. Isolation does not depend on
+`sanitizePartitionSegment`: even if two `projectId`s sanitize or truncate to the same string, the
+distinct `browserSessionId` segment keeps sessions apart. (If a future phase keys partitions on
+`workspaceId` alone — to share a login across a workspace's sessions — it must hash or escape the raw
+id rather than rely on `sanitizePartitionSegment`, whose lossy mapping could otherwise collide
+distinct workspaces.)
 
-All tabs in a pane share that one partition, so cookies, HTTP cache, IndexedDB, localStorage,
-service-worker registrations, and site sessions persist and are reused across tabs and across
-renderer reloads — scoped to Vimeflow, never the system Chrome profile. A per-partition policy
-installer (`installPartitionPolicy`) attaches the permission and `select-webauthn-account` handlers
-exactly once per partition (Section 1 security contracts).
+All tabs across the session's browser panes share that one partition, so cookies, HTTP cache,
+IndexedDB, localStorage, service-worker registrations, and site sessions persist and are reused
+across tabs and across renderer reloads — scoped to Vimeflow, never the system Chrome profile. A
+per-partition policy installer (`installPartitionPolicy`) attaches the permission and
+`select-webauthn-account` handlers exactly once per partition (Section 1 security contracts).
+
+### Persistence & reconnect (Phase 1)
+
+Browser panes are persisted client-side; what survives depends on whether the main process stayed
+alive:
+
+- **Pane store.** The renderer writes a `vimeflow:browser-panes:v1` localStorage record
+  (`useSessionManager.ts:175`) holding, per browser pane, its stable `browserSessionId`, `paneId`,
+  `browserUrl`, and `active` flag. On mount, `restoreStoredBrowserPanes` re-creates those panes for
+  the sessions the backend restored.
+- **Renderer refresh (full recovery).** The main process is still alive, so `createPane` takes its
+  reconnect path (`browser-pane.ts:638-648`) and returns the existing native record — its full
+  `tabs` snapshot and active tab included — so cache, login, and the multi-tab list all survive a
+  refresh intact.
+- **On-disk partition (always durable).** The `persist:` partition's cookies / cache / storage are
+  written to `userData` and survive any process exit; they are reused only when a pane is later
+  created with the same `browserSessionId` partition key.
+- **Graceful restart (login NOT restored in Phase 1).** On a normal quit the sidecar is shut down
+  (`main.ts:344-363`) and the backend clears its session cache (`state.rs:76`), so the owning
+  terminal session is not recreated on relaunch — `restoreStoredBrowserPanes` has no session to
+  attach to, no pane re-references the partition, and the (still on-disk) cookies sit unused, so the
+  user re-authenticates. The stable `browserSessionId` would make restore work _if_ the session
+  returned (e.g. after a crash that skips the shutdown hook and leaves the cache), but that is
+  best-effort, not a Phase-1 guarantee. Persisting sessions across a graceful quit is a follow-up in
+  the terminal-session lifecycle.
+- **Not restored in Phase 1.** Regardless of path, the multi-tab list and prior active-tab selection
+  _within_ a pane are not restored across a full restart (a recreated pane re-seeds to one tab) —
+  that is Phase 3.
 
 ### Tab model
 
@@ -190,7 +232,7 @@ events complete the surface:
 - `browser-pane:url-changed` → `BrowserPaneUrlChangedEvent` (`onUrlChange`; carries the active
   tab's url/title plus the full `tabs[]` snapshot)
 - `browser-pane:tabs-changed` → `BrowserPaneTabsChangedEvent` (`onTabsChange`; emitted on tab
-  create / activate / close so the React chrome re-renders the tab strip)
+  create / activate / close so the React chrome re-renders the tab strip). Each tab snapshot's `url` is non-empty — the requested target URL until navigation commits (task 7)
 
 ### IPC layering (touch-points per channel)
 
@@ -227,8 +269,9 @@ operations.
   same workspace + session.
 - OAuth popups become in-pane tabs on the shared partition (Section 2), within the Phase-1 popup
   scope.
-- Passkeys are deferred; `select-webauthn-account` auto-selects the first credential and users rely
-  on the accepted non-passkey sign-in fallback (Section 1).
+- Passkeys are deferred; `select-webauthn-account` selects the sole credential when there is exactly
+  one and otherwise cancels (non-passkey fallback) rather than guessing among several (Section 1;
+  Section 5, task 9).
 
 ### Automation boundary (CDP-compatible proxy)
 
@@ -253,14 +296,21 @@ trusted Vimeflow shell `webContents`.
 - **Upgrade gating.** The WebSocket upgrade is accepted only when the token matches (a `?token=`
   query param or an `Authorization: Bearer <token>` header, `:1486`) and the request origin is
   absent or equals `BROWSER_CDP_ORIGIN` (`:1480`). The HTTP listing requires the same token.
+  `BROWSER_CDP_ORIGIN` (`vimeflow://agent-plugin/local`) is a sentinel identifier for the trusted
+  agent-plugin — a non-browser CDP client that omits the `Origin` header (the normal case) or sends
+  this exact string; it is not a wire-valid browser origin (an `Origin` header carries no path), so
+  browser-page clients are not the intended consumer. The 24-byte per-pane token is the primary
+  gate; the origin check is defense-in-depth.
 - **Command allowlist.** Forwarded methods are restricted to a fixed domain allowlist
   (`ALLOWED_CDP_DOMAINS`, `:164-173`): `Accessibility`, `DOM`, `Emulation`, `Input`, `Log`,
   `Network`, `Page`, `Runtime`. The only method accepted outside those domains is the
   locally-answered `Browser.getVersion` (`:1633`); everything else is rejected. `Page.navigate`
   arguments are URL-validated before forwarding (`:1648`).
 - **Active-tab targeting.** Commands and the CDP attachment are routed to the pane's active tab
-  (`activeWebContents()`); switching the active tab tears down any prior attachment and re-targets
-  the new active tab (Section 2).
+  (`activeWebContents()`); switching the active tab closes any prior attachment and re-targets the
+  new active tab (Section 2). In-flight commands on a closed attachment are **abandoned** — the
+  client observes the socket close and must reconnect and re-issue against the new target; Phase 1
+  does not queue, drain, or replay commands across a tab switch.
 - **Dev-only raw debugging.** Electron's raw remote-debugging port stays dev-only and is never the
   production automation path.
 
@@ -268,9 +318,11 @@ trusted Vimeflow shell `webContents`.
 
 ### Stabilization tasks
 
-The spike is feature-complete (all nine invoke channels plus three events implemented; the 19
-focused browser/electron tests pass), but the in-progress working tree is not yet clean. Phase 1
-closes these gaps, in order:
+The spike is feature-complete (all nine invoke channels plus three events implemented), but the
+in-progress working tree is not yet clean: `npm run type-check` and `npm run lint` currently fail
+(tasks 1–2), and `BrowserPane.test.tsx`'s bridge mock may not yet expose `newBrowserPaneTab`, so
+confirm the focused-test baseline (red vs green) before starting. Phase 1 closes these gaps, in
+order:
 
 1. **Fix the type-check failure.** `isTabRequest` (`browser-pane.ts:304`) reads `value.tabId` after
    a guard that has narrowed `value` to a type without `tabId`, so `npm run type-check` fails
@@ -281,52 +333,87 @@ closes these gaps, in order:
    unknown word `webauthn` (`browser-pane.ts:1194` — add to the project dictionary / inline
    ignore), and `no-unnecessary-condition` (`BrowserPane.tsx:328,473`). Use `npm run lint:fix`
    where safe; hand-edit the cspell and `no-unnecessary-condition` cases.
-3. **Add the matching `setPermissionCheckHandler`.** Mirror the request handler's allowlist
-   (`mediaKeySystem`, `storage-access`, `top-level-storage-access` → allow; everything else → deny)
-   inside `installPartitionPolicy`, so the deny-by-default guarantee (Section 1) holds on both the
-   request and check paths.
+3. **Add the matching `setPermissionCheckHandler` and test the allow/deny list.** Mirror the request
+   handler's allowlist (`mediaKeySystem`, `storage-access`, `top-level-storage-access` → allow;
+   everything else → deny) inside `installPartitionPolicy`, so the deny-by-default guarantee
+   (Section 1) holds on both the request and check paths. Add a test (`browser-pane.test.ts`)
+   asserting that both handlers allow exactly `mediaKeySystem`, `storage-access`, and
+   `top-level-storage-access`, and deny the real Electron permission strings — `media` (camera /
+   microphone), `geolocation`, and `notifications` — so a wrong permission name or an accidental
+   allow fails the gate.
 4. **Add React tab-strip tests** (`BrowserPane.test.tsx`). Cover: clicking a tab calls
    `activateTab`; the close `×` calls `closeTab` and stops event propagation; `+` calls `newTab`;
    and an `onTabsChange` event re-renders the tab strip and address bar. (Currently only the 4
    pre-existing tests exist; the tab UI is untested.)
 5. **Add a CDP active-tab test** (`browser-pane.test.ts`). Assert that a forwarded `Page.navigate` /
-   `Runtime.evaluate` reaches the active tab's debugger, and that activating another tab **closes
-   the prior CDP attachment** and a fresh connection to the same pane target attaches to the new
-   active tab's debugger (Section 2's "switching tabs tears down any prior attachment"). This closes
-   the gap where launch-acceptance bullet 5 is otherwise evidenced only by the manual spike artifact
+   `Runtime.evaluate` reaches the active tab's debugger; that activating another tab **closes the
+   prior CDP attachment** and a fresh connection to the same pane target attaches to the new active
+   tab's debugger; and that a command sent on the now-closed prior attachment is **not** forwarded to
+   the old tab (Section 4's abandon-on-switch semantics). This closes the gap where launch-acceptance
+   bullet 5 is otherwise evidenced only by the manual spike artifact
    `media/cdp-client-navigate-evaluate.txt`.
+6. **Add a preload / channel-wiring test.** Assert that `electron/preload.ts` exposes all nine
+   browser-pane invoke channels and the three event subscriptions used by `browserBridge.ts`, so a
+   dropped `contextBridge` entry or a channel-name typo for the new `newTab` / `activateTab` /
+   `closeTab` / `onTabsChange` path is caught (the five-layer IPC path of Section 3 can otherwise
+   pass bridge + component tests yet fail at runtime).
+7. **Make every emitted / persisted tab URL non-empty.** `tabSnapshots` reads `webContents.getURL()`
+   (`browser-pane.ts:755-762`), which is `''` for a just-created tab before its `loadURL` commits, so
+   both the `tabs[]` snapshots **and** the top-level `BrowserPaneUrlChangedEvent.url` emitted at
+   creation can push `''` into the address bar and the persisted `browserUrl`, poisoning restart
+   restore. Carry the requested target URL on the tab and use it as the fallback wherever an
+   active-tab URL is emitted (the `tabs[]` snapshots and `url-changed.url`) until navigation commits,
+   and have the pane store ignore empty URLs.
+8. **Add a `createPane` reconnect test** (`browser-pane.test.ts`). Assert that calling `createPane`
+   for an already-registered pane returns the **existing** native record — its full `tabs[]` snapshot
+   and active tab — without building a new `WebContentsView`, so the renderer-refresh recovery path
+   (Section 2) is locked by a test, matching launch-acceptance #3's "reconnect (unit-tested)" claim.
+9. **Make WebAuthn account selection safe.** `select-webauthn-account` currently auto-selects the
+   first credential unconditionally (`browser-pane.ts:1194-1196`), silently picking an arbitrary
+   account when several discoverable credentials exist. With passkeys deferred, select the credential
+   only when `details.accounts.length === 1`; otherwise `callback(null)` to cancel and fall back to
+   the accepted non-passkey flow. Add a test for both the single- and multi-credential cases.
 
-Tasks 1–3 are mechanical / verbatim (well suited to an unattended coder); tasks 4–5 require
-test-design judgment.
+Tasks 1–3, 7, and 9 are mechanical / verbatim code changes (well suited to an unattended coder);
+tasks 4–6 and 8 are test-design work.
 
 ### Testing approach
 
 - **Electron main** (`electron/browser-pane.test.ts`): partition + cache + `addChildView` +
-  `loadURL` on create; bounds routing across tabs; popup→tab; CDP token / origin gating; and the
-  new CDP active-tab forwarding (task 5).
+  `loadURL` on create; bounds routing across tabs; popup→tab; CDP token / origin gating; the new CDP
+  active-tab forwarding (task 5); the `createPane` reconnect path (task 8); the permission
+  request/check allow-deny list (task 3); and safe WebAuthn account selection (task 9).
 - **Renderer bridge** (`src/features/browser/browserBridge.test.ts`): each `BrowserPaneBridge`
   method delegates to the correct channel with the correct payload (`tabs[]` in the create result;
   `newTab` / `activateTab` / `closeTab` delegation).
 - **Component** (`src/features/browser/components/BrowserPane.test.tsx`): the tab-strip + address-bar
   behavior (task 4).
+- **Preload / channel wiring** (task 6): `electron/preload.ts` exposes every browser-pane channel the
+  bridge uses — a missing `contextBridge` exposure or channel-name mismatch for `newTab` /
+  `activateTab` / `closeTab` / `onTabsChange` would pass the bridge and component tests yet fail at
+  runtime.
 - **Verification gate:** `npm run lint`, `npm run type-check`, and `npm run test` must all pass
   before the working tree is committed.
 
 ### Launch acceptance
 
-| #   | Criterion                                                                    | How it is evidenced                                                                                                     |
-| --- | ---------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| 1   | `+ add pane → Browser` creates a docked browser pane                         | `EmptySlot` picker wiring + `createPane` test                                                                           |
-| 2   | New-window / OAuth flows open as in-pane tabs                                | popup→tab test (`browser-pane.test.ts`) + manual OAuth smoke                                                            |
-| 3   | Browser cache + login state survive renderer refresh and app restart         | renderer-refresh: `createPane` reconnect path (unit-tested); app-restart: partition durability + a manual restart smoke |
-| 4   | YouTube / equivalent non-DRM video plays with audio                          | spike artifacts (`media/browser-pane-video-audio.png`, `youtube-playback-state.txt`) + manual smoke                     |
-| 5   | CDP proxy lists the pane target and runs navigate/evaluate on the active tab | task-5 automated test + spike artifacts (`media/cdp-targets.json`, `cdp-client-navigate-evaluate.txt`)                  |
-| 6   | `npm run lint`, `npm run type-check`, `npm run test` pass                    | local + CI run after tasks 1–5                                                                                          |
-| 7   | Final Codex review against `main` returns zero structural findings           | Phase-C local codex review + PR-time review                                                                             |
+| #   | Criterion                                                                                        | How it is evidenced                                                                                                                                                                                                                                                     |
+| --- | ------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | `+ add pane → Browser` creates a docked browser pane                                             | `EmptySlot` picker wiring + `createPane` test                                                                                                                                                                                                                           |
+| 2   | New-window opens as an in-pane tab; redirect-based OAuth completes in-pane                       | popup→tab test (`browser-pane.test.ts`) + manual smoke of a redirect-based OAuth flow (opener/postMessage/postBody popups are out of scope — Section 2)                                                                                                                 |
+| 3   | Browser cache + login survive a renderer refresh; the on-disk partition persists across any exit | `createPane` reconnect (unit-tested) + persistent on-disk partition. Graceful-restart login restore is **out of Phase-1 scope** — the backend clears its session cache on shutdown (`state.rs:76`); the manual smoke documents the current restart behavior (Section 2) |
+| 4   | YouTube / equivalent non-DRM video plays with audio                                              | spike artifacts (`media/browser-pane-video-audio.png`, `youtube-playback-state.txt`) + manual smoke                                                                                                                                                                     |
+| 5   | CDP proxy lists the pane target and runs navigate/evaluate on the active tab                     | task-5 automated test + spike artifacts (`media/cdp-targets.json`, `cdp-client-navigate-evaluate.txt`)                                                                                                                                                                  |
+| 6   | `npm run lint`, `npm run type-check`, `npm run test` pass                                        | local + CI run after tasks 1–9                                                                                                                                                                                                                                          |
+| 7   | Final Codex review against `main` returns zero structural findings                               | Phase-C local codex review + PR-time review                                                                                                                                                                                                                             |
 
-Bullets 2, 3 (app-restart leg), and 4 require a human / Claude run of the Electron app: bullet 4
-has spike artifacts and bullet 2's popup→tab path is also unit-tested; bullet 3's app-restart leg
-needs a manual smoke (sign in, fully restart the app, confirm the session is still authenticated),
-while its renderer-refresh leg is covered by the `createPane` reconnect unit test. Tab-list
-restoration after a full restart is Phase 3; bullet 3 covers partition-level (cache / cookie /
-session) durability only.
+Bullets 2 and 4 require a human / Claude run of the Electron app (bullet 4 has spike artifacts and
+bullet 2's popup→tab path is also unit-tested; the manual smoke targets a redirect-based OAuth flow,
+not an opener/postMessage popup). Bullet 3 is Phase-1 only for the **renderer-refresh** leg (the
+`createPane` reconnect path, unit-tested) and for the on-disk persistence of the partition itself.
+Login does **not** automatically survive a **graceful** app restart in Phase 1: the backend clears
+its session cache on shutdown (`state.rs:76` via `main.ts:344-363`), so the owning session is not
+recreated and no browser pane re-references the partition — its cookies / cache remain on disk but
+unreferenced. The restart smoke documents this current behavior; making sessions survive a graceful
+quit is a follow-up in the terminal-session lifecycle. Tab-list restoration _within_ a pane is
+Phase 3.
