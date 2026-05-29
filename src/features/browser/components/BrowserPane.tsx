@@ -1,0 +1,396 @@
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+  type MouseEvent,
+  type PointerEvent,
+  type ReactElement,
+} from 'react'
+import type { Pane, Session } from '../../sessions/types'
+import {
+  createBrowserPane,
+  focusBrowserPane,
+  getBrowserCdpInfo,
+  navigateBrowserPane,
+  onBrowserPaneFocus,
+  onBrowserPaneUrlChange,
+  setBrowserPaneBounds,
+} from '../browserBridge'
+import type { BrowserCdpInfo } from '../types'
+
+// cspell:ignore cdp WebContentsView
+const DEFAULT_BROWSER_URL = 'https://www.youtube.com/'
+
+const LOCAL_DEV_HOST_PATTERN =
+  /^(localhost|127(?:\.\d{1,3}){3}|0\.0\.0\.0|\[::1\])(?::\d+)?(?:[/?#]|$)/i
+
+export interface BrowserPaneProps {
+  session: Session
+  pane: Pane
+  isActive: boolean
+  isOccluded?: boolean
+  onClose?: (sessionId: string, paneId: string) => void
+  onRequestActive?: (sessionId: string, paneId: string) => void
+  onRequestFocus?: () => void
+  onUrlChange?: (sessionId: string, paneId: string, url: string) => void
+  showFocusHighlight?: boolean
+}
+
+const normalizeUrl = (value: string): string => {
+  const trimmed = value.trim()
+  if (trimmed.length === 0) {
+    return DEFAULT_BROWSER_URL
+  }
+
+  if (/^https?:\/\//i.test(trimmed)) {
+    return trimmed
+  }
+
+  if (LOCAL_DEV_HOST_PATTERN.test(trimmed)) {
+    return `http://${trimmed}`
+  }
+
+  return `https://${trimmed}`
+}
+
+const isShellPane = (pane: Pane): boolean => (pane.kind ?? 'shell') === 'shell'
+
+const browserSessionIdForSession = (session: Session): string =>
+  session.browserSessionId ??
+  session.panes.find(isShellPane)?.ptyId ??
+  session.id
+
+export const BrowserPane = ({
+  session,
+  pane,
+  isActive,
+  isOccluded = false,
+  onClose = undefined,
+  onRequestActive = undefined,
+  onRequestFocus = undefined,
+  onUrlChange = undefined,
+  showFocusHighlight = true,
+}: BrowserPaneProps): ReactElement => {
+  const contentRef = useRef<HTMLDivElement>(null)
+  const url = pane.browserUrl ?? DEFAULT_BROWSER_URL
+  const initialUrlRef = useRef(url)
+  const isActiveRef = useRef(isActive)
+  const isOccludedRef = useRef(isOccluded)
+  const nativePaneReadyRef = useRef(false)
+  const wasPaneActiveRef = useRef<boolean | undefined>(undefined)
+  const wasOccludedRef = useRef(isOccluded)
+  const suppressNextNativeFocusRef = useRef(false)
+  const lastBoundsKeyRef = useRef<string | null>(null)
+  const [address, setAddress] = useState(url)
+  const [cdpInfo, setCdpInfo] = useState<BrowserCdpInfo | null>(null)
+  const browserSessionId = browserSessionIdForSession(session)
+
+  const paneIds = useMemo(
+    () => session.panes.map((sessionPane) => sessionPane.id),
+    [session.panes]
+  )
+
+  const activePaneId =
+    session.panes.find((sessionPane) => sessionPane.active)?.id ?? null
+
+  const shortcutContext = useMemo(
+    () => ({ paneIds, activePaneId }),
+    [activePaneId, paneIds]
+  )
+  const shortcutContextRef = useRef(shortcutContext)
+
+  const syncBounds = useCallback((): void => {
+    const node = contentRef.current
+    if (!node) {
+      return
+    }
+
+    const rect = node.getBoundingClientRect()
+
+    const bounds = {
+      x: Math.round(rect.left),
+      y: Math.round(rect.top),
+      width: Math.max(0, Math.round(rect.width)),
+      height: Math.max(0, Math.round(rect.height)),
+    }
+
+    const visible =
+      isActiveRef.current &&
+      !isOccludedRef.current &&
+      rect.width > 0 &&
+      rect.height > 0
+
+    const currentShortcutContext = shortcutContextRef.current
+
+    const boundsKey = [
+      bounds.x,
+      bounds.y,
+      bounds.width,
+      bounds.height,
+      visible ? '1' : '0',
+      currentShortcutContext.activePaneId ?? '',
+      ...currentShortcutContext.paneIds,
+    ].join(':')
+
+    if (nativePaneReadyRef.current && lastBoundsKeyRef.current === boundsKey) {
+      return
+    }
+    if (nativePaneReadyRef.current) {
+      lastBoundsKeyRef.current = boundsKey
+    }
+
+    void setBrowserPaneBounds({
+      sessionId: browserSessionId,
+      paneId: pane.id,
+      bounds,
+      visible,
+      shortcutContext: currentShortcutContext,
+    })
+  }, [browserSessionId, pane.id])
+
+  useLayoutEffect(() => {
+    isActiveRef.current = isActive
+    isOccludedRef.current = isOccluded
+    shortcutContextRef.current = shortcutContext
+    // ResizeObserver does not fire for pure position changes. Ancestor layout
+    // changes such as moving the dock still re-render this component, so sync
+    // after every render and let syncBounds de-dupe unchanged rectangles.
+    syncBounds()
+  })
+
+  useEffect(() => {
+    const lifecycle = { cancelled: false }
+
+    void (async (): Promise<void> => {
+      try {
+        const result = await createBrowserPane({
+          sessionId: browserSessionId,
+          paneId: pane.id,
+          workspaceId: session.projectId,
+          initialUrl: initialUrlRef.current,
+          shortcutContext: shortcutContextRef.current,
+        })
+        if (lifecycle.cancelled) {
+          return
+        }
+
+        nativePaneReadyRef.current = true
+        setAddress(result.url)
+        onUrlChange?.(session.id, pane.id, result.url)
+
+        const info = await getBrowserCdpInfo({
+          sessionId: browserSessionId,
+          paneId: pane.id,
+        })
+        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- Cleanup can flip this while the awaited IPC is in flight.
+        if (lifecycle.cancelled) {
+          return
+        }
+
+        setCdpInfo(info)
+        lastBoundsKeyRef.current = null
+        syncBounds()
+      } catch {
+        if (!lifecycle.cancelled) {
+          setCdpInfo(null)
+        }
+      }
+    })()
+
+    return (): void => {
+      lifecycle.cancelled = true
+      nativePaneReadyRef.current = false
+    }
+  }, [
+    browserSessionId,
+    onUrlChange,
+    pane.id,
+    session.id,
+    session.projectId,
+    syncBounds,
+  ])
+
+  useLayoutEffect(() => {
+    const node = contentRef.current
+    if (!node) {
+      return
+    }
+
+    syncBounds()
+    const observer = new ResizeObserver(syncBounds)
+    observer.observe(node)
+    window.addEventListener('resize', syncBounds)
+
+    return (): void => {
+      observer.disconnect()
+      window.removeEventListener('resize', syncBounds)
+      void setBrowserPaneBounds({
+        sessionId: browserSessionId,
+        paneId: pane.id,
+        bounds: { x: 0, y: 0, width: 0, height: 0 },
+        visible: false,
+        shortcutContext: shortcutContextRef.current,
+      })
+    }
+  }, [browserSessionId, pane.id, syncBounds])
+
+  useEffect(() => {
+    const becameVisibleAgain = wasOccludedRef.current && !isOccluded
+    isActiveRef.current = isActive
+    isOccludedRef.current = isOccluded
+
+    const shouldFocusNative =
+      showFocusHighlight &&
+      isActive &&
+      pane.active &&
+      !isOccluded &&
+      (wasPaneActiveRef.current !== true || becameVisibleAgain) &&
+      !suppressNextNativeFocusRef.current
+
+    if (shouldFocusNative) {
+      void focusBrowserPane({ sessionId: browserSessionId, paneId: pane.id })
+    }
+    suppressNextNativeFocusRef.current = false
+    wasPaneActiveRef.current = pane.active
+    wasOccludedRef.current = isOccluded
+
+    syncBounds()
+  }, [
+    browserSessionId,
+    isActive,
+    isOccluded,
+    pane.active,
+    pane.id,
+    showFocusHighlight,
+    syncBounds,
+  ])
+
+  useEffect(
+    () =>
+      onBrowserPaneFocus((event) => {
+        if (event.sessionId !== browserSessionId || event.paneId !== pane.id) {
+          return
+        }
+
+        onRequestFocus?.()
+
+        if (!pane.active) {
+          onRequestActive?.(session.id, pane.id)
+        }
+      }),
+    [
+      browserSessionId,
+      onRequestActive,
+      onRequestFocus,
+      pane.active,
+      pane.id,
+      session.id,
+    ]
+  )
+
+  useEffect(
+    () =>
+      onBrowserPaneUrlChange((event) => {
+        if (event.sessionId !== browserSessionId || event.paneId !== pane.id) {
+          return
+        }
+
+        setAddress(event.url)
+        onUrlChange?.(session.id, pane.id, event.url)
+      }),
+    [browserSessionId, onUrlChange, pane.id, session.id]
+  )
+
+  const handleSubmit = (event: FormEvent<HTMLFormElement>): void => {
+    event.preventDefault()
+    const nextUrl = normalizeUrl(address)
+    setAddress(nextUrl)
+    void navigateBrowserPane({
+      sessionId: browserSessionId,
+      paneId: pane.id,
+      url: nextUrl,
+    })
+  }
+
+  const handleChromePointerDownCapture = useCallback(
+    (event: PointerEvent<HTMLDivElement>): void => {
+      if (pane.active || !onRequestActive) {
+        return
+      }
+
+      suppressNextNativeFocusRef.current = true
+      onRequestFocus?.()
+      onRequestActive(session.id, pane.id)
+      event.stopPropagation()
+    },
+    [onRequestActive, onRequestFocus, pane.active, pane.id, session.id]
+  )
+
+  const handleChromeClick = useCallback(
+    (event: MouseEvent<HTMLDivElement>): void => {
+      event.stopPropagation()
+    },
+    []
+  )
+
+  return (
+    <div
+      className={`flex h-full w-full flex-col overflow-hidden rounded-lg bg-surface shadow-[inset_0_0_0_1px_rgba(108,112,134,0.22)] ${
+        showFocusHighlight && pane.active ? 'ring-1 ring-primary/35' : ''
+      }`}
+      data-testid="browser-pane"
+      data-browser-pane-id={pane.id}
+    >
+      <div
+        className="flex shrink-0 items-center gap-2 bg-surface-container/95 px-2 py-2"
+        onPointerDownCapture={handleChromePointerDownCapture}
+        onClick={handleChromeClick}
+      >
+        <form className="flex min-w-0 flex-1 gap-2" onSubmit={handleSubmit}>
+          <input
+            aria-label="browser address"
+            value={address}
+            onChange={(event): void => setAddress(event.currentTarget.value)}
+            className="min-w-0 flex-1 rounded-md bg-surface-container px-3 py-1.5 font-mono text-[12px] text-on-surface outline-none ring-1 ring-outline-variant/20 transition focus:ring-primary/45"
+          />
+          <button
+            type="submit"
+            className="rounded-md bg-primary/15 px-3 py-1.5 font-mono text-[11px] text-primary transition hover:bg-primary/25 focus:outline-none focus:ring-2 focus:ring-primary/45"
+          >
+            Go
+          </button>
+        </form>
+        {onClose ? (
+          <button
+            type="button"
+            aria-label="close browser pane"
+            onClick={(): void => onClose(session.id, pane.id)}
+            className="rounded-md px-2 py-1 font-mono text-[11px] text-on-surface-muted transition hover:bg-white/[0.06] hover:text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/45"
+          >
+            Close
+          </button>
+        ) : null}
+      </div>
+      <div
+        ref={contentRef}
+        className="relative min-h-0 flex-1 bg-surface-container/60"
+        data-testid="browser-pane-content"
+      >
+        <div className="pointer-events-none absolute inset-0 grid place-items-center bg-surface-container/60 text-center font-mono text-[11px] text-on-surface-muted">
+          <div>
+            <p>Electron WebContentsView browser surface</p>
+            {cdpInfo ? (
+              <p className="mt-2 max-w-[520px] break-all text-primary/80">
+                CDP {cdpInfo.url} token hidden
+              </p>
+            ) : null}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}

@@ -24,3 +24,8 @@ export const deriveSessionStatus = (panes: Pane[]): SessionStatus => {
 
   return 'paused'
 }
+
+const isShellPane = (pane: Pane): boolean => (pane.kind ?? 'shell') === 'shell'
+
+export const deriveShellSessionStatus = (panes: Pane[]): SessionStatus =>
+  deriveSessionStatus(panes.filter(isShellPane))

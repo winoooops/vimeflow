@@ -1,5 +1,5 @@
 import type { LayoutId, Pane, Session } from '../types'
-import { deriveSessionStatus } from './sessionStatus'
+import { deriveShellSessionStatus } from './sessionStatus'
 
 export interface ApplyAddPaneResult {
   sessions: Session[]
@@ -57,6 +57,8 @@ export const nextFreePaneId = (panes: readonly Pane[]): string => {
   return `p${index}`
 }
 
+const isShellPane = (pane: Pane): boolean => (pane.kind ?? 'shell') === 'shell'
+
 export const applyAddPane = (
   sessions: Session[],
   sessionId: string,
@@ -87,7 +89,7 @@ export const applyAddPane = (
   const updated: Session = {
     ...session,
     panes,
-    status: deriveSessionStatus(panes),
+    status: deriveShellSessionStatus(panes),
     agentType: newPane.agentType,
   }
 
@@ -133,7 +135,9 @@ export const applyRemovePane = (
     panes = remaining.map((pane) =>
       pane.id === nextActiveId ? { ...pane, active: true } : pane
     )
-    newActivePtyId = panes.find((pane) => pane.active)?.ptyId
+    const activePane = panes.find((pane) => pane.active)
+    newActivePtyId =
+      activePane && isShellPane(activePane) ? activePane.ptyId : undefined
   }
 
   const activePane = panes.find((pane) => pane.active)
@@ -142,7 +146,7 @@ export const applyRemovePane = (
     ...session,
     panes,
     layout: autoShrinkLayoutFor(panes.length, currentLayoutId),
-    status: deriveSessionStatus(panes),
+    status: deriveShellSessionStatus(panes),
     agentType: activePane?.agentType ?? session.agentType,
   }
 
@@ -152,7 +156,7 @@ export const applyRemovePane = (
       updated,
       ...sessions.slice(sessionIndex + 1),
     ],
-    removedPtyId: closedPane.ptyId,
+    removedPtyId: isShellPane(closedPane) ? closedPane.ptyId : undefined,
     newActivePtyId,
   }
 }

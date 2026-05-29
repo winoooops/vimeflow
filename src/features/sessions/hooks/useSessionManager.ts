@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { flushSync } from 'react-dom'
-import type { LayoutId, Pane, Session } from '../types'
+import type { LayoutId, Pane, PaneKind, Session } from '../types'
 import type { AgentSessionTitleEvent } from '../../../bindings'
 import { listen, type UnlistenFn } from '../../../lib/backend'
 import { isDesktop } from '../../../lib/environment'
@@ -27,12 +27,13 @@ import {
   applyRemovePane,
   nextFreePaneId,
 } from '../utils/paneLifecycle'
-import { deriveSessionStatus } from '../utils/sessionStatus'
+import { deriveShellSessionStatus } from '../utils/sessionStatus'
 import {
   deleteActivityPanelCollapsed,
   writeActivityPanelCollapsed,
 } from '../utils/activityPanelCollapsedStore'
 import { usePtyExitListener } from '../../terminal/hooks/usePtyExitListener'
+import { destroyBrowserPane } from '../../browser/browserBridge'
 import { useAutoCreateOnEmpty } from './useAutoCreateOnEmpty'
 import { useActiveSessionController } from './useActiveSessionController'
 import { useSessionRestore } from './useSessionRestore'
@@ -47,7 +48,7 @@ export interface SessionManager {
   removeSession: (id: string) => void
   setSessionLayout: (sessionId: string, layoutId: LayoutId) => void
   setSessionActivePane: (sessionId: string, paneId: string) => void
-  addPane: (sessionId: string) => void
+  addPane: (sessionId: string, kind?: PaneKind) => void
   removePane: (sessionId: string, paneId: string) => void
   /**
    * Restart an Exited session in the same cwd. Idempotent on the kill side:
@@ -80,6 +81,11 @@ export interface SessionManager {
     sessionId: string,
     paneId: string,
     agentType: Session['agentType']
+  ) => void
+  updateBrowserPaneUrl?: (
+    sessionId: string,
+    paneId: string,
+    browserUrl: string
   ) => void
   /** Toggle the agent activity panel collapse state for ALL panes in the
    *  session at once. UI-only state — persisted via localStorage so the
@@ -138,6 +144,224 @@ const normalizePaneUserLabel = (
   const trimmed = label?.trim()
 
   return trimmed && trimmed.length > 0 ? trimmed : undefined
+}
+
+const isShellPane = (pane: Pane): boolean => (pane.kind ?? 'shell') === 'shell'
+
+const findBackendSessionPane = (session: Session): Pane | undefined => {
+  const activePane = findActivePane(session)
+  if (!activePane) {
+    return undefined
+  }
+
+  return isShellPane(activePane) ? activePane : session.panes.find(isShellPane)
+}
+
+const browserSessionIdForSession = (session: Session): string =>
+  session.browserSessionId ??
+  session.panes.find(isShellPane)?.ptyId ??
+  session.id
+
+interface StoredBrowserPane {
+  sessionId: string
+  shellPtyId?: string
+  paneId: string
+  ptyId: string
+  cwd: string
+  browserUrl: string
+  active: boolean
+}
+
+const BROWSER_PANE_STORE_KEY = 'vimeflow:browser-panes:v1'
+
+const canUseLocalStorage = (): boolean => typeof window !== 'undefined'
+
+const isStoredBrowserPane = (value: unknown): value is StoredBrowserPane =>
+  typeof value === 'object' &&
+  value !== null &&
+  !Array.isArray(value) &&
+  typeof (value as StoredBrowserPane).sessionId === 'string' &&
+  ((value as StoredBrowserPane).shellPtyId === undefined ||
+    typeof (value as StoredBrowserPane).shellPtyId === 'string') &&
+  typeof (value as StoredBrowserPane).paneId === 'string' &&
+  typeof (value as StoredBrowserPane).ptyId === 'string' &&
+  typeof (value as StoredBrowserPane).cwd === 'string' &&
+  typeof (value as StoredBrowserPane).browserUrl === 'string' &&
+  typeof (value as StoredBrowserPane).active === 'boolean'
+
+const readStoredBrowserPanes = (): StoredBrowserPane[] => {
+  if (!canUseLocalStorage()) {
+    return []
+  }
+
+  try {
+    const raw = window.localStorage.getItem(BROWSER_PANE_STORE_KEY)
+    if (!raw) {
+      return []
+    }
+
+    const parsed: unknown = JSON.parse(raw)
+
+    return Array.isArray(parsed) ? parsed.filter(isStoredBrowserPane) : []
+  } catch {
+    return []
+  }
+}
+
+const writeStoredBrowserPanes = (panes: StoredBrowserPane[]): void => {
+  if (!canUseLocalStorage()) {
+    return
+  }
+
+  try {
+    if (panes.length === 0) {
+      window.localStorage.removeItem(BROWSER_PANE_STORE_KEY)
+
+      return
+    }
+
+    window.localStorage.setItem(BROWSER_PANE_STORE_KEY, JSON.stringify(panes))
+  } catch {
+    // Browser pane restore is a convenience cache; quota or storage failures
+    // must not affect terminal session lifecycle.
+  }
+}
+
+const storedBrowserPanesForSessions = (
+  sessions: Session[]
+): StoredBrowserPane[] =>
+  sessions.flatMap((session) => {
+    const shellPtyId = session.panes.find(isShellPane)?.ptyId ?? session.id
+
+    return session.panes
+      .filter((pane) => !isShellPane(pane))
+      .map((pane) => ({
+        sessionId: browserSessionIdForSession(session),
+        shellPtyId,
+        paneId: pane.id,
+        ptyId: pane.ptyId,
+        cwd: pane.cwd,
+        browserUrl: pane.browserUrl ?? 'https://www.youtube.com/',
+        active: pane.active,
+      }))
+  })
+
+const layoutForPaneCount = (
+  currentLayoutId: LayoutId,
+  paneCount: number
+): LayoutId => {
+  if (LAYOUTS[currentLayoutId].capacity >= paneCount) {
+    return currentLayoutId
+  }
+
+  const matchingLayout = Object.values(LAYOUTS).find(
+    (layout) => layout.capacity >= paneCount
+  )
+
+  return matchingLayout?.id ?? currentLayoutId
+}
+
+const restoreStoredBrowserPanes = (sessions: Session[]): Session[] => {
+  const stored = readStoredBrowserPanes()
+  if (stored.length === 0) {
+    return sessions
+  }
+
+  const storedBySession = new Map<string, StoredBrowserPane[]>()
+  const storedByShellPty = new Map<string, StoredBrowserPane[]>()
+  for (const pane of stored) {
+    storedBySession.set(pane.sessionId, [
+      ...(storedBySession.get(pane.sessionId) ?? []),
+      pane,
+    ])
+
+    if (pane.shellPtyId) {
+      storedByShellPty.set(pane.shellPtyId, [
+        ...(storedByShellPty.get(pane.shellPtyId) ?? []),
+        pane,
+      ])
+    }
+  }
+
+  return sessions.map((session) => {
+    const shellPtyId = session.panes.find(isShellPane)?.ptyId ?? session.id
+
+    const storedByStableKey =
+      storedBySession.get(browserSessionIdForSession(session)) ?? []
+    const storedByCurrentShell = storedByShellPty.get(shellPtyId) ?? []
+    const storedByPaneId = new Map<string, StoredBrowserPane>()
+
+    for (const pane of [...storedByStableKey, ...storedByCurrentShell]) {
+      storedByPaneId.set(pane.paneId, pane)
+    }
+
+    const storedForSession = [...storedByPaneId.values()]
+    if (storedForSession.length === 0) {
+      return session
+    }
+
+    const existingPaneIds = new Set(session.panes.map((pane) => pane.id))
+    let restoredActiveBrowser = false
+
+    const restoredBrowserPanes = storedForSession
+      .filter((pane) => {
+        if (existingPaneIds.has(pane.paneId)) {
+          return false
+        }
+
+        existingPaneIds.add(pane.paneId)
+
+        return true
+      })
+      .map((pane) => {
+        const active = pane.active && !restoredActiveBrowser
+        if (active) {
+          restoredActiveBrowser = true
+        }
+
+        return {
+          kind: 'browser',
+          id: pane.paneId,
+          ptyId: pane.ptyId,
+          cwd: pane.cwd,
+          agentType: 'generic',
+          status: 'running',
+          active,
+          browserUrl: pane.browserUrl,
+        } satisfies Pane
+      })
+
+    if (restoredBrowserPanes.length === 0) {
+      return session
+    }
+
+    const hasRestoredActiveBrowser = restoredBrowserPanes.some(
+      (pane) => pane.active
+    )
+
+    const panes = hasRestoredActiveBrowser
+      ? [
+          ...session.panes.map((pane) =>
+            pane.active ? { ...pane, active: false } : pane
+          ),
+          ...restoredBrowserPanes,
+        ]
+      : [...session.panes, ...restoredBrowserPanes]
+
+    const activePane = findActivePane({ ...session, panes })
+
+    const restoredBrowserSessionId =
+      storedForSession[0]?.sessionId ?? browserSessionIdForSession(session)
+
+    return {
+      ...session,
+      browserSessionId: restoredBrowserSessionId,
+      panes,
+      layout: layoutForPaneCount(session.layout, panes.length),
+      status: deriveShellSessionStatus(panes.filter(isShellPane)),
+      agentType: activePane?.agentType ?? session.agentType,
+    }
+  })
 }
 
 /**
@@ -206,7 +430,9 @@ export const useSessionManager = (
     service,
     buffer,
     onRestore: (restored): void => {
-      for (const session of restored) {
+      const restoredWithBrowserPanes = restoreStoredBrowserPanes(restored)
+
+      for (const session of restoredWithBrowserPanes) {
         for (const pane of session.panes) {
           if (pane.restoreData) {
             restoreDataRef.current.set(pane.ptyId, pane.restoreData)
@@ -220,7 +446,7 @@ export const useSessionManager = (
             prev.flatMap((session) => session.panes.map((pane) => pane.ptyId))
           )
 
-          const restoredOnly = restored.filter(
+          const restoredOnly = restoredWithBrowserPanes.filter(
             (session) =>
               !session.panes.some((pane) => inMemoryPtyIds.has(pane.ptyId))
           )
@@ -279,7 +505,7 @@ export const useSessionManager = (
 
         return {
           ...s,
-          status: deriveSessionStatus(newPanes),
+          status: deriveShellSessionStatus(newPanes),
           agentType: activePane?.agentType ?? s.agentType,
           panes: newPanes,
           lastActivityAt: exitedAt,
@@ -448,11 +674,13 @@ export const useSessionManager = (
               name: `session ${prev.length + 1}`,
               status: 'running',
               workingDirectory: result.cwd,
+              browserSessionId: result.sessionId,
               agentType: 'generic',
               layout: 'single',
               activityPanelCollapsed: false,
               panes: [
                 {
+                  kind: 'shell',
                   id: 'p0',
                   ptyId: result.sessionId,
                   cwd: result.cwd,
@@ -485,7 +713,7 @@ export const useSessionManager = (
         // bug), skip the IPC — React state stays, Rust order will catch
         // up on the next reorder.
         const orderIds = sessionsRef.current
-          .map((s) => findActivePane(s)?.ptyId)
+          .map((s) => findBackendSessionPane(s)?.ptyId)
           .filter((ptyId): ptyId is string => ptyId !== undefined)
         if (orderIds.length === sessionsRef.current.length) {
           computedNewOrder = orderIds
@@ -538,7 +766,9 @@ export const useSessionManager = (
   // terminal on first paint. Treat that case the same as empty cache
   // and seed a fresh tab; the Exited tabs remain available for the user
   // to Restart in their original cwd if they want to.
-  const hasLiveSession = sessions.some((s) => s.status === 'running')
+  const hasLiveSession = sessions.some((s) =>
+    s.panes.some((pane) => isShellPane(pane) && pane.status === 'running')
+  )
   useAutoCreateOnEmpty({
     enabled: autoCreateOnEmpty,
     loading,
@@ -546,6 +776,14 @@ export const useSessionManager = (
     pendingSpawns,
     createSession,
   })
+
+  useEffect(() => {
+    if (loading) {
+      return
+    }
+
+    writeStoredBrowserPanes(storedBrowserPanesForSessions(sessions))
+  }, [loading, sessions])
 
   // Remove session — kill + filter + advance active
   const removeSession = useCallback(
@@ -563,7 +801,9 @@ export const useSessionManager = (
         // for the kill loop and the (separate) post-await diff against
         // any new ptyIds the session has acquired during the await
         // window (concurrent restartSession would rotate pane.ptyId).
-        const snapshotPtyIds = target.panes.map((pane) => pane.ptyId)
+        const snapshotPtyIds = target.panes
+          .filter(isShellPane)
+          .map((pane) => pane.ptyId)
 
         const results = await Promise.allSettled(
           snapshotPtyIds.map((ptyId) => service.kill({ sessionId: ptyId }))
@@ -598,7 +838,7 @@ export const useSessionManager = (
         const currentTarget = sessionsRef.current.find((s) => s.id === id)
 
         const currentPtyIds = currentTarget
-          ? currentTarget.panes.map((pane) => pane.ptyId)
+          ? currentTarget.panes.filter(isShellPane).map((pane) => pane.ptyId)
           : []
 
         const newPtyIds = currentPtyIds.filter(
@@ -624,6 +864,36 @@ export const useSessionManager = (
             // Same bail policy as above — refuse to drop the React
             // session if any PTY remains unkilled.
             return
+          }
+        }
+
+        const currentBrowserTarget =
+          sessionsRef.current.find((s) => s.id === id) ?? target
+
+        const browserPanes = currentBrowserTarget.panes.filter(
+          (pane) => !isShellPane(pane)
+        )
+
+        const browserResults = await Promise.allSettled(
+          browserPanes.map((pane) =>
+            destroyBrowserPane({
+              sessionId: browserSessionIdForSession(currentBrowserTarget),
+              paneId: pane.id,
+            })
+          )
+        )
+
+        const browserRejected = browserResults.filter(
+          (result) => result.status === 'rejected'
+        )
+
+        if (browserRejected.length > 0) {
+          for (const result of browserRejected) {
+            // eslint-disable-next-line no-console
+            console.warn(
+              'removeSession: browser pane cleanup failed',
+              result.reason
+            )
           }
         }
 
@@ -774,7 +1044,7 @@ export const useSessionManager = (
       }
       setSessions((prev) => applyActivePane(prev, sessionId, paneId))
 
-      if (sessionId === activeSessionIdRef.current) {
+      if (sessionId === activeSessionIdRef.current && isShellPane(target)) {
         // eslint-disable-next-line promise/prefer-await-to-then
         service.setActiveSession(target.ptyId).catch((err) => {
           // eslint-disable-next-line no-console
@@ -786,7 +1056,7 @@ export const useSessionManager = (
   )
 
   const addPane = useCallback(
-    (sessionId: string): void => {
+    (sessionId: string, kind: PaneKind = 'shell'): void => {
       if (pendingPaneOps.current.has(sessionId)) {
         // eslint-disable-next-line no-console
         console.warn(
@@ -817,6 +1087,51 @@ export const useSessionManager = (
         console.warn(
           `addPane: session ${sessionId} is at capacity for layout ${session.layout}`
         )
+
+        return
+      }
+
+      if (kind === 'browser') {
+        pendingPaneOps.current.add(sessionId)
+        try {
+          const fresh = sessionsRef.current.find((s) => s.id === sessionId)
+          if (!fresh) {
+            // eslint-disable-next-line no-console
+            console.warn(`addPane: no session ${sessionId}`)
+
+            return
+          }
+
+          const newPane: Pane = {
+            kind: 'browser',
+            id: nextFreePaneId(fresh.panes),
+            ptyId: `browser:${crypto.randomUUID()}`,
+            cwd: fresh.workingDirectory,
+            agentType: 'generic',
+            status: 'running',
+            active: true,
+            browserUrl: 'https://www.youtube.com/',
+          }
+
+          let appended = false as boolean
+          flushSync(() => {
+            setSessions((prev) => {
+              const target = prev.find((s) => s.id === sessionId)
+              const capacity = target ? LAYOUTS[target.layout].capacity : 0
+              const update = applyAddPane(prev, sessionId, newPane, capacity)
+              appended = update.appended
+
+              return update.sessions
+            })
+          })
+
+          if (!appended) {
+            // eslint-disable-next-line no-console
+            console.warn(`addPane: reducer rejected browser pane ${sessionId}`)
+          }
+        } finally {
+          pendingPaneOps.current.delete(sessionId)
+        }
 
         return
       }
@@ -866,6 +1181,7 @@ export const useSessionManager = (
           }
 
           const newPane: Pane = {
+            kind: 'shell',
             id: nextFreePaneId(fresh.panes),
             ptyId: result.sessionId,
             cwd: result.cwd,
@@ -963,22 +1279,48 @@ export const useSessionManager = (
         return
       }
 
+      if (
+        isShellPane(target) &&
+        session.panes.filter(isShellPane).length <= 1
+      ) {
+        // eslint-disable-next-line no-console
+        console.warn(
+          `removePane: refusing to remove the last shell pane in ${sessionId}`
+        )
+
+        return
+      }
+
       pendingPaneOps.current.add(sessionId)
 
       void (async (): Promise<void> => {
         try {
-          try {
-            await service.kill({ sessionId: target.ptyId })
-          } catch (err) {
-            // eslint-disable-next-line no-console
-            console.warn('removePane: kill failed; pane preserved', err)
+          if (isShellPane(target)) {
+            try {
+              await service.kill({ sessionId: target.ptyId })
+            } catch (err) {
+              // eslint-disable-next-line no-console
+              console.warn('removePane: kill failed; pane preserved', err)
 
-            return
+              return
+            }
+
+            dropAllForPty(target.ptyId)
+            restoreDataRef.current.delete(target.ptyId)
+            unregisterPtySession(target.ptyId)
+          } else {
+            try {
+              await destroyBrowserPane({
+                sessionId: browserSessionIdForSession(session),
+                paneId,
+              })
+            } catch (err) {
+              // eslint-disable-next-line no-console
+              console.warn('removePane: browser pane cleanup failed', err)
+
+              return
+            }
           }
-
-          dropAllForPty(target.ptyId)
-          restoreDataRef.current.delete(target.ptyId)
-          unregisterPtySession(target.ptyId)
 
           let newActivePtyId: string | undefined
           flushSync(() => {
@@ -997,12 +1339,25 @@ export const useSessionManager = (
             })
           })
 
+          let backendActivePtyId = newActivePtyId
           if (
-            newActivePtyId !== undefined &&
+            backendActivePtyId === undefined &&
+            isShellPane(target) &&
+            sessionId === activeSessionIdRef.current
+          ) {
+            const fresh = sessionsRef.current.find((s) => s.id === sessionId)
+            const activePane = fresh ? findActivePane(fresh) : undefined
+            if (activePane && !isShellPane(activePane)) {
+              backendActivePtyId = fresh?.panes.find(isShellPane)?.ptyId
+            }
+          }
+
+          if (
+            backendActivePtyId !== undefined &&
             sessionId === activeSessionIdRef.current
           ) {
             // eslint-disable-next-line promise/prefer-await-to-then
-            service.setActiveSession(newActivePtyId).catch((err) => {
+            service.setActiveSession(backendActivePtyId).catch((err) => {
               // eslint-disable-next-line no-console
               console.warn('removePane: setActiveSession failed', err)
             })
@@ -1061,6 +1416,12 @@ export const useSessionManager = (
         }
 
         const oldPane = getActivePane(oldSession)
+        if (!isShellPane(oldPane)) {
+          // eslint-disable-next-line no-console
+          console.warn('restartSession: active pane is not a shell pane')
+
+          return
+        }
         const cachedCwd = oldPane.cwd
 
         let result: { sessionId: string; pid: number; cwd: string }
@@ -1161,7 +1522,7 @@ export const useSessionManager = (
         // session lacks an active pane (5b transient state), skip the IPC
         // — Rust order will catch up on the next successful reorder.
         const orderIdsAfter = sessionsRef.current
-          .map((s) => findActivePane(s)?.ptyId)
+          .map((s) => findBackendSessionPane(s)?.ptyId)
           .filter((ptyId): ptyId is string => ptyId !== undefined)
         if (orderIdsAfter.length === sessionsRef.current.length) {
           computedNewOrder = orderIdsAfter
@@ -1283,7 +1644,7 @@ export const useSessionManager = (
       // active pane (5b transient state), bail BEFORE setSessions so
       // React and Rust stay aligned.
       const ids = reordered
-        .map((s) => findActivePane(s)?.ptyId)
+        .map((s) => findBackendSessionPane(s)?.ptyId)
         .filter((ptyId): ptyId is string => ptyId !== undefined)
       if (ids.length !== reordered.length) {
         // eslint-disable-next-line no-console
@@ -1380,6 +1741,49 @@ export const useSessionManager = (
     []
   )
 
+  const updateBrowserPaneUrl = useCallback(
+    (sessionId: string, paneId: string, browserUrl: string): void => {
+      setSessions((prev) => {
+        const sessionIndex = prev.findIndex(
+          (session) => session.id === sessionId
+        )
+
+        if (sessionIndex === -1) {
+          return prev
+        }
+
+        const session = prev[sessionIndex]
+
+        const paneIndex = session.panes.findIndex(
+          (pane) => pane.id === paneId && !isShellPane(pane)
+        )
+
+        if (paneIndex === -1) {
+          return prev
+        }
+
+        const pane = session.panes[paneIndex]
+        if (pane.browserUrl === browserUrl) {
+          return prev
+        }
+
+        const panes = [
+          ...session.panes.slice(0, paneIndex),
+          { ...pane, browserUrl },
+          ...session.panes.slice(paneIndex + 1),
+        ]
+        const updatedSession = { ...session, panes }
+
+        return [
+          ...prev.slice(0, sessionIndex),
+          updatedSession,
+          ...prev.slice(sessionIndex + 1),
+        ]
+      })
+    },
+    []
+  )
+
   const setSessionActivityPanelCollapsed = useCallback(
     (sessionId: string, collapsed: boolean): void => {
       const session = sessionsRef.current.find((s) => s.id === sessionId)
@@ -1447,6 +1851,7 @@ export const useSessionManager = (
     reorderSessions,
     updatePaneCwd,
     updatePaneAgentType,
+    updateBrowserPaneUrl,
     setSessionActivityPanelCollapsed,
     updateSessionCwd,
     updateSessionAgentType,

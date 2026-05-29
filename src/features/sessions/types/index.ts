@@ -5,14 +5,27 @@ export type SessionStatus = 'running' | 'paused' | 'completed' | 'errored'
 
 export type LayoutId = 'single' | 'vsplit' | 'hsplit' | 'threeRight' | 'quad'
 
+export type PaneKind = 'shell' | 'browser'
+
 export interface Pane {
+  /**
+   * Pane renderer kind. Undefined means the legacy shell pane so restored
+   * sessions, older tests, and existing serialized state keep their behavior.
+   */
+  kind?: PaneKind
+
   /** Session-scoped pane id, e.g. `'p0'`, `'p1'`. Stable across renders;
    * used to address the pane within `Session.panes`. NOT a Rust handle. */
   id: string
 
   /** Rust PTY handle. Equals what the Rust IPC layer calls `sessionId` on
-   * the wire. Used for every PTY operation. */
+   * the wire. Used for every PTY operation. Browser panes use a stable
+   * `browser:<uuid>` pseudo-handle so existing pane identity plumbing can
+   * remain additive. */
   ptyId: string
+
+  /** Initial/current browser URL for browser panes. Ignored by shell panes. */
+  browserUrl?: string
 
   /** Per-pane working directory. */
   cwd: string
@@ -76,6 +89,11 @@ export interface Session {
   status: SessionStatus
   /** Stable session/project cwd used as the baseline for new panes. */
   workingDirectory: string
+  /** Stable native-browser owner key. Defaults to the first shell PTY for
+   *  older in-memory sessions, but once set it survives shell pane restarts
+   *  and close/reorder operations so WebContentsView partition/control keys
+   *  stay stable for the lifetime of the Vimeflow session. */
+  browserSessionId?: string
   /** Derived from `getActivePane(session).agentType`; retained for existing chrome. */
   agentType: 'claude-code' | 'codex' | 'aider' | 'generic'
   /** Per-session canvas layout. Default 'single' in step 5a. */

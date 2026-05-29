@@ -67,6 +67,8 @@ const sendCommandPaletteToggle = (win: BrowserWindow): void => {
   win.webContents.send(COMMAND_PALETTE_TOGGLE)
 }
 
+const commandPaletteToggleDispatchers = new WeakMap<BrowserWindow, () => void>()
+
 const createCommandPaletteToggleDispatcher = (
   win: BrowserWindow
 ): (() => void) => {
@@ -84,6 +86,20 @@ const createCommandPaletteToggleDispatcher = (
   }
 }
 
+export const commandPaletteToggleDispatcherForWindow = (
+  win: BrowserWindow
+): (() => void) => {
+  const existing = commandPaletteToggleDispatchers.get(win)
+  if (existing) {
+    return existing
+  }
+
+  const dispatcher = createCommandPaletteToggleDispatcher(win)
+  commandPaletteToggleDispatchers.set(win, dispatcher)
+
+  return dispatcher
+}
+
 export const installCommandPaletteShortcutOverride = (
   win: BrowserWindow,
   options: CommandPaletteShortcutOverrideOptions = {}
@@ -91,7 +107,9 @@ export const installCommandPaletteShortcutOverride = (
   const platform = options.platform ?? process.platform
   const shortcutRegistry = options.shortcutRegistry ?? globalShortcut
   const shortcutConfig = commandPaletteShortcutConfigForPlatform(platform)
-  const dispatchCommandPaletteToggle = createCommandPaletteToggleDispatcher(win)
+
+  const dispatchCommandPaletteToggle =
+    commandPaletteToggleDispatcherForWindow(win)
   let registeredAccelerators: string[] = []
 
   const registerFocusedLinuxShortcuts = (): void => {

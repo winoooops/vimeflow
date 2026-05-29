@@ -7,7 +7,7 @@ import {
   type PointerEvent,
   type ReactElement,
 } from 'react'
-import type { LayoutId, Session } from '../../sessions/types'
+import type { LayoutId, PaneKind, Session } from '../../sessions/types'
 import type { ITerminalService } from '../../terminal/services/terminalService'
 import type {
   PaneEventHandler,
@@ -51,9 +51,15 @@ export interface TerminalZoneProps {
    */
   service: ITerminalService
   setSessionActivePane: (sessionId: string, paneId: string) => void
+  updateBrowserPaneUrl?: (
+    sessionId: string,
+    paneId: string,
+    browserUrl: string
+  ) => void
   setSessionLayout: (sessionId: string, layoutId: LayoutId) => void
-  addPane: (sessionId: string) => void
+  addPane: (sessionId: string, kind?: PaneKind) => void
   removePane: (sessionId: string, paneId: string) => void
+  areBrowserPanesOccluded?: boolean
   isZoneFocused?: boolean
   onContainerFocus?: () => void
 }
@@ -74,9 +80,11 @@ export const TerminalZone = forwardRef<TerminalZoneHandle, TerminalZoneProps>(
       deferTerminalFit = false,
       service,
       setSessionActivePane,
+      updateBrowserPaneUrl = undefined,
       setSessionLayout,
       addPane,
       removePane,
+      areBrowserPanesOccluded = false,
       isZoneFocused = true,
       onContainerFocus = undefined,
     }: TerminalZoneProps,
@@ -247,8 +255,11 @@ export const TerminalZone = forwardRef<TerminalZoneHandle, TerminalZoneProps>(
                     onPaneReady={onPaneReady}
                     onSessionRestart={onSessionRestart}
                     onSetActivePane={setSessionActivePane}
+                    onBrowserPaneUrlChange={updateBrowserPaneUrl}
+                    onRequestFocus={onContainerFocus}
                     onAddPane={addPane}
                     onClosePane={removePane}
+                    areBrowserPanesOccluded={areBrowserPanesOccluded}
                     deferTerminalFit={deferTerminalFit}
                     showPaneFocusHighlight={isZoneFocused}
                   />

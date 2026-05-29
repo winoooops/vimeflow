@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import type { Pane } from '../types'
-import { deriveSessionStatus } from './sessionStatus'
+import { deriveSessionStatus, deriveShellSessionStatus } from './sessionStatus'
 
 const pane = (status: Pane['status']): Pane => ({
   id: 'p0',
@@ -9,6 +9,13 @@ const pane = (status: Pane['status']): Pane => ({
   agentType: 'generic',
   status,
   active: true,
+})
+
+const browserPane = (status: Pane['status']): Pane => ({
+  ...pane(status),
+  kind: 'browser',
+  id: 'p-browser',
+  ptyId: 'browser:x',
 })
 
 describe('deriveSessionStatus', () => {
@@ -45,5 +52,15 @@ describe('deriveSessionStatus', () => {
     // hard bug; surface it as 'errored' rather than vacuously 'completed'
     // (Array.every of an empty array is true).
     expect(deriveSessionStatus([])).toBe('errored')
+  })
+
+  test('shell liveness ignores running browser panes', () => {
+    expect(
+      deriveShellSessionStatus([pane('completed'), browserPane('running')])
+    ).toBe('completed')
+  })
+
+  test('browser-only liveness surfaces missing shell as errored', () => {
+    expect(deriveShellSessionStatus([browserPane('running')])).toBe('errored')
   })
 })

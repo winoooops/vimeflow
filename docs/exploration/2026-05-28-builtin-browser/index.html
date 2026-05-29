@@ -1,0 +1,1258 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Vimeflow Built-in Browser Spike Proposal</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --base: #1e1e2e;
+        --mantle: #181825;
+        --crust: #11111b;
+        --surface-0: #313244;
+        --surface-1: #45475a;
+        --surface-2: #585b70;
+        --overlay-0: #6c7086;
+        --overlay-1: #7f849c;
+        --text: #cdd6f4;
+        --subtext: #bac2de;
+        --muted: #a6adc8;
+        --mauve: #cba6f7;
+        --blue: #89b4fa;
+        --sapphire: #74c7ec;
+        --teal: #94e2d5;
+        --green: #a6e3a1;
+        --yellow: #f9e2af;
+        --peach: #fab387;
+        --red: #f38ba8;
+        --rosewater: #f5e0dc;
+        --shadow: rgba(0, 0, 0, 0.38);
+        --glass: rgba(49, 50, 68, 0.58);
+        --glass-strong: rgba(69, 71, 90, 0.7);
+        font-family:
+          Manrope,
+          ui-sans-serif,
+          system-ui,
+          -apple-system,
+          BlinkMacSystemFont,
+          'Segoe UI',
+          sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html {
+        background: var(--crust);
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background:
+          radial-gradient(
+            circle at 12% 8%,
+            rgba(116, 199, 236, 0.18),
+            transparent 34rem
+          ),
+          radial-gradient(
+            circle at 88% 18%,
+            rgba(203, 166, 247, 0.16),
+            transparent 32rem
+          ),
+          linear-gradient(135deg, var(--crust), var(--mantle) 40%, var(--base));
+        color: var(--text);
+        line-height: 1.55;
+      }
+
+      a {
+        color: var(--sapphire);
+        text-decoration: none;
+      }
+
+      a:hover {
+        color: var(--blue);
+        text-decoration: underline;
+      }
+
+      .page {
+        width: min(1180px, calc(100vw - 32px));
+        margin: 0 auto;
+        padding: 48px 0 72px;
+      }
+
+      .hero,
+      .panel,
+      .callout,
+      .matrix-wrap {
+        border: 1px solid rgba(88, 91, 112, 0.28);
+        background: var(--glass);
+        box-shadow: 0 24px 70px var(--shadow);
+        backdrop-filter: blur(18px) saturate(124%);
+      }
+
+      .hero {
+        position: relative;
+        overflow: hidden;
+        border-radius: 28px;
+        padding: clamp(28px, 5vw, 56px);
+      }
+
+      .hero::after {
+        content: '';
+        position: absolute;
+        inset: auto -12% -45% 48%;
+        height: 320px;
+        background: linear-gradient(
+          90deg,
+          rgba(148, 226, 213, 0.18),
+          rgba(203, 166, 247, 0.12)
+        );
+        filter: blur(28px);
+        transform: rotate(-8deg);
+      }
+
+      .eyebrow {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        margin: 0 0 18px;
+        color: var(--teal);
+        font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+        font-size: 12px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+
+      h1,
+      h2,
+      h3 {
+        margin: 0;
+        line-height: 1.08;
+        letter-spacing: -0.04em;
+      }
+
+      h1 {
+        max-width: 880px;
+        font-size: clamp(42px, 7vw, 82px);
+      }
+
+      h2 {
+        margin-bottom: 18px;
+        color: var(--rosewater);
+        font-size: clamp(28px, 4vw, 44px);
+      }
+
+      h3 {
+        color: var(--text);
+        font-size: 21px;
+      }
+
+      p {
+        margin: 0;
+      }
+
+      .lede {
+        position: relative;
+        z-index: 1;
+        max-width: 790px;
+        margin-top: 22px;
+        color: var(--subtext);
+        font-size: 18px;
+      }
+
+      .meta-grid,
+      .cards,
+      .flow,
+      .decision-grid {
+        display: grid;
+        gap: 16px;
+      }
+
+      .meta-grid {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        margin-top: 28px;
+      }
+
+      .meta-card {
+        border-radius: 18px;
+        background: rgba(17, 17, 27, 0.44);
+        padding: 16px;
+      }
+
+      .meta-card strong {
+        display: block;
+        color: var(--text);
+        font-size: 14px;
+      }
+
+      .meta-card span {
+        display: block;
+        margin-top: 4px;
+        color: var(--muted);
+        font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+        font-size: 12px;
+      }
+
+      section {
+        margin-top: 34px;
+      }
+
+      .panel {
+        border-radius: 24px;
+        padding: clamp(22px, 4vw, 34px);
+      }
+
+      .cards {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      .card {
+        min-height: 180px;
+        border-radius: 20px;
+        background: rgba(17, 17, 27, 0.36);
+        padding: 20px;
+      }
+
+      .card p,
+      .panel p,
+      li {
+        color: var(--subtext);
+      }
+
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        border-radius: 999px;
+        margin-bottom: 12px;
+        padding: 5px 9px;
+        background: rgba(203, 166, 247, 0.13);
+        color: var(--mauve);
+        font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+        font-size: 11px;
+      }
+
+      .callout {
+        border-radius: 22px;
+        margin-top: 18px;
+        padding: 20px;
+      }
+
+      .callout.good {
+        border-color: rgba(166, 227, 161, 0.35);
+        background: rgba(166, 227, 161, 0.09);
+      }
+
+      .callout.warn {
+        border-color: rgba(249, 226, 175, 0.34);
+        background: rgba(249, 226, 175, 0.08);
+      }
+
+      .callout.risk {
+        border-color: rgba(243, 139, 168, 0.34);
+        background: rgba(243, 139, 168, 0.08);
+      }
+
+      .matrix-wrap {
+        overflow-x: auto;
+        border-radius: 24px;
+      }
+
+      table {
+        width: 100%;
+        min-width: 980px;
+        border-collapse: collapse;
+        font-size: 14px;
+      }
+
+      th,
+      td {
+        border-bottom: 1px solid rgba(88, 91, 112, 0.28);
+        padding: 14px;
+        text-align: left;
+        vertical-align: top;
+      }
+
+      th {
+        color: var(--teal);
+        font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+        font-size: 11px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      td:first-child {
+        color: var(--text);
+        font-weight: 700;
+      }
+
+      tr:last-child td {
+        border-bottom: 0;
+      }
+
+      .score {
+        display: inline-flex;
+        border-radius: 999px;
+        padding: 4px 8px;
+        font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+        font-size: 11px;
+      }
+
+      .score.high {
+        background: rgba(166, 227, 161, 0.13);
+        color: var(--green);
+      }
+
+      .score.med {
+        background: rgba(249, 226, 175, 0.13);
+        color: var(--yellow);
+      }
+
+      .score.low {
+        background: rgba(243, 139, 168, 0.13);
+        color: var(--red);
+      }
+
+      ul,
+      ol {
+        margin: 12px 0 0;
+        padding-left: 20px;
+      }
+
+      li + li {
+        margin-top: 8px;
+      }
+
+      code,
+      pre {
+        font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+      }
+
+      code {
+        color: var(--teal);
+      }
+
+      pre {
+        overflow-x: auto;
+        border-radius: 18px;
+        margin: 16px 0 0;
+        padding: 18px;
+        background: rgba(17, 17, 27, 0.72);
+        color: var(--text);
+        font-size: 13px;
+      }
+
+      .flow {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+      }
+
+      .step {
+        position: relative;
+        border-radius: 18px;
+        background: rgba(17, 17, 27, 0.38);
+        padding: 18px;
+      }
+
+      .step .num {
+        display: inline-grid;
+        width: 28px;
+        height: 28px;
+        margin-bottom: 12px;
+        place-items: center;
+        border-radius: 999px;
+        background: rgba(116, 199, 236, 0.14);
+        color: var(--sapphire);
+        font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+        font-size: 12px;
+      }
+
+      .decision-grid {
+        grid-template-columns: 1.15fr 0.85fr;
+      }
+
+      .sources {
+        columns: 2;
+        column-gap: 28px;
+      }
+
+      .sources li {
+        break-inside: avoid;
+        font-size: 13px;
+      }
+
+      @media (max-width: 860px) {
+        .meta-grid,
+        .cards,
+        .flow,
+        .decision-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .sources {
+          columns: 1;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <header class="hero">
+        <p class="eyebrow">Vimeflow exploration / 2026-05-28</p>
+        <h1>
+          Built-in browser hosting paths for terminal-first agent workspaces
+        </h1>
+        <p class="lede">
+          This proposal compares the practical ways Vimeflow can host a real
+          browser inside the Electron workspace, recommends a path for the
+          spike, and sketches the agent-plugin boundary needed for Claude Code,
+          Codex, and the existing claude-in-chrome MCP server to drive browser
+          panes without taking over system Chrome.
+        </p>
+        <div class="meta-grid" aria-label="proposal metadata">
+          <div class="meta-card">
+            <strong>Recommended host</strong>
+            <span>Electron WebContentsView</span>
+          </div>
+          <div class="meta-card">
+            <strong>Automation surface</strong>
+            <span>pane-scoped CDP proxy</span>
+          </div>
+          <div class="meta-card">
+            <strong>Profile model</strong>
+            <span>persistent cookies/cache per workspace session</span>
+          </div>
+          <div class="meta-card">
+            <strong>Sync policy</strong>
+            <span>app-scoped profile, no Chrome sync</span>
+          </div>
+        </div>
+      </header>
+
+      <section class="panel" aria-labelledby="requirements-heading">
+        <h2 id="requirements-heading">Decision criteria</h2>
+        <div class="cards">
+          <article class="card">
+            <span class="badge">must support</span>
+            <h3>User-visible browser pane</h3>
+            <p>
+              Browser content must appear as a pane in the same workspace canvas
+              as shell panes, keep audio, support ordinary navigation, and fit
+              Vimeflow's split-pane mental model.
+            </p>
+          </article>
+          <article class="card">
+            <span class="badge">must support</span>
+            <h3>Agent-grade control</h3>
+            <p>
+              External clients need a stable target they can list, attach to,
+              navigate, inspect, and evaluate with Chrome DevTools Protocol
+              semantics.
+            </p>
+          </article>
+          <article class="card">
+            <span class="badge">must preserve</span>
+            <h3>Local security boundary</h3>
+            <p>
+              Remote web content must have no Node integration, no access to
+              Vimeflow IPC, no system Chrome profile reuse, and no Google
+              account sync path. Durable cookies and cache stay inside
+              Vimeflow-owned partitions.
+            </p>
+          </article>
+        </div>
+        <div class="callout warn">
+          <strong>Implementation constraint.</strong>
+          The final spike needs a renderer mount point in the existing SplitView
+          empty-slot flow. The proposal can be produced inside the current
+          documentation allowlist, but the working pane requires additive
+          changes to the current SplitView/TerminalZone host files unless the
+          app is refactored first.
+        </div>
+      </section>
+
+      <section aria-labelledby="matrix-heading">
+        <h2 id="matrix-heading">Comparison matrix</h2>
+        <div class="matrix-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Path</th>
+                <th>Fit for Vimeflow pane</th>
+                <th>Media and DRM</th>
+                <th>Agent control</th>
+                <th>Security posture</th>
+                <th>Recommendation</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>WebContentsView</td>
+                <td>
+                  <span class="score high">high</span><br />Native Electron View
+                  created and positioned by the main process; can be layered
+                  with multiple pages in one window.
+                </td>
+                <td>
+                  <span class="score high">best native path</span><br />Uses
+                  Chromium webContents, audio APIs, permission handlers, and the
+                  same CDP target model. Widevine still depends on a licensed
+                  CDM-capable Electron distribution.
+                </td>
+                <td>
+                  <span class="score high">high</span><br />Expose targets
+                  through Electron remote debugging or bridge selected CDP
+                  commands through the main-process Debugger API.
+                </td>
+                <td>
+                  <span class="score high">strong</span><br />No DOM-created
+                  guest tag; enforce webPreferences centrally: nodeIntegration
+                  false, contextIsolation true, sandbox true, scoped partition.
+                </td>
+                <td>Use for spike and production design.</td>
+              </tr>
+              <tr>
+                <td>&lt;webview&gt;</td>
+                <td>
+                  <span class="score med">medium</span><br />Easy DOM mount
+                  inside React, but Electron warns against it and requires
+                  enabling webviewTag on the host BrowserWindow.
+                </td>
+                <td>
+                  <span class="score med">medium</span><br />Can use partitions
+                  and webContents-like methods, but stability and event-routing
+                  risks are known.
+                </td>
+                <td>
+                  <span class="score med">medium</span><br />Control is
+                  available through webview APIs, but target lifecycle is
+                  renderer-owned and easier to misconfigure.
+                </td>
+                <td>
+                  <span class="score low">weaker</span><br />DOM scripts can
+                  create tags unless will-attach-webview is strictly denied or
+                  sanitized.
+                </td>
+                <td>Reject except as a quick throwaway demo.</td>
+              </tr>
+              <tr>
+                <td>BrowserView</td>
+                <td>
+                  <span class="score med">medium</span><br />Historically
+                  similar to the needed shape, but it is deprecated in favor of
+                  WebContentsView.
+                </td>
+                <td>
+                  <span class="score med">medium</span><br />Same broad Chromium
+                  media model, but no reason to start new work on a deprecated
+                  API.
+                </td>
+                <td>
+                  <span class="score med">medium</span><br />webContents can be
+                  automated, but migration debt is immediate.
+                </td>
+                <td>
+                  <span class="score med">medium</span><br />Main-process
+                  controlled, but deprecated API surface increases long-term
+                  risk.
+                </td>
+                <td>Reject for new code.</td>
+              </tr>
+              <tr>
+                <td>BrowserWindow child or popup host</td>
+                <td>
+                  <span class="score low">low</span><br />Can host a real
+                  browser, but window-manager behavior fights the
+                  DockPanel/SplitView illusion.
+                </td>
+                <td>
+                  <span class="score high">high</span><br />Normal BrowserWindow
+                  media behavior. DRM still CDM-gated.
+                </td>
+                <td>
+                  <span class="score high">high</span><br />Easy CDP target and
+                  webContents control.
+                </td>
+                <td>
+                  <span class="score med">medium</span><br />Can be hardened,
+                  but focus, z-order, and lifecycle drift from pane ownership.
+                </td>
+                <td>Keep as fallback for detached browser windows only.</td>
+              </tr>
+              <tr>
+                <td>iframe in renderer DOM</td>
+                <td>
+                  <span class="score low">low</span><br />Fits React layout but
+                  fails many real sites due CSP, X-Frame-Options, and feature
+                  limitations.
+                </td>
+                <td>
+                  <span class="score low">low</span><br />No browser-chrome
+                  control; third-party auth and protected media are unreliable.
+                </td>
+                <td>
+                  <span class="score low">low</span><br />No first-class
+                  per-pane CDP target for the embedded page.
+                </td>
+                <td>
+                  <span class="score med">medium</span><br />Sandboxable, but
+                  too constrained for the product goal.
+                </td>
+                <td>
+                  Reject for browser pane; acceptable only for trusted docs
+                  previews.
+                </td>
+              </tr>
+              <tr>
+                <td>CDP-attached embedded Chromium</td>
+                <td>
+                  <span class="score high">high</span><br />This is
+                  WebContentsView plus app-level remote debugging: a visible
+                  Electron WebContents with an externally attachable CDP target.
+                </td>
+                <td>
+                  <span class="score high">high</span><br />Same as
+                  WebContentsView. CDP does not solve Widevine availability by
+                  itself.
+                </td>
+                <td>
+                  <span class="score high">high</span><br />Best compatibility
+                  with chrome-remote-interface and existing MCP tooling when
+                  exposed through a pane-scoped proxy.
+                </td>
+                <td>
+                  <span class="score med">medium</span><br />Raw Electron remote
+                  debugging exposes every app webContents, including the trusted
+                  shell. Use it only as a dev diagnostic, or put a pane-scoped
+                  proxy in front of Electron's Debugger API.
+                </td>
+                <td>Use as the spike's automation mode.</td>
+              </tr>
+              <tr>
+                <td>Headless Chromium plus screencast</td>
+                <td>
+                  <span class="score low">low</span><br />Can draw frames into
+                  canvas, but does not feel like a native user browser pane.
+                </td>
+                <td>
+                  <span class="score low">low</span><br />Audio routing, user
+                  gestures, popups, protected media, and input latency are
+                  difficult.
+                </td>
+                <td>
+                  <span class="score high">high</span><br />Excellent CDP
+                  control, especially for agents.
+                </td>
+                <td>
+                  <span class="score med">medium</span><br />Separate process
+                  isolation is good, but profile and binary management become
+                  product problems.
+                </td>
+                <td>
+                  Reject for user pane; useful for background agent-only
+                  browsing.
+                </td>
+              </tr>
+              <tr>
+                <td>Electron offscreen rendering</td>
+                <td>
+                  <span class="score low">low</span><br />Electron can emit
+                  paint frames from offscreen windows, but Vimeflow would need
+                  an interaction compositor.
+                </td>
+                <td>
+                  <span class="score low">low</span><br />Offscreen frame
+                  capture is not the right acceptance path for audio and
+                  protected streaming evidence.
+                </td>
+                <td>
+                  <span class="score med">medium</span><br />The backing
+                  webContents can be controlled, but the pane is a canvas
+                  projection.
+                </td>
+                <td>
+                  <span class="score med">medium</span><br />Potentially
+                  isolated, but more code and more failure modes.
+                </td>
+                <td>Reject for this spike.</td>
+              </tr>
+              <tr>
+                <td>WebDriver-driven browser</td>
+                <td>
+                  <span class="score low">low</span><br />Good for E2E tests,
+                  not for hosting third-party web content as an in-app pane.
+                </td>
+                <td>
+                  <span class="score med">medium</span><br />Depends on the
+                  actual driven browser. It does not solve embedding.
+                </td>
+                <td>
+                  <span class="score med">medium</span><br />Portable automation
+                  API, but lower fidelity than CDP for DevTools-style
+                  inspection.
+                </td>
+                <td>
+                  <span class="score med">medium</span><br />Extra driver
+                  processes and binary matching increase support burden.
+                </td>
+                <td>Keep for tests, not runtime browser panes.</td>
+              </tr>
+              <tr>
+                <td>Existing system Chrome plus MCP</td>
+                <td>
+                  <span class="score low">low</span><br />No in-app pane. It is
+                  an adjacent browser controlled by a separate server.
+                </td>
+                <td>
+                  <span class="score high">high</span><br />Best chance of
+                  consumer DRM because it uses the user's installed Chrome, but
+                  it violates the no system-Chrome modification path for the
+                  built-in spike.
+                </td>
+                <td>
+                  <span class="score high">high</span><br />Already matches
+                  claude-in-chrome style workflows.
+                </td>
+                <td>
+                  <span class="score low">low</span><br />Uses user profile
+                  state unless carefully launched with a separate profile, and
+                  cannot provide Vimeflow-scoped pane lifecycle.
+                </td>
+                <td>Coexist, do not replace the built-in browser.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel" aria-labelledby="recommendation-heading">
+        <h2 id="recommendation-heading">Recommendation</h2>
+        <div class="decision-grid">
+          <div>
+            <h3>
+              Ship the spike on WebContentsView plus app-scoped CDP exposure.
+            </h3>
+            <p>
+              WebContentsView is the only current Electron-native path that is
+              main-process controlled, non-deprecated, compatible with real
+              Chromium webContents behavior, and suitable for a pane that agents
+              can also inspect. The renderer should own intent and geometry
+              only; Electron main should own browser creation, partitioning,
+              navigation, permissions, target identity, and teardown.
+            </p>
+            <ul>
+              <li>
+                Create one WebContentsView per browser pane from Electron main.
+              </li>
+              <li>
+                Use a persistent app partition named
+                <code
+                  >persist:vimeflow-browser:&lt;workspaceId&gt;:&lt;sessionId&gt;</code
+                >
+                so cookies, HTTP cache, IndexedDB, localStorage, and service
+                worker state survive app restarts for normal developer workflows
+                such as GitHub sign-in, SaaS dashboards, YouTube tutorials, and
+                music/video sites.
+              </li>
+              <li>
+                Keep that persistence app-scoped rather than
+                system-Chrome-scoped: no imported Chrome profile, no Chrome
+                extensions, no Google account sync, and no defaultSession
+                sharing with the Vimeflow shell.
+              </li>
+              <li>
+                Disable Node integration, keep context isolation and sandboxing,
+                and never attach the Vimeflow preload to remote browser content.
+              </li>
+              <li>
+                Expose automation through a Vimeflow-owned CDP-compatible proxy
+                that lists only registered browser pane targets and forwards
+                allowed commands through Electron's Debugger API. Require an
+                explicit per-pane user grant, an ephemeral capability token, and
+                a strict WebSocket <code>Origin</code> allowlist before
+                attachment. Do not expose the trusted Vimeflow shell webContents
+                to external CDP clients.
+              </li>
+              <li>
+                Keep Electron's raw <code>remote-debugging-port</code> dev-only
+                for diagnostics. It is not the production or plugin security
+                boundary because Chromium's target list is app-wide.
+              </li>
+              <li>
+                Use <code>session.setPermissionRequestHandler</code> to deny
+                permissions by default. Ordinary video/audio playback does not
+                require <code>media</code>; keep camera/microphone capture
+                denied unless a future explicit capture prompt is added. Handle
+                <code>mediaKeySystem</code> separately for EME/Widevine checks.
+              </li>
+            </ul>
+          </div>
+          <aside class="callout good">
+            <h3>Why not &lt;webview&gt;?</h3>
+            <p>
+              The webview tag is tempting because it fits in JSX, but Electron
+              documents it as not recommended and not guaranteed to remain
+              available. Vimeflow's browser pane is infrastructure for agents,
+              auth, playback, and long-running workspace state, so the lifecycle
+              should be owned by the trusted main process, not a DOM-created
+              guest element.
+            </p>
+          </aside>
+        </div>
+        <div class="callout risk">
+          <strong>Widevine risk.</strong>
+          The architecture can request <code>mediaKeySystem</code> permission,
+          but stock Electron availability of Widevine-protected playback is a
+          distribution and licensing question. If the current Electron binary
+          cannot create <code>com.widevine.alpha</code> media keys, the smallest
+          honest path is a user decision: adopt a CDM-capable Electron
+          distribution such as a Castlabs-style build, accept a non-DRM playback
+          spike, or keep Widevine evidence delegated to external Chrome while
+          Vimeflow implements the built-in non-DRM browser pane.
+        </div>
+      </section>
+
+      <section class="panel" aria-labelledby="profile-heading">
+        <h2 id="profile-heading">Persistent profile and cache policy</h2>
+        <p>
+          A cache-stripped browser is not useful for the primary Vimeflow use
+          cases. Developers need to stay signed into GitHub, cloud consoles,
+          deployment dashboards, documentation sites, video tutorials, and music
+          services while an agent works in the same project. The browser pane
+          should therefore behave like a durable app-owned browser profile, not
+          like an incognito automation tab.
+        </p>
+        <ul>
+          <li>
+            <strong>Persist by default:</strong> keep cookies, HTTP cache,
+            storage buckets, IndexedDB, localStorage, sessionStorage restoration
+            where Chromium supports it, media licenses where supported, and
+            service worker registrations inside the partition.
+          </li>
+          <li>
+            <strong>Scope by workspace/session:</strong> default to
+            <code
+              >persist:vimeflow-browser:&lt;workspaceId&gt;:&lt;sessionId&gt;</code
+            >
+            so one project can reuse sign-ins without leaking state into
+            unrelated workspaces. A later product setting can opt into a shared
+            <code>persist:vimeflow-browser:global</code> profile for users who
+            want one browser identity across projects.
+          </li>
+          <li>
+            <strong>No Google sync:</strong> do not reuse system Chrome user
+            data, do not launch system Chrome, do not import Chrome cookies, and
+            do not enable browser account sync. Signing into websites inside the
+            pane is allowed; syncing the browser profile itself is not.
+          </li>
+          <li>
+            <strong>Renderer refresh survival:</strong> the pane model should be
+            mirrored into app localStorage and the main-process
+            <code>WebContentsView</code> should survive a renderer
+            <code>Ctrl+Shift+R</code> reload. The refreshed React tree remounts
+            the same pane ids and reconnects to the still-live native browser,
+            preserving in-page login state, media playback context, cookies, and
+            cache where Chromium allows.
+          </li>
+          <li>
+            <strong>Popup login support:</strong> allow bounded
+            <code>window.open</code> login windows for <code>http:</code>,
+            <code>https:</code>, and OAuth <code>about:blank</code> bootstrap
+            popups. These windows must use the same Vimeflow partition as the
+            parent pane, keep Node/preload disabled, and never use the system
+            Chrome profile.
+          </li>
+          <li>
+            <strong>User controls:</strong> expose clear actions for
+            <code>Clear site data for this pane</code>,
+            <code>Reset workspace browser profile</code>, and
+            <code>Open temporary private browser pane</code>. The private option
+            is secondary and must not be the default.
+          </li>
+          <li>
+            <strong>Agent safety:</strong> plugin tools can read and operate the
+            active pane only with explicit browser-tool permissions. Persistent
+            authenticated sessions make permission prompts more important, not
+            less.
+          </li>
+        </ul>
+      </section>
+
+      <section class="panel" aria-labelledby="architecture-heading">
+        <h2 id="architecture-heading">Spike architecture</h2>
+        <div class="flow">
+          <article class="step">
+            <span class="num">1</span>
+            <h3>Renderer chooses pane kind</h3>
+            <p>
+              Empty SplitView slots show Shell and Browser choices. Shell keeps
+              the existing PTY flow. Browser creates a pane with
+              <code>kind: "browser"</code>.
+            </p>
+          </article>
+          <article class="step">
+            <span class="num">2</span>
+            <h3>Main owns WebContentsView</h3>
+            <p>
+              Renderer sends pane identity and element bounds. Main creates or
+              moves the WebContentsView and loads the current URL.
+            </p>
+          </article>
+          <article class="step">
+            <span class="num">3</span>
+            <h3>Persistent partition</h3>
+            <p>
+              The view uses a Vimeflow partition, not defaultSession and not
+              system Chrome. Cookie persistence is app scoped and session
+              scoped.
+            </p>
+          </article>
+          <article class="step">
+            <span class="num">4</span>
+            <h3>CDP attaches externally</h3>
+            <p>
+              A chrome-remote-interface client lists the Vimeflow proxy's
+              <code>/json/list</code>, sees only browser-pane targets, calls
+              <code>Page.navigate</code>, and evaluates page state.
+            </p>
+          </article>
+        </div>
+        <pre><code>type PaneKind = 'shell' | 'browser'
+
+interface BrowserPaneState {
+  kind: 'browser'
+  paneId: string
+  sessionId: string
+  partition: `persist:vimeflow-browser:${string}:${string}`
+  url: string
+  title: string | null
+  cdpTargetId: string | null
+  cdpEndpoint: `http://127.0.0.1:${number}` | null
+}
+
+interface BrowserPaneBoundsMessage {
+  paneId: string
+  sessionId: string
+  bounds: { x: number; y: number; width: number; height: number }
+  visible: boolean
+}</code></pre>
+      </section>
+
+      <section class="panel" aria-labelledby="plugin-heading">
+        <h2 id="plugin-heading">Agent-plugin tool registration sketch</h2>
+        <p>
+          The browser feature should expose tools as data, not plugin runtime
+          code. Agents register desired browser capabilities against a pane
+          target; Vimeflow decides which capabilities are available for the pane
+          and maps them to CDP, Electron webContents, or safe UI operations.
+        </p>
+        <pre><code>interface AgentToolRegistration {
+  pluginId: string
+  tools: readonly AgentToolDefinition[]
+}
+
+interface AgentToolDefinition {
+  name: string
+  target: 'active-browser-pane' | 'browser-pane-by-id'
+  description: string
+  inputSchema: Record&lt;string, unknown&gt;
+  permissions: readonly BrowserToolPermission[]
+  transport: 'vimeflow-cdp-proxy'
+}
+
+type BrowserToolPermission =
+  | 'browser.navigate'
+  | 'browser.evaluate'
+  | 'browser.screenshot'
+  | 'browser.read-dom'
+  | 'browser.network.read'
+
+const exampleRegistration: AgentToolRegistration = {
+  pluginId: 'devtools-lite',
+  tools: [
+    {
+      name: 'browser_evaluate',
+      target: 'active-browser-pane',
+      description: 'Evaluate JavaScript in the active Vimeflow browser pane and return the serializable result.',
+      inputSchema: {
+        type: 'object',
+        required: ['expression'],
+        properties: {
+          expression: { type: 'string', minLength: 1 },
+        },
+        additionalProperties: false,
+      },
+      permissions: ['browser.evaluate'],
+      transport: 'vimeflow-cdp-proxy',
+    },
+  ],
+}</code></pre>
+        <div class="callout warn">
+          <strong>Design boundary.</strong>
+          This proposal intentionally stops at the registration shape. The
+          goal's plugin runtime remains design-only; the spike should expose a
+          browser pane and CDP evidence, not implement a plugin host.
+        </div>
+      </section>
+
+      <section class="panel" aria-labelledby="coexist-heading">
+        <h2 id="coexist-heading">Coexistence with claude-in-chrome MCP</h2>
+        <ul>
+          <li>
+            Keep the existing claude-in-chrome MCP path available for users who
+            want to drive their normal Chrome or a separately launched Chrome
+            profile.
+          </li>
+          <li>
+            Expose Vimeflow browser panes through a separate local
+            CDP-compatible proxy endpoint so MCP clients can distinguish
+            <code>Vimeflow Browser Pane</code> targets from system Chrome tabs
+            without seeing the trusted Vimeflow shell target.
+          </li>
+          <li>
+            Do not import cookies, extensions, Google profile state, or sync
+            data from system Chrome into Vimeflow partitions.
+          </li>
+          <li>
+            Preserve Vimeflow-owned browser cache and site sessions across app
+            restarts so built-in panes remain useful for authenticated SaaS and
+            tutorial/music workflows.
+          </li>
+          <li>
+            Preserve browser pane metadata and native WebContents records across
+            renderer refreshes, and share the same partition with popup login
+            windows so Google/GitHub/OAuth flows can complete without system
+            Chrome.
+          </li>
+          <li>
+            Allow an MCP configuration to prefer built-in Vimeflow panes when
+            <code>VIMEFLOW_BROWSER_CDP_URL</code> and
+            <code>VIMEFLOW_BROWSER_CDP_TOKEN</code> are present, and fall back
+            to its existing Chrome discovery otherwise.
+          </li>
+          <li>
+            Document that only one CDP client may safely assume exclusive
+            automation control at a time, even though Chromium supports multiple
+            clients; Vimeflow should show attachment status to avoid user
+            surprise.
+          </li>
+        </ul>
+        <pre><code># Example MCP environment contract, not runtime code.
+# Issued only after an explicit pane-level user grant.
+VIMEFLOW_BROWSER_CDP_URL=http://127.0.0.1:9223
+VIMEFLOW_BROWSER_CDP_TOKEN=&lt;ephemeral-capability-token&gt;
+VIMEFLOW_BROWSER_CDP_ORIGIN=vimeflow://agent-plugin/&lt;pluginId&gt;
+VIMEFLOW_BROWSER_TARGET_HINT=vimeflow-session:&lt;sessionId&gt;:pane:&lt;paneId&gt;</code></pre>
+      </section>
+
+      <section class="panel" aria-labelledby="deps-heading">
+        <h2 id="deps-heading">Dependency justification</h2>
+        <p>
+          The browser pane itself should not require a production npm
+          dependency. Electron already provides WebContentsView, Session,
+          permission handlers, webContents, and the Debugger API needed behind a
+          pane-scoped CDP proxy.
+        </p>
+        <ul>
+          <li>
+            <strong>No new production dependency</strong> is justified for the
+            host implementation.
+          </li>
+          <li>
+            <strong>Optional dev dependency:</strong>
+            <code>chrome-remote-interface</code> is justified only for the
+            requested evidence client because it is the explicit stand-in for
+            claude-in-chrome MCP and can prove list-targets, navigate, and
+            evaluate behavior against the pane.
+          </li>
+          <li>
+            If added, <code>chrome-remote-interface</code> should remain
+            dev-only and should not become the in-app automation abstraction.
+            Vimeflow can talk to Electron's Debugger API or CDP endpoint without
+            shipping CRI to users.
+          </li>
+          <li>
+            A Castlabs-style Electron build is not a normal npm dependency. It
+            is a distribution decision required only if stock Electron cannot
+            satisfy Widevine playback.
+          </li>
+        </ul>
+      </section>
+
+      <section class="panel" aria-labelledby="acceptance-heading">
+        <h2 id="acceptance-heading">Acceptance evidence and current spike result</h2>
+        <p>
+          Current spike evidence was captured with the proxy environment cleared
+          and <code>npm run electron:dev</code>, because <code>npm run dev</code>
+          starts the renderer server only. Files are stored under
+          <code>docs/exploration/2026-05-28-builtin-browser/media/</code>.
+        </p>
+        <ul>
+          <li>
+            <strong>Pane mount:</strong>
+            <code>browser-pane-video-audio.png</code> shows the Browser picker
+            coexistence state and the mounted native browser surface inside the
+            DockPanel/SplitView layout.
+          </li>
+          <li>
+            <strong>CDP proxy:</strong> <code>cdp-targets.json</code> lists only
+            the registered browser pane target, with the ephemeral local token
+            redacted. <code>cdp-client-navigate-evaluate.txt</code> records an
+            external <code>chrome-remote-interface</code> client attaching,
+            navigating to <code>https://example.com/?vimeflow-cdp=1</code>, and
+            evaluating page state inside the pane.
+          </li>
+          <li>
+            <strong>Non-DRM media/audio:</strong>
+            <code>nondrm-video-audio-state.txt</code> records HTML5 video
+            playback with <code>paused=false</code>,
+            <code>muted=false</code>, <code>volume=1</code>,
+            <code>readyState=4</code>, and advancing
+            <code>currentTime</code>. This verifies Electron audio output for
+            the embedded browser path.
+          </li>
+          <li>
+            <strong>YouTube:</strong> <code>youtube-playback-state.txt</code>
+            records YouTube loading in the fresh app-scoped profile, but the
+            page returns "Sign in to confirm you're not a bot".
+            <code>youtube-embed-state.txt</code> records the embed path failing
+            with "Error 153". The shipped persistent partition is therefore
+            required for real YouTube evidence: a user must sign in once inside
+            the Vimeflow browser profile, then reuse that cache/cookie state.
+          </li>
+          <li>
+            <strong>Widevine:</strong>
+            <code>widevine-capability-state.txt</code> records stock Electron
+            returning <code>NotSupportedError</code> for
+            <code>com.widevine.alpha</code>. The accepted path is to keep the
+            built-in non-DRM browser pane on stock Electron and require a
+            CDM-capable distribution decision before claiming Widevine playback.
+          </li>
+        </ul>
+        <ol>
+          <li>
+            Run <code>npm run electron:dev</code> with proxy variables cleared
+            and manually click <code>+ add pane -&gt; Browser</code>.
+          </li>
+          <li>
+            Sign into at least one ordinary web service or use a test site that
+            sets durable cookies, restart the app, and confirm the browser pane
+            keeps its Vimeflow-scoped session without using system Chrome
+            profile data.
+          </li>
+          <li>
+            Capture screenshots or a short recording under
+            <code>docs/exploration/2026-05-28-builtin-browser/media/</code>
+            showing YouTube playback with audio.
+          </li>
+          <li>
+            Capture Widevine playback evidence if the Electron distribution can
+            create the required media keys; otherwise record the exact blocker
+            and the tested stream.
+          </li>
+          <li>
+            Run a chrome-remote-interface client against the Vimeflow CDP proxy
+            endpoint and save target-list plus navigate/evaluate output,
+            confirming the Vimeflow shell webContents is not listed.
+          </li>
+          <li>
+            Run <code>npm run lint</code>, <code>npm run type-check</code>,
+            <code>npm run test</code>, and
+            <code>cargo test -p vimeflow-backend</code> if Rust changed.
+          </li>
+          <li>
+            Run final <code>codex exec --base main &lt; /dev/null</code> from
+            the worktree with proxy cleared and
+            <code>LIFELINE_CODEX_TIMEOUT=600</code> once context exceeds roughly
+            250 lines.
+          </li>
+        </ol>
+      </section>
+
+      <section class="panel" aria-labelledby="sources-heading">
+        <h2 id="sources-heading">Primary sources</h2>
+        <ul class="sources">
+          <li>
+            <a
+              href="https://www.electronjs.org/docs/latest/api/web-contents-view"
+              >Electron WebContentsView API</a
+            >: main-process View that displays a webContents and can load URLs.
+          </li>
+          <li>
+            <a href="https://www.electronjs.org/docs/latest/tutorial/web-embeds"
+              >Electron Web Embeds guide</a
+            >: compares iframe, webview, and WebContentsView, and notes
+            WebContentsView is not DOM based.
+          </li>
+          <li>
+            <a href="https://www.electronjs.org/docs/latest/api/webview-tag"
+              >Electron webview tag API</a
+            >: Electron recommends against webview and requires enabling
+            <code>webviewTag</code>.
+          </li>
+          <li>
+            <a href="https://www.electronjs.org/docs/latest/api/browser-view"
+              >Electron BrowserView API</a
+            >: BrowserView is deprecated and replaced by WebContentsView.
+          </li>
+          <li>
+            <a href="https://www.electronjs.org/docs/latest/tutorial/security"
+              >Electron security guide</a
+            >: remote content must not have Node integration and should use
+            context isolation.
+          </li>
+          <li>
+            <a href="https://www.electronjs.org/docs/latest/api/session"
+              >Electron Session API</a
+            >: persistent partitions use the <code>persist:</code> prefix and
+            permission handlers include <code>mediaKeySystem</code>.
+          </li>
+          <li>
+            <a
+              href="https://www.electronjs.org/docs/latest/api/command-line-switches/"
+              >Electron command-line switches</a
+            >: <code>remote-debugging-port</code> exposes debugging over HTTP.
+          </li>
+          <li>
+            <a href="https://www.electronjs.org/docs/latest/api/debugger"
+              >Electron Debugger API</a
+            >: main-process alternate transport for Chrome remote debugging
+            protocol.
+          </li>
+          <li>
+            <a href="https://chromedevtools.github.io/devtools-protocol/"
+              >Chrome DevTools Protocol</a
+            >: documents <code>/json/list</code>, target WebSocket URLs, and
+            protocol access.
+          </li>
+          <li>
+            <a
+              href="https://www.electronjs.org/docs/latest/tutorial/offscreen-rendering/"
+              >Electron Offscreen Rendering guide</a
+            >: paint-frame approach and tradeoffs.
+          </li>
+          <li>
+            <a
+              href="https://developer.mozilla.org/en-US/docs/Web/API/Navigator/requestMediaKeySystemAccess"
+              >MDN Encrypted Media Extensions</a
+            >: <code>requestMediaKeySystemAccess</code> is the browser API for
+            DRM media keys.
+          </li>
+          <li>
+            <a href="https://developers.google.com/widevine/drm/overview"
+              >Google Widevine overview</a
+            >: Widevine protects premium media and uses Encrypted Media
+            Extensions and Common Encryption.
+          </li>
+          <li>
+            <a href="https://webdriver.io/docs/desktop-testing/electron/"
+              >WebdriverIO Electron testing guide</a
+            >: WebDriver is useful for Electron tests but is not an embedding
+            primitive.
+          </li>
+        </ul>
+      </section>
+    </main>
+  </body>
+</html>

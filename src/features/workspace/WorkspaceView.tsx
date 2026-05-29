@@ -169,6 +169,7 @@ export const WorkspaceView = (): ReactElement => {
     reorderSessions,
     updatePaneCwd,
     updatePaneAgentType,
+    updateBrowserPaneUrl,
     setSessionActivityPanelCollapsed,
     setSessionActivePane,
     setSessionLayout,
@@ -242,10 +243,17 @@ export const WorkspaceView = (): ReactElement => {
   const activePaneForCommandInputs = activeSessionForCommands
     ? (findActivePane(activeSessionForCommands) ?? null)
     : null
-  const activePanePtyIdForCommands = activePaneForCommandInputs?.ptyId ?? null
 
-  const activePaneAgentTypeForCommands =
-    activePaneForCommandInputs?.agentType ?? null
+  const activePaneForCommandsIsShell =
+    (activePaneForCommandInputs?.kind ?? 'shell') === 'shell'
+
+  const activePanePtyIdForCommands = activePaneForCommandsIsShell
+    ? (activePaneForCommandInputs?.ptyId ?? null)
+    : null
+
+  const activePaneAgentTypeForCommands = activePaneForCommandsIsShell
+    ? (activePaneForCommandInputs?.agentType ?? null)
+    : null
 
   const workspaceCommands = useMemo(
     () =>
@@ -291,10 +299,20 @@ export const WorkspaceView = (): ReactElement => {
   // Non-throwing variant: render-path callers cannot crash on transient
   // invariant violations. Mutation guards still use `getActivePane`.
   const activePane = activeSession ? findActivePane(activeSession) : undefined
-  const activePaneId = activePane?.id
-  const activePanePtyId = activePane?.ptyId
 
-  const agentStatus = useAgentStatus(activePanePtyId ?? null)
+  const activePtyBackedPane =
+    activePane === undefined
+      ? undefined
+      : (activePane.kind ?? 'shell') === 'shell'
+        ? activePane
+        : activeSession?.panes.find(
+            (pane) => (pane.kind ?? 'shell') === 'shell'
+          )
+
+  const activePtyBackedPaneId = activePtyBackedPane?.id
+  const activePtyBackedPanePtyId = activePtyBackedPane?.ptyId
+
+  const agentStatus = useAgentStatus(activePtyBackedPanePtyId ?? null)
   const activityPanelCollapsed = activeSession?.activityPanelCollapsed ?? false
 
   const activityPanelAgent = useMemo(
@@ -309,7 +327,8 @@ export const WorkspaceView = (): ReactElement => {
   // pulsing dot. The pane's own `status` is the source of truth for
   // running/paused/completed/errored — agent activity stays an orthogonal
   // signal that the "live" pulse next to the agent chip already reflects.
-  const activityPanelStatus: SessionStatus = activePane?.status ?? 'paused'
+  const activityPanelStatus: SessionStatus =
+    activePtyBackedPane?.status ?? 'paused'
 
   const handleActivityPanelCollapsed = useCallback(
     (collapsed: boolean): void => {
@@ -335,8 +354,8 @@ export const WorkspaceView = (): ReactElement => {
   const activeSessionStatus = activeSession?.status
 
   const isStatusBarAgentActive =
-    activePanePtyId !== undefined &&
-    agentStatus.sessionId === activePanePtyId &&
+    activePtyBackedPanePtyId !== undefined &&
+    agentStatus.sessionId === activePtyBackedPanePtyId &&
     agentStatus.isActive &&
     !agentStatus.agentExited &&
     (activeSessionStatus === 'running' || activeSessionStatus === 'paused')
@@ -345,10 +364,10 @@ export const WorkspaceView = (): ReactElement => {
     if (!activeSessionId) {
       return
     }
-    if (!activePaneId || !activePanePtyId) {
+    if (!activePtyBackedPaneId || !activePtyBackedPanePtyId) {
       return
     }
-    if (agentStatus.sessionId !== activePanePtyId) {
+    if (agentStatus.sessionId !== activePtyBackedPanePtyId) {
       return
     }
     if (activeSessionStatus !== 'running' && activeSessionStatus !== 'paused') {
@@ -356,7 +375,7 @@ export const WorkspaceView = (): ReactElement => {
     }
 
     if (agentStatus.agentExited) {
-      updatePaneAgentType(activeSessionId, activePaneId, 'generic')
+      updatePaneAgentType(activeSessionId, activePtyBackedPaneId, 'generic')
 
       return
     }
@@ -365,7 +384,7 @@ export const WorkspaceView = (): ReactElement => {
       if (agentStatus.agentType) {
         updatePaneAgentType(
           activeSessionId,
-          activePaneId,
+          activePtyBackedPaneId,
           agentStatus.agentType
         )
       }
@@ -374,8 +393,8 @@ export const WorkspaceView = (): ReactElement => {
     }
   }, [
     activeSessionId,
-    activePaneId,
-    activePanePtyId,
+    activePtyBackedPaneId,
+    activePtyBackedPanePtyId,
     activeSessionStatus,
     agentStatus.agentExited,
     agentStatus.isActive,
@@ -405,15 +424,19 @@ export const WorkspaceView = (): ReactElement => {
   // exits — only `isActive` / `agentExited` flip) cannot overwrite a
   // shell-driven `pane.cwd` change; dedupe against pane.cwd to avoid IPC
   // churn.
-  const activePaneCwd = activePane?.cwd
+  const activePtyBackedPaneCwd = activePtyBackedPane?.cwd
   const agentCwd = agentStatus.cwd
   const agentIsActive = agentStatus.isActive
   const agentHasExited = agentStatus.agentExited
   useEffect(() => {
-    if (!activeSessionId || !activePaneId || !activePanePtyId) {
+    if (
+      !activeSessionId ||
+      !activePtyBackedPaneId ||
+      !activePtyBackedPanePtyId
+    ) {
       return
     }
-    if (agentStatus.sessionId !== activePanePtyId) {
+    if (agentStatus.sessionId !== activePtyBackedPanePtyId) {
       return
     }
     if (activeSessionStatus !== 'running' && activeSessionStatus !== 'paused') {
@@ -422,16 +445,16 @@ export const WorkspaceView = (): ReactElement => {
     if (!agentIsActive || agentHasExited) {
       return
     }
-    if (!agentCwd || agentCwd === activePaneCwd) {
+    if (!agentCwd || agentCwd === activePtyBackedPaneCwd) {
       return
     }
 
-    updatePaneCwd(activeSessionId, activePaneId, agentCwd)
+    updatePaneCwd(activeSessionId, activePtyBackedPaneId, agentCwd)
   }, [
     activeSessionId,
-    activePaneId,
-    activePanePtyId,
-    activePaneCwd,
+    activePtyBackedPaneId,
+    activePtyBackedPanePtyId,
+    activePtyBackedPaneCwd,
     activeSessionStatus,
     agentCwd,
     agentHasExited,
@@ -515,13 +538,13 @@ export const WorkspaceView = (): ReactElement => {
     previewSidebarWidth(sidebarWidth)
   }, [previewSidebarWidth, sidebarWidth])
 
-  const activeCwd = activePane?.cwd ?? '.'
+  const activeCwd = activePtyBackedPane?.cwd ?? '.'
   // Distinct fallback for the FILES-tab file explorer: when no session
   // is active, browse from `~` (home) rather than `.` (process cwd).
   // `activeCwd` defaults to `.` because git/diff/agent-status all need a
   // valid working directory in the running process; the file explorer
   // is a navigation surface where `~` is the more useful starting point.
-  const fileExplorerCwd = activePane?.cwd ?? '~'
+  const fileExplorerCwd = activePtyBackedPane?.cwd ?? '~'
 
   // File selection state.
   //
@@ -584,6 +607,9 @@ export const WorkspaceView = (): ReactElement => {
     // requiring it surprised the user when their visibly-focused pane
     // dropped the chord into the palette instead.
     if (!activeSession || !activePane) {
+      return null
+    }
+    if ((activePane.kind ?? 'shell') !== 'shell') {
       return null
     }
 
@@ -959,6 +985,14 @@ export const WorkspaceView = (): ReactElement => {
     verticalDockElastic.isDragging ||
     horizontalDockElastic.isDragging
 
+  const areBrowserPanesOccluded =
+    terminalFitDeferred ||
+    showUnsavedDialog ||
+    commandPalette.state.isOpen ||
+    paneRenameNode !== null ||
+    fileError !== null ||
+    infoMessage !== null
+
   const dockOrPeek = isDockOpen ? (
     <DockPanel
       ref={dockPanelRef}
@@ -1112,9 +1146,11 @@ export const WorkspaceView = (): ReactElement => {
               onSessionRestart={restartSession}
               service={terminalService}
               setSessionActivePane={setSessionActivePane}
+              updateBrowserPaneUrl={updateBrowserPaneUrl}
               setSessionLayout={setSessionLayout}
               addPane={addPane}
               removePane={removePane}
+              areBrowserPanesOccluded={areBrowserPanesOccluded}
               isZoneFocused={activeContainerId === TERMINAL_CONTAINER_ID}
               onContainerFocus={() => {
                 setActiveContainerId(TERMINAL_CONTAINER_ID)

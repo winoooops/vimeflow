@@ -9,6 +9,7 @@ import {
 import { installCommandPaletteShortcutOverride } from './command-palette-shortcut'
 import { BACKEND_EVENT, BACKEND_INVOKE } from './ipc-channels'
 import { spawnSidecar, type Sidecar } from './sidecar'
+import { setupBrowserPaneIpc, type BrowserPaneController } from './browser-pane'
 
 // __dirname is not defined in ESM modules. Derive it from import.meta.url.
 // vite-plugin-electron bundles main.ts as ESM (main.js) under
@@ -134,6 +135,7 @@ type InvokeEnvelope =
   | { ok: false; error: string; errorReason?: string }
 
 let sidecar: Sidecar | null = null
+let browserPaneController: BrowserPaneController | null = null
 let quitting = false
 
 const RENDERER_DIAGNOSTIC_PREFIXES = [
@@ -260,6 +262,7 @@ const setupApp = async (): Promise<void> => {
   })
 
   sidecar = spawnedSidecar
+  browserPaneController = setupBrowserPaneIpc()
   const allowE2eBackendMethods = !app.isPackaged && isE2eRuntime()
 
   ipcMain.handle(
@@ -321,6 +324,8 @@ app.on('before-quit', (event) => {
   quitting = true
 
   const currentSidecar = sidecar
+  browserPaneController?.dispose()
+  browserPaneController = null
 
   void (async (): Promise<void> => {
     try {

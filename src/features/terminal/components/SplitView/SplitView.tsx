@@ -11,6 +11,7 @@ import {
 } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import type { LayoutId, Pane, Session } from '../../../sessions/types'
+import { BrowserPane, focusBrowserPane } from '../../../browser'
 import type { NotifyPaneReady } from '../../hooks/useTerminal'
 import type { ITerminalService } from '../../services/terminalService'
 import {
@@ -34,8 +35,15 @@ export interface SplitViewProps {
   onPaneReady?: NotifyPaneReady
   onSessionRestart?: (sessionId: string) => void
   onSetActivePane?: (sessionId: string, paneId: string) => void
-  onAddPane?: (sessionId: string) => void
+  onBrowserPaneUrlChange?: (
+    sessionId: string,
+    paneId: string,
+    browserUrl: string
+  ) => void
+  onRequestFocus?: () => void
+  onAddPane?: (sessionId: string, kind?: Pane['kind']) => void
   onClosePane?: (sessionId: string, paneId: string) => void
+  areBrowserPanesOccluded?: boolean
   deferTerminalFit?: boolean
   showPaneFocusHighlight?: boolean
 }
@@ -55,6 +63,20 @@ const paneMode = (pane: Pane): TerminalPaneMode => {
   }
 
   return 'spawn'
+}
+
+const isShellPane = (pane: Pane): boolean => (pane.kind ?? 'shell') === 'shell'
+
+const canClosePane = (pane: Pane, session: Session): boolean => {
+  if (session.panes.length <= 1) {
+    return false
+  }
+
+  if (!isShellPane(pane)) {
+    return true
+  }
+
+  return session.panes.filter(isShellPane).length > 1
 }
 
 /** Pick the panes that should be rendered for `layout.capacity` slots.
@@ -86,8 +108,11 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
       onPaneReady = undefined,
       onSessionRestart = undefined,
       onSetActivePane = undefined,
+      onBrowserPaneUrlChange = undefined,
+      onRequestFocus = undefined,
       onAddPane = undefined,
       onClosePane = undefined,
+      areBrowserPanesOccluded = false,
       deferTerminalFit = false,
       showPaneFocusHighlight = true,
     }: SplitViewProps,
@@ -95,6 +120,11 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
   ): ReactElement {
     const layout = LAYOUTS[session.layout]
     const outerDivRef = useRef<HTMLDivElement>(null)
+
+    const browserSessionId =
+      session.browserSessionId ??
+      session.panes.find(isShellPane)?.ptyId ??
+      session.id
 
     const [ratios, setRatios] = useState<
       Partial<Record<LayoutId, LayoutRatios>>
@@ -167,6 +197,15 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
         }
 
         const handle = paneHandleRefs.current.get(activePane.id)
+        if ((activePane.kind ?? 'shell') === 'browser') {
+          void focusBrowserPane({
+            sessionId: browserSessionId,
+            paneId: activePane.id,
+          })
+
+          return true
+        }
+
         if (!handle) {
           outerDivRef.current?.focus()
 
@@ -205,6 +244,7 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
           ref={outerDivRef}
           data-testid="split-view"
           data-session-id={session.id}
+          data-browser-session-id={browserSessionId}
           data-layout={session.layout}
           tabIndex={-1}
           className="grid h-full w-full gap-0"
@@ -217,7 +257,13 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
           {/* eslint-disable-next-line react/jsx-boolean-value -- framer-motion: `initial={false}` skips the entry animation for children already mounted. Omitting `initial` reverts to the default (animate on mount) — semantically distinct. */}
           <AnimatePresence initial={false}>
             {visiblePanes.map((pane, i) => {
-              const mode = paneMode(pane)
+              const isBrowserPane = !isShellPane(pane)
+              const mode = isBrowserPane ? 'browser' : paneMode(pane)
+
+              const closeHandler =
+                onClosePane && canClosePane(pane, session)
+                  ? onClosePane
+                  : undefined
 
               return (
                 <motion.div
@@ -239,6 +285,8 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
                   }
                   data-testid="split-view-slot"
                   data-pane-id={pane.id}
+                  data-pane-kind={pane.kind ?? 'shell'}
+                  data-pane-active={pane.active ? 'true' : 'false'}
                   data-pty-id={pane.ptyId}
                   data-mode={mode}
                   data-cwd={pane.cwd}
@@ -273,27 +321,38 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
                     nowhere until reload. The outer slot wrapper above keys
                     by `pane.id` so layout slot identity is preserved across
                     restarts. */}
-                      <TerminalPane
-                        key={pane.ptyId}
-                        ref={getPaneRefSetter(pane.id)}
-                        session={session}
-                        pane={pane}
-                        service={service}
-                        mode={mode}
-                        onCwdChange={(cwd) =>
-                          onSessionCwdChange?.(session.id, pane.id, cwd)
-                        }
-                        onPaneReady={onPaneReady}
-                        onRestart={onSessionRestart}
-                        onClose={
-                          session.panes.length > 1 && onClosePane
-                            ? onClosePane
-                            : undefined
-                        }
-                        isActive={isActive}
-                        deferFit={deferTerminalFit}
-                        showFocusHighlight={showPaneFocusHighlight}
-                      />
+                      {isBrowserPane ? (
+                        <BrowserPane
+                          key={pane.ptyId}
+                          session={session}
+                          pane={pane}
+                          isActive={isActive}
+                          isOccluded={areBrowserPanesOccluded}
+                          onClose={closeHandler}
+                          onRequestActive={onSetActivePane}
+                          onRequestFocus={onRequestFocus}
+                          onUrlChange={onBrowserPaneUrlChange}
+                          showFocusHighlight={showPaneFocusHighlight}
+                        />
+                      ) : (
+                        <TerminalPane
+                          key={pane.ptyId}
+                          ref={getPaneRefSetter(pane.id)}
+                          session={session}
+                          pane={pane}
+                          service={service}
+                          mode={paneMode(pane)}
+                          onCwdChange={(cwd) =>
+                            onSessionCwdChange?.(session.id, pane.id, cwd)
+                          }
+                          onPaneReady={onPaneReady}
+                          onRestart={onSessionRestart}
+                          onClose={closeHandler}
+                          isActive={isActive}
+                          deferFit={deferTerminalFit}
+                          showFocusHighlight={showPaneFocusHighlight}
+                        />
+                      )}
                     </div>
                   </Tooltip>
                 </motion.div>

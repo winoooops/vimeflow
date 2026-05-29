@@ -4,6 +4,16 @@ import {
   BACKEND_INVOKE,
   COMMAND_PALETTE_TOGGLE,
 } from './ipc-channels'
+import {
+  BROWSER_PANE_CDP_INFO,
+  BROWSER_PANE_CREATE,
+  BROWSER_PANE_DESTROY,
+  BROWSER_PANE_FOCUS,
+  BROWSER_PANE_FOCUSED,
+  BROWSER_PANE_NAVIGATE,
+  BROWSER_PANE_SET_BOUNDS,
+  BROWSER_PANE_URL_CHANGED,
+} from './browser-pane-channels'
 
 type InvokeEnvelope<T> =
   | { ok: true; result: T }
@@ -72,4 +82,40 @@ contextBridge.exposeInMainWorld('vimeflow', {
   invoke,
   listen,
   onCommandPaletteToggle,
+  browserPane: {
+    createPane: (request: unknown): Promise<unknown> =>
+      ipcRenderer.invoke(BROWSER_PANE_CREATE, request),
+    setBounds: (request: unknown): Promise<unknown> =>
+      ipcRenderer.invoke(BROWSER_PANE_SET_BOUNDS, request),
+    navigate: (request: unknown): Promise<unknown> =>
+      ipcRenderer.invoke(BROWSER_PANE_NAVIGATE, request),
+    destroyPane: (request: unknown): Promise<unknown> =>
+      ipcRenderer.invoke(BROWSER_PANE_DESTROY, request),
+    focusPane: (request: unknown): Promise<unknown> =>
+      ipcRenderer.invoke(BROWSER_PANE_FOCUS, request),
+    getCdpInfo: (request?: unknown): Promise<unknown> =>
+      ipcRenderer.invoke(BROWSER_PANE_CDP_INFO, request),
+    onFocus: (callback: (payload: unknown) => void): (() => void) => {
+      const handler = (_event: IpcRendererEvent, payload: unknown): void => {
+        callback(payload)
+      }
+
+      ipcRenderer.on(BROWSER_PANE_FOCUSED, handler)
+
+      return (): void => {
+        ipcRenderer.off(BROWSER_PANE_FOCUSED, handler)
+      }
+    },
+    onUrlChange: (callback: (payload: unknown) => void): (() => void) => {
+      const handler = (_event: IpcRendererEvent, payload: unknown): void => {
+        callback(payload)
+      }
+
+      ipcRenderer.on(BROWSER_PANE_URL_CHANGED, handler)
+
+      return (): void => {
+        ipcRenderer.off(BROWSER_PANE_URL_CHANGED, handler)
+      }
+    },
+  },
 })

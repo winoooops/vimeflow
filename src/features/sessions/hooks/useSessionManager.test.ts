@@ -105,6 +105,88 @@ describe('useSessionManager', () => {
     expect(order).toEqual(['onData', 'listSessions'])
   })
 
+  test('updateBrowserPaneUrl preserves session identity when URL is unchanged', async () => {
+    const service = createMockService()
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: 'pty-1',
+      sessions: [
+        {
+          id: 'pty-1',
+          cwd: '/tmp',
+          status: {
+            kind: 'Alive',
+            pid: 1,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+      ],
+    })
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    const sessionId = result.current.sessions[0].id
+
+    act(() => {
+      result.current.setSessionLayout(sessionId, 'vsplit')
+    })
+
+    await waitFor(() => {
+      expect(result.current.sessions[0].layout).toBe('vsplit')
+    })
+
+    act(() => {
+      result.current.addPane(sessionId, 'browser')
+    })
+
+    await waitFor(() => {
+      expect(
+        result.current.sessions[0].panes.some((pane) => pane.kind === 'browser')
+      ).toBe(true)
+    })
+
+    const sessionsBeforeNoop = result.current.sessions
+    const sessionBeforeNoop = result.current.sessions[0]
+
+    const browserPane = sessionBeforeNoop.panes.find(
+      (pane) => pane.kind === 'browser'
+    )
+
+    if (!browserPane) {
+      throw new Error('expected browser pane')
+    }
+
+    const updateBrowserPaneUrl = result.current.updateBrowserPaneUrl
+
+    if (!updateBrowserPaneUrl) {
+      throw new Error('expected updateBrowserPaneUrl')
+    }
+
+    act(() => {
+      updateBrowserPaneUrl(
+        sessionId,
+        browserPane.id,
+        browserPane.browserUrl ?? 'https://www.youtube.com/'
+      )
+    })
+
+    expect(result.current.sessions).toBe(sessionsBeforeNoop)
+    expect(result.current.sessions[0]).toBe(sessionBeforeNoop)
+
+    act(() => {
+      updateBrowserPaneUrl(sessionId, browserPane.id, 'https://example.com/')
+    })
+
+    expect(result.current.sessions).not.toBe(sessionsBeforeNoop)
+    expect(result.current.sessions[0]).not.toBe(sessionBeforeNoop)
+    expect(result.current.sessions[0].panes[1].browserUrl).toBe(
+      'https://example.com/'
+    )
+  })
+
   test('agent-session-title with matching ptyId updates the pane', async () => {
     const service = createMockService()
     service.listSessions = vi.fn().mockResolvedValue({
