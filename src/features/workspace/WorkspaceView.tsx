@@ -69,7 +69,7 @@ import { findActivePane } from '../sessions/utils/activeSessionPane'
 import { lineDelta } from '../sessions/utils/lineDelta'
 import { pickNextVisibleSessionId } from '../sessions/utils/pickNextVisibleSessionId'
 import { AGENTS, agentTypeToRegistryKey } from '../../agents/registry'
-import type { SessionStatus } from '../sessions/types'
+import type { SessionCloseResult, SessionStatus } from '../sessions/types'
 import {
   buildWorkspaceCommands,
   WORKSPACE_TAB_KEYS,
@@ -651,7 +651,7 @@ export const WorkspaceView = (): ReactElement => {
   }, [claimTerminal, createSession])
 
   const handleRemoveSession = useCallback(
-    (sessionId: string): boolean => {
+    (sessionId: string): SessionCloseResult => {
       if (hasUnsavedChanges(sessionId)) {
         const restoreSessionId =
           sessionId !== activeSessionId ? activeSessionId : null
@@ -675,7 +675,7 @@ export const WorkspaceView = (): ReactElement => {
         claimTerminal()
       }
 
-      return true
+      return undefined
     },
     [
       activeSessionId,

@@ -3,6 +3,8 @@
 
 export type SessionStatus = 'running' | 'paused' | 'completed' | 'errored'
 
+export type SessionCloseResult = false | void
+
 export type LayoutId = 'single' | 'vsplit' | 'hsplit' | 'threeRight' | 'quad'
 
 export interface Pane {

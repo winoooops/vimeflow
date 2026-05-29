@@ -178,8 +178,7 @@ export const useEditorBuffer = (
   )
 
   const hasUnsavedChanges = useCallback((scopeIdToCheck: string): boolean => {
-    const targetScopeId = resolveEditorBufferScopeId(scopeIdToCheck)
-    const buffer = buffersByScopeRef.current[targetScopeId]
+    const buffer = buffersByScopeRef.current[scopeIdToCheck]
 
     if (!buffer) {
       return false
@@ -189,19 +188,18 @@ export const useEditorBuffer = (
   }, [])
 
   const releaseScope = useCallback((scopeIdToRelease: string): void => {
-    const targetScopeId = resolveEditorBufferScopeId(scopeIdToRelease)
     const previousBuffers = buffersByScopeRef.current
 
-    if (previousBuffers[targetScopeId]) {
+    if (previousBuffers[scopeIdToRelease]) {
       const nextBuffers = { ...previousBuffers }
-      delete nextBuffers[targetScopeId]
+      delete nextBuffers[scopeIdToRelease]
       buffersByScopeRef.current = nextBuffers
       setBuffersByScope(nextBuffers)
     }
 
-    if (openRequestIdsRef.current[targetScopeId] !== undefined) {
+    if (openRequestIdsRef.current[scopeIdToRelease] !== undefined) {
       const nextOpenRequestIds = { ...openRequestIdsRef.current }
-      delete nextOpenRequestIds[targetScopeId]
+      delete nextOpenRequestIds[scopeIdToRelease]
       openRequestIdsRef.current = nextOpenRequestIds
     }
   }, [])
