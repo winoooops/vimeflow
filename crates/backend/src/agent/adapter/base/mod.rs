@@ -162,7 +162,6 @@ mod tests {
         watcher_state.remove(&sid);
     }
 
-    #[cfg(test)]
     struct ErrLocator;
 
     impl StatusSourceLocator for ErrLocator {
@@ -216,7 +215,6 @@ mod tests {
         watcher_state.remove(&sid);
     }
 
-    #[cfg(test)]
     struct OutsideTrustLocator;
 
     impl StatusSourceLocator for OutsideTrustLocator {
