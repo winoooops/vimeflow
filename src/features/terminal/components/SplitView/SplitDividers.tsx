@@ -1,5 +1,5 @@
-// cspell:ignore vsplit hsplit vdiv hdiv
-import { Fragment, type ReactElement, type RefObject } from 'react'
+// cspell:ignore vsplit hsplit vdiv hdiv subcomponent
+import { Fragment, useCallback, type ReactElement, type RefObject } from 'react'
 import { ResizeHandle } from '../../../../components/ResizeHandle'
 import type { LayoutId } from '../../../sessions/types'
 import { useSplitDivider } from './useSplitDivider'
@@ -14,17 +14,32 @@ export interface SplitDividersProps {
 
 const HANDLE_TEST_ID = 'split-resize-handle'
 
+// Each per-layout subcomponent curries the shared `onRatioChange(axis, ratio)`
+// prop into a single-arg `(ratio) => …` to satisfy `useSplitDivider`'s
+// `onRatioChange: (ratio: number) => void` contract. The currying MUST be
+// `useCallback`-stable, not an inline arrow: `useSplitDivider` keeps
+// `onRatioChange` in the dep array of an effect that mirrors the committed
+// `size` back into the CSS var. With an inline arrow, every parent re-render
+// (e.g. a session prop ticking from terminal output) recreates the ref and
+// re-fires that effect mid-drag, overwriting the live `onDragPreview` write
+// with the stale committed ratio — the divider visibly snaps back toward the
+// pre-drag position then catches back up on the next mousemove RAF.
 const VSplitDividers = ({
   containerRef,
   ratios,
   onRatioChange,
 }: Omit<SplitDividersProps, 'layout'>): ReactElement => {
+  const onColChange = useCallback(
+    (r: number): void => onRatioChange('col', r),
+    [onRatioChange]
+  )
+
   const col = useSplitDivider({
     containerRef,
     axis: 'horizontal',
     cssVar: '--split-col',
     initialRatio: ratios.col,
-    onRatioChange: (r) => onRatioChange('col', r),
+    onRatioChange: onColChange,
   })
 
   return (
@@ -49,12 +64,17 @@ const HSplitDividers = ({
   ratios,
   onRatioChange,
 }: Omit<SplitDividersProps, 'layout'>): ReactElement => {
+  const onRowChange = useCallback(
+    (r: number): void => onRatioChange('row', r),
+    [onRatioChange]
+  )
+
   const row = useSplitDivider({
     containerRef,
     axis: 'vertical',
     cssVar: '--split-row',
     initialRatio: ratios.row,
-    onRatioChange: (r) => onRatioChange('row', r),
+    onRatioChange: onRowChange,
   })
 
   return (
@@ -79,12 +99,22 @@ const ThreeRightDividers = ({
   ratios,
   onRatioChange,
 }: Omit<SplitDividersProps, 'layout'>): ReactElement => {
+  const onColChange = useCallback(
+    (r: number): void => onRatioChange('col', r),
+    [onRatioChange]
+  )
+
+  const onRowChange = useCallback(
+    (r: number): void => onRatioChange('row', r),
+    [onRatioChange]
+  )
+
   const col = useSplitDivider({
     containerRef,
     axis: 'horizontal',
     cssVar: '--split-col',
     initialRatio: ratios.col,
-    onRatioChange: (r) => onRatioChange('col', r),
+    onRatioChange: onColChange,
   })
 
   const row = useSplitDivider({
@@ -92,7 +122,7 @@ const ThreeRightDividers = ({
     axis: 'vertical',
     cssVar: '--split-row',
     initialRatio: ratios.row,
-    onRatioChange: (r) => onRatioChange('row', r),
+    onRatioChange: onRowChange,
   })
 
   return (
@@ -132,12 +162,22 @@ const QuadDividers = ({
   ratios,
   onRatioChange,
 }: Omit<SplitDividersProps, 'layout'>): ReactElement => {
+  const onColChange = useCallback(
+    (r: number): void => onRatioChange('col', r),
+    [onRatioChange]
+  )
+
+  const onRowChange = useCallback(
+    (r: number): void => onRatioChange('row', r),
+    [onRatioChange]
+  )
+
   const col = useSplitDivider({
     containerRef,
     axis: 'horizontal',
     cssVar: '--split-col',
     initialRatio: ratios.col,
-    onRatioChange: (r) => onRatioChange('col', r),
+    onRatioChange: onColChange,
   })
 
   const row = useSplitDivider({
@@ -145,7 +185,7 @@ const QuadDividers = ({
     axis: 'vertical',
     cssVar: '--split-row',
     initialRatio: ratios.row,
-    onRatioChange: (r) => onRatioChange('row', r),
+    onRatioChange: onRowChange,
   })
 
   // One logical column divider rendered as two elements (segmented by the
