@@ -258,6 +258,56 @@ describe('useEditorBuffer', () => {
     )
   })
 
+  test('saves an explicit inactive scope without switching active scope', async () => {
+    vi.mocked(mockFileSystemService.readFile).mockImplementation((path) =>
+      Promise.resolve(`content for ${path}`)
+    )
+    vi.mocked(mockFileSystemService.writeFile).mockResolvedValue()
+
+    const { result, rerender } = renderHook(
+      ({ sessionId }: { sessionId: string }) =>
+        useEditorBuffer(mockFileSystemService, sessionId),
+      {
+        initialProps: { sessionId: 'session-a' },
+      }
+    )
+
+    await act(async () => {
+      await result.current.openFile('~/a.ts')
+    })
+
+    act(() => {
+      result.current.updateContent('session a edits')
+    })
+
+    rerender({ sessionId: 'session-b' })
+
+    await act(async () => {
+      await result.current.openFile('~/b.ts')
+    })
+
+    act(() => {
+      result.current.updateContent('session b edits')
+    })
+
+    await act(async () => {
+      await result.current.saveFile('session-a')
+    })
+
+    expect(mockFileSystemService.writeFile).toHaveBeenCalledWith(
+      '~/a.ts',
+      'session a edits'
+    )
+    expect(result.current.filePath).toBe('~/b.ts')
+    expect(result.current.isDirty).toBe(true)
+
+    rerender({ sessionId: 'session-a' })
+
+    expect(result.current.filePath).toBe('~/a.ts')
+    expect(result.current.originalContent).toBe('session a edits')
+    expect(result.current.isDirty).toBe(false)
+  })
+
   test('reports and releases scoped unsaved buffers', async () => {
     vi.mocked(mockFileSystemService.readFile).mockImplementation((path) =>
       Promise.resolve(`content for ${path}`)

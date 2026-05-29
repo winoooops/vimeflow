@@ -947,7 +947,9 @@ export const WorkspaceView = (): ReactElement => {
     ]
   )
 
-  // Save current file and open pending file.
+  // Save the guarded buffer, then continue the pending file switch or
+  // session close. Session closes pass an explicit scope so a failed
+  // active-session IPC switch cannot make Save write the wrong tab.
   //
   // Use TWO separate try/catch blocks so save-failure and open-failure
   // emit accurate messages. Previously a single try/catch reported a
@@ -966,8 +968,14 @@ export const WorkspaceView = (): ReactElement => {
   // on the return object), destructure { saveFile, openFile } into the
   // deps here to lock the handler identity.
   const handleSave = useCallback(async (): Promise<void> => {
+    const pendingSessionRemovalIdAtSave = pendingSessionRemovalIdRef.current
+
     try {
-      await editorBuffer.saveFile()
+      if (pendingSessionRemovalIdAtSave) {
+        await editorBuffer.saveFile(pendingSessionRemovalIdAtSave)
+      } else {
+        await editorBuffer.saveFile()
+      }
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error)
       setSaveError(`Failed to save: ${message}`)

@@ -37,7 +37,7 @@ export interface EditorBuffer {
    */
   isLoading: boolean
   openFile: (path: string) => Promise<void>
-  saveFile: () => Promise<void>
+  saveFile: (scopeId?: string) => Promise<void>
   updateContent: (content: string) => void
   hasUnsavedChanges: (scopeId: string) => boolean
   releaseScope: (scopeId: string) => void
@@ -139,31 +139,34 @@ export const useEditorBuffer = (
     [fileSystemService, setBufferForScope]
   )
 
-  const saveFile = useCallback(async (): Promise<void> => {
-    const targetScopeId = activeScopeIdRef.current
+  const saveFile = useCallback(
+    async (scopeIdToSave?: string): Promise<void> => {
+      const targetScopeId = scopeIdToSave ?? activeScopeIdRef.current
 
-    const buffer =
-      buffersByScopeRef.current[targetScopeId] ?? EMPTY_EDITOR_BUFFER
+      const buffer =
+        buffersByScopeRef.current[targetScopeId] ?? EMPTY_EDITOR_BUFFER
 
-    if (!buffer.filePath) {
-      throw new Error('No file loaded')
-    }
-
-    const filePath = buffer.filePath
-    const content = buffer.currentContent
-
-    await fileSystemService.writeFile(filePath, content)
-    setBufferForScope(targetScopeId, (currentBuffer) => {
-      if (currentBuffer.filePath !== filePath) {
-        return currentBuffer
+      if (!buffer.filePath) {
+        throw new Error('No file loaded')
       }
 
-      return {
-        ...currentBuffer,
-        originalContent: content,
-      }
-    })
-  }, [fileSystemService, setBufferForScope])
+      const filePath = buffer.filePath
+      const content = buffer.currentContent
+
+      await fileSystemService.writeFile(filePath, content)
+      setBufferForScope(targetScopeId, (currentBuffer) => {
+        if (currentBuffer.filePath !== filePath) {
+          return currentBuffer
+        }
+
+        return {
+          ...currentBuffer,
+          originalContent: content,
+        }
+      })
+    },
+    [fileSystemService, setBufferForScope]
+  )
 
   const updateContent = useCallback(
     (content: string): void => {

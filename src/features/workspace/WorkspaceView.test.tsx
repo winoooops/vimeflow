@@ -458,6 +458,10 @@ describe('WorkspaceView', () => {
     const hasUnsavedChanges = vi.fn((scopeId: string) => scopeId === 'second')
     const saveFile = vi.fn().mockResolvedValue(undefined)
 
+    const consoleWarn = vi
+      .spyOn(console, 'warn')
+      .mockImplementation((): void => undefined)
+
     workspaceTerminalMock.service.listSessions.mockResolvedValue({
       activeSessionId: 'first',
       sessions: [
@@ -494,6 +498,10 @@ describe('WorkspaceView', () => {
       ],
     })
 
+    workspaceTerminalMock.service.setActiveSession.mockRejectedValueOnce(
+      new Error('IPC failed')
+    )
+
     vi.mocked(useEditorBuffer).mockReturnValue({
       filePath: 'src/current.ts',
       originalContent: 'original',
@@ -507,31 +515,35 @@ describe('WorkspaceView', () => {
       releaseScope: vi.fn(),
     })
 
-    render(<WorkspaceView />)
+    try {
+      render(<WorkspaceView />)
 
-    await screen.findByRole('tab', { name: 'first' })
+      await screen.findByRole('tab', { name: 'first' })
 
-    await user.click(screen.getByRole('button', { name: 'Close second' }))
-    await screen.findByRole('dialog', { name: /unsaved changes/i })
-    await user.click(screen.getByRole('button', { name: 'Save' }))
+      await user.click(screen.getByRole('button', { name: 'Close second' }))
+      await screen.findByRole('dialog', { name: /unsaved changes/i })
+      await user.click(screen.getByRole('button', { name: 'Save' }))
 
-    await waitFor(() => {
-      expect(saveFile).toHaveBeenCalled()
-    })
+      await waitFor(() => {
+        expect(saveFile).toHaveBeenCalledWith('second')
+      })
 
-    await waitFor(() => {
-      expect(screen.queryByRole('tab', { name: 'second' })).toBeNull()
-    })
+      await waitFor(() => {
+        expect(screen.queryByRole('tab', { name: 'second' })).toBeNull()
+      })
 
-    expect(screen.getByRole('tab', { name: 'first' })).toHaveAttribute(
-      'aria-selected',
-      'true'
-    )
+      expect(screen.getByRole('tab', { name: 'first' })).toHaveAttribute(
+        'aria-selected',
+        'true'
+      )
 
-    expect(screen.getByRole('tab', { name: 'third' })).toHaveAttribute(
-      'aria-selected',
-      'false'
-    )
+      expect(screen.getByRole('tab', { name: 'third' })).toHaveAttribute(
+        'aria-selected',
+        'false'
+      )
+    } finally {
+      consoleWarn.mockRestore()
+    }
   })
 
   test('selects the next visible session after confirming a dirty active-session close', async () => {
@@ -655,7 +667,7 @@ describe('WorkspaceView', () => {
     await user.click(screen.getByRole('button', { name: 'Save' }))
 
     await waitFor(() => {
-      expect(saveFile).toHaveBeenCalled()
+      expect(saveFile).toHaveBeenCalledWith('first')
     })
 
     await waitFor(() => {
