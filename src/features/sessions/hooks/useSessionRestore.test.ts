@@ -329,6 +329,85 @@ describe('useSessionRestore', () => {
     expect(onActiveResolved).toHaveBeenCalledWith(ws)
   })
 
+  // PR #290 cycle 13: Claude MEDIUM — when no pane records a persisted
+  // `grouping.workspaceDirectory` (legacy cache from before that field
+  // existed), `groupSessionsFromInfos` falls back to `panes[0].cwd` as
+  // the workspace baseline. `panes[0]` is whichever pane the single-
+  // active-pane fixup promoted, which may NOT be the real active pane.
+  // The reconciler now overrides `workingDirectory` to the canonical
+  // active pane's cwd in that fallback case — but ONLY when no pane in
+  // the workspace recorded a persisted baseline (so a real persisted
+  // value is left alone).
+  test('overrides fallback workingDirectory from the active pane for legacy caches', async () => {
+    const ws = 'workspace-legacy'
+
+    // No pane carries `workspaceDirectory` — simulates a cache written
+    // before the field existed. pty-a and pty-b live in different cwds;
+    // pty-b is the canonical active pane per `list.activeSessionId`.
+    // Both panes' grouping.active is FALSE so the fixup promotes pane-0
+    // (pty-a) as a tiebreaker; that's where the buggy fallback used to
+    // bake `/repo-a` as the baseline. The reconciler must replace it
+    // with `/repo-b` (the real active pane's cwd).
+    const grouped = (
+      id: string,
+      cwd: string,
+      paneIndex: number,
+      paneId: string,
+      agentType: string
+    ): unknown => ({
+      id,
+      cwd,
+      status: {
+        kind: 'Alive',
+        pid: 1000 + paneIndex,
+        replay_data: '',
+        replay_end_offset: BigInt(0),
+      },
+      grouping: {
+        workspaceSessionId: ws,
+        layout: 'vsplit',
+        paneId,
+        paneIndex,
+        agentType,
+        active: false,
+        // workspaceDirectory deliberately omitted (legacy cache).
+      },
+    })
+
+    const service = {
+      onData: vi.fn().mockResolvedValue(() => undefined),
+      listSessions: vi.fn().mockResolvedValue({
+        sessions: [
+          grouped('pty-a', '/home/will/repo-a', 0, 'p0', 'claude-code'),
+          grouped('pty-b', '/home/will/repo-b', 1, 'p1', 'codex'),
+        ],
+        activeSessionId: 'pty-b',
+      }),
+    } as unknown as ITerminalService
+    const onRestore = vi.fn<(sessions: Session[]) => void>()
+    const onActiveResolved = vi.fn<(id: string) => void>()
+
+    const { result } = renderHook(() =>
+      useSessionRestore({
+        service,
+        buffer: buildBuffer(),
+        onRestore,
+        onActiveResolved,
+      })
+    )
+
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    const restored = onRestore.mock.calls[0]?.[0]
+    if (!restored) {
+      throw new Error('expected onRestore to be called')
+    }
+    const ws1 = restored[0]
+    expect(ws1.workingDirectory).toBe('/home/will/repo-b')
+    // The active pane is pty-b post-reconciliation.
+    expect(ws1.panes.find((pane) => pane.active)?.ptyId).toBe('pty-b')
+  })
+
   test('null active id with no sessions leaves activeSessionId null', async () => {
     const service = {
       onData: vi.fn().mockResolvedValue(() => undefined),

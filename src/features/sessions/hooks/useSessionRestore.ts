@@ -88,13 +88,30 @@ export const useSessionRestore = ({
         // within the workspace it belongs to.
         //
         // Recompute the session-level fields that depend on which pane
-        // is active: just `agentType`. `workingDirectory` and `name`
-        // are intentionally LEFT ALONE — both come from the workspace
-        // baseline (persisted `grouping.workspaceDirectory`), NOT from
-        // any pane's live cwd. Overwriting them from the new active
-        // pane would silently reintroduce the OSC 7 drift bug Codex P2
-        // flagged on PR #290 cycle 7.
+        // is active. `agentType` always follows the new active pane.
+        //
+        // `workingDirectory` / `name` are normally LEFT ALONE — they come
+        // from the persisted workspace baseline (`grouping.workspaceDirectory`),
+        // NOT from any pane's live cwd, so overwriting from the new
+        // active pane would silently reintroduce the OSC 7 drift bug
+        // Codex P2 flagged on PR #290 cycle 7.
+        //
+        // EXCEPTION: a back-compat case from PR #290 cycle 13 (Claude
+        // MEDIUM). For caches written before `workspaceDirectory` existed,
+        // `groupSessionsFromInfos` defaulted `workingDirectory` to
+        // `panes[0].cwd` (the fixup-promoted pane, which may NOT be the
+        // real active pane). In that case the fallback can be wrong, so
+        // we override it here using the cache's canonical active pane —
+        // the closest available approximation of the baseline. We only
+        // do this when NO pane in the workspace recorded a persisted
+        // value, so a real persisted baseline survives untouched.
         const activePtyId = list.activeSessionId
+
+        const persistedWorkspaceDirs = new Set(
+          list.sessions
+            .filter((info) => info.grouping?.workspaceDirectory !== undefined)
+            .map((info) => info.grouping?.workspaceSessionId ?? '')
+        )
 
         const reconciled = activePtyId
           ? grouped.map((session) => {
@@ -105,6 +122,8 @@ export const useSessionRestore = ({
                 return session
               }
 
+              const overrideBaseline = !persistedWorkspaceDirs.has(session.id)
+
               return {
                 ...session,
                 panes: session.panes.map((pane) => ({
@@ -112,6 +131,9 @@ export const useSessionRestore = ({
                   active: pane.ptyId === activePtyId,
                 })),
                 agentType: newActivePane.agentType,
+                ...(overrideBaseline
+                  ? { workingDirectory: newActivePane.cwd }
+                  : {}),
               }
             })
           : grouped
