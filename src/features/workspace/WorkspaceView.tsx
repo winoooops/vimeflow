@@ -772,7 +772,10 @@ export const WorkspaceView = (): ReactElement => {
       notifyInfo,
     ]
   )
-  const commandPalette = useCommandPalette(workspaceCommands)
+
+  const commandPalette = useCommandPalette(workspaceCommands, {
+    enabled: !showUnsavedDialog,
+  })
 
   usePaneShortcuts({
     sessions,

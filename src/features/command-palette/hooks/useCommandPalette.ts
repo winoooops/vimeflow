@@ -9,6 +9,7 @@ import {
 import type {
   Command,
   CommandPaletteState,
+  UseCommandPaletteOptions,
   UseCommandPaletteReturn,
 } from '../registry/types'
 import { fuzzyMatch } from '../registry/fuzzyMatch'
@@ -51,8 +52,11 @@ const fullyConsumeEvent = (event: KeyboardEvent): void => {
 export { COMMAND_PALETTE_SHORTCUT_KEYS }
 
 export const useCommandPalette = (
-  commands: Command[] = defaultCommands
+  commands: Command[] = defaultCommands,
+  options: UseCommandPaletteOptions = {}
 ): UseCommandPaletteReturn => {
+  const isEnabled = options.enabled ?? true
+
   const [state, setState] = useState<CommandPaletteState>({
     isOpen: false,
     query: ':',
@@ -61,6 +65,9 @@ export const useCommandPalette = (
   })
   const leaderTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const leaderActiveRef = useRef(false)
+  const isEnabledRef = useRef(isEnabled)
+
+  isEnabledRef.current = isEnabled
 
   const clearLeaderWindow = useCallback((): void => {
     if (leaderTimerRef.current) {
@@ -155,15 +162,24 @@ export const useCommandPalette = (
     return Math.min(state.selectedIndex, filteredResults.length - 1)
   }, [state.selectedIndex, filteredResults.length])
 
-  const openWithQuery = useCallback((query: string): void => {
-    setState((prev) => ({
-      ...prev,
-      isOpen: true,
-      query,
-      selectedIndex: 0,
-      currentNamespace: null,
-    }))
-  }, [])
+  const openWithQuery = useCallback(
+    (query: string): void => {
+      if (!isEnabledRef.current) {
+        clearLeaderWindow()
+
+        return
+      }
+
+      setState((prev) => ({
+        ...prev,
+        isOpen: true,
+        query,
+        selectedIndex: 0,
+        currentNamespace: null,
+      }))
+    },
+    [clearLeaderWindow]
+  )
 
   const open = useCallback((): void => {
     openWithQuery(':')
@@ -179,6 +195,14 @@ export const useCommandPalette = (
       currentNamespace: null,
     }))
   }, [clearLeaderWindow])
+
+  useEffect(() => {
+    if (isEnabled) {
+      return
+    }
+
+    close()
+  }, [close, isEnabled])
 
   const setQuery = useCallback((query: string): void => {
     setState((prev) => ({
@@ -318,6 +342,13 @@ export const useCommandPalette = (
     // the follow-up chord key (NOT intercepted) still reaches handleKeyDown
     // below and routes through chordRegistry / usePaneRenameChord.
     const handlePaletteShortcut = (): void => {
+      if (!isEnabledRef.current) {
+        clearLeaderWindow()
+        handlersRef.current.close()
+
+        return
+      }
+
       if (leaderActiveRef.current) {
         clearLeaderWindow()
         handlersRef.current.open()

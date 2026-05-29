@@ -74,6 +74,32 @@ describe('useCommandPalette', () => {
       // filteredResults is derived from query ':' so it shows all default commands
       expect(result.current.filteredResults.length).toBeGreaterThan(0)
     })
+
+    test('disabled palette rejects opens and closes current state', async () => {
+      const { result, rerender } = renderHook(
+        ({ enabled }: { enabled: boolean }) =>
+          useCommandPalette(undefined, { enabled }),
+        { initialProps: { enabled: true } }
+      )
+
+      act(() => {
+        result.current.open()
+      })
+
+      expect(result.current.state.isOpen).toBe(true)
+
+      rerender({ enabled: false })
+
+      await waitFor(() => {
+        expect(result.current.state.isOpen).toBe(false)
+      })
+
+      act(() => {
+        result.current.open()
+      })
+
+      expect(result.current.state.isOpen).toBe(false)
+    })
   })
 
   describe('keyboard trigger', () => {
