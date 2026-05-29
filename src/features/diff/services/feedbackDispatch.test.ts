@@ -102,3 +102,28 @@ test('dispatchFeedbackBatch calls writePty once with paste-bracketed payload', a
   expect(sent.startsWith('\x1b[200~')).toBe(true)
   expect(sent.endsWith('\x1b[201~\r')).toBe(true)
 })
+
+test('strips terminal control characters so a crafted path/comment cannot break out of the paste', () => {
+  const entries: DispatchEntry[] = [
+    {
+      // filename embedding the paste-END sentinel + CR
+      filePath: 'src/ev\x1b[201~il.tsx',
+      annotations: [
+        makeAnnotation(5, 'additions', 'breakout\x1b[201~\rinjected'),
+      ],
+    },
+  ]
+  const body = formatFeedbackPayload(entries)
+
+  // No ESC or CR survives the format step — the dangerous bytes that form the
+  // bracketed-paste sentinel / inject prompt lines are gone (the harmless
+  // printable remainder like "[201~" stays as plain text).
+  expect(body).not.toContain('\x1b')
+  expect(body).not.toContain('\r')
+  expect(body).toContain('breakout[201~injected')
+
+  // End to end: the only control sequences in the dispatched payload are the
+  // wrapper's own start/end sentinels — exactly two ESC bytes, one trailing CR.
+  const sent = `\x1b[200~${body}\x1b[201~\r`
+  expect((sent.match(/\x1b/g) ?? []).length).toBe(2)
+})

@@ -7,7 +7,12 @@ describe('ReviewCommentRow', () => {
   test('renders the comment text', () => {
     render(
       <ReviewCommentRow
-        comment={{ id: '1', text: 'Looks good to me', author: 'self', createdAt: 1000 }}
+        comment={{
+          id: '1',
+          text: 'Looks good to me',
+          author: 'self',
+          createdAt: 1000,
+        }}
         onEdit={vi.fn()}
         onDelete={vi.fn()}
       />
@@ -39,7 +44,12 @@ describe('ReviewCommentRow', () => {
 
     render(
       <ReviewCommentRow
-        comment={{ id: '3', text: 'Remove this', author: 'self', createdAt: 3000 }}
+        comment={{
+          id: '3',
+          text: 'Remove this',
+          author: 'self',
+          createdAt: 3000,
+        }}
         onEdit={vi.fn()}
         onDelete={handleDelete}
       />
@@ -56,7 +66,12 @@ describe('ReviewCommentRow', () => {
 
     render(
       <ReviewCommentRow
-        comment={{ id: '4', text: 'Some comment', author: 'self', createdAt: 4000 }}
+        comment={{
+          id: '4',
+          text: 'Some comment',
+          author: 'self',
+          createdAt: 4000,
+        }}
         onEdit={vi.fn()}
         onDelete={handleDelete}
       />

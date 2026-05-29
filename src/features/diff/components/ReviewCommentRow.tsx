@@ -23,7 +23,10 @@ export const ReviewCommentRow = ({
         className="rounded p-1 text-on-surface-variant hover:bg-surface-container-highest hover:text-on-surface"
         aria-label="Edit comment"
       >
-        <span aria-hidden="true" className="material-symbols-outlined text-base">
+        <span
+          aria-hidden="true"
+          className="material-symbols-outlined text-base"
+        >
           edit
         </span>
       </button>
@@ -33,7 +36,10 @@ export const ReviewCommentRow = ({
         className="rounded p-1 text-on-surface-variant hover:bg-error-container/30 hover:text-error"
         aria-label="Delete comment"
       >
-        <span aria-hidden="true" className="material-symbols-outlined text-base">
+        <span
+          aria-hidden="true"
+          className="material-symbols-outlined text-base"
+        >
           delete
         </span>
       </button>
