@@ -601,6 +601,73 @@ describe('usePushWorkspaceGrouping', () => {
     }
   })
 
+  // PR #290 cycle 14: Claude MEDIUM — the success continuation
+  // (`if (pending !== null) void latestDrainRef.current?.()`) did NOT
+  // check `mountedRef`, while the retry-timer path did. If the
+  // component unmounted mid-await AND a newer snapshot landed in
+  // `pending` during the await, the continuation would still fire an
+  // IPC against the torn-down hook. The cycle-14 guard short-circuits
+  // when `mountedRef.current` flipped false, mirroring the catch's
+  // retry-timer pattern.
+  test('does not dispatch a follow-up IPC after unmount mid-await', async () => {
+    vi.useFakeTimers()
+    try {
+      let releaseFirst: (() => void) | undefined
+
+      const setWorkspaceSessions = vi
+        .fn()
+        .mockImplementationOnce(
+          () =>
+            new Promise<void>((resolve) => {
+              releaseFirst = resolve
+            })
+        )
+        .mockResolvedValue(undefined)
+      const service = { setWorkspaceSessions } as unknown as ITerminalService
+
+      const initial = [
+        session('ws-1', 'single', [
+          pane({ id: 'p0', ptyId: 'pty-a', active: true }),
+        ]),
+      ]
+
+      const updated = [
+        session('ws-1', 'vsplit', [
+          pane({ id: 'p0', ptyId: 'pty-a', active: true }),
+          pane({ id: 'p1', ptyId: 'pty-b', active: false }),
+        ]),
+      ]
+
+      const { rerender, unmount } = renderHook(
+        ({ sessions }) =>
+          usePushWorkspaceGrouping({ service, loading: false, sessions }),
+        { initialProps: { sessions: initial as readonly Session[] } }
+      )
+
+      // First IPC is in flight (held by the unresolved promise).
+      await vi.advanceTimersByTimeAsync(0)
+      expect(setWorkspaceSessions).toHaveBeenCalledTimes(1)
+
+      // Rerender lands a newer snapshot in `pending` while the first
+      // IPC is still in flight. The new effect's drain returns at the
+      // `inFlight` guard.
+      rerender({ sessions: updated as readonly Session[] })
+
+      // Unmount BEFORE the first IPC resolves.
+      unmount()
+
+      // Release the first IPC. The success continuation must NOT fire
+      // a second IPC for the queued snapshot because the hook is gone.
+      releaseFirst?.()
+      await vi.advanceTimersByTimeAsync(0)
+      await vi.advanceTimersByTimeAsync(10)
+
+      expect(setWorkspaceSessions).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   // PR #290 cycle 12: Claude MEDIUM — the effect dep is `sessions`, which
   // changes on EVERY `setSessions` call (OSC 7 cwd update, agent title
   // event, user label set, PTY-exit status flip). None of those affect

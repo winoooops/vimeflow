@@ -256,6 +256,14 @@ export const usePushWorkspaceGrouping = ({
       // treats `pending` as still null after the consume above; the
       // disable is intentional — a concurrent effect re-run can populate
       // it with a newer snapshot.
+      //
+      // The `mountedRef` gate keeps the unmount contract symmetric with
+      // the retry-timer path: an unmount mid-await must not enqueue
+      // another IPC against a torn-down hook (Claude MEDIUM on PR #290
+      // cycle 14).
+      if (!mountedRef.current) {
+        return
+      }
       // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
       if (queueRef.current.pending !== null) {
         void latestDrainRef.current?.()
