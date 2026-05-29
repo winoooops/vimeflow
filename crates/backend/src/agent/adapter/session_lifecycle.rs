@@ -378,6 +378,16 @@ impl SessionLifecycle {
         self.watcher_state.remove(sid);
     }
 
+    /// PRECONDITION: `located` MUST have passed `ensure_trust`
+    /// (`ensure_status_source_under_trust_root`) before this verb runs.
+    /// `base::start_watching` does NOT re-validate the status path against
+    /// the trust root — that obligation lives in the sibling `ensure_trust`
+    /// verb, which the `start()` orchestration calls earlier in the sequence
+    /// (`locate → ensure_trust → evict_old → spawn_watch → register`; see the
+    /// F.5 cutover and the T-LIFECYCLE-2b regression test). Spawning a watcher
+    /// on an unvalidated path would reopen the symlink-race / path-traversal
+    /// hole `path_security` closes. Mirrors the precondition documented on
+    /// `base::start_watching` itself.
     #[allow(dead_code)] // remove in F.5 cutover
     fn spawn_watch(
         &self,
