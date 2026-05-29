@@ -40,7 +40,7 @@ export const dispatchFeedbackBatch = async (
   writePty: (ptyId: string, data: string) => Promise<void>
 ): Promise<void> => {
   const formatted = formatFeedbackPayload(entries)
-  const payload = `${PASTE_START}${formatted}${PASTE_END}\n`
+  const payload = `${PASTE_START}${formatted}${PASTE_END}\r`
 
   await writePty(ptyId, payload)
 }

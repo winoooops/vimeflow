@@ -23,6 +23,7 @@ import {
 import type { GitService } from '../services/gitService'
 import * as gitServiceModule from '../services/gitService'
 import * as pierreAdapterModule from '../services/pierreAdapter'
+import * as useFeedbackBatchModule from '../hooks/useFeedbackBatch'
 import type { MockInstance } from 'vitest'
 import type { PaneCandidate } from '../services/activePanePicker'
 
@@ -2238,6 +2239,58 @@ describe('DiffPanelContent', () => {
           screen.queryByRole('button', { name: /finish feedback/i })
         ).not.toBeInTheDocument()
       )
+    })
+
+    test('preserves the composer draft and shows a notification when the feedback cap is reached', async (): Promise<void> => {
+      const user = userEvent.setup()
+      const addAnnotationSpy = vi.fn().mockReturnValue('cap-reached')
+
+      const spy = vi
+        .spyOn(useFeedbackBatchModule, 'useFeedbackBatch')
+        .mockReturnValue({
+          batch: new Map(),
+          annotationsForFile: () => [],
+          addAnnotation: addAnnotationSpy,
+          updateAnnotation: vi.fn(),
+          removeAnnotation: vi.fn(),
+          clearBatch: vi.fn(),
+          totalAnnotations: () => 50,
+        })
+
+      render(
+        <DiffPanelContent
+          cwd="/repo"
+          selectedFile={{ path: 'src/foo.ts', staged: false, cwd: '/repo' }}
+          onSelectedFileChange={vi.fn()}
+        />
+      )
+
+      setPaneWidth(SPLIT_MIN_WIDTH_PX + 100)
+
+      const gutterSlot = screen.getByTestId('gutter-utility-slot')
+
+      const addButton = within(gutterSlot).getByRole('button', {
+        name: 'Add comment on this line',
+      })
+
+      await user.click(addButton)
+
+      const dialog = screen.getByRole('dialog', { name: /Comment on line/ })
+      const textarea = within(dialog).getByPlaceholderText('Request change')
+
+      await user.type(textarea, 'Draft comment')
+      await user.keyboard('{Enter}')
+
+      expect(addAnnotationSpy).toHaveBeenCalledTimes(1)
+      expect(
+        screen.getByRole('dialog', { name: /Comment on line/ })
+      ).toBeInTheDocument()
+
+      expect(await screen.findByRole('status')).toHaveTextContent(
+        'Feedback limit reached'
+      )
+
+      spy.mockRestore()
     })
   })
 })

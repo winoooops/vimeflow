@@ -64,6 +64,7 @@ import { useDockShortcuts } from './hooks/useDockShortcuts'
 import { useEditorBuffer } from '../editor/hooks/useEditorBuffer'
 import { useAgentStatus } from '../agent-status/hooks/useAgentStatus'
 import { useGitStatus } from '../diff/hooks/useGitStatus'
+import type { PaneCandidate } from '../diff/services/activePanePicker'
 import { sumLines } from '../diff/utils/sumLines'
 import { findActivePane } from '../sessions/utils/activeSessionPane'
 import { lineDelta } from '../sessions/utils/lineDelta'
@@ -959,6 +960,51 @@ export const WorkspaceView = (): ReactElement => {
     verticalDockElastic.isDragging ||
     horizontalDockElastic.isDragging
 
+  const feedbackDispatch = useMemo(() => {
+    const candidates: PaneCandidate[] = sessions.flatMap((session) =>
+      session.panes.map((pane) => {
+        const agent = AGENTS[agentTypeToRegistryKey(pane.agentType)]
+
+        const statusMap: Record<typeof pane.status, PaneCandidate['status']> = {
+          running: 'running',
+          paused: 'idle',
+          completed: 'exited',
+          errored: 'error',
+        }
+
+        // `agentLabel` must match the picker's SupportedAgent literals
+        // ('Claude Code' | 'Codex'); the registry display name diverges
+        // (e.g. AGENTS.codex.name === 'Codex CLI'), which would silently
+        // filter Codex panes out of feedback dispatch. Map agentType
+        // directly; unsupported types fall back to the display name and
+        // are filtered by resolveCandidatePanes.
+        const agentLabel =
+          pane.agentType === 'claude-code'
+            ? 'Claude Code'
+            : pane.agentType === 'codex'
+              ? 'Codex'
+              : agent.name
+
+        return {
+          paneId: pane.id,
+          ptyId: pane.ptyId,
+          tabName: pane.userLabel ?? pane.agentTitle ?? session.name,
+          agentLabel,
+          cwd: pane.cwd,
+          status: statusMap[pane.status],
+          isFocused: pane.active && session.id === activeSessionId,
+        }
+      })
+    )
+
+    return {
+      candidates,
+      writePty: async (ptyId: string, data: string): Promise<void> => {
+        await terminalService.write({ sessionId: ptyId, data })
+      },
+    }
+  }, [sessions, activeSessionId, terminalService])
+
   const dockOrPeek = isDockOpen ? (
     <DockPanel
       ref={dockPanelRef}
@@ -995,6 +1041,7 @@ export const WorkspaceView = (): ReactElement => {
       onContainerFocus={() => {
         setActiveContainerId(DOCK_CONTAINER_ID)
       }}
+      feedbackDispatch={feedbackDispatch}
     />
   ) : (
     <DockPeekButton position={dockPosition} onOpen={() => openDock()} />

@@ -345,7 +345,7 @@ export const DiffPanelContent = ({
             text,
           })
         } else {
-          feedback.addAnnotation(cwd, selectedFilePath, {
+          const result = feedback.addAnnotation(cwd, selectedFilePath, {
             side: current.side,
             lineNumber: current.lineNumber,
             metadata: {
@@ -355,12 +355,19 @@ export const DiffPanelContent = ({
               createdAt: Date.now(),
             },
           })
+          if (result === 'cap-reached') {
+            notifyInfo(
+              'Feedback limit reached (50 comments). Finish or discard before adding more.'
+            )
+
+            return current
+          }
         }
 
         return null
       })
     },
-    [feedback, cwd, selectedFilePath]
+    [feedback, cwd, selectedFilePath, notifyInfo]
   )
 
   const closeComposer = useCallback((): void => {

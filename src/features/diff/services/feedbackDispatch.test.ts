@@ -75,5 +75,5 @@ test('dispatchFeedbackBatch calls writePty once with paste-bracketed payload', a
   expect(writePty).toHaveBeenCalledTimes(1)
   const sent = writePty.mock.calls[0][1] as string
   expect(sent.startsWith('\x1b[200~')).toBe(true)
-  expect(sent.endsWith('\x1b[201~\n')).toBe(true)
+  expect(sent.endsWith('\x1b[201~\r')).toBe(true)
 })
