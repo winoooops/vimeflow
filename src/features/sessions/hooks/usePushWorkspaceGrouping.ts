@@ -304,10 +304,20 @@ export const usePushWorkspaceGrouping = ({
     // JSON) would re-enter here, find `pending` non-null from the
     // restored failure, and immediately retry — bypassing the 5s
     // backoff entirely. Cycle 16 moves the timer-clear into the
-    // unmount-only effect AND gates this kick on the timer's presence:
-    // a real structural change (no timer set) drains immediately, a
-    // no-op rerun while a retry is queued lets the timer own the
-    // schedule. Claude MEDIUM on PR #290 cycle 16.
+    // unmount-only effect AND gates this kick on the timer's presence.
+    //
+    // The gate is intentionally BROAD: when a retry timer is armed, ANY
+    // rerender (no-op OR structural) is held back until the timer fires.
+    // The flood case (OSC 7 no-op reruns) is what motivated the gate,
+    // but structurally-new snapshots that arrive during the 5s window
+    // are also blocked — they're picked up by `latest-wins` on
+    // `queueRef.current.pending` and dispatched when the timer drains.
+    // Letting structural changes through immediately would re-open the
+    // flood window for any case where the inputs happen to mutate
+    // (e.g. an active-pane swap during outage). The sub-5s persistence
+    // delay is the deliberate trade for flood protection. Claude MEDIUM
+    // on PR #290 cycles 16 (gate added) and 17 (comment broadened to
+    // match the actual condition).
     if (queueRef.current.pending !== null && retryTimerRef.current === null) {
       void drain()
     }
