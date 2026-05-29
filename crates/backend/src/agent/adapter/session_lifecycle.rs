@@ -1,4 +1,4 @@
-//! `AgentWatcherService` — the registry facade for agent-watcher
+//! `SessionLifecycle` — the registry facade for agent-watcher
 //! lifecycle.
 //!
 //! Step D' of the v4-frozen refactor plan (#246). Owns clones of the
@@ -37,7 +37,7 @@ use base::{AgentWatcherState, TranscriptState};
 /// facade shape is uniform and a future eager-prevalidation `stop`
 /// (or a `restart`) has the inputs it needs without a signature
 /// change.
-pub(crate) struct AgentWatcherService {
+pub(crate) struct SessionLifecycle {
     pty_state: PtyState,
     watcher_state: AgentWatcherState,
     transcript_state: TranscriptState,
@@ -56,7 +56,7 @@ mod tests {
     }
 }
 
-impl AgentWatcherService {
+impl SessionLifecycle {
     pub(crate) fn new(
         pty_state: PtyState,
         watcher_state: AgentWatcherState,

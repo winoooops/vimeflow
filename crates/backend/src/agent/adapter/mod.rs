@@ -11,7 +11,7 @@ pub mod claude_code;
 pub mod codex;
 mod error;
 mod serde_helpers;
-mod service;
+mod session_lifecycle;
 mod traits;
 pub mod types;
 
@@ -228,7 +228,7 @@ pub(crate) async fn start_agent_watcher_inner(
     // attach-resolution, the `AgentBindings::for_attach` +
     // `AttachError` → `String` mapping seam, and the spawn_blocking
     // hand-off to `base::start_for`.
-    service::AgentWatcherService::new(pty_state, watcher_state, transcript_state, events)
+    session_lifecycle::SessionLifecycle::new(pty_state, watcher_state, transcript_state, events)
         .start(session_id)
         .await
 }
@@ -287,17 +287,50 @@ pub(crate) async fn stop_agent_watcher_inner(
     events: Arc<dyn EventSink>,
     session_id: String,
 ) -> Result<(), String> {
-    service::AgentWatcherService::new(pty_state, watcher_state, transcript_state, events)
+    session_lifecycle::SessionLifecycle::new(pty_state, watcher_state, transcript_state, events)
         .stop(session_id)
         .await
 }
 
 #[cfg(test)]
+use portable_pty::{native_pty_system, CommandBuilder, PtySize};
+#[cfg(test)]
+use std::sync::atomic::AtomicBool;
+#[cfg(test)]
+use std::sync::Mutex;
+
+#[cfg(test)]
+pub(crate) fn make_test_session() -> crate::terminal::state::ManagedSession {
+    let pty_system = native_pty_system();
+    let pty_pair = pty_system
+        .openpty(PtySize {
+            rows: 24,
+            cols: 80,
+            pixel_width: 0,
+            pixel_height: 0,
+        })
+        .expect("openpty");
+    let child = pty_pair
+        .slave
+        .spawn_command(CommandBuilder::new("/bin/true"))
+        .expect("spawn");
+    let writer = pty_pair.master.take_writer().expect("take_writer");
+
+    crate::terminal::state::ManagedSession {
+        master: pty_pair.master,
+        writer,
+        child,
+        cwd: "/tmp/workspace".into(),
+        generation: 0,
+        ring: Arc::new(Mutex::new(crate::terminal::state::RingBuffer::new(64))),
+        cancelled: Arc::new(AtomicBool::new(false)),
+        started_at: std::time::SystemTime::UNIX_EPOCH,
+    }
+}
+
+#[cfg(test)]
 mod noop_tests {
     use super::*;
-    use portable_pty::{native_pty_system, CommandBuilder, PtySize};
-    use std::sync::atomic::AtomicBool;
-    use std::sync::{Arc, Mutex};
 
     #[test]
     fn agent_type_round_trips() {
@@ -403,40 +436,12 @@ mod noop_tests {
         assert_eq!(snapshot.agent_session_id, "sess");
     }
 
-    fn make_test_session() -> crate::terminal::state::ManagedSession {
-        let pty_system = native_pty_system();
-        let pty_pair = pty_system
-            .openpty(PtySize {
-                rows: 24,
-                cols: 80,
-                pixel_width: 0,
-                pixel_height: 0,
-            })
-            .expect("openpty");
-        let child = pty_pair
-            .slave
-            .spawn_command(CommandBuilder::new("/bin/true"))
-            .expect("spawn");
-        let writer = pty_pair.master.take_writer().expect("take_writer");
-
-        crate::terminal::state::ManagedSession {
-            master: pty_pair.master,
-            writer,
-            child,
-            cwd: "/tmp/workspace".into(),
-            generation: 0,
-            ring: Arc::new(Mutex::new(crate::terminal::state::RingBuffer::new(64))),
-            cancelled: Arc::new(AtomicBool::new(false)),
-            started_at: std::time::SystemTime::UNIX_EPOCH,
-        }
-    }
-
     #[test]
     fn resolve_bind_inputs_uses_detected_agent_pid_not_shell_pid() {
         let state = PtyState::new();
         let session_id = "sid".to_string();
         state
-            .try_insert(session_id.clone(), make_test_session(), 64)
+            .try_insert(session_id.clone(), super::make_test_session(), 64)
             .unwrap_or_else(|_| panic!("insert session"));
 
         let attach = resolve_bind_inputs(&state, &session_id, |_| Some((AgentType::Codex, 4242)))
@@ -452,7 +457,7 @@ mod noop_tests {
         let state = PtyState::new();
         let session_id = "sid-populate".to_string();
         state
-            .try_insert(session_id.clone(), make_test_session(), 64)
+            .try_insert(session_id.clone(), super::make_test_session(), 64)
             .unwrap_or_else(|_| panic!("insert session"));
 
         let attach = resolve_bind_inputs(&state, &session_id, |_| Some((AgentType::Codex, 4242)))
@@ -486,7 +491,7 @@ mod noop_tests {
         let state = PtyState::new();
         let session_id = "sid-aider".to_string();
         state
-            .try_insert(session_id.clone(), make_test_session(), 64)
+            .try_insert(session_id.clone(), super::make_test_session(), 64)
             .unwrap_or_else(|_| panic!("insert session"));
 
         let attach = resolve_bind_inputs(&state, &session_id, |_| Some((AgentType::Aider, 9999)))
@@ -509,7 +514,7 @@ mod noop_tests {
         let state = PtyState::new();
         let session_id = "sid-runtime-live".to_string();
         state
-            .try_insert(session_id.clone(), make_test_session(), 64)
+            .try_insert(session_id.clone(), super::make_test_session(), 64)
             .unwrap_or_else(|_| panic!("insert session"));
 
         let runtime = SessionRuntimeContext::new(session_id.clone(), state);
@@ -550,7 +555,7 @@ mod noop_tests {
         assert_eq!(cloned_runtime.live_cwd(), None);
 
         state
-            .try_insert(session_id.clone(), make_test_session(), 64)
+            .try_insert(session_id.clone(), super::make_test_session(), 64)
             .unwrap_or_else(|_| panic!("insert session"));
 
         let expected = Some(PathBuf::from("/tmp/workspace"));

@@ -16,7 +16,7 @@ use std::path::Path;
 /// aborts before Vimeflow watches or reads from that path. Multi-user or
 /// shared-volume deployments should revisit this with fd-pinned traversal
 /// such as `cap-std`.
-pub(super) fn ensure_status_source_under_trust_root(
+pub(crate) fn ensure_status_source_under_trust_root(
     status_path: &Path,
     trust_root: &Path,
 ) -> Result<(), String> {

@@ -157,7 +157,7 @@ impl AgentWatcherState {
     /// diagnostic "active_watchers=N" log line — surfaces leaked
     /// watchers from prior sessions that are still polling old
     /// status.json files in the background.
-    pub(super) fn active_count(&self) -> usize {
+    pub(crate) fn active_count(&self) -> usize {
         let watchers = self.watchers.lock().expect("failed to lock watchers");
         watchers.len()
     }
@@ -273,7 +273,7 @@ fn maybe_start_transcript(
 /// is still `located.status_path`; the rest of the struct is cloned
 /// into each callback so they can resolve transcript paths via the
 /// new trait without re-reading from the adapter.
-pub(super) fn start_watching(
+pub(crate) fn start_watching(
     bindings: AgentBindings,
     events: Arc<dyn EventSink>,
     pty_state: PtyState,
