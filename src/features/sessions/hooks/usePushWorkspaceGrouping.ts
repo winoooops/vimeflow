@@ -60,6 +60,8 @@ interface PushQueueState {
   pending: SetWorkspaceSessionsRequest | null
 }
 
+const RETRY_BACKOFF_MS = 5000
+
 export const usePushWorkspaceGrouping = ({
   service,
   sessions,
@@ -82,6 +84,27 @@ export const usePushWorkspaceGrouping = ({
   // change, mutating `queue.current.pending` to the latest snapshot.
   const queueRef = useRef<PushQueueState>({ inFlight: false, pending: null })
 
+  // Mount-lifetime ref for the unmount race. The per-effect cleanup
+  // ALSO runs on dependency changes (sessions / service / loading), so a
+  // per-effect `disposed` local would conflate harmless re-runs with
+  // teardown — a sessions change mid-failed-await would then incorrectly
+  // suppress the retry timer and leave the newer snapshot stuck in
+  // `pending`. A mount-lifetime ref flips false only on actual unmount,
+  // so the catch can distinguish the two.
+  //
+  // Setup MUST re-assert `true` because React StrictMode runs every
+  // effect in dev as setup → cleanup → setup; without the re-assertion
+  // the second setup leaves the ref stuck at `false` for the whole
+  // mounted lifetime, and the retry gate degrades to "never schedule".
+  const mountedRef = useRef(true)
+  useEffect(() => {
+    mountedRef.current = true
+
+    return (): void => {
+      mountedRef.current = false
+    }
+  }, [])
+
   useEffect(() => {
     if (loading) {
       return
@@ -93,6 +116,18 @@ export const usePushWorkspaceGrouping = ({
     if (sessions.length === 0) {
       return
     }
+
+    // Deferred retry handle, scoped to this effect run. On a transient IPC
+    // failure the drain restores `pending` and schedules ONE backoff
+    // timer; that timer re-enters drain after `RETRY_BACKOFF_MS`, so a
+    // sidecar that recovers in seconds doesn't leave the cache stale
+    // until the next structural sessions change. On a fresh sessions
+    // change (effect re-run) the cleanup clears the timer; the new drain
+    // handles the new snapshot directly. The catch consults `mountedRef`
+    // (mount-lifetime, NOT per-effect) before scheduling — so a
+    // dependency-change cleanup doesn't suppress the retry that an old
+    // closure may still need to drain a newer snapshot.
+    let retryTimer: ReturnType<typeof setTimeout> | null = null
 
     const snapshot = buildGroupingSnapshot(sessions)
     log.info(
@@ -146,10 +181,23 @@ export const usePushWorkspaceGrouping = ({
           // Break out of the drain loop instead of immediately retrying.
           // If the IPC keeps failing (sidecar down, etc.), looping here
           // would saturate the microtask queue and flood the log. The
-          // restored `pending` will be retried on the next `sessions`
-          // change (which re-enters drain via the effect), giving the
-          // backend time to recover. `inFlight` is cleared by the
-          // `finally` below so the next entry isn't blocked.
+          // restored `pending` will be retried either on the next
+          // `sessions` change (which re-enters drain via the effect) OR
+          // by the deferred timer below, whichever fires first. That
+          // covers the transient-error case where the sidecar recovers
+          // in seconds but the user isn't making structural changes —
+          // without the timer the cache would stay stale until the next
+          // reload fragments. `inFlight` is cleared by the `finally`
+          // below so the next entry isn't blocked.
+          if (mountedRef.current) {
+            retryTimer ??= setTimeout(() => {
+              retryTimer = null
+              if (mountedRef.current && queueRef.current.pending !== null) {
+                void drain()
+              }
+            }, RETRY_BACKOFF_MS)
+          }
+
           return
         } finally {
           queueRef.current.inFlight = false
@@ -157,5 +205,12 @@ export const usePushWorkspaceGrouping = ({
       }
     }
     void drain()
+
+    return (): void => {
+      if (retryTimer !== null) {
+        clearTimeout(retryTimer)
+        retryTimer = null
+      }
+    }
   }, [service, sessions, loading])
 }

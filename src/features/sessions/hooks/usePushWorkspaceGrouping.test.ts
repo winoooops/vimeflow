@@ -1,4 +1,5 @@
 import { renderHook, waitFor } from '@testing-library/react'
+import { StrictMode } from 'react'
 import { describe, expect, test, vi } from 'vitest'
 import type { ITerminalService } from '../../terminal/services/terminalService'
 import { emptyActivity } from '../constants'
@@ -297,6 +298,237 @@ describe('usePushWorkspaceGrouping', () => {
     await waitFor(() => expect(setWorkspaceSessions).toHaveBeenCalledTimes(1))
     await new Promise((resolve) => setTimeout(resolve, 30))
     expect(setWorkspaceSessions).toHaveBeenCalledTimes(1)
+  })
+
+  // PR #290 cycle 7: Claude MEDIUM + Codex P2 — after cycle 6's `return`,
+  // a transient IPC failure left the restored snapshot sitting in
+  // `pending` indefinitely if the user made no structural change
+  // afterwards. The fix is a single 5s deferred retry timer scheduled on
+  // failure: it re-enters drain so a sidecar that recovers in seconds
+  // resyncs the cache without waiting for the next sessions change.
+  test('schedules a deferred retry after a transient failure', async () => {
+    vi.useFakeTimers()
+    try {
+      const setWorkspaceSessions = vi
+        .fn()
+        .mockRejectedValueOnce(new Error('transient sidecar hiccup'))
+        .mockResolvedValue(undefined)
+      const service = { setWorkspaceSessions } as unknown as ITerminalService
+
+      renderHook(() =>
+        usePushWorkspaceGrouping({
+          service,
+          loading: false,
+          sessions: [
+            session('ws-1', 'vsplit', [
+              pane({ id: 'p0', ptyId: 'pty-a', active: true }),
+              pane({ id: 'p1', ptyId: 'pty-b', active: false }),
+            ]),
+          ],
+        })
+      )
+
+      // First call fires and rejects. Let the catch's microtask run.
+      await vi.advanceTimersByTimeAsync(0)
+      expect(setWorkspaceSessions).toHaveBeenCalledTimes(1)
+
+      // No premature retry. Backoff is 5s; well before that nothing fires.
+      await vi.advanceTimersByTimeAsync(1000)
+      expect(setWorkspaceSessions).toHaveBeenCalledTimes(1)
+
+      // After the full backoff the deferred retry drains the restored
+      // snapshot and the second call succeeds.
+      await vi.advanceTimersByTimeAsync(5000)
+      expect(setWorkspaceSessions).toHaveBeenCalledTimes(2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  // PR #290 cycle 7 (post-verify): Codex caught a regression in the
+  // initial cycle-7 patch — if the hook unmounts WHILE a push is mid-
+  // await, cleanup runs while `retryTimer` is still null, then the
+  // catch (running later as a microtask) would schedule a NEW timer
+  // that escaped cancellation and could fire a stale push at an
+  // unmounted hook. A mount-lifetime `mountedRef` closes the race:
+  // it flips false only on real unmount (NOT on dep-change cleanups),
+  // so the catch checks it before scheduling, and the timer callback
+  // re-checks it before re-entering drain.
+  test('does not schedule a retry after unmount during an in-flight push', async () => {
+    vi.useFakeTimers()
+    try {
+      let rejectInFlight: ((err: unknown) => void) | undefined
+
+      const setWorkspaceSessions = vi
+        .fn()
+        .mockImplementationOnce(
+          () =>
+            new Promise<void>((_resolve, reject) => {
+              rejectInFlight = reject
+            })
+        )
+        .mockResolvedValue(undefined)
+      const service = { setWorkspaceSessions } as unknown as ITerminalService
+
+      const { unmount } = renderHook(() =>
+        usePushWorkspaceGrouping({
+          service,
+          loading: false,
+          sessions: [
+            session('ws-1', 'single', [
+              pane({ id: 'p0', ptyId: 'pty-a', active: true }),
+            ]),
+          ],
+        })
+      )
+
+      // First IPC is in flight.
+      await vi.advanceTimersByTimeAsync(0)
+      expect(setWorkspaceSessions).toHaveBeenCalledTimes(1)
+
+      // Unmount BEFORE the IPC rejects. The one-shot useEffect cleanup
+      // flips `mountedRef.current` to false.
+      unmount()
+
+      // Now reject — the catch runs post-cleanup. With the mountedRef
+      // guard, no retry timer is scheduled.
+      rejectInFlight?.(new Error('sidecar crashed at shutdown'))
+      await vi.advanceTimersByTimeAsync(0)
+
+      // Advance well past the backoff window. No second IPC fires.
+      await vi.advanceTimersByTimeAsync(10000)
+      expect(setWorkspaceSessions).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  // PR #290 cycle 7 (post-verify-2): Codex re-verify caught that an
+  // earlier per-effect disposal flag conflated unmount with dep-
+  // change cleanup. When `sessions` changes while a push is mid-await,
+  // the old effect's cleanup ran and the flag was set; the rejected
+  // catch then SKIPPED the retry timer even though the new effect had
+  // already queued a fresh snapshot in `pending` (its drain returned at
+  // the `inFlight` guard and is waiting for someone to drain). Without
+  // the retry, the new snapshot sits there forever. Switching to a
+  // mount-lifetime ref preserves the retry on dependency changes while
+  // still suppressing it post-unmount.
+  test('retries after a rerender lands during a failed in-flight push', async () => {
+    vi.useFakeTimers()
+    try {
+      let rejectFirst: ((err: unknown) => void) | undefined
+
+      const setWorkspaceSessions = vi
+        .fn()
+        .mockImplementationOnce(
+          () =>
+            new Promise<void>((_resolve, reject) => {
+              rejectFirst = reject
+            })
+        )
+        .mockResolvedValue(undefined)
+      const service = { setWorkspaceSessions } as unknown as ITerminalService
+
+      const initial = [
+        session('ws-1', 'single', [
+          pane({ id: 'p0', ptyId: 'pty-a', active: true }),
+        ]),
+      ]
+
+      const updated = [
+        session('ws-1', 'vsplit', [
+          pane({ id: 'p0', ptyId: 'pty-a', active: true }),
+          pane({ id: 'p1', ptyId: 'pty-b', active: false }),
+        ]),
+      ]
+
+      const { rerender } = renderHook(
+        ({ sessions }) =>
+          usePushWorkspaceGrouping({ service, loading: false, sessions }),
+        { initialProps: { sessions: initial as readonly Session[] } }
+      )
+
+      // First IPC is in flight.
+      await vi.advanceTimersByTimeAsync(0)
+      expect(setWorkspaceSessions).toHaveBeenCalledTimes(1)
+
+      // Rerender with a new sessions reference WHILE the IPC is still
+      // mid-await. This triggers the old effect's cleanup and starts a
+      // new effect whose drain hits the `inFlight` guard and returns.
+      rerender({ sessions: updated as readonly Session[] })
+
+      // Now reject the old IPC. The catch must NOT skip retry just
+      // because cleanup ran — the hook is still mounted, and the new
+      // snapshot is sitting in `pending`.
+      rejectFirst?.(new Error('transient'))
+      await vi.advanceTimersByTimeAsync(0)
+
+      // Backoff fires and the retry drains the new snapshot.
+      await vi.advanceTimersByTimeAsync(5000)
+      expect(setWorkspaceSessions).toHaveBeenCalledTimes(2)
+
+      // Second call carries the NEW snapshot (2 panes), not the stale one.
+      const secondPayload = setWorkspaceSessions.mock.calls[1]?.[0] as
+        | { sessions: { panes: { ptyId: string }[] }[] }
+        | undefined
+      expect(secondPayload?.sessions[0]?.panes.map((p) => p.ptyId)).toEqual([
+        'pty-a',
+        'pty-b',
+      ])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  // PR #290 cycle 7 (post-verify-3): Codex re-verify caught that the
+  // mount-lifetime ref initialized with `useRef(true)` is NOT
+  // StrictMode-safe — StrictMode dev runs each effect as setup →
+  // cleanup → setup, and without re-asserting `mountedRef.current =
+  // true` in setup, the second setup leaves the ref stuck at false for
+  // the whole mounted lifetime. The retry gate then degrades to "never
+  // schedule" in dev. This test wraps `renderHook` in `<StrictMode>`
+  // and verifies the retry timer still fires after a transient IPC
+  // failure even though StrictMode replayed the mount effect.
+  test('schedules the deferred retry even under React StrictMode replay', async () => {
+    vi.useFakeTimers()
+    try {
+      const setWorkspaceSessions = vi
+        .fn()
+        .mockRejectedValueOnce(new Error('transient'))
+        .mockResolvedValue(undefined)
+      const service = { setWorkspaceSessions } as unknown as ITerminalService
+
+      renderHook(
+        () =>
+          usePushWorkspaceGrouping({
+            service,
+            loading: false,
+            sessions: [
+              session('ws-1', 'single', [
+                pane({ id: 'p0', ptyId: 'pty-a', active: true }),
+              ]),
+            ],
+          }),
+        { wrapper: StrictMode }
+      )
+
+      // StrictMode replays the effect setup/cleanup once in dev. The
+      // first IPC fires and rejects.
+      await vi.advanceTimersByTimeAsync(0)
+      // StrictMode may invoke the effect twice on mount; we accept any
+      // initial count but must see the retry happen on top of it.
+      const initialCount = setWorkspaceSessions.mock.calls.length
+      expect(initialCount).toBeGreaterThanOrEqual(1)
+
+      // Drain the 5s backoff. The retry must fire even though
+      // StrictMode flipped mountedRef during its replay.
+      await vi.advanceTimersByTimeAsync(5000)
+      expect(setWorkspaceSessions.mock.calls.length).toBeGreaterThan(
+        initialCount
+      )
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   // Latest-wins coalesce: when several sessions changes pile up during one
