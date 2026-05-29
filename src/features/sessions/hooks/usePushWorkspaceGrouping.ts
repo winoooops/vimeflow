@@ -35,6 +35,12 @@ export const buildGroupingSnapshot = (
     (session): WorkspaceSessionSnapshot => ({
       id: session.id,
       layout: session.layout,
+      // Carry the stable session baseline cwd through to the cache so
+      // restore can reseed `addPane`'s spawn cwd correctly (Codex P2 on
+      // PR #290 cycle 7). Without this the active pane's drifted cwd
+      // (via OSC 7) would become the post-reload baseline, and new panes
+      // would spawn in the wrong directory.
+      workingDirectory: session.workingDirectory,
       panes: session.panes.map((pane, paneIndex) => ({
         ptyId: pane.ptyId,
         paneId: pane.id,
@@ -105,6 +111,27 @@ export const usePushWorkspaceGrouping = ({
     }
   }, [])
 
+  // Mount-lifetime ref for the deferred retry timer. Was a per-effect
+  // local in cycle 7; Claude reviewer caught the leak (PR #290 cycle 8):
+  // if the IPC fails AFTER a dependency-change cleanup ran (cleanup saw
+  // `retryTimer === null` because the catch hadn't scheduled yet), the
+  // catch then scheduled a timer in the OLD effect's closure — which the
+  // NEW effect's cleanup couldn't reach. The orphaned timer would fire
+  // unconditionally 5s later, making an extra IPC call against the OLD
+  // closure's `service`. Lifting the handle to a useRef means every
+  // cleanup — regardless of which effect invocation it belongs to —
+  // cancels the same handle.
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Latest drain function. Codex re-verify caught that the cancel ref
+  // alone wasn't enough: the timer callback still invoked the OLD
+  // effect's `drain` closure (which captured the OLD `service`), so if
+  // `service` changed between effect runs the deferred retry would push
+  // through the stale service. Re-route the timer through this ref so
+  // the retry always dispatches to the latest drain — which captures
+  // the latest service.
+  const latestDrainRef = useRef<(() => Promise<void>) | null>(null)
+
   useEffect(() => {
     if (loading) {
       return
@@ -116,18 +143,6 @@ export const usePushWorkspaceGrouping = ({
     if (sessions.length === 0) {
       return
     }
-
-    // Deferred retry handle, scoped to this effect run. On a transient IPC
-    // failure the drain restores `pending` and schedules ONE backoff
-    // timer; that timer re-enters drain after `RETRY_BACKOFF_MS`, so a
-    // sidecar that recovers in seconds doesn't leave the cache stale
-    // until the next structural sessions change. On a fresh sessions
-    // change (effect re-run) the cleanup clears the timer; the new drain
-    // handles the new snapshot directly. The catch consults `mountedRef`
-    // (mount-lifetime, NOT per-effect) before scheduling — so a
-    // dependency-change cleanup doesn't suppress the retry that an old
-    // closure may still need to drain a newer snapshot.
-    let retryTimer: ReturnType<typeof setTimeout> | null = null
 
     const snapshot = buildGroupingSnapshot(sessions)
     log.info(
@@ -190,10 +205,14 @@ export const usePushWorkspaceGrouping = ({
           // reload fragments. `inFlight` is cleared by the `finally`
           // below so the next entry isn't blocked.
           if (mountedRef.current) {
-            retryTimer ??= setTimeout(() => {
-              retryTimer = null
+            retryTimerRef.current ??= setTimeout(() => {
+              retryTimerRef.current = null
               if (mountedRef.current && queueRef.current.pending !== null) {
-                void drain()
+                // Dispatch through `latestDrainRef`, NOT the local
+                // `drain`, so a service swap between effect runs takes
+                // effect even if this timer was scheduled by an old
+                // closure.
+                void latestDrainRef.current?.()
               }
             }, RETRY_BACKOFF_MS)
           }
@@ -204,12 +223,13 @@ export const usePushWorkspaceGrouping = ({
         }
       }
     }
+    latestDrainRef.current = drain
     void drain()
 
     return (): void => {
-      if (retryTimer !== null) {
-        clearTimeout(retryTimer)
-        retryTimer = null
+      if (retryTimerRef.current !== null) {
+        clearTimeout(retryTimerRef.current)
+        retryTimerRef.current = null
       }
     }
   }, [service, sessions, loading])

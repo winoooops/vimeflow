@@ -155,6 +155,18 @@ pub struct PaneGrouping {
     pub workspace_session_id: String,
     /// `LayoutId` of the owning workspace: single|vsplit|hsplit|threeRight|quad.
     pub layout: String,
+    /// Stable session baseline cwd — the directory new panes spawn from via
+    /// `addPane`. Distinct from each pane's live `info.cwd`: the active
+    /// pane's cwd can drift via OSC 7 (e.g. into a worktree subdir) while
+    /// the workspace baseline stays at the project root. Persisted in EACH
+    /// pane's grouping (denormalised: every pane in one workspace records
+    /// the same value) so restore can read it from any pane in the bucket
+    /// without a separate workspace-level table. Optional for back-compat
+    /// with caches written before this field existed; absent → restore
+    /// falls back to deriving from the active pane's cwd.
+    #[cfg_attr(test, ts(optional))]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_directory: Option<String>,
     /// Session-scoped pane id, e.g. `"p0"`.
     pub pane_id: String,
     /// Stable pane order within the workspace session.
@@ -262,6 +274,12 @@ pub struct WorkspaceSessionSnapshot {
     pub id: String,
     /// `LayoutId`: single|vsplit|hsplit|threeRight|quad.
     pub layout: String,
+    /// Stable session baseline cwd that `addPane` uses for new shells.
+    /// Distinct from any pane's live cwd (which can drift via OSC 7).
+    /// Optional for back-compat with frontends that haven't yet sent it.
+    #[cfg_attr(test, ts(optional))]
+    #[serde(default)]
+    pub working_directory: Option<String>,
     pub panes: Vec<WorkspacePaneSnapshot>,
 }
 

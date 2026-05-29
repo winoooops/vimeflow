@@ -869,6 +869,7 @@ pub(crate) fn set_workspace_sessions_inner(
                     PaneGrouping {
                         workspace_session_id: session.id.clone(),
                         layout: session.layout.clone(),
+                        workspace_directory: session.working_directory.clone(),
                         pane_id: pane.pane_id.clone(),
                         pane_index: pane.pane_index,
                         agent_type: pane.agent_type.clone(),
@@ -2794,6 +2795,7 @@ mod tests {
                     WorkspaceSessionSnapshot {
                         id: "ws-quad".into(),
                         layout: "vsplit".into(),
+                        working_directory: None,
                         panes: vec![
                             WorkspacePaneSnapshot {
                                 pty_id: "pty-a".into(),
@@ -2821,6 +2823,7 @@ mod tests {
                     WorkspaceSessionSnapshot {
                         id: "ws-solo".into(),
                         layout: "single".into(),
+                        working_directory: None,
                         panes: vec![WorkspacePaneSnapshot {
                             pty_id: "pty-solo".into(),
                             pane_id: "p0".into(),
@@ -2888,6 +2891,7 @@ mod tests {
                     WorkspaceSessionSnapshot {
                         id: "ws-solo".into(),
                         layout: "single".into(),
+                        working_directory: None,
                         panes: vec![WorkspacePaneSnapshot {
                             pty_id: "pty-solo".into(),
                             pane_id: "p0".into(),
@@ -2899,6 +2903,7 @@ mod tests {
                     WorkspaceSessionSnapshot {
                         id: "ws-quad".into(),
                         layout: "single".into(),
+                        working_directory: None,
                         panes: vec![WorkspacePaneSnapshot {
                             pty_id: "pty-a".into(),
                             pane_id: "p0".into(),
@@ -2934,6 +2939,7 @@ mod tests {
                 sessions: vec![WorkspaceSessionSnapshot {
                     id: "ws-quad".into(),
                     layout: "single".into(),
+                    working_directory: None,
                     panes: vec![WorkspacePaneSnapshot {
                         pty_id: "pty-a".into(),
                         pane_id: "p0".into(),
@@ -3004,6 +3010,7 @@ mod tests {
                 sessions: vec![WorkspaceSessionSnapshot {
                     id: "ws-1".into(),
                     layout: "vsplit".into(),
+                    working_directory: None,
                     panes: vec![
                         WorkspacePaneSnapshot {
                             pty_id: "pty-1".into(),
@@ -3038,6 +3045,7 @@ mod tests {
                 sessions: vec![WorkspaceSessionSnapshot {
                     id: "ws-1".into(),
                     layout: "vsplit".into(),
+                    working_directory: None,
                     panes: vec![WorkspacePaneSnapshot {
                         pty_id: "pty-1".into(),
                         pane_id: "p0".into(),
@@ -3066,6 +3074,85 @@ mod tests {
 
         // Cleanup
         for id in &["pty-1", "pty-2"] {
+            let _ = state.remove(&id.to_string());
+        }
+    }
+
+    /// Codex P2 on PR #290 cycle 7: a workspace session's baseline cwd
+    /// (used by `addPane` for new shells) must be persisted alongside the
+    /// grouping. Without it, restore derives `workingDirectory` from the
+    /// active pane's live cwd, so a session whose active pane drifted via
+    /// OSC 7 into a worktree subdir would have new panes opening there
+    /// instead of the original project root. Pin: `working_directory` on
+    /// `WorkspaceSessionSnapshot` lands on every pane's
+    /// `PaneGrouping.workspace_directory` after `set_workspace_sessions`.
+    #[tokio::test]
+    async fn set_workspace_sessions_persists_workspace_directory() {
+        let (state, cache, events, _temp_dir) = create_test_state_with_cache();
+        let cwd = std::env::current_dir()
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
+
+        for id in &["pty-x", "pty-y"] {
+            spawn_pty_inner(
+                state.clone(),
+                cache.clone(),
+                events.clone(),
+                SpawnPtyRequest {
+                    session_id: id.to_string(),
+                    cwd: cwd.clone(),
+                    shell: None,
+                    env: None,
+                    enable_agent_bridge: false,
+                },
+            )
+            .await
+            .expect("spawn");
+        }
+
+        set_workspace_sessions_inner(
+            &cache,
+            SetWorkspaceSessionsRequest {
+                sessions: vec![WorkspaceSessionSnapshot {
+                    id: "ws-project".into(),
+                    layout: "vsplit".into(),
+                    working_directory: Some("/home/will/project-root".into()),
+                    panes: vec![
+                        WorkspacePaneSnapshot {
+                            pty_id: "pty-x".into(),
+                            pane_id: "p0".into(),
+                            pane_index: 0,
+                            agent_type: "claude-code".into(),
+                            active: true,
+                        },
+                        WorkspacePaneSnapshot {
+                            pty_id: "pty-y".into(),
+                            pane_id: "p1".into(),
+                            pane_index: 1,
+                            agent_type: "generic".into(),
+                            active: false,
+                        },
+                    ],
+                }],
+            },
+        )
+        .expect("snapshot");
+
+        let snap = cache.snapshot();
+        for id in &["pty-x", "pty-y"] {
+            let g = snap
+                .groupings
+                .get(*id)
+                .unwrap_or_else(|| panic!("missing grouping for {id}"));
+            assert_eq!(
+                g.workspace_directory.as_deref(),
+                Some("/home/will/project-root")
+            );
+        }
+
+        // Cleanup
+        for id in &["pty-x", "pty-y"] {
             let _ = state.remove(&id.to_string());
         }
     }

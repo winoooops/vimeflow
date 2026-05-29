@@ -209,4 +209,81 @@ describe('groupSessionsFromInfos', () => {
     expect(pane.restoreData?.replayData).toBe('hello')
     expect(pane.restoreData?.replayEndOffset).toBe(5)
   })
+
+  // Codex P2 on PR #290 cycle 7: the session baseline cwd (used by
+  // `addPane` for new shells) is persisted on `grouping.workspaceDirectory`
+  // and must be read back through to `session.workingDirectory` — NOT
+  // derived from the active pane's drifted cwd.
+  test('reads session.workingDirectory from grouping.workspaceDirectory when present', () => {
+    const ws = 'ws-baseline'
+
+    const sessions = groupSessionsFromInfos([
+      {
+        id: 'pty-a',
+        cwd: '/project/sub/feature-branch',
+        status: {
+          kind: 'Alive',
+          pid: 1,
+          replay_data: '',
+          replay_end_offset: 0n,
+        },
+        grouping: grouping({
+          workspaceSessionId: ws,
+          layout: 'vsplit',
+          workspaceDirectory: '/project',
+          paneId: 'p0',
+          paneIndex: 0,
+          active: true,
+        }),
+      },
+      {
+        id: 'pty-b',
+        cwd: '/project',
+        status: {
+          kind: 'Alive',
+          pid: 2,
+          replay_data: '',
+          replay_end_offset: 0n,
+        },
+        grouping: grouping({
+          workspaceSessionId: ws,
+          layout: 'vsplit',
+          workspaceDirectory: '/project',
+          paneId: 'p1',
+          paneIndex: 1,
+        }),
+      },
+    ])
+    expect(sessions[0].workingDirectory).toBe('/project')
+    expect(sessions[0].name).toBe('project')
+  })
+
+  // Back-compat: a cache written before `workspaceDirectory` existed has
+  // no value in the grouping; restore falls back to the active pane's
+  // cwd (same as cycle-6 behavior).
+  test('falls back to active pane cwd when grouping.workspaceDirectory is absent', () => {
+    const ws = 'ws-legacy'
+
+    const sessions = groupSessionsFromInfos([
+      {
+        id: 'pty-a',
+        cwd: '/legacy-project',
+        status: {
+          kind: 'Alive',
+          pid: 1,
+          replay_data: '',
+          replay_end_offset: 0n,
+        },
+        grouping: grouping({
+          workspaceSessionId: ws,
+          layout: 'single',
+          paneId: 'p0',
+          paneIndex: 0,
+          active: true,
+          // workspaceDirectory deliberately omitted.
+        }),
+      },
+    ])
+    expect(sessions[0].workingDirectory).toBe('/legacy-project')
+  })
 })

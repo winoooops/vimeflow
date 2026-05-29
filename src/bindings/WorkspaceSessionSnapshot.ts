@@ -13,5 +13,11 @@ export type WorkspaceSessionSnapshot = {
    * `LayoutId`: single|vsplit|hsplit|threeRight|quad.
    */
   layout: string
+  /**
+   * Stable session baseline cwd that `addPane` uses for new shells.
+   * Distinct from any pane's live cwd (which can drift via OSC 7).
+   * Optional for back-compat with frontends that haven't yet sent it.
+   */
+  workingDirectory?: string
   panes: Array<WorkspacePaneSnapshot>
 }

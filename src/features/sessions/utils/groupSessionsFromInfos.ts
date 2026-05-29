@@ -133,12 +133,22 @@ const buildGroupedSession = (
   const activePane = panes.find((pane) => pane.active) ?? panes[0]
   const now = new Date().toISOString()
 
+  // Read the stable session baseline cwd from any pane's grouping (the
+  // backend writes it onto every pane in the bucket so we can pick the
+  // first non-null value here without a separate workspace lookup). When
+  // the cache predates the field, fall back to the active pane's cwd —
+  // same behavior as before the field existed (Codex P2 on PR #290
+  // cycle 7).
+  const workspaceDirectory =
+    ordered.find((entry) => entry.grouping.workspaceDirectory !== undefined)
+      ?.grouping.workspaceDirectory ?? activePane.cwd
+
   return {
     id: workspaceId,
     projectId: 'proj-1',
-    name: tabName(activePane.cwd, fallbackIndex),
+    name: tabName(workspaceDirectory, fallbackIndex),
     status: deriveSessionStatus(panes),
-    workingDirectory: activePane.cwd,
+    workingDirectory: workspaceDirectory,
     agentType: activePane.agentType,
     layout,
     activityPanelCollapsed: readActivityPanelCollapsed(workspaceId),

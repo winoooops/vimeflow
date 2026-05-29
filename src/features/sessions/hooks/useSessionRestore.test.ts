@@ -249,8 +249,12 @@ describe('useSessionRestore', () => {
     // Grouping claims pty-a is active; cache's activeSessionId says pty-b
     // (e.g. the user switched the active pane and Cmd+R'd before the
     // grouping snapshot push completed). pty-a and pty-b live in
-    // different cwds so the reconciler's `workingDirectory` /
-    // `name` recompute is observable.
+    // different cwds so the reconciler's `agentType` recompute is
+    // observable. `workingDirectory` is now the persisted workspace
+    // baseline and must NOT follow the active pane (Codex P2 on PR #290
+    // cycle 7) — the workspace baseline is the project root that
+    // `addPane` spawns from, not whichever directory the active pane
+    // happens to be in.
     const aliveAt = (
       id: string,
       cwd: string,
@@ -270,6 +274,7 @@ describe('useSessionRestore', () => {
       grouping: {
         workspaceSessionId: ws,
         layout: 'vsplit',
+        workspaceDirectory: '/home/will/project-root',
         paneId,
         paneIndex,
         agentType,
@@ -313,11 +318,13 @@ describe('useSessionRestore', () => {
     expect(ws1.panes.find((pane) => pane.active)?.ptyId).toBe('pty-b')
     // The session's derived agentType follows the new active pane.
     expect(ws1.agentType).toBe('codex')
-    // Every session-level field derived from the active pane in
-    // groupSessionsFromInfos must be recomputed in the reconcile pass —
-    // otherwise addPane later spawns from the stale cwd.
-    expect(ws1.workingDirectory).toBe('/home/will/repo-b')
-    expect(ws1.name).toBe('repo-b')
+    // The workspace baseline cwd comes from the persisted grouping and
+    // does NOT follow the active pane's drifted cwd (Codex P2 on PR
+    // #290 cycle 7) — otherwise `addPane` would spawn in `/repo-b`
+    // even though the project baseline is `/project-root`.
+    expect(ws1.workingDirectory).toBe('/home/will/project-root')
+    // The tab name is derived from the same baseline.
+    expect(ws1.name).toBe('project-root')
     // Active session resolved to the workspace id, not the PTY.
     expect(onActiveResolved).toHaveBeenCalledWith(ws)
   })

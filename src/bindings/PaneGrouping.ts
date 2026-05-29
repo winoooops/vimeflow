@@ -20,6 +20,18 @@ export type PaneGrouping = {
    */
   layout: string
   /**
+   * Stable session baseline cwd — the directory new panes spawn from via
+   * `addPane`. Distinct from each pane's live `info.cwd`: the active
+   * pane's cwd can drift via OSC 7 (e.g. into a worktree subdir) while
+   * the workspace baseline stays at the project root. Persisted in EACH
+   * pane's grouping (denormalised: every pane in one workspace records
+   * the same value) so restore can read it from any pane in the bucket
+   * without a separate workspace-level table. Optional for back-compat
+   * with caches written before this field existed; absent → restore
+   * falls back to deriving from the active pane's cwd.
+   */
+  workspaceDirectory?: string
+  /**
    * Session-scoped pane id, e.g. `"p0"`.
    */
   paneId: string

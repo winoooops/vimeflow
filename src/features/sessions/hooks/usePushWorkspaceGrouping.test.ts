@@ -53,6 +53,9 @@ describe('buildGroupingSnapshot', () => {
       {
         id: 'ws-1',
         layout: 'vsplit',
+        // Stable session baseline cwd; pulled from `session.workingDirectory`
+        // (see the `session` helper at the top of the file).
+        workingDirectory: '/r',
         panes: [
           {
             ptyId: 'pty-a',
@@ -475,6 +478,73 @@ describe('usePushWorkspaceGrouping', () => {
         'pty-a',
         'pty-b',
       ])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  // PR #290 cycle 8 (post-verify): Codex re-verify caught that even with
+  // a shared `retryTimerRef`, the timer's callback would still invoke
+  // the OLD effect's `drain` closure if it was scheduled by the old
+  // effect — the OLD drain captured the OLD `service`. If `service`
+  // changes between effect runs (e.g. wrapper hot-swaps the service),
+  // the deferred retry would push through the stale service. The fix
+  // is a `latestDrainRef` that always points at the most recent drain.
+  // This test changes the service between renders during a failed in-
+  // flight push and verifies the retry IPC fires on the NEW service.
+  test('routes the deferred retry through the latest service after a dep change', async () => {
+    vi.useFakeTimers()
+    try {
+      let rejectOldIpc: ((err: unknown) => void) | undefined
+
+      const oldService = {
+        setWorkspaceSessions: vi.fn().mockImplementationOnce(
+          () =>
+            new Promise<void>((_resolve, reject) => {
+              rejectOldIpc = reject
+            })
+        ),
+      } as unknown as ITerminalService
+
+      const newService = {
+        setWorkspaceSessions: vi.fn().mockResolvedValue(undefined),
+      } as unknown as ITerminalService
+
+      const sessions = [
+        session('ws-1', 'single', [
+          pane({ id: 'p0', ptyId: 'pty-a', active: true }),
+        ]),
+      ]
+
+      const { rerender } = renderHook(
+        ({ service }) =>
+          usePushWorkspaceGrouping({
+            service,
+            loading: false,
+            sessions,
+          }),
+        { initialProps: { service: oldService } }
+      )
+
+      // First IPC fires on the old service and is held mid-await.
+      await vi.advanceTimersByTimeAsync(0)
+      expect(oldService.setWorkspaceSessions).toHaveBeenCalledTimes(1)
+
+      // Service swaps to the new one while the old IPC is still in
+      // flight. The new effect's drain returns at the `inFlight` guard.
+      rerender({ service: newService })
+
+      // Old IPC rejects. The catch schedules a retry timer.
+      rejectOldIpc?.(new Error('transient'))
+      await vi.advanceTimersByTimeAsync(0)
+
+      // Backoff fires. The retry must dispatch through the NEW service,
+      // not the OLD one — even though the timer was scheduled in the
+      // old effect's closure.
+      await vi.advanceTimersByTimeAsync(5000)
+      expect(newService.setWorkspaceSessions).toHaveBeenCalledTimes(1)
+      // Old service must NOT have been called again.
+      expect(oldService.setWorkspaceSessions).toHaveBeenCalledTimes(1)
     } finally {
       vi.useRealTimers()
     }

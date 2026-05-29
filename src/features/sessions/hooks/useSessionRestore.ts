@@ -5,7 +5,6 @@ import type { PtyBufferDrain } from '../../terminal/orchestration/usePtyBufferDr
 import { registerPtySession } from '../../terminal/ptySessionMap'
 import { createLogger } from '../../../lib/log'
 import { groupSessionsFromInfos } from '../utils/groupSessionsFromInfos'
-import { tabName } from '../utils/tabName'
 
 const log = createLogger('restore')
 
@@ -89,14 +88,18 @@ export const useSessionRestore = ({
         // within the workspace it belongs to.
         //
         // Recompute every session-level field that was derived from the
-        // previous active pane in `groupSessionsFromInfos`: `agentType`,
-        // `workingDirectory`, and the fallback `name`. Without this,
-        // `addPane` later spawns from the stale `workingDirectory` and new
-        // panes open in the wrong directory.
+        // previous active pane in `groupSessionsFromInfos`: only
+        // `agentType` and the fallback `name`. `workingDirectory` is
+        // the session's BASELINE cwd (used by `addPane` for new shells)
+        // and is fed from the persisted `grouping.workspaceDirectory`
+        // upstream — it must NOT be overwritten by the active pane's
+        // live cwd (which can drift via OSC 7 into a subdirectory).
+        // Codex P2 on PR #290 cycle 7 flagged the prior overwrite as
+        // making `addPane` spawn from the wrong directory.
         const activePtyId = list.activeSessionId
 
         const reconciled = activePtyId
-          ? grouped.map((session, idx) => {
+          ? grouped.map((session) => {
               const newActivePane = session.panes.find(
                 (pane) => pane.ptyId === activePtyId
               )
@@ -111,8 +114,6 @@ export const useSessionRestore = ({
                   active: pane.ptyId === activePtyId,
                 })),
                 agentType: newActivePane.agentType,
-                workingDirectory: newActivePane.cwd,
-                name: tabName(newActivePane.cwd, idx),
               }
             })
           : grouped
