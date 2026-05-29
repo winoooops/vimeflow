@@ -671,7 +671,6 @@ export const WorkspaceView = (): ReactElement => {
 
       const wasActive = sessionId === activeSessionId
       removeSession(sessionId)
-      releaseScope(sessionId)
       if (wasActive) {
         claimTerminal()
       }
@@ -682,7 +681,6 @@ export const WorkspaceView = (): ReactElement => {
       activeSessionId,
       claimTerminal,
       hasUnsavedChanges,
-      releaseScope,
       removeSession,
       setActiveSessionId,
       setPendingFilePathSynced,
@@ -692,7 +690,9 @@ export const WorkspaceView = (): ReactElement => {
   )
 
   const previousSessionIdsRef = useRef<Set<string>>(new Set())
-  useEffect(() => {
+  // Tie editor-scope cleanup to committed session removals. Layout timing
+  // avoids a paint/input gap where a removed session can still look dirty.
+  useLayoutEffect(() => {
     const currentSessionIds = new Set(sessions.map((session) => session.id))
 
     for (const previousSessionId of previousSessionIdsRef.current) {
@@ -724,7 +724,6 @@ export const WorkspaceView = (): ReactElement => {
       }
 
       removeSession(sessionId)
-      releaseScope(sessionId)
 
       if (sessionId === activeSessionId || nextId !== undefined) {
         claimTerminal()
@@ -733,7 +732,6 @@ export const WorkspaceView = (): ReactElement => {
     [
       activeSessionId,
       claimTerminal,
-      releaseScope,
       removeSession,
       sessions,
       setActiveSessionId,
