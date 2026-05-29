@@ -107,7 +107,7 @@ const buildGroupedSession = (
     (a, b) => a.grouping.paneIndex - b.grouping.paneIndex
   )
 
-  const panes: Pane[] = ordered.map((entry) =>
+  const rawPanes: Pane[] = ordered.map((entry) =>
     buildPane(
       entry.info,
       entry.grouping.paneId,
@@ -118,17 +118,17 @@ const buildGroupedSession = (
 
   // Invariant: exactly one active pane. The cache may briefly hold zero or
   // multiple active flags during a push race; fix it up locally so the
-  // SplitView's `getActivePane` doesn't throw.
-  const activeIndex = panes.findIndex((pane) => pane.active)
-  if (activeIndex === -1 && panes.length > 0) {
-    panes[0] = { ...panes[0], active: true }
-  } else if (activeIndex !== -1) {
-    for (let i = 0; i < panes.length; i += 1) {
-      if (i !== activeIndex && panes[i].active) {
-        panes[i] = { ...panes[i], active: false }
-      }
-    }
-  }
+  // SplitView's `getActivePane` doesn't throw. The fix-up is a single
+  // immutable `map` pass per the project immutability rule (`rules/typescript/
+  // coding-style/CLAUDE.md`): when no pane is flagged active, pane 0 wins;
+  // when one or more are flagged, the first flagged pane wins and the rest
+  // are cleared.
+  const firstActiveIdx = rawPanes.findIndex((pane) => pane.active)
+
+  const panes: Pane[] = rawPanes.map((pane, i) => ({
+    ...pane,
+    active: firstActiveIdx === -1 ? i === 0 : i === firstActiveIdx,
+  }))
 
   const activePane = panes.find((pane) => pane.active) ?? panes[0]
   const now = new Date().toISOString()
@@ -186,14 +186,19 @@ export const groupSessionsFromInfos = (
       }
       const bucket = buckets.get(key)
       if (bucket?.kind === 'grouped') {
-        bucket.entries.push({ info, grouping })
         // Self-healing: the layout recorded on any pane wins. If different
         // panes disagree (rare race), the first non-`single` wins so a quad
         // workspace doesn't collapse to single because one pane was pushed
         // before the layout change.
-        if (bucket.layout === 'single' && grouping.layout !== 'single') {
-          bucket.layout = toLayoutId(grouping.layout)
-        }
+        const incomingLayout = toLayoutId(grouping.layout)
+        buckets.set(key, {
+          ...bucket,
+          entries: [...bucket.entries, { info, grouping }],
+          layout:
+            bucket.layout === 'single' && incomingLayout !== 'single'
+              ? incomingLayout
+              : bucket.layout,
+        })
       }
     } else {
       const key = `__solo:${info.id}`

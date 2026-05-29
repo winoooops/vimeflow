@@ -87,15 +87,13 @@ export const useSessionRestore = ({
         // `activeSessionId` as the source of truth for which pane is focused
         // within the workspace it belongs to.
         //
-        // Recompute every session-level field that was derived from the
-        // previous active pane in `groupSessionsFromInfos`: only
-        // `agentType` and the fallback `name`. `workingDirectory` is
-        // the session's BASELINE cwd (used by `addPane` for new shells)
-        // and is fed from the persisted `grouping.workspaceDirectory`
-        // upstream — it must NOT be overwritten by the active pane's
-        // live cwd (which can drift via OSC 7 into a subdirectory).
-        // Codex P2 on PR #290 cycle 7 flagged the prior overwrite as
-        // making `addPane` spawn from the wrong directory.
+        // Recompute the session-level fields that depend on which pane
+        // is active: just `agentType`. `workingDirectory` and `name`
+        // are intentionally LEFT ALONE — both come from the workspace
+        // baseline (persisted `grouping.workspaceDirectory`), NOT from
+        // any pane's live cwd. Overwriting them from the new active
+        // pane would silently reintroduce the OSC 7 drift bug Codex P2
+        // flagged on PR #290 cycle 7.
         const activePtyId = list.activeSessionId
 
         const reconciled = activePtyId
