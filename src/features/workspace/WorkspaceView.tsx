@@ -961,41 +961,45 @@ export const WorkspaceView = (): ReactElement => {
     horizontalDockElastic.isDragging
 
   const feedbackDispatch = useMemo(() => {
-    const candidates: PaneCandidate[] = sessions.flatMap((session) =>
-      session.panes.map((pane) => {
-        const agent = AGENTS[agentTypeToRegistryKey(pane.agentType)]
+    // Inline-review feedback dispatches to the single CONNECTED (active) pane —
+    // the one whose diff is on screen. We gate the candidate on LIVE agent
+    // state from `useAgentStatus` (sessionId match + isActive + !agentExited),
+    // NOT the PTY-lifecycle `pane.status`: a pane whose agent exited can keep a
+    // stale 'codex'/'claude-code' label while its shell PTY is still running,
+    // and the live signal is the only way to avoid pasting feedback into a bare
+    // shell. `agentLabel` maps agentType directly to the picker's SupportedAgent
+    // literals (the registry display name diverges, e.g. AGENTS.codex.name ===
+    // 'Codex CLI', which would mis-filter Codex).
+    const agentLabel =
+      agentStatus.agentType === 'claude-code'
+        ? 'Claude Code'
+        : agentStatus.agentType === 'codex'
+          ? 'Codex'
+          : null
 
-        const statusMap: Record<typeof pane.status, PaneCandidate['status']> = {
-          running: 'running',
-          paused: 'idle',
-          completed: 'exited',
-          errored: 'error',
-        }
-
-        // `agentLabel` must match the picker's SupportedAgent literals
-        // ('Claude Code' | 'Codex'); the registry display name diverges
-        // (e.g. AGENTS.codex.name === 'Codex CLI'), which would silently
-        // filter Codex panes out of feedback dispatch. Map agentType
-        // directly; unsupported types fall back to the display name and
-        // are filtered by resolveCandidatePanes.
-        const agentLabel =
-          pane.agentType === 'claude-code'
-            ? 'Claude Code'
-            : pane.agentType === 'codex'
-              ? 'Codex'
-              : agent.name
-
-        return {
-          paneId: pane.id,
-          ptyId: pane.ptyId,
-          tabName: pane.userLabel ?? pane.agentTitle ?? session.name,
-          agentLabel,
-          cwd: pane.cwd,
-          status: statusMap[pane.status],
-          isFocused: pane.active && session.id === activeSessionId,
-        }
-      })
-    )
+    const candidates: PaneCandidate[] =
+      activePane &&
+      activePanePtyId &&
+      agentStatus.sessionId === activePanePtyId &&
+      agentStatus.isActive &&
+      !agentStatus.agentExited &&
+      agentLabel !== null
+        ? [
+            {
+              paneId: activePane.id,
+              ptyId: activePanePtyId,
+              tabName:
+                activePane.userLabel ??
+                activePane.agentTitle ??
+                activeSession?.name ??
+                'Terminal',
+              agentLabel,
+              cwd: activePane.cwd,
+              status: 'running',
+              isFocused: true,
+            },
+          ]
+        : []
 
     return {
       candidates,
@@ -1003,7 +1007,16 @@ export const WorkspaceView = (): ReactElement => {
         await terminalService.write({ sessionId: ptyId, data })
       },
     }
-  }, [sessions, activeSessionId, terminalService])
+  }, [
+    activePane,
+    activePanePtyId,
+    activeSession,
+    agentStatus.agentType,
+    agentStatus.isActive,
+    agentStatus.agentExited,
+    agentStatus.sessionId,
+    terminalService,
+  ])
 
   const dockOrPeek = isDockOpen ? (
     <DockPanel

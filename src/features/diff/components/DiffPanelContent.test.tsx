@@ -163,6 +163,7 @@ const fileDiffMock = ({
   oldText = '',
   newText = '',
   rawDiff = '',
+  repoRoot = '/repo',
 }: {
   diff: FileDiff | null
   loading: boolean
@@ -170,6 +171,7 @@ const fileDiffMock = ({
   oldText?: string
   newText?: string
   rawDiff?: string
+  repoRoot?: string
 }): UseFileDiffReturn => ({
   response:
     diff === null
@@ -180,6 +182,7 @@ const fileDiffMock = ({
           oldText,
           newText,
           rawDiff,
+          repoRoot,
         },
   diff,
   loading,
@@ -1537,6 +1540,7 @@ describe('DiffPanelContent', () => {
           oldText: '',
           newText: '',
           rawDiff: hunkRawDiff,
+          repoRoot: '/repo',
         },
         diff: hunkFileDiff,
         loading: false,
@@ -1581,6 +1585,7 @@ describe('DiffPanelContent', () => {
           oldText: '',
           newText: '',
           rawDiff: hunkRawDiff,
+          repoRoot: '/repo',
         },
         diff: hunkFileDiff,
         loading: false,
@@ -1619,6 +1624,7 @@ describe('DiffPanelContent', () => {
           oldText: '',
           newText: '',
           rawDiff: '',
+          repoRoot: '/repo',
         },
         diff: hunkFileDiff,
         loading: false,
@@ -1656,6 +1662,7 @@ describe('DiffPanelContent', () => {
           oldText: '',
           newText: '',
           rawDiff: hunkRawDiff,
+          repoRoot: '/repo',
         },
         diff: hunkFileDiff,
         loading: false,
@@ -1708,6 +1715,7 @@ describe('DiffPanelContent', () => {
           oldText: '',
           newText: '',
           rawDiff: hunkRawDiff,
+          repoRoot: '/repo',
         },
         diff: hunkFileDiff,
         loading: false,
@@ -2233,6 +2241,9 @@ describe('DiffPanelContent', () => {
       const [, payload] = writePty.mock.calls[0]
       expect(typeof payload).toBe('string')
       expect(payload as string).toContain('\x1b[200~')
+      // P1 fix: the dispatched reference is an ABSOLUTE path (repoRoot joined
+      // with the repo-relative file path), so an agent in any cwd resolves it.
+      expect(payload as string).toContain('/repo/')
 
       await waitFor(() =>
         expect(

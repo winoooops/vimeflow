@@ -408,12 +408,21 @@ export const DiffPanelContent = ({
       }
       sendingFeedbackRef.current = true
       void (async (): Promise<void> => {
+        // git reports file paths relative to the repo TOPLEVEL, but the target
+        // agent runs in the pane's cwd (possibly a repo subdirectory). Join the
+        // toplevel (`response.repoRoot`) so the dispatched reference is an
+        // absolute path the agent can resolve regardless of its cwd. All batch
+        // entries share one repo (the batch is cleared on cwd change), so the
+        // current diff's repoRoot applies to every file. Falls back to the
+        // repo-relative path if the root is unavailable (not in a git repo).
+        const repoRoot = response?.repoRoot ?? ''
         const entries: DispatchEntry[] = []
         for (const [key, annotations] of feedback.batch) {
           const firstSep = key.indexOf('::')
           const remainder = key.slice(firstSep + 2)
           const lastSep = remainder.lastIndexOf('::')
-          const filePath = remainder.slice(0, lastSep)
+          const relPath = remainder.slice(0, lastSep)
+          const filePath = repoRoot ? `${repoRoot}/${relPath}` : relPath
           entries.push({ filePath, annotations })
         }
 
@@ -435,7 +444,7 @@ export const DiffPanelContent = ({
         }
       })()
     },
-    [feedback, feedbackDispatch, notifyInfo]
+    [feedback, feedbackDispatch, notifyInfo, response]
   )
 
   // Single-flight staging flag — drops clicks while an IPC is in flight.

@@ -116,7 +116,7 @@ export const FinishFeedbackPopover = ({
             <div className="flex flex-col gap-2">
               {result.candidates.map((pane) => (
                 <div
-                  key={pane.paneId}
+                  key={pane.ptyId}
                   className="flex items-center justify-between gap-2"
                 >
                   <span className="text-sm text-on-surface">

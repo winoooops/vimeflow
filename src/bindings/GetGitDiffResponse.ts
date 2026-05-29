@@ -22,4 +22,11 @@ export type GetGitDiffResponse = {
    * The raw unified-diff text. Reused by PR2's `extractHunkPatch()`.
    */
   rawDiff: string
+  /**
+   * Absolute path of the git repository toplevel (canonicalized). Empty
+   * when `cwd` is not inside a git repo. The frontend joins this with the
+   * repo-root-relative file path to build an absolute reference an agent
+   * can resolve regardless of its own cwd (PR4 inline-feedback dispatch).
+   */
+  repoRoot: string
 }
