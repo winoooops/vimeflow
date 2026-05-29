@@ -20,6 +20,9 @@ interface MockEditorBuffer {
   openFile: ReturnType<typeof vi.fn>
   saveFile: ReturnType<typeof vi.fn>
   updateContent: ReturnType<typeof vi.fn>
+  hasUnsavedChanges: ReturnType<typeof vi.fn>
+  getFilePathForScope: ReturnType<typeof vi.fn>
+  releaseScope: ReturnType<typeof vi.fn>
 }
 
 vi.mock('../editor/hooks/useEditorBuffer', () => ({
@@ -32,6 +35,9 @@ vi.mock('../editor/hooks/useEditorBuffer', () => ({
     openFile: vi.fn().mockResolvedValue(undefined),
     saveFile: vi.fn().mockResolvedValue(undefined),
     updateContent: vi.fn(),
+    hasUnsavedChanges: vi.fn(() => false),
+    getFilePathForScope: vi.fn(() => null),
+    releaseScope: vi.fn(),
   }),
 }))
 

@@ -7,18 +7,22 @@ export interface UnsavedChangesDialogProps {
   fileName: string
   /** Optional error surfaced from a failed save/discard attempt. */
   errorMessage?: string | null
+  actionDescription?: string
   onSave: () => void
   onDiscard: () => void
   onCancel: () => void
+  isSaving?: boolean
 }
 
 export const UnsavedChangesDialog = ({
   isOpen,
   fileName,
   errorMessage = null,
+  actionDescription = 'switching files',
   onSave,
   onDiscard,
   onCancel,
+  isSaving = false,
 }: UnsavedChangesDialogProps): ReactElement | null => {
   const labelId = useId()
   const descriptionId = useId()
@@ -32,6 +36,14 @@ export const UnsavedChangesDialog = ({
   // focus on document.body — vim shortcuts then silently no-op until
   // the user clicks back into the editor, which looks like a freeze.
   const previousFocusRef = useRef<HTMLElement | null>(null)
+
+  const handleCancelRequest = (): void => {
+    if (isSaving) {
+      return
+    }
+
+    onCancel()
+  }
 
   useEffect(() => {
     if (isOpen) {
@@ -58,6 +70,10 @@ export const UnsavedChangesDialog = ({
 
     const handleKeyDown = (event: KeyboardEvent): void => {
       if (event.key === 'Escape') {
+        if (isSaving) {
+          return
+        }
+
         onCancel()
 
         return
@@ -71,9 +87,13 @@ export const UnsavedChangesDialog = ({
         saveButtonRef.current,
         discardButtonRef.current,
         cancelButtonRef.current,
-      ].filter((b): b is HTMLButtonElement => b !== null)
+      ].filter((b): b is HTMLButtonElement => b !== null && !b.disabled)
 
       if (buttons.length === 0) {
+        if (isSaving) {
+          event.preventDefault()
+        }
+
         return
       }
 
@@ -102,7 +122,7 @@ export const UnsavedChangesDialog = ({
     return (): void => {
       document.removeEventListener('keydown', handleKeyDown)
     }
-  }, [isOpen, onCancel])
+  }, [isOpen, isSaving, onCancel])
 
   return (
     <AnimatePresence>
@@ -121,7 +141,7 @@ export const UnsavedChangesDialog = ({
             exit={{ opacity: 0 }}
             transition={{ duration: 0.15 }}
             className="absolute inset-0 backdrop-blur-sm bg-black/40"
-            onClick={onCancel}
+            onClick={handleCancelRequest}
           />
 
           {/* Panel */}
@@ -153,8 +173,8 @@ export const UnsavedChangesDialog = ({
                 className="text-sm text-on-surface/80 font-inter leading-relaxed"
               >
                 <span className="font-medium text-on-surface">{fileName}</span>{' '}
-                has unsaved changes. Do you want to save them before switching
-                files?
+                has unsaved changes. Do you want to save them before{' '}
+                {actionDescription}?
               </p>
               {errorMessage && (
                 <div
@@ -173,9 +193,11 @@ export const UnsavedChangesDialog = ({
                 ref={saveButtonRef}
                 type="button"
                 onClick={onSave}
-                className="px-4 py-2 rounded-lg bg-primary hover:bg-primary/90 text-on-primary font-inter font-medium text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-[#1e1e2e]"
+                disabled={isSaving}
+                aria-busy={isSaving}
+                className="px-4 py-2 rounded-lg bg-primary hover:bg-primary/90 text-on-primary font-inter font-medium text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-[#1e1e2e] disabled:cursor-not-allowed disabled:opacity-60"
               >
-                Save
+                {isSaving ? 'Saving...' : 'Save'}
               </button>
 
               {/* Discard button (error) */}
@@ -183,7 +205,8 @@ export const UnsavedChangesDialog = ({
                 ref={discardButtonRef}
                 type="button"
                 onClick={onDiscard}
-                className="px-4 py-2 rounded-lg bg-error hover:bg-error/90 text-on-error font-inter font-medium text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-error focus:ring-offset-2 focus:ring-offset-[#1e1e2e]"
+                disabled={isSaving}
+                className="px-4 py-2 rounded-lg bg-error hover:bg-error/90 text-on-error font-inter font-medium text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-error focus:ring-offset-2 focus:ring-offset-[#1e1e2e] disabled:cursor-not-allowed disabled:opacity-60"
               >
                 Discard
               </button>
@@ -192,8 +215,9 @@ export const UnsavedChangesDialog = ({
               <button
                 ref={cancelButtonRef}
                 type="button"
-                onClick={onCancel}
-                className="px-4 py-2 rounded-lg bg-surface-container hover:bg-surface-container-high text-on-surface font-inter font-medium text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-[#1e1e2e]"
+                onClick={handleCancelRequest}
+                disabled={isSaving}
+                className="px-4 py-2 rounded-lg bg-surface-container hover:bg-surface-container-high text-on-surface font-inter font-medium text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-[#1e1e2e] disabled:cursor-not-allowed disabled:opacity-60"
               >
                 Cancel
               </button>

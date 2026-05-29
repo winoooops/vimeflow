@@ -98,7 +98,12 @@ vi.mock('../agent-status/components/AgentStatusPanel', () => ({
 }))
 
 vi.mock('../editor/components/UnsavedChangesDialog', () => ({
-  UnsavedChangesDialog: (): ReactElement => <div />,
+  UnsavedChangesDialog: ({
+    isOpen,
+  }: {
+    isOpen: boolean
+  }): ReactElement | null =>
+    isOpen ? <div data-testid="unsaved-changes-dialog" /> : null,
 }))
 
 const createMockSession = (id: string, name: string): Session => ({
@@ -261,6 +266,9 @@ describe('WorkspaceView - Command Palette Integration', () => {
       openFile: vi.fn(),
       saveFile: vi.fn(),
       updateContent: vi.fn(),
+      hasUnsavedChanges: vi.fn(() => false),
+      getFilePathForScope: vi.fn(() => null),
+      releaseScope: vi.fn(),
     })
 
     // Mock fileSystemService
@@ -611,6 +619,102 @@ describe('WorkspaceView - Command Palette Integration', () => {
     await waitFor(() => {
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     })
+  })
+
+  test(':close command respects dirty-session guard', async () => {
+    const user = userEvent.setup()
+    const hasUnsavedChanges = vi.fn(() => true)
+    const { useEditorBuffer } = await import('../editor/hooks/useEditorBuffer')
+
+    vi.mocked(useEditorBuffer).mockReturnValue({
+      filePath: 'src/current.ts',
+      originalContent: 'original',
+      currentContent: 'edits',
+      isDirty: true,
+      isLoading: false,
+      openFile: vi.fn(),
+      saveFile: vi.fn(),
+      updateContent: vi.fn(),
+      hasUnsavedChanges,
+      getFilePathForScope: vi.fn(() => null),
+      releaseScope: vi.fn(),
+    })
+
+    render(<WorkspaceView />)
+
+    openPalette()
+
+    await waitFor(() => {
+      expect(screen.getByRole('dialog')).toBeInTheDocument()
+    })
+
+    const input = screen.getByRole('combobox', {
+      name: 'Command palette search',
+    })
+    await user.clear(input)
+    await user.type(input, ':close')
+    await user.keyboard('{Enter}')
+
+    expect(hasUnsavedChanges).toHaveBeenCalledWith('session-1')
+    expect(mockSessionManager.removeSession).not.toHaveBeenCalled()
+  })
+
+  test('does not open the palette while the unsaved dialog is active', async () => {
+    const user = userEvent.setup()
+    const hasUnsavedChanges = vi.fn(() => true)
+    const { useEditorBuffer } = await import('../editor/hooks/useEditorBuffer')
+
+    vi.mocked(useEditorBuffer).mockReturnValue({
+      filePath: 'src/current.ts',
+      originalContent: 'original',
+      currentContent: 'edits',
+      isDirty: true,
+      isLoading: false,
+      openFile: vi.fn(),
+      saveFile: vi.fn(),
+      updateContent: vi.fn(),
+      hasUnsavedChanges,
+      getFilePathForScope: vi.fn(() => null),
+      releaseScope: vi.fn(),
+    })
+
+    render(<WorkspaceView />)
+
+    openPalette()
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole('dialog', { name: 'Command palette' })
+      ).toBeInTheDocument()
+    })
+
+    const input = screen.getByRole('combobox', {
+      name: 'Command palette search',
+    })
+    await user.clear(input)
+    await user.type(input, ':close')
+    await user.keyboard('{Enter}')
+
+    await waitFor(() => {
+      expect(screen.getByTestId('unsaved-changes-dialog')).toBeInTheDocument()
+    })
+
+    await waitFor(() => {
+      expect(
+        screen.queryByRole('dialog', { name: 'Command palette' })
+      ).not.toBeInTheDocument()
+    })
+
+    openPalette()
+    expect(
+      screen.queryByRole('dialog', { name: 'Command palette' })
+    ).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Command Palette' }))
+    expect(
+      screen.queryByRole('dialog', { name: 'Command palette' })
+    ).not.toBeInTheDocument()
+    expect(mockSessionManager.setActiveSessionId).not.toHaveBeenCalled()
   })
 
   test(':rename-session foo command renames active session', async () => {

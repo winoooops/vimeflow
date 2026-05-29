@@ -1,4 +1,4 @@
-import type { Session } from '../../sessions/types'
+import type { Session, SessionCloseResult } from '../../sessions/types'
 import { validateTitle } from '../../sessions/utils/sanitizeTitle'
 import { isExpectedLocalOnlyRenameFailure } from '../../sessions/utils/agentRenameErrors'
 import type { Command } from '../../command-palette/registry/types'
@@ -28,7 +28,7 @@ export interface WorkspaceCommandDeps {
   activePanePtyId: string | null
   activePaneAgentType?: Session['agentType'] | null
   createSession: () => void
-  removeSession: (id: string) => void
+  removeSession: (id: string) => SessionCloseResult
   renameSession: (id: string, name: string) => void
   /**
    * Set a per-pane user label, written by `:rename-pane`. In-memory only;
