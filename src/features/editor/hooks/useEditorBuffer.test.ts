@@ -177,4 +177,42 @@ describe('useEditorBuffer', () => {
 
     expect(result.current.isDirty).toBe(true)
   })
+
+  test('keeps open files scoped to the active session', async () => {
+    vi.mocked(mockFileSystemService.readFile).mockImplementation((path) =>
+      Promise.resolve(`content for ${path}`)
+    )
+
+    const { result, rerender } = renderHook(
+      ({ sessionId }: { sessionId: string }) =>
+        useEditorBuffer(mockFileSystemService, sessionId),
+      {
+        initialProps: { sessionId: 'session-a' },
+      }
+    )
+
+    await act(async () => {
+      await result.current.openFile('~/a.ts')
+    })
+
+    expect(result.current.filePath).toBe('~/a.ts')
+    expect(result.current.currentContent).toBe('content for ~/a.ts')
+
+    rerender({ sessionId: 'session-b' })
+
+    expect(result.current.filePath).toBeNull()
+    expect(result.current.currentContent).toBe('')
+
+    await act(async () => {
+      await result.current.openFile('~/b.ts')
+    })
+
+    expect(result.current.filePath).toBe('~/b.ts')
+    expect(result.current.currentContent).toBe('content for ~/b.ts')
+
+    rerender({ sessionId: 'session-a' })
+
+    expect(result.current.filePath).toBe('~/a.ts')
+    expect(result.current.currentContent).toBe('content for ~/a.ts')
+  })
 })

@@ -3,7 +3,14 @@
 // cspell:ignore worktree worktrees
 import type { ReactElement } from 'react'
 import { describe, test, expect, vi, beforeEach } from 'vitest'
-import { act, fireEvent, render, screen, within } from '@testing-library/react'
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { WorkspaceView } from './WorkspaceView'
 import { useEditorBuffer } from '../editor/hooks/useEditorBuffer'
@@ -194,6 +201,42 @@ describe('WorkspaceView', () => {
     ).toBe(true)
     expect(typeof args.setSessionActivePane).toBe('function')
     expect(typeof args.setSessionLayout).toBe('function')
+  })
+
+  test('scopes the editor buffer to the active session', async () => {
+    const user = userEvent.setup()
+    const nextSessionId = '00000000-0000-4000-8000-000000000002'
+
+    const randomUUID = vi
+      .spyOn(crypto, 'randomUUID')
+      .mockReturnValue(nextSessionId)
+
+    try {
+      render(<WorkspaceView />)
+
+      await screen.findByRole('button', { name: 'session 1' })
+
+      await waitFor(() => {
+        expect(
+          vi
+            .mocked(useEditorBuffer)
+            .mock.calls.some(([, sessionId]) => sessionId === 'sess-1')
+        ).toBe(true)
+      })
+
+      await user.click(screen.getByRole('button', { name: 'new session' }))
+      await screen.findByRole('button', { name: 'session 2' })
+
+      await waitFor(() => {
+        expect(
+          vi
+            .mocked(useEditorBuffer)
+            .mock.calls.some(([, sessionId]) => sessionId === nextSessionId)
+        ).toBe(true)
+      })
+    } finally {
+      randomUUID.mockRestore()
+    }
   })
 
   test('applies correct grid layout with 4 columns (dynamic sidebar width)', () => {

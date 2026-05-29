@@ -531,7 +531,7 @@ export const WorkspaceView = (): ReactElement => {
   // WorkspaceView re-render — including each keystroke in the editor — and
   // reloads the file from disk, overwriting in-progress edits.
   const fileSystemService = useMemo(() => createFileSystemService(), [])
-  const editorBuffer = useEditorBuffer(fileSystemService)
+  const editorBuffer = useEditorBuffer(fileSystemService, activeSessionId)
   const [showUnsavedDialog, setShowUnsavedDialog] = useState(false)
   const [pendingFilePath, setPendingFilePath] = useState<string | null>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
