@@ -550,6 +550,86 @@ describe('WorkspaceView', () => {
     }
   })
 
+  test('keeps dirty session close pending while save is in flight', async () => {
+    const user = userEvent.setup()
+    const hasUnsavedChanges = vi.fn((scopeId: string) => scopeId === 'second')
+    let resolveSave: (() => void) | null = null
+
+    const saveFile = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveSave = resolve
+        })
+    )
+
+    workspaceTerminalMock.service.listSessions.mockResolvedValue({
+      activeSessionId: 'first',
+      sessions: [
+        {
+          id: 'first',
+          cwd: '/repo/first',
+          status: {
+            kind: 'Alive',
+            pid: 1,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+        {
+          id: 'second',
+          cwd: '/repo/second',
+          status: {
+            kind: 'Alive',
+            pid: 2,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+      ],
+    })
+
+    vi.mocked(useEditorBuffer).mockReturnValue({
+      filePath: 'src/current.ts',
+      originalContent: 'original',
+      currentContent: 'edits',
+      isDirty: true,
+      isLoading: false,
+      openFile: vi.fn().mockResolvedValue(undefined),
+      saveFile,
+      updateContent: vi.fn(),
+      hasUnsavedChanges,
+      releaseScope: vi.fn(),
+    })
+
+    render(<WorkspaceView />)
+
+    await screen.findByRole('tab', { name: 'first' })
+
+    await user.click(screen.getByRole('button', { name: 'Close second' }))
+    await screen.findByRole('dialog', { name: /unsaved changes/i })
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => {
+      expect(saveFile).toHaveBeenCalledWith('second')
+    })
+
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled()
+
+    fireEvent.keyDown(document, { key: 'Escape' })
+
+    expect(
+      screen.getByRole('dialog', { name: /unsaved changes/i })
+    ).toBeInTheDocument()
+
+    act(() => {
+      resolveSave?.()
+    })
+
+    await waitFor(() => {
+      expect(screen.queryByRole('tab', { name: 'second' })).toBeNull()
+    })
+  })
+
   test('selects the next visible session after confirming a dirty active-session close', async () => {
     const user = userEvent.setup()
     const hasUnsavedChanges = vi.fn((scopeId: string) => scopeId === 'first')

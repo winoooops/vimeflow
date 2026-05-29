@@ -142,6 +142,29 @@ describe('UnsavedChangesDialog', () => {
     expect(onCancel).toHaveBeenCalledTimes(1)
   })
 
+  test('disables actions and ignores cancel shortcuts while saving', () => {
+    const onCancel = vi.fn()
+
+    render(
+      <UnsavedChangesDialog
+        isOpen
+        isSaving
+        fileName="example.ts"
+        onSave={vi.fn()}
+        onDiscard={vi.fn()}
+        onCancel={onCancel}
+      />
+    )
+
+    expect(screen.getByRole('button', { name: /saving/i })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /discard/i })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /cancel/i })).toBeDisabled()
+
+    fireEvent.keyDown(document, { key: 'Escape' })
+
+    expect(onCancel).not.toHaveBeenCalled()
+  })
+
   test('renders dialog with aria attributes', () => {
     render(
       <UnsavedChangesDialog

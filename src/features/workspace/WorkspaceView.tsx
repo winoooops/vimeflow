@@ -503,6 +503,7 @@ export const WorkspaceView = (): ReactElement => {
     string | null
   >(null)
   const [saveError, setSaveError] = useState<string | null>(null)
+  const [isUnsavedDialogSaving, setIsUnsavedDialogSaving] = useState(false)
 
   // Live mirror of `pendingFilePath`. `handleSave` reads this AFTER its
   // saveFile() await so a Cancel/backdrop click during the in-flight
@@ -519,6 +520,7 @@ export const WorkspaceView = (): ReactElement => {
   const pendingFilePathRef = useRef<string | null>(null)
   const pendingSessionRemovalIdRef = useRef<string | null>(null)
   const pendingSessionRestoreIdRef = useRef<string | null>(null)
+  const isUnsavedDialogSavingRef = useRef(false)
 
   useEffect(() => {
     pendingFilePathRef.current = pendingFilePath
@@ -547,6 +549,12 @@ export const WorkspaceView = (): ReactElement => {
     },
     []
   )
+
+  const setUnsavedDialogSavingSynced = useCallback((value: boolean): void => {
+    isUnsavedDialogSavingRef.current = value
+    setIsUnsavedDialogSaving(value)
+  }, [])
+
   // General-purpose error banner for non-dialog file ops (direct file open,
   // async load failure inside CodeEditor, vim :w save failure).
   const [fileError, setFileError] = useState<string | null>(null)
@@ -971,7 +979,12 @@ export const WorkspaceView = (): ReactElement => {
   // on the return object), destructure { saveFile, openFile } into the
   // deps here to lock the handler identity.
   const handleSave = useCallback(async (): Promise<void> => {
+    if (isUnsavedDialogSavingRef.current) {
+      return
+    }
+
     const pendingSessionRemovalIdAtSave = pendingSessionRemovalIdRef.current
+    setUnsavedDialogSavingSynced(true)
 
     try {
       if (pendingSessionRemovalIdAtSave) {
@@ -982,18 +995,19 @@ export const WorkspaceView = (): ReactElement => {
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error)
       setSaveError(`Failed to save: ${message}`)
+      setUnsavedDialogSavingSynced(false)
 
       // Keep the dialog open so the user can retry or cancel — the file
       // is still dirty and we haven't switched away.
       return
     }
 
-    // Read the pending-file path FROM THE REF after the save completes.
-    // If the user clicked the backdrop or pressed Escape during the
-    // save IPC, `handleCancel` cleared `pendingFilePath` to null and
-    // the ref reflects that. Reading the closure variable (or a
-    // capture-before-await constant) would see the stale snapshot and
-    // open the cancelled pending file anyway.
+    setUnsavedDialogSavingSynced(false)
+
+    // Read pending targets FROM THE REFS after the save completes.
+    // Cancellation is disabled while saving, but ref reads still keep
+    // this continuation aligned with any synchronous pending-action
+    // reset that happened before the save began.
     const currentPendingPath = pendingFilePathRef.current
     const currentPendingSessionRemovalId = pendingSessionRemovalIdRef.current
     const currentPendingSessionRestoreId = pendingSessionRestoreIdRef.current
@@ -1035,6 +1049,7 @@ export const WorkspaceView = (): ReactElement => {
     setPendingFilePathSynced,
     setPendingSessionRemovalIdSynced,
     setPendingSessionRestoreIdRef,
+    setUnsavedDialogSavingSynced,
   ])
 
   // Discard changes and open pending file.
@@ -1048,6 +1063,10 @@ export const WorkspaceView = (): ReactElement => {
   // wrong and could trick the user into a confirmation action on
   // the wrong file. Closing the dialog up front removes the window.
   const handleDiscard = useCallback(async (): Promise<void> => {
+    if (isUnsavedDialogSavingRef.current) {
+      return
+    }
+
     const target = pendingFilePathRef.current
     const targetSessionRemovalId = pendingSessionRemovalIdRef.current
     const targetSessionRestoreId = pendingSessionRestoreIdRef.current
@@ -1088,10 +1107,14 @@ export const WorkspaceView = (): ReactElement => {
   // CRITICAL: writes `pendingFilePathRef.current = null` synchronously
   // via `setPendingFilePathSynced` so a concurrently-running `handleSave`
   // awaiting saveFile() sees the cleared ref as soon as its microtask
-  // resumes. Without this, the useEffect-based ref mirror would only
-  // update on the next paint — after handleSave had already read the
-  // stale non-null value and opened the cancelled pending file.
+  // resumes. While a save is actively in flight the dialog disables
+  // cancellation so users cannot accidentally write the file but cancel
+  // the guarded session close/open action with no feedback.
   const handleCancel = useCallback((): void => {
+    if (isUnsavedDialogSavingRef.current) {
+      return
+    }
+
     const restoreSessionId = pendingSessionRestoreIdRef.current
 
     setShowUnsavedDialog(false)
@@ -1393,6 +1416,7 @@ export const WorkspaceView = (): ReactElement => {
         isOpen={showUnsavedDialog}
         fileName={editorBuffer.filePath ?? ''}
         errorMessage={saveError}
+        isSaving={isUnsavedDialogSaving}
         actionDescription={
           pendingSessionRemovalId ? 'closing this session' : 'switching files'
         }
