@@ -417,3 +417,5 @@ recreated and no browser pane re-references the partition — its cookies / cach
 unreferenced. The restart smoke documents this current behavior; making sessions survive a graceful
 quit is a follow-up in the terminal-session lifecycle. Tab-list restoration _within_ a pane is
 Phase 3.
+
+<!-- codex-reviewed: 2026-05-29T13:48:24Z -->
