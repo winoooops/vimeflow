@@ -107,10 +107,23 @@ export const useSessionRestore = ({
         // value, so a real persisted baseline survives untouched.
         const activePtyId = list.activeSessionId
 
+        // `flatMap` over the grouping (narrowed by the `if`) instead of
+        // `filter().map(...?.workspaceSessionId ?? '')`. The previous
+        // form silently fell back to `''` if the backend ever sent a
+        // PaneGrouping with `workspaceDirectory` set but
+        // `workspaceSessionId` absent — `''` would enter the set, no
+        // session.id would match, and every restored workspace's
+        // baseline would be silently overridden with the active pane's
+        // drifted cwd. The flatMap form keeps TypeScript honest: only
+        // groupings with both fields contribute, and a future schema
+        // regression that drops `workspaceSessionId` would compile-fail
+        // here. Claude review on PR #290 cycle 15 (MEDIUM).
         const persistedWorkspaceDirs = new Set(
-          list.sessions
-            .filter((info) => info.grouping?.workspaceDirectory !== undefined)
-            .map((info) => info.grouping?.workspaceSessionId ?? '')
+          list.sessions.flatMap((info) =>
+            info.grouping?.workspaceDirectory !== undefined
+              ? [info.grouping.workspaceSessionId]
+              : []
+          )
         )
 
         const reconciled = activePtyId
