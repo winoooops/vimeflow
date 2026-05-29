@@ -864,20 +864,35 @@ pub(crate) fn set_workspace_sessions_inner(
                 if !d.sessions.contains_key(&pane.pty_id) {
                     continue;
                 }
-                groupings.insert(
-                    pane.pty_id.clone(),
-                    PaneGrouping {
-                        workspace_session_id: session.id.clone(),
-                        layout: session.layout.clone(),
-                        workspace_directory: session.working_directory.clone(),
-                        pane_id: pane.pane_id.clone(),
-                        pane_index: pane.pane_index,
-                        agent_type: pane.agent_type.clone(),
-                        active: pane.active,
-                    },
-                );
+                // Both `groupings.insert` and `new_order.push` are gated by
+                // the same `seen` dedup. Without this, a malformed snapshot
+                // that lists the same `pty_id` under two workspace sessions
+                // would silently overwrite the first session's grouping
+                // with the second's (PR #290 cycle 11 — Claude MEDIUM). The
+                // first-wins policy preserves the earlier workspace and
+                // logs a warning so a regression in the frontend snapshot
+                // builder is visible.
                 if seen.insert(pane.pty_id.clone()) {
+                    groupings.insert(
+                        pane.pty_id.clone(),
+                        PaneGrouping {
+                            workspace_session_id: session.id.clone(),
+                            layout: session.layout.clone(),
+                            workspace_directory: session.working_directory.clone(),
+                            pane_id: pane.pane_id.clone(),
+                            pane_index: pane.pane_index,
+                            agent_type: pane.agent_type.clone(),
+                            active: pane.active,
+                        },
+                    );
                     new_order.push(pane.pty_id.clone());
+                } else {
+                    log::warn!(
+                        "set_workspace_sessions: duplicate pty_id '{}' in request — \
+                         keeping first occurrence, ignoring later entry under workspace '{}'",
+                        pane.pty_id,
+                        session.id,
+                    );
                 }
             }
         }
@@ -3155,5 +3170,84 @@ mod tests {
         for id in &["pty-x", "pty-y"] {
             let _ = state.remove(&id.to_string());
         }
+    }
+
+    /// Claude reviewer MEDIUM on PR #290 cycle 10: `groupings.insert` was
+    /// called for every pane BEFORE the `seen` dedup, so a malformed
+    /// snapshot listing the same `pty_id` under two workspaces would
+    /// silently overwrite the first session's grouping with the second's.
+    /// Both writes must go through the same dedup. First-wins.
+    #[tokio::test]
+    async fn set_workspace_sessions_dedups_duplicate_pty_id_first_wins() {
+        let (state, cache, events, _temp_dir) = create_test_state_with_cache();
+        let cwd = std::env::current_dir()
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
+
+        spawn_pty_inner(
+            state.clone(),
+            cache.clone(),
+            events.clone(),
+            SpawnPtyRequest {
+                session_id: "pty-shared".into(),
+                cwd: cwd.clone(),
+                shell: None,
+                env: None,
+                enable_agent_bridge: false,
+            },
+        )
+        .await
+        .expect("spawn");
+
+        // Both ws-first and ws-second claim pty-shared. The dedup must
+        // keep the FIRST workspace's grouping and ignore the later
+        // duplicate without crashing or corrupting state.
+        set_workspace_sessions_inner(
+            &cache,
+            SetWorkspaceSessionsRequest {
+                sessions: vec![
+                    WorkspaceSessionSnapshot {
+                        id: "ws-first".into(),
+                        layout: "single".into(),
+                        working_directory: None,
+                        panes: vec![WorkspacePaneSnapshot {
+                            pty_id: "pty-shared".into(),
+                            pane_id: "p0".into(),
+                            pane_index: 0,
+                            agent_type: "claude-code".into(),
+                            active: true,
+                        }],
+                    },
+                    WorkspaceSessionSnapshot {
+                        id: "ws-second".into(),
+                        layout: "single".into(),
+                        working_directory: None,
+                        panes: vec![WorkspacePaneSnapshot {
+                            pty_id: "pty-shared".into(),
+                            pane_id: "p0".into(),
+                            pane_index: 0,
+                            agent_type: "generic".into(),
+                            active: true,
+                        }],
+                    },
+                ],
+            },
+        )
+        .expect("snapshot");
+
+        let snap = cache.snapshot();
+        // The PTY appears EXACTLY ONCE in session_order.
+        assert_eq!(snap.session_order, vec!["pty-shared".to_string()]);
+        // Its grouping points at the FIRST workspace, not the duplicate.
+        let g = snap
+            .groupings
+            .get("pty-shared")
+            .expect("pty-shared grouping");
+        assert_eq!(g.workspace_session_id, "ws-first");
+        assert_eq!(g.agent_type, "claude-code");
+
+        // Cleanup
+        let _ = state.remove(&"pty-shared".to_string());
     }
 }

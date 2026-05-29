@@ -202,13 +202,22 @@ export const groupSessionsFromInfos = (
       }
     } else {
       const key = `__solo:${info.id}`
-      buckets.set(key, {
-        kind: 'ungrouped',
-        id: info.id,
-        entries: [info],
-        layout: 'single',
-      })
-      order.push(key)
+      // Mirror the grouped path's `!buckets.has` guard so a duplicate
+      // `info.id` (from a corrupted cache `session_order` with repeated
+      // PTY ids) does not produce two solo buckets keyed `__solo:<id>`.
+      // Without this guard, the duplicate would surface as two restored
+      // Sessions sharing one ptyId; both call `registerPtySession`, the
+      // second overwrites the first, and one pane stays blank
+      // forever. Codex review on PR #290 cycle 11 (Claude MEDIUM).
+      if (!buckets.has(key)) {
+        buckets.set(key, {
+          kind: 'ungrouped',
+          id: info.id,
+          entries: [info],
+          layout: 'single',
+        })
+        order.push(key)
+      }
     }
   }
 

@@ -286,4 +286,22 @@ describe('groupSessionsFromInfos', () => {
     ])
     expect(sessions[0].workingDirectory).toBe('/legacy-project')
   })
+
+  // PR #290 cycle 11: Claude MEDIUM — the grouped path guards
+  // `order.push` inside `!buckets.has`, but the ungrouped (`__solo:`)
+  // branch did not. A duplicate `info.id` (from a corrupt
+  // `session_order` with repeated entries) would push the same key
+  // into `order` twice and produce two restored sessions sharing one
+  // ptyId; `registerPtySession` collisions would leave one pane
+  // permanently blank. The duplicate guard makes the ungrouped path
+  // robust to that input.
+  test('drops duplicate ungrouped PTY ids — first wins', () => {
+    const sessions = groupSessionsFromInfos([
+      alive('pty-dup', '/repo/a'),
+      alive('pty-dup', '/repo/b'),
+    ])
+    expect(sessions).toHaveLength(1)
+    expect(sessions[0].panes[0].ptyId).toBe('pty-dup')
+    expect(sessions[0].panes[0].cwd).toBe('/repo/a')
+  })
 })
