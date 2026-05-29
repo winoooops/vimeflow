@@ -24,6 +24,7 @@ use super::transcript_state::{TranscriptStartStatus, TranscriptState};
 // (PR #261 cycle 2 review F9). Step B'' added `TranscriptStreamer` here
 // when `start_or_replace` migrated off `Arc<dyn AgentAdapter>`.
 use super::super::traits::{TranscriptPathValidator, TranscriptStreamer};
+use super::TrustedLocatedSource;
 use crate::agent::adapter::types::{
     stamp_snapshot, LocatedStatusSource, RawPath, TranscriptPathSource, ValidateTranscriptError,
 };
@@ -279,8 +280,9 @@ pub(crate) fn start_watching(
     pty_state: PtyState,
     transcript_state: TranscriptState,
     session_id: String,
-    located: LocatedStatusSource,
+    located: TrustedLocatedSource,
 ) -> Result<WatcherHandle, String> {
+    let located = located.into_inner();
     let status_file_path = located.status_path.clone();
     let target_path = status_file_path.clone();
     let sid = session_id.clone();

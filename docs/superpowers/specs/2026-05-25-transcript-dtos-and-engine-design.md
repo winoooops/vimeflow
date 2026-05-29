@@ -174,9 +174,11 @@ TranscriptDecoder>` plus a `&'static str` provider label (used only for
   separate step-9 concern.
 - **A-status is not re-done.** It already shipped (#257); this effort
   _reuses_ its `lenient_*` helpers rather than re-deriving them.
-- **Step F** (the single-class session-lifecycle capstone) is **deferred**
-  — see § 6. It reshapes `watcher_runtime` / the D' `AgentWatcherService`
-  and earns its own design + go/no-go after A-transcript + C land.
+- **Step F** (the single-class session-lifecycle capstone) **has since
+  landed** — see § 6. It earned its own design
+  (`2026-05-28-step-f-session-lifecycle-design.md`) + go/no-go after
+  A-transcript + C landed, then shipped as staged PRs F.0–F.5
+  (`AgentWatcherService → SessionLifecycle`, `base::start_for` deleted).
 - **No event-surface change beyond G3.** No new `AgentEvent` variants, no
   changed event shapes, ordering, or emit semantics; no new IPC; no
   frontend change.
@@ -770,7 +772,16 @@ both provider decoders can implement the trait and build the service.
   production scaffolding shrinks — the effort _adds_ DTOs/service/tests
   overall, so this is a dedup, not a net-LOC claim).
 
-## 6. Step F — single-class session lifecycle (deferred capstone, NOT in this effort)
+## 6. Step F — single-class session lifecycle (LANDED — staged PRs F.0–F.5)
+
+> **Update (2026-05-29):** Step F has **landed**, delivered as the staged
+> PRs F.0–F.5 per `docs/superpowers/specs/2026-05-28-step-f-session-lifecycle-design.md`.
+> `AgentWatcherService` was renamed to `SessionLifecycle`; `base::start_for`
+> is deleted and `start()` now calls the seven private verbs directly
+> (`resolve_attach → bind_services → locate → ensure_trust → evict_old →
+spawn_watch → register`); the trust boundary is compiler-enforced via a
+> base-sealed `TrustedLocatedSource` proof type. The original deferred-intent
+> description below is retained for historical context.
 
 **What.** A session's lifecycle is currently spread across free functions
 and several state holders: `base::start_for`, `AgentWatcherState` /

@@ -2,7 +2,7 @@
 //!
 //! The trait carries provider hooks only. User-facing lifecycle methods live
 //! on `dyn AgentAdapter`, and the watcher orchestration body lives in
-//! `base::start_for`.
+//! `SessionLifecycle::start`.
 
 mod attach;
 pub mod base;
