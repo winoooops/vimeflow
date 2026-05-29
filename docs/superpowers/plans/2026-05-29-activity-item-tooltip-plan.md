@@ -15,12 +15,14 @@
 ## File structure
 
 **PR1 (frontend only):**
+
 - Modify: `src/features/agent-status/components/ActivityEvent.tsx` — row cursor; rewrite `ActivityTooltipContent` to the structured card; add `buildCopyText` + `isToolEvent`; pass `{ event, label, now }`.
 - Modify: `src/features/agent-status/types/activityEvent.ts` — add `ToolActivityEvent.resultPreview?: string | null` (spec §4 step 5a).
 - Modify: `src/features/agent-status/hooks/useAgentStatus.ts` — zero-duration mapper fix.
 - Test: `src/features/agent-status/components/ActivityEvent.test.tsx`, `src/features/agent-status/hooks/useAgentStatus.test.ts`.
 
 **PR2 (full-stack):**
+
 - Modify: `crates/backend/src/agent/types.rs` — add `result_preview: Option<String>` to `AgentToolCallEvent`.
 - Modify: `crates/backend/src/agent/adapter/claude_code/transcript.rs` — add `tool_result_preview`; populate at the done/failed site; `None` at the running site.
 - Modify: `crates/backend/src/agent/adapter/codex/transcript.rs` — `result_preview: None` at all five sites.
@@ -35,6 +37,7 @@
 ## Task 1: Row cursor + non-selectable (spec §2)
 
 **Files:**
+
 - Modify: `src/features/agent-status/components/ActivityEvent.tsx:274`
 - Test: `src/features/agent-status/components/ActivityEvent.test.tsx`
 
@@ -58,7 +61,8 @@ Expected: FAIL — element does not have class `cursor-default`.
 - [ ] **Step 3: Add the classes** — in the `<article>` `className` (ActivityEvent.tsx:274), insert `cursor-default select-none` after `py-1`:
 
 ```tsx
-className="flex items-start gap-2 rounded-md py-1 cursor-default select-none outline-none focus-visible:ring-1 focus-visible:ring-primary-container"
+className =
+  'flex items-start gap-2 rounded-md py-1 cursor-default select-none outline-none focus-visible:ring-1 focus-visible:ring-primary-container'
 ```
 
 - [ ] **Step 4: Run it, verify it passes**
@@ -78,6 +82,7 @@ git commit -m "fix(agent-status): use default cursor on activity rows, not the t
 `useAgentStatus` maps `durationMs` with `Number(p.durationMs) || null`, turning a `0n` duration into `null` (drops the `0s` chip). `AgentToolCallEvent.durationMs` is a non-null `bigint`, so map it directly.
 
 **Files:**
+
 - Modify: `src/features/agent-status/hooks/useAgentStatus.ts:537`
 - Test: `src/features/agent-status/hooks/useAgentStatus.test.ts`
 
@@ -117,7 +122,9 @@ Expected: FAIL — received `null`, expected `0`.
 ```ts
 durationMs: Number(p.durationMs) || null,
 ```
+
 to:
+
 ```ts
 // durationMs is a non-null bigint on the wire; `|| null` would coerce a
 // legitimate 0 ms duration to null and drop the "0s" chip. Map directly.
@@ -141,6 +148,7 @@ git commit -m "fix(agent-status): preserve 0 ms tool-call durations in the activ
 Lands in PR1 so Task 4/5's preview-aware code typechecks against the union; always `undefined` until PR2 populates it.
 
 **Files:**
+
 - Modify: `src/features/agent-status/types/activityEvent.ts:27-33`
 
 - [ ] **Step 1: Add the field** to the `ToolActivityEvent` interface:
@@ -177,6 +185,7 @@ git commit -m "feat(agent-status): declare optional resultPreview on ToolActivit
 ## Task 4: `buildCopyText` + `isToolEvent` helpers (spec §3)
 
 **Files:**
+
 - Modify: `src/features/agent-status/components/ActivityEvent.tsx` (add near the existing `writeClipboardText` helper)
 - Test: `src/features/agent-status/components/ActivityEvent.test.tsx`
 
@@ -188,10 +197,19 @@ test('Copy copies body alone when there is no resultPreview', async () => {
   const writeText = vi.fn().mockResolvedValue(undefined)
   setClipboard({ writeText })
 
-  render(<ActivityEvent event={toolEvent({ kind: 'bash', tool: 'Bash', body: 'pnpm test' })} now={now} />)
+  render(
+    <ActivityEvent
+      event={toolEvent({ kind: 'bash', tool: 'Bash', body: 'pnpm test' })}
+      now={now}
+    />
+  )
   fireEvent.focus(screen.getByRole('article', { name: 'BASH' }))
-  const details = await screen.findByRole('dialog', { name: 'BASH activity details' })
-  await user.click(within(details).getByRole('button', { name: 'Copy activity details' }))
+  const details = await screen.findByRole('dialog', {
+    name: 'BASH activity details',
+  })
+  await user.click(
+    within(details).getByRole('button', { name: 'Copy activity details' })
+  )
 
   expect(writeText).toHaveBeenCalledWith('pnpm test')
 })
@@ -203,13 +221,22 @@ test('Copy joins body and resultPreview when present', async () => {
 
   render(
     <ActivityEvent
-      event={toolEvent({ kind: 'bash', tool: 'Bash', body: 'pnpm test', resultPreview: '✓ 4 passed' })}
+      event={toolEvent({
+        kind: 'bash',
+        tool: 'Bash',
+        body: 'pnpm test',
+        resultPreview: '✓ 4 passed',
+      })}
       now={now}
     />
   )
   fireEvent.focus(screen.getByRole('article', { name: 'BASH' }))
-  const details = await screen.findByRole('dialog', { name: 'BASH activity details' })
-  await user.click(within(details).getByRole('button', { name: 'Copy activity details' }))
+  const details = await screen.findByRole('dialog', {
+    name: 'BASH activity details',
+  })
+  await user.click(
+    within(details).getByRole('button', { name: 'Copy activity details' })
+  )
 
   expect(writeText).toHaveBeenCalledWith('pnpm test\n\n✓ 4 passed')
 })
@@ -233,6 +260,7 @@ const buildCopyText = (event: ActivityEventType): string =>
 ```
 
 Add `ToolActivityEvent` to the existing type import:
+
 ```tsx
 import type {
   ActivityEvent as ActivityEventType,
@@ -248,6 +276,7 @@ import type {
 ## Task 5: Rewrite `ActivityTooltipContent` to the structured card (spec §3)
 
 **Files:**
+
 - Modify: `src/features/agent-status/components/ActivityEvent.tsx` (replace `ActivityTooltipContentProps` + `ActivityTooltipContent`; update the call site in `ActivityEvent`)
 - Test: `src/features/agent-status/components/ActivityEvent.test.tsx`
 
@@ -255,9 +284,16 @@ import type {
 
 ```tsx
 test('tooltip header shows the kind tag and an OK chip for a done tool call', async () => {
-  render(<ActivityEvent event={toolEvent({ kind: 'bash', tool: 'Bash', status: 'done' })} now={now} />)
+  render(
+    <ActivityEvent
+      event={toolEvent({ kind: 'bash', tool: 'Bash', status: 'done' })}
+      now={now}
+    />
+  )
   fireEvent.focus(screen.getByRole('article', { name: 'BASH' }))
-  const details = await screen.findByRole('dialog', { name: 'BASH activity details' })
+  const details = await screen.findByRole('dialog', {
+    name: 'BASH activity details',
+  })
 
   expect(within(details).getByText('BASH')).toBeInTheDocument()
   expect(within(details).getByText('OK')).toBeInTheDocument()
@@ -265,60 +301,107 @@ test('tooltip header shows the kind tag and an OK chip for a done tool call', as
 
 test('failed tool call shows FAILED; running shows RUNNING (in the tooltip)', async () => {
   const { rerender } = render(
-    <ActivityEvent event={toolEvent({ kind: 'bash', tool: 'Bash', status: 'failed' })} now={now} />
-  )
-  fireEvent.focus(screen.getByRole('article', { name: 'BASH' }))
-  // Scope to the dialog: the row's own status pill also renders "FAILED".
-  const failed = await screen.findByRole('dialog', { name: 'BASH activity details' })
-  expect(within(failed).getByText('FAILED')).toBeInTheDocument()
-
-  rerender(
     <ActivityEvent
-      event={{ id: 'r', kind: 'bash', tool: 'Bash', body: 'pnpm test', timestamp: '2026-04-22T11:59:52Z', status: 'running', durationMs: null }}
+      event={toolEvent({ kind: 'bash', tool: 'Bash', status: 'failed' })}
       now={now}
     />
   )
   fireEvent.focus(screen.getByRole('article', { name: 'BASH' }))
-  const running = await screen.findByRole('dialog', { name: 'BASH activity details' })
+  // Scope to the dialog: the row's own status pill also renders "FAILED".
+  const failed = await screen.findByRole('dialog', {
+    name: 'BASH activity details',
+  })
+  expect(within(failed).getByText('FAILED')).toBeInTheDocument()
+
+  rerender(
+    <ActivityEvent
+      event={{
+        id: 'r',
+        kind: 'bash',
+        tool: 'Bash',
+        body: 'pnpm test',
+        timestamp: '2026-04-22T11:59:52Z',
+        status: 'running',
+        durationMs: null,
+      }}
+      now={now}
+    />
+  )
+  fireEvent.focus(screen.getByRole('article', { name: 'BASH' }))
+  const running = await screen.findByRole('dialog', {
+    name: 'BASH activity details',
+  })
   expect(within(running).getByText('RUNNING')).toBeInTheDocument()
 })
 
 test('bash card appends passed/total when bashResult is present', async () => {
   render(
     <ActivityEvent
-      event={toolEvent({ kind: 'bash', tool: 'Bash', status: 'done', bashResult: { passed: 4, total: 4 } })}
+      event={toolEvent({
+        kind: 'bash',
+        tool: 'Bash',
+        status: 'done',
+        bashResult: { passed: 4, total: 4 },
+      })}
       now={now}
     />
   )
   fireEvent.focus(screen.getByRole('article', { name: 'BASH' }))
   // Scope to the dialog: the row's own status pill also renders "OK 4/4".
-  const details = await screen.findByRole('dialog', { name: 'BASH activity details' })
+  const details = await screen.findByRole('dialog', {
+    name: 'BASH activity details',
+  })
   expect(within(details).getByText('OK 4/4')).toBeInTheDocument()
 })
 
 test('think card renders no status chip', async () => {
   render(
     <ActivityEvent
-      event={{ id: 'th', kind: 'think', body: 'considering options', timestamp: '2026-04-22T11:59:42Z', status: 'done' }}
+      event={{
+        id: 'th',
+        kind: 'think',
+        body: 'considering options',
+        timestamp: '2026-04-22T11:59:42Z',
+        status: 'done',
+      }}
       now={now}
     />
   )
   fireEvent.focus(screen.getByRole('article', { name: 'THINK' }))
-  const details = await screen.findByRole('dialog', { name: 'THINK activity details' })
+  const details = await screen.findByRole('dialog', {
+    name: 'THINK activity details',
+  })
   expect(within(details).queryByText('OK')).not.toBeInTheDocument()
   expect(within(details).getByText('considering options')).toBeInTheDocument()
 })
 
 test('no resultPreview → no output pre block', async () => {
-  render(<ActivityEvent event={toolEvent({ kind: 'read', tool: 'Read', body: 'src/x.ts' })} now={now} />)
+  render(
+    <ActivityEvent
+      event={toolEvent({ kind: 'read', tool: 'Read', body: 'src/x.ts' })}
+      now={now}
+    />
+  )
   fireEvent.focus(screen.getByRole('article', { name: 'READ' }))
-  const details = await screen.findByRole('dialog', { name: 'READ activity details' })
+  const details = await screen.findByRole('dialog', {
+    name: 'READ activity details',
+  })
   // eslint-disable-next-line testing-library/no-node-access -- assert the <pre> output block is absent
   expect(details.querySelector('pre')).toBeNull()
 })
 
 test('renders 0s for a 0 ms completed tool call', async () => {
-  render(<ActivityEvent event={toolEvent({ kind: 'bash', tool: 'Bash', status: 'done', durationMs: 0 })} now={now} />)
+  render(
+    <ActivityEvent
+      event={toolEvent({
+        kind: 'bash',
+        tool: 'Bash',
+        status: 'done',
+        durationMs: 0,
+      })}
+      now={now}
+    />
+  )
   fireEvent.focus(screen.getByRole('article', { name: 'BASH' }))
   expect(await screen.findByText('0s')).toBeInTheDocument()
 })
@@ -351,10 +434,14 @@ const StatusChip = ({ event }: { event: ToolActivityEvent }): ReactElement => {
     event.kind === 'bash' && event.bashResult
       ? ` ${event.bashResult.passed}/${event.bashResult.total}`
       : ''
-  const palette = ok ? 'bg-success/[0.12] text-success' : 'bg-error/[0.12] text-error'
+  const palette = ok
+    ? 'bg-success/[0.12] text-success'
+    : 'bg-error/[0.12] text-error'
 
   return (
-    <span className={`rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] ${palette}`}>
+    <span
+      className={`rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] ${palette}`}
+    >
       {(ok ? 'OK' : 'FAILED') + counts}
     </span>
   )
@@ -442,7 +529,9 @@ const ActivityTooltipContent = ({
           </span>
           <span className="text-[9px] font-mono text-outline">{ago}</span>
           {duration ? (
-            <span className="text-[9px] font-mono text-outline">{duration}</span>
+            <span className="text-[9px] font-mono text-outline">
+              {duration}
+            </span>
           ) : null}
           {isToolEvent(event) ? <StatusChip event={event} /> : null}
           {diff ? (
@@ -467,7 +556,10 @@ const ActivityTooltipContent = ({
             }}
             className="inline-flex h-6 items-center gap-1 rounded-md bg-on-surface/10 px-1.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-on-surface-variant transition-colors hover:bg-on-surface/15 hover:text-on-surface focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary-container"
           >
-            <span className="material-symbols-outlined text-sm" aria-hidden="true">
+            <span
+              className="material-symbols-outlined text-sm"
+              aria-hidden="true"
+            >
               {copyState === 'copied' ? 'check' : 'content_copy'}
             </span>
             Copy
@@ -514,6 +606,7 @@ git commit -m "feat(agent-status): redesign the activity tooltip as a structured
 ## Task 6: `tool_result_preview` extractor (spec §4 step 2)
 
 **Files:**
+
 - Modify: `crates/backend/src/agent/adapter/claude_code/transcript.rs` (add near `extract_tool_result_content`, line ~774; reuse existing `text_block_type` / `text_block_text` / `TOOL_RESULT_TRUNCATED_MARKER`)
 
 - [ ] **Step 1: Write the failing tests** in the `transcript.rs` `#[cfg(test)] mod tests`:
@@ -676,6 +769,7 @@ git commit -m "feat(agent): add bounded head-preview extractor for tool results"
 ## Task 7: Add `result_preview` to the event + populate / default it (spec §4 steps 1, 3, 4)
 
 **Files:**
+
 - Modify: `crates/backend/src/agent/types.rs:309`
 - Modify: `crates/backend/src/agent/adapter/claude_code/transcript.rs` (sites 497, 630)
 - Modify: `crates/backend/src/agent/adapter/codex/transcript.rs` (sites 429, 479, 527, 605, 647)
@@ -693,7 +787,7 @@ git commit -m "feat(agent): add bounded head-preview extractor for tool results"
 - [ ] **Step 2: Run the build to enumerate every broken construction site**
 
 Run: `cargo build --manifest-path crates/backend/Cargo.toml`
-Expected: `error[E0063]: missing field \`result_preview\`` at `claude_code/transcript.rs:497, 630` and `codex/transcript.rs:429, 479, 527, 605, 647` (plus any Rust test builders). To list just the sites: `cargo build --manifest-path crates/backend/Cargo.toml 2>&1 | grep -nE "missing field.*result_preview"`.
+Expected: `error[E0063]: missing field \`result_preview\``at`claude_code/transcript.rs:497, 630`and`codex/transcript.rs:429, 479, 527, 605, 647`(plus any Rust test builders). To list just the sites:`cargo build --manifest-path crates/backend/Cargo.toml 2>&1 | grep -nE "missing field.\*result_preview"`.
 
 - [ ] **Step 3: Default `None` at every construction site so the crate compiles** — claude_code/transcript.rs:497 (running) and :630 (done/failed), all five `codex/transcript.rs` sites, and any Rust test builders. Each named-field literal gets:
 
@@ -789,6 +883,7 @@ git commit -m "feat(agent): forward a tool-result preview on agent-tool-call eve
 ## Task 8: Thread `resultPreview` through the frontend pipeline (spec §4 steps 5b–5d)
 
 **Files:**
+
 - Modify: `src/features/agent-status/types/index.ts:166-179` (`RecentToolCall`)
 - Modify: `src/features/agent-status/hooks/useAgentStatus.ts:532-540` (mapping)
 - Modify: `src/features/agent-status/utils/toolCallsToEvents.ts:75-86` (copy)
@@ -797,6 +892,7 @@ git commit -m "feat(agent): forward a tool-result preview on agent-tool-call eve
 - [ ] **Step 1: Write the failing tests**
 
 In `useAgentStatus.test.ts`:
+
 ```tsx
 test('maps resultPreview from the agent-tool-call event', async () => {
   const { result } = renderHook(() => useAgentStatus('session-1'))
@@ -805,9 +901,15 @@ test('maps resultPreview from the agent-tool-call event', async () => {
   })
   act(() => {
     emit('agent-tool-call', {
-      sessionId: 'pty-session-1', toolUseId: 't1', tool: 'Read', args: 'a.ts',
-      status: 'done', timestamp: '2026-04-22T12:00:00Z', durationMs: 5n,
-      isTestFile: false, resultPreview: 'file head',
+      sessionId: 'pty-session-1',
+      toolUseId: 't1',
+      tool: 'Read',
+      args: 'a.ts',
+      status: 'done',
+      timestamp: '2026-04-22T12:00:00Z',
+      durationMs: 5n,
+      isTestFile: false,
+      resultPreview: 'file head',
     })
   })
   expect(result.current.recentToolCalls[0]?.resultPreview).toBe('file head')
@@ -815,12 +917,21 @@ test('maps resultPreview from the agent-tool-call event', async () => {
 ```
 
 In `toolCallsToEvents.test.ts`:
+
 ```ts
 test('copies resultPreview onto the produced tool event', () => {
-  const events = toolCallsToEvents(null, [{
-    id: 't1', tool: 'Read', args: 'a.ts', status: 'done', durationMs: 5,
-    timestamp: '2026-04-22T12:00:00Z', isTestFile: false, resultPreview: 'preview',
-  }])
+  const events = toolCallsToEvents(null, [
+    {
+      id: 't1',
+      tool: 'Read',
+      args: 'a.ts',
+      status: 'done',
+      durationMs: 5,
+      timestamp: '2026-04-22T12:00:00Z',
+      isTestFile: false,
+      resultPreview: 'preview',
+    },
+  ])
   expect(events[0]).toMatchObject({ resultPreview: 'preview' })
 })
 ```
@@ -837,11 +948,13 @@ Expected: FAIL.
 ```
 
 `useAgentStatus.ts` done/failed mapping (~line 539, in the `recentCall` object literal), add:
+
 ```ts
       resultPreview: p.resultPreview ?? null,
 ```
 
 `toolCallsToEvents.ts` recent loop (~line 85, in the pushed object), add:
+
 ```ts
       resultPreview: r.resultPreview,
 ```
@@ -863,6 +976,7 @@ git commit -m "feat(agent-status): carry resultPreview through the activity pipe
 The card already renders `<pre>` when `resultPreview` is present (Task 5's `TooltipBody`). Now that the producer populates it, add the end-to-end render + copy tests.
 
 **Files:**
+
 - Test: `src/features/agent-status/components/ActivityEvent.test.tsx`
 
 - [ ] **Step 1: Write the test**
@@ -871,12 +985,19 @@ The card already renders `<pre>` when `resultPreview` is present (Task 5's `Tool
 test('renders the output pre block when resultPreview is present', async () => {
   render(
     <ActivityEvent
-      event={toolEvent({ kind: 'bash', tool: 'Bash', body: 'pnpm test', resultPreview: '✓ 4 passed\n✗ 0 failed' })}
+      event={toolEvent({
+        kind: 'bash',
+        tool: 'Bash',
+        body: 'pnpm test',
+        resultPreview: '✓ 4 passed\n✗ 0 failed',
+      })}
       now={now}
     />
   )
   fireEvent.focus(screen.getByRole('article', { name: 'BASH' }))
-  const details = await screen.findByRole('dialog', { name: 'BASH activity details' })
+  const details = await screen.findByRole('dialog', {
+    name: 'BASH activity details',
+  })
   expect(within(details).getByText(/4 passed/)).toBeInTheDocument()
 })
 ```
@@ -898,6 +1019,7 @@ git commit -m "test(agent-status): cover resultPreview rendering in the activity
 Spec §5 R2 accepts the one-time catch-up burst (one preview per historical completion on attach) and bounds it **per event**. This test drives the real replay parse entrypoint — `process_line` over assistant `tool_use` + user `tool_result` pairs, exactly as the file tailer replays a transcript — and asserts every emitted completion carries a bounded preview, so the burst is `N × ≤ MAX_BYTES`, never unbounded. (Hundreds-scale throughput / event-queue stall is a perf/manual concern, not unit-tested; steady-state frontend memory is bounded separately by the existing `RECENT_TOOL_CALLS_LIMIT` 50-slice in `useAgentStatus`. The per-event helper cap is covered by Task 6.)
 
 **Files:**
+
 - Test: `crates/backend/src/agent/adapter/claude_code/transcript.rs` test module
 
 - [ ] **Step 1: Write the test**
