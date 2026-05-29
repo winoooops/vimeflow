@@ -531,7 +531,89 @@ pub(crate) fn kill_pty_inner(
             data.session_order.retain(|id| id != &request.session_id);
             // Drop any workspace grouping for this PTY — the pane no longer
             // exists, so it must not be reconstructed on the next restore.
+            // Capture its workspace_session_id BEFORE removal so we can
+            // re-index surviving siblings (cycle 18 MEDIUM): without this
+            // step, sibling groupings retain the pre-kill layout (e.g.,
+            // `quad` with 4 pane_indexes occupied) but the workspace now
+            // only has N-1 alive PTYs. In the crash window between
+            // `kill_pty` and the next `set_workspace_sessions` push (the
+            // frontend heals via that effect), restore would reconstruct
+            // the workspace at the stale layout with an empty slot the
+            // user cannot interact with. Re-indexing here keeps the
+            // workspace internally consistent in that window. Claude
+            // MEDIUM on PR #290 cycle 17.
+            let workspace_session_id = data
+                .groupings
+                .get(&request.session_id)
+                .map(|g| g.workspace_session_id.clone());
+            let was_active = data
+                .groupings
+                .get(&request.session_id)
+                .map(|g| g.active)
+                .unwrap_or(false);
             data.groupings.remove(&request.session_id);
+
+            if let Some(ws_id) = workspace_session_id {
+                // Collect surviving siblings in stable pane_index order.
+                // Cloning keys to release the borrow before mutation.
+                let mut sibling_ids: Vec<String> = data
+                    .groupings
+                    .iter()
+                    .filter(|(_, g)| g.workspace_session_id == ws_id)
+                    .map(|(id, _)| id.clone())
+                    .collect();
+                sibling_ids.sort_by_key(|id| {
+                    data.groupings
+                        .get(id)
+                        .map(|g| g.pane_index)
+                        .unwrap_or(u32::MAX)
+                });
+
+                // Layout-by-count for the crash window. The next
+                // `set_workspace_sessions` push from the frontend
+                // overwrites these with the authoritative user choice;
+                // for the crash-recovery path we pick a sensible
+                // default (vsplit over hsplit when N=2 — the more
+                // common choice in this codebase's defaults).
+                //
+                // No-survivor case (workspace gone) falls through this
+                // `if` block without an early return so the
+                // `active_session_id` cleanup BELOW still runs. Codex
+                // verify cycle 18 caught that `return Ok(())` here was
+                // a closure-scope early return that would have skipped
+                // that cleanup, leaving a dangling active id.
+                let new_layout: Option<&'static str> = match sibling_ids.len() {
+                    0 => None,
+                    1 => Some("single"),
+                    2 => Some("vsplit"),
+                    3 => Some("threeRight"),
+                    _ => Some("quad"), // 4+ defensively maps to quad
+                };
+
+                if let Some(new_layout) = new_layout {
+                    // Promote first surviving sibling to active when the
+                    // killed pane held the active flag. Otherwise preserve
+                    // whatever active marker already exists on a survivor.
+                    let needs_active_promotion = was_active
+                        && !sibling_ids.iter().any(|id| {
+                            data.groupings
+                                .get(id)
+                                .map(|g| g.active)
+                                .unwrap_or(false)
+                        });
+
+                    for (idx, sibling_id) in sibling_ids.iter().enumerate() {
+                        if let Some(grouping) = data.groupings.get_mut(sibling_id) {
+                            grouping.layout = new_layout.to_string();
+                            grouping.pane_index = idx as u32;
+                            grouping.pane_id = format!("p{}", idx);
+                            if needs_active_promotion && idx == 0 {
+                                grouping.active = true;
+                            }
+                        }
+                    }
+                }
+            }
 
             // Clear active_session_id if the killed session was active.
             // The frontend owns tab-neighbor selection and persists the
@@ -1822,6 +1904,277 @@ mod tests {
         // Cleanup
         let _ = state.remove(&"session-2".to_string());
         let _ = state.remove(&"session-3".to_string());
+    }
+
+    // PR #290 cycle 18 — Claude MEDIUM. kill_pty was only removing the
+    // killed PTY's grouping entry but left sibling groupings in the same
+    // workspace at the pre-kill (layout, pane_index) values. In the
+    // crash window between kill_pty and the next set_workspace_sessions
+    // push, restore would reconstruct the workspace at the stale layout
+    // (e.g. quad with an empty slot). kill_pty now re-indexes survivors
+    // and shrinks the layout to match the new pane count.
+    #[tokio::test]
+    async fn kill_pty_reindexes_sibling_groupings_in_same_workspace() {
+        let (state, cache, events, _temp_dir) = create_test_state_with_cache();
+
+        let cwd = std::env::current_dir()
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
+
+        // Spawn four PTYs that share one quad workspace.
+        for id in ["pty-a", "pty-b", "pty-c", "pty-d"] {
+            spawn_pty_inner(
+                state.clone(),
+                cache.clone(),
+                events.clone(),
+                SpawnPtyRequest {
+                    session_id: id.into(),
+                    cwd: cwd.clone(),
+                    shell: None,
+                    env: None,
+                    enable_agent_bridge: false,
+                },
+            )
+            .await
+            .expect("spawn should succeed");
+        }
+
+        set_workspace_sessions_inner(
+            &cache,
+            SetWorkspaceSessionsRequest {
+                sessions: vec![WorkspaceSessionSnapshot {
+                    id: "ws-quad".into(),
+                    layout: "quad".into(),
+                    working_directory: Some(cwd.clone()),
+                    panes: vec![
+                        WorkspacePaneSnapshot {
+                            pty_id: "pty-a".into(),
+                            pane_id: "p0".into(),
+                            pane_index: 0,
+                            agent_type: "claude-code".into(),
+                            active: true,
+                        },
+                        WorkspacePaneSnapshot {
+                            pty_id: "pty-b".into(),
+                            pane_id: "p1".into(),
+                            pane_index: 1,
+                            agent_type: "generic".into(),
+                            active: false,
+                        },
+                        WorkspacePaneSnapshot {
+                            pty_id: "pty-c".into(),
+                            pane_id: "p2".into(),
+                            pane_index: 2,
+                            agent_type: "generic".into(),
+                            active: false,
+                        },
+                        WorkspacePaneSnapshot {
+                            pty_id: "pty-d".into(),
+                            pane_id: "p3".into(),
+                            pane_index: 3,
+                            agent_type: "generic".into(),
+                            active: false,
+                        },
+                    ],
+                }],
+            },
+        )
+        .expect("set_workspace_sessions should succeed");
+
+        // Kill the middle pane (pane_index = 2).
+        kill_pty_inner(
+            &state,
+            &cache,
+            KillPtyRequest {
+                session_id: "pty-c".into(),
+            },
+        )
+        .expect("kill_pty should succeed");
+
+        let snap = cache.snapshot();
+
+        // Killed pane's grouping gone.
+        assert!(!snap.groupings.contains_key("pty-c"));
+
+        // Three survivors re-indexed 0/1/2 in original pane_index order,
+        // layout shrunk to threeRight (3-capacity), pane_id renumbered.
+        let a = snap.groupings.get("pty-a").expect("pty-a grouping");
+        let b = snap.groupings.get("pty-b").expect("pty-b grouping");
+        let d = snap.groupings.get("pty-d").expect("pty-d grouping");
+
+        for g in [a, b, d] {
+            assert_eq!(g.layout, "threeRight");
+            assert_eq!(g.workspace_session_id, "ws-quad");
+        }
+
+        assert_eq!(a.pane_index, 0);
+        assert_eq!(a.pane_id, "p0");
+        assert!(a.active, "originally active pane stays active");
+        assert_eq!(b.pane_index, 1);
+        assert_eq!(b.pane_id, "p1");
+        assert!(!b.active);
+        assert_eq!(d.pane_index, 2);
+        assert_eq!(d.pane_id, "p2");
+        assert!(!d.active);
+
+        for id in ["pty-a", "pty-b", "pty-d"] {
+            let _ = state.remove(&id.to_string());
+        }
+    }
+
+    // Cycle 18 follow-up: when the killed pane was active and survivors
+    // remain, the first surviving pane (by pane_index) is promoted to
+    // active so restore always has exactly one active pane per workspace.
+    #[tokio::test]
+    async fn kill_pty_promotes_first_sibling_when_active_killed() {
+        let (state, cache, events, _temp_dir) = create_test_state_with_cache();
+
+        let cwd = std::env::current_dir()
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
+
+        for id in ["pty-a", "pty-b"] {
+            spawn_pty_inner(
+                state.clone(),
+                cache.clone(),
+                events.clone(),
+                SpawnPtyRequest {
+                    session_id: id.into(),
+                    cwd: cwd.clone(),
+                    shell: None,
+                    env: None,
+                    enable_agent_bridge: false,
+                },
+            )
+            .await
+            .expect("spawn should succeed");
+        }
+
+        // pty-b is active; we'll kill it and expect pty-a to be promoted.
+        set_workspace_sessions_inner(
+            &cache,
+            SetWorkspaceSessionsRequest {
+                sessions: vec![WorkspaceSessionSnapshot {
+                    id: "ws-vs".into(),
+                    layout: "vsplit".into(),
+                    working_directory: Some(cwd.clone()),
+                    panes: vec![
+                        WorkspacePaneSnapshot {
+                            pty_id: "pty-a".into(),
+                            pane_id: "p0".into(),
+                            pane_index: 0,
+                            agent_type: "generic".into(),
+                            active: false,
+                        },
+                        WorkspacePaneSnapshot {
+                            pty_id: "pty-b".into(),
+                            pane_id: "p1".into(),
+                            pane_index: 1,
+                            agent_type: "generic".into(),
+                            active: true,
+                        },
+                    ],
+                }],
+            },
+        )
+        .expect("set_workspace_sessions should succeed");
+
+        kill_pty_inner(
+            &state,
+            &cache,
+            KillPtyRequest {
+                session_id: "pty-b".into(),
+            },
+        )
+        .expect("kill_pty should succeed");
+
+        let snap = cache.snapshot();
+        let a = snap.groupings.get("pty-a").expect("pty-a grouping");
+        assert_eq!(a.layout, "single");
+        assert_eq!(a.pane_index, 0);
+        assert_eq!(a.pane_id, "p0");
+        assert!(
+            a.active,
+            "first surviving pane promoted to active when the killed pane was active"
+        );
+
+        let _ = state.remove(&"pty-a".to_string());
+    }
+
+    // Cycle 18 codex-verify rev 2: when the killed pane was the LAST in
+    // its grouped workspace, the no-survivor branch must not bypass the
+    // `active_session_id` cleanup that runs later in the same
+    // `cache.mutate` closure. The original draft used `return Ok(())`
+    // inside the closure for the zero-sibling case, which exited the
+    // whole closure and left a dangling active id pointing at a removed
+    // PTY. The fix structures the sibling-repair as an `if let
+    // Some(layout)` so the no-survivor case falls through.
+    #[tokio::test]
+    async fn kill_pty_clears_active_when_last_grouped_pane_killed() {
+        let (state, cache, events, _temp_dir) = create_test_state_with_cache();
+
+        let cwd = std::env::current_dir()
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
+
+        spawn_pty_inner(
+            state.clone(),
+            cache.clone(),
+            events.clone(),
+            SpawnPtyRequest {
+                session_id: "pty-only".into(),
+                cwd: cwd.clone(),
+                shell: None,
+                env: None,
+                enable_agent_bridge: false,
+            },
+        )
+        .await
+        .expect("spawn should succeed");
+
+        set_workspace_sessions_inner(
+            &cache,
+            SetWorkspaceSessionsRequest {
+                sessions: vec![WorkspaceSessionSnapshot {
+                    id: "ws-solo".into(),
+                    layout: "single".into(),
+                    working_directory: Some(cwd),
+                    panes: vec![WorkspacePaneSnapshot {
+                        pty_id: "pty-only".into(),
+                        pane_id: "p0".into(),
+                        pane_index: 0,
+                        agent_type: "generic".into(),
+                        active: true,
+                    }],
+                }],
+            },
+        )
+        .expect("set_workspace_sessions should succeed");
+
+        // spawn_pty_inner sets active; confirm precondition.
+        assert_eq!(
+            cache.snapshot().active_session_id.as_deref(),
+            Some("pty-only")
+        );
+
+        kill_pty_inner(
+            &state,
+            &cache,
+            KillPtyRequest {
+                session_id: "pty-only".into(),
+            },
+        )
+        .expect("kill_pty should succeed");
+
+        let snap = cache.snapshot();
+        assert!(
+            snap.active_session_id.is_none(),
+            "active_session_id must be cleared for the killed pane even when its workspace has no surviving siblings"
+        );
+        assert!(!snap.groupings.contains_key("pty-only"));
     }
 
     #[tokio::test]
