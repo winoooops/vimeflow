@@ -108,6 +108,14 @@ export const usePushWorkspaceGrouping = ({
 
     return (): void => {
       mountedRef.current = false
+      // Unmount-only timer clear. The main effect's cleanup deliberately
+      // does NOT clear `retryTimerRef` (cycle 16 restructure): dep-change
+      // cleanups must NOT reset the 5s backoff or a `cd`-flood during a
+      // sidecar outage would retry on every OSC 7 update.
+      if (retryTimerRef.current !== null) {
+        clearTimeout(retryTimerRef.current)
+        retryTimerRef.current = null
+      }
     }
   }, [])
 
@@ -145,54 +153,31 @@ export const usePushWorkspaceGrouping = ({
   // shape is deterministic.
   const lastPushedJsonRef = useRef<string | null>(null)
 
+  // Reset the memoization on a service swap. Without this, a sidecar
+  // restart that reconnects with a fresh empty cache would silently skip
+  // the first push (the snapshot JSON matches the previous one cached
+  // against the OLD service), leaving the new backend's `groupings` map
+  // empty — the next reload would fragment every multi-pane workspace
+  // back to single-pane, re-introducing the bug this PR fixes. Claude
+  // HIGH on PR #290 cycle 16.
   useEffect(() => {
-    if (loading) {
-      return
-    }
-    // No live sessions in React state: rely on per-PTY kill_pty cleanup
-    // that already drops grouping entries individually. Pushing an empty
-    // snapshot here would race the restore window if `sessions` is
-    // transiently empty.
-    if (sessions.length === 0) {
-      return
-    }
+    lastPushedJsonRef.current = null
+  }, [service])
 
-    const snapshot = buildGroupingSnapshot(sessions)
-    const snapshotJson = JSON.stringify(snapshot)
-    const isNoOpRerun = snapshotJson === lastPushedJsonRef.current
-    if (!isNoOpRerun) {
-      lastPushedJsonRef.current = snapshotJson
-
-      log.info(
-        `pushing grouping snapshot: ${snapshot.sessions.length} workspace ` +
-          `session(s), ${snapshot.sessions.reduce(
-            (n, s) => n + s.panes.length,
-            0
-          )} pane(s)`,
-        {
-          workspaces: snapshot.sessions.map((s) => ({
-            id: s.id,
-            layout: s.layout,
-            panes: s.panes.length,
-          })),
-        }
-      )
-
-      // Latest wins: overwrite whatever pending snapshot was there.
-      queueRef.current.pending = snapshot
-    }
-
-    // Drain the queue if no push is currently in flight. JS is
-    // single-threaded; the `inFlight` check and set are atomic within a
-    // microtask, so two concurrent drain calls cannot both pass the guard.
+  useEffect(() => {
+    // Define the drain BEFORE any early returns. `latestDrainRef.current`
+    // must be updated on every effect run — including the `loading=true`
+    // and `sessions.length === 0` early-exit paths — so a deferred retry
+    // timer scheduled by an OLDER closure dispatches through the LATEST
+    // service when it fires (Claude MEDIUM on PR #290 cycle 16). drain
+    // closes over `service` from the current render, so reassigning the
+    // ref to this closure is what makes the swap visible to the timer.
     //
-    // The continuation after a successful IPC dispatches through
-    // `latestDrainRef`, not the local `drain`, so if `service` changed
-    // between effect runs the next pending snapshot is pushed via the
-    // LATEST closure (which captures the latest service). Without this,
-    // a snapshot that landed in `pending` during the in-flight await
-    // would be pushed via this old closure's `service` even though the
-    // hook now has a new one. (Codex re-verify on PR #290 cycle 12.)
+    // The continuation after a successful IPC also dispatches through
+    // `latestDrainRef`, not the local `drain`, so a snapshot that landed
+    // in `pending` during the in-flight await is pushed via the LATEST
+    // closure (which captures the latest service). Codex re-verify on
+    // PR #290 cycle 12.
     const drain = async (): Promise<void> => {
       if (queueRef.current.inFlight) {
         return
@@ -269,26 +254,66 @@ export const usePushWorkspaceGrouping = ({
         void latestDrainRef.current?.()
       }
     }
-    // Always keep `latestDrainRef` pointed at the freshest closure even
-    // on a no-op re-run: a deferred retry timer scheduled by an OLD
-    // closure dispatches through this ref, so a no-op rerender after a
-    // service swap still gives the timer access to the new service.
+    // Always keep `latestDrainRef` pointed at the freshest closure —
+    // BEFORE any early returns — so a deferred retry timer scheduled by
+    // an OLD closure dispatches through this drain (and its captured
+    // `service`) when it fires. Cycle 16 fix.
     latestDrainRef.current = drain
 
-    // Drive a drain whenever there's something to drain. On the no-op
-    // path that's a previously failed snapshot the catch restored into
-    // `pending` — without this kick the only retry path is the 5s
-    // backoff timer, which observably broke the cycle-5
-    // `restores the snapshot for retry` test under the memoization.
-    if (queueRef.current.pending !== null) {
+    if (loading) {
+      return
+    }
+    // No live sessions in React state: rely on per-PTY kill_pty cleanup
+    // that already drops grouping entries individually. Pushing an empty
+    // snapshot here would race the restore window if `sessions` is
+    // transiently empty.
+    if (sessions.length === 0) {
+      return
+    }
+
+    const snapshot = buildGroupingSnapshot(sessions)
+    const snapshotJson = JSON.stringify(snapshot)
+    const isNoOpRerun = snapshotJson === lastPushedJsonRef.current
+    if (!isNoOpRerun) {
+      lastPushedJsonRef.current = snapshotJson
+
+      log.info(
+        `pushing grouping snapshot: ${snapshot.sessions.length} workspace ` +
+          `session(s), ${snapshot.sessions.reduce(
+            (n, s) => n + s.panes.length,
+            0
+          )} pane(s)`,
+        {
+          workspaces: snapshot.sessions.map((s) => ({
+            id: s.id,
+            layout: s.layout,
+            panes: s.panes.length,
+          })),
+        }
+      )
+
+      // Latest wins: overwrite whatever pending snapshot was there.
+      queueRef.current.pending = snapshot
+    }
+
+    // Drive a drain whenever there's something to drain — UNLESS the
+    // catch already scheduled a backoff timer for that pending snapshot.
+    // The previous main-effect cleanup cleared `retryTimerRef` on every
+    // dep change, so a `cd`-flood during a sidecar outage (each OSC 7
+    // update is a non-structural sessions change with the same memoized
+    // JSON) would re-enter here, find `pending` non-null from the
+    // restored failure, and immediately retry — bypassing the 5s
+    // backoff entirely. Cycle 16 moves the timer-clear into the
+    // unmount-only effect AND gates this kick on the timer's presence:
+    // a real structural change (no timer set) drains immediately, a
+    // no-op rerun while a retry is queued lets the timer own the
+    // schedule. Claude MEDIUM on PR #290 cycle 16.
+    if (queueRef.current.pending !== null && retryTimerRef.current === null) {
       void drain()
     }
 
-    return (): void => {
-      if (retryTimerRef.current !== null) {
-        clearTimeout(retryTimerRef.current)
-        retryTimerRef.current = null
-      }
-    }
+    // Cycle 16 restructure: NO timer clear in the dep-change cleanup
+    // (that's what was bypassing the backoff). The mount-effect's
+    // unmount-only cleanup handles `clearTimeout`.
   }, [service, sessions, loading])
 }

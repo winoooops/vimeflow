@@ -223,50 +223,57 @@ describe('usePushWorkspaceGrouping', () => {
   // the cache stays stale and the next reload fragments. The fix restores
   // `pending` in the catch when no newer snapshot arrived during the await.
   test('restores the snapshot for retry when the IPC fails', async () => {
-    let firstCallReject: ((err: unknown) => void) | undefined
+    vi.useFakeTimers()
+    try {
+      let firstCallReject: ((err: unknown) => void) | undefined
 
-    const setWorkspaceSessions = vi
-      .fn()
-      .mockImplementationOnce(
-        () =>
-          new Promise<void>((_resolve, reject) => {
-            firstCallReject = reject
-          })
+      const setWorkspaceSessions = vi
+        .fn()
+        .mockImplementationOnce(
+          () =>
+            new Promise<void>((_resolve, reject) => {
+              firstCallReject = reject
+            })
+        )
+        .mockResolvedValue(undefined)
+      const service = { setWorkspaceSessions } as unknown as ITerminalService
+
+      const initial = [
+        session('ws-1', 'vsplit', [
+          pane({ id: 'p0', ptyId: 'pty-a', active: true }),
+          pane({ id: 'p1', ptyId: 'pty-b', active: false }),
+        ]),
+      ]
+
+      renderHook(
+        ({ sessions }) =>
+          usePushWorkspaceGrouping({ service, loading: false, sessions }),
+        { initialProps: { sessions: initial as readonly Session[] } }
       )
-      .mockResolvedValue(undefined)
-    const service = { setWorkspaceSessions } as unknown as ITerminalService
 
-    const initial = [
-      session('ws-1', 'vsplit', [
-        pane({ id: 'p0', ptyId: 'pty-a', active: true }),
-        pane({ id: 'p1', ptyId: 'pty-b', active: false }),
-      ]),
-    ]
+      // The first push is in flight.
+      await vi.waitFor(() =>
+        expect(setWorkspaceSessions).toHaveBeenCalledTimes(1)
+      )
 
-    const { rerender } = renderHook(
-      ({ sessions }) =>
-        usePushWorkspaceGrouping({ service, loading: false, sessions }),
-      { initialProps: { sessions: initial as readonly Session[] } }
-    )
+      // Reject the in-flight IPC. The catch restores `pending` to the
+      // failed snapshot and schedules a 5s retry timer (cycle 6: no
+      // tight-loop retry). Cycle 16: dep-change rerenders no longer
+      // bypass the scheduled timer because the immediate-drain kick is
+      // gated on `retryTimerRef.current === null`, so we drive the
+      // retry via the timer rather than a rerender.
+      firstCallReject?.(new Error('sidecar crashed'))
+      await Promise.resolve()
+      await Promise.resolve()
 
-    // The first push is in flight.
-    await waitFor(() => expect(setWorkspaceSessions).toHaveBeenCalledTimes(1))
+      await vi.advanceTimersByTimeAsync(5000)
 
-    // Reject the in-flight IPC and let the catch's microtask drain. The
-    // catch restores `pending` to the failed snapshot and breaks out of
-    // the drain loop (cycle 6: no tight-loop retry).
-    firstCallReject?.(new Error('sidecar crashed'))
-    await new Promise((resolve) => setTimeout(resolve, 0))
-
-    // The next `sessions` change re-enters the effect, which calls drain
-    // again. With the cycle-5 restore in place, the snapshot survives and
-    // the second IPC eventually fires; without it, the first failure
-    // would have permanently lost the snapshot.
-    rerender({ sessions: [...initial] as readonly Session[] })
-
-    await waitFor(() => {
-      expect(setWorkspaceSessions).toHaveBeenCalledTimes(2)
-    })
+      await vi.waitFor(() => {
+        expect(setWorkspaceSessions).toHaveBeenCalledTimes(2)
+      })
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   // PR #290 cycle 6: Claude MEDIUM + Codex P2 — the cycle-5 retry restore
@@ -838,5 +845,114 @@ describe('usePushWorkspaceGrouping', () => {
       'pty-b',
       'pty-c',
     ])
+  })
+
+  // PR #290 cycle 16: Claude HIGH — the `lastPushedJsonRef` memoization
+  // skips the IPC when the new snapshot matches the previously-pushed
+  // payload. When the service swaps mid-mount (e.g. the user reconnects
+  // to a freshly-restarted sidecar), the NEW service has never seen the
+  // current snapshot, but the ref still holds the JSON from the OLD
+  // service and silently skips the first push. Restored state never
+  // reaches the new backend until the next structural change.
+  test('replays the latest snapshot to a newly-installed service', async () => {
+    const firstService = {
+      setWorkspaceSessions: vi.fn().mockResolvedValue(undefined),
+    } as unknown as ITerminalService
+
+    const sessions = [
+      session('ws-1', 'vsplit', [
+        pane({ id: 'p0', ptyId: 'pty-a', active: true }),
+        pane({ id: 'p1', ptyId: 'pty-b', active: false }),
+      ]),
+    ]
+
+    const { rerender } = renderHook(
+      ({ service }) =>
+        usePushWorkspaceGrouping({
+          service,
+          loading: false,
+          sessions: sessions as readonly Session[],
+        }),
+      { initialProps: { service: firstService } }
+    )
+
+    await waitFor(() =>
+      expect(firstService.setWorkspaceSessions).toHaveBeenCalledTimes(1)
+    )
+
+    const secondService = {
+      setWorkspaceSessions: vi.fn().mockResolvedValue(undefined),
+    } as unknown as ITerminalService
+
+    // Swap to the new service with the SAME `sessions` — the snapshot
+    // hasn't changed, but the new service has never seen it.
+    rerender({ service: secondService })
+
+    await waitFor(() =>
+      expect(secondService.setWorkspaceSessions).toHaveBeenCalledTimes(1)
+    )
+  })
+
+  // PR #290 cycle 16: Claude MEDIUM — repeated dep-change rerenders
+  // during a sidecar outage must not bypass the 5s backoff. The cycle-6
+  // backoff timer is the only thing keeping us from flooding a down
+  // sidecar; the dep-change rerender path now checks for a pending
+  // retry timer before issuing an immediate drain.
+  test('repeated rerenders during outage do not bypass the 5s retry backoff', async () => {
+    vi.useFakeTimers()
+    try {
+      const setWorkspaceSessions = vi
+        .fn()
+        .mockRejectedValue(new Error('sidecar down'))
+      const service = { setWorkspaceSessions } as unknown as ITerminalService
+
+      const { rerender } = renderHook(
+        ({ tick }) =>
+          usePushWorkspaceGrouping({
+            service,
+            loading: false,
+            // Mutate panes shape on each rerender so the memoization
+            // doesn't dedupe and our gate is the only thing standing
+            // between the rerender and a fresh IPC.
+            sessions: [
+              session('ws-1', 'vsplit', [
+                pane({
+                  id: 'p0',
+                  ptyId: 'pty-a',
+                  active: true,
+                  cwd: `/tick-${tick}`,
+                }),
+              ]),
+            ] as readonly Session[],
+          }),
+        { initialProps: { tick: 0 } }
+      )
+
+      // First push fires immediately and rejects.
+      await vi.waitFor(() =>
+        expect(setWorkspaceSessions).toHaveBeenCalledTimes(1)
+      )
+      await Promise.resolve()
+      await Promise.resolve()
+
+      // Rerender with new structural snapshots WITHIN the 5s window —
+      // the gate must skip the immediate drain because a retry timer
+      // is already scheduled.
+      for (let i = 1; i <= 5; i++) {
+        rerender({ tick: i })
+        await vi.advanceTimersByTimeAsync(500)
+      }
+
+      // We're at t=2.5s. No additional IPC should have fired yet.
+      expect(setWorkspaceSessions).toHaveBeenCalledTimes(1)
+
+      // Advance past 5s; the backoff timer fires once.
+      await vi.advanceTimersByTimeAsync(3000)
+      await vi.waitFor(() =>
+        expect(setWorkspaceSessions).toHaveBeenCalledTimes(2)
+      )
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
