@@ -63,6 +63,32 @@ pub(crate) fn ensure_status_source_under_trust_root(
     Ok(())
 }
 
+mod trusted {
+    use std::path::Path;
+    use crate::agent::adapter::types::LocatedStatusSource;
+
+    pub(crate) struct TrustedLocatedSource(LocatedStatusSource);
+
+    pub(crate) fn ensure_trusted(
+        located: LocatedStatusSource,
+    ) -> Result<TrustedLocatedSource, String> {
+        super::ensure_status_source_under_trust_root(&located.status_path, &located.trust_root)?;
+        Ok(TrustedLocatedSource(located))
+    }
+
+    impl TrustedLocatedSource {
+        pub(crate) fn status_path(&self) -> &Path {
+            &self.0.status_path
+        }
+
+        pub(crate) fn into_inner(self) -> LocatedStatusSource {
+            self.0
+        }
+    }
+}
+
+pub(crate) use trusted::{TrustedLocatedSource, ensure_trusted};
+
 #[cfg(test)]
 mod tests {
     use super::*;

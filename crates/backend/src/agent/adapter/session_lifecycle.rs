@@ -7,8 +7,8 @@
 //! lifecycle verbs the IPC layer needs:
 //!
 //! - `start(session_id)` — resolve the [`AttachContext`] from live
-//!   `PtyState`, build the typed [`AgentBindings`], and hand off to
-//!   `base::start_for` on the blocking pool.
+//!   `PtyState`, build the typed [`AgentBindings`], and run the verb
+//!   sequence on the blocking pool.
 //! - `stop(session_id)` — remove the session's watcher from
 //!   `AgentWatcherState` (its `Drop` cascades the transcript-tail
 //!   teardown).
@@ -16,9 +16,10 @@
 //! **`AttachError` → `String` boundary.** Per #246's D' acceptance and
 //! frozen constraint #4, the typed `AttachError` from
 //! `AgentBindings::for_attach` is collapsed to `String` *here* — the
-//! `base::start_for` layer and everything below it speaks `String`
-//! errors. This is the single mapping seam; `start_agent_watcher_inner`
-//! delegates to this method rather than mapping independently.
+//! post-bindings verb sequence (`run_watch_sequence`) and everything
+//! below it speaks `String` errors. This is the single mapping seam;
+//! `start_agent_watcher_inner` delegates to this method rather than
+//! mapping independently.
 
 use std::path::Path;
 use std::sync::Arc;
@@ -31,7 +32,7 @@ use crate::agent::types::AgentType;
 use crate::runtime::EventSink;
 use crate::terminal::types::SessionId;
 use crate::terminal::PtyState;
-use base::{AgentWatcherState, TranscriptState, WatcherHandle};
+use base::{AgentWatcherState, TranscriptState, TrustedLocatedSource, WatcherHandle};
 
 /// Registry facade owning clones of the four runtime collaborators.
 ///
@@ -41,6 +42,7 @@ use base::{AgentWatcherState, TranscriptState, WatcherHandle};
 /// facade shape is uniform and a future eager-prevalidation `stop`
 /// (or a `restart`) has the inputs it needs without a signature
 /// change.
+#[derive(Clone)]
 pub(crate) struct SessionLifecycle {
     pty_state: PtyState,
     watcher_state: AgentWatcherState,
@@ -61,8 +63,71 @@ mod tests {
     use crate::agent::adapter::types::LocatedStatusSource;
     use crate::agent::types::AgentType;
     use crate::runtime::FakeEventSink;
+    use crate::runtime::EventSink;
     use crate::terminal::PtyState;
     use tempfile::TempDir;
+
+    fn make_attach_ctx(cwd: &std::path::Path) -> AttachContext {
+        AttachContext {
+            session_id: "test-sess".to_string(),
+            initial_cwd: cwd.to_path_buf(),
+            shell_pid: 1,
+            agent_pid: 2,
+            pty_start: SystemTime::UNIX_EPOCH,
+            agent_type: AgentType::ClaudeCode,
+            provider_home: Some(PathBuf::from("/home/u/.claude")),
+            proc_root: None,
+        }
+    }
+
+    fn write_claude_status(cwd: &std::path::Path, sid: &str) {
+        let dir = cwd.join(".vimeflow").join("sessions").join(sid);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("status.json"), r#"{"session_id":"sid","model":{}}"#).unwrap();
+    }
+
+    fn seeded_fixture(sid: &str) -> (tempfile::TempDir, TranscriptState, AgentWatcherState) {
+        let sink = Arc::new(FakeEventSink::new());
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let transcript_path = tmp.path().join("t.jsonl");
+        std::fs::write(&transcript_path, "").expect("write");
+        let transcript_state = TranscriptState::new();
+        let adapter: Arc<dyn crate::agent::adapter::traits::TranscriptStreamer> =
+            Arc::new(crate::agent::adapter::claude_code::ClaudeCodeAdapter);
+        transcript_state
+            .start_or_replace(
+                adapter,
+                sink,
+                sid.to_string(),
+                transcript_path,
+                None,
+            )
+            .expect("seed transcript state");
+        let watcher_state = AgentWatcherState::new();
+        let seed = WatcherHandle::new_for_test(transcript_state.clone(), sid.to_string());
+        watcher_state.insert(sid.to_string(), seed);
+        // Return `tmp` so the caller owns its lifetime — dropping the TempDir
+        // here would delete the seeded transcript file before the test body
+        // runs (a latent trap for any future test that reads it).
+        (tmp, transcript_state, watcher_state)
+    }
+
+    struct OutsideTrustLocator;
+
+    impl StatusSourceLocator for OutsideTrustLocator {
+        fn locate(
+            &self,
+            cwd: &std::path::Path,
+            _session_id: &str,
+        ) -> Result<LocatedStatusSource, String> {
+            let parent = cwd.parent().unwrap_or(cwd);
+            Ok(LocatedStatusSource {
+                status_path: parent.join("sibling.json"),
+                trust_root: cwd.to_path_buf(),
+                static_transcript_hint: None,
+            })
+        }
+    }
 
     fn _assert_send_sync_static<T: Send + Sync + 'static>() {}
 
@@ -199,13 +264,14 @@ mod tests {
         let tmp = TempDir::new().unwrap();
 
         // Under trust root -> Ok
+        let under_status_path = tmp
+            .path()
+            .join(".vimeflow")
+            .join("sessions")
+            .join("s")
+            .join("status.json");
         let under = LocatedStatusSource {
-            status_path: tmp
-                .path()
-                .join(".vimeflow")
-                .join("sessions")
-                .join("s")
-                .join("status.json"),
+            status_path: under_status_path.clone(),
             trust_root: tmp.path().to_path_buf(),
             static_transcript_hint: None,
         };
@@ -215,7 +281,8 @@ mod tests {
             TranscriptState::new(),
             Arc::new(FakeEventSink::new()),
         );
-        lifecycle.ensure_trust(&under).expect("under trust root");
+        let trusted = lifecycle.ensure_trust(under).expect("under trust root");
+        assert_eq!(trusted.status_path(), under_status_path);
 
         // Outside trust root -> Err
         let outside = LocatedStatusSource {
@@ -223,7 +290,7 @@ mod tests {
             trust_root: tmp.path().to_path_buf(),
             static_transcript_hint: None,
         };
-        let result = lifecycle.ensure_trust(&outside);
+        let result = lifecycle.ensure_trust(outside);
         assert!(result.is_err(), "outside trust root should fail");
     }
 
@@ -286,8 +353,9 @@ mod tests {
             Arc::new(FakeEventSink::new()),
         );
 
+        let trusted = lifecycle.ensure_trust(located).expect("ensure_trust should pass");
         let handle = lifecycle
-            .spawn_watch(bindings, located, sid.clone())
+            .spawn_watch(bindings, trusted, sid.clone())
             .expect("spawn_watch should return a handle");
         // Drop the handle to join the spawned thread
         drop(handle);
@@ -324,6 +392,116 @@ mod tests {
             "No active watcher for session: nonexistent"
         );
     }
+
+    #[tokio::test]
+    async fn t_lifecycle_1_start_inner_for_test_happy_path_registers_session() {
+        let tmp = TempDir::new().unwrap();
+        let sid = "test-sess".to_string();
+        write_claude_status(tmp.path(), &sid);
+
+        let ctx = make_attach_ctx(tmp.path());
+        let bindings = AgentBindings::for_attach(&ctx).unwrap();
+        let events: Arc<dyn EventSink> = Arc::new(FakeEventSink::new());
+        let pty_state = PtyState::new();
+        let transcript_state = TranscriptState::new();
+        let watcher_state = AgentWatcherState::new();
+
+        let lifecycle = SessionLifecycle::new(
+            pty_state,
+            watcher_state.clone(),
+            transcript_state,
+            events,
+        );
+        lifecycle
+            .start_inner_for_test(sid.clone(), bindings, tmp.path().to_path_buf())
+            .await
+            .expect("start_inner_for_test happy path");
+        assert!(watcher_state.contains(&sid), "session registered");
+
+        watcher_state.remove(&sid);
+    }
+
+    #[tokio::test]
+    async fn t_lifecycle_2a_start_inner_for_test_locate_err_preserves_existing_watcher() {
+        let sid = "test-sess".to_string();
+        let (_tmp, transcript_state, watcher_state) = seeded_fixture(&sid);
+
+        let adapter: Arc<crate::agent::adapter::claude_code::ClaudeCodeAdapter> =
+            Arc::new(crate::agent::adapter::claude_code::ClaudeCodeAdapter);
+        let bindings = AgentBindings {
+            agent_type: AgentType::ClaudeCode,
+            locator: Arc::new(ErrLocator),
+            decoder: adapter.clone(),
+            transcript_paths: adapter.clone(),
+            validator: adapter.clone(),
+            streamer: adapter,
+        };
+        let events: Arc<dyn EventSink> = Arc::new(FakeEventSink::new());
+        let pty_state = PtyState::new();
+
+        let lifecycle = SessionLifecycle::new(
+            pty_state,
+            watcher_state.clone(),
+            transcript_state.clone(),
+            events,
+        );
+        let result = lifecycle
+            .start_inner_for_test(sid.clone(), bindings, PathBuf::from("/tmp"))
+            .await;
+
+        assert!(result.is_err(), "locate failure should return Err");
+        assert!(
+            watcher_state.contains(&sid),
+            "existing watcher should be preserved"
+        );
+        assert!(
+            transcript_state.contains(&sid),
+            "transcript state entry should be preserved"
+        );
+
+        watcher_state.remove(&sid);
+    }
+
+    #[tokio::test]
+    async fn t_lifecycle_2b_start_inner_for_test_trust_err_preserves_existing_watcher() {
+        let sid = "test-sess".to_string();
+        let (_tmp, transcript_state, watcher_state) = seeded_fixture(&sid);
+
+        let adapter: Arc<crate::agent::adapter::claude_code::ClaudeCodeAdapter> =
+            Arc::new(crate::agent::adapter::claude_code::ClaudeCodeAdapter);
+        let bindings = AgentBindings {
+            agent_type: AgentType::ClaudeCode,
+            locator: Arc::new(OutsideTrustLocator),
+            decoder: adapter.clone(),
+            transcript_paths: adapter.clone(),
+            validator: adapter.clone(),
+            streamer: adapter,
+        };
+        let events: Arc<dyn EventSink> = Arc::new(FakeEventSink::new());
+        let pty_state = PtyState::new();
+
+        let lifecycle = SessionLifecycle::new(
+            pty_state,
+            watcher_state.clone(),
+            transcript_state.clone(),
+            events,
+        );
+        let result = lifecycle
+            .start_inner_for_test(sid.clone(), bindings, PathBuf::from("/tmp"))
+            .await;
+
+        assert!(result.is_err(), "trust failure should return Err");
+        assert!(
+            watcher_state.contains(&sid),
+            "existing watcher should be preserved"
+        );
+        assert!(
+            transcript_state.contains(&sid),
+            "transcript state entry should be preserved"
+        );
+
+        watcher_state.remove(&sid);
+    }
 }
 
 impl SessionLifecycle {
@@ -341,7 +519,6 @@ impl SessionLifecycle {
         }
     }
 
-    #[allow(dead_code)] // remove in F.5 cutover
     fn resolve_attach<F>(
         &self,
         sid: &SessionId,
@@ -353,12 +530,10 @@ impl SessionLifecycle {
         resolve_bind_inputs(&self.pty_state, sid, detect)
     }
 
-    #[allow(dead_code)] // remove in F.5 cutover
     fn bind_services(&self, ctx: &AttachContext) -> Result<AgentBindings, String> {
         AgentBindings::for_attach(ctx).map_err(|e| format!("agent bindings: {}", e))
     }
 
-    #[allow(dead_code)] // remove in F.5 cutover
     fn locate(
         &self,
         bindings: &AgentBindings,
@@ -368,31 +543,18 @@ impl SessionLifecycle {
         bindings.locator.locate(cwd, sid)
     }
 
-    #[allow(dead_code)] // remove in F.5 cutover
-    fn ensure_trust(&self, located: &LocatedStatusSource) -> Result<(), String> {
-        base::ensure_status_source_under_trust_root(&located.status_path, &located.trust_root)
+    fn ensure_trust(&self, located: LocatedStatusSource) -> Result<TrustedLocatedSource, String> {
+        base::ensure_trusted(located)
     }
 
-    #[allow(dead_code)] // remove in F.5 cutover
     fn evict_old(&self, sid: &str) {
         self.watcher_state.remove(sid);
     }
 
-    /// PRECONDITION: `located` MUST have passed `ensure_trust`
-    /// (`ensure_status_source_under_trust_root`) before this verb runs.
-    /// `base::start_watching` does NOT re-validate the status path against
-    /// the trust root — that obligation lives in the sibling `ensure_trust`
-    /// verb, which the `start()` orchestration calls earlier in the sequence
-    /// (`locate → ensure_trust → evict_old → spawn_watch → register`; see the
-    /// F.5 cutover and the T-LIFECYCLE-2b regression test). Spawning a watcher
-    /// on an unvalidated path would reopen the symlink-race / path-traversal
-    /// hole `path_security` closes. Mirrors the precondition documented on
-    /// `base::start_watching` itself.
-    #[allow(dead_code)] // remove in F.5 cutover
     fn spawn_watch(
         &self,
         bindings: AgentBindings,
-        located: LocatedStatusSource,
+        located: TrustedLocatedSource,
         sid: String,
     ) -> Result<WatcherHandle, String> {
         base::start_watching(
@@ -405,7 +567,6 @@ impl SessionLifecycle {
         )
     }
 
-    #[allow(dead_code)] // remove in F.5 cutover
     fn register(&self, sid: String, handle: WatcherHandle) {
         self.watcher_state.insert(sid, handle);
     }
@@ -413,44 +574,71 @@ impl SessionLifecycle {
     /// Start (or restart) the agent watcher for `session_id`.
     ///
     /// Resolves the attach inputs from live `PtyState`, builds the
-    /// `AgentBindings`, and runs `base::start_for` on the blocking
-    /// pool. `AttachError` is mapped to `String` at this boundary.
+    /// `AgentBindings`, then runs the post-bindings verb sequence
+    /// (`locate → ensure_trust → evict_old → spawn_watch → register`) on
+    /// the blocking pool via [`Self::run_watch_sequence`]. `AttachError`
+    /// is mapped to `String` at this boundary.
     pub(crate) async fn start(&self, session_id: String) -> Result<(), String> {
-        let attach = resolve_bind_inputs(&self.pty_state, &session_id, detect_agent)?;
+        let attach = self.resolve_attach(&session_id, detect_agent)?;
+        let bindings = self.bind_services(&attach)?;
+        let cwd = attach.initial_cwd.clone();
+        self.run_watch_sequence(session_id, bindings, cwd).await
+    }
 
-        // `AttachError` → `String` mapping seam (frozen constraint #4 /
-        // #246 D'). Everything from `base::start_for` down speaks
-        // `String`; the typed error stops here.
-        let bindings =
-            AgentBindings::for_attach(&attach).map_err(|e| format!("agent bindings: {}", e))?;
-        let cwd_path = attach.initial_cwd.clone();
-
-        // Clone the owned collaborators into the blocking task.
-        // `base::start_for(bindings, ...)` calls
-        // `bindings.locator.locate(...)`; for codex sessions the
-        // locator runs a bounded retry (5 × 100 ms inter-attempt
-        // sleeps) inside its `StatusSourceLocator::locate` impl, and
-        // `path_security::ensure_status_source_under_trust_root` does
-        // synchronous `canonicalize` I/O. Running either on a tokio
-        // worker thread starves co-scheduled futures, so hop onto the
-        // blocking pool (mirrors `src/git/watcher.rs`).
-        let events = self.events.clone();
-        let pty_state = self.pty_state.clone();
-        let transcript_state = self.transcript_state.clone();
-        let watcher_state = self.watcher_state.clone();
+    /// The post-bindings half of `start`: the verb sequence run on the
+    /// blocking pool (`locate → ensure_trust → evict_old → spawn_watch →
+    /// register`) with the two diagnostic log lines at the orchestration
+    /// site. Shared by `start` (production) and, in tests,
+    /// `start_inner_for_test` — so the migrated T-LIFECYCLE-1/2a/2b tests
+    /// exercise the EXACT production sequence rather than a parallel copy.
+    async fn run_watch_sequence(
+        &self,
+        session_id: String,
+        bindings: AgentBindings,
+        cwd: std::path::PathBuf,
+    ) -> Result<(), String> {
+        let lc = self.clone();
         tokio::task::spawn_blocking(move || {
-            base::start_for(
-                bindings,
-                events,
-                pty_state,
-                transcript_state,
+            let located = lc.locate(&bindings, &cwd, &session_id)?;
+            let trusted = lc.ensure_trust(located)?;
+
+            log::debug!(
+                "Watcher startup detail: session={}, cwd={}, path={}",
                 session_id,
-                cwd_path,
-                watcher_state,
-            )
+                cwd.display(),
+                trusted.status_path().display(),
+            );
+
+            lc.evict_old(&session_id);
+
+            log::info!(
+                "Starting agent watcher: session={}, path={}, active_watchers={}",
+                session_id,
+                trusted.status_path().display(),
+                lc.watcher_state.active_count(),
+            );
+
+            let handle = lc.spawn_watch(bindings, trusted, session_id.clone())?;
+            lc.register(session_id, handle);
+            Ok::<_, String>(())
         })
         .await
         .map_err(|e| format!("start_agent_watcher task panicked: {}", e))?
+    }
+
+    /// Test-only entry to the post-bindings sequence with hand-built
+    /// `AgentBindings` (bypassing `resolve_attach`, which needs a live
+    /// `PtyState` entry). Delegates to the SAME [`Self::run_watch_sequence`]
+    /// production `start` runs, so the migrated T-LIFECYCLE-2a/2b
+    /// short-circuit tests cover the real orchestration body.
+    #[cfg(test)]
+    pub(crate) async fn start_inner_for_test(
+        &self,
+        session_id: String,
+        bindings: AgentBindings,
+        cwd: std::path::PathBuf,
+    ) -> Result<(), String> {
+        self.run_watch_sequence(session_id, bindings, cwd).await
     }
 
     /// Stop the agent watcher for `session_id`. Removing the
