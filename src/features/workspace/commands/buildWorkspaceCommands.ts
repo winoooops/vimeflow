@@ -28,7 +28,7 @@ export interface WorkspaceCommandDeps {
   activePanePtyId: string | null
   activePaneAgentType?: Session['agentType'] | null
   createSession: () => void
-  removeSession: (id: string) => void
+  removeSession: (id: string) => boolean | void
   renameSession: (id: string, name: string) => void
   /**
    * Set a per-pane user label, written by `:rename-pane`. In-memory only;

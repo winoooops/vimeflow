@@ -615,6 +615,43 @@ describe('WorkspaceView - Command Palette Integration', () => {
     })
   })
 
+  test(':close command respects dirty-session guard', async () => {
+    const user = userEvent.setup()
+    const hasUnsavedChanges = vi.fn(() => true)
+    const { useEditorBuffer } = await import('../editor/hooks/useEditorBuffer')
+
+    vi.mocked(useEditorBuffer).mockReturnValue({
+      filePath: 'src/current.ts',
+      originalContent: 'original',
+      currentContent: 'edits',
+      isDirty: true,
+      isLoading: false,
+      openFile: vi.fn(),
+      saveFile: vi.fn(),
+      updateContent: vi.fn(),
+      hasUnsavedChanges,
+      releaseScope: vi.fn(),
+    })
+
+    render(<WorkspaceView />)
+
+    openPalette()
+
+    await waitFor(() => {
+      expect(screen.getByRole('dialog')).toBeInTheDocument()
+    })
+
+    const input = screen.getByRole('combobox', {
+      name: 'Command palette search',
+    })
+    await user.clear(input)
+    await user.type(input, ':close')
+    await user.keyboard('{Enter}')
+
+    expect(hasUnsavedChanges).toHaveBeenCalledWith('session-1')
+    expect(mockSessionManager.removeSession).not.toHaveBeenCalled()
+  })
+
   test(':rename-session foo command renames active session', async () => {
     const user = userEvent.setup()
     render(<WorkspaceView />)

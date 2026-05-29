@@ -247,44 +247,6 @@ export const WorkspaceView = (): ReactElement => {
   const activePaneAgentTypeForCommands =
     activePaneForCommandInputs?.agentType ?? null
 
-  const workspaceCommands = useMemo(
-    () =>
-      buildWorkspaceCommands({
-        sessions,
-        activeSessionId,
-        activePanePtyId: activePanePtyIdForCommands,
-        activePaneAgentType: activePaneAgentTypeForCommands,
-        createSession,
-        removeSession,
-        renameSession,
-        setPaneUserLabel,
-        renameAgentSession,
-        nextPaneRenameRequestId,
-        isCurrentPaneRenameRequest,
-        setActiveSessionId,
-        notifyInfo,
-      }),
-    // sessionsSignature captures every field the closures read; activity-only
-    // changes keep the signature stable so the memo (and downstream
-    // filteredResults / handler refs) do not churn during agent I/O.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [
-      sessionsSignature,
-      activeSessionId,
-      activePanePtyIdForCommands,
-      activePaneAgentTypeForCommands,
-      createSession,
-      removeSession,
-      renameSession,
-      setPaneUserLabel,
-      nextPaneRenameRequestId,
-      isCurrentPaneRenameRequest,
-      setActiveSessionId,
-      notifyInfo,
-    ]
-  )
-  const commandPalette = useCommandPalette(workspaceCommands)
-
   const activeSession = activeSessionId
     ? sessions.find((s) => s.id === activeSessionId)
     : undefined
@@ -725,6 +687,44 @@ export const WorkspaceView = (): ReactElement => {
 
     previousSessionIdsRef.current = currentSessionIds
   }, [releaseScope, sessions])
+
+  const workspaceCommands = useMemo(
+    () =>
+      buildWorkspaceCommands({
+        sessions,
+        activeSessionId,
+        activePanePtyId: activePanePtyIdForCommands,
+        activePaneAgentType: activePaneAgentTypeForCommands,
+        createSession,
+        removeSession: handleRemoveSession,
+        renameSession,
+        setPaneUserLabel,
+        renameAgentSession,
+        nextPaneRenameRequestId,
+        isCurrentPaneRenameRequest,
+        setActiveSessionId,
+        notifyInfo,
+      }),
+    // sessionsSignature captures every field the closures read; activity-only
+    // changes keep the signature stable so the memo (and downstream
+    // filteredResults / handler refs) do not churn during agent I/O.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [
+      sessionsSignature,
+      activeSessionId,
+      activePanePtyIdForCommands,
+      activePaneAgentTypeForCommands,
+      createSession,
+      handleRemoveSession,
+      renameSession,
+      setPaneUserLabel,
+      nextPaneRenameRequestId,
+      isCurrentPaneRenameRequest,
+      setActiveSessionId,
+      notifyInfo,
+    ]
+  )
+  const commandPalette = useCommandPalette(workspaceCommands)
 
   usePaneShortcuts({
     sessions,
