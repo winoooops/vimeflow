@@ -307,6 +307,152 @@ describe('WorkspaceView', () => {
     expect(releaseScope).not.toHaveBeenCalled()
   })
 
+  test('restores the original active session when cancelling a dirty background close', async () => {
+    const user = userEvent.setup()
+    const hasUnsavedChanges = vi.fn((scopeId: string) => scopeId === 'second')
+
+    workspaceTerminalMock.service.listSessions.mockResolvedValue({
+      activeSessionId: 'first',
+      sessions: [
+        {
+          id: 'first',
+          cwd: '/repo/first',
+          status: {
+            kind: 'Alive',
+            pid: 1,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+        {
+          id: 'second',
+          cwd: '/repo/second',
+          status: {
+            kind: 'Alive',
+            pid: 2,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+        {
+          id: 'third',
+          cwd: '/repo/third',
+          status: {
+            kind: 'Alive',
+            pid: 3,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+      ],
+    })
+
+    vi.mocked(useEditorBuffer).mockReturnValue({
+      filePath: 'src/current.ts',
+      originalContent: 'original',
+      currentContent: 'edits',
+      isDirty: true,
+      isLoading: false,
+      openFile: vi.fn().mockResolvedValue(undefined),
+      saveFile: vi.fn().mockResolvedValue(undefined),
+      updateContent: vi.fn(),
+      hasUnsavedChanges,
+      releaseScope: vi.fn(),
+    })
+
+    render(<WorkspaceView />)
+
+    await screen.findByRole('tab', { name: 'first' })
+
+    await user.click(screen.getByRole('button', { name: 'Close second' }))
+    await screen.findByRole('dialog', { name: /unsaved changes/i })
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
+
+    await waitFor(() => {
+      expect(screen.getByRole('tab', { name: 'first' })).toHaveAttribute(
+        'aria-selected',
+        'true'
+      )
+    })
+    expect(screen.getByRole('tab', { name: 'second' })).toBeInTheDocument()
+  })
+
+  test('restores the original active session after discarding a dirty background close', async () => {
+    const user = userEvent.setup()
+    const hasUnsavedChanges = vi.fn((scopeId: string) => scopeId === 'second')
+
+    workspaceTerminalMock.service.listSessions.mockResolvedValue({
+      activeSessionId: 'first',
+      sessions: [
+        {
+          id: 'first',
+          cwd: '/repo/first',
+          status: {
+            kind: 'Alive',
+            pid: 1,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+        {
+          id: 'second',
+          cwd: '/repo/second',
+          status: {
+            kind: 'Alive',
+            pid: 2,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+        {
+          id: 'third',
+          cwd: '/repo/third',
+          status: {
+            kind: 'Alive',
+            pid: 3,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+      ],
+    })
+
+    vi.mocked(useEditorBuffer).mockReturnValue({
+      filePath: 'src/current.ts',
+      originalContent: 'original',
+      currentContent: 'edits',
+      isDirty: true,
+      isLoading: false,
+      openFile: vi.fn().mockResolvedValue(undefined),
+      saveFile: vi.fn().mockResolvedValue(undefined),
+      updateContent: vi.fn(),
+      hasUnsavedChanges,
+      releaseScope: vi.fn(),
+    })
+
+    render(<WorkspaceView />)
+
+    await screen.findByRole('tab', { name: 'first' })
+
+    await user.click(screen.getByRole('button', { name: 'Close second' }))
+    await screen.findByRole('dialog', { name: /unsaved changes/i })
+    await user.click(screen.getByRole('button', { name: 'Discard' }))
+
+    await waitFor(() => {
+      expect(screen.queryByRole('tab', { name: 'second' })).toBeNull()
+    })
+
+    expect(screen.getByRole('tab', { name: 'first' })).toHaveAttribute(
+      'aria-selected',
+      'true'
+    )
+
+    expect(screen.getByRole('tab', { name: 'third' })).toHaveAttribute(
+      'aria-selected',
+      'false'
+    )
+  })
+
   test('selects the next visible session after confirming a dirty active-session close', async () => {
     const user = userEvent.setup()
     const hasUnsavedChanges = vi.fn((scopeId: string) => scopeId === 'first')
