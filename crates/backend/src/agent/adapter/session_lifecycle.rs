@@ -31,7 +31,7 @@ use crate::agent::types::AgentType;
 use crate::runtime::EventSink;
 use crate::terminal::types::SessionId;
 use crate::terminal::PtyState;
-use base::{AgentWatcherState, TranscriptState};
+use base::{AgentWatcherState, TranscriptState, WatcherHandle};
 
 /// Registry facade owning clones of the four runtime collaborators.
 ///
@@ -55,7 +55,7 @@ mod tests {
     use std::time::SystemTime;
 
     use super::{AgentBindings, AttachContext, SessionLifecycle};
-    use crate::agent::adapter::base::{AgentWatcherState, TranscriptState};
+    use crate::agent::adapter::base::{AgentWatcherState, TranscriptState, WatcherHandle};
     use crate::agent::adapter::make_test_session;
     use crate::agent::adapter::traits::StatusSourceLocator;
     use crate::agent::adapter::types::LocatedStatusSource;
@@ -226,6 +226,104 @@ mod tests {
         let result = lifecycle.ensure_trust(&outside);
         assert!(result.is_err(), "outside trust root should fail");
     }
+
+    #[test]
+    fn t_verb_evict_old() {
+        let state = AgentWatcherState::new();
+        let transcript_state = TranscriptState::new();
+        let sid = "test-sid".to_string();
+        let handle = WatcherHandle::new_for_test(transcript_state, sid.clone());
+        state.insert(sid.clone(), handle);
+        assert!(state.contains(&sid));
+
+        let lifecycle = SessionLifecycle::new(
+            PtyState::new(),
+            state.clone(),
+            TranscriptState::new(),
+            Arc::new(FakeEventSink::new()),
+        );
+        lifecycle.evict_old(&sid);
+        assert!(!state.contains(&sid), "evict_old should remove the session");
+
+        // Idempotent on empty/absent registry — must not panic
+        lifecycle.evict_old("nonexistent");
+    }
+
+    #[test]
+    fn t_verb_spawn_watch() {
+        let tmp = TempDir::new().unwrap();
+        let sid = "test-sess".to_string();
+        let status_path = tmp
+            .path()
+            .join(".vimeflow")
+            .join("sessions")
+            .join(&sid)
+            .join("status.json");
+        std::fs::create_dir_all(status_path.parent().unwrap()).unwrap();
+        std::fs::write(&status_path, r#"{"session_id":"sid","model":{}}"#).unwrap();
+
+        let ctx = AttachContext {
+            session_id: sid.clone(),
+            initial_cwd: tmp.path().to_path_buf(),
+            shell_pid: 1,
+            agent_pid: 2,
+            pty_start: SystemTime::UNIX_EPOCH,
+            agent_type: AgentType::ClaudeCode,
+            provider_home: Some(PathBuf::from("/home/u/.claude")),
+            proc_root: None,
+        };
+        let bindings = AgentBindings::for_attach(&ctx).expect("for_attach");
+        let located = LocatedStatusSource {
+            status_path,
+            trust_root: tmp.path().to_path_buf(),
+            static_transcript_hint: None,
+        };
+
+        let lifecycle = SessionLifecycle::new(
+            PtyState::new(),
+            AgentWatcherState::new(),
+            TranscriptState::new(),
+            Arc::new(FakeEventSink::new()),
+        );
+
+        let handle = lifecycle
+            .spawn_watch(bindings, located, sid.clone())
+            .expect("spawn_watch should return a handle");
+        // Drop the handle to join the spawned thread
+        drop(handle);
+    }
+
+    #[test]
+    fn t_verb_register() {
+        let state = AgentWatcherState::new();
+        let transcript_state = TranscriptState::new();
+        let sid = "test-sid".to_string();
+        let handle = WatcherHandle::new_for_test(transcript_state, sid.clone());
+
+        let lifecycle = SessionLifecycle::new(
+            PtyState::new(),
+            state.clone(),
+            TranscriptState::new(),
+            Arc::new(FakeEventSink::new()),
+        );
+        lifecycle.register(sid.clone(), handle);
+        assert!(state.contains(&sid), "register should insert the session");
+    }
+
+    #[tokio::test]
+    async fn t_verb_stop_empty_registry_returns_err() {
+        let lifecycle = SessionLifecycle::new(
+            PtyState::new(),
+            AgentWatcherState::new(),
+            TranscriptState::new(),
+            Arc::new(FakeEventSink::new()),
+        );
+        let result = lifecycle.stop("nonexistent".to_string()).await;
+        assert_eq!(
+            result.unwrap_err(),
+            "No active watcher for session: nonexistent"
+        );
+    }
 }
 
 impl SessionLifecycle {
@@ -273,6 +371,43 @@ impl SessionLifecycle {
     #[allow(dead_code)] // remove in F.5 cutover
     fn ensure_trust(&self, located: &LocatedStatusSource) -> Result<(), String> {
         base::ensure_status_source_under_trust_root(&located.status_path, &located.trust_root)
+    }
+
+    #[allow(dead_code)] // remove in F.5 cutover
+    fn evict_old(&self, sid: &str) {
+        self.watcher_state.remove(sid);
+    }
+
+    /// PRECONDITION: `located` MUST have passed `ensure_trust`
+    /// (`ensure_status_source_under_trust_root`) before this verb runs.
+    /// `base::start_watching` does NOT re-validate the status path against
+    /// the trust root — that obligation lives in the sibling `ensure_trust`
+    /// verb, which the `start()` orchestration calls earlier in the sequence
+    /// (`locate → ensure_trust → evict_old → spawn_watch → register`; see the
+    /// F.5 cutover and the T-LIFECYCLE-2b regression test). Spawning a watcher
+    /// on an unvalidated path would reopen the symlink-race / path-traversal
+    /// hole `path_security` closes. Mirrors the precondition documented on
+    /// `base::start_watching` itself.
+    #[allow(dead_code)] // remove in F.5 cutover
+    fn spawn_watch(
+        &self,
+        bindings: AgentBindings,
+        located: LocatedStatusSource,
+        sid: String,
+    ) -> Result<WatcherHandle, String> {
+        base::start_watching(
+            bindings,
+            self.events.clone(),
+            self.pty_state.clone(),
+            self.transcript_state.clone(),
+            sid,
+            located,
+        )
+    }
+
+    #[allow(dead_code)] // remove in F.5 cutover
+    fn register(&self, sid: String, handle: WatcherHandle) {
+        self.watcher_state.insert(sid, handle);
     }
 
     /// Start (or restart) the agent watcher for `session_id`.
