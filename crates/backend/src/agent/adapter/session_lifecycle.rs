@@ -85,22 +85,15 @@ mod tests {
             .resolve_attach(&sid, |_pid| Some((AgentType::Codex, 4242)))
             .expect("resolve_attach");
 
+        // resolve_attach is a thin delegate to resolve_bind_inputs; this test
+        // proves only the wiring — the right session plus the injected
+        // detector's (agent_type, pid) flowing through. The exhaustive
+        // field→value map is already pinned by
+        // resolve_bind_inputs_populates_attach_context_fields, so re-asserting
+        // every field here would just duplicate that coverage.
         assert_eq!(attach.session_id, sid);
-        assert_eq!(attach.initial_cwd, PathBuf::from("/tmp/workspace"));
-        assert_eq!(attach.pty_start, SystemTime::UNIX_EPOCH);
-        assert_eq!(attach.agent_pid, 4242);
         assert_eq!(attach.agent_type, AgentType::Codex);
-
-        let provider_home = attach
-            .provider_home
-            .expect("Codex spec defines a home subdir");
-        assert!(provider_home.ends_with(".codex"));
-
-        if cfg!(target_os = "linux") {
-            assert_eq!(attach.proc_root, Some(PathBuf::from("/proc")));
-        } else {
-            assert_eq!(attach.proc_root, None);
-        }
+        assert_eq!(attach.agent_pid, 4242);
     }
 
     #[test]
