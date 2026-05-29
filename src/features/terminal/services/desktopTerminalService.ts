@@ -17,6 +17,7 @@ import type {
   ReorderSessionsRequest,
   UpdateSessionCwdRequest,
   SetSessionActivityPanelCollapsedRequest,
+  SetWorkspaceSessionsRequest,
 } from '../../../bindings'
 import type { ITerminalService } from './terminalService'
 
@@ -313,5 +314,11 @@ export class DesktopTerminalService implements ITerminalService {
     request: SetSessionActivityPanelCollapsedRequest
   ): Promise<void> {
     await invoke('set_session_activity_panel_collapsed', { request })
+  }
+
+  async setWorkspaceSessions(
+    request: SetWorkspaceSessionsRequest
+  ): Promise<void> {
+    await invoke('set_workspace_sessions', { request })
   }
 }

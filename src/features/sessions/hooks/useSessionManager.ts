@@ -35,6 +35,7 @@ import {
 import { usePtyExitListener } from '../../terminal/hooks/usePtyExitListener'
 import { useAutoCreateOnEmpty } from './useAutoCreateOnEmpty'
 import { useActiveSessionController } from './useActiveSessionController'
+import { usePushWorkspaceGrouping } from './usePushWorkspaceGrouping'
 import { useSessionRestore } from './useSessionRestore'
 
 export type { RestoreData, PaneEventHandler, NotifyPaneReadyResult }
@@ -439,7 +440,6 @@ export const useSessionManager = (
         restoreDataRef.current.set(newSessionId, restoreData)
         registerPending(result.sessionId)
 
-        let computedNewOrder = null as string[] | null
         flushSync(() => {
           setSessions((prev) => {
             const newSession: Session = {
@@ -468,36 +468,18 @@ export const useSessionManager = (
               activity: { ...emptyActivity },
             }
 
-            const next = [...prev, newSession]
-            // F13 (claude MEDIUM): do NOT call the throwing getActivePane
-            // inside the setSessions updater — a transient invariant
-            // violation (5b multi-pane edits) would abort the React state
-            // commit and orphan the freshly-spawned Rust PTY. Compute the
-            // reorder payload AFTER flushSync returns using findActivePane.
-
-            return next
+            return [...prev, newSession]
           })
         })
 
-        // F13: derive the reorder payload OUTSIDE the updater using the
-        // non-throwing findActivePane. sessionsRef.current was updated by
-        // the flushSync above. If any session lacks an active pane (5b
-        // bug), skip the IPC — React state stays, Rust order will catch
-        // up on the next reorder.
-        const orderIds = sessionsRef.current
-          .map((s) => findActivePane(s)?.ptyId)
-          .filter((ptyId): ptyId is string => ptyId !== undefined)
-        if (orderIds.length === sessionsRef.current.length) {
-          computedNewOrder = orderIds
-        }
-
-        if (computedNewOrder !== null) {
-          // eslint-disable-next-line promise/prefer-await-to-then
-          service.reorderSessions(computedNewOrder).catch((err) => {
-            // eslint-disable-next-line no-console
-            console.warn('createSession: reorderSessions failed', err)
-          })
-        }
+        // Cache ordering is persisted by `usePushWorkspaceGrouping` on the
+        // sessions[] change above — `set_workspace_sessions` now rebuilds
+        // `session_order` atomically with the grouping write, so we no
+        // longer need (and previously erroneously used) the legacy
+        // `reorder_sessions` IPC here. That IPC's permutation check
+        // expected ALL PTY ids while this site sent only active-per-
+        // workspace ids, which silently rejected as soon as any other
+        // workspace had >1 pane — see PR #290 review thread.
 
         setActiveSessionId(newSessionId)
         registerPtySession(result.sessionId, result.sessionId, result.cwd)
@@ -546,6 +528,12 @@ export const useSessionManager = (
     pendingSpawns,
     createSession,
   })
+
+  // Push pane grouping (workspace id + layout + pane shape) to the Rust
+  // cache whenever the React `sessions[]` structure changes, so a later
+  // restore can reconstruct the multi-pane layout instead of fragmenting
+  // each PTY into its own single-pane session. Debounced inside the hook.
+  usePushWorkspaceGrouping({ service, sessions, loading })
 
   // Remove session — kill + filter + advance active
   const removeSession = useCallback(
@@ -1115,7 +1103,6 @@ export const useSessionManager = (
         registerPending(result.sessionId)
         registerPtySession(result.sessionId, result.sessionId, result.cwd)
 
-        let computedNewOrder = null as string[] | null
         let orphanedSessionId = null as string | null
         flushSync(() => {
           setSessions((prev) => {
@@ -1150,22 +1137,9 @@ export const useSessionManager = (
               lastActivityAt: new Date().toISOString(),
             }
 
-            // F13: defer the throw-prone getActivePane(s).ptyId map to
-            // OUTSIDE the updater (see createSession for the rationale).
-
             return next
           })
         })
-
-        // F13: compute ids OUTSIDE the updater with findActivePane. If any
-        // session lacks an active pane (5b transient state), skip the IPC
-        // — Rust order will catch up on the next successful reorder.
-        const orderIdsAfter = sessionsRef.current
-          .map((s) => findActivePane(s)?.ptyId)
-          .filter((ptyId): ptyId is string => ptyId !== undefined)
-        if (orderIdsAfter.length === sessionsRef.current.length) {
-          computedNewOrder = orderIdsAfter
-        }
 
         if (orphanedSessionId !== null) {
           // eslint-disable-next-line promise/prefer-await-to-then,@typescript-eslint/no-empty-function
@@ -1175,13 +1149,9 @@ export const useSessionManager = (
           dropAllForPty(orphanedSessionId)
           unregisterPtySession(orphanedSessionId)
         }
-        if (computedNewOrder !== null) {
-          // eslint-disable-next-line promise/prefer-await-to-then
-          service.reorderSessions(computedNewOrder).catch((err) => {
-            // eslint-disable-next-line no-console
-            console.warn('restartSession: reorderSessions failed', err)
-          })
-        }
+
+        // Cache ordering is persisted by `usePushWorkspaceGrouping` on the
+        // sessions[] change above (see createSession for the rationale).
 
         if (activeSessionIdRef.current === sessionId) {
           setActiveSessionId(sessionId)
@@ -1258,59 +1228,62 @@ export const useSessionManager = (
     []
   )
 
-  // Reorder sessions — optimistic update + IPC
+  // Reorder sessions — purely a React-state update.
   //
-  // Round 9, Finding 5 (codex P2 / claude LOW): no rollback on IPC failure.
-  // The previous code captured `prev = sessions` at call time and called
-  // `setSessions(prev)` from the catch handler — a render-time snapshot
-  // that overwrote any concurrent createSession / removeSession updates
-  // that committed during the IPC roundtrip. Rust's reorder_sessions
-  // already validates the input is a permutation of the current set, so
-  // a rejected call leaves the cache untouched. Without rolling back the
-  // UI here, the in-memory order may briefly diverge from the cache;
-  // the next reload merges via list_sessions and reconciles. The cost is
-  // tiny (a refresh window where the tab strip shows the user's intent
-  // even though the cache holds the prior order) and the win is large
-  // (no clobbering of unrelated concurrent state).
-  const reorderSessions = useCallback(
-    (reordered: Session[]): void => {
-      // F14 (claude MEDIUM): compute the Rust IPC payload BEFORE
-      // committing React state. Previously: setSessions fired, then
-      // getActivePane(s).ptyId mapped — a throw would leave React
-      // showing the new order while Rust kept the old, diverging
-      // permanently until the next reload. Now: derive ids first via
-      // findActivePane (non-throwing); if any session is missing an
-      // active pane (5b transient state), bail BEFORE setSessions so
-      // React and Rust stay aligned.
-      const ids = reordered
-        .map((s) => findActivePane(s)?.ptyId)
-        .filter((ptyId): ptyId is string => ptyId !== undefined)
-      if (ids.length !== reordered.length) {
-        // eslint-disable-next-line no-console
-        console.warn(
-          'reorderSessions: skipping — at least one session has no active pane'
-        )
+  // Cache persistence is owned by `usePushWorkspaceGrouping`, which fires on
+  // every `sessions[]` change and pushes the full snapshot via
+  // `set_workspace_sessions`; that IPC now rebuilds `session_order` from the
+  // snapshot's workspace * pane-index ordering, atomically with the grouping
+  // write. So the legacy `reorder_sessions` IPC is redundant here.
+  //
+  // Use a FUNCTIONAL updater that merges the incoming order against the
+  // latest committed `prev` rather than overwriting it. The caller passes a
+  // snapshot built at drag-start; if an `addPane` (or `restartSession`,
+  // `removePane`, `createSession`) commits between drag-start and
+  // setSessions landing — a real ~50–500 ms window for the spawn IPC —
+  // overwriting with the stale snapshot would silently erase the new pane
+  // from React state while its PTY stays alive in Rust. Merge keys: take
+  // `reordered`'s ORDER but each session's CONTENTS from `prev` (lookup by
+  // session id). Sessions present in `prev` but absent from `reordered`
+  // (e.g. a `createSession` that landed during the reorder) are appended
+  // at the end so they survive the merge instead of disappearing.
+  //
+  // The active-pane invariant check is preserved — committing a session
+  // without an active pane would trip the SplitView's `getActivePane` on
+  // the next render.
+  const reorderSessions = useCallback((reordered: Session[]): void => {
+    const hasInvariantHole = reordered.some(
+      (s) => findActivePane(s) === undefined
+    )
+    if (hasInvariantHole) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        'reorderSessions: skipping — at least one session has no active pane'
+      )
 
-        return
-      }
-      setSessions(reordered)
-      // eslint-disable-next-line promise/prefer-await-to-then
-      service.reorderSessions(ids).catch((err) => {
-        // eslint-disable-next-line no-console
-        console.warn(
-          'reorderSessions IPC failed; cache untouched, UI may diverge until next reload',
-          err
-        )
-        // No rollback: setSessions(prev) with a render-time snapshot
-        // would discard concurrent create/remove updates that commit
-        // during the IPC roundtrip. The Rust side rejected the write so
-        // the cache retains the prior order; on next reload the merge
-        // logic in the orchestrator reconciles in-memory React state
-        // with the cached order.
+      return
+    }
+    setSessions((prev) => {
+      const prevById = new Map(prev.map((s) => [s.id, s]))
+      const reorderedIds = new Set(reordered.map((s) => s.id))
+
+      // DROP, don't fall back to the stale `s`, when `reordered` references
+      // a session no longer present in `prev`. A `removeSession` (or a
+      // pty-exit-driven cleanup) that committed during the drag would have
+      // evicted that id from `prev`; restoring the stale snapshot here
+      // would resurrect a zombie session whose PTY is already dead and the
+      // tab can no longer be closed (kill_pty rejects "session not found"
+      // and React filters can't find the id).
+      const ordered = reordered.flatMap((s) => {
+        const live = prevById.get(s.id)
+
+        return live ? [live] : []
       })
-    },
-    [service]
-  )
+      const extras = prev.filter((s) => !reorderedIds.has(s.id))
+
+      return [...ordered, ...extras]
+    })
+  }, [])
 
   const updatePaneCwd = useCallback(
     (sessionId: string, paneId: string, cwd: string): void => {
