@@ -9,7 +9,9 @@ import {
 } from 'react'
 import { MultiFileDiff, useWorkerPool } from '@pierre/diffs/react'
 import type {
+  AnnotationSide,
   BaseDiffOptions,
+  DiffLineAnnotation,
   DiffsThemeNames,
   SelectedLineRange,
 } from '@pierre/diffs'
@@ -28,6 +30,18 @@ import { createGitService } from '../services/gitService'
 import { enqueuePoolWrite } from '../services/workerPoolWrites'
 import { useNotifyInfo } from '../../workspace/hooks/useNotifyInfo'
 import type { ChangedFile, SelectedDiffFile } from '../types'
+import { useFeedbackBatch, type ReviewComment } from '../hooks/useFeedbackBatch'
+import { ReviewCommentComposer } from './ReviewCommentComposer'
+import { ReviewCommentRow } from './ReviewCommentRow'
+import { FinishFeedbackPopover } from './FinishFeedbackPopover'
+import {
+  dispatchFeedbackBatch,
+  type DispatchEntry,
+} from '../services/feedbackDispatch'
+import {
+  resolveCandidatePanes,
+  type PaneCandidate,
+} from '../services/activePanePicker'
 
 // Pierre option subtypes — derived from `BaseDiffOptions` (rather than typed as
 // the raw enum literals) so a Pierre version bump that widens or renames any
@@ -71,10 +85,26 @@ interface DiffPanelContentBaseProps {
   cwd?: string
   /** Optional shared git status from a parent-level watcher subscription */
   gitStatus?: UseGitStatusReturn
+  /** Optional feedback dispatch target for inline review comments */
+  feedbackDispatch?: {
+    candidates: PaneCandidate[]
+    writePty: (ptyId: string, data: string) => Promise<void>
+  }
 }
 
 export type DiffPanelContentProps = DiffPanelContentBaseProps &
   DiffPanelSelectionControl
+
+// Sentinel id marking the transient "draft" annotation that renders the
+// composer inline before a real comment exists.
+const DRAFT_ID = '__draft__'
+
+// Monotonic id source. A module counter keeps comment ids stable + unique
+// without reaching for Date.now()/Math.random() in render.
+let feedbackCommentSeq = 0
+
+const nextFeedbackCommentId = (): string =>
+  `feedback-comment-${(feedbackCommentSeq += 1)}`
 
 // Small inline status cards. They previously lived as an inline JSX ladder in
 // the right-pane block; extracting them keeps the populated-state JSX readable
@@ -113,6 +143,7 @@ export const DiffPanelContent = ({
   gitStatus = undefined,
   selectedFile: controlledSelectedFile,
   onSelectedFileChange,
+  feedbackDispatch = undefined,
 }: DiffPanelContentProps): ReactElement => {
   const internalGitStatus = useGitStatus(cwd, {
     watch: true,
@@ -246,6 +277,125 @@ export const DiffPanelContent = ({
   // Notification hook — reused for the "Pierre split differently" and
   // "could not isolate hunk" informational messages.
   const { message: notifyMessage, notifyInfo } = useNotifyInfo()
+
+  // Inline review comment batch state.
+  const feedback = useFeedbackBatch()
+
+  // Clear the feedback batch when cwd changes so stale comments from a
+  // previous workspace do not leak into the new one.
+  const previousCwdRef = useRef(cwd)
+
+  useEffect(() => {
+    if (previousCwdRef.current !== cwd) {
+      previousCwdRef.current = cwd
+      feedback.clearBatch()
+    }
+  }, [cwd, feedback, feedback.clearBatch])
+
+  // Composer target state: which line currently has an open composer.
+  // `editId` set => editing an existing comment in place; absent => a new
+  // draft on that line.
+  const [composerTarget, setComposerTarget] = useState<{
+    lineNumber: number
+    side: AnnotationSide
+    editId?: string
+  } | null>(null)
+
+  // Finish feedback popover open state.
+  const [finishOpen, setFinishOpen] = useState(false)
+
+  // Real annotations for the currently selected file.
+  const realAnnotations = feedback.annotationsForFile(
+    cwd,
+    selectedFilePath ?? ''
+  )
+
+  // Merge a transient draft annotation in only while composing a NEW comment,
+  // so the composer renders inline below the target line. Editing reuses the
+  // existing annotation's slot, so no draft is added there. When idle we pass
+  // `realAnnotations` straight through to keep its identity stable (avoids
+  // Pierre re-tokenizing on every render).
+  const lineAnnotations = useMemo((): DiffLineAnnotation<ReviewComment>[] => {
+    if (composerTarget !== null && composerTarget.editId === undefined) {
+      const draft: DiffLineAnnotation<ReviewComment> = {
+        side: composerTarget.side,
+        lineNumber: composerTarget.lineNumber,
+        metadata: { id: DRAFT_ID, text: '', author: 'self', createdAt: 0 },
+      }
+
+      return [...realAnnotations, draft]
+    }
+
+    return realAnnotations
+  }, [realAnnotations, composerTarget])
+
+  const confirmComposer = useCallback(
+    (text: string): void => {
+      setComposerTarget((current) => {
+        if (current === null) {
+          return null
+        }
+
+        if (selectedFilePath === null) {
+          return null
+        }
+
+        if (current.editId !== undefined) {
+          feedback.updateAnnotation(cwd, selectedFilePath, current.editId, {
+            text,
+          })
+        } else {
+          feedback.addAnnotation(cwd, selectedFilePath, {
+            side: current.side,
+            lineNumber: current.lineNumber,
+            metadata: {
+              id: nextFeedbackCommentId(),
+              text,
+              author: 'self',
+              createdAt: Date.now(),
+            },
+          })
+        }
+
+        return null
+      })
+    },
+    [feedback, cwd, selectedFilePath]
+  )
+
+  const closeComposer = useCallback((): void => {
+    setComposerTarget(null)
+  }, [])
+
+  const handleSendFeedback = useCallback(
+    (pane: PaneCandidate): void => {
+      void (async (): Promise<void> => {
+        const entries: DispatchEntry[] = []
+        for (const [key, annotations] of feedback.batch) {
+          const sep = key.indexOf('::')
+          const entryCwd = key.slice(0, sep)
+          const filePath = key.slice(sep + 2)
+          entries.push({ cwd: entryCwd, filePath, annotations })
+        }
+
+        try {
+          if (feedbackDispatch) {
+            await dispatchFeedbackBatch(
+              pane.paneId,
+              pane.ptyId,
+              entries,
+              feedbackDispatch.writePty
+            )
+          }
+          feedback.clearBatch()
+          setFinishOpen(false)
+        } catch {
+          notifyInfo('Terminal session ended; feedback not sent.')
+        }
+      })()
+    },
+    [feedback, feedbackDispatch, notifyInfo]
+  )
 
   // Single-flight staging flag — drops clicks while an IPC is in flight.
   const [staging, setStaging] = useState(false)
@@ -694,6 +844,9 @@ export const DiffPanelContent = ({
     [effectiveFiles, currentFileIndex, commitSelection, cwd]
   )
 
+  // Toolbar shell ref for anchoring the FinishFeedbackPopover.
+  const toolbarShellRef = useRef<HTMLDivElement>(null)
+
   // Loading state
   if (effectiveStatusLoading) {
     return (
@@ -771,7 +924,11 @@ export const DiffPanelContent = ({
         data-testid="diff-right-pane"
         className="flex min-w-0 flex-1 flex-col overflow-hidden"
       >
-        <div data-testid="diff-toolbar-shell" className="shrink-0">
+        <div
+          ref={toolbarShellRef}
+          data-testid="diff-toolbar-shell"
+          className="shrink-0"
+        >
           <DiffChipToolbar
             diffMode={selectedFileStaged ? 'staged' : 'unstaged'}
             diffStyle={effectiveDiffStyle}
@@ -806,6 +963,9 @@ export const DiffPanelContent = ({
             onDiscardAll={handleDiscardAll}
             staging={staging}
             selectedFileName={selectedFilePath ?? undefined}
+            feedbackCount={feedback.totalAnnotations()}
+            onDiscardFeedback={feedback.clearBatch}
+            onFinishFeedback={(): void => setFinishOpen(true)}
           />
           {renderSyncError !== null ? (
             <div
@@ -823,6 +983,20 @@ export const DiffPanelContent = ({
             >
               {notifyMessage}
             </div>
+          ) : null}
+          {finishOpen && toolbarShellRef.current !== null ? (
+            <FinishFeedbackPopover
+              anchor={toolbarShellRef.current}
+              result={resolveCandidatePanes({
+                allPanes: feedbackDispatch?.candidates ?? [],
+                diffCwd: cwd,
+                focusedPaneId: null,
+              })}
+              commentCount={feedback.totalAnnotations()}
+              fileCount={feedback.batch.size}
+              onCancel={(): void => setFinishOpen(false)}
+              onSend={handleSendFeedback}
+            />
           ) : null}
         </div>
         <div
@@ -855,6 +1029,7 @@ export const DiffPanelContent = ({
                 oldFile={pierreInputs.oldFile}
                 newFile={pierreInputs.newFile}
                 selectedLines={selectedLines}
+                lineAnnotations={lineAnnotations}
                 options={{
                   diffStyle: effectiveDiffStyle,
                   theme: renderedTheme,
@@ -865,6 +1040,71 @@ export const DiffPanelContent = ({
                   disableBackground,
                   disableFileHeader,
                   stickyHeader,
+                  enableGutterUtility: true,
+                }}
+                renderGutterUtility={(getHoveredLine): ReactElement => (
+                  <button
+                    type="button"
+                    aria-label="Add comment on this line"
+                    className="flex h-5 w-5 items-center justify-center rounded bg-primary/80 text-on-primary hover:bg-primary"
+                    onClick={(): void => {
+                      const hovered = getHoveredLine()
+                      if (hovered) {
+                        setComposerTarget({
+                          lineNumber: hovered.lineNumber,
+                          side: hovered.side,
+                        })
+                      }
+                    }}
+                  >
+                    <span
+                      aria-hidden="true"
+                      className="material-symbols-outlined text-sm leading-none"
+                    >
+                      add
+                    </span>
+                  </button>
+                )}
+                renderAnnotation={(
+                  annotation: DiffLineAnnotation<ReviewComment>
+                ): ReactElement => {
+                  const isDraft = annotation.metadata.id === DRAFT_ID
+
+                  const isEditing =
+                    composerTarget?.editId !== undefined &&
+                    composerTarget.editId === annotation.metadata.id
+
+                  if (isDraft || isEditing) {
+                    return (
+                      <ReviewCommentComposer
+                        lineNumber={annotation.lineNumber}
+                        side={annotation.side}
+                        initialText={isEditing ? annotation.metadata.text : ''}
+                        onConfirm={confirmComposer}
+                        onCancel={closeComposer}
+                      />
+                    )
+                  }
+
+                  return (
+                    <ReviewCommentRow
+                      comment={annotation.metadata}
+                      onEdit={(): void =>
+                        setComposerTarget({
+                          lineNumber: annotation.lineNumber,
+                          side: annotation.side,
+                          editId: annotation.metadata.id,
+                        })
+                      }
+                      onDelete={(): void =>
+                        feedback.removeAnnotation(
+                          cwd,
+                          selectedFilePath ?? '',
+                          annotation.metadata.id
+                        )
+                      }
+                    />
+                  )
                 }}
                 style={{ display: 'block', width: '100%' }}
               />
