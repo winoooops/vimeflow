@@ -115,6 +115,7 @@ export const useEditorBuffer = (
 
         // Last-write-wins: ignore stale responses.
         if (requestId !== openRequestIdsRef.current[targetScopeId]) {
+          // Newer requests own loading cleanup for this scope.
           return
         }
 

@@ -671,6 +671,7 @@ export const WorkspaceView = (): ReactElement => {
 
       const wasActive = sessionId === activeSessionId
       removeSession(sessionId)
+      releaseScope(sessionId)
       if (wasActive) {
         claimTerminal()
       }
@@ -681,6 +682,7 @@ export const WorkspaceView = (): ReactElement => {
       activeSessionId,
       claimTerminal,
       hasUnsavedChanges,
+      releaseScope,
       removeSession,
       setActiveSessionId,
       setPendingFilePathSynced,
@@ -722,6 +724,7 @@ export const WorkspaceView = (): ReactElement => {
       }
 
       removeSession(sessionId)
+      releaseScope(sessionId)
 
       if (sessionId === activeSessionId || nextId !== undefined) {
         claimTerminal()
@@ -730,6 +733,7 @@ export const WorkspaceView = (): ReactElement => {
     [
       activeSessionId,
       claimTerminal,
+      releaseScope,
       removeSession,
       sessions,
       setActiveSessionId,
@@ -766,6 +770,7 @@ export const WorkspaceView = (): ReactElement => {
       handleRemoveSession,
       renameSession,
       setPaneUserLabel,
+      renameAgentSession,
       nextPaneRenameRequestId,
       isCurrentPaneRenameRequest,
       setActiveSessionId,

@@ -380,6 +380,7 @@ describe('WorkspaceView', () => {
   test('restores the original active session after discarding a dirty background close', async () => {
     const user = userEvent.setup()
     const hasUnsavedChanges = vi.fn((scopeId: string) => scopeId === 'second')
+    const releaseScope = vi.fn()
 
     workspaceTerminalMock.service.listSessions.mockResolvedValue({
       activeSessionId: 'first',
@@ -427,7 +428,7 @@ describe('WorkspaceView', () => {
       saveFile: vi.fn().mockResolvedValue(undefined),
       updateContent: vi.fn(),
       hasUnsavedChanges,
-      releaseScope: vi.fn(),
+      releaseScope,
     })
 
     render(<WorkspaceView />)
@@ -451,12 +452,14 @@ describe('WorkspaceView', () => {
       'aria-selected',
       'false'
     )
+    expect(releaseScope).toHaveBeenCalledWith('second')
   })
 
   test('removes a dirty background session after saving and restores the original active session', async () => {
     const user = userEvent.setup()
     const hasUnsavedChanges = vi.fn((scopeId: string) => scopeId === 'second')
     const saveFile = vi.fn().mockResolvedValue(undefined)
+    const releaseScope = vi.fn()
 
     const consoleWarn = vi
       .spyOn(console, 'warn')
@@ -512,7 +515,7 @@ describe('WorkspaceView', () => {
       saveFile,
       updateContent: vi.fn(),
       hasUnsavedChanges,
-      releaseScope: vi.fn(),
+      releaseScope,
     })
 
     try {
@@ -541,6 +544,7 @@ describe('WorkspaceView', () => {
         'aria-selected',
         'false'
       )
+      expect(releaseScope).toHaveBeenCalledWith('second')
     } finally {
       consoleWarn.mockRestore()
     }

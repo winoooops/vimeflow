@@ -343,7 +343,6 @@ export const useCommandPalette = (
     // below and routes through chordRegistry / usePaneRenameChord.
     const handlePaletteShortcut = (): void => {
       if (!isEnabledRef.current) {
-        clearLeaderWindow()
         handlersRef.current.close()
 
         return
