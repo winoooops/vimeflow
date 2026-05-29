@@ -1,6 +1,6 @@
 # Built-in browser pane — Phase 1 implementation plan
 
-Status: codex review in progress
+Status: codex-reviewed
 Date: 2026-05-29
 Spec: [`docs/superpowers/specs/2026-05-29-builtin-browser-pane-design.md`](../specs/2026-05-29-builtin-browser-pane-design.md)
 
@@ -126,3 +126,5 @@ Code changes first (unblock compilation and lock behavior), then the test additi
 - **Bullet 3 (restart leg):** sign in, fully quit and relaunch; document whether login persists
   (the spec notes graceful quit clears the backend session cache — `state.rs:76`).
 - **Bullet 4:** YouTube (or equivalent non-DRM) video plays with audio.
+
+<!-- codex-reviewed: 2026-05-29T13:54:17Z -->
