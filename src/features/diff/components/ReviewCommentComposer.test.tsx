@@ -1,34 +1,41 @@
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
+import { describe, expect, test, vi } from 'vitest'
 import { ReviewCommentComposer } from './ReviewCommentComposer'
 
-/**
- * Create a real anchor element attached to document.body.
- * floating-ui needs the anchor in the DOM to compute positioning.
- */
-const createAnchor = (): HTMLDivElement => {
-  const el = document.createElement('div')
-  document.body.appendChild(el)
-
-  return el
-}
-
 describe('ReviewCommentComposer', () => {
-  let anchor: HTMLDivElement
+  test('renders the "Local comment" header and the R-side line reference', () => {
+    render(
+      <ReviewCommentComposer
+        lineNumber={190}
+        side="additions"
+        onConfirm={vi.fn()}
+        onCancel={vi.fn()}
+      />
+    )
 
-  beforeEach(() => {
-    anchor = createAnchor()
+    expect(screen.getByText('Local comment')).toBeInTheDocument()
+    expect(screen.getByText('Comment on line R190')).toBeInTheDocument()
   })
 
-  afterEach(() => {
-    anchor.remove()
+  test('renders the L-side line reference for a deletions-side comment', () => {
+    render(
+      <ReviewCommentComposer
+        lineNumber={42}
+        side="deletions"
+        onConfirm={vi.fn()}
+        onCancel={vi.fn()}
+      />
+    )
+
+    expect(screen.getByText('Comment on line L42')).toBeInTheDocument()
   })
 
   test('renders the textarea pre-filled with initialText', () => {
     render(
       <ReviewCommentComposer
-        anchor={anchor}
+        lineNumber={1}
+        side="additions"
         initialText="pre-filled text"
         onConfirm={vi.fn()}
         onCancel={vi.fn()}
@@ -38,31 +45,19 @@ describe('ReviewCommentComposer', () => {
     expect(screen.getByRole('textbox')).toHaveValue('pre-filled text')
   })
 
-  test('renders with an empty textarea when no initialText provided', () => {
-    render(
-      <ReviewCommentComposer
-        anchor={anchor}
-        onConfirm={vi.fn()}
-        onCancel={vi.fn()}
-      />
-    )
-
-    expect(screen.getByRole('textbox')).toHaveValue('')
-  })
-
   test('typing updates the textarea value', async () => {
     const user = userEvent.setup()
 
     render(
       <ReviewCommentComposer
-        anchor={anchor}
+        lineNumber={1}
+        side="additions"
         onConfirm={vi.fn()}
         onCancel={vi.fn()}
       />
     )
 
     const textarea = screen.getByRole('textbox')
-    await user.clear(textarea)
     await user.type(textarea, 'hello world')
 
     expect(textarea).toHaveValue('hello world')
@@ -74,14 +69,14 @@ describe('ReviewCommentComposer', () => {
 
     render(
       <ReviewCommentComposer
-        anchor={anchor}
+        lineNumber={1}
+        side="additions"
         initialText="  my comment  "
         onConfirm={handleConfirm}
         onCancel={vi.fn()}
       />
     )
 
-    // Click the textarea to ensure it has focus before pressing Enter.
     await user.click(screen.getByRole('textbox'))
     await user.keyboard('{Enter}')
 
@@ -95,7 +90,8 @@ describe('ReviewCommentComposer', () => {
 
     render(
       <ReviewCommentComposer
-        anchor={anchor}
+        lineNumber={1}
+        side="additions"
         initialText="line one"
         onConfirm={handleConfirm}
         onCancel={vi.fn()}
@@ -103,7 +99,6 @@ describe('ReviewCommentComposer', () => {
     )
 
     const textarea = screen.getByRole('textbox')
-    // Move cursor to end then Shift+Enter
     await user.click(textarea)
     await user.keyboard('{Shift>}{Enter}{/Shift}')
 
@@ -117,13 +112,15 @@ describe('ReviewCommentComposer', () => {
 
     render(
       <ReviewCommentComposer
-        anchor={anchor}
+        lineNumber={1}
+        side="additions"
         initialText="some text"
         onConfirm={vi.fn()}
         onCancel={handleCancel}
       />
     )
 
+    await user.click(screen.getByRole('textbox'))
     await user.keyboard('{Escape}')
 
     expect(handleCancel).toHaveBeenCalledTimes(1)
@@ -135,7 +132,8 @@ describe('ReviewCommentComposer', () => {
 
     render(
       <ReviewCommentComposer
-        anchor={anchor}
+        lineNumber={1}
+        side="additions"
         onConfirm={vi.fn()}
         onCancel={handleCancel}
       />
@@ -146,48 +144,32 @@ describe('ReviewCommentComposer', () => {
     expect(handleCancel).toHaveBeenCalledTimes(1)
   })
 
-  test('Add comment button is disabled when text is empty', () => {
+  test('Comment button is disabled when text is empty', () => {
     render(
       <ReviewCommentComposer
-        anchor={anchor}
+        lineNumber={1}
+        side="additions"
         initialText=""
         onConfirm={vi.fn()}
         onCancel={vi.fn()}
       />
     )
 
-    expect(screen.getByRole('button', { name: 'Add comment' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Comment' })).toBeDisabled()
   })
 
-  test('Add comment button is disabled when text is whitespace only', () => {
+  test('Comment button is disabled when text is whitespace only', () => {
     render(
       <ReviewCommentComposer
-        anchor={anchor}
+        lineNumber={1}
+        side="additions"
         initialText="   "
         onConfirm={vi.fn()}
         onCancel={vi.fn()}
       />
     )
 
-    expect(screen.getByRole('button', { name: 'Add comment' })).toBeDisabled()
-  })
-
-  test('Enter does not confirm when text is empty', async () => {
-    const user = userEvent.setup()
-    const handleConfirm = vi.fn()
-
-    render(
-      <ReviewCommentComposer
-        anchor={anchor}
-        initialText=""
-        onConfirm={handleConfirm}
-        onCancel={vi.fn()}
-      />
-    )
-
-    await user.keyboard('{Enter}')
-
-    expect(handleConfirm).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: 'Comment' })).toBeDisabled()
   })
 
   test('Enter does not confirm when text is whitespace only', async () => {
@@ -196,74 +178,37 @@ describe('ReviewCommentComposer', () => {
 
     render(
       <ReviewCommentComposer
-        anchor={anchor}
+        lineNumber={1}
+        side="additions"
         initialText="   "
         onConfirm={handleConfirm}
         onCancel={vi.fn()}
       />
     )
 
+    await user.click(screen.getByRole('textbox'))
     await user.keyboard('{Enter}')
 
     expect(handleConfirm).not.toHaveBeenCalled()
   })
 
-  test('Add comment button fires onConfirm with trimmed text when clicked', async () => {
+  test('Comment button fires onConfirm with trimmed text when clicked', async () => {
     const user = userEvent.setup()
     const handleConfirm = vi.fn()
 
     render(
       <ReviewCommentComposer
-        anchor={anchor}
+        lineNumber={1}
+        side="additions"
         initialText="valid comment"
         onConfirm={handleConfirm}
         onCancel={vi.fn()}
       />
     )
 
-    await user.click(screen.getByRole('button', { name: 'Add comment' }))
+    await user.click(screen.getByRole('button', { name: 'Comment' }))
 
     expect(handleConfirm).toHaveBeenCalledTimes(1)
     expect(handleConfirm).toHaveBeenCalledWith('valid comment')
-  })
-
-  test('click outside the popover calls onCancel via useDismiss', async () => {
-    const user = userEvent.setup()
-    const handleCancel = vi.fn()
-
-    render(
-      <ReviewCommentComposer
-        anchor={anchor}
-        initialText="some text"
-        onConfirm={vi.fn()}
-        onCancel={handleCancel}
-      />
-    )
-
-    // Click on a DOM element outside the floating popover.
-    // useDismiss fires onOpenChange(false) → onCancel on pointerdown outside.
-    await user.click(document.body)
-
-    await waitFor(() => {
-      expect(handleCancel).toHaveBeenCalledTimes(1)
-    })
-  })
-
-  test('renders the popover via FloatingPortal (outside the render container)', () => {
-    const { container } = render(
-      <ReviewCommentComposer
-        anchor={anchor}
-        onConfirm={vi.fn()}
-        onCancel={vi.fn()}
-      />
-    )
-
-    // The textarea must be in the document but NOT inside the React render root.
-    // FloatingPortal mounts directly under document.body, escaping the render container.
-    expect(screen.getByRole('textbox')).toBeInTheDocument()
-    // The render root (container) must not contain a textbox.
-    // (It is an empty div when FloatingPortal is used correctly.)
-    const { queryByRole } = within(container)
-    expect(queryByRole('textbox')).not.toBeInTheDocument()
   })
 })

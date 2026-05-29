@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState, type ReactElement } from 'react'
+import { useCallback, useMemo, useState, type ReactElement } from 'react'
 import { MultiFileDiff } from '@pierre/diffs/react'
 import type { AnnotationSide, DiffLineAnnotation } from '@pierre/diffs'
 import { useFeedbackBatch, type ReviewComment } from '../hooks/useFeedbackBatch'
@@ -6,16 +6,20 @@ import { ReviewCommentComposer } from '../components/ReviewCommentComposer'
 import { ReviewCommentRow } from '../components/ReviewCommentRow'
 
 // Dev-only interactive demo justifying the PR4 "gutter affordance" approach to
-// adding inline review comments (spec §7). It wires the REAL Pierre
-// `renderGutterUtility` + `getHoveredLine` API (the only per-line interaction
-// hook `<MultiFileDiff>` exposes — there is no `onDiffLineClick`) to the real
-// ReviewCommentComposer / ReviewCommentRow / useFeedbackBatch built in Tasks
-// 4.1–4.2, so hovering a line, clicking the gutter 💬, and seeing the comment
-// render inline can be validated by hand before the full DiffPanelContent
-// integration (Task 4.5). Launch via `npm run dev` → `?demo=inline-comments`.
+// adding inline review comments (spec §7), matching the Codex inline-composer
+// UX: a `+` in the gutter on hover opens a FULL-WIDTH composer panel BELOW the
+// line (via Pierre's `renderAnnotation` slot, driven by a transient draft
+// annotation) — not a floating popover. Wires the real Pierre
+// `renderGutterUtility` + `getHoveredLine` API to the real
+// ReviewCommentComposer / ReviewCommentRow / useFeedbackBatch (Tasks 4.1–4.2).
+// Launch: `npm run dev` → http://localhost:5173/?demo=inline-comments
 
 const DEMO_CWD = '/demo'
 const DEMO_FILE = 'greet.ts'
+
+// Sentinel id marking the transient "draft" annotation that renders the
+// composer inline before a real comment exists.
+const DRAFT_ID = '__draft__'
 
 const OLD_CONTENTS = `export function greet(name) {
   const msg = 'Hello, ' + name
@@ -36,77 +40,74 @@ const NEW_CONTENTS = `export function greet(name: string): string {
 let commentSeq = 0
 const nextCommentId = (): string => `demo-comment-${(commentSeq += 1)}`
 
-interface ComposerState {
-  anchor: HTMLElement
-  side: AnnotationSide
+// Which line currently has an open composer. `editId` set => editing an
+// existing comment in place; absent => a new draft on that line.
+interface ComposerTarget {
   lineNumber: number
+  side: AnnotationSide
   editId?: string
-  initialText: string
 }
 
 /**
- * InlineCommentDemo - dev harness for the gutter-comment interaction.
+ * InlineCommentDemo - dev harness for the Codex-style gutter-comment flow.
  */
 export const InlineCommentDemo = (): ReactElement => {
   const feedback = useFeedbackBatch()
-  const [composer, setComposer] = useState<ComposerState | null>(null)
+  const [target, setTarget] = useState<ComposerTarget | null>(null)
 
-  const annotations = feedback.annotationsForFile(DEMO_CWD, DEMO_FILE)
+  const realAnnotations = feedback.annotationsForFile(DEMO_CWD, DEMO_FILE)
 
-  const openAddComposer = useCallback(
-    (anchor: HTMLElement, lineNumber: number, side: AnnotationSide): void => {
-      setComposer({ anchor, side, lineNumber, initialText: '' })
-    },
-    []
-  )
+  // Merge a transient draft annotation in only while composing a NEW comment,
+  // so the composer renders inline below the target line. Editing reuses the
+  // existing annotation's slot, so no draft is added there. When idle we pass
+  // `realAnnotations` straight through to keep its identity stable (avoids
+  // Pierre re-tokenizing on every render).
+  const lineAnnotations = useMemo((): DiffLineAnnotation<ReviewComment>[] => {
+    if (target !== null && target.editId === undefined) {
+      const draft: DiffLineAnnotation<ReviewComment> = {
+        side: target.side,
+        lineNumber: target.lineNumber,
+        metadata: { id: DRAFT_ID, text: '', author: 'self', createdAt: 0 },
+      }
 
-  const openEditComposer = useCallback(
-    (
-      anchor: HTMLElement,
-      annotation: DiffLineAnnotation<ReviewComment>
-    ): void => {
-      setComposer({
-        anchor,
-        side: annotation.side,
-        lineNumber: annotation.lineNumber,
-        editId: annotation.metadata.id,
-        initialText: annotation.metadata.text,
-      })
-    },
-    []
-  )
+      return [...realAnnotations, draft]
+    }
+
+    return realAnnotations
+  }, [realAnnotations, target])
 
   const confirmComposer = useCallback(
     (text: string): void => {
-      if (composer === null) {
-        return
-      }
-
-      if (composer.editId !== undefined) {
-        feedback.updateAnnotation(DEMO_CWD, DEMO_FILE, composer.editId, {
-          text,
-        })
-      } else {
-        const comment: ReviewComment = {
-          id: nextCommentId(),
-          text,
-          author: 'self',
-          createdAt: Date.now(),
+      setTarget((current) => {
+        if (current === null) {
+          return null
         }
-        feedback.addAnnotation(DEMO_CWD, DEMO_FILE, {
-          side: composer.side,
-          lineNumber: composer.lineNumber,
-          metadata: comment,
-        })
-      }
 
-      setComposer(null)
+        if (current.editId !== undefined) {
+          feedback.updateAnnotation(DEMO_CWD, DEMO_FILE, current.editId, {
+            text,
+          })
+        } else {
+          feedback.addAnnotation(DEMO_CWD, DEMO_FILE, {
+            side: current.side,
+            lineNumber: current.lineNumber,
+            metadata: {
+              id: nextCommentId(),
+              text,
+              author: 'self',
+              createdAt: Date.now(),
+            },
+          })
+        }
+
+        return null
+      })
     },
-    [composer, feedback]
+    [feedback]
   )
 
   const closeComposer = useCallback((): void => {
-    setComposer(null)
+    setTarget(null)
   }, [])
 
   return (
@@ -116,7 +117,7 @@ export const InlineCommentDemo = (): ReactElement => {
           Inline review comments — gutter affordance demo
         </h1>
         <p className="text-on-surface-variant text-xs">
-          Hover a diff line, click the 💬 in the gutter, type a comment, press
+          Hover a diff line, click the + in the gutter, type a comment, press
           Enter. {feedback.totalAnnotations()} comment(s) in the batch.
         </p>
       </header>
@@ -126,7 +127,7 @@ export const InlineCommentDemo = (): ReactElement => {
           newFile={{ name: DEMO_FILE, contents: NEW_CONTENTS }}
           // `enableGutterUtility` is REQUIRED to activate Pierre's per-line
           // hover tracking + render the gutter slot — without it
-          // `handlePointerMove` ignores hover and the 💬 button never appears
+          // `handlePointerMove` ignores hover and the + button never appears
           // (the `renderGutterUtility` prop alone does nothing). See
           // node_modules/@pierre/diffs/dist/managers/InteractionManager.js.
           options={{
@@ -134,20 +135,19 @@ export const InlineCommentDemo = (): ReactElement => {
             theme: 'pierre-dark',
             enableGutterUtility: true,
           }}
-          lineAnnotations={annotations}
+          lineAnnotations={lineAnnotations}
           renderGutterUtility={(getHoveredLine): ReactElement => (
             <button
               type="button"
               aria-label="Add comment on this line"
               className="flex h-5 w-5 items-center justify-center rounded bg-primary/80 text-on-primary hover:bg-primary"
-              onClick={(event): void => {
+              onClick={(): void => {
                 const hovered = getHoveredLine()
                 if (hovered) {
-                  openAddComposer(
-                    event.currentTarget,
-                    hovered.lineNumber,
-                    hovered.side
-                  )
+                  setTarget({
+                    lineNumber: hovered.lineNumber,
+                    side: hovered.side,
+                  })
                 }
               }}
             >
@@ -155,69 +155,54 @@ export const InlineCommentDemo = (): ReactElement => {
                 aria-hidden="true"
                 className="material-symbols-outlined text-sm leading-none"
               >
-                add_comment
+                add
               </span>
             </button>
           )}
           renderAnnotation={(
             annotation: DiffLineAnnotation<ReviewComment>
-          ): ReactElement => (
-            <AnnotationRow
-              annotation={annotation}
-              onEdit={openEditComposer}
-              onDelete={(): void =>
-                feedback.removeAnnotation(
-                  DEMO_CWD,
-                  DEMO_FILE,
-                  annotation.metadata.id
-                )
-              }
-            />
-          )}
+          ): ReactElement => {
+            const isDraft = annotation.metadata.id === DRAFT_ID
+
+            const isEditing =
+              target?.editId !== undefined &&
+              target.editId === annotation.metadata.id
+
+            if (isDraft || isEditing) {
+              return (
+                <ReviewCommentComposer
+                  lineNumber={annotation.lineNumber}
+                  side={annotation.side}
+                  initialText={isEditing ? annotation.metadata.text : ''}
+                  onConfirm={confirmComposer}
+                  onCancel={closeComposer}
+                />
+              )
+            }
+
+            return (
+              <ReviewCommentRow
+                comment={annotation.metadata}
+                onEdit={(): void =>
+                  setTarget({
+                    lineNumber: annotation.lineNumber,
+                    side: annotation.side,
+                    editId: annotation.metadata.id,
+                  })
+                }
+                onDelete={(): void =>
+                  feedback.removeAnnotation(
+                    DEMO_CWD,
+                    DEMO_FILE,
+                    annotation.metadata.id
+                  )
+                }
+              />
+            )
+          }}
           style={{ display: 'block', width: '100%' }}
         />
       </div>
-      {composer !== null ? (
-        <ReviewCommentComposer
-          anchor={composer.anchor}
-          initialText={composer.initialText}
-          onConfirm={confirmComposer}
-          onCancel={closeComposer}
-        />
-      ) : null}
-    </div>
-  )
-}
-
-// Small wrapper so the edit affordance can capture its own DOM element as the
-// composer anchor (ReviewCommentRow is anchor-agnostic by design).
-interface AnnotationRowProps {
-  annotation: DiffLineAnnotation<ReviewComment>
-  onEdit: (
-    anchor: HTMLElement,
-    annotation: DiffLineAnnotation<ReviewComment>
-  ) => void
-  onDelete: () => void
-}
-
-const AnnotationRow = ({
-  annotation,
-  onEdit,
-  onDelete,
-}: AnnotationRowProps): ReactElement => {
-  const ref = useRef<HTMLDivElement>(null)
-
-  return (
-    <div ref={ref}>
-      <ReviewCommentRow
-        comment={annotation.metadata}
-        onEdit={(): void => {
-          if (ref.current) {
-            onEdit(ref.current, annotation)
-          }
-        }}
-        onDelete={onDelete}
-      />
     </div>
   )
 }
