@@ -261,6 +261,8 @@ describe('WorkspaceView - Command Palette Integration', () => {
       openFile: vi.fn(),
       saveFile: vi.fn(),
       updateContent: vi.fn(),
+      hasUnsavedChanges: vi.fn(() => false),
+      releaseScope: vi.fn(),
     })
 
     // Mock fileSystemService

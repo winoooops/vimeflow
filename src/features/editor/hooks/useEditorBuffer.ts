@@ -10,8 +10,8 @@ interface EditorBufferState {
   isLoading: boolean
 }
 
-type EditorBuffersByScope = Record<string, EditorBufferState>
-type OpenRequestIdsByScope = Record<string, number>
+type EditorBuffersByScope = Partial<Record<string, EditorBufferState>>
+type OpenRequestIdsByScope = Partial<Record<string, number>>
 
 const EMPTY_EDITOR_BUFFER: EditorBufferState = {
   filePath: null,
@@ -39,6 +39,8 @@ export interface EditorBuffer {
   openFile: (path: string) => Promise<void>
   saveFile: () => Promise<void>
   updateContent: (content: string) => void
+  hasUnsavedChanges: (scopeId: string) => boolean
+  releaseScope: (scopeId: string) => void
 }
 
 export const useEditorBuffer = (
@@ -175,6 +177,35 @@ export const useEditorBuffer = (
     [setBufferForScope]
   )
 
+  const hasUnsavedChanges = useCallback((scopeIdToCheck: string): boolean => {
+    const targetScopeId = resolveEditorBufferScopeId(scopeIdToCheck)
+    const buffer = buffersByScopeRef.current[targetScopeId]
+
+    if (!buffer) {
+      return false
+    }
+
+    return buffer.currentContent !== buffer.originalContent
+  }, [])
+
+  const releaseScope = useCallback((scopeIdToRelease: string): void => {
+    const targetScopeId = resolveEditorBufferScopeId(scopeIdToRelease)
+    const previousBuffers = buffersByScopeRef.current
+
+    if (previousBuffers[targetScopeId]) {
+      const nextBuffers = { ...previousBuffers }
+      delete nextBuffers[targetScopeId]
+      buffersByScopeRef.current = nextBuffers
+      setBuffersByScope(nextBuffers)
+    }
+
+    if (openRequestIdsRef.current[targetScopeId] !== undefined) {
+      const nextOpenRequestIds = { ...openRequestIdsRef.current }
+      delete nextOpenRequestIds[targetScopeId]
+      openRequestIdsRef.current = nextOpenRequestIds
+    }
+  }, [])
+
   return {
     filePath: activeBuffer.filePath,
     originalContent: activeBuffer.originalContent,
@@ -184,5 +215,7 @@ export const useEditorBuffer = (
     openFile,
     saveFile,
     updateContent,
+    hasUnsavedChanges,
+    releaseScope,
   }
 }

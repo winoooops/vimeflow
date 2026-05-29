@@ -532,8 +532,13 @@ export const WorkspaceView = (): ReactElement => {
   // reloads the file from disk, overwriting in-progress edits.
   const fileSystemService = useMemo(() => createFileSystemService(), [])
   const editorBuffer = useEditorBuffer(fileSystemService, activeSessionId)
+  const { hasUnsavedChanges, releaseScope } = editorBuffer
   const [showUnsavedDialog, setShowUnsavedDialog] = useState(false)
   const [pendingFilePath, setPendingFilePath] = useState<string | null>(null)
+
+  const [pendingSessionRemovalId, setPendingSessionRemovalId] = useState<
+    string | null
+  >(null)
   const [saveError, setSaveError] = useState<string | null>(null)
 
   // Live mirror of `pendingFilePath`. `handleSave` reads this AFTER its
@@ -549,14 +554,28 @@ export const WorkspaceView = (): ReactElement => {
   // and resumes, the effect hasn't run yet, so a stale ref would be
   // read and the handler would open the cancelled pending file.
   const pendingFilePathRef = useRef<string | null>(null)
+  const pendingSessionRemovalIdRef = useRef<string | null>(null)
+
   useEffect(() => {
     pendingFilePathRef.current = pendingFilePath
   }, [pendingFilePath])
+
+  useEffect(() => {
+    pendingSessionRemovalIdRef.current = pendingSessionRemovalId
+  }, [pendingSessionRemovalId])
 
   const setPendingFilePathSynced = useCallback((value: string | null): void => {
     pendingFilePathRef.current = value
     setPendingFilePath(value)
   }, [])
+
+  const setPendingSessionRemovalIdSynced = useCallback(
+    (value: string | null): void => {
+      pendingSessionRemovalIdRef.current = value
+      setPendingSessionRemovalId(value)
+    },
+    []
+  )
   // General-purpose error banner for non-dialog file ops (direct file open,
   // async load failure inside CodeEditor, vim :w save failure).
   const [fileError, setFileError] = useState<string | null>(null)
@@ -661,15 +680,51 @@ export const WorkspaceView = (): ReactElement => {
   }, [claimTerminal, createSession])
 
   const handleRemoveSession = useCallback(
-    (sessionId: string): void => {
+    (sessionId: string): boolean => {
+      if (hasUnsavedChanges(sessionId)) {
+        if (sessionId !== activeSessionId) {
+          setActiveSessionId(sessionId)
+        }
+
+        setPendingFilePathSynced(null)
+        setPendingSessionRemovalIdSynced(sessionId)
+        setSaveError(null)
+        setShowUnsavedDialog(true)
+
+        return false
+      }
+
       const wasActive = sessionId === activeSessionId
       removeSession(sessionId)
       if (wasActive) {
         claimTerminal()
       }
+
+      return true
     },
-    [activeSessionId, claimTerminal, removeSession]
+    [
+      activeSessionId,
+      claimTerminal,
+      hasUnsavedChanges,
+      removeSession,
+      setActiveSessionId,
+      setPendingFilePathSynced,
+      setPendingSessionRemovalIdSynced,
+    ]
   )
+
+  const previousSessionIdsRef = useRef<Set<string>>(new Set())
+  useEffect(() => {
+    const currentSessionIds = new Set(sessions.map((session) => session.id))
+
+    for (const previousSessionId of previousSessionIdsRef.current) {
+      if (!currentSessionIds.has(previousSessionId)) {
+        releaseScope(previousSessionId)
+      }
+    }
+
+    previousSessionIdsRef.current = currentSessionIds
+  }, [releaseScope, sessions])
 
   usePaneShortcuts({
     sessions,
@@ -866,14 +921,26 @@ export const WorkspaceView = (): ReactElement => {
     // capture-before-await constant) would see the stale snapshot and
     // open the cancelled pending file anyway.
     const currentPendingPath = pendingFilePathRef.current
+    const currentPendingSessionRemovalId = pendingSessionRemovalIdRef.current
 
     // Current buffer is clean on disk. The dialog's job of guarding
-    // the switch is done — surface any pending-open failure via the
-    // workspace-level banner instead of leaving the dialog stuck
-    // with a misleading "Failed to save" message.
+    // the pending action is done — surface any pending-open failure via
+    // the workspace-level banner instead of leaving the dialog stuck with
+    // a misleading "Failed to save" message.
     setShowUnsavedDialog(false)
     setPendingFilePathSynced(null)
+    setPendingSessionRemovalIdSynced(null)
     setSaveError(null)
+
+    if (currentPendingSessionRemovalId) {
+      removeSession(currentPendingSessionRemovalId)
+      if (currentPendingSessionRemovalId === activeSessionId) {
+        claimTerminal()
+      }
+      setFileError(null)
+
+      return
+    }
 
     if (currentPendingPath) {
       try {
@@ -886,7 +953,14 @@ export const WorkspaceView = (): ReactElement => {
         )
       }
     }
-  }, [editorBuffer, setPendingFilePathSynced])
+  }, [
+    activeSessionId,
+    claimTerminal,
+    editorBuffer,
+    removeSession,
+    setPendingFilePathSynced,
+    setPendingSessionRemovalIdSynced,
+  ])
 
   // Discard changes and open pending file.
   //
@@ -900,9 +974,21 @@ export const WorkspaceView = (): ReactElement => {
   // the wrong file. Closing the dialog up front removes the window.
   const handleDiscard = useCallback(async (): Promise<void> => {
     const target = pendingFilePathRef.current
+    const targetSessionRemovalId = pendingSessionRemovalIdRef.current
     setShowUnsavedDialog(false)
     setPendingFilePathSynced(null)
+    setPendingSessionRemovalIdSynced(null)
     setSaveError(null)
+
+    if (targetSessionRemovalId) {
+      removeSession(targetSessionRemovalId)
+      if (targetSessionRemovalId === activeSessionId) {
+        claimTerminal()
+      }
+      setFileError(null)
+
+      return
+    }
 
     if (!target) {
       return
@@ -915,7 +1001,14 @@ export const WorkspaceView = (): ReactElement => {
       const message = error instanceof Error ? error.message : String(error)
       setFileError(`Failed to open file: ${message}`)
     }
-  }, [editorBuffer, setPendingFilePathSynced])
+  }, [
+    activeSessionId,
+    claimTerminal,
+    editorBuffer,
+    removeSession,
+    setPendingFilePathSynced,
+    setPendingSessionRemovalIdSynced,
+  ])
 
   // Cancel and stay on current file.
   //
@@ -928,8 +1021,9 @@ export const WorkspaceView = (): ReactElement => {
   const handleCancel = useCallback((): void => {
     setShowUnsavedDialog(false)
     setPendingFilePathSynced(null)
+    setPendingSessionRemovalIdSynced(null)
     setSaveError(null)
-  }, [setPendingFilePathSynced])
+  }, [setPendingFilePathSynced, setPendingSessionRemovalIdSynced])
 
   // Handle opening a diff file from AgentStatusPanel
   const handleOpenDiff = useCallback(
@@ -1208,6 +1302,9 @@ export const WorkspaceView = (): ReactElement => {
         isOpen={showUnsavedDialog}
         fileName={editorBuffer.filePath ?? ''}
         errorMessage={saveError}
+        actionDescription={
+          pendingSessionRemovalId ? 'closing this session' : 'switching files'
+        }
         onSave={() => {
           void handleSave()
         }}

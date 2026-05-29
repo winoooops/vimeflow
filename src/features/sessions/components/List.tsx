@@ -14,7 +14,7 @@ export interface ListProps {
   activeSessionId: string | null
   onSessionClick: (sessionId: string) => void
   onCreateSession?: () => void
-  onRemoveSession?: (sessionId: string) => void
+  onRemoveSession?: (sessionId: string) => boolean | void
   onRenameSession?: (sessionId: string, name: string) => void
   onReorderSessions?: (sessions: Session[]) => void
 }
@@ -74,7 +74,11 @@ export const List = ({
           id === activeSessionId
             ? pickNextVisibleSessionId(sessions, id, activeSessionId)
             : undefined
-        onRemoveSession(id)
+        const didRemove = onRemoveSession(id)
+        if (didRemove === false) {
+          return
+        }
+
         if (nextId !== undefined) {
           onSessionClick(nextId)
           queueMicrotask(() => {

@@ -7,6 +7,7 @@ export interface UnsavedChangesDialogProps {
   fileName: string
   /** Optional error surfaced from a failed save/discard attempt. */
   errorMessage?: string | null
+  actionDescription?: string
   onSave: () => void
   onDiscard: () => void
   onCancel: () => void
@@ -16,6 +17,7 @@ export const UnsavedChangesDialog = ({
   isOpen,
   fileName,
   errorMessage = null,
+  actionDescription = 'switching files',
   onSave,
   onDiscard,
   onCancel,
@@ -153,8 +155,8 @@ export const UnsavedChangesDialog = ({
                 className="text-sm text-on-surface/80 font-inter leading-relaxed"
               >
                 <span className="font-medium text-on-surface">{fileName}</span>{' '}
-                has unsaved changes. Do you want to save them before switching
-                files?
+                has unsaved changes. Do you want to save them before{' '}
+                {actionDescription}?
               </p>
               {errorMessage && (
                 <div

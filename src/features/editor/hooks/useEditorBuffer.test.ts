@@ -257,4 +257,40 @@ describe('useEditorBuffer', () => {
       'session b edits'
     )
   })
+
+  test('reports and releases scoped unsaved buffers', async () => {
+    vi.mocked(mockFileSystemService.readFile).mockImplementation((path) =>
+      Promise.resolve(`content for ${path}`)
+    )
+
+    const { result, rerender } = renderHook(
+      ({ sessionId }: { sessionId: string }) =>
+        useEditorBuffer(mockFileSystemService, sessionId),
+      {
+        initialProps: { sessionId: 'session-a' },
+      }
+    )
+
+    await act(async () => {
+      await result.current.openFile('~/a.ts')
+    })
+
+    act(() => {
+      result.current.updateContent('session a edits')
+    })
+
+    expect(result.current.hasUnsavedChanges('session-a')).toBe(true)
+    expect(result.current.hasUnsavedChanges('session-b')).toBe(false)
+
+    act(() => {
+      result.current.releaseScope('session-a')
+    })
+
+    expect(result.current.hasUnsavedChanges('session-a')).toBe(false)
+
+    rerender({ sessionId: 'session-a' })
+
+    expect(result.current.filePath).toBeNull()
+    expect(result.current.currentContent).toBe('')
+  })
 })

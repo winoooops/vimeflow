@@ -172,6 +172,8 @@ describe('WorkspaceView', () => {
       openFile: vi.fn().mockResolvedValue(undefined),
       saveFile: vi.fn().mockResolvedValue(undefined),
       updateContent: vi.fn(),
+      hasUnsavedChanges: vi.fn(() => false),
+      releaseScope: vi.fn(),
     })
   })
 
@@ -237,6 +239,72 @@ describe('WorkspaceView', () => {
     } finally {
       randomUUID.mockRestore()
     }
+  })
+
+  test('prompts before removing a dirty active session', async () => {
+    const user = userEvent.setup()
+    const hasUnsavedChanges = vi.fn((scopeId: string) => scopeId === 'sess-1')
+    const releaseScope = vi.fn()
+
+    vi.mocked(useEditorBuffer).mockReturnValue({
+      filePath: 'src/current.ts',
+      originalContent: 'original',
+      currentContent: 'edits',
+      isDirty: true,
+      isLoading: false,
+      openFile: vi.fn().mockResolvedValue(undefined),
+      saveFile: vi.fn().mockResolvedValue(undefined),
+      updateContent: vi.fn(),
+      hasUnsavedChanges,
+      releaseScope,
+    })
+
+    render(<WorkspaceView />)
+
+    const activeTab = await screen.findByRole('tab', { name: 'session 1' })
+
+    await user.click(screen.getByRole('button', { name: 'Close session 1' }))
+
+    expect(hasUnsavedChanges).toHaveBeenCalledWith('sess-1')
+
+    const dialog = await screen.findByRole('dialog', {
+      name: /unsaved changes/i,
+    })
+
+    expect(dialog).toHaveTextContent(/before closing this session/i)
+    expect(within(dialog).getByText('src/current.ts')).toBeInTheDocument()
+    expect(activeTab).toHaveAttribute('aria-selected', 'true')
+    expect(releaseScope).not.toHaveBeenCalled()
+  })
+
+  test('releases an editor scope after a clean session is removed', async () => {
+    const user = userEvent.setup()
+    const hasUnsavedChanges = vi.fn(() => false)
+    const releaseScope = vi.fn()
+
+    vi.mocked(useEditorBuffer).mockReturnValue({
+      filePath: null,
+      originalContent: '',
+      currentContent: '',
+      isDirty: false,
+      isLoading: false,
+      openFile: vi.fn().mockResolvedValue(undefined),
+      saveFile: vi.fn().mockResolvedValue(undefined),
+      updateContent: vi.fn(),
+      hasUnsavedChanges,
+      releaseScope,
+    })
+
+    render(<WorkspaceView />)
+
+    await screen.findByRole('tab', { name: 'session 1' })
+
+    await user.click(screen.getByRole('button', { name: 'Close session 1' }))
+
+    expect(hasUnsavedChanges).toHaveBeenCalledWith('sess-1')
+    await waitFor(() => {
+      expect(releaseScope).toHaveBeenCalledWith('sess-1')
+    })
   })
 
   test('applies correct grid layout with 4 columns (dynamic sidebar width)', () => {
@@ -882,6 +950,8 @@ describe('WorkspaceView', () => {
       openFile: openFileMock,
       saveFile: vi.fn().mockResolvedValue(undefined),
       updateContent: vi.fn(),
+      hasUnsavedChanges: vi.fn(() => false),
+      releaseScope: vi.fn(),
     })
 
     render(<WorkspaceView />)
@@ -912,6 +982,8 @@ describe('WorkspaceView', () => {
       openFile: openFileMock,
       saveFile: vi.fn().mockResolvedValue(undefined),
       updateContent: vi.fn(),
+      hasUnsavedChanges: vi.fn(() => true),
+      releaseScope: vi.fn(),
     })
 
     render(<WorkspaceView />)
@@ -945,6 +1017,8 @@ describe('WorkspaceView', () => {
       openFile: openFileMock,
       saveFile: vi.fn().mockResolvedValue(undefined),
       updateContent: vi.fn(),
+      hasUnsavedChanges: vi.fn(() => false),
+      releaseScope: vi.fn(),
     })
 
     render(<WorkspaceView />)

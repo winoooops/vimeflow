@@ -11,7 +11,7 @@ export interface TabsProps {
   sessions: Session[]
   activeSessionId: string | null
   onSelect: (sessionId: string) => void
-  onClose: (sessionId: string) => void
+  onClose: (sessionId: string) => boolean | void
   onNew: () => void
 }
 
@@ -61,7 +61,11 @@ export const Tabs = ({
       sessionId === activeSessionId
         ? pickNextVisibleSessionId(sessions, sessionId, activeSessionId)
         : undefined
-    onClose(sessionId)
+    const didClose = onClose(sessionId)
+    if (didClose === false) {
+      return
+    }
+
     if (nextId !== undefined) {
       onSelect(nextId)
       // WAI-ARIA Tabs Pattern §4.4.3: after a close, focus must move

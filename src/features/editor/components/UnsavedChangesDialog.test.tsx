@@ -52,6 +52,21 @@ describe('UnsavedChangesDialog', () => {
     expect(screen.getByText(/my-file\.rs/i)).toBeInTheDocument()
   })
 
+  test('uses custom action description in dialog content', () => {
+    render(
+      <UnsavedChangesDialog
+        isOpen
+        fileName="my-file.rs"
+        actionDescription="closing this session"
+        onSave={vi.fn()}
+        onDiscard={vi.fn()}
+        onCancel={vi.fn()}
+      />
+    )
+
+    expect(screen.getByText(/before closing this session/i)).toBeInTheDocument()
+  })
+
   test('calls onSave when Save button is clicked', () => {
     const onSave = vi.fn()
 
