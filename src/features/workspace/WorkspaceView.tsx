@@ -67,6 +67,7 @@ import { useGitStatus } from '../diff/hooks/useGitStatus'
 import { sumLines } from '../diff/utils/sumLines'
 import { findActivePane } from '../sessions/utils/activeSessionPane'
 import { lineDelta } from '../sessions/utils/lineDelta'
+import { pickNextVisibleSessionId } from '../sessions/utils/pickNextVisibleSessionId'
 import { AGENTS, agentTypeToRegistryKey } from '../../agents/registry'
 import type { SessionStatus } from '../sessions/types'
 import {
@@ -688,6 +689,32 @@ export const WorkspaceView = (): ReactElement => {
     previousSessionIdsRef.current = currentSessionIds
   }, [releaseScope, sessions])
 
+  const removePendingSession = useCallback(
+    (sessionId: string): void => {
+      const nextId =
+        sessionId === activeSessionId
+          ? pickNextVisibleSessionId(sessions, sessionId, activeSessionId)
+          : undefined
+
+      removeSession(sessionId)
+
+      if (nextId !== undefined) {
+        setActiveSessionId(nextId)
+      }
+
+      if (sessionId === activeSessionId || nextId !== undefined) {
+        claimTerminal()
+      }
+    },
+    [
+      activeSessionId,
+      claimTerminal,
+      removeSession,
+      sessions,
+      setActiveSessionId,
+    ]
+  )
+
   const workspaceCommands = useMemo(
     () =>
       buildWorkspaceCommands({
@@ -933,10 +960,7 @@ export const WorkspaceView = (): ReactElement => {
     setSaveError(null)
 
     if (currentPendingSessionRemovalId) {
-      removeSession(currentPendingSessionRemovalId)
-      if (currentPendingSessionRemovalId === activeSessionId) {
-        claimTerminal()
-      }
+      removePendingSession(currentPendingSessionRemovalId)
       setFileError(null)
 
       return
@@ -954,10 +978,8 @@ export const WorkspaceView = (): ReactElement => {
       }
     }
   }, [
-    activeSessionId,
-    claimTerminal,
     editorBuffer,
-    removeSession,
+    removePendingSession,
     setPendingFilePathSynced,
     setPendingSessionRemovalIdSynced,
   ])
@@ -981,10 +1003,7 @@ export const WorkspaceView = (): ReactElement => {
     setSaveError(null)
 
     if (targetSessionRemovalId) {
-      removeSession(targetSessionRemovalId)
-      if (targetSessionRemovalId === activeSessionId) {
-        claimTerminal()
-      }
+      removePendingSession(targetSessionRemovalId)
       setFileError(null)
 
       return
@@ -1002,10 +1021,8 @@ export const WorkspaceView = (): ReactElement => {
       setFileError(`Failed to open file: ${message}`)
     }
   }, [
-    activeSessionId,
-    claimTerminal,
     editorBuffer,
-    removeSession,
+    removePendingSession,
     setPendingFilePathSynced,
     setPendingSessionRemovalIdSynced,
   ])

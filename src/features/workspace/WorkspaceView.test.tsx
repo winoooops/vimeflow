@@ -17,6 +17,56 @@ import { useEditorBuffer } from '../editor/hooks/useEditorBuffer'
 import type { AgentStatus } from '../agent-status/types'
 import { useAgentStatus } from '../agent-status/hooks/useAgentStatus'
 import { usePaneShortcuts } from '../terminal/hooks/usePaneShortcuts'
+import type { SessionList } from '../../bindings'
+
+const workspaceTerminalMock = vi.hoisted(() => {
+  const defaultSessionList = (): SessionList => ({
+    activeSessionId: 'sess-1',
+    sessions: [
+      {
+        id: 'sess-1',
+        cwd: '~',
+        status: {
+          kind: 'Alive' as const,
+          pid: 1234,
+          replay_data: '',
+          replay_end_offset: BigInt(0),
+        },
+      },
+    ],
+  })
+
+  const service = {
+    spawn: vi
+      .fn()
+      .mockResolvedValue({ sessionId: 'new-id', pid: 999, cwd: '~' }),
+    write: vi.fn().mockResolvedValue(undefined),
+    resize: vi.fn().mockResolvedValue(undefined),
+    kill: vi.fn().mockResolvedValue(undefined),
+    onData: vi.fn(
+      (): Promise<() => void> =>
+        // eslint-disable-next-line @typescript-eslint/no-empty-function
+        Promise.resolve((): void => {})
+    ),
+    onExit: vi.fn(
+      (): Promise<() => void> =>
+        // eslint-disable-next-line @typescript-eslint/no-empty-function
+        Promise.resolve((): void => {})
+    ),
+    onError: vi.fn(
+      (): Promise<() => void> =>
+        // eslint-disable-next-line @typescript-eslint/no-empty-function
+        Promise.resolve((): void => {})
+    ),
+    listSessions: vi.fn().mockResolvedValue(defaultSessionList()),
+    setActiveSession: vi.fn().mockResolvedValue(undefined),
+    reorderSessions: vi.fn().mockResolvedValue(undefined),
+    updateSessionCwd: vi.fn().mockResolvedValue(undefined),
+    setSessionActivityPanelCollapsed: vi.fn().mockResolvedValue(undefined),
+  }
+
+  return { defaultSessionList, service }
+})
 
 // Mock TerminalPane to avoid xterm.js issues in tests. Surface `pane.cwd`
 // as a data attribute so tests can observe the agent-cwd → pane.cwd bridge
@@ -111,46 +161,12 @@ vi.mock('../agent-status/components/AgentStatusPanel', () => ({
 
 // Mock terminal service to return initial session data synchronously
 vi.mock('../terminal/services/terminalService', () => ({
-  createTerminalService: vi.fn(() => ({
-    spawn: vi
-      .fn()
-      .mockResolvedValue({ sessionId: 'new-id', pid: 999, cwd: '~' }),
-    write: vi.fn().mockResolvedValue(undefined),
-    resize: vi.fn().mockResolvedValue(undefined),
-    kill: vi.fn().mockResolvedValue(undefined),
-    onData: vi.fn(
-      (): Promise<() => void> =>
-        // eslint-disable-next-line @typescript-eslint/no-empty-function
-        Promise.resolve((): void => {})
-    ),
-    // eslint-disable-next-line @typescript-eslint/no-empty-function
-    onExit: vi.fn((): (() => void) => (): void => {}),
-    // eslint-disable-next-line @typescript-eslint/no-empty-function
-    onError: vi.fn((): (() => void) => (): void => {}),
-    listSessions: vi.fn().mockResolvedValue({
-      activeSessionId: 'sess-1',
-      sessions: [
-        {
-          id: 'sess-1',
-          cwd: '~',
-          status: {
-            kind: 'Alive',
-            pid: 1234,
-            replay_data: '',
-            replay_end_offset: BigInt(0),
-          },
-        },
-      ],
-    }),
-    setActiveSession: vi.fn().mockResolvedValue(undefined),
-    reorderSessions: vi.fn().mockResolvedValue(undefined),
-    updateSessionCwd: vi.fn().mockResolvedValue(undefined),
-    setSessionActivityPanelCollapsed: vi.fn().mockResolvedValue(undefined),
-  })),
+  createTerminalService: vi.fn(() => workspaceTerminalMock.service),
 }))
 
 describe('WorkspaceView', () => {
   beforeEach(() => {
+    vi.clearAllMocks()
     Object.defineProperty(navigator, 'platform', {
       value: 'Linux x86_64',
       configurable: true,
@@ -158,7 +174,21 @@ describe('WorkspaceView', () => {
     capturedAgentStatusPanelProps.onOpenFile = undefined
     capturedAgentStatusPanelProps.onOpenDiff = undefined
     capturedAgentStatusPanelProps.agentStatus = undefined
-    vi.mocked(usePaneShortcuts).mockClear()
+    workspaceTerminalMock.service.spawn.mockResolvedValue({
+      sessionId: 'new-id',
+      pid: 999,
+      cwd: '~',
+    })
+    workspaceTerminalMock.service.kill.mockResolvedValue(undefined)
+    workspaceTerminalMock.service.listSessions.mockResolvedValue(
+      workspaceTerminalMock.defaultSessionList()
+    )
+    workspaceTerminalMock.service.setActiveSession.mockResolvedValue(undefined)
+    workspaceTerminalMock.service.reorderSessions.mockResolvedValue(undefined)
+    workspaceTerminalMock.service.updateSessionCwd.mockResolvedValue(undefined)
+    workspaceTerminalMock.service.setSessionActivityPanelCollapsed.mockResolvedValue(
+      undefined
+    )
 
     // Default: clean buffer with no file open. Mirrors the real hook's
     // initial state so existing tests don't see a dirty buffer or get
@@ -275,6 +305,70 @@ describe('WorkspaceView', () => {
     expect(within(dialog).getByText('src/current.ts')).toBeInTheDocument()
     expect(activeTab).toHaveAttribute('aria-selected', 'true')
     expect(releaseScope).not.toHaveBeenCalled()
+  })
+
+  test('selects the next visible session after confirming a dirty active-session close', async () => {
+    const user = userEvent.setup()
+    const hasUnsavedChanges = vi.fn((scopeId: string) => scopeId === 'first')
+
+    workspaceTerminalMock.service.listSessions.mockResolvedValue({
+      activeSessionId: 'first',
+      sessions: [
+        {
+          id: 'first',
+          cwd: '/repo/first',
+          status: {
+            kind: 'Alive',
+            pid: 1,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+        {
+          id: 'hidden-ended',
+          cwd: '/repo/hidden-ended',
+          status: { kind: 'Exited', last_exit_code: 0 },
+        },
+        {
+          id: 'third',
+          cwd: '/repo/third',
+          status: {
+            kind: 'Alive',
+            pid: 3,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+      ],
+    })
+
+    vi.mocked(useEditorBuffer).mockReturnValue({
+      filePath: 'src/current.ts',
+      originalContent: 'original',
+      currentContent: 'edits',
+      isDirty: true,
+      isLoading: false,
+      openFile: vi.fn().mockResolvedValue(undefined),
+      saveFile: vi.fn().mockResolvedValue(undefined),
+      updateContent: vi.fn(),
+      hasUnsavedChanges,
+      releaseScope: vi.fn(),
+    })
+
+    render(<WorkspaceView />)
+
+    await screen.findByRole('tab', { name: 'first' })
+
+    await user.click(screen.getByRole('button', { name: 'Close first' }))
+    await user.click(screen.getByRole('button', { name: 'Discard' }))
+
+    await waitFor(() => {
+      expect(screen.getByRole('tab', { name: 'third' })).toHaveAttribute(
+        'aria-selected',
+        'true'
+      )
+    })
+    expect(screen.queryByRole('tab', { name: 'hidden-ended' })).toBeNull()
   })
 
   test('releases an editor scope after a clean session is removed', async () => {
