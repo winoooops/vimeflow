@@ -248,19 +248,55 @@ describe('usePushWorkspaceGrouping', () => {
     // The first push is in flight.
     await waitFor(() => expect(setWorkspaceSessions).toHaveBeenCalledTimes(1))
 
-    // Reject the in-flight IPC.
+    // Reject the in-flight IPC and let the catch's microtask drain. The
+    // catch restores `pending` to the failed snapshot and breaks out of
+    // the drain loop (cycle 6: no tight-loop retry).
     firstCallReject?.(new Error('sidecar crashed'))
+    await new Promise((resolve) => setTimeout(resolve, 0))
 
-    // Trigger another `sessions` change (equivalent shape but a new array
-    // reference) so the effect re-runs and calls `drain` again. Without
-    // the cycle-5 fix `pending` would be null and no second IPC fires;
-    // with the fix the failed snapshot is restored and the next drain
-    // pushes it through.
+    // The next `sessions` change re-enters the effect, which calls drain
+    // again. With the cycle-5 restore in place, the snapshot survives and
+    // the second IPC eventually fires; without it, the first failure
+    // would have permanently lost the snapshot.
     rerender({ sessions: [...initial] as readonly Session[] })
 
     await waitFor(() => {
       expect(setWorkspaceSessions).toHaveBeenCalledTimes(2)
     })
+  })
+
+  // PR #290 cycle 6: Claude MEDIUM + Codex P2 — the cycle-5 retry restore
+  // re-entered the `while` loop on the same drain call. If the IPC keeps
+  // failing (sidecar down), the loop spun the microtask queue with no
+  // backoff. Adding a `return` after the restore exits the drain on
+  // failure; the next `sessions` change re-enters via the effect.
+  test('does not tight-loop when the IPC keeps failing', async () => {
+    // setWorkspaceSessions ALWAYS rejects. Without the cycle-6 return the
+    // drain would call it repeatedly in a tight loop until React unmounts.
+    const setWorkspaceSessions = vi
+      .fn()
+      .mockRejectedValue(new Error('sidecar down'))
+    const service = { setWorkspaceSessions } as unknown as ITerminalService
+
+    renderHook(() =>
+      usePushWorkspaceGrouping({
+        service,
+        loading: false,
+        sessions: [
+          session('ws-1', 'single', [
+            pane({ id: 'p0', ptyId: 'pty-a', active: true }),
+          ]),
+        ],
+      })
+    )
+
+    // Give the drain ample time to react. Even with the failure, only
+    // ONE IPC call should fire on this effect run; the drain returns
+    // after restoring `pending` and the next entry comes from a future
+    // sessions change (not from a tight-loop retry).
+    await waitFor(() => expect(setWorkspaceSessions).toHaveBeenCalledTimes(1))
+    await new Promise((resolve) => setTimeout(resolve, 30))
+    expect(setWorkspaceSessions).toHaveBeenCalledTimes(1)
   })
 
   // Latest-wins coalesce: when several sessions changes pile up during one

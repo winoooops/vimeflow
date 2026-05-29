@@ -142,6 +142,15 @@ export const usePushWorkspaceGrouping = ({
           // null/undefined, so a concurrent effect re-run that populated
           // `pending` with a newer snapshot wins ("latest wins").
           queueRef.current.pending ??= next
+
+          // Break out of the drain loop instead of immediately retrying.
+          // If the IPC keeps failing (sidecar down, etc.), looping here
+          // would saturate the microtask queue and flood the log. The
+          // restored `pending` will be retried on the next `sessions`
+          // change (which re-enters drain via the effect), giving the
+          // backend time to recover. `inFlight` is cleared by the
+          // `finally` below so the next entry isn't blocked.
+          return
         } finally {
           queueRef.current.inFlight = false
         }
