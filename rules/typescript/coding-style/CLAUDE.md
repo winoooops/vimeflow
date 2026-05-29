@@ -86,7 +86,14 @@ type Bucket =
   | { kind: 'ungrouped'; entries: SessionInfo[] }
 
 if (bucket.kind === 'grouped') {
-  bucket.entries.push(entry) // entries: GroupedEntry[], no cast
+  // Narrows to GroupedEntry[]; no cast needed.
+  // Note: this rebuild is immutable per the Immutability section below
+  // (`.push` is forbidden everywhere, including discriminated-union
+  // examples).
+  const updated: Bucket = {
+    ...bucket,
+    entries: [...bucket.entries, entry],
+  }
 }
 ```
 
