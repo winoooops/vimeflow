@@ -55,7 +55,11 @@ export const InlineCommentDemo = (): ReactElement => {
   const feedback = useFeedbackBatch()
   const [target, setTarget] = useState<ComposerTarget | null>(null)
 
-  const realAnnotations = feedback.annotationsForFile(DEMO_CWD, DEMO_FILE)
+  const realAnnotations = feedback.annotationsForFile(
+    DEMO_CWD,
+    DEMO_FILE,
+    false
+  )
 
   // Merge a transient draft annotation in only while composing a NEW comment,
   // so the composer renders inline below the target line. Editing reuses the
@@ -84,11 +88,17 @@ export const InlineCommentDemo = (): ReactElement => {
         }
 
         if (current.editId !== undefined) {
-          feedback.updateAnnotation(DEMO_CWD, DEMO_FILE, current.editId, {
-            text,
-          })
+          feedback.updateAnnotation(
+            DEMO_CWD,
+            DEMO_FILE,
+            false,
+            current.editId,
+            {
+              text,
+            }
+          )
         } else {
-          feedback.addAnnotation(DEMO_CWD, DEMO_FILE, {
+          feedback.addAnnotation(DEMO_CWD, DEMO_FILE, false, {
             side: current.side,
             lineNumber: current.lineNumber,
             metadata: {
@@ -194,6 +204,7 @@ export const InlineCommentDemo = (): ReactElement => {
                   feedback.removeAnnotation(
                     DEMO_CWD,
                     DEMO_FILE,
+                    false,
                     annotation.metadata.id
                   )
                 }

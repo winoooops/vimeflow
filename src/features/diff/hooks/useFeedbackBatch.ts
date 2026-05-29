@@ -9,7 +9,7 @@ export interface ReviewComment {
 }
 
 export type FeedbackBatch = Map<
-  /** batchKey: `${cwd}::${filePath}` */
+  /** batchKey: `${cwd}::${filePath}::${staged ? 'staged' : 'unstaged'}` */
   string,
   DiffLineAnnotation<ReviewComment>[]
 >
@@ -29,19 +29,27 @@ export interface UseFeedbackBatchReturn {
   annotationsForFile: (
     cwd: string,
     filePath: string,
+    staged: boolean
   ) => DiffLineAnnotation<ReviewComment>[]
   addAnnotation: (
     cwd: string,
     filePath: string,
-    annotation: DiffLineAnnotation<ReviewComment>,
+    staged: boolean,
+    annotation: DiffLineAnnotation<ReviewComment>
   ) => 'ok' | 'cap-reached'
   updateAnnotation: (
     cwd: string,
     filePath: string,
+    staged: boolean,
     id: string,
-    patch: Partial<ReviewComment>,
+    patch: Partial<ReviewComment>
   ) => void
-  removeAnnotation: (cwd: string, filePath: string, id: string) => void
+  removeAnnotation: (
+    cwd: string,
+    filePath: string,
+    staged: boolean,
+    id: string
+  ) => void
   clearBatch: () => void
   totalAnnotations: () => number
 }
@@ -59,24 +67,29 @@ export const useFeedbackBatch = (): UseFeedbackBatchReturn => {
   }, [batch])
 
   const annotationsForFile = useCallback(
-    (cwd: string, filePath: string): DiffLineAnnotation<ReviewComment>[] => {
-      const key = `${cwd}::${filePath}`
+    (
+      cwd: string,
+      filePath: string,
+      staged: boolean
+    ): DiffLineAnnotation<ReviewComment>[] => {
+      const key = `${cwd}::${filePath}::${staged ? 'staged' : 'unstaged'}`
 
       return batch.get(key) ?? EMPTY
     },
-    [batch],
+    [batch]
   )
 
   const addAnnotation = useCallback(
     (
       cwd: string,
       filePath: string,
-      annotation: DiffLineAnnotation<ReviewComment>,
+      staged: boolean,
+      annotation: DiffLineAnnotation<ReviewComment>
     ): 'ok' | 'cap-reached' => {
       if (totalAnnotations() >= SOFT_CAP) {
         return 'cap-reached'
       }
-      const key = `${cwd}::${filePath}`
+      const key = `${cwd}::${filePath}::${staged ? 'staged' : 'unstaged'}`
       setBatch((prev) => {
         const next = new Map(prev)
         const existing = next.get(key) ?? []
@@ -87,26 +100,33 @@ export const useFeedbackBatch = (): UseFeedbackBatchReturn => {
 
       return 'ok'
     },
-    [totalAnnotations],
+    [totalAnnotations]
   )
 
   const updateAnnotation = useCallback(
     (
       cwd: string,
       filePath: string,
+      staged: boolean,
       id: string,
-      patch: Partial<ReviewComment>,
+      patch: Partial<ReviewComment>
     ): void => {
-      const key = `${cwd}::${filePath}`
+      const key = `${cwd}::${filePath}::${staged ? 'staged' : 'unstaged'}`
       setBatch((prev) => {
         const list = prev.get(key)
-        if (!list) {return prev}
+        if (!list) {
+          return prev
+        }
         const idx = list.findIndex((a) => a.metadata.id === id)
-        if (idx === -1) {return prev}
+        if (idx === -1) {
+          return prev
+        }
         const next = new Map(prev)
 
         const updated = list.map((a, i) => {
-          if (i !== idx) {return a}
+          if (i !== idx) {
+            return a
+          }
 
           return {
             ...a,
@@ -118,15 +138,17 @@ export const useFeedbackBatch = (): UseFeedbackBatchReturn => {
         return next
       })
     },
-    [],
+    []
   )
 
   const removeAnnotation = useCallback(
-    (cwd: string, filePath: string, id: string): void => {
-      const key = `${cwd}::${filePath}`
+    (cwd: string, filePath: string, staged: boolean, id: string): void => {
+      const key = `${cwd}::${filePath}::${staged ? 'staged' : 'unstaged'}`
       setBatch((prev) => {
         const list = prev.get(key)
-        if (!list) {return prev}
+        if (!list) {
+          return prev
+        }
         const filtered = list.filter((a) => a.metadata.id !== id)
         const next = new Map(prev)
         if (filtered.length === 0) {
@@ -138,7 +160,7 @@ export const useFeedbackBatch = (): UseFeedbackBatchReturn => {
         return next
       })
     },
-    [],
+    []
   )
 
   const clearBatch = useCallback((): void => {

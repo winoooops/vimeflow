@@ -298,6 +298,8 @@ export const DiffPanelContent = ({
   const [composerTarget, setComposerTarget] = useState<{
     lineNumber: number
     side: AnnotationSide
+    filePath: string
+    staged: boolean
     editId?: string
   } | null>(null)
 
@@ -307,7 +309,8 @@ export const DiffPanelContent = ({
   // Real annotations for the currently selected file.
   const realAnnotations = feedback.annotationsForFile(
     cwd,
-    selectedFilePath ?? ''
+    selectedFilePath ?? '',
+    selectedFileStaged
   )
 
   // Merge a transient draft annotation in only while composing a NEW comment,
@@ -331,43 +334,65 @@ export const DiffPanelContent = ({
 
   const confirmComposer = useCallback(
     (text: string): void => {
-      setComposerTarget((current) => {
-        if (current === null) {
-          return null
-        }
+      if (composerTarget === null) {
+        return
+      }
 
-        if (selectedFilePath === null) {
-          return null
-        }
+      if (selectedFilePath === null) {
+        return
+      }
 
-        if (current.editId !== undefined) {
-          feedback.updateAnnotation(cwd, selectedFilePath, current.editId, {
-            text,
-          })
-        } else {
-          const result = feedback.addAnnotation(cwd, selectedFilePath, {
-            side: current.side,
-            lineNumber: current.lineNumber,
+      if (
+        composerTarget.filePath !== selectedFilePath ||
+        composerTarget.staged !== selectedFileStaged
+      ) {
+        setComposerTarget(null)
+
+        return
+      }
+
+      if (composerTarget.editId !== undefined) {
+        feedback.updateAnnotation(
+          cwd,
+          selectedFilePath,
+          selectedFileStaged,
+          composerTarget.editId,
+          { text }
+        )
+        setComposerTarget(null)
+      } else {
+        const result = feedback.addAnnotation(
+          cwd,
+          selectedFilePath,
+          selectedFileStaged,
+          {
+            side: composerTarget.side,
+            lineNumber: composerTarget.lineNumber,
             metadata: {
               id: nextFeedbackCommentId(),
               text,
               author: 'self',
               createdAt: Date.now(),
             },
-          })
-          if (result === 'cap-reached') {
-            notifyInfo(
-              'Feedback limit reached (50 comments). Finish or discard before adding more.'
-            )
-
-            return current
           }
+        )
+        if (result === 'cap-reached') {
+          notifyInfo(
+            'Feedback limit reached (50 comments). Finish or discard before adding more.'
+          )
+        } else {
+          setComposerTarget(null)
         }
-
-        return null
-      })
+      }
     },
-    [feedback, cwd, selectedFilePath, notifyInfo]
+    [
+      composerTarget,
+      selectedFilePath,
+      selectedFileStaged,
+      feedback,
+      cwd,
+      notifyInfo,
+    ]
   )
 
   const closeComposer = useCallback((): void => {
@@ -379,9 +404,11 @@ export const DiffPanelContent = ({
       void (async (): Promise<void> => {
         const entries: DispatchEntry[] = []
         for (const [key, annotations] of feedback.batch) {
-          const sep = key.indexOf('::')
-          const entryCwd = key.slice(0, sep)
-          const filePath = key.slice(sep + 2)
+          const firstSep = key.indexOf('::')
+          const entryCwd = key.slice(0, firstSep)
+          const remainder = key.slice(firstSep + 2)
+          const lastSep = remainder.lastIndexOf('::')
+          const filePath = remainder.slice(0, lastSep)
           entries.push({ cwd: entryCwd, filePath, annotations })
         }
 
@@ -419,6 +446,12 @@ export const DiffPanelContent = ({
   // how useFileDiff and selectedFileEntry are driven.
   useEffect(() => {
     setFocusedHunkIndex(0)
+  }, [selectedFilePath, selectedFileStaged])
+
+  // Clear composer when the selected file changes so a draft opened on one
+  // file is not accidentally submitted against another.
+  useEffect(() => {
+    setComposerTarget(null)
   }, [selectedFilePath, selectedFileStaged])
 
   const hunkCount = response?.fileDiff.hunks.length ?? 0
@@ -1056,10 +1089,12 @@ export const DiffPanelContent = ({
                     className="flex h-5 w-5 items-center justify-center rounded bg-primary/80 text-on-primary hover:bg-primary"
                     onClick={(): void => {
                       const hovered = getHoveredLine()
-                      if (hovered) {
+                      if (hovered && selectedFilePath !== null) {
                         setComposerTarget({
                           lineNumber: hovered.lineNumber,
                           side: hovered.side,
+                          filePath: selectedFilePath,
+                          staged: selectedFileStaged,
                         })
                       }
                     }}
@@ -1100,6 +1135,8 @@ export const DiffPanelContent = ({
                         setComposerTarget({
                           lineNumber: annotation.lineNumber,
                           side: annotation.side,
+                          filePath: selectedFilePath ?? '',
+                          staged: selectedFileStaged,
                           editId: annotation.metadata.id,
                         })
                       }
@@ -1107,6 +1144,7 @@ export const DiffPanelContent = ({
                         feedback.removeAnnotation(
                           cwd,
                           selectedFilePath ?? '',
+                          selectedFileStaged,
                           annotation.metadata.id
                         )
                       }

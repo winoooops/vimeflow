@@ -17,10 +17,15 @@ export const formatFeedbackPayload = (entries: DispatchEntry[]): string => {
 
   const body = entries
     .flatMap((entry) =>
-      entry.annotations.map(
-        (a) =>
-          `> ${entry.filePath}:${a.lineNumber} (${a.side})\n> ─ ${a.metadata.text}\n>`
-      )
+      entry.annotations.map((a) => {
+        const lines = a.metadata.text.split('\n').map((line) => `> ─ ${line}`)
+
+        return [
+          `> ${entry.filePath}:${a.lineNumber} (${a.side})`,
+          ...lines,
+          '>',
+        ].join('\n')
+      })
     )
     .join('\n')
 

@@ -59,6 +59,24 @@ test('3 comments across 2 files -> header says plural counts and body has 3 entr
   expect(payload).toContain('> src/main.tsx:3 (additions)')
 })
 
+test('multi-line comment prefixes every line', () => {
+  const entries: DispatchEntry[] = [
+    {
+      cwd: '/repo',
+      filePath: 'src/App.tsx',
+      annotations: [
+        makeAnnotation(5, 'additions', 'Line one\nLine two\nLine three'),
+      ],
+    },
+  ]
+  const payload = formatFeedbackPayload(entries)
+
+  expect(payload).toContain('> src/App.tsx:5 (additions)')
+  expect(payload).toContain('> ─ Line one')
+  expect(payload).toContain('> ─ Line two')
+  expect(payload).toContain('> ─ Line three')
+})
+
 test('dispatchFeedbackBatch calls writePty once with paste-bracketed payload', async () => {
   const writePty = vi.fn().mockResolvedValue(undefined)
 
