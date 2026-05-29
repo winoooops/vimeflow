@@ -54,9 +54,9 @@ test('3 comments across 2 files -> header says plural counts and body has 3 entr
   const payload = formatFeedbackPayload(entries)
 
   expect(payload).toContain('3 comments across 2 files')
-  expect(payload).toContain('> src/App.tsx:5 (additions)')
-  expect(payload).toContain('> src/App.tsx:10 (deletions)')
-  expect(payload).toContain('> src/main.tsx:3 (additions)')
+  expect(payload).toContain('> /repo/src/App.tsx:5 (additions)')
+  expect(payload).toContain('> /repo/src/App.tsx:10 (deletions)')
+  expect(payload).toContain('> /repo/src/main.tsx:3 (additions)')
 })
 
 test('multi-line comment prefixes every line', () => {
@@ -71,10 +71,24 @@ test('multi-line comment prefixes every line', () => {
   ]
   const payload = formatFeedbackPayload(entries)
 
-  expect(payload).toContain('> src/App.tsx:5 (additions)')
+  expect(payload).toContain('> /repo/src/App.tsx:5 (additions)')
   expect(payload).toContain('> ─ Line one')
   expect(payload).toContain('> ─ Line two')
   expect(payload).toContain('> ─ Line three')
+})
+
+test('avoids double slash when cwd ends with /', () => {
+  const entries: DispatchEntry[] = [
+    {
+      cwd: '/repo/',
+      filePath: 'src/App.tsx',
+      annotations: [makeAnnotation(5, 'additions', 'Nice work')],
+    },
+  ]
+  const payload = formatFeedbackPayload(entries)
+
+  expect(payload).toContain('> /repo/src/App.tsx:5 (additions)')
+  expect(payload).not.toContain('//')
 })
 
 test('dispatchFeedbackBatch calls writePty once with paste-bracketed payload', async () => {

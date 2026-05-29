@@ -1030,7 +1030,9 @@ export const DiffPanelContent = ({
               result={resolveCandidatePanes({
                 allPanes: feedbackDispatch?.candidates ?? [],
                 diffCwd: cwd,
-                focusedPaneId: null,
+                focusedPaneId:
+                  feedbackDispatch?.candidates.find((c) => c.isFocused)
+                    ?.paneId ?? null,
               })}
               commentCount={feedback.totalAnnotations()}
               fileCount={feedback.batch.size}

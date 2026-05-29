@@ -10,6 +10,12 @@ export interface DispatchEntry {
   annotations: DiffLineAnnotation<ReviewComment>[]
 }
 
+const joinPath = (cwd: string, filePath: string): string => {
+  const base = cwd.endsWith('/') ? cwd.slice(0, -1) : cwd
+
+  return `${base}/${filePath}`
+}
+
 export const formatFeedbackPayload = (entries: DispatchEntry[]): string => {
   const totalCount = entries.reduce((s, e) => s + e.annotations.length, 0)
   const fileCount = entries.length
@@ -21,7 +27,7 @@ export const formatFeedbackPayload = (entries: DispatchEntry[]): string => {
         const lines = a.metadata.text.split('\n').map((line) => `> ─ ${line}`)
 
         return [
-          `> ${entry.filePath}:${a.lineNumber} (${a.side})`,
+          `> ${joinPath(entry.cwd, entry.filePath)}:${a.lineNumber} (${a.side})`,
           ...lines,
           '>',
         ].join('\n')
