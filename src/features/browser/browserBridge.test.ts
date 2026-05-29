@@ -1,11 +1,15 @@
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import {
+  activateBrowserPaneTab,
+  closeBrowserPaneTab,
   createBrowserPane,
   destroyBrowserPane,
   focusBrowserPane,
   getBrowserCdpInfo,
   navigateBrowserPane,
+  newBrowserPaneTab,
   onBrowserPaneFocus,
+  onBrowserPaneTabsChange,
   onBrowserPaneUrlChange,
   setBrowserPaneBounds,
 } from './browserBridge'
@@ -39,6 +43,14 @@ describe('browserBridge', () => {
       url: request.initialUrl,
       title: null,
       partition: 'persist:vimeflow-browser:proj-1:pty-1',
+      tabs: [
+        {
+          id: 'tab-0',
+          url: request.initialUrl,
+          title: null,
+          active: true,
+        },
+      ],
     })
   })
 
@@ -66,17 +78,29 @@ describe('browserBridge', () => {
   test('delegates bridge calls to window.vimeflow.browserPane', async () => {
     const unlistenFocus = vi.fn()
     const unlistenUrl = vi.fn()
+    const unlistenTabs = vi.fn()
 
     const bridge: BrowserPaneBridge = {
       createPane: vi.fn().mockResolvedValue({
         url: 'https://created.example/',
         title: 'Created',
         partition: 'persist:vimeflow-browser:proj-1:pty-1',
+        tabs: [
+          {
+            id: 'tab-0',
+            url: 'https://created.example/',
+            title: 'Created',
+            active: true,
+          },
+        ],
       }),
       setBounds: vi.fn().mockResolvedValue(undefined),
       navigate: vi.fn().mockResolvedValue(undefined),
+      newTab: vi.fn().mockResolvedValue(undefined),
       destroyPane: vi.fn().mockResolvedValue(undefined),
       focusPane: vi.fn().mockResolvedValue(undefined),
+      activateTab: vi.fn().mockResolvedValue(undefined),
+      closeTab: vi.fn().mockResolvedValue(undefined),
       getCdpInfo: vi.fn().mockResolvedValue({
         url: 'http://127.0.0.1:9223',
         token: 'token',
@@ -85,6 +109,7 @@ describe('browserBridge', () => {
       }),
       onFocus: vi.fn(() => unlistenFocus),
       onUrlChange: vi.fn(() => unlistenUrl),
+      onTabsChange: vi.fn(() => unlistenTabs),
     }
 
     browserWindow().vimeflow = {
@@ -110,8 +135,26 @@ describe('browserBridge', () => {
       url: 'https://next.example/',
     })
 
+    await newBrowserPaneTab({
+      sessionId: 'pty-1',
+      paneId: 'p1',
+      url: 'https://new.example/',
+    })
+
     await destroyBrowserPane({ sessionId: 'pty-1', paneId: 'p1' })
     await focusBrowserPane({ sessionId: 'pty-1', paneId: 'p1' })
+    await activateBrowserPaneTab({
+      sessionId: 'pty-1',
+      paneId: 'p1',
+      tabId: 'tab-1',
+    })
+
+    await closeBrowserPaneTab({
+      sessionId: 'pty-1',
+      paneId: 'p1',
+      tabId: 'tab-1',
+    })
+
     await expect(
       getBrowserCdpInfo({ sessionId: 'pty-1', paneId: 'p1' })
     ).resolves.toMatchObject({
@@ -120,6 +163,7 @@ describe('browserBridge', () => {
 
     const focusCleanup = onBrowserPaneFocus(() => undefined)
     const urlCleanup = onBrowserPaneUrlChange(() => undefined)
+    const tabsCleanup = onBrowserPaneTabsChange(() => undefined)
 
     expect(bridge.createPane).toHaveBeenCalledWith(request)
     expect(bridge.setBounds).toHaveBeenCalledOnce()
@@ -127,6 +171,12 @@ describe('browserBridge', () => {
       sessionId: 'pty-1',
       paneId: 'p1',
       url: 'https://next.example/',
+    })
+
+    expect(bridge.newTab).toHaveBeenCalledWith({
+      sessionId: 'pty-1',
+      paneId: 'p1',
+      url: 'https://new.example/',
     })
 
     expect(bridge.destroyPane).toHaveBeenCalledWith({
@@ -139,11 +189,24 @@ describe('browserBridge', () => {
       paneId: 'p1',
     })
 
+    expect(bridge.activateTab).toHaveBeenCalledWith({
+      sessionId: 'pty-1',
+      paneId: 'p1',
+      tabId: 'tab-1',
+    })
+
+    expect(bridge.closeTab).toHaveBeenCalledWith({
+      sessionId: 'pty-1',
+      paneId: 'p1',
+      tabId: 'tab-1',
+    })
+
     expect(bridge.getCdpInfo).toHaveBeenCalledWith({
       sessionId: 'pty-1',
       paneId: 'p1',
     })
     expect(focusCleanup).toBe(unlistenFocus)
     expect(urlCleanup).toBe(unlistenUrl)
+    expect(tabsCleanup).toBe(unlistenTabs)
   })
 })

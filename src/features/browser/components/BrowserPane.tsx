@@ -12,15 +12,19 @@ import {
 } from 'react'
 import type { Pane, Session } from '../../sessions/types'
 import {
+  activateBrowserPaneTab,
+  closeBrowserPaneTab,
   createBrowserPane,
   focusBrowserPane,
   getBrowserCdpInfo,
   navigateBrowserPane,
+  newBrowserPaneTab,
   onBrowserPaneFocus,
+  onBrowserPaneTabsChange,
   onBrowserPaneUrlChange,
   setBrowserPaneBounds,
 } from '../browserBridge'
-import type { BrowserCdpInfo } from '../types'
+import type { BrowserCdpInfo, BrowserPaneTab } from '../types'
 
 // cspell:ignore cdp WebContentsView
 const DEFAULT_BROWSER_URL = 'https://www.youtube.com/'
@@ -87,7 +91,12 @@ export const BrowserPane = ({
   const lastBoundsKeyRef = useRef<string | null>(null)
   const [address, setAddress] = useState(url)
   const [cdpInfo, setCdpInfo] = useState<BrowserCdpInfo | null>(null)
+
+  const [tabs, setTabs] = useState<BrowserPaneTab[]>([
+    { id: 'tab-0', url, title: null, active: true },
+  ])
   const browserSessionId = browserSessionIdForSession(session)
+  const activeTab = tabs.find((tab) => tab.active) ?? tabs[0]
 
   const paneIds = useMemo(
     () => session.panes.map((sessionPane) => sessionPane.id),
@@ -180,6 +189,7 @@ export const BrowserPane = ({
 
         nativePaneReadyRef.current = true
         setAddress(result.url)
+        setTabs(result.tabs)
         onUrlChange?.(session.id, pane.id, result.url)
 
         const info = await getBrowserCdpInfo({
@@ -299,8 +309,26 @@ export const BrowserPane = ({
           return
         }
 
+        setTabs(event.tabs)
         setAddress(event.url)
         onUrlChange?.(session.id, pane.id, event.url)
+      }),
+    [browserSessionId, onUrlChange, pane.id, session.id]
+  )
+
+  useEffect(
+    () =>
+      onBrowserPaneTabsChange((event) => {
+        if (event.sessionId !== browserSessionId || event.paneId !== pane.id) {
+          return
+        }
+
+        setTabs(event.tabs)
+
+        const nextActiveTab =
+          event.tabs.find((tab) => tab.active) ?? event.tabs[0]
+        setAddress(nextActiveTab.url)
+        onUrlChange?.(session.id, pane.id, nextActiveTab.url)
       }),
     [browserSessionId, onUrlChange, pane.id, session.id]
   )
@@ -315,6 +343,37 @@ export const BrowserPane = ({
       url: nextUrl,
     })
   }
+
+  const handleActivateTab = useCallback(
+    (tabId: string): void => {
+      void activateBrowserPaneTab({
+        sessionId: browserSessionId,
+        paneId: pane.id,
+        tabId,
+      })
+    },
+    [browserSessionId, pane.id]
+  )
+
+  const handleCloseTab = useCallback(
+    (event: MouseEvent<HTMLButtonElement>, tabId: string): void => {
+      event.stopPropagation()
+      void closeBrowserPaneTab({
+        sessionId: browserSessionId,
+        paneId: pane.id,
+        tabId,
+      })
+    },
+    [browserSessionId, pane.id]
+  )
+
+  const handleNewTab = useCallback((): void => {
+    void newBrowserPaneTab({
+      sessionId: browserSessionId,
+      paneId: pane.id,
+      url: DEFAULT_BROWSER_URL,
+    })
+  }, [browserSessionId, pane.id])
 
   const handleChromePointerDownCapture = useCallback(
     (event: PointerEvent<HTMLDivElement>): void => {
@@ -350,6 +409,53 @@ export const BrowserPane = ({
         onPointerDownCapture={handleChromePointerDownCapture}
         onClick={handleChromeClick}
       >
+        {tabs.length > 0 ? (
+          <div
+            className="flex max-w-[42%] shrink-0 items-center gap-1 overflow-x-auto"
+            role="tablist"
+            aria-label="browser tabs"
+          >
+            {tabs.map((tab) => (
+              <div
+                key={tab.id}
+                className={`flex max-w-[190px] items-center overflow-hidden rounded-md transition ${
+                  tab.active
+                    ? 'bg-primary/15 text-primary'
+                    : 'bg-white/[0.04] text-on-surface-muted hover:bg-white/[0.08] hover:text-on-surface'
+                }`}
+              >
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={tab.active}
+                  aria-label={`browser tab ${tab.title ?? tab.url}`}
+                  onClick={(): void => handleActivateTab(tab.id)}
+                  className="min-w-0 flex-1 truncate px-2 py-1.5 text-left font-mono text-[10.5px] focus:outline-none focus:ring-2 focus:ring-primary/45"
+                >
+                  {tab.title ?? tab.url}
+                </button>
+                {tabs.length > 1 ? (
+                  <button
+                    type="button"
+                    aria-label={`close browser tab ${tab.title ?? tab.url}`}
+                    onClick={(event): void => handleCloseTab(event, tab.id)}
+                    className="px-1.5 py-1 font-mono text-[10px] opacity-70 hover:bg-white/[0.08] hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-primary/45"
+                  >
+                    x
+                  </button>
+                ) : null}
+              </div>
+            ))}
+            <button
+              type="button"
+              aria-label="new browser tab"
+              onClick={handleNewTab}
+              className="rounded-md bg-white/[0.04] px-2 py-1.5 font-mono text-[12px] text-on-surface-muted transition hover:bg-white/[0.08] hover:text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/45"
+            >
+              +
+            </button>
+          </div>
+        ) : null}
         <form className="flex min-w-0 flex-1 gap-2" onSubmit={handleSubmit}>
           <input
             aria-label="browser address"
@@ -364,6 +470,9 @@ export const BrowserPane = ({
             Go
           </button>
         </form>
+        <span className="hidden max-w-[160px] truncate font-mono text-[10px] text-on-surface-muted lg:inline">
+          {activeTab.title ?? activeTab.url}
+        </span>
         {onClose ? (
           <button
             type="button"

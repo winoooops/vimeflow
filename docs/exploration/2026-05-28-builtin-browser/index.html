@@ -756,6 +756,13 @@
                 music/video sites.
               </li>
               <li>
+                Treat browser tabs as first-class pane state. Page
+                <code>window.open</code> and target-blank OAuth/login flows
+                should create Vimeflow-owned tabs in the pane chrome, not
+                floating modal dialogs, while preserving the same persistent
+                partition.
+              </li>
+              <li>
                 Keep that persistence app-scoped rather than
                 system-Chrome-scoped: no imported Chrome profile, no Chrome
                 extensions, no Google account sync, and no defaultSession
@@ -785,6 +792,10 @@
                 require <code>media</code>; keep camera/microphone capture
                 denied unless a future explicit capture prompt is added. Handle
                 <code>mediaKeySystem</code> separately for EME/Widevine checks.
+                Passkey/WebAuthn parity is deferred from this spike because
+                Google passkeys depend on platform authenticator and browser
+                distribution behavior that stock Electron does not match to
+                Chrome by default.
               </li>
             </ul>
           </div>
@@ -810,6 +821,14 @@
           distribution such as a Castlabs-style build, accept a non-DRM playback
           spike, or keep Widevine evidence delegated to external Chrome while
           Vimeflow implements the built-in non-DRM browser pane.
+        </div>
+        <div class="callout">
+          <strong>Passkeys deferred.</strong>
+          Google passkey parity is not a launch blocker for the built-in browser
+          spike. The browser should keep ordinary authenticated sessions durable
+          and let users choose non-passkey fallback flows such as "Try another
+          way"; signed platform WebAuthn support can be revisited as a separate
+          distribution decision.
         </div>
       </section>
 
@@ -856,12 +875,19 @@
             cache where Chromium allows.
           </li>
           <li>
-            <strong>Popup login support:</strong> allow bounded
-            <code>window.open</code> login windows for <code>http:</code>,
-            <code>https:</code>, and OAuth <code>about:blank</code> bootstrap
-            popups. These windows must use the same Vimeflow partition as the
-            parent pane, keep Node/preload disabled, and never use the system
-            Chrome profile.
+            <strong>Multi-tab login support:</strong> convert
+            <code>window.open</code>, target-blank, and OAuth popup requests
+            into Vimeflow-owned browser tabs inside the pane. Tabs must use the
+            same persistent partition as the opener, so GitHub, Google, and
+            SaaS OAuth flows can complete without leaking into system Chrome or
+            hiding inside floating dialogs.
+          </li>
+          <li>
+            <strong>Passkeys deferred:</strong> do not block the built-in
+            browser on Google passkey parity. Electron can be configured for
+            platform WebAuthn where the signed distribution supports it, but the
+            official requirement for this spike is ordinary authenticated cache
+            reuse plus a visible fallback path such as "Try another way".
           </li>
           <li>
             <strong>User controls:</strong> expose clear actions for
@@ -1021,8 +1047,8 @@ const exampleRegistration: AgentToolRegistration = {
           </li>
           <li>
             Preserve browser pane metadata and native WebContents records across
-            renderer refreshes, and share the same partition with popup login
-            windows so Google/GitHub/OAuth flows can complete without system
+            renderer refreshes, and share the same partition across built-in
+            tabs so Google/GitHub/OAuth flows can complete without system
             Chrome.
           </li>
           <li>
@@ -1088,6 +1114,12 @@ VIMEFLOW_BROWSER_TARGET_HINT=vimeflow-session:&lt;sessionId&gt;:pane:&lt;paneId&
           starts the renderer server only. Files are stored under
           <code>docs/exploration/2026-05-28-builtin-browser/media/</code>.
         </p>
+        <div class="callout good">
+          <strong>Manual follow-up, 2026-05-29:</strong> built-in multi-tab
+          behavior, persistent cache/session reuse, and video playback were
+          checked successfully. Passkey support is now explicitly deferred and
+          should not block the browser-pane recommendation.
+        </div>
         <ul>
           <li>
             <strong>Pane mount:</strong>
@@ -1128,6 +1160,12 @@ VIMEFLOW_BROWSER_TARGET_HINT=vimeflow-session:&lt;sessionId&gt;:pane:&lt;paneId&
             <code>com.widevine.alpha</code>. The accepted path is to keep the
             built-in non-DRM browser pane on stock Electron and require a
             CDM-capable distribution decision before claiming Widevine playback.
+          </li>
+          <li>
+            <strong>Passkeys:</strong> Google passkey prompts were tested during
+            the follow-up and are deferred. The built-in browser should allow
+            users to choose non-passkey sign-in methods; Chrome/Google Password
+            Manager parity is outside the current spike.
           </li>
         </ul>
         <ol>

@@ -6,7 +6,10 @@ import type {
   BrowserPaneCreateResult,
   BrowserPaneDestroyRequest,
   BrowserPaneFocusedEvent,
+  BrowserPaneNewTabRequest,
   BrowserPaneUrlChangedEvent,
+  BrowserPaneTabRequest,
+  BrowserPaneTabsChangedEvent,
   BrowserPaneNavigateRequest,
 } from './types'
 
@@ -33,6 +36,14 @@ export const createBrowserPane = async (
       url: request.initialUrl,
       title: null,
       partition: `persist:vimeflow-browser:${request.workspaceId}:${request.sessionId}`,
+      tabs: [
+        {
+          id: 'tab-0',
+          url: request.initialUrl,
+          title: null,
+          active: true,
+        },
+      ],
     }
   }
 
@@ -51,6 +62,12 @@ export const navigateBrowserPane = async (
   await bridge()?.navigate(request)
 }
 
+export const newBrowserPaneTab = async (
+  request: BrowserPaneNewTabRequest
+): Promise<void> => {
+  await bridge()?.newTab(request)
+}
+
 export const destroyBrowserPane = async (
   request: BrowserPaneDestroyRequest
 ): Promise<void> => {
@@ -67,6 +84,18 @@ export const getBrowserCdpInfo = async (
   request: BrowserPaneDestroyRequest
 ): Promise<BrowserCdpInfo | null> => bridge()?.getCdpInfo(request) ?? null
 
+export const activateBrowserPaneTab = async (
+  request: BrowserPaneTabRequest
+): Promise<void> => {
+  await bridge()?.activateTab(request)
+}
+
+export const closeBrowserPaneTab = async (
+  request: BrowserPaneTabRequest
+): Promise<void> => {
+  await bridge()?.closeTab(request)
+}
+
 export const onBrowserPaneFocus = (
   callback: (event: BrowserPaneFocusedEvent) => void
 ): (() => void) => bridge()?.onFocus(callback) ?? ((): void => undefined)
@@ -74,3 +103,7 @@ export const onBrowserPaneFocus = (
 export const onBrowserPaneUrlChange = (
   callback: (event: BrowserPaneUrlChangedEvent) => void
 ): (() => void) => bridge()?.onUrlChange(callback) ?? ((): void => undefined)
+
+export const onBrowserPaneTabsChange = (
+  callback: (event: BrowserPaneTabsChangedEvent) => void
+): (() => void) => bridge()?.onTabsChange(callback) ?? ((): void => undefined)

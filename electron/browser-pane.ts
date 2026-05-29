@@ -17,13 +17,17 @@ import {
 } from 'node:http'
 import type { Socket } from 'node:net'
 import {
+  BROWSER_PANE_ACTIVATE_TAB,
   BROWSER_PANE_CDP_INFO,
+  BROWSER_PANE_CLOSE_TAB,
   BROWSER_PANE_CREATE,
   BROWSER_PANE_DESTROY,
   BROWSER_PANE_FOCUS,
   BROWSER_PANE_FOCUSED,
   BROWSER_PANE_NAVIGATE,
+  BROWSER_PANE_NEW_TAB,
   BROWSER_PANE_SET_BOUNDS,
+  BROWSER_PANE_TABS_CHANGED,
   BROWSER_PANE_URL_CHANGED,
 } from './browser-pane-channels'
 import {
@@ -66,9 +70,19 @@ interface BrowserPaneNavigateRequest {
   url: string
 }
 
+interface BrowserPaneNewTabRequest {
+  sessionId: string
+  paneId: string
+  url?: string
+}
+
 interface BrowserPaneDestroyRequest {
   sessionId: string
   paneId: string
+}
+
+interface BrowserPaneTabRequest extends BrowserPaneDestroyRequest {
+  tabId: string
 }
 
 interface BrowserCdpInfoRequest {
@@ -91,6 +105,7 @@ interface BrowserPaneCreateResult {
   url: string
   title: string | null
   partition: string
+  tabs: BrowserPaneTabSnapshot[]
 }
 
 interface BrowserCdpInfo {
@@ -109,9 +124,26 @@ interface BrowserPaneRecord {
   windowId: number
   ownerWebContentsId: number
   view: WebContentsView
+  tabs: Map<string, BrowserPaneTabRecord>
+  activeTabId: string
+  nextTabIndex: number
+  lastBounds: BrowserPaneBounds
+  visible: boolean
   popupWindows: Set<BrowserWindow>
   windowClosedHandler: () => void
   shortcutContext: BrowserPaneShortcutContext | null
+}
+
+interface BrowserPaneTabRecord {
+  id: string
+  view: WebContentsView
+}
+
+interface BrowserPaneTabSnapshot {
+  id: string
+  url: string
+  title: string | null
+  active: boolean
 }
 
 interface CdpAttachment {
@@ -169,6 +201,9 @@ const normalizeUrl = (value: string): string => {
 
   return parsed.toString()
 }
+
+const normalizeTabUrl = (value: string): string =>
+  value === 'about:blank' ? value : normalizeUrl(value)
 
 const isAllowedBrowserNavigationUrl = (value: string): boolean => {
   if (value === 'about:blank') {
@@ -256,8 +291,20 @@ const isNavigateRequest = (
   isString(value.paneId) &&
   isString(value.url)
 
+const isNewTabRequest = (value: unknown): value is BrowserPaneNewTabRequest =>
+  isRecord(value) &&
+  isString(value.sessionId) &&
+  isString(value.paneId) &&
+  (value.url === undefined || isString(value.url))
+
 const isDestroyRequest = (value: unknown): value is BrowserPaneDestroyRequest =>
   isRecord(value) && isString(value.sessionId) && isString(value.paneId)
+
+const isTabRequest = (value: unknown): value is BrowserPaneTabRequest =>
+  isRecord(value) &&
+  isString(value.sessionId) &&
+  isString(value.paneId) &&
+  isString(value.tabId)
 
 const isCdpInfoRequest = (value: unknown): value is BrowserCdpInfoRequest =>
   isRecord(value) && isString(value.sessionId) && isString(value.paneId)
@@ -528,6 +575,10 @@ export class BrowserPaneController {
       this.navigate(payload)
     )
 
+    ipcMain.handle(BROWSER_PANE_NEW_TAB, (_event, payload) =>
+      this.newTab(payload)
+    )
+
     ipcMain.handle(BROWSER_PANE_DESTROY, (_event, payload) =>
       this.destroyPane(payload)
     )
@@ -539,15 +590,26 @@ export class BrowserPaneController {
     ipcMain.handle(BROWSER_PANE_CDP_INFO, (_event, payload) =>
       this.cdpInfo(payload)
     )
+
+    ipcMain.handle(BROWSER_PANE_ACTIVATE_TAB, (_event, payload) =>
+      this.activateTab(payload)
+    )
+
+    ipcMain.handle(BROWSER_PANE_CLOSE_TAB, (_event, payload) =>
+      this.closeTab(payload)
+    )
   }
 
   dispose(): void {
     ipcMain.removeHandler(BROWSER_PANE_CREATE)
     ipcMain.removeHandler(BROWSER_PANE_SET_BOUNDS)
     ipcMain.removeHandler(BROWSER_PANE_NAVIGATE)
+    ipcMain.removeHandler(BROWSER_PANE_NEW_TAB)
     ipcMain.removeHandler(BROWSER_PANE_DESTROY)
     ipcMain.removeHandler(BROWSER_PANE_FOCUS)
     ipcMain.removeHandler(BROWSER_PANE_CDP_INFO)
+    ipcMain.removeHandler(BROWSER_PANE_ACTIVATE_TAB)
+    ipcMain.removeHandler(BROWSER_PANE_CLOSE_TAB)
 
     for (const record of this.panes.values()) {
       this.removeRecord(record)
@@ -581,10 +643,11 @@ export class BrowserPaneController {
 
       return {
         url:
-          existing.view.webContents.getURL() ||
+          this.activeWebContents(existing)?.getURL() ??
           normalizeUrl(payload.initialUrl),
-        title: existing.view.webContents.getTitle() || null,
+        title: this.activeWebContents(existing)?.getTitle() ?? null,
         partition: existing.partition,
+        tabs: this.tabSnapshots(existing),
       }
     }
 
@@ -617,6 +680,11 @@ export class BrowserPaneController {
       windowId: win.id,
       ownerWebContentsId: event.sender.id,
       view,
+      tabs: new Map([['tab-0', { id: 'tab-0', view }]]),
+      activeTabId: 'tab-0',
+      nextTabIndex: 1,
+      lastBounds: { x: 0, y: 0, width: 0, height: 0 },
+      visible: false,
       popupWindows: new Set<BrowserWindow>(),
       windowClosedHandler: handleWindowClosed,
       shortcutContext: shortcutContextFromRequest(payload),
@@ -632,7 +700,13 @@ export class BrowserPaneController {
     view.webContents.setAudioMuted(false)
     this.installAppShortcutForwarding(record)
     view.webContents.on('destroyed', () => {
-      if (this.panes.get(key) === record) {
+      record.tabs.delete('tab-0')
+      if (record.activeTabId === 'tab-0') {
+        record.activeTabId = record.tabs.keys().next().value ?? 'tab-0'
+        this.applyRecordBounds(record)
+      }
+      this.emitTabsChanged(record)
+      if (this.panes.get(key) === record && record.tabs.size === 0) {
         this.panes.delete(key)
       }
     })
@@ -649,10 +723,11 @@ export class BrowserPaneController {
     })
 
     const emitUrlChanged = (): void => {
-      this.emitPaneUrlChanged(record)
+      this.emitPaneUrlChanged(record, 'tab-0')
     }
     view.webContents.on('did-navigate', emitUrlChanged)
     view.webContents.on('did-navigate-in-page', emitUrlChanged)
+    view.webContents.on('page-title-updated', emitUrlChanged)
 
     win.once('closed', record.windowClosedHandler)
 
@@ -664,7 +739,42 @@ export class BrowserPaneController {
       url: view.webContents.getURL() || initialUrl,
       title: view.webContents.getTitle() || null,
       partition,
+      tabs: this.tabSnapshots(record),
     }
+  }
+
+  private activeTab(record: BrowserPaneRecord): BrowserPaneTabRecord | null {
+    return (
+      record.tabs.get(record.activeTabId) ??
+      record.tabs.values().next().value ??
+      null
+    )
+  }
+
+  private activeWebContents(record: BrowserPaneRecord): WebContents | null {
+    return this.activeTab(record)?.view.webContents ?? null
+  }
+
+  private tabSnapshots(record: BrowserPaneRecord): BrowserPaneTabSnapshot[] {
+    return [...record.tabs.values()].map((tab) => ({
+      id: tab.id,
+      url: tab.view.webContents.getURL(),
+      title: tab.view.webContents.getTitle() || null,
+      active: tab.id === record.activeTabId,
+    }))
+  }
+
+  private emitTabsChanged(record: BrowserPaneRecord): void {
+    const win = BrowserWindow.fromId(record.windowId)
+    if (!win || win.isDestroyed() || win.webContents.isDestroyed()) {
+      return
+    }
+
+    win.webContents.send(BROWSER_PANE_TABS_CHANGED, {
+      sessionId: record.sessionId,
+      paneId: record.paneId,
+      tabs: this.tabSnapshots(record),
+    })
   }
 
   private installNavigationPolicy(webContents: WebContents): void {
@@ -687,56 +797,113 @@ export class BrowserPaneController {
     ses: ElectronSession,
     record: BrowserPaneRecord
   ): void {
-    webContents.setWindowOpenHandler(({ url }) => {
+    webContents.setWindowOpenHandler(({ url, disposition }) => {
       if (!isAllowedPopupUrl(url)) {
         return { action: 'deny' }
       }
 
-      return {
-        action: 'allow',
-        overrideBrowserWindowOptions: {
-          parent: win,
-          modal: false,
-          width: 520,
-          height: 720,
-          autoHideMenuBar: true,
-          backgroundColor: '#1e1e2e',
-          webPreferences: {
-            session: ses,
-            contextIsolation: true,
-            nodeIntegration: false,
-            sandbox: true,
-            webSecurity: true,
-          },
-        },
-      }
-    })
-
-    webContents.on('did-create-window', (popup) => {
-      record.popupWindows.add(popup)
-      popup.once('closed', () => {
-        record.popupWindows.delete(popup)
+      this.createOwnedTab(record, win, ses, {
+        url,
+        activate: disposition !== 'background-tab',
       })
-      this.installNavigationPolicy(popup.webContents)
-      this.installPopupPolicy(popup.webContents, win, ses, record)
+
+      return { action: 'deny' }
     })
   }
 
-  private emitPaneUrlChanged(record: BrowserPaneRecord): void {
+  private createOwnedTab(
+    record: BrowserPaneRecord,
+    win: BrowserWindow,
+    ses: ElectronSession,
+    options: { url: string; activate: boolean }
+  ): void {
+    if (win.isDestroyed()) {
+      return
+    }
+
+    const tabId = `tab-${record.nextTabIndex.toString()}`
+    record.nextTabIndex += 1
+
+    const view = new WebContentsView({
+      webPreferences: {
+        session: ses,
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: true,
+        webSecurity: true,
+      },
+    })
+
+    record.tabs.set(tabId, { id: tabId, view })
+    win.contentView.addChildView(view)
+    view.setBounds({ x: 0, y: 0, width: 0, height: 0 })
+    view.webContents.setAudioMuted(false)
+    this.installNavigationPolicy(view.webContents)
+    this.installPopupPolicy(view.webContents, win, ses, record)
+    this.installAppShortcutForwarding(record, view.webContents)
+
+    const emitUrlChanged = (): void => {
+      this.emitPaneUrlChanged(record, tabId)
+    }
+    view.webContents.on('did-navigate', emitUrlChanged)
+    view.webContents.on('did-navigate-in-page', emitUrlChanged)
+    view.webContents.on('page-title-updated', emitUrlChanged)
+    view.webContents.on('focus', () => {
+      if (win.webContents.isDestroyed()) {
+        return
+      }
+
+      win.webContents.send(BROWSER_PANE_FOCUSED, {
+        sessionId: record.sessionId,
+        paneId: record.paneId,
+      })
+    })
+
+    view.webContents.on('destroyed', () => {
+      record.tabs.delete(tabId)
+      if (record.activeTabId === tabId) {
+        record.activeTabId = record.tabs.keys().next().value ?? 'tab-0'
+        this.applyRecordBounds(record)
+      }
+      this.emitTabsChanged(record)
+    })
+
+    if (options.activate) {
+      this.setActiveTab(record, tabId, true)
+    } else {
+      this.emitTabsChanged(record)
+    }
+
+    void loadBrowserUrl(view.webContents, normalizeTabUrl(options.url))
+  }
+
+  private emitPaneUrlChanged(record: BrowserPaneRecord, tabId: string): void {
+    const tab = record.tabs.get(tabId)
     const win = BrowserWindow.fromId(record.windowId)
-    if (!win || win.isDestroyed() || win.webContents.isDestroyed()) {
+    if (!tab || !win || win.isDestroyed() || win.webContents.isDestroyed()) {
+      return
+    }
+
+    const tabs = this.tabSnapshots(record)
+    this.emitTabsChanged(record)
+    if (record.activeTabId !== tabId) {
       return
     }
 
     win.webContents.send(BROWSER_PANE_URL_CHANGED, {
       sessionId: record.sessionId,
       paneId: record.paneId,
-      url: record.view.webContents.getURL(),
-      title: record.view.webContents.getTitle() || null,
+      tabId,
+      url: tab.view.webContents.getURL(),
+      title: tab.view.webContents.getTitle() || null,
+      tabs,
     })
   }
 
-  private installAppShortcutForwarding(record: BrowserPaneRecord): void {
+  private installAppShortcutForwarding(
+    record: BrowserPaneRecord,
+    webContents: WebContents = record.view.webContents
+  ): void {
     const dispatchCommandPaletteToggle = (): void => {
       const win = BrowserWindow.fromId(record.windowId)
       if (!win || win.isDestroyed()) {
@@ -747,7 +914,7 @@ export class BrowserPaneController {
       commandPaletteToggleDispatcherForWindow(win)()
     }
 
-    record.view.webContents.on('before-input-event', (event, input) => {
+    webContents.on('before-input-event', (event, input) => {
       if (isCommandPaletteShortcutInput(input)) {
         event.preventDefault()
         dispatchCommandPaletteToggle()
@@ -815,12 +982,48 @@ export class BrowserPaneController {
         shouldRefocusBrowserAfterWorkspaceShortcut(input) &&
         shouldRefocus === true &&
         this.panes.get(record.id) === record &&
-        !record.view.webContents.isDestroyed()
+        !this.activeWebContents(record)?.isDestroyed()
       ) {
-        record.view.webContents.focus()
+        this.activeWebContents(record)?.focus()
       }
     } catch {
       // The app renderer may be navigating or shutting down.
+    }
+  }
+
+  private setActiveTab(
+    record: BrowserPaneRecord,
+    tabId: string,
+    focus: boolean
+  ): void {
+    if (!record.tabs.has(tabId)) {
+      return
+    }
+
+    if (record.activeTabId !== tabId) {
+      this.cdpAttachments.get(record.id)?.close()
+    }
+    record.activeTabId = tabId
+    this.applyRecordBounds(record)
+    this.emitTabsChanged(record)
+
+    const active = this.activeTab(record)
+    if (focus) {
+      active?.view.webContents.focus()
+    }
+    if (active) {
+      this.emitPaneUrlChanged(record, active.id)
+    }
+  }
+
+  private applyRecordBounds(record: BrowserPaneRecord): void {
+    const active = this.activeTab(record)
+    for (const tab of record.tabs.values()) {
+      tab.view.setBounds(
+        tab === active
+          ? visibleBounds(record.lastBounds, record.visible)
+          : { x: 0, y: 0, width: 0, height: 0 }
+      )
     }
   }
 
@@ -835,7 +1038,9 @@ export class BrowserPaneController {
     }
 
     record.shortcutContext = shortcutContextFromRequest(payload)
-    record.view.setBounds(visibleBounds(payload.bounds, payload.visible))
+    record.lastBounds = payload.bounds
+    record.visible = payload.visible
+    this.applyRecordBounds(record)
   }
 
   private async navigate(payload: unknown): Promise<void> {
@@ -848,7 +1053,34 @@ export class BrowserPaneController {
       return
     }
 
-    await loadBrowserUrl(record.view.webContents, normalizeUrl(payload.url))
+    const webContents = this.activeWebContents(record)
+    if (!webContents) {
+      return
+    }
+
+    await loadBrowserUrl(webContents, normalizeUrl(payload.url))
+  }
+
+  private newTab(payload: unknown): void {
+    if (!isNewTabRequest(payload)) {
+      throw new Error('invalid browser pane new tab payload')
+    }
+
+    const record = this.panes.get(paneKey(payload.sessionId, payload.paneId))
+    if (!record) {
+      return
+    }
+
+    const win = BrowserWindow.fromId(record.windowId)
+    if (!win || win.isDestroyed()) {
+      return
+    }
+
+    const ses = electronSession.fromPartition(record.partition, { cache: true })
+    this.createOwnedTab(record, win, ses, {
+      url: payload.url ?? DEFAULT_BROWSER_URL,
+      activate: true,
+    })
   }
 
   private destroyPane(payload: unknown): void {
@@ -876,7 +1108,59 @@ export class BrowserPaneController {
       return
     }
 
-    record.view.webContents.focus()
+    this.activeWebContents(record)?.focus()
+  }
+
+  private activateTab(payload: unknown): void {
+    if (!isTabRequest(payload)) {
+      throw new Error('invalid browser pane activate tab payload')
+    }
+
+    const record = this.panes.get(paneKey(payload.sessionId, payload.paneId))
+    if (!record) {
+      return
+    }
+
+    this.setActiveTab(record, payload.tabId, true)
+  }
+
+  private closeTab(payload: unknown): void {
+    if (!isTabRequest(payload)) {
+      throw new Error('invalid browser pane close tab payload')
+    }
+
+    const record = this.panes.get(paneKey(payload.sessionId, payload.paneId))
+    if (!record || record.tabs.size <= 1) {
+      return
+    }
+
+    const tab = record.tabs.get(payload.tabId)
+    if (!tab) {
+      return
+    }
+
+    const wasActive = record.activeTabId === payload.tabId
+    record.tabs.delete(payload.tabId)
+
+    const win = BrowserWindow.fromId(record.windowId)
+    if (win && !win.isDestroyed()) {
+      win.contentView.removeChildView(tab.view)
+    }
+
+    if (!tab.view.webContents.isDestroyed()) {
+      tab.view.webContents.close()
+    }
+
+    if (wasActive) {
+      const nextTabId = record.tabs.keys().next().value
+      if (nextTabId) {
+        this.setActiveTab(record, nextTabId, true)
+      }
+
+      return
+    }
+
+    this.emitTabsChanged(record)
   }
 
   private async cdpInfo(payload: unknown): Promise<BrowserCdpInfo> {
@@ -908,8 +1192,16 @@ export class BrowserPaneController {
     }
 
     this.partitionHandlers.add(partition)
+    ses.on('select-webauthn-account', (_event, details, callback) => {
+      callback(details.accounts[0]?.credentialId ?? null)
+    })
+
     ses.setPermissionRequestHandler((_webContents, permission, callback) => {
-      callback(permission === 'mediaKeySystem')
+      callback(
+        permission === 'mediaKeySystem' ||
+          permission === 'storage-access' ||
+          permission === 'top-level-storage-access'
+      )
     })
   }
 
@@ -927,12 +1219,18 @@ export class BrowserPaneController {
     const win = BrowserWindow.fromId(record.windowId)
     if (win && !win.isDestroyed()) {
       win.removeListener('closed', record.windowClosedHandler)
-      win.contentView.removeChildView(record.view)
     }
 
-    if (!record.view.webContents.isDestroyed()) {
-      record.view.webContents.close()
+    for (const tab of record.tabs.values()) {
+      if (win && !win.isDestroyed()) {
+        win.contentView.removeChildView(tab.view)
+      }
+
+      if (!tab.view.webContents.isDestroyed()) {
+        tab.view.webContents.close()
+      }
     }
+    record.tabs.clear()
   }
 
   private installRendererLifecycleCleanup(sender: WebContents): void {
@@ -1074,8 +1372,10 @@ export class BrowserPaneController {
         [authorizedRecord].map((record) => ({
           id: record.id,
           type: 'page',
-          title: record.view.webContents.getTitle() || 'Vimeflow Browser Pane',
-          url: record.view.webContents.getURL(),
+          title:
+            this.activeWebContents(record)?.getTitle() ??
+            'Vimeflow Browser Pane',
+          url: this.activeWebContents(record)?.getURL() ?? '',
           webSocketDebuggerUrl: this.pageWebSocketUrl(record),
         }))
       )
@@ -1198,7 +1498,14 @@ export class BrowserPaneController {
   ): void {
     this.cdpAttachments.get(record.id)?.close()
 
-    const { debugger: debuggee } = record.view.webContents
+    const webContents = this.activeWebContents(record)
+    if (!webContents) {
+      sendWebSocketClose(socket)
+
+      return
+    }
+
+    const { debugger: debuggee } = webContents
     if (debuggee.isAttached()) {
       try {
         debuggee.detach()
@@ -1268,7 +1575,7 @@ export class BrowserPaneController {
         let frame = decodeFrame(pending)
         while (frame) {
           pending = pending.subarray(frame.byteLength)
-          this.handleDebuggerFrame(record.view.webContents, socket, frame)
+          this.handleDebuggerFrame(webContents, socket, frame)
           frame = decodeFrame(pending)
         }
       } catch {

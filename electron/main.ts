@@ -125,6 +125,31 @@ const registerAppProtocol = (): void => {
   })
 }
 
+const configureBrowserPaneWebAuthn = (): void => {
+  if (process.platform !== 'darwin') {
+    return
+  }
+
+  try {
+    const keychainAccessGroup =
+      process.env.VIMEFLOW_WEBAUTHN_KEYCHAIN_ACCESS_GROUP
+
+    app.configureWebAuthn(
+      keychainAccessGroup
+        ? {
+            touchID: {
+              keychainAccessGroup,
+              promptReason: 'verify your identity on $1',
+            },
+          }
+        : {}
+    )
+  } catch (error) {
+    // eslint-disable-next-line no-console
+    console.warn('WebAuthn platform authenticator setup failed', error)
+  }
+}
+
 interface BackendInvokePayload {
   method: string
   args?: Record<string, unknown>
@@ -251,6 +276,7 @@ const createWindow = (): void => {
 const setupApp = async (): Promise<void> => {
   await app.whenReady()
   installContentSecurityPolicy()
+  configureBrowserPaneWebAuthn()
 
   if (app.isPackaged) {
     registerAppProtocol()

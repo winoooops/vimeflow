@@ -5,13 +5,17 @@ import {
   COMMAND_PALETTE_TOGGLE,
 } from './ipc-channels'
 import {
+  BROWSER_PANE_ACTIVATE_TAB,
   BROWSER_PANE_CDP_INFO,
+  BROWSER_PANE_CLOSE_TAB,
   BROWSER_PANE_CREATE,
   BROWSER_PANE_DESTROY,
   BROWSER_PANE_FOCUS,
   BROWSER_PANE_FOCUSED,
   BROWSER_PANE_NAVIGATE,
+  BROWSER_PANE_NEW_TAB,
   BROWSER_PANE_SET_BOUNDS,
+  BROWSER_PANE_TABS_CHANGED,
   BROWSER_PANE_URL_CHANGED,
 } from './browser-pane-channels'
 
@@ -89,12 +93,18 @@ contextBridge.exposeInMainWorld('vimeflow', {
       ipcRenderer.invoke(BROWSER_PANE_SET_BOUNDS, request),
     navigate: (request: unknown): Promise<unknown> =>
       ipcRenderer.invoke(BROWSER_PANE_NAVIGATE, request),
+    newTab: (request: unknown): Promise<unknown> =>
+      ipcRenderer.invoke(BROWSER_PANE_NEW_TAB, request),
     destroyPane: (request: unknown): Promise<unknown> =>
       ipcRenderer.invoke(BROWSER_PANE_DESTROY, request),
     focusPane: (request: unknown): Promise<unknown> =>
       ipcRenderer.invoke(BROWSER_PANE_FOCUS, request),
     getCdpInfo: (request?: unknown): Promise<unknown> =>
       ipcRenderer.invoke(BROWSER_PANE_CDP_INFO, request),
+    activateTab: (request: unknown): Promise<unknown> =>
+      ipcRenderer.invoke(BROWSER_PANE_ACTIVATE_TAB, request),
+    closeTab: (request: unknown): Promise<unknown> =>
+      ipcRenderer.invoke(BROWSER_PANE_CLOSE_TAB, request),
     onFocus: (callback: (payload: unknown) => void): (() => void) => {
       const handler = (_event: IpcRendererEvent, payload: unknown): void => {
         callback(payload)
@@ -115,6 +125,17 @@ contextBridge.exposeInMainWorld('vimeflow', {
 
       return (): void => {
         ipcRenderer.off(BROWSER_PANE_URL_CHANGED, handler)
+      }
+    },
+    onTabsChange: (callback: (payload: unknown) => void): (() => void) => {
+      const handler = (_event: IpcRendererEvent, payload: unknown): void => {
+        callback(payload)
+      }
+
+      ipcRenderer.on(BROWSER_PANE_TABS_CHANGED, handler)
+
+      return (): void => {
+        ipcRenderer.off(BROWSER_PANE_TABS_CHANGED, handler)
       }
     },
   },

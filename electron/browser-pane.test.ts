@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { connect } from 'node:net'
 import {
+  BROWSER_PANE_ACTIVATE_TAB,
   BROWSER_PANE_CDP_INFO,
+  BROWSER_PANE_CLOSE_TAB,
   BROWSER_PANE_CREATE,
   BROWSER_PANE_DESTROY,
   BROWSER_PANE_SET_BOUNDS,
@@ -31,6 +33,7 @@ interface FakeWebContents {
   getTitle: () => string
   setAudioMuted: (muted: boolean) => void
   setWindowOpenHandler: (handler: unknown) => void
+  session?: unknown
   on: (event: string, handler: EventHandler) => FakeWebContents
   once: (event: string, handler: EventHandler) => FakeWebContents
   removeListener: (event: string, handler: EventHandler) => FakeWebContents
@@ -72,6 +75,7 @@ const electronMock = vi.hoisted(() => {
     getTitle: () => string
     setAudioMuted: (muted: boolean) => void
     setWindowOpenHandler: (handler: unknown) => void
+    session?: unknown
     on: (event: string, handler: LocalEventHandler) => LocalFakeWebContents
     once: (event: string, handler: LocalEventHandler) => LocalFakeWebContents
     removeListener: (
@@ -136,6 +140,7 @@ const electronMock = vi.hoisted(() => {
       getTitle: vi.fn(() => 'Example'),
       setAudioMuted: vi.fn(),
       setWindowOpenHandler: vi.fn(),
+      session: fakeSession,
       on: vi.fn(() => webContents),
       once: vi.fn(() => webContents),
       removeListener: vi.fn(() => webContents),
@@ -153,6 +158,7 @@ const electronMock = vi.hoisted(() => {
   }
 
   const fakeSession = {
+    on: vi.fn(),
     setPermissionRequestHandler: vi.fn(),
   }
 
@@ -251,6 +257,7 @@ const electronMock = vi.hoisted(() => {
       ipcMain.handle.mockClear()
       ipcMain.removeHandler.mockClear()
       session.fromPartition.mockClear()
+      fakeSession.on.mockClear()
       fakeSession.setPermissionRequestHandler.mockClear()
     },
   }
@@ -386,8 +393,8 @@ describe('BrowserPaneController', () => {
       'https://example.com/'
     )
 
-    expect(electronMock.views[0]?.webContents.on).not.toHaveBeenCalledWith(
-      'page-title-updated',
+    expect(electronMock.fakeSession.on).toHaveBeenCalledWith(
+      'select-webauthn-account',
       expect.any(Function)
     )
   })
@@ -524,7 +531,7 @@ describe('BrowserPaneController', () => {
     expect(alive.status).toBe(200)
   })
 
-  test('force-destroys popup windows when the owning pane is destroyed', async () => {
+  test('opens window.open requests as docked browser tabs', async () => {
     await handler(BROWSER_PANE_CREATE)(eventForSender(), {
       sessionId: 'pty-1',
       paneId: 'p1',
@@ -532,23 +539,106 @@ describe('BrowserPaneController', () => {
       initialUrl: 'https://example.com/',
     })
 
-    const didCreateWindowHandler = vi
-      .mocked(electronMock.views[0]?.webContents.on)
-      .mock.calls.find(([eventName]) => eventName === 'did-create-window')?.[1]
+    const windowOpenHandler = vi.mocked(
+      electronMock.views[0]?.webContents.setWindowOpenHandler
+    ).mock.calls[0]?.[0] as
+      | ((details: { url: string; disposition: string }) => {
+          action: string
+        })
+      | undefined
 
-    if (didCreateWindowHandler === undefined) {
-      throw new Error('missing did-create-window handler')
+    if (windowOpenHandler === undefined) {
+      throw new Error('missing window open handler')
     }
 
-    const popup = electronMock.createPopupWindow()
-    didCreateWindowHandler(popup)
-
-    handler(BROWSER_PANE_DESTROY)(eventForSender(), {
-      sessionId: 'pty-1',
-      paneId: 'p1',
+    const response = windowOpenHandler({
+      url: 'https://accounts.google.com/',
+      disposition: 'foreground-tab',
     })
 
-    expect(popup.destroy).toHaveBeenCalledOnce()
+    expect(response.action).toBe('deny')
+    expect(electronMock.win.contentView.addChildView).toHaveBeenCalledWith(
+      electronMock.views[1]
+    )
+
+    handler(BROWSER_PANE_SET_BOUNDS)(eventForSender(), {
+      sessionId: 'pty-1',
+      paneId: 'p1',
+      bounds: { x: 1, y: 2, width: 300, height: 200 },
+      visible: true,
+    })
+
+    expect(electronMock.views[1]?.setBounds).toHaveBeenLastCalledWith({
+      x: 1,
+      y: 2,
+      width: 300,
+      height: 200,
+    })
+
+    handler(BROWSER_PANE_ACTIVATE_TAB)(eventForSender(), {
+      sessionId: 'pty-1',
+      paneId: 'p1',
+      tabId: 'tab-0',
+    })
+
+    expect(electronMock.views[0]?.setBounds).toHaveBeenLastCalledWith({
+      x: 1,
+      y: 2,
+      width: 300,
+      height: 200,
+    })
+
+    expect(electronMock.views[1]?.setBounds).toHaveBeenLastCalledWith({
+      x: 0,
+      y: 0,
+      width: 0,
+      height: 0,
+    })
+
+    handler(BROWSER_PANE_CLOSE_TAB)(eventForSender(), {
+      sessionId: 'pty-1',
+      paneId: 'p1',
+      tabId: 'tab-1',
+    })
+
+    expect(electronMock.win.contentView.removeChildView).toHaveBeenCalledWith(
+      electronMock.views[1]
+    )
+    expect(electronMock.views[1]?.webContents.close).toHaveBeenCalledOnce()
+  })
+
+  test('selects the first WebAuthn account instead of cancelling passkey prompts', async () => {
+    await handler(BROWSER_PANE_CREATE)(eventForSender(), {
+      sessionId: 'pty-1',
+      paneId: 'p1',
+      workspaceId: 'proj-1',
+      initialUrl: 'https://example.com/',
+    })
+
+    const webAuthnHandler = vi
+      .mocked(electronMock.fakeSession.on)
+      .mock.calls.find(
+        ([eventName]) => eventName === 'select-webauthn-account'
+      )?.[1] as
+      | ((
+          event: unknown,
+          details: { accounts: { credentialId: string }[] },
+          callback: (credentialId: string | null) => void
+        ) => void)
+      | undefined
+
+    if (webAuthnHandler === undefined) {
+      throw new Error('missing WebAuthn account handler')
+    }
+
+    const callback = vi.fn()
+    webAuthnHandler(
+      {},
+      { accounts: [{ credentialId: 'credential-1' }] },
+      callback
+    )
+
+    expect(callback).toHaveBeenCalledWith('credential-1')
   })
 
   test('does not suppress digit shortcuts unless they target another pane', async () => {

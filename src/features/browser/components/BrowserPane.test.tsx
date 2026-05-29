@@ -7,11 +7,14 @@ import { emptyActivity } from '../../sessions/constants'
 import { BrowserPane } from './BrowserPane'
 
 const bridgeMocks = vi.hoisted(() => ({
+  activateBrowserPaneTab: vi.fn().mockResolvedValue(undefined),
+  closeBrowserPaneTab: vi.fn().mockResolvedValue(undefined),
   createBrowserPane: vi.fn(),
   focusBrowserPane: vi.fn().mockResolvedValue(undefined),
   getBrowserCdpInfo: vi.fn(),
   navigateBrowserPane: vi.fn().mockResolvedValue(undefined),
   onBrowserPaneFocus: vi.fn(() => (): void => undefined),
+  onBrowserPaneTabsChange: vi.fn(() => (): void => undefined),
   onBrowserPaneUrlChange: vi.fn(() => (): void => undefined),
   setBrowserPaneBounds: vi.fn().mockResolvedValue(undefined),
 }))
@@ -111,6 +114,14 @@ describe('BrowserPane', () => {
         url: 'https://example.com/',
         title: 'Example',
         partition: 'persist:vimeflow-browser:proj-1:pty-shell',
+        tabs: [
+          {
+            id: 'tab-0',
+            url: 'https://example.com/',
+            title: 'Example',
+            active: true,
+          },
+        ],
       })
     })
 
@@ -206,6 +217,14 @@ describe('BrowserPane', () => {
         url: 'https://example.com/',
         title: 'Example',
         partition: 'persist:vimeflow-browser:proj-1:pty-shell',
+        tabs: [
+          {
+            id: 'tab-0',
+            url: 'https://example.com/',
+            title: 'Example',
+            active: true,
+          },
+        ],
       })
     })
 

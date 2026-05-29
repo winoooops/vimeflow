@@ -18,10 +18,18 @@ export interface BrowserPaneCreateRequest {
   shortcutContext?: BrowserPaneShortcutContext
 }
 
+export interface BrowserPaneTab {
+  id: string
+  url: string
+  title: string | null
+  active: boolean
+}
+
 export interface BrowserPaneCreateResult {
   url: string
   title: string | null
   partition: string
+  tabs: BrowserPaneTab[]
 }
 
 export interface BrowserPaneBoundsRequest {
@@ -43,6 +51,14 @@ export interface BrowserPaneDestroyRequest {
   paneId: string
 }
 
+export interface BrowserPaneNewTabRequest extends BrowserPaneDestroyRequest {
+  url?: string
+}
+
+export interface BrowserPaneTabRequest extends BrowserPaneDestroyRequest {
+  tabId: string
+}
+
 export interface BrowserCdpInfo {
   url: string
   token: string
@@ -58,8 +74,16 @@ export interface BrowserPaneFocusedEvent {
 export interface BrowserPaneUrlChangedEvent {
   sessionId: string
   paneId: string
+  tabId: string
   url: string
   title: string | null
+  tabs: BrowserPaneTab[]
+}
+
+export interface BrowserPaneTabsChangedEvent {
+  sessionId: string
+  paneId: string
+  tabs: BrowserPaneTab[]
 }
 
 export interface BrowserPaneBridge {
@@ -68,11 +92,17 @@ export interface BrowserPaneBridge {
   ) => Promise<BrowserPaneCreateResult>
   setBounds: (request: BrowserPaneBoundsRequest) => Promise<void>
   navigate: (request: BrowserPaneNavigateRequest) => Promise<void>
+  newTab: (request: BrowserPaneNewTabRequest) => Promise<void>
   destroyPane: (request: BrowserPaneDestroyRequest) => Promise<void>
   focusPane: (request: BrowserPaneDestroyRequest) => Promise<void>
   getCdpInfo: (request: BrowserPaneDestroyRequest) => Promise<BrowserCdpInfo>
+  activateTab: (request: BrowserPaneTabRequest) => Promise<void>
+  closeTab: (request: BrowserPaneTabRequest) => Promise<void>
   onFocus: (callback: (event: BrowserPaneFocusedEvent) => void) => () => void
   onUrlChange: (
     callback: (event: BrowserPaneUrlChangedEvent) => void
+  ) => () => void
+  onTabsChange: (
+    callback: (event: BrowserPaneTabsChangedEvent) => void
   ) => () => void
 }
