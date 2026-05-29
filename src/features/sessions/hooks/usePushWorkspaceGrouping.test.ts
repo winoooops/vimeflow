@@ -601,6 +601,112 @@ describe('usePushWorkspaceGrouping', () => {
     }
   })
 
+  // PR #290 cycle 12: Claude MEDIUM — the effect dep is `sessions`, which
+  // changes on EVERY `setSessions` call (OSC 7 cwd update, agent title
+  // event, user label set, PTY-exit status flip). None of those affect
+  // the snapshot payload, but each one used to fire an IPC + disk write.
+  // The memoization (`lastPushedJsonRef`) skips identical payloads.
+  test('skips the IPC when the snapshot payload is unchanged', async () => {
+    const setWorkspaceSessions = vi.fn().mockResolvedValue(undefined)
+    const service = { setWorkspaceSessions } as unknown as ITerminalService
+
+    const initial = [
+      session('ws-1', 'vsplit', [
+        pane({ id: 'p0', ptyId: 'pty-a', active: true }),
+        pane({ id: 'p1', ptyId: 'pty-b', active: false }),
+      ]),
+    ]
+
+    const { rerender } = renderHook(
+      ({ sessions }) =>
+        usePushWorkspaceGrouping({ service, loading: false, sessions }),
+      { initialProps: { sessions: initial as readonly Session[] } }
+    )
+
+    await waitFor(() => expect(setWorkspaceSessions).toHaveBeenCalledTimes(1))
+
+    // Simulate a non-structural mutation: same shape, new array
+    // reference (the same churn React produces for OSC 7 cwd / agent
+    // title / user label / status updates). The effect re-runs because
+    // `sessions` is a new array, but the snapshot JSON is identical.
+    rerender({ sessions: [...initial] as readonly Session[] })
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    expect(setWorkspaceSessions).toHaveBeenCalledTimes(1)
+
+    // A truly structural mutation re-enables the push.
+    const withExtraPane = [
+      session('ws-1', 'quad', [
+        pane({ id: 'p0', ptyId: 'pty-a', active: true }),
+        pane({ id: 'p1', ptyId: 'pty-b', active: false }),
+        pane({ id: 'p2', ptyId: 'pty-c', active: false }),
+      ]),
+    ]
+    rerender({ sessions: withExtraPane as readonly Session[] })
+    await waitFor(() => expect(setWorkspaceSessions).toHaveBeenCalledTimes(2))
+  })
+
+  // PR #290 cycle 12: Claude MEDIUM — the drain's post-await continuation
+  // would `while`-loop with the OLD effect's `service`. If a sessions
+  // change between effect runs lands a newer snapshot in `pending`
+  // during the in-flight await, the old drain would push it through the
+  // OLD service. The fix is symmetric with the retry-timer path:
+  // dispatch through `latestDrainRef` after a successful await.
+  test('continuation after a successful IPC dispatches through the latest service', async () => {
+    let releaseFirst: (() => void) | undefined
+
+    const oldService = {
+      setWorkspaceSessions: vi.fn().mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            releaseFirst = resolve
+          })
+      ),
+    } as unknown as ITerminalService
+
+    const newService = {
+      setWorkspaceSessions: vi.fn().mockResolvedValue(undefined),
+    } as unknown as ITerminalService
+
+    const first = [
+      session('ws-1', 'single', [
+        pane({ id: 'p0', ptyId: 'pty-a', active: true }),
+      ]),
+    ]
+
+    const second = [
+      session('ws-1', 'vsplit', [
+        pane({ id: 'p0', ptyId: 'pty-a', active: true }),
+        pane({ id: 'p1', ptyId: 'pty-b', active: false }),
+      ]),
+    ]
+
+    const { rerender } = renderHook(
+      ({ service, sessions }) =>
+        usePushWorkspaceGrouping({ service, loading: false, sessions }),
+      { initialProps: { service: oldService, sessions: first } }
+    )
+
+    // First IPC is held mid-await on the OLD service.
+    await waitFor(() =>
+      expect(oldService.setWorkspaceSessions).toHaveBeenCalledTimes(1)
+    )
+
+    // Swap BOTH the service AND the sessions: a newer snapshot lands in
+    // `pending` while the old IPC is still awaiting.
+    rerender({ service: newService, sessions: second })
+
+    // Release the old IPC. The OLD drain's post-await continuation must
+    // dispatch through `latestDrainRef` (which now points at the new
+    // closure capturing `newService`), not push directly via its
+    // captured OLD `service`.
+    releaseFirst?.()
+    await waitFor(() =>
+      expect(newService.setWorkspaceSessions).toHaveBeenCalledTimes(1)
+    )
+    // OLD service must NOT have been called a second time.
+    expect(oldService.setWorkspaceSessions).toHaveBeenCalledTimes(1)
+  })
+
   // Latest-wins coalesce: when several sessions changes pile up during one
   // in-flight push, only the MOST RECENT snapshot is sent next — intermediate
   // ones are dropped (the cache replaces its groupings map on every push, so

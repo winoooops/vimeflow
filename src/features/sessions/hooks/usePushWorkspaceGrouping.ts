@@ -132,6 +132,19 @@ export const usePushWorkspaceGrouping = ({
   // the latest service.
   const latestDrainRef = useRef<(() => Promise<void>) | null>(null)
 
+  // Memoize the last-pushed snapshot's JSON shape so we can skip pushes
+  // whose payload is identical to the previous one. The effect dep
+  // `sessions` triggers on EVERY `setSessions` call, including non-
+  // structural mutations (OSC 7 cwd updates, agent-title events,
+  // `setPaneUserLabel`, PTY-exit status flips) — none of which change
+  // `buildGroupingSnapshot`'s output. Without this guard each one of
+  // those mutations writes an identical JSON blob to disk through
+  // `cache.mutate`, holding the cache mutex against concurrent
+  // `spawn_pty` / `kill_pty` / `list_sessions`. JSON.stringify is fine
+  // here: the snapshot is small (workspace + pane scalars only) and the
+  // shape is deterministic.
+  const lastPushedJsonRef = useRef<string | null>(null)
+
   useEffect(() => {
     if (loading) {
       return
@@ -145,86 +158,123 @@ export const usePushWorkspaceGrouping = ({
     }
 
     const snapshot = buildGroupingSnapshot(sessions)
-    log.info(
-      `pushing grouping snapshot: ${snapshot.sessions.length} workspace ` +
-        `session(s), ${snapshot.sessions.reduce(
-          (n, s) => n + s.panes.length,
-          0
-        )} pane(s)`,
-      {
-        workspaces: snapshot.sessions.map((s) => ({
-          id: s.id,
-          layout: s.layout,
-          panes: s.panes.length,
-        })),
-      }
-    )
+    const snapshotJson = JSON.stringify(snapshot)
+    const isNoOpRerun = snapshotJson === lastPushedJsonRef.current
+    if (!isNoOpRerun) {
+      lastPushedJsonRef.current = snapshotJson
 
-    // Latest wins: overwrite whatever pending snapshot was there.
-    queueRef.current.pending = snapshot
+      log.info(
+        `pushing grouping snapshot: ${snapshot.sessions.length} workspace ` +
+          `session(s), ${snapshot.sessions.reduce(
+            (n, s) => n + s.panes.length,
+            0
+          )} pane(s)`,
+        {
+          workspaces: snapshot.sessions.map((s) => ({
+            id: s.id,
+            layout: s.layout,
+            panes: s.panes.length,
+          })),
+        }
+      )
+
+      // Latest wins: overwrite whatever pending snapshot was there.
+      queueRef.current.pending = snapshot
+    }
 
     // Drain the queue if no push is currently in flight. JS is
     // single-threaded; the `inFlight` check and set are atomic within a
     // microtask, so two concurrent drain calls cannot both pass the guard.
+    //
+    // The continuation after a successful IPC dispatches through
+    // `latestDrainRef`, not the local `drain`, so if `service` changed
+    // between effect runs the next pending snapshot is pushed via the
+    // LATEST closure (which captures the latest service). Without this,
+    // a snapshot that landed in `pending` during the in-flight await
+    // would be pushed via this old closure's `service` even though the
+    // hook now has a new one. (Codex re-verify on PR #290 cycle 12.)
     const drain = async (): Promise<void> => {
       if (queueRef.current.inFlight) {
         return
       }
-      while (queueRef.current.pending !== null) {
-        const next = queueRef.current.pending
-        queueRef.current.pending = null
-        queueRef.current.inFlight = true
-        try {
-          await service.setWorkspaceSessions(next)
-        } catch (err) {
-          log.warn('setWorkspaceSessions IPC failed', err)
+      if (queueRef.current.pending === null) {
+        return
+      }
+      const next = queueRef.current.pending
+      queueRef.current.pending = null
+      queueRef.current.inFlight = true
+      try {
+        await service.setWorkspaceSessions(next)
+      } catch (err) {
+        log.warn('setWorkspaceSessions IPC failed', err)
 
-          // Restore the failed snapshot so the next `sessions` change (or
-          // any other call into `drain`) retries it instead of silently
-          // dropping it. Without this restore a sidecar crash or transient
-          // IPC error mid-push would leave the cache permanently out of
-          // sync with React — the layout would fragment back to single-
-          // pane on the next reload with no visible signal beyond the
-          // console warn.
-          //
-          // Only restore when no newer snapshot has arrived during the
-          // await. `??=` only assigns when the left-hand side is
-          // null/undefined, so a concurrent effect re-run that populated
-          // `pending` with a newer snapshot wins ("latest wins").
-          queueRef.current.pending ??= next
+        // Restore the failed snapshot so the next `sessions` change (or
+        // any other call into `drain`) retries it instead of silently
+        // dropping it. Without this restore a sidecar crash or transient
+        // IPC error mid-push would leave the cache permanently out of
+        // sync with React — the layout would fragment back to single-
+        // pane on the next reload with no visible signal beyond the
+        // console warn.
+        //
+        // Only restore when no newer snapshot has arrived during the
+        // await. `??=` only assigns when the left-hand side is
+        // null/undefined, so a concurrent effect re-run that populated
+        // `pending` with a newer snapshot wins ("latest wins").
+        queueRef.current.pending ??= next
 
-          // Break out of the drain loop instead of immediately retrying.
-          // If the IPC keeps failing (sidecar down, etc.), looping here
-          // would saturate the microtask queue and flood the log. The
-          // restored `pending` will be retried either on the next
-          // `sessions` change (which re-enters drain via the effect) OR
-          // by the deferred timer below, whichever fires first. That
-          // covers the transient-error case where the sidecar recovers
-          // in seconds but the user isn't making structural changes —
-          // without the timer the cache would stay stale until the next
-          // reload fragments. `inFlight` is cleared by the `finally`
-          // below so the next entry isn't blocked.
-          if (mountedRef.current) {
-            retryTimerRef.current ??= setTimeout(() => {
-              retryTimerRef.current = null
-              if (mountedRef.current && queueRef.current.pending !== null) {
-                // Dispatch through `latestDrainRef`, NOT the local
-                // `drain`, so a service swap between effect runs takes
-                // effect even if this timer was scheduled by an old
-                // closure.
-                void latestDrainRef.current?.()
-              }
-            }, RETRY_BACKOFF_MS)
-          }
-
-          return
-        } finally {
-          queueRef.current.inFlight = false
+        // Don't immediately retry. If the IPC keeps failing (sidecar
+        // down, etc.) a synchronous re-entry here would saturate the
+        // microtask queue and flood the log. The restored `pending`
+        // will be retried either on the next `sessions` change (which
+        // re-enters drain via the effect) OR by the deferred timer
+        // below, whichever fires first. That covers the transient-error
+        // case where the sidecar recovers in seconds but the user isn't
+        // making structural changes — without the timer the cache would
+        // stay stale until the next reload fragments. `inFlight` is
+        // cleared by the `finally` below so the next entry isn't
+        // blocked.
+        if (mountedRef.current) {
+          retryTimerRef.current ??= setTimeout(() => {
+            retryTimerRef.current = null
+            if (mountedRef.current && queueRef.current.pending !== null) {
+              // Dispatch through `latestDrainRef`, NOT the local
+              // `drain`, so a service swap between effect runs takes
+              // effect even if this timer was scheduled by an old
+              // closure.
+              void latestDrainRef.current?.()
+            }
+          }, RETRY_BACKOFF_MS)
         }
+
+        return
+      } finally {
+        queueRef.current.inFlight = false
+      }
+
+      // Successful push — if more arrived during the await, continue via
+      // the latest drain (captures the latest `service`). The narrower
+      // treats `pending` as still null after the consume above; the
+      // disable is intentional — a concurrent effect re-run can populate
+      // it with a newer snapshot.
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+      if (queueRef.current.pending !== null) {
+        void latestDrainRef.current?.()
       }
     }
+    // Always keep `latestDrainRef` pointed at the freshest closure even
+    // on a no-op re-run: a deferred retry timer scheduled by an OLD
+    // closure dispatches through this ref, so a no-op rerender after a
+    // service swap still gives the timer access to the new service.
     latestDrainRef.current = drain
-    void drain()
+
+    // Drive a drain whenever there's something to drain. On the no-op
+    // path that's a previously failed snapshot the catch restored into
+    // `pending` — without this kick the only retry path is the 5s
+    // backoff timer, which observably broke the cycle-5
+    // `restores the snapshot for retry` test under the memoization.
+    if (queueRef.current.pending !== null) {
+      void drain()
+    }
 
     return (): void => {
       if (retryTimerRef.current !== null) {
