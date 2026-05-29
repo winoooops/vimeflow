@@ -267,6 +267,7 @@ describe('WorkspaceView - Command Palette Integration', () => {
       saveFile: vi.fn(),
       updateContent: vi.fn(),
       hasUnsavedChanges: vi.fn(() => false),
+      getFilePathForScope: vi.fn(() => null),
       releaseScope: vi.fn(),
     })
 
@@ -635,6 +636,7 @@ describe('WorkspaceView - Command Palette Integration', () => {
       saveFile: vi.fn(),
       updateContent: vi.fn(),
       hasUnsavedChanges,
+      getFilePathForScope: vi.fn(() => null),
       releaseScope: vi.fn(),
     })
 
@@ -672,6 +674,7 @@ describe('WorkspaceView - Command Palette Integration', () => {
       saveFile: vi.fn(),
       updateContent: vi.fn(),
       hasUnsavedChanges,
+      getFilePathForScope: vi.fn(() => null),
       releaseScope: vi.fn(),
     })
 

@@ -40,6 +40,7 @@ export interface EditorBuffer {
   saveFile: (scopeId?: string) => Promise<void>
   updateContent: (content: string) => void
   hasUnsavedChanges: (scopeId: string) => boolean
+  getFilePathForScope: (scopeId: string) => string | null
   releaseScope: (scopeId: string) => void
 }
 
@@ -191,6 +192,12 @@ export const useEditorBuffer = (
     return buffer.currentContent !== buffer.originalContent
   }, [])
 
+  const getFilePathForScope = useCallback(
+    (scopeIdToRead: string): string | null =>
+      buffersByScopeRef.current[scopeIdToRead]?.filePath ?? null,
+    []
+  )
+
   const releaseScope = useCallback((scopeIdToRelease: string): void => {
     const previousBuffers = buffersByScopeRef.current
 
@@ -218,6 +225,7 @@ export const useEditorBuffer = (
     saveFile,
     updateContent,
     hasUnsavedChanges,
+    getFilePathForScope,
     releaseScope,
   }
 }

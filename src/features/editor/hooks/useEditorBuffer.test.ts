@@ -300,6 +300,8 @@ describe('useEditorBuffer', () => {
     )
     expect(result.current.filePath).toBe('~/b.ts')
     expect(result.current.isDirty).toBe(true)
+    expect(result.current.getFilePathForScope('session-a')).toBe('~/a.ts')
+    expect(result.current.getFilePathForScope('missing')).toBeNull()
 
     rerender({ sessionId: 'session-a' })
 

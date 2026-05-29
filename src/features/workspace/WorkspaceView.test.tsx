@@ -203,6 +203,7 @@ describe('WorkspaceView', () => {
       saveFile: vi.fn().mockResolvedValue(undefined),
       updateContent: vi.fn(),
       hasUnsavedChanges: vi.fn(() => false),
+      getFilePathForScope: vi.fn(() => null),
       releaseScope: vi.fn(),
     })
   })
@@ -286,6 +287,7 @@ describe('WorkspaceView', () => {
       saveFile: vi.fn().mockResolvedValue(undefined),
       updateContent: vi.fn(),
       hasUnsavedChanges,
+      getFilePathForScope: vi.fn(() => null),
       releaseScope,
     })
 
@@ -357,6 +359,7 @@ describe('WorkspaceView', () => {
       saveFile: vi.fn().mockResolvedValue(undefined),
       updateContent: vi.fn(),
       hasUnsavedChanges,
+      getFilePathForScope: vi.fn(() => null),
       releaseScope: vi.fn(),
     })
 
@@ -428,6 +431,7 @@ describe('WorkspaceView', () => {
       saveFile: vi.fn().mockResolvedValue(undefined),
       updateContent: vi.fn(),
       hasUnsavedChanges,
+      getFilePathForScope: vi.fn(() => null),
       releaseScope,
     })
 
@@ -515,6 +519,9 @@ describe('WorkspaceView', () => {
       saveFile,
       updateContent: vi.fn(),
       hasUnsavedChanges,
+      getFilePathForScope: vi.fn((scopeId: string) =>
+        scopeId === 'second' ? 'src/second.ts' : null
+      ),
       releaseScope,
     })
 
@@ -524,7 +531,12 @@ describe('WorkspaceView', () => {
       await screen.findByRole('tab', { name: 'first' })
 
       await user.click(screen.getByRole('button', { name: 'Close second' }))
-      await screen.findByRole('dialog', { name: /unsaved changes/i })
+
+      const dialog = await screen.findByRole('dialog', {
+        name: /unsaved changes/i,
+      })
+
+      expect(within(dialog).getByText('src/second.ts')).toBeInTheDocument()
       await user.click(screen.getByRole('button', { name: 'Save' }))
 
       await waitFor(() => {
@@ -598,6 +610,7 @@ describe('WorkspaceView', () => {
       saveFile,
       updateContent: vi.fn(),
       hasUnsavedChanges,
+      getFilePathForScope: vi.fn(() => null),
       releaseScope: vi.fn(),
     })
 
@@ -675,6 +688,7 @@ describe('WorkspaceView', () => {
       saveFile: vi.fn().mockResolvedValue(undefined),
       updateContent: vi.fn(),
       hasUnsavedChanges,
+      getFilePathForScope: vi.fn(() => null),
       releaseScope: vi.fn(),
     })
 
@@ -740,6 +754,7 @@ describe('WorkspaceView', () => {
       saveFile,
       updateContent: vi.fn(),
       hasUnsavedChanges,
+      getFilePathForScope: vi.fn(() => null),
       releaseScope: vi.fn(),
     })
 
@@ -778,6 +793,7 @@ describe('WorkspaceView', () => {
       saveFile: vi.fn().mockResolvedValue(undefined),
       updateContent: vi.fn(),
       hasUnsavedChanges,
+      getFilePathForScope: vi.fn(() => null),
       releaseScope,
     })
 
@@ -1437,6 +1453,7 @@ describe('WorkspaceView', () => {
       saveFile: vi.fn().mockResolvedValue(undefined),
       updateContent: vi.fn(),
       hasUnsavedChanges: vi.fn(() => false),
+      getFilePathForScope: vi.fn(() => null),
       releaseScope: vi.fn(),
     })
 
@@ -1469,6 +1486,7 @@ describe('WorkspaceView', () => {
       saveFile: vi.fn().mockResolvedValue(undefined),
       updateContent: vi.fn(),
       hasUnsavedChanges: vi.fn(() => true),
+      getFilePathForScope: vi.fn(() => null),
       releaseScope: vi.fn(),
     })
 
@@ -1504,6 +1522,7 @@ describe('WorkspaceView', () => {
       saveFile: vi.fn().mockResolvedValue(undefined),
       updateContent: vi.fn(),
       hasUnsavedChanges: vi.fn(() => false),
+      getFilePathForScope: vi.fn(() => null),
       releaseScope: vi.fn(),
     })
 

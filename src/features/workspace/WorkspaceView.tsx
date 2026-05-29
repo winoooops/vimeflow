@@ -1208,6 +1208,17 @@ export const WorkspaceView = (): ReactElement => {
     <DockPeekButton position={dockPosition} onOpen={() => openDock()} />
   )
 
+  const pendingSessionFilePath = pendingSessionRemovalId
+    ? editorBuffer.getFilePathForScope(pendingSessionRemovalId)
+    : null
+
+  const unsavedDialogFileName = pendingSessionRemovalId
+    ? (pendingSessionFilePath ??
+      (pendingSessionRemovalId === activeSessionId
+        ? (editorBuffer.filePath ?? '')
+        : ''))
+    : (editorBuffer.filePath ?? '')
+
   return (
     <div
       ref={workspaceRef}
@@ -1414,7 +1425,7 @@ export const WorkspaceView = (): ReactElement => {
           destination the user is switching to. */}
       <UnsavedChangesDialog
         isOpen={showUnsavedDialog}
-        fileName={editorBuffer.filePath ?? ''}
+        fileName={unsavedDialogFileName}
         errorMessage={saveError}
         isSaving={isUnsavedDialogSaving}
         actionDescription={
