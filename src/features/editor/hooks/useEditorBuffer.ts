@@ -47,9 +47,11 @@ export const useEditorBuffer = (
 ): EditorBuffer => {
   const activeScopeId = resolveEditorBufferScopeId(scopeId)
   const [buffersByScope, setBuffersByScope] = useState<EditorBuffersByScope>({})
+  const activeScopeIdRef = useRef(activeScopeId)
   const buffersByScopeRef = useRef<EditorBuffersByScope>({})
   const openRequestIdsRef = useRef<OpenRequestIdsByScope>({})
 
+  activeScopeIdRef.current = activeScopeId
   buffersByScopeRef.current = buffersByScope
 
   const activeBuffer = buffersByScope[activeScopeId] ?? EMPTY_EDITOR_BUFFER
@@ -95,7 +97,7 @@ export const useEditorBuffer = (
   // on-disk contents with A's buffer (silent data corruption).
   const openFile = useCallback(
     async (path: string): Promise<void> => {
-      const targetScopeId = activeScopeId
+      const targetScopeId = activeScopeIdRef.current
       const requestId = (openRequestIdsRef.current[targetScopeId] ?? 0) + 1
       openRequestIdsRef.current = {
         ...openRequestIdsRef.current,
@@ -132,11 +134,11 @@ export const useEditorBuffer = (
         throw error
       }
     },
-    [activeScopeId, fileSystemService, setBufferForScope]
+    [fileSystemService, setBufferForScope]
   )
 
   const saveFile = useCallback(async (): Promise<void> => {
-    const targetScopeId = activeScopeId
+    const targetScopeId = activeScopeIdRef.current
 
     const buffer =
       buffersByScopeRef.current[targetScopeId] ?? EMPTY_EDITOR_BUFFER
@@ -159,18 +161,18 @@ export const useEditorBuffer = (
         originalContent: content,
       }
     })
-  }, [activeScopeId, fileSystemService, setBufferForScope])
+  }, [fileSystemService, setBufferForScope])
 
   const updateContent = useCallback(
     (content: string): void => {
-      const targetScopeId = activeScopeId
+      const targetScopeId = activeScopeIdRef.current
 
       setBufferForScope(targetScopeId, (buffer) => ({
         ...buffer,
         currentContent: content,
       }))
     },
-    [activeScopeId, setBufferForScope]
+    [setBufferForScope]
   )
 
   return {

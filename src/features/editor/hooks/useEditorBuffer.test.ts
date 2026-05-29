@@ -215,4 +215,46 @@ describe('useEditorBuffer', () => {
     expect(result.current.filePath).toBe('~/a.ts')
     expect(result.current.currentContent).toBe('content for ~/a.ts')
   })
+
+  test('keeps action callbacks stable across active session changes', async () => {
+    vi.mocked(mockFileSystemService.readFile).mockImplementation((path) =>
+      Promise.resolve(`content for ${path}`)
+    )
+    vi.mocked(mockFileSystemService.writeFile).mockResolvedValue()
+
+    const { result, rerender } = renderHook(
+      ({ sessionId }: { sessionId: string }) =>
+        useEditorBuffer(mockFileSystemService, sessionId),
+      {
+        initialProps: { sessionId: 'session-a' },
+      }
+    )
+
+    const initialOpenFile = result.current.openFile
+    const initialSaveFile = result.current.saveFile
+    const initialUpdateContent = result.current.updateContent
+
+    rerender({ sessionId: 'session-b' })
+
+    expect(result.current.openFile).toBe(initialOpenFile)
+    expect(result.current.saveFile).toBe(initialSaveFile)
+    expect(result.current.updateContent).toBe(initialUpdateContent)
+
+    await act(async () => {
+      await result.current.openFile('~/b.ts')
+    })
+
+    act(() => {
+      result.current.updateContent('session b edits')
+    })
+
+    await act(async () => {
+      await result.current.saveFile()
+    })
+
+    expect(mockFileSystemService.writeFile).toHaveBeenCalledWith(
+      '~/b.ts',
+      'session b edits'
+    )
+  })
 })
