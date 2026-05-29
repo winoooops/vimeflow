@@ -666,6 +666,22 @@ pub(super) fn start_watching(
 }
 
 #[cfg(test)]
+impl WatcherHandle {
+    pub(crate) fn new_for_test(
+        transcript_state: TranscriptState,
+        session_id: String,
+    ) -> Self {
+        WatcherHandle {
+            _watcher: None,
+            poll_stop: Arc::new((Mutex::new(false), Condvar::new())),
+            join_handle: None,
+            transcript_state,
+            session_id,
+        }
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
