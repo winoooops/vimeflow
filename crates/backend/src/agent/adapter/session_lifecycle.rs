@@ -23,9 +23,11 @@
 use std::sync::Arc;
 
 use super::bindings::AgentBindings;
-use super::{base, resolve_bind_inputs};
+use super::{base, resolve_bind_inputs, AttachContext};
 use crate::agent::detector::detect_agent;
+use crate::agent::types::AgentType;
 use crate::runtime::EventSink;
+use crate::terminal::types::SessionId;
 use crate::terminal::PtyState;
 use base::{AgentWatcherState, TranscriptState};
 
@@ -46,13 +48,76 @@ pub(crate) struct SessionLifecycle {
 
 #[cfg(test)]
 mod tests {
-    use crate::agent::adapter::bindings::AgentBindings;
+    use std::path::PathBuf;
+    use std::sync::Arc;
+    use std::time::SystemTime;
+
+    use super::{AgentBindings, AttachContext, SessionLifecycle};
+    use crate::agent::adapter::base::{AgentWatcherState, TranscriptState};
+    use crate::agent::adapter::make_test_session;
+    use crate::agent::types::AgentType;
+    use crate::runtime::FakeEventSink;
+    use crate::terminal::PtyState;
 
     fn _assert_send_sync_static<T: Send + Sync + 'static>() {}
 
     #[test]
     fn t_lifecycle_4_agent_bindings_is_send_sync_static() {
         _assert_send_sync_static::<AgentBindings>();
+    }
+
+    #[test]
+    fn t_verb_resolve_attach() {
+        let pty_state = PtyState::new();
+        let sid = "sid-verb-resolve".to_string();
+        pty_state
+            .try_insert(sid.clone(), make_test_session(), 64)
+            .unwrap_or_else(|_| panic!("insert session"));
+
+        let lifecycle = SessionLifecycle::new(
+            pty_state,
+            AgentWatcherState::new(),
+            TranscriptState::new(),
+            Arc::new(FakeEventSink::new()),
+        );
+
+        let attach = lifecycle
+            .resolve_attach(&sid, |_pid| Some((AgentType::Codex, 4242)))
+            .expect("resolve_attach");
+
+        // resolve_attach is a thin delegate to resolve_bind_inputs; this test
+        // proves only the wiring — the right session plus the injected
+        // detector's (agent_type, pid) flowing through. The exhaustive
+        // field→value map is already pinned by
+        // resolve_bind_inputs_populates_attach_context_fields, so re-asserting
+        // every field here would just duplicate that coverage.
+        assert_eq!(attach.session_id, sid);
+        assert_eq!(attach.agent_type, AgentType::Codex);
+        assert_eq!(attach.agent_pid, 4242);
+    }
+
+    #[test]
+    fn t_verb_bind_services() {
+        let ctx = AttachContext {
+            session_id: "pty-codex".to_string(),
+            initial_cwd: PathBuf::from("/tmp/ws"),
+            shell_pid: 1,
+            agent_pid: 12345,
+            pty_start: SystemTime::UNIX_EPOCH,
+            agent_type: AgentType::Codex,
+            provider_home: Some(PathBuf::from("/home/u/.codex")),
+            proc_root: None,
+        };
+
+        let lifecycle = SessionLifecycle::new(
+            PtyState::new(),
+            AgentWatcherState::new(),
+            TranscriptState::new(),
+            Arc::new(FakeEventSink::new()),
+        );
+
+        let bindings = lifecycle.bind_services(&ctx).expect("bind_services");
+        assert!(matches!(bindings.agent_type, AgentType::Codex));
     }
 }
 
@@ -69,6 +134,23 @@ impl SessionLifecycle {
             transcript_state,
             events,
         }
+    }
+
+    #[allow(dead_code)] // remove in F.5 cutover
+    fn resolve_attach<F>(
+        &self,
+        sid: &SessionId,
+        detect: F,
+    ) -> Result<AttachContext, String>
+    where
+        F: FnOnce(u32) -> Option<(AgentType, u32)>,
+    {
+        resolve_bind_inputs(&self.pty_state, sid, detect)
+    }
+
+    #[allow(dead_code)] // remove in F.5 cutover
+    fn bind_services(&self, ctx: &AttachContext) -> Result<AgentBindings, String> {
+        AgentBindings::for_attach(ctx).map_err(|e| format!("agent bindings: {}", e))
     }
 
     /// Start (or restart) the agent watcher for `session_id`.
