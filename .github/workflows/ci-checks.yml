@@ -51,9 +51,6 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Repair Electron binary install
-        run: npm rebuild electron
-
       - name: Run tests
         run: npm test
 
