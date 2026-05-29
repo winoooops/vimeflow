@@ -20,9 +20,11 @@
 //! errors. This is the single mapping seam; `start_agent_watcher_inner`
 //! delegates to this method rather than mapping independently.
 
+use std::path::Path;
 use std::sync::Arc;
 
 use super::bindings::AgentBindings;
+use crate::agent::adapter::types::LocatedStatusSource;
 use super::{base, resolve_bind_inputs, AttachContext};
 use crate::agent::detector::detect_agent;
 use crate::agent::types::AgentType;
@@ -55,9 +57,12 @@ mod tests {
     use super::{AgentBindings, AttachContext, SessionLifecycle};
     use crate::agent::adapter::base::{AgentWatcherState, TranscriptState};
     use crate::agent::adapter::make_test_session;
+    use crate::agent::adapter::traits::StatusSourceLocator;
+    use crate::agent::adapter::types::LocatedStatusSource;
     use crate::agent::types::AgentType;
     use crate::runtime::FakeEventSink;
     use crate::terminal::PtyState;
+    use tempfile::TempDir;
 
     fn _assert_send_sync_static<T: Send + Sync + 'static>() {}
 
@@ -119,6 +124,108 @@ mod tests {
         let bindings = lifecycle.bind_services(&ctx).expect("bind_services");
         assert!(matches!(bindings.agent_type, AgentType::Codex));
     }
+
+    #[test]
+    fn t_verb_locate_happy_path() {
+        let tmp = TempDir::new().unwrap();
+        let sid = "test-sess".to_string();
+        let ctx = AttachContext {
+            session_id: sid.clone(),
+            initial_cwd: tmp.path().to_path_buf(),
+            shell_pid: 1,
+            agent_pid: 2,
+            pty_start: SystemTime::UNIX_EPOCH,
+            agent_type: AgentType::ClaudeCode,
+            provider_home: Some(PathBuf::from("/home/u/.claude")),
+            proc_root: None,
+        };
+        let bindings = AgentBindings::for_attach(&ctx).expect("for_attach");
+        let lifecycle = SessionLifecycle::new(
+            PtyState::new(),
+            AgentWatcherState::new(),
+            TranscriptState::new(),
+            Arc::new(FakeEventSink::new()),
+        );
+        let located = lifecycle
+            .locate(&bindings, tmp.path(), &sid)
+            .expect("locate happy path");
+        assert_eq!(
+            located.status_path,
+            tmp.path()
+                .join(".vimeflow")
+                .join("sessions")
+                .join(&sid)
+                .join("status.json")
+        );
+        assert_eq!(located.trust_root, tmp.path());
+    }
+
+    struct ErrLocator;
+
+    impl StatusSourceLocator for ErrLocator {
+        fn locate(
+            &self,
+            _cwd: &std::path::Path,
+            _session_id: &str,
+        ) -> Result<LocatedStatusSource, String> {
+            Err("locate failed".to_string())
+        }
+    }
+
+    #[test]
+    fn t_verb_locate_err_forwarding() {
+        let adapter: Arc<crate::agent::adapter::claude_code::ClaudeCodeAdapter> =
+            Arc::new(crate::agent::adapter::claude_code::ClaudeCodeAdapter);
+        let bindings = AgentBindings {
+            agent_type: AgentType::ClaudeCode,
+            locator: Arc::new(ErrLocator),
+            decoder: adapter.clone(),
+            transcript_paths: adapter.clone(),
+            validator: adapter.clone(),
+            streamer: adapter,
+        };
+        let lifecycle = SessionLifecycle::new(
+            PtyState::new(),
+            AgentWatcherState::new(),
+            TranscriptState::new(),
+            Arc::new(FakeEventSink::new()),
+        );
+        let result = lifecycle.locate(&bindings, std::path::Path::new("/tmp"), "sid");
+        assert_eq!(result.unwrap_err(), "locate failed");
+    }
+
+    #[test]
+    fn t_verb_ensure_trust() {
+        let tmp = TempDir::new().unwrap();
+
+        // Under trust root -> Ok
+        let under = LocatedStatusSource {
+            status_path: tmp
+                .path()
+                .join(".vimeflow")
+                .join("sessions")
+                .join("s")
+                .join("status.json"),
+            trust_root: tmp.path().to_path_buf(),
+            static_transcript_hint: None,
+        };
+        let lifecycle = SessionLifecycle::new(
+            PtyState::new(),
+            AgentWatcherState::new(),
+            TranscriptState::new(),
+            Arc::new(FakeEventSink::new()),
+        );
+        lifecycle.ensure_trust(&under).expect("under trust root");
+
+        // Outside trust root -> Err
+        let outside = LocatedStatusSource {
+            status_path: tmp.path().parent().unwrap().join("sibling.json"),
+            trust_root: tmp.path().to_path_buf(),
+            static_transcript_hint: None,
+        };
+        let result = lifecycle.ensure_trust(&outside);
+        assert!(result.is_err(), "outside trust root should fail");
+    }
 }
 
 impl SessionLifecycle {
@@ -151,6 +258,21 @@ impl SessionLifecycle {
     #[allow(dead_code)] // remove in F.5 cutover
     fn bind_services(&self, ctx: &AttachContext) -> Result<AgentBindings, String> {
         AgentBindings::for_attach(ctx).map_err(|e| format!("agent bindings: {}", e))
+    }
+
+    #[allow(dead_code)] // remove in F.5 cutover
+    fn locate(
+        &self,
+        bindings: &AgentBindings,
+        cwd: &Path,
+        sid: &str,
+    ) -> Result<LocatedStatusSource, String> {
+        bindings.locator.locate(cwd, sid)
+    }
+
+    #[allow(dead_code)] // remove in F.5 cutover
+    fn ensure_trust(&self, located: &LocatedStatusSource) -> Result<(), String> {
+        base::ensure_status_source_under_trust_root(&located.status_path, &located.trust_root)
     }
 
     /// Start (or restart) the agent watcher for `session_id`.
