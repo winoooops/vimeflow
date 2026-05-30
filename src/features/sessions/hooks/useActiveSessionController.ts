@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { Pane, Session } from '../types'
+import type { Session } from '../types'
 import type { ITerminalService } from '../../terminal/services/terminalService'
-import { findActivePane } from '../utils/activeSessionPane'
-import { isShellPane } from '../utils/paneKind'
+import { findBackendSessionPane } from '../utils/findBackendPane'
 
 export interface UseActiveSessionControllerOptions {
   service: ITerminalService
@@ -16,23 +15,6 @@ export interface ActiveSessionController {
   setActiveSessionIdRaw: (id: string | null) => void
   /** Latest active React session id for async manager mutations. */
   activeSessionIdRef: { readonly current: string | null }
-}
-
-const findBackendSessionPane = (session: Session): Pane | undefined => {
-  const activePane = findActivePane(session)
-  if (!activePane) {
-    return undefined
-  }
-
-  if (isShellPane(activePane)) {
-    return activePane
-  }
-
-  // Active pane is a browser: bind backend/agent state to a live shell when one
-  // exists, not blindly the first shell (which may have exited).
-  const shellPanes = session.panes.filter(isShellPane)
-
-  return shellPanes.find((pane) => pane.status === 'running') ?? shellPanes[0]
 }
 
 export const useActiveSessionController = ({

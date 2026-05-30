@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from 'react'
+import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import { flushSync } from 'react-dom'
 import type { LayoutId, Pane, PaneKind, Session } from '../types'
 import type { AgentSessionTitleEvent } from '../../../bindings'
@@ -33,6 +33,7 @@ import {
   writeActivityPanelCollapsed,
 } from '../utils/activityPanelCollapsedStore'
 import { isShellPane } from '../utils/paneKind'
+import { findBackendSessionPane } from '../utils/findBackendPane'
 import { DEFAULT_BROWSER_URL } from '../../browser/types'
 import { usePtyExitListener } from '../../terminal/hooks/usePtyExitListener'
 import { destroyBrowserPane } from '../../browser/browserBridge'
@@ -148,15 +149,6 @@ const normalizePaneUserLabel = (
   return trimmed && trimmed.length > 0 ? trimmed : undefined
 }
 
-const findBackendSessionPane = (session: Session): Pane | undefined => {
-  const activePane = findActivePane(session)
-  if (!activePane) {
-    return undefined
-  }
-
-  return isShellPane(activePane) ? activePane : session.panes.find(isShellPane)
-}
-
 const browserSessionIdForSession = (session: Session): string =>
   session.browserSessionId ??
   session.panes.find(isShellPane)?.ptyId ??
@@ -208,19 +200,19 @@ const readStoredBrowserPanes = (): StoredBrowserPane[] => {
   }
 }
 
-const writeStoredBrowserPanes = (panes: StoredBrowserPane[]): void => {
+const writeStoredBrowserPanesJson = (json: string): void => {
   if (!canUseLocalStorage()) {
     return
   }
 
   try {
-    if (panes.length === 0) {
+    if (json === '[]') {
       window.localStorage.removeItem(BROWSER_PANE_STORE_KEY)
 
       return
     }
 
-    window.localStorage.setItem(BROWSER_PANE_STORE_KEY, JSON.stringify(panes))
+    window.localStorage.setItem(BROWSER_PANE_STORE_KEY, json)
   } catch {
     // Browser pane restore is a convenience cache; quota or storage failures
     // must not affect terminal session lifecycle.
@@ -783,13 +775,18 @@ export const useSessionManager = (
     createSession,
   })
 
+  const browserPaneStoreJson = useMemo(
+    () => JSON.stringify(storedBrowserPanesForSessions(sessions)),
+    [sessions]
+  )
+
   useEffect(() => {
     if (loading) {
       return
     }
 
-    writeStoredBrowserPanes(storedBrowserPanesForSessions(sessions))
-  }, [loading, sessions])
+    writeStoredBrowserPanesJson(browserPaneStoreJson)
+  }, [loading, browserPaneStoreJson])
 
   // Remove session — kill + filter + advance active
   const removeSession = useCallback(

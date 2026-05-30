@@ -159,6 +159,7 @@ interface CdpCommand {
 }
 
 const BROWSER_CDP_ORIGIN = 'vimeflow://agent-plugin/local'
+// Keep in sync with src/features/browser/types.ts DEFAULT_BROWSER_URL (main/renderer project boundary prevents sharing a module).
 const DEFAULT_BROWSER_URL = 'https://www.youtube.com/'
 const WS_GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11'
 
@@ -800,7 +801,10 @@ export class BrowserPaneController {
     }))
   }
 
-  private emitTabsChanged(record: BrowserPaneRecord): void {
+  private emitTabsChanged(
+    record: BrowserPaneRecord,
+    tabs?: BrowserPaneTabSnapshot[]
+  ): void {
     const win = BrowserWindow.fromId(record.windowId)
     if (!win || win.isDestroyed() || win.webContents.isDestroyed()) {
       return
@@ -809,7 +813,7 @@ export class BrowserPaneController {
     win.webContents.send(BROWSER_PANE_TABS_CHANGED, {
       sessionId: record.sessionId,
       paneId: record.paneId,
-      tabs: this.tabSnapshots(record),
+      tabs: tabs ?? this.tabSnapshots(record),
     })
   }
 
@@ -925,7 +929,7 @@ export class BrowserPaneController {
     }
 
     const tabs = this.tabSnapshots(record)
-    this.emitTabsChanged(record)
+    this.emitTabsChanged(record, tabs)
     if (record.activeTabId !== tabId) {
       return
     }
