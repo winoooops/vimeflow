@@ -852,7 +852,7 @@ describe('ActivityEvent — structured tooltip', () => {
     expect(body).not.toHaveClass('italic')
   })
 
-  test('FilePathChip directory span uses left-truncation classes and bdi wrapper', async () => {
+  test('FilePathChip path wraps with break-all and renders dir + filename', async () => {
     render(
       <ActivityEvent
         event={toolEvent({
@@ -869,15 +869,17 @@ describe('ActivityEvent — structured tooltip', () => {
     const details = await screen.findByRole('dialog', {
       name: 'EDIT activity details',
     })
-    const bdi = within(details).getByText('src/components/')
+    const dir = within(details).getByText('src/components/')
+    expect(dir).toHaveClass('text-[#6c7086]')
+    const file = within(details).getByText('Button.tsx')
+    expect(file).toHaveClass('font-semibold')
     // eslint-disable-next-line testing-library/no-node-access
-    const dirSpan = bdi.parentElement
-    expect(dirSpan).toHaveClass('truncate')
-    expect(dirSpan).toHaveClass('[direction:rtl]')
-    expect(bdi.tagName.toLowerCase()).toBe('bdi')
+    const pathSpan = dir.parentElement
+    expect(pathSpan).toHaveClass('min-w-0')
+    expect(pathSpan).toHaveClass('break-all')
   })
 
-  test('FilePathChip filename span never shrinks', async () => {
+  test('FilePathChip icon stays aligned to first line while path wraps', async () => {
     render(
       <ActivityEvent
         event={toolEvent({
@@ -895,11 +897,14 @@ describe('ActivityEvent — structured tooltip', () => {
       name: 'READ activity details',
     })
     const filename = within(details).getByText('Button.tsx')
-    expect(filename).toHaveClass('shrink-0')
-    expect(filename).toHaveClass('whitespace-nowrap')
+    expect(filename).toHaveClass('font-semibold')
+    // eslint-disable-next-line testing-library/no-node-access
+    const pathSpan = filename.parentElement
+    expect(pathSpan).toHaveClass('min-w-0')
+    expect(pathSpan).toHaveClass('break-all')
   })
 
-  test('CommandBlock command span uses truncate for single-line overflow', async () => {
+  test('CommandBlock command span wraps with whitespace-pre-wrap and break-all', async () => {
     render(
       <ActivityEvent
         event={toolEvent({
@@ -920,6 +925,7 @@ describe('ActivityEvent — structured tooltip', () => {
     const cmd = within(details).getByText(
       'npm run test -- --run src/features/agent-status/components/ActivityEvent.test.tsx'
     )
-    expect(cmd).toHaveClass('truncate')
+    expect(cmd).toHaveClass('whitespace-pre-wrap')
+    expect(cmd).toHaveClass('break-all')
   })
 })

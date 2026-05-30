@@ -32,7 +32,7 @@ use crate::runtime::EventSink;
 const POLL_INTERVAL: Duration = Duration::from_millis(500);
 
 /// Maximum length for the args summary string
-const MAX_ARGS_LEN: usize = 100;
+const MAX_ARGS_LEN: usize = 1024;
 
 const MAX_TOOL_RESULT_CONTENT_LEN: usize = 256 * 1024;
 /// When truncating `tool_result` content that exceeds the cap, keep at
@@ -686,7 +686,7 @@ fn is_user_prompt(content: &Value) -> bool {
     items.iter().any(is_non_empty_user_block)
 }
 
-/// Summarize a tool input Value into a short string (~100 chars max)
+/// Summarize a tool input Value into a short string (~1024 chars max)
 fn summarize_input(input: Option<&Value>) -> String {
     let input = match input {
         Some(v) => v,
@@ -1503,11 +1503,11 @@ mod tests {
 
     #[test]
     fn summarize_input_truncation() {
-        let long_path = format!("/very/long/path/{}", "a".repeat(200));
+        let long_path = format!("/very/long/path/{}", "a".repeat(1100));
         let input: Value =
             serde_json::from_str(&format!(r#"{{"file_path":"{}"}}"#, long_path)).unwrap();
         let summary = summarize_input(Some(&input));
-        assert!(summary.len() <= MAX_ARGS_LEN);
+        assert!(summary.chars().count() <= MAX_ARGS_LEN);
         assert!(summary.ends_with("..."));
     }
 
@@ -1532,14 +1532,14 @@ mod tests {
 
     #[test]
     fn truncate_string_long() {
-        let long = "a".repeat(200);
-        let result = truncate_string(&long, 100);
+        let long = "a".repeat(1200);
+        let result = truncate_string(&long, MAX_ARGS_LEN);
         // truncate_string's contract is bounded by character count, not
         // byte count — assert against `chars().count()` (Claude review
         // on PR #152, F17). For all-ASCII inputs `len()` and
         // `chars().count()` agree, so this also matches the previous
         // assertion.
-        assert_eq!(result.chars().count(), 100);
+        assert_eq!(result.chars().count(), MAX_ARGS_LEN);
         assert!(result.ends_with("..."));
     }
 
@@ -1548,17 +1548,17 @@ mod tests {
         // Multi-byte UTF-8 input: each CJK char is 3 bytes. The byte
         // length of the truncated string can significantly exceed
         // max_len (97 chars × 3 bytes + 3 bytes for "..." = 294 bytes
-        // for max_len=100), but the char count must remain at the cap.
+        // for max_len=1024), but the char count must remain at the cap.
         // Regression guard for F17: previously the test asserted
         // `result.len() <= MAX_ARGS_LEN` (bytes), which would have
         // passed for ASCII but given false assurance about CJK paths.
-        let cjk = "中".repeat(200);
-        let result = truncate_string(&cjk, 100);
-        assert_eq!(result.chars().count(), 100);
+        let cjk = "中".repeat(1200);
+        let result = truncate_string(&cjk, MAX_ARGS_LEN);
+        assert_eq!(result.chars().count(), MAX_ARGS_LEN);
         assert!(result.ends_with("..."));
         // Byte length is unbounded by design — sanity check it's larger
         // than max_len in chars, proving the char-count is the real cap.
-        assert!(result.len() > 100, "byte length should exceed char cap");
+        assert!(result.len() > MAX_ARGS_LEN, "byte length should exceed char cap");
     }
 
     #[test]

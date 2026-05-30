@@ -145,14 +145,14 @@ const CommandBlock = ({
   cmd: string
   accent: string
 }): ReactElement => (
-  <pre className="relative m-0 overflow-hidden rounded-md border border-[rgba(74,68,79,0.3)] bg-[rgba(13,13,28,0.55)] p-2 pl-6 font-mono text-[11px] leading-[1.55] text-[#cdc3d1]">
+  <pre className="relative m-0 max-h-[12rem] overflow-y-auto thin-scrollbar rounded-md border border-[rgba(74,68,79,0.3)] bg-[rgba(13,13,28,0.55)] p-2 pl-6 font-mono text-[11px] leading-[1.55] text-[#cdc3d1]">
     <span
       className="absolute left-[10px] top-2 text-sm"
       style={{ color: accent, opacity: 0.8 }}
     >
       $
     </span>
-    <span className="block truncate text-[#e3e0f7]">{cmd}</span>
+    <span className="whitespace-pre-wrap break-all text-[#e3e0f7]">{cmd}</span>
   </pre>
 )
 
@@ -168,19 +168,17 @@ const FilePathChip = ({
   const dir = parts.join('/') + (parts.length > 0 ? '/' : '')
 
   return (
-    <div className="flex items-baseline gap-px overflow-hidden rounded-md border border-[rgba(74,68,79,0.3)] bg-[rgba(13,13,28,0.55)] px-2.5 py-2 font-mono text-[11.5px]">
+    <div className="flex items-start gap-1.5 rounded-md border border-[rgba(74,68,79,0.3)] bg-[rgba(13,13,28,0.55)] px-2.5 py-2 font-mono text-[11.5px]">
       <span
-        className="material-symbols-outlined mr-1.5 shrink-0 text-xs"
+        className="material-symbols-outlined shrink-0 text-xs"
         style={{ color: accent, transform: 'translateY(2px)' }}
         aria-hidden="true"
       >
         draft
       </span>
-      <span className="min-w-0 truncate text-left text-[#6c7086] [direction:rtl]">
-        <bdi>{dir}</bdi>
-      </span>
-      <span className="shrink-0 whitespace-nowrap font-semibold text-[#e3e0f7]">
-        {file}
+      <span className="min-w-0 break-all">
+        <span className="text-[#6c7086]">{dir}</span>
+        <span className="font-semibold text-[#e3e0f7]">{file}</span>
       </span>
     </div>
   )
