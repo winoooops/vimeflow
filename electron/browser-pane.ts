@@ -552,6 +552,11 @@ const decodeFrame = (buffer: Buffer): DecodedFrame | null => {
     offset += 8
   }
 
+  // Cap frame payloads (CDP messages are KBs) to prevent an unbounded pending buffer.
+  if (payloadLength > 16 * 1024 * 1024) {
+    throw new Error('websocket frame too large')
+  }
+
   const maskLength = masked ? 4 : 0
   const frameLength = offset + maskLength + payloadLength
   if (buffer.length < frameLength) {
@@ -1655,8 +1660,9 @@ export class BrowserPaneController {
     }
 
     // This minimal proxy requires non-fragmented frames (Phase 1).
+    // 1003 = Unsupported Data (fragmentation), not 1009 (message too big).
     if (!frame.fin && (frame.opcode === 0x1 || frame.opcode === 0x2)) {
-      sendWebSocketClose(socket, 1009)
+      sendWebSocketClose(socket, 1003)
 
       return
     }

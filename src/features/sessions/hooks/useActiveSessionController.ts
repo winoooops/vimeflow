@@ -25,7 +25,15 @@ const findBackendSessionPane = (session: Session): Pane | undefined => {
     return undefined
   }
 
-  return isShellPane(activePane) ? activePane : session.panes.find(isShellPane)
+  if (isShellPane(activePane)) {
+    return activePane
+  }
+
+  // Active pane is a browser: bind backend/agent state to a live shell when one
+  // exists, not blindly the first shell (which may have exited).
+  const shellPanes = session.panes.filter(isShellPane)
+
+  return shellPanes.find((pane) => pane.status === 'running') ?? shellPanes[0]
 }
 
 export const useActiveSessionController = ({
