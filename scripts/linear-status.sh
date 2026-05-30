@@ -41,7 +41,22 @@ gql() { # $1 query  $2 variables-json (optional)
     return 0
   fi
   : "${LINEAR_API_KEY:?set LINEAR_API_KEY (see scripts/linear.env.example)}"
-  curl -fsS "$API" -H "Authorization: $LINEAR_API_KEY" -H 'Content-Type: application/json' -d "$payload"
+  # --fail-with-body keeps Linear's JSON error body on 4xx/5xx (plain -f drops it);
+  # --max-time / --connect-timeout stop a git-hook or CI call hanging if the API is unreachable.
+  local resp
+  resp=$(curl --fail-with-body -sS --max-time 10 --connect-timeout 5 \
+    "$API" -H "Authorization: $LINEAR_API_KEY" -H 'Content-Type: application/json' -d "$payload") || {
+    echo "error: Linear API request failed:" >&2
+    printf '%s\n' "$resp" >&2
+    return 1
+  }
+  # GraphQL can also return errors in an "errors" array with HTTP 200 — surface and fail.
+  if jq -e 'has("errors") and (.errors | length > 0)' >/dev/null 2>&1 <<<"$resp"; then
+    echo "error: Linear GraphQL returned errors:" >&2
+    jq -r '.errors[].message' <<<"$resp" >&2
+    return 1
+  fi
+  printf '%s\n' "$resp"
 }
 
 emit() { if [[ "$DRY" -eq 1 ]]; then cat; else jq -r "$1"; fi; }
