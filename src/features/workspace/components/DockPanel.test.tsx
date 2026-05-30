@@ -241,6 +241,24 @@ describe('DockPanel', () => {
       expect(screen.getByTestId('markdown-reading-view')).toHaveFocus()
     })
 
+    test('switching between markdown files keeps focus in the reading region (focused pane)', () => {
+      const view = renderDockPanel({
+        selectedFilePath: '/x/a.md',
+        content: '# A',
+        isFocused: true,
+      })
+
+      // The effect focuses the region on the initial focused-reading mount.
+      expect(screen.getByTestId('markdown-reading-view')).toHaveFocus()
+
+      // Switching files remounts the region (key=selectedFilePath); the effect
+      // must re-fire on the selectedFilePath change to restore focus — otherwise
+      // none of the other deps change and focus falls to document.body.
+      view.rerenderWith({ selectedFilePath: '/x/b.md', content: '# B' })
+
+      expect(screen.getByTestId('markdown-reading-view')).toHaveFocus()
+    })
+
     test('.markdown extension also opens in the reading view', () => {
       renderDockPanel({
         selectedFilePath: '/x/notes.markdown',

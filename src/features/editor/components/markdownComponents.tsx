@@ -97,10 +97,12 @@ export const markdownComponents: Components = {
     className,
     ...props
   }: IntrinsicProps<'a'>): ReactElement => (
+    // `rel` is forced AFTER the spread so a `rel` carried on the source link
+    // can never widen it back to a referrer-leaking value.
     <a
       className="text-secondary underline-offset-2 hover:underline"
-      rel="noreferrer"
       {...props}
+      rel="noreferrer"
     />
   ),
   strong: ({

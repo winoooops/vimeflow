@@ -158,7 +158,10 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
     // `shouldAutoFocus={isFocused}`. Without it, toggling Source → Reading
     // leaves focus on the toggle button, so PageDown/arrow scrolling is dead
     // until the user clicks the document. Gated on `isFocused` so opening a
-    // markdown file in a background dock never steals focus.
+    // markdown file in a background dock never steals focus. `selectedFilePath`
+    // is a dependency so switching between two markdown files re-focuses the
+    // region the `key={selectedFilePath}` remount just rebuilt — otherwise none
+    // of the other deps change and focus falls to document.body after unmount.
     useEffect(() => {
       if (
         tab === 'editor' &&
@@ -168,7 +171,7 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
       ) {
         markdownViewRef.current?.focus()
       }
-    }, [tab, isMarkdown, viewMode, isFocused])
+    }, [tab, isMarkdown, viewMode, isFocused, selectedFilePath])
 
     useImperativeHandle(ref, () => ({
       focusEditor(): boolean {

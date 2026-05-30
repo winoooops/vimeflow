@@ -111,10 +111,15 @@ export const installNavigationGuard = (
     const current = win.webContents.getURL()
     const targetDoc = documentUrl(url)
 
-    // Allow ONLY a real in-page anchor jump: the same document AND a non-empty
-    // `#fragment`. A same-document link without a fragment (e.g. "/index.html"
-    // when the app is already at ".../index.html") is a full reload that would
-    // drop SPA / editor state, so it must be blocked like any other navigation.
+    // Same-document `#hash` allowance. In modern Electron an in-page anchor
+    // click is handled by the renderer's History API and fires
+    // `did-navigate-in-page` (which we deliberately do NOT hook), so real
+    // table-of-contents jumps already work without reaching this handler. This
+    // branch is the defensive counterpart: should a same-document + `#fragment`
+    // navigation ever surface as `will-navigate`, let it through rather than
+    // preventDefault-ing a harmless in-page scroll. A same-document link WITHOUT
+    // a fragment (e.g. "/index.html" while already at ".../index.html") is a
+    // full reload that would drop SPA / editor state, so it stays blocked.
     if (
       hasFragment(url) &&
       targetDoc !== null &&

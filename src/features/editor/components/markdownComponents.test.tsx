@@ -1,5 +1,6 @@
 import { render, screen } from '@testing-library/react'
 import { describe, expect, test } from 'vitest'
+import type { ComponentPropsWithoutRef, ReactElement } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { markdownComponents } from './markdownComponents'
@@ -52,6 +53,25 @@ describe('markdownComponents', () => {
     const link = screen.getByRole('link', { name: 'docs' })
     expect(link).toHaveAttribute('href', 'https://example.com')
     expect(link).toHaveAttribute('rel', 'noreferrer')
+  })
+
+  test('forces rel="noreferrer" even when the source link carries its own rel', () => {
+    // Markdown syntax can't set attributes, so render the `a` component directly
+    // with a hostile `rel` to exercise the after-spread override guard.
+    const Anchor = markdownComponents.a as (
+      props: ComponentPropsWithoutRef<'a'>
+    ) => ReactElement
+
+    render(
+      <Anchor href="https://example.com" rel="opener">
+        danger
+      </Anchor>
+    )
+
+    expect(screen.getByRole('link', { name: 'danger' })).toHaveAttribute(
+      'rel',
+      'noreferrer'
+    )
   })
 
   test('renders a GFM table with header + cell roles', () => {
