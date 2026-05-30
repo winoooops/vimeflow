@@ -116,6 +116,8 @@ words:
 
   # Git apply flag — `--whitespace=nowarn` suppresses whitespace warnings
   - nowarn
+  - worktree
+  - worktrees
 
 ignorePaths:
   - node_modules
