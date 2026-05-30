@@ -1,0 +1,406 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Vimeflow · Activity Tooltip</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link
+      href="https://fonts.googleapis.com/icon?family=Material+Symbols+Outlined"
+      rel="stylesheet"
+    />
+
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      html,
+      body {
+        height: 100%;
+        background: #0d0d1c;
+        color: #e3e0f7;
+        font-family: 'Inter', system-ui, sans-serif;
+      }
+      body {
+        background-image:
+          radial-gradient(
+            1200px circle at 10% -10%,
+            rgba(203, 166, 247, 0.06),
+            transparent 45%
+          ),
+          radial-gradient(
+            900px circle at 100% 100%,
+            rgba(168, 200, 255, 0.035),
+            transparent 50%
+          );
+        padding: 48px 32px 80px;
+      }
+      .wrap {
+        max-width: 1280px;
+        margin: 0 auto;
+      }
+      h1 {
+        font-family: 'Instrument Sans', system-ui, sans-serif;
+        font-size: 30px;
+        font-weight: 600;
+        letter-spacing: -0.02em;
+        color: #e3e0f7;
+        margin-bottom: 6px;
+      }
+      .sub {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 11px;
+        color: #8a8299;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        margin-bottom: 40px;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+        gap: 28px;
+      }
+      .cell {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+      .cell-label {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 10px;
+        color: #6c7086;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+      }
+      .compare {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 28px;
+        margin-bottom: 48px;
+        padding: 24px;
+        background: rgba(20, 18, 32, 0.4);
+        border: 1px solid rgba(74, 68, 79, 0.25);
+        border-radius: 12px;
+      }
+      .before {
+        background: #1f1d2b;
+        border-radius: 8px;
+        padding: 16px;
+      }
+      .before-eyebrow {
+        font-family: 'Inter', sans-serif;
+        font-weight: 600;
+        color: #8a8299;
+        font-size: 11px;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        margin-bottom: 12px;
+      }
+      .before-card {
+        background: rgba(13, 13, 28, 0.6);
+        border: 1px solid rgba(74, 68, 79, 0.4);
+        border-radius: 8px;
+        padding: 12px 14px;
+      }
+      .before-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 10px;
+      }
+      .before-tag {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 11px;
+        color: #8a8299;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        font-weight: 700;
+      }
+      .before-copy {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 4px 8px;
+        border-radius: 4px;
+        background: rgba(74, 68, 79, 0.3);
+        color: #cdc3d1;
+        font-size: 10px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
+      }
+      .before-body {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 11px;
+        color: #cdc3d1;
+        line-height: 1.55;
+      }
+      .after-eyebrow {
+        font-family: 'Inter', sans-serif;
+        font-weight: 600;
+        color: #cba6f7;
+        font-size: 11px;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        margin-bottom: 12px;
+      }
+      kbd {
+        font-family: 'JetBrains Mono', monospace;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 16px;
+        height: 14px;
+        padding: 0 4px;
+        background: rgba(51, 51, 68, 0.6);
+        border: 1px solid rgba(74, 68, 79, 0.6);
+        border-radius: 3px;
+        font-size: 9px;
+        font-weight: 600;
+        color: #cdc3d1;
+        margin: 0 1px;
+      }
+      .material-symbols-outlined {
+        font-variation-settings:
+          'FILL' 0,
+          'wght' 400;
+        vertical-align: middle;
+      }
+    </style>
+
+    <script
+      src="https://unpkg.com/react@18.3.1/umd/react.development.js"
+      integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L"
+      crossorigin="anonymous"
+    ></script>
+    <script
+      src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js"
+      integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm"
+      crossorigin="anonymous"
+    ></script>
+    <script
+      src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js"
+      integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y"
+      crossorigin="anonymous"
+    ></script>
+  </head>
+  <body>
+    <div class="wrap">
+      <h1>Activity tooltip</h1>
+      <div class="sub">Hover card for activity feed rows · before → after</div>
+
+      <div class="compare">
+        <div>
+          <div class="before-eyebrow">Before</div>
+          <div class="before-card">
+            <div class="before-header">
+              <span class="before-tag">BASH</span>
+              <span class="before-copy">
+                <span class="material-symbols-outlined" style="font-size: 12px"
+                  >content_copy</span
+                >
+                COPY
+              </span>
+            </div>
+            <div class="before-body">
+              cd /home/will/projects/vimeflow/.claude/worktrees/feat-agent-ipc
+              &amp;&amp; git status &amp;&amp; git log --oneli...
+            </div>
+          </div>
+        </div>
+        <div>
+          <div class="after-eyebrow">After</div>
+          <div id="after-mount"></div>
+        </div>
+      </div>
+
+      <h1 style="margin-bottom: 6px">All variants</h1>
+      <div class="sub">One per activity kind</div>
+      <div class="grid" id="grid"></div>
+    </div>
+
+    <!-- Inline minimal kit needed by the tooltip -->
+    <script type="text/babel">
+      // Minimal Kbd + Icon for the standalone stage. Mirror src/primitives.jsx.
+      function Icon({ name, size = 18, fill = 0, style, ...rest }) {
+        return (
+          <span
+            {...rest}
+            className="material-symbols-outlined"
+            style={{
+              fontSize: size,
+              fontVariationSettings: `'FILL' ${fill}, 'wght' 400, 'GRAD' 0, 'opsz' ${size}`,
+              lineHeight: 1,
+              userSelect: 'none',
+              ...style,
+            }}
+          >
+            {name}
+          </span>
+        )
+      }
+      function Kbd({ children }) {
+        return (
+          <kbd
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              minWidth: 16,
+              height: 14,
+              padding: '0 4px',
+              background: 'rgba(51,51,68,0.6)',
+              border: '1px solid rgba(74,68,79,0.6)',
+              borderRadius: 3,
+              fontFamily: "'JetBrains Mono', monospace",
+              fontSize: 9,
+              fontWeight: 600,
+              color: '#cdc3d1',
+            }}
+          >
+            {children}
+          </kbd>
+        )
+      }
+      window.Icon = Icon
+      window.Kbd = Kbd
+    </script>
+
+    <script type="text/babel" src="activity-tooltip.jsx"></script>
+
+    <script type="text/babel">
+      const { ActivityTooltip } = window
+
+      // Mount the "after" comparison
+      ReactDOM.createRoot(document.getElementById('after-mount')).render(
+        <ActivityTooltip
+          kind="bash"
+          meta={{ ago: '18s ago', exit: 1, duration: '1.2s' }}
+          body={{
+            command:
+              'cd /home/will/projects/vimeflow/.claude/worktrees/feat-agent-ipc && git status && git log --oneline -5',
+            output: [
+              'On branch feat/agent-ipc',
+              '  modified: src/lib/ipc.ts',
+              '  modified: src/runner.ts',
+              'a7f23c · refactor: extract ipc transport',
+              'b3d810 · feat: agent registry',
+              '✗ uncommitted changes pending',
+            ],
+          }}
+        />
+      )
+
+      // All variants
+      const variants = [
+        {
+          label: 'BASH — failed',
+          kind: 'bash',
+          meta: { ago: '18s ago', exit: 1, duration: '2.4s' },
+          body: {
+            command: 'pnpm test auth',
+            output: [
+              '> vimeflow@0.9.4 test',
+              '> vitest run auth',
+              '✓ rejects missing tokens',
+              '✓ accepts valid tokens',
+              '✗ rejects expired tokens',
+              '4 passed, 1 failed in 1.8s',
+            ],
+          },
+        },
+        {
+          label: 'BASH — success',
+          kind: 'bash',
+          meta: { ago: '1m ago', exit: 0, duration: '1.2s' },
+          body: {
+            command: 'pnpm add jose',
+            output: ['+ jose 5.6.3', '  added 1 package in 1.2s'],
+          },
+        },
+        {
+          label: 'EDIT — with diff',
+          kind: 'edit',
+          meta: { ago: 'now', add: 12, rem: 2 },
+          body: {
+            file: 'src/middleware/auth.ts',
+            before: [
+              'if (token === null || token === undefined) {',
+              "  throw new Error('Unauthorized');",
+              '}',
+            ],
+            after: [
+              'if (!token) {',
+              "  return next(new AuthError('TokenMissing'));",
+              '}',
+            ],
+          },
+        },
+        {
+          label: 'READ — file + meta',
+          kind: 'read',
+          meta: { ago: '46s ago', lines: 'L14-L62', tokens: 420 },
+          body: {
+            file: 'src/utils/jwt.ts',
+            preview:
+              "import { jwtVerify } from 'jose';\nimport { createSecret } from './secrets';\n\nexport async function verify(token: string) {\n  const secret = await createSecret();\n  return jwtVerify(token, secret);\n}",
+          },
+        },
+        {
+          label: 'THINK — internal',
+          kind: 'think',
+          meta: { ago: '1m ago' },
+          body: {
+            text: 'I need to check how `jwt.verify` is being called elsewhere before removing the helper. The middleware imports it directly but there may be other callers — let me grep first.',
+          },
+        },
+        {
+          label: 'USER — message',
+          kind: 'user',
+          meta: { ago: '2m ago' },
+          body: {
+            text: 'Refactor this to use jose instead of jsonwebtoken. Keep the API stable; I just want the underlying library swapped.',
+          },
+        },
+        {
+          label: 'TOOL — invocation',
+          kind: 'tool',
+          meta: { ago: '38s ago', duration: '0.4s' },
+          body: {
+            name: 'grep',
+            args: "'jsonwebtoken' src/",
+          },
+        },
+      ]
+
+      function VariantCard({ v }) {
+        return (
+          <div className="cell">
+            <div className="cell-label">{v.label}</div>
+            <ActivityTooltip kind={v.kind} meta={v.meta} body={v.body} />
+          </div>
+        )
+      }
+
+      function Grid() {
+        return (
+          <>
+            {variants.map((v, i) => (
+              <VariantCard key={i} v={v} />
+            ))}
+          </>
+        )
+      }
+
+      ReactDOM.createRoot(document.getElementById('grid')).render(<Grid />)
+    </script>
+  </body>
+</html>

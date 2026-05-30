@@ -23,7 +23,7 @@ use crate::agent::types::{AgentCwdEvent, AgentToolCallEvent, AgentTurnEvent, Too
 use crate::runtime::EventSink;
 
 const POLL_INTERVAL: Duration = Duration::from_millis(500);
-const MAX_ARGS_LEN: usize = 100;
+const MAX_ARGS_LEN: usize = 1024;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum CompletionMode {

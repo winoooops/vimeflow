@@ -20,6 +20,11 @@ export default defineConfig({
       '**/{karma,rollup,webpack,vite,vitest,jest,ava,nyc,cypress,tsup,build,eslint,prettier}.config.*',
       '.claude/**',
       'tests/e2e/**',
+      // Nested git worktrees carry their own src/ and node_modules/. Vitest
+      // would otherwise discover their test files and load a second React
+      // instance, breaking every hooks-using test with a null dispatcher.
+      'worktrees/**',
+      '.worktrees/**',
     ],
     coverage: {
       provider: 'v8',

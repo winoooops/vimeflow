@@ -26,8 +26,22 @@ import {
 } from '@floating-ui/react'
 import { formatShortcut, type ShortcutInput } from '../lib/formatShortcut'
 
-interface TooltipBaseProps {
+interface TooltipCommonProps {
   content: ReactNode
+  children: ReactElement
+  placement?: Placement
+  delayMs?: number
+  disabled?: boolean
+  className?: string
+}
+
+/**
+ * Default ("chrome") surface: the floating element renders its own rounded,
+ * shadowed, blurred background. Supports the optional shortcut chip and a
+ * `maxWidth` clamp.
+ */
+interface ChromeSurfaceProps {
+  bare?: false
   /**
    * Optional keyboard shortcut shown as a single chip on the right side
    * of the tooltip (Zed-style). Accepts a single key or a chord array
@@ -35,20 +49,31 @@ interface TooltipBaseProps {
    * `formatShortcut`.
    */
   shortcut?: ShortcutInput
-  children: ReactElement
-  placement?: Placement
-  delayMs?: number
-  disabled?: boolean
   maxWidth?: number
-  className?: string
 }
 
-interface PassiveTooltipProps extends TooltipBaseProps {
+/**
+ * Bare surface: the floating element renders with only `z-50` and any
+ * consumer-provided `className` — the default visual chrome (rounded, shadow,
+ * background, border) and the `maxWidth` clamp are omitted so the consumer
+ * fully owns the surface styling. The chrome-only `shortcut` chip and
+ * `maxWidth` clamp are unsupported here and typed `never` so the combination
+ * is a compile error rather than a silently broken layout.
+ */
+interface BareSurfaceProps {
+  bare: true
+  shortcut?: never
+  maxWidth?: never
+}
+
+type TooltipSurfaceProps = ChromeSurfaceProps | BareSurfaceProps
+
+interface PassiveTooltipProps {
   interactive?: false
   ariaLabel?: never
 }
 
-interface InteractiveTooltipProps extends TooltipBaseProps {
+interface InteractiveTooltipProps {
   /**
    * Allows pointer interaction inside the floating surface. Keep this off for
    * passive labels so regular tooltips remain non-interactive descriptions.
@@ -57,7 +82,11 @@ interface InteractiveTooltipProps extends TooltipBaseProps {
   ariaLabel: string
 }
 
-export type TooltipProps = PassiveTooltipProps | InteractiveTooltipProps
+type TooltipInteractionProps = PassiveTooltipProps | InteractiveTooltipProps
+
+export type TooltipProps = TooltipCommonProps &
+  TooltipSurfaceProps &
+  TooltipInteractionProps
 
 const TOOLTIP_BASE_CLASSES =
   'z-50 rounded-md shadow-lg px-3 py-1.5 ' +
@@ -80,6 +109,7 @@ export const Tooltip = ({
   className = '',
   interactive = false,
   ariaLabel = undefined,
+  bare = false,
 }: TooltipProps): ReactElement => {
   // `content != null` would admit falsy ReactNodes (`false`, `''`) and render
   // an empty floating box — these are common with the `cond && 'text'` idiom.
@@ -135,14 +165,17 @@ export const Tooltip = ({
   const interactionClass = interactive
     ? 'pointer-events-auto'
     : 'pointer-events-none'
-  const tooltipClasses = `${interactionClass} ${TOOLTIP_BASE_CLASSES}`
+
+  const tooltipClasses = bare
+    ? `${interactionClass} z-50`
+    : `${interactionClass} ${TOOLTIP_BASE_CLASSES}`
   const classes = className ? `${tooltipClasses} ${className}` : tooltipClasses
 
   const floatingSurface = (
     <div
       ref={refs.setFloating}
       data-placement={resolvedPlacement}
-      style={{ ...floatingStyles, maxWidth }}
+      style={{ ...floatingStyles, maxWidth: bare ? undefined : maxWidth }}
       className={classes}
       {...getFloatingProps(
         ariaLabel === undefined ? undefined : { 'aria-label': ariaLabel }
