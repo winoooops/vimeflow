@@ -21,6 +21,7 @@ import { DockTab } from './DockTab'
 import { ViewModeToggle, type ViewMode } from './ViewModeToggle'
 import type { SelectedDiffFile } from '../../diff/types'
 import type { UseGitStatusReturn } from '../../diff/hooks/useGitStatus'
+import type { FeedbackDispatchTarget } from '../../diff/services/activePanePicker'
 import { DOCK_CONTAINER_ID } from '../containerIds'
 import {
   DOCK_INLINE_ACTIONS_MIN_WIDTH_PX,
@@ -78,6 +79,8 @@ interface DockPanelBaseProps {
   cwd?: string
   /** Optional shared git status from WorkspaceView. */
   gitStatus?: UseGitStatusReturn
+  /** Optional feedback dispatch target for inline review comments. */
+  feedbackDispatch?: FeedbackDispatchTarget
   isFocused?: boolean
   onContainerFocus?: () => void
 }
@@ -117,6 +120,7 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
       isLoading = false,
       cwd = '.',
       gitStatus = undefined,
+      feedbackDispatch = undefined,
       isFocused = false,
       onContainerFocus = undefined,
       selectedDiffFile,
@@ -397,9 +401,14 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
                     gitStatus={gitStatus}
                     selectedFile={selectedDiffFile}
                     onSelectedFileChange={onSelectedDiffFileChange}
+                    feedbackDispatch={feedbackDispatch}
                   />
                 ) : (
-                  <DiffPanelContent cwd={cwd} gitStatus={gitStatus} />
+                  <DiffPanelContent
+                    cwd={cwd}
+                    gitStatus={gitStatus}
+                    feedbackDispatch={feedbackDispatch}
+                  />
                 )}
               </div>
             </div>

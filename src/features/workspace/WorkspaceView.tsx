@@ -64,11 +64,14 @@ import { useDockShortcuts } from './hooks/useDockShortcuts'
 import { useEditorBuffer } from '../editor/hooks/useEditorBuffer'
 import { useAgentStatus } from '../agent-status/hooks/useAgentStatus'
 import { useGitStatus } from '../diff/hooks/useGitStatus'
+import type { PaneCandidate } from '../diff/services/activePanePicker'
 import { sumLines } from '../diff/utils/sumLines'
 import { findActivePane } from '../sessions/utils/activeSessionPane'
+import { isShellPane } from '../sessions/utils/paneKind'
 import { lineDelta } from '../sessions/utils/lineDelta'
+import { pickNextVisibleSessionId } from '../sessions/utils/pickNextVisibleSessionId'
 import { AGENTS, agentTypeToRegistryKey } from '../../agents/registry'
-import type { SessionStatus } from '../sessions/types'
+import type { SessionCloseResult, SessionStatus } from '../sessions/types'
 import {
   buildWorkspaceCommands,
   WORKSPACE_TAB_KEYS,
@@ -169,6 +172,7 @@ export const WorkspaceView = (): ReactElement => {
     reorderSessions,
     updatePaneCwd,
     updatePaneAgentType,
+    updateBrowserPaneUrl,
     setSessionActivityPanelCollapsed,
     setSessionActivePane,
     setSessionLayout,
@@ -242,48 +246,17 @@ export const WorkspaceView = (): ReactElement => {
   const activePaneForCommandInputs = activeSessionForCommands
     ? (findActivePane(activeSessionForCommands) ?? null)
     : null
-  const activePanePtyIdForCommands = activePaneForCommandInputs?.ptyId ?? null
 
-  const activePaneAgentTypeForCommands =
-    activePaneForCommandInputs?.agentType ?? null
+  const activePaneForCommandsIsShell =
+    (activePaneForCommandInputs?.kind ?? 'shell') === 'shell'
 
-  const workspaceCommands = useMemo(
-    () =>
-      buildWorkspaceCommands({
-        sessions,
-        activeSessionId,
-        activePanePtyId: activePanePtyIdForCommands,
-        activePaneAgentType: activePaneAgentTypeForCommands,
-        createSession,
-        removeSession,
-        renameSession,
-        setPaneUserLabel,
-        renameAgentSession,
-        nextPaneRenameRequestId,
-        isCurrentPaneRenameRequest,
-        setActiveSessionId,
-        notifyInfo,
-      }),
-    // sessionsSignature captures every field the closures read; activity-only
-    // changes keep the signature stable so the memo (and downstream
-    // filteredResults / handler refs) do not churn during agent I/O.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [
-      sessionsSignature,
-      activeSessionId,
-      activePanePtyIdForCommands,
-      activePaneAgentTypeForCommands,
-      createSession,
-      removeSession,
-      renameSession,
-      setPaneUserLabel,
-      nextPaneRenameRequestId,
-      isCurrentPaneRenameRequest,
-      setActiveSessionId,
-      notifyInfo,
-    ]
-  )
-  const commandPalette = useCommandPalette(workspaceCommands)
+  const activePanePtyIdForCommands = activePaneForCommandsIsShell
+    ? (activePaneForCommandInputs?.ptyId ?? null)
+    : null
+
+  const activePaneAgentTypeForCommands = activePaneForCommandsIsShell
+    ? (activePaneForCommandInputs?.agentType ?? null)
+    : null
 
   const activeSession = activeSessionId
     ? sessions.find((s) => s.id === activeSessionId)
@@ -291,10 +264,22 @@ export const WorkspaceView = (): ReactElement => {
   // Non-throwing variant: render-path callers cannot crash on transient
   // invariant violations. Mutation guards still use `getActivePane`.
   const activePane = activeSession ? findActivePane(activeSession) : undefined
-  const activePaneId = activePane?.id
-  const activePanePtyId = activePane?.ptyId
 
-  const agentStatus = useAgentStatus(activePanePtyId ?? null)
+  const activePtyBackedPane =
+    activePane === undefined
+      ? undefined
+      : (activePane.kind ?? 'shell') === 'shell'
+        ? activePane
+        : // Active pane is a browser: prefer a live shell so agent/cwd/status
+          // state does not bind to an exited PTY when another shell is running.
+          (activeSession?.panes.find(
+            (pane) => isShellPane(pane) && pane.status === 'running'
+          ) ?? activeSession?.panes.find(isShellPane))
+
+  const activePtyBackedPaneId = activePtyBackedPane?.id
+  const activePtyBackedPanePtyId = activePtyBackedPane?.ptyId
+
+  const agentStatus = useAgentStatus(activePtyBackedPanePtyId ?? null)
   const activityPanelCollapsed = activeSession?.activityPanelCollapsed ?? false
 
   const activityPanelAgent = useMemo(
@@ -309,7 +294,8 @@ export const WorkspaceView = (): ReactElement => {
   // pulsing dot. The pane's own `status` is the source of truth for
   // running/paused/completed/errored — agent activity stays an orthogonal
   // signal that the "live" pulse next to the agent chip already reflects.
-  const activityPanelStatus: SessionStatus = activePane?.status ?? 'paused'
+  const activityPanelStatus: SessionStatus =
+    activePtyBackedPane?.status ?? 'paused'
 
   const handleActivityPanelCollapsed = useCallback(
     (collapsed: boolean): void => {
@@ -335,8 +321,8 @@ export const WorkspaceView = (): ReactElement => {
   const activeSessionStatus = activeSession?.status
 
   const isStatusBarAgentActive =
-    activePanePtyId !== undefined &&
-    agentStatus.sessionId === activePanePtyId &&
+    activePtyBackedPanePtyId !== undefined &&
+    agentStatus.sessionId === activePtyBackedPanePtyId &&
     agentStatus.isActive &&
     !agentStatus.agentExited &&
     (activeSessionStatus === 'running' || activeSessionStatus === 'paused')
@@ -345,10 +331,10 @@ export const WorkspaceView = (): ReactElement => {
     if (!activeSessionId) {
       return
     }
-    if (!activePaneId || !activePanePtyId) {
+    if (!activePtyBackedPaneId || !activePtyBackedPanePtyId) {
       return
     }
-    if (agentStatus.sessionId !== activePanePtyId) {
+    if (agentStatus.sessionId !== activePtyBackedPanePtyId) {
       return
     }
     if (activeSessionStatus !== 'running' && activeSessionStatus !== 'paused') {
@@ -356,7 +342,7 @@ export const WorkspaceView = (): ReactElement => {
     }
 
     if (agentStatus.agentExited) {
-      updatePaneAgentType(activeSessionId, activePaneId, 'generic')
+      updatePaneAgentType(activeSessionId, activePtyBackedPaneId, 'generic')
 
       return
     }
@@ -365,7 +351,7 @@ export const WorkspaceView = (): ReactElement => {
       if (agentStatus.agentType) {
         updatePaneAgentType(
           activeSessionId,
-          activePaneId,
+          activePtyBackedPaneId,
           agentStatus.agentType
         )
       }
@@ -374,8 +360,8 @@ export const WorkspaceView = (): ReactElement => {
     }
   }, [
     activeSessionId,
-    activePaneId,
-    activePanePtyId,
+    activePtyBackedPaneId,
+    activePtyBackedPanePtyId,
     activeSessionStatus,
     agentStatus.agentExited,
     agentStatus.isActive,
@@ -405,15 +391,19 @@ export const WorkspaceView = (): ReactElement => {
   // exits — only `isActive` / `agentExited` flip) cannot overwrite a
   // shell-driven `pane.cwd` change; dedupe against pane.cwd to avoid IPC
   // churn.
-  const activePaneCwd = activePane?.cwd
+  const activePtyBackedPaneCwd = activePtyBackedPane?.cwd
   const agentCwd = agentStatus.cwd
   const agentIsActive = agentStatus.isActive
   const agentHasExited = agentStatus.agentExited
   useEffect(() => {
-    if (!activeSessionId || !activePaneId || !activePanePtyId) {
+    if (
+      !activeSessionId ||
+      !activePtyBackedPaneId ||
+      !activePtyBackedPanePtyId
+    ) {
       return
     }
-    if (agentStatus.sessionId !== activePanePtyId) {
+    if (agentStatus.sessionId !== activePtyBackedPanePtyId) {
       return
     }
     if (activeSessionStatus !== 'running' && activeSessionStatus !== 'paused') {
@@ -422,16 +412,16 @@ export const WorkspaceView = (): ReactElement => {
     if (!agentIsActive || agentHasExited) {
       return
     }
-    if (!agentCwd || agentCwd === activePaneCwd) {
+    if (!agentCwd || agentCwd === activePtyBackedPaneCwd) {
       return
     }
 
-    updatePaneCwd(activeSessionId, activePaneId, agentCwd)
+    updatePaneCwd(activeSessionId, activePtyBackedPaneId, agentCwd)
   }, [
     activeSessionId,
-    activePaneId,
-    activePanePtyId,
-    activePaneCwd,
+    activePtyBackedPaneId,
+    activePtyBackedPanePtyId,
+    activePtyBackedPaneCwd,
     activeSessionStatus,
     agentCwd,
     agentHasExited,
@@ -515,13 +505,13 @@ export const WorkspaceView = (): ReactElement => {
     previewSidebarWidth(sidebarWidth)
   }, [previewSidebarWidth, sidebarWidth])
 
-  const activeCwd = activePane?.cwd ?? '.'
+  const activeCwd = activePtyBackedPane?.cwd ?? '.'
   // Distinct fallback for the FILES-tab file explorer: when no session
   // is active, browse from `~` (home) rather than `.` (process cwd).
   // `activeCwd` defaults to `.` because git/diff/agent-status all need a
   // valid working directory in the running process; the file explorer
   // is a navigation surface where `~` is the more useful starting point.
-  const fileExplorerCwd = activePane?.cwd ?? '~'
+  const fileExplorerCwd = activePtyBackedPane?.cwd ?? '~'
 
   // File selection state.
   //
@@ -531,10 +521,16 @@ export const WorkspaceView = (): ReactElement => {
   // WorkspaceView re-render — including each keystroke in the editor — and
   // reloads the file from disk, overwriting in-progress edits.
   const fileSystemService = useMemo(() => createFileSystemService(), [])
-  const editorBuffer = useEditorBuffer(fileSystemService)
+  const editorBuffer = useEditorBuffer(fileSystemService, activeSessionId)
+  const { hasUnsavedChanges, releaseScope } = editorBuffer
   const [showUnsavedDialog, setShowUnsavedDialog] = useState(false)
   const [pendingFilePath, setPendingFilePath] = useState<string | null>(null)
+
+  const [pendingSessionRemovalId, setPendingSessionRemovalId] = useState<
+    string | null
+  >(null)
   const [saveError, setSaveError] = useState<string | null>(null)
+  const [isUnsavedDialogSaving, setIsUnsavedDialogSaving] = useState(false)
 
   // Live mirror of `pendingFilePath`. `handleSave` reads this AFTER its
   // saveFile() await so a Cancel/backdrop click during the in-flight
@@ -549,14 +545,43 @@ export const WorkspaceView = (): ReactElement => {
   // and resumes, the effect hasn't run yet, so a stale ref would be
   // read and the handler would open the cancelled pending file.
   const pendingFilePathRef = useRef<string | null>(null)
+  const pendingSessionRemovalIdRef = useRef<string | null>(null)
+  const pendingSessionRestoreIdRef = useRef<string | null>(null)
+  const isUnsavedDialogSavingRef = useRef(false)
+
   useEffect(() => {
     pendingFilePathRef.current = pendingFilePath
   }, [pendingFilePath])
+
+  useEffect(() => {
+    pendingSessionRemovalIdRef.current = pendingSessionRemovalId
+  }, [pendingSessionRemovalId])
 
   const setPendingFilePathSynced = useCallback((value: string | null): void => {
     pendingFilePathRef.current = value
     setPendingFilePath(value)
   }, [])
+
+  const setPendingSessionRemovalIdSynced = useCallback(
+    (value: string | null): void => {
+      pendingSessionRemovalIdRef.current = value
+      setPendingSessionRemovalId(value)
+    },
+    []
+  )
+
+  const setPendingSessionRestoreIdRef = useCallback(
+    (value: string | null): void => {
+      pendingSessionRestoreIdRef.current = value
+    },
+    []
+  )
+
+  const setUnsavedDialogSavingSynced = useCallback((value: boolean): void => {
+    isUnsavedDialogSavingRef.current = value
+    setIsUnsavedDialogSaving(value)
+  }, [])
+
   // General-purpose error banner for non-dialog file ops (direct file open,
   // async load failure inside CodeEditor, vim :w save failure).
   const [fileError, setFileError] = useState<string | null>(null)
@@ -584,6 +609,9 @@ export const WorkspaceView = (): ReactElement => {
     // requiring it surprised the user when their visibly-focused pane
     // dropped the chord into the palette instead.
     if (!activeSession || !activePane) {
+      return null
+    }
+    if ((activePane.kind ?? 'shell') !== 'shell') {
       return null
     }
 
@@ -661,15 +689,134 @@ export const WorkspaceView = (): ReactElement => {
   }, [claimTerminal, createSession])
 
   const handleRemoveSession = useCallback(
-    (sessionId: string): void => {
+    (sessionId: string): SessionCloseResult => {
+      if (hasUnsavedChanges(sessionId)) {
+        const restoreSessionId =
+          sessionId !== activeSessionId ? activeSessionId : null
+
+        if (sessionId !== activeSessionId) {
+          setActiveSessionId(sessionId)
+        }
+
+        setPendingFilePathSynced(null)
+        setPendingSessionRemovalIdSynced(sessionId)
+        setPendingSessionRestoreIdRef(restoreSessionId)
+        setSaveError(null)
+        setShowUnsavedDialog(true)
+
+        return false
+      }
+
       const wasActive = sessionId === activeSessionId
       removeSession(sessionId)
       if (wasActive) {
         claimTerminal()
       }
+
+      return undefined
     },
-    [activeSessionId, claimTerminal, removeSession]
+    [
+      activeSessionId,
+      claimTerminal,
+      hasUnsavedChanges,
+      removeSession,
+      setActiveSessionId,
+      setPendingFilePathSynced,
+      setPendingSessionRemovalIdSynced,
+      setPendingSessionRestoreIdRef,
+    ]
   )
+
+  const previousSessionIdsRef = useRef<Set<string>>(new Set())
+  // Tie editor-scope cleanup to committed session removals. Layout timing
+  // avoids a paint/input gap where a removed session can still look dirty.
+  useLayoutEffect(() => {
+    const currentSessionIds = new Set(sessions.map((session) => session.id))
+
+    for (const previousSessionId of previousSessionIdsRef.current) {
+      if (!currentSessionIds.has(previousSessionId)) {
+        releaseScope(previousSessionId)
+      }
+    }
+
+    previousSessionIdsRef.current = currentSessionIds
+  }, [releaseScope, sessions])
+
+  const removePendingSession = useCallback(
+    (sessionId: string, restoreSessionId: string | null): void => {
+      const restorableSessionId =
+        restoreSessionId &&
+        restoreSessionId !== sessionId &&
+        sessions.some((session) => session.id === restoreSessionId)
+          ? restoreSessionId
+          : undefined
+
+      const nextId =
+        restorableSessionId ??
+        (sessionId === activeSessionId
+          ? pickNextVisibleSessionId(sessions, sessionId, activeSessionId)
+          : undefined)
+
+      if (nextId !== undefined) {
+        setActiveSessionId(nextId)
+      }
+
+      removeSession(sessionId)
+
+      if (sessionId === activeSessionId || nextId !== undefined) {
+        claimTerminal()
+      }
+    },
+    [
+      activeSessionId,
+      claimTerminal,
+      removeSession,
+      sessions,
+      setActiveSessionId,
+    ]
+  )
+
+  const workspaceCommands = useMemo(
+    () =>
+      buildWorkspaceCommands({
+        sessions,
+        activeSessionId,
+        activePanePtyId: activePanePtyIdForCommands,
+        activePaneAgentType: activePaneAgentTypeForCommands,
+        createSession,
+        removeSession: handleRemoveSession,
+        renameSession,
+        setPaneUserLabel,
+        renameAgentSession,
+        nextPaneRenameRequestId,
+        isCurrentPaneRenameRequest,
+        setActiveSessionId,
+        notifyInfo,
+      }),
+    // sessionsSignature captures every field the closures read; activity-only
+    // changes keep the signature stable so the memo (and downstream
+    // filteredResults / handler refs) do not churn during agent I/O.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [
+      sessionsSignature,
+      activeSessionId,
+      activePanePtyIdForCommands,
+      activePaneAgentTypeForCommands,
+      createSession,
+      handleRemoveSession,
+      renameSession,
+      setPaneUserLabel,
+      renameAgentSession,
+      nextPaneRenameRequestId,
+      isCurrentPaneRenameRequest,
+      setActiveSessionId,
+      notifyInfo,
+    ]
+  )
+
+  const commandPalette = useCommandPalette(workspaceCommands, {
+    enabled: !showUnsavedDialog,
+  })
 
   usePaneShortcuts({
     sessions,
@@ -800,6 +947,7 @@ export const WorkspaceView = (): ReactElement => {
       // If current file has unsaved changes, show dialog
       if (editorBuffer.isDirty) {
         setPendingFilePathSynced(filePath)
+        setPendingSessionRestoreIdRef(null)
         setShowUnsavedDialog(true)
 
         return
@@ -807,7 +955,12 @@ export const WorkspaceView = (): ReactElement => {
 
       void openFileSafely(filePath)
     },
-    [editorBuffer.isDirty, openFileSafely, setPendingFilePathSynced]
+    [
+      editorBuffer.isDirty,
+      openFileSafely,
+      setPendingFilePathSynced,
+      setPendingSessionRestoreIdRef,
+    ]
   )
 
   // Open a test file from the activity panel. Mirrors handleFileSelect's
@@ -819,6 +972,7 @@ export const WorkspaceView = (): ReactElement => {
     (filePath: string): void => {
       if (editorBuffer.isDirty) {
         setPendingFilePathSynced(filePath)
+        setPendingSessionRestoreIdRef(null)
         setShowUnsavedDialog(true)
 
         return
@@ -826,10 +980,17 @@ export const WorkspaceView = (): ReactElement => {
 
       void openFileSafely(filePath)
     },
-    [editorBuffer.isDirty, openFileSafely, setPendingFilePathSynced]
+    [
+      editorBuffer.isDirty,
+      openFileSafely,
+      setPendingFilePathSynced,
+      setPendingSessionRestoreIdRef,
+    ]
   )
 
-  // Save current file and open pending file.
+  // Save the guarded buffer, then continue the pending file switch or
+  // session close. Session closes pass an explicit scope so a failed
+  // active-session IPC switch cannot make Save write the wrong tab.
   //
   // Use TWO separate try/catch blocks so save-failure and open-failure
   // emit accurate messages. Previously a single try/catch reported a
@@ -848,32 +1009,58 @@ export const WorkspaceView = (): ReactElement => {
   // on the return object), destructure { saveFile, openFile } into the
   // deps here to lock the handler identity.
   const handleSave = useCallback(async (): Promise<void> => {
+    if (isUnsavedDialogSavingRef.current) {
+      return
+    }
+
+    const pendingSessionRemovalIdAtSave = pendingSessionRemovalIdRef.current
+    setUnsavedDialogSavingSynced(true)
+
     try {
-      await editorBuffer.saveFile()
+      if (pendingSessionRemovalIdAtSave) {
+        await editorBuffer.saveFile(pendingSessionRemovalIdAtSave)
+      } else {
+        await editorBuffer.saveFile()
+      }
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error)
       setSaveError(`Failed to save: ${message}`)
+      setUnsavedDialogSavingSynced(false)
 
       // Keep the dialog open so the user can retry or cancel — the file
       // is still dirty and we haven't switched away.
       return
     }
 
-    // Read the pending-file path FROM THE REF after the save completes.
-    // If the user clicked the backdrop or pressed Escape during the
-    // save IPC, `handleCancel` cleared `pendingFilePath` to null and
-    // the ref reflects that. Reading the closure variable (or a
-    // capture-before-await constant) would see the stale snapshot and
-    // open the cancelled pending file anyway.
+    setUnsavedDialogSavingSynced(false)
+
+    // Read pending targets FROM THE REFS after the save completes.
+    // Cancellation is disabled while saving, but ref reads still keep
+    // this continuation aligned with any synchronous pending-action
+    // reset that happened before the save began.
     const currentPendingPath = pendingFilePathRef.current
+    const currentPendingSessionRemovalId = pendingSessionRemovalIdRef.current
+    const currentPendingSessionRestoreId = pendingSessionRestoreIdRef.current
 
     // Current buffer is clean on disk. The dialog's job of guarding
-    // the switch is done — surface any pending-open failure via the
-    // workspace-level banner instead of leaving the dialog stuck
-    // with a misleading "Failed to save" message.
+    // the pending action is done — surface any pending-open failure via
+    // the workspace-level banner instead of leaving the dialog stuck with
+    // a misleading "Failed to save" message.
     setShowUnsavedDialog(false)
     setPendingFilePathSynced(null)
+    setPendingSessionRemovalIdSynced(null)
+    setPendingSessionRestoreIdRef(null)
     setSaveError(null)
+
+    if (currentPendingSessionRemovalId) {
+      removePendingSession(
+        currentPendingSessionRemovalId,
+        currentPendingSessionRestoreId
+      )
+      setFileError(null)
+
+      return
+    }
 
     if (currentPendingPath) {
       try {
@@ -886,7 +1073,14 @@ export const WorkspaceView = (): ReactElement => {
         )
       }
     }
-  }, [editorBuffer, setPendingFilePathSynced])
+  }, [
+    editorBuffer,
+    removePendingSession,
+    setPendingFilePathSynced,
+    setPendingSessionRemovalIdSynced,
+    setPendingSessionRestoreIdRef,
+    setUnsavedDialogSavingSynced,
+  ])
 
   // Discard changes and open pending file.
   //
@@ -899,10 +1093,25 @@ export const WorkspaceView = (): ReactElement => {
   // wrong and could trick the user into a confirmation action on
   // the wrong file. Closing the dialog up front removes the window.
   const handleDiscard = useCallback(async (): Promise<void> => {
+    if (isUnsavedDialogSavingRef.current) {
+      return
+    }
+
     const target = pendingFilePathRef.current
+    const targetSessionRemovalId = pendingSessionRemovalIdRef.current
+    const targetSessionRestoreId = pendingSessionRestoreIdRef.current
     setShowUnsavedDialog(false)
     setPendingFilePathSynced(null)
+    setPendingSessionRemovalIdSynced(null)
+    setPendingSessionRestoreIdRef(null)
     setSaveError(null)
+
+    if (targetSessionRemovalId) {
+      removePendingSession(targetSessionRemovalId, targetSessionRestoreId)
+      setFileError(null)
+
+      return
+    }
 
     if (!target) {
       return
@@ -915,21 +1124,50 @@ export const WorkspaceView = (): ReactElement => {
       const message = error instanceof Error ? error.message : String(error)
       setFileError(`Failed to open file: ${message}`)
     }
-  }, [editorBuffer, setPendingFilePathSynced])
+  }, [
+    editorBuffer,
+    removePendingSession,
+    setPendingFilePathSynced,
+    setPendingSessionRemovalIdSynced,
+    setPendingSessionRestoreIdRef,
+  ])
 
   // Cancel and stay on current file.
   //
   // CRITICAL: writes `pendingFilePathRef.current = null` synchronously
   // via `setPendingFilePathSynced` so a concurrently-running `handleSave`
   // awaiting saveFile() sees the cleared ref as soon as its microtask
-  // resumes. Without this, the useEffect-based ref mirror would only
-  // update on the next paint — after handleSave had already read the
-  // stale non-null value and opened the cancelled pending file.
+  // resumes. While a save is actively in flight the dialog disables
+  // cancellation so users cannot accidentally write the file but cancel
+  // the guarded session close/open action with no feedback.
   const handleCancel = useCallback((): void => {
+    if (isUnsavedDialogSavingRef.current) {
+      return
+    }
+
+    const restoreSessionId = pendingSessionRestoreIdRef.current
+
     setShowUnsavedDialog(false)
     setPendingFilePathSynced(null)
+    setPendingSessionRemovalIdSynced(null)
+    setPendingSessionRestoreIdRef(null)
     setSaveError(null)
-  }, [setPendingFilePathSynced])
+
+    if (
+      restoreSessionId &&
+      sessions.some((session) => session.id === restoreSessionId)
+    ) {
+      setActiveSessionId(restoreSessionId)
+      claimTerminal()
+    }
+  }, [
+    claimTerminal,
+    sessions,
+    setActiveSessionId,
+    setPendingFilePathSynced,
+    setPendingSessionRemovalIdSynced,
+    setPendingSessionRestoreIdRef,
+  ])
 
   // Handle opening a diff file from AgentStatusPanel
   const handleOpenDiff = useCallback(
@@ -958,6 +1196,76 @@ export const WorkspaceView = (): ReactElement => {
     isDragging ||
     verticalDockElastic.isDragging ||
     horizontalDockElastic.isDragging
+
+  const areBrowserPanesOccluded =
+    terminalFitDeferred ||
+    showUnsavedDialog ||
+    commandPalette.state.isOpen ||
+    paneRenameNode !== null ||
+    fileError !== null ||
+    infoMessage !== null
+
+  const feedbackDispatch = useMemo(() => {
+    // Inline-review feedback dispatches to the single CONNECTED (active) pane —
+    // the one whose diff is on screen. We gate the candidate on LIVE agent
+    // state from `useAgentStatus` (sessionId match + isActive + !agentExited),
+    // NOT the PTY-lifecycle `pane.status`: a pane whose agent exited can keep a
+    // stale 'codex'/'claude-code' label while its shell PTY is still running,
+    // and the live signal is the only way to avoid pasting feedback into a bare
+    // shell. `agentLabel` maps agentType directly to the picker's SupportedAgent
+    // literals (the registry display name diverges, e.g. AGENTS.codex.name ===
+    // 'Codex CLI', which would mis-filter Codex).
+    const agentLabel =
+      agentStatus.agentType === 'claude-code'
+        ? 'Claude Code'
+        : agentStatus.agentType === 'codex'
+          ? 'Codex'
+          : null
+
+    // Bind the candidate to the pty-backed pane (not the literal active pane),
+    // matching the pane `agentStatus` is computed from: when a browser pane is
+    // active we prefer the live shell, so feedback never targets a browser
+    // pane or an exited PTY.
+    const candidates: PaneCandidate[] =
+      activePtyBackedPane &&
+      activePtyBackedPanePtyId &&
+      agentStatus.sessionId === activePtyBackedPanePtyId &&
+      agentStatus.isActive &&
+      !agentStatus.agentExited &&
+      agentLabel !== null
+        ? [
+            {
+              paneId: activePtyBackedPane.id,
+              ptyId: activePtyBackedPanePtyId,
+              tabName:
+                activePtyBackedPane.userLabel ??
+                activePtyBackedPane.agentTitle ??
+                activeSession?.name ??
+                'Terminal',
+              agentLabel,
+              cwd: activePtyBackedPane.cwd,
+              status: 'running',
+              isFocused: true,
+            },
+          ]
+        : []
+
+    return {
+      candidates,
+      writePty: async (ptyId: string, data: string): Promise<void> => {
+        await terminalService.write({ sessionId: ptyId, data })
+      },
+    }
+  }, [
+    activePtyBackedPane,
+    activePtyBackedPanePtyId,
+    activeSession,
+    agentStatus.agentType,
+    agentStatus.isActive,
+    agentStatus.agentExited,
+    agentStatus.sessionId,
+    terminalService,
+  ])
 
   const dockOrPeek = isDockOpen ? (
     <DockPanel
@@ -995,10 +1303,22 @@ export const WorkspaceView = (): ReactElement => {
       onContainerFocus={() => {
         setActiveContainerId(DOCK_CONTAINER_ID)
       }}
+      feedbackDispatch={feedbackDispatch}
     />
   ) : (
     <DockPeekButton position={dockPosition} onOpen={() => openDock()} />
   )
+
+  const pendingSessionFilePath = pendingSessionRemovalId
+    ? editorBuffer.getFilePathForScope(pendingSessionRemovalId)
+    : null
+
+  const unsavedDialogFileName = pendingSessionRemovalId
+    ? (pendingSessionFilePath ??
+      (pendingSessionRemovalId === activeSessionId
+        ? (editorBuffer.filePath ?? '')
+        : ''))
+    : (editorBuffer.filePath ?? '')
 
   return (
     <div
@@ -1112,9 +1432,11 @@ export const WorkspaceView = (): ReactElement => {
               onSessionRestart={restartSession}
               service={terminalService}
               setSessionActivePane={setSessionActivePane}
+              updateBrowserPaneUrl={updateBrowserPaneUrl}
               setSessionLayout={setSessionLayout}
               addPane={addPane}
               removePane={removePane}
+              areBrowserPanesOccluded={areBrowserPanesOccluded}
               isZoneFocused={activeContainerId === TERMINAL_CONTAINER_ID}
               onContainerFocus={() => {
                 setActiveContainerId(TERMINAL_CONTAINER_ID)
@@ -1206,8 +1528,12 @@ export const WorkspaceView = (): ReactElement => {
           destination the user is switching to. */}
       <UnsavedChangesDialog
         isOpen={showUnsavedDialog}
-        fileName={editorBuffer.filePath ?? ''}
+        fileName={unsavedDialogFileName}
         errorMessage={saveError}
+        isSaving={isUnsavedDialogSaving}
+        actionDescription={
+          pendingSessionRemovalId ? 'closing this session' : 'switching files'
+        }
         onSave={() => {
           void handleSave()
         }}

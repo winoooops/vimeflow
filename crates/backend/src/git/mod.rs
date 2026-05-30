@@ -660,6 +660,11 @@ pub struct GetGitDiffResponse {
     pub new_text: String,
     /// The raw unified-diff text. Reused by PR2's `extractHunkPatch()`.
     pub raw_diff: String,
+    /// Absolute path of the git repository toplevel (canonicalized). Empty
+    /// when `cwd` is not inside a git repo. The frontend joins this with the
+    /// repo-root-relative file path to build an absolute reference an agent
+    /// can resolve regardless of its own cwd (PR4 inline-feedback dispatch).
+    pub repo_root: String,
 }
 
 fn raw_diff_file_header_has(raw_diff: &str, marker: &str) -> bool {
@@ -1429,6 +1434,7 @@ pub(crate) async fn get_git_diff_inner(
             old_text: String::new(),
             new_text: String::new(),
             raw_diff: String::new(),
+            repo_root: String::new(),
         });
     }
 
@@ -1580,6 +1586,7 @@ pub(crate) async fn get_git_diff_inner(
         old_text,
         new_text,
         raw_diff,
+        repo_root: canonical_toplevel.to_string_lossy().into_owned(),
     })
 }
 

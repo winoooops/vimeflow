@@ -657,6 +657,31 @@ describe('useAgentStatus', () => {
     expect(result.current.recentToolCalls[0]?.isTestFile).toBe(true)
   })
 
+  test('maps a 0 ms completed tool call to durationMs 0 (not null)', async () => {
+    const { result } = renderHook(() => useAgentStatus('session-1'))
+    await vi.waitFor(() => {
+      expect(listen).toHaveBeenCalledWith(
+        'agent-tool-call',
+        expect.any(Function)
+      )
+    })
+
+    act(() => {
+      emit('agent-tool-call', {
+        sessionId: 'pty-session-1',
+        toolUseId: 'toolu_zero',
+        tool: 'Bash',
+        args: 'true',
+        status: 'done',
+        timestamp: '2026-04-22T12:00:00Z',
+        durationMs: 0n,
+        isTestFile: false,
+      })
+    })
+
+    expect(result.current.recentToolCalls[0]?.durationMs).toBe(0)
+  })
+
   test('parallel same-tool completions retain distinct ids via toolUseId', async () => {
     const { result } = renderHook(() => useAgentStatus('session-1'))
 

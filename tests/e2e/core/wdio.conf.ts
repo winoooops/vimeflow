@@ -8,11 +8,16 @@ import {
 } from '../shared/electron-app.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
+const cacheDir = path.resolve(
+  process.env.RUNNER_TEMP ?? path.resolve(__dirname, '..', '.wdio-cache'),
+  'core'
+)
 
 export const config: WebdriverIO.Config = {
   runner: 'local',
   framework: 'mocha',
   reporters: ['spec'],
+  cacheDir,
 
   specs: [path.resolve(__dirname, 'specs/**/*.spec.ts')],
   maxInstances: 1,

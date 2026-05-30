@@ -2,7 +2,7 @@ import { createRef } from 'react'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, test, vi } from 'vitest'
-import { Tooltip } from './Tooltip'
+import { Tooltip, type TooltipProps } from './Tooltip'
 
 const rect = ({
   x,
@@ -373,5 +373,84 @@ describe('Tooltip', () => {
       </Tooltip>
     )
     expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
+  })
+
+  test('bare mode omits default visual chrome and maxWidth', async () => {
+    const user = userEvent.setup()
+    render(
+      <Tooltip content="hello" delayMs={0} bare>
+        <button type="button">trigger</button>
+      </Tooltip>
+    )
+
+    await user.hover(screen.getByRole('button', { name: 'trigger' }))
+    const tip = await screen.findByRole('tooltip')
+    expect(tip).toHaveClass('z-50')
+    expect(tip).not.toHaveClass('rounded-md')
+    expect(tip).not.toHaveClass('backdrop-blur-md')
+    expect(tip).not.toHaveStyle({ maxWidth: '320px' })
+  })
+
+  test('bare mode appends custom className to the stripped surface', async () => {
+    const user = userEvent.setup()
+    render(
+      <Tooltip content="hello" delayMs={0} bare className="custom-surface">
+        <button type="button">trigger</button>
+      </Tooltip>
+    )
+
+    await user.hover(screen.getByRole('button', { name: 'trigger' }))
+    const tip = await screen.findByRole('tooltip')
+    expect(tip).toHaveClass('custom-surface')
+    expect(tip).toHaveClass('z-50')
+    expect(tip).not.toHaveClass('rounded-md')
+  })
+
+  test('bare interactive mode still uses pointer-events-auto and dialog role', async () => {
+    const user = userEvent.setup()
+    render(
+      <Tooltip
+        content="hello"
+        delayMs={0}
+        bare
+        interactive
+        ariaLabel="Details"
+        className="custom-surface"
+      >
+        <button type="button">trigger</button>
+      </Tooltip>
+    )
+
+    await user.hover(screen.getByRole('button', { name: 'trigger' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Details' })
+    expect(dialog).toHaveClass('pointer-events-auto')
+    expect(dialog).toHaveClass('custom-surface')
+    expect(dialog).not.toHaveClass('rounded-md')
+  })
+
+  test('bare is compile-incompatible with the chrome-only shortcut and maxWidth props', () => {
+    // A `bare` tooltip owns its surface, so the chrome-only `shortcut` chip and
+    // `maxWidth` clamp are typed `never`. The @ts-expect-error directives below
+    // fail `tsc -b` if the discriminated union ever stops enforcing that —
+    // guarding against a future caller getting a chip in an unstyled surface.
+
+    // @ts-expect-error `bare` owns its surface; `shortcut` is chrome-only
+    const bareWithShortcut: TooltipProps = {
+      content: 'x',
+      children: <button type="button">a</button>,
+      bare: true,
+      shortcut: ['Mod', 'E'],
+    }
+
+    // @ts-expect-error `bare` omits the `maxWidth` clamp
+    const bareWithMaxWidth: TooltipProps = {
+      content: 'x',
+      children: <button type="button">b</button>,
+      bare: true,
+      maxWidth: 200,
+    }
+
+    expect(bareWithShortcut.bare).toBe(true)
+    expect(bareWithMaxWidth.bare).toBe(true)
   })
 })

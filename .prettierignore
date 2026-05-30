@@ -8,3 +8,4 @@ playwright-report
 *.min.js
 *.d.ts
 docs/design/*/code.html
+docs/diagrams/*.html
