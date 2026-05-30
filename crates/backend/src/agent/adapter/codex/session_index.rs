@@ -580,15 +580,40 @@ mod tests {
     #[test]
     fn mtime_change_picks_up_new_thread_name() {
         // PR #302 cycle 4 — was a wall-clock-sleep test (50ms + 1100ms +
-        // 700ms = ~1.85s minimum runtime, flake-prone on heavily loaded
-        // CI when the spawned thread couldn't be scheduled within the
-        // 50ms initial-read budget). Now uses `spawn_watch_with_sync` so
-        // the test waits on REAL watcher progress signals instead of
-        // arbitrary sleeps. Deterministic, runs in well under a second
-        // even on a busy host, and the failure mode (real bug vs
-        // scheduler hiccup) is unambiguous.
+        // 700ms ≈ 1.85s minimum, flake-prone on loaded CI). Replaced
+        // wall-clock waits with `spawn_watch_with_sync` so the test
+        // observes REAL watcher progress signals instead of arbitrary
+        // sleeps. Deterministic on the scheduler axis; runs in well
+        // under a second.
+        //
+        // PR #302 cycle 7 — also force the seed file's mtime two
+        // seconds into the past before spawning the watcher, so the
+        // watcher's recorded `last_mtime` is unambiguously older than
+        // the test's later rewrite even on filesystems with 1-second
+        // mtime resolution (HFS+ pre-APFS, FAT32, some FUSE-mounted
+        // tmpdirs). Without this, the seed-write and the rewrite can
+        // share a second boundary on fast machines + coarse FS,
+        // producing identical mtimes, the watcher's
+        // `current_mtime == last_mtime` guard skips the change, and
+        // the test's `recv_timeout` would expire as a spurious flake.
         let dir = TempDir::new().expect("tempdir");
         let path = write_index(&dir, &[("abc-uuid", "first")]);
+
+        // Force the seed file's mtime backward so it predates the
+        // rewrite by at least 2 seconds — well above the worst-case
+        // 1-second filesystem resolution. Use `File::set_modified`
+        // (std, stable since Rust 1.75) so this works without an
+        // extra direct dep on the `filetime` crate (which is already
+        // pulled in transitively by `notify`).
+        let seed_file = std::fs::OpenOptions::new()
+            .write(true)
+            .open(&path)
+            .expect("open seed file for mtime adjustment");
+        seed_file
+            .set_modified(SystemTime::now() - Duration::from_secs(2))
+            .expect("set_modified backward on seed file");
+        drop(seed_file);
+
         let sink: Arc<FakeEventSink> = Arc::new(FakeEventSink::new());
         let sink_dyn: Arc<dyn EventSink> = sink.clone();
         let stop = Arc::new(AtomicBool::new(false));
