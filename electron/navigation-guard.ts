@@ -15,6 +15,13 @@ const originOf = (url: string): string | null => {
   try {
     const parsed = new URL(url)
 
+    // `file:` has no host, so every local path collapses to one `file://`
+    // origin. Never treat it as same-origin, or a markdown `file:///…` link
+    // could navigate the window in the non-packaged file:// fallback runtime.
+    if (parsed.protocol === 'file:') {
+      return null
+    }
+
     return `${parsed.protocol}//${parsed.host}`
   } catch {
     return null

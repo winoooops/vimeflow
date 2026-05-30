@@ -21,6 +21,20 @@
   background: var(--surface-container-lowest);
 }
 
+/*
+ * Fenced code blocks render <pre><code>. The `code` component applies inline
+ * "pill" styling and cannot tell an unlabelled fence from inline code, so
+ * neutralize it inside <pre>: the <pre> owns the surface/scroll, and the .hljs
+ * tokens (or inherited text for unlabelled fences) own the color.
+ */
+.markdown-reading-view pre code {
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  font-size: inherit;
+}
+
 .markdown-reading-view .hljs-keyword,
 .markdown-reading-view .hljs-built_in,
 .markdown-reading-view .hljs-literal,

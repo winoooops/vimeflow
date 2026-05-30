@@ -112,4 +112,14 @@ describe('installNavigationGuard — will-navigate', () => {
     expect(event.preventDefault).toHaveBeenCalledTimes(1)
     expect(openExternal).toHaveBeenCalledWith('https://evil.example')
   })
+
+  test('treats file: as never same-origin so the loadFile runtime is not hijacked', () => {
+    const { openExternal, handlers } = setup('file:///home/app/dist/index.html')
+    const event = { preventDefault: vi.fn() }
+
+    handlers.navigate?.(event, 'file:///tmp/pwn.html')
+
+    expect(event.preventDefault).toHaveBeenCalledTimes(1)
+    expect(openExternal).not.toHaveBeenCalled()
+  })
 })
