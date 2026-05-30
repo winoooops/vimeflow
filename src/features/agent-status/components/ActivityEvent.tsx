@@ -114,7 +114,6 @@ const buildCopyText = (event: ActivityEventType): string =>
 
 interface ActivityTooltipContentProps {
   event: ActivityEventType
-  label: string
   now: Date
 }
 
@@ -192,12 +191,10 @@ const Kbd = ({ children }: { children: ReactNode }): ReactElement => (
 
 const ActivityTooltipContent = ({
   event,
-  label,
   now,
 }: ActivityTooltipContentProps): ReactElement => {
-  void label // consumed by Tooltip aria-label; kept for signature compatibility
-
   const [copyState, setCopyState] = useState<CopyState>('idle')
+  const [isHovered, setIsHovered] = useState(false)
   const copyText = buildCopyText(event)
 
   useEffect(() => {
@@ -305,22 +302,21 @@ const ActivityTooltipContent = ({
             onClick={(): void => {
               void handleCopy()
             }}
-            className="grid h-[22px] w-[22px] place-items-center rounded border-none bg-transparent transition-colors duration-[160ms] ease-in-out"
+            className="grid h-[22px] w-[22px] place-items-center rounded border-none transition-colors duration-[160ms] ease-in-out"
             style={{
-              color: copyState === 'copied' ? '#7defa1' : '#8a8299',
+              background:
+                copyState !== 'copied' && isHovered
+                  ? 'rgba(255,255,255,0.05)'
+                  : 'transparent',
+              color:
+                copyState === 'copied'
+                  ? '#7defa1'
+                  : isHovered
+                    ? '#e2c7ff'
+                    : '#8a8299',
             }}
-            onMouseEnter={(e) => {
-              if (copyState !== 'copied') {
-                e.currentTarget.style.background = 'rgba(255,255,255,0.05)'
-                e.currentTarget.style.color = '#e2c7ff'
-              }
-            }}
-            onMouseLeave={(e) => {
-              if (copyState !== 'copied') {
-                e.currentTarget.style.background = 'transparent'
-                e.currentTarget.style.color = '#8a8299'
-              }
-            }}
+            onMouseEnter={(): void => setIsHovered(true)}
+            onMouseLeave={(): void => setIsHovered(false)}
           >
             <span
               className="material-symbols-outlined text-xs"
@@ -468,7 +464,7 @@ export const ActivityEvent = ({
 
   return (
     <Tooltip
-      content={<ActivityTooltipContent event={event} label={label} now={now} />}
+      content={<ActivityTooltipContent event={event} now={now} />}
       placement="left"
       bare
       interactive
