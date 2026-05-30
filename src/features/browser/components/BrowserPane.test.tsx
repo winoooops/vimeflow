@@ -445,4 +445,48 @@ describe('BrowserPane', () => {
       screen.getByRole('tab', { name: 'browser tab New' })
     ).toBeInTheDocument()
   })
+
+  test('survives an empty tabs-changed event during teardown', async () => {
+    render(<BrowserPane session={session} pane={browserPane} isActive />)
+
+    act(() => {
+      resolveCreate({
+        url: 'https://example.com/',
+        title: 'Example',
+        partition: 'persist:vimeflow-browser:proj-1:pty-shell',
+        tabs: [
+          {
+            id: 'tab-0',
+            url: 'https://example.com/',
+            title: 'Example',
+            active: true,
+          },
+        ],
+      })
+    })
+
+    await waitFor(() => {
+      expect(bridgeMocks.onBrowserPaneTabsChange).toHaveBeenCalled()
+    })
+
+    const callback = bridgeMocks.onBrowserPaneTabsChange.mock
+      .calls[0][0] as (event: {
+      sessionId: string
+      paneId: string
+      tabs: {
+        id: string
+        url: string
+        title: string | null
+        active: boolean
+      }[]
+    }) => void
+
+    expect(() => {
+      act(() => {
+        callback({ sessionId: 'pty-shell', paneId: 'p1', tabs: [] })
+      })
+    }).not.toThrow()
+
+    expect(screen.getByLabelText('browser address')).toBeInTheDocument()
+  })
 })

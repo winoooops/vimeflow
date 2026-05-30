@@ -96,7 +96,9 @@ export const BrowserPane = ({
     { id: 'tab-0', url, title: null, active: true },
   ])
   const browserSessionId = browserSessionIdForSession(session)
-  const activeTab = tabs.find((tab) => tab.active) ?? tabs[0]
+
+  const activeTab =
+    tabs.find((tab) => tab.active) ?? (tabs.length > 0 ? tabs[0] : undefined)
 
   const paneIds = useMemo(
     () => session.panes.map((sessionPane) => sessionPane.id),
@@ -326,9 +328,12 @@ export const BrowserPane = ({
         setTabs(event.tabs)
 
         const nextActiveTab =
-          event.tabs.find((tab) => tab.active) ?? event.tabs[0]
-        setAddress(nextActiveTab.url)
-        onUrlChange?.(session.id, pane.id, nextActiveTab.url)
+          event.tabs.find((tab) => tab.active) ??
+          (event.tabs.length > 0 ? event.tabs[0] : undefined)
+        if (nextActiveTab) {
+          setAddress(nextActiveTab.url)
+          onUrlChange?.(session.id, pane.id, nextActiveTab.url)
+        }
       }),
     [browserSessionId, onUrlChange, pane.id, session.id]
   )
@@ -471,7 +476,7 @@ export const BrowserPane = ({
           </button>
         </form>
         <span className="hidden max-w-[160px] truncate font-mono text-[10px] text-on-surface-muted lg:inline">
-          {activeTab.title ?? activeTab.url}
+          {activeTab ? (activeTab.title ?? activeTab.url) : null}
         </span>
         {onClose ? (
           <button
