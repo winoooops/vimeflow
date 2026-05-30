@@ -68,6 +68,21 @@ describe('installNavigationGuard — window.open', () => {
     expect(result).toEqual({ action: 'deny' })
     expect(openExternal).not.toHaveBeenCalled()
   })
+
+  test('strips mailto body/attach params before opening externally', () => {
+    const { openExternal, handlers } = setup()
+
+    handlers.open?.({
+      url: 'mailto:support@corp.com?subject=Bug&body=evil&attach=/etc/passwd',
+    })
+
+    expect(openExternal).toHaveBeenCalledTimes(1)
+    const opened = openExternal.mock.calls[0]?.[0] as string
+    expect(opened).toContain('mailto:support@corp.com')
+    expect(opened).toContain('subject=Bug')
+    expect(opened).not.toContain('body=')
+    expect(opened).not.toContain('attach')
+  })
 })
 
 describe('installNavigationGuard — will-navigate', () => {

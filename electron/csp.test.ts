@@ -40,6 +40,16 @@ describe('Content Security Policy', () => {
     expect(scriptSrc).not.toContain("'nonce-")
   })
 
+  test('img-src allows https so the markdown reading view can show web images', () => {
+    expect(directive(packagedContentSecurityPolicy, 'img-src')).toContain(
+      'https:'
+    )
+
+    expect(
+      directive(developmentContentSecurityPolicy(false), 'img-src')
+    ).toContain('https:')
+  })
+
   test('development selector preserves the dev and E2E split', () => {
     expect(developmentContentSecurityPolicy(false, nonce)).toBe(
       devContentSecurityPolicy(nonce)

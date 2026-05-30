@@ -12,7 +12,7 @@ export const packagedContentSecurityPolicy = [
   directive('default-src', ["'self'"]),
   directive('script-src', ["'self'"]),
   directive('style-src', ["'self'", "'unsafe-inline'"]),
-  directive('img-src', ["'self'", 'data:', 'blob:']),
+  directive('img-src', ["'self'", 'data:', 'blob:', 'https:']),
   directive('font-src', ["'self'", 'data:']),
   directive('connect-src', ["'self'"]),
 ].join('; ')
@@ -78,7 +78,16 @@ const devE2eScriptSources = [
 ]
 
 const devStyleSources = ["'self'", "'unsafe-inline'", ...localhostHttpSources]
-const devAssetSources = ["'self'", 'data:', 'blob:', ...localhostHttpSources]
+
+// `https:` lets the markdown reading view show web-hosted images (shields.io
+// badges, diagrams) instead of broken icons; the rest of the policy stays tight.
+const devAssetSources = [
+  "'self'",
+  'data:',
+  'blob:',
+  'https:',
+  ...localhostHttpSources,
+]
 const devFontSources = ["'self'", 'data:', ...localhostHttpSources]
 
 const devConnectSources = [

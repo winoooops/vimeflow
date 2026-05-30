@@ -7,6 +7,27 @@ import type { BrowserWindow } from 'electron'
 export const isSafeExternalUrl = (url: string): boolean =>
   /^https?:\/\//i.test(url) || url.startsWith('mailto:')
 
+// Strip the RFC 6068 query params that weaponize a `mailto:` link from an
+// untrusted doc before it reaches `shell.openExternal`: `body=` (pre-filled
+// phishing content) and `attach=` (a historical local-file-attachment exploit
+// in some mail clients). Recipient + subject are kept; non-mailto URLs pass
+// through untouched.
+const sanitizeOutboundUrl = (url: string): string => {
+  if (!url.toLowerCase().startsWith('mailto:')) {
+    return url
+  }
+  try {
+    const parsed = new URL(url)
+    parsed.searchParams.delete('body')
+    parsed.searchParams.delete('attach')
+    parsed.searchParams.delete('attachment')
+
+    return parsed.toString()
+  } catch {
+    return url
+  }
+}
+
 // The URL with its `#fragment` stripped. Two URLs that differ only by fragment
 // address the same document, which lets us tell an in-page anchor jump apart
 // from a real navigation to a different document.
@@ -70,7 +91,7 @@ export const installNavigationGuard = (
 ): void => {
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (isSafeExternalUrl(url)) {
-      openExternal(url)
+      openExternal(sanitizeOutboundUrl(url))
     }
 
     return { action: 'deny' }
@@ -97,7 +118,7 @@ export const installNavigationGuard = (
     // Only genuinely external safe URLs go to the system browser; a blocked
     // same-origin/relative link is internal — don't pop the browser for it.
     if (isSafeExternalUrl(url) && !isSameOrigin(url, current)) {
-      openExternal(url)
+      openExternal(sanitizeOutboundUrl(url))
     }
   })
 }
