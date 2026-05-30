@@ -128,6 +128,7 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
     const sectionRef = useRef<HTMLElement>(null)
     const diffWrapperRef = useRef<HTMLDivElement>(null)
     const editorHandleRef = useRef<CodeEditorHandle | null>(null)
+    const markdownViewRef = useRef<HTMLDivElement>(null)
 
     const isMarkdown = MARKDOWN_FILE_PATTERN.test(selectedFilePath ?? '')
 
@@ -145,6 +146,20 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
 
     useImperativeHandle(ref, () => ({
       focusEditor(): boolean {
+        // Reading mode renders MarkdownReadingView, not CodeEditor — focus its
+        // scrollable region so keyboard PageDown/arrow scrolling works.
+        if (tab === 'editor' && isMarkdown && viewMode === 'reading') {
+          if (markdownViewRef.current) {
+            markdownViewRef.current.focus()
+
+            return true
+          }
+
+          sectionRef.current?.focus()
+
+          return false
+        }
+
         if (editorHandleRef.current) {
           const ok = editorHandleRef.current.focus()
 
@@ -334,7 +349,11 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
               className="flex min-h-0 flex-1 overflow-hidden"
             >
               {isMarkdown && viewMode === 'reading' ? (
-                <MarkdownReadingView content={content} isLoading={isLoading} />
+                <MarkdownReadingView
+                  ref={markdownViewRef}
+                  content={content}
+                  isLoading={isLoading}
+                />
               ) : (
                 <CodeEditor
                   ref={editorHandleRef}

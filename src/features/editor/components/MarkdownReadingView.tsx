@@ -1,4 +1,5 @@
-import type { ReactElement } from 'react'
+/* eslint-disable react/require-default-props -- forwardRef component; optional props use default args (matches CodeEditor) */
+import { forwardRef, type ReactElement } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeHighlight from 'rehype-highlight'
@@ -37,43 +38,57 @@ interface MarkdownReadingViewProps {
  *
  * The `markdown-reading-view` class stays on the (relative) root so the scoped
  * `.hljs-*` CSS still matches descendants, and the loading overlay can position
- * against it.
+ * against it. The forwarded ref points at the scrollable region (a focusable
+ * `role="region"`), so `DockPanel.focusEditor()` can place keyboard focus there
+ * — there is no CodeEditor to focus in reading mode, and the region must be
+ * reachable for PageDown/arrow scrolling.
  */
-export const MarkdownReadingView = ({
-  content,
-  isLoading = false,
-}: MarkdownReadingViewProps): ReactElement => (
-  <div
-    data-testid="markdown-reading-view"
-    className="markdown-reading-view relative flex min-h-0 flex-1 flex-col overflow-hidden"
-  >
-    <div className="thin-scrollbar min-h-0 flex-1 overflow-auto px-8 py-6">
-      <div className="mx-auto max-w-[80ch]">
-        <ReactMarkdown
-          remarkPlugins={[remarkGfm]}
-          rehypePlugins={[rehypeSanitize, rehypeHighlight]}
-          components={markdownComponents}
-        >
-          {content}
-        </ReactMarkdown>
-      </div>
-    </div>
-
-    {isLoading && (
+export const MarkdownReadingView = forwardRef<
+  HTMLDivElement,
+  MarkdownReadingViewProps
+>(function MarkdownReadingView(
+  { content, isLoading = false }: MarkdownReadingViewProps,
+  ref
+): ReactElement {
+  return (
+    <div
+      data-testid="markdown-reading-view"
+      className="markdown-reading-view relative flex min-h-0 flex-1 flex-col overflow-hidden"
+    >
       <div
-        role="status"
-        aria-live="polite"
-        aria-label="Loading file"
-        data-testid="markdown-reading-loading"
-        className="absolute inset-0 z-10 flex items-center justify-center bg-surface-container-lowest/70 backdrop-blur-sm"
+        ref={ref}
+        role="region"
+        aria-label="Markdown reading view"
+        tabIndex={0}
+        className="thin-scrollbar min-h-0 flex-1 overflow-auto px-8 py-6 focus:outline-none"
       >
-        <div className="flex items-center gap-2 font-body text-sm text-on-surface-variant">
-          <span className="material-symbols-outlined animate-spin text-base">
-            progress_activity
-          </span>
-          <span>Loading…</span>
+        <div className="mx-auto max-w-[80ch]">
+          <ReactMarkdown
+            remarkPlugins={[remarkGfm]}
+            rehypePlugins={[rehypeSanitize, rehypeHighlight]}
+            components={markdownComponents}
+          >
+            {content}
+          </ReactMarkdown>
         </div>
       </div>
-    )}
-  </div>
-)
+
+      {isLoading && (
+        <div
+          role="status"
+          aria-live="polite"
+          aria-label="Loading file"
+          data-testid="markdown-reading-loading"
+          className="absolute inset-0 z-10 flex items-center justify-center bg-surface-container-lowest/70 backdrop-blur-sm"
+        >
+          <div className="flex items-center gap-2 font-body text-sm text-on-surface-variant">
+            <span className="material-symbols-outlined animate-spin text-base">
+              progress_activity
+            </span>
+            <span>Loading…</span>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+})

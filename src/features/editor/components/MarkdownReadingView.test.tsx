@@ -72,4 +72,15 @@ describe('MarkdownReadingView', () => {
 
     expect(screen.queryByRole('status')).toBeNull()
   })
+
+  test('exposes a focusable reading region for keyboard scrolling', () => {
+    render(<MarkdownReadingView content="# Doc" />)
+
+    const region = screen.getByRole('region', {
+      name: /markdown reading view/i,
+    })
+    region.focus()
+
+    expect(region).toHaveFocus()
+  })
 })
