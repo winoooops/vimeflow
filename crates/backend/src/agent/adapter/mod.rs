@@ -225,10 +225,13 @@ pub(crate) async fn start_agent_watcher_inner(
     events: Arc<dyn EventSink>,
     session_id: String,
 ) -> Result<(), String> {
-    // Step D': delegate to `AgentWatcherService`. The service owns the
+    // Step F.5: delegate to `SessionLifecycle`. The service owns the
     // attach-resolution, the `AgentBindings::for_attach` +
     // `AttachError` → `String` mapping seam, and the spawn_blocking
-    // hand-off to `base::start_for`.
+    // hand-off inside `SessionLifecycle::run_watch_sequence` (replaced
+    // the former D'-era `base::start_for` delegate when F.5 sealed the
+    // trust boundary and inlined orchestration; PR #302 cycle 3 docs
+    // refresh).
     session_lifecycle::SessionLifecycle::new(pty_state, watcher_state, transcript_state, events)
         .start(session_id)
         .await

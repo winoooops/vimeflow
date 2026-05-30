@@ -551,6 +551,25 @@ impl SessionLifecycle {
         base::ensure_trusted(located)
     }
 
+    /// One of the seven F.4-decomposition verbs, but no longer called by
+    /// `run_watch_sequence` after PR #302 cycle 3 — `register` (via
+    /// `AgentWatcherState::insert`) does the atomic replace by itself
+    /// (acquires watchers lock, swaps in the new handle, releases the
+    /// lock, then drops the displaced `Option<WatcherHandle>` outside
+    /// the lock so the Drop cascade's poll-thread join doesn't block
+    /// readers). Calling `evict_old` separately broke that atomicity by
+    /// routing the displaced handle's Drop through
+    /// `AgentWatcherState::remove`'s in-function drop — which joins
+    /// inside `remove`, leaving the map empty for the join duration
+    /// (~3.5s window where `agent_type_for_pty` returns None and the
+    /// rename/title-sync IPC silently no-ops). The verb stays as part
+    /// of the F.4 named interface (spec at
+    /// `docs/superpowers/specs/2026-05-25-transcript-dtos-and-engine-design.md`)
+    /// and the `t_verb_evict_old` test pins its standalone behavior, so
+    /// any future caller that genuinely wants "evict without replace"
+    /// (e.g. a hard reset before a new spawn that lives in a different
+    /// task) still has a documented entry point.
+    #[allow(dead_code)]
     fn evict_old(&self, sid: &str) {
         self.watcher_state.remove(sid);
     }
@@ -579,9 +598,15 @@ impl SessionLifecycle {
     ///
     /// Resolves the attach inputs from live `PtyState`, builds the
     /// `AgentBindings`, then runs the post-bindings verb sequence
-    /// (`locate → ensure_trust → evict_old → spawn_watch → register`) on
-    /// the blocking pool via [`Self::run_watch_sequence`]. `AttachError`
-    /// is mapped to `String` at this boundary.
+    /// (`locate → ensure_trust → spawn_watch → register`) on the blocking
+    /// pool via [`Self::run_watch_sequence`]. The `register` step calls
+    /// `AgentWatcherState::insert`, which atomically swaps the old handle
+    /// for the new one under a single lock — there is no separate `evict`
+    /// step (PR #302 cycle 3 — cycle 2 had inserted an `evict_old` here
+    /// that opened a ~3.5s session-absent window during the displaced
+    /// handle's thread-join inside `remove`; deleted in this cycle because
+    /// `insert`'s own `_displaced` drop already handles atomic replace).
+    /// `AttachError` is mapped to `String` at this boundary.
     pub(crate) async fn start(&self, session_id: String) -> Result<(), String> {
         let attach = self.resolve_attach(&session_id, detect_agent)?;
         let bindings = self.bind_services(&attach)?;
@@ -590,28 +615,44 @@ impl SessionLifecycle {
     }
 
     /// The post-bindings half of `start`: the verb sequence run on the
-    /// blocking pool (`locate → ensure_trust → spawn_watch → evict_old →
-    /// register`) with the two diagnostic log lines at the orchestration
-    /// site. Shared by `start` (production) and, in tests,
+    /// blocking pool (`locate → ensure_trust → spawn_watch → register`)
+    /// with the two diagnostic log lines at the orchestration site.
+    /// Shared by `start` (production) and, in tests,
     /// `start_inner_for_test` — so the migrated T-LIFECYCLE-1/2a/2b tests
     /// exercise the EXACT production sequence rather than a parallel copy.
     ///
-    /// **Ordering: spawn → evict → register, NOT evict → spawn → register.**
-    /// Pre-PR-#302-cycle-2 the order was `evict → spawn → register`, which
-    /// matched the pre-refactor `base::start_for` shape. Claude review on
-    /// PR #302 flagged a behavioral cliff: if `spawn_watch` returned `Err`
-    /// (inotify fd exhaustion, racy restart, low-fd container), the
-    /// old `WatcherHandle` had already been dropped by `evict_old` — its
-    /// Drop cascade tore down the transcript-tail thread and the codex
-    /// title-sync watcher — and the closure exited via `?` before
-    /// `register` could re-install anything. The session was left
-    /// permanently unwatched with no automatic recovery path.
+    /// **Atomic replace, no separate evict step.** Two cumulative
+    /// invariants need to hold across a watcher restart:
     ///
-    /// New order spawns the NEW handle FIRST. On `Err`, the closure
-    /// exits via `?` before any state mutation; the old watcher is
-    /// untouched. On `Ok`, the new handle is in hand BEFORE `evict_old`
-    /// drops the old one, so the eviction-and-registration window is
-    /// back-to-back with no observable gap (PR #302 cycle 2 F3).
+    /// 1. **Spawn failure leaves the old watcher intact.** If
+    ///    `spawn_watch` returns `Err` (inotify fd exhaustion, racy
+    ///    restart, low-fd container), the closure exits via `?` BEFORE
+    ///    `register` runs, so the old `WatcherHandle` is untouched and
+    ///    the session keeps observing (PR #302 cycle 2 F3 fixed the
+    ///    pre-cycle-2 evict-before-spawn ordering that violated this).
+    ///
+    /// 2. **The swap from old → new is observable as atomic.**
+    ///    `register` calls `AgentWatcherState::insert`, which acquires
+    ///    the watchers lock, calls `watchers.insert(sid, new_handle)`
+    ///    (returning the displaced `Option<old_handle>`), and releases
+    ///    the lock — the displaced `Option<WatcherHandle>` is bound to
+    ///    `_displaced` in `insert`'s outer scope and drops AFTER the
+    ///    guard, so the long Drop cascade (poll-thread join ≤3s,
+    ///    session-index thread join ≤500ms, transcript-tail teardown)
+    ///    runs OUTSIDE the lock with the NEW handle already in the
+    ///    map. Concurrent `agent_type_for_pty` / `contains` /
+    ///    `active_count` always see ONE handle for the session — never
+    ///    None, never under-counted by one.
+    ///
+    /// Cycle 2 of PR #302 originally inserted an `lc.evict_old(&sid)`
+    /// call between `spawn_watch` and `register` to make the eviction
+    /// "explicit". That call inadvertently broke invariant 2 by routing
+    /// the displaced handle's Drop through `AgentWatcherState::remove`'s
+    /// in-function drop (which joins the polling thread BEFORE returning
+    /// — leaving the map empty for the duration of the join). Cycle 3
+    /// deleted the `evict_old` call: `insert` does the atomic replace
+    /// it was designed for, and the spawn-failure-rollback property is
+    /// preserved by the spawn-before-register ordering alone.
     async fn run_watch_sequence(
         &self,
         session_id: String,
@@ -642,11 +683,14 @@ impl SessionLifecycle {
             let agent_type = bindings.agent_type;
             // Spawn FIRST. On `Err`, `?` short-circuits before any state
             // mutation — the old watcher (if any) is still live and
-            // continues polling. This is the F3 ordering fix (PR #302).
+            // continues polling. PR #302 cycle 2 F3.
             let handle = lc.spawn_watch(bindings, trusted, session_id.clone())?;
-            // Spawn succeeded; the old handle is safe to drop now, and
-            // `register` slots the new one in immediately after.
-            lc.evict_old(&session_id);
+            // `register` (via `AgentWatcherState::insert`) atomically swaps
+            // the old handle for the new one under a single lock; the
+            // displaced handle drops outside the lock so its thread-join
+            // cascade never blocks readers. See the docstring above for
+            // the full invariant statement (PR #302 cycle 3 deleted a
+            // separate `evict_old` call that broke this property).
             lc.register(session_id, handle, agent_type);
             Ok::<_, String>(())
         })
