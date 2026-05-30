@@ -125,6 +125,7 @@ mod tests {
                 status_path: parent.join("sibling.json"),
                 trust_root: cwd.to_path_buf(),
                 static_transcript_hint: None,
+                agent_session_id: None,
             })
         }
     }
@@ -274,6 +275,7 @@ mod tests {
             status_path: under_status_path.clone(),
             trust_root: tmp.path().to_path_buf(),
             static_transcript_hint: None,
+            agent_session_id: None,
         };
         let lifecycle = SessionLifecycle::new(
             PtyState::new(),
@@ -289,6 +291,7 @@ mod tests {
             status_path: tmp.path().parent().unwrap().join("sibling.json"),
             trust_root: tmp.path().to_path_buf(),
             static_transcript_hint: None,
+            agent_session_id: None,
         };
         let result = lifecycle.ensure_trust(outside);
         assert!(result.is_err(), "outside trust root should fail");
@@ -344,6 +347,7 @@ mod tests {
             status_path,
             trust_root: tmp.path().to_path_buf(),
             static_transcript_hint: None,
+            agent_session_id: None,
         };
 
         let lifecycle = SessionLifecycle::new(

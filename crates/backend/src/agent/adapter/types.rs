@@ -43,6 +43,20 @@ pub struct LocatedStatusSource {
     /// `static_hint` instead of threading the path through
     /// `parse_status` as a side channel.
     pub static_transcript_hint: Option<RawPath>,
+    /// Adapter-internal session identifier known at attach time —
+    /// `Some(thread_id)` for Codex (the locator returns it alongside
+    /// the rollout path), `None` for Claude / NoOp adapters.
+    ///
+    /// Held here so the lifecycle layer can wire codex's
+    /// `session_index.jsonl` title-sync watcher (which keys on this id
+    /// to find the matching row) without a side-channel back into the
+    /// locator (PR #302 codex review F5 — the previous refactor
+    /// dropped this wiring, parking the `agent-session-title` emit path
+    /// referenced in `events.rs`). Distinct from
+    /// `AgentStatusEvent.session_id` — that one is the Vimeflow PTY
+    /// session id, stamped by the runtime; this one is the agent's own
+    /// internal id.
+    pub agent_session_id: Option<String>,
 }
 
 /// Decoder output — provider-neutral status state, **session-id-free**

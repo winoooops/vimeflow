@@ -50,18 +50,22 @@ impl CodexAdapter {
     /// Test-only convenience constructor. Production callers go
     /// through `AgentBindings::for_attach` → `CodexAdapter::with_locator`
     /// (which shares the outer `Arc<CompositeLocator>`). Hardcoding
-    /// `/proc` here is safe ONLY because the `#[cfg(test)]` gate
-    /// prevents accidental production use that would bypass
-    /// `AttachContext.proc_root` injection (PR #261 cycle 10 review
-    /// F29 — symmetric with the test-only
-    /// `SqliteFirstLocator::new`).
+    /// `Some("/proc")` here is safe ONLY because the `#[cfg(test)]`
+    /// gate prevents accidental production use that would bypass
+    /// `AttachContext.proc_root` injection — production callers now
+    /// thread `Option<PathBuf>` through so non-Linux runs pass `None`
+    /// and the proc fast-paths skip themselves (PR #261 cycle 10 F29
+    /// noted the symmetry with test-only `SqliteFirstLocator::new`;
+    /// PR #302 Claude review F1 widened the production signature to
+    /// `Option`, leaving this test-only constructor with the explicit
+    /// `Some(/proc)` to keep the locator unit-test surface unchanged).
     #[cfg(test)]
     pub fn new(pid: u32, pty_start: SystemTime) -> Self {
         Self::with_locator(Arc::new(CompositeLocator::new(
             default_codex_home(),
             pid,
             pty_start,
-            PathBuf::from("/proc"),
+            Some(PathBuf::from("/proc")),
         )))
     }
 
@@ -211,7 +215,7 @@ mod adapter_tests {
             default_codex_home(),
             12345,
             SystemTime::UNIX_EPOCH,
-            PathBuf::from("/proc"),
+            Some(PathBuf::from("/proc")),
         ));
         let expected_ptr = Arc::as_ptr(&locator) as *const ();
         let adapter = CodexAdapter::with_locator(locator);
@@ -264,6 +268,7 @@ mod adapter_tests {
             status_path: PathBuf::from("/home/u/.codex/sessions/r.jsonl"),
             trust_root: PathBuf::from("/home/u/.codex"),
             static_transcript_hint: Some("/home/u/.codex/sessions/r.jsonl".to_string()),
+            agent_session_id: Some("thread-id".to_string()),
         };
         assert_eq!(
             tps.static_hint(&with_hint),
@@ -274,6 +279,7 @@ mod adapter_tests {
             status_path: PathBuf::from("/tmp/x"),
             trust_root: PathBuf::from("/tmp"),
             static_transcript_hint: None,
+            agent_session_id: None,
         };
         assert_eq!(tps.static_hint(&without_hint), None);
     }
@@ -388,7 +394,7 @@ mod status_source_tests {
             codex_home.path().to_path_buf(),
             999,
             pty_start,
-            PathBuf::from("/proc"),
+            Some(PathBuf::from("/proc")),
         )));
         let cwd = codex_home.path().to_path_buf();
 
@@ -416,7 +422,7 @@ mod status_source_tests {
             codex_home.path().to_path_buf(),
             999,
             SystemTime::now(),
-            PathBuf::from("/proc"),
+            Some(PathBuf::from("/proc")),
         )));
         let cwd = codex_home.path().to_path_buf();
 

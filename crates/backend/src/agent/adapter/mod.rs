@@ -132,6 +132,7 @@ impl traits::StatusSourceLocator for NoOpAdapter {
                 .join("status.json"),
             trust_root: cwd.to_path_buf(),
             static_transcript_hint: None,
+            agent_session_id: None,
         })
     }
 }
@@ -385,6 +386,7 @@ mod noop_tests {
             status_path: PathBuf::from("/tmp/status.json"),
             trust_root: PathBuf::from("/tmp"),
             static_transcript_hint: Some("/tmp/ignored.jsonl".to_string()),
+            agent_session_id: None,
         };
         assert_eq!(tps.static_hint(&located), None);
         assert_eq!(tps.dynamic_hint(r#"{"transcript_path":"/tmp/x"}"#), None);

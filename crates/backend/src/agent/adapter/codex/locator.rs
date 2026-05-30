@@ -114,26 +114,38 @@ fn extract_numeric_suffix(name: &str) -> u32 {
 
 pub struct SqliteFirstLocator {
     pub codex_home: PathBuf,
-    proc_root: PathBuf,
+    /// `Some(path)` on Linux (and in test harnesses that inject a
+    /// tempdir-based fake proc); `None` on macOS/Windows where the
+    /// `/proc` filesystem does not exist. The proc-backed fast-paths
+    /// (`resume_thread_id_from_proc`, `open_rollout_paths_from_proc`)
+    /// SKIP themselves when this is `None` rather than attempting to
+    /// open `/proc/<pid>/cmdline` and silently failing with ENOENT
+    /// (PR #302 Claude review F1 — the previous production fallback
+    /// hardcoded `/proc` even on non-Linux, contradicting the design
+    /// documented on `default_proc_root()` and `CompositeLocator::new`).
+    proc_root: Option<PathBuf>,
 }
 
 impl SqliteFirstLocator {
-    /// Default-`/proc` constructor — used by `locator` unit tests
+    /// Default-`Some("/proc")` constructor — used by `locator` unit tests
     /// that don't need to inject a fake proc root. Production callers
     /// go through `CompositeLocator::new` → `with_proc_root` so
-    /// `AttachContext.proc_root` flows through.
+    /// `AttachContext.proc_root` (which is `None` on non-Linux) flows
+    /// through and the proc fast-paths gate themselves.
     #[cfg(test)]
     pub fn new(codex_home: PathBuf) -> Self {
-        Self::with_proc_root(codex_home, PathBuf::from("/proc"))
+        Self::with_proc_root(codex_home, Some(PathBuf::from("/proc")))
     }
 
     /// Explicit `proc_root` constructor. `pub(super)` so
     /// `CompositeLocator::new` can thread an `AttachContext`-derived
-    /// proc_root through, instead of every Codex attach hardcoding
-    /// `/proc` (PR #261 cycle 8 F22 — test harnesses that supply a
-    /// tempdir-based `proc_root` via `AttachContext` were previously
-    /// dead-letter).
-    pub(super) fn with_proc_root(codex_home: PathBuf, proc_root: PathBuf) -> Self {
+    /// `Option<PathBuf>` through. `None` disables the proc-backed
+    /// fast-paths (the locator falls through to the logs / FS-scan
+    /// strategies); `Some(path)` enables them rooted at the given
+    /// directory (PR #261 cycle 8 F22 added the proc_root parameter,
+    /// PR #302 Claude review F1 widened it to `Option` so non-Linux
+    /// production callers stop probing nonexistent `/proc` paths).
+    pub(super) fn with_proc_root(codex_home: PathBuf, proc_root: Option<PathBuf>) -> Self {
         Self {
             codex_home,
             proc_root,
@@ -305,7 +317,13 @@ impl SqliteFirstLocator {
         state_path: &Path,
         ctx: &BindContext<'_>,
     ) -> Result<Option<RolloutLocation>, LocatorError> {
-        let Some(thread_id) = resume_thread_id_from_proc(&self.proc_root, ctx.pid) else {
+        // No proc root on this platform — the resume-argv fast-path is a
+        // Linux-only probe. Caller falls through to the FS-scan / logs path
+        // (PR #302 Claude review F1).
+        let Some(proc_root) = self.proc_root.as_deref() else {
+            return Ok(None);
+        };
+        let Some(thread_id) = resume_thread_id_from_proc(proc_root, ctx.pid) else {
             return Ok(None);
         };
 
@@ -328,8 +346,13 @@ impl SqliteFirstLocator {
         state_path: &Path,
         ctx: &BindContext<'_>,
     ) -> Result<Option<RolloutLocation>, LocatorError> {
-        let rollout_paths =
-            open_rollout_paths_from_proc(&self.proc_root, ctx.pid, &self.codex_home);
+        // Same platform gate as `resolve_from_resume_arg` — opening
+        // `/proc/<pid>/fd/*` only makes sense on Linux (PR #302 Claude
+        // review F1).
+        let Some(proc_root) = self.proc_root.as_deref() else {
+            return Ok(None);
+        };
+        let rollout_paths = open_rollout_paths_from_proc(proc_root, ctx.pid, &self.codex_home);
         if rollout_paths.is_empty() {
             return Ok(None);
         }
@@ -645,22 +668,21 @@ const CODEX_BIND_RETRY_INTERVAL_MS: u64 = 100;
 const CODEX_BIND_RETRY_MAX_ATTEMPTS: u32 = 5;
 
 impl CompositeLocator {
-    /// `proc_root` lets `AttachContext` inject a tempdir-based fake
-    /// `/proc` for tests (PR #261 cycle 8 F22 — was previously
-    /// hardcoded to `/proc` inside `SqliteFirstLocator::new`, leaving
-    /// `AttachContext.proc_root` as dead-letter). Production sites
-    /// pass `ctx.proc_root.clone().unwrap_or_else(|| PathBuf::from("/proc"))`
-    /// from `AgentBindings::for_attach` so the proc fast-paths
-    /// (`resume_thread_id_from_proc`, `open_rollout_paths_from_proc`)
-    /// can be redirected at attach time. The fallback default mirrors
-    /// the pre-cycle-8 behavior so direct `CompositeLocator::new`
-    /// callers (CodexAdapter::new in tests, locator unit tests)
-    /// keep working without a behavioral change.
+    /// `proc_root` lets `AttachContext` inject the platform's proc
+    /// directory (`Some("/proc")` on Linux), a tempdir-based fake proc
+    /// for tests, or `None` on macOS / Windows where the `/proc`
+    /// filesystem does not exist (PR #261 cycle 8 F22 added the
+    /// parameter; PR #302 Claude review F1 widened it to `Option` so
+    /// non-Linux callers stop hardcoding a nonexistent path). Production
+    /// sites pass `ctx.proc_root.clone()` directly from
+    /// `AgentBindings::for_attach`; the proc-backed fast-paths inside
+    /// `SqliteFirstLocator` skip themselves when this is `None`, so the
+    /// locator falls through cleanly to the logs / FS-scan strategies.
     pub fn new(
         codex_home: PathBuf,
         pid: u32,
         pty_start: SystemTime,
-        proc_root: PathBuf,
+        proc_root: Option<PathBuf>,
     ) -> Self {
         // No log here. PR #261 cycle 4 F13 / cycle 11 F31:
         // `AgentBindings::for_attach` historically constructed two
@@ -773,6 +795,13 @@ impl crate::agent::adapter::traits::StatusSourceLocator for CompositeLocator {
             status_path: location.rollout_path,
             trust_root: self.codex_home.clone(),
             static_transcript_hint,
+            // Codex's `thread_id` IS its agent_session_id — the same value
+            // that appears as `id` in `session_index.jsonl`. Surfaces here
+            // so `SessionLifecycle` can wire the codex title-sync watcher
+            // back into production (PR #302 codex review F5 — the previous
+            // refactor dropped this wiring, parking `agent-session-title`
+            // emits for live Codex sessions).
+            agent_session_id: Some(location.thread_id),
         })
     }
 }
@@ -1113,8 +1142,10 @@ mod sqlite_first_tests {
             &["/vendor/codex/codex", "resume", "thread-resume"],
         );
 
-        let locator =
-            SqliteFirstLocator::with_proc_root(dir.path().to_path_buf(), proc_root.path().into());
+        let locator = SqliteFirstLocator::with_proc_root(
+            dir.path().to_path_buf(),
+            Some(proc_root.path().into()),
+        );
         let result = locator
             .resolve_rollout(&ctx(dir.path(), 4242, SystemTime::now()))
             .expect("resume argv should bind");
@@ -1144,14 +1175,49 @@ mod sqlite_first_tests {
         write_cmdline(proc_root.path(), 5151, &["/vendor/codex/codex"]);
         write_rollout_fd(proc_root.path(), 5151, "30", &rollout_path);
 
-        let locator =
-            SqliteFirstLocator::with_proc_root(dir.path().to_path_buf(), proc_root.path().into());
+        let locator = SqliteFirstLocator::with_proc_root(
+            dir.path().to_path_buf(),
+            Some(proc_root.path().into()),
+        );
         let result = locator
             .resolve_rollout(&ctx(dir.path(), 5151, SystemTime::now()))
             .expect("open rollout fd should bind");
 
         assert_eq!(result.thread_id, "thread-fd");
         assert_eq!(result.rollout_path, rollout_path);
+    }
+
+    #[test]
+    fn proc_root_none_skips_proc_fast_paths_and_falls_through_to_logs() {
+        // PR #302 Claude review F1 — non-Linux platforms (macOS / Windows)
+        // pass `proc_root: None` so the proc-backed fast-paths
+        // (`resume_thread_id_from_proc`, `open_rollout_paths_from_proc`)
+        // skip themselves rather than probing nonexistent `/proc/<pid>/`
+        // paths. Pin the contract: with `None`, the locator still binds
+        // via the logs-table path.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let logs = dir.path().join("logs_1.sqlite");
+        let state = dir.path().join("state_1.sqlite");
+        build_logs_db(&logs);
+        build_state_db(&state);
+
+        let pty_start = SystemTime::now() - Duration::from_secs(60);
+        let pty_secs = pty_start
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .expect("pty_start after epoch")
+            .as_secs() as i64;
+
+        insert_log_row(&logs, "pid:7777:abc", Some("thread-NL"), pty_secs + 5, 0);
+        insert_thread(&state, "thread-NL", "/tmp/rollout-NL.jsonl", 1000);
+
+        // Crucially: NO proc root. The proc fast-paths must not crash
+        // even though `self.proc_root` is `None`.
+        let locator = SqliteFirstLocator::with_proc_root(dir.path().to_path_buf(), None);
+        let result = locator
+            .resolve_rollout(&ctx(dir.path(), 7777, pty_start))
+            .expect("logs path binds when proc fast-paths are skipped");
+        assert_eq!(result.thread_id, "thread-NL");
+        assert_eq!(result.rollout_path, PathBuf::from("/tmp/rollout-NL.jsonl"));
     }
 
     #[test]
@@ -1178,8 +1244,10 @@ mod sqlite_first_tests {
         let proc_root = fake_proc_root();
         write_cmdline(proc_root.path(), 9090, &["/vendor/codex/codex"]);
 
-        let locator =
-            SqliteFirstLocator::with_proc_root(dir.path().to_path_buf(), proc_root.path().into());
+        let locator = SqliteFirstLocator::with_proc_root(
+            dir.path().to_path_buf(),
+            Some(proc_root.path().into()),
+        );
         let result = locator
             .resolve_rollout(&ctx(dir.path(), 9090, pty_start))
             .expect("recent thread row should bind when logs are threadless");
@@ -1261,11 +1329,15 @@ mod fs_fallback_tests {
         // `CodexAdapter`). The dummy values below don't matter for
         // this test — `resolve_rollout` is called with an explicit
         // `BindContext` that supplies its own pid/pty_start.
+        // PR #302 F1: `proc_root` is `Option<PathBuf>`. `Some("/proc")`
+        // here matches the pre-F1 behavior even though this test never
+        // exercises the proc fast-path (the FS scan fires on schema
+        // drift).
         let composite = CompositeLocator::new(
             dir.path().to_path_buf(),
             0,
             SystemTime::UNIX_EPOCH,
-            PathBuf::from("/proc"),
+            Some(PathBuf::from("/proc")),
         );
         let result =
             composite.resolve_rollout(&ctx(std::path::Path::new("/tmp"), SystemTime::now()));

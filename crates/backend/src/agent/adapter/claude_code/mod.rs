@@ -45,6 +45,10 @@ pub(super) fn claude_status_path(cwd: &Path, session_id: &str) -> LocatedStatusS
             .join("status.json"),
         trust_root: cwd.to_path_buf(),
         static_transcript_hint: None,
+        // Claude has no attach-time agent-session id surfaced through
+        // the locator — the runtime keys on the Vimeflow PTY session id
+        // exclusively, and the title-sync watcher is codex-only.
+        agent_session_id: None,
     }
 }
 
@@ -229,6 +233,7 @@ mod tests {
             status_path: PathBuf::from("/tmp/status.json"),
             trust_root: PathBuf::from("/tmp"),
             static_transcript_hint: Some("/tmp/should_be_ignored.jsonl".to_string()),
+            agent_session_id: None,
         };
         assert_eq!(tps.static_hint(&located), None);
     }

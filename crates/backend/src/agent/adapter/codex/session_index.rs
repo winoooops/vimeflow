@@ -1,15 +1,14 @@
 //! Codex `session_index.jsonl` watcher.
 //!
-//! TODO(epic→main reconciliation): main #265's Codex title-sync + `/rename`
-//! plumbing is preserved here verbatim, but it was wired into main's
-//! pre-refactor watcher (`base::start_for`). The agent-adapter refactor (#246)
-//! replaced that orchestration with `SessionLifecycle`'s verb sequence, which
-//! does NOT yet start this watcher or drive the rename path — so every item in
-//! this module is currently unreferenced from production. RE-WIRE it into the
-//! `SessionLifecycle` flow (start the index-watch for Codex agents in
-//! `run_watch_sequence`; route the rename IPC) to restore the feature. Parked
-//! (not deleted) so the code is ready to re-attach. Tracked for follow-up.
-#![allow(dead_code)]
+//! Spawned by `base::watcher_runtime::start_watching` for live Codex sessions
+//! whose locator surfaced an `agent_session_id`. Polls
+//! `<codex_home>/session_index.jsonl` for changes, emits
+//! `agent-session-title` events as `thread_name` updates land, and reconciles
+//! AI-generated thread names with pending `/rename` claims recorded via
+//! `record_user_rename` from the rename IPC. The watcher's lifetime is bound
+//! 1:1 to the `WatcherHandle` (Drop signals stop + joins the thread). PR
+//! #302 codex review F5 re-wired this path after the agent-adapter refactor
+//! initially dropped the production caller.
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};

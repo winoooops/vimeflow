@@ -6,6 +6,7 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::Duration;
 use std::time::Instant;
@@ -73,6 +74,28 @@ pub struct WatcherHandle {
     /// `session_id` itself is always cloned into the struct. Removed
     /// in cycle 6 per Claude review F13.)
     session_id: String,
+    /// Which agent runs in this pty session. Stored here so
+    /// `AgentWatcherState::agent_type_for_pty` can resolve under the
+    /// single `watchers` mutex, instead of a separate `agent_types`
+    /// map that would expose an inconsistency window between insert /
+    /// remove and the lookup (PR #302 Claude review F2 — the pre-fix
+    /// split-mutex design let the rename / title-sync IPC see "agent
+    /// type present, watcher absent" and the reverse during the gap
+    /// between the two critical sections).
+    agent_type: AgentType,
+    /// Optional codex title-sync watcher stop flag. `Some` only for
+    /// Codex sessions where the locator surfaced an `agent_session_id`;
+    /// `None` for Claude / NoOp / Codex-without-thread-id. `Drop`
+    /// signals stop before joining `session_index_join` so the
+    /// poll-and-emit thread exits in bounded time (PR #302 codex
+    /// review F5 — re-wires the title-sync path that the pre-fix
+    /// refactor dropped).
+    session_index_stop: Option<Arc<AtomicBool>>,
+    /// Optional codex title-sync watcher join handle. Paired with
+    /// `session_index_stop`; `Drop` joins after signalling stop so the
+    /// thread is reaped instead of left detached (matches the existing
+    /// `join_handle` pattern for the polling fallback).
+    session_index_join: Option<std::thread::JoinHandle<()>>,
 }
 
 impl Drop for WatcherHandle {
@@ -85,6 +108,15 @@ impl Drop for WatcherHandle {
             wake.notify_one();
         }
         if let Some(handle) = self.join_handle.take() {
+            let _ = handle.join();
+        }
+        // Stop + join the codex title-sync watcher (if any). Bounded by
+        // the watcher's own poll cadence (~500ms) — same shape as the
+        // polling fallback teardown above (PR #302 codex review F5).
+        if let Some(stop) = self.session_index_stop.take() {
+            stop.store(true, std::sync::atomic::Ordering::Release);
+        }
+        if let Some(handle) = self.session_index_join.take() {
             let _ = handle.join();
         }
         let _ = self.transcript_state.stop(&self.session_id);
@@ -100,14 +132,17 @@ impl Drop for WatcherHandle {
     }
 }
 
-/// Thread-safe state for managing active agent watchers per session
+/// Thread-safe state for managing active agent watchers per session.
+///
+/// PR #302 Claude review F2 collapsed the previous parallel `agent_types`
+/// map into a field on `WatcherHandle`, so `agent_type_for_pty` and
+/// `contains` / `active_count` now read from the SAME `watchers` mutex
+/// — closing the inconsistency window where the rename / title-sync IPC
+/// could observe an agent type without a live watcher (or vice versa)
+/// during a concurrent insert / remove.
 #[derive(Default, Clone)]
 pub struct AgentWatcherState {
     watchers: Arc<Mutex<HashMap<String, WatcherHandle>>>,
-    /// Which agent runs in each pty/session — populated at `insert` time so
-    /// the rename / title-sync IPC can resolve the agent for a pty. Ported
-    /// from main #265 during the epic→main reconciliation.
-    agent_types: Arc<Mutex<HashMap<String, AgentType>>>,
 }
 
 impl AgentWatcherState {
@@ -115,11 +150,15 @@ impl AgentWatcherState {
     pub fn new() -> Self {
         Self {
             watchers: Arc::new(Mutex::new(HashMap::new())),
-            agent_types: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
     /// Insert a watcher for a session, stopping any existing watcher.
+    ///
+    /// Stamps the handle's `agent_type` from the caller-supplied value
+    /// so the watchers map is the single source of truth for both the
+    /// watcher presence AND the agent type — no split-mutex
+    /// inconsistency window (PR #302 Claude review F2).
     ///
     /// Scope the lock guard to a nested block so the evicted
     /// `WatcherHandle` (if any) drops AFTER the watchers mutex is
@@ -128,11 +167,8 @@ impl AgentWatcherState {
     /// would block any concurrent `insert` / `remove` / `active_count`
     /// for the same duration. Same fix that was already in
     /// `TranscriptState::stop` (Claude review on PR #152, F7).
-    pub fn insert(&self, session_id: String, handle: WatcherHandle, agent_type: AgentType) {
-        {
-            let mut agent_types = self.agent_types.lock().expect("failed to lock agent_types");
-            agent_types.insert(session_id.clone(), agent_type);
-        }
+    pub fn insert(&self, session_id: String, mut handle: WatcherHandle, agent_type: AgentType) {
+        handle.agent_type = agent_type;
         let _displaced = {
             let mut watchers = self.watchers.lock().expect("failed to lock watchers");
             watchers.insert(session_id, handle)
@@ -148,10 +184,6 @@ impl AgentWatcherState {
     /// removed `WatcherHandle` drops outside the mutex (Claude review
     /// on PR #152, F7).
     pub fn remove(&self, session_id: &str) -> bool {
-        {
-            let mut agent_types = self.agent_types.lock().expect("failed to lock agent_types");
-            agent_types.remove(session_id);
-        }
         let handle = {
             let mut watchers = self.watchers.lock().expect("failed to lock watchers");
             watchers.remove(session_id)
@@ -178,17 +210,25 @@ impl AgentWatcherState {
     }
 
     /// Resolve which agent runs in a given pty/session — used by the rename /
-    /// title-sync IPC (main #265). Ported during the epic→main reconciliation.
+    /// title-sync IPC (main #265). Reads from the same `watchers` mutex
+    /// that gates `contains` / `active_count`, so callers observe
+    /// agent-type and watcher-presence atomically (PR #302 Claude review
+    /// F2 collapsed the previous separate `agent_types` map).
     pub fn agent_type_for_pty(&self, pty_id: &str) -> Option<AgentType> {
-        let agent_types = self.agent_types.lock().expect("failed to lock agent_types");
-        agent_types.get(pty_id).cloned()
+        let watchers = self.watchers.lock().expect("failed to lock watchers");
+        watchers.get(pty_id).map(|handle| handle.agent_type)
     }
 
-    /// Test-only seam to set a pty's agent type without a live watcher.
+    /// Test-only seam to set a pty's agent type without going through a
+    /// real watcher startup. Builds a stub `WatcherHandle::new_for_test`
+    /// with a fresh `TranscriptState` (whose `stop` is a no-op for an
+    /// unknown session id, matching the production handle Drop
+    /// cascade), then inserts via the public `insert` API so the
+    /// single-mutex invariant is preserved (PR #302 Claude review F2).
     #[cfg(test)]
     pub(crate) fn insert_agent_type_for_test(&self, pty_id: String, agent_type: AgentType) {
-        let mut agent_types = self.agent_types.lock().expect("failed to lock agent_types");
-        agent_types.insert(pty_id, agent_type);
+        let stub = WatcherHandle::new_for_test(TranscriptState::new(), pty_id.clone());
+        self.insert(pty_id, stub, agent_type);
     }
 }
 
@@ -343,9 +383,12 @@ pub(crate) fn start_watching(
     //   stayed alive on `bindings` and drops with this function-local
     //   move now (PR #261 cycle 11 review F32). The watcher itself
     //   doesn't need the locator again.
-    // - `bindings.agent_type` — diagnostics-only; the watcher
-    //   doesn't branch on it (each adapter's split-trait impls
-    //   carry their own behavior).
+    // - `bindings.agent_type` — now CONSUMED here too: stamped onto
+    //   the returned `WatcherHandle.agent_type` so
+    //   `AgentWatcherState::agent_type_for_pty` can resolve under the
+    //   same mutex as `contains` / `active_count`, and used below to
+    //   gate the codex `session_index.jsonl` title-sync spawn (PR #302
+    //   Claude review F2 + codex review F5).
     //
     // Step B'' (this PR): `bindings.streamer` is now CONSUMED here and
     // threaded into `TranscriptState::start_or_replace` (which migrated
@@ -355,6 +398,7 @@ pub(crate) fn start_watching(
     // guarantee now lives entirely in `bindings.streamer` (for Codex it
     // is the `Arc<CodexAdapter>` that shares the same
     // `Arc<CompositeLocator>` the locator uses).
+    let agent_type = bindings.agent_type;
     let decoder = bindings.decoder;
     let validator = bindings.validator;
     let transcript_paths = bindings.transcript_paths;
@@ -680,6 +724,39 @@ pub(crate) fn start_watching(
         }))
     };
 
+    // Codex title-sync watcher (PR #302 codex review F5). Re-wires the
+    // `session_index.jsonl` watcher that the pre-fix refactor dropped:
+    // when the locator surfaced an `agent_session_id` (Codex's
+    // `thread_id`), spawn a watcher that emits `agent-session-title`
+    // events as `thread_name` updates land in
+    // `<codex_home>/session_index.jsonl`. The `WatcherHandle::Drop`
+    // cascade signals stop + joins the thread so the title-sync
+    // lifecycle is bound 1:1 to the statusline watcher's lifetime.
+    //
+    // Gated on (a) `agent_type == Codex` and (b) the locator actually
+    // surfaced an agent_session_id — both must hold. Claude / NoOp /
+    // Codex-without-thread-id leave the handle's title-sync fields as
+    // `None` and Drop becomes a no-op for those branches.
+    let (session_index_stop, session_index_join) =
+        if matches!(agent_type, AgentType::Codex) && located.agent_session_id.is_some() {
+            let agent_session_id = located
+                .agent_session_id
+                .clone()
+                .expect("checked is_some above");
+            let session_index_path = located.trust_root.join("session_index.jsonl");
+            let stop = Arc::new(AtomicBool::new(false));
+            let join = super::super::codex::session_index::spawn_watch(
+                session_index_path,
+                agent_session_id,
+                session_id.clone(),
+                events.clone(),
+                stop.clone(),
+            );
+            (Some(stop), Some(join))
+        } else {
+            (None, None)
+        };
+
     log::info!(
         "Started watching statusline for session {}: {}",
         session_id,
@@ -692,6 +769,9 @@ pub(crate) fn start_watching(
         join_handle: poll_join_handle,
         transcript_state: transcript_state_for_handle,
         session_id: session_id.clone(),
+        agent_type,
+        session_index_stop,
+        session_index_join,
     })
 }
 
@@ -701,12 +781,20 @@ impl WatcherHandle {
         transcript_state: TranscriptState,
         session_id: String,
     ) -> Self {
+        // `agent_type` defaults to `ClaudeCode`. Tests that care about
+        // the agent type pass the real value through
+        // `AgentWatcherState::insert(sid, handle, agent_type)`, which
+        // overwrites this field — so the default only matters for
+        // tests that never call `agent_type_for_pty` on the stub.
         WatcherHandle {
             _watcher: None,
             poll_stop: Arc::new((Mutex::new(false), Condvar::new())),
             join_handle: None,
             transcript_state,
             session_id,
+            agent_type: AgentType::ClaudeCode,
+            session_index_stop: None,
+            session_index_join: None,
         }
     }
 }
@@ -726,6 +814,33 @@ mod tests {
     fn remove_returns_false_for_missing_session() {
         let state = AgentWatcherState::new();
         assert!(!state.remove("nonexistent"));
+    }
+
+    #[test]
+    fn insert_makes_agent_type_and_presence_atomic_under_single_lock() {
+        // PR #302 Claude review F2 — `agent_type_for_pty` and `contains`
+        // / `active_count` must agree on every snapshot. Before the fix,
+        // `agent_types` and `watchers` were separate mutexes and a
+        // concurrent reader could see (Some(type), contains=false) or
+        // (None, contains=true) between insert's two critical sections.
+        // After the fix, the agent type lives on `WatcherHandle` and is
+        // resolved from the same map `contains` queries — so the
+        // round-trip below is structurally atomic.
+        let state = AgentWatcherState::new();
+        let sid = "atomic-sid".to_string();
+        assert_eq!(state.agent_type_for_pty(&sid), None);
+        assert!(!state.contains(&sid));
+
+        let handle = WatcherHandle::new_for_test(TranscriptState::new(), sid.clone());
+        state.insert(sid.clone(), handle, AgentType::Codex);
+
+        // Both reads under the same `watchers` mutex — must agree.
+        assert_eq!(state.agent_type_for_pty(&sid), Some(AgentType::Codex));
+        assert!(state.contains(&sid));
+
+        state.remove(&sid);
+        assert_eq!(state.agent_type_for_pty(&sid), None);
+        assert!(!state.contains(&sid));
     }
 
     #[test]

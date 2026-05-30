@@ -10,8 +10,13 @@
 //!
 //! The loop owns the frozen line-buffering contract (F-EVENTS replay→live
 //! boundary): a partial line survives a non-terminal EOF, [`on_caught_up`]
-//! fires on the first EOF of each catch-up, and a read error warns + sleeps +
-//! continues rather than tearing the watcher down.
+//! fires on the first EOF of each catch-up **after the partial buffer is
+//! empty**, and a read error warns + sleeps + continues rather than tearing
+//! the watcher down. The empty-partial guard is load-bearing: firing the
+//! replay→live boundary while a line is half-buffered would let decoders that
+//! flush replay-only emitter state at that signal classify the straddling
+//! line — which started during replay — as a live event when it eventually
+//! completes.
 //!
 //! [`on_caught_up`]: TranscriptDecoder::on_caught_up
 
@@ -30,8 +35,14 @@ pub(crate) const POLL_INTERVAL: Duration = Duration::from_millis(500);
 pub(crate) trait TranscriptDecoder: Send {
     /// Decode one complete (newline-stripped, non-blank) transcript line.
     fn decode_line(&mut self, line: &str);
-    /// Called on the first EOF of each catch-up pass — the replay→live
-    /// boundary. Used to flush replay-only emitter state exactly once.
+    /// Called on the first EOF of each catch-up pass with an **empty partial
+    /// buffer** — the replay→live boundary. Used to flush replay-only
+    /// emitter state exactly once. Implementations that flush in-flight
+    /// accumulators here can rely on the invariant that any straddling line
+    /// already-buffered before this signal will be decoded *before* the
+    /// signal fires (the engine defers the signal until the partial is
+    /// committed); if the writer truncated mid-line and never completes,
+    /// the signal stays parked — there is no boundary to cross.
     fn on_caught_up(&mut self);
 }
 
@@ -71,7 +82,15 @@ impl TranscriptTailService {
             line_buf.clear();
             match reader.read_line(&mut line_buf) {
                 Ok(0) => {
-                    self.decoder.on_caught_up();
+                    // Defer the replay→live boundary signal while a partial
+                    // line is half-buffered: firing on_caught_up here would
+                    // let decoders that flush replay-only emitter state at
+                    // that signal classify the eventually-completed
+                    // straddling line as a live event, even though it
+                    // started during replay (PR #302 Claude review F3).
+                    if partial.is_empty() {
+                        self.decoder.on_caught_up();
+                    }
                     std::thread::sleep(self.poll_interval);
                 }
                 Ok(_) => {
@@ -212,10 +231,31 @@ mod tests {
 
     #[test]
     fn engine_truncated_partial_never_emits() {
-        // A partial that never completes before stop is dropped — and the EOF
-        // arm still fired exactly once.
+        // A partial that never completes before stop is dropped, AND the
+        // replay→live boundary signal (on_caught_up) stays parked — every
+        // EOF that occurred while the partial was buffered is gated by the
+        // empty-partial guard. Decoders keep accumulating replay-only state,
+        // which is the correct semantic for "the transcript replay never
+        // completed" (PR #302 Claude review F3).
         let (lines, caught) = drive(vec![Step::Chunk("{\"a\":1"), Step::EofStop]);
         assert!(lines.is_empty());
+        assert_eq!(caught, 0);
+    }
+
+    #[test]
+    fn engine_caught_up_defers_until_partial_completes() {
+        // Regression test for PR #302 Claude review F3 — the engine must NOT
+        // fire on_caught_up while a partial line is half-buffered. The
+        // ordering pinned here: chunk(open) → Eof (deferred — partial
+        // non-empty) → chunk(close) → EofStop (partial cleared after
+        // decode_line) → on_caught_up fires exactly once.
+        let (lines, caught) = drive(vec![
+            Step::Chunk("{\"a\":1"),
+            Step::Eof,
+            Step::Chunk("23}\n"),
+            Step::EofStop,
+        ]);
+        assert_eq!(lines, ["{\"a\":123}"]);
         assert_eq!(caught, 1);
     }
 

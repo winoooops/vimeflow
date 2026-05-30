@@ -19,7 +19,6 @@
 //!   `adapter_for_transcript_state: Arc<dyn AgentAdapter>` field that
 //!   B' carried only because `start_or_replace` still took the façade.
 
-use std::path::PathBuf;
 use std::sync::Arc;
 
 use super::claude_code::ClaudeCodeAdapter;
@@ -108,14 +107,16 @@ impl AgentBindings {
                     .unwrap_or_else(default_codex_home);
                 // `ctx.proc_root` carries `Some("/proc")` on Linux,
                 // `None` on non-Linux, and `Some(tempdir)` in test
-                // harnesses that inject a fake `/proc`. The shared
-                // `Arc<CompositeLocator>` now means the proc-root
-                // value flows through to BOTH consumer paths through
-                // ONE construction site (PR #261 cycle 8 F22).
-                let proc_root = ctx
-                    .proc_root
-                    .clone()
-                    .unwrap_or_else(|| PathBuf::from("/proc"));
+                // harnesses that inject a fake `/proc`. Pass the
+                // `Option` straight through — `CompositeLocator::new`
+                // (and `SqliteFirstLocator`) gate the proc fast-paths
+                // on `is_some()`, so macOS / Windows production runs
+                // stop probing nonexistent `/proc/<pid>/cmdline` (PR
+                // #261 cycle 8 F22 added `proc_root`; PR #302 Claude
+                // review F1 widened it to `Option` so the platform
+                // guard already in `config::default_proc_root()` isn't
+                // silently undone by an `unwrap_or_else` here).
+                let proc_root = ctx.proc_root.clone();
                 // Attach-once observability for production Codex
                 // sessions (PR #261 cycle 3 F11 + cycle 4 F13). The
                 // log site stays here at the binding boundary so it
