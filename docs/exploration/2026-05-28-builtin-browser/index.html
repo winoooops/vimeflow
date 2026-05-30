@@ -878,8 +878,8 @@
             <strong>Multi-tab login support:</strong> convert
             <code>window.open</code>, target-blank, and OAuth popup requests
             into Vimeflow-owned browser tabs inside the pane. Tabs must use the
-            same persistent partition as the opener, so GitHub, Google, and
-            SaaS OAuth flows can complete without leaking into system Chrome or
+            same persistent partition as the opener, so GitHub, Google, and SaaS
+            OAuth flows can complete without leaking into system Chrome or
             hiding inside floating dialogs.
           </li>
           <li>
@@ -1107,10 +1107,13 @@ VIMEFLOW_BROWSER_TARGET_HINT=vimeflow-session:&lt;sessionId&gt;:pane:&lt;paneId&
       </section>
 
       <section class="panel" aria-labelledby="acceptance-heading">
-        <h2 id="acceptance-heading">Acceptance evidence and current spike result</h2>
+        <h2 id="acceptance-heading">
+          Acceptance evidence and current spike result
+        </h2>
         <p>
           Current spike evidence was captured with the proxy environment cleared
-          and <code>npm run electron:dev</code>, because <code>npm run dev</code>
+          and <code>npm run electron:dev</code>, because
+          <code>npm run dev</code>
           starts the renderer server only. Files are stored under
           <code>docs/exploration/2026-05-28-builtin-browser/media/</code>.
         </p>
@@ -1138,9 +1141,8 @@ VIMEFLOW_BROWSER_TARGET_HINT=vimeflow-session:&lt;sessionId&gt;:pane:&lt;paneId&
           <li>
             <strong>Non-DRM media/audio:</strong>
             <code>nondrm-video-audio-state.txt</code> records HTML5 video
-            playback with <code>paused=false</code>,
-            <code>muted=false</code>, <code>volume=1</code>,
-            <code>readyState=4</code>, and advancing
+            playback with <code>paused=false</code>, <code>muted=false</code>,
+            <code>volume=1</code>, <code>readyState=4</code>, and advancing
             <code>currentTime</code>. This verifies Electron audio output for
             the embedded browser path.
           </li>
