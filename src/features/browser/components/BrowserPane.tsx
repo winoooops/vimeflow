@@ -11,6 +11,7 @@ import {
   type ReactElement,
 } from 'react'
 import type { Pane, Session } from '../../sessions/types'
+import { isShellPane } from '../../sessions/utils/paneKind'
 import {
   activateBrowserPaneTab,
   closeBrowserPaneTab,
@@ -25,9 +26,7 @@ import {
   setBrowserPaneBounds,
 } from '../browserBridge'
 import type { BrowserCdpInfo, BrowserPaneTab } from '../types'
-
-// cspell:ignore cdp WebContentsView
-const DEFAULT_BROWSER_URL = 'https://www.youtube.com/'
+import { DEFAULT_BROWSER_URL } from '../types'
 
 const LOCAL_DEV_HOST_PATTERN =
   /^(localhost|127(?:\.\d{1,3}){3}|0\.0\.0\.0|\[::1\])(?::\d+)?(?:[/?#]|$)/i
@@ -60,8 +59,6 @@ const normalizeUrl = (value: string): string => {
 
   return `https://${trimmed}`
 }
-
-const isShellPane = (pane: Pane): boolean => (pane.kind ?? 'shell') === 'shell'
 
 const browserSessionIdForSession = (session: Session): string =>
   session.browserSessionId ??

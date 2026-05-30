@@ -1,5 +1,6 @@
 import type { LayoutId, Pane, Session } from '../types'
 import { deriveShellSessionStatus } from './sessionStatus'
+import { isShellPane } from './paneKind'
 
 export interface ApplyAddPaneResult {
   sessions: Session[]
@@ -56,8 +57,6 @@ export const nextFreePaneId = (panes: readonly Pane[]): string => {
 
   return `p${index}`
 }
-
-const isShellPane = (pane: Pane): boolean => (pane.kind ?? 'shell') === 'shell'
 
 export const applyAddPane = (
   sessions: Session[],

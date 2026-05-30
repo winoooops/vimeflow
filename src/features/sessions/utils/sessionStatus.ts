@@ -1,4 +1,5 @@
 import type { Pane, SessionStatus } from '../types'
+import { isShellPane } from './paneKind'
 
 /** Aggregate a session's status from its panes.
  *
@@ -24,8 +25,6 @@ export const deriveSessionStatus = (panes: Pane[]): SessionStatus => {
 
   return 'paused'
 }
-
-const isShellPane = (pane: Pane): boolean => (pane.kind ?? 'shell') === 'shell'
 
 export const deriveShellSessionStatus = (panes: Pane[]): SessionStatus =>
   deriveSessionStatus(panes.filter(isShellPane))

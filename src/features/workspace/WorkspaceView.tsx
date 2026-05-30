@@ -66,6 +66,7 @@ import { useAgentStatus } from '../agent-status/hooks/useAgentStatus'
 import { useGitStatus } from '../diff/hooks/useGitStatus'
 import { sumLines } from '../diff/utils/sumLines'
 import { findActivePane } from '../sessions/utils/activeSessionPane'
+import { isShellPane } from '../sessions/utils/paneKind'
 import { lineDelta } from '../sessions/utils/lineDelta'
 import { AGENTS, agentTypeToRegistryKey } from '../../agents/registry'
 import type { SessionStatus } from '../sessions/types'
@@ -308,12 +309,8 @@ export const WorkspaceView = (): ReactElement => {
         : // Active pane is a browser: prefer a live shell so agent/cwd/status
           // state does not bind to an exited PTY when another shell is running.
           (activeSession?.panes.find(
-            (pane) =>
-              (pane.kind ?? 'shell') === 'shell' && pane.status === 'running'
-          ) ??
-          activeSession?.panes.find(
-            (pane) => (pane.kind ?? 'shell') === 'shell'
-          ))
+            (pane) => isShellPane(pane) && pane.status === 'running'
+          ) ?? activeSession?.panes.find(isShellPane))
 
   const activePtyBackedPaneId = activePtyBackedPane?.id
   const activePtyBackedPanePtyId = activePtyBackedPane?.ptyId

@@ -1,3 +1,5 @@
+export const DEFAULT_BROWSER_URL = 'https://www.youtube.com/'
+
 export interface BrowserPaneBounds {
   x: number
   y: number

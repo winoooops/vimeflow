@@ -32,6 +32,8 @@ import {
   deleteActivityPanelCollapsed,
   writeActivityPanelCollapsed,
 } from '../utils/activityPanelCollapsedStore'
+import { isShellPane } from '../utils/paneKind'
+import { DEFAULT_BROWSER_URL } from '../../browser/types'
 import { usePtyExitListener } from '../../terminal/hooks/usePtyExitListener'
 import { destroyBrowserPane } from '../../browser/browserBridge'
 import { useAutoCreateOnEmpty } from './useAutoCreateOnEmpty'
@@ -146,8 +148,6 @@ const normalizePaneUserLabel = (
   return trimmed && trimmed.length > 0 ? trimmed : undefined
 }
 
-const isShellPane = (pane: Pane): boolean => (pane.kind ?? 'shell') === 'shell'
-
 const findBackendSessionPane = (session: Session): Pane | undefined => {
   const activePane = findActivePane(session)
   if (!activePane) {
@@ -244,7 +244,7 @@ const storedBrowserPanesForSessions = (
         browserUrl:
           pane.browserUrl && pane.browserUrl.length > 0
             ? pane.browserUrl
-            : 'https://www.youtube.com/',
+            : DEFAULT_BROWSER_URL,
         active: pane.active,
       }))
   })
@@ -333,7 +333,7 @@ const restoreStoredBrowserPanes = (sessions: Session[]): Session[] => {
           browserUrl:
             pane.browserUrl && pane.browserUrl.length > 0
               ? pane.browserUrl
-              : 'https://www.youtube.com/',
+              : DEFAULT_BROWSER_URL,
         } satisfies Pane
       })
 
@@ -1116,7 +1116,7 @@ export const useSessionManager = (
             agentType: 'generic',
             status: 'running',
             active: true,
-            browserUrl: 'https://www.youtube.com/',
+            browserUrl: DEFAULT_BROWSER_URL,
           }
 
           let appended = false as boolean
@@ -1421,10 +1421,17 @@ export const useSessionManager = (
           return
         }
 
-        const oldPane = getActivePane(oldSession)
-        if (!isShellPane(oldPane)) {
+        // Restart the active shell when one is focused; only fall back to
+        // another shell when the active pane is a browser (so a browser-active
+        // session is still restartable without targeting the wrong PTY).
+        const activePane = getActivePane(oldSession)
+
+        const oldPane = isShellPane(activePane)
+          ? activePane
+          : oldSession.panes.find(isShellPane)
+        if (!oldPane || !isShellPane(oldPane)) {
           // eslint-disable-next-line no-console
-          console.warn('restartSession: active pane is not a shell pane')
+          console.warn('restartSession: no shell pane found')
 
           return
         }

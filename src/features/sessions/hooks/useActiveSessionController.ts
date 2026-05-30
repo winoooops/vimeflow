@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Pane, Session } from '../types'
 import type { ITerminalService } from '../../terminal/services/terminalService'
 import { findActivePane } from '../utils/activeSessionPane'
+import { isShellPane } from '../utils/paneKind'
 
 export interface UseActiveSessionControllerOptions {
   service: ITerminalService
@@ -16,8 +17,6 @@ export interface ActiveSessionController {
   /** Latest active React session id for async manager mutations. */
   activeSessionIdRef: { readonly current: string | null }
 }
-
-const isShellPane = (pane: Pane): boolean => (pane.kind ?? 'shell') === 'shell'
 
 const findBackendSessionPane = (session: Session): Pane | undefined => {
   const activePane = findActivePane(session)

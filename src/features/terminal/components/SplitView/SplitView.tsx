@@ -11,6 +11,7 @@ import {
 } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import type { LayoutId, Pane, Session } from '../../../sessions/types'
+import { isShellPane } from '../../../sessions/utils/paneKind'
 import { BrowserPane, focusBrowserPane } from '../../../browser'
 import type { NotifyPaneReady } from '../../hooks/useTerminal'
 import type { ITerminalService } from '../../services/terminalService'
@@ -64,8 +65,6 @@ const paneMode = (pane: Pane): TerminalPaneMode => {
 
   return 'spawn'
 }
-
-const isShellPane = (pane: Pane): boolean => (pane.kind ?? 'shell') === 'shell'
 
 const canClosePane = (pane: Pane, session: Session): boolean => {
   if (session.panes.length <= 1) {
