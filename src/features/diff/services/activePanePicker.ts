@@ -8,6 +8,17 @@ export interface PaneCandidate {
   isFocused: boolean
 }
 
+/**
+ * The capability threaded WorkspaceView → DockPanel → DiffPanelContent so the
+ * diff can dispatch inline feedback to a live agent pane. Named once here (next
+ * to PaneCandidate) so the three layers share one shape instead of repeating an
+ * inline type that can drift silently under structural typing.
+ */
+export interface FeedbackDispatchTarget {
+  candidates: PaneCandidate[]
+  writePty: (ptyId: string, data: string) => Promise<void>
+}
+
 export interface ResolveCandidatesArgs {
   allPanes: PaneCandidate[]
   diffCwd: string

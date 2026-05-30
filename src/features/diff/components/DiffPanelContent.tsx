@@ -33,6 +33,7 @@ import type { ChangedFile, SelectedDiffFile } from '../types'
 import {
   useFeedbackBatch,
   parseBatchKey,
+  DRAFT_ID,
   type ReviewComment,
 } from '../hooks/useFeedbackBatch'
 import { ReviewCommentComposer } from './ReviewCommentComposer'
@@ -45,6 +46,7 @@ import {
 import {
   resolveCandidatePanes,
   type PaneCandidate,
+  type FeedbackDispatchTarget,
 } from '../services/activePanePicker'
 
 // Pierre option subtypes — derived from `BaseDiffOptions` (rather than typed as
@@ -90,18 +92,11 @@ interface DiffPanelContentBaseProps {
   /** Optional shared git status from a parent-level watcher subscription */
   gitStatus?: UseGitStatusReturn
   /** Optional feedback dispatch target for inline review comments */
-  feedbackDispatch?: {
-    candidates: PaneCandidate[]
-    writePty: (ptyId: string, data: string) => Promise<void>
-  }
+  feedbackDispatch?: FeedbackDispatchTarget
 }
 
 export type DiffPanelContentProps = DiffPanelContentBaseProps &
   DiffPanelSelectionControl
-
-// Sentinel id marking the transient "draft" annotation that renders the
-// composer inline before a real comment exists.
-const DRAFT_ID = '__draft__'
 
 // Monotonic id source. A module counter keeps comment ids stable + unique
 // without reaching for Date.now()/Math.random() in render.
@@ -1134,15 +1129,9 @@ export const DiffPanelContent = ({
             />
           ) : null}
         </div>
-        {/*
-          STALE-BRANCH NOTE: main adds `thin-scrollbar` here via #293 (merged
-          after this branch diverged), so it was never present to "remove" — the
-          Claude review on #301 flagged it from the stale diff. Keep
-          `thin-scrollbar` on this className when reconciling with main.
-        */}
         <div
           data-testid="diff-scroll-body"
-          className="min-h-0 flex-1 overflow-auto"
+          className="thin-scrollbar min-h-0 flex-1 overflow-auto"
         >
           {diffError ? (
             <ErrorCard message={diffError.message} />

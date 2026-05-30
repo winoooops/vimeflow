@@ -17,7 +17,7 @@ import { DockSwitcher, type DockPosition } from './DockSwitcher'
 import { DockTab } from './DockTab'
 import type { SelectedDiffFile } from '../../diff/types'
 import type { UseGitStatusReturn } from '../../diff/hooks/useGitStatus'
-import type { PaneCandidate } from '../../diff/services/activePanePicker'
+import type { FeedbackDispatchTarget } from '../../diff/services/activePanePicker'
 import { DOCK_CONTAINER_ID } from '../containerIds'
 import {
   DOCK_INLINE_ACTIONS_MIN_WIDTH_PX,
@@ -74,10 +74,7 @@ interface DockPanelBaseProps {
   /** Optional shared git status from WorkspaceView. */
   gitStatus?: UseGitStatusReturn
   /** Optional feedback dispatch target for inline review comments. */
-  feedbackDispatch?: {
-    candidates: PaneCandidate[]
-    writePty: (ptyId: string, data: string) => Promise<void>
-  }
+  feedbackDispatch?: FeedbackDispatchTarget
   isFocused?: boolean
   onContainerFocus?: () => void
 }

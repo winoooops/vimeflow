@@ -123,7 +123,7 @@ describe('useFeedbackBatch', () => {
     const { result } = renderHook(() => useFeedbackBatch())
     const cwd = '/repo'
     const filePath = 'solo.ts'
-    const key = `${cwd}::${filePath}::unstaged`
+    const key = makeBatchKey(cwd, filePath, false)
 
     act(() => {
       result.current.addAnnotation(
@@ -171,7 +171,9 @@ describe('useFeedbackBatch', () => {
     const list = result.current.annotationsForFile(cwd, filePath, false)
     expect(list).toHaveLength(1)
     expect(list[0].metadata.id).toBe('duo-2')
-    expect(result.current.batch.has(`${cwd}::${filePath}::unstaged`)).toBe(true)
+    expect(result.current.batch.has(makeBatchKey(cwd, filePath, false))).toBe(
+      true
+    )
   })
 
   test('clearBatch empties the Map', () => {
@@ -247,21 +249,18 @@ describe('useFeedbackBatch', () => {
     expect(unstagedList[0].metadata.text).toBe('unstaged comment')
   })
 
-  test('makeBatchKey / parseBatchKey round-trip for staged and unstaged', () => {
-    const staged = makeBatchKey('/repo/a', 'src/x.ts', true)
-    const unstaged = makeBatchKey('/repo/a', 'src/x.ts', false)
+  test('makeBatchKey / parseBatchKey round-trip — including a cwd containing "::"', () => {
+    const cases = [
+      { cwd: '/repo/a', filePath: 'src/x.ts', staged: true },
+      { cwd: '/repo/a', filePath: 'src/x.ts', staged: false },
+      // A cwd containing the old "::" separator must still round-trip; the NUL
+      // separator can't appear in a path, so it parses unambiguously.
+      { cwd: '/home/user::special/p', filePath: 'src/y.ts', staged: false },
+    ]
 
-    expect(staged).toBe('/repo/a::src/x.ts::staged')
-    expect(parseBatchKey(staged)).toEqual({
-      cwd: '/repo/a',
-      filePath: 'src/x.ts',
-      staged: true,
-    })
-
-    expect(parseBatchKey(unstaged)).toEqual({
-      cwd: '/repo/a',
-      filePath: 'src/x.ts',
-      staged: false,
-    })
+    for (const expected of cases) {
+      const key = makeBatchKey(expected.cwd, expected.filePath, expected.staged)
+      expect(parseBatchKey(key)).toEqual(expected)
+    }
   })
 })

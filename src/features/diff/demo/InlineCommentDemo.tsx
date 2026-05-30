@@ -1,7 +1,11 @@
 import { useCallback, useMemo, useState, type ReactElement } from 'react'
 import { MultiFileDiff } from '@pierre/diffs/react'
 import type { AnnotationSide, DiffLineAnnotation } from '@pierre/diffs'
-import { useFeedbackBatch, type ReviewComment } from '../hooks/useFeedbackBatch'
+import {
+  useFeedbackBatch,
+  DRAFT_ID,
+  type ReviewComment,
+} from '../hooks/useFeedbackBatch'
 import { ReviewCommentComposer } from '../components/ReviewCommentComposer'
 import { ReviewCommentRow } from '../components/ReviewCommentRow'
 
@@ -16,10 +20,6 @@ import { ReviewCommentRow } from '../components/ReviewCommentRow'
 
 const DEMO_CWD = '/demo'
 const DEMO_FILE = 'greet.ts'
-
-// Sentinel id marking the transient "draft" annotation that renders the
-// composer inline before a real comment exists.
-const DRAFT_ID = '__draft__'
 
 const OLD_CONTENTS = `export function greet(name) {
   const msg = 'Hello, ' + name

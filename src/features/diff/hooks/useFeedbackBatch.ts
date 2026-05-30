@@ -8,6 +8,14 @@ export interface ReviewComment {
   createdAt: number
 }
 
+/**
+ * Sentinel annotation id for the in-progress draft comment — the one the
+ * composer is editing before it is committed to the batch. Shared so
+ * DiffPanelContent and the dev demo both render the composer (not a row) for
+ * it from a single definition.
+ */
+export const DRAFT_ID = '__draft__'
+
 export type FeedbackBatch = Map<
   /** batchKey: `${cwd}::${filePath}::${staged ? 'staged' : 'unstaged'}` */
   string,
@@ -20,27 +28,32 @@ export interface ParsedBatchKey {
   staged: boolean
 }
 
+// NUL separates the key segments. It cannot occur in a Unix cwd or file path,
+// so splitting is unambiguous even when a path itself contains the old `::`
+// separator. The key is internal to the batch Map — never displayed or sent to
+// a terminal.
+const KEY_SEP = '\0'
+
 /**
  * The batch Map is keyed by a single string encoding (cwd, filePath, staged).
- * Construction (`makeBatchKey`) and parsing (`parseBatchKey`) live together so
- * the format has ONE source of truth — consumers (e.g. the dispatch path in
- * DiffPanelContent) must use these instead of hand-slicing on `::`, so a format
- * change can't silently break parsing in callers.
+ * `makeBatchKey` and `parseBatchKey` are the ONE source of truth for that
+ * format — consumers (e.g. the dispatch path in DiffPanelContent) use these
+ * rather than splitting the key by hand.
  */
 export const makeBatchKey = (
   cwd: string,
   filePath: string,
   staged: boolean
-): string => `${cwd}::${filePath}::${staged ? 'staged' : 'unstaged'}`
+): string =>
+  `${cwd}${KEY_SEP}${filePath}${KEY_SEP}${staged ? 'staged' : 'unstaged'}`
 
 export const parseBatchKey = (key: string): ParsedBatchKey => {
-  const firstSep = key.indexOf('::')
-  const lastSep = key.lastIndexOf('::')
+  const parts = key.split(KEY_SEP)
 
   return {
-    cwd: key.slice(0, firstSep),
-    filePath: key.slice(firstSep + 2, lastSep),
-    staged: key.slice(lastSep + 2) === 'staged',
+    cwd: parts[0] ?? '',
+    filePath: parts[1] ?? '',
+    staged: parts[2] === 'staged',
   }
 }
 
