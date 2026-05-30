@@ -7,41 +7,51 @@ import type { BrowserWindow } from 'electron'
 export const isSafeExternalUrl = (url: string): boolean =>
   /^https?:\/\//i.test(url) || url.startsWith('mailto:')
 
-// Scheme-agnostic origin (`protocol//host`) rather than `URL.origin`, which
-// only yields a real origin for schemes registered as "standard" — true for
-// `vimeflow:` in the Electron runtime, but not under unit tests, where
-// `.origin` collapses to the opaque "null" for both the app and `file:` URLs.
-const originOf = (url: string): string | null => {
+// The URL with its `#fragment` stripped. Two URLs that differ only by fragment
+// address the same document, which lets us tell an in-page anchor jump apart
+// from a real navigation to a different document.
+const documentUrl = (url: string): string | null => {
   try {
     const parsed = new URL(url)
+    parsed.hash = ''
 
-    // `file:` has no host, so every local path collapses to one `file://`
-    // origin. Never treat it as same-origin, or a markdown `file:///…` link
-    // could navigate the window in the non-packaged file:// fallback runtime.
-    if (parsed.protocol === 'file:') {
-      return null
-    }
-
-    return `${parsed.protocol}//${parsed.host}`
+    return parsed.href
   } catch {
     return null
+  }
+}
+
+// Scheme + host comparison (works for the custom `vimeflow:` scheme too). Used
+// only to decide whether a blocked navigation is genuinely external: a
+// same-origin link is internal and must not pop the system browser.
+const isSameOrigin = (a: string, b: string): boolean => {
+  try {
+    const ua = new URL(a)
+    const ub = new URL(b)
+
+    return ua.protocol === ub.protocol && ua.host === ub.host
+  } catch {
+    return false
   }
 }
 
 /**
  * Harden a window against renderer-driven navigation.
  *
- * The app is a single-document SPA served from one origin (`vimeflow://app` when
- * packaged, the Vite dev server in development). The markdown reading view is
- * the first surface that renders arbitrary links from on-disk documents, so a
- * clicked link in a spec/README could otherwise navigate the `BrowserWindow`
- * off-origin — and because the preload exposes `window.vimeflow` on the
- * navigated page, that remote page would inherit access to the backend IPC
- * bridge. Keep same-origin navigation, deny `window.open`, and route safe
- * external URLs to the system browser instead.
+ * The app is a single-document SPA: it never performs a real top-level
+ * navigation (the UI is React state, and HMR / reloads do not fire
+ * `will-navigate`). The markdown reading view is the first surface that renders
+ * arbitrary links from on-disk documents, and any of them — external
+ * (`https://…`), absolute (`/index.html`), relative (`./next.md`), or
+ * `file:///…` — would otherwise navigate the `BrowserWindow` away from the app
+ * shell: losing unsaved editor state, and (for off-origin targets) handing the
+ * preload's `window.vimeflow` bridge to a remote page.
  *
- * `openExternal` is injected (rather than importing electron's `shell` here) so
- * this module stays free of the electron runtime and is unit-testable in jsdom.
+ * So block every navigation except a same-document `#hash` anchor and deny
+ * `window.open`; hand only genuinely external (different-origin) safe URLs to
+ * the system browser. `openExternal` is injected (rather than importing
+ * electron's `shell` here) so this module stays free of the electron runtime
+ * and is unit-testable in jsdom.
  */
 export const installNavigationGuard = (
   win: BrowserWindow,
@@ -56,16 +66,19 @@ export const installNavigationGuard = (
   })
 
   win.webContents.on('will-navigate', (event, url) => {
-    const appOrigin = originOf(win.webContents.getURL())
+    const current = win.webContents.getURL()
+    const targetDoc = documentUrl(url)
 
-    // Allow the app to navigate within its own origin; block everything else.
-    if (appOrigin !== null && originOf(url) === appOrigin) {
+    // Same document, only the `#fragment` differs — an in-page anchor jump.
+    if (targetDoc !== null && targetDoc === documentUrl(current)) {
       return
     }
 
     event.preventDefault()
 
-    if (isSafeExternalUrl(url)) {
+    // Only genuinely external safe URLs go to the system browser; a blocked
+    // same-origin/relative link is internal — don't pop the browser for it.
+    if (isSafeExternalUrl(url) && !isSameOrigin(url, current)) {
       openExternal(url)
     }
   })

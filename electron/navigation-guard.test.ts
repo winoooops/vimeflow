@@ -71,7 +71,7 @@ describe('installNavigationGuard — window.open', () => {
 })
 
 describe('installNavigationGuard — will-navigate', () => {
-  test('blocks off-origin navigation and routes http(s) to the system browser', () => {
+  test('blocks external navigation and routes http(s) to the system browser', () => {
     const { openExternal, handlers } = setup()
     const event = { preventDefault: vi.fn() }
 
@@ -81,7 +81,7 @@ describe('installNavigationGuard — will-navigate', () => {
     expect(openExternal).toHaveBeenCalledWith('https://evil.example/login')
   })
 
-  test('blocks off-origin navigation to unsafe schemes without opening', () => {
+  test('blocks navigation to unsafe schemes without opening anything', () => {
     const { openExternal, handlers } = setup()
     const event = { preventDefault: vi.fn() }
 
@@ -91,29 +91,39 @@ describe('installNavigationGuard — will-navigate', () => {
     expect(openExternal).not.toHaveBeenCalled()
   })
 
-  test('allows same-origin navigation within the app', () => {
+  test('blocks same-origin navigation to another document (relative markdown links)', () => {
     const { openExternal, handlers } = setup(APP_URL)
     const event = { preventDefault: vi.fn() }
 
-    handlers.navigate?.(event, 'vimeflow://app/somewhere-else')
+    // `[next](./next.md)` resolves to a same-origin app path, but it is still a
+    // real top-level navigation that would replace the SPA and lose edits.
+    handlers.navigate?.(event, 'vimeflow://app/docs/next.md')
+
+    expect(event.preventDefault).toHaveBeenCalledTimes(1)
+    expect(openExternal).not.toHaveBeenCalled()
+  })
+
+  test('blocks same-origin navigation on the dev-server origin too', () => {
+    const { openExternal, handlers } = setup('http://localhost:5173/')
+    const event = { preventDefault: vi.fn() }
+
+    handlers.navigate?.(event, 'http://localhost:5173/index.html')
+
+    expect(event.preventDefault).toHaveBeenCalledTimes(1)
+    expect(openExternal).not.toHaveBeenCalled()
+  })
+
+  test('allows a same-document #hash anchor jump', () => {
+    const { openExternal, handlers } = setup(APP_URL)
+    const event = { preventDefault: vi.fn() }
+
+    handlers.navigate?.(event, `${APP_URL}#section`)
 
     expect(event.preventDefault).not.toHaveBeenCalled()
     expect(openExternal).not.toHaveBeenCalled()
   })
 
-  test('guards the dev-server origin too', () => {
-    const { openExternal, handlers } = setup('http://localhost:5173/')
-    const event = { preventDefault: vi.fn() }
-
-    handlers.navigate?.(event, 'http://localhost:5173/index.html')
-    expect(event.preventDefault).not.toHaveBeenCalled()
-
-    handlers.navigate?.(event, 'https://evil.example')
-    expect(event.preventDefault).toHaveBeenCalledTimes(1)
-    expect(openExternal).toHaveBeenCalledWith('https://evil.example')
-  })
-
-  test('treats file: as never same-origin so the loadFile runtime is not hijacked', () => {
+  test('blocks file: navigation so the loadFile runtime is not hijacked', () => {
     const { openExternal, handlers } = setup('file:///home/app/dist/index.html')
     const event = { preventDefault: vi.fn() }
 
