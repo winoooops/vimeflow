@@ -9,6 +9,7 @@ export const sessionFromInfo = (info: SessionInfo, index: number): Session => {
   const status = info.status.kind === 'Alive' ? 'running' : 'completed'
 
   const paneBase = {
+    kind: 'shell',
     id: 'p0',
     ptyId: info.id,
     cwd: info.cwd,
@@ -42,6 +43,7 @@ export const sessionFromInfo = (info: SessionInfo, index: number): Session => {
     activityPanelCollapsed: readActivityPanelCollapsed(info.id),
     panes: [pane],
     workingDirectory: info.cwd,
+    browserSessionId: info.id,
     agentType: 'generic',
     createdAt: new Date().toISOString(),
     lastActivityAt: new Date().toISOString(),

@@ -66,6 +66,9 @@ words:
   # Custom DOM events
   - vfliquidwake
 
+  # Browser / WebAuthn
+  - webauthn
+
   # Workspace domain abbreviations
   - sess # session
   - proj # project

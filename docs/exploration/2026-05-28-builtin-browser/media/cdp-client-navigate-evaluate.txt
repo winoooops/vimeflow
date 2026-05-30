@@ -1,0 +1,4 @@
+proxy=http://127.0.0.1:35097
+attached=55451012-4cac-44ae-8c92-7bbb97302357:p1
+initial=https://www.youtube.com/
+evaluated={"href":"https://example.com/?vimeflow-cdp=1","text":"Example Domain\n\nThis domain is for use in documentation examples without needing permission. Avoid u","title":"Example Domain","userAgent":"Electron"}
