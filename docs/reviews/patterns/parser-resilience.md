@@ -2,8 +2,8 @@
 id: parser-resilience
 category: code-quality
 created: 2026-05-24
-last_updated: 2026-05-24
-ref_count: 1
+last_updated: 2026-05-30
+ref_count: 2
 ---
 
 # Parser Resilience
@@ -83,3 +83,51 @@ For each nested-struct field:
 - **Finding:** `TranscriptTailService::run` treated EOF (`Ok(0)`) and incomplete-line (non-empty `partial`) as orthogonal states: every `Ok(0)` immediately called `self.decoder.on_caught_up()` regardless of whether a line was half-buffered. For decoders that flush replay-only emitter state in `on_caught_up` (e.g. in-flight tool-call accumulators, turn-boundary markers), the partial would later complete and `decode_line` would deliver it AFTER the boundary signal — promoting a line that started during replay into a live event. Test `engine_truncated_partial_never_emits` confirmed `caught == 1` even when the only chunk was a partial — pinning the buggy behavior rather than the intended one. The bug surfaces only when a transcript writer is interrupted mid-byte (rare, but real for crash-recovery scenarios), so it had escaped review until the trait surface was scrutinized.
 - **Fix:** Guard the EOF arm with `if partial.is_empty() { self.decoder.on_caught_up(); }`. Deferred boundary signal: if a partial completes mid-loop, the next EOF will fire `on_caught_up` with `partial` now empty (cleared after `decode_line`); if the partial never completes (writer truncated forever), the boundary stays parked — decoders keep accumulating replay-only state, which is the correct semantic for "replay never completed" (a degraded mode that surfaces if the writer comes back, not a correctness violation). Updated the `TranscriptDecoder` trait doc to spell out the deferred-signal contract. Updated the existing `engine_truncated_partial_never_emits` test (`caught` is now `0`, with a comment explaining why) and added a new regression `engine_caught_up_defers_until_partial_completes` to pin the ordering: chunk(open) → Eof (deferred) → chunk(close) → EofStop (signal fires once). Code-review heuristic: when a state-machine boundary signal is triggered by an external event (EOF, timeout, interrupt) but the in-memory state may be mid-transition (partial buffer, pending I/O), gate the signal on the in-memory state being settled — otherwise downstream consumers that flush-on-boundary will observe an incoherent state.
 - **Commit:** _(PR #302 upsource cycle 1 fix commit)_
+
+### 3. Unbounded `BufRead::read_line` in streaming tail engine — runaway memory on missing newline
+
+- **Source:** local-codex | PR #302 round 14 | 2026-05-30
+- **Severity:** MEDIUM
+- **File:** `crates/backend/src/agent/adapter/base/transcript_tail_service.rs`
+- **Finding:** The tail engine used `BufRead::read_line(&mut partial)`,
+  which grows `partial` without bound until it sees `\n`. A
+  pathological writer (or a corrupt rollout file with megabytes of
+  binary garbage before the next newline) could OOM the watcher
+  thread. The streaming-tail tests covered correctness of normal
+  line accumulation but never exercised the
+  no-newline-for-N-bytes adversarial shape, so the unbounded
+  allocation slipped through.
+- **Fix:** Refactor to bounded chunk reads. Engine reads into a
+  fixed `[u8; READ_CHUNK_BYTES]` (8 KiB), feeds each chunk to a
+  small state machine (`process_chunk`), and caps `partial` at
+  `MAX_PARTIAL_BYTES` (4 MiB). On cap-overflow:
+  1. Discard `partial`, log warn, enter `skip_until_newline`
+     mode so subsequent bytes feed into a sink until the next
+     `\n` terminates the over-long line.
+  2. Resume normal processing on the byte AFTER that `\n`.
+     Two cap-enforcement paths exist and BOTH must be checked
+     separately — codex-verify retry-1 caught that only one was
+     protected in the initial fix:
+  - **No-newline-in-chunk** (`None` arm of `position(b'\n')`) —
+    cap check before appending `head`. If `partial.len() +
+head.len() > MAX_PARTIAL_BYTES`, set `skip_until_newline =
+true` and drop the chunk.
+  - **Newline-in-crossing-chunk** (`Some(pos)` arm) — cap check
+    before appending `head` (which includes the terminator). If
+    over cap, discard, log, do NOT enter skip mode (the `\n` is
+    in `head` itself, so the line is fully consumed here), and
+    continue from `rest`.
+    Test seam: replaced `BufReader<Box<dyn Read>>` factories with
+    a `ScriptedReader { steps, pending }` that splits chunks
+    across multiple `Read::read` calls when the chunk exceeds the
+    caller's buffer. Three regression tests pin all three shapes:
+    over-cap chunk WITHOUT newline (skip-mode), over-cap chunk
+    WITH newline (same-chunk discard), and recovery on the next
+    valid line. **Heuristic:** when bounding a streaming parser's
+    buffer, audit EVERY state-machine arm that mutates the
+    buffer — newline-arrival paths and no-newline paths have
+    different cap semantics (skip-mode vs same-chunk discard),
+    and a single-arm cap check leaves the other path
+    unprotected. Codex verify caught this with high confidence
+    (0.9) on retry-1.
+- **Commit:** _(PR #302 upsource cycle 14 fix commit)_

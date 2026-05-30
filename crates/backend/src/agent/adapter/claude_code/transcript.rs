@@ -1679,7 +1679,7 @@ mod tests {
     /// pre-C drop.
     #[test]
     fn split_tool_use_line_across_eof_still_emits() {
-        use crate::agent::adapter::base::{ScriptedBufRead, Step};
+        use crate::agent::adapter::base::{ScriptedReader, Step};
 
         let concrete = Arc::new(crate::runtime::FakeEventSink::new());
         let events: Arc<dyn EventSink> = concrete.clone();
@@ -1692,23 +1692,23 @@ mod tests {
 
         // One valid tool_use assistant line, split mid-string-value so neither
         // side parses on its own: `..."tool_us` | `e"...`.
-        let first = r#"{"type":"assistant","message":{"content":[{"type":"tool_us"#;
-        let second = "e\",\"id\":\"toolu_g3\",\"name\":\"Read\",\"input\":{\"file_path\":\"/a.ts\"}}]}}\n";
+        let first: &[u8] = br#"{"type":"assistant","message":{"content":[{"type":"tool_us"#;
+        let second: &[u8] = b"e\",\"id\":\"toolu_g3\",\"name\":\"Read\",\"input\":{\"file_path\":\"/a.ts\"}}]}}\n";
 
         let stop = Arc::new(AtomicBool::new(false));
         TranscriptTailService::new(Box::new(decoder), "transcript")
             .with_poll_interval(std::time::Duration::ZERO)
             .run(
-                ScriptedBufRead {
-                    steps: vec![
+                ScriptedReader::new(
+                    vec![
                         Step::Chunk(first),
                         Step::Eof,
                         Step::Chunk(second),
                         Step::EofStop,
                     ]
                     .into_iter(),
-                    stop: stop.clone(),
-                },
+                    stop.clone(),
+                ),
                 stop,
             );
 
