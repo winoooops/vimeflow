@@ -7,6 +7,7 @@ import {
   BROWSER_PANE_CREATE,
   BROWSER_PANE_DESTROY,
   BROWSER_PANE_SET_BOUNDS,
+  BROWSER_PANE_TABS_CHANGED,
 } from './browser-pane-channels'
 import { BrowserPaneController } from './browser-pane'
 
@@ -460,6 +461,40 @@ describe('BrowserPaneController', () => {
       electronMock.views[0]
     )
     expect(electronMock.views[0]?.webContents.close).toHaveBeenCalledOnce()
+  })
+
+  test('tab-0 destroyed after teardown does not emit a spurious empty tabs-changed', async () => {
+    await handler(BROWSER_PANE_CREATE)(eventForSender(), {
+      sessionId: 'pty-1',
+      paneId: 'p1',
+      workspaceId: 'proj-1',
+      initialUrl: 'https://example.com/',
+    })
+
+    // Capture tab-0's destroyed handler before teardown clears the record.
+    const destroyedHandler = vi
+      .mocked(electronMock.views[0]?.webContents.on)
+      .mock.calls.find(([eventName]) => eventName === 'destroyed')?.[1] as
+      | (() => void)
+      | undefined
+    expect(destroyedHandler).toBeDefined()
+
+    // Explicit teardown: removeRecord clears record.tabs and deletes the entry.
+    handler(BROWSER_PANE_DESTROY)(eventForSender(), {
+      sessionId: 'pty-1',
+      paneId: 'p1',
+    })
+
+    vi.mocked(electronMock.win.webContents.send).mockClear()
+
+    // Chromium delivers `destroyed` AFTER teardown — the handler must be a
+    // no-op, not emit a phantom tabs-changed with an empty list.
+    destroyedHandler?.()
+
+    expect(electronMock.win.webContents.send).not.toHaveBeenCalledWith(
+      BROWSER_PANE_TABS_CHANGED,
+      expect.anything()
+    )
   })
 
   test('rejects non-finite native view bounds', async () => {

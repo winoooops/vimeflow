@@ -32,7 +32,7 @@ import {
   deleteActivityPanelCollapsed,
   writeActivityPanelCollapsed,
 } from '../utils/activityPanelCollapsedStore'
-import { isShellPane } from '../utils/paneKind'
+import { isBrowserPane, isShellPane } from '../utils/paneKind'
 import { findBackendSessionPane } from '../utils/findBackendPane'
 import { DEFAULT_BROWSER_URL } from '../../browser/types'
 import { usePtyExitListener } from '../../terminal/hooks/usePtyExitListener'
@@ -225,20 +225,18 @@ const storedBrowserPanesForSessions = (
   sessions.flatMap((session) => {
     const shellPtyId = session.panes.find(isShellPane)?.ptyId ?? session.id
 
-    return session.panes
-      .filter((pane) => !isShellPane(pane))
-      .map((pane) => ({
-        sessionId: browserSessionIdForSession(session),
-        shellPtyId,
-        paneId: pane.id,
-        ptyId: pane.ptyId,
-        cwd: pane.cwd,
-        browserUrl:
-          pane.browserUrl && pane.browserUrl.length > 0
-            ? pane.browserUrl
-            : DEFAULT_BROWSER_URL,
-        active: pane.active,
-      }))
+    return session.panes.filter(isBrowserPane).map((pane) => ({
+      sessionId: browserSessionIdForSession(session),
+      shellPtyId,
+      paneId: pane.id,
+      ptyId: pane.ptyId,
+      cwd: pane.cwd,
+      browserUrl:
+        pane.browserUrl && pane.browserUrl.length > 0
+          ? pane.browserUrl
+          : DEFAULT_BROWSER_URL,
+      active: pane.active,
+    }))
   })
 
 const layoutForPaneCount = (

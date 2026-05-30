@@ -766,7 +766,15 @@ export class BrowserPaneController {
       record.tabs.delete('tab-0')
       // Pane teardown: the last tab is gone — drop the record and do NOT emit a
       // tabs-changed with an empty list (it would collapse the renderer's chrome).
-      if (this.panes.get(key) === record && record.tabs.size === 0) {
+      // The first clause covers the async case where removeRecord/removePane has
+      // already cleared the record and deleted the entry before Chromium delivers
+      // this `destroyed` notification — `panes.get(key) === record` would be
+      // false there, so without `!this.panes.has(key)` the handler would fall
+      // through and emit a spurious empty tabs-changed after explicit teardown.
+      if (
+        !this.panes.has(key) ||
+        (this.panes.get(key) === record && record.tabs.size === 0)
+      ) {
         this.panes.delete(key)
 
         return
