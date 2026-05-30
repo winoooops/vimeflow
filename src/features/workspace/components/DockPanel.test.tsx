@@ -176,7 +176,7 @@ describe('DockPanel', () => {
       renderDockPanel({ selectedFilePath: '/x/README.md', content: '# Hi' })
 
       await user.click(screen.getByRole('button', { name: /source/i }))
-      await user.click(screen.getByRole('button', { name: /reading/i }))
+      await user.click(screen.getByRole('button', { name: /^reading$/i }))
 
       expect(screen.getByTestId('markdown-reading-view')).toBeInTheDocument()
       expect(
@@ -202,7 +202,7 @@ describe('DockPanel', () => {
       ).not.toBeInTheDocument()
 
       expect(
-        screen.queryByRole('button', { name: /reading/i })
+        screen.queryByRole('button', { name: /^reading$/i })
       ).not.toBeInTheDocument()
 
       expect(
@@ -214,7 +214,7 @@ describe('DockPanel', () => {
       renderDockPanel({ selectedFilePath: '/x/README.md' })
 
       expect(
-        screen.getByRole('button', { name: /reading/i })
+        screen.getByRole('button', { name: /^reading$/i })
       ).toBeInTheDocument()
 
       expect(
@@ -222,11 +222,26 @@ describe('DockPanel', () => {
       ).toBeInTheDocument()
     })
 
+    test('reading-style gear is shown in reading mode and hidden in source mode', async () => {
+      const user = userEvent.setup()
+      renderDockPanel({ selectedFilePath: '/x/README.md' })
+
+      expect(
+        screen.getByRole('button', { name: /reading style/i })
+      ).toBeInTheDocument()
+
+      await user.click(screen.getByRole('button', { name: /^source$/i }))
+
+      expect(
+        screen.queryByRole('button', { name: /reading style/i })
+      ).not.toBeInTheDocument()
+    })
+
     test('view-mode toggle is absent on the diff tab even for a markdown file', () => {
       renderDockPanel({ tab: 'diff', selectedFilePath: '/x/README.md' })
 
       expect(
-        screen.queryByRole('button', { name: /reading/i })
+        screen.queryByRole('button', { name: /^reading$/i })
       ).not.toBeInTheDocument()
     })
 
@@ -238,7 +253,7 @@ describe('DockPanel', () => {
 
       // Toggle is present...
       expect(
-        screen.getByRole('button', { name: /reading/i })
+        screen.getByRole('button', { name: /^reading$/i })
       ).toBeInTheDocument()
 
       // ...and DockSwitcher (dock: <position>) was NOT removed (D6).

@@ -9,6 +9,12 @@ import type { Components } from 'react-markdown'
  * blocks use `font-mono` on `bg-surface-container-lowest`; tables and rules use
  * the `outline-variant` ghost-border token.
  *
+ * Sizes are in `em` (and line-height is inherited, not set here) so the whole
+ * document scales from the single base font-size the active reading-style
+ * preset publishes on the container (`--rv-font-size` / `--rv-line-height` in
+ * `MarkdownReadingView`). Bumping the preset bumps headings, code, and tables
+ * proportionally.
+ *
  * `react-markdown` passes an extra `node` prop (the hast node) to each
  * component. We strip it so it is never forwarded onto a real DOM element
  * (React would warn about an unknown `node` attribute otherwise) and spread the
@@ -25,7 +31,7 @@ export const markdownComponents: Components = {
     ...props
   }: IntrinsicProps<'h1'>): ReactElement => (
     <h1
-      className="mt-8 mb-3 font-headline text-2xl font-bold tracking-tight text-on-surface first:mt-0"
+      className="mt-8 mb-3 font-headline text-[1.875em] font-bold tracking-tight text-on-surface first:mt-0"
       {...props}
     />
   ),
@@ -35,7 +41,7 @@ export const markdownComponents: Components = {
     ...props
   }: IntrinsicProps<'h2'>): ReactElement => (
     <h2
-      className="mt-8 mb-3 font-headline text-xl font-semibold tracking-tight text-on-surface first:mt-0"
+      className="mt-8 mb-3 font-headline text-[1.4em] font-semibold tracking-tight text-on-surface first:mt-0"
       {...props}
     />
   ),
@@ -45,7 +51,7 @@ export const markdownComponents: Components = {
     ...props
   }: IntrinsicProps<'h3'>): ReactElement => (
     <h3
-      className="mt-6 mb-2 font-headline text-lg font-semibold text-on-surface first:mt-0"
+      className="mt-6 mb-2 font-headline text-[1.18em] font-semibold text-on-surface first:mt-0"
       {...props}
     />
   ),
@@ -55,7 +61,7 @@ export const markdownComponents: Components = {
     ...props
   }: IntrinsicProps<'h4'>): ReactElement => (
     <h4
-      className="mt-5 mb-2 font-headline text-base font-semibold text-on-surface first:mt-0"
+      className="mt-5 mb-2 font-headline text-[1.05em] font-semibold text-on-surface first:mt-0"
       {...props}
     />
   ),
@@ -65,7 +71,7 @@ export const markdownComponents: Components = {
     ...props
   }: IntrinsicProps<'h5'>): ReactElement => (
     <h5
-      className="mt-4 mb-1 font-headline text-sm font-semibold uppercase tracking-wide text-on-surface-variant first:mt-0"
+      className="mt-4 mb-1 font-headline text-[0.9em] font-semibold uppercase tracking-wide text-on-surface-variant first:mt-0"
       {...props}
     />
   ),
@@ -75,7 +81,7 @@ export const markdownComponents: Components = {
     ...props
   }: IntrinsicProps<'h6'>): ReactElement => (
     <h6
-      className="mt-4 mb-1 font-headline text-xs font-semibold uppercase tracking-wide text-on-surface-muted first:mt-0"
+      className="mt-4 mb-1 font-headline text-[0.8em] font-semibold uppercase tracking-wide text-on-surface-muted first:mt-0"
       {...props}
     />
   ),
@@ -84,10 +90,7 @@ export const markdownComponents: Components = {
     className,
     ...props
   }: IntrinsicProps<'p'>): ReactElement => (
-    <p
-      className="my-3 font-body leading-relaxed text-on-surface-variant"
-      {...props}
-    />
+    <p className="my-[0.9em] font-body text-on-surface-variant" {...props} />
   ),
   a: ({
     node: _node,
@@ -120,7 +123,7 @@ export const markdownComponents: Components = {
     ...props
   }: IntrinsicProps<'ul'>): ReactElement => (
     <ul
-      className="my-3 list-disc space-y-1 pl-6 font-body text-on-surface-variant"
+      className="my-[0.9em] list-disc space-y-1 pl-6 font-body text-on-surface-variant"
       {...props}
     />
   ),
@@ -130,7 +133,7 @@ export const markdownComponents: Components = {
     ...props
   }: IntrinsicProps<'ol'>): ReactElement => (
     <ol
-      className="my-3 list-decimal space-y-1 pl-6 font-body text-on-surface-variant"
+      className="my-[0.9em] list-decimal space-y-1 pl-6 font-body text-on-surface-variant"
       {...props}
     />
   ),
@@ -139,7 +142,7 @@ export const markdownComponents: Components = {
     className,
     ...props
   }: IntrinsicProps<'li'>): ReactElement => (
-    <li className="leading-relaxed marker:text-on-surface-muted" {...props} />
+    <li className="marker:text-on-surface-muted" {...props} />
   ),
   blockquote: ({
     node: _node,
@@ -171,7 +174,7 @@ export const markdownComponents: Components = {
     if (isBlock) {
       return (
         <code
-          className={`font-mono text-sm ${className ?? ''}`.trimEnd()}
+          className={`font-mono text-[0.85em] ${className ?? ''}`.trimEnd()}
           {...props}
         />
       )
@@ -179,7 +182,7 @@ export const markdownComponents: Components = {
 
     return (
       <code
-        className="rounded bg-surface-container-lowest px-1.5 py-0.5 font-mono text-sm text-primary"
+        className="rounded bg-surface-container-lowest px-1.5 py-0.5 font-mono text-[0.85em] text-primary"
         {...props}
       />
     )
@@ -190,7 +193,7 @@ export const markdownComponents: Components = {
     ...props
   }: IntrinsicProps<'pre'>): ReactElement => (
     <pre
-      className="thin-scrollbar my-4 overflow-x-auto rounded-md bg-surface-container-lowest p-4 font-mono text-sm leading-relaxed"
+      className="thin-scrollbar my-4 overflow-x-auto rounded-md bg-surface-container-lowest p-4 font-mono text-[0.85em]"
       {...props}
     />
   ),
@@ -200,7 +203,7 @@ export const markdownComponents: Components = {
     ...props
   }: IntrinsicProps<'table'>): ReactElement => (
     <div className="my-4 overflow-x-auto">
-      <table className="w-full border-collapse text-sm" {...props} />
+      <table className="w-full border-collapse text-[0.9em]" {...props} />
     </div>
   ),
   thead: ({

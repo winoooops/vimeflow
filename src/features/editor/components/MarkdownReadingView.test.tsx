@@ -83,4 +83,13 @@ describe('MarkdownReadingView', () => {
 
     expect(region).toHaveFocus()
   })
+
+  test('publishes the active reading-style preset as CSS custom properties', () => {
+    render(<MarkdownReadingView content="# Doc" />)
+
+    // Defaults to the "comfortable" preset (18.5px / 75ch) via the shared store.
+    const root = screen.getByTestId('markdown-reading-view')
+    expect(root.style.getPropertyValue('--rv-font-size')).toBe('18.5px')
+    expect(root.style.getPropertyValue('--rv-measure')).toBe('75ch')
+  })
 })

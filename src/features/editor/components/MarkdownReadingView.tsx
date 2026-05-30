@@ -1,9 +1,15 @@
 /* eslint-disable react/require-default-props -- forwardRef component; optional props use default args (matches CodeEditor) */
-import { forwardRef, useMemo, type ReactElement } from 'react'
+import {
+  forwardRef,
+  useMemo,
+  type CSSProperties,
+  type ReactElement,
+} from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeHighlight from 'rehype-highlight'
 import rehypeSanitize from 'rehype-sanitize'
+import { useReadingStyle } from '../hooks/useReadingStyle'
 import { markdownComponents } from './markdownComponents'
 import './MarkdownReadingView.css'
 
@@ -42,17 +48,18 @@ interface MarkdownReadingViewProps {
  * unstyled. `MarkdownReadingView.test.tsx` asserts the surviving `.hljs` class
  * as the regression net for this ordering.
  *
- * The render is memoized by `content`: parsing + sanitizing + highlighting the
- * whole document is expensive, and DockPanel / WorkspaceView re-render often
- * (agent status, focus, the loading overlay), so only a real content change
- * pays for the re-parse.
+ * Typography is driven by the shared reading-style preference
+ * (`useReadingStyle`, picked via the dock ⚙ menu): the active preset's base
+ * font / line-height / measure / inline-padding are published as CSS custom
+ * properties on the root, and `markdownComponents` sizes everything in `em` so
+ * the whole document scales from that one base. The scroller is a
+ * `container-type: inline-size` container so the `cqi`-based padding tracks the
+ * dock pane width, not the window.
  *
- * The `markdown-reading-view` class stays on the (relative) root so the scoped
- * `.hljs-*` CSS still matches descendants, and the loading overlay can position
- * against it. The forwarded ref points at the scrollable region (a focusable
- * `role="region"`), so `DockPanel.focusEditor()` can place keyboard focus there
- * — there is no CodeEditor to focus in reading mode, and the region must be
- * reachable for PageDown/arrow scrolling.
+ * The render is memoized by `content` (parse + sanitize + highlight is
+ * expensive; the dock re-renders often). The forwarded ref points at the
+ * focusable scroll region so `DockPanel.focusEditor()` can place keyboard focus
+ * there for PageDown/arrow scrolling.
  */
 export const MarkdownReadingView = forwardRef<
   HTMLDivElement,
@@ -61,6 +68,15 @@ export const MarkdownReadingView = forwardRef<
   { content, isLoading = false }: MarkdownReadingViewProps,
   ref
 ): ReactElement {
+  const { style } = useReadingStyle()
+
+  const styleVars = {
+    '--rv-font-size': `${style.fontPx}px`,
+    '--rv-line-height': `${style.lineHeight}`,
+    '--rv-measure': `${style.measureCh}ch`,
+    '--rv-pad-inline': style.paddingInline,
+  } as CSSProperties
+
   const rendered = useMemo(
     () => (
       <ReactMarkdown
@@ -77,6 +93,7 @@ export const MarkdownReadingView = forwardRef<
   return (
     <div
       data-testid="markdown-reading-view"
+      style={styleVars}
       className="markdown-reading-view relative flex min-h-0 flex-1 flex-col overflow-hidden"
     >
       <div
@@ -84,9 +101,11 @@ export const MarkdownReadingView = forwardRef<
         role="region"
         aria-label="Markdown reading view"
         tabIndex={0}
-        className="thin-scrollbar min-h-0 flex-1 overflow-auto px-8 py-6 focus:outline-none"
+        className="thin-scrollbar min-h-0 flex-1 overflow-auto py-8 [container-type:inline-size] [padding-inline:var(--rv-pad-inline)] focus:outline-none"
       >
-        <div className="mx-auto max-w-[80ch]">{rendered}</div>
+        <div className="mx-auto [font-size:var(--rv-font-size)] [line-height:var(--rv-line-height)] [max-width:var(--rv-measure)]">
+          {rendered}
+        </div>
       </div>
 
       {isLoading && (

@@ -15,6 +15,7 @@ import {
   type CodeEditorHandle,
 } from '../../editor/components/CodeEditor'
 import { MarkdownReadingView } from '../../editor/components/MarkdownReadingView'
+import { ReadingStyleMenu } from '../../editor/components/ReadingStyleMenu'
 import { DiffPanelContent } from '../../diff/components/DiffPanelContent'
 import { DockSwitcher, type DockPosition } from './DockSwitcher'
 import { DockTab } from './DockTab'
@@ -339,6 +340,9 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
           <div className="flex items-center gap-1">
             {isMarkdown && tab === 'editor' ? (
               <ViewModeToggle value={viewMode} onChange={setViewMode} />
+            ) : null}
+            {isMarkdown && tab === 'editor' && viewMode === 'reading' ? (
+              <ReadingStyleMenu />
             ) : null}
             <DockSwitcher position={position} onPick={onPositionChange} />
           </div>
