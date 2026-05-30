@@ -356,7 +356,11 @@ const restoreStoredBrowserPanes = (sessions: Session[]): Session[] => {
       browserSessionId: restoredBrowserSessionId,
       panes,
       layout: layoutForPaneCount(session.layout, panes.length),
-      status: deriveShellSessionStatus(panes.filter(isShellPane)),
+      // Pass the full pane set (like every other caller) — deriveShellSessionStatus
+      // filters to shells internally and falls back to all panes when none remain,
+      // so a restored browser-only session reads 'running' instead of the
+      // empty-slice 'errored' guard the pre-filter produced.
+      status: deriveShellSessionStatus(panes),
       agentType: activePane?.agentType ?? session.agentType,
     }
   })

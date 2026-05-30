@@ -1157,8 +1157,9 @@ export class BrowserPaneController {
       return
     }
 
-    activeTab.requestedUrl = normalizeUrl(payload.url)
-    await loadBrowserUrl(activeTab.view.webContents, normalizeUrl(payload.url))
+    const url = normalizeUrl(payload.url)
+    activeTab.requestedUrl = url
+    await loadBrowserUrl(activeTab.view.webContents, url)
   }
 
   private newTab(payload: unknown): void {
@@ -1199,7 +1200,11 @@ export class BrowserPaneController {
   }
 
   private focusPane(payload: unknown): void {
-    if (!isDestroyRequest(payload)) {
+    // Validate with the neutral pane-ref shape ({ sessionId, paneId }) rather
+    // than the destroy-request validator — focus is not a teardown, and reusing
+    // isDestroyRequest would silently reject valid focus payloads if the
+    // destroy type ever grows a required field.
+    if (!isCdpInfoRequest(payload)) {
       throw new Error('invalid browser pane focus payload')
     }
 
@@ -1735,10 +1740,12 @@ export class BrowserPaneController {
       return
     }
 
-    // This minimal proxy requires non-fragmented frames (Phase 1).
-    // 1003 = Unsupported Data (fragmentation), not 1009 (message too big).
+    // This minimal proxy requires non-fragmented frames (Phase 1). Fragmentation
+    // is an unimplemented protocol feature, so close with 1002 (Protocol Error)
+    // per RFC 6455 §7.4.1 — not 1003 (Unsupported Data, wrong data type) or 1009
+    // (message too big).
     if (!frame.fin && (frame.opcode === 0x1 || frame.opcode === 0x2)) {
-      sendWebSocketClose(socket, 1003)
+      sendWebSocketClose(socket, 1002)
 
       return
     }
