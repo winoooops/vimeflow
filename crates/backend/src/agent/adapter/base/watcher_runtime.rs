@@ -117,25 +117,34 @@ pub struct WatcherHandle {
 impl Drop for WatcherHandle {
     fn drop(&mut self) {
         drop(self._watcher.take());
+        // PR #302 cycle 6 — signal BOTH background threads to stop
+        // BEFORE joining EITHER, so the two ~500ms sleep budgets race
+        // toward exit in parallel instead of accumulating sequentially.
+        // Cuts worst-case Drop latency from ~1s (poll-sleep +
+        // session_index-sleep) to ~500ms (max of the two). Drop runs
+        // outside the watchers mutex, but slimming it reduces stop-IPC
+        // and restart latency observed by the caller.
         let (lock, wake) = &*self.poll_stop;
         {
             let mut stopped = lock.lock().expect("failed to lock poll stop flag");
             *stopped = true;
             wake.notify_one();
         }
-        if let Some(handle) = self.join_handle.take() {
-            let _ = handle.join();
-        }
-        // Stop + join the codex title-sync watcher (if any). Bounded by
-        // the watcher's own poll cadence (~500ms) — same shape as the
-        // polling fallback teardown above (PR #302 codex review F5).
-        // Always unconditional: `session_index::spawn_watch` is called
+        // Stop signal for the codex title-sync watcher (if any). Always
+        // unconditional: `session_index::spawn_watch` is called
         // per-handle in `start_watching` (not via an idempotent
         // start-or-replace), so the new handle has its own thread and
         // the old thread is a redundant resource that must be reaped
-        // (NOT inherited the way transcript-state is).
+        // (NOT inherited the way transcript-state is). PR #302 cycle 6
+        // hoisted this above the `join_handle.join()` below so both
+        // threads receive their stop signals before either join blocks.
         if let Some(stop) = self.session_index_stop.take() {
             stop.store(true, std::sync::atomic::Ordering::Release);
+        }
+        // Now join both threads. Order doesn't matter for correctness;
+        // total time is bounded by the slower of the two (~500ms).
+        if let Some(handle) = self.join_handle.take() {
+            let _ = handle.join();
         }
         if let Some(handle) = self.session_index_join.take() {
             let _ = handle.join();

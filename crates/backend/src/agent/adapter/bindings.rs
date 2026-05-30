@@ -32,19 +32,33 @@ use super::{AttachContext, ClaudeStatusFileLocator, NoOpAdapter};
 use crate::agent::types::AgentType;
 
 /// One session's typed adapter views, assembled from the
-/// [`AttachContext`] by [`AgentBindings::for_attach`].
+/// [`AttachContext`] by [`AgentBindings::for_attach`]. Every field has
+/// a production consumer:
 ///
-/// `agent_type` carries `#[allow(dead_code)]` — it's for diagnostics
-/// / future telemetry and the watcher doesn't branch on it. Every
-/// other field has a production consumer: `locator` (in `start_for`),
-/// `decoder` / `transcript_paths` / `validator` (in the watcher
-/// callbacks), and `streamer` (in `TranscriptState::start_or_replace`,
-/// wired in step B''). The transitional `adapter_for_transcript_state:
-/// Arc<dyn AgentAdapter>` field was removed in B'' — `start_or_replace`
-/// now takes `Arc<dyn TranscriptStreamer>`, so the façade `Arc` is no
+/// - `agent_type` — captured in `session_lifecycle::run_watch_sequence`
+///   BEFORE `spawn_watch` consumes `bindings`, then forwarded to
+///   `register`, which stamps it onto `WatcherHandle.agent_type` so
+///   `AgentWatcherState::agent_type_for_pty` can resolve under the
+///   single watchers mutex (the single-mutex atomicity guarantee from
+///   PR #302 cycle 1 F2). The same captured value also gates the codex
+///   `session_index.jsonl` title-sync thread spawn inside
+///   `base::start_watching` (PR #302 cycle 1 F5). PR #302 cycle 6
+///   removed the stale `#[allow(dead_code)]` attribute and rewrote
+///   this docstring after the field gained real consumers in steps
+///   F.2–F.5 + cycle-1 fixes of this PR.
+/// - `locator` — consumed by `session_lifecycle::locate` to produce
+///   the `LocatedStatusSource`.
+/// - `decoder` / `transcript_paths` / `validator` — passed into
+///   `start_watching`'s notify / inline-init / poll callbacks.
+/// - `streamer` — handed to `TranscriptState::start_or_replace`
+///   (wired in step B'' when `start_or_replace` migrated off
+///   `Arc<dyn AgentAdapter>`).
+///
+/// The transitional `adapter_for_transcript_state: Arc<dyn AgentAdapter>`
+/// field was removed in B'' — `start_or_replace` now takes
+/// `Arc<dyn TranscriptStreamer>` directly, so the façade `Arc` is no
 /// longer needed.
 pub(crate) struct AgentBindings {
-    #[allow(dead_code)]
     pub(crate) agent_type: AgentType,
     pub(crate) locator: Arc<dyn StatusSourceLocator>,
     pub(crate) decoder: Arc<dyn StateDecoder>,
