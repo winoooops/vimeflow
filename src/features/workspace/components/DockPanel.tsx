@@ -336,10 +336,12 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
           compactActions={compactActions}
           menuAlign={position === 'left' ? 'left' : 'right'}
         >
-          {isMarkdown && tab === 'editor' ? (
-            <ViewModeToggle value={viewMode} onChange={setViewMode} />
-          ) : null}
-          <DockSwitcher position={position} onPick={onPositionChange} />
+          <div className="flex items-center gap-1">
+            {isMarkdown && tab === 'editor' ? (
+              <ViewModeToggle value={viewMode} onChange={setViewMode} />
+            ) : null}
+            <DockSwitcher position={position} onPick={onPositionChange} />
+          </div>
         </DockTab>
 
         <div className="flex min-h-0 flex-1 overflow-hidden">
