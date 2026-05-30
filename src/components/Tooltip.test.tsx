@@ -374,4 +374,57 @@ describe('Tooltip', () => {
     )
     expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
   })
+
+  test('bare mode omits default visual chrome and maxWidth', async () => {
+    const user = userEvent.setup()
+    render(
+      <Tooltip content="hello" delayMs={0} bare>
+        <button type="button">trigger</button>
+      </Tooltip>
+    )
+
+    await user.hover(screen.getByRole('button', { name: 'trigger' }))
+    const tip = await screen.findByRole('tooltip')
+    expect(tip).toHaveClass('z-50')
+    expect(tip).not.toHaveClass('rounded-md')
+    expect(tip).not.toHaveClass('backdrop-blur-md')
+    expect(tip).not.toHaveStyle({ maxWidth: '320px' })
+  })
+
+  test('bare mode appends custom className to the stripped surface', async () => {
+    const user = userEvent.setup()
+    render(
+      <Tooltip content="hello" delayMs={0} bare className="custom-surface">
+        <button type="button">trigger</button>
+      </Tooltip>
+    )
+
+    await user.hover(screen.getByRole('button', { name: 'trigger' }))
+    const tip = await screen.findByRole('tooltip')
+    expect(tip).toHaveClass('custom-surface')
+    expect(tip).toHaveClass('z-50')
+    expect(tip).not.toHaveClass('rounded-md')
+  })
+
+  test('bare interactive mode still uses pointer-events-auto and dialog role', async () => {
+    const user = userEvent.setup()
+    render(
+      <Tooltip
+        content="hello"
+        delayMs={0}
+        bare
+        interactive
+        ariaLabel="Details"
+        className="custom-surface"
+      >
+        <button type="button">trigger</button>
+      </Tooltip>
+    )
+
+    await user.hover(screen.getByRole('button', { name: 'trigger' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Details' })
+    expect(dialog).toHaveClass('pointer-events-auto')
+    expect(dialog).toHaveClass('custom-surface')
+    expect(dialog).not.toHaveClass('rounded-md')
+  })
 })

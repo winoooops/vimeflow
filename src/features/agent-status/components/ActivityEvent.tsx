@@ -88,6 +88,9 @@ const getBodyClass = (kind: ActivityEventKind): string => {
 
 const COPY_FEEDBACK_MS = 1500
 
+const ACTIVITY_CARD_SURFACE =
+  'relative w-[min(24rem,calc(100vw-2rem))] overflow-hidden rounded-[10px] border border-[rgba(74,68,79,0.45)] bg-[rgba(20,18,32,0.96)] font-sans shadow-[0_16px_48px_rgba(0,0,0,0.55),0_0_0_1px_rgba(203,166,247,0.04)] backdrop-blur-[20px] backdrop-saturate-[150%]'
+
 type CopyState = 'idle' | 'copied' | 'failed'
 
 const writeClipboardText = async (text: string): Promise<void> => {
@@ -248,7 +251,7 @@ const ActivityTooltipContent = ({
     event.kind === 'read'
 
   return (
-    <div className="relative w-[min(24rem,calc(100vw-2rem))] overflow-hidden rounded-[10px] border border-[rgba(74,68,79,0.45)] bg-[rgba(20,18,32,0.96)] font-sans shadow-[0_16px_48px_rgba(0,0,0,0.55),0_0_0_1px_rgba(203,166,247,0.04)] backdrop-blur-[20px] backdrop-saturate-[150%]">
+    <>
       {/* Accent stripe */}
       <span
         className="absolute left-3 right-3 top-0 h-[2px] opacity-[0.55]"
@@ -384,7 +387,7 @@ const ActivityTooltipContent = ({
           <span className="text-[#4a444f]">esc</span>
         </div>
       ) : null}
-    </div>
+    </>
   )
 }
 
@@ -465,10 +468,10 @@ export const ActivityEvent = ({
     <Tooltip
       content={<ActivityTooltipContent event={event} label={label} now={now} />}
       placement="left"
-      maxWidth={520}
+      bare
       interactive
       ariaLabel={`${label} activity details`}
-      className="p-3"
+      className={ACTIVITY_CARD_SURFACE}
     >
       <article
         ref={rowRef}

@@ -41,6 +41,13 @@ interface TooltipBaseProps {
   disabled?: boolean
   maxWidth?: number
   className?: string
+  /**
+   * When true, the floating surface renders with only `z-50` and any
+   * consumer-provided `className` — the default visual chrome (rounded,
+   * shadow, background, border, etc.) is omitted so the consumer fully
+   * owns the surface styling.
+   */
+  bare?: boolean
 }
 
 interface PassiveTooltipProps extends TooltipBaseProps {
@@ -80,6 +87,7 @@ export const Tooltip = ({
   className = '',
   interactive = false,
   ariaLabel = undefined,
+  bare = false,
 }: TooltipProps): ReactElement => {
   // `content != null` would admit falsy ReactNodes (`false`, `''`) and render
   // an empty floating box — these are common with the `cond && 'text'` idiom.
@@ -135,14 +143,17 @@ export const Tooltip = ({
   const interactionClass = interactive
     ? 'pointer-events-auto'
     : 'pointer-events-none'
-  const tooltipClasses = `${interactionClass} ${TOOLTIP_BASE_CLASSES}`
+
+  const tooltipClasses = bare
+    ? `${interactionClass} z-50`
+    : `${interactionClass} ${TOOLTIP_BASE_CLASSES}`
   const classes = className ? `${tooltipClasses} ${className}` : tooltipClasses
 
   const floatingSurface = (
     <div
       ref={refs.setFloating}
       data-placement={resolvedPlacement}
-      style={{ ...floatingStyles, maxWidth }}
+      style={{ ...floatingStyles, maxWidth: bare ? undefined : maxWidth }}
       className={classes}
       {...getFloatingProps(
         ariaLabel === undefined ? undefined : { 'aria-label': ariaLabel }
