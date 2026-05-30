@@ -1,11 +1,17 @@
 /* eslint-disable react/require-default-props -- forwardRef component; optional props use default args (matches CodeEditor) */
-import { forwardRef, type ReactElement } from 'react'
+import { forwardRef, useMemo, type ReactElement } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeHighlight from 'rehype-highlight'
 import rehypeSanitize from 'rehype-sanitize'
 import { markdownComponents } from './markdownComponents'
 import './MarkdownReadingView.css'
+
+// Module-level stable references so re-renders never hand react-markdown new
+// plugin arrays. ORDER IS LOAD-BEARING: rehype-sanitize FIRST, rehype-highlight
+// SECOND — see the component doc below.
+const REMARK_PLUGINS = [remarkGfm]
+const REHYPE_PLUGINS = [rehypeSanitize, rehypeHighlight]
 
 interface MarkdownReadingViewProps {
   /**
@@ -28,13 +34,18 @@ interface MarkdownReadingViewProps {
  * tree (no `dangerouslySetInnerHTML`), themed to the Obsidian Lens through the
  * `markdownComponents` per-tag map + the scoped `MarkdownReadingView.css`.
  *
- * CRITICAL plugin order: `rehypePlugins={[rehypeSanitize, rehypeHighlight]}` —
+ * CRITICAL plugin order: `REHYPE_PLUGINS = [rehypeSanitize, rehypeHighlight]` —
  * sanitize FIRST, highlight SECOND. `rehype-sanitize` runs an allow-list over
  * the hast; running it before `rehype-highlight` lets highlight.js add its
  * `.hljs-*` classes to the already-sanitized tree so they survive to the DOM.
  * The reverse order would strip the just-added classes, leaving fences
  * unstyled. `MarkdownReadingView.test.tsx` asserts the surviving `.hljs` class
  * as the regression net for this ordering.
+ *
+ * The render is memoized by `content`: parsing + sanitizing + highlighting the
+ * whole document is expensive, and DockPanel / WorkspaceView re-render often
+ * (agent status, focus, the loading overlay), so only a real content change
+ * pays for the re-parse.
  *
  * The `markdown-reading-view` class stays on the (relative) root so the scoped
  * `.hljs-*` CSS still matches descendants, and the loading overlay can position
@@ -50,6 +61,19 @@ export const MarkdownReadingView = forwardRef<
   { content, isLoading = false }: MarkdownReadingViewProps,
   ref
 ): ReactElement {
+  const rendered = useMemo(
+    () => (
+      <ReactMarkdown
+        remarkPlugins={REMARK_PLUGINS}
+        rehypePlugins={REHYPE_PLUGINS}
+        components={markdownComponents}
+      >
+        {content}
+      </ReactMarkdown>
+    ),
+    [content]
+  )
+
   return (
     <div
       data-testid="markdown-reading-view"
@@ -62,15 +86,7 @@ export const MarkdownReadingView = forwardRef<
         tabIndex={0}
         className="thin-scrollbar min-h-0 flex-1 overflow-auto px-8 py-6 focus:outline-none"
       >
-        <div className="mx-auto max-w-[80ch]">
-          <ReactMarkdown
-            remarkPlugins={[remarkGfm]}
-            rehypePlugins={[rehypeSanitize, rehypeHighlight]}
-            components={markdownComponents}
-          >
-            {content}
-          </ReactMarkdown>
-        </div>
+        <div className="mx-auto max-w-[80ch]">{rendered}</div>
       </div>
 
       {isLoading && (
