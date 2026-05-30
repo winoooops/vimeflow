@@ -154,6 +154,7 @@ impl TranscriptState {
         session_id: String,
         transcript_path: PathBuf,
         cwd: Option<PathBuf>,
+        claim_flag: Option<Arc<std::sync::atomic::AtomicBool>>,
     ) -> Result<TranscriptStartStatus, String> {
         // Acquire (or lazily create) the per-session start gate so only
         // one start_or_replace call per session can be inside the
@@ -171,6 +172,28 @@ impl TranscriptState {
                 .clone()
         };
         let _gate_guard = gate.lock().expect("failed to lock per-session start gate");
+
+        // PR #302 cycle 9 — close the cycle-8 TOCTOU race. The
+        // `claim_flag` is set BEFORE returning so the gate-held write
+        // is visible to any later gate-holder (specifically
+        // `AgentWatcherState::insert`'s gate-protected read). The
+        // pre-cycle-9 code wrote the flag AFTER `maybe_start_transcript`
+        // returned — outside the gate — so insert could acquire the
+        // gate between `start_or_replace`'s gate release and the
+        // caller's flag store, reading a stale `false`. Setting under
+        // the gate makes the race structurally impossible.
+        //
+        // Closure runs at every successful early-return + at function
+        // tail. Failure paths (streamer.tail returning `Err`) DO NOT
+        // set the flag — start_or_replace removed the old entry but
+        // didn't establish a new one, so the new handle hasn't truly
+        // claimed anything; the displaced handle should retain
+        // ownership.
+        let mark_claimed = || {
+            if let Some(flag) = &claim_flag {
+                flag.store(true, std::sync::atomic::Ordering::Release);
+            }
+        };
 
         // Extract any old watcher BEFORE spawning the new tail thread, so
         // the old thread is fully joined before the new one starts emitting
@@ -203,6 +226,11 @@ impl TranscriptState {
             let mut watchers = self.watchers.lock().expect("failed to lock watchers");
             if let Some(current) = watchers.get(&session_id) {
                 if current.transcript_path == transcript_path && current.cwd == cwd {
+                    // AlreadyRunning is a successful claim — the new
+                    // handle has adopted the existing entry. Mark the
+                    // flag while still holding the gate so the
+                    // gate-protected reader sees it.
+                    mark_claimed();
                     return Ok(TranscriptStartStatus::AlreadyRunning);
                 }
             }
@@ -241,6 +269,11 @@ impl TranscriptState {
             );
         }
 
+        // Started / Replaced are both successful claims — the new
+        // handle has established the entry. Mark the flag under the
+        // still-held gate (cycle 9 TOCTOU close).
+        mark_claimed();
+
         Ok(if had_old {
             TranscriptStartStatus::Replaced
         } else {
@@ -253,6 +286,66 @@ impl TranscriptState {
     pub fn contains(&self, session_id: &str) -> bool {
         let watchers = self.watchers.lock().expect("failed to lock watchers");
         watchers.contains_key(session_id)
+    }
+
+    /// Return the per-session start gate `Arc<Mutex<()>>` (creating it
+    /// lazily on first access). Callers can `.lock()` the gate to
+    /// serialize their critical section against any in-flight
+    /// `start_or_replace` or `stop` on the same session.
+    ///
+    /// Used by `AgentWatcherState::insert` to gate-protect its
+    /// claim-flag read + map-mutation + (when the new handle DIDN'T
+    /// claim) the under-gate teardown of any orphaned old entry
+    /// against a pre-register notify callback's in-flight
+    /// `start_or_replace` (PR #302 cycle 9 — closes the cycle-8 TOCTOU
+    /// race by making the claim-flag write happen INSIDE
+    /// `start_or_replace`'s gate, and insert's read + teardown happen
+    /// INSIDE a re-acquisition of the same gate).
+    ///
+    /// **Lock-ordering invariant**: gate → watchers, matching
+    /// `start_or_replace` and `stop`. Callers MUST release the gate
+    /// before any operation that could re-acquire it transitively
+    /// (specifically: any path that calls `stop` or `start_or_replace`
+    /// for the same session). The displaced `WatcherHandle`'s Drop's
+    /// `transcript_state.stop` re-acquires the same gate, so insert
+    /// uses `stop_with_held_gate` under its own gate and CLEARS the
+    /// displaced handle's `owns_transcript` to make the Drop a no-op
+    /// for transcript state — no Drop-time gate re-acquisition.
+    pub(crate) fn session_gate(&self, session_id: &str) -> Arc<Mutex<()>> {
+        let mut gates = self.start_gates.lock().expect("failed to lock start_gates");
+        gates
+            .entry(session_id.to_string())
+            .or_insert_with(|| Arc::new(Mutex::new(())))
+            .clone()
+    }
+
+    /// Same as `stop` but assumes the CALLER already holds the
+    /// per-session start gate (via `session_gate(sid).lock()`).
+    /// Removes the entry from `watchers` under the watchers lock, then
+    /// drops the displaced `TranscriptHandle` (which joins the tail
+    /// thread) WITHOUT re-acquiring the gate. Used by
+    /// `AgentWatcherState::insert` to tear down an orphaned old
+    /// transcript entry atomically with the watchers-map mutation,
+    /// closing the cycle-9 retry-1 race where a notify callback could
+    /// acquire the gate AFTER insert released it and BEFORE the
+    /// displaced handle's Drop ran stop (PR #302 cycle 9 retry-1).
+    ///
+    /// **Caller must hold the gate.** Calling without the gate is a
+    /// correctness bug — concurrent `start_or_replace` could re-create
+    /// the entry between the watchers-map remove and the Drop's
+    /// thread-join. Use plain `stop` in any non-insert context.
+    pub(crate) fn stop_with_held_gate(&self, session_id: &str) -> bool {
+        let removed = {
+            let mut watchers = self.watchers.lock().expect("failed to lock watchers");
+            watchers.remove(session_id)
+        };
+        let was_present = removed.is_some();
+        // `removed: Option<TranscriptWatcher>` drops at end of fn. Its
+        // inner `TranscriptHandle`'s Drop joins the tail thread (~500ms
+        // worst case). Gate stays held by the caller through this join
+        // — that's intentional, it's what serializes against any
+        // concurrent notify callback wanting to claim the entry.
+        was_present
     }
 
     /// Stop tailing for the given session.
@@ -347,6 +440,7 @@ mod tests {
                 session_id.clone(),
                 first_path.clone(),
                 None,
+                None,
             )
             .expect("failed to start first transcript watcher");
         assert_eq!(first_status, TranscriptStartStatus::Started);
@@ -358,12 +452,20 @@ mod tests {
                 session_id.clone(),
                 first_path,
                 None,
+                None,
             )
             .expect("failed to check duplicate transcript watcher");
         assert_eq!(duplicate_status, TranscriptStartStatus::AlreadyRunning);
 
         let replaced_status = state
-            .start_or_replace(adapter, sink.clone(), session_id.clone(), second_path, None)
+            .start_or_replace(
+                adapter,
+                sink.clone(),
+                session_id.clone(),
+                second_path,
+                None,
+                None,
+            )
             .expect("failed to replace transcript watcher");
         assert_eq!(replaced_status, TranscriptStartStatus::Replaced);
 
@@ -389,6 +491,7 @@ mod tests {
                 "session-cwd".to_string(),
                 transcript_path,
                 Some(cwd),
+                None,
             )
             .expect("failed to start watcher with cwd");
         assert_eq!(status, TranscriptStartStatus::Started);
@@ -417,6 +520,7 @@ mod tests {
                 session_id.clone(),
                 transcript_path.clone(),
                 Some(cwd_a.path().to_path_buf()),
+                None,
             )
             .expect("failed to start with cwd_a");
         assert_eq!(first, TranscriptStartStatus::Started);
@@ -428,6 +532,7 @@ mod tests {
                 session_id.clone(),
                 transcript_path.clone(),
                 Some(cwd_a.path().to_path_buf()),
+                None,
             )
             .expect("failed to detect already-running");
         assert_eq!(same, TranscriptStartStatus::AlreadyRunning);
@@ -439,6 +544,7 @@ mod tests {
                 session_id.clone(),
                 transcript_path.clone(),
                 Some(cwd_b.path().to_path_buf()),
+                None,
             )
             .expect("failed to replace on cwd change");
         assert_eq!(replaced, TranscriptStartStatus::Replaced);
@@ -449,6 +555,7 @@ mod tests {
                 sink.clone(),
                 session_id.clone(),
                 transcript_path,
+                None,
                 None,
             )
             .expect("failed to replace on cwd to None transition");
@@ -656,6 +763,7 @@ mod tests {
                 session_id.clone(),
                 transcript_path.clone(),
                 Some(cwd_a.path().to_path_buf()),
+                None,
             )
             .expect("failed to start with cwd_a");
 
@@ -666,6 +774,7 @@ mod tests {
                 session_id.clone(),
                 transcript_path,
                 Some(cwd_b.path().to_path_buf()),
+                None,
             )
             .expect("failed to replace with cwd_b");
 

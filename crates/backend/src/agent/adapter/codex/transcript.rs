@@ -919,9 +919,27 @@ mod tests {
         )
         .expect("tailing should start");
 
-        std::thread::sleep(Duration::from_millis(750));
+        // PR #302 cycle 9 — replaced two wall-clock sleeps
+        // (750ms + 100ms) with event-based sync via the existing
+        // `wait_for_count` helper. The sibling test
+        // `rollout_replay_collapses_then_live_test_run_emits` already
+        // uses this pattern; the sleep version was a stale copy from
+        // earlier work, copied before the helper was added. Wait for
+        // each event type the assertions below count so the tail has
+        // demonstrably emitted all of them before we stop and snapshot.
+        assert!(
+            sink.wait_for_count("agent-tool-call", 4, Duration::from_secs(5)),
+            "expected 4 agent-tool-call events within 5s",
+        );
+        assert!(
+            sink.wait_for_count("agent-turn", 1, Duration::from_secs(5)),
+            "expected 1 agent-turn event within 5s",
+        );
+        assert!(
+            sink.wait_for_count("test-run", 1, Duration::from_secs(5)),
+            "expected 1 test-run event within 5s",
+        );
         handle.stop();
-        std::thread::sleep(Duration::from_millis(100));
 
         let recorded = sink.recorded();
         let tool_call_payloads: Vec<Value> = recorded
@@ -1436,9 +1454,13 @@ mod tests {
         let handle = start_tailing(sink.clone(), "sid-cwd".to_string(), transcript_path, None)
             .expect("start tailing");
 
-        std::thread::sleep(Duration::from_millis(750));
+        // PR #302 cycle 9 — replaced wall-clock sleeps with
+        // event-based sync (see the sibling-test fix above).
+        assert!(
+            sink.wait_for_count("agent-cwd", 3, Duration::from_secs(5)),
+            "expected 3 agent-cwd events within 5s",
+        );
         handle.stop();
-        std::thread::sleep(Duration::from_millis(100));
 
         let cwd_events: Vec<Value> = sink
             .recorded()
