@@ -185,8 +185,19 @@ const isStringArray = (value: unknown): value is string[] =>
 const paneKey = (sessionId: string, paneId: string): string =>
   `${sessionId}:${paneId}`
 
-const sanitizePartitionSegment = (value: string): string =>
-  value.replace(/[^a-zA-Z0-9._-]/g, '-').slice(0, 96)
+const sanitizePartitionSegment = (value: string): string => {
+  const safe = value.replace(/[^a-zA-Z0-9._-]/g, '-').slice(0, 96)
+  if (safe === value) {
+    return safe
+  }
+
+  const digest = createHash('sha256')
+    .update(value)
+    .digest('base64url')
+    .slice(0, 16)
+
+  return `${safe.slice(0, 79)}-${digest}`
+}
 
 const normalizeUrl = (value: string): string => {
   let parsed: URL
@@ -488,10 +499,16 @@ const sendWebSocketText = (socket: Socket, value: unknown): void => {
   socket.write(Buffer.concat([header, payload]))
 }
 
-const sendWebSocketClose = (socket: Socket): void => {
+const sendWebSocketClose = (socket: Socket, code?: number): void => {
   try {
     if (!socket.destroyed && socket.writable) {
-      socket.write(Buffer.from([0x88, 0x00]))
+      if (code !== undefined) {
+        const body = Buffer.allocUnsafe(2)
+        body.writeUInt16BE(code, 0)
+        socket.write(Buffer.concat([Buffer.from([0x88, 0x02]), body]))
+      } else {
+        socket.write(Buffer.from([0x88, 0x00]))
+      }
     }
   } catch {
     // The socket may already be half-closed/reset by the client.
@@ -500,6 +517,7 @@ const sendWebSocketClose = (socket: Socket): void => {
 }
 
 interface DecodedFrame {
+  fin: boolean
   opcode: number
   payload: Buffer
   byteLength: number
@@ -510,6 +528,7 @@ const decodeFrame = (buffer: Buffer): DecodedFrame | null => {
     return null
   }
 
+  const fin = (buffer[0] & 0x80) !== 0
   const opcode = buffer[0] & 0x0f
   const masked = (buffer[1] & 0x80) !== 0
   let payloadLength = buffer[1] & 0x7f
@@ -545,7 +564,7 @@ const decodeFrame = (buffer: Buffer): DecodedFrame | null => {
     payload = Buffer.from(payload.map((byte, index) => byte ^ mask[index % 4]))
   }
 
-  return { opcode, payload, byteLength: frameLength }
+  return { fin, opcode, payload, byteLength: frameLength }
 }
 
 export class BrowserPaneController {
@@ -1209,6 +1228,7 @@ export class BrowserPaneController {
     }
 
     this.partitionHandlers.add(partition)
+    ses.removeAllListeners('select-webauthn-account')
     ses.on('select-webauthn-account', (_event, details, callback) => {
       if (details.accounts.length === 1) {
         callback(details.accounts[0].credentialId)
@@ -1630,6 +1650,13 @@ export class BrowserPaneController {
   ): void {
     if (frame.opcode === 0x8) {
       sendWebSocketClose(socket)
+
+      return
+    }
+
+    // This minimal proxy requires non-fragmented frames (Phase 1).
+    if (!frame.fin && (frame.opcode === 0x1 || frame.opcode === 0x2)) {
+      sendWebSocketClose(socket, 1009)
 
       return
     }

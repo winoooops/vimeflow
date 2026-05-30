@@ -10,7 +10,7 @@ import {
 } from './browser-pane-channels'
 import { BrowserPaneController } from './browser-pane'
 
-// cspell:ignore debuggee
+// cspell:ignore debuggee Lkls
 type IpcHandler = (event: unknown, payload?: unknown) => unknown
 type EventHandler = (...args: unknown[]) => void
 
@@ -159,6 +159,7 @@ const electronMock = vi.hoisted(() => {
 
   const fakeSession = {
     on: vi.fn(),
+    removeAllListeners: vi.fn(),
     setPermissionRequestHandler: vi.fn(),
     setPermissionCheckHandler: vi.fn(),
   }
@@ -259,6 +260,7 @@ const electronMock = vi.hoisted(() => {
       ipcMain.removeHandler.mockClear()
       session.fromPartition.mockClear()
       fakeSession.on.mockClear()
+      fakeSession.removeAllListeners.mockClear()
       fakeSession.setPermissionRequestHandler.mockClear()
       fakeSession.setPermissionCheckHandler.mockClear()
     },
@@ -369,11 +371,12 @@ describe('BrowserPaneController', () => {
 
     await expect(createPromise).resolves.toMatchObject({
       url: 'https://example.com/',
-      partition: 'persist:vimeflow-browser:proj-1:pty-1',
+      partition:
+        'persist:vimeflow-browser:proj-1-U4YTnQstCLGyLkls:pty-1-_aMy5oEC2UDG6i_k',
     })
 
     expect(electronMock.session.fromPartition).toHaveBeenCalledWith(
-      'persist:vimeflow-browser:proj-1:pty-1',
+      'persist:vimeflow-browser:proj-1-U4YTnQstCLGyLkls:pty-1-_aMy5oEC2UDG6i_k',
       { cache: true }
     )
 

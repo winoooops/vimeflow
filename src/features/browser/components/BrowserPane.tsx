@@ -89,8 +89,10 @@ export const BrowserPane = ({
   const wasOccludedRef = useRef(isOccluded)
   const suppressNextNativeFocusRef = useRef(false)
   const lastBoundsKeyRef = useRef<string | null>(null)
+  const onUrlChangeRef = useRef(onUrlChange)
   const [address, setAddress] = useState(url)
   const [cdpInfo, setCdpInfo] = useState<BrowserCdpInfo | null>(null)
+  const [createError, setCreateError] = useState<string | null>(null)
 
   const [tabs, setTabs] = useState<BrowserPaneTab[]>([
     { id: 'tab-0', url, title: null, active: true },
@@ -164,6 +166,10 @@ export const BrowserPane = ({
   }, [browserSessionId, pane.id])
 
   useLayoutEffect(() => {
+    onUrlChangeRef.current = onUrlChange
+  })
+
+  useLayoutEffect(() => {
     isActiveRef.current = isActive
     isOccludedRef.current = isOccluded
     shortcutContextRef.current = shortcutContext
@@ -192,7 +198,7 @@ export const BrowserPane = ({
         nativePaneReadyRef.current = true
         setAddress(result.url)
         setTabs(result.tabs)
-        onUrlChange?.(session.id, pane.id, result.url)
+        onUrlChangeRef.current?.(session.id, pane.id, result.url)
 
         const info = await getBrowserCdpInfo({
           sessionId: browserSessionId,
@@ -203,11 +209,13 @@ export const BrowserPane = ({
           return
         }
 
+        setCreateError(null)
         setCdpInfo(info)
         lastBoundsKeyRef.current = null
         syncBounds()
       } catch {
         if (!lifecycle.cancelled) {
+          setCreateError('Failed to start browser pane')
           setCdpInfo(null)
         }
       }
@@ -217,14 +225,7 @@ export const BrowserPane = ({
       lifecycle.cancelled = true
       nativePaneReadyRef.current = false
     }
-  }, [
-    browserSessionId,
-    onUrlChange,
-    pane.id,
-    session.id,
-    session.projectId,
-    syncBounds,
-  ])
+  }, [browserSessionId, pane.id, session.id, session.projectId, syncBounds])
 
   useLayoutEffect(() => {
     const node = contentRef.current
@@ -313,9 +314,9 @@ export const BrowserPane = ({
 
         setTabs(event.tabs)
         setAddress(event.url)
-        onUrlChange?.(session.id, pane.id, event.url)
+        onUrlChangeRef.current?.(session.id, pane.id, event.url)
       }),
-    [browserSessionId, onUrlChange, pane.id, session.id]
+    [browserSessionId, pane.id, session.id]
   )
 
   useEffect(
@@ -332,10 +333,10 @@ export const BrowserPane = ({
           (event.tabs.length > 0 ? event.tabs[0] : undefined)
         if (nextActiveTab) {
           setAddress(nextActiveTab.url)
-          onUrlChange?.(session.id, pane.id, nextActiveTab.url)
+          onUrlChangeRef.current?.(session.id, pane.id, nextActiveTab.url)
         }
       }),
-    [browserSessionId, onUrlChange, pane.id, session.id]
+    [browserSessionId, pane.id, session.id]
   )
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>): void => {
@@ -496,7 +497,11 @@ export const BrowserPane = ({
       >
         <div className="pointer-events-none absolute inset-0 grid place-items-center bg-surface-container/60 text-center font-mono text-[11px] text-on-surface-muted">
           <div>
-            <p>Electron WebContentsView browser surface</p>
+            {createError ? (
+              <p className="text-error">{createError}</p>
+            ) : (
+              <p>Electron WebContentsView browser surface</p>
+            )}
             {cdpInfo ? (
               <p className="mt-2 max-w-[520px] break-all text-primary/80">
                 CDP {cdpInfo.url} token hidden
