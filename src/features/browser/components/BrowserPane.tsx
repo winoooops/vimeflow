@@ -323,6 +323,10 @@ export const BrowserPane = ({
           return
         }
 
+        if (event.tabs.length === 0) {
+          return
+        }
+
         setTabs(event.tabs)
 
         const nextActiveTab =

@@ -591,6 +591,15 @@ export class BrowserPaneController {
 
   private readonly partitionHandlers = new Set<string>()
 
+  private readonly webAuthnHandlers = new Map<
+    string,
+    (
+      event: ElectronEvent,
+      details: { accounts: { credentialId: string }[] },
+      callback: (credentialId: string | null) => void
+    ) => void
+  >()
+
   private readonly rendererLifecycleHandlers = new Set<number>()
 
   private cdpServer: Server | null = null
@@ -654,6 +663,13 @@ export class BrowserPaneController {
     this.panes.clear()
     this.cdpAttachments.clear()
     this.rendererLifecycleHandlers.clear()
+    for (const [partition, handler] of this.webAuthnHandlers) {
+      electronSession
+        .fromPartition(partition)
+        .off('select-webauthn-account', handler)
+    }
+    this.webAuthnHandlers.clear()
+    this.partitionHandlers.clear()
     this.cdpServer?.close()
     this.cdpServer = null
     this.cdpServerStart = null
@@ -677,6 +693,10 @@ export class BrowserPaneController {
     const existing = this.panes.get(key)
     if (existing) {
       existing.shortcutContext = shortcutContextFromRequest(payload)
+      // A renderer reload hands us a new sender id; refresh the owner and its
+      // lifecycle cleanup so a later crash can still reclaim this pane.
+      existing.ownerWebContentsId = event.sender.id
+      this.installRendererLifecycleCleanup(event.sender)
 
       const activeTab = this.activeTab(existing)
 
@@ -744,22 +764,30 @@ export class BrowserPaneController {
     this.installAppShortcutForwarding(record)
     view.webContents.on('destroyed', () => {
       record.tabs.delete('tab-0')
+      // Pane teardown: the last tab is gone — drop the record and do NOT emit a
+      // tabs-changed with an empty list (it would collapse the renderer's chrome).
+      if (this.panes.get(key) === record && record.tabs.size === 0) {
+        this.panes.delete(key)
+
+        return
+      }
+
       if (record.activeTabId === 'tab-0') {
         record.activeTabId = record.tabs.keys().next().value ?? 'tab-0'
         this.applyRecordBounds(record)
       }
       this.emitTabsChanged(record)
-      if (this.panes.get(key) === record && record.tabs.size === 0) {
-        this.panes.delete(key)
-      }
     })
 
     view.webContents.on('focus', () => {
-      if (event.sender.isDestroyed()) {
+      // Send via the window's (current) webContents, not the creation-time
+      // event.sender, so focus still reaches the renderer after a reload that
+      // adopted a new sender on the reconnect path.
+      if (win.webContents.isDestroyed()) {
         return
       }
 
-      event.sender.send(BROWSER_PANE_FOCUSED, {
+      win.webContents.send(BROWSER_PANE_FOCUSED, {
         sessionId: payload.sessionId,
         paneId: payload.paneId,
       })
@@ -919,7 +947,18 @@ export class BrowserPaneController {
     })
 
     view.webContents.on('destroyed', () => {
+      // closeTab removes the tab from the map before close() and owns the emit;
+      // if it is already gone, stay silent to avoid a duplicate tabs-changed.
+      if (!record.tabs.has(tabId)) {
+        return
+      }
+
       record.tabs.delete(tabId)
+      // Pane teardown: last tab gone — do not emit an empty tabs-changed.
+      if (record.tabs.size === 0) {
+        return
+      }
+
       if (record.activeTabId === tabId) {
         record.activeTabId = record.tabs.keys().next().value ?? 'tab-0'
         this.applyRecordBounds(record)
@@ -1253,14 +1292,22 @@ export class BrowserPaneController {
     }
 
     this.partitionHandlers.add(partition)
-    ses.removeAllListeners('select-webauthn-account')
-    ses.on('select-webauthn-account', (_event, details, callback) => {
+
+    // Track our own listener so dispose() can remove exactly it — never
+    // removeAllListeners on this process-wide partition session singleton.
+    const webAuthnHandler = (
+      _event: ElectronEvent,
+      details: { accounts: { credentialId: string }[] },
+      callback: (credentialId: string | null) => void
+    ): void => {
       if (details.accounts.length === 1) {
         callback(details.accounts[0].credentialId)
       } else {
         callback(null)
       }
-    })
+    }
+    this.webAuthnHandlers.set(partition, webAuthnHandler)
+    ses.on('select-webauthn-account', webAuthnHandler)
 
     ses.setPermissionRequestHandler((_webContents, permission, callback) => {
       callback(
@@ -1553,6 +1600,10 @@ export class BrowserPaneController {
     const auth = request.headers.authorization
     const origin = request.headers.origin
 
+    // `origin === undefined` is the expected non-browser caller path (CLI /
+    // automation clients omit Origin); the per-pane 192-bit token is the sole
+    // gate for those callers. Browser callers always send Origin and are
+    // checked against BROWSER_CDP_ORIGIN, blocking cross-origin/DNS-rebinding.
     const originAllowed = origin === undefined || origin === BROWSER_CDP_ORIGIN
     if (!originAllowed) {
       return null

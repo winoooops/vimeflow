@@ -159,6 +159,7 @@ const electronMock = vi.hoisted(() => {
 
   const fakeSession = {
     on: vi.fn(),
+    off: vi.fn(),
     removeAllListeners: vi.fn(),
     setPermissionRequestHandler: vi.fn(),
     setPermissionCheckHandler: vi.fn(),
