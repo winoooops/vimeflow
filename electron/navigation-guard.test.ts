@@ -132,4 +132,16 @@ describe('installNavigationGuard — will-navigate', () => {
     expect(event.preventDefault).toHaveBeenCalledTimes(1)
     expect(openExternal).not.toHaveBeenCalled()
   })
+
+  test('blocks a same-document reload that carries no fragment', () => {
+    const { openExternal, handlers } = setup(APP_URL)
+    const event = { preventDefault: vi.fn() }
+
+    // A link like "/index.html" resolves to the current document with no
+    // fragment — a full reload, not an in-page jump, so it must be blocked.
+    handlers.navigate?.(event, APP_URL)
+
+    expect(event.preventDefault).toHaveBeenCalledTimes(1)
+    expect(openExternal).not.toHaveBeenCalled()
+  })
 })

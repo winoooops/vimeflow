@@ -21,6 +21,17 @@ const documentUrl = (url: string): string | null => {
   }
 }
 
+// Whether the URL carries a non-empty `#fragment`. A same-document link with no
+// fragment is a full reload (it would drop SPA / editor state), so it must NOT
+// be treated as an in-page anchor jump.
+const hasFragment = (url: string): boolean => {
+  try {
+    return new URL(url).hash !== ''
+  } catch {
+    return false
+  }
+}
+
 // Scheme + host comparison (works for the custom `vimeflow:` scheme too). Used
 // only to decide whether a blocked navigation is genuinely external: a
 // same-origin link is internal and must not pop the system browser.
@@ -69,8 +80,15 @@ export const installNavigationGuard = (
     const current = win.webContents.getURL()
     const targetDoc = documentUrl(url)
 
-    // Same document, only the `#fragment` differs — an in-page anchor jump.
-    if (targetDoc !== null && targetDoc === documentUrl(current)) {
+    // Allow ONLY a real in-page anchor jump: the same document AND a non-empty
+    // `#fragment`. A same-document link without a fragment (e.g. "/index.html"
+    // when the app is already at ".../index.html") is a full reload that would
+    // drop SPA / editor state, so it must be blocked like any other navigation.
+    if (
+      hasFragment(url) &&
+      targetDoc !== null &&
+      targetDoc === documentUrl(current)
+    ) {
       return
     }
 
