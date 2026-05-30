@@ -9,6 +9,7 @@ import {
   type Ref,
 } from 'react'
 import { Tooltip } from '../../../components/Tooltip'
+import { formatShortcut } from '../../../lib/formatShortcut'
 import { formatRelativeTime, formatDuration } from '../utils/relativeTime'
 import type {
   ActivityEvent as ActivityEventType,
@@ -189,6 +190,16 @@ const Kbd = ({ children }: { children: ReactNode }): ReactElement => (
   </span>
 )
 
+// Shared relative-time string for the feed row and the tooltip header so the
+// running-clock format and the negative-delta clamp can't drift between them.
+const computeAgo = (event: ActivityEventType, now: Date): string =>
+  event.status === 'running'
+    ? // Clamp negative deltas to zero so a tool whose emitted timestamp beats
+      // JS's Date.now() snapshot (sub-ms clock skew on fast machines, batch
+      // catch-up paths) doesn't read as 'running -1s' for a frame.
+      `running ${formatDuration(Math.max(0, now.getTime() - new Date(event.timestamp).getTime()))}`
+    : formatRelativeTime(event.timestamp, now)
+
 const ActivityTooltipContent = ({
   event,
   now,
@@ -231,9 +242,7 @@ const ActivityTooltipContent = ({
 
   const isRunning = event.status === 'running'
 
-  const ago = isRunning
-    ? `running ${formatDuration(Math.max(0, now.getTime() - new Date(event.timestamp).getTime()))}`
-    : formatRelativeTime(event.timestamp, now)
+  const ago = computeAgo(event, now)
 
   const duration =
     isToolEvent(event) && !isRunning && event.durationMs != null
@@ -248,6 +257,10 @@ const ActivityTooltipContent = ({
     event.kind === 'edit' ||
     event.kind === 'write' ||
     event.kind === 'read'
+
+  // Platform-aware super key (⌘ on macOS, Ctrl elsewhere) so the placeholder
+  // footer hints don't show a macOS-only key on Windows/Linux.
+  const modKey = formatShortcut('Mod')
 
   return (
     <>
@@ -364,20 +377,20 @@ const ActivityTooltipContent = ({
         <div className="flex items-center gap-2 border-t border-[rgba(74,68,79,0.25)] bg-[rgba(13,13,28,0.6)] px-3.5 py-[7px] font-mono text-[9.5px] tracking-[0.04em] text-[#6c7086]">
           {event.kind === 'bash' && (
             <>
-              <Kbd>↵</Kbd> rerun <Kbd>⌘</Kbd>
+              <Kbd>↵</Kbd> rerun <Kbd>{modKey}</Kbd>
               <Kbd>O</Kbd> open in terminal
             </>
           )}
           {(event.kind === 'edit' || event.kind === 'write') && (
             <>
-              <Kbd>⌘</Kbd>
-              <Kbd>O</Kbd> open file <Kbd>⌘</Kbd>
+              <Kbd>{modKey}</Kbd>
+              <Kbd>O</Kbd> open file <Kbd>{modKey}</Kbd>
               <Kbd>D</Kbd> view diff
             </>
           )}
           {event.kind === 'read' && (
             <>
-              <Kbd>⌘</Kbd>
+              <Kbd>{modKey}</Kbd>
               <Kbd>O</Kbd> open file
             </>
           )}
@@ -455,12 +468,7 @@ export const ActivityEvent = ({
   const label = getLabel(event)
   const isRunning = event.status === 'running'
 
-  const timestampText = isRunning
-    ? // Clamp negative deltas to zero so a tool whose emitted timestamp
-      // beats JS's Date.now() snapshot (sub-ms clock skew on fast machines,
-      // batch catch-up paths) doesn't read as 'running -1s' for a frame.
-      `running ${formatDuration(Math.max(0, now.getTime() - new Date(event.timestamp).getTime()))}`
-    : formatRelativeTime(event.timestamp, now)
+  const timestampText = computeAgo(event, now)
 
   return (
     <Tooltip

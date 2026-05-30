@@ -2,6 +2,7 @@ import { afterEach, describe, test, expect, vi } from 'vitest'
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ActivityEvent } from './ActivityEvent'
+import { formatShortcut } from '../../../lib/formatShortcut'
 import type { ToolActivityEvent } from '../types/activityEvent'
 
 const now = new Date('2026-04-22T12:00:00Z')
@@ -828,6 +829,9 @@ describe('ActivityEvent — structured tooltip', () => {
     })
     expect(within(details).getByText(/rerun/)).toBeInTheDocument()
     expect(within(details).getByText(/open in terminal/)).toBeInTheDocument()
+    // Footer super key is platform-aware (⌘ on macOS, Ctrl elsewhere), not a
+    // hardcoded ⌘ — assert it matches the resolved platform key.
+    expect(within(details).getByText(formatShortcut('Mod'))).toBeInTheDocument()
   })
 
   test('user card renders body as plain text', async () => {
