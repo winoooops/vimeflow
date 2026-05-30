@@ -851,4 +851,75 @@ describe('ActivityEvent — structured tooltip', () => {
     const body = within(details).getByText('refactor this')
     expect(body).not.toHaveClass('italic')
   })
+
+  test('FilePathChip directory span uses left-truncation classes and bdi wrapper', async () => {
+    render(
+      <ActivityEvent
+        event={toolEvent({
+          kind: 'edit',
+          tool: 'Edit',
+          body: 'src/components/Button.tsx',
+          status: 'done',
+        })}
+        now={now}
+      />
+    )
+    fireEvent.focus(screen.getByRole('article', { name: 'EDIT' }))
+
+    const details = await screen.findByRole('dialog', {
+      name: 'EDIT activity details',
+    })
+    const bdi = within(details).getByText('src/components/')
+    // eslint-disable-next-line testing-library/no-node-access
+    const dirSpan = bdi.parentElement
+    expect(dirSpan).toHaveClass('truncate')
+    expect(dirSpan).toHaveClass('[direction:rtl]')
+    expect(bdi.tagName.toLowerCase()).toBe('bdi')
+  })
+
+  test('FilePathChip filename span never shrinks', async () => {
+    render(
+      <ActivityEvent
+        event={toolEvent({
+          kind: 'read',
+          tool: 'Read',
+          body: 'src/components/Button.tsx',
+          status: 'done',
+        })}
+        now={now}
+      />
+    )
+    fireEvent.focus(screen.getByRole('article', { name: 'READ' }))
+
+    const details = await screen.findByRole('dialog', {
+      name: 'READ activity details',
+    })
+    const filename = within(details).getByText('Button.tsx')
+    expect(filename).toHaveClass('shrink-0')
+    expect(filename).toHaveClass('whitespace-nowrap')
+  })
+
+  test('CommandBlock command span uses truncate for single-line overflow', async () => {
+    render(
+      <ActivityEvent
+        event={toolEvent({
+          kind: 'bash',
+          tool: 'Bash',
+          body: 'npm run test -- --run src/features/agent-status/components/ActivityEvent.test.tsx',
+          status: 'done',
+        })}
+        now={now}
+      />
+    )
+    fireEvent.focus(screen.getByRole('article', { name: 'BASH' }))
+
+    const details = await screen.findByRole('dialog', {
+      name: 'BASH activity details',
+    })
+
+    const cmd = within(details).getByText(
+      'npm run test -- --run src/features/agent-status/components/ActivityEvent.test.tsx'
+    )
+    expect(cmd).toHaveClass('truncate')
+  })
 })
