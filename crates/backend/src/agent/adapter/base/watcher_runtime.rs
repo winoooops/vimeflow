@@ -331,9 +331,7 @@ impl AgentWatcherState {
         // gate-scope ends.
         let mut removed_transcript: Option<TranscriptHandle> = None;
         let _displaced: Option<WatcherHandle> = {
-            let _gate_guard = gate
-                .lock()
-                .expect("failed to lock per-session start gate");
+            let _gate_guard = gate.lock();
 
             let new_claimed = handle
                 .claimed_transcript
@@ -374,10 +372,15 @@ impl AgentWatcherState {
                     // (cycle 11 F2 — reduces gate-hold time from
                     // ~500ms to ~µs).
                     //
-                    // PR #302 cycle 13 F3: pass `&_gate_guard` as
-                    // the compile-time witness that the gate is
-                    // held. Compiler proves the borrow lives across
-                    // the call.
+                    // PR #302 cycle 15 F1 (Claude post-cycle-13
+                    // review): `_gate_guard` is now a typed
+                    // `SessionGateGuard<'_>` issued by
+                    // `ts.session_gate(&session_id).lock()` above;
+                    // its `session_id()` is identical to
+                    // `session_id` here. `stop_with_held_gate`
+                    // debug-asserts the match so a future
+                    // contributor accidentally passing the wrong
+                    // session's guard fails fast in debug builds.
                     removed_transcript =
                         ts.stop_with_held_gate(&session_id, &_gate_guard);
                 }

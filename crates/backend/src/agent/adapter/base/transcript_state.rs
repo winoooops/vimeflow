@@ -121,6 +121,80 @@ pub enum TranscriptStartStatus {
 /// `TxOutcome::StartFailed` (warn log). PR #302 cycle 13 F1.
 pub(crate) const DISPLACED_ERR_PREFIX: &str = "watcher displaced — ";
 
+/// Typed handle to a per-session start gate. Constructed only via
+/// `TranscriptState::session_gate(session_id)` — owns an
+/// `Arc<Mutex<()>>` clone of the registered gate and remembers the
+/// `session_id` it was issued for. `.lock()` returns a
+/// `SessionGateGuard<'_>` that carries the same `session_id`.
+///
+/// PR #302 cycle 15 F1 (Claude post-cycle-13 review): strengthens
+/// cycle-13 F3's compile-time witness from "some `Mutex<()>` is held"
+/// to "the per-session start gate for THIS `session_id` is held".
+/// The private constructor (only `TranscriptState::session_gate` can
+/// build one) closes the "any random `Mutex<()>` works" loophole; the
+/// `session_id` stored inside lets `stop_with_held_gate` runtime-check
+/// in debug builds that the guard belongs to the session being torn
+/// down.
+pub(crate) struct SessionGate<'a> {
+    session_id: &'a str,
+    /// Identity Arc of the issuing `TranscriptState`'s `start_gates`
+    /// map. Stored as a cheap clone (atomic refcount bump) for
+    /// `Arc::ptr_eq` identity comparison only — never locked or
+    /// dereferenced through this clone. Used by `stop_with_held_gate`
+    /// to debug-assert the guard was issued by the same
+    /// `TranscriptState` instance that's now being mutated, closing
+    /// the cycle-15 retry-1 gap codex flagged: "guard from a different
+    /// `TranscriptState` with the same session_id would pass the
+    /// session_id check but not be holding `self`'s lock."
+    start_gates: Arc<Mutex<HashMap<String, Arc<Mutex<()>>>>>,
+    arc: Arc<Mutex<()>>,
+}
+
+impl<'a> SessionGate<'a> {
+    /// Lock the per-session gate. Returns a `SessionGateGuard<'a>`
+    /// whose `session_id()` matches this `SessionGate`'s session_id
+    /// and whose owner identity matches the issuing `TranscriptState`.
+    pub(crate) fn lock(&'a self) -> SessionGateGuard<'a> {
+        SessionGateGuard {
+            session_id: self.session_id,
+            start_gates: self.start_gates.clone(),
+            _guard: self
+                .arc
+                .lock()
+                .expect("failed to lock per-session start gate"),
+        }
+    }
+}
+
+/// Guard proving the per-session start gate for `session_id()` is
+/// currently locked. Constructed only by `SessionGate::lock`. The
+/// inner `MutexGuard` is private — possessing a `SessionGateGuard`
+/// proves both:
+///   - SOME `Arc<Mutex<()>>` is locked (compile-time, via the
+///     embedded `MutexGuard`'s lifetime), AND
+///   - the lock chain went through
+///     `TranscriptState::session_gate(session_id).lock()` (compile-
+///     time, via the private constructor + private field).
+///
+/// `stop_with_held_gate` `debug_assert_eq!`s its `session_id` argument
+/// against `gate.session_id()` to catch a future contributor passing
+/// the wrong session's guard in debug builds. Release builds incur no
+/// runtime overhead beyond the underlying `MutexGuard`.
+pub(crate) struct SessionGateGuard<'a> {
+    session_id: &'a str,
+    /// See `SessionGate::start_gates`. Owner identity for
+    /// `Arc::ptr_eq` against the operating `TranscriptState`.
+    start_gates: Arc<Mutex<HashMap<String, Arc<Mutex<()>>>>>,
+    _guard: std::sync::MutexGuard<'a, ()>,
+}
+
+impl SessionGateGuard<'_> {
+    /// The `session_id` this guard was issued for.
+    pub(crate) fn session_id(&self) -> &str {
+        self.session_id
+    }
+}
+
 struct TranscriptWatcher {
     transcript_path: PathBuf,
     cwd: Option<PathBuf>,
@@ -345,10 +419,26 @@ impl TranscriptState {
         watchers.contains_key(session_id)
     }
 
-    /// Return the per-session start gate `Arc<Mutex<()>>` (creating it
-    /// lazily on first access). Callers can `.lock()` the gate to
-    /// serialize their critical section against any in-flight
-    /// `start_or_replace` or `stop` on the same session.
+    /// Internal: return the per-session start gate's
+    /// `Arc<Mutex<()>>` (creating it lazily on first access). Used
+    /// directly by `start_or_replace` and `stop` (which already live
+    /// in this module) and indirectly by the public `session_gate`
+    /// constructor that wraps the result in a typed `SessionGate`.
+    fn session_gate_arc(&self, session_id: &str) -> Arc<Mutex<()>> {
+        let mut gates = self.start_gates.lock().expect("failed to lock start_gates");
+        gates
+            .entry(session_id.to_string())
+            .or_insert_with(|| Arc::new(Mutex::new(())))
+            .clone()
+    }
+
+    /// Return a typed `SessionGate<'a>` bound to `session_id`.
+    /// Callers `.lock()` the gate to serialize their critical section
+    /// against any in-flight `start_or_replace` or `stop` on the same
+    /// session. The resulting `SessionGateGuard<'a>` carries the
+    /// `session_id` so gate-aware callees (`stop_with_held_gate`) can
+    /// runtime-verify the guard belongs to the session being
+    /// operated on.
     ///
     /// Used by `AgentWatcherState::insert` to gate-protect its
     /// claim-flag read + map-mutation + (when the new handle DIDN'T
@@ -368,12 +458,12 @@ impl TranscriptState {
     /// uses `stop_with_held_gate` under its own gate and CLEARS the
     /// displaced handle's `owns_transcript` to make the Drop a no-op
     /// for transcript state — no Drop-time gate re-acquisition.
-    pub(crate) fn session_gate(&self, session_id: &str) -> Arc<Mutex<()>> {
-        let mut gates = self.start_gates.lock().expect("failed to lock start_gates");
-        gates
-            .entry(session_id.to_string())
-            .or_insert_with(|| Arc::new(Mutex::new(())))
-            .clone()
+    pub(crate) fn session_gate<'a>(&self, session_id: &'a str) -> SessionGate<'a> {
+        SessionGate {
+            session_id,
+            start_gates: self.start_gates.clone(),
+            arc: self.session_gate_arc(session_id),
+        }
     }
 
     /// Same as `stop` but assumes the CALLER already holds the
@@ -408,21 +498,50 @@ impl TranscriptState {
     pub(crate) fn stop_with_held_gate(
         &self,
         session_id: &str,
-        // PR #302 cycle 13 F3: the `_gate` parameter encodes the
-        // "caller must hold the per-session gate" precondition at the
-        // type level. A `MutexGuard<'_, ()>` only exists while a
-        // Mutex<()> is locked, so the borrow checker proves the
-        // caller is holding some such guard at the call site. The
-        // guard is structurally bound to the per-session gate via the
-        // call chain (caller obtained it from `session_gate(sid).lock()`
-        // and passes its borrow here). The parameter is unused at the
-        // value level — it exists purely as a compile-time witness.
-        // Closes the cycle-9 documentation-only invariant gap: a
-        // future contributor adding a restart path who forgets to
-        // hold the gate fails to compile rather than silently
-        // reintroducing the cycle-8 TOCTOU race.
-        _gate: &std::sync::MutexGuard<'_, ()>,
+        // PR #302 cycle 15 F1 (Claude post-cycle-13 review):
+        // strengthened from cycle-13's `&MutexGuard<'_, ()>` to
+        // `&SessionGateGuard<'_>`. The cycle-13 witness only proved
+        // that SOME `Mutex<()>` was held; a future contributor could
+        // pass any unrelated `MutexGuard<()>` and bypass the intended
+        // serialization guarantee. The `SessionGateGuard` newtype
+        // closes both layers:
+        //   - Compile-time: the only public constructor is
+        //     `SessionGate::lock`, and `SessionGate` itself is only
+        //     built by `TranscriptState::session_gate(...)`. Future
+        //     contributors physically cannot pass a `Mutex<()>` from
+        //     a different subsystem.
+        //   - Debug-runtime: the `debug_assert_eq!` below catches a
+        //     contributor who holds the gate for the wrong session
+        //     (e.g., `ts.session_gate(other_id).lock()` then calls
+        //     `stop_with_held_gate(this_id, ...)`). Release builds
+        //     incur no overhead.
+        //
+        // Closes the cycle-13 F3 "only proves no-gate-held, not
+        // right-gate-held" gap from Claude's post-cycle-13 review.
+        gate: &SessionGateGuard<'_>,
     ) -> Option<TranscriptHandle> {
+        // PR #302 cycle 15 retry-1 (codex verify): also check the
+        // guard belongs to THIS `TranscriptState` instance. The
+        // session_id-only assert below would pass for a guard issued
+        // by some OTHER `TranscriptState` with the same session_id —
+        // and that other state's lock provides no serialization on
+        // `self.watchers`. The `Arc::ptr_eq` on `start_gates` is the
+        // identity test (atomic refcount bump on construction; no
+        // dereference here). Closes codex's MEDIUM finding (0.86
+        // conf) flagged on cycle 15.
+        debug_assert!(
+            Arc::ptr_eq(&gate.start_gates, &self.start_gates),
+            "stop_with_held_gate: gate belongs to a different TranscriptState instance; \
+             caller is holding the wrong state's gate",
+        );
+        debug_assert_eq!(
+            gate.session_id(),
+            session_id,
+            "stop_with_held_gate: gate.session_id() ({}) does not match the session_id argument ({}); \
+             caller is holding the wrong session's gate",
+            gate.session_id(),
+            session_id,
+        );
         let removed = {
             let mut watchers = self.watchers.lock().expect("failed to lock watchers");
             watchers.remove(session_id)
@@ -506,6 +625,61 @@ mod tests {
     fn transcript_state_contains_empty() {
         let state = TranscriptState::new();
         assert!(!state.contains("any-session"));
+    }
+
+    /// PR #302 cycle 15 F1 — `SessionGate::lock` returns a
+    /// `SessionGateGuard` whose `session_id()` matches the
+    /// `session_id` passed to `TranscriptState::session_gate(...)`.
+    #[test]
+    fn session_gate_guard_carries_its_session_id() {
+        let state = TranscriptState::new();
+        let sid = "session-witness";
+        let gate = state.session_gate(sid);
+        let guard = gate.lock();
+        assert_eq!(guard.session_id(), sid);
+    }
+
+    /// PR #302 cycle 15 F1 — `stop_with_held_gate` debug-asserts the
+    /// guard's `session_id` matches its `session_id` argument. Passing
+    /// the wrong session's guard panics in debug builds, catching a
+    /// future contributor who borrows the convenient nearby guard
+    /// instead of the right one.
+    ///
+    /// `cfg(debug_assertions)`-gated because release builds skip the
+    /// assertion (no panic, only an undefined teardown — production
+    /// is debug-built for safety; release builds still benefit from
+    /// the compile-time guarantee that the guard came from
+    /// `TranscriptState::session_gate`).
+    #[cfg(debug_assertions)]
+    #[test]
+    #[should_panic(expected = "caller is holding the wrong session's gate")]
+    fn stop_with_held_gate_panics_on_wrong_session_in_debug() {
+        let state = TranscriptState::new();
+        let wrong_gate = state.session_gate("other-session");
+        let wrong_guard = wrong_gate.lock();
+        // Pretend to tear down "target-session" while holding
+        // "other-session"'s gate — debug_assert_eq! must fire.
+        state.stop_with_held_gate("target-session", &wrong_guard);
+    }
+
+    /// PR #302 cycle 15 retry-1 (codex verify) — guard from a
+    /// DIFFERENT `TranscriptState` instance with the same session_id
+    /// would pass the session_id check but isn't actually holding
+    /// `self`'s `start_gates[session_id]` lock. The `Arc::ptr_eq` on
+    /// `start_gates` catches this in debug builds.
+    #[cfg(debug_assertions)]
+    #[test]
+    #[should_panic(expected = "caller is holding the wrong state's gate")]
+    fn stop_with_held_gate_panics_on_wrong_state_in_debug() {
+        let state_a = TranscriptState::new();
+        let state_b = TranscriptState::new();
+        let sid = "shared-session-id";
+        // Acquire the gate on state_b (wrong state) for the same sid.
+        let foreign_gate = state_b.session_gate(sid);
+        let foreign_guard = foreign_gate.lock();
+        // Pretend to tear down sid on state_a while holding state_b's
+        // gate — Arc::ptr_eq on start_gates must fire.
+        state_a.stop_with_held_gate(sid, &foreign_guard);
     }
 
     #[test]

@@ -2,8 +2,8 @@
 id: async-race-conditions
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-05-25
-ref_count: 12
+last_updated: 2026-05-30
+ref_count: 13
 ---
 
 # Async Race Conditions
@@ -525,3 +525,18 @@ prevent showing previous data.
   5. `maybe_start_transcript` threads the claim_flag through to `start_or_replace`. Inline-init AND notify-callback closure both pass `Some(claimed_transcript.clone())`. The poll thread passes `None` (sleeps 3s before first iteration, doesn't race with insert).
 - **Code-review heuristic:** Multi-step TOCTOU race-closing requires identifying every state-mutation window the read-decision depends on AND every callback source that can fire during those windows. For a per-session ownership-transfer decision in a setup where the displaced watcher has multiple OS-level callback sources (notify watcher + poll thread + sidecar threads), the fix needs: (a) shared gate between the deciding read and any state mutation, (b) gate-held write of the signal the read snapshots, (c) under-gate cleanup of any orphaned state, (d) early termination of callback sources from the displaced watcher BEFORE the cleanup. Skipping any of these leaves a different sub-race. The cost is API surface (`session_gate` and `stop_with_held_gate` are new public-crate methods); the benefit is structural correctness rather than a documented residual race. Codex verify found each successive sub-race in turn — iterative narrowing of a TOCTOU is a strong signal that the architecture (rather than the implementation) needs to coordinate the two state stores.
 - **Commit:** _(PR #302 upsource cycle 9 fix commit; codex-verify retries #1 added under-gate orphan-teardown, retry #2 added drop-notify-watcher-first under the gate)_
+
+### 53. Compile-time TOCTOU witnesses must bind BOTH the lock-type AND the owner-identity, not just "some Mutex held"
+
+- **Source:** github-claude + local-codex | PR #302 round 15 | 2026-05-30
+- **Severity:** MEDIUM
+- **File:** `crates/backend/src/agent/adapter/base/transcript_state.rs` (SessionGate + SessionGateGuard + stop_with_held_gate)
+- **Finding:** Cycle 13 F3 added `_gate: &MutexGuard<'_, ()>` to `stop_with_held_gate` as a compile-time witness that "the caller holds the per-session gate". Claude's post-cycle-13 review pointed out the type only proves SOME `Mutex<()>` is held — a future contributor could pass any unrelated `MutexGuard<()>` (wrong subsystem, wrong session, wrong state instance) and bypass the intended serialization guarantee. Local codex verify on the cycle-15 fix further narrowed this: even a `SessionGateGuard` newtype that carries the `session_id` is insufficient if it doesn't also bind the issuing `TranscriptState` instance — `other_state.session_gate(sid).lock()` would pass both the type check AND the session_id assert while holding `other_state`'s lock, not `self`'s.
+- **Fix (two-axis binding):**
+  1. **Lock-type axis (compile-time)**: `SessionGate` / `SessionGateGuard` newtypes with private constructors. Only `TranscriptState::session_gate(sid)` can build a `SessionGate`; only `SessionGate::lock()` can build a `SessionGateGuard` (constructor + fields module-private). Future contributors physically cannot pass a `Mutex<()>` from another subsystem.
+  2. **Session-identity axis (debug-runtime)**: `SessionGateGuard` carries the `session_id` it was issued for; `stop_with_held_gate` `debug_assert_eq!`s `gate.session_id() == session_id`.
+  3. **State-identity axis (debug-runtime)**: `SessionGate` / `SessionGateGuard` also carry an `Arc<Mutex<HashMap<...>>>` clone of the issuing `TranscriptState`'s `start_gates` field (cheap atomic refcount; never dereferenced through this clone). `stop_with_held_gate` `debug_assert!`s `Arc::ptr_eq(&gate.start_gates, &self.start_gates)` BEFORE the session_id check.
+  - Release builds incur no runtime overhead beyond the underlying `MutexGuard`; the asserts compile out.
+  - Two regression tests pin debug-runtime behavior: `stop_with_held_gate_panics_on_wrong_session_in_debug` (right state, wrong sid) and `stop_with_held_gate_panics_on_wrong_state_in_debug` (right sid, wrong state instance).
+- **Code-review heuristic:** When using a typed witness to enforce a TOCTOU invariant at the API boundary, identify EVERY axis the invariant is parameterized on — not just the most obvious one (the lock kind). A per-session lock is parameterized on (lock-type, session-id, state-instance). A witness that only proves the first axis is a partial enforcement; codex / external review will reliably find each unbound axis. The compile-time-vs-runtime split is acceptable: bind what the type system can express (constructor visibility + private fields + lifetimes), and `debug_assert!` what it can't (Arc identity, string equality). The pattern of "cheap `Arc::ptr_eq` for owner identity" generalizes wherever a token-issuing API needs to verify the token came from the right issuer instance (registry, pool, factory).
+- **Commit:** _(PR #302 upsource cycle 15 fix commit)_
