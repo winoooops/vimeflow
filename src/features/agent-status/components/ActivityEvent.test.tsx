@@ -2,6 +2,7 @@ import { afterEach, describe, test, expect, vi } from 'vitest'
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ActivityEvent } from './ActivityEvent'
+import { formatShortcut } from '../../../lib/formatShortcut'
 import type { ToolActivityEvent } from '../types/activityEvent'
 
 const now = new Date('2026-04-22T12:00:00Z')
@@ -183,6 +184,14 @@ describe('ActivityEvent — basic row', () => {
     const body = screen.getByText('refactor this')
 
     expect(body).not.toHaveClass('font-mono')
+  })
+
+  test('activity row uses a default cursor and is not text-selectable', () => {
+    render(<ActivityEvent event={toolEvent()} now={now} />)
+    const row = screen.getByRole('article', { name: 'EDIT' })
+
+    expect(row).toHaveClass('cursor-default')
+    expect(row).toHaveClass('select-none')
   })
 })
 
@@ -572,5 +581,378 @@ describe('ActivityEvent — test-file verb prefix', () => {
     expect(screen.queryByText(/created test/i)).not.toBeInTheDocument()
     expect(screen.queryByText(/🧪/)).not.toBeInTheDocument()
     expect(screen.getByText(/^WRITE$/)).toBeInTheDocument()
+  })
+})
+
+describe('ActivityEvent — copy with resultPreview', () => {
+  test('Copy copies body alone when there is no resultPreview', async () => {
+    const user = userEvent.setup()
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    setClipboard({ writeText })
+
+    render(
+      <ActivityEvent
+        event={toolEvent({ kind: 'bash', tool: 'Bash', body: 'pnpm test' })}
+        now={now}
+      />
+    )
+    fireEvent.focus(screen.getByRole('article', { name: 'BASH' }))
+
+    const details = await screen.findByRole('dialog', {
+      name: 'BASH activity details',
+    })
+    await user.click(
+      within(details).getByRole('button', { name: 'Copy activity details' })
+    )
+
+    expect(writeText).toHaveBeenCalledWith('pnpm test')
+  })
+
+  test('Copy joins body and resultPreview when present', async () => {
+    const user = userEvent.setup()
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    setClipboard({ writeText })
+
+    render(
+      <ActivityEvent
+        event={toolEvent({
+          kind: 'bash',
+          tool: 'Bash',
+          body: 'pnpm test',
+          resultPreview: '✓ 4 passed',
+        })}
+        now={now}
+      />
+    )
+    fireEvent.focus(screen.getByRole('article', { name: 'BASH' }))
+
+    const details = await screen.findByRole('dialog', {
+      name: 'BASH activity details',
+    })
+    await user.click(
+      within(details).getByRole('button', { name: 'Copy activity details' })
+    )
+
+    expect(writeText).toHaveBeenCalledWith('pnpm test\n\n✓ 4 passed')
+  })
+})
+
+describe('ActivityEvent — structured tooltip', () => {
+  test('tooltip header shows the lowercase kind chip for a done tool call', async () => {
+    render(
+      <ActivityEvent
+        event={toolEvent({ kind: 'bash', tool: 'Bash', status: 'done' })}
+        now={now}
+      />
+    )
+    fireEvent.focus(screen.getByRole('article', { name: 'BASH' }))
+
+    const details = await screen.findByRole('dialog', {
+      name: 'BASH activity details',
+    })
+
+    expect(within(details).getByText('bash')).toBeInTheDocument()
+    expect(within(details).queryByText('OK')).not.toBeInTheDocument()
+    expect(within(details).queryByText('exit')).not.toBeInTheDocument()
+  })
+
+  test('failed and running tool calls show no status chip in the tooltip', async () => {
+    const { rerender } = render(
+      <ActivityEvent
+        event={toolEvent({ kind: 'bash', tool: 'Bash', status: 'failed' })}
+        now={now}
+      />
+    )
+    fireEvent.focus(screen.getByRole('article', { name: 'BASH' }))
+
+    const failed = await screen.findByRole('dialog', {
+      name: 'BASH activity details',
+    })
+    expect(within(failed).queryByText('FAILED')).not.toBeInTheDocument()
+    expect(within(failed).queryByText('RUNNING')).not.toBeInTheDocument()
+
+    rerender(
+      <ActivityEvent
+        event={{
+          id: 'r',
+          kind: 'bash',
+          tool: 'Bash',
+          body: 'pnpm test',
+          timestamp: '2026-04-22T11:59:52Z',
+          status: 'running',
+          durationMs: null,
+        }}
+        now={now}
+      />
+    )
+    fireEvent.focus(screen.getByRole('article', { name: 'BASH' }))
+
+    const running = await screen.findByRole('dialog', {
+      name: 'BASH activity details',
+    })
+    expect(within(running).queryByText('RUNNING')).not.toBeInTheDocument()
+  })
+
+  test('bash card shows no passed/total status chip even when bashResult is present', async () => {
+    render(
+      <ActivityEvent
+        event={toolEvent({
+          kind: 'bash',
+          tool: 'Bash',
+          status: 'done',
+          bashResult: { passed: 4, total: 4 },
+        })}
+        now={now}
+      />
+    )
+    fireEvent.focus(screen.getByRole('article', { name: 'BASH' }))
+
+    const details = await screen.findByRole('dialog', {
+      name: 'BASH activity details',
+    })
+    expect(within(details).queryByText('OK 4/4')).not.toBeInTheDocument()
+    expect(within(details).getByText('bash')).toBeInTheDocument()
+  })
+
+  test('think card renders no status chip and body in italic', async () => {
+    render(
+      <ActivityEvent
+        event={{
+          id: 'th',
+          kind: 'think',
+          body: 'considering options',
+          timestamp: '2026-04-22T11:59:42Z',
+          status: 'done',
+        }}
+        now={now}
+      />
+    )
+    fireEvent.focus(screen.getByRole('article', { name: 'THINK' }))
+
+    const details = await screen.findByRole('dialog', {
+      name: 'THINK activity details',
+    })
+    expect(within(details).queryByText('OK')).not.toBeInTheDocument()
+    const body = within(details).getByText('considering options')
+    expect(body).toHaveClass('italic')
+  })
+
+  test('no resultPreview → no output pre block', async () => {
+    render(
+      <ActivityEvent
+        event={toolEvent({ kind: 'read', tool: 'Read', body: 'src/x.ts' })}
+        now={now}
+      />
+    )
+    fireEvent.focus(screen.getByRole('article', { name: 'READ' }))
+
+    const details = await screen.findByRole('dialog', {
+      name: 'READ activity details',
+    })
+    // eslint-disable-next-line testing-library/no-node-access -- assert the <pre> output block is absent
+    expect(details.querySelector('pre')).toBeNull()
+  })
+
+  test('renders 0s for a 0 ms completed tool call', async () => {
+    render(
+      <ActivityEvent
+        event={toolEvent({
+          kind: 'bash',
+          tool: 'Bash',
+          status: 'done',
+          durationMs: 0,
+        })}
+        now={now}
+      />
+    )
+    fireEvent.focus(screen.getByRole('article', { name: 'BASH' }))
+    expect(await screen.findByText('0s')).toBeInTheDocument()
+  })
+
+  test('bash card shows its command in a $ block', async () => {
+    render(
+      <ActivityEvent
+        event={toolEvent({
+          kind: 'bash',
+          tool: 'Bash',
+          body: 'pnpm test',
+          status: 'done',
+        })}
+        now={now}
+      />
+    )
+    fireEvent.focus(screen.getByRole('article', { name: 'BASH' }))
+
+    const details = await screen.findByRole('dialog', {
+      name: 'BASH activity details',
+    })
+    expect(within(details).getByText('pnpm test')).toBeInTheDocument()
+    expect(within(details).getByText('$')).toBeInTheDocument()
+  })
+
+  test('edit card shows the FilePathChip filename', async () => {
+    render(
+      <ActivityEvent
+        event={toolEvent({
+          kind: 'edit',
+          tool: 'Edit',
+          body: 'src/components/Button.tsx',
+          status: 'done',
+        })}
+        now={now}
+      />
+    )
+    fireEvent.focus(screen.getByRole('article', { name: 'EDIT' }))
+
+    const details = await screen.findByRole('dialog', {
+      name: 'EDIT activity details',
+    })
+    expect(within(details).getByText('Button.tsx')).toBeInTheDocument()
+  })
+
+  test('footer hints render for bash and are static', async () => {
+    render(
+      <ActivityEvent
+        event={toolEvent({
+          kind: 'bash',
+          tool: 'Bash',
+          body: 'pnpm test',
+          status: 'done',
+        })}
+        now={now}
+      />
+    )
+    fireEvent.focus(screen.getByRole('article', { name: 'BASH' }))
+
+    const details = await screen.findByRole('dialog', {
+      name: 'BASH activity details',
+    })
+    expect(within(details).getByText(/rerun/)).toBeInTheDocument()
+    expect(within(details).getByText(/open in terminal/)).toBeInTheDocument()
+    // Footer super key is platform-aware (⌘ on macOS, Ctrl elsewhere), not a
+    // hardcoded ⌘ — assert it matches the resolved platform key.
+    expect(within(details).getByText(formatShortcut('Mod'))).toBeInTheDocument()
+  })
+
+  test('user card renders body as plain text', async () => {
+    render(
+      <ActivityEvent
+        event={{
+          id: 'u-1',
+          kind: 'user',
+          body: 'refactor this',
+          timestamp: '2026-04-22T11:59:42Z',
+          status: 'done',
+        }}
+        now={now}
+      />
+    )
+    fireEvent.focus(screen.getByRole('article', { name: 'USER' }))
+
+    const details = await screen.findByRole('dialog', {
+      name: 'USER activity details',
+    })
+    const body = within(details).getByText('refactor this')
+    expect(body).not.toHaveClass('italic')
+  })
+
+  test('FilePathChip path wraps with break-all and renders dir + filename', async () => {
+    render(
+      <ActivityEvent
+        event={toolEvent({
+          kind: 'edit',
+          tool: 'Edit',
+          body: 'src/components/Button.tsx',
+          status: 'done',
+        })}
+        now={now}
+      />
+    )
+    fireEvent.focus(screen.getByRole('article', { name: 'EDIT' }))
+
+    const details = await screen.findByRole('dialog', {
+      name: 'EDIT activity details',
+    })
+    const dir = within(details).getByText('src/components/')
+    expect(dir).toHaveClass('text-[#6c7086]')
+    const file = within(details).getByText('Button.tsx')
+    expect(file).toHaveClass('font-semibold')
+    // eslint-disable-next-line testing-library/no-node-access
+    const pathSpan = dir.parentElement
+    expect(pathSpan).toHaveClass('min-w-0')
+    expect(pathSpan).toHaveClass('break-all')
+  })
+
+  test('FilePathChip splits a native Windows path on the last backslash', async () => {
+    render(
+      <ActivityEvent
+        event={toolEvent({
+          kind: 'edit',
+          tool: 'Edit',
+          body: 'C:\\repo\\src\\Button.tsx',
+          status: 'done',
+        })}
+        now={now}
+      />
+    )
+    fireEvent.focus(screen.getByRole('article', { name: 'EDIT' }))
+
+    const details = await screen.findByRole('dialog', {
+      name: 'EDIT activity details',
+    })
+    const dir = within(details).getByText('C:\\repo\\src\\')
+    expect(dir).toHaveClass('text-[#6c7086]')
+    const file = within(details).getByText('Button.tsx')
+    expect(file).toHaveClass('font-semibold')
+  })
+
+  test('FilePathChip icon stays aligned to first line while path wraps', async () => {
+    render(
+      <ActivityEvent
+        event={toolEvent({
+          kind: 'read',
+          tool: 'Read',
+          body: 'src/components/Button.tsx',
+          status: 'done',
+        })}
+        now={now}
+      />
+    )
+    fireEvent.focus(screen.getByRole('article', { name: 'READ' }))
+
+    const details = await screen.findByRole('dialog', {
+      name: 'READ activity details',
+    })
+    const filename = within(details).getByText('Button.tsx')
+    expect(filename).toHaveClass('font-semibold')
+    // eslint-disable-next-line testing-library/no-node-access
+    const pathSpan = filename.parentElement
+    expect(pathSpan).toHaveClass('min-w-0')
+    expect(pathSpan).toHaveClass('break-all')
+  })
+
+  test('CommandBlock command span wraps with whitespace-pre-wrap and break-all', async () => {
+    render(
+      <ActivityEvent
+        event={toolEvent({
+          kind: 'bash',
+          tool: 'Bash',
+          body: 'npm run test -- --run src/features/agent-status/components/ActivityEvent.test.tsx',
+          status: 'done',
+        })}
+        now={now}
+      />
+    )
+    fireEvent.focus(screen.getByRole('article', { name: 'BASH' }))
+
+    const details = await screen.findByRole('dialog', {
+      name: 'BASH activity details',
+    })
+
+    const cmd = within(details).getByText(
+      'npm run test -- --run src/features/agent-status/components/ActivityEvent.test.tsx'
+    )
+    expect(cmd).toHaveClass('whitespace-pre-wrap')
+    expect(cmd).toHaveClass('break-all')
   })
 })

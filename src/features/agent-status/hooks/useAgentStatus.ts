@@ -534,7 +534,9 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
               tool: p.tool,
               args: p.args,
               status: p.status,
-              durationMs: Number(p.durationMs) || null,
+              // durationMs is a non-null bigint on the wire; `|| null` would coerce a
+              // legitimate 0 ms duration to null and drop the "0s" chip. Map directly.
+              durationMs: Number(p.durationMs),
               timestamp: p.timestamp,
               isTestFile: p.isTestFile,
             }

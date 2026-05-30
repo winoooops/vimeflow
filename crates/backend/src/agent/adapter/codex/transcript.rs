@@ -27,7 +27,13 @@ use super::transcript_dto::{
     CodexRecordType,
 };
 
-const MAX_ARGS_LEN: usize = 100;
+// PR #302 (this branch) extracted the per-provider tail loop into the
+// shared `TranscriptTailService` engine; `POLL_INTERVAL` is no longer
+// referenced from this file (the engine owns the poll cadence).
+// PR #303 (merged to main) widened `MAX_ARGS_LEN` from 100 to 1024 so
+// the agent-status activity-detail card can show the full wrapped
+// command/path. Both kept here.
+const MAX_ARGS_LEN: usize = 1024;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum CompletionMode {
