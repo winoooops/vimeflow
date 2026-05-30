@@ -98,20 +98,72 @@ pub struct WatcherHandle {
     session_index_join: Option<std::thread::JoinHandle<()>>,
     /// True if this handle owns the per-session entry in
     /// `transcript_state` and should tear it down on Drop. Cleared to
-    /// `false` by `AgentWatcherState::insert` when this handle is
-    /// displaced by a NEW handle for the same session: the new handle's
-    /// `start_watching` inline-init has already called
-    /// `TranscriptState::start_or_replace` and, depending on the result,
-    /// either inherited the existing entry (`AlreadyRunning`), replaced
-    /// it with a new tail (`Replaced`), or started a fresh one
-    /// (`Started`). In all three cases the NEW handle is the rightful
-    /// owner of the per-session transcript-state entry, so the OLD
-    /// handle's Drop must NOT call `transcript_state.stop` — otherwise
-    /// it would tear down the tail the new handle just adopted, leaving
-    /// the session with a status watcher but no transcript streaming
-    /// (PR #302 codex review cycle 5 P1 — the bug existed for every
-    /// restart, not just the `AlreadyRunning` shape codex flagged).
+    /// `false` by `AgentWatcherState::insert` ONLY when this handle is
+    /// displaced by a NEW handle that reached
+    /// `TranscriptState::start_or_replace` at least once before the
+    /// `insert` call (signal carried by the new handle's
+    /// `claimed_transcript: Arc<AtomicBool>` — set by inline-init AND
+    /// the pre-register notify callback). When the new handle never
+    /// engaged with `transcript_state`, the old handle retains
+    /// ownership and its Drop properly tears down the orphaned old
+    /// tail (PR #302 codex review cycle 5 P1 established the
+    /// ownership-transfer pattern; cycle 8 P2 narrowed the trigger
+    /// from "every restart" to "only when the new handle claimed";
+    /// cycle 8 retry-2 widened the claim signal to include
+    /// pre-register notify-callback claims).
     owns_transcript: bool,
+    /// `Arc<AtomicBool>` set to `true` by ANY pre-register
+    /// `maybe_start_transcript` call that actually reached
+    /// `TranscriptState::start_or_replace` — covering both the
+    /// inline-init path AND the notify-callback path. The notify
+    /// watcher is registered via `watcher.watch(...)` BEFORE
+    /// `start_watching` returns; a file event during inline-init or
+    /// after it but before the caller's `register` call can fire the
+    /// notify callback, which calls `maybe_start_transcript` and may
+    /// adopt/replace/start the per-session transcript entry. Both
+    /// sites share THIS atomic so `AgentWatcherState::insert`'s
+    /// ownership-transfer decision sees every pre-register claim.
+    ///
+    /// **Residual TOCTOU race (documented, accepted).** The flag is
+    /// stored AFTER `maybe_start_transcript` returns. A notify
+    /// callback can enter `start_or_replace`, acquire
+    /// `TranscriptState`'s per-session gate, begin mutating the
+    /// entry, and still be inside `start_or_replace` when
+    /// `AgentWatcherState::insert` snapshots this atomic as `false`.
+    /// If insert subsequently displaces an OLD handle whose Drop then
+    /// blocks on the same `TranscriptState` gate, the notify callback
+    /// completes its mutation first, but the old's Drop then runs
+    /// `transcript_state.stop` and tears down the entry the callback
+    /// just adopted. Closing this race fully requires sharing
+    /// `TranscriptState`'s per-session gate with
+    /// `AgentWatcherState::insert` (so insert can serialize against
+    /// in-flight start_or_replace calls) — a cross-module change out
+    /// of scope for the v4-frozen refactor PR. Race window is the
+    /// time between `watcher.watch()` returning and the caller's
+    /// `register` call (microseconds in production); manifests only
+    /// when a status-file event fires AND the notify callback is
+    /// in-flight in `start_or_replace` AT the moment insert reads the
+    /// flag. Impact when it triggers: new watcher loses its
+    /// transcript tail until the next status update (~100ms later)
+    /// re-establishes it via `maybe_start_transcript`.
+    ///
+    /// Read once at `AgentWatcherState::insert` time via `Acquire`
+    /// load — after that, later claims by the poll thread / live
+    /// notify callbacks don't influence ownership transfer (they
+    /// happen long after the displaced handle has been dropped). The
+    /// poll thread sleeps ~3s before its first iteration, so it
+    /// doesn't race with insert and intentionally does not write to
+    /// this flag.
+    ///
+    /// Field is `Arc`-wrapped (rather than a bare `AtomicBool`) so
+    /// the notify-callback closure can capture a clone independently
+    /// of the handle's eventual move into `AgentWatcherState`.
+    ///
+    /// PR #302 cycle 5 P1 introduced unconditional ownership
+    /// transfer; cycle 8 P2 narrowed it; cycle 8 retry-2 expanded
+    /// the signal from inline-init-only to "any pre-register claim"
+    /// after codex verify flagged the notify-callback race.
+    claimed_transcript: Arc<AtomicBool>,
 }
 
 impl Drop for WatcherHandle {
@@ -211,25 +263,42 @@ impl AgentWatcherState {
     /// `TranscriptState::stop` (Claude review on PR #152, F7).
     pub fn insert(&self, session_id: String, mut handle: WatcherHandle, agent_type: AgentType) {
         handle.agent_type = agent_type;
+        // Capture the new handle's "did any pre-register
+        // maybe_start_transcript call reach start_or_replace?" signal
+        // BEFORE moving the handle into the map. Reads the shared
+        // `Arc<AtomicBool>` updated by inline-init AND by the notify
+        // callback (which the watcher.watch() call inside
+        // `start_watching` may have triggered before this point).
+        // Cycle 5 P1 introduced the transfer; cycle 8 P2 narrowed it;
+        // cycle 8 retry-2 widened the signal from inline-init-only to
+        // "any pre-register claim".
+        let new_claimed = handle
+            .claimed_transcript
+            .load(std::sync::atomic::Ordering::Acquire);
         let mut displaced = {
             let mut watchers = self.watchers.lock().expect("failed to lock watchers");
             watchers.insert(session_id, handle)
         };
-        // If we displaced a prior handle for the same session, transfer
-        // ownership of the per-session transcript-state entry to the
-        // NEW handle: clear the OLD handle's `owns_transcript` flag so
-        // its Drop won't call `transcript_state.stop` and tear down the
-        // tail the new handle just adopted via `start_or_replace`. See
-        // `WatcherHandle.owns_transcript` for the full rationale (PR
-        // #302 codex review cycle 5 P1).
+        // Ownership transfer: clear the displaced handle's
+        // `owns_transcript` flag ONLY when the new handle reached
+        // `TranscriptState::start_or_replace` at least once before
+        // insert. When the new handle never engaged (status file
+        // unreadable / empty / parse-failed / validation-failed /
+        // NoPath AND no notify callback fired in time), the displaced
+        // handle retains ownership so its Drop properly tears down the
+        // orphaned old tail.
         if let Some(d) = displaced.as_mut() {
-            d.owns_transcript = false;
+            if new_claimed {
+                d.owns_transcript = false;
+            }
+            // else: keep d.owns_transcript = true (its Drop will stop
+            // the transcript tail since the new handle never claimed
+            // ownership of any entry).
         }
         // `displaced: Option<WatcherHandle>` drops here, after the
         // guard above is gone. If non-None, its `Drop` joins the poll
         // thread (and the codex session-index thread, if any) without
-        // holding the mutex AND without stopping the transcript tail
-        // the new handle now owns.
+        // holding the mutex.
     }
 
     /// Remove and stop a watcher for a session.
@@ -458,6 +527,15 @@ pub(crate) fn start_watching(
     let transcript_paths = bindings.transcript_paths;
     let streamer = bindings.streamer;
 
+    // Shared "this handle has reached start_or_replace" signal.
+    // Updated by both inline-init AND the notify callback below (which
+    // can fire before `register` runs in the caller, since
+    // `watcher.watch(...)` activates the notify backend before this
+    // function returns). Stored on the `WatcherHandle` so
+    // `AgentWatcherState::insert` reads it via `Acquire` load to gate
+    // ownership transfer. PR #302 cycle 8 retry-2.
+    let claimed_transcript = Arc::new(AtomicBool::new(false));
+
     let notify_timing_for_cb = notify_timing.clone();
     let path_history_for_cb = path_history.clone();
     let decoder_for_cb = decoder.clone();
@@ -468,6 +546,7 @@ pub(crate) fn start_watching(
     let events_for_cb = events.clone();
     let pty_state_for_cb = pty_state.clone();
     let transcript_state_for_cb = transcript_state.clone();
+    let claimed_transcript_for_cb = claimed_transcript.clone();
     // Step 0c: each watcher callback (notify / inline-init / poll)
     // needs the full `LocatedStatusSource` so it can ask the adapter's
     // `TranscriptPathSource::static_hint` for Codex's attach-time
@@ -558,6 +637,26 @@ pub(crate) fn start_watching(
                             &sid,
                             &path,
                         );
+                        // If we reached start_or_replace, mark this
+                        // handle as having claimed the per-session
+                        // transcript entry. The notify callback can
+                        // fire BEFORE the caller's `register` call,
+                        // so this write needs to be visible to
+                        // `AgentWatcherState::insert`'s Acquire load
+                        // (PR #302 cycle 8 retry-2 — codex verify
+                        // flagged that inline-init-only tracking
+                        // missed the pre-register notify-callback
+                        // race).
+                        if matches!(
+                            outcome,
+                            TxOutcome::Started
+                                | TxOutcome::Replaced
+                                | TxOutcome::AlreadyRunning
+                                | TxOutcome::StartFailed
+                        ) {
+                            claimed_transcript_for_cb
+                                .store(true, std::sync::atomic::Ordering::Release);
+                        }
                         (outcome, Some(path))
                     }
                     None => (TxOutcome::NoPath, None),
@@ -607,6 +706,14 @@ pub(crate) fn start_watching(
     // Read the file immediately in case it was already written before
     // the watcher started (common race: status.json written by statusline.sh
     // before the frontend calls start_agent_watcher).
+    //
+    // The `claimed_transcript` shared `Arc<AtomicBool>` is updated
+    // below (and by the notify callback above) when
+    // `maybe_start_transcript` actually reaches
+    // `TranscriptState::start_or_replace`. `AgentWatcherState::insert`
+    // reads the flag at restart time to gate ownership transfer from a
+    // displaced predecessor handle (PR #302 cycle 5 P1 + cycle 8 P2 +
+    // cycle 8 retry-2).
     {
         let initial_sid = session_id.clone();
         let initial_path = status_file_path.clone();
@@ -643,6 +750,30 @@ pub(crate) fn start_watching(
                                 &path,
                             );
                             inline_tx_path = Some(path);
+                            // Mark the shared claim flag if and only
+                            // if `maybe_start_transcript` actually
+                            // reached `TranscriptState::start_or_replace`.
+                            // Validation early-exits (`Missing`,
+                            // `OutsidePath`, `InvalidPath`, `NotFile`)
+                            // return BEFORE `start_or_replace`, so the
+                            // new handle has NOT engaged with
+                            // `transcript_state` for those outcomes.
+                            // `StartFailed` DOES count (start_or_replace
+                            // was called and the displaced entry was
+                            // already removed) so there's nothing for
+                            // the old handle's Drop to stop, but
+                            // classifying it as a claim is consistent
+                            // with "reached start_or_replace".
+                            if matches!(
+                                outcome,
+                                TxOutcome::Started
+                                    | TxOutcome::Replaced
+                                    | TxOutcome::AlreadyRunning
+                                    | TxOutcome::StartFailed
+                            ) {
+                                claimed_transcript
+                                    .store(true, std::sync::atomic::Ordering::Release);
+                            }
                         }
                     }
                     Err(e) => {
@@ -849,11 +980,19 @@ pub(crate) fn start_watching(
         session_index_stop,
         session_index_join,
         // Default `true` — this handle owns the transcript-state entry
-        // it just established via inline-init. `AgentWatcherState::insert`
-        // clears this to `false` if a NEW handle later displaces this
-        // one for the same session (transferring ownership to the new
-        // handle). See `WatcherHandle.owns_transcript` for rationale.
+        // it just established (or inherited) via inline-init or a
+        // pre-register notify callback. `AgentWatcherState::insert`
+        // clears this to `false` only if a NEW handle later displaces
+        // this one AND the new handle reached `start_or_replace` at
+        // least once before insert (see `claimed_transcript`).
         owns_transcript: true,
+        // Shared Arc with the notify callback closure above and the
+        // inline-init block above; both sites set it on a successful
+        // pre-register claim. `AgentWatcherState::insert` reads via
+        // Acquire load to decide ownership transfer (PR #302 cycle 8
+        // retry-2 — widened from inline-init-only after codex verify
+        // flagged the pre-register notify-callback race).
+        claimed_transcript,
     })
 }
 
@@ -878,7 +1017,32 @@ impl WatcherHandle {
             session_index_stop: None,
             session_index_join: None,
             owns_transcript: true,
+            // Default `false` (no pre-register claim) — matches the
+            // "did NOT run start_watching" test seam semantic. Tests
+            // that simulate "the displacing handle DID claim transcript
+            // ownership" should call `set_claimed_for_test(true)`
+            // before passing the handle to `AgentWatcherState::insert`.
+            claimed_transcript: Arc::new(AtomicBool::new(false)),
         }
+    }
+
+    /// Test-only setter for the pre-register claim signal. Stores into
+    /// the shared `Arc<AtomicBool>` so tests can simulate either
+    /// restart shape:
+    ///
+    /// - leave default `false` to model "new handle never reached
+    ///   start_or_replace before insert" (cycle 8 Case B — displaced
+    ///   handle KEEPS ownership)
+    /// - set `true` to model "new handle reached start_or_replace via
+    ///   inline-init or a pre-register notify callback" (cycle 5 Case
+    ///   A — displaced handle transfers ownership)
+    ///
+    /// Without this seam, tests can't exercise the ownership-transfer
+    /// decision independently of running the full inline-init / notify
+    /// code path.
+    pub(crate) fn set_claimed_for_test(&mut self, v: bool) {
+        self.claimed_transcript
+            .store(v, std::sync::atomic::Ordering::Release);
     }
 }
 
@@ -927,17 +1091,17 @@ mod tests {
     }
 
     /// PR #302 codex review cycle 5 P1 — when a NEW handle for the same
-    /// session displaces an OLD handle via `insert`, the new handle has
-    /// already adopted/replaced/started the per-session transcript-state
-    /// entry. The displaced OLD handle's Drop must NOT stop that entry —
-    /// otherwise the session ends up with a status watcher but no
-    /// transcript tail. This test pins the handoff: insert A (registers
-    /// tail), insert B for same session, then assert the tail is still
-    /// tracked AFTER A's drop. Without the `owns_transcript` flag, the
-    /// displaced A's Drop would call `transcript_state.stop`, leaving
-    /// the assert failing.
+    /// session displaces an OLD handle via `insert`, AND the new
+    /// handle has reached `start_or_replace` at least once before the
+    /// insert (via inline-init or a pre-register notify callback),
+    /// the displaced OLD handle's Drop must NOT stop the per-session
+    /// transcript entry — otherwise the session ends up with a status
+    /// watcher but no transcript tail. This test simulates the cycle-5
+    /// happy path: handle B's pre-register claim flag is set explicitly
+    /// via `set_claimed_for_test(true)`, so insert should transfer
+    /// ownership and A's Drop must NOT stop the entry.
     #[test]
-    fn insert_transfers_transcript_ownership_to_displacing_handle() {
+    fn insert_transfers_transcript_ownership_when_new_handle_claimed() {
         let tmp = tempfile::tempdir().expect("tempdir");
         let transcript_path = tmp.path().join("t.jsonl");
         std::fs::write(&transcript_path, "").expect("write");
@@ -967,31 +1131,110 @@ mod tests {
         state.insert(sid.clone(), handle_a, AgentType::ClaudeCode);
         assert!(transcript_state.contains(&sid));
 
-        // NEW handle B — same session. (In production, B would inherit
-        // the per-session entry via start_or_replace returning
-        // AlreadyRunning during start_watching's inline-init; the test
-        // stub skips start_watching and just simulates the displacement.)
-        let handle_b = WatcherHandle::new_for_test(transcript_state.clone(), sid.clone());
+        // NEW handle B — same session, and it CLAIMED transcript
+        // ownership before insert (simulated via the test setter). In
+        // production this would be set by `start_watching` when either
+        // (a) the inline-init's `maybe_start_transcript` call reaches
+        // `start_or_replace`, or (b) the notify callback (registered
+        // before `start_watching` returns) fires in time and reaches
+        // `start_or_replace` before the caller's `register` call.
+        let mut handle_b = WatcherHandle::new_for_test(transcript_state.clone(), sid.clone());
+        handle_b.set_claimed_for_test(true);
         state.insert(sid.clone(), handle_b, AgentType::ClaudeCode);
 
         // Critical assertion: A has been displaced and dropped, but the
         // transcript entry must STILL be tracked because B inherited
         // ownership (the `owns_transcript = false` clearing in
-        // `insert`). Pre-fix: A's Drop would have called
-        // transcript_state.stop and this assertion would fail.
+        // `insert`, gated on B's claim flag).
         assert!(
             transcript_state.contains(&sid),
             "transcript tail must survive A's displacement — B owns it now",
         );
 
         // Clean removal of B drops with owns_transcript = true, so the
-        // tail is finally stopped. This pins the "owns_transcript stays
-        // true on the surviving handle" half of the invariant.
+        // tail is finally stopped.
         state.remove(&sid);
         assert!(
             !transcript_state.contains(&sid),
             "transcript tail must stop when the final handle is removed",
         );
+    }
+
+    /// PR #302 codex review cycle 8 P2 — counter-example to cycle-5
+    /// ownership transfer: when the NEW handle's inline-init did NOT
+    /// engage with `transcript_state` (status file unreadable / empty
+    /// / parse-failed / NoPath), ownership MUST stay with the OLD
+    /// handle so its Drop properly tears down the orphaned tail.
+    /// Otherwise the previous session's transcript tail keeps streaming
+    /// under the new watcher indefinitely (until a later status update
+    /// happens to replace it, or the new handle is removed).
+    /// This test simulates the cycle-8 Case B path: handle B's
+    /// inline-init flag stays at its default `false`, so insert MUST
+    /// NOT clear A's owns_transcript flag, and A's Drop MUST stop the
+    /// transcript entry.
+    #[test]
+    fn insert_keeps_displaced_ownership_when_new_handle_did_not_claim() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let transcript_path = tmp.path().join("t.jsonl");
+        std::fs::write(&transcript_path, "").expect("write");
+
+        let transcript_state = TranscriptState::new();
+        let sid = "case-b-sid".to_string();
+        let adapter: Arc<dyn TranscriptStreamer> =
+            Arc::new(crate::agent::adapter::claude_code::ClaudeCodeAdapter);
+        let sink = Arc::new(FakeEventSink::new());
+
+        // Seed transcript_state (as if OLD handle's inline-init had
+        // established the entry).
+        let status = transcript_state
+            .start_or_replace(
+                adapter,
+                sink,
+                sid.clone(),
+                transcript_path.clone(),
+                None,
+            )
+            .expect("seed transcript");
+        assert_eq!(status, TranscriptStartStatus::Started);
+
+        // OLD handle A — owns the seeded entry.
+        let handle_a = WatcherHandle::new_for_test(transcript_state.clone(), sid.clone());
+        let state = AgentWatcherState::new();
+        state.insert(sid.clone(), handle_a, AgentType::ClaudeCode);
+        assert!(transcript_state.contains(&sid));
+
+        // NEW handle B — same session, but NO pre-register claim
+        // (the shared Arc<AtomicBool> stays at its default `false`).
+        // This simulates Case B: B's start_watching read the status
+        // file but it was unreadable / empty / parse-failed / had no
+        // transcript path / validation-failed, so neither inline-init
+        // nor any pre-register notify callback reached
+        // `start_or_replace`.
+        let handle_b = WatcherHandle::new_for_test(transcript_state.clone(), sid.clone());
+        assert!(
+            !handle_b
+                .claimed_transcript
+                .load(std::sync::atomic::Ordering::Acquire),
+            "test premise: B did not claim transcript ownership before insert",
+        );
+        state.insert(sid.clone(), handle_b, AgentType::ClaudeCode);
+
+        // Critical assertion: A has been displaced; since B did NOT
+        // claim, A retained `owns_transcript = true`; A's Drop called
+        // `transcript_state.stop(&sid)`; the orphaned old tail is now
+        // gone. Without the cycle-8 gate, A's Drop would have skipped
+        // the stop call and this assertion would fail.
+        assert!(
+            !transcript_state.contains(&sid),
+            "displaced handle MUST stop the orphaned tail when the \
+             new handle didn't claim transcript ownership",
+        );
+
+        // Subsequent removal of B is a no-op for transcript_state
+        // (already empty) — pins that B's Drop doesn't panic / error
+        // when there's nothing to stop.
+        state.remove(&sid);
+        assert!(!transcript_state.contains(&sid));
     }
 
     #[test]
