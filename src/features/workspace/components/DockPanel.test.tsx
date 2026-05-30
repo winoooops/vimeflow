@@ -33,7 +33,9 @@ type DockPanelTestProps = Parameters<typeof DockPanel>[0]
 
 const renderDockPanel = (
   overrides: Partial<DockPanelTestProps> = {}
-): ReturnType<typeof render> => {
+): ReturnType<typeof render> & {
+  rerenderWith: (next: Partial<DockPanelTestProps>) => void
+} => {
   const props: DockPanelTestProps = {
     position: 'bottom',
     tab: 'editor',
@@ -57,7 +59,18 @@ const renderDockPanel = (
     ...overrides,
   } as DockPanelTestProps
 
-  return render(<DockPanel {...props} />)
+  const view = render(<DockPanel {...props} />)
+
+  return {
+    ...view,
+    // Re-render the same instance with a changed prop (e.g. selectedFilePath),
+    // so a test can exercise the render-time view-mode reset without rebuilding
+    // the full prop object.
+    rerenderWith: (next: Partial<DockPanelTestProps>): void => {
+      const nextProps = { ...props, ...next } as DockPanelTestProps
+      view.rerender(<DockPanel {...nextProps} />)
+    },
+  }
 }
 
 describe('DockPanel', () => {
@@ -177,6 +190,28 @@ describe('DockPanel', () => {
 
       await user.click(screen.getByRole('button', { name: /source/i }))
       await user.click(screen.getByRole('button', { name: /^reading$/i }))
+
+      expect(screen.getByTestId('markdown-reading-view')).toBeInTheDocument()
+      expect(
+        screen.queryByTestId('codemirror-container')
+      ).not.toBeInTheDocument()
+    })
+
+    test('switching to a different markdown file resets Source back to Reading', async () => {
+      const user = userEvent.setup()
+
+      const view = renderDockPanel({
+        selectedFilePath: '/x/a.md',
+        content: '# A',
+      })
+
+      // Drop file A into Source mode.
+      await user.click(screen.getByRole('button', { name: /^source$/i }))
+      expect(screen.getByTestId('codemirror-container')).toBeInTheDocument()
+
+      // Opening a different markdown file resets the view mode to Reading, so
+      // the reader never lands in the editor for a file they just opened.
+      view.rerenderWith({ selectedFilePath: '/x/b.md', content: '# B' })
 
       expect(screen.getByTestId('markdown-reading-view')).toBeInTheDocument()
       expect(

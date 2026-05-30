@@ -7,20 +7,24 @@ import type { BrowserWindow } from 'electron'
 export const isSafeExternalUrl = (url: string): boolean =>
   /^https?:\/\//i.test(url) || url.startsWith('mailto:')
 
-// Strip the RFC 6068 query params that weaponize a `mailto:` link from an
-// untrusted doc before it reaches `shell.openExternal`: `body=` (pre-filled
-// phishing content) and `attach=` (a historical local-file-attachment exploit
-// in some mail clients). Recipient + subject are kept; non-mailto URLs pass
-// through untouched.
+// Sanitize a `mailto:` link from an untrusted doc before it reaches
+// `shell.openExternal`. We allowlist rather than blocklist: keep only the
+// recipient (path) and `subject`, dropping every other RFC 6068 field. That
+// closes `body=` (pre-filled phishing content), `attach=` (a historical
+// local-file-attachment exploit), and `cc=` / `bcc=` (silent extra recipients
+// the user might send to without noticing) in one rule, leaving no param to
+// enumerate. Non-mailto URLs pass through untouched.
 const sanitizeOutboundUrl = (url: string): string => {
   if (!url.toLowerCase().startsWith('mailto:')) {
     return url
   }
   try {
     const parsed = new URL(url)
-    parsed.searchParams.delete('body')
-    parsed.searchParams.delete('attach')
-    parsed.searchParams.delete('attachment')
+    const subject = parsed.searchParams.get('subject')
+    parsed.search = ''
+    if (subject !== null) {
+      parsed.searchParams.set('subject', subject)
+    }
 
     return parsed.toString()
   } catch {
