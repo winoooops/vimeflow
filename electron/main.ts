@@ -11,6 +11,16 @@ import { BACKEND_EVENT, BACKEND_INVOKE } from './ipc-channels'
 import { spawnSidecar, type Sidecar } from './sidecar'
 import { setupBrowserPaneIpc, type BrowserPaneController } from './browser-pane'
 
+// Keep the GPU serving this window while it is occluded (covered by another
+// window) or unfocused. Chromium otherwise backgrounds the occluded window and
+// reclaims its GPU resources, which corrupts xterm's cached glyph textures so
+// they render as garbage on return. (Confirmed: disabling hardware
+// acceleration entirely made the corruption vanish — it is the GPU layer.)
+// These switches keep hardware acceleration and the WebGL renderer while
+// stopping the occlusion-driven reclaim.
+app.commandLine.appendSwitch('disable-backgrounding-occluded-windows')
+app.commandLine.appendSwitch('disable-renderer-backgrounding')
+
 // __dirname is not defined in ESM modules. Derive it from import.meta.url.
 // vite-plugin-electron bundles main.ts as ESM (main.js) under
 // package.json:type=module, so we need the ESM-compatible idiom.

@@ -300,6 +300,12 @@ describe('DiffPanelContent', () => {
     expect(layout).toHaveClass('min-h-0')
     expect(layout).toHaveClass('min-w-0')
 
+    // The Pierre diff scroll body carries the project thin-scrollbar treatment
+    // (Pierre spreads our style/className onto its scroll container and ships
+    // no scrollbar CSS of its own, so without this the diff pane shows the
+    // default chunky OS scrollbar instead of the Obsidian-Lens thin one).
+    expect(screen.getByTestId('diff-scroll-body')).toHaveClass('thin-scrollbar')
+
     // Initial pane width is the unmeasured sentinel, so MultiFileDiff mounts
     // immediately before a ResizeObserver trigger without forcing narrow mode.
     expect(screen.getByTestId('multi-file-diff')).toBeInTheDocument()

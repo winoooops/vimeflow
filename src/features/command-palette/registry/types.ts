@@ -27,3 +27,7 @@ export interface UseCommandPaletteReturn {
   navigateUp: () => void
   navigateDown: () => void
 }
+
+export interface UseCommandPaletteOptions {
+  enabled?: boolean
+}

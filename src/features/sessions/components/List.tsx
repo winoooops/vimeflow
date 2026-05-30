@@ -1,6 +1,6 @@
 import { useRef, type ReactElement } from 'react'
 import { motion } from 'framer-motion'
-import type { Session } from '../types'
+import type { Session, SessionCloseResult } from '../types'
 import { Card } from './Card'
 import { Group } from './Group'
 import {
@@ -14,7 +14,7 @@ export interface ListProps {
   activeSessionId: string | null
   onSessionClick: (sessionId: string) => void
   onCreateSession?: () => void
-  onRemoveSession?: (sessionId: string) => void
+  onRemoveSession?: (sessionId: string) => SessionCloseResult
   onRenameSession?: (sessionId: string, name: string) => void
   onReorderSessions?: (sessions: Session[]) => void
 }
@@ -62,6 +62,8 @@ export const List = ({
   // stays a true no-op. Otherwise the trailing onSessionClick(nextId)
   // would silently switch the active session without removing the
   // intended one — a latent bug for callers that omit the prop.
+  // Returning false is the only cancellation sentinel; void means
+  // close/navigation may proceed.
   //
   // Focus restoration: removing the focused remove button drops DOM
   // focus to <body>; queueMicrotask defers until React commits the
@@ -74,7 +76,11 @@ export const List = ({
           id === activeSessionId
             ? pickNextVisibleSessionId(sessions, id, activeSessionId)
             : undefined
-        onRemoveSession(id)
+        const didRemove = onRemoveSession(id)
+        if (didRemove === false) {
+          return
+        }
+
         if (nextId !== undefined) {
           onSessionClick(nextId)
           queueMicrotask(() => {

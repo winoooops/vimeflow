@@ -2,7 +2,7 @@
 id: pty-session-management
 category: backend
 created: 2026-04-09
-last_updated: 2026-05-20
+last_updated: 2026-05-28
 ref_count: 2
 ---
 
@@ -79,3 +79,12 @@ below preserve their original Tauri-era file paths for auditability.
 - **Finding:** Step 5c-2's `addPane` has two orphan-cleanup branches: (a) `!fresh` (session vanished during spawn), (b) `!appended` (reducer rejected at commit). Branch (b) correctly tombstones first (`dropAllForPty(result.sessionId)` then `await service.kill(...)`); branch (a) used the inverse order (kill then drop), so during the kill IPC round-trip any `pty-data` event the orphan emitted would be accepted into `usePtyBufferDrain`'s `bufferedRef` / `pendingPanesRef` and only discarded once `dropAllForPty` ran. The F6 invariant in `usePtyBufferDrain.ts` is explicit: "tombstone FIRST so any racing pty-data event arriving between here and Rust's actual kill is dropped on the floor instead of re-populating bufferedRef." Copy-paste drift between the two branches.
 - **Fix:** Swap the order in branch (a) so `dropAllForPty(result.sessionId)` runs BEFORE the `await service.kill(...)`. One-line move. Identical shape to branch (b); both branches now match the F6 contract. Code-review heuristic: any two cleanup branches in the same function that handle the same resource MUST share the same tombstone+kill ordering — any divergence is a copy-paste bug, not a deliberate design choice.
 - **Commit:** _(see git log for the cycle-2 fix commit on PR #204)_
+
+### 8. Injecting `LC_CTYPE` is ignored when a non-empty `LC_ALL` is inherited (POSIX precedence)
+
+- **Source:** github-codex-connector (P2) | PR #288 cycle 1 | 2026-05-28
+- **Severity:** MEDIUM
+- **File:** `crates/backend/src/terminal/commands.rs`
+- **Finding:** The UTF-8 locale fix injected `LC_CTYPE` into the spawned shell whenever no UTF-8 locale was inherited, but only set `LC_CTYPE` — it never touched `LC_ALL`. POSIX locale precedence is `LC_ALL` > `LC_CTYPE` > `LANG`: a non-empty `LC_ALL` overrides every category, so when the inherited env had `LC_ALL=C` (or `POSIX`), the spawned shell still ran in the non-UTF-8 locale and the original glyph-width / cursor-desync bug remained. The override decision (`utf8_ctype_override`) correctly treated a non-UTF-8 `LC_ALL` as needing an override, but the application step then set a category that `LC_ALL` shadows.
+- **Fix:** Introduced `locale_env_plan()` returning a struct with `ctype: Option<&'static str>` and `clear_lc_all: bool`. The `clear_lc_all` flag is set when an override fires AND the inherited `LC_ALL` is non-empty; the spawn path then calls `cmd.env_remove("LC_ALL")` — `portable-pty`'s `CommandBuilder` seeds the full parent env, so `env_remove` drops the inherited value — before `cmd.env("LC_CTYPE", ctype)`. Dropping `LC_ALL` rather than overwriting it lets the individual `LC_FOO` categories and `LANG` keep driving message/collation language. An empty `LC_ALL` is treated as unset (POSIX) and left alone. Code-review heuristic: when forcing a single locale category via an env var, account for the full POSIX precedence chain — a higher-precedence var (`LC_ALL`) set to a conflicting value silently nullifies the lower one. Pure-function the decision (`locale_env_plan`) so both the ctype choice and the clear-higher-var choice are unit-testable without spawning a process.
+- **Commit:** same commit as this entry

@@ -8,6 +8,13 @@ import {
   isCommandPaletteShortcutInput,
 } from './command-palette-shortcut'
 
+vi.mock('electron', () => ({
+  globalShortcut: {
+    register: vi.fn(() => true),
+    unregister: vi.fn(),
+  },
+}))
+
 type ShortcutInput = Parameters<typeof isCommandPaletteShortcutInput>[0]
 
 type BeforeInputHandler = (

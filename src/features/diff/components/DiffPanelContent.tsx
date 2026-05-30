@@ -827,7 +827,7 @@ export const DiffPanelContent = ({
         </div>
         <div
           data-testid="diff-scroll-body"
-          className="min-h-0 flex-1 overflow-auto"
+          className="thin-scrollbar min-h-0 flex-1 overflow-auto"
         >
           {diffError ? (
             <ErrorCard message={diffError.message} />
