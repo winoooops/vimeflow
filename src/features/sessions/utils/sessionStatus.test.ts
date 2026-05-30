@@ -60,7 +60,10 @@ describe('deriveSessionStatus', () => {
     ).toBe('completed')
   })
 
-  test('browser-only liveness surfaces missing shell as errored', () => {
-    expect(deriveShellSessionStatus([browserPane('running')])).toBe('errored')
+  test('browser-only liveness derives from browser panes (running, not errored)', () => {
+    // All shells closed but a browser pane is live: the session is 'running',
+    // not the empty-slice 'errored' guard (which would show a stale Restart
+    // affordance for a session whose browser pane is still running).
+    expect(deriveShellSessionStatus([browserPane('running')])).toBe('running')
   })
 })

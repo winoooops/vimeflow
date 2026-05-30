@@ -26,5 +26,12 @@ export const deriveSessionStatus = (panes: Pane[]): SessionStatus => {
   return 'paused'
 }
 
-export const deriveShellSessionStatus = (panes: Pane[]): SessionStatus =>
-  deriveSessionStatus(panes.filter(isShellPane))
+export const deriveShellSessionStatus = (panes: Pane[]): SessionStatus => {
+  const shellPanes = panes.filter(isShellPane)
+
+  // A browser-only session (all shells closed) has no shell status to derive;
+  // fall back to the full pane set so a running browser pane reads as 'running'
+  // rather than the empty-slice 'errored' guard (which shows a misleading
+  // Restart affordance for a live browser session).
+  return deriveSessionStatus(shellPanes.length > 0 ? shellPanes : panes)
+}

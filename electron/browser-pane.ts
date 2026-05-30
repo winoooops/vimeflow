@@ -1045,8 +1045,9 @@ export class BrowserPaneController {
     }
     record.activeTabId = tabId
     this.applyRecordBounds(record)
-    this.emitTabsChanged(record)
 
+    // emitPaneUrlChanged (below) emits tabs-changed first, so do not emit it
+    // here too — a direct call double-fires TABS_CHANGED per activation.
     const active = this.activeTab(record)
     if (focus) {
       active?.view.webContents.focus()
