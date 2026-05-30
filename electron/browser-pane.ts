@@ -531,6 +531,7 @@ const sendWebSocketClose = (socket: Socket, code?: number): void => {
 interface DecodedFrame {
   fin: boolean
   opcode: number
+  masked: boolean
   payload: Buffer
   byteLength: number
 }
@@ -581,7 +582,7 @@ const decodeFrame = (buffer: Buffer): DecodedFrame | null => {
     payload = Buffer.from(payload.map((byte, index) => byte ^ mask[index % 4]))
   }
 
-  return { fin, opcode, payload, byteLength: frameLength }
+  return { fin, opcode, masked, payload, byteLength: frameLength }
 }
 
 export class BrowserPaneController {
@@ -1744,6 +1745,15 @@ export class BrowserPaneController {
   ): void {
     if (frame.opcode === 0x8) {
       sendWebSocketClose(socket)
+
+      return
+    }
+
+    // RFC 6455 §5.1: every client-to-server frame MUST be masked. Reject an
+    // unmasked frame with 1002 (Protocol Error) so a buggy or non-compliant CDP
+    // client fails loudly instead of silently working against transport defects.
+    if (!frame.masked) {
+      sendWebSocketClose(socket, 1002)
 
       return
     }

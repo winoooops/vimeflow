@@ -77,6 +77,7 @@ export const BrowserPane = ({
   showFocusHighlight = true,
 }: BrowserPaneProps): ReactElement => {
   const contentRef = useRef<HTMLDivElement>(null)
+  const goButtonRef = useRef<HTMLButtonElement>(null)
   const url = pane.browserUrl ?? DEFAULT_BROWSER_URL
   const initialUrlRef = useRef(url)
   const isActiveRef = useRef(isActive)
@@ -353,13 +354,12 @@ export const BrowserPane = ({
 
         setTabs(event.tabs)
 
+        // event.tabs is non-empty here (the length === 0 early-return above),
+        // so the first tab is always a valid fallback.
         const nextActiveTab =
-          event.tabs.find((tab) => tab.active) ??
-          (event.tabs.length > 0 ? event.tabs[0] : undefined)
-        if (nextActiveTab) {
-          setCommittedUrl(nextActiveTab.url)
-          onUrlChangeRef.current?.(session.id, pane.id, nextActiveTab.url)
-        }
+          event.tabs.find((tab) => tab.active) ?? event.tabs[0]
+        setCommittedUrl(nextActiveTab.url)
+        onUrlChangeRef.current?.(session.id, pane.id, nextActiveTab.url)
       }),
     [browserSessionId, pane.id, session.id]
   )
@@ -509,22 +509,23 @@ export const BrowserPane = ({
             onBlur={(event): void => {
               isAddressEditingRef.current = false
 
-              // Tab-to-Go: focus moving to the submit button means a navigation
-              // is imminent, so keep the typed draft for the pending submit.
-              // Any other blur is a cancel — revert the draft to the live
-              // committed URL so the bar and an idle Go aren't left showing an
-              // abandoned value (a url event may have changed committedUrl
-              // while editing, when the idle effect was paused).
-              const toSubmit =
-                event.relatedTarget instanceof HTMLElement &&
-                event.relatedTarget.getAttribute('type') === 'submit'
-              if (!toSubmit) {
+              // Tab-to-Go: focus moving to THIS pane's Go button means a
+              // navigation is imminent, so keep the typed draft for the pending
+              // submit. Match the button instance (not a generic type=submit
+              // attribute) so focus moving to any other submit button in the
+              // tree doesn't accidentally preserve a stale draft. Any other blur
+              // is a cancel — revert the draft to the live committed URL so the
+              // bar and an idle Go aren't left showing an abandoned value (a url
+              // event may have changed committedUrl while editing, when the idle
+              // effect was paused).
+              if (event.relatedTarget !== goButtonRef.current) {
                 setDraft(committedUrl)
               }
             }}
             className="min-w-0 flex-1 rounded-md bg-surface-container px-3 py-1.5 font-mono text-[12px] text-on-surface outline-none ring-1 ring-outline-variant/20 transition focus:ring-primary/45"
           />
           <button
+            ref={goButtonRef}
             type="submit"
             onMouseDown={(event): void => {
               // Keep the input focused through a mouse click so the draft
