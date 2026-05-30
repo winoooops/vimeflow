@@ -241,7 +241,10 @@ const storedBrowserPanesForSessions = (
         paneId: pane.id,
         ptyId: pane.ptyId,
         cwd: pane.cwd,
-        browserUrl: pane.browserUrl ?? 'https://www.youtube.com/',
+        browserUrl:
+          pane.browserUrl && pane.browserUrl.length > 0
+            ? pane.browserUrl
+            : 'https://www.youtube.com/',
         active: pane.active,
       }))
   })
@@ -327,7 +330,10 @@ const restoreStoredBrowserPanes = (sessions: Session[]): Session[] => {
           agentType: 'generic',
           status: 'running',
           active,
-          browserUrl: pane.browserUrl,
+          browserUrl:
+            pane.browserUrl && pane.browserUrl.length > 0
+              ? pane.browserUrl
+              : 'https://www.youtube.com/',
         } satisfies Pane
       })
 

@@ -137,6 +137,7 @@ interface BrowserPaneRecord {
 interface BrowserPaneTabRecord {
   id: string
   view: WebContentsView
+  requestedUrl: string
 }
 
 interface BrowserPaneTabSnapshot {
@@ -641,10 +642,12 @@ export class BrowserPaneController {
     if (existing) {
       existing.shortcutContext = shortcutContextFromRequest(payload)
 
+      const activeTab = this.activeTab(existing)
+
       return {
-        url:
-          this.activeWebContents(existing)?.getURL() ??
-          normalizeUrl(payload.initialUrl),
+        url: activeTab
+          ? this.tabUrl(activeTab)
+          : normalizeUrl(payload.initialUrl),
         title: this.activeWebContents(existing)?.getTitle() ?? null,
         partition: existing.partition,
         tabs: this.tabSnapshots(existing),
@@ -667,6 +670,8 @@ export class BrowserPaneController {
       },
     })
 
+    const initialUrl = normalizeUrl(payload.initialUrl)
+
     const handleWindowClosed = (): void => {
       void this.destroyPane(payload)
     }
@@ -680,7 +685,9 @@ export class BrowserPaneController {
       windowId: win.id,
       ownerWebContentsId: event.sender.id,
       view,
-      tabs: new Map([['tab-0', { id: 'tab-0', view }]]),
+      tabs: new Map([
+        ['tab-0', { id: 'tab-0', view, requestedUrl: initialUrl }],
+      ]),
       activeTabId: 'tab-0',
       nextTabIndex: 1,
       lastBounds: { x: 0, y: 0, width: 0, height: 0 },
@@ -732,11 +739,10 @@ export class BrowserPaneController {
     win.once('closed', record.windowClosedHandler)
 
     await this.ensureCdpServer()
-    const initialUrl = normalizeUrl(payload.initialUrl)
     void loadBrowserUrl(view.webContents, initialUrl)
 
     return {
-      url: view.webContents.getURL() || initialUrl,
+      url: this.tabUrl(record.tabs.get('tab-0')!),
       title: view.webContents.getTitle() || null,
       partition,
       tabs: this.tabSnapshots(record),
@@ -755,10 +761,16 @@ export class BrowserPaneController {
     return this.activeTab(record)?.view.webContents ?? null
   }
 
+  private tabUrl(tab: BrowserPaneTabRecord): string {
+    const u = tab.view.webContents.getURL()
+
+    return u.length > 0 ? u : tab.requestedUrl
+  }
+
   private tabSnapshots(record: BrowserPaneRecord): BrowserPaneTabSnapshot[] {
     return [...record.tabs.values()].map((tab) => ({
       id: tab.id,
-      url: tab.view.webContents.getURL(),
+      url: this.tabUrl(tab),
       title: tab.view.webContents.getTitle() || null,
       active: tab.id === record.activeTabId,
     }))
@@ -834,7 +846,11 @@ export class BrowserPaneController {
       },
     })
 
-    record.tabs.set(tabId, { id: tabId, view })
+    record.tabs.set(tabId, {
+      id: tabId,
+      view,
+      requestedUrl: normalizeTabUrl(options.url),
+    })
     win.contentView.addChildView(view)
     view.setBounds({ x: 0, y: 0, width: 0, height: 0 })
     view.webContents.setAudioMuted(false)
@@ -894,7 +910,7 @@ export class BrowserPaneController {
       sessionId: record.sessionId,
       paneId: record.paneId,
       tabId,
-      url: tab.view.webContents.getURL(),
+      url: this.tabUrl(tab),
       title: tab.view.webContents.getTitle() || null,
       tabs,
     })
@@ -1053,12 +1069,13 @@ export class BrowserPaneController {
       return
     }
 
-    const webContents = this.activeWebContents(record)
-    if (!webContents) {
+    const activeTab = this.activeTab(record)
+    if (!activeTab) {
       return
     }
 
-    await loadBrowserUrl(webContents, normalizeUrl(payload.url))
+    activeTab.requestedUrl = normalizeUrl(payload.url)
+    await loadBrowserUrl(activeTab.view.webContents, normalizeUrl(payload.url))
   }
 
   private newTab(payload: unknown): void {
@@ -1193,7 +1210,11 @@ export class BrowserPaneController {
 
     this.partitionHandlers.add(partition)
     ses.on('select-webauthn-account', (_event, details, callback) => {
-      callback(details.accounts[0]?.credentialId ?? null)
+      if (details.accounts.length === 1) {
+        callback(details.accounts[0].credentialId)
+      } else {
+        callback(null)
+      }
     })
 
     ses.setPermissionRequestHandler((_webContents, permission, callback) => {
@@ -1203,6 +1224,13 @@ export class BrowserPaneController {
           permission === 'top-level-storage-access'
       )
     })
+
+    ses.setPermissionCheckHandler(
+      (_webContents, permission) =>
+        permission === 'mediaKeySystem' ||
+        permission === 'storage-access' ||
+        permission === 'top-level-storage-access'
+    )
   }
 
   private removeRecord(record: BrowserPaneRecord): void {
@@ -1367,18 +1395,20 @@ export class BrowserPaneController {
     }
 
     if (url.pathname === '/json/list') {
-      writeJson(
-        response,
-        [authorizedRecord].map((record) => ({
+      const record = authorizedRecord
+      const activeTab = this.activeTab(record)
+
+      writeJson(response, [
+        {
           id: record.id,
           type: 'page',
           title:
             this.activeWebContents(record)?.getTitle() ??
             'Vimeflow Browser Pane',
-          url: this.activeWebContents(record)?.getURL() ?? '',
+          url: activeTab ? this.tabUrl(activeTab) : '',
           webSocketDebuggerUrl: this.pageWebSocketUrl(record),
-        }))
-      )
+        },
+      ])
 
       return
     }

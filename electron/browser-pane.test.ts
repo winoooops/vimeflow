@@ -160,6 +160,7 @@ const electronMock = vi.hoisted(() => {
   const fakeSession = {
     on: vi.fn(),
     setPermissionRequestHandler: vi.fn(),
+    setPermissionCheckHandler: vi.fn(),
   }
 
   let sender = createWebContents()
@@ -259,6 +260,7 @@ const electronMock = vi.hoisted(() => {
       session.fromPartition.mockClear()
       fakeSession.on.mockClear()
       fakeSession.setPermissionRequestHandler.mockClear()
+      fakeSession.setPermissionCheckHandler.mockClear()
     },
   }
 })
@@ -607,7 +609,7 @@ describe('BrowserPaneController', () => {
     expect(electronMock.views[1]?.webContents.close).toHaveBeenCalledOnce()
   })
 
-  test('selects the first WebAuthn account instead of cancelling passkey prompts', async () => {
+  test('permission handlers allow mediaKeySystem, storage-access, and top-level-storage-access only', async () => {
     await handler(BROWSER_PANE_CREATE)(eventForSender(), {
       sessionId: 'pty-1',
       paneId: 'p1',
@@ -615,11 +617,61 @@ describe('BrowserPaneController', () => {
       initialUrl: 'https://example.com/',
     })
 
-    const webAuthnHandler = vi
-      .mocked(electronMock.fakeSession.on)
-      .mock.calls.find(
-        ([eventName]) => eventName === 'select-webauthn-account'
-      )?.[1] as
+    const requestHandler = electronMock.fakeSession.setPermissionRequestHandler
+      .mock.calls[0][0] as
+      | ((
+          wc: unknown,
+          permission: string,
+          callback: (allow: boolean) => void
+        ) => void)
+      | undefined
+
+    const checkHandler = electronMock.fakeSession.setPermissionCheckHandler.mock
+      .calls[0][0] as ((wc: unknown, permission: string) => boolean) | undefined
+
+    const allowedPermissions = [
+      'mediaKeySystem',
+      'storage-access',
+      'top-level-storage-access',
+    ]
+    const deniedPermissions = ['media', 'geolocation', 'notifications']
+
+    if (requestHandler === undefined) {
+      throw new Error('missing permission request handler')
+    }
+
+    if (checkHandler === undefined) {
+      throw new Error('missing permission check handler')
+    }
+
+    for (const permission of allowedPermissions) {
+      const requestCallback = vi.fn()
+      requestHandler({}, permission, requestCallback)
+      expect(requestCallback).toHaveBeenCalledWith(true)
+
+      expect(checkHandler({}, permission)).toBe(true)
+    }
+
+    for (const permission of deniedPermissions) {
+      const requestCallback = vi.fn()
+      requestHandler({}, permission, requestCallback)
+      expect(requestCallback).toHaveBeenCalledWith(false)
+
+      expect(checkHandler({}, permission)).toBe(false)
+    }
+  })
+
+  test('selects the single WebAuthn account or falls back to null for multiple', async () => {
+    await handler(BROWSER_PANE_CREATE)(eventForSender(), {
+      sessionId: 'pty-1',
+      paneId: 'p1',
+      workspaceId: 'proj-1',
+      initialUrl: 'https://example.com/',
+    })
+
+    const webAuthnHandler = electronMock.fakeSession.on.mock.calls.find(
+      (c) => c[0] === 'select-webauthn-account'
+    )?.[1] as
       | ((
           event: unknown,
           details: { accounts: { credentialId: string }[] },
@@ -631,14 +683,19 @@ describe('BrowserPaneController', () => {
       throw new Error('missing WebAuthn account handler')
     }
 
-    const callback = vi.fn()
+    const callbackOne = vi.fn()
+    webAuthnHandler({}, { accounts: [{ credentialId: 'cred-1' }] }, callbackOne)
+    expect(callbackOne).toHaveBeenCalledWith('cred-1')
+
+    const callbackTwo = vi.fn()
     webAuthnHandler(
       {},
-      { accounts: [{ credentialId: 'credential-1' }] },
-      callback
+      {
+        accounts: [{ credentialId: 'cred-1' }, { credentialId: 'cred-2' }],
+      },
+      callbackTwo
     )
-
-    expect(callback).toHaveBeenCalledWith('credential-1')
+    expect(callbackTwo).toHaveBeenCalledWith(null)
   })
 
   test('does not suppress digit shortcuts unless they target another pane', async () => {
