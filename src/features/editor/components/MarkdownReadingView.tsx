@@ -9,15 +9,23 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeHighlight from 'rehype-highlight'
 import rehypeSanitize from 'rehype-sanitize'
+import type { PluggableList } from 'unified'
 import { useReadingStyle } from '../hooks/useReadingStyle'
 import { markdownComponents } from './markdownComponents'
 import './MarkdownReadingView.css'
 
 // Module-level stable references so re-renders never hand react-markdown new
 // plugin arrays. ORDER IS LOAD-BEARING: rehype-sanitize FIRST, rehype-highlight
-// SECOND — see the component doc below.
-const REMARK_PLUGINS = [remarkGfm]
-const REHYPE_PLUGINS = [rehypeSanitize, rehypeHighlight]
+// SECOND — see the component doc below. `ignoreMissing` stops rehype-highlight
+// from THROWING on a fence whose language it does not know (e.g. ```mermaid or
+// a project-specific label); the block renders as plain code instead of
+// blanking the reading pane — important since this view renders arbitrary docs.
+const REMARK_PLUGINS: PluggableList = [remarkGfm]
+
+const REHYPE_PLUGINS: PluggableList = [
+  rehypeSanitize,
+  [rehypeHighlight, { ignoreMissing: true }],
+]
 
 interface MarkdownReadingViewProps {
   /**

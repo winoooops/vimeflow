@@ -106,4 +106,17 @@ describe('MarkdownReadingView', () => {
 
     expect(screen.queryByTestId('markdown-reading-dirty')).toBeNull()
   })
+
+  test('renders a fence with an unknown language without crashing (ignoreMissing)', () => {
+    // rehype-highlight throws on an unregistered language unless ignoreMissing
+    // is set; an arbitrary doc with ```mermaid must not blank the reading pane.
+    const { container } = render(
+      <MarkdownReadingView content={'```mermaid\ngraph TD; A-->B\n```'} />
+    )
+
+    // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access -- asserting the unknown-language fence still renders as a code block
+    const code = container.querySelector('pre code')
+    expect(code).not.toBeNull()
+    expect(code?.textContent).toContain('graph TD')
+  })
 })
