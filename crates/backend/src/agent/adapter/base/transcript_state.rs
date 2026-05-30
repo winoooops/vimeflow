@@ -76,6 +76,19 @@ impl TranscriptHandle {
             let _ = handle.join();
         }
     }
+
+    /// Signal the background thread(s) to start winding down WITHOUT
+    /// joining. The caller can drop the handle later to perform the
+    /// join. Used by `stop_with_held_gate` so the per-session gate
+    /// only needs to be held long enough to flip the stop flag — the
+    /// ~500ms thread-join can then happen outside the gate, reducing
+    /// IPC latency for concurrent gate waiters (PR #302 cycle 11 F2).
+    pub(crate) fn signal_stop(&self) {
+        self.stop_flag.store(true, Ordering::Release);
+        if let Some(stop) = &self.aux_stop {
+            stop.store(true, Ordering::Release);
+        }
+    }
 }
 
 impl Drop for TranscriptHandle {
@@ -348,31 +361,49 @@ impl TranscriptState {
 
     /// Same as `stop` but assumes the CALLER already holds the
     /// per-session start gate (via `session_gate(sid).lock()`).
-    /// Removes the entry from `watchers` under the watchers lock, then
-    /// drops the displaced `TranscriptHandle` (which joins the tail
-    /// thread) WITHOUT re-acquiring the gate. Used by
+    /// Removes the entry from `watchers` under the watchers lock and
+    /// signals the displaced `TranscriptHandle`'s stop flag UNDER the
+    /// gate so its tail thread starts winding down immediately.
+    /// Returns the displaced handle so the caller can drop it OUTSIDE
+    /// the gate — the ~500ms tail-thread join then happens without
+    /// holding the gate, so concurrent gate waiters (notify callbacks,
+    /// future `start_or_replace` calls) don't stall on IPC for that
+    /// duration (PR #302 cycle 9 retry-1 established the under-gate
+    /// teardown pattern; cycle 11 F2 split the signal-vs-join so the
+    /// join can happen outside the gate). Used by
     /// `AgentWatcherState::insert` to tear down an orphaned old
-    /// transcript entry atomically with the watchers-map mutation,
-    /// closing the cycle-9 retry-1 race where a notify callback could
-    /// acquire the gate AFTER insert released it and BEFORE the
-    /// displaced handle's Drop ran stop (PR #302 cycle 9 retry-1).
+    /// transcript entry.
     ///
-    /// **Caller must hold the gate.** Calling without the gate is a
-    /// correctness bug — concurrent `start_or_replace` could re-create
-    /// the entry between the watchers-map remove and the Drop's
-    /// thread-join. Use plain `stop` in any non-insert context.
-    pub(crate) fn stop_with_held_gate(&self, session_id: &str) -> bool {
+    /// **Caller must hold the gate** for the duration of any work
+    /// that relies on the entry being absent (e.g., the new handle's
+    /// claim-decision or further state mutations).
+    ///
+    /// **Race window vs the join-outside-gate decision:** between
+    /// the gate release and the OLD tail thread actually observing
+    /// the stop flag (at most one POLL_INTERVAL ≈ 500ms later), a
+    /// concurrent `start_or_replace` can acquire the gate and spawn
+    /// a fresh tail for the same session. Briefly there are two
+    /// threads emitting events; the OLD thread exits at its next
+    /// stop-flag check (within ≤ one poll iteration), so the overlap
+    /// is bounded to a couple of duplicate events at most. The
+    /// frontend has no per-tool-call dedup; brief duplicates are an
+    /// acceptable cost vs holding the gate for the full join.
+    pub(crate) fn stop_with_held_gate(
+        &self,
+        session_id: &str,
+    ) -> Option<TranscriptHandle> {
         let removed = {
             let mut watchers = self.watchers.lock().expect("failed to lock watchers");
             watchers.remove(session_id)
         };
-        let was_present = removed.is_some();
-        // `removed: Option<TranscriptWatcher>` drops at end of fn. Its
-        // inner `TranscriptHandle`'s Drop joins the tail thread (~500ms
-        // worst case). Gate stays held by the caller through this join
-        // — that's intentional, it's what serializes against any
-        // concurrent notify callback wanting to claim the entry.
-        was_present
+        // Signal stop_flag IMMEDIATELY under the gate so the tail
+        // thread starts winding down without waiting for the caller's
+        // later drop. Caller drops the returned handle outside the
+        // gate, which then performs the actual thread-join.
+        if let Some(w) = &removed {
+            w.handle.signal_stop();
+        }
+        removed.map(|w| w.handle)
     }
 
     /// Stop tailing for the given session.

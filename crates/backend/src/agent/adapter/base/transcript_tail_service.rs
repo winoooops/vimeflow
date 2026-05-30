@@ -29,6 +29,18 @@ use std::time::Duration;
 /// from the per-provider modules so both tails share one value.
 pub(crate) const POLL_INTERVAL: Duration = Duration::from_millis(500);
 
+/// Hard cap on the partial-line buffer to prevent runaway memory growth from a
+/// pathological writer that emits data without ever terminating a line.
+/// Production Claude / Codex JSONL writers always terminate with `\n`, so this
+/// cap is hit only on a writer bug, a truncated mid-write file, or a corrupt
+/// transcript. When the cap would be exceeded, the partial is discarded with a
+/// warning and tailing continues from the next complete line. 4 MiB is
+/// well above any single JSONL line we would ever see in practice (typical
+/// lines are <10 KiB; the largest realistic line — a long tool result — is
+/// still <1 MiB), so legitimate traffic never trips this (PR #302 cycle 11
+/// F3).
+pub(crate) const MAX_PARTIAL_BYTES: usize = 4 * 1024 * 1024;
+
 /// The provider-specific seam: turns one complete transcript line into events,
 /// and reacts to the replay→live boundary. Implementations own their
 /// per-session parse state (in-flight tool calls, turn counts, last cwd).
@@ -95,6 +107,25 @@ impl TranscriptTailService {
                 }
                 Ok(_) => {
                     if !line_buf.ends_with('\n') {
+                        // PR #302 cycle 11 F3: cap the partial buffer
+                        // so a pathological writer that never emits a
+                        // newline can't OOM the sidecar. Real JSONL
+                        // writers always terminate lines; hitting this
+                        // limit means a writer bug, truncated file, or
+                        // corruption. Discard the partial with a warn
+                        // and continue from the next complete line —
+                        // we'd never have decoded a runaway partial
+                        // anyway.
+                        if partial.len().saturating_add(line_buf.len()) > MAX_PARTIAL_BYTES {
+                            log::warn!(
+                                "{} tail: partial line buffer exceeded {} bytes; \
+                                 discarding (likely writer bug or corrupt file)",
+                                self.provider_label,
+                                MAX_PARTIAL_BYTES,
+                            );
+                            partial.clear();
+                            continue;
+                        }
                         partial.push_str(&line_buf);
                         continue;
                     }

@@ -17,7 +17,7 @@ use super::super::bindings::AgentBindings;
 #[cfg(debug_assertions)]
 use super::diagnostics::short_sid;
 use super::diagnostics::{record_event_diag, EventTiming, PathHistory, TxOutcome};
-use super::transcript_state::{TranscriptStartStatus, TranscriptState};
+use super::transcript_state::{TranscriptHandle, TranscriptStartStatus, TranscriptState};
 use crate::agent::types::AgentType;
 // `TranscriptPathValidator` and `TranscriptStreamer` are referenced as
 // `Arc<dyn ...>` in `maybe_start_transcript`'s signature, so both must be
@@ -319,6 +319,17 @@ impl AgentWatcherState {
         // hold time.
         let ts = handle.transcript_state.clone();
         let gate = ts.session_gate(&session_id);
+        // PR #302 cycle 11 F2: the orphan-teardown's tail-thread
+        // JOIN must happen OUTSIDE the gate to keep the gate-hold
+        // short (cycle-9 retry-1 originally held the gate across the
+        // ~500ms join, stalling all concurrent gate waiters for that
+        // duration). `stop_with_held_gate` now signals stop_flag
+        // under the gate and returns the displaced `TranscriptHandle`
+        // for the caller to drop after gate release. The handle
+        // binding lives in the OUTER scope (this `let mut` here) so
+        // the Drop happens at end-of-function, well after the inner
+        // gate-scope ends.
+        let mut removed_transcript: Option<TranscriptHandle> = None;
         let _displaced: Option<WatcherHandle> = {
             let _gate_guard = gate
                 .lock()
@@ -353,11 +364,16 @@ impl AgentWatcherState {
                 let _ = d._watcher.take();
 
                 if !new_claimed {
-                    // Under-the-gate teardown: stop the orphaned old
-                    // transcript entry while no concurrent
-                    // start_or_replace can be in-flight for this
-                    // session. Cycle-9 retry-1 fix.
-                    let _ = ts.stop_with_held_gate(&session_id);
+                    // Under-the-gate teardown: signal stop_flag on
+                    // the orphaned old transcript entry while no
+                    // concurrent start_or_replace can be in-flight
+                    // for this session (cycle-9 retry-1). The
+                    // returned TranscriptHandle is captured in
+                    // `removed_transcript` (outer scope) so its
+                    // Drop's thread-join happens OUTSIDE the gate
+                    // (cycle 11 F2 — reduces gate-hold time from
+                    // ~500ms to ~µs).
+                    removed_transcript = ts.stop_with_held_gate(&session_id);
                 }
                 // Always clear: either the new handle owns the entry
                 // (claim transferred) or we just tore it down — either
@@ -367,9 +383,12 @@ impl AgentWatcherState {
             displaced
             // `_gate_guard` drops here, releasing the per-session gate.
         };
-        // `_displaced: Option<WatcherHandle>` drops here. Its Drop
+        // `removed_transcript: Option<TranscriptHandle>` drops here,
+        // OUTSIDE the gate. Its Drop joins the tail thread (~500ms).
+        // `_displaced: Option<WatcherHandle>` drops too. Its Drop
         // joins the poll thread + codex session-index thread (if any)
         // and SKIPS `transcript_state.stop` (owns_transcript = false).
+        drop(removed_transcript);
     }
 
     /// Remove and stop a watcher for a session.
@@ -909,6 +928,16 @@ pub(crate) fn start_watching(
         // token lets `start_or_replace` short-circuit under its gate
         // if the handle is no longer current.
         let poll_alive = alive.clone();
+        // PR #302 cycle 11 F1: pass the claim flag from the poll thread
+        // too — defense-in-depth. The original "3s sleep guarantees
+        // ordering with insert" argument only covered iteration 1; on
+        // iterations 2+ the poll thread can race with a concurrent
+        // insert. Cycle 10's `alive` token already short-circuits the
+        // start_or_replace in that race, but passing claim_flag keeps
+        // the symmetry with inline-init / notify callbacks and lets
+        // any successful start_or_replace from a fresh (non-displaced)
+        // poll iteration also count as a pre-register claim.
+        let poll_claimed_transcript = claimed_transcript.clone();
         Some(std::thread::spawn(move || {
             // `poll_last` is the per-thread dedup buffer. Originally
             // wrapped in `Arc<Mutex<String>>` by analogy with the other
@@ -962,16 +991,16 @@ pub(crate) fn start_watching(
                             &poll_located,
                         ) {
                             Some(path) => {
-                                // Poll thread doesn't race with insert
-                                // (sleeps 3s before first iteration);
-                                // its claims happen long after insert
-                                // has finalized ownership. Pass `None`
-                                // for claim_flag — no claim tracking
-                                // needed. PR #302 cycle 10: pass the
-                                // alive token though — if this poll
-                                // thread is still running on a
-                                // displaced handle's WatcherHandle, its
-                                // start_or_replace must short-circuit.
+                                // PR #302 cycle 11 F1: pass both the
+                                // claim flag AND the alive token, same
+                                // as the inline-init and notify-callback
+                                // paths. The "3s sleep guarantees
+                                // ordering with insert" argument that
+                                // justified None for claim_flag only
+                                // applied to iteration 1; iterations
+                                // 2+ have no ordering guarantee, so
+                                // defense-in-depth says track claims
+                                // from this path too.
                                 let outcome = maybe_start_transcript(
                                     &poll_validator,
                                     &poll_streamer,
@@ -980,7 +1009,7 @@ pub(crate) fn start_watching(
                                     &poll_transcript_state,
                                     &poll_sid,
                                     &path,
-                                    None,
+                                    Some(poll_claimed_transcript.clone()),
                                     Some(poll_alive.clone()),
                                 );
                                 (outcome, Some(path))

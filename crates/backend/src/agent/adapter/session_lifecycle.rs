@@ -553,25 +553,26 @@ impl SessionLifecycle {
         base::ensure_trusted(located)
     }
 
-    /// One of the seven F.4-decomposition verbs, but no longer called by
-    /// `run_watch_sequence` after PR #302 cycle 3 — `register` (via
+    /// One of the seven F.4-decomposition verbs, but no longer called
+    /// by `run_watch_sequence` after PR #302 cycle 3 — `register` (via
     /// `AgentWatcherState::insert`) does the atomic replace by itself
-    /// (acquires watchers lock, swaps in the new handle, releases the
-    /// lock, then drops the displaced `Option<WatcherHandle>` outside
-    /// the lock so the Drop cascade's poll-thread join doesn't block
-    /// readers). Calling `evict_old` separately broke that atomicity by
-    /// routing the displaced handle's Drop through
-    /// `AgentWatcherState::remove`'s in-function drop — which joins
-    /// inside `remove`, leaving the map empty for the join duration
-    /// (~3.5s window where `agent_type_for_pty` returns None and the
-    /// rename/title-sync IPC silently no-ops). The verb stays as part
-    /// of the F.4 named interface (spec at
-    /// `docs/superpowers/specs/2026-05-25-transcript-dtos-and-engine-design.md`)
-    /// and the `t_verb_evict_old` test pins its standalone behavior, so
-    /// any future caller that genuinely wants "evict without replace"
-    /// (e.g. a hard reset before a new spawn that lives in a different
-    /// task) still has a documented entry point.
-    #[allow(dead_code)]
+    /// without the ~3.5s session-absent window that a separate evict
+    /// step introduced.
+    ///
+    /// **Footgun guard:** marked `#[cfg(test)]` so the verb only
+    /// exists in test builds (PR #302 cycle 11 F4). In production
+    /// builds the method doesn't exist, so a future contributor
+    /// browsing autocomplete can't accidentally reintroduce the race
+    /// the `start_or_replace` / `register` path was carefully designed
+    /// to avoid. The `t_verb_evict_old` test still pins the standalone
+    /// semantics under `cfg(test)`, satisfying the F.4 spec mapping in
+    /// `docs/superpowers/specs/2026-05-25-transcript-dtos-and-engine-design.md`
+    /// without exposing the verb as a production API. If a genuine
+    /// "evict without replace" use case appears (e.g. a hard reset
+    /// before a new spawn that lives in a different task), revert
+    /// this gate AND add a docstring spelling out the rename /
+    /// title-sync IPC contract the caller must handle.
+    #[cfg(test)]
     fn evict_old(&self, sid: &str) {
         self.watcher_state.remove(sid);
     }
