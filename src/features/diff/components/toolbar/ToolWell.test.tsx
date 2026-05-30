@@ -23,29 +23,6 @@ const renderWell = (
 }
 
 describe('ToolWell', () => {
-  test('renders the three annotation placeholders as coming-soon (aria-disabled)', () => {
-    renderWell()
-
-    const labels = [/add comment/i, /highlight selection/i, /clear markup/i]
-
-    for (const label of labels) {
-      const button = screen.getByRole('button', { name: label })
-      expect(button).toHaveAttribute('aria-disabled', 'true')
-      expect(button.className).toContain('cursor-not-allowed')
-    }
-  })
-
-  test('annotation placeholders show the "Coming soon" tooltip on hover', async () => {
-    const user = userEvent.setup()
-    renderWell()
-
-    await user.hover(
-      screen.getByRole('button', { name: /highlight selection/i })
-    )
-
-    expect(await screen.findByRole('tooltip')).toHaveTextContent('Coming soon')
-  })
-
   test('omits the unstage button when showUnstage is false', () => {
     renderWell({ showUnstage: false })
 

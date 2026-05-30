@@ -123,11 +123,13 @@ export interface ToolWellProps {
   discardAllSlot: ReactNode
 }
 
-// Extended tool-well: one tonal container holding an annotation group (add
-// comment / highlight / eraser — all coming-soon placeholders, no backend yet)
-// and a staging group (stage / unstage / discard / discard-all), separated by a
-// felt divider. Rendered as a single unit so PriorityPlus overflows the whole
-// well together rather than spilling individual buttons.
+// Tool-well: one tonal container holding the per-file staging actions (stage /
+// unstage / discard / discard-all), rendered as a single unit so PriorityPlus
+// overflows the whole well together rather than spilling individual buttons.
+//
+// The speculative annotation tools (comment / highlight / erase) were dropped —
+// commenting is the gutter `+` affordance, and highlight/erase had no backend
+// or use case.
 export const ToolWell = ({
   showUnstage,
   staging,
@@ -137,25 +139,6 @@ export const ToolWell = ({
   discardAllSlot,
 }: ToolWellProps): ReactElement => (
   <span className="inline-flex items-center gap-0.5 bg-surface-container-highest rounded-md px-0.5 py-px">
-    {/* Annotation group — net-new, no backend yet. */}
-    <ComingSoonTooltip label="Add comment — Coming soon">
-      <WellDisabledButton icon="add_comment" label="add comment" />
-    </ComingSoonTooltip>
-    <ComingSoonTooltip label="Highlight selection — Coming soon">
-      <WellDisabledButton
-        icon="format_ink_highlighter"
-        label="highlight selection"
-      />
-    </ComingSoonTooltip>
-    <ComingSoonTooltip label="Clear markup — Coming soon">
-      <WellDisabledButton icon="ink_eraser" label="clear markup" />
-    </ComingSoonTooltip>
-
-    <span
-      aria-hidden="true"
-      className="w-px h-[18px] bg-outline-variant/45 mx-[3px]"
-    />
-
     {/* Staging group — fully wired when handlers are provided. */}
     {onStage !== undefined ? (
       <WellButton

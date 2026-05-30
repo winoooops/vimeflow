@@ -164,8 +164,8 @@ describe('DiffChipToolbar', () => {
     // The redesign reshapes the flat chips into grouped pills: the file-nav
     // group is a lavender FilePill (prev arrow + basename + N/M badge + next
     // arrow), hunk-nav is an azure ChangeStepper (data_object + N/N + vertical
-    // arrows), and the staging buttons live inside the ToolWell alongside the
-    // (coming-soon) annotation buttons. The View ▾ dropdown stays consolidated.
+    // arrows), and the staging buttons live inside the ToolWell. The View ▾
+    // dropdown stays consolidated.
     renderToolbar({ diffMode: 'unstaged', selectedFileName: 'src/App.tsx' })
 
     // Segmented: split / unified.
@@ -196,18 +196,20 @@ describe('DiffChipToolbar', () => {
     // Stepper group accessible name carries the ratio.
     expect(screen.getByLabelText(/hunk 1\/3/i)).toBeInTheDocument()
 
-    // Tool-well annotation placeholders (net-new, coming-soon).
+    // The speculative annotation tools (comment / highlight / erase) were
+    // dropped — commenting is the gutter `+` affordance, and highlight/erase
+    // had no backend or use case. The tool-well is staging-only now.
     expect(
-      screen.getByRole('button', { name: /add comment/i })
-    ).toBeInTheDocument()
+      screen.queryByRole('button', { name: /add comment/i })
+    ).not.toBeInTheDocument()
 
     expect(
-      screen.getByRole('button', { name: /highlight selection/i })
-    ).toBeInTheDocument()
+      screen.queryByRole('button', { name: /highlight selection/i })
+    ).not.toBeInTheDocument()
 
     expect(
-      screen.getByRole('button', { name: /clear markup/i })
-    ).toBeInTheDocument()
+      screen.queryByRole('button', { name: /clear markup/i })
+    ).not.toBeInTheDocument()
 
     // Tool-well staging buttons (PR1: disabled placeholders here).
     expect(screen.getByRole('button', { name: /^stage$/i })).toBeInTheDocument()
@@ -519,6 +521,26 @@ describe('DiffChipToolbar', () => {
       expect(
         await screen.findByText(/discard all changes to/i)
       ).toBeInTheDocument()
+    })
+
+    test('Discard All button exposes a tooltip on hover', async () => {
+      const user = userEvent.setup()
+
+      const onDiscardAll = vi
+        .fn<() => Promise<void>>()
+        .mockResolvedValue(undefined)
+
+      renderToolbar({ onDiscardAll, selectedFileName: 'src/App.tsx' })
+
+      // Hover (not click) — the destructive action needs a label even before
+      // the confirm popover opens. The tooltip wraps the span around the
+      // button, so hovering the button surfaces it via React's synthetic
+      // mouseenter.
+      await user.hover(screen.getByRole('button', { name: /^discard all$/i }))
+
+      expect(await screen.findByRole('tooltip')).toHaveTextContent(
+        /discard all changes/i
+      )
     })
 
     test('Discard All confirmation: Confirm calls onDiscardAll', async () => {

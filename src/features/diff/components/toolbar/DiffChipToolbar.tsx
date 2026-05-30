@@ -348,59 +348,70 @@ export const DiffChipToolbar = ({
 
   // The discard-all button is rendered here (it owns the confirm popover +
   // floating refs) and slotted into the tool-well so it sits inside the same
-  // tonal well after the felt divider. FUNCTIONAL in PR2 when onDiscardAll is
-  // provided; otherwise a coming-soon placeholder.
+  // tonal well as the other staging actions. FUNCTIONAL in PR2 when
+  // onDiscardAll is provided; otherwise a coming-soon placeholder.
+  //
+  // Tooltip wraps the SPAN, not the button — the button owns the popover's
+  // floating ref, and Tooltip's cloneElement would clobber it. Disabled while
+  // the popover is open so the two floating layers never co-exist.
   const discardAllSlot =
     onDiscardAll !== undefined ? (
-      <span>
-        <button
-          ref={discardAllRefs.setReference}
-          type="button"
-          disabled={staging}
-          aria-label="discard all"
-          aria-expanded={discardAllOpen}
-          className={
-            staging ? WELL_DANGER_DISABLED_CLASSES : WELL_DANGER_BUTTON_CLASSES
-          }
-          {...getDiscardAllReferenceProps({
-            onClick: (): void => {
-              if (!staging) {
-                setDiscardAllOpen((prev) => !prev)
-              }
-            },
-          })}
-        >
-          <span
-            aria-hidden="true"
-            className="material-symbols-outlined text-base leading-none"
+      <Tooltip content="Discard all changes" disabled={discardAllOpen}>
+        <span>
+          <button
+            ref={discardAllRefs.setReference}
+            type="button"
+            disabled={staging}
+            aria-label="discard all"
+            aria-expanded={discardAllOpen}
+            className={
+              staging
+                ? WELL_DANGER_DISABLED_CLASSES
+                : WELL_DANGER_BUTTON_CLASSES
+            }
+            {...getDiscardAllReferenceProps({
+              onClick: (): void => {
+                if (!staging) {
+                  setDiscardAllOpen((prev) => !prev)
+                }
+              },
+            })}
           >
-            delete_sweep
-          </span>
-        </button>
-        {discardAllOpen ? (
-          <FloatingPortal>
-            <FloatingFocusManager context={discardAllContext} initialFocus={-1}>
-              <div
-                ref={discardAllRefs.setFloating}
-                style={discardAllStyles}
-                className="z-50 rounded-lg bg-surface-container-high/95 backdrop-blur-md backdrop-saturate-150 border border-outline-variant/20 shadow-xl"
-                {...getDiscardAllFloatingProps()}
+            <span
+              aria-hidden="true"
+              className="material-symbols-outlined text-base leading-none"
+            >
+              delete_sweep
+            </span>
+          </button>
+          {discardAllOpen ? (
+            <FloatingPortal>
+              <FloatingFocusManager
+                context={discardAllContext}
+                initialFocus={-1}
               >
-                <DiscardAllConfirm
-                  fileName={selectedFileName}
-                  onConfirm={(): void => {
-                    setDiscardAllOpen(false)
-                    void onDiscardAll()
-                  }}
-                  onCancel={(): void => {
-                    setDiscardAllOpen(false)
-                  }}
-                />
-              </div>
-            </FloatingFocusManager>
-          </FloatingPortal>
-        ) : null}
-      </span>
+                <div
+                  ref={discardAllRefs.setFloating}
+                  style={discardAllStyles}
+                  className="z-50 rounded-lg bg-surface-container-high/95 backdrop-blur-md backdrop-saturate-150 border border-outline-variant/20 shadow-xl"
+                  {...getDiscardAllFloatingProps()}
+                >
+                  <DiscardAllConfirm
+                    fileName={selectedFileName}
+                    onConfirm={(): void => {
+                      setDiscardAllOpen(false)
+                      void onDiscardAll()
+                    }}
+                    onCancel={(): void => {
+                      setDiscardAllOpen(false)
+                    }}
+                  />
+                </div>
+              </FloatingFocusManager>
+            </FloatingPortal>
+          ) : null}
+        </span>
+      </Tooltip>
     ) : (
       <ComingSoonTooltip label="Available in PR2">
         <WellDangerDisabledButton icon="delete_sweep" label="discard all" />
