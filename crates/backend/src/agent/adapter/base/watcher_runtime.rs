@@ -373,7 +373,13 @@ impl AgentWatcherState {
                     // Drop's thread-join happens OUTSIDE the gate
                     // (cycle 11 F2 — reduces gate-hold time from
                     // ~500ms to ~µs).
-                    removed_transcript = ts.stop_with_held_gate(&session_id);
+                    //
+                    // PR #302 cycle 13 F3: pass `&_gate_guard` as
+                    // the compile-time witness that the gate is
+                    // held. Compiler proves the borrow lives across
+                    // the call.
+                    removed_transcript =
+                        ts.stop_with_held_gate(&session_id, &_gate_guard);
                 }
                 // Always clear: either the new handle owns the entry
                 // (claim transferred) or we just tore it down — either
@@ -550,12 +556,31 @@ fn maybe_start_transcript(
         }
         Ok(TranscriptStartStatus::AlreadyRunning) => TxOutcome::AlreadyRunning,
         Err(e) => {
-            log::warn!(
-                "Failed to start transcript tailing for session {}: {}",
-                session_id,
-                e
-            );
-            TxOutcome::StartFailed
+            // PR #302 cycle 13 F1 — distinguish the expected
+            // displacement short-circuit from a real tail-spawn
+            // failure. `start_or_replace`'s alive check returns Err
+            // prefixed with `DISPLACED_ERR_PREFIX` whenever a notify
+            // or poll callback fires for a displaced handle. This is
+            // a normal restart-time condition, NOT a failure — log at
+            // debug, return the dedicated `Displaced` outcome.
+            // Pre-cycle-13 this fell into the generic warn arm and
+            // produced false-positive "Failed to start transcript
+            // tailing" alerts on every session restart.
+            if e.starts_with(super::transcript_state::DISPLACED_ERR_PREFIX) {
+                log::debug!(
+                    "transcript: displaced-watcher short-circuit for session {}: {}",
+                    session_id,
+                    e
+                );
+                TxOutcome::Displaced
+            } else {
+                log::warn!(
+                    "Failed to start transcript tailing for session {}: {}",
+                    session_id,
+                    e
+                );
+                TxOutcome::StartFailed
+            }
         }
     }
 }

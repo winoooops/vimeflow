@@ -272,7 +272,23 @@ pub struct AgentCwdEvent {
     pub cwd: String,
 }
 
-/// Event emitted when a Claude transcript reveals the latest user-prompt count
+/// Event emitted when a Claude transcript reveals the latest user-prompt
+/// count.
+///
+/// **Duplication note (PR #302 cycle 13 F2):** same restart-boundary
+/// duplicate window as `AgentToolCallEvent` — see that struct's doc.
+/// Unlike tool-call events, `agent-turn` does NOT have a reliable
+/// dedup key in the current schema: `num_turns` is monotonic WITHIN a
+/// single Claude invocation but resets to 0 when a new Claude run
+/// starts on the same PTY (existing frontend behavior accepts this
+/// reset as a legitimate restart). A `(session_id, num_turns)`
+/// dedup rule would therefore drop the first turns of post-restart
+/// invocations and is unsafe. The duplicate window is bounded to
+/// ≤2 events at restart boundaries, so the practical impact is a
+/// transient over-count of `num_turns` displayed in the UI — typically
+/// invisible because subsequent live turns immediately re-establish
+/// the correct count. Adding a stable transcript/agent-session id to
+/// the payload (out of scope for PR #302) would enable safe dedup.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[cfg_attr(test, ts(export))]
@@ -300,7 +316,22 @@ pub enum ToolCallStatus {
     Failed,
 }
 
-/// Event emitted when an agent executes a tool call
+/// Event emitted when an agent executes a tool call.
+///
+/// **Duplication note (PR #302 cycle 13 F2):** during a watcher restart
+/// where the new handle's inline-init didn't claim transcript ownership,
+/// the OLD transcript tail is signaled-stop under the per-session gate
+/// but the actual thread-join happens AFTER gate release (cycle 11 F2,
+/// to avoid stalling concurrent gate waiters for ~500ms). In that
+/// ≤500ms window before the OLD tail observes its stop flag, the OLD
+/// tail may emit one or two more `agent-tool-call` events while the
+/// NEW handle is already active. Consumers SHOULD dedup by
+/// `tool_use_id` (stable per tool call across both tails). The
+/// duplicate window is bounded to one POLL_INTERVAL (500ms) and only
+/// occurs at restart boundaries.
+///
+/// For `AgentTurnEvent`'s analogous note (no reliable dedup key in the
+/// current schema), see that struct's doc.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[cfg_attr(test, ts(export))]
@@ -312,6 +343,8 @@ pub struct AgentToolCallEvent {
     /// Anthropic tool_use id (e.g., "toolu_01ABC..."). Stable per
     /// tool call — used on the frontend as the React key so parallel
     /// tool calls sharing a message-level timestamp don't collide.
+    /// **Also serves as the natural dedup key** for the ≤500ms
+    /// restart-boundary duplicate window (see struct-level doc).
     pub tool_use_id: String,
     /// Tool name (e.g., "Read", "Write", "Bash")
     pub tool: String,

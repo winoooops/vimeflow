@@ -115,6 +115,12 @@ pub enum TranscriptStartStatus {
     AlreadyRunning,
 }
 
+/// Sentinel prefix on `start_or_replace`'s Err when the alive check
+/// short-circuits — `maybe_start_transcript` matches `starts_with` to
+/// route to `TxOutcome::Displaced` (debug log) rather than the generic
+/// `TxOutcome::StartFailed` (warn log). PR #302 cycle 13 F1.
+pub(crate) const DISPLACED_ERR_PREFIX: &str = "watcher displaced — ";
+
 struct TranscriptWatcher {
     transcript_path: PathBuf,
     cwd: Option<PathBuf>,
@@ -207,9 +213,20 @@ impl TranscriptState {
         // claim flag set. Closes the residual cycle-9 race where an
         // already-dispatched displaced callback could race past the
         // _watcher drop and reclaim the entry.
+        //
+        // PR #302 cycle 13 F1: the error message starts with the
+        // `DISPLACED_ERR_PREFIX` sentinel so `maybe_start_transcript`
+        // can map this expected restart-time condition to
+        // `TxOutcome::Displaced` (debug-level log) rather than
+        // `TxOutcome::StartFailed` (warn-level). Without the prefix,
+        // every session restart produced false-positive
+        // "Failed to start transcript tailing" WARN logs.
         if let Some(alive_flag) = &alive {
             if !alive_flag.load(std::sync::atomic::Ordering::Acquire) {
-                return Err("watcher displaced — start_or_replace short-circuited".to_string());
+                return Err(format!(
+                    "{}start_or_replace short-circuited",
+                    DISPLACED_ERR_PREFIX
+                ));
             }
         }
 
@@ -391,6 +408,20 @@ impl TranscriptState {
     pub(crate) fn stop_with_held_gate(
         &self,
         session_id: &str,
+        // PR #302 cycle 13 F3: the `_gate` parameter encodes the
+        // "caller must hold the per-session gate" precondition at the
+        // type level. A `MutexGuard<'_, ()>` only exists while a
+        // Mutex<()> is locked, so the borrow checker proves the
+        // caller is holding some such guard at the call site. The
+        // guard is structurally bound to the per-session gate via the
+        // call chain (caller obtained it from `session_gate(sid).lock()`
+        // and passes its borrow here). The parameter is unused at the
+        // value level — it exists purely as a compile-time witness.
+        // Closes the cycle-9 documentation-only invariant gap: a
+        // future contributor adding a restart path who forgets to
+        // hold the gate fails to compile rather than silently
+        // reintroducing the cycle-8 TOCTOU race.
+        _gate: &std::sync::MutexGuard<'_, ()>,
     ) -> Option<TranscriptHandle> {
         let removed = {
             let mut watchers = self.watchers.lock().expect("failed to lock watchers");
