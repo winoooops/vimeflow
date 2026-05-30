@@ -23,6 +23,105 @@ import { Dropdown, type DropdownOption } from './Dropdown'
 import { PriorityPlus } from './PriorityPlus'
 import { Segmented } from './Segmented'
 import { ViewSettingsDropdown } from './ViewSettingsDropdown'
+import { FilePill } from './FilePill'
+import { ChangeStepper } from './ChangeStepper'
+import {
+  ToolWell,
+  WELL_DANGER_BUTTON_CLASSES,
+  WELL_DISABLED_BUTTON_CLASSES,
+} from './ToolWell'
+
+// Disabled variant of the danger (discard-all) button — reuses the tool-well's
+// muted disabled tone so a staging-in-flight discard-all reads identically to
+// the other disabled staging buttons.
+const WELL_DANGER_DISABLED_CLASSES = WELL_DISABLED_BUTTON_CLASSES
+
+// Wrap an aria-disabled placeholder in an "Available in PRx" / "Coming soon"
+// tooltip so users know the placeholder will light up later. The button stays
+// focusable because native disabled controls do not dispatch the hover/focus
+// events Tooltip needs.
+const ComingSoonTooltip = ({
+  label,
+  children,
+}: {
+  label: string
+  children: ReactElement
+}): ReactElement => <Tooltip content={label}>{children}</Tooltip>
+
+// Disabled discard-all placeholder (no onDiscardAll handler). Mirrors the
+// tool-well's disabled-button styling but keeps the discard-all accessible
+// name. aria-disabled (not native disabled) so the Tooltip can open on hover.
+interface WellDangerDisabledButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
+  icon: string
+  label: string
+}
+
+const WellDangerDisabledButton = forwardRef<
+  HTMLButtonElement,
+  WellDangerDisabledButtonProps
+>(
+  ({ icon, label, ...buttonProps }, ref): ReactElement => (
+    <button
+      ref={ref}
+      type="button"
+      aria-disabled="true"
+      aria-label={label}
+      className={WELL_DANGER_DISABLED_CLASSES}
+      {...buttonProps}
+    >
+      <span
+        aria-hidden="true"
+        className="material-symbols-outlined text-base leading-none"
+      >
+        {icon}
+      </span>
+    </button>
+  )
+)
+
+WellDangerDisabledButton.displayName = 'WellDangerDisabledButton'
+
+// Floating-UI popover confirmation for the Discard All action. Rendered as
+// a floating box anchored to the trigger so it escapes any overflow clipping
+// (same pattern as Dropdown). The two action buttons use native
+// `type="button"` so they don't accidentally submit a parent form.
+interface DiscardAllConfirmProps {
+  fileName: string | undefined
+  onConfirm: () => void
+  onCancel: () => void
+}
+
+const DiscardAllConfirm = ({
+  fileName,
+  onConfirm,
+  onCancel,
+}: DiscardAllConfirmProps): ReactElement => {
+  const label = fileName ? `"${fileName}"` : 'this file'
+
+  return (
+    <div className="p-3 space-y-3">
+      <p className="text-xs text-on-surface leading-snug max-w-[17rem]">
+        Discard all changes to {label}? This cannot be undone.
+      </p>
+      <div className="flex justify-end gap-2">
+        <button
+          type="button"
+          onClick={onCancel}
+          className="px-2.5 py-1 rounded-md text-xs text-on-surface-variant hover:bg-surface-container/60 transition-colors"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          onClick={onConfirm}
+          className="px-2.5 py-1 rounded-md text-xs bg-error/20 text-error hover:bg-error/30 transition-colors"
+        >
+          Discard
+        </button>
+      </div>
+    </div>
+  )
+}
 
 // Pierre option subtypes — pulled from `BaseDiffOptions` so a Pierre version
 // bump that widens / renames the enums is caught at type-check time rather
@@ -101,7 +200,7 @@ export interface DiffChipToolbarProps {
   stickyHeader: boolean
   onStickyHeaderChange: (next: boolean) => void
   // Hunk navigation. `totalHunks` is optional — when omitted (or 0), the
-  // counter chip renders `0/0`. In PR1 prev/next are disabled placeholders;
+  // stepper renders `0/0`. In PR1 prev/next are disabled placeholders;
   // PR3 wires the click handlers (the work was re-split: PR2 = staging,
   // PR3 = hunk navigation, PR4 = inline review).
   totalHunks?: number
@@ -118,27 +217,29 @@ export interface DiffChipToolbarProps {
   currentFileIndex: number
   totalFiles: number
   // Hunk navigation handlers — FUNCTIONAL in PR3. When provided the prev/next
-  // hunk chips become interactive; omitting them leaves them disabled. Both
-  // must be provided together for the chips to enable (mirrors the file-nav
+  // hunk arrows become interactive; omitting them leaves them disabled. Both
+  // must be provided together for the arrows to enable (mirrors the file-nav
   // pattern).
   onPrevHunk?: () => void
   onNextHunk?: () => void
-  // Staging actions — FUNCTIONAL in PR2. When provided the staging chips
+  // Staging actions — FUNCTIONAL in PR2. When provided the staging buttons
   // become interactive; omitting them (or passing `staging === true`) leaves
-  // the chips disabled so pre-PR2 callers remain unaffected.
+  // the buttons disabled so pre-PR2 callers remain unaffected.
   onStage?: () => Promise<void>
   onUnstage?: () => Promise<void>
   onDiscard?: () => Promise<void>
   onDiscardAll?: () => Promise<void>
-  // True while any staging IPC is in-flight — disables all staging chips to
+  // True while any staging IPC is in-flight — disables all staging buttons to
   // prevent double-fire while waiting for a round-trip.
   staging?: boolean
   // Filename shown in the Discard All confirmation popover ("Discard all
-  // changes to <selectedFileName>?"). Optional — omit for a generic prompt.
+  // changes to <selectedFileName>?") and on the file pill. Optional — omit for
+  // a generic prompt / em-dash placeholder.
   selectedFileName?: string
-  // Feedback actions — inline review feedback chips. When `feedbackCount > 0`
-  // the toolbar renders a high-priority "Finish feedback (N)" chip plus a
-  // muted, lowest-priority "Discard feedback" chip; at 0 neither renders.
+  // Feedback actions — inline review feedback. When `feedbackCount > 0` the
+  // toolbar renders a pinned-right paired-action group: a muted "Discard"
+  // button plus a primary-gradient "Finish (N)" button. At 0 neither renders.
+  // The paired actions are pinned outside PriorityPlus and never overflow.
   // Optional (default 0 / no-op) so pre-feedback callers are unaffected,
   // mirroring the other optional-handler chips in this component.
   feedbackCount?: number
@@ -146,202 +247,17 @@ export interface DiffChipToolbarProps {
   onDiscardFeedback?: () => void
 }
 
-// Styling shared by every icon-button chip — the staging chips, the prev/next
-// hunk chips, and the counter. Disabled chips use a muted surface tone and the
-// `not-allowed` cursor so it is obvious they are placeholders.
-const DISABLED_ICON_CHIP_CLASSES =
-  'inline-flex items-center justify-center w-8 h-8 rounded-md ' +
-  'bg-surface-container/20 text-on-surface-variant/40 cursor-not-allowed ' +
-  'transition-colors'
-
-// Enabled icon-button chip — used by the FUNCTIONAL file-nav arrows. Slightly
-// brighter surface + hover affordance so it reads as interactive, in contrast
-// to the muted disabled placeholders.
-const ICON_CHIP_CLASSES =
-  'inline-flex items-center justify-center w-8 h-8 rounded-md ' +
-  'bg-surface-container/40 text-on-surface-variant ' +
-  'hover:bg-surface-container/70 hover:text-on-surface ' +
-  'transition-colors'
-
-// The counter chips are text chips — non-interactive, just a label. They carry
-// a leading material icon (file `description` / hunk `data_object`) so the two
-// `‹ N/M ›` arrow groups are distinguishable at a glance.
-const COUNTER_CHIP_CLASSES =
-  'inline-flex items-center justify-center gap-1 min-w-[3.25rem] h-8 px-2 ' +
-  'rounded-md bg-surface-container/40 text-on-surface-variant text-[0.7rem] ' +
-  'font-mono tracking-tight'
-
-// Interactive text chip — used by the feedback actions. Mirrors the counter
-// chip sizing but adds hover affordance so it reads as clickable.
-const TEXT_CHIP_CLASSES =
-  'inline-flex items-center justify-center gap-1 h-8 px-2 ' +
-  'rounded-md bg-surface-container/40 text-on-surface-variant text-[0.7rem] ' +
-  'font-mono tracking-tight ' +
-  'hover:bg-surface-container/70 hover:text-on-surface ' +
-  'transition-colors'
-
-// Muted interactive text chip — used by the Discard feedback action. Lower
-// contrast surface so it overflows first, but still interactive on hover.
-const MUTED_TEXT_CHIP_CLASSES =
-  'inline-flex items-center justify-center gap-1 h-8 px-2 ' +
-  'rounded-md bg-surface-container/20 text-on-surface-variant/40 ' +
-  'text-[0.7rem] font-mono tracking-tight ' +
-  'hover:bg-surface-container/30 hover:text-on-surface-variant/60 ' +
-  'transition-colors'
-
-// Wrap an aria-disabled chip in an "Available in PRx" tooltip so users know
-// the placeholder will light up later. The button stays focusable because
-// native disabled controls do not dispatch the hover/focus events Tooltip
-// needs.
-const ComingSoonTooltip = ({
-  label,
-  children,
-}: {
-  label: string
-  children: ReactElement
-}): ReactElement => <Tooltip content={label}>{children}</Tooltip>
-
-// Small disabled icon button — the building block for prev hunk, next hunk,
-// stage, unstage, discard, discard all. The `aria-label` carries the
-// accessible name (the material icon span is decorative). Use aria-disabled
-// instead of native disabled so the surrounding Tooltip can open on
-// hover/focus while the chip remains inert (no onClick handler).
-interface DisabledIconChipProps extends ButtonHTMLAttributes<HTMLButtonElement> {
-  icon: string
-  label: string
-}
-
-const DisabledIconChip = forwardRef<HTMLButtonElement, DisabledIconChipProps>(
-  ({ icon, label, ...buttonProps }, ref): ReactElement => (
-    <button
-      ref={ref}
-      type="button"
-      aria-disabled="true"
-      aria-label={label}
-      className={DISABLED_ICON_CHIP_CLASSES}
-      {...buttonProps}
-    >
-      <span
-        aria-hidden="true"
-        className="material-symbols-outlined text-base leading-none"
-      >
-        {icon}
-      </span>
-    </button>
-  )
-)
-
-DisabledIconChip.displayName = 'DisabledIconChip'
-
-// Icon button that toggles between the enabled + disabled styling based on
-// `disabled`. Used by the functional file-nav arrows: enabled when there is
-// more than one file to step through, disabled (inert, no tooltip) on a single
-// file. When disabled it reuses the placeholder styling for visual consistency
-// with the not-yet-wired chips.
-const IconChip = ({
-  icon,
-  label,
-  onClick = undefined,
-  disabled = false,
-}: {
-  icon: string
-  label: string
-  onClick?: () => void
-  disabled?: boolean
-}): ReactElement => (
-  <button
-    type="button"
-    disabled={disabled}
-    aria-label={label}
-    onClick={onClick}
-    className={disabled ? DISABLED_ICON_CHIP_CLASSES : ICON_CHIP_CLASSES}
-  >
-    <span
-      aria-hidden="true"
-      className="material-symbols-outlined text-base leading-none"
-    >
-      {icon}
-    </span>
-  </button>
-)
-
-// Text counter chip with a leading material icon. `icon` distinguishes the two
-// `‹ N/M ›` groups: `description` (file) vs `data_object` (hunk). The icon is
-// decorative — the `aria-label` (passed by the caller) carries the accessible
-// position string.
-const CounterChip = ({
-  icon,
-  label,
-  text,
-}: {
-  icon: string
-  label: string
-  text: string
-}): ReactElement => (
-  <span aria-label={label} className={COUNTER_CHIP_CLASSES}>
-    <span
-      aria-hidden="true"
-      className="material-symbols-outlined text-sm leading-none"
-    >
-      {icon}
-    </span>
-    {text}
-  </span>
-)
-
-// Floating-UI popover confirmation for the Discard All action. Rendered as
-// a floating box anchored to the trigger chip so it escapes any overflow
-// clipping (same pattern as Dropdown). The two action buttons use native
-// `type="button"` so they don't accidentally submit a parent form.
-interface DiscardAllConfirmProps {
-  fileName: string | undefined
-  onConfirm: () => void
-  onCancel: () => void
-}
-
-const DiscardAllConfirm = ({
-  fileName,
-  onConfirm,
-  onCancel,
-}: DiscardAllConfirmProps): ReactElement => {
-  const label = fileName ? `"${fileName}"` : 'this file'
-
-  return (
-    <div className="p-3 space-y-3">
-      <p className="text-xs text-on-surface leading-snug max-w-[17rem]">
-        Discard all changes to {label}? This cannot be undone.
-      </p>
-      <div className="flex justify-end gap-2">
-        <button
-          type="button"
-          onClick={onCancel}
-          className="px-2.5 py-1 rounded-md text-xs text-on-surface-variant hover:bg-surface-container/60 transition-colors"
-        >
-          Cancel
-        </button>
-        <button
-          type="button"
-          onClick={onConfirm}
-          className="px-2.5 py-1 rounded-md text-xs bg-error/20 text-error hover:bg-error/30 transition-colors"
-        >
-          Discard
-        </button>
-      </div>
-    </div>
-  )
-}
-
 // Composed chip toolbar. Pure controlled component — all state lives in the
 // consumer. PriorityPlus measures the rendered chips and folds anything
 // beyond the first row into a portal-rendered `…` menu (last items overflow
-// first, so toggles drop before dropdowns drop before navigation chips).
+// first, so the view dropdown drops before the theme dropdown, etc.).
 //
-// File navigation (prev-file / counter / next-file) is FUNCTIONAL from PR1 —
-// it only changes which file is selected, so no Rust backend is needed.
-// Staging chips (stage / unstage / discard / discard all) are FUNCTIONAL
-// in PR2 when the on* handlers are provided. Hunk prev/next/counter chips
-// are FUNCTIONAL in PR3 when onPrevHunk/onNextHunk are provided and there
-// is more than one hunk.
+// File navigation (FilePill) is FUNCTIONAL from PR1 — it only changes which
+// file is selected, so no Rust backend is needed. Staging buttons (inside the
+// ToolWell) are FUNCTIONAL in PR2 when the on* handlers are provided. The
+// ChangeStepper hunk arrows are FUNCTIONAL in PR3 when onPrevHunk/onNextHunk
+// are provided and there is more than one hunk. The pinned feedback actions
+// render when feedbackCount > 0 (PR4 inline review).
 export const DiffChipToolbar = ({
   diffMode,
   diffStyle,
@@ -381,8 +297,8 @@ export const DiffChipToolbar = ({
   onDiscardFeedback = undefined,
 }: DiffChipToolbarProps): ReactElement => {
   // Discard All confirmation popover state. The trigger is the discard-all
-  // chip; the floating content is the DiscardAllConfirm component rendered
-  // via FloatingPortal.
+  // button inside the tool-well; the floating content is the DiscardAllConfirm
+  // component rendered via FloatingPortal.
   const [discardAllOpen, setDiscardAllOpen] = useState(false)
 
   const {
@@ -406,8 +322,8 @@ export const DiffChipToolbar = ({
   } = useInteractions([discardAllDismiss, discardAllRole])
 
   // Counter copy: `1/N` when there is at least one hunk, `0/0` otherwise.
-  // PR1 shows the current focused index as `focusedHunkIndex + 1` so the
-  // counter is consistent with PR3 once prev/next start mutating the index.
+  // Shows the current focused index as `focusedHunkIndex + 1` so the counter
+  // is consistent with PR3 once prev/next start mutating the index.
   const hunkCounterText =
     totalHunks > 0 ? `${focusedHunkIndex + 1}/${totalHunks}` : '0/0'
 
@@ -430,156 +346,22 @@ export const DiffChipToolbar = ({
   const hunkNavEnabled =
     onPrevHunk !== undefined && onNextHunk !== undefined && totalHunks > 1
 
-  // Build the chip list in priority order. Highest priority first → last to
-  // overflow into the `…` menu when the toolbar is narrow.
-  //
-  // The chip array is declared inline (rather than memoized) because every
-  // chip is a thin wrapper around primitives that already memoize their own
-  // children when needed. PriorityPlus measures the rendered DOM on resize,
-  // not the JSX, so churning the array on each render is cheap.
-  const chips: ReactNode[] = [
-    // 1. split / unified segmented — top priority; the most-used control.
-    <Segmented
-      key="diff-style"
-      value={diffStyle}
-      options={['split', 'unified'] as const}
-      onChange={onDiffStyleChange}
-    />,
-    // 2. prev file — FUNCTIONAL: steps the selection to the previous changed
-    // file (wrap-around handled by the consumer). Disabled + inert on a single
-    // file; no tooltip in either state.
-    <IconChip
-      key="prev-file"
-      icon="chevron_left"
-      label="previous file"
-      onClick={onPrevFile}
-      disabled={!fileNavEnabled}
-    />,
-    // 3. file N/M counter — `description` icon distinguishes it from the hunk
-    // counter. Always shows a valid 1-based position when files exist.
-    <CounterChip
-      key="file-counter"
-      icon="description"
-      label={`file ${fileCounterText}`}
-      text={fileCounterText}
-    />,
-    // 4. next file — FUNCTIONAL counterpart to prev file.
-    <IconChip
-      key="next-file"
-      icon="chevron_right"
-      label="next file"
-      onClick={onNextFile}
-      disabled={!fileNavEnabled}
-    />,
-    // 5. prev hunk — FUNCTIONAL in PR3 when onPrevHunk is provided and
-    // totalHunks > 1. Disabled (inert, no tooltip) when only one hunk.
-    <IconChip
-      key="prev-hunk"
-      icon="chevron_left"
-      label="prev hunk"
-      onClick={onPrevHunk}
-      disabled={!hunkNavEnabled}
-    />,
-    // 6. hunk N/M counter — text chip with the `data_object` icon (code/hunks)
-    // so it reads distinctly from the file counter. Now shows the real
-    // focusedHunkIndex once PR3 wires the navigation state.
-    <CounterChip
-      key="hunk-counter"
-      icon="data_object"
-      label={`hunk ${hunkCounterText}`}
-      text={hunkCounterText}
-    />,
-    // 7. next hunk — FUNCTIONAL in PR3 counterpart to prev hunk.
-    <IconChip
-      key="next-hunk"
-      icon="chevron_right"
-      label="next hunk"
-      onClick={onNextHunk}
-      disabled={!hunkNavEnabled}
-    />,
-    // 8. finish feedback — shown when there is pending inline review feedback.
-    ...(feedbackCount > 0
-      ? [
-          <button
-            key="finish-feedback"
-            type="button"
-            aria-label={`finish feedback (${feedbackCount})`}
-            onClick={onFinishFeedback}
-            className={TEXT_CHIP_CLASSES}
-          >
-            Finish feedback ({feedbackCount})
-          </button>,
-        ]
-      : []),
-    // 9. stage — FUNCTIONAL in PR2 when onStage is provided.
-    onStage !== undefined ? (
-      <IconChip
-        key="stage"
-        icon="add_box"
-        label="stage"
-        onClick={(): void => {
-          void onStage()
-        }}
-        disabled={staging}
-      />
-    ) : (
-      <ComingSoonTooltip key="stage" label="Available in PR2">
-        <DisabledIconChip icon="add_box" label="stage" />
-      </ComingSoonTooltip>
-    ),
-    // 9. unstage — only rendered on the staged diff view. On unstaged diffs
-    // the chip is omitted entirely (per spec Section 4.7) because the
-    // operation is meaningless there. FUNCTIONAL in PR2 when onUnstage provided.
-    ...(diffMode === 'staged'
-      ? [
-          onUnstage !== undefined ? (
-            <IconChip
-              key="unstage"
-              icon="indeterminate_check_box"
-              label="unstage"
-              onClick={(): void => {
-                void onUnstage()
-              }}
-              disabled={staging}
-            />
-          ) : (
-            <ComingSoonTooltip key="unstage" label="Available in PR2">
-              <DisabledIconChip
-                icon="indeterminate_check_box"
-                label="unstage"
-              />
-            </ComingSoonTooltip>
-          ),
-        ]
-      : []),
-    // 10. discard — FUNCTIONAL in PR2 when onDiscard is provided.
-    onDiscard !== undefined ? (
-      <IconChip
-        key="discard"
-        icon="backspace"
-        label="discard"
-        onClick={(): void => {
-          void onDiscard()
-        }}
-        disabled={staging}
-      />
-    ) : (
-      <ComingSoonTooltip key="discard" label="Available in PR2">
-        <DisabledIconChip icon="backspace" label="discard" />
-      </ComingSoonTooltip>
-    ),
-    // 11. discard all — FUNCTIONAL in PR2 when onDiscardAll is provided.
-    // A confirmation popover fires before the IPC to prevent accidental data
-    // loss. The chip is the floating reference; the popover renders via portal.
+  // The discard-all button is rendered here (it owns the confirm popover +
+  // floating refs) and slotted into the tool-well so it sits inside the same
+  // tonal well after the felt divider. FUNCTIONAL in PR2 when onDiscardAll is
+  // provided; otherwise a coming-soon placeholder.
+  const discardAllSlot =
     onDiscardAll !== undefined ? (
-      <span key="discard-all">
+      <span>
         <button
           ref={discardAllRefs.setReference}
           type="button"
           disabled={staging}
           aria-label="discard all"
           aria-expanded={discardAllOpen}
-          className={staging ? DISABLED_ICON_CHIP_CLASSES : ICON_CHIP_CLASSES}
+          className={
+            staging ? WELL_DANGER_DISABLED_CLASSES : WELL_DANGER_BUTTON_CLASSES
+          }
           {...getDiscardAllReferenceProps({
             onClick: (): void => {
               if (!staging) {
@@ -620,11 +402,59 @@ export const DiffChipToolbar = ({
         ) : null}
       </span>
     ) : (
-      <ComingSoonTooltip key="discard-all" label="Available in PR2">
-        <DisabledIconChip icon="delete_sweep" label="discard all" />
+      <ComingSoonTooltip label="Available in PR2">
+        <WellDangerDisabledButton icon="delete_sweep" label="discard all" />
       </ComingSoonTooltip>
-    ),
-    // 13. highlight dropdown — `lineDiffType` Pierre option.
+    )
+
+  // Build the chip list in priority order. Highest priority first → last to
+  // overflow into the `…` menu when the toolbar is narrow.
+  //
+  // Each navigation/tool group is a single wrapping element so PriorityPlus
+  // measures and overflows it as one unit (the whole file pill / change
+  // stepper / tool-well collapses together, never spilling sub-buttons).
+  //
+  // Collapse order (lowest priority overflows FIRST):
+  //   View → Theme → Hi-lite → Change-stepper → Tool-well → File-pill → Segmented
+  const chips: ReactNode[] = [
+    // 1. split / unified segmented — top priority; the most-used control.
+    <Segmented
+      key="diff-style"
+      value={diffStyle}
+      options={['split', 'unified'] as const}
+      onChange={onDiffStyleChange}
+    />,
+    // 2. file pill — lavender (primary) file-nav group (prev arrow + basename
+    // pill + N/M badge + next arrow). FUNCTIONAL: steps the selection through
+    // the changed-files list; inert on a single file.
+    <FilePill
+      key="file-nav"
+      fileName={selectedFileName}
+      counterText={fileCounterText}
+      navEnabled={fileNavEnabled}
+      onPrev={onPrevFile}
+      onNext={onNextFile}
+    />,
+    // 3. tool-well — annotation placeholders + staging group (one unit).
+    <ToolWell
+      key="tool-well"
+      showUnstage={diffMode === 'staged'}
+      staging={staging}
+      onStage={onStage}
+      onUnstage={onUnstage}
+      onDiscard={onDiscard}
+      discardAllSlot={discardAllSlot}
+    />,
+    // 4. change stepper — azure (secondary) hunk-nav group (data_object glyph
+    // + N/N + vertical up/down arrows). FUNCTIONAL in PR3.
+    <ChangeStepper
+      key="change-stepper"
+      counterText={hunkCounterText}
+      navEnabled={hunkNavEnabled}
+      onPrev={onPrevHunk}
+      onNext={onNextHunk}
+    />,
+    // 5. highlight dropdown — `lineDiffType` Pierre option.
     <Dropdown
       key="highlight"
       label="highlight"
@@ -633,20 +463,19 @@ export const DiffChipToolbar = ({
       onChange={onLineDiffTypeChange}
       width={260}
     />,
-    // 14. theme dropdown — `DiffsThemeNames` enumeration.
+    // 6. theme dropdown — `DiffsThemeNames` enumeration, with a palette lead
+    // icon.
     <Dropdown
       key="theme"
       label="theme"
       value={theme}
       options={THEME_OPTIONS}
       onChange={onThemeChange}
+      leadingIcon="palette"
     />,
-    // 15. View ▾ gear chip — consolidates the indicators / overflow
-    // dropdowns and the four boolean toggle chips into a single portal-
-    // rendered popover with a Format section (nested sub-dropdowns) and
-    // a View Options section (checkbox rows). Replaces six standalone
-    // chips that previously stretched the toolbar to ~15 visible items
-    // (PR #263 QA feedback — Option A from the design preview).
+    // 7. View ▾ gear chip — consolidates the indicators / overflow dropdowns
+    // and the four boolean toggle chips into a single portal-rendered popover
+    // (tune lead icon). Lowest priority → overflows first.
     <ViewSettingsDropdown
       key="view-settings"
       diffIndicators={diffIndicators}
@@ -662,30 +491,55 @@ export const DiffChipToolbar = ({
       stickyHeader={stickyHeader}
       onStickyHeaderChange={onStickyHeaderChange}
     />,
-    // 16. discard feedback — muted text chip, lowest priority so Priority+
-    // overflows it first. Only renders when there is pending feedback.
-    ...(feedbackCount > 0
-      ? [
-          <button
-            key="discard-feedback"
-            type="button"
-            aria-label="discard feedback"
-            onClick={onDiscardFeedback}
-            className={MUTED_TEXT_CHIP_CLASSES}
-          >
-            Discard feedback
-          </button>,
-        ]
-      : []),
   ]
+
+  // Paired feedback actions — pinned right, NEVER overflow (rendered outside
+  // PriorityPlus). Only present when there is pending inline-review feedback.
+  const showActions = feedbackCount > 0
 
   return (
     <div
       role="toolbar"
       aria-label="Diff toolbar"
-      className="px-3 py-2 rounded-lg bg-surface-container-low/50 backdrop-blur-sm border border-outline-variant/10"
+      className="px-3 py-2 rounded-lg bg-surface-container-low/[0.88] backdrop-blur-xl backdrop-saturate-150 border border-outline-variant/15 shadow-[0_10px_40px_rgba(0,0,0,0.4)]"
     >
-      <PriorityPlus maxRows={1}>{chips}</PriorityPlus>
+      <div className="flex w-full items-center">
+        <PriorityPlus
+          maxRows={1}
+          remeasureKey={`${selectedFileName ?? ''}|${fileCounterText}|${hunkCounterText}|${theme}|${lineDiffType}|${diffMode}`}
+        >
+          {chips}
+        </PriorityPlus>
+        {showActions ? (
+          <div className="ml-auto flex shrink-0 items-center gap-2 pl-3">
+            <button
+              type="button"
+              aria-label="discard all feedback"
+              onClick={onDiscardFeedback}
+              className="inline-flex items-center gap-[7px] h-[30px] px-3.5 rounded-md font-body text-[0.78rem] font-semibold bg-surface-container-highest text-on-surface-variant hover:bg-error/15 hover:text-error transition-colors"
+            >
+              Discard
+            </button>
+            <button
+              type="button"
+              aria-label={`finish feedback (${feedbackCount})`}
+              onClick={onFinishFeedback}
+              className="inline-flex items-center gap-[7px] h-[30px] px-3.5 rounded-md font-body text-[0.78rem] font-semibold text-on-primary bg-gradient-to-br from-primary to-primary-container shadow-[0_4px_14px_rgba(203,166,247,0.22)] transition-colors"
+            >
+              <span
+                aria-hidden="true"
+                className="material-symbols-outlined text-base leading-none"
+              >
+                check
+              </span>
+              Finish
+              <span className="font-mono text-[0.625rem] font-semibold bg-on-primary/20 text-on-primary px-1.5 py-px rounded-full">
+                {feedbackCount}
+              </span>
+            </button>
+          </div>
+        ) : null}
+      </div>
     </div>
   )
 }

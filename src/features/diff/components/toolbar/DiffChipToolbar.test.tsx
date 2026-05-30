@@ -134,11 +134,14 @@ const stubLayout = (
 
 // Return the inner flex container PriorityPlus mounts the chips into. The
 // toolbar wraps that in an outer styled `<div role="toolbar">` for padding,
-// so we have to drill one level down to reach the measurement container.
+// which then holds a flex row (PriorityPlus + the pinned feedback actions), so
+// we drill two levels down to reach the measurement container.
 const priorityPlusRoot = (): HTMLElement => {
   const toolbar = screen.getByRole('toolbar', { name: /diff toolbar/i })
+  // eslint-disable-next-line testing-library/no-node-access -- read toolbar row wrapper
+  const row = toolbar.firstElementChild
   // eslint-disable-next-line testing-library/no-node-access -- read PriorityPlus root
-  const inner = toolbar.firstElementChild
+  const inner = row?.firstElementChild
   if (!(inner instanceof HTMLElement)) {
     throw new Error('PriorityPlus root not found inside the toolbar')
   }
@@ -157,18 +160,19 @@ describe('DiffChipToolbar', () => {
     resizeCallback = null
   })
 
-  test('renders the consolidated 13 functional chips on the unstaged view', () => {
-    // After PR #263 follow-up: indicators / overflow dropdowns + the four
-    // boolean toggle chips collapsed into a single View ▾ chip. PR1 then adds
-    // the functional file-nav group (prev-file + counter + next-file), so the
-    // unstaged view ships 13 visible chips (10 + 3).
-    renderToolbar({ diffMode: 'unstaged' })
+  test('renders the redesigned toolbar groups on the unstaged view', () => {
+    // The redesign reshapes the flat chips into grouped pills: the file-nav
+    // group is a lavender FilePill (prev arrow + basename + N/M badge + next
+    // arrow), hunk-nav is an azure ChangeStepper (data_object + N/N + vertical
+    // arrows), and the staging buttons live inside the ToolWell alongside the
+    // (coming-soon) annotation buttons. The View ▾ dropdown stays consolidated.
+    renderToolbar({ diffMode: 'unstaged', selectedFileName: 'src/App.tsx' })
 
     // Segmented: split / unified.
     expect(screen.getByRole('button', { name: 'split' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'unified' })).toBeInTheDocument()
 
-    // File navigation chips (PR1: FUNCTIONAL).
+    // File pill (PR1: FUNCTIONAL) — arrows + basename + counter.
     expect(
       screen.getByRole('button', { name: /previous file/i })
     ).toBeInTheDocument()
@@ -176,10 +180,12 @@ describe('DiffChipToolbar', () => {
     expect(
       screen.getByRole('button', { name: /next file/i })
     ).toBeInTheDocument()
-    // File counter — currentFileIndex 1 of 9 → "2/9".
+    // File pill shows the basename of the selected path.
+    expect(screen.getByText('App.tsx')).toBeInTheDocument()
+    // File counter — currentFileIndex 1 of 9 → "2/9" (group accessible name).
     expect(screen.getByLabelText(/file 2\/9/i)).toBeInTheDocument()
 
-    // Hunk navigation chips (PR1: disabled placeholders).
+    // Change stepper — vertical hunk arrows + counter.
     expect(
       screen.getByRole('button', { name: /prev hunk/i })
     ).toBeInTheDocument()
@@ -187,10 +193,23 @@ describe('DiffChipToolbar', () => {
     expect(
       screen.getByRole('button', { name: /next hunk/i })
     ).toBeInTheDocument()
-    // Counter text chip — accessible name carries the ratio.
+    // Stepper group accessible name carries the ratio.
     expect(screen.getByLabelText(/hunk 1\/3/i)).toBeInTheDocument()
 
-    // Staging chips (PR1: disabled placeholders).
+    // Tool-well annotation placeholders (net-new, coming-soon).
+    expect(
+      screen.getByRole('button', { name: /add comment/i })
+    ).toBeInTheDocument()
+
+    expect(
+      screen.getByRole('button', { name: /highlight selection/i })
+    ).toBeInTheDocument()
+
+    expect(
+      screen.getByRole('button', { name: /clear markup/i })
+    ).toBeInTheDocument()
+
+    // Tool-well staging buttons (PR1: disabled placeholders here).
     expect(screen.getByRole('button', { name: /^stage$/i })).toBeInTheDocument()
     expect(
       screen.getByRole('button', { name: /^discard$/i })
@@ -609,7 +628,7 @@ describe('DiffChipToolbar', () => {
     })
   })
 
-  test('does not render feedback chips when feedbackCount is 0', () => {
+  test('does not render the pinned feedback actions when feedbackCount is 0', () => {
     renderToolbar({ feedbackCount: 0 })
 
     expect(
@@ -617,23 +636,27 @@ describe('DiffChipToolbar', () => {
     ).not.toBeInTheDocument()
 
     expect(
-      screen.queryByRole('button', { name: /discard feedback/i })
+      screen.queryByRole('button', { name: /discard all feedback/i })
     ).not.toBeInTheDocument()
   })
 
-  test('renders both feedback chips when feedbackCount > 0', () => {
+  test('renders the pinned Discard + Finish actions when feedbackCount > 0', () => {
     renderToolbar({ feedbackCount: 3 })
 
-    expect(
-      screen.getByRole('button', { name: /finish feedback \(3\)/i })
-    ).toBeInTheDocument()
+    // Primary-gradient Finish button — accessible name carries the count.
+    const finish = screen.getByRole('button', {
+      name: /finish feedback \(3\)/i,
+    })
+    expect(finish).toBeInTheDocument()
+    // The count pill surfaces the number on the button text.
+    expect(finish).toHaveTextContent('3')
 
     expect(
-      screen.getByRole('button', { name: /discard feedback/i })
+      screen.getByRole('button', { name: /discard all feedback/i })
     ).toBeInTheDocument()
   })
 
-  test('clicking Finish feedback chip calls onFinishFeedback once', async () => {
+  test('clicking the Finish action calls onFinishFeedback once', async () => {
     const user = userEvent.setup()
     const onFinishFeedback = vi.fn<() => void>()
 
@@ -643,29 +666,42 @@ describe('DiffChipToolbar', () => {
     expect(onFinishFeedback).toHaveBeenCalledTimes(1)
   })
 
-  test('clicking Discard feedback chip calls onDiscardFeedback once', async () => {
+  test('clicking the Discard action calls onDiscardFeedback once', async () => {
     const user = userEvent.setup()
     const onDiscardFeedback = vi.fn<() => void>()
 
     renderToolbar({ feedbackCount: 3, onDiscardFeedback })
 
-    await user.click(screen.getByRole('button', { name: /discard feedback/i }))
+    await user.click(
+      screen.getByRole('button', { name: /discard all feedback/i })
+    )
     expect(onDiscardFeedback).toHaveBeenCalledTimes(1)
   })
 
-  test('PriorityPlus collapses the lower-priority chips into the overflow menu at a narrow width', () => {
+  test('the pinned feedback actions render outside PriorityPlus (never overflow)', () => {
+    renderToolbar({ feedbackCount: 2 })
+
+    // The actions live in a sibling container after the PriorityPlus root, not
+    // inside it — so they are excluded from overflow measurement entirely.
+    const finish = screen.getByRole('button', { name: /finish feedback/i })
+    const ppRoot = priorityPlusRoot()
+    expect(ppRoot.contains(finish)).toBe(false)
+  })
+
+  test('PriorityPlus collapses the lower-priority groups into the overflow menu at a narrow width', () => {
     renderToolbar({ diffMode: 'unstaged' })
 
-    // Layout: every chip is 60 px wide with 12 px gaps. The unstaged view
-    // ships 13 chips (10 + the PR1 functional file-nav group), so the overflow
-    // threshold shifts. Width 600 px fits the first eight chips plus the
-    // 32 + 12 px overflow chip on the visible row; the trailing five fold into
-    // the `…` menu (lowest priority overflows first).
+    // The redesign mounts 7 grouped chips into PriorityPlus (segmented, file
+    // pill, tool-well, change stepper, highlight, theme, view). Lay the first
+    // four on row 0 and the trailing three on row 1 so the measurement loop
+    // folds the lowest-priority groups (highlight → theme → view) into the
+    // `…` menu first. Each wrapper is 60 px wide with 12 px gaps; the container
+    // is wide enough that the last visible group leaves room for the overflow
+    // chip on row 0 (no cutoff pull-back).
     const layouts: ItemLayout[] = []
-    for (let i = 0; i < 13; i++) {
-      // Eight chips fit on row 1 (i < 8), the rest land on row 2 (i >= 8).
-      const row = i < 8 ? 0 : 1
-      const colIndex = row === 0 ? i : i - 8
+    for (let i = 0; i < 7; i++) {
+      const row = i < 4 ? 0 : 1
+      const colIndex = row === 0 ? i : i - 4
       layouts.push({
         offsetTop: row === 0 ? 0 : 30,
         offsetHeight: 24,
@@ -683,9 +719,8 @@ describe('DiffChipToolbar', () => {
     })
     expect(overflowChip).toBeInTheDocument()
 
-    // Visible row holds the highest-priority chips: segmented, the functional
-    // file-nav group, then hunk prev/counter/next. Verify the top-priority
-    // chips remain on the bar.
+    // Visible row holds the highest-priority groups: the segmented control and
+    // the functional file pill stay on the bar.
     expect(screen.getByRole('button', { name: 'split' })).toBeInTheDocument()
 
     expect(

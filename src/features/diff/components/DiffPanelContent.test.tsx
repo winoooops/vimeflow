@@ -2140,7 +2140,7 @@ describe('DiffPanelContent', () => {
       ).toBeInTheDocument()
     })
 
-    test('onDiscardFeedback (Discard feedback chip) clears the batch', async (): Promise<void> => {
+    test('onDiscardFeedback (Discard action) clears the batch', async (): Promise<void> => {
       const user = userEvent.setup()
 
       render(
@@ -2172,7 +2172,7 @@ describe('DiffPanelContent', () => {
       ).toBeInTheDocument()
 
       await user.click(
-        screen.getByRole('button', { name: /discard feedback/i })
+        screen.getByRole('button', { name: /discard all feedback/i })
       )
 
       await waitFor(() =>
