@@ -1813,7 +1813,7 @@ describe('DiffPanelContent', () => {
       )
     })
 
-    test('initial render: selectedLines derived from hunk 0 (additions)', (): void => {
+    test('initial render: no persistent hunk selection (gutter + follows hover)', (): void => {
       render(
         <DiffPanelContent
           cwd="/repo"
@@ -1822,10 +1822,13 @@ describe('DiffPanelContent', () => {
         />
       )
 
+      // PR4: the focused-hunk selection is only a transient flash on prev/next
+      // navigation. There is no persistent selection on load — otherwise Pierre
+      // would pin the comment-gutter "+" to the focused hunk instead of letting
+      // it follow the mouse.
       const diff = screen.getByTestId('multi-file-diff')
-      expect(diff.getAttribute('data-selected-lines-start')).toBe('1')
-      expect(diff.getAttribute('data-selected-lines-end')).toBe('3')
-      expect(diff.getAttribute('data-selected-lines-side')).toBe('additions')
+      expect(diff.getAttribute('data-selected-lines-start')).toBeNull()
+      expect(diff.getAttribute('data-selected-lines-side')).toBeNull()
     })
 
     test('counter shows 1/3 on initial render', (): void => {
@@ -2043,14 +2046,10 @@ describe('DiffPanelContent', () => {
       )
 
       // Index 2 clamps to 1: counter is the valid "2/2", never the invalid "3/2".
+      // (The focused hunk now drives staging via the counter/index, not a
+      // persistent Pierre selection — see the transient nav-flash design.)
       expect(screen.getByLabelText(/hunk 2\/2/i)).toBeInTheDocument()
       expect(screen.queryByLabelText(/hunk 3\/2/i)).not.toBeInTheDocument()
-
-      // focusedHunk resolves to the now-last hunk (index 1) — selectedLines is
-      // non-null, so per-hunk staging is not silently blocked.
-      const diff = screen.getByTestId('multi-file-diff')
-      expect(diff.getAttribute('data-selected-lines-start')).toBe('20')
-      expect(diff.getAttribute('data-selected-lines-side')).toBe('additions')
     })
   })
 

@@ -514,56 +514,98 @@ export const DiffPanelContent = ({
 
   const focusedHunk = response?.fileDiff.hunks[clampedHunkIndex] ?? null
 
+  // Map a hunk to its Pierre line range. Deletion-only hunks (newLines === 0)
+  // use old-side coordinates so the highlight lands on the deletions column.
+  const hunkToRange = useCallback(
+    (
+      hunk: NonNullable<typeof response>['fileDiff']['hunks'][number]
+    ): SelectedLineRange => {
+      const isDeletionOnly = hunk.newLines === 0
+      const lineStart = isDeletionOnly ? hunk.oldStart : hunk.newStart
+      const lineCount = isDeletionOnly ? hunk.oldLines : hunk.newLines
+
+      return {
+        start: lineStart,
+        end: lineStart + Math.max(lineCount - 1, 0),
+        side: isDeletionOnly ? 'deletions' : 'additions',
+      }
+    },
+    []
+  )
+
+  // Pierre anchors the gutter "+" comment affordance to the active SELECTION
+  // whenever one exists (placeUtilityFromSelection in InteractionManager), only
+  // falling back to the hovered line otherwise. A PERSISTENT focused-hunk
+  // selection would therefore pin the "+" to that hunk and stop it following the
+  // mouse. So the focused-hunk selection is surfaced only as a brief FLASH on
+  // prev/next navigation (to scroll/highlight the target hunk), then cleared so
+  // commenting works on any hovered line.
+  const [navSelection, setNavSelection] = useState<SelectedLineRange | null>(
+    null
+  )
+  const navClearTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const clearNavSelectionTimer = useCallback((): void => {
+    if (navClearTimerRef.current !== null) {
+      clearTimeout(navClearTimerRef.current)
+      navClearTimerRef.current = null
+    }
+  }, [])
+
+  const flashHunkSelection = useCallback(
+    (hunk: NonNullable<typeof response>['fileDiff']['hunks'][number]): void => {
+      setNavSelection(hunkToRange(hunk))
+      clearNavSelectionTimer()
+      navClearTimerRef.current = setTimeout(() => {
+        setNavSelection(null)
+        navClearTimerRef.current = null
+      }, 1200)
+    },
+    [hunkToRange, clearNavSelectionTimer]
+  )
+
+  useEffect(() => clearNavSelectionTimer, [clearNavSelectionTimer])
+
+  // Drop any pending nav flash when the selected file changes (the hunk ranges
+  // belong to the previous file).
+  useEffect(() => {
+    clearNavSelectionTimer()
+    setNavSelection(null)
+  }, [selectedFilePath, selectedFileStaged, clearNavSelectionTimer])
+
   const onPrevHunk = useCallback((): void => {
     if (!response) {
       return
     }
 
-    const len = response.fileDiff.hunks.length
-    if (len === 0) {
+    const hunks = response.fileDiff.hunks
+    if (hunks.length === 0) {
       return
     }
 
-    setFocusedHunkIndex((prev) => (prev + len - 1) % len)
-  }, [response])
+    const next = (clampedHunkIndex + hunks.length - 1) % hunks.length
+    setFocusedHunkIndex(next)
+    flashHunkSelection(hunks[next])
+  }, [response, clampedHunkIndex, flashHunkSelection])
 
   const onNextHunk = useCallback((): void => {
     if (!response) {
       return
     }
 
-    const len = response.fileDiff.hunks.length
-    if (len === 0) {
+    const hunks = response.fileDiff.hunks
+    if (hunks.length === 0) {
       return
     }
 
-    setFocusedHunkIndex((prev) => (prev + 1) % len)
-  }, [response])
+    const next = (clampedHunkIndex + 1) % hunks.length
+    setFocusedHunkIndex(next)
+    flashHunkSelection(hunks[next])
+  }, [response, clampedHunkIndex, flashHunkSelection])
 
-  // Derive the Pierre selectedLines from the focused hunk. Deletion-only hunks
-  // (newLines === 0) use the old-side coordinates so the highlight lands on the
-  // deletions column; all other hunks use the new-side (additions).
-  const selectedLines: SelectedLineRange | null =
-    useMemo((): SelectedLineRange | null => {
-      const hunk = response?.fileDiff.hunks[clampedHunkIndex]
-      if (!hunk) {
-        return null
-      }
-
-      const isDeletionOnly = hunk.newLines === 0
-      const lineStart = isDeletionOnly ? hunk.oldStart : hunk.newStart
-      const lineCount = isDeletionOnly ? hunk.oldLines : hunk.newLines
-
-      const side = isDeletionOnly
-        ? ('deletions' as const)
-        : ('additions' as const)
-
-      return {
-        start: lineStart,
-        end: lineStart + Math.max(lineCount - 1, 0),
-        side,
-      }
-    }, [response, clampedHunkIndex])
+  // Only the transient nav flash drives Pierre's selection — see the comment on
+  // `navSelection` above for why a persistent focused-hunk selection is avoided.
+  const selectedLines: SelectedLineRange | null = navSelection
 
   // Shared helper for all three hunk-based staging operations. Extracts the
   // focused hunk patch, calls the provided service operation, then refreshes
@@ -1118,10 +1160,15 @@ export const DiffPanelContent = ({
                   enableGutterUtility: true,
                 }}
                 renderGutterUtility={(getHoveredLine): ReactElement => (
+                  // Pierre wraps this button in a center-aligned slot pinned to
+                  // the gutter's right edge, so by default the "+" lands on top of
+                  // the line number. translate-x-3/4 nudges it into the gutter
+                  // gap next to the code (GitHub-style); the percentage is of the
+                  // button's own width, so it adapts to any line-number column.
                   <button
                     type="button"
                     aria-label="Add comment on this line"
-                    className="flex h-5 w-5 items-center justify-center rounded bg-primary/80 text-on-primary hover:bg-primary"
+                    className="flex h-5 w-5 translate-x-3/4 items-center justify-center rounded-full bg-primary text-on-primary shadow-md hover:bg-primary/90"
                     onClick={(): void => {
                       const hovered = getHoveredLine()
                       if (hovered && selectedFilePath !== null) {

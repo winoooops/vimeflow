@@ -147,10 +147,13 @@ export const InlineCommentDemo = (): ReactElement => {
           }}
           lineAnnotations={lineAnnotations}
           renderGutterUtility={(getHoveredLine): ReactElement => (
+            // translate-x-3/4 shifts the "+" out of the line-number cell into the
+            // gutter gap next to the code (GitHub-style) — Pierre otherwise
+            // center-anchors it on top of the number. Mirrors DiffPanelContent.
             <button
               type="button"
               aria-label="Add comment on this line"
-              className="flex h-5 w-5 items-center justify-center rounded bg-primary/80 text-on-primary hover:bg-primary"
+              className="flex h-5 w-5 translate-x-3/4 items-center justify-center rounded-full bg-primary text-on-primary shadow-md hover:bg-primary/90"
               onClick={(): void => {
                 const hovered = getHoveredLine()
                 if (hovered) {
