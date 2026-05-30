@@ -44,6 +44,7 @@ describe('isSafeExternalUrl', () => {
     expect(isSafeExternalUrl('https://example.com')).toBe(true)
     expect(isSafeExternalUrl('http://example.com')).toBe(true)
     expect(isSafeExternalUrl('mailto:a@b.com')).toBe(true)
+    expect(isSafeExternalUrl('MailTo:a@b.com')).toBe(true)
     expect(isSafeExternalUrl('file:///etc/passwd')).toBe(false)
     expect(isSafeExternalUrl('javascript:alert(1)')).toBe(false)
     expect(isSafeExternalUrl('vimeflow://app/x')).toBe(false)
@@ -83,6 +84,36 @@ describe('installNavigationGuard — window.open', () => {
     expect(opened).not.toContain('body')
     expect(opened).not.toContain('attach')
     expect(opened).not.toContain('cc=')
+    expect(opened).not.toContain('bcc')
+  })
+
+  test('treats MAILTO: (any case) as safe and still sanitizes it', () => {
+    const { openExternal, handlers } = setup()
+
+    expect(isSafeExternalUrl('MAILTO:support@corp.com')).toBe(true)
+
+    handlers.open?.({
+      url: 'MAILTO:support@corp.com?subject=Hi&bcc=leak@evil.test',
+    })
+
+    expect(openExternal).toHaveBeenCalledTimes(1)
+    const opened = openExternal.mock.calls[0]?.[0] as string
+    expect(opened).toContain('subject=Hi')
+    expect(opened).not.toContain('bcc')
+  })
+
+  test('drops the query from an unparseable mailto: (catch fallback stays safe)', () => {
+    const { openExternal, handlers } = setup()
+
+    // `mailto://[bad` makes `new URL` throw (the `[` starts an invalid IPv6
+    // host), exercising the catch fallback — which must still strip the query
+    // rather than forward the original unsanitized params.
+    handlers.open?.({ url: 'mailto://[bad?body=evil&bcc=leak@evil.test' })
+
+    expect(openExternal).toHaveBeenCalledTimes(1)
+    const opened = openExternal.mock.calls[0]?.[0] as string
+    expect(opened).toBe('mailto://[bad')
+    expect(opened).not.toContain('body')
     expect(opened).not.toContain('bcc')
   })
 })

@@ -274,7 +274,18 @@ const createWindow = (): void => {
 
   installRendererDiagnosticLogging(win)
   installCommandPaletteShortcutOverride(win)
-  installNavigationGuard(win, (url) => void shell.openExternal(url))
+  installNavigationGuard(win, (url) => {
+    const openExternalUrl = async (): Promise<void> => {
+      try {
+        await shell.openExternal(url)
+      } catch (error) {
+        // eslint-disable-next-line no-console
+        console.warn('Failed to open external URL', url, error)
+      }
+    }
+
+    void openExternalUrl()
+  })
 
   const devUrl = process.env.VITE_DEV_SERVER_URL
 

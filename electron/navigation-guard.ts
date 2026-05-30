@@ -5,7 +5,7 @@ import type { BrowserWindow } from 'electron'
  * never `file:`, `javascript:`, `data:`, or the app's own `vimeflow:` scheme.
  */
 export const isSafeExternalUrl = (url: string): boolean =>
-  /^https?:\/\//i.test(url) || url.startsWith('mailto:')
+  /^https?:\/\//i.test(url) || /^mailto:/i.test(url)
 
 // Sanitize a `mailto:` link from an untrusted doc before it reaches
 // `shell.openExternal`. We allowlist rather than blocklist: keep only the
@@ -28,7 +28,13 @@ const sanitizeOutboundUrl = (url: string): string => {
 
     return parsed.toString()
   } catch {
-    return url
+    // A mailto: we could not parse must NOT reach the mail client with its
+    // query intact — that would silently undo the sanitizer. Drop everything
+    // from the first '?' so no body/cc/bcc/attach param can survive the
+    // fallback. (`isSafeExternalUrl` already gated this to a mailto: link.)
+    const queryStart = url.indexOf('?')
+
+    return queryStart === -1 ? url : url.slice(0, queryStart)
   }
 }
 
