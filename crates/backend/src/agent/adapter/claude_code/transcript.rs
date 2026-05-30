@@ -19,8 +19,14 @@ use super::test_runners::matcher::{match_command, MatchedCommand};
 use super::transcript_dto::{ClaudeToolResultDto, ClaudeToolUseDto, ClaudeTranscriptLineDto};
 use crate::agent::adapter::base::{TranscriptDecoder, TranscriptHandle, TranscriptTailService};
 use crate::agent::adapter::types::ValidateTranscriptError;
-use crate::agent::events::{emit_agent_cwd, emit_agent_tool_call, emit_agent_turn};
-use crate::agent::types::{AgentCwdEvent, AgentToolCallEvent, AgentTurnEvent, ToolCallStatus};
+use crate::agent::events::{
+    emit_agent_cwd, emit_agent_session_title, emit_agent_tool_call, emit_agent_turn,
+};
+use crate::agent::sanitize_title;
+use crate::agent::types::{
+    AgentCwdEvent, AgentSessionTitleEvent, AgentToolCallEvent, AgentTurnEvent, TitleSource,
+    ToolCallStatus,
+};
 use crate::runtime::EventSink;
 
 /// Maximum length for the args summary string
@@ -161,6 +167,22 @@ pub fn start_tailing(
     transcript_path: PathBuf,
     cwd: Option<PathBuf>,
 ) -> Result<TranscriptHandle, String> {
+    // Derive Claude's own agent_session_id from the transcript filename
+    // stem. Each Claude Code session writes one JSONL file named
+    // `<agent-session-uuid>.jsonl` under its `.claude/projects/.../` tree,
+    // so the stem IS the id (PR #265 wiring; restored in PR #302 cycle 2
+    // alongside the `ai-title` / `custom-title` arms it gates).
+    let claude_agent_session_id = transcript_path
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .map(str::to_string)
+        .ok_or_else(|| {
+            format!(
+                "could not derive claude session id from transcript path: {}",
+                transcript_path.display()
+            )
+        })?;
+
     let file = File::open(&transcript_path).map_err(|e| {
         format!(
             "Failed to open transcript: {}: {}",
@@ -176,7 +198,8 @@ pub fn start_tailing(
     // file, so all lines belong to the current session. Replay catches any
     // tool calls written before tailing started (the transcript file is often
     // created seconds after the statusline first reports its path).
-    let decoder = ClaudeTranscriptDecoder::new(events, session_id, cwd);
+    let decoder =
+        ClaudeTranscriptDecoder::new(events, session_id, cwd, claude_agent_session_id);
     let service = TranscriptTailService::new(Box::new(decoder), "transcript");
 
     let join_handle = std::thread::spawn(move || {
@@ -205,10 +228,29 @@ struct ClaudeTranscriptDecoder {
     /// catch-up read and emits the latest one (only) on the first EOF. Once
     /// we're tailing live, every snapshot emits immediately.
     emitter: TestRunEmitter,
+    /// Claude's own agent session id (the transcript file's stem). Used by
+    /// the `ai-title` / `custom-title` arms in `process_line` to filter
+    /// out title rows whose `sessionId` field belongs to a different
+    /// Claude session — Claude writes title lines stamped with the
+    /// originating session id, and a tail thread should only emit
+    /// `agent-session-title` for ITS session (PR #302 cycle 2 F1+F2).
+    claude_agent_session_id: String,
+    /// Per-decoder dedup memo for the title-emit path: skip duplicate
+    /// `ai-title` rows (Claude can write the same `aiTitle` value
+    /// multiple times in a row); `custom-title` ALWAYS emits because
+    /// `/rename` is a user-initiated event that must round-trip even if
+    /// the title text hasn't changed (matches the pre-refactor
+    /// `emit_title` dedup contract from PR #265).
+    last_title_memo: Option<String>,
 }
 
 impl ClaudeTranscriptDecoder {
-    fn new(events: Arc<dyn EventSink>, session_id: String, cwd: Option<PathBuf>) -> Self {
+    fn new(
+        events: Arc<dyn EventSink>,
+        session_id: String,
+        cwd: Option<PathBuf>,
+        claude_agent_session_id: String,
+    ) -> Self {
         let emitter = TestRunEmitter::new(events.clone());
         Self {
             events,
@@ -218,6 +260,8 @@ impl ClaudeTranscriptDecoder {
             num_turns: 0,
             last_cwd: None,
             emitter,
+            claude_agent_session_id,
+            last_title_memo: None,
         }
     }
 }
@@ -233,6 +277,8 @@ impl TranscriptDecoder for ClaudeTranscriptDecoder {
             &mut self.in_flight,
             &mut self.num_turns,
             &mut self.last_cwd,
+            &self.claude_agent_session_id,
+            &mut self.last_title_memo,
         );
     }
 
@@ -243,7 +289,21 @@ impl TranscriptDecoder for ClaudeTranscriptDecoder {
     }
 }
 
-/// Process a single JSONL line and emit events if it's a tool call
+/// Process a single JSONL line and emit events if it's a tool call or a
+/// title row.
+///
+/// `claude_agent_session_id` is the agent's own session id (derived from
+/// the transcript filename stem in `start_tailing`). `ai-title` /
+/// `custom-title` lines carry a `sessionId` field stamped by Claude; the
+/// arms below filter on equality so a tail thread only emits
+/// `agent-session-title` for ITS session and never leaks another
+/// session's title through this PTY. `last_title_memo` dedups consecutive
+/// identical `ai-title` rows; `custom-title` bypasses the memo since
+/// `/rename` is user-initiated and must round-trip even when text is
+/// unchanged (PR #302 cycle 2 F1+F2 — restored from PR #265 after the
+/// PR #287 `tail_loop` → `TranscriptTailService` extraction dropped
+/// both arms along with the title helper and 8 covering tests).
+#[allow(clippy::too_many_arguments)]
 fn process_line(
     line: &str,
     session_id: &str,
@@ -253,6 +313,8 @@ fn process_line(
     in_flight: &mut InFlightToolCalls,
     num_turns: &mut u32,
     last_cwd: &mut Option<String>,
+    claude_agent_session_id: &str,
+    last_title_memo: &mut Option<String>,
 ) {
     let dto: ClaudeTranscriptLineDto = match serde_json::from_str(line) {
         Ok(v) => v,
@@ -305,10 +367,80 @@ fn process_line(
                 &timestamp,
             );
         }
+        "ai-title" => {
+            if dto.session_id_field.as_deref() == Some(claude_agent_session_id) {
+                emit_title(
+                    events,
+                    session_id,
+                    claude_agent_session_id,
+                    dto.ai_title.as_deref().unwrap_or(""),
+                    TitleSource::AiGenerated,
+                    last_title_memo,
+                );
+            }
+        }
+        "custom-title" => {
+            if dto.session_id_field.as_deref() == Some(claude_agent_session_id) {
+                emit_title(
+                    events,
+                    session_id,
+                    claude_agent_session_id,
+                    dto.custom_title.as_deref().unwrap_or(""),
+                    TitleSource::UserRenamed,
+                    last_title_memo,
+                );
+            }
+        }
         _ => {
             // Other message types — ignore
         }
     }
+}
+
+/// Sanitize, dedup (for AI-generated only), and emit one
+/// `agent-session-title` event. Mirrors the pre-refactor `emit_title`
+/// helper from PR #265: AI-generated titles dedup against the memo to
+/// avoid spamming the frontend on idempotent rewrites; user-renamed
+/// titles ALWAYS emit because `/rename` is user-initiated and the
+/// round-trip itself is a UX confirmation signal. `None` after
+/// sanitization (empty / whitespace-only) clears the memo and emits an
+/// empty-string title if a non-empty one was previously emitted, so the
+/// frontend can revert to the pane's default name (PR #302 cycle 2
+/// F1+F2).
+fn emit_title(
+    events: &Arc<dyn EventSink>,
+    session_id: &str,
+    claude_agent_session_id: &str,
+    raw_title: &str,
+    source: TitleSource,
+    last_title_memo: &mut Option<String>,
+) {
+    let sanitized = sanitize_title(raw_title);
+    let is_user_renamed = matches!(&source, TitleSource::UserRenamed);
+    let (title, new_memo) = match sanitized {
+        Some(title)
+            if last_title_memo.as_deref() == Some(title.as_str()) && !is_user_renamed =>
+        {
+            return;
+        }
+        Some(title) => (title.clone(), Some(title)),
+        None if last_title_memo.is_some() => (String::new(), None),
+        None => return,
+    };
+
+    let payload = AgentSessionTitleEvent {
+        session_id: session_id.to_string(),
+        agent_session_id: claude_agent_session_id.to_string(),
+        title,
+        source,
+    };
+
+    if let Err(err) = emit_agent_session_title(events.as_ref(), &payload) {
+        log::warn!("agent-session-title emit failed: {}", err);
+        return;
+    }
+
+    *last_title_memo = new_memo;
 }
 
 /// Pull the top-level `timestamp` field off a transcript line, or fall back
@@ -1406,6 +1538,7 @@ mod tests {
         );
 
         let line = r#"{"type":"tool_result","tool_use_id":"toolu_xyz","content":"ok","is_error":"oops"}"#;
+        let mut last_title_memo: Option<String> = None;
         process_line(
             line,
             "sess-1",
@@ -1415,6 +1548,8 @@ mod tests {
             &mut in_flight,
             &mut num_turns,
             &mut last_cwd,
+            "claude-agent-sid",
+            &mut last_title_memo,
         );
 
         assert_eq!(concrete.count("agent-tool-call"), 1);
@@ -1428,6 +1563,109 @@ mod tests {
     fn summarize_input_preserves_absent_vs_null() {
         assert_eq!(summarize_input(None), "");
         assert_eq!(summarize_input(Some(&serde_json::Value::Null)), "null");
+    }
+
+    /// Test helper for the title-emit regressions below. Drives a single
+    /// transcript line through `process_line` with default emitter / state,
+    /// then returns the recorded `agent-session-title` payloads.
+    fn drive_title_line(
+        line: &str,
+        claude_agent_session_id: &str,
+        last_title_memo: &mut Option<String>,
+    ) -> Vec<serde_json::Value> {
+        let concrete = Arc::new(crate::runtime::FakeEventSink::new());
+        let events: Arc<dyn EventSink> = concrete.clone();
+        let mut emitter = TestRunEmitter::new(events.clone());
+        let mut in_flight: InFlightToolCalls = HashMap::new();
+        let mut num_turns = 0_u32;
+        let mut last_cwd = None;
+
+        process_line(
+            line,
+            "pty-1",
+            None,
+            &events,
+            &mut emitter,
+            &mut in_flight,
+            &mut num_turns,
+            &mut last_cwd,
+            claude_agent_session_id,
+            last_title_memo,
+        );
+
+        concrete
+            .recorded()
+            .into_iter()
+            .filter(|(name, _)| name == "agent-session-title")
+            .map(|(_, payload)| payload)
+            .collect()
+    }
+
+    /// PR #302 cycle 2 F1+F2 — `ai-title` rows whose `sessionId` matches
+    /// the tail's `claude_agent_session_id` emit an `agent-session-title`
+    /// event with `source = ai-generated`.
+    #[test]
+    fn ai_title_matching_session_id_emits_ai_generated() {
+        let agent_id = "claude-abc-123";
+        let mut memo = None;
+        let line = format!(
+            r#"{{"type":"ai-title","aiTitle":"Investigate slow startup","sessionId":"{}"}}"#,
+            agent_id
+        );
+        let titles = drive_title_line(&line, agent_id, &mut memo);
+        assert_eq!(titles.len(), 1);
+        assert_eq!(titles[0]["title"], "Investigate slow startup");
+        assert_eq!(titles[0]["source"], "ai-generated");
+        assert_eq!(titles[0]["sessionId"], "pty-1");
+        assert_eq!(titles[0]["agentSessionId"], agent_id);
+        assert_eq!(memo.as_deref(), Some("Investigate slow startup"));
+    }
+
+    /// PR #302 cycle 2 F1+F2 — `custom-title` rows (from `/rename`) emit
+    /// with `source = user-renamed` and bypass the dedup memo so a
+    /// re-rename to the same title still round-trips.
+    #[test]
+    fn custom_title_matching_session_id_emits_user_renamed_and_bypasses_dedup() {
+        let agent_id = "claude-abc-123";
+        let mut memo = Some("my-feature".to_string());
+        let line = format!(
+            r#"{{"type":"custom-title","customTitle":"my-feature","sessionId":"{}"}}"#,
+            agent_id
+        );
+        let titles = drive_title_line(&line, agent_id, &mut memo);
+        assert_eq!(titles.len(), 1, "custom-title must always emit");
+        assert_eq!(titles[0]["title"], "my-feature");
+        assert_eq!(titles[0]["source"], "user-renamed");
+    }
+
+    /// PR #302 cycle 2 F1+F2 — title rows whose `sessionId` does NOT
+    /// match the tail's `claude_agent_session_id` are dropped silently.
+    /// Per-session isolation: a tail thread must only emit for ITS
+    /// session, never another Claude session's title.
+    #[test]
+    fn ai_title_mismatched_session_id_is_dropped() {
+        let mut memo = None;
+        let line = r#"{"type":"ai-title","aiTitle":"Wrong","sessionId":"other-session"}"#;
+        let titles = drive_title_line(line, "claude-abc-123", &mut memo);
+        assert!(titles.is_empty());
+        assert_eq!(memo, None);
+    }
+
+    /// PR #302 cycle 2 F1+F2 — `ai-title` dedup against the per-decoder
+    /// memo. Two identical AI-generated titles back-to-back emit only
+    /// once; the second is suppressed.
+    #[test]
+    fn ai_title_dedups_against_memo() {
+        let agent_id = "claude-abc-123";
+        let mut memo = None;
+        let line = format!(
+            r#"{{"type":"ai-title","aiTitle":"Same","sessionId":"{}"}}"#,
+            agent_id
+        );
+        let first = drive_title_line(&line, agent_id, &mut memo);
+        assert_eq!(first.len(), 1);
+        let second = drive_title_line(&line, agent_id, &mut memo);
+        assert!(second.is_empty(), "duplicate ai-title must dedup");
     }
 
     /// End-to-end G3 carve-out: a real `tool_use` line split across the
@@ -1445,7 +1683,12 @@ mod tests {
 
         let concrete = Arc::new(crate::runtime::FakeEventSink::new());
         let events: Arc<dyn EventSink> = concrete.clone();
-        let decoder = ClaudeTranscriptDecoder::new(events, "sess-g3".to_string(), None);
+        let decoder = ClaudeTranscriptDecoder::new(
+            events,
+            "sess-g3".to_string(),
+            None,
+            "claude-sess-g3".to_string(),
+        );
 
         // One valid tool_use assistant line, split mid-string-value so neither
         // side parses on its own: `..."tool_us` | `e"...`.

@@ -16,9 +16,10 @@ use crate::agent::adapter::serde_helpers::{lenient_bool, lenient_object, lenient
 
 /// One transcript JSONL line. Carries the top-level fields `process_line`
 /// reads — including the top-level `cwd` (emits `agent-cwd` before the
-/// `line_type` dispatch) and the top-level `tool_result` shape
-/// (`tool_use_id` / `is_error` / `content`), since `tool_result` is one of the
-/// top-level line types alongside `assistant` / `user`.
+/// `line_type` dispatch), the top-level `tool_result` shape
+/// (`tool_use_id` / `is_error` / `content`), and the top-level `ai-title`
+/// / `custom-title` shape (`sessionId` / `aiTitle` / `customTitle`), since
+/// all of these are top-level line types alongside `assistant` / `user`.
 #[derive(Deserialize, Default)]
 pub(super) struct ClaudeTranscriptLineDto {
     #[serde(rename = "type", default, deserialize_with = "lenient_string")]
@@ -37,6 +38,17 @@ pub(super) struct ClaudeTranscriptLineDto {
     /// Raw — consumed by the ported `extract_tool_result_content`.
     #[serde(default)]
     pub content: Value,
+    // Top-level title-line fields (PR #302 cycle 2 — F1+F2: re-add
+    // `ai-title` / `custom-title` handling that was dropped during PR
+    // #287's tail_loop → TranscriptTailService extraction). The lines
+    // carry `sessionId` (Claude's own session id; filter against the
+    // tailed file's stem) and one of `aiTitle` / `customTitle`.
+    #[serde(default, deserialize_with = "lenient_string", rename = "sessionId")]
+    pub session_id_field: Option<String>,
+    #[serde(default, deserialize_with = "lenient_string", rename = "aiTitle")]
+    pub ai_title: Option<String>,
+    #[serde(default, deserialize_with = "lenient_string", rename = "customTitle")]
+    pub custom_title: Option<String>,
 }
 
 /// `message` envelope. `content` is string | array | other and stays raw —

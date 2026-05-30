@@ -739,20 +739,42 @@ pub(crate) fn start_watching(
     // `None` and Drop becomes a no-op for those branches.
     let (session_index_stop, session_index_join) =
         if matches!(agent_type, AgentType::Codex) && located.agent_session_id.is_some() {
-            let agent_session_id = located
-                .agent_session_id
-                .clone()
-                .expect("checked is_some above");
-            let session_index_path = located.trust_root.join("session_index.jsonl");
-            let stop = Arc::new(AtomicBool::new(false));
-            let join = super::super::codex::session_index::spawn_watch(
-                session_index_path,
-                agent_session_id,
-                session_id.clone(),
-                events.clone(),
-                stop.clone(),
-            );
-            (Some(stop), Some(join))
+            // PR #302 cycle 2 F4: `located.trust_root` can be the relative
+            // `.codex` path when `dirs::home_dir()` returns `None` (headless
+            // / container environments). `default_codex_home()` keeps the
+            // relative fallback so codex attach itself doesn't hard-fail —
+            // but joining `session_index.jsonl` onto a relative trust_root
+            // and handing the result to `spawn_watch` would open the wrong
+            // file (relative to the sidecar's cwd, NOT the user's home).
+            // Status-path flow tolerates this because
+            // `ensure_status_source_under_trust_root` canonicalizes early;
+            // the title-sync path bypasses that gate, so we add an explicit
+            // absoluteness check here. Non-absolute → skip the title-sync
+            // spawn and log a warn so operators can correlate "Codex titles
+            // not updating" with a missing HOME env.
+            if !located.trust_root.is_absolute() {
+                log::warn!(
+                    "codex title-sync: skipping spawn — trust_root is not absolute (path={}); \
+                     check HOME / dirs::home_dir() in this environment",
+                    located.trust_root.display(),
+                );
+                (None, None)
+            } else {
+                let agent_session_id = located
+                    .agent_session_id
+                    .clone()
+                    .expect("checked is_some above");
+                let session_index_path = located.trust_root.join("session_index.jsonl");
+                let stop = Arc::new(AtomicBool::new(false));
+                let join = super::super::codex::session_index::spawn_watch(
+                    session_index_path,
+                    agent_session_id,
+                    session_id.clone(),
+                    events.clone(),
+                    stop.clone(),
+                );
+                (Some(stop), Some(join))
+            }
         } else {
             (None, None)
         };

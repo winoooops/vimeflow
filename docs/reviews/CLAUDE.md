@@ -46,14 +46,14 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Filesystem Scope](patterns/filesystem-scope.md)                     | security           | 21       | 3    | 2026-05-20   |
 | [React Lifecycle](patterns/react-lifecycle.md)                       | react-patterns     | 23       | 8    | 2026-05-27   |
 | [Resource Cleanup](patterns/resource-cleanup.md)                     | react-patterns     | 3        | 3    | 2026-05-24   |
-| [Cross-Platform Paths](patterns/cross-platform-paths.md)             | cross-platform     | 5        | 3    | 2026-05-29   |
+| [Cross-Platform Paths](patterns/cross-platform-paths.md)             | cross-platform     | 6        | 3    | 2026-05-30   |
 | [Debug Artifacts](patterns/debug-artifacts.md)                       | code-quality       | 5        | 0    | 2026-05-09   |
 | [Generated Artifacts](patterns/generated-artifacts.md)               | code-quality       | 3        | 2    | 2026-05-25   |
 | [Testing Gaps](patterns/testing-gaps.md)                             | testing            | 55       | 25   | 2026-05-28   |
 | [Terminal Input Handling](patterns/terminal-input-handling.md)       | terminal           | 4        | 2    | 2026-05-24   |
 | [Documentation Accuracy](patterns/documentation-accuracy.md)         | code-quality       | 73       | 22   | 2026-05-24   |
 | [Accessibility](patterns/accessibility.md)                           | a11y               | 25       | 6    | 2026-05-09   |
-| [Async Race Conditions](patterns/async-race-conditions.md)           | react-patterns     | 45       | 12   | 2026-05-29   |
+| [Async Race Conditions](patterns/async-race-conditions.md)           | react-patterns     | 46       | 12   | 2026-05-30   |
 | [Tokio Blocking On Async](patterns/tokio-blocking-on-async.md)       | backend            | 2        | 1    | 2026-05-20   |
 | [Command Injection](patterns/command-injection.md)                   | security           | 7        | 3    | 2026-05-02   |
 | [Policy Judge Hygiene](patterns/policy-judge-hygiene.md)             | security           | 15       | 2    | 2026-04-20   |
@@ -67,7 +67,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [File Tree Paths](patterns/file-tree-paths.md)                       | files              | 4        | 0    | 2026-04-10   |
 | [Scope Boundary](patterns/scope-boundary.md)                         | review-process     | 7        | 2    | 2026-05-12   |
 | [E2E Testing](patterns/e2e-testing.md)                               | e2e-testing        | 18       | 6    | 2026-05-20   |
-| [Module Boundaries](patterns/module-boundaries.md)                   | code-quality       | 11       | 1    | 2026-05-29   |
+| [Module Boundaries](patterns/module-boundaries.md)                   | code-quality       | 12       | 1    | 2026-05-30   |
 | [Diagnostic Instrumentation](patterns/diagnostic-instrumentation.md) | code-quality       | 7        | 2    | 2026-05-02   |
 | [Keyboard Shortcut Guards](patterns/keyboard-shortcut-guards.md)     | keyboard-shortcuts | 18       | 0    | 2026-05-26   |
 | [Verify Render Target](patterns/verify-render-target.md)             | code-quality       | 2        | 0    | 2026-05-24   |

@@ -590,11 +590,28 @@ impl SessionLifecycle {
     }
 
     /// The post-bindings half of `start`: the verb sequence run on the
-    /// blocking pool (`locate → ensure_trust → evict_old → spawn_watch →
+    /// blocking pool (`locate → ensure_trust → spawn_watch → evict_old →
     /// register`) with the two diagnostic log lines at the orchestration
     /// site. Shared by `start` (production) and, in tests,
     /// `start_inner_for_test` — so the migrated T-LIFECYCLE-1/2a/2b tests
     /// exercise the EXACT production sequence rather than a parallel copy.
+    ///
+    /// **Ordering: spawn → evict → register, NOT evict → spawn → register.**
+    /// Pre-PR-#302-cycle-2 the order was `evict → spawn → register`, which
+    /// matched the pre-refactor `base::start_for` shape. Claude review on
+    /// PR #302 flagged a behavioral cliff: if `spawn_watch` returned `Err`
+    /// (inotify fd exhaustion, racy restart, low-fd container), the
+    /// old `WatcherHandle` had already been dropped by `evict_old` — its
+    /// Drop cascade tore down the transcript-tail thread and the codex
+    /// title-sync watcher — and the closure exited via `?` before
+    /// `register` could re-install anything. The session was left
+    /// permanently unwatched with no automatic recovery path.
+    ///
+    /// New order spawns the NEW handle FIRST. On `Err`, the closure
+    /// exits via `?` before any state mutation; the old watcher is
+    /// untouched. On `Ok`, the new handle is in hand BEFORE `evict_old`
+    /// drops the old one, so the eviction-and-registration window is
+    /// back-to-back with no observable gap (PR #302 cycle 2 F3).
     async fn run_watch_sequence(
         &self,
         session_id: String,
@@ -613,8 +630,6 @@ impl SessionLifecycle {
                 trusted.status_path().display(),
             );
 
-            lc.evict_old(&session_id);
-
             log::info!(
                 "Starting agent watcher: session={}, path={}, active_watchers={}",
                 session_id,
@@ -625,7 +640,13 @@ impl SessionLifecycle {
             // Capture the agent type before `spawn_watch` consumes `bindings`,
             // so `register` records it for the rename / title-sync IPC (main #265).
             let agent_type = bindings.agent_type;
+            // Spawn FIRST. On `Err`, `?` short-circuits before any state
+            // mutation — the old watcher (if any) is still live and
+            // continues polling. This is the F3 ordering fix (PR #302).
             let handle = lc.spawn_watch(bindings, trusted, session_id.clone())?;
+            // Spawn succeeded; the old handle is safe to drop now, and
+            // `register` slots the new one in immediately after.
+            lc.evict_old(&session_id);
             lc.register(session_id, handle, agent_type);
             Ok::<_, String>(())
         })
