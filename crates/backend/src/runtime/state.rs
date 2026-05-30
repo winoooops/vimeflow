@@ -429,9 +429,11 @@ mod tests {
         state
             .pty
             .insert(pty_id.to_string(), make_capturing_session(writes.clone()));
-        state
-            .agents
-            .insert_agent_type_for_test(pty_id.to_string(), agent_type);
+        state.agents.insert_agent_type_for_test(
+            state.transcripts.clone(),
+            pty_id.to_string(),
+            agent_type,
+        );
         writes
     }
 
@@ -505,9 +507,11 @@ mod tests {
         state
             .pty
             .insert(pty_id.to_string(), make_failing_session(writes.clone()));
-        state
-            .agents
-            .insert_agent_type_for_test(pty_id.to_string(), AgentType::Codex);
+        state.agents.insert_agent_type_for_test(
+            state.transcripts.clone(),
+            pty_id.to_string(),
+            AgentType::Codex,
+        );
 
         let result = state.rename_agent_session(rename_request_for_pty(pty_id, "failed-title"));
 
@@ -584,9 +588,11 @@ mod tests {
                 })),
             ),
         );
-        state
-            .agents
-            .insert_agent_type_for_test("pty-1".to_string(), AgentType::ClaudeCode);
+        state.agents.insert_agent_type_for_test(
+            state.transcripts.clone(),
+            "pty-1".to_string(),
+            AgentType::ClaudeCode,
+        );
 
         let result = state.rename_agent_session(rename_request("exited"));
 
@@ -610,9 +616,11 @@ mod tests {
                 })),
             ),
         );
-        state
-            .agents
-            .insert_agent_type_for_test(pty_id.to_string(), AgentType::Codex);
+        state.agents.insert_agent_type_for_test(
+            state.transcripts.clone(),
+            pty_id.to_string(),
+            AgentType::Codex,
+        );
 
         let result = state.rename_agent_session(rename_request_for_pty(pty_id, "exited-codex"));
 

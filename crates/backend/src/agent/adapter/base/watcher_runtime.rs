@@ -548,9 +548,28 @@ impl AgentWatcherState {
     /// unknown session id, matching the production handle Drop
     /// cascade), then inserts via the public `insert` API so the
     /// single-mutex invariant is preserved (PR #302 Claude review F2).
+    /// PR #302 cycle 18 (Claude post-cycle-17 review LOW 90%): takes
+    /// the *shared* `TranscriptState` so the stub's `insert`-driven
+    /// gate acquisition and `stop_with_held_gate` call operate on the
+    /// same state any real transcript tail was registered against.
+    /// Previously this constructed a fresh `TranscriptState::new()`,
+    /// which meant `insert`'s teardown branch looked for the tail in
+    /// an isolated map (always empty) and silently no-op'd — leaking
+    /// any real tail thread the production state still owned, with
+    /// possible cross-test event contamination. The
+    /// `Arc::ptr_eq(&gate.start_gates, &self.start_gates)`
+    /// debug-assert inside `stop_with_held_gate` doesn't catch this
+    /// because both sides come from the same stub state — they match
+    /// each other, not the production state. Threading the real
+    /// state is the only structural fix.
     #[cfg(test)]
-    pub(crate) fn insert_agent_type_for_test(&self, pty_id: String, agent_type: AgentType) {
-        let stub = WatcherHandle::new_for_test(TranscriptState::new(), pty_id.clone());
+    pub(crate) fn insert_agent_type_for_test(
+        &self,
+        transcript_state: TranscriptState,
+        pty_id: String,
+        agent_type: AgentType,
+    ) {
+        let stub = WatcherHandle::new_for_test(transcript_state, pty_id.clone());
         self.insert(pty_id, stub, agent_type);
     }
 }
