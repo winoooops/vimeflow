@@ -10,13 +10,13 @@
 //!
 //! The loop owns the frozen line-buffering contract (F-EVENTS replay→live
 //! boundary): a partial line survives a non-terminal EOF, [`on_caught_up`]
-//! fires on the first EOF of each catch-up **after the partial buffer is
-//! empty**, and a read error warns + sleeps + continues rather than tearing
-//! the watcher down. The empty-partial guard is load-bearing: firing the
-//! replay→live boundary while a line is half-buffered would let decoders that
-//! flush replay-only emitter state at that signal classify the straddling
-//! line — which started during replay — as a live event when it eventually
-//! completes.
+//! fires on **every** EOF where the partial buffer is empty (NOT just the
+//! first — implementations MUST be idempotent, see the trait docstring), and
+//! a read error warns + sleeps + continues rather than tearing the watcher
+//! down. The empty-partial guard is load-bearing: firing the boundary signal
+//! while a line is half-buffered would let decoders that flush replay-only
+//! emitter state at that signal classify the straddling line — which started
+//! during replay — as a live event when it eventually completes.
 //!
 //! [`on_caught_up`]: TranscriptDecoder::on_caught_up
 
@@ -42,19 +42,33 @@ pub(crate) const POLL_INTERVAL: Duration = Duration::from_millis(500);
 pub(crate) const MAX_PARTIAL_BYTES: usize = 4 * 1024 * 1024;
 
 /// The provider-specific seam: turns one complete transcript line into events,
-/// and reacts to the replay→live boundary. Implementations own their
+/// and reacts to the EOF / caught-up signal. Implementations own their
 /// per-session parse state (in-flight tool calls, turn counts, last cwd).
 pub(crate) trait TranscriptDecoder: Send {
     /// Decode one complete (newline-stripped, non-blank) transcript line.
     fn decode_line(&mut self, line: &str);
-    /// Called on the first EOF of each catch-up pass with an **empty partial
-    /// buffer** — the replay→live boundary. Used to flush replay-only
-    /// emitter state exactly once. Implementations that flush in-flight
-    /// accumulators here can rely on the invariant that any straddling line
-    /// already-buffered before this signal will be decoded *before* the
-    /// signal fires (the engine defers the signal until the partial is
-    /// committed); if the writer truncated mid-line and never completes,
-    /// the signal stays parked — there is no boundary to cross.
+    /// Called on **every** EOF (`Ok(0)` read) where the partial-line
+    /// buffer is empty. Implementations MUST be idempotent — this fires
+    /// repeatedly during steady-state live tailing (every poll cycle,
+    /// ≈ POLL_INTERVAL = 500ms), not just at the initial replay→live
+    /// boundary.
+    ///
+    /// **Idempotency contract.** Treat each call as "the writer has
+    /// caught me up to its current end-of-file; flush any pending
+    /// emit-batches and return to a steady state." A handler that
+    /// emits a non-idempotent side effect (a summary event, a
+    /// state-machine transition, etc.) will misbehave every 500ms
+    /// during live tailing. If you genuinely need "the replay just
+    /// ended" exactly-once, implement that as a per-decoder
+    /// `bool replay_done` flag set on the first call and short-circuit
+    /// subsequent calls.
+    ///
+    /// **Partial-buffer guard (PR #302 review F3).** The engine
+    /// suppresses this call when a straddling line is half-buffered,
+    /// so any line already-buffered before the signal will be decoded
+    /// BEFORE the signal fires. If the writer truncated mid-line and
+    /// never completes, the signal stays parked — there is no
+    /// boundary to cross.
     fn on_caught_up(&mut self);
 }
 
@@ -288,6 +302,35 @@ mod tests {
         ]);
         assert_eq!(lines, ["{\"a\":123}"]);
         assert_eq!(caught, 1);
+    }
+
+    #[test]
+    fn engine_caught_up_fires_on_every_empty_eof_documenting_idempotency_requirement() {
+        // PR #302 cycle 12 review F1 — pins the engine's actual behavior:
+        // `on_caught_up` fires on EVERY EOF where the partial buffer is
+        // empty, NOT just the first ("replay→live boundary"). Decoders
+        // MUST be idempotent. Without this test, a future maintainer
+        // could read the partial-guard logic alone, conclude the signal
+        // fires once per replay, and write a non-idempotent
+        // `on_caught_up` handler that misfires every poll cycle (~500ms)
+        // during steady-state live tailing.
+        //
+        // Three consecutive empty-partial EOFs → three on_caught_up
+        // calls. The recording decoder's `caught_up` counter is itself
+        // idempotent (just increments an AtomicUsize), so this test
+        // doesn't assert any specific decoder behavior — only the
+        // engine's fire-cadence contract.
+        let (lines, caught) = drive(vec![
+            Step::Chunk("{\"a\":1}\n"),
+            Step::Eof,
+            Step::Eof,
+            Step::EofStop,
+        ]);
+        assert_eq!(lines, ["{\"a\":1}"]);
+        assert_eq!(
+            caught, 3,
+            "on_caught_up must fire on every empty-partial EOF (3 total: 2 Eof + 1 EofStop)",
+        );
     }
 
     #[test]
