@@ -30,6 +30,13 @@ export interface ToolActivityEvent extends BaseActivityEvent {
   durationMs: number | null
   diff?: { added: number; removed: number }
   bashResult?: { passed: number; total: number }
+  /**
+   * Small head preview of the tool_result content, for the activity
+   * tooltip body. Populated by the producer in PR2; always undefined in
+   * PR1 (the card degrades to the tier-1 body when absent). Tool events
+   * only — Think/User never carry it.
+   */
+  resultPreview?: string | null
 }
 
 export interface ThinkActivityEvent extends BaseActivityEvent {
