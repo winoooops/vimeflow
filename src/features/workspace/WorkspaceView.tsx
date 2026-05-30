@@ -64,6 +64,7 @@ import { useDockShortcuts } from './hooks/useDockShortcuts'
 import { useEditorBuffer } from '../editor/hooks/useEditorBuffer'
 import { useAgentStatus } from '../agent-status/hooks/useAgentStatus'
 import { useGitStatus } from '../diff/hooks/useGitStatus'
+import type { PaneCandidate } from '../diff/services/activePanePicker'
 import { sumLines } from '../diff/utils/sumLines'
 import { findActivePane } from '../sessions/utils/activeSessionPane'
 import { isShellPane } from '../sessions/utils/paneKind'
@@ -1204,6 +1205,68 @@ export const WorkspaceView = (): ReactElement => {
     fileError !== null ||
     infoMessage !== null
 
+  const feedbackDispatch = useMemo(() => {
+    // Inline-review feedback dispatches to the single CONNECTED (active) pane —
+    // the one whose diff is on screen. We gate the candidate on LIVE agent
+    // state from `useAgentStatus` (sessionId match + isActive + !agentExited),
+    // NOT the PTY-lifecycle `pane.status`: a pane whose agent exited can keep a
+    // stale 'codex'/'claude-code' label while its shell PTY is still running,
+    // and the live signal is the only way to avoid pasting feedback into a bare
+    // shell. `agentLabel` maps agentType directly to the picker's SupportedAgent
+    // literals (the registry display name diverges, e.g. AGENTS.codex.name ===
+    // 'Codex CLI', which would mis-filter Codex).
+    const agentLabel =
+      agentStatus.agentType === 'claude-code'
+        ? 'Claude Code'
+        : agentStatus.agentType === 'codex'
+          ? 'Codex'
+          : null
+
+    // Bind the candidate to the pty-backed pane (not the literal active pane),
+    // matching the pane `agentStatus` is computed from: when a browser pane is
+    // active we prefer the live shell, so feedback never targets a browser
+    // pane or an exited PTY.
+    const candidates: PaneCandidate[] =
+      activePtyBackedPane &&
+      activePtyBackedPanePtyId &&
+      agentStatus.sessionId === activePtyBackedPanePtyId &&
+      agentStatus.isActive &&
+      !agentStatus.agentExited &&
+      agentLabel !== null
+        ? [
+            {
+              paneId: activePtyBackedPane.id,
+              ptyId: activePtyBackedPanePtyId,
+              tabName:
+                activePtyBackedPane.userLabel ??
+                activePtyBackedPane.agentTitle ??
+                activeSession?.name ??
+                'Terminal',
+              agentLabel,
+              cwd: activePtyBackedPane.cwd,
+              status: 'running',
+              isFocused: true,
+            },
+          ]
+        : []
+
+    return {
+      candidates,
+      writePty: async (ptyId: string, data: string): Promise<void> => {
+        await terminalService.write({ sessionId: ptyId, data })
+      },
+    }
+  }, [
+    activePtyBackedPane,
+    activePtyBackedPanePtyId,
+    activeSession,
+    agentStatus.agentType,
+    agentStatus.isActive,
+    agentStatus.agentExited,
+    agentStatus.sessionId,
+    terminalService,
+  ])
+
   const dockOrPeek = isDockOpen ? (
     <DockPanel
       ref={dockPanelRef}
@@ -1240,6 +1303,7 @@ export const WorkspaceView = (): ReactElement => {
       onContainerFocus={() => {
         setActiveContainerId(DOCK_CONTAINER_ID)
       }}
+      feedbackDispatch={feedbackDispatch}
     />
   ) : (
     <DockPeekButton position={dockPosition} onOpen={() => openDock()} />
