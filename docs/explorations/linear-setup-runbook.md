@@ -3,7 +3,7 @@
 Operational do-list for the plan in [`linear-migration-analysis.html`](./linear-migration-analysis.html).
 All Linear facts verified against live docs on 2026-05-30; cost target = **free tier**.
 
-**Legend:** 🧑 = needs your login / OAuth (an agent can't do it) · 🤖 = agent- or script-runnable
+**Legend:** 🧑 = needs your login / OAuth (an agent can't do it) · 🤖 = agent-runnable (via MCP)
 
 ---
 
@@ -28,12 +28,9 @@ All Linear facts verified against live docs on 2026-05-30; cost target = **free 
 
 9. 🧑 `Settings → Import/Export → Import → GitHub` (lift everything; note: created/modified dates do **not** carry over), **or** hand-create the live handful.
 
-## Phase 4 — scripted status for hooks/CI (optional) 🤖
+## Phase 4 — direct API access (optional, non-agent only) 🧑
 
-10. 🧑 Create a personal API key → `Settings → Security & access → Personal API keys`; copy `scripts/linear.env.example` → `scripts/linear.env`, fill `LINEAR_API_KEY`, `source` it.
-11. 🤖 Verify the key: `./scripts/linear-status.sh whoami`
-12. 🤖 List a team's states: `./scripts/linear-status.sh states VIM`
-13. 🤖 Move an issue: `./scripts/linear-status.sh set VIM-1 <STATE_UUID>` (use `--dry-run` first to inspect the request)
+10. 🧑 Only for git hooks / CI that aren't agents and aren't tied to a PR. Create a personal API key → `Settings → Security & access → Personal API keys`; copy `linear.env.example` → `linear.env` (repo root, gitignored), fill `LINEAR_API_KEY`, then `source linear.env`. The MCP server uses OAuth and does **not** use this key. Details: `rules/common/linear-workflow.md`.
 
 ## Later — full delegation (Path C)
 

@@ -112,5 +112,5 @@ feedbacak*.png
 !build/icon.png
 release/
 
-# local Linear API key (never commit)
-scripts/linear.env
+# local Linear API key (never commit) — see linear.env.example + rules/common/linear-workflow.md
+linear.env
