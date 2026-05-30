@@ -57,7 +57,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "jq -r '.tool_name // \"\"' | grep -qE 'save_(issue|comment|project|milestone)' && printf '%s' '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"additionalContext\":\"Linear write (rules/common/linear-workflow.md): team key VIM; statuses Backlog -> Todo -> In Progress -> In Review -> Done, plus Canceled/Duplicate for dropped work; map GitHub wontfix -> Canceled.\"}}' || true"
+            "command": "jq -r '.tool_name // \"\"' | grep -qE '(save|create|update)_(issue|comment|project|milestone)$' && printf '%s' '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"additionalContext\":\"Linear write (rules/common/linear-workflow.md): team key VIM; statuses Backlog -> Todo -> In Progress -> In Review -> Done, plus Canceled/Duplicate for dropped work; map GitHub wontfix -> Canceled.\"}}' || true"
           }
         ]
       }
