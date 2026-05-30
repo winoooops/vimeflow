@@ -94,14 +94,14 @@ export const MarkdownReadingView = forwardRef<
     <div
       data-testid="markdown-reading-view"
       style={styleVars}
-      className="markdown-reading-view relative flex min-h-0 flex-1 flex-col overflow-hidden"
+      className="markdown-reading-view relative flex min-h-0 flex-1 flex-col overflow-hidden [container-type:inline-size]"
     >
       <div
         ref={ref}
         role="region"
         aria-label="Markdown reading view"
         tabIndex={0}
-        className="thin-scrollbar min-h-0 flex-1 overflow-auto py-8 [container-type:inline-size] [padding-inline:var(--rv-pad-inline)] focus:outline-none"
+        className="thin-scrollbar min-h-0 flex-1 overflow-auto py-8 [padding-inline:var(--rv-pad-inline)] focus:outline-none"
       >
         <div className="mx-auto [font-size:var(--rv-font-size)] [line-height:var(--rv-line-height)] [max-width:var(--rv-measure)]">
           {rendered}

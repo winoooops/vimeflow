@@ -356,6 +356,7 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
             >
               {isMarkdown && viewMode === 'reading' ? (
                 <MarkdownReadingView
+                  key={selectedFilePath ?? 'markdown'}
                   ref={markdownViewRef}
                   content={content}
                   isLoading={isLoading}

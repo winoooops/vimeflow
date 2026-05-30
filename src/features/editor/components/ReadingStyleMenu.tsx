@@ -42,7 +42,13 @@ export const ReadingStyleMenu = (): ReactElement => {
   }, [open])
 
   return (
-    <div ref={wrapRef} className="relative shrink-0">
+    // Stop clicks from bubbling so the gear works inside DockTab's compact
+    // overflow menu, which otherwise closes (and unmounts this) on any click.
+    <div
+      ref={wrapRef}
+      onClick={(event) => event.stopPropagation()}
+      className="relative shrink-0"
+    >
       <button
         type="button"
         aria-label="Reading style"
