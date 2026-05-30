@@ -305,9 +305,15 @@ export const WorkspaceView = (): ReactElement => {
       ? undefined
       : (activePane.kind ?? 'shell') === 'shell'
         ? activePane
-        : activeSession?.panes.find(
+        : // Active pane is a browser: prefer a live shell so agent/cwd/status
+          // state does not bind to an exited PTY when another shell is running.
+          (activeSession?.panes.find(
+            (pane) =>
+              (pane.kind ?? 'shell') === 'shell' && pane.status === 'running'
+          ) ??
+          activeSession?.panes.find(
             (pane) => (pane.kind ?? 'shell') === 'shell'
-          )
+          ))
 
   const activePtyBackedPaneId = activePtyBackedPane?.id
   const activePtyBackedPanePtyId = activePtyBackedPane?.ptyId
