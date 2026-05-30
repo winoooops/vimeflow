@@ -6,132 +6,644 @@
     <title>Vimeflow → Linear · Migration & Agent-Autonomy Analysis</title>
     <style>
       :root {
-        --base:#1e1e2e;--mantle:#181825;--crust:#11111b;--surface0:#313244;--surface1:#45475a;
-        --text:#cdd6f4;--subtext0:#a6adc8;--subtext1:#bac2de;--overlay0:#6c7086;--overlay1:#7f849c;
-        --green:#a6e3a1;--yellow:#f9e2af;--blue:#89b4fa;--sapphire:#74c7ec;--red:#f38ba8;
-        --peach:#fab387;--mauve:#cba6f7;--lavender:#b4befe;--teal:#94e2d5;--grey:#9399b2;
+        --base: #1e1e2e;
+        --mantle: #181825;
+        --crust: #11111b;
+        --surface0: #313244;
+        --surface1: #45475a;
+        --text: #cdd6f4;
+        --subtext0: #a6adc8;
+        --subtext1: #bac2de;
+        --overlay0: #6c7086;
+        --overlay1: #7f849c;
+        --green: #a6e3a1;
+        --yellow: #f9e2af;
+        --blue: #89b4fa;
+        --sapphire: #74c7ec;
+        --red: #f38ba8;
+        --peach: #fab387;
+        --mauve: #cba6f7;
+        --lavender: #b4befe;
+        --teal: #94e2d5;
+        --grey: #9399b2;
       }
-      *{box-sizing:border-box;}
-      html{scroll-behavior:smooth;}
-      body{margin:0;background:radial-gradient(1100px 560px at 82% -8%,rgba(137,180,250,.08),transparent),radial-gradient(900px 480px at -8% 8%,rgba(203,166,247,.07),transparent),var(--base);color:var(--text);font-family:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;line-height:1.58;-webkit-font-smoothing:antialiased;}
-      .wrap{max-width:1080px;margin:0 auto;padding:40px 28px 90px;}
-      h1{font-family:'Manrope','Inter',sans-serif;font-weight:800;font-size:30px;letter-spacing:-.02em;margin:0 0 6px;}
-      h1 .accent{color:var(--mauve);}
-      .sub{color:var(--subtext0);font-size:14px;margin:0 0 4px;}
-      .sub a{color:var(--blue);text-decoration:none;}.sub a:hover{text-decoration:underline;}
-      .stamp{color:var(--overlay0);font-size:12px;}
-      h2{font-family:'Manrope',sans-serif;font-size:20px;font-weight:700;margin:38px 0 4px;letter-spacing:-.01em;color:var(--c,var(--text));scroll-margin-top:18px;}
-      h2 .pre{font-family:'JetBrains Mono',monospace;font-size:13px;color:var(--overlay1);margin-right:8px;}
-      h3{font-size:15px;font-weight:700;margin:22px 0 6px;color:var(--subtext1);}
-      p{margin:8px 0;}
-      a.ref{color:var(--sapphire);text-decoration:none;font-size:11px;font-family:'JetBrains Mono',monospace;vertical-align:super;}
-      a.ref:hover{text-decoration:underline;}
-      code{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:.86em;background:var(--crust);padding:1px 6px;border-radius:5px;color:var(--lavender);}
-      pre{background:var(--crust);border:1px solid var(--surface0);border-radius:10px;padding:13px 15px;overflow-x:auto;margin:10px 0;}
-      pre code{background:none;padding:0;color:var(--teal);font-size:12.6px;line-height:1.5;}
-      .tldr{margin:20px 0 8px;background:linear-gradient(180deg,rgba(166,227,161,.10),rgba(166,227,161,.03));border:1px solid rgba(166,227,161,.25);border-radius:14px;padding:18px 22px;}
-      .tldr h2{margin:0 0 8px;font-size:17px;color:var(--green);}
-      .tldr ul{margin:6px 0 0;padding-left:20px;}.tldr li{margin:4px 0;font-size:13.5px;color:var(--subtext1);}
-      .toc{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0 6px;}
-      .toc a{font-size:12px;color:var(--subtext0);background:var(--mantle);border:1px solid var(--surface0);border-radius:999px;padding:5px 12px;text-decoration:none;}
-      .toc a:hover{border-color:var(--surface1);color:var(--text);}
-      table{width:100%;border-collapse:collapse;margin:12px 0;font-size:13px;}
-      th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--surface0);vertical-align:top;}
-      th{color:var(--subtext0);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:.04em;background:var(--mantle);}
-      td code{font-size:.84em;}
-      tr:hover td{background:rgba(255,255,255,.015);}
-      .pill{display:inline-block;font-size:10.5px;font-weight:600;padding:1px 8px;border-radius:999px;}
-      .pill.free{background:rgba(166,227,161,.16);color:var(--green);}
-      .pill.paid{background:rgba(250,179,135,.16);color:var(--peach);}
-      .pill.beta{background:rgba(203,166,247,.16);color:var(--mauve);}
-      .pill.open{background:rgba(243,139,168,.16);color:var(--red);}
-      .card{background:linear-gradient(180deg,rgba(255,255,255,.025),rgba(255,255,255,0));border:1px solid var(--surface0);border-radius:12px;padding:14px 18px;margin:12px 0;}
-      .card.path{border-left:4px solid var(--c);}
-      .note{font-size:12.5px;color:var(--subtext0);border-left:3px solid var(--surface1);padding:2px 0 2px 12px;margin:10px 0;}
-      .warn{border-left-color:var(--peach);color:var(--peach);}
-      .ok{color:var(--green);}
-      .step{counter-increment:s;}
-      ol.checklist{list-style:none;counter-reset:s;padding-left:0;}
-      ol.checklist>li{position:relative;padding:10px 0 10px 38px;border-bottom:1px solid var(--surface0);font-size:13.5px;}
-      ol.checklist>li::before{counter-increment:c;content:counter(c);position:absolute;left:0;top:9px;width:24px;height:24px;border-radius:7px;background:var(--surface0);color:var(--lavender);font-family:'JetBrains Mono',monospace;font-size:12px;display:flex;align-items:center;justify-content:center;font-weight:700;}
-      ol.checklist{counter-reset:c;}
-      .you{font-size:10px;font-weight:700;color:var(--peach);background:rgba(250,179,135,.14);padding:1px 7px;border-radius:5px;margin-left:6px;letter-spacing:.03em;}
-      footer{margin-top:46px;padding-top:18px;border-top:1px solid var(--surface0);color:var(--overlay0);font-size:11.5px;}
-      footer ol{padding-left:18px;}footer li{margin:3px 0;}
-      footer a{color:var(--sapphire);text-decoration:none;}footer a:hover{text-decoration:underline;}
+      * {
+        box-sizing: border-box;
+      }
+      html {
+        scroll-behavior: smooth;
+      }
+      body {
+        margin: 0;
+        background:
+          radial-gradient(
+            1100px 560px at 82% -8%,
+            rgba(137, 180, 250, 0.08),
+            transparent
+          ),
+          radial-gradient(
+            900px 480px at -8% 8%,
+            rgba(203, 166, 247, 0.07),
+            transparent
+          ),
+          var(--base);
+        color: var(--text);
+        font-family:
+          'Inter',
+          system-ui,
+          -apple-system,
+          'Segoe UI',
+          sans-serif;
+        line-height: 1.58;
+        -webkit-font-smoothing: antialiased;
+      }
+      .wrap {
+        max-width: 1080px;
+        margin: 0 auto;
+        padding: 40px 28px 90px;
+      }
+      h1 {
+        font-family: 'Manrope', 'Inter', sans-serif;
+        font-weight: 800;
+        font-size: 30px;
+        letter-spacing: -0.02em;
+        margin: 0 0 6px;
+      }
+      h1 .accent {
+        color: var(--mauve);
+      }
+      .sub {
+        color: var(--subtext0);
+        font-size: 14px;
+        margin: 0 0 4px;
+      }
+      .sub a {
+        color: var(--blue);
+        text-decoration: none;
+      }
+      .sub a:hover {
+        text-decoration: underline;
+      }
+      .stamp {
+        color: var(--overlay0);
+        font-size: 12px;
+      }
+      h2 {
+        font-family: 'Manrope', sans-serif;
+        font-size: 20px;
+        font-weight: 700;
+        margin: 38px 0 4px;
+        letter-spacing: -0.01em;
+        color: var(--c, var(--text));
+        scroll-margin-top: 18px;
+      }
+      h2 .pre {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 13px;
+        color: var(--overlay1);
+        margin-right: 8px;
+      }
+      h3 {
+        font-size: 15px;
+        font-weight: 700;
+        margin: 22px 0 6px;
+        color: var(--subtext1);
+      }
+      p {
+        margin: 8px 0;
+      }
+      a.ref {
+        color: var(--sapphire);
+        text-decoration: none;
+        font-size: 11px;
+        font-family: 'JetBrains Mono', monospace;
+        vertical-align: super;
+      }
+      a.ref:hover {
+        text-decoration: underline;
+      }
+      code {
+        font-family: 'JetBrains Mono', ui-monospace, monospace;
+        font-size: 0.86em;
+        background: var(--crust);
+        padding: 1px 6px;
+        border-radius: 5px;
+        color: var(--lavender);
+      }
+      pre {
+        background: var(--crust);
+        border: 1px solid var(--surface0);
+        border-radius: 10px;
+        padding: 13px 15px;
+        overflow-x: auto;
+        margin: 10px 0;
+      }
+      pre code {
+        background: none;
+        padding: 0;
+        color: var(--teal);
+        font-size: 12.6px;
+        line-height: 1.5;
+      }
+      .tldr {
+        margin: 20px 0 8px;
+        background: linear-gradient(
+          180deg,
+          rgba(166, 227, 161, 0.1),
+          rgba(166, 227, 161, 0.03)
+        );
+        border: 1px solid rgba(166, 227, 161, 0.25);
+        border-radius: 14px;
+        padding: 18px 22px;
+      }
+      .tldr h2 {
+        margin: 0 0 8px;
+        font-size: 17px;
+        color: var(--green);
+      }
+      .tldr ul {
+        margin: 6px 0 0;
+        padding-left: 20px;
+      }
+      .tldr li {
+        margin: 4px 0;
+        font-size: 13.5px;
+        color: var(--subtext1);
+      }
+      .toc {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin: 14px 0 6px;
+      }
+      .toc a {
+        font-size: 12px;
+        color: var(--subtext0);
+        background: var(--mantle);
+        border: 1px solid var(--surface0);
+        border-radius: 999px;
+        padding: 5px 12px;
+        text-decoration: none;
+      }
+      .toc a:hover {
+        border-color: var(--surface1);
+        color: var(--text);
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 12px 0;
+        font-size: 13px;
+      }
+      th,
+      td {
+        text-align: left;
+        padding: 9px 12px;
+        border-bottom: 1px solid var(--surface0);
+        vertical-align: top;
+      }
+      th {
+        color: var(--subtext0);
+        font-weight: 600;
+        font-size: 11.5px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        background: var(--mantle);
+      }
+      td code {
+        font-size: 0.84em;
+      }
+      tr:hover td {
+        background: rgba(255, 255, 255, 0.015);
+      }
+      .pill {
+        display: inline-block;
+        font-size: 10.5px;
+        font-weight: 600;
+        padding: 1px 8px;
+        border-radius: 999px;
+      }
+      .pill.free {
+        background: rgba(166, 227, 161, 0.16);
+        color: var(--green);
+      }
+      .pill.paid {
+        background: rgba(250, 179, 135, 0.16);
+        color: var(--peach);
+      }
+      .pill.beta {
+        background: rgba(203, 166, 247, 0.16);
+        color: var(--mauve);
+      }
+      .pill.open {
+        background: rgba(243, 139, 168, 0.16);
+        color: var(--red);
+      }
+      .card {
+        background: linear-gradient(
+          180deg,
+          rgba(255, 255, 255, 0.025),
+          rgba(255, 255, 255, 0)
+        );
+        border: 1px solid var(--surface0);
+        border-radius: 12px;
+        padding: 14px 18px;
+        margin: 12px 0;
+      }
+      .card.path {
+        border-left: 4px solid var(--c);
+      }
+      .note {
+        font-size: 12.5px;
+        color: var(--subtext0);
+        border-left: 3px solid var(--surface1);
+        padding: 2px 0 2px 12px;
+        margin: 10px 0;
+      }
+      .warn {
+        border-left-color: var(--peach);
+        color: var(--peach);
+      }
+      .ok {
+        color: var(--green);
+      }
+      .step {
+        counter-increment: s;
+      }
+      ol.checklist {
+        list-style: none;
+        counter-reset: s;
+        padding-left: 0;
+      }
+      ol.checklist > li {
+        position: relative;
+        padding: 10px 0 10px 38px;
+        border-bottom: 1px solid var(--surface0);
+        font-size: 13.5px;
+      }
+      ol.checklist > li::before {
+        counter-increment: c;
+        content: counter(c);
+        position: absolute;
+        left: 0;
+        top: 9px;
+        width: 24px;
+        height: 24px;
+        border-radius: 7px;
+        background: var(--surface0);
+        color: var(--lavender);
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 700;
+      }
+      ol.checklist {
+        counter-reset: c;
+      }
+      .you {
+        font-size: 10px;
+        font-weight: 700;
+        color: var(--peach);
+        background: rgba(250, 179, 135, 0.14);
+        padding: 1px 7px;
+        border-radius: 5px;
+        margin-left: 6px;
+        letter-spacing: 0.03em;
+      }
+      footer {
+        margin-top: 46px;
+        padding-top: 18px;
+        border-top: 1px solid var(--surface0);
+        color: var(--overlay0);
+        font-size: 11.5px;
+      }
+      footer ol {
+        padding-left: 18px;
+      }
+      footer li {
+        margin: 3px 0;
+      }
+      footer a {
+        color: var(--sapphire);
+        text-decoration: none;
+      }
+      footer a:hover {
+        text-decoration: underline;
+      }
     </style>
   </head>
   <body>
     <div class="wrap">
-      <h1>Vimeflow → <span class="accent">Linear</span> · Migration &amp; Agent-Autonomy Analysis</h1>
-      <p class="sub">Porting the GitHub-Issues + lifeline/Codex/Claude-Code workflow into Linear · keep GitHub for code &amp; PRs, Linear for issues &amp; status, synced.</p>
-      <p class="stamp">All Linear pricing &amp; capability claims checked against live docs on <b>2026-05-30</b>. Sources numbered inline &amp; listed at the end.</p>
+      <h1>
+        Vimeflow → <span class="accent">Linear</span> · Migration &amp;
+        Agent-Autonomy Analysis
+      </h1>
+      <p class="sub">
+        Porting the GitHub-Issues + lifeline/Codex/Claude-Code workflow into
+        Linear · keep GitHub for code &amp; PRs, Linear for issues &amp; status,
+        synced.
+      </p>
+      <p class="stamp">
+        All Linear pricing &amp; capability claims checked against live docs on
+        <b>2026-05-30</b>. Sources numbered inline &amp; listed at the end.
+      </p>
 
       <div class="tldr">
         <h2>TL;DR — the verdict</h2>
         <ul>
-          <li><b>Cost: start 100% free.</b> Linear's Free tier allows 250 issues / 2 teams and explicitly includes the <b>Agent platform + Linear Agent (beta)</b>, the API, MCP, webhooks and GitHub sync. Your repo has ~26 issues — the only realistic forcing function is the 250-issue cap later (then Basic <code>$10/user/mo</code>).<a class="ref" href="#s5">[1]</a></li>
-          <li><b>Migration: one-click native importer.</b> Linear has a built-in GitHub Issues importer; caveat — created/modified dates don't carry over.<a class="ref" href="#s2">[6]</a></li>
-          <li><b>Agent autonomy: 3 layered paths.</b> (A) Linear <b>MCP</b> in Claude Code &amp; Codex → agents read/update status mid-run <span class="pill free">free, today</span>; (B) <b>GitHub PR automation</b> → status moves itself on PR open/merge <span class="pill free">free, zero agent change</span>; (C) <b>Agent SDK</b> (actor=app + webhooks) → assign an issue to a bot that runs an agent <span class="pill free">free platform, custom build</span>.<a class="ref" href="#s4">[3][4][5]</a></li>
-          <li><b>Honest gap:</b> native "assign a Linear issue → Claude Code cloud session" is <span class="pill open">open / not shipped</span> (tracked in claude-code#12925). Today that delegation needs the Agent-SDK path or GitHub sync.<a class="ref" href="#s4">[7]</a></li>
+          <li>
+            <b>Cost: start 100% free.</b> Linear's Free tier allows 250 issues /
+            2 teams and explicitly includes the
+            <b>Agent platform + Linear Agent (beta)</b>, the API, MCP, webhooks
+            and GitHub sync. Your repo has ~26 issues — the only realistic
+            forcing function is the 250-issue cap later (then Basic
+            <code>$10/user/mo</code>).<a class="ref" href="#s5">[1]</a>
+          </li>
+          <li>
+            <b>Migration: one-click native importer.</b> Linear has a built-in
+            GitHub Issues importer; caveat — created/modified dates don't carry
+            over.<a class="ref" href="#s2">[6]</a>
+          </li>
+          <li>
+            <b>Agent autonomy: 3 layered paths.</b> (A) Linear <b>MCP</b> in
+            Claude Code &amp; Codex → agents read/update status mid-run
+            <span class="pill free">free, today</span>; (B)
+            <b>GitHub PR automation</b> → status moves itself on PR open/merge
+            <span class="pill free">free, zero agent change</span>; (C)
+            <b>Agent SDK</b> (actor=app + webhooks) → assign an issue to a bot
+            that runs an agent
+            <span class="pill free">free platform, custom build</span>.<a
+              class="ref"
+              href="#s4"
+              >[3][4][5]</a
+            >
+          </li>
+          <li>
+            <b>Honest gap:</b> native "assign a Linear issue → Claude Code cloud
+            session" is
+            <span class="pill open">open / not shipped</span> (tracked in
+            claude-code#12925). Today that delegation needs the Agent-SDK path
+            or GitHub sync.<a class="ref" href="#s4">[7]</a>
+          </li>
         </ul>
       </div>
 
       <div class="toc">
-        <a href="#s1">1 · Workflow mapping</a><a href="#s2">2 · Migrate existing issues</a><a href="#s3">3 · Go-forward flow</a>
-        <a href="#s4">4 · Agent autonomy</a><a href="#s5">5 · Cost</a><a href="#s6">6 · Setup checklist</a><a href="#src">Sources</a>
+        <a href="#s1">1 · Workflow mapping</a
+        ><a href="#s2">2 · Migrate existing issues</a
+        ><a href="#s3">3 · Go-forward flow</a>
+        <a href="#s4">4 · Agent autonomy</a><a href="#s5">5 · Cost</a
+        ><a href="#s6">6 · Setup checklist</a><a href="#src">Sources</a>
       </div>
 
       <!-- 1 -->
-      <h2 id="s1" style="--c:var(--blue)"><span class="pre">01</span>Current workflow → Linear concept mapping</h2>
-      <p>Linear's object model is richer than GitHub Issues. The mapping is mostly 1:1, with two upgrades: <b>workflow statuses</b> (a real state machine vs GitHub's open/closed) and <b>Cycles</b> (time-boxed sprints).</p>
+      <h2 id="s1" style="--c: var(--blue)">
+        <span class="pre">01</span>Current workflow → Linear concept mapping
+      </h2>
+      <p>
+        Linear's object model is richer than GitHub Issues. The mapping is
+        mostly 1:1, with two upgrades: <b>workflow statuses</b> (a real state
+        machine vs GitHub's open/closed) and <b>Cycles</b> (time-boxed sprints).
+      </p>
       <table>
-        <tr><th>Today (this repo)</th><th>Linear equivalent</th><th>Notes</th></tr>
-        <tr><td>GitHub Issue</td><td>Linear <b>Issue</b> (<code>ENG-123</code> style ID)</td><td>Stable identifier used in branch names &amp; PR magic words.</td></tr>
-        <tr><td>Repo / project</td><td><b>Team</b> (e.g. <code>Vimeflow</code>, key <code>VIM</code>)</td><td>Free tier = up to 2 teams.<a class="ref" href="#s5">[1]</a></td></tr>
-        <tr><td>Ad-hoc status (your triage: partial / deferred / backlog…)</td><td><b>Workflow statuses</b>: Backlog → Todo → In&nbsp;Progress → In&nbsp;Review → Done / Canceled (fully customizable)</td><td>Replaces hand-rolled status. <code>wontfix</code>/<code>duplicate</code> → <b>Canceled</b> + label or a Duplicate relation.</td></tr>
-        <tr><td>Labels (<code>bug</code>, <code>enhancement</code>, <code>security</code>, <code>ui-handoff-migration</code>…)</td><td><b>Labels</b> (groups + nested)</td><td>Imported as-is by the GitHub importer.<a class="ref" href="#s2">[6]</a></td></tr>
-        <tr><td>Milestones / epics (e.g. the @pierre/diffs &amp; agent-adapter epics)</td><td><b>Projects</b> (with project milestones)</td><td>A natural home for your multi-PR epics (#255, #246).</td></tr>
-        <tr><td>Sprints / iterations</td><td><b>Cycles</b></td><td>Optional; good for "what am I doing this week".</td></tr>
-        <tr><td><code>docs/roadmap/progress.yaml</code></td><td><b>Projects + Cycles</b> (+ Insights on Business)</td><td>Status lives in Linear instead of a YAML file.</td></tr>
-        <tr><td>Stacked PRs → integration branch → <code>main</code></td><td>Stay on GitHub; <b>linked</b> to the Linear issue</td><td>Linear doesn't host code/PRs — GitHub remains the source of truth.<a class="ref" href="#s3">[8]</a></td></tr>
-        <tr><td>lifeline skills (<code>planner</code>, <code>loop</code>, <code>request-pr</code>, <code>approve-pr</code>…)</td><td>Unchanged — they target <code>gh</code>/git</td><td>Add a Linear-status step (via MCP/API) where useful — see §4.</td></tr>
+        <tr>
+          <th>Today (this repo)</th>
+          <th>Linear equivalent</th>
+          <th>Notes</th>
+        </tr>
+        <tr>
+          <td>GitHub Issue</td>
+          <td>Linear <b>Issue</b> (<code>ENG-123</code> style ID)</td>
+          <td>Stable identifier used in branch names &amp; PR magic words.</td>
+        </tr>
+        <tr>
+          <td>Repo / project</td>
+          <td>
+            <b>Team</b> (e.g. <code>Vimeflow</code>, key <code>VIM</code>)
+          </td>
+          <td>Free tier = up to 2 teams.<a class="ref" href="#s5">[1]</a></td>
+        </tr>
+        <tr>
+          <td>Ad-hoc status (your triage: partial / deferred / backlog…)</td>
+          <td>
+            <b>Workflow statuses</b>: Backlog → Todo → In&nbsp;Progress →
+            In&nbsp;Review → Done / Canceled (fully customizable)
+          </td>
+          <td>
+            Replaces hand-rolled status. <code>wontfix</code>/<code
+              >duplicate</code
+            >
+            → <b>Canceled</b> + label or a Duplicate relation.
+          </td>
+        </tr>
+        <tr>
+          <td>
+            Labels (<code>bug</code>, <code>enhancement</code>,
+            <code>security</code>, <code>ui-handoff-migration</code>…)
+          </td>
+          <td><b>Labels</b> (groups + nested)</td>
+          <td>
+            Imported as-is by the GitHub importer.<a class="ref" href="#s2"
+              >[6]</a
+            >
+          </td>
+        </tr>
+        <tr>
+          <td>
+            Milestones / epics (e.g. the @pierre/diffs &amp; agent-adapter
+            epics)
+          </td>
+          <td><b>Projects</b> (with project milestones)</td>
+          <td>A natural home for your multi-PR epics (#255, #246).</td>
+        </tr>
+        <tr>
+          <td>Sprints / iterations</td>
+          <td><b>Cycles</b></td>
+          <td>Optional; good for "what am I doing this week".</td>
+        </tr>
+        <tr>
+          <td><code>docs/roadmap/progress.yaml</code></td>
+          <td><b>Projects + Cycles</b> (+ Insights on Business)</td>
+          <td>Status lives in Linear instead of a YAML file.</td>
+        </tr>
+        <tr>
+          <td>Stacked PRs → integration branch → <code>main</code></td>
+          <td>Stay on GitHub; <b>linked</b> to the Linear issue</td>
+          <td>
+            Linear doesn't host code/PRs — GitHub remains the source of truth.<a
+              class="ref"
+              href="#s3"
+              >[8]</a
+            >
+          </td>
+        </tr>
+        <tr>
+          <td>
+            lifeline skills (<code>planner</code>, <code>loop</code>,
+            <code>request-pr</code>, <code>approve-pr</code>…)
+          </td>
+          <td>Unchanged — they target <code>gh</code>/git</td>
+          <td>Add a Linear-status step (via MCP/API) where useful — see §4.</td>
+        </tr>
       </table>
 
       <!-- 2 -->
-      <h2 id="s2" style="--c:var(--teal)"><span class="pre">02</span>Migrate the existing ~26 open GitHub issues</h2>
-      <p>Linear ships a <b>native in-product importer</b> for GitHub Issues (alongside Jira/Asana/Shortcut/Trello). It retains far more than a CSV and supports bulk-delete if an import goes wrong.<a class="ref" href="#s2">[6]</a></p>
-      <p><b>Path A — in-app importer (recommended).</b> <code>Settings → Import/Export → Import issues → GitHub</code>. Authorize, pick the repo, map labels/state, run.</p>
-      <p><b>Path B — CLI</b> (<code>@linear/import</code>, repo <code>linear/linear-import</code>) for scripted/repeatable imports.<a class="ref" href="#s2">[9]</a></p>
-      <div class="note warn"><b>Caveats to plan for:</b> ① created/modified <b>dates do not carry over</b> — issues get the import timestamp. ② To preserve <b>author / assignee / @mentions / comment authorship</b>, make sure each GitHub user already exists in Linear with the <b>same email</b> and has linked accounts under <code>Settings → Integrations</code> first. ③ For a solo workspace, just accept that everything imports as you.<a class="ref" href="#s2">[6]</a></div>
-      <p class="note">Because only ~26 issues are involved, a pragmatic alternative is to <b>not bulk-migrate</b>: close the stale/low-value ones on GitHub (you just triaged them), and re-create only the live handful directly in Linear so they start with clean statuses and IDs. The importer is there if you'd rather lift-and-shift everything.</p>
+      <h2 id="s2" style="--c: var(--teal)">
+        <span class="pre">02</span>Migrate the existing ~26 open GitHub issues
+      </h2>
+      <p>
+        Linear ships a <b>native in-product importer</b> for GitHub Issues
+        (alongside Jira/Asana/Shortcut/Trello). It retains far more than a CSV
+        and supports bulk-delete if an import goes wrong.<a
+          class="ref"
+          href="#s2"
+          >[6]</a
+        >
+      </p>
+      <p>
+        <b>Path A — in-app importer (recommended).</b>
+        <code>Settings → Import/Export → Import issues → GitHub</code>.
+        Authorize, pick the repo, map labels/state, run.
+      </p>
+      <p>
+        <b>Path B — CLI</b> (<code>@linear/import</code>, repo
+        <code>linear/linear-import</code>) for scripted/repeatable imports.<a
+          class="ref"
+          href="#s2"
+          >[9]</a
+        >
+      </p>
+      <div class="note warn">
+        <b>Caveats to plan for:</b> ① created/modified
+        <b>dates do not carry over</b> — issues get the import timestamp. ② To
+        preserve <b>author / assignee / @mentions / comment authorship</b>, make
+        sure each GitHub user already exists in Linear with the
+        <b>same email</b> and has linked accounts under
+        <code>Settings → Integrations</code> first. ③ For a solo workspace, just
+        accept that everything imports as you.<a class="ref" href="#s2">[6]</a>
+      </div>
+      <p class="note">
+        Because only ~26 issues are involved, a pragmatic alternative is to
+        <b>not bulk-migrate</b>: close the stale/low-value ones on GitHub (you
+        just triaged them), and re-create only the live handful directly in
+        Linear so they start with clean statuses and IDs. The importer is there
+        if you'd rather lift-and-shift everything.
+      </p>
 
       <!-- 3 -->
-      <h2 id="s3" style="--c:var(--peach)"><span class="pre">03</span>Go-forward: assigning tasks &amp; managing status</h2>
+      <h2 id="s3" style="--c: var(--peach)">
+        <span class="pre">03</span>Go-forward: assigning tasks &amp; managing
+        status
+      </h2>
       <h3>Assigning &amp; status (the thing you want to learn)</h3>
-      <p>An issue has one <b>Assignee</b> and one <b>Status</b>. You drag a card across board columns or press <code>Cmd/Ctrl+Shift</code> shortcuts; status is a real workflow, not just open/closed. Cycles answer "what's this week"; Projects group the epics.</p>
+      <p>
+        An issue has one <b>Assignee</b> and one <b>Status</b>. You drag a card
+        across board columns or press <code>Cmd/Ctrl+Shift</code> shortcuts;
+        status is a real workflow, not just open/closed. Cycles answer "what's
+        this week"; Projects group the epics.
+      </p>
       <h3>Let PR activity move status for you — automatically</h3>
-      <p>This is the highest-leverage GitHub link: connect a PR to an issue and Linear moves the status on its own.<a class="ref" href="#s3">[8]</a></p>
+      <p>
+        This is the highest-leverage GitHub link: connect a PR to an issue and
+        Linear moves the status on its own.<a class="ref" href="#s3">[8]</a>
+      </p>
       <ul>
-        <li><b>Branch name</b> — copy the Linear-generated branch name (<code>Cmd/Ctrl+Shift+.</code> on the issue) and use it for your worktree branch.</li>
-        <li><b>Magic words</b> in PR title/body — closing: <code>fix/fixes/close/closes/resolve/resolves/complete/implements ENG-123</code>; non-closing: <code>ref/refs/related to ENG-123</code>.</li>
-        <li><b>Automation</b> — PR opened → <b>In Progress</b>; merged to default branch → <b>Done</b>. Customizable per team (incl. branch-regex rules) under <code>Settings → Team → Issue statuses &amp; automations</code>.</li>
-        <li><b>Two-way Issues sync</b> covers Title, Description, Status, Assignee, Labels, Sub-issues, Comments.</li>
+        <li>
+          <b>Branch name</b> — copy the Linear-generated branch name (<code
+            >Cmd/Ctrl+Shift+.</code
+          >
+          on the issue) and use it for your worktree branch.
+        </li>
+        <li>
+          <b>Magic words</b> in PR title/body — closing:
+          <code
+            >fix/fixes/close/closes/resolve/resolves/complete/implements
+            ENG-123</code
+          >; non-closing: <code>ref/refs/related to ENG-123</code>.
+        </li>
+        <li>
+          <b>Automation</b> — PR opened → <b>In Progress</b>; merged to default
+          branch → <b>Done</b>. Customizable per team (incl. branch-regex rules)
+          under <code>Settings → Team → Issue statuses &amp; automations</code>.
+        </li>
+        <li>
+          <b>Two-way Issues sync</b> covers Title, Description, Status,
+          Assignee, Labels, Sub-issues, Comments.
+        </li>
       </ul>
-      <p class="note ok">Fit with your workflow: your worktree branches already follow <code>feat|fix|refactor/&lt;name&gt;</code>. Swap in Linear's branch name (or just append <code>ENG-123</code>), and your existing stacked-PR + <code>request-pr</code>/<code>approve-pr</code> flow drives Linear status with <b>zero extra effort</b>.</p>
+      <p class="note ok">
+        Fit with your workflow: your worktree branches already follow
+        <code>feat|fix|refactor/&lt;name&gt;</code>. Swap in Linear's branch
+        name (or just append <code>ENG-123</code>), and your existing stacked-PR
+        + <code>request-pr</code>/<code>approve-pr</code> flow drives Linear
+        status with <b>zero extra effort</b>.
+      </p>
 
       <!-- 4 -->
-      <h2 id="s4" style="--c:var(--mauve)"><span class="pre">04</span>Agent autonomy — the core goal</h2>
-      <p>"More autonomy" decomposes into three layers you can adopt independently. Start with A, add B for free, build C when you want true delegation.</p>
+      <h2 id="s4" style="--c: var(--mauve)">
+        <span class="pre">04</span>Agent autonomy — the core goal
+      </h2>
+      <p>
+        "More autonomy" decomposes into three layers you can adopt
+        independently. Start with A, add B for free, build C when you want true
+        delegation.
+      </p>
       <table>
-        <tr><th>Path</th><th>What the agent can do</th><th>Setup</th><th>Cost</th></tr>
-        <tr><td><b>A · MCP</b><br>(read/write)</td><td>During a Claude Code / Codex run, the agent <b>finds, creates &amp; updates</b> Linear issues/projects/comments — e.g. "move VIM-12 to In Review and comment the PR link".<a class="ref" href="#s4">[3]</a></td><td>One CLI command per tool (below)</td><td><span class="pill free">Free</span></td></tr>
-        <tr><td><b>B · GitHub sync</b><br>(passive)</td><td>Agent just opens/merges PRs as usual; Linear moves status automatically. No agent awareness of Linear at all.<a class="ref" href="#s3">[8]</a></td><td>Connect GitHub once (§6)</td><td><span class="pill free">Free</span></td></tr>
-        <tr><td><b>C · Agent SDK</b><br>(delegation)</td><td>You <b>assign / @mention</b> an issue to a bot user; a webhook fires an <b>Agent session</b>; your server runs Claude Code/Codex and posts activity + status back.<a class="ref" href="#s4">[4][5]</a></td><td>Build an OAuth <code>actor=app</code> integration + webhook handler</td><td><span class="pill free">Free platform</span></td></tr>
+        <tr>
+          <th>Path</th>
+          <th>What the agent can do</th>
+          <th>Setup</th>
+          <th>Cost</th>
+        </tr>
+        <tr>
+          <td><b>A · MCP</b><br />(read/write)</td>
+          <td>
+            During a Claude Code / Codex run, the agent
+            <b>finds, creates &amp; updates</b> Linear issues/projects/comments
+            — e.g. "move VIM-12 to In Review and comment the PR link".<a
+              class="ref"
+              href="#s4"
+              >[3]</a
+            >
+          </td>
+          <td>One CLI command per tool (below)</td>
+          <td><span class="pill free">Free</span></td>
+        </tr>
+        <tr>
+          <td><b>B · GitHub sync</b><br />(passive)</td>
+          <td>
+            Agent just opens/merges PRs as usual; Linear moves status
+            automatically. No agent awareness of Linear at all.<a
+              class="ref"
+              href="#s3"
+              >[8]</a
+            >
+          </td>
+          <td>Connect GitHub once (§6)</td>
+          <td><span class="pill free">Free</span></td>
+        </tr>
+        <tr>
+          <td><b>C · Agent SDK</b><br />(delegation)</td>
+          <td>
+            You <b>assign / @mention</b> an issue to a bot user; a webhook fires
+            an <b>Agent session</b>; your server runs Claude Code/Codex and
+            posts activity + status back.<a class="ref" href="#s4">[4][5]</a>
+          </td>
+          <td>
+            Build an OAuth <code>actor=app</code> integration + webhook handler
+          </td>
+          <td><span class="pill free">Free platform</span></td>
+        </tr>
       </table>
 
       <h3>Path A — wire the Linear MCP server (do this first)</h3>
-      <p>Remote hosted server at <code>https://mcp.linear.app/mcp</code> (Streamable HTTP, OAuth 2.1, 25+ tools).<a class="ref" href="#s4">[2][3]</a></p>
+      <p>
+        Remote hosted server at
+        <code>https://mcp.linear.app/mcp</code> (Streamable HTTP, OAuth 2.1, 25+
+        tools).<a class="ref" href="#s4">[2][3]</a>
+      </p>
       <p><b>Claude Code:</b></p>
       <pre><code>claude mcp add --transport http linear-server https://mcp.linear.app/mcp
 # then run  /mcp  inside a session to authenticate</code></pre>
@@ -145,59 +657,259 @@ experimental_use_rmcp_client = true
 
 [mcp_servers.linear]
 url = "https://mcp.linear.app/mcp"</code></pre>
-      <p class="note">Now a lifeline skill or a plain prompt can end with "…and set the Linear issue to Done" and the agent does it through MCP — no <code>gh</code>, no API key in your shell.</p>
+      <p class="note">
+        Now a lifeline skill or a plain prompt can end with "…and set the Linear
+        issue to Done" and the agent does it through MCP — no <code>gh</code>,
+        no API key in your shell.
+      </p>
 
-      <h3>Path C — programmatic status via the GraphQL API (for scripts/hooks)</h3>
-      <p>Linear's API is <b>GraphQL</b> at <code>https://api.linear.app/graphql</code>; auth via a <b>personal API key</b> (header) or OAuth2; official <code>@linear/sdk</code> (TypeScript).<a class="ref" href="#s4">[10]</a> Minimal "move status" mutation a hook could call:</p>
+      <h3>
+        Path C — programmatic status via the GraphQL API (for scripts/hooks)
+      </h3>
+      <p>
+        Linear's API is <b>GraphQL</b> at
+        <code>https://api.linear.app/graphql</code>; auth via a
+        <b>personal API key</b> (header) or OAuth2; official
+        <code>@linear/sdk</code> (TypeScript).<a class="ref" href="#s4">[10]</a>
+        Minimal "move status" mutation a hook could call:
+      </p>
       <pre><code>curl -s https://api.linear.app/graphql \
   -H "Authorization: $LINEAR_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{"query":"mutation{ issueUpdate(id:\"ISSUE_ID\", input:{stateId:\"STATE_ID\"}){ success } }"}'</code></pre>
-      <p>For true delegation, the <b>Agent platform</b> adds an OAuth <code>actor=app</code> mode that mints a dedicated bot user; request scopes <code>read, write, app:assignable, app:mentionable</code> and subscribe to <b>Agent session events</b> webhooks. Five "agent activity" types let the bot post thoughts/responses back into the issue.<a class="ref" href="#s4">[4][5]</a></p>
-      <div class="note warn"><b>Reality check on full hands-off delegation:</b> Anthropic's "assign a Linear issue to Claude Code → trigger a cloud agent session" is an <span class="pill open">open</span> feature request (claude-code#12925, still open 2026-05-29), not a shipped product. Until it lands, Path C means <b>building</b> the actor=app webhook→agent bridge yourself (or using a third-party agent). Paths A + B give you most of the day-to-day autonomy now with near-zero build.<a class="ref" href="#s4">[7]</a></div>
+      <p>
+        For true delegation, the <b>Agent platform</b> adds an OAuth
+        <code>actor=app</code> mode that mints a dedicated bot user; request
+        scopes <code>read, write, app:assignable, app:mentionable</code> and
+        subscribe to <b>Agent session events</b> webhooks. Five "agent activity"
+        types let the bot post thoughts/responses back into the issue.<a
+          class="ref"
+          href="#s4"
+          >[4][5]</a
+        >
+      </p>
+      <div class="note warn">
+        <b>Reality check on full hands-off delegation:</b> Anthropic's "assign a
+        Linear issue to Claude Code → trigger a cloud agent session" is an
+        <span class="pill open">open</span> feature request (claude-code#12925,
+        still open 2026-05-29), not a shipped product. Until it lands, Path C
+        means <b>building</b> the actor=app webhook→agent bridge yourself (or
+        using a third-party agent). Paths A + B give you most of the day-to-day
+        autonomy now with near-zero build.<a class="ref" href="#s4">[7]</a>
+      </div>
 
       <!-- 5 -->
-      <h2 id="s5" style="--c:var(--green)"><span class="pre">05</span>Cost analysis</h2>
+      <h2 id="s5" style="--c: var(--green)">
+        <span class="pre">05</span>Cost analysis
+      </h2>
       <table>
-        <tr><th>Plan</th><th>Price (billed yearly)</th><th>Issues</th><th>Teams</th><th>Agent / API relevant</th></tr>
-        <tr><td><b>Free</b> <span class="pill free">your start</span></td><td><b>$0</b></td><td>250</td><td>2</td><td><b>Agent platform + Linear Agent (beta)</b>, API, MCP, webhooks, GitHub sync</td></tr>
-        <tr><td>Basic</td><td><code>$10</code>/user/mo</td><td>Unlimited</td><td>5</td><td>+ admin roles</td></tr>
-        <tr><td>Business</td><td><code>$16</code>/user/mo</td><td>Unlimited</td><td>Unlimited</td><td>+ <span class="pill beta">beta</span> Linear Agent <b>automations</b>, Code Intelligence, Insights, Triage Intelligence</td></tr>
-        <tr><td>Enterprise</td><td>Custom</td><td>Unlimited</td><td>Unlimited</td><td>+ SAML/SCIM, GitHub Enterprise</td></tr>
+        <tr>
+          <th>Plan</th>
+          <th>Price (billed yearly)</th>
+          <th>Issues</th>
+          <th>Teams</th>
+          <th>Agent / API relevant</th>
+        </tr>
+        <tr>
+          <td><b>Free</b> <span class="pill free">your start</span></td>
+          <td><b>$0</b></td>
+          <td>250</td>
+          <td>2</td>
+          <td>
+            <b>Agent platform + Linear Agent (beta)</b>, API, MCP, webhooks,
+            GitHub sync
+          </td>
+        </tr>
+        <tr>
+          <td>Basic</td>
+          <td><code>$10</code>/user/mo</td>
+          <td>Unlimited</td>
+          <td>5</td>
+          <td>+ admin roles</td>
+        </tr>
+        <tr>
+          <td>Business</td>
+          <td><code>$16</code>/user/mo</td>
+          <td>Unlimited</td>
+          <td>Unlimited</td>
+          <td>
+            + <span class="pill beta">beta</span> Linear Agent
+            <b>automations</b>, Code Intelligence, Insights, Triage Intelligence
+          </td>
+        </tr>
+        <tr>
+          <td>Enterprise</td>
+          <td>Custom</td>
+          <td>Unlimited</td>
+          <td>Unlimited</td>
+          <td>+ SAML/SCIM, GitHub Enterprise</td>
+        </tr>
       </table>
-      <p>All figures from Linear's pricing page, 2026-05-30.<a class="ref" href="#s5">[1]</a></p>
-      <p class="note ok"><b>Recommendation:</b> run entirely on <b>Free</b>. It already includes the agent platform, API, MCP, webhooks and GitHub sync — i.e. all three autonomy paths. The single thing Free can't do is exceed <b>250 issues</b> or <b>2 teams</b>; at that point Basic (<code>$10/user/mo</code>) lifts both. The <span class="pill beta">beta</span> built-in agent <i>automations</i> on Business are a convenience, not a prerequisite for your MCP/SDK approach.</p>
+      <p>
+        All figures from Linear's pricing page, 2026-05-30.<a
+          class="ref"
+          href="#s5"
+          >[1]</a
+        >
+      </p>
+      <p class="note ok">
+        <b>Recommendation:</b> run entirely on <b>Free</b>. It already includes
+        the agent platform, API, MCP, webhooks and GitHub sync — i.e. all three
+        autonomy paths. The single thing Free can't do is exceed
+        <b>250 issues</b> or <b>2 teams</b>; at that point Basic
+        (<code>$10/user/mo</code>) lifts both. The
+        <span class="pill beta">beta</span> built-in agent <i>automations</i> on
+        Business are a convenience, not a prerequisite for your MCP/SDK
+        approach.
+      </p>
 
       <!-- 6 -->
-      <h2 id="s6" style="--c:var(--sapphire)"><span class="pre">06</span>Setup checklist (copy-ready)</h2>
-      <p>Phased so you get value after each step. <span class="you">YOU</span> = needs your account/login (an agent can't create accounts or hold your credentials).</p>
+      <h2 id="s6" style="--c: var(--sapphire)">
+        <span class="pre">06</span>Setup checklist (copy-ready)
+      </h2>
+      <p>
+        Phased so you get value after each step. <span class="you">YOU</span> =
+        needs your account/login (an agent can't create accounts or hold your
+        credentials).
+      </p>
       <ol class="checklist">
-        <li><b>Create the workspace &amp; first team.</b> <span class="you">YOU</span> Sign up at <code>linear.app</code>, make a team (name <code>Vimeflow</code>, suggested key <code>VIM</code>). Stay on Free.</li>
-        <li><b>Customize statuses &amp; labels.</b> <code>Settings → Team → Issue statuses</code>: confirm Backlog/Todo/In&nbsp;Progress/In&nbsp;Review/Done/Canceled. Recreate your labels (<code>bug</code>, <code>enhancement</code>, <code>security</code>, <code>ui-handoff-migration</code>…).</li>
-        <li><b>Connect GitHub</b> (unlocks Path B for free). <span class="you">YOU</span> <code>Settings → Integrations → GitHub</code> → install on the <code>winoooops/vimeflow</code> repo (grant read metadata/checks, read+write issues &amp; PRs). Verify the PR automation rules (open→In&nbsp;Progress, merge→Done).</li>
-        <li><b>Migrate or seed issues.</b> Either run <code>Settings → Import/Export → Import → GitHub</code> (lift everything), <b>or</b> hand-create the ~handful of live issues. Remember: dates won't carry; link your GitHub email first if you want authorship preserved.</li>
-        <li><b>Add the Linear MCP server</b> (Path A) to Claude Code: <code>claude mcp add --transport http linear-server https://mcp.linear.app/mcp</code> → <code>/mcp</code> to auth. <span class="you">YOU</span> approve the OAuth prompt.</li>
-        <li><b>Add it to Codex</b> too: <code>codex mcp add linear --url https://mcp.linear.app/mcp</code> → <code>codex mcp login linear</code>.</li>
-        <li><b>Try the loop.</b> In a worktree, name the branch with the Linear ID (or copy Linear's branch name), open a PR with <code>Fixes VIM-1</code>, merge → watch the issue auto-move to Done. Then ask the agent: "set VIM-2 to In&nbsp;Review and comment the PR link" → confirm it lands via MCP.</li>
-        <li><b>(Optional) Personal API key</b> for scripts/hooks. <span class="you">YOU</span> <code>Settings → Security &amp; access → Personal API keys</code>; store as <code>LINEAR_API_KEY</code>; use the GraphQL mutation in §4 from a git hook or lifeline step.</li>
-        <li><b>(Later) Delegation (Path C).</b> Only if you want assign-to-bot autonomy: build an OAuth <code>actor=app</code> integration with Agent-session webhooks, or wait on claude-code#12925. Not needed for daily use.</li>
+        <li>
+          <b>Create the workspace &amp; first team.</b>
+          <span class="you">YOU</span> Sign up at <code>linear.app</code>, make
+          a team (name <code>Vimeflow</code>, suggested key <code>VIM</code>).
+          Stay on Free.
+        </li>
+        <li>
+          <b>Customize statuses &amp; labels.</b>
+          <code>Settings → Team → Issue statuses</code>: confirm
+          Backlog/Todo/In&nbsp;Progress/In&nbsp;Review/Done/Canceled. Recreate
+          your labels (<code>bug</code>, <code>enhancement</code>,
+          <code>security</code>, <code>ui-handoff-migration</code>…).
+        </li>
+        <li>
+          <b>Connect GitHub</b> (unlocks Path B for free).
+          <span class="you">YOU</span>
+          <code>Settings → Integrations → GitHub</code> → install on the
+          <code>winoooops/vimeflow</code> repo (grant read metadata/checks,
+          read+write issues &amp; PRs). Verify the PR automation rules
+          (open→In&nbsp;Progress, merge→Done).
+        </li>
+        <li>
+          <b>Migrate or seed issues.</b> Either run
+          <code>Settings → Import/Export → Import → GitHub</code> (lift
+          everything), <b>or</b> hand-create the ~handful of live issues.
+          Remember: dates won't carry; link your GitHub email first if you want
+          authorship preserved.
+        </li>
+        <li>
+          <b>Add the Linear MCP server</b> (Path A) to Claude Code:
+          <code
+            >claude mcp add --transport http linear-server
+            https://mcp.linear.app/mcp</code
+          >
+          → <code>/mcp</code> to auth. <span class="you">YOU</span> approve the
+          OAuth prompt.
+        </li>
+        <li>
+          <b>Add it to Codex</b> too:
+          <code>codex mcp add linear --url https://mcp.linear.app/mcp</code> →
+          <code>codex mcp login linear</code>.
+        </li>
+        <li>
+          <b>Try the loop.</b> In a worktree, name the branch with the Linear ID
+          (or copy Linear's branch name), open a PR with
+          <code>Fixes VIM-1</code>, merge → watch the issue auto-move to Done.
+          Then ask the agent: "set VIM-2 to In&nbsp;Review and comment the PR
+          link" → confirm it lands via MCP.
+        </li>
+        <li>
+          <b>(Optional) Personal API key</b> for scripts/hooks.
+          <span class="you">YOU</span>
+          <code>Settings → Security &amp; access → Personal API keys</code>;
+          store as <code>LINEAR_API_KEY</code>; use the GraphQL mutation in §4
+          from a git hook or lifeline step.
+        </li>
+        <li>
+          <b>(Later) Delegation (Path C).</b> Only if you want assign-to-bot
+          autonomy: build an OAuth <code>actor=app</code> integration with
+          Agent-session webhooks, or wait on claude-code#12925. Not needed for
+          daily use.
+        </li>
       </ol>
 
       <footer>
         <p id="src"><b>Sources</b> — fetched 2026-05-30:</p>
         <ol>
-          <li id="s1"><a href="https://linear.app/pricing">linear.app/pricing</a> — tiers, Free limits (250 issues / 2 teams), Agent platform on Free, Basic $10 / Business $16 per user/mo.</li>
-          <li><a href="https://linear.app/docs/mcp">linear.app/docs/mcp</a> &amp; <a href="https://linear.app/changelog/2025-05-01-mcp">changelog 2025-05-01</a> — MCP endpoint <code>mcp.linear.app/mcp</code>, transport, OAuth 2.1, client setup.</li>
-          <li><a href="https://linear.app/docs/mcp">linear.app/docs/mcp</a> — Claude Code &amp; Codex MCP commands; tool categories (find/create/update).</li>
-          <li><a href="https://linear.app/now/our-approach-to-building-the-agent-interaction-sdk">linear.app/now — Agent Interaction SDK</a> — agent sessions, actor=app, scopes, agent activity types, assigning issues to agents.</li>
-          <li><a href="https://linear.app/developers">linear.app/developers</a> — Agent platform, webhooks incl. Agent session events.</li>
-          <li id="s2"><a href="https://linear.app/docs/import-issues">linear.app/docs/import-issues</a> &amp; <a href="https://linear.app/switch/migration-guide">switch/migration-guide</a> — native GitHub importer; dates not carried; pre-link users by email.</li>
-          <li><a href="https://github.com/anthropics/claude-code/issues/12925">anthropics/claude-code#12925</a> — "Assign issues to Claude Code to trigger cloud agent sessions" — OPEN (updated 2026-05-29).</li>
-          <li><a href="https://linear.app/docs/github">linear.app/docs/github</a> — PR linking (branch name / magic words), status automation, two-way Issues sync, permissions.</li>
-          <li><a href="https://github.com/linear/linear-import">github.com/linear/linear-import</a> — CLI importers (<code>@linear/import</code>).</li>
-          <li><a href="https://linear.app/developers">linear.app/developers</a> — GraphQL API (<code>api.linear.app/graphql</code>), personal API keys / OAuth2, TypeScript <code>@linear/sdk</code>.</li>
+          <li id="s1">
+            <a href="https://linear.app/pricing">linear.app/pricing</a> — tiers,
+            Free limits (250 issues / 2 teams), Agent platform on Free, Basic
+            $10 / Business $16 per user/mo.
+          </li>
+          <li>
+            <a href="https://linear.app/docs/mcp">linear.app/docs/mcp</a> &amp;
+            <a href="https://linear.app/changelog/2025-05-01-mcp"
+              >changelog 2025-05-01</a
+            >
+            — MCP endpoint <code>mcp.linear.app/mcp</code>, transport, OAuth
+            2.1, client setup.
+          </li>
+          <li>
+            <a href="https://linear.app/docs/mcp">linear.app/docs/mcp</a> —
+            Claude Code &amp; Codex MCP commands; tool categories
+            (find/create/update).
+          </li>
+          <li>
+            <a
+              href="https://linear.app/now/our-approach-to-building-the-agent-interaction-sdk"
+              >linear.app/now — Agent Interaction SDK</a
+            >
+            — agent sessions, actor=app, scopes, agent activity types, assigning
+            issues to agents.
+          </li>
+          <li>
+            <a href="https://linear.app/developers">linear.app/developers</a> —
+            Agent platform, webhooks incl. Agent session events.
+          </li>
+          <li id="s2">
+            <a href="https://linear.app/docs/import-issues"
+              >linear.app/docs/import-issues</a
+            >
+            &amp;
+            <a href="https://linear.app/switch/migration-guide"
+              >switch/migration-guide</a
+            >
+            — native GitHub importer; dates not carried; pre-link users by
+            email.
+          </li>
+          <li>
+            <a href="https://github.com/anthropics/claude-code/issues/12925"
+              >anthropics/claude-code#12925</a
+            >
+            — "Assign issues to Claude Code to trigger cloud agent sessions" —
+            OPEN (updated 2026-05-29).
+          </li>
+          <li>
+            <a href="https://linear.app/docs/github">linear.app/docs/github</a>
+            — PR linking (branch name / magic words), status automation, two-way
+            Issues sync, permissions.
+          </li>
+          <li>
+            <a href="https://github.com/linear/linear-import"
+              >github.com/linear/linear-import</a
+            >
+            — CLI importers (<code>@linear/import</code>).
+          </li>
+          <li>
+            <a href="https://linear.app/developers">linear.app/developers</a> —
+            GraphQL API (<code>api.linear.app/graphql</code>), personal API keys
+            / OAuth2, TypeScript <code>@linear/sdk</code>.
+          </li>
         </ol>
-        <p>Generated locally for planning. Not committed unless you choose to. Verify pricing on Linear's site before committing budget — plans change.</p>
+        <p>
+          Generated locally for planning. Not committed unless you choose to.
+          Verify pricing on Linear's site before committing budget — plans
+          change.
+        </p>
       </footer>
     </div>
   </body>
