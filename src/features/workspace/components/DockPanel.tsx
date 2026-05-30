@@ -1,8 +1,10 @@
 /* eslint-disable react/require-default-props -- forwardRef components: ESLint cannot see through forwardRef to find destructuring defaults */
 import {
   forwardRef,
+  useEffect,
   useImperativeHandle,
   useRef,
+  useState,
   type KeyboardEvent,
   type MouseEvent,
   type PointerEvent,
@@ -12,9 +14,11 @@ import {
   CodeEditor,
   type CodeEditorHandle,
 } from '../../editor/components/CodeEditor'
+import { MarkdownReadingView } from '../../editor/components/MarkdownReadingView'
 import { DiffPanelContent } from '../../diff/components/DiffPanelContent'
 import { DockSwitcher, type DockPosition } from './DockSwitcher'
 import { DockTab } from './DockTab'
+import { ViewModeToggle, type ViewMode } from './ViewModeToggle'
 import type { SelectedDiffFile } from '../../diff/types'
 import type { UseGitStatusReturn } from '../../diff/hooks/useGitStatus'
 import { DOCK_CONTAINER_ID } from '../containerIds'
@@ -26,6 +30,8 @@ import {
 import { ResizeHandle } from '../../../components/ResizeHandle'
 
 type TabType = 'editor' | 'diff'
+
+const MARKDOWN_FILE_PATTERN = /\.(md|markdown)$/i
 
 type SelectedDiffControl =
   | { selectedDiffFile?: undefined; onSelectedDiffFileChange?: undefined }
@@ -122,6 +128,20 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
     const sectionRef = useRef<HTMLElement>(null)
     const diffWrapperRef = useRef<HTMLDivElement>(null)
     const editorHandleRef = useRef<CodeEditorHandle | null>(null)
+
+    const isMarkdown = MARKDOWN_FILE_PATTERN.test(selectedFilePath ?? '')
+
+    // Ephemeral dock state (D5): the per-file Source/Reading mode is not
+    // persisted across reload, matching the dock's existing non-persistence
+    // stance. Default 'reading' (D4) so markdown docs open pretty.
+    const [viewMode, setViewMode] = useState<ViewMode>('reading')
+
+    // Reset to the default Reading mode whenever the selected file changes, so
+    // a user who dropped to Source on one doc still sees "docs open pretty" on
+    // the next one. Keyed on selectedFilePath.
+    useEffect(() => {
+      setViewMode('reading')
+    }, [selectedFilePath])
 
     useImperativeHandle(ref, () => ({
       focusEditor(): boolean {
@@ -301,6 +321,9 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
           compactActions={compactActions}
           menuAlign={position === 'left' ? 'left' : 'right'}
         >
+          {isMarkdown && tab === 'editor' ? (
+            <ViewModeToggle value={viewMode} onChange={setViewMode} />
+          ) : null}
           <DockSwitcher position={position} onPick={onPositionChange} />
         </DockTab>
 
@@ -310,16 +333,20 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
               data-testid="editor-panel"
               className="flex min-h-0 flex-1 overflow-hidden"
             >
-              <CodeEditor
-                ref={editorHandleRef}
-                filePath={selectedFilePath}
-                content={content}
-                onContentChange={onContentChange}
-                onSave={onSave}
-                isDirty={isDirty}
-                isLoading={isLoading}
-                shouldAutoFocus={isFocused}
-              />
+              {isMarkdown && viewMode === 'reading' ? (
+                <MarkdownReadingView content={content} />
+              ) : (
+                <CodeEditor
+                  ref={editorHandleRef}
+                  filePath={selectedFilePath}
+                  content={content}
+                  onContentChange={onContentChange}
+                  onSave={onSave}
+                  isDirty={isDirty}
+                  isLoading={isLoading}
+                  shouldAutoFocus={isFocused}
+                />
+              )}
             </div>
           )}
 
