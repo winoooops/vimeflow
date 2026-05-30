@@ -163,9 +163,13 @@ const FilePathChip = ({
   path: string
   accent: string
 }): ReactElement => {
-  const parts = path.split('/')
-  const file = parts.pop() ?? ''
-  const dir = parts.join('/') + (parts.length > 0 ? '/' : '')
+  // Split on the last path separator — POSIX `/` or Windows `\` — so a native
+  // Windows path (`C:\repo\src\Button.tsx`) keeps its directory/filename
+  // separation instead of collapsing the whole path into the filename. Slicing
+  // by index preserves the original separators in the displayed string.
+  const sepIndex = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'))
+  const dir = sepIndex >= 0 ? path.slice(0, sepIndex + 1) : ''
+  const file = sepIndex >= 0 ? path.slice(sepIndex + 1) : path
 
   return (
     <div className="flex items-start gap-1.5 rounded-md border border-[rgba(74,68,79,0.3)] bg-[rgba(13,13,28,0.55)] px-2.5 py-2 font-mono text-[11.5px]">

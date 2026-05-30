@@ -883,6 +883,29 @@ describe('ActivityEvent — structured tooltip', () => {
     expect(pathSpan).toHaveClass('break-all')
   })
 
+  test('FilePathChip splits a native Windows path on the last backslash', async () => {
+    render(
+      <ActivityEvent
+        event={toolEvent({
+          kind: 'edit',
+          tool: 'Edit',
+          body: 'C:\\repo\\src\\Button.tsx',
+          status: 'done',
+        })}
+        now={now}
+      />
+    )
+    fireEvent.focus(screen.getByRole('article', { name: 'EDIT' }))
+
+    const details = await screen.findByRole('dialog', {
+      name: 'EDIT activity details',
+    })
+    const dir = within(details).getByText('C:\\repo\\src\\')
+    expect(dir).toHaveClass('text-[#6c7086]')
+    const file = within(details).getByText('Button.tsx')
+    expect(file).toHaveClass('font-semibold')
+  })
+
   test('FilePathChip icon stays aligned to first line while path wraps', async () => {
     render(
       <ActivityEvent
