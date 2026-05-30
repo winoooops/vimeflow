@@ -169,12 +169,16 @@ describe('useSessionManager', () => {
     await waitFor(() => expect(result.current.loading).toBe(false))
     await waitFor(() => expect(titleListener()).toBeDefined())
 
+    // Seed an ai-generated title so the clear below has something to
+    // wipe. A user-renamed first event is covered by the "cleared
+    // agent-session-title cannot wipe a user-renamed agentTitle" test —
+    // user-renamed is sticky against later clears.
     act(() => {
       titleListener()?.({
         sessionId: 'pty-1',
         agentSessionId: 'agent-uuid',
         title: 'Old Task',
-        source: 'user-renamed',
+        source: 'ai-generated',
       })
     })
 
@@ -183,7 +187,7 @@ describe('useSessionManager', () => {
         sessionId: 'pty-1',
         agentSessionId: 'agent-uuid',
         title: '',
-        source: 'user-renamed',
+        source: 'ai-generated',
       })
     })
 
@@ -413,6 +417,122 @@ describe('useSessionManager', () => {
     expect(pane?.agentTitle).toBeUndefined()
     expect(pane?.agentTitleSource).toBeUndefined()
     expect(pane?.userLabel).toBeUndefined()
+  })
+
+  test('ai-generated agent-session-title cannot overwrite a user-renamed agentTitle', async () => {
+    const service = createMockService()
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: 'pty-1',
+      sessions: [
+        {
+          id: 'pty-1',
+          cwd: '/tmp',
+          status: {
+            kind: 'Alive',
+            pid: 1,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+      ],
+    })
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    await waitFor(() => expect(titleListener()).toBeDefined())
+
+    act(() => {
+      result.current.setPaneUserLabel('pty-1', 'user-title')
+    })
+
+    // Agent confirms the rename: userLabel clears, agentTitle inherits
+    // 'user-title', agentTitleSource flips to 'user-renamed'.
+    act(() => {
+      titleListener()?.({
+        sessionId: 'pty-1',
+        agentSessionId: 'agent-uuid',
+        title: 'user-title',
+        source: 'user-renamed',
+      })
+    })
+
+    // Claude later writes its own ai-title JSONL line — without the
+    // guard this clobbered agentTitle and silently dropped the user's
+    // rename intent (path A of the revert bug).
+    act(() => {
+      titleListener()?.({
+        sessionId: 'pty-1',
+        agentSessionId: 'agent-uuid',
+        title: 'agent-auto-title',
+        source: 'ai-generated',
+      })
+    })
+
+    const pane = result.current.sessions[0]?.panes.find(
+      (candidate) => candidate.ptyId === 'pty-1'
+    )
+    expect(pane?.agentTitle).toBe('user-title')
+    expect(pane?.agentTitleSource).toBe('user-renamed')
+    expect(pane?.userLabel).toBeUndefined()
+  })
+
+  test('cleared agent-session-title cannot wipe a user-renamed agentTitle', async () => {
+    const service = createMockService()
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: 'pty-1',
+      sessions: [
+        {
+          id: 'pty-1',
+          cwd: '/tmp',
+          status: {
+            kind: 'Alive',
+            pid: 1,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+      ],
+    })
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    await waitFor(() => expect(titleListener()).toBeDefined())
+
+    act(() => {
+      result.current.setPaneUserLabel('pty-1', 'user-title')
+    })
+
+    act(() => {
+      titleListener()?.({
+        sessionId: 'pty-1',
+        agentSessionId: 'agent-uuid',
+        title: 'user-title',
+        source: 'user-renamed',
+      })
+    })
+
+    // Codex watcher emits a transient clear (read_thread_name returned
+    // None during an atomic rewrite of session_index.jsonl). Without the
+    // guard this wiped agentTitle and dropped the header to session.name
+    // (path B of the revert bug).
+    act(() => {
+      titleListener()?.({
+        sessionId: 'pty-1',
+        agentSessionId: 'agent-uuid',
+        title: '',
+        source: 'ai-generated',
+      })
+    })
+
+    const pane = result.current.sessions[0]?.panes.find(
+      (candidate) => candidate.ptyId === 'pty-1'
+    )
+    expect(pane?.agentTitle).toBe('user-title')
+    expect(pane?.agentTitleSource).toBe('user-renamed')
   })
 
   test('agent-session-title for unknown ptyId does not change state identity', async () => {

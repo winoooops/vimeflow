@@ -326,6 +326,26 @@ export const useSessionManager = (
                     return pane
                   }
 
+                  // Once the pane's title was set by an explicit user
+                  // rename (agentTitleSource === 'user-renamed'), the
+                  // user's intent is sticky: a later ai-generated title
+                  // (Claude's auto-summary) must not silently clobber it,
+                  // and a transient watcher clear (Codex rewriting
+                  // session_index.jsonl) must not wipe it. Only a
+                  // subsequent user-renamed event — i.e. the user
+                  // explicitly renaming again — replaces it.
+                  if (pane.agentTitleSource === 'user-renamed') {
+                    if (cleared) {
+                      return pane
+                    }
+                    if (
+                      payload.source === 'ai-generated' &&
+                      payload.title !== pane.agentTitle
+                    ) {
+                      return pane
+                    }
+                  }
+
                   // A matching confirmed `/rename` (`user-renamed`) means the
                   // agent transcript has caught up with the temporary local
                   // label, so let `agentTitle` render. Other title updates must
