@@ -30,7 +30,11 @@ import { createGitService } from '../services/gitService'
 import { enqueuePoolWrite } from '../services/workerPoolWrites'
 import { useNotifyInfo } from '../../workspace/hooks/useNotifyInfo'
 import type { ChangedFile, SelectedDiffFile } from '../types'
-import { useFeedbackBatch, type ReviewComment } from '../hooks/useFeedbackBatch'
+import {
+  useFeedbackBatch,
+  parseBatchKey,
+  type ReviewComment,
+} from '../hooks/useFeedbackBatch'
 import { ReviewCommentComposer } from './ReviewCommentComposer'
 import { ReviewCommentRow } from './ReviewCommentRow'
 import { FinishFeedbackPopover } from './FinishFeedbackPopover'
@@ -288,6 +292,11 @@ export const DiffPanelContent = ({
   // above the dock lifecycle; deferred here to avoid a risky partial lift that
   // could leak stale comments across cwd changes.
   const feedback = useFeedbackBatch()
+  // Destructured so the cwd-clear effect can depend on the stable `clearBatch`
+  // identity (memoized, empty deps) rather than the whole `feedback` object —
+  // which is a fresh reference each render and would re-fire the effect every
+  // render (the if-guard makes it a no-op, but it is needless work).
+  const { clearBatch } = feedback
 
   // Clear the feedback batch when cwd changes so stale comments from a
   // previous workspace do not leak into the new one.
@@ -305,9 +314,9 @@ export const DiffPanelContent = ({
     if (previousCwdRef.current !== cwd) {
       previousCwdRef.current = cwd
       lastRepoRootRef.current = ''
-      feedback.clearBatch()
+      clearBatch()
     }
-  }, [cwd, feedback, feedback.clearBatch])
+  }, [cwd, clearBatch])
 
   useEffect(() => {
     if (response?.repoRoot) {
@@ -445,16 +454,12 @@ export const DiffPanelContent = ({
         // undefined only) is exactly right.
         const repoRoot = response?.repoRoot ?? lastRepoRootRef.current
         const entries: DispatchEntry[] = []
-        // batchKey is `${cwd}::${filePath}::${staged ? 'staged' : 'unstaged'}`.
-        // Slice off the cwd prefix, then the trailing staged token, leaving the
-        // file path in between. The staged flag rides into the payload so an
-        // `MM` file (staged + unstaged both commented) stays disambiguated.
+        // parseBatchKey is the single source of truth for the key format (it
+        // lives next to makeBatchKey in useFeedbackBatch). The staged flag rides
+        // into the payload so an `MM` file (staged + unstaged both commented)
+        // stays disambiguated.
         for (const [key, annotations] of feedback.batch) {
-          const firstSep = key.indexOf('::')
-          const remainder = key.slice(firstSep + 2)
-          const lastSep = remainder.lastIndexOf('::')
-          const relPath = remainder.slice(0, lastSep)
-          const staged = remainder.slice(lastSep + 2) === 'staged'
+          const { filePath: relPath, staged } = parseBatchKey(key)
           const filePath = repoRoot ? `${repoRoot}/${relPath}` : relPath
           entries.push({ filePath, staged, annotations })
         }
@@ -1129,6 +1134,12 @@ export const DiffPanelContent = ({
             />
           ) : null}
         </div>
+        {/*
+          STALE-BRANCH NOTE: main adds `thin-scrollbar` here via #293 (merged
+          after this branch diverged), so it was never present to "remove" — the
+          Claude review on #301 flagged it from the stale diff. Keep
+          `thin-scrollbar` on this className when reconciling with main.
+        */}
         <div
           data-testid="diff-scroll-body"
           className="min-h-0 flex-1 overflow-auto"

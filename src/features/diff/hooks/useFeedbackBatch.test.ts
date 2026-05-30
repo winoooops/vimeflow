@@ -1,6 +1,10 @@
 import { describe, test, expect } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
-import { useFeedbackBatch } from './useFeedbackBatch'
+import {
+  useFeedbackBatch,
+  makeBatchKey,
+  parseBatchKey,
+} from './useFeedbackBatch'
 import type { ReviewComment } from './useFeedbackBatch'
 import type { DiffLineAnnotation } from '@pierre/diffs'
 
@@ -241,5 +245,23 @@ describe('useFeedbackBatch', () => {
     expect(stagedList[0].metadata.text).toBe('staged comment')
     expect(unstagedList).toHaveLength(1)
     expect(unstagedList[0].metadata.text).toBe('unstaged comment')
+  })
+
+  test('makeBatchKey / parseBatchKey round-trip for staged and unstaged', () => {
+    const staged = makeBatchKey('/repo/a', 'src/x.ts', true)
+    const unstaged = makeBatchKey('/repo/a', 'src/x.ts', false)
+
+    expect(staged).toBe('/repo/a::src/x.ts::staged')
+    expect(parseBatchKey(staged)).toEqual({
+      cwd: '/repo/a',
+      filePath: 'src/x.ts',
+      staged: true,
+    })
+
+    expect(parseBatchKey(unstaged)).toEqual({
+      cwd: '/repo/a',
+      filePath: 'src/x.ts',
+      staged: false,
+    })
   })
 })

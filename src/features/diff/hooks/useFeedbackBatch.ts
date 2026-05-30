@@ -14,6 +14,36 @@ export type FeedbackBatch = Map<
   DiffLineAnnotation<ReviewComment>[]
 >
 
+export interface ParsedBatchKey {
+  cwd: string
+  filePath: string
+  staged: boolean
+}
+
+/**
+ * The batch Map is keyed by a single string encoding (cwd, filePath, staged).
+ * Construction (`makeBatchKey`) and parsing (`parseBatchKey`) live together so
+ * the format has ONE source of truth — consumers (e.g. the dispatch path in
+ * DiffPanelContent) must use these instead of hand-slicing on `::`, so a format
+ * change can't silently break parsing in callers.
+ */
+export const makeBatchKey = (
+  cwd: string,
+  filePath: string,
+  staged: boolean
+): string => `${cwd}::${filePath}::${staged ? 'staged' : 'unstaged'}`
+
+export const parseBatchKey = (key: string): ParsedBatchKey => {
+  const firstSep = key.indexOf('::')
+  const lastSep = key.lastIndexOf('::')
+
+  return {
+    cwd: key.slice(0, firstSep),
+    filePath: key.slice(firstSep + 2, lastSep),
+    staged: key.slice(lastSep + 2) === 'staged',
+  }
+}
+
 const SOFT_CAP = 50
 
 /**
@@ -72,7 +102,7 @@ export const useFeedbackBatch = (): UseFeedbackBatchReturn => {
       filePath: string,
       staged: boolean
     ): DiffLineAnnotation<ReviewComment>[] => {
-      const key = `${cwd}::${filePath}::${staged ? 'staged' : 'unstaged'}`
+      const key = makeBatchKey(cwd, filePath, staged)
 
       return batch.get(key) ?? EMPTY
     },
@@ -89,7 +119,7 @@ export const useFeedbackBatch = (): UseFeedbackBatchReturn => {
       if (totalAnnotations() >= SOFT_CAP) {
         return 'cap-reached'
       }
-      const key = `${cwd}::${filePath}::${staged ? 'staged' : 'unstaged'}`
+      const key = makeBatchKey(cwd, filePath, staged)
       setBatch((prev) => {
         const next = new Map(prev)
         const existing = next.get(key) ?? []
@@ -111,7 +141,7 @@ export const useFeedbackBatch = (): UseFeedbackBatchReturn => {
       id: string,
       patch: Partial<ReviewComment>
     ): void => {
-      const key = `${cwd}::${filePath}::${staged ? 'staged' : 'unstaged'}`
+      const key = makeBatchKey(cwd, filePath, staged)
       setBatch((prev) => {
         const list = prev.get(key)
         if (!list) {
@@ -143,7 +173,7 @@ export const useFeedbackBatch = (): UseFeedbackBatchReturn => {
 
   const removeAnnotation = useCallback(
     (cwd: string, filePath: string, staged: boolean, id: string): void => {
-      const key = `${cwd}::${filePath}::${staged ? 'staged' : 'unstaged'}`
+      const key = makeBatchKey(cwd, filePath, staged)
       setBatch((prev) => {
         const list = prev.get(key)
         if (!list) {
