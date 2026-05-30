@@ -269,6 +269,91 @@ impl AgentWatcherState {
     /// would block any concurrent `insert` / `remove` / `active_count`
     /// for the same duration. Same fix that was already in
     /// `TranscriptState::stop` (Claude review on PR #152, F7).
+    /// Quiesce any existing watcher for `session_id` BEFORE a new
+    /// watcher's `start_watching` runs inline-init. Called from
+    /// `SessionLifecycle::run_watch_sequence` between
+    /// `ensure_trust` and `spawn_watch`.
+    ///
+    /// **Why this is necessary (PR #302 cycle 16 — codex P2):**
+    /// Without quiesce, the OLD handle's notify or poll callback can
+    /// fire AFTER the new handle's inline-init has reached
+    /// `start_or_replace` and set `NEW.claimed_transcript = true`,
+    /// but BEFORE `insert` displaces the OLD handle (i.e., before
+    /// `OLD.alive.store(false)`). In that window the OLD callback's
+    /// `start_or_replace` passes its alive check (OLD.alive still
+    /// `true`), takes the per-session gate, and overwrites the
+    /// just-claimed transcript entry with the OLD path/cwd.
+    /// `insert` later sees `new_claimed == true` and skips
+    /// orphan-teardown, leaving a stale OLD-path tail attached
+    /// under the NEW handle.
+    ///
+    /// The fix is to set `OLD.alive = false` and drop `OLD._watcher`
+    /// UNDER the per-session gate BEFORE inline-init runs. After
+    /// this returns:
+    ///   - OS-level notify backend stops dispatching new callbacks
+    ///     from OLD's watcher (`_watcher.take()` → `Drop`).
+    ///   - In-flight OLD callbacks already past dispatch will,
+    ///     when they reach `start_or_replace`'s gate-protected
+    ///     alive check, observe `OLD.alive == false` and
+    ///     short-circuit with `StartError::Displaced` — no
+    ///     mutation, transcript entry unaffected.
+    ///   - New handle's inline-init re-acquires the gate cleanly
+    ///     and races nothing.
+    ///
+    /// **Lock-ordering invariant:** gate → watchers, matching
+    /// `start_or_replace`, `stop`, and `insert`. Caller MUST NOT
+    /// hold either lock when calling this method.
+    ///
+    /// **Idempotency:** no-op when no existing watcher for
+    /// `session_id`. Safe to call multiple times (e.g., concurrent
+    /// `start_agent_watcher` requests for the same session) —
+    /// later calls observe an already-quiesced handle and re-store
+    /// `false` (harmless).
+    ///
+    /// **What this does NOT do:** does not remove the OLD entry
+    /// from the watchers map (`insert` does that atomically later)
+    /// and does not signal the OLD handle's stop flag or join its
+    /// background threads (the displaced `WatcherHandle::Drop`
+    /// handles that AFTER `insert` evicts it).
+    ///
+    /// **Deadlock avoidance (cycle-16 retry-1, codex HIGH):** the
+    /// `_watcher: Option<RecommendedWatcher>` is *moved out* under
+    /// the gate but *dropped after the gate is released*. On macOS
+    /// `RecommendedWatcher` is `FsEventWatcher`, whose `Drop` stops
+    /// and joins the FSEvents runloop — if an in-flight OLD notify
+    /// callback is blocked on this same per-session gate waiting to
+    /// run, dropping the watcher under the gate would deadlock the
+    /// restart: the gate-holder would wait for the runloop to
+    /// drain, and the runloop would wait for the gate-holding
+    /// thread to release before the in-flight callback could
+    /// complete. The `alive=false` store under the gate is the
+    /// load-bearing race-fix; the watcher-drop is a defensive
+    /// belt-and-suspenders that stops fresh dispatches from the OS
+    /// backend but doesn't need to be under the gate to remain
+    /// correct (any callback that slips out between the gate
+    /// release and the drop will still observe `alive == false` at
+    /// `start_or_replace`'s gate-protected check).
+    pub fn quiesce_existing(&self, session_id: &str, transcript_state: &TranscriptState) {
+        let removed_watcher: Option<notify::RecommendedWatcher> = {
+            let gate = transcript_state.session_gate(session_id);
+            let _gate_guard = gate.lock();
+            let mut watchers = self.watchers.lock().expect("failed to lock watchers");
+            if let Some(handle) = watchers.get_mut(session_id) {
+                handle
+                    .alive
+                    .store(false, std::sync::atomic::Ordering::Release);
+                handle._watcher.take()
+            } else {
+                None
+            }
+        };
+        // Drop the RecommendedWatcher OUTSIDE the gate so its
+        // OS-level join doesn't wait on an in-flight callback that's
+        // itself blocked on the gate. See the deadlock-avoidance
+        // note in the docstring.
+        drop(removed_watcher);
+    }
+
     pub fn insert(&self, session_id: String, mut handle: WatcherHandle, agent_type: AgentType) {
         handle.agent_type = agent_type;
 
@@ -559,17 +644,16 @@ fn maybe_start_transcript(
         }
         Ok(TranscriptStartStatus::AlreadyRunning) => TxOutcome::AlreadyRunning,
         Err(e) => {
-            // PR #302 cycle 13 F1 — distinguish the expected
-            // displacement short-circuit from a real tail-spawn
-            // failure. `start_or_replace`'s alive check returns Err
-            // prefixed with `DISPLACED_ERR_PREFIX` whenever a notify
-            // or poll callback fires for a displaced handle. This is
-            // a normal restart-time condition, NOT a failure — log at
-            // debug, return the dedicated `Displaced` outcome.
-            // Pre-cycle-13 this fell into the generic warn arm and
-            // produced false-positive "Failed to start transcript
-            // tailing" alerts on every session restart.
-            if e.starts_with(super::transcript_state::DISPLACED_ERR_PREFIX) {
+            // PR #302 cycle 16 F1 (Claude post-cycle-15 review):
+            // route by the typed `StartError` discriminant instead of
+            // substring-matching a string sentinel. Pre-cycle-16 this
+            // used `starts_with(DISPLACED_ERR_PREFIX)` — a typo or
+            // i18n edit to the prefix would silently route every
+            // restart's expected-condition Err into the generic warn
+            // arm. With a structural enum the compiler enforces
+            // both arms are handled and the producer/consumer
+            // contract is strongly typed.
+            if e.is_displaced() {
                 log::debug!(
                     "transcript: displaced-watcher short-circuit for session {}: {}",
                     session_id,
@@ -605,6 +689,19 @@ fn maybe_start_transcript(
 /// is still `located.status_path`; the rest of the struct is cloned
 /// into each callback so they can resolve transcript paths via the
 /// new trait without re-reading from the adapter.
+/// `pre_inline_init` runs AFTER the fallible notify setup
+/// (`recommended_watcher` + `watch(parent_dir)`) succeeds and BEFORE
+/// the inline-init block reads the status file. It is the hook used
+/// by `SessionLifecycle` to call
+/// `AgentWatcherState::quiesce_existing` (PR #302 cycle 16 retry-1):
+///   - Placing quiesce inside this hook (rather than before
+///     `spawn_watch`) preserves the spawn-failure rollback invariant
+///     — if any fallible step before this hook fails, we return
+///     `Err` and the OLD watcher is untouched.
+///   - Placing it BEFORE inline-init closes the codex P2 race —
+///     inline-init's `start_or_replace` runs in a quiesced world
+///     (OLD.alive already false; any in-flight OLD callback
+///     short-circuits under the per-session gate).
 pub(crate) fn start_watching(
     bindings: AgentBindings,
     events: Arc<dyn EventSink>,
@@ -612,6 +709,7 @@ pub(crate) fn start_watching(
     transcript_state: TranscriptState,
     session_id: String,
     located: TrustedLocatedSource,
+    pre_inline_init: impl FnOnce(),
 ) -> Result<WatcherHandle, String> {
     let located = located.into_inner();
     let status_file_path = located.status_path.clone();
@@ -844,6 +942,16 @@ pub(crate) fn start_watching(
     watcher
         .watch(parent_dir, RecursiveMode::NonRecursive)
         .map_err(|e| format!("failed to start watching: {}", e))?;
+
+    // PR #302 cycle 16 retry-1 — invoke the pre_inline_init hook
+    // AFTER all fallible notify-setup succeeds and BEFORE inline-init
+    // claims transcript. Caller uses this to quiesce any displaced
+    // predecessor watcher (alive=false + drop _watcher outside the
+    // gate), so inline-init's `start_or_replace` runs without racing
+    // an in-flight OLD callback. If the steps above this point
+    // returned `Err`, the hook never ran and the OLD watcher is
+    // intact — spawn-failure rollback invariant preserved.
+    pre_inline_init();
 
     // Read the file immediately in case it was already written before
     // the watcher started (common race: status.json written by statusline.sh
@@ -1406,6 +1514,73 @@ mod tests {
         // when there's nothing to stop.
         state.remove(&sid);
         assert!(!transcript_state.contains(&sid));
+    }
+
+    /// PR #302 cycle 16 (codex P2 + Claude F1) — `quiesce_existing`
+    /// flips the existing handle's `alive` flag to `false` and drops
+    /// its `_watcher`. After quiesce, an in-flight callback that
+    /// later reaches `start_or_replace` with this handle's alive
+    /// token will short-circuit with `StartError::Displaced`.
+    /// No-op on a missing session.
+    #[test]
+    fn t_quiesce_existing_flips_alive_and_drops_watcher() {
+        let transcript_state = TranscriptState::new();
+        let watcher_state = AgentWatcherState::new();
+        let sid = "quiesce-test".to_string();
+
+        // No-op on missing — must not panic, must not create a stub.
+        watcher_state.quiesce_existing(&sid, &transcript_state);
+        assert!(!watcher_state.contains(&sid));
+
+        // Insert a stub handle and capture its `alive` Arc clone so we
+        // can observe the flag change after quiesce.
+        let handle = WatcherHandle::new_for_test(transcript_state.clone(), sid.clone());
+        let alive_observer = handle.alive.clone();
+        watcher_state.insert(sid.clone(), handle, AgentType::ClaudeCode);
+        assert!(
+            alive_observer.load(std::sync::atomic::Ordering::Acquire),
+            "fresh handle should be alive before quiesce",
+        );
+
+        watcher_state.quiesce_existing(&sid, &transcript_state);
+        assert!(
+            !alive_observer.load(std::sync::atomic::Ordering::Acquire),
+            "quiesce_existing must flip alive=false on the existing handle",
+        );
+
+        // Simulate the in-flight-callback short-circuit path:
+        // start_or_replace called with the (now-false) alive token
+        // returns StartError::Displaced.
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let transcript_path = tmp.path().join("t.jsonl");
+        std::fs::write(&transcript_path, "").expect("write");
+        let adapter: Arc<dyn TranscriptStreamer> =
+            Arc::new(crate::agent::adapter::claude_code::ClaudeCodeAdapter);
+        let sink = Arc::new(FakeEventSink::new());
+        let err = transcript_state
+            .start_or_replace(
+                adapter,
+                sink,
+                sid.clone(),
+                transcript_path,
+                None,
+                None,
+                Some(alive_observer.clone()),
+            )
+            .expect_err("alive=false must produce StartError::Displaced");
+        assert!(err.is_displaced(), "expected Displaced, got: {:?}", err);
+    }
+
+    /// PR #302 cycle 16 F1 (Claude post-cycle-15 review) —
+    /// `StartError::is_displaced` returns the right discriminant for
+    /// both variants. Pins the structural-routing contract that
+    /// `maybe_start_transcript` depends on.
+    #[test]
+    fn t_start_error_discriminant_routes_correctly() {
+        let displaced = super::super::transcript_state::StartError::Displaced("x".into());
+        let failed = super::super::transcript_state::StartError::Failed("y".into());
+        assert!(displaced.is_displaced());
+        assert!(!failed.is_displaced());
     }
 
     #[test]

@@ -2,8 +2,8 @@
 id: error-surfacing
 category: error-handling
 created: 2026-04-10
-last_updated: 2026-05-24
-ref_count: 7
+last_updated: 2026-05-30
+ref_count: 8
 ---
 
 # Error Surfacing
@@ -296,3 +296,13 @@ failed" must mean the editor shows the original file, not the requested one.
 - **Finding:** Cycle 10 added an alive-flag check inside `start_or_replace` that returns `Err("watcher displaced — ...")` whenever a notify or poll callback fires for a displaced WatcherHandle. This is an **expected, normal condition** on every restart — but the caller's existing Err arm in `maybe_start_transcript` logged it at WARN level with the message `"Failed to start transcript tailing for session {}: {}"` and mapped to `TxOutcome::StartFailed` — indistinguishable from genuine tail-spawn failures (inotify fd exhaustion, permission errors, etc.). Any monitoring rule alerting on `WARN.*Failed to start transcript tailing` would fire false positives on every session restart, training on-call engineers to ignore the warning class and missing real failures. Same finding-class as #28 (typed-error split wasted at the formatter layer): when a function's Err encodes multiple semantic categories (real failure vs. expected-short-circuit), the formatter MUST distinguish them.
 - **Fix:** Three coordinated changes. (1) Introduce a `pub(crate) const DISPLACED_ERR_PREFIX: &str = "watcher displaced — "` sentinel in `transcript_state.rs`; `start_or_replace`'s alive-check Err uses the prefix. (2) Add a dedicated `TxOutcome::Displaced` variant in `diagnostics.rs` (with `"displaced"` label) — the compile-time-exhaustive `tx_outcome_label_covers_every_variant` test forces future contributors adding a new variant to also acknowledge this one. (3) `maybe_start_transcript`'s Err arm now checks `e.starts_with(DISPLACED_ERR_PREFIX)` — routes to `TxOutcome::Displaced` with `log::debug!` (expected condition); real failures still route to `TxOutcome::StartFailed` with `log::warn!` (alertable). Code-review heuristic: any code path that adds a new short-circuit Err to a function whose existing Err arm is logged at warn/error level MUST also update the caller to distinguish the new semantic. The default "use the existing Err arm" path silently collapses the new condition into the wrong log level. Defense: when adding a new error-return path, grep for ALL callers that match against the function's Err to verify each one routes the new semantic correctly.
 - **Commit:** _(PR #302 upsource cycle 13 fix commit)_
+
+### 30. String-sentinel error discriminant replaced by typed enum after Claude flagged it as fragile
+
+- **Source:** github-claude | PR #302 cycle 16 | 2026-05-30
+- **Severity:** MEDIUM
+- **File:** `crates/backend/src/agent/adapter/base/transcript_state.rs` (`StartError` enum + `start_or_replace` return type) + `crates/backend/src/agent/adapter/base/watcher_runtime.rs` (`maybe_start_transcript` consumer)
+- **Finding:** #29's fix used `pub(crate) const DISPLACED_ERR_PREFIX: &str = "watcher displaced — "` + `e.starts_with(prefix)` to discriminate the expected restart-time error from genuine spawn failures. This couples two sites by a string contract that the compiler can't verify: if `start_or_replace` ever changes the prefix (typo fix, i18n, restructuring), `maybe_start_transcript`'s `starts_with` silently misfires — displaced restarts land in `TxOutcome::StartFailed` and emit false-positive WARN alerts. Claude's post-cycle-15 review (87% conf MED) called this out as a fragile contract.
+- **Fix:** Replace the sentinel with a typed `pub enum StartError { Displaced(String), Failed(String) }`. `start_or_replace`'s return type becomes `Result<TranscriptStartStatus, StartError>`. The alive-check Err constructs `StartError::Displaced(msg)`; `streamer.tail(...)?` is wrapped via `.map_err(StartError::Failed)`. `maybe_start_transcript` consumes via `e.is_displaced()` pattern. `StartError` implements `Display` (for log messages) and `From<StartError> for String` (back-compat). Regression test `t_start_error_discriminant_routes_correctly` pins the discriminant.
+- **Code-review heuristic:** String-sentinel discriminants are _always_ a stopgap. Even with a constant defined in one place + grep-discoverable, the contract is invisible to the compiler — any edit to either site that breaks the relationship compiles cleanly and ships. The right shape is a typed enum: producer constructs the variant, consumer pattern-matches. Cost is touching the return type once + a few `Result<_, NewErr>` updates; benefit is structural enforcement at the compiler level. The pattern recurs whenever you reach for `e.starts_with(SOME_CONST)` or `e.contains(SOME_TOKEN)` — those are smells of an enum trying to escape.
+- **Commit:** _(PR #302 upsource cycle 16 fix commit)_

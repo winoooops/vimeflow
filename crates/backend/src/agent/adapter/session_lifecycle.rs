@@ -583,6 +583,14 @@ impl SessionLifecycle {
         located: TrustedLocatedSource,
         sid: String,
     ) -> Result<WatcherHandle, String> {
+        // PR #302 cycle 16 retry-1: the `pre_inline_init` closure
+        // quiesces any displaced predecessor watcher AFTER notify
+        // setup succeeds (preserving spawn-failure rollback) and
+        // BEFORE inline-init runs (closing the codex P2 race). See
+        // `start_watching`'s docstring for the full ordering proof.
+        let watcher_state = self.watcher_state.clone();
+        let transcript_state_for_quiesce = self.transcript_state.clone();
+        let sid_for_quiesce = sid.clone();
         base::start_watching(
             bindings,
             self.events.clone(),
@@ -590,6 +598,10 @@ impl SessionLifecycle {
             self.transcript_state.clone(),
             sid,
             located,
+            move || {
+                watcher_state
+                    .quiesce_existing(&sid_for_quiesce, &transcript_state_for_quiesce);
+            },
         )
     }
 
@@ -687,6 +699,16 @@ impl SessionLifecycle {
             // Spawn FIRST. On `Err`, `?` short-circuits before any state
             // mutation — the old watcher (if any) is still live and
             // continues polling. PR #302 cycle 2 F3.
+            //
+            // PR #302 cycle 16 (codex P2 + retry-1): `spawn_watch`
+            // takes a quiesce closure that fires AFTER notify setup
+            // succeeds and BEFORE inline-init. This ordering
+            // preserves cycle-2 F3's rollback invariant (spawn-failure
+            // leaves the old watcher intact — quiesce never ran) AND
+            // closes the codex P2 race (inline-init runs in a
+            // quiesced world — OLD.alive already false, OLD's notify
+            // callbacks short-circuit at `start_or_replace`'s
+            // alive check).
             let handle = lc.spawn_watch(bindings, trusted, session_id.clone())?;
             // `register` (via `AgentWatcherState::insert`) atomically swaps
             // the old handle for the new one under a single lock; the

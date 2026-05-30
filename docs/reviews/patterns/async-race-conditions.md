@@ -3,7 +3,7 @@ id: async-race-conditions
 category: react-patterns
 created: 2026-04-09
 last_updated: 2026-05-30
-ref_count: 13
+ref_count: 14
 ---
 
 # Async Race Conditions
@@ -540,3 +540,16 @@ prevent showing previous data.
   - Two regression tests pin debug-runtime behavior: `stop_with_held_gate_panics_on_wrong_session_in_debug` (right state, wrong sid) and `stop_with_held_gate_panics_on_wrong_state_in_debug` (right sid, wrong state instance).
 - **Code-review heuristic:** When using a typed witness to enforce a TOCTOU invariant at the API boundary, identify EVERY axis the invariant is parameterized on — not just the most obvious one (the lock kind). A per-session lock is parameterized on (lock-type, session-id, state-instance). A witness that only proves the first axis is a partial enforcement; codex / external review will reliably find each unbound axis. The compile-time-vs-runtime split is acceptable: bind what the type system can express (constructor visibility + private fields + lifetimes), and `debug_assert!` what it can't (Arc identity, string equality). The pattern of "cheap `Arc::ptr_eq` for owner identity" generalizes wherever a token-issuing API needs to verify the token came from the right issuer instance (registry, pool, factory).
 - **Commit:** _(PR #302 upsource cycle 15 fix commit)_
+
+### 54. Quiesce displaced watcher BEFORE inline-init via a fallible-setup-success hook, with watcher Drop outside the gate
+
+- **Source:** github-codex-connector | PR #302 cycle 16 P2 | 2026-05-30
+- **Severity:** MEDIUM (P2)
+- **File:** `crates/backend/src/agent/adapter/base/watcher_runtime.rs` (AgentWatcherState::quiesce_existing + start_watching pre_inline_init hook) + `crates/backend/src/agent/adapter/session_lifecycle.rs` (spawn_watch closure)
+- **Finding:** Cycles 9–11 closed the gate-protected ownership-transfer races in `AgentWatcherState::insert`, but a residual window remained between NEW handle's inline-init (claims transcript via `start_or_replace` and sets `NEW.claimed_transcript = true`) and `register`'s `insert` (sets `OLD.alive = false`). During that window the OLD handle's notify or poll callback can fire, pass its still-true alive check, take the per-session gate, and overwrite the just-claimed transcript with the OLD path/cwd. `register` later sees `new_claimed == true` and skips orphan-teardown, leaving a stale OLD-path tail attached under the NEW handle.
+- **Fix (three-step ordering proof):**
+  1. **Quiesce the OLD handle BEFORE inline-init runs.** New `AgentWatcherState::quiesce_existing(&str, &TranscriptState)` acquires the per-session gate, sets `handle.alive.store(false, Release)` on the existing entry (no-op if absent), and moves `handle._watcher.take()` into a local. After quiesce, any in-flight OLD callback that later reaches `start_or_replace`'s alive check observes `false` and short-circuits with `StartError::Displaced`; no mutation happens.
+  2. **Preserve cycle-2 F3 spawn-failure rollback.** `quiesce_existing` is invoked via a `pre_inline_init: impl FnOnce()` parameter added to `start_watching`. The hook fires AFTER all fallible notify setup (`recommended_watcher` + `watcher.watch(parent_dir)`) succeeds and BEFORE the inline-init block reads the status file. If any earlier fallible step returns `Err`, the hook never fires — OLD watcher untouched.
+  3. **Avoid the FsEventWatcher deadlock (codex retry-1 HIGH 0.89).** Drop the moved-out `RecommendedWatcher` OUTSIDE the gate. On macOS, `RecommendedWatcher = FsEventWatcher`, whose `Drop` stops and joins the FSEvents runloop — if an in-flight OLD callback is blocked on the per-session gate, dropping the watcher under the gate deadlocks (gate-holder waits for runloop drain; runloop waits for in-flight callback to complete; callback waits for gate). The `alive=false` store under the gate is the load-bearing race-fix; the watcher-drop is defensive belt-and-suspenders.
+- **Code-review heuristic:** When a multi-phase setup includes both (a) fallible setup steps that must roll back on failure and (b) irreversible mutations needed for race-safety, the right architectural shape is a **post-setup-success hook**, NOT a caller-side pre-setup mutation. `pre_inline_init: impl FnOnce()` is a one-liner trait bound that lets the caller inject the irreversible step at the correct ordering point inside the setup function. This generalizes: any "do X only if Y succeeds" sequence where X and Y live in different modules is cleaner via a closure parameter than via two-call patterns where the caller has to remember the ordering. **Drop-outside-the-lock corollary:** when a lock protects an in-flight callback chain AND the callback's `Drop` synchronously joins the callback runloop, the Drop must happen outside the lock. The pattern recurs for any OS-level event source (FSEvents on macOS, inotify watchers, kqueue, mio registrations) whose teardown synchronizes with the dispatch thread.
+- **Commit:** _(PR #302 upsource cycle 16 fix commit; codex-verify retry-1 added the drop-outside-gate fix and the post-setup-success hook restructure)_

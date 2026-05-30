@@ -115,11 +115,57 @@ pub enum TranscriptStartStatus {
     AlreadyRunning,
 }
 
-/// Sentinel prefix on `start_or_replace`'s Err when the alive check
-/// short-circuits — `maybe_start_transcript` matches `starts_with` to
-/// route to `TxOutcome::Displaced` (debug log) rather than the generic
-/// `TxOutcome::StartFailed` (warn log). PR #302 cycle 13 F1.
-pub(crate) const DISPLACED_ERR_PREFIX: &str = "watcher displaced — ";
+/// Typed error returned by [`TranscriptState::start_or_replace`]. The
+/// variant is the routing discriminant: `Displaced` is an expected
+/// restart-time condition (`debug!` log + `TxOutcome::Displaced`);
+/// `Failed` is a genuine spawn failure (`warn!` log + `TxOutcome::
+/// StartFailed`).
+///
+/// PR #302 cycle 16 F1 (Claude post-cycle-15 review): replaced the
+/// cycle-13 `DISPLACED_ERR_PREFIX` string-sentinel that
+/// `maybe_start_transcript` used via `starts_with` — a typo or i18n
+/// edit to the prefix would have silently routed every restart's
+/// expected-condition Err into the generic warn arm (false-positive
+/// alerts). The enum makes the discriminant structural: the producer
+/// constructs the right variant and the consumer pattern-matches on
+/// the variant. The wrapped `String` keeps the human-readable message
+/// for logs.
+#[doc(hidden)]
+#[derive(Debug)]
+pub enum StartError {
+    /// Caller's `WatcherHandle` was displaced between the callback
+    /// dispatch and `start_or_replace`'s gate-protected alive check.
+    /// Expected normal restart-time condition; consumer should log
+    /// at `debug` and emit `TxOutcome::Displaced`.
+    Displaced(String),
+    /// Spawn of the new tail thread failed (fs error, inotify
+    /// exhaustion, streamer adapter returned `Err`). Unexpected;
+    /// consumer should log at `warn` and emit
+    /// `TxOutcome::StartFailed`.
+    Failed(String),
+}
+
+impl StartError {
+    /// True iff this error is a displaced-watcher short-circuit (the
+    /// expected restart-time condition).
+    pub(crate) fn is_displaced(&self) -> bool {
+        matches!(self, Self::Displaced(_))
+    }
+}
+
+impl std::fmt::Display for StartError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Displaced(s) | Self::Failed(s) => f.write_str(s),
+        }
+    }
+}
+
+impl From<StartError> for String {
+    fn from(e: StartError) -> Self {
+        e.to_string()
+    }
+}
 
 /// Typed handle to a per-session start gate. Constructed only via
 /// `TranscriptState::session_gate(session_id)` — owns an
@@ -262,7 +308,7 @@ impl TranscriptState {
         // and reclaim the entry with stale data (codex-connector P2
         // round 10).
         alive: Option<Arc<std::sync::atomic::AtomicBool>>,
-    ) -> Result<TranscriptStartStatus, String> {
+    ) -> Result<TranscriptStartStatus, StartError> {
         // Acquire (or lazily create) the per-session start gate so only
         // one start_or_replace call per session can be inside the
         // check + spawn + insert critical section at a time. Without
@@ -288,18 +334,21 @@ impl TranscriptState {
         // already-dispatched displaced callback could race past the
         // _watcher drop and reclaim the entry.
         //
-        // PR #302 cycle 13 F1: the error message starts with the
-        // `DISPLACED_ERR_PREFIX` sentinel so `maybe_start_transcript`
-        // can map this expected restart-time condition to
-        // `TxOutcome::Displaced` (debug-level log) rather than
-        // `TxOutcome::StartFailed` (warn-level). Without the prefix,
-        // every session restart produced false-positive
-        // "Failed to start transcript tailing" WARN logs.
+        // PR #302 cycle 16 F1 (Claude post-cycle-15 review):
+        // returns the typed `StartError::Displaced` variant so
+        // `maybe_start_transcript` can pattern-match on the
+        // discriminant rather than substring-match a string sentinel.
+        // The wrapped String is the human-readable message (logs only;
+        // not part of the routing contract). Pre-cycle-16 used a
+        // `DISPLACED_ERR_PREFIX` string sentinel — a typo or i18n
+        // edit to the prefix would have silently routed every
+        // restart's expected-condition Err into the generic warn arm
+        // (false-positive "Failed to start transcript tailing"
+        // alerts). The enum makes the discriminant structural.
         if let Some(alive_flag) = &alive {
             if !alive_flag.load(std::sync::atomic::Ordering::Acquire) {
-                return Err(format!(
-                    "{}start_or_replace short-circuited",
-                    DISPLACED_ERR_PREFIX
+                return Err(StartError::Displaced(
+                    "watcher displaced before start_or_replace gate".to_string(),
                 ));
             }
         }
@@ -373,12 +422,14 @@ impl TranscriptState {
             handle.stop();
         }
 
-        let new_handle = streamer.tail(
-            events,
-            session_id.clone(),
-            cwd.clone(),
-            transcript_path.clone(),
-        )?;
+        let new_handle = streamer
+            .tail(
+                events,
+                session_id.clone(),
+                cwd.clone(),
+                transcript_path.clone(),
+            )
+            .map_err(StartError::Failed)?;
 
         // The per-session gate guarantees no concurrent `start_or_replace`
         // can have inserted between the check above and this insert.
