@@ -26,6 +26,7 @@ test('1 comment across 1 file -> header contains singular wording', () => {
   const entries: DispatchEntry[] = [
     {
       filePath: 'src/App.tsx',
+      staged: false,
       annotations: [makeAnnotation(5, 'additions', 'Nice work')],
     },
   ]
@@ -38,6 +39,7 @@ test('3 comments across 2 files -> header says plural counts and body has 3 entr
   const entries: DispatchEntry[] = [
     {
       filePath: 'src/App.tsx',
+      staged: false,
       annotations: [
         makeAnnotation(5, 'additions', 'Nice work'),
         makeAnnotation(10, 'deletions', 'Remove this'),
@@ -45,6 +47,7 @@ test('3 comments across 2 files -> header says plural counts and body has 3 entr
     },
     {
       filePath: 'src/main.tsx',
+      staged: false,
       annotations: [makeAnnotation(3, 'additions', 'Consider renaming')],
     },
   ]
@@ -60,6 +63,7 @@ test('multi-line comment prefixes every line', () => {
   const entries: DispatchEntry[] = [
     {
       filePath: 'src/App.tsx',
+      staged: false,
       annotations: [
         makeAnnotation(5, 'additions', 'Line one\nLine two\nLine three'),
       ],
@@ -77,6 +81,7 @@ test('repo-relative file path is emitted directly without joining', () => {
   const entries: DispatchEntry[] = [
     {
       filePath: 'src/App.tsx',
+      staged: false,
       annotations: [makeAnnotation(5, 'additions', 'Nice work')],
     },
   ]
@@ -85,12 +90,34 @@ test('repo-relative file path is emitted directly without joining', () => {
   expect(payload).toContain('> src/App.tsx:5 (additions)')
 })
 
+test('each entry line is labelled with its staged/unstaged diff view', () => {
+  const entries: DispatchEntry[] = [
+    {
+      filePath: 'src/App.tsx',
+      staged: true,
+      annotations: [makeAnnotation(5, 'additions', 'staged side')],
+    },
+    {
+      filePath: 'src/App.tsx',
+      staged: false,
+      annotations: [makeAnnotation(8, 'additions', 'unstaged side')],
+    },
+  ]
+  const payload = formatFeedbackPayload(entries)
+
+  // An MM file produces two same-path entries whose line numbers refer to
+  // different comparisons — the [staged]/[unstaged] tag keeps them distinct.
+  expect(payload).toContain('> src/App.tsx:5 (additions) [staged]')
+  expect(payload).toContain('> src/App.tsx:8 (additions) [unstaged]')
+})
+
 test('dispatchFeedbackBatch calls writePty once with paste-bracketed payload', async () => {
   const writePty = vi.fn().mockResolvedValue(undefined)
 
   const entries: DispatchEntry[] = [
     {
       filePath: 'src/App.tsx',
+      staged: false,
       annotations: [makeAnnotation(5, 'additions', 'Nice work')],
     },
   ]
@@ -108,6 +135,7 @@ test('strips terminal control characters so a crafted path/comment cannot break 
     {
       // filename embedding the paste-END sentinel + CR
       filePath: 'src/ev\x1b[201~il.tsx',
+      staged: false,
       annotations: [
         makeAnnotation(5, 'additions', 'breakout\x1b[201~\rinjected'),
       ],

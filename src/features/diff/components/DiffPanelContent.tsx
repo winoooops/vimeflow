@@ -279,6 +279,14 @@ export const DiffPanelContent = ({
   const { message: notifyMessage, notifyInfo } = useNotifyInfo()
 
   // Inline review comment batch state.
+  //
+  // KNOWN LIMITATION (deferred — tracked in #307; part of the workspace-layer
+  // refactor #306): DockPanel conditionally mounts DiffPanelContent only while
+  // the diff tab is active and unmounts it on dock close, so leaving the diff
+  // tab before Finish/Discard tears this component down and silently drops an
+  // unsent batch. The fix is to hoist the batch (and its cwd-invalidation)
+  // above the dock lifecycle; deferred here to avoid a risky partial lift that
+  // could leak stale comments across cwd changes.
   const feedback = useFeedbackBatch()
 
   // Clear the feedback batch when cwd changes so stale comments from a
@@ -437,13 +445,18 @@ export const DiffPanelContent = ({
         // undefined only) is exactly right.
         const repoRoot = response?.repoRoot ?? lastRepoRootRef.current
         const entries: DispatchEntry[] = []
+        // batchKey is `${cwd}::${filePath}::${staged ? 'staged' : 'unstaged'}`.
+        // Slice off the cwd prefix, then the trailing staged token, leaving the
+        // file path in between. The staged flag rides into the payload so an
+        // `MM` file (staged + unstaged both commented) stays disambiguated.
         for (const [key, annotations] of feedback.batch) {
           const firstSep = key.indexOf('::')
           const remainder = key.slice(firstSep + 2)
           const lastSep = remainder.lastIndexOf('::')
           const relPath = remainder.slice(0, lastSep)
+          const staged = remainder.slice(lastSep + 2) === 'staged'
           const filePath = repoRoot ? `${repoRoot}/${relPath}` : relPath
-          entries.push({ filePath, annotations })
+          entries.push({ filePath, staged, annotations })
         }
 
         try {

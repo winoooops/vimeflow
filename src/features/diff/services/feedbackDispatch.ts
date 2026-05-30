@@ -22,6 +22,13 @@ const stripControls = (value: string): string =>
 
 export interface DispatchEntry {
   filePath: string
+  /**
+   * Which diff view the comments were authored against. A file with both
+   * staged AND unstaged changes (git status `MM`) produces two batch entries
+   * for the same path whose line numbers refer to different comparisons —
+   * the payload labels each so the agent addresses the correct version.
+   */
+  staged: boolean
   annotations: DiffLineAnnotation<ReviewComment>[]
 }
 
@@ -38,7 +45,7 @@ export const formatFeedbackPayload = (entries: DispatchEntry[]): string => {
           .map((line) => `> ─ ${stripControls(line)}`)
 
         return [
-          `> ${stripControls(entry.filePath)}:${a.lineNumber} (${a.side})`,
+          `> ${stripControls(entry.filePath)}:${a.lineNumber} (${a.side}) [${entry.staged ? 'staged' : 'unstaged'}]`,
           ...lines,
           '>',
         ].join('\n')
