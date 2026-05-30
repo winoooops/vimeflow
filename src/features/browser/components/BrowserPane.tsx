@@ -87,7 +87,16 @@ export const BrowserPane = ({
   const suppressNextNativeFocusRef = useRef(false)
   const lastBoundsKeyRef = useRef<string | null>(null)
   const onUrlChangeRef = useRef(onUrlChange)
-  const [address, setAddress] = useState(url)
+  // Address bar = `committedUrl` (the active tab's real URL, synced from native
+  // events) projected into a single editable `draft` that the input always
+  // displays. While the user is editing, the draft is their input and native
+  // url events (SPA page-title-updated re-emits url/tabs-changed constantly)
+  // never overwrite it. While idle, an effect keeps the draft equal to
+  // committedUrl, so what is submitted is always exactly what is displayed —
+  // there is no hidden draft and no blur-timing edge for any submit path.
+  const [committedUrl, setCommittedUrl] = useState(url)
+  const [draft, setDraft] = useState(url)
+  const isAddressEditingRef = useRef(false)
   const [cdpInfo, setCdpInfo] = useState<BrowserCdpInfo | null>(null)
   const [createError, setCreateError] = useState<string | null>(null)
 
@@ -104,6 +113,15 @@ export const BrowserPane = ({
     [session.panes]
   )
 
+  // Mirror the active tab URL into the draft whenever the bar is idle (not
+  // being edited). Guarded by the editing ref so a focused, half-typed draft
+  // survives the stream of native url/tabs-changed events.
+  useEffect(() => {
+    if (!isAddressEditingRef.current) {
+      setDraft(committedUrl)
+    }
+  }, [committedUrl])
+
   const activePaneId =
     session.panes.find((sessionPane) => sessionPane.active)?.id ?? null
 
@@ -114,6 +132,12 @@ export const BrowserPane = ({
   const shortcutContextRef = useRef(shortcutContext)
 
   const syncBounds = useCallback((): void => {
+    // Before the native pane exists, main silently drops bounds IPC — skip it.
+    // The explicit syncBounds() after createBrowserPane applies the first bounds.
+    if (!nativePaneReadyRef.current) {
+      return
+    }
+
     const node = contentRef.current
     if (!node) {
       return
@@ -146,12 +170,12 @@ export const BrowserPane = ({
       ...currentShortcutContext.paneIds,
     ].join(':')
 
-    if (nativePaneReadyRef.current && lastBoundsKeyRef.current === boundsKey) {
+    // Past the readiness guard above, the native pane always exists — skip
+    // unchanged bounds and record the latest key.
+    if (lastBoundsKeyRef.current === boundsKey) {
       return
     }
-    if (nativePaneReadyRef.current) {
-      lastBoundsKeyRef.current = boundsKey
-    }
+    lastBoundsKeyRef.current = boundsKey
 
     void setBrowserPaneBounds({
       sessionId: browserSessionId,
@@ -193,7 +217,7 @@ export const BrowserPane = ({
         }
 
         nativePaneReadyRef.current = true
-        setAddress(result.url)
+        setCommittedUrl(result.url)
         setTabs(result.tabs)
         onUrlChangeRef.current?.(session.id, pane.id, result.url)
 
@@ -310,7 +334,7 @@ export const BrowserPane = ({
         }
 
         setTabs(event.tabs)
-        setAddress(event.url)
+        setCommittedUrl(event.url)
         onUrlChangeRef.current?.(session.id, pane.id, event.url)
       }),
     [browserSessionId, pane.id, session.id]
@@ -333,7 +357,7 @@ export const BrowserPane = ({
           event.tabs.find((tab) => tab.active) ??
           (event.tabs.length > 0 ? event.tabs[0] : undefined)
         if (nextActiveTab) {
-          setAddress(nextActiveTab.url)
+          setCommittedUrl(nextActiveTab.url)
           onUrlChangeRef.current?.(session.id, pane.id, nextActiveTab.url)
         }
       }),
@@ -342,8 +366,13 @@ export const BrowserPane = ({
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>): void => {
     event.preventDefault()
-    const nextUrl = normalizeUrl(address)
-    setAddress(nextUrl)
+    // Editing ends at submit even if the input keeps focus (Enter), so the
+    // post-navigation / redirect url events flow back into the draft. A
+    // subsequent keystroke re-arms editing via onChange.
+    isAddressEditingRef.current = false
+    const nextUrl = normalizeUrl(draft)
+    setCommittedUrl(nextUrl)
+    setDraft(nextUrl)
     void navigateBrowserPane({
       sessionId: browserSessionId,
       paneId: pane.id,
@@ -466,12 +495,43 @@ export const BrowserPane = ({
         <form className="flex min-w-0 flex-1 gap-2" onSubmit={handleSubmit}>
           <input
             aria-label="browser address"
-            value={address}
-            onChange={(event): void => setAddress(event.currentTarget.value)}
+            value={draft}
+            onFocus={(): void => {
+              // Mark the bar as being edited so idle url-syncs pause.
+              isAddressEditingRef.current = true
+            }}
+            onChange={(event): void => {
+              // Any keystroke (re-)arms editing — covers typing again after an
+              // Enter submit cleared the flag while the input kept focus.
+              isAddressEditingRef.current = true
+              setDraft(event.currentTarget.value)
+            }}
+            onBlur={(event): void => {
+              isAddressEditingRef.current = false
+
+              // Tab-to-Go: focus moving to the submit button means a navigation
+              // is imminent, so keep the typed draft for the pending submit.
+              // Any other blur is a cancel — revert the draft to the live
+              // committed URL so the bar and an idle Go aren't left showing an
+              // abandoned value (a url event may have changed committedUrl
+              // while editing, when the idle effect was paused).
+              const toSubmit =
+                event.relatedTarget instanceof HTMLElement &&
+                event.relatedTarget.getAttribute('type') === 'submit'
+              if (!toSubmit) {
+                setDraft(committedUrl)
+              }
+            }}
             className="min-w-0 flex-1 rounded-md bg-surface-container px-3 py-1.5 font-mono text-[12px] text-on-surface outline-none ring-1 ring-outline-variant/20 transition focus:ring-primary/45"
           />
           <button
             type="submit"
+            onMouseDown={(event): void => {
+              // Keep the input focused through a mouse click so the draft
+              // survives to submit — the blur-cancel resync would otherwise
+              // revert it before the click reaches handleSubmit.
+              event.preventDefault()
+            }}
             className="rounded-md bg-primary/15 px-3 py-1.5 font-mono text-[11px] text-primary transition hover:bg-primary/25 focus:outline-none focus:ring-2 focus:ring-primary/45"
           >
             Go

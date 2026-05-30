@@ -7,6 +7,7 @@ import type {
   BrowserPaneDestroyRequest,
   BrowserPaneFocusedEvent,
   BrowserPaneNewTabRequest,
+  BrowserPaneRef,
   BrowserPaneUrlChangedEvent,
   BrowserPaneTabRequest,
   BrowserPaneTabsChangedEvent,
@@ -75,13 +76,13 @@ export const destroyBrowserPane = async (
 }
 
 export const focusBrowserPane = async (
-  request: BrowserPaneDestroyRequest
+  request: BrowserPaneRef
 ): Promise<void> => {
   await bridge()?.focusPane(request)
 }
 
 export const getBrowserCdpInfo = async (
-  request: BrowserPaneDestroyRequest
+  request: BrowserPaneRef
 ): Promise<BrowserCdpInfo | null> => bridge()?.getCdpInfo(request) ?? null
 
 export const activateBrowserPaneTab = async (

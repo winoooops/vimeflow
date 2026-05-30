@@ -49,16 +49,21 @@ export interface BrowserPaneNavigateRequest {
   url: string
 }
 
-export interface BrowserPaneDestroyRequest {
+// Minimal identity of a browser pane — the fields every pane-scoped IPC needs.
+// Operations that only locate a pane (focus, CDP-info) take this directly;
+// the destroy path keeps its intent-named alias below.
+export interface BrowserPaneRef {
   sessionId: string
   paneId: string
 }
 
-export interface BrowserPaneNewTabRequest extends BrowserPaneDestroyRequest {
+export type BrowserPaneDestroyRequest = BrowserPaneRef
+
+export interface BrowserPaneNewTabRequest extends BrowserPaneRef {
   url?: string
 }
 
-export interface BrowserPaneTabRequest extends BrowserPaneDestroyRequest {
+export interface BrowserPaneTabRequest extends BrowserPaneRef {
   tabId: string
 }
 
@@ -97,8 +102,8 @@ export interface BrowserPaneBridge {
   navigate: (request: BrowserPaneNavigateRequest) => Promise<void>
   newTab: (request: BrowserPaneNewTabRequest) => Promise<void>
   destroyPane: (request: BrowserPaneDestroyRequest) => Promise<void>
-  focusPane: (request: BrowserPaneDestroyRequest) => Promise<void>
-  getCdpInfo: (request: BrowserPaneDestroyRequest) => Promise<BrowserCdpInfo>
+  focusPane: (request: BrowserPaneRef) => Promise<void>
+  getCdpInfo: (request: BrowserPaneRef) => Promise<BrowserCdpInfo>
   activateTab: (request: BrowserPaneTabRequest) => Promise<void>
   closeTab: (request: BrowserPaneTabRequest) => Promise<void>
   onFocus: (callback: (event: BrowserPaneFocusedEvent) => void) => () => void
