@@ -120,10 +120,15 @@ export default defineConfig([
       '@typescript-eslint/explicit-function-return-type': 'error',
       '@typescript-eslint/no-unnecessary-condition': 'error',
       '@typescript-eslint/no-shadow': 'error',
-      // Permit the strip-and-spread pattern — destructuring a few props out to
-      // drop them, then spreading the rest (e.g. react-markdown component maps
-      // discard `node`/`className` before forwarding `...props`). The discarded
-      // siblings are intentional, not dead code.
+    },
+  },
+  {
+    // The react-markdown component map pulls `node`/`className` out to drop
+    // them before spreading `...props`; those discarded siblings are
+    // intentional, not dead code. Scope the strip-and-spread relaxation to just
+    // this file so the rest of the repo keeps strict unused-var checking.
+    files: ['src/features/editor/components/markdownComponents.tsx'],
+    rules: {
       '@typescript-eslint/no-unused-vars': [
         'error',
         { ignoreRestSiblings: true },
