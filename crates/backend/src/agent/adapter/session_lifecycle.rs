@@ -102,6 +102,7 @@ mod tests {
                 transcript_path,
                 None,
                 None,
+                None,
             )
             .expect("seed transcript state");
         let watcher_state = AgentWatcherState::new();

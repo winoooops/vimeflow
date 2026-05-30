@@ -48,6 +48,7 @@ fn transcript_emits_turn_events_for_real_user_prompts_only() {
             transcript_path,
             None,
             None,
+            None,
         )
         .expect("start watcher");
 
@@ -92,6 +93,7 @@ fn vitest_pass_fixture_emits_one_test_run() {
             fixture_path,
             Some(cwd.path().to_path_buf()),
             None,
+            None,
         )
         .expect("start watcher");
 
@@ -135,6 +137,7 @@ fn cargo_mixed_fixture_emits_test_run_with_groups() {
             "session-cargo".to_string(),
             fixture_path,
             Some(cwd.path().to_path_buf()),
+            None,
             None,
         )
         .expect("start watcher");
@@ -208,6 +211,7 @@ fn transcript_emits_agent_cwd_event_on_each_cwd_transition() {
             transcript_path,
             None,
             None,
+            None,
         )
         .expect("start watcher");
 
@@ -255,6 +259,7 @@ fn replay_emits_only_latest_snapshot() {
             "session-replay".to_string(),
             fixture_path,
             Some(cwd.path().to_path_buf()),
+            None,
             None,
         )
         .expect("start watcher");
@@ -318,6 +323,7 @@ fn replay_collapses_then_live_test_run_emits() {
             transcript_path.clone(),
             // Some(cwd) REQUIRED: process_tool_result skips test-run when cwd is None.
             Some(tmp.path().to_path_buf()),
+            None,
             None,
         )
         .expect("start watcher");

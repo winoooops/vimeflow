@@ -147,6 +147,7 @@ impl TranscriptState {
     /// `Arc<CompositeLocator>` plumbing from B' cycle 11 means
     /// `bindings.streamer` already references the same allocation the
     /// watcher's locator does.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn start_or_replace(
         &self,
         streamer: Arc<dyn TranscriptStreamer>,
@@ -155,6 +156,19 @@ impl TranscriptState {
         transcript_path: PathBuf,
         cwd: Option<PathBuf>,
         claim_flag: Option<Arc<std::sync::atomic::AtomicBool>>,
+        // PR #302 cycle 10 — `alive: Option<Arc<AtomicBool>>` is the
+        // per-WatcherHandle alive token. Notify and poll callbacks
+        // pass `Some(alive.clone())`; inline-init / direct test
+        // callers pass `None`. Checked UNDER the per-session gate
+        // BEFORE any mutation: if `alive` is `Some(false)`, the
+        // caller's handle has been displaced and any claim it would
+        // make is stale — return `Err("watcher displaced")` early so
+        // no mutation happens and `claim_flag` is NOT set. Closes the
+        // cycle-9 residual race where an already-dispatched displaced
+        // callback could acquire the gate after `insert` released it
+        // and reclaim the entry with stale data (codex-connector P2
+        // round 10).
+        alive: Option<Arc<std::sync::atomic::AtomicBool>>,
     ) -> Result<TranscriptStartStatus, String> {
         // Acquire (or lazily create) the per-session start gate so only
         // one start_or_replace call per session can be inside the
@@ -172,6 +186,19 @@ impl TranscriptState {
                 .clone()
         };
         let _gate_guard = gate.lock().expect("failed to lock per-session start gate");
+
+        // PR #302 cycle 10 — alive check INSIDE the gate, BEFORE any
+        // mutation. If the caller's handle has been displaced (the
+        // gate-protected window that AgentWatcherState::insert uses to
+        // set alive = false), short-circuit with Err — no mutation, no
+        // claim flag set. Closes the residual cycle-9 race where an
+        // already-dispatched displaced callback could race past the
+        // _watcher drop and reclaim the entry.
+        if let Some(alive_flag) = &alive {
+            if !alive_flag.load(std::sync::atomic::Ordering::Acquire) {
+                return Err("watcher displaced — start_or_replace short-circuited".to_string());
+            }
+        }
 
         // PR #302 cycle 9 — close the cycle-8 TOCTOU race. The
         // `claim_flag` is set BEFORE returning so the gate-held write
@@ -441,6 +468,7 @@ mod tests {
                 first_path.clone(),
                 None,
                 None,
+                None,
             )
             .expect("failed to start first transcript watcher");
         assert_eq!(first_status, TranscriptStartStatus::Started);
@@ -453,6 +481,7 @@ mod tests {
                 first_path,
                 None,
                 None,
+                None,
             )
             .expect("failed to check duplicate transcript watcher");
         assert_eq!(duplicate_status, TranscriptStartStatus::AlreadyRunning);
@@ -463,6 +492,7 @@ mod tests {
                 sink.clone(),
                 session_id.clone(),
                 second_path,
+                None,
                 None,
                 None,
             )
@@ -491,6 +521,7 @@ mod tests {
                 "session-cwd".to_string(),
                 transcript_path,
                 Some(cwd),
+                None,
                 None,
             )
             .expect("failed to start watcher with cwd");
@@ -521,6 +552,7 @@ mod tests {
                 transcript_path.clone(),
                 Some(cwd_a.path().to_path_buf()),
                 None,
+                None,
             )
             .expect("failed to start with cwd_a");
         assert_eq!(first, TranscriptStartStatus::Started);
@@ -532,6 +564,7 @@ mod tests {
                 session_id.clone(),
                 transcript_path.clone(),
                 Some(cwd_a.path().to_path_buf()),
+                None,
                 None,
             )
             .expect("failed to detect already-running");
@@ -545,6 +578,7 @@ mod tests {
                 transcript_path.clone(),
                 Some(cwd_b.path().to_path_buf()),
                 None,
+                None,
             )
             .expect("failed to replace on cwd change");
         assert_eq!(replaced, TranscriptStartStatus::Replaced);
@@ -555,6 +589,7 @@ mod tests {
                 sink.clone(),
                 session_id.clone(),
                 transcript_path,
+                None,
                 None,
                 None,
             )
@@ -764,6 +799,7 @@ mod tests {
                 transcript_path.clone(),
                 Some(cwd_a.path().to_path_buf()),
                 None,
+                None,
             )
             .expect("failed to start with cwd_a");
 
@@ -774,6 +810,7 @@ mod tests {
                 session_id.clone(),
                 transcript_path,
                 Some(cwd_b.path().to_path_buf()),
+                None,
                 None,
             )
             .expect("failed to replace with cwd_b");

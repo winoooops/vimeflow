@@ -112,6 +112,21 @@ pub struct WatcherHandle {
     /// cycle 8 retry-2 widened the claim signal to include
     /// pre-register notify-callback claims).
     owns_transcript: bool,
+    /// Per-handle "alive" token. Set to `false` by
+    /// `AgentWatcherState::insert` UNDER the per-session gate when
+    /// this handle is displaced, BEFORE dropping `_watcher` (the
+    /// notify backend) and BEFORE the under-gate orphan teardown.
+    /// Notify and poll callbacks pass `Some(alive.clone())` to
+    /// `maybe_start_transcript`; `start_or_replace` checks the flag
+    /// UNDER the per-session gate and short-circuits with Err if
+    /// false — preventing already-dispatched displaced callbacks
+    /// from claiming the entry with stale data after the OS-level
+    /// `_watcher` disconnect (PR #302 cycle 10 — closes the residual
+    /// in-flight-dispatch race codex-connector flagged in round 10).
+    ///
+    /// Inline-init (synchronous, can't be displaced mid-flight)
+    /// passes `None` for alive.
+    alive: Arc<AtomicBool>,
     /// `Arc<AtomicBool>` set to `true` by ANY pre-register
     /// `maybe_start_transcript` call that actually reached
     /// `TranscriptState::start_or_replace`. The flag is written
@@ -317,23 +332,24 @@ impl AgentWatcherState {
                 watchers.insert(session_id.clone(), handle)
             };
             if let Some(d) = displaced.as_mut() {
-                // Drop the displaced notify watcher FIRST, BEFORE any
-                // transcript teardown. Dropping `RecommendedWatcher`
-                // unregisters from the OS file-system backend, so no
-                // new notify callbacks will be dispatched from the
-                // displaced watcher after this point. Combined with
-                // holding the per-session gate (any in-flight callback
-                // blocks on it), this closes the cycle-9 retry-2 race
-                // where a displaced-watcher callback could acquire the
-                // gate after our teardown and re-create the entry
-                // with stale data. Codex verify retry-2 caveat: notify
-                // can have in-flight dispatches mid-flight when Drop
-                // runs; those would block on our gate and observe
-                // (post-stop) an empty `transcript_state` plus a fresh
-                // gate, so start_or_replace returns Started for a
-                // session whose displaced watcher is otherwise dead.
-                // The new handle's own callbacks would overwrite that
-                // on the next status update; impact is bounded.
+                // PR #302 cycle 10 — mark displaced alive=false UNDER
+                // the gate, BEFORE any other cleanup. Already-
+                // dispatched displaced callbacks that are blocked
+                // waiting for this gate will, upon acquiring it,
+                // observe alive=false and short-circuit out of
+                // start_or_replace before any mutation. Closes the
+                // in-flight-dispatch race codex-connector flagged in
+                // round 10.
+                d.alive.store(false, std::sync::atomic::Ordering::Release);
+
+                // Drop the displaced notify watcher next, so the OS
+                // file-system backend stops dispatching fresh
+                // callbacks from this point onward (cycle-9 retry-2).
+                // Combined with the alive=false flag above, every
+                // displaced callback — both in-flight and any that
+                // might still squeak through the notify-crate's
+                // internal dispatch queue — will short-circuit at
+                // start_or_replace's alive check.
                 let _ = d._watcher.take();
 
                 if !new_claimed {
@@ -438,6 +454,14 @@ fn maybe_start_transcript(
     // NOT set the flag; only outcomes that reach start_or_replace
     // (Started, Replaced, AlreadyRunning) claim ownership.
     claim_flag: Option<Arc<AtomicBool>>,
+    // PR #302 cycle 10 — per-WatcherHandle alive token. Notify and
+    // poll callbacks pass `Some(alive.clone())`; inline-init passes
+    // `None` (synchronous, can't be displaced mid-flight).
+    // `start_or_replace` checks this UNDER the per-session gate and
+    // short-circuits if the handle has been displaced, preventing
+    // already-dispatched displaced callbacks from claiming the entry
+    // with stale data after the OS-level _watcher disconnect.
+    alive: Option<Arc<AtomicBool>>,
 ) -> TxOutcome {
     let canonical = match validator.validate(transcript_path) {
         Ok(path) => path,
@@ -487,6 +511,7 @@ fn maybe_start_transcript(
         canonical.clone(),
         cwd,
         claim_flag,
+        alive,
     ) {
         Ok(TranscriptStartStatus::Started) => {
             log::info!(
@@ -603,6 +628,13 @@ pub(crate) fn start_watching(
     // `AgentWatcherState::insert` reads it via `Acquire` load to gate
     // ownership transfer. PR #302 cycle 8 retry-2.
     let claimed_transcript = Arc::new(AtomicBool::new(false));
+    // Per-handle alive token (cycle 10). True until
+    // `AgentWatcherState::insert` displaces this handle. Notify and
+    // poll callbacks pass this to `maybe_start_transcript` so
+    // `start_or_replace` can short-circuit under its gate when the
+    // handle is no longer current — closes the in-flight dispatch
+    // race after _watcher.take() is called.
+    let alive = Arc::new(AtomicBool::new(true));
 
     let notify_timing_for_cb = notify_timing.clone();
     let path_history_for_cb = path_history.clone();
@@ -615,6 +647,7 @@ pub(crate) fn start_watching(
     let pty_state_for_cb = pty_state.clone();
     let transcript_state_for_cb = transcript_state.clone();
     let claimed_transcript_for_cb = claimed_transcript.clone();
+    let alive_for_cb = alive.clone();
     // Step 0c: each watcher callback (notify / inline-init / poll)
     // needs the full `LocatedStatusSource` so it can ask the adapter's
     // `TranscriptPathSource::static_hint` for Codex's attach-time
@@ -703,6 +736,11 @@ pub(crate) fn start_watching(
                         // concurrent notify callback (us) can't race
                         // with insert — the gate serializes the
                         // claim-write and the claim-read.
+                        // PR #302 cycle 10: also thread the alive
+                        // token so `start_or_replace` can short-circuit
+                        // under the gate if THIS handle has been
+                        // displaced (closing the post-_watcher.take()
+                        // in-flight-dispatch race).
                         let outcome = maybe_start_transcript(
                             &validator_for_cb,
                             &streamer_for_cb,
@@ -712,6 +750,7 @@ pub(crate) fn start_watching(
                             &sid,
                             &path,
                             Some(claimed_transcript_for_cb.clone()),
+                            Some(alive_for_cb.clone()),
                         );
                         (outcome, Some(path))
                     }
@@ -802,6 +841,11 @@ pub(crate) fn start_watching(
                             // per-session gate. Validation early-exits
                             // never reach start_or_replace and so don't
                             // set the flag (correct: no claim).
+                            // PR #302 cycle 10: inline-init is
+                            // synchronous within start_watching — can't
+                            // be displaced mid-flight, so passes None
+                            // for the alive token. Only async callbacks
+                            // (notify / poll) need it.
                             outcome = maybe_start_transcript(
                                 &initial_validator,
                                 &initial_streamer,
@@ -811,6 +855,7 @@ pub(crate) fn start_watching(
                                 &initial_sid,
                                 &path,
                                 Some(claimed_transcript.clone()),
+                                None,
                             );
                             inline_tx_path = Some(path);
                         }
@@ -858,6 +903,12 @@ pub(crate) fn start_watching(
         // through `TranscriptPathSource` and so needs its own clone of
         // the `LocatedStatusSource`.
         let poll_located = located.clone();
+        // PR #302 cycle 10: poll thread can fire maybe_start_transcript
+        // long after the handle was displaced (it sleeps 3s before its
+        // first iteration, then on a 3s cadence). Passing the alive
+        // token lets `start_or_replace` short-circuit under its gate
+        // if the handle is no longer current.
+        let poll_alive = alive.clone();
         Some(std::thread::spawn(move || {
             // `poll_last` is the per-thread dedup buffer. Originally
             // wrapped in `Arc<Mutex<String>>` by analogy with the other
@@ -915,7 +966,12 @@ pub(crate) fn start_watching(
                                 // (sleeps 3s before first iteration);
                                 // its claims happen long after insert
                                 // has finalized ownership. Pass `None`
-                                // — no claim tracking needed.
+                                // for claim_flag — no claim tracking
+                                // needed. PR #302 cycle 10: pass the
+                                // alive token though — if this poll
+                                // thread is still running on a
+                                // displaced handle's WatcherHandle, its
+                                // start_or_replace must short-circuit.
                                 let outcome = maybe_start_transcript(
                                     &poll_validator,
                                     &poll_streamer,
@@ -925,6 +981,7 @@ pub(crate) fn start_watching(
                                     &poll_sid,
                                     &path,
                                     None,
+                                    Some(poll_alive.clone()),
                                 );
                                 (outcome, Some(path))
                             }
@@ -1038,6 +1095,11 @@ pub(crate) fn start_watching(
         // retry-2 — widened from inline-init-only after codex verify
         // flagged the pre-register notify-callback race).
         claimed_transcript,
+        // Cycle 10: shared with the notify and poll callbacks above
+        // so `start_or_replace` can short-circuit under its gate when
+        // this handle has been displaced (set false by
+        // `AgentWatcherState::insert`).
+        alive,
     })
 }
 
@@ -1068,6 +1130,9 @@ impl WatcherHandle {
             // ownership" should call `set_claimed_for_test(true)`
             // before passing the handle to `AgentWatcherState::insert`.
             claimed_transcript: Arc::new(AtomicBool::new(false)),
+            // Default `true` — fresh test handle is alive. Insert will
+            // set it false on displacement just like in production.
+            alive: Arc::new(AtomicBool::new(true)),
         }
     }
 
@@ -1167,6 +1232,7 @@ mod tests {
                 transcript_path.clone(),
                 None,
                 None,
+                None,
             )
             .expect("seed transcript");
         assert_eq!(status, TranscriptStartStatus::Started);
@@ -1240,6 +1306,7 @@ mod tests {
                 transcript_path.clone(),
                 None,
                 None,
+                None,
             )
             .expect("seed transcript");
         assert_eq!(status, TranscriptStartStatus::Started);
@@ -1297,7 +1364,7 @@ mod tests {
         let sink = Arc::new(FakeEventSink::new());
 
         let status = transcript_state
-            .start_or_replace(adapter, sink, sid.clone(), transcript_path, None, None)
+            .start_or_replace(adapter, sink, sid.clone(), transcript_path, None, None, None)
             .expect("failed to start transcript watcher");
         assert_eq!(status, TranscriptStartStatus::Started);
 
