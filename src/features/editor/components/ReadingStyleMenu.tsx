@@ -20,7 +20,7 @@ export const ReadingStyleMenu = (): ReactElement => {
       return
     }
 
-    const onPointerDown = (event: MouseEvent): void => {
+    const onMouseDown = (event: MouseEvent): void => {
       if (!wrapRef.current?.contains(event.target as Node)) {
         setOpen(false)
       }
@@ -32,11 +32,11 @@ export const ReadingStyleMenu = (): ReactElement => {
       }
     }
 
-    document.addEventListener('mousedown', onPointerDown)
+    document.addEventListener('mousedown', onMouseDown)
     document.addEventListener('keydown', onKeyDown)
 
     return (): void => {
-      document.removeEventListener('mousedown', onPointerDown)
+      document.removeEventListener('mousedown', onMouseDown)
       document.removeEventListener('keydown', onKeyDown)
     }
   }, [open])
