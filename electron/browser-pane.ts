@@ -8,7 +8,7 @@ import {
   type Session as ElectronSession,
   type WebContents,
 } from 'electron'
-import { randomBytes, createHash } from 'node:crypto'
+import { randomBytes, createHash, timingSafeEqual } from 'node:crypto'
 import {
   createServer,
   type IncomingMessage,
@@ -161,6 +161,7 @@ interface CdpCommand {
 const BROWSER_CDP_ORIGIN = 'vimeflow://agent-plugin/local'
 // Keep in sync with src/features/browser/types.ts DEFAULT_BROWSER_URL (main/renderer project boundary prevents sharing a module).
 const DEFAULT_BROWSER_URL = 'https://www.youtube.com/'
+const MAX_TABS_PER_PANE = 20
 const WS_GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11'
 
 const ALLOWED_CDP_DOMAINS = new Set([
@@ -176,6 +177,16 @@ const ALLOWED_CDP_DOMAINS = new Set([
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
+
+const tokensMatch = (a: string, b: string): boolean => {
+  // Compare encoded BYTE lengths (not JS string lengths): a non-ASCII value of
+  // equal string length would yield differently-sized buffers and make
+  // timingSafeEqual throw, crashing the handler on an unauthenticated request.
+  const bufA = Buffer.from(a)
+  const bufB = Buffer.from(b)
+
+  return bufA.length === bufB.length && timingSafeEqual(bufA, bufB)
+}
 
 const isString = (value: unknown): value is string =>
   typeof value === 'string' && value.length > 0
@@ -857,6 +868,10 @@ export class BrowserPaneController {
     ses: ElectronSession,
     options: { url: string; activate: boolean }
   ): void {
+    if (record.tabs.size >= MAX_TABS_PER_PANE) {
+      return
+    }
+
     if (win.isDestroyed()) {
       return
     }
@@ -1544,7 +1559,10 @@ export class BrowserPaneController {
     }
 
     for (const record of this.panes.values()) {
-      if (token === record.cdpToken || auth === `Bearer ${record.cdpToken}`) {
+      if (
+        (token !== null && tokensMatch(token, record.cdpToken)) ||
+        (auth !== undefined && tokensMatch(auth, `Bearer ${record.cdpToken}`))
+      ) {
         return record
       }
     }
@@ -1595,7 +1613,7 @@ export class BrowserPaneController {
 
     debuggee.on('message', onDebuggerMessage)
 
-    let pending = Buffer.alloc(0)
+    let chunks: Buffer[] = []
 
     const cleanup = (): void => {
       socket.off('data', handleData)
@@ -1629,15 +1647,17 @@ export class BrowserPaneController {
 
     const handleData = (chunk: Buffer | string): void => {
       const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
-      pending = Buffer.concat([pending, buffer])
+      chunks.push(buffer)
 
       try {
+        let pending = Buffer.concat(chunks)
         let frame = decodeFrame(pending)
         while (frame) {
           pending = pending.subarray(frame.byteLength)
           this.handleDebuggerFrame(webContents, socket, frame)
           frame = decodeFrame(pending)
         }
+        chunks = pending.length > 0 ? [pending] : []
       } catch {
         closeAttachment()
       }
