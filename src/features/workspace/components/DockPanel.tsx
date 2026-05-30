@@ -334,7 +334,7 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
               className="flex min-h-0 flex-1 overflow-hidden"
             >
               {isMarkdown && viewMode === 'reading' ? (
-                <MarkdownReadingView content={content} />
+                <MarkdownReadingView content={content} isLoading={isLoading} />
               ) : (
                 <CodeEditor
                   ref={editorHandleRef}

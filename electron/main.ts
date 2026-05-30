@@ -1,4 +1,12 @@
-import { app, BrowserWindow, ipcMain, net, protocol, session } from 'electron'
+import {
+  app,
+  BrowserWindow,
+  ipcMain,
+  net,
+  protocol,
+  session,
+  shell,
+} from 'electron'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { isAllowedBackendMethod } from './backend-methods'
@@ -7,6 +15,7 @@ import {
   packagedContentSecurityPolicy,
 } from './csp'
 import { installCommandPaletteShortcutOverride } from './command-palette-shortcut'
+import { installNavigationGuard } from './navigation-guard'
 import { BACKEND_EVENT, BACKEND_INVOKE } from './ipc-channels'
 import { spawnSidecar, type Sidecar } from './sidecar'
 
@@ -228,6 +237,7 @@ const createWindow = (): void => {
 
   installRendererDiagnosticLogging(win)
   installCommandPaletteShortcutOverride(win)
+  installNavigationGuard(win, (url) => void shell.openExternal(url))
 
   const devUrl = process.env.VITE_DEV_SERVER_URL
 

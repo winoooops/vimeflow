@@ -60,4 +60,16 @@ describe('MarkdownReadingView', () => {
       expect(img.getAttribute('onerror')).toBeNull()
     }
   })
+
+  test('shows a loading overlay while isLoading is true', () => {
+    render(<MarkdownReadingView content="# Doc" isLoading />)
+
+    expect(screen.getByRole('status', { name: /loading/i })).toBeInTheDocument()
+  })
+
+  test('renders no loading overlay when not loading', () => {
+    render(<MarkdownReadingView content="# Doc" />)
+
+    expect(screen.queryByRole('status')).toBeNull()
+  })
 })
