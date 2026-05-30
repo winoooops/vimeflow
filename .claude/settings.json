@@ -42,6 +42,24 @@
             "command": "jq -r '.tool_input.skill // \"\"' | grep -qE '^lifeline:(planner|loop|review|request-pr|upsource-review|approve-pr)$' && printf '%s' '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"additionalContext\":\"Before running Lifeline workflows, consult CLAUDE.md and README.md for project-local usage notes, and https://github.com/winoooops/lifeline for the plugin runbook.\"}}' || true"
           }
         ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.command // \"\"' | grep -qE 'gh +pr +create' && printf '%s' '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"additionalContext\":\"Opening a PR: if it relates to a Linear issue, put `Closes VIM-N` in the PR title/body so its status auto-moves (PR open -> In Progress, merge -> Done). See rules/common/linear-workflow.md.\"}}' || true"
+          }
+        ]
+      },
+      {
+        "matcher": "mcp__linear-server__.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '.tool_name // \"\"' | grep -qE 'save_(issue|comment|project|milestone)' && printf '%s' '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"additionalContext\":\"Linear write (rules/common/linear-workflow.md): team key VIM; statuses Backlog -> Todo -> In Progress -> In Review -> Done, plus Canceled/Duplicate for dropped work; map GitHub wontfix -> Canceled.\"}}' || true"
+          }
+        ]
       }
     ]
   }
