@@ -401,6 +401,30 @@ describe('BrowserPaneController', () => {
     )
   })
 
+  test('reconnect returns existing pane without creating a new WebContentsView', async () => {
+    await handler(BROWSER_PANE_CREATE)(eventForSender(), {
+      sessionId: 'pty-1',
+      paneId: 'p1',
+      workspaceId: 'proj-1',
+      initialUrl: 'https://example.com/',
+    })
+
+    const callsAfterFirst = electronMock.WebContentsView.mock.calls.length
+
+    const result = (await handler(BROWSER_PANE_CREATE)(eventForSender(), {
+      sessionId: 'pty-1',
+      paneId: 'p1',
+      workspaceId: 'proj-1',
+      initialUrl: 'https://example.com/',
+    })) as { tabs: { id: string; active: boolean }[] }
+
+    expect(result).toMatchObject({
+      tabs: [{ id: 'tab-0', active: true }],
+    })
+
+    expect(electronMock.WebContentsView.mock.calls.length).toBe(callsAfterFirst)
+  })
+
   test('applies bounds and destroys the native view', async () => {
     await handler(BROWSER_PANE_CREATE)(eventForSender(), {
       sessionId: 'pty-1',

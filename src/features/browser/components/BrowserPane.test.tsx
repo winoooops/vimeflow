@@ -1,6 +1,7 @@
 import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
+import type { Mock } from 'vitest'
 import type { BrowserPaneCreateResult } from '../types'
 import type { Pane, Session } from '../../sessions/types'
 import { emptyActivity } from '../../sessions/constants'
@@ -13,9 +14,16 @@ const bridgeMocks = vi.hoisted(() => ({
   focusBrowserPane: vi.fn().mockResolvedValue(undefined),
   getBrowserCdpInfo: vi.fn(),
   navigateBrowserPane: vi.fn().mockResolvedValue(undefined),
-  onBrowserPaneFocus: vi.fn(() => (): void => undefined),
-  onBrowserPaneTabsChange: vi.fn(() => (): void => undefined),
-  onBrowserPaneUrlChange: vi.fn(() => (): void => undefined),
+  newBrowserPaneTab: vi.fn().mockResolvedValue(undefined),
+  onBrowserPaneFocus: vi.fn(() => (): void => undefined) as Mock<
+    (callback: (event: unknown) => void) => () => void
+  >,
+  onBrowserPaneTabsChange: vi.fn(() => (): void => undefined) as Mock<
+    (callback: (event: unknown) => void) => () => void
+  >,
+  onBrowserPaneUrlChange: vi.fn(() => (): void => undefined) as Mock<
+    (callback: (event: unknown) => void) => () => void
+  >,
   setBrowserPaneBounds: vi.fn().mockResolvedValue(undefined),
 }))
 
@@ -252,5 +260,189 @@ describe('BrowserPane', () => {
       'github.com/login'
     )
     expect(bridgeMocks.createBrowserPane).toHaveBeenCalledOnce()
+  })
+
+  test('clicking a tab calls activateBrowserPaneTab', async () => {
+    const user = userEvent.setup()
+
+    render(<BrowserPane session={session} pane={browserPane} isActive />)
+
+    act(() => {
+      resolveCreate({
+        url: 'https://example.com/',
+        title: 'Example',
+        partition: 'persist:vimeflow-browser:proj-1:pty-shell',
+        tabs: [
+          {
+            id: 'tab-0',
+            url: 'https://example.com/',
+            title: 'Example',
+            active: true,
+          },
+          {
+            id: 'tab-1',
+            url: 'https://other.com/',
+            title: 'Other',
+            active: false,
+          },
+        ],
+      })
+    })
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole('tab', { name: 'browser tab Other' })
+      ).toBeInTheDocument()
+    })
+
+    await user.click(screen.getByRole('tab', { name: 'browser tab Other' }))
+
+    expect(bridgeMocks.activateBrowserPaneTab).toHaveBeenCalledWith({
+      sessionId: 'pty-shell',
+      paneId: 'p1',
+      tabId: 'tab-1',
+    })
+  })
+
+  test('clicking the new-tab button calls newBrowserPaneTab', async () => {
+    const user = userEvent.setup()
+
+    render(<BrowserPane session={session} pane={browserPane} isActive />)
+
+    act(() => {
+      resolveCreate({
+        url: 'https://example.com/',
+        title: 'Example',
+        partition: 'persist:vimeflow-browser:proj-1:pty-shell',
+        tabs: [
+          {
+            id: 'tab-0',
+            url: 'https://example.com/',
+            title: 'Example',
+            active: true,
+          },
+        ],
+      })
+    })
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole('button', { name: 'new browser tab' })
+      ).toBeInTheDocument()
+    })
+
+    await user.click(screen.getByRole('button', { name: 'new browser tab' }))
+
+    expect(bridgeMocks.newBrowserPaneTab).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionId: 'pty-shell',
+        paneId: 'p1',
+      })
+    )
+  })
+
+  test('clicking a tab close button calls closeBrowserPaneTab', async () => {
+    const user = userEvent.setup()
+
+    render(<BrowserPane session={session} pane={browserPane} isActive />)
+
+    act(() => {
+      resolveCreate({
+        url: 'https://example.com/',
+        title: 'Example',
+        partition: 'persist:vimeflow-browser:proj-1:pty-shell',
+        tabs: [
+          {
+            id: 'tab-0',
+            url: 'https://example.com/',
+            title: 'Example',
+            active: true,
+          },
+          {
+            id: 'tab-1',
+            url: 'https://other.com/',
+            title: 'Other',
+            active: false,
+          },
+        ],
+      })
+    })
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole('button', { name: 'close browser tab Other' })
+      ).toBeInTheDocument()
+    })
+
+    await user.click(
+      screen.getByRole('button', { name: 'close browser tab Other' })
+    )
+
+    expect(bridgeMocks.closeBrowserPaneTab).toHaveBeenCalledWith({
+      sessionId: 'pty-shell',
+      paneId: 'p1',
+      tabId: 'tab-1',
+    })
+  })
+
+  test('firing onBrowserPaneTabsChange updates the tab strip', async () => {
+    render(<BrowserPane session={session} pane={browserPane} isActive />)
+
+    act(() => {
+      resolveCreate({
+        url: 'https://example.com/',
+        title: 'Example',
+        partition: 'persist:vimeflow-browser:proj-1:pty-shell',
+        tabs: [
+          {
+            id: 'tab-0',
+            url: 'https://example.com/',
+            title: 'Example',
+            active: true,
+          },
+        ],
+      })
+    })
+
+    await waitFor(() => {
+      expect(bridgeMocks.onBrowserPaneTabsChange).toHaveBeenCalled()
+    })
+
+    const callback = bridgeMocks.onBrowserPaneTabsChange.mock
+      .calls[0][0] as (event: {
+      sessionId: string
+      paneId: string
+      tabs: {
+        id: string
+        url: string
+        title: string | null
+        active: boolean
+      }[]
+    }) => void
+
+    act(() => {
+      callback({
+        sessionId: 'pty-shell',
+        paneId: 'p1',
+        tabs: [
+          {
+            id: 'tab-0',
+            url: 'https://example.com/',
+            title: 'Example',
+            active: false,
+          },
+          {
+            id: 'tab-1',
+            url: 'https://new.com/',
+            title: 'New',
+            active: true,
+          },
+        ],
+      })
+    })
+
+    expect(
+      screen.getByRole('tab', { name: 'browser tab New' })
+    ).toBeInTheDocument()
   })
 })
