@@ -96,6 +96,22 @@ pub struct WatcherHandle {
     /// thread is reaped instead of left detached (matches the existing
     /// `join_handle` pattern for the polling fallback).
     session_index_join: Option<std::thread::JoinHandle<()>>,
+    /// True if this handle owns the per-session entry in
+    /// `transcript_state` and should tear it down on Drop. Cleared to
+    /// `false` by `AgentWatcherState::insert` when this handle is
+    /// displaced by a NEW handle for the same session: the new handle's
+    /// `start_watching` inline-init has already called
+    /// `TranscriptState::start_or_replace` and, depending on the result,
+    /// either inherited the existing entry (`AlreadyRunning`), replaced
+    /// it with a new tail (`Replaced`), or started a fresh one
+    /// (`Started`). In all three cases the NEW handle is the rightful
+    /// owner of the per-session transcript-state entry, so the OLD
+    /// handle's Drop must NOT call `transcript_state.stop` — otherwise
+    /// it would tear down the tail the new handle just adopted, leaving
+    /// the session with a status watcher but no transcript streaming
+    /// (PR #302 codex review cycle 5 P1 — the bug existed for every
+    /// restart, not just the `AlreadyRunning` shape codex flagged).
+    owns_transcript: bool,
 }
 
 impl Drop for WatcherHandle {
@@ -113,13 +129,30 @@ impl Drop for WatcherHandle {
         // Stop + join the codex title-sync watcher (if any). Bounded by
         // the watcher's own poll cadence (~500ms) — same shape as the
         // polling fallback teardown above (PR #302 codex review F5).
+        // Always unconditional: `session_index::spawn_watch` is called
+        // per-handle in `start_watching` (not via an idempotent
+        // start-or-replace), so the new handle has its own thread and
+        // the old thread is a redundant resource that must be reaped
+        // (NOT inherited the way transcript-state is).
         if let Some(stop) = self.session_index_stop.take() {
             stop.store(true, std::sync::atomic::Ordering::Release);
         }
         if let Some(handle) = self.session_index_join.take() {
             let _ = handle.join();
         }
-        let _ = self.transcript_state.stop(&self.session_id);
+        // Only tear down the transcript-state entry if THIS handle
+        // currently owns it. When a new handle for the same session
+        // displaces this one via `AgentWatcherState::insert`, the new
+        // handle's `start_watching` has already adopted / replaced /
+        // started the per-session transcript entry, and `insert` cleared
+        // this flag before letting the displaced handle drop — calling
+        // `stop` here would otherwise tear down the new tail (PR #302
+        // codex review cycle 5 P1). Clean stops via
+        // `AgentWatcherState::remove` leave the flag set, so this
+        // line runs and the tail is correctly stopped.
+        if self.owns_transcript {
+            let _ = self.transcript_state.stop(&self.session_id);
+        }
         // `#[cfg(...)]` (attribute) on a statement, NOT `if cfg!(...)`
         // (runtime). The attribute physically removes the entire
         // `log::info!(...)` call in release builds, so even the
@@ -169,13 +202,25 @@ impl AgentWatcherState {
     /// `TranscriptState::stop` (Claude review on PR #152, F7).
     pub fn insert(&self, session_id: String, mut handle: WatcherHandle, agent_type: AgentType) {
         handle.agent_type = agent_type;
-        let _displaced = {
+        let mut displaced = {
             let mut watchers = self.watchers.lock().expect("failed to lock watchers");
             watchers.insert(session_id, handle)
         };
-        // `_displaced: Option<WatcherHandle>` drops here, after the
+        // If we displaced a prior handle for the same session, transfer
+        // ownership of the per-session transcript-state entry to the
+        // NEW handle: clear the OLD handle's `owns_transcript` flag so
+        // its Drop won't call `transcript_state.stop` and tear down the
+        // tail the new handle just adopted via `start_or_replace`. See
+        // `WatcherHandle.owns_transcript` for the full rationale (PR
+        // #302 codex review cycle 5 P1).
+        if let Some(d) = displaced.as_mut() {
+            d.owns_transcript = false;
+        }
+        // `displaced: Option<WatcherHandle>` drops here, after the
         // guard above is gone. If non-None, its `Drop` joins the poll
-        // thread without holding the mutex.
+        // thread (and the codex session-index thread, if any) without
+        // holding the mutex AND without stopping the transcript tail
+        // the new handle now owns.
     }
 
     /// Remove and stop a watcher for a session.
@@ -794,6 +839,12 @@ pub(crate) fn start_watching(
         agent_type,
         session_index_stop,
         session_index_join,
+        // Default `true` — this handle owns the transcript-state entry
+        // it just established via inline-init. `AgentWatcherState::insert`
+        // clears this to `false` if a NEW handle later displaces this
+        // one for the same session (transferring ownership to the new
+        // handle). See `WatcherHandle.owns_transcript` for rationale.
+        owns_transcript: true,
     })
 }
 
@@ -817,6 +868,7 @@ impl WatcherHandle {
             agent_type: AgentType::ClaudeCode,
             session_index_stop: None,
             session_index_join: None,
+            owns_transcript: true,
         }
     }
 }
@@ -863,6 +915,74 @@ mod tests {
         state.remove(&sid);
         assert_eq!(state.agent_type_for_pty(&sid), None);
         assert!(!state.contains(&sid));
+    }
+
+    /// PR #302 codex review cycle 5 P1 — when a NEW handle for the same
+    /// session displaces an OLD handle via `insert`, the new handle has
+    /// already adopted/replaced/started the per-session transcript-state
+    /// entry. The displaced OLD handle's Drop must NOT stop that entry —
+    /// otherwise the session ends up with a status watcher but no
+    /// transcript tail. This test pins the handoff: insert A (registers
+    /// tail), insert B for same session, then assert the tail is still
+    /// tracked AFTER A's drop. Without the `owns_transcript` flag, the
+    /// displaced A's Drop would call `transcript_state.stop`, leaving
+    /// the assert failing.
+    #[test]
+    fn insert_transfers_transcript_ownership_to_displacing_handle() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let transcript_path = tmp.path().join("t.jsonl");
+        std::fs::write(&transcript_path, "").expect("write");
+
+        let transcript_state = TranscriptState::new();
+        let sid = "restart-sid".to_string();
+        let adapter: Arc<dyn TranscriptStreamer> =
+            Arc::new(crate::agent::adapter::claude_code::ClaudeCodeAdapter);
+        let sink = Arc::new(FakeEventSink::new());
+
+        // Seed transcript_state with an entry for `sid` (as if the OLD
+        // handle's `start_watching` had done so via start_or_replace).
+        let status = transcript_state
+            .start_or_replace(
+                adapter,
+                sink,
+                sid.clone(),
+                transcript_path.clone(),
+                None,
+            )
+            .expect("seed transcript");
+        assert_eq!(status, TranscriptStartStatus::Started);
+
+        // OLD handle A — owns the seeded transcript entry.
+        let handle_a = WatcherHandle::new_for_test(transcript_state.clone(), sid.clone());
+        let state = AgentWatcherState::new();
+        state.insert(sid.clone(), handle_a, AgentType::ClaudeCode);
+        assert!(transcript_state.contains(&sid));
+
+        // NEW handle B — same session. (In production, B would inherit
+        // the per-session entry via start_or_replace returning
+        // AlreadyRunning during start_watching's inline-init; the test
+        // stub skips start_watching and just simulates the displacement.)
+        let handle_b = WatcherHandle::new_for_test(transcript_state.clone(), sid.clone());
+        state.insert(sid.clone(), handle_b, AgentType::ClaudeCode);
+
+        // Critical assertion: A has been displaced and dropped, but the
+        // transcript entry must STILL be tracked because B inherited
+        // ownership (the `owns_transcript = false` clearing in
+        // `insert`). Pre-fix: A's Drop would have called
+        // transcript_state.stop and this assertion would fail.
+        assert!(
+            transcript_state.contains(&sid),
+            "transcript tail must survive A's displacement — B owns it now",
+        );
+
+        // Clean removal of B drops with owns_transcript = true, so the
+        // tail is finally stopped. This pins the "owns_transcript stays
+        // true on the surviving handle" half of the invariant.
+        state.remove(&sid);
+        assert!(
+            !transcript_state.contains(&sid),
+            "transcript tail must stop when the final handle is removed",
+        );
     }
 
     #[test]
