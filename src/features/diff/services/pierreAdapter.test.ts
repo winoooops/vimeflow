@@ -17,6 +17,7 @@ const makeResponse = (
   oldText: '',
   newText: '',
   rawDiff: '',
+  repoRoot: '',
   ...overrides,
 })
 
