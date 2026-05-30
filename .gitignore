@@ -111,3 +111,6 @@ feedbacak*.png
 !build/
 !build/icon.png
 release/
+
+# local Linear API key (never commit)
+scripts/linear.env
