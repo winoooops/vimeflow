@@ -47,6 +47,8 @@ struct ResponseFrame<'a> {
     result: Option<&'a Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     error: Option<&'a str>,
+    #[serde(rename = "errorReason", skip_serializing_if = "Option::is_none")]
+    error_reason: Option<&'a str>,
 }
 
 impl<'a> ResponseFrame<'a> {
@@ -57,17 +59,59 @@ impl<'a> ResponseFrame<'a> {
             ok: true,
             result: Some(result),
             error: None,
+            error_reason: None,
         }
     }
 
-    fn err(id: &'a str, error: &'a str) -> Self {
+    fn err(id: &'a str, error: &'a str, error_reason: Option<&'a str>) -> Self {
         Self {
             kind: "response",
             id,
             ok: false,
             result: None,
             error: Some(error),
+            error_reason,
         }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct IpcError {
+    message: String,
+    reason: Option<String>,
+}
+
+impl IpcError {
+    fn new(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+            reason: None,
+        }
+    }
+
+    fn with_reason(message: impl Into<String>, reason: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+            reason: Some(reason.into()),
+        }
+    }
+}
+
+impl From<String> for IpcError {
+    fn from(message: String) -> Self {
+        Self::new(message)
+    }
+}
+
+impl From<&str> for IpcError {
+    fn from(message: &str) -> Self {
+        Self::new(message)
+    }
+}
+
+impl std::fmt::Display for IpcError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
     }
 }
 
@@ -345,16 +389,21 @@ mod frame {
 mod router {
     use std::sync::Arc;
 
-    use serde::Deserialize;
+    use serde::{Deserialize, Serialize};
     use serde_json::Value;
 
     use crate::runtime::BackendState;
+
+    fn encode_result<T: Serialize>(result: T) -> Result<Value, super::IpcError> {
+        serde_json::to_value(result)
+            .map_err(|e| super::IpcError::new(format!("result encode: {e}")))
+    }
 
     pub async fn dispatch(
         state: Arc<BackendState>,
         method: &str,
         params: Value,
-    ) -> Result<Value, String> {
+    ) -> Result<Value, super::IpcError> {
         match method {
             "spawn_pty" => {
                 #[derive(Deserialize)]
@@ -365,7 +414,7 @@ mod router {
 
                 let p: P = serde_json::from_value(params).map_err(|e| format!("params: {e}"))?;
                 let res = state.spawn_pty(p.request).await?;
-                serde_json::to_value(res).map_err(|e| format!("result encode: {e}"))
+                encode_result(res)
             }
             "write_pty" => {
                 #[derive(Deserialize)]
@@ -376,6 +425,15 @@ mod router {
 
                 let p: P = serde_json::from_value(params).map_err(|e| format!("params: {e}"))?;
                 state.write_pty(p.request)?;
+                Ok(Value::Null)
+            }
+            "rename_agent_session" => {
+                let request: crate::agent::types::RenameAgentSessionRequest =
+                    serde_json::from_value(params)
+                        .map_err(|e| format!("invalid rename request: {e}"))?;
+                state.rename_agent_session(request).map_err(|err| {
+                    super::IpcError::with_reason(err.to_string(), err.reason.as_str())
+                })?;
                 Ok(Value::Null)
             }
             "resize_pty" => {
@@ -402,7 +460,7 @@ mod router {
             }
             "list_sessions" => {
                 let res = state.list_sessions()?;
-                serde_json::to_value(res).map_err(|e| format!("result encode: {e}"))
+                encode_result(res)
             }
             "set_active_session" => {
                 #[derive(Deserialize)]
@@ -457,7 +515,7 @@ mod router {
 
                 let p: P = serde_json::from_value(params).map_err(|e| format!("params: {e}"))?;
                 let res = state.detect_agent_in_session(p.session_id).await?;
-                serde_json::to_value(res).map_err(|e| format!("result encode: {e}"))
+                encode_result(res)
             }
             "start_agent_watcher" => {
                 #[derive(Deserialize)]
@@ -490,7 +548,7 @@ mod router {
 
                 let p: P = serde_json::from_value(params).map_err(|e| format!("params: {e}"))?;
                 let res = state.list_dir(p.request)?;
-                serde_json::to_value(res).map_err(|e| format!("result encode: {e}"))
+                encode_result(res)
             }
             "read_file" => {
                 #[derive(Deserialize)]
@@ -501,7 +559,7 @@ mod router {
 
                 let p: P = serde_json::from_value(params).map_err(|e| format!("params: {e}"))?;
                 let res = state.read_file(p.request)?;
-                serde_json::to_value(res).map_err(|e| format!("result encode: {e}"))
+                encode_result(res)
             }
             "write_file" => {
                 #[derive(Deserialize)]
@@ -523,7 +581,7 @@ mod router {
 
                 let p: P = serde_json::from_value(params).map_err(|e| format!("params: {e}"))?;
                 let res = state.git_status(p.cwd).await?;
-                serde_json::to_value(res).map_err(|e| format!("result encode: {e}"))
+                encode_result(res)
             }
             "git_branch" => {
                 #[derive(Deserialize)]
@@ -534,7 +592,7 @@ mod router {
 
                 let p: P = serde_json::from_value(params).map_err(|e| format!("params: {e}"))?;
                 let res = state.git_branch(p.cwd).await?;
-                serde_json::to_value(res).map_err(|e| format!("result encode: {e}"))
+                encode_result(res)
             }
             "git_worktree_name" => {
                 #[derive(Deserialize)]
@@ -545,7 +603,7 @@ mod router {
 
                 let p: P = serde_json::from_value(params).map_err(|e| format!("params: {e}"))?;
                 let res = state.git_worktree_name(p.cwd).await?;
-                serde_json::to_value(res).map_err(|e| format!("result encode: {e}"))
+                encode_result(res)
             }
             "get_git_diff" => {
                 #[derive(Deserialize)]
@@ -562,7 +620,25 @@ mod router {
                 let diff = state
                     .get_git_diff(p.cwd, p.file, p.staged, p.untracked)
                     .await?;
-                serde_json::to_value(diff).map_err(|e| format!("result encode: {e}"))
+                encode_result(diff)
+            }
+            "stage_file" => {
+                let req: crate::git::StageFileRequest =
+                    serde_json::from_value(params).map_err(|e| format!("invalid params: {e}"))?;
+                state.stage_file(req).await?;
+                Ok(Value::Null)
+            }
+            "unstage_file" => {
+                let req: crate::git::StageFileRequest =
+                    serde_json::from_value(params).map_err(|e| format!("invalid params: {e}"))?;
+                state.unstage_file(req).await?;
+                Ok(Value::Null)
+            }
+            "discard_file" => {
+                let req: crate::git::DiscardFileRequest =
+                    serde_json::from_value(params).map_err(|e| format!("invalid params: {e}"))?;
+                state.discard_file(req).await?;
+                Ok(Value::Null)
             }
             "start_git_watcher" => {
                 #[derive(Deserialize)]
@@ -587,8 +663,7 @@ mod router {
                 Ok(Value::Null)
             }
             #[cfg(feature = "e2e-test")]
-            "list_active_pty_sessions" => serde_json::to_value(state.list_active_pty_sessions())
-                .map_err(|e| format!("result encode: {e}")),
+            "list_active_pty_sessions" => encode_result(state.list_active_pty_sessions()),
             #[cfg(test)]
             "__test_sleep_then_null" => {
                 #[derive(Deserialize)]
@@ -601,7 +676,7 @@ mod router {
                 tokio::time::sleep(std::time::Duration::from_millis(p.delay_ms)).await;
                 Ok(Value::Null)
             }
-            _ => Err(format!("unknown method: {method}")),
+            _ => Err(super::IpcError::new(format!("unknown method: {method}"))),
         }
     }
 }
@@ -830,7 +905,8 @@ fn spawn_handler(
             Err(err) => {
                 log::warn!("ipc bad envelope: {err}");
                 if let Some(id) = recoverable_request_id {
-                    let body = encode_error_response_body(&id, "bad envelope", "bad-envelope");
+                    let body =
+                        encode_error_response_body(&id, "bad envelope", None, "bad-envelope");
                     send_response_frame(&tx, &id, body, &cancel).await;
                 }
                 return;
@@ -856,7 +932,12 @@ fn spawn_handler(
                     encode_internal_error_response_body(&req.id)
                 }
             },
-            Err(msg) => encode_error_response_body(&req.id, msg.as_str(), "error-response"),
+            Err(err) => encode_error_response_body(
+                &req.id,
+                err.message.as_str(),
+                err.reason.as_deref(),
+                "error-response",
+            ),
         };
 
         send_response_frame(&tx, &req.id, body, &cancel).await;
@@ -877,12 +958,17 @@ async fn send_overload_response(tx: &Sender<Vec<u8>>, cancel: &CancellationToken
         return;
     };
 
-    let response = encode_error_response_body(&id, "server overloaded", "overload");
+    let response = encode_error_response_body(&id, "server overloaded", None, "overload");
     send_response_frame(tx, &id, response, cancel).await;
 }
 
-fn encode_error_response_body(id: &str, message: &str, context: &str) -> Vec<u8> {
-    match serde_json::to_vec(&ResponseFrame::err(id, message)) {
+fn encode_error_response_body(
+    id: &str,
+    message: &str,
+    reason: Option<&str>,
+    context: &str,
+) -> Vec<u8> {
+    match serde_json::to_vec(&ResponseFrame::err(id, message, reason)) {
         Ok(body) => body,
         Err(err) => {
             log::error!("ipc {context} response encode failed (id={id}): {err}");
@@ -1358,12 +1444,25 @@ mod tests {
 
     #[test]
     fn response_err_serializes_with_error_field_and_no_result() {
-        let frame = super::ResponseFrame::err("99", "boom");
+        let frame = super::ResponseFrame::err("99", "boom", None);
         let bytes = serde_json::to_vec(&frame).expect("serialize");
         let val: serde_json::Value = serde_json::from_slice(&bytes).expect("parse");
         assert_eq!(val["kind"], "response");
         assert_eq!(val["ok"], false);
         assert_eq!(val["error"], "boom");
+        assert!(val.get("errorReason").is_none());
+        assert!(val.get("result").is_none());
+    }
+
+    #[test]
+    fn response_err_serializes_optional_error_reason() {
+        let frame = super::ResponseFrame::err("99", "boom", Some("no-live-agent"));
+        let bytes = serde_json::to_vec(&frame).expect("serialize");
+        let val: serde_json::Value = serde_json::from_slice(&bytes).expect("parse");
+        assert_eq!(val["kind"], "response");
+        assert_eq!(val["ok"], false);
+        assert_eq!(val["error"], "boom");
+        assert_eq!(val["errorReason"], "no-live-agent");
         assert!(val.get("result").is_none());
     }
 
@@ -1720,9 +1819,25 @@ mod tests {
             .await
             .expect_err("err");
         assert!(
-            err.starts_with("unknown method: no_such_method"),
+            err.message.starts_with("unknown method: no_such_method"),
             "got {err}"
         );
+    }
+
+    #[tokio::test]
+    async fn dispatch_rename_agent_session_returns_structured_failure_reason() {
+        let (state, _sink) = crate::runtime::BackendState::with_fake_sink();
+        let params = serde_json::json!({
+            "ptyId": "missing-pty",
+            "title": "new-title",
+        });
+
+        let err = super::router::dispatch(state, "rename_agent_session", params)
+            .await
+            .expect_err("missing agent should reject");
+
+        assert_eq!(err.reason.as_deref(), Some("no-live-agent"));
+        assert!(err.message.contains("no live agent"));
     }
 
     #[tokio::test]
@@ -1732,9 +1847,9 @@ mod tests {
         let outcome = super::router::dispatch(state, "start_agent_watcher", params).await;
         match outcome {
             Ok(v) => assert_eq!(v, serde_json::Value::Null),
-            Err(msg) => assert!(
-                !msg.starts_with("params:"),
-                "params decode unexpectedly failed: {msg}"
+            Err(err) => assert!(
+                !err.message.starts_with("params:"),
+                "params decode unexpectedly failed: {err}"
             ),
         }
     }
@@ -1746,7 +1861,7 @@ mod tests {
         let err = super::router::dispatch(state, "start_agent_watcher", params)
             .await
             .expect_err("err");
-        assert!(err.starts_with("params:"), "got {err}");
+        assert!(err.message.starts_with("params:"), "got {err}");
     }
 
     #[tokio::test]
@@ -1761,7 +1876,7 @@ mod tests {
         });
         let r_full = super::router::dispatch(state.clone(), "get_git_diff", p_full).await;
         assert!(
-            matches!(&r_full, Err(msg) if !msg.starts_with("params:")),
+            matches!(&r_full, Err(err) if !err.message.starts_with("params:")),
             "expected non-params error, got {r_full:?}"
         );
 
@@ -1772,7 +1887,7 @@ mod tests {
         });
         let r_min = super::router::dispatch(state, "get_git_diff", p_min).await;
         assert!(
-            matches!(&r_min, Err(msg) if !msg.starts_with("params:")),
+            matches!(&r_min, Err(err) if !err.message.starts_with("params:")),
             "expected non-params error, got {r_min:?}"
         );
     }
@@ -1787,9 +1902,9 @@ mod tests {
         let outcome = super::router::dispatch(state, "git_worktree_name", params).await;
         match outcome {
             Ok(_) => panic!("expected dispatch error for non-existent cwd"),
-            Err(msg) => assert!(
-                !msg.starts_with("unknown method:"),
-                "git_worktree_name must be a known method, got: {msg}"
+            Err(err) => assert!(
+                !err.message.starts_with("unknown method:"),
+                "git_worktree_name must be a known method, got: {err}"
             ),
         }
     }

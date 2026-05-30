@@ -1,5 +1,12 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
-import { invoke, listen, type BackendApi } from './backend'
+import {
+  AgentRenameError,
+  invoke,
+  listen,
+  listenCommandPaletteToggle,
+  renameAgentSession,
+  type BackendApi,
+} from './backend'
 
 const noop = (): void => undefined
 
@@ -46,6 +53,19 @@ describe('backend (window.vimeflow bridge)', () => {
     await expect(invoke('git_status', { cwd: '/x' })).rejects.toBe(
       'sidecar error'
     )
+  })
+
+  test('renameAgentSession wraps structured backend errors', async () => {
+    mockInvoke.mockRejectedValueOnce({
+      message: 'no live agent in pty pty-1 to rename',
+      reason: 'no-live-agent',
+    })
+
+    await expect(renameAgentSession('pty-1', 'title')).rejects.toMatchObject({
+      name: 'AgentRenameError',
+      message: 'no live agent in pty pty-1 to rename',
+      reason: 'no-live-agent',
+    } satisfies Partial<AgentRenameError>)
   })
 
   test('listen delegates to window.vimeflow.listen', async () => {
@@ -113,6 +133,34 @@ describe('backend (window.vimeflow bridge)', () => {
 
     expect(rawUnlisten).toHaveBeenCalledTimes(1)
   })
+
+  test('listenCommandPaletteToggle delegates to optional bridge hook', () => {
+    const rawUnlisten = vi.fn()
+    const callback = vi.fn()
+    const onCommandPaletteToggle = vi.fn(() => rawUnlisten)
+
+    window.vimeflow = {
+      invoke: mockInvoke,
+      listen: mockListen,
+      onCommandPaletteToggle,
+    } as unknown as BackendApi
+
+    const unlisten = listenCommandPaletteToggle(callback)
+
+    expect(onCommandPaletteToggle).toHaveBeenCalledWith(callback)
+
+    unlisten()
+    expect(rawUnlisten).toHaveBeenCalledOnce()
+  })
+
+  test('listenCommandPaletteToggle is a no-op when bridge hook is absent', () => {
+    const callback = vi.fn()
+    const unlisten = listenCommandPaletteToggle(callback)
+
+    expect(() => {
+      unlisten()
+    }).not.toThrow()
+  })
 })
 
 describe('backend (missing bridge)', () => {
@@ -130,5 +178,14 @@ describe('backend (missing bridge)', () => {
     await expect(listen('x', noop)).rejects.toThrow(
       'window.vimeflow is not available'
     )
+  })
+
+  test('listenCommandPaletteToggle is a no-op when bridge is unset', () => {
+    const callback = vi.fn()
+    const unlisten = listenCommandPaletteToggle(callback)
+
+    expect(() => {
+      unlisten()
+    }).not.toThrow()
   })
 })

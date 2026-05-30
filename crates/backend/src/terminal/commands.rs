@@ -18,6 +18,70 @@ fn cleanup_generated_bridge_dir(dir: Option<&std::path::Path>) {
     }
 }
 
+/// `LC_CTYPE` injected into a spawned shell when the inherited environment
+/// selects no UTF-8 locale. A non-UTF-8 (or empty) locale makes the shell
+/// byte-count multibyte glyphs, so this picks the most broadly available UTF-8
+/// character map per platform.
+#[cfg(target_os = "macos")]
+const DEFAULT_UTF8_CTYPE: &str = "en_US.UTF-8";
+#[cfg(not(target_os = "macos"))]
+const DEFAULT_UTF8_CTYPE: &str = "C.UTF-8";
+
+fn is_utf8_locale(value: &str) -> bool {
+    let lower = value.to_ascii_lowercase();
+    lower.contains("utf-8") || lower.contains("utf8")
+}
+
+/// Decide which `LC_CTYPE` to inject into a spawned shell from the inherited
+/// locale env, evaluated in POSIX precedence order (`LC_ALL` > `LC_CTYPE` >
+/// `LANG`). Returns `Some` only when no UTF-8 locale is inherited — an explicit
+/// UTF-8 locale is left untouched. Targets `LC_CTYPE` (character handling)
+/// rather than `LANG` so the user's message/collation language is preserved.
+fn utf8_ctype_override(
+    lc_all: Option<&str>,
+    lc_ctype: Option<&str>,
+    lang: Option<&str>,
+) -> Option<&'static str> {
+    let effective = [lc_all, lc_ctype, lang]
+        .into_iter()
+        .flatten()
+        .find(|value| !value.is_empty());
+
+    match effective {
+        Some(value) if is_utf8_locale(value) => None,
+        _ => Some(DEFAULT_UTF8_CTYPE),
+    }
+}
+
+/// The locale env mutations to apply to a spawned shell, derived from the
+/// inherited locale env in POSIX precedence order.
+struct LocaleEnvPlan {
+    /// `LC_CTYPE` to inject, or `None` when an inherited UTF-8 locale is kept.
+    ctype: Option<&'static str>,
+    /// Whether to drop `LC_ALL` from the child env. A non-empty `LC_ALL`
+    /// overrides `LC_CTYPE` under POSIX precedence, so injecting `LC_CTYPE`
+    /// alone would be ignored and the shell would keep byte-counting glyphs.
+    clear_lc_all: bool,
+}
+
+/// Plan the locale env mutations for a spawned shell. When a UTF-8 override is
+/// needed but `LC_ALL` is set to a non-empty (non-UTF-8) locale — the very
+/// reason the override fired — `LC_ALL` is cleared so the injected `LC_CTYPE`
+/// governs character handling; individual `LC_*`/`LANG` still drive the user's
+/// message/collation language.
+fn locale_env_plan(
+    lc_all: Option<&str>,
+    lc_ctype: Option<&str>,
+    lang: Option<&str>,
+) -> LocaleEnvPlan {
+    let ctype = utf8_ctype_override(lc_all, lc_ctype, lang);
+    let clear_lc_all = ctype.is_some() && matches!(lc_all, Some(value) if !value.is_empty());
+    LocaleEnvPlan {
+        ctype,
+        clear_lc_all,
+    }
+}
+
 /// Spawn a new PTY session with a shell
 pub(crate) async fn spawn_pty_inner(
     state: PtyState,
@@ -143,18 +207,42 @@ pub(crate) async fn spawn_pty_inner(
     cmd.env("TERM", "xterm-256color");
     cmd.env("COLORTERM", "truecolor");
 
+    // Ensure a UTF-8 locale for character handling. GUI launches frequently
+    // inherit no LANG/LC_* (Terminal.app/iTerm2 set them; a dock/Finder or
+    // `electron:dev` launch does not), so the shell falls back to the C locale
+    // and byte-counts multibyte Powerline/Nerd Font glyphs — miscomputing line
+    // width and desyncing the cursor during line editing (autocomplete,
+    // redisplay). Inject LC_CTYPE only when no UTF-8 locale is inherited, so an
+    // explicit user locale is preserved.
+    let inherited_lc_all = std::env::var("LC_ALL").ok();
+    let inherited_lc_ctype = std::env::var("LC_CTYPE").ok();
+    let inherited_lang = std::env::var("LANG").ok();
+    let locale_plan = locale_env_plan(
+        inherited_lc_all.as_deref(),
+        inherited_lc_ctype.as_deref(),
+        inherited_lang.as_deref(),
+    );
+    if locale_plan.clear_lc_all {
+        cmd.env_remove("LC_ALL");
+    }
+    if let Some(ctype) = locale_plan.ctype {
+        cmd.env("LC_CTYPE", ctype);
+    }
+
     // Inject a `claude` wrapper function into the interactive shell.
     //
     // We do NOT set CLAUDE_CONFIG_DIR — that would replace the user's
     // entire config directory, breaking auth, plugins, and hooks.
-    // Instead, we set ENV/BASH_ENV (sourced by non-interactive shells)
-    // and use --rcfile (for interactive bash) to source both the user's
-    // rc file and our init script.
+    // Instead, we set shell startup hooks to source our generated init script:
+    // BASH_ENV/--rcfile for bash and ZDOTDIR for zsh, while preserving the
+    // user's HOME-level startup files.
     if let Some(ref files) = bridge_files {
-        // Pass paths via env vars — the scripts reference $VIMEFLOW_STATUS_FILE
-        // and $VIMEFLOW_CLAUDE_SETTINGS instead of embedding paths directly,
-        // which avoids injection from paths containing quotes or metacharacters.
+        // Pass paths via env vars — the scripts reference these variables
+        // instead of embedding paths directly, which avoids injection from
+        // paths containing quotes or metacharacters.
         cmd.env("BASH_ENV", files.shell_init_path.as_os_str());
+        cmd.env("ENV", files.shell_init_path.as_os_str());
+        cmd.env("VIMEFLOW_AGENT_INIT", files.shell_init_path.as_os_str());
         cmd.env("VIMEFLOW_CLAUDE_SETTINGS", files.settings_path.as_os_str());
         cmd.env("VIMEFLOW_STATUS_FILE", files.status_file_path.as_os_str());
 
@@ -174,6 +262,10 @@ pub(crate) async fn spawn_pty_inner(
         } else if shell.contains("bash") {
             cmd.arg("--rcfile");
             cmd.arg(rcfile_path.as_os_str());
+        }
+
+        if shell.contains("zsh") {
+            cmd.env("ZDOTDIR", init_dir.as_os_str());
         }
 
         log::info!("Injected claude wrapper for session {}", request.session_id);
@@ -835,6 +927,83 @@ mod tests {
         (PtyState::new(), cache, events, temp_dir)
     }
 
+    #[test]
+    fn utf8_ctype_override_injects_default_when_locale_unset() {
+        assert_eq!(
+            utf8_ctype_override(None, None, None),
+            Some(DEFAULT_UTF8_CTYPE)
+        );
+    }
+
+    #[test]
+    fn utf8_ctype_override_injects_for_non_utf8_or_empty_locale() {
+        assert_eq!(
+            utf8_ctype_override(None, None, Some("C")),
+            Some(DEFAULT_UTF8_CTYPE)
+        );
+        assert_eq!(
+            utf8_ctype_override(None, None, Some("")),
+            Some(DEFAULT_UTF8_CTYPE)
+        );
+    }
+
+    #[test]
+    fn utf8_ctype_override_preserves_inherited_utf8_locale() {
+        assert_eq!(utf8_ctype_override(None, None, Some("en_US.UTF-8")), None);
+        assert_eq!(utf8_ctype_override(None, Some("zh_CN.UTF-8"), None), None);
+        assert_eq!(utf8_ctype_override(Some("en_US.utf8"), None, None), None);
+    }
+
+    #[test]
+    fn utf8_ctype_override_follows_posix_precedence() {
+        // LC_ALL (UTF-8) wins even when LANG is non-UTF-8.
+        assert_eq!(
+            utf8_ctype_override(Some("en_US.UTF-8"), None, Some("C")),
+            None
+        );
+        // A non-UTF-8 LC_CTYPE overrides a UTF-8 LANG, so injection still wins.
+        assert_eq!(
+            utf8_ctype_override(None, Some("C"), Some("en_US.UTF-8")),
+            Some(DEFAULT_UTF8_CTYPE)
+        );
+    }
+
+    #[test]
+    fn locale_env_plan_clears_non_utf8_lc_all_when_injecting() {
+        // A non-UTF-8 LC_ALL is effective and would override an injected
+        // LC_CTYPE, so it must be cleared alongside the injection.
+        let plan = locale_env_plan(Some("C"), None, None);
+        assert_eq!(plan.ctype, Some(DEFAULT_UTF8_CTYPE));
+        assert!(plan.clear_lc_all);
+
+        // Even when a lower-precedence UTF-8 locale exists, the non-UTF-8
+        // LC_ALL still wins, so both the injection and the clear must happen.
+        let plan = locale_env_plan(Some("POSIX"), None, Some("de_DE.UTF-8"));
+        assert_eq!(plan.ctype, Some(DEFAULT_UTF8_CTYPE));
+        assert!(plan.clear_lc_all);
+    }
+
+    #[test]
+    fn locale_env_plan_keeps_lc_all_when_no_override() {
+        // A UTF-8 LC_ALL needs no override and must not be cleared.
+        let plan = locale_env_plan(Some("en_US.UTF-8"), None, Some("C"));
+        assert_eq!(plan.ctype, None);
+        assert!(!plan.clear_lc_all);
+    }
+
+    #[test]
+    fn locale_env_plan_does_not_clear_unset_or_empty_lc_all() {
+        // No LC_ALL: inject LC_CTYPE only, nothing to clear.
+        let plan = locale_env_plan(None, None, Some("C"));
+        assert_eq!(plan.ctype, Some(DEFAULT_UTF8_CTYPE));
+        assert!(!plan.clear_lc_all);
+
+        // Empty LC_ALL behaves as unset under POSIX, so it need not be cleared.
+        let plan = locale_env_plan(Some(""), None, Some("C"));
+        assert_eq!(plan.ctype, Some(DEFAULT_UTF8_CTYPE));
+        assert!(!plan.clear_lc_all);
+    }
+
     #[tokio::test]
     async fn spawn_pty_creates_session() {
         let (state, cache, events, _temp_dir) = create_test_state_with_cache();
@@ -859,6 +1028,65 @@ mod tests {
 
         // Cleanup
         let _ = state.remove(&"test-session".to_string());
+    }
+
+    #[tokio::test]
+    async fn spawn_pty_agent_bridge_env_writes_status_file_with_path_chars() {
+        let (state, cache, events, temp_dir) = create_test_state_with_cache();
+        let cwd = temp_dir.path().join("workspace with spaces and quote's");
+        std::fs::create_dir_all(&cwd).expect("create cwd");
+        let session_id = "bridge-live-test".to_string();
+        let status_path = cwd
+            .join(".vimeflow")
+            .join("sessions")
+            .join(&session_id)
+            .join("status.json");
+
+        let request = SpawnPtyRequest {
+            session_id: session_id.clone(),
+            cwd: cwd.to_string_lossy().to_string(),
+            shell: None,
+            env: None,
+            enable_agent_bridge: true,
+        };
+
+        let result = spawn_pty_inner(state.clone(), cache.clone(), events.clone(), request).await;
+
+        assert!(result.is_ok(), "spawn_pty should succeed: {result:?}");
+        assert!(
+            status_path.parent().expect("status parent").exists(),
+            "spawn_pty should create the bridge session directory"
+        );
+
+        write_pty_inner(
+            &state,
+            WritePtyRequest {
+                session_id: session_id.clone(),
+                data: "printf '%s' '{\"ok\":true}' > \"$VIMEFLOW_STATUS_FILE\"\n".to_string(),
+            },
+        )
+        .expect("write status command");
+
+        let written = (0..160)
+            .find_map(|_| match std::fs::read_to_string(&status_path) {
+                Ok(value) if value == "{\"ok\":true}" => Some(value),
+                _ => {
+                    std::thread::sleep(std::time::Duration::from_millis(25));
+                    None
+                }
+            })
+            .expect("shell should write the configured VIMEFLOW_STATUS_FILE");
+
+        assert_eq!(written, "{\"ok\":true}");
+
+        kill_pty_inner(
+            &state,
+            &cache,
+            KillPtyRequest {
+                session_id: session_id.clone(),
+            },
+        )
+        .expect("kill bridge test session");
     }
 
     #[tokio::test]
@@ -1240,10 +1468,10 @@ mod tests {
                 pixel_height: 0,
             })
             .expect("openpty");
-        // Spawn /bin/true and reap immediately. We only need the pair to
+        // Spawn a no-op child and reap immediately. We only need the pair to
         // source a real master + writer of the correct trait-object types;
         // the synthetic child below replaces the real one for the kill path.
-        let cmd = CommandBuilder::new("/bin/true");
+        let cmd = CommandBuilder::new(test_true_path());
         let mut helper_child = pty_pair.slave.spawn_command(cmd).expect("spawn");
         let _ = helper_child.wait();
         let writer = pty_pair.master.take_writer().expect("take_writer");
@@ -1256,6 +1484,14 @@ mod tests {
             ring: Arc::new(Mutex::new(RingBuffer::new(64))),
             cancelled: Arc::new(AtomicBool::new(false)),
             started_at: std::time::SystemTime::now(),
+        }
+    }
+
+    fn test_true_path() -> &'static str {
+        if cfg!(target_os = "macos") {
+            "/usr/bin/true"
+        } else {
+            "/bin/true"
         }
     }
 
@@ -1500,18 +1736,22 @@ mod tests {
         )
         .unwrap();
 
-        // Wait for read loop to process EOF (give shell a moment to exit)
-        std::thread::sleep(std::time::Duration::from_millis(500));
+        let mut exited = false;
+        for _ in 0..100 {
+            let snap = cache.snapshot();
+            let entry = snap
+                .sessions
+                .get("eof-test")
+                .expect("session should still be in cache after exit");
+            if entry.exited {
+                exited = true;
+                break;
+            }
 
-        let snap = cache.snapshot();
-        let entry = snap
-            .sessions
-            .get("eof-test")
-            .expect("session should still be in cache after exit");
-        assert!(
-            entry.exited,
-            "cache entry should be marked exited after EOF"
-        );
+            tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+        }
+
+        assert!(exited, "cache entry should be marked exited after EOF");
     }
 
     #[tokio::test]

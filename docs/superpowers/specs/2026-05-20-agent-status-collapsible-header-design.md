@@ -71,8 +71,7 @@ generic | null`) onto the `AGENTS` registry keys we currently support:
 ### Out of scope
 
 - Redesigning the body sections (ContextBucket, TokenCache, ActivityFeed,
-  FilesChanged, TestResults, ActivityFooter). They render unchanged inside the
-  expanded panel.
+  FilesChanged, TestResults). They render unchanged inside the expanded panel.
 - Adopting the prototype's expanded-body design (its custom Meters block,
   CacheBlock with sparkline, history bars, etc.). Tracked as a follow-up.
 - A general "tweaks" preferences store. We add exactly one persisted bool now
@@ -120,8 +119,8 @@ completed | errored`) — derived from `agentStatus.isActive` as a v1
   Gemini support is deferred until the backend detector emits it.
 - No regression in existing **body sub-component** tests (`ContextBucket`,
   `TokenCache`, `ToolCallSummary`, `ActivityFeed`, `FilesChanged`,
-  `TestResults`, `ActivityFooter`) — those continue to pass unchanged
-  because their props and rendering are not touched. The
+  `TestResults`) — those continue to pass unchanged because their props and
+  rendering are not touched. The
   `AgentStatusPanel` (now `AgentStatusPanel/index.tsx`) test file gains
   fixture updates for the three new required props (`agent`, `status`,
   `onCollapse`) and a small new `Header.test.tsx`, but its assertions about
@@ -149,7 +148,6 @@ src/features/agent-status/components/
 ├── ActivityFeed.tsx                 # unchanged
 ├── FilesChanged.tsx                 # unchanged
 ├── TestResults.tsx                  # unchanged
-├── ActivityFooter.tsx               # unchanged
 └── … (other existing siblings unchanged)
 ```
 
@@ -165,7 +163,7 @@ other internal-to-folder imports that the test currently uses (e.g.
 `./types`, `./hooks/useActivityEvents` — those stay parent-folder relative
 and need to gain an extra `../` segment).
 
-No `Body.tsx` is introduced; the body composition is already 7 pure
+No `Body.tsx` is introduced; the body composition is already pure
 presentational children stitched directly in `index.tsx` — wrapping them in
 a passthrough `Body` would add a layer with no behavior to encapsulate.
 
@@ -204,7 +202,7 @@ interface AgentStatusPanelProps {
 }
 // Body composition is unchanged. The new <Header agent status onCollapse/>
 // sits above the existing two-region body (`gap-2 p-2` block + `thin-scrollbar`
-// block + ActivityFooter).
+// block).
 ```
 
 ### Header JSX skeleton

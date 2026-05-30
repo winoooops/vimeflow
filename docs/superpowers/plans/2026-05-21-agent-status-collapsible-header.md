@@ -1094,7 +1094,6 @@ Same exercise in `src/features/agent-status/components/AgentStatusPanel/index.ts
 - `from './ToolCallSummary'` → `from '../ToolCallSummary'`
 - `from './FilesChanged'` → `from '../FilesChanged'`
 - `from './TestResults'` → `from '../TestResults'`
-- `from './ActivityFooter'` → `from '../ActivityFooter'`
 - `from './ActivityFeed'` → `from '../ActivityFeed'`
 - `from '../hooks/useActivityEvents'` → `from '../../hooks/useActivityEvents'`
 - `from '../types'` → `from '../../types'`

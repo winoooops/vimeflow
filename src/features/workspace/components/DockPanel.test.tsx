@@ -15,6 +15,10 @@ vi.mock('../../editor/hooks/useVimMode')
 vi.mock('../../editor/services/languageService')
 vi.mock('../../diff/hooks/useGitStatus')
 vi.mock('../../diff/hooks/useFileDiff')
+vi.mock('@pierre/diffs/react', () => ({
+  useWorkerPool: vi.fn(() => null),
+  MultiFileDiff: vi.fn(() => <div data-testid="multi-file-diff" />),
+}))
 
 type DockPanelTestProps = Parameters<typeof DockPanel>[0]
 
@@ -87,9 +91,11 @@ describe('DockPanel', () => {
     })
 
     vi.spyOn(useFileDiffModule, 'useFileDiff').mockReturnValue({
+      response: null,
       diff: null,
       loading: false,
       error: null,
+      refetch: vi.fn(),
     })
   })
 

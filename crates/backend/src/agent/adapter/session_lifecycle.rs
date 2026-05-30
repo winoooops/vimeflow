@@ -105,7 +105,7 @@ mod tests {
             .expect("seed transcript state");
         let watcher_state = AgentWatcherState::new();
         let seed = WatcherHandle::new_for_test(transcript_state.clone(), sid.to_string());
-        watcher_state.insert(sid.to_string(), seed);
+        watcher_state.insert(sid.to_string(), seed, AgentType::ClaudeCode);
         // Return `tmp` so the caller owns its lifetime — dropping the TempDir
         // here would delete the seeded transcript file before the test body
         // runs (a latent trap for any future test that reads it).
@@ -300,7 +300,7 @@ mod tests {
         let transcript_state = TranscriptState::new();
         let sid = "test-sid".to_string();
         let handle = WatcherHandle::new_for_test(transcript_state, sid.clone());
-        state.insert(sid.clone(), handle);
+        state.insert(sid.clone(), handle, AgentType::ClaudeCode);
         assert!(state.contains(&sid));
 
         let lifecycle = SessionLifecycle::new(
@@ -374,7 +374,7 @@ mod tests {
             TranscriptState::new(),
             Arc::new(FakeEventSink::new()),
         );
-        lifecycle.register(sid.clone(), handle);
+        lifecycle.register(sid.clone(), handle, AgentType::ClaudeCode);
         assert!(state.contains(&sid), "register should insert the session");
     }
 
@@ -567,8 +567,8 @@ impl SessionLifecycle {
         )
     }
 
-    fn register(&self, sid: String, handle: WatcherHandle) {
-        self.watcher_state.insert(sid, handle);
+    fn register(&self, sid: String, handle: WatcherHandle, agent_type: AgentType) {
+        self.watcher_state.insert(sid, handle, agent_type);
     }
 
     /// Start (or restart) the agent watcher for `session_id`.
@@ -618,8 +618,11 @@ impl SessionLifecycle {
                 lc.watcher_state.active_count(),
             );
 
+            // Capture the agent type before `spawn_watch` consumes `bindings`,
+            // so `register` records it for the rename / title-sync IPC (main #265).
+            let agent_type = bindings.agent_type;
             let handle = lc.spawn_watch(bindings, trusted, session_id.clone())?;
-            lc.register(session_id, handle);
+            lc.register(session_id, handle, agent_type);
             Ok::<_, String>(())
         })
         .await

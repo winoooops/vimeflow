@@ -6,8 +6,19 @@ import {
   developmentContentSecurityPolicy,
   packagedContentSecurityPolicy,
 } from './csp'
+import { installCommandPaletteShortcutOverride } from './command-palette-shortcut'
 import { BACKEND_EVENT, BACKEND_INVOKE } from './ipc-channels'
 import { spawnSidecar, type Sidecar } from './sidecar'
+
+// Keep the GPU serving this window while it is occluded (covered by another
+// window) or unfocused. Chromium otherwise backgrounds the occluded window and
+// reclaims its GPU resources, which corrupts xterm's cached glyph textures so
+// they render as garbage on return. (Confirmed: disabling hardware
+// acceleration entirely made the corruption vanish — it is the GPU layer.)
+// These switches keep hardware acceleration and the WebGL renderer while
+// stopping the occlusion-driven reclaim.
+app.commandLine.appendSwitch('disable-backgrounding-occluded-windows')
+app.commandLine.appendSwitch('disable-renderer-backgrounding')
 
 // __dirname is not defined in ESM modules. Derive it from import.meta.url.
 // vite-plugin-electron bundles main.ts as ESM (main.js) under
@@ -130,7 +141,7 @@ interface BackendInvokePayload {
 
 type InvokeEnvelope =
   | { ok: true; result: unknown }
-  | { ok: false; error: string }
+  | { ok: false; error: string; errorReason?: string }
 
 let sidecar: Sidecar | null = null
 let quitting = false
@@ -142,6 +153,17 @@ const RENDERER_DIAGNOSTIC_PREFIXES = [
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
+
+// Mirrors isStructuredBackendError in src/lib/backend.ts; keep in sync manually.
+const isStructuredBackendError = (
+  value: unknown
+): value is { message: string; reason: string } =>
+  isRecord(value) &&
+  typeof value.message === 'string' &&
+  typeof value.reason === 'string'
+
+const supportsStructuredBackendError = (method: string): boolean =>
+  method === 'rename_agent_session'
 
 const rendererConsoleLevelName = (level: number): string => {
   switch (level) {
@@ -215,6 +237,7 @@ const createWindow = (): void => {
   })
 
   installRendererDiagnosticLogging(win)
+  installCommandPaletteShortcutOverride(win)
 
   const devUrl = process.env.VITE_DEV_SERVER_URL
 
@@ -269,6 +292,17 @@ const setupApp = async (): Promise<void> => {
 
         return { ok: true, result }
       } catch (err) {
+        if (
+          supportsStructuredBackendError(payload.method) &&
+          isStructuredBackendError(err)
+        ) {
+          return {
+            ok: false,
+            error: err.message,
+            errorReason: err.reason,
+          }
+        }
+
         return {
           ok: false,
           error: typeof err === 'string' ? err : String(err),

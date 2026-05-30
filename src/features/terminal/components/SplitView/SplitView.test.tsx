@@ -1,8 +1,8 @@
-// cspell:ignore vsplit hsplit
-import { render, screen, within } from '@testing-library/react'
+// cspell:ignore vsplit hsplit vdiv hdiv
+import { render, screen, within, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { createRef } from 'react'
-import { describe, test, expect, vi } from 'vitest'
+import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
 import type { UseGitBranchReturn } from '../../../diff/hooks/useGitBranch'
 import type { UseGitStatusReturn } from '../../../diff/hooks/useGitStatus'
 import type { BodyHandle, BodyProps } from '../TerminalPane/Body'
@@ -13,6 +13,32 @@ import {
 } from './SplitView'
 import type { LayoutId, Pane, Session } from '../../../sessions/types'
 import type { ITerminalService } from '../../services/terminalService'
+
+class MockResizeObserver {
+  observe = vi.fn()
+  disconnect = vi.fn()
+  unobserve = vi.fn()
+}
+
+vi.stubGlobal('ResizeObserver', MockResizeObserver)
+
+beforeEach(() => {
+  vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue({
+    width: 1200,
+    height: 800,
+    top: 0,
+    left: 0,
+    right: 1200,
+    bottom: 800,
+    x: 0,
+    y: 0,
+    toJSON: (): undefined => undefined,
+  } as DOMRect)
+})
+
+afterEach(() => {
+  vi.restoreAllMocks()
+})
 
 vi.mock('../TerminalPane/Body', async () => {
   const React = await import('react')
@@ -71,6 +97,7 @@ const makeSession = (
   workingDirectory: '/tmp/fixture',
   agentType: 'generic',
   layout,
+  activityPanelCollapsed: false,
   panes: Array.from(
     { length: paneCount },
     (_, i): Pane => ({
@@ -80,7 +107,6 @@ const makeSession = (
       agentType: 'generic',
       status: 'running',
       active: i === activeIndex,
-      activityPanelCollapsed: null,
       pid: 1000 + i,
       restoreData: {
         sessionId: `pty-${i}`,
@@ -126,6 +152,10 @@ const makeMockService = (): ITerminalService => ({
   updateSessionCwd: vi.fn(() => Promise.resolve(undefined)),
   setSessionActivityPanelCollapsed: vi.fn(() => Promise.resolve(undefined)),
 })
+
+// Literal `isActive={false}` is stripped by the project's jsx-boolean-value
+// autofix, which then breaks the required prop; a variable dodges the rule.
+const inactive = false
 
 describe('SplitView - single layout', () => {
   test('renders one slot with data attrs from the lone pane', () => {
@@ -201,9 +231,7 @@ describe('SplitView - multi-pane layouts', () => {
     ])
 
     expect(screen.getByTestId('split-view')).toHaveStyle({
-      gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)',
-      gridTemplateRows: 'minmax(0,1fr)',
-      gridTemplateAreas: '"p0 p1"',
+      gridTemplateAreas: '"p0 vdiv p1"',
     })
   })
 
@@ -217,7 +245,7 @@ describe('SplitView - multi-pane layouts', () => {
     )
 
     expect(screen.getByTestId('split-view')).toHaveStyle({
-      gridTemplateAreas: '"p0" "p1"',
+      gridTemplateAreas: '"p0" "hdiv" "p1"',
     })
     expect(screen.getAllByTestId('split-view-slot')).toHaveLength(2)
   })
@@ -232,9 +260,7 @@ describe('SplitView - multi-pane layouts', () => {
     )
 
     expect(screen.getByTestId('split-view')).toHaveStyle({
-      gridTemplateColumns: 'minmax(0,1.4fr) minmax(0,1fr)',
-      gridTemplateRows: 'minmax(0,1fr) minmax(0,1fr)',
-      gridTemplateAreas: '"p0 p1" "p0 p2"',
+      gridTemplateAreas: '"p0 vdiv p1" "p0 vdiv hdiv" "p0 vdiv p2"',
     })
     expect(screen.getAllByTestId('split-view-slot')).toHaveLength(3)
   })
@@ -249,9 +275,108 @@ describe('SplitView - multi-pane layouts', () => {
     )
 
     expect(screen.getByTestId('split-view')).toHaveStyle({
-      gridTemplateAreas: '"p0 p1" "p2 p3"',
+      gridTemplateAreas: '"p0 vdiv0 p1" "hdiv hdiv hdiv" "p2 vdiv1 p3"',
     })
     expect(screen.getAllByTestId('split-view-slot')).toHaveLength(4)
+  })
+
+  test('single layout renders no dividers', () => {
+    render(
+      <SplitView
+        session={makeSession('single', 1)}
+        service={makeMockService()}
+        isActive
+      />
+    )
+    expect(screen.queryAllByTestId('split-resize-handle')).toHaveLength(0)
+  })
+
+  test('active vsplit renders a divider; inactive does not', () => {
+    const session = makeSession('vsplit', 2)
+
+    const { rerender } = render(
+      <SplitView session={session} service={makeMockService()} isActive />
+    )
+    expect(screen.getAllByTestId('split-resize-handle')).toHaveLength(1)
+
+    rerender(
+      <SplitView
+        session={session}
+        service={makeMockService()}
+        isActive={inactive}
+      />
+    )
+    expect(screen.queryAllByTestId('split-resize-handle')).toHaveLength(0)
+  })
+
+  test('remembers the split ratio across a layout cycle (D4)', () => {
+    const valueNow = (): string | null =>
+      screen.getByTestId('split-resize-handle').getAttribute('aria-valuenow')
+
+    const { rerender } = render(
+      <SplitView
+        session={makeSession('vsplit', 2)}
+        service={makeMockService()}
+        isActive
+      />
+    )
+    const pristine = valueNow()
+    fireEvent.keyDown(screen.getByTestId('split-resize-handle'), {
+      key: 'ArrowRight',
+    })
+    const resized = valueNow()
+    expect(resized).not.toBe(pristine)
+
+    rerender(
+      <SplitView
+        session={makeSession('single', 1)}
+        service={makeMockService()}
+        isActive
+      />
+    )
+
+    rerender(
+      <SplitView
+        session={makeSession('vsplit', 2)}
+        service={makeMockService()}
+        isActive
+      />
+    )
+    expect(valueNow()).toBe(resized)
+  })
+
+  test('remembers the split ratio across a tab switch (D2)', () => {
+    const valueNow = (): string | null =>
+      screen.getByTestId('split-resize-handle').getAttribute('aria-valuenow')
+
+    const { rerender } = render(
+      <SplitView
+        session={makeSession('vsplit', 2)}
+        service={makeMockService()}
+        isActive
+      />
+    )
+    fireEvent.keyDown(screen.getByTestId('split-resize-handle'), {
+      key: 'ArrowRight',
+    })
+    const resized = valueNow()
+
+    rerender(
+      <SplitView
+        session={makeSession('vsplit', 2)}
+        service={makeMockService()}
+        isActive={inactive}
+      />
+    )
+
+    rerender(
+      <SplitView
+        session={makeSession('vsplit', 2)}
+        service={makeMockService()}
+        isActive
+      />
+    )
+    expect(valueNow()).toBe(resized)
   })
 
   test('each slot gets gridArea by index regardless of pane.id naming', () => {
@@ -344,7 +469,7 @@ describe('SplitView - under-capacity', () => {
     )
 
     expect(screen.getByTestId('split-view')).toHaveStyle({
-      gridTemplateAreas: '"p0 p1" "p2 p3"',
+      gridTemplateAreas: '"p0 vdiv0 p1" "hdiv hdiv hdiv" "p2 vdiv1 p3"',
     })
   })
 
@@ -640,7 +765,6 @@ describe('selectVisiblePanes', () => {
     agentType: 'generic',
     status: 'running',
     active,
-    activityPanelCollapsed: null,
     pid: 1,
   })
 

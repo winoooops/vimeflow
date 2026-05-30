@@ -10,6 +10,7 @@ export const mockSessions: Session[] = [
     workingDirectory: '~',
     agentType: 'claude-code',
     layout: 'single',
+    activityPanelCollapsed: false,
     panes: [
       {
         id: 'p0',
@@ -18,7 +19,6 @@ export const mockSessions: Session[] = [
         agentType: 'claude-code',
         status: 'running',
         active: true,
-        activityPanelCollapsed: null,
         pid: 12345,
       },
     ],
@@ -35,6 +35,7 @@ export const mockSessions: Session[] = [
     workingDirectory: '~',
     agentType: 'claude-code',
     layout: 'single',
+    activityPanelCollapsed: false,
     panes: [
       {
         id: 'p0',
@@ -43,7 +44,6 @@ export const mockSessions: Session[] = [
         agentType: 'claude-code',
         status: 'paused',
         active: true,
-        activityPanelCollapsed: null,
         pid: 12346,
       },
     ],
@@ -60,6 +60,7 @@ export const mockSessions: Session[] = [
     workingDirectory: '~',
     agentType: 'claude-code',
     layout: 'single',
+    activityPanelCollapsed: false,
     panes: [
       {
         id: 'p0',
@@ -68,7 +69,6 @@ export const mockSessions: Session[] = [
         agentType: 'claude-code',
         status: 'completed',
         active: true,
-        activityPanelCollapsed: null,
       },
     ],
     createdAt: '2026-04-07T02:00:00Z',
@@ -83,6 +83,7 @@ export const mockSessions: Session[] = [
     workingDirectory: '~',
     agentType: 'claude-code',
     layout: 'single',
+    activityPanelCollapsed: false,
     panes: [
       {
         id: 'p0',
@@ -91,7 +92,6 @@ export const mockSessions: Session[] = [
         agentType: 'claude-code',
         status: 'running',
         active: true,
-        activityPanelCollapsed: null,
         pid: 12347,
       },
     ],
@@ -108,6 +108,7 @@ export const mockSessions: Session[] = [
     workingDirectory: '~',
     agentType: 'claude-code',
     layout: 'single',
+    activityPanelCollapsed: false,
     panes: [
       {
         id: 'p0',
@@ -116,7 +117,6 @@ export const mockSessions: Session[] = [
         agentType: 'claude-code',
         status: 'completed',
         active: true,
-        activityPanelCollapsed: null,
       },
     ],
     createdAt: '2026-04-05T12:10:00Z',

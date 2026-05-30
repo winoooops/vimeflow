@@ -310,9 +310,17 @@ pub(crate) fn make_test_session() -> crate::terminal::state::ManagedSession {
             pixel_height: 0,
         })
         .expect("openpty");
+    // macOS keeps `true` at /usr/bin, not /bin — preserve main's #282
+    // cross-platform agent-bridge fix when this fixture was promoted to
+    // file level in F.1.
+    let true_path = if cfg!(target_os = "macos") {
+        "/usr/bin/true"
+    } else {
+        "/bin/true"
+    };
     let child = pty_pair
         .slave
-        .spawn_command(CommandBuilder::new("/bin/true"))
+        .spawn_command(CommandBuilder::new(true_path))
         .expect("spawn");
     let writer = pty_pair.master.take_writer().expect("take_writer");
 

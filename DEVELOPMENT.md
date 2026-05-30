@@ -10,6 +10,7 @@ npm run format        # Prettier write
 npm run type-check    # tsc -b
 npm run test          # Vitest
 npm run test:coverage # Vitest coverage
+npm run dev           # Vite dev server, no Rust sidecar required
 npm run electron:dev  # Electron shell + vimeflow-backend sidecar
 npm run electron:build # Linux AppImage packaging
 npm run test:e2e:all  # WebdriverIO + @wdio/electron-service E2E suites

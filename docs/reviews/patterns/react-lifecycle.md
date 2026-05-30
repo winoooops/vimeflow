@@ -2,8 +2,8 @@
 id: react-lifecycle
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-05-20
-ref_count: 5
+last_updated: 2026-05-27
+ref_count: 8
 ---
 
 # React Lifecycle
@@ -186,3 +186,39 @@ to avoid unintended re-runs (e.g., PTY respawning on every cwd change).
 - **Finding:** Hoisting `useCommandPalette` out of `CommandPalette.tsx` and into `WorkspaceView` turned `clampedSelectedIndex` and `filteredResults` from internally-derived state into independent props. The activeDescendantId expression `filteredResults[clampedSelectedIndex].id` was preserved verbatim from the pre-hoist code because the hook still guarantees the joint invariant `clampedSelectedIndex === -1 ⟺ filteredResults.length === 0`. Inside the hook, the invariant was automatic; across the prop boundary, it became an unstated contract — any future caller wiring `CommandPalette` directly (without `useCommandPalette`) can supply a mismatched pair (e.g. `clampedSelectedIndex=0`, `filteredResults=[]`) and crash the workspace error boundary with `TypeError: Cannot read properties of undefined (reading 'id')`. Class of bug: when a component's internal invariant gets externalized into prop space, the expressions that depended on the encapsulated form must be re-defended at the new boundary.
 - **Fix:** Guarded the lookup: compute `activeCommand = clampedSelectedIndex >= 0 ? filteredResults[clampedSelectedIndex] : undefined` first, then return `activeCommand ? \`command-${activeCommand.id}\` : undefined`. A mismatched-pair input now degrades to "no active descendant" instead of crashing. Added a regression test in `CommandPalette.test.tsx` that drives the unsafe input (`filteredResults: [], clampedSelectedIndex: 0`) and asserts the input has no `aria-activedescendant` attribute. Code-review heuristic: when a hook moves up a level via the controlled-component pattern, sweep every expression in the component that depended on co-derived state for an implicit invariant — and either defend it at the new prop boundary or encode the invariant in the type signature.
 - **Commit:** same commit as this entry
+
+### 20. Positional wrapper keys migrate state when keyed children move
+
+- **Source:** github-codex-connector | PR #263 | 2026-05-25
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/diff/components/toolbar/PriorityPlus.tsx`
+- **Finding:** `PriorityPlus` wrapped each keyed toolbar chip in a `<div key={index}>`. When a chip was inserted or removed before stateful controls such as dropdowns, React reused the wrapper at the same index for a different logical child, allowing open/active state to migrate to the wrong chip.
+- **Fix:** Key wrapper nodes from each child's stable React key, falling back to the index only for unkeyed children. Added a regression test with a stateful keyed child that preserves state when another child is inserted before it.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 21. Responsive coercion display state overwrote the saved user preference
+
+- **Source:** github-claude | PR #263 follow-up | 2026-05-25
+- **Severity:** MEDIUM
+- **File:** `src/features/diff/components/DiffPanelContent.tsx`
+- **Finding:** The diff toolbar displayed coerced `unified` mode while the pane was too narrow for split view, but its change handler still wrote directly to the saved `diffStyle` state. Clicking the already-active `unified` segment permanently replaced a saved `split` preference, so widening the pane did not restore split view.
+- **Fix:** Track `paneWidth=0` as an unmeasured sentinel, derive forced-unified display state only after measurement, and ignore the no-op `unified` write while split is merely being coerced. Added a regression test that clicks forced-unified at narrow width and verifies split returns when the pane widens.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 22. Layout measurements must compare coordinates from the same origin
+
+- **Source:** github-claude | PR #263 follow-up | 2026-05-25
+- **Severity:** HIGH
+- **File:** `src/features/diff/components/toolbar/PriorityPlus.tsx`
+- **Finding:** PriorityPlus used `container.clientWidth` with `lastVisible.offsetLeft + offsetWidth` to reserve space for the overflow chip. In the docked diff panel, the wrapper's `offsetParent` is a positioned ancestor outside the toolbar, so the item coordinate included the file-list offset while the container width did not. The toolbar hid one extra chip whenever overflow started.
+- **Fix:** Measure both the container and last visible item with `getBoundingClientRect()` and subtract viewport-relative `right` values. Added a regression test that simulates a toolbar offset by the file list and proves the last fitting chip stays visible.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 23. Index-into-data reset effect missed the same-collection shrink case
+
+- **Source:** github-claude + github-codex-connector | PR #284 | 2026-05-27
+- **Severity:** HIGH
+- **File:** `src/features/diff/components/DiffPanelContent.tsx`
+- **Finding:** `focusedHunkIndex` was reset to 0 only on `[selectedFilePath, selectedFileStaged]` change. Staging/discarding a hunk reloads the SAME file with fewer hunks (path + staged unchanged), so the reset never fired — the stale index pointed out of range, the hunk counter rendered an invalid value (e.g. "3/2", with no `Math.min` clamp unlike the sibling file counter), and per-hunk stage/unstage/discard silently no-op'd via the `focusedHunk === null` guard until the user manually navigated. The reset effect's dependency set covered file-identity changes but not the equivalent "the indexed collection shrank under a held index" case.
+- **Fix:** Added a clamp effect keyed on `hunkCount` (`setFocusedHunkIndex((prev) => Math.min(prev, hunkCount - 1))`) plus a derived `clampedHunkIndex` (`hunkCount > 0 ? Math.min(focusedHunkIndex, hunkCount - 1) : 0`) used for the focused hunk, `selectedLines`, and the toolbar counter — so the single render between the shrink and the effect firing also stays in range. Lesson: when state holds an index/cursor into a refetchable collection, the clamp must key on the collection length, not only on the identity that selected it. Regression test: focus the last of 3 hunks, reload the same file with 2 hunks, assert the counter clamps to "2/2" (never "3/2") and `selectedLines` stays non-null.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

@@ -1,3 +1,4 @@
+@import '../docs/design/tokens.css';
 @import 'tailwindcss';
 @config '../tailwind.config.js';
 
@@ -38,21 +39,17 @@
 }
 
 @font-face {
-  font-family: 'Pure Nerd Font';
+  font-family: 'Vimeflow Nerd Symbols';
   font-style: normal;
   font-display: block;
   font-weight: 400;
   src: url('@azurity/pure-nerd-font/PureNerdFont.woff2') format('woff2');
-  /* Match JetBrains Mono's em metrics so Nerd Font icons (e.g. md-cat
-     U+F011B used in shell prompts) render at full cell size instead of
-     as tiny specks. PNF's natural ascent/descent (711/-45 in a 1000-unit
-     em = 75.6% content) is much smaller than JBM's (1020/-300 = 132%);
-     when the browser substitutes a PNF glyph into an xterm cell sized by
-     JBM, the glyph renders at ~57% scale and looks invisible. size-adjust
-     scales the glyph outlines, and the *-override descriptors align the
-     baseline so substituted icons share the same vertical centerline as
-     JBM characters in the same line. */
-  size-adjust: 174%;
+  /* Isolated alias for the bundled Nerd Font symbol face. Keep this after full
+     patched Nerd Font families in the xterm stack: the symbol-only face is a
+     missing-glyph safety net, not a replacement for one monospaced patched
+     terminal font. Avoid size-adjust here because scaling the fallback face
+     also scales glyph advances, which makes Powerline prompt icons overrun
+     xterm cells on macOS. */
   ascent-override: 102%;
   descent-override: 30%;
 }
@@ -163,10 +160,43 @@
   background: #4a444f;
 }
 
-/* Agent activity rail bucket animations.
-   Two opposing sine-wave translations create the ripple; vfSlosh tilts
-   the whole liquid mass < 1deg. Honors prefers-reduced-motion. */
-@keyframes vfWaveA {
+/* CodeMirror's internal scroller — same treatment as @utility thin-scrollbar.
+   The utility class can't be applied to the CodeEditor container because
+   ::-webkit-scrollbar targets the element it's on, not descendants — and
+   the actual scroll container is the nested .cm-scroller (set to
+   `overflow: auto` by the catppuccin theme). The @supports gate mirrors
+   thin-scrollbar: keep the standard scrollbar-* properties Firefox-only
+   so WebKitGTK doesn't paint a second track on top of the pseudo-element. */
+.cm-editor .cm-scroller::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.cm-editor .cm-scroller::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.cm-editor .cm-scroller::-webkit-scrollbar-thumb {
+  background: #333344;
+  border-radius: 10px;
+}
+
+.cm-editor .cm-scroller::-webkit-scrollbar-thumb:hover {
+  background: #4a444f;
+}
+
+@supports (-moz-appearance: none) {
+  .cm-editor .cm-scroller {
+    scrollbar-width: thin;
+    scrollbar-color: #333344 transparent;
+  }
+}
+
+/* Liquid bucket animations (used by both Bucket and ContextBucket via
+   LiquidFill). Two opposing sine-wave translations create the ripple;
+   vfLiquidSlosh tilts the whole liquid mass < 1deg. Honors
+   prefers-reduced-motion. */
+@keyframes vfLiquidWaveA {
   from {
     transform: translateX(0);
   }
@@ -175,7 +205,7 @@
   }
 }
 
-@keyframes vfWaveB {
+@keyframes vfLiquidWaveB {
   from {
     transform: translateX(-50%);
   }
@@ -184,7 +214,7 @@
   }
 }
 
-@keyframes vfSlosh {
+@keyframes vfLiquidSlosh {
   0%,
   100% {
     transform: translateX(0) rotate(0deg);
@@ -194,22 +224,26 @@
   }
 }
 
-.vf-bucket-wave-a {
-  animation: vfWaveA 3.4s linear infinite;
+.vf-liquid-wave-a {
+  animation: vfLiquidWaveA 3.4s linear infinite;
 }
 
-.vf-bucket-wave-b {
-  animation: vfWaveB 4.8s linear infinite;
+.vf-liquid-wave-b {
+  animation: vfLiquidWaveB 4.8s linear infinite;
 }
 
-.vf-bucket-slosh {
-  animation: vfSlosh 2.6s ease-in-out infinite;
+.vf-liquid-slosh {
+  animation: vfLiquidSlosh 2.6s ease-in-out infinite;
+}
+
+.vf-liquid-slosh[data-interactive='on'] {
+  animation: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .vf-bucket-wave-a,
-  .vf-bucket-wave-b,
-  .vf-bucket-slosh {
+  .vf-liquid-wave-a,
+  .vf-liquid-wave-b,
+  .vf-liquid-slosh {
     animation: none;
   }
 }

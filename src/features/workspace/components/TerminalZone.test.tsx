@@ -443,6 +443,7 @@ describe('TerminalZone', () => {
       workingDirectory: '/tmp/a',
       agentType: 'generic',
       layout: 'vsplit',
+      activityPanelCollapsed: false,
       panes: [
         {
           id: 'p0',
@@ -451,7 +452,6 @@ describe('TerminalZone', () => {
           agentType: 'generic',
           status: 'running',
           active: true,
-          activityPanelCollapsed: null,
           pid: 1001,
           restoreData: {
             sessionId: 'pty-a',
@@ -469,7 +469,6 @@ describe('TerminalZone', () => {
           agentType: 'generic',
           status: 'running',
           active: false,
-          activityPanelCollapsed: null,
           pid: 1002,
           restoreData: {
             sessionId: 'pty-b',

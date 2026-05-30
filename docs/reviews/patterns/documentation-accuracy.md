@@ -3,7 +3,7 @@ id: documentation-accuracy
 category: code-quality
 created: 2026-04-09
 last_updated: 2026-05-24
-ref_count: 23
+ref_count: 22
 ---
 
 # Documentation Accuracy
@@ -685,47 +685,11 @@ Stale documentation misleads future contributors and review agents.
 - **Fix:** Extracted `getActiveDescendantId(clampedSelectedIndex, filteredResults): \`command-${string}\` | undefined` to a module-level helper above the component. The JSX prop becomes a single-line helper call. The 7-line rationale collapses to a single comment line on the helper that points at the react-lifecycle pattern entry (§19) for the full reasoning. Code-review heuristic: when a JSX expression needs (a) a typed return + (b) multi-line context, the right home is a module-level helper — not an IIFE in JSX. The IIFE is a syntactic shortcut that costs the file's readability budget twice (function object per render + comment-style violation) for one type-inference convenience.
 - **Commit:** same commit as this entry
 
-### 73. spec_for doc-comment claimed "in debug builds" but the panic is unconditional
+### 73. CHANGELOG entry said "hover-darkening" but the CSS `:hover` rule brightens the thumb
 
-- **Source:** github-claude | PR #247 | 2026-05-23
+- **Source:** github-claude | PR #264 round 1 | 2026-05-24
 - **Severity:** LOW
-- **File:** `crates/backend/src/agent/config.rs`
-- **Finding:** `spec_for(agent_type: AgentType)` was documented as "Panics in debug builds if the registry has drifted..." but the implementation used `unwrap_or_else(|| panic!(...))` with no `#[cfg(debug_assertions)]` guard — it panics in every build. A future contributor reading the doc might believe release builds silently fall through, or might add a release-only fallback that would be worse than the crash. The unconditional panic is the right behavior here (a programming-error invariant should fail loudly); only the doc was wrong.
-- **Fix:** Dropped "in debug builds" from the doc-comment. New wording: "Panics if the registry has drifted away from `AgentType` — the registry must cover every enum variant. The panic fires in both debug and release builds; treat it as a programming-error guard, not a recoverable runtime error." Code-review heuristic: words like "in debug builds", "in tests", "may panic" in Rust doc-comments are contracts — they imply specific `cfg()` gates or fallback paths. Use them only when those gates exist; otherwise the implementation drifts from the documentation contract.
+- **File:** `CHANGELOG.md`
+- **Finding:** The English `[Unreleased] → Fixed` entry described the new scrollbar thumb as "`#333344` thumb on hover-darkening". The corresponding `::-webkit-scrollbar-thumb:hover` rule in `src/index.css` swaps the thumb to `#4a444f` — RGB(74,68,79) is brighter than RGB(51,51,68) in all three channels, so the hover effect actually brightens. The mirrored Chinese entry in `CHANGELOG.zh-CN.md` correctly used "hover 时变亮" (brightens on hover); only the English side was wrong, so a reader cross-checking the two changelogs would have noticed the disagreement before noticing the impl mismatch.
+- **Fix:** Rewrote the English entry as "`#333344` thumb that brightens to `#4a444f` on hover" and updated the Chinese entry to cite the same target color "`#4a444f`" for parity. Code-review heuristic: when describing a hover/focus state change, name both colors explicitly rather than relying on "darkens"/"brightens" — readers can verify the direction without running a color picker, and a typo in the verb becomes immediately obvious against the surrounding context.
 - **Commit:** same commit as this entry
-
-### 74. parse_status comment claimed test exercised a read path that the test bypassed
-
-- **Source:** github-claude | PR #256 | 2026-05-23
-- **Severity:** LOW
-- **File:** `crates/backend/src/agent/adapter/codex/mod.rs`
-- **Finding:** `CodexAdapter::parse_status` (Step 0c v1) contained a `let transcript_path = self.resolved_rollout_path.lock()...; let _ = transcript_path;` block — a deliberately-unused mutex read + heap `String` allocation per status update. The justifying comment claimed the deprecated mutex was kept "read" so the pinned regression test (`parse_status_includes_resolved_rollout_path_when_available`) could anchor the back-compat contract. But the test seeded the mutex directly in a separate block BEFORE calling `parse_status` and then read the mutex DIRECTLY afterwards — it never relied on `parse_status` touching the mutex at all. The comment misled future readers into thinking the read-path was load-bearing; in reality it was dead code on the hot path (every Codex statusline update paid a `Mutex::lock()` + `to_string_lossy().to_string()`).
-- **Fix:** Removed lines 136-141 (the dead `let _ = transcript_path;` block). Rewrote both (a) the `parse_status` comment to describe what's actually pinned and where (write side: `located_status_source_returns_resolved_rollout_on_happy_path`; "slot not cleared on parse" side: `parse_status_includes_resolved_rollout_path_when_available`) and (b) the regression test's own comment to admit it pre-seeds directly. Code-review heuristic: a `let _ = expr;` pattern justified ONLY by "the test reads this" is a smell — verify the test actually reaches the code path through the production entry point; if it pre-seeds and reads directly, the in-function read is dead and the comment is lying.
-- **Commit:** same commit as this entry
-
-### 75. ParsedStatusline.transcript_path field left alive after the consumer dropped it
-
-- **Source:** github-claude | PR #256 | 2026-05-23
-- **Severity:** MEDIUM
-- **File:** `crates/backend/src/agent/adapter/claude_code/statusline.rs`
-- **Finding:** Step 0c removed `transcript_path` from the public `ParsedStatus` struct (`adapter/types.rs`) and rewired the watcher to call `extract_transcript_path` via `TranscriptPathSource::dynamic_hint`. The intent was to kill the side channel entirely — but the analogous field on the **internal** `ParsedStatusline` struct (returned by `parse_statusline`) was left intact. The only production caller (`ClaudeCodeAdapter::parse_status`) silently dropped the field. Two harms: (1) every Claude statusline update wasted a `transcript_path(&value)` JSON lookup + heap `String` allocation for a value nobody read; (2) two tests in `statusline.rs` (`parses_full_statusline_json` line 501-505, `parses_minimal_json` line 527) still asserted on the field, falsely appearing to pin transcript-path extraction behavior when in fact they exercised dead code — a real regression in `extract_transcript_path` (the live path) would not have been caught.
-- **Fix:** Removed `transcript_path: Option<String>` from `ParsedStatusline`, deleted the `let transcript_path = transcript_path(&value);` line, dropped the field from the `Ok(ParsedStatusline { ... })` literal, and deleted both test assertions. Added a new test `extract_transcript_path_returns_field_when_present_else_none` (present / absent / malformed JSON) to keep the live helper covered at the `statusline.rs` level. The adapter-level live path stays covered by `dynamic_hint_extracts_transcript_path_when_present` in `claude_code/mod.rs`. Code-review heuristic: when a public struct loses a field, sweep ALL its construction sites for parallel internal structs whose corresponding field is now dead. Rust's `dead_code` lint does not catch this case because the field is technically read by `Debug` / `Clone` derives even when no code path consumes its value.
-- **Commit:** same commit as this entry
-
-### 76. Terminology lagged behind a refactor rename — `NoOpAdapter::parse_status` error string
-
-- **Source:** github-claude | PR #261 round 2 | 2026-05-24
-- **Severity:** LOW
-- **File:** `crates/backend/src/agent/adapter/mod.rs`
-- **Finding:** Step B' renamed the concept "parse → decode" throughout the adapter stack: the trait went from `AgentAdapter::parse_status` to `StateDecoder::decode`, the helper went from `parse_status` to `decode`, the pattern-KB note for parser resilience (#5) cited the new wording. But `NoOpAdapter` ended up with TWO different phrasings in the same type: `StateDecoder::decode` returned `"{:?} adapter has no status decoder"` while `AgentAdapter::parse_status` (the transitional façade) returned `"{:?} adapter has no status parser"`. Log scrapers / SIEM rules / future telemetry consumers keying on either phrase silently miss one emission site depending on which path fires. Same finding-class as #46 (`StatusReader` rename leaving doc-comments behind) — a refactor that renames a concept has to sweep error strings, debug labels, and log lines too, not just type names and function signatures. README snippet illustrating `NoOpAdapter` also lagged.
-- **Fix:** Changed both façade error string and README snippet to "has no status decoder", matching `StateDecoder::decode`'s wording. Lesson: when grepping for a renamed concept during a refactor, include string literals (`grep -rn '"old_name"'` and `grep -rn '"\.\.\.old_name"'`) — they don't show up in `cargo check` and aren't caught by `dead_code` / type-system checks. Add a "string-literal sweep" step to the rename-refactor checklist.
-- **Commit:** _(PR #261 round 2 `/lifeline:upsource-review` cycle 2)_
-
-### 77. `#[allow(unused_imports)]` used as documentation-by-import is non-idiomatic Rust
-
-- **Source:** github-claude | PR #261 round 3 | 2026-05-24
-- **Severity:** LOW
-- **File:** `crates/backend/src/agent/adapter/base/watcher_runtime.rs`
-- **Finding:** Step B' watcher*runtime imported `StateDecoder` and `TranscriptPathValidator` under `#[allow(unused_imports)]` purely to document which traits the watcher consumes via bindings — even though method dispatch through `Arc<dyn Trait>` doesn't require the trait in scope (vtable lookup). The accompanying comment asserted the claim, but the pattern is non-standard: `use` is for name availability, not documentation. A contributor reading the file might either remove the imports (potentially breaking the build if they were partially load-bearing — which they were here for `TranscriptPathValidator`) or keep the `#[allow]` without understanding why. The mix was actually \_more* confusing than either extreme: it claimed both imports were vtable-dispatch-only, but `TranscriptPathValidator` is referenced as `Arc<dyn TranscriptPathValidator>` in `maybe_start_transcript`'s signature and IS load-bearing.
-- **Fix:** Audited each trait individually. `TranscriptPathValidator` IS used as a type bound → kept as a normal `use` import without the `#[allow]`. `StateDecoder` is NOT used textually (only via method dispatch on `Arc<dyn StateDecoder>`) → dropped from the imports entirely. The 5-line comment now states the audit result (which trait is load-bearing and why), replacing the previous documentation-by-import pattern. Lesson: `#[allow(unused_imports)]` is for genuine edge cases (macros that may or may not reference a name, conditional compilation, re-exports for downstream crates). Using it to "document by import" mixes two distinct concepts (compile-time scope vs documentation-for-the-reader) and creates ambiguity about whether the imports are actually needed. Prefer call-site comments + audited imports.
-- **Commit:** _(PR #261 round 3 `/lifeline:upsource-review` cycle 3)_

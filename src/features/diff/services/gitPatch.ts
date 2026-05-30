@@ -35,6 +35,16 @@ const isSafeBaseBranch = (baseBranch: string): boolean =>
   !baseBranch.endsWith('/') &&
   SAFE_BASE_BRANCH_REGEX.test(baseBranch)
 
+export const normalizeBaseBranch = (
+  baseBranch?: string | null
+): string | null => {
+  const trimmedBaseBranch = baseBranch?.trim()
+
+  return trimmedBaseBranch && isSafeBaseBranch(trimmedBaseBranch)
+    ? trimmedBaseBranch
+    : null
+}
+
 export const buildGitDiffArgs = ({
   safePath,
   staged,
@@ -44,10 +54,9 @@ export const buildGitDiffArgs = ({
     return ['--cached', '--', safePath]
   }
 
-  const trimmedBaseBranch = baseBranch?.trim()
-
-  if (trimmedBaseBranch && isSafeBaseBranch(trimmedBaseBranch)) {
-    return [trimmedBaseBranch, '--', safePath]
+  const safeBaseBranch = normalizeBaseBranch(baseBranch)
+  if (safeBaseBranch !== null) {
+    return [safeBaseBranch, '--', safePath]
   }
 
   return ['--', safePath]

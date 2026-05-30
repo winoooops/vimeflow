@@ -1,9 +1,9 @@
 import type { ReactElement } from 'react'
 import { render, screen } from '@testing-library/react'
-import { describe, test, expect, vi } from 'vitest'
+import { afterAll, beforeAll, describe, expect, test, vi } from 'vitest'
 import App from './App'
 
-// Mock WorkspaceView to avoid rendering the full workspace in App tests
+// Mock WorkspaceView to avoid rendering the full workspace in App tests.
 vi.mock('./features/workspace/WorkspaceView', () => {
   const MockedWorkspaceView = (): ReactElement => (
     <div data-testid="workspace-view">Mocked WorkspaceView</div>
@@ -15,7 +15,39 @@ vi.mock('./features/workspace/WorkspaceView', () => {
   }
 })
 
+class TestWorker {
+  constructor(readonly url: string | URL) {}
+
+  postMessage(): void {
+    // No-op test worker stub.
+  }
+
+  terminate(): void {
+    // No-op test worker stub.
+  }
+
+  addEventListener(): void {
+    // No-op test worker stub.
+  }
+
+  removeEventListener(): void {
+    // No-op test worker stub.
+  }
+
+  dispatchEvent(): boolean {
+    return true
+  }
+}
+
 describe('App', () => {
+  beforeAll(() => {
+    vi.stubGlobal('Worker', TestWorker)
+  })
+
+  afterAll(() => {
+    vi.unstubAllGlobals()
+  })
+
   test('renders without crashing', () => {
     render(<App />)
     expect(document.body).toBeTruthy()

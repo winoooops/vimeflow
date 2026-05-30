@@ -443,7 +443,7 @@ mod tests {
     }
 
     /// Build a real but ephemeral `ManagedSession` for tests that need
-    /// `PtyState::try_insert` exercising. The shell is `/bin/true` so the
+    /// `PtyState::try_insert` exercising. The child exits immediately so the
     /// child exits immediately — we don't care about its output, only that
     /// `Box<dyn MasterPty + Send>` and `Box<dyn Child + Send + Sync>` are
     /// real values that satisfy `try_insert`'s signature. The `Drop` impl
@@ -460,10 +460,7 @@ mod tests {
                 pixel_height: 0,
             })
             .expect("openpty");
-        // /bin/true exits immediately with status 0 — keeps the test fast
-        // and avoids leaving long-running shells around if cleanup is
-        // skipped.
-        let cmd = CommandBuilder::new("/bin/true");
+        let cmd = CommandBuilder::new(test_true_path());
         let child = pty_pair.slave.spawn_command(cmd).expect("spawn");
         let writer = pty_pair.master.take_writer().expect("take_writer");
         ManagedSession {
@@ -529,11 +526,11 @@ mod tests {
                 pixel_height: 0,
             })
             .expect("openpty");
-        // Spawn /bin/true and immediately drop the real child handle —
+        // Spawn a no-op child and immediately drop the real child handle —
         // we only used the pair to obtain a master + writer of correct
         // trait-object types. The writer dangles when the helper exits,
         // which is fine because the test never writes to it.
-        let cmd = CommandBuilder::new("/bin/true");
+        let cmd = CommandBuilder::new(test_true_path());
         let mut helper_child = pty_pair.slave.spawn_command(cmd).expect("spawn");
         // Reap the helper so it doesn't linger as a zombie in CI. Best-effort.
         let _ = helper_child.wait();
@@ -547,6 +544,15 @@ mod tests {
             ring: Arc::new(Mutex::new(super::RingBuffer::new(64))),
             cancelled: Arc::new(AtomicBool::new(false)),
             started_at: SystemTime::now(),
+        }
+    }
+
+    #[cfg(test)]
+    fn test_true_path() -> &'static str {
+        if cfg!(target_os = "macos") {
+            "/usr/bin/true"
+        } else {
+            "/bin/true"
         }
     }
 

@@ -2,15 +2,32 @@
 
 ## Commit Message Format
 
+Types: feat, fix, refactor, docs, test, chore, perf, ci
+
+Standard commits:
+
 ```
 <type>: <description>
 
 <optional body>
 ```
 
-Types: feat, fix, refactor, docs, test, chore, perf, ci
+Codex-assisted commits:
 
-Note: Attribution disabled globally via ~/.claude/settings.json.
+```
+<type>: <description>
+
+<optional body>
+
+Co-Authored-By: codex <codex@openai.com>
+```
+
+For any commit that Codex participated in, include the
+`Co-Authored-By: codex <codex@openai.com>` trailer exactly once at the end of
+the commit message so GitHub attributes Codex as a contributor. Do not add the
+Codex trailer to commits where Codex did not participate.
+
+Note: Claude attribution disabled globally via ~/.claude/settings.json.
 
 ## Merge Strategy: Squash and Merge Only
 

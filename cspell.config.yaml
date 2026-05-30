@@ -61,6 +61,10 @@ words:
   - glassmorphism
   - catppuccin
   - Catppuccin
+  - wght # Material Symbols font-variation axis (weight)
+
+  # Custom DOM events
+  - vfliquidwake
 
   # Workspace domain abbreviations
   - sess # session
@@ -101,6 +105,17 @@ words:
   - pty
   - termios
   - statusline
+  - nvim
+  - DECRQM
+  - JetBrainsMono
+  - MesloLGS
+  - FiraCode
+  - Cascadia
+  - Menlo
+  - backgrounding
+
+  # Git apply flag — `--whitespace=nowarn` suppresses whitespace warnings
+  - nowarn
 
 ignorePaths:
   - node_modules

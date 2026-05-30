@@ -17,6 +17,7 @@ use super::super::bindings::AgentBindings;
 use super::diagnostics::short_sid;
 use super::diagnostics::{record_event_diag, EventTiming, PathHistory, TxOutcome};
 use super::transcript_state::{TranscriptStartStatus, TranscriptState};
+use crate::agent::types::AgentType;
 // `TranscriptPathValidator` and `TranscriptStreamer` are referenced as
 // `Arc<dyn ...>` in `maybe_start_transcript`'s signature, so both must be
 // in scope. `StateDecoder` is consumed only via method dispatch on
@@ -103,6 +104,10 @@ impl Drop for WatcherHandle {
 #[derive(Default, Clone)]
 pub struct AgentWatcherState {
     watchers: Arc<Mutex<HashMap<String, WatcherHandle>>>,
+    /// Which agent runs in each pty/session — populated at `insert` time so
+    /// the rename / title-sync IPC can resolve the agent for a pty. Ported
+    /// from main #265 during the epic→main reconciliation.
+    agent_types: Arc<Mutex<HashMap<String, AgentType>>>,
 }
 
 impl AgentWatcherState {
@@ -110,6 +115,7 @@ impl AgentWatcherState {
     pub fn new() -> Self {
         Self {
             watchers: Arc::new(Mutex::new(HashMap::new())),
+            agent_types: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -122,7 +128,11 @@ impl AgentWatcherState {
     /// would block any concurrent `insert` / `remove` / `active_count`
     /// for the same duration. Same fix that was already in
     /// `TranscriptState::stop` (Claude review on PR #152, F7).
-    pub fn insert(&self, session_id: String, handle: WatcherHandle) {
+    pub fn insert(&self, session_id: String, handle: WatcherHandle, agent_type: AgentType) {
+        {
+            let mut agent_types = self.agent_types.lock().expect("failed to lock agent_types");
+            agent_types.insert(session_id.clone(), agent_type);
+        }
         let _displaced = {
             let mut watchers = self.watchers.lock().expect("failed to lock watchers");
             watchers.insert(session_id, handle)
@@ -138,6 +148,10 @@ impl AgentWatcherState {
     /// removed `WatcherHandle` drops outside the mutex (Claude review
     /// on PR #152, F7).
     pub fn remove(&self, session_id: &str) -> bool {
+        {
+            let mut agent_types = self.agent_types.lock().expect("failed to lock agent_types");
+            agent_types.remove(session_id);
+        }
         let handle = {
             let mut watchers = self.watchers.lock().expect("failed to lock watchers");
             watchers.remove(session_id)
@@ -161,6 +175,20 @@ impl AgentWatcherState {
     pub(crate) fn active_count(&self) -> usize {
         let watchers = self.watchers.lock().expect("failed to lock watchers");
         watchers.len()
+    }
+
+    /// Resolve which agent runs in a given pty/session — used by the rename /
+    /// title-sync IPC (main #265). Ported during the epic→main reconciliation.
+    pub fn agent_type_for_pty(&self, pty_id: &str) -> Option<AgentType> {
+        let agent_types = self.agent_types.lock().expect("failed to lock agent_types");
+        agent_types.get(pty_id).cloned()
+    }
+
+    /// Test-only seam to set a pty's agent type without a live watcher.
+    #[cfg(test)]
+    pub(crate) fn insert_agent_type_for_test(&self, pty_id: String, agent_type: AgentType) {
+        let mut agent_types = self.agent_types.lock().expect("failed to lock agent_types");
+        agent_types.insert(pty_id, agent_type);
     }
 }
 
@@ -719,7 +747,7 @@ mod tests {
 
         let handle = WatcherHandle::new_for_test(transcript_state.clone(), sid.clone());
         let watcher_state = AgentWatcherState::new();
-        watcher_state.insert(sid.clone(), handle);
+        watcher_state.insert(sid.clone(), handle, AgentType::ClaudeCode);
 
         assert!(
             transcript_state.contains(&sid),

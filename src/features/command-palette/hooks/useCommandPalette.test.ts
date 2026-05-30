@@ -1,16 +1,30 @@
-import { beforeEach, describe, expect, test, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { renderHook, act, waitFor } from '@testing-library/react'
-import { useCommandPalette } from './useCommandPalette'
+import {
+  COMMAND_PALETTE_SHORTCUT_KEYS,
+  useCommandPalette,
+} from './useCommandPalette'
 import type { Command } from '../registry/types'
+import * as chordRegistry from '../chordRegistry'
+import type { BackendApi } from '../../../lib/backend'
 
 describe('useCommandPalette', () => {
   beforeEach(() => {
+    Object.defineProperty(navigator, 'platform', {
+      value: 'Linux x86_64',
+      configurable: true,
+    })
+    chordRegistry._resetForTest()
     // Clear any focused elements before each test
     document.body.innerHTML = ''
     if (document.activeElement && 'blur' in document.activeElement) {
       const activeElement = document.activeElement as HTMLElement
       activeElement.blur()
     }
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
   })
 
   describe('initial state', () => {
@@ -60,35 +74,118 @@ describe('useCommandPalette', () => {
       // filteredResults is derived from query ':' so it shows all default commands
       expect(result.current.filteredResults.length).toBeGreaterThan(0)
     })
+
+    test('disabled palette rejects opens and closes current state', async () => {
+      const { result, rerender } = renderHook(
+        ({ enabled }: { enabled: boolean }) =>
+          useCommandPalette(undefined, { enabled }),
+        { initialProps: { enabled: true } }
+      )
+
+      act(() => {
+        result.current.open()
+      })
+
+      expect(result.current.state.isOpen).toBe(true)
+
+      rerender({ enabled: false })
+
+      await waitFor(() => {
+        expect(result.current.state.isOpen).toBe(false)
+      })
+
+      act(() => {
+        result.current.open()
+      })
+
+      expect(result.current.state.isOpen).toBe(false)
+    })
   })
 
-  describe('keyboard trigger - Ctrl+:', () => {
-    test('opens palette when Ctrl+: is pressed', async () => {
+  describe('keyboard trigger', () => {
+    test('exports the displayed command-palette shortcut', () => {
+      expect(COMMAND_PALETTE_SHORTCUT_KEYS).toEqual(['Mod', ';'])
+    })
+
+    test('Ctrl+; opens palette after the leader window expires', () => {
+      vi.useFakeTimers()
       const { result } = renderHook(() => useCommandPalette())
 
       expect(result.current.state.isOpen).toBe(false)
 
       act(() => {
         const event = new KeyboardEvent('keydown', {
-          key: ':',
+          key: ';',
           ctrlKey: true,
           bubbles: true,
         })
         document.dispatchEvent(event)
       })
 
-      await waitFor(() => {
-        expect(result.current.state.isOpen).toBe(true)
+      expect(result.current.state.isOpen).toBe(false)
+
+      act(() => {
+        vi.advanceTimersByTime(500)
       })
+
+      expect(result.current.state.isOpen).toBe(true)
     })
 
-    test('does not open palette when bare : is pressed', async () => {
+    test('Cmd+; opens palette on macOS after the leader window expires', () => {
+      Object.defineProperty(navigator, 'platform', {
+        value: 'MacIntel',
+        configurable: true,
+      })
+      vi.useFakeTimers()
+      const { result } = renderHook(() => useCommandPalette())
+
+      act(() => {
+        const event = new KeyboardEvent('keydown', {
+          key: ';',
+          metaKey: true,
+          bubbles: true,
+        })
+        document.dispatchEvent(event)
+      })
+
+      expect(result.current.state.isOpen).toBe(false)
+
+      act(() => {
+        vi.advanceTimersByTime(500)
+      })
+
+      expect(result.current.state.isOpen).toBe(true)
+    })
+
+    test('Ctrl+; with palette closed keeps palette closed during leader window', () => {
+      vi.useFakeTimers()
+      const { result } = renderHook(() => useCommandPalette())
+
+      act(() => {
+        const event = new KeyboardEvent('keydown', {
+          key: ';',
+          ctrlKey: true,
+          bubbles: true,
+        })
+        document.dispatchEvent(event)
+      })
+
+      expect(result.current.state.isOpen).toBe(false)
+
+      act(() => {
+        vi.advanceTimersByTime(499)
+      })
+
+      expect(result.current.state.isOpen).toBe(false)
+    })
+
+    test('does not open palette when bare semicolon is pressed', async () => {
       const { result } = renderHook(() => useCommandPalette())
 
       expect(result.current.state.isOpen).toBe(false)
 
       act(() => {
-        const event = new KeyboardEvent('keydown', { key: ':' })
+        const event = new KeyboardEvent('keydown', { key: ';' })
         document.dispatchEvent(event)
       })
 
@@ -97,7 +194,8 @@ describe('useCommandPalette', () => {
       })
     })
 
-    test('toggles palette closed when Ctrl+: pressed while open', async () => {
+    test('toggles palette closed when Ctrl+; pressed while open', () => {
+      vi.useFakeTimers()
       const { result } = renderHook(() => useCommandPalette())
 
       act(() => {
@@ -108,23 +206,28 @@ describe('useCommandPalette', () => {
 
       act(() => {
         const event = new KeyboardEvent('keydown', {
-          key: ':',
+          key: ';',
           ctrlKey: true,
           bubbles: true,
         })
         document.dispatchEvent(event)
       })
 
-      await waitFor(() => {
-        expect(result.current.state.isOpen).toBe(false)
+      expect(result.current.state.isOpen).toBe(false)
+
+      act(() => {
+        vi.advanceTimersByTime(500)
       })
+
+      expect(result.current.state.isOpen).toBe(false)
     })
 
-    test('Ctrl+: trigger calls preventDefault and stopPropagation when opening', async () => {
+    test('Ctrl+; trigger consumes the event when starting the leader window', () => {
+      vi.useFakeTimers()
       const { result } = renderHook(() => useCommandPalette())
 
       const event = new KeyboardEvent('keydown', {
-        key: ':',
+        key: ';',
         ctrlKey: true,
         bubbles: true,
         cancelable: true,
@@ -132,19 +235,203 @@ describe('useCommandPalette', () => {
       const preventDefaultSpy = vi.spyOn(event, 'preventDefault')
       const stopPropagationSpy = vi.spyOn(event, 'stopPropagation')
 
+      const stopImmediatePropagationSpy = vi.spyOn(
+        event,
+        'stopImmediatePropagation'
+      )
+
       act(() => {
         document.dispatchEvent(event)
       })
 
-      await waitFor(() => {
-        expect(result.current.state.isOpen).toBe(true)
+      expect(result.current.state.isOpen).toBe(false)
+      expect(preventDefaultSpy).toHaveBeenCalled()
+      expect(stopPropagationSpy).toHaveBeenCalled()
+      expect(stopImmediatePropagationSpy).toHaveBeenCalled()
+    })
+
+    test('Ctrl+; while palette is open closes it immediately without leader delay', () => {
+      vi.useFakeTimers()
+      const { result } = renderHook(() => useCommandPalette())
+
+      act(() => {
+        result.current.open()
+      })
+
+      act(() => {
+        const event = new KeyboardEvent('keydown', {
+          key: ';',
+          ctrlKey: true,
+          bubbles: true,
+          cancelable: true,
+        })
+        document.dispatchEvent(event)
+      })
+
+      expect(result.current.state.isOpen).toBe(false)
+
+      act(() => {
+        vi.advanceTimersByTime(500)
+      })
+
+      expect(result.current.state.isOpen).toBe(false)
+    })
+
+    test('Ctrl+; then r within 500ms triggers chord without opening palette', () => {
+      vi.useFakeTimers()
+      const handler = vi.fn(() => true)
+      chordRegistry.registerChord('r', handler)
+      const { result } = renderHook(() => useCommandPalette())
+
+      act(() => {
+        const leaderEvent = new KeyboardEvent('keydown', {
+          key: ';',
+          ctrlKey: true,
+          bubbles: true,
+          cancelable: true,
+        })
+        document.dispatchEvent(leaderEvent)
+      })
+
+      expect(result.current.state.isOpen).toBe(false)
+
+      const followUpEvent = new KeyboardEvent('keydown', {
+        key: 'r',
+        bubbles: true,
+        cancelable: true,
+      })
+      const preventDefaultSpy = vi.spyOn(followUpEvent, 'preventDefault')
+      const stopPropagationSpy = vi.spyOn(followUpEvent, 'stopPropagation')
+
+      act(() => {
+        document.dispatchEvent(followUpEvent)
+      })
+
+      expect(handler).toHaveBeenCalledWith(followUpEvent)
+      expect(preventDefaultSpy).toHaveBeenCalled()
+      expect(stopPropagationSpy).toHaveBeenCalled()
+      expect(result.current.state.isOpen).toBe(false)
+
+      act(() => {
+        vi.advanceTimersByTime(500)
+      })
+
+      expect(result.current.state.isOpen).toBe(false)
+    })
+
+    test('Ctrl+; then non-chord follow-up opens palette with follow-up query', () => {
+      vi.useFakeTimers()
+      const { result } = renderHook(() => useCommandPalette())
+
+      act(() => {
+        const leaderEvent = new KeyboardEvent('keydown', {
+          key: ';',
+          ctrlKey: true,
+          bubbles: true,
+          cancelable: true,
+        })
+        document.dispatchEvent(leaderEvent)
+      })
+
+      expect(result.current.state.isOpen).toBe(false)
+
+      const followUpEvent = new KeyboardEvent('keydown', {
+        key: 'q',
+        bubbles: true,
+        cancelable: true,
+      })
+      const preventDefaultSpy = vi.spyOn(followUpEvent, 'preventDefault')
+      const stopPropagationSpy = vi.spyOn(followUpEvent, 'stopPropagation')
+
+      act(() => {
+        document.dispatchEvent(followUpEvent)
       })
 
       expect(preventDefaultSpy).toHaveBeenCalled()
       expect(stopPropagationSpy).toHaveBeenCalled()
+      expect(result.current.state.isOpen).toBe(true)
+      expect(result.current.state.query).toBe(':q')
     })
 
-    test('Ctrl+: trigger calls preventDefault and stopPropagation when closing', async () => {
+    test('Ctrl+; then Ctrl+; opens palette immediately', () => {
+      vi.useFakeTimers()
+      const { result } = renderHook(() => useCommandPalette())
+
+      act(() => {
+        const leaderEvent = new KeyboardEvent('keydown', {
+          key: ';',
+          ctrlKey: true,
+          bubbles: true,
+          cancelable: true,
+        })
+        document.dispatchEvent(leaderEvent)
+      })
+
+      const secondLeaderEvent = new KeyboardEvent('keydown', {
+        key: ';',
+        ctrlKey: true,
+        bubbles: true,
+        cancelable: true,
+      })
+      const preventDefaultSpy = vi.spyOn(secondLeaderEvent, 'preventDefault')
+      const stopPropagationSpy = vi.spyOn(secondLeaderEvent, 'stopPropagation')
+
+      act(() => {
+        document.dispatchEvent(secondLeaderEvent)
+      })
+
+      expect(preventDefaultSpy).toHaveBeenCalled()
+      expect(stopPropagationSpy).toHaveBeenCalled()
+      expect(result.current.state.isOpen).toBe(true)
+
+      act(() => {
+        vi.advanceTimersByTime(500)
+      })
+
+      expect(result.current.state.isOpen).toBe(true)
+    })
+
+    test('close() clears pending leader chord window', () => {
+      vi.useFakeTimers()
+      const handler = vi.fn(() => true)
+      chordRegistry.registerChord('r', handler)
+      const { result } = renderHook(() => useCommandPalette())
+
+      act(() => {
+        const leaderEvent = new KeyboardEvent('keydown', {
+          key: ';',
+          ctrlKey: true,
+          bubbles: true,
+          cancelable: true,
+        })
+        document.dispatchEvent(leaderEvent)
+      })
+
+      expect(result.current.state.isOpen).toBe(false)
+
+      act(() => {
+        result.current.close()
+      })
+
+      const followUpEvent = new KeyboardEvent('keydown', {
+        key: 'r',
+        bubbles: true,
+        cancelable: true,
+      })
+      const preventDefaultSpy = vi.spyOn(followUpEvent, 'preventDefault')
+      const stopPropagationSpy = vi.spyOn(followUpEvent, 'stopPropagation')
+
+      act(() => {
+        document.dispatchEvent(followUpEvent)
+      })
+
+      expect(handler).not.toHaveBeenCalled()
+      expect(preventDefaultSpy).not.toHaveBeenCalled()
+      expect(stopPropagationSpy).not.toHaveBeenCalled()
+      expect(result.current.state.isOpen).toBe(false)
+    })
+
+    test('Ctrl+; trigger calls preventDefault and stops propagation when closing', async () => {
       const { result } = renderHook(() => useCommandPalette())
 
       act(() => {
@@ -154,13 +441,18 @@ describe('useCommandPalette', () => {
       expect(result.current.state.isOpen).toBe(true)
 
       const event = new KeyboardEvent('keydown', {
-        key: ':',
+        key: ';',
         ctrlKey: true,
         bubbles: true,
         cancelable: true,
       })
       const preventDefaultSpy = vi.spyOn(event, 'preventDefault')
       const stopPropagationSpy = vi.spyOn(event, 'stopPropagation')
+
+      const stopImmediatePropagationSpy = vi.spyOn(
+        event,
+        'stopImmediatePropagation'
+      )
 
       act(() => {
         document.dispatchEvent(event)
@@ -172,9 +464,81 @@ describe('useCommandPalette', () => {
 
       expect(preventDefaultSpy).toHaveBeenCalled()
       expect(stopPropagationSpy).toHaveBeenCalled()
+      expect(stopImmediatePropagationSpy).toHaveBeenCalled()
     })
 
-    test('Ctrl+: trigger suppresses repeat events (key-hold flickering guard)', async () => {
+    test('Ctrl+; trigger overrides later document-level global shortcuts', async () => {
+      const { result } = renderHook(() => useCommandPalette())
+      const globalShortcut = vi.fn()
+      document.addEventListener('keydown', globalShortcut, { capture: true })
+
+      try {
+        act(() => {
+          const event = new KeyboardEvent('keydown', {
+            key: ';',
+            ctrlKey: true,
+            bubbles: true,
+            cancelable: true,
+          })
+          document.dispatchEvent(event)
+        })
+
+        await waitFor(() => {
+          expect(result.current.state.isOpen).toBe(true)
+        })
+
+        expect(globalShortcut).not.toHaveBeenCalled()
+      } finally {
+        document.removeEventListener('keydown', globalShortcut, {
+          capture: true,
+        })
+      }
+    })
+
+    test('toggles from the Electron main-process shortcut override', async () => {
+      let toggleFromMain: (() => void) | null = null
+      const unlisten = vi.fn()
+
+      window.vimeflow = {
+        invoke: vi.fn(),
+        listen: vi.fn(),
+        onCommandPaletteToggle: (callback: () => void): (() => void) => {
+          toggleFromMain = callback
+
+          return unlisten
+        },
+      } as unknown as BackendApi
+
+      const { result, unmount } = renderHook(() => useCommandPalette())
+
+      try {
+        expect(result.current.state.isOpen).toBe(false)
+
+        act(() => {
+          toggleFromMain?.()
+        })
+
+        await waitFor(() => {
+          expect(result.current.state.isOpen).toBe(true)
+        })
+
+        act(() => {
+          toggleFromMain?.()
+        })
+
+        await waitFor(() => {
+          expect(result.current.state.isOpen).toBe(false)
+        })
+
+        unmount()
+        expect(unlisten).toHaveBeenCalledOnce()
+      } finally {
+        delete window.vimeflow
+      }
+    })
+
+    test('Ctrl+; trigger suppresses repeat events (key-hold flickering guard)', () => {
+      vi.useFakeTimers()
       // Real-world hardware sends repeat=true events while a key is held.
       // The hook must short-circuit these via the `event.repeat` guard so
       // holding the shortcut after a real toggle doesn't flicker the
@@ -187,7 +551,7 @@ describe('useCommandPalette', () => {
 
       act(() => {
         const initialEvent = new KeyboardEvent('keydown', {
-          key: ':',
+          key: ';',
           ctrlKey: true,
           bubbles: true,
           cancelable: true,
@@ -195,12 +559,14 @@ describe('useCommandPalette', () => {
         document.dispatchEvent(initialEvent)
       })
 
-      await waitFor(() => {
-        expect(result.current.state.isOpen).toBe(true)
+      act(() => {
+        vi.advanceTimersByTime(500)
       })
 
+      expect(result.current.state.isOpen).toBe(true)
+
       const repeatEvent = new KeyboardEvent('keydown', {
-        key: ':',
+        key: ';',
         ctrlKey: true,
         bubbles: true,
         cancelable: true,
@@ -208,6 +574,11 @@ describe('useCommandPalette', () => {
       })
       const preventDefaultSpy = vi.spyOn(repeatEvent, 'preventDefault')
       const stopPropagationSpy = vi.spyOn(repeatEvent, 'stopPropagation')
+
+      const stopImmediatePropagationSpy = vi.spyOn(
+        repeatEvent,
+        'stopImmediatePropagation'
+      )
 
       act(() => {
         document.dispatchEvent(repeatEvent)
@@ -218,12 +589,14 @@ describe('useCommandPalette', () => {
       // other listeners) but does NOT toggle the palette closed.
       expect(preventDefaultSpy).toHaveBeenCalled()
       expect(stopPropagationSpy).toHaveBeenCalled()
+      expect(stopImmediatePropagationSpy).toHaveBeenCalled()
       expect(result.current.state.isOpen).toBe(true)
     })
 
-    test('capture-phase listener wins over child stopPropagation', async () => {
+    test('capture-phase listener wins over child stopPropagation', () => {
+      vi.useFakeTimers()
       // A child element calling event.stopPropagation() during the bubbling
-      // phase must NOT prevent the global Ctrl+: toggle. The hook attaches
+      // phase must NOT prevent the global Ctrl+; toggle. The hook attaches
       // with { capture: true } so it runs during the capture phase, before
       // any descendant bubble-phase listener can interfere.
       const { result } = renderHook(() => useCommandPalette())
@@ -238,7 +611,7 @@ describe('useCommandPalette', () => {
 
       act(() => {
         const event = new KeyboardEvent('keydown', {
-          key: ':',
+          key: ';',
           ctrlKey: true,
           bubbles: true,
           cancelable: true,
@@ -246,9 +619,11 @@ describe('useCommandPalette', () => {
         child.dispatchEvent(event)
       })
 
-      await waitFor(() => {
-        expect(result.current.state.isOpen).toBe(true)
+      act(() => {
+        vi.advanceTimersByTime(500)
       })
+
+      expect(result.current.state.isOpen).toBe(true)
 
       child.removeEventListener('keydown', childListener)
       child.remove()

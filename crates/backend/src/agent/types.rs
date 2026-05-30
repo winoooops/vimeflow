@@ -154,6 +154,92 @@ pub struct AgentStatusEvent {
     pub rate_limits: RateLimits,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+#[serde(rename_all = "camelCase")]
+#[allow(dead_code)] // Used by frontend
+pub struct AgentSessionTitleEvent {
+    /// PTY session ID. Same shape as AgentStatusEvent.session_id;
+    /// the frontend matches on this.
+    pub session_id: String,
+    /// Agent's own session UUID (Claude transcript `sessionId` /
+    /// Codex `session_index.jsonl` `id`). Informational; frontend
+    /// does not join on this.
+    pub agent_session_id: String,
+    /// Sanitized title string. Empty string is the explicit "clear"
+    /// signal; the frontend coerces empty to `agentTitle: undefined`.
+    pub title: String,
+    /// Where the title came from.
+    pub source: TitleSource,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+#[serde(rename_all = "kebab-case")]
+pub enum TitleSource {
+    /// Claude `ai-title` event or uncorrelated Codex `thread_name` update.
+    AiGenerated,
+    /// Claude `custom-title` event or Codex `thread_name` update correlated
+    /// with a Vimeflow `/rename` write.
+    UserRenamed,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct RenameAgentSessionRequest {
+    pub pty_id: String,
+    pub title: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+#[serde(rename_all = "kebab-case")]
+pub enum RenameAgentSessionErrorReason {
+    NoLiveAgent,
+    UnsupportedAgent,
+    EmptyTitle,
+    PtyWrite,
+}
+
+impl RenameAgentSessionErrorReason {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::NoLiveAgent => "no-live-agent",
+            Self::UnsupportedAgent => "unsupported-agent",
+            Self::EmptyTitle => "empty-title",
+            Self::PtyWrite => "pty-write",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RenameAgentSessionError {
+    pub reason: RenameAgentSessionErrorReason,
+    message: String,
+}
+
+impl RenameAgentSessionError {
+    pub fn new(reason: RenameAgentSessionErrorReason, message: impl Into<String>) -> Self {
+        Self {
+            reason,
+            message: message.into(),
+        }
+    }
+}
+
+impl std::fmt::Display for RenameAgentSessionError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for RenameAgentSessionError {}
+
 /// Event emitted when the agent's tracked working directory changes.
 ///
 /// Sourced from each adapter's structured cwd channel in its transcript

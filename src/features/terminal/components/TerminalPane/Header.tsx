@@ -1,8 +1,9 @@
 // cspell:ignore worktree
-import type { ReactElement } from 'react'
+import { useEffect, useRef, type ReactElement } from 'react'
 import type { Agent } from '../../../../agents/registry'
 import { StatusDot } from '../../../sessions/components/StatusDot'
 import type { Session, SessionStatus } from '../../../sessions/types'
+import { register, unregister } from '../../paneHeaderRefs'
 import { HeaderActions } from './HeaderActions'
 import { HeaderMetadata } from './HeaderMetadata'
 
@@ -12,10 +13,14 @@ export interface HeaderProps {
   pipStatus: SessionStatus
   worktreeName: string | null
   branch: string | null
+  cwd?: string
   added: number
   removed: number
   isFocused: boolean
   isCollapsed: boolean
+  ptyId: string
+  paneAgentTitle?: string
+  paneUserLabel?: string
   onToggleCollapse: () => void
   onClose?: () => void
 }
@@ -26,18 +31,32 @@ export const Header = ({
   pipStatus,
   worktreeName,
   branch,
+  cwd = undefined,
   added,
   removed,
   isFocused,
   isCollapsed,
+  ptyId,
+  paneAgentTitle = undefined,
+  paneUserLabel = undefined,
   onToggleCollapse,
   onClose = undefined,
 }: HeaderProps): ReactElement => {
+  const titleRef = useRef<HTMLSpanElement | null>(null)
+
   const headerStyle = isFocused
     ? {
         background: `linear-gradient(180deg, ${agent.accentDim}, rgba(13,13,28,0.0))`,
       }
     : { background: 'transparent' }
+
+  useEffect(() => {
+    if (titleRef.current) {
+      register(ptyId, titleRef.current)
+    }
+
+    return (): void => unregister(ptyId)
+  }, [ptyId])
 
   return (
     <div
@@ -64,12 +83,15 @@ export const Header = ({
       </div>
 
       <StatusDot status={pipStatus} size={6} aria-label={`pty ${pipStatus}`} />
-      <span className="min-w-0 truncate text-on-surface">{session.name}</span>
+      <span ref={titleRef} className="min-w-0 truncate text-on-surface">
+        {paneUserLabel ?? paneAgentTitle ?? session.name}
+      </span>
 
       {!isCollapsed && (
         <HeaderMetadata
           worktreeName={worktreeName}
           branch={branch}
+          cwd={cwd}
           added={added}
           removed={removed}
           session={session}

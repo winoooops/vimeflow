@@ -29,9 +29,7 @@ TODAY                                 AFTER
                                         ~ src/features/workspace/WorkspaceView.tsx +4 / -4 EDIT
                                         + src/hooks/useGitStatusRefresh.ts      +47 / -0 NEW
 
-0m     0 turns     +0 / -0            ▸ TESTS 0/0                 ← unchanged (out of scope)
-
-                                      0m     0 turns     +0 / -0  ← unchanged (agent-sourced)
+                                      ▸ TESTS 0/0
 ```
 
 (The two `FilesChanged.tsx` rows illustrate the MM dual-entry pattern — the file is staged with 8 lines added, then edited further in the working tree with 4 more added. Each row routes to the correct half of the diff when clicked.)
@@ -174,7 +172,6 @@ On WSL2, SMB, and NFS, `inotify` sometimes misses events — especially when an 
 | `src/features/workspace/WorkspaceView`                   | Lifts tab + selected-file state; wires `onOpenDiff`                                                        | Same file                                             |
 | `src/features/agent-status/components/FilesChanged`      | Refactored to consume `ChangedFile[]`; adds `onSelect`; renders `+N/-N`                                    | Same file                                             |
 | `src/features/agent-status/components/AgentStatusPanel`  | Replaces placeholder with real hook; forwards `onOpenDiff`                                                 | Same file                                             |
-| `src/features/agent-status/components/ActivityFooter`    | Unchanged                                                                                                  | —                                                     |
 | `src/features/agent-status/components/TestResults`       | Unchanged — wiring is a separate feature                                                                   | —                                                     |
 
 ---

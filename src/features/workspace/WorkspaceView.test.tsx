@@ -3,13 +3,70 @@
 // cspell:ignore worktree worktrees
 import type { ReactElement } from 'react'
 import { describe, test, expect, vi, beforeEach } from 'vitest'
-import { act, fireEvent, render, screen, within } from '@testing-library/react'
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { WorkspaceView } from './WorkspaceView'
 import { useEditorBuffer } from '../editor/hooks/useEditorBuffer'
 import type { AgentStatus } from '../agent-status/types'
 import { useAgentStatus } from '../agent-status/hooks/useAgentStatus'
 import { usePaneShortcuts } from '../terminal/hooks/usePaneShortcuts'
+import type { SessionList } from '../../bindings'
+
+const workspaceTerminalMock = vi.hoisted(() => {
+  const defaultSessionList = (): SessionList => ({
+    activeSessionId: 'sess-1',
+    sessions: [
+      {
+        id: 'sess-1',
+        cwd: '~',
+        status: {
+          kind: 'Alive' as const,
+          pid: 1234,
+          replay_data: '',
+          replay_end_offset: BigInt(0),
+        },
+      },
+    ],
+  })
+
+  const service = {
+    spawn: vi
+      .fn()
+      .mockResolvedValue({ sessionId: 'new-id', pid: 999, cwd: '~' }),
+    write: vi.fn().mockResolvedValue(undefined),
+    resize: vi.fn().mockResolvedValue(undefined),
+    kill: vi.fn().mockResolvedValue(undefined),
+    onData: vi.fn(
+      (): Promise<() => void> =>
+        // eslint-disable-next-line @typescript-eslint/no-empty-function
+        Promise.resolve((): void => {})
+    ),
+    onExit: vi.fn(
+      (): Promise<() => void> =>
+        // eslint-disable-next-line @typescript-eslint/no-empty-function
+        Promise.resolve((): void => {})
+    ),
+    onError: vi.fn(
+      (): Promise<() => void> =>
+        // eslint-disable-next-line @typescript-eslint/no-empty-function
+        Promise.resolve((): void => {})
+    ),
+    listSessions: vi.fn().mockResolvedValue(defaultSessionList()),
+    setActiveSession: vi.fn().mockResolvedValue(undefined),
+    reorderSessions: vi.fn().mockResolvedValue(undefined),
+    updateSessionCwd: vi.fn().mockResolvedValue(undefined),
+    setSessionActivityPanelCollapsed: vi.fn().mockResolvedValue(undefined),
+  }
+
+  return { defaultSessionList, service }
+})
 
 // Mock TerminalPane to avoid xterm.js issues in tests. Surface `pane.cwd`
 // as a data attribute so tests can observe the agent-cwd → pane.cwd bridge
@@ -104,50 +161,34 @@ vi.mock('../agent-status/components/AgentStatusPanel', () => ({
 
 // Mock terminal service to return initial session data synchronously
 vi.mock('../terminal/services/terminalService', () => ({
-  createTerminalService: vi.fn(() => ({
-    spawn: vi
-      .fn()
-      .mockResolvedValue({ sessionId: 'new-id', pid: 999, cwd: '~' }),
-    write: vi.fn().mockResolvedValue(undefined),
-    resize: vi.fn().mockResolvedValue(undefined),
-    kill: vi.fn().mockResolvedValue(undefined),
-    onData: vi.fn(
-      (): Promise<() => void> =>
-        // eslint-disable-next-line @typescript-eslint/no-empty-function
-        Promise.resolve((): void => {})
-    ),
-    // eslint-disable-next-line @typescript-eslint/no-empty-function
-    onExit: vi.fn((): (() => void) => (): void => {}),
-    // eslint-disable-next-line @typescript-eslint/no-empty-function
-    onError: vi.fn((): (() => void) => (): void => {}),
-    listSessions: vi.fn().mockResolvedValue({
-      activeSessionId: 'sess-1',
-      sessions: [
-        {
-          id: 'sess-1',
-          cwd: '~',
-          status: {
-            kind: 'Alive',
-            pid: 1234,
-            replay_data: '',
-            replay_end_offset: BigInt(0),
-          },
-        },
-      ],
-    }),
-    setActiveSession: vi.fn().mockResolvedValue(undefined),
-    reorderSessions: vi.fn().mockResolvedValue(undefined),
-    updateSessionCwd: vi.fn().mockResolvedValue(undefined),
-    setSessionActivityPanelCollapsed: vi.fn().mockResolvedValue(undefined),
-  })),
+  createTerminalService: vi.fn(() => workspaceTerminalMock.service),
 }))
 
 describe('WorkspaceView', () => {
   beforeEach(() => {
+    vi.clearAllMocks()
+    Object.defineProperty(navigator, 'platform', {
+      value: 'Linux x86_64',
+      configurable: true,
+    })
     capturedAgentStatusPanelProps.onOpenFile = undefined
     capturedAgentStatusPanelProps.onOpenDiff = undefined
     capturedAgentStatusPanelProps.agentStatus = undefined
-    vi.mocked(usePaneShortcuts).mockClear()
+    workspaceTerminalMock.service.spawn.mockResolvedValue({
+      sessionId: 'new-id',
+      pid: 999,
+      cwd: '~',
+    })
+    workspaceTerminalMock.service.kill.mockResolvedValue(undefined)
+    workspaceTerminalMock.service.listSessions.mockResolvedValue(
+      workspaceTerminalMock.defaultSessionList()
+    )
+    workspaceTerminalMock.service.setActiveSession.mockResolvedValue(undefined)
+    workspaceTerminalMock.service.reorderSessions.mockResolvedValue(undefined)
+    workspaceTerminalMock.service.updateSessionCwd.mockResolvedValue(undefined)
+    workspaceTerminalMock.service.setSessionActivityPanelCollapsed.mockResolvedValue(
+      undefined
+    )
 
     // Default: clean buffer with no file open. Mirrors the real hook's
     // initial state so existing tests don't see a dirty buffer or get
@@ -161,6 +202,9 @@ describe('WorkspaceView', () => {
       openFile: vi.fn().mockResolvedValue(undefined),
       saveFile: vi.fn().mockResolvedValue(undefined),
       updateContent: vi.fn(),
+      hasUnsavedChanges: vi.fn(() => false),
+      getFilePathForScope: vi.fn(() => null),
+      releaseScope: vi.fn(),
     })
   })
 
@@ -190,6 +234,579 @@ describe('WorkspaceView', () => {
     ).toBe(true)
     expect(typeof args.setSessionActivePane).toBe('function')
     expect(typeof args.setSessionLayout).toBe('function')
+  })
+
+  test('scopes the editor buffer to the active session', async () => {
+    const user = userEvent.setup()
+    const nextSessionId = '00000000-0000-4000-8000-000000000002'
+
+    const randomUUID = vi
+      .spyOn(crypto, 'randomUUID')
+      .mockReturnValue(nextSessionId)
+
+    try {
+      render(<WorkspaceView />)
+
+      await screen.findByRole('button', { name: 'session 1' })
+
+      await waitFor(() => {
+        expect(
+          vi
+            .mocked(useEditorBuffer)
+            .mock.calls.some(([, sessionId]) => sessionId === 'sess-1')
+        ).toBe(true)
+      })
+
+      await user.click(screen.getByRole('button', { name: 'new session' }))
+      await screen.findByRole('button', { name: 'session 2' })
+
+      await waitFor(() => {
+        expect(
+          vi
+            .mocked(useEditorBuffer)
+            .mock.calls.some(([, sessionId]) => sessionId === nextSessionId)
+        ).toBe(true)
+      })
+    } finally {
+      randomUUID.mockRestore()
+    }
+  })
+
+  test('prompts before removing a dirty active session', async () => {
+    const user = userEvent.setup()
+    const hasUnsavedChanges = vi.fn((scopeId: string) => scopeId === 'sess-1')
+    const releaseScope = vi.fn()
+
+    vi.mocked(useEditorBuffer).mockReturnValue({
+      filePath: 'src/current.ts',
+      originalContent: 'original',
+      currentContent: 'edits',
+      isDirty: true,
+      isLoading: false,
+      openFile: vi.fn().mockResolvedValue(undefined),
+      saveFile: vi.fn().mockResolvedValue(undefined),
+      updateContent: vi.fn(),
+      hasUnsavedChanges,
+      getFilePathForScope: vi.fn(() => null),
+      releaseScope,
+    })
+
+    render(<WorkspaceView />)
+
+    const activeTab = await screen.findByRole('tab', { name: 'session 1' })
+
+    await user.click(screen.getByRole('button', { name: 'Close session 1' }))
+
+    expect(hasUnsavedChanges).toHaveBeenCalledWith('sess-1')
+
+    const dialog = await screen.findByRole('dialog', {
+      name: /unsaved changes/i,
+    })
+
+    expect(dialog).toHaveTextContent(/before closing this session/i)
+    expect(within(dialog).getByText('src/current.ts')).toBeInTheDocument()
+    expect(activeTab).toHaveAttribute('aria-selected', 'true')
+    expect(releaseScope).not.toHaveBeenCalled()
+  })
+
+  test('restores the original active session when cancelling a dirty background close', async () => {
+    const user = userEvent.setup()
+    const hasUnsavedChanges = vi.fn((scopeId: string) => scopeId === 'second')
+
+    workspaceTerminalMock.service.listSessions.mockResolvedValue({
+      activeSessionId: 'first',
+      sessions: [
+        {
+          id: 'first',
+          cwd: '/repo/first',
+          status: {
+            kind: 'Alive',
+            pid: 1,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+        {
+          id: 'second',
+          cwd: '/repo/second',
+          status: {
+            kind: 'Alive',
+            pid: 2,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+        {
+          id: 'third',
+          cwd: '/repo/third',
+          status: {
+            kind: 'Alive',
+            pid: 3,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+      ],
+    })
+
+    vi.mocked(useEditorBuffer).mockReturnValue({
+      filePath: 'src/current.ts',
+      originalContent: 'original',
+      currentContent: 'edits',
+      isDirty: true,
+      isLoading: false,
+      openFile: vi.fn().mockResolvedValue(undefined),
+      saveFile: vi.fn().mockResolvedValue(undefined),
+      updateContent: vi.fn(),
+      hasUnsavedChanges,
+      getFilePathForScope: vi.fn(() => null),
+      releaseScope: vi.fn(),
+    })
+
+    render(<WorkspaceView />)
+
+    await screen.findByRole('tab', { name: 'first' })
+
+    await user.click(screen.getByRole('button', { name: 'Close second' }))
+    await screen.findByRole('dialog', { name: /unsaved changes/i })
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
+
+    await waitFor(() => {
+      expect(screen.getByRole('tab', { name: 'first' })).toHaveAttribute(
+        'aria-selected',
+        'true'
+      )
+    })
+    expect(screen.getByRole('tab', { name: 'second' })).toBeInTheDocument()
+  })
+
+  test('restores the original active session after discarding a dirty background close', async () => {
+    const user = userEvent.setup()
+    const hasUnsavedChanges = vi.fn((scopeId: string) => scopeId === 'second')
+    const releaseScope = vi.fn()
+
+    workspaceTerminalMock.service.listSessions.mockResolvedValue({
+      activeSessionId: 'first',
+      sessions: [
+        {
+          id: 'first',
+          cwd: '/repo/first',
+          status: {
+            kind: 'Alive',
+            pid: 1,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+        {
+          id: 'second',
+          cwd: '/repo/second',
+          status: {
+            kind: 'Alive',
+            pid: 2,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+        {
+          id: 'third',
+          cwd: '/repo/third',
+          status: {
+            kind: 'Alive',
+            pid: 3,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+      ],
+    })
+
+    vi.mocked(useEditorBuffer).mockReturnValue({
+      filePath: 'src/current.ts',
+      originalContent: 'original',
+      currentContent: 'edits',
+      isDirty: true,
+      isLoading: false,
+      openFile: vi.fn().mockResolvedValue(undefined),
+      saveFile: vi.fn().mockResolvedValue(undefined),
+      updateContent: vi.fn(),
+      hasUnsavedChanges,
+      getFilePathForScope: vi.fn(() => null),
+      releaseScope,
+    })
+
+    render(<WorkspaceView />)
+
+    await screen.findByRole('tab', { name: 'first' })
+
+    await user.click(screen.getByRole('button', { name: 'Close second' }))
+    await screen.findByRole('dialog', { name: /unsaved changes/i })
+    await user.click(screen.getByRole('button', { name: 'Discard' }))
+
+    await waitFor(() => {
+      expect(screen.queryByRole('tab', { name: 'second' })).toBeNull()
+    })
+
+    expect(screen.getByRole('tab', { name: 'first' })).toHaveAttribute(
+      'aria-selected',
+      'true'
+    )
+
+    expect(screen.getByRole('tab', { name: 'third' })).toHaveAttribute(
+      'aria-selected',
+      'false'
+    )
+    expect(releaseScope).toHaveBeenCalledWith('second')
+  })
+
+  test('removes a dirty background session after saving and restores the original active session', async () => {
+    const user = userEvent.setup()
+    const hasUnsavedChanges = vi.fn((scopeId: string) => scopeId === 'second')
+    const saveFile = vi.fn().mockResolvedValue(undefined)
+    const releaseScope = vi.fn()
+
+    const consoleWarn = vi
+      .spyOn(console, 'warn')
+      .mockImplementation((): void => undefined)
+
+    workspaceTerminalMock.service.listSessions.mockResolvedValue({
+      activeSessionId: 'first',
+      sessions: [
+        {
+          id: 'first',
+          cwd: '/repo/first',
+          status: {
+            kind: 'Alive',
+            pid: 1,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+        {
+          id: 'second',
+          cwd: '/repo/second',
+          status: {
+            kind: 'Alive',
+            pid: 2,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+        {
+          id: 'third',
+          cwd: '/repo/third',
+          status: {
+            kind: 'Alive',
+            pid: 3,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+      ],
+    })
+
+    workspaceTerminalMock.service.setActiveSession.mockRejectedValueOnce(
+      new Error('IPC failed')
+    )
+
+    vi.mocked(useEditorBuffer).mockReturnValue({
+      filePath: 'src/current.ts',
+      originalContent: 'original',
+      currentContent: 'edits',
+      isDirty: true,
+      isLoading: false,
+      openFile: vi.fn().mockResolvedValue(undefined),
+      saveFile,
+      updateContent: vi.fn(),
+      hasUnsavedChanges,
+      getFilePathForScope: vi.fn((scopeId: string) =>
+        scopeId === 'second' ? 'src/second.ts' : null
+      ),
+      releaseScope,
+    })
+
+    try {
+      render(<WorkspaceView />)
+
+      await screen.findByRole('tab', { name: 'first' })
+
+      await user.click(screen.getByRole('button', { name: 'Close second' }))
+
+      const dialog = await screen.findByRole('dialog', {
+        name: /unsaved changes/i,
+      })
+
+      expect(within(dialog).getByText('src/second.ts')).toBeInTheDocument()
+      await user.click(screen.getByRole('button', { name: 'Save' }))
+
+      await waitFor(() => {
+        expect(saveFile).toHaveBeenCalledWith('second')
+      })
+
+      await waitFor(() => {
+        expect(screen.queryByRole('tab', { name: 'second' })).toBeNull()
+      })
+
+      expect(screen.getByRole('tab', { name: 'first' })).toHaveAttribute(
+        'aria-selected',
+        'true'
+      )
+
+      expect(screen.getByRole('tab', { name: 'third' })).toHaveAttribute(
+        'aria-selected',
+        'false'
+      )
+      expect(releaseScope).toHaveBeenCalledWith('second')
+    } finally {
+      consoleWarn.mockRestore()
+    }
+  })
+
+  test('keeps dirty session close pending while save is in flight', async () => {
+    const user = userEvent.setup()
+    const hasUnsavedChanges = vi.fn((scopeId: string) => scopeId === 'second')
+    let resolveSave: (() => void) | null = null
+
+    const saveFile = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveSave = resolve
+        })
+    )
+
+    workspaceTerminalMock.service.listSessions.mockResolvedValue({
+      activeSessionId: 'first',
+      sessions: [
+        {
+          id: 'first',
+          cwd: '/repo/first',
+          status: {
+            kind: 'Alive',
+            pid: 1,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+        {
+          id: 'second',
+          cwd: '/repo/second',
+          status: {
+            kind: 'Alive',
+            pid: 2,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+      ],
+    })
+
+    vi.mocked(useEditorBuffer).mockReturnValue({
+      filePath: 'src/current.ts',
+      originalContent: 'original',
+      currentContent: 'edits',
+      isDirty: true,
+      isLoading: false,
+      openFile: vi.fn().mockResolvedValue(undefined),
+      saveFile,
+      updateContent: vi.fn(),
+      hasUnsavedChanges,
+      getFilePathForScope: vi.fn(() => null),
+      releaseScope: vi.fn(),
+    })
+
+    render(<WorkspaceView />)
+
+    await screen.findByRole('tab', { name: 'first' })
+
+    await user.click(screen.getByRole('button', { name: 'Close second' }))
+    await screen.findByRole('dialog', { name: /unsaved changes/i })
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => {
+      expect(saveFile).toHaveBeenCalledWith('second')
+    })
+
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled()
+
+    fireEvent.keyDown(document, { key: 'Escape' })
+
+    expect(
+      screen.getByRole('dialog', { name: /unsaved changes/i })
+    ).toBeInTheDocument()
+
+    act(() => {
+      resolveSave?.()
+    })
+
+    await waitFor(() => {
+      expect(screen.queryByRole('tab', { name: 'second' })).toBeNull()
+    })
+  })
+
+  test('selects the next visible session after confirming a dirty active-session close', async () => {
+    const user = userEvent.setup()
+    const hasUnsavedChanges = vi.fn((scopeId: string) => scopeId === 'first')
+
+    workspaceTerminalMock.service.listSessions.mockResolvedValue({
+      activeSessionId: 'first',
+      sessions: [
+        {
+          id: 'first',
+          cwd: '/repo/first',
+          status: {
+            kind: 'Alive',
+            pid: 1,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+        {
+          id: 'hidden-ended',
+          cwd: '/repo/hidden-ended',
+          status: { kind: 'Exited', last_exit_code: 0 },
+        },
+        {
+          id: 'third',
+          cwd: '/repo/third',
+          status: {
+            kind: 'Alive',
+            pid: 3,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+      ],
+    })
+
+    vi.mocked(useEditorBuffer).mockReturnValue({
+      filePath: 'src/current.ts',
+      originalContent: 'original',
+      currentContent: 'edits',
+      isDirty: true,
+      isLoading: false,
+      openFile: vi.fn().mockResolvedValue(undefined),
+      saveFile: vi.fn().mockResolvedValue(undefined),
+      updateContent: vi.fn(),
+      hasUnsavedChanges,
+      getFilePathForScope: vi.fn(() => null),
+      releaseScope: vi.fn(),
+    })
+
+    render(<WorkspaceView />)
+
+    await screen.findByRole('tab', { name: 'first' })
+
+    await user.click(screen.getByRole('button', { name: 'Close first' }))
+    await user.click(screen.getByRole('button', { name: 'Discard' }))
+
+    await waitFor(() => {
+      expect(screen.getByRole('tab', { name: 'third' })).toHaveAttribute(
+        'aria-selected',
+        'true'
+      )
+    })
+    expect(screen.queryByRole('tab', { name: 'hidden-ended' })).toBeNull()
+  })
+
+  test('selects the next visible session after saving a dirty active-session close', async () => {
+    const user = userEvent.setup()
+    const hasUnsavedChanges = vi.fn((scopeId: string) => scopeId === 'first')
+    const saveFile = vi.fn().mockResolvedValue(undefined)
+
+    workspaceTerminalMock.service.listSessions.mockResolvedValue({
+      activeSessionId: 'first',
+      sessions: [
+        {
+          id: 'first',
+          cwd: '/repo/first',
+          status: {
+            kind: 'Alive',
+            pid: 1,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+        {
+          id: 'hidden-ended',
+          cwd: '/repo/hidden-ended',
+          status: { kind: 'Exited', last_exit_code: 0 },
+        },
+        {
+          id: 'third',
+          cwd: '/repo/third',
+          status: {
+            kind: 'Alive',
+            pid: 3,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+      ],
+    })
+
+    vi.mocked(useEditorBuffer).mockReturnValue({
+      filePath: 'src/current.ts',
+      originalContent: 'original',
+      currentContent: 'edits',
+      isDirty: true,
+      isLoading: false,
+      openFile: vi.fn().mockResolvedValue(undefined),
+      saveFile,
+      updateContent: vi.fn(),
+      hasUnsavedChanges,
+      getFilePathForScope: vi.fn(() => null),
+      releaseScope: vi.fn(),
+    })
+
+    render(<WorkspaceView />)
+
+    await screen.findByRole('tab', { name: 'first' })
+
+    await user.click(screen.getByRole('button', { name: 'Close first' }))
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => {
+      expect(saveFile).toHaveBeenCalledWith('first')
+    })
+
+    await waitFor(() => {
+      expect(screen.getByRole('tab', { name: 'third' })).toHaveAttribute(
+        'aria-selected',
+        'true'
+      )
+    })
+    expect(screen.queryByRole('tab', { name: 'hidden-ended' })).toBeNull()
+  })
+
+  test('releases an editor scope after a clean session is removed', async () => {
+    const user = userEvent.setup()
+    const hasUnsavedChanges = vi.fn(() => false)
+    const releaseScope = vi.fn()
+
+    vi.mocked(useEditorBuffer).mockReturnValue({
+      filePath: null,
+      originalContent: '',
+      currentContent: '',
+      isDirty: false,
+      isLoading: false,
+      openFile: vi.fn().mockResolvedValue(undefined),
+      saveFile: vi.fn().mockResolvedValue(undefined),
+      updateContent: vi.fn(),
+      hasUnsavedChanges,
+      getFilePathForScope: vi.fn(() => null),
+      releaseScope,
+    })
+
+    render(<WorkspaceView />)
+
+    await screen.findByRole('tab', { name: 'session 1' })
+
+    await user.click(screen.getByRole('button', { name: 'Close session 1' }))
+
+    expect(hasUnsavedChanges).toHaveBeenCalledWith('sess-1')
+    await waitFor(() => {
+      expect(releaseScope).toHaveBeenCalledWith('sess-1')
+    })
   })
 
   test('applies correct grid layout with 4 columns (dynamic sidebar width)', () => {
@@ -835,6 +1452,9 @@ describe('WorkspaceView', () => {
       openFile: openFileMock,
       saveFile: vi.fn().mockResolvedValue(undefined),
       updateContent: vi.fn(),
+      hasUnsavedChanges: vi.fn(() => false),
+      getFilePathForScope: vi.fn(() => null),
+      releaseScope: vi.fn(),
     })
 
     render(<WorkspaceView />)
@@ -865,6 +1485,9 @@ describe('WorkspaceView', () => {
       openFile: openFileMock,
       saveFile: vi.fn().mockResolvedValue(undefined),
       updateContent: vi.fn(),
+      hasUnsavedChanges: vi.fn(() => true),
+      getFilePathForScope: vi.fn(() => null),
+      releaseScope: vi.fn(),
     })
 
     render(<WorkspaceView />)
@@ -898,6 +1521,9 @@ describe('WorkspaceView', () => {
       openFile: openFileMock,
       saveFile: vi.fn().mockResolvedValue(undefined),
       updateContent: vi.fn(),
+      hasUnsavedChanges: vi.fn(() => false),
+      getFilePathForScope: vi.fn(() => null),
+      releaseScope: vi.fn(),
     })
 
     render(<WorkspaceView />)
@@ -916,7 +1542,7 @@ describe('WorkspaceView', () => {
     act(() => {
       document.dispatchEvent(
         new KeyboardEvent('keydown', {
-          key: ':',
+          key: ';',
           ctrlKey: true,
           bubbles: true,
         })

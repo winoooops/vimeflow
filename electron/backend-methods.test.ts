@@ -6,6 +6,7 @@ describe('isAllowedBackendMethod', () => {
   test.each([
     'spawn_pty',
     'write_pty',
+    'rename_agent_session',
     'resize_pty',
     'kill_pty',
     'list_sessions',
@@ -23,6 +24,9 @@ describe('isAllowedBackendMethod', () => {
     'git_branch',
     'git_worktree_name',
     'get_git_diff',
+    'stage_file',
+    'unstage_file',
+    'discard_file',
     'start_git_watcher',
     'stop_git_watcher',
   ])('allows %s', (method) => {

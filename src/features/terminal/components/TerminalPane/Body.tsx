@@ -21,8 +21,10 @@ import {
   type RestoreData,
   type NotifyPaneReady,
 } from '../../hooks/useTerminal'
+import { useTerminalClipboard } from '../../hooks/useTerminalClipboard'
 import { type ITerminalService } from '../../services/terminalService'
 import { registerPtySession, unregisterPtySession } from '../../ptySessionMap'
+import { TerminalContextMenu } from '../TerminalContextMenu'
 import {
   type AgentCwdSource,
   isDescendantPath,
@@ -32,6 +34,11 @@ import {
 } from './agentCwdGuard'
 import { parseAgentCwdHint } from './agentCwdHint'
 import { parseOsc7Cwd, WINDOWS_DRIVE_PATH } from './osc7'
+import {
+  TERMINAL_FONT_FAMILY,
+  TERMINAL_FONT_SIZE,
+  loadTerminalFonts,
+} from './terminalFont'
 import '@xterm/xterm/css/xterm.css'
 
 const AGENT_CWD_HINT_BUFFER_SIZE = 4096
@@ -212,6 +219,7 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
   const flushFitRef = useRef<(() => void) | null>(null)
   const flushFitSessionIdRef = useRef<string | null>(null)
   const pendingDeferredFitFlushRef = useRef(false)
+  const pendingDeferredRefreshAfterFitRef = useRef(false)
   const agentCwdOutputBufferRef = useRef('')
   const agentCwdHintContextRef = useRef('')
   const isRestoringOutputRef = useRef(false)
@@ -494,6 +502,7 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
     let canvasAddon: CanvasAddon | null = null
     let fitFrameId: number | null = null
     let lastFitSize: { width: number; height: number } | null = null
+    let disposed = false
 
     const cancelScheduledFit = (): void => {
       if (fitFrameId !== null) {
@@ -543,16 +552,32 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
       })
     }
 
-    const flushFit = (targetFitAddon: FitAddon): void => {
+    const flushFit = (
+      targetFitAddon: FitAddon,
+      options: { force?: boolean; afterFit?: () => void } = {}
+    ): void => {
       cancelScheduledFit()
 
-      fitFrameId = window.requestAnimationFrame(() => {
-        fitFrameId = null
-        if (deferFitRef.current) {
-          return
-        }
-        fitIfNeeded(targetFitAddon)
-      })
+      const flushWithRetry = (): void => {
+        fitFrameId = window.requestAnimationFrame(() => {
+          fitFrameId = null
+          if (deferFitRef.current) {
+            return
+          }
+          const width = node.offsetWidth
+          const didFit = fitIfNeeded(targetFitAddon, options.force ?? false)
+          if (!didFit && width <= 0 && options.afterFit) {
+            flushWithRetry()
+
+            return
+          }
+          if (didFit) {
+            options.afterFit?.()
+          }
+        })
+      }
+
+      flushWithRetry()
     }
 
     const fitInitialWhenReady = (targetFitAddon: FitAddon): boolean => {
@@ -582,9 +607,8 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
       // Create new terminal instance
       newTerminal = new Terminal({
         cursorBlink: true,
-        fontSize: 14,
-        fontFamily:
-          '"JetBrains Mono", "JetBrainsMono Nerd Font", "Pure Nerd Font", "Courier New", Courier, monospace',
+        fontSize: TERMINAL_FONT_SIZE,
+        fontFamily: TERMINAL_FONT_FAMILY,
         theme: toXtermTheme(catppuccinMocha),
         scrollback: 10000,
         allowProposedApi: true,
@@ -682,17 +706,101 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
       terminalCache.set(sessionId, { terminal: newTerminal, fitAddon })
     }
 
-    cancelScheduledFitRef.current = cancelScheduledFit
-    flushFitRef.current = (): void => {
+    const refreshAfterFontFit = (): void => {
+      newTerminal.refresh(0, Math.max(newTerminal.rows - 1, 0))
+    }
+
+    const clearPendingDeferredFit = (): void => {
+      pendingDeferredFitFlushRef.current = false
+      pendingDeferredRefreshAfterFitRef.current = false
+    }
+
+    const refitAfterTerminalFontsSettle = (): void => {
+      if (disposed) {
+        return
+      }
+
+      lastFitSize = null
+
+      if (deferFitRef.current) {
+        pendingDeferredFitFlushRef.current = true
+        pendingDeferredRefreshAfterFitRef.current = true
+
+        return
+      }
+
+      pendingDeferredRefreshAfterFitRef.current = true
+      flushFit(fitAddon, {
+        force: true,
+        afterFit: (): void => {
+          clearPendingDeferredFit()
+          refreshAfterFontFit()
+        },
+      })
+    }
+
+    const refitWhenTerminalFontsSettle = async (): Promise<void> => {
+      const terminalFontsLoaded = loadTerminalFonts()
+
+      if (!terminalFontsLoaded) {
+        return
+      }
+
+      try {
+        await terminalFontsLoaded
+      } catch {
+        // Fall back to the available system stack, then remeasure whatever loaded.
+      }
+
+      refitAfterTerminalFontsSettle()
+    }
+
+    if (!cached) {
+      void refitWhenTerminalFontsSettle()
+    }
+
+    const flushDeferredFit = (): void => {
+      if (pendingDeferredRefreshAfterFitRef.current) {
+        pendingDeferredFitFlushRef.current = false
+        flushFit(fitAddon, {
+          force: true,
+          afterFit: (): void => {
+            clearPendingDeferredFit()
+            refreshAfterFontFit()
+          },
+        })
+
+        return
+      }
+
+      pendingDeferredFitFlushRef.current = false
       flushFit(fitAddon)
     }
+
+    const refreshAfterPendingInitialFit = (): void => {
+      if (!pendingDeferredRefreshAfterFitRef.current) {
+        pendingDeferredFitFlushRef.current = false
+
+        return
+      }
+
+      clearPendingDeferredFit()
+      refreshAfterFontFit()
+    }
+
+    cancelScheduledFitRef.current = cancelScheduledFit
+    flushFitRef.current = flushDeferredFit
     flushFitSessionIdRef.current = sessionId
 
-    if (pendingDeferredFitFlushRef.current && !deferFitRef.current) {
-      pendingDeferredFitFlushRef.current = false
-
+    if (
+      (pendingDeferredFitFlushRef.current ||
+        pendingDeferredRefreshAfterFitRef.current) &&
+      !deferFitRef.current
+    ) {
       if (!didInitialFit) {
-        flushFit(fitAddon)
+        flushDeferredFit()
+      } else {
+        refreshAfterPendingInitialFit()
       }
     }
 
@@ -739,6 +847,24 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
     node.addEventListener('focusin', handleFocusIn)
     node.addEventListener('focusout', handleFocusOut)
 
+    // Root cause B (Claude + Codex consensus): xterm renders on a debounced
+    // animation-frame loop and never forces a repaint when the OS window
+    // regains focus or visibility. The browser throttles that loop while the
+    // window is covered or unfocused, so rows that streamed in while we were
+    // away stay stale until something forces a repaint (the buffer is correct
+    // — a text selection fixes only the pixels). Repaint on focus/visibility
+    // recovery to flush them.
+    const repaintOnWindowVisible = (): void => {
+      if (document.visibilityState !== 'visible') {
+        return
+      }
+
+      newTerminal.refresh(0, Math.max(newTerminal.rows - 1, 0))
+    }
+
+    window.addEventListener('focus', repaintOnWindowVisible)
+    document.addEventListener('visibilitychange', repaintOnWindowVisible)
+
     // P2 Fix: Add ResizeObserver to detect container size changes
     // When the container resizes (e.g., window resize, panel collapse),
     // fit the terminal which will trigger the onResize event above.
@@ -755,6 +881,9 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
     // Cleanup: disconnect observers and dispose terminal from cache
     // When Body unmounts, the session is closed — free resources
     return (): void => {
+      disposed = true
+      pendingDeferredFitFlushRef.current = false
+      pendingDeferredRefreshAfterFitRef.current = false
       cancelScheduledFit()
       if (flushFitSessionIdRef.current === sessionId) {
         cancelScheduledFitRef.current = null
@@ -765,6 +894,8 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
       resizeDisposable.dispose()
       node.removeEventListener('focusin', handleFocusIn)
       node.removeEventListener('focusout', handleFocusOut)
+      window.removeEventListener('focus', repaintOnWindowVisible)
+      document.removeEventListener('visibilitychange', repaintOnWindowVisible)
       // Dispose the renderer addon (and any WebGL context-loss subscription)
       // before the terminal itself — order matters: the addon holds
       // references to the terminal's renderer state and must clean up while
@@ -785,6 +916,13 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
     }
   }, [sessionId])
 
+  const clipboard = useTerminalClipboard({
+    terminal,
+    // TODO: surface clipboard failures via a visible status/error channel.
+    onCopyError: (): void => undefined,
+    onPasteError: (): void => undefined,
+  })
+
   return (
     <div
       data-testid="terminal-pane-body-wrapper"
@@ -795,6 +933,18 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
         data-testid="terminal-pane"
         data-pty-id={sessionId}
         className="h-full w-full"
+      />
+      <TerminalContextMenu
+        isOpen={clipboard.isOpen}
+        position={clipboard.openAt}
+        onClose={clipboard.close}
+        onCopy={(): void => {
+          void clipboard.copy()
+        }}
+        onPaste={(): void => {
+          void clipboard.paste()
+        }}
+        canCopy={clipboard.hasSelection}
       />
     </div>
   )

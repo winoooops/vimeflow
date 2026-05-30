@@ -937,6 +937,157 @@ describe('useAgentStatus', () => {
     expect(result.current.agentType).toBe('claude-code')
   })
 
+  test('restarts watcher and clears run state when detected agent pid changes in same pane', async () => {
+    let detectedPid = 111
+
+    vi.mocked(invoke).mockImplementation(((cmd: string) => {
+      if (cmd === 'detect_agent_in_session') {
+        return Promise.resolve({
+          sessionId: 'pty-session-1',
+          agentType: 'codex',
+          pid: detectedPid,
+        })
+      }
+
+      return Promise.resolve(null)
+    }) as unknown as typeof invoke)
+
+    const { result } = renderHook(() => useAgentStatus('session-1'))
+
+    await vi.waitFor(() => {
+      expect(result.current.isActive).toBe(true)
+      expect(result.current.agentType).toBe('codex')
+      expect(invoke).toHaveBeenCalledWith('start_agent_watcher', {
+        sessionId: 'pty-session-1',
+      })
+    })
+
+    await vi.waitFor(() => {
+      expect(eventListeners.get('agent-status')?.length).toBe(1)
+      expect(eventListeners.get('agent-tool-call')?.length).toBe(1)
+    })
+
+    act(() => {
+      emit('agent-status', {
+        sessionId: 'pty-session-1',
+        modelId: 'gpt-5.5',
+        modelDisplayName: 'GPT-5.5',
+        version: '0.133.0',
+        agentSessionId: 'codex-old',
+        contextWindow: {
+          usedPercentage: 77,
+          remainingPercentage: 23,
+          contextWindowSize: 258000,
+          totalInputTokens: 198000,
+          totalOutputTokens: 0,
+          currentUsage: {
+            inputTokens: 198000,
+            outputTokens: 0,
+            cacheCreationInputTokens: 0,
+            cacheReadInputTokens: 198000,
+          },
+        },
+        cost: null,
+        rateLimits: null,
+      })
+
+      emit('agent-tool-call', {
+        sessionId: 'pty-session-1',
+        toolUseId: 'toolu_old',
+        tool: 'exec_command',
+        args: '{"cmd":"old"}',
+        status: 'done',
+        timestamp: '2026-05-26T00:00:00Z',
+        durationMs: 10,
+      })
+    })
+
+    expect(result.current.agentSessionId).toBe('codex-old')
+    expect(result.current.contextWindow?.usedPercentage).toBe(77)
+    expect(result.current.toolCalls.total).toBe(1)
+
+    detectedPid = 222
+
+    await act(async () => {
+      vi.advanceTimersByTime(500)
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    await vi.waitFor(() => {
+      const startCalls = vi
+        .mocked(invoke)
+        .mock.calls.filter(([cmd]) => cmd === 'start_agent_watcher')
+      expect(startCalls).toHaveLength(2)
+    })
+
+    expect(invoke).toHaveBeenCalledWith('stop_agent_watcher', {
+      sessionId: 'pty-session-1',
+    })
+    expect(result.current.isActive).toBe(true)
+    expect(result.current.agentType).toBe('codex')
+    expect(result.current.agentSessionId).toBeNull()
+    expect(result.current.contextWindow).toBeNull()
+    expect(result.current.toolCalls.total).toBe(0)
+    expect(result.current.recentToolCalls).toEqual([])
+  })
+
+  test('clears run-scoped status when agentSessionId changes on same pane', async () => {
+    const { result } = renderHook(() => useAgentStatus('session-1'))
+
+    await vi.waitFor(() => {
+      expect(eventListeners.get('agent-status')?.length).toBe(1)
+    })
+
+    act(() => {
+      emit('agent-status', {
+        sessionId: 'pty-session-1',
+        modelId: 'gpt-5.5',
+        modelDisplayName: 'GPT-5.5',
+        version: '0.133.0',
+        agentSessionId: 'codex-old',
+        contextWindow: {
+          usedPercentage: 77,
+          remainingPercentage: 23,
+          contextWindowSize: 258000,
+          totalInputTokens: 198000,
+          totalOutputTokens: 0,
+          currentUsage: null,
+        },
+        cost: {
+          totalCostUsd: null,
+          totalDurationMs: 5000,
+          totalApiDurationMs: 4000,
+          totalLinesAdded: 851,
+          totalLinesRemoved: 537,
+        },
+        rateLimits: null,
+      })
+    })
+
+    expect(result.current.agentSessionId).toBe('codex-old')
+    expect(result.current.contextWindow?.usedPercentage).toBe(77)
+    expect(result.current.cost?.totalLinesAdded).toBe(851)
+
+    act(() => {
+      emit('agent-status', {
+        sessionId: 'pty-session-1',
+        modelId: 'gpt-5.5',
+        modelDisplayName: 'GPT-5.5',
+        version: '0.133.0',
+        agentSessionId: 'codex-new',
+        contextWindow: null,
+        cost: null,
+        rateLimits: null,
+      })
+    })
+
+    expect(result.current.agentSessionId).toBe('codex-new')
+    expect(result.current.contextWindow).toBeNull()
+    expect(result.current.cost).toBeNull()
+    expect(result.current.toolCalls.total).toBe(0)
+  })
+
   test('does not invoke start_agent_watcher again while a prior start is in flight', async () => {
     let resolveStart: (() => void) | undefined
 
@@ -1418,5 +1569,117 @@ describe('useAgentStatus', () => {
 
     expect(result.current.isActive).toBe(false)
     expect(result.current.agentExited).toBe(false)
+  })
+
+  test('clears run-scoped status after the exit-hold expires when an agent exits in a live pane', async () => {
+    // Bug: exiting an agent inside a pane WITHOUT closing the pane left the
+    // activity panel painting the dead agent's frozen snapshot — context
+    // window, tool-call counts, and the activity feed — indefinitely. The
+    // exit-collapse only flipped isActive/agentExited and retained every
+    // run-scoped metric, and the panel renders those fields unconditionally.
+    // After EXIT_HOLD_MS the panel must return to a clean idle state, not a
+    // stale snapshot of the agent that just exited.
+    const PTY_ID = 'pty-session-1'
+    let detectCallCount = 0
+
+    vi.mocked(invoke).mockImplementation(((cmd: string) => {
+      if (cmd === 'detect_agent_in_session') {
+        detectCallCount += 1
+        // First poll: agent present. Subsequent polls: agent exited but the
+        // PTY/pane stays alive (user typed `exit`, dropped back to the shell).
+        if (detectCallCount === 1) {
+          return Promise.resolve({
+            sessionId: PTY_ID,
+            agentType: 'claudeCode',
+            pid: 4242,
+          })
+        }
+
+        return Promise.resolve(null)
+      }
+
+      return Promise.resolve(null)
+    }) as unknown as typeof invoke)
+
+    const { result } = renderHook(() => useAgentStatus('session-1'))
+
+    // Agent detected → active, all listeners attached.
+    await vi.waitFor(() => {
+      expect(result.current.isActive).toBe(true)
+      expect(eventListeners.get('agent-status')?.length).toBe(1)
+      expect(eventListeners.get('agent-tool-call')?.length).toBe(1)
+      expect(eventListeners.get('agent-turn')?.length).toBe(1)
+    })
+
+    // Populate the run-scoped metrics the panel renders.
+    act(() => {
+      emit('agent-status', {
+        sessionId: PTY_ID,
+        modelId: 'claude-opus-4-7',
+        modelDisplayName: 'Claude Opus 4.7',
+        version: '2.1.0',
+        agentSessionId: 'cc-session',
+        contextWindow: {
+          usedPercentage: 8,
+          remainingPercentage: 92,
+          contextWindowSize: 1000000,
+          totalInputTokens: 88964,
+          totalOutputTokens: 0,
+          currentUsage: {
+            inputTokens: 80000,
+            outputTokens: 0,
+            cacheCreationInputTokens: 140,
+            cacheReadInputTokens: 80000,
+          },
+        },
+        cost: null,
+        rateLimits: null,
+      })
+
+      emit('agent-tool-call', {
+        sessionId: PTY_ID,
+        toolUseId: 'toolu_1',
+        tool: 'Bash',
+        args: '{"cmd":"echo hi"}',
+        status: 'done',
+        timestamp: '2026-05-27T00:00:00Z',
+        durationMs: 12,
+      })
+
+      emit('agent-turn', {
+        sessionId: PTY_ID,
+        numTurns: 6,
+      })
+    })
+
+    expect(result.current.contextWindow?.usedPercentage).toBe(8)
+    expect(result.current.toolCalls.total).toBe(1)
+    expect(result.current.recentToolCalls).toHaveLength(1)
+    expect(result.current.numTurns).toBe(6)
+
+    // Agent exits: next poll returns null → exit-hold begins. The final
+    // snapshot is intentionally held for EXIT_HOLD_MS (5s).
+    await act(async () => {
+      vi.advanceTimersByTime(500)
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(result.current.agentExited).toBe(true)
+    expect(result.current.toolCalls.total).toBe(1) // still held during the hold window
+
+    // After the exit-hold expires, the panel resets to a clean idle state.
+    await act(async () => {
+      vi.advanceTimersByTime(6000)
+      await Promise.resolve()
+    })
+
+    expect(result.current.isActive).toBe(false)
+    expect(result.current.agentExited).toBe(false)
+    expect(result.current.contextWindow).toBeNull()
+    expect(result.current.toolCalls.total).toBe(0)
+    expect(result.current.toolCalls.byType).toEqual({})
+    expect(result.current.recentToolCalls).toEqual([])
+    expect(result.current.numTurns).toBe(0)
   })
 })

@@ -1,5 +1,5 @@
 import { type ReactElement } from 'react'
-import type { Session } from '../types'
+import type { Session, SessionCloseResult } from '../types'
 import { agentForSession } from '../utils/agentForSession'
 import {
   getVisibleSessions,
@@ -11,7 +11,7 @@ export interface TabsProps {
   sessions: Session[]
   activeSessionId: string | null
   onSelect: (sessionId: string) => void
-  onClose: (sessionId: string) => void
+  onClose: (sessionId: string) => SessionCloseResult
   onNew: () => void
 }
 
@@ -55,13 +55,17 @@ export const Tabs = ({
     // the visible next-tab id. Order matters: onClose runs first so
     // removeSession can do its work (kill IPC, drop from list, pick its
     // own fallback); the trailing onSelect then overrides the selection
-    // to a tab the user can actually see. This way an onClose failure
-    // cannot strand the selection on a removed id.
+    // to a tab the user can actually see. Returning false is the only
+    // cancellation sentinel; void means close/navigation may proceed.
     const nextId =
       sessionId === activeSessionId
         ? pickNextVisibleSessionId(sessions, sessionId, activeSessionId)
         : undefined
-    onClose(sessionId)
+    const didClose = onClose(sessionId)
+    if (didClose === false) {
+      return
+    }
+
     if (nextId !== undefined) {
       onSelect(nextId)
       // WAI-ARIA Tabs Pattern §4.4.3: after a close, focus must move

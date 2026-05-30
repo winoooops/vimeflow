@@ -50,6 +50,8 @@ crates/backend/
 
 Quick reference: no semicolons, single quotes, trailing commas (es5), arrow-function components only, explicit return types on exports, no `console.log`, `test()` not `it()`, CSpell spell-checking, ESM-only.
 
+Commit messages for Codex-assisted changes must include the trailer `Co-Authored-By: codex <codex@openai.com>` exactly once at the end. See `rules/common/git-workflow.md` for the full commit format.
+
 **For complete standards**, read these files in `rules/`:
 
 - `rules/common/coding-style.md` — immutability, file organization, error handling, input validation
@@ -96,6 +98,7 @@ Follow the review process and checklist defined in `agents/code-reviewer.md`. Ke
 ## Review Guidelines
 
 - **Scope boundary (mandatory)**: Review ONLY the lines added or modified in the diff. Pre-existing bugs in unchanged code are out of scope — note them as follow-ups in a separate "Out-of-Scope Observations" section, never as findings with severity. Do not cascade into related files or chase increasingly niche edge cases in working code. Exception: actively exploitable CRITICAL security vulnerabilities.
+- **Illustrative docs are out of scope**: Static, hand-authored explainer/diagram files under `docs/**` (e.g. `docs/diagrams/*.html`, `docs/design/*/code.html`) carry no application logic, runtime code, or tests. They are documentation. Do not line-by-line review them, raise CSS/SVG/markup nits, or treat them as behavioral surface; at most confirm links resolve. These files are also Prettier-ignored.
 - Severity levels: CRITICAL (security/data loss), HIGH (bugs), MEDIUM (maintainability), LOW (style)
 - Flag any hardcoded secrets, `console.log` statements, or `any` types
 - Approval: no CRITICAL/HIGH = approve; HIGH only = warn; CRITICAL = block

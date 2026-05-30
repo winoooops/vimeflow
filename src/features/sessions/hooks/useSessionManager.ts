@@ -1,6 +1,9 @@
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { flushSync } from 'react-dom'
 import type { LayoutId, Pane, Session } from '../types'
+import type { AgentSessionTitleEvent } from '../../../bindings'
+import { listen, type UnlistenFn } from '../../../lib/backend'
+import { isDesktop } from '../../../lib/environment'
 import type { ITerminalService } from '../../terminal/services/terminalService'
 import { LAYOUTS } from '../../terminal/components/SplitView/layouts'
 import type {
@@ -25,37 +28,16 @@ import {
   nextFreePaneId,
 } from '../utils/paneLifecycle'
 import { deriveSessionStatus } from '../utils/sessionStatus'
+import {
+  deleteActivityPanelCollapsed,
+  writeActivityPanelCollapsed,
+} from '../utils/activityPanelCollapsedStore'
 import { usePtyExitListener } from '../../terminal/hooks/usePtyExitListener'
 import { useAutoCreateOnEmpty } from './useAutoCreateOnEmpty'
 import { useActiveSessionController } from './useActiveSessionController'
 import { useSessionRestore } from './useSessionRestore'
 
 export type { RestoreData, PaneEventHandler, NotifyPaneReadyResult }
-
-const absorbCollapseQueueFailure = async (
-  promise: Promise<void>
-): Promise<void> => {
-  try {
-    await promise
-  } catch {
-    return
-  }
-}
-
-const persistActivityPanelCollapsed = async (
-  service: ITerminalService,
-  prior: Promise<void>,
-  id: string,
-  collapsed: boolean
-): Promise<void> => {
-  await absorbCollapseQueueFailure(prior)
-  await service.setSessionActivityPanelCollapsed({ id, collapsed })
-}
-
-interface CollapseChainEntry {
-  tail: Promise<void>
-  originalValue: boolean | null
-}
 
 export interface SessionManager {
   sessions: Session[]
@@ -79,6 +61,18 @@ export interface SessionManager {
    */
   restartSession: (id: string) => void
   renameSession: (id: string, name: string) => void
+  /**
+   * Set a per-pane user label (overrides `pane.agentTitle` and
+   * `session.name` in the Header). Always in-memory; no IPC.
+   * Pass `undefined` to clear. Trims whitespace; empty post-trim
+   * input clears the label. `ifCurrentLabel` makes the update conditional,
+   * used by async rollback paths so newer labels survive stale failures.
+   */
+  setPaneUserLabel: (
+    ptyId: string,
+    label: string | undefined,
+    options?: SetPaneUserLabelOptions
+  ) => void
   reorderSessions: (reordered: Session[]) => void
   /** Update a pane's live cwd and the backend PTY cwd cache. */
   updatePaneCwd: (sessionId: string, paneId: string, cwd: string) => void
@@ -87,11 +81,14 @@ export interface SessionManager {
     paneId: string,
     agentType: Session['agentType']
   ) => void
-  setPaneActivityPanelCollapsed: (
+  /** Toggle the agent activity panel collapse state for ALL panes in the
+   *  session at once. UI-only state — persisted via localStorage so the
+   *  preference survives restart without flowing through the agent/PTY
+   *  lifecycle. */
+  setSessionActivityPanelCollapsed: (
     sessionId: string,
-    paneId: string,
     collapsed: boolean
-  ) => Promise<void>
+  ) => void
   /**
    * Update the stable session baseline cwd in React state only.
    *
@@ -129,6 +126,18 @@ export interface SessionManager {
     ptyId: string,
     handler: PaneEventHandler
   ) => NotifyPaneReadyResult
+}
+
+export interface SetPaneUserLabelOptions {
+  ifCurrentLabel?: string | undefined
+}
+
+const normalizePaneUserLabel = (
+  label: string | undefined
+): string | undefined => {
+  const trimmed = label?.trim()
+
+  return trimmed && trimmed.length > 0 ? trimmed : undefined
 }
 
 /**
@@ -284,6 +293,83 @@ export const useSessionManager = (
     onExit: (ptyId) => onPtyExitRef.current(ptyId),
   })
 
+  useEffect(() => {
+    if (!isDesktop()) {
+      return
+    }
+
+    let cancelled = false
+    let unlistenFn: UnlistenFn | undefined
+
+    void (async (): Promise<void> => {
+      let fn: UnlistenFn
+      try {
+        fn = await listen<AgentSessionTitleEvent>(
+          'agent-session-title',
+          (payload) => {
+            const cleared = payload.title.length === 0
+            const nextTitle = cleared ? undefined : payload.title
+            const nextSource = cleared ? undefined : payload.source
+
+            setSessions((prev) => {
+              const matchExists = prev.some((session) =>
+                session.panes.some((pane) => pane.ptyId === payload.sessionId)
+              )
+              if (!matchExists) {
+                return prev
+              }
+
+              return prev.map((session) => ({
+                ...session,
+                panes: session.panes.map((pane) => {
+                  if (pane.ptyId !== payload.sessionId) {
+                    return pane
+                  }
+
+                  // A matching confirmed `/rename` (`user-renamed`) means the
+                  // agent transcript has caught up with the temporary local
+                  // label, so let `agentTitle` render. Other title updates must
+                  // not erase an explicit local pane label unless the agent
+                  // watcher is clearing title state for the session lifecycle.
+                  const confirmedCurrentUserLabel =
+                    payload.source === 'user-renamed' &&
+                    pane.userLabel === payload.title
+
+                  const nextUserLabel =
+                    cleared || confirmedCurrentUserLabel
+                      ? undefined
+                      : pane.userLabel
+
+                  return {
+                    ...pane,
+                    agentTitle: nextTitle,
+                    agentTitleSource: nextSource,
+                    userLabel: nextUserLabel,
+                  }
+                }),
+              }))
+            })
+          }
+        )
+      } catch {
+        return
+      }
+
+      // cancelled may flip while the listener promise is awaiting.
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+      if (cancelled) {
+        fn()
+      } else {
+        unlistenFn = fn
+      }
+    })()
+
+    return (): void => {
+      cancelled = true
+      unlistenFn?.()
+    }
+  }, [])
+
   // Create session — spawn + append, then mark the pane as 'attach'.
   //
   // The PTY is created up-front in this hook (so we get the canonical id and
@@ -320,13 +406,6 @@ export const useSessionManager = (
   // and fires the auto-create that the round-10 comment promised.
   const [pendingSpawns, setPendingSpawns] = useState(0)
   const pendingPaneOps = useRef<Set<string>>(new Set())
-  // Chain entry carries the persisted-pre-call value alongside the in-flight
-  // tail. originalValue is captured once per chain run — when the first call
-  // for a (sessionId, paneId) starts — and reused by every subsequent call
-  // that piggybacks on the chain. The tail acquired during back-to-back
-  // failures rolls UI back to originalValue, not to whichever optimistic
-  // value happened to be on screen when the call was issued.
-  const collapseChainRef = useRef<Map<string, CollapseChainEntry>>(new Map())
 
   const createSession = useCallback((): void => {
     setPendingSpawns((c) => c + 1)
@@ -371,6 +450,7 @@ export const useSessionManager = (
               workingDirectory: result.cwd,
               agentType: 'generic',
               layout: 'single',
+              activityPanelCollapsed: false,
               panes: [
                 {
                   id: 'p0',
@@ -379,7 +459,6 @@ export const useSessionManager = (
                   agentType: 'generic',
                   status: 'running',
                   active: true,
-                  activityPanelCollapsed: null,
                   pid: result.pid,
                   restoreData,
                 },
@@ -557,6 +636,14 @@ export const useSessionManager = (
           unregisterPtySession(ptyId)
         }
         restoreDataRef.current.delete(target.id)
+
+        // Replaces the implicit cleanup the Rust PTY cache used to do on
+        // session exit. Without it, every closed session leaves a stale
+        // `vimeflow:sessions:activityPanelCollapsed:<id>` key in
+        // localStorage forever. Runs only on the happy path (after both
+        // kill phases settle) so a partial-kill bail-out doesn't drop
+        // the preference for a session the user can still see.
+        deleteActivityPanelCollapsed(target.id)
 
         const currentActiveId = activeSessionIdRef.current
         let computedFallback = null as string | null
@@ -785,7 +872,6 @@ export const useSessionManager = (
             agentType: 'generic',
             status: 'running',
             active: true,
-            activityPanelCollapsed: null,
             pid: result.pid,
             restoreData,
           }
@@ -1123,6 +1209,55 @@ export const useSessionManager = (
     )
   }, [])
 
+  // Set a per-pane user label — in-memory only (no IPC). The chord
+  // hook calls this for every rename; for Claude/Codex panes it ALSO
+  // dispatches the `rename_agent_session` IPC so the agent's transcript
+  // stays in sync. See `pane.userLabel` doc in `../types/index.ts`.
+  const setPaneUserLabel = useCallback(
+    (
+      ptyId: string,
+      label: string | undefined,
+      setOptions?: SetPaneUserLabelOptions
+    ): void => {
+      const next = normalizePaneUserLabel(label)
+
+      const hasExpectedCurrentLabel =
+        setOptions !== undefined && 'ifCurrentLabel' in setOptions
+
+      const expectedCurrentLabel = hasExpectedCurrentLabel
+        ? normalizePaneUserLabel(setOptions.ifCurrentLabel)
+        : undefined
+
+      setSessions((prev) => {
+        const matchExists = prev.some((session) =>
+          session.panes.some((pane) => pane.ptyId === ptyId)
+        )
+        if (!matchExists) {
+          return prev
+        }
+
+        return prev.map((session) => ({
+          ...session,
+          panes: session.panes.map((pane) => {
+            if (pane.ptyId !== ptyId) {
+              return pane
+            }
+
+            if (
+              hasExpectedCurrentLabel &&
+              pane.userLabel !== expectedCurrentLabel
+            ) {
+              return pane
+            }
+
+            return { ...pane, userLabel: next }
+          }),
+        }))
+      })
+    },
+    []
+  )
+
   // Reorder sessions — optimistic update + IPC
   //
   // Round 9, Finding 5 (codex P2 / claude LOW): no rollback on IPC failure.
@@ -1245,137 +1380,21 @@ export const useSessionManager = (
     []
   )
 
-  const setPaneActivityPanelCollapsed = useCallback(
-    async (
-      sessionId: string,
-      paneId: string,
-      collapsed: boolean
-    ): Promise<void> => {
+  const setSessionActivityPanelCollapsed = useCallback(
+    (sessionId: string, collapsed: boolean): void => {
       const session = sessionsRef.current.find((s) => s.id === sessionId)
-      const pane = session?.panes.find((p) => p.id === paneId)
-      if (!session || !pane) {
+      if (!session || session.activityPanelCollapsed === collapsed) {
         return
       }
 
-      // Capture ptyId at call entry. Pane ids (`p0`, `p1`, ...) are reused
-      // by `nextFreePaneId` when a pane is removed and a new one is created
-      // in the same session, but ptyId is a per-spawn backend identifier
-      // that never recycles. We use it for BOTH the chain key AND the
-      // state-update predicate so a late persist/failure for a removed pane
-      // cannot contaminate a freshly-spawned replacement that happens to
-      // reuse the same React pane id.
-      const panePtyId = pane.ptyId
-      const chainKey = panePtyId
-      const existing = collapseChainRef.current.get(chainKey)
-
-      // Read pane.activityPanelCollapsed only on the FIRST call per chain run;
-      // every reentrant call (B issued while A is in flight) reads stale
-      // optimistic state and would set originalValue to whatever the previous
-      // call optimistically wrote. existing.originalValue carries the
-      // pre-A persisted truth forward so a B-rollback after A also failed
-      // restores UI to backend ground truth — not to A's speculative value.
-      // The explicit `existing !== undefined` check is required because
-      // `null` is a valid persisted value (un-collapsed default); `??` here
-      // would collapse a legitimate null baseline into the stale-fallback
-      // path and capture A's optimistic value as B's rollback target.
-      const originalValue =
-        existing !== undefined
-          ? existing.originalValue
-          : (pane.activityPanelCollapsed ?? null)
+      writeActivityPanelCollapsed(sessionId, collapsed)
       setSessions((prev) =>
         prev.map((s) =>
-          s.id !== sessionId
-            ? s
-            : {
-                ...s,
-                panes: s.panes.map((p) =>
-                  p.ptyId !== panePtyId
-                    ? p
-                    : { ...p, activityPanelCollapsed: collapsed }
-                ),
-              }
+          s.id === sessionId ? { ...s, activityPanelCollapsed: collapsed } : s
         )
       )
-
-      const prior = existing?.tail ?? Promise.resolve()
-
-      const next = persistActivityPanelCollapsed(
-        service,
-        prior,
-        pane.ptyId,
-        collapsed
-      )
-      const tail = absorbCollapseQueueFailure(next)
-
-      collapseChainRef.current.set(chainKey, { tail, originalValue })
-
-      try {
-        await next
-        // Persist succeeded — advance the chain's known-good baseline so a
-        // later queued failure (mixed success/fail case) rolls back to THIS
-        // call's value rather than the pre-chain value. Mutating the entry in
-        // place is safe and necessary: any queued caller after this point
-        // reads `existing?.originalValue` to seed its own rollback baseline
-        // and must see the just-persisted value, not the original.
-        const current = collapseChainRef.current.get(chainKey)
-        if (current !== undefined) {
-          current.originalValue = collapsed
-        }
-      } catch (err) {
-        // Capture liveBaseline NOW — `finally` will delete the chain entry
-        // before React processes the setSessions updater, so reading inside
-        // the updater would always see `undefined`. Same `null`-is-data
-        // caveat as the originalValue read above: use an explicit existence
-        // check so a legitimate `null` baseline isn't collapsed into the
-        // closure-snapshot fallback path.
-        const liveEntry = collapseChainRef.current.get(chainKey)
-
-        const liveBaseline =
-          liveEntry !== undefined ? liveEntry.originalValue : originalValue
-        // Ownership-by-identity: we roll back AND propagate the error ONLY
-        // when our tail is still the latest in the chain. Comparing
-        // `p.activityPanelCollapsed` against this call's `collapsed` would
-        // mis-fire when two same-direction calls (A=true, C=true) race —
-        // A's failure would value-match C's optimistic state and clobber
-        // it. The identity check sidesteps that: any newer queued call has
-        // already displaced our tail in the Map, so we silently defer to
-        // it — both the UI rollback AND the re-throw must stay inside the
-        // guard, otherwise the user sees an error notification for a
-        // superseded call whose newer sibling owns the visible outcome.
-        const isHead = liveEntry?.tail === tail
-
-        if (isHead) {
-          setSessions((prev) =>
-            prev.map((s) => {
-              if (s.id !== sessionId) {
-                return s
-              }
-
-              return {
-                ...s,
-                panes: s.panes.map((p) => {
-                  // Match by ptyId so a stale rollback for a removed pane
-                  // can never clobber a freshly-spawned pane that reused
-                  // the same React pane id. If the original pane is gone,
-                  // the find returns no match and setSessions is a no-op.
-                  if (p.ptyId !== panePtyId) {
-                    return p
-                  }
-
-                  return { ...p, activityPanelCollapsed: liveBaseline }
-                }),
-              }
-            })
-          )
-          throw err
-        }
-      } finally {
-        if (collapseChainRef.current.get(chainKey)?.tail === tail) {
-          collapseChainRef.current.delete(chainKey)
-        }
-      }
     },
-    [service]
+    []
   )
 
   const updateSessionCwd = useCallback((id: string, cwd: string): void => {
@@ -1424,10 +1443,11 @@ export const useSessionManager = (
     removePane,
     restartSession,
     renameSession,
+    setPaneUserLabel,
     reorderSessions,
     updatePaneCwd,
     updatePaneAgentType,
-    setPaneActivityPanelCollapsed,
+    setSessionActivityPanelCollapsed,
     updateSessionCwd,
     updateSessionAgentType,
     // Round 12 F2: expose the ref-backed Map. Identity is stable across

@@ -5,6 +5,9 @@ mod parser;
 mod transcript;
 mod transcript_dto;
 mod types;
+// Title-sync / rename support (main #265) — read Codex `session_index.jsonl`
+// thread_name + drive `/rename`. Brought in during the epic→main merge.
+pub(crate) mod session_index;
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;

@@ -29,3 +29,13 @@ export const KEYBOARD_STEP_SHIFT_PX = 100
  * the dock switcher/file/collapse controls move into the overflow menu.
  */
 export const DOCK_INLINE_ACTIONS_MIN_WIDTH_PX = 420
+
+/**
+ * Elastic config for split-pane dividers. Percentages apply to the pane space
+ * (container minus the 8px divider track, via useElasticContainer's reservedPx),
+ * so both panes stay within 15–85%.
+ */
+export const SPLIT_ELASTIC_CONFIG = {
+  minPercent: 0.15,
+  maxPercent: 0.85,
+} as const

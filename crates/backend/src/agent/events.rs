@@ -1,9 +1,15 @@
 //! Agent event emission helpers.
 
 use crate::agent::types::{
-    AgentCwdEvent, AgentStatusEvent, AgentToolCallEvent, AgentTurnEvent,
+    AgentCwdEvent, AgentSessionTitleEvent, AgentStatusEvent, AgentToolCallEvent, AgentTurnEvent,
 };
 use crate::runtime::{serialize_event, EventSink};
+
+// TODO(epic→main reconciliation): the title-sync emit path (main #265) is
+// parked — its only caller is the unwired `codex::session_index` module.
+// Re-wire title-sync into `SessionLifecycle` to make this live again.
+#[allow(dead_code)]
+pub const AGENT_SESSION_TITLE: &str = "agent-session-title";
 
 pub(crate) fn emit_agent_status(
     events: &dyn EventSink,
@@ -31,4 +37,12 @@ pub(crate) fn emit_agent_cwd(
     payload: &AgentCwdEvent,
 ) -> Result<(), String> {
     events.emit_json("agent-cwd", serialize_event(payload)?)
+}
+
+#[allow(dead_code)] // parked with AGENT_SESSION_TITLE — see TODO above (title-sync re-wire)
+pub(crate) fn emit_agent_session_title(
+    events: &dyn EventSink,
+    payload: &AgentSessionTitleEvent,
+) -> Result<(), String> {
+    events.emit_json(AGENT_SESSION_TITLE, serialize_event(payload)?)
 }

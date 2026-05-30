@@ -2,6 +2,7 @@
 const backendMethods = new Set([
   'spawn_pty',
   'write_pty',
+  'rename_agent_session',
   'resize_pty',
   'kill_pty',
   'list_sessions',
@@ -19,8 +20,14 @@ const backendMethods = new Set([
   'git_branch',
   'git_worktree_name',
   'get_git_diff',
+  'stage_file',
+  'unstage_file',
+  'discard_file',
   'start_git_watcher',
   'stop_git_watcher',
+  'stage_file',
+  'unstage_file',
+  'discard_file',
 ])
 
 const e2eBackendMethods = new Set(['list_active_pty_sessions'])

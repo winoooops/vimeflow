@@ -7,21 +7,23 @@ use super::types::AgentType;
 use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
+#[cfg(target_os = "macos")]
+use std::process::Command;
 
 trait ProcessSource {
     fn read_children(&self, pid: u32) -> Option<Vec<u32>>;
     fn read_cmdline(&self, pid: u32) -> Option<Vec<String>>;
 }
 
-struct ProcFsProcessSource;
+struct PlatformProcessSource;
 
-impl ProcessSource for ProcFsProcessSource {
+impl ProcessSource for PlatformProcessSource {
     fn read_children(&self, pid: u32) -> Option<Vec<u32>> {
-        read_proc_children(pid)
+        read_platform_children(pid)
     }
 
     fn read_cmdline(&self, pid: u32) -> Option<Vec<String>> {
-        read_proc_cmdline(pid)
+        read_platform_cmdline(pid)
     }
 }
 
@@ -37,13 +39,10 @@ impl ProcessSource for ProcFsProcessSource {
 /// * `Some((agent_type, agent_pid))` - If an agent is found
 /// * `None` - If no agent is detected
 pub fn detect_agent(pid: u32) -> Option<(AgentType, u32)> {
-    detect_agent_with_source(pid, &ProcFsProcessSource)
+    detect_agent_with_source(pid, &PlatformProcessSource)
 }
 
-fn detect_agent_with_source<S: ProcessSource>(
-    pid: u32,
-    source: &S,
-) -> Option<(AgentType, u32)> {
+fn detect_agent_with_source<S: ProcessSource>(pid: u32, source: &S) -> Option<(AgentType, u32)> {
     // Check the PTY root plus its descendants. Including the root handles
     // shells that have been replaced with `exec claude`.
     for candidate_pid in collect_process_tree(pid, source) {
@@ -55,9 +54,22 @@ fn detect_agent_with_source<S: ProcessSource>(
     None
 }
 
-/// Read the children of a process from /proc filesystem
+/// Read the children of a process from the host process table.
+#[cfg(target_os = "linux")]
+fn read_platform_children(pid: u32) -> Option<Vec<u32>> {
+    read_proc_children(pid)
+}
+
+/// Read and parse argv for a process from the host process table.
+#[cfg(target_os = "linux")]
+fn read_platform_cmdline(pid: u32) -> Option<Vec<String>> {
+    read_proc_cmdline(pid)
+}
+
+/// Read the children of a process from /proc filesystem.
 ///
 /// On Linux, /proc/<pid>/task/<pid>/children contains space-separated child PIDs.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 fn read_proc_children(pid: u32) -> Option<Vec<u32>> {
     let children_path = format!("/proc/{}/task/{}/children", pid, pid);
     let content = fs::read_to_string(children_path).ok()?;
@@ -98,6 +110,7 @@ fn collect_process_tree<S: ProcessSource>(root_pid: u32, source: &S) -> Vec<u32>
 /// Read and parse /proc/<pid>/cmdline
 ///
 /// The cmdline file contains null-separated arguments. argv[0] is the binary name.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 fn read_proc_cmdline(pid: u32) -> Option<Vec<String>> {
     let cmdline_path = format!("/proc/{}/cmdline", pid);
     let content = fs::read(cmdline_path).ok()?;
@@ -118,6 +131,76 @@ fn read_proc_cmdline(pid: u32) -> Option<Vec<String>> {
     } else {
         Some(args)
     }
+}
+
+/// Read direct children on macOS.
+///
+/// Darwin has no Linux-compatible procfs. `pgrep -P` is the narrowest
+/// command-line process API available by default: it asks launchd/libproc for
+/// direct children of a single parent PID and prints one PID per line.
+#[cfg(target_os = "macos")]
+fn read_platform_children(pid: u32) -> Option<Vec<u32>> {
+    let output = Command::new("pgrep")
+        .arg("-P")
+        .arg(pid.to_string())
+        .output()
+        .ok()?;
+
+    if !output.status.success() {
+        return Some(Vec::new());
+    }
+
+    Some(
+        String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .filter_map(|line| line.trim().parse::<u32>().ok())
+            .collect(),
+    )
+}
+
+/// Read argv on macOS.
+///
+/// `ps -p <pid> -o command=` returns the command line for a single process.
+/// It is not as strong as Linux's null-separated `/proc/<pid>/cmdline`, but it
+/// is sufficient for agent binary detection because we only inspect argv[0]
+/// after shell-style splitting. If parsing fails, fall back to the first
+/// whitespace-delimited token.
+#[cfg(target_os = "macos")]
+fn read_platform_cmdline(pid: u32) -> Option<Vec<String>> {
+    let output = Command::new("ps")
+        .arg("-p")
+        .arg(pid.to_string())
+        .arg("-o")
+        .arg("command=")
+        .output()
+        .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    let command_line = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if command_line.is_empty() {
+        return None;
+    }
+
+    match shell_words::split(&command_line) {
+        Ok(args) if !args.is_empty() => Some(args),
+        _ => command_line
+            .split_whitespace()
+            .next()
+            .map(|argv0| vec![argv0.to_string()]),
+    }
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+fn read_platform_children(_: u32) -> Option<Vec<u32>> {
+    Some(Vec::new())
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+fn read_platform_cmdline(_: u32) -> Option<Vec<String>> {
+    None
 }
 
 /// Extract binary name from cmdline argv[0]
@@ -145,6 +228,8 @@ fn detect_agent_from_cmdline<S: ProcessSource>(pid: u32, source: &S) -> Option<A
 mod tests {
     use super::*;
     use std::collections::HashMap;
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    use std::process::Command;
 
     #[derive(Default)]
     struct MockProcessSource {
@@ -165,11 +250,7 @@ mod tests {
     #[test]
     fn detects_only_agent_inside_pty_process_tree() {
         let source = MockProcessSource {
-            children: HashMap::from([
-                (10, vec![11]),
-                (11, vec![12]),
-                (20, vec![21]),
-            ]),
+            children: HashMap::from([(10, vec![11]), (11, vec![12]), (20, vec![21])]),
             cmdlines: HashMap::from([
                 (10, vec!["bash".to_string()]),
                 (11, vec!["sh".to_string()]),
@@ -181,19 +262,13 @@ mod tests {
 
         let detected = detect_agent_with_source(10, &source);
 
-        assert!(matches!(
-            detected,
-            Some((AgentType::ClaudeCode, 12))
-        ));
+        assert!(matches!(detected, Some((AgentType::ClaudeCode, 12))));
     }
 
     #[test]
     fn ignores_agent_outside_pty_process_tree() {
         let source = MockProcessSource {
-            children: HashMap::from([
-                (10, vec![11]),
-                (20, vec![21]),
-            ]),
+            children: HashMap::from([(10, vec![11]), (20, vec![21])]),
             cmdlines: HashMap::from([
                 (10, vec!["bash".to_string()]),
                 (11, vec!["python".to_string()]),
@@ -205,11 +280,11 @@ mod tests {
         assert!(detect_agent_with_source(10, &source).is_none());
     }
 
+    #[cfg(target_os = "linux")]
     #[test]
     fn reads_self_cmdline() {
-        // /proc/self always exists and points to our own process
-        let cmdline = read_proc_cmdline(std::process::id());
-        assert!(cmdline.is_some(), "Failed to read /proc/self/cmdline");
+        let cmdline = read_platform_cmdline(std::process::id());
+        assert!(cmdline.is_some(), "Failed to read self cmdline");
 
         let cmdline = cmdline.unwrap();
         assert!(!cmdline.is_empty(), "cmdline should not be empty");
@@ -222,8 +297,73 @@ mod tests {
     #[test]
     fn handles_missing_pid_gracefully() {
         // PID 9999999 is unlikely to exist
-        let cmdline = read_proc_cmdline(9999999);
+        let cmdline = read_platform_cmdline(9999999);
         assert!(cmdline.is_none(), "Should return None for missing PID");
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_proc_children_include_spawned_child() {
+        let mut child = Command::new("/bin/sh")
+            .args(["-c", "sleep 5 & wait"])
+            .spawn()
+            .expect("spawn child shell");
+
+        let parent_pid = child.id();
+        let children = (0..20)
+            .find_map(|_| {
+                let children = read_proc_children(parent_pid)?;
+                if children.is_empty() {
+                    std::thread::sleep(std::time::Duration::from_millis(25));
+                    None
+                } else {
+                    Some(children)
+                }
+            })
+            .expect("spawned shell should expose a child through procfs");
+
+        let _ = child.kill();
+        let _ = child.wait();
+
+        assert!(
+            !children.is_empty(),
+            "procfs children should include the shell child process"
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_process_reader_finds_spawned_child_and_cmdline() {
+        let mut child = Command::new("/bin/sh")
+            .args(["-c", "sleep 5 & wait"])
+            .spawn()
+            .expect("spawn child shell");
+
+        let parent_pid = child.id();
+        let children = (0..20)
+            .find_map(|_| {
+                let children = read_platform_children(parent_pid)?;
+                if children.is_empty() {
+                    std::thread::sleep(std::time::Duration::from_millis(25));
+                    None
+                } else {
+                    Some(children)
+                }
+            })
+            .expect("spawned shell should expose a child through pgrep");
+        let cmdline = read_platform_cmdline(parent_pid).expect("shell cmdline");
+
+        let _ = child.kill();
+        let _ = child.wait();
+
+        assert!(
+            !children.is_empty(),
+            "pgrep should include the shell child process"
+        );
+        assert!(
+            cmdline.first().is_some_and(|argv0| argv0.ends_with("sh")),
+            "ps command line should expose shell argv0, got {cmdline:?}"
+        );
     }
 
     #[test]

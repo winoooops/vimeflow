@@ -23,6 +23,7 @@ import {
   KEYBOARD_STEP_PX,
   KEYBOARD_STEP_SHIFT_PX,
 } from '../panelConfig'
+import { ResizeHandle } from '../../../components/ResizeHandle'
 
 type TabType = 'editor' | 'diff'
 
@@ -267,40 +268,27 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
         ) : null}
 
         {isVerticalDock ? (
-          <div
-            data-testid="resize-handle"
-            role="separator"
-            aria-orientation="horizontal"
-            aria-label="Resize panel"
-            aria-valuenow={verticalSize}
-            aria-valuemin={verticalPixelMin}
-            aria-valuemax={verticalPixelMax}
-            tabIndex={0}
+          <ResizeHandle
+            orientation="horizontal"
+            isDragging={isVerticalResizing}
+            ariaValueNow={verticalSize}
+            ariaValueMin={verticalPixelMin}
+            ariaValueMax={verticalPixelMax}
             onMouseDown={onVerticalResizeMouseDown}
             onKeyDown={handleVerticalKeyDown}
-            // z-10 keeps the 4-px handle above the DockTab header
-            // (`relative` sibling) and the content area; without it,
-            // both later-in-source-order children paint on top and
-            // swallow mousedown events at the handle's coordinates.
-            className={`absolute ${position === 'top' ? 'bottom-0' : 'top-0'} left-0 right-0 z-10 h-1 cursor-ns-resize transition-colors hover:bg-primary/20 focus:bg-primary/40 focus:outline-none ${
-              isVerticalResizing ? 'bg-primary/30' : ''
-            }`}
+            // z-10 keeps the 4-px handle above the DockTab header (relative sibling)
+            className={`absolute ${position === 'top' ? 'bottom-0' : 'top-0'} left-0 right-0 z-10 h-1`}
           />
         ) : (
-          <div
-            data-testid="resize-handle"
-            role="separator"
-            aria-orientation="vertical"
-            aria-label="Resize panel"
-            aria-valuenow={horizontalSize}
-            aria-valuemin={horizontalPixelMin}
-            aria-valuemax={horizontalPixelMax}
-            tabIndex={0}
+          <ResizeHandle
+            orientation="vertical"
+            isDragging={isHorizontalResizing}
+            ariaValueNow={horizontalSize}
+            ariaValueMin={horizontalPixelMin}
+            ariaValueMax={horizontalPixelMax}
             onMouseDown={onHorizontalResizeMouseDown}
             onKeyDown={handleHorizontalKeyDown}
-            className={`absolute ${position === 'right' ? 'left-0' : 'right-0'} top-0 bottom-0 z-10 w-1 cursor-col-resize transition-colors hover:bg-primary/20 focus:bg-primary/40 focus:outline-none ${
-              isHorizontalResizing ? 'bg-primary/30' : ''
-            }`}
+            className={`absolute ${position === 'right' ? 'left-0' : 'right-0'} top-0 bottom-0 z-10 w-1`}
           />
         )}
 

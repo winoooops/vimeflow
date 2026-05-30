@@ -2,8 +2,8 @@
 id: testing-gaps
 category: testing
 created: 2026-04-09
-last_updated: 2026-05-23
-ref_count: 24
+last_updated: 2026-05-28
+ref_count: 25
 ---
 
 # Testing Gaps
@@ -129,8 +129,8 @@ filesystem scope restrictions).
 
 - **Source:** github-claude | PR #122 round 3 | 2026-05-01
 - **Severity:** MEDIUM
-- **File:** `src/features/agent-status/components/ActivityFooter.test.tsx`
-- **Finding:** The PR refactored `ActivityFooter` from a conditional-render pattern (no cell when `numTurns=0`) to an always-render pattern (`{n} turn|turns`). The pre-existing test `does not render a turns cell` was deleted and replaced with `renders singular turn label` (numTurns=1) plus a localized 1,234 case. No test exercised `numTurns=0` — the initial value of `createDefaultStatus().numTurns`, visible to users during the pre-activity window between agent detection and the first `agent-turn` replay event. Without a test, the contract was undocumented: a future contributor could re-add a `{numTurns > 0 && …}` guard thinking it's "what was meant" and silently regress the always-render intent.
+- **File:** former agent-status footer test
+- **Finding:** A past PR refactored the agent-status footer from a conditional-render pattern (no cell when `numTurns=0`) to an always-render pattern (`{n} turn|turns`). The pre-existing test `does not render a turns cell` was deleted and replaced with `renders singular turn label` (numTurns=1) plus a localized 1,234 case. No test exercised `numTurns=0` — the initial value of `createDefaultStatus().numTurns`, visible to users during the pre-activity window between agent detection and the first `agent-turn` replay event. Without a test, the contract was undocumented: a future contributor could re-add a `{numTurns > 0 && …}` guard thinking it's "what was meant" and silently regress the always-render intent. The footer has since been removed; this entry remains as a general conditional-render test-gap pattern.
 - **Fix:** Added `renders 0 turns during the pre-activity window before the first agent-turn event` test that locks the always-render-with-zero contract. The test comment also documents the alternative path: if the design intent is to hide the cell pre-activity, both the test and the component must change together — not one without the other.
 - **Commit:** _(see git log for the round-3 fix commit)_
 
@@ -536,11 +536,20 @@ filesystem scope restrictions).
 - **Fix:** Added four tests to the existing `describe('keyboard trigger - Ctrl+:')` block. Each dispatches a real `KeyboardEvent`, spies on the relevant event methods, and asserts the observable outcome (spy invocation + palette state). The repeat-suppression test specifically opens the palette via a non-repeat event FIRST, then dispatches the repeat event — testing only the closed-state case would let a buggy implementation that closes on repeat-while-open slip through. The capture-phase test attaches a child listener that calls `event.stopPropagation()` during bubble phase; the hook must still fire because it's registered with `{ capture: true }`. Code-review heuristic: when a refactor splits a component into a hook + render component, behavioral contracts on the hook's side-effect surface (event plumbing, listener phase, repeat guards) must migrate as tests on the hook — not implicitly assumed because "the old integration test was deleted". Audit the OLD test file's expectations before deleting it; any assertion that survives the API change but doesn't show up in the new file is a regression-window gap.
 - **Commit:** same commit as this entry
 
-### 54. registry_covers_every_agent_type test claimed compile-time exhaustiveness via array iteration
+### 54. Higher-level tests must mock mandatory transitive providers introduced by child components
 
-- **Source:** github-claude | PR #247 | 2026-05-23
+- **Source:** github-claude | PR #263 follow-up | 2026-05-25
 - **Severity:** MEDIUM
-- **File:** `crates/backend/src/agent/config.rs`
-- **Finding:** The test for the `AgentSpec` registry-coverage contract was written as `for at in [ClaudeCode, Codex, Aider, Generic] { let _ = spec_for(at); }` with a doc-comment claiming "Exhaustive match here makes the contract a compile-time requirement." That is false — array literals do not trigger Rust's exhaustiveness check; only `match` expressions do. Adding `AgentType::Cursor` to the enum without updating `AGENT_SPECS` would compile cleanly, the test would still pass (it never sees `Cursor`), and `spec_for(Cursor)` would only panic at the first production attach. The illusion of compile-time safety is worse than no safety at all — a reader trusts a guard that does not exist.
-- **Fix:** Layered two checks. (1) Compile-time: a closure `|at: AgentType| match at { ClaudeCode | Codex | Aider | Generic => spec_for(at) }` whose body is never invoked but whose `match` exhaustiveness fires at definition time — adding a new variant fails to compile here. (2) Runtime: the original `for` loop survives, mirroring the match arms, so a contributor who adds the variant + match arm but forgets `AGENT_SPECS` triggers a test-time panic in `spec_for` rather than a production panic. Code-review heuristic: when a test claims "X is checked at compile time", the only valid implementations are `match`, `const _: () = assert!(...)`, or a typed function whose signature embeds the invariant. Iterating an array literal claims more than it delivers.
+- **File:** `src/features/workspace/components/DockPanel.test.tsx`, `src/features/workspace/WorkspaceView.elastic.test.tsx`
+- **Finding:** Workspace-level tests rendered `DiffPanelContent` through `DockPanel` / `WorkspaceView` but did not mock `@pierre/diffs/react`. The child now calls `useWorkerPool()` unconditionally, so a Pierre release that throws outside `WorkerPoolContextProvider` would break these suites even though the tests are not trying to exercise Pierre itself.
+- **Fix:** Add explicit `@pierre/diffs/react` mocks in each higher-level test that renders through the diff panel, matching the direct `DiffPanelContent.test.tsx` pattern. Code-review heuristic: when a child component gains a mandatory provider hook, update both direct tests and every integration-style test that renders the child transitively.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 55. Event-listener guard branches need a test for both the fire and the suppress path
+
+- **Source:** github-claude | PR #288 cycle 1 | 2026-05-28
+- **Severity:** MEDIUM
+- **File:** `src/features/terminal/components/TerminalPane/Body.test.tsx`
+- **Finding:** The focus-repaint fix registered two listeners that share one guarded handler — `window 'focus'` and `document 'visibilitychange'` — where the handler early-returns unless `document.visibilityState === 'visible'`. The new regression test only dispatched `window.focus` (which in jsdom runs with the default `visibilityState === 'visible'`, so the guard always passes). The `visibilitychange` path was never exercised, leaving the non-trivial branch untested: a future edit that inverts or drops the `visibilityState !== 'visible'` guard would still pass every test while silently repainting a hidden terminal (or suppressing a needed repaint on minimized-window restore — the primary scenario the fix targets).
+- **Fix:** Added a test that shadows the read-only `document.visibilityState` getter via `Object.defineProperty(document, 'visibilityState', { configurable: true, get })`, dispatches `visibilitychange` once with `'hidden'` (asserts `refresh` NOT called) and once with `'visible'` (asserts `refresh` called), and restores the prototype getter in a `finally` by `delete`-ing the instance override. Code-review heuristic: when one handler guards on a runtime condition, the test must drive BOTH branches — the condition-true (fires) and condition-false (suppressed) paths. Asserting only the happy path lets a guard regression pass silently. When two events share a guarded handler, test the event whose default test-environment state actually exercises the guard (here `visibilitychange`), not just the one where the guard is incidentally always-true (`focus`).
 - **Commit:** same commit as this entry

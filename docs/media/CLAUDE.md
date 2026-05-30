@@ -11,6 +11,7 @@ Image and animation assets referenced by `README.md` and `README.zh-CN.md`. Capt
 | `agent-status-sidebar.png` | Agent Status Sidebar section | Active-window screenshot, cropped to right panel                               |
 | `git-diff.png`             | Feature Modules section      | Active-window screenshot                                                       |
 | `editor-vim.png`           | Feature Modules section      | Active-window screenshot                                                       |
+| `terminal-nvim.png`        | "Use Vimeflow" section       | Active-window screenshot — Neovim dashboard inside a Vimeflow terminal pane    |
 
 ## Capture pipeline (hero gif)
 

@@ -4,11 +4,13 @@ import {
   forwardRef,
   useCallback,
   useImperativeHandle,
+  useLayoutEffect,
   useRef,
+  useState,
   type ReactElement,
 } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import type { Pane, Session } from '../../../sessions/types'
+import type { LayoutId, Pane, Session } from '../../../sessions/types'
 import type { NotifyPaneReady } from '../../hooks/useTerminal'
 import type { ITerminalService } from '../../services/terminalService'
 import {
@@ -19,6 +21,8 @@ import {
 import { EmptySlot } from './EmptySlot'
 import { LAYOUTS } from './layouts'
 import { Tooltip } from '../../../../components/Tooltip'
+import { SplitDividers } from './SplitDividers'
+import { resolveGrid, DEFAULT_RATIOS, type LayoutRatios } from './resolveGrid'
 
 const SLOT_FADE_TRANSITION = { duration: 0.08, ease: 'easeOut' } as const
 
@@ -92,6 +96,39 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
     const layout = LAYOUTS[session.layout]
     const outerDivRef = useRef<HTMLDivElement>(null)
 
+    const [ratios, setRatios] = useState<
+      Partial<Record<LayoutId, LayoutRatios>>
+    >({})
+
+    const currentRatios =
+      ratios[session.layout] ?? DEFAULT_RATIOS[session.layout]
+    const grid = resolveGrid(session.layout, currentRatios)
+
+    const handleRatioChange = useCallback(
+      (axis: 'col' | 'row', value: number): void => {
+        setRatios((prev) => {
+          const base = prev[session.layout] ?? DEFAULT_RATIOS[session.layout]
+          if (base[axis] === value) {
+            return prev
+          }
+
+          return { ...prev, [session.layout]: { ...base, [axis]: value } }
+        })
+      },
+      [session.layout]
+    )
+
+    // Mount SplitDividers (and their useElasticContainer hooks) only once the
+    // grid actually has a measured size. Sessions mount while hidden
+    // (display:none → 0×0) and useElasticContainer hard-throws on a zero
+    // dimension at mount, so re-measure whenever `isActive` flips and the
+    // session becomes visible.
+    const [hasSize, setHasSize] = useState(false)
+    useLayoutEffect(() => {
+      const rect = outerDivRef.current?.getBoundingClientRect()
+      setHasSize(Boolean(rect && rect.width > 0 && rect.height > 0))
+    }, [isActive])
+
     const paneHandleRefs = useRef<Map<string, TerminalPaneHandle | null>>(
       new Map()
     )
@@ -155,56 +192,60 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
           )
         : []
 
-    const gridTemplateAreas = layout.areas
+    const gridTemplateAreas = grid.areas
       .map((row) => `"${row.join(' ')}"`)
       .join(' ')
 
     return (
       <div
-        ref={outerDivRef}
-        data-testid="split-view"
-        data-session-id={session.id}
-        data-layout={session.layout}
-        tabIndex={-1}
-        className="grid h-full w-full gap-2 bg-surface p-2.5"
-        style={{
-          gridTemplateColumns: layout.cols,
-          gridTemplateRows: layout.rows,
-          gridTemplateAreas,
-        }}
+        data-testid="split-view-canvas"
+        className="h-full w-full bg-surface p-2.5"
       >
-        {/* eslint-disable-next-line react/jsx-boolean-value -- framer-motion: `initial={false}` skips the entry animation for children already mounted. Omitting `initial` reverts to the default (animate on mount) — semantically distinct. */}
-        <AnimatePresence initial={false}>
-          {visiblePanes.map((pane, i) => {
-            const mode = paneMode(pane)
+        <div
+          ref={outerDivRef}
+          data-testid="split-view"
+          data-session-id={session.id}
+          data-layout={session.layout}
+          tabIndex={-1}
+          className="grid h-full w-full gap-0"
+          style={{
+            gridTemplateColumns: grid.cols,
+            gridTemplateRows: grid.rows,
+            gridTemplateAreas,
+          }}
+        >
+          {/* eslint-disable-next-line react/jsx-boolean-value -- framer-motion: `initial={false}` skips the entry animation for children already mounted. Omitting `initial` reverts to the default (animate on mount) — semantically distinct. */}
+          <AnimatePresence initial={false}>
+            {visiblePanes.map((pane, i) => {
+              const mode = paneMode(pane)
 
-            return (
-              <motion.div
-                key={pane.id}
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                transition={SLOT_FADE_TRANSITION}
-                // Skip the dispatch when this slot's pane is already
-                // active. applyActivePane returns the same reference
-                // on no-op, but expressing the guard at the call site
-                // keeps the semantic clean: every click that survives
-                // this handler is a real focus change. Mirrors the
-                // already-active escape-hatch in usePaneShortcuts.
-                onClick={
-                  pane.active
-                    ? undefined
-                    : (): void => onSetActivePane?.(session.id, pane.id)
-                }
-                data-testid="split-view-slot"
-                data-pane-id={pane.id}
-                data-pty-id={pane.ptyId}
-                data-mode={mode}
-                data-cwd={pane.cwd}
-                className="relative min-h-0 min-w-0"
-                style={{ gridArea: `p${i}` }}
-              >
-                {/* Inner Tooltip wrapper. The motion.div above carries
+              return (
+                <motion.div
+                  key={pane.id}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={SLOT_FADE_TRANSITION}
+                  // Skip the dispatch when this slot's pane is already
+                  // active. applyActivePane returns the same reference
+                  // on no-op, but expressing the guard at the call site
+                  // keeps the semantic clean: every click that survives
+                  // this handler is a real focus change. Mirrors the
+                  // already-active escape-hatch in usePaneShortcuts.
+                  onClick={
+                    pane.active
+                      ? undefined
+                      : (): void => onSetActivePane?.(session.id, pane.id)
+                  }
+                  data-testid="split-view-slot"
+                  data-pane-id={pane.id}
+                  data-pty-id={pane.ptyId}
+                  data-mode={mode}
+                  data-cwd={pane.cwd}
+                  className="relative min-h-0 min-w-0"
+                  style={{ gridArea: `p${i}` }}
+                >
+                  {/* Inner Tooltip wrapper. The motion.div above carries
                   the click handler + grid placement; this inner Tooltip
                   attaches floating-ui hover handlers to a plain div so
                   the `cloneElement` merge doesn't have to negotiate
@@ -213,17 +254,17 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
                   whole slot. Disabled when the pane is active —
                   nothing to hint at, and overlaying an active
                   terminal with a popover would interfere. */}
-                <Tooltip
-                  content={`Focus pane ${i + 1}`}
-                  shortcut={['Mod', String(i + 1)]}
-                  disabled={pane.active}
-                  placement="top"
-                >
-                  <div
-                    data-testid="split-view-slot-inner"
-                    className="h-full w-full"
+                  <Tooltip
+                    content={`Focus pane ${i + 1}`}
+                    shortcut={['Mod', String(i + 1)]}
+                    disabled={pane.active}
+                    placement="top"
                   >
-                    {/* F16 (codex connector P1, carried over from pre-5b TerminalZone):
+                    <div
+                      data-testid="split-view-slot-inner"
+                      className="h-full w-full"
+                    >
+                      {/* F16 (codex connector P1, carried over from pre-5b TerminalZone):
                     keying TerminalPane by `pane.ptyId` (NOT `pane.id`) forces a
                     clean useTerminal subtree unmount + remount whenever a
                     restartSession rotates the pane's PTY handle. Without the
@@ -232,50 +273,59 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
                     nowhere until reload. The outer slot wrapper above keys
                     by `pane.id` so layout slot identity is preserved across
                     restarts. */}
-                    <TerminalPane
-                      key={pane.ptyId}
-                      ref={getPaneRefSetter(pane.id)}
-                      session={session}
-                      pane={pane}
-                      service={service}
-                      mode={mode}
-                      onCwdChange={(cwd) =>
-                        onSessionCwdChange?.(session.id, pane.id, cwd)
-                      }
-                      onPaneReady={onPaneReady}
-                      onRestart={onSessionRestart}
-                      onClose={
-                        session.panes.length > 1 && onClosePane
-                          ? onClosePane
-                          : undefined
-                      }
-                      isActive={isActive}
-                      deferFit={deferTerminalFit}
-                      showFocusHighlight={showPaneFocusHighlight}
-                    />
-                  </div>
-                </Tooltip>
-              </motion.div>
-            )
-          })}
-          {onAddPane
-            ? emptySlotIndices.map((slotIndex) => (
-                <motion.div
-                  key={`empty-${slotIndex}`}
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  transition={SLOT_FADE_TRANSITION}
-                  data-testid="split-view-empty-slot"
-                  data-slot-index={slotIndex}
-                  className="relative min-h-0 min-w-0"
-                  style={{ gridArea: `p${slotIndex}` }}
-                >
-                  <EmptySlot sessionId={session.id} onAddPane={onAddPane} />
+                      <TerminalPane
+                        key={pane.ptyId}
+                        ref={getPaneRefSetter(pane.id)}
+                        session={session}
+                        pane={pane}
+                        service={service}
+                        mode={mode}
+                        onCwdChange={(cwd) =>
+                          onSessionCwdChange?.(session.id, pane.id, cwd)
+                        }
+                        onPaneReady={onPaneReady}
+                        onRestart={onSessionRestart}
+                        onClose={
+                          session.panes.length > 1 && onClosePane
+                            ? onClosePane
+                            : undefined
+                        }
+                        isActive={isActive}
+                        deferFit={deferTerminalFit}
+                        showFocusHighlight={showPaneFocusHighlight}
+                      />
+                    </div>
+                  </Tooltip>
                 </motion.div>
-              ))
-            : null}
-        </AnimatePresence>
+              )
+            })}
+            {onAddPane
+              ? emptySlotIndices.map((slotIndex) => (
+                  <motion.div
+                    key={`empty-${slotIndex}`}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={SLOT_FADE_TRANSITION}
+                    data-testid="split-view-empty-slot"
+                    data-slot-index={slotIndex}
+                    className="relative min-h-0 min-w-0"
+                    style={{ gridArea: `p${slotIndex}` }}
+                  >
+                    <EmptySlot sessionId={session.id} onAddPane={onAddPane} />
+                  </motion.div>
+                ))
+              : null}
+          </AnimatePresence>
+          {isActive && hasSize ? (
+            <SplitDividers
+              layout={session.layout}
+              containerRef={outerDivRef}
+              ratios={currentRatios}
+              onRatioChange={handleRatioChange}
+            />
+          ) : null}
+        </div>
       </div>
     )
   }

@@ -50,6 +50,7 @@ interface RenderElasticOverrides {
   minPercent?: number
   maxPercent?: number
   initialPercent?: number
+  reservedPx?: number
 }
 
 const renderElastic = (
@@ -204,5 +205,29 @@ describe('useElasticContainer', () => {
     expect(typeof result.current.adjustBy).toBe('function')
     expect(typeof result.current.isDragging).toBe('boolean')
     expect(typeof result.current.sizeRef.current).toBe('number')
+  })
+
+  test('reservedPx subtracts from the dimension before applying percentages', () => {
+    // dim 1200, reserved 8 → effective 1192; initial 0.5 → round(596)
+    const { result } = renderElastic({
+      axis: 'horizontal',
+      minPercent: 0.15,
+      maxPercent: 0.85,
+      initialPercent: 0.5,
+      reservedPx: 8,
+    })
+    expect(result.current.size).toBe(596)
+    expect(result.current.pixelMin).toBe(Math.ceil(1192 * 0.15)) // 179
+    expect(result.current.pixelMax).toBe(Math.floor(1192 * 0.85)) // 1013
+    expect(result.current.effectiveDimension).toBe(1192)
+  })
+
+  test('reservedPx defaults to 0 (dock behavior unchanged)', () => {
+    const { result } = renderElastic({
+      axis: 'horizontal',
+      initialPercent: 0.3,
+    })
+    expect(result.current.size).toBe(360)
+    expect(result.current.effectiveDimension).toBe(1200)
   })
 })

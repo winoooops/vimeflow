@@ -51,7 +51,6 @@ describe('Session Types', () => {
         agentType: 'claude-code',
         status: 'running',
         active: true,
-        activityPanelCollapsed: null,
         pid: 12345,
         restoreData: undefined,
       }
@@ -78,6 +77,7 @@ describe('Session Types', () => {
         workingDirectory: '/home/user/my-project',
         agentType: 'claude-code',
         layout: 'single',
+        activityPanelCollapsed: false,
         panes: [
           {
             id: 'p0',
@@ -86,7 +86,6 @@ describe('Session Types', () => {
             agentType: 'claude-code',
             status: 'running',
             active: true,
-            activityPanelCollapsed: null,
           },
         ],
         createdAt: '2026-04-07T00:00:00Z',

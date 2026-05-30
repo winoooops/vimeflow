@@ -11,6 +11,7 @@ import {
   terminalCache,
   type BodyHandle,
 } from './Body'
+import { TERMINAL_FONT_FAMILY } from './terminalFont'
 import { useTerminal, type UseTerminalReturn } from '../../hooks/useTerminal'
 import type { ITerminalService } from '../../services/terminalService'
 
@@ -83,6 +84,9 @@ describe('Body', () => {
     focus: ReturnType<typeof vi.fn>
     onResize: ReturnType<typeof vi.fn>
     parser: { registerOscHandler: ReturnType<typeof vi.fn> }
+    refresh: ReturnType<typeof vi.fn>
+    cols: number
+    rows: number
     options: Record<string, unknown>
   }
   let mockFitAddon: { fit: ReturnType<typeof vi.fn> }
@@ -109,6 +113,9 @@ describe('Body', () => {
       parser: {
         registerOscHandler: vi.fn(() => ({ dispose: vi.fn() })),
       },
+      refresh: vi.fn(),
+      cols: 80,
+      rows: 24,
       options: {},
     }
 
@@ -193,7 +200,7 @@ describe('Body', () => {
         expect.objectContaining({
           cursorBlink: true,
           fontSize: 14,
-          fontFamily: expect.stringContaining('JetBrains Mono'),
+          fontFamily: TERMINAL_FONT_FAMILY,
         })
       )
     })
@@ -219,6 +226,584 @@ describe('Body', () => {
         })
       )
     })
+  })
+
+  test('repaints the terminal when the window regains focus', async () => {
+    render(
+      <Body
+        sessionId="test-session"
+        cwd="/home/user"
+        service={defaultMockService}
+      />
+    )
+
+    await waitFor(() => {
+      expect(mockTerminal.open).toHaveBeenCalled()
+    })
+
+    mockTerminal.refresh.mockClear()
+
+    // Root cause B: the render loop stalls while the window is covered;
+    // regaining focus must force a full repaint to flush stale rows.
+    act(() => {
+      window.dispatchEvent(new Event('focus'))
+    })
+
+    expect(mockTerminal.refresh).toHaveBeenCalledWith(0, 23)
+  })
+
+  test('repaints on visibilitychange only when the document is visible', async () => {
+    render(
+      <Body
+        sessionId="test-session"
+        cwd="/home/user"
+        service={defaultMockService}
+      />
+    )
+
+    await waitFor(() => {
+      expect(mockTerminal.open).toHaveBeenCalled()
+    })
+
+    // jsdom exposes a read-only visibilityState getter on Document.prototype;
+    // shadow it on the instance so we can exercise both branches of the guard.
+    const setVisibility = (state: DocumentVisibilityState): void => {
+      Object.defineProperty(document, 'visibilityState', {
+        configurable: true,
+        get: () => state,
+      })
+    }
+
+    try {
+      mockTerminal.refresh.mockClear()
+
+      // Hidden: the guard must suppress repainting an invisible terminal.
+      setVisibility('hidden')
+      act(() => {
+        document.dispatchEvent(new Event('visibilitychange'))
+      })
+      expect(mockTerminal.refresh).not.toHaveBeenCalled()
+
+      // Visible: the minimized-window restore path must flush stale rows.
+      setVisibility('visible')
+      act(() => {
+        document.dispatchEvent(new Event('visibilitychange'))
+      })
+      expect(mockTerminal.refresh).toHaveBeenCalledWith(0, 23)
+    } finally {
+      // Drop the instance override so jsdom's prototype getter is restored.
+      delete (document as { visibilityState?: DocumentVisibilityState })
+        .visibilityState
+    }
+  })
+
+  test('refits terminal after bundled terminal fonts load', async () => {
+    let resolveFonts: () => void = (): void => undefined
+
+    const fontsLoaded = new Promise<FontFace[]>((resolve) => {
+      resolveFonts = (): void => resolve([])
+    })
+
+    const load = vi.fn<FontFaceSet['load']>().mockReturnValue(fontsLoaded)
+    const originalFonts = document.fonts
+    const frameCallbacks: FrameRequestCallback[] = []
+
+    Object.defineProperty(document, 'fonts', {
+      configurable: true,
+      value: { load },
+    })
+
+    const requestAnimationFrameSpy = vi
+      .spyOn(window, 'requestAnimationFrame')
+      .mockImplementation((callback: FrameRequestCallback): number => {
+        frameCallbacks.push(callback)
+
+        return frameCallbacks.length
+      })
+
+    const offsetWidthSpy = vi
+      .spyOn(HTMLElement.prototype, 'offsetWidth', 'get')
+      .mockReturnValue(840)
+
+    const offsetHeightSpy = vi
+      .spyOn(HTMLElement.prototype, 'offsetHeight', 'get')
+      .mockReturnValue(600)
+
+    try {
+      render(
+        <Body
+          sessionId="test-session"
+          cwd="/home/user"
+          service={defaultMockService}
+        />
+      )
+
+      await waitFor(() => {
+        expect(load).toHaveBeenCalledTimes(2)
+      })
+
+      mockFitAddon.fit.mockClear()
+
+      await act(async () => {
+        resolveFonts()
+        await fontsLoaded
+      })
+
+      await waitFor(() => {
+        expect(requestAnimationFrameSpy).toHaveBeenCalledTimes(1)
+      })
+
+      act(() => {
+        frameCallbacks[0](16)
+      })
+
+      expect(mockFitAddon.fit).toHaveBeenCalledTimes(1)
+      expect(mockTerminal.refresh).toHaveBeenCalledWith(0, 23)
+    } finally {
+      Object.defineProperty(document, 'fonts', {
+        configurable: true,
+        value: originalFonts,
+      })
+      requestAnimationFrameSpy.mockRestore()
+      offsetWidthSpy.mockRestore()
+      offsetHeightSpy.mockRestore()
+    }
+  })
+
+  test('retries terminal font-settle refit until the container is visible', async () => {
+    let resolveFonts: () => void = (): void => undefined
+    let fontContainerWidth = 0
+
+    const fontsLoaded = new Promise<FontFace[]>((resolve) => {
+      resolveFonts = (): void => resolve([])
+    })
+
+    const load = vi.fn<FontFaceSet['load']>().mockReturnValue(fontsLoaded)
+    const originalFonts = document.fonts
+    const frameCallbacks: FrameRequestCallback[] = []
+
+    Object.defineProperty(document, 'fonts', {
+      configurable: true,
+      value: { load },
+    })
+
+    const requestAnimationFrameSpy = vi
+      .spyOn(window, 'requestAnimationFrame')
+      .mockImplementation((callback: FrameRequestCallback): number => {
+        frameCallbacks.push(callback)
+
+        return frameCallbacks.length
+      })
+
+    const offsetWidthSpy = vi
+      .spyOn(HTMLElement.prototype, 'offsetWidth', 'get')
+      .mockImplementation(() => fontContainerWidth)
+
+    const offsetHeightSpy = vi
+      .spyOn(HTMLElement.prototype, 'offsetHeight', 'get')
+      .mockReturnValue(600)
+
+    try {
+      render(
+        <Body
+          sessionId="test-session"
+          cwd="/home/user"
+          service={defaultMockService}
+        />
+      )
+
+      await waitFor(() => {
+        expect(load).toHaveBeenCalledTimes(2)
+      })
+
+      await act(async () => {
+        resolveFonts()
+        await fontsLoaded
+      })
+
+      await waitFor(() => {
+        expect(requestAnimationFrameSpy).toHaveBeenCalledTimes(1)
+      })
+
+      mockFitAddon.fit.mockClear()
+      mockTerminal.refresh.mockClear()
+
+      act(() => {
+        frameCallbacks[0](16)
+      })
+
+      // First flush attempt retries because width is still zero (hidden pane).
+      expect(requestAnimationFrameSpy).toHaveBeenCalledTimes(2)
+      expect(mockFitAddon.fit).not.toHaveBeenCalled()
+      expect(mockTerminal.refresh).not.toHaveBeenCalled()
+
+      fontContainerWidth = 800
+
+      act(() => {
+        frameCallbacks[1](32)
+      })
+
+      expect(mockFitAddon.fit).toHaveBeenCalledTimes(1)
+      expect(mockTerminal.refresh).toHaveBeenCalledWith(0, 23)
+    } finally {
+      Object.defineProperty(document, 'fonts', {
+        configurable: true,
+        value: originalFonts,
+      })
+      requestAnimationFrameSpy.mockRestore()
+      offsetWidthSpy.mockRestore()
+      offsetHeightSpy.mockRestore()
+    }
+  })
+
+  test('refreshes terminal after deferred terminal font refit flushes', async () => {
+    let resolveFonts: () => void = (): void => undefined
+
+    const fontsLoaded = new Promise<FontFace[]>((resolve) => {
+      resolveFonts = (): void => resolve([])
+    })
+
+    const load = vi.fn<FontFaceSet['load']>().mockReturnValue(fontsLoaded)
+    const originalFonts = document.fonts
+    const frameCallbacks: FrameRequestCallback[] = []
+
+    Object.defineProperty(document, 'fonts', {
+      configurable: true,
+      value: { load },
+    })
+
+    const requestAnimationFrameSpy = vi
+      .spyOn(window, 'requestAnimationFrame')
+      .mockImplementation((callback: FrameRequestCallback): number => {
+        frameCallbacks.push(callback)
+
+        return frameCallbacks.length
+      })
+
+    const offsetWidthSpy = vi
+      .spyOn(HTMLElement.prototype, 'offsetWidth', 'get')
+      .mockReturnValue(840)
+
+    const offsetHeightSpy = vi
+      .spyOn(HTMLElement.prototype, 'offsetHeight', 'get')
+      .mockReturnValue(600)
+
+    try {
+      const { rerender } = render(
+        <Body
+          sessionId="test-session"
+          cwd="/home/user"
+          service={defaultMockService}
+          deferFit
+        />
+      )
+
+      await waitFor(() => {
+        expect(load).toHaveBeenCalledTimes(2)
+      })
+
+      await act(async () => {
+        resolveFonts()
+        await fontsLoaded
+      })
+
+      expect(requestAnimationFrameSpy).not.toHaveBeenCalled()
+
+      mockFitAddon.fit.mockClear()
+      mockTerminal.refresh.mockClear()
+
+      rerender(
+        <Body
+          sessionId="test-session"
+          cwd="/home/user"
+          service={defaultMockService}
+        />
+      )
+
+      expect(requestAnimationFrameSpy).toHaveBeenCalledTimes(1)
+
+      act(() => {
+        frameCallbacks[0](16)
+      })
+
+      expect(mockFitAddon.fit).toHaveBeenCalledTimes(1)
+      expect(mockTerminal.refresh).toHaveBeenCalledWith(0, 23)
+    } finally {
+      Object.defineProperty(document, 'fonts', {
+        configurable: true,
+        value: originalFonts,
+      })
+      requestAnimationFrameSpy.mockRestore()
+      offsetWidthSpy.mockRestore()
+      offsetHeightSpy.mockRestore()
+    }
+  })
+
+  test('keeps deferred terminal font refresh pending when drag restarts before flush', async () => {
+    let resolveFonts: () => void = (): void => undefined
+
+    const fontsLoaded = new Promise<FontFace[]>((resolve) => {
+      resolveFonts = (): void => resolve([])
+    })
+
+    const load = vi.fn<FontFaceSet['load']>().mockReturnValue(fontsLoaded)
+    const originalFonts = document.fonts
+    const frameCallbacks: FrameRequestCallback[] = []
+
+    Object.defineProperty(document, 'fonts', {
+      configurable: true,
+      value: { load },
+    })
+
+    const requestAnimationFrameSpy = vi
+      .spyOn(window, 'requestAnimationFrame')
+      .mockImplementation((callback: FrameRequestCallback): number => {
+        frameCallbacks.push(callback)
+
+        return frameCallbacks.length
+      })
+
+    const offsetWidthSpy = vi
+      .spyOn(HTMLElement.prototype, 'offsetWidth', 'get')
+      .mockReturnValue(840)
+
+    const offsetHeightSpy = vi
+      .spyOn(HTMLElement.prototype, 'offsetHeight', 'get')
+      .mockReturnValue(600)
+
+    try {
+      const { rerender } = render(
+        <Body
+          sessionId="test-session"
+          cwd="/home/user"
+          service={defaultMockService}
+          deferFit
+        />
+      )
+
+      await waitFor(() => {
+        expect(load).toHaveBeenCalledTimes(2)
+      })
+
+      await act(async () => {
+        resolveFonts()
+        await fontsLoaded
+      })
+
+      rerender(
+        <Body
+          sessionId="test-session"
+          cwd="/home/user"
+          service={defaultMockService}
+        />
+      )
+
+      expect(requestAnimationFrameSpy).toHaveBeenCalledTimes(1)
+
+      rerender(
+        <Body
+          sessionId="test-session"
+          cwd="/home/user"
+          service={defaultMockService}
+          deferFit
+        />
+      )
+
+      act(() => {
+        frameCallbacks[0](16)
+      })
+
+      expect(mockFitAddon.fit).not.toHaveBeenCalled()
+      expect(mockTerminal.refresh).not.toHaveBeenCalled()
+
+      rerender(
+        <Body
+          sessionId="test-session"
+          cwd="/home/user"
+          service={defaultMockService}
+        />
+      )
+
+      expect(requestAnimationFrameSpy).toHaveBeenCalledTimes(2)
+
+      act(() => {
+        frameCallbacks[1](32)
+      })
+
+      expect(mockFitAddon.fit).toHaveBeenCalledTimes(1)
+      expect(mockTerminal.refresh).toHaveBeenCalledWith(0, 23)
+    } finally {
+      Object.defineProperty(document, 'fonts', {
+        configurable: true,
+        value: originalFonts,
+      })
+      requestAnimationFrameSpy.mockRestore()
+      offsetWidthSpy.mockRestore()
+      offsetHeightSpy.mockRestore()
+    }
+  })
+
+  test('clears pending deferred terminal font refresh when switching sessions', async () => {
+    let resolveFonts: () => void = (): void => undefined
+
+    const fontsLoaded = new Promise<FontFace[]>((resolve) => {
+      resolveFonts = (): void => resolve([])
+    })
+
+    const load = vi.fn<FontFaceSet['load']>().mockReturnValue(fontsLoaded)
+    const originalFonts = document.fonts
+
+    Object.defineProperty(document, 'fonts', {
+      configurable: true,
+      value: { load },
+    })
+
+    const offsetWidthSpy = vi
+      .spyOn(HTMLElement.prototype, 'offsetWidth', 'get')
+      .mockReturnValue(840)
+
+    const offsetHeightSpy = vi
+      .spyOn(HTMLElement.prototype, 'offsetHeight', 'get')
+      .mockReturnValue(600)
+
+    try {
+      const { rerender } = render(
+        <Body
+          sessionId="session-a"
+          cwd="/home/user"
+          service={defaultMockService}
+          deferFit
+        />
+      )
+
+      await waitFor(() => {
+        expect(load).toHaveBeenCalledTimes(2)
+      })
+
+      await act(async () => {
+        resolveFonts()
+        await fontsLoaded
+      })
+
+      mockFitAddon.fit.mockClear()
+      mockTerminal.refresh.mockClear()
+
+      rerender(
+        <Body
+          sessionId="session-b"
+          cwd="/home/user"
+          service={defaultMockService}
+        />
+      )
+
+      expect(mockFitAddon.fit).toHaveBeenCalledTimes(1)
+      expect(mockTerminal.refresh).not.toHaveBeenCalled()
+    } finally {
+      Object.defineProperty(document, 'fonts', {
+        configurable: true,
+        value: originalFonts,
+      })
+      offsetWidthSpy.mockRestore()
+      offsetHeightSpy.mockRestore()
+    }
+  })
+
+  test('retries terminal font refresh when drag starts before scheduled refit runs', async () => {
+    let resolveFonts: () => void = (): void => undefined
+
+    const fontsLoaded = new Promise<FontFace[]>((resolve) => {
+      resolveFonts = (): void => resolve([])
+    })
+
+    const load = vi.fn<FontFaceSet['load']>().mockReturnValue(fontsLoaded)
+    const originalFonts = document.fonts
+    const frameCallbacks: FrameRequestCallback[] = []
+
+    Object.defineProperty(document, 'fonts', {
+      configurable: true,
+      value: { load },
+    })
+
+    const requestAnimationFrameSpy = vi
+      .spyOn(window, 'requestAnimationFrame')
+      .mockImplementation((callback: FrameRequestCallback): number => {
+        frameCallbacks.push(callback)
+
+        return frameCallbacks.length
+      })
+
+    const offsetWidthSpy = vi
+      .spyOn(HTMLElement.prototype, 'offsetWidth', 'get')
+      .mockReturnValue(840)
+
+    const offsetHeightSpy = vi
+      .spyOn(HTMLElement.prototype, 'offsetHeight', 'get')
+      .mockReturnValue(600)
+
+    try {
+      const { rerender } = render(
+        <Body
+          sessionId="test-session"
+          cwd="/home/user"
+          service={defaultMockService}
+        />
+      )
+
+      await waitFor(() => {
+        expect(load).toHaveBeenCalledTimes(2)
+      })
+
+      mockFitAddon.fit.mockClear()
+      mockTerminal.refresh.mockClear()
+
+      await act(async () => {
+        resolveFonts()
+        await fontsLoaded
+      })
+
+      expect(requestAnimationFrameSpy).toHaveBeenCalledTimes(1)
+
+      rerender(
+        <Body
+          sessionId="test-session"
+          cwd="/home/user"
+          service={defaultMockService}
+          deferFit
+        />
+      )
+
+      act(() => {
+        frameCallbacks[0](16)
+      })
+
+      expect(mockFitAddon.fit).not.toHaveBeenCalled()
+      expect(mockTerminal.refresh).not.toHaveBeenCalled()
+
+      rerender(
+        <Body
+          sessionId="test-session"
+          cwd="/home/user"
+          service={defaultMockService}
+        />
+      )
+
+      expect(requestAnimationFrameSpy).toHaveBeenCalledTimes(2)
+
+      act(() => {
+        frameCallbacks[1](32)
+      })
+
+      expect(mockFitAddon.fit).toHaveBeenCalledTimes(1)
+      expect(mockTerminal.refresh).toHaveBeenCalledWith(0, 23)
+    } finally {
+      Object.defineProperty(document, 'fonts', {
+        configurable: true,
+        value: originalFonts,
+      })
+      requestAnimationFrameSpy.mockRestore()
+      offsetWidthSpy.mockRestore()
+      offsetHeightSpy.mockRestore()
+    }
   })
 
   test('loads fit addon', async () => {
@@ -1116,6 +1701,68 @@ describe('Body', () => {
       } finally {
         offsetSpy.mockRestore()
         terminalCache.delete('cached-session')
+      }
+    })
+
+    test('caches terminals skip font settle refit when reused', async () => {
+      // Seed the module-level cache to force the reuse branch
+      const cachedFitAddon = { fit: vi.fn() }
+
+      const cachedTerminal = {
+        open: vi.fn(),
+        dispose: vi.fn(),
+        focus: vi.fn(),
+        cols: 80,
+        rows: 24,
+        onResize: vi.fn(() => ({ dispose: vi.fn() })),
+        parser: { registerOscHandler: vi.fn(() => ({ dispose: vi.fn() })) },
+      }
+
+      const load = vi.fn<FontFaceSet['load']>().mockResolvedValue([])
+      const originalFonts = document.fonts
+
+      Object.defineProperty(document, 'fonts', {
+        configurable: true,
+        value: { load },
+      })
+
+      terminalCache.set('cached-session', {
+        terminal: cachedTerminal as unknown as Terminal,
+        fitAddon: cachedFitAddon as unknown as FitAddon,
+      })
+
+      const offsetWidthSpy = vi
+        .spyOn(HTMLElement.prototype, 'offsetWidth', 'get')
+        .mockReturnValue(800)
+
+      const offsetHeightSpy = vi
+        .spyOn(HTMLElement.prototype, 'offsetHeight', 'get')
+        .mockReturnValue(600)
+
+      try {
+        render(
+          <Body
+            sessionId="cached-session"
+            cwd="/home/user"
+            service={defaultMockService}
+          />
+        )
+
+        await waitFor(() => {
+          expect(cachedTerminal.open).toHaveBeenCalled()
+        })
+
+        // Cached terminals already have terminals and fonts in-process, so we
+        // should not re-run the font-settle pipeline when restoring.
+        expect(load).not.toHaveBeenCalled()
+      } finally {
+        terminalCache.delete('cached-session')
+        offsetHeightSpy.mockRestore()
+        offsetWidthSpy.mockRestore()
+        Object.defineProperty(document, 'fonts', {
+          configurable: true,
+          value: originalFonts,
+        })
       }
     })
 

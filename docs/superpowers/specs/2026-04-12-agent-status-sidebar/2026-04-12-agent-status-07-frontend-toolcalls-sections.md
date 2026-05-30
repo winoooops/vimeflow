@@ -2,7 +2,7 @@
 
 **Parent:** `CLAUDE.md`
 **Depends on:** Sub-spec 4 (types + hook)
-**Scope:** Tool call aggregation, recent tool calls list, files changed, test results, and activity footer.
+**Scope:** Tool call aggregation, recent tool calls list, files changed, and test results.
 
 ## Files to Create
 
@@ -12,7 +12,6 @@ src/features/agent-status/components/
 ├── RecentToolCalls.tsx       // Collapsible list of last 5-10 calls
 ├── FilesChanged.tsx          // File list with badges
 ├── TestResults.tsx           // Pass/fail segmented bar
-├── ActivityFooter.tsx        // Session time, turns, lines
 └── CollapsibleSection.tsx    // Shared expand/collapse wrapper
 ```
 
@@ -22,7 +21,7 @@ src/features/agent-status/components/
 
 ## Design Reference
 
-- Visual: `docs/design/agent_status_sidebar/code.html` — Tool Calls, Recent, Files Changed, Tests, Footer sections
+- Visual: `docs/design/agent_status_sidebar/code.html` — Tool Calls, Recent, Files Changed, and Tests sections. Its footer is stale; session duration, turns, and line deltas now live in the global bottom `StatusBar`.
 
 ## CollapsibleSection (shared)
 
@@ -132,39 +131,6 @@ interface TestResultsProps {
   - Failed: `bg-error/40`
 - Count text: `text-[10px] font-mono text-success font-bold` (green if all pass, warning otherwise)
 
-## ActivityFooter
-
-### Props
-
-```typescript
-interface ActivityFooterProps {
-  totalDurationMs: number
-  turnCount: number
-  linesAdded: number
-  linesRemoved: number
-}
-```
-
-### Layout
-
-- Sticky at bottom: `mt-auto px-5 py-3 bg-surface-container-low/40`
-- Single flex row with three items:
-  - Session time: formatted as `XXh XXm` from `totalDurationMs`
-  - Turn count: `XX turns`
-  - Lines: `+X,XXX / -X,XXX lines`
-- All text: `font-mono text-[9px] text-outline`
-
-### Time formatting
-
-```typescript
-const formatDuration = (ms: number): string => {
-  const hours = Math.floor(ms / 3_600_000)
-  const minutes = Math.floor((ms % 3_600_000) / 60_000)
-  if (hours > 0) return `${hours}h ${minutes.toString().padStart(2, '0')}m`
-  return `${minutes}m`
-}
-```
-
 ## Acceptance Criteria
 
 - [ ] `npm run type-check` passes
@@ -174,7 +140,6 @@ const formatDuration = (ms: number): string => {
 - [ ] Tests: RecentToolCalls starts collapsed, expands on click
 - [ ] Tests: FilesChanged renders correct prefix symbols and colors
 - [ ] Tests: TestResults renders correct number of bar segments
-- [ ] Tests: ActivityFooter formats duration correctly (0 → "0m", 9900000 → "2h 45m")
 - [ ] Tests: CollapsibleSection toggles content visibility
 - [ ] All test files co-located
 - [ ] No `console.log` statements
@@ -183,5 +148,5 @@ const formatDuration = (ms: number): string => {
 ## Notes
 
 - The `CollapsibleSection` pattern already exists in `src/features/workspace/components/AgentActivity/CollapsibleSection.tsx` — look at it for reference but create a new one in `agent-status/` to avoid coupling
-- `turnCount` is not directly in the statusline — derive it from the number of assistant messages in transcript, or accept it as a prop populated by the hook
+- Turn count, session duration, and line deltas are not rendered in this panel anymore; the global bottom `StatusBar` owns that ambient session readout.
 - File changes are derived from tool calls (Edit/Write tools) in the `useAgentStatus` hook, not from a separate data source

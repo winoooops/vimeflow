@@ -9,25 +9,86 @@ import {
 import type {
   Command,
   CommandPaletteState,
+  UseCommandPaletteOptions,
   UseCommandPaletteReturn,
 } from '../registry/types'
 import { fuzzyMatch } from '../registry/fuzzyMatch'
 import { defaultCommands } from '../data/defaultCommands'
 import { getAllLeaves, traverseNamespace } from '../registry/commandTree'
 import { parseQuery } from '../registry/parseQuery'
+import * as chordRegistry from '../chordRegistry'
+import { listenCommandPaletteToggle } from '../../../lib/backend'
+import {
+  COMMAND_PALETTE_SHORTCUT_KEYS,
+  isCommandPaletteToggle,
+} from '../shortcutConfig'
 
-const isPaletteToggle = (event: KeyboardEvent): boolean =>
-  event.ctrlKey && !event.metaKey && !event.altKey && event.key === ':'
+const LEADER_WINDOW_MS = 500
+
+const queryForLeaderFollowUp = (event: KeyboardEvent): string | null => {
+  if (
+    event.ctrlKey ||
+    event.metaKey ||
+    event.altKey ||
+    event.key.length !== 1
+  ) {
+    return null
+  }
+
+  return `:${event.key}`
+}
+
+// Fully swallow a keydown: preventDefault + stopPropagation +
+// stopImmediatePropagation. Applied to the palette toggle AND to Escape /
+// leader follow-up keys, so the name describes the full-consume contract
+// rather than any single call site (stopImmediatePropagation also blocks
+// same-target capture-phase listeners in the Electron IPC path).
+const fullyConsumeEvent = (event: KeyboardEvent): void => {
+  event.preventDefault()
+  event.stopPropagation()
+  event.stopImmediatePropagation()
+}
+
+export { COMMAND_PALETTE_SHORTCUT_KEYS }
 
 export const useCommandPalette = (
-  commands: Command[] = defaultCommands
+  commands: Command[] = defaultCommands,
+  options: UseCommandPaletteOptions = {}
 ): UseCommandPaletteReturn => {
+  const isEnabled = options.enabled ?? true
+
   const [state, setState] = useState<CommandPaletteState>({
     isOpen: false,
     query: ':',
     selectedIndex: 0,
     currentNamespace: null,
   })
+  const leaderTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const leaderActiveRef = useRef(false)
+  const isEnabledRef = useRef(isEnabled)
+
+  isEnabledRef.current = isEnabled
+
+  const clearLeaderWindow = useCallback((): void => {
+    if (leaderTimerRef.current) {
+      clearTimeout(leaderTimerRef.current)
+      leaderTimerRef.current = null
+    }
+    leaderActiveRef.current = false
+  }, [])
+
+  const startLeaderWindow = useCallback(
+    (onExpire: () => void): void => {
+      clearLeaderWindow()
+      leaderActiveRef.current = true
+      leaderTimerRef.current = setTimeout(() => {
+        leaderActiveRef.current = false
+        leaderTimerRef.current = null
+        onExpire()
+      }, LEADER_WINDOW_MS)
+    },
+    [clearLeaderWindow]
+  )
 
   // Parse query into verb and args
   const parsedQuery = useMemo(() => parseQuery(state.query), [state.query])
@@ -101,17 +162,31 @@ export const useCommandPalette = (
     return Math.min(state.selectedIndex, filteredResults.length - 1)
   }, [state.selectedIndex, filteredResults.length])
 
+  const openWithQuery = useCallback(
+    (query: string): void => {
+      if (!isEnabledRef.current) {
+        clearLeaderWindow()
+
+        return
+      }
+
+      setState((prev) => ({
+        ...prev,
+        isOpen: true,
+        query,
+        selectedIndex: 0,
+        currentNamespace: null,
+      }))
+    },
+    [clearLeaderWindow]
+  )
+
   const open = useCallback((): void => {
-    setState((prev) => ({
-      ...prev,
-      isOpen: true,
-      query: ':',
-      selectedIndex: 0,
-      currentNamespace: null,
-    }))
-  }, [])
+    openWithQuery(':')
+  }, [openWithQuery])
 
   const close = useCallback((): void => {
+    clearLeaderWindow()
     setState((prev) => ({
       ...prev,
       isOpen: false,
@@ -119,7 +194,15 @@ export const useCommandPalette = (
       selectedIndex: 0,
       currentNamespace: null,
     }))
-  }, [])
+  }, [clearLeaderWindow])
+
+  useEffect(() => {
+    if (isEnabled) {
+      return
+    }
+
+    close()
+  }, [close, isEnabled])
 
   const setQuery = useCallback((query: string): void => {
     setState((prev) => ({
@@ -230,6 +313,7 @@ export const useCommandPalette = (
 
   const handlersRef = useRef({
     open,
+    openWithQuery,
     close,
     navigateUp,
     navigateDown,
@@ -241,6 +325,7 @@ export const useCommandPalette = (
     stateRef.current = state
     handlersRef.current = {
       open,
+      openWithQuery,
       close,
       navigateUp,
       navigateDown,
@@ -250,25 +335,79 @@ export const useCommandPalette = (
 
   // Global keyboard listener — registered once for the hook's lifetime.
   useEffect(() => {
+    // Platform command-palette toggle handling shared by the renderer keydown path and the Electron
+    // before-input-event override. In the packaged app Electron owns the
+    // toggle binding and consumes it before the renderer sees it, dispatching
+    // an IPC toggle instead; this callback drives the same leader window so
+    // the follow-up chord key (NOT intercepted) still reaches handleKeyDown
+    // below and routes through chordRegistry / usePaneRenameChord.
+    const handlePaletteShortcut = (): void => {
+      if (!isEnabledRef.current) {
+        handlersRef.current.close()
+
+        return
+      }
+
+      if (leaderActiveRef.current) {
+        clearLeaderWindow()
+        handlersRef.current.open()
+
+        return
+      }
+
+      if (stateRef.current.isOpen) {
+        handlersRef.current.close()
+      } else {
+        startLeaderWindow(() => {
+          handlersRef.current.open()
+        })
+      }
+    }
+
     const handleKeyDown = (event: KeyboardEvent): void => {
-      // Toggle palette on Ctrl+: (capture-phase listener)
-      if (isPaletteToggle(event)) {
-        // Suppress repeat events
-        if (event.repeat) {
-          event.preventDefault()
-          event.stopPropagation()
+      if (isCommandPaletteToggle(event) && event.repeat) {
+        fullyConsumeEvent(event)
+
+        return
+      }
+
+      if (leaderActiveRef.current) {
+        if (isCommandPaletteToggle(event)) {
+          fullyConsumeEvent(event)
+          clearLeaderWindow()
+          handlersRef.current.open()
 
           return
         }
 
-        event.preventDefault()
-        event.stopPropagation()
+        const consumed = chordRegistry.dispatch(event)
+        clearLeaderWindow()
 
-        if (stateRef.current.isOpen) {
+        if (consumed) {
+          fullyConsumeEvent(event)
           handlersRef.current.close()
-        } else {
-          handlersRef.current.open()
+
+          return
         }
+
+        if (event.key === 'Escape') {
+          fullyConsumeEvent(event)
+
+          return
+        }
+
+        fullyConsumeEvent(event)
+        handlersRef.current.openWithQuery(queryForLeaderFollowUp(event) ?? ':')
+
+        return
+      }
+
+      // The palette toggle starts a short leader window. If no chord consumes the
+      // follow-up key, the palette opens after the window or immediately on
+      // the non-chord key.
+      if (isCommandPaletteToggle(event)) {
+        fullyConsumeEvent(event)
+        handlePaletteShortcut()
 
         return
       }
@@ -303,12 +442,18 @@ export const useCommandPalette = (
       }
     }
 
+    const unlistenCommandPaletteToggle = listenCommandPaletteToggle(
+      handlePaletteShortcut
+    )
+
     document.addEventListener('keydown', handleKeyDown, { capture: true })
 
     return (): void => {
+      unlistenCommandPaletteToggle()
+      clearLeaderWindow()
       document.removeEventListener('keydown', handleKeyDown, { capture: true })
     }
-  }, [])
+  }, [clearLeaderWindow, startLeaderWindow])
 
   return {
     state,

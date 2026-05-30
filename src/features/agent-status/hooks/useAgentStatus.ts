@@ -117,6 +117,11 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
   const watcherStartGenerationRef = useRef(0)
   // PTY id captured at start so cleanup stops the right backend watcher.
   const knownPtyIdRef = useRef<string | undefined>(undefined)
+  // Agent PID captured from detect_agent_in_session. A pane refresh can
+  // replace the Codex/Claude process while preserving the same PTY/pane
+  // identity; when that happens, the old transcript watcher must be
+  // restarted and run-scoped panel state must be cleared.
+  const detectedAgentPidRef = useRef<number | null>(null)
 
   // Stale-detection guard: written synchronously during render so IPC continuations see the latest sessionId.
   const currentSessionIdRef = useRef(sessionId)
@@ -163,6 +168,7 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
       watcherStartInFlightRef.current = false
       watcherStartGenerationRef.current += 1
       knownPtyIdRef.current = undefined
+      detectedAgentPidRef.current = null
       listenersReadyRef.current = false
       if (collapseTimeoutRef.current) {
         clearTimeout(collapseTimeoutRef.current)
@@ -209,10 +215,31 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
           ? AGENT_TYPE_MAP[agentKey]
           : 'generic'
 
+        const detectedPid = result.pid
+
+        const agentProcessChanged =
+          detectedAgentPidRef.current !== null &&
+          detectedAgentPidRef.current !== detectedPid
+
+        detectedAgentPidRef.current = detectedPid
+
+        if (agentProcessChanged) {
+          watcherStartedRef.current = false
+          watcherStartInFlightRef.current = false
+          watcherStartGenerationRef.current += 1
+          await stopWatchers(sid, knownPtyIdRef.current ?? ptySessionId)
+          // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+          if (!isMountedRef.current || currentSessionIdRef.current !== sid) {
+            return
+          }
+
+          knownPtyIdRef.current = ptySessionId
+        }
+
         setStatus((prev) =>
           prev.sessionId === sid
             ? {
-                ...prev,
+                ...(agentProcessChanged ? createDefaultStatus(sid) : prev),
                 isActive: true,
                 agentExited: false,
                 agentType: mapped,
@@ -290,6 +317,7 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
           return
         }
         agentEverDetectedRef.current = false
+        detectedAgentPidRef.current = null
 
         watcherStartedRef.current = false
         watcherStartInFlightRef.current = false
@@ -303,15 +331,21 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
           prev.sessionId === sid ? { ...prev, agentExited: true } : prev
         )
 
-        // Hold final state for 5s, then collapse. Runs regardless of
-        // watcherStartedRef — that's the F1 fix: a transient
-        // start_agent_watcher failure no longer blocks collapse.
+        // Hold the final snapshot for 5s, then reset the panel to a clean
+        // idle state. Reset to the full default rather than only flipping
+        // isActive/agentExited: the panel renders run-scoped metrics
+        // (context window, tool calls, activity feed, tests, turns)
+        // unconditionally, so retaining them here leaves a dead agent's
+        // frozen snapshot painting the panel forever while the PTY/pane
+        // stays alive (agent exited without closing the pane). Mirrors the
+        // session-change and agent-process-change resets above.
+        //
+        // Runs regardless of watcherStartedRef — that's the F1 fix: a
+        // transient start_agent_watcher failure no longer blocks collapse.
         collapseTimeoutRef.current = setTimeout(() => {
           collapseTimeoutRef.current = null
           setStatus((prev) =>
-            prev.sessionId === sid
-              ? { ...prev, isActive: false, agentExited: false }
-              : prev
+            prev.sessionId === sid ? createDefaultStatus(sid) : prev
           )
         }, EXIT_HOLD_MS)
       }
@@ -380,66 +414,86 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
 
           const p = payload
 
-          setStatus((prev) => ({
-            ...prev,
-            modelId: p.modelId ?? prev.modelId,
-            modelDisplayName: p.modelDisplayName ?? prev.modelDisplayName,
-            version: p.version ?? prev.version,
-            agentSessionId: p.agentSessionId ?? prev.agentSessionId,
-            // All nested objects can be null (Option<T> in Rust) —
-            // guard every access to avoid silent TypeError crashes.
-            contextWindow: p.contextWindow
-              ? {
-                  usedPercentage: p.contextWindow.usedPercentage ?? 0,
-                  contextWindowSize: Number(p.contextWindow.contextWindowSize),
-                  totalInputTokens: Number(p.contextWindow.totalInputTokens),
-                  totalOutputTokens: Number(p.contextWindow.totalOutputTokens),
-                  currentUsage: p.contextWindow.currentUsage
-                    ? {
-                        inputTokens: Number(
-                          p.contextWindow.currentUsage.inputTokens
-                        ),
-                        outputTokens: Number(
-                          p.contextWindow.currentUsage.outputTokens
-                        ),
-                        cacheCreationInputTokens: Number(
-                          p.contextWindow.currentUsage.cacheCreationInputTokens
-                        ),
-                        cacheReadInputTokens: Number(
-                          p.contextWindow.currentUsage.cacheReadInputTokens
-                        ),
-                      }
-                    : null,
-                }
-              : prev.contextWindow,
-            cost: p.cost
-              ? {
-                  totalCostUsd: p.cost.totalCostUsd ?? null,
-                  totalDurationMs: Number(p.cost.totalDurationMs),
-                  totalApiDurationMs: Number(p.cost.totalApiDurationMs),
-                  totalLinesAdded: Number(p.cost.totalLinesAdded),
-                  totalLinesRemoved: Number(p.cost.totalLinesRemoved),
-                }
-              : prev.cost,
-            rateLimits: p.rateLimits?.fiveHour
-              ? {
-                  fiveHour: {
-                    usedPercentage: p.rateLimits.fiveHour.usedPercentage,
-                    // resets_at is Unix epoch seconds (u64 from Rust → bigint in TS)
-                    resetsAt: Number(p.rateLimits.fiveHour.resetsAt) * 1000,
-                  },
-                  ...(p.rateLimits.sevenDay
-                    ? {
-                        sevenDay: {
-                          usedPercentage: p.rateLimits.sevenDay.usedPercentage,
-                          resetsAt:
-                            Number(p.rateLimits.sevenDay.resetsAt) * 1000,
-                        },
-                      }
-                    : {}),
-                }
-              : prev.rateLimits,
-          }))
+          setStatus((prev) => {
+            const base =
+              p.agentSessionId !== null &&
+              prev.agentSessionId !== null &&
+              p.agentSessionId !== prev.agentSessionId
+                ? {
+                    ...createDefaultStatus(prev.sessionId),
+                    isActive: prev.isActive,
+                    agentExited: prev.agentExited,
+                    agentType: prev.agentType,
+                  }
+                : prev
+
+            return {
+              ...base,
+              modelId: p.modelId ?? base.modelId,
+              modelDisplayName: p.modelDisplayName ?? base.modelDisplayName,
+              version: p.version ?? base.version,
+              agentSessionId: p.agentSessionId ?? base.agentSessionId,
+              // All nested objects can be null (Option<T> in Rust) —
+              // guard every access to avoid silent TypeError crashes.
+              contextWindow: p.contextWindow
+                ? {
+                    usedPercentage: p.contextWindow.usedPercentage ?? 0,
+                    contextWindowSize: Number(
+                      p.contextWindow.contextWindowSize
+                    ),
+                    totalInputTokens: Number(p.contextWindow.totalInputTokens),
+                    totalOutputTokens: Number(
+                      p.contextWindow.totalOutputTokens
+                    ),
+                    currentUsage: p.contextWindow.currentUsage
+                      ? {
+                          inputTokens: Number(
+                            p.contextWindow.currentUsage.inputTokens
+                          ),
+                          outputTokens: Number(
+                            p.contextWindow.currentUsage.outputTokens
+                          ),
+                          cacheCreationInputTokens: Number(
+                            p.contextWindow.currentUsage
+                              .cacheCreationInputTokens
+                          ),
+                          cacheReadInputTokens: Number(
+                            p.contextWindow.currentUsage.cacheReadInputTokens
+                          ),
+                        }
+                      : null,
+                  }
+                : base.contextWindow,
+              cost: p.cost
+                ? {
+                    totalCostUsd: p.cost.totalCostUsd ?? null,
+                    totalDurationMs: Number(p.cost.totalDurationMs),
+                    totalApiDurationMs: Number(p.cost.totalApiDurationMs),
+                    totalLinesAdded: Number(p.cost.totalLinesAdded),
+                    totalLinesRemoved: Number(p.cost.totalLinesRemoved),
+                  }
+                : base.cost,
+              rateLimits: p.rateLimits?.fiveHour
+                ? {
+                    fiveHour: {
+                      usedPercentage: p.rateLimits.fiveHour.usedPercentage,
+                      // resets_at is Unix epoch seconds (u64 from Rust → bigint in TS)
+                      resetsAt: Number(p.rateLimits.fiveHour.resetsAt) * 1000,
+                    },
+                    ...(p.rateLimits.sevenDay
+                      ? {
+                          sevenDay: {
+                            usedPercentage:
+                              p.rateLimits.sevenDay.usedPercentage,
+                            resetsAt:
+                              Number(p.rateLimits.sevenDay.resetsAt) * 1000,
+                          },
+                        }
+                      : {}),
+                  }
+                : base.rateLimits,
+            }
+          })
         }
       )
 
@@ -622,6 +676,7 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
         watcherStartGenerationRef.current += 1
         void stopWatchers(sid, knownPtyIdRef.current)
         knownPtyIdRef.current = undefined
+        detectedAgentPidRef.current = null
       }
     },
     []
