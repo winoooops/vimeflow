@@ -53,7 +53,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Terminal Input Handling](patterns/terminal-input-handling.md)       | terminal           | 4        | 2    | 2026-05-24   |
 | [Documentation Accuracy](patterns/documentation-accuracy.md)         | code-quality       | 76       | 22   | 2026-05-30   |
 | [Accessibility](patterns/accessibility.md)                           | a11y               | 25       | 6    | 2026-05-09   |
-| [Async Race Conditions](patterns/async-race-conditions.md)           | react-patterns     | 54       | 14   | 2026-05-30   |
+| [Async Race Conditions](patterns/async-race-conditions.md)           | react-patterns     | 55       | 15   | 2026-05-30   |
 | [Tokio Blocking On Async](patterns/tokio-blocking-on-async.md)       | backend            | 2        | 1    | 2026-05-20   |
 | [Command Injection](patterns/command-injection.md)                   | security           | 7        | 3    | 2026-05-02   |
 | [Policy Judge Hygiene](patterns/policy-judge-hygiene.md)             | security           | 15       | 2    | 2026-04-20   |
@@ -72,4 +72,4 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Keyboard Shortcut Guards](patterns/keyboard-shortcut-guards.md)     | keyboard-shortcuts | 18       | 0    | 2026-05-26   |
 | [Verify Render Target](patterns/verify-render-target.md)             | code-quality       | 2        | 0    | 2026-05-24   |
 | [Status Indicator Display](patterns/status-indicator-display.md)     | code-quality       | 3        | 0    | 2026-05-26   |
-| [Parser Resilience](patterns/parser-resilience.md)                   | code-quality       | 3        | 2    | 2026-05-30   |
+| [Parser Resilience](patterns/parser-resilience.md)                   | code-quality       | 4        | 3    | 2026-05-30   |

@@ -3,7 +3,7 @@ id: parser-resilience
 category: code-quality
 created: 2026-05-24
 last_updated: 2026-05-30
-ref_count: 2
+ref_count: 3
 ---
 
 # Parser Resilience
@@ -131,3 +131,19 @@ true` and drop the chunk.
     unprotected. Codex verify caught this with high confidence
     (0.9) on retry-1.
 - **Commit:** _(PR #302 upsource cycle 14 fix commit)_
+
+### 4. Stale-partial watchdog for streaming tail engines whose partial-line guard can permanently park the replay→live boundary signal
+
+- **Source:** github-claude | PR #302 cycle 17 | 2026-05-30
+- **Severity:** MEDIUM
+- **File:** `crates/backend/src/agent/adapter/base/transcript_tail_service.rs`
+- **Finding:** Cycle 1 round 1 (#2) added the `partial.is_empty() && !skip_until_newline` guard before firing `on_caught_up` to fix the misclassification of straddling lines as live events. The guard is semantically correct for normal replay→live transitions but introduces a silent persistent failure mode: if a JSONL writer dies mid-line (crash, disk full, killed process), `partial` stays non-empty forever, `on_caught_up` never fires, decoders that gate replay-bounded state on `on_caught_up` (e.g. `TestRunEmitter` via its `replay_done` flag) stay frozen, and downstream UIs receive no events with no user-visible diagnostic. Recovery requires a session restart.
+- **Fix:** Stale-partial watchdog in `TranscriptTailService::run`:
+  - New `STALE_PARTIAL_WATCHDOG: Duration = Duration::from_secs(30)` constant (30s comfortably above any realistic inter-write gap during live tailing; tunable via `with_stale_partial_watchdog` in tests).
+  - Track `last_byte_at: Instant` updated whenever a non-EOF read returns >0 bytes.
+  - In the EOF arm, if `!partial.is_empty()` (or `skip_until_newline`) AND `last_byte_at.elapsed() >= STALE_PARTIAL_WATCHDOG`: log warn with provider label / threshold / buffered byte count, discard the partial, reset skip-mode, force-fire `on_caught_up`, and reset `last_byte_at = now` so the watchdog doesn't refire every poll while the writer stays silent.
+  - The orphaned partial is DISCARDED, never decoded as a line — corrupt-line safety preserved.
+  - Updated `TranscriptDecoder::on_caught_up` docstring with the watchdog contract; same idempotency requirement as the normal path.
+  - Regression test `engine_stale_partial_watchdog_force_fires_on_caught_up` uses `with_stale_partial_watchdog(Duration::ZERO)` so the very next Eof with non-empty partial fires the watchdog; asserts orphaned partial is not decoded AND `on_caught_up` fires at least once.
+- **Code-review heuristic:** When a defensive guard correctly prevents one failure class, audit whether it introduces a new "silent persistent failure" class. The guard "don't fire boundary signal while X is true" is symmetric: if X never becomes false, the boundary signal never fires. The fix shape — watchdog/timeout + reset condition + force-progress — is the standard recovery for any guard whose unblock condition depends on external state (the JSONL writer, here) that can fail to materialize. Pair every "deferred-until-X" guard with a "force-progress if X stuck for too long" escape hatch. The escape MUST discard the still-pending state (not commit it to events) because if the unblock condition never arrived, the pending state is inherently incomplete or corrupt.
+- **Commit:** _(PR #302 upsource cycle 17 fix commit)_

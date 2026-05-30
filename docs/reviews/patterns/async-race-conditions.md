@@ -3,7 +3,7 @@ id: async-race-conditions
 category: react-patterns
 created: 2026-04-09
 last_updated: 2026-05-30
-ref_count: 14
+ref_count: 15
 ---
 
 # Async Race Conditions
@@ -553,3 +553,17 @@ prevent showing previous data.
   3. **Avoid the FsEventWatcher deadlock (codex retry-1 HIGH 0.89).** Drop the moved-out `RecommendedWatcher` OUTSIDE the gate. On macOS, `RecommendedWatcher = FsEventWatcher`, whose `Drop` stops and joins the FSEvents runloop — if an in-flight OLD callback is blocked on the per-session gate, dropping the watcher under the gate deadlocks (gate-holder waits for runloop drain; runloop waits for in-flight callback to complete; callback waits for gate). The `alive=false` store under the gate is the load-bearing race-fix; the watcher-drop is defensive belt-and-suspenders.
 - **Code-review heuristic:** When a multi-phase setup includes both (a) fallible setup steps that must roll back on failure and (b) irreversible mutations needed for race-safety, the right architectural shape is a **post-setup-success hook**, NOT a caller-side pre-setup mutation. `pre_inline_init: impl FnOnce()` is a one-liner trait bound that lets the caller inject the irreversible step at the correct ordering point inside the setup function. This generalizes: any "do X only if Y succeeds" sequence where X and Y live in different modules is cleaner via a closure parameter than via two-call patterns where the caller has to remember the ordering. **Drop-outside-the-lock corollary:** when a lock protects an in-flight callback chain AND the callback's `Drop` synchronously joins the callback runloop, the Drop must happen outside the lock. The pattern recurs for any OS-level event source (FSEvents on macOS, inotify watchers, kqueue, mio registrations) whose teardown synchronizes with the dispatch thread.
 - **Commit:** _(PR #302 upsource cycle 16 fix commit; codex-verify retry-1 added the drop-outside-gate fix and the post-setup-success hook restructure)_
+
+### 55. The drop-outside-gate corollary recurred in `insert` — applying a pattern reactively is not the same as applying it everywhere it belongs
+
+- **Source:** github-claude | PR #302 cycle 17 | 2026-05-30
+- **Severity:** HIGH
+- **File:** `crates/backend/src/agent/adapter/base/watcher_runtime.rs` (AgentWatcherState::insert)
+- **Finding:** Cycle 16 retry-1 (#54) introduced the drop-outside-gate corollary for OS-level event sources, and applied it to `quiesce_existing`. The exact same `let _ = d._watcher.take()` under-gate pattern was sitting in `AgentWatcherState::insert` (introduced cycle-9 retry-2 as the original "drop notify watcher first" fix), unaddressed. Claude's post-cycle-16 review flagged the pre-existing call site at HIGH 90% confidence. The original cycle-9 retry-2 comment said "deadlock concern is gone" — but that referred to a DIFFERENT deadlock (the `transcript_state.stop` gate re-entry from displaced.Drop). The FSEvents-runloop deadlock is orthogonal and was never addressed at the `insert` site.
+- **Fix:** Mirror cycle 16 retry-1's `quiesce_existing` pattern exactly:
+  1. Declare `let mut removed_watcher_for_drop: Option<notify::RecommendedWatcher> = None;` alongside the existing outer-scope `removed_transcript` binding.
+  2. Inside the gate block, replace `let _ = d._watcher.take()` with `removed_watcher_for_drop = d._watcher.take();`.
+  3. The watcher's `Drop` runs at end-of-function when the outer-scope binding falls out of scope, after the gate has been released.
+     No semantic change to the `alive=false` store (still under the gate — that's the load-bearing race-fix). Only the watcher-drop timing changed.
+- **Code-review heuristic:** When a code-review finding introduces a new pattern AND there's an existing call site exhibiting the same flaw, the fix is incomplete unless the existing site is also corrected. Reviewers reactively spot the new code; ALSO grep the rest of the file/module for the same antipattern in pre-existing code. The cycle-16 fix's docstring on `quiesce_existing` explicitly named the FSEvents-runloop deadlock class but didn't trigger a sweep of other locations holding gates while dropping notify watchers. Mitigation: when introducing a fix for an OS-resource-Drop-under-lock pattern, immediately `grep` for `_watcher.take\|_watcher.drop\|drop(.*watcher)` and audit every match for the same hazard. Same applies to the broader class: any time you write a comment justifying "this is safe because X", consider whether the same justification applies (or breaks) at every other site doing similar work.
+- **Commit:** _(PR #302 upsource cycle 17 fix commit)_

@@ -52,6 +52,21 @@ pub(crate) const MAX_PARTIAL_BYTES: usize = 4 * 1024 * 1024;
 /// (typical Claude / Codex JSONL lines are <10 KiB). PR #302 cycle 14 F1.
 pub(crate) const READ_CHUNK_BYTES: usize = 8 * 1024;
 
+/// PR #302 cycle 17 F2 (Claude post-cycle-16 review MED 85%) — stale-
+/// partial watchdog. When a JSONL writer dies mid-line (crash, disk
+/// full, killed process), `partial` would otherwise stay non-empty
+/// forever and `on_caught_up` would never fire, leaving decoders
+/// (e.g. `TestRunEmitter`) frozen in replay mode with no user-visible
+/// signal. After this threshold of inactivity (no new bytes read) AND
+/// `partial.is_empty() == false`, the engine logs a warn, discards
+/// the orphaned partial, exits skip-mode if set, and force-fires
+/// `on_caught_up` so downstream UIs unblock. 30s is well above any
+/// realistic inter-write gap during live tailing (Claude / Codex
+/// write multiple events per second when active) and short enough
+/// that a stuck UI recovers within human-observable time. Tests
+/// override via `with_stale_partial_watchdog`.
+pub(crate) const STALE_PARTIAL_WATCHDOG: Duration = Duration::from_secs(30);
+
 /// The provider-specific seam: turns one complete transcript line into events,
 /// and reacts to the EOF / caught-up signal. Implementations own their
 /// per-session parse state (in-flight tool calls, turn counts, last cwd).
@@ -77,9 +92,20 @@ pub(crate) trait TranscriptDecoder: Send {
     /// **Partial-buffer guard (PR #302 review F3).** The engine
     /// suppresses this call when a straddling line is half-buffered,
     /// so any line already-buffered before the signal will be decoded
-    /// BEFORE the signal fires. If the writer truncated mid-line and
-    /// never completes, the signal stays parked — there is no
-    /// boundary to cross.
+    /// BEFORE the signal fires. If the writer truncated mid-line, the
+    /// signal stays parked until the line completes OR until the
+    /// stale-partial watchdog fires.
+    ///
+    /// **Stale-partial watchdog (PR #302 cycle 17 F2).** If the
+    /// partial line buffer (or skip-mode) stays stuck without any
+    /// new bytes for `STALE_PARTIAL_WATCHDOG` (default 30s), the
+    /// engine logs a warn, discards the buffered bytes, and
+    /// force-fires this signal so downstream replay-bounded state
+    /// can unblock. The orphaned partial is dropped without being
+    /// decoded — corrupt or truncated lines are never delivered as
+    /// events. Implementations don't need to special-case the
+    /// watchdog path; this method is called with the same
+    /// idempotency contract as the normal path.
     fn on_caught_up(&mut self);
 }
 
@@ -89,6 +115,7 @@ pub(crate) struct TranscriptTailService {
     decoder: Box<dyn TranscriptDecoder>,
     provider_label: &'static str,
     poll_interval: Duration,
+    stale_partial_watchdog: Duration,
 }
 
 impl TranscriptTailService {
@@ -97,7 +124,16 @@ impl TranscriptTailService {
             decoder,
             provider_label,
             poll_interval: POLL_INTERVAL,
+            stale_partial_watchdog: STALE_PARTIAL_WATCHDOG,
         }
+    }
+
+    /// Override the stale-partial watchdog (tests drive short
+    /// durations to exercise the recovery path without a 30s sleep).
+    #[cfg(test)]
+    pub(crate) fn with_stale_partial_watchdog(mut self, d: Duration) -> Self {
+        self.stale_partial_watchdog = d;
+        self
     }
 
     /// Override the poll cadence (tests drive `Duration::ZERO` so the EOF
@@ -130,6 +166,12 @@ impl TranscriptTailService {
         // True iff we exceeded MAX_PARTIAL_BYTES on the current line; bytes
         // are discarded until the next `\n` resets us to normal processing.
         let mut skip_until_newline = false;
+        // PR #302 cycle 17 F2 — last `Instant` at which a non-EOF read
+        // returned >0 bytes. Drives the stale-partial watchdog so a
+        // truncated JSONL writer doesn't freeze decoders forever.
+        // Initialised to `Instant::now()` so the watchdog measures
+        // elapsed-from-startup until the first byte arrives.
+        let mut last_byte_at = std::time::Instant::now();
         while !stop.load(Ordering::Acquire) {
             match reader.read(&mut chunk) {
                 Ok(0) => {
@@ -142,12 +184,38 @@ impl TranscriptTailService {
                     // Same guard applies during skip mode — if we're in
                     // the middle of dropping a runaway line, the writer
                     // hasn't truly "caught up" yet.
+                    //
+                    // PR #302 cycle 17 F2 — stale-partial watchdog: if
+                    // `partial` (or skip-mode) has been stuck without
+                    // any new bytes for `STALE_PARTIAL_WATCHDOG`,
+                    // discard it and force-fire `on_caught_up` so
+                    // downstream decoders (e.g. `TestRunEmitter`)
+                    // exit replay mode and the user-visible UI
+                    // unblocks. Recovers from corrupt-file /
+                    // writer-crash / disk-full scenarios where the
+                    // terminating `\n` will never arrive.
                     if partial.is_empty() && !skip_until_newline {
                         self.decoder.on_caught_up();
+                    } else if last_byte_at.elapsed() >= self.stale_partial_watchdog {
+                        log::warn!(
+                            "{} tail: partial line stalled for >={:?} with no new bytes \
+                             (writer crashed mid-line, disk full, or corrupt file); \
+                             discarding {} buffered bytes and force-firing on_caught_up",
+                            self.provider_label,
+                            self.stale_partial_watchdog,
+                            partial.len(),
+                        );
+                        partial.clear();
+                        skip_until_newline = false;
+                        self.decoder.on_caught_up();
+                        // Reset so the watchdog doesn't refire every
+                        // poll iteration if the writer stays silent.
+                        last_byte_at = std::time::Instant::now();
                     }
                     std::thread::sleep(self.poll_interval);
                 }
                 Ok(n) => {
+                    last_byte_at = std::time::Instant::now();
                     self.process_chunk(&chunk[..n], &mut partial, &mut skip_until_newline);
                 }
                 Err(e) => {
@@ -375,6 +443,70 @@ mod tests {
             Step::EofStop,
         ]);
         assert_eq!(lines, ["{\"a\":123}"]);
+    }
+
+    /// PR #302 cycle 17 F2 (Claude post-cycle-16 review MED 85%) —
+    /// stale-partial watchdog fires after the configured threshold,
+    /// discarding the orphaned partial and force-firing
+    /// `on_caught_up` so downstream replay-bounded decoders unblock.
+    /// Test uses a 1ms watchdog so the assertion completes promptly;
+    /// drives a partial chunk + a sequence of `Step::Eof`s
+    /// representing the post-crash silence before the stop signal.
+    #[test]
+    fn engine_stale_partial_watchdog_force_fires_on_caught_up() {
+        let stop = Arc::new(AtomicBool::new(false));
+        let dec = RecordingDecoder::default();
+        let lines = dec.lines.clone();
+        let caught = dec.caught_up.clone();
+        TranscriptTailService::new(Box::new(dec), "t")
+            .with_poll_interval(Duration::ZERO)
+            // ZERO threshold → `elapsed() >= ZERO` is always true,
+            // so the very next Eof with non-empty partial fires the
+            // watchdog. Exercise-style threshold; production uses
+            // 30s. The engine still requires a non-empty `partial`
+            // AND an Eof to fire — sub-threshold edge cases (e.g.
+            // an Eof immediately after the first chunk before the
+            // watchdog elapses in real time) are tested implicitly
+            // by the other engine_truncated / engine_caught_up
+            // tests, which use the default 30s threshold.
+            .with_stale_partial_watchdog(Duration::ZERO)
+            .run(
+                ScriptedReader::new(
+                    vec![
+                        // Writer crashed mid-line — no closing `\n`.
+                        Step::Chunk(b"{\"a\":1"),
+                        // Several EOF polls; the first will be too
+                        // soon to trip the 1ms watchdog (or not — the
+                        // engine sleeps for poll_interval=ZERO between
+                        // polls, but the watchdog measures wall-clock
+                        // since last byte). Either way, by the time
+                        // we reach EofStop the watchdog should have
+                        // fired at least once.
+                        Step::Eof,
+                        Step::Eof,
+                        Step::Eof,
+                        Step::Eof,
+                        Step::EofStop,
+                    ]
+                    .into_iter(),
+                    stop.clone(),
+                ),
+                stop,
+            );
+        let decoded = lines.lock().unwrap().clone();
+        // The orphaned partial is discarded, not delivered as an
+        // event — corrupt-line safety.
+        assert!(
+            decoded.is_empty(),
+            "watchdog must not decode the orphaned partial as a line; got: {:?}",
+            decoded,
+        );
+        // The watchdog must have force-fired on_caught_up at least
+        // once so downstream decoders can flush replay-bounded state.
+        assert!(
+            caught.load(Ordering::Acquire) >= 1,
+            "watchdog must force-fire on_caught_up at least once",
+        );
     }
 
     #[test]

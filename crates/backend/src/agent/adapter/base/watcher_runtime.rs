@@ -415,6 +415,22 @@ impl AgentWatcherState {
         // the Drop happens at end-of-function, well after the inner
         // gate-scope ends.
         let mut removed_transcript: Option<TranscriptHandle> = None;
+        // PR #302 cycle 17 F1 (Claude post-cycle-16 review HIGH 90%) —
+        // moved-out displaced notify watcher, dropped OUTSIDE the
+        // gate-scope. Mirrors the deadlock-avoidance fix in
+        // `quiesce_existing` (cycle 16 retry-1): on macOS
+        // `RecommendedWatcher = FsEventWatcher`, whose `Drop` joins
+        // the FSEvents runloop. If an in-flight OLD callback is
+        // blocked on the per-session gate, dropping the watcher
+        // under the gate would ABBA-deadlock (gate-holder waits for
+        // runloop drain; runloop waits for in-flight callback to
+        // complete; callback waits for gate). Cycle 9 retry-2
+        // introduced the under-gate drop as part of the
+        // ownership-transfer fix; the comment claimed the deadlock
+        // concern was gone, but that referred to the
+        // `transcript_state.stop` gate re-entry, NOT the FSEvents
+        // runloop join — the two concerns are orthogonal.
+        let mut removed_watcher_for_drop: Option<notify::RecommendedWatcher> = None;
         let _displaced: Option<WatcherHandle> = {
             let _gate_guard = gate.lock();
 
@@ -436,15 +452,15 @@ impl AgentWatcherState {
                 // round 10.
                 d.alive.store(false, std::sync::atomic::Ordering::Release);
 
-                // Drop the displaced notify watcher next, so the OS
-                // file-system backend stops dispatching fresh
-                // callbacks from this point onward (cycle-9 retry-2).
-                // Combined with the alive=false flag above, every
-                // displaced callback — both in-flight and any that
-                // might still squeak through the notify-crate's
-                // internal dispatch queue — will short-circuit at
-                // start_or_replace's alive check.
-                let _ = d._watcher.take();
+                // Move the displaced notify watcher OUT of the
+                // handle under the gate (cycle 9 retry-2 — stops the
+                // OS file-system backend from dispatching fresh
+                // callbacks). The actual `Drop` happens at end-of-
+                // function when `removed_watcher_for_drop` falls out
+                // of scope, well after the gate is released — see
+                // the cycle-17 F1 note above the outer let-binding
+                // for the macOS deadlock rationale.
+                removed_watcher_for_drop = d._watcher.take();
 
                 if !new_claimed {
                     // Under-the-gate teardown: signal stop_flag on
