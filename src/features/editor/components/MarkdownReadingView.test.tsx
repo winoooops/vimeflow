@@ -92,4 +92,18 @@ describe('MarkdownReadingView', () => {
     expect(root.style.getPropertyValue('--rv-font-size')).toBe('18.5px')
     expect(root.style.getPropertyValue('--rv-measure')).toBe('75ch')
   })
+
+  test('surfaces an unsaved indicator when the buffer is dirty', () => {
+    render(<MarkdownReadingView content="# Doc" isDirty />)
+
+    expect(screen.getByTestId('markdown-reading-dirty')).toHaveTextContent(
+      /unsaved/i
+    )
+  })
+
+  test('hides the unsaved indicator when the buffer is clean', () => {
+    render(<MarkdownReadingView content="# Doc" />)
+
+    expect(screen.queryByTestId('markdown-reading-dirty')).toBeNull()
+  })
 })

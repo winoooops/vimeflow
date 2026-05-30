@@ -31,6 +31,13 @@ interface MarkdownReadingViewProps {
    * the same feedback instead of leaving the previous document on screen.
    */
   isLoading?: boolean
+  /**
+   * Whether the underlying buffer has unsaved edits. Reading mode replaces the
+   * CodeEditor (which renders the vim `[+]` dirty marker), so surface an
+   * equivalent unsaved indicator here — otherwise switching Source → Reading
+   * with unsaved changes would hide that state.
+   */
+  isDirty?: boolean
 }
 
 /**
@@ -52,9 +59,9 @@ interface MarkdownReadingViewProps {
  * (`useReadingStyle`, picked via the dock ⚙ menu): the active preset's base
  * font / line-height / measure / inline-padding are published as CSS custom
  * properties on the root, and `markdownComponents` sizes everything in `em` so
- * the whole document scales from that one base. The scroller is a
- * `container-type: inline-size` container so the `cqi`-based padding tracks the
- * dock pane width, not the window.
+ * the whole document scales from that one base. The root is a
+ * `container-type: inline-size` container so the `cqi`-based scroller padding
+ * tracks the dock pane width, not the window.
  *
  * The render is memoized by `content` (parse + sanitize + highlight is
  * expensive; the dock re-renders often). The forwarded ref points at the
@@ -65,7 +72,7 @@ export const MarkdownReadingView = forwardRef<
   HTMLDivElement,
   MarkdownReadingViewProps
 >(function MarkdownReadingView(
-  { content, isLoading = false }: MarkdownReadingViewProps,
+  { content, isLoading = false, isDirty = false }: MarkdownReadingViewProps,
   ref
 ): ReactElement {
   const { style } = useReadingStyle()
@@ -122,6 +129,18 @@ export const MarkdownReadingView = forwardRef<
             </span>
             <span>Loading…</span>
           </div>
+        </div>
+      )}
+
+      {isDirty && (
+        <div
+          data-testid="markdown-reading-dirty"
+          className="pointer-events-none absolute bottom-3 right-3 flex items-center gap-1.5 rounded-full bg-surface-container-high/90 px-2.5 py-1 font-mono text-[0.7rem] text-on-surface-muted shadow-lg backdrop-blur-sm"
+        >
+          <span className="text-primary" aria-hidden="true">
+            [+]
+          </span>
+          <span>Unsaved</span>
         </div>
       )}
     </div>

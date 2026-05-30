@@ -1,7 +1,6 @@
 /* eslint-disable react/require-default-props -- forwardRef components: ESLint cannot see through forwardRef to find destructuring defaults */
 import {
   forwardRef,
-  useEffect,
   useImperativeHandle,
   useRef,
   useState,
@@ -138,12 +137,16 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
     // stance. Default 'reading' (D4) so markdown docs open pretty.
     const [viewMode, setViewMode] = useState<ViewMode>('reading')
 
-    // Reset to the default Reading mode whenever the selected file changes, so
-    // a user who dropped to Source on one doc still sees "docs open pretty" on
-    // the next one. Keyed on selectedFilePath.
-    useEffect(() => {
+    // Reset to the default Reading mode when the selected file changes. Done
+    // during render (not a post-commit effect) so a newly-opened markdown file
+    // renders in Reading on its FIRST render — a previous file left in Source
+    // would otherwise flash the source editor for a frame before an effect
+    // could reset it. Guarded by a previous-path ref to avoid a render loop.
+    const previousFilePathRef = useRef(selectedFilePath)
+    if (previousFilePathRef.current !== selectedFilePath) {
+      previousFilePathRef.current = selectedFilePath
       setViewMode('reading')
-    }, [selectedFilePath])
+    }
 
     useImperativeHandle(ref, () => ({
       focusEditor(): boolean {
@@ -360,6 +363,7 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
                   ref={markdownViewRef}
                   content={content}
                   isLoading={isLoading}
+                  isDirty={isDirty}
                 />
               ) : (
                 <CodeEditor
