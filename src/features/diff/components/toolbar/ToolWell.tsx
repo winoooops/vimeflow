@@ -77,28 +77,32 @@ WellDisabledButton.displayName = 'WellDisabledButton'
 const WellButton = ({
   icon,
   label,
+  tooltip,
   onClick,
   disabled,
 }: {
   icon: string
   label: string
+  tooltip: string
   onClick: () => void
   disabled: boolean
 }): ReactElement => (
-  <button
-    type="button"
-    disabled={disabled}
-    aria-label={label}
-    onClick={onClick}
-    className={disabled ? WELL_DISABLED_BUTTON_CLASSES : WELL_BUTTON_CLASSES}
-  >
-    <span
-      aria-hidden="true"
-      className="material-symbols-outlined text-base leading-none"
+  <Tooltip content={tooltip}>
+    <button
+      type="button"
+      disabled={disabled}
+      aria-label={label}
+      onClick={onClick}
+      className={disabled ? WELL_DISABLED_BUTTON_CLASSES : WELL_BUTTON_CLASSES}
     >
-      {icon}
-    </span>
-  </button>
+      <span
+        aria-hidden="true"
+        className="material-symbols-outlined text-base leading-none"
+      >
+        {icon}
+      </span>
+    </button>
+  </Tooltip>
 )
 
 export interface ToolWellProps {
@@ -134,16 +138,16 @@ export const ToolWell = ({
 }: ToolWellProps): ReactElement => (
   <span className="inline-flex items-center gap-0.5 bg-surface-container-highest rounded-md px-0.5 py-px">
     {/* Annotation group — net-new, no backend yet. */}
-    <ComingSoonTooltip label="Coming soon">
+    <ComingSoonTooltip label="Add comment — Coming soon">
       <WellDisabledButton icon="add_comment" label="add comment" />
     </ComingSoonTooltip>
-    <ComingSoonTooltip label="Coming soon">
+    <ComingSoonTooltip label="Highlight selection — Coming soon">
       <WellDisabledButton
         icon="format_ink_highlighter"
         label="highlight selection"
       />
     </ComingSoonTooltip>
-    <ComingSoonTooltip label="Coming soon">
+    <ComingSoonTooltip label="Clear markup — Coming soon">
       <WellDisabledButton icon="ink_eraser" label="clear markup" />
     </ComingSoonTooltip>
 
@@ -157,13 +161,14 @@ export const ToolWell = ({
       <WellButton
         icon="add_box"
         label="stage"
+        tooltip="Stage hunk"
         onClick={(): void => {
           void onStage()
         }}
         disabled={staging}
       />
     ) : (
-      <ComingSoonTooltip label="Available in PR2">
+      <ComingSoonTooltip label="Stage — Available in PR2">
         <WellDisabledButton icon="add_box" label="stage" />
       </ComingSoonTooltip>
     )}
@@ -172,13 +177,14 @@ export const ToolWell = ({
         <WellButton
           icon="indeterminate_check_box"
           label="unstage"
+          tooltip="Unstage"
           onClick={(): void => {
             void onUnstage()
           }}
           disabled={staging}
         />
       ) : (
-        <ComingSoonTooltip label="Available in PR2">
+        <ComingSoonTooltip label="Unstage — Available in PR2">
           <WellDisabledButton icon="indeterminate_check_box" label="unstage" />
         </ComingSoonTooltip>
       )
@@ -187,13 +193,14 @@ export const ToolWell = ({
       <WellButton
         icon="backspace"
         label="discard"
+        tooltip="Discard hunk"
         onClick={(): void => {
           void onDiscard()
         }}
         disabled={staging}
       />
     ) : (
-      <ComingSoonTooltip label="Available in PR2">
+      <ComingSoonTooltip label="Discard — Available in PR2">
         <WellDisabledButton icon="backspace" label="discard" />
       </ComingSoonTooltip>
     )}

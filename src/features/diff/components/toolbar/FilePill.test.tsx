@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, test, vi } from 'vitest'
 import { FilePill, type FilePillProps } from './FilePill'
@@ -66,8 +66,7 @@ describe('FilePill', () => {
     expect(onPrev).toHaveBeenCalledTimes(1)
   })
 
-  test('arrows are disabled and inert when navEnabled is false', async () => {
-    const user = userEvent.setup()
+  test('arrows are disabled and inert when navEnabled is false', () => {
     const onPrev = vi.fn<() => void>()
     const onNext = vi.fn<() => void>()
 
@@ -78,8 +77,11 @@ describe('FilePill', () => {
     expect(prev).toBeDisabled()
     expect(next).toBeDisabled()
 
-    await user.click(prev)
-    await user.click(next)
+    // fireEvent (not userEvent) — the disabled arrows are `pointer-events:none`,
+    // which userEvent.click refuses to interact with; the disabled attribute
+    // still blocks the handler.
+    fireEvent.click(prev)
+    fireEvent.click(next)
     expect(onPrev).not.toHaveBeenCalled()
     expect(onNext).not.toHaveBeenCalled()
   })

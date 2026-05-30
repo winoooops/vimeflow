@@ -286,16 +286,19 @@ describe('DiffPanelContent', () => {
     render(<DiffPanelContent />)
 
     expect(screen.getByText('No changes to review')).toBeInTheDocument()
-    expect(
-      screen.getByText('Modified files will appear here')
-    ).toBeInTheDocument()
+    expect(screen.getByText(/nothing to diff or annotate/i)).toBeInTheDocument()
 
-    // Verify centering classes include w-full
+    // The empty state keeps a dormant toolbar (settings stay live) above a
+    // centered "no changes" panel, so the chrome persists when a diff appears.
     const wrapper = screen.getByTestId('diff-empty-state')
     expect(wrapper).toBeInTheDocument()
     expect(wrapper).toHaveClass('w-full')
-    expect(wrapper).toHaveClass('items-center')
-    expect(wrapper).toHaveClass('justify-center')
+    expect(
+      screen.getByRole('toolbar', { name: /diff toolbar/i })
+    ).toBeInTheDocument()
+    const panel = screen.getByTestId('diff-empty-panel')
+    expect(panel).toHaveClass('items-center')
+    expect(panel).toHaveClass('justify-center')
   })
 
   test('renders ChangedFilesList and Pierre MultiFileDiff when changes exist', (): void => {

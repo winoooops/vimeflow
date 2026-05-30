@@ -1008,16 +1008,72 @@ export const DiffPanelContent = ({
     )
   }
 
-  // Empty state (no changes)
+  // Toolbar prop bundle shared by the populated state AND the dormant empty
+  // state below. The settings dropdowns stay live in both; the file / hunk /
+  // staging / feedback props differ per branch.
+  const toolbarSettingsProps = {
+    diffStyle: effectiveDiffStyle,
+    onDiffStyleChange: handleDiffStyleChange,
+    theme,
+    onThemeChange: setTheme,
+    lineDiffType,
+    onLineDiffTypeChange: setLineDiffType,
+    diffIndicators,
+    onDiffIndicatorsChange: setDiffIndicators,
+    overflow: overflowOpt,
+    onOverflowChange: setOverflowOpt,
+    disableLineNumbers,
+    onDisableLineNumbersChange: setDisableLineNumbers,
+    disableBackground,
+    onDisableBackgroundChange: setDisableBackground,
+    disableFileHeader,
+    onDisableFileHeaderChange: setDisableFileHeader,
+    stickyHeader,
+    onStickyHeaderChange: setStickyHeader,
+  }
+
+  // Empty state (no changes): keep a DORMANT toolbar (only the settings
+  // dropdowns stay live — nav arrows, tool-well + actions render disabled /
+  // placeholder) above a calm "no changes" panel, so the chrome stays put when
+  // a diff appears instead of collapsing + re-expanding.
   if (effectiveFiles.length === 0) {
     return (
       <div
         data-testid="diff-empty-state"
-        className="flex h-full w-full items-center justify-center text-on-surface-variant"
+        className="flex h-full w-full min-h-0 flex-col overflow-hidden text-on-surface-variant"
       >
-        <div className="text-center space-y-2">
-          <p className="text-sm">No changes to review</p>
-          <p className="text-xs opacity-60">Modified files will appear here</p>
+        <div className="shrink-0">
+          <DiffChipToolbar
+            {...toolbarSettingsProps}
+            diffMode="unstaged"
+            currentFileIndex={-1}
+            totalFiles={0}
+          />
+        </div>
+        <div
+          data-testid="diff-empty-panel"
+          className="flex min-h-0 flex-1 items-center justify-center p-8"
+        >
+          <div className="flex max-w-sm flex-col items-center gap-4 text-center">
+            <div className="grid size-16 place-items-center rounded-full bg-success-muted/10 ring-1 ring-inset ring-success-muted/20">
+              <span
+                aria-hidden="true"
+                className="material-symbols-outlined text-[2rem] leading-none text-success-muted"
+              >
+                check_circle
+              </span>
+            </div>
+            <h2 className="font-display text-lg font-bold text-on-surface">
+              No changes to review
+            </h2>
+            <p className="text-sm leading-relaxed">
+              The working tree matches{' '}
+              <code className="font-mono text-xs text-primary-dim bg-primary/10 px-1.5 py-0.5 rounded">
+                HEAD
+              </code>{' '}
+              for this selection — nothing to diff or annotate.
+            </p>
+          </div>
         </div>
       </div>
     )
@@ -1061,25 +1117,8 @@ export const DiffPanelContent = ({
           className="shrink-0"
         >
           <DiffChipToolbar
+            {...toolbarSettingsProps}
             diffMode={selectedFileStaged ? 'staged' : 'unstaged'}
-            diffStyle={effectiveDiffStyle}
-            onDiffStyleChange={handleDiffStyleChange}
-            theme={theme}
-            onThemeChange={setTheme}
-            lineDiffType={lineDiffType}
-            onLineDiffTypeChange={setLineDiffType}
-            diffIndicators={diffIndicators}
-            onDiffIndicatorsChange={setDiffIndicators}
-            overflow={overflowOpt}
-            onOverflowChange={setOverflowOpt}
-            disableLineNumbers={disableLineNumbers}
-            onDisableLineNumbersChange={setDisableLineNumbers}
-            disableBackground={disableBackground}
-            onDisableBackgroundChange={setDisableBackground}
-            disableFileHeader={disableFileHeader}
-            onDisableFileHeaderChange={setDisableFileHeader}
-            stickyHeader={stickyHeader}
-            onStickyHeaderChange={setStickyHeader}
             totalHunks={hunkCount}
             focusedHunkIndex={clampedHunkIndex}
             onPrevHunk={onPrevHunk}
