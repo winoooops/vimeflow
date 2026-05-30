@@ -9,21 +9,24 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeHighlight from 'rehype-highlight'
 import rehypeSanitize from 'rehype-sanitize'
+import rehypeSlug from 'rehype-slug'
 import type { PluggableList } from 'unified'
 import { useReadingStyle } from '../hooks/useReadingStyle'
 import { markdownComponents } from './markdownComponents'
 import './MarkdownReadingView.css'
 
 // Module-level stable references so re-renders never hand react-markdown new
-// plugin arrays. ORDER IS LOAD-BEARING: rehype-sanitize FIRST, rehype-highlight
-// SECOND — see the component doc below. `ignoreMissing` stops rehype-highlight
-// from THROWING on a fence whose language it does not know (e.g. ```mermaid or
-// a project-specific label); the block renders as plain code instead of
-// blanking the reading pane — important since this view renders arbitrary docs.
+// plugin arrays. ORDER IS LOAD-BEARING: rehype-sanitize FIRST, then rehype-slug,
+// then rehype-highlight — see the component doc below. `ignoreMissing` stops
+// rehype-highlight from THROWING on a fence whose language it does not know
+// (e.g. ```mermaid or a project-specific label); the block renders as plain code
+// instead of blanking the reading pane — important since this view renders
+// arbitrary docs.
 const REMARK_PLUGINS: PluggableList = [remarkGfm]
 
 const REHYPE_PLUGINS: PluggableList = [
   rehypeSanitize,
+  rehypeSlug,
   [rehypeHighlight, { ignoreMissing: true }],
 ]
 
@@ -55,13 +58,17 @@ interface MarkdownReadingViewProps {
  * tree (no `dangerouslySetInnerHTML`), themed to the Obsidian Lens through the
  * `markdownComponents` per-tag map + the scoped `MarkdownReadingView.css`.
  *
- * CRITICAL plugin order: `REHYPE_PLUGINS = [rehypeSanitize, rehypeHighlight]` —
- * sanitize FIRST, highlight SECOND. `rehype-sanitize` runs an allow-list over
- * the hast; running it before `rehype-highlight` lets highlight.js add its
- * `.hljs-*` classes to the already-sanitized tree so they survive to the DOM.
- * The reverse order would strip the just-added classes, leaving fences
- * unstyled. `MarkdownReadingView.test.tsx` asserts the surviving `.hljs` class
- * as the regression net for this ordering.
+ * CRITICAL plugin order: `[rehypeSanitize, rehypeSlug, rehypeHighlight]`.
+ * `rehype-sanitize` runs an allow-list over the hast and must go FIRST so the
+ * later plugins decorate an already-clean tree. `rehype-slug` adds heading
+ * `id`s (for working `#hash` table-of-contents links) AFTER sanitize on
+ * purpose: sanitize's default schema rewrites author-supplied `id`s with its
+ * `user-content-` clobber prefix, which would break `#section` anchors — slugs
+ * minted post-sanitize keep their bare `id="section"`. `rehype-highlight` goes
+ * LAST so highlight.js's `.hljs-*` classes are added to the sanitized tree and
+ * survive to the DOM (running it before sanitize would strip them, leaving
+ * fences unstyled). `MarkdownReadingView.test.tsx` asserts both the surviving
+ * `.hljs` class and the bare heading `id` as the regression net for this order.
  *
  * Typography is driven by the shared reading-style preference
  * (`useReadingStyle`, picked via the dock ⚙ menu): the active preset's base

@@ -1,6 +1,7 @@
 /* eslint-disable react/require-default-props -- forwardRef components: ESLint cannot see through forwardRef to find destructuring defaults */
 import {
   forwardRef,
+  useEffect,
   useImperativeHandle,
   useRef,
   useState,
@@ -151,6 +152,23 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
       previousFilePathRef.current = selectedFilePath
       setViewMode('reading')
     }
+
+    // Move keyboard focus into the reading region when reading mode becomes
+    // active in a focused pane — the symmetric counterpart to CodeEditor's
+    // `shouldAutoFocus={isFocused}`. Without it, toggling Source → Reading
+    // leaves focus on the toggle button, so PageDown/arrow scrolling is dead
+    // until the user clicks the document. Gated on `isFocused` so opening a
+    // markdown file in a background dock never steals focus.
+    useEffect(() => {
+      if (
+        tab === 'editor' &&
+        isMarkdown &&
+        viewMode === 'reading' &&
+        isFocused
+      ) {
+        markdownViewRef.current?.focus()
+      }
+    }, [tab, isMarkdown, viewMode, isFocused])
 
     useImperativeHandle(ref, () => ({
       focusEditor(): boolean {

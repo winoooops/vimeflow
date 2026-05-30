@@ -11,6 +11,19 @@ describe('MarkdownReadingView', () => {
     ).toBeInTheDocument()
   })
 
+  test('adds bare heading ids so #hash anchor links resolve (rehype-slug)', () => {
+    render(<MarkdownReadingView content="## Setup Guide" />)
+
+    const heading = screen.getByRole('heading', {
+      level: 2,
+      name: /setup guide/i,
+    })
+    // rehype-slug runs AFTER rehype-sanitize, so the id is the bare github slug
+    // — NOT sanitize's `user-content-`-prefixed form — which is what an
+    // in-document `[link](#setup-guide)` table-of-contents anchor must match.
+    expect(heading).toHaveAttribute('id', 'setup-guide')
+  })
+
   test('renders a GFM table (remark-gfm is active)', () => {
     render(
       <MarkdownReadingView

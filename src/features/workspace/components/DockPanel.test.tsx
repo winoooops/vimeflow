@@ -1,7 +1,7 @@
 import { render, screen, within, fireEvent } from '@testing-library/react'
 import { describe, test, expect, vi, beforeEach } from 'vitest'
 import userEvent from '@testing-library/user-event'
-import { createRef, type ReactElement } from 'react'
+import { createRef, forwardRef, type ReactElement } from 'react'
 import DockPanel, { type DockPanelHandle } from './DockPanel'
 import * as useCodeMirrorModule from '../../editor/hooks/useCodeMirror'
 import * as useVimModeModule from '../../editor/hooks/useVimMode'
@@ -24,8 +24,16 @@ vi.mock('@pierre/diffs/react', () => ({
 // to prove WHICH surface mounts per viewMode. The real rendering/sanitize
 // behavior is covered by MarkdownReadingView.test.tsx.
 vi.mock('../../editor/components/MarkdownReadingView', () => ({
-  MarkdownReadingView: ({ content }: { content: string }): ReactElement => (
-    <div data-testid="markdown-reading-view">{content}</div>
+  MarkdownReadingView: forwardRef<HTMLDivElement, { content: string }>(
+    function MarkdownReadingView({ content }, ref): ReactElement {
+      // Forward the ref to a focusable node so the DockPanel view-mode-focus
+      // effect (markdownViewRef.current?.focus()) is observable in tests.
+      return (
+        <div ref={ref} data-testid="markdown-reading-view" tabIndex={-1}>
+          {content}
+        </div>
+      )
+    }
   ),
 }))
 
@@ -217,6 +225,20 @@ describe('DockPanel', () => {
       expect(
         screen.queryByTestId('codemirror-container')
       ).not.toBeInTheDocument()
+    })
+
+    test('toggling to Reading moves keyboard focus into the reading region (focused pane)', async () => {
+      const user = userEvent.setup()
+      renderDockPanel({
+        selectedFilePath: '/x/README.md',
+        content: '# Hi',
+        isFocused: true,
+      })
+
+      await user.click(screen.getByRole('button', { name: /^source$/i }))
+      await user.click(screen.getByRole('button', { name: /^reading$/i }))
+
+      expect(screen.getByTestId('markdown-reading-view')).toHaveFocus()
     })
 
     test('.markdown extension also opens in the reading view', () => {

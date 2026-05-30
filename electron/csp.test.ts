@@ -40,14 +40,19 @@ describe('Content Security Policy', () => {
     expect(scriptSrc).not.toContain("'nonce-")
   })
 
-  test('img-src allows https so the markdown reading view can show web images', () => {
-    expect(directive(packagedContentSecurityPolicy, 'img-src')).toContain(
-      'https:'
-    )
+  test('img-src allows specific image CDNs but not a bare https: wildcard', () => {
+    for (const policy of [
+      packagedContentSecurityPolicy,
+      developmentContentSecurityPolicy(false),
+    ]) {
+      const imgSrc = directive(policy, 'img-src')
 
-    expect(
-      directive(developmentContentSecurityPolicy(false), 'img-src')
-    ).toContain('https:')
+      expect(imgSrc).toContain('https://img.shields.io')
+      expect(imgSrc).toContain('https://*.githubusercontent.com')
+      // No bare `https:` wildcard — an untrusted .md must not be able to beacon
+      // to an arbitrary host through an <img> sub-resource load.
+      expect(imgSrc).not.toMatch(/(^|\s)https:(\s|$)/)
+    }
   })
 
   test('development selector preserves the dev and E2E split', () => {
