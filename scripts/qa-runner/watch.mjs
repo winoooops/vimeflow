@@ -166,7 +166,7 @@ const computeState = (pr, ctx) => {
     'view',
     String(pr.number),
     '--json',
-    'mergeable,mergeStateStatus,body',
+    'mergeable,mergeStateStatus,body,headRefOid',
   ])
   const vim = linkedVim(view.body)
   let state, detail
@@ -195,9 +195,9 @@ const computeState = (pr, ctx) => {
           '0 threads · Claude clean · CI green · mergeable',
         ]
     }
-    return { state, detail, vim, threads }
+    return { state, detail, vim, threads, headSha: view.headRefOid }
   }
-  return { state, detail, vim, threads: 0 }
+  return { state, detail, vim, threads: 0, headSha: view.headRefOid }
 }
 
 const postLinear = (vim, body, stateName) => {
@@ -216,7 +216,9 @@ const postLinear = (vim, body, stateName) => {
 }
 
 // Squash-merge + branch delete as the orchestrator bot (or you, if none).
-const approve = (pr, vim, ctx) => {
+// headSha is the head observed at GOOD_SHAPE classification — the merge aborts if
+// the head moved since (so we never squash-merge an unreviewed push).
+const approve = (pr, vim, headSha, ctx) => {
   const env = botProcessEnv(ctx.orchBot)
   const merger = botLabel(ctx.orchBot)
   out(`           → APPROVING as ${merger}: squash-merge #${pr.number}`)
@@ -233,7 +235,17 @@ const approve = (pr, vim, ctx) => {
   if (!alreadyApproved) {
     gh(['pr', 'review', String(pr.number), '--approve'], env)
   }
-  gh(['pr', 'merge', String(pr.number), '--squash'], env)
+  gh(
+    [
+      'pr',
+      'merge',
+      String(pr.number),
+      '--squash',
+      '--match-head-commit',
+      headSha,
+    ],
+    env
+  )
   out(`           ✓ MERGED`)
   // Remove the qa-pr-N worktree so orphaned checkouts don't accumulate.
   try {
@@ -376,7 +388,7 @@ const tick = async (ctx) => {
     } else if (s.state === 'GOOD_SHAPE') {
       if (ctx.approve) {
         try {
-          approve(pr, s.vim, ctx)
+          approve(pr, s.vim, s.headSha, ctx)
         } catch (e) {
           out(`           ✗ approve failed: ${e.message.split('\n')[0]}`)
         }
