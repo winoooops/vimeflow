@@ -1,27 +1,36 @@
 #!/usr/bin/env node
-// QA runner — outer watcher + review state machine.
+// QA runner — outer watcher + review state machine (parallel, two-bot).
 //
 //   scan   — read-only: list eligible PRs (auto-review label) + why.
 //   tick   — one pass: per eligible PR, compute the review state and act:
 //              NEEDS_FIX  → (with --execute) run.mjs <pr> --push   (an upsource cycle)
-//              GOOD_SHAPE → (with --approve) squash-merge + delete branch
+//                           dispatched CONCURRENTLY, capped at --max (default 2).
+//              GOOD_SHAPE → (with --approve) squash-merge AS THE ORCHESTRATOR BOT
+//                           (orchestrator.env) + delete branch.
 //              WAITING / CI_RED → report only.
 //            State is mirrored to the linked Linear issue (a VIM-N in the PR body)
 //            via lib/linear-status.mjs — Linear is the control plane / observability.
 //   watch  — loop `tick` every pollSeconds (Ctrl-C to stop).
 //
-// Default is REPORT-ONLY (no side effects). `--execute` arms fixing; `--approve`
-// arms merging. `--pr N` targets a single PR. See README.md.
+// Two identities: the INNER fixer runs as bot.env (handled inside run.mjs); the
+// OUTER merge runs as orchestrator.env so author ≠ approver. Either absent ⇒ that
+// action falls back to your own gh.
+//
+// Default is REPORT-ONLY. `--execute` arms fixing; `--approve` arms merging.
+// `--pr N` targets one PR; `--max N` caps parallel fixes. See README.md.
 
-import { execFileSync, spawnSync } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { execFileSync, spawn, spawnSync } from 'node:child_process'
+import { createWriteStream, existsSync, mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { botLabel, botProcessEnv, loadBot } from './lib/bot-identity.mjs'
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url))
 const LOCK_DIR = join(SCRIPT_DIR, '.locks')
+const LOG_DIR = join(SCRIPT_DIR, 'logs')
 const DEFAULT_LABEL = 'auto-review'
 const POLL_SECONDS = 60
+const MAX_PARALLEL = 2
 // CI checks that are the *reviewers*, not the build/test gate — excluded from "CI green".
 const REVIEW_CHECKS = new Set([
   'Claude Code Review',
@@ -31,8 +40,13 @@ const REVIEW_CHECKS = new Set([
 
 const out = (s = '') => process.stdout.write(`${s}\n`)
 const err = (s = '') => process.stderr.write(`${s}\n`)
-const gh = (args) =>
-  execFileSync('gh', args, { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 })
+// gh as the ambient identity, or — when `env` is passed — as a bot.
+const gh = (args, env) =>
+  execFileSync('gh', args, {
+    encoding: 'utf8',
+    maxBuffer: 16 * 1024 * 1024,
+    ...(env ? { env } : {}),
+  })
 const ghJson = (args) => JSON.parse(gh(args))
 
 const repoSlug = () => {
@@ -156,7 +170,91 @@ const postLinear = (vim, body, stateName) => {
     )
 }
 
-const tick = (ctx) => {
+// Squash-merge + branch delete as the orchestrator bot (or you, if none).
+const approve = (pr, vim, ctx) => {
+  const env = botProcessEnv(ctx.orchBot)
+  const merger = botLabel(ctx.orchBot)
+  out(`           → APPROVING as ${merger}: squash-merge #${pr.number}`)
+  gh(['pr', 'merge', String(pr.number), '--squash'], env)
+  out(`           ✓ MERGED`)
+  // Delete the merged branch REMOTELY — `gh --delete-branch` deletes the LOCAL
+  // branch too, which fails when a worktree holds it (run.mjs's qa-pr-N). The API
+  // ref delete is hook-free and never touches the local checkout.
+  try {
+    gh(
+      [
+        'api',
+        '--method',
+        'DELETE',
+        `repos/${ctx.owner}/${ctx.name}/git/refs/heads/${pr.headRefName}`,
+      ],
+      env
+    )
+    out(`           ✓ deleted remote branch ${pr.headRefName}`)
+  } catch {
+    out(`           (remote branch already gone)`)
+  }
+  postLinear(
+    vim,
+    `QA runner: PR #${pr.number} met all review success criteria → squash-merged by ${merger}.`,
+    'Done'
+  )
+}
+
+// Run run.mjs for one PR as a child, teeing output to a per-PR log and prefixing
+// the console so concurrent runs stay legible. Resolves the exit code; never
+// rejects — a failed child must not abort the pool. run.mjs adopts the INNER
+// (fixer) bot identity itself, so we just inherit the env here.
+const dispatchFix = (pr) =>
+  new Promise((resolve) => {
+    mkdirSync(LOG_DIR, { recursive: true })
+    const logPath = join(LOG_DIR, `pr-${pr}.log`)
+    const logFd = createWriteStream(logPath, { flags: 'a' })
+    const tag = `[#${pr}]`
+    out(`${tag} → run.mjs ${pr} --push   (log: ${logPath})`)
+    const child = spawn(
+      'node',
+      [join(SCRIPT_DIR, 'run.mjs'), String(pr), '--push'],
+      {
+        env: process.env,
+      }
+    )
+    const pipe = (stream) => {
+      let buf = ''
+      stream.on('data', (d) => {
+        logFd.write(d)
+        buf += d.toString()
+        let nl
+        while ((nl = buf.indexOf('\n')) >= 0) {
+          out(`${tag} ${buf.slice(0, nl)}`)
+          buf = buf.slice(nl + 1)
+        }
+      })
+    }
+    pipe(child.stdout)
+    pipe(child.stderr)
+    child.on('close', (code) => {
+      logFd.end()
+      out(`${tag} ✓ run.mjs exited ${code}`)
+      resolve(code)
+    })
+    child.on('error', (e) => {
+      logFd.end()
+      out(`${tag} ✗ spawn error: ${e.message}`)
+      resolve(-1)
+    })
+  })
+
+// Bounded-concurrency pool — at most `limit` workers in flight.
+const pool = async (items, limit, worker) => {
+  let i = 0
+  const next = async () => {
+    while (i < items.length) await worker(items[i++])
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, next))
+}
+
+const tick = async (ctx) => {
   let prs = openPRs().filter(
     (p) => (ctx.all || hasLabel(p, ctx.label)) && !p.isDraft
   )
@@ -170,8 +268,10 @@ const tick = (ctx) => {
     return
   }
   out(
-    `QA watcher tick — ${ctx.owner}/${ctx.name} · ${prs.length} PR(s) · approve=${ctx.approve} execute=${ctx.execute}\n`
+    `QA watcher tick — ${ctx.owner}/${ctx.name} · ${prs.length} PR(s) · ` +
+      `approve=${ctx.approve} execute=${ctx.execute} max=${ctx.maxParallel}\n`
   )
+  const needsFix = []
   for (const pr of prs) {
     if (isLocked(pr.number)) {
       out(`LOCKED     #${pr.number} ${pr.headRefName} — run in flight, skip\n`)
@@ -194,60 +294,41 @@ const tick = (ctx) => {
         `QA runner: review findings on PR #${pr.number} — ${s.detail}. Running an upsource cycle.`,
         'In Progress'
       )
-      if (ctx.execute) {
-        out(`           → run.mjs ${pr.number} --push`)
-        spawnSync(
-          'node',
-          [join(SCRIPT_DIR, 'run.mjs'), String(pr.number), '--push'],
-          {
-            stdio: 'inherit',
-          }
-        )
-      } else out(`           (report-only — pass --execute to run the cycle)`)
+      if (ctx.execute) needsFix.push(pr.number)
+      else out(`           (report-only — pass --execute to run the cycle)`)
     } else if (s.state === 'GOOD_SHAPE') {
       if (ctx.approve) {
-        out(`           → APPROVING: squash-merge #${pr.number}`)
-        gh(['pr', 'merge', String(pr.number), '--squash'])
-        out(`           ✓ MERGED`)
-        // Delete the merged branch REMOTELY — not via `gh --delete-branch`, whose
-        // local branch delete fails whenever a worktree holds the branch (run.mjs
-        // creates exactly such a qa-pr-N worktree for fix cycles). The API ref
-        // delete is hook-free and never touches the local checkout.
         try {
-          gh([
-            'api',
-            '--method',
-            'DELETE',
-            `repos/${ctx.owner}/${ctx.name}/git/refs/heads/${pr.headRefName}`,
-          ])
-          out(`           ✓ deleted remote branch ${pr.headRefName}`)
-        } catch {
-          out(`           (remote branch already gone)`)
+          approve(pr, s.vim, ctx)
+        } catch (e) {
+          out(`           ✗ approve failed: ${e.message.split('\n')[0]}`)
         }
-        postLinear(
-          s.vim,
-          `QA runner: PR #${pr.number} met all review success criteria → squash-merged.`,
-          'Done'
-        )
       } else out(`           (report-only — pass --approve to auto-merge)`)
     }
     out('')
   }
+  if (needsFix.length) {
+    out(
+      `Dispatching ${needsFix.length} fix run(s), up to ${ctx.maxParallel} in parallel…\n`
+    )
+    await pool(needsFix, ctx.maxParallel, dispatchFix)
+  }
 }
 
-const watch = (ctx) => {
+const watch = async (ctx) => {
   out(
-    `QA watcher — looping every ${POLL_SECONDS}s (approve=${ctx.approve} execute=${ctx.execute}). Ctrl-C to stop.\n`
+    `QA watcher — looping every ${POLL_SECONDS}s ` +
+      `(approve=${ctx.approve} execute=${ctx.execute} max=${ctx.maxParallel}). Ctrl-C to stop.\n`
   )
-  const loop = () => {
+  const loop = async () => {
     try {
-      tick(ctx)
+      await tick(ctx)
     } catch (e) {
       err(`tick error: ${e.message.split('\n')[0]}`)
     }
     setTimeout(loop, POLL_SECONDS * 1000)
   }
-  loop()
+  await loop()
 }
 
 // Read-only eligibility lister (lightweight).
@@ -292,14 +373,21 @@ const main = () => {
     execute: has('execute'),
     all: has('all'),
     pr: val('pr') ? Number(val('pr')) : undefined,
+    maxParallel: Number(val('max')) || MAX_PARALLEL,
+    orchBot: loadBot(SCRIPT_DIR, 'orchestrator.env', 'GH_ORCH'),
   }
   if (cmd === 'scan') return scan(ctx)
   if (cmd === 'tick') return tick(ctx)
   if (cmd === 'watch') return watch(ctx)
   err(
-    `unknown command: ${cmd}. Use: scan | tick | watch  [--pr N] [--approve] [--execute] [--all] [--label NAME]`
+    `unknown command: ${cmd}. Use: scan | tick | watch  [--pr N] [--approve] [--execute] [--all] [--max N] [--label NAME]`
   )
   process.exit(1)
 }
 
-main()
+const result = main()
+if (result && typeof result.then === 'function')
+  result.catch((e) => {
+    err(e.message)
+    process.exit(1)
+  })

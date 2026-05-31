@@ -20,7 +20,6 @@ import { execFileSync, spawnSync } from 'node:child_process'
 import {
   existsSync,
   mkdirSync,
-  readFileSync,
   readdirSync,
   rmSync,
   symlinkSync,
@@ -30,6 +29,7 @@ import {
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { botEnv, botLabel, loadBot } from './lib/bot-identity.mjs'
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url))
 const LOCK_DIR = join(SCRIPT_DIR, '.locks')
@@ -64,33 +64,6 @@ const lifelineSkillsDir = () => {
     die('lifeline upsource-review skill not found in the plugin cache.')
   return join(root, versions[versions.length - 1], 'skills')
 }
-
-// Optional bot identity (scripts/qa-runner/bot.env). Absent/placeholder ⇒ act as your own gh.
-const loadBotEnv = () => {
-  const f = join(SCRIPT_DIR, 'bot.env')
-  if (!existsSync(f)) return null
-  const env = {}
-  for (const line of readFileSync(f, 'utf8').split('\n')) {
-    const m = line.match(
-      /^\s*(?:export\s+)?(GH_BOT_TOKEN|GH_BOT_USER|GH_BOT_EMAIL)\s*=\s*(.+?)\s*$/
-    )
-    if (m) env[m[1]] = m[2].replace(/^["']|["']$/g, '')
-  }
-  if (!env.GH_BOT_TOKEN || env.GH_BOT_TOKEN.includes('xxxx')) return null
-  return env
-}
-
-// Env injected into the kimi subprocess so its gh/git act as the bot.
-const botProcessEnv = (bot) =>
-  bot
-    ? {
-        GH_TOKEN: bot.GH_BOT_TOKEN,
-        GIT_AUTHOR_NAME: bot.GH_BOT_USER,
-        GIT_AUTHOR_EMAIL: bot.GH_BOT_EMAIL,
-        GIT_COMMITTER_NAME: bot.GH_BOT_USER,
-        GIT_COMMITTER_EMAIL: bot.GH_BOT_EMAIL,
-      }
-    : {}
 
 const mainRoot = () =>
   dirname(
@@ -182,7 +155,7 @@ const run = (pr, live) => {
     )
     if (info.state !== 'OPEN') die(`PR #${pr} is ${info.state}, not OPEN.`)
     const branch = info.headRefName
-    const bot = loadBotEnv()
+    const bot = loadBot(SCRIPT_DIR, 'bot.env', 'GH_BOT')
     const repo = JSON.parse(
       sh('gh', ['repo', 'view', '--json', 'nameWithOwner'])
     ).nameWithOwner
@@ -190,7 +163,7 @@ const run = (pr, live) => {
     const wt = ensureWorktree(pr, branch, live, skillsDir, bot, repo)
     out(
       `${live ? 'LIVE' : 'DRY-RUN'}: kimi → /skill:upsource-review ${pr}  ` +
-        `(branch ${branch}, as ${bot ? bot.GH_BOT_USER : 'you'}, worktree ${wt})`
+        `(branch ${branch}, as ${botLabel(bot)}, worktree ${wt})`
     )
     const r = spawnSync(
       'kimi',
@@ -207,7 +180,7 @@ const run = (pr, live) => {
       {
         stdio: 'inherit',
         timeout: KIMI_TIMEOUT_MS,
-        env: { ...process.env, ...botProcessEnv(bot) },
+        env: { ...process.env, ...botEnv(bot) },
       }
     )
     out(`\nkimi exit: ${r.status ?? `signal ${r.signal}`}`)
