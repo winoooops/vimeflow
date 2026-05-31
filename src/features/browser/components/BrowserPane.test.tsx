@@ -197,6 +197,20 @@ describe('BrowserPane', () => {
     expect(screen.getByLabelText('browser address')).toHaveFocus()
   })
 
+  test('shows a user-set pane label in the chrome title', () => {
+    // `:rename-pane` sets pane.userLabel; the browser chrome must surface it so
+    // the rename is visible (otherwise the command silently no-ops visually).
+    render(
+      <BrowserPane
+        session={session}
+        pane={{ ...browserPane, userLabel: 'docs-tab' }}
+        isActive
+      />
+    )
+
+    expect(screen.getByText('docs-tab')).toBeInTheDocument()
+  })
+
   test('close button fires before chrome click propagation is stopped', async () => {
     const user = userEvent.setup()
     const onClose = vi.fn()

@@ -765,6 +765,52 @@ describe('WorkspaceView - Command Palette Integration', () => {
     expect(mockSessionManager.renameSession).not.toHaveBeenCalled()
   })
 
+  test(':rename-pane labels a browser pane locally', async () => {
+    const user = userEvent.setup()
+
+    // Active pane is a browser pane. Previously the shell-only gate nulled its
+    // ptyId, so :rename-pane reported "No active pane to rename". It must now
+    // label the pane locally by its pseudo ptyId (the agent /rename sync is a
+    // tolerated NoLiveAgent no-op for non-agent panes).
+    const browserSession: Session = {
+      ...createMockSession('session-browser', 'browser-tab'),
+      panes: [
+        {
+          id: 'b0',
+          kind: 'browser',
+          ptyId: 'browser:session-browser',
+          cwd: '/home/user',
+          agentType: 'generic',
+          status: 'running',
+          active: true,
+          browserUrl: 'https://example.com/',
+        },
+      ],
+    }
+    mockSessionManager.sessions = [browserSession]
+    mockSessionManager.activeSessionId = 'session-browser'
+
+    render(<WorkspaceView />)
+
+    openPalette()
+
+    await waitFor(() => {
+      expect(screen.getByRole('dialog')).toBeInTheDocument()
+    })
+
+    const input = screen.getByRole('combobox', {
+      name: 'Command palette search',
+    })
+    await user.clear(input)
+    await user.type(input, ':rename-pane web')
+    await user.keyboard('{Enter}')
+
+    expect(mockSessionManager.setPaneUserLabel).toHaveBeenCalledWith(
+      'browser:session-browser',
+      'web'
+    )
+  })
+
   test(':next command switches to next session', async () => {
     const user = userEvent.setup()
     render(<WorkspaceView />)
