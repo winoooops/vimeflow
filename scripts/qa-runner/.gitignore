@@ -1,3 +1,4 @@
 # local QA-runner state — never commit
 .locks/
 config.json
+bot.env
