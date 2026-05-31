@@ -2,7 +2,7 @@
 id: documentation-accuracy
 category: code-quality
 created: 2026-04-09
-last_updated: 2026-05-24
+last_updated: 2026-05-31
 ref_count: 22
 ---
 
@@ -692,4 +692,13 @@ Stale documentation misleads future contributors and review agents.
 - **File:** `CHANGELOG.md`
 - **Finding:** The English `[Unreleased] → Fixed` entry described the new scrollbar thumb as "`#333344` thumb on hover-darkening". The corresponding `::-webkit-scrollbar-thumb:hover` rule in `src/index.css` swaps the thumb to `#4a444f` — RGB(74,68,79) is brighter than RGB(51,51,68) in all three channels, so the hover effect actually brightens. The mirrored Chinese entry in `CHANGELOG.zh-CN.md` correctly used "hover 时变亮" (brightens on hover); only the English side was wrong, so a reader cross-checking the two changelogs would have noticed the disagreement before noticing the impl mismatch.
 - **Fix:** Rewrote the English entry as "`#333344` thumb that brightens to `#4a444f` on hover" and updated the Chinese entry to cite the same target color "`#4a444f`" for parity. Code-review heuristic: when describing a hover/focus state change, name both colors explicitly rather than relying on "darkens"/"brightens" — readers can verify the direction without running a color picker, and a typo in the verb becomes immediately obvious against the surrounding context.
+- **Commit:** same commit as this entry
+
+### 74. Stale comment claims skipped rewrite after guard removal
+
+- **Source:** github-claude | PR #320 round 1 | 2026-05-31
+- **Severity:** LOW
+- **File:** `scripts/qa-runner/run.mjs`
+- **Finding:** A comment said "skip the rewrite" for reused worktrees, but the `!existing` guard that implemented the skip had been removed. The code now rewrote origin unconditionally, yet the comment said the opposite.
+- **Fix:** Rewrote the comment to explain the unconditional rewrite (reused worktrees may retain a pre-bot remote).
 - **Commit:** same commit as this entry

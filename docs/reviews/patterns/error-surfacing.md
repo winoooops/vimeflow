@@ -305,3 +305,12 @@ failed" must mean the editor shows the original file, not the requested one.
 - **Finding:** `approve()` calls `gh pr review --approve` then `gh pr merge --squash` sequentially. On merge failure, the PR stays approved; the next tick posts another approval before retrying merge, spamming the timeline.
 - **Fix:** Query existing PR reviews and skip `--approve` if the effective approver identity (bot or ambient `gh` user) already approved.
 - **Commit:** `7644ec4` + cycle-2 fix
+
+### 31. Unconditional Linear state transitions in report-only mode
+
+- **Source:** github-claude | PR #320 round 1 | 2026-05-31
+- **Severity:** MEDIUM
+- **File:** `scripts/qa-runner/watch.mjs`
+- **Finding:** `postLinear(…, 'In Progress')` was called before the `ctx.execute` guard, so every report-only tick falsely transitioned linked Linear issues to "In Progress" even when no fix cycle ran.
+- **Fix:** Moved `postLinear` inside the `ctx.execute` block so it only fires when a real fix cycle is dispatched.
+- **Commit:** same commit as this entry

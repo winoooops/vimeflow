@@ -221,3 +221,12 @@ between display and mutation operations.
 - **Finding:** The guard `if (bot && live && !existing)` skips HTTPS remote + credential helper setup for reused worktrees. A worktree created without a bot identity retains its original remote; the bot's `GH_TOKEN` is injected into env but git pushes over the old remote, breaking the author≠approver invariant.
 - **Fix:** Remove the `!existing` guard so remote config runs unconditionally when `bot && live`.
 - **Commit:** `7644ec4` + cycle-2 fix
+
+### 24. Orphaned qa-pr-N worktrees accumulate after merge
+
+- **Source:** github-claude | PR #320 round 1 | 2026-05-31
+- **Severity:** LOW
+- **File:** `scripts/qa-runner/watch.mjs`
+- **Finding:** `ensureWorktree()` created `.claude/worktrees/qa-pr-N` per PR, but `approve()` never cleaned them up after squash-merge. Over many PRs the worktrees accumulated, holding git references that prevented GC.
+- **Fix:** Added `git worktree remove --force` in `approve()\'s` success path, right after remote branch deletion.
+- **Commit:** same commit as this entry

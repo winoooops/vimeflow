@@ -148,8 +148,9 @@ const ensureWorktree = (pr, branch, live, skillsDir, bot, repo) => {
   rmSync(link, { recursive: true, force: true })
   symlinkSync(join(skillsDir, 'upsource-review'), link)
   // Live + bot: push as the bot over HTTPS. The gh credential helper reads GH_TOKEN
-  // at push time, so the bot token is never written to git config. A reused worktree
-  // already shares the repo's (HTTPS + helper) remote config, so skip the rewrite.
+  // at push time, so the bot token is never written to git config. Rewrite origin +
+  // credential helper unconditionally — reused worktrees may retain a pre-bot remote
+  // (see git-operations.md §23 for why the !existing guard was removed).
   if (bot && live) {
     sh('git', [
       '-C',

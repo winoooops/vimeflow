@@ -54,6 +54,13 @@ const repoSlug = () => {
   return { owner: r.owner.login, name: r.name }
 }
 
+const mainRoot = () =>
+  dirname(
+    execFileSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], {
+      encoding: 'utf8',
+    }).trim()
+  )
+
 const openPRs = () =>
   ghJson([
     'pr',
@@ -148,9 +155,7 @@ const computeState = (pr, ctx) => {
       ? 'pending'
       : 'green'
   const claudeCheck = checks.find((c) => c.name === 'Claude Code Review')
-  const claudePending = claudeCheck?.bucket === 'pending'
-  const threads = unresolvedThreads(ctx.owner, ctx.name, pr.number)
-  const verdict = claudeVerdictClean(ctx.owner, ctx.name, pr.number) // null|true|false
+  const claudeReady = claudeCheck?.bucket === 'pass'
   const view = ghJson([
     'pr',
     'view',
@@ -161,22 +166,27 @@ const computeState = (pr, ctx) => {
   const vim = linkedVim(view.body)
   let state, detail
   if (ci === 'fail') [state, detail] = ['CI_RED', 'non-review CI failing']
-  else if (claudePending || ci === 'pending')
+  else if (!claudeReady || ci === 'pending')
     [state, detail] = ['WAITING', 'CI / Claude re-running']
-  else if (threads > 0)
-    [state, detail] = ['NEEDS_FIX', `${threads} unresolved thread(s)`]
-  else if (verdict === false)
-    [state, detail] = ['NEEDS_FIX', 'Claude verdict: patch has issues']
-  else if (verdict === null)
-    [state, detail] = ['WAITING', 'no Claude review yet']
-  else if (view.mergeable !== 'MERGEABLE')
-    [state, detail] = ['WAITING', `not mergeable (${view.mergeStateStatus})`]
-  else
-    [state, detail] = [
-      'GOOD_SHAPE',
-      '0 threads · Claude clean · CI green · mergeable',
-    ]
-  return { state, detail, vim, threads }
+  else {
+    const threads = unresolvedThreads(ctx.owner, ctx.name, pr.number)
+    const verdict = claudeVerdictClean(ctx.owner, ctx.name, pr.number) // null|true|false
+    if (threads > 0)
+      [state, detail] = ['NEEDS_FIX', `${threads} unresolved thread(s)`]
+    else if (verdict === false)
+      [state, detail] = ['NEEDS_FIX', 'Claude verdict: patch has issues']
+    else if (verdict === null)
+      [state, detail] = ['WAITING', 'no Claude review yet']
+    else if (view.mergeable !== 'MERGEABLE')
+      [state, detail] = ['WAITING', `not mergeable (${view.mergeStateStatus})`]
+    else
+      [state, detail] = [
+        'GOOD_SHAPE',
+        '0 threads · Claude clean · CI green · mergeable',
+      ]
+    return { state, detail, vim, threads }
+  }
+  return { state, detail, vim, threads: 0 }
 }
 
 const postLinear = (vim, body, stateName) => {
@@ -208,6 +218,18 @@ const approve = (pr, vim, ctx) => {
   }
   gh(['pr', 'merge', String(pr.number), '--squash'], env)
   out(`           ✓ MERGED`)
+  // Remove the qa-pr-N worktree so orphaned checkouts don't accumulate.
+  try {
+    execFileSync('git', [
+      'worktree',
+      'remove',
+      '--force',
+      join(mainRoot(), '.claude', 'worktrees', `qa-pr-${pr.number}`),
+    ])
+    out(`           ✓ removed worktree qa-pr-${pr.number}`)
+  } catch {
+    out(`           (worktree already gone)`)
+  }
   // Delete the merged branch REMOTELY — `gh --delete-branch` deletes the LOCAL
   // branch too, which fails when a worktree holds it (run.mjs's qa-pr-N). The API
   // ref delete is hook-free and never touches the local checkout.
@@ -320,13 +342,16 @@ const tick = async (ctx) => {
     )
     out(`           ${s.detail}`)
     if (s.state === 'NEEDS_FIX') {
-      postLinear(
-        s.vim,
-        `QA runner: review findings on PR #${pr.number} — ${s.detail}. Running an upsource cycle.`,
-        'In Progress'
-      )
-      if (ctx.execute) needsFix.push(pr.number)
-      else out(`           (report-only — pass --execute to run the cycle)`)
+      if (ctx.execute) {
+        postLinear(
+          s.vim,
+          `QA runner: review findings on PR #${pr.number} — ${s.detail}. Running an upsource cycle.`,
+          'In Progress'
+        )
+        needsFix.push(pr.number)
+      } else {
+        out(`           (report-only — pass --execute to run the cycle)`)
+      }
     } else if (s.state === 'GOOD_SHAPE') {
       if (ctx.approve) {
         try {
