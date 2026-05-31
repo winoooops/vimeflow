@@ -115,16 +115,13 @@ const unresolvedThreads = (owner, name, pr) => {
 // that's a repo-permissions boundary (protect .github/workflows/).
 const claudeVerdictClean = (owner, name, pr) => {
   const comments = JSON.parse(
-    execFileSync('jq', ['-s', 'add'], {
-      encoding: 'utf8',
-      input: gh([
-        'api',
-        `repos/${owner}/${name}/issues/${pr}/comments`,
-        '--paginate',
-      ]),
-      maxBuffer: 16 * 1024 * 1024,
-    })
-  )
+    gh([
+      'api',
+      `repos/${owner}/${name}/issues/${pr}/comments`,
+      '--paginate',
+      '--slurp',
+    ])
+  ).flat()
   const last = comments
     .filter(
       (c) =>
@@ -174,20 +171,26 @@ const computeState = (pr, ctx) => {
     [state, detail] = ['WAITING', 'CI / Claude re-running']
   else {
     const threads = unresolvedThreads(ctx.owner, ctx.name, pr.number)
-    const verdict = claudeVerdictClean(ctx.owner, ctx.name, pr.number) // null|true|false
     if (threads > 0)
       [state, detail] = ['NEEDS_FIX', `${threads} unresolved thread(s)`]
-    else if (verdict === false)
-      [state, detail] = ['NEEDS_FIX', 'Claude verdict: patch has issues']
-    else if (verdict === null)
-      [state, detail] = ['WAITING', 'no Claude review yet']
-    else if (view.mergeable !== 'MERGEABLE')
-      [state, detail] = ['WAITING', `not mergeable (${view.mergeStateStatus})`]
-    else
-      [state, detail] = [
-        'GOOD_SHAPE',
-        '0 threads · Claude clean · CI green · mergeable',
-      ]
+    else {
+      // verdict is irrelevant until threads are clear — defer the fetch to here
+      const verdict = claudeVerdictClean(ctx.owner, ctx.name, pr.number) // null|true|false
+      if (verdict === false)
+        [state, detail] = ['NEEDS_FIX', 'Claude verdict: patch has issues']
+      else if (verdict === null)
+        [state, detail] = ['WAITING', 'no Claude review yet']
+      else if (view.mergeable !== 'MERGEABLE')
+        [state, detail] = [
+          'WAITING',
+          `not mergeable (${view.mergeStateStatus})`,
+        ]
+      else
+        [state, detail] = [
+          'GOOD_SHAPE',
+          '0 threads · Claude clean · CI green · mergeable',
+        ]
+    }
     return { state, detail, vim, threads }
   }
   return { state, detail, vim, threads: 0 }

@@ -77,9 +77,7 @@ const mainRoot = () =>
     ]).trim()
   )
 
-// The worktree that currently has `branch` checked out, or null. git refuses a
-// second worktree on a branch already checked out elsewhere — including the
-// runner reviewing its OWN PR, whose branch is this dev worktree.
+// The worktree that has `branch` checked out, or null — used to refuse self-review.
 const worktreeForBranch = (branch) => {
   let path = null
   for (const line of sh('git', ['worktree', 'list', '--porcelain']).split(
@@ -92,54 +90,32 @@ const worktreeForBranch = (branch) => {
 }
 
 const ensureWorktree = (pr, branch, live, skillsDir, bot, repo) => {
-  // Reuse a checkout already on the branch; an isolated copy is impossible (and
-  // unnecessary) when the branch is checked out elsewhere. Otherwise create one.
-  const existing = worktreeForBranch(branch)
-  const wt = existing || join(mainRoot(), '.claude', 'worktrees', `qa-pr-${pr}`)
-  if (existing) {
-    out(`(reusing worktree already on ${branch}: ${wt})`)
-  } else if (!existsSync(wt)) {
+  // No self-review: refuse a branch that's already checked out (can't isolate it,
+  // and reviewing a branch you're working on never converges).
+  const held = worktreeForBranch(branch)
+  if (held)
+    die(
+      `refusing to review PR #${pr}: branch '${branch}' is checked out at ${held} (no self-review)`,
+      4
+    )
+  const wt = join(mainRoot(), '.claude', 'worktrees', `qa-pr-${pr}`)
+  const ref = live ? branch : `qa/dryrun-${pr}`
+  if (!existsSync(wt)) {
     sh('git', ['fetch', 'origin', branch, '-q'])
-    if (live) {
-      sh('git', ['worktree', 'add', '-B', branch, wt, `origin/${branch}`])
-    } else {
-      // dry-run: throwaway branch with no upstream — an accidental push has no target
-      sh('git', [
-        'worktree',
-        'add',
-        '-b',
-        `qa/dryrun-${pr}`,
-        wt,
-        `origin/${branch}`,
-      ])
-      try {
-        sh('git', ['-C', wt, 'branch', '--unset-upstream'])
-      } catch {
-        /* no upstream to unset */
-      }
-    }
+    sh('git', ['worktree', 'add', '-B', ref, wt, `origin/${branch}`])
   } else {
-    // Worktree exists but is on the wrong branch (e.g. dry-run → live)
-    out(`(resetting existing worktree to origin/${branch})`)
+    // reset a stale qa-pr-N worktree from a prior run
     sh('git', ['-C', wt, 'fetch', 'origin', branch, '-q'])
-    if (live) {
-      sh('git', ['-C', wt, 'checkout', '-B', branch, `origin/${branch}`])
-      sh('git', ['-C', wt, 'reset', '--hard'])
-      sh('git', ['-C', wt, 'clean', '-fd'])
-    } else {
-      sh('git', [
-        '-C',
-        wt,
-        'checkout',
-        '-B',
-        `qa/dryrun-${pr}`,
-        `origin/${branch}`,
-      ])
-      try {
-        sh('git', ['-C', wt, 'branch', '--unset-upstream'])
-      } catch {
-        /* no upstream to unset */
-      }
+    sh('git', ['-C', wt, 'checkout', '-B', ref, `origin/${branch}`])
+    sh('git', ['-C', wt, 'reset', '--hard'])
+    sh('git', ['-C', wt, 'clean', '-fd'])
+  }
+  if (!live) {
+    // dry-run branch carries no upstream — an accidental push has no target
+    try {
+      sh('git', ['-C', wt, 'branch', '--unset-upstream'])
+    } catch {
+      /* no upstream to unset */
     }
   }
   // The skill's helper scripts bootstrap from `skills/upsource-review` (repo-relative).
@@ -147,10 +123,7 @@ const ensureWorktree = (pr, branch, live, skillsDir, bot, repo) => {
   const link = join(wt, 'skills', 'upsource-review')
   rmSync(link, { recursive: true, force: true })
   symlinkSync(join(skillsDir, 'upsource-review'), link)
-  // Live + bot: push as the bot over HTTPS. The gh credential helper reads GH_TOKEN
-  // at push time, so the bot token is never written to git config. Rewrite origin +
-  // credential helper unconditionally — reused worktrees may retain a pre-bot remote
-  // (see git-operations.md §23 for why the !existing guard was removed).
+  // Live + bot: push as the bot over HTTPS via the gh credential helper.
   if (bot && live) {
     sh('git', [
       '-C',
