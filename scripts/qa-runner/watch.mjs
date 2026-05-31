@@ -56,9 +56,13 @@ const repoSlug = () => {
 
 const mainRoot = () =>
   dirname(
-    execFileSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], {
-      encoding: 'utf8',
-    }).trim()
+    execFileSync(
+      'git',
+      ['rev-parse', '--path-format=absolute', '--git-common-dir'],
+      {
+        encoding: 'utf8',
+      }
+    ).trim()
   )
 
 const openPRs = () =>
