@@ -1,10 +1,4 @@
-import {
-  forwardRef,
-  useState,
-  type ButtonHTMLAttributes,
-  type ReactElement,
-  type ReactNode,
-} from 'react'
+import { useState, type ReactElement, type ReactNode } from 'react'
 import type { BaseDiffOptions, DiffsThemeNames } from '@pierre/diffs'
 import {
   FloatingPortal,
@@ -27,59 +21,10 @@ import { FilePill } from './FilePill'
 import { ChangeStepper } from './ChangeStepper'
 import {
   ToolWell,
+  WellDisabledButton,
   WELL_DANGER_BUTTON_CLASSES,
   WELL_DISABLED_BUTTON_CLASSES,
 } from './ToolWell'
-
-// Disabled variant of the danger (discard-all) button — reuses the tool-well's
-// muted disabled tone so a staging-in-flight discard-all reads identically to
-// the other disabled staging buttons.
-const WELL_DANGER_DISABLED_CLASSES = WELL_DISABLED_BUTTON_CLASSES
-
-// Wrap an aria-disabled placeholder in an "Available in PRx" / "Coming soon"
-// tooltip so users know the placeholder will light up later. The button stays
-// focusable because native disabled controls do not dispatch the hover/focus
-// events Tooltip needs.
-const ComingSoonTooltip = ({
-  label,
-  children,
-}: {
-  label: string
-  children: ReactElement
-}): ReactElement => <Tooltip content={label}>{children}</Tooltip>
-
-// Disabled discard-all placeholder (no onDiscardAll handler). Mirrors the
-// tool-well's disabled-button styling but keeps the discard-all accessible
-// name. aria-disabled (not native disabled) so the Tooltip can open on hover.
-interface WellDangerDisabledButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
-  icon: string
-  label: string
-}
-
-const WellDangerDisabledButton = forwardRef<
-  HTMLButtonElement,
-  WellDangerDisabledButtonProps
->(
-  ({ icon, label, ...buttonProps }, ref): ReactElement => (
-    <button
-      ref={ref}
-      type="button"
-      aria-disabled="true"
-      aria-label={label}
-      className={WELL_DANGER_DISABLED_CLASSES}
-      {...buttonProps}
-    >
-      <span
-        aria-hidden="true"
-        className="material-symbols-outlined text-base leading-none"
-      >
-        {icon}
-      </span>
-    </button>
-  )
-)
-
-WellDangerDisabledButton.displayName = 'WellDangerDisabledButton'
 
 // Floating-UI popover confirmation for the Discard All action. Rendered as
 // a floating box anchored to the trigger so it escapes any overflow clipping
@@ -366,7 +311,7 @@ export const DiffChipToolbar = ({
             aria-expanded={discardAllOpen}
             className={
               staging
-                ? WELL_DANGER_DISABLED_CLASSES
+                ? WELL_DISABLED_BUTTON_CLASSES
                 : WELL_DANGER_BUTTON_CLASSES
             }
             {...getDiscardAllReferenceProps({
@@ -413,9 +358,9 @@ export const DiffChipToolbar = ({
         </span>
       </Tooltip>
     ) : (
-      <ComingSoonTooltip label="Available in PR2">
-        <WellDangerDisabledButton icon="delete_sweep" label="discard all" />
-      </ComingSoonTooltip>
+      <Tooltip content="Available in PR2">
+        <WellDisabledButton icon="delete_sweep" label="discard all" />
+      </Tooltip>
     )
 
   // Build the chip list in priority order. Highest priority first → last to

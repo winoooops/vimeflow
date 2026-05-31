@@ -38,7 +38,9 @@ const ComingSoonTooltip = ({
   children: ReactElement
 }): ReactElement => <Tooltip content={label}>{children}</Tooltip>
 
-// Disabled icon button used by the annotation placeholders. Uses aria-disabled
+// Disabled icon button used by the staging placeholders here, and shared with
+// the discard-all placeholder in DiffChipToolbar (exported so the danger button
+// reuses the same markup rather than a byte-identical copy). Uses aria-disabled
 // (not native disabled) so the surrounding Tooltip can open on hover/focus
 // while the button stays inert (no onClick handler).
 interface WellDisabledButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -46,7 +48,7 @@ interface WellDisabledButtonProps extends ButtonHTMLAttributes<HTMLButtonElement
   label: string
 }
 
-const WellDisabledButton = forwardRef<
+export const WellDisabledButton = forwardRef<
   HTMLButtonElement,
   WellDisabledButtonProps
 >(
