@@ -149,7 +149,8 @@ const computeState = (pr, ctx) => {
   if (pr.isDraft) return { state: 'WAITING', detail: 'draft' }
   const checks = checksFor(pr.number)
   const nonReview = checks.filter((c) => !REVIEW_CHECKS.has(c.name))
-  const ci = nonReview.some((c) => c.bucket === 'fail')
+  // 'cancel' (aborted) is not a pass — block it; only 'pass'/'skipping' count as green.
+  const ci = nonReview.some((c) => c.bucket === 'fail' || c.bucket === 'cancel')
     ? 'fail'
     : nonReview.some((c) => c.bucket === 'pending')
       ? 'pending'
@@ -165,7 +166,8 @@ const computeState = (pr, ctx) => {
   ])
   const vim = linkedVim(view.body)
   let state, detail
-  if (ci === 'fail') [state, detail] = ['CI_RED', 'non-review CI failing']
+  if (ci === 'fail')
+    [state, detail] = ['CI_RED', 'non-review CI failing or canceled']
   else if (!claudeReady || ci === 'pending')
     [state, detail] = ['WAITING', 'CI / Claude re-running']
   else {
