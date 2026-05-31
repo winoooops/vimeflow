@@ -136,6 +136,14 @@ export interface DiffChipToolbarProps {
   // Filename shown in the Discard All confirmation popover ("Discard all
   // changes to <selectedFileName>?"). Optional — omit for a generic prompt.
   selectedFileName?: string
+  // Feedback actions — inline review feedback chips. When `feedbackCount > 0`
+  // the toolbar renders a high-priority "Finish feedback (N)" chip plus a
+  // muted, lowest-priority "Discard feedback" chip; at 0 neither renders.
+  // Optional (default 0 / no-op) so pre-feedback callers are unaffected,
+  // mirroring the other optional-handler chips in this component.
+  feedbackCount?: number
+  onFinishFeedback?: () => void
+  onDiscardFeedback?: () => void
 }
 
 // Styling shared by every icon-button chip — the staging chips, the prev/next
@@ -162,6 +170,24 @@ const COUNTER_CHIP_CLASSES =
   'inline-flex items-center justify-center gap-1 min-w-[3.25rem] h-8 px-2 ' +
   'rounded-md bg-surface-container/40 text-on-surface-variant text-[0.7rem] ' +
   'font-mono tracking-tight'
+
+// Interactive text chip — used by the feedback actions. Mirrors the counter
+// chip sizing but adds hover affordance so it reads as clickable.
+const TEXT_CHIP_CLASSES =
+  'inline-flex items-center justify-center gap-1 h-8 px-2 ' +
+  'rounded-md bg-surface-container/40 text-on-surface-variant text-[0.7rem] ' +
+  'font-mono tracking-tight ' +
+  'hover:bg-surface-container/70 hover:text-on-surface ' +
+  'transition-colors'
+
+// Muted interactive text chip — used by the Discard feedback action. Lower
+// contrast surface so it overflows first, but still interactive on hover.
+const MUTED_TEXT_CHIP_CLASSES =
+  'inline-flex items-center justify-center gap-1 h-8 px-2 ' +
+  'rounded-md bg-surface-container/20 text-on-surface-variant/40 ' +
+  'text-[0.7rem] font-mono tracking-tight ' +
+  'hover:bg-surface-container/30 hover:text-on-surface-variant/60 ' +
+  'transition-colors'
 
 // Wrap an aria-disabled chip in an "Available in PRx" tooltip so users know
 // the placeholder will light up later. The button stays focusable because
@@ -350,6 +376,9 @@ export const DiffChipToolbar = ({
   onDiscardAll = undefined,
   staging = false,
   selectedFileName = undefined,
+  feedbackCount = 0,
+  onFinishFeedback = undefined,
+  onDiscardFeedback = undefined,
 }: DiffChipToolbarProps): ReactElement => {
   // Discard All confirmation popover state. The trigger is the discard-all
   // chip; the floating content is the DiscardAllConfirm component rendered
@@ -468,7 +497,21 @@ export const DiffChipToolbar = ({
       onClick={onNextHunk}
       disabled={!hunkNavEnabled}
     />,
-    // 8. stage — FUNCTIONAL in PR2 when onStage is provided.
+    // 8. finish feedback — shown when there is pending inline review feedback.
+    ...(feedbackCount > 0
+      ? [
+          <button
+            key="finish-feedback"
+            type="button"
+            aria-label={`finish feedback (${feedbackCount})`}
+            onClick={onFinishFeedback}
+            className={TEXT_CHIP_CLASSES}
+          >
+            Finish feedback ({feedbackCount})
+          </button>,
+        ]
+      : []),
+    // 9. stage — FUNCTIONAL in PR2 when onStage is provided.
     onStage !== undefined ? (
       <IconChip
         key="stage"
@@ -581,7 +624,7 @@ export const DiffChipToolbar = ({
         <DisabledIconChip icon="delete_sweep" label="discard all" />
       </ComingSoonTooltip>
     ),
-    // 12. highlight dropdown — `lineDiffType` Pierre option.
+    // 13. highlight dropdown — `lineDiffType` Pierre option.
     <Dropdown
       key="highlight"
       label="highlight"
@@ -590,7 +633,7 @@ export const DiffChipToolbar = ({
       onChange={onLineDiffTypeChange}
       width={260}
     />,
-    // 13. theme dropdown — `DiffsThemeNames` enumeration.
+    // 14. theme dropdown — `DiffsThemeNames` enumeration.
     <Dropdown
       key="theme"
       label="theme"
@@ -598,7 +641,7 @@ export const DiffChipToolbar = ({
       options={THEME_OPTIONS}
       onChange={onThemeChange}
     />,
-    // 14. View ▾ gear chip — consolidates the indicators / overflow
+    // 15. View ▾ gear chip — consolidates the indicators / overflow
     // dropdowns and the four boolean toggle chips into a single portal-
     // rendered popover with a Format section (nested sub-dropdowns) and
     // a View Options section (checkbox rows). Replaces six standalone
@@ -619,6 +662,21 @@ export const DiffChipToolbar = ({
       stickyHeader={stickyHeader}
       onStickyHeaderChange={onStickyHeaderChange}
     />,
+    // 16. discard feedback — muted text chip, lowest priority so Priority+
+    // overflows it first. Only renders when there is pending feedback.
+    ...(feedbackCount > 0
+      ? [
+          <button
+            key="discard-feedback"
+            type="button"
+            aria-label="discard feedback"
+            onClick={onDiscardFeedback}
+            className={MUTED_TEXT_CHIP_CLASSES}
+          >
+            Discard feedback
+          </button>,
+        ]
+      : []),
   ]
 
   return (

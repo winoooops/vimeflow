@@ -1,7 +1,7 @@
 import { render, screen, within, fireEvent } from '@testing-library/react'
 import { describe, test, expect, vi, beforeEach } from 'vitest'
 import userEvent from '@testing-library/user-event'
-import { createRef } from 'react'
+import { createRef, forwardRef, type ReactElement } from 'react'
 import DockPanel, { type DockPanelHandle } from './DockPanel'
 import * as useCodeMirrorModule from '../../editor/hooks/useCodeMirror'
 import * as useVimModeModule from '../../editor/hooks/useVimMode'
@@ -20,11 +20,30 @@ vi.mock('@pierre/diffs/react', () => ({
   MultiFileDiff: vi.fn(() => <div data-testid="multi-file-diff" />),
 }))
 
+// react-markdown is ESM-only and heavy in jsdom; the DockPanel test only needs
+// to prove WHICH surface mounts per viewMode. The real rendering/sanitize
+// behavior is covered by MarkdownReadingView.test.tsx.
+vi.mock('../../editor/components/MarkdownReadingView', () => ({
+  MarkdownReadingView: forwardRef<HTMLDivElement, { content: string }>(
+    function MarkdownReadingView({ content }, ref): ReactElement {
+      // Forward the ref to a focusable node so the DockPanel view-mode-focus
+      // effect (markdownViewRef.current?.focus()) is observable in tests.
+      return (
+        <div ref={ref} data-testid="markdown-reading-view" tabIndex={-1}>
+          {content}
+        </div>
+      )
+    }
+  ),
+}))
+
 type DockPanelTestProps = Parameters<typeof DockPanel>[0]
 
 const renderDockPanel = (
   overrides: Partial<DockPanelTestProps> = {}
-): ReturnType<typeof render> => {
+): ReturnType<typeof render> & {
+  rerenderWith: (next: Partial<DockPanelTestProps>) => void
+} => {
   const props: DockPanelTestProps = {
     position: 'bottom',
     tab: 'editor',
@@ -48,7 +67,18 @@ const renderDockPanel = (
     ...overrides,
   } as DockPanelTestProps
 
-  return render(<DockPanel {...props} />)
+  const view = render(<DockPanel {...props} />)
+
+  return {
+    ...view,
+    // Re-render the same instance with a changed prop (e.g. selectedFilePath),
+    // so a test can exercise the render-time view-mode reset without rebuilding
+    // the full prop object.
+    rerenderWith: (next: Partial<DockPanelTestProps>): void => {
+      const nextProps = { ...props, ...next } as DockPanelTestProps
+      view.rerender(<DockPanel {...nextProps} />)
+    },
+  }
 }
 
 describe('DockPanel', () => {
@@ -138,6 +168,174 @@ describe('DockPanel', () => {
 
     expect(screen.getByTestId('no-file-selected')).toBeInTheDocument()
     expect(screen.getByText(/No file selected/i)).toBeInTheDocument()
+  })
+
+  describe('markdown reading view', () => {
+    test('markdown file defaults to the reading view (not CodeEditor)', () => {
+      renderDockPanel({ selectedFilePath: '/x/README.md', content: '# Hi' })
+
+      expect(screen.getByTestId('markdown-reading-view')).toBeInTheDocument()
+      expect(
+        screen.queryByTestId('codemirror-container')
+      ).not.toBeInTheDocument()
+    })
+
+    test('toggling to Source shows the CodeEditor (vim path)', async () => {
+      const user = userEvent.setup()
+      renderDockPanel({ selectedFilePath: '/x/README.md', content: '# Hi' })
+
+      await user.click(screen.getByRole('button', { name: /source/i }))
+
+      expect(screen.getByTestId('codemirror-container')).toBeInTheDocument()
+      expect(
+        screen.queryByTestId('markdown-reading-view')
+      ).not.toBeInTheDocument()
+    })
+
+    test('toggling back to Reading restores the reading view', async () => {
+      const user = userEvent.setup()
+      renderDockPanel({ selectedFilePath: '/x/README.md', content: '# Hi' })
+
+      await user.click(screen.getByRole('button', { name: /source/i }))
+      await user.click(screen.getByRole('button', { name: /^reading$/i }))
+
+      expect(screen.getByTestId('markdown-reading-view')).toBeInTheDocument()
+      expect(
+        screen.queryByTestId('codemirror-container')
+      ).not.toBeInTheDocument()
+    })
+
+    test('switching to a different markdown file resets Source back to Reading', async () => {
+      const user = userEvent.setup()
+
+      const view = renderDockPanel({
+        selectedFilePath: '/x/a.md',
+        content: '# A',
+      })
+
+      // Drop file A into Source mode.
+      await user.click(screen.getByRole('button', { name: /^source$/i }))
+      expect(screen.getByTestId('codemirror-container')).toBeInTheDocument()
+
+      // Opening a different markdown file resets the view mode to Reading, so
+      // the reader never lands in the editor for a file they just opened.
+      view.rerenderWith({ selectedFilePath: '/x/b.md', content: '# B' })
+
+      expect(screen.getByTestId('markdown-reading-view')).toBeInTheDocument()
+      expect(
+        screen.queryByTestId('codemirror-container')
+      ).not.toBeInTheDocument()
+    })
+
+    test('toggling to Reading moves keyboard focus into the reading region (focused pane)', async () => {
+      const user = userEvent.setup()
+      renderDockPanel({
+        selectedFilePath: '/x/README.md',
+        content: '# Hi',
+        isFocused: true,
+      })
+
+      await user.click(screen.getByRole('button', { name: /^source$/i }))
+      await user.click(screen.getByRole('button', { name: /^reading$/i }))
+
+      expect(screen.getByTestId('markdown-reading-view')).toHaveFocus()
+    })
+
+    test('switching between markdown files keeps focus in the reading region (focused pane)', () => {
+      const view = renderDockPanel({
+        selectedFilePath: '/x/a.md',
+        content: '# A',
+        isFocused: true,
+      })
+
+      // The effect focuses the region on the initial focused-reading mount.
+      expect(screen.getByTestId('markdown-reading-view')).toHaveFocus()
+
+      // Switching files remounts the region (key=selectedFilePath); the effect
+      // must re-fire on the selectedFilePath change to restore focus — otherwise
+      // none of the other deps change and focus falls to document.body.
+      view.rerenderWith({ selectedFilePath: '/x/b.md', content: '# B' })
+
+      expect(screen.getByTestId('markdown-reading-view')).toHaveFocus()
+    })
+
+    test('.markdown extension also opens in the reading view', () => {
+      renderDockPanel({
+        selectedFilePath: '/x/notes.markdown',
+        content: '# Hi',
+      })
+
+      expect(screen.getByTestId('markdown-reading-view')).toBeInTheDocument()
+    })
+
+    test('non-markdown file shows CodeEditor and no view-mode toggle', () => {
+      renderDockPanel({ selectedFilePath: '/x/test.ts' })
+
+      expect(screen.getByTestId('codemirror-container')).toBeInTheDocument()
+      expect(
+        screen.queryByTestId('markdown-reading-view')
+      ).not.toBeInTheDocument()
+
+      expect(
+        screen.queryByRole('button', { name: /^reading$/i })
+      ).not.toBeInTheDocument()
+
+      expect(
+        screen.queryByRole('button', { name: /^source$/i })
+      ).not.toBeInTheDocument()
+    })
+
+    test('view-mode toggle is present for a markdown file on the editor tab', () => {
+      renderDockPanel({ selectedFilePath: '/x/README.md' })
+
+      expect(
+        screen.getByRole('button', { name: /^reading$/i })
+      ).toBeInTheDocument()
+
+      expect(
+        screen.getByRole('button', { name: /^source$/i })
+      ).toBeInTheDocument()
+    })
+
+    test('reading-style gear is shown in reading mode and hidden in source mode', async () => {
+      const user = userEvent.setup()
+      renderDockPanel({ selectedFilePath: '/x/README.md' })
+
+      expect(
+        screen.getByRole('button', { name: /reading style/i })
+      ).toBeInTheDocument()
+
+      await user.click(screen.getByRole('button', { name: /^source$/i }))
+
+      expect(
+        screen.queryByRole('button', { name: /reading style/i })
+      ).not.toBeInTheDocument()
+    })
+
+    test('view-mode toggle is absent on the diff tab even for a markdown file', () => {
+      renderDockPanel({ tab: 'diff', selectedFilePath: '/x/README.md' })
+
+      expect(
+        screen.queryByRole('button', { name: /^reading$/i })
+      ).not.toBeInTheDocument()
+    })
+
+    test('DockSwitcher remains present alongside the toggle (composed, not replaced)', () => {
+      renderDockPanel({
+        position: 'bottom',
+        selectedFilePath: '/x/README.md',
+      })
+
+      // Toggle is present...
+      expect(
+        screen.getByRole('button', { name: /^reading$/i })
+      ).toBeInTheDocument()
+
+      // ...and DockSwitcher (dock: <position>) was NOT removed (D6).
+      expect(
+        screen.getByRole('button', { name: /dock: bottom/i })
+      ).toBeInTheDocument()
+    })
   })
 
   test('renders resize handle for vertical docks', () => {

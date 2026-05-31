@@ -63,6 +63,9 @@ const renderToolbar = (
     onNextFile: vi.fn<() => void>(),
     currentFileIndex: 1,
     totalFiles: 9,
+    feedbackCount: 0,
+    onFinishFeedback: vi.fn<() => void>(),
+    onDiscardFeedback: vi.fn<() => void>(),
   }
 
   return render(<DiffChipToolbar {...baseProps} {...overrides} />)
@@ -604,6 +607,50 @@ describe('DiffChipToolbar', () => {
 
       expect(screen.getByLabelText(/hunk 2\/3/i)).toBeInTheDocument()
     })
+  })
+
+  test('does not render feedback chips when feedbackCount is 0', () => {
+    renderToolbar({ feedbackCount: 0 })
+
+    expect(
+      screen.queryByRole('button', { name: /finish feedback/i })
+    ).not.toBeInTheDocument()
+
+    expect(
+      screen.queryByRole('button', { name: /discard feedback/i })
+    ).not.toBeInTheDocument()
+  })
+
+  test('renders both feedback chips when feedbackCount > 0', () => {
+    renderToolbar({ feedbackCount: 3 })
+
+    expect(
+      screen.getByRole('button', { name: /finish feedback \(3\)/i })
+    ).toBeInTheDocument()
+
+    expect(
+      screen.getByRole('button', { name: /discard feedback/i })
+    ).toBeInTheDocument()
+  })
+
+  test('clicking Finish feedback chip calls onFinishFeedback once', async () => {
+    const user = userEvent.setup()
+    const onFinishFeedback = vi.fn<() => void>()
+
+    renderToolbar({ feedbackCount: 3, onFinishFeedback })
+
+    await user.click(screen.getByRole('button', { name: /finish feedback/i }))
+    expect(onFinishFeedback).toHaveBeenCalledTimes(1)
+  })
+
+  test('clicking Discard feedback chip calls onDiscardFeedback once', async () => {
+    const user = userEvent.setup()
+    const onDiscardFeedback = vi.fn<() => void>()
+
+    renderToolbar({ feedbackCount: 3, onDiscardFeedback })
+
+    await user.click(screen.getByRole('button', { name: /discard feedback/i }))
+    expect(onDiscardFeedback).toHaveBeenCalledTimes(1)
   })
 
   test('PriorityPlus collapses the lower-priority chips into the overflow menu at a narrow width', () => {

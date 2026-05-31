@@ -1,0 +1,1603 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Markdown Reading &amp; Editing in the Dock — A Technical Field Guide</title>
+    <!--
+      Self-contained by design: all CSS is inline below, no external fonts,
+      no CDN scripts, no network assets. Renders standalone from file://.
+      Visual language mirrors the "Obsidian Lens" tokens in
+      docs/design/tokens.css (Catppuccin Mocha). Font families degrade
+      gracefully to system fonts when the bundled webfonts are absent.
+    -->
+    <style>
+      :root {
+        /* Surfaces */
+        --surface: #121221;
+        --surface-lowest: #0d0d1c;
+        --surface-low: #1a1a2a;
+        --surface-container: #1e1e2e;
+        --surface-high: #292839;
+        --surface-highest: #333344;
+        --surface-bright: #383849;
+        /* Accents */
+        --primary: #e2c7ff;
+        --primary-container: #cba6f7;
+        --secondary: #a8c8ff;
+        --tertiary: #ff94a5;
+        --error: #ffb4ab;
+        --success: #50fa7b;
+        --success-muted: #7defa1;
+        /* Text */
+        --on-surface: #e3e0f7;
+        --on-surface-variant: #cdc3d1;
+        --on-surface-muted: #8a8299;
+        --outline: #4a444f;
+        /* Syntax */
+        --syn-keyword: #cba6f7;
+        --syn-string: #a6e3a1;
+        --syn-fn: #89b4fa;
+        --syn-variable: #f5e0dc;
+        --syn-comment: #6c7086;
+        --syn-type: #fab387;
+        --syn-tag: #f38ba8;
+        /* Type */
+        --font-display: 'Manrope', 'Instrument Sans', system-ui, -apple-system,
+          'Segoe UI', sans-serif;
+        --font-body: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+        --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', 'Cascadia Code',
+          Menlo, Consolas, monospace;
+        /* Radius */
+        --radius-xl: 1.5rem;
+        --radius-lg: 1rem;
+        --radius-md: 0.75rem;
+        --radius-sm: 0.5rem;
+        --radius-full: 9999px;
+        --shadow-ambient: 0 10px 40px rgba(0, 0, 0, 0.4);
+        --glow-primary: 0 0 24px rgba(203, 166, 247, 0.28);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+      }
+
+      body {
+        background:
+          radial-gradient(
+            1200px 600px at 80% -10%,
+            rgba(203, 166, 247, 0.08),
+            transparent 60%
+          ),
+          radial-gradient(
+            900px 500px at -10% 10%,
+            rgba(168, 200, 255, 0.06),
+            transparent 55%
+          ),
+          var(--surface-lowest);
+        color: var(--on-surface-variant);
+        font-family: var(--font-body);
+        font-size: 16px;
+        line-height: 1.7;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+      }
+
+      ::selection {
+        background: rgba(203, 166, 247, 0.3);
+        color: var(--on-surface);
+      }
+
+      .wrap {
+        max-width: 1080px;
+        margin: 0 auto;
+        padding: 64px 28px 96px;
+      }
+
+      /* ── Masthead ── */
+      .masthead {
+        border-bottom: 1px solid rgba(74, 68, 79, 0.4);
+        padding-bottom: 28px;
+        margin-bottom: 44px;
+      }
+      .eyebrow {
+        font-family: var(--font-mono);
+        font-size: 0.72rem;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        color: var(--primary-container);
+        margin: 0 0 14px;
+      }
+      h1 {
+        font-family: var(--font-display);
+        font-weight: 700;
+        font-size: clamp(2rem, 4.5vw, 3rem);
+        line-height: 1.08;
+        letter-spacing: -0.02em;
+        color: var(--on-surface);
+        margin: 0 0 14px;
+      }
+      .dek {
+        font-size: 1.1rem;
+        color: var(--on-surface-variant);
+        max-width: 70ch;
+        margin: 0 0 22px;
+      }
+      .meta-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+      .chip {
+        font-family: var(--font-mono);
+        font-size: 0.68rem;
+        letter-spacing: 0.04em;
+        padding: 5px 11px;
+        border-radius: var(--radius-full);
+        background: var(--surface-container);
+        color: var(--on-surface-muted);
+        border: 1px solid rgba(74, 68, 79, 0.35);
+      }
+      .chip b {
+        color: var(--on-surface-variant);
+        font-weight: 600;
+      }
+
+      /* ── Section structure ── */
+      section {
+        margin: 0 0 52px;
+      }
+      h2 {
+        font-family: var(--font-display);
+        font-weight: 700;
+        font-size: 1.55rem;
+        letter-spacing: -0.01em;
+        color: var(--on-surface);
+        margin: 0 0 6px;
+        display: flex;
+        align-items: baseline;
+        gap: 12px;
+      }
+      h2 .num {
+        font-family: var(--font-mono);
+        font-size: 0.9rem;
+        color: var(--primary-container);
+        font-weight: 600;
+      }
+      h3 {
+        font-family: var(--font-display);
+        font-weight: 600;
+        font-size: 1.15rem;
+        color: var(--on-surface);
+        margin: 32px 0 10px;
+      }
+      .lede {
+        color: var(--on-surface-muted);
+        margin: 0 0 22px;
+        max-width: 76ch;
+      }
+      p {
+        max-width: 76ch;
+      }
+      a {
+        color: var(--secondary);
+        text-decoration: none;
+        border-bottom: 1px solid rgba(168, 200, 255, 0.3);
+      }
+      a:hover {
+        border-bottom-color: var(--secondary);
+      }
+      strong {
+        color: var(--on-surface);
+        font-weight: 600;
+      }
+      code {
+        font-family: var(--font-mono);
+        font-size: 0.86em;
+        background: var(--surface-high);
+        color: var(--primary);
+        padding: 1px 6px;
+        border-radius: var(--radius-sm);
+        border: 1px solid rgba(74, 68, 79, 0.3);
+      }
+      .path {
+        color: var(--secondary);
+        background: rgba(168, 200, 255, 0.08);
+        border-color: rgba(168, 200, 255, 0.2);
+      }
+
+      /* ── Cards ── */
+      .card {
+        background: var(--surface-container);
+        border: 1px solid rgba(74, 68, 79, 0.3);
+        border-radius: var(--radius-lg);
+        padding: 24px 26px;
+        box-shadow: var(--shadow-ambient);
+      }
+
+      /* ── TL;DR ── */
+      .tldr {
+        background:
+          linear-gradient(
+            135deg,
+            rgba(203, 166, 247, 0.12),
+            rgba(168, 200, 255, 0.05)
+          ),
+          var(--surface-container);
+        border: 1px solid rgba(203, 166, 247, 0.3);
+        border-radius: var(--radius-lg);
+        padding: 26px 28px;
+        box-shadow: var(--glow-primary);
+        margin-bottom: 52px;
+      }
+      .tldr h2 {
+        font-size: 1.2rem;
+        margin-bottom: 12px;
+      }
+      .tldr-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 16px;
+        margin-top: 18px;
+      }
+      .tldr-item {
+        border-left: 2px solid var(--primary-container);
+        padding-left: 14px;
+      }
+      .tldr-item .k {
+        font-family: var(--font-mono);
+        font-size: 0.68rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--on-surface-muted);
+        margin-bottom: 4px;
+      }
+      .tldr-item .v {
+        color: var(--on-surface);
+        font-weight: 600;
+        font-size: 0.95rem;
+        line-height: 1.4;
+      }
+      .tldr-item .v small {
+        display: block;
+        font-weight: 400;
+        font-size: 0.8rem;
+        color: var(--on-surface-muted);
+        margin-top: 2px;
+      }
+
+      /* ── Pipeline diagram ── */
+      .pipe {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 6px;
+        margin: 22px 0 8px;
+      }
+      .node {
+        font-family: var(--font-mono);
+        font-size: 0.78rem;
+        padding: 9px 13px;
+        border-radius: var(--radius-md);
+        background: var(--surface-high);
+        color: var(--on-surface);
+        border: 1px solid rgba(74, 68, 79, 0.5);
+        white-space: nowrap;
+      }
+      .node.in {
+        background: rgba(168, 200, 255, 0.12);
+        border-color: rgba(168, 200, 255, 0.4);
+        color: var(--secondary);
+      }
+      .node.ast {
+        background: rgba(250, 179, 135, 0.1);
+        border-color: rgba(250, 179, 135, 0.35);
+        color: var(--syn-type);
+      }
+      .node.out {
+        background: rgba(203, 166, 247, 0.14);
+        border-color: rgba(203, 166, 247, 0.45);
+        color: var(--primary);
+      }
+      .arrow {
+        color: var(--on-surface-muted);
+        font-family: var(--font-mono);
+      }
+      .pipe-note {
+        font-size: 0.82rem;
+        color: var(--on-surface-muted);
+        margin: 4px 0 0;
+      }
+      .pipe-note b {
+        color: var(--syn-type);
+        font-weight: 600;
+      }
+
+      /* ── Tables ── */
+      .table-scroll {
+        overflow-x: auto;
+        border-radius: var(--radius-lg);
+        border: 1px solid rgba(74, 68, 79, 0.35);
+        box-shadow: var(--shadow-ambient);
+      }
+      table {
+        border-collapse: collapse;
+        width: 100%;
+        font-size: 0.82rem;
+        min-width: 880px;
+      }
+      thead th {
+        background: var(--surface-high);
+        color: var(--on-surface);
+        font-family: var(--font-display);
+        font-weight: 600;
+        text-align: left;
+        padding: 12px 14px;
+        position: sticky;
+        top: 0;
+        font-size: 0.78rem;
+        letter-spacing: 0.01em;
+      }
+      tbody td {
+        padding: 11px 14px;
+        border-top: 1px solid rgba(74, 68, 79, 0.25);
+        vertical-align: top;
+        color: var(--on-surface-variant);
+      }
+      tbody tr:nth-child(odd) td {
+        background: rgba(26, 26, 42, 0.4);
+      }
+      tbody tr.rec td {
+        background: rgba(203, 166, 247, 0.1);
+      }
+      tbody tr.rec td:first-child {
+        box-shadow: inset 3px 0 0 var(--primary-container);
+      }
+      .lib {
+        color: var(--on-surface);
+        font-weight: 600;
+        font-family: var(--font-mono);
+        font-size: 0.82rem;
+      }
+      .cat {
+        display: block;
+        font-family: var(--font-body);
+        font-weight: 400;
+        font-size: 0.72rem;
+        color: var(--on-surface-muted);
+        margin-top: 2px;
+      }
+      .group-row td {
+        background: var(--surface-low) !important;
+        color: var(--primary-container);
+        font-family: var(--font-mono);
+        font-size: 0.72rem;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        padding: 8px 14px;
+        font-weight: 600;
+      }
+
+      /* ── Badges ── */
+      .b {
+        display: inline-block;
+        font-family: var(--font-mono);
+        font-size: 0.68rem;
+        padding: 2px 8px;
+        border-radius: var(--radius-full);
+        white-space: nowrap;
+      }
+      .b-ok {
+        background: rgba(80, 250, 123, 0.12);
+        color: var(--success-muted);
+        border: 1px solid rgba(80, 250, 123, 0.3);
+      }
+      .b-warn {
+        background: rgba(255, 148, 165, 0.12);
+        color: var(--tertiary);
+        border: 1px solid rgba(255, 148, 165, 0.3);
+      }
+      .b-bad {
+        background: rgba(255, 180, 171, 0.12);
+        color: var(--error);
+        border: 1px solid rgba(255, 180, 171, 0.3);
+      }
+      .b-info {
+        background: rgba(168, 200, 255, 0.12);
+        color: var(--secondary);
+        border: 1px solid rgba(168, 200, 255, 0.3);
+      }
+      .b-rec {
+        background: rgba(203, 166, 247, 0.16);
+        color: var(--primary);
+        border: 1px solid rgba(203, 166, 247, 0.45);
+      }
+      .tcap {
+        font-size: 0.78rem;
+        color: var(--on-surface-muted);
+        margin: 10px 2px 0;
+      }
+
+      /* ── IDEA option blocks ── */
+      .options {
+        display: grid;
+        gap: 18px;
+        margin-top: 20px;
+      }
+      .opt {
+        border: 1px solid rgba(74, 68, 79, 0.35);
+        border-radius: var(--radius-lg);
+        padding: 22px 24px;
+        background: var(--surface-container);
+      }
+      .opt.win {
+        border-color: rgba(203, 166, 247, 0.45);
+        background:
+          linear-gradient(135deg, rgba(203, 166, 247, 0.08), transparent 70%),
+          var(--surface-container);
+        box-shadow: var(--glow-primary);
+      }
+      .opt-head {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 6px;
+      }
+      .opt-head .tag {
+        font-family: var(--font-mono);
+        font-size: 0.72rem;
+        font-weight: 700;
+        color: var(--on-surface);
+        background: var(--surface-highest);
+        border-radius: var(--radius-sm);
+        padding: 3px 9px;
+      }
+      .opt.win .opt-head .tag {
+        background: var(--primary-container);
+        color: #2a1646;
+      }
+      .opt-head h3 {
+        margin: 0;
+        font-size: 1.08rem;
+      }
+      .idea {
+        margin-top: 12px;
+        display: grid;
+        gap: 7px;
+      }
+      .idea div {
+        font-size: 0.9rem;
+      }
+      .idea .lab {
+        font-family: var(--font-mono);
+        font-size: 0.66rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--on-surface-muted);
+        margin-right: 8px;
+      }
+      .idea .I .lab {
+        color: var(--secondary);
+      }
+      .idea .D .lab {
+        color: var(--tertiary);
+      }
+      .idea .E .lab {
+        color: var(--success-muted);
+      }
+      .idea .A .lab {
+        color: var(--syn-type);
+      }
+
+      /* ── Code blocks ── */
+      pre {
+        background: var(--surface-lowest);
+        border: 1px solid rgba(74, 68, 79, 0.4);
+        border-radius: var(--radius-md);
+        padding: 16px 18px;
+        overflow-x: auto;
+        font-family: var(--font-mono);
+        font-size: 0.82rem;
+        line-height: 1.6;
+        color: var(--on-surface-variant);
+        margin: 14px 0;
+      }
+      pre code {
+        background: none;
+        border: none;
+        padding: 0;
+        color: inherit;
+        font-size: inherit;
+      }
+      .cmt {
+        color: var(--syn-comment);
+        font-style: italic;
+      }
+      .kw {
+        color: var(--syn-keyword);
+      }
+      .str {
+        color: var(--syn-string);
+      }
+      .fn {
+        color: var(--syn-fn);
+      }
+      .typ {
+        color: var(--syn-type);
+      }
+      .tag {
+        color: var(--syn-tag);
+      }
+      .filetag {
+        font-family: var(--font-mono);
+        font-size: 0.7rem;
+        color: var(--on-surface-muted);
+        background: var(--surface-high);
+        border: 1px solid rgba(74, 68, 79, 0.4);
+        border-bottom: none;
+        border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+        padding: 5px 12px;
+        display: inline-block;
+        margin: 16px 0 -8px;
+      }
+
+      /* ── Step list ── */
+      ol.steps {
+        list-style: none;
+        counter-reset: step;
+        padding: 0;
+        margin: 18px 0 0;
+      }
+      ol.steps > li {
+        counter-increment: step;
+        position: relative;
+        padding: 0 0 22px 46px;
+        border-left: 1px solid rgba(74, 68, 79, 0.4);
+        margin-left: 14px;
+      }
+      ol.steps > li:last-child {
+        border-left-color: transparent;
+        padding-bottom: 0;
+      }
+      ol.steps > li::before {
+        content: counter(step);
+        position: absolute;
+        left: -15px;
+        top: -2px;
+        width: 30px;
+        height: 30px;
+        border-radius: var(--radius-full);
+        background: var(--surface-high);
+        border: 1px solid rgba(203, 166, 247, 0.4);
+        color: var(--primary);
+        font-family: var(--font-mono);
+        font-size: 0.82rem;
+        font-weight: 700;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      ol.steps > li h3 {
+        margin: 2px 0 6px;
+        font-size: 1.02rem;
+      }
+      ul.tight {
+        margin: 8px 0;
+        padding-left: 20px;
+      }
+      ul.tight li {
+        margin: 4px 0;
+        max-width: 74ch;
+      }
+
+      /* ── Callouts ── */
+      .callout {
+        border-radius: var(--radius-md);
+        padding: 14px 18px;
+        margin: 18px 0;
+        font-size: 0.9rem;
+        border: 1px solid;
+      }
+      .callout .ct {
+        font-family: var(--font-mono);
+        font-size: 0.68rem;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        font-weight: 700;
+        display: block;
+        margin-bottom: 5px;
+      }
+      .callout.key {
+        background: rgba(203, 166, 247, 0.08);
+        border-color: rgba(203, 166, 247, 0.35);
+      }
+      .callout.key .ct {
+        color: var(--primary);
+      }
+      .callout.warn {
+        background: rgba(255, 148, 165, 0.08);
+        border-color: rgba(255, 148, 165, 0.3);
+      }
+      .callout.warn .ct {
+        color: var(--tertiary);
+      }
+
+      /* ── Footer / sources ── */
+      footer {
+        border-top: 1px solid rgba(74, 68, 79, 0.4);
+        margin-top: 60px;
+        padding-top: 28px;
+        font-size: 0.82rem;
+        color: var(--on-surface-muted);
+      }
+      footer h3 {
+        font-size: 0.92rem;
+        color: var(--on-surface-variant);
+      }
+      footer ul {
+        padding-left: 18px;
+      }
+      footer li {
+        margin: 4px 0;
+      }
+      footer code {
+        font-size: 0.78rem;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="wrap">
+      <!-- ════════════════ MASTHEAD ════════════════ -->
+      <header class="masthead">
+        <p class="eyebrow">Knowledge Exchange · Frontend · Editor</p>
+        <h1>Reading Markdown in the Dock</h1>
+        <p class="dek">
+          A technical field guide to the open-source markdown
+          reader/editor landscape — and a concrete plan to give Vimeflow's
+          dock editor a polished reading experience for specs, plans, and
+          design docs, <em>without</em> sacrificing the CodeMirror&nbsp;6 +
+          vim foundation we already depend on.
+        </p>
+        <div class="meta-row">
+          <span class="chip"><b>Date</b> &nbsp;2026-05-30</span>
+          <span class="chip"><b>Type</b> &nbsp;Exploration / tech survey</span>
+          <span class="chip"><b>Status</b> &nbsp;Pre-decision</span>
+          <span class="chip"><b>Scope</b> &nbsp;src/features/editor · DockPanel</span>
+          <span class="chip"><b>Data as of</b> &nbsp;2026-05-30 (npm/GitHub)</span>
+        </div>
+      </header>
+
+      <!-- ════════════════ TL;DR ════════════════ -->
+      <div class="tldr">
+        <h2>⚡ TL;DR</h2>
+        <p style="margin: 0; max-width: 80ch">
+          A great reading view <strong>cannot</strong> live inside
+          CodeMirror today — there is no production-ready in-editor live
+          preview. So the right shape is <strong>two complementary
+          surfaces</strong>: keep CM6&nbsp;+&nbsp;vim as the
+          <em>editor</em>, and add a separate <em>reading view</em> rendered
+          by <strong>react-markdown</strong>. The heavyweight WYSIWYG
+          editors (Milkdown, TipTap, Lexical) all <strong>replace</strong>
+          CodeMirror and <strong>lose vim</strong> — a bad trade when reading
+          is the priority.
+        </p>
+        <div class="tldr-grid">
+          <div class="tldr-item">
+            <div class="k">Recommended pick</div>
+            <div class="v">
+              react-markdown
+              <small>+ remark-gfm + rehype-highlight + rehype-sanitize</small>
+            </div>
+          </div>
+          <div class="tldr-item">
+            <div class="k">Free complementary win</div>
+            <div class="v">
+              @codemirror/lang-markdown
+              <small>one dep, one line — vim fully preserved</small>
+            </div>
+          </div>
+          <div class="tldr-item">
+            <div class="k">Explicitly rejected</div>
+            <div class="v">
+              WYSIWYG editors
+              <small>Milkdown / TipTap / Lexical — replace CM6, lose vim</small>
+            </div>
+          </div>
+          <div class="tldr-item">
+            <div class="k">Integration cost</div>
+            <div class="v">
+              Low–medium
+              <small>1 new component, ~1 line in languageService, a view
+              toggle in DockPanel</small>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ════════════════ §1 THE GAP ════════════════ -->
+      <section>
+        <h2><span class="num">01</span> The gap, grounded in our code</h2>
+        <p class="lede">
+          Before surveying libraries, here is exactly what happens today when
+          you open a <code>.md</code> spec in the dock.
+        </p>
+
+        <p>
+          The dock's editing surface is
+          <code class="path">src/features/editor/components/CodeEditor.tsx</code>,
+          a thin wrapper around CodeMirror&nbsp;6. It derives a language
+          extension purely from the filename
+          (<code>CodeEditor.tsx:60-63</code>) by calling
+          <code>getLanguageExtension()</code> in
+          <code class="path">src/features/editor/services/languageService.ts</code>.
+          That function maps a handful of extensions to CM6 language packages
+          — and everything else falls through:
+        </p>
+
+        <span class="filetag">src/features/editor/services/languageService.ts:15-33</span>
+        <pre><code><span class="kw">switch</span> (ext) {
+  <span class="kw">case</span> <span class="str">'js'</span>:
+  <span class="kw">case</span> <span class="str">'jsx'</span>:   <span class="kw">return</span> <span class="fn">javascript</span>({ jsx: <span class="kw">true</span> })
+  <span class="kw">case</span> <span class="str">'ts'</span>:
+  <span class="kw">case</span> <span class="str">'tsx'</span>:   <span class="kw">return</span> <span class="fn">javascript</span>({ jsx: <span class="kw">true</span>, typescript: <span class="kw">true</span> })
+  <span class="kw">case</span> <span class="str">'rs'</span>:    <span class="kw">return</span> <span class="fn">rust</span>()
+  <span class="kw">case</span> <span class="str">'json'</span>:  <span class="kw">return</span> <span class="fn">json</span>()
+  <span class="kw">case</span> <span class="str">'css'</span>:   <span class="kw">return</span> <span class="fn">css</span>()
+  <span class="kw">case</span> <span class="str">'html'</span>:
+  <span class="kw">case</span> <span class="str">'htm'</span>:   <span class="kw">return</span> <span class="fn">html</span>()
+  <span class="kw">default</span>:     <span class="kw">return</span> <span class="kw">null</span>   <span class="cmt">// ← .md lands here: NO language, NO highlight</span>
+}</code></pre>
+
+        <p>
+          So a Markdown file is rendered as <strong>raw, unstyled monospace
+          text</strong> — no heading hierarchy, no rendered tables, no
+          highlighted code fences, no links you can follow. Confirmed two
+          ways:
+        </p>
+        <ul class="tight">
+          <li>
+            <code>package.json</code> declares CM6 language packs only for
+            <code>css</code>, <code>html</code>, <code>javascript</code>,
+            <code>json</code>, and <code>rust</code> — there is
+            <strong>no <code>@codemirror/lang-markdown</code></strong>, and
+            <strong>no renderer</strong> (<code>react-markdown</code>,
+            <code>markdown-it</code>, <code>remark</code>, …) anywhere in the
+            dependency tree.
+          </li>
+          <li>
+            The <code>FileLanguage</code> union in
+            <code class="path">src/features/editor/types/index.ts</code>
+            <em>names</em> <code>'markdown'</code>, but nothing ever produces a
+            markdown view — it's a label without an implementation.
+          </li>
+        </ul>
+
+        <p>
+          The editor surface is mounted at
+          <code>DockPanel.tsx:313</code>
+          (<code class="path">src/features/workspace/components/DockPanel.tsx</code>),
+          which renders <code>&lt;CodeEditor&gt;</code> whenever a file is
+          selected. (Note:
+          <code class="path">.../panels/EditorPanel.tsx</code> is only the
+          260px sidebar <em>placeholder</em> — "No file open" — not the live
+          surface.) <strong>This is our single integration point.</strong>
+        </p>
+
+        <div class="callout warn">
+          <span class="ct">The constraint that shapes everything</span>
+          The editor is not just CodeMirror — it is CodeMirror
+          <strong>plus a deeply-wired vim mode</strong>
+          (<code>useCodeMirror.ts:164-189</code>): the <code>vim()</code>
+          extension, a global <code>:w</code>→per-view <code>WeakMap</code>
+          save router (<code>useCodeMirror.ts:62-92</code>), and a vim
+          scroll-follow <code>transactionExtender</code>. Any option that
+          <em>replaces</em> CodeMirror for <code>.md</code> files throws all
+          of this away for Markdown. Preserving vim is the lens through which
+          every candidate below is judged.
+        </div>
+      </section>
+
+      <!-- ════════════════ §2 MENTAL MODEL ════════════════ -->
+      <section>
+        <h2><span class="num">02</span> Mental model: four families, one pipeline</h2>
+        <p class="lede">
+          "Markdown library" is an overloaded term. The candidates split into
+          four families with very different shapes. Knowing which family a
+          tool belongs to answers most questions before you read a single
+          benchmark.
+        </p>
+
+        <h3>The four families</h3>
+        <ul class="tight">
+          <li>
+            <strong>String renderers</strong> (<code>markdown-it</code>,
+            <code>marked</code>) — markdown text → an HTML
+            <em>string</em>. Fast and framework-agnostic, but in React you
+            must inject via <code>dangerouslySetInnerHTML</code>, losing the
+            component tree.
+          </li>
+          <li>
+            <strong>React-native renderers</strong> (<code>react-markdown</code>,
+            <code>@uiw/react-markdown-preview</code>, <code>streamdown</code>)
+            — markdown text → a <em>React element tree</em>. No
+            <code>innerHTML</code>; every tag is a real React node you can
+            restyle or swap. This is the family built for a reading view.
+          </li>
+          <li>
+            <strong>CodeMirror-native</strong>
+            (<code>@codemirror/lang-markdown</code>) — adds Markdown
+            <em>highlighting + editing affordances</em> to the editor we
+            already run. Renders nothing, but coexists perfectly with vim.
+          </li>
+          <li>
+            <strong>WYSIWYG editors</strong> (Milkdown, TipTap, Lexical,
+            ProseMirror) — replace the text editor with a rendered editing
+            surface. Powerful, heavy, and (critically) none ships a viable
+            vim mode.
+          </li>
+        </ul>
+
+        <h3>The framework worth learning: <code>unified</code> (remark → rehype)</h3>
+        <p>
+          The react-native renderers nearly all sit on the
+          <strong>unified</strong> ecosystem — a "content as a syntax tree"
+          pipeline that is the de-facto standard for Markdown in JS. It is
+          worth understanding because it is what makes a reading view
+          extensible <em>and</em> safe:
+        </p>
+
+        <div class="card">
+          <div class="pipe">
+            <span class="node in">raw .md text</span>
+            <span class="arrow">→</span>
+            <span class="node">remark-parse</span>
+            <span class="arrow">→</span>
+            <span class="node ast">mdast</span>
+            <span class="arrow">→</span>
+            <span class="node">remark-rehype</span>
+            <span class="arrow">→</span>
+            <span class="node ast">hast</span>
+            <span class="arrow">→</span>
+            <span class="node out">React elements</span>
+          </div>
+          <p class="pipe-note">
+            <b>mdast</b> = Markdown syntax tree · <b>hast</b> = HTML syntax
+            tree. Plugins hook each stage:
+            <code>remark-gfm</code> (tables, task-lists, strikethrough,
+            autolinks) operates on <b>mdast</b>;
+            <code>rehype-sanitize</code> (XSS allow-list),
+            <code>rehype-highlight</code> (code fences), and
+            <code>rehype-slug</code>/<code>autolink-headings</code> (anchored
+            TOC for long specs) operate on <b>hast</b>.
+            <code>react-markdown</code> is a thin React front-end over exactly
+            this pipeline.
+          </p>
+        </div>
+
+        <p>
+          The payoff: a reading view is not a fixed renderer but a
+          <em>composable</em> one. Want GFM tables in plans? Add a remark
+          plugin. Want a sanitized boundary? Add a rehype plugin. Want code
+          fences in our Catppuccin palette? Swap the highlighter. No forking,
+          no <code>innerHTML</code>.
+        </p>
+      </section>
+
+      <!-- ════════════════ §3 THE FIELD ════════════════ -->
+      <section>
+        <h2><span class="num">03</span> The candidate field</h2>
+        <p class="lede">
+          Eleven libraries across the four families, scored on the dimensions
+          that matter for <em>this</em> app. All figures verified against npm,
+          GitHub, and bundlephobia on 2026-05-30; see provenance notes in §6.
+        </p>
+
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Library</th>
+                <th>Read / Edit</th>
+                <th>License</th>
+                <th>Maintenance</th>
+                <th>Popularity</th>
+                <th>Bundle (gzip)</th>
+                <th>React&nbsp;19 / ESM</th>
+                <th>Catppuccin theming</th>
+                <th>CM6 fit · vim</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr class="group-row">
+                <td colspan="9">React-native renderers — the reading-view family</td>
+              </tr>
+              <tr class="rec">
+                <td>
+                  <span class="lib">react-markdown</span>
+                  <span class="cat">10.1.0 · unified/remark</span>
+                  <span class="b b-rec">RECOMMENDED</span>
+                </td>
+                <td><span class="b b-ok">Read ✓</span></td>
+                <td><span class="b b-ok">MIT</span></td>
+                <td>Active · 2025-03</td>
+                <td>21.9M/wk · 15.7k★</td>
+                <td>~33 kB + plugins</td>
+                <td>
+                  <span class="b b-ok">R19 ✓</span>
+                  <span class="b b-ok">ESM-only</span>
+                </td>
+                <td>
+                  <code>components</code> prop → per-tag control; full token
+                  match
+                </td>
+                <td>
+                  <span class="b b-ok">Coexist</span> vim untouched
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <span class="lib">@uiw/react-markdown-preview</span>
+                  <span class="cat">5.2.1 · wraps react-markdown</span>
+                </td>
+                <td><span class="b b-ok">Read ✓</span></td>
+                <td><span class="b b-ok">MIT</span></td>
+                <td>Active · 2026-05</td>
+                <td>789k/wk · 346★</td>
+                <td>~tens kB</td>
+                <td>
+                  <span class="b b-ok">R19 ✓</span>
+                  <span class="b b-info">dual</span>
+                </td>
+                <td>CSS vars + <code>data-color-mode="dark"</code></td>
+                <td><span class="b b-ok">Coexist</span> vim untouched</td>
+              </tr>
+              <tr>
+                <td>
+                  <span class="lib">markdown-it</span>
+                  <span class="cat">14.2.0 · string renderer</span>
+                </td>
+                <td><span class="b b-info">Read (string)</span></td>
+                <td><span class="b b-ok">MIT</span></td>
+                <td>Active · 2026-05</td>
+                <td>22.5M/wk · 21.5k★</td>
+                <td>44.6 kB</td>
+                <td>
+                  <span class="b b-info">via innerHTML</span>
+                  <span class="b b-info">dual</span>
+                </td>
+                <td>Own prose CSS (safe-by-default: <code>html:false</code>)</td>
+                <td>
+                  <span class="b b-warn">Coexist*</span> fights React tree
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <span class="lib">marked</span>
+                  <span class="cat">18.0.4 · string renderer</span>
+                </td>
+                <td><span class="b b-info">Read (string)</span></td>
+                <td><span class="b b-ok">MIT</span></td>
+                <td>Very active · 2026-05</td>
+                <td>43M/wk · 36.8k★</td>
+                <td><span class="b b-ok">12.1 kB · 0 deps</span></td>
+                <td>
+                  <span class="b b-info">via innerHTML</span>
+                  <span class="b b-info">ESM</span>
+                </td>
+                <td>Own prose CSS</td>
+                <td>
+                  <span class="b b-warn">No sanitize</span> needs DOMPurify
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <span class="lib">streamdown</span>
+                  <span class="cat">2.5.0 · Vercel, AI-stream</span>
+                </td>
+                <td><span class="b b-ok">Read ✓</span></td>
+                <td><span class="b b-info">Apache-2.0</span></td>
+                <td>Very active · 2026-03</td>
+                <td>2.78M/wk · 5.2k★</td>
+                <td><span class="b b-warn">138 kB (mermaid)</span></td>
+                <td>
+                  <span class="b b-ok">R19 ✓</span>
+                  <span class="b b-ok">ESM-only</span>
+                </td>
+                <td>Tailwind-native (we run Tailwind)</td>
+                <td>
+                  <span class="b b-warn">Overkill</span> built for LLM streams
+                </td>
+              </tr>
+
+              <tr class="group-row">
+                <td colspan="9">CodeMirror-native — the "free win" for the editor</td>
+              </tr>
+              <tr>
+                <td>
+                  <span class="lib">@codemirror/lang-markdown</span>
+                  <span class="cat">6.5.0 · CM6 language</span>
+                  <span class="b b-info">COMPLEMENT</span>
+                </td>
+                <td><span class="b b-info">Edit (highlight)</span></td>
+                <td><span class="b b-ok">MIT</span></td>
+                <td>Active · 2025-10</td>
+                <td>2.17M/wk</td>
+                <td><span class="b b-ok">~tens kB marginal</span></td>
+                <td>
+                  <span class="b b-info">n/a (in CM6)</span>
+                  <span class="b b-info">dual</span>
+                </td>
+                <td>Inherits our CM6 <code>HighlightStyle</code></td>
+                <td>
+                  <span class="b b-ok">Coexist — cleanest</span> vim ✓ fully
+                </td>
+              </tr>
+
+              <tr class="group-row">
+                <td colspan="9">
+                  WYSIWYG / batteries editors — replace CM6, forfeit vim
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <span class="lib">Milkdown / @milkdown/crepe</span>
+                  <span class="cat">7.21.1 · ProseMirror</span>
+                </td>
+                <td><span class="b b-info">Edit (WYSIWYG)</span></td>
+                <td><span class="b b-ok">MIT</span></td>
+                <td>Active · 2026-05</td>
+                <td>143k/wk · 11.5k★</td>
+                <td><span class="b b-bad">~439 kB (crepe)</span></td>
+                <td>
+                  <span class="b b-ok">R19 ✓</span>
+                  <span class="b b-ok">ESM</span>
+                </td>
+                <td>Crepe CSS vars</td>
+                <td>
+                  <span class="b b-bad">REPLACE · no vim</span>
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <span class="lib">TipTap</span>
+                  <span class="cat">3.23.6 · ProseMirror</span>
+                </td>
+                <td><span class="b b-info">Edit (WYSIWYG)</span></td>
+                <td>
+                  <span class="b b-warn">MIT core / Pro paid</span>
+                </td>
+                <td>Very active · 2026-05</td>
+                <td>8.58M/wk · 37k★</td>
+                <td>~102 kB (starter-kit)</td>
+                <td>
+                  <span class="b b-ok">R19 ✓</span>
+                  <span class="b b-ok">ESM</span>
+                </td>
+                <td>Headless — full control, build it all</td>
+                <td>
+                  <span class="b b-bad">REPLACE · no vim</span> · md is lossy
+                  serialization
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <span class="lib">Lexical</span>
+                  <span class="cat">0.45.0 · Meta, custom core</span>
+                </td>
+                <td><span class="b b-info">Edit (WYSIWYG)</span></td>
+                <td><span class="b b-ok">MIT</span></td>
+                <td>
+                  <span class="b b-warn">Pre-1.0</span> · 2026-05
+                </td>
+                <td>3M/wk · 23.5k★</td>
+                <td>~45 kB core*</td>
+                <td>
+                  <span class="b b-warn">R19 ✓ (StrictMode)</span>
+                  <span class="b b-info">dual</span>
+                </td>
+                <td>Theme map → CSS classes</td>
+                <td>
+                  <span class="b b-bad">REPLACE · no vim (worst)</span>
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <span class="lib">@uiw/react-md-editor</span>
+                  <span class="cat">4.1.1 · textarea-based</span>
+                </td>
+                <td><span class="b b-info">Edit + preview</span></td>
+                <td><span class="b b-ok">MIT</span></td>
+                <td>Active · 2026-05</td>
+                <td>580k/wk · 2.9k★</td>
+                <td>~tens kB (92 deps)</td>
+                <td>
+                  <span class="b b-warn">R19 likely</span>
+                  <span class="b b-info">dual</span>
+                </td>
+                <td>CSS vars + <code>data-color-mode</code></td>
+                <td>
+                  <span class="b b-bad">REPLACE (textarea) · no vim</span>
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <span class="lib">bytemd</span>
+                  <span class="cat">1.22.0 · CodeMirror 5</span>
+                </td>
+                <td><span class="b b-info">Edit + preview</span></td>
+                <td><span class="b b-ok">MIT</span></td>
+                <td>
+                  <span class="b b-bad">Dormant &gt;15mo</span>
+                </td>
+                <td>3.9k/wk · 1.3k★</td>
+                <td><span class="b b-warn">128.8 kB</span></td>
+                <td>
+                  <span class="b b-warn">unverified</span>
+                  <span class="b b-info">dual</span>
+                </td>
+                <td>CSS overrides</td>
+                <td>
+                  <span class="b b-bad">REPLACE (CM5!) · no CM6 vim</span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="tcap">
+          * <code>markdown-it</code> coexists technically but its HTML-string
+          output requires <code>dangerouslySetInnerHTML</code>, abandoning the
+          React tree we want for theming. * Lexical's
+          <code>@lexical/react</code> / <code>@lexical/markdown</code> gzip
+          figures were unavailable on bundlephobia at survey time (core only).
+          <code>ProseMirror</code>-core is the substrate under Milkdown/TipTap
+          (its GitHub repos were archived 2026-04-01; development moved
+          off-GitHub) — not a product to adopt directly.
+        </p>
+
+        <h3>Code-fence highlighting for the reading view</h3>
+        <p>
+          Specs and plans are full of fenced code, so the reading view needs a
+          highlighter. Three realistic pairings:
+        </p>
+        <div class="table-scroll">
+          <table style="min-width: 640px">
+            <thead>
+              <tr>
+                <th>Highlighter</th>
+                <th>Mode</th>
+                <th>Size / fit</th>
+                <th>Catppuccin</th>
+                <th>Verdict</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr class="rec">
+                <td>
+                  <span class="lib">rehype-highlight</span>
+                  <span class="cat">highlight.js · BSD-3 / MIT</span>
+                </td>
+                <td>Synchronous</td>
+                <td>~37 kB gzip subset</td>
+                <td>Official Catppuccin Mocha CSS (incl. CSS-var build)</td>
+                <td>
+                  <span class="b b-rec">Pick</span> drops into
+                  <code>rehypePlugins</code>, no async dance
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <span class="lib">shiki</span>
+                  <span class="cat">4.1.0 · MIT</span>
+                </td>
+                <td>Async init</td>
+                <td>Large unless fine-grained</td>
+                <td>Built-in <code>catppuccin-mocha</code> theme</td>
+                <td>
+                  <span class="b b-info">Upgrade path</span> VS-Code-grade
+                  fidelity, more wiring
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <span class="lib">prismjs</span>
+                  <span class="cat">1.30.0 · MIT</span>
+                </td>
+                <td>Sync (global)</td>
+                <td><span class="b b-ok">6.9 kB</span></td>
+                <td>Official Catppuccin CSS</td>
+                <td>
+                  <span class="b b-warn">CJS/global</span> worst ESM/Vite fit
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ════════════════ §4 DECISION ════════════════ -->
+      <section>
+        <h2><span class="num">04</span> The decision</h2>
+        <p class="lede">
+          Three coherent architectures. Each is framed as an IDEA block —
+          <em>Intent · Danger · Explain · Alternatives</em> — so the trade is
+          explicit. We recommend Option&nbsp;B (which absorbs Option&nbsp;A).
+        </p>
+
+        <div class="options">
+          <!-- Option A -->
+          <div class="opt">
+            <div class="opt-head">
+              <span class="tag">A</span>
+              <h3>Highlight-only — add <code>@codemirror/lang-markdown</code></h3>
+            </div>
+            <p style="margin: 0">
+              The cheapest possible change: one dependency, one line in
+              <code>languageService.ts</code>. Markdown gets syntax
+              highlighting, code-fence highlighting, list/blockquote
+              auto-continue, and smart backspace — all inside the existing
+              editor.
+            </p>
+            <div class="idea">
+              <div class="I">
+                <span class="lab">Intent</span> Make raw-source Markdown
+                <em>editing</em> pleasant with near-zero risk.
+              </div>
+              <div class="D">
+                <span class="lab">Danger</span> It renders <strong>nothing</strong>.
+                Headings, tables, and links stay as raw syntax — this does
+                <em>not</em> satisfy "polished reading UX." Minor CM6 footgun:
+                ensure a single deduped <code>@codemirror/state</code>.
+              </div>
+              <div class="E">
+                <span class="lab">Explain</span> It's just another
+                <code>LanguageSupport</code> in the language
+                <code>Compartment</code>. vim operates on a different layer
+                (commands/keymap) and is <strong>fully preserved</strong>.
+              </div>
+              <div class="A">
+                <span class="lab">Alternatives</span> Insufficient alone — but
+                it is the editor half of Option&nbsp;B, so we ship it
+                regardless.
+              </div>
+            </div>
+          </div>
+
+          <!-- Option B -->
+          <div class="opt win">
+            <div class="opt-head">
+              <span class="tag">B ✓</span>
+              <h3>
+                Dual surface — CM6 editor + <code>react-markdown</code> reading
+                view
+              </h3>
+            </div>
+            <p style="margin: 0">
+              Keep CM6&nbsp;+&nbsp;vim as the editor (with Option&nbsp;A's
+              highlighting), and add a separate <strong>reading view</strong>
+              for <code>.md</code> rendered by <code>react-markdown</code> +
+              <code>remark-gfm</code> + <code>rehype-highlight</code> +
+              <code>rehype-sanitize</code>. A toggle in the dock toolbar flips
+              between <em>Source</em> and <em>Reading</em>.
+            </p>
+            <div class="idea">
+              <div class="I">
+                <span class="lab">Intent</span> A polished, themeable reading
+                experience for specs/plans/docs <em>and</em> an untouched
+                vim-enabled editor — the literal ask.
+              </div>
+              <div class="D">
+                <span class="lab">Danger</span> Adds the unified/rehype tree
+                (~tens of kB gzip) and one new component + a view-mode toggle.
+                Two surfaces means a small amount of state (which mode per
+                file). All low-risk and reversible.
+              </div>
+              <div class="E">
+                <span class="lab">Explain</span> <code>react-markdown</code> is
+                ESM-only and React-19-native, returns a real element tree
+                (no <code>innerHTML</code>), is <strong>secure by
+                default</strong>, and its <code>components</code> prop maps
+                every tag to our Catppuccin tokens. The reading view is a plain
+                React subtree in the DockPanel — CM6 and vim are completely
+                unaffected because nothing about the editor changes.
+              </div>
+              <div class="A">
+                <span class="lab">Alternatives</span>
+                <code>@uiw/react-markdown-preview</code> is a faster turnkey
+                route (it wraps react-markdown) if we want GitHub styling out
+                of the box and less control; <code>markdown-it</code> if we
+                ever need a non-React render context.
+              </div>
+            </div>
+          </div>
+
+          <!-- Option C -->
+          <div class="opt">
+            <div class="opt-head">
+              <span class="tag">C</span>
+              <h3>WYSIWYG replacement — Milkdown / TipTap / Lexical</h3>
+            </div>
+            <p style="margin: 0">
+              Replace CodeMirror for <code>.md</code> with a rendered editing
+              surface where you edit the formatted document in place
+              (Obsidian-style live preview).
+            </p>
+            <div class="idea">
+              <div class="I">
+                <span class="lab">Intent</span> Best-in-class
+                <em>editing</em> of rendered Markdown, if editing — not reading
+                — were the priority.
+              </div>
+              <div class="D">
+                <span class="lab">Danger</span>
+                <strong>Forfeits vim for Markdown.</strong> No WYSIWYG editor
+                ships a viable vim mode — the only ProseMirror vim extensions
+                are abandoned and unpublished, and Lexical's custom core has
+                none at all. Also the heaviest option (Crepe ~439 kB gzip),
+                and reading is only secondary here. TipTap additionally gates
+                collab/AI/export behind a paid tier.
+              </div>
+              <div class="E">
+                <span class="lab">Explain</span> These are full editor
+                frameworks that own the document surface; they coexist with CM6
+                for <em>other</em> files but supplant it for <code>.md</code>,
+                taking our <code>@replit/codemirror-vim</code> integration with
+                them.
+              </div>
+              <div class="A">
+                <span class="lab">Alternatives</span> Revisit only if
+                live-preview <em>editing</em> of Markdown becomes a first-class
+                product goal. If so, <strong>Milkdown</strong> is the pick
+                (Markdown is its native document model → best round-trip
+                fidelity).
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="callout key">
+          <span class="ct">Recommendation</span>
+          Ship <strong>Option&nbsp;B</strong>: <code>react-markdown</code> for
+          the reading view, <code>@codemirror/lang-markdown</code> for the
+          editor. It delivers the polished reading UX directly, keeps the
+          CM6&nbsp;+&nbsp;vim editor we already rely on, and stays
+          fully reversible. Option&nbsp;C is rejected specifically because it
+          trades away vim for editing power we don't currently need.
+        </div>
+      </section>
+
+      <!-- ════════════════ §5 INTEGRATION ════════════════ -->
+      <section>
+        <h2><span class="num">05</span> Integration plan</h2>
+        <p class="lede">
+          A concrete path through real files. Each step is independently
+          shippable; vim is never at risk because the editor code path is only
+          ever <em>added to</em>, never replaced.
+        </p>
+
+        <ol class="steps">
+          <li>
+            <h3>Add Markdown highlighting (Option&nbsp;A — the free win)</h3>
+            <p style="margin: 0 0 4px">
+              Add <code>@codemirror/lang-markdown</code> and one branch to
+              <code class="path">src/features/editor/services/languageService.ts</code>.
+              No change to the editor or vim wiring.
+            </p>
+            <span class="filetag">languageService.ts</span>
+            <pre><code><span class="kw">import</span> { markdown } <span class="kw">from</span> <span class="str">'@codemirror/lang-markdown'</span>
+<span class="cmt">// …inside getLanguageExtension(filename)'s switch:</span>
+  <span class="kw">case</span> <span class="str">'md'</span>:
+  <span class="kw">case</span> <span class="str">'markdown'</span>: <span class="kw">return</span> <span class="fn">markdown</span>({ codeLanguages: languages })</code></pre>
+          </li>
+
+          <li>
+            <h3>Create the reading-view component</h3>
+            <p style="margin: 0 0 4px">
+              A new presentational component beside
+              <code>CodeEditor.tsx</code>. It takes the same
+              <code>content</code> string the editor already receives, so it
+              plugs into the existing buffer with zero new data flow. Theme via
+              a <code>markdown-reading-view</code> class scoped to our tokens.
+            </p>
+            <span class="filetag">src/features/editor/components/MarkdownReadingView.tsx</span>
+            <pre><code><span class="kw">import</span> <span class="kw">type</span> { ReactElement } <span class="kw">from</span> <span class="str">'react'</span>
+<span class="kw">import</span> ReactMarkdown <span class="kw">from</span> <span class="str">'react-markdown'</span>
+<span class="kw">import</span> remarkGfm <span class="kw">from</span> <span class="str">'remark-gfm'</span>
+<span class="kw">import</span> rehypeHighlight <span class="kw">from</span> <span class="str">'rehype-highlight'</span>
+<span class="kw">import</span> rehypeSanitize <span class="kw">from</span> <span class="str">'rehype-sanitize'</span>
+
+<span class="kw">interface</span> <span class="typ">MarkdownReadingViewProps</span> {
+  content: <span class="typ">string</span>
+}
+
+<span class="kw">export const</span> <span class="fn">MarkdownReadingView</span> = ({
+  content,
+}: <span class="typ">MarkdownReadingViewProps</span>): <span class="typ">ReactElement</span> =&gt; (
+  <span class="tag">&lt;div</span> className=<span class="str">"markdown-reading-view min-h-0 flex-1 overflow-auto"</span><span class="tag">&gt;</span>
+    <span class="tag">&lt;ReactMarkdown</span>
+      remarkPlugins={[remarkGfm]}
+      rehypePlugins={[rehypeSanitize, rehypeHighlight]}
+    <span class="tag">&gt;</span>
+      {content}
+    <span class="tag">&lt;/ReactMarkdown&gt;</span>
+  <span class="tag">&lt;/div&gt;</span>
+)</code></pre>
+          </li>
+
+          <li>
+            <h3>Switch view per file type in the DockPanel</h3>
+            <p style="margin: 0 0 4px">
+              At <code>DockPanel.tsx:313</code>, branch on the file extension
+              and a view-mode flag. Non-Markdown files are unaffected; Markdown
+              files default to reading and fall back to the real
+              <code>&lt;CodeEditor&gt;</code> (with vim) on toggle.
+            </p>
+            <span class="filetag">src/features/workspace/components/DockPanel.tsx (~:313)</span>
+            <pre><code><span class="kw">const</span> isMarkdown = <span class="str">/\.(md|markdown)$/i</span>.<span class="fn">test</span>(selectedFilePath ?? <span class="str">''</span>)
+
+{isMarkdown &amp;&amp; viewMode === <span class="str">'reading'</span> ? (
+  <span class="tag">&lt;MarkdownReadingView</span> content={content} <span class="tag">/&gt;</span>
+) : (
+  <span class="tag">&lt;CodeEditor</span>
+    filePath={selectedFilePath}
+    content={content}
+    onContentChange={onContentChange}
+    onSave={onSave}
+  <span class="tag">/&gt;</span>
+)}</code></pre>
+          </li>
+
+          <li>
+            <h3>Add the Source ⇄ Reading toggle</h3>
+            <ul class="tight" style="margin-top: 0">
+              <li>
+                A segmented control in the dock toolbar, shown only when
+                <code>isMarkdown</code> is true.
+              </li>
+              <li>
+                Persist the chosen mode (per file, or a global default) in the
+                same place the dock already tracks panel state — default
+                <em>Reading</em> for <code>.md</code> so docs open pretty.
+              </li>
+              <li>
+                Optional polish: a vim-friendly keymap entry (e.g.
+                <code>:view</code> / a keybinding) to flip modes without the
+                mouse, keeping the muscle memory intact.
+              </li>
+            </ul>
+          </li>
+
+          <li>
+            <h3>Theme the reading view in the Obsidian Lens</h3>
+            <ul class="tight" style="margin-top: 0">
+              <li>
+                Scope a stylesheet to <code>.markdown-reading-view</code> using
+                the tokens in <code class="path">docs/design/tokens.css</code>
+                (<code>--on-surface</code> for body, <code>--primary</code> for
+                headings/links, <code>--surface-container-lowest</code> for
+                code blocks).
+              </li>
+              <li>
+                Wire <code>rehype-highlight</code> to the official
+                <strong>Catppuccin Mocha</strong> CSS (CSS-variable build) so
+                code fences match the editor's own syntax colors.
+              </li>
+              <li>
+                Add <code>rehype-slug</code> + <code>rehype-autolink-headings</code>
+                later for anchored, TOC-friendly long specs.
+              </li>
+            </ul>
+          </li>
+
+          <li>
+            <h3>Test &amp; verify (project conventions)</h3>
+            <ul class="tight" style="margin-top: 0">
+              <li>
+                Co-locate <code>MarkdownReadingView.test.tsx</code> with
+                explicit <code>import { test, expect } from 'vitest'</code>
+                (globals don't satisfy <code>tsc -b</code> / lint-staged).
+              </li>
+              <li>
+                Assert: renders headings/tables/code, sanitizes a
+                <code>&lt;script&gt;</code> payload, and that opening a
+                <code>.ts</code> file still mounts <code>&lt;CodeEditor&gt;</code>
+                with vim.
+              </li>
+              <li>
+                Confirm a single deduped <code>@codemirror/state</code> after
+                adding <code>lang-markdown</code> (<code>npm ls @codemirror/state</code>).
+              </li>
+            </ul>
+          </li>
+        </ol>
+      </section>
+
+      <!-- ════════════════ §6 RISKS & PROVENANCE ════════════════ -->
+      <section>
+        <h2><span class="num">06</span> Risks, caveats &amp; data provenance</h2>
+        <ul class="tight">
+          <li>
+            <strong>Bundle figures are nuanced.</strong> bundlephobia counts
+            full dependency trees:
+            <code>@codemirror/lang-markdown</code> shows ~161 kB because it
+            includes view/state/language we <em>already</em> ship — the
+            marginal cost is low-to-mid tens of kB. <code>highlight.js</code>
+            shows ~298 kB for all grammars; the common-language subset is
+            ~37 kB. Always reason about the <em>marginal</em> add.
+          </li>
+          <li>
+            <strong>Untrusted input.</strong> The docs we render are
+            locally-authored and trusted, but we still add
+            <code>rehype-sanitize</code> by default — cheap insurance if a
+            rendered file ever comes from an agent or a clone.
+          </li>
+          <li>
+            <strong>Flagged as unverified:</strong> exact gzip sizes for
+            <code>@lexical/react</code> and <code>@lexical/markdown</code>
+            (bundlephobia returned errors at survey time — core only was
+            measured); <code>@uiw/react-md-editor</code> React-19 support is
+            "permissive peer range, no red flags" rather than an explicit
+            declaration. Neither library is on the recommended path.
+          </li>
+          <li>
+            <strong>ProseMirror is effectively single-maintainer</strong> and
+            its GitHub repos were archived (read-only) on 2026-04-01 with
+            development relocated off-GitHub; packages still publish. This
+            underpins Milkdown and TipTap — not a blocker, but worth knowing if
+            Option&nbsp;C is ever reconsidered.
+          </li>
+          <li>
+            <strong>All numbers are point-in-time (2026-05-30)</strong> from
+            npm registry + downloads API, the GitHub API, and bundlephobia.
+            Re-check versions before implementing.
+          </li>
+        </ul>
+      </section>
+
+      <!-- ════════════════ FOOTER ════════════════ -->
+      <footer>
+        <h3>Primary sources</h3>
+        <ul>
+          <li>
+            Versions / license / peerDeps / module type —
+            <code>registry.npmjs.org/&lt;pkg&gt;</code>
+          </li>
+          <li>
+            Weekly downloads —
+            <code>api.npmjs.org/downloads/point/last-week/&lt;pkg&gt;</code>
+          </li>
+          <li>
+            Bundle sizes —
+            <code>bundlephobia.com/api/size?package=&lt;pkg&gt;@&lt;ver&gt;</code>
+          </li>
+          <li>
+            Stars / maintenance / archived status —
+            <code>api.github.com/repos/&lt;owner&gt;/&lt;repo&gt;</code>
+          </li>
+          <li>
+            Catppuccin themes —
+            <code>github.com/catppuccin/{highlightjs,prismjs}</code>; Shiki
+            built-in <code>catppuccin-mocha</code> theme
+          </li>
+          <li>
+            Repo grounding — <code>src/features/editor/services/languageService.ts</code>,
+            <code>.../components/CodeEditor.tsx</code>,
+            <code>.../hooks/useCodeMirror.ts</code>,
+            <code>src/features/workspace/components/DockPanel.tsx</code>,
+            <code>docs/design/tokens.css</code>
+          </li>
+        </ul>
+        <p style="margin-top: 18px">
+          Vimeflow · Knowledge Exchange · This is an exploration document, not
+          a committed decision. If we proceed, promote Option&nbsp;B to a
+          dated record under <code>docs/decisions/</code>.
+        </p>
+      </footer>
+    </main>
+  </body>
+</html>

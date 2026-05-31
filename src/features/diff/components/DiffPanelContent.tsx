@@ -9,7 +9,9 @@ import {
 } from 'react'
 import { MultiFileDiff, useWorkerPool } from '@pierre/diffs/react'
 import type {
+  AnnotationSide,
   BaseDiffOptions,
+  DiffLineAnnotation,
   DiffsThemeNames,
   SelectedLineRange,
 } from '@pierre/diffs'
@@ -28,6 +30,24 @@ import { createGitService } from '../services/gitService'
 import { enqueuePoolWrite } from '../services/workerPoolWrites'
 import { useNotifyInfo } from '../../workspace/hooks/useNotifyInfo'
 import type { ChangedFile, SelectedDiffFile } from '../types'
+import {
+  useFeedbackBatch,
+  parseBatchKey,
+  DRAFT_ID,
+  type ReviewComment,
+} from '../hooks/useFeedbackBatch'
+import { ReviewCommentComposer } from './ReviewCommentComposer'
+import { ReviewCommentRow } from './ReviewCommentRow'
+import { FinishFeedbackPopover } from './FinishFeedbackPopover'
+import {
+  dispatchFeedbackBatch,
+  type DispatchEntry,
+} from '../services/feedbackDispatch'
+import {
+  resolveCandidatePanes,
+  type PaneCandidate,
+  type FeedbackDispatchTarget,
+} from '../services/activePanePicker'
 
 // Pierre option subtypes — derived from `BaseDiffOptions` (rather than typed as
 // the raw enum literals) so a Pierre version bump that widens or renames any
@@ -71,10 +91,19 @@ interface DiffPanelContentBaseProps {
   cwd?: string
   /** Optional shared git status from a parent-level watcher subscription */
   gitStatus?: UseGitStatusReturn
+  /** Optional feedback dispatch target for inline review comments */
+  feedbackDispatch?: FeedbackDispatchTarget
 }
 
 export type DiffPanelContentProps = DiffPanelContentBaseProps &
   DiffPanelSelectionControl
+
+// Monotonic id source. A module counter keeps comment ids stable + unique
+// without reaching for Date.now()/Math.random() in render.
+let feedbackCommentSeq = 0
+
+const nextFeedbackCommentId = (): string =>
+  `feedback-comment-${(feedbackCommentSeq += 1)}`
 
 // Small inline status cards. They previously lived as an inline JSX ladder in
 // the right-pane block; extracting them keeps the populated-state JSX readable
@@ -113,6 +142,7 @@ export const DiffPanelContent = ({
   gitStatus = undefined,
   selectedFile: controlledSelectedFile,
   onSelectedFileChange,
+  feedbackDispatch = undefined,
 }: DiffPanelContentProps): ReactElement => {
   const internalGitStatus = useGitStatus(cwd, {
     watch: true,
@@ -247,6 +277,209 @@ export const DiffPanelContent = ({
   // "could not isolate hunk" informational messages.
   const { message: notifyMessage, notifyInfo } = useNotifyInfo()
 
+  // Inline review comment batch state.
+  //
+  // KNOWN LIMITATION (deferred — tracked in #307; part of the workspace-layer
+  // refactor #306): DockPanel conditionally mounts DiffPanelContent only while
+  // the diff tab is active and unmounts it on dock close, so leaving the diff
+  // tab before Finish/Discard tears this component down and silently drops an
+  // unsent batch. The fix is to hoist the batch (and its cwd-invalidation)
+  // above the dock lifecycle; deferred here to avoid a risky partial lift that
+  // could leak stale comments across cwd changes.
+  const feedback = useFeedbackBatch()
+  // Destructured so the cwd-clear effect can depend on the stable `clearBatch`
+  // identity (memoized, empty deps) rather than the whole `feedback` object —
+  // which is a fresh reference each render and would re-fire the effect every
+  // render (the if-guard makes it a no-op, but it is needless work).
+  const { clearBatch } = feedback
+
+  // Clear the feedback batch when cwd changes so stale comments from a
+  // previous workspace do not leak into the new one.
+  const previousCwdRef = useRef(cwd)
+
+  // Last non-empty git repo root seen for the current cwd. `response.repoRoot`
+  // goes transiently null whenever the user selects another file (useFileDiff
+  // clears `response` while the next diff loads or if it errors); without this,
+  // an in-flight feedback batch sent during that window would fall back to
+  // repo-relative paths and mis-resolve for agents in a repo subdirectory.
+  // Reset on cwd change below (a new repo invalidates the old root).
+  const lastRepoRootRef = useRef('')
+
+  useEffect(() => {
+    if (previousCwdRef.current !== cwd) {
+      previousCwdRef.current = cwd
+      lastRepoRootRef.current = ''
+      clearBatch()
+    }
+  }, [cwd, clearBatch])
+
+  useEffect(() => {
+    if (response?.repoRoot) {
+      lastRepoRootRef.current = response.repoRoot
+    }
+  }, [response])
+
+  // Composer target state: which line currently has an open composer.
+  // `editId` set => editing an existing comment in place; absent => a new
+  // draft on that line.
+  const [composerTarget, setComposerTarget] = useState<{
+    lineNumber: number
+    side: AnnotationSide
+    filePath: string
+    staged: boolean
+    editId?: string
+  } | null>(null)
+
+  // Finish feedback popover open state.
+  const [finishOpen, setFinishOpen] = useState(false)
+
+  // Real annotations for the currently selected file.
+  const realAnnotations = feedback.annotationsForFile(
+    cwd,
+    selectedFilePath ?? '',
+    selectedFileStaged
+  )
+
+  // Merge a transient draft annotation in only while composing a NEW comment,
+  // so the composer renders inline below the target line. Editing reuses the
+  // existing annotation's slot, so no draft is added there. When idle we pass
+  // `realAnnotations` straight through to keep its identity stable (avoids
+  // Pierre re-tokenizing on every render).
+  const lineAnnotations = useMemo((): DiffLineAnnotation<ReviewComment>[] => {
+    if (composerTarget !== null && composerTarget.editId === undefined) {
+      const draft: DiffLineAnnotation<ReviewComment> = {
+        side: composerTarget.side,
+        lineNumber: composerTarget.lineNumber,
+        metadata: { id: DRAFT_ID, text: '', author: 'self', createdAt: 0 },
+      }
+
+      return [...realAnnotations, draft]
+    }
+
+    return realAnnotations
+  }, [realAnnotations, composerTarget])
+
+  const confirmComposer = useCallback(
+    (text: string): void => {
+      if (composerTarget === null) {
+        return
+      }
+
+      if (selectedFilePath === null) {
+        return
+      }
+
+      if (
+        composerTarget.filePath !== selectedFilePath ||
+        composerTarget.staged !== selectedFileStaged
+      ) {
+        setComposerTarget(null)
+
+        return
+      }
+
+      if (composerTarget.editId !== undefined) {
+        feedback.updateAnnotation(
+          cwd,
+          selectedFilePath,
+          selectedFileStaged,
+          composerTarget.editId,
+          { text }
+        )
+        setComposerTarget(null)
+      } else {
+        const result = feedback.addAnnotation(
+          cwd,
+          selectedFilePath,
+          selectedFileStaged,
+          {
+            side: composerTarget.side,
+            lineNumber: composerTarget.lineNumber,
+            metadata: {
+              id: nextFeedbackCommentId(),
+              text,
+              author: 'self',
+              createdAt: Date.now(),
+            },
+          }
+        )
+        if (result === 'cap-reached') {
+          notifyInfo(
+            'Feedback limit reached (50 comments). Finish or discard before adding more.'
+          )
+        } else {
+          setComposerTarget(null)
+        }
+      }
+    },
+    [
+      composerTarget,
+      selectedFilePath,
+      selectedFileStaged,
+      feedback,
+      cwd,
+      notifyInfo,
+    ]
+  )
+
+  const closeComposer = useCallback((): void => {
+    setComposerTarget(null)
+  }, [])
+
+  const sendingFeedbackRef = useRef(false)
+
+  const handleSendFeedback = useCallback(
+    (pane: PaneCandidate): void => {
+      if (sendingFeedbackRef.current) {
+        return
+      }
+      sendingFeedbackRef.current = true
+      void (async (): Promise<void> => {
+        // git reports file paths relative to the repo TOPLEVEL, but the target
+        // agent runs in the pane's cwd (possibly a repo subdirectory). Join the
+        // toplevel (`response.repoRoot`) so the dispatched reference is an
+        // absolute path the agent can resolve regardless of its cwd. All batch
+        // entries share one repo (the batch is cleared on cwd change), so the
+        // current diff's repoRoot applies to every file. Falls back to the
+        // repo-relative path if the root is unavailable (not in a git repo).
+        // Prefer the current diff's root; fall back to the last-known root when
+        // `response` is transiently null (file-switch loading/error) so an
+        // in-flight batch keeps absolute paths. The empty-string (non-repo)
+        // case needs no fallback — the ref is empty there too — so `??` (null/
+        // undefined only) is exactly right.
+        const repoRoot = response?.repoRoot ?? lastRepoRootRef.current
+        const entries: DispatchEntry[] = []
+        // parseBatchKey is the single source of truth for the key format (it
+        // lives next to makeBatchKey in useFeedbackBatch). The staged flag rides
+        // into the payload so an `MM` file (staged + unstaged both commented)
+        // stays disambiguated.
+        for (const [key, annotations] of feedback.batch) {
+          const { filePath: relPath, staged } = parseBatchKey(key)
+          const filePath = repoRoot ? `${repoRoot}/${relPath}` : relPath
+          entries.push({ filePath, staged, annotations })
+        }
+
+        try {
+          if (feedbackDispatch) {
+            await dispatchFeedbackBatch(
+              pane.paneId,
+              pane.ptyId,
+              entries,
+              feedbackDispatch.writePty
+            )
+          }
+          feedback.clearBatch()
+          setFinishOpen(false)
+        } catch {
+          notifyInfo('Terminal session ended; feedback not sent.')
+        } finally {
+          sendingFeedbackRef.current = false
+        }
+      })()
+    },
+    [feedback, feedbackDispatch, notifyInfo, response]
+  )
+
   // Single-flight staging flag — drops clicks while an IPC is in flight.
   const [staging, setStaging] = useState(false)
 
@@ -262,6 +495,12 @@ export const DiffPanelContent = ({
   // how useFileDiff and selectedFileEntry are driven.
   useEffect(() => {
     setFocusedHunkIndex(0)
+  }, [selectedFilePath, selectedFileStaged])
+
+  // Clear composer when the selected file changes so a draft opened on one
+  // file is not accidentally submitted against another.
+  useEffect(() => {
+    setComposerTarget(null)
   }, [selectedFilePath, selectedFileStaged])
 
   const hunkCount = response?.fileDiff.hunks.length ?? 0
@@ -288,56 +527,98 @@ export const DiffPanelContent = ({
 
   const focusedHunk = response?.fileDiff.hunks[clampedHunkIndex] ?? null
 
+  // Map a hunk to its Pierre line range. Deletion-only hunks (newLines === 0)
+  // use old-side coordinates so the highlight lands on the deletions column.
+  const hunkToRange = useCallback(
+    (
+      hunk: NonNullable<typeof response>['fileDiff']['hunks'][number]
+    ): SelectedLineRange => {
+      const isDeletionOnly = hunk.newLines === 0
+      const lineStart = isDeletionOnly ? hunk.oldStart : hunk.newStart
+      const lineCount = isDeletionOnly ? hunk.oldLines : hunk.newLines
+
+      return {
+        start: lineStart,
+        end: lineStart + Math.max(lineCount - 1, 0),
+        side: isDeletionOnly ? 'deletions' : 'additions',
+      }
+    },
+    []
+  )
+
+  // Pierre anchors the gutter "+" comment affordance to the active SELECTION
+  // whenever one exists (placeUtilityFromSelection in InteractionManager), only
+  // falling back to the hovered line otherwise. A PERSISTENT focused-hunk
+  // selection would therefore pin the "+" to that hunk and stop it following the
+  // mouse. So the focused-hunk selection is surfaced only as a brief FLASH on
+  // prev/next navigation (to scroll/highlight the target hunk), then cleared so
+  // commenting works on any hovered line.
+  const [navSelection, setNavSelection] = useState<SelectedLineRange | null>(
+    null
+  )
+  const navClearTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const clearNavSelectionTimer = useCallback((): void => {
+    if (navClearTimerRef.current !== null) {
+      clearTimeout(navClearTimerRef.current)
+      navClearTimerRef.current = null
+    }
+  }, [])
+
+  const flashHunkSelection = useCallback(
+    (hunk: NonNullable<typeof response>['fileDiff']['hunks'][number]): void => {
+      setNavSelection(hunkToRange(hunk))
+      clearNavSelectionTimer()
+      navClearTimerRef.current = setTimeout(() => {
+        setNavSelection(null)
+        navClearTimerRef.current = null
+      }, 1200)
+    },
+    [hunkToRange, clearNavSelectionTimer]
+  )
+
+  useEffect(() => clearNavSelectionTimer, [clearNavSelectionTimer])
+
+  // Drop any pending nav flash when the selected file changes (the hunk ranges
+  // belong to the previous file).
+  useEffect(() => {
+    clearNavSelectionTimer()
+    setNavSelection(null)
+  }, [selectedFilePath, selectedFileStaged, clearNavSelectionTimer])
+
   const onPrevHunk = useCallback((): void => {
     if (!response) {
       return
     }
 
-    const len = response.fileDiff.hunks.length
-    if (len === 0) {
+    const hunks = response.fileDiff.hunks
+    if (hunks.length === 0) {
       return
     }
 
-    setFocusedHunkIndex((prev) => (prev + len - 1) % len)
-  }, [response])
+    const next = (clampedHunkIndex + hunks.length - 1) % hunks.length
+    setFocusedHunkIndex(next)
+    flashHunkSelection(hunks[next])
+  }, [response, clampedHunkIndex, flashHunkSelection])
 
   const onNextHunk = useCallback((): void => {
     if (!response) {
       return
     }
 
-    const len = response.fileDiff.hunks.length
-    if (len === 0) {
+    const hunks = response.fileDiff.hunks
+    if (hunks.length === 0) {
       return
     }
 
-    setFocusedHunkIndex((prev) => (prev + 1) % len)
-  }, [response])
+    const next = (clampedHunkIndex + 1) % hunks.length
+    setFocusedHunkIndex(next)
+    flashHunkSelection(hunks[next])
+  }, [response, clampedHunkIndex, flashHunkSelection])
 
-  // Derive the Pierre selectedLines from the focused hunk. Deletion-only hunks
-  // (newLines === 0) use the old-side coordinates so the highlight lands on the
-  // deletions column; all other hunks use the new-side (additions).
-  const selectedLines: SelectedLineRange | null =
-    useMemo((): SelectedLineRange | null => {
-      const hunk = response?.fileDiff.hunks[clampedHunkIndex]
-      if (!hunk) {
-        return null
-      }
-
-      const isDeletionOnly = hunk.newLines === 0
-      const lineStart = isDeletionOnly ? hunk.oldStart : hunk.newStart
-      const lineCount = isDeletionOnly ? hunk.oldLines : hunk.newLines
-
-      const side = isDeletionOnly
-        ? ('deletions' as const)
-        : ('additions' as const)
-
-      return {
-        start: lineStart,
-        end: lineStart + Math.max(lineCount - 1, 0),
-        side,
-      }
-    }, [response, clampedHunkIndex])
+  // Only the transient nav flash drives Pierre's selection — see the comment on
+  // `navSelection` above for why a persistent focused-hunk selection is avoided.
+  const selectedLines: SelectedLineRange | null = navSelection
 
   // Shared helper for all three hunk-based staging operations. Extracts the
   // focused hunk patch, calls the provided service operation, then refreshes
@@ -694,6 +975,9 @@ export const DiffPanelContent = ({
     [effectiveFiles, currentFileIndex, commitSelection, cwd]
   )
 
+  // Toolbar shell ref for anchoring the FinishFeedbackPopover.
+  const toolbarShellRef = useRef<HTMLDivElement>(null)
+
   // Loading state
   if (effectiveStatusLoading) {
     return (
@@ -771,7 +1055,11 @@ export const DiffPanelContent = ({
         data-testid="diff-right-pane"
         className="flex min-w-0 flex-1 flex-col overflow-hidden"
       >
-        <div data-testid="diff-toolbar-shell" className="shrink-0">
+        <div
+          ref={toolbarShellRef}
+          data-testid="diff-toolbar-shell"
+          className="shrink-0"
+        >
           <DiffChipToolbar
             diffMode={selectedFileStaged ? 'staged' : 'unstaged'}
             diffStyle={effectiveDiffStyle}
@@ -806,6 +1094,9 @@ export const DiffPanelContent = ({
             onDiscardAll={handleDiscardAll}
             staging={staging}
             selectedFileName={selectedFilePath ?? undefined}
+            feedbackCount={feedback.totalAnnotations()}
+            onDiscardFeedback={feedback.clearBatch}
+            onFinishFeedback={(): void => setFinishOpen(true)}
           />
           {renderSyncError !== null ? (
             <div
@@ -823,6 +1114,19 @@ export const DiffPanelContent = ({
             >
               {notifyMessage}
             </div>
+          ) : null}
+          {finishOpen && toolbarShellRef.current !== null ? (
+            <FinishFeedbackPopover
+              anchor={toolbarShellRef.current}
+              result={resolveCandidatePanes({
+                allPanes: feedbackDispatch?.candidates ?? [],
+                diffCwd: cwd,
+              })}
+              commentCount={feedback.totalAnnotations()}
+              fileCount={feedback.batch.size}
+              onCancel={(): void => setFinishOpen(false)}
+              onSend={handleSendFeedback}
+            />
           ) : null}
         </div>
         <div
@@ -855,6 +1159,7 @@ export const DiffPanelContent = ({
                 oldFile={pierreInputs.oldFile}
                 newFile={pierreInputs.newFile}
                 selectedLines={selectedLines}
+                lineAnnotations={lineAnnotations}
                 options={{
                   diffStyle: effectiveDiffStyle,
                   theme: renderedTheme,
@@ -865,6 +1170,89 @@ export const DiffPanelContent = ({
                   disableBackground,
                   disableFileHeader,
                   stickyHeader,
+                  enableGutterUtility: true,
+                }}
+                renderGutterUtility={(getHoveredLine): ReactElement => (
+                  // Pierre wraps this button in a center-aligned slot pinned to
+                  // the gutter's right edge, so by default the "+" lands on top of
+                  // the line number. translate-x-3/4 nudges it into the gutter
+                  // gap next to the code (GitHub-style); the percentage is of the
+                  // button's own width, so it adapts to any line-number column.
+                  <button
+                    type="button"
+                    aria-label="Add comment on this line"
+                    className="flex h-5 w-5 translate-x-3/4 items-center justify-center rounded-full bg-primary text-on-primary shadow-md hover:bg-primary/90"
+                    onClick={(): void => {
+                      const hovered = getHoveredLine()
+                      if (hovered && selectedFilePath !== null) {
+                        setComposerTarget({
+                          lineNumber: hovered.lineNumber,
+                          side: hovered.side,
+                          filePath: selectedFilePath,
+                          staged: selectedFileStaged,
+                        })
+                      }
+                    }}
+                  >
+                    <span
+                      aria-hidden="true"
+                      className="material-symbols-outlined text-sm leading-none"
+                    >
+                      add
+                    </span>
+                  </button>
+                )}
+                renderAnnotation={(
+                  annotation: DiffLineAnnotation<ReviewComment>
+                ): ReactElement => {
+                  const isDraft = annotation.metadata.id === DRAFT_ID
+
+                  const isEditing =
+                    composerTarget?.editId !== undefined &&
+                    composerTarget.editId === annotation.metadata.id
+
+                  if (isDraft || isEditing) {
+                    return (
+                      <ReviewCommentComposer
+                        // Key by target identity so switching the gutter `+` to
+                        // another line (the draft stays at the same annotation
+                        // index, so React would otherwise reuse this instance
+                        // and carry the old textarea text to the new line)
+                        // forces a remount with fresh state.
+                        key={`${annotation.lineNumber}:${annotation.side}:${
+                          isEditing ? annotation.metadata.id : 'draft'
+                        }`}
+                        lineNumber={annotation.lineNumber}
+                        side={annotation.side}
+                        initialText={isEditing ? annotation.metadata.text : ''}
+                        onConfirm={confirmComposer}
+                        onCancel={closeComposer}
+                      />
+                    )
+                  }
+
+                  return (
+                    <ReviewCommentRow
+                      comment={annotation.metadata}
+                      onEdit={(): void =>
+                        setComposerTarget({
+                          lineNumber: annotation.lineNumber,
+                          side: annotation.side,
+                          filePath: selectedFilePath ?? '',
+                          staged: selectedFileStaged,
+                          editId: annotation.metadata.id,
+                        })
+                      }
+                      onDelete={(): void =>
+                        feedback.removeAnnotation(
+                          cwd,
+                          selectedFilePath ?? '',
+                          selectedFileStaged,
+                          annotation.metadata.id
+                        )
+                      }
+                    />
+                  )
                 }}
                 style={{ display: 'block', width: '100%' }}
               />

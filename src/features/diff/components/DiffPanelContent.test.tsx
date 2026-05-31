@@ -23,7 +23,9 @@ import {
 import type { GitService } from '../services/gitService'
 import * as gitServiceModule from '../services/gitService'
 import * as pierreAdapterModule from '../services/pierreAdapter'
+import * as useFeedbackBatchModule from '../hooks/useFeedbackBatch'
 import type { MockInstance } from 'vitest'
+import type { PaneCandidate } from '../services/activePanePicker'
 
 // Mock the hooks
 vi.mock('../hooks/useGitStatus')
@@ -71,15 +73,46 @@ vi.mock('@pierre/diffs/react', () => ({
     newFile,
     options,
     selectedLines = undefined,
+    lineAnnotations = undefined,
+    renderGutterUtility = undefined,
+    renderAnnotation = undefined,
   }: {
     oldFile: { name: string; contents: string }
     newFile: { name: string; contents: string }
-    options: { diffStyle?: string; theme?: string; lineDiffType?: string }
+    options: {
+      diffStyle?: string
+      theme?: string
+      lineDiffType?: string
+      enableGutterUtility?: boolean
+    }
     selectedLines?: {
       start: number
       end: number
       side?: string
     } | null
+    lineAnnotations?: {
+      lineNumber: number
+      side: string
+      metadata: {
+        id: string
+        text: string
+        author: string
+        createdAt: number
+      }
+    }[]
+    renderGutterUtility?: (
+      getHovered: () => { lineNumber: number; side: string }
+    ) => ReactElement
+    renderAnnotation?: (a: {
+      lineNumber: number
+      side: string
+      metadata: {
+        id: string
+        text: string
+        author: string
+        createdAt: number
+      }
+    }) => ReactElement
   }): ReactElement => (
     <div
       data-testid="multi-file-diff"
@@ -98,6 +131,20 @@ vi.mock('@pierre/diffs/react', () => ({
       }
       data-selected-lines-side={selectedLines?.side ?? undefined}
     >
+      {renderGutterUtility != null ? (
+        <div data-testid="gutter-utility-slot">
+          {renderGutterUtility(() => ({ lineNumber: 1, side: 'additions' }))}
+        </div>
+      ) : null}
+      {lineAnnotations != null && renderAnnotation != null ? (
+        <div data-testid="annotation-slot">
+          {lineAnnotations.map((annotation, index) => (
+            <div key={annotation.metadata.id ?? index}>
+              {renderAnnotation(annotation)}
+            </div>
+          ))}
+        </div>
+      ) : null}
       MultiFileDiff stub
     </div>
   ),
@@ -116,6 +163,7 @@ const fileDiffMock = ({
   oldText = '',
   newText = '',
   rawDiff = '',
+  repoRoot = '/repo',
 }: {
   diff: FileDiff | null
   loading: boolean
@@ -123,6 +171,7 @@ const fileDiffMock = ({
   oldText?: string
   newText?: string
   rawDiff?: string
+  repoRoot?: string
 }): UseFileDiffReturn => ({
   response:
     diff === null
@@ -133,6 +182,7 @@ const fileDiffMock = ({
           oldText,
           newText,
           rawDiff,
+          repoRoot,
         },
   diff,
   loading,
@@ -1496,6 +1546,7 @@ describe('DiffPanelContent', () => {
           oldText: '',
           newText: '',
           rawDiff: hunkRawDiff,
+          repoRoot: '/repo',
         },
         diff: hunkFileDiff,
         loading: false,
@@ -1540,6 +1591,7 @@ describe('DiffPanelContent', () => {
           oldText: '',
           newText: '',
           rawDiff: hunkRawDiff,
+          repoRoot: '/repo',
         },
         diff: hunkFileDiff,
         loading: false,
@@ -1578,6 +1630,7 @@ describe('DiffPanelContent', () => {
           oldText: '',
           newText: '',
           rawDiff: '',
+          repoRoot: '/repo',
         },
         diff: hunkFileDiff,
         loading: false,
@@ -1615,6 +1668,7 @@ describe('DiffPanelContent', () => {
           oldText: '',
           newText: '',
           rawDiff: hunkRawDiff,
+          repoRoot: '/repo',
         },
         diff: hunkFileDiff,
         loading: false,
@@ -1667,6 +1721,7 @@ describe('DiffPanelContent', () => {
           oldText: '',
           newText: '',
           rawDiff: hunkRawDiff,
+          repoRoot: '/repo',
         },
         diff: hunkFileDiff,
         loading: false,
@@ -1764,7 +1819,7 @@ describe('DiffPanelContent', () => {
       )
     })
 
-    test('initial render: selectedLines derived from hunk 0 (additions)', (): void => {
+    test('initial render: no persistent hunk selection (gutter + follows hover)', (): void => {
       render(
         <DiffPanelContent
           cwd="/repo"
@@ -1773,10 +1828,13 @@ describe('DiffPanelContent', () => {
         />
       )
 
+      // PR4: the focused-hunk selection is only a transient flash on prev/next
+      // navigation. There is no persistent selection on load — otherwise Pierre
+      // would pin the comment-gutter "+" to the focused hunk instead of letting
+      // it follow the mouse.
       const diff = screen.getByTestId('multi-file-diff')
-      expect(diff.getAttribute('data-selected-lines-start')).toBe('1')
-      expect(diff.getAttribute('data-selected-lines-end')).toBe('3')
-      expect(diff.getAttribute('data-selected-lines-side')).toBe('additions')
+      expect(diff.getAttribute('data-selected-lines-start')).toBeNull()
+      expect(diff.getAttribute('data-selected-lines-side')).toBeNull()
     })
 
     test('counter shows 1/3 on initial render', (): void => {
@@ -1994,14 +2052,261 @@ describe('DiffPanelContent', () => {
       )
 
       // Index 2 clamps to 1: counter is the valid "2/2", never the invalid "3/2".
+      // (The focused hunk now drives staging via the counter/index, not a
+      // persistent Pierre selection — see the transient nav-flash design.)
       expect(screen.getByLabelText(/hunk 2\/2/i)).toBeInTheDocument()
       expect(screen.queryByLabelText(/hunk 3\/2/i)).not.toBeInTheDocument()
+    })
+  })
 
-      // focusedHunk resolves to the now-last hunk (index 1) — selectedLines is
-      // non-null, so per-hunk staging is not silently blocked.
-      const diff = screen.getByTestId('multi-file-diff')
-      expect(diff.getAttribute('data-selected-lines-start')).toBe('20')
-      expect(diff.getAttribute('data-selected-lines-side')).toBe('additions')
+  describe('inline review comments', () => {
+    const inlineFileDiff: FileDiff = {
+      filePath: 'src/foo.ts',
+      oldPath: 'src/foo.ts',
+      newPath: 'src/foo.ts',
+      hunks: [
+        {
+          id: 'hunk-0',
+          header: '@@ -1,3 +1,3 @@',
+          oldStart: 1,
+          oldLines: 3,
+          newStart: 1,
+          newLines: 3,
+          lines: [
+            { type: 'context', content: 'alpha' },
+            { type: 'added', content: 'beta' },
+            { type: 'context', content: 'gamma' },
+          ],
+        },
+      ],
+    }
+
+    beforeEach(() => {
+      vi.spyOn(useGitStatusModule, 'useGitStatus').mockReturnValue({
+        files: [{ path: 'src/foo.ts', status: 'modified', staged: false }],
+        filesCwd: '/repo',
+        loading: false,
+        error: null,
+        refresh: vi.fn(),
+        idle: false,
+      })
+
+      vi.spyOn(useFileDiffModule, 'useFileDiff').mockReturnValue(
+        fileDiffMock({
+          diff: inlineFileDiff,
+          loading: false,
+          error: null,
+          oldText: 'old',
+          newText: 'new',
+          rawDiff: '',
+        })
+      )
+    })
+
+    test('clicking the gutter + opens a composer and submitting adds an annotation rendered via renderAnnotation', async (): Promise<void> => {
+      const user = userEvent.setup()
+
+      render(
+        <DiffPanelContent
+          cwd="/repo"
+          selectedFile={{ path: 'src/foo.ts', staged: false, cwd: '/repo' }}
+          onSelectedFileChange={vi.fn()}
+        />
+      )
+
+      setPaneWidth(SPLIT_MIN_WIDTH_PX + 100)
+
+      const gutterSlot = screen.getByTestId('gutter-utility-slot')
+
+      const addButton = within(gutterSlot).getByRole('button', {
+        name: 'Add comment on this line',
+      })
+
+      await user.click(addButton)
+
+      const dialog = screen.getByRole('dialog', { name: /Comment on line/ })
+      const textarea = within(dialog).getByPlaceholderText('Request change')
+
+      await user.type(textarea, 'Great change!')
+      await user.keyboard('{Enter}')
+
+      expect(
+        await screen.findByRole('button', { name: /finish feedback \(1\)/i })
+      ).toBeInTheDocument()
+
+      const annotationSlot = screen.getByTestId('annotation-slot')
+      expect(
+        within(annotationSlot).getByText('Great change!')
+      ).toBeInTheDocument()
+    })
+
+    test('onDiscardFeedback (Discard feedback chip) clears the batch', async (): Promise<void> => {
+      const user = userEvent.setup()
+
+      render(
+        <DiffPanelContent
+          cwd="/repo"
+          selectedFile={{ path: 'src/foo.ts', staged: false, cwd: '/repo' }}
+          onSelectedFileChange={vi.fn()}
+        />
+      )
+
+      setPaneWidth(SPLIT_MIN_WIDTH_PX + 100)
+
+      const gutterSlot = screen.getByTestId('gutter-utility-slot')
+
+      const addButton = within(gutterSlot).getByRole('button', {
+        name: 'Add comment on this line',
+      })
+
+      await user.click(addButton)
+
+      const dialog = screen.getByRole('dialog', { name: /Comment on line/ })
+      const textarea = within(dialog).getByPlaceholderText('Request change')
+
+      await user.type(textarea, 'Great change!')
+      await user.keyboard('{Enter}')
+
+      expect(
+        await screen.findByRole('button', { name: /finish feedback \(1\)/i })
+      ).toBeInTheDocument()
+
+      await user.click(
+        screen.getByRole('button', { name: /discard feedback/i })
+      )
+
+      await waitFor(() =>
+        expect(
+          screen.queryByRole('button', { name: /finish feedback/i })
+        ).not.toBeInTheDocument()
+      )
+
+      expect(screen.queryByText('Great change!')).not.toBeInTheDocument()
+    })
+
+    test('Finish with one running candidate dispatches via writePty and clears the batch', async (): Promise<void> => {
+      const user = userEvent.setup()
+      const writePty = vi.fn().mockResolvedValue(undefined)
+
+      const candidate: PaneCandidate = {
+        paneId: 'pane-1',
+        ptyId: 'pty-1',
+        tabName: 'Tab 1',
+        agentLabel: 'Claude Code',
+        cwd: '/repo',
+        status: 'running',
+        isFocused: true,
+      }
+
+      render(
+        <DiffPanelContent
+          cwd="/repo"
+          selectedFile={{ path: 'src/foo.ts', staged: false, cwd: '/repo' }}
+          onSelectedFileChange={vi.fn()}
+          feedbackDispatch={{
+            candidates: [candidate],
+            writePty,
+          }}
+        />
+      )
+
+      setPaneWidth(SPLIT_MIN_WIDTH_PX + 100)
+
+      const gutterSlot = screen.getByTestId('gutter-utility-slot')
+
+      const addButton = within(gutterSlot).getByRole('button', {
+        name: 'Add comment on this line',
+      })
+
+      await user.click(addButton)
+
+      const dialog = screen.getByRole('dialog', { name: /Comment on line/ })
+      const textarea = within(dialog).getByPlaceholderText('Request change')
+
+      await user.type(textarea, 'Great change!')
+      await user.keyboard('{Enter}')
+
+      expect(
+        await screen.findByRole('button', { name: /finish feedback \(1\)/i })
+      ).toBeInTheDocument()
+
+      await user.click(
+        screen.getByRole('button', { name: /finish feedback \(1\)/i })
+      )
+
+      const popover = await screen.findByRole('dialog', {
+        name: 'Finish feedback',
+      })
+      expect(popover).toHaveTextContent(/Send 1 comment/)
+
+      await user.click(within(popover).getByRole('button', { name: 'Confirm' }))
+
+      await waitFor(() => expect(writePty).toHaveBeenCalledTimes(1))
+
+      const [, payload] = writePty.mock.calls[0]
+      expect(typeof payload).toBe('string')
+      expect(payload as string).toContain('\x1b[200~')
+      // P1 fix: the dispatched reference is an ABSOLUTE path (repoRoot joined
+      // with the repo-relative file path), so an agent in any cwd resolves it.
+      expect(payload as string).toContain('/repo/')
+
+      await waitFor(() =>
+        expect(
+          screen.queryByRole('button', { name: /finish feedback/i })
+        ).not.toBeInTheDocument()
+      )
+    })
+
+    test('preserves the composer draft and shows a notification when the feedback cap is reached', async (): Promise<void> => {
+      const user = userEvent.setup()
+      const addAnnotationSpy = vi.fn().mockReturnValue('cap-reached')
+
+      const spy = vi
+        .spyOn(useFeedbackBatchModule, 'useFeedbackBatch')
+        .mockReturnValue({
+          batch: new Map(),
+          annotationsForFile: () => [],
+          addAnnotation: addAnnotationSpy,
+          updateAnnotation: vi.fn(),
+          removeAnnotation: vi.fn(),
+          clearBatch: vi.fn(),
+          totalAnnotations: () => 50,
+        })
+
+      render(
+        <DiffPanelContent
+          cwd="/repo"
+          selectedFile={{ path: 'src/foo.ts', staged: false, cwd: '/repo' }}
+          onSelectedFileChange={vi.fn()}
+        />
+      )
+
+      setPaneWidth(SPLIT_MIN_WIDTH_PX + 100)
+
+      const gutterSlot = screen.getByTestId('gutter-utility-slot')
+
+      const addButton = within(gutterSlot).getByRole('button', {
+        name: 'Add comment on this line',
+      })
+
+      await user.click(addButton)
+
+      const dialog = screen.getByRole('dialog', { name: /Comment on line/ })
+      const textarea = within(dialog).getByPlaceholderText('Request change')
+
+      await user.type(textarea, 'Draft comment')
+      await user.keyboard('{Enter}')
+
+      expect(addAnnotationSpy).toHaveBeenCalledTimes(1)
+      expect(
+        screen.getByRole('dialog', { name: /Comment on line/ })
+      ).toBeInTheDocument()
+
+      expect(await screen.findByRole('status')).toHaveTextContent(
+        'Feedback limit reached'
+      )
+
+      spy.mockRestore()
     })
   })
 })

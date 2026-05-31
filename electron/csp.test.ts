@@ -40,6 +40,21 @@ describe('Content Security Policy', () => {
     expect(scriptSrc).not.toContain("'nonce-")
   })
 
+  test('img-src allows specific image CDNs but not a bare https: wildcard', () => {
+    for (const policy of [
+      packagedContentSecurityPolicy,
+      developmentContentSecurityPolicy(false),
+    ]) {
+      const imgSrc = directive(policy, 'img-src')
+
+      expect(imgSrc).toContain('https://img.shields.io')
+      expect(imgSrc).toContain('https://*.githubusercontent.com')
+      // No bare `https:` wildcard — an untrusted .md must not be able to beacon
+      // to an arbitrary host through an <img> sub-resource load.
+      expect(imgSrc).not.toMatch(/(^|\s)https:(\s|$)/)
+    }
+  })
+
   test('development selector preserves the dev and E2E split', () => {
     expect(developmentContentSecurityPolicy(false, nonce)).toBe(
       devContentSecurityPolicy(nonce)

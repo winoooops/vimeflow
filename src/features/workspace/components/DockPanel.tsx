@@ -1,8 +1,10 @@
 /* eslint-disable react/require-default-props -- forwardRef components: ESLint cannot see through forwardRef to find destructuring defaults */
 import {
   forwardRef,
+  useEffect,
   useImperativeHandle,
   useRef,
+  useState,
   type KeyboardEvent,
   type MouseEvent,
   type PointerEvent,
@@ -12,11 +14,15 @@ import {
   CodeEditor,
   type CodeEditorHandle,
 } from '../../editor/components/CodeEditor'
+import { MarkdownReadingView } from '../../editor/components/MarkdownReadingView'
+import { ReadingStyleMenu } from '../../editor/components/ReadingStyleMenu'
 import { DiffPanelContent } from '../../diff/components/DiffPanelContent'
 import { DockSwitcher, type DockPosition } from './DockSwitcher'
 import { DockTab } from './DockTab'
+import { ViewModeToggle, type ViewMode } from './ViewModeToggle'
 import type { SelectedDiffFile } from '../../diff/types'
 import type { UseGitStatusReturn } from '../../diff/hooks/useGitStatus'
+import type { FeedbackDispatchTarget } from '../../diff/services/activePanePicker'
 import { DOCK_CONTAINER_ID } from '../containerIds'
 import {
   DOCK_INLINE_ACTIONS_MIN_WIDTH_PX,
@@ -26,6 +32,8 @@ import {
 import { ResizeHandle } from '../../../components/ResizeHandle'
 
 type TabType = 'editor' | 'diff'
+
+const MARKDOWN_FILE_PATTERN = /\.(md|markdown)$/i
 
 type SelectedDiffControl =
   | { selectedDiffFile?: undefined; onSelectedDiffFileChange?: undefined }
@@ -72,6 +80,8 @@ interface DockPanelBaseProps {
   cwd?: string
   /** Optional shared git status from WorkspaceView. */
   gitStatus?: UseGitStatusReturn
+  /** Optional feedback dispatch target for inline review comments. */
+  feedbackDispatch?: FeedbackDispatchTarget
   isFocused?: boolean
   onContainerFocus?: () => void
 }
@@ -111,6 +121,7 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
       isLoading = false,
       cwd = '.',
       gitStatus = undefined,
+      feedbackDispatch = undefined,
       isFocused = false,
       onContainerFocus = undefined,
       selectedDiffFile,
@@ -122,9 +133,62 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
     const sectionRef = useRef<HTMLElement>(null)
     const diffWrapperRef = useRef<HTMLDivElement>(null)
     const editorHandleRef = useRef<CodeEditorHandle | null>(null)
+    const markdownViewRef = useRef<HTMLDivElement>(null)
+
+    const isMarkdown = MARKDOWN_FILE_PATTERN.test(selectedFilePath ?? '')
+
+    // Ephemeral dock state (D5): the per-file Source/Reading mode is not
+    // persisted across reload, matching the dock's existing non-persistence
+    // stance. Default 'reading' (D4) so markdown docs open pretty.
+    const [viewMode, setViewMode] = useState<ViewMode>('reading')
+
+    // Reset to the default Reading mode when the selected file changes. Done
+    // during render (not a post-commit effect) so a newly-opened markdown file
+    // renders in Reading on its FIRST render — a previous file left in Source
+    // would otherwise flash the source editor for a frame before an effect
+    // could reset it. Guarded by a previous-path ref to avoid a render loop.
+    const previousFilePathRef = useRef(selectedFilePath)
+    if (previousFilePathRef.current !== selectedFilePath) {
+      previousFilePathRef.current = selectedFilePath
+      setViewMode('reading')
+    }
+
+    // Move keyboard focus into the reading region when reading mode becomes
+    // active in a focused pane — the symmetric counterpart to CodeEditor's
+    // `shouldAutoFocus={isFocused}`. Without it, toggling Source → Reading
+    // leaves focus on the toggle button, so PageDown/arrow scrolling is dead
+    // until the user clicks the document. Gated on `isFocused` so opening a
+    // markdown file in a background dock never steals focus. `selectedFilePath`
+    // is a dependency so switching between two markdown files re-focuses the
+    // region the `key={selectedFilePath}` remount just rebuilt — otherwise none
+    // of the other deps change and focus falls to document.body after unmount.
+    useEffect(() => {
+      if (
+        tab === 'editor' &&
+        isMarkdown &&
+        viewMode === 'reading' &&
+        isFocused
+      ) {
+        markdownViewRef.current?.focus()
+      }
+    }, [tab, isMarkdown, viewMode, isFocused, selectedFilePath])
 
     useImperativeHandle(ref, () => ({
       focusEditor(): boolean {
+        // Reading mode renders MarkdownReadingView, not CodeEditor — focus its
+        // scrollable region so keyboard PageDown/arrow scrolling works.
+        if (tab === 'editor' && isMarkdown && viewMode === 'reading') {
+          if (markdownViewRef.current) {
+            markdownViewRef.current.focus()
+
+            return true
+          }
+
+          sectionRef.current?.focus()
+
+          return false
+        }
+
         if (editorHandleRef.current) {
           const ok = editorHandleRef.current.focus()
 
@@ -301,7 +365,15 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
           compactActions={compactActions}
           menuAlign={position === 'left' ? 'left' : 'right'}
         >
-          <DockSwitcher position={position} onPick={onPositionChange} />
+          <div className="flex items-center gap-1">
+            {isMarkdown && tab === 'editor' ? (
+              <ViewModeToggle value={viewMode} onChange={setViewMode} />
+            ) : null}
+            {isMarkdown && tab === 'editor' && viewMode === 'reading' ? (
+              <ReadingStyleMenu />
+            ) : null}
+            <DockSwitcher position={position} onPick={onPositionChange} />
+          </div>
         </DockTab>
 
         <div className="flex min-h-0 flex-1 overflow-hidden">
@@ -310,16 +382,26 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
               data-testid="editor-panel"
               className="flex min-h-0 flex-1 overflow-hidden"
             >
-              <CodeEditor
-                ref={editorHandleRef}
-                filePath={selectedFilePath}
-                content={content}
-                onContentChange={onContentChange}
-                onSave={onSave}
-                isDirty={isDirty}
-                isLoading={isLoading}
-                shouldAutoFocus={isFocused}
-              />
+              {isMarkdown && viewMode === 'reading' ? (
+                <MarkdownReadingView
+                  key={selectedFilePath ?? 'markdown'}
+                  ref={markdownViewRef}
+                  content={content}
+                  isLoading={isLoading}
+                  isDirty={isDirty}
+                />
+              ) : (
+                <CodeEditor
+                  ref={editorHandleRef}
+                  filePath={selectedFilePath}
+                  content={content}
+                  onContentChange={onContentChange}
+                  onSave={onSave}
+                  isDirty={isDirty}
+                  isLoading={isLoading}
+                  shouldAutoFocus={isFocused}
+                />
+              )}
             </div>
           )}
 
@@ -340,9 +422,14 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
                     gitStatus={gitStatus}
                     selectedFile={selectedDiffFile}
                     onSelectedFileChange={onSelectedDiffFileChange}
+                    feedbackDispatch={feedbackDispatch}
                   />
                 ) : (
-                  <DiffPanelContent cwd={cwd} gitStatus={gitStatus} />
+                  <DiffPanelContent
+                    cwd={cwd}
+                    gitStatus={gitStatus}
+                    feedbackDispatch={feedbackDispatch}
+                  />
                 )}
               </div>
             </div>

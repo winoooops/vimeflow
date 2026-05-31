@@ -3,6 +3,7 @@ import { rust } from '@codemirror/lang-rust'
 import { json } from '@codemirror/lang-json'
 import { css } from '@codemirror/lang-css'
 import { html } from '@codemirror/lang-html'
+import { markdown } from '@codemirror/lang-markdown'
 import type { Extension } from '@codemirror/state'
 
 /**
@@ -28,6 +29,14 @@ export function getLanguageExtension(filename: string): Extension | null {
     case 'html':
     case 'htm':
       return html()
+    case 'md':
+    case 'markdown':
+      // No-argument form: source-mode markdown highlighting, list/blockquote
+      // auto-continue, smart backspace — inheriting the CM6 HighlightStyle.
+      // We deliberately omit `codeLanguages` (in-fence highlighting) to avoid
+      // pulling the heavy `@codemirror/language-data` grammar loader; the
+      // reading view highlights fences via rehype-highlight instead.
+      return markdown()
     default:
       return null
   }

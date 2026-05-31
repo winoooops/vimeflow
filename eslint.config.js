@@ -123,6 +123,19 @@ export default defineConfig([
     },
   },
   {
+    // The react-markdown component map pulls `node`/`className` out to drop
+    // them before spreading `...props`; those discarded siblings are
+    // intentional, not dead code. Scope the strip-and-spread relaxation to just
+    // this file so the rest of the repo keeps strict unused-var checking.
+    files: ['src/features/editor/components/markdownComponents.tsx'],
+    rules: {
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        { ignoreRestSiblings: true },
+      ],
+    },
+  },
+  {
     files: ['**/*.test.ts', '**/*.test.tsx'],
     rules: {
       // Test rules

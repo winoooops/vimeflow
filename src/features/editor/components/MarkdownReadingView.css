@@ -1,0 +1,81 @@
+/*
+ * MarkdownReadingView — highlight.js token theming, scoped + token-driven.
+ *
+ * `rehype-highlight` emits `.hljs` + `.hljs-*` token classes on the fenced
+ * code it highlights. This stylesheet maps each class to the project's
+ * `--syn-*` design tokens (defined in docs/design/tokens.css, imported globally
+ * via src/index.css) so reading-view code fences match the CM6 editor's own
+ * syntax palette. No raw hex — every color resolves to a token CSS variable.
+ *
+ * Every rule is scoped under `.markdown-reading-view` so these styles never
+ * leak to the CM6 editor or the rest of the app.
+ *
+ * (CSS variables are used rather than Tailwind `theme()` because this file is
+ * imported by a component outside the `src/index.css` Tailwind entry; the
+ * tokens.css vars are globally available and guarantee no-hex resolution under
+ * the Tailwind v4 / PostCSS pipeline — see the design spec's risk note.)
+ */
+
+.markdown-reading-view .hljs {
+  color: var(--on-surface);
+  background: var(--surface-container-lowest);
+}
+
+/*
+ * Fenced code blocks render <pre><code>. The `code` component applies inline
+ * "pill" styling and cannot tell an unlabelled fence from inline code, so
+ * neutralize it inside <pre>: the <pre> owns the surface/scroll, and the .hljs
+ * tokens (or inherited text for unlabelled fences) own the color.
+ */
+.markdown-reading-view pre code {
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  font-size: inherit;
+}
+
+.markdown-reading-view .hljs-keyword,
+.markdown-reading-view .hljs-built_in,
+.markdown-reading-view .hljs-literal,
+.markdown-reading-view .hljs-selector-tag {
+  color: var(--syn-keyword);
+}
+
+.markdown-reading-view .hljs-string,
+.markdown-reading-view .hljs-attr,
+.markdown-reading-view .hljs-regexp,
+.markdown-reading-view .hljs-addition {
+  color: var(--syn-string);
+}
+
+.markdown-reading-view .hljs-title,
+.markdown-reading-view .hljs-title.function_,
+.markdown-reading-view .hljs-section {
+  color: var(--syn-fn);
+}
+
+.markdown-reading-view .hljs-comment,
+.markdown-reading-view .hljs-quote {
+  color: var(--syn-comment);
+  font-style: italic;
+}
+
+.markdown-reading-view .hljs-type,
+.markdown-reading-view .hljs-number,
+.markdown-reading-view .hljs-class .hljs-title {
+  color: var(--syn-type);
+}
+
+.markdown-reading-view .hljs-variable,
+.markdown-reading-view .hljs-template-variable,
+.markdown-reading-view .hljs-params {
+  color: var(--syn-variable);
+}
+
+.markdown-reading-view .hljs-tag,
+.markdown-reading-view .hljs-name,
+.markdown-reading-view .hljs-attribute,
+.markdown-reading-view .hljs-deletion {
+  color: var(--syn-tag);
+}

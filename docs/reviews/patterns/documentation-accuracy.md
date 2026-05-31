@@ -2,8 +2,8 @@
 id: documentation-accuracy
 category: code-quality
 created: 2026-04-09
-last_updated: 2026-05-24
-ref_count: 22
+last_updated: 2026-05-31
+ref_count: 23
 ---
 
 # Documentation Accuracy
@@ -694,7 +694,7 @@ Stale documentation misleads future contributors and review agents.
 - **Fix:** Rewrote the English entry as "`#333344` thumb that brightens to `#4a444f` on hover" and updated the Chinese entry to cite the same target color "`#4a444f`" for parity. Code-review heuristic: when describing a hover/focus state change, name both colors explicitly rather than relying on "darkens"/"brightens" — readers can verify the direction without running a color picker, and a typo in the verb becomes immediately obvious against the surrounding context.
 - **Commit:** same commit as this entry
 
-### 75. Trait docstring said "exactly once" but the engine fires on every empty-partial EOF — contract mismatch invites non-idempotent future implementations
+### 74. Trait docstring said "exactly once" but the engine fires on every empty-partial EOF — contract mismatch invites non-idempotent future implementations
 
 - **Source:** github-claude | PR #302 round 12 | 2026-05-30
 - **Severity:** HIGH
@@ -704,7 +704,7 @@ Stale documentation misleads future contributors and review agents.
 - **Code-review heuristic:** When a trait method's docstring uses absolute words ("exactly once", "always", "never"), have a test that PINS that property by exercising the boundary case. A test that only drives the happy-path case won't catch a contract drift between the doc and the implementation. The drift becomes a footgun once a third implementer arrives — the existing implementations are coincidentally fine but the next one isn't. Apply the same heuristic to ANY trait method whose contract has temporal quantifiers ("on the first X", "after every Y", "until Z fires").
 - **Commit:** _(PR #302 upsource cycle 12 fix commit)_
 
-### 74. Cycle-2 fix-doc-drift: `start()` doc listed the OLD verb sequence + `start_agent_watcher_inner` comment referenced the DELETED `base::start_for` after F.5 sealed the trust boundary
+### 75. Cycle-2 fix-doc-drift: `start()` doc listed the OLD verb sequence + `start_agent_watcher_inner` comment referenced the DELETED `base::start_for` after F.5 sealed the trust boundary
 
 - **Source:** github-claude | PR #302 round 3 | 2026-05-30
 - **Severity:** LOW
@@ -713,11 +713,27 @@ Stale documentation misleads future contributors and review agents.
 - **Fix:** Two surgical edits. (a) Rewrote `start()`'s docstring to list the cycle-3 final sequence `locate → ensure_trust → spawn_watch → register` and to spell out that `register` (via `AgentWatcherState::insert`) does the atomic replace by itself — explicitly noting that no separate evict step exists, and pointing forward at the verb's docstring for the atomicity invariant. (b) Replaced "spawn_blocking hand-off to `base::start_for`" with "spawn_blocking hand-off inside `SessionLifecycle::run_watch_sequence` (replaced the former D'-era `base::start_for` delegate when F.5 sealed the trust boundary and inlined orchestration)" — citing both the new home and the F.5 retirement so future grep audits don't have to re-derive the migration history. Code-review heuristic: when a refactor renames or deletes a function that's mentioned in adjacent module-level comments, grep the symbol globally BEFORE the PR lands — `git grep deleted_fn_name` is one command and catches every stale reference at once. Don't trust visual-only comment-review during code-review; humans read comments as "narrative" and pattern-match on what they expect rather than what's there.
 - **Commit:** same commit as this entry
 
-### 75. Stale `#[allow(dead_code)]` + outdated "future telemetry" docstring on a field that GAINED real consumers during the same multi-step PR
+### 76. Stale `#[allow(dead_code)]` + outdated "future telemetry" docstring on a field that GAINED real consumers during the same multi-step PR
 
 - **Source:** github-claude | PR #302 round 6 | 2026-05-30
 - **Severity:** MEDIUM
 - **File:** `crates/backend/src/agent/adapter/bindings.rs` L37-48 (`AgentBindings::agent_type`)
 - **Finding:** Step B' of the v4-frozen plan introduced `AgentBindings.agent_type: AgentType` with `#[allow(dead_code)]` and a docstring saying "for diagnostics / future telemetry — the watcher doesn't branch on it." That was correct AT B' — no consumer existed. But later steps in the same PR (F.2–F.5 + cycle-1 F2 / F5) added TWO concrete consumers: `session_lifecycle::run_watch_sequence` now captures `let agent_type = bindings.agent_type` before `spawn_watch` consumes `bindings` and forwards it to `register` (which stamps it onto `WatcherHandle.agent_type` — the load-bearing field for the single-mutex atomicity guarantee), AND `base::start_watching` uses the same captured value to gate the codex `session_index.jsonl` title-sync thread spawn. The stale `#[allow(dead_code)]` was harmless (the field is `pub(crate)` so no lint would fire either way), but the docstring was actively misleading: a future contributor reading "future telemetry, watcher doesn't branch on it" and removing the field / the bindings captures would silently break Codex title-sync AND the agent_type_for_pty atomicity guarantee — the compile would succeed only because the consumer code would also need to be deleted, but a partial cleanup is exactly the failure mode the docstring invited.
 - **Fix:** Remove `#[allow(dead_code)]` entirely (no behavior change — `pub(crate)` fields don't trigger the dead-code lint). Rewrite the docstring to enumerate every field's production consumer, with explicit citations to the PR sub-steps that introduced each one. The new doc names: agent_type → consumed in `session_lifecycle::run_watch_sequence` (stamps `WatcherHandle.agent_type` via `register`) AND in `base::start_watching` (codex title-sync spawn gate); locator/decoder/transcript_paths/validator/streamer → their respective consumer sites. Cite "PR #302 cycle 1 F2" and "PR #302 cycle 1 F5" inline so the next maintainer can `git log -S "F2"` to find the full rationale rather than re-deriving it. Code-review heuristic: in any multi-step PR, when a sub-step adds a NEW consumer for a field/method previously marked dead-code or annotated "no current consumer", the cleanup pass MUST remove the stale annotation AND rewrite the docstring in the same sub-step that adds the consumer. Don't trust "I'll clean it up in the final review" — multi-PR series merge their sub-PRs incrementally, and the stale annotation/docstring lives in the codebase between each sub-PR landing. Concrete check: `git grep "#\[allow(dead_code)\]"` and `git grep "future telemetry\|future use\|not yet wired"` before merging any refactor PR.
+### 77. Sticky-guard escape-hatch claim in the commit message had no implementation
+
+- **Source:** github-claude | PR #317 cycle 1 | 2026-05-30
+- **Severity:** LOW
+- **File:** `src/features/sessions/hooks/useSessionManager.ts`
+- **Finding:** The cycle-0 commit message stated "a real lifecycle reset clears via the agent emitting an explicit `user-renamed` empty title" as the documented escape hatch out of the sticky-guard state introduced in [[react-lifecycle]] §24. But the guard evaluated `cleared` (empty title) before `payload.source`, so a `user-renamed + empty` event was caught by `if (cleared) { return pane }` and silently swallowed — the stated escape hatch did not exist. Dormant today (no current code path emits `user-renamed + empty`), but the false claim would mislead future contributors who try to wire a programmatic lifecycle-reset hook (e.g. `:clear-pane-name` command, agent-session-end handler) — the event would fire, no error would surface, and the pane would remain stuck on the user's prior rename indefinitely.
+- **Fix:** Restructured the guard to gate on `payload.source` alone: `if (agentTitleSource === 'user-renamed' && payload.source === 'ai-generated') return pane`. user-renamed events (including `user-renamed + empty`) now fall through to the standard cleared path, which clears `agentTitle`, `agentTitleSource`, and `userLabel` — matching the stated design intent. Added a regression test (`user-renamed with empty title clears the sticky guard`) that locks the documented behavior in code so it can't drift back to dormant-only without breaking CI. Code-review heuristic: when a commit message documents an "escape hatch" or "design intent" not exercised by any current call site, add a test that locks the documented behavior in place — otherwise the divergence between doc and code is invisible until someone tries to use the hatch and finds it silently no-op'd.
+- **Commit:** same commit as this entry
+
+### 78. Test comment overstates guard scope from "ai-generated clears" to "all clears"
+
+- **Source:** github-claude | PR #317 cycle 2 | 2026-05-31
+- **Severity:** LOW
+- **File:** `src/features/sessions/hooks/useSessionManager.test.ts`
+- **Finding:** A test comment explaining why the seed source was changed from `user-renamed` to `ai-generated` stated: "user-renamed is sticky against later clears." The guard predicate is `agentTitleSource === 'user-renamed' && payload.source === 'ai-generated'` — it blocks ONLY `ai-generated` clears, not `user-renamed + empty` events (the documented lifecycle-reset escape hatch). The neighboring test `user-renamed with empty title clears the sticky guard` demonstrates exactly that a `user-renamed + empty` event falls through and clears the sticky state, making the comment directly contradictory to tested behavior. A future contributor reading only this comment could incorrectly conclude that ALL clear events are blocked once sticky, and design a lifecycle-reset mechanism that emits `ai-generated + empty` instead of `user-renamed + empty` — the wrong event would be swallowed by the guard, the reset would silently no-op, and the pane would remain stuck indefinitely with no error.
+- **Fix:** Changed the comment to "user-renamed is sticky against later **ai-generated** clears" so the phrasing matches the actual guard predicate. Code-review heuristic: when a guard predicate is narrow (filters on a specific source/value), every comment describing its effect must repeat that narrow qualifier — generic phrasing ("clears", "updates", "events") drifts toward overstating scope and misleads future readers who rely on comments as a behavioral contract.
 - **Commit:** same commit as this entry

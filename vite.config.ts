@@ -590,7 +590,16 @@ function gitApiPlugin(): Plugin {
 
             res.writeHead(200, { 'Content-Type': 'application/json' })
             res.end(
-              JSON.stringify({ fileDiff, oldText, newText, rawDiff: diff })
+              JSON.stringify({
+                fileDiff,
+                oldText,
+                newText,
+                rawDiff: diff,
+                // Dev parity with the Rust producer's `repo_root` (PR4): the
+                // dev server runs at the repo root, so process.cwd() is the
+                // toplevel the frontend joins with repo-relative paths.
+                repoRoot,
+              })
             )
 
             return

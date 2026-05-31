@@ -1,4 +1,12 @@
-import { app, BrowserWindow, ipcMain, net, protocol, session } from 'electron'
+import {
+  app,
+  BrowserWindow,
+  ipcMain,
+  net,
+  protocol,
+  session,
+  shell,
+} from 'electron'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { isAllowedBackendMethod } from './backend-methods'
@@ -7,8 +15,10 @@ import {
   packagedContentSecurityPolicy,
 } from './csp'
 import { installCommandPaletteShortcutOverride } from './command-palette-shortcut'
+import { installNavigationGuard } from './navigation-guard'
 import { BACKEND_EVENT, BACKEND_INVOKE } from './ipc-channels'
 import { spawnSidecar, type Sidecar } from './sidecar'
+import { setupBrowserPaneIpc, type BrowserPaneController } from './browser-pane'
 
 // Keep the GPU serving this window while it is occluded (covered by another
 // window) or unfocused. Chromium otherwise backgrounds the occluded window and
@@ -134,6 +144,31 @@ const registerAppProtocol = (): void => {
   })
 }
 
+const configureBrowserPaneWebAuthn = (): void => {
+  if (process.platform !== 'darwin') {
+    return
+  }
+
+  try {
+    const keychainAccessGroup =
+      process.env.VIMEFLOW_WEBAUTHN_KEYCHAIN_ACCESS_GROUP
+
+    app.configureWebAuthn(
+      keychainAccessGroup
+        ? {
+            touchID: {
+              keychainAccessGroup,
+              promptReason: 'verify your identity on $1',
+            },
+          }
+        : {}
+    )
+  } catch (error) {
+    // eslint-disable-next-line no-console
+    console.warn('WebAuthn platform authenticator setup failed', error)
+  }
+}
+
 interface BackendInvokePayload {
   method: string
   args?: Record<string, unknown>
@@ -144,6 +179,7 @@ type InvokeEnvelope =
   | { ok: false; error: string; errorReason?: string }
 
 let sidecar: Sidecar | null = null
+let browserPaneController: BrowserPaneController | null = null
 let quitting = false
 
 const RENDERER_DIAGNOSTIC_PREFIXES = [
@@ -238,6 +274,18 @@ const createWindow = (): void => {
 
   installRendererDiagnosticLogging(win)
   installCommandPaletteShortcutOverride(win)
+  installNavigationGuard(win, (url) => {
+    const openExternalUrl = async (): Promise<void> => {
+      try {
+        await shell.openExternal(url)
+      } catch (error) {
+        // eslint-disable-next-line no-console
+        console.warn('Failed to open external URL', url, error)
+      }
+    }
+
+    void openExternalUrl()
+  })
 
   const devUrl = process.env.VITE_DEV_SERVER_URL
 
@@ -259,6 +307,7 @@ const createWindow = (): void => {
 const setupApp = async (): Promise<void> => {
   await app.whenReady()
   installContentSecurityPolicy()
+  configureBrowserPaneWebAuthn()
 
   if (app.isPackaged) {
     registerAppProtocol()
@@ -270,6 +319,7 @@ const setupApp = async (): Promise<void> => {
   })
 
   sidecar = spawnedSidecar
+  browserPaneController = setupBrowserPaneIpc()
   const allowE2eBackendMethods = !app.isPackaged && isE2eRuntime()
 
   ipcMain.handle(
@@ -331,6 +381,8 @@ app.on('before-quit', (event) => {
   quitting = true
 
   const currentSidecar = sidecar
+  browserPaneController?.dispose()
+  browserPaneController = null
 
   void (async (): Promise<void> => {
     try {
