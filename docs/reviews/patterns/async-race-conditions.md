@@ -2,7 +2,7 @@
 id: async-race-conditions
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-05-25
+last_updated: 2026-05-31
 ref_count: 12
 ---
 
@@ -439,3 +439,12 @@ prevent showing previous data.
 - **Finding:** DiffPanelContent changed `theme` and remounted `<MultiFileDiff key={theme}>` in the same render where it launched `workerPool.setRenderOptions({ theme })` as a fire-and-forget effect. The remounted Pierre component could request tokenization before the worker pool had accepted the new theme, producing a first render with the previous pool theme.
 - **Fix:** Track `syncedTheme` separately from the toolbar's selected `theme`. MultiFileDiff keeps rendering with the last synced theme and only remounts after `setRenderOptions` resolves for the newest theme. Added a regression test with a deferred worker-pool promise to verify the diff stays on the previous theme until sync completes.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 45. TOCTOU race on lock file: concurrent processes bypass lock
+
+- **Source:** github-claude | PR #320 | 2026-05-31
+- **Severity:** MEDIUM
+- **File:** `scripts/qa-runner/run.mjs`
+- **Finding:** `existsSync(lock)` followed by `writeFileSync(lock, ...)` is non-atomic; two concurrent processes can both pass the existence check before either writes, resulting in double-dispatch.
+- **Fix:** Replace with `fs.openSync(lock, 'wx')` wrapped in try/catch; `EEXIST` means another process holds the lock.
+- **Commit:** `7644ec4` + cycle-2 fix

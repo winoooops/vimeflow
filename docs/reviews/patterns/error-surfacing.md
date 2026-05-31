@@ -2,7 +2,7 @@
 id: error-surfacing
 category: error-handling
 created: 2026-04-10
-last_updated: 2026-05-16
+last_updated: 2026-05-31
 ref_count: 7
 ---
 
@@ -278,3 +278,39 @@ failed" must mean the editor shows the original file, not the requested one.
 - **Finding:** The first fix for `onExit()` / `onError()` listener setup caught backend `listen()` failures and logged a diagnostic, but the public methods still returned a normal unsubscribe function. Callers had no way to observe that the underlying IPC listeners were not attached, and the failed callbacks stayed registered until disposal.
 - **Fix:** Make `onExit()` and `onError()` return `Promise<unsubscribe>` like `onData()`. They now await listener attachment, reject on setup failure, and remove the just-added callback before propagating the error. React call sites track the async unsubscribe so cleanup still works if an effect unmounts before setup resolves.
 - **Commit:** _(see git log for the PR #214 listener-init propagation review-fix commit)_
+
+### 28. Stale-verdict auto-merge: threads check precedes claudePending
+
+- **Source:** github-claude | PR #320 | 2026-05-31
+- **Severity:** HIGH
+- **File:** `scripts/qa-runner/watch.mjs`
+- **Finding:** `computeState` checks `threads > 0` before `claudePending`, so a pending Claude review is ignored when open threads exist. The watcher dispatches a fix cycle, advances HEAD, and later reads Claude's stale verdict for the pre-fix SHA as "patch is correct".
+- **Fix:** Swap the priority arms so `claudePending || ci === 'pending'` is evaluated before `threads > 0`.
+- **Commit:** `7644ec4` + cycle-2 fix
+
+### 29. claudeVerdictClean: no pagination misses verdict on busy PRs
+
+- **Source:** github-claude | PR #320 | 2026-05-31
+- **Severity:** HIGH
+- **File:** `scripts/qa-runner/watch.mjs`
+- **Finding:** REST API call uses `?per_page=100` with no pagination loop. On PRs with >100 issue comments, the latest Claude review is invisible and the PR is permanently stuck in `WAITING`.
+- **Fix:** Use `gh api --paginate` piped through `jq -s add` to concatenate all pages before filtering.
+- **Commit:** `7644ec4` + cycle-2 fix
+
+### 30. approve() is non-atomic: PR permanently approved if merge fails
+
+- **Source:** github-claude | PR #320 | 2026-05-31
+- **Severity:** MEDIUM
+- **File:** `scripts/qa-runner/watch.mjs`
+- **Finding:** `approve()` calls `gh pr review --approve` then `gh pr merge --squash` sequentially. On merge failure, the PR stays approved; the next tick posts another approval before retrying merge, spamming the timeline.
+- **Fix:** Query existing PR reviews and skip `--approve` if the effective approver identity (bot or ambient `gh` user) already approved.
+- **Commit:** `7644ec4` + cycle-2 fix
+
+### 31. Unconditional Linear state transitions in report-only mode
+
+- **Source:** github-claude | PR #320 round 1 | 2026-05-31
+- **Severity:** MEDIUM
+- **File:** `scripts/qa-runner/watch.mjs`
+- **Finding:** `postLinear(…, 'In Progress')` was called before the `ctx.execute` guard, so every report-only tick falsely transitioned linked Linear issues to "In Progress" even when no fix cycle ran.
+- **Fix:** Moved `postLinear` inside the `ctx.execute` block so it only fires when a real fix cycle is dispatched.
+- **Commit:** same commit as this entry
