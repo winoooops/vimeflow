@@ -1,0 +1,7 @@
+{
+  "label": "auto-review",
+  "linearTeamKey": "VIM",
+  "maxRounds": 8,
+  "pollSeconds": 60,
+  "comment": "Copy to config.json (gitignored) to override defaults. The Linear API key for status posting lives in linear.env at the repo root (LINEAR_API_KEY) — see rules/common/linear-workflow.md."
+}
