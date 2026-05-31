@@ -2,8 +2,8 @@
 id: react-lifecycle
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-05-27
-ref_count: 8
+last_updated: 2026-05-31
+ref_count: 9
 ---
 
 # React Lifecycle
@@ -196,6 +196,14 @@ to avoid unintended re-runs (e.g., PTY respawning on every cwd change).
 - **Fix:** Key wrapper nodes from each child's stable React key, falling back to the index only for unkeyed children. Added a regression test with a stateful keyed child that preserves state when another child is inserted before it.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
 
+### 25. Sticky title state survives PTY restart because `replacementPane` spreads `...oldPane`
+
+- **Source:** github-codex-connector | PR #317 cycle 2 | 2026-05-31
+- **Severity:** P2
+- **File:** `src/features/sessions/hooks/useSessionManager.ts`
+- **Finding:** `restartSession` builds the replacement pane with `...oldPane`, so the new PTY inherits `agentTitleSource: 'user-renamed'`, `agentTitle`, and `userLabel` from the old pane. In that state the `agent-session-title` guard (see §24) drops every subsequent `ai-generated` title from the new agent session, leaving the old pane title stuck after restart unless the user manually renames again. The pane replacement is a genuine lifecycle reset — a new PTY, new PID, new `restoreData`, and `agentType` already resets to `'generic'` — but the title fields were carried forward silently.
+- **Fix:** Explicitly set `agentTitle: undefined`, `agentTitleSource: undefined`, and `userLabel: undefined` on the `replacementPane` object so the new PTY starts with a blank title slate. The user's explicit rename is ephemeral (documented non-goal: "no persistence beyond what the agent persists"), so clearing on restart is consistent with the design. Added a regression test that seeds a pane with `user-renamed` title and label, restarts the session, and asserts all three fields are undefined on the replacement pane. Code-review heuristic: when replacing an entity via object spread (`{ ...old, newProp }`), enumerate every field that MUST NOT survive the replacement — spread is "copy everything by default"; lifecycle resets need "start fresh by default".
+
 ### 21. Responsive coercion display state overwrote the saved user preference
 
 - **Source:** github-claude | PR #263 follow-up | 2026-05-25
@@ -221,4 +229,13 @@ to avoid unintended re-runs (e.g., PTY respawning on every cwd change).
 - **File:** `src/features/diff/components/DiffPanelContent.tsx`
 - **Finding:** `focusedHunkIndex` was reset to 0 only on `[selectedFilePath, selectedFileStaged]` change. Staging/discarding a hunk reloads the SAME file with fewer hunks (path + staged unchanged), so the reset never fired — the stale index pointed out of range, the hunk counter rendered an invalid value (e.g. "3/2", with no `Math.min` clamp unlike the sibling file counter), and per-hunk stage/unstage/discard silently no-op'd via the `focusedHunk === null` guard until the user manually navigated. The reset effect's dependency set covered file-identity changes but not the equivalent "the indexed collection shrank under a held index" case.
 - **Fix:** Added a clamp effect keyed on `hunkCount` (`setFocusedHunkIndex((prev) => Math.min(prev, hunkCount - 1))`) plus a derived `clampedHunkIndex` (`hunkCount > 0 ? Math.min(focusedHunkIndex, hunkCount - 1) : 0`) used for the focused hunk, `selectedLines`, and the toolbar counter — so the single render between the shrink and the effect firing also stays in range. Lesson: when state holds an index/cursor into a refetchable collection, the clamp must key on the collection length, not only on the identity that selected it. Regression test: focus the last of 3 hunks, reload the same file with 2 hunks, assert the counter clamps to "2/2" (never "3/2") and `selectedLines` stays non-null.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 24. Sticky-source guard with title-equality bypass silently downgraded the protected source on a same-title re-emit
+
+- **Source:** github-claude + github-codex-connector | PR #317 cycle 1 | 2026-05-30
+- **Severity:** MEDIUM / P2
+- **File:** `src/features/sessions/hooks/useSessionManager.ts`
+- **Finding:** The cycle-0 fix introduced a sticky guard in the `agent-session-title` listener: when `pane.agentTitleSource === 'user-renamed'`, subsequent `ai-generated` events were supposed to be ignored so a user-typed rename couldn't be silently overwritten by Claude's later auto-summary or Codex's transient `read_thread_name` clear. The ai-generated branch carried a `payload.title !== pane.agentTitle` discriminator intended to let "idempotent" same-title ai-generated events pass through harmlessly. "Pass through" meant the listener fell through to the standard write at lines 589–594, which unconditionally set `agentTitleSource: nextSource` where `nextSource = 'ai-generated'` — silently downgrading the protected state. After that downgrade, the next ai-generated event with a different title was no longer blocked, defeating the entire guard. Triggered cleanly by the Codex sequence the cycle-0 commit message itself described: `session_index.jsonl` rewrite → transient empty-title clear (blocked by the guard) → watcher re-reads the persisted title with no pending rename claim → emits `ai-generated` with the user's title → discriminator says "same as agentTitle, let through" → source downgrades to `ai-generated` → next Claude auto-summary clobbers. Class of bug: a guard whose predicate references the very state it's supposed to protect lets the state be flipped by any event the guard was supposed to swallow — the protection only survives until the FIRST "harmless" let-through.
+- **Fix:** Dropped the `payload.title !== pane.agentTitle` clause. The guard now blocks ALL `ai-generated` events whenever `agentTitleSource === 'user-renamed'`, regardless of title value. A same-title ai-generated re-emit is now a no-op (state already matches, source stays `'user-renamed'`); a different-title ai-generated event is blocked. Also restructured the guard to check `source` before `cleared`, so the documented `user-renamed + empty` lifecycle-reset escape hatch falls through to the standard cleared path instead of being trapped (see [[documentation-accuracy]] §74). Added regression tests covering (a) same-title ai-generated followed by a different-title ai-generated and (b) the lifecycle-reset path. Code-review heuristic: when a guard's predicate references the state it's supposed to protect, every "let through harmlessly" branch must guarantee the protected state is NOT written by the downstream code — otherwise the gate opens itself on the first such event.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

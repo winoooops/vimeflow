@@ -552,6 +552,29 @@ export const useSessionManager = (
                     return pane
                   }
 
+                  // Once the pane's title was set by an explicit user
+                  // rename (agentTitleSource === 'user-renamed'), the
+                  // user's intent is sticky against ai-generated events.
+                  // This covers both Claude's later auto-summary (a
+                  // non-empty ai-generated title that would otherwise
+                  // overwrite agentTitle) and Codex's transient clear (an
+                  // empty title from `read_thread_name` returning None
+                  // during an atomic rewrite of session_index.jsonl — the
+                  // tailer emits it with source ai-generated because the
+                  // pending rename claim was already consumed).
+                  //
+                  // user-renamed events fall through to the existing
+                  // logic so the user can rename again, and so an
+                  // explicit lifecycle reset (`user-renamed` + empty)
+                  // can clear the sticky state via the standard cleared
+                  // path below.
+                  if (
+                    pane.agentTitleSource === 'user-renamed' &&
+                    payload.source === 'ai-generated'
+                  ) {
+                    return pane
+                  }
+
                   // A matching confirmed `/rename` (`user-renamed`) means the
                   // agent transcript has caught up with the temporary local
                   // label, so let `agentTitle` render. Other title updates must
@@ -1510,6 +1533,12 @@ export const useSessionManager = (
               agentType: 'generic',
               pid: result.pid,
               restoreData,
+              // Clear sticky title state so the new PTY session starts
+              // fresh — a user-renamed pane must not block ai-generated
+              // titles from the new agent session.
+              agentTitle: undefined,
+              agentTitleSource: undefined,
+              userLabel: undefined,
             }
 
             next[idx] = {
