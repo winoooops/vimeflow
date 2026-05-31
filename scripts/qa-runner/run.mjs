@@ -171,7 +171,11 @@ const ensureWorktree = (pr, branch, live, skillsDir, bot, repo) => {
 }
 
 const invocation = (pr, live) => {
-  const base = `/skill:upsource-review ${pr}`
+  const base =
+    `/skill:upsource-review ${pr}\n\n` +
+    `Run the lifeline upsource-review skill now on pull request #${pr} of this repository. ` +
+    `"${pr}" is the PR number — not a line number or a count. Resolve PR #${pr}, fetch its ` +
+    `review findings, and fix every one. Do not ask for clarification; the target is PR #${pr}.`
   if (live) return base
   return (
     `${base}\n\n` +
@@ -232,7 +236,11 @@ const run = (pr, live) => {
       {
         stdio: 'inherit',
         timeout: KIMI_TIMEOUT_MS,
-        env: { ...process.env, ...botEnv(bot) },
+        env: {
+          ...process.env,
+          ...botEnv(bot),
+          USER_SUPPLIED_PR_NUMBER: String(pr),
+        },
       }
     )
     if (r.error) die('kimi spawn failed: ' + r.error.message)
