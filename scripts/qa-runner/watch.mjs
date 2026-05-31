@@ -67,35 +67,52 @@ const openPRs = () =>
   ])
 
 const unresolvedThreads = (owner, name, pr) => {
-  const q =
-    'query($o:String!,$n:String!,$p:Int!){repository(owner:$o,name:$n){pullRequest(number:$p){reviewThreads(first:100){nodes{isResolved}}}}}'
-  const r = ghJson([
-    'api',
-    'graphql',
-    '-f',
-    `query=${q}`,
-    '-F',
-    `o=${owner}`,
-    '-F',
-    `n=${name}`,
-    '-F',
-    `p=${pr}`,
-  ])
-  return (r.data.repository.pullRequest.reviewThreads.nodes || []).filter(
-    (t) => !t.isResolved
-  ).length
+  let cursor = ''
+  let count = 0
+  while (true) {
+    const q = cursor
+      ? 'query($o:String!,$n:String!,$p:Int!,$c:String!){repository(owner:$o,name:$n){pullRequest(number:$p){reviewThreads(first:100,after:$c){pageInfo{hasNextPage endCursor}nodes{isResolved}}}}}'
+      : 'query($o:String!,$n:String!,$p:Int!){repository(owner:$o,name:$n){pullRequest(number:$p){reviewThreads(first:100){pageInfo{hasNextPage endCursor}nodes{isResolved}}}}}'
+    const args = [
+      'api',
+      'graphql',
+      '-f',
+      `query=${q}`,
+      '-F',
+      `o=${owner}`,
+      '-F',
+      `n=${name}`,
+      '-F',
+      `p=${pr}`,
+    ]
+    if (cursor) args.push('-F', `c=${cursor}`)
+    const r = ghJson(args)
+    const threads = r.data.repository.pullRequest.reviewThreads
+    count += (threads.nodes || []).filter((t) => !t.isResolved).length
+    if (!threads.pageInfo.hasNextPage) break
+    cursor = threads.pageInfo.endCursor
+  }
+  return count
 }
 
-// null = no Claude review yet · true = "patch is correct" · false = "patch has issues"
+// Claude's verdict from its review COMMENT — null = none yet · true = "patch is
+// correct" · false = "patch has issues". The check-run only says the review RAN,
+// not that it approved, so we read the comment. Identity-checked: only a comment
+// posted by a real GitHub Action (performed_via_github_app 'github-actions') is
+// trusted, so a PAT-authenticated agent (kimi, the bots, a human) can't forge a
+// "patch is correct" verdict. A malicious workflow file is out of scope here —
+// that's a repo-permissions boundary (protect .github/workflows/).
 const claudeVerdictClean = (owner, name, pr) => {
   const comments = ghJson([
     'api',
-    `repos/${owner}/${name}/issues/${pr}/comments`,
+    `repos/${owner}/${name}/issues/${pr}/comments?per_page=100`,
   ])
   const last = comments
     .filter(
       (c) =>
         c.user?.login === 'github-actions[bot]' &&
+        c.user?.type === 'Bot' &&
+        c.performed_via_github_app?.slug === 'github-actions' &&
         typeof c.body === 'string' &&
         c.body.startsWith('## Claude Code Review')
     )
@@ -123,8 +140,8 @@ const computeState = (pr, ctx) => {
     : nonReview.some((c) => c.bucket === 'pending')
       ? 'pending'
       : 'green'
-  const claudePending =
-    checks.find((c) => c.name === 'Claude Code Review')?.bucket === 'pending'
+  const claudeCheck = checks.find((c) => c.name === 'Claude Code Review')
+  const claudePending = claudeCheck?.bucket === 'pending'
   const threads = unresolvedThreads(ctx.owner, ctx.name, pr.number)
   const verdict = claudeVerdictClean(ctx.owner, ctx.name, pr.number) // null|true|false
   const view = ghJson([
@@ -175,6 +192,7 @@ const approve = (pr, vim, ctx) => {
   const env = botProcessEnv(ctx.orchBot)
   const merger = botLabel(ctx.orchBot)
   out(`           → APPROVING as ${merger}: squash-merge #${pr.number}`)
+  gh(['pr', 'review', String(pr.number), '--approve'], env)
   gh(['pr', 'merge', String(pr.number), '--squash'], env)
   out(`           ✓ MERGED`)
   // Delete the merged branch REMOTELY — `gh --delete-branch` deletes the LOCAL

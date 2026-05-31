@@ -21,8 +21,10 @@ export const loadBot = (scriptDir, file, prefix) => {
     if (m && want.has(m[1])) env[m[1]] = m[2].replace(/^["']|["']$/g, '')
   }
   const token = env[`${prefix}_TOKEN`]
-  if (!token || token.includes('xxxx')) return null
-  return { token, user: env[`${prefix}_USER`], email: env[`${prefix}_EMAIL`] }
+  const user = env[`${prefix}_USER`]
+  const email = env[`${prefix}_EMAIL`]
+  if (!token || !user || !email || token.includes('xxxx')) return null
+  return { token, user, email }
 }
 
 // Env overlay so a child's gh/git act as the bot (gh honors GH_TOKEN; git honors

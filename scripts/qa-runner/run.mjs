@@ -33,12 +33,13 @@ import { botEnv, botLabel, loadBot } from './lib/bot-identity.mjs'
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url))
 const LOCK_DIR = join(SCRIPT_DIR, '.locks')
-const KIMI_TIMEOUT_MS = 25 * 60 * 1000
+const KIMI_TIMEOUT_MS = 45 * 60 * 1000
 
 const out = (s = '') => process.stdout.write(`${s}\n`)
 const die = (s, code = 1) => {
-  process.stderr.write(`${s}\n`)
-  process.exit(code)
+  const err = new Error(s)
+  err.exitCode = code
+  throw err
 }
 const sh = (cmd, args, opts = {}) =>
   execFileSync(cmd, args, {
@@ -59,7 +60,7 @@ const lifelineSkillsDir = () => {
   )
   const versions = readdirSync(root)
     .filter((v) => existsSync(join(root, v, 'skills', 'upsource-review')))
-    .sort()
+    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
   if (!versions.length)
     die('lifeline upsource-review skill not found in the plugin cache.')
   return join(root, versions[versions.length - 1], 'skills')
@@ -107,6 +108,29 @@ const ensureWorktree = (pr, branch, live, skillsDir, bot, repo) => {
         '-b',
         `qa/dryrun-${pr}`,
         wt,
+        `origin/${branch}`,
+      ])
+      try {
+        sh('git', ['-C', wt, 'branch', '--unset-upstream'])
+      } catch {
+        /* no upstream to unset */
+      }
+    }
+  } else {
+    // Worktree exists but is on the wrong branch (e.g. dry-run → live)
+    out(`(resetting existing worktree to origin/${branch})`)
+    sh('git', ['-C', wt, 'fetch', 'origin', branch, '-q'])
+    if (live) {
+      sh('git', ['-C', wt, 'checkout', '-B', branch, `origin/${branch}`])
+      sh('git', ['-C', wt, 'reset', '--hard'])
+      sh('git', ['-C', wt, 'clean', '-fd'])
+    } else {
+      sh('git', [
+        '-C',
+        wt,
+        'checkout',
+        '-B',
+        `qa/dryrun-${pr}`,
         `origin/${branch}`,
       ])
       try {
@@ -203,6 +227,7 @@ const run = (pr, live) => {
         env: { ...process.env, ...botEnv(bot) },
       }
     )
+    if (r.error) die('kimi spawn failed: ' + r.error.message)
     out(`\nkimi exit: ${r.status ?? `signal ${r.signal}`}`)
     out('--- worktree changes ---')
     out(sh('git', ['-C', wt, 'status', '--short']) || '(none)')
@@ -238,7 +263,12 @@ const main = () => {
     die(
       'usage: run.mjs <PR#> [--push]   (default = dry-run; --push arms the live path)'
     )
-  run(pr, argv.includes('--push'))
+  try {
+    run(pr, argv.includes('--push'))
+  } catch (e) {
+    process.stderr.write(`${e.message}\n`)
+    process.exit(e.exitCode || 1)
+  }
 }
 
 main()
