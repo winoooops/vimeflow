@@ -32,6 +32,7 @@ import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { botEnv, botLabel, loadBot } from './lib/bot-identity.mjs'
+import { linkedVim } from './lib/pr-utils.mjs'
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url))
 const LOCK_DIR = join(SCRIPT_DIR, '.locks')
@@ -227,13 +228,13 @@ const run = (pr, live) => {
     out('--- worktree changes ---')
     out(sh('git', ['-C', wt, 'status', '--short']) || '(none)')
     if (live && r.status === 0) {
-      const m = (info.body || '').match(/\b(VIM-\d+)\b/i)
-      if (m) {
+      const vim = linkedVim(info.body)
+      if (vim) {
         spawnSync(
           'node',
           [
             join(SCRIPT_DIR, 'lib', 'linear-status.mjs'),
-            m[1],
+            vim,
             `QA runner: ran an upsource-review cycle on PR #${pr} (${info.url}).`,
           ],
           { stdio: 'inherit' }
