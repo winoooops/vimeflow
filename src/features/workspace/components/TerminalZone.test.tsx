@@ -106,6 +106,15 @@ vi.mock('../../terminal/components/TerminalPane', () => ({
   ),
 }))
 
+// Mock the browser barrel so SplitView can render a browser pane without the
+// real WebContentsView bridge — we only assert TerminalZone's panel wiring.
+vi.mock('../../browser', () => ({
+  BrowserPane: (): ReactElement => (
+    <div data-testid="browser-pane-mock">Mocked BrowserPane</div>
+  ),
+  focusBrowserPane: vi.fn().mockResolvedValue(undefined),
+}))
+
 describe('TerminalZone', () => {
   const defaultProps = {
     sessions: mockSessions.slice(0, 2), // First two sessions
@@ -116,6 +125,80 @@ describe('TerminalZone', () => {
     addPane: vi.fn(),
     removePane: vi.fn(),
   }
+
+  test('wires the tabpanel aria linkage for a completed session kept visible by a live browser pane', () => {
+    const sessions: Session[] = [
+      {
+        ...mockSessions[0],
+        id: 'alive',
+        status: 'running' as const,
+        panes: [
+          {
+            ...mockSessions[0].panes[0],
+            ptyId: 'alive',
+            status: 'running' as const,
+          },
+        ],
+      },
+      {
+        ...mockSessions[0],
+        id: 'browser-live',
+        status: 'completed' as const,
+        layout: 'single' as LayoutId,
+        panes: [
+          {
+            id: 'b0',
+            kind: 'browser',
+            ptyId: 'browser:browser-live',
+            cwd: '~',
+            agentType: 'generic',
+            status: 'running' as const,
+            active: true,
+            browserUrl: 'https://example.com/',
+          },
+        ],
+      },
+      {
+        ...mockSessions[0],
+        id: 'exited',
+        status: 'completed' as const,
+        panes: [
+          {
+            ...mockSessions[0].panes[0],
+            ptyId: 'exited',
+            status: 'completed' as const,
+          },
+        ],
+      },
+    ]
+
+    render(
+      <TerminalZone
+        {...defaultProps}
+        sessions={sessions}
+        activeSessionId="alive"
+      />
+    )
+
+    // Inactive panels carry the `hidden` class (display:none), so include
+    // hidden roles to reach them.
+    const panels = screen.getAllByRole('tabpanel', { hidden: true })
+
+    const browserPanel = panels.find(
+      (p) => p.id === 'session-panel-browser-live'
+    )
+    const exitedPanel = panels.find((p) => p.id === 'session-panel-exited')
+
+    // Completed but kept visible by its running browser pane → the tab exists,
+    // so the panel must carry the aria-labelledby relationship to it.
+    expect(browserPanel).toHaveAttribute(
+      'aria-labelledby',
+      'session-tab-browser-live'
+    )
+
+    // Completed, shell-only, non-active → no tab → panel stays aria-clean.
+    expect(exitedPanel).not.toHaveAttribute('aria-labelledby')
+  })
 
   test('renders terminal content area with TerminalPane', () => {
     render(<TerminalZone {...defaultProps} />)
