@@ -2,6 +2,7 @@ import { describe, test, expect } from 'vitest'
 import {
   getVisibleSessions,
   isOpenSessionStatus,
+  isSessionVisible,
   pickNextVisibleSessionId,
 } from './pickNextVisibleSessionId'
 import type { Pane, Session, SessionStatus } from '../types'
@@ -59,6 +60,44 @@ const withBrowserPane = (
       browserUrl: 'https://example.com/',
     },
   ],
+})
+
+describe('isSessionVisible', () => {
+  // The shared predicate behind BOTH getVisibleSessions (tab strip) and
+  // TerminalZone (panel aria linkage) — they must agree on every case.
+  test('open status is visible', () => {
+    expect(isSessionVisible(buildSession('A', 'running'), null)).toBe(true)
+    expect(isSessionVisible(buildSession('A', 'paused'), null)).toBe(true)
+  })
+
+  test('completed/errored non-active session is not visible', () => {
+    expect(isSessionVisible(buildSession('A', 'completed'), 'other')).toBe(
+      false
+    )
+    expect(isSessionVisible(buildSession('A', 'errored'), 'other')).toBe(false)
+  })
+
+  test('the active session is always visible', () => {
+    expect(isSessionVisible(buildSession('A', 'completed'), 'A')).toBe(true)
+  })
+
+  test('a completed session with a running browser pane is visible', () => {
+    expect(
+      isSessionVisible(
+        withBrowserPane(buildSession('A', 'completed'), 'running'),
+        'other'
+      )
+    ).toBe(true)
+  })
+
+  test('a completed session whose browser pane also exited is not visible', () => {
+    expect(
+      isSessionVisible(
+        withBrowserPane(buildSession('A', 'completed'), 'completed'),
+        'other'
+      )
+    ).toBe(false)
+  })
 })
 
 describe('getVisibleSessions', () => {

@@ -13,7 +13,7 @@ import type {
   PaneEventHandler,
   NotifyPaneReadyResult,
 } from '../../sessions/hooks/useSessionManager'
-import { isOpenSessionStatus } from '../../sessions/utils/pickNextVisibleSessionId'
+import { isSessionVisible } from '../../sessions/utils/pickNextVisibleSessionId'
 import { LayoutSwitcher } from '../../terminal/components/LayoutSwitcher'
 import {
   SplitView,
@@ -220,19 +220,15 @@ export const TerminalZone = forwardRef<TerminalZoneHandle, TerminalZoneProps>(
             sessions.map((session) => {
               const isActive = session.id === activeSessionId
 
-              // SessionTabs.open keeps a tab for running/paused sessions OR
-              // the active session — completed/errored non-active sessions
-              // exist as panels here but have no corresponding tab id, so
-              // aria-labelledby would point at a non-existent element. Only
-              // wire the linkage when the panel actually has a visible tab
-              // (= isActive OR open status). Hidden panels stay aria-clean.
-              // Use the canonical `isOpenSessionStatus` predicate from the
-              // utility (same source as Sidebar's Active/Recent grouping)
-              // so a future non-open status (e.g. `suspended`) auto-flows
-              // into both visibility surfaces without TerminalZone needing
-              // a separate update.
-              const hasVisibleTab =
-                isActive || isOpenSessionStatus(session.status)
+              // Completed/errored non-active sessions exist as panels here but
+              // may have no corresponding tab id, so aria-labelledby would point
+              // at a non-existent element. Wire the linkage only when the panel
+              // actually has a visible tab. Use the SAME `isSessionVisible`
+              // predicate `getVisibleSessions` uses — sharing it is what keeps
+              // the tab and its panel from disagreeing (e.g. a completed session
+              // kept visible by a running browser pane must still get the tab
+              // relationship). Hidden panels stay aria-clean.
+              const hasVisibleTab = isSessionVisible(session, activeSessionId)
 
               return (
                 <div
