@@ -61,7 +61,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Preflight Checks](patterns/preflight-checks.md)                     | error-handling     | 3        | 0    | 2026-05-31   |
 | [CSP Configuration](patterns/csp-configuration.md)                   | security           | 8        | 5    | 2026-05-16   |
 | [PTY Session Management](patterns/pty-session-management.md)         | backend            | 8        | 2    | 2026-05-28   |
-| [Git Operations](patterns/git-operations.md)                         | correctness        | 24       | 10   | 2026-05-31   |
+| [Git Operations](patterns/git-operations.md)                         | correctness        | 25       | 10   | 2026-05-31   |
 | [CodeMirror Integration](patterns/codemirror-integration.md)         | editor             | 12       | 0    | 2026-04-11   |
 | [Error Surfacing](patterns/error-surfacing.md)                       | error-handling     | 31       | 7    | 2026-05-31   |
 | [File Tree Paths](patterns/file-tree-paths.md)                       | files              | 4        | 0    | 2026-04-10   |

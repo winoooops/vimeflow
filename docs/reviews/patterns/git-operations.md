@@ -230,3 +230,12 @@ between display and mutation operations.
 - **Finding:** `ensureWorktree()` created `.claude/worktrees/qa-pr-N` per PR, but `approve()` never cleaned them up after squash-merge. Over many PRs the worktrees accumulated, holding git references that prevented GC.
 - **Fix:** Added `git worktree remove --force` in `approve()\'s` success path, right after remote branch deletion.
 - **Commit:** same commit as this entry
+
+### 25. Fork PR branch deletion targets base repo instead of contributor repo
+
+- **Source:** github-codex-connector | PR #320 round 3 | 2026-05-31
+- **Severity:** P1 / HIGH
+- **File:** `scripts/qa-runner/watch.mjs`
+- **Finding:** `approve()` unconditionally deleted the remote branch via base-repo API after merge. For fork PRs, `headRefName` is the contributor's branch name; the deletion would remove a same-named base-repo branch instead.
+- **Fix:** Fetched `isCrossRepository` from `gh pr view\' and gated the remote ref-delete on `!isCrossRepository`.
+- **Commit:** same commit as this entry

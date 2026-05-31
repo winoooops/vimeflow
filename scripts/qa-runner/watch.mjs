@@ -213,8 +213,14 @@ const approve = (pr, vim, ctx) => {
   const env = botProcessEnv(ctx.orchBot)
   const merger = botLabel(ctx.orchBot)
   out(`           → APPROVING as ${merger}: squash-merge #${pr.number}`)
-  const reviews = ghJson(['pr', 'view', String(pr.number), '--json', 'reviews'])
-  const alreadyApproved = (reviews.reviews || []).some(
+  const prInfo = ghJson([
+    'pr',
+    'view',
+    String(pr.number),
+    '--json',
+    'reviews,isCrossRepository',
+  ])
+  const alreadyApproved = (prInfo.reviews || []).some(
     (r) => r.state === 'APPROVED' && r.author?.login === ctx.approverLogin
   )
   if (!alreadyApproved) {
@@ -234,22 +240,26 @@ const approve = (pr, vim, ctx) => {
   } catch {
     out(`           (worktree already gone)`)
   }
-  // Delete the merged branch REMOTELY — `gh --delete-branch` deletes the LOCAL
-  // branch too, which fails when a worktree holds it (run.mjs's qa-pr-N). The API
-  // ref delete is hook-free and never touches the local checkout.
-  try {
-    gh(
-      [
-        'api',
-        '--method',
-        'DELETE',
-        `repos/${ctx.owner}/${ctx.name}/git/refs/heads/${pr.headRefName}`,
-      ],
-      env
-    )
-    out(`           ✓ deleted remote branch ${pr.headRefName}`)
-  } catch {
-    out(`           (remote branch already gone)`)
+  // Delete the merged branch REMOTELY — but only when the PR head is in the
+  // base repo. Fork PRs have headRefName in the contributor's repo; deleting
+  // here could remove a coincidentally-named base-repo branch.
+  if (!prInfo.isCrossRepository) {
+    try {
+      gh(
+        [
+          'api',
+          '--method',
+          'DELETE',
+          `repos/${ctx.owner}/${ctx.name}/git/refs/heads/${pr.headRefName}`,
+        ],
+        env
+      )
+      out(`           ✓ deleted remote branch ${pr.headRefName}`)
+    } catch {
+      out(`           (remote branch already gone)`)
+    }
+  } else {
+    out(`           (fork PR — skipped remote branch deletion)`)
   }
   postLinear(
     vim,
