@@ -539,9 +539,7 @@ export const BrowserPane = ({
           </button>
         </form>
         <span className="hidden max-w-[160px] truncate font-mono text-[10px] text-on-surface-muted lg:inline">
-          {/* A user-set pane label (`:rename-pane`) wins over the live tab
-              title, mirroring the shell Header's `userLabel ?? agentTitle ??
-              session.name` precedence — so renaming a browser pane is visible. */}
+          {/* User label wins over the live tab title (shell-Header precedence). */}
           {pane.userLabel ??
             (activeTab ? (activeTab.title ?? activeTab.url) : null)}
         </span>

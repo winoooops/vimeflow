@@ -198,8 +198,7 @@ describe('BrowserPane', () => {
   })
 
   test('shows a user-set pane label in the chrome title', () => {
-    // `:rename-pane` sets pane.userLabel; the browser chrome must surface it so
-    // the rename is visible (otherwise the command silently no-ops visually).
+    // The browser chrome must surface a user-set pane label.
     render(
       <BrowserPane
         session={session}

@@ -768,10 +768,7 @@ describe('WorkspaceView - Command Palette Integration', () => {
   test(':rename-pane labels a browser pane locally', async () => {
     const user = userEvent.setup()
 
-    // Active pane is a browser pane. Previously the shell-only gate nulled its
-    // ptyId, so :rename-pane reported "No active pane to rename". It must now
-    // label the pane locally by its pseudo ptyId (the agent /rename sync is a
-    // tolerated NoLiveAgent no-op for non-agent panes).
+    // A browser pane must be labelable by its ptyId.
     const browserSession: Session = {
       ...createMockSession('session-browser', 'browser-tab'),
       panes: [

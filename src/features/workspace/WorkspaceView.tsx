@@ -247,11 +247,7 @@ export const WorkspaceView = (): ReactElement => {
     ? (findActivePane(activeSessionForCommands) ?? null)
     : null
 
-  // `:rename-pane` addresses any pane by its (pseudo) ptyId — browser panes
-  // included. The local label applies to every pane; the agent `/rename` sync
-  // is rejected as NoLiveAgent by the backend for non-agent panes (browser or
-  // generic shell), which the rename command + chord already tolerate via
-  // isExpectedLocalOnlyRenameFailure (so the local label sticks).
+  // Any pane is addressable by ptyId; the agent sync no-ops on non-agent panes.
   const activePanePtyIdForCommands = activePaneForCommandInputs?.ptyId ?? null
 
   const activePaneAgentTypeForCommands =
@@ -611,12 +607,7 @@ export const WorkspaceView = (): ReactElement => {
       return null
     }
 
-    // The chord positions its input over the pane's header element
-    // (PaneRenameInput anchors via paneHeaderRefs by ptyId). Browser panes have
-    // no registered header anchor yet, so the input would fall back to the body
-    // centre — behind the native WebContentsView — and the chord would appear
-    // not to open. Keep it shell-only; the `:rename-pane` command still labels
-    // browser panes. Registering a browser rename anchor is Phase-2 chrome work.
+    // Chord stays shell-only: it anchors over a pane-header element browser panes lack.
     if ((activePane.kind ?? 'shell') !== 'shell') {
       return null
     }
