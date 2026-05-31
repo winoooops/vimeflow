@@ -74,9 +74,28 @@ const mainRoot = () =>
     ]).trim()
   )
 
+// The worktree that currently has `branch` checked out, or null. git refuses a
+// second worktree on a branch already checked out elsewhere — including the
+// runner reviewing its OWN PR, whose branch is this dev worktree.
+const worktreeForBranch = (branch) => {
+  let path = null
+  for (const line of sh('git', ['worktree', 'list', '--porcelain']).split(
+    '\n'
+  )) {
+    if (line.startsWith('worktree ')) path = line.slice('worktree '.length)
+    else if (line === `branch refs/heads/${branch}`) return path
+  }
+  return null
+}
+
 const ensureWorktree = (pr, branch, live, skillsDir, bot, repo) => {
-  const wt = join(mainRoot(), '.claude', 'worktrees', `qa-pr-${pr}`)
-  if (!existsSync(wt)) {
+  // Reuse a checkout already on the branch; an isolated copy is impossible (and
+  // unnecessary) when the branch is checked out elsewhere. Otherwise create one.
+  const existing = worktreeForBranch(branch)
+  const wt = existing || join(mainRoot(), '.claude', 'worktrees', `qa-pr-${pr}`)
+  if (existing) {
+    out(`(reusing worktree already on ${branch}: ${wt})`)
+  } else if (!existsSync(wt)) {
     sh('git', ['fetch', 'origin', branch, '-q'])
     if (live) {
       sh('git', ['worktree', 'add', '-B', branch, wt, `origin/${branch}`])
@@ -102,9 +121,10 @@ const ensureWorktree = (pr, branch, live, skillsDir, bot, repo) => {
   const link = join(wt, 'skills', 'upsource-review')
   rmSync(link, { recursive: true, force: true })
   symlinkSync(join(skillsDir, 'upsource-review'), link)
-  // Live + bot: push as the bot over HTTPS (your git is SSH). The gh credential helper
-  // reads GH_TOKEN at push time, so the bot token is never written to git config.
-  if (bot && live) {
+  // Live + bot: push as the bot over HTTPS. The gh credential helper reads GH_TOKEN
+  // at push time, so the bot token is never written to git config. A reused worktree
+  // already shares the repo's (HTTPS + helper) remote config, so skip the rewrite.
+  if (bot && live && !existing) {
     sh('git', [
       '-C',
       wt,
