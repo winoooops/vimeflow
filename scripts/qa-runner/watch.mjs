@@ -206,9 +206,24 @@ const tick = (ctx) => {
       } else out(`           (report-only — pass --execute to run the cycle)`)
     } else if (s.state === 'GOOD_SHAPE') {
       if (ctx.approve) {
-        out(`           → APPROVING: gh pr merge --squash --delete-branch`)
-        gh(['pr', 'merge', String(pr.number), '--squash', '--delete-branch'])
+        out(`           → APPROVING: squash-merge #${pr.number}`)
+        gh(['pr', 'merge', String(pr.number), '--squash'])
         out(`           ✓ MERGED`)
+        // Delete the merged branch REMOTELY — not via `gh --delete-branch`, whose
+        // local branch delete fails whenever a worktree holds the branch (run.mjs
+        // creates exactly such a qa-pr-N worktree for fix cycles). The API ref
+        // delete is hook-free and never touches the local checkout.
+        try {
+          gh([
+            'api',
+            '--method',
+            'DELETE',
+            `repos/${ctx.owner}/${ctx.name}/git/refs/heads/${pr.headRefName}`,
+          ])
+          out(`           ✓ deleted remote branch ${pr.headRefName}`)
+        } catch {
+          out(`           (remote branch already gone)`)
+        }
         postLinear(
           s.vim,
           `QA runner: PR #${pr.number} met all review success criteria → squash-merged.`,
