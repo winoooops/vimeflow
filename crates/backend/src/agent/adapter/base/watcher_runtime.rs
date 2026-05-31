@@ -493,12 +493,35 @@ impl AgentWatcherState {
             displaced
             // `_gate_guard` drops here, releasing the per-session gate.
         };
-        // `removed_transcript: Option<TranscriptHandle>` drops here,
-        // OUTSIDE the gate. Its Drop joins the tail thread (~500ms).
-        // `_displaced: Option<WatcherHandle>` drops too. Its Drop
-        // joins the poll thread + codex session-index thread (if any)
-        // and SKIPS `transcript_state.stop` (owns_transcript = false).
+        // Explicit `drop(removed_transcript)` joins the displaced
+        // tail thread (~500ms) HERE, OUTSIDE the gate. Moving this
+        // earlier than Rust's default reverse-declaration drop order
+        // is intentional — it lets the tail thread start winding
+        // down before the OS-level work in `_displaced::Drop` runs.
+        //
+        // PR #302 cycle 19 F3 (Claude post-cycle-18 review LOW 87% +
+        // codex-verify retry-1 correction LOW 95%): the pre-cycle-19
+        // comment incorrectly grouped `_displaced`'s drop into this
+        // same statement; the cycle-19 first attempt then mis-stated
+        // the relative order. The actual order at function exit
+        // (after this explicit `drop`) follows Rust's reverse-
+        // declaration order. `_displaced` was declared LAST (line
+        // ~434) so it drops FIRST; `removed_watcher_for_drop` was
+        // declared SECOND so it drops SECOND. Both happen at
+        // end-of-function, both OUTSIDE the gate.
+        // `_displaced::Drop` joins the poll thread + codex
+        // session-index thread (if any) and SKIPS
+        // `transcript_state.stop` (owns_transcript = false). The
+        // safety property (every join happens outside the gate)
+        // holds regardless of relative ordering of the three drops;
+        // if a future change ever requires a different order, use an
+        // explicit `drop(...)` call to force it.
         drop(removed_transcript);
+        // At end-of-function (reverse-declaration order): `_displaced`
+        // drops first, then `removed_watcher_for_drop`. See cycle-17
+        // F1 and the outer-scope binding comment above for why
+        // `removed_watcher_for_drop` is dropped outside the gate
+        // (FsEventWatcher runloop join hazard on macOS).
     }
 
     /// Remove and stop a watcher for a session.

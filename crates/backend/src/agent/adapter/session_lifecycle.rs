@@ -741,12 +741,30 @@ impl SessionLifecycle {
     /// Stop the agent watcher for `session_id`. Removing the
     /// `WatcherHandle` from `AgentWatcherState` runs its `Drop`, which
     /// cascades the transcript-tail teardown.
+    ///
+    /// PR #302 cycle 19 F1 (Claude post-cycle-18 review MED 90%):
+    /// dispatched via `spawn_blocking` because `AgentWatcherState::
+    /// remove` drops a `WatcherHandle` inline, and `WatcherHandle::
+    /// Drop` joins the transcript-tail thread (~500ms) plus the
+    /// poll / session-index threads. Joining OS threads from a
+    /// Tokio task starves the executor during that window — on a
+    /// single-threaded runtime this can deadlock; on
+    /// multi-threaded it spikes IPC latency under concurrent
+    /// session churn. The `start` path already uses
+    /// `spawn_blocking` for the same reason (see
+    /// `run_watch_sequence` above). The async `bool` from the
+    /// inner closure propagates back through `JoinError`.
     pub(crate) async fn stop(&self, session_id: String) -> Result<(), String> {
-        if self.watcher_state.remove(&session_id) {
-            log::info!("Stopped watching statusline for session {}", session_id);
+        let watcher_state = self.watcher_state.clone();
+        let sid_for_log = session_id.clone();
+        let removed = tokio::task::spawn_blocking(move || watcher_state.remove(&session_id))
+            .await
+            .map_err(|e| format!("stop task panicked: {}", e))?;
+        if removed {
+            log::info!("Stopped watching statusline for session {}", sid_for_log);
             Ok(())
         } else {
-            Err(format!("No active watcher for session: {}", session_id))
+            Err(format!("No active watcher for session: {}", sid_for_log))
         }
     }
 }

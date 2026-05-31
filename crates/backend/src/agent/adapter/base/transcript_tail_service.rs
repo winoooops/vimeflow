@@ -324,7 +324,19 @@ pub(crate) enum Step {
     /// `read` returns these bytes verbatim. To exercise chunking, split
     /// a multi-line input across multiple `Chunk` steps. Newlines must
     /// be present in the chunk content if line termination is desired.
+    /// Use with byte literals (`b"..."`); they coerce to `&'static [u8]`
+    /// without allocation.
     Chunk(&'static [u8]),
+    /// Same as `Chunk` but holds an owned buffer. PR #302 cycle 19 F2
+    /// (Claude post-cycle-18 review LOW 90%): over-cap tests need a
+    /// runtime-sized `MAX_PARTIAL_BYTES + 1` buffer (4 MiB+) for the
+    /// engine's bounded-chunk read loop to grind through. Pre-cycle-19
+    /// used `Box::leak(vec![...])` to satisfy the `&'static [u8]`
+    /// lifetime — leaking 4–8 MiB of permanent heap per `cargo test`
+    /// run, and blocking future Miri CI adoption. `ChunkOwned` keeps
+    /// the byte-literal call sites zero-cost while letting over-cap
+    /// tests pass a plain `Vec<u8>` that drops normally at end-of-test.
+    ChunkOwned(Vec<u8>),
     /// Non-terminal EOF — `Ok(0)`; the loop fires `on_caught_up` (if
     /// partial is empty AND not in skip mode) and polls again.
     Eof,
@@ -338,15 +350,17 @@ pub(crate) enum Step {
 pub(crate) struct ScriptedReader {
     pub steps: std::vec::IntoIter<Step>,
     pub stop: Arc<AtomicBool>,
-    /// Remainder of a `Chunk` step too large to fit in a single
-    /// `Read::read` buffer — returned on subsequent calls until exhausted,
-    /// then the next step is consumed (PR #302 cycle 14 F1's
-    /// over-cap-line regression test passes a `MAX_PARTIAL_BYTES + 1`
-    /// chunk that's 4 MiB+, far larger than the engine's 8 KiB read
-    /// buffer; the engine then sees a series of bounded reads as if
-    /// from a real File).
+    /// In-flight chunk bytes — either an owned `Vec<u8>` (from
+    /// `Step::ChunkOwned`) or a borrowed `&'static [u8]` (from
+    /// `Step::Chunk`), unified via `Cow<'static, [u8]>`. Paired with
+    /// a `usize` offset that cursors the engine's bounded `Read::read`
+    /// calls through the chunk. PR #302 cycle 14 F1 introduced this
+    /// shape for the engine's chunked-read loop; cycle 19 F2 switched
+    /// it from `&'static [u8]` (which forced over-cap tests into
+    /// `Box::leak`) to `Cow` so owned `Vec<u8>` buffers drop normally
+    /// at end-of-test.
     #[cfg(test)]
-    pub(crate) pending: &'static [u8],
+    current: Option<(std::borrow::Cow<'static, [u8]>, usize)>,
 }
 
 #[cfg(test)]
@@ -355,7 +369,7 @@ impl ScriptedReader {
         Self {
             steps,
             stop,
-            pending: &[],
+            current: None,
         }
     }
 }
@@ -363,11 +377,15 @@ impl ScriptedReader {
 #[cfg(test)]
 impl std::io::Read for ScriptedReader {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        // Drain pending bytes from a previous oversized chunk first.
-        if !self.pending.is_empty() {
-            let n = self.pending.len().min(buf.len());
-            buf[..n].copy_from_slice(&self.pending[..n]);
-            self.pending = &self.pending[n..];
+        // Drain remainder of the previously-started chunk first.
+        if let Some((bytes, offset)) = self.current.as_mut() {
+            let remaining = &bytes[*offset..];
+            let n = remaining.len().min(buf.len());
+            buf[..n].copy_from_slice(&remaining[..n]);
+            *offset += n;
+            if *offset == bytes.len() {
+                self.current = None;
+            }
             return Ok(n);
         }
         match self.steps.next() {
@@ -375,8 +393,16 @@ impl std::io::Read for ScriptedReader {
                 let n = bytes.len().min(buf.len());
                 buf[..n].copy_from_slice(&bytes[..n]);
                 if n < bytes.len() {
-                    self.pending = &bytes[n..];
+                    self.current = Some((std::borrow::Cow::Borrowed(bytes), n));
                 }
+                Ok(n)
+            }
+            Some(Step::ChunkOwned(bytes)) => {
+                let n = bytes.len().min(buf.len());
+                buf[..n].copy_from_slice(&bytes[..n]);
+                if n < bytes.len() {
+                    self.current = Some((std::borrow::Cow::Owned(bytes), n));
+                } // else: small owned chunk consumed in one read; drop now
                 Ok(n)
             }
             Some(Step::Err) => Err(std::io::Error::new(
@@ -606,11 +632,13 @@ mod tests {
         // `\n`. Without the cap check on the newline path, the engine
         // would decode this as a complete line. With the fix, the
         // entire over-long line is discarded.
+        // PR #302 cycle 19 F2: use `Step::ChunkOwned(Vec<u8>)` so the
+        // 4 MiB buffer drops normally at end-of-test (pre-cycle-19
+        // used `Box::leak` and permanently leaked 4 MiB per run).
         let mut big = vec![b'x'; MAX_PARTIAL_BYTES];
         big.push(b'\n'); // terminator IS in the crossing chunk
-        let big: &'static [u8] = Box::leak(big.into_boxed_slice());
         let (lines, _) = drive(vec![
-            Step::Chunk(big),
+            Step::ChunkOwned(big),
             Step::Chunk(b"{\"a\":1}\n"), // next valid line decodes
             Step::EofStop,
         ]);
@@ -636,11 +664,13 @@ mod tests {
     #[test]
     fn engine_over_cap_line_is_discarded_and_processing_resumes() {
         // Build a single chunk that exceeds MAX_PARTIAL_BYTES, with no
-        // newline so the engine has to enter skip mode. Leak to get
-        // `&'static [u8]` for the Step variant.
-        let big: &'static [u8] = Box::leak(vec![b'x'; MAX_PARTIAL_BYTES + 1].into_boxed_slice());
+        // newline so the engine has to enter skip mode.
+        // PR #302 cycle 19 F2: use `Step::ChunkOwned(Vec<u8>)` instead
+        // of `Box::leak`-into-`&'static [u8]` so the 4 MiB buffer
+        // drops normally at end-of-test.
+        let big = vec![b'x'; MAX_PARTIAL_BYTES + 1];
         let (lines, _) = drive(vec![
-            Step::Chunk(big),
+            Step::ChunkOwned(big),
             Step::Chunk(b"\n"),        // terminate the over-long line; exits skip mode
             Step::Chunk(b"{\"b\":2}\n"), // next valid line decodes normally
             Step::EofStop,
