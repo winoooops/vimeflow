@@ -478,6 +478,140 @@ describe('useSessionManager', () => {
     expect(pane?.userLabel).toBeUndefined()
   })
 
+  test('ai-generated with title matching user-renamed agentTitle preserves the sticky source', async () => {
+    const service = createMockService()
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: 'pty-1',
+      sessions: [
+        {
+          id: 'pty-1',
+          cwd: '/tmp',
+          status: {
+            kind: 'Alive',
+            pid: 1,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+      ],
+    })
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    await waitFor(() => expect(titleListener()).toBeDefined())
+
+    act(() => {
+      result.current.setPaneUserLabel('pty-1', 'shared-title')
+    })
+
+    act(() => {
+      titleListener()?.({
+        sessionId: 'pty-1',
+        agentSessionId: 'agent-uuid',
+        title: 'shared-title',
+        source: 'user-renamed',
+      })
+    })
+
+    // ai-generated with a title that happens to match the user's rename
+    // (e.g., Codex re-emits the persisted thread_name as ai-generated
+    // after a transient clear consumed the pending rename claim). An
+    // earlier guard that included `payload.title !== pane.agentTitle`
+    // let this fall through and silently downgrade agentTitleSource to
+    // 'ai-generated', removing the protection for the next event.
+    act(() => {
+      titleListener()?.({
+        sessionId: 'pty-1',
+        agentSessionId: 'agent-uuid',
+        title: 'shared-title',
+        source: 'ai-generated',
+      })
+    })
+
+    let pane = result.current.sessions[0]?.panes.find(
+      (candidate) => candidate.ptyId === 'pty-1'
+    )
+    expect(pane?.agentTitle).toBe('shared-title')
+    expect(pane?.agentTitleSource).toBe('user-renamed')
+
+    // The protection must still hold: a subsequent ai-generated with a
+    // different title cannot overwrite the user's rename.
+    act(() => {
+      titleListener()?.({
+        sessionId: 'pty-1',
+        agentSessionId: 'agent-uuid',
+        title: 'different-ai-title',
+        source: 'ai-generated',
+      })
+    })
+
+    pane = result.current.sessions[0]?.panes.find(
+      (candidate) => candidate.ptyId === 'pty-1'
+    )
+    expect(pane?.agentTitle).toBe('shared-title')
+    expect(pane?.agentTitleSource).toBe('user-renamed')
+  })
+
+  test('user-renamed with empty title clears the sticky guard (lifecycle reset)', async () => {
+    const service = createMockService()
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: 'pty-1',
+      sessions: [
+        {
+          id: 'pty-1',
+          cwd: '/tmp',
+          status: {
+            kind: 'Alive',
+            pid: 1,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+      ],
+    })
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    await waitFor(() => expect(titleListener()).toBeDefined())
+
+    act(() => {
+      result.current.setPaneUserLabel('pty-1', 'Foo')
+    })
+
+    act(() => {
+      titleListener()?.({
+        sessionId: 'pty-1',
+        agentSessionId: 'agent-uuid',
+        title: 'Foo',
+        source: 'user-renamed',
+      })
+    })
+
+    // Explicit lifecycle reset: the agent emits a user-renamed event
+    // with an empty title. This is the documented escape hatch out of
+    // sticky state — distinct from a transient ai-generated clear, which
+    // is blocked by the guard.
+    act(() => {
+      titleListener()?.({
+        sessionId: 'pty-1',
+        agentSessionId: 'agent-uuid',
+        title: '',
+        source: 'user-renamed',
+      })
+    })
+
+    const pane = result.current.sessions[0]?.panes.find(
+      (candidate) => candidate.ptyId === 'pty-1'
+    )
+    expect(pane?.agentTitle).toBeUndefined()
+    expect(pane?.agentTitleSource).toBeUndefined()
+    expect(pane?.userLabel).toBeUndefined()
+  })
+
   test('cleared agent-session-title cannot wipe a user-renamed agentTitle', async () => {
     const service = createMockService()
     service.listSessions = vi.fn().mockResolvedValue({

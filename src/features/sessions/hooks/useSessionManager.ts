@@ -328,22 +328,25 @@ export const useSessionManager = (
 
                   // Once the pane's title was set by an explicit user
                   // rename (agentTitleSource === 'user-renamed'), the
-                  // user's intent is sticky: a later ai-generated title
-                  // (Claude's auto-summary) must not silently clobber it,
-                  // and a transient watcher clear (Codex rewriting
-                  // session_index.jsonl) must not wipe it. Only a
-                  // subsequent user-renamed event — i.e. the user
-                  // explicitly renaming again — replaces it.
-                  if (pane.agentTitleSource === 'user-renamed') {
-                    if (cleared) {
-                      return pane
-                    }
-                    if (
-                      payload.source === 'ai-generated' &&
-                      payload.title !== pane.agentTitle
-                    ) {
-                      return pane
-                    }
+                  // user's intent is sticky against ai-generated events.
+                  // This covers both Claude's later auto-summary (a
+                  // non-empty ai-generated title that would otherwise
+                  // overwrite agentTitle) and Codex's transient clear (an
+                  // empty title from `read_thread_name` returning None
+                  // during an atomic rewrite of session_index.jsonl — the
+                  // tailer emits it with source ai-generated because the
+                  // pending rename claim was already consumed).
+                  //
+                  // user-renamed events fall through to the existing
+                  // logic so the user can rename again, and so an
+                  // explicit lifecycle reset (`user-renamed` + empty)
+                  // can clear the sticky state via the standard cleared
+                  // path below.
+                  if (
+                    pane.agentTitleSource === 'user-renamed' &&
+                    payload.source === 'ai-generated'
+                  ) {
+                    return pane
                   }
 
                   // A matching confirmed `/rename` (`user-renamed`) means the

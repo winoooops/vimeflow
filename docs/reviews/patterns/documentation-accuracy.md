@@ -2,7 +2,7 @@
 id: documentation-accuracy
 category: code-quality
 created: 2026-04-09
-last_updated: 2026-05-24
+last_updated: 2026-05-30
 ref_count: 22
 ---
 
@@ -692,4 +692,13 @@ Stale documentation misleads future contributors and review agents.
 - **File:** `CHANGELOG.md`
 - **Finding:** The English `[Unreleased] → Fixed` entry described the new scrollbar thumb as "`#333344` thumb on hover-darkening". The corresponding `::-webkit-scrollbar-thumb:hover` rule in `src/index.css` swaps the thumb to `#4a444f` — RGB(74,68,79) is brighter than RGB(51,51,68) in all three channels, so the hover effect actually brightens. The mirrored Chinese entry in `CHANGELOG.zh-CN.md` correctly used "hover 时变亮" (brightens on hover); only the English side was wrong, so a reader cross-checking the two changelogs would have noticed the disagreement before noticing the impl mismatch.
 - **Fix:** Rewrote the English entry as "`#333344` thumb that brightens to `#4a444f` on hover" and updated the Chinese entry to cite the same target color "`#4a444f`" for parity. Code-review heuristic: when describing a hover/focus state change, name both colors explicitly rather than relying on "darkens"/"brightens" — readers can verify the direction without running a color picker, and a typo in the verb becomes immediately obvious against the surrounding context.
+- **Commit:** same commit as this entry
+
+### 74. Sticky-guard escape-hatch claim in the commit message had no implementation
+
+- **Source:** github-claude | PR #317 cycle 1 | 2026-05-30
+- **Severity:** LOW
+- **File:** `src/features/sessions/hooks/useSessionManager.ts`
+- **Finding:** The cycle-0 commit message stated "a real lifecycle reset clears via the agent emitting an explicit `user-renamed` empty title" as the documented escape hatch out of the sticky-guard state introduced in [[react-lifecycle]] §24. But the guard evaluated `cleared` (empty title) before `payload.source`, so a `user-renamed + empty` event was caught by `if (cleared) { return pane }` and silently swallowed — the stated escape hatch did not exist. Dormant today (no current code path emits `user-renamed + empty`), but the false claim would mislead future contributors who try to wire a programmatic lifecycle-reset hook (e.g. `:clear-pane-name` command, agent-session-end handler) — the event would fire, no error would surface, and the pane would remain stuck on the user's prior rename indefinitely.
+- **Fix:** Restructured the guard to gate on `payload.source` alone: `if (agentTitleSource === 'user-renamed' && payload.source === 'ai-generated') return pane`. user-renamed events (including `user-renamed + empty`) now fall through to the standard cleared path, which clears `agentTitle`, `agentTitleSource`, and `userLabel` — matching the stated design intent. Added a regression test (`user-renamed with empty title clears the sticky guard`) that locks the documented behavior in code so it can't drift back to dormant-only without breaking CI. Code-review heuristic: when a commit message documents an "escape hatch" or "design intent" not exercised by any current call site, add a test that locks the documented behavior in place — otherwise the divergence between doc and code is invisible until someone tries to use the hatch and finds it silently no-op'd.
 - **Commit:** same commit as this entry
