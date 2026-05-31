@@ -7,16 +7,20 @@
 // arms the live path (kimi commits/pushes; status posts to the linked Linear
 // issue).
 //
-// kimi loads the skill via `--skills-dir` (the lifeline plugin cache) and is
-// invoked with `/skill:upsource-review <PR#>`. The skill's helper scripts
-// resolve their dir via a `skills/upsource-review` symlink we create in the
-// worktree (the SKILL.md bootstrap looks for `skills/upsource-review`). codex is
-// the verify gate (inside the skill). See README.md.
+// Identity: if scripts/qa-runner/bot.env is present + filled, the runner acts as
+// that bot account (GH_TOKEN + bot git-author + HTTPS-push via the gh credential
+// helper); otherwise it acts as your own gh. See README.md.
+//
+// kimi loads the skill via `--skills-dir` and is invoked with
+// `/skill:upsource-review <PR#>`; the skill's helper scripts resolve their dir
+// via a `skills/upsource-review` symlink we create in the worktree. codex is the
+// verify gate (inside the skill).
 
 import { execFileSync, spawnSync } from 'node:child_process'
 import {
   existsSync,
   mkdirSync,
+  readFileSync,
   readdirSync,
   rmSync,
   symlinkSync,
@@ -61,6 +65,33 @@ const lifelineSkillsDir = () => {
   return join(root, versions[versions.length - 1], 'skills')
 }
 
+// Optional bot identity (scripts/qa-runner/bot.env). Absent/placeholder ⇒ act as your own gh.
+const loadBotEnv = () => {
+  const f = join(SCRIPT_DIR, 'bot.env')
+  if (!existsSync(f)) return null
+  const env = {}
+  for (const line of readFileSync(f, 'utf8').split('\n')) {
+    const m = line.match(
+      /^\s*(?:export\s+)?(GH_BOT_TOKEN|GH_BOT_USER|GH_BOT_EMAIL)\s*=\s*(.+?)\s*$/
+    )
+    if (m) env[m[1]] = m[2].replace(/^["']|["']$/g, '')
+  }
+  if (!env.GH_BOT_TOKEN || env.GH_BOT_TOKEN.includes('xxxx')) return null
+  return env
+}
+
+// Env injected into the kimi subprocess so its gh/git act as the bot.
+const botProcessEnv = (bot) =>
+  bot
+    ? {
+        GH_TOKEN: bot.GH_BOT_TOKEN,
+        GIT_AUTHOR_NAME: bot.GH_BOT_USER,
+        GIT_AUTHOR_EMAIL: bot.GH_BOT_EMAIL,
+        GIT_COMMITTER_NAME: bot.GH_BOT_USER,
+        GIT_COMMITTER_EMAIL: bot.GH_BOT_EMAIL,
+      }
+    : {}
+
 const mainRoot = () =>
   dirname(
     sh('git', [
@@ -70,7 +101,7 @@ const mainRoot = () =>
     ]).trim()
   )
 
-const ensureWorktree = (pr, branch, live, skillsDir) => {
+const ensureWorktree = (pr, branch, live, skillsDir, bot, repo) => {
   const wt = join(mainRoot(), '.claude', 'worktrees', `qa-pr-${pr}`)
   if (!existsSync(wt)) {
     sh('git', ['fetch', 'origin', branch, '-q'])
@@ -93,12 +124,30 @@ const ensureWorktree = (pr, branch, live, skillsDir) => {
       }
     }
   }
-  // The skill's helper scripts bootstrap from `skills/upsource-review` (repo-relative);
-  // make that resolve inside the worktree.
+  // The skill's helper scripts bootstrap from `skills/upsource-review` (repo-relative).
   mkdirSync(join(wt, 'skills'), { recursive: true })
   const link = join(wt, 'skills', 'upsource-review')
   rmSync(link, { recursive: true, force: true })
   symlinkSync(join(skillsDir, 'upsource-review'), link)
+  // Live + bot: push as the bot over HTTPS (your git is SSH). The gh credential helper
+  // reads GH_TOKEN at push time, so the bot token is never written to git config.
+  if (bot && live) {
+    sh('git', [
+      '-C',
+      wt,
+      'remote',
+      'set-url',
+      'origin',
+      `https://github.com/${repo}.git`,
+    ])
+    sh('git', [
+      '-C',
+      wt,
+      'config',
+      'credential.https://github.com.helper',
+      '!gh auth git-credential',
+    ])
+  }
   return wt
 }
 
@@ -133,10 +182,15 @@ const run = (pr, live) => {
     )
     if (info.state !== 'OPEN') die(`PR #${pr} is ${info.state}, not OPEN.`)
     const branch = info.headRefName
+    const bot = loadBotEnv()
+    const repo = JSON.parse(
+      sh('gh', ['repo', 'view', '--json', 'nameWithOwner'])
+    ).nameWithOwner
     const skillsDir = lifelineSkillsDir()
-    const wt = ensureWorktree(pr, branch, live, skillsDir)
+    const wt = ensureWorktree(pr, branch, live, skillsDir, bot, repo)
     out(
-      `${live ? 'LIVE' : 'DRY-RUN'}: kimi → /skill:upsource-review ${pr}  (branch ${branch}, worktree ${wt})`
+      `${live ? 'LIVE' : 'DRY-RUN'}: kimi → /skill:upsource-review ${pr}  ` +
+        `(branch ${branch}, as ${bot ? bot.GH_BOT_USER : 'you'}, worktree ${wt})`
     )
     const r = spawnSync(
       'kimi',
@@ -150,7 +204,11 @@ const run = (pr, live) => {
         '-p',
         invocation(pr, live),
       ],
-      { stdio: 'inherit', timeout: KIMI_TIMEOUT_MS }
+      {
+        stdio: 'inherit',
+        timeout: KIMI_TIMEOUT_MS,
+        env: { ...process.env, ...botProcessEnv(bot) },
+      }
     )
     out(`\nkimi exit: ${r.status ?? `signal ${r.signal}`}`)
     out('--- worktree changes ---')
