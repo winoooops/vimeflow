@@ -90,15 +90,15 @@ const worktreeForBranch = (branch) => {
 }
 
 const ensureWorktree = (pr, branch, live, skillsDir, bot, repo) => {
-  // No self-review: refuse a branch that's already checked out (can't isolate it,
-  // and reviewing a branch you're working on never converges).
+  const wt = join(mainRoot(), '.claude', 'worktrees', `qa-pr-${pr}`)
+  // No self-review: refuse only when the branch is held by a DIFFERENT worktree (a
+  // dev checkout). Our own qa-pr-N from a prior round is fine — reset + reuse it.
   const held = worktreeForBranch(branch)
-  if (held)
+  if (held && held !== wt)
     die(
       `refusing to review PR #${pr}: branch '${branch}' is checked out at ${held} (no self-review)`,
       4
     )
-  const wt = join(mainRoot(), '.claude', 'worktrees', `qa-pr-${pr}`)
   const ref = live ? branch : `qa/dryrun-${pr}`
   if (!existsSync(wt)) {
     sh('git', ['fetch', 'origin', branch, '-q'])
@@ -180,10 +180,15 @@ const run = (pr, live) => {
         'view',
         String(pr),
         '--json',
-        'number,headRefName,url,body,state',
+        'number,headRefName,url,body,state,isCrossRepository',
       ])
     )
     if (info.state !== 'OPEN') die(`PR #${pr} is ${info.state}, not OPEN.`)
+    if (info.isCrossRepository)
+      die(
+        `PR #${pr} is from a fork — its head ref isn't a base-repo branch; refusing to avoid fetching/pushing the wrong branch.`,
+        5
+      )
     const branch = info.headRefName
     const bot = loadBot(SCRIPT_DIR, 'bot.env', 'GH_BOT')
     const repo = JSON.parse(

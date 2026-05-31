@@ -142,8 +142,12 @@ const checksFor = (pr) =>
   ghJson(['pr', 'checks', String(pr), '--json', 'name,bucket'])
 const isLocked = (pr) => existsSync(join(LOCK_DIR, `pr-${pr}.lock`))
 const hasLabel = (pr, label) => (pr.labels || []).some((l) => l.name === label)
-const linkedVim = (body) =>
-  (body || '').match(/\bVIM-\d+\b/i)?.[0]?.toUpperCase()
+const linkedVim = (body) => {
+  const b = body || ''
+  // prefer the Closes/Fixes/Resolves magic word; fall back to the first VIM-N mention
+  const closing = b.match(/\b(?:closes|fixes|resolves)\s+(VIM-\d+)\b/i)
+  return (closing?.[1] || b.match(/\bVIM-\d+\b/i)?.[0])?.toUpperCase()
+}
 
 // The review state machine.
 const computeState = (pr, ctx) => {
