@@ -806,6 +806,12 @@ describe('WorkspaceView - Command Palette Integration', () => {
       'browser:session-browser',
       'web'
     )
+
+    // Label is set once and never rolled back (no second undefined call).
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(mockSessionManager.setPaneUserLabel).toHaveBeenCalledTimes(1)
   })
 
   test(':next command switches to next session', async () => {

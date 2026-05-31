@@ -190,6 +190,37 @@ describe('buildWorkspaceCommands - happy paths', () => {
     expect(notifyInfo).not.toHaveBeenCalled()
   })
 
+  test(':rename-pane keeps a browser-pane label after the NoLiveAgent sync failure', async () => {
+    renameAgentSession.mockRejectedValueOnce(
+      new AgentRenameError('no live agent', 'no-live-agent')
+    )
+
+    const commands = buildWorkspaceCommands({
+      sessions: mockSessions,
+      activeSessionId: 'session-1',
+      createSession,
+      removeSession,
+      renameSession,
+      setPaneUserLabel,
+      renameAgentSession,
+      activePanePtyId: 'browser:p1',
+      activePaneAgentType: 'generic',
+      setActiveSessionId,
+      notifyInfo,
+    })
+
+    commands.find((c) => c.id === 'rename-pane')?.execute?.('web-tab')
+
+    expect(setPaneUserLabel).toHaveBeenCalledWith('browser:p1', 'web-tab')
+
+    await Promise.resolve()
+    await Promise.resolve()
+
+    // NoLiveAgent is suppressed for non-agent panes: label kept, no rollback.
+    expect(setPaneUserLabel).toHaveBeenCalledTimes(1)
+    expect(notifyInfo).not.toHaveBeenCalled()
+  })
+
   test(':rename-pane surfaces unexpected backend rename failure after local label update', async () => {
     renameAgentSession.mockRejectedValueOnce(new Error('pty write failed'))
 
