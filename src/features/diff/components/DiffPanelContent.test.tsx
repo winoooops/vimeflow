@@ -286,16 +286,19 @@ describe('DiffPanelContent', () => {
     render(<DiffPanelContent />)
 
     expect(screen.getByText('No changes to review')).toBeInTheDocument()
-    expect(
-      screen.getByText('Modified files will appear here')
-    ).toBeInTheDocument()
+    expect(screen.getByText(/nothing to diff or annotate/i)).toBeInTheDocument()
 
-    // Verify centering classes include w-full
+    // The empty state keeps a dormant toolbar (settings stay live) above a
+    // centered "no changes" panel, so the chrome persists when a diff appears.
     const wrapper = screen.getByTestId('diff-empty-state')
     expect(wrapper).toBeInTheDocument()
     expect(wrapper).toHaveClass('w-full')
-    expect(wrapper).toHaveClass('items-center')
-    expect(wrapper).toHaveClass('justify-center')
+    expect(
+      screen.getByRole('toolbar', { name: /diff toolbar/i })
+    ).toBeInTheDocument()
+    const panel = screen.getByTestId('diff-empty-panel')
+    expect(panel).toHaveClass('items-center')
+    expect(panel).toHaveClass('justify-center')
   })
 
   test('renders ChangedFilesList and Pierre MultiFileDiff when changes exist', (): void => {
@@ -1846,7 +1849,9 @@ describe('DiffPanelContent', () => {
         />
       )
 
-      expect(screen.getByLabelText(/hunk 1\/3/i)).toBeInTheDocument()
+      expect(
+        screen.getByRole('group', { name: /hunk 1\/3/i })
+      ).toBeInTheDocument()
     })
 
     test('clicking next-hunk advances focus: counter 2/3 and selectedLines from hunk 1', async (): Promise<void> => {
@@ -1862,7 +1867,9 @@ describe('DiffPanelContent', () => {
 
       await user.click(screen.getByRole('button', { name: /next hunk/i }))
 
-      expect(screen.getByLabelText(/hunk 2\/3/i)).toBeInTheDocument()
+      expect(
+        screen.getByRole('group', { name: /hunk 2\/3/i })
+      ).toBeInTheDocument()
 
       const diff = screen.getByTestId('multi-file-diff')
       expect(diff.getAttribute('data-selected-lines-start')).toBe('20')
@@ -1887,7 +1894,9 @@ describe('DiffPanelContent', () => {
       // Wrap around to hunk 0 (index 0)
       await user.click(screen.getByRole('button', { name: /next hunk/i }))
 
-      expect(screen.getByLabelText(/hunk 1\/3/i)).toBeInTheDocument()
+      expect(
+        screen.getByRole('group', { name: /hunk 1\/3/i })
+      ).toBeInTheDocument()
 
       const diff = screen.getByTestId('multi-file-diff')
       expect(diff.getAttribute('data-selected-lines-start')).toBe('1')
@@ -1907,7 +1916,9 @@ describe('DiffPanelContent', () => {
 
       await user.click(screen.getByRole('button', { name: /prev hunk/i }))
 
-      expect(screen.getByLabelText(/hunk 3\/3/i)).toBeInTheDocument()
+      expect(
+        screen.getByRole('group', { name: /hunk 3\/3/i })
+      ).toBeInTheDocument()
 
       const diff = screen.getByTestId('multi-file-diff')
       // Hunk 2 is deletion-only: oldStart=50, oldLines=2 → side=deletions, start=50, end=51
@@ -1931,7 +1942,9 @@ describe('DiffPanelContent', () => {
       await user.click(screen.getByRole('button', { name: /next hunk/i }))
       await user.click(screen.getByRole('button', { name: /next hunk/i }))
 
-      expect(screen.getByLabelText(/hunk 3\/3/i)).toBeInTheDocument()
+      expect(
+        screen.getByRole('group', { name: /hunk 3\/3/i })
+      ).toBeInTheDocument()
 
       const diff = screen.getByTestId('multi-file-diff')
       expect(diff.getAttribute('data-selected-lines-start')).toBe('50')
@@ -1967,7 +1980,9 @@ describe('DiffPanelContent', () => {
       // Advance to hunk 2 on multi.ts
       await user.click(screen.getByRole('button', { name: /next hunk/i }))
       await user.click(screen.getByRole('button', { name: /next hunk/i }))
-      expect(screen.getByLabelText(/hunk 3\/3/i)).toBeInTheDocument()
+      expect(
+        screen.getByRole('group', { name: /hunk 3\/3/i })
+      ).toBeInTheDocument()
 
       // Switch to a different file (1 hunk only)
       vi.spyOn(useFileDiffModule, 'useFileDiff').mockReturnValue(
@@ -2005,7 +2020,9 @@ describe('DiffPanelContent', () => {
       )
 
       // Focus must reset to 0: counter shows 1/1 (not 3/3 or out-of-range)
-      expect(screen.getByLabelText(/hunk 1\/1/i)).toBeInTheDocument()
+      expect(
+        screen.getByRole('group', { name: /hunk 1\/1/i })
+      ).toBeInTheDocument()
     })
 
     test('clamp-on-shrink: same-file refetch with fewer hunks clamps focus (valid counter, staging not blocked)', async (): Promise<void> => {
@@ -2021,7 +2038,9 @@ describe('DiffPanelContent', () => {
 
       // Focus the last hunk of the 3-hunk file (prev from hunk 0 wraps to 3/3).
       await user.click(screen.getByRole('button', { name: /prev hunk/i }))
-      expect(screen.getByLabelText(/hunk 3\/3/i)).toBeInTheDocument()
+      expect(
+        screen.getByRole('group', { name: /hunk 3\/3/i })
+      ).toBeInTheDocument()
 
       // Simulate a stage/discard refetch: SAME file (path + staged unchanged)
       // but the hunk array shrank 3 → 2 (the focused last hunk was discarded).
@@ -2054,7 +2073,9 @@ describe('DiffPanelContent', () => {
       // Index 2 clamps to 1: counter is the valid "2/2", never the invalid "3/2".
       // (The focused hunk now drives staging via the counter/index, not a
       // persistent Pierre selection — see the transient nav-flash design.)
-      expect(screen.getByLabelText(/hunk 2\/2/i)).toBeInTheDocument()
+      expect(
+        screen.getByRole('group', { name: /hunk 2\/2/i })
+      ).toBeInTheDocument()
       expect(screen.queryByLabelText(/hunk 3\/2/i)).not.toBeInTheDocument()
     })
   })
@@ -2140,7 +2161,7 @@ describe('DiffPanelContent', () => {
       ).toBeInTheDocument()
     })
 
-    test('onDiscardFeedback (Discard feedback chip) clears the batch', async (): Promise<void> => {
+    test('onDiscardFeedback (Discard action) clears the batch', async (): Promise<void> => {
       const user = userEvent.setup()
 
       render(
@@ -2172,7 +2193,7 @@ describe('DiffPanelContent', () => {
       ).toBeInTheDocument()
 
       await user.click(
-        screen.getByRole('button', { name: /discard feedback/i })
+        screen.getByRole('button', { name: /discard all feedback/i })
       )
 
       await waitFor(() =>

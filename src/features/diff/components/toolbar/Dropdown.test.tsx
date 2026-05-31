@@ -170,6 +170,22 @@ describe('Dropdown', () => {
     expect(await screen.findByText('high-contrast purple')).toBeInTheDocument()
   })
 
+  test('renders the leading material-symbol icon on the trigger when provided', () => {
+    render(
+      <Dropdown
+        label="theme"
+        value="pierre-dark"
+        options={themeOptions}
+        onChange={vi.fn()}
+        leadingIcon="palette"
+      />
+    )
+
+    // Material symbol ligature renders its name as text content on the trigger.
+    const trigger = screen.getByRole('button', { name: /pierre-dark/i })
+    expect(trigger).toHaveTextContent('palette')
+  })
+
   test('accepts numeric values via the widened generic', async () => {
     const user = userEvent.setup()
     const handleChange = vi.fn<(value: number) => void>()

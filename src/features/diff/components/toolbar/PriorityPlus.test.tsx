@@ -218,6 +218,53 @@ describe('PriorityPlus', () => {
     expect(screen.getByTestId('item-2')).toBeVisible()
   })
 
+  test('re-measures on remeasureKey change (width-only content swap) without a resize', () => {
+    const { rerender } = render(
+      <PriorityPlus maxRows={1} remeasureKey="short">
+        {renderItems(3)}
+      </PriorityPlus>
+    )
+
+    // All three fit on row 1 — no overflow chip.
+    stubLayout(
+      rootContainer('item-0'),
+      [
+        { offsetTop: 0, offsetHeight: 24, offsetLeft: 0, offsetWidth: 60 },
+        { offsetTop: 0, offsetHeight: 24, offsetLeft: 72, offsetWidth: 60 },
+        { offsetTop: 0, offsetHeight: 24, offsetLeft: 144, offsetWidth: 60 },
+      ],
+      600
+    )
+    fireResize()
+    expect(
+      screen.queryByRole('button', { name: /more controls/i })
+    ).not.toBeInTheDocument()
+
+    // A child's content grew (e.g. the file pill swapped in a longer filename),
+    // pushing item 2 onto row 2 — re-stub the new layout, then bump
+    // remeasureKey. No ResizeObserver fire: the remeasure must come from the key
+    // change alone (the bug codex flagged left this stale until a resize).
+    stubLayout(
+      rootContainer('item-0'),
+      [
+        { offsetTop: 0, offsetHeight: 24, offsetLeft: 0, offsetWidth: 60 },
+        { offsetTop: 0, offsetHeight: 24, offsetLeft: 72, offsetWidth: 60 },
+        { offsetTop: 30, offsetHeight: 24, offsetLeft: 0, offsetWidth: 60 },
+      ],
+      600
+    )
+
+    rerender(
+      <PriorityPlus maxRows={1} remeasureKey="a-much-longer-filename">
+        {renderItems(3)}
+      </PriorityPlus>
+    )
+
+    expect(
+      screen.getByRole('button', { name: /more controls/i })
+    ).toBeInTheDocument()
+  })
+
   test('defaults to a single visible row', () => {
     render(<PriorityPlus>{renderItems(3)}</PriorityPlus>)
 

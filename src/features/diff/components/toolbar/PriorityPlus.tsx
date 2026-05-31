@@ -30,6 +30,12 @@ interface PriorityPlusProps {
   children: readonly ReactNode[]
   maxRows?: number
   gap?: string
+  // Bump to force a re-measure when a child's rendered WIDTH changes without a
+  // change in child count or container size (e.g. the file pill swapping a
+  // short filename for a long one). PriorityPlus otherwise only re-measures on
+  // ResizeObserver fires + child-count changes, so a width-only content swap
+  // would leave a stale overflow cutoff until the next resize.
+  remeasureKey?: string | number
 }
 
 // Priority+ overflow: render all children, measure positions, hide anything
@@ -48,6 +54,7 @@ export const PriorityPlus = ({
   children,
   maxRows = 1,
   gap = 'gap-x-3 gap-y-2',
+  remeasureKey = undefined,
 }: PriorityPlusProps): ReactElement => {
   const containerRef = useRef<HTMLDivElement>(null)
   const itemRefs = useRef<(HTMLDivElement | null)[]>([])
@@ -80,6 +87,16 @@ export const PriorityPlus = ({
     itemRefs.current.length = children.length
     setOverflowFrom(null)
   }, [children.length])
+
+  // A child's rendered width can change without a child-count or container-size
+  // change (e.g. the file pill swapping a short filename for a long one). Mirror
+  // the ResizeObserver path — reset the cutoff AND bump the tick — so the
+  // measurement re-runs even when it would land on the same cutoff, or when
+  // nothing was overflowing yet (`setOverflowFrom(null)` alone is a no-op then).
+  useLayoutEffect(() => {
+    setOverflowFrom(null)
+    setResizeTick((t) => t + 1)
+  }, [remeasureKey])
 
   // Measurement pass — only runs while overflowFrom is null (Phase A render).
   // Sets overflowFrom to the cutoff index (or null = nothing overflows).
