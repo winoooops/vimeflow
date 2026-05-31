@@ -1,9 +1,10 @@
 import { describe, test, expect } from 'vitest'
 import {
+  getVisibleSessions,
   isOpenSessionStatus,
   pickNextVisibleSessionId,
 } from './pickNextVisibleSessionId'
-import type { Session, SessionStatus } from '../types'
+import type { Pane, Session, SessionStatus } from '../types'
 
 const buildSession = (id: string, status: SessionStatus): Session => ({
   id,
@@ -38,6 +39,58 @@ const buildSession = (id: string, status: SessionStatus): Session => ({
       tokens: { input: 0, output: 0, total: 0 },
     },
   },
+})
+
+const withBrowserPane = (
+  session: Session,
+  browserStatus: Pane['status']
+): Session => ({
+  ...session,
+  panes: [
+    ...session.panes,
+    {
+      id: 'browser-0',
+      kind: 'browser',
+      ptyId: `browser:${session.id}`,
+      cwd: '~',
+      agentType: 'generic',
+      status: browserStatus,
+      active: false,
+      browserUrl: 'https://example.com/',
+    },
+  ],
+})
+
+describe('getVisibleSessions', () => {
+  test('hides a fully-completed, non-active session', () => {
+    const sessions = [
+      buildSession('A', 'running'),
+      buildSession('B', 'completed'),
+    ]
+    expect(getVisibleSessions(sessions, 'A').map((s) => s.id)).toEqual(['A'])
+  })
+
+  test('keeps a completed session that still has a running browser pane', () => {
+    // The shell exited (status flips to completed) but a browser pane is still
+    // live — the tab must stay reachable even when the session is not active,
+    // or the native browser view is orphaned with no way back to it.
+    const sessions = [
+      buildSession('A', 'running'),
+      withBrowserPane(buildSession('B', 'completed'), 'running'),
+    ]
+    expect(getVisibleSessions(sessions, 'A').map((s) => s.id)).toEqual([
+      'A',
+      'B',
+    ])
+  })
+
+  test('hides a completed session whose browser pane has also exited', () => {
+    const sessions = [
+      buildSession('A', 'running'),
+      withBrowserPane(buildSession('B', 'completed'), 'completed'),
+    ]
+    expect(getVisibleSessions(sessions, 'A').map((s) => s.id)).toEqual(['A'])
+  })
 })
 
 describe('isOpenSessionStatus', () => {
@@ -88,6 +141,17 @@ describe('pickNextVisibleSessionId', () => {
       buildSession('C', 'completed'),
     ]
     expect(pickNextVisibleSessionId(sessions, 'C', 'C')).toBe('B')
+  })
+
+  test('treats a completed session with a live browser pane as visible', () => {
+    // B is completed and not active, but its browser pane is running, so it is
+    // visible — removing A picks B (the right neighbor) rather than skipping to C.
+    const sessions = [
+      buildSession('A', 'running'),
+      withBrowserPane(buildSession('B', 'completed'), 'running'),
+      buildSession('C', 'running'),
+    ]
+    expect(pickNextVisibleSessionId(sessions, 'A', 'A')).toBe('B')
   })
 
   test('returns undefined when only one visible session exists', () => {
