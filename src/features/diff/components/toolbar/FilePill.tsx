@@ -60,7 +60,12 @@ export const FilePill = ({
         </button>
       </Tooltip>
       <Tooltip content={fileName ?? `File ${counterText}`}>
+        {/* role="group" makes the aria-label a valid author name. ARIA 1.2
+            forbids names on the implicit `generic` role of a bare <div>, so
+            screen readers would otherwise discard the path + N/M position
+            (the visible text only shows the basename). */}
         <div
+          role="group"
           aria-label={
             fileName
               ? `file ${counterText}: ${fileName}`

@@ -20,7 +20,7 @@ describe('ChangeStepper', () => {
   test('renders the data_object glyph and the counter inside the labelled group', () => {
     renderStepper({ counterText: '1/3' })
 
-    const group = screen.getByLabelText(/hunk 1\/3/i)
+    const group = screen.getByRole('group', { name: /hunk 1\/3/i })
     expect(group).toHaveTextContent('data_object')
     expect(group).toHaveTextContent('1/3')
   })
@@ -28,7 +28,9 @@ describe('ChangeStepper', () => {
   test('renders 0/0 when there are no hunks', () => {
     renderStepper({ counterText: '0/0' })
 
-    expect(screen.getByLabelText(/hunk 0\/0/i)).toBeInTheDocument()
+    expect(
+      screen.getByRole('group', { name: /hunk 0\/0/i })
+    ).toBeInTheDocument()
   })
 
   test('clicking the vertical arrows fires onPrev / onNext when navEnabled', async () => {

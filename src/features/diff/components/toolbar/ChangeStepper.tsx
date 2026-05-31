@@ -34,7 +34,11 @@ export const ChangeStepper = ({
   onPrev,
   onNext,
 }: ChangeStepperProps): ReactElement => (
+  // role="group" makes the aria-label a valid author name — ARIA 1.2 forbids
+  // names on the implicit `generic` role of a bare <span>, so the hunk
+  // position would otherwise be discarded by screen readers.
   <span
+    role="group"
     aria-label={`hunk ${counterText}`}
     className="inline-flex items-center gap-[7px] h-[30px] pl-2.5 pr-1 rounded-md bg-secondary/[0.08] ring-1 ring-inset ring-secondary/[0.16]"
   >

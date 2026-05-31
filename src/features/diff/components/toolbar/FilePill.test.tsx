@@ -35,7 +35,7 @@ describe('FilePill', () => {
     renderPill({ counterText: '2/9' })
 
     // The accessible group name carries the position so screen readers get it.
-    const group = screen.getByLabelText(/file 2\/9/i)
+    const group = screen.getByRole('group', { name: /file 2\/9/i })
     // Material symbol ligature renders as text content.
     expect(group).toHaveTextContent('description')
     expect(group).toHaveTextContent('2/9')
@@ -48,7 +48,7 @@ describe('FilePill', () => {
     renderPill({ fileName: 'src/features/diff/App.tsx', counterText: '3/9' })
 
     expect(
-      screen.getByLabelText('file 3/9: src/features/diff/App.tsx')
+      screen.getByRole('group', { name: 'file 3/9: src/features/diff/App.tsx' })
     ).toBeInTheDocument()
   })
 

@@ -183,7 +183,9 @@ describe('DiffChipToolbar', () => {
     // File pill shows the basename of the selected path.
     expect(screen.getByText('App.tsx')).toBeInTheDocument()
     // File counter — currentFileIndex 1 of 9 → "2/9" (group accessible name).
-    expect(screen.getByLabelText(/file 2\/9/i)).toBeInTheDocument()
+    expect(
+      screen.getByRole('group', { name: /file 2\/9/i })
+    ).toBeInTheDocument()
 
     // Change stepper — vertical hunk arrows + counter.
     expect(
@@ -193,8 +195,11 @@ describe('DiffChipToolbar', () => {
     expect(
       screen.getByRole('button', { name: /next hunk/i })
     ).toBeInTheDocument()
+
     // Stepper group accessible name carries the ratio.
-    expect(screen.getByLabelText(/hunk 1\/3/i)).toBeInTheDocument()
+    expect(
+      screen.getByRole('group', { name: /hunk 1\/3/i })
+    ).toBeInTheDocument()
 
     // The speculative annotation tools (comment / highlight / erase) were
     // dropped — commenting is the gutter `+` affordance, and highlight/erase
@@ -268,25 +273,33 @@ describe('DiffChipToolbar', () => {
   test('counter chip renders 0/0 when there are no hunks', () => {
     renderToolbar({ totalHunks: 0 })
 
-    expect(screen.getByLabelText(/hunk 0\/0/i)).toBeInTheDocument()
+    expect(
+      screen.getByRole('group', { name: /hunk 0\/0/i })
+    ).toBeInTheDocument()
   })
 
   test('counter chip reflects focusedHunkIndex + 1', () => {
     renderToolbar({ totalHunks: 5, focusedHunkIndex: 2 })
 
-    expect(screen.getByLabelText(/hunk 3\/5/i)).toBeInTheDocument()
+    expect(
+      screen.getByRole('group', { name: /hunk 3\/5/i })
+    ).toBeInTheDocument()
   })
 
   test('file counter renders currentFileIndex + 1 / totalFiles', () => {
     renderToolbar({ currentFileIndex: 4, totalFiles: 9 })
 
-    expect(screen.getByLabelText(/file 5\/9/i)).toBeInTheDocument()
+    expect(
+      screen.getByRole('group', { name: /file 5\/9/i })
+    ).toBeInTheDocument()
   })
 
   test('file counter clamps to 1/N when nothing is selected (index -1)', () => {
     renderToolbar({ currentFileIndex: -1, totalFiles: 3 })
 
-    expect(screen.getByLabelText(/file 1\/3/i)).toBeInTheDocument()
+    expect(
+      screen.getByRole('group', { name: /file 1\/3/i })
+    ).toBeInTheDocument()
   })
 
   test('clicking the file arrows fires onPrevFile / onNextFile', async () => {
@@ -333,7 +346,9 @@ describe('DiffChipToolbar', () => {
     expect(onNextFile).not.toHaveBeenCalled()
 
     // Counter still shows the position.
-    expect(screen.getByLabelText(/file 1\/1/i)).toBeInTheDocument()
+    expect(
+      screen.getByRole('group', { name: /file 1\/1/i })
+    ).toBeInTheDocument()
   })
 
   test('the two counter groups carry distinguishing material icons', () => {
@@ -342,10 +357,10 @@ describe('DiffChipToolbar', () => {
     // This is what keeps the two `‹ N/M ›` arrow groups visually distinct.
     renderToolbar({ currentFileIndex: 0, totalFiles: 2, totalHunks: 3 })
 
-    const fileCounter = screen.getByLabelText(/file 1\/2/i)
+    const fileCounter = screen.getByRole('group', { name: /file 1\/2/i })
     expect(fileCounter).toHaveTextContent('description')
 
-    const hunkCounter = screen.getByLabelText(/hunk 1\/3/i)
+    const hunkCounter = screen.getByRole('group', { name: /hunk 1\/3/i })
     expect(hunkCounter).toHaveTextContent('data_object')
   })
 
@@ -646,7 +661,9 @@ describe('DiffChipToolbar', () => {
     test('counter shows focusedHunkIndex + 1 / totalHunks', () => {
       renderToolbar({ totalHunks: 3, focusedHunkIndex: 1 })
 
-      expect(screen.getByLabelText(/hunk 2\/3/i)).toBeInTheDocument()
+      expect(
+        screen.getByRole('group', { name: /hunk 2\/3/i })
+      ).toBeInTheDocument()
     })
   })
 
