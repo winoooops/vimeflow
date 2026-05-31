@@ -3,7 +3,7 @@ id: parser-resilience
 category: code-quality
 created: 2026-05-24
 last_updated: 2026-05-30
-ref_count: 3
+ref_count: 4
 ---
 
 # Parser Resilience
@@ -147,3 +147,14 @@ true` and drop the chunk.
   - Regression test `engine_stale_partial_watchdog_force_fires_on_caught_up` uses `with_stale_partial_watchdog(Duration::ZERO)` so the very next Eof with non-empty partial fires the watchdog; asserts orphaned partial is not decoded AND `on_caught_up` fires at least once.
 - **Code-review heuristic:** When a defensive guard correctly prevents one failure class, audit whether it introduces a new "silent persistent failure" class. The guard "don't fire boundary signal while X is true" is symmetric: if X never becomes false, the boundary signal never fires. The fix shape — watchdog/timeout + reset condition + force-progress — is the standard recovery for any guard whose unblock condition depends on external state (the JSONL writer, here) that can fail to materialize. Pair every "deferred-until-X" guard with a "force-progress if X stuck for too long" escape hatch. The escape MUST discard the still-pending state (not commit it to events) because if the unblock condition never arrived, the pending state is inherently incomplete or corrupt.
 - **Commit:** _(PR #302 upsource cycle 17 fix commit)_
+
+### 5. Recovery escape hatches must reach EVERY arm that fails to make progress, not just the "natural" one
+
+- **Source:** github-claude | PR #302 cycle 20 | 2026-05-31
+- **Severity:** MEDIUM
+- **File:** `crates/backend/src/agent/adapter/base/transcript_tail_service.rs`
+- **Finding:** Cycle 17's stale-partial watchdog (#4) lived only inside the `Ok(0)` EOF arm of `TranscriptTailService::run`'s read loop. Claude's post-cycle-19 review (MED 93%) pointed out that a reader stuck in a persistent error state (e.g., EIO on an NFS mount that disappears) never executes the `Ok(0)` branch — `last_byte_at` stays frozen at its last-successful-read timestamp, the elapsed check never fires, `on_caught_up` is never called, and decoders gating replay-bounded state on `on_caught_up` stay stuck indefinitely. The original cycle-17 fix solved the writer-crashed-mid-line scenario (which produces `Ok(0)` because the file's existing bytes have already been consumed) but missed the reader-side analogue (persistent `Err` with no intervening `Ok(0)`).
+- **Fix:** Hoist the watchdog check OUT of the `Ok(0)` arm to a post-match block that runs after every loop iteration EXCEPT `Ok(n)` (which `continue`s — fresh bytes resets the stale clock). Both `Ok(0)` and `Err` arms fall through to the watchdog. The `Ok(0)`'s natural `on_caught_up` (the replay→live boundary signal when partial is empty) is unchanged; only the stuck-buffer recovery path moved.
+- **Regression-test discipline:** Cycle 20's first regression test ended with `Step::EofStop` (returns `Ok(0)`), which gave the pre-cycle-20 Ok-arm-only watchdog a final EOF to fire from — so the test passed against both old and new implementations and didn't actually distinguish the fix. Codex-verify retry-1 (MED 0.93) caught this. Added a `Step::ErrStop` variant to the scripted reader that flips `stop` while returning `Err(...)`, so the loop exits via the Err arm with NO `Ok(0)` ever served. Pre-cycle-20 implementation has `caught.load() == 0` on this script; cycle-20 fires the watchdog and `caught.load() >= 1`.
+- **Code-review heuristic (extends #4's "deferred-until-X" rule):** When the recovery escape hatch is placed inside ONE specific arm of a state machine, audit whether there are other arms that can also fail to make progress without ever reaching that arm. The natural placement (the "nothing-to-read" branch) is rarely the only branch where the precondition holds. Hoist the escape to a shared point that EVERY non-progress branch reaches, or replicate it in each — but never let a single arm silently swallow the recovery path. **Test discipline:** when a regression test scripts an error scenario, end the script through the same arm that triggers the bug, not through an adjacent arm that happens to terminate the loop. Otherwise the test passes against the unfixed code and gives false confidence. The `ErrStop` shape (flips `stop` while returning the variant of interest) generalizes: when a scripted-reader / state-machine test harness has terminator variants, every error or boundary case needs its own terminator that exits via the same code path.
+- **Commit:** _(PR #302 upsource cycle 20 fix commit)_

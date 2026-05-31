@@ -184,44 +184,59 @@ impl TranscriptTailService {
                     // Same guard applies during skip mode — if we're in
                     // the middle of dropping a runaway line, the writer
                     // hasn't truly "caught up" yet.
-                    //
-                    // PR #302 cycle 17 F2 — stale-partial watchdog: if
-                    // `partial` (or skip-mode) has been stuck without
-                    // any new bytes for `STALE_PARTIAL_WATCHDOG`,
-                    // discard it and force-fire `on_caught_up` so
-                    // downstream decoders (e.g. `TestRunEmitter`)
-                    // exit replay mode and the user-visible UI
-                    // unblocks. Recovers from corrupt-file /
-                    // writer-crash / disk-full scenarios where the
-                    // terminating `\n` will never arrive.
                     if partial.is_empty() && !skip_until_newline {
                         self.decoder.on_caught_up();
-                    } else if last_byte_at.elapsed() >= self.stale_partial_watchdog {
-                        log::warn!(
-                            "{} tail: partial line stalled for >={:?} with no new bytes \
-                             (writer crashed mid-line, disk full, or corrupt file); \
-                             discarding {} buffered bytes and force-firing on_caught_up",
-                            self.provider_label,
-                            self.stale_partial_watchdog,
-                            partial.len(),
-                        );
-                        partial.clear();
-                        skip_until_newline = false;
-                        self.decoder.on_caught_up();
-                        // Reset so the watchdog doesn't refire every
-                        // poll iteration if the writer stays silent.
-                        last_byte_at = std::time::Instant::now();
                     }
                     std::thread::sleep(self.poll_interval);
                 }
                 Ok(n) => {
                     last_byte_at = std::time::Instant::now();
                     self.process_chunk(&chunk[..n], &mut partial, &mut skip_until_newline);
+                    // Fresh bytes arrived — skip the watchdog check.
+                    continue;
                 }
                 Err(e) => {
                     log::warn!("Error reading {}: {}", self.provider_label, e);
                     std::thread::sleep(self.poll_interval);
                 }
+            }
+            // PR #302 cycle 17 F2 + cycle 20 F1 — stale-partial
+            // watchdog: if `partial` (or skip-mode) has been stuck
+            // without any new bytes for `STALE_PARTIAL_WATCHDOG`,
+            // discard it and force-fire `on_caught_up` so downstream
+            // decoders (e.g. `TestRunEmitter`) exit replay mode and
+            // the user-visible UI unblocks. Recovers from
+            // corrupt-file / writer-crash / disk-full scenarios
+            // where the terminating `\n` will never arrive.
+            //
+            // **Hoisted outside the match (cycle 20 F1, Claude
+            // post-cycle-19 review MED 93%):** pre-cycle-20 the
+            // check lived only in the `Ok(0)` arm, so a reader
+            // stuck in a persistent error state (e.g., EIO on an
+            // NFS mount that goes away) would never hit the
+            // watchdog — `Ok(0)` never executes, `last_byte_at`
+            // stays frozen, and decoders gating replay-bounded
+            // state on `on_caught_up` stay stuck indefinitely. The
+            // `Ok(n)` arm uses `continue` above to skip this block
+            // (fresh bytes resets the stale clock); both `Ok(0)`
+            // and `Err` arms fall through to here.
+            if (!partial.is_empty() || skip_until_newline)
+                && last_byte_at.elapsed() >= self.stale_partial_watchdog
+            {
+                log::warn!(
+                    "{} tail: partial line stalled for >={:?} with no new bytes \
+                     (writer crashed mid-line, disk full, or corrupt file); \
+                     discarding {} buffered bytes and force-firing on_caught_up",
+                    self.provider_label,
+                    self.stale_partial_watchdog,
+                    partial.len(),
+                );
+                partial.clear();
+                skip_until_newline = false;
+                self.decoder.on_caught_up();
+                // Reset so the watchdog doesn't refire every poll
+                // iteration if the reader / writer stays silent.
+                last_byte_at = std::time::Instant::now();
             }
         }
     }
@@ -344,6 +359,13 @@ pub(crate) enum Step {
     EofStop,
     /// One read failure — the loop warns, sleeps, and continues.
     Err,
+    /// Like `Err`, but also flips `stop` so the loop exits after
+    /// this read. PR #302 cycle 20 retry-1 (codex MED 0.93): needed
+    /// so the persistent-Err regression test can terminate WITHOUT
+    /// giving the pre-cycle-20 code an `Ok(0)` to fire the watchdog
+    /// from — otherwise the test passes against both old and new
+    /// implementations.
+    ErrStop,
 }
 
 #[cfg(test)]
@@ -409,6 +431,13 @@ impl std::io::Read for ScriptedReader {
                 std::io::ErrorKind::Other,
                 "scripted read error",
             )),
+            Some(Step::ErrStop) => {
+                self.stop.store(true, Ordering::Release);
+                Err(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    "scripted read error (stop)",
+                ))
+            }
             Some(Step::Eof) => Ok(0),
             Some(Step::EofStop) | None => {
                 self.stop.store(true, Ordering::Release);
@@ -469,6 +498,57 @@ mod tests {
             Step::EofStop,
         ]);
         assert_eq!(lines, ["{\"a\":123}"]);
+    }
+
+    /// PR #302 cycle 20 F1 (Claude post-cycle-19 review MED 93%) —
+    /// stale-partial watchdog also fires under persistent read
+    /// errors. Pre-cycle-20 the watchdog lived only in the `Ok(0)`
+    /// arm, so a reader stuck on `Err` (e.g., EIO on an NFS mount
+    /// that disappears) would never trip the watchdog and decoders
+    /// would stay frozen. The fix hoisted the check out of the
+    /// match so both `Ok(0)` and `Err` arms reach it.
+    #[test]
+    fn engine_stale_partial_watchdog_fires_under_persistent_err() {
+        let stop = Arc::new(AtomicBool::new(false));
+        let dec = RecordingDecoder::default();
+        let lines = dec.lines.clone();
+        let caught = dec.caught_up.clone();
+        TranscriptTailService::new(Box::new(dec), "t")
+            .with_poll_interval(Duration::ZERO)
+            .with_stale_partial_watchdog(Duration::ZERO)
+            .run(
+                ScriptedReader::new(
+                    vec![
+                        // Partial line — never terminated.
+                        Step::Chunk(b"{\"a\":1"),
+                        // Reader enters persistent error state. NO
+                        // intervening `Ok(0)` — codex-verify retry-1
+                        // (cycle 20 MED 0.93) caught that the
+                        // original test ended with `EofStop`, which
+                        // returns `Ok(0)` and gave the pre-cycle-20
+                        // (Ok-arm-only) watchdog an opportunity to
+                        // fire from that final EOF. `ErrStop` flips
+                        // `stop` while returning `Err`, so the loop
+                        // exits via the Err arm and ONLY the hoisted
+                        // post-match watchdog can fire here.
+                        Step::Err,
+                        Step::Err,
+                        Step::ErrStop,
+                    ]
+                    .into_iter(),
+                    stop.clone(),
+                ),
+                stop,
+            );
+        let decoded = lines.lock().unwrap().clone();
+        assert!(
+            decoded.is_empty(),
+            "orphaned partial must not decode as a line under persistent Err",
+        );
+        assert!(
+            caught.load(Ordering::Acquire) >= 1,
+            "watchdog must force-fire on_caught_up even when Err is the only post-Chunk read",
+        );
     }
 
     /// PR #302 cycle 17 F2 (Claude post-cycle-16 review MED 85%) —
