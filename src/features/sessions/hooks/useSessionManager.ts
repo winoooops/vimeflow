@@ -1160,6 +1160,12 @@ export const useSessionManager = (
               agentType: 'generic',
               pid: result.pid,
               restoreData,
+              // Clear sticky title state so the new PTY session starts
+              // fresh — a user-renamed pane must not block ai-generated
+              // titles from the new agent session.
+              agentTitle: undefined,
+              agentTitleSource: undefined,
+              userLabel: undefined,
             }
 
             next[idx] = {

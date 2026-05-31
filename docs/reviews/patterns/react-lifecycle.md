@@ -2,8 +2,8 @@
 id: react-lifecycle
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-05-30
-ref_count: 8
+last_updated: 2026-05-31
+ref_count: 9
 ---
 
 # React Lifecycle
@@ -195,6 +195,14 @@ to avoid unintended re-runs (e.g., PTY respawning on every cwd change).
 - **Finding:** `PriorityPlus` wrapped each keyed toolbar chip in a `<div key={index}>`. When a chip was inserted or removed before stateful controls such as dropdowns, React reused the wrapper at the same index for a different logical child, allowing open/active state to migrate to the wrong chip.
 - **Fix:** Key wrapper nodes from each child's stable React key, falling back to the index only for unkeyed children. Added a regression test with a stateful keyed child that preserves state when another child is inserted before it.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 25. Sticky title state survives PTY restart because `replacementPane` spreads `...oldPane`
+
+- **Source:** github-codex-connector | PR #317 cycle 2 | 2026-05-31
+- **Severity:** P2
+- **File:** `src/features/sessions/hooks/useSessionManager.ts`
+- **Finding:** `restartSession` builds the replacement pane with `...oldPane`, so the new PTY inherits `agentTitleSource: 'user-renamed'`, `agentTitle`, and `userLabel` from the old pane. In that state the `agent-session-title` guard (see §24) drops every subsequent `ai-generated` title from the new agent session, leaving the old pane title stuck after restart unless the user manually renames again. The pane replacement is a genuine lifecycle reset — a new PTY, new PID, new `restoreData`, and `agentType` already resets to `'generic'` — but the title fields were carried forward silently.
+- **Fix:** Explicitly set `agentTitle: undefined`, `agentTitleSource: undefined`, and `userLabel: undefined` on the `replacementPane` object so the new PTY starts with a blank title slate. The user's explicit rename is ephemeral (documented non-goal: "no persistence beyond what the agent persists"), so clearing on restart is consistent with the design. Added a regression test that seeds a pane with `user-renamed` title and label, restarts the session, and asserts all three fields are undefined on the replacement pane. Code-review heuristic: when replacing an entity via object spread (`{ ...old, newProp }`), enumerate every field that MUST NOT survive the replacement — spread is "copy everything by default"; lifecycle resets need "start fresh by default".
 
 ### 21. Responsive coercion display state overwrote the saved user preference
 

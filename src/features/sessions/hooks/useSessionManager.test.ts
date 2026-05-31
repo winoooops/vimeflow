@@ -172,7 +172,7 @@ describe('useSessionManager', () => {
     // Seed an ai-generated title so the clear below has something to
     // wipe. A user-renamed first event is covered by the "cleared
     // agent-session-title cannot wipe a user-renamed agentTitle" test —
-    // user-renamed is sticky against later clears.
+    // user-renamed is sticky against later ai-generated clears.
     act(() => {
       titleListener()?.({
         sessionId: 'pty-1',
@@ -2813,6 +2813,73 @@ describe('useSessionManager', () => {
     })
 
     expect(result.current.sessions[0].agentType).toBe('generic')
+  })
+
+  test('restartSession clears sticky title fields so the new PTY starts fresh', async () => {
+    const service = createMockService()
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: 's1',
+      sessions: [
+        {
+          id: 's1',
+          cwd: '/tmp',
+          status: {
+            kind: 'Alive',
+            pid: 1,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+      ],
+    })
+
+    service.spawn = vi.fn().mockResolvedValue({
+      sessionId: 's2',
+      pid: 2,
+      cwd: '/tmp',
+    })
+    service.kill = vi.fn().mockResolvedValue(undefined)
+    service.reorderSessions = vi.fn().mockResolvedValue(undefined)
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    await waitFor(() => expect(titleListener()).toBeDefined())
+
+    // Seed a user-renamed title so the pane is in sticky state.
+    act(() => {
+      titleListener()?.({
+        sessionId: 's1',
+        agentSessionId: 'agent-uuid',
+        title: 'Old Task',
+        source: 'user-renamed',
+      })
+    })
+
+    act(() => {
+      result.current.setPaneUserLabel('s1', 'renamed-task')
+    })
+
+    const paneBefore = result.current.sessions[0]?.panes[0]
+    expect(paneBefore?.agentTitle).toBe('Old Task')
+    expect(paneBefore?.agentTitleSource).toBe('user-renamed')
+    expect(paneBefore?.userLabel).toBe('renamed-task')
+
+    await act(async () => {
+      result.current.restartSession('s1')
+      await vi.waitFor(
+        () => {
+          expect(result.current.sessions[0].panes[0].ptyId).toBe('s2')
+        },
+        { timeout: 1000 }
+      )
+    })
+
+    const paneAfter = result.current.sessions[0]?.panes[0]
+    expect(paneAfter?.agentTitle).toBeUndefined()
+    expect(paneAfter?.agentTitleSource).toBeUndefined()
+    expect(paneAfter?.userLabel).toBeUndefined()
   })
 
   // F2 regression: events fired AFTER listSessions resolves but BEFORE the

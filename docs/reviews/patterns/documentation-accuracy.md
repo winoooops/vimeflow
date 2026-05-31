@@ -2,8 +2,8 @@
 id: documentation-accuracy
 category: code-quality
 created: 2026-04-09
-last_updated: 2026-05-30
-ref_count: 22
+last_updated: 2026-05-31
+ref_count: 23
 ---
 
 # Documentation Accuracy
@@ -701,4 +701,13 @@ Stale documentation misleads future contributors and review agents.
 - **File:** `src/features/sessions/hooks/useSessionManager.ts`
 - **Finding:** The cycle-0 commit message stated "a real lifecycle reset clears via the agent emitting an explicit `user-renamed` empty title" as the documented escape hatch out of the sticky-guard state introduced in [[react-lifecycle]] §24. But the guard evaluated `cleared` (empty title) before `payload.source`, so a `user-renamed + empty` event was caught by `if (cleared) { return pane }` and silently swallowed — the stated escape hatch did not exist. Dormant today (no current code path emits `user-renamed + empty`), but the false claim would mislead future contributors who try to wire a programmatic lifecycle-reset hook (e.g. `:clear-pane-name` command, agent-session-end handler) — the event would fire, no error would surface, and the pane would remain stuck on the user's prior rename indefinitely.
 - **Fix:** Restructured the guard to gate on `payload.source` alone: `if (agentTitleSource === 'user-renamed' && payload.source === 'ai-generated') return pane`. user-renamed events (including `user-renamed + empty`) now fall through to the standard cleared path, which clears `agentTitle`, `agentTitleSource`, and `userLabel` — matching the stated design intent. Added a regression test (`user-renamed with empty title clears the sticky guard`) that locks the documented behavior in code so it can't drift back to dormant-only without breaking CI. Code-review heuristic: when a commit message documents an "escape hatch" or "design intent" not exercised by any current call site, add a test that locks the documented behavior in place — otherwise the divergence between doc and code is invisible until someone tries to use the hatch and finds it silently no-op'd.
+- **Commit:** same commit as this entry
+
+### 75. Test comment overstates guard scope from "ai-generated clears" to "all clears"
+
+- **Source:** github-claude | PR #317 cycle 2 | 2026-05-31
+- **Severity:** LOW
+- **File:** `src/features/sessions/hooks/useSessionManager.test.ts`
+- **Finding:** A test comment explaining why the seed source was changed from `user-renamed` to `ai-generated` stated: "user-renamed is sticky against later clears." The guard predicate is `agentTitleSource === 'user-renamed' && payload.source === 'ai-generated'` — it blocks ONLY `ai-generated` clears, not `user-renamed + empty` events (the documented lifecycle-reset escape hatch). The neighboring test `user-renamed with empty title clears the sticky guard` demonstrates exactly that a `user-renamed + empty` event falls through and clears the sticky state, making the comment directly contradictory to tested behavior. A future contributor reading only this comment could incorrectly conclude that ALL clear events are blocked once sticky, and design a lifecycle-reset mechanism that emits `ai-generated + empty` instead of `user-renamed + empty` — the wrong event would be swallowed by the guard, the reset would silently no-op, and the pane would remain stuck indefinitely with no error.
+- **Fix:** Changed the comment to "user-renamed is sticky against later **ai-generated** clears" so the phrasing matches the actual guard predicate. Code-review heuristic: when a guard predicate is narrow (filters on a specific source/value), every comment describing its effect must repeat that narrow qualifier — generic phrasing ("clears", "updates", "events") drifts toward overstating scope and misleads future readers who rely on comments as a behavioral contract.
 - **Commit:** same commit as this entry

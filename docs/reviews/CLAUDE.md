@@ -44,14 +44,14 @@ When appending findings to a pattern file, label the source so future readers ca
 | Pattern                                                              | Category           | Findings | Refs | Last Updated |
 | -------------------------------------------------------------------- | ------------------ | -------- | ---- | ------------ |
 | [Filesystem Scope](patterns/filesystem-scope.md)                     | security           | 21       | 3    | 2026-05-20   |
-| [React Lifecycle](patterns/react-lifecycle.md)                       | react-patterns     | 24       | 8    | 2026-05-30   |
+| [React Lifecycle](patterns/react-lifecycle.md)                       | react-patterns     | 25       | 9    | 2026-05-31   |
 | [Resource Cleanup](patterns/resource-cleanup.md)                     | react-patterns     | 3        | 3    | 2026-05-24   |
 | [Cross-Platform Paths](patterns/cross-platform-paths.md)             | cross-platform     | 4        | 3    | 2026-05-07   |
 | [Debug Artifacts](patterns/debug-artifacts.md)                       | code-quality       | 5        | 0    | 2026-05-09   |
 | [Generated Artifacts](patterns/generated-artifacts.md)               | code-quality       | 3        | 2    | 2026-05-25   |
 | [Testing Gaps](patterns/testing-gaps.md)                             | testing            | 55       | 25   | 2026-05-28   |
 | [Terminal Input Handling](patterns/terminal-input-handling.md)       | terminal           | 4        | 2    | 2026-05-24   |
-| [Documentation Accuracy](patterns/documentation-accuracy.md)         | code-quality       | 74       | 22   | 2026-05-30   |
+| [Documentation Accuracy](patterns/documentation-accuracy.md)         | code-quality       | 75       | 23   | 2026-05-31   |
 | [Accessibility](patterns/accessibility.md)                           | a11y               | 25       | 6    | 2026-05-09   |
 | [Async Race Conditions](patterns/async-race-conditions.md)           | react-patterns     | 44       | 12   | 2026-05-25   |
 | [Tokio Blocking On Async](patterns/tokio-blocking-on-async.md)       | backend            | 2        | 1    | 2026-05-20   |
