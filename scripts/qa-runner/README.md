@@ -12,7 +12,7 @@ Design + rationale: [`docs/explorations/linear-agent-cicd-pilot.html`](../../doc
     runner per eligible PR, and post status to Linear via the API key.
                  │
                  ▼  per PR, in its own worktree:
- ② kimi --afk  following playbook.md  — poll → fix → CODEX GATE → commit →
+ ② kimi --afk  running the upsource-review skill  — poll → fix → CODEX GATE → commit →
     push → reply/resolve threads → repeat until clean.   (the inner contract)
                  │
                  ▼

@@ -1,0 +1,193 @@
+#!/usr/bin/env node
+// QA runner — inner runner (increment 2, skill-based).
+//
+// Dispatches a headless kimi that runs the ported lifeline `upsource-review`
+// skill on a PR's worktree to drive its review findings to zero. DRY-RUN by
+// default (kimi stops before commit/push; the PR is never touched). `--push`
+// arms the live path (kimi commits/pushes; status posts to the linked Linear
+// issue).
+//
+// kimi loads the skill via `--skills-dir` (the lifeline plugin cache) and is
+// invoked with `/skill:upsource-review <PR#>`. The skill's helper scripts
+// resolve their dir via a `skills/upsource-review` symlink we create in the
+// worktree (the SKILL.md bootstrap looks for `skills/upsource-review`). codex is
+// the verify gate (inside the skill). See README.md.
+
+import { execFileSync, spawnSync } from 'node:child_process'
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  rmSync,
+  symlinkSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs'
+import { homedir } from 'node:os'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url))
+const LOCK_DIR = join(SCRIPT_DIR, '.locks')
+const KIMI_TIMEOUT_MS = 25 * 60 * 1000
+
+const out = (s = '') => process.stdout.write(`${s}\n`)
+const die = (s, code = 1) => {
+  process.stderr.write(`${s}\n`)
+  process.exit(code)
+}
+const sh = (cmd, args, opts = {}) =>
+  execFileSync(cmd, args, {
+    encoding: 'utf8',
+    maxBuffer: 32 * 1024 * 1024,
+    ...opts,
+  })
+
+// Latest lifeline version in the plugin cache that ships the skill.
+const lifelineSkillsDir = () => {
+  const root = join(
+    homedir(),
+    '.claude',
+    'plugins',
+    'cache',
+    'lifeline',
+    'lifeline'
+  )
+  const versions = readdirSync(root)
+    .filter((v) => existsSync(join(root, v, 'skills', 'upsource-review')))
+    .sort()
+  if (!versions.length)
+    die('lifeline upsource-review skill not found in the plugin cache.')
+  return join(root, versions[versions.length - 1], 'skills')
+}
+
+const mainRoot = () =>
+  dirname(
+    sh('git', [
+      'rev-parse',
+      '--path-format=absolute',
+      '--git-common-dir',
+    ]).trim()
+  )
+
+const ensureWorktree = (pr, branch, live, skillsDir) => {
+  const wt = join(mainRoot(), '.claude', 'worktrees', `qa-pr-${pr}`)
+  if (!existsSync(wt)) {
+    sh('git', ['fetch', 'origin', branch, '-q'])
+    if (live) {
+      sh('git', ['worktree', 'add', '-B', branch, wt, `origin/${branch}`])
+    } else {
+      // dry-run: throwaway branch with no upstream — an accidental push has no target
+      sh('git', [
+        'worktree',
+        'add',
+        '-b',
+        `qa/dryrun-${pr}`,
+        wt,
+        `origin/${branch}`,
+      ])
+      try {
+        sh('git', ['-C', wt, 'branch', '--unset-upstream'])
+      } catch {
+        /* no upstream to unset */
+      }
+    }
+  }
+  // The skill's helper scripts bootstrap from `skills/upsource-review` (repo-relative);
+  // make that resolve inside the worktree.
+  mkdirSync(join(wt, 'skills'), { recursive: true })
+  const link = join(wt, 'skills', 'upsource-review')
+  rmSync(link, { recursive: true, force: true })
+  symlinkSync(join(skillsDir, 'upsource-review'), link)
+  return wt
+}
+
+const invocation = (pr, live) => {
+  const base = `/skill:upsource-review ${pr}`
+  if (live) return base
+  return (
+    `${base}\n\n` +
+    'MODE: DRY RUN — run the cycle through the codex verify gate ONLY, then STOP. ' +
+    'Do NOT commit, push, reply, or resolve anything; do NOT modify the PR or any thread. ' +
+    'Leave changes in the working tree and output: the findings, the fix per finding ' +
+    '(or skip + one-line rationale), the codex verdict, and the staged diff. This is a ' +
+    'capability test — inspected before anything goes live.'
+  )
+}
+
+const run = (pr, live) => {
+  mkdirSync(LOCK_DIR, { recursive: true })
+  const lock = join(LOCK_DIR, `pr-${pr}.lock`)
+  if (existsSync(lock))
+    die(`PR #${pr} locked (run in flight). rm ${lock} to override.`, 3)
+  writeFileSync(lock, `pid ${process.pid}\n`)
+  try {
+    const info = JSON.parse(
+      sh('gh', [
+        'pr',
+        'view',
+        String(pr),
+        '--json',
+        'number,headRefName,url,body,state',
+      ])
+    )
+    if (info.state !== 'OPEN') die(`PR #${pr} is ${info.state}, not OPEN.`)
+    const branch = info.headRefName
+    const skillsDir = lifelineSkillsDir()
+    const wt = ensureWorktree(pr, branch, live, skillsDir)
+    out(
+      `${live ? 'LIVE' : 'DRY-RUN'}: kimi → /skill:upsource-review ${pr}  (branch ${branch}, worktree ${wt})`
+    )
+    const r = spawnSync(
+      'kimi',
+      [
+        '--afk',
+        '--print',
+        '-w',
+        wt,
+        '--skills-dir',
+        skillsDir,
+        '-p',
+        invocation(pr, live),
+      ],
+      { stdio: 'inherit', timeout: KIMI_TIMEOUT_MS }
+    )
+    out(`\nkimi exit: ${r.status ?? `signal ${r.signal}`}`)
+    out('--- worktree changes ---')
+    out(sh('git', ['-C', wt, 'status', '--short']) || '(none)')
+    if (live && r.status === 0) {
+      const m = (info.body || '').match(/\b(VIM-\d+)\b/i)
+      if (m) {
+        spawnSync(
+          'node',
+          [
+            join(SCRIPT_DIR, 'lib', 'linear-status.mjs'),
+            m[1],
+            `QA runner: ran an upsource-review cycle on PR #${pr} (${info.url}).`,
+          ],
+          { stdio: 'inherit' }
+        )
+      } else {
+        out('(no VIM-N in the PR body — skipped Linear status.)')
+      }
+    }
+  } finally {
+    try {
+      unlinkSync(lock)
+    } catch {
+      /* lock already gone */
+    }
+  }
+}
+
+const main = () => {
+  const argv = process.argv.slice(2)
+  const pr = Number(argv.find((a) => /^\d+$/.test(a)))
+  if (!pr)
+    die(
+      'usage: run.mjs <PR#> [--push]   (default = dry-run; --push arms the live path)'
+    )
+  run(pr, argv.includes('--push'))
+}
+
+main()
