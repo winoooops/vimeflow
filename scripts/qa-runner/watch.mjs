@@ -103,10 +103,17 @@ const unresolvedThreads = (owner, name, pr) => {
 // "patch is correct" verdict. A malicious workflow file is out of scope here —
 // that's a repo-permissions boundary (protect .github/workflows/).
 const claudeVerdictClean = (owner, name, pr) => {
-  const comments = ghJson([
-    'api',
-    `repos/${owner}/${name}/issues/${pr}/comments?per_page=100`,
-  ])
+  const comments = JSON.parse(
+    execFileSync('jq', ['-s', 'add'], {
+      encoding: 'utf8',
+      input: gh([
+        'api',
+        `repos/${owner}/${name}/issues/${pr}/comments`,
+        '--paginate',
+      ]),
+      maxBuffer: 16 * 1024 * 1024,
+    })
+  )
   const last = comments
     .filter(
       (c) =>
@@ -154,10 +161,10 @@ const computeState = (pr, ctx) => {
   const vim = linkedVim(view.body)
   let state, detail
   if (ci === 'fail') [state, detail] = ['CI_RED', 'non-review CI failing']
-  else if (threads > 0)
-    [state, detail] = ['NEEDS_FIX', `${threads} unresolved thread(s)`]
   else if (claudePending || ci === 'pending')
     [state, detail] = ['WAITING', 'CI / Claude re-running']
+  else if (threads > 0)
+    [state, detail] = ['NEEDS_FIX', `${threads} unresolved thread(s)`]
   else if (verdict === false)
     [state, detail] = ['NEEDS_FIX', 'Claude verdict: patch has issues']
   else if (verdict === null)
@@ -192,7 +199,13 @@ const approve = (pr, vim, ctx) => {
   const env = botProcessEnv(ctx.orchBot)
   const merger = botLabel(ctx.orchBot)
   out(`           → APPROVING as ${merger}: squash-merge #${pr.number}`)
-  gh(['pr', 'review', String(pr.number), '--approve'], env)
+  const reviews = ghJson(['pr', 'view', String(pr.number), '--json', 'reviews'])
+  const alreadyApproved = (reviews.reviews || []).some(
+    (r) => r.state === 'APPROVED' && r.author?.login === ctx.approverLogin
+  )
+  if (!alreadyApproved) {
+    gh(['pr', 'review', String(pr.number), '--approve'], env)
+  }
   gh(['pr', 'merge', String(pr.number), '--squash'], env)
   out(`           ✓ MERGED`)
   // Delete the merged branch REMOTELY — `gh --delete-branch` deletes the LOCAL
@@ -383,6 +396,7 @@ const main = () => {
     return i >= 0 ? argv[i + 1] : undefined
   }
   const { owner, name } = repoSlug()
+  const orchBot = loadBot(SCRIPT_DIR, 'orchestrator.env', 'GH_ORCH')
   const ctx = {
     owner,
     name,
@@ -392,7 +406,8 @@ const main = () => {
     all: has('all'),
     pr: val('pr') ? Number(val('pr')) : undefined,
     maxParallel: Number(val('max')) || MAX_PARALLEL,
-    orchBot: loadBot(SCRIPT_DIR, 'orchestrator.env', 'GH_ORCH'),
+    orchBot,
+    approverLogin: orchBot?.user ?? ghJson(['api', 'user']).login,
   }
   if (cmd === 'scan') return scan(ctx)
   if (cmd === 'tick') return tick(ctx)

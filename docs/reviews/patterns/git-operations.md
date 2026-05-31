@@ -2,7 +2,7 @@
 id: git-operations
 category: correctness
 created: 2026-04-09
-last_updated: 2026-05-25
+last_updated: 2026-05-31
 ref_count: 10
 ---
 
@@ -212,3 +212,12 @@ between display and mutation operations.
 - **Finding:** The mock `rawDiff` synthesizer used `a/dev/null` or `b/dev/null` in the leading `diff --git` header for added/deleted files. Git uses the real file path on both sides of that header and reserves `/dev/null` for the subsequent `---` / `+++` patch-side lines, so future `git apply` consumers would interpret `dev/null` as a literal path.
 - **Fix:** Build `diff --git` sides from the real non-null path for added/deleted files while preserving `/dev/null` only in `---` / `+++`. Regression tests cover explicit `/dev/null` fixture metadata and inferred all-added/all-removed hunks.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 23. ensureWorktree: bot remote config skipped for reused worktrees
+
+- **Source:** github-claude | PR #320 | 2026-05-31
+- **Severity:** MEDIUM
+- **File:** `scripts/qa-runner/run.mjs`
+- **Finding:** The guard `if (bot && live && !existing)` skips HTTPS remote + credential helper setup for reused worktrees. A worktree created without a bot identity retains its original remote; the bot's `GH_TOKEN` is injected into env but git pushes over the old remote, breaking the author≠approver invariant.
+- **Fix:** Remove the `!existing` guard so remote config runs unconditionally when `bot && live`.
+- **Commit:** `7644ec4` + cycle-2 fix

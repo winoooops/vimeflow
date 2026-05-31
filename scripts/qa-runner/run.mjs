@@ -18,13 +18,15 @@
 
 import { execFileSync, spawnSync } from 'node:child_process'
 import {
+  closeSync,
   existsSync,
   mkdirSync,
+  openSync,
   readdirSync,
   rmSync,
   symlinkSync,
   unlinkSync,
-  writeFileSync,
+  writeSync,
 } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -148,7 +150,7 @@ const ensureWorktree = (pr, branch, live, skillsDir, bot, repo) => {
   // Live + bot: push as the bot over HTTPS. The gh credential helper reads GH_TOKEN
   // at push time, so the bot token is never written to git config. A reused worktree
   // already shares the repo's (HTTPS + helper) remote config, so skip the rewrite.
-  if (bot && live && !existing) {
+  if (bot && live) {
     sh('git', [
       '-C',
       wt,
@@ -184,9 +186,15 @@ const invocation = (pr, live) => {
 const run = (pr, live) => {
   mkdirSync(LOCK_DIR, { recursive: true })
   const lock = join(LOCK_DIR, `pr-${pr}.lock`)
-  if (existsSync(lock))
-    die(`PR #${pr} locked (run in flight). rm ${lock} to override.`, 3)
-  writeFileSync(lock, `pid ${process.pid}\n`)
+  try {
+    const fd = openSync(lock, 'wx')
+    writeSync(fd, `pid ${process.pid}\n`)
+    closeSync(fd)
+  } catch (e) {
+    if (e.code === 'EEXIST')
+      die(`PR #${pr} locked (run in flight). rm ${lock} to override.`, 3)
+    throw e
+  }
   try {
     const info = JSON.parse(
       sh('gh', [
