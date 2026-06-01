@@ -217,7 +217,7 @@ between display and mutation operations.
 
 - **Source:** github-claude | PR #320 | 2026-05-31
 - **Severity:** MEDIUM
-- **File:** `scripts/qa-runner/run.mjs`
+- **File:** `scripts/qa-runner/run.js`
 - **Finding:** The guard `if (bot && live && !existing)` skips HTTPS remote + credential helper setup for reused worktrees. A worktree created without a bot identity retains its original remote; the bot's `GH_TOKEN` is injected into env but git pushes over the old remote, breaking the author≠approver invariant.
 - **Fix:** Remove the `!existing` guard so remote config runs unconditionally when `bot && live`.
 - **Commit:** `7644ec4` + cycle-2 fix
@@ -226,7 +226,7 @@ between display and mutation operations.
 
 - **Source:** github-claude | PR #320 round 1 | 2026-05-31
 - **Severity:** LOW
-- **File:** `scripts/qa-runner/watch.mjs`
+- **File:** `scripts/qa-runner/watch.js`
 - **Finding:** `ensureWorktree()` created `.claude/worktrees/qa-pr-N` per PR, but `approve()` never cleaned them up after squash-merge. Over many PRs the worktrees accumulated, holding git references that prevented GC.
 - **Fix:** Added `git worktree remove --force` in `approve()\'s` success path, right after remote branch deletion.
 - **Commit:** same commit as this entry
@@ -235,7 +235,7 @@ between display and mutation operations.
 
 - **Source:** github-codex-connector | PR #320 round 3 | 2026-05-31
 - **Severity:** P1 / HIGH
-- **File:** `scripts/qa-runner/watch.mjs`
+- **File:** `scripts/qa-runner/watch.js`
 - **Finding:** `approve()` unconditionally deleted the remote branch via base-repo API after merge. For fork PRs, `headRefName` is the contributor's branch name; the deletion would remove a same-named base-repo branch instead.
 - **Fix:** Fetched `isCrossRepository` from `gh pr view\' and gated the remote ref-delete on `!isCrossRepository`.
 - **Commit:** same commit as this entry

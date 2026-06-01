@@ -444,7 +444,7 @@ prevent showing previous data.
 
 - **Source:** github-claude | PR #320 | 2026-05-31
 - **Severity:** MEDIUM
-- **File:** `scripts/qa-runner/run.mjs`
+- **File:** `scripts/qa-runner/run.js`
 - **Finding:** `existsSync(lock)` followed by `writeFileSync(lock, ...)` is non-atomic; two concurrent processes can both pass the existence check before either writes, resulting in double-dispatch.
 - **Fix:** Replace with `fs.openSync(lock, 'wx')` wrapped in try/catch; `EEXIST` means another process holds the lock.
 - **Commit:** `7644ec4` + cycle-2 fix

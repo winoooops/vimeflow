@@ -283,7 +283,7 @@ failed" must mean the editor shows the original file, not the requested one.
 
 - **Source:** github-claude | PR #320 | 2026-05-31
 - **Severity:** HIGH
-- **File:** `scripts/qa-runner/watch.mjs`
+- **File:** `scripts/qa-runner/watch.js`
 - **Finding:** `computeState` checks `threads > 0` before `claudePending`, so a pending Claude review is ignored when open threads exist. The watcher dispatches a fix cycle, advances HEAD, and later reads Claude's stale verdict for the pre-fix SHA as "patch is correct".
 - **Fix:** Swap the priority arms so `claudePending || ci === 'pending'` is evaluated before `threads > 0`.
 - **Commit:** `7644ec4` + cycle-2 fix
@@ -292,7 +292,7 @@ failed" must mean the editor shows the original file, not the requested one.
 
 - **Source:** github-claude | PR #320 | 2026-05-31
 - **Severity:** HIGH
-- **File:** `scripts/qa-runner/watch.mjs`
+- **File:** `scripts/qa-runner/watch.js`
 - **Finding:** REST API call uses `?per_page=100` with no pagination loop. On PRs with >100 issue comments, the latest Claude review is invisible and the PR is permanently stuck in `WAITING`.
 - **Fix:** Use `gh api --paginate` piped through `jq -s add` to concatenate all pages before filtering.
 - **Commit:** `7644ec4` + cycle-2 fix
@@ -301,7 +301,7 @@ failed" must mean the editor shows the original file, not the requested one.
 
 - **Source:** github-claude | PR #320 | 2026-05-31
 - **Severity:** MEDIUM
-- **File:** `scripts/qa-runner/watch.mjs`
+- **File:** `scripts/qa-runner/watch.js`
 - **Finding:** `approve()` calls `gh pr review --approve` then `gh pr merge --squash` sequentially. On merge failure, the PR stays approved; the next tick posts another approval before retrying merge, spamming the timeline.
 - **Fix:** Query existing PR reviews and skip `--approve` if the effective approver identity (bot or ambient `gh` user) already approved.
 - **Commit:** `7644ec4` + cycle-2 fix
@@ -310,7 +310,7 @@ failed" must mean the editor shows the original file, not the requested one.
 
 - **Source:** github-claude | PR #320 round 1 | 2026-05-31
 - **Severity:** MEDIUM
-- **File:** `scripts/qa-runner/watch.mjs`
+- **File:** `scripts/qa-runner/watch.js`
 - **Finding:** `postLinear(…, 'In Progress')` was called before the `ctx.execute` guard, so every report-only tick falsely transitioned linked Linear issues to "In Progress" even when no fix cycle ran.
 - **Fix:** Moved `postLinear` inside the `ctx.execute` block so it only fires when a real fix cycle is dispatched.
 - **Commit:** same commit as this entry

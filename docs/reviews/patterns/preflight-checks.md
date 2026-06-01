@@ -35,7 +35,7 @@ When adding / removing / refactoring preflight checks:
 
 - **Source:** github-claude | PR #320 round 1 | 2026-05-31
 - **Severity:** MEDIUM
-- **File:** `scripts/qa-runner/watch.mjs`
+- **File:** `scripts/qa-runner/watch.js`
 - **Finding:** `computeState()\'s` two most expensive calls — `unresolvedThreads()` (paginated GraphQL) and `claudeVerdictClean()` (paginated REST) — ran before the CI fail / Claude pending early-exits, wasting API quota on PRs that would exit cheaply.
 - **Fix:** Deferred both expensive calls until inside the `else` branch after all cheap guard checks pass.
 - **Commit:** same commit as this entry
@@ -44,7 +44,7 @@ When adding / removing / refactoring preflight checks:
 
 - **Source:** github-codex-connector | PR #320 round 1 | 2026-05-31
 - **Severity:** P1 / HIGH
-- **File:** `scripts/qa-runner/watch.mjs`
+- **File:** `scripts/qa-runner/watch.js`
 - **Finding:** `computeState()` enumerated negative states (missing, pending, fail) to block on Claude check status, but `skipping` and `cancel` buckets bypassed the gate. An old clean Claude comment could still let the PR reach `GOOD_SHAPE` and auto-merge without a fresh review.
 - **Fix:** Replaced negative-state enumeration with a single positive gate `claudeReady = claudeCheck?.bucket === 'pass'`; block on `!claudeReady` so any non-pass state (including skipped/cancelled) waits.
 - **Commit:** same commit as this entry

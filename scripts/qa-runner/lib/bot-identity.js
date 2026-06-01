@@ -1,6 +1,6 @@
 // Shared bot-identity loader for the QA runner's two roles:
-//   inner / fixer        → bot.env          (GH_BOT_*)   — used by run.mjs (kimi)
-//   outer / orchestrator → orchestrator.env  (GH_ORCH_*)  — used by watch.mjs (merge)
+//   inner / fixer        → bot.env          (GH_BOT_*)   — used by run.js (kimi)
+//   outer / orchestrator → orchestrator.env  (GH_ORCH_*)  — used by watch.js (merge)
 //
 // Each file holds a separate GitHub account so the bot that WRITES the fix is a
 // distinct identity from the bot that MERGES it — author ≠ approver, which also
@@ -13,17 +13,24 @@ import { join } from 'node:path'
 // Read `<scriptDir>/<file>` and pull the `<prefix>_TOKEN|USER|EMAIL` keys.
 export const loadBot = (scriptDir, file, prefix) => {
   const f = join(scriptDir, file)
-  if (!existsSync(f)) return null
+  if (!existsSync(f)) {
+    return null
+  }
   const want = new Set([`${prefix}_TOKEN`, `${prefix}_USER`, `${prefix}_EMAIL`])
   const env = {}
   for (const line of readFileSync(f, 'utf8').split('\n')) {
     const m = line.match(/^\s*(?:export\s+)?([A-Z_]+)\s*=\s*(.+?)\s*$/)
-    if (m && want.has(m[1])) env[m[1]] = m[2].replace(/^["']|["']$/g, '')
+    if (m && want.has(m[1])) {
+      env[m[1]] = m[2].replace(/^["']|["']$/g, '')
+    }
   }
   const token = env[`${prefix}_TOKEN`]
   const user = env[`${prefix}_USER`]
   const email = env[`${prefix}_EMAIL`]
-  if (!token || !user || !email || token.includes('xxxx')) return null
+  if (!token || !user || !email || token.includes('xxxx')) {
+    return null
+  }
+
   return { token, user, email }
 }
 

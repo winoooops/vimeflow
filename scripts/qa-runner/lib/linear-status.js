@@ -8,7 +8,7 @@
 // comments carry the agent's identity, not yours. Without a linked agent it falls
 // back to the personal LINEAR_API_KEY ($env or repo-root linear.env).
 //
-// Usage: node linear-status.mjs <VIM-N> "<comment>" [--state "<name>"] [--as <role>]
+// Usage: node linear-status.js <VIM-N> "<comment>" [--state "<name>"] [--as <role>]
 
 import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
@@ -29,10 +29,14 @@ const repoRoot = () =>
 
 // Pull a single KEY=value from a dotenv-style file, or undefined.
 const readEnvVar = (file, key) => {
-  if (!existsSync(file)) return undefined
+  if (!existsSync(file)) {
+    return undefined
+  }
+
   const m = readFileSync(file, 'utf8').match(
     new RegExp(`^\\s*(?:export\\s+)?${key}\\s*=\\s*(.+?)\\s*$`, 'm')
   )
+
   return m ? m[1].replace(/^["']|["']$/g, '') : undefined
 }
 
@@ -48,16 +52,21 @@ const loadAuth = (role) => {
   const root = repoRoot()
   if (role) {
     const file = ROLE_FILE[role]
-    if (!file)
+    if (!file) {
       throw new Error(`unknown --as role "${role}" (fixer|orchestrator)`)
+    }
     const tok = readEnvVar(join(root, file), 'LINEAR_AGENT_TOKEN')
-    if (tok && !/PASTE|xxxx/i.test(tok))
+    if (tok && !/PASTE|xxxx/i.test(tok)) {
       return { header: `Bearer ${tok}`, who: `${role} agent` }
+    }
   }
+
   const key =
     process.env.LINEAR_API_KEY ||
     readEnvVar(join(root, 'linear.env'), 'LINEAR_API_KEY')
-  if (key) return { header: key, who: 'you (personal key)' }
+  if (key) {
+    return { header: key, who: 'you (personal key)' }
+  }
   throw new Error(
     'no Linear auth — link the agent (LINEAR_AGENT_TOKEN) or set LINEAR_API_KEY (env or repo-root linear.env). See rules/common/linear-workflow.md'
   )
@@ -75,6 +84,7 @@ const gql = async (auth, query, variables) => {
       `Linear GraphQL: ${json.errors.map((e) => e.message).join('; ')}`
     )
   }
+
   return json.data
 }
 
@@ -82,7 +92,7 @@ const main = async () => {
   const [identifier, body, ...rest] = process.argv.slice(2)
   if (!identifier || !body) {
     throw new Error(
-      'usage: linear-status.mjs <VIM-N> "<comment>" [--state "<name>"] [--as <role>]'
+      'usage: linear-status.js <VIM-N> "<comment>" [--state "<name>"] [--as <role>]'
     )
   }
   const flag = (n) => (rest.includes(n) ? rest[rest.indexOf(n) + 1] : undefined)
@@ -94,7 +104,9 @@ const main = async () => {
     'query($id:String!){issue(id:$id){id identifier team{id}}}',
     { id: identifier }
   )
-  if (!d.issue) throw new Error(`issue ${identifier} not found`)
+  if (!d.issue) {
+    throw new Error(`issue ${identifier} not found`)
+  }
 
   await gql(
     auth.header,
@@ -109,10 +121,13 @@ const main = async () => {
       'query($t:ID!){workflowStates(filter:{team:{id:{eq:$t}}}){nodes{id name}}}',
       { t: d.issue.team.id }
     )
+
     const st = s.workflowStates.nodes.find(
       (n) => n.name.toLowerCase() === stateName.toLowerCase()
     )
-    if (!st) throw new Error(`state "${stateName}" not found for the team`)
+    if (!st) {
+      throw new Error(`state "${stateName}" not found for the team`)
+    }
     await gql(
       auth.header,
       'mutation($id:String!,$s:String!){issueUpdate(id:$id,input:{stateId:$s}){success}}',

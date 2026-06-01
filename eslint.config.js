@@ -38,10 +38,6 @@ export default defineConfig([
       // tests/e2e/tsconfig.json, WDIO globals, and domain terms
       // (tput, xterm, wdio, pty, …) rather than extending the main one.
       'tests/e2e/**',
-      // QA-runner ops scripts: standalone node tooling (run via `node`, not
-      // bundled) with their own idioms; the app's React/TS/cspell rules don't
-      // carry. Covered by `node --check` + Prettier. Same rationale as e2e above.
-      'scripts/qa-runner/**',
     ],
   },
   {
