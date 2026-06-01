@@ -81,7 +81,7 @@ Commit messages for Codex-assisted changes must include the trailer `Co-Authored
 
 ## Lifeline Integration
 
-This file is read by Codex during Lifeline local reviews (`/lifeline:review`), Lifeline PR fix cycles (`/lifeline:upsource-review`), and GitHub PR reviews. It provides the project context that informs review quality. Lifeline is installed from <https://github.com/winoooops/lifeline>; this repository no longer vendors the old `harness/` scripts or `harness-plugin`.
+This file is read by Codex during Lifeline local reviews (`/lifeline:review`), Lifeline PR fix cycles (`/lifeline:upsource-review`), and GitHub PR reviews, including reviews posted by the `chatgpt-codex-connector[bot]` GitHub App. It provides the project context that informs review quality. Lifeline is installed from <https://github.com/winoooops/lifeline>; this repository no longer vendors the old `harness/` scripts or `harness-plugin`.
 
 ## Review Profile
 
@@ -94,6 +94,18 @@ Follow the review process and checklist defined in `agents/code-reviewer.md`. Ke
 - For AI-generated code: prioritize behavioral regressions, security assumptions, hidden coupling, unnecessary complexity
 
 **Full review agent spec**: `agents/code-reviewer.md`
+
+## GitHub Codex Connector
+
+For PR reviews posted by the `chatgpt-codex-connector[bot]` GitHub App, treat the root `AGENTS.md` instructions as the repository-level review profile. Before reporting findings, apply `agents/code-reviewer.md` as the full checklist and methodology, with `rules/common/idea-framework.md` as the canonical IDEA definition.
+
+Connector review findings should follow the same profile as Claude Code Review:
+
+- Review only lines added or modified in the PR diff
+- Apply the confidence, reality, and fix-cost filters from `agents/code-reviewer.md`
+- Consolidate related findings into one issue instead of splitting one bug class across comments
+- Use the project's severity levels and approval criteria below
+- Skip low-value perfection findings; report only issues with plausible real-world impact or meaningful future-change cost
 
 ## Review Guidelines
 
