@@ -430,7 +430,7 @@ impl AgentWatcherState {
         // concern was gone, but that referred to the
         // `transcript_state.stop` gate re-entry, NOT the FSEvents
         // runloop join — the two concerns are orthogonal.
-        let mut removed_watcher_for_drop: Option<notify::RecommendedWatcher> = None;
+        let mut _removed_watcher_for_drop: Option<notify::RecommendedWatcher> = None;
         let _displaced: Option<WatcherHandle> = {
             let _gate_guard = gate.lock();
 
@@ -456,11 +456,11 @@ impl AgentWatcherState {
                 // handle under the gate (cycle 9 retry-2 — stops the
                 // OS file-system backend from dispatching fresh
                 // callbacks). The actual `Drop` happens at end-of-
-                // function when `removed_watcher_for_drop` falls out
+                // function when `_removed_watcher_for_drop` falls out
                 // of scope, well after the gate is released — see
                 // the cycle-17 F1 note above the outer let-binding
                 // for the macOS deadlock rationale.
-                removed_watcher_for_drop = d._watcher.take();
+                _removed_watcher_for_drop = d._watcher.take();
 
                 if !new_claimed {
                     // Under-the-gate teardown: signal stop_flag on
@@ -506,7 +506,7 @@ impl AgentWatcherState {
         // the relative order. The actual order at function exit
         // (after this explicit `drop`) follows Rust's reverse-
         // declaration order. `_displaced` was declared LAST (line
-        // ~434) so it drops FIRST; `removed_watcher_for_drop` was
+        // ~434) so it drops FIRST; `_removed_watcher_for_drop` was
         // declared SECOND so it drops SECOND. Both happen at
         // end-of-function, both OUTSIDE the gate.
         // `_displaced::Drop` joins the poll thread + codex
@@ -518,9 +518,9 @@ impl AgentWatcherState {
         // explicit `drop(...)` call to force it.
         drop(removed_transcript);
         // At end-of-function (reverse-declaration order): `_displaced`
-        // drops first, then `removed_watcher_for_drop`. See cycle-17
+        // drops first, then `_removed_watcher_for_drop`. See cycle-17
         // F1 and the outer-scope binding comment above for why
-        // `removed_watcher_for_drop` is dropped outside the gate
+        // `_removed_watcher_for_drop` is dropped outside the gate
         // (FsEventWatcher runloop join hazard on macOS).
     }
 

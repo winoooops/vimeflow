@@ -2,7 +2,7 @@
 id: error-surfacing
 category: error-handling
 created: 2026-04-10
-last_updated: 2026-05-30
+last_updated: 2026-05-31
 ref_count: 8
 ---
 
@@ -306,3 +306,39 @@ failed" must mean the editor shows the original file, not the requested one.
 - **Fix:** Replace the sentinel with a typed `pub enum StartError { Displaced(String), Failed(String) }`. `start_or_replace`'s return type becomes `Result<TranscriptStartStatus, StartError>`. The alive-check Err constructs `StartError::Displaced(msg)`; `streamer.tail(...)?` is wrapped via `.map_err(StartError::Failed)`. `maybe_start_transcript` consumes via `e.is_displaced()` pattern. `StartError` implements `Display` (for log messages) and `From<StartError> for String` (back-compat). Regression test `t_start_error_discriminant_routes_correctly` pins the discriminant.
 - **Code-review heuristic:** String-sentinel discriminants are _always_ a stopgap. Even with a constant defined in one place + grep-discoverable, the contract is invisible to the compiler — any edit to either site that breaks the relationship compiles cleanly and ships. The right shape is a typed enum: producer constructs the variant, consumer pattern-matches. Cost is touching the return type once + a few `Result<_, NewErr>` updates; benefit is structural enforcement at the compiler level. The pattern recurs whenever you reach for `e.starts_with(SOME_CONST)` or `e.contains(SOME_TOKEN)` — those are smells of an enum trying to escape.
 - **Commit:** _(PR #302 upsource cycle 16 fix commit)_
+
+### 31. Stale-verdict auto-merge: threads check precedes claudePending
+
+- **Source:** github-claude | PR #320 | 2026-05-31
+- **Severity:** HIGH
+- **File:** `scripts/qa-runner/watch.mjs`
+- **Finding:** `computeState` checks `threads > 0` before `claudePending`, so a pending Claude review is ignored when open threads exist. The watcher dispatches a fix cycle, advances HEAD, and later reads Claude's stale verdict for the pre-fix SHA as "patch is correct".
+- **Fix:** Swap the priority arms so `claudePending || ci === 'pending'` is evaluated before `threads > 0`.
+- **Commit:** `7644ec4` + cycle-2 fix
+
+### 32. claudeVerdictClean: no pagination misses verdict on busy PRs
+
+- **Source:** github-claude | PR #320 | 2026-05-31
+- **Severity:** HIGH
+- **File:** `scripts/qa-runner/watch.mjs`
+- **Finding:** REST API call uses `?per_page=100` with no pagination loop. On PRs with >100 issue comments, the latest Claude review is invisible and the PR is permanently stuck in `WAITING`.
+- **Fix:** Use `gh api --paginate` piped through `jq -s add` to concatenate all pages before filtering.
+- **Commit:** `7644ec4` + cycle-2 fix
+
+### 33. approve() is non-atomic: PR permanently approved if merge fails
+
+- **Source:** github-claude | PR #320 | 2026-05-31
+- **Severity:** MEDIUM
+- **File:** `scripts/qa-runner/watch.mjs`
+- **Finding:** `approve()` calls `gh pr review --approve` then `gh pr merge --squash` sequentially. On merge failure, the PR stays approved; the next tick posts another approval before retrying merge, spamming the timeline.
+- **Fix:** Query existing PR reviews and skip `--approve` if the effective approver identity (bot or ambient `gh` user) already approved.
+- **Commit:** `7644ec4` + cycle-2 fix
+
+### 34. Unconditional Linear state transitions in report-only mode
+
+- **Source:** github-claude | PR #320 round 1 | 2026-05-31
+- **Severity:** MEDIUM
+- **File:** `scripts/qa-runner/watch.mjs`
+- **Finding:** `postLinear(…, 'In Progress')` was called before the `ctx.execute` guard, so every report-only tick falsely transitioned linked Linear issues to "In Progress" even when no fix cycle ran.
+- **Fix:** Moved `postLinear` inside the `ctx.execute` block so it only fires when a real fix cycle is dispatched.
+- **Commit:** same commit as this entry

@@ -2,7 +2,7 @@
 id: async-race-conditions
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-05-30
+last_updated: 2026-05-31
 ref_count: 15
 ---
 
@@ -567,3 +567,12 @@ prevent showing previous data.
      No semantic change to the `alive=false` store (still under the gate — that's the load-bearing race-fix). Only the watcher-drop timing changed.
 - **Code-review heuristic:** When a code-review finding introduces a new pattern AND there's an existing call site exhibiting the same flaw, the fix is incomplete unless the existing site is also corrected. Reviewers reactively spot the new code; ALSO grep the rest of the file/module for the same antipattern in pre-existing code. The cycle-16 fix's docstring on `quiesce_existing` explicitly named the FSEvents-runloop deadlock class but didn't trigger a sweep of other locations holding gates while dropping notify watchers. Mitigation: when introducing a fix for an OS-resource-Drop-under-lock pattern, immediately `grep` for `_watcher.take\|_watcher.drop\|drop(.*watcher)` and audit every match for the same hazard. Same applies to the broader class: any time you write a comment justifying "this is safe because X", consider whether the same justification applies (or breaks) at every other site doing similar work.
 - **Commit:** _(PR #302 upsource cycle 17 fix commit)_
+
+### 56. TOCTOU race on lock file: concurrent processes bypass lock
+
+- **Source:** github-claude | PR #320 | 2026-05-31
+- **Severity:** MEDIUM
+- **File:** `scripts/qa-runner/run.mjs`
+- **Finding:** `existsSync(lock)` followed by `writeFileSync(lock, ...)` is non-atomic; two concurrent processes can both pass the existence check before either writes, resulting in double-dispatch.
+- **Fix:** Replace with `fs.openSync(lock, 'wx')` wrapped in try/catch; `EEXIST` means another process holds the lock.
+- **Commit:** `7644ec4` + cycle-2 fix

@@ -280,6 +280,11 @@ const eventForSender = (): { sender: FakeWebContents } => ({
   sender: electronMock.sender as unknown as FakeWebContents,
 })
 
+const platformShortcutModifier = (): { control: boolean; meta: boolean } =>
+  process.platform === 'darwin'
+    ? { control: false, meta: true }
+    : { control: true, meta: false }
+
 const handler = (channel: string): IpcHandler => {
   const registered = electronMock.handlers.get(channel)
   if (!registered) {
@@ -785,8 +790,7 @@ describe('BrowserPaneController', () => {
         type: 'keyDown',
         key: '1',
         code: 'Digit1',
-        control: true,
-        meta: false,
+        ...platformShortcutModifier(),
         alt: false,
       }
     )
@@ -798,8 +802,7 @@ describe('BrowserPaneController', () => {
         type: 'keyDown',
         key: '2',
         code: 'Digit2',
-        control: true,
-        meta: false,
+        ...platformShortcutModifier(),
         alt: false,
       }
     )
@@ -825,8 +828,7 @@ describe('BrowserPaneController', () => {
         type: 'keyDown',
         key: '2',
         code: 'Digit2',
-        control: true,
-        meta: false,
+        ...platformShortcutModifier(),
         alt: false,
       }
     )
@@ -867,8 +869,7 @@ describe('BrowserPaneController', () => {
         type: 'keyDown',
         key: '\\',
         code: 'Backslash',
-        control: true,
-        meta: false,
+        ...platformShortcutModifier(),
         alt: false,
       }
     )
@@ -912,8 +913,7 @@ describe('BrowserPaneController', () => {
         type: 'keyDown',
         key: 'e',
         code: 'KeyE',
-        control: true,
-        meta: false,
+        ...platformShortcutModifier(),
         alt: false,
       }
     )

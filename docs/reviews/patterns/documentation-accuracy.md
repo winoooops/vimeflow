@@ -2,8 +2,8 @@
 id: documentation-accuracy
 category: code-quality
 created: 2026-04-09
-last_updated: 2026-05-31
-ref_count: 23
+last_updated: 2026-06-01
+ref_count: 24
 ---
 
 # Documentation Accuracy
@@ -736,4 +736,40 @@ Stale documentation misleads future contributors and review agents.
 - **File:** `src/features/sessions/hooks/useSessionManager.test.ts`
 - **Finding:** A test comment explaining why the seed source was changed from `user-renamed` to `ai-generated` stated: "user-renamed is sticky against later clears." The guard predicate is `agentTitleSource === 'user-renamed' && payload.source === 'ai-generated'` — it blocks ONLY `ai-generated` clears, not `user-renamed + empty` events (the documented lifecycle-reset escape hatch). The neighboring test `user-renamed with empty title clears the sticky guard` demonstrates exactly that a `user-renamed + empty` event falls through and clears the sticky state, making the comment directly contradictory to tested behavior. A future contributor reading only this comment could incorrectly conclude that ALL clear events are blocked once sticky, and design a lifecycle-reset mechanism that emits `ai-generated + empty` instead of `user-renamed + empty` — the wrong event would be swallowed by the guard, the reset would silently no-op, and the pane would remain stuck indefinitely with no error.
 - **Fix:** Changed the comment to "user-renamed is sticky against later **ai-generated** clears" so the phrasing matches the actual guard predicate. Code-review heuristic: when a guard predicate is narrow (filters on a specific source/value), every comment describing its effect must repeat that narrow qualifier — generic phrasing ("clears", "updates", "events") drifts toward overstating scope and misleads future readers who rely on comments as a behavioral contract.
+- **Commit:** same commit as this entry
+
+### 79. Reality check in IDEA Analysis section is narrower than canonical definition
+
+- **Source:** github-claude | PR #323 round 1 | 2026-06-01
+- **Severity:** MEDIUM
+- **File:** `agents/code-reviewer.md`
+- **Finding:** IDEA Analysis reality check (line 281) paraphrased the canonical impact criterion more narrowly than line 29, omitting security issue, data loss, user-visible regression, and operating cost
+- **Fix:** Aligned line 281 with the full formulation from line 29
+- **Commit:** same commit as this entry
+
+### 80. idea-framework.md retains 'frame as follow-up' after parallel fix in code-reviewer.md
+
+- **Source:** github-claude | PR #323 round 2 | 2026-06-01
+- **Severity:** LOW
+- **File:** `rules/common/idea-framework.md`
+- **Finding:** Line 32 kept the two-option form "skip the finding or frame it as a follow-up" while the parallel sentence in `agents/code-reviewer.md` line 286 was tightened to "skip the finding entirely" in round 1, creating a divergence between canonical doc and agent spec
+- **Fix:** Aligned `idea-framework.md` line 32 to "skip the finding entirely" to match the round 1 fix
+- **Commit:** same commit as this entry
+
+### 81. Stale `last_updated` frontmatter in pattern files after new entries committed
+
+- **Source:** github-claude | PR #323 round 2 | 2026-06-01
+- **Severity:** LOW
+- **File:** `docs/reviews/patterns/documentation-accuracy.md` and `docs/reviews/patterns/scope-boundary.md`
+- **Finding:** Both pattern files received new entries (#76 and #8) in round 1 but their frontmatter `last_updated` remained at 2026-05-31 and 2026-05-12 respectively, diverging from the index table
+- **Fix:** Updated `last_updated` to 2026-06-01 in both frontmatter blocks
+- **Commit:** same commit as this entry
+
+### 82. Reality check runtime scope contradicts Perfection trap's future-change cost
+
+- **Source:** github-claude | PR #323 round 3 | 2026-06-01
+- **Severity:** MEDIUM
+- **File:** `agents/code-reviewer.md` and `rules/common/idea-framework.md`
+- **Finding:** The Reality check's "while the user is using the app or the system is running" qualifier scoped the gate to runtime impacts only, silently contradicting the Perfection trap (line 46) that explicitly permits findings justified by "meaningful future-change cost". Design Complexity findings with future maintenance cost but no immediate runtime failure would pass the Perfection trap but fail the Reality check and be dropped.
+- **Fix:** Restructured both Reality checks so "meaningful future-change cost" sits outside the runtime qualifier — e.g. "...while the user is using the app or the system is running, or create meaningful future-change cost?"
 - **Commit:** same commit as this entry
