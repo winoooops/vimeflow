@@ -137,7 +137,9 @@ const main = async () => {
   }
 }
 
-main().catch((e) => {
+try {
+  await main()
+} catch (e) {
   process.stderr.write(`${e.message}\n`)
   process.exit(1)
-})
+}

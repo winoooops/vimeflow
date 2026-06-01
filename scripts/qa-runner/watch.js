@@ -349,6 +349,12 @@ const dispatchFix = (pr) =>
           buf = buf.slice(nl + 1)
         }
       })
+
+      stream.on('end', () => {
+        if (buf) {
+          out(`${tag} ${buf}`)
+        }
+      })
     }
     pipe(child.stdout)
     pipe(child.stderr)

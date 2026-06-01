@@ -18,15 +18,13 @@
 
 import { execFileSync, spawnSync } from 'node:child_process'
 import {
-  closeSync,
   existsSync,
   mkdirSync,
-  openSync,
   readdirSync,
   rmSync,
   symlinkSync,
   unlinkSync,
-  writeSync,
+  writeFileSync,
 } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -181,12 +179,15 @@ const run = (pr, live) => {
   mkdirSync(LOCK_DIR, { recursive: true })
   const lock = join(LOCK_DIR, `pr-${pr}.lock`)
   try {
-    const fd = openSync(lock, 'wx')
-    writeSync(fd, `pid ${process.pid}\n`)
-    closeSync(fd)
+    writeFileSync(lock, `pid ${process.pid}\n`, { flag: 'wx' })
   } catch (e) {
     if (e.code === 'EEXIST') {
       die(`PR #${pr} locked (run in flight). rm ${lock} to override.`, 3)
+    }
+    try {
+      unlinkSync(lock)
+    } catch {
+      /* lock may not exist */
     }
     throw e
   }
