@@ -32,6 +32,14 @@ const list = (v) =>
         .filter(Boolean)
     : []
 
+const bool = (v, d = false) => {
+  if (v == null || v === '') {
+    return d
+  }
+
+  return ['1', 'true', 'yes', 'on'].includes(String(v).toLowerCase())
+}
+
 // Merge the layers and coerce types. Called once at daemon start.
 export const loadConfig = () => {
   const file = {
@@ -48,6 +56,7 @@ export const loadConfig = () => {
     maxParallel: num(env.QA_MAX_PARALLEL, num(file.maxParallel, 2)),
     maxNoops: num(env.QA_MAX_NOOPS, num(file.maxNoops, 15)),
     pollSeconds: num(env.QA_POLL_SECONDS, num(file.pollSeconds, 60)),
+    approve: bool(env.QA_APPROVE, bool(file.approve)),
     triggerPhrase:
       env.QA_TRIGGER_PHRASE || file.triggerPhrase || '/upsource-review',
     trustedSenders: senders.length ? senders : file.trustedSenders || [],

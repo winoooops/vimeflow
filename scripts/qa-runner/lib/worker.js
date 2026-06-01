@@ -18,6 +18,14 @@ import { linkedVim } from './pr-utils.js'
 
 const WATCH = join(dirname(dirname(fileURLToPath(import.meta.url))), 'watch.js')
 
+const snapshotFailureText = (e) =>
+  [e?.stderr?.toString?.(), e?.stdout?.toString?.(), e?.message]
+    .filter(Boolean)
+    .join('\n')
+
+export const isMissingPullRequestSnapshot = (e) =>
+  /Could not resolve to a PullRequest/i.test(snapshotFailureText(e))
+
 const snapshot = (pr) => {
   try {
     const j = JSON.parse(
@@ -42,11 +50,14 @@ const snapshot = (pr) => {
       isDraft: Boolean(j.isDraft),
       labels: (j.labels || []).map((l) => l.name),
     }
-  } catch {
+  } catch (e) {
     // ok:false marks an UNKNOWN read (network / auth / rate-limit), distinct from a
     // real unlabeled/draft PR — the caller must not mutate state on an unknown.
+    // A GitHub "PullRequest not found" response for an untracked synthetic PR is
+    // permanent, so the smoke path can skip instead of hot-retrying forever.
     return {
       ok: false,
+      missing: isMissingPullRequestSnapshot(e),
       headSha: null,
       state: null,
       vim: undefined,
@@ -56,12 +67,21 @@ const snapshot = (pr) => {
   }
 }
 
-const tick = (pr, label) =>
+export const watchArgs = (pr, { label, approve = false } = {}) => {
+  const args = [WATCH, 'tick', '--pr', String(pr), '--execute']
+  if (approve) {
+    args.push('--approve')
+  }
+  if (label) {
+    args.push('--label', label)
+  }
+
+  return args
+}
+
+const tick = (pr, config) =>
   new Promise((resolve) => {
-    const args = [WATCH, 'tick', '--pr', String(pr), '--execute', '--approve']
-    if (label) {
-      args.push('--label', label)
-    }
+    const args = watchArgs(pr, config)
     const child = spawn('node', args, { stdio: 'inherit' })
     child.on('exit', (code) => resolve(code ?? -1))
     child.on('error', () => resolve(-1))
@@ -82,10 +102,17 @@ export const runOne = async (pr, reason, deps) => {
   const tracked = state.has(pr)
   const before = snapshot(pr)
 
-  // Unknown read (gh failed transiently): do NOT touch state — forgetting here would
-  // drop a tracked PR's round/noop counts and its later merged/closed milestone over a
-  // blip. Skip; the next poll/event re-snapshots.
+  // Missing untracked PR: a synthetic / stale webhook, not a transient. Do not
+  // requeue it; this is the local smoke's expected safe skip path.
   if (!before.ok) {
+    if (before.missing && !tracked) {
+      log(`#${pr}: PR not found — skip`)
+
+      return 'skip'
+    }
+    // Unknown read (gh failed transiently): do NOT touch state — forgetting here would
+    // drop a tracked PR's round/noop counts and its later merged/closed milestone over a
+    // blip. Skip; the next poll/event re-snapshots.
     log(`#${pr}: snapshot unavailable (transient) — retry, state preserved`)
 
     return 'retry'
@@ -136,7 +163,7 @@ export const runOne = async (pr, reason, deps) => {
   }
 
   events.emit({ type: 'cycle', pr, round: st.roundCount, detail: reason })
-  const code = await tick(pr, config.label)
+  const code = await tick(pr, config)
   const after = snapshot(pr)
 
   // Post-tick read failed (same rule as the pre-tick guard): never interpret null

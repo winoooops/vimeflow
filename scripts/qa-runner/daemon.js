@@ -17,12 +17,16 @@ import { createEvents } from './lib/events.js'
 
 const log = (s) => process.stdout.write(`${new Date().toISOString()} ${s}\n`)
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+const DRAIN_POLL_MS = 1000
+const DRAIN_TIMEOUT_MS = 60000
+const RETRY_BACKOFF_MS = 15000
 
 const config = loadConfig()
 const state = createState()
 const queue = createQueue()
 const events = createEvents(log)
 let running = true
+let shuttingDown = false
 
 // One worker: claim a PR, run a single cycle, release, repeat. Live concurrency
 // is capped by the worker count (config.maxParallel).
@@ -47,8 +51,14 @@ const worker = async (id) => {
         log,
         events,
       })
-      if (outcome === 'retry' && job.reason !== 'poll') {
-        queue.enqueue(job.pr, job.reason)
+      if (outcome === 'retry' && job.reason !== 'poll' && running) {
+        log(
+          `worker ${id}: #${job.pr} transient retry in ${RETRY_BACKOFF_MS / 1000}s`
+        )
+        await sleep(RETRY_BACKOFF_MS)
+        if (running) {
+          queue.enqueue(job.pr, job.reason)
+        }
       }
     } catch (e) {
       log(`worker ${id}: #${job.pr} ERROR ${e.message}`)
@@ -125,13 +135,31 @@ poll()
 // Graceful-ish shutdown: stop accepting + claiming; let in-flight cycles finish
 // (state is checkpointed each tick); force-exit after a grace window.
 const shutdown = (sig) => {
-  log(`${sig} — draining; in-flight: ${queue.inFlight().join(', ') || 'none'}`)
+  if (shuttingDown) {
+    return
+  }
+  shuttingDown = true
   running = false
-  server.close(() => log('http server closed'))
+
+  const exitWhenDrained = () => {
+    const inFlight = queue.inFlight()
+    if (!inFlight.length) {
+      log('drain complete — exiting')
+      process.exit(0)
+    }
+    setTimeout(exitWhenDrained, DRAIN_POLL_MS)
+  }
+
+  log(`${sig} — draining; in-flight: ${queue.inFlight().join(', ') || 'none'}`)
+  server.close(() => {
+    log('http server closed')
+    exitWhenDrained()
+  })
+
   setTimeout(() => {
     log('drain window elapsed — exiting')
     process.exit(0)
-  }, 60000).unref()
+  }, DRAIN_TIMEOUT_MS)
 }
 
 process.on('SIGTERM', () => shutdown('SIGTERM'))
