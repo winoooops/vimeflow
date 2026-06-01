@@ -2,7 +2,7 @@
 id: documentation-accuracy
 category: code-quality
 created: 2026-04-09
-last_updated: 2026-05-31
+last_updated: 2026-06-01
 ref_count: 24
 ---
 
@@ -719,4 +719,22 @@ Stale documentation misleads future contributors and review agents.
 - **File:** `agents/code-reviewer.md`
 - **Finding:** IDEA Analysis reality check (line 281) paraphrased the canonical impact criterion more narrowly than line 29, omitting security issue, data loss, user-visible regression, and operating cost
 - **Fix:** Aligned line 281 with the full formulation from line 29
+- **Commit:** same commit as this entry
+
+### 77. idea-framework.md retains 'frame as follow-up' after parallel fix in code-reviewer.md
+
+- **Source:** github-claude | PR #323 round 2 | 2026-06-01
+- **Severity:** LOW
+- **File:** `rules/common/idea-framework.md`
+- **Finding:** Line 32 kept the two-option form "skip the finding or frame it as a follow-up" while the parallel sentence in `agents/code-reviewer.md` line 286 was tightened to "skip the finding entirely" in round 1, creating a divergence between canonical doc and agent spec
+- **Fix:** Aligned `idea-framework.md` line 32 to "skip the finding entirely" to match the round 1 fix
+- **Commit:** same commit as this entry
+
+### 78. Stale `last_updated` frontmatter in pattern files after new entries committed
+
+- **Source:** github-claude | PR #323 round 2 | 2026-06-01
+- **Severity:** LOW
+- **File:** `docs/reviews/patterns/documentation-accuracy.md` and `docs/reviews/patterns/scope-boundary.md`
+- **Finding:** Both pattern files received new entries (#76 and #8) in round 1 but their frontmatter `last_updated` remained at 2026-05-31 and 2026-05-12 respectively, diverging from the index table
+- **Fix:** Updated `last_updated` to 2026-06-01 in both frontmatter blocks
 - **Commit:** same commit as this entry
