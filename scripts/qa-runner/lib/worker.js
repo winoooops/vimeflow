@@ -69,7 +69,7 @@ const tick = (pr, label) =>
 
 // Run one cycle for `pr`. deps: { config, state, log, events, now? }. Async — the
 // heavy watch.js/kimi run is awaited, keeping the daemon responsive. Returns an
-// outcome tag: 'done' | 'progress' | 'error' | 'waiting' | 'paused' | 'skip'.
+// outcome tag: 'done' | 'progress' | 'error' | 'waiting' | 'paused' | 'skip' | 'retry'.
 export const runOne = async (pr, reason, deps) => {
   const {
     config,
@@ -86,9 +86,9 @@ export const runOne = async (pr, reason, deps) => {
   // drop a tracked PR's round/noop counts and its later merged/closed milestone over a
   // blip. Skip; the next poll/event re-snapshots.
   if (!before.ok) {
-    log(`#${pr}: snapshot unavailable (transient) — skip, state preserved`)
+    log(`#${pr}: snapshot unavailable (transient) — retry, state preserved`)
 
-    return 'skip'
+    return 'retry'
   }
 
   // Already terminal before we tick — a human merged/closed it, or a `pull_request

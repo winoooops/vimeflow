@@ -27,7 +27,7 @@ const readRawBody = (req, limit = 2 * 1024 * 1024) =>
     req.on('data', (c) => {
       size += c.length
       if (size > limit) {
-        req.destroy()
+        req.pause()
         reject(new Error('payload too large'))
 
         return
@@ -50,6 +50,7 @@ const handleWebhook = async (req, res, deps) => {
     raw = await readRawBody(req)
   } catch (e) {
     sendJson(res, 413, { error: e.message })
+    res.on('finish', () => req.destroy())
 
     return
   }

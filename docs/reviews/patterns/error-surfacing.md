@@ -2,7 +2,7 @@
 id: error-surfacing
 category: error-handling
 created: 2026-04-10
-last_updated: 2026-05-31
+last_updated: 2026-06-01
 ref_count: 7
 ---
 
@@ -350,3 +350,21 @@ failed" must mean the editor shows the original file, not the requested one.
 - **Finding:** `isLocked` used `process.kill(pid, 0)` alone to check liveness. If the original `run.js` crashed and its PID was reused by an unrelated process, the PR was skipped every tick forever until that unrelated process died.
 - **Fix:** Added a `/proc/<pid>/cmdline` check for the substring `run.js`; if the live process is not a `run.js`, the lock is reaped as stale. Full ownership validation (start time + expected PR) was deferred per the PR author's original plan.
 - **Commit:** same commit as this entry
+
+### 36. req.destroy() on payload-too-large tears down shared HTTP/1.x socket before 413 flushes
+
+- **Source:** github-claude | PR #324 round 2 | 2026-06-01
+- **Severity:** LOW
+- **File:** `scripts/qa-runner/lib/host.js`
+- **Finding:** In `readRawBody`, when the payload exceeded the 2 MB limit, `req.destroy()` was called before the promise rejected. The caller `handleWebhook` then called `sendJson(res, 413, ...)`. In Node.js HTTP/1.x, `req` and `res` share the same underlying `net.Socket`; `req.destroy()` propagated to `socket.destroy()`, closing the socket before the 413 headers could be flushed. GitHub received a TCP reset rather than a 413, logged the delivery as failed, and retried with exponential backoff for up to 72 hours.
+- **Fix:** Replaced `req.destroy()` with `req.pause()` in `readRawBody`; added `res.on('finish', () => req.destroy())` in `handleWebhook` so the 413 response completes before the socket closes.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 37. One-shot webhook events lost when pre-tick snapshot fails transiently
+
+- **Source:** github-codex-connector | PR #324 round 2 | 2026-06-01
+- **Severity:** P2 / MEDIUM
+- **File:** `scripts/qa-runner/lib/worker.js`
+- **Finding:** When `gh pr view` failed transiently, `runOne` returned `'skip'` and `daemon.js` always called `queue.done()`, discarding the event. For open labeled PRs the fallback poll re-enqueues them, but one-shot webhooks (`pull_request:closed`, `unlabeled`, `converted_to_draft`) cannot be recreated by the poll. A transient API blip while processing such an event caused the daemon to preserve state but never clean up or announce the terminal transition.
+- **Fix:** Changed the pre-tick snapshot-unavailable return from `'skip'` to `'retry'`. Updated `daemon.js` to requeue non-poll jobs that return `'retry'` so one-shot events survive transient `gh` failures.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

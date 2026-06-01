@@ -272,7 +272,11 @@ const run = async (pr, live) => {
       die('kimi spawn failed: ' + r.error.message)
     }
     if (r.timedOut) {
-      die(`kimi timed out with no commit (${KIMI_TIMEOUT_MS / 60000}m)`, 6)
+      const head = sh('git', ['-C', wt, 'rev-parse', 'HEAD']).trim()
+      if (head === startHead) {
+        die(`kimi timed out with no commit (${KIMI_TIMEOUT_MS / 60000}m)`, 6)
+      }
+      // commit landed in the final poll window — fall through to push verification
     }
     // A non-zero exit or unexpected signal (anything but our intentional single-pass
     // stop) is a real fixer failure — exit non-zero so the daemon's failure

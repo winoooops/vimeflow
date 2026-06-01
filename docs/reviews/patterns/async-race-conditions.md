@@ -2,7 +2,7 @@
 id: async-race-conditions
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-05-31
+last_updated: 2026-06-01
 ref_count: 12
 ---
 
@@ -448,3 +448,12 @@ prevent showing previous data.
 - **Finding:** `existsSync(lock)` followed by `writeFileSync(lock, ...)` is non-atomic; two concurrent processes can both pass the existence check before either writes, resulting in double-dispatch.
 - **Fix:** Replace with `fs.openSync(lock, 'wx')` wrapped in try/catch; `EEXIST` means another process holds the lock.
 - **Commit:** `7644ec4` + cycle-2 fix
+
+### 46. Timeout fires before live HEAD check, causing false fixer-stall classification
+
+- **Source:** github-claude | PR #324 round 2 | 2026-06-01
+- **Severity:** MEDIUM
+- **File:** `scripts/qa-runner/run.js`
+- **Finding:** `r.timedOut` triggered `die(msg, 6)` before the live HEAD check ran. A commit landing in the final ~15 s poll window was undetected; the worktree HEAD had advanced past `startHead`, yet `run.js` exited 6 claiming "no commit". `watch.js` classified this as a fixer stall, incrementing `noopCount`. The stranded local commit was never pushed, so the daemon's next remote-HEAD comparison still saw no progress and did not reset the counter, leading to false pausing after `maxNoops` consecutive misclassifications.
+- **Fix:** Before dying on `timedOut`, check `sh('git', ['-C', wt, 'rev-parse', 'HEAD']).trim() !== startHead`. If a commit is present, fall through to the push-verification block instead of exiting 6.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

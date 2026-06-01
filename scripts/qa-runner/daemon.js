@@ -34,7 +34,15 @@ const worker = async (id) => {
       continue
     }
     try {
-      await runOne(job.pr, job.reason, { config, state, log, events })
+      const outcome = await runOne(job.pr, job.reason, {
+        config,
+        state,
+        log,
+        events,
+      })
+      if (outcome === 'retry' && job.reason !== 'poll') {
+        queue.enqueue(job.pr, job.reason)
+      }
     } catch (e) {
       log(`worker ${id}: #${job.pr} ERROR ${e.message}`)
     } finally {
