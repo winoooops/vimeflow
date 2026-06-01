@@ -512,24 +512,27 @@ const tick = async (ctx) => {
     out('')
   }
   let fixerStall = false
-  let signalKilled = false
+  let transientChild = false
   if (needsFix.length) {
     out(
       `Dispatching ${needsFix.length} fix run(s), up to ${ctx.maxParallel} in parallel…\n`
     )
     const codes = await pool(needsFix, ctx.maxParallel, dispatchFix)
-    fixerStall = codes.some((c) => c !== null && c !== 0)
-    signalKilled = codes.some((c) => c === null)
+    // dispatchFix resolves a real run.js exit code, null (signal-killed), or -1
+    // (spawn failed: node/run.js missing, OOM before fork). Only a real non-zero
+    // exit is a fixer stall; null and -1 are transient infra, not kimi's fault.
+    fixerStall = codes.some((c) => c !== null && c !== -1 && c !== 0)
+    transientChild = codes.some((c) => c === null || c === -1)
   }
   // Exit-code contract for the supervising daemon:
   //   1 = a dispatched FIXER stalled (run.js non-zero) — the actionable signal it
   //       counts toward pausing the PR (kimi can't drive these findings to zero).
-  //   2 = a TRANSIENT infra failure (classification / approve / signal-killed) — the
-  //       daemon retries WITHOUT pausing, so a gh/GraphQL blip or host OOM can't stick a PR.
+  //   2 = a TRANSIENT infra failure (classify / approve / signal-kill / spawn-fail) —
+  //       the daemon retries WITHOUT pausing, so a blip or host OOM can't stick a PR.
   // Fixer stall wins when both happen in one tick.
   if (fixerStall) {
     process.exitCode = 1
-  } else if (classifyError || approveError || signalKilled) {
+  } else if (classifyError || approveError || transientChild) {
     process.exitCode = 2
   }
 }

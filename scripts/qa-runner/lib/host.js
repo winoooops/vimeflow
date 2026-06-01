@@ -114,7 +114,10 @@ export const createHost = (deps) => {
       }
       if (req.method === 'GET' && url.pathname === '/status') {
         if (!config.statusToken) {
-          sendJson(res, 404, { error: 'status disabled (set QA_STATUS_TOKEN)' })
+          // Generic 404 (not a descriptive one): a disabled /status must be
+          // indistinguishable from a nonexistent path so the public bind reveals
+          // neither the endpoint nor the env-var that enables it.
+          sendJson(res, 404, { error: 'not found' })
 
           return
         }
