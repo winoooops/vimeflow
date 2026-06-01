@@ -51,7 +51,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Generated Artifacts](patterns/generated-artifacts.md)               | code-quality       | 3        | 2    | 2026-05-25   |
 | [Testing Gaps](patterns/testing-gaps.md)                             | testing            | 55       | 25   | 2026-05-28   |
 | [Terminal Input Handling](patterns/terminal-input-handling.md)       | terminal           | 4        | 2    | 2026-05-24   |
-| [Documentation Accuracy](patterns/documentation-accuracy.md)         | code-quality       | 75       | 23   | 2026-05-31   |
+| [Documentation Accuracy](patterns/documentation-accuracy.md)         | code-quality       | 76       | 24   | 2026-06-01   |
 | [Accessibility](patterns/accessibility.md)                           | a11y               | 25       | 6    | 2026-05-09   |
 | [Async Race Conditions](patterns/async-race-conditions.md)           | react-patterns     | 45       | 12   | 2026-05-31   |
 | [Tokio Blocking On Async](patterns/tokio-blocking-on-async.md)       | backend            | 2        | 1    | 2026-05-20   |
@@ -65,7 +65,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [CodeMirror Integration](patterns/codemirror-integration.md)         | editor             | 12       | 0    | 2026-04-11   |
 | [Error Surfacing](patterns/error-surfacing.md)                       | error-handling     | 31       | 7    | 2026-05-31   |
 | [File Tree Paths](patterns/file-tree-paths.md)                       | files              | 4        | 0    | 2026-04-10   |
-| [Scope Boundary](patterns/scope-boundary.md)                         | review-process     | 7        | 2    | 2026-05-12   |
+| [Scope Boundary](patterns/scope-boundary.md)                         | review-process     | 8        | 3    | 2026-06-01   |
 | [E2E Testing](patterns/e2e-testing.md)                               | e2e-testing        | 18       | 6    | 2026-05-20   |
 | [Module Boundaries](patterns/module-boundaries.md)                   | code-quality       | 3        | 1    | 2026-05-07   |
 | [Diagnostic Instrumentation](patterns/diagnostic-instrumentation.md) | code-quality       | 7        | 2    | 2026-05-02   |

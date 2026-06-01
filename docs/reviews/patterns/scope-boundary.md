@@ -3,7 +3,7 @@ id: scope-boundary
 category: review-process
 created: 2026-04-12
 last_updated: 2026-05-12
-ref_count: 2
+ref_count: 3
 ---
 
 # Scope Boundary
@@ -76,3 +76,12 @@ separate follow-up section, not as findings with severity.
 - **Finding:** Cycle 4's SKIP for "Pass pane identity when wiring per-pane restart action" (issue #202) closed thread `PRRT_kwDOR06LW86BSzCk` via the rationale-in-thread + TODO-in-code disposition. The underlying code state did not change in cycle 5 (test additions only) or cycle 6 (doc comments only). On cycle 7's review of commit `6f08a03`, the connector posted essentially the same finding again — different inline comment id (`3223788780`) and new thread (`PRRT_kwDOR06LW86BS6GW`), retitled "Pass pane identity when forwarding restart callbacks", same root cause. The connector's heuristic re-flags any code state matching its lint on every push; it has no memory of prior threads. Class of lesson: previously-skipped findings that depend on code state will recur until either the code changes or the reviewer is told (via a `wontfix`-style label or repo-side configuration) to suppress them.
 - **Fix:** Replied on the new thread with the cross-cycle link: "Same finding as the cycle-4 disposition — SKIPPED + tracked in #202; see thread `PRRT_kwDOR06LW86BSzCk` and the TODO in `TerminalPane/index.tsx handleRestart`." Resolved the new thread (`PRRT_kwDOR06LW86BS6GW`). Recorded processed-inline id 3223788780 + processed-review id 4269233620 in the cycle 7 commit's watermark trailers so Step 1 of any future cycle doesn't re-poll this finding. Code-review heuristic: when a reviewer re-flags a previously-skipped finding on the next review cycle, reply with the cross-cycle pointer (resolved thread id + tracking issue) and resolve; do not re-fix. The discipline is to make the SKIP audit trail navigable from any single thread.
 - **Commit:** _(see git log for the cycle-7 fix commit on PR #199)_
+
+### 8. In-diff low-value findings misdirected to Out-of-Scope Observations
+
+- **Source:** github-claude | PR #323 round 1 | 2026-06-01
+- **Severity:** LOW
+- **File:** `agents/code-reviewer.md`
+- **Finding:** Line 286 routed low-value in-diff findings to Out-of-Scope Observations, conflating pre-existing out-of-diff issues with intentionally deprioritised new findings
+- **Fix:** Changed guidance to "skip the finding entirely" for weak-danger/non-trivial-cost cases
+- **Commit:** same commit as this entry

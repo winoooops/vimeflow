@@ -278,12 +278,12 @@ The four-field definition and formatting live in `rules/common/idea-framework.md
 - Do **not** produce a PR-level IDEA block at the end of the review.
 - Use the per-finding format shown in the "Review Output Format" example above.
 - Add an implication layer to the IDEA reasoning before reporting the finding:
-  - **Reality**: Will this finding plausibly produce a bug in reality while the user is using the app or the system is running?
+  - **Reality**: Will this finding plausibly produce a real bug, security issue, data loss, user-visible regression, or meaningful operating cost while the user is using the app or the system is running?
   - **Fix cost**: What is the implementation, regression, review, and complexity cost of fixing it now?
 - Reflect the implication layer in the IDEA fields without adding new fields:
   - Put the real runtime/user/system failure mode in **D — Danger**.
   - Put the proportional fix and its cost/trade-off in **A — Alternatives**.
-- If the real-world danger is weak and the fix cost is non-trivial, skip the finding or put it in Out-of-Scope Observations as a follow-up. Do not block a PR for code that is merely less-than-perfect.
+- If the real-world danger is weak and the fix cost is non-trivial, skip the finding entirely. Do not block a PR for code that is merely less-than-perfect.
 
 ## Approval Criteria
 
