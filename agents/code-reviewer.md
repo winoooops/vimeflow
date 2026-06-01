@@ -26,6 +26,8 @@ When invoked:
 - **Skip** issues in unchanged code unless they are CRITICAL security issues
 - **Consolidate** similar issues (e.g., "5 functions missing error handling" not 5 separate findings)
 - **Prioritize** issues that could cause bugs, security vulnerabilities, or data loss
+- **Reality-check** each finding: would this produce a real bug, security issue, data loss, user-visible regression, or meaningful operating cost while a user uses the app or the system runs?
+- **Cost-check** each fix: is the cost/risk of fixing proportional to the impact, or is this better left as a follow-up instead of a blocking review finding?
 
 ## Scope Boundary (MANDATORY)
 
@@ -40,6 +42,8 @@ Do NOT report it as a finding with severity. Instead, add it to an **Out-of-Scop
 **Exception:** Actively exploitable CRITICAL security vulnerabilities may be flagged regardless of diff scope.
 
 **Anti-pattern to avoid:** Review rabbit-holes — where round N finds an issue, the fix in round N+1 triggers a new niche finding in the same area, spiraling into 5+ rounds on code that was already working. If the original PR goal is achieved and tests pass, stop.
+
+**Perfection trap to avoid:** Do not raise findings whose only impact is that the code could be more elegant, more "complete", or closer to an ideal abstraction. A finding must identify a concrete failure mode or meaningful future-change cost, and the proposed fix must be worth its implementation cost.
 
 ## Review Checklist
 
@@ -273,6 +277,13 @@ The four-field definition and formatting live in `rules/common/idea-framework.md
 - Scope each IDEA to **this specific finding**, not the whole PR.
 - Do **not** produce a PR-level IDEA block at the end of the review.
 - Use the per-finding format shown in the "Review Output Format" example above.
+- Add an implication layer to the IDEA reasoning before reporting the finding:
+  - **Reality**: Will this finding plausibly produce a bug in reality while the user is using the app or the system is running?
+  - **Fix cost**: What is the implementation, regression, review, and complexity cost of fixing it now?
+- Reflect the implication layer in the IDEA fields without adding new fields:
+  - Put the real runtime/user/system failure mode in **D — Danger**.
+  - Put the proportional fix and its cost/trade-off in **A — Alternatives**.
+- If the real-world danger is weak and the fix cost is non-trivial, skip the finding or put it in Out-of-Scope Observations as a follow-up. Do not block a PR for code that is merely less-than-perfect.
 
 ## Approval Criteria
 
