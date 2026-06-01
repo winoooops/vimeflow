@@ -7,6 +7,7 @@ playwright-report
 .lifeline-planner
 *.min.js
 *.d.ts
+docs/design/*.html
 docs/design/*/code.html
 docs/diagrams/*.html
 docs/explorations/*.html
