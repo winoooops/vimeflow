@@ -199,7 +199,13 @@ const computeState = (pr, ctx) => {
 
 const postLinear = (vim, body, stateName) => {
   if (!vim) return
-  const args = [join(SCRIPT_DIR, 'lib', 'linear-status.mjs'), vim, body]
+  const args = [
+    join(SCRIPT_DIR, 'lib', 'linear-status.mjs'),
+    vim,
+    body,
+    '--as',
+    'orchestrator',
+  ]
   if (stateName) args.push('--state', stateName)
   const r = spawnSync('node', args, { encoding: 'utf8' })
   if (r.status === 0)
