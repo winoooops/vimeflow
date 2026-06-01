@@ -1,394 +1,1022 @@
-<!DOCTYPE html>
+<!doctype html>
 <html class="dark" lang="en">
-<head>
-<meta charset="utf-8"/>
-<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
-<title>Diff Feedback Toolbar — Redesign</title>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Manrope:wght@600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet"/>
-<style>
-  :root{
-    --surface:#121221;
-    --surface-container-lowest:#0d0d1c;
-    --surface-container-low:#1a1a2a;
-    --surface-container:#1e1e2e;
-    --surface-container-high:#292839;
-    --surface-container-highest:#333344;
-    --surface-bright:#383849;
-    --primary:#e2c7ff;
-    --primary-container:#cba6f7;
-    --primary-dim:#d3b9f0;
-    --on-primary:#2a1646;
-    --secondary:#a8c8ff;
-    --secondary-dim:#8fbaff;
-    --error:#ffb4ab;
-    --error-dim:#d73357;
-    --success-muted:#7defa1;
-    --on-surface:#e3e0f7;
-    --on-surface-variant:#cdc3d1;
-    --on-surface-muted:#8a8299;
-    --outline-variant:#4a444f;
-    --syn-keyword:#cba6f7;
-    --syn-string:#a6e3a1;
-    --syn-fn:#89b4fa;
-    --font-display:'Manrope',system-ui,sans-serif;
-    --font-body:'Inter',system-ui,sans-serif;
-    --font-mono:'JetBrains Mono',ui-monospace,monospace;
-    --radius-md:0.75rem;--radius-sm:0.5rem;--radius-full:9999px;
-    --ease:cubic-bezier(0.2,0.8,0.2,1);
-  }
-  *{box-sizing:border-box;margin:0;padding:0;}
-  html,body{background:var(--surface-container-lowest);color:var(--on-surface);font-family:var(--font-body);-webkit-font-smoothing:antialiased;}
-  .ic{display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;}
-  .ic svg{width:18px;height:18px;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;fill:none;}
-  ::selection{background:rgba(203,166,247,0.3);color:var(--on-surface);}
+  <head>
+    <meta charset="utf-8" />
+    <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+    <title>Diff Feedback Toolbar — Redesign</title>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Manrope:wght@600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --surface: #121221;
+        --surface-container-lowest: #0d0d1c;
+        --surface-container-low: #1a1a2a;
+        --surface-container: #1e1e2e;
+        --surface-container-high: #292839;
+        --surface-container-highest: #333344;
+        --surface-bright: #383849;
+        --primary: #e2c7ff;
+        --primary-container: #cba6f7;
+        --primary-dim: #d3b9f0;
+        --on-primary: #2a1646;
+        --secondary: #a8c8ff;
+        --secondary-dim: #8fbaff;
+        --error: #ffb4ab;
+        --error-dim: #d73357;
+        --success-muted: #7defa1;
+        --on-surface: #e3e0f7;
+        --on-surface-variant: #cdc3d1;
+        --on-surface-muted: #8a8299;
+        --outline-variant: #4a444f;
+        --syn-keyword: #cba6f7;
+        --syn-string: #a6e3a1;
+        --syn-fn: #89b4fa;
+        --font-display: 'Manrope', system-ui, sans-serif;
+        --font-body: 'Inter', system-ui, sans-serif;
+        --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+        --radius-md: 0.75rem;
+        --radius-sm: 0.5rem;
+        --radius-full: 9999px;
+        --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+      }
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      html,
+      body {
+        background: var(--surface-container-lowest);
+        color: var(--on-surface);
+        font-family: var(--font-body);
+        -webkit-font-smoothing: antialiased;
+      }
+      .ic {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        flex: 0 0 auto;
+      }
+      .ic svg {
+        width: 18px;
+        height: 18px;
+        stroke: currentColor;
+        stroke-width: 2;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+        fill: none;
+      }
+      ::selection {
+        background: rgba(203, 166, 247, 0.3);
+        color: var(--on-surface);
+      }
 
-  /* ── presentation scaffold (not part of the design) ── */
-  .stage{min-height:100vh;display:flex;flex-direction:column;}
-  .scaffold-bar{display:flex;align-items:center;justify-content:space-between;
-    padding:14px 28px;background:var(--surface-container-lowest);border-bottom:1px solid rgba(74,68,79,0.18);}
-  .scaffold-title{display:flex;align-items:baseline;gap:12px;}
-  .scaffold-title h1{font-family:var(--font-display);font-weight:700;font-size:15px;letter-spacing:-0.01em;color:var(--on-surface);}
-  .scaffold-title span{font-family:var(--font-mono);font-size:11px;color:var(--on-surface-muted);}
-  .ab-toggle{display:flex;background:var(--surface-container-highest);border-radius:var(--radius-full);padding:3px;gap:2px;}
-  .ab-toggle button{font-family:var(--font-mono);font-size:11px;font-weight:500;letter-spacing:0.04em;
-    padding:5px 14px;border:none;border-radius:var(--radius-full);background:transparent;
-    color:var(--on-surface-muted);cursor:pointer;transition:all .2s var(--ease);}
-  .ab-toggle button.on{background:var(--surface-container-low);color:var(--on-surface);box-shadow:0 1px 3px rgba(0,0,0,.3);}
-  .ab-toggle button.on.new{color:var(--primary-container);}
+      /* ── presentation scaffold (not part of the design) ── */
+      .stage {
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+      }
+      .scaffold-bar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 14px 28px;
+        background: var(--surface-container-lowest);
+        border-bottom: 1px solid rgba(74, 68, 79, 0.18);
+      }
+      .scaffold-title {
+        display: flex;
+        align-items: baseline;
+        gap: 12px;
+      }
+      .scaffold-title h1 {
+        font-family: var(--font-display);
+        font-weight: 700;
+        font-size: 15px;
+        letter-spacing: -0.01em;
+        color: var(--on-surface);
+      }
+      .scaffold-title span {
+        font-family: var(--font-mono);
+        font-size: 11px;
+        color: var(--on-surface-muted);
+      }
+      .ab-toggle {
+        display: flex;
+        background: var(--surface-container-highest);
+        border-radius: var(--radius-full);
+        padding: 3px;
+        gap: 2px;
+      }
+      .ab-toggle button {
+        font-family: var(--font-mono);
+        font-size: 11px;
+        font-weight: 500;
+        letter-spacing: 0.04em;
+        padding: 5px 14px;
+        border: none;
+        border-radius: var(--radius-full);
+        background: transparent;
+        color: var(--on-surface-muted);
+        cursor: pointer;
+        transition: all 0.2s var(--ease);
+      }
+      .ab-toggle button.on {
+        background: var(--surface-container-low);
+        color: var(--on-surface);
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+      }
+      .ab-toggle button.on.new {
+        color: var(--primary-container);
+      }
 
-  .canvas{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;
-    padding:64px 40px;background:
-      radial-gradient(120% 80% at 50% -10%, rgba(203,166,247,0.06), transparent 60%),
-      var(--surface);}
-  .frame{width:100%;max-width:1320px;}
+      .canvas {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: flex-start;
+        padding: 64px 40px;
+        background:
+          radial-gradient(
+            120% 80% at 50% -10%,
+            rgba(203, 166, 247, 0.06),
+            transparent 60%
+          ),
+          var(--surface);
+      }
+      .frame {
+        width: 100%;
+        max-width: 1320px;
+      }
 
-  /* ══════════ TOOLBAR ══════════ */
-  .toolbar{display:flex;align-items:center;gap:14px;padding:9px 12px;
-    background:rgba(26,26,42,0.88);backdrop-filter:blur(20px) saturate(150%);-webkit-backdrop-filter:blur(20px) saturate(150%);
-    border:1px solid rgba(74,68,79,0.15);border-radius:var(--radius-md);box-shadow:0 10px 40px rgba(0,0,0,0.40);position:relative;z-index:5;}
-  .group{display:flex;align-items:center;gap:6px;}
-  .spacer{flex:1 1 auto;}
-  .ghost-sep{width:1px;height:22px;background:rgba(74,68,79,0.30);flex:0 0 auto;}
+      /* ══════════ TOOLBAR ══════════ */
+      .toolbar {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        padding: 9px 12px;
+        background: rgba(26, 26, 42, 0.88);
+        backdrop-filter: blur(20px) saturate(150%);
+        -webkit-backdrop-filter: blur(20px) saturate(150%);
+        border: 1px solid rgba(74, 68, 79, 0.15);
+        border-radius: var(--radius-md);
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
+        position: relative;
+        z-index: 5;
+      }
+      .group {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .spacer {
+        flex: 1 1 auto;
+      }
+      .ghost-sep {
+        width: 1px;
+        height: 22px;
+        background: rgba(74, 68, 79, 0.3);
+        flex: 0 0 auto;
+      }
 
-  /* segmented (Split / Unified) */
-  .seg{display:flex;background:var(--surface-container-highest);border-radius:var(--radius-sm);padding:3px;gap:2px;}
-  .seg button{font-family:var(--font-mono);font-size:11px;font-weight:600;letter-spacing:0.06em;
-    padding:5px 11px;border:none;border-radius:6px;background:transparent;color:var(--on-surface-muted);
-    cursor:pointer;transition:all .18s var(--ease);text-transform:uppercase;}
-  .seg button.on{background:var(--primary-container);color:var(--on-primary);}
-  .seg button:not(.on):hover{color:var(--on-surface);background:var(--surface-bright);}
+      /* segmented (Split / Unified) */
+      .seg {
+        display: flex;
+        background: var(--surface-container-highest);
+        border-radius: var(--radius-sm);
+        padding: 3px;
+        gap: 2px;
+      }
+      .seg button {
+        font-family: var(--font-mono);
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        padding: 5px 11px;
+        border: none;
+        border-radius: 6px;
+        background: transparent;
+        color: var(--on-surface-muted);
+        cursor: pointer;
+        transition: all 0.18s var(--ease);
+        text-transform: uppercase;
+      }
+      .seg button.on {
+        background: var(--primary-container);
+        color: var(--on-primary);
+      }
+      .seg button:not(.on):hover {
+        color: var(--on-surface);
+        background: var(--surface-bright);
+      }
 
-  /* ── FILE selector (lavender · horizontal · named) ── */
-  .nav-file{display:flex;align-items:center;gap:2px;}
-  .nav-file .arrow{width:26px;height:30px;display:grid;place-items:center;border:none;background:transparent;
-    color:var(--on-surface-muted);cursor:pointer;border-radius:7px;transition:all .16s var(--ease);}
-  .nav-file .arrow:hover{background:var(--surface-bright);color:var(--primary-container);}
-  .file-pill{display:flex;align-items:center;gap:8px;height:30px;padding:0 12px;
-    background:rgba(203,166,247,0.10);border-radius:var(--radius-sm);
-    box-shadow:inset 0 0 0 1px rgba(203,166,247,0.20);cursor:pointer;transition:background .18s var(--ease);}
-  .file-pill:hover{background:rgba(203,166,247,0.16);}
-  .file-pill .ficon{color:var(--primary-container);}
-  .file-pill .ficon svg{width:16px;height:16px;}
-  .file-pill .fname{font-family:var(--font-mono);font-size:12px;font-weight:500;color:var(--on-surface);}
-  .file-pill .fcount{font-family:var(--font-mono);font-size:10px;color:var(--primary-dim);white-space:nowrap;
-    background:rgba(203,166,247,0.14);padding:2px 6px;border-radius:var(--radius-full);letter-spacing:0.02em;}
-  .micro{font-family:var(--font-mono);font-size:9px;font-weight:600;letter-spacing:0.14em;text-transform:uppercase;color:var(--on-surface-muted);}
+      /* ── FILE selector (lavender · horizontal · named) ── */
+      .nav-file {
+        display: flex;
+        align-items: center;
+        gap: 2px;
+      }
+      .nav-file .arrow {
+        width: 26px;
+        height: 30px;
+        display: grid;
+        place-items: center;
+        border: none;
+        background: transparent;
+        color: var(--on-surface-muted);
+        cursor: pointer;
+        border-radius: 7px;
+        transition: all 0.16s var(--ease);
+      }
+      .nav-file .arrow:hover {
+        background: var(--surface-bright);
+        color: var(--primary-container);
+      }
+      .file-pill {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        height: 30px;
+        padding: 0 12px;
+        background: rgba(203, 166, 247, 0.1);
+        border-radius: var(--radius-sm);
+        box-shadow: inset 0 0 0 1px rgba(203, 166, 247, 0.2);
+        cursor: pointer;
+        transition: background 0.18s var(--ease);
+      }
+      .file-pill:hover {
+        background: rgba(203, 166, 247, 0.16);
+      }
+      .file-pill .ficon {
+        color: var(--primary-container);
+      }
+      .file-pill .ficon svg {
+        width: 16px;
+        height: 16px;
+      }
+      .file-pill .fname {
+        font-family: var(--font-mono);
+        font-size: 12px;
+        font-weight: 500;
+        color: var(--on-surface);
+      }
+      .file-pill .fcount {
+        font-family: var(--font-mono);
+        font-size: 10px;
+        color: var(--primary-dim);
+        white-space: nowrap;
+        background: rgba(203, 166, 247, 0.14);
+        padding: 2px 6px;
+        border-radius: var(--radius-full);
+        letter-spacing: 0.02em;
+      }
+      .micro {
+        font-family: var(--font-mono);
+        font-size: 9px;
+        font-weight: 600;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--on-surface-muted);
+      }
 
-  /* ── CHANGE stepper (azure · vertical arrows) ── */
-  .nav-change{display:flex;align-items:center;gap:7px;height:30px;padding:0 4px 0 10px;
-    background:rgba(168,200,255,0.08);border-radius:var(--radius-sm);box-shadow:inset 0 0 0 1px rgba(168,200,255,0.16);}
-  .nav-change .cicon{color:var(--secondary);}
-  .nav-change .cicon svg{width:15px;height:15px;}
-  .nav-change .cn{font-family:var(--font-mono);font-size:12px;font-weight:600;color:var(--secondary);letter-spacing:0.01em;white-space:nowrap;}
-  .nav-change .vstep{display:flex;flex-direction:column;gap:0;}
-  .nav-change .vstep button{width:20px;height:13px;display:grid;place-items:center;border:none;background:transparent;
-    color:var(--secondary-dim);cursor:pointer;border-radius:4px;transition:all .15s var(--ease);}
-  .nav-change .vstep button:hover{background:rgba(168,200,255,0.18);color:var(--secondary);}
-  .nav-change .vstep .ic svg{width:14px;height:14px;}
+      /* ── CHANGE stepper (azure · vertical arrows) ── */
+      .nav-change {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        height: 30px;
+        padding: 0 4px 0 10px;
+        background: rgba(168, 200, 255, 0.08);
+        border-radius: var(--radius-sm);
+        box-shadow: inset 0 0 0 1px rgba(168, 200, 255, 0.16);
+      }
+      .nav-change .cicon {
+        color: var(--secondary);
+      }
+      .nav-change .cicon svg {
+        width: 15px;
+        height: 15px;
+      }
+      .nav-change .cn {
+        font-family: var(--font-mono);
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--secondary);
+        letter-spacing: 0.01em;
+        white-space: nowrap;
+      }
+      .nav-change .vstep {
+        display: flex;
+        flex-direction: column;
+        gap: 0;
+      }
+      .nav-change .vstep button {
+        width: 20px;
+        height: 13px;
+        display: grid;
+        place-items: center;
+        border: none;
+        background: transparent;
+        color: var(--secondary-dim);
+        cursor: pointer;
+        border-radius: 4px;
+        transition: all 0.15s var(--ease);
+      }
+      .nav-change .vstep button:hover {
+        background: rgba(168, 200, 255, 0.18);
+        color: var(--secondary);
+      }
+      .nav-change .vstep .ic svg {
+        width: 14px;
+        height: 14px;
+      }
 
-  /* generic icon button */
-  .iconbtn{width:28px;height:28px;display:grid;place-items:center;border:none;background:transparent;
-    color:var(--on-surface-variant);cursor:pointer;border-radius:6px;transition:all .16s var(--ease);}
-  .iconbtn:hover{background:var(--surface-bright);color:var(--on-surface);}
-  .iconbtn.on{background:rgba(203,166,247,0.16);color:var(--primary-container);}
-  .iconbtn svg{width:17px;height:17px;}
+      /* generic icon button */
+      .iconbtn {
+        width: 28px;
+        height: 28px;
+        display: grid;
+        place-items: center;
+        border: none;
+        background: transparent;
+        color: var(--on-surface-variant);
+        cursor: pointer;
+        border-radius: 6px;
+        transition: all 0.16s var(--ease);
+      }
+      .iconbtn:hover {
+        background: var(--surface-bright);
+        color: var(--on-surface);
+      }
+      .iconbtn.on {
+        background: rgba(203, 166, 247, 0.16);
+        color: var(--primary-container);
+      }
+      .iconbtn svg {
+        width: 17px;
+        height: 17px;
+      }
 
-  .tool-well{display:flex;align-items:center;gap:2px;background:var(--surface-container-highest);border-radius:var(--radius-sm);padding:1px;}
+      .tool-well {
+        display: flex;
+        align-items: center;
+        gap: 2px;
+        background: var(--surface-container-highest);
+        border-radius: var(--radius-sm);
+        padding: 1px;
+      }
 
-  /* labelled dropdowns */
-  .dd{display:flex;align-items:center;gap:7px;height:30px;padding:0 9px 0 10px;
-    background:var(--surface-container-highest);border-radius:var(--radius-sm);cursor:pointer;transition:background .16s var(--ease);}
-  .dd:hover{background:var(--surface-bright);}
-  .dd .dk{font-family:var(--font-mono);font-size:9px;font-weight:600;letter-spacing:0.12em;text-transform:uppercase;color:var(--on-surface-muted);}
-  .dd .dv{font-family:var(--font-mono);font-size:11.5px;font-weight:500;color:var(--on-surface);}
-  .dd .caret{color:var(--on-surface-muted);}
-  .dd .caret svg{width:14px;height:14px;}
-  .dd .lead{color:var(--primary-dim);}
-  .dd .lead svg{width:15px;height:15px;}
+      /* labelled dropdowns */
+      .dd {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        height: 30px;
+        padding: 0 9px 0 10px;
+        background: var(--surface-container-highest);
+        border-radius: var(--radius-sm);
+        cursor: pointer;
+        transition: background 0.16s var(--ease);
+      }
+      .dd:hover {
+        background: var(--surface-bright);
+      }
+      .dd .dk {
+        font-family: var(--font-mono);
+        font-size: 9px;
+        font-weight: 600;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: var(--on-surface-muted);
+      }
+      .dd .dv {
+        font-family: var(--font-mono);
+        font-size: 11.5px;
+        font-weight: 500;
+        color: var(--on-surface);
+      }
+      .dd .caret {
+        color: var(--on-surface-muted);
+      }
+      .dd .caret svg {
+        width: 14px;
+        height: 14px;
+      }
+      .dd .lead {
+        color: var(--primary-dim);
+      }
+      .dd .lead svg {
+        width: 15px;
+        height: 15px;
+      }
 
-  /* ── action pair (Discard · Finish) ── */
-  .actions{display:flex;align-items:center;gap:8px;}
-  .btn{display:flex;align-items:center;gap:7px;height:30px;padding:0 14px;border:none;cursor:pointer;
-    border-radius:var(--radius-sm);font-family:var(--font-body);font-size:12.5px;font-weight:600;transition:all .18s var(--ease);}
-  .btn svg{width:16px;height:16px;}
-  .btn:active{transform:scale(0.965);}
-  .btn-secondary{background:var(--surface-container-highest);color:var(--on-surface-variant);}
-  .btn-secondary:hover{background:rgba(215,51,87,0.14);color:var(--error);}
-  .btn-primary{background:linear-gradient(135deg,var(--primary) 0%,var(--primary-container) 100%);color:var(--on-primary);box-shadow:0 4px 14px rgba(203,166,247,0.22);}
-  .btn-primary:hover{box-shadow:0 6px 20px rgba(203,166,247,0.34);filter:brightness(1.03);}
-  .btn-primary .pill{font-family:var(--font-mono);font-size:10px;font-weight:600;background:rgba(42,22,70,0.22);color:var(--on-primary);padding:1px 6px;border-radius:var(--radius-full);}
+      /* ── action pair (Discard · Finish) ── */
+      .actions {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .btn {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        height: 30px;
+        padding: 0 14px;
+        border: none;
+        cursor: pointer;
+        border-radius: var(--radius-sm);
+        font-family: var(--font-body);
+        font-size: 12.5px;
+        font-weight: 600;
+        transition: all 0.18s var(--ease);
+      }
+      .btn svg {
+        width: 16px;
+        height: 16px;
+      }
+      .btn:active {
+        transform: scale(0.965);
+      }
+      .btn-secondary {
+        background: var(--surface-container-highest);
+        color: var(--on-surface-variant);
+      }
+      .btn-secondary:hover {
+        background: rgba(215, 51, 87, 0.14);
+        color: var(--error);
+      }
+      .btn-primary {
+        background: linear-gradient(
+          135deg,
+          var(--primary) 0%,
+          var(--primary-container) 100%
+        );
+        color: var(--on-primary);
+        box-shadow: 0 4px 14px rgba(203, 166, 247, 0.22);
+      }
+      .btn-primary:hover {
+        box-shadow: 0 6px 20px rgba(203, 166, 247, 0.34);
+        filter: brightness(1.03);
+      }
+      .btn-primary .pill {
+        font-family: var(--font-mono);
+        font-size: 10px;
+        font-weight: 600;
+        background: rgba(42, 22, 70, 0.22);
+        color: var(--on-primary);
+        padding: 1px 6px;
+        border-radius: var(--radius-full);
+      }
 
-  /* ══════════ diff slice (context) ══════════ */
-  .diff-context{margin-top:14px;display:grid;grid-template-columns:1fr 1fr;gap:1px;
-    background:rgba(74,68,79,0.15);border-radius:var(--radius-md);overflow:hidden;box-shadow:0 10px 40px rgba(0,0,0,0.35);}
-  .diff-pane{background:var(--surface-container);}
-  .diff-head{display:flex;align-items:center;gap:8px;padding:9px 16px;background:rgba(51,51,68,0.40);}
-  .diff-head .ic svg{width:15px;height:15px;}
-  .diff-head .t{font-family:var(--font-mono);font-size:11px;font-weight:600;color:var(--on-surface-variant);}
-  .diff-body{font-family:var(--font-mono);font-size:12.5px;line-height:1.85;padding:12px 0;}
-  .row{display:flex;}
-  .row:hover{background:rgba(56,56,73,0.20);}
-  .ln{width:46px;flex:0 0 auto;text-align:right;padding-right:14px;color:rgba(205,195,209,0.38);user-select:none;}
-  .code{white-space:pre;color:var(--on-surface-variant);}
-  .added{background:rgba(166,227,161,0.13);}
-  .removed{background:rgba(243,139,168,0.13);}
-  .pm-add{color:var(--success-muted);}
-  .pm-del{color:var(--error);}
-  .hl-add{background:rgba(166,227,161,0.32);border-radius:2px;}
-  .hl-del{background:rgba(243,139,168,0.32);border-radius:2px;}
-  .kw{color:var(--syn-keyword);} .fn{color:var(--syn-fn);} .str{color:var(--syn-string);}
+      /* ══════════ diff slice (context) ══════════ */
+      .diff-context {
+        margin-top: 14px;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 1px;
+        background: rgba(74, 68, 79, 0.15);
+        border-radius: var(--radius-md);
+        overflow: hidden;
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.35);
+      }
+      .diff-pane {
+        background: var(--surface-container);
+      }
+      .diff-head {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 9px 16px;
+        background: rgba(51, 51, 68, 0.4);
+      }
+      .diff-head .ic svg {
+        width: 15px;
+        height: 15px;
+      }
+      .diff-head .t {
+        font-family: var(--font-mono);
+        font-size: 11px;
+        font-weight: 600;
+        color: var(--on-surface-variant);
+      }
+      .diff-body {
+        font-family: var(--font-mono);
+        font-size: 12.5px;
+        line-height: 1.85;
+        padding: 12px 0;
+      }
+      .row {
+        display: flex;
+      }
+      .row:hover {
+        background: rgba(56, 56, 73, 0.2);
+      }
+      .ln {
+        width: 46px;
+        flex: 0 0 auto;
+        text-align: right;
+        padding-right: 14px;
+        color: rgba(205, 195, 209, 0.38);
+        user-select: none;
+      }
+      .code {
+        white-space: pre;
+        color: var(--on-surface-variant);
+      }
+      .added {
+        background: rgba(166, 227, 161, 0.13);
+      }
+      .removed {
+        background: rgba(243, 139, 168, 0.13);
+      }
+      .pm-add {
+        color: var(--success-muted);
+      }
+      .pm-del {
+        color: var(--error);
+      }
+      .hl-add {
+        background: rgba(166, 227, 161, 0.32);
+        border-radius: 2px;
+      }
+      .hl-del {
+        background: rgba(243, 139, 168, 0.32);
+        border-radius: 2px;
+      }
+      .kw {
+        color: var(--syn-keyword);
+      }
+      .fn {
+        color: var(--syn-fn);
+      }
+      .str {
+        color: var(--syn-string);
+      }
 
-  .caption{display:flex;gap:22px;flex-wrap:wrap;margin-top:26px;}
-  .cap{display:flex;gap:10px;max-width:300px;}
-  .cap .num{font-family:var(--font-mono);font-size:11px;font-weight:600;color:var(--on-primary);
-    background:var(--primary-container);width:20px;height:20px;flex:0 0 auto;border-radius:var(--radius-full);display:grid;place-items:center;margin-top:1px;}
-  .cap p{font-size:12.5px;line-height:1.5;color:var(--on-surface-variant);}
-  .cap p b{color:var(--on-surface);font-weight:600;}
+      .caption {
+        display: flex;
+        gap: 22px;
+        flex-wrap: wrap;
+        margin-top: 26px;
+      }
+      .cap {
+        display: flex;
+        gap: 10px;
+        max-width: 300px;
+      }
+      .cap .num {
+        font-family: var(--font-mono);
+        font-size: 11px;
+        font-weight: 600;
+        color: var(--on-primary);
+        background: var(--primary-container);
+        width: 20px;
+        height: 20px;
+        flex: 0 0 auto;
+        border-radius: var(--radius-full);
+        display: grid;
+        place-items: center;
+        margin-top: 1px;
+      }
+      .cap p {
+        font-size: 12.5px;
+        line-height: 1.5;
+        color: var(--on-surface-variant);
+      }
+      .cap p b {
+        color: var(--on-surface);
+        font-weight: 600;
+      }
 
-  .new-only{display:flex;}
-  .old-only{display:none;}
-  body.show-old .new-only{display:none;}
-  body.show-old .old-only{display:flex;}
-</style>
-</head>
-<body class="show-new">
-<div class="stage">
+      .new-only {
+        display: flex;
+      }
+      .old-only {
+        display: none;
+      }
+      body.show-old .new-only {
+        display: none;
+      }
+      body.show-old .old-only {
+        display: flex;
+      }
+    </style>
+  </head>
+  <body class="show-new">
+    <div class="stage">
+      <!-- presentation scaffold -->
+      <div class="scaffold-bar">
+        <div class="scaffold-title">
+          <h1>Diff Feedback Toolbar</h1>
+          <span>redesign · git_diff</span>
+        </div>
+        <div class="ab-toggle" id="abToggle">
+          <button data-mode="old">Before</button>
+          <button class="on new" data-mode="new">After</button>
+        </div>
+      </div>
 
-  <!-- presentation scaffold -->
-  <div class="scaffold-bar">
-    <div class="scaffold-title">
-      <h1>Diff Feedback Toolbar</h1>
-      <span>redesign · git_diff</span>
+      <div class="canvas">
+        <div class="frame">
+          <!-- ════════ AFTER (redesigned) ════════ -->
+          <div class="toolbar new-only">
+            <div class="group">
+              <div class="seg">
+                <button class="on">Split</button>
+                <button>Unified</button>
+              </div>
+            </div>
+
+            <!-- FILE selector -->
+            <div class="group nav-file">
+              <button class="arrow" title="Previous file">
+                <span class="ic" data-ic="chevron_left"></span>
+              </button>
+              <div class="file-pill" title="Switch file">
+                <span class="ic ficon" data-ic="description"></span>
+                <span class="fname">App.tsx</span>
+                <span class="fcount">1 / 2</span>
+              </div>
+              <button class="arrow" title="Next file">
+                <span class="ic" data-ic="chevron_right"></span>
+              </button>
+            </div>
+
+            <!-- CHANGE stepper -->
+            <div
+              class="group nav-change"
+              title="Jump between changes in this file"
+            >
+              <span class="ic cicon" data-ic="data_object"></span>
+              <span class="cn">3 / 3</span>
+              <div class="vstep">
+                <button title="Previous change">
+                  <span class="ic" data-ic="chevron_up"></span>
+                </button>
+                <button title="Next change">
+                  <span class="ic" data-ic="chevron_down"></span>
+                </button>
+              </div>
+            </div>
+
+            <div class="spacer"></div>
+
+            <!-- annotate tools -->
+            <div class="group">
+              <div class="tool-well">
+                <button class="iconbtn on" title="Add comment">
+                  <span class="ic" data-ic="add_comment"></span>
+                </button>
+                <button class="iconbtn" title="Highlight selection">
+                  <span class="ic" data-ic="highlighter"></span>
+                </button>
+                <button class="iconbtn" title="Clear markup">
+                  <span class="ic" data-ic="eraser"></span>
+                </button>
+              </div>
+              <div class="dd" title="Highlight granularity">
+                <span class="dk">Hi-lite</span>
+                <span class="dv">Word</span>
+                <span class="ic caret" data-ic="chevron_down"></span>
+              </div>
+            </div>
+
+            <div class="ghost-sep"></div>
+
+            <!-- settings -->
+            <div class="group">
+              <div class="dd" title="Syntax theme">
+                <span class="ic lead" data-ic="palette"></span>
+                <span class="dv">pierre-dark</span>
+                <span class="ic caret" data-ic="chevron_down"></span>
+              </div>
+              <div class="dd" title="View options">
+                <span class="ic lead" data-ic="tune"></span>
+                <span class="dv">View</span>
+                <span class="ic caret" data-ic="chevron_down"></span>
+              </div>
+            </div>
+
+            <div class="ghost-sep"></div>
+
+            <!-- paired actions -->
+            <div class="group actions">
+              <button class="btn btn-secondary" title="Discard all feedback">
+                Discard
+              </button>
+              <button
+                class="btn btn-primary"
+                title="Finish &amp; submit feedback"
+              >
+                <span class="ic" data-ic="check"></span>
+                Finish
+                <span class="pill">1</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- ════════ BEFORE (original) ════════ -->
+          <div class="toolbar old-only" style="gap: 10px">
+            <div class="seg">
+              <button class="on">Split</button><button>Unified</button>
+            </div>
+            <div class="nav-file" style="gap: 1px">
+              <button class="arrow">
+                <span class="ic" data-ic="chevron_left"></span>
+              </button>
+              <div
+                class="file-pill"
+                style="
+                  background: var(--surface-container-highest);
+                  box-shadow: none;
+                "
+              >
+                <span
+                  class="ic"
+                  data-ic="description"
+                  style="color: var(--on-surface-variant)"
+                ></span>
+                <span class="fname" style="color: var(--on-surface-variant)"
+                  >1/2</span
+                >
+              </div>
+              <button class="arrow">
+                <span class="ic" data-ic="chevron_right"></span>
+              </button>
+            </div>
+            <div class="nav-file" style="gap: 1px">
+              <button class="arrow">
+                <span class="ic" data-ic="chevron_left"></span>
+              </button>
+              <div
+                class="file-pill"
+                style="
+                  background: var(--surface-container-highest);
+                  box-shadow: none;
+                "
+              >
+                <span
+                  class="ic"
+                  data-ic="data_object"
+                  style="color: var(--on-surface-variant)"
+                ></span>
+                <span class="fname" style="color: var(--on-surface-variant)"
+                  >3/3</span
+                >
+              </div>
+              <button class="arrow">
+                <span class="ic" data-ic="chevron_right"></span>
+              </button>
+            </div>
+            <button
+              class="btn"
+              style="
+                background: var(--surface-container-highest);
+                color: var(--on-surface-variant);
+              "
+            >
+              Finish feedback (1)
+            </button>
+            <div class="tool-well">
+              <button class="iconbtn">
+                <span class="ic" data-ic="add"></span>
+              </button>
+              <button class="iconbtn">
+                <span class="ic" data-ic="backspace"></span>
+              </button>
+              <button class="iconbtn">
+                <span class="ic" data-ic="align_left"></span>
+              </button>
+            </div>
+            <span class="micro" style="margin-left: 6px">Highlight</span>
+            <div class="dd">
+              <span class="dv">Word</span
+              ><span class="ic caret" data-ic="chevron_down"></span>
+            </div>
+            <span class="micro" style="margin-left: 6px">Theme</span>
+            <div class="dd">
+              <span class="dv">pierre-dark</span
+              ><span class="ic caret" data-ic="chevron_down"></span>
+            </div>
+            <div class="dd">
+              <span class="ic lead" data-ic="tune"></span
+              ><span class="dv">View</span
+              ><span class="ic caret" data-ic="chevron_down"></span>
+            </div>
+            <div class="spacer"></div>
+            <span
+              style="
+                font-family: var(--font-body);
+                font-size: 12px;
+                color: var(--on-surface-muted);
+              "
+              >Discard feedback</span
+            >
+          </div>
+
+          <!-- diff slice for context -->
+          <div class="diff-context">
+            <div class="diff-pane">
+              <div class="diff-head">
+                <span
+                  class="ic"
+                  data-ic="history"
+                  style="color: var(--error)"
+                ></span>
+                <span class="t">Before · App.tsx</span>
+              </div>
+              <div class="diff-body">
+                <div class="row">
+                  <div class="ln">102</div>
+                  <div class="code">
+                    <span class="kw">const</span> handleRender = () => {
+                  </div>
+                </div>
+                <div class="row">
+                  <div class="ln">103</div>
+                  <div class="code">
+                    <span class="kw">const</span> start = performance.<span
+                      class="fn"
+                      >now</span
+                    >();
+                  </div>
+                </div>
+                <div class="row removed">
+                  <div class="ln">104</div>
+                  <div class="code">
+                    <span class="pm-del">-</span>
+                    <span class="fn">executeLegacyLoop</span>(data, (res) => {
+                  </div>
+                </div>
+                <div class="row removed">
+                  <div class="ln">105</div>
+                  <div class="code">
+                    <span class="pm-del">-</span>
+                    <span class="hl-del">processSync</span>(res);
+                  </div>
+                </div>
+                <div class="row removed">
+                  <div class="ln">106</div>
+                  <div class="code">
+                    <span class="pm-del">-</span>
+                    <span class="fn">updateUI</span>(res);
+                  </div>
+                </div>
+                <div class="row">
+                  <div class="ln">107</div>
+                  <div class="code">});</div>
+                </div>
+                <div class="row">
+                  <div class="ln">108</div>
+                  <div class="code">};</div>
+                </div>
+              </div>
+            </div>
+            <div class="diff-pane">
+              <div class="diff-head">
+                <span
+                  class="ic"
+                  data-ic="edit"
+                  style="color: var(--success-muted)"
+                ></span>
+                <span class="t">After · App.tsx</span>
+              </div>
+              <div class="diff-body">
+                <div class="row">
+                  <div class="ln">102</div>
+                  <div class="code">
+                    <span class="kw">const</span> handleRender =
+                    <span class="kw">async</span> () => {
+                  </div>
+                </div>
+                <div class="row">
+                  <div class="ln">103</div>
+                  <div class="code">
+                    <span class="kw">const</span> start = performance.<span
+                      class="fn"
+                      >now</span
+                    >();
+                  </div>
+                </div>
+                <div class="row added">
+                  <div class="ln">104</div>
+                  <div class="code">
+                    <span class="pm-add">+</span>
+                    <span class="kw">await</span> engine.<span class="fn"
+                      >processAsync</span
+                    >(data);
+                  </div>
+                </div>
+                <div class="row added">
+                  <div class="ln">105</div>
+                  <div class="code">
+                    <span class="pm-add">+</span>
+                    <span class="hl-add">notifyAgent</span>(<span class="str"
+                      >'Render optimized'</span
+                    >);
+                  </div>
+                </div>
+                <div class="row">
+                  <div class="ln">106</div>
+                  <div class="code">
+                    console.<span class="fn">log</span>(start);
+                  </div>
+                </div>
+                <div class="row">
+                  <div class="ln">107</div>
+                  <div class="code">};</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- annotated rationale (after only) -->
+          <div class="caption new-only">
+            <div class="cap">
+              <span class="num">1</span>
+              <p>
+                <b>File vs. change are now unmistakable.</b> The file selector
+                is lavender with the filename and ‹ › arrows; the change stepper
+                is azure with the {} braces icon and vertical ↑ ↓ arrows —
+                different colour, shape, and direction.
+              </p>
+            </div>
+            <div class="cap">
+              <span class="num">2</span>
+              <p>
+                <b>Discard &amp; Finish are paired</b> at the right edge.
+                Discard is the secondary button; Finish is the primary gradient
+                with a count pill. Copy shortened to one word each.
+              </p>
+            </div>
+            <div class="cap">
+              <span class="num">3</span>
+              <p>
+                <b>Grouped to the Obsidian Lens.</b> Glass bar, tonal "wells"
+                instead of stray controls, JetBrains Mono values, and ghost
+                separators felt-not-seen.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
-    <div class="ab-toggle" id="abToggle">
-      <button data-mode="old">Before</button>
-      <button class="on new" data-mode="new">After</button>
-    </div>
-  </div>
 
-  <div class="canvas">
-    <div class="frame">
+    <script>
+      const ICONS = {
+        chevron_left: '<path d="m15 18-6-6 6-6"/>',
+        chevron_right: '<path d="m9 18 6-6-6-6"/>',
+        chevron_up: '<path d="m18 15-6-6-6 6"/>',
+        chevron_down: '<path d="m6 9 6 6 6-6"/>',
+        description:
+          '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/>',
+        data_object:
+          '<path d="M8 3H7a2 2 0 0 0-2 2v5a2 2 0 0 1-2 2 2 2 0 0 1 2 2v5a2 2 0 0 0 2 2h1"/><path d="M16 21h1a2 2 0 0 0 2-2v-5a2 2 0 0 1 2-2 2 2 0 0 1-2-2V5a2 2 0 0 0-2-2h-1"/>',
+        add_comment:
+          '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><line x1="9" y1="10" x2="15" y2="10"/><line x1="12" y1="7" x2="12" y2="13"/>',
+        highlighter:
+          '<path d="m9 11-6 6v3h9l3-3"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"/>',
+        eraser:
+          '<path d="m7 21-4.3-4.3a1 1 0 0 1 0-1.4l9.6-9.6a1 1 0 0 1 1.4 0l5.6 5.6a1 1 0 0 1 0 1.4L13 21"/><path d="M22 21H7"/>',
+        palette:
+          '<circle cx="13.5" cy="6.5" r=".9" fill="currentColor" stroke="none"/><circle cx="17.5" cy="10.5" r=".9" fill="currentColor" stroke="none"/><circle cx="6.5" cy="12.5" r=".9" fill="currentColor" stroke="none"/><circle cx="8.5" cy="7.5" r=".9" fill="currentColor" stroke="none"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.555C21.965 6.012 17.461 2 12 2z"/>',
+        tune: '<line x1="21" y1="6" x2="10" y2="6"/><line x1="6" y1="6" x2="3" y2="6"/><line x1="21" y1="12" x2="14" y2="12"/><line x1="10" y1="12" x2="3" y2="12"/><line x1="21" y1="18" x2="16" y2="18"/><line x1="12" y1="18" x2="3" y2="18"/><circle cx="8" cy="6" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="14" cy="18" r="2"/>',
+        check: '<path d="M20 6 9 17l-5-5"/>',
+        history:
+          '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/>',
+        edit: '<path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/>',
+        add: '<path d="M5 12h14"/><path d="M12 5v14"/>',
+        backspace:
+          '<path d="M21 4H8l-7 8 7 8h13a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2z"/><line x1="18" y1="9" x2="12" y2="15"/><line x1="12" y1="9" x2="18" y2="15"/>',
+        align_left:
+          '<line x1="21" y1="6" x2="3" y2="6"/><line x1="15" y1="12" x2="3" y2="12"/><line x1="17" y1="18" x2="3" y2="18"/>',
+      }
+      document.querySelectorAll('.ic[data-ic]').forEach((el) => {
+        const name = el.getAttribute('data-ic')
+        if (ICONS[name])
+          el.innerHTML =
+            '<svg viewBox="0 0 24 24" aria-hidden="true">' +
+            ICONS[name] +
+            '</svg>'
+      })
 
-      <!-- ════════ AFTER (redesigned) ════════ -->
-      <div class="toolbar new-only">
-        <div class="group">
-          <div class="seg">
-            <button class="on">Split</button>
-            <button>Unified</button>
-          </div>
-        </div>
-
-        <!-- FILE selector -->
-        <div class="group nav-file">
-          <button class="arrow" title="Previous file"><span class="ic" data-ic="chevron_left"></span></button>
-          <div class="file-pill" title="Switch file">
-            <span class="ic ficon" data-ic="description"></span>
-            <span class="fname">App.tsx</span>
-            <span class="fcount">1 / 2</span>
-          </div>
-          <button class="arrow" title="Next file"><span class="ic" data-ic="chevron_right"></span></button>
-        </div>
-
-        <!-- CHANGE stepper -->
-        <div class="group nav-change" title="Jump between changes in this file">
-          <span class="ic cicon" data-ic="data_object"></span>
-          <span class="cn">3 / 3</span>
-          <div class="vstep">
-            <button title="Previous change"><span class="ic" data-ic="chevron_up"></span></button>
-            <button title="Next change"><span class="ic" data-ic="chevron_down"></span></button>
-          </div>
-        </div>
-
-        <div class="spacer"></div>
-
-        <!-- annotate tools -->
-        <div class="group">
-          <div class="tool-well">
-            <button class="iconbtn on" title="Add comment"><span class="ic" data-ic="add_comment"></span></button>
-            <button class="iconbtn" title="Highlight selection"><span class="ic" data-ic="highlighter"></span></button>
-            <button class="iconbtn" title="Clear markup"><span class="ic" data-ic="eraser"></span></button>
-          </div>
-          <div class="dd" title="Highlight granularity">
-            <span class="dk">Hi-lite</span>
-            <span class="dv">Word</span>
-            <span class="ic caret" data-ic="chevron_down"></span>
-          </div>
-        </div>
-
-        <div class="ghost-sep"></div>
-
-        <!-- settings -->
-        <div class="group">
-          <div class="dd" title="Syntax theme">
-            <span class="ic lead" data-ic="palette"></span>
-            <span class="dv">pierre-dark</span>
-            <span class="ic caret" data-ic="chevron_down"></span>
-          </div>
-          <div class="dd" title="View options">
-            <span class="ic lead" data-ic="tune"></span>
-            <span class="dv">View</span>
-            <span class="ic caret" data-ic="chevron_down"></span>
-          </div>
-        </div>
-
-        <div class="ghost-sep"></div>
-
-        <!-- paired actions -->
-        <div class="group actions">
-          <button class="btn btn-secondary" title="Discard all feedback">Discard</button>
-          <button class="btn btn-primary" title="Finish &amp; submit feedback">
-            <span class="ic" data-ic="check"></span>
-            Finish
-            <span class="pill">1</span>
-          </button>
-        </div>
-      </div>
-
-      <!-- ════════ BEFORE (original) ════════ -->
-      <div class="toolbar old-only" style="gap:10px;">
-        <div class="seg"><button class="on">Split</button><button>Unified</button></div>
-        <div class="nav-file" style="gap:1px;">
-          <button class="arrow"><span class="ic" data-ic="chevron_left"></span></button>
-          <div class="file-pill" style="background:var(--surface-container-highest);box-shadow:none;">
-            <span class="ic" data-ic="description" style="color:var(--on-surface-variant);"></span>
-            <span class="fname" style="color:var(--on-surface-variant);">1/2</span>
-          </div>
-          <button class="arrow"><span class="ic" data-ic="chevron_right"></span></button>
-        </div>
-        <div class="nav-file" style="gap:1px;">
-          <button class="arrow"><span class="ic" data-ic="chevron_left"></span></button>
-          <div class="file-pill" style="background:var(--surface-container-highest);box-shadow:none;">
-            <span class="ic" data-ic="data_object" style="color:var(--on-surface-variant);"></span>
-            <span class="fname" style="color:var(--on-surface-variant);">3/3</span>
-          </div>
-          <button class="arrow"><span class="ic" data-ic="chevron_right"></span></button>
-        </div>
-        <button class="btn" style="background:var(--surface-container-highest);color:var(--on-surface-variant);">Finish feedback (1)</button>
-        <div class="tool-well">
-          <button class="iconbtn"><span class="ic" data-ic="add"></span></button>
-          <button class="iconbtn"><span class="ic" data-ic="backspace"></span></button>
-          <button class="iconbtn"><span class="ic" data-ic="align_left"></span></button>
-        </div>
-        <span class="micro" style="margin-left:6px;">Highlight</span>
-        <div class="dd"><span class="dv">Word</span><span class="ic caret" data-ic="chevron_down"></span></div>
-        <span class="micro" style="margin-left:6px;">Theme</span>
-        <div class="dd"><span class="dv">pierre-dark</span><span class="ic caret" data-ic="chevron_down"></span></div>
-        <div class="dd"><span class="ic lead" data-ic="tune"></span><span class="dv">View</span><span class="ic caret" data-ic="chevron_down"></span></div>
-        <div class="spacer"></div>
-        <span style="font-family:var(--font-body);font-size:12px;color:var(--on-surface-muted);">Discard feedback</span>
-      </div>
-
-      <!-- diff slice for context -->
-      <div class="diff-context">
-        <div class="diff-pane">
-          <div class="diff-head">
-            <span class="ic" data-ic="history" style="color:var(--error);"></span>
-            <span class="t">Before · App.tsx</span>
-          </div>
-          <div class="diff-body">
-            <div class="row"><div class="ln">102</div><div class="code">  <span class="kw">const</span> handleRender = () => {</div></div>
-            <div class="row"><div class="ln">103</div><div class="code">    <span class="kw">const</span> start = performance.<span class="fn">now</span>();</div></div>
-            <div class="row removed"><div class="ln">104</div><div class="code"><span class="pm-del">-</span>   <span class="fn">executeLegacyLoop</span>(data, (res) => {</div></div>
-            <div class="row removed"><div class="ln">105</div><div class="code"><span class="pm-del">-</span>     <span class="hl-del">processSync</span>(res);</div></div>
-            <div class="row removed"><div class="ln">106</div><div class="code"><span class="pm-del">-</span>     <span class="fn">updateUI</span>(res);</div></div>
-            <div class="row"><div class="ln">107</div><div class="code">    });</div></div>
-            <div class="row"><div class="ln">108</div><div class="code">  };</div></div>
-          </div>
-        </div>
-        <div class="diff-pane">
-          <div class="diff-head">
-            <span class="ic" data-ic="edit" style="color:var(--success-muted);"></span>
-            <span class="t">After · App.tsx</span>
-          </div>
-          <div class="diff-body">
-            <div class="row"><div class="ln">102</div><div class="code">  <span class="kw">const</span> handleRender = <span class="kw">async</span> () => {</div></div>
-            <div class="row"><div class="ln">103</div><div class="code">    <span class="kw">const</span> start = performance.<span class="fn">now</span>();</div></div>
-            <div class="row added"><div class="ln">104</div><div class="code"><span class="pm-add">+</span>   <span class="kw">await</span> engine.<span class="fn">processAsync</span>(data);</div></div>
-            <div class="row added"><div class="ln">105</div><div class="code"><span class="pm-add">+</span>   <span class="hl-add">notifyAgent</span>(<span class="str">'Render optimized'</span>);</div></div>
-            <div class="row"><div class="ln">106</div><div class="code">    console.<span class="fn">log</span>(start);</div></div>
-            <div class="row"><div class="ln">107</div><div class="code">  };</div></div>
-          </div>
-        </div>
-      </div>
-
-      <!-- annotated rationale (after only) -->
-      <div class="caption new-only">
-        <div class="cap">
-          <span class="num">1</span>
-          <p><b>File vs. change are now unmistakable.</b> The file selector is lavender with the filename and ‹ › arrows; the change stepper is azure with the {} braces icon and vertical ↑ ↓ arrows — different colour, shape, and direction.</p>
-        </div>
-        <div class="cap">
-          <span class="num">2</span>
-          <p><b>Discard &amp; Finish are paired</b> at the right edge. Discard is the secondary button; Finish is the primary gradient with a count pill. Copy shortened to one word each.</p>
-        </div>
-        <div class="cap">
-          <span class="num">3</span>
-          <p><b>Grouped to the Obsidian Lens.</b> Glass bar, tonal "wells" instead of stray controls, JetBrains Mono values, and ghost separators felt-not-seen.</p>
-        </div>
-      </div>
-
-    </div>
-  </div>
-</div>
-
-<script>
-  const ICONS = {
-    chevron_left:'<path d="m15 18-6-6 6-6"/>',
-    chevron_right:'<path d="m9 18 6-6-6-6"/>',
-    chevron_up:'<path d="m18 15-6-6-6 6"/>',
-    chevron_down:'<path d="m6 9 6 6 6-6"/>',
-    description:'<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/>',
-    data_object:'<path d="M8 3H7a2 2 0 0 0-2 2v5a2 2 0 0 1-2 2 2 2 0 0 1 2 2v5a2 2 0 0 0 2 2h1"/><path d="M16 21h1a2 2 0 0 0 2-2v-5a2 2 0 0 1 2-2 2 2 0 0 1-2-2V5a2 2 0 0 0-2-2h-1"/>',
-    add_comment:'<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><line x1="9" y1="10" x2="15" y2="10"/><line x1="12" y1="7" x2="12" y2="13"/>',
-    highlighter:'<path d="m9 11-6 6v3h9l3-3"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"/>',
-    eraser:'<path d="m7 21-4.3-4.3a1 1 0 0 1 0-1.4l9.6-9.6a1 1 0 0 1 1.4 0l5.6 5.6a1 1 0 0 1 0 1.4L13 21"/><path d="M22 21H7"/>',
-    palette:'<circle cx="13.5" cy="6.5" r=".9" fill="currentColor" stroke="none"/><circle cx="17.5" cy="10.5" r=".9" fill="currentColor" stroke="none"/><circle cx="6.5" cy="12.5" r=".9" fill="currentColor" stroke="none"/><circle cx="8.5" cy="7.5" r=".9" fill="currentColor" stroke="none"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.555C21.965 6.012 17.461 2 12 2z"/>',
-    tune:'<line x1="21" y1="6" x2="10" y2="6"/><line x1="6" y1="6" x2="3" y2="6"/><line x1="21" y1="12" x2="14" y2="12"/><line x1="10" y1="12" x2="3" y2="12"/><line x1="21" y1="18" x2="16" y2="18"/><line x1="12" y1="18" x2="3" y2="18"/><circle cx="8" cy="6" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="14" cy="18" r="2"/>',
-    check:'<path d="M20 6 9 17l-5-5"/>',
-    history:'<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/>',
-    edit:'<path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/>',
-    add:'<path d="M5 12h14"/><path d="M12 5v14"/>',
-    backspace:'<path d="M21 4H8l-7 8 7 8h13a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2z"/><line x1="18" y1="9" x2="12" y2="15"/><line x1="12" y1="9" x2="18" y2="15"/>',
-    align_left:'<line x1="21" y1="6" x2="3" y2="6"/><line x1="15" y1="12" x2="3" y2="12"/><line x1="17" y1="18" x2="3" y2="18"/>'
-  };
-  document.querySelectorAll('.ic[data-ic]').forEach(el=>{
-    const name = el.getAttribute('data-ic');
-    if(ICONS[name]) el.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true">'+ICONS[name]+'</svg>';
-  });
-
-  const toggle = document.getElementById('abToggle');
-  toggle.addEventListener('click', (e) => {
-    const btn = e.target.closest('button');
-    if (!btn) return;
-    const mode = btn.dataset.mode;
-    document.body.classList.toggle('show-old', mode === 'old');
-    document.body.classList.toggle('show-new', mode === 'new');
-    toggle.querySelectorAll('button').forEach(b => {
-      const on = b.dataset.mode === mode;
-      b.classList.toggle('on', on);
-      b.classList.toggle('new', on && mode === 'new');
-    });
-  });
-</script>
-</body>
+      const toggle = document.getElementById('abToggle')
+      toggle.addEventListener('click', (e) => {
+        const btn = e.target.closest('button')
+        if (!btn) return
+        const mode = btn.dataset.mode
+        document.body.classList.toggle('show-old', mode === 'old')
+        document.body.classList.toggle('show-new', mode === 'new')
+        toggle.querySelectorAll('button').forEach((b) => {
+          const on = b.dataset.mode === mode
+          b.classList.toggle('on', on)
+          b.classList.toggle('new', on && mode === 'new')
+        })
+      })
+    </script>
+  </body>
 </html>
