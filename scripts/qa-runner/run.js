@@ -18,32 +18,32 @@
 
 import { execFileSync, spawnSync } from 'node:child_process'
 import {
-  closeSync,
   existsSync,
   mkdirSync,
-  openSync,
   readdirSync,
   rmSync,
   symlinkSync,
   unlinkSync,
-  writeSync,
+  writeFileSync,
 } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { botEnv, botLabel, loadBot } from './lib/bot-identity.mjs'
-import { linkedVim } from './lib/pr-utils.mjs'
+import { botEnv, botLabel, loadBot } from './lib/bot-identity.js'
+import { linkedVim } from './lib/pr-utils.js'
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url))
 const LOCK_DIR = join(SCRIPT_DIR, '.locks')
 const KIMI_TIMEOUT_MS = 45 * 60 * 1000
 
 const out = (s = '') => process.stdout.write(`${s}\n`)
+
 const die = (s, code = 1) => {
   const err = new Error(s)
   err.exitCode = code
   throw err
 }
+
 const sh = (cmd, args, opts = {}) =>
   execFileSync(cmd, args, {
     encoding: 'utf8',
@@ -61,11 +61,14 @@ const lifelineSkillsDir = () => {
     'lifeline',
     'lifeline'
   )
+
   const versions = readdirSync(root)
     .filter((v) => existsSync(join(root, v, 'skills', 'upsource-review')))
     .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
-  if (!versions.length)
+  if (!versions.length) {
     die('lifeline upsource-review skill not found in the plugin cache.')
+  }
+
   return join(root, versions[versions.length - 1], 'skills')
 }
 
@@ -84,9 +87,13 @@ const worktreeForBranch = (branch) => {
   for (const line of sh('git', ['worktree', 'list', '--porcelain']).split(
     '\n'
   )) {
-    if (line.startsWith('worktree ')) path = line.slice('worktree '.length)
-    else if (line === `branch refs/heads/${branch}`) return path
+    if (line.startsWith('worktree ')) {
+      path = line.slice('worktree '.length)
+    } else if (line === `branch refs/heads/${branch}`) {
+      return path
+    }
   }
+
   return null
 }
 
@@ -95,11 +102,12 @@ const ensureWorktree = (pr, branch, live, skillsDir, bot, repo) => {
   // No self-review: refuse only when the branch is held by a DIFFERENT worktree (a
   // dev checkout). Our own qa-pr-N from a prior round is fine — reset + reuse it.
   const held = worktreeForBranch(branch)
-  if (held && held !== wt)
+  if (held && held !== wt) {
     die(
       `refusing to review PR #${pr}: branch '${branch}' is checked out at ${held} (no self-review)`,
       4
     )
+  }
   const ref = live ? branch : `qa/dryrun-${pr}`
   if (!existsSync(wt)) {
     sh('git', ['fetch', 'origin', branch, '-q'])
@@ -134,6 +142,7 @@ const ensureWorktree = (pr, branch, live, skillsDir, bot, repo) => {
       'origin',
       `https://github.com/${repo}.git`,
     ])
+
     sh('git', [
       '-C',
       wt,
@@ -142,6 +151,7 @@ const ensureWorktree = (pr, branch, live, skillsDir, bot, repo) => {
       '!gh auth git-credential',
     ])
   }
+
   return wt
 }
 
@@ -151,7 +161,10 @@ const invocation = (pr, live) => {
     `Run the lifeline upsource-review skill now on pull request #${pr} of this repository. ` +
     `"${pr}" is the PR number — not a line number or a count. Resolve PR #${pr}, fetch its ` +
     `review findings, and fix every one. Do not ask for clarification; the target is PR #${pr}.`
-  if (live) return base
+  if (live) {
+    return base
+  }
+
   return (
     `${base}\n\n` +
     'MODE: DRY RUN — run the cycle through the codex verify gate ONLY, then STOP. ' +
@@ -166,12 +179,16 @@ const run = (pr, live) => {
   mkdirSync(LOCK_DIR, { recursive: true })
   const lock = join(LOCK_DIR, `pr-${pr}.lock`)
   try {
-    const fd = openSync(lock, 'wx')
-    writeSync(fd, `pid ${process.pid}\n`)
-    closeSync(fd)
+    writeFileSync(lock, `pid ${process.pid}\n`, { flag: 'wx' })
   } catch (e) {
-    if (e.code === 'EEXIST')
+    if (e.code === 'EEXIST') {
       die(`PR #${pr} locked (run in flight). rm ${lock} to override.`, 3)
+    }
+    try {
+      unlinkSync(lock)
+    } catch {
+      /* lock may not exist */
+    }
     throw e
   }
   try {
@@ -184,14 +201,18 @@ const run = (pr, live) => {
         'number,headRefName,url,body,state,isCrossRepository',
       ])
     )
-    if (info.state !== 'OPEN') die(`PR #${pr} is ${info.state}, not OPEN.`)
-    if (info.isCrossRepository)
+    if (info.state !== 'OPEN') {
+      die(`PR #${pr} is ${info.state}, not OPEN.`)
+    }
+    if (info.isCrossRepository) {
       die(
         `PR #${pr} is from a fork — its head ref isn't a base-repo branch; refusing to avoid fetching/pushing the wrong branch.`,
         5
       )
+    }
     const branch = info.headRefName
     const bot = loadBot(SCRIPT_DIR, 'bot.env', 'GH_BOT')
+
     const repo = JSON.parse(
       sh('gh', ['repo', 'view', '--json', 'nameWithOwner'])
     ).nameWithOwner
@@ -201,6 +222,7 @@ const run = (pr, live) => {
       `${live ? 'LIVE' : 'DRY-RUN'}: kimi → /skill:upsource-review ${pr}  ` +
         `(branch ${branch}, as ${botLabel(bot)}, worktree ${wt})`
     )
+
     const r = spawnSync(
       'kimi',
       [
@@ -223,8 +245,11 @@ const run = (pr, live) => {
         },
       }
     )
-    if (r.error) die('kimi spawn failed: ' + r.error.message)
-    out(`\nkimi exit: ${r.status ?? `signal ${r.signal}`}`)
+    if (r.error) {
+      die('kimi spawn failed: ' + r.error.message)
+    }
+    out('')
+    out(`kimi exit: ${r.status ?? `signal ${r.signal}`}`)
     out('--- worktree changes ---')
     out(sh('git', ['-C', wt, 'status', '--short']) || '(none)')
     if (live && r.status === 0) {
@@ -233,7 +258,7 @@ const run = (pr, live) => {
         spawnSync(
           'node',
           [
-            join(SCRIPT_DIR, 'lib', 'linear-status.mjs'),
+            join(SCRIPT_DIR, 'lib', 'linear-status.js'),
             vim,
             `QA runner: ran an upsource-review cycle on PR #${pr} (${info.url}).`,
             '--as',
@@ -257,10 +282,11 @@ const run = (pr, live) => {
 const main = () => {
   const argv = process.argv.slice(2)
   const pr = Number(argv.find((a) => /^\d+$/.test(a)))
-  if (!pr)
+  if (!pr) {
     die(
-      'usage: run.mjs <PR#> [--push]   (default = dry-run; --push arms the live path)'
+      'usage: run.js <PR#> [--push]   (default = dry-run; --push arms the live path)'
     )
+  }
   try {
     run(pr, argv.includes('--push'))
   } catch (e) {

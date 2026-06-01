@@ -3,16 +3,16 @@
 //
 //   scan   — read-only: list eligible PRs (auto-review label) + why.
 //   tick   — one pass: per eligible PR, compute the review state and act:
-//              NEEDS_FIX  → (with --execute) run.mjs <pr> --push   (an upsource cycle)
+//              NEEDS_FIX  → (with --execute) run.js <pr> --push   (an upsource cycle)
 //                           dispatched CONCURRENTLY, capped at --max (default 2).
 //              GOOD_SHAPE → (with --approve) squash-merge AS THE ORCHESTRATOR BOT
 //                           (orchestrator.env) + delete branch.
 //              WAITING / CI_RED → report only.
 //            State is mirrored to the linked Linear issue (a VIM-N in the PR body)
-//            via lib/linear-status.mjs — Linear is the control plane / observability.
+//            via lib/linear-status.js — Linear is the control plane / observability.
 //   watch  — loop `tick` every pollSeconds (Ctrl-C to stop).
 //
-// Two identities: the INNER fixer runs as bot.env (handled inside run.mjs); the
+// Two identities: the INNER fixer runs as bot.env (handled inside run.js); the
 // OUTER merge runs as orchestrator.env so author ≠ approver. Either absent ⇒ that
 // action falls back to your own gh.
 //
@@ -23,8 +23,8 @@ import { execFileSync, spawn, spawnSync } from 'node:child_process'
 import { createWriteStream, existsSync, mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { botLabel, botProcessEnv, loadBot } from './lib/bot-identity.mjs'
-import { linkedVim } from './lib/pr-utils.mjs'
+import { botLabel, botProcessEnv, loadBot } from './lib/bot-identity.js'
+import { linkedVim } from './lib/pr-utils.js'
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url))
 const LOCK_DIR = join(SCRIPT_DIR, '.locks')
@@ -32,6 +32,7 @@ const LOG_DIR = join(SCRIPT_DIR, 'logs')
 const DEFAULT_LABEL = 'auto-review'
 const POLL_SECONDS = 60
 const MAX_PARALLEL = 2
+
 // CI checks that are the *reviewers*, not the build/test gate — excluded from "CI green".
 const REVIEW_CHECKS = new Set([
   'Claude Code Review',
@@ -41,6 +42,7 @@ const REVIEW_CHECKS = new Set([
 
 const out = (s = '') => process.stdout.write(`${s}\n`)
 const err = (s = '') => process.stderr.write(`${s}\n`)
+
 // gh as the ambient identity, or — when `env` is passed — as a bot.
 const gh = (args, env) =>
   execFileSync('gh', args, {
@@ -52,6 +54,7 @@ const ghJson = (args) => JSON.parse(gh(args))
 
 const repoSlug = () => {
   const r = ghJson(['repo', 'view', '--json', 'owner,name'])
+
   return { owner: r.owner.login, name: r.name }
 }
 
@@ -85,6 +88,7 @@ const unresolvedThreads = (owner, name, pr) => {
     const q = cursor
       ? 'query($o:String!,$n:String!,$p:Int!,$c:String!){repository(owner:$o,name:$n){pullRequest(number:$p){reviewThreads(first:100,after:$c){pageInfo{hasNextPage endCursor}nodes{isResolved}}}}}'
       : 'query($o:String!,$n:String!,$p:Int!){repository(owner:$o,name:$n){pullRequest(number:$p){reviewThreads(first:100){pageInfo{hasNextPage endCursor}nodes{isResolved}}}}}'
+
     const args = [
       'api',
       'graphql',
@@ -97,13 +101,18 @@ const unresolvedThreads = (owner, name, pr) => {
       '-F',
       `p=${pr}`,
     ]
-    if (cursor) args.push('-F', `c=${cursor}`)
+    if (cursor) {
+      args.push('-F', `c=${cursor}`)
+    }
     const r = ghJson(args)
     const threads = r.data.repository.pullRequest.reviewThreads
     count += (threads.nodes || []).filter((t) => !t.isResolved).length
-    if (!threads.pageInfo.hasNextPage) break
+    if (!threads.pageInfo.hasNextPage) {
+      break
+    }
     cursor = threads.pageInfo.endCursor
   }
+
   return count
 }
 
@@ -123,6 +132,7 @@ const claudeVerdictClean = (owner, name, pr) => {
       '--slurp',
     ])
   ).flat()
+
   const last = comments
     .filter(
       (c) =>
@@ -133,7 +143,10 @@ const claudeVerdictClean = (owner, name, pr) => {
         c.body.startsWith('## Claude Code Review')
     )
     .pop()
-  if (!last) return null
+  if (!last) {
+    return null
+  }
+
   return /patch is correct|✅/i.test(
     last.body.match(/Overall:[^\n]*/)?.[0] || ''
   )
@@ -146,9 +159,12 @@ const hasLabel = (pr, label) => (pr.labels || []).some((l) => l.name === label)
 
 // The review state machine.
 const computeState = (pr, ctx) => {
-  if (pr.isDraft) return { state: 'WAITING', detail: 'draft' }
+  if (pr.isDraft) {
+    return { state: 'WAITING', detail: 'draft' }
+  }
   const checks = checksFor(pr.number)
   const nonReview = checks.filter((c) => !REVIEW_CHECKS.has(c.name))
+
   // 'cancel' (aborted) is not a pass — block it; only 'pass'/'skipping' count as green.
   const ci = nonReview.some((c) => c.bucket === 'fail' || c.bucket === 'cancel')
     ? 'fail'
@@ -157,6 +173,7 @@ const computeState = (pr, ctx) => {
       : 'green'
   const claudeCheck = checks.find((c) => c.name === 'Claude Code Review')
   const claudeReady = claudeCheck?.bucket === 'pass'
+
   const view = ghJson([
     'pr',
     'view',
@@ -166,56 +183,65 @@ const computeState = (pr, ctx) => {
   ])
   const vim = linkedVim(view.body)
   let state, detail
-  if (ci === 'fail')
-    [state, detail] = ['CI_RED', 'non-review CI failing or canceled']
-  else if (!claudeReady || ci === 'pending')
-    [state, detail] = ['WAITING', 'CI / Claude re-running']
-  else {
+  if (ci === 'fail') {
+    ;[state, detail] = ['CI_RED', 'non-review CI failing or canceled']
+  } else if (!claudeReady || ci === 'pending') {
+    ;[state, detail] = ['WAITING', 'CI / Claude re-running']
+  } else {
     const threads = unresolvedThreads(ctx.owner, ctx.name, pr.number)
-    if (threads > 0)
-      [state, detail] = ['NEEDS_FIX', `${threads} unresolved thread(s)`]
-    else {
+    if (threads > 0) {
+      ;[state, detail] = ['NEEDS_FIX', `${threads} unresolved thread(s)`]
+    } else {
       // verdict is irrelevant until threads are clear — defer the fetch to here
       const verdict = claudeVerdictClean(ctx.owner, ctx.name, pr.number) // null|true|false
-      if (verdict === false)
-        [state, detail] = ['NEEDS_FIX', 'Claude verdict: patch has issues']
-      else if (verdict === null)
-        [state, detail] = ['WAITING', 'no Claude review yet']
-      else if (view.mergeable !== 'MERGEABLE')
-        [state, detail] = [
+      if (verdict === false) {
+        ;[state, detail] = ['NEEDS_FIX', 'Claude verdict: patch has issues']
+      } else if (verdict === null) {
+        ;[state, detail] = ['WAITING', 'no Claude review yet']
+      } else if (view.mergeable !== 'MERGEABLE') {
+        ;[state, detail] = [
           'WAITING',
           `not mergeable (${view.mergeStateStatus})`,
         ]
-      else
-        [state, detail] = [
+      } else {
+        ;[state, detail] = [
           'GOOD_SHAPE',
           '0 threads · Claude clean · CI green · mergeable',
         ]
+      }
     }
+
     return { state, detail, vim, threads, headSha: view.headRefOid }
   }
+
   return { state, detail, vim, threads: 0, headSha: view.headRefOid }
 }
 
 const postLinear = (vim, body, stateName) => {
-  if (!vim) return
+  if (!vim) {
+    return
+  }
+
   const args = [
-    join(SCRIPT_DIR, 'lib', 'linear-status.mjs'),
+    join(SCRIPT_DIR, 'lib', 'linear-status.js'),
     vim,
     body,
     '--as',
     'orchestrator',
   ]
-  if (stateName) args.push('--state', stateName)
+  if (stateName) {
+    args.push('--state', stateName)
+  }
   const r = spawnSync('node', args, { encoding: 'utf8' })
-  if (r.status === 0)
+  if (r.status === 0) {
     out(
       `           ↳ Linear ${vim}${stateName ? ` → ${stateName}` : ''}: commented`
     )
-  else
+  } else {
     out(
       `           ↳ Linear ${vim}: skipped (${(r.stderr || '').trim().split('\n')[0] || 'no LINEAR_API_KEY'})`
     )
+  }
 }
 
 // Squash-merge + branch delete as the orchestrator bot (or you, if none).
@@ -225,6 +251,7 @@ const approve = (pr, vim, headSha, ctx) => {
   const env = botProcessEnv(ctx.orchBot)
   const merger = botLabel(ctx.orchBot)
   out(`           → APPROVING as ${merger}: squash-merge #${pr.number}`)
+
   const prInfo = ghJson([
     'pr',
     'view',
@@ -232,6 +259,7 @@ const approve = (pr, vim, headSha, ctx) => {
     '--json',
     'reviews,isCrossRepository',
   ])
+
   const alreadyApproved = (prInfo.reviews || []).some(
     (r) => r.state === 'APPROVED' && r.author?.login === ctx.approverLogin
   )
@@ -290,9 +318,9 @@ const approve = (pr, vim, headSha, ctx) => {
   )
 }
 
-// Run run.mjs for one PR as a child, teeing output to a per-PR log and prefixing
+// Run run.js for one PR as a child, teeing output to a per-PR log and prefixing
 // the console so concurrent runs stay legible. Resolves the exit code; never
-// rejects — a failed child must not abort the pool. run.mjs adopts the INNER
+// rejects — a failed child must not abort the pool. run.js adopts the INNER
 // (fixer) bot identity itself, so we just inherit the env here.
 const dispatchFix = (pr) =>
   new Promise((resolve) => {
@@ -300,14 +328,16 @@ const dispatchFix = (pr) =>
     const logPath = join(LOG_DIR, `pr-${pr}.log`)
     const logFd = createWriteStream(logPath, { flags: 'a' })
     const tag = `[#${pr}]`
-    out(`${tag} → run.mjs ${pr} --push   (log: ${logPath})`)
+    out(`${tag} → run.js ${pr} --push   (log: ${logPath})`)
+
     const child = spawn(
       'node',
-      [join(SCRIPT_DIR, 'run.mjs'), String(pr), '--push'],
+      [join(SCRIPT_DIR, 'run.js'), String(pr), '--push'],
       {
         env: process.env,
       }
     )
+
     const pipe = (stream) => {
       let buf = ''
       stream.on('data', (d) => {
@@ -319,14 +349,21 @@ const dispatchFix = (pr) =>
           buf = buf.slice(nl + 1)
         }
       })
+
+      stream.on('end', () => {
+        if (buf) {
+          out(`${tag} ${buf}`)
+        }
+      })
     }
     pipe(child.stdout)
     pipe(child.stderr)
     child.on('close', (code) => {
       logFd.end()
-      out(`${tag} ✓ run.mjs exited ${code}`)
+      out(`${tag} ✓ run.js exited ${code}`)
       resolve(code)
     })
+
     child.on('error', (e) => {
       logFd.end()
       out(`${tag} ✗ spawn error: ${e.message}`)
@@ -337,8 +374,11 @@ const dispatchFix = (pr) =>
 // Bounded-concurrency pool — at most `limit` workers in flight.
 const pool = async (items, limit, worker) => {
   let i = 0
+
   const next = async () => {
-    while (i < items.length) await worker(items[i++])
+    while (i < items.length) {
+      await worker(items[i++])
+    }
   }
   await Promise.all(Array.from({ length: Math.min(limit, items.length) }, next))
 }
@@ -347,13 +387,16 @@ const tick = async (ctx) => {
   let prs = openPRs().filter(
     (p) => (ctx.all || hasLabel(p, ctx.label)) && !p.isDraft
   )
-  if (ctx.pr) prs = prs.filter((p) => p.number === ctx.pr)
+  if (ctx.pr) {
+    prs = prs.filter((p) => p.number === ctx.pr)
+  }
   if (!prs.length) {
     out(
       ctx.pr
         ? `PR #${ctx.pr} is not an eligible open PR.`
         : `No eligible PRs (label '${ctx.label}').`
     )
+
     return
   }
   out(
@@ -395,7 +438,9 @@ const tick = async (ctx) => {
         } catch (e) {
           out(`           ✗ approve failed: ${e.message.split('\n')[0]}`)
         }
-      } else out(`           (report-only — pass --approve to auto-merge)`)
+      } else {
+        out(`           (report-only — pass --approve to auto-merge)`)
+      }
     }
     out('')
   }
@@ -412,6 +457,7 @@ const watch = async (ctx) => {
     `QA watcher — looping every ${POLL_SECONDS}s ` +
       `(approve=${ctx.approve} execute=${ctx.execute} max=${ctx.maxParallel}). Ctrl-C to stop.\n`
   )
+
   const loop = async () => {
     try {
       await tick(ctx)
@@ -426,9 +472,12 @@ const watch = async (ctx) => {
 // Read-only eligibility lister (lightweight).
 const scan = (ctx) => {
   let prs = openPRs()
-  if (ctx.pr) prs = prs.filter((p) => p.number === ctx.pr)
+  if (ctx.pr) {
+    prs = prs.filter((p) => p.number === ctx.pr)
+  }
   if (!prs.length) {
     out('No open PRs.')
+
     return
   }
   out(
@@ -440,7 +489,9 @@ const scan = (ctx) => {
       !pr.isDraft &&
       (ctx.all || hasLabel(pr, ctx.label)) &&
       !isLocked(pr.number)
-    if (eligible) n++
+    if (eligible) {
+      n++
+    }
     out(
       `${eligible ? 'ELIGIBLE →' : 'skip      '} #${pr.number}  ${pr.headRefName}  —  ${pr.title}`
     )
@@ -452,12 +503,15 @@ const main = () => {
   const argv = process.argv.slice(2)
   const cmd = argv[0] && !argv[0].startsWith('--') ? argv[0] : 'scan'
   const has = (n) => argv.includes(`--${n}`)
+
   const val = (n) => {
     const i = argv.indexOf(`--${n}`)
+
     return i >= 0 ? argv[i + 1] : undefined
   }
   const { owner, name } = repoSlug()
   const orchBot = loadBot(SCRIPT_DIR, 'orchestrator.env', 'GH_ORCH')
+
   const ctx = {
     owner,
     name,
@@ -470,18 +524,24 @@ const main = () => {
     orchBot,
     approverLogin: orchBot?.user ?? ghJson(['api', 'user']).login,
   }
-  if (cmd === 'scan') return scan(ctx)
-  if (cmd === 'tick') return tick(ctx)
-  if (cmd === 'watch') return watch(ctx)
+  if (cmd === 'scan') {
+    return scan(ctx)
+  }
+  if (cmd === 'tick') {
+    return tick(ctx)
+  }
+  if (cmd === 'watch') {
+    return watch(ctx)
+  }
   err(
     `unknown command: ${cmd}. Use: scan | tick | watch  [--pr N] [--approve] [--execute] [--all] [--max N] [--label NAME]`
   )
   process.exit(1)
 }
 
-const result = main()
-if (result && typeof result.then === 'function')
-  result.catch((e) => {
-    err(e.message)
-    process.exit(1)
-  })
+try {
+  await main()
+} catch (e) {
+  err(e.message)
+  process.exit(1)
+}

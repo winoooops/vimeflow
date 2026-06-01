@@ -18,6 +18,11 @@ words:
   # Anthropic id prefixes appearing in code and test fixtures
   - toolu
 
+  # QA-runner automation (kimi fixer CLI, dry-run worktrees, review state)
+  - kimi
+  - dryrun
+  - unreviewed
+
   # General vocabulary flagged by cspell's defaults
   - unparseable
   - lossily

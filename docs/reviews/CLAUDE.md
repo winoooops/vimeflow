@@ -45,7 +45,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | -------------------------------------------------------------------- | ------------------ | -------- | ---- | ------------ |
 | [Filesystem Scope](patterns/filesystem-scope.md)                     | security           | 21       | 3    | 2026-05-20   |
 | [React Lifecycle](patterns/react-lifecycle.md)                       | react-patterns     | 25       | 9    | 2026-05-31   |
-| [Resource Cleanup](patterns/resource-cleanup.md)                     | react-patterns     | 3        | 3    | 2026-05-24   |
+| [Resource Cleanup](patterns/resource-cleanup.md)                     | react-patterns     | 5        | 3    | 2026-05-31   |
 | [Cross-Platform Paths](patterns/cross-platform-paths.md)             | cross-platform     | 4        | 3    | 2026-05-07   |
 | [Debug Artifacts](patterns/debug-artifacts.md)                       | code-quality       | 5        | 0    | 2026-05-09   |
 | [Generated Artifacts](patterns/generated-artifacts.md)               | code-quality       | 3        | 2    | 2026-05-25   |
@@ -71,5 +71,6 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Module Boundaries](patterns/module-boundaries.md)                   | code-quality       | 3        | 1    | 2026-05-07   |
 | [Diagnostic Instrumentation](patterns/diagnostic-instrumentation.md) | code-quality       | 7        | 2    | 2026-05-02   |
 | [Keyboard Shortcut Guards](patterns/keyboard-shortcut-guards.md)     | keyboard-shortcuts | 18       | 0    | 2026-05-26   |
+| [Promise Patterns](patterns/promise-patterns.md)                     | code-quality       | 1        | 0    | 2026-05-31   |
 | [Verify Render Target](patterns/verify-render-target.md)             | code-quality       | 2        | 0    | 2026-05-24   |
 | [Status Indicator Display](patterns/status-indicator-display.md)     | code-quality       | 3        | 0    | 2026-05-26   |
