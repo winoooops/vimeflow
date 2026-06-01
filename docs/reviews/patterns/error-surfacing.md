@@ -314,3 +314,39 @@ failed" must mean the editor shows the original file, not the requested one.
 - **Finding:** `postLinear(…, 'In Progress')` was called before the `ctx.execute` guard, so every report-only tick falsely transitioned linked Linear issues to "In Progress" even when no fix cycle ran.
 - **Fix:** Moved `postLinear` inside the `ctx.execute` block so it only fires when a real fix cycle is dispatched.
 - **Commit:** same commit as this entry
+
+### 32. Worker crashes permanently if queue.done() throws in finally block
+
+- **Source:** github-claude | PR #324 round 1 | 2026-06-01
+- **Severity:** HIGH
+- **File:** `scripts/qa-runner/daemon.js`
+- **Finding:** `queue.done()` was called in a bare `finally` block. If `save()` inside it threw (disk-full, permissions, rename failure), the exception propagated out of the `try-catch-finally` block and rejected the worker's async function. Because `worker(i + 1)` was called without `.catch()` or `await`, this became an unhandled promise rejection that could crash the daemon or silently shrink the concurrency pool.
+- **Fix:** Wrapped `queue.done()` in an inner `try-catch` inside the `finally` block so failures are logged but never escape the worker loop.
+- **Commit:** same commit as this entry
+
+### 33. before=null initial probe causes spurious grace trigger, kills kimi in 2 min
+
+- **Source:** github-claude | PR #324 round 1 | 2026-06-01
+- **Severity:** MEDIUM
+- **File:** `scripts/qa-runner/lib/run-until-change.js`
+- **Finding:** `probe()` returning `null` on the initial call set `before = null`. The poll condition `now && now !== before` then fired on the first successful probe, immediately arming the 120-second grace timer and killing kimi before it could commit.
+- **Fix:** Made `before` mutable; when `before` is `null` and `now` is non-null, set `before = now` as the baseline before evaluating change detection.
+- **Commit:** same commit as this entry
+
+### 34. null exit code (signal-killed child) counted as fixer stall, inflates noopCount
+
+- **Source:** github-claude | PR #324 round 1 | 2026-06-01
+- **Severity:** MEDIUM
+- **File:** `scripts/qa-runner/watch.js`
+- **Finding:** `dispatchFix` resolved `null` when `run.js` was killed by an external signal. `codes.some((c) => c !== 0)` evaluated `null !== 0` as `true`, counting the kill as a fixer stall and incrementing `noopCount` toward pausing the PR.
+- **Fix:** Excluded `null` from the `fixerStall` predicate and routed signal-killed children through the transient exit-code-2 path so host OOM/restarts don't count toward pausing.
+- **Commit:** same commit as this entry
+
+### 35. Stale lock reaping via process.kill(pid,0) vulnerable to PID recycling
+
+- **Source:** github-claude | PR #324 round 1 | 2026-06-01
+- **Severity:** LOW
+- **File:** `scripts/qa-runner/watch.js`
+- **Finding:** `isLocked` used `process.kill(pid, 0)` alone to check liveness. If the original `run.js` crashed and its PID was reused by an unrelated process, the PR was skipped every tick forever until that unrelated process died.
+- **Fix:** Added a `/proc/<pid>/cmdline` check for the substring `run.js`; if the live process is not a `run.js`, the lock is reaped as stale. Full ownership validation (start time + expected PR) was deferred per the PR author's original plan.
+- **Commit:** same commit as this entry

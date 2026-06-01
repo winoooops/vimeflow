@@ -30,7 +30,7 @@ export const runUntilChange = (spawnChild, probe, opts = {}) => {
   } = opts
 
   return new Promise((resolve) => {
-    const before = probe()
+    let before = probe()
     const child = spawnChild()
     let stopped = false
     let stopReason = null
@@ -52,7 +52,12 @@ export const runUntilChange = (spawnChild, probe, opts = {}) => {
 
     const poll = timers.setInterval(() => {
       const now = probe()
-      if (now && now !== before && graceTimer === null) {
+      if (before === null && now) {
+        before = now
+
+        return
+      }
+      if (now && before !== null && now !== before && graceTimer === null) {
         log(
           `run-until-change: probe changed (${String(now).slice(0, 7)}) — grace ${graceMs / 1000}s then stop`
         )

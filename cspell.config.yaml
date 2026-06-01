@@ -27,6 +27,7 @@ words:
   - healthz
   - dedup
   - checkpointed
+  - cmdline
 
   # General vocabulary flagged by cspell's defaults
   - unparseable

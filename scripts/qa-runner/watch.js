@@ -187,6 +187,17 @@ const isLocked = (pr) => {
     const pid = Number((readFileSync(lock, 'utf8').match(/pid (\d+)/) || [])[1])
     if (pid > 0) {
       process.kill(pid, 0) // throws ESRCH if the owner process is gone
+      try {
+        const cmdLine = readFileSync(`/proc/${pid}/cmdline`, 'utf8')
+        if (!cmdLine.includes('run.js')) {
+          // PID recycled to a non-run.js process — stale lock
+          rmSync(lock, { force: true })
+
+          return false
+        }
+      } catch {
+        // /proc unreadable — treat as locked to be safe
+      }
 
       return true
     }
@@ -501,22 +512,24 @@ const tick = async (ctx) => {
     out('')
   }
   let fixerStall = false
+  let signalKilled = false
   if (needsFix.length) {
     out(
       `Dispatching ${needsFix.length} fix run(s), up to ${ctx.maxParallel} in parallel…\n`
     )
     const codes = await pool(needsFix, ctx.maxParallel, dispatchFix)
-    fixerStall = codes.some((c) => c !== 0)
+    fixerStall = codes.some((c) => c !== null && c !== 0)
+    signalKilled = codes.some((c) => c === null)
   }
   // Exit-code contract for the supervising daemon:
   //   1 = a dispatched FIXER stalled (run.js non-zero) — the actionable signal it
   //       counts toward pausing the PR (kimi can't drive these findings to zero).
-  //   2 = a TRANSIENT infra failure (classification / approve, no fixer stall) — the
-  //       daemon retries WITHOUT pausing, so a gh/GraphQL blip can't stick a PR.
+  //   2 = a TRANSIENT infra failure (classification / approve / signal-killed) — the
+  //       daemon retries WITHOUT pausing, so a gh/GraphQL blip or host OOM can't stick a PR.
   // Fixer stall wins when both happen in one tick.
   if (fixerStall) {
     process.exitCode = 1
-  } else if (classifyError || approveError) {
+  } else if (classifyError || approveError || signalKilled) {
     process.exitCode = 2
   }
 }

@@ -38,7 +38,11 @@ const worker = async (id) => {
     } catch (e) {
       log(`worker ${id}: #${job.pr} ERROR ${e.message}`)
     } finally {
-      queue.done(job.pr)
+      try {
+        queue.done(job.pr)
+      } catch (e) {
+        log(`worker ${id}: queue.done failed — ${e.message}`)
+      }
     }
   }
 }
