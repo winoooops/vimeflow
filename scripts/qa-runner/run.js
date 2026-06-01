@@ -16,7 +16,7 @@
 // via a `skills/upsource-review` symlink we create in the worktree. codex is the
 // verify gate (inside the skill).
 
-import { execFileSync, spawnSync } from 'node:child_process'
+import { execFileSync, spawn, spawnSync } from 'node:child_process'
 import {
   existsSync,
   mkdirSync,
@@ -31,6 +31,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { botEnv, botLabel, loadBot } from './lib/bot-identity.js'
 import { linkedVim } from './lib/pr-utils.js'
+import { runUntilChange } from './lib/run-until-change.js'
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url))
 const LOCK_DIR = join(SCRIPT_DIR, '.locks')
@@ -162,7 +163,15 @@ const invocation = (pr, live) => {
     `"${pr}" is the PR number — not a line number or a count. Resolve PR #${pr}, fetch its ` +
     `review findings, and fix every one. Do not ask for clarification; the target is PR #${pr}.`
   if (live) {
-    return base
+    // SINGLE PASS: the orchestrator owns re-dispatch — fix one round and exit, never poll.
+    return (
+      `${base}\n\n` +
+      'SINGLE PASS — fix only the CURRENT round of review findings: apply the fixes, ' +
+      'run the codex verify gate, commit, push, then reply to and resolve the threads ' +
+      'you addressed, and STOP. Do NOT poll or wait for a re-review, and do NOT begin ' +
+      'another fix round — exit cleanly as soon as this round is pushed. The orchestrator ' +
+      're-dispatches you when fresh review feedback arrives.'
+    )
   }
 
   return (
@@ -175,7 +184,7 @@ const invocation = (pr, live) => {
   )
 }
 
-const run = (pr, live) => {
+const run = async (pr, live) => {
   mkdirSync(LOCK_DIR, { recursive: true })
   const lock = join(LOCK_DIR, `pr-${pr}.lock`)
   try {
@@ -218,41 +227,97 @@ const run = (pr, live) => {
     ).nameWithOwner
     const skillsDir = lifelineSkillsDir()
     const wt = ensureWorktree(pr, branch, live, skillsDir, bot, repo)
+    // HEAD before the run (== origin/<branch>) — the baseline the post-run live
+    // checks compare against to tell "advanced the remote" from "did nothing".
+    const startHead = sh('git', ['-C', wt, 'rev-parse', 'HEAD']).trim()
     out(
       `${live ? 'LIVE' : 'DRY-RUN'}: kimi → /skill:upsource-review ${pr}  ` +
         `(branch ${branch}, as ${botLabel(bot)}, worktree ${wt})`
     )
 
-    const r = spawnSync(
-      'kimi',
-      [
-        '--afk',
-        '--print',
-        '-w',
-        wt,
-        '--skills-dir',
-        skillsDir,
-        '-p',
-        invocation(pr, live),
-      ],
-      {
-        stdio: 'inherit',
-        timeout: KIMI_TIMEOUT_MS,
-        env: {
-          ...process.env,
-          ...botEnv(bot),
-          USER_SUPPLIED_PR_NUMBER: String(pr),
-        },
-      }
+    // Single-pass guard: stop kimi once it commits (probe = worktree HEAD) so the skill can't POLL_NEXT.
+    const r = await runUntilChange(
+      () =>
+        spawn(
+          'kimi',
+          [
+            '--afk',
+            '--print',
+            '-w',
+            wt,
+            '--skills-dir',
+            skillsDir,
+            '-p',
+            invocation(pr, live),
+          ],
+          {
+            stdio: 'inherit',
+            env: {
+              ...process.env,
+              ...botEnv(bot),
+              USER_SUPPLIED_PR_NUMBER: String(pr),
+            },
+          }
+        ),
+      () => {
+        try {
+          return sh('git', ['-C', wt, 'rev-parse', 'HEAD']).trim()
+        } catch {
+          return null
+        }
+      },
+      { timeoutMs: KIMI_TIMEOUT_MS, log: out }
     )
     if (r.error) {
       die('kimi spawn failed: ' + r.error.message)
     }
+    if (r.timedOut) {
+      const head = sh('git', ['-C', wt, 'rev-parse', 'HEAD']).trim()
+      if (head === startHead) {
+        die(`kimi timed out with no commit (${KIMI_TIMEOUT_MS / 60000}m)`, 6)
+      }
+      // commit landed in the final poll window — fall through to push verification
+    }
+    // A non-zero exit or unexpected signal (anything but our intentional single-pass
+    // stop) is a real fixer failure — exit non-zero so the daemon's failure
+    // accounting sees it instead of recording a clean waiting cycle.
+    if (!r.killed && r.status !== 0) {
+      die(`kimi failed (${r.status ?? `signal ${r.signal}`})`, 7)
+    }
+    // Live invariant: exit 0 ONLY when the run advanced origin/<branch>, so the daemon
+    // can read a clean exit as real progress. Two ways it can fail to:
+    //   1. No commit at all — the fixer was dispatched for findings but addressed
+    //      none (HEAD never left startHead). Looks identical to a WAITING tick to the
+    //      daemon, so without this it would reset the failure streak and poll forever.
+    //   2. Committed but the push never landed (bad credentials, non-fast-forward,
+    //      killed mid-push) — the probe is the LOCAL HEAD, so grace tripped on the
+    //      commit; origin/<branch> stays behind, so the daemon sees an unchanged remote.
+    if (live) {
+      const head = sh('git', ['-C', wt, 'rev-parse', 'HEAD']).trim()
+      if (head === startHead) {
+        die(`kimi produced no commit — findings left unaddressed`, 9)
+      }
+      let remote = null
+      try {
+        remote = sh('git', ['-C', wt, 'rev-parse', `origin/${branch}`]).trim()
+      } catch {
+        /* remote-tracking ref missing — treated as not-pushed below */
+      }
+      if (remote !== head) {
+        die(
+          `kimi committed but the push did not land (local ${head.slice(0, 7)} ≠ origin/${branch} ${remote ? remote.slice(0, 7) : 'unknown'})`,
+          8
+        )
+      }
+    }
     out('')
-    out(`kimi exit: ${r.status ?? `signal ${r.signal}`}`)
+    out(
+      `kimi exit: ${r.status ?? `signal ${r.signal}`}${r.killed ? ' (single-pass stop)' : ''}`
+    )
     out('--- worktree changes ---')
     out(sh('git', ['-C', wt, 'status', '--short']) || '(none)')
-    if (live && r.status === 0) {
+    // r.killed (single-pass stop) is also success — every failure mode die()'d above.
+    if (live && (r.status === 0 || r.killed)) {
       const vim = linkedVim(info.body)
       if (vim) {
         spawnSync(
@@ -279,20 +344,20 @@ const run = (pr, live) => {
   }
 }
 
-const main = () => {
-  const argv = process.argv.slice(2)
-  const pr = Number(argv.find((a) => /^\d+$/.test(a)))
-  if (!pr) {
-    die(
-      'usage: run.js <PR#> [--push]   (default = dry-run; --push arms the live path)'
-    )
-  }
+const main = async () => {
   try {
-    run(pr, argv.includes('--push'))
+    const argv = process.argv.slice(2)
+    const pr = Number(argv.find((a) => /^\d+$/.test(a)))
+    if (!pr) {
+      die(
+        'usage: run.js <PR#> [--push]   (default = dry-run; --push arms the live path)'
+      )
+    }
+    await run(pr, argv.includes('--push'))
   } catch (e) {
     process.stderr.write(`${e.message}\n`)
     process.exit(e.exitCode || 1)
   }
 }
 
-main()
+await main()

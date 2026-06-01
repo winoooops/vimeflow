@@ -20,7 +20,13 @@
 // `--pr N` targets one PR; `--max N` caps parallel fixes. See README.md.
 
 import { execFileSync, spawn, spawnSync } from 'node:child_process'
-import { createWriteStream, existsSync, mkdirSync } from 'node:fs'
+import {
+  createWriteStream,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+} from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { botLabel, botProcessEnv, loadBot } from './lib/bot-identity.js'
@@ -69,6 +75,8 @@ const mainRoot = () =>
     ).trim()
   )
 
+const PR_FIELDS = 'number,title,headRefName,isDraft,labels'
+
 const openPRs = () =>
   ghJson([
     'pr',
@@ -78,8 +86,20 @@ const openPRs = () =>
     '--limit',
     '50',
     '--json',
-    'number,title,headRefName,isDraft,labels',
+    PR_FIELDS,
   ])
+
+// Candidate PRs for a tick/scan. A targeted --pr is fetched directly so a PR past
+// openPRs()'s first page still resolves (the daemon enqueues by number); without
+// one, the capped open list drives the human scan.
+const candidatePRs = (pr) => {
+  if (!pr) {
+    return openPRs()
+  }
+  const p = ghJson(['pr', 'view', String(pr), '--json', `${PR_FIELDS},state`])
+
+  return p.state === 'OPEN' ? [p] : []
+}
 
 const unresolvedThreads = (owner, name, pr) => {
   let cursor = ''
@@ -154,7 +174,43 @@ const claudeVerdictClean = (owner, name, pr) => {
 
 const checksFor = (pr) =>
   ghJson(['pr', 'checks', String(pr), '--json', 'name,bucket'])
-const isLocked = (pr) => existsSync(join(LOCK_DIR, `pr-${pr}.lock`))
+
+// Is a runner holding this PR's lock? Lazily reaps a STALE lock — one whose owner
+// PID is gone (host crash / SIGKILL before run.js released it) — so a requeued PR
+// isn't reported LOCKED and skipped forever after a restart.
+const isLocked = (pr) => {
+  const lock = join(LOCK_DIR, `pr-${pr}.lock`)
+  if (!existsSync(lock)) {
+    return false
+  }
+  try {
+    const pid = Number((readFileSync(lock, 'utf8').match(/pid (\d+)/) || [])[1])
+    if (pid > 0) {
+      process.kill(pid, 0) // throws ESRCH if the owner process is gone
+      try {
+        const cmdLine = readFileSync(`/proc/${pid}/cmdline`, 'utf8')
+        if (!cmdLine.includes('run.js')) {
+          // PID recycled to a non-run.js process — stale lock
+          rmSync(lock, { force: true })
+
+          return false
+        }
+      } catch {
+        // /proc unreadable — treat as locked to be safe
+      }
+
+      return true
+    }
+  } catch (e) {
+    if (e.code === 'EPERM') {
+      return true // owner alive but not ours — still a live holder
+    }
+    // ESRCH / unreadable PID → stale; fall through to reap
+  }
+  rmSync(lock, { force: true })
+
+  return false
+}
 const hasLabel = (pr, label) => (pr.labels || []).some((l) => l.name === label)
 
 // The review state machine.
@@ -373,23 +429,24 @@ const dispatchFix = (pr) =>
 
 // Bounded-concurrency pool — at most `limit` workers in flight.
 const pool = async (items, limit, worker) => {
+  const results = []
   let i = 0
 
   const next = async () => {
     while (i < items.length) {
-      await worker(items[i++])
+      const idx = i++
+      results[idx] = await worker(items[idx])
     }
   }
   await Promise.all(Array.from({ length: Math.min(limit, items.length) }, next))
+
+  return results
 }
 
 const tick = async (ctx) => {
-  let prs = openPRs().filter(
+  const prs = candidatePRs(ctx.pr).filter(
     (p) => (ctx.all || hasLabel(p, ctx.label)) && !p.isDraft
   )
-  if (ctx.pr) {
-    prs = prs.filter((p) => p.number === ctx.pr)
-  }
   if (!prs.length) {
     out(
       ctx.pr
@@ -404,6 +461,8 @@ const tick = async (ctx) => {
       `approve=${ctx.approve} execute=${ctx.execute} max=${ctx.maxParallel}\n`
   )
   const needsFix = []
+  let classifyError = false
+  let approveError = false
   for (const pr of prs) {
     if (isLocked(pr.number)) {
       out(`LOCKED     #${pr.number} ${pr.headRefName} — run in flight, skip\n`)
@@ -413,7 +472,11 @@ const tick = async (ctx) => {
     try {
       s = computeState(pr, ctx)
     } catch (e) {
+      // A transient classification failure (gh checks / GraphQL) is NOT a clean tick —
+      // flag it so the exit is non-zero and a supervising daemon counts it, rather
+      // than reading exit 0 as "WAITING" and resetting the PR's failure streak.
       out(`ERROR      #${pr.number} — ${e.message.split('\n')[0]}\n`)
+      classifyError = true
       continue
     }
     out(
@@ -436,7 +499,11 @@ const tick = async (ctx) => {
         try {
           approve(pr, s.vim, s.headSha, ctx)
         } catch (e) {
+          // A failed merge (branch protection, perms, a moved head, a transient gh
+          // outage) is infra, not a fixer stall — flag it for the exit-2 path so the
+          // daemon retries without counting it toward pausing the PR.
           out(`           ✗ approve failed: ${e.message.split('\n')[0]}`)
+          approveError = true
         }
       } else {
         out(`           (report-only — pass --approve to auto-merge)`)
@@ -444,11 +511,29 @@ const tick = async (ctx) => {
     }
     out('')
   }
+  let fixerStall = false
+  let transientChild = false
   if (needsFix.length) {
     out(
       `Dispatching ${needsFix.length} fix run(s), up to ${ctx.maxParallel} in parallel…\n`
     )
-    await pool(needsFix, ctx.maxParallel, dispatchFix)
+    const codes = await pool(needsFix, ctx.maxParallel, dispatchFix)
+    // dispatchFix resolves a real run.js exit code, null (signal-killed), or -1
+    // (spawn failed: node/run.js missing, OOM before fork). Only a real non-zero
+    // exit is a fixer stall; null and -1 are transient infra, not kimi's fault.
+    fixerStall = codes.some((c) => c !== null && c !== -1 && c !== 0)
+    transientChild = codes.some((c) => c === null || c === -1)
+  }
+  // Exit-code contract for the supervising daemon:
+  //   1 = a dispatched FIXER stalled (run.js non-zero) — the actionable signal it
+  //       counts toward pausing the PR (kimi can't drive these findings to zero).
+  //   2 = a TRANSIENT infra failure (classify / approve / signal-kill / spawn-fail) —
+  //       the daemon retries WITHOUT pausing, so a blip or host OOM can't stick a PR.
+  // Fixer stall wins when both happen in one tick.
+  if (fixerStall) {
+    process.exitCode = 1
+  } else if (classifyError || approveError || transientChild) {
+    process.exitCode = 2
   }
 }
 
@@ -471,10 +556,7 @@ const watch = async (ctx) => {
 
 // Read-only eligibility lister (lightweight).
 const scan = (ctx) => {
-  let prs = openPRs()
-  if (ctx.pr) {
-    prs = prs.filter((p) => p.number === ctx.pr)
-  }
+  const prs = candidatePRs(ctx.pr)
   if (!prs.length) {
     out('No open PRs.')
 
@@ -542,6 +624,10 @@ const main = () => {
 try {
   await main()
 } catch (e) {
+  // A throw reaching here is a top-level infra failure (repoSlug / targeted PR
+  // lookup / `gh api user`), NOT a dispatched-fixer stall — a fixer stall sets
+  // exitCode 1 inside tick and returns without throwing. Exit 2 (transient) so the
+  // daemon retries instead of counting it toward pausing a healthy PR.
   err(e.message)
-  process.exit(1)
+  process.exit(2)
 }

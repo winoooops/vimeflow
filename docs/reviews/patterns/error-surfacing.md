@@ -2,8 +2,8 @@
 id: error-surfacing
 category: error-handling
 created: 2026-04-10
-last_updated: 2026-05-31
-ref_count: 7
+last_updated: 2026-06-01
+ref_count: 8
 ---
 
 # Error Surfacing
@@ -314,3 +314,66 @@ failed" must mean the editor shows the original file, not the requested one.
 - **Finding:** `postLinear(…, 'In Progress')` was called before the `ctx.execute` guard, so every report-only tick falsely transitioned linked Linear issues to "In Progress" even when no fix cycle ran.
 - **Fix:** Moved `postLinear` inside the `ctx.execute` block so it only fires when a real fix cycle is dispatched.
 - **Commit:** same commit as this entry
+
+### 32. Worker crashes permanently if queue.done() throws in finally block
+
+- **Source:** github-claude | PR #324 round 1 | 2026-06-01
+- **Severity:** HIGH
+- **File:** `scripts/qa-runner/daemon.js`
+- **Finding:** `queue.done()` was called in a bare `finally` block. If `save()` inside it threw (disk-full, permissions, rename failure), the exception propagated out of the `try-catch-finally` block and rejected the worker's async function. Because `worker(i + 1)` was called without `.catch()` or `await`, this became an unhandled promise rejection that could crash the daemon or silently shrink the concurrency pool.
+- **Fix:** Wrapped `queue.done()` in an inner `try-catch` inside the `finally` block so failures are logged but never escape the worker loop.
+- **Commit:** same commit as this entry
+
+### 33. before=null initial probe causes spurious grace trigger, kills kimi in 2 min
+
+- **Source:** github-claude | PR #324 round 1 | 2026-06-01
+- **Severity:** MEDIUM
+- **File:** `scripts/qa-runner/lib/run-until-change.js`
+- **Finding:** `probe()` returning `null` on the initial call set `before = null`. The poll condition `now && now !== before` then fired on the first successful probe, immediately arming the 120-second grace timer and killing kimi before it could commit.
+- **Fix:** Made `before` mutable; when `before` is `null` and `now` is non-null, set `before = now` as the baseline before evaluating change detection.
+- **Commit:** same commit as this entry
+
+### 34. null exit code (signal-killed child) counted as fixer stall, inflates noopCount
+
+- **Source:** github-claude | PR #324 round 1 | 2026-06-01
+- **Severity:** MEDIUM
+- **File:** `scripts/qa-runner/watch.js`
+- **Finding:** `dispatchFix` resolved `null` when `run.js` was killed by an external signal. `codes.some((c) => c !== 0)` evaluated `null !== 0` as `true`, counting the kill as a fixer stall and incrementing `noopCount` toward pausing the PR.
+- **Fix:** Excluded `null` from the `fixerStall` predicate and routed signal-killed children through the transient exit-code-2 path so host OOM/restarts don't count toward pausing.
+- **Commit:** same commit as this entry
+
+### 35. Stale lock reaping via process.kill(pid,0) vulnerable to PID recycling
+
+- **Source:** github-claude | PR #324 round 1 | 2026-06-01
+- **Severity:** LOW
+- **File:** `scripts/qa-runner/watch.js`
+- **Finding:** `isLocked` used `process.kill(pid, 0)` alone to check liveness. If the original `run.js` crashed and its PID was reused by an unrelated process, the PR was skipped every tick forever until that unrelated process died.
+- **Fix:** Added a `/proc/<pid>/cmdline` check for the substring `run.js`; if the live process is not a `run.js`, the lock is reaped as stale. Full ownership validation (start time + expected PR) was deferred per the PR author's original plan.
+- **Commit:** same commit as this entry
+
+### 36. req.destroy() on payload-too-large tears down shared HTTP/1.x socket before 413 flushes
+
+- **Source:** github-claude | PR #324 round 2 | 2026-06-01
+- **Severity:** LOW
+- **File:** `scripts/qa-runner/lib/host.js`
+- **Finding:** In `readRawBody`, when the payload exceeded the 2 MB limit, `req.destroy()` was called before the promise rejected. The caller `handleWebhook` then called `sendJson(res, 413, ...)`. In Node.js HTTP/1.x, `req` and `res` share the same underlying `net.Socket`; `req.destroy()` propagated to `socket.destroy()`, closing the socket before the 413 headers could be flushed. GitHub received a TCP reset rather than a 413, logged the delivery as failed, and retried with exponential backoff for up to 72 hours.
+- **Fix:** Replaced `req.destroy()` with `req.pause()` in `readRawBody`; added `res.on('finish', () => req.destroy())` in `handleWebhook` so the 413 response completes before the socket closes.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 37. One-shot webhook events lost when pre-tick snapshot fails transiently
+
+- **Source:** github-codex-connector | PR #324 round 2 | 2026-06-01
+- **Severity:** P2 / MEDIUM
+- **File:** `scripts/qa-runner/lib/worker.js`
+- **Finding:** When `gh pr view` failed transiently, `runOne` returned `'skip'` and `daemon.js` always called `queue.done()`, discarding the event. For open labeled PRs the fallback poll re-enqueues them, but one-shot webhooks (`pull_request:closed`, `unlabeled`, `converted_to_draft`) cannot be recreated by the poll. A transient API blip while processing such an event caused the daemon to preserve state but never clean up or announce the terminal transition.
+- **Fix:** Changed the pre-tick snapshot-unavailable return from `'skip'` to `'retry'`. Updated `daemon.js` to requeue non-poll jobs that return `'retry'` so one-shot events survive transient `gh` failures.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 38. `queue.take()` outside try-catch — persistent save failure terminates the daemon
+
+- **Source:** github-claude | PR #324 round 3 | 2026-06-01
+- **Severity:** HIGH
+- **File:** `scripts/qa-runner/daemon.js`
+- **Finding:** `queue.take()` at line 31 sat outside the `try-catch-finally` block that protected `runOne` and `queue.done()`. If `save()` inside `take()` threw (disk full, `ENOSPC` on the rename, permissions error), the exception propagated through the `while` loop, out of the `worker` async function, and became an unhandled promise rejection. Because `worker(i + 1)` at line 114 was called without `.catch()`, Node.js ≥ 15 converts unhandled promise rejections to process termination, killing the entire daemon rather than one worker. This is the symmetric counterpart to finding #32 (`queue.done()` in `finally`).
+- **Fix:** Wrapped `queue.take()` in its own `try-catch` inside the `while` loop so save failures are logged and the loop continues. Changed `const job = queue.take()` to `let job` plus a guarded `try { job = queue.take() } catch (e) { log(...); await sleep(1500); continue }`.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

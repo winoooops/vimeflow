@@ -23,6 +23,12 @@ words:
   - dryrun
   - unreviewed
 
+  # QA daemon (webhook receiver + persistent state machine)
+  - healthz
+  - dedup
+  - checkpointed
+  - cmdline
+
   # General vocabulary flagged by cspell's defaults
   - unparseable
   - lossily
