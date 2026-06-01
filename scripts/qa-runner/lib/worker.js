@@ -26,10 +26,10 @@ const snapshotFailureText = (e) =>
 export const isMissingPullRequestSnapshot = (e) =>
   /Could not resolve to a PullRequest/i.test(snapshotFailureText(e))
 
-const snapshot = (pr) => {
+const snapshot = (pr, exec = execFileSync) => {
   try {
     const j = JSON.parse(
-      execFileSync(
+      exec(
         'gh',
         [
           'pr',
@@ -87,9 +87,10 @@ const tick = (pr, config) =>
     child.on('error', () => resolve(-1))
   })
 
-// Run one cycle for `pr`. deps: { config, state, log, events, now? }. Async — the
-// heavy watch.js/kimi run is awaited, keeping the daemon responsive. Returns an
-// outcome tag: 'done' | 'progress' | 'error' | 'waiting' | 'paused' | 'skip' | 'retry'.
+// Run one cycle for `pr`. deps: { config, state, log, events, now?,
+// snapshotExec? }. Async — the heavy watch.js/kimi run is awaited, keeping the
+// daemon responsive. Returns an outcome tag:
+// 'done' | 'progress' | 'error' | 'waiting' | 'paused' | 'skip' | 'retry'.
 export const runOne = async (pr, reason, deps) => {
   const {
     config,
@@ -97,10 +98,11 @@ export const runOne = async (pr, reason, deps) => {
     log,
     events,
     now = () => new Date().toISOString(),
+    snapshotExec = execFileSync,
   } = deps
   const st = state.get(pr)
   const tracked = state.has(pr)
-  const before = snapshot(pr)
+  const before = snapshot(pr, snapshotExec)
 
   // Missing untracked PR: a synthetic / stale webhook, not a transient. Do not
   // requeue it; this is the local smoke's expected safe skip path.
@@ -164,7 +166,7 @@ export const runOne = async (pr, reason, deps) => {
 
   events.emit({ type: 'cycle', pr, round: st.roundCount, detail: reason })
   const code = await tick(pr, config)
-  const after = snapshot(pr)
+  const after = snapshot(pr, snapshotExec)
 
   // Post-tick read failed (same rule as the pre-tick guard): never interpret null
   // state/head — that would log a real push/merge as a null-head 'waiting' or miss a

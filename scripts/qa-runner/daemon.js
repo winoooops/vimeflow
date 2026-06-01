@@ -51,14 +51,14 @@ const worker = async (id) => {
         log,
         events,
       })
-      if (outcome === 'retry' && job.reason !== 'poll' && running) {
+      if (outcome === 'retry' && job.reason !== 'poll') {
         log(
           `worker ${id}: #${job.pr} transient retry in ${RETRY_BACKOFF_MS / 1000}s`
         )
-        await sleep(RETRY_BACKOFF_MS)
         if (running) {
-          queue.enqueue(job.pr, job.reason)
+          await sleep(RETRY_BACKOFF_MS)
         }
+        queue.enqueue(job.pr, job.reason)
       }
     } catch (e) {
       log(`worker ${id}: #${job.pr} ERROR ${e.message}`)
