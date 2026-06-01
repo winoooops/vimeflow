@@ -243,6 +243,7 @@ pub(crate) async fn spawn_pty_inner(
         cmd.env("BASH_ENV", files.shell_init_path.as_os_str());
         cmd.env("ENV", files.shell_init_path.as_os_str());
         cmd.env("VIMEFLOW_AGENT_INIT", files.shell_init_path.as_os_str());
+        cmd.env("VIMEFLOW_CLAUDE_SHIM_DIR", files.shim_dir_path.as_os_str());
         cmd.env("VIMEFLOW_CLAUDE_SETTINGS", files.settings_path.as_os_str());
         cmd.env("VIMEFLOW_STATUS_FILE", files.status_file_path.as_os_str());
 
