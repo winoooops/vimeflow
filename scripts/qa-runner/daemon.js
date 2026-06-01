@@ -151,9 +151,9 @@ const shutdown = (sig) => {
   }
 
   log(`${sig} — draining; in-flight: ${queue.inFlight().join(', ') || 'none'}`)
+  exitWhenDrained()
   server.close(() => {
     log('http server closed')
-    exitWhenDrained()
   })
 
   setTimeout(() => {
