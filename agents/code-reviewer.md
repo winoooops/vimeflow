@@ -278,7 +278,7 @@ The four-field definition and formatting live in `rules/common/idea-framework.md
 - Do **not** produce a PR-level IDEA block at the end of the review.
 - Use the per-finding format shown in the "Review Output Format" example above.
 - Add an implication layer to the IDEA reasoning before reporting the finding:
-  - **Reality**: Will this finding plausibly produce a real bug, security issue, data loss, user-visible regression, or meaningful operating cost while the user is using the app or the system is running?
+  - **Reality**: Will this finding plausibly produce a real bug, security issue, data loss, user-visible regression, or meaningful operating cost while the user is using the app or the system is running, or create meaningful future-change cost?
   - **Fix cost**: What is the implementation, regression, review, and complexity cost of fixing it now?
 - Reflect the implication layer in the IDEA fields without adding new fields:
   - Put the real runtime/user/system failure mode in **D — Danger**.

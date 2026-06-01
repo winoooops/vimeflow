@@ -738,3 +738,12 @@ Stale documentation misleads future contributors and review agents.
 - **Finding:** Both pattern files received new entries (#76 and #8) in round 1 but their frontmatter `last_updated` remained at 2026-05-31 and 2026-05-12 respectively, diverging from the index table
 - **Fix:** Updated `last_updated` to 2026-06-01 in both frontmatter blocks
 - **Commit:** same commit as this entry
+
+### 79. Reality check runtime scope contradicts Perfection trap's future-change cost
+
+- **Source:** github-claude | PR #323 round 3 | 2026-06-01
+- **Severity:** MEDIUM
+- **File:** `agents/code-reviewer.md` and `rules/common/idea-framework.md`
+- **Finding:** The Reality check's "while the user is using the app or the system is running" qualifier scoped the gate to runtime impacts only, silently contradicting the Perfection trap (line 46) that explicitly permits findings justified by "meaningful future-change cost". Design Complexity findings with future maintenance cost but no immediate runtime failure would pass the Perfection trap but fail the Reality check and be dropped.
+- **Fix:** Restructured both Reality checks so "meaningful future-change cost" sits outside the runtime qualifier — e.g. "...while the user is using the app or the system is running, or create meaningful future-change cost?"
+- **Commit:** same commit as this entry

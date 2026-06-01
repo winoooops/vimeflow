@@ -26,7 +26,7 @@ Keep each line to one or two sentences. If a field has no real content, write "n
 
 For code-review findings, IDEA must also make the practical implication legible:
 
-- **Reality**: Would this issue plausibly produce a real bug, security issue, data loss, user-visible regression, or meaningful operating cost while a user uses the app or the system runs?
+- **Reality**: Would this issue plausibly produce a real bug, security issue, data loss, user-visible regression, or meaningful operating cost while a user uses the app or the system runs, or create meaningful future-change cost?
 - **Fix cost**: What is the implementation, regression, review, and complexity cost of fixing it now?
 
 Do not add new IDEA fields for these questions. Fold the real-world consequence into **D — Danger** and the proportional fix/cost trade-off into **A — Alternatives**. If the danger is weak and the fix cost is non-trivial, skip the finding entirely — do not turn the review into a search for perfect code.
