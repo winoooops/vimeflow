@@ -44,7 +44,7 @@ from the CI gate, so a clean patch is never held `WAITING` by its own reviewers.
 
 | State          | When                                                                    | Action (armed)                      |
 | -------------- | ----------------------------------------------------------------------- | ----------------------------------- |
-| **NEEDS_FIX**  | unresolved review threads > 0, **or** Claude verdict "patch has issues" | `--execute` → `run.js <pr> --push` |
+| **NEEDS_FIX**  | unresolved review threads > 0, **or** Claude verdict "patch has issues" | `--execute` → `run.js <pr> --push`  |
 | **CI_RED**     | a non-review CI check is failing                                        | report only (humans fix the build)  |
 | **WAITING**    | CI/Claude still running · draft · not mergeable · no Claude review yet  | report only (poll again)            |
 | **GOOD_SHAPE** | 0 threads · Claude ✅ · non-review CI green · `MERGEABLE`               | `--approve` → squash-merge + delete |
@@ -64,13 +64,13 @@ authenticated comment author is on the whitelist.
 
 ## Status
 
-| Increment | What                                                                                               | State                    |
-| --------- | -------------------------------------------------------------------------------------------------- | ------------------------ |
+| Increment | What                                                                                              | State                    |
+| --------- | ------------------------------------------------------------------------------------------------- | ------------------------ |
 | **1**     | `watch.js scan` — read-only: list eligible PRs                                                    | ✅ done                  |
 | **2**     | `run.js` — lock → dispatch kimi (upsource-review skill) → codex gate → push, fixer bot identity   | ✅ done                  |
 | **3**     | `watch.js tick/watch` — outer state machine, `--execute` fixes, `--approve` merges, Linear wiring | ✅ done — proven on #317 |
-| **4**     | two-bot loop (fixer ≠ orchestrator) + parallel fixes (cap `--max`)                                 | ✅ done                  |
-| 5         | host: cron / `/loop`, then a self-hosted GitHub Actions runner on `pull_request_review`            | ⬜ next                  |
+| **4**     | two-bot loop (fixer ≠ orchestrator) + parallel fixes (cap `--max`)                                | ✅ done                  |
+| 5         | host: cron / `/loop`, then a self-hosted GitHub Actions runner on `pull_request_review`           | ⬜ next                  |
 
 ## Usage
 
@@ -117,8 +117,8 @@ actions are attributable and split by role. Either absent ⇒ that role acts as 
 own `gh` (backward-compatible). **Never paste a token into chat** — they're read
 from these files.
 
-| File               | Keys        | Role                                      | Used by                   |
-| ------------------ | ----------- | ----------------------------------------- | ------------------------- |
+| File               | Keys        | Role                                      | Used by                  |
+| ------------------ | ----------- | ----------------------------------------- | ------------------------ |
 | `bot.env`          | `GH_BOT_*`  | inner **fixer**                           | `run.js` (kimi)          |
 | `orchestrator.env` | `GH_ORCH_*` | outer **orchestrator** (reviews + merges) | `watch.js` (`--approve`) |
 
