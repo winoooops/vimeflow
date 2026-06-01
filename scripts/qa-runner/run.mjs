@@ -236,6 +236,8 @@ const run = (pr, live) => {
             join(SCRIPT_DIR, 'lib', 'linear-status.mjs'),
             vim,
             `QA runner: ran an upsource-review cycle on PR #${pr} (${info.url}).`,
+            '--as',
+            'fixer',
           ],
           { stdio: 'inherit' }
         )

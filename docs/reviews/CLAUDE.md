@@ -56,6 +56,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Async Race Conditions](patterns/async-race-conditions.md)           | react-patterns     | 45       | 12   | 2026-05-31   |
 | [Tokio Blocking On Async](patterns/tokio-blocking-on-async.md)       | backend            | 2        | 1    | 2026-05-20   |
 | [Command Injection](patterns/command-injection.md)                   | security           | 7        | 3    | 2026-05-02   |
+| [Credential Leakage](patterns/credential-leakage.md)                 | security           | 1        | 0    | 2026-05-31   |
 | [Policy Judge Hygiene](patterns/policy-judge-hygiene.md)             | security           | 15       | 2    | 2026-04-20   |
 | [Fail-Closed Hooks](patterns/fail-closed-hooks.md)                   | security           | 3        | 1    | 2026-04-20   |
 | [Preflight Checks](patterns/preflight-checks.md)                     | error-handling     | 3        | 0    | 2026-05-31   |
