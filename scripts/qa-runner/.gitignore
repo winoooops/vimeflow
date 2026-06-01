@@ -1,6 +1,7 @@
 # local QA-runner state — never commit
 .locks/
 logs/
+.state/
 config.json
 bot.env
 orchestrator.env
