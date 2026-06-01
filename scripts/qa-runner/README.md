@@ -110,6 +110,18 @@ node scripts/qa-runner/run.js 317 --push   # live: commit/push as the fixer bot,
 - **v2 — a self-hosted GitHub Actions runner** on a small always-on box, triggered by
   `pull_request_review`: event-driven for free, full toolchain, your secrets.
 
+## Daemon rollout
+
+The webhook daemon is safe-by-default for the staged rollout:
+
+```bash
+GITHUB_WEBHOOK_SECRET=... QA_TRUSTED_SENDERS=you node scripts/qa-runner/daemon.js
+```
+
+It runs `watch.js tick --execute` for queued PRs. It does **not** pass
+`--approve` unless explicitly armed with `QA_APPROVE=1`, which belongs to the
+orchestrator-bot rung.
+
 ## Identity (`lib/bot-identity.js`)
 
 Two optional, gitignored env files — each a **separate GitHub account** so machine
