@@ -28,7 +28,14 @@ let running = true
 // is capped by the worker count (config.maxParallel).
 const worker = async (id) => {
   while (running) {
-    const job = queue.take()
+    let job
+    try {
+      job = queue.take()
+    } catch (e) {
+      log(`worker ${id}: queue.take failed — ${e.message}`)
+      await sleep(1500)
+      continue
+    }
     if (!job) {
       await sleep(1500)
       continue

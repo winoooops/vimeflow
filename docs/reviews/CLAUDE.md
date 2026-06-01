@@ -64,7 +64,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [PTY Session Management](patterns/pty-session-management.md)         | backend            | 8        | 2    | 2026-05-28   |
 | [Git Operations](patterns/git-operations.md)                         | correctness        | 25       | 10   | 2026-05-31   |
 | [CodeMirror Integration](patterns/codemirror-integration.md)         | editor             | 12       | 0    | 2026-04-11   |
-| [Error Surfacing](patterns/error-surfacing.md)                       | error-handling     | 37       | 7    | 2026-06-01   |
+| [Error Surfacing](patterns/error-surfacing.md)                       | error-handling     | 38       | 8    | 2026-06-01   |
 | [File Tree Paths](patterns/file-tree-paths.md)                       | files              | 4        | 0    | 2026-04-10   |
 | [Scope Boundary](patterns/scope-boundary.md)                         | review-process     | 7        | 2    | 2026-05-12   |
 | [E2E Testing](patterns/e2e-testing.md)                               | e2e-testing        | 18       | 6    | 2026-05-20   |

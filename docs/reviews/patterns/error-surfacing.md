@@ -3,7 +3,7 @@ id: error-surfacing
 category: error-handling
 created: 2026-04-10
 last_updated: 2026-06-01
-ref_count: 7
+ref_count: 8
 ---
 
 # Error Surfacing
@@ -367,4 +367,13 @@ failed" must mean the editor shows the original file, not the requested one.
 - **File:** `scripts/qa-runner/lib/worker.js`
 - **Finding:** When `gh pr view` failed transiently, `runOne` returned `'skip'` and `daemon.js` always called `queue.done()`, discarding the event. For open labeled PRs the fallback poll re-enqueues them, but one-shot webhooks (`pull_request:closed`, `unlabeled`, `converted_to_draft`) cannot be recreated by the poll. A transient API blip while processing such an event caused the daemon to preserve state but never clean up or announce the terminal transition.
 - **Fix:** Changed the pre-tick snapshot-unavailable return from `'skip'` to `'retry'`. Updated `daemon.js` to requeue non-poll jobs that return `'retry'` so one-shot events survive transient `gh` failures.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 38. `queue.take()` outside try-catch — persistent save failure terminates the daemon
+
+- **Source:** github-claude | PR #324 round 3 | 2026-06-01
+- **Severity:** HIGH
+- **File:** `scripts/qa-runner/daemon.js`
+- **Finding:** `queue.take()` at line 31 sat outside the `try-catch-finally` block that protected `runOne` and `queue.done()`. If `save()` inside `take()` threw (disk full, `ENOSPC` on the rename, permissions error), the exception propagated through the `while` loop, out of the `worker` async function, and became an unhandled promise rejection. Because `worker(i + 1)` at line 114 was called without `.catch()`, Node.js ≥ 15 converts unhandled promise rejections to process termination, killing the entire daemon rather than one worker. This is the symmetric counterpart to finding #32 (`queue.done()` in `finally`).
+- **Fix:** Wrapped `queue.take()` in its own `try-catch` inside the `while` loop so save failures are logged and the loop continues. Changed `const job = queue.take()` to `let job` plus a guarded `try { job = queue.take() } catch (e) { log(...); await sleep(1500); continue }`.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
