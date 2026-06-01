@@ -3,7 +3,7 @@ id: error-surfacing
 category: error-handling
 created: 2026-04-10
 last_updated: 2026-05-31
-ref_count: 7
+ref_count: 8
 ---
 
 # Error Surfacing
@@ -279,7 +279,35 @@ failed" must mean the editor shows the original file, not the requested one.
 - **Fix:** Make `onExit()` and `onError()` return `Promise<unsubscribe>` like `onData()`. They now await listener attachment, reject on setup failure, and remove the just-added callback before propagating the error. React call sites track the async unsubscribe so cleanup still works if an effect unmounts before setup resolves.
 - **Commit:** _(see git log for the PR #214 listener-init propagation review-fix commit)_
 
-### 28. Stale-verdict auto-merge: threads check precedes claudePending
+### 28. Distinct error categories collapsed into one prefix in `retry_locator`
+
+- **Source:** github-claude | PR #261 round 2 | 2026-05-24
+- **Severity:** LOW
+- **File:** `crates/backend/src/agent/adapter/codex/locator.rs`
+- **Finding:** `retry_locator` merged `LocatorError::Unresolved(reason) | LocatorError::Fatal(reason)` into one match arm emitting `"codex bind fatal: {reason}"`. The two variants represent fundamentally different failure modes — `Unresolved` is "no unique candidate" (the locator ran and produced an ambiguous / empty result), `Fatal` is "the filesystem or SQLite is broken." Same Display prefix → log scrapers and any future `AttachError` mapping at the D' boundary can't tell ambiguous from fatal. Same finding-class as #25 (`git_branch`): a wide arm in error mapping that conflates distinct categories. The `AttachError` enum in `error.rs` already split `LocatorAmbiguous` vs `LocatorFatal`; the `retry_locator` formatter lagged.
+- **Fix:** Split the arm into two branches: `Err(LocatorError::Unresolved(reason)) => Err(format!("codex bind ambiguous: {}", reason))` and `Err(LocatorError::Fatal(reason)) => Err(format!("codex bind fatal: {}", reason))`. Updated the `unresolved_short_circuits_immediately` test to assert the new "ambiguous" prefix is present AND the legacy "fatal" prefix is NOT present (positive + negative check) so a future regression that re-merges the arms fails loudly. Lesson: when a typed error enum has N variants representing distinct categories, every consumer that flattens them to a string should emit N distinct prefixes — otherwise the typed split is wasted at the formatter layer.
+- **Commit:** _(PR #261 round 2 `/lifeline:upsource-review` cycle 2)_
+
+### 29. Expected condition flowed through generic Err arm at warn level — false-positive alerts on every restart
+
+- **Source:** github-claude | PR #302 round 13 | 2026-05-30
+- **Severity:** HIGH
+- **File:** `crates/backend/src/agent/adapter/base/transcript_state.rs` (`DISPLACED_ERR_PREFIX` sentinel + `start_or_replace` alive-check Err) + `crates/backend/src/agent/adapter/base/watcher_runtime.rs` (`maybe_start_transcript` Err-arm branching) + `crates/backend/src/agent/adapter/base/diagnostics.rs` (`TxOutcome::Displaced` variant)
+- **Finding:** Cycle 10 added an alive-flag check inside `start_or_replace` that returns `Err("watcher displaced — ...")` whenever a notify or poll callback fires for a displaced WatcherHandle. This is an **expected, normal condition** on every restart — but the caller's existing Err arm in `maybe_start_transcript` logged it at WARN level with the message `"Failed to start transcript tailing for session {}: {}"` and mapped to `TxOutcome::StartFailed` — indistinguishable from genuine tail-spawn failures (inotify fd exhaustion, permission errors, etc.). Any monitoring rule alerting on `WARN.*Failed to start transcript tailing` would fire false positives on every session restart, training on-call engineers to ignore the warning class and missing real failures. Same finding-class as #28 (typed-error split wasted at the formatter layer): when a function's Err encodes multiple semantic categories (real failure vs. expected-short-circuit), the formatter MUST distinguish them.
+- **Fix:** Three coordinated changes. (1) Introduce a `pub(crate) const DISPLACED_ERR_PREFIX: &str = "watcher displaced — "` sentinel in `transcript_state.rs`; `start_or_replace`'s alive-check Err uses the prefix. (2) Add a dedicated `TxOutcome::Displaced` variant in `diagnostics.rs` (with `"displaced"` label) — the compile-time-exhaustive `tx_outcome_label_covers_every_variant` test forces future contributors adding a new variant to also acknowledge this one. (3) `maybe_start_transcript`'s Err arm now checks `e.starts_with(DISPLACED_ERR_PREFIX)` — routes to `TxOutcome::Displaced` with `log::debug!` (expected condition); real failures still route to `TxOutcome::StartFailed` with `log::warn!` (alertable). Code-review heuristic: any code path that adds a new short-circuit Err to a function whose existing Err arm is logged at warn/error level MUST also update the caller to distinguish the new semantic. The default "use the existing Err arm" path silently collapses the new condition into the wrong log level. Defense: when adding a new error-return path, grep for ALL callers that match against the function's Err to verify each one routes the new semantic correctly.
+- **Commit:** _(PR #302 upsource cycle 13 fix commit)_
+
+### 30. String-sentinel error discriminant replaced by typed enum after Claude flagged it as fragile
+
+- **Source:** github-claude | PR #302 cycle 16 | 2026-05-30
+- **Severity:** MEDIUM
+- **File:** `crates/backend/src/agent/adapter/base/transcript_state.rs` (`StartError` enum + `start_or_replace` return type) + `crates/backend/src/agent/adapter/base/watcher_runtime.rs` (`maybe_start_transcript` consumer)
+- **Finding:** #29's fix used `pub(crate) const DISPLACED_ERR_PREFIX: &str = "watcher displaced — "` + `e.starts_with(prefix)` to discriminate the expected restart-time error from genuine spawn failures. This couples two sites by a string contract that the compiler can't verify: if `start_or_replace` ever changes the prefix (typo fix, i18n, restructuring), `maybe_start_transcript`'s `starts_with` silently misfires — displaced restarts land in `TxOutcome::StartFailed` and emit false-positive WARN alerts. Claude's post-cycle-15 review (87% conf MED) called this out as a fragile contract.
+- **Fix:** Replace the sentinel with a typed `pub enum StartError { Displaced(String), Failed(String) }`. `start_or_replace`'s return type becomes `Result<TranscriptStartStatus, StartError>`. The alive-check Err constructs `StartError::Displaced(msg)`; `streamer.tail(...)?` is wrapped via `.map_err(StartError::Failed)`. `maybe_start_transcript` consumes via `e.is_displaced()` pattern. `StartError` implements `Display` (for log messages) and `From<StartError> for String` (back-compat). Regression test `t_start_error_discriminant_routes_correctly` pins the discriminant.
+- **Code-review heuristic:** String-sentinel discriminants are _always_ a stopgap. Even with a constant defined in one place + grep-discoverable, the contract is invisible to the compiler — any edit to either site that breaks the relationship compiles cleanly and ships. The right shape is a typed enum: producer constructs the variant, consumer pattern-matches. Cost is touching the return type once + a few `Result<_, NewErr>` updates; benefit is structural enforcement at the compiler level. The pattern recurs whenever you reach for `e.starts_with(SOME_CONST)` or `e.contains(SOME_TOKEN)` — those are smells of an enum trying to escape.
+- **Commit:** _(PR #302 upsource cycle 16 fix commit)_
+
+### 31. Stale-verdict auto-merge: threads check precedes claudePending
 
 - **Source:** github-claude | PR #320 | 2026-05-31
 - **Severity:** HIGH
@@ -288,7 +316,7 @@ failed" must mean the editor shows the original file, not the requested one.
 - **Fix:** Swap the priority arms so `claudePending || ci === 'pending'` is evaluated before `threads > 0`.
 - **Commit:** `7644ec4` + cycle-2 fix
 
-### 29. claudeVerdictClean: no pagination misses verdict on busy PRs
+### 32. claudeVerdictClean: no pagination misses verdict on busy PRs
 
 - **Source:** github-claude | PR #320 | 2026-05-31
 - **Severity:** HIGH
@@ -297,7 +325,7 @@ failed" must mean the editor shows the original file, not the requested one.
 - **Fix:** Use `gh api --paginate` piped through `jq -s add` to concatenate all pages before filtering.
 - **Commit:** `7644ec4` + cycle-2 fix
 
-### 30. approve() is non-atomic: PR permanently approved if merge fails
+### 33. approve() is non-atomic: PR permanently approved if merge fails
 
 - **Source:** github-claude | PR #320 | 2026-05-31
 - **Severity:** MEDIUM
@@ -306,7 +334,7 @@ failed" must mean the editor shows the original file, not the requested one.
 - **Fix:** Query existing PR reviews and skip `--approve` if the effective approver identity (bot or ambient `gh` user) already approved.
 - **Commit:** `7644ec4` + cycle-2 fix
 
-### 31. Unconditional Linear state transitions in report-only mode
+### 34. Unconditional Linear state transitions in report-only mode
 
 - **Source:** github-claude | PR #320 round 1 | 2026-05-31
 - **Severity:** MEDIUM

@@ -1,0 +1,170 @@
+@startuml
+title 4. codex/ — internals (locator + parser + transcript)
+
+skinparam classAttributeIconSize 0
+skinparam packageStyle rectangle
+
+class CodexAdapter <<impl AgentAdapter>> {
+  -pid, pty_start, codex_home
+  -locator_cache : OnceLock<CompositeLocator>
+  -resolved_rollout_path : Mutex<Option<PathBuf>>
+  +status_source(cwd, _sid) : runs locator with retry,\ncaches resolved path
+  +parse_status(sid, raw) : parser::parse_rollout
+  +validate_transcript() : transcript::validate
+  +tail_transcript() : transcript::start_tailing
+}
+
+class "retry_locator()" as RL <<fn>> {
+  5 attempts × 100 ms
+  NotYetReady → backoff
+  Unresolved / Fatal → short-circuit
+}
+
+package "locator" #EDF {
+  interface "CodexSessionLocator\n(trait)" as CSL {
+    +resolve_rollout(ctx) : RolloutLocation
+  }
+  class CompositeLocator {
+    -primary : SqliteFirstLocator
+    -fallback : FsScanFallback
+  }
+  class SqliteFirstLocator {
+    +codex_home
+    -proc_root
+    -query_logs_thread_id()
+    -query_thread_row()
+    -query_thread_by_rollout_path()
+    -query_candidate_rows()
+    -resolve_from_resume_arg()    // /proc cmdline fast path
+    -resolve_from_proc_fds()      // /proc fd symlinks
+    -resolve_recent_state_candidate()
+  }
+  class FsScanFallback {
+    +codex_home
+    -scan_today_and_yesterday()
+  }
+  class RolloutLocation {
+    +rollout_path
+    +thread_id
+    +state_updated_at_ms
+  }
+  enum LocatorError {
+    NotYetReady
+    Unresolved(reason)
+    Fatal(reason)
+  }
+  class StateCandidate <<private>>
+  class "discover_db()" as DD <<fn>>
+}
+
+package "types" {
+  class BindContext <<pub(super)>> {
+    +cwd, +pid, +pty_start
+  }
+}
+
+package "parser" #DFE {
+  class "parse_rollout()" as PR <<fn>>
+  class "fold_event()" as FE <<fn>>
+  class CodexFoldState <<private>> {
+    agent_session_id, cli_version, model
+    last_task_started_context_window
+    last_token_count_info
+    last_rate_limits
+    total_duration_ms
+    +into_event(sid) : AgentStatusEvent
+  }
+  class TokenCountInfo <<private>>
+}
+
+package "transcript" #FDE {
+  class "validate_transcript_path()" as VTP <<fn>>
+  class "start_tailing()" as ST <<fn>>
+  class "tail_loop()" as TL <<fn>>
+
+  class InFlightToolCall <<private>> {
+    started_at, started_at_iso, tool, args
+    is_test_file
+    test_match
+    completion_mode : CompletionMode
+  }
+  enum CompletionMode {
+    Output
+    ExecCommandEnd
+    PatchApplyEnd
+  }
+
+  class "process_line()" as PL <<fn>>
+  class "process_response_item()" as PRI <<fn>>
+  class "process_event_msg()" as PEM <<fn>>
+  class "start_function_call()" as SFC <<fn>>
+  class "start_custom_tool_call()" as SCTC <<fn>>
+  class "process_output_\ncompletion()" as POC <<fn>>
+  class "process_exec_\ncommand_end()" as PECE <<fn>>
+  class "process_patch_\napply_end()" as PPAE <<fn>>
+}
+
+package "test_runners (from claude_code)" #FFD {
+  class "TestRunEmitter/\nmatch_command/…" as TR
+}
+
+CodexAdapter ..> RL : every status_source
+CodexAdapter ..> BindContext : builds per call
+CodexAdapter ..> CSL : through locator_cache
+CodexAdapter ..> PR : parse_status
+CodexAdapter ..> VTP : validate_transcript
+CodexAdapter ..> ST : tail_transcript
+
+RL ..> CSL : invokes
+
+CSL <|.. CompositeLocator
+CSL <|.. SqliteFirstLocator
+CSL <|.. FsScanFallback
+
+CompositeLocator o-- SqliteFirstLocator
+CompositeLocator o-- FsScanFallback
+
+SqliteFirstLocator ..> DD : threads & logs DBs
+SqliteFirstLocator ..> StateCandidate
+SqliteFirstLocator ..> RolloutLocation
+SqliteFirstLocator ..> LocatorError
+
+PR --> CodexFoldState
+PR ..> FE
+CodexFoldState *-- TokenCountInfo
+
+ST --> TL : spawns
+TL --> PL
+PL --> PRI : type=response_item
+PL --> PEM : type=event_msg
+
+PRI --> SFC : function_call
+PRI --> SCTC : custom_tool_call
+PRI --> POC : function_call_output\nor custom_tool_call_output\n(Output mode only)
+
+PEM --> PECE : exec_command_end\n(ExecCommandEnd mode)
+PEM --> PPAE : patch_apply_end\n(PatchApplyEnd mode)
+
+SFC ..> InFlightToolCall : insert
+SCTC ..> InFlightToolCall : insert
+POC ..> InFlightToolCall : remove (Output)
+PECE ..> InFlightToolCall : remove (ExecCommandEnd)
+PPAE ..> InFlightToolCall : remove (PatchApplyEnd)
+
+PECE ..> TR : snapshot + emit
+
+note bottom of CompositeLocator
+  Dispatches on schema drift:
+  Sqlite path fails Unresolved("schema drift") ⇒ FS scan.
+  All other errors propagate unchanged.
+end note
+
+note right of "transcript"
+  CompletionMode disambiguates which
+  completion path is authoritative —
+  prevents double-emit when a call has
+  both exec_command_end AND
+  function_call_output entries.
+end note
+
+@enduml

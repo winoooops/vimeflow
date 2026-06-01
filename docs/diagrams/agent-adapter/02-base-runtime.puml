@@ -1,0 +1,119 @@
+@startuml
+title 2. base/ — Watcher runtime, transcript registry, diagnostics
+
+skinparam classAttributeIconSize 0
+skinparam packageStyle rectangle
+
+package "base::watcher_runtime" {
+  class AgentWatcherState {
+    -watchers : Arc<Mutex<HashMap<Sid, WatcherHandle>>>
+    +new()
+    +insert(sid, handle)
+    +remove(sid) : bool
+    +contains(sid)
+    +active_count() : usize
+  }
+
+  class WatcherHandle <<RAII lifecycle>> {
+    -_watcher : Option<RecommendedWatcher>
+    -poll_stop : Arc<(Mutex<bool>, Condvar)>
+    -join_handle : Option<JoinHandle>
+    -transcript_state : TranscriptState
+    -session_id : String
+    +drop()  // cascades stop on tail thread
+  }
+
+  class "start_watching()" as SW <<fn>> {
+    create notify watcher
+    spawn poll thread (3s fallback)
+    inline-init read of status file
+  }
+  class "maybe_start_transcript()" as MST <<fn>>
+}
+
+package "base::transcript_state" {
+  class TranscriptState {
+    -watchers : Arc<Mutex<HashMap<Sid, TranscriptWatcher>>>
+    -start_gates : Arc<Mutex<HashMap<Sid, Arc<Mutex<()>>>>>
+    +start_or_replace(adapter, events, sid, path, cwd) : TranscriptStartStatus
+    +stop(sid)
+    +contains(sid)
+  }
+  class TranscriptWatcher <<private>> {
+    transcript_path : PathBuf
+    cwd : Option<PathBuf>
+    handle : TranscriptHandle
+  }
+  class TranscriptHandle <<RAII lifecycle>> {
+    -stop_flag : Arc<AtomicBool>
+    -join_handle : Option<JoinHandle>
+    +new(stop_flag, join)
+    +stop()
+  }
+  enum TranscriptStartStatus {
+    Started
+    Replaced
+    AlreadyRunning
+  }
+}
+
+package "base::diagnostics" #FFE {
+  enum TxOutcome {
+    Started / Replaced / AlreadyRunning
+    Missing / OutsidePath / NotFile
+    InvalidPath / StartFailed
+    NoPath / ParseError
+  }
+  class EventTiming
+  class PathHistory {
+    -last_tx_path : Option<String>
+    -same_path_repeat : u32
+    +observe(path) : Option<old>
+  }
+  class "record_event_diag()" as RED <<fn>>
+}
+
+package "base::path_security" #FEE {
+  class "ensure_status_source_\nunder_trust_root()" as ESS <<fn>>
+}
+
+package "base::mod" {
+  class "start_for()" as SF <<pub(crate) fn>>
+}
+
+SF --> ESS : pre-flight\ntrust check
+SF --> AgentWatcherState : remove old +\ninsert new
+SF --> SW
+
+AgentWatcherState o-- WatcherHandle : owns N
+WatcherHandle ..> TranscriptState : Drop calls\n.stop(sid)
+
+SW ..> WatcherHandle : constructs
+SW ..> MST : on every event
+SW ..> RED : emits diagnostics
+
+MST ..> TranscriptState : start_or_replace
+MST ..> TxOutcome
+RED ..> EventTiming
+RED ..> PathHistory
+RED ..> TxOutcome
+
+TranscriptState o-- TranscriptWatcher : owns N
+TranscriptWatcher *-- TranscriptHandle
+
+note right of WatcherHandle
+  Drop ⇒ stops notify watcher,
+  signals poll_stop, joins thread,
+  then cascades transcript_state.stop(sid)
+  to take down the tail loop.
+end note
+
+note bottom of TranscriptState
+  Per-session start_gate Mutex
+  serializes start_or_replace
+  vs stop() to prevent both:
+   • duplicate event replay on race
+   • zombie tail thread on stop
+end note
+
+@enduml

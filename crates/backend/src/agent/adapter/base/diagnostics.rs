@@ -24,6 +24,19 @@ pub(super) enum TxOutcome {
     StartFailed,
     NoPath,
     ParseError,
+    /// `start_or_replace` short-circuited because the caller's
+    /// WatcherHandle has been displaced (`alive` flag set to false by
+    /// `AgentWatcherState::insert` under the per-session gate). This
+    /// is a normal, expected condition that fires on every restart for
+    /// any callbacks still in-flight from the displaced handle — it is
+    /// NOT a tail-spawn failure and MUST be distinguishable from
+    /// `StartFailed` so monitoring rules alerting on
+    /// `WARN.*Failed to start transcript tailing` don't fire on every
+    /// restart (PR #302 cycle 13 F1 — cycle-10's alive check
+    /// originally reused the catch-all Err arm in
+    /// `maybe_start_transcript`, which logged at warn level
+    /// indistinguishable from real failures).
+    Displaced,
 }
 
 impl TxOutcome {
@@ -39,6 +52,7 @@ impl TxOutcome {
             Self::StartFailed => "start_failed",
             Self::NoPath => "no_path",
             Self::ParseError => "parse_error",
+            Self::Displaced => "displaced",
         }
     }
 }
@@ -310,6 +324,7 @@ mod tests {
                 TxOutcome::StartFailed => "start_failed",
                 TxOutcome::NoPath => "no_path",
                 TxOutcome::ParseError => "parse_error",
+                TxOutcome::Displaced => "displaced",
             }
         }
 
@@ -324,6 +339,7 @@ mod tests {
             TxOutcome::StartFailed,
             TxOutcome::NoPath,
             TxOutcome::ParseError,
+            TxOutcome::Displaced,
         ];
 
         for outcome in outcomes.iter().copied() {

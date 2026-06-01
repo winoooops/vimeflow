@@ -6,6 +6,7 @@
 
 pub mod adapter;
 pub mod commands;
+pub(crate) mod config;
 pub mod detector;
 pub(crate) mod events;
 pub mod sanitize_title;

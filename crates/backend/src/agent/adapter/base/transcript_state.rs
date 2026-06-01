@@ -5,16 +5,17 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
-use crate::agent::adapter::AgentAdapter;
+use crate::agent::adapter::traits::TranscriptStreamer;
 use crate::runtime::EventSink;
 
-/// Internal lifecycle type — created by adapter `tail_transcript`
+/// Internal lifecycle type — created by `TranscriptStreamer::tail`
 /// implementations (e.g., `claude_code::transcript::start_tailing` via
 /// `TranscriptHandle::new`, which is `pub(crate)`) and owned by
 /// `TranscriptState`'s internal `TranscriptWatcher` map. The type
 /// itself must remain `pub` because it appears in the
-/// `AgentAdapter::tail_transcript` trait signature, which is publicly
-/// visible from `agent::adapter::mod`. Construction is gated to the
+/// `TranscriptStreamer::tail` trait signature (and, until D' removes
+/// it, the transitional `AgentAdapter::tail_transcript` façade), which
+/// is visible from `agent::adapter`. Construction is gated to the
 /// crate via `pub(crate) fn new`; do not bypass that path.
 #[doc(hidden)]
 pub struct TranscriptHandle {
@@ -75,6 +76,19 @@ impl TranscriptHandle {
             let _ = handle.join();
         }
     }
+
+    /// Signal the background thread(s) to start winding down WITHOUT
+    /// joining. The caller can drop the handle later to perform the
+    /// join. Used by `stop_with_held_gate` so the per-session gate
+    /// only needs to be held long enough to flip the stop flag — the
+    /// ~500ms thread-join can then happen outside the gate, reducing
+    /// IPC latency for concurrent gate waiters (PR #302 cycle 11 F2).
+    pub(crate) fn signal_stop(&self) {
+        self.stop_flag.store(true, Ordering::Release);
+        if let Some(stop) = &self.aux_stop {
+            stop.store(true, Ordering::Release);
+        }
+    }
 }
 
 impl Drop for TranscriptHandle {
@@ -101,6 +115,132 @@ pub enum TranscriptStartStatus {
     AlreadyRunning,
 }
 
+/// Typed error returned by [`TranscriptState::start_or_replace`]. The
+/// variant is the routing discriminant: `Displaced` is an expected
+/// restart-time condition (`debug!` log + `TxOutcome::Displaced`);
+/// `Failed` is a genuine spawn failure (`warn!` log + `TxOutcome::
+/// StartFailed`).
+///
+/// PR #302 cycle 16 F1 (Claude post-cycle-15 review): replaced the
+/// cycle-13 `DISPLACED_ERR_PREFIX` string-sentinel that
+/// `maybe_start_transcript` used via `starts_with` — a typo or i18n
+/// edit to the prefix would have silently routed every restart's
+/// expected-condition Err into the generic warn arm (false-positive
+/// alerts). The enum makes the discriminant structural: the producer
+/// constructs the right variant and the consumer pattern-matches on
+/// the variant. The wrapped `String` keeps the human-readable message
+/// for logs.
+#[doc(hidden)]
+#[derive(Debug)]
+pub enum StartError {
+    /// Caller's `WatcherHandle` was displaced between the callback
+    /// dispatch and `start_or_replace`'s gate-protected alive check.
+    /// Expected normal restart-time condition; consumer should log
+    /// at `debug` and emit `TxOutcome::Displaced`.
+    Displaced(String),
+    /// Spawn of the new tail thread failed (fs error, inotify
+    /// exhaustion, streamer adapter returned `Err`). Unexpected;
+    /// consumer should log at `warn` and emit
+    /// `TxOutcome::StartFailed`.
+    Failed(String),
+}
+
+impl StartError {
+    /// True iff this error is a displaced-watcher short-circuit (the
+    /// expected restart-time condition).
+    pub(crate) fn is_displaced(&self) -> bool {
+        matches!(self, Self::Displaced(_))
+    }
+}
+
+impl std::fmt::Display for StartError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Displaced(s) | Self::Failed(s) => f.write_str(s),
+        }
+    }
+}
+
+impl From<StartError> for String {
+    fn from(e: StartError) -> Self {
+        e.to_string()
+    }
+}
+
+/// Typed handle to a per-session start gate. Constructed only via
+/// `TranscriptState::session_gate(session_id)` — owns an
+/// `Arc<Mutex<()>>` clone of the registered gate and remembers the
+/// `session_id` it was issued for. `.lock()` returns a
+/// `SessionGateGuard<'_>` that carries the same `session_id`.
+///
+/// PR #302 cycle 15 F1 (Claude post-cycle-13 review): strengthens
+/// cycle-13 F3's compile-time witness from "some `Mutex<()>` is held"
+/// to "the per-session start gate for THIS `session_id` is held".
+/// The private constructor (only `TranscriptState::session_gate` can
+/// build one) closes the "any random `Mutex<()>` works" loophole; the
+/// `session_id` stored inside lets `stop_with_held_gate` runtime-check
+/// in debug builds that the guard belongs to the session being torn
+/// down.
+pub(crate) struct SessionGate<'a> {
+    session_id: &'a str,
+    /// Identity Arc of the issuing `TranscriptState`'s `start_gates`
+    /// map. Stored as a cheap clone (atomic refcount bump) for
+    /// `Arc::ptr_eq` identity comparison only — never locked or
+    /// dereferenced through this clone. Used by `stop_with_held_gate`
+    /// to debug-assert the guard was issued by the same
+    /// `TranscriptState` instance that's now being mutated, closing
+    /// the cycle-15 retry-1 gap codex flagged: "guard from a different
+    /// `TranscriptState` with the same session_id would pass the
+    /// session_id check but not be holding `self`'s lock."
+    start_gates: Arc<Mutex<HashMap<String, Arc<Mutex<()>>>>>,
+    arc: Arc<Mutex<()>>,
+}
+
+impl<'a> SessionGate<'a> {
+    /// Lock the per-session gate. Returns a `SessionGateGuard<'a>`
+    /// whose `session_id()` matches this `SessionGate`'s session_id
+    /// and whose owner identity matches the issuing `TranscriptState`.
+    pub(crate) fn lock(&'a self) -> SessionGateGuard<'a> {
+        SessionGateGuard {
+            session_id: self.session_id,
+            start_gates: self.start_gates.clone(),
+            _guard: self
+                .arc
+                .lock()
+                .expect("failed to lock per-session start gate"),
+        }
+    }
+}
+
+/// Guard proving the per-session start gate for `session_id()` is
+/// currently locked. Constructed only by `SessionGate::lock`. The
+/// inner `MutexGuard` is private — possessing a `SessionGateGuard`
+/// proves both:
+///   - SOME `Arc<Mutex<()>>` is locked (compile-time, via the
+///     embedded `MutexGuard`'s lifetime), AND
+///   - the lock chain went through
+///     `TranscriptState::session_gate(session_id).lock()` (compile-
+///     time, via the private constructor + private field).
+///
+/// `stop_with_held_gate` `debug_assert_eq!`s its `session_id` argument
+/// against `gate.session_id()` to catch a future contributor passing
+/// the wrong session's guard in debug builds. Release builds incur no
+/// runtime overhead beyond the underlying `MutexGuard`.
+pub(crate) struct SessionGateGuard<'a> {
+    session_id: &'a str,
+    /// See `SessionGate::start_gates`. Owner identity for
+    /// `Arc::ptr_eq` against the operating `TranscriptState`.
+    start_gates: Arc<Mutex<HashMap<String, Arc<Mutex<()>>>>>,
+    _guard: std::sync::MutexGuard<'a, ()>,
+}
+
+impl SessionGateGuard<'_> {
+    /// The `session_id` this guard was issued for.
+    pub(crate) fn session_id(&self) -> &str {
+        self.session_id
+    }
+}
+
 struct TranscriptWatcher {
     transcript_path: PathBuf,
     cwd: Option<PathBuf>,
@@ -109,7 +249,7 @@ struct TranscriptWatcher {
 
 /// Runtime-managed registry of in-flight transcript tailers, one per
 /// session. Constructed once as part of `BackendState` and passed to the
-/// watcher runtime and adapter `tail_transcript` impls. `pub` supports
+/// watcher runtime and `TranscriptStreamer::tail` impls. `pub` supports
 /// direct instantiation in `#[cfg(test)]` integration tests under
 /// `crates/backend/tests/transcript_*.rs`; do not construct ad hoc instances
 /// in production code paths.
@@ -117,7 +257,7 @@ struct TranscriptWatcher {
 #[derive(Default, Clone)]
 pub struct TranscriptState {
     watchers: Arc<Mutex<HashMap<String, TranscriptWatcher>>>,
-    /// Per-session "start gate" — held across `tail_transcript` so the
+    /// Per-session "start gate" — held across `tail` so the
     /// notify callback and the 3s poll thread can't both pass the
     /// AlreadyRunning check, both spawn, and both emit duplicate
     /// `agent-tool-call` / `agent-turn` events from byte 0 of the
@@ -137,19 +277,43 @@ impl TranscriptState {
 
     /// Start tailing when none is active, or switch to a newer transcript
     /// path or workspace cwd.
-    pub fn start_or_replace(
+    ///
+    /// Step B'' narrowed the parameter from `Arc<dyn AgentAdapter>` to
+    /// `Arc<dyn TranscriptStreamer>` — `base` only ever needed the
+    /// `tail` spawn method, never the full adapter façade — and
+    /// narrowed visibility to `pub(crate)` (the only callers are the
+    /// watcher runtime + same-crate tests). The shared
+    /// `Arc<CompositeLocator>` plumbing from B' cycle 11 means
+    /// `bindings.streamer` already references the same allocation the
+    /// watcher's locator does.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn start_or_replace(
         &self,
-        adapter: Arc<dyn AgentAdapter>,
+        streamer: Arc<dyn TranscriptStreamer>,
         events: Arc<dyn EventSink>,
         session_id: String,
         transcript_path: PathBuf,
         cwd: Option<PathBuf>,
-    ) -> Result<TranscriptStartStatus, String> {
+        claim_flag: Option<Arc<std::sync::atomic::AtomicBool>>,
+        // PR #302 cycle 10 — `alive: Option<Arc<AtomicBool>>` is the
+        // per-WatcherHandle alive token. Notify and poll callbacks
+        // pass `Some(alive.clone())`; inline-init / direct test
+        // callers pass `None`. Checked UNDER the per-session gate
+        // BEFORE any mutation: if `alive` is `Some(false)`, the
+        // caller's handle has been displaced and any claim it would
+        // make is stale — return `Err("watcher displaced")` early so
+        // no mutation happens and `claim_flag` is NOT set. Closes the
+        // cycle-9 residual race where an already-dispatched displaced
+        // callback could acquire the gate after `insert` released it
+        // and reclaim the entry with stale data (codex-connector P2
+        // round 10).
+        alive: Option<Arc<std::sync::atomic::AtomicBool>>,
+    ) -> Result<TranscriptStartStatus, StartError> {
         // Acquire (or lazily create) the per-session start gate so only
         // one start_or_replace call per session can be inside the
         // check + spawn + insert critical section at a time. Without
         // this, the notify callback and 3s poll thread can both pass
-        // the AlreadyRunning check, both call adapter.tail_transcript,
+        // the AlreadyRunning check, both call streamer.tail,
         // and both emit events from byte 0 of the JSONL during the
         // tens-of-ms thread-spawn window before the loser's handle is
         // stopped (Claude review on PR #152, F2).
@@ -161,6 +325,55 @@ impl TranscriptState {
                 .clone()
         };
         let _gate_guard = gate.lock().expect("failed to lock per-session start gate");
+
+        // PR #302 cycle 10 — alive check INSIDE the gate, BEFORE any
+        // mutation. If the caller's handle has been displaced (the
+        // gate-protected window that AgentWatcherState::insert uses to
+        // set alive = false), short-circuit with Err — no mutation, no
+        // claim flag set. Closes the residual cycle-9 race where an
+        // already-dispatched displaced callback could race past the
+        // _watcher drop and reclaim the entry.
+        //
+        // PR #302 cycle 16 F1 (Claude post-cycle-15 review):
+        // returns the typed `StartError::Displaced` variant so
+        // `maybe_start_transcript` can pattern-match on the
+        // discriminant rather than substring-match a string sentinel.
+        // The wrapped String is the human-readable message (logs only;
+        // not part of the routing contract). Pre-cycle-16 used a
+        // `DISPLACED_ERR_PREFIX` string sentinel — a typo or i18n
+        // edit to the prefix would have silently routed every
+        // restart's expected-condition Err into the generic warn arm
+        // (false-positive "Failed to start transcript tailing"
+        // alerts). The enum makes the discriminant structural.
+        if let Some(alive_flag) = &alive {
+            if !alive_flag.load(std::sync::atomic::Ordering::Acquire) {
+                return Err(StartError::Displaced(
+                    "watcher displaced before start_or_replace gate".to_string(),
+                ));
+            }
+        }
+
+        // PR #302 cycle 9 — close the cycle-8 TOCTOU race. The
+        // `claim_flag` is set BEFORE returning so the gate-held write
+        // is visible to any later gate-holder (specifically
+        // `AgentWatcherState::insert`'s gate-protected read). The
+        // pre-cycle-9 code wrote the flag AFTER `maybe_start_transcript`
+        // returned — outside the gate — so insert could acquire the
+        // gate between `start_or_replace`'s gate release and the
+        // caller's flag store, reading a stale `false`. Setting under
+        // the gate makes the race structurally impossible.
+        //
+        // Closure runs at every successful early-return + at function
+        // tail. Failure paths (streamer.tail returning `Err`) DO NOT
+        // set the flag — start_or_replace removed the old entry but
+        // didn't establish a new one, so the new handle hasn't truly
+        // claimed anything; the displaced handle should retain
+        // ownership.
+        let mark_claimed = || {
+            if let Some(flag) = &claim_flag {
+                flag.store(true, std::sync::atomic::Ordering::Release);
+            }
+        };
 
         // Extract any old watcher BEFORE spawning the new tail thread, so
         // the old thread is fully joined before the new one starts emitting
@@ -181,10 +394,10 @@ impl TranscriptState {
         // `start_or_replace` or `stop()` for this session can observe that
         // gap (both acquire the gate first, F4).
         //
-        // Trade-off: if `adapter.tail_transcript` fails AFTER the old
+        // Trade-off: if `streamer.tail` fails AFTER the old
         // watcher is stopped, the caller gets the error AND the session is
         // left with no active watcher. Previously (spawn-first order) a
-        // tail_transcript failure preserved the old watcher. The new
+        // tail failure preserved the old watcher. The new
         // behaviour is intentional for the Replaced path: a cwd change
         // means the old cwd is no longer the correct routing context, so a
         // failed swap should fail loudly rather than silently keep a
@@ -193,6 +406,11 @@ impl TranscriptState {
             let mut watchers = self.watchers.lock().expect("failed to lock watchers");
             if let Some(current) = watchers.get(&session_id) {
                 if current.transcript_path == transcript_path && current.cwd == cwd {
+                    // AlreadyRunning is a successful claim — the new
+                    // handle has adopted the existing entry. Mark the
+                    // flag while still holding the gate so the
+                    // gate-protected reader sees it.
+                    mark_claimed();
                     return Ok(TranscriptStartStatus::AlreadyRunning);
                 }
             }
@@ -204,12 +422,14 @@ impl TranscriptState {
             handle.stop();
         }
 
-        let new_handle = adapter.tail_transcript(
-            events,
-            session_id.clone(),
-            cwd.clone(),
-            transcript_path.clone(),
-        )?;
+        let new_handle = streamer
+            .tail(
+                events,
+                session_id.clone(),
+                cwd.clone(),
+                transcript_path.clone(),
+            )
+            .map_err(StartError::Failed)?;
 
         // The per-session gate guarantees no concurrent `start_or_replace`
         // can have inserted between the check above and this insert.
@@ -231,6 +451,11 @@ impl TranscriptState {
             );
         }
 
+        // Started / Replaced are both successful claims — the new
+        // handle has established the entry. Mark the flag under the
+        // still-held gate (cycle 9 TOCTOU close).
+        mark_claimed();
+
         Ok(if had_old {
             TranscriptStartStatus::Replaced
         } else {
@@ -245,12 +470,149 @@ impl TranscriptState {
         watchers.contains_key(session_id)
     }
 
+    /// Internal: return the per-session start gate's
+    /// `Arc<Mutex<()>>` (creating it lazily on first access). Used
+    /// directly by `start_or_replace` and `stop` (which already live
+    /// in this module) and indirectly by the public `session_gate`
+    /// constructor that wraps the result in a typed `SessionGate`.
+    fn session_gate_arc(&self, session_id: &str) -> Arc<Mutex<()>> {
+        let mut gates = self.start_gates.lock().expect("failed to lock start_gates");
+        gates
+            .entry(session_id.to_string())
+            .or_insert_with(|| Arc::new(Mutex::new(())))
+            .clone()
+    }
+
+    /// Return a typed `SessionGate<'a>` bound to `session_id`.
+    /// Callers `.lock()` the gate to serialize their critical section
+    /// against any in-flight `start_or_replace` or `stop` on the same
+    /// session. The resulting `SessionGateGuard<'a>` carries the
+    /// `session_id` so gate-aware callees (`stop_with_held_gate`) can
+    /// runtime-verify the guard belongs to the session being
+    /// operated on.
+    ///
+    /// Used by `AgentWatcherState::insert` to gate-protect its
+    /// claim-flag read + map-mutation + (when the new handle DIDN'T
+    /// claim) the under-gate teardown of any orphaned old entry
+    /// against a pre-register notify callback's in-flight
+    /// `start_or_replace` (PR #302 cycle 9 — closes the cycle-8 TOCTOU
+    /// race by making the claim-flag write happen INSIDE
+    /// `start_or_replace`'s gate, and insert's read + teardown happen
+    /// INSIDE a re-acquisition of the same gate).
+    ///
+    /// **Lock-ordering invariant**: gate → watchers, matching
+    /// `start_or_replace` and `stop`. Callers MUST release the gate
+    /// before any operation that could re-acquire it transitively
+    /// (specifically: any path that calls `stop` or `start_or_replace`
+    /// for the same session). The displaced `WatcherHandle`'s Drop's
+    /// `transcript_state.stop` re-acquires the same gate, so insert
+    /// uses `stop_with_held_gate` under its own gate and CLEARS the
+    /// displaced handle's `owns_transcript` to make the Drop a no-op
+    /// for transcript state — no Drop-time gate re-acquisition.
+    pub(crate) fn session_gate<'a>(&self, session_id: &'a str) -> SessionGate<'a> {
+        SessionGate {
+            session_id,
+            start_gates: self.start_gates.clone(),
+            arc: self.session_gate_arc(session_id),
+        }
+    }
+
+    /// Same as `stop` but assumes the CALLER already holds the
+    /// per-session start gate (via `session_gate(sid).lock()`).
+    /// Removes the entry from `watchers` under the watchers lock and
+    /// signals the displaced `TranscriptHandle`'s stop flag UNDER the
+    /// gate so its tail thread starts winding down immediately.
+    /// Returns the displaced handle so the caller can drop it OUTSIDE
+    /// the gate — the ~500ms tail-thread join then happens without
+    /// holding the gate, so concurrent gate waiters (notify callbacks,
+    /// future `start_or_replace` calls) don't stall on IPC for that
+    /// duration (PR #302 cycle 9 retry-1 established the under-gate
+    /// teardown pattern; cycle 11 F2 split the signal-vs-join so the
+    /// join can happen outside the gate). Used by
+    /// `AgentWatcherState::insert` to tear down an orphaned old
+    /// transcript entry.
+    ///
+    /// **Caller must hold the gate** for the duration of any work
+    /// that relies on the entry being absent (e.g., the new handle's
+    /// claim-decision or further state mutations).
+    ///
+    /// **Race window vs the join-outside-gate decision:** between
+    /// the gate release and the OLD tail thread actually observing
+    /// the stop flag (at most one POLL_INTERVAL ≈ 500ms later), a
+    /// concurrent `start_or_replace` can acquire the gate and spawn
+    /// a fresh tail for the same session. Briefly there are two
+    /// threads emitting events; the OLD thread exits at its next
+    /// stop-flag check (within ≤ one poll iteration), so the overlap
+    /// is bounded to a couple of duplicate events at most. The
+    /// frontend has no per-tool-call dedup; brief duplicates are an
+    /// acceptable cost vs holding the gate for the full join.
+    pub(crate) fn stop_with_held_gate(
+        &self,
+        session_id: &str,
+        // PR #302 cycle 15 F1 (Claude post-cycle-13 review):
+        // strengthened from cycle-13's `&MutexGuard<'_, ()>` to
+        // `&SessionGateGuard<'_>`. The cycle-13 witness only proved
+        // that SOME `Mutex<()>` was held; a future contributor could
+        // pass any unrelated `MutexGuard<()>` and bypass the intended
+        // serialization guarantee. The `SessionGateGuard` newtype
+        // closes both layers:
+        //   - Compile-time: the only public constructor is
+        //     `SessionGate::lock`, and `SessionGate` itself is only
+        //     built by `TranscriptState::session_gate(...)`. Future
+        //     contributors physically cannot pass a `Mutex<()>` from
+        //     a different subsystem.
+        //   - Debug-runtime: the `debug_assert_eq!` below catches a
+        //     contributor who holds the gate for the wrong session
+        //     (e.g., `ts.session_gate(other_id).lock()` then calls
+        //     `stop_with_held_gate(this_id, ...)`). Release builds
+        //     incur no overhead.
+        //
+        // Closes the cycle-13 F3 "only proves no-gate-held, not
+        // right-gate-held" gap from Claude's post-cycle-13 review.
+        gate: &SessionGateGuard<'_>,
+    ) -> Option<TranscriptHandle> {
+        // PR #302 cycle 15 retry-1 (codex verify): also check the
+        // guard belongs to THIS `TranscriptState` instance. The
+        // session_id-only assert below would pass for a guard issued
+        // by some OTHER `TranscriptState` with the same session_id —
+        // and that other state's lock provides no serialization on
+        // `self.watchers`. The `Arc::ptr_eq` on `start_gates` is the
+        // identity test (atomic refcount bump on construction; no
+        // dereference here). Closes codex's MEDIUM finding (0.86
+        // conf) flagged on cycle 15.
+        debug_assert!(
+            Arc::ptr_eq(&gate.start_gates, &self.start_gates),
+            "stop_with_held_gate: gate belongs to a different TranscriptState instance; \
+             caller is holding the wrong state's gate",
+        );
+        debug_assert_eq!(
+            gate.session_id(),
+            session_id,
+            "stop_with_held_gate: gate.session_id() ({}) does not match the session_id argument ({}); \
+             caller is holding the wrong session's gate",
+            gate.session_id(),
+            session_id,
+        );
+        let removed = {
+            let mut watchers = self.watchers.lock().expect("failed to lock watchers");
+            watchers.remove(session_id)
+        };
+        // Signal stop_flag IMMEDIATELY under the gate so the tail
+        // thread starts winding down without waiting for the caller's
+        // later drop. Caller drops the returned handle outside the
+        // gate, which then performs the actual thread-join.
+        if let Some(w) = &removed {
+            w.handle.signal_stop();
+        }
+        removed.map(|w| w.handle)
+    }
+
     /// Stop tailing for the given session.
     pub fn stop(&self, session_id: &str) -> Result<(), String> {
         // Acquire the per-session start gate before touching `watchers`
         // (Claude review on PR #152, F4). Without this, an in-flight
         // `start_or_replace` could be between its drop-watchers-lock /
-        // tail_transcript-spawn / re-acquire-watchers steps when stop()
+        // tail-spawn / re-acquire-watchers steps when stop()
         // ran concurrently and removed the entry. `start_or_replace`
         // would then insert the freshly-spawned T1 as `Started` even
         // though `stop()` already ran — leaving T1 as a zombie tail
@@ -265,7 +627,7 @@ impl TranscriptState {
         // Intentionally do NOT remove this session's entry from
         // `start_gates`. If we deleted the gate after releasing it, a
         // subsequent `start_or_replace` would lookup the empty map
-        // slot, create a NEW gate, and enter `tail_transcript`
+        // slot, create a NEW gate, and enter `tail`
         // concurrently with another already-in-flight start that still
         // holds a clone of the OLD gate. Gates are ~56 bytes each
         // (`String` key + `Arc<Mutex<()>>` value); leaving them for
@@ -316,6 +678,61 @@ mod tests {
         assert!(!state.contains("any-session"));
     }
 
+    /// PR #302 cycle 15 F1 — `SessionGate::lock` returns a
+    /// `SessionGateGuard` whose `session_id()` matches the
+    /// `session_id` passed to `TranscriptState::session_gate(...)`.
+    #[test]
+    fn session_gate_guard_carries_its_session_id() {
+        let state = TranscriptState::new();
+        let sid = "session-witness";
+        let gate = state.session_gate(sid);
+        let guard = gate.lock();
+        assert_eq!(guard.session_id(), sid);
+    }
+
+    /// PR #302 cycle 15 F1 — `stop_with_held_gate` debug-asserts the
+    /// guard's `session_id` matches its `session_id` argument. Passing
+    /// the wrong session's guard panics in debug builds, catching a
+    /// future contributor who borrows the convenient nearby guard
+    /// instead of the right one.
+    ///
+    /// `cfg(debug_assertions)`-gated because release builds skip the
+    /// assertion (no panic, only an undefined teardown — production
+    /// is debug-built for safety; release builds still benefit from
+    /// the compile-time guarantee that the guard came from
+    /// `TranscriptState::session_gate`).
+    #[cfg(debug_assertions)]
+    #[test]
+    #[should_panic(expected = "caller is holding the wrong session's gate")]
+    fn stop_with_held_gate_panics_on_wrong_session_in_debug() {
+        let state = TranscriptState::new();
+        let wrong_gate = state.session_gate("other-session");
+        let wrong_guard = wrong_gate.lock();
+        // Pretend to tear down "target-session" while holding
+        // "other-session"'s gate — debug_assert_eq! must fire.
+        state.stop_with_held_gate("target-session", &wrong_guard);
+    }
+
+    /// PR #302 cycle 15 retry-1 (codex verify) — guard from a
+    /// DIFFERENT `TranscriptState` instance with the same session_id
+    /// would pass the session_id check but isn't actually holding
+    /// `self`'s `start_gates[session_id]` lock. The `Arc::ptr_eq` on
+    /// `start_gates` catches this in debug builds.
+    #[cfg(debug_assertions)]
+    #[test]
+    #[should_panic(expected = "caller is holding the wrong state's gate")]
+    fn stop_with_held_gate_panics_on_wrong_state_in_debug() {
+        let state_a = TranscriptState::new();
+        let state_b = TranscriptState::new();
+        let sid = "shared-session-id";
+        // Acquire the gate on state_b (wrong state) for the same sid.
+        let foreign_gate = state_b.session_gate(sid);
+        let foreign_guard = foreign_gate.lock();
+        // Pretend to tear down sid on state_a while holding state_b's
+        // gate — Arc::ptr_eq on start_gates must fire.
+        state_a.stop_with_held_gate(sid, &foreign_guard);
+    }
+
     #[test]
     fn transcript_state_replaces_changed_path() {
         let sink = Arc::new(FakeEventSink::new());
@@ -327,7 +744,7 @@ mod tests {
 
         let state = TranscriptState::new();
         let session_id = "session-1".to_string();
-        let adapter: Arc<dyn AgentAdapter> =
+        let adapter: Arc<dyn TranscriptStreamer> =
             Arc::new(crate::agent::adapter::claude_code::ClaudeCodeAdapter);
 
         let first_status = state
@@ -336,6 +753,8 @@ mod tests {
                 sink.clone(),
                 session_id.clone(),
                 first_path.clone(),
+                None,
+                None,
                 None,
             )
             .expect("failed to start first transcript watcher");
@@ -348,12 +767,22 @@ mod tests {
                 session_id.clone(),
                 first_path,
                 None,
+                None,
+                None,
             )
             .expect("failed to check duplicate transcript watcher");
         assert_eq!(duplicate_status, TranscriptStartStatus::AlreadyRunning);
 
         let replaced_status = state
-            .start_or_replace(adapter, sink.clone(), session_id.clone(), second_path, None)
+            .start_or_replace(
+                adapter,
+                sink.clone(),
+                session_id.clone(),
+                second_path,
+                None,
+                None,
+                None,
+            )
             .expect("failed to replace transcript watcher");
         assert_eq!(replaced_status, TranscriptStartStatus::Replaced);
 
@@ -369,7 +798,7 @@ mod tests {
         let cwd = tmp.path().to_path_buf();
 
         let state = TranscriptState::new();
-        let adapter: Arc<dyn AgentAdapter> =
+        let adapter: Arc<dyn TranscriptStreamer> =
             Arc::new(crate::agent::adapter::claude_code::ClaudeCodeAdapter);
 
         let status = state
@@ -379,6 +808,8 @@ mod tests {
                 "session-cwd".to_string(),
                 transcript_path,
                 Some(cwd),
+                None,
+                None,
             )
             .expect("failed to start watcher with cwd");
         assert_eq!(status, TranscriptStartStatus::Started);
@@ -397,7 +828,7 @@ mod tests {
 
         let state = TranscriptState::new();
         let session_id = "session-cwd-change".to_string();
-        let adapter: Arc<dyn AgentAdapter> =
+        let adapter: Arc<dyn TranscriptStreamer> =
             Arc::new(crate::agent::adapter::claude_code::ClaudeCodeAdapter);
 
         let first = state
@@ -407,6 +838,8 @@ mod tests {
                 session_id.clone(),
                 transcript_path.clone(),
                 Some(cwd_a.path().to_path_buf()),
+                None,
+                None,
             )
             .expect("failed to start with cwd_a");
         assert_eq!(first, TranscriptStartStatus::Started);
@@ -418,6 +851,8 @@ mod tests {
                 session_id.clone(),
                 transcript_path.clone(),
                 Some(cwd_a.path().to_path_buf()),
+                None,
+                None,
             )
             .expect("failed to detect already-running");
         assert_eq!(same, TranscriptStartStatus::AlreadyRunning);
@@ -429,6 +864,8 @@ mod tests {
                 session_id.clone(),
                 transcript_path.clone(),
                 Some(cwd_b.path().to_path_buf()),
+                None,
+                None,
             )
             .expect("failed to replace on cwd change");
         assert_eq!(replaced, TranscriptStartStatus::Replaced);
@@ -439,6 +876,8 @@ mod tests {
                 sink.clone(),
                 session_id.clone(),
                 transcript_path,
+                None,
+                None,
                 None,
             )
             .expect("failed to replace on cwd to None transition");
@@ -558,53 +997,28 @@ mod tests {
     /// produced duplicate `agent-tool-call` / `agent-turn` events on the
     /// frontend.
     ///
-    /// The invariant is observed via a custom adapter that records the
-    /// order of `tail_transcript` calls AND the order of stop-flag flips
+    /// The invariant is observed via a custom streamer that records the
+    /// order of `tail` calls AND the order of stop-flag flips
     /// on the handles it returns. After two `start_or_replace` calls (cwd
     /// A then cwd B on the same transcript_path), the recorded sequence
     /// must be: `spawn(A)`, `stop(A)`, `spawn(B)` — NOT `spawn(A)`,
     /// `spawn(B)`, `stop(A)`.
     ///
-    /// Claude review on PR #152, F19.
+    /// Claude review on PR #152, F19. Step B'' retyped the mock from a
+    /// full `AgentAdapter` (4 `unreachable!()` stubs + the real
+    /// `tail_transcript`) to a lean `TranscriptStreamer` — the only
+    /// trait `start_or_replace` now needs.
     #[test]
     fn replace_on_cwd_change_stops_old_before_spawning_new() {
         use std::sync::Mutex;
 
-        struct OrderingAdapter {
+        struct OrderingStreamer {
             events: Arc<Mutex<Vec<String>>>,
             stop_flags: Arc<Mutex<Vec<Arc<AtomicBool>>>>,
         }
 
-        impl AgentAdapter for OrderingAdapter {
-            fn agent_type(&self) -> crate::agent::types::AgentType {
-                crate::agent::types::AgentType::ClaudeCode
-            }
-
-            fn status_source(
-                &self,
-                _cwd: &std::path::Path,
-                _session_id: &str,
-            ) -> Result<crate::agent::adapter::types::StatusSource, String> {
-                unreachable!("status_source not exercised in this test")
-            }
-
-            fn parse_status(
-                &self,
-                _session_id: &str,
-                _raw: &str,
-            ) -> Result<crate::agent::adapter::types::ParsedStatus, String> {
-                unreachable!("parse_status not exercised in this test")
-            }
-
-            fn validate_transcript(
-                &self,
-                _raw: &str,
-            ) -> Result<PathBuf, crate::agent::adapter::types::ValidateTranscriptError>
-            {
-                unreachable!("validate_transcript not exercised in this test")
-            }
-
-            fn tail_transcript(
+        impl TranscriptStreamer for OrderingStreamer {
+            fn tail(
                 &self,
                 _events: Arc<dyn crate::runtime::EventSink>,
                 _session_id: String,
@@ -656,7 +1070,7 @@ mod tests {
 
         let events = Arc::new(Mutex::new(Vec::<String>::new()));
         let stop_flags = Arc::new(Mutex::new(Vec::<Arc<AtomicBool>>::new()));
-        let adapter: Arc<dyn AgentAdapter> = Arc::new(OrderingAdapter {
+        let adapter: Arc<dyn TranscriptStreamer> = Arc::new(OrderingStreamer {
             events: Arc::clone(&events),
             stop_flags: Arc::clone(&stop_flags),
         });
@@ -671,6 +1085,8 @@ mod tests {
                 session_id.clone(),
                 transcript_path.clone(),
                 Some(cwd_a.path().to_path_buf()),
+                None,
+                None,
             )
             .expect("failed to start with cwd_a");
 
@@ -681,6 +1097,8 @@ mod tests {
                 session_id.clone(),
                 transcript_path,
                 Some(cwd_b.path().to_path_buf()),
+                None,
+                None,
             )
             .expect("failed to replace with cwd_b");
 
