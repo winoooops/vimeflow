@@ -881,7 +881,7 @@ const main = () => {
     reason: val('reason') || 'manual',
     all: has('all'),
     pr: val('pr') ? Number(val('pr')) : undefined,
-    maxParallel: numericOption(val('max'), MAX_PARALLEL),
+    maxParallel: Math.max(1, numericOption(val('max'), MAX_PARALLEL)),
     maxCiReruns: numericOption(val('max-ci-reruns'), MAX_CI_RERUNS),
     linearTeamKey: val('linear-team') || 'VIM',
     orchBot,

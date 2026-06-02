@@ -2,7 +2,7 @@
 id: preflight-checks
 category: error-handling
 created: 2026-04-20
-last_updated: 2026-05-31
+last_updated: 2026-06-02
 ref_count: 0
 ---
 
@@ -48,3 +48,12 @@ When adding / removing / refactoring preflight checks:
 - **Finding:** `computeState()` enumerated negative states (missing, pending, fail) to block on Claude check status, but `skipping` and `cancel` buckets bypassed the gate. An old clean Claude comment could still let the PR reach `GOOD_SHAPE` and auto-merge without a fresh review.
 - **Fix:** Replaced negative-state enumeration with a single positive gate `claudeReady = claudeCheck?.bucket === 'pass'`; block on `!claudeReady` so any non-pass state (including skipped/cancelled) waits.
 - **Commit:** same commit as this entry
+
+### 4. Zero concurrency limit disables fixer dispatch without warning
+
+- **Source:** github-codex-connector | PR #331 round 1 | 2026-06-02
+- **Severity:** P2 / MEDIUM
+- **File:** `scripts/qa-runner/watch.js`
+- **Finding:** `numericOption(val('max'), MAX_PARALLEL)` correctly preserves `0` as a parsed number (unlike the previous `Number(...) || fallback` which fell back for `0`). However, the bounded-concurrency `pool()` uses `Math.min(limit, items.length)` workers; with `limit = 0` it starts none. A user passing `--max 0` intending to throttle or test would silently block all `NEEDS_FIX` dispatches, and the tick would exit cleanly with no work done and no error surfaced.
+- **Fix:** Clamped `maxParallel` to at least 1 via `Math.max(1, numericOption(val('max'), MAX_PARALLEL))`. This restores the prior behavior where `0` falls back to `MAX_PARALLEL`, while still allowing `--max-ci-reruns 0` where zero is semantically intentional.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
