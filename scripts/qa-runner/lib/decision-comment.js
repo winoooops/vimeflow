@@ -7,6 +7,9 @@ const STATE_DIR = join(QA_DIR, '.state')
 
 export const DEFAULT_DECISION_STORE = join(STATE_DIR, 'decision-comments.json')
 
+export const decisionStorePath = (pr) =>
+  join(STATE_DIR, `decision-pr-${pr}.json`)
+
 const tableValue = (value) =>
   String(value ?? 'unknown')
     .replace(/\r?\n/g, ' ')

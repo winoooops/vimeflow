@@ -33,6 +33,7 @@ import { botLabel, botProcessEnv, loadBot } from './lib/bot-identity.js'
 import {
   actionForDecision,
   decisionKey,
+  decisionStorePath,
   formatDecisionComment,
   markDecisionPosted,
   readDecisionStore,
@@ -353,7 +354,8 @@ const maybePostDecisionLinear = (pr, s, ctx) => {
     approve: ctx.approve,
     execute: ctx.execute,
   })
-  const store = readDecisionStore()
+  const storeFile = decisionStorePath(pr.number)
+  const store = readDecisionStore(storeFile)
   if (!shouldPostDecision(store, pr.number, key)) {
     out(`           ↳ Linear ${s.vim}: decision unchanged`)
 
@@ -377,9 +379,12 @@ const maybePostDecisionLinear = (pr, s, ctx) => {
     mergeStateStatus: s.mergeStateStatus,
   })
 
-  const stateName = s.state === 'NEEDS_FIX' ? 'In Progress' : undefined
+  const stateName =
+    s.state === 'NEEDS_FIX' && action === 'dispatch fixer'
+      ? 'In Progress'
+      : undefined
   if (postLinear(s.vim, body, stateName)) {
-    markDecisionPosted(store, pr.number, key)
+    markDecisionPosted(store, pr.number, key, storeFile)
   }
 }
 

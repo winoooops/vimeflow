@@ -2,8 +2,8 @@
 id: async-race-conditions
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-06-01
-ref_count: 12
+last_updated: 2026-06-02
+ref_count: 13
 ---
 
 # Async Race Conditions
@@ -456,4 +456,31 @@ prevent showing previous data.
 - **File:** `scripts/qa-runner/run.js`
 - **Finding:** `r.timedOut` triggered `die(msg, 6)` before the live HEAD check ran. A commit landing in the final ~15 s poll window was undetected; the worktree HEAD had advanced past `startHead`, yet `run.js` exited 6 claiming "no commit". `watch.js` classified this as a fixer stall, incrementing `noopCount`. The stranded local commit was never pushed, so the daemon's next remote-HEAD comparison still saw no progress and did not reset the counter, leading to false pausing after `maxNoops` consecutive misclassifications.
 - **Fix:** Before dying on `timedOut`, check `sh('git', ['-C', wt, 'rev-parse', 'HEAD']).trim() !== startHead`. If a commit is present, fall through to the push-verification block instead of exiting 6.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 47. Non-atomic store read-modify-write breaks dedup under parallel ticks
+
+- **Source:** github-claude | PR #330 round 1 | 2026-06-02
+- **Severity:** MEDIUM
+- **File:** `scripts/qa-runner/watch.js`
+- **Finding:** `maybePostDecisionLinear` reads the full store, checks its PR's entry, then writes the full store back. With `maxParallel > 1` the daemon spawns multiple concurrent `watch.js tick --pr N` processes. Two processes for different PRs can interleave: both read `{}`, A writes `{ '317': 'key-A' }`, B writes `{ '318': 'key-B' }` — A's entry is silently lost.
+- **Fix:** Changed `maybePostDecisionLinear` to use per-PR decision store files via `decisionStorePath(pr.number)`, so each concurrent tick only touches its own file, eliminating the race entirely.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 48. Merge store updates before writing decision state
+
+- **Source:** github-codex-connector | PR #330 round 1 | 2026-06-02
+- **Severity:** P2
+- **File:** `scripts/qa-runner/lib/decision-comment.js`
+- **Finding:** With the daemon's default `maxParallel=2`, separate `watch.js tick --pr ...` processes can read the decision store concurrently and then each write a full JSON object based on its stale snapshot. If two different PRs post decisions at the same time, the later write drops the earlier PR's key.
+- **Fix:** Added `decisionStorePath(pr)` to generate per-PR store paths. `watch.js` now passes the per-PR path to `readDecisionStore` and `markDecisionPosted`, so concurrent ticks for different PRs no longer contend on the same file.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 49. Move Linear only when execute is armed
+
+- **Source:** github-codex-connector | PR #330 round 1 | 2026-06-02
+- **Severity:** P2
+- **File:** `scripts/qa-runner/watch.js`
+- **Finding:** When `--linear-decisions` is used without `--execute`, a `NEEDS_FIX` PR still passes `--state In Progress` to `linear-status.js` even though the tick is report-only and no fixer is dispatched. This makes Linear show active work for a PR the runner explicitly did not start.
+- **Fix:** Narrowed `stateName` assignment to only set `'In Progress'` when `s.state === 'NEEDS_FIX'` AND `action === 'dispatch fixer'`, preventing Linear state changes on report-only ticks.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
