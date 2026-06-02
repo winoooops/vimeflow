@@ -20,6 +20,11 @@ export const checkIdentity = (check) =>
     runIdFromCheck(check) || check.link || 'unknown-run',
   ].join('|')
 
+export const stableCheckIdentity = (check) =>
+  [check.name || 'unknown-check', check.workflow || 'unknown-workflow'].join(
+    '|'
+  )
+
 export const checkLabel = (check) =>
   [check.name || 'unknown check', check.workflow && `(${check.workflow})`]
     .filter(Boolean)

@@ -3,6 +3,7 @@ import {
   checkIdentity,
   classifyChecks,
   runIdFromCheck,
+  stableCheckIdentity,
   summarizeChecks,
 } from './ci-policy.js'
 
@@ -68,6 +69,11 @@ describe('check metadata helpers', () => {
     }
 
     expect(checkIdentity(check)).toBe('Claude Code Review|Claude PR Review|123')
+
+    expect(stableCheckIdentity(check)).toBe(
+      'Claude Code Review|Claude PR Review'
+    )
+
     expect(summarizeChecks([check])).toEqual([
       {
         name: 'Claude Code Review',

@@ -450,7 +450,7 @@ const computeState = async (pr, ctx) => {
     state,
     detail,
     vim,
-    threads: null,
+    threads,
     headSha: view.headRefOid,
     ci: ciResult.ci,
     claude,

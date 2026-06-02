@@ -63,6 +63,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [CSP Configuration](patterns/csp-configuration.md)                   | security           | 8        | 5    | 2026-05-16   |
 | [PTY Session Management](patterns/pty-session-management.md)         | backend            | 8        | 2    | 2026-05-28   |
 | [Git Operations](patterns/git-operations.md)                         | correctness        | 25       | 10   | 2026-05-31   |
+| [CI Orchestration State](patterns/ci-orchestration-state.md)         | correctness        | 2        | 0    | 2026-06-02   |
 | [CodeMirror Integration](patterns/codemirror-integration.md)         | editor             | 12       | 0    | 2026-04-11   |
 | [Error Surfacing](patterns/error-surfacing.md)                       | error-handling     | 40       | 9    | 2026-06-02   |
 | [File Tree Paths](patterns/file-tree-paths.md)                       | files              | 4        | 0    | 2026-04-10   |

@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { checkIdentity } from './ci-policy.js'
+import { stableCheckIdentity } from './ci-policy.js'
 
 const QA_DIR = dirname(dirname(fileURLToPath(import.meta.url)))
 const STATE_DIR = join(QA_DIR, '.state')
@@ -9,7 +9,7 @@ const STATE_DIR = join(QA_DIR, '.state')
 export const rerunStorePath = (pr) => join(STATE_DIR, `ci-reruns-pr-${pr}.json`)
 
 export const rerunKey = ({ pr, headSha, check }) =>
-  [pr, headSha || 'unknown-head', checkIdentity(check)].join('|')
+  [pr, headSha || 'unknown-head', stableCheckIdentity(check)].join('|')
 
 export const readRerunStore = (file) => {
   if (!existsSync(file)) {
