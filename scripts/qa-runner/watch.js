@@ -300,6 +300,7 @@ const rerunReviewCheck = (pr, check, headSha, ctx) => {
       action: 'none',
       rerunAttempt: status.count,
       rerunLimit: ctx.maxCiReruns,
+      ciClassification: 'no run id',
     }
   }
 
@@ -310,6 +311,7 @@ const rerunReviewCheck = (pr, check, headSha, ctx) => {
       action: 'none',
       rerunAttempt: status.count,
       rerunLimit: ctx.maxCiReruns,
+      ciClassification: 'rerun exhausted',
     }
   }
 
@@ -323,8 +325,8 @@ const rerunReviewCheck = (pr, check, headSha, ctx) => {
     }
   }
 
-  markRerunAttempt(store, key, storeFile)
   gh(['run', 'rerun', runId, '--failed'])
+  markRerunAttempt(store, key, storeFile)
 
   return {
     state: 'WAITING',
@@ -407,8 +409,7 @@ const computeState = async (pr, ctx) => {
     action = rerun.action
     rerunAttempt = rerun.rerunAttempt
     rerunLimit = rerun.rerunLimit
-    ciClassification =
-      state === 'CI_RED' ? 'rerun exhausted' : 'transient review failure'
+    ciClassification = rerun.ciClassification || 'transient review failure'
     checkSummaries = summarizeChecks(ciResult.reviewRerunFailures)
   } else if (openThreads() > 0) {
     ;[state, detail] = ['NEEDS_FIX', `${threads} unresolved thread(s)`]

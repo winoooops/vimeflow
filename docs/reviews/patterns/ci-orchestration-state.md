@@ -3,7 +3,7 @@ id: ci-orchestration-state
 category: correctness
 created: 2026-06-02
 last_updated: 2026-06-02
-ref_count: 0
+ref_count: 1
 ---
 
 # CI Orchestration State
@@ -51,6 +51,31 @@ Findings in the CI orchestration / QA runner pipeline where state is either lost
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
 
 ### 5. Failed review check invisible when absent from reviewRerunChecks
+
+- **Source:** github-claude | PR #331 round 4 | 2026-06-02
+- **Severity:** MEDIUM
+- **File:** `scripts/qa-runner/lib/ci-policy.js`
+- **Finding:** `classifyChecks` produced `deterministicFailures` for non-review checks and `reviewRerunFailures` for failed review checks in `reviewRerunChecks`. A failed review check not in `reviewRerunChecks` fell through both lists, so `computeState` never saw it and the PR could reach `GOOD_SHAPE` despite the failure.
+- **Fix:** Added a `reviewNonRerunFailures` list to `classifyChecks` and mapped it to `CI_RED` in `computeState` before the `reviewRerunFailures` branch.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 6. markRerunAttempt before gh run rerun silently exhausts budget
+
+- **Source:** github-claude | PR #331 round 5 | 2026-06-02
+- **Severity:** MEDIUM
+- **File:** `scripts/qa-runner/watch.js`
+- **Finding:** `rerunReviewCheck` called `markRerunAttempt` before `gh(['run', 'rerun', runId, '--failed'])`. Because `gh()` uses `execFileSync` and throws on non-zero exit, a transient API failure (rate limit, deleted run) incremented the counter without a real rerun. Three consecutive failures exhausted the `maxCiReruns=3` budget and locked the PR in `CI_RED` permanently.
+- **Fix:** Swapped the order so `gh(['run', 'rerun', ...])` runs first and `markRerunAttempt` is only called on success. A failed `gh` call propagates as a transient error (exit 2) without consuming budget. This reverses the round-4 fix for finding #3, which had moved `markRerunAttempt` before `gh` to prevent infinite loops — the round-5 analysis concluded that pessimistic accounting is worse than transient retries because it permanently disables rerun for a run ID that might succeed later.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 7. ciClassification 'rerun exhausted' even when check has no run ID
+
+- **Source:** github-claude | PR #331 round 5 | 2026-06-02
+- **Severity:** LOW
+- **File:** `scripts/qa-runner/watch.js`
+- **Finding:** `computeState` derived `ciClassification` from `state === 'CI_RED' ? 'rerun exhausted' : 'transient review failure'`. But `rerunReviewCheck` returns `CI_RED` for two reasons: (a) the rerun budget is exhausted, and (b) the selected check has no Actions run ID (`!runId`). Case (b) was falsely labeled "rerun exhausted", confusing operators who saw "0/3" attempts alongside that label.
+- **Fix:** Added `ciClassification` fields to each `rerunReviewCheck` return object (`'no run id'` vs `'rerun exhausted'`), and changed `computeState` to use `rerun.ciClassification` with a fallback to `'transient review failure'`.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
 
 - **Source:** github-claude | PR #331 round 4 | 2026-06-02
 - **Severity:** MEDIUM
