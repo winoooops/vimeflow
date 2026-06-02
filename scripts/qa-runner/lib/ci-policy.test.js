@@ -32,6 +32,22 @@ describe('classifyChecks', () => {
     expect(result.deterministicFailures).toHaveLength(0)
     expect(result.reviewRerunFailures).toHaveLength(1)
   })
+
+  test('excludes checks absent from reviewRerunChecks from rerun set', () => {
+    const result = classifyChecks(
+      [
+        { name: 'Unit Tests', bucket: 'pass' },
+        { name: 'Claude Code Review', bucket: 'fail' },
+        { name: 'Post Review Comment', bucket: 'fail' },
+      ],
+      {
+        reviewRerunChecks: new Set(['Claude Code Review', 'Codex Code Review']),
+      }
+    )
+
+    expect(result.reviewRerunFailures).toHaveLength(1)
+    expect(result.reviewRerunFailures[0].name).toBe('Claude Code Review')
+  })
 })
 
 describe('check metadata helpers', () => {

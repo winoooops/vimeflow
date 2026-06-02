@@ -2,8 +2,8 @@
 id: error-surfacing
 category: error-handling
 created: 2026-04-10
-last_updated: 2026-06-01
-ref_count: 8
+last_updated: 2026-06-02
+ref_count: 9
 ---
 
 # Error Surfacing
@@ -96,6 +96,24 @@ failed" must mean the editor shows the original file, not the requested one.
 - **File:** `plugins/harness/skills/github-review/SKILL.md`
 - **Finding:** `paginated_review_threads_query` ends with `echo "$result"` — bash propagates the exit code of the last command, so the function always returns 0 regardless of inner `gh api graphql` failures. A failed `page_json=$(gh api graphql ...)` produces empty output; downstream `jq` errors silently to stderr; the loop hits `break` because `has_next` is not `"true"` for empty input — and the function returns `0` with a corrupted thread map. The Step 1 caller's `2>/dev/null || echo "[]"` fallback never fires; Step 2B and 7.1 callers had no fallback at all. Same shape as the `void promise` footgun: silent error swallowing where the caller is expected to detect failures via exit code.
 - **Fix:** Add `|| return 1` after each `page_json=$(gh api graphql ...)` assignment so transient GraphQL failures actually propagate. Then loud-fail at every call site: Step 1 keeps its `|| echo "[]"` (best-effort reconciliation); Step 2B and 7.1 promote to `|| { echo "ERROR..."; exit 1; }` because a corrupted thread map there silently misses unresolved threads (Step 7.1 would declare clean exit prematurely) or breaks inline-comment lookup with no diagnostic.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 39. markRerunAttempt before gh run rerun drains budget on API failure
+
+- **Source:** github-claude | PR #331 round 2 | 2026-06-02
+- **Severity:** MEDIUM
+- **File:** `scripts/qa-runner/watch.js`
+- **Finding:** In `rerunReviewCheck`, `markRerunAttempt` persists the incremented count to disk before `gh run rerun`. If the `gh` call exits non-zero (transient API error, rate limit, or the run has already completed), `execFileSync` throws, the exception surfaces as a classify error (exit 2), and the budget is consumed. With `maxCiReruns=3`, three consecutive transient `gh` failures exhaust the budget and flip the check to `CI_RED` permanently, with no actual rerun ever having run.
+- **Fix:** Swapped the order so `gh run rerun` executes first and `markRerunAttempt` is only called on success. This makes the budget consumption conditional on a successful dispatch.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 40. openThreads() before reviewRerunFailures adds GraphQL dep to rerun path
+
+- **Source:** github-claude | PR #331 round 2 | 2026-06-02
+- **Severity:** MEDIUM
+- **File:** `scripts/qa-runner/watch.js`
+- **Finding:** In `computeState`, `openThreads()` — a `gh api` GraphQL call — was evaluated before the `reviewRerunFailures` check. Prior to the PR, threads were fetched only in the fully-clean path. After the PR they were fetched whenever `deterministicFailures.length === 0`, including every case where a reviewer check had failed and a rerun was warranted. If the GraphQL thread-count API was down, the exception propagated out of `computeState` and the tick exited 2 — the rerun logic was never reached.
+- **Fix:** Moved the `reviewRerunFailures` check above `openThreads()` so reruns are attempted before the GraphQL thread query. Unresolved threads are still checked before `GOOD_SHAPE` approval, preserving the original priority semantics without adding a fragile API dependency to the rerun hot path.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
 
 ### 9. `grep -vxFf` exits 1 on full-match input, aborting under `set -euo pipefail`
@@ -376,4 +394,22 @@ failed" must mean the editor shows the original file, not the requested one.
 - **File:** `scripts/qa-runner/daemon.js`
 - **Finding:** `queue.take()` at line 31 sat outside the `try-catch-finally` block that protected `runOne` and `queue.done()`. If `save()` inside `take()` threw (disk full, `ENOSPC` on the rename, permissions error), the exception propagated through the `while` loop, out of the `worker` async function, and became an unhandled promise rejection. Because `worker(i + 1)` at line 114 was called without `.catch()`, Node.js ≥ 15 converts unhandled promise rejections to process termination, killing the entire daemon rather than one worker. This is the symmetric counterpart to finding #32 (`queue.done()` in `finally`).
 - **Fix:** Wrapped `queue.take()` in its own `try-catch` inside the `while` loop so save failures are logged and the loop continues. Changed `const job = queue.take()` to `let job` plus a guarded `try { job = queue.take() } catch (e) { log(...); await sleep(1500); continue }`.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 39. markRerunAttempt before gh run rerun drains budget on API failure
+
+- **Source:** github-claude | PR #331 round 2 | 2026-06-02
+- **Severity:** MEDIUM
+- **File:** `scripts/qa-runner/watch.js`
+- **Finding:** In `rerunReviewCheck`, `markRerunAttempt` persists the incremented count to disk before `gh run rerun`. If the `gh` call exits non-zero (transient API error, rate limit, or the run has already completed), `execFileSync` throws, the exception surfaces as a classify error (exit 2), and the budget is consumed. With `maxCiReruns=3`, three consecutive transient `gh` failures exhaust the budget and flip the check to `CI_RED` permanently, with no actual rerun ever having run.
+- **Fix:** Swapped the order so `gh run rerun` executes first and `markRerunAttempt` is only called on success. This makes the budget consumption conditional on a successful dispatch.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 40. openThreads() before reviewRerunFailures adds GraphQL dep to rerun path
+
+- **Source:** github-claude | PR #331 round 2 | 2026-06-02
+- **Severity:** MEDIUM
+- **File:** `scripts/qa-runner/watch.js`
+- **Finding:** In `computeState`, `openThreads()` — a `gh api` GraphQL call — was evaluated before the `reviewRerunFailures` check. Prior to the PR, threads were fetched only in the fully-clean path. After the PR they were fetched whenever `deterministicFailures.length === 0`, including every case where a reviewer check had failed and a rerun was warranted. If the GraphQL thread-count API was down, the exception propagated out of `computeState` and the tick exited 2 — the rerun logic was never reached.
+- **Fix:** Moved the `reviewRerunFailures` check above `openThreads()` so reruns are attempted before the GraphQL thread query. Unresolved threads are still checked before `GOOD_SHAPE` approval, preserving the original priority semantics without adding a fragile API dependency to the rerun hot path.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

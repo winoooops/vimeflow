@@ -323,8 +323,8 @@ const rerunReviewCheck = (pr, check, headSha, ctx) => {
     }
   }
 
-  markRerunAttempt(store, key, storeFile)
   gh(['run', 'rerun', runId, '--failed'])
+  markRerunAttempt(store, key, storeFile)
 
   return {
     state: 'WAITING',
@@ -385,8 +385,6 @@ const computeState = async (pr, ctx) => {
         'The orchestrator dispatched this fixer because deterministic CI failed. Inspect the linked GitHub check logs, fix the code or generated artifacts, run relevant verification locally, commit, and push.',
       checks: checkSummaries,
     }
-  } else if (openThreads() > 0) {
-    ;[state, detail] = ['NEEDS_FIX', `${threads} unresolved thread(s)`]
   } else if (ciResult.reviewRerunFailures.length) {
     const rerun = rerunReviewCheck(
       pr,
@@ -407,6 +405,8 @@ const computeState = async (pr, ctx) => {
     ciClassification =
       state === 'CI_RED' ? 'rerun exhausted' : 'transient review failure'
     checkSummaries = summarizeChecks(ciResult.reviewRerunFailures)
+  } else if (openThreads() > 0) {
+    ;[state, detail] = ['NEEDS_FIX', `${threads} unresolved thread(s)`]
   } else if (!claudeReady || ciResult.ci === 'pending') {
     ;[state, detail] = ['WAITING', 'CI / Claude re-running']
   } else {

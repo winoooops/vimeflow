@@ -2,8 +2,8 @@
 id: testing-gaps
 category: testing
 created: 2026-04-09
-last_updated: 2026-05-28
-ref_count: 25
+last_updated: 2026-06-02
+ref_count: 26
 ---
 
 # Testing Gaps
@@ -553,3 +553,12 @@ filesystem scope restrictions).
 - **Finding:** The focus-repaint fix registered two listeners that share one guarded handler — `window 'focus'` and `document 'visibilitychange'` — where the handler early-returns unless `document.visibilityState === 'visible'`. The new regression test only dispatched `window.focus` (which in jsdom runs with the default `visibilityState === 'visible'`, so the guard always passes). The `visibilitychange` path was never exercised, leaving the non-trivial branch untested: a future edit that inverts or drops the `visibilityState !== 'visible'` guard would still pass every test while silently repainting a hidden terminal (or suppressing a needed repaint on minimized-window restore — the primary scenario the fix targets).
 - **Fix:** Added a test that shadows the read-only `document.visibilityState` getter via `Object.defineProperty(document, 'visibilityState', { configurable: true, get })`, dispatches `visibilitychange` once with `'hidden'` (asserts `refresh` NOT called) and once with `'visible'` (asserts `refresh` called), and restores the prototype getter in a `finally` by `delete`-ing the instance override. Code-review heuristic: when one handler guards on a runtime condition, the test must drive BOTH branches — the condition-true (fires) and condition-false (suppressed) paths. Asserting only the happy path lets a guard regression pass silently. When two events share a guarded handler, test the event whose default test-environment state actually exercises the guard (here `visibilitychange`), not just the one where the guard is incidentally always-true (`focus`).
 - **Commit:** same commit as this entry
+
+### 56. REVIEW_CHECKS equals REVIEW_RERUN_CHECKS — reviewRerunChecks filter is no-op
+
+- **Source:** github-claude | PR #331 round 2 | 2026-06-02
+- **Severity:** LOW
+- **File:** `scripts/qa-runner/lib/ci-policy.js`
+- **Finding:** Both exported sets contained identical three entries. In `classifyChecks`, `review` was first filtered by `reviewChecks`, so every element was already in `reviewChecks`. Since `REVIEW_RERUN_CHECKS === REVIEW_CHECKS`, `reviewRerunChecks.has(check.name)` was always true for elements of `review` — the filter was a no-op. Adding a name to one set without updating the other would silently diverge behavior, and no test covered the divergent case.
+- **Fix:** Made `REVIEW_RERUN_CHECKS` an explicit alias of `REVIEW_CHECKS` so the sameness is intentional rather than coincidental. Added a test asserting that checks absent from `reviewRerunChecks` are excluded from `reviewRerunFailures`, pinning the contract against future drift.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
