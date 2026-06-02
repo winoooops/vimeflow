@@ -28,10 +28,13 @@ export const createLinearIssueForPr = async (
     { key: teamKey },
     fetchImpl
   )
-  const team = teamData.teams.nodes[0]
-  if (!team) {
-    throw new Error(`Linear team ${teamKey} not found`)
+  const nodes = teamData?.teams?.nodes
+  if (!nodes?.length) {
+    throw new Error(
+      teamData?.errors?.[0]?.message ?? `Linear team ${teamKey} not found`
+    )
   }
+  const team = nodes[0]
 
   const issueData = await gql(
     auth.header,

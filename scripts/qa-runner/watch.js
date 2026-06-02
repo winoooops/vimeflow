@@ -411,10 +411,10 @@ const computeState = async (pr, ctx) => {
     rerunLimit = rerun.rerunLimit
     ciClassification = rerun.ciClassification || 'transient review failure'
     checkSummaries = summarizeChecks(ciResult.reviewRerunFailures)
-  } else if (openThreads() > 0) {
-    ;[state, detail] = ['NEEDS_FIX', `${threads} unresolved thread(s)`]
   } else if (!claudeReady || ciResult.ci === 'pending') {
     ;[state, detail] = ['WAITING', 'CI / Claude re-running']
+  } else if (openThreads() > 0) {
+    ;[state, detail] = ['NEEDS_FIX', `${threads} unresolved thread(s)`]
   } else {
     // verdict is irrelevant until threads are clear — defer the fetch to here
     const verdict = claudeVerdictClean(ctx.owner, ctx.name, pr.number) // null|true|false

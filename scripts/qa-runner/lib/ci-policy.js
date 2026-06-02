@@ -4,7 +4,10 @@ export const REVIEW_CHECKS = new Set([
   'Post Review Comment',
 ])
 
-export const REVIEW_RERUN_CHECKS = REVIEW_CHECKS
+export const REVIEW_RERUN_CHECKS = new Set([
+  'Claude Code Review',
+  'Codex Code Review',
+])
 
 const FAILED_BUCKETS = new Set(['fail', 'cancel'])
 

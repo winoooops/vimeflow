@@ -3,7 +3,7 @@ id: ci-orchestration-state
 category: correctness
 created: 2026-06-02
 last_updated: 2026-06-02
-ref_count: 1
+ref_count: 2
 ---
 
 # CI Orchestration State
@@ -57,6 +57,24 @@ Findings in the CI orchestration / QA runner pipeline where state is either lost
 - **File:** `scripts/qa-runner/lib/ci-policy.js`
 - **Finding:** `classifyChecks` produced `deterministicFailures` for non-review checks and `reviewRerunFailures` for failed review checks in `reviewRerunChecks`. A failed review check not in `reviewRerunChecks` fell through both lists, so `computeState` never saw it and the PR could reach `GOOD_SHAPE` despite the failure.
 - **Fix:** Added a `reviewNonRerunFailures` list to `classifyChecks` and mapped it to `CI_RED` in `computeState` before the `reviewRerunFailures` branch.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 8. Thread check before !claudeReady guard — premature NEEDS_FIX dispatch
+
+- **Source:** github-claude | PR #331 round 6 | 2026-06-02
+- **Severity:** HIGH
+- **File:** `scripts/qa-runner/watch.js`
+- **Finding:** The pre-PR `computeState` evaluated `!claudeReady || ci === 'pending'` before fetching unresolved threads, so a pending Claude check always short-circuited to WAITING. The refactoring inverted the order: `openThreads() > 0` was checked before `!claudeReady || ciResult.ci === 'pending'`. If a PR carried leftover threads while Claude's review was still running, `computeState` returned `NEEDS_FIX` and dispatched a fixer — whereas the old code returned WAITING and let Claude finish first.
+- **Fix:** Swapped the `openThreads() > 0` branch with the `!claudeReady || ciResult.ci === 'pending'` branch so CI/Claude pending is checked first, restoring the original priority.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 9. REVIEW_RERUN_CHECKS aliases REVIEW_CHECKS — reviewNonRerunFailures always empty
+
+- **Source:** github-claude | PR #331 round 6 | 2026-06-02
+- **Severity:** MEDIUM
+- **File:** `scripts/qa-runner/lib/ci-policy.js`
+- **Finding:** `REVIEW_RERUN_CHECKS = REVIEW_CHECKS` was a reference alias — both names pointed to the same `Set`. Since every item in `review` satisfied `reviewRerunChecks.has(check.name)`, the `!reviewRerunChecks.has(...)` filter was always false: `reviewNonRerunFailures` was structurally always empty and the `else if (ciResult.reviewNonRerunFailures.length)` CI_RED branch in `computeState` was permanently dead code.
+- **Fix:** Changed `REVIEW_RERUN_CHECKS` from a reference alias to a new `Set(['Claude Code Review', 'Codex Code Review'])`, activating the non-rerun failure path.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
 
 ### 6. markRerunAttempt before gh run rerun silently exhausts budget

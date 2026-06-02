@@ -3,7 +3,7 @@ id: error-surfacing
 category: error-handling
 created: 2026-04-10
 last_updated: 2026-06-02
-ref_count: 9
+ref_count: 10
 ---
 
 # Error Surfacing
@@ -114,6 +114,15 @@ failed" must mean the editor shows the original file, not the requested one.
 - **File:** `scripts/qa-runner/watch.js`
 - **Finding:** In `computeState`, `openThreads()` — a `gh api` GraphQL call — was evaluated before the `reviewRerunFailures` check. Prior to the PR, threads were fetched only in the fully-clean path. After the PR they were fetched whenever `deterministicFailures.length === 0`, including every case where a reviewer check had failed and a rerun was warranted. If the GraphQL thread-count API was down, the exception propagated out of `computeState` and the tick exited 2 — the rerun logic was never reached.
 - **Fix:** Moved the `reviewRerunFailures` check above `openThreads()` so reruns are attempted before the GraphQL thread query. Unresolved threads are still checked before `GOOD_SHAPE` approval, preserving the original priority semantics without adding a fragile API dependency to the rerun hot path.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 41. Unsafe property traversal on GraphQL error response in linear-issue.js
+
+- **Source:** github-claude | PR #331 round 6 | 2026-06-02
+- **Severity:** MEDIUM
+- **File:** `scripts/qa-runner/lib/linear-issue.js`
+- **Finding:** `teamData.teams.nodes[0]` threw `TypeError: Cannot read properties of undefined (reading 'nodes')` when the Linear API returned an error envelope (e.g. `{ errors: [{message: 'Unauthorized'}] }`) without a `teams` key. The `resolveLinkedIssue` catch in `watch.js` swallowed the exception but logged only the raw TypeError text, making auth failures and network errors operationally invisible.
+- **Fix:** Replaced direct property access with optional chaining, checking `nodes?.length` before indexing, and surfacing `teamData.errors?.[0]?.message` in the thrown error when available.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
 
 ### 9. `grep -vxFf` exits 1 on full-match input, aborting under `set -euo pipefail`
