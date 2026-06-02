@@ -14,7 +14,7 @@
 import { execFileSync, spawn } from 'node:child_process'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { linkedVim } from './pr-utils.js'
+import { linkedVimForPr } from './pr-utils.js'
 
 const WATCH = join(dirname(dirname(fileURLToPath(import.meta.url))), 'watch.js')
 
@@ -36,7 +36,7 @@ const snapshot = (pr, exec = execFileSync) => {
           'view',
           String(pr),
           '--json',
-          'headRefOid,state,body,isDraft,labels',
+          'headRefOid,state,body,isDraft,labels,headRefName',
         ],
         { encoding: 'utf8' }
       )
@@ -46,7 +46,11 @@ const snapshot = (pr, exec = execFileSync) => {
       ok: true,
       headSha: j.headRefOid,
       state: j.state,
-      vim: linkedVim(j.body),
+      vim: linkedVimForPr({
+        body: j.body,
+        branch: j.headRefName,
+        pr,
+      }),
       isDraft: Boolean(j.isDraft),
       labels: (j.labels || []).map((l) => l.name),
     }
@@ -69,7 +73,15 @@ const snapshot = (pr, exec = execFileSync) => {
 
 export const watchArgs = (
   pr,
-  { label, approve = false, linearDecisionComments = false, reason } = {}
+  {
+    label,
+    approve = false,
+    linearDecisionComments = false,
+    linearCreateIssues = false,
+    linearTeamKey,
+    maxCiReruns,
+    reason,
+  } = {}
 ) => {
   const args = [WATCH, 'tick', '--pr', String(pr), '--execute']
   if (approve) {
@@ -77,6 +89,15 @@ export const watchArgs = (
   }
   if (linearDecisionComments) {
     args.push('--linear-decisions')
+  }
+  if (linearCreateIssues) {
+    args.push('--linear-create-issues')
+  }
+  if (linearTeamKey) {
+    args.push('--linear-team', linearTeamKey)
+  }
+  if (maxCiReruns) {
+    args.push('--max-ci-reruns', String(maxCiReruns))
   }
   if (reason) {
     args.push('--reason', reason)

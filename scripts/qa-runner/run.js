@@ -31,7 +31,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { botEnv, botLabel, loadBot } from './lib/bot-identity.js'
 import { formatFixerCycleComment } from './lib/decision-comment.js'
-import { linkedVim } from './lib/pr-utils.js'
+import { linkedVimForPr } from './lib/pr-utils.js'
 import { runUntilChange } from './lib/run-until-change.js'
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url))
@@ -157,12 +157,28 @@ const ensureWorktree = (pr, branch, live, skillsDir, bot, repo) => {
   return wt
 }
 
+const fixContextText = () => {
+  const context = process.env.QA_FIX_CONTEXT
+  if (!context) {
+    return ''
+  }
+
+  return (
+    '\n\nAdditional orchestrator context for this fixer cycle:\n' +
+    '```json\n' +
+    context +
+    '\n```\n' +
+    'If this context describes deterministic CI failures, inspect the linked GitHub check logs and fix those failures even when there are no unresolved review threads.'
+  )
+}
+
 const invocation = (pr, live) => {
   const base =
     `/skill:upsource-review ${pr}\n\n` +
     `Run the lifeline upsource-review skill now on pull request #${pr} of this repository. ` +
     `"${pr}" is the PR number — not a line number or a count. Resolve PR #${pr}, fetch its ` +
-    `review findings, and fix every one. Do not ask for clarification; the target is PR #${pr}.`
+    `review findings, and fix every one. Do not ask for clarification; the target is PR #${pr}.` +
+    fixContextText()
   if (live) {
     // SINGLE PASS: the orchestrator owns re-dispatch — fix one round and exit, never poll.
     return (
@@ -322,7 +338,11 @@ const run = async (pr, live) => {
     out(worktreeStatus || '(none)')
     // r.killed (single-pass stop) is also success — every failure mode die()'d above.
     if (live && (r.status === 0 || r.killed)) {
-      const vim = linkedVim(info.body)
+      const vim = linkedVimForPr({
+        body: info.body,
+        branch,
+        pr,
+      })
       if (vim) {
         const kimiExit =
           r.status === null || r.status === undefined

@@ -21,7 +21,7 @@ const TOKEN_API = 'https://api.linear.app/oauth/token'
 
 // Repo root (shared across linked worktrees via --git-common-dir) — where the
 // gitignored Linear env files live.
-const repoRoot = () =>
+export const repoRoot = () =>
   dirname(
     execFileSync(
       'git',
@@ -142,8 +142,8 @@ export const loadAuthFromRoot = async (role, root, fetchImpl = fetch) => {
 
 const loadAuth = (role) => loadAuthFromRoot(role, repoRoot())
 
-const gql = async (auth, query, variables) => {
-  const res = await fetch(API, {
+export const linearGql = async (auth, query, variables, fetchImpl = fetch) => {
+  const res = await fetchImpl(API, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: auth },
     body: JSON.stringify({ query, variables }),
@@ -169,7 +169,7 @@ export const main = async () => {
   const stateName = flag('--state')
   const auth = await loadAuth(flag('--as'))
 
-  const d = await gql(
+  const d = await linearGql(
     auth.header,
     'query($id:String!){issue(id:$id){id identifier team{id}}}',
     { id: identifier }
@@ -178,7 +178,7 @@ export const main = async () => {
     throw new Error(`issue ${identifier} not found`)
   }
 
-  await gql(
+  await linearGql(
     auth.header,
     'mutation($id:String!,$body:String!){commentCreate(input:{issueId:$id,body:$body}){success}}',
     { id: d.issue.id, body }
@@ -186,7 +186,7 @@ export const main = async () => {
   process.stdout.write(`commented on ${identifier} (as ${auth.who})\n`)
 
   if (stateName) {
-    const s = await gql(
+    const s = await linearGql(
       auth.header,
       'query($t:ID!){workflowStates(filter:{team:{id:{eq:$t}}}){nodes{id name}}}',
       { t: d.issue.team.id }
@@ -198,7 +198,7 @@ export const main = async () => {
     if (!st) {
       throw new Error(`state "${stateName}" not found for the team`)
     }
-    await gql(
+    await linearGql(
       auth.header,
       'mutation($id:String!,$s:String!){issueUpdate(id:$id,input:{stateId:$s}){success}}',
       { id: d.issue.id, s: st.id }

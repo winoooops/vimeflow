@@ -71,6 +71,72 @@ describe('formatDecisionComment', () => {
       'Reason: PR meets success criteria, but approve is not armed.'
     )
   })
+
+  test('formats deterministic CI check context without raw logs', () => {
+    const body = formatDecisionComment({
+      pr: 330,
+      branch: 'feature/vim-20',
+      state: 'NEEDS_FIX',
+      detail: 'deterministic CI failure: Code Quality Check',
+      sourceEvent: 'ci:check_run',
+      action: 'dispatch fixer',
+      approve: true,
+      execute: true,
+      headSha: '3c0454fa261b50f7448730be95759845ece1f8bb',
+      ci: 'fail',
+      claude: 'clean',
+      threads: null,
+      mergeable: 'MERGEABLE',
+      mergeStateStatus: 'UNSTABLE',
+      ciClassification: 'deterministic failure',
+      checkSummaries: [
+        {
+          name: 'Code Quality Check',
+          workflow: 'CI Checks',
+          bucket: 'fail',
+          link: 'https://github.com/winoooops/vimeflow/actions/runs/123',
+        },
+      ],
+    })
+
+    expect(body).toContain('| CI classification | deterministic failure |')
+    expect(body).toContain('Affected checks:')
+    expect(body).toContain(
+      '- Code Quality Check (CI Checks): fail — https://github.com/winoooops/vimeflow/actions/runs/123'
+    )
+
+    expect(body).toContain(
+      'Reason: Review or deterministic CI findings require a fixer cycle and execute is armed.'
+    )
+  })
+
+  test('formats rerun attempt metadata', () => {
+    const body = formatDecisionComment({
+      pr: 330,
+      branch: 'feature/vim-20',
+      state: 'WAITING',
+      detail: 'reran Claude Code Review (attempt 1/3)',
+      sourceEvent: 'ci:check_run',
+      action: 'rerun check',
+      approve: false,
+      execute: true,
+      headSha: '3c0454fa261b50f7448730be95759845ece1f8bb',
+      ci: 'green',
+      claude: 'fail',
+      threads: null,
+      mergeable: 'MERGEABLE',
+      mergeStateStatus: 'UNSTABLE',
+      ciClassification: 'transient review failure',
+      rerunAttempt: 1,
+      rerunLimit: 3,
+    })
+
+    expect(body).toContain('| CI classification | transient review failure |')
+    expect(body).toContain('| Rerun attempt | 1 / 3 |')
+    expect(body).toContain(
+      'Reason: A transient check was rerun and the runner is waiting for the new result.'
+    )
+  })
 })
 
 describe('formatFixerCycleComment', () => {

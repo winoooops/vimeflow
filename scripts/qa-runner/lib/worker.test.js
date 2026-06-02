@@ -66,6 +66,9 @@ describe('watchArgs', () => {
       watchArgs(123, {
         label: 'auto-review',
         linearDecisionComments: true,
+        linearCreateIssues: true,
+        linearTeamKey: 'VIM',
+        maxCiReruns: 3,
         reason: 'pr:ready_for_review',
       })
     ).toEqual([
@@ -75,6 +78,11 @@ describe('watchArgs', () => {
       '123',
       '--execute',
       '--linear-decisions',
+      '--linear-create-issues',
+      '--linear-team',
+      'VIM',
+      '--max-ci-reruns',
+      '3',
       '--reason',
       'pr:ready_for_review',
       '--label',
