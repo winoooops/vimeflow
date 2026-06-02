@@ -3,18 +3,21 @@
 // issue via the GraphQL API. Headless ⇒ no interactive MCP (see
 // rules/common/linear-workflow.md).
 //
-// Auth is role-aware: `--as fixer|orchestrator` posts as that role's Linear AGENT
-// (OAuth token from linear-agent.env / linear-orchestrator.env → "Bearer …"), so
-// comments carry the agent's identity, not yours. Without a linked agent it falls
-// back to the personal LINEAR_API_KEY ($env or repo-root linear.env).
+// Auth is role-aware: `--as fixer|orchestrator` posts as that role's Linear app
+// (client credentials from linear-agent.env / linear-orchestrator.env -> app
+// actor token), so comments carry the bot identity, not yours. A stored OAuth
+// access token is kept as a compatibility fallback; without either, it falls back
+// to the personal LINEAR_API_KEY ($env or repo-root linear.env).
 //
 // Usage: node linear-status.js <VIM-N> "<comment>" [--state "<name>"] [--as <role>]
 
 import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 
 const API = 'https://api.linear.app/graphql'
+const TOKEN_API = 'https://api.linear.app/oauth/token'
 
 // Repo root (shared across linked worktrees via --git-common-dir) — where the
 // gitignored Linear env files live.
@@ -27,37 +30,102 @@ const repoRoot = () =>
     ).trim()
   )
 
-// Pull a single KEY=value from a dotenv-style file, or undefined.
-const readEnvVar = (file, key) => {
+const isRealSecret = (value) => value && !/PASTE|xxxx/i.test(value)
+
+export const readEnvFile = (file) => {
+  const env = {}
   if (!existsSync(file)) {
-    return undefined
+    return env
   }
 
-  const m = readFileSync(file, 'utf8').match(
-    new RegExp(`^\\s*(?:export\\s+)?${key}\\s*=\\s*(.+?)\\s*$`, 'm')
-  )
+  for (const line of readFileSync(file, 'utf8').split(/\r?\n/)) {
+    const m = line.match(
+      /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$/
+    )
+    if (!m) {
+      continue
+    }
 
-  return m ? m[1].replace(/^["']|["']$/g, '') : undefined
+    const [, key, rawValue] = m
+    env[key] = rawValue.replace(/^["']|["']$/g, '')
+  }
+
+  return env
 }
 
-// Each role's Linear AGENT (OAuth) token lives in its own gitignored env file.
+// Each role's Linear app credentials live in a separate gitignored env file.
 const ROLE_FILE = {
   fixer: 'linear-agent.env',
   orchestrator: 'linear-orchestrator.env',
 }
 
-// Authorization for a role: prefer that role's AGENT token (Bearer, posts as the
-// agent), else the personal key (raw header, posts as you). Returns { header, who }.
-const loadAuth = (role) => {
-  const root = repoRoot()
+const readEnvVar = (file, key) => readEnvFile(file)[key]
+
+const roleFile = (root, role) => {
+  const file = ROLE_FILE[role]
+  if (!file) {
+    throw new Error(`unknown --as role "${role}" (fixer|orchestrator)`)
+  }
+
+  return join(root, file)
+}
+
+const mintClientCredentialsAuth = async (role, env, fetchImpl) => {
+  if (
+    !isRealSecret(env.LINEAR_CLIENT_ID) ||
+    !isRealSecret(env.LINEAR_CLIENT_SECRET)
+  ) {
+    return null
+  }
+
+  const body = new URLSearchParams({
+    grant_type: 'client_credentials',
+    scope: env.LINEAR_SCOPES || 'read,write',
+    client_id: env.LINEAR_CLIENT_ID,
+    client_secret: env.LINEAR_CLIENT_SECRET,
+  })
+
+  const res = await fetchImpl(TOKEN_API, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body,
+  })
+  const json = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    const reason = json.error_description || json.error || `HTTP ${res.status}`
+    throw new Error(`Linear ${role} client_credentials failed: ${reason}`)
+  }
+  if (!json.access_token) {
+    throw new Error(
+      `Linear ${role} client_credentials returned no access_token`
+    )
+  }
+
+  return { header: `Bearer ${json.access_token}`, who: `${role} app` }
+}
+
+// Authorization for a role: prefer role app client credentials (Bearer, posts as
+// the app), then a stored role access token, else the personal key (raw header,
+// posts as you). Returns { header, who }.
+export const loadAuthFromRoot = async (role, root, fetchImpl = fetch) => {
   if (role) {
-    const file = ROLE_FILE[role]
-    if (!file) {
-      throw new Error(`unknown --as role "${role}" (fixer|orchestrator)`)
+    const env = readEnvFile(roleFile(root, role))
+    let clientCredentialsError
+    try {
+      const auth = await mintClientCredentialsAuth(role, env, fetchImpl)
+      if (auth) {
+        return auth
+      }
+    } catch (e) {
+      clientCredentialsError = e
     }
-    const tok = readEnvVar(join(root, file), 'LINEAR_AGENT_TOKEN')
-    if (tok && !/PASTE|xxxx/i.test(tok)) {
-      return { header: `Bearer ${tok}`, who: `${role} agent` }
+
+    const tok = env.LINEAR_ACCESS_TOKEN || env.LINEAR_AGENT_TOKEN
+    if (isRealSecret(tok)) {
+      return { header: `Bearer ${tok}`, who: `${role} access token` }
+    }
+    if (clientCredentialsError) {
+      throw clientCredentialsError
     }
   }
 
@@ -68,9 +136,11 @@ const loadAuth = (role) => {
     return { header: key, who: 'you (personal key)' }
   }
   throw new Error(
-    'no Linear auth — link the agent (LINEAR_AGENT_TOKEN) or set LINEAR_API_KEY (env or repo-root linear.env). See rules/common/linear-workflow.md'
+    'no Linear auth — configure role client credentials, set LINEAR_ACCESS_TOKEN / LINEAR_AGENT_TOKEN, or set LINEAR_API_KEY (env or repo-root linear.env). See rules/common/linear-workflow.md'
   )
 }
+
+const loadAuth = (role) => loadAuthFromRoot(role, repoRoot())
 
 const gql = async (auth, query, variables) => {
   const res = await fetch(API, {
@@ -88,7 +158,7 @@ const gql = async (auth, query, variables) => {
   return json.data
 }
 
-const main = async () => {
+export const main = async () => {
   const [identifier, body, ...rest] = process.argv.slice(2)
   if (!identifier || !body) {
     throw new Error(
@@ -97,7 +167,7 @@ const main = async () => {
   }
   const flag = (n) => (rest.includes(n) ? rest[rest.indexOf(n) + 1] : undefined)
   const stateName = flag('--state')
-  const auth = loadAuth(flag('--as'))
+  const auth = await loadAuth(flag('--as'))
 
   const d = await gql(
     auth.header,
@@ -137,9 +207,14 @@ const main = async () => {
   }
 }
 
-try {
-  await main()
-} catch (e) {
-  process.stderr.write(`${e.message}\n`)
-  process.exit(1)
+if (
+  process.argv[1] &&
+  import.meta.url === pathToFileURL(process.argv[1]).href
+) {
+  try {
+    await main()
+  } catch (e) {
+    process.stderr.write(`${e.message}\n`)
+    process.exit(1)
+  }
 }
