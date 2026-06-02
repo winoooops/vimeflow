@@ -115,7 +115,7 @@ server.listen(config.port, config.host, () => {
   )
 
   log(
-    `config: label=${config.label} maxParallel=${config.maxParallel} maxNoops=${config.maxNoops} pollSeconds=${config.pollSeconds} trusted=[${config.trustedSenders.join(',')}]`
+    `config: label=${config.label} maxParallel=${config.maxParallel} maxNoops=${config.maxNoops} pollSeconds=${config.pollSeconds} linearDecisionComments=${config.linearDecisionComments} trusted=[${config.trustedSenders.join(',')}]`
   )
   if (!config.webhookSecret) {
     log(

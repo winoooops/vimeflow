@@ -30,6 +30,7 @@ import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { botEnv, botLabel, loadBot } from './lib/bot-identity.js'
+import { formatFixerCycleComment } from './lib/decision-comment.js'
 import { linkedVim } from './lib/pr-utils.js'
 import { runUntilChange } from './lib/run-until-change.js'
 
@@ -292,6 +293,7 @@ const run = async (pr, live) => {
     //   2. Committed but the push never landed (bad credentials, non-fast-forward,
     //      killed mid-push) — the probe is the LOCAL HEAD, so grace tripped on the
     //      commit; origin/<branch> stays behind, so the daemon sees an unchanged remote.
+    let pushedHead = null
     if (live) {
       const head = sh('git', ['-C', wt, 'rev-parse', 'HEAD']).trim()
       if (head === startHead) {
@@ -309,23 +311,48 @@ const run = async (pr, live) => {
           8
         )
       }
+      pushedHead = head
     }
     out('')
     out(
       `kimi exit: ${r.status ?? `signal ${r.signal}`}${r.killed ? ' (single-pass stop)' : ''}`
     )
     out('--- worktree changes ---')
-    out(sh('git', ['-C', wt, 'status', '--short']) || '(none)')
+    const worktreeStatus = sh('git', ['-C', wt, 'status', '--short']).trim()
+    out(worktreeStatus || '(none)')
     // r.killed (single-pass stop) is also success — every failure mode die()'d above.
     if (live && (r.status === 0 || r.killed)) {
       const vim = linkedVim(info.body)
       if (vim) {
+        const kimiExit =
+          r.status === null || r.status === undefined
+            ? r.signal
+              ? `signal ${r.signal}`
+              : 'unknown'
+            : String(r.status)
+
+        const stopMode = r.timedOut
+          ? 'timeout stop'
+          : r.killed
+            ? 'single-pass stop'
+            : 'process exit'
+
+        const body = formatFixerCycleComment({
+          pr,
+          url: info.url,
+          branch,
+          headSha: pushedHead,
+          kimiExit,
+          stopMode,
+          worktreeClean: !worktreeStatus,
+        })
+
         spawnSync(
           'node',
           [
             join(SCRIPT_DIR, 'lib', 'linear-status.js'),
             vim,
-            `QA runner: ran an upsource-review cycle on PR #${pr} (${info.url}).`,
+            body,
             '--as',
             'fixer',
           ],
