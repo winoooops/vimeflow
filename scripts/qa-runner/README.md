@@ -21,9 +21,10 @@ Design + rationale: [`docs/explorations/linear-agent-cicd-pilot.html`](../../doc
                  ▼
  ③ Linear  — control plane / observability. Each state transition mirrors to the
     linked issue (a `VIM-N` in the PR body). The native GitHub↔Linear sync moves
-    the issue → Done on merge; the watcher's own posts use the `linear.env` API key
-    (headless ⇒ scoped API key, not interactive MCP — see
-    rules/common/linear-workflow.md) and no-op gracefully when no key is set.
+    the issue → Done on merge; the watcher's own posts use role-specific Linear
+    app credentials (`linear-agent.env` / `linear-orchestrator.env`) so comments
+    are attributed to the fixer or orchestrator app. Personal `linear.env` remains
+    a fallback for non-role scripts only.
 ```
 
 **Two bot identities** so the bot that writes a fix is never the bot that approves
@@ -122,7 +123,9 @@ It runs `watch.js tick --execute` for queued PRs. It does **not** pass
 `--approve` unless explicitly armed with `QA_APPROVE=1`, which belongs to the
 orchestrator-bot rung.
 
-## Identity (`lib/bot-identity.js`)
+## Identity
+
+### GitHub (`lib/bot-identity.js`)
 
 Two optional, gitignored env files — each a **separate GitHub account** so machine
 actions are attributable and split by role. Either absent ⇒ that role acts as your
@@ -138,6 +141,22 @@ Each = a classic PAT (`repo` scope) on a Write-collaborator account; see the
 `*.example` files. The identity flows through three points: API actor (`GH_TOKEN`),
 commit author (`GIT_AUTHOR_*`), and HTTPS push (the `gh` credential helper).
 
+### Linear (`lib/linear-status.js`)
+
+Two optional, gitignored env files — each a **separate Linear OAuth app** with
+Client credentials enabled. `linear-status.js --as fixer|orchestrator` mints an
+app-actor token on demand, so issue comments show the bot app identity in Linear.
+
+| File                      | Keys                                       | Role                   | Used by                       |
+| ------------------------- | ------------------------------------------ | ---------------------- | ----------------------------- |
+| `linear-agent.env`        | `LINEAR_CLIENT_ID`, `LINEAR_CLIENT_SECRET` | inner **fixer**        | `run.js` status posts         |
+| `linear-orchestrator.env` | `LINEAR_CLIENT_ID`, `LINEAR_CLIENT_SECRET` | outer **orchestrator** | `watch.js` status/merge posts |
+
+Use `LINEAR_SCOPES=read,write`. `LINEAR_ACCESS_TOKEN` / `LINEAR_AGENT_TOKEN` are
+kept only as compatibility fallbacks for existing OAuth tokens; client credentials
+are preferred for the daemon because the helper can re-mint app tokens without an
+interactive login.
+
 ## Guardrails
 
 - **Opt-in only** (`auto-review` label) — narrow blast radius for the pilot.
@@ -148,4 +167,5 @@ commit author (`GIT_AUTHOR_*`), and HTTPS push (the `gh` credential helper).
 - **author ≠ approver** — the fixer bot never merges its own work; the orchestrator does.
 - Branch deletion on merge is a **remote API ref-delete**, not `gh --delete-branch`
   (whose local delete fails when a worktree holds the branch).
-- Linear status via the **scoped API key**; never echo untrusted review text into a shell.
+- Linear status via role-specific **app credentials**; never echo untrusted review
+  text into a shell.

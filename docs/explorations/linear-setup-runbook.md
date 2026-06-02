@@ -30,7 +30,18 @@ All Linear facts verified against live docs on 2026-05-30; cost target = **free 
 
 ## Phase 4 — direct API access (optional, non-agent only) 🧑
 
-10. 🧑 Only for git hooks / CI that aren't agents and aren't tied to a PR. Create a personal API key → `Settings → Security & access → Personal API keys`; copy `linear.env.example` → `linear.env` (repo root, gitignored), fill `LINEAR_API_KEY`, then `source linear.env`. The MCP server uses OAuth and does **not** use this key. Details: `rules/common/linear-workflow.md`.
+10. 🧑 For the QA runner role bots, create two Linear OAuth apps:
+    - **Kimi Review Runner** → copy `linear-agent.env.example` to `linear-agent.env`.
+    - **Vimeflow Orchestrator** → copy `linear-orchestrator.env.example` to `linear-orchestrator.env`.
+11. 🧑 In each app, enable **Client credentials**, grant access to the VIM team, and store `LINEAR_CLIENT_ID`, `LINEAR_CLIENT_SECRET`, and `LINEAR_SCOPES=read,write` in the matching gitignored env file.
+12. 🤖 Smoke test each role:
+
+```bash
+node scripts/qa-runner/lib/linear-status.js VIM-18 "fixer Linear app smoke" --as fixer
+node scripts/qa-runner/lib/linear-status.js VIM-18 "orchestrator Linear app smoke" --as orchestrator
+```
+
+13. 🧑 Only for git hooks / CI that are not role bots and are not tied to a PR. Create a personal API key → `Settings → Security & access → Personal API keys`; copy `linear.env.example` → `linear.env` (repo root, gitignored), fill `LINEAR_API_KEY`, then `source linear.env`. The MCP server uses OAuth and does **not** use this key. Details: `rules/common/linear-workflow.md`.
 
 ## Later — full delegation (Path C)
 
