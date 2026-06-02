@@ -57,6 +57,10 @@ export const loadConfig = () => {
     maxNoops: num(env.QA_MAX_NOOPS, num(file.maxNoops, 15)),
     pollSeconds: num(env.QA_POLL_SECONDS, num(file.pollSeconds, 60)),
     approve: bool(env.QA_APPROVE, bool(file.approve)),
+    linearDecisionComments: bool(
+      env.QA_LINEAR_DECISION_COMMENTS,
+      bool(file.linearDecisionComments, true)
+    ),
     triggerPhrase:
       env.QA_TRIGGER_PHRASE || file.triggerPhrase || '/upsource-review',
     trustedSenders: senders.length ? senders : file.trustedSenders || [],

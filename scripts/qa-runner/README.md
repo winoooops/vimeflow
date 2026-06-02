@@ -90,6 +90,8 @@ node scripts/qa-runner/watch.js tick --execute            # NEEDS_FIX  → run u
 node scripts/qa-runner/watch.js tick --execute --max 3    # …up to 3 at once
 node scripts/qa-runner/watch.js tick --approve            # GOOD_SHAPE → squash-merge
 node scripts/qa-runner/watch.js tick --execute --approve  # full autonomy
+node scripts/qa-runner/watch.js tick --pr 317 --linear-decisions --reason manual-debug
+                                                          # post one deduped Linear decision comment
 
 # loop forever (Ctrl-C to stop)
 node scripts/qa-runner/watch.js watch --execute --approve
@@ -122,6 +124,17 @@ GITHUB_WEBHOOK_SECRET=... QA_TRUSTED_SENDERS=you node scripts/qa-runner/daemon.j
 It runs `watch.js tick --execute` for queued PRs. It does **not** pass
 `--approve` unless explicitly armed with `QA_APPROVE=1`, which belongs to the
 orchestrator-bot rung.
+
+By default the daemon also passes `--linear-decisions --reason <event>` into each
+tick. The watcher posts one structured, deduped Linear decision comment per PR
+head/state/action combination, so operators can see why a signal became
+`WAITING`, `NEEDS_FIX`, `CI_RED`, or `GOOD_SHAPE` without reading local logs.
+Decision comments can be disabled with `QA_LINEAR_DECISION_COMMENTS=0` or
+`linearDecisionComments: false` in `config.json`.
+
+When the fixer completes a live `/lifeline:upsource-review` cycle, `run.js` posts
+a structured fixer comment with the PR, branch, pushed head, Kimi exit, stop mode,
+and worktree cleanliness.
 
 ## Identity
 

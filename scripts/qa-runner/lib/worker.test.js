@@ -60,6 +60,27 @@ describe('watchArgs', () => {
       '--approve'
     )
   })
+
+  test('adds Linear decision observability flags when configured', () => {
+    expect(
+      watchArgs(123, {
+        label: 'auto-review',
+        linearDecisionComments: true,
+        reason: 'pr:ready_for_review',
+      })
+    ).toEqual([
+      expect.stringContaining('watch.js'),
+      'tick',
+      '--pr',
+      '123',
+      '--execute',
+      '--linear-decisions',
+      '--reason',
+      'pr:ready_for_review',
+      '--label',
+      'auto-review',
+    ])
+  })
 })
 
 describe('runOne', () => {

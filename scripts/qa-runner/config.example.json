@@ -8,7 +8,8 @@
   "maxParallel": 2,
   "maxNoops": 15,
   "approve": false,
+  "linearDecisionComments": true,
   "triggerPhrase": "/upsource-review",
   "trustedSenders": [],
-  "comment": "Copy to config.json (gitignored) to override. SECRETS are env-only: GITHUB_WEBHOOK_SECRET (webhook HMAC), bot tokens in bot.env/orchestrator.env, Linear in linear.env. trustedSenders = GitHub logins allowed to trigger a fix via a PR comment; env QA_TRUSTED_SENDERS (comma-separated) overrides it."
+  "comment": "Copy to config.json (gitignored) to override. SECRETS are env-only: GITHUB_WEBHOOK_SECRET (webhook HMAC), bot tokens in bot.env/orchestrator.env, Linear in linear*.env. trustedSenders = GitHub logins allowed to trigger a fix via a PR comment; env QA_TRUSTED_SENDERS (comma-separated) overrides it. linearDecisionComments posts deduped Linear comments explaining each state-machine decision."
 }

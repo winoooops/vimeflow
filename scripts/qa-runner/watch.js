@@ -30,6 +30,15 @@ import {
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { botLabel, botProcessEnv, loadBot } from './lib/bot-identity.js'
+import {
+  actionForDecision,
+  decisionKey,
+  decisionStorePath,
+  formatDecisionComment,
+  markDecisionPosted,
+  readDecisionStore,
+  shouldPostDecision,
+} from './lib/decision-comment.js'
 import { linkedVim } from './lib/pr-utils.js'
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url))
@@ -229,6 +238,9 @@ const computeState = (pr, ctx) => {
       : 'green'
   const claudeCheck = checks.find((c) => c.name === 'Claude Code Review')
   const claudeReady = claudeCheck?.bucket === 'pass'
+  let claude = claudeReady
+    ? 'review check passed'
+    : (claudeCheck?.bucket ?? 'missing')
 
   const view = ghJson([
     'pr',
@@ -250,6 +262,8 @@ const computeState = (pr, ctx) => {
     } else {
       // verdict is irrelevant until threads are clear — defer the fetch to here
       const verdict = claudeVerdictClean(ctx.owner, ctx.name, pr.number) // null|true|false
+      claude =
+        verdict === true ? 'clean' : verdict === false ? 'issues' : 'no verdict'
       if (verdict === false) {
         ;[state, detail] = ['NEEDS_FIX', 'Claude verdict: patch has issues']
       } else if (verdict === null) {
@@ -267,15 +281,35 @@ const computeState = (pr, ctx) => {
       }
     }
 
-    return { state, detail, vim, threads, headSha: view.headRefOid }
+    return {
+      state,
+      detail,
+      vim,
+      threads,
+      headSha: view.headRefOid,
+      ci,
+      claude,
+      mergeable: view.mergeable,
+      mergeStateStatus: view.mergeStateStatus,
+    }
   }
 
-  return { state, detail, vim, threads: 0, headSha: view.headRefOid }
+  return {
+    state,
+    detail,
+    vim,
+    threads: null,
+    headSha: view.headRefOid,
+    ci,
+    claude,
+    mergeable: view.mergeable,
+    mergeStateStatus: view.mergeStateStatus,
+  }
 }
 
 const postLinear = (vim, body, stateName) => {
   if (!vim) {
-    return
+    return false
   }
 
   const args = [
@@ -293,10 +327,64 @@ const postLinear = (vim, body, stateName) => {
     out(
       `           ↳ Linear ${vim}${stateName ? ` → ${stateName}` : ''}: commented`
     )
+
+    return true
   } else {
     out(
       `           ↳ Linear ${vim}: skipped (${(r.stderr || '').trim().split('\n')[0] || 'no LINEAR_API_KEY'})`
     )
+
+    return false
+  }
+}
+
+const maybePostDecisionLinear = (pr, s, ctx) => {
+  if (!ctx.linearDecisions || !s.vim) {
+    return
+  }
+
+  const action = actionForDecision(s.state, ctx)
+
+  const key = decisionKey({
+    pr: pr.number,
+    state: s.state,
+    detail: s.detail,
+    headSha: s.headSha,
+    action,
+    approve: ctx.approve,
+    execute: ctx.execute,
+  })
+  const storeFile = decisionStorePath(pr.number)
+  const store = readDecisionStore(storeFile)
+  if (!shouldPostDecision(store, pr.number, key)) {
+    out(`           ↳ Linear ${s.vim}: decision unchanged`)
+
+    return
+  }
+
+  const body = formatDecisionComment({
+    pr: pr.number,
+    branch: pr.headRefName,
+    state: s.state,
+    detail: s.detail,
+    sourceEvent: ctx.reason,
+    action,
+    approve: ctx.approve,
+    execute: ctx.execute,
+    headSha: s.headSha,
+    ci: s.ci,
+    claude: s.claude,
+    threads: s.threads,
+    mergeable: s.mergeable,
+    mergeStateStatus: s.mergeStateStatus,
+  })
+
+  const stateName =
+    s.state === 'NEEDS_FIX' && action === 'dispatch fixer'
+      ? 'In Progress'
+      : undefined
+  if (postLinear(s.vim, body, stateName)) {
+    markDecisionPosted(store, pr.number, key, storeFile)
   }
 }
 
@@ -483,13 +571,9 @@ const tick = async (ctx) => {
       `${s.state.padEnd(10)} #${pr.number}  ${pr.headRefName}${s.vim ? `  (${s.vim})` : ''}`
     )
     out(`           ${s.detail}`)
+    maybePostDecisionLinear(pr, s, ctx)
     if (s.state === 'NEEDS_FIX') {
       if (ctx.execute) {
-        postLinear(
-          s.vim,
-          `QA runner: review findings on PR #${pr.number} — ${s.detail}. Running an upsource cycle.`,
-          'In Progress'
-        )
         needsFix.push(pr.number)
       } else {
         out(`           (report-only — pass --execute to run the cycle)`)
@@ -600,6 +684,8 @@ const main = () => {
     label: val('label') || DEFAULT_LABEL,
     approve: has('approve'),
     execute: has('execute'),
+    linearDecisions: has('linear-decisions'),
+    reason: val('reason') || 'manual',
     all: has('all'),
     pr: val('pr') ? Number(val('pr')) : undefined,
     maxParallel: Number(val('max')) || MAX_PARALLEL,
@@ -616,7 +702,7 @@ const main = () => {
     return watch(ctx)
   }
   err(
-    `unknown command: ${cmd}. Use: scan | tick | watch  [--pr N] [--approve] [--execute] [--all] [--max N] [--label NAME]`
+    `unknown command: ${cmd}. Use: scan | tick | watch  [--pr N] [--approve] [--execute] [--linear-decisions] [--reason EVENT] [--all] [--max N] [--label NAME]`
   )
   process.exit(1)
 }

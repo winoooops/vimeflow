@@ -67,10 +67,19 @@ const snapshot = (pr, exec = execFileSync) => {
   }
 }
 
-export const watchArgs = (pr, { label, approve = false } = {}) => {
+export const watchArgs = (
+  pr,
+  { label, approve = false, linearDecisionComments = false, reason } = {}
+) => {
   const args = [WATCH, 'tick', '--pr', String(pr), '--execute']
   if (approve) {
     args.push('--approve')
+  }
+  if (linearDecisionComments) {
+    args.push('--linear-decisions')
+  }
+  if (reason) {
+    args.push('--reason', reason)
   }
   if (label) {
     args.push('--label', label)
@@ -79,9 +88,9 @@ export const watchArgs = (pr, { label, approve = false } = {}) => {
   return args
 }
 
-const tick = (pr, config) =>
+const tick = (pr, config, reason) =>
   new Promise((resolve) => {
-    const args = watchArgs(pr, config)
+    const args = watchArgs(pr, { ...config, reason })
     const child = spawn('node', args, { stdio: 'inherit' })
     child.on('exit', (code) => resolve(code ?? -1))
     child.on('error', () => resolve(-1))
@@ -165,7 +174,7 @@ export const runOne = async (pr, reason, deps) => {
   }
 
   events.emit({ type: 'cycle', pr, round: st.roundCount, detail: reason })
-  const code = await tick(pr, config)
+  const code = await tick(pr, config, reason)
   const after = snapshot(pr, snapshotExec)
 
   // Post-tick read failed (same rule as the pre-tick guard): never interpret null
