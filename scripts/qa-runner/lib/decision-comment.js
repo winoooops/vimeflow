@@ -156,12 +156,7 @@ export const readDecisionStore = (file) => {
 
 export const shouldPostDecision = (store, pr, key) => store[String(pr)] !== key
 
-export const markDecisionPosted = (
-  store,
-  pr,
-  key,
-  file
-) => {
+export const markDecisionPosted = (store, pr, key, file) => {
   const next = { ...store, [String(pr)]: key }
   mkdirSync(dirname(file), { recursive: true })
   writeFileSync(file, `${JSON.stringify(next, null, 2)}\n`)
