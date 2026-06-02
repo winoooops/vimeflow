@@ -323,12 +323,12 @@ const rerunReviewCheck = (pr, check, headSha, ctx) => {
     }
   }
 
-  gh(['run', 'rerun', runId, '--failed'])
   markRerunAttempt(store, key, storeFile)
+  gh(['run', 'rerun', runId, '--failed'])
 
   return {
     state: 'WAITING',
-    detail: `reran ${checkLabel(check)} (attempt ${status.nextAttempt}/${ctx.maxCiReruns})`,
+    detail: `reran ${checkLabel(check)}`,
     action: 'rerun check',
     rerunAttempt: status.nextAttempt,
     rerunLimit: ctx.maxCiReruns,
@@ -385,6 +385,11 @@ const computeState = async (pr, ctx) => {
         'The orchestrator dispatched this fixer because deterministic CI failed. Inspect the linked GitHub check logs, fix the code or generated artifacts, run relevant verification locally, commit, and push.',
       checks: checkSummaries,
     }
+  } else if (ciResult.reviewNonRerunFailures.length) {
+    checkSummaries = summarizeChecks(ciResult.reviewNonRerunFailures)
+    ciClassification = 'non-rerun review failure'
+    state = 'CI_RED'
+    detail = `review check failed (not eligible for rerun): ${checkNames(ciResult.reviewNonRerunFailures)}`
   } else if (ciResult.reviewRerunFailures.length) {
     const rerun = rerunReviewCheck(
       pr,

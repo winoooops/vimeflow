@@ -51,6 +51,10 @@ export const classifyChecks = (
     (check) => isFailedCheck(check) && reviewRerunChecks.has(check.name)
   )
 
+  const reviewNonRerunFailures = review.filter(
+    (check) => isFailedCheck(check) && !reviewRerunChecks.has(check.name)
+  )
+
   const ci = deterministicFailures.length
     ? 'fail'
     : nonReview.some((check) => check.bucket === 'pending')
@@ -63,5 +67,6 @@ export const classifyChecks = (
     nonReview,
     deterministicFailures,
     reviewRerunFailures,
+    reviewNonRerunFailures,
   }
 }

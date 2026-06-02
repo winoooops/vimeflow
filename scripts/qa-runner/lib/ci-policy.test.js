@@ -49,6 +49,25 @@ describe('classifyChecks', () => {
     expect(result.reviewRerunFailures).toHaveLength(1)
     expect(result.reviewRerunFailures[0].name).toBe('Claude Code Review')
   })
+
+  test('classifies failed review checks not in reviewRerunChecks as non-rerun failures', () => {
+    const result = classifyChecks(
+      [
+        { name: 'Unit Tests', bucket: 'pass' },
+        { name: 'Claude Code Review', bucket: 'fail' },
+        { name: 'Post Review Comment', bucket: 'fail' },
+      ],
+      {
+        reviewRerunChecks: new Set(['Claude Code Review']),
+      }
+    )
+
+    expect(result.reviewRerunFailures).toHaveLength(1)
+    expect(result.reviewRerunFailures[0].name).toBe('Claude Code Review')
+    expect(result.reviewNonRerunFailures).toHaveLength(1)
+    expect(result.reviewNonRerunFailures[0].name).toBe('Post Review Comment')
+    expect(result.ci).toBe('green')
+  })
 })
 
 describe('check metadata helpers', () => {

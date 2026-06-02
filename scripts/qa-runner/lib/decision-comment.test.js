@@ -115,7 +115,7 @@ describe('formatDecisionComment', () => {
       pr: 330,
       branch: 'feature/vim-20',
       state: 'WAITING',
-      detail: 'reran Claude Code Review (attempt 1/3)',
+      detail: 'reran Claude Code Review',
       sourceEvent: 'ci:check_run',
       action: 'rerun check',
       approve: false,
