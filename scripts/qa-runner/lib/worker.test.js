@@ -1,4 +1,9 @@
-import { describe, expect, test, vi } from 'vitest'
+import { afterEach, describe, expect, test, vi } from 'vitest'
+import {
+  DISPATCH_BLOCKED_EXIT,
+  clearDispatchBlocker,
+  writeDispatchBlocker,
+} from './dispatch-blocker.js'
 import { isMissingPullRequestSnapshot, runOne, watchArgs } from './worker.js'
 
 const makeDeps = (overrides = {}) => ({
@@ -20,6 +25,10 @@ const makeDeps = (overrides = {}) => ({
   ...overrides,
 })
 
+afterEach(() => {
+  clearDispatchBlocker(42)
+})
+
 const missingPrSnapshotExec = (pr) => () => {
   const err = new Error(`Command failed: gh pr view ${pr}`)
   err.stderr = Buffer.from(
@@ -27,6 +36,22 @@ const missingPrSnapshotExec = (pr) => () => {
   )
   throw err
 }
+
+const openPrSnapshotExec = ({
+  headSha = 'abc123',
+  body = 'Closes VIM-20',
+  branch = 'feature/example',
+} = {}) =>
+  vi.fn(() =>
+    JSON.stringify({
+      headRefOid: headSha,
+      state: 'OPEN',
+      body,
+      isDraft: false,
+      labels: [{ name: 'auto-review' }],
+      headRefName: branch,
+    })
+  )
 
 describe('isMissingPullRequestSnapshot', () => {
   test('identifies GitHub PR-not-found snapshot failures', () => {
@@ -66,6 +91,9 @@ describe('watchArgs', () => {
       watchArgs(123, {
         label: 'auto-review',
         linearDecisionComments: true,
+        linearCreateIssues: true,
+        linearTeamKey: 'VIM',
+        maxCiReruns: 3,
         reason: 'pr:ready_for_review',
       })
     ).toEqual([
@@ -75,11 +103,25 @@ describe('watchArgs', () => {
       '123',
       '--execute',
       '--linear-decisions',
+      '--linear-create-issues',
+      '--linear-team',
+      'VIM',
+      '--max-ci-reruns',
+      '3',
       '--reason',
       'pr:ready_for_review',
       '--label',
       'auto-review',
     ])
+  })
+
+  test('preserves maxCiReruns=0 as an explicit option', () => {
+    expect(
+      watchArgs(123, {
+        label: 'auto-review',
+        maxCiReruns: 0,
+      })
+    ).toContain('0')
   })
 })
 
@@ -120,6 +162,70 @@ describe('runOne', () => {
     expect(outcome).toBe('retry')
     expect(deps.log).toHaveBeenCalledWith(
       '#42: snapshot unavailable (transient) — retry, state preserved'
+    )
+  })
+
+  test('pauses as dispatch-blocked without incrementing fixer failures', async () => {
+    writeDispatchBlocker(42, {
+      code: 4,
+      reason:
+        "refusing to review PR #42: branch 'feature/example' is checked out at /repo/dev (no self-review)",
+      logPath: '/repo/scripts/qa-runner/logs/pr-42.log',
+    })
+
+    const deps = makeDeps({
+      snapshotExec: openPrSnapshotExec(),
+      tickRunner: vi.fn(async () => DISPATCH_BLOCKED_EXIT),
+    })
+
+    const outcome = await runOne(42, 'poll', deps)
+
+    expect(outcome).toBe('blocked')
+    expect(deps.state.update).toHaveBeenCalledWith(42, {
+      lastHeadSha: 'abc123',
+      noopCount: 0,
+      pausedAt: '2024-01-01T00:00:00.000Z',
+      pauseReason: 'dispatch_blocked',
+    })
+
+    expect(deps.events.emit).toHaveBeenCalledWith(
+      {
+        type: 'dispatch_blocked',
+        pr: 42,
+        detail: expect.stringContaining('refusing to review PR #42'),
+      },
+      'VIM-20'
+    )
+
+    clearDispatchBlocker(42)
+  })
+
+  test('skips routine polls while dispatch-blocked', async () => {
+    const tickRunner = vi.fn(async () => 0)
+
+    const deps = makeDeps({
+      snapshotExec: openPrSnapshotExec(),
+      tickRunner,
+      state: {
+        has: vi.fn(() => true),
+        get: vi.fn(() => ({
+          roundCount: 0,
+          noopCount: 0,
+          lastHeadSha: 'abc123',
+          pausedAt: '2024-01-01T00:00:00.000Z',
+          pauseReason: 'dispatch_blocked',
+        })),
+        forget: vi.fn(),
+        update: vi.fn(),
+      },
+    })
+
+    const outcome = await runOne(42, 'poll', deps)
+
+    expect(outcome).toBe('paused')
+    expect(tickRunner).not.toHaveBeenCalled()
+    expect(deps.log).toHaveBeenCalledWith(
+      '#42: paused (dispatch blocked) — poll skip'
     )
   })
 })

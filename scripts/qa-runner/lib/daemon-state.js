@@ -24,6 +24,7 @@ const EMPTY = {
   noopCount: 0,
   lastState: null,
   pausedAt: null,
+  pauseReason: null,
 }
 
 const read = () => {

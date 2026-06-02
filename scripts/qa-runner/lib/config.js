@@ -55,11 +55,16 @@ export const loadConfig = () => {
     label: env.QA_LABEL || file.label || 'auto-review',
     maxParallel: num(env.QA_MAX_PARALLEL, num(file.maxParallel, 2)),
     maxNoops: num(env.QA_MAX_NOOPS, num(file.maxNoops, 15)),
+    maxCiReruns: num(env.QA_MAX_CI_RERUNS, num(file.maxCiReruns, 3)),
     pollSeconds: num(env.QA_POLL_SECONDS, num(file.pollSeconds, 60)),
     approve: bool(env.QA_APPROVE, bool(file.approve)),
     linearDecisionComments: bool(
       env.QA_LINEAR_DECISION_COMMENTS,
       bool(file.linearDecisionComments, true)
+    ),
+    linearCreateIssues: bool(
+      env.QA_LINEAR_CREATE_ISSUES,
+      bool(file.linearCreateIssues, false)
     ),
     triggerPhrase:
       env.QA_TRIGGER_PHRASE || file.triggerPhrase || '/upsource-review',
@@ -69,6 +74,6 @@ export const loadConfig = () => {
     // Bearer token for GET /status (env only). Empty ⇒ /status is DISABLED, so the
     // public webhook bind never leaks queue/PR state. Set to expose it to operators.
     statusToken: env.QA_STATUS_TOKEN || '',
-    linearTeamKey: file.linearTeamKey || 'VIM',
+    linearTeamKey: env.QA_LINEAR_TEAM_KEY || file.linearTeamKey || 'VIM',
   }
 }

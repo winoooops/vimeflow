@@ -12,7 +12,8 @@ Design + rationale: [`docs/explorations/linear-agent-cicd-pilot.html`](../../doc
     review STATE, and act:
        NEEDS_FIX  → dispatch the inner runner (--execute), up to --max in parallel
        GOOD_SHAPE → squash-merge as the orchestrator bot + delete branch (--approve)
-       WAITING / CI_RED → report only
+       WAITING    → report only, or rerun transient reviewer checks when armed
+       CI_RED     → report only once automatic reruns are exhausted/unavailable
                  │
                  ▼  per NEEDS_FIX PR, concurrently, each in its own worktree:
  ② run.js → kimi --afk (as the FIXER bot) · upsource-review skill  — poll → fix →
@@ -43,12 +44,24 @@ branch protection): the **fixer** runs as `bot.env`, the **orchestrator** merges
 (`Claude Code Review`, `Codex Code Review`, `Post Review Comment`) are excluded
 from the CI gate, so a clean patch is never held `WAITING` by its own reviewers.
 
-| State          | When                                                                    | Action (armed)                      |
-| -------------- | ----------------------------------------------------------------------- | ----------------------------------- |
-| **NEEDS_FIX**  | unresolved review threads > 0, **or** Claude verdict "patch has issues" | `--execute` → `run.js <pr> --push`  |
-| **CI_RED**     | a non-review CI check is failing                                        | report only (humans fix the build)  |
-| **WAITING**    | CI/Claude still running · draft · not mergeable · no Claude review yet  | report only (poll again)            |
-| **GOOD_SHAPE** | 0 threads · Claude ✅ · non-review CI green · `MERGEABLE`               | `--approve` → squash-merge + delete |
+| State          | When                                                                                                     | Action (armed)                                 |
+| -------------- | -------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
+| **NEEDS_FIX**  | unresolved review threads > 0, Claude verdict "patch has issues", or deterministic non-review CI failure | `--execute` → `run.js <pr> --push`             |
+| **CI_RED**     | transient reviewer reruns are exhausted/unavailable                                                      | report only                                    |
+| **WAITING**    | CI/Claude still running · draft · not mergeable · no Claude review yet · transient reviewer check rerun  | report only or rerun transient reviewer checks |
+| **GOOD_SHAPE** | 0 threads · Claude clean · non-review CI green · `MERGEABLE`                                             | `--approve` → squash-merge + delete            |
+
+Deterministic non-review CI failures include unit tests, Rust tests, type/check
+binding verification, code quality/lint, and build failures. The watcher passes
+the failed check names and GitHub Actions URLs into the fixer as
+`QA_FIX_CONTEXT`, so the fixer can inspect logs and repair code even when there
+are no unresolved review threads.
+
+Transient reviewer checks (`Claude Code Review`, `Codex Code Review`, and
+`Post Review Comment`) can be rerun automatically with `gh run rerun --failed`
+when `--execute` is armed. Reruns are capped by PR + head SHA + check identity
+(default **3**, configurable with `--max-ci-reruns` / `QA_MAX_CI_RERUNS`), so the
+daemon cannot spin forever.
 
 `NEEDS_FIX` PRs are dispatched **concurrently**, capped at `--max` (default **2**) —
 each kimi runs in its own `qa-pr-N` worktree behind its own `.locks/pr-N.lock`, so
@@ -90,8 +103,12 @@ node scripts/qa-runner/watch.js tick --execute            # NEEDS_FIX  → run u
 node scripts/qa-runner/watch.js tick --execute --max 3    # …up to 3 at once
 node scripts/qa-runner/watch.js tick --approve            # GOOD_SHAPE → squash-merge
 node scripts/qa-runner/watch.js tick --execute --approve  # full autonomy
+node scripts/qa-runner/watch.js tick --execute --max-ci-reruns 3
+                                                          # rerun transient reviewer failures up to 3 times
 node scripts/qa-runner/watch.js tick --pr 317 --linear-decisions --reason manual-debug
                                                           # post one deduped Linear decision comment
+node scripts/qa-runner/watch.js tick --pr 317 --linear-create-issues --linear-team VIM
+                                                          # create a missing Linear issue for an unlinked PR
 
 # loop forever (Ctrl-C to stop)
 node scripts/qa-runner/watch.js watch --execute --approve
@@ -121,6 +138,19 @@ The webhook daemon is safe-by-default for the staged rollout:
 GITHUB_WEBHOOK_SECRET=... QA_TRUSTED_SENDERS=you node scripts/qa-runner/daemon.js
 ```
 
+Run the daemon from a neutral checkout of the repository, normally `main` or the
+integration branch that contains the runner code. It does not need PR branches
+preloaded. For each `NEEDS_FIX` PR, `run.js` resolves the PR head branch, fetches
+`origin/<branch>`, and creates or resets `.claude/worktrees/qa-pr-N` from that
+remote branch before running the fixer. This is the expected shape for a fresh
+dedicated host: the root clone stays neutral, while each PR gets its own isolated
+worktree and lock file.
+
+If the PR branch is already checked out in another local worktree, the runner
+refuses to self-review and records a dispatch-blocked event instead of counting
+failed fixer attempts. On a dedicated daemon host this should normally only happen
+when an operator manually checks out the PR branch in the daemon clone.
+
 It runs `watch.js tick --execute` for queued PRs. It does **not** pass
 `--approve` unless explicitly armed with `QA_APPROVE=1`, which belongs to the
 orchestrator-bot rung.
@@ -131,6 +161,12 @@ head/state/action combination, so operators can see why a signal became
 `WAITING`, `NEEDS_FIX`, `CI_RED`, or `GOOD_SHAPE` without reading local logs.
 Decision comments can be disabled with `QA_LINEAR_DECISION_COMMENTS=0` or
 `linearDecisionComments: false` in `config.json`.
+
+If `QA_LINEAR_CREATE_ISSUES=1` / `linearCreateIssues: true` is enabled, an
+eligible PR with no `VIM-N` in the body or branch name gets a new Linear issue
+created through the orchestrator tool `create_linear_issue_for_pr`. The issue
+description links back to the GitHub PR, and the runner caches the PR→issue
+mapping for future comments.
 
 When the fixer completes a live `/lifeline:upsource-review` cycle, `run.js` posts
 a structured fixer comment with the PR, branch, pushed head, Kimi exit, stop mode,

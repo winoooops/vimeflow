@@ -19,8 +19,19 @@ const LINEAR_STATUS = join(LIB_DIR, 'linear-status.js')
 const LINEAR_COMMENT = {
   progress: (e) =>
     `✅ Fix pushed for #${e.pr} (round ${e.round}). Re-review pending.`,
+  dispatch_blocked: (e) =>
+    [
+      '## QA runner dispatch blocked',
+      '',
+      '| Field | Value |',
+      '| --- | --- |',
+      `| PR | #${e.pr} |`,
+      `| Reason | ${String(e.detail || 'unknown').replace(/\s+/g, ' ')} |`,
+      '',
+      'The fixer did not run and this was not counted as a failed fix attempt. Run the daemon from a neutral checkout, free the PR branch worktree, or push a new head event to resume.',
+    ].join('\n'),
   paused: (e) =>
-    `⏸️ Paused #${e.pr} after ${e.noopCount} failed fix attempts — needs a look.`,
+    `⏸️ Paused #${e.pr} after ${e.noopCount} failed fix attempts — ${e.detail || 'needs a look'}.`,
   merged: (e) => `🎉 #${e.pr} merged — review loop complete.`,
   closed: (e) => `🚫 #${e.pr} closed without merge — review loop stopped.`,
 }

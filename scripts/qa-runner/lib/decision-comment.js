@@ -31,8 +31,8 @@ export const actionForDecision = (state, { approve, execute } = {}) => {
 export const explainDecision = (state, action) => {
   if (state === 'NEEDS_FIX') {
     return action === 'dispatch fixer'
-      ? 'Review findings require a fixer cycle and execute is armed.'
-      : 'Review findings require a fixer cycle, but execute is not armed.'
+      ? 'Review or deterministic CI findings require a fixer cycle and execute is armed.'
+      : 'Review or deterministic CI findings require a fixer cycle, but execute is not armed.'
   }
   if (state === 'GOOD_SHAPE') {
     return action === 'approve/merge'
@@ -40,9 +40,13 @@ export const explainDecision = (state, action) => {
       : 'PR meets success criteria, but approve is not armed.'
   }
   if (state === 'CI_RED') {
-    return 'Non-review CI is failing or canceled, so the fixer is not dispatched.'
+    return 'CI is red and no automatic action is available for this state.'
   }
   if (state === 'WAITING') {
+    if (action === 'rerun check') {
+      return 'A transient check was rerun and the runner is waiting for the new result.'
+    }
+
     return 'The runner is waiting for CI, review, mergeability, or a new event.'
   }
 
@@ -83,6 +87,10 @@ export const formatDecisionComment = ({
   threads,
   mergeable,
   mergeStateStatus,
+  ciClassification,
+  checkSummaries = [],
+  rerunAttempt,
+  rerunLimit,
 }) => {
   const lines = [
     `## QA runner decision: ${state}`,
@@ -98,6 +106,18 @@ export const formatDecisionComment = ({
     `| Execute armed | ${execute ? 'true' : 'false'} |`,
     `| Approve armed | ${approve ? 'true' : 'false'} |`,
     `| Head | ${shortSha(headSha)} |`,
+  ]
+
+  if (ciClassification) {
+    lines.push(`| CI classification | ${tableValue(ciClassification)} |`)
+  }
+  if (rerunAttempt != null) {
+    lines.push(
+      `| Rerun attempt | ${tableValue(rerunAttempt)} / ${tableValue(rerunLimit)} |`
+    )
+  }
+
+  lines.push(
     '',
     'Checks:',
     `- CI: ${ci ?? 'unknown'}`,
@@ -105,10 +125,19 @@ export const formatDecisionComment = ({
     `- Unresolved threads: ${threads ?? 'unknown'}`,
     `- Mergeable: ${mergeable ?? 'unknown'}${
       mergeStateStatus ? ` (${mergeStateStatus})` : ''
-    }`,
-    '',
-    `Reason: ${explainDecision(state, action)}`,
-  ]
+    }`
+  )
+
+  if (checkSummaries.length) {
+    lines.push('', 'Affected checks:')
+    for (const check of checkSummaries) {
+      lines.push(
+        `- ${tableValue(check.name)}${check.workflow ? ` (${tableValue(check.workflow)})` : ''}: ${tableValue(check.bucket)}${check.link ? ` — ${tableValue(check.link)}` : ''}`
+      )
+    }
+  }
+
+  lines.push('', `Reason: ${explainDecision(state, action)}`)
 
   return lines.join('\n')
 }
