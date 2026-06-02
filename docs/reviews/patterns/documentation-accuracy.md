@@ -2,8 +2,8 @@
 id: documentation-accuracy
 category: code-quality
 created: 2026-04-09
-last_updated: 2026-05-31
-ref_count: 23
+last_updated: 2026-06-02
+ref_count: 24
 ---
 
 # Documentation Accuracy
@@ -710,4 +710,13 @@ Stale documentation misleads future contributors and review agents.
 - **File:** `src/features/sessions/hooks/useSessionManager.test.ts`
 - **Finding:** A test comment explaining why the seed source was changed from `user-renamed` to `ai-generated` stated: "user-renamed is sticky against later clears." The guard predicate is `agentTitleSource === 'user-renamed' && payload.source === 'ai-generated'` — it blocks ONLY `ai-generated` clears, not `user-renamed + empty` events (the documented lifecycle-reset escape hatch). The neighboring test `user-renamed with empty title clears the sticky guard` demonstrates exactly that a `user-renamed + empty` event falls through and clears the sticky state, making the comment directly contradictory to tested behavior. A future contributor reading only this comment could incorrectly conclude that ALL clear events are blocked once sticky, and design a lifecycle-reset mechanism that emits `ai-generated + empty` instead of `user-renamed + empty` — the wrong event would be swallowed by the guard, the reset would silently no-op, and the pane would remain stuck indefinitely with no error.
 - **Fix:** Changed the comment to "user-renamed is sticky against later **ai-generated** clears" so the phrasing matches the actual guard predicate. Code-review heuristic: when a guard predicate is narrow (filters on a specific source/value), every comment describing its effect must repeat that narrow qualifier — generic phrasing ("clears", "updates", "events") drifts toward overstating scope and misleads future readers who rely on comments as a behavioral contract.
+- **Commit:** same commit as this entry
+
+### 76. Phase 0 host proof doc missing concrete webhook evidence
+
+- **Source:** github-human | PR #328 round 1 | 2026-06-02
+- **Severity:** HUMAN
+- **File:** `docs/qa-runner-cloudflare-local-host.md`
+- **Finding:** Human reviewer requested concrete webhook proof evidence (hook id, signed ping result, public `/status` auth result, unsigned webhook 401 result) be added to the Phase 0 host proof document. The proof sequence listed steps but did not record the actual verification outcomes.
+- **Fix:** Added a `## Proof Evidence` section with live endpoint test results: hook ID `635125484`, signed ping HTTP 200 OK, public `/status` HTTP 401 Unauthorized, authenticated `/status` HTTP 200 OK, unsigned webhook HTTP 401 Unauthorized.
 - **Commit:** same commit as this entry
