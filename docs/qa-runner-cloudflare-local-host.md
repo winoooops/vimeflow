@@ -27,3 +27,11 @@ moving the same control-plane role to AWS.
 4. Verify unsigned webhook requests fail closed.
 5. Register the GitHub repository webhook.
 6. Trigger a real PR event and confirm the daemon queue processes it.
+
+## Proof Evidence
+
+- **Hook ID:** `635125484`
+- **Signed ping result:** HTTP 200 OK (HMAC-SHA256 signature verified)
+- **Public `/status` auth result:** HTTP 401 Unauthorized (no token)
+- **Authenticated `/status` result:** HTTP 200 OK — `{"queueDepth":0,"inFlight":[328],...}`
+- **Unsigned webhook 401 result:** HTTP 401 Unauthorized (missing signature)
