@@ -15,7 +15,7 @@ const tableValue = (value) =>
     .replace(/\r?\n/g, ' ')
     .replace(/\|/g, '\\|')
 
-const shortSha = (sha) => (sha ? `\`${sha.slice(0, 7)}\`` : 'unknown')
+const shortSha = (sha) => (sha ? `\`${sha.slice(0, 7)}\`` : '`unknown`')
 
 export const actionForDecision = (state, { approve, execute } = {}) => {
   if (state === 'NEEDS_FIX') {
@@ -143,7 +143,7 @@ export const formatFixerCycleComment = ({
   return lines.join('\n')
 }
 
-export const readDecisionStore = (file = DEFAULT_DECISION_STORE) => {
+export const readDecisionStore = (file) => {
   if (!existsSync(file)) {
     return {}
   }
@@ -160,7 +160,7 @@ export const markDecisionPosted = (
   store,
   pr,
   key,
-  file = DEFAULT_DECISION_STORE
+  file
 ) => {
   const next = { ...store, [String(pr)]: key }
   mkdirSync(dirname(file), { recursive: true })

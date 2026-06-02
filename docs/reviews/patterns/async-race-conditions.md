@@ -3,7 +3,7 @@ id: async-race-conditions
 category: react-patterns
 created: 2026-04-09
 last_updated: 2026-06-02
-ref_count: 13
+ref_count: 14
 ---
 
 # Async Race Conditions
@@ -483,4 +483,13 @@ prevent showing previous data.
 - **File:** `scripts/qa-runner/watch.js`
 - **Finding:** When `--linear-decisions` is used without `--execute`, a `NEEDS_FIX` PR still passes `--state In Progress` to `linear-status.js` even though the tick is report-only and no fixer is dispatched. This makes Linear show active work for a PR the runner explicitly did not start.
 - **Fix:** Narrowed `stateName` assignment to only set `'In Progress'` when `s.state === 'NEEDS_FIX'` AND `action === 'dispatch fixer'`, preventing Linear state changes on report-only ticks.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 50. Default parameter on markDecisionPosted reverts per-PR store safety
+
+- **Source:** github-claude | PR #330 round 1 | 2026-06-02
+- **Severity:** MEDIUM
+- **File:** `scripts/qa-runner/lib/decision-comment.js`
+- **Finding:** After round 1 switched decision storage to per-PR files (`decisionStorePath(pr.number)`), `markDecisionPosted` and `readDecisionStore` retained `file = DEFAULT_DECISION_STORE` as their default parameter. Every current call site passes an explicit path, so no regression exists today. A future caller that omits the argument — or a maintenance edit that drops the fourth parameter — silently reverts to the shared global store, reintroducing the concurrent-read-modify-write race the per-PR redesign eliminated.
+- **Fix:** Removed the `DEFAULT_DECISION_STORE` default from both functions, making the per-PR path a required argument. Call sites in `watch.js` and tests already pass explicit paths, so the change is non-breaking.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

@@ -298,7 +298,7 @@ const computeState = (pr, ctx) => {
     state,
     detail,
     vim,
-    threads: 0,
+    threads: null,
     headSha: view.headRefOid,
     ci,
     claude,

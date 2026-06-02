@@ -2,8 +2,8 @@
 id: diagnostic-instrumentation
 category: code-quality
 created: 2026-04-30
-last_updated: 2026-04-30
-ref_count: 2
+last_updated: 2026-06-02
+ref_count: 3
 ---
 
 # Diagnostic Instrumentation
@@ -98,3 +98,21 @@ The discipline:
 - **Finding:** `spawn_trailing_debounce_thread` calls `std::thread::spawn(...)` and discards the returned `JoinHandle`. In production the emit closure only calls `emit_for_all_subscribers`, which logs errors rather than panicking, so the swallowed-panic path is unreachable. In tests, however, the closure was `move || { emitted_tx.send(()).expect("failed to record debounce emit"); }` — and if the receiver dropped first (test cleanup ordering races), `.expect` would panic inside the detached thread. The panic was invisible: the next test assertion (`recv_timeout(...).expect("debounce should emit")`) would fire instead, attributing the failure to "no emit" when the real cause was "the emit closure panicked." Same finding-class as #5 (structurally-zero `dt` produces misleading log values) — both are diagnostics that point an investigator at the wrong cause.
 - **Fix:** Tests now use `let _ = emitted_tx.send(())` instead of `.expect(...)`, swallowing send errors so the detached thread can never panic. The positive `recv_timeout(...).expect("debounce should emit")` assertion remains the canonical failure signal, with no false-attribution interference from the worker thread. Returning the `JoinHandle` and exposing it for tests was considered but rejected: the fire-and-forget API is the right shape for production callers, and `catch_unwind` machinery would be heavy for the low-risk scenario.
 - **Commit:** _(see git log for the round-2 fix commit)_
+
+### 8. Missing sentinel for unqueried thread count produces false "zero unresolved" in Linear comments
+
+- **Source:** github-claude | PR #330 round 1 | 2026-06-02
+- **Severity:** MEDIUM
+- **File:** `scripts/qa-runner/watch.js`
+- **Finding:** `computeState` skips the `unresolvedThreads` GraphQL call when CI is failing or still pending (CI_RED / WAITING states). The early-return path hardcodes `threads: 0`, which `formatDecisionComment` renders as `- Unresolved threads: 0`. An operator reading the Linear comment could dismiss thread backlog as a root cause because the comment explicitly says threads are clear, when in fact they were never queried.
+- **Fix:** Changed the early-return sentinel from `threads: 0` to `threads: null`. `formatDecisionComment` already uses `${threads ?? 'unknown'}`, so the unqueried path now renders honestly as "unknown".
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 9. Markdown inline-code inconsistency in SHA helper degrades comment formatting
+
+- **Source:** github-claude | PR #330 round 1 | 2026-06-02
+- **Severity:** LOW
+- **File:** `scripts/qa-runner/lib/decision-comment.js`
+- **Finding:** `shortSha` returns `` `abc1234` `` for a truthy SHA but the plain string `'unknown'` for a falsy one. Both `formatDecisionComment` and `formatFixerCycleComment` use the helper for the Head table row, producing inconsistent Markdown formatting: `| Head | unknown |` (plain text) versus `| Head | \`1b5cb1a\` |` (inline code).
+- **Fix:** Changed the falsy branch to return `` `unknown` `` so both branches produce inline-code spans.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
