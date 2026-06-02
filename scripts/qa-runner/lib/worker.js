@@ -14,6 +14,12 @@
 import { execFileSync, spawn } from 'node:child_process'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import {
+  DISPATCH_BLOCKED_EXIT,
+  clearDispatchBlocker,
+  dispatchBlockerDetail,
+  readDispatchBlocker,
+} from './dispatch-blocker.js'
 import { linkedVimForPr } from './pr-utils.js'
 
 const WATCH = join(dirname(dirname(fileURLToPath(import.meta.url))), 'watch.js')
@@ -96,7 +102,7 @@ export const watchArgs = (
   if (linearTeamKey) {
     args.push('--linear-team', linearTeamKey)
   }
-  if (maxCiReruns) {
+  if (maxCiReruns != null) {
     args.push('--max-ci-reruns', String(maxCiReruns))
   }
   if (reason) {
@@ -120,7 +126,12 @@ const tick = (pr, config, reason) =>
 // Run one cycle for `pr`. deps: { config, state, log, events, now?,
 // snapshotExec? }. Async — the heavy watch.js/kimi run is awaited, keeping the
 // daemon responsive. Returns an outcome tag:
-// 'done' | 'progress' | 'error' | 'waiting' | 'paused' | 'skip' | 'retry'.
+const pauseLabel = (st, maxNoops) =>
+  st.pauseReason === 'dispatch_blocked'
+    ? 'dispatch blocked'
+    : `${st.noopCount}/${maxNoops} failed`
+
+// 'done' | 'progress' | 'error' | 'waiting' | 'paused' | 'blocked' | 'skip' | 'retry'.
 export const runOne = async (pr, reason, deps) => {
   const {
     config,
@@ -129,6 +140,7 @@ export const runOne = async (pr, reason, deps) => {
     events,
     now = () => new Date().toISOString(),
     snapshotExec = execFileSync,
+    tickRunner = tick,
   } = deps
   const st = state.get(pr)
   const tracked = state.has(pr)
@@ -187,15 +199,13 @@ export const runOne = async (pr, reason, deps) => {
   // unsticks it (CI finishing, a human re-triggering) arrives as an event, and
   // refusing those is how a paused PR gets permanently stuck.
   if (st.pausedAt && reason === 'poll' && !headMoved) {
-    log(
-      `#${pr}: paused (${st.noopCount}/${config.maxNoops} failed) — poll skip`
-    )
+    log(`#${pr}: paused (${pauseLabel(st, config.maxNoops)}) — poll skip`)
 
     return 'paused'
   }
 
   events.emit({ type: 'cycle', pr, round: st.roundCount, detail: reason })
-  const code = await tick(pr, config, reason)
+  const code = await tickRunner(pr, config, reason)
   const after = snapshot(pr, snapshotExec)
 
   // Post-tick read failed (same rule as the pre-tick guard): never interpret null
@@ -233,12 +243,14 @@ export const runOne = async (pr, reason, deps) => {
     Boolean(before.headSha) &&
     after.headSha !== before.headSha
   if (fixed) {
+    clearDispatchBlocker(pr)
     const round = st.roundCount + 1
     state.update(pr, {
       lastHeadSha: after.headSha,
       roundCount: round,
       noopCount: 0,
       pausedAt: null,
+      pauseReason: null,
     })
     events.emit({ type: 'progress', pr, round }, after.vim)
 
@@ -247,8 +259,22 @@ export const runOne = async (pr, reason, deps) => {
 
   // watch.js exit codes: 1 = a dispatched fixer stalled (run.js non-zero — crash,
   // timeout, no commit, or commit-without-push); 2 = a transient infra failure
-  // (classification / approve); -1 = the spawn itself failed.
+  // (classification / approve); 3 = dispatch blocked before the fixer could run
+  // (for example, the PR branch is checked out in a dev worktree); -1 = spawn failed.
   if (code !== 0) {
+    if (code === DISPATCH_BLOCKED_EXIT) {
+      const blocker = readDispatchBlocker(pr)
+      const detail = dispatchBlockerDetail(blocker)
+      state.update(pr, {
+        lastHeadSha: after.headSha,
+        noopCount: 0,
+        pausedAt: now(),
+        pauseReason: 'dispatch_blocked',
+      })
+      events.emit({ type: 'dispatch_blocked', pr, detail }, after.vim)
+
+      return 'blocked'
+    }
     if (code !== 1) {
       // Transient (2) or a failed spawn (-1) — NOT a fixer stall. Retry next cycle
       // without touching the failure streak, so a gh/GraphQL blip can't pause a
@@ -268,6 +294,7 @@ export const runOne = async (pr, reason, deps) => {
       lastHeadSha: after.headSha,
       noopCount,
       pausedAt: paused ? now() : st.pausedAt,
+      pauseReason: paused ? 'fixer_stall' : st.pauseReason,
     })
 
     events.emit(
@@ -287,7 +314,13 @@ export const runOne = async (pr, reason, deps) => {
   // non-zero (above), this means NO fixer ran — the PR is genuinely WAITING on CI or
   // review. NOT a stall: reset the failure streak AND clear any pause, since a clean
   // recheck means it is no longer stuck and routine polling should resume.
-  state.update(pr, { lastHeadSha: after.headSha, noopCount: 0, pausedAt: null })
+  clearDispatchBlocker(pr)
+  state.update(pr, {
+    lastHeadSha: after.headSha,
+    noopCount: 0,
+    pausedAt: null,
+    pauseReason: null,
+  })
 
   return 'waiting'
 }

@@ -138,6 +138,19 @@ The webhook daemon is safe-by-default for the staged rollout:
 GITHUB_WEBHOOK_SECRET=... QA_TRUSTED_SENDERS=you node scripts/qa-runner/daemon.js
 ```
 
+Run the daemon from a neutral checkout of the repository, normally `main` or the
+integration branch that contains the runner code. It does not need PR branches
+preloaded. For each `NEEDS_FIX` PR, `run.js` resolves the PR head branch, fetches
+`origin/<branch>`, and creates or resets `.claude/worktrees/qa-pr-N` from that
+remote branch before running the fixer. This is the expected shape for a fresh
+dedicated host: the root clone stays neutral, while each PR gets its own isolated
+worktree and lock file.
+
+If the PR branch is already checked out in another local worktree, the runner
+refuses to self-review and records a dispatch-blocked event instead of counting
+failed fixer attempts. On a dedicated daemon host this should normally only happen
+when an operator manually checks out the PR branch in the daemon clone.
+
 It runs `watch.js tick --execute` for queued PRs. It does **not** pass
 `--approve` unless explicitly armed with `QA_APPROVE=1`, which belongs to the
 orchestrator-bot rung.

@@ -31,6 +31,8 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { botEnv, botLabel, loadBot } from './lib/bot-identity.js'
 import { formatFixerCycleComment } from './lib/decision-comment.js'
+import { RUN_SELF_REVIEW_EXIT } from './lib/dispatch-blocker.js'
+import { worktreePlan } from './lib/fixer-worktree.js'
 import { linkedVimForPr } from './lib/pr-utils.js'
 import { runUntilChange } from './lib/run-until-change.js'
 
@@ -100,24 +102,31 @@ const worktreeForBranch = (branch) => {
 }
 
 const ensureWorktree = (pr, branch, live, skillsDir, bot, repo) => {
-  const wt = join(mainRoot(), '.claude', 'worktrees', `qa-pr-${pr}`)
   // No self-review: refuse only when the branch is held by a DIFFERENT worktree (a
   // dev checkout). Our own qa-pr-N from a prior round is fine — reset + reuse it.
-  const held = worktreeForBranch(branch)
-  if (held && held !== wt) {
+  const heldPath = worktreeForBranch(branch)
+
+  const plan = worktreePlan({
+    repoRoot: mainRoot(),
+    pr,
+    branch,
+    live,
+    heldPath,
+  })
+  const wt = plan.path
+  if (plan.blockedBy) {
     die(
-      `refusing to review PR #${pr}: branch '${branch}' is checked out at ${held} (no self-review)`,
-      4
+      `refusing to review PR #${pr}: branch '${branch}' is checked out at ${plan.blockedBy} (no self-review)`,
+      RUN_SELF_REVIEW_EXIT
     )
   }
-  const ref = live ? branch : `qa/dryrun-${pr}`
   if (!existsSync(wt)) {
-    sh('git', ['fetch', 'origin', branch, '-q'])
-    sh('git', ['worktree', 'add', '-B', ref, wt, `origin/${branch}`])
+    sh('git', plan.fetchArgs)
+    sh('git', plan.addArgs)
   } else {
     // reset a stale qa-pr-N worktree from a prior run
-    sh('git', ['-C', wt, 'fetch', 'origin', branch, '-q'])
-    sh('git', ['-C', wt, 'checkout', '-B', ref, `origin/${branch}`])
+    sh('git', ['-C', wt, ...plan.fetchArgs])
+    sh('git', plan.checkoutArgs)
     sh('git', ['-C', wt, 'reset', '--hard'])
     sh('git', ['-C', wt, 'clean', '-fd'])
   }

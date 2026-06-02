@@ -47,6 +47,12 @@ import {
   readDecisionStore,
   shouldPostDecision,
 } from './lib/decision-comment.js'
+import {
+  DISPATCH_BLOCKED_EXIT,
+  RUN_SELF_REVIEW_EXIT,
+  clearDispatchBlocker,
+  writeDispatchBlocker,
+} from './lib/dispatch-blocker.js'
 import { orchestratorTool } from './lib/orchestrator-tools.js'
 import { linkedVimForPr, writeLinkedIssueCache } from './lib/pr-utils.js'
 import {
@@ -56,6 +62,7 @@ import {
   rerunStatus,
   rerunStorePath,
 } from './lib/rerun-state.js'
+import { pickReviewRerunCheck } from './lib/review-rerun.js'
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url))
 const LOCK_DIR = join(SCRIPT_DIR, '.locks')
@@ -76,6 +83,15 @@ const gh = (args, env) =>
     ...(env ? { env } : {}),
   })
 const ghJson = (args) => JSON.parse(gh(args))
+
+const numericOption = (raw, fallback) => {
+  if (raw === undefined) {
+    return fallback
+  }
+  const n = Number(raw)
+
+  return Number.isFinite(n) ? n : fallback
+}
 
 const repoSlug = () => {
   const r = ghJson(['repo', 'view', '--json', 'owner,name'])
@@ -307,8 +323,8 @@ const rerunReviewCheck = (pr, check, headSha, ctx) => {
     }
   }
 
-  gh(['run', 'rerun', runId, '--failed'])
   markRerunAttempt(store, key, storeFile)
+  gh(['run', 'rerun', runId, '--failed'])
 
   return {
     state: 'WAITING',
@@ -347,6 +363,15 @@ const computeState = async (pr, ctx) => {
   let ciClassification
   let checkSummaries = []
   let fixContext
+  let threads = null
+
+  const openThreads = () => {
+    if (threads === null) {
+      threads = unresolvedThreads(ctx.owner, ctx.name, pr.number)
+    }
+
+    return threads
+  }
 
   if (ciResult.deterministicFailures.length) {
     checkSummaries = summarizeChecks(ciResult.deterministicFailures)
@@ -360,10 +385,17 @@ const computeState = async (pr, ctx) => {
         'The orchestrator dispatched this fixer because deterministic CI failed. Inspect the linked GitHub check logs, fix the code or generated artifacts, run relevant verification locally, commit, and push.',
       checks: checkSummaries,
     }
+  } else if (openThreads() > 0) {
+    ;[state, detail] = ['NEEDS_FIX', `${threads} unresolved thread(s)`]
   } else if (ciResult.reviewRerunFailures.length) {
     const rerun = rerunReviewCheck(
       pr,
-      ciResult.reviewRerunFailures[0],
+      pickReviewRerunCheck({
+        pr: pr.number,
+        checks: ciResult.reviewRerunFailures,
+        headSha: view.headRefOid,
+        maxCiReruns: ctx.maxCiReruns,
+      }),
       view.headRefOid,
       ctx
     )
@@ -378,29 +410,21 @@ const computeState = async (pr, ctx) => {
   } else if (!claudeReady || ciResult.ci === 'pending') {
     ;[state, detail] = ['WAITING', 'CI / Claude re-running']
   } else {
-    const threads = unresolvedThreads(ctx.owner, ctx.name, pr.number)
-    if (threads > 0) {
-      ;[state, detail] = ['NEEDS_FIX', `${threads} unresolved thread(s)`]
+    // verdict is irrelevant until threads are clear — defer the fetch to here
+    const verdict = claudeVerdictClean(ctx.owner, ctx.name, pr.number) // null|true|false
+    claude =
+      verdict === true ? 'clean' : verdict === false ? 'issues' : 'no verdict'
+    if (verdict === false) {
+      ;[state, detail] = ['NEEDS_FIX', 'Claude verdict: patch has issues']
+    } else if (verdict === null) {
+      ;[state, detail] = ['WAITING', 'no Claude review yet']
+    } else if (view.mergeable !== 'MERGEABLE') {
+      ;[state, detail] = ['WAITING', `not mergeable (${view.mergeStateStatus})`]
     } else {
-      // verdict is irrelevant until threads are clear — defer the fetch to here
-      const verdict = claudeVerdictClean(ctx.owner, ctx.name, pr.number) // null|true|false
-      claude =
-        verdict === true ? 'clean' : verdict === false ? 'issues' : 'no verdict'
-      if (verdict === false) {
-        ;[state, detail] = ['NEEDS_FIX', 'Claude verdict: patch has issues']
-      } else if (verdict === null) {
-        ;[state, detail] = ['WAITING', 'no Claude review yet']
-      } else if (view.mergeable !== 'MERGEABLE') {
-        ;[state, detail] = [
-          'WAITING',
-          `not mergeable (${view.mergeStateStatus})`,
-        ]
-      } else {
-        ;[state, detail] = [
-          'GOOD_SHAPE',
-          '0 threads · Claude clean · CI green · mergeable',
-        ]
-      }
+      ;[state, detail] = [
+        'GOOD_SHAPE',
+        '0 threads · Claude clean · CI green · mergeable',
+      ]
     }
 
     return {
@@ -487,7 +511,6 @@ const maybePostDecisionLinear = (pr, s, ctx) => {
     action,
     approve: ctx.approve,
     execute: ctx.execute,
-    selectedAction: s.action,
   })
   const storeFile = decisionStorePath(pr.number)
   const store = readDecisionStore(storeFile)
@@ -611,6 +634,8 @@ const dispatchFix = ({ pr, fixContext }) =>
     const logPath = join(LOG_DIR, `pr-${pr}.log`)
     const logFd = createWriteStream(logPath, { flags: 'a' })
     const tag = `[#${pr}]`
+    let lastLine = ''
+    clearDispatchBlocker(pr)
     out(`${tag} → run.js ${pr} --push   (log: ${logPath})`)
 
     const child = spawn(
@@ -633,13 +658,20 @@ const dispatchFix = ({ pr, fixContext }) =>
         buf += d.toString()
         let nl
         while ((nl = buf.indexOf('\n')) >= 0) {
-          out(`${tag} ${buf.slice(0, nl)}`)
+          const line = buf.slice(0, nl)
+          if (line.trim()) {
+            lastLine = line.trim()
+          }
+          out(`${tag} ${line}`)
           buf = buf.slice(nl + 1)
         }
       })
 
       stream.on('end', () => {
         if (buf) {
+          if (buf.trim()) {
+            lastLine = buf.trim()
+          }
           out(`${tag} ${buf}`)
         }
       })
@@ -648,14 +680,21 @@ const dispatchFix = ({ pr, fixContext }) =>
     pipe(child.stderr)
     child.on('close', (code) => {
       logFd.end()
+      if (code === RUN_SELF_REVIEW_EXIT) {
+        writeDispatchBlocker(pr, {
+          code,
+          reason: lastLine || `run.js exited ${code}`,
+          logPath,
+        })
+      }
       out(`${tag} ✓ run.js exited ${code}`)
-      resolve(code)
+      resolve({ code })
     })
 
     child.on('error', (e) => {
       logFd.end()
       out(`${tag} ✗ spawn error: ${e.message}`)
-      resolve(-1)
+      resolve({ code: -1 })
     })
   })
 
@@ -740,16 +779,21 @@ const tick = async (ctx) => {
     out('')
   }
   let fixerStall = false
+  let dispatchBlocked = false
   let transientChild = false
   if (needsFix.length) {
     out(
       `Dispatching ${needsFix.length} fix run(s), up to ${ctx.maxParallel} in parallel…\n`
     )
-    const codes = await pool(needsFix, ctx.maxParallel, dispatchFix)
+    const results = await pool(needsFix, ctx.maxParallel, dispatchFix)
     // dispatchFix resolves a real run.js exit code, null (signal-killed), or -1
-    // (spawn failed: node/run.js missing, OOM before fork). Only a real non-zero
-    // exit is a fixer stall; null and -1 are transient infra, not kimi's fault.
-    fixerStall = codes.some((c) => c !== null && c !== -1 && c !== 0)
+    // (spawn failed: node/run.js missing, OOM before fork). Self-review refusal is
+    // a local dispatch blocker, not a failed fixer attempt.
+    const codes = results.map((r) => r.code)
+    fixerStall = codes.some(
+      (c) => c !== null && c !== -1 && c !== 0 && c !== RUN_SELF_REVIEW_EXIT
+    )
+    dispatchBlocked = codes.some((c) => c === RUN_SELF_REVIEW_EXIT)
     transientChild = codes.some((c) => c === null || c === -1)
   }
   // Exit-code contract for the supervising daemon:
@@ -757,9 +801,13 @@ const tick = async (ctx) => {
   //       counts toward pausing the PR (kimi can't drive these findings to zero).
   //   2 = a TRANSIENT infra failure (classify / approve / signal-kill / spawn-fail) —
   //       the daemon retries WITHOUT pausing, so a blip or host OOM can't stick a PR.
+  //   3 = dispatch blocked before a fixer ran — the daemon pauses with the blocker
+  //       reason instead of burning fixer attempts.
   // Fixer stall wins when both happen in one tick.
   if (fixerStall) {
     process.exitCode = 1
+  } else if (dispatchBlocked) {
+    process.exitCode = DISPATCH_BLOCKED_EXIT
   } else if (classifyError || approveError || transientChild) {
     process.exitCode = 2
   }
@@ -833,8 +881,8 @@ const main = () => {
     reason: val('reason') || 'manual',
     all: has('all'),
     pr: val('pr') ? Number(val('pr')) : undefined,
-    maxParallel: Number(val('max')) || MAX_PARALLEL,
-    maxCiReruns: Number(val('max-ci-reruns')) || MAX_CI_RERUNS,
+    maxParallel: numericOption(val('max'), MAX_PARALLEL),
+    maxCiReruns: numericOption(val('max-ci-reruns'), MAX_CI_RERUNS),
     linearTeamKey: val('linear-team') || 'VIM',
     orchBot,
     approverLogin: orchBot?.user ?? ghJson(['api', 'user']).login,
