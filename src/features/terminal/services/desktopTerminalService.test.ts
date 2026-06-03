@@ -132,6 +132,35 @@ describe('DesktopTerminalService', () => {
         request: expect.objectContaining({ enableAgentBridge: false }),
       })
     })
+
+    test('spawn forwards ephemeral=true when caller opts in', async () => {
+      mockInvokeOnce({ id: 's1', pid: 1, cwd: '/repo' })
+      await service.spawn({ cwd: '/repo', ephemeral: true })
+
+      expect(invoke).toHaveBeenCalledWith('spawn_pty', {
+        request: expect.objectContaining({ ephemeral: true }),
+      })
+    })
+
+    test('spawn defaults ephemeral to false when caller omits it', async () => {
+      mockInvokeOnce({ id: 's1', pid: 1, cwd: '/tmp' })
+      await service.spawn({ cwd: '/tmp' })
+
+      expect(invoke).toHaveBeenCalledWith('spawn_pty', {
+        request: expect.objectContaining({ ephemeral: false }),
+      })
+    })
+  })
+
+  describe('killEphemeralPtys', () => {
+    test('invokes kill_ephemeral_ptys and returns the killed ids', async () => {
+      mockInvokeOnce(['scratch-a', 'scratch-b'])
+
+      const killed = await service.killEphemeralPtys()
+
+      expect(invoke).toHaveBeenCalledWith('kill_ephemeral_ptys')
+      expect(killed).toEqual(['scratch-a', 'scratch-b'])
+    })
   })
 
   describe('write', () => {

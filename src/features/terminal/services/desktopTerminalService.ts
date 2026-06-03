@@ -315,4 +315,8 @@ export class DesktopTerminalService implements ITerminalService {
   ): Promise<void> {
     await invoke('set_session_activity_panel_collapsed', { request })
   }
+
+  async killEphemeralPtys(): Promise<string[]> {
+    return invoke<string[]>('kill_ephemeral_ptys')
+  }
 }

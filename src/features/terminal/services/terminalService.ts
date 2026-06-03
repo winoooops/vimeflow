@@ -104,6 +104,12 @@ export interface ITerminalService {
   setSessionActivityPanelCollapsed(
     request: SetSessionActivityPanelCollapsedRequest
   ): Promise<void>
+
+  /**
+   * Reap all ephemeral (scratch) PTYs; returns the ids killed. Called on
+   * renderer boot to clear reload orphans.
+   */
+  killEphemeralPtys(): Promise<string[]>
 }
 
 /**
@@ -397,6 +403,11 @@ export class MockTerminalService implements ITerminalService {
   ): Promise<void> {
     // Mock no-op
     return Promise.resolve()
+  }
+
+  killEphemeralPtys(): Promise<string[]> {
+    // Mock no-op
+    return Promise.resolve([])
   }
 }
 
