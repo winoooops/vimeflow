@@ -843,7 +843,9 @@ const tick = async (ctx) => {
     // dispatchFix resolves a real run.js exit code, null (signal-killed), or -1
     // (spawn failed: node/run.js missing, OOM before fork). Self-review refusal is
     // a local dispatch blocker, not a failed fixer attempt.
-    for (const result of results.filter((r) => r.code !== 0)) {
+    for (const result of results.filter(
+      (r) => r.code !== 0 && r.code !== RUN_SELF_REVIEW_EXIT
+    )) {
       out(
         `FIXER_EXIT #${result.pr}: ${result.reason} ` +
           `(exit ${result.code ?? 'signal'}; log: ${result.logPath})`

@@ -2,7 +2,7 @@
 id: diagnostic-instrumentation
 category: code-quality
 created: 2026-04-30
-last_updated: 2026-06-02
+last_updated: 2026-06-03
 ref_count: 3
 ---
 
@@ -115,4 +115,13 @@ The discipline:
 - **File:** `scripts/qa-runner/lib/decision-comment.js`
 - **Finding:** `shortSha` returns `` `abc1234` `` for a truthy SHA but the plain string `'unknown'` for a falsy one. Both `formatDecisionComment` and `formatFixerCycleComment` use the helper for the Head table row, producing inconsistent Markdown formatting: `| Head | unknown |` (plain text) versus `| Head | \`1b5cb1a\` |` (inline code).
 - **Fix:** Changed the falsy branch to return `` `unknown` `` so both branches produce inline-code spans.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 10. FIXER_EXIT log prefix includes dispatch-blocked exits, falsely implying a fixer failure
+
+- **Source:** github-claude | PR #334 round 1 | 2026-06-03
+- **Severity:** MEDIUM
+- **File:** `scripts/qa-runner/watch.js`
+- **Finding:** `results.filter((r) => r.code !== 0)` included `RUN_SELF_REVIEW_EXIT` (code 3). When run.js refused self-review, the loop logged `FIXER_EXIT #42: refusing to review PR #42 (exit 3; ...)`, which falsely implied the fixer ran and failed. The existing comment explicitly states "Self-review refusal is a local dispatch blocker, not a failed fixer attempt." This eroded `FIXER_EXIT` as a reliable fixer-failure signal.
+- **Fix:** Added `&& r.code !== RUN_SELF_REVIEW_EXIT` to the filter so dispatch-blocked exits are excluded from `FIXER_EXIT` logging. They remain correctly handled downstream by the `dispatchBlocked` branch.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

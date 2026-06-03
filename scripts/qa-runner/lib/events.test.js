@@ -49,7 +49,7 @@ describe('formatLinearEventComment', () => {
     expect(body).toContain('loop paused')
   })
 
-  test('formats non-paused fixer stalls as failed attempts', () => {
+  test('returns null for non-paused fixer stall errors to avoid Linear spam', () => {
     const body = formatLinearEventComment({
       type: 'error',
       pr: 42,
@@ -64,9 +64,6 @@ describe('formatLinearEventComment', () => {
       terminal: false,
     })
 
-    expect(body).toContain('## QA runner cycle exit: FIXER_STALL')
-    expect(body).toContain('| Source event | comment:/upsource-review |')
-    expect(body).toContain('| Failed attempts | 1 / 3 |')
-    expect(body).toContain('without daemon backoff')
+    expect(body).toBeNull()
   })
 })
