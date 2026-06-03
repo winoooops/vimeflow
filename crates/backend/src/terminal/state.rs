@@ -74,6 +74,10 @@ pub struct ManagedSession {
     /// Current working directory
     #[allow(dead_code)]
     pub cwd: String,
+    /// Shim directory path for this session, used for cleanup.
+    /// Stored at spawn time so cleanup reads the same path even if
+    /// `dirs::cache_dir()` env variables change between spawn and kill.
+    pub shim_dir: Option<String>,
     /// Generation counter — distinguishes old vs new session on ID reuse
     pub generation: u64,
     /// Ring buffer for recent output + monotonic offset (replay protocol)
@@ -468,6 +472,7 @@ mod tests {
             writer,
             child,
             cwd: "/tmp".into(),
+            shim_dir: None,
             generation: 0,
             ring: Arc::new(Mutex::new(super::RingBuffer::new(64))),
             cancelled: Arc::new(AtomicBool::new(false)),
@@ -540,6 +545,7 @@ mod tests {
             writer,
             child: Box::new(FailingKillChild),
             cwd: "/tmp".into(),
+            shim_dir: None,
             generation: 0,
             ring: Arc::new(Mutex::new(super::RingBuffer::new(64))),
             cancelled: Arc::new(AtomicBool::new(false)),

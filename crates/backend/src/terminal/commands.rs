@@ -366,6 +366,7 @@ pub(crate) async fn spawn_pty_inner(
         writer,
         child,
         cwd: cwd.to_string_lossy().to_string(),
+        shim_dir: bridge_files.as_ref().map(|f| f.shim_dir_path.to_string_lossy().to_string()),
         generation,
         ring,
         cancelled,
@@ -545,12 +546,9 @@ pub(crate) fn kill_pty_inner(
     if let Some(session) = removed {
         let cwd = std::path::Path::new(&session.cwd);
         let bridge_dir = cwd.join(".vimeflow").join("sessions").join(&request.session_id);
-        let shim_dir = dirs::cache_dir()
-            .map(|c| c.join("vimeflow-shims").join(&request.session_id))
-            .unwrap_or_else(|| std::env::temp_dir().join("vimeflow-shims").join(&request.session_id));
         let _ = super::bridge::cleanup_bridge_files(
             &bridge_dir.to_string_lossy(),
-            Some(&shim_dir.to_string_lossy()),
+            session.shim_dir.as_deref(),
         );
     }
 
@@ -936,12 +934,9 @@ async fn read_pty_output(
     if let Some(session) = removed {
         let cwd = std::path::Path::new(&session.cwd);
         let bridge_dir = cwd.join(".vimeflow").join("sessions").join(&session_id);
-        let shim_dir = dirs::cache_dir()
-            .map(|c| c.join("vimeflow-shims").join(&session_id))
-            .unwrap_or_else(|| std::env::temp_dir().join("vimeflow-shims").join(&session_id));
         let _ = super::bridge::cleanup_bridge_files(
             &bridge_dir.to_string_lossy(),
-            Some(&shim_dir.to_string_lossy()),
+            session.shim_dir.as_deref(),
         );
     }
 
@@ -1523,6 +1518,7 @@ mod tests {
             writer,
             child: Box::new(FailingKillChild),
             cwd: "/tmp".into(),
+            shim_dir: None,
             generation: 0,
             ring: Arc::new(Mutex::new(RingBuffer::new(64))),
             cancelled: Arc::new(AtomicBool::new(false)),

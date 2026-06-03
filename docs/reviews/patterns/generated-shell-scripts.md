@@ -74,3 +74,12 @@ end to avoid leaking ephemeral artifacts.
 - **Finding:** `cleanup_bridge_files` only removed `agent_status_dir` (`.vimeflow/sessions/<id>/`). The new shim directory at `<cache>/vimeflow-shims/<session_id>/` had no corresponding removal. `shim_cleanup_dir` was only called on spawn-error paths; it was never reached on a successful spawn that later ended normally.
 - **Fix:** Extended `cleanup_bridge_files` to accept an optional `shim_dir` parameter and remove the shim directory alongside the session bridge directory when provided. Added a test verifying both directories are removed.
 - **Commit:** same commit as this entry
+
+### 7. Shell init script silently drops trailing-colon PATH entries
+
+- **Source:** github-claude | PR #325 round 5 | 2026-06-03
+- **Severity:** LOW
+- **File:** `crates/backend/src/terminal/bridge.rs`
+- **Finding:** The PATH reconstruction in the generated `init.sh` converted colons to newlines, filtered the shim dir, converted back, then stripped the trailing colon with `${new_path%:}`. A trailing colon in the original PATH (the POSIX convention for appending `.`) was indistinguishable from the sentinel the final `tr '\n' ':'` added. After `${new_path%:}`, the user's intentional trailing colon was removed and never restored, so `export PATH="$VIMEFLOW_CLAUDE_SHIM_DIR${new_path:+:$new_path}"` omitted the `.` entry.
+- **Fix:** Capture whether PATH ends with `:` before transformation (`case "$PATH" in *:) path_ends_colon=1 ;; esac`), then restore it after stripping the sentinel colon (`[ -n "$path_ends_colon" ] && new_path="${new_path}:"`).
+- **Commit:** same commit as this entry

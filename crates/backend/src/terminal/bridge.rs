@@ -36,10 +36,14 @@ pub struct BridgeFiles {
 /// Creates:
 /// 1. `<dir>/statusline.sh` — receives JSON on stdin, writes to `status.json`
 /// 2. `<dir>/settings.json` — Claude Code settings overlay pointing to the script
+/// 3. `<shim_dir>/claude` — executable shim that wraps the real `claude` binary
+/// 4. `<dir>/init.sh` — shell startup hook that prepends the shim to PATH
+/// 5. `<dir>/.zshenv` and `<dir>/.zshrc` — zsh-specific startup hooks (when shell is zsh)
 ///
 /// # Arguments
 /// * `agent_status_dir` - Directory to create files in (e.g. `.vimeflow/sessions/<id>/`)
 /// * `session_id` - Session identifier for the comment header
+/// * `shim_dir` - Optional directory for the PATH shim; `None` falls back to `<agent_status_dir>/bin`
 ///
 /// # Returns
 /// * `Ok(BridgeFiles)` with paths to generated files
@@ -156,8 +160,11 @@ pub fn generate_bridge_files(
          unalias claude 2>/dev/null\n\
          unset -f claude 2>/dev/null\n\
          if [ -n \"$VIMEFLOW_CLAUDE_SHIM_DIR\" ]; then\n\
+           path_ends_colon=\"\"\n\
+           case \"$PATH\" in *:) path_ends_colon=1 ;; esac\n\
            new_path=$(printf '%s' \"$PATH\" | tr ':' '\\n' | grep -Fxv \"$VIMEFLOW_CLAUDE_SHIM_DIR\" | tr '\\n' ':')\n\
            new_path=\"${{new_path%:}}\"\n\
+           [ -n \"$path_ends_colon\" ] && new_path=\"${{new_path}}:\"\n\
            export PATH=\"$VIMEFLOW_CLAUDE_SHIM_DIR${{new_path:+:$new_path}}\"\n\
            hash -r 2>/dev/null || rehash 2>/dev/null || true\n\
          fi\n",
