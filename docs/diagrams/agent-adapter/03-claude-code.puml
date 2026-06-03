@@ -1,0 +1,98 @@
+@startuml
+title 3. claude_code/ — internals
+
+skinparam classAttributeIconSize 0
+skinparam packageStyle rectangle
+
+class ClaudeCodeAdapter <<impl AgentAdapter>> {
+  +agent_type() : ClaudeCode
+  +status_source() : ${cwd}/.vimeflow/sessions/${sid}/status.json
+  +parse_status() : delegates → statusline
+  +validate_transcript() : delegates → transcript
+  +tail_transcript() : delegates → transcript
+}
+
+package "statusline" #DFE {
+  class ParsedStatusline {
+    +event : AgentStatusEvent
+    +transcript_path : Option<String>
+  }
+  class "parse_statusline()" as PS <<fn>> {
+    serde_json::Value-driven parser
+  }
+  note bottom of PS
+    Many private helpers (model_id,
+    parse_context_window, parse_cost_metrics,
+    parse_rate_limits, used_percentage,
+    five_hour_rate_limit, value_at, …)
+  end note
+}
+
+package "transcript" #EDF {
+  class "validate_transcript_path()" as VTP <<fn>>
+  class "start_tailing()" as ST <<fn>>
+  class "tail_loop()" as TL <<fn>>
+
+  class InFlightToolCall <<private>> {
+    started_at : Instant
+    started_at_iso : String
+    tool : String
+    args : String
+    is_test_file : bool
+    test_match : Option<MatchedCommand>
+  }
+
+  class "process_line()" as PL <<fn>>
+  class "process_assistant_\nmessage()" as PAM <<fn>>
+  class "process_user_\nmessage()" as PUM <<fn>>
+  class "process_tool_result()" as PTR <<fn>>
+  class "extract_tool_result_\ncontent()" as ETRC <<fn>>
+  class "summarize_input()" as SI <<fn>>
+  class "extract_timestamp()" as ETS <<fn>>
+  class "agent-cwd emit\n(inline in process_line)" as CWD <<fn>>
+}
+
+package "test_runners (shared — also used by codex)" #FFD {
+  class TestRunEmitter
+  class MatchedCommand
+  class CapturedOutput
+  class "match_command()" as MC <<fn>>
+  class "maybe_build_snapshot()" as MBS <<fn>>
+  class "is_test_file()" as ITF <<fn>>
+  class "compute_duration_ms()" as CDM <<fn>>
+}
+
+ClaudeCodeAdapter ..> PS : parse_status
+ClaudeCodeAdapter ..> VTP : validate_transcript
+ClaudeCodeAdapter ..> ST : tail_transcript
+
+PS --> ParsedStatusline
+
+ST --> TL : spawns thread
+TL --> PL
+PL --> CWD : top-level cwd field
+PL --> PAM : type=assistant
+PL --> PUM : type=user
+PL --> PTR : type=tool_result
+
+PAM ..> InFlightToolCall : inserts on tool_use
+PAM ..> SI
+PAM ..> MC : Bash → maybe match
+PAM ..> ITF : Write/Edit → tag is_test_file
+
+PUM ..> PTR : nested tool_result blocks
+PUM ..> ETS
+
+PTR ..> InFlightToolCall : removes (orphan-safe)
+PTR ..> ETRC : ≤256KiB head+tail truncation
+PTR ..> MBS : test snapshot
+PTR ..> TestRunEmitter : submit
+
+note bottom of "test_runners (shared — also used by codex)"
+  Lives under claude_code/ but is consumed
+  by codex/transcript.rs as well.
+  A logical "common" module that hasn't
+  been hoisted to base/ or its own crate.
+end note
+
+@enduml

@@ -119,13 +119,13 @@ Starts the watcher pipeline for a PTY session. **Owns the full lifecycle:** remo
 
 `pid` is the detected agent PID (returned by `detector::detect_agent`), not the shell PID at the PTY root — Codex's `logs.process_uuid` indexes by the codex child PID. `pty_start` is captured at PTY spawn (`ManagedSession.started_at`) so the logs query can filter out PID-reuse and stale-loaded-thread matches. Both arguments are stored on `CodexAdapter` at construction (`CodexAdapter::new(pid, pty_start)` via the `for_attach(agent_type, pid, pty_start)` factory). The codex adapter wraps them in a private `BindContext` for its locator on each `status_source` call. `base::start_for` invokes `adapter.status_source(cwd, session_id)` once and codex's internal retry lives in `retry_locator` (5 attempts, 4 × 100ms inter-attempt sleeps, 400ms sleep budget on full exhaustion). Claude's impl ignores these fields — Claude's `status_source(cwd, sid)` is infallible.
 
-### `<dyn AgentAdapter>::stop`
+### `AgentWatcherService::stop`
 
 ```rust
-pub fn stop(state: &AgentWatcherState, session_id: &str) -> bool
+pub(crate) async fn stop(&self, session_id: String) -> Result<(), String>
 ```
 
-Stops the pipeline by dropping the `WatcherHandle` for `session_id`. Returns `true` if a handle was removed. The handle's `Drop` cascades — see [Lifecycle section](#lifecycle-watcherhandle-drop-cascade) below.
+Step D' moved stop onto the `AgentWatcherService` facade (`adapter/service.rs`); the former `<dyn AgentAdapter>::stop` inherent method was removed. `stop` calls `AgentWatcherState::remove(session_id)` directly — dropping the `WatcherHandle` whose `Drop` cascades the transcript-tail teardown (see [Lifecycle section](#lifecycle-watcherhandle-drop-cascade) below) — and returns `Err` when no handle was present.
 
 ### BackendState / IPC entry point
 
@@ -232,7 +232,7 @@ impl AgentAdapter for NoOpAdapter {
             trust_root: cwd.to_path_buf(),
         })
     }
-    fn parse_status(&self, _, _) -> Result<ParsedStatus, String>  { Err("…no status parser".into()) }
+    fn parse_status(&self, _, _) -> Result<ParsedStatus, String>  { Err("…no status decoder".into()) }
     fn validate_transcript(&self, _) -> Result<PathBuf, ValidateTranscriptError> {
         Err(ValidateTranscriptError::Other("…no transcript validator".into()))
     }
@@ -287,7 +287,7 @@ The runtime details are split by responsibility:
 1. `base/path_security.rs` canonicalizes `trust_root`, walks to the deepest existing ancestor of `src.path`, asserts under `trust_root`, creates the parent, then re-canonicalizes and re-asserts.
 2. `base/watcher_runtime.rs` builds the `notify` watcher with a 100ms debounce, filters events on the target file, performs the inline-init read, and spawns the 3s polling fallback for WSL2/inotify gaps and atomic-write rename patterns.
 3. `base/diagnostics.rs` owns `watcher.event` / `watcher.slow_event` / `watcher.tx_path_change` support types: `EventTiming`, `PathHistory`, and `TxOutcome`.
-4. `base/transcript_state.rs` owns the transcript registry. When `parse_status` yields a transcript path, the watcher runtime routes through `TranscriptState::start_or_replace(adapter.clone(), …)`, which owns the `(transcript_path, cwd)` identity check, `Replaced` / `AlreadyRunning` short-circuit, and previous-handle cleanup.
+4. `base/transcript_state.rs` owns the transcript registry. When the watcher resolves a transcript path (via `TranscriptPathSource`), it routes through `TranscriptState::start_or_replace(streamer.clone(), …)` — `pub(crate)`, taking `Arc<dyn TranscriptStreamer>` as of step B'' (was `Arc<dyn AgentAdapter>`) — which owns the `(transcript_path, cwd)` identity check, `Replaced` / `AlreadyRunning` short-circuit, and previous-handle cleanup.
 5. `base/watcher_runtime.rs` constructs the `WatcherHandle` with `_watcher: Some(...)`, `transcript_state: state.clone()`, and `session_id: sid.clone()` so its `Drop` can cascade.
 
 ---
@@ -371,7 +371,7 @@ pub enum TranscriptStartStatus { Started, Replaced, AlreadyRunning }
 
 Constructed once inside `BackendState` and passed into watcher startup. **Visibility:** `pub #[doc(hidden)]` — production code goes through the trait surface (`AgentAdapter::start`), but `crates/backend/tests/transcript_*.rs` integration tests drive `TranscriptState::start_or_replace` directly to isolate transcript-parsing assertions from watcher-orchestration assertions. `#[doc(hidden)]` keeps it out of generated docs; a doc-comment on each pub item warns "Test-only public surface — production code MUST use AgentAdapter::start instead."
 
-`start_or_replace` takes `Arc<dyn AgentAdapter>` so the registry can route the spawn through `adapter.tail_transcript(…)` without re-coupling `base` to any specific adapter. The replace-vs-keep identity check on `(transcript_path, cwd)` is unchanged — only the spawn site changes.
+As of step B'', `start_or_replace` is `pub(crate)` and takes `Arc<dyn TranscriptStreamer>` (B' had it on the transitional `Arc<dyn AgentAdapter>` façade), so the registry routes the spawn through `streamer.tail(…)` without re-coupling `base` to any specific adapter or to the broader `AgentAdapter` surface. The replace-vs-keep identity check on `(transcript_path, cwd)` is unchanged — only the spawn site changes. (Surrounding `Arc<dyn AgentAdapter>` snippets in this section pre-date the split and describe the legacy monolithic shape; the live signature is the B'' one.)
 
 ---
 

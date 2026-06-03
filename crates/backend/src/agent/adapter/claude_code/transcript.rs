@@ -6,17 +6,18 @@
 
 use std::collections::HashMap;
 use std::fs::{self, File};
-use std::io::{self, BufRead, BufReader};
+use std::io::{self, BufReader};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use serde_json::Value;
 
 use super::test_runners::emitter::TestRunEmitter;
 use super::test_runners::matcher::{match_command, MatchedCommand};
-use crate::agent::adapter::base::TranscriptHandle;
+use super::transcript_dto::{ClaudeToolResultDto, ClaudeToolUseDto, ClaudeTranscriptLineDto};
+use crate::agent::adapter::base::{TranscriptDecoder, TranscriptHandle, TranscriptTailService};
 use crate::agent::adapter::types::ValidateTranscriptError;
 use crate::agent::events::{
     emit_agent_cwd, emit_agent_session_title, emit_agent_tool_call, emit_agent_turn,
@@ -27,9 +28,6 @@ use crate::agent::types::{
     ToolCallStatus,
 };
 use crate::runtime::EventSink;
-
-/// Poll interval for checking new transcript lines
-const POLL_INTERVAL: Duration = Duration::from_millis(500);
 
 /// Maximum length for the args summary string
 const MAX_ARGS_LEN: usize = 1024;
@@ -129,41 +127,15 @@ fn tool_block_type(item: &Value) -> &str {
     line_type(item)
 }
 
-fn tool_use_id(item: &Value) -> Option<&str> {
-    item.get("id").and_then(Value::as_str)
-}
-
-fn tool_name(item: &Value) -> &str {
-    item.get("name")
-        .and_then(Value::as_str)
-        .unwrap_or("unknown")
-}
-
-fn bash_command(item: &Value) -> Option<&str> {
-    if tool_name(item) != "Bash" {
+fn bash_command<'a>(name: &'a str, input: Option<&'a Value>) -> Option<&'a str> {
+    if name != "Bash" {
         return None;
     }
-
-    item.get("input")
-        .and_then(|input| input.get("command"))
-        .and_then(Value::as_str)
+    input?.get("command").and_then(Value::as_str)
 }
 
-fn tool_file_path(item: &Value) -> Option<&str> {
-    item.get("input")
-        .and_then(|input| input.get("file_path"))
-        .and_then(Value::as_str)
-}
-
-fn tool_result_id(value: &Value) -> Option<&str> {
-    value.get("tool_use_id").and_then(Value::as_str)
-}
-
-fn tool_result_is_error(value: &Value) -> bool {
-    value
-        .get("is_error")
-        .and_then(Value::as_bool)
-        .unwrap_or(false)
+fn tool_file_path<'a>(input: Option<&'a Value>) -> Option<&'a str> {
+    input?.get("file_path").and_then(Value::as_str)
 }
 
 fn text_block_type(block: &Value) -> Option<&str> {
@@ -186,40 +158,6 @@ fn input_pattern(input: &Value) -> Option<&str> {
     input.get("pattern").and_then(Value::as_str)
 }
 
-fn emit_title(
-    events: &Arc<dyn EventSink>,
-    session_id: &str,
-    agent_session_id: &str,
-    raw_title: &str,
-    source: TitleSource,
-    last_title_memo: &mut Option<String>,
-) {
-    let sanitized = sanitize_title(raw_title);
-    let is_user_renamed = matches!(&source, TitleSource::UserRenamed);
-    let (title, new_memo) = match sanitized {
-        Some(title) if last_title_memo.as_deref() == Some(title.as_str()) && !is_user_renamed => {
-            return
-        }
-        Some(title) => (title.clone(), Some(title)),
-        None if last_title_memo.is_some() => (String::new(), None),
-        None => return,
-    };
-
-    let payload = AgentSessionTitleEvent {
-        session_id: session_id.to_string(),
-        agent_session_id: agent_session_id.to_string(),
-        title,
-        source,
-    };
-
-    if let Err(err) = emit_agent_session_title(events.as_ref(), &payload) {
-        log::warn!("agent-session-title emit failed: {}", err);
-        return;
-    }
-
-    *last_title_memo = new_memo;
-}
-
 /// Start tailing a transcript JSONL file.
 /// Reads from the beginning to catch up on missed tool calls.
 /// Emits `agent-tool-call` backend events for each tool call detected.
@@ -229,11 +167,21 @@ pub fn start_tailing(
     transcript_path: PathBuf,
     cwd: Option<PathBuf>,
 ) -> Result<TranscriptHandle, String> {
+    // Derive Claude's own agent_session_id from the transcript filename
+    // stem. Each Claude Code session writes one JSONL file named
+    // `<agent-session-uuid>.jsonl` under its `.claude/projects/.../` tree,
+    // so the stem IS the id (PR #265 wiring; restored in PR #302 cycle 2
+    // alongside the `ai-title` / `custom-title` arms it gates).
     let claude_agent_session_id = transcript_path
         .file_stem()
-        .and_then(|s| s.to_str())
+        .and_then(|stem| stem.to_str())
         .map(str::to_string)
-        .ok_or_else(|| "could not derive claude session id from transcript path".to_string())?;
+        .ok_or_else(|| {
+            format!(
+                "could not derive claude session id from transcript path: {}",
+                transcript_path.display()
+            )
+        })?;
 
     let file = File::open(&transcript_path).map_err(|e| {
         format!(
@@ -246,93 +194,116 @@ pub fn start_tailing(
     let stop_flag = Arc::new(AtomicBool::new(false));
     let stop_clone = stop_flag.clone();
 
+    // Read from the beginning — each Claude Code session gets a unique JSONL
+    // file, so all lines belong to the current session. Replay catches any
+    // tool calls written before tailing started (the transcript file is often
+    // created seconds after the statusline first reports its path).
+    let decoder =
+        ClaudeTranscriptDecoder::new(events, session_id, cwd, claude_agent_session_id);
+    let service = TranscriptTailService::new(Box::new(decoder), "transcript");
+
     let join_handle = std::thread::spawn(move || {
-        tail_loop(
-            events,
-            session_id,
-            cwd,
-            file,
-            stop_clone,
-            claude_agent_session_id,
-        );
+        service.run(BufReader::new(file), stop_clone);
     });
 
     Ok(TranscriptHandle::new(stop_flag, join_handle))
 }
 
-/// Background loop that tails the transcript file
-fn tail_loop(
+/// Per-session Claude Code decoder: owns the in-flight tool-call map, turn
+/// count, last-seen cwd, and the replay-aware emitter, and turns each complete
+/// transcript line into `agent-*` events. Driven by [`TranscriptTailService`],
+/// which owns the read/buffer/poll loop.
+struct ClaudeTranscriptDecoder {
     events: Arc<dyn EventSink>,
     session_id: String,
     cwd: Option<PathBuf>,
-    file: File,
-    stop_flag: Arc<AtomicBool>,
+    /// In-flight tool calls: tool_use_id -> call details.
+    in_flight: InFlightToolCalls,
+    num_turns: u32,
+    /// Last agent-reported cwd. Tracked so consecutive lines that share the
+    /// same `cwd` field don't re-emit. Initial `None` so the first observed
+    /// cwd always fires a transition event.
+    last_cwd: Option<String>,
+    /// Replay-aware emitter — buffers test-run snapshots during the initial
+    /// catch-up read and emits the latest one (only) on the first EOF. Once
+    /// we're tailing live, every snapshot emits immediately.
+    emitter: TestRunEmitter,
+    /// Claude's own agent session id (the transcript file's stem). Used by
+    /// the `ai-title` / `custom-title` arms in `process_line` to filter
+    /// out title rows whose `sessionId` field belongs to a different
+    /// Claude session — Claude writes title lines stamped with the
+    /// originating session id, and a tail thread should only emit
+    /// `agent-session-title` for ITS session (PR #302 cycle 2 F1+F2).
     claude_agent_session_id: String,
-) {
-    let mut reader = BufReader::new(file);
+    /// Per-decoder dedup memo for the title-emit path: skip duplicate
+    /// `ai-title` rows (Claude can write the same `aiTitle` value
+    /// multiple times in a row); `custom-title` ALWAYS emits because
+    /// `/rename` is a user-initiated event that must round-trip even if
+    /// the title text hasn't changed (matches the pre-refactor
+    /// `emit_title` dedup contract from PR #265).
+    last_title_memo: Option<String>,
+}
 
-    // Read from the beginning — each Claude Code session gets a unique JSONL
-    // file, so all lines belong to the current session. Replay catches any
-    // tool calls written before tailing started (the transcript file is often
-    // created seconds after the statusline first reports its path).
-
-    // In-flight tool calls: tool_use_id -> call details
-    let mut in_flight: InFlightToolCalls = HashMap::new();
-    let mut num_turns = 0_u32;
-    // Last agent-reported cwd. Tracked so consecutive lines that share the
-    // same `cwd` field don't re-emit. Initial `None` so the first observed
-    // cwd always fires a transition event.
-    let mut last_cwd: Option<String> = None;
-    let mut last_title_memo: Option<String> = None;
-
-    // Replay-aware emitter — buffers test-run snapshots during the initial
-    // catch-up read and emits the latest one (only) on the first EOF. Once
-    // we're tailing live, every snapshot emits immediately.
-    let mut emitter = TestRunEmitter::new(events.clone());
-
-    // Buffer for partial lines
-    let mut line_buf = String::new();
-
-    // Acquire pairs with the Release in `TranscriptHandle::stop` /
-    // `Drop` (Claude review on PR #152, F12) so the stop signal is
-    // observed promptly on weakly-ordered architectures. Same pattern
-    // applied to `WatcherHandle`'s stop_flag in F8.
-    while !stop_flag.load(Ordering::Acquire) {
-        line_buf.clear();
-        match reader.read_line(&mut line_buf) {
-            Ok(0) => {
-                // First EOF marks the end of replay; subsequent EOFs are
-                // idempotent. After this, every submit emits live.
-                emitter.finish_replay();
-                std::thread::sleep(POLL_INTERVAL);
-            }
-            Ok(_) => {
-                let line = line_buf.trim();
-                if line.is_empty() {
-                    continue;
-                }
-                process_line(
-                    line,
-                    &session_id,
-                    cwd.as_deref(),
-                    &events,
-                    &mut emitter,
-                    &mut in_flight,
-                    &mut num_turns,
-                    &mut last_cwd,
-                    &claude_agent_session_id,
-                    &mut last_title_memo,
-                );
-            }
-            Err(e) => {
-                log::warn!("Error reading transcript line: {}", e);
-                std::thread::sleep(POLL_INTERVAL);
-            }
+impl ClaudeTranscriptDecoder {
+    fn new(
+        events: Arc<dyn EventSink>,
+        session_id: String,
+        cwd: Option<PathBuf>,
+        claude_agent_session_id: String,
+    ) -> Self {
+        let emitter = TestRunEmitter::new(events.clone());
+        Self {
+            events,
+            session_id,
+            cwd,
+            in_flight: HashMap::new(),
+            num_turns: 0,
+            last_cwd: None,
+            emitter,
+            claude_agent_session_id,
+            last_title_memo: None,
         }
     }
 }
 
-/// Process a single JSONL line and emit events if it's a tool call
+impl TranscriptDecoder for ClaudeTranscriptDecoder {
+    fn decode_line(&mut self, line: &str) {
+        process_line(
+            line,
+            &self.session_id,
+            self.cwd.as_deref(),
+            &self.events,
+            &mut self.emitter,
+            &mut self.in_flight,
+            &mut self.num_turns,
+            &mut self.last_cwd,
+            &self.claude_agent_session_id,
+            &mut self.last_title_memo,
+        );
+    }
+
+    /// First EOF marks the end of replay; subsequent EOFs are idempotent.
+    /// After this, every submit emits live.
+    fn on_caught_up(&mut self) {
+        self.emitter.finish_replay();
+    }
+}
+
+/// Process a single JSONL line and emit events if it's a tool call or a
+/// title row.
+///
+/// `claude_agent_session_id` is the agent's own session id (derived from
+/// the transcript filename stem in `start_tailing`). `ai-title` /
+/// `custom-title` lines carry a `sessionId` field stamped by Claude; the
+/// arms below filter on equality so a tail thread only emits
+/// `agent-session-title` for ITS session and never leaks another
+/// session's title through this PTY. `last_title_memo` dedups consecutive
+/// identical `ai-title` rows; `custom-title` bypasses the memo since
+/// `/rename` is user-initiated and must round-trip even when text is
+/// unchanged (PR #302 cycle 2 F1+F2 — restored from PR #265 after the
+/// PR #287 `tail_loop` → `TranscriptTailService` extraction dropped
+/// both arms along with the title helper and 8 covering tests).
+#[allow(clippy::too_many_arguments)]
 fn process_line(
     line: &str,
     session_id: &str,
@@ -345,7 +316,7 @@ fn process_line(
     claude_agent_session_id: &str,
     last_title_memo: &mut Option<String>,
 ) {
-    let value: Value = match serde_json::from_str(line) {
+    let dto: ClaudeTranscriptLineDto = match serde_json::from_str(line) {
         Ok(v) => v,
         Err(_) => {
             // Malformed JSON — skip silently
@@ -357,8 +328,10 @@ fn process_line(
     // tracking. Surface transitions through `agent-cwd` so the frontend
     // can mirror them into pane.cwd without depending on the interactive
     // shell emitting OSC 7.
-    if let Some(observed) = value.get("cwd").and_then(Value::as_str) {
-        if !observed.is_empty() && last_cwd.as_deref().map_or(true, |seen| seen != observed) {
+    if let Some(observed) = dto.cwd.as_deref() {
+        if !observed.is_empty()
+            && last_cwd.as_deref().map_or(true, |seen| seen != observed)
+        {
             let event = AgentCwdEvent {
                 session_id: session_id.to_string(),
                 cwd: observed.to_string(),
@@ -371,51 +344,52 @@ fn process_line(
         }
     }
 
-    match line_type(&value) {
+    match dto.line_type.as_deref().unwrap_or("") {
+        "assistant" => {
+            process_assistant_message(&dto, session_id, cwd, events, in_flight);
+        }
+        "user" => {
+            process_user_message(
+                &dto, session_id, cwd, events, emitter, in_flight, num_turns,
+            );
+        }
+        "tool_result" => {
+            let timestamp = extract_timestamp(dto.timestamp.as_deref());
+            process_tool_result(
+                dto.tool_use_id.as_deref(),
+                dto.is_error,
+                &dto.content,
+                session_id,
+                cwd,
+                events,
+                emitter,
+                in_flight,
+                &timestamp,
+            );
+        }
         "ai-title" => {
-            let event_session_id = value.get("sessionId").and_then(Value::as_str);
-            if event_session_id == Some(claude_agent_session_id) {
-                let raw_title = value.get("aiTitle").and_then(Value::as_str).unwrap_or("");
+            if dto.session_id_field.as_deref() == Some(claude_agent_session_id) {
                 emit_title(
                     events,
                     session_id,
                     claude_agent_session_id,
-                    raw_title,
+                    dto.ai_title.as_deref().unwrap_or(""),
                     TitleSource::AiGenerated,
                     last_title_memo,
                 );
             }
         }
         "custom-title" => {
-            let event_session_id = value.get("sessionId").and_then(Value::as_str);
-            if event_session_id == Some(claude_agent_session_id) {
-                let raw_title = value
-                    .get("customTitle")
-                    .and_then(Value::as_str)
-                    .unwrap_or("");
+            if dto.session_id_field.as_deref() == Some(claude_agent_session_id) {
                 emit_title(
                     events,
                     session_id,
                     claude_agent_session_id,
-                    raw_title,
+                    dto.custom_title.as_deref().unwrap_or(""),
                     TitleSource::UserRenamed,
                     last_title_memo,
                 );
             }
-        }
-        "assistant" => {
-            process_assistant_message(&value, session_id, cwd, events, in_flight);
-        }
-        "user" => {
-            process_user_message(
-                &value, session_id, cwd, events, emitter, in_flight, num_turns,
-            );
-        }
-        "tool_result" => {
-            let timestamp = extract_timestamp(&value);
-            process_tool_result(
-                &value, session_id, cwd, events, emitter, in_flight, &timestamp,
-            );
         }
         _ => {
             // Other message types — ignore
@@ -423,58 +397,106 @@ fn process_line(
     }
 }
 
-/// Extract tool_use entries from an assistant message
+/// Sanitize, dedup (for AI-generated only), and emit one
+/// `agent-session-title` event. Mirrors the pre-refactor `emit_title`
+/// helper from PR #265: AI-generated titles dedup against the memo to
+/// avoid spamming the frontend on idempotent rewrites; user-renamed
+/// titles ALWAYS emit because `/rename` is user-initiated and the
+/// round-trip itself is a UX confirmation signal. `None` after
+/// sanitization (empty / whitespace-only) clears the memo and emits an
+/// empty-string title if a non-empty one was previously emitted, so the
+/// frontend can revert to the pane's default name (PR #302 cycle 2
+/// F1+F2).
+fn emit_title(
+    events: &Arc<dyn EventSink>,
+    session_id: &str,
+    claude_agent_session_id: &str,
+    raw_title: &str,
+    source: TitleSource,
+    last_title_memo: &mut Option<String>,
+) {
+    let sanitized = sanitize_title(raw_title);
+    let is_user_renamed = matches!(&source, TitleSource::UserRenamed);
+    let (title, new_memo) = match sanitized {
+        Some(title)
+            if last_title_memo.as_deref() == Some(title.as_str()) && !is_user_renamed =>
+        {
+            return;
+        }
+        Some(title) => (title.clone(), Some(title)),
+        None if last_title_memo.is_some() => (String::new(), None),
+        None => return,
+    };
+
+    let payload = AgentSessionTitleEvent {
+        session_id: session_id.to_string(),
+        agent_session_id: claude_agent_session_id.to_string(),
+        title,
+        source,
+    };
+
+    if let Err(err) = emit_agent_session_title(events.as_ref(), &payload) {
+        log::warn!("agent-session-title emit failed: {}", err);
+        return;
+    }
+
+    *last_title_memo = new_memo;
+}
+
 /// Pull the top-level `timestamp` field off a transcript line, or fall back
 /// to the current clock. Claude Code JSONL lines carry the real event time —
 /// `now_iso8601()` would otherwise stamp every event parsed in a single tick
 /// (e.g. initial watch / batch catch-up) with the same "now", making the UI
 /// feed look as if everything happened at once.
-fn extract_timestamp(value: &Value) -> String {
-    value
-        .get("timestamp")
-        .and_then(Value::as_str)
-        .map(str::to_string)
-        .unwrap_or_else(now_iso8601)
+fn extract_timestamp(timestamp: Option<&str>) -> String {
+    timestamp.map(str::to_string).unwrap_or_else(now_iso8601)
 }
 
+/// Extract tool_use entries from an assistant message.
 fn process_assistant_message(
-    value: &Value,
+    dto: &ClaudeTranscriptLineDto,
     session_id: &str,
     cwd: Option<&Path>,
     events: &Arc<dyn EventSink>,
     in_flight: &mut InFlightToolCalls,
 ) {
-    let content = match message_content_items(value) {
+    let content = match message_content_items(dto) {
         Some(arr) => arr,
         None => return,
     };
 
-    let timestamp = extract_timestamp(value);
+    let timestamp = extract_timestamp(dto.timestamp.as_deref());
 
     for item in content {
         if tool_block_type(item) != "tool_use" {
             continue;
         }
 
-        let id = match tool_use_id(item) {
+        let tool_use_dto: ClaudeToolUseDto = match serde_json::from_value(item.clone()) {
+            Ok(d) => d,
+            Err(_) => continue,
+        };
+
+        let id = match tool_use_dto.id.as_deref() {
             Some(id) => id.to_string(),
             None => continue,
         };
 
-        let name = tool_name(item).to_string();
+        let name = tool_use_dto.name.as_deref().unwrap_or("unknown");
+        let input_value = tool_use_dto.rest.get("input");
 
         // Run the matcher BEFORE summarize_input truncates — the matcher
         // needs the full untruncated command to tokenize correctly.
-        let test_match = bash_command(item).and_then(|cmd| match_command(cmd, cwd));
+        let test_match = bash_command(name, input_value).and_then(|cmd| match_command(cmd, cwd));
 
-        let args = summarize_input(item.get("input"));
+        let args = summarize_input(input_value);
 
         // Tag Write/Edit on test files. Use the FULL untruncated
         // input.file_path — `args` is summarized to MAX_ARGS_LEN and
         // long workspace paths could otherwise drop the suffix that
         // makes a file recognizable as a test (e.g. `…ndle.test.ts`).
-        let is_test_file = if matches!(name.as_str(), "Write" | "Edit") {
-            tool_file_path(item)
+        let is_test_file = if matches!(name, "Write" | "Edit") {
+            tool_file_path(input_value)
                 .map(super::test_runners::test_file_patterns::is_test_file)
                 .unwrap_or(false)
         } else {
@@ -487,7 +509,7 @@ fn process_assistant_message(
             InFlightToolCall {
                 started_at: now,
                 started_at_iso: timestamp.clone(),
-                tool: name.clone(),
+                tool: name.to_string(),
                 args: args.clone(),
                 is_test_file,
                 test_match,
@@ -497,7 +519,7 @@ fn process_assistant_message(
         let event = AgentToolCallEvent {
             session_id: session_id.to_string(),
             tool_use_id: id,
-            tool: name,
+            tool: name.to_string(),
             args,
             status: ToolCallStatus::Running,
             timestamp: timestamp.clone(),
@@ -513,7 +535,7 @@ fn process_assistant_message(
 
 /// Extract tool_result entries from a user message.
 fn process_user_message(
-    value: &Value,
+    dto: &ClaudeTranscriptLineDto,
     session_id: &str,
     cwd: Option<&Path>,
     events: &Arc<dyn EventSink>,
@@ -521,18 +543,30 @@ fn process_user_message(
     in_flight: &mut InFlightToolCalls,
     num_turns: &mut u32,
 ) {
-    let content = match message_content(value) {
+    let content = match dto.message.as_ref().map(|m| &m.content) {
         Some(content) => content,
         None => return,
     };
 
-    let timestamp = extract_timestamp(value);
+    let timestamp = extract_timestamp(dto.timestamp.as_deref());
 
     if let Some(items) = content.as_array() {
         for item in items {
             if is_tool_result_block(item) {
+                let block_dto: ClaudeToolResultDto = match serde_json::from_value(item.clone()) {
+                    Ok(d) => d,
+                    Err(_) => continue,
+                };
                 process_tool_result(
-                    item, session_id, cwd, events, emitter, in_flight, &timestamp,
+                    block_dto.tool_use_id.as_deref(),
+                    block_dto.is_error,
+                    &block_dto.content,
+                    session_id,
+                    cwd,
+                    events,
+                    emitter,
+                    in_flight,
+                    &timestamp,
                 );
             }
         }
@@ -553,7 +587,9 @@ fn process_user_message(
 
 /// Process a tool_result line and emit Done/Failed event
 fn process_tool_result(
-    value: &Value,
+    tool_use_id: Option<&str>,
+    is_error: Option<bool>,
+    content: &Value,
     session_id: &str,
     cwd: Option<&Path>,
     events: &Arc<dyn EventSink>,
@@ -561,12 +597,12 @@ fn process_tool_result(
     in_flight: &mut InFlightToolCalls,
     timestamp: &str,
 ) {
-    let tool_use_id = match tool_result_id(value) {
+    let tool_use_id = match tool_use_id {
         Some(id) => id.to_string(),
         None => return,
     };
 
-    let is_error = tool_result_is_error(value);
+    let is_error = is_error.unwrap_or(false);
 
     // An orphaned tool_result — a tool_result whose parent tool_use was
     // never recorded in_flight — arrives most often when a Claude Code
@@ -586,8 +622,11 @@ fn process_tool_result(
 
     if let Some(matched) = call.test_match {
         // Pull the captured Bash output content.
-        let content = extract_tool_result_content(value);
-        let captured = super::test_runners::types::CapturedOutput { content, is_error };
+        let content_str = extract_tool_result_content(content);
+        let captured = super::test_runners::types::CapturedOutput {
+            content: content_str,
+            is_error,
+        };
         // Build the snapshot only when we have a workspace cwd. Falling
         // back to `Path::new(".")` would canonicalise to the backend
         // process's cwd — NOT the user's workspace — so test-file groups
@@ -643,14 +682,8 @@ fn process_tool_result(
     }
 }
 
-fn message_content_items(value: &Value) -> Option<&[Value]> {
-    message_content(value)
-        .and_then(|c| c.as_array())
-        .map(Vec::as_slice)
-}
-
-fn message_content(value: &Value) -> Option<&Value> {
-    value.get("message").and_then(|m| m.get("content"))
+fn message_content_items(dto: &ClaudeTranscriptLineDto) -> Option<&[Value]> {
+    dto.message.as_ref()?.content.as_array().map(Vec::as_slice)
 }
 
 fn is_tool_result_block(value: &Value) -> bool {
@@ -771,15 +804,15 @@ fn days_to_date(days: u64) -> (u64, u64, u64) {
 /// Pull the textual `content` out of a tool_result JSON value.
 /// Handles both the simple-string shape and the array-of-blocks shape
 /// (where each block may carry `{type:"text", text:"..."}` payloads).
-fn extract_tool_result_content(value: &Value) -> String {
-    let raw = match value.get("content") {
-        Some(c) => c,
-        None => return String::new(),
-    };
-    if let Some(s) = raw.as_str() {
+fn extract_tool_result_content(content: &Value) -> String {
+    // Takes the `content` *value* directly (not the enclosing block) so the
+    // A-transcript migration can pass `&dto.content`. Absent `content` (passed
+    // as `Value::Null` by callers) and `null` both miss the str/array arms and
+    // fall through to `""` — behavior-neutral with the prior `.get("content")`.
+    if let Some(s) = content.as_str() {
         return cap_with_head_and_tail(s);
     }
-    if let Some(arr) = raw.as_array() {
+    if let Some(arr) = content.as_array() {
         let memory_cap = MAX_TOOL_RESULT_CONTENT_LEN + TOOL_RESULT_TAIL_LEN;
         let prune_threshold = memory_cap * 2;
         let mut buf = String::new();
@@ -874,42 +907,6 @@ fn cap_with_head_and_tail(content: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::agent::events::AGENT_SESSION_TITLE;
-    use crate::runtime::FakeEventSink;
-    use serde_json::json;
-
-    fn make_sink_and_emitter() -> (Arc<FakeEventSink>, Arc<dyn EventSink>, TestRunEmitter) {
-        let sink: Arc<FakeEventSink> = Arc::new(FakeEventSink::new());
-        let sink_dyn: Arc<dyn EventSink> = sink.clone();
-        let emitter = TestRunEmitter::new(sink_dyn.clone());
-        (sink, sink_dyn, emitter)
-    }
-
-    fn process_title_line(
-        line: &str,
-        session_id: &str,
-        events: &Arc<dyn EventSink>,
-        emitter: &mut TestRunEmitter,
-        agent_session_id: &str,
-        last_title_memo: &mut Option<String>,
-    ) {
-        let mut in_flight = InFlightToolCalls::new();
-        let mut num_turns = 0_u32;
-        let mut last_cwd = None;
-
-        process_line(
-            line,
-            session_id,
-            None,
-            events,
-            emitter,
-            &mut in_flight,
-            &mut num_turns,
-            &mut last_cwd,
-            agent_session_id,
-            last_title_memo,
-        );
-    }
 
     #[test]
     fn validate_transcript_path_rejects_path_outside_claude_root() {
@@ -935,324 +932,6 @@ mod tests {
             Err(ValidateTranscriptError::InvalidPath(message))
                 if message.contains("null byte")
         ));
-    }
-
-    #[test]
-    fn ai_title_matching_session_id_emits() {
-        let agent_id = "0a1b95fd-54bc-4635-9161-983f661d74da";
-        let mut memo = None;
-        let (sink, sink_dyn, mut emitter) = make_sink_and_emitter();
-        let line = serde_json::to_string(&json!({
-            "type": "ai-title",
-            "aiTitle": "Investigate slow startup",
-            "sessionId": agent_id,
-        }))
-        .expect("serialize title line");
-
-        process_title_line(&line, "pty-1", &sink_dyn, &mut emitter, agent_id, &mut memo);
-
-        let recorded = sink.recorded();
-        let title_events: Vec<_> = recorded
-            .iter()
-            .filter(|(name, _)| name == AGENT_SESSION_TITLE)
-            .collect();
-        assert_eq!(title_events.len(), 1);
-        let payload = &title_events[0].1;
-        assert_eq!(payload["title"], "Investigate slow startup");
-        assert_eq!(payload["source"], "ai-generated");
-        assert_eq!(payload["sessionId"], "pty-1");
-        assert_eq!(payload["agentSessionId"], agent_id);
-        assert_eq!(memo.as_deref(), Some("Investigate slow startup"));
-    }
-
-    #[test]
-    fn custom_title_matching_session_id_emits_user_renamed() {
-        let agent_id = "abc-123";
-        let mut memo = None;
-        let (sink, sink_dyn, mut emitter) = make_sink_and_emitter();
-        let line = serde_json::to_string(&json!({
-            "type": "custom-title",
-            "customTitle": "my-feature",
-            "sessionId": agent_id,
-        }))
-        .expect("serialize title line");
-
-        process_title_line(&line, "pty-1", &sink_dyn, &mut emitter, agent_id, &mut memo);
-
-        let recorded = sink.recorded();
-        let title = recorded
-            .iter()
-            .find(|(name, _)| name == AGENT_SESSION_TITLE)
-            .expect("title event");
-        assert_eq!(title.1["title"], "my-feature");
-        assert_eq!(title.1["source"], "user-renamed");
-    }
-
-    #[test]
-    fn tail_loop_shutdown_does_not_clear_title() {
-        use std::io::Write;
-
-        let agent_id = "abc-123";
-        let mut transcript = tempfile::NamedTempFile::new().expect("temp transcript");
-        let line = serde_json::to_string(&json!({
-            "type": "custom-title",
-            "customTitle": "my-feature",
-            "sessionId": agent_id,
-        }))
-        .expect("serialize title line");
-        writeln!(transcript, "{}", line).expect("write transcript");
-        transcript.flush().expect("flush transcript");
-
-        let file = std::fs::File::open(transcript.path()).expect("open transcript");
-        let (sink, sink_dyn, _) = make_sink_and_emitter();
-        let stop = Arc::new(AtomicBool::new(false));
-        let stop_clone = stop.clone();
-        let events = sink_dyn.clone();
-        let join = std::thread::spawn(move || {
-            tail_loop(
-                events,
-                "pty-1".to_string(),
-                None,
-                file,
-                stop_clone,
-                agent_id.to_string(),
-            );
-        });
-
-        for _ in 0..40 {
-            if sink.count(AGENT_SESSION_TITLE) >= 1 {
-                break;
-            }
-            std::thread::sleep(Duration::from_millis(25));
-        }
-
-        stop.store(true, Ordering::Release);
-        join.join().expect("tail loop joins");
-
-        let titles: Vec<_> = sink
-            .recorded()
-            .into_iter()
-            .filter(|(name, _)| name == AGENT_SESSION_TITLE)
-            .collect();
-        assert_eq!(titles.len(), 1);
-        assert_eq!(titles[0].1["source"], "user-renamed");
-    }
-
-    #[test]
-    fn mismatched_session_id_does_not_emit_title() {
-        let mut memo = None;
-        let (sink, sink_dyn, mut emitter) = make_sink_and_emitter();
-        let line = serde_json::to_string(&json!({
-            "type": "ai-title",
-            "aiTitle": "other session",
-            "sessionId": "other-uuid",
-        }))
-        .expect("serialize title line");
-
-        process_title_line(
-            &line,
-            "pty-1",
-            &sink_dyn,
-            &mut emitter,
-            "expected-uuid",
-            &mut memo,
-        );
-
-        assert_eq!(sink.count(AGENT_SESSION_TITLE), 0);
-        assert!(memo.is_none());
-    }
-
-    #[test]
-    fn duplicate_ai_title_emits_once() {
-        let agent_id = "abc";
-        let mut memo = None;
-        let (sink, sink_dyn, mut emitter) = make_sink_and_emitter();
-        let line = serde_json::to_string(&json!({
-            "type": "ai-title",
-            "aiTitle": "T",
-            "sessionId": agent_id,
-        }))
-        .expect("serialize title line");
-
-        process_title_line(&line, "pty-1", &sink_dyn, &mut emitter, agent_id, &mut memo);
-        process_title_line(&line, "pty-1", &sink_dyn, &mut emitter, agent_id, &mut memo);
-
-        assert_eq!(sink.count(AGENT_SESSION_TITLE), 1);
-    }
-
-    #[test]
-    fn ai_title_followed_by_custom_title_emits_two_events() {
-        let agent_id = "abc";
-        let mut memo = None;
-        let (sink, sink_dyn, mut emitter) = make_sink_and_emitter();
-        let first = serde_json::to_string(&json!({
-            "type": "ai-title",
-            "aiTitle": "ai",
-            "sessionId": agent_id,
-        }))
-        .expect("serialize ai title line");
-        let second = serde_json::to_string(&json!({
-            "type": "custom-title",
-            "customTitle": "user",
-            "sessionId": agent_id,
-        }))
-        .expect("serialize custom title line");
-
-        process_title_line(
-            &first,
-            "pty-1",
-            &sink_dyn,
-            &mut emitter,
-            agent_id,
-            &mut memo,
-        );
-        process_title_line(
-            &second,
-            "pty-1",
-            &sink_dyn,
-            &mut emitter,
-            agent_id,
-            &mut memo,
-        );
-
-        let titles: Vec<_> = sink
-            .recorded()
-            .into_iter()
-            .filter(|(name, _)| name == AGENT_SESSION_TITLE)
-            .collect();
-        assert_eq!(titles.len(), 2);
-        assert_eq!(titles[1].1["title"], "user");
-        assert_eq!(titles[1].1["source"], "user-renamed");
-    }
-
-    #[test]
-    fn matching_ai_title_followed_by_custom_title_emits_user_renamed_event() {
-        let agent_id = "abc";
-        let mut memo = None;
-        let (sink, sink_dyn, mut emitter) = make_sink_and_emitter();
-        let first = serde_json::to_string(&json!({
-            "type": "ai-title",
-            "aiTitle": "same-title",
-            "sessionId": agent_id,
-        }))
-        .expect("serialize ai title line");
-        let second = serde_json::to_string(&json!({
-            "type": "custom-title",
-            "customTitle": "same-title",
-            "sessionId": agent_id,
-        }))
-        .expect("serialize custom title line");
-
-        process_title_line(
-            &first,
-            "pty-1",
-            &sink_dyn,
-            &mut emitter,
-            agent_id,
-            &mut memo,
-        );
-        process_title_line(
-            &second,
-            "pty-1",
-            &sink_dyn,
-            &mut emitter,
-            agent_id,
-            &mut memo,
-        );
-
-        let titles: Vec<_> = sink
-            .recorded()
-            .into_iter()
-            .filter(|(name, _)| name == AGENT_SESSION_TITLE)
-            .collect();
-        assert_eq!(titles.len(), 2);
-        assert_eq!(titles[0].1["source"], "ai-generated");
-        assert_eq!(titles[1].1["title"], "same-title");
-        assert_eq!(titles[1].1["source"], "user-renamed");
-    }
-
-    #[test]
-    fn ai_title_with_newline_emits_sanitized() {
-        let agent_id = "abc";
-        let mut memo = None;
-        let (sink, sink_dyn, mut emitter) = make_sink_and_emitter();
-        let line = serde_json::to_string(&json!({
-            "type": "ai-title",
-            "aiTitle": "Line1\nLine2",
-            "sessionId": agent_id,
-        }))
-        .expect("serialize title line");
-
-        process_title_line(&line, "pty-1", &sink_dyn, &mut emitter, agent_id, &mut memo);
-
-        let title = sink
-            .recorded()
-            .into_iter()
-            .find(|(name, _)| name == AGENT_SESSION_TITLE)
-            .expect("title event");
-        assert_eq!(title.1["title"], "Line1 Line2");
-    }
-
-    #[test]
-    fn empty_ai_title_after_set_emits_clear() {
-        let agent_id = "abc";
-        let mut memo = None;
-        let (sink, sink_dyn, mut emitter) = make_sink_and_emitter();
-        let first = serde_json::to_string(&json!({
-            "type": "ai-title",
-            "aiTitle": "first",
-            "sessionId": agent_id,
-        }))
-        .expect("serialize first title line");
-        let second = serde_json::to_string(&json!({
-            "type": "ai-title",
-            "aiTitle": "",
-            "sessionId": agent_id,
-        }))
-        .expect("serialize second title line");
-
-        process_title_line(
-            &first,
-            "pty-1",
-            &sink_dyn,
-            &mut emitter,
-            agent_id,
-            &mut memo,
-        );
-        process_title_line(
-            &second,
-            "pty-1",
-            &sink_dyn,
-            &mut emitter,
-            agent_id,
-            &mut memo,
-        );
-
-        let titles: Vec<_> = sink
-            .recorded()
-            .into_iter()
-            .filter(|(name, _)| name == AGENT_SESSION_TITLE)
-            .collect();
-        assert_eq!(titles.len(), 2);
-        assert_eq!(titles[1].1["title"], "");
-        assert!(memo.is_none());
-    }
-
-    #[test]
-    fn empty_ai_title_without_prior_does_not_emit() {
-        let agent_id = "abc";
-        let mut memo = None;
-        let (sink, sink_dyn, mut emitter) = make_sink_and_emitter();
-        let line = serde_json::to_string(&json!({
-            "type": "ai-title",
-            "aiTitle": "",
-            "sessionId": agent_id,
-        }))
-        .expect("serialize title line");
-
-        process_title_line(&line, "pty-1", &sink_dyn, &mut emitter, agent_id, &mut memo);
-
-        assert_eq!(sink.count(AGENT_SESSION_TITLE), 0);
     }
 
     #[test]
@@ -1294,7 +973,7 @@ mod tests {
             "content": "a".repeat(MAX_TOOL_RESULT_CONTENT_LEN + 1024)
         });
 
-        let content = extract_tool_result_content(&value);
+        let content = extract_tool_result_content(&value["content"]);
 
         assert!(content.len() < MAX_TOOL_RESULT_CONTENT_LEN + 1024);
         assert!(content.contains(TOOL_RESULT_TRUNCATED_MARKER));
@@ -1323,7 +1002,7 @@ mod tests {
             ]
         });
 
-        let content = extract_tool_result_content(&value);
+        let content = extract_tool_result_content(&value["content"]);
 
         assert!(content.contains(TOOL_RESULT_TRUNCATED_MARKER));
         assert!(
@@ -1357,7 +1036,7 @@ mod tests {
             ]
         });
 
-        let content = extract_tool_result_content(&value);
+        let content = extract_tool_result_content(&value["content"]);
 
         assert_eq!(content.len(), MAX_TOOL_RESULT_CONTENT_LEN);
         assert!(
@@ -1386,7 +1065,7 @@ mod tests {
             "content": &combined
         });
 
-        let content = extract_tool_result_content(&value);
+        let content = extract_tool_result_content(&value["content"]);
 
         assert!(
             content.contains(summary_line),
@@ -1426,7 +1105,7 @@ mod tests {
             ]
         });
 
-        let content = extract_tool_result_content(&value);
+        let content = extract_tool_result_content(&value["content"]);
 
         assert_eq!(content.len(), MAX_TOOL_RESULT_CONTENT_LEN);
         assert!(
@@ -1438,9 +1117,9 @@ mod tests {
     #[test]
     fn parse_nested_tool_result_from_user_message() {
         let line = r#"{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_abc","content":"file contents...","is_error":false}]}}"#;
-        let value: Value = serde_json::from_str(line).unwrap();
+        let dto: ClaudeTranscriptLineDto = serde_json::from_str(line).unwrap();
 
-        let content = message_content_items(&value).unwrap();
+        let content = message_content_items(&dto).unwrap();
         let result = content
             .iter()
             .find(|item| is_tool_result_block(item))
@@ -1463,18 +1142,17 @@ mod tests {
             r#"{"type":"tool_result"}"#, // missing tool_use_id
         ];
 
-        // process_line requires app_handle — test the parsing path directly
+        // Every line shape must deserialize without error (DTO fields are
+        // all defaulted/lenient). Lines that are not valid JSON at all are
+        // skipped silently by process_line.
         for line in &bad_lines {
-            let result: Result<Value, _> = serde_json::from_str(line);
-            // Should either fail to parse or produce a Value we can handle
-            if let Ok(value) = result {
-                // These should not cause panics in extraction logic
-                let _ = line_type(&value);
-                let _ = value
-                    .get("message")
-                    .and_then(|m| m.get("content"))
-                    .and_then(|c| c.as_array());
-                let _ = tool_result_id(&value);
+            let result: Result<ClaudeTranscriptLineDto, _> = serde_json::from_str(line);
+            if let Ok(dto) = result {
+                let _ = dto.line_type.as_deref().unwrap_or("");
+                let _ = dto.message.as_ref().map(|m| m.content.as_array());
+                let _ = dto.tool_use_id.as_deref();
+                let _ = dto.is_error;
+                let _ = &dto.content;
             }
         }
     }
@@ -1684,19 +1362,12 @@ mod tests {
     // contract so future refactors can't silently regress it.
     #[test]
     fn extract_timestamp_uses_transcript_field_when_present() {
-        let line =
-            r#"{"type":"assistant","timestamp":"2026-04-22T10:30:00Z","message":{"content":[]}}"#;
-        let value: Value = serde_json::from_str(line).unwrap();
-
-        assert_eq!(extract_timestamp(&value), "2026-04-22T10:30:00Z");
+        assert_eq!(extract_timestamp(Some("2026-04-22T10:30:00Z")), "2026-04-22T10:30:00Z");
     }
 
     #[test]
     fn extract_timestamp_falls_back_to_now_when_absent() {
-        let line = r#"{"type":"assistant","message":{"content":[]}}"#;
-        let value: Value = serde_json::from_str(line).unwrap();
-
-        let ts = extract_timestamp(&value);
+        let ts = extract_timestamp(None);
 
         // Shape check against now_iso8601 — same ISO-8601 UTC format
         // (YYYY-MM-DDTHH:MM:SSZ). We can't compare exact values because
@@ -1708,14 +1379,21 @@ mod tests {
 
     #[test]
     fn extract_timestamp_ignores_non_string_field() {
-        // If a malformed line has a non-string timestamp (e.g. a number
-        // or null), we should fall back rather than coerce.
-        let line = r#"{"type":"assistant","timestamp":1234567890,"message":{"content":[]}}"#;
-        let value: Value = serde_json::from_str(line).unwrap();
+        // Integration guard for the full JSONL → DTO → fallback path: a
+        // non-string `timestamp` degrades to None via the DTO's lenient_string
+        // deserializer, so extract_timestamp falls back to now_iso8601 (this is
+        // the round-trip the migration must not lose — distinct from the
+        // extract_timestamp(None) unit case above).
+        let dto: ClaudeTranscriptLineDto = serde_json::from_str(
+            r#"{"type":"assistant","timestamp":1234567890,"message":{"content":[]}}"#,
+        )
+        .expect("line with non-string timestamp still parses");
+        assert!(
+            dto.timestamp.is_none(),
+            "non-string timestamp degrades to None via lenient_string"
+        );
 
-        let ts = extract_timestamp(&value);
-
-        // Falls back to now_iso8601 format (not the numeric literal).
+        let ts = extract_timestamp(dto.timestamp.as_deref());
         assert!(ts.ends_with('Z'));
         assert_eq!(ts.len(), 20);
     }
@@ -1724,11 +1402,10 @@ mod tests {
     fn extract_timestamp_preserves_full_iso_string_exactly() {
         // Sub-second precision and timezone offsets should pass through
         // untouched — the frontend parses whatever we emit.
-        let line =
-            r#"{"type":"user","timestamp":"2026-04-22T10:30:45.123Z","message":{"content":[]}}"#;
-        let value: Value = serde_json::from_str(line).unwrap();
-
-        assert_eq!(extract_timestamp(&value), "2026-04-22T10:30:45.123Z");
+        assert_eq!(
+            extract_timestamp(Some("2026-04-22T10:30:45.123Z")),
+            "2026-04-22T10:30:45.123Z"
+        );
     }
 
     // is_user_prompt / is_non_empty_user_block — direct in-module coverage.
@@ -1832,5 +1509,213 @@ mod tests {
 
         let null_type: Value = serde_json::from_str(r#"{"type":null,"text":"hello"}"#).unwrap();
         assert!(is_non_empty_user_block(&null_type));
+    }
+
+    /// Regression: a tool_result line with a wrong-typed `is_error` must
+    /// still emit the `agent-tool-call` event (lenient degradation, not a
+    /// silent drop). The DTO's `lenient_bool` turns `"oops"` → `None`,
+    /// which `process_tool_result` maps to `false` → `Done` status.
+    #[test]
+    fn process_line_emits_with_wrong_typed_is_error() {
+        let concrete = Arc::new(crate::runtime::FakeEventSink::new());
+        let events: Arc<dyn EventSink> = concrete.clone();
+        let mut emitter = TestRunEmitter::new(events.clone());
+        let mut in_flight: InFlightToolCalls = HashMap::new();
+        let mut num_turns = 0;
+        let mut last_cwd = None;
+
+        // Seed in_flight so the tool_result has a match
+        in_flight.insert(
+            "toolu_xyz".to_string(),
+            InFlightToolCall {
+                started_at: Instant::now(),
+                started_at_iso: "2026-04-28T12:00:00Z".to_string(),
+                tool: "Bash".to_string(),
+                args: "echo hi".to_string(),
+                is_test_file: false,
+                test_match: None,
+            },
+        );
+
+        let line = r#"{"type":"tool_result","tool_use_id":"toolu_xyz","content":"ok","is_error":"oops"}"#;
+        let mut last_title_memo: Option<String> = None;
+        process_line(
+            line,
+            "sess-1",
+            None,
+            &events,
+            &mut emitter,
+            &mut in_flight,
+            &mut num_turns,
+            &mut last_cwd,
+            "claude-agent-sid",
+            &mut last_title_memo,
+        );
+
+        assert_eq!(concrete.count("agent-tool-call"), 1);
+        assert!(in_flight.is_empty(), "matched tool_use should be removed");
+    }
+
+    /// Regression: `summarize_input` must preserve the absent vs present-null
+    /// distinction ("" vs "null") that the DTO's `#[serde(flatten)] rest`
+    /// map preserves for `tool_use.input`.
+    #[test]
+    fn summarize_input_preserves_absent_vs_null() {
+        assert_eq!(summarize_input(None), "");
+        assert_eq!(summarize_input(Some(&serde_json::Value::Null)), "null");
+    }
+
+    /// Test helper for the title-emit regressions below. Drives a single
+    /// transcript line through `process_line` with default emitter / state,
+    /// then returns the recorded `agent-session-title` payloads.
+    fn drive_title_line(
+        line: &str,
+        claude_agent_session_id: &str,
+        last_title_memo: &mut Option<String>,
+    ) -> Vec<serde_json::Value> {
+        let concrete = Arc::new(crate::runtime::FakeEventSink::new());
+        let events: Arc<dyn EventSink> = concrete.clone();
+        let mut emitter = TestRunEmitter::new(events.clone());
+        let mut in_flight: InFlightToolCalls = HashMap::new();
+        let mut num_turns = 0_u32;
+        let mut last_cwd = None;
+
+        process_line(
+            line,
+            "pty-1",
+            None,
+            &events,
+            &mut emitter,
+            &mut in_flight,
+            &mut num_turns,
+            &mut last_cwd,
+            claude_agent_session_id,
+            last_title_memo,
+        );
+
+        concrete
+            .recorded()
+            .into_iter()
+            .filter(|(name, _)| name == "agent-session-title")
+            .map(|(_, payload)| payload)
+            .collect()
+    }
+
+    /// PR #302 cycle 2 F1+F2 — `ai-title` rows whose `sessionId` matches
+    /// the tail's `claude_agent_session_id` emit an `agent-session-title`
+    /// event with `source = ai-generated`.
+    #[test]
+    fn ai_title_matching_session_id_emits_ai_generated() {
+        let agent_id = "claude-abc-123";
+        let mut memo = None;
+        let line = format!(
+            r#"{{"type":"ai-title","aiTitle":"Investigate slow startup","sessionId":"{}"}}"#,
+            agent_id
+        );
+        let titles = drive_title_line(&line, agent_id, &mut memo);
+        assert_eq!(titles.len(), 1);
+        assert_eq!(titles[0]["title"], "Investigate slow startup");
+        assert_eq!(titles[0]["source"], "ai-generated");
+        assert_eq!(titles[0]["sessionId"], "pty-1");
+        assert_eq!(titles[0]["agentSessionId"], agent_id);
+        assert_eq!(memo.as_deref(), Some("Investigate slow startup"));
+    }
+
+    /// PR #302 cycle 2 F1+F2 — `custom-title` rows (from `/rename`) emit
+    /// with `source = user-renamed` and bypass the dedup memo so a
+    /// re-rename to the same title still round-trips.
+    #[test]
+    fn custom_title_matching_session_id_emits_user_renamed_and_bypasses_dedup() {
+        let agent_id = "claude-abc-123";
+        let mut memo = Some("my-feature".to_string());
+        let line = format!(
+            r#"{{"type":"custom-title","customTitle":"my-feature","sessionId":"{}"}}"#,
+            agent_id
+        );
+        let titles = drive_title_line(&line, agent_id, &mut memo);
+        assert_eq!(titles.len(), 1, "custom-title must always emit");
+        assert_eq!(titles[0]["title"], "my-feature");
+        assert_eq!(titles[0]["source"], "user-renamed");
+    }
+
+    /// PR #302 cycle 2 F1+F2 — title rows whose `sessionId` does NOT
+    /// match the tail's `claude_agent_session_id` are dropped silently.
+    /// Per-session isolation: a tail thread must only emit for ITS
+    /// session, never another Claude session's title.
+    #[test]
+    fn ai_title_mismatched_session_id_is_dropped() {
+        let mut memo = None;
+        let line = r#"{"type":"ai-title","aiTitle":"Wrong","sessionId":"other-session"}"#;
+        let titles = drive_title_line(line, "claude-abc-123", &mut memo);
+        assert!(titles.is_empty());
+        assert_eq!(memo, None);
+    }
+
+    /// PR #302 cycle 2 F1+F2 — `ai-title` dedup against the per-decoder
+    /// memo. Two identical AI-generated titles back-to-back emit only
+    /// once; the second is suppressed.
+    #[test]
+    fn ai_title_dedups_against_memo() {
+        let agent_id = "claude-abc-123";
+        let mut memo = None;
+        let line = format!(
+            r#"{{"type":"ai-title","aiTitle":"Same","sessionId":"{}"}}"#,
+            agent_id
+        );
+        let first = drive_title_line(&line, agent_id, &mut memo);
+        assert_eq!(first.len(), 1);
+        let second = drive_title_line(&line, agent_id, &mut memo);
+        assert!(second.is_empty(), "duplicate ai-title must dedup");
+    }
+
+    /// End-to-end G3 carve-out: a real `tool_use` line split across the
+    /// replay→live EOF boundary — where *neither half is valid JSON* — must
+    /// still emit `agent-tool-call`. The old per-provider `tail_loop` handed
+    /// each partial to the parser as if it were a complete line (both halves
+    /// failed `from_str`, so the event was silently dropped); the shared
+    /// `TranscriptTailService` buffers the partial across the non-terminal EOF
+    /// and rejoins it. This is the sanctioned Phase 2 behavior change
+    /// (F-EVENTS two-sided G3 carve-out), so the assertion is PASS, not the
+    /// pre-C drop.
+    #[test]
+    fn split_tool_use_line_across_eof_still_emits() {
+        use crate::agent::adapter::base::{ScriptedReader, Step};
+
+        let concrete = Arc::new(crate::runtime::FakeEventSink::new());
+        let events: Arc<dyn EventSink> = concrete.clone();
+        let decoder = ClaudeTranscriptDecoder::new(
+            events,
+            "sess-g3".to_string(),
+            None,
+            "claude-sess-g3".to_string(),
+        );
+
+        // One valid tool_use assistant line, split mid-string-value so neither
+        // side parses on its own: `..."tool_us` | `e"...`.
+        let first: &[u8] = br#"{"type":"assistant","message":{"content":[{"type":"tool_us"#;
+        let second: &[u8] = b"e\",\"id\":\"toolu_g3\",\"name\":\"Read\",\"input\":{\"file_path\":\"/a.ts\"}}]}}\n";
+
+        let stop = Arc::new(AtomicBool::new(false));
+        TranscriptTailService::new(Box::new(decoder), "transcript")
+            .with_poll_interval(std::time::Duration::ZERO)
+            .run(
+                ScriptedReader::new(
+                    vec![
+                        Step::Chunk(first),
+                        Step::Eof,
+                        Step::Chunk(second),
+                        Step::EofStop,
+                    ]
+                    .into_iter(),
+                    stop.clone(),
+                ),
+                stop,
+            );
+
+        assert_eq!(
+            concrete.count("agent-tool-call"),
+            1,
+            "split tool_use line must rejoin across EOF and emit exactly one event"
+        );
     }
 }

@@ -44,17 +44,17 @@ When appending findings to a pattern file, label the source so future readers ca
 | Pattern                                                              | Category           | Findings | Refs | Last Updated |
 | -------------------------------------------------------------------- | ------------------ | -------- | ---- | ------------ |
 | [Filesystem Scope](patterns/filesystem-scope.md)                     | security           | 21       | 3    | 2026-05-20   |
-| [React Lifecycle](patterns/react-lifecycle.md)                       | react-patterns     | 25       | 9    | 2026-05-31   |
-| [Resource Cleanup](patterns/resource-cleanup.md)                     | react-patterns     | 3        | 3    | 2026-05-24   |
-| [Cross-Platform Paths](patterns/cross-platform-paths.md)             | cross-platform     | 4        | 3    | 2026-05-07   |
+| [React Lifecycle](patterns/react-lifecycle.md)                       | react-patterns     | 25       | 9    | 2026-05-27   |
+| [Resource Cleanup](patterns/resource-cleanup.md)                     | react-patterns     | 4        | 3    | 2026-05-30   |
+| [Cross-Platform Paths](patterns/cross-platform-paths.md)             | cross-platform     | 6        | 3    | 2026-05-30   |
 | [Debug Artifacts](patterns/debug-artifacts.md)                       | code-quality       | 5        | 0    | 2026-05-09   |
 | [Generated Artifacts](patterns/generated-artifacts.md)               | code-quality       | 3        | 2    | 2026-05-25   |
 | [Generated Shell Scripts](patterns/generated-shell-scripts.md)       | backend            | 3        | 0    | 2026-06-02   |
-| [Testing Gaps](patterns/testing-gaps.md)                             | testing            | 55       | 25   | 2026-05-28   |
+| [Testing Gaps](patterns/testing-gaps.md)                             | testing            | 58       | 25   | 2026-05-30   |
 | [Terminal Input Handling](patterns/terminal-input-handling.md)       | terminal           | 4        | 2    | 2026-05-24   |
-| [Documentation Accuracy](patterns/documentation-accuracy.md)         | code-quality       | 79       | 24   | 2026-06-01   |
+| [Documentation Accuracy](patterns/documentation-accuracy.md)         | code-quality       | 82       | 24   | 2026-06-01   |
 | [Accessibility](patterns/accessibility.md)                           | a11y               | 25       | 6    | 2026-05-09   |
-| [Async Race Conditions](patterns/async-race-conditions.md)           | react-patterns     | 45       | 12   | 2026-05-31   |
+| [Async Race Conditions](patterns/async-race-conditions.md)           | react-patterns     | 56       | 15   | 2026-05-31   |
 | [Tokio Blocking On Async](patterns/tokio-blocking-on-async.md)       | backend            | 2        | 1    | 2026-05-20   |
 | [Command Injection](patterns/command-injection.md)                   | security           | 7        | 3    | 2026-05-02   |
 | [Policy Judge Hygiene](patterns/policy-judge-hygiene.md)             | security           | 15       | 2    | 2026-04-20   |
@@ -64,12 +64,13 @@ When appending findings to a pattern file, label the source so future readers ca
 | [PTY Session Management](patterns/pty-session-management.md)         | backend            | 8        | 2    | 2026-05-28   |
 | [Git Operations](patterns/git-operations.md)                         | correctness        | 25       | 10   | 2026-05-31   |
 | [CodeMirror Integration](patterns/codemirror-integration.md)         | editor             | 12       | 0    | 2026-04-11   |
-| [Error Surfacing](patterns/error-surfacing.md)                       | error-handling     | 31       | 7    | 2026-05-31   |
+| [Error Surfacing](patterns/error-surfacing.md)                       | error-handling     | 34       | 8    | 2026-05-31   |
 | [File Tree Paths](patterns/file-tree-paths.md)                       | files              | 4        | 0    | 2026-04-10   |
 | [Scope Boundary](patterns/scope-boundary.md)                         | review-process     | 8        | 3    | 2026-06-01   |
 | [E2E Testing](patterns/e2e-testing.md)                               | e2e-testing        | 18       | 6    | 2026-05-20   |
-| [Module Boundaries](patterns/module-boundaries.md)                   | code-quality       | 3        | 1    | 2026-05-07   |
+| [Module Boundaries](patterns/module-boundaries.md)                   | code-quality       | 12       | 1    | 2026-05-30   |
 | [Diagnostic Instrumentation](patterns/diagnostic-instrumentation.md) | code-quality       | 7        | 2    | 2026-05-02   |
 | [Keyboard Shortcut Guards](patterns/keyboard-shortcut-guards.md)     | keyboard-shortcuts | 18       | 0    | 2026-05-26   |
 | [Verify Render Target](patterns/verify-render-target.md)             | code-quality       | 2        | 0    | 2026-05-24   |
 | [Status Indicator Display](patterns/status-indicator-display.md)     | code-quality       | 3        | 0    | 2026-05-26   |
+| [Parser Resilience](patterns/parser-resilience.md)                   | code-quality       | 5        | 4    | 2026-05-31   |

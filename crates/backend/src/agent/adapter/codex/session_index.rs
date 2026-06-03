@@ -1,4 +1,14 @@
 //! Codex `session_index.jsonl` watcher.
+//!
+//! Spawned by `base::watcher_runtime::start_watching` for live Codex sessions
+//! whose locator surfaced an `agent_session_id`. Polls
+//! `<codex_home>/session_index.jsonl` for changes, emits
+//! `agent-session-title` events as `thread_name` updates land, and reconciles
+//! AI-generated thread names with pending `/rename` claims recorded via
+//! `record_user_rename` from the rename IPC. The watcher's lifetime is bound
+//! 1:1 to the `WatcherHandle` (Drop signals stop + joins the thread). PR
+//! #302 codex review F5 re-wired this path after the agent-adapter refactor
+//! initially dropped the production caller.
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -51,6 +61,50 @@ pub fn spawn_watch(
     events: Arc<dyn EventSink>,
     stop: Arc<AtomicBool>,
 ) -> std::thread::JoinHandle<()> {
+    spawn_watch_inner(path, agent_session_id, session_id, events, stop, None)
+}
+
+/// Test-only spawn that signals lifecycle phases over a channel so tests
+/// can wait on real watcher progress instead of wall-clock sleeps.
+///
+/// Two phase tags are emitted in order:
+///
+/// - `"initial-read"` — fires after the watcher's first
+///   `read_thread_name` + `try_emit` pass completes, before the poll loop
+///   starts. Always fires (even when the initial read yields no title)
+///   so the test knows the watcher is past startup.
+/// - `"mtime-update"` — fires after every mtime-triggered re-read +
+///   `try_emit` pass inside the poll loop. Multiple sends across the
+///   watcher's lifetime; the test reads them in arrival order.
+///
+/// Sends are non-blocking and swallow `SendError` (test may have dropped
+/// the receiver) so the watcher's correctness never depends on whether
+/// anyone is listening. Production `spawn_watch` passes `None` for
+/// `sync_tx`, so the channel sends are eliminated by the
+/// `if let Some(...)` guard with zero overhead in release builds.
+/// PR #302 cycle 4 — replaces wall-clock sleeps in
+/// `mtime_change_picks_up_new_thread_name` with deterministic
+/// signal-and-wait.
+#[cfg(test)]
+pub(crate) fn spawn_watch_with_sync(
+    path: PathBuf,
+    agent_session_id: String,
+    session_id: String,
+    events: Arc<dyn EventSink>,
+    stop: Arc<AtomicBool>,
+    sync_tx: std::sync::mpsc::Sender<&'static str>,
+) -> std::thread::JoinHandle<()> {
+    spawn_watch_inner(path, agent_session_id, session_id, events, stop, Some(sync_tx))
+}
+
+fn spawn_watch_inner(
+    path: PathBuf,
+    agent_session_id: String,
+    session_id: String,
+    events: Arc<dyn EventSink>,
+    stop: Arc<AtomicBool>,
+    sync_tx: Option<std::sync::mpsc::Sender<&'static str>>,
+) -> std::thread::JoinHandle<()> {
     std::thread::spawn(move || {
         let mut last_emitted_title: Option<String> = None;
         let mut last_mtime = modified_time(&path);
@@ -63,6 +117,12 @@ pub fn spawn_watch(
                 &title,
                 &mut last_emitted_title,
             );
+        }
+        // Signal "watcher past initial read" regardless of whether the
+        // initial read yielded a title — the test wants to know startup
+        // is complete before it writes a new file (PR #302 cycle 4).
+        if let Some(tx) = &sync_tx {
+            let _ = tx.send("initial-read");
         }
 
         loop {
@@ -105,6 +165,13 @@ pub fn spawn_watch(
                     );
                 }
                 None => {}
+            }
+            // Signal "watcher re-read and processed an mtime change" so
+            // the test can synchronize on real progress (PR #302 cycle 4).
+            // Fires AFTER `try_emit` so any expected event is already in
+            // the sink when the receiver unblocks.
+            if let Some(tx) = &sync_tx {
+                let _ = tx.send("mtime-update");
             }
         }
     })
@@ -512,27 +579,83 @@ mod tests {
 
     #[test]
     fn mtime_change_picks_up_new_thread_name() {
+        // PR #302 cycle 4 — was a wall-clock-sleep test (50ms + 1100ms +
+        // 700ms ≈ 1.85s minimum, flake-prone on loaded CI). Replaced
+        // wall-clock waits with `spawn_watch_with_sync` so the test
+        // observes REAL watcher progress signals instead of arbitrary
+        // sleeps. Deterministic on the scheduler axis; runs in well
+        // under a second.
+        //
+        // PR #302 cycle 7 — also force the seed file's mtime two
+        // seconds into the past before spawning the watcher, so the
+        // watcher's recorded `last_mtime` is unambiguously older than
+        // the test's later rewrite even on filesystems with 1-second
+        // mtime resolution (HFS+ pre-APFS, FAT32, some FUSE-mounted
+        // tmpdirs). Without this, the seed-write and the rewrite can
+        // share a second boundary on fast machines + coarse FS,
+        // producing identical mtimes, the watcher's
+        // `current_mtime == last_mtime` guard skips the change, and
+        // the test's `recv_timeout` would expire as a spurious flake.
         let dir = TempDir::new().expect("tempdir");
         let path = write_index(&dir, &[("abc-uuid", "first")]);
+
+        // Force the seed file's mtime backward so it predates the
+        // rewrite by at least 2 seconds — well above the worst-case
+        // 1-second filesystem resolution. Use `File::set_modified`
+        // (std, stable since Rust 1.75) so this works without an
+        // extra direct dep on the `filetime` crate (which is already
+        // pulled in transitively by `notify`).
+        let seed_file = std::fs::OpenOptions::new()
+            .write(true)
+            .open(&path)
+            .expect("open seed file for mtime adjustment");
+        seed_file
+            .set_modified(SystemTime::now() - Duration::from_secs(2))
+            .expect("set_modified backward on seed file");
+        drop(seed_file);
+
         let sink: Arc<FakeEventSink> = Arc::new(FakeEventSink::new());
         let sink_dyn: Arc<dyn EventSink> = sink.clone();
         let stop = Arc::new(AtomicBool::new(false));
-        let handle = spawn_watch(
+        let (sync_tx, sync_rx) = std::sync::mpsc::channel::<&'static str>();
+        // Generous timeout — well above any reasonable scheduler hiccup
+        // while still keeping the suite fast on the happy path. A test
+        // that genuinely deadlocks here would surface as a flake-style
+        // timeout rather than wedge the suite.
+        let recv_timeout = Duration::from_secs(5);
+
+        let handle = spawn_watch_with_sync(
             path.clone(),
             "abc-uuid".into(),
             "pty-1".into(),
             sink_dyn,
             Arc::clone(&stop),
+            sync_tx,
         );
 
-        std::thread::sleep(Duration::from_millis(50));
-        std::thread::sleep(Duration::from_millis(1100));
+        // Phase 1: wait for the watcher to finish its initial read of
+        // the seeded "first" row. After this signal the sink contains
+        // the "first" title event.
+        let phase1 = sync_rx
+            .recv_timeout(recv_timeout)
+            .expect("initial-read signal should arrive");
+        assert_eq!(phase1, "initial-read");
+
+        // Phase 2: rewrite the file with the new "second" row. The
+        // watcher's next poll-tick will detect the mtime change.
         std::fs::write(
             &path,
             r#"{"id":"abc-uuid","thread_name":"second","updated_at":"2026-05-23T00:00:01Z"}"#,
         )
         .expect("rewrite index");
-        std::thread::sleep(Duration::from_millis(700));
+
+        // Phase 3: wait for the watcher to process the mtime change.
+        let phase2 = sync_rx
+            .recv_timeout(recv_timeout)
+            .expect("mtime-update signal should arrive");
+        assert_eq!(phase2, "mtime-update");
+
+        // Stop + join now that both expected emits have happened.
         stop.store(true, Ordering::Release);
         handle.join().expect("join watcher");
 

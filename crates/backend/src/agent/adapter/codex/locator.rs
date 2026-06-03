@@ -24,6 +24,17 @@ pub enum LocatorError {
     Fatal(String),
 }
 
+/// Shared prefix tying the `SqliteFirstLocator` schema-drift producer
+/// sites to the `CompositeLocator::resolve_rollout` fallback-dispatch
+/// guard. Two producers (`"threads table not found"` and
+/// `"logs table not found"`) prepend this string; the consumer checks
+/// `reason.starts_with(SCHEMA_DRIFT_ERROR_PREFIX)`. Centralizing here
+/// gives the build a compile-time contract — renaming the constant
+/// updates all three sites in one diff (PR #261 cycle 15 review F40 —
+/// the prior bare-string-literal form left the consumer guard 350
+/// lines from the producers and trivially breakable by a rename).
+pub(super) const SCHEMA_DRIFT_ERROR_PREFIX: &str = "schema drift: ";
+
 impl std::fmt::Display for LocatorError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -103,15 +114,38 @@ fn extract_numeric_suffix(name: &str) -> u32 {
 
 pub struct SqliteFirstLocator {
     pub codex_home: PathBuf,
-    proc_root: PathBuf,
+    /// `Some(path)` on Linux (and in test harnesses that inject a
+    /// tempdir-based fake proc); `None` on macOS/Windows where the
+    /// `/proc` filesystem does not exist. The proc-backed fast-paths
+    /// (`resume_thread_id_from_proc`, `open_rollout_paths_from_proc`)
+    /// SKIP themselves when this is `None` rather than attempting to
+    /// open `/proc/<pid>/cmdline` and silently failing with ENOENT
+    /// (PR #302 Claude review F1 — the previous production fallback
+    /// hardcoded `/proc` even on non-Linux, contradicting the design
+    /// documented on `default_proc_root()` and `CompositeLocator::new`).
+    proc_root: Option<PathBuf>,
 }
 
 impl SqliteFirstLocator {
+    /// Default-`Some("/proc")` constructor — used by `locator` unit tests
+    /// that don't need to inject a fake proc root. Production callers
+    /// go through `CompositeLocator::new` → `with_proc_root` so
+    /// `AttachContext.proc_root` (which is `None` on non-Linux) flows
+    /// through and the proc fast-paths gate themselves.
+    #[cfg(test)]
     pub fn new(codex_home: PathBuf) -> Self {
-        Self::with_proc_root(codex_home, PathBuf::from("/proc"))
+        Self::with_proc_root(codex_home, Some(PathBuf::from("/proc")))
     }
 
-    fn with_proc_root(codex_home: PathBuf, proc_root: PathBuf) -> Self {
+    /// Explicit `proc_root` constructor. `pub(super)` so
+    /// `CompositeLocator::new` can thread an `AttachContext`-derived
+    /// `Option<PathBuf>` through. `None` disables the proc-backed
+    /// fast-paths (the locator falls through to the logs / FS-scan
+    /// strategies); `Some(path)` enables them rooted at the given
+    /// directory (PR #261 cycle 8 F22 added the proc_root parameter,
+    /// PR #302 Claude review F1 widened it to `Option` so non-Linux
+    /// production callers stop probing nonexistent `/proc` paths).
+    pub(super) fn with_proc_root(codex_home: PathBuf, proc_root: Option<PathBuf>) -> Self {
         Self {
             codex_home,
             proc_root,
@@ -283,7 +317,13 @@ impl SqliteFirstLocator {
         state_path: &Path,
         ctx: &BindContext<'_>,
     ) -> Result<Option<RolloutLocation>, LocatorError> {
-        let Some(thread_id) = resume_thread_id_from_proc(&self.proc_root, ctx.pid) else {
+        // No proc root on this platform — the resume-argv fast-path is a
+        // Linux-only probe. Caller falls through to the FS-scan / logs path
+        // (PR #302 Claude review F1).
+        let Some(proc_root) = self.proc_root.as_deref() else {
+            return Ok(None);
+        };
+        let Some(thread_id) = resume_thread_id_from_proc(proc_root, ctx.pid) else {
             return Ok(None);
         };
 
@@ -306,8 +346,13 @@ impl SqliteFirstLocator {
         state_path: &Path,
         ctx: &BindContext<'_>,
     ) -> Result<Option<RolloutLocation>, LocatorError> {
-        let rollout_paths =
-            open_rollout_paths_from_proc(&self.proc_root, ctx.pid, &self.codex_home);
+        // Same platform gate as `resolve_from_resume_arg` — opening
+        // `/proc/<pid>/fd/*` only makes sense on Linux (PR #302 Claude
+        // review F1).
+        let Some(proc_root) = self.proc_root.as_deref() else {
+            return Ok(None);
+        };
+        let rollout_paths = open_rollout_paths_from_proc(proc_root, ctx.pid, &self.codex_home);
         if rollout_paths.is_empty() {
             return Ok(None);
         }
@@ -347,9 +392,10 @@ impl CodexSessionLocator for SqliteFirstLocator {
         })?;
 
         let Some(state_path) = state_db else {
-            return Err(LocatorError::Unresolved(
-                "schema drift: threads table not found".to_string(),
-            ));
+            return Err(LocatorError::Unresolved(format!(
+                "{}threads table not found",
+                SCHEMA_DRIFT_ERROR_PREFIX
+            )));
         };
 
         if let Some(location) = self.resolve_from_resume_arg(&state_path, ctx)? {
@@ -360,9 +406,10 @@ impl CodexSessionLocator for SqliteFirstLocator {
         }
 
         let Some(logs_path) = logs_db else {
-            return Err(LocatorError::Unresolved(
-                "schema drift: logs table not found".to_string(),
-            ));
+            return Err(LocatorError::Unresolved(format!(
+                "{}logs table not found",
+                SCHEMA_DRIFT_ERROR_PREFIX
+            )));
         };
 
         let (pty_secs, pty_nanos) = pty_start_to_secs_nanos(ctx.pty_start)?;
@@ -589,27 +636,224 @@ impl CodexSessionLocator for FsScanFallback {
 pub struct CompositeLocator {
     primary: SqliteFirstLocator,
     fallback: FsScanFallback,
+    /// Codex home directory (`~/.codex` by default). Held here so the
+    /// `StatusSourceLocator` impl can use it as the `trust_root` for
+    /// the returned `LocatedStatusSource` without an extra clone from
+    /// the adapter.
+    codex_home: PathBuf,
+    /// PID of the detected `codex` process inside the PTY session.
+    /// Step B' moved this out of `CodexAdapter` and into the locator
+    /// per frozen constraint #2: the `StatusSourceLocator` impl
+    /// (below) needs to build the `BindContext` it forwards to the
+    /// SQLite-first / FS-scan strategies, and that context wants
+    /// pid + pty_start.
+    pid: u32,
+    /// `SystemTime` when the PTY session was spawned. Used by the
+    /// SQLite filter to exclude stale rollout rows from earlier
+    /// processes.
+    pty_start: SystemTime,
 }
 
+// ----- Step B' retry budget (moved here from `codex/mod.rs`) -----
+//
+// Per frozen constraint #2: "Codex retry lives inside
+// `CompositeLocator::resolve_rollout`'s `StatusSourceLocator` impl,
+// NOT around individual SQLite/FS strategies." The retry sits at
+// `<CompositeLocator as StatusSourceLocator>::locate` below — one
+// wrapper around the strategy chain, so a transient
+// `NotYetReady` from EITHER strategy gets retried, but each strategy
+// runs only once per retry iteration.
+
+const CODEX_BIND_RETRY_INTERVAL_MS: u64 = 100;
+const CODEX_BIND_RETRY_MAX_ATTEMPTS: u32 = 5;
+
 impl CompositeLocator {
-    pub fn new(codex_home: PathBuf) -> Self {
+    /// `proc_root` lets `AttachContext` inject the platform's proc
+    /// directory (`Some("/proc")` on Linux), a tempdir-based fake proc
+    /// for tests, or `None` on macOS / Windows where the `/proc`
+    /// filesystem does not exist (PR #261 cycle 8 F22 added the
+    /// parameter; PR #302 Claude review F1 widened it to `Option` so
+    /// non-Linux callers stop hardcoding a nonexistent path). Production
+    /// sites pass `ctx.proc_root.clone()` directly from
+    /// `AgentBindings::for_attach`; the proc-backed fast-paths inside
+    /// `SqliteFirstLocator` skip themselves when this is `None`, so the
+    /// locator falls through cleanly to the logs / FS-scan strategies.
+    pub fn new(
+        codex_home: PathBuf,
+        pid: u32,
+        pty_start: SystemTime,
+        proc_root: Option<PathBuf>,
+    ) -> Self {
+        // No log here. PR #261 cycle 4 F13 / cycle 11 F31:
+        // `AgentBindings::for_attach` historically constructed two
+        // `CompositeLocator`s per Codex attach (one outer, one inside
+        // `CodexAdapter`). Cycle 11 fixed that by sharing a single
+        // `Arc<CompositeLocator>` between `bindings.locator` and
+        // `CodexAdapter::with_locator`, but the log site still belongs
+        // here-or-the-caller decision stands: the attach-once
+        // observability lives in `for_attach` so it fires exactly once
+        // per attach regardless of how many adapters / consumers
+        // clone the resulting `Arc`.
         Self {
-            primary: SqliteFirstLocator::new(codex_home.clone()),
-            fallback: FsScanFallback::new(codex_home),
+            primary: SqliteFirstLocator::with_proc_root(codex_home.clone(), proc_root),
+            fallback: FsScanFallback::new(codex_home.clone()),
+            codex_home,
+            pid,
+            pty_start,
         }
     }
 }
 
 impl CodexSessionLocator for CompositeLocator {
+    /// Two-strategy dispatch with an INTENTIONALLY narrow fallback
+    /// gate. `FsScanFallback` runs only when `SqliteFirstLocator`
+    /// reported `Unresolved(reason)` that **starts** with the
+    /// `"schema drift: "` prefix — i.e. the SQLite tables themselves
+    /// are missing or renamed.
+    ///
+    /// Ambiguity-class `Unresolved` errors (`"multiple codex session
+    /// candidates matched cwd"` / `"multiple ... remained after bind
+    /// heuristics"`) propagate to the caller and bubble up as
+    /// `"codex bind ambiguous: ..."` without consulting the fallback.
+    /// This is the **mutually-exclusive** design from the original
+    /// design pass: the two strategies read different data sources
+    /// (SQLite `threads.cwd` vs. JSONL `/payload/cwd`), and an
+    /// ambiguity in one is overwhelmingly likely to also be an
+    /// ambiguity in the other; dispatching the fallback would mostly
+    /// add latency and either find the same N candidates or pick a
+    /// different one for non-principled reasons (PR #261 cycle 12
+    /// review F34 — reviewer flagged this as a potential recovery
+    /// path but rated the suggestion 72% confidence with an explicit
+    /// "the 'mutually exclusive' design rationale is legitimate"
+    /// caveat; documenting the intent so future reviewers don't
+    /// re-flag the same design choice).
     fn resolve_rollout(&self, ctx: &BindContext<'_>) -> Result<RolloutLocation, LocatorError> {
         match self.primary.resolve_rollout(ctx) {
             Ok(location) => Ok(location),
-            Err(LocatorError::Unresolved(reason)) if reason.contains("schema drift") => {
+            // `starts_with(SCHEMA_DRIFT_ERROR_PREFIX)` rather than
+            // `contains(...)` because the prefix is the structurally
+            // significant part. Both producer sites in
+            // `SqliteFirstLocator` build their message via
+            // `format!("{}...", SCHEMA_DRIFT_ERROR_PREFIX)`, so a
+            // rename of the constant updates both producers AND this
+            // consumer in one diff — compile-time contract between
+            // the three sites (PR #261 cycle 13 F35 introduced the
+            // prefix match; cycle 15 F40 added the shared constant
+            // so the guard can't silently desync from the producers).
+            Err(LocatorError::Unresolved(reason))
+                if reason.starts_with(SCHEMA_DRIFT_ERROR_PREFIX) =>
+            {
                 self.fallback.resolve_rollout(ctx)
             }
             Err(other) => Err(other),
         }
     }
+}
+
+// ----------- Step B' new trait surface -----------
+//
+// `StatusSourceLocator::locate` wraps `resolve_rollout` with the
+// codex bind retry budget (5 attempts × 100ms inter-attempt sleeps).
+// Per frozen constraint #2, the retry lives at THIS boundary — one
+// outer loop around the full primary→fallback chain, not around
+// individual strategies.
+
+impl crate::agent::adapter::traits::StatusSourceLocator for CompositeLocator {
+    fn locate(
+        &self,
+        cwd: &std::path::Path,
+        _session_id: &str,
+    ) -> Result<crate::agent::adapter::types::LocatedStatusSource, String> {
+        let ctx = BindContext {
+            cwd,
+            pid: self.pid,
+            pty_start: self.pty_start,
+        };
+        let location = retry_locator(|| self.resolve_rollout(&ctx))?;
+        // `to_str()` rejects non-UTF-8 paths by returning `None`,
+        // producing a clean `TxOutcome::NoPath` downstream. The
+        // previous `to_string_lossy().into_owned()` silently replaced
+        // invalid bytes with U+FFFD, yielding a "valid" String that
+        // then failed `validate_transcript_path` on every watcher tick
+        // — invisible at attach-time, noisy per-update warn spam.
+        // PR #261 cycle 6 review F18 — Codex paths under `~/.codex/`
+        // are ASCII in practice but the defensive None handles the
+        // edge case (Windows home dirs with non-UTF-8 bytes, etc.).
+        let static_transcript_hint = location.rollout_path.to_str().map(str::to_owned);
+        if static_transcript_hint.is_none() {
+            // Attach-time anchor so operators correlating "AgentToolCall
+            // stream is empty for this session" have a single log line
+            // to grep for rather than per-tick `TxOutcome::NoPath`
+            // sentinels (PR #261 cycle 12 review F33). Fires at most
+            // once per attach.
+            log::warn!(
+                "codex: rollout_path contains non-UTF-8 bytes — transcript tailing disabled (path={:?})",
+                location.rollout_path,
+            );
+        }
+        Ok(crate::agent::adapter::types::LocatedStatusSource {
+            status_path: location.rollout_path,
+            trust_root: self.codex_home.clone(),
+            static_transcript_hint,
+            // Codex's `thread_id` IS its agent_session_id — the same value
+            // that appears as `id` in `session_index.jsonl`. Surfaces here
+            // so `SessionLifecycle` can wire the codex title-sync watcher
+            // back into production (PR #302 codex review F5 — the previous
+            // refactor dropped this wiring, parking `agent-session-title`
+            // emits for live Codex sessions).
+            agent_session_id: Some(location.thread_id),
+        })
+    }
+}
+
+/// Retry a codex locator resolution up to the bind budget.
+///
+/// Moved from `codex/mod.rs` to live with the locator that uses it.
+/// Private — the only caller is `StatusSourceLocator::locate`
+/// above and same-file `retry_locator_tests`. Cycle 5 (F15)
+/// narrowed `pub(crate)` → `pub(super)`; cycle 9 (F25) further
+/// narrowed to plain `fn` since `codex/mod.rs` (the only sibling
+/// module) has no caller. Closes the accidental surface so future
+/// code can't bypass the trait and reintroduce ad-hoc retry chains.
+fn retry_locator<F>(mut resolve: F) -> Result<RolloutLocation, String>
+where
+    F: FnMut() -> Result<RolloutLocation, LocatorError>,
+{
+    let started = std::time::Instant::now();
+    let mut last_reason = String::from("no attempts");
+
+    for attempt in 0..CODEX_BIND_RETRY_MAX_ATTEMPTS {
+        match resolve() {
+            Ok(location) => return Ok(location),
+            Err(LocatorError::NotYetReady) => {
+                last_reason = format!("not yet ready (attempt {})", attempt + 1);
+                if attempt + 1 < CODEX_BIND_RETRY_MAX_ATTEMPTS {
+                    std::thread::sleep(std::time::Duration::from_millis(
+                        CODEX_BIND_RETRY_INTERVAL_MS,
+                    ));
+                }
+            }
+            // Distinct prefixes so incident triage + log scraping can
+            // tell "no unique candidate" (ambiguous) apart from
+            // "filesystem / DB really broken" (fatal). The split also
+            // lines up with the `AttachError::LocatorAmbiguous` vs
+            // `LocatorFatal` enum split in `error.rs` (PR #261
+            // Claude review cycle 2, F4).
+            Err(LocatorError::Unresolved(reason)) => {
+                return Err(format!("codex bind ambiguous: {}", reason));
+            }
+            Err(LocatorError::Fatal(reason)) => {
+                return Err(format!("codex bind fatal: {}", reason));
+            }
+        }
+    }
+
+    log::warn!(
+        "codex bind retry exhausted after {} attempts (elapsed={:?})",
+        CODEX_BIND_RETRY_MAX_ATTEMPTS,
+        started.elapsed()
+    );
+    Err(format!("codex bind retry exhausted: {}", last_reason))
 }
 
 #[cfg(test)]
@@ -898,8 +1142,10 @@ mod sqlite_first_tests {
             &["/vendor/codex/codex", "resume", "thread-resume"],
         );
 
-        let locator =
-            SqliteFirstLocator::with_proc_root(dir.path().to_path_buf(), proc_root.path().into());
+        let locator = SqliteFirstLocator::with_proc_root(
+            dir.path().to_path_buf(),
+            Some(proc_root.path().into()),
+        );
         let result = locator
             .resolve_rollout(&ctx(dir.path(), 4242, SystemTime::now()))
             .expect("resume argv should bind");
@@ -929,14 +1175,49 @@ mod sqlite_first_tests {
         write_cmdline(proc_root.path(), 5151, &["/vendor/codex/codex"]);
         write_rollout_fd(proc_root.path(), 5151, "30", &rollout_path);
 
-        let locator =
-            SqliteFirstLocator::with_proc_root(dir.path().to_path_buf(), proc_root.path().into());
+        let locator = SqliteFirstLocator::with_proc_root(
+            dir.path().to_path_buf(),
+            Some(proc_root.path().into()),
+        );
         let result = locator
             .resolve_rollout(&ctx(dir.path(), 5151, SystemTime::now()))
             .expect("open rollout fd should bind");
 
         assert_eq!(result.thread_id, "thread-fd");
         assert_eq!(result.rollout_path, rollout_path);
+    }
+
+    #[test]
+    fn proc_root_none_skips_proc_fast_paths_and_falls_through_to_logs() {
+        // PR #302 Claude review F1 — non-Linux platforms (macOS / Windows)
+        // pass `proc_root: None` so the proc-backed fast-paths
+        // (`resume_thread_id_from_proc`, `open_rollout_paths_from_proc`)
+        // skip themselves rather than probing nonexistent `/proc/<pid>/`
+        // paths. Pin the contract: with `None`, the locator still binds
+        // via the logs-table path.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let logs = dir.path().join("logs_1.sqlite");
+        let state = dir.path().join("state_1.sqlite");
+        build_logs_db(&logs);
+        build_state_db(&state);
+
+        let pty_start = SystemTime::now() - Duration::from_secs(60);
+        let pty_secs = pty_start
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .expect("pty_start after epoch")
+            .as_secs() as i64;
+
+        insert_log_row(&logs, "pid:7777:abc", Some("thread-NL"), pty_secs + 5, 0);
+        insert_thread(&state, "thread-NL", "/tmp/rollout-NL.jsonl", 1000);
+
+        // Crucially: NO proc root. The proc fast-paths must not crash
+        // even though `self.proc_root` is `None`.
+        let locator = SqliteFirstLocator::with_proc_root(dir.path().to_path_buf(), None);
+        let result = locator
+            .resolve_rollout(&ctx(dir.path(), 7777, pty_start))
+            .expect("logs path binds when proc fast-paths are skipped");
+        assert_eq!(result.thread_id, "thread-NL");
+        assert_eq!(result.rollout_path, PathBuf::from("/tmp/rollout-NL.jsonl"));
     }
 
     #[test]
@@ -963,8 +1244,10 @@ mod sqlite_first_tests {
         let proc_root = fake_proc_root();
         write_cmdline(proc_root.path(), 9090, &["/vendor/codex/codex"]);
 
-        let locator =
-            SqliteFirstLocator::with_proc_root(dir.path().to_path_buf(), proc_root.path().into());
+        let locator = SqliteFirstLocator::with_proc_root(
+            dir.path().to_path_buf(),
+            Some(proc_root.path().into()),
+        );
         let result = locator
             .resolve_rollout(&ctx(dir.path(), 9090, pty_start))
             .expect("recent thread row should bind when logs are threadless");
@@ -1041,9 +1324,122 @@ mod fs_fallback_tests {
     #[test]
     fn composite_dispatches_schema_drift_to_fs() {
         let dir = tempfile::tempdir().expect("tempdir");
-        let composite = CompositeLocator::new(dir.path().to_path_buf());
+        // Step B': `CompositeLocator::new` now also takes pid +
+        // pty_start so the locator can own them (they used to live on
+        // `CodexAdapter`). The dummy values below don't matter for
+        // this test — `resolve_rollout` is called with an explicit
+        // `BindContext` that supplies its own pid/pty_start.
+        // PR #302 F1: `proc_root` is `Option<PathBuf>`. `Some("/proc")`
+        // here matches the pre-F1 behavior even though this test never
+        // exercises the proc fast-path (the FS scan fires on schema
+        // drift).
+        let composite = CompositeLocator::new(
+            dir.path().to_path_buf(),
+            0,
+            SystemTime::UNIX_EPOCH,
+            Some(PathBuf::from("/proc")),
+        );
         let result =
             composite.resolve_rollout(&ctx(std::path::Path::new("/tmp"), SystemTime::now()));
         assert!(matches!(result, Err(LocatorError::NotYetReady)));
+    }
+}
+
+#[cfg(test)]
+mod retry_locator_tests {
+    //! Step B': these tests moved here from `codex/mod.rs` alongside
+    //! `retry_locator` itself, so the helper and its regression suite
+    //! live together.
+
+    use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    #[test]
+    fn retries_on_not_yet_ready_then_succeeds() {
+        let calls = AtomicUsize::new(0);
+        let result = retry_locator(|| {
+            let n = calls.fetch_add(1, Ordering::SeqCst);
+            if n < 3 {
+                Err(LocatorError::NotYetReady)
+            } else {
+                Ok(RolloutLocation {
+                    rollout_path: PathBuf::from("/tmp/rollout.jsonl"),
+                    thread_id: "tid".to_string(),
+                    state_updated_at_ms: 0,
+                })
+            }
+        });
+
+        assert!(
+            result.is_ok(),
+            "expected Ok after 4th attempt: {:?}",
+            result
+        );
+        assert_eq!(calls.load(Ordering::SeqCst), 4);
+    }
+
+    #[test]
+    fn returns_err_when_retry_budget_exhausted() {
+        let calls = AtomicUsize::new(0);
+        let result = retry_locator(|| {
+            calls.fetch_add(1, Ordering::SeqCst);
+            Err(LocatorError::NotYetReady)
+        });
+
+        assert!(result.is_err());
+        assert!(
+            result.as_ref().unwrap_err().contains("retry exhausted"),
+            "expected 'retry exhausted' in: {:?}",
+            result
+        );
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            CODEX_BIND_RETRY_MAX_ATTEMPTS as usize,
+        );
+    }
+
+    #[test]
+    fn fatal_short_circuits_immediately() {
+        let calls = AtomicUsize::new(0);
+        let started = std::time::Instant::now();
+        let result = retry_locator(|| {
+            calls.fetch_add(1, Ordering::SeqCst);
+            Err(LocatorError::Fatal("permission denied".to_string()))
+        });
+
+        assert!(result.is_err());
+        assert!(result.as_ref().unwrap_err().contains("codex bind fatal"));
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        assert!(
+            started.elapsed() < std::time::Duration::from_millis(100),
+            "fatal should short-circuit: elapsed {:?}",
+            started.elapsed()
+        );
+    }
+
+    #[test]
+    fn unresolved_short_circuits_immediately_with_ambiguous_prefix() {
+        let calls = AtomicUsize::new(0);
+        let result = retry_locator(|| {
+            calls.fetch_add(1, Ordering::SeqCst);
+            Err(LocatorError::Unresolved("ambiguous candidates".to_string()))
+        });
+
+        assert!(result.is_err());
+        let err = result.as_ref().unwrap_err();
+        // PR #261 cycle 2: distinct prefix so log triage can tell
+        // ambiguous (no unique candidate) apart from fatal (FS / DB
+        // broken). Was previously merged under "codex bind fatal".
+        assert!(
+            err.contains("codex bind ambiguous"),
+            "expected ambiguous prefix, got: {}",
+            err,
+        );
+        assert!(
+            !err.contains("codex bind fatal"),
+            "ambiguous error must NOT emit the fatal prefix, got: {}",
+            err,
+        );
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
     }
 }

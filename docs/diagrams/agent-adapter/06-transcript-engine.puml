@@ -1,0 +1,108 @@
+@startuml
+title 6. Transcript tail engine (step C) — shared service + injected decoder
+
+skinparam classAttributeIconSize 0
+skinparam packageStyle rectangle
+
+interface "EventSink" as SINK
+
+interface "TranscriptStreamer\n(adapter trait, B')" as STR {
+  +tail(events, sid, path, cwd) : TranscriptHandle
+}
+
+package "adapter::base::transcript_tail_service" #DEF {
+  interface "TranscriptDecoder\n(Send)" as TD {
+    +decode_line(&mut self, line: &str)
+    +on_caught_up(&mut self)
+  }
+  class TranscriptTailService {
+    -decoder : Box<dyn TranscriptDecoder>
+    -provider_label : &'static str
+    -poll_interval : Duration
+    +new(decoder, provider_label) : Self
+    +run<R: BufRead>(self, reader, stop: Arc<AtomicBool>)
+    ~with_poll_interval(d)  // test only
+  }
+  note bottom of TranscriptTailService
+    Owns the ONE loop both providers shared:
+    read_line → buffer partial across EOF →
+    strip CRLF → skip blank → decode_line.
+    Ok(0) ⇒ on_caught_up + sleep(POLL_INTERVAL);
+    Err ⇒ warn + sleep + continue.
+    stop read with Ordering::Acquire.
+  end note
+}
+
+package "adapter::claude_code::transcript" #EFE {
+  class ClaudeTranscriptDecoder {
+    -events : Arc<dyn EventSink>
+    -session_id : String
+    -cwd : Option<PathBuf>
+    -in_flight : InFlightToolCalls
+    -num_turns : u32
+    -last_cwd : Option<String>
+    -emitter : TestRunEmitter
+  }
+  class "start_tailing()" as CST <<fn>> {
+    open → build decoder →
+    new(.., "transcript") →
+    spawn run(BufReader, stop)
+  }
+}
+
+package "adapter::codex::transcript" #FEF {
+  class CodexTranscriptDecoder {
+    -events : Arc<dyn EventSink>
+    -session_id : String
+    -cwd : Option<PathBuf>
+    -in_flight : InFlightToolCalls
+    -num_turns : u32
+    -last_cwd : Option<String>
+    -emitter : TestRunEmitter
+  }
+  class "start_tailing()" as XST <<fn>> {
+    open → build decoder →
+    new(.., "Codex rollout transcript") →
+    spawn run(BufReader, stop)
+  }
+}
+
+package "adapter::*::transcript_dto (Phase 1)" #FFE {
+  class ClaudeTranscriptLineDto <<lenient DTO>>
+  class CodexLineDto <<lenient DTO>>
+  class CodexPayloadDto <<lenient DTO>>
+}
+
+TD <|.. ClaudeTranscriptDecoder
+TD <|.. CodexTranscriptDecoder
+TranscriptTailService *-- TD : owns Box<dyn>\n(injected)
+
+STR ..> CST : Claude impl delegates
+STR ..> XST : Codex impl delegates
+CST ..> ClaudeTranscriptDecoder : builds
+CST ..> TranscriptTailService : builds + spawns
+XST ..> CodexTranscriptDecoder : builds
+XST ..> TranscriptTailService : builds + spawns
+
+ClaudeTranscriptDecoder ..> ClaudeTranscriptLineDto : parses once
+CodexTranscriptDecoder ..> CodexLineDto : parses once
+CodexTranscriptDecoder ..> CodexPayloadDto : payload parsed ONCE,\nshared by cwd + dispatch
+
+ClaudeTranscriptDecoder ..> SINK : agent-tool-call /\nagent-turn / agent-cwd
+CodexTranscriptDecoder ..> SINK : agent-tool-call /\nagent-turn / agent-cwd
+
+note right of TD
+  The ONLY provider-specific seam.
+  decode_line: one complete line → events.
+  on_caught_up: first EOF = replay→live
+  boundary (flush the replay emitter once).
+end note
+
+note bottom of CodexTranscriptDecoder
+  Phase-2 delay fix: decode_line parses the
+  payload ONCE per line, threading &payload to
+  both the cwd transition and the dispatch.
+  A response_item line parsed it twice pre-C.
+end note
+
+@enduml

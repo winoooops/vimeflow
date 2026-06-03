@@ -694,7 +694,34 @@ Stale documentation misleads future contributors and review agents.
 - **Fix:** Rewrote the English entry as "`#333344` thumb that brightens to `#4a444f` on hover" and updated the Chinese entry to cite the same target color "`#4a444f`" for parity. Code-review heuristic: when describing a hover/focus state change, name both colors explicitly rather than relying on "darkens"/"brightens" — readers can verify the direction without running a color picker, and a typo in the verb becomes immediately obvious against the surrounding context.
 - **Commit:** same commit as this entry
 
-### 74. Sticky-guard escape-hatch claim in the commit message had no implementation
+### 74. Trait docstring said "exactly once" but the engine fires on every empty-partial EOF — contract mismatch invites non-idempotent future implementations
+
+- **Source:** github-claude | PR #302 round 12 | 2026-05-30
+- **Severity:** HIGH
+- **File:** `crates/backend/src/agent/adapter/base/transcript_tail_service.rs` (`TranscriptDecoder::on_caught_up` trait + module-level docs)
+- **Finding:** `TranscriptTailService::run` calls `self.decoder.on_caught_up()` on EVERY `Ok(0)` read where the partial buffer is empty — including the 500ms steady-state poll during live tailing. But the trait docstring said "Used to flush replay-only emitter state **exactly once**" and called it "the replay→live boundary." Existing decoders (Claude + Codex) are idempotent and work correctly, so no current bug. But any future `TranscriptDecoder` implementer reading only the trait definition would write a non-idempotent handler — e.g. emitting a summary event, closing a streaming buffer, or flipping a state machine — which would misfire every 500ms during live tailing. The test suite uses `EofStop` (loop exits immediately), so no test exercised multiple consecutive EOF calls on an empty partial; the silent multi-fire was easy to miss.
+- **Fix:** Two safe options exist. (a) Add a `caught_up: bool` guard in the engine so the signal fires once per catch-up event (reset when data arrives). (b) Update the trait docstring + module-level doc to say "fires on every empty-partial EOF; MUST be idempotent." Chose (b) because (i) all current decoders are already idempotent so changing engine behavior could subtly alter event ordering for current code, (ii) the engine's actual behavior is in fact useful — implementations can rely on the signal as a steady-state "writer caught up" pulse and emit flushes as needed. Rewrote both docs to be explicit. Added regression test `engine_caught_up_fires_on_every_empty_eof_documenting_idempotency_requirement` that drives three consecutive empty-partial EOFs and asserts `caught == 3` — pins the contract so a future engine change (e.g. someone adding a `caught_up: bool` guard) breaks the test rather than silently shifting the contract.
+- **Code-review heuristic:** When a trait method's docstring uses absolute words ("exactly once", "always", "never"), have a test that PINS that property by exercising the boundary case. A test that only drives the happy-path case won't catch a contract drift between the doc and the implementation. The drift becomes a footgun once a third implementer arrives — the existing implementations are coincidentally fine but the next one isn't. Apply the same heuristic to ANY trait method whose contract has temporal quantifiers ("on the first X", "after every Y", "until Z fires").
+- **Commit:** _(PR #302 upsource cycle 12 fix commit)_
+
+### 75. Cycle-2 fix-doc-drift: `start()` doc listed the OLD verb sequence + `start_agent_watcher_inner` comment referenced the DELETED `base::start_for` after F.5 sealed the trust boundary
+
+- **Source:** github-claude | PR #302 round 3 | 2026-05-30
+- **Severity:** LOW
+- **File:** `crates/backend/src/agent/adapter/session_lifecycle.rs` L582-583 + `crates/backend/src/agent/adapter/mod.rs` L228-232
+- **Finding:** Two stale documentation references on adjacent code paths, both surfaced by the same cycle-2 fix that also changed the production ordering. (a) `SessionLifecycle::start`'s docstring still summarized the verb sequence as `locate → ensure_trust → evict_old → spawn_watch → register` — the pre-cycle-2 order — while the actual `run_watch_sequence` body and ITS docstring carried the fixed `spawn_watch → evict_old → register` order. A developer reasoning about restart safety from `start()`'s contract would see the race-unsafe pattern the fix was meant to eliminate. (b) `start_agent_watcher_inner`'s comment said "the spawn_blocking hand-off to `base::start_for`" — but `base::start_for` was deleted in F.5 of this same PR when the trust boundary was sealed and orchestration was inlined into `run_watch_sequence`. A grep for `start_for` finds nothing in production; the comment lies. Common pattern: same-PR refactors update the changed call sites and their immediate doc-comments but leave one-hop-away references stale because they "still parse" mentally.
+- **Fix:** Two surgical edits. (a) Rewrote `start()`'s docstring to list the cycle-3 final sequence `locate → ensure_trust → spawn_watch → register` and to spell out that `register` (via `AgentWatcherState::insert`) does the atomic replace by itself — explicitly noting that no separate evict step exists, and pointing forward at the verb's docstring for the atomicity invariant. (b) Replaced "spawn_blocking hand-off to `base::start_for`" with "spawn_blocking hand-off inside `SessionLifecycle::run_watch_sequence` (replaced the former D'-era `base::start_for` delegate when F.5 sealed the trust boundary and inlined orchestration)" — citing both the new home and the F.5 retirement so future grep audits don't have to re-derive the migration history. Code-review heuristic: when a refactor renames or deletes a function that's mentioned in adjacent module-level comments, grep the symbol globally BEFORE the PR lands — `git grep deleted_fn_name` is one command and catches every stale reference at once. Don't trust visual-only comment-review during code-review; humans read comments as "narrative" and pattern-match on what they expect rather than what's there.
+- **Commit:** same commit as this entry
+
+### 76. Stale `#[allow(dead_code)]` + outdated "future telemetry" docstring on a field that GAINED real consumers during the same multi-step PR
+
+- **Source:** github-claude | PR #302 round 6 | 2026-05-30
+- **Severity:** MEDIUM
+- **File:** `crates/backend/src/agent/adapter/bindings.rs` L37-48 (`AgentBindings::agent_type`)
+- **Finding:** Step B' of the v4-frozen plan introduced `AgentBindings.agent_type: AgentType` with `#[allow(dead_code)]` and a docstring saying "for diagnostics / future telemetry — the watcher doesn't branch on it." That was correct AT B' — no consumer existed. But later steps in the same PR (F.2–F.5 + cycle-1 F2 / F5) added TWO concrete consumers: `session_lifecycle::run_watch_sequence` now captures `let agent_type = bindings.agent_type` before `spawn_watch` consumes `bindings` and forwards it to `register` (which stamps it onto `WatcherHandle.agent_type` — the load-bearing field for the single-mutex atomicity guarantee), AND `base::start_watching` uses the same captured value to gate the codex `session_index.jsonl` title-sync thread spawn. The stale `#[allow(dead_code)]` was harmless (the field is `pub(crate)` so no lint would fire either way), but the docstring was actively misleading: a future contributor reading "future telemetry, watcher doesn't branch on it" and removing the field / the bindings captures would silently break Codex title-sync AND the agent_type_for_pty atomicity guarantee — the compile would succeed only because the consumer code would also need to be deleted, but a partial cleanup is exactly the failure mode the docstring invited.
+- **Fix:** Remove `#[allow(dead_code)]` entirely (no behavior change — `pub(crate)` fields don't trigger the dead-code lint). Rewrite the docstring to enumerate every field's production consumer, with explicit citations to the PR sub-steps that introduced each one. The new doc names: agent_type → consumed in `session_lifecycle::run_watch_sequence` (stamps `WatcherHandle.agent_type` via `register`) AND in `base::start_watching` (codex title-sync spawn gate); locator/decoder/transcript_paths/validator/streamer → their respective consumer sites. Cite "PR #302 cycle 1 F2" and "PR #302 cycle 1 F5" inline so the next maintainer can `git log -S "F2"` to find the full rationale rather than re-deriving it. Code-review heuristic: in any multi-step PR, when a sub-step adds a NEW consumer for a field/method previously marked dead-code or annotated "no current consumer", the cleanup pass MUST remove the stale annotation AND rewrite the docstring in the same sub-step that adds the consumer. Don't trust "I'll clean it up in the final review" — multi-PR series merge their sub-PRs incrementally, and the stale annotation/docstring lives in the codebase between each sub-PR landing. Concrete check: `git grep "#\[allow(dead_code)\]"` and `git grep "future telemetry\|future use\|not yet wired"` before merging any refactor PR.
+
+### 77. Sticky-guard escape-hatch claim in the commit message had no implementation
 
 - **Source:** github-claude | PR #317 cycle 1 | 2026-05-30
 - **Severity:** LOW
@@ -703,7 +730,7 @@ Stale documentation misleads future contributors and review agents.
 - **Fix:** Restructured the guard to gate on `payload.source` alone: `if (agentTitleSource === 'user-renamed' && payload.source === 'ai-generated') return pane`. user-renamed events (including `user-renamed + empty`) now fall through to the standard cleared path, which clears `agentTitle`, `agentTitleSource`, and `userLabel` — matching the stated design intent. Added a regression test (`user-renamed with empty title clears the sticky guard`) that locks the documented behavior in code so it can't drift back to dormant-only without breaking CI. Code-review heuristic: when a commit message documents an "escape hatch" or "design intent" not exercised by any current call site, add a test that locks the documented behavior in place — otherwise the divergence between doc and code is invisible until someone tries to use the hatch and finds it silently no-op'd.
 - **Commit:** same commit as this entry
 
-### 75. Test comment overstates guard scope from "ai-generated clears" to "all clears"
+### 78. Test comment overstates guard scope from "ai-generated clears" to "all clears"
 
 - **Source:** github-claude | PR #317 cycle 2 | 2026-05-31
 - **Severity:** LOW
@@ -712,7 +739,7 @@ Stale documentation misleads future contributors and review agents.
 - **Fix:** Changed the comment to "user-renamed is sticky against later **ai-generated** clears" so the phrasing matches the actual guard predicate. Code-review heuristic: when a guard predicate is narrow (filters on a specific source/value), every comment describing its effect must repeat that narrow qualifier — generic phrasing ("clears", "updates", "events") drifts toward overstating scope and misleads future readers who rely on comments as a behavioral contract.
 - **Commit:** same commit as this entry
 
-### 76. Reality check in IDEA Analysis section is narrower than canonical definition
+### 79. Reality check in IDEA Analysis section is narrower than canonical definition
 
 - **Source:** github-claude | PR #323 round 1 | 2026-06-01
 - **Severity:** MEDIUM
@@ -721,7 +748,7 @@ Stale documentation misleads future contributors and review agents.
 - **Fix:** Aligned line 281 with the full formulation from line 29
 - **Commit:** same commit as this entry
 
-### 77. idea-framework.md retains 'frame as follow-up' after parallel fix in code-reviewer.md
+### 80. idea-framework.md retains 'frame as follow-up' after parallel fix in code-reviewer.md
 
 - **Source:** github-claude | PR #323 round 2 | 2026-06-01
 - **Severity:** LOW
@@ -730,7 +757,7 @@ Stale documentation misleads future contributors and review agents.
 - **Fix:** Aligned `idea-framework.md` line 32 to "skip the finding entirely" to match the round 1 fix
 - **Commit:** same commit as this entry
 
-### 78. Stale `last_updated` frontmatter in pattern files after new entries committed
+### 81. Stale `last_updated` frontmatter in pattern files after new entries committed
 
 - **Source:** github-claude | PR #323 round 2 | 2026-06-01
 - **Severity:** LOW
@@ -739,7 +766,7 @@ Stale documentation misleads future contributors and review agents.
 - **Fix:** Updated `last_updated` to 2026-06-01 in both frontmatter blocks
 - **Commit:** same commit as this entry
 
-### 79. Reality check runtime scope contradicts Perfection trap's future-change cost
+### 82. Reality check runtime scope contradicts Perfection trap's future-change cost
 
 - **Source:** github-claude | PR #323 round 3 | 2026-06-01
 - **Severity:** MEDIUM
