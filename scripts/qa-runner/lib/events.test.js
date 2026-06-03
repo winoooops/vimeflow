@@ -48,4 +48,25 @@ describe('formatLinearEventComment', () => {
     expect(body).toContain('| Failed attempts | 3 / 3 |')
     expect(body).toContain('loop paused')
   })
+
+  test('formats non-paused fixer stalls as failed attempts', () => {
+    const body = formatLinearEventComment({
+      type: 'error',
+      pr: 42,
+      sourceEvent: 'comment:/upsource-review',
+      category: 'fixer_stall',
+      detail: 'fixer stall (watch.js exit 1)',
+      exitCode: 1,
+      signal: null,
+      exitReason: 'FIXER_EXIT #42: kimi failed (42)',
+      noopCount: 1,
+      maxNoops: 3,
+      terminal: false,
+    })
+
+    expect(body).toContain('## QA runner cycle exit: FIXER_STALL')
+    expect(body).toContain('| Source event | comment:/upsource-review |')
+    expect(body).toContain('| Failed attempts | 1 / 3 |')
+    expect(body).toContain('without daemon backoff')
+  })
 })

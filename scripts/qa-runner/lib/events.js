@@ -23,9 +23,11 @@ const tableValue = (value) =>
 
 const formatCycleExitComment = (e) => {
   const terminal = e.type === 'paused' || e.terminal
+  const fixerStall = e.category === 'fixer_stall'
+  const cycleState = terminal ? 'PAUSED' : fixerStall ? 'FIXER_STALL' : 'RETRY'
 
   const lines = [
-    `## QA runner cycle exit: ${terminal ? 'PAUSED' : 'RETRY'}`,
+    `## QA runner cycle exit: ${cycleState}`,
     '',
     '| Field | Value |',
     '| --- | --- |',
@@ -54,7 +56,9 @@ const formatCycleExitComment = (e) => {
     '',
     terminal
       ? 'Action: loop paused. A new head, CI/review event, or manual requeue is required before routine polling resumes.'
-      : 'Action: recorded the recoverable exit without incrementing the fixer failure streak. Poll-triggered exits retry on the next poll tick; webhook/manual exits are requeued by daemon backoff.'
+      : fixerStall
+        ? 'Action: recorded a failed fixer attempt without daemon backoff. Routine polling or a new review/CI event may dispatch another fixer cycle until the failed-attempt limit is reached.'
+        : 'Action: recorded the recoverable exit without incrementing the fixer failure streak. Poll-triggered exits retry on the next poll tick; webhook/manual exits are requeued by daemon backoff.'
   )
 
   return lines.join('\n')
