@@ -20,7 +20,7 @@ The backend persistence change (§3) is the **first commit of PR1** — the UI c
 
 1. A scratch shell is a **separate PTY** associated with a pane but **never a `Pane`** in `Session.panes` — so it never consumes layout capacity (`SplitView/layouts.ts`) and never enters the frontend session graph.
 2. Spawned with `ephemeral: true` (§3) **and** `enableAgentBridge: false` — no `sessions.json` entry, no `.vimeflow/sessions/<uuid>/` bridge dir.
-3. **Never persisted, reaped on reload** — absent from `sessions.json`/`session_order`; the sidecar tracks ephemeral ptyIds in memory and reaps them on renderer boot (§3.4), so a scratch shell never survives an app restart _or a renderer reload_ and never lingers as an orphaned child process.
+3. **Never persisted, reaped on reload** — absent from `sessions.json`/`session_order`; the sidecar tracks ephemeral ptyIds in memory and reaps them on renderer boot (§3.4), so a scratch shell never returns as a ghost tab and is reaped after a renderer reload or graceful quit. (A hard _sidecar_ crash loses the in-memory set and can orphan a scratch child exactly as it already orphans a normal pane shell — see §3.4; this feature does not make it worse.)
 4. **Hide ≠ kill** — dismissing the popup hides it; the PTY and its child processes keep running (until the host pane closes, or a renderer reload reaps it per §3.4).
 5. **cwd isolated** — inherits the host pane's `cwd` on first open; `cd` inside never calls `updatePaneCwd`, so pane/session cwd is untouched.
 6. Each scratch shell has its **own ptyId**, distinct from the host pane's main-shell ptyId (the `terminalCache` at `Body.tsx:86` is 1:1 per ptyId).
@@ -56,9 +56,11 @@ Skipping the cache write keeps the PTY out of `sessions.json`, but the live PTY 
 Mitigation has two layers, because **nothing currently kills PTY children on shutdown** — `BackendState::shutdown()` (`state.rs:76-80`) only clears the cache, and portable_pty's `Child::Drop` does not kill the process (`commands.rs:360-363`); children are reaped only on explicit `kill_pty` or spawn-failure rollback. So normal pane shells already orphan on a hard quit, and ephemeral scratch shells would too. We add:
 
 - **An in-memory ephemeral set in `PtyState`**, populated at spawn — never persisted; its lifetime is exactly the sidecar process.
-- **Authoritative reap-on-boot.** On renderer boot/reconcile the frontend calls a backend reap (`kill_ephemeral_ptys`) that kills every PTY in that set. Because the sidecar (and the set) outlive a renderer reload, this catches reload-orphans; it survives a renderer SIGKILL/crash (no exit hook involved) and is the load-bearing guarantee.
+- **Authoritative reap-on-boot.** On renderer boot/reconcile the frontend calls a backend reap (`kill_ephemeral_ptys`) that kills every PTY in that set, then **scratch spawning is gated until that reap resolves** (so a freshly-spawned scratch can't be caught by its own boot reap). Because the sidecar (and the set) outlive a renderer reload/crash, this catches reload-orphans without any exit hook — it is the load-bearing guarantee for the common case (renderer reload, dev HMR, renderer crash; the sidecar stays alive).
 - **Best-effort shutdown kill.** Extend `BackendState::shutdown()` to also kill the ephemeral set on the graceful `shutdown` frame, so a clean quit doesn't leave a stray `npm run dev` reparented to init between sessions. (Best-effort only — a SIGKILLed sidecar skips it, which is why reap-on-boot is the authoritative layer.)
 - Cost: one small reap IPC (`mod.rs` inner + `state.rs` method + `ipc.rs` arm + `electron/backend-methods.ts` allowlist) + the `shutdown()` extension — neither touches the spawn/read/write/kill machinery. Lands with the backend slice in PR1.
+
+**Residual gap (accepted).** If the _sidecar itself_ is SIGKILLed or crashes, the in-memory set dies with it and a still-running scratch child is reparented to init with no record for the next boot to reap — identical to how a normal pane shell already orphans on sidecar death. A crash-safe reap (persisting ephemeral PIDs for next-boot cleanup, or a process-group kill) is a broader backend concern, out of scope here.
 
 ### 3.5 Test (gates the decision)
 
@@ -92,10 +94,12 @@ type ScratchEntry = {
 The hook returns `{ renderNode, toggle, runningByPane }`:
 
 - `renderNode` — the popup overlay **plus** the mounted (hidden when dismissed) scratch terminals; non-null whenever any **active-session** scratch shell is alive or the popup is open (§5). Mounted in `WorkspaceView` like `paneRenameNode`.
-- `toggle()` — show/hide the popup for the focused pane (chord + pane-button entry points, §7).
+- `toggle(target?: { sessionId: string; paneId: string })` — show/hide the popup for `target`, defaulting to the focused pane when omitted. The chord omits it; the pane-header button passes its **own** pane's identity, which may not be the focused pane (§8).
 - `runningByPane: ReadonlyMap<string /* `${sessionId}:${paneId}` */, ScratchStatus>` — drives the live-but-hidden cues (§8) and the pane-switcher pills (§6).
 
 **The hook owns the PTY lifecycle.** It spawns each scratch shell itself — `service.spawn({ cwd, ephemeral: true, enableAgentBridge: false })`, capturing the returned `scratchPtyId` — and kills it via `service.kill({ sessionId: scratchPtyId })` on teardown (§9). It does **not** delegate spawning to the terminal `<Body>`: `<Body>`'s `spawn` mode neither passes `ephemeral` nor matches our hide≠kill lifetime (it disposes its xterm and would kill on unmount — `Body.tsx:909-913`). `<Body>` is used in **`attach` mode only** (§5).
+
+**Teardown = lazy reconciliation, not a `removePane` callback.** Because scratch ids live only in this hook (never on `Pane`/`Session`), the hook receives the live session/pane list and, in an effect, kills + drops (`service.kill` + `dropAllForPty`) any scratch entry whose `${sessionId}:${paneId}` key no longer maps to a live pane. This fires synchronously when `removePane`/`removeSession` mutate the list (so close is effectively immediate) and self-heals without a shutdown hook — covering pane close, session close, and a self-exited child (whose entry flips to `exited` and is dropped on the next reconcile). No `useSessionManager` coupling.
 
 **Why a ref, not `useState` / the `Pane` model:**
 
@@ -113,11 +117,18 @@ The popup renders the **existing terminal `<Body>` in `attach` mode** against th
 - the N-subscriber service (`desktopTerminalService` keeps callback arrays; each `onData` filters by `sessionId`), so a popup terminal can attach to any ptyId;
 - the **offset-cursor** stream — live `pty-data` events carry `offsetStart`/`byteLen`; the consumer advances by raw bytes and dedupes (`offsetStart >= cursor`).
 
-**Attach needs a snapshot, and the spawn→attach gap must not drop output.** `attach` mode requires `restoredFrom` (`useTerminal.ts:313-317`), normally sourced from `list_sessions` — which a §3 ephemeral PTY is deliberately absent from. A freshly-spawned scratch shell has no prior history, so the hook attaches with an **empty snapshot** (`replayData: ''`, `replayEndOffset: 0`) — but the shell emits its prompt / rc output in the window between `service.spawn()` returning and `<Body>` subscribing. To avoid losing it, the hook reuses the exact no-loss pattern panes use: call **`registerPending(scratchPtyId)` synchronously right after `service.spawn()` returns and before mounting `<Body>`** (`usePtyBufferDrain.ts`) so `bufferEvent` accumulates early `pty-data`; pass **`notifyPaneReady`** as the scratch terminal's `onPaneReady` so those buffered events replay through the same cursor-deduped handler on attach; and call **`dropAllForPty(scratchPtyId)`** on kill to tombstone late events. No new buffering layer is invented.
+**Attach needs a snapshot, and the spawn→attach gap must not drop output.** `attach` mode requires `restoredFrom` (`useTerminal.ts:313-317`), normally sourced from `list_sessions` — which a §3 ephemeral PTY is deliberately absent from. A freshly-spawned scratch shell has no prior history, so it attaches with an **empty snapshot** (`replayData: ''`, `replayEndOffset: 0`) — but the shell emits its prompt / rc output between `service.spawn()` returning and `<Body>` subscribing, and that gap has no `list_sessions` replay source. The hook must therefore own buffering across the gap, reusing the cursor-deduped drain rather than inventing one:
+
+1. ensure a `pty-data` producer feeds `bufferEvent` for the new id — **the existing `usePtyBufferDrain` buffer only captures ids its `service.onData` producer is wired to, and that producer is private to the session/restore flow**, so the hook must either confirm that producer is global to _all_ ptyIds or attach its **own** `service.onData → bufferEvent` listener for the `scratchPtyId` before/at spawn;
+2. `registerPending(scratchPtyId)` immediately after spawn;
+3. pass **`notifyPaneReady`** as the scratch terminal's `onPaneReady` to replay the buffer through the same `offsetStart`-deduped handler on attach;
+4. `dropAllForPty(scratchPtyId)` on kill.
+
+**Build-time check:** verify whether the shared `bufferEvent` producer is global before relying on it; otherwise add the scratch-owned listener.
 
 **Hide ≠ unmount — the load-bearing lifecycle decision.** `<Body>` **disposes its xterm and deletes its `terminalCache` entry on unmount** (`Body.tsx:909-913`: "when Body unmounts, the session is closed — free resources"). Combined with the no-`list_sessions`-snapshot fact above, hiding via unmount would lose all scrollback (and any output produced while detached) with no way to replay it. So the popup **keeps each scratch `<Body>` mounted for its shell's whole life** and toggles **CSS visibility** to hide — it never unmounts to hide. The live subscription stays attached, output keeps streaming into the hidden xterm, and re-showing is instant with full scrollback (refit via `fitAddon.fit()` on reveal, since xterm cannot measure a hidden container). A scratch `<Body>` is unmounted (disposed) **only when its shell is killed** (pane close / session close / reap, §9).
 
-The popup is **scoped to the active session**: it mounts a hidden `<Body>` per running scratch shell **of the active session** (≤4, the pane cap — comparable to the panes' own terminals). **Switching panes** (§6) reveals a different already-mounted scratch `<Body>`; each keeps independent scrollback. Scratch shells in _non-active_ sessions keep running (tracked in the global map, §4) but their `<Body>` is unmounted on session switch; re-entering the session re-attaches and resumes the live stream — full prior-scrollback restoration across a session switch is the `get_pty_replay` enhancement below, deferred.
+Every running scratch shell keeps **one mounted (hidden) `<Body>`** for its whole life, regardless of which session is active — so scrollback survives both pane-switch and session-switch, and the "dispose only on kill" rule above holds without exception. The popup _shows_ the focused pane's (active session); the rest stay mounted-hidden. Count: ≤4 per session, and in practice a small total (scratch shells are user-initiated). If that total ever profiles as too heavy, the `get_pty_replay` escape hatch below lets inactive ones unmount and remount with a real snapshot.
 
 > **Alternative if 4 hidden xterms profile as too heavy:** add a `get_pty_replay(ptyId)` snapshot IPC (reading the per-PTY `RingBuffer`, `commands.rs:590-599`) so the popup can unmount on hide and remount in `attach` mode with a real snapshot. Deferred unless measured.
 
@@ -139,9 +150,9 @@ The popup is **scoped to the active session**: it mounts a hidden `<Body>` per r
 
 ## 7. Invocation chord + keystroke ownership
 
-**Invocation.** Toggled by the chord **`Mod+;` (Ctrl+; on Linux/Windows, Cmd+; on macOS) then `` ` `` (backtick)** — the existing palette leader followed by a registered key, exactly the shape of `usePaneRenameChord` (`Mod+;` then `r`). The leader is defined in `shortcutConfig.ts` (`['Mod', ';']`, requires `!shiftKey` + `key === ';'`); the hook calls `registerChord('`', handler)` (`chordRegistry.ts`), and the handler resolves the focused pane (`resolveFocusedPane()`) and toggles the popup. Secondary entry: the pane-header ghost button (§8) calls the same `toggle()`.
+**Invocation.** Toggled by the chord **`Mod+;` (Ctrl+; on Linux/Windows, Cmd+; on macOS) then `` ` `` (backtick)** — the existing palette leader followed by a registered key, exactly the shape of `usePaneRenameChord` (`Mod+;` then `r`). The leader is defined in `shortcutConfig.ts` (`['Mod', ';']`, requires `!shiftKey` + `key === ';'`); the hook calls `registerChord('`', handler)` (`chordRegistry.ts`), and the handler resolves the focused pane (`resolveFocusedPane()`) and toggles the popup. Secondary entry: the pane-header ghost button (§8) calls `toggle({ sessionId, paneId })` for its **own** pane.
 
-> **Note — corrects the handoff.** The handoff/mock footer and VIM-53 write the chord as "`⌃: ` `" / "`Ctrl+:`". That keystroke is physically Ctrl+Shift+; and **cannot fire** the palette leader, which requires `key === ';'`with`!shiftKey` (`shortcutConfig.ts`+ the Electron`before-input-event`override in`electron/command-palette-shortcut.ts`). The real, consistent gesture is **`Mod+;` then `` ` ``\*\*. The handoff footer and VIM-53 should be updated to match.
+> **Note — corrects the handoff.** The handoff/mock footer and VIM-53 write the chord as "`⌃: ` `" / "`Ctrl+:`". That keystroke is physically Ctrl+Shift+; and **cannot fire** the palette leader, which requires `event.key === ';'`with`!shiftKey` (`shortcutConfig.ts`, plus the Electron `before-input-event`override in`electron/command-palette-shortcut.ts`). The real, consistent gesture is **Mod+; then backtick**. The handoff footer and VIM-53 should be updated to match.
 
 **Keystroke ownership needs no suppression.** The global shortcut layer partitions by _specificity, not focus_ — this is verified against how pane xterms already coexist with it:
 
@@ -155,7 +166,7 @@ Because the chord is a `chordRegistry` entry (not a bare global hotkey), it only
 
 When a scratch shell is running but its popup is dismissed, the workspace must signal it (so a backgrounded `npm run dev` isn't forgotten). All cues read from the hook's `runningByPane` (§4); any count is its running size.
 
-**Primary — pane-header ghost button (`.scratch-btn`).** A secondary, low-key ghost icon button (Material Symbols `terminal`) added to the **existing** pane header's utility cluster, beside collapse/close (`TerminalPane/Header.tsx` + `HeaderActions.tsx`) — the established header order (agent chip · status dot · title · worktree›branch · diff · reltime · utility icons) is **not** restructured. It is the click affordance to open this pane's scratch shell (the chord is primary). When this pane has a running scratch shell while the popup is dismissed, the button gains a **faint amber tint** (`#f0c674`) + a small **mint live-dot** (`--success`).
+**Primary — pane-header ghost button (`.scratch-btn`).** A secondary, low-key ghost icon button (Material Symbols `terminal`) added to the **existing** pane header's utility cluster, beside collapse/close (`TerminalPane/Header.tsx` + `HeaderActions.tsx`) — the established header order (agent chip · status dot · title · worktree›branch · diff · reltime · utility icons) is **not** restructured. It is the click affordance to open this pane's scratch shell (the chord is primary); clicking it focuses that pane and calls `toggle({ sessionId, paneId })` for **its own** pane, not whatever was previously focused (§7). When this pane has a running scratch shell while the popup is dismissed, the button gains a **faint amber tint** (`#f0c674`) + a small **mint live-dot** (`--success`).
 
 **Tooltip (`.scratch-tip`).** Hover/focus on the button shows (via the shared `Tooltip` primitive): a `SCRATCH · pane N` header, a **mint dot + relative-time** status line, one compact hint (`Throwaway shell · cd stays local · gone on restart`), and the chord hint. Per UNIFIED §8 anti-patterns, the status is a **dot + reltime**, never a `Status: Running` label.
 
@@ -172,7 +183,7 @@ Three stacked PRs (VIM-53), each a shippable vertical slice, landing on the `fea
 **PR1 — per-session scratch popup (foundation).**
 
 - _Backend (first commit):_ `ephemeral` flag on `SpawnPtyRequest` + `PTYSpawnParams` (skips the cache write §3.2 **and** bridge generation); ephemeral-ptyId set in `PtyState`; `kill_ephemeral_ptys` reap IPC (the 4-file checklist, §3.4); extend `BackendState::shutdown()` to kill the set. Rust tests per §3.5.
-- _Frontend:_ `useScratchTerminals` owning a **single session-scoped** scratch shell, spawned lazily at `session.workingDirectory` with `{ ephemeral: true, enableAgentBridge: false }`; the popup overlay (command-palette sibling) rendering `<Body>` in attach mode, **keep-mounted-hidden** (§5) with the `registerPending` / `notifyPaneReady` drain; the `Mod+;` `` ` `` chord (§7); the reap-on-boot call on app init; kill on session close.
+- _Frontend:_ `useScratchTerminals` owning a **single session-scoped** scratch shell, spawned lazily at `session.workingDirectory` with `{ ephemeral: true, enableAgentBridge: false }`; the popup overlay (command-palette sibling) rendering `<Body>` in attach mode, **keep-mounted-hidden** (§5) with the `registerPending` / `notifyPaneReady` drain; the `Mod+;` `` ` `` chord (§7); an **awaited** reap-on-boot on app init that **gates the first scratch spawn** (§3.4); lazy-reconciliation teardown on session close (§4).
 - Maps to VIM-53 PR1 acceptance criteria.
 
 **PR2 — one scratch shell per pane.**
@@ -183,7 +194,7 @@ Three stacked PRs (VIM-53), each a shippable vertical slice, landing on the `fea
 
 **PR3 — pane-bound lifecycle.**
 
-- `removePane` (`useSessionManager.ts:1336-1338`) + `removeSession` (`:830-838`) also kill the pane's / session's scratch ptyId(s) (`service.kill` + `dropAllForPty`); a pane **restart keeps** its scratch shell (stable `${sessionId}:${paneId}` key, §6); reconcile a self-exited scratch child on next open (lazy, no shutdown hook).
+- **Lazy reconciliation** in `useScratchTerminals` (§4): when a `${sessionId}:${paneId}` key no longer maps to a live pane — pane close (`removePane`) or session close (`removeSession`) — the hook kills + drops that scratch entry (`service.kill` + `dropAllForPty`). A pane **restart keeps** its scratch shell (the key is stable across ptyId rotation, §6); a self-exited child is dropped on the next reconcile/open. No `useSessionManager` coupling — the hook observes the session/pane list.
 - Maps to VIM-53 PR3 acceptance criteria.
 
 ## 10. Testing strategy
