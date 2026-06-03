@@ -15,9 +15,10 @@ import { execFileSync, spawn } from 'node:child_process'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
-  decisionCommentId,
   decisionStorePath,
+  fixCycleThreadParentId,
   hasMergeLinearPosted,
+  markFixCycleProgress,
   readDecisionStore,
 } from './decision-comment.js'
 import {
@@ -202,11 +203,7 @@ const pauseLabel = (st, maxNoops) =>
 const decisionStore = (pr) => readDecisionStore(decisionStorePath(pr))
 
 const needsFixParentId = (pr, headSha) =>
-  decisionCommentId(decisionStore(pr), pr, {
-    state: 'NEEDS_FIX',
-    headSha,
-    action: 'dispatch fixer',
-  })
+  fixCycleThreadParentId(decisionStore(pr), pr, { headSha })
 
 const shouldPostMergedLinear = (pr) =>
   !hasMergeLinearPosted(decisionStore(pr), pr)
@@ -362,6 +359,10 @@ export const runOne = async (pr, reason, deps) => {
       noopCount: 0,
       pausedAt: null,
       pauseReason: null,
+    })
+
+    markFixCycleProgress(decisionStore(pr), pr, decisionStorePath(pr), {
+      headSha: after.headSha,
     })
 
     events.emit(

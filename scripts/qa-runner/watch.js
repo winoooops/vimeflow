@@ -40,8 +40,10 @@ import {
 } from './lib/ci-policy.js'
 import {
   actionForDecision,
+  commentReplyTarget,
   decisionKey,
   decisionStorePath,
+  decisionThreadTarget,
   formatDecisionComment,
   formatMergedComment,
   markDecisionPosted,
@@ -563,7 +565,12 @@ const maybePostDecisionLinear = (pr, s, ctx) => {
     s.state === 'NEEDS_FIX' && action === 'dispatch fixer'
       ? 'In Progress'
       : undefined
-  const posted = postLinear(s.vim, body, stateName)
+
+  const { parentId } = decisionThreadTarget(store, pr.number, {
+    state: s.state,
+    headSha: s.headSha,
+  })
+  const posted = postLinear(s.vim, body, stateName, { parentId })
   if (posted.ok) {
     markDecisionPosted(store, pr.number, key, storeFile, {
       commentId: posted.commentId,
@@ -648,12 +655,13 @@ const approve = (pr, vim, headSha, ctx) => {
   }
 
   const merged = postLinear(vim, formatMergedComment(pr.number), 'Done')
-  if (merged.ok && merged.commentId) {
+  const replyTarget = commentReplyTarget(merged.commentId)
+  if (merged.ok && replyTarget.parentId) {
     postLinear(
       vim,
       `QA runner: PR #${pr.number} met all review success criteria → squash-merged by ${merger}.`,
       undefined,
-      { parentId: merged.commentId }
+      { parentId: replyTarget.parentId }
     )
   } else if (merged.ok) {
     out(

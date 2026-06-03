@@ -3,8 +3,10 @@ import { rmSync } from 'node:fs'
 import {
   decisionKey,
   decisionStorePath,
+  decisionThreadTarget,
   markDecisionPosted,
   markMergeLinearPosted,
+  readDecisionStore,
 } from './decision-comment.js'
 import {
   DISPATCH_BLOCKED_EXIT,
@@ -291,6 +293,16 @@ describe('runOne', () => {
       },
       'VIM-20'
     )
+
+    const store = readDecisionStore(decisionStorePath(42))
+    for (const state of ['WAITING', 'RETRYING', 'GOOD_SHAPE']) {
+      expect(
+        decisionThreadTarget(store, 42, {
+          state,
+          headSha: 'new-head',
+        })
+      ).toEqual({ mode: 'reply', parentId: 'needs-fix-comment' })
+    }
   })
 
   test('does not post a duplicate merged Linear event after approval already posted it', async () => {

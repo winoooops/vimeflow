@@ -4,12 +4,17 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, test } from 'vitest'
 import {
   actionForDecision,
+  commentReplyTarget,
   decisionCommentId,
   decisionKey,
+  decisionThreadTarget,
+  fixCycleThreadTarget,
   formatDecisionComment,
   formatFixerCycleComment,
+  fixCycleThreadParentId,
   hasMergeLinearPosted,
   markDecisionPosted,
+  markFixCycleProgress,
   markMergeLinearPosted,
   readDecisionStore,
   shouldPostDecision,
@@ -245,6 +250,186 @@ describe('decision store', () => {
         state: 'GOOD_SHAPE',
       })
     ).toBeNull()
+  })
+
+  test('keeps the active fix-cycle parent after post-fix decisions', () => {
+    const file = makeStore()
+
+    const needsFixKey = decisionKey({
+      pr: 334,
+      state: 'NEEDS_FIX',
+      detail: '1 unresolved thread(s)',
+      headSha: 'old-head',
+      action: 'dispatch fixer',
+      approve: true,
+      execute: true,
+    })
+
+    const afterNeedsFix = markDecisionPosted({}, 334, needsFixKey, file, {
+      commentId: 'needs-fix-comment',
+      state: 'NEEDS_FIX',
+      headSha: 'old-head',
+      action: 'dispatch fixer',
+    })
+
+    expect(
+      decisionThreadTarget(afterNeedsFix, 334, {
+        state: 'WAITING',
+        headSha: 'old-head',
+      })
+    ).toEqual({ mode: 'top_level', parentId: null })
+
+    expect(
+      decisionThreadTarget(afterNeedsFix, 334, { state: 'NEEDS_FIX' })
+    ).toEqual({ mode: 'top_level', parentId: null })
+
+    expect(
+      fixCycleThreadParentId(afterNeedsFix, 334, { headSha: 'old-head' })
+    ).toBe('needs-fix-comment')
+
+    expect(
+      fixCycleThreadTarget(afterNeedsFix, 334, { headSha: 'old-head' })
+    ).toEqual({ mode: 'reply', parentId: 'needs-fix-comment' })
+
+    expect(
+      fixCycleThreadParentId(afterNeedsFix, 334, { headSha: 'new-head' })
+    ).toBeNull()
+
+    expect(
+      fixCycleThreadTarget(afterNeedsFix, 334, { headSha: 'new-head' })
+    ).toEqual({ mode: 'top_level', parentId: null })
+
+    const afterProgress = markFixCycleProgress(afterNeedsFix, 334, file, {
+      headSha: 'new-head',
+    })
+    expect(
+      decisionThreadTarget(afterProgress, 334, {
+        state: 'WAITING',
+        headSha: 'new-head',
+      })
+    ).toEqual({ mode: 'reply', parentId: 'needs-fix-comment' })
+
+    for (const state of ['RETRYING', 'GOOD_SHAPE']) {
+      expect(
+        decisionThreadTarget(afterProgress, 334, {
+          state,
+          headSha: 'new-head',
+        })
+      ).toEqual({ mode: 'reply', parentId: 'needs-fix-comment' })
+    }
+
+    expect(
+      decisionThreadTarget(afterProgress, 334, {
+        state: 'GOOD_SHAPE',
+        headSha: 'other-head',
+      })
+    ).toEqual({ mode: 'top_level', parentId: null })
+
+    const waitingKey = decisionKey({
+      pr: 334,
+      state: 'WAITING',
+      detail: 'CI / Claude re-running',
+      headSha: 'new-head',
+      action: 'none',
+      approve: true,
+      execute: true,
+    })
+
+    const afterWaiting = markDecisionPosted(
+      afterProgress,
+      334,
+      waitingKey,
+      file,
+      {
+        commentId: 'waiting-comment',
+        state: 'WAITING',
+        headSha: 'new-head',
+        action: 'none',
+      }
+    )
+
+    expect(
+      decisionThreadTarget(afterWaiting, 334, { state: 'GOOD_SHAPE' })
+    ).toEqual({ mode: 'reply', parentId: 'needs-fix-comment' })
+
+    expect(
+      decisionCommentId(afterWaiting, 334, {
+        state: 'WAITING',
+        headSha: 'new-head',
+        action: 'none',
+      })
+    ).toBe('waiting-comment')
+  })
+
+  test('keeps a later NEEDS_FIX decision top-level instead of replying to the previous fix cycle', () => {
+    const file = makeStore()
+
+    const first = markDecisionPosted({}, 334, 'first-key', file, {
+      commentId: 'first-needs-fix-comment',
+      state: 'NEEDS_FIX',
+      headSha: 'first-head',
+      action: 'dispatch fixer',
+    })
+
+    const afterProgress = markFixCycleProgress(first, 334, file, {
+      headSha: 'first-fix-head',
+    })
+
+    expect(
+      decisionThreadTarget(afterProgress, 334, {
+        state: 'NEEDS_FIX',
+        headSha: 'second-head',
+      })
+    ).toEqual({ mode: 'top_level', parentId: null })
+
+    const second = markDecisionPosted(afterProgress, 334, 'second-key', file, {
+      commentId: 'second-needs-fix-comment',
+      state: 'NEEDS_FIX',
+      headSha: 'second-head',
+      action: 'dispatch fixer',
+    })
+
+    expect(
+      fixCycleThreadParentId(second, 334, { headSha: 'second-head' })
+    ).toBe('second-needs-fix-comment')
+
+    expect(
+      fixCycleThreadParentId(second, 334, { headSha: 'first-head' })
+    ).toBeNull()
+  })
+
+  test('clears a stale fix-cycle parent when a NEEDS_FIX decision is not dispatched', () => {
+    const file = makeStore()
+
+    const active = markDecisionPosted({}, 334, 'old-key', file, {
+      commentId: 'old-needs-fix-comment',
+      state: 'NEEDS_FIX',
+      headSha: 'old-head',
+      action: 'dispatch fixer',
+    })
+
+    const noDispatch = markDecisionPosted(active, 334, 'new-key', file, {
+      commentId: 'new-needs-fix-comment',
+      state: 'NEEDS_FIX',
+      headSha: 'new-head',
+      action: 'none',
+    })
+
+    expect(decisionThreadTarget(noDispatch, 334, { state: 'WAITING' })).toEqual(
+      { mode: 'top_level', parentId: null }
+    )
+  })
+
+  test('builds a reply target for merge detail comments', () => {
+    expect(commentReplyTarget('merged-root-comment')).toEqual({
+      mode: 'reply',
+      parentId: 'merged-root-comment',
+    })
+
+    expect(commentReplyTarget(null)).toEqual({
+      mode: 'top_level',
+      parentId: null,
+    })
   })
 
   test('tracks when the approval path already posted the merged Linear thread', () => {
