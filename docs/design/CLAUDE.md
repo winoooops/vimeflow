@@ -32,8 +32,6 @@ Each subdirectory contains a reference screenshot and the HTML implementation pr
 | `git_diff/`        | Git Diff Viewer | Side-by-side diff with added/removed highlighting, hunk navigation, Stage Hunk/Discard actions, changed files sidebar, floating glassmorphism legend                             |
 | `command_palette/` | Command Palette | Centered overlay modal, search with `:command` syntax, filtered result list, keyboard navigation hints                                                                           |
 
-**Deprecated**: `chat_or_main/` — Chat view replaced by terminal-based agent interaction (see `agent_workspace/`). Kept for historical reference only.
-
 ### File Structure Per Screen
 
 ```

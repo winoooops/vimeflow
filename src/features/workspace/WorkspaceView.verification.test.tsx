@@ -231,7 +231,7 @@ describe('Feature 23: Final Phase 2 Verification', () => {
     })
   })
 
-  describe('7. Design matches Stitch mockup', () => {
+  describe('7. Design matches the design spec', () => {
     test('workspace has correct grid layout', () => {
       render(<WorkspaceView />)
 
