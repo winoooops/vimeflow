@@ -49,6 +49,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Cross-Platform Paths](patterns/cross-platform-paths.md)             | cross-platform     | 4        | 3    | 2026-05-07   |
 | [Debug Artifacts](patterns/debug-artifacts.md)                       | code-quality       | 5        | 0    | 2026-05-09   |
 | [Generated Artifacts](patterns/generated-artifacts.md)               | code-quality       | 3        | 2    | 2026-05-25   |
+| [Generated Shell Scripts](patterns/generated-shell-scripts.md)       | backend            | 3        | 0    | 2026-06-02   |
 | [Testing Gaps](patterns/testing-gaps.md)                             | testing            | 55       | 25   | 2026-05-28   |
 | [Terminal Input Handling](patterns/terminal-input-handling.md)       | terminal           | 4        | 2    | 2026-05-24   |
 | [Documentation Accuracy](patterns/documentation-accuracy.md)         | code-quality       | 79       | 24   | 2026-06-01   |
