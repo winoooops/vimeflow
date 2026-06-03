@@ -169,8 +169,8 @@ export const createLinearComment = async (
   const data = parentId
     ? await linearGql(
         auth,
-        'mutation($parentId:String!,$body:String!){commentCreate(input:{parentId:$parentId,body:$body}){success comment{id}}}',
-        { parentId, body },
+        'mutation($id:String!,$parentId:String!,$body:String!){commentCreate(input:{issueId:$id,parentId:$parentId,body:$body}){success comment{id}}}',
+        { id: issueId, parentId, body },
         fetchImpl
       )
     : await linearGql(
