@@ -172,3 +172,5 @@ bar, favicons are placeholders. Tasks are ordered by dependency (leaf → integr
 Real back/forward/reload + history enablement and the reload↔stop toggle (L2); real
 favicons + the live load bar (L3). L1 only renders their placeholders/disabled states
 forward-compatibly.
+
+<!-- codex-reviewed: 2026-06-03T14:53:58Z -->
