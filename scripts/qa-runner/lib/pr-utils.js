@@ -62,3 +62,22 @@ export const writeLinkedIssueCache = (
 export const linkedVimForPr = ({ body, branch, pr, cacheFile }) =>
   linkedVim(body, branch) ||
   (pr ? readLinkedIssueCache(pr, cacheFile || linkedIssueStorePath(pr)) : null)
+
+// Append `Refs VIM-N` to the PR body so Linear's GitHub app links the auto-created
+// issue. Re-reads the live body first so a concurrent description edit isn't clobbered.
+export const backfillPrRef = ({ owner, name, pr, identifier }, { gh }) => {
+  if (!identifier) {
+    return { changed: false }
+  }
+
+  const path = `repos/${owner}/${name}/pulls/${pr}`
+  const body = JSON.parse(gh(['api', path])).body || ''
+  if (new RegExp(`\\b${identifier}\\b`, 'i').test(body)) {
+    return { changed: false }
+  }
+
+  const next = body ? `${body}\n\nRefs ${identifier}` : `Refs ${identifier}`
+  gh(['api', '--method', 'PATCH', path, '-f', `body=${next}`])
+
+  return { changed: true, body: next }
+}
