@@ -56,6 +56,7 @@ import { useSidebarTab, type SidebarTab } from '../../hooks/useSidebarTab'
 import { useNotifyInfo } from './hooks/useNotifyInfo'
 import { createFileSystemService } from '../files/services/fileSystemService'
 import { createTerminalService } from '../terminal/services/terminalService'
+import { useScratchTerminals } from '../terminal/hooks/useScratchTerminals'
 import {
   usePaneShortcuts,
   type PaneShortcutModifier,
@@ -71,7 +72,11 @@ import { isShellPane } from '../sessions/utils/paneKind'
 import { lineDelta } from '../sessions/utils/lineDelta'
 import { pickNextVisibleSessionId } from '../sessions/utils/pickNextVisibleSessionId'
 import { AGENTS, agentTypeToRegistryKey } from '../../agents/registry'
-import type { SessionCloseResult, SessionStatus } from '../sessions/types'
+import type {
+  Session,
+  SessionCloseResult,
+  SessionStatus,
+} from '../sessions/types'
 import {
   buildWorkspaceCommands,
   WORKSPACE_TAB_KEYS,
@@ -622,6 +627,33 @@ export const WorkspaceView = (): ReactElement => {
     resolveFocusedPane,
     setPaneUserLabel
   )
+
+  // Scratch terminal popup (VIM-53) — reap reload-orphaned ephemeral PTYs before the first spawn.
+  const [scratchReapDone, setScratchReapDone] = useState(false)
+  useEffect(() => {
+    let cancelled = false
+
+    const reap = async (): Promise<void> => {
+      try {
+        await terminalService.killEphemeralPtys()
+      } finally {
+        if (!cancelled) {
+          setScratchReapDone(true)
+        }
+      }
+    }
+    void reap()
+
+    return (): void => {
+      cancelled = true
+    }
+  }, [terminalService])
+
+  const { renderNode: scratchTerminalNode } = useScratchTerminals({
+    service: terminalService,
+    resolveActiveSession: (): Session | null => activeSession ?? null,
+    ready: scratchReapDone,
+  })
 
   const requestFocus = useCallback((target: FocusTarget): void => {
     pendingFocusTarget.current = target
@@ -1547,6 +1579,7 @@ export const WorkspaceView = (): ReactElement => {
       {isDragging && <div className="fixed inset-0 z-50 cursor-col-resize" />}
 
       {paneRenameNode}
+      {scratchTerminalNode}
 
       {/* Command Palette — workspace-scoped command dispatcher */}
       <CommandPalette
