@@ -567,7 +567,9 @@ pub(crate) fn kill_ephemeral_ptys_inner(state: &PtyState) -> Vec<String> {
                 killed.push(id);
             }
             Err(super::state::KillError::KillFailed(msg)) => {
+                // Kill failed; child may be alive — put the id back so a later reap retries it.
                 log::warn!("kill_ephemeral_ptys: failed to kill {}: {}", id, msg);
+                state.mark_ephemeral(id);
             }
         }
     }
