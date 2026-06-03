@@ -5,13 +5,14 @@ import {
   useMemo,
   useRef,
   useState,
-  type FormEvent,
+  type KeyboardEvent,
   type MouseEvent,
   type PointerEvent,
   type ReactElement,
 } from 'react'
 import type { Pane, Session } from '../../sessions/types'
 import { isShellPane } from '../../sessions/utils/paneKind'
+import { isMacPlatform } from '../../../lib/formatShortcut'
 import {
   activateBrowserPaneTab,
   closeBrowserPaneTab,
@@ -21,12 +22,17 @@ import {
   navigateBrowserPane,
   newBrowserPaneTab,
   onBrowserPaneFocus,
+  onBrowserPaneFocusAddress,
   onBrowserPaneTabsChange,
   onBrowserPaneUrlChange,
+  openExternalBrowserPane,
   setBrowserPaneBounds,
 } from '../browserBridge'
+import { BROWSER_IDENTITY } from '../browserIdentity'
 import type { BrowserCdpInfo, BrowserPaneTab } from '../types'
 import { DEFAULT_BROWSER_URL } from '../types'
+import { BrowserTabBar } from './BrowserTabBar'
+import { BrowserToolbar } from './BrowserToolbar'
 
 const LOCAL_DEV_HOST_PATTERN =
   /^(localhost|127(?:\.\d{1,3}){3}|0\.0\.0\.0|\[::1\])(?::\d+)?(?:[/?#]|$)/i
@@ -77,7 +83,6 @@ export const BrowserPane = ({
   showFocusHighlight = true,
 }: BrowserPaneProps): ReactElement => {
   const contentRef = useRef<HTMLDivElement>(null)
-  const goButtonRef = useRef<HTMLButtonElement>(null)
   const url = pane.browserUrl ?? DEFAULT_BROWSER_URL
   const initialUrlRef = useRef(url)
   const isActiveRef = useRef(isActive)
@@ -97,7 +102,7 @@ export const BrowserPane = ({
   // there is no hidden draft and no blur-timing edge for any submit path.
   const [committedUrl, setCommittedUrl] = useState(url)
   const [draft, setDraft] = useState(url)
-  const isAddressEditingRef = useRef(false)
+  const [isEditing, setIsEditing] = useState(false)
   const [cdpInfo, setCdpInfo] = useState<BrowserCdpInfo | null>(null)
   const [createError, setCreateError] = useState<string | null>(null)
 
@@ -105,9 +110,6 @@ export const BrowserPane = ({
     { id: 'tab-0', url, title: null, active: true },
   ])
   const browserSessionId = browserSessionIdForSession(session)
-
-  const activeTab =
-    tabs.find((tab) => tab.active) ?? (tabs.length > 0 ? tabs[0] : undefined)
 
   const paneIds = useMemo(
     () => session.panes.map((sessionPane) => sessionPane.id),
@@ -118,10 +120,10 @@ export const BrowserPane = ({
   // being edited). Guarded by the editing ref so a focused, half-typed draft
   // survives the stream of native url/tabs-changed events.
   useEffect(() => {
-    if (!isAddressEditingRef.current) {
+    if (!isEditing) {
       setDraft(committedUrl)
     }
-  }, [committedUrl])
+  }, [committedUrl, isEditing])
 
   const activePaneId =
     session.panes.find((sessionPane) => sessionPane.active)?.id ?? null
@@ -364,21 +366,34 @@ export const BrowserPane = ({
     [browserSessionId, pane.id, session.id]
   )
 
-  const handleSubmit = (event: FormEvent<HTMLFormElement>): void => {
-    event.preventDefault()
-    // Editing ends at submit even if the input keeps focus (Enter), so the
-    // post-navigation / redirect url events flow back into the draft. A
-    // subsequent keystroke re-arms editing via onChange.
-    isAddressEditingRef.current = false
-    const nextUrl = normalizeUrl(draft)
-    setCommittedUrl(nextUrl)
-    setDraft(nextUrl)
-    void navigateBrowserPane({
-      sessionId: browserSessionId,
-      paneId: pane.id,
-      url: nextUrl,
-    })
-  }
+  useEffect(
+    () =>
+      onBrowserPaneFocusAddress((event) => {
+        if (event.sessionId !== browserSessionId || event.paneId !== pane.id) {
+          return
+        }
+
+        setIsEditing(true)
+      }),
+    [browserSessionId, pane.id]
+  )
+
+  const handleAddressSubmit = useCallback(
+    (value: string): void => {
+      // Editing ends at submit so post-navigation / redirect url events flow
+      // back into the idle draft.
+      setIsEditing(false)
+      const nextUrl = normalizeUrl(value)
+      setCommittedUrl(nextUrl)
+      setDraft(nextUrl)
+      void navigateBrowserPane({
+        sessionId: browserSessionId,
+        paneId: pane.id,
+        url: nextUrl,
+      })
+    },
+    [browserSessionId, pane.id]
+  )
 
   const handleActivateTab = useCallback(
     (tabId: string): void => {
@@ -392,8 +407,7 @@ export const BrowserPane = ({
   )
 
   const handleCloseTab = useCallback(
-    (event: MouseEvent<HTMLButtonElement>, tabId: string): void => {
-      event.stopPropagation()
+    (tabId: string): void => {
       void closeBrowserPaneTab({
         sessionId: browserSessionId,
         paneId: pane.id,
@@ -432,126 +446,84 @@ export const BrowserPane = ({
     []
   )
 
+  const handleBeginEdit = useCallback((): void => {
+    setIsEditing(true)
+  }, [])
+
+  const handleDraftChange = useCallback((value: string): void => {
+    setDraft(value)
+  }, [])
+
+  const handleCancelEdit = useCallback((): void => {
+    setIsEditing(false)
+    setDraft(committedUrl)
+  }, [committedUrl])
+
+  const handleOpenExternal = useCallback((): void => {
+    void openExternalBrowserPane({
+      sessionId: browserSessionId,
+      paneId: pane.id,
+    })
+  }, [browserSessionId, pane.id])
+
+  const handleChromeKeyDown = useCallback(
+    (event: KeyboardEvent<HTMLDivElement>): void => {
+      const withModifier = isMacPlatform()
+        ? event.metaKey && !event.ctrlKey
+        : event.ctrlKey && !event.metaKey
+      if (
+        withModifier &&
+        !event.altKey &&
+        !event.shiftKey &&
+        event.code === 'KeyL'
+      ) {
+        event.preventDefault()
+        setIsEditing(true)
+      }
+    },
+    []
+  )
+
+  const isFocusVisible = showFocusHighlight && pane.active
+
   return (
     <div
-      className={`flex h-full w-full flex-col overflow-hidden rounded-lg bg-surface shadow-[inset_0_0_0_1px_rgba(108,112,134,0.22)] ${
-        showFocusHighlight && pane.active ? 'ring-1 ring-primary/35' : ''
-      }`}
       data-testid="browser-pane"
       data-browser-pane-id={pane.id}
+      onPointerDownCapture={handleChromePointerDownCapture}
+      onClick={handleChromeClick}
+      onKeyDown={handleChromeKeyDown}
+      className="flex h-full w-full flex-col overflow-hidden rounded-[10px] bg-surface"
+      style={{
+        border: `2px solid ${
+          isFocusVisible ? BROWSER_IDENTITY.accent : 'rgba(74,68,79,0.22)'
+        }`,
+        boxShadow: isFocusVisible
+          ? `0 0 0 6px ${BROWSER_IDENTITY.accentDim}, 0 8px 32px rgba(0,0,0,0.35)`
+          : 'none',
+        transition: 'border-color 180ms ease, box-shadow 220ms ease',
+      }}
     >
-      <div
-        className="flex shrink-0 items-center gap-2 bg-surface-container/95 px-2 py-2"
-        onPointerDownCapture={handleChromePointerDownCapture}
-        onClick={handleChromeClick}
-      >
-        {tabs.length > 0 ? (
-          <div
-            className="flex max-w-[42%] shrink-0 items-center gap-1 overflow-x-auto"
-            role="tablist"
-            aria-label="browser tabs"
-          >
-            {tabs.map((tab) => (
-              <div
-                key={tab.id}
-                className={`flex max-w-[190px] items-center overflow-hidden rounded-md transition ${
-                  tab.active
-                    ? 'bg-primary/15 text-primary'
-                    : 'bg-white/[0.04] text-on-surface-muted hover:bg-white/[0.08] hover:text-on-surface'
-                }`}
-              >
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={tab.active}
-                  aria-label={`browser tab ${tab.title ?? tab.url}`}
-                  onClick={(): void => handleActivateTab(tab.id)}
-                  className="min-w-0 flex-1 truncate px-2 py-1.5 text-left font-mono text-[10.5px] focus:outline-none focus:ring-2 focus:ring-primary/45"
-                >
-                  {tab.title ?? tab.url}
-                </button>
-                {tabs.length > 1 ? (
-                  <button
-                    type="button"
-                    aria-label={`close browser tab ${tab.title ?? tab.url}`}
-                    onClick={(event): void => handleCloseTab(event, tab.id)}
-                    className="px-1.5 py-1 font-mono text-[10px] opacity-70 hover:bg-white/[0.08] hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-primary/45"
-                  >
-                    x
-                  </button>
-                ) : null}
-              </div>
-            ))}
-            <button
-              type="button"
-              aria-label="new browser tab"
-              onClick={handleNewTab}
-              className="rounded-md bg-white/[0.04] px-2 py-1.5 font-mono text-[12px] text-on-surface-muted transition hover:bg-white/[0.08] hover:text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/45"
-            >
-              +
-            </button>
-          </div>
-        ) : null}
-        <form className="flex min-w-0 flex-1 gap-2" onSubmit={handleSubmit}>
-          <input
-            aria-label="browser address"
-            value={draft}
-            onFocus={(): void => {
-              // Mark the bar as being edited so idle url-syncs pause.
-              isAddressEditingRef.current = true
-            }}
-            onChange={(event): void => {
-              // Any keystroke (re-)arms editing — covers typing again after an
-              // Enter submit cleared the flag while the input kept focus.
-              isAddressEditingRef.current = true
-              setDraft(event.currentTarget.value)
-            }}
-            onBlur={(event): void => {
-              isAddressEditingRef.current = false
-
-              // Tab-to-Go: focus moving to THIS pane's Go button means a
-              // navigation is imminent, so keep the typed draft for the pending
-              // submit. Match the button instance (not a generic type=submit
-              // attribute) so focus moving to any other submit button in the
-              // tree doesn't accidentally preserve a stale draft. Any other blur
-              // is a cancel — revert the draft to the live committed URL so the
-              // bar and an idle Go aren't left showing an abandoned value (a url
-              // event may have changed committedUrl while editing, when the idle
-              // effect was paused).
-              if (event.relatedTarget !== goButtonRef.current) {
-                setDraft(committedUrl)
-              }
-            }}
-            className="min-w-0 flex-1 rounded-md bg-surface-container px-3 py-1.5 font-mono text-[12px] text-on-surface outline-none ring-1 ring-outline-variant/20 transition focus:ring-primary/45"
-          />
-          <button
-            ref={goButtonRef}
-            type="submit"
-            onMouseDown={(event): void => {
-              // Keep the input focused through a mouse click so the draft
-              // survives to submit — the blur-cancel resync would otherwise
-              // revert it before the click reaches handleSubmit.
-              event.preventDefault()
-            }}
-            className="rounded-md bg-primary/15 px-3 py-1.5 font-mono text-[11px] text-primary transition hover:bg-primary/25 focus:outline-none focus:ring-2 focus:ring-primary/45"
-          >
-            Go
-          </button>
-        </form>
-        <span className="hidden max-w-[160px] truncate font-mono text-[10px] text-on-surface-muted lg:inline">
-          {activeTab ? (activeTab.title ?? activeTab.url) : null}
-        </span>
-        {onClose ? (
-          <button
-            type="button"
-            aria-label="close browser pane"
-            onClick={(): void => onClose(session.id, pane.id)}
-            className="rounded-md px-2 py-1 font-mono text-[11px] text-on-surface-muted transition hover:bg-white/[0.06] hover:text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/45"
-          >
-            Close
-          </button>
-        ) : null}
-      </div>
+      <BrowserTabBar
+        tabs={tabs}
+        onActivate={handleActivateTab}
+        onClose={handleCloseTab}
+        onNewTab={handleNewTab}
+        onClosePane={
+          onClose ? (): void => onClose(session.id, pane.id) : undefined
+        }
+      />
+      <BrowserToolbar
+        committedUrl={committedUrl}
+        draft={draft}
+        isEditing={isEditing}
+        onBeginEdit={handleBeginEdit}
+        onDraftChange={handleDraftChange}
+        onSubmit={handleAddressSubmit}
+        onCancel={handleCancelEdit}
+        onOpenExternal={handleOpenExternal}
+        canOpenExternal={/^https?:\/\//i.test(committedUrl)}
+      />
       <div
         ref={contentRef}
         className="relative min-h-0 flex-1 bg-surface-container/60"
