@@ -390,6 +390,7 @@ const isFocusAddressShortcut = (
   input.code === 'KeyL' &&
   !input.alt &&
   input.shift !== true &&
+  !input.isAutoRepeat &&
   hasPlatformShortcutModifier(input, platform)
 
 const isBrowserPaneWorkspaceShortcutInput = (

@@ -475,6 +475,7 @@ export const BrowserPane = ({
         withModifier &&
         !event.altKey &&
         !event.shiftKey &&
+        !event.repeat &&
         event.code === 'KeyL'
       ) {
         event.preventDefault()
@@ -522,7 +523,7 @@ export const BrowserPane = ({
         onSubmit={handleAddressSubmit}
         onCancel={handleCancelEdit}
         onOpenExternal={handleOpenExternal}
-        canOpenExternal={/^https?:\/\//i.test(committedUrl)}
+        canOpenExternal={tabs.length > 0}
       />
       <div
         ref={contentRef}
