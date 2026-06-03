@@ -1,6 +1,14 @@
-import { createElement, Fragment, useCallback, useRef, useState } from 'react'
+import {
+  createElement,
+  Fragment,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from 'react'
 import type { ReactNode } from 'react'
 import { ScratchTerminalPopup } from '../components/ScratchTerminalPopup'
+import { registerChord } from '../../command-palette/chordRegistry'
 import type { ITerminalService } from '../services/terminalService'
 import type { Session } from '../../sessions/types'
 
@@ -107,6 +115,19 @@ export const useScratchTerminals = ({
       setVisibleSessionId(key)
     }
   }, [resolveActiveSession, visibleSessionId, ready, service, commit])
+
+  // `Mod+;` then backtick chord — registered once, calls the latest toggle via a ref.
+  const toggleRef = useRef(toggle)
+  toggleRef.current = toggle
+  useEffect(
+    () =>
+      registerChord('`', () => {
+        void toggleRef.current()
+
+        return true
+      }),
+    []
+  )
 
   const running = new Map<string, ScratchStatus>()
   entries.forEach((entry, key) => running.set(key, entry.status))

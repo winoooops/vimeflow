@@ -3,6 +3,7 @@ import { renderHook, act } from '@testing-library/react'
 import { useScratchTerminals } from './useScratchTerminals'
 import type { Session } from '../../sessions/types'
 import type { ITerminalService } from '../services/terminalService'
+import * as chordRegistry from '../../command-palette/chordRegistry'
 
 const makeSession = (id = 's1', workingDirectory = '/repo'): Session =>
   ({ id, workingDirectory }) as unknown as Session
@@ -108,4 +109,24 @@ test('toggle is a no-op when there is no active session', async () => {
 
   expect(service.spawn).not.toHaveBeenCalled()
   expect(result.current.renderNode).toBeNull()
+})
+
+test('registers a backtick chord that toggles and consumes the event', async () => {
+  const service = makeService()
+  const session = makeSession()
+
+  renderHook(() =>
+    useScratchTerminals({ service, resolveActiveSession: () => session })
+  )
+
+  let consumed = false
+  await act(async () => {
+    consumed = chordRegistry.dispatch(
+      new KeyboardEvent('keydown', { key: '`' })
+    )
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  })
+
+  expect(consumed).toBe(true)
+  expect(service.spawn).toHaveBeenCalled()
 })
