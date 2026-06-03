@@ -41,6 +41,10 @@ export default {
         'surface-tint': '#d9b9ff',
         'surface-variant': '#333344',
 
+        // Browser pane chrome surfaces
+        'browser-bar': '#121226',
+        'browser-tab-active': '#23233b',
+
         // Text & Borders
         'on-surface': '#e3e0f7',
         'on-surface-variant': '#cdc3d1',

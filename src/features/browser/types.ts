@@ -79,6 +79,11 @@ export interface BrowserPaneFocusedEvent {
   paneId: string
 }
 
+export interface BrowserPaneFocusAddressEvent {
+  sessionId: string
+  paneId: string
+}
+
 export interface BrowserPaneUrlChangedEvent {
   sessionId: string
   paneId: string
@@ -106,7 +111,11 @@ export interface BrowserPaneBridge {
   getCdpInfo: (request: BrowserPaneRef) => Promise<BrowserCdpInfo>
   activateTab: (request: BrowserPaneTabRequest) => Promise<void>
   closeTab: (request: BrowserPaneTabRequest) => Promise<void>
+  openExternal: (request: BrowserPaneRef) => Promise<void>
   onFocus: (callback: (event: BrowserPaneFocusedEvent) => void) => () => void
+  onFocusAddress: (
+    callback: (event: BrowserPaneFocusAddressEvent) => void
+  ) => () => void
   onUrlChange: (
     callback: (event: BrowserPaneUrlChangedEvent) => void
   ) => () => void

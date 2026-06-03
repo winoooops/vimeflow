@@ -9,8 +9,10 @@ import {
   navigateBrowserPane,
   newBrowserPaneTab,
   onBrowserPaneFocus,
+  onBrowserPaneFocusAddress,
   onBrowserPaneTabsChange,
   onBrowserPaneUrlChange,
+  openExternalBrowserPane,
   setBrowserPaneBounds,
 } from './browserBridge'
 import type { BrowserPaneBridge } from './types'
@@ -77,6 +79,7 @@ describe('browserBridge', () => {
 
   test('delegates bridge calls to window.vimeflow.browserPane', async () => {
     const unlistenFocus = vi.fn()
+    const unlistenFocusAddress = vi.fn()
     const unlistenUrl = vi.fn()
     const unlistenTabs = vi.fn()
 
@@ -101,6 +104,7 @@ describe('browserBridge', () => {
       focusPane: vi.fn().mockResolvedValue(undefined),
       activateTab: vi.fn().mockResolvedValue(undefined),
       closeTab: vi.fn().mockResolvedValue(undefined),
+      openExternal: vi.fn().mockResolvedValue(undefined),
       getCdpInfo: vi.fn().mockResolvedValue({
         url: 'http://127.0.0.1:9223',
         token: 'token',
@@ -108,6 +112,7 @@ describe('browserBridge', () => {
         targetId: 'pty-1:p1',
       }),
       onFocus: vi.fn(() => unlistenFocus),
+      onFocusAddress: vi.fn(() => unlistenFocusAddress),
       onUrlChange: vi.fn(() => unlistenUrl),
       onTabsChange: vi.fn(() => unlistenTabs),
     }
@@ -155,6 +160,8 @@ describe('browserBridge', () => {
       tabId: 'tab-1',
     })
 
+    await openExternalBrowserPane({ sessionId: 'pty-1', paneId: 'p1' })
+
     await expect(
       getBrowserCdpInfo({ sessionId: 'pty-1', paneId: 'p1' })
     ).resolves.toMatchObject({
@@ -162,6 +169,7 @@ describe('browserBridge', () => {
     })
 
     const focusCleanup = onBrowserPaneFocus(() => undefined)
+    const focusAddressCleanup = onBrowserPaneFocusAddress(() => undefined)
     const urlCleanup = onBrowserPaneUrlChange(() => undefined)
     const tabsCleanup = onBrowserPaneTabsChange(() => undefined)
 
@@ -205,7 +213,13 @@ describe('browserBridge', () => {
       sessionId: 'pty-1',
       paneId: 'p1',
     })
+
+    expect(bridge.openExternal).toHaveBeenCalledWith({
+      sessionId: 'pty-1',
+      paneId: 'p1',
+    })
     expect(focusCleanup).toBe(unlistenFocus)
+    expect(focusAddressCleanup).toBe(unlistenFocusAddress)
     expect(urlCleanup).toBe(unlistenUrl)
     expect(tabsCleanup).toBe(unlistenTabs)
   })
