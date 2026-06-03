@@ -12,8 +12,10 @@ import {
   BROWSER_PANE_DESTROY,
   BROWSER_PANE_FOCUS,
   BROWSER_PANE_FOCUSED,
+  BROWSER_PANE_FOCUS_ADDRESS,
   BROWSER_PANE_NAVIGATE,
   BROWSER_PANE_NEW_TAB,
+  BROWSER_PANE_OPEN_EXTERNAL,
   BROWSER_PANE_SET_BOUNDS,
   BROWSER_PANE_TABS_CHANGED,
   BROWSER_PANE_URL_CHANGED,
@@ -105,6 +107,8 @@ contextBridge.exposeInMainWorld('vimeflow', {
       ipcRenderer.invoke(BROWSER_PANE_ACTIVATE_TAB, request),
     closeTab: (request: unknown): Promise<unknown> =>
       ipcRenderer.invoke(BROWSER_PANE_CLOSE_TAB, request),
+    openExternal: (request: unknown): Promise<unknown> =>
+      ipcRenderer.invoke(BROWSER_PANE_OPEN_EXTERNAL, request),
     onFocus: (callback: (payload: unknown) => void): (() => void) => {
       const handler = (_event: IpcRendererEvent, payload: unknown): void => {
         callback(payload)
@@ -136,6 +140,17 @@ contextBridge.exposeInMainWorld('vimeflow', {
 
       return (): void => {
         ipcRenderer.off(BROWSER_PANE_TABS_CHANGED, handler)
+      }
+    },
+    onFocusAddress: (callback: (payload: unknown) => void): (() => void) => {
+      const handler = (_event: IpcRendererEvent, payload: unknown): void => {
+        callback(payload)
+      }
+
+      ipcRenderer.on(BROWSER_PANE_FOCUS_ADDRESS, handler)
+
+      return (): void => {
+        ipcRenderer.off(BROWSER_PANE_FOCUS_ADDRESS, handler)
       }
     },
   },

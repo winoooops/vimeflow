@@ -3,6 +3,7 @@ import {
   WebContentsView,
   ipcMain,
   session as electronSession,
+  shell,
   type Event as ElectronEvent,
   type IpcMainInvokeEvent,
   type Session as ElectronSession,
@@ -24,8 +25,10 @@ import {
   BROWSER_PANE_DESTROY,
   BROWSER_PANE_FOCUS,
   BROWSER_PANE_FOCUSED,
+  BROWSER_PANE_FOCUS_ADDRESS,
   BROWSER_PANE_NAVIGATE,
   BROWSER_PANE_NEW_TAB,
+  BROWSER_PANE_OPEN_EXTERNAL,
   BROWSER_PANE_SET_BOUNDS,
   BROWSER_PANE_TABS_CHANGED,
   BROWSER_PANE_URL_CHANGED,
@@ -380,6 +383,16 @@ const hasPlatformShortcutModifier = (
     : input.control && !input.meta
 }
 
+export const isFocusAddressShortcut = (
+  input: BrowserPaneShortcutInput,
+  platform: NodeJS.Platform = process.platform
+): boolean =>
+  input.code === 'KeyL' &&
+  !input.alt &&
+  input.shift !== true &&
+  !input.isAutoRepeat &&
+  hasPlatformShortcutModifier(input, platform)
+
 const isBrowserPaneWorkspaceShortcutInput = (
   input: BrowserPaneShortcutInput
 ): boolean => {
@@ -645,6 +658,10 @@ export class BrowserPaneController {
     ipcMain.handle(BROWSER_PANE_CLOSE_TAB, (_event, payload) =>
       this.closeTab(payload)
     )
+
+    ipcMain.handle(BROWSER_PANE_OPEN_EXTERNAL, (_event, payload) =>
+      this.openExternal(payload)
+    )
   }
 
   dispose(): void {
@@ -657,6 +674,7 @@ export class BrowserPaneController {
     ipcMain.removeHandler(BROWSER_PANE_CDP_INFO)
     ipcMain.removeHandler(BROWSER_PANE_ACTIVATE_TAB)
     ipcMain.removeHandler(BROWSER_PANE_CLOSE_TAB)
+    ipcMain.removeHandler(BROWSER_PANE_OPEN_EXTERNAL)
 
     for (const record of this.panes.values()) {
       this.removeRecord(record)
@@ -1022,6 +1040,20 @@ export class BrowserPaneController {
     }
 
     webContents.on('before-input-event', (event, input) => {
+      if (isFocusAddressShortcut(input)) {
+        event.preventDefault()
+        const win = BrowserWindow.fromId(record.windowId)
+        if (win && !win.isDestroyed() && !win.webContents.isDestroyed()) {
+          win.webContents.focus()
+          win.webContents.send(BROWSER_PANE_FOCUS_ADDRESS, {
+            sessionId: record.sessionId,
+            paneId: record.paneId,
+          })
+        }
+
+        return
+      }
+
       if (isCommandPaletteShortcutInput(input)) {
         event.preventDefault()
         dispatchCommandPaletteToggle()
@@ -1223,6 +1255,22 @@ export class BrowserPaneController {
     }
 
     this.activeWebContents(record)?.focus()
+  }
+
+  private openExternal(payload: unknown): void {
+    if (!isCdpInfoRequest(payload)) {
+      throw new Error('invalid browser pane open-external payload')
+    }
+
+    const record = this.panes.get(paneKey(payload.sessionId, payload.paneId))
+    if (!record) {
+      return
+    }
+
+    const url = this.activeWebContents(record)?.getURL() ?? ''
+    if (/^https?:\/\//i.test(url)) {
+      void shell.openExternal(url)
+    }
   }
 
   private activateTab(payload: unknown): void {

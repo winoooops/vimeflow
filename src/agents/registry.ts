@@ -3,16 +3,19 @@ import openaiMark from '../assets/vendor-icons/openai.svg'
 import type { AgentStatus } from '../features/agent-status/types'
 import type { SessionStatus } from '../features/sessions/types'
 
-interface AgentDef {
-  id: string
+export interface PaneIdentity {
   name: string
   short: string
   glyph: string
-  model: string | null
   accent: string
   accentDim: string
   accentSoft: string
   onAccent: string
+}
+
+export interface AgentDef extends PaneIdentity {
+  id: string
+  model: string | null
 }
 
 export const AGENTS = {

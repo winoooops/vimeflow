@@ -5,6 +5,7 @@ import type {
   BrowserPaneCreateRequest,
   BrowserPaneCreateResult,
   BrowserPaneDestroyRequest,
+  BrowserPaneFocusAddressEvent,
   BrowserPaneFocusedEvent,
   BrowserPaneNewTabRequest,
   BrowserPaneRef,
@@ -97,6 +98,12 @@ export const closeBrowserPaneTab = async (
   await bridge()?.closeTab(request)
 }
 
+export const openExternalBrowserPane = async (
+  request: BrowserPaneRef
+): Promise<void> => {
+  await bridge()?.openExternal(request)
+}
+
 export const onBrowserPaneFocus = (
   callback: (event: BrowserPaneFocusedEvent) => void
 ): (() => void) => bridge()?.onFocus(callback) ?? ((): void => undefined)
@@ -108,3 +115,7 @@ export const onBrowserPaneUrlChange = (
 export const onBrowserPaneTabsChange = (
   callback: (event: BrowserPaneTabsChangedEvent) => void
 ): (() => void) => bridge()?.onTabsChange(callback) ?? ((): void => undefined)
+
+export const onBrowserPaneFocusAddress = (
+  callback: (event: BrowserPaneFocusAddressEvent) => void
+): (() => void) => bridge()?.onFocusAddress(callback) ?? ((): void => undefined)

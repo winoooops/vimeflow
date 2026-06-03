@@ -7,8 +7,10 @@ import {
   BROWSER_PANE_DESTROY,
   BROWSER_PANE_FOCUS,
   BROWSER_PANE_FOCUSED,
+  BROWSER_PANE_FOCUS_ADDRESS,
   BROWSER_PANE_NAVIGATE,
   BROWSER_PANE_NEW_TAB,
+  BROWSER_PANE_OPEN_EXTERNAL,
   BROWSER_PANE_SET_BOUNDS,
   BROWSER_PANE_TABS_CHANGED,
   BROWSER_PANE_URL_CHANGED,
@@ -92,6 +94,11 @@ describe('preload browserPane wiring', () => {
     ['destroyPane', BROWSER_PANE_DESTROY, { sessionId: 's1', paneId: 'p1' }],
     ['focusPane', BROWSER_PANE_FOCUS, { sessionId: 's1', paneId: 'p1' }],
     ['getCdpInfo', BROWSER_PANE_CDP_INFO, { sessionId: 's1', paneId: 'p1' }],
+    [
+      'openExternal',
+      BROWSER_PANE_OPEN_EXTERNAL,
+      { sessionId: 's1', paneId: 'p1' },
+    ],
   ])(
     '%s invokes ipcRenderer.invoke with the correct channel',
     async (
@@ -112,6 +119,7 @@ describe('preload browserPane wiring', () => {
 
   test.each([
     ['onFocus', BROWSER_PANE_FOCUSED],
+    ['onFocusAddress', BROWSER_PANE_FOCUS_ADDRESS],
     ['onUrlChange', BROWSER_PANE_URL_CHANGED],
     ['onTabsChange', BROWSER_PANE_TABS_CHANGED],
   ])(
