@@ -30,7 +30,12 @@ import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { botEnv, botLabel, loadBot } from './lib/bot-identity.js'
-import { formatFixerCycleComment } from './lib/decision-comment.js'
+import {
+  decisionCommentId,
+  decisionStorePath,
+  formatFixerCycleComment,
+  readDecisionStore,
+} from './lib/decision-comment.js'
 import { RUN_SELF_REVIEW_EXIT } from './lib/dispatch-blocker.js'
 import { worktreePlan } from './lib/fixer-worktree.js'
 import { linkedVimForPr } from './lib/pr-utils.js'
@@ -376,17 +381,28 @@ const run = async (pr, live) => {
           worktreeClean: !worktreeStatus,
         })
 
-        spawnSync(
-          'node',
-          [
-            join(SCRIPT_DIR, 'lib', 'linear-status.js'),
-            vim,
-            body,
-            '--as',
-            'fixer',
-          ],
-          { stdio: 'inherit' }
+        const parentId = decisionCommentId(
+          readDecisionStore(decisionStorePath(pr)),
+          pr,
+          {
+            state: 'NEEDS_FIX',
+            headSha: startHead,
+            action: 'dispatch fixer',
+          }
         )
+
+        const args = [
+          join(SCRIPT_DIR, 'lib', 'linear-status.js'),
+          vim,
+          body,
+          '--as',
+          'fixer',
+        ]
+        if (parentId) {
+          args.push('--parent', parentId)
+        }
+
+        spawnSync('node', args, { stdio: 'inherit' })
       } else {
         out('(no VIM-N in the PR body — skipped Linear status.)')
       }

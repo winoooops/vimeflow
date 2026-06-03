@@ -61,11 +61,15 @@ export const createEvents = (log) => {
       return
     }
 
-    const child = spawn(
-      'node',
-      [LINEAR_STATUS, vim, fmt(e), '--as', 'orchestrator'],
-      { stdio: 'ignore' }
-    )
+    const args = [LINEAR_STATUS, vim, fmt(e), '--as', 'orchestrator']
+    if (e.parentId) {
+      args.push('--parent', e.parentId)
+    }
+    if (e.type === 'merged') {
+      args.push('--state', 'Done')
+    }
+
+    const child = spawn('node', args, { stdio: 'ignore' })
     child.on('error', () => {
       // best-effort: Linear observability must never break the loop
     })

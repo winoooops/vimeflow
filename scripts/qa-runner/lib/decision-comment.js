@@ -183,12 +183,83 @@ export const readDecisionStore = (file) => {
   }
 }
 
-export const shouldPostDecision = (store, pr, key) => store[String(pr)] !== key
+const decisionEntry = (store, pr) => {
+  const entry = store[String(pr)]
+  if (!entry) {
+    return {}
+  }
+  if (typeof entry === 'string') {
+    return { key: entry }
+  }
 
-export const markDecisionPosted = (store, pr, key, file) => {
-  const next = { ...store, [String(pr)]: key }
+  return entry
+}
+
+export const shouldPostDecision = (store, pr, key) =>
+  decisionEntry(store, pr).key !== key
+
+export const decisionCommentId = (
+  store,
+  pr,
+  { state, headSha, action } = {}
+) => {
+  const entry = decisionEntry(store, pr)
+  if (!entry.commentId) {
+    return null
+  }
+  if (state && entry.state !== state) {
+    return null
+  }
+  if (headSha && entry.headSha !== headSha) {
+    return null
+  }
+  if (action && entry.action !== action) {
+    return null
+  }
+
+  return entry.commentId
+}
+
+export const hasMergeLinearPosted = (store, pr) =>
+  Boolean(decisionEntry(store, pr).mergeLinearPosted)
+
+const writeDecisionStore = (next, file) => {
   mkdirSync(dirname(file), { recursive: true })
   writeFileSync(file, `${JSON.stringify(next, null, 2)}\n`)
 
   return next
+}
+
+export const markDecisionPosted = (
+  store,
+  pr,
+  key,
+  file,
+  { commentId, state, headSha, action } = {}
+) => {
+  const next = {
+    ...store,
+    [String(pr)]: {
+      ...decisionEntry(store, pr),
+      key,
+      commentId,
+      state,
+      headSha,
+      action,
+    },
+  }
+
+  return writeDecisionStore(next, file)
+}
+
+export const markMergeLinearPosted = (store, pr, file) => {
+  const next = {
+    ...store,
+    [String(pr)]: {
+      ...decisionEntry(store, pr),
+      mergeLinearPosted: true,
+    },
+  }
+
+  return writeDecisionStore(next, file)
 }

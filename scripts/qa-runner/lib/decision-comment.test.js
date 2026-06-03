@@ -4,10 +4,13 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, test } from 'vitest'
 import {
   actionForDecision,
+  decisionCommentId,
   decisionKey,
   formatDecisionComment,
   formatFixerCycleComment,
+  hasMergeLinearPosted,
   markDecisionPosted,
+  markMergeLinearPosted,
   readDecisionStore,
   shouldPostDecision,
 } from './decision-comment.js'
@@ -188,5 +191,55 @@ describe('decision store', () => {
 
     expect(shouldPostDecision(updated, 329, key)).toBe(false)
     expect(shouldPostDecision(readDecisionStore(file), 329, key)).toBe(false)
+  })
+
+  test('keeps old string store entries compatible', () => {
+    const store = { 329: 'legacy-key' }
+
+    expect(shouldPostDecision(store, 329, 'legacy-key')).toBe(false)
+    expect(shouldPostDecision(store, 329, 'new-key')).toBe(true)
+  })
+
+  test('records the decision comment id for threaded follow-up comments', () => {
+    const file = makeStore()
+
+    const key = decisionKey({
+      pr: 331,
+      state: 'NEEDS_FIX',
+      detail: 'Claude verdict: patch has issues',
+      headSha: '8cd325f2efe5f0af0147257343cadfadc06b987c',
+      action: 'dispatch fixer',
+      approve: false,
+      execute: true,
+    })
+
+    const updated = markDecisionPosted({}, 331, key, file, {
+      commentId: 'linear-comment-id',
+      state: 'NEEDS_FIX',
+      headSha: '8cd325f2efe5f0af0147257343cadfadc06b987c',
+      action: 'dispatch fixer',
+    })
+
+    expect(
+      decisionCommentId(updated, 331, {
+        state: 'NEEDS_FIX',
+        headSha: '8cd325f2efe5f0af0147257343cadfadc06b987c',
+        action: 'dispatch fixer',
+      })
+    ).toBe('linear-comment-id')
+
+    expect(
+      decisionCommentId(updated, 331, {
+        state: 'GOOD_SHAPE',
+      })
+    ).toBeNull()
+  })
+
+  test('tracks when the approval path already posted the merged Linear thread', () => {
+    const file = makeStore()
+    const updated = markMergeLinearPosted({}, 331, file)
+
+    expect(hasMergeLinearPosted(updated, 331)).toBe(true)
+    expect(hasMergeLinearPosted(readDecisionStore(file), 331)).toBe(true)
   })
 })

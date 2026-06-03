@@ -15,6 +15,12 @@ import { execFileSync, spawn } from 'node:child_process'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
+  decisionCommentId,
+  decisionStorePath,
+  hasMergeLinearPosted,
+  readDecisionStore,
+} from './decision-comment.js'
+import {
   DISPATCH_BLOCKED_EXIT,
   clearDispatchBlocker,
   dispatchBlockerDetail,
@@ -131,6 +137,18 @@ const pauseLabel = (st, maxNoops) =>
     ? 'dispatch blocked'
     : `${st.noopCount}/${maxNoops} failed`
 
+const decisionStore = (pr) => readDecisionStore(decisionStorePath(pr))
+
+const needsFixParentId = (pr, headSha) =>
+  decisionCommentId(decisionStore(pr), pr, {
+    state: 'NEEDS_FIX',
+    headSha,
+    action: 'dispatch fixer',
+  })
+
+const shouldPostMergedLinear = (pr) =>
+  !hasMergeLinearPosted(decisionStore(pr), pr)
+
 // 'done' | 'progress' | 'error' | 'waiting' | 'paused' | 'blocked' | 'skip' | 'retry'.
 export const runOne = async (pr, reason, deps) => {
   const {
@@ -170,7 +188,12 @@ export const runOne = async (pr, reason, deps) => {
     state.forget(pr)
     if (tracked) {
       const type = before.state === 'MERGED' ? 'merged' : 'closed'
-      events.emit({ type, pr, detail: before.state }, before.vim)
+      events.emit(
+        { type, pr, detail: before.state },
+        type === 'merged' && !shouldPostMergedLinear(pr)
+          ? undefined
+          : before.vim
+      )
     }
 
     return 'done'
@@ -224,7 +247,10 @@ export const runOne = async (pr, reason, deps) => {
   // "merged" milestone for a PR a human just closed.
   if (after.state === 'MERGED') {
     state.forget(pr)
-    events.emit({ type: 'merged', pr, detail: after.state }, after.vim)
+    events.emit(
+      { type: 'merged', pr, detail: after.state },
+      shouldPostMergedLinear(pr) ? after.vim : undefined
+    )
 
     return 'done'
   }
@@ -252,7 +278,16 @@ export const runOne = async (pr, reason, deps) => {
       pausedAt: null,
       pauseReason: null,
     })
-    events.emit({ type: 'progress', pr, round }, after.vim)
+
+    events.emit(
+      {
+        type: 'progress',
+        pr,
+        round,
+        parentId: needsFixParentId(pr, before.headSha),
+      },
+      after.vim
+    )
 
     return 'progress'
   }

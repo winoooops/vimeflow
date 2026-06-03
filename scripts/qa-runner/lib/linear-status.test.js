@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, test, vi } from 'vitest'
-import { loadAuthFromRoot } from './linear-status.js'
+import { createLinearComment, loadAuthFromRoot } from './linear-status.js'
 
 const tempRoots = []
 const originalLinearApiKey = process.env.LINEAR_API_KEY
@@ -117,6 +117,65 @@ describe('loadAuthFromRoot', () => {
     await expect(loadAuthFromRoot(undefined, root, vi.fn())).resolves.toEqual({
       header: 'lin_api_test',
       who: 'you (personal key)',
+    })
+  })
+})
+
+describe('createLinearComment', () => {
+  test('creates a top-level issue comment when no parent is provided', async () => {
+    const fetchImpl = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        data: {
+          commentCreate: {
+            success: true,
+            comment: { id: 'top-level-comment' },
+          },
+        },
+      }),
+    }))
+
+    await expect(
+      createLinearComment(
+        'Bearer token',
+        { issueId: 'issue-id', body: 'body' },
+        fetchImpl
+      )
+    ).resolves.toBe('top-level-comment')
+
+    const payload = JSON.parse(fetchImpl.mock.calls[0][1].body)
+    expect(payload.query).toContain('issueId')
+    expect(payload.query).not.toContain('parentId')
+    expect(payload.variables).toEqual({ id: 'issue-id', body: 'body' })
+  })
+
+  test('creates a threaded reply when parent is provided', async () => {
+    const fetchImpl = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        data: {
+          commentCreate: {
+            success: true,
+            comment: { id: 'reply-comment' },
+          },
+        },
+      }),
+    }))
+
+    await expect(
+      createLinearComment(
+        'Bearer token',
+        { issueId: 'issue-id', parentId: 'parent-comment', body: 'body' },
+        fetchImpl
+      )
+    ).resolves.toBe('reply-comment')
+
+    const payload = JSON.parse(fetchImpl.mock.calls[0][1].body)
+    expect(payload.query).toContain('parentId')
+    expect(payload.query).not.toContain('issueId')
+    expect(payload.variables).toEqual({
+      parentId: 'parent-comment',
+      body: 'body',
     })
   })
 })
