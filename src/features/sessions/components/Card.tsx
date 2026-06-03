@@ -111,8 +111,8 @@ export const Card = ({
               }}
               className={
                 variant === 'active'
-                  ? 'pointer-events-auto min-w-0 flex-1 truncate rounded bg-surface-container-high px-1 font-label text-[13px] font-semibold text-on-surface outline-none ring-1 ring-primary'
-                  : 'pointer-events-auto min-w-0 flex-1 truncate rounded bg-surface-container-high px-1 font-label text-[12.5px] text-on-surface outline-none ring-1 ring-primary'
+                  ? 'pointer-events-auto min-w-0 flex-1 truncate rounded bg-surface-container-high px-1 font-label text-[13.5px] font-semibold text-on-surface outline-none ring-1 ring-primary'
+                  : 'pointer-events-auto min-w-0 flex-1 truncate rounded bg-surface-container-high px-1 font-label text-[13px] text-on-surface outline-none ring-1 ring-primary'
               }
               aria-label="Rename session"
             />
@@ -123,8 +123,8 @@ export const Card = ({
               aria-hidden="true"
               className={
                 variant === 'active'
-                  ? 'pointer-events-auto min-w-0 flex-1 cursor-pointer truncate font-label text-[13px] font-semibold text-on-surface'
-                  : `pointer-events-auto min-w-0 flex-1 cursor-pointer truncate font-label text-[12.5px] ${isActive ? 'text-on-surface' : 'text-on-surface-variant/60'}`
+                  ? 'pointer-events-auto min-w-0 flex-1 cursor-pointer truncate font-label text-[13.5px] font-semibold text-on-surface'
+                  : `pointer-events-auto min-w-0 flex-1 cursor-pointer truncate font-label text-[13px] ${isActive ? 'text-on-surface' : 'text-on-surface-variant/60'}`
               }
               // Title-click activation — REQUIRED. Without an explicit
               // onClick, single clicks on the title would NOT bubble to
