@@ -198,6 +198,37 @@ const decisionEntry = (store, pr) => {
   return entry
 }
 
+// Linear thread policy:
+// - NEEDS_FIX + dispatch fixer opens a fresh fix-cycle thread.
+// - Kimi/progress replies can attach to that root while the fixer runs.
+// - Post-fix decisions only attach after the worker records the pushed head.
+// This keeps a new NEEDS_FIX cycle top-level and prevents stale-thread replies.
+const FIX_CYCLE_CONTINUATION_STATES = new Set([
+  'WAITING',
+  'RETRYING',
+  'GOOD_SHAPE',
+])
+
+const opensFixCycleThread = ({ state, action } = {}) =>
+  state === 'NEEDS_FIX' && action === 'dispatch fixer'
+
+const continuesFixCycleThread = ({ state } = {}) =>
+  FIX_CYCLE_CONTINUATION_STATES.has(state)
+
+const isFixCycleThread = (thread) =>
+  Boolean(thread?.isFixCycle && thread.rootCommentId)
+
+// `progressHeadSha` is written only after a fixer push is observed. Without this
+// gate, unrelated WAITING/GOOD_SHAPE decisions could attach to an old fix thread.
+const matchesProgressHead = (thread, { headSha } = {}) =>
+  Boolean(thread.progressHeadSha) &&
+  (!headSha || headSha === thread.progressHeadSha)
+
+const canReplyToFixCycle = (thread, decision) =>
+  isFixCycleThread(thread) &&
+  matchesProgressHead(thread, decision) &&
+  continuesFixCycleThread(decision)
+
 export const shouldPostDecision = (store, pr, key) => {
   const entry = decisionEntry(store, pr)
 
@@ -226,6 +257,42 @@ export const decisionCommentId = (
   return entry.commentId
 }
 
+export const commentReplyTarget = (commentId) =>
+  commentId
+    ? { mode: 'reply', parentId: commentId }
+    : { mode: 'top_level', parentId: null }
+
+// Used by decision comments. Only post-fix continuation states should reply
+// under the fix-cycle root; a new NEEDS_FIX decision always starts top-level.
+export const decisionThreadTarget = (store, pr, decision = {}) => {
+  const thread = decisionEntry(store, pr).activeThread
+  if (!canReplyToFixCycle(thread, decision)) {
+    return { mode: 'top_level', parentId: null }
+  }
+
+  return commentReplyTarget(thread.rootCommentId)
+}
+
+// Used by the fixer/progress paths while they are still operating on the head
+// that originally triggered the fixer.
+export const fixCycleThreadParentId = (store, pr, { headSha } = {}) => {
+  const thread = decisionEntry(store, pr).activeThread
+  if (!isFixCycleThread(thread)) {
+    return null
+  }
+  if (headSha && thread.openedAtHeadSha !== headSha) {
+    return null
+  }
+
+  return thread.rootCommentId
+}
+
+export const fixCycleThreadTarget = (store, pr, { headSha } = {}) => {
+  const parentId = fixCycleThreadParentId(store, pr, { headSha })
+
+  return commentReplyTarget(parentId)
+}
+
 export const hasMergeLinearPosted = (store, pr) =>
   Boolean(decisionEntry(store, pr).mergeLinearPosted)
 
@@ -243,15 +310,53 @@ export const markDecisionPosted = (
   file,
   { commentId, state, headSha, action } = {}
 ) => {
+  const previous = decisionEntry(store, pr)
+
+  // NEEDS_FIX is the only decision that can open or replace the active thread.
+  // If it does not dispatch a fixer, clear the prior thread instead of reusing it.
+  const activeThread =
+    state === 'NEEDS_FIX'
+      ? opensFixCycleThread({ state, action }) && commentId
+        ? {
+            isFixCycle: true,
+            rootCommentId: commentId,
+            openedAtHeadSha: headSha ?? null,
+          }
+        : null
+      : previous.activeThread
+
   const next = {
     ...store,
     [String(pr)]: {
-      ...decisionEntry(store, pr),
+      ...previous,
       key,
       ...(commentId !== undefined && { commentId: commentId ?? null }),
       ...(state !== undefined && { state }),
       ...(headSha !== undefined && { headSha }),
       ...(action !== undefined && { action }),
+      ...(activeThread !== undefined && { activeThread }),
+    },
+  }
+
+  return writeDecisionStore(next, file)
+}
+
+// Called after the worker sees the fixer pushed a new head. From that point,
+// WAITING/RETRYING/GOOD_SHAPE decisions for that head can continue the thread.
+export const markFixCycleProgress = (store, pr, file, { headSha } = {}) => {
+  const previous = decisionEntry(store, pr)
+  if (!isFixCycleThread(previous.activeThread)) {
+    return store
+  }
+
+  const next = {
+    ...store,
+    [String(pr)]: {
+      ...previous,
+      activeThread: {
+        ...previous.activeThread,
+        progressHeadSha: headSha ?? null,
+      },
     },
   }
 

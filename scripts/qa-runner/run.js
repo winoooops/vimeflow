@@ -31,8 +31,8 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { botEnv, botLabel, loadBot } from './lib/bot-identity.js'
 import {
-  decisionCommentId,
   decisionStorePath,
+  fixCycleThreadParentId,
   formatFixerCycleComment,
   readDecisionStore,
 } from './lib/decision-comment.js'
@@ -381,14 +381,10 @@ const run = async (pr, live) => {
           worktreeClean: !worktreeStatus,
         })
 
-        const parentId = decisionCommentId(
+        const parentId = fixCycleThreadParentId(
           readDecisionStore(decisionStorePath(pr)),
           pr,
-          {
-            state: 'NEEDS_FIX',
-            headSha: startHead,
-            action: 'dispatch fixer',
-          }
+          { headSha: startHead }
         )
 
         const args = [
