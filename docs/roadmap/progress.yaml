@@ -1,6 +1,6 @@
 ---
 # Vimeflow CLI Agent Workspace — Machine-Readable Progress Tracker
-# Source: docs/roadmap/tauri-migration-roadmap.md
+# Source: docs/roadmap/ui-update-roadmap.md
 # Schema: phase → steps → dod (definition of done)
 # Status values: pending | in_progress | done | blocked
 # Revised: 2026-05-20 — Electron runtime cutover complete; main E2E is green.
@@ -9,7 +9,7 @@
 
 version: 10
 updated: '2026-05-20'
-roadmap: docs/roadmap/tauri-migration-roadmap.md
+roadmap: docs/roadmap/ui-update-roadmap.md
 changelog:
   en: CHANGELOG.md
   zh-CN: CHANGELOG.zh-CN.md
