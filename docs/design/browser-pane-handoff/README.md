@@ -5,11 +5,13 @@ shared pane shell (rounded box, focus border + glow) and adopts **Arc-style
 horizontal tabs**.
 
 ## Files
+
 - `Browser Pane.html` — self-contained markup + CSS for the pane.
 - `assets/github-dashboard.png` — placeholder screenshot of the loaded page.
   **In the app, replace the `<img>` inside `.page` with the real webview/iframe.**
 
 ## Structure
+
 ```
 .pane                     ← shared pane shell (border = focus accent, overflow:hidden)
 ├─ .tabbar                ← Arc horizontal tabs
@@ -22,6 +24,7 @@ horizontal tabs**.
 ```
 
 ## Key design decisions
+
 - **Reserved WEB accent = cyan `#4fc8d6`.** Agents already own the other accents
   (claude=lavender, codex=mint, **gemini=blue `#a8c8ff`**, shell=yellow), so the
   browser needed its own identity color that doesn't collide. Used for: focus
@@ -35,6 +38,7 @@ horizontal tabs**.
 - **Page fills edge-to-edge** via `object-fit:cover; object-position:top center`.
 
 ## Tokens used
+
 ```
 --surface-lowest #0d0d1c   --bar #121226        --tab-active #23233b
 --on-surface #e3e0f7       --on-variant #cdc3d1  --muted #8a8299  --faint #6c7086
@@ -46,6 +50,7 @@ icons: Material Symbols Outlined
 ```
 
 ## Unfocused state
+
 The focused pane uses `border:2px var(--web)` + glow. For the unfocused pane,
 match the app convention: `border:1px solid rgba(74,68,79,0.22)` and drop the
 box-shadow glow.

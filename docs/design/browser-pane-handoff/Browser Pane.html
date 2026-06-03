@@ -1,227 +1,488 @@
 <!doctype html>
 <html lang="en">
-<head>
-<meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Vimeflow · Browser Pane</title>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Vimeflow · Browser Pane</title>
 
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link href="https://fonts.googleapis.com/icon?family=Material+Symbols+Outlined" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link
+      href="https://fonts.googleapis.com/icon?family=Material+Symbols+Outlined"
+      rel="stylesheet"
+    />
 
-<style>
-  *{ box-sizing:border-box; margin:0; padding:0; }
-  :root{
-    --workspace:#08080f;
-    --surface-lowest:#0d0d1c;
-    --bar:#121226;
-    --tab-active:#23233b;
-    --on-surface:#e3e0f7;
-    --on-variant:#cdc3d1;
-    --muted:#8a8299;
-    --faint:#6c7086;
-    --hair:#4a444f;
-    --line:rgba(74,68,79,0.30);
-    --line-soft:rgba(74,68,79,0.18);
-    --mint:#7defa1;
-    --mauve:#cba6f7;
-    --coral:#ff94a5;
-    /* reserved WEB identity accent — cyan, distinct from all agents */
-    --web:#4fc8d6;
-    --web-dim:rgba(79,200,214,0.12);
-    --web-soft:rgba(79,200,214,0.30);
-    --mono:'JetBrains Mono',ui-monospace,monospace;
-    --body:'Inter',system-ui,sans-serif;
-  }
-  html,body{ height:100%; }
-  body{
-    background:var(--workspace);
-    color:var(--on-surface);
-    font-family:var(--body);
-    -webkit-font-smoothing:antialiased;
-    overflow:hidden;
-    display:flex; align-items:center; justify-content:center;
-    /* generous padding so the focus ring + glow wraps fully on every side */
-    padding:40px;
-    background-image:
-      radial-gradient(1100px circle at 90% 92%, rgba(79,200,214,0.05), transparent 46%),
-      radial-gradient(900px circle at 8% 6%, rgba(203,166,247,0.04), transparent 48%);
-  }
-  .material-symbols-outlined{
-    font-family:'Material Symbols Outlined';
-    font-variation-settings:'opsz' 20,'wght' 400,'GRAD' 0,'FILL' 0;
-    line-height:1; user-select:none;
-  }
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      :root {
+        --workspace: #08080f;
+        --surface-lowest: #0d0d1c;
+        --bar: #121226;
+        --tab-active: #23233b;
+        --on-surface: #e3e0f7;
+        --on-variant: #cdc3d1;
+        --muted: #8a8299;
+        --faint: #6c7086;
+        --hair: #4a444f;
+        --line: rgba(74, 68, 79, 0.3);
+        --line-soft: rgba(74, 68, 79, 0.18);
+        --mint: #7defa1;
+        --mauve: #cba6f7;
+        --coral: #ff94a5;
+        /* reserved WEB identity accent — cyan, distinct from all agents */
+        --web: #4fc8d6;
+        --web-dim: rgba(79, 200, 214, 0.12);
+        --web-soft: rgba(79, 200, 214, 0.3);
+        --mono: 'JetBrains Mono', ui-monospace, monospace;
+        --body: 'Inter', system-ui, sans-serif;
+      }
+      html,
+      body {
+        height: 100%;
+      }
+      body {
+        background: var(--workspace);
+        color: var(--on-surface);
+        font-family: var(--body);
+        -webkit-font-smoothing: antialiased;
+        overflow: hidden;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        /* generous padding so the focus ring + glow wraps fully on every side */
+        padding: 40px;
+        background-image:
+          radial-gradient(
+            1100px circle at 90% 92%,
+            rgba(79, 200, 214, 0.05),
+            transparent 46%
+          ),
+          radial-gradient(
+            900px circle at 8% 6%,
+            rgba(203, 166, 247, 0.04),
+            transparent 48%
+          );
+      }
+      .material-symbols-outlined {
+        font-family: 'Material Symbols Outlined';
+        font-variation-settings:
+          'opsz' 20,
+          'wght' 400,
+          'GRAD' 0,
+          'FILL' 0;
+        line-height: 1;
+        user-select: none;
+      }
 
-  /* =====================================================
+      /* =====================================================
      BROWSER PANE — same pane shell, focused (cyan border)
      The cyan ring wraps the whole pane: it's a border on the
      rounded box, so overflow:hidden clips content inside it.
      ===================================================== */
-  .pane{
-    width:min(940px,100%); height:min(820px,100%);
-    display:flex; flex-direction:column;
-    background:var(--surface-lowest);
-    border:2px solid var(--web);
-    border-radius:11px;
-    overflow:hidden;
-    box-shadow:0 0 0 6px var(--web-dim), 0 12px 40px rgba(0,0,0,0.4);
-  }
+      .pane {
+        width: min(940px, 100%);
+        height: min(820px, 100%);
+        display: flex;
+        flex-direction: column;
+        background: var(--surface-lowest);
+        border: 2px solid var(--web);
+        border-radius: 11px;
+        overflow: hidden;
+        box-shadow:
+          0 0 0 6px var(--web-dim),
+          0 12px 40px rgba(0, 0, 0, 0.4);
+      }
 
-  /* ---- Arc horizontal tab bar ---- */
-  .tabbar{
-    flex-shrink:0; height:38px;
-    display:flex; align-items:center; gap:5px;
-    padding:0 8px;
-    background:
-      linear-gradient(180deg, rgba(79,200,214,0.05), rgba(79,200,214,0) 70%),
-      var(--bar);
-    border-bottom:1px solid var(--line-soft);
-  }
-  .wchip{
-    display:inline-flex; align-items:center; gap:5px; flex-shrink:0;
-    padding:3px 8px 3px 6px; margin-right:3px;
-    background:var(--web-dim); border:1px solid var(--web-soft);
-    border-radius:7px; color:var(--web);
-    font-family:var(--mono); font-size:10px; font-weight:600; letter-spacing:0.04em;
-  }
-  .wchip .material-symbols-outlined{ font-size:12px; }
+      /* ---- Arc horizontal tab bar ---- */
+      .tabbar {
+        flex-shrink: 0;
+        height: 38px;
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        padding: 0 8px;
+        background:
+          linear-gradient(
+            180deg,
+            rgba(79, 200, 214, 0.05),
+            rgba(79, 200, 214, 0) 70%
+          ),
+          var(--bar);
+        border-bottom: 1px solid var(--line-soft);
+      }
+      .wchip {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        flex-shrink: 0;
+        padding: 3px 8px 3px 6px;
+        margin-right: 3px;
+        background: var(--web-dim);
+        border: 1px solid var(--web-soft);
+        border-radius: 7px;
+        color: var(--web);
+        font-family: var(--mono);
+        font-size: 10px;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+      }
+      .wchip .material-symbols-outlined {
+        font-size: 12px;
+      }
 
-  .tabs{ flex:1; min-width:0; display:flex; align-items:center; gap:5px; overflow:hidden; }
-  .tab{
-    position:relative;
-    display:flex; align-items:center; gap:8px;
-    height:27px; padding:0 7px 0 8px;
-    min-width:96px; max-width:210px;
-    border-radius:8px; cursor:pointer; border:1px solid transparent;
-    transition:background 130ms ease, border-color 130ms ease;
-  }
-  .tab:not(.tab--active):hover{ background:rgba(255,255,255,0.04); }
-  .tab--active{
-    background:var(--tab-active);
-    border-color:rgba(255,255,255,0.10);
-    box-shadow:0 2px 8px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.05);
-  }
-  .fav{
-    width:16px; height:16px; border-radius:5px; flex-shrink:0;
-    display:inline-flex; align-items:center; justify-content:center;
-    background:var(--web-dim); color:var(--web);
-  }
-  .fav .material-symbols-outlined{ font-size:10px; }
-  .fav--coral{ background:rgba(255,148,165,0.12); color:var(--coral); }
-  .fav--mauve{ background:rgba(203,166,247,0.12); color:var(--mauve); }
-  .tab__title{ flex:1; min-width:0; font-family:var(--mono); font-size:10.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  .tab--active .tab__title{ color:var(--on-surface); font-weight:500; }
-  .tab:not(.tab--active) .tab__title{ color:var(--muted); }
-  .tab__x{
-    width:16px; height:16px; border-radius:4px; flex-shrink:0;
-    display:inline-flex; align-items:center; justify-content:center;
-    color:var(--faint); cursor:pointer; opacity:0; background:transparent; border:none;
-    transition:background 120ms,color 120ms,opacity 120ms;
-  }
-  .tab:hover .tab__x, .tab--active .tab__x{ opacity:.8; }
-  .tab__x:hover{ background:rgba(255,255,255,0.08); color:var(--on-surface); opacity:1; }
-  .tab__x .material-symbols-outlined{ font-size:11px; }
+      .tabs {
+        flex: 1;
+        min-width: 0;
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        overflow: hidden;
+      }
+      .tab {
+        position: relative;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        height: 27px;
+        padding: 0 7px 0 8px;
+        min-width: 96px;
+        max-width: 210px;
+        border-radius: 8px;
+        cursor: pointer;
+        border: 1px solid transparent;
+        transition:
+          background 130ms ease,
+          border-color 130ms ease;
+      }
+      .tab:not(.tab--active):hover {
+        background: rgba(255, 255, 255, 0.04);
+      }
+      .tab--active {
+        background: var(--tab-active);
+        border-color: rgba(255, 255, 255, 0.1);
+        box-shadow:
+          0 2px 8px rgba(0, 0, 0, 0.4),
+          inset 0 1px 0 rgba(255, 255, 255, 0.05);
+      }
+      .fav {
+        width: 16px;
+        height: 16px;
+        border-radius: 5px;
+        flex-shrink: 0;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        background: var(--web-dim);
+        color: var(--web);
+      }
+      .fav .material-symbols-outlined {
+        font-size: 10px;
+      }
+      .fav--coral {
+        background: rgba(255, 148, 165, 0.12);
+        color: var(--coral);
+      }
+      .fav--mauve {
+        background: rgba(203, 166, 247, 0.12);
+        color: var(--mauve);
+      }
+      .tab__title {
+        flex: 1;
+        min-width: 0;
+        font-family: var(--mono);
+        font-size: 10.5px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .tab--active .tab__title {
+        color: var(--on-surface);
+        font-weight: 500;
+      }
+      .tab:not(.tab--active) .tab__title {
+        color: var(--muted);
+      }
+      .tab__x {
+        width: 16px;
+        height: 16px;
+        border-radius: 4px;
+        flex-shrink: 0;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--faint);
+        cursor: pointer;
+        opacity: 0;
+        background: transparent;
+        border: none;
+        transition:
+          background 120ms,
+          color 120ms,
+          opacity 120ms;
+      }
+      .tab:hover .tab__x,
+      .tab--active .tab__x {
+        opacity: 0.8;
+      }
+      .tab__x:hover {
+        background: rgba(255, 255, 255, 0.08);
+        color: var(--on-surface);
+        opacity: 1;
+      }
+      .tab__x .material-symbols-outlined {
+        font-size: 11px;
+      }
 
-  .ibtn2{
-    width:26px; height:26px; flex-shrink:0;
-    border-radius:7px; border:none; background:transparent;
-    color:var(--muted); cursor:pointer;
-    display:inline-flex; align-items:center; justify-content:center;
-    transition:background 120ms,color 120ms;
-  }
-  .ibtn2:hover{ background:rgba(255,255,255,0.05); color:var(--web); }
-  .ibtn2 .material-symbols-outlined{ font-size:15px; }
-  .tabbar .divider{ width:1px; height:18px; background:var(--line); flex-shrink:0; margin:0 1px; }
+      .ibtn2 {
+        width: 26px;
+        height: 26px;
+        flex-shrink: 0;
+        border-radius: 7px;
+        border: none;
+        background: transparent;
+        color: var(--muted);
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        transition:
+          background 120ms,
+          color 120ms;
+      }
+      .ibtn2:hover {
+        background: rgba(255, 255, 255, 0.05);
+        color: var(--web);
+      }
+      .ibtn2 .material-symbols-outlined {
+        font-size: 15px;
+      }
+      .tabbar .divider {
+        width: 1px;
+        height: 18px;
+        background: var(--line);
+        flex-shrink: 0;
+        margin: 0 1px;
+      }
 
-  /* ---- toolbar: nav + centered command bar ---- */
-  .toolbar{
-    flex-shrink:0; height:40px;
-    display:flex; align-items:center; gap:6px;
-    padding:0 10px;
-    background:var(--surface-lowest);
-    border-bottom:1px solid var(--line-soft);
-  }
-  .navbtn{
-    width:27px; height:27px; flex-shrink:0;
-    border-radius:8px; border:none; background:transparent;
-    color:var(--muted); cursor:pointer;
-    display:inline-flex; align-items:center; justify-content:center;
-    transition:background 120ms,color 120ms;
-  }
-  .navbtn:hover{ background:rgba(255,255,255,0.05); color:var(--web); }
-  .navbtn .material-symbols-outlined{ font-size:17px; }
-  .navbtn[disabled]{ color:var(--hair); cursor:default; }
-  .navbtn[disabled]:hover{ background:transparent; color:var(--hair); }
+      /* ---- toolbar: nav + centered command bar ---- */
+      .toolbar {
+        flex-shrink: 0;
+        height: 40px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 0 10px;
+        background: var(--surface-lowest);
+        border-bottom: 1px solid var(--line-soft);
+      }
+      .navbtn {
+        width: 27px;
+        height: 27px;
+        flex-shrink: 0;
+        border-radius: 8px;
+        border: none;
+        background: transparent;
+        color: var(--muted);
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        transition:
+          background 120ms,
+          color 120ms;
+      }
+      .navbtn:hover {
+        background: rgba(255, 255, 255, 0.05);
+        color: var(--web);
+      }
+      .navbtn .material-symbols-outlined {
+        font-size: 17px;
+      }
+      .navbtn[disabled] {
+        color: var(--hair);
+        cursor: default;
+      }
+      .navbtn[disabled]:hover {
+        background: transparent;
+        color: var(--hair);
+      }
 
-  .address{
-    flex:1; min-width:0; max-width:520px; margin:0 auto; height:29px;
-    display:flex; align-items:center; gap:9px; padding:0 12px;
-    background:rgba(13,13,28,0.6);
-    border:1px solid var(--web-soft);
-    border-radius:999px;
-    box-shadow:0 0 0 3px rgba(79,200,214,0.08);
-  }
-  .lock{ font-size:12px; color:var(--mint); flex-shrink:0; }
-  .url{ flex:1; min-width:0; text-align:center; font-family:var(--mono); font-size:11.5px; letter-spacing:-0.1px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  .url .scheme{ color:var(--faint); } .url .host{ color:var(--on-surface); } .url .path{ color:var(--muted); }
-  .kbd{ flex-shrink:0; font-family:var(--mono); font-size:9px; color:var(--faint); padding:2px 5px; border-radius:5px; background:rgba(255,255,255,0.03); border:1px solid var(--line-soft); }
+      .address {
+        flex: 1;
+        min-width: 0;
+        max-width: 520px;
+        margin: 0 auto;
+        height: 29px;
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        padding: 0 12px;
+        background: rgba(13, 13, 28, 0.6);
+        border: 1px solid var(--web-soft);
+        border-radius: 999px;
+        box-shadow: 0 0 0 3px rgba(79, 200, 214, 0.08);
+      }
+      .lock {
+        font-size: 12px;
+        color: var(--mint);
+        flex-shrink: 0;
+      }
+      .url {
+        flex: 1;
+        min-width: 0;
+        text-align: center;
+        font-family: var(--mono);
+        font-size: 11.5px;
+        letter-spacing: -0.1px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .url .scheme {
+        color: var(--faint);
+      }
+      .url .host {
+        color: var(--on-surface);
+      }
+      .url .path {
+        color: var(--muted);
+      }
+      .kbd {
+        flex-shrink: 0;
+        font-family: var(--mono);
+        font-size: 9px;
+        color: var(--faint);
+        padding: 2px 5px;
+        border-radius: 5px;
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid var(--line-soft);
+      }
 
-  /* ---- page: fills edge-to-edge ---- */
-  .page{ flex:1; min-height:0; position:relative; background:#0d1117; overflow:hidden; }
-  .page img{ position:absolute; inset:0; width:100%; height:100%; object-fit:cover; object-position:top center; display:block; }
-  .loadbar{ position:absolute; top:0; left:0; height:2px; width:42%; z-index:3; background:linear-gradient(90deg, transparent, var(--web), transparent); animation:vfLoad 1.4s ease-in-out infinite; }
-  @keyframes vfLoad{ 0%{ transform:translateX(-110%); } 100%{ transform:translateX(340%); } }
-</style>
-</head>
-<body>
-  <section class="pane">
-
-    <!-- Arc horizontal tab bar -->
-    <div class="tabbar">
-      <span class="wchip"><span class="material-symbols-outlined">public</span>WEB</span>
-      <div class="tabs">
-        <div class="tab tab--active">
-          <span class="fav"><span class="material-symbols-outlined">public</span></span>
-          <span class="tab__title">Dashboard · github.com</span>
-          <button class="tab__x" title="close tab"><span class="material-symbols-outlined">close</span></button>
+      /* ---- page: fills edge-to-edge ---- */
+      .page {
+        flex: 1;
+        min-height: 0;
+        position: relative;
+        background: #0d1117;
+        overflow: hidden;
+      }
+      .page img {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        object-position: top center;
+        display: block;
+      }
+      .loadbar {
+        position: absolute;
+        top: 0;
+        left: 0;
+        height: 2px;
+        width: 42%;
+        z-index: 3;
+        background: linear-gradient(
+          90deg,
+          transparent,
+          var(--web),
+          transparent
+        );
+        animation: vfLoad 1.4s ease-in-out infinite;
+      }
+      @keyframes vfLoad {
+        0% {
+          transform: translateX(-110%);
+        }
+        100% {
+          transform: translateX(340%);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <section class="pane">
+      <!-- Arc horizontal tab bar -->
+      <div class="tabbar">
+        <span class="wchip"
+          ><span class="material-symbols-outlined">public</span>WEB</span
+        >
+        <div class="tabs">
+          <div class="tab tab--active">
+            <span class="fav"
+              ><span class="material-symbols-outlined">public</span></span
+            >
+            <span class="tab__title">Dashboard · github.com</span>
+            <button class="tab__x" title="close tab">
+              <span class="material-symbols-outlined">close</span>
+            </button>
+          </div>
+          <div class="tab">
+            <span class="fav fav--mauve"
+              ><span class="material-symbols-outlined">merge</span></span
+            >
+            <span class="tab__title">Pull requests · vimeflow</span>
+            <button class="tab__x" title="close tab">
+              <span class="material-symbols-outlined">close</span>
+            </button>
+          </div>
+          <div class="tab">
+            <span class="fav fav--coral"
+              ><span class="material-symbols-outlined">adjust</span></span
+            >
+            <span class="tab__title">Issues · obsidian-kb</span>
+            <button class="tab__x" title="close tab">
+              <span class="material-symbols-outlined">close</span>
+            </button>
+          </div>
+          <button class="ibtn2" title="new tab">
+            <span class="material-symbols-outlined">add</span>
+          </button>
         </div>
-        <div class="tab">
-          <span class="fav fav--mauve"><span class="material-symbols-outlined">merge</span></span>
-          <span class="tab__title">Pull requests · vimeflow</span>
-          <button class="tab__x" title="close tab"><span class="material-symbols-outlined">close</span></button>
-        </div>
-        <div class="tab">
-          <span class="fav fav--coral"><span class="material-symbols-outlined">adjust</span></span>
-          <span class="tab__title">Issues · obsidian-kb</span>
-          <button class="tab__x" title="close tab"><span class="material-symbols-outlined">close</span></button>
-        </div>
-        <button class="ibtn2" title="new tab"><span class="material-symbols-outlined">add</span></button>
+        <div class="divider"></div>
+        <button class="ibtn2" title="close pane">
+          <span class="material-symbols-outlined">close</span>
+        </button>
       </div>
-      <div class="divider"></div>
-      <button class="ibtn2" title="close pane"><span class="material-symbols-outlined">close</span></button>
-    </div>
 
-    <!-- toolbar: nav + command bar + open external -->
-    <div class="toolbar">
-      <button class="navbtn" title="back"><span class="material-symbols-outlined">arrow_back</span></button>
-      <button class="navbtn" disabled title="forward"><span class="material-symbols-outlined">arrow_forward</span></button>
-      <button class="navbtn" title="reload"><span class="material-symbols-outlined">refresh</span></button>
-      <div class="address" title="https://github.com/">
-        <span class="material-symbols-outlined lock">lock</span>
-        <span class="url"><span class="scheme">https://</span><span class="host">github.com</span><span class="path">/</span></span>
-        <span class="kbd">⌘L</span>
+      <!-- toolbar: nav + command bar + open external -->
+      <div class="toolbar">
+        <button class="navbtn" title="back">
+          <span class="material-symbols-outlined">arrow_back</span>
+        </button>
+        <button class="navbtn" disabled title="forward">
+          <span class="material-symbols-outlined">arrow_forward</span>
+        </button>
+        <button class="navbtn" title="reload">
+          <span class="material-symbols-outlined">refresh</span>
+        </button>
+        <div class="address" title="https://github.com/">
+          <span class="material-symbols-outlined lock">lock</span>
+          <span class="url"
+            ><span class="scheme">https://</span
+            ><span class="host">github.com</span
+            ><span class="path">/</span></span
+          >
+          <span class="kbd">⌘L</span>
+        </div>
+        <button class="navbtn" title="open in system browser">
+          <span class="material-symbols-outlined">open_in_new</span>
+        </button>
       </div>
-      <button class="navbtn" title="open in system browser"><span class="material-symbols-outlined">open_in_new</span></button>
-    </div>
 
-    <!-- loaded page -->
-    <div class="page">
-      <div class="loadbar"></div>
-      <img src="assets/github-dashboard.png" alt="github.com — Dashboard"/>
-    </div>
-
-  </section>
-</body>
+      <!-- loaded page -->
+      <div class="page">
+        <div class="loadbar"></div>
+        <img src="assets/github-dashboard.png" alt="github.com — Dashboard" />
+      </div>
+    </section>
+  </body>
 </html>

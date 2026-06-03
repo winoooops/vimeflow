@@ -13,21 +13,22 @@ two-row layout** and a **reserved cyan "WEB" identity accent** (`#4fc8d6`).
 
 This handoff is not purely cosmetic: its toolbar contains nav controls
 (back / forward / reload), a loading bar, and per-tab favicons — all of which are
-already roadmapped as **#316 Phase 2a (navigation controls)** and **2b (favicons
-+ loading state)**, and none of which exist in the backend today
-(`electron/browser-pane-channels.ts` has `BROWSER_PANE_NAVIGATE`, but no
-history-aware back/forward/reload/stop, loading, or favicon channels).
+already roadmapped as **#316 Phase 2a (navigation controls)** and \*\*2b (favicons
+
+- loading state)\*\*, and none of which exist in the backend today
+  (`electron/browser-pane-channels.ts` has `BROWSER_PANE_NAVIGATE`, but no
+  history-aware back/forward/reload/stop, loading, or favicon channels).
 
 ### The increment model
 
 The redesign ships as three sequential increments, each its own spec + plan +
 Linear sub-issue under the parent "Browser pane redesign (handoff)":
 
-| Increment | Delivers | Backend |
-| --------- | -------- | ------- |
-| **L1 — chrome restyle (this spec)** | The full two-row Arc chrome, WEB identity accent, address pill, focus border+glow, open-in-system-browser. Nav controls rendered **disabled**; load bar absent; favicons are deterministic placeholders. | Frontend + two small backend touches (both mirror existing browser-pane channels): `open-external` IPC + a pane-targeted `focus-address` event for page-focused `⌘L` |
-| **L2 — navigation controls** (#316 2a) | back / forward / reload wired to the active tab's `webContents`; history state drives button enablement; the reload button toggles to **stop** while loading. | New nav IPC + history events |
-| **L3 — favicons + loading** (#316 2b) | Real per-tab favicons (`page-favicon-updated`) and the live load bar / spinner (`did-start/stop-loading`). | New favicon/loading fields + events |
+| Increment                              | Delivers                                                                                                                                                                                                 | Backend                                                                                                                                                              |
+| -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **L1 — chrome restyle (this spec)**    | The full two-row Arc chrome, WEB identity accent, address pill, focus border+glow, open-in-system-browser. Nav controls rendered **disabled**; load bar absent; favicons are deterministic placeholders. | Frontend + two small backend touches (both mirror existing browser-pane channels): `open-external` IPC + a pane-targeted `focus-address` event for page-focused `⌘L` |
+| **L2 — navigation controls** (#316 2a) | back / forward / reload wired to the active tab's `webContents`; history state drives button enablement; the reload button toggles to **stop** while loading.                                            | New nav IPC + history events                                                                                                                                         |
+| **L3 — favicons + loading** (#316 2b)  | Real per-tab favicons (`page-favicon-updated`) and the live load bar / spinner (`did-start/stop-loading`).                                                                                               | New favicon/loading fields + events                                                                                                                                  |
 
 ### In scope (L1)
 
@@ -101,11 +102,11 @@ it: tab management moves to row 1, navigation + address move to row 2. The
 extracts three presentational children (each with a co-located test), leaving
 `BrowserPane` as the stateful container (bridge wiring, bounds, draft logic):
 
-| Component | Renders | Owns |
-| --------- | ------- | ---- |
-| `BrowserTabBar` | WEB chip · tab capsules · new-tab · divider · close-pane | tab list → `onActivate`/`onClose`/`onNewTab`/`onClosePane` callbacks |
-| `BrowserToolbar` | nav buttons (disabled) · `BrowserAddressBar` · open-external | nav button slots; hosts the address bar |
-| `BrowserAddressBar` | display↔edit pill (§4) | nothing stateful — controlled by props (`draft`, `committedUrl`, `isEditing`) + callbacks; the state machine stays in `BrowserPane` |
+| Component           | Renders                                                      | Owns                                                                                                                                |
+| ------------------- | ------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `BrowserTabBar`     | WEB chip · tab capsules · new-tab · divider · close-pane     | tab list → `onActivate`/`onClose`/`onNewTab`/`onClosePane` callbacks                                                                |
+| `BrowserToolbar`    | nav buttons (disabled) · `BrowserAddressBar` · open-external | nav button slots; hosts the address bar                                                                                             |
+| `BrowserAddressBar` | display↔edit pill (§4)                                       | nothing stateful — controlled by props (`draft`, `committedUrl`, `isEditing`) + callbacks; the state machine stays in `BrowserPane` |
 
 `BrowserTab` (single capsule: favicon + title + close-x) may be inlined in
 `BrowserTabBar` or split out — left to the plan.
@@ -167,18 +168,18 @@ check verifies this (jsdom does no real layout).
 Reuse existing semantic tokens for exact matches; introduce the chrome-specific
 surfaces and the WEB accent (§3).
 
-| Handoff var | Hex | L1 source |
-| ----------- | --- | --------- |
-| `--surface-lowest` | `#0d0d1c` | reuse `surface-container-lowest` (toolbar + page letterbox) |
-| `--on-surface` | `#e3e0f7` | reuse `on-surface` |
-| `--on-variant` | `#cdc3d1` | reuse `on-surface-variant` |
-| `--muted` | `#8a8299` | reuse `on-surface-muted` |
-| `--faint` | `#6c7086` | reuse `syn-comment` token |
-| `--bar` | `#121226` | **new token** `browser-bar` (tab-bar fill) |
-| `--tab-active` | `#23233b` | **new token** `browser-tab-active` (active capsule) |
-| `--web` / `--web-dim` / `--web-soft` | cyan `#4fc8d6` | WEB identity (§3) |
-| `--mint` (lock) | `#7defa1` | reuse `success-muted` (= the codex accent) |
-| `--mauve` / `--coral` (fav variants) | `#cba6f7` / `#ff94a5` | favicon placeholders (§5) |
+| Handoff var                          | Hex                   | L1 source                                                   |
+| ------------------------------------ | --------------------- | ----------------------------------------------------------- |
+| `--surface-lowest`                   | `#0d0d1c`             | reuse `surface-container-lowest` (toolbar + page letterbox) |
+| `--on-surface`                       | `#e3e0f7`             | reuse `on-surface`                                          |
+| `--on-variant`                       | `#cdc3d1`             | reuse `on-surface-variant`                                  |
+| `--muted`                            | `#8a8299`             | reuse `on-surface-muted`                                    |
+| `--faint`                            | `#6c7086`             | reuse `syn-comment` token                                   |
+| `--bar`                              | `#121226`             | **new token** `browser-bar` (tab-bar fill)                  |
+| `--tab-active`                       | `#23233b`             | **new token** `browser-tab-active` (active capsule)         |
+| `--web` / `--web-dim` / `--web-soft` | cyan `#4fc8d6`        | WEB identity (§3)                                           |
+| `--mint` (lock)                      | `#7defa1`             | reuse `success-muted` (= the codex accent)                  |
+| `--mauve` / `--coral` (fav variants) | `#cba6f7` / `#ff94a5` | favicon placeholders (§5)                                   |
 
 The tab bar also carries a subtle top cyan tint
 (`linear-gradient(180deg, rgba(79,200,214,.05), transparent 70%)` over the fill) —
@@ -279,7 +280,7 @@ Replace `BrowserPane`'s current shell —
     Decorative; on a shared `gap-0` edge it may be partially clipped by a neighbor's
     native view — accepted, since the border carries the signal.
 - **Container**: `border-radius: 10px` (matches the sibling `TerminalPane`), `bg
-  surface`; the `2px` border is constant across focus states, so `contentRef`'s rect —
+surface`; the `2px` border is constant across focus states, so `contentRef`'s rect —
   and the native bounds — never change with focus.
 - **Visibility**: `isFocusVisible = showFocusHighlight && pane.active` — the exact
   condition the component already computes; no prop changes.
@@ -294,15 +295,15 @@ bar will reuse `accent` (deferred).
 Chrome icons adopt the established `material-symbols-outlined` span pattern (used
 throughout the app), replacing today's text `"x"`/`"+"`/`"Go"`/`"Close"`. Exact names:
 
-| Control | Icon |
-| ------- | ---- |
-| WEB chip · default favicon | `public` |
-| PR-URL favicon · issue-URL favicon | `merge` · `adjust` |
-| tab close · close-pane | `close` |
-| new tab | `add` |
-| back · forward · reload | `arrow_back` · `arrow_forward` · `refresh` |
-| address lock | `lock` (https, mint/`success-muted`) · `lock_open` (non-https, faint) |
-| open-external | `open_in_new` |
+| Control                            | Icon                                                                  |
+| ---------------------------------- | --------------------------------------------------------------------- |
+| WEB chip · default favicon         | `public`                                                              |
+| PR-URL favicon · issue-URL favicon | `merge` · `adjust`                                                    |
+| tab close · close-pane             | `close`                                                               |
+| new tab                            | `add`                                                                 |
+| back · forward · reload            | `arrow_back` · `arrow_forward` · `refresh`                            |
+| address lock                       | `lock` (https, mint/`success-muted`) · `lock_open` (non-https, faint) |
+| open-external                      | `open_in_new`                                                         |
 
 **Icon-name verification is mandatory**: an invalid Material Symbol name renders
 as raw ligature _text_, and `textContent`-based tests still pass — so every icon
@@ -374,8 +375,8 @@ blur is always a cancel.
   `isEditing`).
 - **Exit edit**: Enter (submit→navigate), blur (cancel), or `Escape` (cancel) →
   `setIsEditing(false)`; display re-renders from `committedUrl`.
-`⌘L` reaches the address bar over **two pane-targeted paths** — neither relies on
-`activePaneId`, and neither steals keystrokes from the editor/dialogs:
+  `⌘L` reaches the address bar over **two pane-targeted paths** — neither relies on
+  `activePaneId`, and neither steals keystrokes from the editor/dialogs:
 
 - **Chrome focused** (renderer-local): a `keydown` listener on the pane's chrome root
   (`[data-browser-pane-id]`, already present) catches `⌘L` when focus is inside this
@@ -389,12 +390,12 @@ blur is always a cancel.
 
 The page-focused channel mirrors `BROWSER_PANE_FOCUSED`:
 
-| File | Add |
-| ---- | --- |
-| `electron/browser-pane-channels.ts` | `BROWSER_PANE_FOCUS_ADDRESS = 'browser-pane:focus-address'` |
-| `electron/browser-pane.ts` | in `installAppShortcutForwarding`'s `before-input-event`: `KeyL` with the **platform modifier only** (mac `meta && !ctrl`, else `ctrl && !meta`), no `alt`/`shift`, ignoring auto-repeat — an inline main-side predicate mirroring the renderer's `shortcutConfig` platform logic (not an import of that command-palette symbol) → `preventDefault` + send to the **app renderer** via `BrowserWindow.fromId(record.windowId).webContents.send(BROWSER_PANE_FOCUS_ADDRESS, { sessionId, paneId })` (the same `win.webContents` target as `BROWSER_PANE_URL_CHANGED` at `:1000` — **not** the page view's `webContents`) + focus the app window |
-| `electron/preload.ts` · `types.ts` · `browserBridge.ts` | an `onFocusAddress(cb)` subscription, mirroring `onFocus` |
-| `BrowserPane.tsx` | subscribe; on a matching `{ sessionId, paneId }` → `setIsEditing(true)` |
+| File                                                    | Add                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `electron/browser-pane-channels.ts`                     | `BROWSER_PANE_FOCUS_ADDRESS = 'browser-pane:focus-address'`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `electron/browser-pane.ts`                              | in `installAppShortcutForwarding`'s `before-input-event`: `KeyL` with the **platform modifier only** (mac `meta && !ctrl`, else `ctrl && !meta`), no `alt`/`shift`, ignoring auto-repeat — an inline main-side predicate mirroring the renderer's `shortcutConfig` platform logic (not an import of that command-palette symbol) → `preventDefault` + send to the **app renderer** via `BrowserWindow.fromId(record.windowId).webContents.send(BROWSER_PANE_FOCUS_ADDRESS, { sessionId, paneId })` (the same `win.webContents` target as `BROWSER_PANE_URL_CHANGED` at `:1000` — **not** the page view's `webContents`) + focus the app window |
+| `electron/preload.ts` · `types.ts` · `browserBridge.ts` | an `onFocusAddress(cb)` subscription, mirroring `onFocus`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `BrowserPane.tsx`                                       | subscribe; on a matching `{ sessionId, paneId }` → `setIsEditing(true)`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 
 ### 4.5 Ownership
 
@@ -449,13 +450,13 @@ Opens the **active tab's** URL in the system browser. Mirrors the existing
 `navigate` channel; the handler resolves the URL **main-side from the pane record**
 (never trusts a renderer-supplied URL):
 
-| File | Add |
-| ---- | --- |
-| `electron/browser-pane-channels.ts` | `BROWSER_PANE_OPEN_EXTERNAL = 'browser-pane:open-external'` |
-| `electron/browser-pane.ts` | `ipcMain.handle` → resolve the active tab's **loaded** URL (`webContents.getURL()`, not a requested-but-uncommitted target) → validate scheme is `http(s)` → `shell.openExternal(url)` |
-| `electron/preload.ts` | expose `browserPane.openExternal(ref)` |
-| `src/features/browser/types.ts` | `BrowserPaneBridge.openExternal` + request type (`BrowserPaneRef`) |
-| `src/features/browser/browserBridge.ts` | `openExternalBrowserPane` wrapper (no-op when bridge absent) |
+| File                                    | Add                                                                                                                                                                                    |
+| --------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `electron/browser-pane-channels.ts`     | `BROWSER_PANE_OPEN_EXTERNAL = 'browser-pane:open-external'`                                                                                                                            |
+| `electron/browser-pane.ts`              | `ipcMain.handle` → resolve the active tab's **loaded** URL (`webContents.getURL()`, not a requested-but-uncommitted target) → validate scheme is `http(s)` → `shell.openExternal(url)` |
+| `electron/preload.ts`                   | expose `browserPane.openExternal(ref)`                                                                                                                                                 |
+| `src/features/browser/types.ts`         | `BrowserPaneBridge.openExternal` + request type (`BrowserPaneRef`)                                                                                                                     |
+| `src/features/browser/browserBridge.ts` | `openExternalBrowserPane` wrapper (no-op when bridge absent)                                                                                                                           |
 
 Security & enablement: **main is the sole authority** — on invocation it resolves
 the active tab's actually-loaded URL (`getURL()`) and opens it only if the scheme is

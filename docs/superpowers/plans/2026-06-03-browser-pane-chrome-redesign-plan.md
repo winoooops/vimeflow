@@ -28,11 +28,11 @@ bar, favicons are placeholders. Tasks are ordered by dependency (leaf → integr
 ## Task 2 — `PaneIdentity` type + `BROWSER_IDENTITY` (spec §3.1)
 
 - `src/agents/registry.ts`: extract `export interface PaneIdentity { name; short;
-  glyph; accent; accentDim; accentSoft; onAccent }`; make
+glyph; accent; accentDim; accentSoft; onAccent }`; make
   `export interface AgentDef extends PaneIdentity { id; model }`. No `AGENTS` value
   changes; `AgentId` / key-set unchanged.
 - `src/features/browser/browserIdentity.ts`: `export const BROWSER_IDENTITY:
-  PaneIdentity` with cyan accent (`#4fc8d6`), `accentDim 0.16`, `accentSoft 0.30`,
+PaneIdentity` with cyan accent (`#4fc8d6`), `accentDim 0.16`, `accentSoft 0.30`,
   `onAccent #06232a`, `glyph '⊕'`.
 - **Tests:** `browserIdentity.test.ts` asserts the cyan accent + `PaneIdentity`
   shape; `registry.test.ts` is **unchanged** and still passes (key-set assertion
@@ -72,7 +72,7 @@ bar, favicons are placeholders. Tasks are ordered by dependency (leaf → integr
   `before-input-event`, match `KeyL` + the platform modifier (mac `meta && !ctrl`,
   else `ctrl && !meta`), no `alt`/`shift`, ignore auto-repeat → `preventDefault` +
   `BrowserWindow.fromId(record.windowId).webContents.send(BROWSER_PANE_FOCUS_ADDRESS,
-  { sessionId, paneId })` + focus the app window. Extract the match as a **pure,
+{ sessionId, paneId })` + focus the app window. Extract the match as a **pure,
   platform-injected predicate** `isFocusAddressShortcut(input, platform)` so it is
   unit-testable without a real OS.
 - `electron/preload.ts` · `types.ts` · `browserBridge.ts`: `onFocusAddress(cb)`,
