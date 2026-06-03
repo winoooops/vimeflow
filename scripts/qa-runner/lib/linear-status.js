@@ -158,6 +158,9 @@ export const linearGql = async (auth, query, variables, fetchImpl = fetch) => {
   return json.data
 }
 
+export const parseLinearCommentId = (stdout) =>
+  (stdout.match(/comment-id:\t([0-9a-f-]*)/) || [])[1] || null
+
 export const createLinearComment = async (
   auth,
   { issueId, parentId, body },

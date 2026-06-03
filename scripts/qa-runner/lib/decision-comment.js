@@ -201,7 +201,7 @@ const decisionEntry = (store, pr) => {
 export const shouldPostDecision = (store, pr, key) => {
   const entry = decisionEntry(store, pr)
 
-  return entry.key !== key || !('commentId' in entry)
+  return entry.key !== key || !entry.commentId
 }
 
 export const decisionCommentId = (
@@ -248,7 +248,7 @@ export const markDecisionPosted = (
     [String(pr)]: {
       ...decisionEntry(store, pr),
       key,
-      ...(commentId !== undefined && { commentId }),
+      ...(commentId !== undefined && { commentId: commentId ?? null }),
       ...(state !== undefined && { state }),
       ...(headSha !== undefined && { headSha }),
       ...(action !== undefined && { action }),

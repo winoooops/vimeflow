@@ -55,6 +55,7 @@ import {
   clearDispatchBlocker,
   writeDispatchBlocker,
 } from './lib/dispatch-blocker.js'
+import { parseLinearCommentId } from './lib/linear-status.js'
 import { orchestratorTool } from './lib/orchestrator-tools.js'
 import { linkedVimForPr, writeLinkedIssueCache } from './lib/pr-utils.js'
 import {
@@ -473,9 +474,6 @@ const computeState = async (pr, ctx) => {
   }
 }
 
-const commentIdFromLinearOutput = (stdout) =>
-  (stdout.match(/comment-id:\t([0-9a-f-]*)/) || [])[1] || null
-
 const postLinear = (
   vim,
   body,
@@ -501,7 +499,7 @@ const postLinear = (
   }
   const r = spawnSync('node', args, { encoding: 'utf8' })
   if (r.status === 0) {
-    const commentId = commentIdFromLinearOutput(r.stdout || '')
+    const commentId = parseLinearCommentId(r.stdout || '')
     out(
       `           ↳ Linear ${vim}${stateName ? ` → ${stateName}` : ''}: ${parentId ? 'replied' : 'commented'}`
     )
@@ -649,17 +647,17 @@ const approve = (pr, vim, headSha, ctx) => {
     out(`           (fork PR — skipped remote branch deletion)`)
   }
 
-  const merged = postLinear(
-    vim,
-    formatMergedComment(pr.number),
-    'Done'
-  )
+  const merged = postLinear(vim, formatMergedComment(pr.number), 'Done')
   if (merged.ok && merged.commentId) {
     postLinear(
       vim,
       `QA runner: PR #${pr.number} met all review success criteria → squash-merged by ${merger}.`,
       undefined,
       { parentId: merged.commentId }
+    )
+  } else if (merged.ok) {
+    out(
+      `           ⚠ Linear ${vim}: merge comment posted but comment-id missing — threaded reply skipped`
     )
   }
   if (merged.ok) {

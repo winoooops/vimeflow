@@ -2,7 +2,11 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, test, vi } from 'vitest'
-import { createLinearComment, loadAuthFromRoot } from './linear-status.js'
+import {
+  createLinearComment,
+  loadAuthFromRoot,
+  parseLinearCommentId,
+} from './linear-status.js'
 
 const tempRoots = []
 const originalLinearApiKey = process.env.LINEAR_API_KEY
@@ -177,5 +181,33 @@ describe('createLinearComment', () => {
       parentId: 'parent-comment',
       body: 'body',
     })
+  })
+})
+
+describe('parseLinearCommentId', () => {
+  test('extracts comment id from structured stdout', () => {
+    expect(
+      parseLinearCommentId(
+        'commented on VIM-20 (as orchestrator, comment abc-123)\ncomment-id:\tabc-123\n'
+      )
+    ).toBe('abc-123')
+  })
+
+  test('returns null when comment-id line is empty', () => {
+    expect(
+      parseLinearCommentId(
+        'commented on VIM-20 (as orchestrator)\ncomment-id:\t\n'
+      )
+    ).toBeNull()
+  })
+
+  test('returns null when comment-id line is missing', () => {
+    expect(
+      parseLinearCommentId('commented on VIM-20 (as orchestrator)\n')
+    ).toBeNull()
+  })
+
+  test('returns null for empty stdout', () => {
+    expect(parseLinearCommentId('')).toBeNull()
   })
 })

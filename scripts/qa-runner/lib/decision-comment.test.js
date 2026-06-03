@@ -206,6 +206,12 @@ describe('decision store', () => {
     expect(shouldPostDecision(store, 329, 'new-key')).toBe(true)
   })
 
+  test('re-posts when commentId is null or missing', () => {
+    const store = { 329: { key: 'same-key', commentId: null } }
+
+    expect(shouldPostDecision(store, 329, 'same-key')).toBe(true)
+  })
+
   test('records the decision comment id for threaded follow-up comments', () => {
     const file = makeStore()
 

@@ -3,7 +3,7 @@ id: ci-orchestration-state
 category: correctness
 created: 2026-06-02
 last_updated: 2026-06-02
-ref_count: 2
+ref_count: 3
 ---
 
 # CI Orchestration State
@@ -109,4 +109,13 @@ Findings in the CI orchestration / QA runner pipeline where state is either lost
 - **File:** `scripts/qa-runner/lib/decision-comment.js`
 - **Finding:** When a PR had a legacy decision store (`{ "<pr>": "<key>" }`), `decisionEntry` converted it to `{ key }` and `shouldPostDecision` treated an unchanged decision as already posted. No `commentId`, `state`, or `headSha` was ever captured, so threading paths kept falling back to top-level Linear comments.
 - **Fix:** Updated `shouldPostDecision` to return `true` when the entry lacks a `commentId` property, forcing a one-time repost that backfills the metadata.
+- **Commit:** same commit as this entry
+
+### 11. Null commentId poisons store and stale IDs survive across reposts
+
+- **Source:** github-codex-connector | PR #332 round 2 | 2026-06-02
+- **Severity:** P2 / MEDIUM
+- **File:** `scripts/qa-runner/lib/decision-comment.js`
+- **Finding:** Round-1 changed `shouldPostDecision` to use `!('commentId' in entry)`, which correctly triggered reposts for legacy string entries missing the property. But it did not handle two related cases: (a) an entry whose `commentId` was explicitly `null` (e.g., Linear API returned success with no comment ID) was treated as already-posted because `'commentId' in entry` is `true`; and (b) `markDecisionPosted` conditionally spread `...(commentId != null && { commentId })`, so when a new post returned `null` after an earlier post had returned a real ID, the old ID survived in the store.
+- **Fix:** Changed `shouldPostDecision` to `!entry.commentId` so any falsy/missing/null `commentId` triggers a repost. Changed `markDecisionPosted` to explicitly write `commentId: null` when the caller passes `commentId: null`, ensuring stale IDs are cleared rather than silently retained.
 - **Commit:** same commit as this entry
