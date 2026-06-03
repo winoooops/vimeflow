@@ -1,7 +1,7 @@
 //! PTY session state management
 
 use portable_pty::{Child, MasterPty};
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
@@ -96,6 +96,8 @@ pub struct ManagedSession {
 #[derive(Default, Clone)]
 pub struct PtyState {
     sessions: Arc<Mutex<HashMap<SessionId, ManagedSession>>>,
+    /// Ids of ephemeral (scratch) PTYs — reaped by kill_ephemeral_ptys.
+    ephemeral_ptys: Arc<Mutex<HashSet<SessionId>>>,
 }
 
 /// Reason why `PtyState::try_insert` rejected a new session — returned to
@@ -135,6 +137,7 @@ impl PtyState {
     pub fn new() -> Self {
         Self {
             sessions: Arc::new(Mutex::new(HashMap::new())),
+            ephemeral_ptys: Arc::new(Mutex::new(HashSet::new())),
         }
     }
 
@@ -189,8 +192,29 @@ impl PtyState {
         Ok(())
     }
 
+    /// Record a session id as ephemeral (scratch) — reaped by kill_ephemeral_ptys.
+    pub fn mark_ephemeral(&self, session_id: SessionId) {
+        self.ephemeral_ptys
+            .lock()
+            .expect("failed to lock ephemeral_ptys")
+            .insert(session_id);
+    }
+
+    /// Drain and return all ephemeral session ids.
+    pub fn drain_ephemeral(&self) -> Vec<SessionId> {
+        self.ephemeral_ptys
+            .lock()
+            .expect("failed to lock ephemeral_ptys")
+            .drain()
+            .collect()
+    }
+
     /// Remove a PTY session
     pub fn remove(&self, session_id: &SessionId) -> Option<ManagedSession> {
+        self.ephemeral_ptys
+            .lock()
+            .expect("failed to lock ephemeral_ptys")
+            .remove(session_id);
         let mut sessions = self.sessions.lock().expect("failed to lock sessions");
         sessions.remove(session_id)
     }

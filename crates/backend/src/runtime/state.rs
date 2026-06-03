@@ -169,6 +169,11 @@ impl BackendState {
         crate::terminal::commands::kill_pty_inner(&self.pty, &self.sessions, request)
     }
 
+    /// Reap all ephemeral (scratch) PTYs. Returns the ids killed.
+    pub fn kill_ephemeral_ptys(&self) -> Vec<String> {
+        crate::terminal::commands::kill_ephemeral_ptys_inner(&self.pty)
+    }
+
     pub fn list_sessions(&self) -> Result<crate::terminal::types::SessionList, String> {
         crate::terminal::commands::list_sessions_inner(&self.pty, &self.sessions)
     }

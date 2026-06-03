@@ -410,6 +410,9 @@ pub(crate) async fn spawn_pty_inner(
             cleanup_generated_bridge_dir(bridge_cleanup_dir.as_deref());
             return Err(format!("failed to write cache: {}", e));
         }
+    } else {
+        // Ephemeral (scratch) PTY: record for reap, never cached.
+        state.mark_ephemeral(request.session_id.clone());
     }
 
     debug_log(
@@ -547,6 +550,28 @@ pub(crate) fn kill_pty_inner(
         .map_err(|e| format!("failed to update cache: {}", e))?;
 
     Ok(())
+}
+
+/// Reap every ephemeral (scratch) PTY: kill the child and drop it from
+/// PtyState, returning the ids killed. Ephemeral PTYs are never in the
+/// cache, so there is no cache cleanup. Called on renderer boot (to reap
+/// reload orphans) and on shutdown.
+pub(crate) fn kill_ephemeral_ptys_inner(state: &PtyState) -> Vec<String> {
+    let ids = state.drain_ephemeral();
+    let mut killed = Vec::new();
+    for id in ids {
+        match state.kill(&id) {
+            Ok(()) | Err(super::state::KillError::NotPresent) => {
+                state.set_cancelled(&id);
+                state.remove(&id);
+                killed.push(id);
+            }
+            Err(super::state::KillError::KillFailed(msg)) => {
+                log::warn!("kill_ephemeral_ptys: failed to kill {}: {}", id, msg);
+            }
+        }
+    }
+    killed
 }
 
 /// List all sessions with their current status and replay data
@@ -1128,6 +1153,70 @@ mod tests {
         );
 
         let _ = state.remove(&session_id);
+    }
+
+    #[tokio::test]
+    async fn kill_ephemeral_ptys_kills_only_ephemeral() {
+        let (state, cache, events, _temp_dir) = create_test_state_with_cache();
+        let cwd = std::env::current_dir()
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
+
+        let keep = spawn_pty_inner(
+            state.clone(),
+            cache.clone(),
+            events.clone(),
+            SpawnPtyRequest {
+                session_id: "keep".to_string(),
+                cwd: cwd.clone(),
+                shell: None,
+                env: None,
+                enable_agent_bridge: false,
+                ephemeral: false,
+            },
+        )
+        .await
+        .expect("keep spawn");
+
+        let scratch = spawn_pty_inner(
+            state.clone(),
+            cache.clone(),
+            events.clone(),
+            SpawnPtyRequest {
+                session_id: "scratch".to_string(),
+                cwd: cwd.clone(),
+                shell: None,
+                env: None,
+                enable_agent_bridge: false,
+                ephemeral: true,
+            },
+        )
+        .await
+        .expect("scratch spawn");
+
+        let killed = kill_ephemeral_ptys_inner(&state);
+        assert_eq!(killed, vec![scratch.id.clone()]);
+
+        // Scratch PTY is gone; the non-ephemeral one is untouched.
+        let scratch_write = write_pty_inner(
+            &state,
+            WritePtyRequest {
+                session_id: scratch.id.clone(),
+                data: "x".to_string(),
+            },
+        );
+        assert!(scratch_write.is_err(), "scratch PTY should be reaped");
+        let keep_write = write_pty_inner(
+            &state,
+            WritePtyRequest {
+                session_id: keep.id.clone(),
+                data: "x".to_string(),
+            },
+        );
+        assert!(keep_write.is_ok(), "non-ephemeral PTY must be untouched");
+
+        let _ = state.remove(&keep.id);
     }
 
     #[tokio::test]
