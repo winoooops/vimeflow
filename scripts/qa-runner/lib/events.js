@@ -16,10 +16,51 @@ const STATE_DIR = join(dirname(LIB_DIR), '.state')
 const EVENTS_FILE = join(STATE_DIR, 'events.jsonl')
 const LINEAR_STATUS = join(LIB_DIR, 'linear-status.js')
 
+const tableValue = (value) =>
+  String(value ?? 'unknown')
+    .replace(/\r?\n/g, ' ')
+    .replace(/\|/g, '\\|')
+
+const formatCycleExitComment = (e) => {
+  const terminal = e.type === 'paused' || e.terminal
+
+  const lines = [
+    `## QA runner cycle exit: ${terminal ? 'PAUSED' : 'RETRY'}`,
+    '',
+    '| Field | Value |',
+    '| --- | --- |',
+    `| PR | #${tableValue(e.pr)} |`,
+    `| Category | ${tableValue(e.category || e.type)} |`,
+    `| Detail | ${tableValue(e.detail)} |`,
+    `| Exit code | \`${tableValue(e.exitCode)}\` |`,
+    `| Signal | \`${tableValue(e.signal || 'none')}\` |`,
+    `| Reason | ${tableValue(e.exitReason || e.detail)} |`,
+  ]
+
+  if (e.noopCount != null) {
+    lines.push(
+      `| Failed attempts | ${tableValue(e.noopCount)} / ${tableValue(e.maxNoops)} |`
+    )
+  }
+  if (e.logPath) {
+    lines.push(`| Log | \`${tableValue(e.logPath)}\` |`)
+  }
+
+  lines.push(
+    '',
+    terminal
+      ? 'Action: loop paused. A new head, CI/review event, or manual requeue is required before routine polling resumes.'
+      : 'Action: recorded the exit and will retry without incrementing the fixer failure streak.'
+  )
+
+  return lines.join('\n')
+}
+
 // type → a one-line Linear comment. Types absent here are pool/log only (no spam).
 const LINEAR_COMMENT = {
   progress: (e) =>
     `✅ Fix pushed for #${e.pr} (round ${e.round}). Re-review pending.`,
+  error: formatCycleExitComment,
   dispatch_blocked: (e) =>
     [
       '## QA runner dispatch blocked',
@@ -31,11 +72,13 @@ const LINEAR_COMMENT = {
       '',
       'The fixer did not run and this was not counted as a failed fix attempt. Run the daemon from a neutral checkout, free the PR branch worktree, or push a new head event to resume.',
     ].join('\n'),
-  paused: (e) =>
-    `⏸️ Paused #${e.pr} after ${e.noopCount} failed fix attempts — ${e.detail || 'needs a look'}.`,
+  paused: formatCycleExitComment,
   merged: (e) => formatMergedComment(e.pr),
   closed: (e) => `🚫 #${e.pr} closed without merge — review loop stopped.`,
 }
+
+export const formatLinearEventComment = (event) =>
+  LINEAR_COMMENT[event.type]?.(event) ?? null
 
 export const createEvents = (log) => {
   // Append to the pool + log every event; returns the stamped record.
@@ -57,12 +100,12 @@ export const createEvents = (log) => {
   // Milestone events post to the VIM issue as the orchestrator agent. Async +
   // fire-and-forget so a slow/down Linear never blocks the daemon.
   const toLinear = (vim, e) => {
-    const fmt = LINEAR_COMMENT[e.type]
-    if (!vim || !fmt) {
+    const body = formatLinearEventComment(e)
+    if (!vim || !body) {
       return
     }
 
-    const args = [LINEAR_STATUS, vim, fmt(e), '--as', 'orchestrator']
+    const args = [LINEAR_STATUS, vim, body, '--as', 'orchestrator']
     if (e.parentId) {
       args.push('--parent', e.parentId)
     }

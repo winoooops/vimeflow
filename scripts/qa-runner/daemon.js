@@ -144,19 +144,41 @@ const shutdown = (sig) => {
   const exitWhenDrained = () => {
     const inFlight = queue.inFlight()
     if (!inFlight.length) {
+      events.emit({
+        type: 'daemon_exit',
+        detail: 'drain complete',
+        signal: sig,
+        inFlight,
+        terminal: true,
+      })
       log('drain complete — exiting')
       process.exit(0)
     }
     setTimeout(exitWhenDrained, DRAIN_POLL_MS)
   }
 
-  log(`${sig} — draining; in-flight: ${queue.inFlight().join(', ') || 'none'}`)
+  const inFlight = queue.inFlight()
+  events.emit({
+    type: 'daemon_shutdown',
+    detail: `${sig} received; draining in-flight work`,
+    signal: sig,
+    inFlight,
+    terminal: false,
+  })
+  log(`${sig} — draining; in-flight: ${inFlight.join(', ') || 'none'}`)
   exitWhenDrained()
   server.close(() => {
     log('http server closed')
   })
 
   setTimeout(() => {
+    events.emit({
+      type: 'daemon_exit',
+      detail: 'drain window elapsed',
+      signal: sig,
+      inFlight: queue.inFlight(),
+      terminal: true,
+    })
     log('drain window elapsed — exiting')
     process.exit(0)
   }, DRAIN_TIMEOUT_MS)

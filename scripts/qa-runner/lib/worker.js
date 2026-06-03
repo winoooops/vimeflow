@@ -124,9 +124,71 @@ export const watchArgs = (
 const tick = (pr, config, reason) =>
   new Promise((resolve) => {
     const args = watchArgs(pr, { ...config, reason })
-    const child = spawn('node', args, { stdio: 'inherit' })
-    child.on('exit', (code) => resolve(code ?? -1))
-    child.on('error', () => resolve(-1))
+
+    const child = spawn('node', args, {
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    let lastLine = ''
+    let logPath = null
+    let settled = false
+
+    const remember = (line) => {
+      const trimmed = line.trim()
+      if (!trimmed) {
+        return
+      }
+      lastLine = trimmed
+      logPath = logPath || trimmed.match(/\(log: ([^)]+)\)/)?.[1] || null
+    }
+
+    const pipe = (stream, target) => {
+      let buf = ''
+      stream.on('data', (d) => {
+        target.write(d)
+        buf += d.toString()
+        let nl
+        while ((nl = buf.indexOf('\n')) >= 0) {
+          remember(buf.slice(0, nl))
+          buf = buf.slice(nl + 1)
+        }
+      })
+
+      stream.on('end', () => {
+        remember(buf)
+      })
+    }
+
+    pipe(child.stdout, process.stdout)
+    pipe(child.stderr, process.stderr)
+    child.on('close', (code, signal) => {
+      if (settled) {
+        return
+      }
+      settled = true
+      resolve({
+        code: code ?? -1,
+        signal: signal ?? null,
+        exitReason:
+          lastLine ||
+          (signal
+            ? `watch.js terminated by ${signal}`
+            : `watch.js exited ${code}`),
+        logPath,
+      })
+    })
+
+    child.on('error', (error) => {
+      if (settled) {
+        return
+      }
+      settled = true
+      resolve({
+        code: -1,
+        signal: null,
+        exitReason: `watch.js spawn error: ${error.message}`,
+        logPath,
+      })
+    })
   })
 
 // Run one cycle for `pr`. deps: { config, state, log, events, now?,
@@ -148,6 +210,28 @@ const needsFixParentId = (pr, headSha) =>
 
 const shouldPostMergedLinear = (pr) =>
   !hasMergeLinearPosted(decisionStore(pr), pr)
+
+const normalizeTickResult = (result) => {
+  if (typeof result === 'number' || result == null) {
+    return {
+      code: result ?? -1,
+      signal: null,
+      exitReason: `watch.js exited ${result ?? -1}`,
+      logPath: null,
+    }
+  }
+
+  return {
+    code: result.code ?? -1,
+    signal: result.signal ?? null,
+    exitReason:
+      result.exitReason ||
+      (result.signal
+        ? `watch.js terminated by ${result.signal}`
+        : `watch.js exited ${result.code ?? -1}`),
+    logPath: result.logPath ?? null,
+  }
+}
 
 // 'done' | 'progress' | 'error' | 'waiting' | 'paused' | 'blocked' | 'skip' | 'retry'.
 export const runOne = async (pr, reason, deps) => {
@@ -228,7 +312,8 @@ export const runOne = async (pr, reason, deps) => {
   }
 
   events.emit({ type: 'cycle', pr, round: st.roundCount, detail: reason })
-  const code = await tickRunner(pr, config, reason)
+  const tickResult = normalizeTickResult(await tickRunner(pr, config, reason))
+  const { code } = tickResult
   const after = snapshot(pr, snapshotExec)
 
   // Post-tick read failed (same rule as the pre-tick guard): never interpret null
@@ -315,7 +400,17 @@ export const runOne = async (pr, reason, deps) => {
       // without touching the failure streak, so a gh/GraphQL blip can't pause a
       // healthy PR (which the poll guard would then keep skipping).
       events.emit(
-        { type: 'error', pr, detail: `watch.js transient (exit ${code})` },
+        {
+          type: 'error',
+          pr,
+          category: 'transient',
+          detail: `watch.js transient (exit ${code})`,
+          exitCode: code,
+          signal: tickResult.signal,
+          exitReason: tickResult.exitReason,
+          logPath: tickResult.logPath,
+          terminal: false,
+        },
         after.vim
       )
 
@@ -337,7 +432,14 @@ export const runOne = async (pr, reason, deps) => {
         type: paused ? 'paused' : 'error',
         pr,
         noopCount,
+        maxNoops: config.maxNoops,
+        category: 'fixer_stall',
         detail: `fixer stall (watch.js exit ${code})`,
+        exitCode: code,
+        signal: tickResult.signal,
+        exitReason: tickResult.exitReason,
+        logPath: tickResult.logPath,
+        terminal: paused,
       },
       after.vim
     )
