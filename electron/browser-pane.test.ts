@@ -6,10 +6,12 @@ import {
   BROWSER_PANE_CLOSE_TAB,
   BROWSER_PANE_CREATE,
   BROWSER_PANE_DESTROY,
+  BROWSER_PANE_FOCUS_ADDRESS,
+  BROWSER_PANE_OPEN_EXTERNAL,
   BROWSER_PANE_SET_BOUNDS,
   BROWSER_PANE_TABS_CHANGED,
 } from './browser-pane-channels'
-import { BrowserPaneController } from './browser-pane'
+import { BrowserPaneController, isFocusAddressShortcut } from './browser-pane'
 
 // cspell:ignore debuggee Lkls
 type IpcHandler = (event: unknown, payload?: unknown) => unknown
@@ -233,12 +235,17 @@ const electronMock = vi.hoisted(() => {
     fromPartition: vi.fn(() => fakeSession),
   }
 
+  const shell = {
+    openExternal: vi.fn(),
+  }
+
   return {
     BrowserWindow,
     WebContentsView,
     fakeSession,
     handlers,
     ipcMain,
+    shell,
     get sender(): LocalFakeWebContents {
       return sender
     },
@@ -260,6 +267,7 @@ const electronMock = vi.hoisted(() => {
       WebContentsView.mockClear()
       ipcMain.handle.mockClear()
       ipcMain.removeHandler.mockClear()
+      shell.openExternal.mockClear()
       session.fromPartition.mockClear()
       fakeSession.on.mockClear()
       fakeSession.removeAllListeners.mockClear()
@@ -274,6 +282,7 @@ vi.mock('electron', () => ({
   WebContentsView: electronMock.WebContentsView,
   ipcMain: electronMock.ipcMain,
   session: electronMock.session,
+  shell: electronMock.shell,
 }))
 
 const eventForSender = (): { sender: FakeWebContents } => ({
@@ -409,6 +418,177 @@ describe('BrowserPaneController', () => {
       'select-webauthn-account',
       expect.any(Function)
     )
+  })
+
+  test('open-external opens the active tab loaded URL in the system browser', async () => {
+    await handler(BROWSER_PANE_CREATE)(eventForSender(), {
+      sessionId: 'pty-1',
+      paneId: 'p1',
+      workspaceId: 'proj-1',
+      initialUrl: 'https://example.com/',
+    })
+
+    await handler(BROWSER_PANE_OPEN_EXTERNAL)(eventForSender(), {
+      sessionId: 'pty-1',
+      paneId: 'p1',
+    })
+
+    expect(electronMock.shell.openExternal).toHaveBeenCalledWith(
+      'https://example.com/'
+    )
+  })
+
+  test('open-external no-ops for a non-http(s) loaded URL', async () => {
+    await handler(BROWSER_PANE_CREATE)(eventForSender(), {
+      sessionId: 'pty-1',
+      paneId: 'p1',
+      workspaceId: 'proj-1',
+      initialUrl: 'https://example.com/',
+    })
+
+    vi.mocked(electronMock.views[0]?.webContents.getURL).mockReturnValue(
+      'about:blank'
+    )
+
+    await handler(BROWSER_PANE_OPEN_EXTERNAL)(eventForSender(), {
+      sessionId: 'pty-1',
+      paneId: 'p1',
+    })
+
+    expect(electronMock.shell.openExternal).not.toHaveBeenCalled()
+  })
+
+  test('open-external rejects a malformed payload', () => {
+    expect(() =>
+      handler(BROWSER_PANE_OPEN_EXTERNAL)(eventForSender(), { paneId: 'p1' })
+    ).toThrow('invalid browser pane open-external payload')
+  })
+
+  test('open-external handler is removed on dispose', () => {
+    expect(electronMock.handlers.has(BROWSER_PANE_OPEN_EXTERNAL)).toBe(true)
+    controller.dispose()
+    expect(electronMock.handlers.has(BROWSER_PANE_OPEN_EXTERNAL)).toBe(false)
+  })
+
+  test('Cmd/Ctrl+L on a focused page emits a pane-targeted focus-address event', async () => {
+    await handler(BROWSER_PANE_CREATE)(eventForSender(), {
+      sessionId: 'pty-1',
+      paneId: 'p1',
+      workspaceId: 'proj-1',
+      initialUrl: 'https://example.com/',
+    })
+
+    const beforeInputHandler = vi
+      .mocked(electronMock.views[0]?.webContents.on)
+      .mock.calls.find(([eventName]) => eventName === 'before-input-event')?.[1]
+
+    if (beforeInputHandler === undefined) {
+      throw new Error('missing before-input-event handler')
+    }
+
+    const preventDefault = vi.fn()
+    beforeInputHandler(
+      { preventDefault },
+      {
+        type: 'keyDown',
+        key: 'l',
+        code: 'KeyL',
+        ...platformShortcutModifier(),
+        alt: false,
+      }
+    )
+
+    expect(preventDefault).toHaveBeenCalledOnce()
+    expect(electronMock.win.webContents.send).toHaveBeenCalledWith(
+      BROWSER_PANE_FOCUS_ADDRESS,
+      { sessionId: 'pty-1', paneId: 'p1' }
+    )
+  })
+
+  test('a non-L keystroke does not emit a focus-address event', async () => {
+    await handler(BROWSER_PANE_CREATE)(eventForSender(), {
+      sessionId: 'pty-1',
+      paneId: 'p1',
+      workspaceId: 'proj-1',
+      initialUrl: 'https://example.com/',
+    })
+
+    const beforeInputHandler = vi
+      .mocked(electronMock.views[0]?.webContents.on)
+      .mock.calls.find(([eventName]) => eventName === 'before-input-event')?.[1]
+
+    if (beforeInputHandler === undefined) {
+      throw new Error('missing before-input-event handler')
+    }
+
+    beforeInputHandler(
+      { preventDefault: vi.fn() },
+      {
+        type: 'keyDown',
+        key: 'j',
+        code: 'KeyJ',
+        ...platformShortcutModifier(),
+        alt: false,
+      }
+    )
+
+    expect(electronMock.win.webContents.send).not.toHaveBeenCalledWith(
+      BROWSER_PANE_FOCUS_ADDRESS,
+      expect.anything()
+    )
+  })
+
+  test('isFocusAddressShortcut matches the platform modifier only', () => {
+    const keyL = {
+      type: 'keyDown',
+      key: 'l',
+      code: 'KeyL',
+      control: false,
+      meta: false,
+      alt: false,
+    }
+
+    expect(isFocusAddressShortcut({ ...keyL, meta: true }, 'darwin')).toBe(true)
+    expect(isFocusAddressShortcut({ ...keyL, control: true }, 'darwin')).toBe(
+      false
+    )
+
+    expect(isFocusAddressShortcut({ ...keyL, control: true }, 'linux')).toBe(
+      true
+    )
+    expect(isFocusAddressShortcut({ ...keyL, meta: true }, 'linux')).toBe(false)
+    expect(
+      isFocusAddressShortcut({ ...keyL, meta: true, alt: true }, 'darwin')
+    ).toBe(false)
+
+    expect(
+      isFocusAddressShortcut({ ...keyL, meta: true, shift: true }, 'darwin')
+    ).toBe(false)
+
+    expect(
+      isFocusAddressShortcut(
+        { ...keyL, meta: true, isAutoRepeat: true },
+        'darwin'
+      )
+    ).toBe(false)
+
+    expect(
+      isFocusAddressShortcut({ ...keyL, meta: true, type: 'keyUp' }, 'darwin')
+    ).toBe(false)
+
+    expect(
+      isFocusAddressShortcut(
+        {
+          type: 'keyDown',
+          key: 'j',
+          code: 'KeyJ',
+          control: false,
+          meta: true,
+          alt: false,
+        },
+        'darwin'
+      )
+    ).toBe(false)
   })
 
   test('reconnect returns existing pane without creating a new WebContentsView', async () => {

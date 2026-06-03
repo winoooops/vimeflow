@@ -383,7 +383,7 @@ const hasPlatformShortcutModifier = (
     : input.control && !input.meta
 }
 
-const isFocusAddressShortcut = (
+export const isFocusAddressShortcut = (
   input: BrowserPaneShortcutInput,
   platform: NodeJS.Platform = process.platform
 ): boolean =>
