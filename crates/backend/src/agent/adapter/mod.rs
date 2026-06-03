@@ -333,6 +333,7 @@ pub(crate) fn make_test_session() -> crate::terminal::state::ManagedSession {
         writer,
         child,
         cwd: "/tmp/workspace".into(),
+        shim_dir: None,
         generation: 0,
         ring: Arc::new(Mutex::new(crate::terminal::state::RingBuffer::new(64))),
         cancelled: Arc::new(AtomicBool::new(false)),

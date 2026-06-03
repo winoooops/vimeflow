@@ -2,7 +2,7 @@
 id: documentation-accuracy
 category: code-quality
 created: 2026-04-09
-last_updated: 2026-06-01
+last_updated: 2026-06-03
 ref_count: 24
 ---
 
@@ -773,4 +773,13 @@ Stale documentation misleads future contributors and review agents.
 - **File:** `agents/code-reviewer.md` and `rules/common/idea-framework.md`
 - **Finding:** The Reality check's "while the user is using the app or the system is running" qualifier scoped the gate to runtime impacts only, silently contradicting the Perfection trap (line 46) that explicitly permits findings justified by "meaningful future-change cost". Design Complexity findings with future maintenance cost but no immediate runtime failure would pass the Perfection trap but fail the Reality check and be dropped.
 - **Fix:** Restructured both Reality checks so "meaningful future-change cost" sits outside the runtime qualifier — e.g. "...while the user is using the app or the system is running, or create meaningful future-change cost?"
+- **Commit:** same commit as this entry
+
+### 83. Doc comment missing new `shim_dir` argument and new created artifacts
+
+- **Source:** github-claude | PR #325 round 5 | 2026-06-03
+- **Severity:** LOW
+- **File:** `crates/backend/src/terminal/bridge.rs`
+- **Finding:** The `# Arguments` block at `generate_bridge_files` documented only `agent_status_dir` and `session_id`. The new `shim_dir: Option<&str>` parameter had no entry, so callers couldn't tell whether `None` is valid or what it defaults to. The `Creates:` list also named only `statusline.sh` and `settings.json`, omitting the shim executable, `init.sh`, `.zshenv`, and `.zshrc`.
+- **Fix:** Added a `* shim_dir` bullet with description, and expanded the `Creates:` list to include all five generated artifacts with their correct paths (`<dir>/init.sh`, `<dir>/.zshenv`, `<dir>/.zshrc`, `<shim_dir>/claude`).
 - **Commit:** same commit as this entry

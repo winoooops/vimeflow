@@ -2,7 +2,7 @@
 id: pty-session-management
 category: backend
 created: 2026-04-09
-last_updated: 2026-05-28
+last_updated: 2026-06-03
 ref_count: 2
 ---
 
@@ -87,4 +87,13 @@ below preserve their original Tauri-era file paths for auditability.
 - **File:** `crates/backend/src/terminal/commands.rs`
 - **Finding:** The UTF-8 locale fix injected `LC_CTYPE` into the spawned shell whenever no UTF-8 locale was inherited, but only set `LC_CTYPE` — it never touched `LC_ALL`. POSIX locale precedence is `LC_ALL` > `LC_CTYPE` > `LANG`: a non-empty `LC_ALL` overrides every category, so when the inherited env had `LC_ALL=C` (or `POSIX`), the spawned shell still ran in the non-UTF-8 locale and the original glyph-width / cursor-desync bug remained. The override decision (`utf8_ctype_override`) correctly treated a non-UTF-8 `LC_ALL` as needing an override, but the application step then set a category that `LC_ALL` shadows.
 - **Fix:** Introduced `locale_env_plan()` returning a struct with `ctype: Option<&'static str>` and `clear_lc_all: bool`. The `clear_lc_all` flag is set when an override fires AND the inherited `LC_ALL` is non-empty; the spawn path then calls `cmd.env_remove("LC_ALL")` — `portable-pty`'s `CommandBuilder` seeds the full parent env, so `env_remove` drops the inherited value — before `cmd.env("LC_CTYPE", ctype)`. Dropping `LC_ALL` rather than overwriting it lets the individual `LC_FOO` categories and `LANG` keep driving message/collation language. An empty `LC_ALL` is treated as unset (POSIX) and left alone. Code-review heuristic: when forcing a single locale category via an env var, account for the full POSIX precedence chain — a higher-precedence var (`LC_ALL`) set to a conflicting value silently nullifies the lower one. Pure-function the decision (`locale_env_plan`) so both the ctype choice and the clear-higher-var choice are unit-testable without spawning a process.
+- **Commit:** same commit as this entry
+
+### 9. Shim path recomputed from environment at cleanup, not stored from spawn
+
+- **Source:** github-claude | PR #325 round 5 | 2026-06-03
+- **Severity:** MEDIUM
+- **File:** `crates/backend/src/terminal/commands.rs`
+- **Finding:** Both `kill_pty_inner` and `read_pty_output` recomputed the shim directory path by calling `dirs::cache_dir()` at cleanup time rather than reading a stored path from `ManagedSession`. `dirs::cache_dir()` resolves `$HOME` / `$XDG_CACHE_HOME` at call time. If either env var is mutated between spawn and cleanup, cleanup silently targets the wrong directory and the actual shim dir leaks — invisibly, because both callers discard the `Result` with `let _ = ...`. Even without env mutation, the computation was duplicated across three call sites (spawn, kill, read-loop), all of which must stay in sync.
+- **Fix:** Added `shim_dir: Option<String>` to `ManagedSession`, populated from `BridgeFiles.shim_dir_path` at spawn time. Both cleanup callers now read `session.shim_dir.as_deref()` directly instead of recomputing via `dirs::cache_dir()`. Updated all test-session constructors to include `shim_dir: None`.
 - **Commit:** same commit as this entry
