@@ -166,13 +166,22 @@ pub(crate) async fn spawn_pty_inner(
     }
 
     // Generate statusline bridge files.
-    let (bridge_files, bridge_cleanup_dir) = if request.enable_agent_bridge {
+    let (bridge_files, bridge_cleanup_dir, shim_cleanup_dir) = if request.enable_agent_bridge {
         let dir = cwd
             .join(".vimeflow")
             .join("sessions")
             .join(&request.session_id);
         let cleanup_dir = (!dir.exists()).then_some(dir.clone());
-        match super::bridge::generate_bridge_files(&dir.to_string_lossy(), &request.session_id) {
+        let shim_dir = dirs::cache_dir()
+            .map(|c| c.join("vimeflow-shims"))
+            .unwrap_or_else(|| std::env::temp_dir().join("vimeflow-shims"))
+            .join(&request.session_id);
+        let shim_cleanup = (!shim_dir.exists()).then_some(shim_dir.clone());
+        match super::bridge::generate_bridge_files(
+            &dir.to_string_lossy(),
+            &request.session_id,
+            Some(&shim_dir.to_string_lossy()),
+        ) {
             Ok(files) => {
                 debug_log(
                     "bridge",
@@ -182,20 +191,21 @@ pub(crate) async fn spawn_pty_inner(
                         files.shell_init_path.display()
                     ),
                 );
-                (Some(files), cleanup_dir)
+                (Some(files), cleanup_dir, shim_cleanup)
             }
             Err(e) => {
                 cleanup_generated_bridge_dir(cleanup_dir.as_deref());
+                cleanup_generated_bridge_dir(shim_cleanup.as_deref());
                 log::warn!(
                     "Failed to generate statusline bridge for session {}: {}",
                     request.session_id,
                     e
                 );
-                (None, None)
+                (None, None, None)
             }
         }
     } else {
-        (None, None)
+        (None, None, None)
     };
 
     // Build command — env from IPC is ignored for security (prevents injection)
@@ -251,6 +261,7 @@ pub(crate) async fn spawn_pty_inner(
         // both ~/.bashrc (user config) and our init script
         let Some(init_dir) = files.shell_init_path.parent() else {
             cleanup_generated_bridge_dir(bridge_cleanup_dir.as_deref());
+            cleanup_generated_bridge_dir(shim_cleanup_dir.as_deref());
             return Err("shell init path has no parent directory".to_string());
         };
         let rcfile_path = init_dir.join("bashrc");
@@ -290,6 +301,7 @@ pub(crate) async fn spawn_pty_inner(
         Ok(child) => child,
         Err(e) => {
             cleanup_generated_bridge_dir(bridge_cleanup_dir.as_deref());
+            cleanup_generated_bridge_dir(shim_cleanup_dir.as_deref());
             return Err(format!("failed to spawn shell: {}", e));
         }
     };
@@ -298,6 +310,7 @@ pub(crate) async fn spawn_pty_inner(
         let _ = child.kill();
         let _ = child.wait();
         cleanup_generated_bridge_dir(bridge_cleanup_dir.as_deref());
+        cleanup_generated_bridge_dir(shim_cleanup_dir.as_deref());
         return Err("failed to get process ID".to_string());
     };
 
@@ -310,6 +323,7 @@ pub(crate) async fn spawn_pty_inner(
             let _ = child.kill();
             let _ = child.wait();
             cleanup_generated_bridge_dir(bridge_cleanup_dir.as_deref());
+            cleanup_generated_bridge_dir(shim_cleanup_dir.as_deref());
             return Err(format!("failed to get PTY writer: {}", e));
         }
     };
@@ -365,6 +379,7 @@ pub(crate) async fn spawn_pty_inner(
         let _ = rejected.child.kill();
         let _ = rejected.child.wait();
         cleanup_generated_bridge_dir(bridge_cleanup_dir.as_deref());
+        cleanup_generated_bridge_dir(shim_cleanup_dir.as_deref());
         return Err(match reason {
             crate::terminal::state::TryInsertError::AlreadyExists => format!(
                 "session '{}' already exists — cannot spawn duplicate session ID",
@@ -407,6 +422,7 @@ pub(crate) async fn spawn_pty_inner(
             let _ = removed.child.wait();
         }
         cleanup_generated_bridge_dir(bridge_cleanup_dir.as_deref());
+        cleanup_generated_bridge_dir(shim_cleanup_dir.as_deref());
         return Err(format!("failed to write cache: {}", e));
     }
 

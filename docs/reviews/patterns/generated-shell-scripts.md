@@ -2,7 +2,7 @@
 id: generated-shell-scripts
 category: backend
 created: 2026-06-02
-last_updated: 2026-06-02
+last_updated: 2026-06-03
 ref_count: 0
 ---
 
