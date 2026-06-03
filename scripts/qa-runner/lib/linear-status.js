@@ -209,6 +209,7 @@ export const main = async () => {
   process.stdout.write(
     `commented on ${identifier} (as ${auth.who}${commentId ? `, comment ${commentId}` : ''}${parentId ? `, parent ${parentId}` : ''})\n`
   )
+  process.stdout.write(`comment-id:\t${commentId ?? ''}\n`)
 
   if (stateName) {
     const s = await linearGql(

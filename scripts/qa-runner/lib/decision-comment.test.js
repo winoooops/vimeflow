@@ -187,7 +187,12 @@ describe('decision store', () => {
 
     expect(shouldPostDecision(empty, 329, key)).toBe(true)
 
-    const updated = markDecisionPosted(empty, 329, key, file)
+    const updated = markDecisionPosted(empty, 329, key, file, {
+      commentId: 'test-comment-id',
+      state: 'GOOD_SHAPE',
+      headSha: 'abc',
+      action: 'none',
+    })
 
     expect(shouldPostDecision(updated, 329, key)).toBe(false)
     expect(shouldPostDecision(readDecisionStore(file), 329, key)).toBe(false)
@@ -196,7 +201,8 @@ describe('decision store', () => {
   test('keeps old string store entries compatible', () => {
     const store = { 329: 'legacy-key' }
 
-    expect(shouldPostDecision(store, 329, 'legacy-key')).toBe(false)
+    // Legacy entries are posted again once to backfill commentId for threading
+    expect(shouldPostDecision(store, 329, 'legacy-key')).toBe(true)
     expect(shouldPostDecision(store, 329, 'new-key')).toBe(true)
   })
 

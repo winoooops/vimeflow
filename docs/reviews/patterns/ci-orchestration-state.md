@@ -101,3 +101,12 @@ Findings in the CI orchestration / QA runner pipeline where state is either lost
 - **Finding:** `classifyChecks` produced `deterministicFailures` for non-review checks and `reviewRerunFailures` for failed review checks in `reviewRerunChecks`. A failed review check not in `reviewRerunChecks` fell through both lists, so `computeState` never saw it and the PR could reach `GOOD_SHAPE` despite the failure.
 - **Fix:** Added a `reviewNonRerunFailures` list to `classifyChecks` and mapped it to `CI_RED` in `computeState` before the `reviewRerunFailures` branch.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 10. Legacy decision store entries never backfill commentId
+
+- **Source:** github-codex-connector | PR #332 round 1 | 2026-06-02
+- **Severity:** P2 / MEDIUM
+- **File:** `scripts/qa-runner/lib/decision-comment.js`
+- **Finding:** When a PR had a legacy decision store (`{ "<pr>": "<key>" }`), `decisionEntry` converted it to `{ key }` and `shouldPostDecision` treated an unchanged decision as already posted. No `commentId`, `state`, or `headSha` was ever captured, so threading paths kept falling back to top-level Linear comments.
+- **Fix:** Updated `shouldPostDecision` to return `true` when the entry lacks a `commentId` property, forcing a one-time repost that backfills the metadata.
+- **Commit:** same commit as this entry

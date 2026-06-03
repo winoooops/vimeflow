@@ -9,6 +9,7 @@ import { spawn } from 'node:child_process'
 import { appendFileSync, mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { formatMergedComment } from './decision-comment.js'
 
 const LIB_DIR = dirname(fileURLToPath(import.meta.url))
 const STATE_DIR = join(dirname(LIB_DIR), '.state')
@@ -32,7 +33,7 @@ const LINEAR_COMMENT = {
     ].join('\n'),
   paused: (e) =>
     `⏸️ Paused #${e.pr} after ${e.noopCount} failed fix attempts — ${e.detail || 'needs a look'}.`,
-  merged: (e) => `🎉 #${e.pr} merged — review loop complete.`,
+  merged: (e) => formatMergedComment(e.pr),
   closed: (e) => `🚫 #${e.pr} closed without merge — review loop stopped.`,
 }
 

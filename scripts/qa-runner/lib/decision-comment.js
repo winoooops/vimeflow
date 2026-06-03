@@ -142,6 +142,9 @@ export const formatDecisionComment = ({
   return lines.join('\n')
 }
 
+export const formatMergedComment = (pr) =>
+  `🎉 #${pr} merged — review loop complete.`
+
 export const formatFixerCycleComment = ({
   pr,
   url,
@@ -195,8 +198,11 @@ const decisionEntry = (store, pr) => {
   return entry
 }
 
-export const shouldPostDecision = (store, pr, key) =>
-  decisionEntry(store, pr).key !== key
+export const shouldPostDecision = (store, pr, key) => {
+  const entry = decisionEntry(store, pr)
+
+  return entry.key !== key || !('commentId' in entry)
+}
 
 export const decisionCommentId = (
   store,
@@ -242,10 +248,10 @@ export const markDecisionPosted = (
     [String(pr)]: {
       ...decisionEntry(store, pr),
       key,
-      commentId,
-      state,
-      headSha,
-      action,
+      ...(commentId !== undefined && { commentId }),
+      ...(state !== undefined && { state }),
+      ...(headSha !== undefined && { headSha }),
+      ...(action !== undefined && { action }),
     },
   }
 

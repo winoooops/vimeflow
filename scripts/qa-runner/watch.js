@@ -43,6 +43,7 @@ import {
   decisionKey,
   decisionStorePath,
   formatDecisionComment,
+  formatMergedComment,
   markDecisionPosted,
   markMergeLinearPosted,
   readDecisionStore,
@@ -473,7 +474,7 @@ const computeState = async (pr, ctx) => {
 }
 
 const commentIdFromLinearOutput = (stdout) =>
-  (stdout.match(/comment ([0-9a-f-]+)/i) || [])[1] ?? null
+  (stdout.match(/comment-id:\t([0-9a-f-]*)/) || [])[1] || null
 
 const postLinear = (
   vim,
@@ -650,7 +651,7 @@ const approve = (pr, vim, headSha, ctx) => {
 
   const merged = postLinear(
     vim,
-    `🎉 #${pr.number} merged — review loop complete.`,
+    formatMergedComment(pr.number),
     'Done'
   )
   if (merged.ok && merged.commentId) {
