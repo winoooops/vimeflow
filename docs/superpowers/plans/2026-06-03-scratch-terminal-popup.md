@@ -645,3 +645,5 @@ test('registers the backtick chord and toggles on fire', () => {
 **Placeholder scan:** PR1 steps carry concrete test code + impl deltas + exact commands. PR2/PR3 are explicitly outlines (deferred detailed plans), not placeholder-laden steps — gated on PR1's real APIs and the two §5 build-time questions.
 
 **Type consistency:** `ephemeral` (Rust `SpawnPtyRequest` + TS `PTYSpawnParams`), `kill_ephemeral_ptys` (inner / `BackendState` / IPC string / `killEphemeralPtys` TS), `scratchPtyId`, `runningByPane` keyed `${sessionId}:${paneId}`, `toggle(target?)` — names consistent across tasks and with the spec.
+
+<!-- codex-reviewed: 2026-06-03T14:48:06Z -->
