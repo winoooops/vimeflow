@@ -74,6 +74,8 @@ impl BackendState {
     }
 
     pub fn shutdown(&self) {
+        // Best-effort kill of scratch PTYs (reap-on-boot is the authoritative net).
+        let _ = self.kill_ephemeral_ptys();
         if let Err(err) = self.sessions.clear_all() {
             log::warn!("BackendState::shutdown: cache clear failed: {err}");
         }
@@ -479,6 +481,38 @@ mod tests {
         let (state, _sink) = BackendState::with_fake_sink();
         state.shutdown();
         state.shutdown();
+    }
+
+    #[tokio::test]
+    async fn shutdown_kills_ephemeral_ptys() {
+        let (state, _sink) = BackendState::with_fake_sink();
+        let cwd = std::env::current_dir()
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
+
+        state
+            .spawn_pty(crate::terminal::types::SpawnPtyRequest {
+                session_id: "scratch-shutdown".to_string(),
+                cwd,
+                shell: None,
+                env: None,
+                enable_agent_bridge: false,
+                ephemeral: true,
+            })
+            .await
+            .expect("ephemeral spawn");
+
+        state.shutdown();
+
+        let write = state.write_pty(crate::terminal::types::WritePtyRequest {
+            session_id: "scratch-shutdown".to_string(),
+            data: "x".to_string(),
+        });
+        assert!(
+            write.is_err(),
+            "shutdown should have reaped the scratch PTY"
+        );
     }
 
     #[test]
