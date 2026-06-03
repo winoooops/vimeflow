@@ -57,7 +57,7 @@ export const BrowserTabBar = ({
       <div
         role="tablist"
         aria-label="browser tabs"
-        className="flex min-w-0 flex-1 items-center gap-[5px] overflow-x-auto"
+        className="thin-scrollbar flex min-w-0 flex-1 items-center gap-[5px] overflow-x-auto"
       >
         {tabs.map((tab) => {
           const fav = faviconPlaceholder(tab.url)
