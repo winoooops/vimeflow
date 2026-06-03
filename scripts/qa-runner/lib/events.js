@@ -30,6 +30,7 @@ const formatCycleExitComment = (e) => {
     '| Field | Value |',
     '| --- | --- |',
     `| PR | #${tableValue(e.pr)} |`,
+    `| Source event | ${tableValue(e.sourceEvent)} |`,
     `| Category | ${tableValue(e.category || e.type)} |`,
     `| Detail | ${tableValue(e.detail)} |`,
     `| Exit code | \`${tableValue(e.exitCode)}\` |`,
@@ -45,12 +46,15 @@ const formatCycleExitComment = (e) => {
   if (e.logPath) {
     lines.push(`| Log | \`${tableValue(e.logPath)}\` |`)
   }
+  if (e.retryMode) {
+    lines.push(`| Retry mode | ${tableValue(e.retryMode)} |`)
+  }
 
   lines.push(
     '',
     terminal
       ? 'Action: loop paused. A new head, CI/review event, or manual requeue is required before routine polling resumes.'
-      : 'Action: recorded the exit and will retry without incrementing the fixer failure streak.'
+      : 'Action: recorded the recoverable exit without incrementing the fixer failure streak. Poll-triggered exits retry on the next poll tick; webhook/manual exits are requeued by daemon backoff.'
   )
 
   return lines.join('\n')

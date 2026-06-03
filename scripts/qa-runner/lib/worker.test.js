@@ -332,18 +332,20 @@ describe('runOne', () => {
 
     const outcome = await runOne(42, 'poll', deps)
 
-    expect(outcome).toBe('error')
+    expect(outcome).toBe('retry')
     expect(deps.state.update).not.toHaveBeenCalled()
     expect(deps.events.emit).toHaveBeenCalledWith(
       {
         type: 'error',
         pr: 42,
+        sourceEvent: 'poll',
         category: 'transient',
         detail: 'watch.js transient (exit -1)',
         exitCode: -1,
         signal: 'SIGTERM',
         exitReason: 'watch.js terminated by SIGTERM',
         logPath: '/repo/scripts/qa-runner/logs/pr-42.log',
+        retryMode: 'next poll tick',
         terminal: false,
       },
       'VIM-20'
@@ -387,6 +389,7 @@ describe('runOne', () => {
       {
         type: 'paused',
         pr: 42,
+        sourceEvent: 'poll',
         noopCount: 3,
         maxNoops: 3,
         category: 'fixer_stall',

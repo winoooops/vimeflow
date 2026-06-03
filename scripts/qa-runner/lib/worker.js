@@ -403,18 +403,20 @@ export const runOne = async (pr, reason, deps) => {
         {
           type: 'error',
           pr,
+          sourceEvent: reason,
           category: 'transient',
           detail: `watch.js transient (exit ${code})`,
           exitCode: code,
           signal: tickResult.signal,
           exitReason: tickResult.exitReason,
           logPath: tickResult.logPath,
+          retryMode: reason === 'poll' ? 'next poll tick' : 'daemon backoff',
           terminal: false,
         },
         after.vim
       )
 
-      return 'error'
+      return 'retry'
     }
     // exit 1 = the fixer ran and couldn't advance the head. THE stall signal: count
     // consecutive failures and pause at the cap so a broken PR stops burning cycles.
@@ -431,6 +433,7 @@ export const runOne = async (pr, reason, deps) => {
       {
         type: paused ? 'paused' : 'error',
         pr,
+        sourceEvent: reason,
         noopCount,
         maxNoops: config.maxNoops,
         category: 'fixer_stall',
