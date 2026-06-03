@@ -573,3 +573,5 @@ draft/committedUrl sync, blur-cancel, and redirect-event assertions are preserve
 Real back/forward/reload + history-driven enablement (L2); real favicons + the live
 load bar (L3). L1 asserts only that their placeholders/disabled states render and are
 forward-compatible.
+
+<!-- codex-reviewed: 2026-06-03T14:26:16Z -->
