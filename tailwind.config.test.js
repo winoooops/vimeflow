@@ -81,15 +81,10 @@ describe('Tailwind Config - Obsidian Lens Design Tokens', () => {
       ])
     })
 
-    test('has mono font family (JetBrains Mono with ui-monospace fallback)', () => {
-      // Updated per handoff §6: adds `ui-monospace` (CSS Fonts Level 4
-      // generic keyword, supported by every Tauri-targeted engine) before
-      // the generic `monospace` family. On systems without JetBrains Mono
-      // installed, browsers now use `ui-monospace` — the OS-preferred
-      // monospace face — instead of the generic `monospace` fallback.
-      // JetBrains Mono is still preferred when present, so environments
-      // that load it are unaffected.
+    test('has mono font family (Ioskeley Mono primary, JetBrains Mono fallback)', () => {
+      // Ioskeley Mono primary; JetBrains Mono / ui-monospace / monospace fallbacks.
       expect(tailwindConfig.theme.extend.fontFamily.mono).toEqual([
+        'Ioskeley Mono',
         'JetBrains Mono',
         'ui-monospace',
         'monospace',

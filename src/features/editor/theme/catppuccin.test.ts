@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'vitest'
-import { catppuccinMocha } from './catppuccin'
+import { EDITOR_MONO_FONT_FAMILY, catppuccinMocha } from './catppuccin'
 
 describe('catppuccin theme', () => {
   test('exports a valid extension', () => {
@@ -19,5 +19,11 @@ describe('catppuccin theme', () => {
     expect(extensionArray).toHaveLength(2)
     expect(extensionArray[0]).toBeDefined()
     expect(extensionArray[1]).toBeDefined()
+  })
+
+  test('editor mono stack leads with Ioskeley Mono, keeps fallbacks', () => {
+    expect(EDITOR_MONO_FONT_FAMILY.startsWith('"Ioskeley Mono"')).toBe(true)
+    expect(EDITOR_MONO_FONT_FAMILY).toContain('"JetBrains Mono"')
+    expect(EDITOR_MONO_FONT_FAMILY).toContain('monospace')
   })
 })

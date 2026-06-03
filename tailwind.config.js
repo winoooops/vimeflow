@@ -97,7 +97,7 @@ export default {
         headline: ['Manrope', 'sans-serif'],
         body: ['Inter', 'sans-serif'],
         label: ['Inter', 'sans-serif'],
-        mono: ['JetBrains Mono', 'ui-monospace', 'monospace'],
+        mono: ['Ioskeley Mono', 'JetBrains Mono', 'ui-monospace', 'monospace'],
         sans: ['Inter', 'ui-sans-serif', 'system-ui'],
         display: ['Instrument Sans', 'Manrope', 'system-ui'],
       },
