@@ -719,23 +719,36 @@ const dispatchFix = ({ pr, fixContext }) =>
     }
     pipe(child.stdout)
     pipe(child.stderr)
-    child.on('close', (code) => {
+    child.on('close', (code, signal) => {
       logFd.end()
+      const exitCode = code ?? null
+
+      const reason =
+        lastLine ||
+        (signal
+          ? `run.js terminated by ${signal}`
+          : `run.js exited ${exitCode}`)
       if (code === RUN_SELF_REVIEW_EXIT) {
         writeDispatchBlocker(pr, {
           code,
-          reason: lastLine || `run.js exited ${code}`,
+          reason,
           logPath,
         })
       }
       out(`${tag} ✓ run.js exited ${code}`)
-      resolve({ code })
+      resolve({ pr, code: exitCode, signal: signal ?? null, reason, logPath })
     })
 
     child.on('error', (e) => {
       logFd.end()
       out(`${tag} ✗ spawn error: ${e.message}`)
-      resolve({ code: -1 })
+      resolve({
+        pr,
+        code: -1,
+        signal: null,
+        reason: `run.js spawn error: ${e.message}`,
+        logPath,
+      })
     })
   })
 
@@ -830,6 +843,14 @@ const tick = async (ctx) => {
     // dispatchFix resolves a real run.js exit code, null (signal-killed), or -1
     // (spawn failed: node/run.js missing, OOM before fork). Self-review refusal is
     // a local dispatch blocker, not a failed fixer attempt.
+    for (const result of results.filter(
+      (r) => r.code !== 0 && r.code !== RUN_SELF_REVIEW_EXIT
+    )) {
+      out(
+        `FIXER_EXIT #${result.pr}: ${result.reason} ` +
+          `(exit ${result.code ?? 'signal'}; log: ${result.logPath})`
+      )
+    }
     const codes = results.map((r) => r.code)
     fixerStall = codes.some(
       (c) => c !== null && c !== -1 && c !== 0 && c !== RUN_SELF_REVIEW_EXIT

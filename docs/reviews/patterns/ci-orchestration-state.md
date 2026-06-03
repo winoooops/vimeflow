@@ -2,7 +2,7 @@
 id: ci-orchestration-state
 category: correctness
 created: 2026-06-02
-last_updated: 2026-06-02
+last_updated: 2026-06-03
 ref_count: 3
 ---
 
@@ -119,3 +119,12 @@ Findings in the CI orchestration / QA runner pipeline where state is either lost
 - **Finding:** Round-1 changed `shouldPostDecision` to use `!('commentId' in entry)`, which correctly triggered reposts for legacy string entries missing the property. But it did not handle two related cases: (a) an entry whose `commentId` was explicitly `null` (e.g., Linear API returned success with no comment ID) was treated as already-posted because `'commentId' in entry` is `true`; and (b) `markDecisionPosted` conditionally spread `...(commentId != null && { commentId })`, so when a new post returned `null` after an earlier post had returned a real ID, the old ID survived in the store.
 - **Fix:** Changed `shouldPostDecision` to `!entry.commentId` so any falsy/missing/null `commentId` triggers a repost. Changed `markDecisionPosted` to explicitly write `commentId: null` when the caller passes `commentId: null`, ensuring stale IDs are cleared rather than silently retained.
 - **Commit:** same commit as this entry
+
+### 12. `error` events mapped to Linear comments for all categories create unbounded spam on transient failures
+
+- **Source:** github-codex-connector | PR #334 round 1 | 2026-06-03
+- **Severity:** P2 / MEDIUM
+- **File:** `scripts/qa-runner/lib/events.js`
+- **Finding:** `LINEAR_COMMENT` mapped every `type: 'error'` event to `formatCycleExitComment`, including `category: 'fixer_stall'` non-terminal exits. Each incremental fixer stall below `maxNoops` posted a new Linear "RETRY" comment, and transient errors (gh/GraphQL blips, exit 2) were unbounded in frequency. The pre-PR design intentionally kept types absent from `LINEAR_COMMENT` as pool-only to avoid spam.
+- **Fix:** Changed `LINEAR_COMMENT.error` to a gated formatter: `e.category === 'transient' ? formatCycleExitComment(e) : null`. Non-terminal fixer stalls are now pool-only; terminal stalls still surface via the `paused` type. Updated the test to assert `null` for fixer-stall errors.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

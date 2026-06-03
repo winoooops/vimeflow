@@ -318,4 +318,89 @@ describe('runOne', () => {
       undefined
     )
   })
+
+  test('records retryable watch exits with reason and log metadata', async () => {
+    const deps = makeDeps({
+      snapshotExec: openPrSnapshotExec(),
+      tickRunner: vi.fn(async () => ({
+        code: -1,
+        signal: 'SIGTERM',
+        exitReason: 'watch.js terminated by SIGTERM',
+        logPath: '/repo/scripts/qa-runner/logs/pr-42.log',
+      })),
+    })
+
+    const outcome = await runOne(42, 'poll', deps)
+
+    expect(outcome).toBe('retry')
+    expect(deps.state.update).not.toHaveBeenCalled()
+    expect(deps.events.emit).toHaveBeenCalledWith(
+      {
+        type: 'error',
+        pr: 42,
+        sourceEvent: 'poll',
+        category: 'transient',
+        detail: 'watch.js transient (exit -1)',
+        exitCode: -1,
+        signal: 'SIGTERM',
+        exitReason: 'watch.js terminated by SIGTERM',
+        logPath: '/repo/scripts/qa-runner/logs/pr-42.log',
+        retryMode: 'next poll tick',
+        terminal: false,
+      },
+      'VIM-20'
+    )
+  })
+
+  test('pauses repeated fixer stalls with explicit exit context', async () => {
+    const deps = makeDeps({
+      snapshotExec: openPrSnapshotExec(),
+      tickRunner: vi.fn(async () => ({
+        code: 1,
+        signal: null,
+        exitReason: 'kimi produced no commit - findings left unaddressed',
+        logPath: '/repo/scripts/qa-runner/logs/pr-42.log',
+      })),
+      state: {
+        has: vi.fn(() => true),
+        get: vi.fn(() => ({
+          roundCount: 1,
+          noopCount: 2,
+          lastHeadSha: 'abc123',
+          pausedAt: null,
+          pauseReason: null,
+        })),
+        forget: vi.fn(),
+        update: vi.fn(),
+      },
+    })
+
+    const outcome = await runOne(42, 'poll', deps)
+
+    expect(outcome).toBe('paused')
+    expect(deps.state.update).toHaveBeenCalledWith(42, {
+      lastHeadSha: 'abc123',
+      noopCount: 3,
+      pausedAt: '2024-01-01T00:00:00.000Z',
+      pauseReason: 'fixer_stall',
+    })
+
+    expect(deps.events.emit).toHaveBeenCalledWith(
+      {
+        type: 'paused',
+        pr: 42,
+        sourceEvent: 'poll',
+        noopCount: 3,
+        maxNoops: 3,
+        category: 'fixer_stall',
+        detail: 'fixer stall (watch.js exit 1)',
+        exitCode: 1,
+        signal: null,
+        exitReason: 'kimi produced no commit - findings left unaddressed',
+        logPath: '/repo/scripts/qa-runner/logs/pr-42.log',
+        terminal: true,
+      },
+      'VIM-20'
+    )
+  })
 })
