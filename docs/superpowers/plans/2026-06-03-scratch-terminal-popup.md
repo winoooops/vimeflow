@@ -40,13 +40,15 @@
 
 ## PR1 — Backend ephemeral slice (land first), then per-session popup
 
+> **Rust test conventions (read first).** The Cargo package is `vimeflow` (`crates/backend/Cargo.toml`); run backend tests with `cargo test --manifest-path crates/backend/Cargo.toml [name]`. Put each task's unit tests in a `#[cfg(test)] mod tests` block **in the source file it modifies** (`commands.rs`, `state.rs`, `ipc.rs` — all already have such blocks) — **not** in `terminal/test_commands.rs`, which is `#[cfg(feature = "e2e-test")]`-gated and won't run under default `cargo test`. After any change to a `#[derive(TS)]` Rust type (e.g. `SpawnPtyRequest`), run `npm run generate:bindings` (= `cargo test … export_bindings` + prettier) and commit the regenerated `src/bindings/*.ts`, or `npm run type-check` will fail when the new field is forwarded.
+
 ### Task 1: `ephemeral` flag skips the cache write
 
 **Files:**
 
 - Modify: `crates/backend/src/terminal/types.rs` (`SpawnPtyRequest`)
 - Modify: `crates/backend/src/terminal/commands.rs` (`spawn_pty_inner`, cache block `:381-410`)
-- Test: `crates/backend/src/terminal/test_commands.rs` (or the existing PTY test module)
+- Test: a `#[cfg(test)] mod tests` block in `crates/backend/src/terminal/commands.rs` (per the Rust test conventions above — not the e2e-gated `test_commands.rs`)
 
 - [ ] **Step 1: Write the failing test — ephemeral spawn does not persist**
 
@@ -74,7 +76,7 @@ fn ephemeral_spawn_is_absent_from_cache_and_list() {
 
 - [ ] **Step 2: Run it, verify it fails to compile (no `ephemeral` field)**
 
-Run: `cargo test -p vimeflow-backend ephemeral_spawn_is_absent -- --nocapture`
+Run: `cargo test --manifest-path crates/backend/Cargo.toml ephemeral_spawn_is_absent -- --nocapture`
 Expected: compile error — `SpawnPtyRequest` has no field `ephemeral`.
 
 - [ ] **Step 3: Add the field + gate the cache write**
@@ -94,9 +96,15 @@ if !request.ephemeral {
 }
 ```
 
+Then regenerate the TS binding for the changed `#[derive(TS)]` type:
+
+```bash
+npm run generate:bindings   # updates src/bindings/SpawnPtyRequest.ts (+ prettier)
+```
+
 - [ ] **Step 4: Run the test, verify it passes**
 
-Run: `cargo test -p vimeflow-backend ephemeral_spawn_is_absent -- --nocapture`
+Run: `cargo test --manifest-path crates/backend/Cargo.toml ephemeral_spawn_is_absent -- --nocapture`
 Expected: PASS.
 
 - [ ] **Step 5: Add the regression guard — default still persists**
@@ -110,12 +118,12 @@ fn non_ephemeral_spawn_still_persists() {
 }
 ```
 
-Run: `cargo test -p vimeflow-backend _spawn -- --nocapture` → both PASS.
+Run: `cargo test --manifest-path crates/backend/Cargo.toml _spawn -- --nocapture` → both PASS.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add crates/backend/src/terminal/types.rs crates/backend/src/terminal/commands.rs crates/backend/src/terminal/test_commands.rs
+git add crates/backend/src/terminal/types.rs crates/backend/src/terminal/commands.rs src/bindings/SpawnPtyRequest.ts
 git commit -m "feat(terminal): add ephemeral spawn flag that skips session cache"
 ```
 
@@ -144,7 +152,7 @@ fn ephemeral_spawn_creates_no_bridge_dir_even_if_bridge_requested() {
 
 - [ ] **Step 2: Run it, verify FAIL** (bridge dir is created today)
 
-Run: `cargo test -p vimeflow-backend ephemeral_spawn_creates_no_bridge -- --nocapture`
+Run: `cargo test --manifest-path crates/backend/Cargo.toml ephemeral_spawn_creates_no_bridge -- --nocapture`
 Expected: FAIL — the directory exists.
 
 - [ ] **Step 3: Gate the bridge block on `!ephemeral`**
@@ -161,7 +169,7 @@ let (bridge_files, bridge_cleanup_dir) = if request.ephemeral || !request.enable
 
 - [ ] **Step 4: Run the test, verify PASS**
 
-Run: `cargo test -p vimeflow-backend ephemeral_spawn_creates_no_bridge -- --nocapture`
+Run: `cargo test --manifest-path crates/backend/Cargo.toml ephemeral_spawn_creates_no_bridge -- --nocapture`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -196,7 +204,7 @@ fn kill_ephemeral_ptys_kills_only_ephemeral() {
 
 - [ ] **Step 2: Run it, verify it fails to compile** (`kill_ephemeral_ptys` missing)
 
-Run: `cargo test -p vimeflow-backend kill_ephemeral_ptys_kills_only -- --nocapture`
+Run: `cargo test --manifest-path crates/backend/Cargo.toml kill_ephemeral_ptys_kills_only -- --nocapture`
 Expected: compile error.
 
 - [ ] **Step 3: Add the set + recording + inner fn**
@@ -219,7 +227,7 @@ Add `kill_ephemeral_ptys_inner(state) -> Vec<String>`: drain the set, and for ea
 
 - [ ] **Step 4: Run the test, verify PASS**
 
-Run: `cargo test -p vimeflow-backend kill_ephemeral_ptys_kills_only -- --nocapture`
+Run: `cargo test --manifest-path crates/backend/Cargo.toml kill_ephemeral_ptys_kills_only -- --nocapture`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -255,7 +263,7 @@ fn ipc_kill_ephemeral_ptys_routes_to_inner() {
 
 - [ ] **Step 2: Run it, verify FAIL** (unknown command)
 
-Run: `cargo test -p vimeflow-backend ipc_kill_ephemeral_ptys_routes -- --nocapture`
+Run: `cargo test --manifest-path crates/backend/Cargo.toml ipc_kill_ephemeral_ptys_routes -- --nocapture`
 Expected: FAIL — router returns unknown-method error.
 
 - [ ] **Step 3: Add the method + match arm + allowlist**
@@ -281,7 +289,7 @@ pub fn kill_ephemeral_ptys(&self) -> Result<Vec<String>, BackendError> {
 
 - [ ] **Step 4: Run the test, verify PASS**
 
-Run: `cargo test -p vimeflow-backend ipc_kill_ephemeral_ptys_routes -- --nocapture`
+Run: `cargo test --manifest-path crates/backend/Cargo.toml ipc_kill_ephemeral_ptys_routes -- --nocapture`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -314,7 +322,7 @@ fn shutdown_kills_ephemeral_ptys() {
 
 - [ ] **Step 2: Run it, verify FAIL** (`shutdown` only clears cache today)
 
-Run: `cargo test -p vimeflow-backend shutdown_kills_ephemeral -- --nocapture`
+Run: `cargo test --manifest-path crates/backend/Cargo.toml shutdown_kills_ephemeral -- --nocapture`
 Expected: FAIL.
 
 - [ ] **Step 3: Extend `shutdown()`**
@@ -330,7 +338,7 @@ pub fn shutdown(&self) {
 
 - [ ] **Step 4: Run it, verify PASS**; then run the whole backend suite.
 
-Run: `cargo test -p vimeflow-backend -- --nocapture`
+Run: `cargo test --manifest-path crates/backend/Cargo.toml -- --nocapture`
 Expected: all PASS (watch the known pre-existing parallel flake `read_loop_eof_marks_cache_exited` — re-run single-threaded if it trips).
 
 - [ ] **Step 5: Commit**
@@ -434,7 +442,7 @@ test('open spawns an ephemeral, no-bridge shell at the session workingDirectory'
       enableAgentBridge: false,
     })
   )
-  expect([...result.current.runningByPane.keys()]).toEqual(['s1:p0'])
+  expect([...result.current.running.keys()]).toEqual(['s1']) // PR1 keys by session; PR2 generalizes to `${sessionId}:${paneId}`
 })
 
 test('hide does NOT kill', async () => {
@@ -454,6 +462,24 @@ test('hide does NOT kill', async () => {
   }) // hide
   expect(service.kill).not.toHaveBeenCalled()
 })
+
+test('renderNode stays mounted (non-null) when hidden while a shell is alive', async () => {
+  const service = makeFakeService()
+  const { result } = renderHook(() =>
+    useScratchTerminals({
+      service,
+      resolveFocusedPane: () => focused(),
+      sessions: [sess()],
+    })
+  )
+  await act(async () => {
+    await result.current.toggle()
+  }) // open → spawns
+  await act(async () => {
+    await result.current.toggle()
+  }) // hide
+  expect(result.current.renderNode).not.toBeNull() // keep-mounted (spec §5): hide != unmount
+})
 ```
 
 - [ ] **Step 2: Run it, verify FAIL** (module missing)
@@ -463,7 +489,7 @@ Expected: FAIL — cannot find `useScratchTerminals`.
 
 - [ ] **Step 3: Implement the hook skeleton**
 
-Per spec §4: a `useRef<Map<string, ScratchEntry>>` keyed `${sessionId}:${paneId}`; `toggle(target?)` resolves the focused pane when `target` omitted, lazily `service.spawn({ cwd: pane.cwd /* session.workingDirectory in PR1 */, ephemeral: true, enableAgentBridge: false })`, stores `{ scratchPtyId, pid, status: 'running', cwd }`, and flips popup visibility; `runningByPane` is a `useState`-mirrored projection of running entries; `renderNode` returns the popup (Task 8) or null. Hide flips visibility only — no `service.kill`.
+PR1 is **session-scoped** (spec §9): one scratch shell per session, keyed by `sessionId` (PR2 generalizes the key to `${sessionId}:${paneId}` and renames the projection to `runningByPane`, spec §4/§6). `toggle()` lazily `service.spawn({ cwd: session.workingDirectory, ephemeral: true, enableAgentBridge: false })`, stores `{ scratchPtyId, pid, status: 'running', cwd }` in a `useRef<Map<string, ScratchEntry>>`, and flips popup visibility; `running` is a `useState`-mirrored projection; `renderNode` returns the popup (Task 8) and is **null only when no shell is alive** (otherwise kept mounted-hidden, spec §5). Hide flips visibility only — no `service.kill`.
 
 - [ ] **Step 4: Run it, verify PASS**
 
@@ -584,15 +610,15 @@ test('registers the backtick chord and toggles on fire', () => {
 
 ### Task 12: PR1 wrap-up
 
-- [ ] Run the full gate: `npm run build && npm run test && npm run lint && cargo test -p vimeflow-backend`.
+- [ ] Run the full gate: `npm run build && npm run test && npm run lint && cargo test --manifest-path crates/backend/Cargo.toml`.
 - [ ] Manual (spec §10): start `npm run dev` in the scratch popup → hide → confirm it keeps running → reopen sees output; `Cmd+R` reload → no orphan, no ghost tab.
 - [ ] Open PR1 against `feat/scratch-terminal` with `Refs VIM-53`; run codex verify; address findings via `/lifeline:upsource-review`.
 
 ---
 
-## PR2 — one scratch shell per pane (outline)
+## PR2 — one scratch shell per pane (deferred follow-up plan)
 
-Detailed plan authored after PR1 merges. Tasks:
+**NOT executable from this document.** Its detailed, code-bearing TDD steps are authored after PR1 merges — gated on PR1's real APIs and the spec §5 build-time questions (OSC-7 wiring location; buffer-producer globality). Scope:
 
 1. **Per-pane keying** — generalize the map key to `${sessionId}:${paneId}` for real (PR1 used the session); `toggle({ sessionId, paneId })` target (spec §4/§6). Tests: switch focused pane → different shell; ≤4 per session.
 2. **Spawn at `Pane.cwd`** — change the spawn cwd from `session.workingDirectory` to the host `Pane.cwd` (spec §6). Test: spawn cwd = focused pane's cwd.
@@ -601,9 +627,9 @@ Detailed plan authored after PR1 merges. Tasks:
 5. **Live-but-hidden cues** (spec §8) — pane-header ghost button (`TerminalPane/Header.tsx` + `HeaderActions.tsx`) with amber tint + mint live-dot; tooltip via the shared `Tooltip`; status-bar `● scratch ×N` (all-sessions count). Tests per cue; browser-render the icon (ligature trap).
 6. **PR2 wrap-up** — full gate, manual cwd-isolation check, PR against `feat/scratch-terminal` (`Refs VIM-53`).
 
-## PR3 — pane-bound lifecycle via lazy reconciliation (outline)
+## PR3 — pane-bound lifecycle via lazy reconciliation (deferred follow-up plan)
 
-Detailed plan authored after PR2 merges. Tasks:
+**NOT executable from this document.** Detailed steps authored after PR2 merges. Scope:
 
 1. **Lazy reconciliation effect** in `useScratchTerminals` (spec §4): given the live sessions/panes, kill + drop (`service.kill` + `dropAllForPty`) any scratch entry whose `${sessionId}:${paneId}` no longer maps to a live pane. Tests: pane close → its scratch killed+dropped; session close → all its scratch killed.
 2. **Restart keeps** — assert a pane restart (ptyId rotation, same paneId) does NOT kill the scratch entry (stable key). Test with a simulated restart.
