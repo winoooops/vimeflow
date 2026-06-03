@@ -24,4 +24,8 @@ export type SpawnPtyRequest = {
    * Generate statusline bridge files for agent status tracking
    */
   enableAgentBridge: boolean
+  /**
+   * Ephemeral (scratch) PTY: skip the session cache and the agent-bridge dir.
+   */
+  ephemeral: boolean
 }

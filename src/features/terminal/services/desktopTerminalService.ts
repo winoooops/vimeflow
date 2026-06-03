@@ -165,6 +165,7 @@ export class DesktopTerminalService implements ITerminalService {
       shell: params.shell,
       env: params.env,
       enableAgentBridge: params.enableAgentBridge ?? false,
+      ephemeral: params.ephemeral ?? false,
     }
 
     const response = await invoke<PtySession>('spawn_pty', {
