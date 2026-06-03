@@ -3,7 +3,7 @@ id: error-surfacing
 category: error-handling
 created: 2026-04-10
 last_updated: 2026-06-02
-ref_count: 10
+ref_count: 11
 ---
 
 # Error Surfacing
@@ -422,3 +422,30 @@ failed" must mean the editor shows the original file, not the requested one.
 - **Finding:** In `computeState`, `openThreads()` — a `gh api` GraphQL call — was evaluated before the `reviewRerunFailures` check. Prior to the PR, threads were fetched only in the fully-clean path. After the PR they were fetched whenever `deterministicFailures.length === 0`, including every case where a reviewer check had failed and a rerun was warranted. If the GraphQL thread-count API was down, the exception propagated out of `computeState` and the tick exited 2 — the rerun logic was never reached.
 - **Fix:** Moved the `reviewRerunFailures` check above `openThreads()` so reruns are attempted before the GraphQL thread query. Unresolved threads are still checked before `GOOD_SHAPE` approval, preserving the original priority semantics without adding a fragile API dependency to the rerun hot path.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 44. Fragile stdout-scraping in commentIdFromLinearOutput
+
+- **Source:** github-claude | PR #332 round 1 | 2026-06-02
+- **Severity:** MEDIUM
+- **File:** `scripts/qa-runner/watch.js`
+- **Finding:** `commentIdFromLinearOutput` regex-matched the human-readable stdout of `linear-status.js` to extract a comment ID. If the output format changed or `createLinearComment` returned `null`, the regex silently returned `null`, causing the threaded reply to be skipped with no log or alert.
+- **Fix:** Added a structured `comment-id:\t<id>` output line in `linear-status.js` and updated the parser to match the machine-readable token explicitly.
+- **Commit:** same commit as this entry
+
+### 45. markDecisionPosted undefined args silently erase stored commentId
+
+- **Source:** github-claude | PR #332 round 1 | 2026-06-02
+- **Severity:** MEDIUM
+- **File:** `scripts/qa-runner/lib/decision-comment.js`
+- **Finding:** `markDecisionPosted` destructured `{ commentId, state, headSha, action } = {}` and unconditionally spread those names into the stored entry. When called with the 4-arg form, all four fields became `undefined` and `JSON.stringify` dropped them, erasing any previously stored `commentId`.
+- **Fix:** Replaced unconditional spread with conditional spreading: `...(commentId !== undefined && { commentId })`, etc.
+- **Commit:** same commit as this entry
+
+### 46. Parser for structured Linear output remains untested and silent-failure path has no log
+
+- **Source:** github-claude | PR #332 round 2 | 2026-06-02
+- **Severity:** MEDIUM
+- **File:** `scripts/qa-runner/watch.js`
+- **Finding:** Round-1 added a structured `comment-id:\t<id>` line to `linear-status.js` and updated the regex in `watch.js`, but the parser (`commentIdFromLinearOutput`) was still defined inline in an untested file. When `createLinearComment` returned `null`, the regex matched the empty `comment-id:\t` line and silently returned `null`; the threaded reply was skipped and `markMergePosted` gated off the fallback path with no operator-visible indication.
+- **Fix:** Moved `commentIdFromLinearOutput` to `linear-status.js` as the exported `parseLinearCommentId`, added unit tests covering missing/empty/malformed output, and added an explicit `⚠ ... comment-id missing — threaded reply skipped` log in `approve()` so operators see the failure immediately.
+- **Commit:** same commit as this entry

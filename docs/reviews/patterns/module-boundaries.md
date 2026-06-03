@@ -2,7 +2,7 @@
 id: module-boundaries
 category: code-quality
 created: 2026-04-30
-last_updated: 2026-05-07
+last_updated: 2026-06-02
 ref_count: 1
 ---
 
@@ -51,3 +51,12 @@ Don't widen the coupling by adding a second importer.
 - **Finding:** `TerminalZone` decided whether to wire `aria-labelledby` on each panel by recomputing `isActive || status === 'running' || status === 'paused'` inline. The exact same predicate (modulo the `isActive` half) lives in `pickNextVisibleSessionId.ts` as `isOpenSessionStatus`, which `Sidebar` and `SessionTabs` both consume. Today the two are equivalent, but the moment `isOpenSessionStatus` is widened (e.g. to admit a future `suspended` status), `TerminalZone`'s `hasVisibleTab` would silently lag — panels for the new status would emit `aria-labelledby={undefined}` even though `SessionTabs` would render a visible tab for them, breaking the WAI-ARIA tablist↔tabpanel linkage with no build error and no test failure. Same finding-class as #2 above (sibling-shape mismatch is a coupling smell) but the consequence here is functional, not stylistic.
 - **Fix:** Imported `isOpenSessionStatus` from `../utils/pickNextVisibleSessionId`. Replaced the inline three-line OR with `isActive || isOpenSessionStatus(session.status)`. Updated the comment to state the canonical-predicate consumption rationale ("a future non-open status auto-flows into both visibility surfaces without TerminalZone needing a separate update"). Code-review heuristic: when two files in the same feature directory implement the same predicate inline, ONE of them should host the helper and the other(s) should consume it — and reviewers should flag the duplicate the moment the second copy lands, not after a status-set extension surfaces the drift.
 - **Commit:** _(see git log for the cycle-17 fix commit on PR #174)_
+
+### 4. Celebration message duplicated across events.js and watch.js
+
+- **Source:** github-claude | PR #332 round 1 | 2026-06-02
+- **Severity:** LOW
+- **File:** `scripts/qa-runner/lib/events.js`
+- **Finding:** The merged-celebration string was independently composed in two files. Editing one would silently cause divergent Linear comments depending on which code path ran.
+- **Fix:** Exported a shared `formatMergedComment(pr)` from `decision-comment.js` (the existing home for message formatters) and consumed it at both callsites.
+- **Commit:** same commit as this entry

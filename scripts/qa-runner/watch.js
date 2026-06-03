@@ -43,7 +43,9 @@ import {
   decisionKey,
   decisionStorePath,
   formatDecisionComment,
+  formatMergedComment,
   markDecisionPosted,
+  markMergeLinearPosted,
   readDecisionStore,
   shouldPostDecision,
 } from './lib/decision-comment.js'
@@ -53,6 +55,7 @@ import {
   clearDispatchBlocker,
   writeDispatchBlocker,
 } from './lib/dispatch-blocker.js'
+import { parseLinearCommentId } from './lib/linear-status.js'
 import { orchestratorTool } from './lib/orchestrator-tools.js'
 import { linkedVimForPr, writeLinkedIssueCache } from './lib/pr-utils.js'
 import {
@@ -471,9 +474,14 @@ const computeState = async (pr, ctx) => {
   }
 }
 
-const postLinear = (vim, body, stateName) => {
+const postLinear = (
+  vim,
+  body,
+  stateName,
+  { parentId, role = 'orchestrator' } = {}
+) => {
   if (!vim) {
-    return false
+    return { ok: false, commentId: null }
   }
 
   const args = [
@@ -481,24 +489,28 @@ const postLinear = (vim, body, stateName) => {
     vim,
     body,
     '--as',
-    'orchestrator',
+    role,
   ]
+  if (parentId) {
+    args.push('--parent', parentId)
+  }
   if (stateName) {
     args.push('--state', stateName)
   }
   const r = spawnSync('node', args, { encoding: 'utf8' })
   if (r.status === 0) {
+    const commentId = parseLinearCommentId(r.stdout || '')
     out(
-      `           ↳ Linear ${vim}${stateName ? ` → ${stateName}` : ''}: commented`
+      `           ↳ Linear ${vim}${stateName ? ` → ${stateName}` : ''}: ${parentId ? 'replied' : 'commented'}`
     )
 
-    return true
+    return { ok: true, commentId }
   } else {
     out(
       `           ↳ Linear ${vim}: skipped (${(r.stderr || '').trim().split('\n')[0] || 'no LINEAR_API_KEY'})`
     )
 
-    return false
+    return { ok: false, commentId: null }
   }
 }
 
@@ -551,9 +563,20 @@ const maybePostDecisionLinear = (pr, s, ctx) => {
     s.state === 'NEEDS_FIX' && action === 'dispatch fixer'
       ? 'In Progress'
       : undefined
-  if (postLinear(s.vim, body, stateName)) {
-    markDecisionPosted(store, pr.number, key, storeFile)
+  const posted = postLinear(s.vim, body, stateName)
+  if (posted.ok) {
+    markDecisionPosted(store, pr.number, key, storeFile, {
+      commentId: posted.commentId,
+      state: s.state,
+      headSha: s.headSha,
+      action,
+    })
   }
+}
+
+const markMergePosted = (pr) => {
+  const storeFile = decisionStorePath(pr)
+  markMergeLinearPosted(readDecisionStore(storeFile), pr, storeFile)
 }
 
 // Squash-merge + branch delete as the orchestrator bot (or you, if none).
@@ -623,11 +646,23 @@ const approve = (pr, vim, headSha, ctx) => {
   } else {
     out(`           (fork PR — skipped remote branch deletion)`)
   }
-  postLinear(
-    vim,
-    `QA runner: PR #${pr.number} met all review success criteria → squash-merged by ${merger}.`,
-    'Done'
-  )
+
+  const merged = postLinear(vim, formatMergedComment(pr.number), 'Done')
+  if (merged.ok && merged.commentId) {
+    postLinear(
+      vim,
+      `QA runner: PR #${pr.number} met all review success criteria → squash-merged by ${merger}.`,
+      undefined,
+      { parentId: merged.commentId }
+    )
+  } else if (merged.ok) {
+    out(
+      `           ⚠ Linear ${vim}: merge comment posted but comment-id missing — threaded reply skipped`
+    )
+  }
+  if (merged.ok) {
+    markMergePosted(pr.number)
+  }
 }
 
 // Run run.js for one PR as a child, teeing output to a per-PR log and prefixing

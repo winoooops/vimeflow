@@ -9,7 +9,7 @@
 // access token is kept as a compatibility fallback; without either, it falls back
 // to the personal LINEAR_API_KEY ($env or repo-root linear.env).
 //
-// Usage: node linear-status.js <VIM-N> "<comment>" [--state "<name>"] [--as <role>]
+// Usage: node linear-status.js <VIM-N> "<comment>" [--state "<name>"] [--as <role>] [--parent <comment-id>]
 
 import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
@@ -158,15 +158,41 @@ export const linearGql = async (auth, query, variables, fetchImpl = fetch) => {
   return json.data
 }
 
+export const parseLinearCommentId = (stdout) =>
+  (stdout.match(/comment-id:\t([0-9a-f-]*)/) || [])[1] || null
+
+export const createLinearComment = async (
+  auth,
+  { issueId, parentId, body },
+  fetchImpl = fetch
+) => {
+  const data = parentId
+    ? await linearGql(
+        auth,
+        'mutation($parentId:String!,$body:String!){commentCreate(input:{parentId:$parentId,body:$body}){success comment{id}}}',
+        { parentId, body },
+        fetchImpl
+      )
+    : await linearGql(
+        auth,
+        'mutation($id:String!,$body:String!){commentCreate(input:{issueId:$id,body:$body}){success comment{id}}}',
+        { id: issueId, body },
+        fetchImpl
+      )
+
+  return data.commentCreate?.comment?.id ?? null
+}
+
 export const main = async () => {
   const [identifier, body, ...rest] = process.argv.slice(2)
   if (!identifier || !body) {
     throw new Error(
-      'usage: linear-status.js <VIM-N> "<comment>" [--state "<name>"] [--as <role>]'
+      'usage: linear-status.js <VIM-N> "<comment>" [--state "<name>"] [--as <role>] [--parent <comment-id>]'
     )
   }
   const flag = (n) => (rest.includes(n) ? rest[rest.indexOf(n) + 1] : undefined)
   const stateName = flag('--state')
+  const parentId = flag('--parent')
   const auth = await loadAuth(flag('--as'))
 
   const d = await linearGql(
@@ -178,12 +204,15 @@ export const main = async () => {
     throw new Error(`issue ${identifier} not found`)
   }
 
-  await linearGql(
-    auth.header,
-    'mutation($id:String!,$body:String!){commentCreate(input:{issueId:$id,body:$body}){success}}',
-    { id: d.issue.id, body }
+  const commentId = await createLinearComment(auth.header, {
+    issueId: d.issue.id,
+    parentId,
+    body,
+  })
+  process.stdout.write(
+    `commented on ${identifier} (as ${auth.who}${commentId ? `, comment ${commentId}` : ''}${parentId ? `, parent ${parentId}` : ''})\n`
   )
-  process.stdout.write(`commented on ${identifier} (as ${auth.who})\n`)
+  process.stdout.write(`comment-id:\t${commentId ?? ''}\n`)
 
   if (stateName) {
     const s = await linearGql(

@@ -2,7 +2,11 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, test, vi } from 'vitest'
-import { loadAuthFromRoot } from './linear-status.js'
+import {
+  createLinearComment,
+  loadAuthFromRoot,
+  parseLinearCommentId,
+} from './linear-status.js'
 
 const tempRoots = []
 const originalLinearApiKey = process.env.LINEAR_API_KEY
@@ -118,5 +122,92 @@ describe('loadAuthFromRoot', () => {
       header: 'lin_api_test',
       who: 'you (personal key)',
     })
+  })
+})
+
+describe('createLinearComment', () => {
+  test('creates a top-level issue comment when no parent is provided', async () => {
+    const fetchImpl = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        data: {
+          commentCreate: {
+            success: true,
+            comment: { id: 'top-level-comment' },
+          },
+        },
+      }),
+    }))
+
+    await expect(
+      createLinearComment(
+        'Bearer token',
+        { issueId: 'issue-id', body: 'body' },
+        fetchImpl
+      )
+    ).resolves.toBe('top-level-comment')
+
+    const payload = JSON.parse(fetchImpl.mock.calls[0][1].body)
+    expect(payload.query).toContain('issueId')
+    expect(payload.query).not.toContain('parentId')
+    expect(payload.variables).toEqual({ id: 'issue-id', body: 'body' })
+  })
+
+  test('creates a threaded reply when parent is provided', async () => {
+    const fetchImpl = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        data: {
+          commentCreate: {
+            success: true,
+            comment: { id: 'reply-comment' },
+          },
+        },
+      }),
+    }))
+
+    await expect(
+      createLinearComment(
+        'Bearer token',
+        { issueId: 'issue-id', parentId: 'parent-comment', body: 'body' },
+        fetchImpl
+      )
+    ).resolves.toBe('reply-comment')
+
+    const payload = JSON.parse(fetchImpl.mock.calls[0][1].body)
+    expect(payload.query).toContain('parentId')
+    expect(payload.query).not.toContain('issueId')
+    expect(payload.variables).toEqual({
+      parentId: 'parent-comment',
+      body: 'body',
+    })
+  })
+})
+
+describe('parseLinearCommentId', () => {
+  test('extracts comment id from structured stdout', () => {
+    expect(
+      parseLinearCommentId(
+        'commented on VIM-20 (as orchestrator, comment abc-123)\ncomment-id:\tabc-123\n'
+      )
+    ).toBe('abc-123')
+  })
+
+  test('returns null when comment-id line is empty', () => {
+    expect(
+      parseLinearCommentId(
+        'commented on VIM-20 (as orchestrator)\ncomment-id:\t\n'
+      )
+    ).toBeNull()
+  })
+
+  test('returns null when comment-id line is missing', () => {
+    expect(
+      parseLinearCommentId('commented on VIM-20 (as orchestrator)\n')
+    ).toBeNull()
+  })
+
+  test('returns null for empty stdout', () => {
+    expect(parseLinearCommentId('')).toBeNull()
   })
 })

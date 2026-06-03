@@ -1,4 +1,11 @@
 import { afterEach, describe, expect, test, vi } from 'vitest'
+import { rmSync } from 'node:fs'
+import {
+  decisionKey,
+  decisionStorePath,
+  markDecisionPosted,
+  markMergeLinearPosted,
+} from './decision-comment.js'
 import {
   DISPATCH_BLOCKED_EXIT,
   clearDispatchBlocker,
@@ -27,6 +34,7 @@ const makeDeps = (overrides = {}) => ({
 
 afterEach(() => {
   clearDispatchBlocker(42)
+  rmSync(decisionStorePath(42), { force: true })
 })
 
 const missingPrSnapshotExec = (pr) => () => {
@@ -52,6 +60,23 @@ const openPrSnapshotExec = ({
       headRefName: branch,
     })
   )
+
+const prSnapshot = ({
+  headSha = 'abc123',
+  state = 'OPEN',
+  body = 'Closes VIM-20',
+  branch = 'feature/example',
+  labels = [{ name: 'auto-review' }],
+  isDraft = false,
+} = {}) =>
+  JSON.stringify({
+    headRefOid: headSha,
+    state,
+    body,
+    isDraft,
+    labels,
+    headRefName: branch,
+  })
 
 describe('isMissingPullRequestSnapshot', () => {
   test('identifies GitHub PR-not-found snapshot failures', () => {
@@ -226,6 +251,71 @@ describe('runOne', () => {
     expect(tickRunner).not.toHaveBeenCalled()
     expect(deps.log).toHaveBeenCalledWith(
       '#42: paused (dispatch blocked) — poll skip'
+    )
+  })
+
+  test('threads progress events under the triggering NEEDS_FIX decision', async () => {
+    const key = decisionKey({
+      pr: 42,
+      state: 'NEEDS_FIX',
+      detail: 'Claude verdict: patch has issues',
+      headSha: 'old-head',
+      action: 'dispatch fixer',
+      approve: false,
+      execute: true,
+    })
+    markDecisionPosted({}, 42, key, decisionStorePath(42), {
+      commentId: 'needs-fix-comment',
+      state: 'NEEDS_FIX',
+      headSha: 'old-head',
+      action: 'dispatch fixer',
+    })
+
+    const deps = makeDeps({
+      snapshotExec: vi
+        .fn()
+        .mockReturnValueOnce(prSnapshot({ headSha: 'old-head' }))
+        .mockReturnValueOnce(prSnapshot({ headSha: 'new-head' })),
+      tickRunner: vi.fn(async () => 0),
+    })
+
+    const outcome = await runOne(42, 'poll', deps)
+
+    expect(outcome).toBe('progress')
+    expect(deps.events.emit).toHaveBeenCalledWith(
+      {
+        type: 'progress',
+        pr: 42,
+        round: 1,
+        parentId: 'needs-fix-comment',
+      },
+      'VIM-20'
+    )
+  })
+
+  test('does not post a duplicate merged Linear event after approval already posted it', async () => {
+    markMergeLinearPosted({}, 42, decisionStorePath(42))
+
+    const deps = makeDeps({
+      snapshotExec: vi
+        .fn()
+        .mockReturnValueOnce(prSnapshot({ headSha: 'clean-head' }))
+        .mockReturnValueOnce(
+          prSnapshot({ headSha: 'clean-head', state: 'MERGED' })
+        ),
+      tickRunner: vi.fn(async () => 0),
+    })
+
+    const outcome = await runOne(42, 'approval', deps)
+
+    expect(outcome).toBe('done')
+    expect(deps.events.emit).toHaveBeenCalledWith(
+      {
+        type: 'merged',
+        pr: 42,
+        detail: 'MERGED',
+      },
+      undefined
     )
   })
 })
