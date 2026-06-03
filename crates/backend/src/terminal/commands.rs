@@ -539,7 +539,20 @@ pub(crate) fn kill_pty_inner(
     state.set_cancelled(&request.session_id);
 
     // Remove from state (no-op if NotPresent, the safe path above).
-    state.remove(&request.session_id);
+    let removed = state.remove(&request.session_id);
+
+    // Clean up bridge files and shim directory for the session.
+    if let Some(session) = removed {
+        let cwd = std::path::Path::new(&session.cwd);
+        let bridge_dir = cwd.join(".vimeflow").join("sessions").join(&request.session_id);
+        let shim_dir = dirs::cache_dir()
+            .map(|c| c.join("vimeflow-shims").join(&request.session_id))
+            .unwrap_or_else(|| std::env::temp_dir().join("vimeflow-shims").join(&request.session_id));
+        let _ = super::bridge::cleanup_bridge_files(
+            &bridge_dir.to_string_lossy(),
+            Some(&shim_dir.to_string_lossy()),
+        );
+    }
 
     // Clean up cache: remove from sessions map and session_order
     cache
@@ -917,7 +930,20 @@ async fn read_pty_output(
 
     // Clean up session only if this reader's generation still owns it.
     // If the session was replaced (ID reuse), a newer generation owns the slot.
-    state.remove_if_generation(&session_id, generation);
+    let removed = state.remove_if_generation(&session_id, generation);
+
+    // Clean up bridge files and shim directory for the session.
+    if let Some(session) = removed {
+        let cwd = std::path::Path::new(&session.cwd);
+        let bridge_dir = cwd.join(".vimeflow").join("sessions").join(&session_id);
+        let shim_dir = dirs::cache_dir()
+            .map(|c| c.join("vimeflow-shims").join(&session_id))
+            .unwrap_or_else(|| std::env::temp_dir().join("vimeflow-shims").join(&session_id));
+        let _ = super::bridge::cleanup_bridge_files(
+            &bridge_dir.to_string_lossy(),
+            Some(&shim_dir.to_string_lossy()),
+        );
+    }
 
     Ok(())
 }

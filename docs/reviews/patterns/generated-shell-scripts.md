@@ -3,7 +3,7 @@ id: generated-shell-scripts
 category: backend
 created: 2026-06-02
 last_updated: 2026-06-03
-ref_count: 0
+ref_count: 1
 ---
 
 # Generated Shell Scripts
@@ -28,6 +28,24 @@ end to avoid leaking ephemeral artifacts.
 - **File:** `crates/backend/src/terminal/bridge.rs`
 - **Finding:** The generated claude shim executed `exec "$candidate" --settings "$VIMEFLOW_CLAUDE_SETTINGS" "$@"` with no guard on the env var. When invoked outside a Vimeflow session (e.g., stale PATH entry after cleanup), Claude received `--settings ""` and failed with an opaque file-not-found error.
 - **Fix:** Added an early guard: `if [ -z "${VIMEFLOW_CLAUDE_SETTINGS:-}" ]; then ... exit 1; fi` that prints a clear diagnostic before the PATH loop.
+- **Commit:** same commit as this entry
+
+### 5. Test records invocations with `$*`, losing argument boundary info
+
+- **Source:** github-claude | PR #325 round 4 | 2026-06-03
+- **Severity:** MEDIUM
+- **File:** `crates/backend/src/terminal/bridge.rs`
+- **Finding:** The integration test for the claude PATH shim wrote a fake `claude` binary that recorded its arguments with `printf '%s\n' "$*"`. Because `$*` collapses all positional parameters into a single space-separated string, a quoting regression in the shim (e.g., unquoted `$VIMEFLOW_CLAUDE_SETTINGS`) would be invisible: a path containing spaces would split into multiple args, but `"$*"` rejoins them, so the assertion passes even though the real argv was wrong.
+- **Fix:** Replaced `"$*"` with `"$@"` in all three fake-claude test stubs so each argument is written on its own line, and updated the assertions to match per-line output.
+- **Commit:** same commit as this entry
+
+### 6. `cleanup_bridge_files` has no production call site — leaks shim dir on normal session end
+
+- **Source:** github-claude + github-codex-connector | PR #325 round 4 | 2026-06-03
+- **Severity:** MEDIUM
+- **File:** `crates/backend/src/terminal/bridge.rs`, `crates/backend/src/terminal/commands.rs`
+- **Finding:** `cleanup_bridge_files` (with its new `shim_dir` parameter) was still marked `#[allow(dead_code)]` and had zero production callers. Bridge and shim directories were created on spawn but only cleaned up on spawn-error branches. When a session exited normally (EOF or explicit kill), the directories leaked indefinitely.
+- **Fix:** Removed `#[allow(dead_code)]`. Called `cleanup_bridge_files` from both `kill_pty_inner` (after `state.remove`) and `read_pty_output` (after `state.remove_if_generation`), using the immutable `ManagedSession.cwd` from the returned session object to recompute the bridge and shim paths so `cd` during the session cannot misdirect cleanup.
 - **Commit:** same commit as this entry
 
 ### 2. `set -e` exits shim on exec failure, skips remaining PATH entries

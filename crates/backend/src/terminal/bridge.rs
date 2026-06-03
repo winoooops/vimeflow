@@ -210,7 +210,6 @@ pub fn generate_bridge_files(
 ///
 /// Removes the entire session directory if it exists, and optionally removes
 /// the separate shim directory created for PATH-level claude interception.
-#[allow(dead_code)] // Will be used by session cleanup in future sub-spec
 pub fn cleanup_bridge_files(agent_status_dir: &str, shim_dir: Option<&str>) -> Result<(), String> {
     let dir = Path::new(agent_status_dir);
     if dir.exists() {
@@ -340,7 +339,7 @@ mod tests {
             &fake_claude,
             format!(
                 "#!/bin/sh\n\
-                 printf '%s\\n' \"$*\" >> \"{}\"\n",
+                 printf '%s\\n' \"$@\" >> \"{}\"\n",
                 calls_path.display()
             ),
         )
@@ -368,13 +367,11 @@ mod tests {
         assert!(status.success(), "shell init should execute cleanly");
 
         let calls = fs::read_to_string(&calls_path).expect("fake claude should be invoked");
-        assert_eq!(
-            calls.trim(),
-            format!(
-                "--settings {} --model sonnet --print ok",
-                files.settings_path.display()
-            )
+        let expected_lines = format!(
+            "--settings\n{}\n--model\nsonnet\n--print\nok",
+            files.settings_path.display()
         );
+        assert_eq!(calls.trim(), expected_lines);
     }
 
     #[cfg(unix)]
@@ -397,7 +394,7 @@ mod tests {
             &fake_claude,
             format!(
                 "#!/bin/sh\n\
-                 printf '%s\\n' \"$*\" >> \"{}\"\n",
+                 printf '%s\\n' \"$@\" >> \"{}\"\n",
                 calls_path.display()
             ),
         )
@@ -427,13 +424,11 @@ mod tests {
         assert!(status.success(), "zsh wrapper should execute cleanly");
 
         let calls = fs::read_to_string(&calls_path).expect("fake claude should be invoked");
-        assert_eq!(
-            calls.trim(),
-            format!(
-                "--settings {} --model sonnet --print ok",
-                files.settings_path.display()
-            )
+        let expected_lines = format!(
+            "--settings\n{}\n--model\nsonnet\n--print\nok",
+            files.settings_path.display()
         );
+        assert_eq!(calls.trim(), expected_lines);
     }
 
     #[cfg(unix)]
@@ -461,7 +456,7 @@ mod tests {
             &fake_claude,
             format!(
                 "#!/bin/sh\n\
-                 printf '%s\\n' \"$*\" >> \"{}\"\n",
+                 printf '%s\\n' \"$@\" >> \"{}\"\n",
                 calls_path.display()
             ),
         )
@@ -491,13 +486,11 @@ mod tests {
         assert!(status.success(), "zsh alias should execute cleanly");
 
         let calls = fs::read_to_string(&calls_path).expect("fake claude should be invoked");
-        assert_eq!(
-            calls.trim(),
-            format!(
-                "--settings {} --dangerously-skip-permissions --model sonnet",
-                files.settings_path.display()
-            )
+        let expected_lines = format!(
+            "--settings\n{}\n--dangerously-skip-permissions\n--model\nsonnet",
+            files.settings_path.display()
         );
+        assert_eq!(calls.trim(), expected_lines);
     }
 
     #[test]
