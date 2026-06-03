@@ -217,3 +217,5 @@ Three stacked PRs (VIM-53), each a shippable vertical slice, landing on the `fea
 - Hide ≠ kill: start `npm run dev` in the scratch shell, hide the popup, confirm the dev server keeps serving, reopen and see continued output.
 - Renderer reload reaps: start a scratch shell, reload the renderer (Cmd+R), confirm no orphaned child lingers (and no ghost tab).
 - cwd isolation: `cd` in the scratch shell, confirm the pane header location/branch, file explorer, and diff root are unchanged.
+
+<!-- codex-reviewed: 2026-06-03T14:31:13Z -->
