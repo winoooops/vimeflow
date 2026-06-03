@@ -165,8 +165,8 @@ pub(crate) async fn spawn_pty_inner(
         return Err(format!("invalid session_id: {}", request.session_id));
     }
 
-    // Generate statusline bridge files.
-    let (bridge_files, bridge_cleanup_dir) = if request.enable_agent_bridge {
+    // Generate statusline bridge files — skipped for ephemeral (scratch) PTYs.
+    let (bridge_files, bridge_cleanup_dir) = if request.enable_agent_bridge && !request.ephemeral {
         let dir = cwd
             .join(".vimeflow")
             .join("sessions")
@@ -1101,6 +1101,33 @@ mod tests {
         );
 
         let _ = state.remove(&"keep-1".to_string());
+    }
+
+    #[tokio::test]
+    async fn ephemeral_spawn_creates_no_bridge_dir_even_if_bridge_requested() {
+        let (state, cache, events, temp_dir) = create_test_state_with_cache();
+        let cwd = temp_dir.path().join("scratch-workspace");
+        std::fs::create_dir_all(&cwd).expect("create cwd");
+        let session_id = "scratch-no-bridge".to_string();
+        let bridge_dir = cwd.join(".vimeflow").join("sessions").join(&session_id);
+
+        let request = SpawnPtyRequest {
+            session_id: session_id.clone(),
+            cwd: cwd.to_string_lossy().to_string(),
+            shell: None,
+            env: None,
+            enable_agent_bridge: true,
+            ephemeral: true,
+        };
+
+        let result = spawn_pty_inner(state.clone(), cache.clone(), events.clone(), request).await;
+        assert!(result.is_ok(), "ephemeral spawn should succeed: {result:?}");
+        assert!(
+            !bridge_dir.exists(),
+            "ephemeral PTY must not create a bridge dir even when enable_agent_bridge is true"
+        );
+
+        let _ = state.remove(&session_id);
     }
 
     #[tokio::test]
