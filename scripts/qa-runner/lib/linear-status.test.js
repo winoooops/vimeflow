@@ -153,7 +153,7 @@ describe('createLinearComment', () => {
     expect(payload.variables).toEqual({ id: 'issue-id', body: 'body' })
   })
 
-  test('creates a threaded reply when parent is provided', async () => {
+  test('creates a threaded reply with issue and parent ids', async () => {
     const fetchImpl = vi.fn(async () => ({
       ok: true,
       json: async () => ({
@@ -176,8 +176,9 @@ describe('createLinearComment', () => {
 
     const payload = JSON.parse(fetchImpl.mock.calls[0][1].body)
     expect(payload.query).toContain('parentId')
-    expect(payload.query).not.toContain('issueId')
+    expect(payload.query).toContain('issueId')
     expect(payload.variables).toEqual({
+      id: 'issue-id',
       parentId: 'parent-comment',
       body: 'body',
     })
