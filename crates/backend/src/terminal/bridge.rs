@@ -208,13 +208,22 @@ pub fn generate_bridge_files(
 
 /// Clean up statusline bridge files for a session.
 ///
-/// Removes the entire session directory if it exists.
+/// Removes the entire session directory if it exists, and optionally removes
+/// the separate shim directory created for PATH-level claude interception.
 #[allow(dead_code)] // Will be used by session cleanup in future sub-spec
-pub fn cleanup_bridge_files(agent_status_dir: &str) -> Result<(), String> {
+pub fn cleanup_bridge_files(agent_status_dir: &str, shim_dir: Option<&str>) -> Result<(), String> {
     let dir = Path::new(agent_status_dir);
     if dir.exists() {
         fs::remove_dir_all(dir).map_err(|e| format!("failed to clean up bridge files: {}", e))?;
         log::info!("Cleaned up bridge files: {}", dir.display());
+    }
+    if let Some(shim) = shim_dir {
+        let shim_path = Path::new(shim);
+        if shim_path.exists() {
+            fs::remove_dir_all(shim_path)
+                .map_err(|e| format!("failed to clean up shim directory: {}", e))?;
+            log::info!("Cleaned up shim directory: {}", shim_path.display());
+        }
     }
     Ok(())
 }
@@ -499,13 +508,29 @@ mod tests {
         generate_bridge_files(dir.to_str().unwrap(), "session-cleanup", None).unwrap();
         assert!(dir.exists());
 
-        cleanup_bridge_files(dir.to_str().unwrap()).unwrap();
+        cleanup_bridge_files(dir.to_str().unwrap(), None).unwrap();
         assert!(!dir.exists());
     }
 
     #[test]
+    fn cleanup_removes_shim_directory() {
+        let tmp = tempfile::tempdir().expect("failed to create temp dir");
+        let dir = tmp.path().join("session-cleanup");
+        let shim = tmp.path().join("shims").join("session-cleanup");
+
+        generate_bridge_files(dir.to_str().unwrap(), "session-cleanup", Some(shim.to_str().unwrap()))
+            .unwrap();
+        assert!(dir.exists());
+        assert!(shim.exists());
+
+        cleanup_bridge_files(dir.to_str().unwrap(), Some(shim.to_str().unwrap())).unwrap();
+        assert!(!dir.exists());
+        assert!(!shim.exists());
+    }
+
+    #[test]
     fn cleanup_handles_missing_directory() {
-        let result = cleanup_bridge_files("/tmp/nonexistent-vimeflow-dir-12345");
+        let result = cleanup_bridge_files("/tmp/nonexistent-vimeflow-dir-12345", None);
         assert!(
             result.is_ok(),
             "cleanup should succeed for missing directory"

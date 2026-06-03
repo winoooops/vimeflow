@@ -15,7 +15,9 @@ scripts) must be defensively written because they run in unpredictable user
 environments. Generated bash must guard against unset env vars, handle `exec`
 failures gracefully, and remove competing shell functions/aliases before
 relying on PATH resolution. A small oversight in a generated one-liner becomes
-a cryptic runtime failure for every user session.
+a cryptic runtime failure for every user session. The directories and files
+created to host these generated scripts must also be cleaned up on session
+end to avoid leaking ephemeral artifacts.
 
 ## Findings
 
@@ -44,4 +46,13 @@ a cryptic runtime failure for every user session.
 - **File:** `crates/backend/src/terminal/bridge.rs`
 - **Finding:** The shell init script only ran `unalias claude 2>/dev/null` before prepending the shim directory to PATH. A pre-existing `claude()` shell function in the user's startup files still took precedence over the PATH shim, bypassing `--settings` injection and breaking the statusline bridge.
 - **Fix:** Added `unset -f claude 2>/dev/null` immediately after `unalias claude 2>/dev/null` in the generated shell init script.
+- **Commit:** same commit as this entry
+
+### 4. Shim dir has no cleanup path — leaks on normal session end
+
+- **Source:** github-claude | PR #325 round 3 | 2026-06-03
+- **Severity:** MEDIUM
+- **File:** `crates/backend/src/terminal/bridge.rs`
+- **Finding:** `cleanup_bridge_files` only removed `agent_status_dir` (`.vimeflow/sessions/<id>/`). The new shim directory at `<cache>/vimeflow-shims/<session_id>/` had no corresponding removal. `shim_cleanup_dir` was only called on spawn-error paths; it was never reached on a successful spawn that later ended normally.
+- **Fix:** Extended `cleanup_bridge_files` to accept an optional `shim_dir` parameter and remove the shim directory alongside the session bridge directory when provided. Added a test verifying both directories are removed.
 - **Commit:** same commit as this entry
