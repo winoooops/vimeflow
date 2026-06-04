@@ -27,6 +27,7 @@ import {
   BROWSER_PANE_FOCUSED,
   BROWSER_PANE_FOCUS_ADDRESS,
   BROWSER_PANE_NAVIGATE,
+  BROWSER_PANE_NAV_ACTION,
   BROWSER_PANE_NEW_TAB,
   BROWSER_PANE_OPEN_EXTERNAL,
   BROWSER_PANE_SET_BOUNDS,
@@ -332,6 +333,14 @@ const isTabRequest = (value: unknown): value is BrowserPaneTabRequest =>
   isString(value.sessionId) &&
   isString(value.paneId) &&
   isString(value.tabId)
+
+const isNavActionRequest = (
+  value: unknown
+): value is { sessionId: string; paneId: string; action: string } =>
+  isRecord(value) &&
+  isString(value.sessionId) &&
+  isString(value.paneId) &&
+  isString(value.action)
 
 const isCdpInfoRequest = (value: unknown): value is BrowserCdpInfoRequest =>
   isRecord(value) && isString(value.sessionId) && isString(value.paneId)
@@ -662,6 +671,10 @@ export class BrowserPaneController {
     ipcMain.handle(BROWSER_PANE_OPEN_EXTERNAL, (_event, payload) =>
       this.openExternal(payload)
     )
+
+    ipcMain.handle(BROWSER_PANE_NAV_ACTION, (_event, payload) =>
+      this.handleNavAction(payload)
+    )
   }
 
   dispose(): void {
@@ -675,6 +688,7 @@ export class BrowserPaneController {
     ipcMain.removeHandler(BROWSER_PANE_ACTIVATE_TAB)
     ipcMain.removeHandler(BROWSER_PANE_CLOSE_TAB)
     ipcMain.removeHandler(BROWSER_PANE_OPEN_EXTERNAL)
+    ipcMain.removeHandler(BROWSER_PANE_NAV_ACTION)
 
     for (const record of this.panes.values()) {
       this.removeRecord(record)
@@ -1270,6 +1284,47 @@ export class BrowserPaneController {
     const url = this.activeWebContents(record)?.getURL() ?? ''
     if (/^https?:\/\//i.test(url)) {
       void shell.openExternal(url)
+    }
+  }
+
+  private handleNavAction(payload: unknown): void {
+    if (!isNavActionRequest(payload)) {
+      throw new Error('invalid browser pane nav-action payload')
+    }
+
+    const record = this.panes.get(paneKey(payload.sessionId, payload.paneId))
+    if (!record) {
+      return
+    }
+
+    this.runNavAction(record, payload.action)
+  }
+
+  private runNavAction(record: BrowserPaneRecord, action: string): void {
+    const wc = this.activeWebContents(record)
+    if (!wc || wc.isDestroyed()) {
+      return
+    }
+
+    switch (action) {
+      case 'back':
+        if (wc.navigationHistory.canGoBack()) {
+          wc.navigationHistory.goBack()
+        }
+        break
+      case 'forward':
+        if (wc.navigationHistory.canGoForward()) {
+          wc.navigationHistory.goForward()
+        }
+        break
+      case 'reload':
+        wc.reload()
+        break
+      case 'stop':
+        wc.stop()
+        break
+      default:
+        break
     }
   }
 

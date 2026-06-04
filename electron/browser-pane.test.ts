@@ -7,6 +7,7 @@ import {
   BROWSER_PANE_CREATE,
   BROWSER_PANE_DESTROY,
   BROWSER_PANE_FOCUS_ADDRESS,
+  BROWSER_PANE_NAV_ACTION,
   BROWSER_PANE_OPEN_EXTERNAL,
   BROWSER_PANE_SET_BOUNDS,
   BROWSER_PANE_TABS_CHANGED,
@@ -93,6 +94,15 @@ const electronMock = vi.hoisted(() => {
       source: string,
       userGesture?: boolean
     ) => Promise<unknown>
+    navigationHistory: {
+      canGoBack: () => boolean
+      canGoForward: () => boolean
+      goBack: () => void
+      goForward: () => void
+    }
+    isLoading: () => boolean
+    reload: () => void
+    stop: () => void
     debugger: LocalFakeDebugger
   }
 
@@ -152,6 +162,15 @@ const electronMock = vi.hoisted(() => {
       focus: vi.fn(),
       send: vi.fn(),
       executeJavaScript: vi.fn().mockResolvedValue(undefined),
+      navigationHistory: {
+        canGoBack: vi.fn(() => false),
+        canGoForward: vi.fn(() => false),
+        goBack: vi.fn(),
+        goForward: vi.fn(),
+      },
+      isLoading: vi.fn(() => false),
+      reload: vi.fn(),
+      stop: vi.fn(),
       debugger: debuggee,
     }
 
@@ -468,6 +487,112 @@ describe('BrowserPaneController', () => {
     expect(electronMock.handlers.has(BROWSER_PANE_OPEN_EXTERNAL)).toBe(true)
     controller.dispose()
     expect(electronMock.handlers.has(BROWSER_PANE_OPEN_EXTERNAL)).toBe(false)
+  })
+
+  test('nav-action reload reloads the active tab', async () => {
+    await handler(BROWSER_PANE_CREATE)(eventForSender(), {
+      sessionId: 'pty-1',
+      paneId: 'p1',
+      workspaceId: 'proj-1',
+      initialUrl: 'https://example.com/',
+    })
+
+    await handler(BROWSER_PANE_NAV_ACTION)(eventForSender(), {
+      sessionId: 'pty-1',
+      paneId: 'p1',
+      action: 'reload',
+    })
+    expect(electronMock.views[0]?.webContents.reload).toHaveBeenCalledOnce()
+  })
+
+  test('nav-action back goes back only when history allows', async () => {
+    await handler(BROWSER_PANE_CREATE)(eventForSender(), {
+      sessionId: 'pty-1',
+      paneId: 'p1',
+      workspaceId: 'proj-1',
+      initialUrl: 'https://example.com/',
+    })
+    const wc = electronMock.views[0].webContents
+    vi.mocked(wc.navigationHistory.canGoBack).mockReturnValue(false)
+    await handler(BROWSER_PANE_NAV_ACTION)(eventForSender(), {
+      sessionId: 'pty-1',
+      paneId: 'p1',
+      action: 'back',
+    })
+    expect(wc.navigationHistory.goBack).not.toHaveBeenCalled()
+
+    vi.mocked(wc.navigationHistory.canGoBack).mockReturnValue(true)
+    await handler(BROWSER_PANE_NAV_ACTION)(eventForSender(), {
+      sessionId: 'pty-1',
+      paneId: 'p1',
+      action: 'back',
+    })
+    expect(wc.navigationHistory.goBack).toHaveBeenCalledOnce()
+  })
+
+  test('nav-action forward goes forward only when history allows', async () => {
+    await handler(BROWSER_PANE_CREATE)(eventForSender(), {
+      sessionId: 'pty-1',
+      paneId: 'p1',
+      workspaceId: 'proj-1',
+      initialUrl: 'https://example.com/',
+    })
+    const wc = electronMock.views[0].webContents
+    vi.mocked(wc.navigationHistory.canGoForward).mockReturnValue(false)
+    await handler(BROWSER_PANE_NAV_ACTION)(eventForSender(), {
+      sessionId: 'pty-1',
+      paneId: 'p1',
+      action: 'forward',
+    })
+    expect(wc.navigationHistory.goForward).not.toHaveBeenCalled()
+
+    vi.mocked(wc.navigationHistory.canGoForward).mockReturnValue(true)
+    await handler(BROWSER_PANE_NAV_ACTION)(eventForSender(), {
+      sessionId: 'pty-1',
+      paneId: 'p1',
+      action: 'forward',
+    })
+    expect(wc.navigationHistory.goForward).toHaveBeenCalledOnce()
+  })
+
+  test('nav-action stop stops the active tab', async () => {
+    await handler(BROWSER_PANE_CREATE)(eventForSender(), {
+      sessionId: 'pty-1',
+      paneId: 'p1',
+      workspaceId: 'proj-1',
+      initialUrl: 'https://example.com/',
+    })
+
+    await handler(BROWSER_PANE_NAV_ACTION)(eventForSender(), {
+      sessionId: 'pty-1',
+      paneId: 'p1',
+      action: 'stop',
+    })
+    expect(electronMock.views[0]?.webContents.stop).toHaveBeenCalledOnce()
+  })
+
+  test('nav-action with an unknown action no-ops', async () => {
+    await handler(BROWSER_PANE_CREATE)(eventForSender(), {
+      sessionId: 'pty-1',
+      paneId: 'p1',
+      workspaceId: 'proj-1',
+      initialUrl: 'https://example.com/',
+    })
+
+    await handler(BROWSER_PANE_NAV_ACTION)(eventForSender(), {
+      sessionId: 'pty-1',
+      paneId: 'p1',
+      action: 'sideways',
+    })
+    const wc = electronMock.views[0].webContents
+    expect(wc.reload).not.toHaveBeenCalled()
+    expect(wc.stop).not.toHaveBeenCalled()
+  })
+
+  test('nav-action handler is removed on dispose', () => {
+    expect(electronMock.handlers.has(BROWSER_PANE_NAV_ACTION)).toBe(true)
+    controller.dispose()
+    expect(electronMock.handlers.has(BROWSER_PANE_NAV_ACTION)).toBe(false)
   })
 
   test('Cmd/Ctrl+L on a focused page emits a pane-targeted focus-address event', async () => {
