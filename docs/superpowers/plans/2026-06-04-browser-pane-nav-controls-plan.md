@@ -179,6 +179,31 @@ test('nav-action back goes back only when history allows', async () => {
   expect(wc.navigationHistory.goBack).toHaveBeenCalledOnce()
 })
 
+test('nav-action forward goes forward only when history allows', async () => {
+  await handler(BROWSER_PANE_CREATE)(eventForSender(), {
+    sessionId: 'pty-1',
+    paneId: 'p1',
+    workspaceId: 'proj-1',
+    initialUrl: 'https://example.com/',
+  })
+  const wc = electronMock.views[0]!.webContents
+  vi.mocked(wc.navigationHistory.canGoForward).mockReturnValue(false)
+  await handler(BROWSER_PANE_NAV_ACTION)(eventForSender(), {
+    sessionId: 'pty-1',
+    paneId: 'p1',
+    action: 'forward',
+  })
+  expect(wc.navigationHistory.goForward).not.toHaveBeenCalled()
+
+  vi.mocked(wc.navigationHistory.canGoForward).mockReturnValue(true)
+  await handler(BROWSER_PANE_NAV_ACTION)(eventForSender(), {
+    sessionId: 'pty-1',
+    paneId: 'p1',
+    action: 'forward',
+  })
+  expect(wc.navigationHistory.goForward).toHaveBeenCalledOnce()
+})
+
 test('nav-action stop stops the active tab', async () => {
   await handler(BROWSER_PANE_CREATE)(eventForSender(), {
     sessionId: 'pty-1',
@@ -279,7 +304,7 @@ ipcMain.removeHandler(BROWSER_PANE_NAV_ACTION)
 - [ ] **Step 5: Run the tests to verify they pass**
 
 Run: `npx vitest run electron/browser-pane.test.ts -t "nav-action"`
-Expected: PASS (all five).
+Expected: PASS (all six).
 
 - [ ] **Step 6: Commit**
 
@@ -339,6 +364,24 @@ test('did-stop-loading on the active tab emits nav-state', async () => {
   )
 })
 
+test('did-start-loading on the active tab emits isLoading true', async () => {
+  await handler(BROWSER_PANE_CREATE)(eventForSender(), {
+    sessionId: 'pty-1',
+    paneId: 'p1',
+    workspaceId: 'proj-1',
+    initialUrl: 'https://example.com/',
+  })
+  vi.mocked(electronMock.views[0]!.webContents.isLoading).mockReturnValue(true)
+  vi.mocked(electronMock.win.webContents.send).mockClear()
+
+  listenerFor(0, 'did-start-loading')()
+
+  expect(electronMock.win.webContents.send).toHaveBeenCalledWith(
+    BROWSER_PANE_NAV_STATE_CHANGED,
+    expect.objectContaining({ tabId: 'tab-0', isLoading: true })
+  )
+})
+
 test('nav-state emit no-ops for a non-active tab', async () => {
   await handler(BROWSER_PANE_CREATE)(eventForSender(), {
     sessionId: 'pty-1',
@@ -346,7 +389,7 @@ test('nav-state emit no-ops for a non-active tab', async () => {
     workspaceId: 'proj-1',
     initialUrl: 'https://example.com/',
   })
-  // Open a second, background tab (does not become active).
+  // Opening a second tab activates it, so tab-0 (views[0]) is now inactive.
   await handler(BROWSER_PANE_NEW_TAB)(eventForSender(), {
     sessionId: 'pty-1',
     paneId: 'p1',
@@ -354,8 +397,8 @@ test('nav-state emit no-ops for a non-active tab', async () => {
   })
   vi.mocked(electronMock.win.webContents.send).mockClear()
 
-  // Fire a load event on the new (inactive) tab's webContents.
-  listenerFor(1, 'did-stop-loading')()
+  // Fire a load event on the now-inactive first tab's webContents.
+  listenerFor(0, 'did-stop-loading')()
 
   expect(electronMock.win.webContents.send).not.toHaveBeenCalledWith(
     BROWSER_PANE_NAV_STATE_CHANGED,
@@ -364,7 +407,7 @@ test('nav-state emit no-ops for a non-active tab', async () => {
 })
 ```
 
-> Note on tab activation: `new-tab` activates the new tab by default (`createOwnedTab` → `setActiveTab` when `activate`), so for the "non-active" test create the background tab via a path that does **not** activate, or assert against the **first** tab's listener after the second becomes active. Confirm the active tab during implementation and pick the inactive view index accordingly.
+> Tab ids/indices: `new-tab` activates the new tab (`createOwnedTab` → `setActiveTab`), so after it `views[0]` (`tab-0`) is the **inactive** tab the gating test fires on. Confirm the assigned tab ids during implementation.
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
@@ -470,13 +513,38 @@ test('activating a tab emits its nav-state', async () => {
     expect.objectContaining({ paneId: 'p1', tabId: 'tab-0' })
   )
 })
+
+test('destroying the active tab emits the fallback tab nav-state', async () => {
+  await handler(BROWSER_PANE_CREATE)(eventForSender(), {
+    sessionId: 'pty-1',
+    paneId: 'p1',
+    workspaceId: 'proj-1',
+    initialUrl: 'https://example.com/',
+  })
+  // Second tab becomes active; tab-0 remains as the fallback.
+  await handler(BROWSER_PANE_NEW_TAB)(eventForSender(), {
+    sessionId: 'pty-1',
+    paneId: 'p1',
+    url: 'https://second.example/',
+  })
+  vi.mocked(electronMock.win.webContents.send).mockClear()
+
+  // The active (second) tab's webContents is destroyed; activeTabId falls back
+  // to tab-0, whose nav-state must be emitted.
+  listenerFor(1, 'destroyed')()
+
+  expect(electronMock.win.webContents.send).toHaveBeenCalledWith(
+    BROWSER_PANE_NAV_STATE_CHANGED,
+    expect.objectContaining({ paneId: 'p1', tabId: 'tab-0' })
+  )
+})
 ```
 
 > Use the actual tab ids the implementation assigns (`tab-0`, `tab-1`, …); confirm during implementation.
 
 - [ ] **Step 2: Run to verify it fails**
 
-Run: `npx vitest run electron/browser-pane.test.ts -t "activating a tab emits"`
+Run: `npx vitest run electron/browser-pane.test.ts -t "emits"`
 Expected: FAIL — no nav-state send on activate.
 
 - [ ] **Step 3: Implement the transition emits**
@@ -489,7 +557,7 @@ In `electron/browser-pane.ts`:
 
 - [ ] **Step 4: Run to verify it passes**
 
-Run: `npx vitest run electron/browser-pane.test.ts -t "activating a tab emits"`
+Run: `npx vitest run electron/browser-pane.test.ts -t "emits"`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -527,6 +595,28 @@ test('create returns the active tab nav-state snapshot', async () => {
     navState: { canGoBack: false, canGoForward: false, isLoading: false },
   })
   void wc0
+})
+
+test('reconnect returns the existing tab nav-state snapshot', async () => {
+  await handler(BROWSER_PANE_CREATE)(eventForSender(), {
+    sessionId: 'pty-1',
+    paneId: 'p1',
+    workspaceId: 'proj-1',
+    initialUrl: 'https://example.com/',
+  })
+  // The existing native tab has accrued history before the renderer reattaches.
+  vi.mocked(
+    electronMock.views[0]!.webContents.navigationHistory.canGoBack
+  ).mockReturnValue(true)
+
+  const reconnect = await handler(BROWSER_PANE_CREATE)(eventForSender(), {
+    sessionId: 'pty-1',
+    paneId: 'p1',
+    workspaceId: 'proj-1',
+    initialUrl: 'https://example.com/',
+  })
+
+  expect(reconnect).toMatchObject({ navState: { canGoBack: true } })
 })
 ```
 
@@ -820,6 +910,21 @@ test('back/forward/reload dispatch nav-action through the bridge', async () => {
   // click back → expect navAction mock called with { sessionId, paneId, action: 'back' }
   // click reload → action: 'reload'
 })
+
+test('the create-result navState seeds the toolbar (reconnect)', async () => {
+  // make the createPane mock resolve { ...snapshot, navState: { canGoBack: true,
+  //   canGoForward: false, isLoading: false } } and fire NO nav-state event
+  // assert back is enabled purely from the seed (no event needed):
+  expect(await screen.findByRole('button', { name: 'back' })).not.toBeDisabled()
+})
+
+test('a live nav-state event before create resolves is not clobbered by the seed', async () => {
+  // arrange: createPane resolves slowly (deferred); invoke the captured
+  //   onNavStateChange with { ...this pane, isLoading: true } BEFORE it resolves,
+  //   then resolve createPane with navState: { isLoading: false }
+  // the guarded seed (receivedLiveNavRef) must NOT overwrite the live event:
+  expect(screen.getByRole('button', { name: 'stop' })).toBeInTheDocument()
+})
 ```
 
 Mirror the existing test's render + event-driving helpers (the suite already drives `onUrlChange` / `onTabsChange` the same way).
@@ -920,7 +1025,7 @@ Expected: all PASS. Fix any `exhaustive-deps` / formatting issues surfaced (the 
 
 - [ ] **Step 2: Manual real-browser check (§5.3)**
 
-Run: `npm run dev`, open a browser pane, and confirm in the real Electron build:
+Run: `npm run electron:dev` (the Electron path; `npm run dev` is Vite-only and has no browser pane), open a browser pane, and confirm in the real Electron build:
 
 - back / forward are greyed until history exists, then navigate the page;
 - the reload button shows the `refresh` glyph idle and swaps to the `close` glyph while a page loads (NOT the raw ligature words);
