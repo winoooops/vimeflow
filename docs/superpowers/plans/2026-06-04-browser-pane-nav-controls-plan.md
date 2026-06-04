@@ -1047,3 +1047,5 @@ git commit -m "chore(browser): lint/type-check fixups for nav controls (L2)"
 **Type consistency:** `BrowserPaneNavState` (renderer) / inline `{ canGoBack; canGoForward; isLoading }` (main-local, boundary-separated) used consistently; `runNavAction` / `emitPaneNavStateChanged` / `installNavStateEmitters` / `readNavState` names stable across tasks; `navAction` / `onNavStateChange` bridge methods match across preload, browserBridge, and types.
 
 **Known soft spots (resolve during implementation):** exact tab ids + active-tab index in Tasks 3–4 tests; the record-lookup helper reused from `activateTab` in Task 2; the `BrowserPane.test.tsx` mock-driving helper shape in Task 8 (mirror the existing `onUrlChange`/`onTabsChange` drivers).
+
+<!-- codex-reviewed: 2026-06-04T08:18:37Z -->
