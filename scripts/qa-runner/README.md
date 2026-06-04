@@ -76,6 +76,14 @@ when the danger is weak or the fix is disproportionate. Results are cached by PR
 head + review-comment hash + diff hash, so unchanged evidence does not call
 Codex repeatedly.
 
+The adjudicator makes a bounded retry before giving up on malformed or missing
+structured output. Each failed attempt writes a JSON artifact under
+`.state/review-adjudication/` with the Codex status, stderr/stdout tail, raw
+structured-output text when present, and attempt number. If all attempts fail,
+`watch.js` exits through the existing transient path, so poll-triggered work
+tries again on the next poll and webhook/manual work is requeued by daemon
+backoff.
+
 `NEEDS_FIX` PRs are dispatched **concurrently**, capped at `--max` (default **2**) —
 each kimi runs in its own `qa-pr-N` worktree behind its own `.locks/pr-N.lock`, so
 parallel runs never collide. Output is teed to `logs/pr-N.log` and prefixed `[#N]`

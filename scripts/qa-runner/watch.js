@@ -74,7 +74,7 @@ import {
 } from './lib/rerun-state.js'
 import {
   adjudicateReviews,
-  latestTrustedClaudeReview,
+  REVIEW_DECISIONS,
   summarizeBlockingFindings,
   trustedClaudeReviewComments,
 } from './lib/review-adjudicator.js'
@@ -446,7 +446,7 @@ const computeState = async (pr, ctx) => {
     // Review comments are irrelevant until threads are clear — defer the fetch to here.
     const comments = issueComments(ctx.owner, ctx.name, pr.number)
     const trustedReviews = trustedClaudeReviewComments(comments)
-    const latestReview = latestTrustedClaudeReview(comments)
+    const latestReview = trustedReviews.at(-1)
     if (!latestReview) {
       claude = 'no verdict'
       ;[state, detail] = ['WAITING', 'no Claude review yet']
@@ -460,7 +460,7 @@ const computeState = async (pr, ctx) => {
         diffText: prDiff(pr.number),
       })
       claude = `adjudicated ${adjudication.decision}${adjudication.cacheHit ? ' (cached)' : ''}`
-      if (adjudication.decision === 'NEEDS_FIX') {
+      if (adjudication.decision === REVIEW_DECISIONS.needsFix) {
         const findingSummary = summarizeBlockingFindings(
           adjudication.blocking_findings
         )
@@ -479,7 +479,7 @@ const computeState = async (pr, ctx) => {
           summary: adjudication.summary,
           findings: adjudication.blocking_findings,
         }
-      } else if (adjudication.decision === 'WAITING') {
+      } else if (adjudication.decision === REVIEW_DECISIONS.waiting) {
         ;[state, detail] = ['WAITING', adjudication.summary]
       } else if (view.mergeable !== 'MERGEABLE') {
         ;[state, detail] = [
