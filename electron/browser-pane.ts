@@ -28,6 +28,7 @@ import {
   BROWSER_PANE_FOCUS_ADDRESS,
   BROWSER_PANE_NAVIGATE,
   BROWSER_PANE_NAV_ACTION,
+  BROWSER_PANE_NAV_STATE_CHANGED,
   BROWSER_PANE_NEW_TAB,
   BROWSER_PANE_OPEN_EXTERNAL,
   BROWSER_PANE_SET_BOUNDS,
@@ -840,6 +841,7 @@ export class BrowserPaneController {
     view.webContents.on('did-navigate', emitUrlChanged)
     view.webContents.on('did-navigate-in-page', emitUrlChanged)
     view.webContents.on('page-title-updated', emitUrlChanged)
+    this.installNavStateEmitters(record, view, 'tab-0')
 
     win.once('closed', record.windowClosedHandler)
 
@@ -895,6 +897,52 @@ export class BrowserPaneController {
       paneId: record.paneId,
       tabs: tabs ?? this.tabSnapshots(record),
     })
+  }
+
+  private readNavState(wc: WebContents): {
+    canGoBack: boolean
+    canGoForward: boolean
+    isLoading: boolean
+  } {
+    return {
+      canGoBack: wc.navigationHistory.canGoBack(),
+      canGoForward: wc.navigationHistory.canGoForward(),
+      isLoading: wc.isLoading(),
+    }
+  }
+
+  private emitPaneNavStateChanged(
+    record: BrowserPaneRecord,
+    tabId: string
+  ): void {
+    if (record.activeTabId !== tabId) {
+      return
+    }
+
+    const tab = record.tabs.get(tabId)
+    const win = BrowserWindow.fromId(record.windowId)
+    if (!tab || !win || win.isDestroyed() || win.webContents.isDestroyed()) {
+      return
+    }
+
+    win.webContents.send(BROWSER_PANE_NAV_STATE_CHANGED, {
+      sessionId: record.sessionId,
+      paneId: record.paneId,
+      tabId,
+      ...this.readNavState(tab.view.webContents),
+    })
+  }
+
+  private installNavStateEmitters(
+    record: BrowserPaneRecord,
+    view: WebContentsView,
+    tabId: string
+  ): void {
+    const emit = (): void => this.emitPaneNavStateChanged(record, tabId)
+    view.webContents.on('did-navigate', emit)
+    view.webContents.on('did-navigate-in-page', emit)
+    view.webContents.on('did-start-loading', emit)
+    view.webContents.on('did-stop-loading', emit)
   }
 
   private installNavigationPolicy(webContents: WebContents): void {
@@ -976,6 +1024,7 @@ export class BrowserPaneController {
     view.webContents.on('did-navigate', emitUrlChanged)
     view.webContents.on('did-navigate-in-page', emitUrlChanged)
     view.webContents.on('page-title-updated', emitUrlChanged)
+    this.installNavStateEmitters(record, view, tabId)
     view.webContents.on('focus', () => {
       if (win.webContents.isDestroyed()) {
         return

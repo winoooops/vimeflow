@@ -8,6 +8,8 @@ import {
   BROWSER_PANE_DESTROY,
   BROWSER_PANE_FOCUS_ADDRESS,
   BROWSER_PANE_NAV_ACTION,
+  BROWSER_PANE_NAV_STATE_CHANGED,
+  BROWSER_PANE_NEW_TAB,
   BROWSER_PANE_OPEN_EXTERNAL,
   BROWSER_PANE_SET_BOUNDS,
   BROWSER_PANE_TABS_CHANGED,
@@ -322,6 +324,18 @@ const handler = (channel: string): IpcHandler => {
   return registered as IpcHandler
 }
 
+const listenerFor = (viewIndex: number, eventName: string): EventHandler => {
+  const found = vi
+    .mocked(electronMock.views[viewIndex].webContents.on)
+    .mock.calls.find(([name]) => name === eventName)?.[1]
+
+  if (found === undefined) {
+    throw new Error(`missing ${eventName} listener`)
+  }
+
+  return found
+}
+
 const requestRawUpgrade = (endpoint: string): Promise<string> =>
   new Promise((resolve, reject) => {
     const url = new URL(endpoint)
@@ -593,6 +607,74 @@ describe('BrowserPaneController', () => {
     expect(electronMock.handlers.has(BROWSER_PANE_NAV_ACTION)).toBe(true)
     controller.dispose()
     expect(electronMock.handlers.has(BROWSER_PANE_NAV_ACTION)).toBe(false)
+  })
+
+  test('did-stop-loading on the active tab emits nav-state', async () => {
+    await handler(BROWSER_PANE_CREATE)(eventForSender(), {
+      sessionId: 'pty-1',
+      paneId: 'p1',
+      workspaceId: 'proj-1',
+      initialUrl: 'https://example.com/',
+    })
+    const wc = electronMock.views[0].webContents
+    vi.mocked(wc.navigationHistory.canGoBack).mockReturnValue(true)
+    vi.mocked(wc.isLoading).mockReturnValue(false)
+    vi.mocked(electronMock.win.webContents.send).mockClear()
+
+    listenerFor(0, 'did-stop-loading')()
+
+    expect(electronMock.win.webContents.send).toHaveBeenCalledWith(
+      BROWSER_PANE_NAV_STATE_CHANGED,
+      {
+        sessionId: 'pty-1',
+        paneId: 'p1',
+        tabId: 'tab-0',
+        canGoBack: true,
+        canGoForward: false,
+        isLoading: false,
+      }
+    )
+  })
+
+  test('did-start-loading on the active tab emits isLoading true', async () => {
+    await handler(BROWSER_PANE_CREATE)(eventForSender(), {
+      sessionId: 'pty-1',
+      paneId: 'p1',
+      workspaceId: 'proj-1',
+      initialUrl: 'https://example.com/',
+    })
+    vi.mocked(electronMock.views[0].webContents.isLoading).mockReturnValue(true)
+    vi.mocked(electronMock.win.webContents.send).mockClear()
+
+    listenerFor(0, 'did-start-loading')()
+
+    expect(electronMock.win.webContents.send).toHaveBeenCalledWith(
+      BROWSER_PANE_NAV_STATE_CHANGED,
+      expect.objectContaining({ tabId: 'tab-0', isLoading: true })
+    )
+  })
+
+  test('nav-state emit no-ops for a non-active tab', async () => {
+    await handler(BROWSER_PANE_CREATE)(eventForSender(), {
+      sessionId: 'pty-1',
+      paneId: 'p1',
+      workspaceId: 'proj-1',
+      initialUrl: 'https://example.com/',
+    })
+
+    await handler(BROWSER_PANE_NEW_TAB)(eventForSender(), {
+      sessionId: 'pty-1',
+      paneId: 'p1',
+      url: 'https://second.example/',
+    })
+    vi.mocked(electronMock.win.webContents.send).mockClear()
+
+    listenerFor(0, 'did-stop-loading')()
+
+    expect(electronMock.win.webContents.send).not.toHaveBeenCalledWith(
+      BROWSER_PANE_NAV_STATE_CHANGED,
+      expect.anything()
+    )
   })
 
   test('Cmd/Ctrl+L on a focused page emits a pane-targeted focus-address event', async () => {
