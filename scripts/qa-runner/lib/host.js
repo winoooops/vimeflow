@@ -3,21 +3,38 @@
 // always gets a quick 2xx.
 //   POST /webhooks/github   verify sig → parse → enqueue → 202 · 401 bad sig · 200 ignored
 //   GET  /healthz           liveness (no state — always open)
-//   GET  /status            queue depth + in-flight + per-PR state — Bearer-gated
+//   GET  /status            queue depth + in-flight + per-PR state — auth-gated
 import { createServer } from 'node:http'
 import { timingSafeEqual } from 'node:crypto'
 import { parseEvent, verifySignature } from './webhook.js'
 
-// Constant-time Bearer check for /status. No token configured ⇒ always false, so
+// Constant-time token check for /status. No token configured ⇒ always false, so
 // the caller disables the endpoint (the 0.0.0.0 webhook bind never leaks state).
-const bearerOk = (header, token) => {
+const tokenOk = (gotValue, expectedValue) => {
+  if (!expectedValue) {
+    return false
+  }
+  const expected = Buffer.from(expectedValue)
+  const got = Buffer.from(gotValue || '')
+
+  return got.length === expected.length && timingSafeEqual(got, expected)
+}
+
+const bearerToken = (header) => {
+  const prefix = 'Bearer '
+
+  return header?.startsWith(prefix) ? header.slice(prefix.length) : ''
+}
+
+const statusAuthOk = (headers, token) => {
   if (!token) {
     return false
   }
-  const expected = Buffer.from(`Bearer ${token}`)
-  const got = Buffer.from(header || '')
 
-  return got.length === expected.length && timingSafeEqual(got, expected)
+  return (
+    tokenOk(headers['x-qa-status-token'], token) ||
+    tokenOk(bearerToken(headers.authorization), token)
+  )
 }
 
 const readRawBody = (req, limit = 2 * 1024 * 1024) =>
@@ -122,7 +139,7 @@ export const createHost = (deps) => {
 
           return
         }
-        if (!bearerOk(req.headers.authorization, config.statusToken)) {
+        if (!statusAuthOk(req.headers, config.statusToken)) {
           sendJson(res, 401, { error: 'unauthorized' })
 
           return
