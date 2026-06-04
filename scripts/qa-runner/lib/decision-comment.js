@@ -85,7 +85,12 @@ const appendReviewAdjudication = (lines, reviewAdjudication) => {
     `| Summary | ${conciseValue(reviewAdjudication.summary)} |`
   )
 
-  appendFindings(lines, 'Blocking findings', reviewAdjudication.blockingFindings)
+  appendFindings(
+    lines,
+    'Blocking findings',
+    reviewAdjudication.blockingFindings
+  )
+
   appendFindings(
     lines,
     'Non-blocking findings',

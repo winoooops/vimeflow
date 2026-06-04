@@ -161,9 +161,7 @@ describe('formatDecisionComment', () => {
     expect(body).toContain('Review adjudication:')
     expect(body).toContain('| Decision | `GOOD_SHAPE` |')
     expect(body).toContain('| Cache | hit `9f07b5ba338b` |')
-    expect(body).toContain(
-      '| Reviewed comments | `4623675797`, `4623923673` |'
-    )
+    expect(body).toContain('| Reviewed comments | `4623675797`, `4623923673` |')
     expect(body).toContain('| Blocking findings | 0 |')
     expect(body).toContain('| Non-blocking findings | 1 |')
     expect(body).toContain('Blocking findings:\n- none')
