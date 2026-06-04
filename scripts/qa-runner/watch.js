@@ -72,6 +72,12 @@ import {
   rerunStatus,
   rerunStorePath,
 } from './lib/rerun-state.js'
+import {
+  adjudicateReviews,
+  latestTrustedClaudeReview,
+  summarizeBlockingFindings,
+  trustedClaudeReviewComments,
+} from './lib/review-adjudicator.js'
 import { pickReviewRerunCheck } from './lib/review-rerun.js'
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url))
@@ -181,15 +187,8 @@ const unresolvedThreads = (owner, name, pr) => {
   return count
 }
 
-// Claude's verdict from its review COMMENT — null = none yet · true = "patch is
-// correct" · false = "patch has issues". The check-run only says the review RAN,
-// not that it approved, so we read the comment. Identity-checked: only a comment
-// posted by a real GitHub Action (performed_via_github_app 'github-actions') is
-// trusted, so a PAT-authenticated agent (kimi, the bots, a human) can't forge a
-// "patch is correct" verdict. A malicious workflow file is out of scope here —
-// that's a repo-permissions boundary (protect .github/workflows/).
-const claudeVerdictClean = (owner, name, pr) => {
-  const comments = JSON.parse(
+const issueComments = (owner, name, pr) =>
+  JSON.parse(
     gh([
       'api',
       `repos/${owner}/${name}/issues/${pr}/comments`,
@@ -198,24 +197,8 @@ const claudeVerdictClean = (owner, name, pr) => {
     ])
   ).flat()
 
-  const last = comments
-    .filter(
-      (c) =>
-        c.user?.login === 'github-actions[bot]' &&
-        c.user?.type === 'Bot' &&
-        c.performed_via_github_app?.slug === 'github-actions' &&
-        typeof c.body === 'string' &&
-        c.body.startsWith('## Claude Code Review')
-    )
-    .pop()
-  if (!last) {
-    return null
-  }
-
-  return /patch is correct|✅/i.test(
-    last.body.match(/Overall:[^\n]*/)?.[0] || ''
-  )
-}
+const prDiff = (pr) =>
+  gh(['pr', 'diff', String(pr), '--patch', '--color=never'])
 
 const checksFor = (pr) =>
   ghJson(['pr', 'checks', String(pr), '--json', 'name,bucket,link,workflow'])
@@ -460,21 +443,55 @@ const computeState = async (pr, ctx) => {
   } else if (openThreads() > 0) {
     ;[state, detail] = ['NEEDS_FIX', `${threads} unresolved thread(s)`]
   } else {
-    // verdict is irrelevant until threads are clear — defer the fetch to here
-    const verdict = claudeVerdictClean(ctx.owner, ctx.name, pr.number) // null|true|false
-    claude =
-      verdict === true ? 'clean' : verdict === false ? 'issues' : 'no verdict'
-    if (verdict === false) {
-      ;[state, detail] = ['NEEDS_FIX', 'Claude verdict: patch has issues']
-    } else if (verdict === null) {
+    // Review comments are irrelevant until threads are clear — defer the fetch to here.
+    const comments = issueComments(ctx.owner, ctx.name, pr.number)
+    const trustedReviews = trustedClaudeReviewComments(comments)
+    const latestReview = latestTrustedClaudeReview(comments)
+    if (!latestReview) {
+      claude = 'no verdict'
       ;[state, detail] = ['WAITING', 'no Claude review yet']
-    } else if (view.mergeable !== 'MERGEABLE') {
-      ;[state, detail] = ['WAITING', `not mergeable (${view.mergeStateStatus})`]
     } else {
-      ;[state, detail] = [
-        'GOOD_SHAPE',
-        '0 threads · Claude clean · CI green · mergeable',
-      ]
+      const adjudication = adjudicateReviews({
+        owner: ctx.owner,
+        name: ctx.name,
+        pr: pr.number,
+        headSha: view.headRefOid,
+        reviewComments: trustedReviews,
+        diffText: prDiff(pr.number),
+      })
+      claude = `adjudicated ${adjudication.decision}${adjudication.cacheHit ? ' (cached)' : ''}`
+      if (adjudication.decision === 'NEEDS_FIX') {
+        const findingSummary = summarizeBlockingFindings(
+          adjudication.blocking_findings
+        )
+
+        ;[state, detail] = [
+          'NEEDS_FIX',
+          findingSummary
+            ? `Codex review adjudication requires fixes: ${findingSummary}`
+            : adjudication.summary,
+        ]
+
+        fixContext = {
+          kind: 'review_adjudication',
+          instruction:
+            'The orchestrator dispatched this fixer because Codex adjudicated the reviewer comments under agents/code-reviewer.md and found blocking findings. Fix the blocking findings, run relevant verification locally, commit, and push.',
+          summary: adjudication.summary,
+          findings: adjudication.blocking_findings,
+        }
+      } else if (adjudication.decision === 'WAITING') {
+        ;[state, detail] = ['WAITING', adjudication.summary]
+      } else if (view.mergeable !== 'MERGEABLE') {
+        ;[state, detail] = [
+          'WAITING',
+          `not mergeable (${view.mergeStateStatus})`,
+        ]
+      } else {
+        ;[state, detail] = [
+          'GOOD_SHAPE',
+          '0 threads · review adjudication clean · CI green · mergeable',
+        ]
+      }
     }
 
     return {
