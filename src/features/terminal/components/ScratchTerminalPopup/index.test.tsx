@@ -1,5 +1,5 @@
 import { test, expect, vi, beforeEach } from 'vitest'
-import { render, screen, act } from '@testing-library/react'
+import { render, screen, act, fireEvent } from '@testing-library/react'
 import type { ReactElement } from 'react'
 import { ScratchTerminalPopup } from './index'
 import type { ITerminalService } from '../../services/terminalService'
@@ -48,7 +48,7 @@ const baseProps = {
 // rejects a literal `open={false}` under this config.
 const popup = (
   open: boolean,
-  extra: { onPaneReady?: NotifyPaneReady } = {}
+  extra: { onPaneReady?: NotifyPaneReady; onHide?: () => void } = {}
 ): ReactElement => (
   <ScratchTerminalPopup open={open} {...baseProps} {...extra} />
 )
@@ -126,4 +126,24 @@ test('does not focus when Body attaches while the popup is hidden', () => {
   })
 
   expect(focusTerminal).not.toHaveBeenCalled()
+})
+
+test('Escape hides the popup instead of reaching the terminal', () => {
+  const onHide = vi.fn()
+  render(popup(true, { onHide }))
+
+  // Fire on the terminal stub so the event captures up through the overlay —
+  // the capture listener must intercept before the keydown reaches xterm.
+  fireEvent.keyDown(screen.getByTestId('body-stub'), { key: 'Escape' })
+
+  expect(onHide).toHaveBeenCalledTimes(1)
+})
+
+test('Escape does nothing while the popup is hidden', () => {
+  const onHide = vi.fn()
+  render(popup(false, { onHide }))
+
+  fireEvent.keyDown(screen.getByTestId('scratch-popup'), { key: 'Escape' })
+
+  expect(onHide).not.toHaveBeenCalled()
 })

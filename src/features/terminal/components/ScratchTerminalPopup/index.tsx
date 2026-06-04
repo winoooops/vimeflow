@@ -52,6 +52,7 @@ export const ScratchTerminalPopup = ({
   onPaneReady = undefined,
 }: ScratchTerminalPopupProps): ReactElement => {
   const bodyRef = useRef<BodyHandle>(null)
+  const overlayRef = useRef<HTMLDivElement>(null)
   const openRef = useRef(open)
   openRef.current = open
 
@@ -61,6 +62,29 @@ export const ScratchTerminalPopup = ({
       bodyRef.current?.focusTerminal()
     }
   }, [open])
+
+  // Esc hides the popup. The scratch xterm holds focus, so without a native
+  // capture-phase intercept the keydown reaches the terminal and is sent to the
+  // shell as ^[. Capturing on the overlay fires before xterm's textarea handler.
+  useEffect(() => {
+    const overlay = overlayRef.current
+    if (!open || !overlay) {
+      return
+    }
+
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        event.stopPropagation()
+        onHide()
+      }
+    }
+    overlay.addEventListener('keydown', onKeyDown, { capture: true })
+
+    return (): void => {
+      overlay.removeEventListener('keydown', onKeyDown, { capture: true })
+    }
+  }, [open, onHide])
 
   // First open: focus once Body signals its xterm attached (also drains).
   const handlePaneReady = useCallback<NotifyPaneReady>(
@@ -89,6 +113,7 @@ export const ScratchTerminalPopup = ({
 
   return (
     <div
+      ref={overlayRef}
       data-testid="scratch-popup"
       role="dialog"
       aria-label="Scratch terminal"
