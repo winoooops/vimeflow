@@ -210,15 +210,8 @@ export const buildAdjudicationPrompt = ({
   )
 }
 
-const renderTemplate = (template, values) => {
-  let rendered = template
-
-  for (const [key, value] of Object.entries(values)) {
-    rendered = rendered.replaceAll(`{{${key}}}`, String(value))
-  }
-
-  return rendered
-}
+const renderTemplate = (template, values) =>
+  template.replace(/\{\{(\w+)\}\}/g, (_, key) => String(values[key] ?? ''))
 
 // Step 5: run one Codex attempt and require parseable, schema-normalized output.
 const runCodexAttempt = ({ input, key, stateDir, prompt, opts, attempt }) => {

@@ -451,46 +451,55 @@ const computeState = async (pr, ctx) => {
       claude = 'no verdict'
       ;[state, detail] = ['WAITING', 'no Claude review yet']
     } else {
-      const adjudication = adjudicateReviews({
-        owner: ctx.owner,
-        name: ctx.name,
-        pr: pr.number,
-        headSha: view.headRefOid,
-        reviewComments: trustedReviews,
-        diffText: prDiff(pr.number),
-      })
-      claude = `adjudicated ${adjudication.decision}${adjudication.cacheHit ? ' (cached)' : ''}`
-      if (adjudication.decision === REVIEW_DECISIONS.needsFix) {
-        const findingSummary = summarizeBlockingFindings(
-          adjudication.blocking_findings
-        )
+      let adjudication = null
+      try {
+        adjudication = adjudicateReviews({
+          owner: ctx.owner,
+          name: ctx.name,
+          pr: pr.number,
+          headSha: view.headRefOid,
+          reviewComments: trustedReviews,
+          diffText: prDiff(pr.number),
+        })
+      } catch (e) {
+        const artifact = e.artifactPath ? ` (artifact: ${e.artifactPath})` : ''
+        claude = `adjudication transient: ${e.message.split('\n')[0]}${artifact}`
+        ;[state, detail] = ['WAITING', claude]
+      }
+      if (adjudication) {
+        claude = `adjudicated ${adjudication.decision}${adjudication.cacheHit ? ' (cached)' : ''}`
+        if (adjudication.decision === REVIEW_DECISIONS.needsFix) {
+          const findingSummary = summarizeBlockingFindings(
+            adjudication.blocking_findings
+          )
 
-        ;[state, detail] = [
-          'NEEDS_FIX',
-          findingSummary
-            ? `Codex review adjudication requires fixes: ${findingSummary}`
-            : adjudication.summary,
-        ]
+          ;[state, detail] = [
+            'NEEDS_FIX',
+            findingSummary
+              ? `Codex review adjudication requires fixes: ${findingSummary}`
+              : adjudication.summary,
+          ]
 
-        fixContext = {
-          kind: 'review_adjudication',
-          instruction:
-            'The orchestrator dispatched this fixer because Codex adjudicated the reviewer comments under agents/code-reviewer.md and found blocking findings. Fix the blocking findings, run relevant verification locally, commit, and push.',
-          summary: adjudication.summary,
-          findings: adjudication.blocking_findings,
+          fixContext = {
+            kind: 'review_adjudication',
+            instruction:
+              'The orchestrator dispatched this fixer because Codex adjudicated the reviewer comments under agents/code-reviewer.md and found blocking findings. Fix the blocking findings, run relevant verification locally, commit, and push.',
+            summary: adjudication.summary,
+            findings: adjudication.blocking_findings,
+          }
+        } else if (adjudication.decision === REVIEW_DECISIONS.waiting) {
+          ;[state, detail] = ['WAITING', adjudication.summary]
+        } else if (view.mergeable !== 'MERGEABLE') {
+          ;[state, detail] = [
+            'WAITING',
+            `not mergeable (${view.mergeStateStatus})`,
+          ]
+        } else {
+          ;[state, detail] = [
+            'GOOD_SHAPE',
+            '0 threads · review adjudication clean · CI green · mergeable',
+          ]
         }
-      } else if (adjudication.decision === REVIEW_DECISIONS.waiting) {
-        ;[state, detail] = ['WAITING', adjudication.summary]
-      } else if (view.mergeable !== 'MERGEABLE') {
-        ;[state, detail] = [
-          'WAITING',
-          `not mergeable (${view.mergeStateStatus})`,
-        ]
-      } else {
-        ;[state, detail] = [
-          'GOOD_SHAPE',
-          '0 threads · review adjudication clean · CI green · mergeable',
-        ]
       }
     }
 

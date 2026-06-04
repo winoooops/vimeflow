@@ -2,8 +2,8 @@
 id: policy-judge-hygiene
 category: security
 created: 2026-04-20
-last_updated: 2026-04-20
-ref_count: 0
+last_updated: 2026-06-04
+ref_count: 1
 ---
 
 # Policy Judge Hygiene

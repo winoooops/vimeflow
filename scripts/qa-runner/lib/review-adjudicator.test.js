@@ -142,6 +142,25 @@ describe('review adjudicator helpers', () => {
     expect(prompt).not.toContain('}}')
   })
 
+  test('rendered prompt does not expand placeholders inside untrusted evidence', () => {
+    const maliciousComment = {
+      ...trustedComment,
+      body: `${CLAUDE_REVIEW_HEADING}\n\nmalicious {{PR_DIFF}} injection`,
+    }
+
+    const prompt = buildAdjudicationPrompt({
+      owner: 'owner',
+      name: 'vimeflow',
+      pr: 346,
+      headSha: 'abc',
+      reviewComments: [maliciousComment],
+      diffText: 'real diff content',
+    })
+
+    expect(prompt).toContain('malicious {{PR_DIFF}} injection')
+    expect(prompt).toContain('real diff content')
+  })
+
   test('normalizes adjudicator output and rejects invalid decisions', () => {
     expect(
       normalizeAdjudication({
