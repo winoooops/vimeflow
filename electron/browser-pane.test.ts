@@ -727,6 +727,41 @@ describe('BrowserPaneController', () => {
     )
   })
 
+  test('create returns the active tab nav-state snapshot', async () => {
+    const result = await handler(BROWSER_PANE_CREATE)(eventForSender(), {
+      sessionId: 'pty-1',
+      paneId: 'p1',
+      workspaceId: 'proj-1',
+      initialUrl: 'https://example.com/',
+    })
+
+    expect(result).toMatchObject({
+      navState: { canGoBack: false, canGoForward: false, isLoading: false },
+    })
+  })
+
+  test('reconnect returns the existing tab nav-state snapshot', async () => {
+    await handler(BROWSER_PANE_CREATE)(eventForSender(), {
+      sessionId: 'pty-1',
+      paneId: 'p1',
+      workspaceId: 'proj-1',
+      initialUrl: 'https://example.com/',
+    })
+
+    vi.mocked(
+      electronMock.views[0].webContents.navigationHistory.canGoBack
+    ).mockReturnValue(true)
+
+    const reconnect = await handler(BROWSER_PANE_CREATE)(eventForSender(), {
+      sessionId: 'pty-1',
+      paneId: 'p1',
+      workspaceId: 'proj-1',
+      initialUrl: 'https://example.com/',
+    })
+
+    expect(reconnect).toMatchObject({ navState: { canGoBack: true } })
+  })
+
   test('Cmd/Ctrl+L on a focused page emits a pane-targeted focus-address event', async () => {
     await handler(BROWSER_PANE_CREATE)(eventForSender(), {
       sessionId: 'pty-1',

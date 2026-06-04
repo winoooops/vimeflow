@@ -111,6 +111,7 @@ interface BrowserPaneCreateResult {
   title: string | null
   partition: string
   tabs: BrowserPaneTabSnapshot[]
+  navState: { canGoBack: boolean; canGoForward: boolean; isLoading: boolean }
 }
 
 interface BrowserCdpInfo {
@@ -741,6 +742,9 @@ export class BrowserPaneController {
         title: this.activeWebContents(existing)?.getTitle() ?? null,
         partition: existing.partition,
         tabs: this.tabSnapshots(existing),
+        navState: activeTab
+          ? this.readNavState(activeTab.view.webContents)
+          : { canGoBack: false, canGoForward: false, isLoading: false },
       }
     }
 
@@ -854,6 +858,7 @@ export class BrowserPaneController {
       title: view.webContents.getTitle() || null,
       partition,
       tabs: this.tabSnapshots(record),
+      navState: this.readNavState(view.webContents),
     }
   }
 
