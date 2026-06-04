@@ -13,10 +13,15 @@ import {
   clearDispatchBlocker,
   writeDispatchBlocker,
 } from './dispatch-blocker.js'
-import { isMissingPullRequestSnapshot, runOne, watchArgs } from './worker.js'
+import {
+  approveForLabels,
+  isMissingPullRequestSnapshot,
+  runOne,
+  watchArgs,
+} from './worker.js'
 
 const makeDeps = (overrides = {}) => ({
-  config: { label: 'auto-review', maxNoops: 3 },
+  config: { label: 'auto-review', approveLabel: 'auto-approve', maxNoops: 3 },
   state: {
     get: vi.fn(() => ({
       roundCount: 0,
@@ -51,6 +56,7 @@ const openPrSnapshotExec = ({
   headSha = 'abc123',
   body = 'Closes VIM-20',
   branch = 'feature/example',
+  labels = [{ name: 'auto-review' }],
 } = {}) =>
   vi.fn(() =>
     JSON.stringify({
@@ -58,7 +64,7 @@ const openPrSnapshotExec = ({
       state: 'OPEN',
       body,
       isDraft: false,
-      labels: [{ name: 'auto-review' }],
+      labels,
       headRefName: branch,
     })
   )
@@ -152,6 +158,25 @@ describe('watchArgs', () => {
   })
 })
 
+describe('approveForLabels', () => {
+  test('requires the configured approve label', () => {
+    expect(
+      approveForLabels({ approveLabel: 'auto-approve' }, [
+        'auto-review',
+        'auto-approve',
+      ])
+    ).toBe(true)
+
+    expect(
+      approveForLabels({ approveLabel: 'auto-approve' }, ['auto-review'])
+    ).toBe(false)
+  })
+
+  test('can be disabled by clearing the approve label', () => {
+    expect(approveForLabels({ approveLabel: '' }, ['auto-approve'])).toBe(false)
+  })
+})
+
 describe('runOne', () => {
   test('skips untracked PR when snapshot reports missing', async () => {
     const deps = makeDeps({
@@ -225,6 +250,72 @@ describe('runOne', () => {
     )
 
     clearDispatchBlocker(42)
+  })
+
+  test('runs without approval when only auto-review is present', async () => {
+    const tickRunner = vi.fn(async () => 0)
+
+    const deps = makeDeps({
+      config: {
+        label: 'auto-review',
+        approveLabel: 'auto-approve',
+        approve: true,
+        maxNoops: 3,
+      },
+      snapshotExec: openPrSnapshotExec(),
+      tickRunner,
+    })
+
+    const outcome = await runOne(42, 'poll', deps)
+
+    expect(outcome).toBe('waiting')
+    expect(tickRunner).toHaveBeenCalledWith(
+      42,
+      expect.objectContaining({
+        label: 'auto-review',
+        approveLabel: 'auto-approve',
+        approve: false,
+      }),
+      'poll'
+    )
+  })
+
+  test('arms approval for an auto-review PR with auto-approve', async () => {
+    const tickRunner = vi.fn(async () => 0)
+
+    const deps = makeDeps({
+      snapshotExec: openPrSnapshotExec({
+        labels: [{ name: 'auto-review' }, { name: 'auto-approve' }],
+      }),
+      tickRunner,
+    })
+
+    const outcome = await runOne(42, 'poll', deps)
+
+    expect(outcome).toBe('waiting')
+    expect(tickRunner).toHaveBeenCalledWith(
+      42,
+      expect.objectContaining({
+        approve: true,
+      }),
+      'poll'
+    )
+  })
+
+  test('does not process auto-approve without auto-review', async () => {
+    const tickRunner = vi.fn(async () => 0)
+
+    const deps = makeDeps({
+      snapshotExec: openPrSnapshotExec({
+        labels: [{ name: 'auto-approve' }],
+      }),
+      tickRunner,
+    })
+
+    const outcome = await runOne(42, 'poll', deps)
+
+    expect(outcome).toBe('skip')
+    expect(tickRunner).not.toHaveBeenCalled()
   })
 
   test('skips routine polls while dispatch-blocked', async () => {

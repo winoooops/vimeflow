@@ -122,6 +122,16 @@ export const watchArgs = (
   return args
 }
 
+export const approveForLabels = (
+  { approveLabel = 'auto-approve' } = {},
+  labels = []
+) => Boolean(approveLabel) && labels.includes(approveLabel)
+
+const cycleConfig = (config, labels) => ({
+  ...config,
+  approve: approveForLabels(config, labels),
+})
+
 const tick = (pr, config, reason) =>
   new Promise((resolve) => {
     const args = watchArgs(pr, { ...config, reason })
@@ -309,7 +319,10 @@ export const runOne = async (pr, reason, deps) => {
   }
 
   events.emit({ type: 'cycle', pr, round: st.roundCount, detail: reason })
-  const tickResult = normalizeTickResult(await tickRunner(pr, config, reason))
+
+  const tickResult = normalizeTickResult(
+    await tickRunner(pr, cycleConfig(config, before.labels), reason)
+  )
   const { code } = tickResult
   const after = snapshot(pr, snapshotExec)
 
