@@ -435,3 +435,5 @@ state-driven. Address-bar, tab, and focus tests are untouched.
    create snapshot.
 5. Zero chrome re-layout (L1 slots/classes unchanged).
 6. `npm run lint`, `npm run type-check`, `npm run test` pass; the §5.3 manual check is done.
+
+<!-- codex-reviewed: 2026-06-04T08:02:19Z -->
