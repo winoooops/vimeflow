@@ -99,3 +99,5 @@ Grid columns become **`48px auto 1fr auto`** (was `48px var(--workspace-sidebar-
 4. Fused card is borderless/elevated with a state wash, reflects the active session, and degrades gracefully when idle.
 5. No "W" avatar; no rail↔sidebar border.
 6. `npm run lint`, `type-check`, `test` green; coverage ≥80%.
+
+<!-- codex-reviewed: 2026-06-04T16:38:03Z -->
