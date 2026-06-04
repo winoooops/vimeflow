@@ -19,17 +19,23 @@ import {
   createBrowserPane,
   focusBrowserPane,
   getBrowserCdpInfo,
+  navActionBrowserPane,
   navigateBrowserPane,
   newBrowserPaneTab,
   onBrowserPaneFocus,
   onBrowserPaneFocusAddress,
+  onBrowserPaneNavStateChange,
   onBrowserPaneTabsChange,
   onBrowserPaneUrlChange,
   openExternalBrowserPane,
   setBrowserPaneBounds,
 } from '../browserBridge'
 import { BROWSER_IDENTITY } from '../browserIdentity'
-import type { BrowserCdpInfo, BrowserPaneTab } from '../types'
+import type {
+  BrowserCdpInfo,
+  BrowserPaneNavState,
+  BrowserPaneTab,
+} from '../types'
 import { DEFAULT_BROWSER_URL } from '../types'
 import { BrowserTabBar } from './BrowserTabBar'
 import { BrowserToolbar } from './BrowserToolbar'
@@ -105,6 +111,13 @@ export const BrowserPane = ({
   const [isEditing, setIsEditing] = useState(false)
   const [cdpInfo, setCdpInfo] = useState<BrowserCdpInfo | null>(null)
   const [createError, setCreateError] = useState<string | null>(null)
+
+  const [navState, setNavState] = useState<BrowserPaneNavState>({
+    canGoBack: false,
+    canGoForward: false,
+    isLoading: false,
+  })
+  const receivedLiveNavRef = useRef(false)
 
   const [tabs, setTabs] = useState<BrowserPaneTab[]>([
     { id: 'tab-0', url, title: null, active: true },
@@ -205,6 +218,20 @@ export const BrowserPane = ({
 
   useEffect(() => {
     const lifecycle = { cancelled: false }
+    receivedLiveNavRef.current = false
+
+    const offNavState = onBrowserPaneNavStateChange((event) => {
+      if (event.sessionId !== browserSessionId || event.paneId !== pane.id) {
+        return
+      }
+
+      setNavState({
+        canGoBack: event.canGoBack,
+        canGoForward: event.canGoForward,
+        isLoading: event.isLoading,
+      })
+      receivedLiveNavRef.current = true
+    })
 
     void (async (): Promise<void> => {
       try {
@@ -222,6 +249,9 @@ export const BrowserPane = ({
         nativePaneReadyRef.current = true
         setCommittedUrl(result.url)
         setTabs(result.tabs)
+        if (!receivedLiveNavRef.current) {
+          setNavState(result.navState)
+        }
         onUrlChangeRef.current?.(session.id, pane.id, result.url)
 
         const info = await getBrowserCdpInfo({
@@ -248,6 +278,7 @@ export const BrowserPane = ({
     return (): void => {
       lifecycle.cancelled = true
       nativePaneReadyRef.current = false
+      offNavState()
     }
   }, [browserSessionId, pane.id, session.id, session.projectId, syncBounds])
 
@@ -466,6 +497,30 @@ export const BrowserPane = ({
     })
   }, [browserSessionId, pane.id])
 
+  const handleBack = useCallback((): void => {
+    void navActionBrowserPane({
+      sessionId: browserSessionId,
+      paneId: pane.id,
+      action: 'back',
+    })
+  }, [browserSessionId, pane.id])
+
+  const handleForward = useCallback((): void => {
+    void navActionBrowserPane({
+      sessionId: browserSessionId,
+      paneId: pane.id,
+      action: 'forward',
+    })
+  }, [browserSessionId, pane.id])
+
+  const handleReloadOrStop = useCallback((): void => {
+    void navActionBrowserPane({
+      sessionId: browserSessionId,
+      paneId: pane.id,
+      action: navState.isLoading ? 'stop' : 'reload',
+    })
+  }, [browserSessionId, pane.id, navState.isLoading])
+
   const handleChromeKeyDown = useCallback(
     (event: KeyboardEvent<HTMLDivElement>): void => {
       const withModifier = isMacPlatform()
@@ -524,6 +579,12 @@ export const BrowserPane = ({
         onCancel={handleCancelEdit}
         onOpenExternal={handleOpenExternal}
         canOpenExternal={tabs.length > 0}
+        canGoBack={navState.canGoBack}
+        canGoForward={navState.canGoForward}
+        isLoading={navState.isLoading}
+        onBack={handleBack}
+        onForward={handleForward}
+        onReloadOrStop={handleReloadOrStop}
       />
       <div
         ref={contentRef}

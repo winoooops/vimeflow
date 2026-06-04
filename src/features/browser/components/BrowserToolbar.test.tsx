@@ -12,14 +12,63 @@ const baseProps: BrowserToolbarProps = {
   onCancel: () => undefined,
   onOpenExternal: () => undefined,
   canOpenExternal: true,
+  canGoBack: false,
+  canGoForward: false,
+  isLoading: false,
+  onBack: () => undefined,
+  onForward: () => undefined,
+  onReloadOrStop: () => undefined,
 }
 
-test('back / forward / reload render disabled', () => {
+test('back / forward are disabled without history; reload is enabled', () => {
   render(<BrowserToolbar {...baseProps} />)
 
-  for (const label of ['back', 'forward', 'reload']) {
-    expect(screen.getByRole('button', { name: label })).toBeDisabled()
-  }
+  expect(screen.getByRole('button', { name: 'back' })).toBeDisabled()
+  expect(screen.getByRole('button', { name: 'forward' })).toBeDisabled()
+  expect(screen.getByRole('button', { name: 'reload' })).not.toBeDisabled()
+})
+
+test('back / forward enable from canGo* and fire their handlers', () => {
+  const onBack = vi.fn()
+  const onForward = vi.fn()
+  render(
+    <BrowserToolbar
+      {...baseProps}
+      canGoBack
+      canGoForward
+      onBack={onBack}
+      onForward={onForward}
+    />
+  )
+
+  const back = screen.getByRole('button', { name: 'back' })
+  const forward = screen.getByRole('button', { name: 'forward' })
+  expect(back).not.toBeDisabled()
+  expect(forward).not.toBeDisabled()
+
+  fireEvent.click(back)
+  fireEvent.click(forward)
+  expect(onBack).toHaveBeenCalledOnce()
+  expect(onForward).toHaveBeenCalledOnce()
+})
+
+test('reload button toggles to stop while loading', () => {
+  const onReloadOrStop = vi.fn()
+
+  const { rerender } = render(
+    <BrowserToolbar {...baseProps} onReloadOrStop={onReloadOrStop} />
+  )
+
+  fireEvent.click(screen.getByRole('button', { name: 'reload' }))
+  expect(onReloadOrStop).toHaveBeenCalledOnce()
+  expect(screen.queryByRole('button', { name: 'stop' })).toBeNull()
+
+  rerender(
+    <BrowserToolbar {...baseProps} isLoading onReloadOrStop={onReloadOrStop} />
+  )
+
+  expect(screen.getByRole('button', { name: 'stop' })).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: 'reload' })).toBeNull()
 })
 
 test('open-external fires when there is an active URL', () => {
