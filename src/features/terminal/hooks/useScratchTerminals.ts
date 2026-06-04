@@ -9,6 +9,7 @@ import {
 import type { ReactNode } from 'react'
 import { ScratchTerminalPopup } from '../components/ScratchTerminalPopup'
 import { registerChord } from '../../command-palette/chordRegistry'
+import { findActivePane } from '../../sessions/utils/activeSessionPane'
 import type { ITerminalService } from '../services/terminalService'
 import type { NotifyPaneReady } from './useTerminal'
 import type { Session } from '../../sessions/types'
@@ -53,7 +54,8 @@ export interface UseScratchTerminals {
 
 /**
  * Owns the lifecycle of ephemeral "scratch" terminals (VIM-53). PR1: one
- * scratch shell per session, spawned at the session's `workingDirectory` with
+ * scratch shell per session, spawned at the focused pane's live cwd (falling
+ * back to the session's `workingDirectory`) with
  * `{ ephemeral: true, enableAgentBridge: false }`. The hook owns spawn/kill;
  * the popup renders the existing `<Body>` in `attach` mode. Hide ≠ kill.
  */
@@ -102,7 +104,9 @@ export const useScratchTerminals = ({
       spawningRef.current.add(key)
       try {
         const result = await service.spawn({
-          cwd: session.workingDirectory,
+          // The focused pane's live (OSC 7-tracked) cwd, not the session's
+          // static initial wd; falls back when no single active pane resolves.
+          cwd: findActivePane(session)?.cwd ?? session.workingDirectory,
           ephemeral: true,
           enableAgentBridge: false,
         })

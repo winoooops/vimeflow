@@ -5,8 +5,19 @@ import type { Session } from '../../sessions/types'
 import type { ITerminalService } from '../services/terminalService'
 import * as chordRegistry from '../../command-palette/chordRegistry'
 
-const makeSession = (id = 's1', workingDirectory = '/repo'): Session =>
-  ({ id, workingDirectory }) as unknown as Session
+const makeSession = (
+  id = 's1',
+  workingDirectory = '/repo',
+  activePaneCwd?: string
+): Session =>
+  ({
+    id,
+    workingDirectory,
+    panes:
+      activePaneCwd === undefined
+        ? []
+        : [{ id: 'p0', active: true, cwd: activePaneCwd }],
+  }) as unknown as Session
 
 const makeService = (): ITerminalService =>
   ({
@@ -16,9 +27,9 @@ const makeService = (): ITerminalService =>
     kill: vi.fn().mockResolvedValue(undefined),
   }) as unknown as ITerminalService
 
-test('toggle spawns an ephemeral, no-bridge shell at the session workingDirectory', async () => {
+test('toggle spawns an ephemeral, no-bridge shell, falling back to the session workingDirectory when no active pane', async () => {
   const service = makeService()
-  const session = makeSession()
+  const session = makeSession() // no panes → findActivePane undefined → fallback
 
   const { result } = renderHook(() =>
     useScratchTerminals({ service, resolveActiveSession: () => session })
@@ -37,6 +48,24 @@ test('toggle spawns an ephemeral, no-bridge shell at the session workingDirector
   )
   expect([...result.current.running.keys()]).toEqual(['s1'])
   expect(result.current.renderNode).not.toBeNull()
+})
+
+test('toggle spawns the scratch at the focused pane live cwd, not the session wd', async () => {
+  const service = makeService()
+  // Session opened at /repo, but the pane has since cd'd into a subdir.
+  const session = makeSession('s1', '/repo', '/repo/projects/vimeflow')
+
+  const { result } = renderHook(() =>
+    useScratchTerminals({ service, resolveActiveSession: () => session })
+  )
+
+  await act(async () => {
+    await result.current.toggle()
+  })
+
+  expect(service.spawn).toHaveBeenCalledWith(
+    expect.objectContaining({ cwd: '/repo/projects/vimeflow' })
+  )
 })
 
 test('hiding the popup does not kill the shell', async () => {
