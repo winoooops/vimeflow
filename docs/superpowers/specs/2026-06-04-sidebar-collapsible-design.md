@@ -48,7 +48,7 @@ Replaces `SidebarStatusHeader` as the sidebar's `header`. Borderless elevated su
 - **Action line:** `subtitle` clamped to 2 lines; rendered only when present.
 - **Metrics row:** `schedule`/`forum`/`data_usage` cells, each **individually guarded** (idle collapses the row gracefully); `·` separators except after the last rendered cell.
 
-**Data mapping (real signals, reused from the status bar):** `title` ← active session name; `elapsed` ← `formatStatusDuration(agentStatus.cost.totalDurationMs)`; `turns` ← `agentStatus.numTurns`; `contextPct` ← `round(agentStatus.contextWindow.usedPercentage)`; `state` ← `idle` when no active agent, else `completed`/`errored` from pane status, else `running`; `subtitle` ← none yet (guarded).
+**Data mapping (real signals, reused from the status bar — all null-guarded, so an idle session never dereferences a missing `cost`/`contextWindow`):** `title` ← active session name; `elapsed`/`turns` ← the status bar's `statusBarSession` (which is `null` when no agent is active; internally `startedAgo` comes from `formatStatusDuration(agentStatus.cost?.totalDurationMs ?? 0)` and `turns` from `agentStatus.numTurns`); `contextPct` ← `statusBarContextPct` (`agentStatus.contextWindow?.usedPercentage ?? null`, rounded). `state` ← `idle` when there is no active session; otherwise `completed`/`errored` taken straight from the pane lifecycle (**not** masked when the agent goes inactive after finishing), `running` only while the agent is active and the pane is running, else `idle`. `awaiting` is supported by the card but **not emitted** by the current data (no signal yet) — same status as `subtitle`.
 
 ### 3.3 `IconRail` changes (`components/IconRail.tsx`)
 
@@ -60,7 +60,7 @@ Replaces `SidebarStatusHeader` as the sidebar's `header`. Borderless elevated su
 
 Grid columns become **`48px auto 1fr auto`** (was `48px var(--workspace-sidebar-width) 1fr auto`). The sidebar lives in a two-layer structure inside the `auto` track:
 
-- **Shell** (animated): `overflow-hidden`, `style={{ width: collapsed ? 0 : 'var(--workspace-sidebar-width, INITIAL)' }}`, class `transition-[width] duration-[220ms] ease-pane` **disabled while `isDragging`** (so resize stays snappy; only collapse/expand animates). `aria-hidden` when collapsed.
+- **Shell** (animated): `overflow-hidden`, `style={{ width: collapsed ? 0 : 'var(--workspace-sidebar-width, INITIAL)' }}`, class `transition-[width] duration-[220ms] ease-pane` **disabled while `isDragging`** (so resize stays snappy; only collapse/expand animates). When collapsed it carries **both `aria-hidden` and `inert`** (required, not optional) so the clipped content is hidden from assistive tech AND removed from the tab order.
 - **Inner panel** (fixed): `style={{ width: 'var(--workspace-sidebar-width, INITIAL)' }}`, `relative flex h-full`. Keeping the inner panel at full width means the shell **clips** it as it animates → the content **slides** instead of squishing. The `auto` track follows the shell's width, so width 0 = 0 track = no gutter (main reclaims).
 - **Resize handle:** rendered only when `!collapsed`; still drives `--workspace-sidebar-width` via the existing `useResizable` (`commit-on-end` + `previewSidebarWidth`).
 
@@ -68,14 +68,14 @@ Grid columns become **`48px auto 1fr auto`** (was `48px var(--workspace-sidebar-
 
 ## 5. Keyboard shortcut & command palette
 
-- **`src/features/workspace/hooks/useSidebarShortcut.ts`** — mirrors `useDockShortcuts`' global capture-phase listener and text-entry/dialog guards. Platform split via the existing `preferModifier` (meta on macOS, ctrl elsewhere): on meta platforms, `⌘B` toggles globally (⌘ never reaches the PTY); on ctrl platforms, **`Ctrl+⇧B`** toggles (leaving bare `Ctrl+B` to the terminal/tmux). Coexists with the dock's `⌘B` (which only fires when the dock is focused) — sidebar toggle bails when focus is inside the dock/terminal/editor.
+- **`src/features/workspace/hooks/useSidebarShortcut.ts`** — a global capture-phase listener mirroring `useDockShortcuts`' guards. Platform split via the existing `preferModifier`: on **meta** platforms `⌘B` toggles (⌘ never reaches the PTY, so it works even with the terminal focused); on **ctrl** platforms **`Ctrl+⇧B`** toggles (bare `Ctrl+B` is left to the terminal — tmux/readline). The shortcut **fires from the terminal and the editor too** (toggle-from-anywhere); it bails only when (a) a dialog is open, (b) focus is in a plain text input/textarea/contenteditable that is **not** the terminal or CodeMirror, or (c) on macOS the dock is focused (so the dock keeps `⌘B` = close-dock). This is what lets acceptance criterion 1 hold from the normal focused surfaces.
 - **`buildWorkspaceCommands.ts`** — add `:toggle-sidebar` (`{ id, label: ':toggle-sidebar', description: 'Show or hide the sidebar', icon, execute }`) wired to a new `toggleSidebar` dep.
 
 ## 6. Edge cases, failure modes, a11y
 
 - localStorage unavailable / quota / private mode → default `false`, no throw (store guards).
 - Reduced motion → dot pulse uses `motion-safe:`; the width transition is short (220ms) and non-essential; honor `prefers-reduced-motion` by gating the transition class.
-- Collapsed sidebar content is `aria-hidden` and should be made non-focusable (`inert`) so it leaves the tab order.
+- Collapsed sidebar content is `aria-hidden` **and `inert`** (see §4) — hidden from assistive tech and removed from the tab order while clipped to width 0.
 - Idle session: title + `Idle` + dim hollow dot, empty metric row, no crash.
 - Long title → single-line ellipsis; long subtitle → 2-line clamp; card height stays stable across sessions.
 - ⌘B coexistence verified: dock-focused ⌘B still closes the dock; elsewhere it toggles the sidebar.
