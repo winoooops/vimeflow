@@ -211,6 +211,7 @@ describe('WorkspaceView - Command Palette Integration', () => {
       restoreData: new Map(),
       loading: false,
       notifyPaneReady: vi.fn(),
+      registerPending: vi.fn(),
     }
 
     // Mock useSessionManager

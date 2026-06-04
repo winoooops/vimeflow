@@ -111,6 +111,26 @@ test('toggle is a no-op when there is no active session', async () => {
   expect(result.current.renderNode).toBeNull()
 })
 
+test('arms the spawn→attach buffer for the new pty before mounting', async () => {
+  const service = makeService()
+  const session = makeSession()
+  const registerPending = vi.fn()
+
+  const { result } = renderHook(() =>
+    useScratchTerminals({
+      service,
+      resolveActiveSession: () => session,
+      registerPending,
+    })
+  )
+
+  await act(async () => {
+    await result.current.toggle()
+  })
+
+  expect(registerPending).toHaveBeenCalledWith('scratch-pty')
+})
+
 test('registers a backtick chord that toggles and consumes the event', async () => {
   const service = makeService()
   const session = makeSession()

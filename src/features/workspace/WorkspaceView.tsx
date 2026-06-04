@@ -185,6 +185,7 @@ export const WorkspaceView = (): ReactElement => {
     removePane,
     loading,
     notifyPaneReady,
+    registerPending,
   } = useSessionManager(terminalService)
 
   // Detect which modifier the toolbar advertises on this platform so
@@ -653,6 +654,8 @@ export const WorkspaceView = (): ReactElement => {
     service: terminalService,
     resolveActiveSession: (): Session | null => activeSession ?? null,
     ready: scratchReapDone,
+    registerPending,
+    notifyPaneReady,
   })
 
   const requestFocus = useCallback((target: FocusTarget): void => {

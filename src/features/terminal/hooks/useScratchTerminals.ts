@@ -10,6 +10,7 @@ import type { ReactNode } from 'react'
 import { ScratchTerminalPopup } from '../components/ScratchTerminalPopup'
 import { registerChord } from '../../command-palette/chordRegistry'
 import type { ITerminalService } from '../services/terminalService'
+import type { NotifyPaneReady } from './useTerminal'
 import type { Session } from '../../sessions/types'
 
 type ScratchStatus = 'running' | 'exited'
@@ -27,6 +28,10 @@ export interface UseScratchTerminalsArgs {
   resolveActiveSession: () => Session | null
   /** Gate spawning until the boot reap resolves (wired in a later task). */
   ready?: boolean
+  /** Buffer early `pty-data` from spawn until the popup's terminal attaches. */
+  registerPending?: (ptyId: string) => void
+  /** Drain the spawn→attach buffer once the popup's terminal subscribes. */
+  notifyPaneReady?: NotifyPaneReady
 }
 
 export interface UseScratchTerminals {
@@ -56,6 +61,8 @@ export const useScratchTerminals = ({
   service,
   resolveActiveSession,
   ready = true,
+  registerPending,
+  notifyPaneReady,
 }: UseScratchTerminalsArgs): UseScratchTerminals => {
   // Authoritative handles live in a ref so they never serialize; a projection
   // is mirrored into state so renderNode + cues re-render.
@@ -99,6 +106,8 @@ export const useScratchTerminals = ({
           ephemeral: true,
           enableAgentBridge: false,
         })
+        // Buffer prompt/rc output emitted before the popup's terminal attaches.
+        registerPending?.(result.sessionId)
         entriesRef.current.set(key, {
           scratchPtyId: result.sessionId,
           pid: result.pid,
@@ -114,7 +123,14 @@ export const useScratchTerminals = ({
     if (entriesRef.current.has(key)) {
       setVisibleSessionId(key)
     }
-  }, [resolveActiveSession, visibleSessionId, ready, service, commit])
+  }, [
+    resolveActiveSession,
+    visibleSessionId,
+    ready,
+    service,
+    commit,
+    registerPending,
+  ])
 
   // `Mod+;` then backtick chord — registered once, calls the latest toggle via a ref.
   const toggleRef = useRef(toggle)
@@ -146,6 +162,7 @@ export const useScratchTerminals = ({
               pid: entry.pid,
               service,
               onHide: hide,
+              onPaneReady: notifyPaneReady,
             })
           )
         )

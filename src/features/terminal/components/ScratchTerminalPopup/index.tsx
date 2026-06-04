@@ -2,6 +2,7 @@ import type { ReactElement } from 'react'
 import { Body } from '../TerminalPane/Body'
 import type { RestoreData } from '../../types'
 import type { ITerminalService } from '../../services/terminalService'
+import type { NotifyPaneReady } from '../../hooks/useTerminal'
 
 export interface ScratchTerminalPopupProps {
   /** Whether the popup is visible. Hidden ≠ unmounted — the shell keeps running. */
@@ -15,6 +16,8 @@ export interface ScratchTerminalPopupProps {
   service: ITerminalService
   /** Hide the popup (does NOT kill the shell). */
   onHide: () => void
+  /** Drain the spawn→attach buffer once the terminal subscribes. */
+  onPaneReady?: NotifyPaneReady
 }
 
 /**
@@ -32,10 +35,11 @@ export const ScratchTerminalPopup = ({
   pid,
   service,
   onHide,
+  onPaneReady = undefined,
 }: ScratchTerminalPopupProps): ReactElement => {
   // Fresh attach: no prior history. The live subscription streams everything
-  // from spawn onward (the spawn→attach gap is covered by the buffer-drain,
-  // wired in a later task).
+  // from spawn onward; the spawn→attach gap is covered by the buffer-drain
+  // (registerPending at spawn, onPaneReady on subscribe).
   const snapshot: RestoreData = {
     sessionId: scratchPtyId,
     cwd,
@@ -106,6 +110,7 @@ export const ScratchTerminalPopup = ({
             cwd={cwd}
             service={service}
             restoredFrom={snapshot}
+            onPaneReady={onPaneReady}
           />
         </div>
         <footer className="text-on-surface-muted px-4 py-1.5 font-mono text-xs">
