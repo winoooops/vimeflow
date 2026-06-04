@@ -1,5 +1,5 @@
 // Keep in sync with electron/browser-pane.ts DEFAULT_BROWSER_URL (main/renderer project boundary prevents sharing a module).
-export const DEFAULT_BROWSER_URL = 'https://www.youtube.com/'
+export const DEFAULT_BROWSER_URL = 'https://www.google.com/'
 
 export interface BrowserPaneBounds {
   x: number

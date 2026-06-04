@@ -163,7 +163,7 @@ interface CdpCommand {
 
 const BROWSER_CDP_ORIGIN = 'vimeflow://agent-plugin/local'
 // Keep in sync with src/features/browser/types.ts DEFAULT_BROWSER_URL (main/renderer project boundary prevents sharing a module).
-const DEFAULT_BROWSER_URL = 'https://www.youtube.com/'
+const DEFAULT_BROWSER_URL = 'https://www.google.com/'
 const MAX_TABS_PER_PANE = 20
 const WS_GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11'
 
