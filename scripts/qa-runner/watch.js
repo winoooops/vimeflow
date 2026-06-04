@@ -59,7 +59,12 @@ import {
 } from './lib/dispatch-blocker.js'
 import { parseLinearCommentId } from './lib/linear-status.js'
 import { orchestratorTool } from './lib/orchestrator-tools.js'
-import { linkedVimForPr, writeLinkedIssueCache } from './lib/pr-utils.js'
+import {
+  backfillPrRef,
+  linkedVim,
+  readLinkedIssueCache,
+  writeLinkedIssueCache,
+} from './lib/pr-utils.js'
 import {
   markRerunAttempt,
   readRerunStore,
@@ -255,14 +260,47 @@ const hasLabel = (pr, label) => (pr.labels || []).some((l) => l.name === label)
 
 const checkNames = (checks) => checks.map(checkLabel).join(', ')
 
+// Ensure the PR body carries `Refs <identifier>`. Safe to call every tick:
+// backfillPrRef re-reads the body and no-ops if present, so a back-link that
+// failed transiently on an earlier tick self-heals here (cache alone never
+// reaches the PR, so a one-shot attempt could otherwise be lost forever).
+const ensurePrRef = (pr, ctx, identifier) => {
+  try {
+    const linked = backfillPrRef(
+      { owner: ctx.owner, name: ctx.name, pr: pr.number, identifier },
+      { gh }
+    )
+    if (linked.changed) {
+      out(`           ↳ wrote "Refs ${identifier}" into PR #${pr.number} body`)
+    }
+  } catch (e) {
+    out(`           ↳ PR back-link skipped: ${e.message.split('\n')[0]}`)
+  }
+}
+
 const resolveLinkedIssue = async (pr, view, ctx) => {
-  const existing = linkedVimForPr({
-    body: view.body,
-    branch: pr.headRefName,
-    pr: pr.number,
-  })
-  if (existing || !ctx.linearCreateIssues) {
-    return existing
+  // A magic word in the body/branch → Linear's native link already fires.
+  const inText = linkedVim(view.body, pr.headRefName)
+  if (inText) {
+    return inText
+  }
+
+  const cached = readLinkedIssueCache(pr.number)
+
+  // Backfilling the PR body is a WRITE, so it is gated on the linearCreateIssues
+  // opt-in — report-only / non-create ticks just resolve the cached link without
+  // touching GitHub.
+  if (!ctx.linearCreateIssues) {
+    return cached
+  }
+
+  // A cached orchestrator-created issue: re-assert its `Refs` in the PR body
+  // (idempotent; self-heals a back-link that failed on an earlier create-enabled
+  // tick, which the cache alone would otherwise mask forever).
+  if (cached) {
+    ensurePrRef(pr, ctx, cached)
+
+    return cached
   }
 
   const tool = orchestratorTool('create_linear_issue_for_pr')
@@ -282,6 +320,7 @@ const resolveLinkedIssue = async (pr, view, ctx) => {
     out(
       `           ↳ Linear ${identifier}: created for unlinked PR #${pr.number}`
     )
+    ensurePrRef(pr, ctx, identifier)
 
     return identifier
   } catch (e) {

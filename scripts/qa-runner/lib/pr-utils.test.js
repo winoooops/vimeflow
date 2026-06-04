@@ -2,7 +2,12 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, test } from 'vitest'
-import { linkedVim, linkedVimForPr, writeLinkedIssueCache } from './pr-utils.js'
+import {
+  backfillPrRef,
+  linkedVim,
+  linkedVimForPr,
+  writeLinkedIssueCache,
+} from './pr-utils.js'
 
 const tempRoots = []
 
@@ -46,5 +51,61 @@ describe('linked issue cache', () => {
         cacheFile: file,
       })
     ).toBe('VIM-42')
+  })
+})
+
+describe('backfillPrRef', () => {
+  const repo = { owner: 'example', name: 'repo', pr: 325 }
+
+  // gh GET (no --method) returns the LIVE PR JSON; PATCH calls are recorded.
+  const ghWithLiveBody = (liveBody, calls) => (args) => {
+    calls.push(args)
+
+    return args.includes('--method') ? '' : JSON.stringify({ body: liveBody })
+  }
+
+  test('re-reads the live body and appends "Refs VIM-N" when absent', () => {
+    const calls = []
+
+    const result = backfillPrRef(
+      { ...repo, identifier: 'VIM-52' },
+      { gh: ghWithLiveBody('Original body.', calls) }
+    )
+
+    expect(result.changed).toBe(true)
+    expect(calls).toEqual([
+      ['api', 'repos/example/repo/pulls/325'],
+      [
+        'api',
+        '--method',
+        'PATCH',
+        'repos/example/repo/pulls/325',
+        '-f',
+        'body=Original body.\n\nRefs VIM-52',
+      ],
+    ])
+  })
+
+  test('no-ops without patching when the live body already has the id', () => {
+    const calls = []
+
+    const result = backfillPrRef(
+      { ...repo, identifier: 'VIM-52' },
+      { gh: ghWithLiveBody('Some description.\n\nRefs VIM-52', calls) }
+    )
+
+    expect(result.changed).toBe(false)
+    expect(calls).toEqual([['api', 'repos/example/repo/pulls/325']])
+  })
+
+  test('uses the bare ref when the live body is empty', () => {
+    const calls = []
+    backfillPrRef(
+      { ...repo, identifier: 'VIM-52' },
+      { gh: ghWithLiveBody('', calls) }
+    )
+
+    const patch = calls.find((a) => a.includes('--method'))
+    expect(patch[patch.indexOf('-f') + 1]).toBe('body=Refs VIM-52')
   })
 })
