@@ -677,6 +677,56 @@ describe('BrowserPaneController', () => {
     )
   })
 
+  test('activating a tab emits its nav-state', async () => {
+    await handler(BROWSER_PANE_CREATE)(eventForSender(), {
+      sessionId: 'pty-1',
+      paneId: 'p1',
+      workspaceId: 'proj-1',
+      initialUrl: 'https://example.com/',
+    })
+
+    await handler(BROWSER_PANE_NEW_TAB)(eventForSender(), {
+      sessionId: 'pty-1',
+      paneId: 'p1',
+      url: 'https://second.example/',
+    })
+    vi.mocked(electronMock.win.webContents.send).mockClear()
+
+    await handler(BROWSER_PANE_ACTIVATE_TAB)(eventForSender(), {
+      sessionId: 'pty-1',
+      paneId: 'p1',
+      tabId: 'tab-0',
+    })
+
+    expect(electronMock.win.webContents.send).toHaveBeenCalledWith(
+      BROWSER_PANE_NAV_STATE_CHANGED,
+      expect.objectContaining({ paneId: 'p1', tabId: 'tab-0' })
+    )
+  })
+
+  test('destroying the active tab emits the fallback tab nav-state', async () => {
+    await handler(BROWSER_PANE_CREATE)(eventForSender(), {
+      sessionId: 'pty-1',
+      paneId: 'p1',
+      workspaceId: 'proj-1',
+      initialUrl: 'https://example.com/',
+    })
+
+    await handler(BROWSER_PANE_NEW_TAB)(eventForSender(), {
+      sessionId: 'pty-1',
+      paneId: 'p1',
+      url: 'https://second.example/',
+    })
+    vi.mocked(electronMock.win.webContents.send).mockClear()
+
+    listenerFor(1, 'destroyed')()
+
+    expect(electronMock.win.webContents.send).toHaveBeenCalledWith(
+      BROWSER_PANE_NAV_STATE_CHANGED,
+      expect.objectContaining({ paneId: 'p1', tabId: 'tab-0' })
+    )
+  })
+
   test('Cmd/Ctrl+L on a focused page emits a pane-targeted focus-address event', async () => {
     await handler(BROWSER_PANE_CREATE)(eventForSender(), {
       sessionId: 'pty-1',

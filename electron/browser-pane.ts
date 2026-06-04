@@ -819,6 +819,7 @@ export class BrowserPaneController {
         this.applyRecordBounds(record)
       }
       this.emitTabsChanged(record)
+      this.emitPaneNavStateChanged(record, record.activeTabId)
     })
 
     view.webContents.on('focus', () => {
@@ -1054,6 +1055,7 @@ export class BrowserPaneController {
         this.applyRecordBounds(record)
       }
       this.emitTabsChanged(record)
+      this.emitPaneNavStateChanged(record, record.activeTabId)
     })
 
     if (options.activate) {
@@ -1217,6 +1219,7 @@ export class BrowserPaneController {
     if (active) {
       this.emitPaneUrlChanged(record, active.id)
     }
+    this.emitPaneNavStateChanged(record, tabId)
   }
 
   private applyRecordBounds(record: BrowserPaneRecord): void {
