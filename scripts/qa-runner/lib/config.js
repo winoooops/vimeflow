@@ -57,6 +57,8 @@ export const loadConfig = () => {
     maxNoops: num(env.QA_MAX_NOOPS, num(file.maxNoops, 15)),
     maxCiReruns: num(env.QA_MAX_CI_RERUNS, num(file.maxCiReruns, 3)),
     pollSeconds: num(env.QA_POLL_SECONDS, num(file.pollSeconds, 60)),
+    tickRunner: env.QA_TICK_RUNNER || file.tickRunner || 'local',
+    tickCommand: env.QA_TICK_COMMAND || file.tickCommand || '',
     approve: bool(env.QA_APPROVE, bool(file.approve)),
     linearDecisionComments: bool(
       env.QA_LINEAR_DECISION_COMMENTS,

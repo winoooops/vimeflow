@@ -155,6 +155,42 @@ It runs `watch.js tick --execute` for queued PRs. It does **not** pass
 `--approve` unless explicitly armed with `QA_APPROVE=1`, which belongs to the
 orchestrator-bot rung.
 
+### Split-plane worker dispatch
+
+The daemon owns webhooks, queue state, polling, and Linear observability. By
+default, claimed PR work still runs locally through `watch.js tick --execute`.
+For the cloud split-plane rollout, keep the control host light and delegate each
+claimed PR cycle to a burst-worker dispatcher:
+
+```bash
+QA_MAX_PARALLEL=1 \
+QA_TICK_RUNNER=command \
+QA_TICK_COMMAND=/usr/local/sbin/vimeflow-qa-dispatch-worker \
+node scripts/qa-runner/daemon.js
+```
+
+`QA_TICK_RUNNER=command` makes the daemon run `QA_TICK_COMMAND` instead of local
+`watch.js`. The command receives the one-cycle contract through environment
+variables:
+
+| Env                           | Meaning                                                             |
+| ----------------------------- | ------------------------------------------------------------------- |
+| `QA_PR`                       | GitHub PR number claimed from the daemon queue                      |
+| `QA_REASON`                   | Webhook/poll reason such as `pr:labeled`, `ci:check_run`, or `poll` |
+| `QA_LABEL`                    | Opt-in label, normally `auto-review`                                |
+| `QA_APPROVE`                  | `1` only when merge approval is armed                               |
+| `QA_LINEAR_DECISION_COMMENTS` | `1` when decision comments should be posted                         |
+| `QA_LINEAR_CREATE_ISSUES`     | `1` when missing Linear issues may be created                       |
+| `QA_LINEAR_TEAM_KEY`          | Linear team key for issue creation                                  |
+| `QA_MAX_CI_RERUNS`            | Bounded transient reviewer rerun cap                                |
+
+The dispatcher must block until the burst worker completes that PR cycle and then
+exit with the worker's `watch.js tick` exit code. The control daemon keeps its
+existing post-cycle behavior: it re-snapshots the PR, records progress or retry
+state, writes `.state/events.jsonl`, and posts Linear milestones. This keeps the
+`t2.micro` from doing expensive Kimi/Codex/test work while preserving one
+authoritative queue and one Linear status surface.
+
 By default the daemon also passes `--linear-decisions --reason <event>` into each
 tick. The watcher posts one structured, deduped Linear decision comment per PR
 head/state/action combination, so operators can see why a signal became

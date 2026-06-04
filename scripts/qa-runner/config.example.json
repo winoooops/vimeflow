@@ -3,6 +3,8 @@
   "linearTeamKey": "VIM",
   "maxRounds": 8,
   "pollSeconds": 60,
+  "tickRunner": "local",
+  "tickCommand": "",
   "host": "0.0.0.0",
   "port": 8787,
   "maxParallel": 2,

@@ -14,6 +14,7 @@ import { createQueue } from './lib/queue.js'
 import { createHost } from './lib/host.js'
 import { runOne } from './lib/worker.js'
 import { createEvents } from './lib/events.js'
+import { createTickRunner } from './lib/tick-runner.js'
 
 const log = (s) => process.stdout.write(`${new Date().toISOString()} ${s}\n`)
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
@@ -25,6 +26,7 @@ const config = loadConfig()
 const state = createState()
 const queue = createQueue()
 const events = createEvents(log)
+const tickRunner = createTickRunner(config, log)
 let running = true
 let shuttingDown = false
 
@@ -50,6 +52,7 @@ const worker = async (id) => {
         state,
         log,
         events,
+        ...(tickRunner ? { tickRunner } : {}),
       })
       if (outcome === 'retry' && job.reason !== 'poll') {
         log(
@@ -115,7 +118,7 @@ server.listen(config.port, config.host, () => {
   )
 
   log(
-    `config: label=${config.label} maxParallel=${config.maxParallel} maxNoops=${config.maxNoops} maxCiReruns=${config.maxCiReruns} pollSeconds=${config.pollSeconds} linearDecisionComments=${config.linearDecisionComments} linearCreateIssues=${config.linearCreateIssues} trusted=[${config.trustedSenders.join(',')}]`
+    `config: label=${config.label} maxParallel=${config.maxParallel} maxNoops=${config.maxNoops} maxCiReruns=${config.maxCiReruns} pollSeconds=${config.pollSeconds} tickRunner=${config.tickRunner} linearDecisionComments=${config.linearDecisionComments} linearCreateIssues=${config.linearCreateIssues} trusted=[${config.trustedSenders.join(',')}]`
   )
   if (!config.webhookSecret) {
     log(
