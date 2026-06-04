@@ -25,7 +25,8 @@ const rememberLine = (state, line) => {
     return
   }
   state.lastLine = trimmed
-  state.logPath = state.logPath || trimmed.match(/\(log: ([^)]+)\)/)?.[1] || null
+  state.logPath =
+    state.logPath || trimmed.match(/\(log: ([^)]+)\)/)?.[1] || null
 }
 
 const pipeOutput = (stream, target, state) => {

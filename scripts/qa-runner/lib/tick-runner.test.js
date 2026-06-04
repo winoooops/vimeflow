@@ -30,9 +30,9 @@ describe('createTickRunner', () => {
   })
 
   test('rejects unknown modes at daemon startup', () => {
-    expect(() =>
-      createTickRunner({ tickRunner: 'lambda' }, vi.fn())
-    ).toThrow("unsupported QA_TICK_RUNNER 'lambda'")
+    expect(() => createTickRunner({ tickRunner: 'lambda' }, vi.fn())).toThrow(
+      "unsupported QA_TICK_RUNNER 'lambda'"
+    )
   })
 })
 

@@ -173,16 +173,16 @@ node scripts/qa-runner/daemon.js
 `watch.js`. The command receives the one-cycle contract through environment
 variables:
 
-| Env | Meaning |
-| --- | --- |
-| `QA_PR` | GitHub PR number claimed from the daemon queue |
-| `QA_REASON` | Webhook/poll reason such as `pr:labeled`, `ci:check_run`, or `poll` |
-| `QA_LABEL` | Opt-in label, normally `auto-review` |
-| `QA_APPROVE` | `1` only when merge approval is armed |
-| `QA_LINEAR_DECISION_COMMENTS` | `1` when decision comments should be posted |
-| `QA_LINEAR_CREATE_ISSUES` | `1` when missing Linear issues may be created |
-| `QA_LINEAR_TEAM_KEY` | Linear team key for issue creation |
-| `QA_MAX_CI_RERUNS` | Bounded transient reviewer rerun cap |
+| Env                           | Meaning                                                             |
+| ----------------------------- | ------------------------------------------------------------------- |
+| `QA_PR`                       | GitHub PR number claimed from the daemon queue                      |
+| `QA_REASON`                   | Webhook/poll reason such as `pr:labeled`, `ci:check_run`, or `poll` |
+| `QA_LABEL`                    | Opt-in label, normally `auto-review`                                |
+| `QA_APPROVE`                  | `1` only when merge approval is armed                               |
+| `QA_LINEAR_DECISION_COMMENTS` | `1` when decision comments should be posted                         |
+| `QA_LINEAR_CREATE_ISSUES`     | `1` when missing Linear issues may be created                       |
+| `QA_LINEAR_TEAM_KEY`          | Linear team key for issue creation                                  |
+| `QA_MAX_CI_RERUNS`            | Bounded transient reviewer rerun cap                                |
 
 The dispatcher must block until the burst worker completes that PR cycle and then
 exit with the worker's `watch.js tick` exit code. The control daemon keeps its
