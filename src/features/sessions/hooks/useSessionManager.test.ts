@@ -169,7 +169,7 @@ describe('useSessionManager', () => {
       updateBrowserPaneUrl(
         sessionId,
         browserPane.id,
-        browserPane.browserUrl ?? 'https://www.youtube.com/'
+        browserPane.browserUrl ?? 'https://www.google.com/'
       )
     })
 

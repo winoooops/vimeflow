@@ -6,10 +6,12 @@ import {
   destroyBrowserPane,
   focusBrowserPane,
   getBrowserCdpInfo,
+  navActionBrowserPane,
   navigateBrowserPane,
   newBrowserPaneTab,
   onBrowserPaneFocus,
   onBrowserPaneFocusAddress,
+  onBrowserPaneNavStateChange,
   onBrowserPaneTabsChange,
   onBrowserPaneUrlChange,
   openExternalBrowserPane,
@@ -53,6 +55,7 @@ describe('browserBridge', () => {
           active: true,
         },
       ],
+      navState: { canGoBack: false, canGoForward: false, isLoading: false },
     })
   })
 
@@ -75,6 +78,10 @@ describe('browserBridge', () => {
         url: 'https://example.com/',
       })
     ).resolves.toBeUndefined()
+
+    await expect(
+      navActionBrowserPane({ sessionId: 'pty-1', paneId: 'p1', action: 'back' })
+    ).resolves.toBeUndefined()
   })
 
   test('delegates bridge calls to window.vimeflow.browserPane', async () => {
@@ -82,6 +89,7 @@ describe('browserBridge', () => {
     const unlistenFocusAddress = vi.fn()
     const unlistenUrl = vi.fn()
     const unlistenTabs = vi.fn()
+    const unlistenNavState = vi.fn()
 
     const bridge: BrowserPaneBridge = {
       createPane: vi.fn().mockResolvedValue({
@@ -96,6 +104,7 @@ describe('browserBridge', () => {
             active: true,
           },
         ],
+        navState: { canGoBack: false, canGoForward: false, isLoading: false },
       }),
       setBounds: vi.fn().mockResolvedValue(undefined),
       navigate: vi.fn().mockResolvedValue(undefined),
@@ -105,6 +114,7 @@ describe('browserBridge', () => {
       activateTab: vi.fn().mockResolvedValue(undefined),
       closeTab: vi.fn().mockResolvedValue(undefined),
       openExternal: vi.fn().mockResolvedValue(undefined),
+      navAction: vi.fn().mockResolvedValue(undefined),
       getCdpInfo: vi.fn().mockResolvedValue({
         url: 'http://127.0.0.1:9223',
         token: 'token',
@@ -115,6 +125,7 @@ describe('browserBridge', () => {
       onFocusAddress: vi.fn(() => unlistenFocusAddress),
       onUrlChange: vi.fn(() => unlistenUrl),
       onTabsChange: vi.fn(() => unlistenTabs),
+      onNavStateChange: vi.fn(() => unlistenNavState),
     }
 
     browserWindow().vimeflow = {
@@ -162,6 +173,12 @@ describe('browserBridge', () => {
 
     await openExternalBrowserPane({ sessionId: 'pty-1', paneId: 'p1' })
 
+    await navActionBrowserPane({
+      sessionId: 'pty-1',
+      paneId: 'p1',
+      action: 'reload',
+    })
+
     await expect(
       getBrowserCdpInfo({ sessionId: 'pty-1', paneId: 'p1' })
     ).resolves.toMatchObject({
@@ -172,6 +189,7 @@ describe('browserBridge', () => {
     const focusAddressCleanup = onBrowserPaneFocusAddress(() => undefined)
     const urlCleanup = onBrowserPaneUrlChange(() => undefined)
     const tabsCleanup = onBrowserPaneTabsChange(() => undefined)
+    const navStateCleanup = onBrowserPaneNavStateChange(() => undefined)
 
     expect(bridge.createPane).toHaveBeenCalledWith(request)
     expect(bridge.setBounds).toHaveBeenCalledOnce()
@@ -218,9 +236,16 @@ describe('browserBridge', () => {
       sessionId: 'pty-1',
       paneId: 'p1',
     })
+
+    expect(bridge.navAction).toHaveBeenCalledWith({
+      sessionId: 'pty-1',
+      paneId: 'p1',
+      action: 'reload',
+    })
     expect(focusCleanup).toBe(unlistenFocus)
     expect(focusAddressCleanup).toBe(unlistenFocusAddress)
     expect(urlCleanup).toBe(unlistenUrl)
     expect(tabsCleanup).toBe(unlistenTabs)
+    expect(navStateCleanup).toBe(unlistenNavState)
   })
 })

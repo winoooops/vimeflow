@@ -16,6 +16,7 @@ const bridgeMocks = vi.hoisted(() => ({
   navigateBrowserPane: vi.fn().mockResolvedValue(undefined),
   newBrowserPaneTab: vi.fn().mockResolvedValue(undefined),
   openExternalBrowserPane: vi.fn().mockResolvedValue(undefined),
+  navActionBrowserPane: vi.fn().mockResolvedValue(undefined),
   onBrowserPaneFocus: vi.fn(() => (): void => undefined) as Mock<
     (callback: (event: unknown) => void) => () => void
   >,
@@ -26,6 +27,9 @@ const bridgeMocks = vi.hoisted(() => ({
     (callback: (event: unknown) => void) => () => void
   >,
   onBrowserPaneUrlChange: vi.fn(() => (): void => undefined) as Mock<
+    (callback: (event: unknown) => void) => () => void
+  >,
+  onBrowserPaneNavStateChange: vi.fn(() => (): void => undefined) as Mock<
     (callback: (event: unknown) => void) => () => void
   >,
   setBrowserPaneBounds: vi.fn().mockResolvedValue(undefined),
@@ -94,6 +98,7 @@ const singleTab: BrowserPaneCreateResult = {
       active: true,
     },
   ],
+  navState: { canGoBack: false, canGoForward: false, isLoading: false },
 }
 
 interface UrlEvent {
@@ -108,6 +113,20 @@ interface UrlEvent {
 const urlCallback = (): ((event: UrlEvent) => void) =>
   bridgeMocks.onBrowserPaneUrlChange.mock.calls[0][0] as (
     event: UrlEvent
+  ) => void
+
+interface NavStateEvent {
+  sessionId: string
+  paneId: string
+  tabId: string
+  canGoBack: boolean
+  canGoForward: boolean
+  isLoading: boolean
+}
+
+const navStateCallback = (): ((event: NavStateEvent) => void) =>
+  bridgeMocks.onBrowserPaneNavStateChange.mock.calls[0][0] as (
+    event: NavStateEvent
   ) => void
 
 describe('BrowserPane', () => {
@@ -220,6 +239,114 @@ describe('BrowserPane', () => {
       paneId: 'p1',
       url: 'https://github.com/login',
     })
+  })
+
+  test('a nav-state event lights up back and toggles reload to stop', async () => {
+    render(<BrowserPane session={session} pane={browserPane} isActive />)
+    await settle()
+
+    act(() =>
+      navStateCallback()({
+        sessionId: 'pty-shell',
+        paneId: 'p1',
+        tabId: 'tab-0',
+        canGoBack: true,
+        canGoForward: false,
+        isLoading: true,
+      })
+    )
+
+    expect(screen.getByRole('button', { name: 'back' })).not.toBeDisabled()
+    expect(screen.getByRole('button', { name: 'stop' })).toBeInTheDocument()
+  })
+
+  test('a nav-state event for a different pane is ignored', async () => {
+    render(<BrowserPane session={session} pane={browserPane} isActive />)
+    await settle()
+
+    act(() =>
+      navStateCallback()({
+        sessionId: 'other',
+        paneId: 'other',
+        tabId: 'tab-0',
+        canGoBack: true,
+        canGoForward: true,
+        isLoading: false,
+      })
+    )
+
+    expect(screen.getByRole('button', { name: 'back' })).toBeDisabled()
+  })
+
+  test('back and reload dispatch nav-action through the bridge', async () => {
+    const user = userEvent.setup()
+    render(<BrowserPane session={session} pane={browserPane} isActive />)
+    await settle()
+
+    act(() =>
+      navStateCallback()({
+        sessionId: 'pty-shell',
+        paneId: 'p1',
+        tabId: 'tab-0',
+        canGoBack: true,
+        canGoForward: false,
+        isLoading: false,
+      })
+    )
+
+    await user.click(screen.getByRole('button', { name: 'back' }))
+    await user.click(screen.getByRole('button', { name: 'reload' }))
+
+    expect(bridgeMocks.navActionBrowserPane).toHaveBeenCalledWith({
+      sessionId: 'pty-shell',
+      paneId: 'p1',
+      action: 'back',
+    })
+
+    expect(bridgeMocks.navActionBrowserPane).toHaveBeenCalledWith({
+      sessionId: 'pty-shell',
+      paneId: 'p1',
+      action: 'reload',
+    })
+  })
+
+  test('the create-result navState seeds the toolbar', async () => {
+    render(<BrowserPane session={session} pane={browserPane} isActive />)
+
+    act(() =>
+      resolveCreate({
+        ...singleTab,
+        navState: { canGoBack: true, canGoForward: false, isLoading: false },
+      })
+    )
+
+    await waitFor(() => {
+      expect(bridgeMocks.getBrowserCdpInfo).toHaveBeenCalled()
+    })
+
+    expect(screen.getByRole('button', { name: 'back' })).not.toBeDisabled()
+  })
+
+  test('a live nav-state event before create resolves is not clobbered by the seed', async () => {
+    render(<BrowserPane session={session} pane={browserPane} isActive />)
+
+    // Live event arrives before createBrowserPane resolves.
+    act(() =>
+      navStateCallback()({
+        sessionId: 'pty-shell',
+        paneId: 'p1',
+        tabId: 'tab-0',
+        canGoBack: false,
+        canGoForward: false,
+        isLoading: true,
+      })
+    )
+
+    // Create resolves with a stale snapshot (isLoading: false).
+    await settle()
+
+    // The live event wins: the guard keeps the toolbar on stop.
+    expect(screen.getByRole('button', { name: 'stop' })).toBeInTheDocument()
   })
 
   test('the draft survives native url events while editing', async () => {

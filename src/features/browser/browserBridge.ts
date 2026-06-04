@@ -13,6 +13,8 @@ import type {
   BrowserPaneTabRequest,
   BrowserPaneTabsChangedEvent,
   BrowserPaneNavigateRequest,
+  BrowserPaneNavActionRequest,
+  BrowserPaneNavStateChangedEvent,
 } from './types'
 
 type BrowserCapableWindow = Window & {
@@ -46,6 +48,7 @@ export const createBrowserPane = async (
           active: true,
         },
       ],
+      navState: { canGoBack: false, canGoForward: false, isLoading: false },
     }
   }
 
@@ -104,6 +107,12 @@ export const openExternalBrowserPane = async (
   await bridge()?.openExternal(request)
 }
 
+export const navActionBrowserPane = async (
+  request: BrowserPaneNavActionRequest
+): Promise<void> => {
+  await bridge()?.navAction(request)
+}
+
 export const onBrowserPaneFocus = (
   callback: (event: BrowserPaneFocusedEvent) => void
 ): (() => void) => bridge()?.onFocus(callback) ?? ((): void => undefined)
@@ -119,3 +128,8 @@ export const onBrowserPaneTabsChange = (
 export const onBrowserPaneFocusAddress = (
   callback: (event: BrowserPaneFocusAddressEvent) => void
 ): (() => void) => bridge()?.onFocusAddress(callback) ?? ((): void => undefined)
+
+export const onBrowserPaneNavStateChange = (
+  callback: (event: BrowserPaneNavStateChangedEvent) => void
+): (() => void) =>
+  bridge()?.onNavStateChange(callback) ?? ((): void => undefined)
