@@ -1,8 +1,13 @@
 import type { ReactElement } from 'react'
 import { Body } from '../TerminalPane/Body'
+import { AGENTS } from '../../../../agents/registry'
 import type { RestoreData } from '../../types'
 import type { ITerminalService } from '../../services/terminalService'
 import type { NotifyPaneReady } from '../../hooks/useTerminal'
+
+// Scratch wears the registered `shell` agent's amber identity (design handoff).
+const SHELL_ACCENT = AGENTS.shell.accent
+const SHELL_ACCENT_DIM = AGENTS.shell.accentDim
 
 export interface ScratchTerminalPopupProps {
   /** Whether the popup is visible. Hidden ≠ unmounted — the shell keeps running. */
@@ -73,30 +78,44 @@ export const ScratchTerminalPopup = ({
         className="relative flex h-[600px] w-[760px] max-w-[92vw] flex-col overflow-hidden rounded-2xl shadow-2xl"
         style={{
           background: 'rgba(30, 30, 46, 0.88)',
-          borderTop: '2px solid #f0c674',
+          borderTop: `2px solid ${SHELL_ACCENT}`,
         }}
       >
-        <header className="flex items-center gap-3 px-4 py-2">
+        <header className="flex items-center gap-2.5 px-4 py-2">
           <span
-            className="font-mono text-sm font-medium"
-            style={{ color: '#f0c674' }}
+            className="inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 font-mono text-xs font-semibold tracking-wide"
+            style={{ color: SHELL_ACCENT, background: SHELL_ACCENT_DIM }}
           >
-            ❯ SCRATCH
+            <span className="material-symbols-outlined text-base leading-none">
+              terminal
+            </span>
+            SCRATCH
           </span>
           <span className="text-on-surface-variant truncate font-mono text-xs">
             {cwd}
           </span>
-          <span className="text-on-surface-muted ml-1 text-xs">
+          <span className="text-on-surface-muted inline-flex items-center gap-1 text-xs">
+            <span className="material-symbols-outlined text-sm leading-none">
+              link_off
+            </span>
             cd stays in scratch
+          </span>
+          <span className="text-on-surface-muted inline-flex items-center gap-1 text-xs">
+            <span className="material-symbols-outlined text-sm leading-none">
+              auto_delete
+            </span>
+            throwaway
           </span>
           <button
             type="button"
             data-testid="scratch-hide"
             aria-label="Hide scratch terminal"
             onClick={onHide}
-            className="text-on-surface-muted hover:text-on-surface ml-auto text-sm"
+            className="text-on-surface-muted hover:text-on-surface ml-auto inline-flex items-center"
           >
-            ✕
+            <span className="material-symbols-outlined text-lg leading-none">
+              close
+            </span>
           </button>
         </header>
         <div
@@ -113,8 +132,11 @@ export const ScratchTerminalPopup = ({
             onPaneReady={onPaneReady}
           />
         </div>
-        <footer className="text-on-surface-muted px-4 py-1.5 font-mono text-xs">
-          ↵ run · ⌃C cancel · esc hides — shell keeps running
+        <footer className="text-on-surface-muted flex items-center gap-1.5 px-4 py-1.5 font-mono text-xs">
+          <span className="material-symbols-outlined text-sm leading-none">
+            keyboard_return
+          </span>
+          run · ⌃C cancel · esc hides — shell keeps running
         </footer>
       </div>
     </div>
