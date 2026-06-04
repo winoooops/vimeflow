@@ -94,6 +94,7 @@ const singleTab: BrowserPaneCreateResult = {
       active: true,
     },
   ],
+  navState: { canGoBack: false, canGoForward: false, isLoading: false },
 }
 
 interface UrlEvent {

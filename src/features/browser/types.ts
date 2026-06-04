@@ -33,6 +33,7 @@ export interface BrowserPaneCreateResult {
   title: string | null
   partition: string
   tabs: BrowserPaneTab[]
+  navState: BrowserPaneNavState
 }
 
 export interface BrowserPaneBoundsRequest {
@@ -130,6 +131,7 @@ export interface BrowserPaneBridge {
   activateTab: (request: BrowserPaneTabRequest) => Promise<void>
   closeTab: (request: BrowserPaneTabRequest) => Promise<void>
   openExternal: (request: BrowserPaneRef) => Promise<void>
+  navAction: (request: BrowserPaneNavActionRequest) => Promise<void>
   onFocus: (callback: (event: BrowserPaneFocusedEvent) => void) => () => void
   onFocusAddress: (
     callback: (event: BrowserPaneFocusAddressEvent) => void
@@ -139,5 +141,8 @@ export interface BrowserPaneBridge {
   ) => () => void
   onTabsChange: (
     callback: (event: BrowserPaneTabsChangedEvent) => void
+  ) => () => void
+  onNavStateChange: (
+    callback: (event: BrowserPaneNavStateChangedEvent) => void
   ) => () => void
 }

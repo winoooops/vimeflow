@@ -9,6 +9,8 @@ import {
   BROWSER_PANE_FOCUSED,
   BROWSER_PANE_FOCUS_ADDRESS,
   BROWSER_PANE_NAVIGATE,
+  BROWSER_PANE_NAV_ACTION,
+  BROWSER_PANE_NAV_STATE_CHANGED,
   BROWSER_PANE_NEW_TAB,
   BROWSER_PANE_OPEN_EXTERNAL,
   BROWSER_PANE_SET_BOUNDS,
@@ -99,6 +101,11 @@ describe('preload browserPane wiring', () => {
       BROWSER_PANE_OPEN_EXTERNAL,
       { sessionId: 's1', paneId: 'p1' },
     ],
+    [
+      'navAction',
+      BROWSER_PANE_NAV_ACTION,
+      { sessionId: 's1', paneId: 'p1', action: 'back' },
+    ],
   ])(
     '%s invokes ipcRenderer.invoke with the correct channel',
     async (
@@ -122,6 +129,7 @@ describe('preload browserPane wiring', () => {
     ['onFocusAddress', BROWSER_PANE_FOCUS_ADDRESS],
     ['onUrlChange', BROWSER_PANE_URL_CHANGED],
     ['onTabsChange', BROWSER_PANE_TABS_CHANGED],
+    ['onNavStateChange', BROWSER_PANE_NAV_STATE_CHANGED],
   ])(
     '%s registers on the correct channel',
     (method: string, channel: string) => {
