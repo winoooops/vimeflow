@@ -151,9 +151,14 @@ refuses to self-review and records a dispatch-blocked event instead of counting
 failed fixer attempts. On a dedicated daemon host this should normally only happen
 when an operator manually checks out the PR branch in the daemon clone.
 
-It runs `watch.js tick --execute` for queued PRs. It does **not** pass
-`--approve` unless explicitly armed with `QA_APPROVE=1`, which belongs to the
-orchestrator-bot rung.
+It runs `watch.js tick --execute` for queued PRs. `auto-review` is the opt-in
+label that makes the daemon process a PR. `auto-approve` is only a modifier for a
+PR the daemon is already processing; when present, that single PR cycle receives
+the equivalent of `QA_APPROVE=1` / `--approve`.
+
+Set `QA_LABEL` to change the work opt-in label. Set `QA_APPROVE_LABEL` to change
+the approval modifier label; set it to an empty value to disable label-based
+approval globally.
 
 ### Split-plane worker dispatch
 
@@ -178,7 +183,7 @@ variables:
 | `QA_PR`                       | GitHub PR number claimed from the daemon queue                      |
 | `QA_REASON`                   | Webhook/poll reason such as `pr:labeled`, `ci:check_run`, or `poll` |
 | `QA_LABEL`                    | Opt-in label, normally `auto-review`                                |
-| `QA_APPROVE`                  | `1` only when merge approval is armed                               |
+| `QA_APPROVE`                  | `1` only for an `auto-review` PR that also has `auto-approve`       |
 | `QA_LINEAR_DECISION_COMMENTS` | `1` when decision comments should be posted                         |
 | `QA_LINEAR_CREATE_ISSUES`     | `1` when missing Linear issues may be created                       |
 | `QA_LINEAR_TEAM_KEY`          | Linear team key for issue creation                                  |
@@ -245,7 +250,7 @@ interactive login.
 ## Guardrails
 
 - **Opt-in only** (`auto-review` label) — narrow blast radius for the pilot.
-- **Report-only by default** — `--execute` / `--approve` must be passed explicitly.
+- **Approval is a second label** (`auto-approve`) — it never triggers work by itself.
 - **One run per PR** — lock files under `.locks/` (gitignored); concurrency capped at `--max` (2).
 - kimi works **only on the PR branch in an isolated worktree**; never `main`, never `--force`.
 - **codex gate + bounded retry** before any commit.

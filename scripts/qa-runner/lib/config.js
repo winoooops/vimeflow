@@ -53,13 +53,13 @@ export const loadConfig = () => {
     host: env.QA_HOST || file.host || '0.0.0.0',
     port: num(env.QA_PORT, num(file.port, 8787)),
     label: env.QA_LABEL || file.label || 'auto-review',
+    approveLabel: env.QA_APPROVE_LABEL ?? file.approveLabel ?? 'auto-approve',
     maxParallel: num(env.QA_MAX_PARALLEL, num(file.maxParallel, 2)),
     maxNoops: num(env.QA_MAX_NOOPS, num(file.maxNoops, 15)),
     maxCiReruns: num(env.QA_MAX_CI_RERUNS, num(file.maxCiReruns, 3)),
     pollSeconds: num(env.QA_POLL_SECONDS, num(file.pollSeconds, 60)),
     tickRunner: env.QA_TICK_RUNNER || file.tickRunner || 'local',
     tickCommand: env.QA_TICK_COMMAND || file.tickCommand || '',
-    approve: bool(env.QA_APPROVE, bool(file.approve)),
     linearDecisionComments: bool(
       env.QA_LINEAR_DECISION_COMMENTS,
       bool(file.linearDecisionComments, true)

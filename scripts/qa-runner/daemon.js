@@ -30,6 +30,10 @@ const tickRunner = createTickRunner(config, log)
 let running = true
 let shuttingDown = false
 
+const deprecatedApproveEnvSet = ['1', 'true', 'yes', 'on'].includes(
+  String(process.env.QA_APPROVE || '').toLowerCase()
+)
+
 // One worker: claim a PR, run a single cycle, release, repeat. Live concurrency
 // is capped by the worker count (config.maxParallel).
 const worker = async (id) => {
@@ -118,8 +122,13 @@ server.listen(config.port, config.host, () => {
   )
 
   log(
-    `config: label=${config.label} maxParallel=${config.maxParallel} maxNoops=${config.maxNoops} maxCiReruns=${config.maxCiReruns} pollSeconds=${config.pollSeconds} tickRunner=${config.tickRunner} linearDecisionComments=${config.linearDecisionComments} linearCreateIssues=${config.linearCreateIssues} trusted=[${config.trustedSenders.join(',')}]`
+    `config: label=${config.label} approveLabel=${config.approveLabel} maxParallel=${config.maxParallel} maxNoops=${config.maxNoops} maxCiReruns=${config.maxCiReruns} pollSeconds=${config.pollSeconds} tickRunner=${config.tickRunner} linearDecisionComments=${config.linearDecisionComments} linearCreateIssues=${config.linearCreateIssues} trusted=[${config.trustedSenders.join(',')}]`
   )
+  if (deprecatedApproveEnvSet) {
+    log(
+      'WARNING: QA_APPROVE is no longer honored by the daemon; add the auto-approve label to each PR that should run with approval armed.'
+    )
+  }
   if (!config.webhookSecret) {
     log(
       'WARNING: GITHUB_WEBHOOK_SECRET unset — webhook endpoint FAILS CLOSED (rejects all).'
