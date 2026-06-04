@@ -109,13 +109,11 @@ import { WorkspaceView } from './WorkspaceView'
 
 describe('WorkspaceView - Visual Verification (Feature #20)', () => {
   describe('Layout: 5-Zone Architecture (v2)', () => {
-    test('grid layout has correct zone widths (48px, 272px, 1fr, auto)', () => {
+    test('grid layout has correct zone widths (48px, auto, 1fr, auto)', () => {
       render(<WorkspaceView />)
       const workspace = screen.getByTestId('workspace-view')
 
-      expect(workspace.style.gridTemplateColumns).toBe(
-        '48px var(--workspace-sidebar-width, 272px) 1fr auto'
-      )
+      expect(workspace.style.gridTemplateColumns).toBe('48px auto 1fr auto')
 
       expect(
         workspace.style.getPropertyValue('--workspace-sidebar-width')

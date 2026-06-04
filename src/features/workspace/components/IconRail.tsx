@@ -3,6 +3,14 @@ import { Tooltip } from '../../../components/Tooltip'
 import { formatShortcut } from '../../../lib/formatShortcut'
 import { COMMAND_PALETTE_SHORTCUT_KEYS } from '../../command-palette/shortcutConfig'
 import type { NavigationItem } from '../types'
+import { SidebarToggle } from './SidebarToggle'
+
+// The collapsed-state sidebar toggle's top must line up with the in-card
+// toggle's top so the glyph reads as one control as the drawer opens/closes:
+// sidebar header pt-3 (12px) + AgentStatusCard padding-top (13px) = 25px from
+// the column top; the rail's own py-2.5 contributes 10px, so the toggle needs
+// the remaining offset.
+const RAIL_TOGGLE_TOP_OFFSET_PX = 25 - 10
 
 export interface IconRailIdentity {
   initial: string
@@ -14,6 +22,10 @@ export interface IconRailProps {
   onCommand?: () => void
   onSettings?: () => void
   identity?: IconRailIdentity
+  /** Whether the left sidebar is collapsed; when true the rail hosts the expand toggle. */
+  sidebarCollapsed?: boolean
+  /** Toggle the sidebar collapse flag (shared with the in-card toggle, ⌘B, and the palette). */
+  onToggleSidebar?: () => void
   /**
    * @deprecated Ignored by the new rail body — the rail no longer
    * iterates this array. Kept for one cycle so existing callers
@@ -89,14 +101,9 @@ export const IconRail = ({
   settingsIssueNumber,
   onCommand = undefined,
   onSettings = undefined,
-  identity = undefined,
+  sidebarCollapsed = false,
+  onToggleSidebar = undefined,
 }: IconRailProps): ReactElement => {
-  const initial = Array.from(identity?.initial ?? 'w')[0] ?? 'w'
-  const candidateAccountLabel = identity?.ariaLabel ?? 'Account'
-
-  const accountLabel =
-    candidateAccountLabel === '' ? 'Account' : candidateAccountLabel
-
   const settingsTooltip = `Settings panel coming — see issue #${settingsIssueNumber}`
 
   const commandPaletteTooltip = `Command Palette (${formatShortcut(
@@ -108,25 +115,24 @@ export const IconRail = ({
       data-testid="icon-rail"
       className="
         relative z-[5] flex h-full w-12 flex-col items-center
-        bg-surface-container-lowest border-r border-outline-variant/25
+        bg-surface-container-lowest
         py-2.5
       "
     >
-      <Tooltip content={accountLabel} placement="right">
-        <div
-          role="img"
-          aria-label={accountLabel}
-          className="
-            mb-3.5 h-[30px] w-[30px] grid place-items-center
-            rounded-full border border-primary/35
-            bg-[linear-gradient(135deg,theme(colors.primary-deep),theme(colors.surface-container-low))]
-            font-display text-[12px] font-semibold text-primary
-            shadow-[0_4px_18px_rgba(203,166,247,0.25)]
-          "
-        >
-          {initial}
+      {/* The placeholder "W" avatar was removed; the rail's top slot hosts the
+          sidebar expand toggle, shown only while the sidebar is collapsed.
+          Aligned to the in-card toggle's vertical position (see constant). */}
+      {sidebarCollapsed && onToggleSidebar && (
+        <div style={{ marginTop: RAIL_TOGGLE_TOP_OFFSET_PX }}>
+          <SidebarToggle
+            collapsed
+            onClick={onToggleSidebar}
+            size={28}
+            variant="inset"
+            data-testid="sidebar-toggle-rail"
+          />
         </div>
-      </Tooltip>
+      )}
 
       <div className="flex-1" aria-hidden="true" />
 

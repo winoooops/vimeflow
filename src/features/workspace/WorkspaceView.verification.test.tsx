@@ -110,12 +110,10 @@ describe('Feature 23: Final Phase 2 Verification', () => {
   })
 
   describe('2. Icon rail shows utility actions', () => {
-    test('displays the account identity', () => {
+    test('no longer renders a placeholder account avatar (removed, VIM-66)', () => {
       render(<WorkspaceView />)
 
-      const account = screen.getByRole('img', { name: 'Account' })
-
-      expect(account).toHaveTextContent('w')
+      expect(screen.queryByRole('img', { name: 'Account' })).toBeNull()
     })
 
     test('displays command palette and disabled settings buttons', () => {

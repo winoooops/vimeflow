@@ -815,9 +815,7 @@ describe('WorkspaceView', () => {
     const container = screen.getByTestId('workspace-view')
 
     expect(container).toHaveClass('grid')
-    expect(container.style.gridTemplateColumns).toBe(
-      '48px var(--workspace-sidebar-width, 272px) 1fr auto'
-    )
+    expect(container.style.gridTemplateColumns).toBe('48px auto 1fr auto')
 
     expect(container.style.getPropertyValue('--workspace-sidebar-width')).toBe(
       '272px'
@@ -832,14 +830,12 @@ describe('WorkspaceView', () => {
     expect(container).toHaveClass('h-screen')
   })
 
-  test('renders IconRail identity and utility buttons', () => {
+  test('renders IconRail utility buttons (no account avatar)', () => {
     render(<WorkspaceView />)
 
     const iconRail = screen.getByTestId('icon-rail')
 
-    expect(
-      within(iconRail).getByRole('img', { name: 'Account' })
-    ).toHaveTextContent('w')
+    expect(within(iconRail).queryByRole('img', { name: 'Account' })).toBeNull()
 
     expect(
       within(iconRail).getByRole('button', { name: 'Command Palette' })
@@ -1216,21 +1212,18 @@ describe('WorkspaceView', () => {
     expect(screen.getByRole('button', { name: /editor/i })).toBeInTheDocument()
   })
 
-  test('grid columns: icon-rail 48px, sidebar 272px, main 1fr, activity auto', () => {
+  test('grid columns: icon-rail 48px, sidebar auto (drawer), main 1fr, activity auto', () => {
     render(<WorkspaceView />)
 
     const container = screen.getByTestId('workspace-view')
 
-    expect(container.style.gridTemplateColumns).toContain('48px')
-    expect(container.style.gridTemplateColumns).toContain(
-      'var(--workspace-sidebar-width, 272px)'
-    )
+    expect(container.style.gridTemplateColumns).toBe('48px auto 1fr auto')
 
+    // The resizable width still lives in the CSS var (now applied to the
+    // sidebar shell instead of the grid track) so the drawer can animate.
     expect(container.style.getPropertyValue('--workspace-sidebar-width')).toBe(
       '272px'
     )
-    expect(container.style.gridTemplateColumns).toContain('1fr')
-    expect(container.style.gridTemplateColumns).toContain('auto')
   })
 
   test('previews sidebar drag width through CSS variable before committing React state', () => {
