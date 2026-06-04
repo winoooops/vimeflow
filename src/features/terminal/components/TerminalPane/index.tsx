@@ -37,6 +37,8 @@ export interface TerminalPaneProps {
   onPaneReady?: NotifyPaneReady
   mode?: TerminalPaneMode
   onClose?: (sessionId: string, paneId: string) => void
+  /** Toggle this session's ephemeral scratch terminal (VIM-53). */
+  onScratch?: () => void
   onCwdChange?: (cwd: string) => void
   onRestart?: (sessionId: string) => void
   deferFit?: boolean
@@ -64,6 +66,7 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
       onPaneReady = undefined,
       mode = 'spawn',
       onClose = undefined,
+      onScratch = undefined,
       onCwdChange = undefined,
       onRestart = undefined,
       deferFit = false,
@@ -229,6 +232,7 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
           paneUserLabel={pane.userLabel}
           onToggleCollapse={handleToggleCollapse}
           onClose={onClose ? handleClose : undefined}
+          onScratch={onScratch}
         />
 
         {isAwaitingRestart ? (

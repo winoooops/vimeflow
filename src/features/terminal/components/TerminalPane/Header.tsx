@@ -23,6 +23,7 @@ export interface HeaderProps {
   paneUserLabel?: string
   onToggleCollapse: () => void
   onClose?: () => void
+  onScratch?: () => void
 }
 
 export const Header = ({
@@ -41,6 +42,7 @@ export const Header = ({
   paneUserLabel = undefined,
   onToggleCollapse,
   onClose = undefined,
+  onScratch = undefined,
 }: HeaderProps): ReactElement => {
   const titleRef = useRef<HTMLSpanElement | null>(null)
 
@@ -104,6 +106,7 @@ export const Header = ({
         isCollapsed={isCollapsed}
         onToggleCollapse={onToggleCollapse}
         onClose={onClose}
+        onScratch={onScratch}
       />
     </div>
   )

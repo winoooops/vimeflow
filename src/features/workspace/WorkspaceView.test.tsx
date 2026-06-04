@@ -63,6 +63,7 @@ const workspaceTerminalMock = vi.hoisted(() => {
     reorderSessions: vi.fn().mockResolvedValue(undefined),
     updateSessionCwd: vi.fn().mockResolvedValue(undefined),
     setSessionActivityPanelCollapsed: vi.fn().mockResolvedValue(undefined),
+    killEphemeralPtys: vi.fn(),
   }
 
   return { defaultSessionList, service }

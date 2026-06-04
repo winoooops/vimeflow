@@ -40,6 +40,9 @@ pub struct SpawnPtyRequest {
     /// Generate statusline bridge files for agent status tracking
     #[serde(default)]
     pub enable_agent_bridge: bool,
+    /// Ephemeral (scratch) PTY: skip the session cache and the agent-bridge dir.
+    #[serde(default)]
+    pub ephemeral: bool,
 }
 
 /// Request payload for writing data to a PTY session

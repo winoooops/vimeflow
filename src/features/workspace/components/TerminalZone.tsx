@@ -62,6 +62,8 @@ export interface TerminalZoneProps {
   areBrowserPanesOccluded?: boolean
   isZoneFocused?: boolean
   onContainerFocus?: () => void
+  /** Toggle the active session's ephemeral scratch terminal (VIM-53). */
+  onScratch?: () => void
 }
 
 export interface TerminalZoneHandle {
@@ -87,6 +89,7 @@ export const TerminalZone = forwardRef<TerminalZoneHandle, TerminalZoneProps>(
       areBrowserPanesOccluded = false,
       isZoneFocused = true,
       onContainerFocus = undefined,
+      onScratch = undefined,
     }: TerminalZoneProps,
     ref
   ): ReactElement {
@@ -259,6 +262,7 @@ export const TerminalZone = forwardRef<TerminalZoneHandle, TerminalZoneProps>(
                     onRequestFocus={onContainerFocus}
                     onAddPane={addPane}
                     onClosePane={removePane}
+                    onScratch={onScratch}
                     areBrowserPanesOccluded={areBrowserPanesOccluded}
                     deferTerminalFit={deferTerminalFit}
                     showPaneFocusHighlight={isZoneFocused}

@@ -211,6 +211,7 @@ describe('WorkspaceView - Command Palette Integration', () => {
       restoreData: new Map(),
       loading: false,
       notifyPaneReady: vi.fn(),
+      registerPending: vi.fn(),
     }
 
     // Mock useSessionManager
@@ -303,6 +304,7 @@ describe('WorkspaceView - Command Palette Integration', () => {
       reorderSessions: vi.fn().mockResolvedValue(undefined),
       updateSessionCwd: vi.fn().mockResolvedValue(undefined),
       setSessionActivityPanelCollapsed: vi.fn().mockResolvedValue(undefined),
+      killEphemeralPtys: vi.fn(),
     })
   })
 

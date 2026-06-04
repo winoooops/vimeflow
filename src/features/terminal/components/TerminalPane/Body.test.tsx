@@ -48,6 +48,7 @@ const createDefaultMockService = (): ITerminalService =>
     reorderSessions: vi.fn().mockResolvedValue(undefined),
     updateSessionCwd: vi.fn().mockResolvedValue(undefined),
     setSessionActivityPanelCollapsed: vi.fn().mockResolvedValue(undefined),
+    killEphemeralPtys: vi.fn(),
   }) as ITerminalService
 
 // Mock xterm modules
@@ -2087,6 +2088,7 @@ describe('Body', () => {
         }),
         setActiveSession: vi.fn().mockResolvedValue(undefined),
         reorderSessions: vi.fn().mockResolvedValue(undefined),
+        killEphemeralPtys: vi.fn().mockResolvedValue([]),
       }
 
       const onCwdChange = vi.fn()
@@ -2147,6 +2149,7 @@ describe('Body', () => {
         }),
         setActiveSession: vi.fn().mockResolvedValue(undefined),
         reorderSessions: vi.fn().mockResolvedValue(undefined),
+        killEphemeralPtys: vi.fn().mockResolvedValue([]),
       }
 
       const onCwdChange = vi.fn()
@@ -2207,6 +2210,7 @@ describe('Body', () => {
         }),
         setActiveSession: vi.fn().mockResolvedValue(undefined),
         reorderSessions: vi.fn().mockResolvedValue(undefined),
+        killEphemeralPtys: vi.fn().mockResolvedValue([]),
       }
 
       const onCwdChange = vi.fn()

@@ -165,8 +165,8 @@ pub(crate) async fn spawn_pty_inner(
         return Err(format!("invalid session_id: {}", request.session_id));
     }
 
-    // Generate statusline bridge files.
-    let (bridge_files, bridge_cleanup_dir) = if request.enable_agent_bridge {
+    // Generate statusline bridge files — skipped for ephemeral (scratch) PTYs.
+    let (bridge_files, bridge_cleanup_dir) = if request.enable_agent_bridge && !request.ephemeral {
         let dir = cwd
             .join(".vimeflow")
             .join("sessions")
@@ -378,35 +378,41 @@ pub(crate) async fn spawn_pty_inner(
     // Cache write — under the same `mutate` lock as every other state
     // change. On failure we roll back the PtyState insert via the
     // infallible `state.remove` and reap the child it carries.
-    let created_at = chrono::Utc::now().to_rfc3339();
-    if let Err(e) = cache.mutate(|data| {
-        use super::cache::CachedSession;
-        data.sessions.insert(
-            request.session_id.clone(),
-            CachedSession {
-                cwd: cwd.to_string_lossy().to_string(),
-                created_at,
-                exited: false,
-                last_exit_code: None,
-                activity_panel_collapsed: None,
-            },
-        );
-        data.session_order.push(request.session_id.clone());
-        // Promote to active if this is the first session
-        if data.active_session_id.is_none() {
-            data.active_session_id = Some(request.session_id.clone());
+    // Skipped for ephemeral (scratch) PTYs so they never persist.
+    if !request.ephemeral {
+        let created_at = chrono::Utc::now().to_rfc3339();
+        if let Err(e) = cache.mutate(|data| {
+            use super::cache::CachedSession;
+            data.sessions.insert(
+                request.session_id.clone(),
+                CachedSession {
+                    cwd: cwd.to_string_lossy().to_string(),
+                    created_at,
+                    exited: false,
+                    last_exit_code: None,
+                    activity_panel_collapsed: None,
+                },
+            );
+            data.session_order.push(request.session_id.clone());
+            // Promote to active if this is the first session
+            if data.active_session_id.is_none() {
+                data.active_session_id = Some(request.session_id.clone());
+            }
+            Ok(())
+        }) {
+            // Roll back the PtyState insert, then reap the child. Both are
+            // best-effort: surfacing the original cache error is more useful
+            // than chaining a kill or remove error.
+            if let Some(mut removed) = state.remove(&request.session_id) {
+                let _ = removed.child.kill();
+                let _ = removed.child.wait();
+            }
+            cleanup_generated_bridge_dir(bridge_cleanup_dir.as_deref());
+            return Err(format!("failed to write cache: {}", e));
         }
-        Ok(())
-    }) {
-        // Roll back the PtyState insert, then reap the child. Both are
-        // best-effort: surfacing the original cache error is more useful
-        // than chaining a kill or remove error.
-        if let Some(mut removed) = state.remove(&request.session_id) {
-            let _ = removed.child.kill();
-            let _ = removed.child.wait();
-        }
-        cleanup_generated_bridge_dir(bridge_cleanup_dir.as_deref());
-        return Err(format!("failed to write cache: {}", e));
+    } else {
+        // Ephemeral (scratch) PTY: record for reap, never cached.
+        state.mark_ephemeral(request.session_id.clone());
     }
 
     debug_log(
@@ -544,6 +550,30 @@ pub(crate) fn kill_pty_inner(
         .map_err(|e| format!("failed to update cache: {}", e))?;
 
     Ok(())
+}
+
+/// Reap every ephemeral (scratch) PTY: kill the child and drop it from
+/// PtyState, returning the ids killed. Ephemeral PTYs are never in the
+/// cache, so there is no cache cleanup. Called on renderer boot (to reap
+/// reload orphans) and on shutdown.
+pub(crate) fn kill_ephemeral_ptys_inner(state: &PtyState) -> Vec<String> {
+    let ids = state.drain_ephemeral();
+    let mut killed = Vec::new();
+    for id in ids {
+        match state.kill(&id) {
+            Ok(()) | Err(super::state::KillError::NotPresent) => {
+                state.set_cancelled(&id);
+                state.remove(&id);
+                killed.push(id);
+            }
+            Err(super::state::KillError::KillFailed(msg)) => {
+                // Kill failed; child may be alive — put the id back so a later reap retries it.
+                log::warn!("kill_ephemeral_ptys: failed to kill {}: {}", id, msg);
+                state.mark_ephemeral(id);
+            }
+        }
+    }
+    killed
 }
 
 /// List all sessions with their current status and replay data
@@ -1017,6 +1047,7 @@ mod tests {
             shell: None,
             env: None,
             enable_agent_bridge: false,
+            ephemeral: false,
         };
 
         let result = spawn_pty_inner(state.clone(), cache.clone(), events.clone(), request).await;
@@ -1028,6 +1059,166 @@ mod tests {
 
         // Cleanup
         let _ = state.remove(&"test-session".to_string());
+    }
+
+    #[tokio::test]
+    async fn ephemeral_spawn_is_absent_from_cache() {
+        let (state, cache, events, _temp_dir) = create_test_state_with_cache();
+
+        let request = SpawnPtyRequest {
+            session_id: "scratch-1".to_string(),
+            cwd: std::env::current_dir()
+                .unwrap()
+                .to_string_lossy()
+                .to_string(),
+            shell: None,
+            env: None,
+            enable_agent_bridge: false,
+            ephemeral: true,
+        };
+
+        let result = spawn_pty_inner(state.clone(), cache.clone(), events.clone(), request).await;
+        assert!(result.is_ok(), "ephemeral spawn should succeed: {result:?}");
+
+        let snapshot = cache.snapshot();
+        assert!(
+            snapshot.sessions.get("scratch-1").is_none(),
+            "ephemeral PTY must not be written to the session cache"
+        );
+        assert!(
+            !snapshot.session_order.contains(&"scratch-1".to_string()),
+            "ephemeral PTY must not enter session_order"
+        );
+
+        // PTY is still live — a write succeeds.
+        write_pty_inner(
+            &state,
+            WritePtyRequest {
+                session_id: "scratch-1".to_string(),
+                data: "echo hi\n".to_string(),
+            },
+        )
+        .expect("ephemeral PTY should accept writes");
+
+        let _ = state.remove(&"scratch-1".to_string());
+    }
+
+    #[tokio::test]
+    async fn non_ephemeral_spawn_still_persists() {
+        let (state, cache, events, _temp_dir) = create_test_state_with_cache();
+
+        let request = SpawnPtyRequest {
+            session_id: "keep-1".to_string(),
+            cwd: std::env::current_dir()
+                .unwrap()
+                .to_string_lossy()
+                .to_string(),
+            shell: None,
+            env: None,
+            enable_agent_bridge: false,
+            ephemeral: false,
+        };
+
+        let result = spawn_pty_inner(state.clone(), cache.clone(), events.clone(), request).await;
+        assert!(result.is_ok(), "spawn should succeed: {result:?}");
+
+        assert!(
+            cache.snapshot().sessions.get("keep-1").is_some(),
+            "non-ephemeral PTY must persist to the cache (regression guard)"
+        );
+
+        let _ = state.remove(&"keep-1".to_string());
+    }
+
+    #[tokio::test]
+    async fn ephemeral_spawn_creates_no_bridge_dir_even_if_bridge_requested() {
+        let (state, cache, events, temp_dir) = create_test_state_with_cache();
+        let cwd = temp_dir.path().join("scratch-workspace");
+        std::fs::create_dir_all(&cwd).expect("create cwd");
+        let session_id = "scratch-no-bridge".to_string();
+        let bridge_dir = cwd.join(".vimeflow").join("sessions").join(&session_id);
+
+        let request = SpawnPtyRequest {
+            session_id: session_id.clone(),
+            cwd: cwd.to_string_lossy().to_string(),
+            shell: None,
+            env: None,
+            enable_agent_bridge: true,
+            ephemeral: true,
+        };
+
+        let result = spawn_pty_inner(state.clone(), cache.clone(), events.clone(), request).await;
+        assert!(result.is_ok(), "ephemeral spawn should succeed: {result:?}");
+        assert!(
+            !bridge_dir.exists(),
+            "ephemeral PTY must not create a bridge dir even when enable_agent_bridge is true"
+        );
+
+        let _ = state.remove(&session_id);
+    }
+
+    #[tokio::test]
+    async fn kill_ephemeral_ptys_kills_only_ephemeral() {
+        let (state, cache, events, _temp_dir) = create_test_state_with_cache();
+        let cwd = std::env::current_dir()
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
+
+        let keep = spawn_pty_inner(
+            state.clone(),
+            cache.clone(),
+            events.clone(),
+            SpawnPtyRequest {
+                session_id: "keep".to_string(),
+                cwd: cwd.clone(),
+                shell: None,
+                env: None,
+                enable_agent_bridge: false,
+                ephemeral: false,
+            },
+        )
+        .await
+        .expect("keep spawn");
+
+        let scratch = spawn_pty_inner(
+            state.clone(),
+            cache.clone(),
+            events.clone(),
+            SpawnPtyRequest {
+                session_id: "scratch".to_string(),
+                cwd: cwd.clone(),
+                shell: None,
+                env: None,
+                enable_agent_bridge: false,
+                ephemeral: true,
+            },
+        )
+        .await
+        .expect("scratch spawn");
+
+        let killed = kill_ephemeral_ptys_inner(&state);
+        assert_eq!(killed, vec![scratch.id.clone()]);
+
+        // Scratch PTY is gone; the non-ephemeral one is untouched.
+        let scratch_write = write_pty_inner(
+            &state,
+            WritePtyRequest {
+                session_id: scratch.id.clone(),
+                data: "x".to_string(),
+            },
+        );
+        assert!(scratch_write.is_err(), "scratch PTY should be reaped");
+        let keep_write = write_pty_inner(
+            &state,
+            WritePtyRequest {
+                session_id: keep.id.clone(),
+                data: "x".to_string(),
+            },
+        );
+        assert!(keep_write.is_ok(), "non-ephemeral PTY must be untouched");
+
+        let _ = state.remove(&keep.id);
     }
 
     #[tokio::test]
@@ -1048,6 +1239,7 @@ mod tests {
             shell: None,
             env: None,
             enable_agent_bridge: true,
+            ephemeral: false,
         };
 
         let result = spawn_pty_inner(state.clone(), cache.clone(), events.clone(), request).await;
@@ -1138,6 +1330,7 @@ mod tests {
             shell: None,
             env: None,
             enable_agent_bridge: false,
+            ephemeral: false,
         };
 
         spawn_pty_inner(state.clone(), cache.clone(), events.clone(), spawn_request)
@@ -1173,6 +1366,7 @@ mod tests {
             shell: None,
             env: None,
             enable_agent_bridge: false,
+            ephemeral: false,
         };
 
         spawn_pty_inner(state.clone(), cache.clone(), events.clone(), spawn_request)
@@ -1230,6 +1424,7 @@ mod tests {
             shell: None,
             env: None,
             enable_agent_bridge: false,
+            ephemeral: false,
         };
 
         spawn_pty_inner(state.clone(), cache.clone(), events.clone(), spawn_request)
@@ -1279,6 +1474,7 @@ mod tests {
             shell: None,
             env: None,
             enable_agent_bridge: false,
+            ephemeral: false,
         };
 
         // First spawn should succeed
@@ -1319,6 +1515,7 @@ mod tests {
             shell: None,
             env: None,
             enable_agent_bridge: false,
+            ephemeral: false,
         };
 
         spawn_pty_inner(state.clone(), cache.clone(), events.clone(), request1)
@@ -1338,6 +1535,7 @@ mod tests {
             shell: None,
             env: None,
             enable_agent_bridge: false,
+            ephemeral: false,
         };
 
         spawn_pty_inner(state.clone(), cache.clone(), events.clone(), request2)
@@ -1370,6 +1568,7 @@ mod tests {
                 shell: None,
                 env: None,
                 enable_agent_bridge: false,
+                ephemeral: false,
             };
 
             spawn_pty_inner(state.clone(), cache.clone(), events.clone(), request)
@@ -1384,6 +1583,7 @@ mod tests {
             shell: None,
             env: None,
             enable_agent_bridge: true,
+            ephemeral: false,
         };
         let rejected_bridge_dir = cwd_temp_dir
             .path()
@@ -1596,6 +1796,7 @@ mod tests {
             shell: None,
             env: None,
             enable_agent_bridge: false,
+            ephemeral: false,
         };
         spawn_pty_inner(state.clone(), cache.clone(), events.clone(), request1)
             .await
@@ -1607,6 +1808,7 @@ mod tests {
             shell: None,
             env: None,
             enable_agent_bridge: false,
+            ephemeral: false,
         };
         spawn_pty_inner(state.clone(), cache.clone(), events.clone(), request2)
             .await
@@ -1650,6 +1852,7 @@ mod tests {
             shell: None,
             env: None,
             enable_agent_bridge: false,
+            ephemeral: false,
         };
         spawn_pty_inner(state.clone(), cache.clone(), events.clone(), request1)
             .await
@@ -1661,6 +1864,7 @@ mod tests {
             shell: None,
             env: None,
             enable_agent_bridge: false,
+            ephemeral: false,
         };
         spawn_pty_inner(state.clone(), cache.clone(), events.clone(), request2)
             .await
@@ -1672,6 +1876,7 @@ mod tests {
             shell: None,
             env: None,
             enable_agent_bridge: false,
+            ephemeral: false,
         };
         spawn_pty_inner(state.clone(), cache.clone(), events.clone(), request3)
             .await
@@ -1721,6 +1926,7 @@ mod tests {
                 shell: None,
                 env: None,
                 enable_agent_bridge: false,
+                ephemeral: false,
             },
         )
         .await
@@ -1771,6 +1977,7 @@ mod tests {
                 shell: None,
                 env: None,
                 enable_agent_bridge: false,
+                ephemeral: false,
             },
         )
         .await
@@ -1853,6 +2060,7 @@ mod tests {
                 shell: None,
                 env: None,
                 enable_agent_bridge: false,
+                ephemeral: false,
             },
         )
         .await
@@ -1918,6 +2126,7 @@ mod tests {
                     shell: None,
                     env: None,
                     enable_agent_bridge: false,
+                    ephemeral: false,
                 },
             )
             .await
@@ -1956,6 +2165,7 @@ mod tests {
                 shell: None,
                 env: None,
                 enable_agent_bridge: false,
+                ephemeral: false,
             },
         )
         .await
@@ -2021,6 +2231,7 @@ mod tests {
                     shell: None,
                     env: None,
                     enable_agent_bridge: false,
+                    ephemeral: false,
                 },
             )
             .await
@@ -2071,6 +2282,7 @@ mod tests {
                     shell: None,
                     env: None,
                     enable_agent_bridge: false,
+                    ephemeral: false,
                 },
             )
             .await
@@ -2112,6 +2324,7 @@ mod tests {
                 shell: None,
                 env: None,
                 enable_agent_bridge: false,
+                ephemeral: false,
             },
         )
         .await
@@ -2161,6 +2374,7 @@ mod tests {
                     shell: None,
                     env: None,
                     enable_agent_bridge: false,
+                    ephemeral: false,
                 },
             )
             .await
@@ -2215,6 +2429,7 @@ mod tests {
                 shell: None,
                 env: None,
                 enable_agent_bridge: false,
+                ephemeral: false,
             },
         )
         .await
@@ -2608,6 +2823,7 @@ mod tests {
                 shell: None,
                 env: None,
                 enable_agent_bridge: false,
+                ephemeral: false,
             },
         )
         .await;
