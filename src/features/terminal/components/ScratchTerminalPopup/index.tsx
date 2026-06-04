@@ -1,5 +1,7 @@
+import { useCallback, useEffect, useRef } from 'react'
 import type { ReactElement } from 'react'
 import { Body } from '../TerminalPane/Body'
+import type { BodyHandle } from '../TerminalPane/Body'
 import { AGENTS } from '../../../../agents/registry'
 import type { RestoreData } from '../../types'
 import type { ITerminalService } from '../../services/terminalService'
@@ -8,6 +10,9 @@ import type { NotifyPaneReady } from '../../hooks/useTerminal'
 // Scratch wears the registered `shell` agent's amber identity (design handoff).
 const SHELL_ACCENT = AGENTS.shell.accent
 const SHELL_ACCENT_DIM = AGENTS.shell.accentDim
+
+// Release-handle fallback when no drain notifier is wired.
+const releaseNoop = (): void => undefined
 
 export interface ScratchTerminalPopupProps {
   /** Whether the popup is visible. Hidden ≠ unmounted — the shell keeps running. */
@@ -30,8 +35,12 @@ export interface ScratchTerminalPopupProps {
  *
  * Kept mounted for its shell's whole life; `open` toggles CSS visibility so the
  * PTY keeps running while hidden (hide ≠ kill). Renders the existing terminal
- * `<Body>` in `attach` mode against `scratchPtyId`. Visual fidelity against the
- * handoff mockup is refined in the dedicated design pass (VIM-53 T8).
+ * `<Body>` in `attach` mode against `scratchPtyId`.
+ *
+ * Because it renders `<Body>` directly (no `TerminalPane` wrapper to drive
+ * focus), it moves DOM focus into the scratch xterm itself when shown —
+ * otherwise a chord-opened popup leaves focus on the pane underneath and sends
+ * keystrokes there.
  */
 export const ScratchTerminalPopup = ({
   open,
@@ -42,6 +51,30 @@ export const ScratchTerminalPopup = ({
   onHide,
   onPaneReady = undefined,
 }: ScratchTerminalPopupProps): ReactElement => {
+  const bodyRef = useRef<BodyHandle>(null)
+  const openRef = useRef(open)
+  openRef.current = open
+
+  // Re-show: the terminal is already attached, so focus lands immediately.
+  useEffect(() => {
+    if (open) {
+      bodyRef.current?.focusTerminal()
+    }
+  }, [open])
+
+  // First open: focus once Body signals its xterm attached (also drains).
+  const handlePaneReady = useCallback<NotifyPaneReady>(
+    (ptyId, handler) => {
+      const release = onPaneReady?.(ptyId, handler)
+      if (openRef.current) {
+        bodyRef.current?.focusTerminal()
+      }
+
+      return release ?? releaseNoop
+    },
+    [onPaneReady]
+  )
+
   // Fresh attach: no prior history. The live subscription streams everything
   // from spawn onward; the spawn→attach gap is covered by the buffer-drain
   // (registerPending at spawn, onPaneReady on subscribe).
@@ -124,12 +157,13 @@ export const ScratchTerminalPopup = ({
           className="min-h-0 flex-1"
         >
           <Body
+            ref={bodyRef}
             mode="attach"
             sessionId={scratchPtyId}
             cwd={cwd}
             service={service}
             restoredFrom={snapshot}
-            onPaneReady={onPaneReady}
+            onPaneReady={handlePaneReady}
           />
         </div>
         <footer className="text-on-surface-muted flex items-center gap-1.5 px-4 py-1.5 font-mono text-xs">

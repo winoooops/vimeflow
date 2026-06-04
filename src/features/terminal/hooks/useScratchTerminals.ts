@@ -108,6 +108,7 @@ export const useScratchTerminals = ({
         })
         // Buffer prompt/rc output emitted before the popup's terminal attaches.
         registerPending?.(result.sessionId)
+        // Orphaned by a session close: reaped on the next boot/shutdown sweep.
         entriesRef.current.set(key, {
           scratchPtyId: result.sessionId,
           pid: result.pid,

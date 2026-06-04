@@ -1,29 +1,40 @@
-import { test, expect, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { test, expect, vi, beforeEach } from 'vitest'
+import { render, screen, act } from '@testing-library/react'
 import type { ReactElement } from 'react'
 import { ScratchTerminalPopup } from './index'
 import type { ITerminalService } from '../../services/terminalService'
 import type { NotifyPaneReady } from '../../hooks/useTerminal'
 
-// Body owns the xterm instance (canvas/webgl), which jsdom can't render.
-// Stub it so the popup's overlay shell — visibility, keep-mounted, prop
-// forwarding — is unit-tested in isolation; Body's attach behavior is
-// covered in Body.test.tsx.
-vi.mock('../TerminalPane/Body', () => ({
-  Body: ({
-    mode = undefined,
-    onPaneReady = undefined,
-  }: {
-    mode?: string
-    onPaneReady?: unknown
-  }): ReactElement => (
-    <div
-      data-testid="body-stub"
-      data-body-mode={mode}
-      data-has-on-ready={onPaneReady ? 'yes' : 'no'}
-    />
-  ),
+// Body owns the xterm instance (canvas/webgl), which jsdom can't render. Stub
+// it as a forwardRef exposing a focusTerminal spy and capturing the onPaneReady
+// it receives, so the popup's focus + drain wiring is unit-tested in isolation;
+// Body's attach behavior is covered in Body.test.tsx.
+const { focusTerminal, captured } = vi.hoisted(() => ({
+  focusTerminal: vi.fn(),
+  captured: { onPaneReady: undefined as NotifyPaneReady | undefined },
 }))
+
+vi.mock('../TerminalPane/Body', async () => {
+  const { forwardRef, useImperativeHandle } = await import('react')
+
+  return {
+    Body: forwardRef<
+      { focusTerminal: () => void },
+      { mode?: string; onPaneReady?: NotifyPaneReady }
+    >(function BodyStub(props, ref) {
+      captured.onPaneReady = props.onPaneReady
+      useImperativeHandle(ref, () => ({ focusTerminal }), [])
+
+      return (
+        <div
+          data-testid="body-stub"
+          data-body-mode={props.mode}
+          data-has-on-ready={props.onPaneReady ? 'yes' : 'no'}
+        />
+      )
+    }),
+  }
+})
 
 const baseProps = {
   scratchPtyId: 'scratch-pty',
@@ -41,6 +52,11 @@ const popup = (
 ): ReactElement => (
   <ScratchTerminalPopup open={open} {...baseProps} {...extra} />
 )
+
+beforeEach(() => {
+  focusTerminal.mockClear()
+  captured.onPaneReady = undefined
+})
 
 test('renders Body in attach mode for the scratch ptyId', () => {
   render(popup(true))
@@ -69,11 +85,45 @@ test('stays mounted (hidden) when dismissed — not unmounted', () => {
   )
 })
 
-test('forwards the drain notifier to Body as onPaneReady', () => {
-  render(popup(true, { onPaneReady: vi.fn() }))
+test('drains the buffer through the provided onPaneReady when Body attaches', () => {
+  const onPaneReady = vi.fn(() => vi.fn())
 
-  expect(screen.getByTestId('body-stub')).toHaveAttribute(
-    'data-has-on-ready',
-    'yes'
-  )
+  render(popup(true, { onPaneReady }))
+  const handler = vi.fn()
+  act(() => {
+    captured.onPaneReady?.('scratch-pty', handler)
+  })
+
+  expect(onPaneReady).toHaveBeenCalledWith('scratch-pty', handler)
+})
+
+test('focuses the scratch terminal when shown', () => {
+  const { rerender } = render(popup(false))
+  expect(focusTerminal).not.toHaveBeenCalled()
+
+  rerender(popup(true))
+
+  expect(focusTerminal).toHaveBeenCalled()
+})
+
+test('focuses once the terminal attaches on first open', () => {
+  render(popup(true))
+  focusTerminal.mockClear() // ignore the show-effect's eager focus
+
+  act(() => {
+    captured.onPaneReady?.('scratch-pty', vi.fn())
+  })
+
+  expect(focusTerminal).toHaveBeenCalled()
+})
+
+test('does not focus when Body attaches while the popup is hidden', () => {
+  render(popup(false))
+  focusTerminal.mockClear()
+
+  act(() => {
+    captured.onPaneReady?.('scratch-pty', vi.fn())
+  })
+
+  expect(focusTerminal).not.toHaveBeenCalled()
 })
