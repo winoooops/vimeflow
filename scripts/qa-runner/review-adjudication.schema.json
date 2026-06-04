@@ -1,0 +1,100 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "decision": {
+      "type": "string",
+      "enum": ["GOOD_SHAPE", "NEEDS_FIX", "WAITING"]
+    },
+    "summary": {
+      "type": "string"
+    },
+    "confidence_score": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "blocking_findings": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/finding"
+      }
+    },
+    "non_blocking_findings": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/finding"
+      }
+    }
+  },
+  "required": [
+    "decision",
+    "summary",
+    "confidence_score",
+    "blocking_findings",
+    "non_blocking_findings"
+  ],
+  "$defs": {
+    "finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "source": {
+          "type": "string"
+        },
+        "severity": {
+          "type": "string",
+          "enum": ["CRITICAL", "HIGH", "MEDIUM", "LOW"]
+        },
+        "title": {
+          "type": "string"
+        },
+        "confidence_score": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "real_world_risk": {
+          "type": "string",
+          "enum": ["high", "medium", "low"]
+        },
+        "fix_cost": {
+          "type": "string",
+          "enum": ["low", "medium", "high"]
+        },
+        "reason": {
+          "type": "string"
+        },
+        "idea": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "intent": {
+              "type": "string"
+            },
+            "danger": {
+              "type": "string"
+            },
+            "explain": {
+              "type": "string"
+            },
+            "alternatives": {
+              "type": "string"
+            }
+          },
+          "required": ["intent", "danger", "explain", "alternatives"]
+        }
+      },
+      "required": [
+        "source",
+        "severity",
+        "title",
+        "confidence_score",
+        "real_world_risk",
+        "fix_cost",
+        "reason",
+        "idea"
+      ]
+    }
+  }
+}

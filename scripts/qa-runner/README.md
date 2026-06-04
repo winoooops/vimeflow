@@ -44,12 +44,12 @@ branch protection): the **fixer** runs as `bot.env`, the **orchestrator** merges
 (`Claude Code Review`, `Codex Code Review`, `Post Review Comment`) are excluded
 from the CI gate, so a clean patch is never held `WAITING` by its own reviewers.
 
-| State          | When                                                                                                     | Action (armed)                                 |
-| -------------- | -------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
-| **NEEDS_FIX**  | unresolved review threads > 0, Claude verdict "patch has issues", or deterministic non-review CI failure | `--execute` → `run.js <pr> --push`             |
-| **CI_RED**     | transient reviewer reruns are exhausted/unavailable                                                      | report only                                    |
-| **WAITING**    | CI/Claude still running · draft · not mergeable · no Claude review yet · transient reviewer check rerun  | report only or rerun transient reviewer checks |
-| **GOOD_SHAPE** | 0 threads · Claude clean · non-review CI green · `MERGEABLE`                                             | `--approve` → squash-merge + delete            |
+| State          | When                                                                                                                                        | Action (armed)                                 |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
+| **NEEDS_FIX**  | unresolved review threads > 0, Codex review adjudication says reviewer findings should be fixed, or deterministic non-review CI failure     | `--execute` → `run.js <pr> --push`             |
+| **CI_RED**     | transient reviewer reruns are exhausted/unavailable                                                                                         | report only                                    |
+| **WAITING**    | CI/Claude still running · draft · not mergeable · no trusted Claude review yet · adjudication evidence insufficient · transient check rerun | report only or rerun transient reviewer checks |
+| **GOOD_SHAPE** | 0 threads · trusted reviewer comments adjudicated clean by Codex · non-review CI green · `MERGEABLE`                                        | `--approve` → squash-merge + delete            |
 
 Deterministic non-review CI failures include unit tests, Rust tests, type/check
 binding verification, code quality/lint, and build failures. The watcher passes
@@ -62,6 +62,27 @@ Transient reviewer checks (`Claude Code Review`, `Codex Code Review`, and
 when `--execute` is armed. Reruns are capped by PR + head SHA + check identity
 (default **3**, configurable with `--max-ci-reruns` / `QA_MAX_CI_RERUNS`), so the
 daemon cannot spin forever.
+
+When CI and review checks are green and review threads are clear, the daemon does
+not treat Claude's `Overall: patch is correct` line as the single source of
+truth. It polls the trusted `## Claude Code Review` comments, fetches the PR
+diff, and calls `codex exec --sandbox read-only` with
+`review-adjudication.schema.json`. Codex applies `agents/code-reviewer.md` and
+`rules/common/idea-framework.md`: only findings with >80% confidence, plausible
+real-world impact or meaningful future-change cost, and proportional fix cost are
+blocking. Reviewer severity is evidence, not policy; a MEDIUM finding can block
+when the IDEA/reality/fix-cost checks justify fixing it now, and can be ignored
+when the danger is weak or the fix is disproportionate. Results are cached by PR
+head + review-comment hash + diff hash, so unchanged evidence does not call
+Codex repeatedly.
+
+The adjudicator makes a bounded retry before giving up on malformed or missing
+structured output. Each failed attempt writes a JSON artifact under
+`.state/review-adjudication/` with the Codex status, stderr/stdout tail, raw
+structured-output text when present, and attempt number. If all attempts fail,
+`watch.js` exits through the existing transient path, so poll-triggered work
+tries again on the next poll and webhook/manual work is requeued by daemon
+backoff.
 
 `NEEDS_FIX` PRs are dispatched **concurrently**, capped at `--max` (default **2**) —
 each kimi runs in its own `qa-pr-N` worktree behind its own `.locks/pr-N.lock`, so

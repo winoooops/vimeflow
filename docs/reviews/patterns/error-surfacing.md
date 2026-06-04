@@ -2,8 +2,8 @@
 id: error-surfacing
 category: error-handling
 created: 2026-04-10
-last_updated: 2026-06-02
-ref_count: 11
+last_updated: 2026-06-04
+ref_count: 12
 ---
 
 # Error Surfacing
@@ -449,3 +449,12 @@ failed" must mean the editor shows the original file, not the requested one.
 - **Finding:** Round-1 added a structured `comment-id:\t<id>` line to `linear-status.js` and updated the regex in `watch.js`, but the parser (`commentIdFromLinearOutput`) was still defined inline in an untested file. When `createLinearComment` returned `null`, the regex matched the empty `comment-id:\t` line and silently returned `null`; the threaded reply was skipped and `markMergePosted` gated off the fallback path with no operator-visible indication.
 - **Fix:** Moved `commentIdFromLinearOutput` to `linear-status.js` as the exported `parseLinearCommentId`, added unit tests covering missing/empty/malformed output, and added an explicit `⚠ ... comment-id missing — threaded reply skipped` log in `approve()` so operators see the failure immediately.
 - **Commit:** same commit as this entry
+
+### 47. Adjudication retry exhaustion exits through classifyError instead of degrading to WAITING
+
+- **Source:** github-claude | PR #347 | 2026-06-04 (round 1)
+- **Severity:** MEDIUM
+- **File:** `scripts/qa-runner/watch.js`
+- **Finding:** `adjudicateReviews` throws after bounded retries, and `computeState` did not catch that around the new call. A Codex transient failure therefore propagated to the generic tick error path and set `exitCode 2`, contradicting the documented transient `WAITING` behavior. The retry logic existed inside `adjudicateReviews`, but the final throw was not translated back into a state inside `computeState`.
+- **Fix:** Wrapped the `adjudicateReviews` call in `computeState` in a `try/catch`. On failure, set `state = 'WAITING'` and `detail` to a message that includes the artifact path (`e.artifactPath`) so operators can inspect the failure evidence. The tick remains in observation mode and retries on the next poll instead of counting as a transient infra failure.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
