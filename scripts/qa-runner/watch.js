@@ -80,6 +80,19 @@ import {
 } from './lib/review-adjudicator.js'
 import { pickReviewRerunCheck } from './lib/review-rerun.js'
 
+const reviewAdjudicationObservation = (adjudication, reviewComments = []) => ({
+  decision: adjudication.decision,
+  summary: adjudication.summary,
+  confidenceScore: adjudication.confidence_score,
+  cacheHit: adjudication.cacheHit,
+  cacheKey: adjudication.cacheKey,
+  reviewedCommentIds: reviewComments
+    .map((comment) => comment.id)
+    .filter((id) => id != null),
+  blockingFindings: adjudication.blocking_findings || [],
+  nonBlockingFindings: adjudication.non_blocking_findings || [],
+})
+
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url))
 const LOCK_DIR = join(SCRIPT_DIR, '.locks')
 const LOG_DIR = join(SCRIPT_DIR, 'logs')
@@ -392,6 +405,7 @@ const computeState = async (pr, ctx) => {
   let ciClassification
   let checkSummaries = []
   let fixContext
+  let reviewAdjudication
   let threads = null
 
   const openThreads = () => {
@@ -467,6 +481,10 @@ const computeState = async (pr, ctx) => {
         ;[state, detail] = ['WAITING', claude]
       }
       if (adjudication) {
+        reviewAdjudication = reviewAdjudicationObservation(
+          adjudication,
+          trustedReviews
+        )
         claude = `adjudicated ${adjudication.decision}${adjudication.cacheHit ? ' (cached)' : ''}`
         if (adjudication.decision === REVIEW_DECISIONS.needsFix) {
           const findingSummary = summarizeBlockingFindings(
@@ -519,6 +537,7 @@ const computeState = async (pr, ctx) => {
       ciClassification,
       checkSummaries,
       fixContext,
+      reviewAdjudication,
     }
   }
 
@@ -538,6 +557,7 @@ const computeState = async (pr, ctx) => {
     ciClassification,
     checkSummaries,
     fixContext,
+    reviewAdjudication,
   }
 }
 
@@ -596,6 +616,7 @@ const maybePostDecisionLinear = (pr, s, ctx) => {
     action,
     approve: ctx.approve,
     execute: ctx.execute,
+    reviewAdjudication: s.reviewAdjudication,
   })
   const storeFile = decisionStorePath(pr.number)
   const store = readDecisionStore(storeFile)
@@ -624,6 +645,7 @@ const maybePostDecisionLinear = (pr, s, ctx) => {
     checkSummaries: s.checkSummaries,
     rerunAttempt: s.rerunAttempt,
     rerunLimit: s.rerunLimit,
+    reviewAdjudication: s.reviewAdjudication,
   })
 
   const stateName =

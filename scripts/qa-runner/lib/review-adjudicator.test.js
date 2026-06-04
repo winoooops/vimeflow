@@ -231,11 +231,13 @@ describe('review adjudicator helpers', () => {
     expect(cold).toMatchObject({
       decision: REVIEW_DECISIONS.goodShape,
       cacheHit: false,
+      cacheKey: adjudicationCacheKey(adjudicationInput),
     })
 
     expect(warm).toMatchObject({
       decision: REVIEW_DECISIONS.goodShape,
       cacheHit: true,
+      cacheKey: adjudicationCacheKey(adjudicationInput),
     })
 
     expect(spawnCalls).toBe(1)

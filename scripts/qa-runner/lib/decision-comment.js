@@ -15,7 +15,83 @@ const tableValue = (value) =>
     .replace(/\r?\n/g, ' ')
     .replace(/\|/g, '\\|')
 
+const conciseValue = (value, limit = 320) => {
+  const text = tableValue(value)
+
+  return text.length > limit ? `${text.slice(0, limit - 3)}...` : text
+}
+
 const shortSha = (sha) => (sha ? `\`${sha.slice(0, 7)}\`` : '`unknown`')
+
+const shortKey = (key) => (key ? `\`${String(key).slice(0, 12)}\`` : '`none`')
+
+const count = (items) => (Array.isArray(items) ? items.length : 0)
+
+const formatCommentIds = (ids = []) =>
+  ids.length ? ids.map((id) => `\`${id}\``).join(', ') : '`none`'
+
+const findingTitle = (finding) =>
+  `${finding?.severity || 'UNKNOWN'}: ${finding?.title || 'untitled finding'}`
+
+const formatFindingLine = (finding) => {
+  const basis = [
+    finding?.real_world_risk && `risk=${finding.real_world_risk}`,
+    finding?.fix_cost && `fix=${finding.fix_cost}`,
+    finding?.confidence_score != null &&
+      `confidence=${Number(finding.confidence_score).toFixed(2)}`,
+  ]
+    .filter(Boolean)
+    .join(', ')
+
+  return `- ${tableValue(findingTitle(finding))}${
+    basis ? ` (${tableValue(basis)})` : ''
+  } - ${conciseValue(finding?.reason || 'no reason provided')}`
+}
+
+const appendFindings = (lines, heading, findings = []) => {
+  lines.push('', `${heading}:`)
+  if (!findings.length) {
+    lines.push('- none')
+
+    return
+  }
+
+  for (const finding of findings.slice(0, 5)) {
+    lines.push(formatFindingLine(finding))
+  }
+
+  if (findings.length > 5) {
+    lines.push(`- and ${findings.length - 5} more`)
+  }
+}
+
+const appendReviewAdjudication = (lines, reviewAdjudication) => {
+  if (!reviewAdjudication) {
+    return
+  }
+
+  lines.push(
+    '',
+    'Review adjudication:',
+    '',
+    '| Field | Value |',
+    '| --- | --- |',
+    `| Decision | \`${tableValue(reviewAdjudication.decision)}\` |`,
+    `| Confidence | ${tableValue(reviewAdjudication.confidenceScore)} |`,
+    `| Cache | ${reviewAdjudication.cacheHit ? 'hit' : 'miss'} ${shortKey(reviewAdjudication.cacheKey)} |`,
+    `| Reviewed comments | ${formatCommentIds(reviewAdjudication.reviewedCommentIds)} |`,
+    `| Blocking findings | ${count(reviewAdjudication.blockingFindings)} |`,
+    `| Non-blocking findings | ${count(reviewAdjudication.nonBlockingFindings)} |`,
+    `| Summary | ${conciseValue(reviewAdjudication.summary)} |`
+  )
+
+  appendFindings(lines, 'Blocking findings', reviewAdjudication.blockingFindings)
+  appendFindings(
+    lines,
+    'Non-blocking findings',
+    reviewAdjudication.nonBlockingFindings
+  )
+}
 
 export const actionForDecision = (state, { approve, execute } = {}) => {
   if (state === 'NEEDS_FIX') {
@@ -61,6 +137,7 @@ export const decisionKey = ({
   action,
   approve,
   execute,
+  reviewAdjudication,
 }) =>
   [
     pr,
@@ -70,6 +147,10 @@ export const decisionKey = ({
     action,
     approve ? 'approve' : 'no-approve',
     execute ? 'execute' : 'no-execute',
+    reviewAdjudication?.cacheKey || 'no-adjudication',
+    reviewAdjudication
+      ? `${count(reviewAdjudication.blockingFindings)}-${count(reviewAdjudication.nonBlockingFindings)}`
+      : 'no-findings',
   ].join('|')
 
 export const formatDecisionComment = ({
@@ -91,6 +172,7 @@ export const formatDecisionComment = ({
   checkSummaries = [],
   rerunAttempt,
   rerunLimit,
+  reviewAdjudication,
 }) => {
   const lines = [
     `## QA runner decision: ${state}`,
@@ -136,6 +218,8 @@ export const formatDecisionComment = ({
       )
     }
   }
+
+  appendReviewAdjudication(lines, reviewAdjudication)
 
   lines.push('', `Reason: ${explainDecision(state, action)}`)
 

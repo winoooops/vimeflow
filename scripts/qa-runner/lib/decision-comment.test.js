@@ -118,6 +118,60 @@ describe('formatDecisionComment', () => {
     )
   })
 
+  test('formats review adjudication evidence for operator observability', () => {
+    const body = formatDecisionComment({
+      pr: 347,
+      branch: 'feat/vim-55-adjudication-observability',
+      state: 'GOOD_SHAPE',
+      detail: '0 threads · review adjudication clean · CI green · mergeable',
+      sourceEvent: 'poll',
+      action: 'none',
+      approve: false,
+      execute: true,
+      headSha: '176fe271d43ca4cd45d8b9c21893077f382b62b8',
+      ci: 'green',
+      claude: 'adjudicated GOOD_SHAPE (cached)',
+      threads: 0,
+      mergeable: 'MERGEABLE',
+      mergeStateStatus: 'CLEAN',
+      reviewAdjudication: {
+        decision: 'GOOD_SHAPE',
+        summary:
+          'The concrete blockers were fixed; remaining findings are operator cleanup.',
+        confidenceScore: 0.9,
+        cacheHit: true,
+        cacheKey:
+          '9f07b5ba338b232352b6773f163278a39b05a7de00625e3b356652d576e4888c',
+        reviewedCommentIds: [4623675797, 4623923673],
+        blockingFindings: [],
+        nonBlockingFindings: [
+          {
+            severity: 'LOW',
+            title: 'Artifact path duplicated',
+            real_world_risk: 'low',
+            fix_cost: 'low',
+            confidence_score: 0.97,
+            reason:
+              'WAITING behavior is correct; the duplicated path is operator-visible noise only.',
+          },
+        ],
+      },
+    })
+
+    expect(body).toContain('Review adjudication:')
+    expect(body).toContain('| Decision | `GOOD_SHAPE` |')
+    expect(body).toContain('| Cache | hit `9f07b5ba338b` |')
+    expect(body).toContain(
+      '| Reviewed comments | `4623675797`, `4623923673` |'
+    )
+    expect(body).toContain('| Blocking findings | 0 |')
+    expect(body).toContain('| Non-blocking findings | 1 |')
+    expect(body).toContain('Blocking findings:\n- none')
+    expect(body).toContain(
+      '- LOW: Artifact path duplicated (risk=low, fix=low, confidence=0.97)'
+    )
+  })
+
   test('formats rerun attempt metadata', () => {
     const body = formatDecisionComment({
       pr: 330,
@@ -201,6 +255,38 @@ describe('decision store', () => {
 
     expect(shouldPostDecision(updated, 329, key)).toBe(false)
     expect(shouldPostDecision(readDecisionStore(file), 329, key)).toBe(false)
+  })
+
+  test('dedupe key changes when review adjudication evidence changes', () => {
+    const base = {
+      pr: 329,
+      state: 'GOOD_SHAPE',
+      detail: 'clean',
+      headSha: 'abc',
+      action: 'none',
+      approve: false,
+      execute: true,
+    }
+
+    expect(
+      decisionKey({
+        ...base,
+        reviewAdjudication: {
+          cacheKey: 'first-cache',
+          blockingFindings: [],
+          nonBlockingFindings: [],
+        },
+      })
+    ).not.toBe(
+      decisionKey({
+        ...base,
+        reviewAdjudication: {
+          cacheKey: 'second-cache',
+          blockingFindings: [],
+          nonBlockingFindings: [],
+        },
+      })
+    )
   })
 
   test('keeps old string store entries compatible', () => {

@@ -62,7 +62,7 @@ export const adjudicateReviews = (input, opts = {}) => {
   const cached = readCache(stateDir, input.pr, key)
 
   if (cached) {
-    return { ...cached, cacheHit: true }
+    return { ...cached, cacheHit: true, cacheKey: key }
   }
 
   mkdirSync(stateDir, { recursive: true })
@@ -84,7 +84,7 @@ export const adjudicateReviews = (input, opts = {}) => {
 
       writeCache(stateDir, input.pr, key, parsed)
 
-      return { ...parsed, cacheHit: false }
+      return { ...parsed, cacheHit: false, cacheKey: key }
     } catch (error) {
       const outputFile = attemptFile({
         stateDir,
