@@ -655,13 +655,14 @@ export const WorkspaceView = (): ReactElement => {
     }
   }, [terminalService])
 
-  const { renderNode: scratchTerminalNode } = useScratchTerminals({
-    service: terminalService,
-    resolveActiveSession: (): Session | null => activeSession ?? null,
-    ready: scratchReapDone,
-    registerPending,
-    notifyPaneReady,
-  })
+  const { renderNode: scratchTerminalNode, toggle: toggleScratch } =
+    useScratchTerminals({
+      service: terminalService,
+      resolveActiveSession: (): Session | null => activeSession ?? null,
+      ready: scratchReapDone,
+      registerPending,
+      notifyPaneReady,
+    })
 
   const requestFocus = useCallback((target: FocusTarget): void => {
     pendingFocusTarget.current = target
@@ -1481,6 +1482,7 @@ export const WorkspaceView = (): ReactElement => {
               onContainerFocus={() => {
                 setActiveContainerId(TERMINAL_CONTAINER_ID)
               }}
+              onScratch={(): void => void toggleScratch()}
             />
           </div>
           {!dockBeforeTerminal ? dockOrPeek : null}

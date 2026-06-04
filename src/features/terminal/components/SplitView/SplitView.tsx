@@ -44,6 +44,8 @@ export interface SplitViewProps {
   onRequestFocus?: () => void
   onAddPane?: (sessionId: string, kind?: Pane['kind']) => void
   onClosePane?: (sessionId: string, paneId: string) => void
+  /** Toggle the session's ephemeral scratch terminal (VIM-53). */
+  onScratch?: () => void
   areBrowserPanesOccluded?: boolean
   deferTerminalFit?: boolean
   showPaneFocusHighlight?: boolean
@@ -111,6 +113,7 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
       onRequestFocus = undefined,
       onAddPane = undefined,
       onClosePane = undefined,
+      onScratch = undefined,
       areBrowserPanesOccluded = false,
       deferTerminalFit = false,
       showPaneFocusHighlight = true,
@@ -347,6 +350,7 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
                           onPaneReady={onPaneReady}
                           onRestart={onSessionRestart}
                           onClose={closeHandler}
+                          onScratch={onScratch}
                           isActive={isActive}
                           deferFit={deferTerminalFit}
                           showFocusHighlight={showPaneFocusHighlight}

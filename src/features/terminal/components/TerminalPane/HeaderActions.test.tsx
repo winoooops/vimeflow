@@ -63,6 +63,38 @@ describe('HeaderActions', () => {
     expect(onParentClick).not.toHaveBeenCalled()
   })
 
+  test('renders scratch control only when onScratch is defined', () => {
+    const onScratch = vi.fn()
+    const onParentClick = vi.fn()
+
+    const { rerender } = render(
+      <div onClick={onParentClick}>
+        <HeaderActions isCollapsed={expanded} onToggleCollapse={vi.fn()} />
+      </div>
+    )
+
+    expect(
+      screen.queryByRole('button', { name: /open scratch terminal/i })
+    ).toBeNull()
+
+    rerender(
+      <div onClick={onParentClick}>
+        <HeaderActions
+          isCollapsed={expanded}
+          onToggleCollapse={vi.fn()}
+          onScratch={onScratch}
+        />
+      </div>
+    )
+
+    fireEvent.click(
+      screen.getByRole('button', { name: /open scratch terminal/i })
+    )
+
+    expect(onScratch).toHaveBeenCalledTimes(1)
+    expect(onParentClick).not.toHaveBeenCalled()
+  })
+
   test('hovering the collapse-status button shows a plain tooltip', async () => {
     const user = userEvent.setup()
     render(<HeaderActions isCollapsed={expanded} onToggleCollapse={vi.fn()} />)
