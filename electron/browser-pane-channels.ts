@@ -25,3 +25,7 @@ export const BROWSER_PANE_TABS_CHANGED = 'browser-pane:tabs-changed'
 export const BROWSER_PANE_OPEN_EXTERNAL = 'browser-pane:open-external'
 
 export const BROWSER_PANE_FOCUS_ADDRESS = 'browser-pane:focus-address'
+
+export const BROWSER_PANE_NAV_ACTION = 'browser-pane:nav-action'
+
+export const BROWSER_PANE_NAV_STATE_CHANGED = 'browser-pane:nav-state-changed'

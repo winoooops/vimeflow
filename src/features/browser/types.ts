@@ -57,6 +57,24 @@ export interface BrowserPaneRef {
   paneId: string
 }
 
+export type BrowserPaneNavActionKind = 'back' | 'forward' | 'reload' | 'stop'
+
+export interface BrowserPaneNavActionRequest extends BrowserPaneRef {
+  action: BrowserPaneNavActionKind
+}
+
+export interface BrowserPaneNavState {
+  canGoBack: boolean
+  canGoForward: boolean
+  isLoading: boolean
+}
+
+export interface BrowserPaneNavStateChangedEvent extends BrowserPaneNavState {
+  sessionId: string
+  paneId: string
+  tabId: string
+}
+
 export type BrowserPaneDestroyRequest = BrowserPaneRef
 
 export interface BrowserPaneNewTabRequest extends BrowserPaneRef {
