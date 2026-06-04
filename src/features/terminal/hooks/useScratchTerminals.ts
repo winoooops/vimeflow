@@ -116,6 +116,11 @@ export const useScratchTerminals = ({
           cwd: result.cwd,
         })
         commit()
+      } catch (err) {
+        // Contain the rejection (chord calls toggle with `void`); no entry is
+        // created, so the next toggle retries.
+        // eslint-disable-next-line no-console
+        console.warn('scratch spawn failed', err)
       } finally {
         spawningRef.current.delete(key)
       }

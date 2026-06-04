@@ -131,6 +131,28 @@ test('arms the spawn→attach buffer for the new pty before mounting', async () 
   expect(registerPending).toHaveBeenCalledWith('scratch-pty')
 })
 
+test('contains a spawn rejection instead of rejecting from the chord path', async () => {
+  const service = {
+    spawn: vi.fn().mockRejectedValue(new Error('pty cap reached')),
+    kill: vi.fn().mockResolvedValue(undefined),
+  } as unknown as ITerminalService
+  const session = makeSession()
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+
+  const { result } = renderHook(() =>
+    useScratchTerminals({ service, resolveActiveSession: () => session })
+  )
+
+  await act(async () => {
+    await expect(result.current.toggle()).resolves.toBeUndefined()
+  })
+
+  expect([...result.current.running.keys()]).toEqual([])
+  expect(result.current.renderNode).toBeNull()
+  expect(warn).toHaveBeenCalled()
+  warn.mockRestore()
+})
+
 test('registers a backtick chord that toggles and consumes the event', async () => {
   const service = makeService()
   const session = makeSession()

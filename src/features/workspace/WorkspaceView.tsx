@@ -637,6 +637,11 @@ export const WorkspaceView = (): ReactElement => {
     const reap = async (): Promise<void> => {
       try {
         await terminalService.killEphemeralPtys()
+      } catch (err) {
+        // Best-effort: a failed sweep still enables scratch; any orphan is
+        // reaped on shutdown or the next boot.
+        // eslint-disable-next-line no-console
+        console.warn('scratch reap failed', err)
       } finally {
         if (!cancelled) {
           setScratchReapDone(true)
