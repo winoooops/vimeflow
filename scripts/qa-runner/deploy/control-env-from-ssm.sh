@@ -21,6 +21,7 @@ value() {
 }
 
 optional_value() {
+  # Keep this function in sync with worker-env-from-ssm.sh.
   local err
   local out
   local status
@@ -73,7 +74,8 @@ worker_refresh_runner="${QA_WORKER_REFRESH_RUNNER:-$(optional_value QA_WORKER_RE
 worker_ref="${QA_WORKER_REF:-$(optional_value QA_WORKER_REF)}"
 
 if bool_enabled "$worker_refresh_runner" && [ -z "$worker_ref" ]; then
-  worker_ref="$(value QA_WORKER_REF)"
+  echo "error: QA_WORKER_REFRESH_RUNNER is set but QA_WORKER_REF is not set in env or SSM" >&2
+  exit 1
 fi
 
 write_secret_file() {

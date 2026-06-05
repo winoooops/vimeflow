@@ -17,6 +17,7 @@ value() {
 }
 
 optional_value() {
+  # Keep this function in sync with control-env-from-ssm.sh.
   local err
   local out
   local status
