@@ -993,3 +993,5 @@ git commit -m "feat(browser): active-tab load bar in the chrome layer"
 - §3 `BrowserTabFavicon` img + onError + reset, wired into `BrowserTabBar` → **Task 7**
 - §4 load bar (reuse `isLoading`, chrome-layer absolute, motion, tailwind keyframes, BrowserToolbar-owned) → **Task 8**
 - §5 component + main-process + reconnect + bridge tests → **Tasks 1,3,4,5,6,7,8**; §5.3 manual → Final verification
+
+<!-- codex-reviewed: 2026-06-05T03:50:59Z -->
