@@ -105,6 +105,10 @@ export const useScratchTerminals = ({
   // otherwise slip past it.
   const livePaneKeysRef = useRef(livePaneKeys)
   livePaneKeysRef.current = livePaneKeys
+  // Keys whose in-flight spawn was invalidated because the pane left the live set
+  // mid-spawn. Checked when the spawn resolves so the shell is reaped even when a
+  // new pane has since reused the freed id (`nextFreePaneId` recycles ids).
+  const invalidatedSpawnsRef = useRef<Set<string>>(new Set())
 
   const commit = useCallback((): void => {
     setEntries(new Map(entriesRef.current))
@@ -114,6 +118,24 @@ export const useScratchTerminals = ({
     showIntentRef.current = null
     setVisibleKey(null)
   }, [])
+
+  // Kill + drop a scratch pty. The kill rejection is contained so a backend
+  // failure logs instead of becoming an unhandled rejection; the boot sweep and
+  // shutdown kill are the backstop if the kill never lands (spec §4).
+  const killScratch = useCallback(
+    (ptyId: string): void => {
+      void (async (): Promise<void> => {
+        try {
+          await service.kill({ sessionId: ptyId })
+        } catch (err) {
+          // eslint-disable-next-line no-console
+          console.warn('scratch kill failed', err)
+        }
+      })()
+      dropAllForPty?.(ptyId)
+    },
+    [service, dropAllForPty]
+  )
 
   // Lazily spawn a pane's scratch shell on first open. Idempotent + guarded.
   const spawnIfNeeded = useCallback(
@@ -139,13 +161,14 @@ export const useScratchTerminals = ({
           ephemeral: true,
           enableAgentBridge: false,
         })
-        // The host pane may have closed while the spawn was in flight. Reconcile
-        // can't catch it — the entry wasn't in the map when livePaneKeys last
-        // changed — so reap the fresh shell here instead of tracking an orphan.
+        // The host pane may have closed mid-spawn (and a new pane may have reused
+        // its id). `invalidatedSpawnsRef` flags a key whose pane left the live set
+        // while spawning; with the current liveness check this reaps the fresh
+        // shell instead of orphaning it or attaching it to an unrelated new pane.
+        const invalidated = invalidatedSpawnsRef.current.delete(key)
         const live = livePaneKeysRef.current
-        if (live && !live.has(key)) {
-          void service.kill({ sessionId: result.sessionId })
-          dropAllForPty?.(result.sessionId)
+        if (invalidated || (live && !live.has(key))) {
+          killScratch(result.sessionId)
           if (showIntentRef.current === key) {
             showIntentRef.current = null
           }
@@ -170,7 +193,7 @@ export const useScratchTerminals = ({
         spawningRef.current.delete(key)
       }
     },
-    [ready, service, commit, registerPending, dropAllForPty]
+    [ready, service, commit, registerPending, dropAllForPty, killScratch]
   )
 
   // Reveal a pane's scratch (spawning on first open). The pane button and the
@@ -284,8 +307,17 @@ export const useScratchTerminals = ({
       return
     }
 
+    // Invalidate any in-flight spawn whose pane just left the live set, before
+    // it can resolve — guards against a new pane reusing the freed id mid-spawn.
+    const live = livePaneKeys
+    spawningRef.current.forEach((key) => {
+      if (!live.has(key)) {
+        invalidatedSpawnsRef.current.add(key)
+      }
+    })
+
     const deadKeys = [...entriesRef.current.keys()].filter(
-      (key) => !livePaneKeys.has(key)
+      (key) => !live.has(key)
     )
     if (deadKeys.length === 0) {
       return
@@ -293,20 +325,19 @@ export const useScratchTerminals = ({
     for (const key of deadKeys) {
       const entry = entriesRef.current.get(key)
       if (entry) {
-        void service.kill({ sessionId: entry.scratchPtyId })
-        dropAllForPty?.(entry.scratchPtyId)
+        killScratch(entry.scratchPtyId)
       }
       entriesRef.current.delete(key)
     }
     const intent = showIntentRef.current
-    if (intent !== null && !livePaneKeys.has(intent)) {
+    if (intent !== null && !live.has(intent)) {
       showIntentRef.current = null
     }
     setVisibleKey((current) =>
       current !== null && !entriesRef.current.has(current) ? null : current
     )
     commit()
-  }, [livePaneKeys, service, dropAllForPty, commit])
+  }, [livePaneKeys, killScratch, commit])
 
   // Memoized so consumers threading it down only re-render on actual change.
   const runningByPane = useMemo(() => {

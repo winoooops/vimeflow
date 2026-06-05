@@ -566,3 +566,64 @@ test('a scratch whose pane closes mid-spawn is reaped, not left orphaned', async
   expect([...result.current.runningByPane.keys()]).toEqual([])
   expect(result.current.renderNode).toBeNull()
 })
+
+test('a spawn whose pane id is reused mid-flight is reaped, not attached to the new pane', async () => {
+  const service = makeService()
+  const dropAllForPty = vi.fn<(ptyId: string) => void>()
+  const focused = makeFocusedPane('s1', 'p0', '/a')
+
+  let resolveSpawn: (value: {
+    sessionId: string
+    pid: number
+    cwd: string
+  }) => void = () => undefined
+  service.spawn = vi.fn().mockImplementation(
+    () =>
+      new Promise<{ sessionId: string; pid: number; cwd: string }>(
+        (resolve) => {
+          resolveSpawn = resolve
+        }
+      )
+  )
+
+  const { result, rerender } = renderHook(
+    (props: { live: ReadonlySet<string> }) =>
+      useScratchTerminals({
+        service,
+        resolveFocusedPane: () => focused,
+        livePaneKeys: props.live,
+        dropAllForPty,
+      }),
+    { initialProps: { live: new Set<string>(['s1:p0']) } }
+  )
+
+  let togglePromise: Promise<void> = Promise.resolve()
+  act(() => {
+    togglePromise = result.current.toggle({
+      sessionId: 's1',
+      paneId: 'p0',
+      cwd: '/a',
+    })
+  })
+
+  // p0 closes — its in-flight spawn is invalidated...
+  act(() => {
+    rerender({ live: new Set<string>() })
+  })
+
+  // ...then a brand-new pane reuses the freed `p0` id (live set looks unchanged).
+  act(() => {
+    rerender({ live: new Set<string>(['s1:p0']) })
+  })
+
+  await act(async () => {
+    resolveSpawn({ sessionId: 'scratch-1', pid: 1, cwd: '/a' })
+    await togglePromise
+  })
+
+  // The reused-id pane must NOT inherit the old request's scratch shell.
+  expect(service.kill).toHaveBeenCalledWith({ sessionId: 'scratch-1' })
+  expect(dropAllForPty).toHaveBeenCalledWith('scratch-1')
+  expect([...result.current.runningByPane.keys()]).toEqual([])
+  expect(result.current.renderNode).toBeNull()
+})
