@@ -2,73 +2,80 @@
 import { render, screen } from '@testing-library/react'
 import { describe, test, expect, vi } from 'vitest'
 import userEvent from '@testing-library/user-event'
-import type { AgentCardState } from './AgentStatusCard'
 import { AgentStatusCard } from './AgentStatusCard'
 
 describe('AgentStatusCard', () => {
-  test('renders the title', () => {
+  test('renders the model-name title for an agent pane', () => {
     render(
       <AgentStatusCard
-        title="my session"
-        state="idle"
-        onToggleSidebar={vi.fn()}
-      />
-    )
-
-    expect(screen.getByText('my session')).toBeInTheDocument()
-  })
-
-  test.each<[AgentCardState, string]>([
-    ['running', 'Running'],
-    ['awaiting', 'Awaiting you'],
-    ['completed', 'Completed'],
-    ['errored', 'Errored'],
-    ['idle', 'Idle'],
-  ])('maps the %s state to the "%s" label', (state, label) => {
-    render(
-      <AgentStatusCard
-        title="my session"
-        state={state}
-        onToggleSidebar={vi.fn()}
-      />
-    )
-
-    expect(screen.getByText(label)).toBeInTheDocument()
-  })
-
-  test('renders the status dot', () => {
-    render(
-      <AgentStatusCard
-        title="my session"
+        title="claude-sonnet-4-6"
         state="running"
         onToggleSidebar={vi.fn()}
       />
     )
 
-    expect(screen.getByTestId('agent-card-status-dot')).toBeInTheDocument()
+    expect(screen.getByText('claude-sonnet-4-6')).toBeInTheDocument()
   })
 
-  test('collapses the metric row when all metrics are absent', () => {
+  test('does not render an explicit running status indicator (removed)', () => {
     render(
       <AgentStatusCard
-        title="my session"
+        title="claude"
+        state="running"
+        onToggleSidebar={vi.fn()}
+      />
+    )
+
+    expect(screen.queryByText('Running')).not.toBeInTheDocument()
+    expect(
+      screen.queryByTestId('agent-card-status-dot')
+    ).not.toBeInTheDocument()
+  })
+
+  test('renders the SHELL placeholder for a shell pane', () => {
+    render(
+      <AgentStatusCard
+        title="ignored-model"
         state="idle"
-        elapsed={null}
-        turns={null}
-        contextPct={null}
+        isShell
+        onToggleSidebar={vi.fn()}
+      />
+    )
+
+    expect(screen.getByText('SHELL')).toBeInTheDocument()
+    expect(screen.queryByText('ignored-model')).not.toBeInTheDocument()
+    expect(
+      screen.getByTestId('agent-status-card-shell-body')
+    ).toBeInTheDocument()
+    expect(screen.getByText('No active agent')).toBeInTheDocument()
+    expect(screen.getByText('Idle · shell only')).toBeInTheDocument()
+    expect(screen.getByText('terminal')).toBeInTheDocument()
+  })
+
+  test('hides agent metrics and usage bars on a shell pane', () => {
+    render(
+      <AgentStatusCard
+        title="x"
+        state="idle"
+        isShell
+        elapsed="8m"
+        turns={6}
+        contextPct={57}
+        fiveHourPct={12}
+        weekPct={34}
         onToggleSidebar={vi.fn()}
       />
     )
 
     expect(screen.queryByText('schedule')).not.toBeInTheDocument()
-    expect(screen.queryByText('forum')).not.toBeInTheDocument()
-    expect(screen.queryByText('data_usage')).not.toBeInTheDocument()
+    expect(screen.queryByText('5-hour Session')).not.toBeInTheDocument()
+    expect(screen.queryByText('Weekly Usage')).not.toBeInTheDocument()
   })
 
-  test('renders all three metrics when provided', () => {
+  test('renders the session metrics when provided', () => {
     render(
       <AgentStatusCard
-        title="my session"
+        title="m"
         state="running"
         elapsed="2m"
         turns={12}
@@ -85,10 +92,42 @@ describe('AgentStatusCard', () => {
     expect(screen.getByText('64%')).toBeInTheDocument()
   })
 
+  test('renders 5-hour and weekly usage bars when provided', () => {
+    render(
+      <AgentStatusCard
+        title="m"
+        state="running"
+        fiveHourPct={12}
+        weekPct={34}
+        onToggleSidebar={vi.fn()}
+      />
+    )
+
+    expect(screen.getByText('5-hour Session')).toBeInTheDocument()
+    expect(screen.getByText('12%')).toBeInTheDocument()
+    expect(screen.getByText('Weekly Usage')).toBeInTheDocument()
+    expect(screen.getByText('34%')).toBeInTheDocument()
+  })
+
+  test('omits the usage bars when both usages are null', () => {
+    render(
+      <AgentStatusCard
+        title="m"
+        state="running"
+        fiveHourPct={null}
+        weekPct={null}
+        onToggleSidebar={vi.fn()}
+      />
+    )
+
+    expect(screen.queryByText('5-hour Session')).not.toBeInTheDocument()
+    expect(screen.queryByText('Weekly Usage')).not.toBeInTheDocument()
+  })
+
   test('guards a zero turn count from the metric row', () => {
     render(
       <AgentStatusCard
-        title="my session"
+        title="m"
         state="running"
         elapsed="2m"
         turns={0}
@@ -103,47 +142,18 @@ describe('AgentStatusCard', () => {
     expect(screen.getByText('data_usage')).toBeInTheDocument()
   })
 
-  test('renders the subtitle when provided', () => {
-    render(
-      <AgentStatusCard
-        title="my session"
-        state="running"
-        subtitle="Editing src/main.tsx"
-        onToggleSidebar={vi.fn()}
-      />
-    )
-
-    expect(screen.getByText('Editing src/main.tsx')).toBeInTheDocument()
-  })
-
-  test('omits the subtitle when null', () => {
-    render(
-      <AgentStatusCard
-        title="my session"
-        state="running"
-        subtitle={null}
-        onToggleSidebar={vi.fn()}
-      />
-    )
-
-    expect(screen.queryByText('Editing src/main.tsx')).not.toBeInTheDocument()
-  })
-
   test('renders the in-card toggle and invokes onToggleSidebar on click', async () => {
     const user = userEvent.setup()
     const onToggleSidebar = vi.fn()
     render(
       <AgentStatusCard
-        title="my session"
+        title="m"
         state="running"
         onToggleSidebar={onToggleSidebar}
       />
     )
 
-    const toggle = screen.getByTestId('sidebar-toggle-incard')
-    expect(toggle).toBeInTheDocument()
-
-    await user.click(toggle)
+    await user.click(screen.getByTestId('sidebar-toggle-incard'))
 
     expect(onToggleSidebar).toHaveBeenCalledTimes(1)
   })

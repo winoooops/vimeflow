@@ -935,12 +935,32 @@ export const WorkspaceView = (): ReactElement => {
         : agentStatus.isActive && activityPanelStatus === 'running'
           ? 'running'
           : 'idle'
-  const sidebarCardTitle = activeSession?.name ?? 'No session'
+  // A pure shell pane has no detected agent (and therefore no model / usage);
+  // the card renders its fixed-height "SHELL" placeholder in that case so the
+  // session list below never reflows when switching panes.
+  const sidebarCardIsShell = !agentStatus.agentType
+
+  // Card title is the active agent's model name (the old StatusCard surfaced
+  // the model — the fused card now uses it as the title). Falls back to the
+  // session name, then a placeholder, when no model is known (e.g. idle).
+  const sidebarCardTitle =
+    agentStatus.modelDisplayName ??
+    agentStatus.modelId ??
+    activeSession?.name ??
+    'No session'
   const sidebarCardElapsed = statusBarSession?.startedAgo ?? null
   const sidebarCardTurns = statusBarSession?.turns ?? null
 
   const sidebarCardContextPct =
     statusBarContextPct !== null ? Math.round(statusBarContextPct) : null
+
+  const sidebarCardFiveHourPct = agentStatus.rateLimits
+    ? Math.round(agentStatus.rateLimits.fiveHour.usedPercentage)
+    : null
+
+  const sidebarCardWeekPct = agentStatus.rateLimits?.sevenDay
+    ? Math.round(agentStatus.rateLimits.sevenDay.usedPercentage)
+    : null
 
   // Open a file directly (no unsaved-changes guard). Errors were previously
   // swallowed via `void editorBuffer.openFile(...)`, leaving the user with
@@ -1420,9 +1440,12 @@ export const WorkspaceView = (): ReactElement => {
               <AgentStatusCard
                 title={sidebarCardTitle}
                 state={sidebarCardState}
+                isShell={sidebarCardIsShell}
                 elapsed={sidebarCardElapsed}
                 turns={sidebarCardTurns}
                 contextPct={sidebarCardContextPct}
+                fiveHourPct={sidebarCardFiveHourPct}
+                weekPct={sidebarCardWeekPct}
                 onToggleSidebar={toggleSidebar}
               />
             }

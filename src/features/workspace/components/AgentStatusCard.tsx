@@ -1,13 +1,16 @@
 // cspell:ignore incard
 import type { ReactElement } from 'react'
 import { SidebarToggle } from './SidebarToggle'
+import { RateLimitBar } from '../../agent-status/components/RateLimitBar'
 
-// Fused agent-status card (VIM-66 / AGENT-STATUS-CARD-HANDOFF). A single
-// borderless elevated card at the top of the sidebar that surfaces the active
-// session's live agent state. Depth comes from a drop shadow + a 1px inset top
-// highlight (no hard border, no gradient header stripe); state reads from the
-// dot + colored label + a faint state-tinted radial wash in the top-left.
-// Literal palette values come straight from the handoff (no new tokens).
+// Fused agent-status card (VIM-66 — AGENT-STATUS-CARD-HANDOFF + SHELL-CARD-KIT).
+// ONE fixed height in every state: the below-header body is locked to
+// CARD_BODY_H, so switching the active pane between an agent and a pure shell
+// never changes the card height (and never reflows the session list below it).
+// Agent panes fill the body with model metrics + rate-limit bars; a pure shell
+// fills the same box with a placeholder tile. Borderless elevated surface with
+// a faint state-tinted corner wash. The explicit running dot/label was removed
+// by request.
 
 export type AgentCardState =
   | 'running'
@@ -17,107 +20,42 @@ export type AgentCardState =
   | 'idle'
 
 export interface AgentStatusCardProps {
+  /** Agent model name shown as the title; ignored when `isShell` (shows "SHELL"). */
   title: string
+  /** Drives the ambient corner wash. */
   state: AgentCardState
-  /** Current-action line; rendered only when present (clamped to 2 lines). */
-  subtitle?: string | null
-  /** Elapsed-time string (e.g. "2m"); omitted when falsy. */
+  /** True when the active pane is a pure shell (no agent / model / usage). */
+  isShell?: boolean
+  /** Elapsed-time string (e.g. "8m"); omitted when falsy. */
   elapsed?: string | null
   /** Turn count; omitted when 0/absent. */
   turns?: number | null
   /** Context-window usage percent; omitted when null. */
   contextPct?: number | null
+  /** 5-hour (session) rate-limit usage percent; omitted when null. */
+  fiveHourPct?: number | null
+  /** 7-day (weekly) rate-limit usage percent; omitted when null. */
+  weekPct?: number | null
   onToggleSidebar: () => void
 }
 
-interface StateConfig {
-  label: string
-  labelColor: string
-  wash: string
-}
+// Fixed below-header body height — the whole point of the SHELL kit. Agent
+// content and the shell placeholder both render inside this exact height so the
+// card never changes height and nothing below it reflows.
+const CARD_BODY_H = 92
 
-// state → label + label color + ambient corner wash (§2 of the handoff).
-const STATE_CONFIG: Record<AgentCardState, StateConfig> = {
-  running: {
-    label: 'Running',
-    labelColor: '#7defa1',
-    wash: 'rgba(80,250,123,0.08)',
-  },
-  awaiting: {
-    label: 'Awaiting you',
-    labelColor: '#ff94a5',
-    wash: 'rgba(255,148,165,0.09)',
-  },
-  completed: {
-    label: 'Completed',
-    labelColor: '#e2c7ff',
-    wash: 'rgba(203,166,247,0.09)',
-  },
-  errored: {
-    label: 'Errored',
-    labelColor: '#ffb4ab',
-    wash: 'rgba(255,180,171,0.09)',
-  },
-  idle: {
-    label: 'Idle',
-    labelColor: '#8a8299',
-    wash: 'rgba(138,130,153,0.05)',
-  },
-}
-
-interface DotConfig {
-  bg: string
-  border?: string
-  ring: string
-  pulse: boolean
-}
-
-const DOT_CONFIG: Record<AgentCardState, DotConfig> = {
-  running: { bg: '#50fa7b', ring: 'rgba(80,250,123,0.45)', pulse: true },
-  awaiting: { bg: '#ff94a5', ring: 'rgba(255,148,165,0.45)', pulse: true },
-  completed: {
-    bg: 'transparent',
-    border: '1.5px solid #7defa1',
-    ring: 'transparent',
-    pulse: false,
-  },
-  errored: { bg: '#ffb4ab', ring: 'rgba(255,180,171,0.4)', pulse: false },
-  idle: {
-    bg: 'transparent',
-    border: '1.5px solid #4a444f',
-    ring: 'transparent',
-    pulse: false,
-  },
-}
-
-const StatusDot = ({ state }: { state: AgentCardState }): ReactElement => {
-  const dot = DOT_CONFIG[state]
-  const size = 7
-
-  return (
-    <span
-      data-testid="agent-card-status-dot"
-      className={dot.pulse ? 'motion-safe:animate-pulse' : undefined}
-      style={{
-        display: 'inline-block',
-        width: size,
-        height: size,
-        borderRadius: 999,
-        background: dot.bg,
-        border: dot.border,
-        boxShadow:
-          dot.ring !== 'transparent'
-            ? `0 0 0 3px ${dot.ring}, 0 0 10px ${dot.bg}`
-            : 'none',
-        flexShrink: 0,
-      }}
-    />
-  )
+const STATE_WASH: Record<AgentCardState, string> = {
+  running: 'rgba(80,250,123,0.08)',
+  awaiting: 'rgba(255,148,165,0.09)',
+  completed: 'rgba(203,166,247,0.09)',
+  errored: 'rgba(255,180,171,0.09)',
+  idle: 'rgba(138,130,153,0.05)',
 }
 
 interface MetricCell {
   icon: string
   value: string
+  title: string
 }
 
 const Metric = ({
@@ -127,7 +65,10 @@ const Metric = ({
   cell: MetricCell
   last: boolean
 }): ReactElement => (
-  <span style={{ display: 'inline-flex', alignItems: 'center' }}>
+  <span
+    style={{ display: 'inline-flex', alignItems: 'center' }}
+    title={cell.title}
+  >
     <span
       className="material-symbols-outlined"
       aria-hidden="true"
@@ -140,29 +81,113 @@ const Metric = ({
   </span>
 )
 
+// Pure-shell placeholder. Fills the exact CARD_BODY_H so the card height
+// matches an agent pane's.
+const ShellBody = (): ReactElement => (
+  <div
+    data-testid="agent-status-card-shell-body"
+    style={{
+      height: CARD_BODY_H,
+      marginTop: 11,
+      borderRadius: 9,
+      border: '1px dashed rgba(74,68,79,0.5)',
+      background: 'rgba(13,13,28,0.28)',
+      display: 'flex',
+      alignItems: 'center',
+      gap: 11,
+      padding: '0 13px',
+    }}
+  >
+    <div
+      style={{
+        width: 34,
+        height: 34,
+        borderRadius: 8,
+        flexShrink: 0,
+        background: 'rgba(108,112,134,0.14)',
+        display: 'grid',
+        placeItems: 'center',
+      }}
+    >
+      <span
+        className="material-symbols-outlined"
+        aria-hidden="true"
+        style={{ fontSize: 18, color: '#9b93ab' }}
+      >
+        terminal
+      </span>
+    </div>
+    <div style={{ minWidth: 0 }}>
+      <div
+        style={{
+          fontFamily: "'Instrument Sans', system-ui, sans-serif",
+          fontSize: 13,
+          fontWeight: 600,
+          color: '#cdc3d1',
+        }}
+      >
+        No active agent
+      </div>
+      <div
+        style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 }}
+      >
+        <span
+          style={{
+            display: 'inline-block',
+            width: 6,
+            height: 6,
+            borderRadius: 999,
+            border: '1.5px solid #4a444f',
+            flexShrink: 0,
+          }}
+        />
+        <span
+          style={{
+            fontFamily: "'JetBrains Mono', monospace",
+            fontSize: 9,
+            fontWeight: 600,
+            letterSpacing: '0.14em',
+            textTransform: 'uppercase',
+            color: '#8a8299',
+          }}
+        >
+          Idle · shell only
+        </span>
+      </div>
+    </div>
+  </div>
+)
+
 export const AgentStatusCard = ({
   title,
   state,
-  subtitle = null,
+  isShell = false,
   elapsed = null,
   turns = null,
   contextPct = null,
+  fiveHourPct = null,
+  weekPct = null,
   onToggleSidebar,
 }: AgentStatusCardProps): ReactElement => {
-  const config = STATE_CONFIG[state]
-
-  // Guard each metric so an idle/scratch session collapses the row gracefully
-  // instead of printing "—" / "0" / "0%".
+  // Guard each metric so a metric-less agent pane collapses gracefully (the
+  // fixed-height body keeps the card the same size regardless).
   const metrics: MetricCell[] = []
   if (elapsed) {
-    metrics.push({ icon: 'schedule', value: elapsed })
+    metrics.push({ icon: 'schedule', value: elapsed, title: 'Elapsed' })
   }
   if (turns && turns > 0) {
-    metrics.push({ icon: 'forum', value: String(turns) })
+    metrics.push({ icon: 'forum', value: String(turns), title: 'Turns' })
   }
   if (contextPct !== null) {
-    metrics.push({ icon: 'data_usage', value: `${contextPct}%` })
+    metrics.push({
+      icon: 'data_usage',
+      value: `${contextPct}%`,
+      title: 'Context window',
+    })
   }
+
+  const hasUsage = fiveHourPct !== null || weekPct !== null
+  const wash = isShell ? STATE_WASH.idle : STATE_WASH[state]
 
   return (
     <div
@@ -171,92 +196,82 @@ export const AgentStatusCard = ({
         position: 'relative',
         borderRadius: 13,
         padding: '13px 14px 14px',
-        background: `radial-gradient(120% 90% at 0% 0%, ${config.wash} 0%, rgba(34,34,52,0) 55%), rgba(33,33,51,0.55)`,
+        background: `radial-gradient(120% 90% at 0% 0%, ${wash} 0%, rgba(34,34,52,0) 55%), rgba(33,33,51,0.55)`,
         boxShadow:
           '0 5px 20px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,255,255,0.045)',
         overflow: 'hidden',
+        // The card is chrome, not editable text — show the default arrow rather
+        // than the text I-beam over the title/labels. `cursor` inherits, so this
+        // covers all the card's text; the toggle re-asserts `cursor-pointer`.
+        cursor: 'default',
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
         <SidebarToggle
           onClick={onToggleSidebar}
           size={28}
           variant="inset"
           data-testid="sidebar-toggle-incard"
         />
-        <div style={{ flex: 1, minWidth: 0, paddingTop: 1 }}>
-          <div
-            style={{
-              fontFamily: "'Instrument Sans', system-ui, sans-serif",
-              fontSize: 14,
-              fontWeight: 600,
-              color: '#e9e6fb',
-              whiteSpace: 'nowrap',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-            }}
-          >
-            {title}
-          </div>
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
-              marginTop: 5,
-            }}
-          >
-            <StatusDot state={state} />
-            <span
-              style={{
-                fontFamily: "'JetBrains Mono', monospace",
-                fontSize: 11,
-                fontWeight: 600,
-                color: config.labelColor,
-              }}
-            >
-              {config.label}
-            </span>
-          </div>
+        <div
+          style={{
+            flex: 1,
+            minWidth: 0,
+            fontFamily: "'Instrument Sans', system-ui, sans-serif",
+            fontSize: 14,
+            fontWeight: 600,
+            color: '#e9e6fb',
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+          }}
+        >
+          {isShell ? 'SHELL' : title}
         </div>
       </div>
 
-      {subtitle ? (
-        <div
-          style={{
-            marginTop: 11,
-            fontFamily: "'Inter', sans-serif",
-            fontSize: 11.5,
-            lineHeight: 1.4,
-            color: '#a59fb5',
-            display: '-webkit-box',
-            WebkitLineClamp: 2,
-            WebkitBoxOrient: 'vertical',
-            overflow: 'hidden',
-          }}
-        >
-          {subtitle}
-        </div>
-      ) : null}
+      {isShell ? (
+        <ShellBody />
+      ) : (
+        <div style={{ height: CARD_BODY_H, marginTop: 11 }}>
+          {metrics.length > 0 && (
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                flexWrap: 'wrap',
+                fontFamily: "'JetBrains Mono', monospace",
+                fontSize: 10,
+                color: '#8a8299',
+              }}
+            >
+              {metrics.map((cell, index) => (
+                <Metric
+                  key={cell.icon}
+                  cell={cell}
+                  last={index === metrics.length - 1}
+                />
+              ))}
+            </div>
+          )}
 
-      {metrics.length > 0 && (
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            marginTop: 12,
-            fontFamily: "'JetBrains Mono', monospace",
-            fontSize: 10,
-            color: '#8a8299',
-          }}
-        >
-          {metrics.map((cell, index) => (
-            <Metric
-              key={cell.icon}
-              cell={cell}
-              last={index === metrics.length - 1}
-            />
-          ))}
+          {hasUsage && (
+            <div
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 8,
+                marginTop: metrics.length > 0 ? 12 : 0,
+              }}
+            >
+              {fiveHourPct !== null && (
+                <RateLimitBar label="5-hour Session" percentage={fiveHourPct} />
+              )}
+              {weekPct !== null && (
+                <RateLimitBar label="Weekly Usage" percentage={weekPct} />
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>

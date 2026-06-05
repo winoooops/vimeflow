@@ -1,6 +1,7 @@
 import type { ReactElement } from 'react'
 import type { CostState, RateLimitsState } from '../types'
 import { formatTokens } from '../utils/format'
+import { RateLimitBar } from './RateLimitBar'
 
 export interface BudgetMetricsProps {
   cost: CostState | null
@@ -34,31 +35,6 @@ const MetricCell = ({
   </div>
 )
 
-const RateLimitBar = ({
-  label,
-  percentage,
-}: {
-  label: string
-  percentage: number
-}): ReactElement => (
-  <div className="flex flex-col gap-1">
-    <div className="flex items-center justify-between">
-      <span className="text-[8px] font-bold uppercase tracking-[0.08em] text-outline">
-        {label}
-      </span>
-      <span className="font-mono text-[10px] font-semibold text-on-surface">
-        {Math.round(percentage)}%
-      </span>
-    </div>
-    <div className="h-[3px] w-full overflow-hidden rounded-full bg-surface">
-      <div
-        className="h-full rounded-full bg-primary-container"
-        style={{ width: `${Math.min(percentage, 100)}%` }}
-      />
-    </div>
-  </div>
-)
-
 const SubscriberVariant = ({
   cost,
   rateLimits,
@@ -72,12 +48,12 @@ const SubscriberVariant = ({
 }): ReactElement => (
   <div className="flex flex-col gap-2">
     <RateLimitBar
-      label="5h Limit"
+      label="5-hour Session"
       percentage={rateLimits.fiveHour.usedPercentage}
     />
     {rateLimits.sevenDay ? (
       <RateLimitBar
-        label="7d Limit"
+        label="Weekly Usage"
         percentage={rateLimits.sevenDay.usedPercentage}
       />
     ) : null}
