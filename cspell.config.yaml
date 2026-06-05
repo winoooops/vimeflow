@@ -21,6 +21,7 @@ words:
   # General vocabulary flagged by cspell's defaults
   - unparseable
   - lossily
+  - dedup
 
   # Project
   - vibm
@@ -68,6 +69,7 @@ words:
 
   # Browser / WebAuthn
   - webauthn
+  - favicons
 
   # Workspace domain abbreviations
   - sess # session

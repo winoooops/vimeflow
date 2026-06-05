@@ -182,6 +182,7 @@ const electronMock = vi.hoisted(() => {
   }
 
   const fakeSession = {
+    fetch: vi.fn(),
     on: vi.fn(),
     off: vi.fn(),
     removeAllListeners: vi.fn(),
@@ -336,6 +337,99 @@ const listenerFor = (viewIndex: number, eventName: string): EventHandler => {
   return found
 }
 
+const flushMicrotasks = async (): Promise<void> => {
+  for (let i = 0; i < 5; i += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  }
+}
+
+const streamOf = (bytes: Uint8Array): ReadableStream<Uint8Array> =>
+  new ReadableStream({
+    start(controller): void {
+      if (bytes.byteLength > 0) {
+        controller.enqueue(bytes)
+      }
+      controller.close()
+    },
+  })
+
+const imageResponse = (
+  type: string,
+  bytes: Uint8Array,
+  extra: Record<string, string> = {}
+): Response =>
+  ({
+    ok: true,
+    headers: new Headers({ 'content-type': type, ...extra }),
+    body: streamOf(bytes),
+  }) as unknown as Response
+
+const makeDeferred = <T>(): {
+  promise: Promise<T>
+  resolve: (value: T) => void
+} => {
+  let resolveFn: (value: T) => void = () => undefined
+
+  const promise = new Promise<T>((resolve) => {
+    resolveFn = resolve
+  })
+
+  return { promise, resolve: resolveFn }
+}
+
+const callAllListeners = (
+  viewIndex: number,
+  eventName: string,
+  ...args: unknown[]
+): void => {
+  vi.mocked(electronMock.views[viewIndex].webContents.on)
+    .mock.calls.filter(([name]) => name === eventName)
+    .forEach(([, fn]) => (fn as (...a: unknown[]) => void)(...args))
+}
+
+interface FaviconHarness {
+  emitFavicon: (urls: string[]) => void
+  emitNavigate: () => void
+  emitNavigateInPage: () => void
+  tabsChanged: () => { tabs: { id: string; favicon: string | null }[] }[]
+  clearSends: () => void
+}
+
+const faviconHarness = async (pageUrl: string): Promise<FaviconHarness> => {
+  await handler(BROWSER_PANE_CREATE)(eventForSender(), {
+    sessionId: 'pty-1',
+    paneId: 'p1',
+    workspaceId: 'w',
+    initialUrl: pageUrl,
+  })
+  vi.mocked(electronMock.views[0].webContents.getURL).mockReturnValue(pageUrl)
+
+  return {
+    emitFavicon: (urls): void =>
+      callAllListeners(0, 'page-favicon-updated', {}, urls),
+    emitNavigate: (): void => callAllListeners(0, 'did-navigate'),
+    emitNavigateInPage: (): void =>
+      callAllListeners(0, 'did-navigate-in-page'),
+    tabsChanged: (): { tabs: { id: string; favicon: string | null }[] }[] =>
+      vi
+        .mocked(electronMock.win.webContents.send)
+        .mock.calls.filter(([ch]) => ch === BROWSER_PANE_TABS_CHANGED)
+        .map(
+          ([, payload]) =>
+            payload as { tabs: { id: string; favicon: string | null }[] }
+        ),
+    clearSends: (): void => {
+      vi.mocked(electronMock.win.webContents.send).mockClear()
+    },
+  }
+}
+
+const lastFaviconOf = (h: FaviconHarness): string | null => {
+  const calls = h.tabsChanged()
+
+  return calls[calls.length - 1].tabs[0].favicon
+}
+
 const requestRawUpgrade = (endpoint: string): Promise<string> =>
   new Promise((resolve, reject) => {
     const url = new URL(endpoint)
@@ -407,6 +501,242 @@ describe('BrowserPaneController', () => {
       initialUrl: 'https://example.com/',
     })) as { tabs: { favicon: string | null }[] }
     expect(result.tabs[0].favicon).toBe(null)
+  })
+
+  test('a data: image favicon candidate is stored verbatim', async () => {
+    const h = await faviconHarness('https://example.com/')
+    h.clearSends()
+    h.emitFavicon(['data:image/png;base64,iVBORw0KGgo='])
+    await flushMicrotasks()
+    expect(lastFaviconOf(h)).toBe('data:image/png;base64,iVBORw0KGgo=')
+  })
+
+  test('an http image favicon is fetched (no credentials, no redirects) and inlined', async () => {
+    const h = await faviconHarness('https://example.com/')
+    electronMock.fakeSession.fetch = vi
+      .fn()
+      .mockResolvedValue(imageResponse('image/png', new Uint8Array([1, 2, 3, 4])))
+    h.clearSends()
+    h.emitFavicon(['https://example.com/favicon.png'])
+    await flushMicrotasks()
+    expect(lastFaviconOf(h)).toMatch(/^data:image\/png;base64,/)
+    expect(electronMock.fakeSession.fetch).toHaveBeenCalledWith(
+      'https://example.com/favicon.png',
+      expect.objectContaining({ redirect: 'error', credentials: 'omit' })
+    )
+  })
+
+  test('the new-tab path also resolves favicons (view 1, not only create)', async () => {
+    await handler(BROWSER_PANE_CREATE)(eventForSender(), {
+      sessionId: 'pty-1',
+      paneId: 'p1',
+      workspaceId: 'w',
+      initialUrl: 'https://a.com/',
+    })
+
+    await handler(BROWSER_PANE_NEW_TAB)(eventForSender(), {
+      sessionId: 'pty-1',
+      paneId: 'p1',
+      url: 'https://b.com/',
+    })
+
+    vi.mocked(electronMock.views[1].webContents.getURL).mockReturnValue(
+      'https://b.com/'
+    )
+
+    electronMock.fakeSession.fetch = vi
+      .fn()
+      .mockResolvedValue(imageResponse('image/png', new Uint8Array([1])))
+    vi.mocked(electronMock.win.webContents.send).mockClear()
+    callAllListeners(1, 'page-favicon-updated', {}, ['https://b.com/favicon.png'])
+    await flushMicrotasks()
+
+    const calls = vi
+      .mocked(electronMock.win.webContents.send)
+      .mock.calls.filter(([ch]) => ch === BROWSER_PANE_TABS_CHANGED)
+      .map(
+        ([, payload]) =>
+          payload as { tabs: { id: string; favicon: string | null }[] }
+      )
+    const newTab = calls[calls.length - 1].tabs.find((t) => t.id !== 'tab-0')
+    expect(newTab?.favicon).toMatch(/^data:image\/png;base64,/)
+  })
+
+  test.each([
+    ['non-image content-type', imageResponse('text/html', new Uint8Array([1]))],
+    [
+      'non-ok response',
+      {
+        ok: false,
+        headers: new Headers(),
+        body: streamOf(new Uint8Array()),
+      } as unknown as Response,
+    ],
+    ['zero-byte image body', imageResponse('image/png', new Uint8Array())],
+    [
+      'over-cap via content-length',
+      imageResponse('image/png', new Uint8Array([1]), {
+        'content-length': String(40 * 1024),
+      }),
+    ],
+  ])('http favicon %s yields null', async (_label, response) => {
+    const h = await faviconHarness('https://example.com/')
+    electronMock.fakeSession.fetch = vi.fn().mockResolvedValue(response)
+    h.clearSends()
+    h.emitFavicon(['https://example.com/favicon.png'])
+    await flushMicrotasks()
+    expect(lastFaviconOf(h)).toBe(null)
+  })
+
+  test('over-cap via streamed bytes yields null', async () => {
+    const h = await faviconHarness('https://example.com/')
+    electronMock.fakeSession.fetch = vi
+      .fn()
+      .mockResolvedValue(imageResponse('image/png', new Uint8Array(40 * 1024)))
+    h.clearSends()
+    h.emitFavicon(['https://example.com/favicon.png'])
+    await flushMicrotasks()
+    expect(lastFaviconOf(h)).toBe(null)
+  })
+
+  test('empty favicons array yields null', async () => {
+    const h = await faviconHarness('https://example.com/')
+    h.clearSends()
+    h.emitFavicon([])
+    await flushMicrotasks()
+    expect(lastFaviconOf(h)).toBe(null)
+  })
+
+  test('candidate fallback: first non-ok, second image wins', async () => {
+    const h = await faviconHarness('https://example.com/')
+    electronMock.fakeSession.fetch = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        headers: new Headers(),
+        body: streamOf(new Uint8Array()),
+      } as unknown as Response)
+      .mockResolvedValueOnce(imageResponse('image/png', new Uint8Array([9, 9])))
+    h.clearSends()
+    h.emitFavicon(['https://example.com/a.png', 'https://example.com/b.png'])
+    await flushMicrotasks()
+    expect(lastFaviconOf(h)).toMatch(/^data:image\/png;base64,/)
+    expect(electronMock.fakeSession.fetch).toHaveBeenCalledTimes(2)
+  })
+
+  test.each([
+    '127.0.0.1',
+    '10.0.0.5',
+    '169.254.169.254',
+    'localhost',
+    '192.168.1.1',
+  ])('public page to private favicon host %s is blocked', async (host) => {
+    const h = await faviconHarness('https://example.com/')
+    electronMock.fakeSession.fetch = vi.fn()
+    h.clearSends()
+    h.emitFavicon([`http://${host}/favicon.ico`])
+    await flushMicrotasks()
+    expect(electronMock.fakeSession.fetch).not.toHaveBeenCalled()
+    expect(lastFaviconOf(h)).toBe(null)
+  })
+
+  test('localhost page keeps its own localhost favicon (private allowed)', async () => {
+    const h = await faviconHarness('http://localhost:3000/')
+    electronMock.fakeSession.fetch = vi
+      .fn()
+      .mockResolvedValue(imageResponse('image/png', new Uint8Array([1, 2])))
+    h.clearSends()
+    h.emitFavicon(['http://localhost:3000/favicon.png'])
+    await flushMicrotasks()
+    expect(electronMock.fakeSession.fetch).toHaveBeenCalledTimes(1)
+    expect(lastFaviconOf(h)).toMatch(/^data:image\/png;base64,/)
+  })
+
+  test('a pre-navigation in-flight fetch never overwrites the new tab', async () => {
+    const h = await faviconHarness('https://a.com/')
+    const deferred = makeDeferred<Response>()
+    electronMock.fakeSession.fetch = vi.fn().mockReturnValue(deferred.promise)
+    h.emitFavicon(['https://a.com/icon.png'])
+    h.emitNavigate()
+    h.clearSends()
+    deferred.resolve(imageResponse('image/png', new Uint8Array([7])))
+    await flushMicrotasks()
+    expect(h.tabsChanged().some((e) => e.tabs[0].favicon !== null)).toBe(false)
+  })
+
+  test('a newer favicon event supersedes an older in-flight fetch', async () => {
+    const h = await faviconHarness('https://a.com/')
+    const first = makeDeferred<Response>()
+    electronMock.fakeSession.fetch = vi
+      .fn()
+      .mockReturnValueOnce(first.promise)
+      .mockResolvedValueOnce(
+        imageResponse('image/png', new Uint8Array([2, 2, 2]))
+      )
+    h.emitFavicon(['https://a.com/icon-a.png'])
+    h.emitFavicon(['https://a.com/icon-b.png'])
+    await flushMicrotasks()
+    const afterB = lastFaviconOf(h)
+    expect(afterB).toMatch(/^data:image\/png;base64,/)
+    first.resolve(imageResponse('image/png', new Uint8Array([9, 9, 9, 9])))
+    await flushMicrotasks()
+    expect(lastFaviconOf(h)).toBe(afterB)
+  })
+
+  test('dedup: a repeat same-favicon event does not refetch', async () => {
+    const h = await faviconHarness('https://a.com/')
+    electronMock.fakeSession.fetch = vi
+      .fn()
+      .mockResolvedValue(imageResponse('image/png', new Uint8Array([3])))
+    h.emitFavicon(['https://a.com/icon.png'])
+    await flushMicrotasks()
+    h.emitFavicon(['https://a.com/icon.png'])
+    await flushMicrotasks()
+    expect(electronMock.fakeSession.fetch).toHaveBeenCalledTimes(1)
+  })
+
+  test('did-navigate clears the favicon in one cleared snapshot', async () => {
+    const h = await faviconHarness('https://a.com/')
+    electronMock.fakeSession.fetch = vi
+      .fn()
+      .mockResolvedValue(imageResponse('image/png', new Uint8Array([5])))
+    h.emitFavicon(['https://a.com/icon.png'])
+    await flushMicrotasks()
+    h.clearSends()
+    h.emitNavigate()
+    await flushMicrotasks()
+    expect(h.tabsChanged().length).toBeGreaterThan(0)
+    expect(h.tabsChanged().every((e) => e.tabs[0].favicon === null)).toBe(true)
+  })
+
+  test('did-navigate-in-page does not reset the favicon', async () => {
+    const h = await faviconHarness('https://a.com/')
+    electronMock.fakeSession.fetch = vi
+      .fn()
+      .mockResolvedValue(imageResponse('image/png', new Uint8Array([5])))
+    h.emitFavicon(['https://a.com/icon.png'])
+    await flushMicrotasks()
+    h.clearSends()
+    h.emitNavigateInPage()
+    await flushMicrotasks()
+    expect(lastFaviconOf(h)).toMatch(/^data:image\/png;base64,/)
+  })
+
+  test('reconnect createPane returns tabs carrying the current favicon', async () => {
+    const h = await faviconHarness('https://a.com/')
+    electronMock.fakeSession.fetch = vi
+      .fn()
+      .mockResolvedValue(imageResponse('image/png', new Uint8Array([2])))
+    h.emitFavicon(['https://a.com/icon.png'])
+    await flushMicrotasks()
+
+    const reconnect = (await handler(BROWSER_PANE_CREATE)(eventForSender(), {
+      sessionId: 'pty-1',
+      paneId: 'p1',
+      workspaceId: 'w',
+      initialUrl: 'https://a.com/',
+    })) as { tabs: { favicon: string | null }[] }
+    expect(reconnect.tabs[0].favicon).toMatch(/^data:image\/png;base64,/)
   })
 
   test('creates persistent app-scoped panes and resolves before page load settles', async () => {
