@@ -273,15 +273,7 @@ export const ScratchTerminalPopup = ({
             <Kbd>{isMacPlatform() ? '⌘;' : '⌃;'}</Kbd> <Kbd>`</Kbd> toggle
           </span>
           <span className="flex-1" />
-          <span
-            className="inline-flex items-center gap-[6px]"
-            style={{ color: SHELL_ACCENT }}
-          >
-            <span
-              aria-hidden="true"
-              className="h-[6px] w-[6px] rounded-full"
-              style={{ background: '#50fa7b', boxShadow: '0 0 6px #50fa7b' }}
-            />
+          <span style={{ color: SHELL_ACCENT }}>
             esc hides — shell keeps running
           </span>
         </footer>
