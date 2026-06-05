@@ -355,6 +355,7 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
                           onRestart={onSessionRestart}
                           onClose={closeHandler}
                           onScratch={onScratch}
+                          onRequestActive={onSetActivePane}
                           runningScratchPaneKeys={runningScratchPaneKeys}
                           isActive={isActive}
                           deferFit={deferTerminalFit}

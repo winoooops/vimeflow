@@ -40,6 +40,8 @@ export interface TerminalPaneProps {
   onClose?: (sessionId: string, paneId: string) => void
   /** Toggle this pane's ephemeral scratch terminal (VIM-53). */
   onScratch?: (target: ScratchTarget) => void
+  /** Make this pane active — the scratch button focuses its pane (spec §8). */
+  onRequestActive?: (sessionId: string, paneId: string) => void
   /** Pane-keys (`${sessionId}:${paneId}`) with a running scratch — §8 cue. */
   runningScratchPaneKeys?: ReadonlySet<string>
   onCwdChange?: (cwd: string) => void
@@ -70,6 +72,7 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
       mode = 'spawn',
       onClose = undefined,
       onScratch = undefined,
+      onRequestActive = undefined,
       runningScratchPaneKeys = undefined,
       onCwdChange = undefined,
       onRestart = undefined,
@@ -160,8 +163,12 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
     // The header button toggles THIS pane's scratch — not whatever is focused —
     // so it passes its own identity + live cwd (spec §8).
     const handleScratch = useCallback((): void => {
+      // Focus this pane first (spec §8): the button stops propagation, so the
+      // slot's click-to-activate never runs — without this the active-pane
+      // state would stay on the previously-focused pane.
+      onRequestActive?.(session.id, pane.id)
       onScratch?.({ sessionId: session.id, paneId: pane.id, cwd: pane.cwd })
-    }, [onScratch, session.id, pane.id, pane.cwd])
+    }, [onRequestActive, onScratch, session.id, pane.id, pane.cwd])
 
     const handleRestart = useCallback(
       (restartSessionId: string): void => {

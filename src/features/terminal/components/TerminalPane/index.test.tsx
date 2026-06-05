@@ -135,6 +135,33 @@ describe('TerminalPane index', () => {
     )
   })
 
+  test('the scratch button activates its pane (spec §8) then toggles its scratch', async () => {
+    const onScratch = vi.fn()
+    const onRequestActive = vi.fn()
+    const user = userEvent.setup()
+
+    render(
+      <TerminalPane
+        {...baseProps}
+        onScratch={onScratch}
+        onRequestActive={onRequestActive}
+      />
+    )
+
+    await user.click(
+      screen.getByRole('button', { name: /open scratch terminal/i })
+    )
+
+    // Focuses THIS pane (so the active-pane state tracks the popup), then
+    // toggles its own pane's scratch with its identity + live cwd.
+    expect(onRequestActive).toHaveBeenCalledWith('s1', 'p0')
+    expect(onScratch).toHaveBeenCalledWith({
+      sessionId: 's1',
+      paneId: 'p0',
+      cwd: '/home/user/repo',
+    })
+  })
+
   test('renders RestartAffordance when mode is awaiting-restart', () => {
     const completedSession: Session = {
       ...session,
