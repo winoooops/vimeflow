@@ -11,6 +11,7 @@ Design + rationale: [`docs/explorations/linear-agent-cicd-pilot.html`](../../doc
     PRs, gate on opt-in (`auto-review` label) + a per-PR lock, compute each PR's
     review STATE, and act:
        NEEDS_FIX  → dispatch the inner runner (--execute), up to --max in parallel
+       REVOKE     → post PR/Linear rework request; do not dispatch fixer
        GOOD_SHAPE → squash-merge as the orchestrator bot + delete branch (--approve)
        WAITING    → report only, or rerun transient reviewer checks when armed
        CI_RED     → report only once automatic reruns are exhausted/unavailable
@@ -44,12 +45,13 @@ branch protection): the **fixer** runs as `bot.env`, the **orchestrator** merges
 (`Claude Code Review`, `Codex Code Review`, `Post Review Comment`) are excluded
 from the CI gate, so a clean patch is never held `WAITING` by its own reviewers.
 
-| State          | When                                                                                                                                        | Action (armed)                                 |
-| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
-| **NEEDS_FIX**  | unresolved review threads > 0, Codex review adjudication says reviewer findings should be fixed, or deterministic non-review CI failure     | `--execute` → `run.js <pr> --push`             |
-| **CI_RED**     | transient reviewer reruns are exhausted/unavailable                                                                                         | report only                                    |
-| **WAITING**    | CI/Claude still running · draft · not mergeable · no trusted Claude review yet · adjudication evidence insufficient · transient check rerun | report only or rerun transient reviewer checks |
-| **GOOD_SHAPE** | 0 threads · trusted reviewer comments adjudicated clean by Codex · non-review CI green · `MERGEABLE`                                        | `--approve` → squash-merge + delete            |
+| State          | When                                                                                                                                                      | Action (armed)                                 |
+| -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
+| **NEEDS_FIX**  | unresolved review threads > 0, Codex review adjudication says reviewer findings are localized and should be fixed, or deterministic non-review CI failure | `--execute` → `run.js <pr> --push`             |
+| **REVOKE**     | Codex review adjudication says the PR needs author/operator redesign, re-scoping, or security/architecture rework before a safe fixer cycle               | post GitHub + Linear decision; no fixer        |
+| **CI_RED**     | transient reviewer reruns are exhausted/unavailable                                                                                                       | report only                                    |
+| **WAITING**    | CI/Claude still running · draft · not mergeable · no trusted Claude review yet · adjudication evidence insufficient · transient check rerun               | report only or rerun transient reviewer checks |
+| **GOOD_SHAPE** | 0 threads · trusted reviewer comments adjudicated clean by Codex · non-review CI green · `MERGEABLE`                                                      | `--approve` → squash-merge + delete            |
 
 Deterministic non-review CI failures include unit tests, Rust tests, type/check
 binding verification, code quality/lint, and build failures. The watcher passes
@@ -74,7 +76,9 @@ blocking. Reviewer severity is evidence, not policy; a MEDIUM finding can block
 when the IDEA/reality/fix-cost checks justify fixing it now, and can be ignored
 when the danger is weak or the fix is disproportionate. Results are cached by PR
 head + review-comment hash + diff hash, so unchanged evidence does not call
-Codex repeatedly.
+Codex repeatedly. When adjudication returns `REVOKE`, the daemon posts the
+structured decision directly to the GitHub PR and to the linked Linear issue, then
+stops; it does not enter the Kimi fixer loop even when `--execute` is armed.
 
 The adjudicator makes a bounded retry before giving up on malformed or missing
 structured output. Each failed attempt writes a JSON artifact under

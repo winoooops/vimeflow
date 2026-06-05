@@ -5,6 +5,7 @@
 //   tick   — one pass: per eligible PR, compute the review state and act:
 //              NEEDS_FIX  → (with --execute) run.js <pr> --push   (review/CI fix)
 //                           dispatched CONCURRENTLY, capped at --max (default 2).
+//              REVOKE     → post PR/Linear rework request; do not dispatch fixer.
 //              GOOD_SHAPE → (with --approve) squash-merge AS THE ORCHESTRATOR BOT
 //                           (orchestrator.env) + delete branch.
 //              WAITING   → report only, or rerun transient reviewer checks.
@@ -48,7 +49,9 @@ import {
   formatMergedComment,
   markDecisionPosted,
   markMergeLinearPosted,
+  markRevokeGithubDecisionPosted,
   readDecisionStore,
+  shouldPostRevokeGithubDecision,
   shouldPostDecision,
 } from './lib/decision-comment.js'
 import {
@@ -505,6 +508,17 @@ const computeState = async (pr, ctx) => {
             summary: adjudication.summary,
             findings: adjudication.blocking_findings,
           }
+        } else if (adjudication.decision === REVIEW_DECISIONS.revoke) {
+          const findingSummary = summarizeBlockingFindings(
+            adjudication.blocking_findings
+          )
+
+          ;[state, detail] = [
+            'REVOKE',
+            findingSummary
+              ? `Codex review adjudication requires PR rework: ${findingSummary}`
+              : adjudication.summary,
+          ]
         } else if (adjudication.decision === REVIEW_DECISIONS.waiting) {
           ;[state, detail] = ['WAITING', adjudication.summary]
         } else if (view.mergeable !== 'MERGEABLE') {
@@ -601,8 +615,35 @@ const postLinear = (
   }
 }
 
+const postGithubPrComment = ({ owner, name, pr, body }) => {
+  const r = spawnSync(
+    'gh',
+    [
+      'api',
+      `repos/${owner}/${name}/issues/${pr}/comments`,
+      '-f',
+      `body=${body}`,
+      '--jq',
+      '.id',
+    ],
+    { encoding: 'utf8' }
+  )
+  if (r.status === 0) {
+    const commentId = (r.stdout || '').trim() || null
+    out(`           ↳ GitHub #${pr}: revoke comment posted`)
+
+    return { ok: true, commentId }
+  }
+
+  out(
+    `           ↳ GitHub #${pr}: revoke comment skipped (${(r.stderr || '').trim().split('\n')[0] || 'gh failed'})`
+  )
+
+  return { ok: false, commentId: null }
+}
+
 const maybePostDecisionLinear = (pr, s, ctx) => {
-  if (!ctx.linearDecisions || !s.vim) {
+  if (!ctx.linearDecisions) {
     return
   }
 
@@ -619,7 +660,49 @@ const maybePostDecisionLinear = (pr, s, ctx) => {
     reviewAdjudication: s.reviewAdjudication,
   })
   const storeFile = decisionStorePath(pr.number)
-  const store = readDecisionStore(storeFile)
+  let store = readDecisionStore(storeFile)
+
+  if (
+    s.state === 'REVOKE' &&
+    shouldPostRevokeGithubDecision(store, pr.number, key)
+  ) {
+    const posted = postGithubPrComment({
+      owner: ctx.owner,
+      name: ctx.name,
+      pr: pr.number,
+      body: formatDecisionComment({
+        pr: pr.number,
+        branch: pr.headRefName,
+        state: s.state,
+        detail: s.detail,
+        sourceEvent: ctx.reason,
+        action,
+        approve: ctx.approve,
+        execute: ctx.execute,
+        headSha: s.headSha,
+        ci: s.ci,
+        claude: s.claude,
+        threads: s.threads,
+        mergeable: s.mergeable,
+        mergeStateStatus: s.mergeStateStatus,
+        ciClassification: s.ciClassification,
+        checkSummaries: s.checkSummaries,
+        rerunAttempt: s.rerunAttempt,
+        rerunLimit: s.rerunLimit,
+        reviewAdjudication: s.reviewAdjudication,
+      }),
+    })
+    if (posted.ok) {
+      store = markRevokeGithubDecisionPosted(store, pr.number, key, storeFile, {
+        commentId: posted.commentId,
+      })
+    }
+  }
+
+  if (!s.vim) {
+    return
+  }
+
   if (!shouldPostDecision(store, pr.number, key)) {
     out(`           ↳ Linear ${s.vim}: decision unchanged`)
 
@@ -910,6 +993,10 @@ const tick = async (ctx) => {
       } else {
         out(`           (report-only — pass --execute to run the cycle)`)
       }
+    } else if (s.state === 'REVOKE') {
+      out(
+        `           (revoked — author/operator rework required; fixer not dispatched)`
+      )
     } else if (s.state === 'GOOD_SHAPE') {
       if (ctx.approve) {
         try {
