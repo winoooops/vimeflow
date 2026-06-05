@@ -161,29 +161,36 @@ export const useScratchTerminals = ({
 
   const toggle = useCallback(
     async (target?: ScratchTarget): Promise<void> => {
-      let resolved = target
-      if (!resolved) {
-        const focused = resolveFocusedPane()
-        if (focused) {
-          resolved = {
-            sessionId: focused.session.id,
-            paneId: focused.pane.id,
-            cwd: focused.pane.cwd,
-          }
+      // Chord (no target): hide whatever is shown, else open the focused pane.
+      // Keying off `visibleKey` (not the focused pane's key) keeps it a true
+      // toggle even after the pills switched the popup to a non-focused pane.
+      if (!target) {
+        if (visibleKey !== null) {
+          setVisibleKey(null)
+
+          return
         }
-      }
-      if (!resolved) {
+        const focused = resolveFocusedPane()
+        if (!focused) {
+          return
+        }
+        await show({
+          sessionId: focused.session.id,
+          paneId: focused.pane.id,
+          cwd: focused.pane.cwd,
+        })
+
         return
       }
-      const key = paneKey(resolved.sessionId, resolved.paneId)
 
-      // Already showing this pane's scratch → hide (never kill).
+      // Targeted (pane button): toggle that specific pane's scratch.
+      const key = paneKey(target.sessionId, target.paneId)
       if (visibleKey === key) {
         setVisibleKey(null)
 
         return
       }
-      await show(resolved)
+      await show(target)
     },
     [resolveFocusedPane, visibleKey, show]
   )

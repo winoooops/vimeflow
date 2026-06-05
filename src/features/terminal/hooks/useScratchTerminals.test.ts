@@ -72,18 +72,19 @@ test('toggle(target) spawns at the target pane cwd, keyed by that pane (button p
 
 test('different panes get independent shells (keyed per pane)', async () => {
   const service = makeService()
-  let focused = makeFocusedPane('s1', 'p0', '/a')
+  const focused = makeFocusedPane('s1', 'p0', '/a')
 
   const { result } = renderHook(() =>
     useScratchTerminals({ service, resolveFocusedPane: () => focused })
   )
 
+  // Open each pane's scratch by target (the pane-button / pill path).
   await act(async () => {
-    await result.current.toggle() // p0
+    await result.current.toggle({ sessionId: 's1', paneId: 'p0', cwd: '/a' })
   })
-  focused = makeFocusedPane('s1', 'p1', '/b')
+
   await act(async () => {
-    await result.current.toggle() // p1 — different pane
+    await result.current.toggle({ sessionId: 's1', paneId: 'p1', cwd: '/b' })
   })
 
   expect(service.spawn).toHaveBeenCalledTimes(2)
@@ -91,6 +92,34 @@ test('different panes get independent shells (keyed per pane)', async () => {
     's1:p0',
     's1:p1',
   ])
+})
+
+test('the no-target chord hides a visible scratch instead of switching to the focused pane', async () => {
+  const service = makeService()
+  let focused = makeFocusedPane('s1', 'p0', '/a')
+
+  const { result } = renderHook(() =>
+    useScratchTerminals({ service, resolveFocusedPane: () => focused })
+  )
+
+  await act(async () => {
+    await result.current.toggle() // chord opens the focused pane p0
+  })
+
+  await act(async () => {
+    // A pill switches the popup to p1 (which is NOT the focused pane).
+    await result.current.toggle({ sessionId: 's1', paneId: 'p1', cwd: '/b' })
+  })
+  expect(service.spawn).toHaveBeenCalledTimes(2)
+
+  // Focus has moved to a fresh pane p2 with no scratch. The chord must HIDE the
+  // visible p1 popup (spec §7 "hides when shown"), not spawn/switch to p2.
+  focused = makeFocusedPane('s1', 'p2', '/c')
+  await act(async () => {
+    await result.current.toggle()
+  })
+
+  expect(service.spawn).toHaveBeenCalledTimes(2) // hid — no p2 spawn
 })
 
 test('hiding the popup does not kill the shell', async () => {
