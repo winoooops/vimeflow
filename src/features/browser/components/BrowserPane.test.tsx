@@ -130,6 +130,23 @@ const navStateCallback = (): ((event: NavStateEvent) => void) =>
     event: NavStateEvent
   ) => void
 
+interface TabsEvent {
+  sessionId: string
+  paneId: string
+  tabs: {
+    id: string
+    url: string
+    title: string | null
+    active: boolean
+    favicon: string | null
+  }[]
+}
+
+const tabsCallback = (): ((event: TabsEvent) => void) =>
+  bridgeMocks.onBrowserPaneTabsChange.mock.calls[0][0] as (
+    event: TabsEvent
+  ) => void
+
 describe('BrowserPane', () => {
   let resolveCreate: (result: BrowserPaneCreateResult) => void
   let rectSpy: ReturnType<typeof vi.spyOn>
@@ -277,6 +294,50 @@ describe('BrowserPane', () => {
     )
 
     expect(screen.getByRole('button', { name: 'back' })).toBeDisabled()
+  })
+
+  test('a tabs-changed event with a favicon updates the tab icon', async () => {
+    render(<BrowserPane session={session} pane={browserPane} isActive />)
+    await settle()
+
+    act(() =>
+      tabsCallback()({
+        sessionId: 'pty-shell',
+        paneId: 'p1',
+        tabs: [
+          {
+            id: 'tab-0',
+            url: 'https://x.com/',
+            title: 'X',
+            active: true,
+            favicon: 'data:image/png;base64,AAAA',
+          },
+        ],
+      })
+    )
+
+    expect(screen.getByTestId('browser-tab-favicon')).toHaveAttribute(
+      'src',
+      'data:image/png;base64,AAAA'
+    )
+  })
+
+  test('the load bar shows when nav-state reports loading', async () => {
+    render(<BrowserPane session={session} pane={browserPane} isActive />)
+    await settle()
+
+    act(() =>
+      navStateCallback()({
+        sessionId: 'pty-shell',
+        paneId: 'p1',
+        tabId: 'tab-0',
+        canGoBack: false,
+        canGoForward: false,
+        isLoading: true,
+      })
+    )
+
+    expect(screen.getByTestId('browser-load-bar')).toBeInTheDocument()
   })
 
   test('back and reload dispatch nav-action through the bridge', async () => {

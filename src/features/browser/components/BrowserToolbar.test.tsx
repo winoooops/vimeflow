@@ -28,6 +28,14 @@ test('back / forward are disabled without history; reload is enabled', () => {
   expect(screen.getByRole('button', { name: 'reload' })).not.toBeDisabled()
 })
 
+test('shows the chrome-layer load bar only when isLoading', () => {
+  const { rerender } = render(<BrowserToolbar {...baseProps} />)
+  expect(screen.queryByTestId('browser-load-bar')).toBeNull()
+
+  rerender(<BrowserToolbar {...baseProps} isLoading />)
+  expect(screen.getByTestId('browser-load-bar')).toBeInTheDocument()
+})
+
 test('back / forward enable from canGo* and fire their handlers', () => {
   const onBack = vi.fn()
   const onForward = vi.fn()
