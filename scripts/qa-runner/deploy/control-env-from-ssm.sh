@@ -10,6 +10,9 @@ worker_region="${QA_WORKER_REGION:-$region}"
 worker_repo="${QA_WORKER_REPO:-/opt/vimeflow/repo}"
 worker_instance_id="${QA_WORKER_INSTANCE_ID:-}"
 service_user="${QA_SERVICE_USER:-vimeflow-qa}"
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+. "$script_dir/ssm-lib.sh"
 
 value() {
   aws ssm get-parameter \
@@ -18,35 +21,6 @@ value() {
     --with-decryption \
     --query Parameter.Value \
     --output text
-}
-
-optional_value() {
-  # Keep this function in sync with worker-env-from-ssm.sh.
-  local err
-  local out
-  local status
-  err="$(mktemp)"
-  if out="$(aws ssm get-parameter \
-    --region "$region" \
-    --name "$prefix/$1" \
-    --with-decryption \
-    --query Parameter.Value \
-    --output text 2>"$err")"; then
-    rm -f "$err"
-    printf "%s" "$out"
-    return 0
-  else
-    status=$?
-  fi
-
-  if grep -q "ParameterNotFound" "$err"; then
-    rm -f "$err"
-    return 0
-  fi
-
-  cat "$err" >&2
-  rm -f "$err"
-  return "$status"
 }
 
 write_env_line() {
@@ -72,6 +46,7 @@ fi
 worker_timeout_seconds="${QA_WORKER_TIMEOUT_SECONDS:-$(optional_value QA_WORKER_TIMEOUT_SECONDS)}"
 worker_refresh_runner="${QA_WORKER_REFRESH_RUNNER:-$(optional_value QA_WORKER_REFRESH_RUNNER)}"
 worker_ref="${QA_WORKER_REF:-$(optional_value QA_WORKER_REF)}"
+gh_token="$(value GH_ORCH_TOKEN)"
 
 if bool_enabled "$worker_refresh_runner" && [ -z "$worker_ref" ]; then
   echo "error: QA_WORKER_REFRESH_RUNNER is set but QA_WORKER_REF is not set in env or SSM" >&2
@@ -119,7 +94,7 @@ QA_WORKER_MODE=$worker_mode
 QA_WORKER_REGION=$worker_region
 QA_WORKER_REPO=$worker_repo
 EOF
-  write_env_line GH_TOKEN "$(value GH_ORCH_TOKEN)"
+  write_env_line GH_TOKEN "$gh_token"
   write_env_line QA_WORKER_INSTANCE_ID "$worker_instance_id"
   write_env_line QA_WORKER_TIMEOUT_SECONDS "$worker_timeout_seconds"
   write_env_line QA_WORKER_REFRESH_RUNNER "$worker_refresh_runner"

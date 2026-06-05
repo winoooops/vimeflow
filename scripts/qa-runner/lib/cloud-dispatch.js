@@ -12,6 +12,7 @@ export const CYCLE_ENV_KEYS = [
   'QA_MAX_CI_RERUNS',
   'QA_WORKER_REFRESH_RUNNER',
   'QA_WORKER_REF',
+  // Legacy alias consumed by worker-cycle; pass-through only, not SSM-sourced.
   'QA_RUNNER_REF',
 ]
 

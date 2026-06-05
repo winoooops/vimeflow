@@ -6,6 +6,9 @@ repo="${QA_REPO:-/opt/vimeflow/repo}"
 etc_dir="${QA_ETC_DIR:-/etc/vimeflow/qa-runner}"
 prefix="${QA_WORKER_PARAM_PREFIX:-/vimeflow/qa-runner/prod/worker}"
 codex_home="${CODEX_HOME:-$etc_dir/codex}"
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+. "$script_dir/ssm-lib.sh"
 
 value() {
   aws ssm get-parameter \
@@ -14,35 +17,6 @@ value() {
     --with-decryption \
     --query Parameter.Value \
     --output text
-}
-
-optional_value() {
-  # Keep this function in sync with control-env-from-ssm.sh.
-  local err
-  local out
-  local status
-  err="$(mktemp)"
-  if out="$(aws ssm get-parameter \
-    --region "$region" \
-    --name "$prefix/$1" \
-    --with-decryption \
-    --query Parameter.Value \
-    --output text 2>"$err")"; then
-    rm -f "$err"
-    printf "%s" "$out"
-    return 0
-  else
-    status=$?
-  fi
-
-  if grep -q "ParameterNotFound" "$err"; then
-    rm -f "$err"
-    return 0
-  fi
-
-  cat "$err" >&2
-  rm -f "$err"
-  return "$status"
 }
 
 single_line_value() {
