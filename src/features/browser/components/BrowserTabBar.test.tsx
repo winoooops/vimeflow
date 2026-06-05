@@ -9,8 +9,9 @@ const tabs: BrowserPaneTab[] = [
     url: 'https://github.com/o/r/pull/1',
     title: 'PR',
     active: true,
+    favicon: null,
   },
-  { id: 'tab-1', url: 'https://example.com/', title: null, active: false },
+  { id: 'tab-1', url: 'https://example.com/', title: null, active: false, favicon: null },
 ]
 
 const noop = (): void => undefined

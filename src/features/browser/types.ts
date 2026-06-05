@@ -26,6 +26,7 @@ export interface BrowserPaneTab {
   url: string
   title: string | null
   active: boolean
+  favicon: string | null
 }
 
 export interface BrowserPaneCreateResult {

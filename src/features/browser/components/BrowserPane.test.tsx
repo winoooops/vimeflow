@@ -96,6 +96,7 @@ const singleTab: BrowserPaneCreateResult = {
       url: 'https://example.com/',
       title: 'Example',
       active: true,
+      favicon: null,
     },
   ],
   navState: { canGoBack: false, canGoForward: false, isLoading: false },
@@ -527,12 +528,14 @@ describe('BrowserPane', () => {
             url: 'https://example.com/',
             title: 'Example',
             active: true,
+            favicon: null,
           },
           {
             id: 'tab-1',
             url: 'https://other.com/',
             title: 'Other',
             active: false,
+            favicon: null,
           },
         ],
       })

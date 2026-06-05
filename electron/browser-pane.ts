@@ -144,6 +144,7 @@ interface BrowserPaneTabRecord {
   id: string
   view: WebContentsView
   requestedUrl: string
+  favicon: string | null
 }
 
 interface BrowserPaneTabSnapshot {
@@ -151,6 +152,7 @@ interface BrowserPaneTabSnapshot {
   url: string
   title: string | null
   active: boolean
+  favicon: string | null
 }
 
 interface CdpAttachment {
@@ -780,7 +782,7 @@ export class BrowserPaneController {
       ownerWebContentsId: event.sender.id,
       view,
       tabs: new Map([
-        ['tab-0', { id: 'tab-0', view, requestedUrl: initialUrl }],
+        ['tab-0', { id: 'tab-0', view, requestedUrl: initialUrl, favicon: null }],
       ]),
       activeTabId: 'tab-0',
       nextTabIndex: 1,
@@ -886,6 +888,7 @@ export class BrowserPaneController {
       url: this.tabUrl(tab),
       title: tab.view.webContents.getTitle() || null,
       active: tab.id === record.activeTabId,
+      favicon: tab.favicon,
     }))
   }
 
@@ -1016,6 +1019,7 @@ export class BrowserPaneController {
       id: tabId,
       view,
       requestedUrl: normalizeTabUrl(options.url),
+      favicon: null,
     })
     win.contentView.addChildView(view)
     view.setBounds({ x: 0, y: 0, width: 0, height: 0 })

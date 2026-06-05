@@ -399,6 +399,16 @@ describe('BrowserPaneController', () => {
     ).rejects.toThrow('invalid browser pane create payload')
   })
 
+  test('createPane returns tabs with favicon null initially', async () => {
+    const result = (await handler(BROWSER_PANE_CREATE)(eventForSender(), {
+      sessionId: 'pty-1',
+      paneId: 'p1',
+      workspaceId: 'proj-1',
+      initialUrl: 'https://example.com/',
+    })) as { tabs: { favicon: string | null }[] }
+    expect(result.tabs[0].favicon).toBe(null)
+  })
+
   test('creates persistent app-scoped panes and resolves before page load settles', async () => {
     const createPromise = Promise.resolve(
       handler(BROWSER_PANE_CREATE)(eventForSender(), {
