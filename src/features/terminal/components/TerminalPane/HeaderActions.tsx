@@ -37,7 +37,7 @@ export const HeaderActions = ({
             event.stopPropagation()
             onScratch()
           }}
-          className={`relative inline-flex h-[22px] w-[22px] items-center justify-center rounded border-0 hover:bg-white/5 ${
+          className={`inline-flex h-[22px] w-[22px] items-center justify-center rounded border-0 hover:bg-white/5 ${
             scratchRunning
               ? 'bg-[#f0c674]/15 text-[#f0c674]'
               : 'bg-transparent text-[#f0c674]/70 hover:text-[#f0c674]'
@@ -49,13 +49,6 @@ export const HeaderActions = ({
           >
             terminal
           </span>
-          {scratchRunning && (
-            <span
-              data-testid="scratch-live-dot"
-              aria-hidden="true"
-              className="bg-success absolute -top-0.5 -right-0.5 h-[6px] w-[6px] rounded-full"
-            />
-          )}
         </button>
       </Tooltip>
     )}

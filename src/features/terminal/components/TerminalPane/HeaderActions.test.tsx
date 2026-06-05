@@ -95,7 +95,7 @@ describe('HeaderActions', () => {
     expect(onParentClick).not.toHaveBeenCalled()
   })
 
-  test('shows the live-but-hidden cue when the pane scratch is running', () => {
+  test('the running cue is the amber button background (no dot)', () => {
     render(
       <HeaderActions
         isCollapsed={expanded}
@@ -105,15 +105,15 @@ describe('HeaderActions', () => {
       />
     )
 
-    expect(screen.getByTestId('scratch-live-dot')).toBeInTheDocument()
-    expect(
-      screen.getByRole('button', {
-        name: /open scratch terminal \(running\)/i,
-      })
-    ).toBeInTheDocument()
+    const button = screen.getByRole('button', {
+      name: /open scratch terminal \(running\)/i,
+    })
+    expect(button.className).toContain('bg-[#f0c674]/15')
+    // The green live-dot was removed — the amber background is the only cue.
+    expect(screen.queryByTestId('scratch-live-dot')).toBeNull()
   })
 
-  test('no live cue when the pane scratch is not running', () => {
+  test('no running cue when the pane scratch is not running', () => {
     render(
       <HeaderActions
         isCollapsed={expanded}
@@ -122,7 +122,10 @@ describe('HeaderActions', () => {
       />
     )
 
-    expect(screen.queryByTestId('scratch-live-dot')).toBeNull()
+    const button = screen.getByRole('button', {
+      name: 'open scratch terminal',
+    })
+    expect(button.className).toContain('bg-transparent')
   })
 
   test('hovering the collapse-status button shows a plain tooltip', async () => {
