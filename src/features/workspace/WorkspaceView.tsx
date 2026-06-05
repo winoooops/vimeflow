@@ -1537,6 +1537,7 @@ export const WorkspaceView = (): ReactElement => {
           contextPct={statusBarContextPct}
           paletteShortcut={COMMAND_PALETTE_SHORTCUT_KEYS}
           onOpenPalette={commandPalette.open}
+          scratchCount={runningScratchPaneKeys.size}
         />
       </div>
 
