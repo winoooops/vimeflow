@@ -99,6 +99,12 @@ export const useScratchTerminals = ({
   const spawningRef = useRef<Set<string>>(new Set())
   /** Show-intent guard: prevents a late-resolving spawn from stealing visibility. */
   const showIntentRef = useRef<string | null>(null)
+  // Latest live-pane keys, mirrored so an async spawn resolution can re-check
+  // liveness without a stale closure. The reconcile effect only fires on a
+  // `livePaneKeys` change, so a spawn that resolves after its pane closed would
+  // otherwise slip past it.
+  const livePaneKeysRef = useRef(livePaneKeys)
+  livePaneKeysRef.current = livePaneKeys
 
   const commit = useCallback((): void => {
     setEntries(new Map(entriesRef.current))
@@ -133,6 +139,19 @@ export const useScratchTerminals = ({
           ephemeral: true,
           enableAgentBridge: false,
         })
+        // The host pane may have closed while the spawn was in flight. Reconcile
+        // can't catch it — the entry wasn't in the map when livePaneKeys last
+        // changed — so reap the fresh shell here instead of tracking an orphan.
+        const live = livePaneKeysRef.current
+        if (live && !live.has(key)) {
+          void service.kill({ sessionId: result.sessionId })
+          dropAllForPty?.(result.sessionId)
+          if (showIntentRef.current === key) {
+            showIntentRef.current = null
+          }
+
+          return
+        }
         // Buffer prompt/rc output emitted before the popup's terminal attaches.
         registerPending?.(result.sessionId)
         entriesRef.current.set(key, {

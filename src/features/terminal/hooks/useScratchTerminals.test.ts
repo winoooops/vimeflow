@@ -513,3 +513,56 @@ test('re-opening a self-exited pane spawns a fresh shell and drops the dead buff
   expect(dropAllForPty).toHaveBeenCalledTimes(1)
   expect(result.current.runningByPane.get('s1:p0')).toBe('running')
 })
+
+test('a scratch whose pane closes mid-spawn is reaped, not left orphaned', async () => {
+  const service = makeService()
+  const dropAllForPty = vi.fn<(ptyId: string) => void>()
+  const focused = makeFocusedPane('s1', 'p0', '/a')
+
+  // A spawn that stays in flight until the test resolves it by hand.
+  let resolveSpawn: (value: {
+    sessionId: string
+    pid: number
+    cwd: string
+  }) => void = () => undefined
+  service.spawn = vi.fn().mockImplementation(
+    () =>
+      new Promise<{ sessionId: string; pid: number; cwd: string }>(
+        (resolve) => {
+          resolveSpawn = resolve
+        }
+      )
+  )
+
+  const { result, rerender } = renderHook(
+    (props: { live: ReadonlySet<string> }) =>
+      useScratchTerminals({
+        service,
+        resolveFocusedPane: () => focused,
+        livePaneKeys: props.live,
+        dropAllForPty,
+      }),
+    { initialProps: { live: new Set<string>(['s1:p0']) } }
+  )
+
+  await act(async () => {
+    const togglePromise = result.current.toggle({
+      sessionId: 's1',
+      paneId: 'p0',
+      cwd: '/a',
+    })
+    // The pane closes while the spawn is still pending — reconcile sees no entry
+    // for it yet, so the only `livePaneKeys` change slips past.
+    rerender({ live: new Set<string>() })
+    // Now the spawn resolves against a pane that is already gone.
+    resolveSpawn({ sessionId: 'scratch-1', pid: 1, cwd: '/a' })
+    await togglePromise
+  })
+
+  // spawnIfNeeded re-checks liveness post-spawn and reaps the orphan instead of
+  // tracking a scratch shell for a dead pane.
+  expect(service.kill).toHaveBeenCalledWith({ sessionId: 'scratch-1' })
+  expect(dropAllForPty).toHaveBeenCalledWith('scratch-1')
+  expect([...result.current.runningByPane.keys()]).toEqual([])
+  expect(result.current.renderNode).toBeNull()
+})
