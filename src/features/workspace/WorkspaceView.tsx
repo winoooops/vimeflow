@@ -72,11 +72,7 @@ import { isShellPane } from '../sessions/utils/paneKind'
 import { lineDelta } from '../sessions/utils/lineDelta'
 import { pickNextVisibleSessionId } from '../sessions/utils/pickNextVisibleSessionId'
 import { AGENTS, agentTypeToRegistryKey } from '../../agents/registry'
-import type {
-  Session,
-  SessionCloseResult,
-  SessionStatus,
-} from '../sessions/types'
+import type { SessionCloseResult, SessionStatus } from '../sessions/types'
 import {
   buildWorkspaceCommands,
   WORKSPACE_TAB_KEYS,
@@ -658,7 +654,7 @@ export const WorkspaceView = (): ReactElement => {
   const { renderNode: scratchTerminalNode, toggle: toggleScratch } =
     useScratchTerminals({
       service: terminalService,
-      resolveActiveSession: (): Session | null => activeSession ?? null,
+      resolveFocusedPane,
       ready: scratchReapDone,
       registerPending,
       notifyPaneReady,
@@ -1482,7 +1478,7 @@ export const WorkspaceView = (): ReactElement => {
               onContainerFocus={() => {
                 setActiveContainerId(TERMINAL_CONTAINER_ID)
               }}
-              onScratch={(): void => void toggleScratch()}
+              onScratch={(target): void => void toggleScratch(target)}
             />
           </div>
           {!dockBeforeTerminal ? dockOrPeek : null}

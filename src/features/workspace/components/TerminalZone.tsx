@@ -9,6 +9,7 @@ import {
 } from 'react'
 import type { LayoutId, PaneKind, Session } from '../../sessions/types'
 import type { ITerminalService } from '../../terminal/services/terminalService'
+import type { ScratchTarget } from '../../terminal/hooks/useScratchTerminals'
 import type {
   PaneEventHandler,
   NotifyPaneReadyResult,
@@ -62,8 +63,8 @@ export interface TerminalZoneProps {
   areBrowserPanesOccluded?: boolean
   isZoneFocused?: boolean
   onContainerFocus?: () => void
-  /** Toggle the active session's ephemeral scratch terminal (VIM-53). */
-  onScratch?: () => void
+  /** Toggle a pane's ephemeral scratch terminal (VIM-53). */
+  onScratch?: (target: ScratchTarget) => void
 }
 
 export interface TerminalZoneHandle {

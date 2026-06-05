@@ -14,6 +14,7 @@ import type { LayoutId, Pane, Session } from '../../../sessions/types'
 import { isShellPane } from '../../../sessions/utils/paneKind'
 import { BrowserPane, focusBrowserPane } from '../../../browser'
 import type { NotifyPaneReady } from '../../hooks/useTerminal'
+import type { ScratchTarget } from '../../hooks/useScratchTerminals'
 import type { ITerminalService } from '../../services/terminalService'
 import {
   TerminalPane,
@@ -44,8 +45,8 @@ export interface SplitViewProps {
   onRequestFocus?: () => void
   onAddPane?: (sessionId: string, kind?: Pane['kind']) => void
   onClosePane?: (sessionId: string, paneId: string) => void
-  /** Toggle the session's ephemeral scratch terminal (VIM-53). */
-  onScratch?: () => void
+  /** Toggle a pane's ephemeral scratch terminal (VIM-53). */
+  onScratch?: (target: ScratchTarget) => void
   areBrowserPanesOccluded?: boolean
   deferTerminalFit?: boolean
   showPaneFocusHighlight?: boolean

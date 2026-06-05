@@ -16,6 +16,7 @@ import { useGitWorktree } from '../../../diff/hooks/useGitWorktree'
 import type { Pane, Session, SessionStatus } from '../../../sessions/types'
 import { agentForPane } from '../../../sessions/utils/agentForSession'
 import type { NotifyPaneReady } from '../../hooks/useTerminal'
+import type { ScratchTarget } from '../../hooks/useScratchTerminals'
 import type { ITerminalService } from '../../services/terminalService'
 import { aggregateLineDelta } from './aggregateLineDelta'
 import { Body, type BodyHandle } from './Body'
@@ -37,8 +38,8 @@ export interface TerminalPaneProps {
   onPaneReady?: NotifyPaneReady
   mode?: TerminalPaneMode
   onClose?: (sessionId: string, paneId: string) => void
-  /** Toggle this session's ephemeral scratch terminal (VIM-53). */
-  onScratch?: () => void
+  /** Toggle this pane's ephemeral scratch terminal (VIM-53). */
+  onScratch?: (target: ScratchTarget) => void
   onCwdChange?: (cwd: string) => void
   onRestart?: (sessionId: string) => void
   deferFit?: boolean
@@ -153,6 +154,12 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
       onClose?.(session.id, pane.id)
     }, [onClose, pane.id, session.id])
 
+    // The header button toggles THIS pane's scratch — not whatever is focused —
+    // so it passes its own identity + live cwd (spec §8).
+    const handleScratch = useCallback((): void => {
+      onScratch?.({ sessionId: session.id, paneId: pane.id, cwd: pane.cwd })
+    }, [onScratch, session.id, pane.id, pane.cwd])
+
     const handleRestart = useCallback(
       (restartSessionId: string): void => {
         // TODO(#202): for multi-pane sessions, this needs to thread `pane.id`
@@ -232,7 +239,7 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
           paneUserLabel={pane.userLabel}
           onToggleCollapse={handleToggleCollapse}
           onClose={onClose ? handleClose : undefined}
-          onScratch={onScratch}
+          onScratch={onScratch ? handleScratch : undefined}
         />
 
         {isAwaitingRestart ? (

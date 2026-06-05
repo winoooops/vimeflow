@@ -1,23 +1,19 @@
 import { test, expect, vi } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
-import { useScratchTerminals } from './useScratchTerminals'
-import type { Session } from '../../sessions/types'
+import { useScratchTerminals, type ScratchTarget } from './useScratchTerminals'
+import type { FocusedPaneRef } from '../../command-palette/hooks/usePaneRenameChord'
 import type { ITerminalService } from '../services/terminalService'
 import * as chordRegistry from '../../command-palette/chordRegistry'
 
-const makeSession = (
-  id = 's1',
-  workingDirectory = '/repo',
-  activePaneCwd?: string
-): Session =>
+const makeFocusedPane = (
+  sessionId = 's1',
+  paneId = 'p0',
+  cwd = '/repo'
+): FocusedPaneRef =>
   ({
-    id,
-    workingDirectory,
-    panes:
-      activePaneCwd === undefined
-        ? []
-        : [{ id: 'p0', active: true, cwd: activePaneCwd }],
-  }) as unknown as Session
+    pane: { id: paneId, cwd },
+    session: { id: sessionId },
+  }) as unknown as FocusedPaneRef
 
 const makeService = (): ITerminalService =>
   ({
@@ -27,12 +23,12 @@ const makeService = (): ITerminalService =>
     kill: vi.fn().mockResolvedValue(undefined),
   }) as unknown as ITerminalService
 
-test('toggle spawns an ephemeral, no-bridge shell, falling back to the session workingDirectory when no active pane', async () => {
+test('toggle (no target) spawns an ephemeral, no-bridge shell at the focused pane cwd, keyed by pane', async () => {
   const service = makeService()
-  const session = makeSession() // no panes → findActivePane undefined → fallback
+  const focused = makeFocusedPane('s1', 'p0', '/repo/projects/vimeflow')
 
   const { result } = renderHook(() =>
-    useScratchTerminals({ service, resolveActiveSession: () => session })
+    useScratchTerminals({ service, resolveFocusedPane: () => focused })
   )
 
   await act(async () => {
@@ -41,39 +37,68 @@ test('toggle spawns an ephemeral, no-bridge shell, falling back to the session w
 
   expect(service.spawn).toHaveBeenCalledWith(
     expect.objectContaining({
-      cwd: '/repo',
+      cwd: '/repo/projects/vimeflow',
       ephemeral: true,
       enableAgentBridge: false,
     })
   )
-  expect([...result.current.running.keys()]).toEqual(['s1'])
+  expect([...result.current.runningByPane.keys()]).toEqual(['s1:p0'])
   expect(result.current.renderNode).not.toBeNull()
 })
 
-test('toggle spawns the scratch at the focused pane live cwd, not the session wd', async () => {
+test('toggle(target) spawns at the target pane cwd, keyed by that pane (button path)', async () => {
   const service = makeService()
-  // Session opened at /repo, but the pane has since cd'd into a subdir.
-  const session = makeSession('s1', '/repo', '/repo/projects/vimeflow')
+  // Focused pane is p0, but the button targets p1 explicitly.
+  const focused = makeFocusedPane('s1', 'p0', '/repo')
 
   const { result } = renderHook(() =>
-    useScratchTerminals({ service, resolveActiveSession: () => session })
+    useScratchTerminals({ service, resolveFocusedPane: () => focused })
   )
 
+  const target: ScratchTarget = {
+    sessionId: 's1',
+    paneId: 'p1',
+    cwd: '/repo/other',
+  }
   await act(async () => {
-    await result.current.toggle()
+    await result.current.toggle(target)
   })
 
   expect(service.spawn).toHaveBeenCalledWith(
-    expect.objectContaining({ cwd: '/repo/projects/vimeflow' })
+    expect.objectContaining({ cwd: '/repo/other' })
   )
+  expect([...result.current.runningByPane.keys()]).toEqual(['s1:p1'])
+})
+
+test('different panes get independent shells (keyed per pane)', async () => {
+  const service = makeService()
+  let focused = makeFocusedPane('s1', 'p0', '/a')
+
+  const { result } = renderHook(() =>
+    useScratchTerminals({ service, resolveFocusedPane: () => focused })
+  )
+
+  await act(async () => {
+    await result.current.toggle() // p0
+  })
+  focused = makeFocusedPane('s1', 'p1', '/b')
+  await act(async () => {
+    await result.current.toggle() // p1 — different pane
+  })
+
+  expect(service.spawn).toHaveBeenCalledTimes(2)
+  expect([...result.current.runningByPane.keys()].sort()).toEqual([
+    's1:p0',
+    's1:p1',
+  ])
 })
 
 test('hiding the popup does not kill the shell', async () => {
   const service = makeService()
-  const session = makeSession()
+  const focused = makeFocusedPane()
 
   const { result } = renderHook(() =>
-    useScratchTerminals({ service, resolveActiveSession: () => session })
+    useScratchTerminals({ service, resolveFocusedPane: () => focused })
   )
 
   await act(async () => {
@@ -81,7 +106,7 @@ test('hiding the popup does not kill the shell', async () => {
   })
 
   await act(async () => {
-    await result.current.toggle() // hide
+    await result.current.toggle() // hide (same pane)
   })
 
   expect(service.kill).not.toHaveBeenCalled()
@@ -89,10 +114,10 @@ test('hiding the popup does not kill the shell', async () => {
 
 test('renderNode stays non-null when hidden while a shell is alive', async () => {
   const service = makeService()
-  const session = makeSession()
+  const focused = makeFocusedPane()
 
   const { result } = renderHook(() =>
-    useScratchTerminals({ service, resolveActiveSession: () => session })
+    useScratchTerminals({ service, resolveFocusedPane: () => focused })
   )
 
   await act(async () => {
@@ -108,12 +133,12 @@ test('renderNode stays non-null when hidden while a shell is alive', async () =>
 
 test('does not spawn until ready', async () => {
   const service = makeService()
-  const session = makeSession()
+  const focused = makeFocusedPane()
 
   const { result } = renderHook(() =>
     useScratchTerminals({
       service,
-      resolveActiveSession: () => session,
+      resolveFocusedPane: () => focused,
       ready: false,
     })
   )
@@ -125,11 +150,11 @@ test('does not spawn until ready', async () => {
   expect(service.spawn).not.toHaveBeenCalled()
 })
 
-test('toggle is a no-op when there is no active session', async () => {
+test('toggle is a no-op when there is no focused pane', async () => {
   const service = makeService()
 
   const { result } = renderHook(() =>
-    useScratchTerminals({ service, resolveActiveSession: () => null })
+    useScratchTerminals({ service, resolveFocusedPane: () => null })
   )
 
   await act(async () => {
@@ -142,13 +167,13 @@ test('toggle is a no-op when there is no active session', async () => {
 
 test('arms the spawn→attach buffer for the new pty before mounting', async () => {
   const service = makeService()
-  const session = makeSession()
+  const focused = makeFocusedPane()
   const registerPending = vi.fn()
 
   const { result } = renderHook(() =>
     useScratchTerminals({
       service,
-      resolveActiveSession: () => session,
+      resolveFocusedPane: () => focused,
       registerPending,
     })
   )
@@ -165,18 +190,18 @@ test('contains a spawn rejection instead of rejecting from the chord path', asyn
     spawn: vi.fn().mockRejectedValue(new Error('pty cap reached')),
     kill: vi.fn().mockResolvedValue(undefined),
   } as unknown as ITerminalService
-  const session = makeSession()
+  const focused = makeFocusedPane()
   const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
 
   const { result } = renderHook(() =>
-    useScratchTerminals({ service, resolveActiveSession: () => session })
+    useScratchTerminals({ service, resolveFocusedPane: () => focused })
   )
 
   await act(async () => {
     await expect(result.current.toggle()).resolves.toBeUndefined()
   })
 
-  expect([...result.current.running.keys()]).toEqual([])
+  expect([...result.current.runningByPane.keys()]).toEqual([])
   expect(result.current.renderNode).toBeNull()
   expect(warn).toHaveBeenCalled()
   warn.mockRestore()
@@ -184,10 +209,10 @@ test('contains a spawn rejection instead of rejecting from the chord path', asyn
 
 test('registers a backtick chord that toggles and consumes the event', async () => {
   const service = makeService()
-  const session = makeSession()
+  const focused = makeFocusedPane()
 
   renderHook(() =>
-    useScratchTerminals({ service, resolveActiveSession: () => session })
+    useScratchTerminals({ service, resolveFocusedPane: () => focused })
   )
 
   let consumed = false
