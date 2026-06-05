@@ -121,20 +121,24 @@ at fetch level falls back to the next):
 ```text
 // per-tab closure state (§2.3): gen, controller, pendingKey, resolvedKey
 on page-favicon-updated(_e, favicons):
-  key = hash(favicons.join('\n'))             // bounded digest (any stable hash) — O(1) (§2.3)
-  if key === resolvedKey or key === pendingKey: return    // already shown / in flight (§2.3)
-  controller?.abort(); controller = new AbortController() // supersede any prior fetch
+  candidates = favicons.filter(u => u.length <= MAX_FAVICON_URL).slice(0, MAX_CANDIDATES)
+  key = hash(candidates.join('\n'))     // full surviving URLs → key identity == resolution (§2.3)
+  if key === resolvedKey or key === pendingKey: return     // already shown / in flight — dedup (§2.3)
+  controller?.abort()                                      // abort the previous resolution
+  myController = new AbortController()                     // LOCAL to this invocation
+  controller = myController                                // publish as the current resolution
   pendingKey = key
-  myGen = ++gen                               // tag this resolution (§2.3)
+  myGen = ++gen                                            // tag this (non-deduped) resolution (§2.3)
   dataUrl = null
-  for url of favicons.slice(0, MAX_CANDIDATES):   // bounded; first transport-valid wins
-    if controller.signal.aborted: break            // superseded — stop early
-    dataUrl = await resolveFaviconDataUrl(session, url, controller.signal)
+  for url of candidates:                                   // full URLs; first transport-valid wins
+    if myController.signal.aborted: break                 // superseded — stop (this invocation's signal)
+    dataUrl = await resolveFaviconDataUrl(session, url, myController.signal)
     if dataUrl !== null: break
-  if tab gone or myGen !== gen: return         // superseded by a newer event / navigation
+  if tab gone or myGen !== gen: return                    // superseded → bail, touch no shared state
   tab.favicon = dataUrl
-  resolvedKey = dataUrl ? key : null           // only a real icon counts as "shown"; retry empties
-  pendingKey = null; controller = null
+  resolvedKey = dataUrl ? key : null                      // only a real icon counts as "shown"; retry empties
+  pendingKey = null
+  if controller === myController: controller = null       // clear the shared ref only if still ours
   emitTabsChanged
 ```
 
@@ -144,21 +148,32 @@ placeholder.)
 `resolveFaviconDataUrl(session, url, resolutionSignal)` — resolve **one** candidate to a `data:`
 URL or `null`:
 
-- **`data:` URL** → accept only if it is `data:image/…` with a **non-empty** payload and a decoded
-  size within the cap; else `null`. (Inline favicons skip the network.)
-- **`http(s):` URL** → `session.fetch(url, { signal })` on the tab's **partition session**
-  (`view.webContents.session`). This is a main-side **Session network-stack** fetch: it carries
-  that partition's cookies / cache / proxy, but is **not** a renderer same-origin request, so no
-  `webSecurity` semantics apply. The `signal` **combines** the resolution's shared
-  `AbortController` (§2.3 — a superseding event / `did-navigate` aborts the **whole** resolution)
-  with a **per-candidate** ≈5 s `AbortSignal.timeout`, via `AbortSignal.any([resolutionSignal,
-  AbortSignal.timeout(…)])` — so a candidate *timing out* aborts only that fetch and the loop
-  advances to the next, while a *supersede* aborts everything (the two must not share one
-  controller). Constraints: scheme is `http(s)` (redirects followed within the network stack; the
-  checks bind the **final** response); reject unless `res.ok`, `Content-Type` is `image/*`, and the
-  body is **non-empty**; enforce the **≈128 KB cap both ways** — reject up-front when
-  `Content-Length` exceeds it, and abort the read once streamed bytes pass it (never buffer an
-  unbounded body); then `data:${mime};base64,${base64(bytes)}`.
+- **`data:` URL** → accept only a canonical `data:image/<subtype>;base64,<payload>` with a
+  **non-empty** payload and a decoded size within the cap (the candidate already passed the
+  `MAX_FAVICON_URL` string-length filter, so the stored URL is bounded); else `null`. (Inline
+  favicons skip the network.)
+- **`http(s):` URL** → fetched main-side under a strict **SSRF policy** — the favicon URL is
+  page-controlled, so this must not become an arbitrary fetch primitive:
+  `session.fetch(url, { signal, redirect: 'error', credentials: 'omit' })` on the tab's partition
+  session (`view.webContents.session`, for its cache / proxy). **`credentials: 'omit'`** is explicit
+  (Fetch defaults to `same-origin`): favicons are public assets, and sending cookies would enable a
+  *credentialed* SSRF. Scheme must be `http(s)`, and `redirect: 'error'` so a redirect can't bypass
+  the checks. The host guard uses the **Private-Network-Access model**: a target that is loopback /
+  private / link-local / reserved (`localhost`, RFC1918, `169.254/16`, `::1`, metadata IPs) is
+  rejected **only when the tab's committed page origin is *public*** — a private / local page (e.g. a
+  `localhost` dev server) may still load its **own** local favicon, so L3 doesn't regress the pane's
+  first-class localhost / intranet use case (cf. `LOCAL_DEV_HOST_PATTERN`, `BrowserPane.tsx:43`).
+  (Robust enforcement resolves + pins the IP to defeat DNS rebinding — an impl hardening detail.) It
+  is a Session network-stack fetch, not a renderer request, so no `webSecurity` semantics apply. The `signal`
+  **combines** the resolution's shared `AbortController` (§2.3 — a superseding event /
+  `did-navigate` aborts the **whole** resolution) with a **per-candidate** ≈5 s
+  `AbortSignal.timeout`, via `AbortSignal.any([resolutionSignal, AbortSignal.timeout(…)])` — a
+  candidate *timing out* aborts only that fetch (loop advances); a *supersede* aborts everything.
+  Then validate: reject unless `res.ok`, `Content-Type` is `image/*`, and the body is **non-empty**;
+  enforce the **byte cap both ways** (§2.6, ≈32 KB) — reject up-front when `Content-Length` exceeds
+  it and abort the read once streamed bytes pass it (never buffer an unbounded body); then
+  `data:image/${subtype};base64,${base64(bytes)}` with `subtype` from the validated `Content-Type`
+  (canonical MIME, no extra params).
 - **any other scheme** (`file:`, `chrome:`, …) or any throw / timeout / oversize → `null`.
 
 `resolveFaviconDataUrl` validates only at the **transport** level — main cannot decode every
@@ -174,16 +189,22 @@ background tabs resolve their own favicons.
 
 The installer (§2.4) holds per-tab closure state: a monotonic `gen` counter, the in-flight
 `AbortController`, and two **bounded-digest** markers `pendingKey` / `resolvedKey` (hashes of the
-candidate list, not raw URLs — closure state stays O(1) even for large inline `data:` favicons):
+**capped** candidate list — over-length URLs are dropped (`≤ MAX_FAVICON_URL`) and the list is
+sliced to `MAX_CANDIDATES`, then the **full surviving URLs** are hashed, so the dedup key matches
+exactly what gets resolved while staying bounded even for many / huge inline `data:` favicons):
 
 - **Dedup** — a `page-favicon-updated` whose `key` equals `resolvedKey` (already shown) or
   `pendingKey` (in flight) returns immediately, with no refetch.
 - **Staleness** — each resolution captures `myGen = ++gen` at the start and commits **only if**
-  `gen` is unchanged when it finishes. Any newer favicon event **and** the `did-navigate` reset
-  bump `gen` (and `abort()` the in-flight fetch), so a fetch started before a navigation can
-  never overwrite the new document's tab — **even if the new page declares the same favicon URL**
-  (the key would match, but the generation will not). Key equality alone is *not* the staleness
-  guard.
+  `gen` is unchanged when it finishes. Any newer **non-deduped** favicon event (one that passes the
+  dedup check) **and** the `did-navigate` reset bump `gen` and `abort()` the in-flight fetch — so a
+  fetch started before a navigation can never overwrite the new document's tab, **even if the new
+  page declares the same favicon URL** (the key would match, but the generation will not). A
+  deduped repeat returns early and leaves the in-flight resolution untouched. Key equality alone is
+  *not* the staleness guard. (In practice `did-navigate` — the document commit — fires **before**
+  the new document's `page-favicon-updated`, which is parsed from the committed DOM, so the reset's
+  key-clear lands ahead of the new page's favicon events; dedup never suppresses a freshly-navigated
+  favicon.)
 - **Reset** — `did-navigate` aborts the controller, bumps `gen`, clears `pendingKey` /
   `resolvedKey` and `tab.favicon`, and emits **nothing itself** (wired before `emitUrlChanged`,
   §2.4).
@@ -225,10 +246,15 @@ or `tsc` fails (the good kind of silent-failure guard):
 ### 2.6 Payload note
 
 The `data:` URL travels inside every `tabs-changed` payload (which also fires on
-`page-title-updated`). It is **recomputed only on `page-favicon-updated`** (cached on the record)
-— `tabs-changed` re-sends the cached value, and the byte cap bounds each payload. If profiling
-later shows IPC pressure, the noted optimization is a custom `img-src`-allowed favicon protocol
-serving cached bytes by tab id (tabs-changed then carries a short token) — out of scope for L3.
+`page-title-updated`). To keep that bounded the byte cap is a tight **≈32 KB** (favicons render at
+16px; standard icons fit well under it, oversize ones fall back to the placeholder), and the stored
+string is length-bounded (passthrough by `MAX_FAVICON_URL`, http-fetched by the byte cap). Worst
+case is `MAX_TABS_PER_PANE` (20) × ~44 KB base64 ≈ <1 MB on a title-only emit, typically just a few
+small icons; favicon bytes are **recomputed only on `page-favicon-updated`** (cached on the record),
+so title updates re-send the cached value, never a refetch. If profiling still shows IPC pressure,
+the deferred optimization is to move favicons off `tabs-changed` onto a dedicated per-tab
+`favicon-changed` event (or a custom `img-src`-allowed favicon protocol serving cached bytes by tab
+id) — out of scope for L3.
 
 ## 3. Favicon — renderer rendering + fallback
 
@@ -391,6 +417,10 @@ test-only exports), mirroring L2 §5.2. `session.fetch` is mocked.
   and an empty `favicons` array each yield `favicon: null` (→ placeholder).
 - **Candidate fallback**: first candidate non-`ok`, second `image/*` → the second's data: URL is
   committed (the loop advances, not stuck at index 0).
+- **Fetch policy (SSRF)**: a **public** page's favicon pointing at a private / loopback host
+  (`127.0.0.1`, RFC1918, `169.254.x`, `localhost`) → `favicon: null`; the **same** target from a
+  `localhost` / private page is **allowed** (PNA model); a redirected response is rejected
+  (`redirect: 'error'`); the fetch carries `credentials: 'omit'`.
 - **Staleness (§2.3 generation guard)**: with a deferred in-flight favicon fetch, a `did-navigate`
   (or a newer `page-favicon-updated`) bumps `gen`; the old fetch's result is **discarded** —
   including when the post-navigation page declares the **same favicon URL** (the old bytes never
@@ -424,7 +454,8 @@ branch and the absolutely-positioned load bar.
 ### 5.5 Acceptance criteria (L3 done = all of)
 
 1. Tabs show real per-tab favicons (incl. background tabs + after reconnect); absent / broken
-   favicons fall back to the L1 placeholder.
+   favicons fall back to the L1 placeholder. A **public** page cannot make main fetch a private /
+   loopback favicon target (PNA guard), while a `localhost` / intranet page keeps its own favicon.
 2. A favicon never persists stale across a navigation, and a pre-navigation fetch never overwrites
    the new document's icon (the §2.3 generation guard).
 3. The active tab shows the chrome-layer load bar while loading with zero re-layout and no
