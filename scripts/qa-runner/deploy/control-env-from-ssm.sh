@@ -8,6 +8,7 @@ prefix="${QA_CONTROL_PARAM_PREFIX:-/vimeflow/qa-runner/prod/control}"
 worker_mode="${QA_WORKER_MODE:-ssm}"
 worker_region="${QA_WORKER_REGION:-$region}"
 worker_repo="${QA_WORKER_REPO:-/opt/vimeflow/repo}"
+worker_instance_id="${QA_WORKER_INSTANCE_ID:-}"
 service_user="${QA_SERVICE_USER:-vimeflow-qa}"
 
 value() {
@@ -18,6 +19,61 @@ value() {
     --query Parameter.Value \
     --output text
 }
+
+optional_value() {
+  local err
+  local out
+  local status
+  err="$(mktemp)"
+  if out="$(aws ssm get-parameter \
+    --region "$region" \
+    --name "$prefix/$1" \
+    --with-decryption \
+    --query Parameter.Value \
+    --output text 2>"$err")"; then
+    rm -f "$err"
+    printf "%s" "$out"
+    return 0
+  fi
+
+  status=$?
+  if grep -q "ParameterNotFound" "$err"; then
+    rm -f "$err"
+    return 0
+  fi
+
+  cat "$err" >&2
+  rm -f "$err"
+  return "$status"
+}
+
+write_env_line() {
+  local key="$1"
+  local value
+  value="$(printf "%s" "$2" | tr -d "\r\n")"
+  if [ -n "$value" ]; then
+    printf "%s=%s\n" "$key" "$value"
+  fi
+}
+
+bool_enabled() {
+  case "$(printf "%s" "$1" | tr "[:upper:]" "[:lower:]")" in
+    1 | true | yes | on) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+if [ "$worker_mode" = "ssm" ] && [ -z "$worker_instance_id" ]; then
+  worker_instance_id="$(value QA_WORKER_INSTANCE_ID)"
+fi
+
+worker_timeout_seconds="${QA_WORKER_TIMEOUT_SECONDS:-$(optional_value QA_WORKER_TIMEOUT_SECONDS)}"
+worker_refresh_runner="${QA_WORKER_REFRESH_RUNNER:-$(optional_value QA_WORKER_REFRESH_RUNNER)}"
+worker_ref="${QA_WORKER_REF:-$(optional_value QA_WORKER_REF)}"
+
+if bool_enabled "$worker_refresh_runner" && [ -z "$worker_ref" ]; then
+  worker_ref="$(value QA_WORKER_REF)"
+fi
 
 write_secret_file() {
   local path="$1"
@@ -40,9 +96,12 @@ install -d -m 0700 -o "$service_user" -g "$service_user" "$repo/scripts/qa-runne
   chown "$service_user:$service_user" "$repo/scripts/qa-runner"
 }
 
-write_secret_file "$etc_dir/control.env" 0600 <<EOF
+{
+  cat <<EOF
 GITHUB_WEBHOOK_SECRET=$(value GITHUB_WEBHOOK_SECRET)
 QA_STATUS_TOKEN=$(value QA_STATUS_TOKEN)
+GH_TOKEN=$(value GH_ORCH_TOKEN)
+GH_PROMPT_DISABLED=1
 QA_HOST=127.0.0.1
 QA_PORT=8787
 QA_LABEL=auto-review
@@ -58,6 +117,11 @@ QA_WORKER_MODE=$worker_mode
 QA_WORKER_REGION=$worker_region
 QA_WORKER_REPO=$worker_repo
 EOF
+  write_env_line QA_WORKER_INSTANCE_ID "$worker_instance_id"
+  write_env_line QA_WORKER_TIMEOUT_SECONDS "$worker_timeout_seconds"
+  write_env_line QA_WORKER_REFRESH_RUNNER "$worker_refresh_runner"
+  write_env_line QA_WORKER_REF "$worker_ref"
+} | write_secret_file "$etc_dir/control.env" 0600
 
 write_secret_file "$repo/scripts/qa-runner/orchestrator.env" 0600 <<EOF
 GH_ORCH_TOKEN=$(value GH_ORCH_TOKEN)

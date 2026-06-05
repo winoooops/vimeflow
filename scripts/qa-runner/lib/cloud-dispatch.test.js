@@ -33,6 +33,24 @@ describe('cycleEnv', () => {
       })
     ).toEqual(cycle)
   })
+
+  test('forwards worker refresh settings but not instance-id or token', () => {
+    expect(
+      cycleEnv({
+        ...cycle,
+        QA_WORKER_REFRESH_RUNNER: '1',
+        QA_WORKER_REF: 'main',
+        QA_RUNNER_REF: 'main',
+        QA_WORKER_INSTANCE_ID: 'i-123',
+        GH_TOKEN: 'secret',
+      })
+    ).toEqual({
+      ...cycle,
+      QA_WORKER_REFRESH_RUNNER: '1',
+      QA_WORKER_REF: 'main',
+      QA_RUNNER_REF: 'main',
+    })
+  })
 })
 
 describe('worker dispatch plans', () => {

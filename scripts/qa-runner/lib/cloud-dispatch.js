@@ -10,6 +10,9 @@ export const CYCLE_ENV_KEYS = [
   'QA_LINEAR_CREATE_ISSUES',
   'QA_LINEAR_TEAM_KEY',
   'QA_MAX_CI_RERUNS',
+  'QA_WORKER_REFRESH_RUNNER',
+  'QA_WORKER_REF',
+  'QA_RUNNER_REF',
 ]
 
 const boolEnv = (value) =>
