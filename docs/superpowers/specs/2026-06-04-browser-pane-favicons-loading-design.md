@@ -454,8 +454,9 @@ branch and the absolutely-positioned load bar.
 ### 5.5 Acceptance criteria (L3 done = all of)
 
 1. Tabs show real per-tab favicons (incl. background tabs + after reconnect); absent / broken
-   favicons fall back to the L1 placeholder. A **public** page cannot make main fetch a private /
-   loopback favicon target (PNA guard), while a `localhost` / intranet page keeps its own favicon.
+   favicons fall back to the L1 placeholder. A **public** page cannot make main fetch a **literal**
+   private / loopback favicon target (hostname-based PNA guard; DNS-rebinding IP-pinning deferred
+   per §2.2), while a `localhost` / intranet page keeps its own favicon.
 2. A favicon never persists stale across a navigation, and a pre-navigation fetch never overwrites
    the new document's icon (the §2.3 generation guard).
 3. The active tab shows the chrome-layer load bar while loading with zero re-layout and no
