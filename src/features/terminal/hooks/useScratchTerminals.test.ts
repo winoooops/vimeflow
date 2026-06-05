@@ -12,7 +12,7 @@ const makeFocusedPane = (
 ): FocusedPaneRef =>
   ({
     pane: { id: paneId, cwd },
-    session: { id: sessionId },
+    session: { id: sessionId, panes: [{ id: paneId, cwd }] },
   }) as unknown as FocusedPaneRef
 
 const makeService = (): ITerminalService =>

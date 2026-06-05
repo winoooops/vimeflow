@@ -1,9 +1,10 @@
 import { test, expect, vi, beforeEach } from 'vitest'
-import { render, screen, act, fireEvent } from '@testing-library/react'
+import { render, screen, act, fireEvent, within } from '@testing-library/react'
 import type { ReactElement } from 'react'
 import { ScratchTerminalPopup } from './index'
 import type { ITerminalService } from '../../services/terminalService'
 import type { NotifyPaneReady } from '../../hooks/useTerminal'
+import type { ScratchPanePill } from '../../hooks/useScratchTerminals'
 
 // Body owns the xterm instance (canvas/webgl), which jsdom can't render. Stub
 // it as a forwardRef exposing a focusTerminal spy and capturing the onPaneReady
@@ -162,4 +163,54 @@ test('Escape does nothing while the popup is hidden', () => {
   fireEvent.keyDown(screen.getByTestId('scratch-popup'), { key: 'Escape' })
 
   expect(onHide).not.toHaveBeenCalled()
+})
+
+const makePill = (
+  label: string,
+  paneId: string,
+  running = false
+): ScratchPanePill => ({
+  key: `s1:${paneId}`,
+  target: { sessionId: 's1', paneId, cwd: '/repo' },
+  label,
+  running,
+})
+
+test('renders pane-switcher pills and selects a pane on click', () => {
+  const onSelectPane = vi.fn()
+
+  render(
+    <ScratchTerminalPopup
+      open
+      {...baseProps}
+      panes={[makePill('1', 'p0', true), makePill('2', 'p1')]}
+      activeKey="s1:p0"
+      onSelectPane={onSelectPane}
+    />
+  )
+
+  const pills = within(screen.getByTestId('scratch-pane-pills')).getAllByRole(
+    'button'
+  )
+  expect(pills).toHaveLength(2)
+  // The active pane's pill is pressed; the running pane's pill reads "running".
+  expect(
+    screen.getByRole('button', { name: /scratch pane 1 \(running\)/i })
+  ).toHaveAttribute('aria-pressed', 'true')
+
+  fireEvent.click(screen.getByRole('button', { name: 'scratch pane 2' }))
+
+  expect(onSelectPane).toHaveBeenCalledWith({
+    sessionId: 's1',
+    paneId: 'p1',
+    cwd: '/repo',
+  })
+})
+
+test('omits the pills row for a single-pane session', () => {
+  render(
+    <ScratchTerminalPopup open {...baseProps} panes={[makePill('1', 'p0')]} />
+  )
+
+  expect(screen.queryByTestId('scratch-pane-pills')).toBeNull()
 })

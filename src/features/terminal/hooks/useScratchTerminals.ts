@@ -10,6 +10,7 @@ import {
 import type { ReactNode } from 'react'
 import { ScratchTerminalPopup } from '../components/ScratchTerminalPopup'
 import { registerChord } from '../../command-palette/chordRegistry'
+import { isShellPane } from '../../sessions/utils/paneKind'
 import type { ITerminalService } from '../services/terminalService'
 import type { NotifyPaneReady } from './useTerminal'
 import type { FocusedPaneRef } from '../../command-palette/hooks/usePaneRenameChord'
@@ -31,6 +32,17 @@ export interface ScratchTarget {
   sessionId: string
   paneId: string
   cwd: string
+}
+
+/**
+ * A pane-switcher pill in the popup header — one per shell pane of the active
+ * session, with a live dot when that pane's scratch is running (spec §6).
+ */
+export interface ScratchPanePill {
+  key: string
+  target: ScratchTarget
+  label: string
+  running: boolean
 }
 
 /** Stable per-pane key — NOT the host ptyId, which rotates on pane restart. */
@@ -95,6 +107,58 @@ export const useScratchTerminals = ({
     setVisibleKey(null)
   }, [])
 
+  // Lazily spawn a pane's scratch shell on first open. Idempotent + guarded.
+  const spawnIfNeeded = useCallback(
+    async (target: ScratchTarget, key: string): Promise<void> => {
+      if (
+        entriesRef.current.has(key) ||
+        !ready ||
+        spawningRef.current.has(key)
+      ) {
+        return
+      }
+      spawningRef.current.add(key)
+      try {
+        const result = await service.spawn({
+          // The pane's live (OSC 7-tracked) cwd, not the session's static wd.
+          cwd: target.cwd,
+          ephemeral: true,
+          enableAgentBridge: false,
+        })
+        // Buffer prompt/rc output emitted before the popup's terminal attaches.
+        registerPending?.(result.sessionId)
+        entriesRef.current.set(key, {
+          scratchPtyId: result.sessionId,
+          pid: result.pid,
+          status: 'running',
+          cwd: result.cwd,
+        })
+        commit()
+      } catch (err) {
+        // Contain the rejection (chord/pill call with `void`); no entry is
+        // created, so the next attempt retries.
+        // eslint-disable-next-line no-console
+        console.warn('scratch spawn failed', err)
+      } finally {
+        spawningRef.current.delete(key)
+      }
+    },
+    [ready, service, commit, registerPending]
+  )
+
+  // Reveal a pane's scratch (spawning on first open). The pane button and the
+  // pane-switcher pills land here; only the chord toggles (hide-if-shown).
+  const show = useCallback(
+    async (target: ScratchTarget): Promise<void> => {
+      const key = paneKey(target.sessionId, target.paneId)
+      await spawnIfNeeded(target, key)
+      if (entriesRef.current.has(key)) {
+        setVisibleKey(key)
+      }
+    },
+    [spawnIfNeeded]
+  )
+
   const toggle = useCallback(
     async (target?: ScratchTarget): Promise<void> => {
       let resolved = target
@@ -119,45 +183,9 @@ export const useScratchTerminals = ({
 
         return
       }
-
-      // Lazily spawn this pane's scratch shell on first open.
-      if (
-        !entriesRef.current.has(key) &&
-        ready &&
-        !spawningRef.current.has(key)
-      ) {
-        spawningRef.current.add(key)
-        try {
-          const result = await service.spawn({
-            // The pane's live (OSC 7-tracked) cwd, not the session's static wd.
-            cwd: resolved.cwd,
-            ephemeral: true,
-            enableAgentBridge: false,
-          })
-          // Buffer prompt/rc output emitted before the popup's terminal attaches.
-          registerPending?.(result.sessionId)
-          entriesRef.current.set(key, {
-            scratchPtyId: result.sessionId,
-            pid: result.pid,
-            status: 'running',
-            cwd: result.cwd,
-          })
-          commit()
-        } catch (err) {
-          // Contain the rejection (chord calls toggle with `void`); no entry is
-          // created, so the next toggle retries.
-          // eslint-disable-next-line no-console
-          console.warn('scratch spawn failed', err)
-        } finally {
-          spawningRef.current.delete(key)
-        }
-      }
-
-      if (entriesRef.current.has(key)) {
-        setVisibleKey(key)
-      }
+      await show(resolved)
     },
-    [resolveFocusedPane, visibleKey, ready, service, commit, registerPending]
+    [resolveFocusedPane, visibleKey, show]
   )
 
   // `Mod+;` then backtick chord — registered once, calls the latest toggle via a ref.
@@ -181,6 +209,28 @@ export const useScratchTerminals = ({
     return map
   }, [entries])
 
+  // Pane-switcher pills: one per shell pane of the active (focused) session,
+  // with a live dot when that pane's scratch is running (spec §6). The popup is
+  // a modal overlay, so the focused session is stable while it's open.
+  const focused = resolveFocusedPane()
+
+  const panePills: ScratchPanePill[] = focused
+    ? focused.session.panes.filter(isShellPane).map((pane, index) => {
+        const key = paneKey(focused.session.id, pane.id)
+
+        return {
+          key,
+          target: {
+            sessionId: focused.session.id,
+            paneId: pane.id,
+            cwd: pane.cwd,
+          },
+          label: String(index + 1),
+          running: runningByPane.get(key) === 'running',
+        }
+      })
+    : []
+
   const renderNode: ReactNode =
     entries.size > 0
       ? createElement(
@@ -196,6 +246,9 @@ export const useScratchTerminals = ({
               service,
               onHide: hide,
               onPaneReady: notifyPaneReady,
+              panes: panePills,
+              activeKey: visibleKey,
+              onSelectPane: (target: ScratchTarget): void => void show(target),
             })
           )
         )
