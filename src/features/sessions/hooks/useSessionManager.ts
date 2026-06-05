@@ -141,6 +141,13 @@ export interface SessionManager {
    * scratch terminal, whose PTY spawns outside the session-restore path.
    */
   registerPending: (ptyId: string) => void
+  /**
+   * Drop the spawn→attach buffer for a PTY. The scratch hook calls this when it
+   * reaps a scratch shell (host pane / session closed) or re-spawns one that
+   * self-exited, so the dead shell's buffered output never reaches a new
+   * subscriber.
+   */
+  dropAllForPty: (ptyId: string) => void
 }
 
 export interface SetPaneUserLabelOptions {
@@ -1911,5 +1918,6 @@ export const useSessionManager = (
     loading,
     notifyPaneReady,
     registerPending,
+    dropAllForPty,
   }
 }

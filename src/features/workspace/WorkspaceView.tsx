@@ -182,6 +182,7 @@ export const WorkspaceView = (): ReactElement => {
     loading,
     notifyPaneReady,
     registerPending,
+    dropAllForPty,
   } = useSessionManager(terminalService)
 
   // Detect which modifier the toolbar advertises on this platform so
@@ -651,6 +652,14 @@ export const WorkspaceView = (): ReactElement => {
     }
   }, [terminalService])
 
+  // Live pane keys across all sessions — drives the scratch lazy reconciliation
+  // (a scratch whose host pane/session is gone gets killed + dropped).
+  const livePaneKeys = useMemo(
+    () =>
+      new Set(sessions.flatMap((s) => s.panes.map((p) => `${s.id}:${p.id}`))),
+    [sessions]
+  )
+
   const {
     renderNode: scratchTerminalNode,
     toggle: toggleScratch,
@@ -661,6 +670,8 @@ export const WorkspaceView = (): ReactElement => {
     ready: scratchReapDone,
     registerPending,
     notifyPaneReady,
+    livePaneKeys,
+    dropAllForPty,
   })
 
   // Pane-keys whose scratch shell is running — drives the pane-button live cue.

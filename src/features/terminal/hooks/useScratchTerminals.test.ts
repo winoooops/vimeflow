@@ -22,7 +22,20 @@ const makeService = (): ITerminalService =>
       .fn()
       .mockResolvedValue({ sessionId: 'scratch-pty', pid: 7, cwd: '/repo' }),
     kill: vi.fn().mockResolvedValue(undefined),
+    onExit: vi.fn().mockResolvedValue(() => undefined),
   }) as unknown as ITerminalService
+
+// The reconcile effect (VIM-62) keys spawned shells by ptyId; a counter mints a
+// distinct id per spawn so a test can assert the right shell was killed/dropped.
+const countingSpawn = (): ITerminalService['spawn'] => {
+  let n = 0
+
+  return vi.fn().mockImplementation((args: { cwd: string }) => {
+    n += 1
+
+    return Promise.resolve({ sessionId: `scratch-${n}`, pid: n, cwd: args.cwd })
+  })
+}
 
 test('toggle (no target) spawns an ephemeral, no-bridge shell at the focused pane cwd, keyed by pane', async () => {
   const service = makeService()
@@ -219,6 +232,7 @@ test('contains a spawn rejection instead of rejecting from the chord path', asyn
   const service = {
     spawn: vi.fn().mockRejectedValue(new Error('pty cap reached')),
     kill: vi.fn().mockResolvedValue(undefined),
+    onExit: vi.fn().mockResolvedValue(() => undefined),
   } as unknown as ITerminalService
   const focused = makeFocusedPane()
   const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
@@ -311,4 +325,191 @@ test('registers a backtick chord that toggles and consumes the event', async () 
 
   expect(consumed).toBe(true)
   expect(service.spawn).toHaveBeenCalled()
+})
+
+// --- PR3 (VIM-62): pane-bound lifecycle via lazy reconciliation ---
+
+test('closing a pane kills + drops its scratch and removes the entry', async () => {
+  const service = makeService()
+  service.spawn = countingSpawn()
+  const dropAllForPty = vi.fn<(ptyId: string) => void>()
+  const focused = makeFocusedPane('s1', 'p0', '/a')
+
+  const { result, rerender } = renderHook(
+    (props: { live: ReadonlySet<string> }) =>
+      useScratchTerminals({
+        service,
+        resolveFocusedPane: () => focused,
+        livePaneKeys: props.live,
+        dropAllForPty,
+      }),
+    { initialProps: { live: new Set<string>(['s1:p0']) } }
+  )
+
+  await act(async () => {
+    await result.current.toggle({ sessionId: 's1', paneId: 'p0', cwd: '/a' })
+  })
+  expect([...result.current.runningByPane.keys()]).toEqual(['s1:p0'])
+
+  // The host pane closes — its `s1:p0` key drops out of the live set.
+  act(() => {
+    rerender({ live: new Set<string>() })
+  })
+
+  expect(service.kill).toHaveBeenCalledWith({ sessionId: 'scratch-1' })
+  expect(dropAllForPty).toHaveBeenCalledWith('scratch-1')
+  expect([...result.current.runningByPane.keys()]).toEqual([])
+  expect(result.current.renderNode).toBeNull()
+})
+
+test('closing a session reaps every scratch in it at once', async () => {
+  const service = makeService()
+  service.spawn = countingSpawn()
+  const dropAllForPty = vi.fn<(ptyId: string) => void>()
+  const focused = makeFocusedPane('s1', 'p0', '/a')
+
+  const { result, rerender } = renderHook(
+    (props: { live: ReadonlySet<string> }) =>
+      useScratchTerminals({
+        service,
+        resolveFocusedPane: () => focused,
+        livePaneKeys: props.live,
+        dropAllForPty,
+      }),
+    { initialProps: { live: new Set<string>(['s1:p0', 's1:p1']) } }
+  )
+
+  await act(async () => {
+    await result.current.toggle({ sessionId: 's1', paneId: 'p0', cwd: '/a' })
+  })
+
+  await act(async () => {
+    await result.current.toggle({ sessionId: 's1', paneId: 'p1', cwd: '/b' })
+  })
+
+  expect([...result.current.runningByPane.keys()].sort()).toEqual([
+    's1:p0',
+    's1:p1',
+  ])
+
+  // The whole session closes — both pane keys vanish in the same live-set diff.
+  act(() => {
+    rerender({ live: new Set<string>() })
+  })
+
+  expect(service.kill).toHaveBeenCalledWith({ sessionId: 'scratch-1' })
+  expect(service.kill).toHaveBeenCalledWith({ sessionId: 'scratch-2' })
+  expect(dropAllForPty.mock.calls.map((call) => call[0]).sort()).toEqual([
+    'scratch-1',
+    'scratch-2',
+  ])
+  expect([...result.current.runningByPane.keys()]).toEqual([])
+})
+
+test('a pane restart keeps its scratch — the stable key survives a live-set change', async () => {
+  const service = makeService()
+  service.spawn = countingSpawn()
+  const dropAllForPty = vi.fn<(ptyId: string) => void>()
+  const focused = makeFocusedPane('s1', 'p0', '/a')
+
+  const { result, rerender } = renderHook(
+    (props: { live: ReadonlySet<string> }) =>
+      useScratchTerminals({
+        service,
+        resolveFocusedPane: () => focused,
+        livePaneKeys: props.live,
+        dropAllForPty,
+      }),
+    { initialProps: { live: new Set<string>(['s1:p0']) } }
+  )
+
+  await act(async () => {
+    await result.current.toggle({ sessionId: 's1', paneId: 'p0', cwd: '/a' })
+  })
+
+  // p0 restarts (its host ptyId rotates) and a sibling p1 opens. The live set
+  // changes, but p0's stable `s1:p0` key is still present, so its scratch lives.
+  act(() => {
+    rerender({ live: new Set<string>(['s1:p0', 's1:p1']) })
+  })
+
+  expect(service.kill).not.toHaveBeenCalled()
+  expect(dropAllForPty).not.toHaveBeenCalled()
+  expect([...result.current.runningByPane.keys()]).toEqual(['s1:p0'])
+})
+
+test('a self-exited scratch flips to `exited` but stays mounted while its pane lives', async () => {
+  const service = makeService()
+  service.spawn = countingSpawn()
+  const focused = makeFocusedPane('s1', 'p0', '/a')
+
+  const { result } = renderHook(
+    (props: { live: ReadonlySet<string> }) =>
+      useScratchTerminals({
+        service,
+        resolveFocusedPane: () => focused,
+        livePaneKeys: props.live,
+      }),
+    { initialProps: { live: new Set<string>(['s1:p0']) } }
+  )
+
+  await act(async () => {
+    await result.current.toggle({ sessionId: 's1', paneId: 'p0', cwd: '/a' })
+  })
+  expect(result.current.runningByPane.get('s1:p0')).toBe('running')
+
+  // The shell exits on its own (`exit` / Ctrl-D); the backend emits onExit.
+  const exitCb = vi.mocked(service.onExit).mock.calls[0][0]
+  act(() => {
+    exitCb('scratch-1', 0)
+  })
+
+  // Cue goes dark (status !== running), but the pane is alive so reconcile keeps
+  // the entry mounted — it's only replaced when the pane is re-opened.
+  expect(result.current.runningByPane.get('s1:p0')).toBe('exited')
+  expect(result.current.renderNode).not.toBeNull()
+})
+
+test('re-opening a self-exited pane spawns a fresh shell and drops the dead buffer', async () => {
+  const service = makeService()
+  service.spawn = countingSpawn()
+  const dropAllForPty = vi.fn<(ptyId: string) => void>()
+  const focused = makeFocusedPane('s1', 'p0', '/a')
+
+  const { result } = renderHook(
+    (props: { live: ReadonlySet<string> }) =>
+      useScratchTerminals({
+        service,
+        resolveFocusedPane: () => focused,
+        livePaneKeys: props.live,
+        dropAllForPty,
+      }),
+    { initialProps: { live: new Set<string>(['s1:p0']) } }
+  )
+
+  await act(async () => {
+    await result.current.toggle({ sessionId: 's1', paneId: 'p0', cwd: '/a' })
+  })
+
+  const exitCb = vi.mocked(service.onExit).mock.calls[0][0]
+  act(() => {
+    exitCb('scratch-1', 0)
+  })
+  expect(result.current.runningByPane.get('s1:p0')).toBe('exited')
+
+  // Hide the still-visible exited popup, then re-open the same pane.
+  await act(async () => {
+    await result.current.toggle({ sessionId: 's1', paneId: 'p0', cwd: '/a' })
+  })
+
+  await act(async () => {
+    await result.current.toggle({ sessionId: 's1', paneId: 'p0', cwd: '/a' })
+  })
+
+  // spawnIfNeeded saw an `exited` entry: it dropped the dead shell's buffer and
+  // spawned a fresh ptyId. The pane key was never dead, so reconcile never ran.
+  expect(service.spawn).toHaveBeenCalledTimes(2)
+  expect(dropAllForPty).toHaveBeenCalledWith('scratch-1')
+  expect(dropAllForPty).toHaveBeenCalledTimes(1)
+  expect(result.current.runningByPane.get('s1:p0')).toBe('running')
 })

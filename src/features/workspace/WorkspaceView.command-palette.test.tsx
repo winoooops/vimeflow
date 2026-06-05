@@ -212,6 +212,7 @@ describe('WorkspaceView - Command Palette Integration', () => {
       loading: false,
       notifyPaneReady: vi.fn(),
       registerPending: vi.fn(),
+      dropAllForPty: vi.fn(),
     }
 
     // Mock useSessionManager

@@ -47,6 +47,15 @@ export interface UseScratchTerminalsArgs {
   registerPending?: (ptyId: string) => void
   /** Drain the spawn→attach buffer once the popup's terminal subscribes. */
   notifyPaneReady?: NotifyPaneReady
+  /**
+   * Live `${sessionId}:${paneId}` keys across all sessions. A scratch entry
+   * whose key drops out (pane close / session close) is reaped — killed +
+   * dropped. A pane restart keeps the key (stable paneId), so its scratch
+   * survives. Omitted ⇒ no reconciliation (PR1/PR2 behavior).
+   */
+  livePaneKeys?: ReadonlySet<string>
+  /** Drop the spawn→attach buffer for a killed / self-exited scratch pty. */
+  dropAllForPty?: (ptyId: string) => void
 }
 
 export interface UseScratchTerminals {
@@ -79,6 +88,8 @@ export const useScratchTerminals = ({
   ready = true,
   registerPending,
   notifyPaneReady,
+  livePaneKeys,
+  dropAllForPty,
 }: UseScratchTerminalsArgs): UseScratchTerminals => {
   // Authoritative handles live in a ref so they never serialize; a projection
   // is mirrored into state so renderNode + cues re-render.
@@ -101,12 +112,18 @@ export const useScratchTerminals = ({
   // Lazily spawn a pane's scratch shell on first open. Idempotent + guarded.
   const spawnIfNeeded = useCallback(
     async (target: ScratchTarget, key: string): Promise<void> => {
+      const existing = entriesRef.current.get(key)
       if (
-        entriesRef.current.has(key) ||
+        (existing && existing.status !== 'exited') ||
         !ready ||
         spawningRef.current.has(key)
       ) {
         return
+      }
+      // Re-opening a self-exited scratch: drop the dead shell's stale buffer
+      // before the fresh spawn replaces the entry (VIM-62 self-exit reconcile).
+      if (existing) {
+        dropAllForPty?.(existing.scratchPtyId)
       }
       spawningRef.current.add(key)
       try {
@@ -134,7 +151,7 @@ export const useScratchTerminals = ({
         spawningRef.current.delete(key)
       }
     },
-    [ready, service, commit, registerPending]
+    [ready, service, commit, registerPending, dropAllForPty]
   )
 
   // Reveal a pane's scratch (spawning on first open). The pane button and the
@@ -200,6 +217,78 @@ export const useScratchTerminals = ({
     []
   )
 
+  // Self-exit (VIM-62): a scratch child that exits on its own (`exit`/Ctrl-D)
+  // flips its entry to `exited`. The button cue goes dark (status !== running);
+  // it's dropped on the next reconcile or replaced on the next open
+  // (spawnIfNeeded re-spawns an exited entry).
+  useEffect(() => {
+    // The subscribe is async but the cleanup is sync — the teardown flag and
+    // unsubscribe handle live on an object so the type-checker doesn't narrow
+    // them to always-false the way it does closure-mutated `let`s.
+    const subscription: { cancelled: boolean; off: (() => void) | null } = {
+      cancelled: false,
+      off: null,
+    }
+    void (async (): Promise<void> => {
+      const off = await service.onExit((ptyId) => {
+        const affected = [...entriesRef.current.entries()].filter(
+          ([, entry]) =>
+            entry.scratchPtyId === ptyId && entry.status !== 'exited'
+        )
+        if (affected.length === 0) {
+          return
+        }
+        for (const [key, entry] of affected) {
+          entriesRef.current.set(key, { ...entry, status: 'exited' })
+        }
+        commit()
+      })
+      if (subscription.cancelled) {
+        off()
+
+        return
+      }
+      subscription.off = off
+    })()
+
+    return (): void => {
+      subscription.cancelled = true
+      subscription.off?.()
+    }
+  }, [service, commit])
+
+  // Lazy reconciliation (VIM-62): a scratch whose host pane no longer exists
+  // (pane close / session close) is killed + dropped. A pane restart keeps it —
+  // the key is the stable `${sessionId}:${paneId}`, not the rotating host ptyId.
+  useEffect(() => {
+    if (!livePaneKeys) {
+      return
+    }
+
+    const deadKeys = [...entriesRef.current.keys()].filter(
+      (key) => !livePaneKeys.has(key)
+    )
+    if (deadKeys.length === 0) {
+      return
+    }
+    for (const key of deadKeys) {
+      const entry = entriesRef.current.get(key)
+      if (entry) {
+        void service.kill({ sessionId: entry.scratchPtyId })
+        dropAllForPty?.(entry.scratchPtyId)
+      }
+      entriesRef.current.delete(key)
+    }
+    const intent = showIntentRef.current
+    if (intent !== null && !livePaneKeys.has(intent)) {
+      showIntentRef.current = null
+    }
+    setVisibleKey((current) =>
+      current !== null && !entriesRef.current.has(current) ? null : current
+    )
+    commit()
+  }, [livePaneKeys, service, dropAllForPty, commit])
+
   // Memoized so consumers threading it down only re-render on actual change.
   const runningByPane = useMemo(() => {
     const map = new Map<string, ScratchStatus>()
@@ -215,7 +304,9 @@ export const useScratchTerminals = ({
           null,
           [...entries.entries()].map(([key, entry]) =>
             createElement(ScratchTerminalPopup, {
-              key,
+              // Keyed by pty so a re-spawned (post-exit) shell remounts a fresh
+              // <Body>; `open` still tracks the stable pane key.
+              key: `${key}:${entry.scratchPtyId}`,
               open: visibleKey === key,
               scratchPtyId: entry.scratchPtyId,
               cwd: entry.cwd,
