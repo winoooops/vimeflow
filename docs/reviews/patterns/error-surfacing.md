@@ -2,8 +2,8 @@
 id: error-surfacing
 category: error-handling
 created: 2026-04-10
-last_updated: 2026-06-04
-ref_count: 12
+last_updated: 2026-06-05
+ref_count: 13
 ---
 
 # Error Surfacing
@@ -96,6 +96,15 @@ failed" must mean the editor shows the original file, not the requested one.
 - **File:** `plugins/harness/skills/github-review/SKILL.md`
 - **Finding:** `paginated_review_threads_query` ends with `echo "$result"` — bash propagates the exit code of the last command, so the function always returns 0 regardless of inner `gh api graphql` failures. A failed `page_json=$(gh api graphql ...)` produces empty output; downstream `jq` errors silently to stderr; the loop hits `break` because `has_next` is not `"true"` for empty input — and the function returns `0` with a corrupted thread map. The Step 1 caller's `2>/dev/null || echo "[]"` fallback never fires; Step 2B and 7.1 callers had no fallback at all. Same shape as the `void promise` footgun: silent error swallowing where the caller is expected to detect failures via exit code.
 - **Fix:** Add `|| return 1` after each `page_json=$(gh api graphql ...)` assignment so transient GraphQL failures actually propagate. Then loud-fail at every call site: Step 1 keeps its `|| echo "[]"` (best-effort reconciliation); Step 2B and 7.1 promote to `|| { echo "ERROR..."; exit 1; }` because a corrupted thread map there silently misses unresolved threads (Step 7.1 would declare clean exit prematurely) or breaks inline-comment lookup with no diagnostic.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 48. SSM polling loop fatally returns on transient InvocationDoesNotExist errors
+
+- **Source:** github-claude | PR #349 round 1 | 2026-06-04
+- **Severity:** HIGH
+- **File:** `scripts/qa-runner/lib/cloud-dispatch.js`
+- **Finding:** The replacement manual polling loop for `aws ssm wait command-executed` called `get-command-invocation` immediately after `send-command` and treated any non-zero CLI exit as permanent failure. AWS SSM's eventually-consistent model means `InvocationDoesNotExist` and `InvalidCommandId` can appear briefly during the propagation window (1–5 seconds), causing false dispatch failures even though the command was accepted.
+- **Fix:** Inspect `get.stderr` for `InvocationDoesNotExist` / `InvalidCommandId` and retry with the poll interval instead of returning. Non-transient errors (e.g. `AccessDeniedException`) still return immediately so real permission failures are not masked.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
 
 ### 39. markRerunAttempt before gh run rerun drains budget on API failure
@@ -458,3 +467,30 @@ failed" must mean the editor shows the original file, not the requested one.
 - **Finding:** `adjudicateReviews` throws after bounded retries, and `computeState` did not catch that around the new call. A Codex transient failure therefore propagated to the generic tick error path and set `exitCode 2`, contradicting the documented transient `WAITING` behavior. The retry logic existed inside `adjudicateReviews`, but the final throw was not translated back into a state inside `computeState`.
 - **Fix:** Wrapped the `adjudicateReviews` call in `computeState` in a `try/catch`. On failure, set `state = 'WAITING'` and `detail` to a message that includes the artifact path (`e.artifactPath`) so operators can inspect the failure evidence. The tick remains in observation mode and retries on the next poll instead of counting as a transient infra failure.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 48. QA_WORKER_SSH_OPTIONS whitespace split breaks space-valued SSH options
+
+- **Source:** github-claude | PR #349 round 1 | 2026-06-05
+- **Severity:** LOW
+- **File:** `scripts/qa-runner/lib/cloud-dispatch.js`
+- **Finding:** `dispatchConfig` splits `QA_WORKER_SSH_OPTIONS` on whitespace and passes the result as an explicit args array to `spawn()` (no shell). An option whose value contains a space is incorrectly split into extra tokens. The documented examples (`-o BatchMode=yes`) work, but the limitation is invisible to operators.
+- **Fix:** Added `QA_WORKER_SSH_OPTIONS_JSON` env var that accepts a JSON array for complex SSH options containing spaces, providing an unambiguous escape hatch while preserving the simple string split for the common case.
+- **Commit:** same commit as this entry
+
+### 50. runSpawn silently drops OS-level spawn errors
+
+- **Source:** github-claude | PR #349 round 2 | 2026-06-05
+- **Severity:** HIGH
+- **File:** `scripts/qa-runner/lib/cloud-dispatch.js`
+- **Finding:** `runSpawn` returned `{ code: -1, signal: null, error }` from its catch block without writing `error.message` to the injected `stderr` stream. When the child process failed to start (ENOENT, EPERM, bad PATH), no child stderr was produced and the control daemon logs showed only a generic exit failure with no actionable diagnostic. The sibling `runCapture` already preserved `error.message` in its stderr return value, making `runSpawn` the inconsistent outlier.
+- **Fix:** Added a guarded `stderr.write(`${error.message}\n`)` in the catch block before returning the structured failure result. The guard checks `stderr && error?.message` so falsy streams or missing messages are handled safely. The function remains non-throwing and the contract is unchanged except for the now-visible error diagnostic.
+- **Commit:** same commit as this entry
+
+### 49. abortOnFailure swallows OS-level spawn errors from spawnSync
+
+- **Source:** github-claude | PR #349 round 1 | 2026-06-05
+- **Severity:** LOW
+- **File:** `scripts/qa-runner/worker-cycle.js`
+- **Finding:** When `spawnSync` fails to launch a process (ENOENT, EPERM), it sets `result.status = null` and `result.error` to the OS error. `abortOnFailure` checks `result.status === 0` (false), then throws a generic exit-1 message discarding `result.error.message`. On a fresh worker EC2 instance where git may not be on PATH, this produces a misleading error rather than the actionable spawn ENOENT cause.
+- **Fix:** Appended `result.error.message` to the thrown error when OS-level spawn errors occur, so operators see the real cause (e.g., "spawn ENOENT") instead of a generic exit code.
+- **Commit:** same commit as this entry

@@ -195,7 +195,7 @@ claimed PR cycle to a burst-worker dispatcher:
 ```bash
 QA_MAX_PARALLEL=1 \
 QA_TICK_RUNNER=command \
-QA_TICK_COMMAND=/usr/local/sbin/vimeflow-qa-dispatch-worker \
+QA_TICK_COMMAND="node /opt/vimeflow/repo/scripts/qa-runner/dispatch-worker.js" \
 node scripts/qa-runner/daemon.js
 ```
 
@@ -220,6 +220,19 @@ existing post-cycle behavior: it re-snapshots the PR, records progress or retry
 state, writes `.state/events.jsonl`, and posts Linear milestones. This keeps the
 `t2.micro` from doing expensive Kimi/Codex/test work while preserving one
 authoritative queue and one Linear status surface.
+
+`dispatch-worker.js` is the built-in dispatcher for the production rollout. It
+supports:
+
+- `QA_WORKER_MODE=local` for contract smoke tests.
+- `QA_WORKER_MODE=ssh` for an already-running worker reachable by SSH.
+- `QA_WORKER_MODE=ssm` for AWS Systems Manager `AWS-RunShellScript` dispatch with
+  no inbound SSH.
+
+The remote side runs `worker-cycle.js`, which maps the daemon's environment
+contract back into one `watch.js tick --pr <N> --execute` cycle. See
+[`docs/qa-runner-cloud-infra.md`](../../docs/qa-runner-cloud-infra.md) for the
+VIM-70 AWS, Cloudflare, credential, and smoke-test runbook.
 
 By default the daemon also passes `--linear-decisions --reason <event>` into each
 tick. The watcher posts one structured, deduped Linear decision comment per PR

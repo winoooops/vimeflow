@@ -2,8 +2,8 @@
 id: ci-orchestration-state
 category: correctness
 created: 2026-06-02
-last_updated: 2026-06-03
-ref_count: 3
+last_updated: 2026-06-04
+ref_count: 4
 ---
 
 # CI Orchestration State
@@ -127,4 +127,13 @@ Findings in the CI orchestration / QA runner pipeline where state is either lost
 - **File:** `scripts/qa-runner/lib/events.js`
 - **Finding:** `LINEAR_COMMENT` mapped every `type: 'error'` event to `formatCycleExitComment`, including `category: 'fixer_stall'` non-terminal exits. Each incremental fixer stall below `maxNoops` posted a new Linear "RETRY" comment, and transient errors (gh/GraphQL blips, exit 2) were unbounded in frequency. The pre-PR design intentionally kept types absent from `LINEAR_COMMENT` as pool-only to avoid spam.
 - **Fix:** Changed `LINEAR_COMMENT.error` to a gated formatter: `e.category === 'transient' ? formatCycleExitComment(e) : null`. Non-terminal fixer stalls are now pool-only; terminal stalls still surface via the `paused` type. Updated the test to assert `null` for fixer-stall errors.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 13. SSM waiter ceiling silently shorter than configured worker timeout, causing false failures
+
+- **Source:** github-claude | PR #349 round 1 | 2026-06-04
+- **Severity:** HIGH
+- **File:** `scripts/qa-runner/lib/cloud-dispatch.js`
+- **Finding:** `aws ssm wait command-executed` has a built-in client-side max-attempts ceiling far below the documented `QA_WORKER_TIMEOUT_SECONDS=5400` (90 min). Once the waiter exceeds its ceiling, it exits non-zero while the SSM invocation is still `InProgress`. The dispatcher then falls back to the waiter exit code, returning a false failure to the control daemon even though the worker later succeeds. This blocks merge automation and creates misleading failure records.
+- **Fix:** Replaced the one-shot waiter with a bounded polling loop that calls `get-command-invocation` on a 15-second sleep interval, stopping on any terminal SSM status (`Success`, `Failed`, `TimedOut`, `Cancelled`, etc.) or when the explicitly configured `timeoutSeconds` elapses. The worker's actual `ResponseCode` is returned when available.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
