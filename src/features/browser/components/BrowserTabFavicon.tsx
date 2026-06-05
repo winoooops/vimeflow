@@ -40,7 +40,10 @@ export const BrowserTabFavicon = ({
     <span
       className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-[5px] ${TONE_CLASS[tone]}`}
     >
-      <span aria-hidden="true" className="material-symbols-outlined text-[10px]">
+      <span
+        aria-hidden="true"
+        className="material-symbols-outlined text-[10px]"
+      >
         {glyph}
       </span>
     </span>

@@ -36,7 +36,10 @@ test('falls back to the placeholder when the img errors', () => {
 
 test('resets the img error state when the favicon prop changes', () => {
   const { rerender } = render(
-    <BrowserTabFavicon favicon="data:image/png;base64,bad" url="https://x.com/" />
+    <BrowserTabFavicon
+      favicon="data:image/png;base64,bad"
+      url="https://x.com/"
+    />
   )
   fireEvent.error(screen.getByTestId('browser-tab-favicon'))
   expect(screen.queryByTestId('browser-tab-favicon')).toBeNull()

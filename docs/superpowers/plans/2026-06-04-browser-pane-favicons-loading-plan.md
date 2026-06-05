@@ -63,7 +63,10 @@ const imageResponse = (
     headers: new Headers({ 'content-type': type, ...extra }),
     body: streamOf(bytes),
   }) as unknown as Response
-const makeDeferred = <T>(): { promise: Promise<T>; resolve: (v: T) => void } => {
+const makeDeferred = <T>(): {
+  promise: Promise<T>
+  resolve: (v: T) => void
+} => {
   let resolve!: (v: T) => void
   const promise = new Promise<T>((r) => {
     resolve = r
@@ -79,8 +82,8 @@ const callAllListeners = (
   eventName: string,
   ...args: unknown[]
 ): void => {
-  vi.mocked(electronMock.views[viewIndex].webContents.on).mock.calls
-    .filter(([ev]) => ev === eventName)
+  vi.mocked(electronMock.views[viewIndex].webContents.on)
+    .mock.calls.filter(([ev]) => ev === eventName)
     .forEach(([, fn]) => (fn as (...a: unknown[]) => void)(...args))
 }
 
@@ -91,7 +94,9 @@ const faviconHarness = async (
   emitFavicon: (urls: string[]) => void
   emitNavigate: () => void
   emitNavigateInPage: () => void
-  tabsChanged: () => Array<{ tabs: Array<{ id: string; favicon: string | null }> }>
+  tabsChanged: () => Array<{
+    tabs: Array<{ id: string; favicon: string | null }>
+  }>
   clearSends: () => void
 }> => {
   await handler(BROWSER_PANE_CREATE)(eventForSender(), {
@@ -103,18 +108,26 @@ const faviconHarness = async (
   vi.mocked(electronMock.views[0].webContents.getURL).mockReturnValue(pageUrl)
 
   return {
-    emitFavicon: (urls) => callAllListeners(0, 'page-favicon-updated', {}, urls),
+    emitFavicon: (urls) =>
+      callAllListeners(0, 'page-favicon-updated', {}, urls),
     emitNavigate: () => callAllListeners(0, 'did-navigate'),
     emitNavigateInPage: () => callAllListeners(0, 'did-navigate-in-page'),
     tabsChanged: () =>
       vi
         .mocked(electronMock.win.webContents.send)
         .mock.calls.filter(([ch]) => ch === BROWSER_PANE_TABS_CHANGED)
-        .map(([, payload]) => payload as { tabs: Array<{ id: string; favicon: string | null }> }),
+        .map(
+          ([, payload]) =>
+            payload as { tabs: Array<{ id: string; favicon: string | null }> }
+        ),
     clearSends: () => vi.mocked(electronMock.win.webContents.send).mockClear(),
   }
 }
-const lastFaviconOf = (h: { tabsChanged: () => Array<{ tabs: Array<{ id: string; favicon: string | null }> }> }): string | null => {
+const lastFaviconOf = (h: {
+  tabsChanged: () => Array<{
+    tabs: Array<{ id: string; favicon: string | null }>
+  }>
+}): string | null => {
   const calls = h.tabsChanged()
 
   return calls[calls.length - 1].tabs[0].favicon
@@ -130,6 +143,7 @@ Tasks 2–6 use `faviconHarness` + `electronMock.fakeSession.fetch = vi.fn().moc
 Implements the §2.5 cross-boundary checklist. Required-nullable field → `tsc` forces every `BrowserPaneTab` literal to set it. No behavior yet; everything compiles and stays green.
 
 **Files:**
+
 - Modify: `src/features/browser/types.ts:24-29` (`BrowserPaneTab`)
 - Modify: `electron/browser-pane.ts:143-147` (`BrowserPaneTabRecord`), `:149-154` (`BrowserPaneTabSnapshot`), `:883-890` (`tabSnapshots`), both `BrowserPaneTabRecord` construction sites (create `tab-0`, new-tab — `tsc` will flag them)
 - Modify: `src/features/browser/browserBridge.ts:43-50` (bridge-absent fallback tab)
@@ -250,6 +264,7 @@ git commit -m "feat(browser): add per-tab favicon field (null) across the tab mo
 Adds `resolveFaviconDataUrl`, `installFaviconEmitter`, and the PNA host guard, wired into both setup paths **before** `emitUrlChanged`. Tested through the public event/IPC surface (no private exports), per §5.2.
 
 **Files:**
+
 - Modify: `electron/browser-pane.ts` — new helpers + wiring at the create `tab-0` setup (before `:843`'s `emitUrlChanged`) and the new-tab setup (before `:1027`'s `emitUrlChanged`)
 - Test: `electron/browser-pane.test.ts`
 
@@ -282,16 +297,31 @@ test('an http image favicon is fetched (omit creds, no redirects) + inlined as a
 })
 
 test('the new-tab path also resolves favicons (view 1, not only the create path)', async () => {
-  await handler(BROWSER_PANE_CREATE)(eventForSender(), { sessionId: 'pty-1', paneId: 'p1', workspaceId: 'w', initialUrl: 'https://a.com/' })
-  await handler(BROWSER_PANE_NEW_TAB)(eventForSender(), { sessionId: 'pty-1', paneId: 'p1', url: 'https://b.com/' })
-  vi.mocked(electronMock.views[1].webContents.getURL).mockReturnValue('https://b.com/')
-  electronMock.fakeSession.fetch = vi.fn().mockResolvedValue(imageResponse('image/png', new Uint8Array([1])))
+  await handler(BROWSER_PANE_CREATE)(eventForSender(), {
+    sessionId: 'pty-1',
+    paneId: 'p1',
+    workspaceId: 'w',
+    initialUrl: 'https://a.com/',
+  })
+  await handler(BROWSER_PANE_NEW_TAB)(eventForSender(), {
+    sessionId: 'pty-1',
+    paneId: 'p1',
+    url: 'https://b.com/',
+  })
+  vi.mocked(electronMock.views[1].webContents.getURL).mockReturnValue(
+    'https://b.com/'
+  )
+  electronMock.fakeSession.fetch = vi
+    .fn()
+    .mockResolvedValue(imageResponse('image/png', new Uint8Array([1])))
   vi.mocked(electronMock.win.webContents.send).mockClear()
   callAllListeners(1, 'page-favicon-updated', {}, ['https://b.com/favicon.png']) // view 1 = new tab
   await flushMicrotasks()
   const calls = vi
     .mocked(electronMock.win.webContents.send)
-    .mock.calls.filter(([ch]) => ch === BROWSER_PANE_TABS_CHANGED) as Array<[string, { tabs: Array<{ id: string; favicon: string | null }> }]>
+    .mock.calls.filter(([ch]) => ch === BROWSER_PANE_TABS_CHANGED) as Array<
+    [string, { tabs: Array<{ id: string; favicon: string | null }> }]
+  >
   const newTab = calls[calls.length - 1][1].tabs.find((t) => t.id !== 'tab-0')
   expect(newTab?.favicon).toMatch(/^data:image\/png;base64,/)
 })
@@ -316,7 +346,12 @@ const isImageDataUrl = (url: string): boolean =>
 const isPrivateHost = (hostname: string): boolean => {
   const h = hostname.toLowerCase().replace(/^\[|\]$/g, '')
   if (h === 'localhost' || h.endsWith('.localhost')) return true
-  if (h === '::1' || h.startsWith('fc') || h.startsWith('fd') || h.startsWith('fe80')) {
+  if (
+    h === '::1' ||
+    h.startsWith('fc') ||
+    h.startsWith('fd') ||
+    h.startsWith('fe80')
+  ) {
     return true
   }
   const m = h.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/)
@@ -334,7 +369,10 @@ const isPrivateHost = (hostname: string): boolean => {
 // PNA: a private favicon target is allowed only when the page itself is private/local.
 // TODO(L3-followup): hostname classification only — DNS resolution + IP pinning to defeat
 // rebinding is deferred (spec §2.2 "impl hardening detail"); track as a VIM-56 follow-up.
-const isFaviconHostAllowed = (pageUrl: string, faviconHost: string): boolean => {
+const isFaviconHostAllowed = (
+  pageUrl: string,
+  faviconHost: string
+): boolean => {
   if (!isPrivateHost(faviconHost)) return true
   try {
     return isPrivateHost(new URL(pageUrl).hostname)
@@ -507,9 +545,21 @@ git commit -m "feat(browser): resolve real per-tab favicons to capped data URLs"
 ```ts
 test.each([
   ['non-image content-type', imageResponse('text/html', new Uint8Array([1]))],
-  ['non-ok response', { ok: false, headers: new Headers(), body: streamOf(new Uint8Array()) } as unknown as Response],
+  [
+    'non-ok response',
+    {
+      ok: false,
+      headers: new Headers(),
+      body: streamOf(new Uint8Array()),
+    } as unknown as Response,
+  ],
   ['zero-byte image body', imageResponse('image/png', new Uint8Array())],
-  ['over-cap via content-length', imageResponse('image/png', new Uint8Array([1]), { 'content-length': String(40 * 1024) })],
+  [
+    'over-cap via content-length',
+    imageResponse('image/png', new Uint8Array([1]), {
+      'content-length': String(40 * 1024),
+    }),
+  ],
 ])('http favicon %s → null', async (_label, response) => {
   const h = await faviconHarness('https://example.com/')
   electronMock.fakeSession.fetch = vi.fn().mockResolvedValue(response)
@@ -542,7 +592,11 @@ test('candidate fallback: first non-ok, second image → second wins', async () 
   const h = await faviconHarness('https://example.com/')
   electronMock.fakeSession.fetch = vi
     .fn()
-    .mockResolvedValueOnce({ ok: false, headers: new Headers(), body: streamOf(new Uint8Array()) } as unknown as Response)
+    .mockResolvedValueOnce({
+      ok: false,
+      headers: new Headers(),
+      body: streamOf(new Uint8Array()),
+    } as unknown as Response)
     .mockResolvedValueOnce(imageResponse('image/png', new Uint8Array([9, 9])))
   h.clearSends()
   h.emitFavicon(['https://example.com/a.png', 'https://example.com/b.png'])
@@ -570,7 +624,13 @@ git commit -m "test(browser): favicon transport edge cases + candidate fallback"
 - [ ] **Step 1: Write the failing/locking tests.**
 
 ```ts
-test.each(['127.0.0.1', '10.0.0.5', '169.254.169.254', 'localhost', '192.168.1.1'])(
+test.each([
+  '127.0.0.1',
+  '10.0.0.5',
+  '169.254.169.254',
+  'localhost',
+  '192.168.1.1',
+])(
   'public page → private favicon host %s is blocked (no fetch, null)',
   async (host) => {
     const h = await faviconHarness('https://example.com/')
@@ -632,7 +692,9 @@ test('a newer (non-deduped) favicon event supersedes an older in-flight fetch', 
   electronMock.fakeSession.fetch = vi
     .fn()
     .mockReturnValueOnce(first.promise) // icon-a in flight (gen 1)
-    .mockResolvedValueOnce(imageResponse('image/png', new Uint8Array([2, 2, 2]))) // icon-b (gen 2)
+    .mockResolvedValueOnce(
+      imageResponse('image/png', new Uint8Array([2, 2, 2]))
+    ) // icon-b (gen 2)
   h.emitFavicon(['https://a.com/icon-a.png']) // gen 1
   h.emitFavicon(['https://a.com/icon-b.png']) // newer key → gen 2 + abort gen 1
   await flushMicrotasks()
@@ -734,6 +796,7 @@ git commit -m "test(browser): reconnect snapshot carries per-tab favicon"
 ## Task 7: Renderer `BrowserTabFavicon` + wire into `BrowserTabBar`
 
 **Files:**
+
 - Create: `src/features/browser/components/BrowserTabFavicon.tsx` + `BrowserTabFavicon.test.tsx`
 - Modify: `src/features/browser/components/BrowserTabBar.tsx:1-4` (imports), `:63` (drop the inline `faviconPlaceholder` call), `:88-97` (replace the `.fav` glyph block)
 - Modify: `src/features/browser/components/BrowserTabBar.test.tsx`
@@ -819,7 +882,10 @@ export const BrowserTabFavicon = ({
     <span
       className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-[5px] ${TONE_CLASS[tone]}`}
     >
-      <span aria-hidden="true" className="material-symbols-outlined text-[10px]">
+      <span
+        aria-hidden="true"
+        className="material-symbols-outlined text-[10px]"
+      >
         {glyph}
       </span>
     </span>
@@ -869,6 +935,7 @@ git commit -m "feat(browser): render real favicons with placeholder fallback in 
 ## Task 8: Active-tab load bar in `BrowserToolbar` + tailwind keyframes
 
 **Files:**
+
 - Modify: `tailwind.config.js` (theme.extend keyframes/animation)
 - Modify: `src/features/browser/components/BrowserToolbar.tsx:1` (import `BROWSER_IDENTITY`), `:63` (root `relative`), add the bar
 - Modify: `src/features/browser/components/BrowserToolbar.test.tsx`
@@ -907,19 +974,21 @@ test('renders the load bar only when isLoading', () => {
 - [ ] **Step 4: Add the bar.** In `BrowserToolbar.tsx`: `import { BROWSER_IDENTITY } from '../browserIdentity'`; add `relative` to the root div's className (`:63`); render the bar as the last child of the root:
 
 ```tsx
-{isLoading ? (
-  <div
-    data-testid="browser-load-bar"
-    className="pointer-events-none absolute inset-x-0 bottom-0 h-[2px] overflow-hidden"
-  >
+{
+  isLoading ? (
     <div
-      className="h-full w-2/5 motion-safe:animate-browser-load-bar motion-reduce:w-full motion-reduce:opacity-60"
-      style={{
-        background: `linear-gradient(90deg, transparent, ${BROWSER_IDENTITY.accent}, transparent)`,
-      }}
-    />
-  </div>
-) : null}
+      data-testid="browser-load-bar"
+      className="pointer-events-none absolute inset-x-0 bottom-0 h-[2px] overflow-hidden"
+    >
+      <div
+        className="h-full w-2/5 motion-safe:animate-browser-load-bar motion-reduce:w-full motion-reduce:opacity-60"
+        style={{
+          background: `linear-gradient(90deg, transparent, ${BROWSER_IDENTITY.accent}, transparent)`,
+        }}
+      />
+    </div>
+  ) : null
+}
 ```
 
 - [ ] **Step 5: Run toolbar test** → PASS.
@@ -936,16 +1005,34 @@ test('a tabs-changed event with a favicon updates the tab icon', async () => {
   onTabs({
     sessionId: SESSION_ID,
     paneId: PANE_ID,
-    tabs: [{ id: 'tab-0', url: 'https://x.com/', title: 'X', active: true, favicon: 'data:image/png;base64,AAAA' }],
+    tabs: [
+      {
+        id: 'tab-0',
+        url: 'https://x.com/',
+        title: 'X',
+        active: true,
+        favicon: 'data:image/png;base64,AAAA',
+      },
+    ],
   })
   await settle()
-  expect(container.querySelector('img')).toHaveAttribute('src', 'data:image/png;base64,AAAA')
+  expect(container.querySelector('img')).toHaveAttribute(
+    'src',
+    'data:image/png;base64,AAAA'
+  )
 })
 
 test('the load bar shows when nav-state isLoading is true', async () => {
   const { findByTestId } = renderBrowserPane()
   const onNav = vi.mocked(bridgeMocks.onNavStateChange).mock.calls[0][0]
-  onNav({ sessionId: SESSION_ID, paneId: PANE_ID, tabId: 'tab-0', canGoBack: false, canGoForward: false, isLoading: true })
+  onNav({
+    sessionId: SESSION_ID,
+    paneId: PANE_ID,
+    tabId: 'tab-0',
+    canGoBack: false,
+    canGoForward: false,
+    isLoading: true,
+  })
   expect(await findByTestId('browser-load-bar')).toBeInTheDocument()
 })
 ```

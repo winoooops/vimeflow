@@ -11,7 +11,13 @@ const tabs: BrowserPaneTab[] = [
     active: true,
     favicon: null,
   },
-  { id: 'tab-1', url: 'https://example.com/', title: null, active: false, favicon: null },
+  {
+    id: 'tab-1',
+    url: 'https://example.com/',
+    title: null,
+    active: false,
+    favicon: null,
+  },
 ]
 
 const noop = (): void => undefined

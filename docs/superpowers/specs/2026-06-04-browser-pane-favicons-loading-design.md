@@ -157,10 +157,10 @@ URL or `null`:
   `session.fetch(url, { signal, redirect: 'error', credentials: 'omit' })` on the tab's partition
   session (`view.webContents.session`, for its cache / proxy). **`credentials: 'omit'`** is explicit
   (Fetch defaults to `same-origin`): favicons are public assets, and sending cookies would enable a
-  *credentialed* SSRF. Scheme must be `http(s)`, and `redirect: 'error'` so a redirect can't bypass
+  _credentialed_ SSRF. Scheme must be `http(s)`, and `redirect: 'error'` so a redirect can't bypass
   the checks. The host guard uses the **Private-Network-Access model**: a target that is loopback /
   private / link-local / reserved (`localhost`, RFC1918, `169.254/16`, `::1`, metadata IPs) is
-  rejected **only when the tab's committed page origin is *public*** — a private / local page (e.g. a
+  rejected **only when the tab's committed page origin is _public_** — a private / local page (e.g. a
   `localhost` dev server) may still load its **own** local favicon, so L3 doesn't regress the pane's
   first-class localhost / intranet use case (cf. `LOCAL_DEV_HOST_PATTERN`, `BrowserPane.tsx:43`).
   (Robust enforcement resolves + pins the IP to defeat DNS rebinding — an impl hardening detail.) It
@@ -168,7 +168,7 @@ URL or `null`:
   **combines** the resolution's shared `AbortController` (§2.3 — a superseding event /
   `did-navigate` aborts the **whole** resolution) with a **per-candidate** ≈5 s
   `AbortSignal.timeout`, via `AbortSignal.any([resolutionSignal, AbortSignal.timeout(…)])` — a
-  candidate *timing out* aborts only that fetch (loop advances); a *supersede* aborts everything.
+  candidate _timing out_ aborts only that fetch (loop advances); a _supersede_ aborts everything.
   Then validate: reject unless `res.ok`, `Content-Type` is `image/*`, and the body is **non-empty**;
   enforce the **byte cap both ways** (§2.6, ≈32 KB) — reject up-front when `Content-Length` exceeds
   it and abort the read once streamed bytes pass it (never buffer an unbounded body); then
@@ -201,7 +201,7 @@ exactly what gets resolved while staying bounded even for many / huge inline `da
   fetch started before a navigation can never overwrite the new document's tab, **even if the new
   page declares the same favicon URL** (the key would match, but the generation will not). A
   deduped repeat returns early and leaves the in-flight resolution untouched. Key equality alone is
-  *not* the staleness guard. (In practice `did-navigate` — the document commit — fires **before**
+  _not_ the staleness guard. (In practice `did-navigate` — the document commit — fires **before**
   the new document's `page-favicon-updated`, which is parsed from the committed DOM, so the reset's
   key-clear lands ahead of the new page's favicon events; dedup never suppresses a freshly-navigated
   favicon.)
@@ -294,7 +294,10 @@ const BrowserTabFavicon = ({
     <span
       className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-[5px] ${TONE_CLASS[tone]}`}
     >
-      <span aria-hidden="true" className="material-symbols-outlined text-[10px]">
+      <span
+        aria-hidden="true"
+        className="material-symbols-outlined text-[10px]"
+      >
         {glyph}
       </span>
     </span>
@@ -360,16 +363,18 @@ buttons, open-external, and the grid are untouched.
 
 ```tsx
 // inside the BrowserToolbar root (now `relative`); BROWSER_IDENTITY imported
-{isLoading ? (
-  <div className="pointer-events-none absolute inset-x-0 bottom-0 h-[2px] overflow-hidden">
-    <div
-      className="h-full w-2/5 motion-safe:animate-browser-load-bar motion-reduce:w-full motion-reduce:opacity-60"
-      style={{
-        background: `linear-gradient(90deg, transparent, ${BROWSER_IDENTITY.accent}, transparent)`,
-      }}
-    />
-  </div>
-) : null}
+{
+  isLoading ? (
+    <div className="pointer-events-none absolute inset-x-0 bottom-0 h-[2px] overflow-hidden">
+      <div
+        className="h-full w-2/5 motion-safe:animate-browser-load-bar motion-reduce:w-full motion-reduce:opacity-60"
+        style={{
+          background: `linear-gradient(90deg, transparent, ${BROWSER_IDENTITY.accent}, transparent)`,
+        }}
+      />
+    </div>
+  ) : null
+}
 ```
 
 ```js
