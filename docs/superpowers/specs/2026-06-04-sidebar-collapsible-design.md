@@ -36,19 +36,20 @@ Workspace-global, mirroring `features/editor/utils/readingStyleStore.ts` (a loca
 
 ### 3.1 `SidebarToggle` (`components/SidebarToggle.tsx`)
 
-Presentational button rendering the panel-left SVG (viewBox 16, stroke 1.3; outline rect + `M5.9 2.9V13.1` divider always; `x2.2 y3.2 w3.1 h9.6` rail fill only when `!collapsed`). Props: `collapsed`, `onClick`, `size` (default 28), `variant: 'ghost' | 'inset'` (default `ghost`), `data-testid`. `aria-pressed={collapsed}`; `title`/`aria-label` swap on state. `inset` variant = recessed well (`bg rgba(13,13,28,0.45)`, `border rgba(74,68,79,0.35)`, hover border `rgba(203,166,247,0.4)`). **Both homes use `inset` at size 28** (the spike confirmed `ghost` in the rail read as a smaller/different control).
+Presentational button rendering the panel-left SVG (viewBox 16, stroke 1.3; outline rect + `M5.9 2.9V13.1` divider always; `x2.2 y3.2 w3.1 h9.6` rail fill only when `!collapsed`). Props: `collapsed?` (default false), `onClick`, `size` (default 28), `variant: 'ghost' | 'inset'` (default `ghost`), `data-testid`. `aria-pressed={collapsed}`; `title`/`aria-label` swap on state; `cursor-pointer` so it stays clickable inside the card's `cursor: default`. `inset` variant = recessed well (`bg rgba(13,13,28,0.45)`, `border rgba(74,68,79,0.35)`, hover border `rgba(203,166,247,0.4)`). **Both homes use `inset` at size 28** (the spike confirmed `ghost` in the rail read as a smaller/different control).
 
 ### 3.2 `AgentStatusCard` (`components/AgentStatusCard.tsx`) — fused card
 
-Replaces `SidebarStatusHeader` as the sidebar's `header`. Borderless elevated surface (no 1px border, no gradient stripe): `radial-gradient` state wash in the top-left + `rgba(33,33,51,0.55)` fill, `boxShadow 0 5px 20px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,255,255,0.045)`, `overflow:hidden`, radius 13.
+Replaces (and removes) `SidebarStatusHeader` as the sidebar's `header`. Borderless elevated surface (no 1px border, no gradient stripe): `radial-gradient` state-tinted wash in the top-left + `rgba(33,33,51,0.55)` fill, `boxShadow 0 5px 20px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,255,255,0.045)`, `overflow:hidden`, radius 13, `cursor: default` (the card is chrome, not editable text).
 
-- **Props:** `title`, `state: 'running'|'awaiting'|'completed'|'errored'|'idle'`, `subtitle?`, `elapsed?`, `turns?`, `contextPct?`, `onToggleSidebar`.
-- **State → presentation map** (label, label color, wash, dot) per the handoff §2/§A.3. `StatusDot` (animated pulse for running/awaiting; hollow for completed/idle; solid for errored).
-- **Header row:** `inset` toggle (top-left, `align-items:flex-start`) + title (single-line ellipsis) + dot/label.
-- **Action line:** `subtitle` clamped to 2 lines; rendered only when present.
-- **Metrics row:** `schedule`/`forum`/`data_usage` cells, each **individually guarded** (idle collapses the row gracefully); `·` separators except after the last rendered cell.
+**Fixed height (SHELL-CARD-KIT):** the below-header body is locked to `CARD_BODY_H = 92px` in every state, so switching the active pane between an agent and a pure shell never changes the card height — the session list below never reflows.
 
-**Data mapping (real signals, reused from the status bar — all null-guarded, so an idle session never dereferences a missing `cost`/`contextWindow`):** `title` ← active session name; `elapsed`/`turns` ← the status bar's `statusBarSession` (which is `null` when no agent is active; internally `startedAgo` comes from `formatStatusDuration(agentStatus.cost?.totalDurationMs ?? 0)` and `turns` from `agentStatus.numTurns`); `contextPct` ← `statusBarContextPct` (`agentStatus.contextWindow?.usedPercentage ?? null`, rounded). `state` ← `idle` when there is no active session; otherwise `completed`/`errored` taken straight from the pane lifecycle (**not** masked when the agent goes inactive after finishing), `running` only while the agent is active and the pane is running, else `idle`. `awaiting` is supported by the card but **not emitted** by the current data (no signal yet) — same status as `subtitle`.
+- **Props:** `title` (model name), `state`, `isShell?`, `elapsed?`, `turns?`, `contextPct?`, `fiveHourPct?`, `weekPct?`, `onToggleSidebar`.
+- **Header:** `inset` `SidebarToggle` (top-left) + title (single-line ellipsis). **No status dot/label** — the explicit running indicator was removed by request; `state` now drives only the ambient wash.
+- **Agent body** (height `CARD_BODY_H`): a guarded metrics row (`schedule`/`forum`/`data_usage`, with hover `title`s) + two `RateLimitBar`s ("5-hour Session", "Weekly Usage"). `RateLimitBar` is a shared component (`agent-status/components/RateLimitBar.tsx`, also used by `BudgetMetrics`).
+- **Shell body** (`isShell`, same `CARD_BODY_H`): the title shows `SHELL`; the body is a dashed placeholder tile — terminal icon + "No active agent" + idle dot + "Idle · shell only". No metrics or bars.
+
+**Data mapping (from `agentStatus`, all null-guarded):** `title` ← `modelDisplayName ?? modelId ?? session name ?? 'No session'`; `isShell` ← `!agentStatus.agentType` (no detected agent → pure shell); `elapsed`/`turns` ← the status bar's `statusBarSession`; `contextPct` ← `statusBarContextPct` (rounded); `fiveHourPct`/`weekPct` ← `agentStatus.rateLimits.fiveHour` / `.sevenDay` (rounded, `null` when absent). `state` ← `idle` when there is no active session; otherwise `completed`/`errored` from the pane lifecycle (**not** masked when the agent goes inactive after finishing), `running` only while the agent is active and the pane is running, else `idle`.
 
 ### 3.3 `IconRail` changes (`components/IconRail.tsx`)
 
