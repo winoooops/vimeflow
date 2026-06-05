@@ -1,5 +1,6 @@
 import { test, expect, vi } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
+import type { ReactElement } from 'react'
 import { useScratchTerminals, type ScratchTarget } from './useScratchTerminals'
 import type { FocusedPaneRef } from '../../command-palette/hooks/usePaneRenameChord'
 import type { ITerminalService } from '../services/terminalService'
@@ -234,6 +235,62 @@ test('contains a spawn rejection instead of rejecting from the chord path', asyn
   expect(result.current.renderNode).toBeNull()
   expect(warn).toHaveBeenCalled()
   warn.mockRestore()
+})
+
+test('show() does not overwrite a later pane selection when an earlier spawn resolves late', async () => {
+  const service = makeService()
+  const focused = makeFocusedPane('s1', 'p0', '/a')
+
+  let resolveP1: (value: {
+    sessionId: string
+    pid: number
+    cwd: string
+  }) => void = () => undefined
+
+  const spawnMock = vi.fn().mockImplementation((args: { cwd: string }) => {
+    if (args.cwd === '/a') {
+      return Promise.resolve({ sessionId: 'scratch-a', pid: 1, cwd: '/a' })
+    }
+
+    return new Promise<{ sessionId: string; pid: number; cwd: string }>(
+      (resolve) => {
+        resolveP1 = resolve
+      }
+    )
+  })
+  service.spawn = spawnMock
+
+  const { result } = renderHook(() =>
+    useScratchTerminals({ service, resolveFocusedPane: () => focused })
+  )
+
+  // Start p1 (slow spawn), then immediately open p0 (fast spawn).
+  await act(async () => {
+    const p1Promise = result.current.toggle({
+      sessionId: 's1',
+      paneId: 'p1',
+      cwd: '/b',
+    })
+    await result.current.toggle({ sessionId: 's1', paneId: 'p0', cwd: '/a' })
+    resolveP1({ sessionId: 'scratch-b', pid: 2, cwd: '/b' })
+    await p1Promise
+  })
+
+  expect(spawnMock).toHaveBeenCalledTimes(2)
+  expect([...result.current.runningByPane.keys()].sort()).toEqual([
+    's1:p0',
+    's1:p1',
+  ])
+
+  // p0 was opened after p1, so it is the first child (Map insertion order).
+  const fragment = result.current.renderNode as ReactElement<{
+    children: ReactElement<{ open: boolean }>[]
+  }>
+  const popups = fragment.props.children
+
+  expect(popups).toHaveLength(2)
+  expect(popups[0].props.open).toBe(true) // p0 — visible as the latest intent
+  expect(popups[1].props.open).toBe(false) // p1 — hidden despite late resolution
 })
 
 test('registers a backtick chord that toggles and consumes the event', async () => {

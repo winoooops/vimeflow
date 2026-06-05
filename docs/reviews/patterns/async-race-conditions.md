@@ -2,8 +2,8 @@
 id: async-race-conditions
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-05-31
-ref_count: 15
+last_updated: 2026-06-04
+ref_count: 16
 ---
 
 # Async Race Conditions
@@ -576,3 +576,12 @@ prevent showing previous data.
 - **Finding:** `existsSync(lock)` followed by `writeFileSync(lock, ...)` is non-atomic; two concurrent processes can both pass the existence check before either writes, resulting in double-dispatch.
 - **Fix:** Replace with `fs.openSync(lock, 'wx')` wrapped in try/catch; `EEXIST` means another process holds the lock.
 - **Commit:** `7644ec4` + cycle-2 fix
+
+### 57. Post-spawn show() can overwrite a later scratch-pane selection
+
+- **Source:** github-claude | PR #351 round 1 | 2026-06-04
+- **Severity:** MEDIUM
+- **File:** `src/features/terminal/hooks/useScratchTerminals.ts`
+- **Finding:** `show()` awaited `spawnIfNeeded` and then unconditionally called `setVisibleKey(key)`. If the user clicked a second pane's scratch button while the first pane's pty was still spawning, the second click correctly set `visibleKey` to paneB (spawn already done, immediate return). When paneA's spawn finished milliseconds later, `setVisibleKey(keyA)` fired and silently stole the popup back from paneB.
+- **Fix:** Added a `showIntentRef` that stores the latest intended visible key before the async spawn. `hide()` clears the intent. After `spawnIfNeeded` resolves, `setVisibleKey(key)` only runs when `showIntentRef.current === key`. Added regression test with a deferred spawn to verify p0 stays visible when p1's late resolution would otherwise steal it.
+- **Commit:** _(see git log for PR #351 cycle-1 fix commit)_

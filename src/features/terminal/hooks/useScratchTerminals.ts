@@ -86,12 +86,15 @@ export const useScratchTerminals = ({
   const [entries, setEntries] = useState<Map<string, ScratchEntry>>(new Map())
   const [visibleKey, setVisibleKey] = useState<string | null>(null)
   const spawningRef = useRef<Set<string>>(new Set())
+  /** Show-intent guard: prevents a late-resolving spawn from stealing visibility. */
+  const showIntentRef = useRef<string | null>(null)
 
   const commit = useCallback((): void => {
     setEntries(new Map(entriesRef.current))
   }, [])
 
   const hide = useCallback((): void => {
+    showIntentRef.current = null
     setVisibleKey(null)
   }, [])
 
@@ -139,8 +142,9 @@ export const useScratchTerminals = ({
   const show = useCallback(
     async (target: ScratchTarget): Promise<void> => {
       const key = paneKey(target.sessionId, target.paneId)
+      showIntentRef.current = key
       await spawnIfNeeded(target, key)
-      if (entriesRef.current.has(key)) {
+      if (entriesRef.current.has(key) && showIntentRef.current === key) {
         setVisibleKey(key)
       }
     },
@@ -154,7 +158,7 @@ export const useScratchTerminals = ({
       // toggle even after the pills switched the popup to a non-focused pane.
       if (!target) {
         if (visibleKey !== null) {
-          setVisibleKey(null)
+          hide()
 
           return
         }
@@ -174,13 +178,13 @@ export const useScratchTerminals = ({
       // Targeted (pane button): toggle that specific pane's scratch.
       const key = paneKey(target.sessionId, target.paneId)
       if (visibleKey === key) {
-        setVisibleKey(null)
+        hide()
 
         return
       }
       await show(target)
     },
-    [resolveFocusedPane, visibleKey, show]
+    [resolveFocusedPane, visibleKey, show, hide]
   )
 
   // `Mod+;` then backtick chord — registered once, calls the latest toggle via a ref.
