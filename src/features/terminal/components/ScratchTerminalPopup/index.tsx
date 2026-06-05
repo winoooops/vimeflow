@@ -3,7 +3,6 @@ import type { ReactElement, ReactNode } from 'react'
 import { Body } from '../TerminalPane/Body'
 import type { BodyHandle } from '../TerminalPane/Body'
 import { AGENTS } from '../../../../agents/registry'
-import { isMacPlatform } from '../../../../lib/formatShortcut'
 import type { RestoreData } from '../../types'
 import type { ITerminalService } from '../../services/terminalService'
 import type { NotifyPaneReady } from '../../hooks/useTerminal'
@@ -268,9 +267,6 @@ export const ScratchTerminalPopup = ({
           </span>
           <span className="inline-flex items-center gap-[5px]">
             <Kbd>⌃C</Kbd> cancel
-          </span>
-          <span className="inline-flex items-center gap-[5px]">
-            <Kbd>{isMacPlatform() ? '⌘;' : '⌃;'}</Kbd> <Kbd>`</Kbd> toggle
           </span>
           <span className="flex-1" />
           <span style={{ color: SHELL_ACCENT }}>
