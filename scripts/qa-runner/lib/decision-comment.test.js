@@ -16,7 +16,9 @@ import {
   markDecisionPosted,
   markFixCycleProgress,
   markMergeLinearPosted,
+  markRevokeGithubDecisionPosted,
   readDecisionStore,
+  shouldPostRevokeGithubDecision,
   shouldPostDecision,
 } from './decision-comment.js'
 
@@ -48,6 +50,12 @@ describe('actionForDecision', () => {
       'approve/merge'
     )
     expect(actionForDecision('GOOD_SHAPE', { approve: false })).toBe('none')
+  })
+
+  test('selects author rework for REVOKE instead of fixer dispatch', () => {
+    expect(actionForDecision('REVOKE', { execute: true })).toBe(
+      'request author rework'
+    )
   })
 })
 
@@ -195,6 +203,53 @@ describe('formatDecisionComment', () => {
     expect(body).toContain('| Rerun attempt | 1 / 3 |')
     expect(body).toContain(
       'Reason: A transient check was rerun and the runner is waiting for the new result.'
+    )
+  })
+
+  test('formats a REVOKE decision as a no-fixer operator action', () => {
+    const body = formatDecisionComment({
+      pr: 349,
+      branch: 'feature/vim-70-cloud-infra',
+      state: 'REVOKE',
+      detail:
+        'Codex review adjudication requires PR rework: HIGH: worker contract invalid',
+      sourceEvent: 'poll',
+      action: 'request author rework',
+      approve: true,
+      execute: true,
+      headSha: '1948580939e06829dcdf8e164c1533f3c5c1633c',
+      ci: 'green',
+      claude: 'adjudicated REVOKE',
+      threads: 0,
+      mergeable: 'MERGEABLE',
+      mergeStateStatus: 'CLEAN',
+      reviewAdjudication: {
+        decision: 'REVOKE',
+        summary: 'The worker contract needs PR-author redesign.',
+        confidenceScore: 0.94,
+        cacheHit: false,
+        cacheKey: 'revoke-cache-key',
+        reviewedCommentIds: [4627699502],
+        blockingFindings: [
+          {
+            severity: 'HIGH',
+            title: 'worker contract invalid',
+            real_world_risk: 'high',
+            fix_cost: 'high',
+            confidence_score: 0.94,
+            reason:
+              'Correctness depends on a different control/worker contract rather than a local patch.',
+          },
+        ],
+        nonBlockingFindings: [],
+      },
+    })
+
+    expect(body).toContain('## QA runner decision: REVOKE')
+    expect(body).toContain('| Action | request author rework |')
+    expect(body).toContain('| Decision | `REVOKE` |')
+    expect(body).toContain(
+      'Reason: Review adjudication found blockers that require PR-author or operator rework; the fixer loop is intentionally not dispatched.'
     )
   })
 })
@@ -501,6 +556,73 @@ describe('decision store', () => {
 
     expect(decisionThreadTarget(noDispatch, 334, { state: 'WAITING' })).toEqual(
       { mode: 'top_level', parentId: null }
+    )
+  })
+
+  test('REVOKE clears stale fix-cycle state and tracks GitHub PR comment dedupe', () => {
+    const file = makeStore()
+
+    const needsFixKey = decisionKey({
+      pr: 349,
+      state: 'NEEDS_FIX',
+      detail: 'Claude verdict: patch has issues',
+      headSha: 'old-head',
+      action: 'dispatch fixer',
+      approve: false,
+      execute: true,
+    })
+
+    const revokeKey = decisionKey({
+      pr: 349,
+      state: 'REVOKE',
+      detail: 'architecture rework required',
+      headSha: 'old-head',
+      action: 'request author rework',
+      approve: false,
+      execute: true,
+    })
+
+    const afterNeedsFix = markDecisionPosted({}, 349, needsFixKey, file, {
+      commentId: 'needs-fix-comment',
+      state: 'NEEDS_FIX',
+      headSha: 'old-head',
+      action: 'dispatch fixer',
+    })
+
+    const afterRevoke = markDecisionPosted(
+      afterNeedsFix,
+      349,
+      revokeKey,
+      file,
+      {
+        commentId: 'revoke-linear-comment',
+        state: 'REVOKE',
+        headSha: 'old-head',
+        action: 'request author rework',
+      }
+    )
+
+    expect(
+      decisionThreadTarget(afterRevoke, 349, {
+        state: 'GOOD_SHAPE',
+        headSha: 'new-head',
+      })
+    ).toEqual({ mode: 'top_level', parentId: null })
+
+    expect(shouldPostRevokeGithubDecision(afterRevoke, 349, revokeKey)).toBe(
+      true
+    )
+
+    const afterGithub = markRevokeGithubDecisionPosted(
+      afterRevoke,
+      349,
+      revokeKey,
+      file,
+      { commentId: '123456' }
+    )
+
+    expect(shouldPostRevokeGithubDecision(afterGithub, 349, revokeKey)).toBe(
+      false
     )
   })
 

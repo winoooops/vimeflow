@@ -102,6 +102,9 @@ export const actionForDecision = (state, { approve, execute } = {}) => {
   if (state === 'NEEDS_FIX') {
     return execute ? 'dispatch fixer' : 'none'
   }
+  if (state === 'REVOKE') {
+    return 'request author rework'
+  }
   if (state === 'GOOD_SHAPE') {
     return approve ? 'approve/merge' : 'none'
   }
@@ -119,6 +122,9 @@ export const explainDecision = (state, action) => {
     return action === 'approve/merge'
       ? 'PR meets success criteria and approve is armed.'
       : 'PR meets success criteria, but approve is not armed.'
+  }
+  if (state === 'REVOKE') {
+    return 'Review adjudication found blockers that require PR-author or operator rework; the fixer loop is intentionally not dispatched.'
   }
   if (state === 'CI_RED') {
     return 'CI is red and no automatic action is available for this state.'
@@ -346,6 +352,12 @@ export const decisionCommentId = (
   return entry.commentId
 }
 
+export const shouldPostRevokeGithubDecision = (store, pr, key) => {
+  const entry = decisionEntry(store, pr)
+
+  return entry.revokeGithubKey !== key || !entry.revokeGithubCommentId
+}
+
 export const commentReplyTarget = (commentId) =>
   commentId
     ? { mode: 'reply', parentId: commentId }
@@ -403,6 +415,8 @@ export const markDecisionPosted = (
 
   // NEEDS_FIX is the only decision that can open or replace the active thread.
   // If it does not dispatch a fixer, clear the prior thread instead of reusing it.
+  // REVOKE is also terminal for a fixer cycle: future decisions must not reply
+  // under an old fix root after the daemon has asked the PR author to rework.
   const activeThread =
     state === 'NEEDS_FIX'
       ? opensFixCycleThread({ state, action }) && commentId
@@ -412,7 +426,9 @@ export const markDecisionPosted = (
             openedAtHeadSha: headSha ?? null,
           }
         : null
-      : previous.activeThread
+      : state === 'REVOKE'
+        ? null
+        : previous.activeThread
 
   const next = {
     ...store,
@@ -424,6 +440,27 @@ export const markDecisionPosted = (
       ...(headSha !== undefined && { headSha }),
       ...(action !== undefined && { action }),
       ...(activeThread !== undefined && { activeThread }),
+    },
+  }
+
+  return writeDecisionStore(next, file)
+}
+
+export const markRevokeGithubDecisionPosted = (
+  store,
+  pr,
+  key,
+  file,
+  { commentId } = {}
+) => {
+  const previous = decisionEntry(store, pr)
+
+  const next = {
+    ...store,
+    [String(pr)]: {
+      ...previous,
+      revokeGithubKey: key,
+      revokeGithubCommentId: commentId ?? null,
     },
   }
 

@@ -6,8 +6,9 @@ Typical adjudication flow:
 4. On a cache miss, it renders review-adjudication.prompt.md and asks Codex for
    schema-constrained JSON.
 5. GOOD_SHAPE is accepted only after normalized structured output has no blocking
-   findings. NEEDS_FIX passes blocking findings into the fixer context. WAITING
-   keeps the daemon in observation mode.
+   findings. NEEDS_FIX passes localized blocking findings into the fixer context.
+   REVOKE stops the fix loop for architecture/scope/security rework. WAITING keeps
+   the daemon in observation mode.
 6. Malformed or missing structured output gets a bounded retry. Each failed attempt
    writes a JSON artifact under .state/review-adjudication/; after the last attempt
    the caller sees a transient error with that artifact path.
@@ -36,6 +37,7 @@ export const CLAUDE_REVIEW_HEADING = '## Claude Code Review'
 export const REVIEW_DECISIONS = Object.freeze({
   goodShape: 'GOOD_SHAPE',
   needsFix: 'NEEDS_FIX',
+  revoke: 'REVOKE',
   waiting: 'WAITING',
 })
 
@@ -199,6 +201,7 @@ export const buildAdjudicationPrompt = ({
       HEAD_SHA: headSha,
       GOOD_SHAPE: REVIEW_DECISIONS.goodShape,
       NEEDS_FIX: REVIEW_DECISIONS.needsFix,
+      REVOKE: REVIEW_DECISIONS.revoke,
       WAITING: REVIEW_DECISIONS.waiting,
       REVIEW_COMMENTS: reviews.text || '(none)',
       REVIEW_TRUNCATION_NOTE: reviews.truncated
@@ -329,6 +332,10 @@ export const normalizeAdjudication = (value) => {
   const nonBlocking = Array.isArray(value.non_blocking_findings)
     ? value.non_blocking_findings
     : []
+
+  if (value.decision === REVIEW_DECISIONS.revoke && !blocking.length) {
+    throw new Error('REVOKE requires at least one blocking finding')
+  }
 
   const decision =
     value.decision === REVIEW_DECISIONS.goodShape && blocking.length

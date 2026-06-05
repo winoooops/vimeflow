@@ -4,7 +4,7 @@
   "properties": {
     "decision": {
       "type": "string",
-      "enum": ["GOOD_SHAPE", "NEEDS_FIX", "WAITING"]
+      "enum": ["GOOD_SHAPE", "NEEDS_FIX", "REVOKE", "WAITING"]
     },
     "summary": {
       "type": "string"
