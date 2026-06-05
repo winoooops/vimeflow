@@ -462,3 +462,5 @@ branch and the absolutely-positioned load bar.
    native-view jitter; `prefers-reduced-motion` is honored.
 4. No new IPC channel and no CSP change; favicon rides `tabs-changed` as a capped `data:` URL.
 5. `npm run lint`, `npm run type-check`, `npm run test` pass; the §5.3 manual checks are done.
+
+<!-- codex-reviewed: 2026-06-05T02:49:56Z -->
