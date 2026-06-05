@@ -29,6 +29,30 @@ test('renders the WEB identity chip', () => {
   expect(screen.getByText('WEB')).toBeInTheDocument()
 })
 
+test('passes tab.favicon through to the favicon slot', () => {
+  render(
+    <BrowserTabBar
+      tabs={[
+        {
+          id: 't',
+          url: 'https://x.com/',
+          title: 'X',
+          active: true,
+          favicon: 'data:image/png;base64,AAAA',
+        },
+      ]}
+      onActivate={noop}
+      onClose={noop}
+      onNewTab={noop}
+    />
+  )
+
+  expect(screen.getByTestId('browser-tab-favicon')).toHaveAttribute(
+    'src',
+    'data:image/png;base64,AAAA'
+  )
+})
+
 test('a PR-URL tab uses the merge favicon glyph', () => {
   render(
     <BrowserTabBar
