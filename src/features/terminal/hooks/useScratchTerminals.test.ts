@@ -627,3 +627,68 @@ test('a spawn whose pane id is reused mid-flight is reaped, not attached to the 
   expect([...result.current.runningByPane.keys()]).toEqual([])
   expect(result.current.renderNode).toBeNull()
 })
+
+test('a failed in-flight spawn does not leave a tombstone that kills a later valid spawn', async () => {
+  const service = makeService()
+  const focused = makeFocusedPane('s1', 'p0', '/a')
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+
+  // First spawn stays pending until rejected; the second resolves normally.
+  let rejectFirst: (err: Error) => void = () => undefined
+  let call = 0
+  service.spawn = vi.fn().mockImplementation((args: { cwd: string }) => {
+    call += 1
+    if (call === 1) {
+      return new Promise<{ sessionId: string; pid: number; cwd: string }>(
+        (_resolve, reject) => {
+          rejectFirst = reject
+        }
+      )
+    }
+
+    return Promise.resolve({ sessionId: 'scratch-2', pid: 2, cwd: args.cwd })
+  })
+
+  const { result, rerender } = renderHook(
+    (props: { live: ReadonlySet<string> }) =>
+      useScratchTerminals({
+        service,
+        resolveFocusedPane: () => focused,
+        livePaneKeys: props.live,
+      }),
+    { initialProps: { live: new Set<string>(['s1:p0']) } }
+  )
+
+  let togglePromise: Promise<void> = Promise.resolve()
+  act(() => {
+    togglePromise = result.current.toggle({
+      sessionId: 's1',
+      paneId: 'p0',
+      cwd: '/a',
+    })
+  })
+
+  // p0 closes mid-spawn — its in-flight spawn is invalidated.
+  act(() => {
+    rerender({ live: new Set<string>() })
+  })
+
+  // The spawn then fails; the tombstone must be cleared, not left behind.
+  await act(async () => {
+    rejectFirst(new Error('pty cap reached'))
+    await togglePromise
+  })
+
+  // A new pane reuses `p0` and opens a scratch — it must spawn and survive.
+  act(() => {
+    rerender({ live: new Set<string>(['s1:p0']) })
+  })
+
+  await act(async () => {
+    await result.current.toggle({ sessionId: 's1', paneId: 'p0', cwd: '/a' })
+  })
+
+  expect(service.kill).not.toHaveBeenCalled()
+  expect(result.current.runningByPane.get('s1:p0')).toBe('running')
+  warn.mockRestore()
+})

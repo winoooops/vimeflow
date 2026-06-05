@@ -165,7 +165,7 @@ export const useScratchTerminals = ({
         // its id). `invalidatedSpawnsRef` flags a key whose pane left the live set
         // while spawning; with the current liveness check this reaps the fresh
         // shell instead of orphaning it or attaching it to an unrelated new pane.
-        const invalidated = invalidatedSpawnsRef.current.delete(key)
+        const invalidated = invalidatedSpawnsRef.current.has(key)
         const live = livePaneKeysRef.current
         if (invalidated || (live && !live.has(key))) {
           killScratch(result.sessionId)
@@ -191,6 +191,9 @@ export const useScratchTerminals = ({
         console.warn('scratch spawn failed', err)
       } finally {
         spawningRef.current.delete(key)
+        // Clear the tombstone once the spawn settles (success, reap, or failure)
+        // so a failed attempt can't kill a later valid spawn for a reused id.
+        invalidatedSpawnsRef.current.delete(key)
       }
     },
     [ready, service, commit, registerPending, dropAllForPty, killScratch]
