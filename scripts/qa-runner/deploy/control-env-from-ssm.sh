@@ -8,6 +8,7 @@ prefix="${QA_CONTROL_PARAM_PREFIX:-/vimeflow/qa-runner/prod/control}"
 worker_mode="${QA_WORKER_MODE:-ssm}"
 worker_region="${QA_WORKER_REGION:-$region}"
 worker_repo="${QA_WORKER_REPO:-/opt/vimeflow/repo}"
+service_user="${QA_SERVICE_USER:-vimeflow-qa}"
 
 value() {
   aws ssm get-parameter \
@@ -27,10 +28,17 @@ write_secret_file() {
   cat >"$tmp"
   mv "$tmp" "$path"
   chmod "$mode" "$path"
+  chown "$service_user:$service_user" "$path"
 }
 
-install -d -m 0700 "$etc_dir"
-install -d -m 0700 "$repo/scripts/qa-runner"
+install -d -m 0700 -o "$service_user" -g "$service_user" "$etc_dir" || {
+  install -d -m 0700 "$etc_dir"
+  chown "$service_user:$service_user" "$etc_dir"
+}
+install -d -m 0700 -o "$service_user" -g "$service_user" "$repo/scripts/qa-runner" || {
+  install -d -m 0700 "$repo/scripts/qa-runner"
+  chown "$service_user:$service_user" "$repo/scripts/qa-runner"
+}
 
 write_secret_file "$etc_dir/control.env" 0600 <<EOF
 GITHUB_WEBHOOK_SECRET=$(value GITHUB_WEBHOOK_SECRET)

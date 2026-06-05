@@ -222,44 +222,66 @@ export const runSsmDispatch = async ({
 
   const commandId = parseCommandId(send.stdout)
 
-  const wait = await runCapture('aws', [
-    'ssm',
-    'wait',
-    'command-executed',
-    '--region',
-    region,
-    '--command-id',
-    commandId,
-    '--instance-id',
-    instanceId,
+  const pollIntervalMs = 15000
+  const startTime = Date.now()
+  const deadline = startTime + (timeoutSeconds || 5400) * 1000
+
+  const terminalStatuses = new Set([
+    'Success',
+    'Cancelled',
+    'TimedOut',
+    'Failed',
+    'AccessDenied',
+    'DeliveryTimedOut',
+    'ExecutionTimedOut',
+    'InvalidInstanceId',
+    'InvalidParameters',
+    'Undeliverable',
   ])
 
-  const get = await runCapture('aws', [
-    'ssm',
-    'get-command-invocation',
-    '--region',
-    region,
-    '--command-id',
-    commandId,
-    '--instance-id',
-    instanceId,
-    '--output',
-    'json',
-  ])
-  if (get.code !== 0) {
-    stderr.write(get.stderr || get.stdout || wait.stderr || wait.stdout)
+  let invocation = null
+  while (Date.now() < deadline) {
+    const get = await runCapture('aws', [
+      'ssm',
+      'get-command-invocation',
+      '--region',
+      region,
+      '--command-id',
+      commandId,
+      '--instance-id',
+      instanceId,
+      '--output',
+      'json',
+    ])
+    if (get.code !== 0) {
+      stderr.write(get.stderr || get.stdout)
 
-    return get
+      return get
+    }
+
+    invocation = JSON.parse(get.stdout || '{}')
+    if (terminalStatuses.has(invocation.Status)) {
+      break
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, pollIntervalMs))
   }
 
-  const invocation = JSON.parse(get.stdout || '{}')
+  if (!terminalStatuses.has(invocation?.Status)) {
+    stderr.write(
+      `SSM command ${commandId} timed out after ${timeoutSeconds || 5400}s\n`
+    )
+
+    return { code: 1, signal: null }
+  }
+
   printInvocation({ invocation, stdout, stderr })
 
   return {
     code:
       Number.isInteger(invocation.ResponseCode) && invocation.ResponseCode >= 0
         ? invocation.ResponseCode
-        : wait.code,
+        : 1,
     signal: null,
   }
 }

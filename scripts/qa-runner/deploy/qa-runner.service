@@ -6,6 +6,8 @@ Wants=network-online.target
 
 [Service]
 Type=simple
+User=vimeflow-qa
+Group=vimeflow-qa
 WorkingDirectory=/opt/vimeflow/repo
 EnvironmentFile=/etc/vimeflow/qa-runner/control.env
 ExecStart=/usr/bin/node /opt/vimeflow/repo/scripts/qa-runner/daemon.js

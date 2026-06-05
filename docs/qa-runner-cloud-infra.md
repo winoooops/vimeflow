@@ -71,6 +71,15 @@ files. They do not print secret values.
 
 ## Control Daemon Mode
 
+Create the dedicated service account before installing the unit. The daemon must
+not run as root:
+
+```bash
+sudo useradd --system --home-dir /opt/vimeflow/repo --user-group vimeflow-qa
+sudo chown -R vimeflow-qa:vimeflow-qa /opt/vimeflow/repo
+sudo install -d -m 0700 -o vimeflow-qa -g vimeflow-qa /etc/vimeflow/qa-runner
+```
+
 Use command mode so the control host forwards one claimed PR cycle to a worker:
 
 ```bash
