@@ -30,9 +30,10 @@ optional_value() {
     rm -f "$err"
     printf "%s" "$out"
     return 0
+  else
+    status=$?
   fi
 
-  status=$?
   if grep -q "ParameterNotFound" "$err"; then
     rm -f "$err"
     return 0
@@ -88,18 +89,15 @@ EOF
 codex_api_key="$(single_line_value CODEX_API_KEY)"
 printf "%s" "$codex_api_key" | CODEX_HOME="$codex_home" codex login --with-api-key >/dev/null
 
-write_secret_file "$etc_dir/worker.env" 0600 <<EOF
+openai_api_key="${OPENAI_API_KEY:-$(single_line_optional_value openai-api-key)}"
+
+{
+  cat <<EOF
 AWS_REGION=$region
 AWS_DEFAULT_REGION=$region
 CODEX_HOME=$codex_home
 EOF
-
-openai_api_key="${OPENAI_API_KEY:-$(single_line_optional_value openai-api-key)}"
-if [ -n "$openai_api_key" ]; then
-  {
-    cat "$etc_dir/worker.env"
-    write_env_line OPENAI_API_KEY "$openai_api_key"
-  } | write_secret_file "$etc_dir/worker.env" 0600
-fi
+  write_env_line OPENAI_API_KEY "$openai_api_key"
+} | write_secret_file "$etc_dir/worker.env" 0600
 
 echo "worker env installed under $repo and $etc_dir"

@@ -34,9 +34,10 @@ optional_value() {
     rm -f "$err"
     printf "%s" "$out"
     return 0
+  else
+    status=$?
   fi
 
-  status=$?
   if grep -q "ParameterNotFound" "$err"; then
     rm -f "$err"
     return 0
