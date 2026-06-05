@@ -10,7 +10,7 @@
 
 **Conventions:** No semicolons, single quotes, trailing-comma es5, explicit return types on exported fns, arrow components, `test()` not `it()`, explicit `import { test, expect, vi } from 'vitest'` per new test file, co-located tests. Commit per task with `feat(browser): …` (lowercase subject). Run from the worktree `worktrees/browser-pane-favicons-loading`.
 
-**Test harness note (main):** `electron/browser-pane.test.ts` already mocks `WebContentsView` / `webContents` (as an `EventEmitter`) and `BrowserWindow` (L2 added nav tests). Favicon tests drive the tab's `webContents` events (`emit('page-favicon-updated', …)`, `emit('did-navigate')`) and assert the captured `BROWSER_PANE_TABS_CHANGED` payload. Add a `session.fetch` mock on the mocked session. Reuse the existing helpers rather than re-inventing them — read the top of `browser-pane.test.ts` first.
+**Test harness note (main):** `electron/browser-pane.test.ts` mocks `WebContentsView` / `webContents` (listeners stored as `vi.fn()` calls — **not** a real `EventEmitter`) and `BrowserWindow`. Drive listeners via `listenerFor` / `callAllListeners` and capture emits via the `win.webContents.send` mock — see **Execution notes** below for the exact primitives + helpers. Read the top of `browser-pane.test.ts` first.
 
 ---
 
