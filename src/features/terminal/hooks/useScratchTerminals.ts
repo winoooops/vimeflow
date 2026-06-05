@@ -10,7 +10,6 @@ import {
 import type { ReactNode } from 'react'
 import { ScratchTerminalPopup } from '../components/ScratchTerminalPopup'
 import { registerChord } from '../../command-palette/chordRegistry'
-import { isShellPane } from '../../sessions/utils/paneKind'
 import type { ITerminalService } from '../services/terminalService'
 import type { NotifyPaneReady } from './useTerminal'
 import type { FocusedPaneRef } from '../../command-palette/hooks/usePaneRenameChord'
@@ -32,17 +31,6 @@ export interface ScratchTarget {
   sessionId: string
   paneId: string
   cwd: string
-}
-
-/**
- * A pane-switcher pill in the popup header — one per shell pane of the active
- * session, with a live dot when that pane's scratch is running (spec §6).
- */
-export interface ScratchPanePill {
-  key: string
-  target: ScratchTarget
-  label: string
-  running: boolean
 }
 
 /** Stable per-pane key — NOT the host ptyId, which rotates on pane restart. */
@@ -216,28 +204,6 @@ export const useScratchTerminals = ({
     return map
   }, [entries])
 
-  // Pane-switcher pills: one per shell pane of the active (focused) session,
-  // with a live dot when that pane's scratch is running (spec §6). The popup is
-  // a modal overlay, so the focused session is stable while it's open.
-  const focused = resolveFocusedPane()
-
-  const panePills: ScratchPanePill[] = focused
-    ? focused.session.panes.filter(isShellPane).map((pane, index) => {
-        const key = paneKey(focused.session.id, pane.id)
-
-        return {
-          key,
-          target: {
-            sessionId: focused.session.id,
-            paneId: pane.id,
-            cwd: pane.cwd,
-          },
-          label: String(index + 1),
-          running: runningByPane.get(key) === 'running',
-        }
-      })
-    : []
-
   const renderNode: ReactNode =
     entries.size > 0
       ? createElement(
@@ -253,9 +219,6 @@ export const useScratchTerminals = ({
               service,
               onHide: hide,
               onPaneReady: notifyPaneReady,
-              panes: panePills,
-              activeKey: visibleKey,
-              onSelectPane: (target: ScratchTarget): void => void show(target),
             })
           )
         )

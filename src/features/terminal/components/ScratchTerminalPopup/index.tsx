@@ -6,10 +6,6 @@ import { AGENTS } from '../../../../agents/registry'
 import type { RestoreData } from '../../types'
 import type { ITerminalService } from '../../services/terminalService'
 import type { NotifyPaneReady } from '../../hooks/useTerminal'
-import type {
-  ScratchPanePill,
-  ScratchTarget,
-} from '../../hooks/useScratchTerminals'
 
 // Scratch wears the registered `shell` agent's amber identity (design handoff).
 const SHELL_ACCENT = AGENTS.shell.accent
@@ -32,12 +28,6 @@ export interface ScratchTerminalPopupProps {
   onHide: () => void
   /** Drain the spawn→attach buffer once the terminal subscribes. */
   onPaneReady?: NotifyPaneReady
-  /** Pane-switcher pills — the active session's shell panes (§6). */
-  panes?: ScratchPanePill[]
-  /** The currently-shown pane-key — highlights its pill. */
-  activeKey?: string | null
-  /** Switch the popup to a pane's scratch, spawning if it has none yet. */
-  onSelectPane?: (target: ScratchTarget) => void
 }
 
 /**
@@ -60,9 +50,6 @@ export const ScratchTerminalPopup = ({
   service,
   onHide,
   onPaneReady = undefined,
-  panes = [],
-  activeKey = null,
-  onSelectPane = undefined,
 }: ScratchTerminalPopupProps): ReactElement => {
   const bodyRef = useRef<BodyHandle>(null)
   const overlayRef = useRef<HTMLDivElement>(null)
@@ -162,37 +149,6 @@ export const ScratchTerminalPopup = ({
             </span>
             SCRATCH
           </span>
-          {panes.length > 1 && (
-            <div
-              data-testid="scratch-pane-pills"
-              className="flex items-center gap-1"
-            >
-              {panes.map((pill) => (
-                <button
-                  key={pill.key}
-                  type="button"
-                  aria-label={`scratch pane ${pill.label}${
-                    pill.running ? ' (running)' : ''
-                  }`}
-                  aria-pressed={pill.key === activeKey}
-                  onClick={() => onSelectPane?.(pill.target)}
-                  className={`inline-flex h-5 items-center gap-1 rounded px-1.5 font-mono text-[11px] ${
-                    pill.key === activeKey
-                      ? 'bg-[#f0c674]/15 text-[#f0c674]'
-                      : 'text-on-surface-muted hover:text-on-surface hover:bg-white/5'
-                  }`}
-                >
-                  {pill.label}
-                  {pill.running && (
-                    <span
-                      aria-hidden="true"
-                      className="bg-success h-[5px] w-[5px] rounded-full"
-                    />
-                  )}
-                </button>
-              ))}
-            </div>
-          )}
           <span className="text-on-surface-variant truncate font-mono text-xs">
             {cwd}
           </span>
