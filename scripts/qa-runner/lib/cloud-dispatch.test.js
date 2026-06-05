@@ -16,11 +16,11 @@ const cycle = {
   QA_PR: '348',
   QA_REASON: 'ci:check_run',
   QA_LABEL: 'auto-review',
-  QA_APPROVE: '1',
   QA_LINEAR_DECISION_COMMENTS: '1',
   QA_LINEAR_CREATE_ISSUES: '0',
   QA_LINEAR_TEAM_KEY: 'VIM',
   QA_MAX_CI_RERUNS: '3',
+  QA_FIX_CONTEXT: '{"kind":"review_adjudication"}',
 }
 
 describe('cycleEnv', () => {
@@ -41,6 +41,7 @@ describe('cycleEnv', () => {
         QA_WORKER_REFRESH_RUNNER: '1',
         QA_WORKER_REF: 'main',
         QA_RUNNER_REF: 'main',
+        QA_APPROVE: '1',
         QA_WORKER_INSTANCE_ID: 'i-123',
         GH_TOKEN: 'secret',
       })
@@ -169,6 +170,10 @@ describe('ssmSendCommandArgs', () => {
       remoteCycleCommand({ repo: '/srv/vimeflow', env: cycle }),
     ])
     expect(params.commands[0]).toContain("QA_PR='348'")
+    expect(params.commands[0]).toContain(
+      'QA_FIX_CONTEXT=\'{"kind":"review_adjudication"}\''
+    )
+    expect(params.commands[0]).not.toContain('QA_APPROVE')
     expect(params.commands[0]).not.toContain('GH_TOKEN')
   })
 

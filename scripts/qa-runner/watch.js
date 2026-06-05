@@ -843,11 +843,26 @@ const approve = (pr, vim, headSha, ctx) => {
   }
 }
 
-// Run run.js for one PR as a child, teeing output to a per-PR log and prefixing
-// the console so concurrent runs stay legible. Resolves the exit code; never
-// rejects — a failed child must not abort the pool. run.js adopts the INNER
-// (fixer) bot identity itself, so we just inherit the env here.
-const dispatchFix = ({ pr, fixContext }) =>
+const fixCommandEnv = ({ pr, fixContext, ctx }) => ({
+  ...process.env,
+  QA_PR: String(pr),
+  QA_REASON: ctx.reason || '',
+  QA_LABEL: ctx.label || '',
+  QA_APPROVE: '0',
+  QA_LINEAR_DECISION_COMMENTS: ctx.linearDecisions ? '1' : '0',
+  QA_LINEAR_CREATE_ISSUES: ctx.linearCreateIssues ? '1' : '0',
+  QA_LINEAR_TEAM_KEY: ctx.linearTeamKey || '',
+  QA_MAX_CI_RERUNS: ctx.maxCiReruns == null ? '' : String(ctx.maxCiReruns),
+  ...(fixContext
+    ? { QA_FIX_CONTEXT: JSON.stringify(fixContext, null, 2) }
+    : {}),
+})
+
+// Run one fixer for one PR, teeing output to a per-PR log and prefixing the
+// console so concurrent runs stay legible. On a single-host daemon this runs
+// run.js locally. In split-plane cloud mode QA_FIX_COMMAND dispatches the same
+// fixer-only contract to a burst worker; classification and merge stay here.
+const dispatchFix = ({ pr, fixContext }, ctx) =>
   new Promise((resolve) => {
     mkdirSync(LOG_DIR, { recursive: true })
     const logPath = join(LOG_DIR, `pr-${pr}.log`)
@@ -855,20 +870,21 @@ const dispatchFix = ({ pr, fixContext }) =>
     const tag = `[#${pr}]`
     let lastLine = ''
     clearDispatchBlocker(pr)
-    out(`${tag} → run.js ${pr} --push   (log: ${logPath})`)
-
-    const child = spawn(
-      'node',
-      [join(SCRIPT_DIR, 'run.js'), String(pr), '--push'],
-      {
-        env: {
-          ...process.env,
-          ...(fixContext
-            ? { QA_FIX_CONTEXT: JSON.stringify(fixContext, null, 2) }
-            : {}),
-        },
-      }
+    const command = ctx.fixCommand || ''
+    out(
+      command
+        ? `${tag} → ${command}   (fixer-only dispatch; log: ${logPath})`
+        : `${tag} → run.js ${pr} --push   (log: ${logPath})`
     )
+
+    const child = command
+      ? spawn(command, {
+          shell: true,
+          env: fixCommandEnv({ pr, fixContext, ctx }),
+        })
+      : spawn('node', [join(SCRIPT_DIR, 'run.js'), String(pr), '--push'], {
+          env: fixCommandEnv({ pr, fixContext, ctx }),
+        })
 
     const pipe = (stream) => {
       let buf = ''
@@ -1021,7 +1037,9 @@ const tick = async (ctx) => {
     out(
       `Dispatching ${needsFix.length} fix run(s), up to ${ctx.maxParallel} in parallel…\n`
     )
-    const results = await pool(needsFix, ctx.maxParallel, dispatchFix)
+    const results = await pool(needsFix, ctx.maxParallel, (item) =>
+      dispatchFix(item, ctx)
+    )
     // dispatchFix resolves a real run.js exit code, null (signal-killed), or -1
     // (spawn failed: node/run.js missing, OOM before fork). Self-review refusal is
     // a local dispatch blocker, not a failed fixer attempt.
@@ -1128,6 +1146,7 @@ const main = () => {
     maxParallel: Math.max(1, numericOption(val('max'), MAX_PARALLEL)),
     maxCiReruns: numericOption(val('max-ci-reruns'), MAX_CI_RERUNS),
     linearTeamKey: val('linear-team') || 'VIM',
+    fixCommand: val('fix-command') || process.env.QA_FIX_COMMAND || '',
     orchBot,
     approverLogin: orchBot?.user ?? ghJson(['api', 'user']).login,
   }
@@ -1141,7 +1160,7 @@ const main = () => {
     return watch(ctx)
   }
   err(
-    `unknown command: ${cmd}. Use: scan | tick | watch  [--pr N] [--approve] [--execute] [--linear-decisions] [--linear-create-issues] [--max-ci-reruns N] [--linear-team KEY] [--reason EVENT] [--all] [--max N] [--label NAME]`
+    `unknown command: ${cmd}. Use: scan | tick | watch  [--pr N] [--approve] [--execute] [--linear-decisions] [--linear-create-issues] [--max-ci-reruns N] [--linear-team KEY] [--fix-command COMMAND] [--reason EVENT] [--all] [--max N] [--label NAME]`
   )
   process.exit(1)
 }

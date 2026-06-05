@@ -45,6 +45,8 @@ Control host credentials:
   PR status reads
 - `orchestrator.env`
 - `linear-orchestrator.env`
+- `CODEX_HOME`, populated by `codex login --with-api-key` during control
+  bootstrap so review adjudication can run on the control host
 - Cloudflare Tunnel token or locally managed tunnel credentials
 
 Worker credentials:
@@ -64,7 +66,7 @@ Worker credentials:
 - Lifeline installation/config
 
 Shared rule: secrets live in SSM Parameter Store or root-owned env files with
-`0600` permissions. Do not pass secrets through `QA_TICK_COMMAND`, SSM command
+`0600` permissions. Do not pass secrets through `QA_FIX_COMMAND`, SSM command
 arguments, systemd unit text, GitHub comments, or Linear comments.
 
 Use the checked-in bootstrap helpers to materialize role-specific env files:
@@ -82,7 +84,7 @@ files. They do not print secret values.
 
 On the worker, `worker-env-from-ssm.sh` also writes
 `/etc/vimeflow/qa-runner/worker.env` with `0600` permissions. `worker-cycle.js`
-loads that local file before running `watch.js`, so `CODEX_HOME` points
+loads that local file before running `run.js --push`, so `CODEX_HOME` points
 `codex exec` at the root-owned cached API-key login without including the raw API
 key in SSM command arguments or repo-controlled process environments.
 
@@ -97,7 +99,9 @@ sudo chown -R vimeflow-qa:vimeflow-qa /opt/vimeflow/repo
 sudo install -d -m 0700 -o vimeflow-qa -g vimeflow-qa /etc/vimeflow/qa-runner
 ```
 
-Use command mode so the control host forwards one claimed PR cycle to a worker:
+Use local tick mode so the control host owns classification, adjudication,
+Linear decisions, and `GOOD_SHAPE` approval/merge. Only `NEEDS_FIX` fixer work
+is forwarded to a worker:
 
 ```bash
 sudo cp /opt/vimeflow/repo/scripts/qa-runner/deploy/qa-runner.service \
@@ -112,8 +116,8 @@ The service receives its environment from
 
 ```bash
 QA_MAX_PARALLEL=1 \
-QA_TICK_RUNNER=command \
-QA_TICK_COMMAND="node /opt/vimeflow/repo/scripts/qa-runner/dispatch-worker.js" \
+QA_TICK_RUNNER=local \
+QA_FIX_COMMAND="node /opt/vimeflow/repo/scripts/qa-runner/dispatch-worker.js" \
 node /opt/vimeflow/repo/scripts/qa-runner/daemon.js
 ```
 
@@ -193,26 +197,21 @@ node /opt/vimeflow/repo/scripts/qa-runner/dispatch-worker.js
 
 The dispatcher calls `AWS-RunShellScript`, waits for the command invocation, then
 exits with the worker command response code. The SSM payload contains only the
-non-secret PR-cycle variables.
+non-secret fixer variables and structured `QA_FIX_CONTEXT`.
 
 ## Worker Cycle Entrypoint
 
-On the worker, `worker-cycle.js` runs:
+On the worker, `worker-cycle.js` loads the local worker env, optionally refreshes
+the checkout, then runs:
 
 ```bash
-node scripts/qa-runner/watch.js tick \
-  --pr "$QA_PR" \
-  --execute \
-  --linear-decisions \
-  --reason "$QA_REASON" \
-  --label "$QA_LABEL"
+node scripts/qa-runner/run.js "$QA_PR" --push
 ```
 
-It appends:
+The worker never appends approval flags. It only fixes and replies as the fixer
+identity; approval and merge remain on the control host under the orchestrator
+identity.
 
-- `--approve` when `QA_APPROVE=1`.
-- `--linear-create-issues` when `QA_LINEAR_CREATE_ISSUES=1`.
-- `--linear-team "$QA_LINEAR_TEAM_KEY"` when set.
 - `--max-ci-reruns "$QA_MAX_CI_RERUNS"` when set.
 
 Before building that command, it loads

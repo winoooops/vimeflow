@@ -1,20 +1,17 @@
 #!/usr/bin/env node
-// Worker-side one-cycle entrypoint. It runs the same watch.js tick contract as
-// the local daemon, but from the burst worker checkout and with role credentials
-// already present on that worker.
+// Worker-side fixer entrypoint. The control daemon owns classification,
+// adjudication, and GOOD_SHAPE merge. Burst workers only run the expensive
+// review-fixing pass from the worker checkout with fixer credentials already
+// present on that worker.
 import { spawnSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
-import { dirname, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { shouldRefreshRunner } from './lib/cloud-dispatch.js'
-import { watchArgs } from './lib/worker.js'
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url))
 const REPO_ROOT = resolve(SCRIPT_DIR, '..', '..')
 const DEFAULT_WORKER_ENV_FILE = '/etc/vimeflow/qa-runner/worker.env'
-
-const boolEnv = (value) =>
-  ['1', 'true', 'yes', 'on'].includes(String(value || '').toLowerCase())
 
 const stripMatchingOuterQuotes = (value) => {
   const trimmed = value.trim()
@@ -96,9 +93,12 @@ export const warnMissingWorkerEnv = (
   }
 }
 
+const boolEnv = (value) =>
+  ['1', 'true', 'yes', 'on'].includes(String(value || '').toLowerCase())
+
 export const workerConfigFromEnv = (env = process.env) => ({
   label: env.QA_LABEL || 'auto-review',
-  approve: boolEnv(env.QA_APPROVE),
+  approve: false,
   linearDecisionComments: boolEnv(env.QA_LINEAR_DECISION_COMMENTS),
   linearCreateIssues: boolEnv(env.QA_LINEAR_CREATE_ISSUES),
   linearTeamKey: env.QA_LINEAR_TEAM_KEY || 'VIM',
@@ -106,17 +106,12 @@ export const workerConfigFromEnv = (env = process.env) => ({
   reason: env.QA_REASON || 'worker',
 })
 
-export const workerWatchArgs = (env = process.env) => {
+export const workerRunArgs = (env = process.env) => {
   if (!env.QA_PR) {
     throw new Error('QA_PR is required')
   }
 
-  const config = workerConfigFromEnv(env)
-
-  return watchArgs(env.QA_PR, {
-    ...config,
-    maxCiReruns: config.maxCiReruns || undefined,
-  })
+  return [join(SCRIPT_DIR, 'run.js'), env.QA_PR, '--push']
 }
 
 const run = (command, args, opts = {}) =>
@@ -176,7 +171,7 @@ export const main = () => {
   const repoRoot = process.env.QA_WORKER_REPO || REPO_ROOT
   refreshRunner(process.env, repoRoot)
 
-  const result = run('node', workerWatchArgs(process.env), {
+  const result = run('node', workerRunArgs(process.env), {
     cwd: repoRoot,
     env: process.env,
   })
