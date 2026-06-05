@@ -695,6 +695,28 @@ describe('BrowserPaneController', () => {
     expect(lastFaviconOf(h)).toBe(null)
   })
 
+  test('a link-local IPv6 favicon target (fe90::) is blocked from a public page', async () => {
+    const h = await faviconHarness('https://example.com/')
+    electronMock.fakeSession.fetch = vi.fn()
+    h.clearSends()
+    h.emitFavicon(['http://[fe90::1]/favicon.ico'])
+    await flushMicrotasks()
+    expect(electronMock.fakeSession.fetch).not.toHaveBeenCalled()
+    expect(lastFaviconOf(h)).toBe(null)
+  })
+
+  test('a public IPv6 favicon target is fetched normally', async () => {
+    const h = await faviconHarness('https://example.com/')
+    electronMock.fakeSession.fetch = vi
+      .fn()
+      .mockResolvedValue(imageResponse('image/png', new Uint8Array([1, 2])))
+    h.clearSends()
+    h.emitFavicon(['http://[2001:4860:4860::8888]/favicon.png'])
+    await flushMicrotasks()
+    expect(electronMock.fakeSession.fetch).toHaveBeenCalledTimes(1)
+    expect(lastFaviconOf(h)).toMatch(/^data:image\/png;base64,/)
+  })
+
   test('a pre-navigation in-flight fetch never overwrites the new tab', async () => {
     const h = await faviconHarness('https://a.com/')
     const deferred = makeDeferred<Response>()

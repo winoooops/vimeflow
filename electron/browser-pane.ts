@@ -621,51 +621,63 @@ const faviconKey = (candidates: string[]): string =>
 const isImageDataUrl = (url: string): boolean =>
   /^data:image\/[a-z0-9.+-]+;base64,/i.test(url)
 
-// Unwrap an IPv4-mapped IPv6 suffix (dotted `127.0.0.1` or hex `7f00:1`) to dotted IPv4.
-const ipv4FromMapped = (mapped: string): string | null => {
-  if (/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(mapped)) {
-    return mapped
-  }
-  const hex = /^([0-9a-f]{1,4}):([0-9a-f]{1,4})$/.exec(mapped)
-  if (!hex) {
+// Parse an IPv6 literal (with `::` compression and/or an embedded IPv4 tail) to its 16 bytes.
+const parseIpv6 = (input: string): number[] | null => {
+  const halves = input.split('%')[0].split('::')
+  if (halves.length > 2) {
     return null
   }
-  const high = Number.parseInt(hex[1], 16)
-  const low = Number.parseInt(hex[2], 16)
 
-  return `${high >> 8}.${high & 0xff}.${low >> 8}.${low & 0xff}`
-}
-
-const isPrivateHost = (hostname: string): boolean => {
-  const h = hostname
-    .toLowerCase()
-    .replace(/^\[|\]$/g, '')
-    .replace(/\.$/, '')
-  if (h === 'localhost' || h.endsWith('.localhost')) {
-    return true
-  }
-  if (h.includes(':')) {
-    // IPv6 literal: unwrap IPv4-mapped (::ffff:...) then classify; else loopback / ULA / link-local.
-    const mapped = /^::ffff:(.+)$/.exec(h)
-    const v4 = mapped ? ipv4FromMapped(mapped[1]) : null
-    if (v4) {
-      return isPrivateHost(v4)
+  const toGroups = (part: string): number[] | null => {
+    if (part === '') {
+      return []
+    }
+    const tokens = part.split(':')
+    const out: number[] = []
+    for (let i = 0; i < tokens.length; i += 1) {
+      const tok = tokens[i]
+      if (tok.includes('.')) {
+        const v4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(tok)
+        if (i !== tokens.length - 1 || !v4) {
+          return null
+        }
+        const q = v4.slice(1).map(Number)
+        if (q.some((n) => n > 255)) {
+          return null
+        }
+        out.push((q[0] << 8) | q[1], (q[2] << 8) | q[3])
+      } else if (/^[0-9a-f]{1,4}$/.test(tok)) {
+        out.push(Number.parseInt(tok, 16))
+      } else {
+        return null
+      }
     }
 
-    return (
-      h === '::' ||
-      h === '::1' ||
-      h.startsWith('fc') ||
-      h.startsWith('fd') ||
-      h.startsWith('fe80')
-    )
+    return out
   }
-  const m = /^(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(h)
-  if (!m) {
-    return false
+  const head = toGroups(halves[0])
+  const tail = halves.length === 2 ? toGroups(halves[1]) : []
+  if (head === null || tail === null) {
+    return null
   }
-  const a = Number(m[1])
-  const b = Number(m[2])
+  let groups: number[]
+  if (halves.length === 2) {
+    const gap = 8 - head.length - tail.length
+    if (gap < 1) {
+      return null
+    }
+    groups = [...head, ...Array.from({ length: gap }, () => 0), ...tail]
+  } else {
+    groups = head
+  }
+  if (groups.length !== 8) {
+    return null
+  }
+
+  return groups.flatMap((g) => [(g >> 8) & 0xff, g & 0xff])
+}
+
+const isPrivateIpv4 = ([a, b]: number[]): boolean => {
   if (a === 0 || a === 127 || a === 10) {
     return true
   }
@@ -677,6 +689,50 @@ const isPrivateHost = (hostname: string): boolean => {
   }
 
   return a === 169 && b === 254
+}
+
+const isPrivateIpv6 = (b: number[]): boolean => {
+  if (b.every((x) => x === 0)) {
+    return true // unspecified ::
+  }
+  // IPv4-mapped (::ffff:a.b.c.d) and IPv4-compatible (::a.b.c.d, incl. ::1) — classify the embedded v4.
+  const headZero = b.slice(0, 10).every((x) => x === 0)
+  if (headZero && b[10] === 0xff && b[11] === 0xff) {
+    return isPrivateIpv4([b[12], b[13], b[14], b[15]])
+  }
+  if (headZero && b[10] === 0 && b[11] === 0) {
+    return isPrivateIpv4([b[12], b[13], b[14], b[15]])
+  }
+  if ((b[0] & 0xfe) === 0xfc) {
+    return true // ULA fc00::/7
+  }
+
+  return b[0] === 0xfe && (b[1] & 0xc0) === 0x80 // link-local fe80::/10
+}
+
+const isPrivateHost = (hostname: string): boolean => {
+  const h = hostname
+    .toLowerCase()
+    .replace(/^\[|\]$/g, '')
+    .replace(/\.$/, '')
+  if (h === 'localhost' || h.endsWith('.localhost')) {
+    return true
+  }
+  if (h.includes(':')) {
+    const bytes = parseIpv6(h)
+
+    return bytes !== null && isPrivateIpv6(bytes)
+  }
+  const m = /^(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(h)
+  if (!m) {
+    return false
+  }
+  const octets = m.slice(1).map(Number)
+  if (octets.some((n) => n > 255)) {
+    return false
+  }
+
+  return isPrivateIpv4(octets)
 }
 
 // PNA: a private favicon target is allowed only when the page is itself private.
