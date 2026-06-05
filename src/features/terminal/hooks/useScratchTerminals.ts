@@ -3,6 +3,7 @@ import {
   Fragment,
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from 'react'
@@ -172,8 +173,13 @@ export const useScratchTerminals = ({
     []
   )
 
-  const runningByPane = new Map<string, ScratchStatus>()
-  entries.forEach((entry, key) => runningByPane.set(key, entry.status))
+  // Memoized so consumers threading it down only re-render on actual change.
+  const runningByPane = useMemo(() => {
+    const map = new Map<string, ScratchStatus>()
+    entries.forEach((entry, key) => map.set(key, entry.status))
+
+    return map
+  }, [entries])
 
   const renderNode: ReactNode =
     entries.size > 0

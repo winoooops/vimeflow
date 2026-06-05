@@ -651,14 +651,28 @@ export const WorkspaceView = (): ReactElement => {
     }
   }, [terminalService])
 
-  const { renderNode: scratchTerminalNode, toggle: toggleScratch } =
-    useScratchTerminals({
-      service: terminalService,
-      resolveFocusedPane,
-      ready: scratchReapDone,
-      registerPending,
-      notifyPaneReady,
-    })
+  const {
+    renderNode: scratchTerminalNode,
+    toggle: toggleScratch,
+    runningByPane: runningScratchByPane,
+  } = useScratchTerminals({
+    service: terminalService,
+    resolveFocusedPane,
+    ready: scratchReapDone,
+    registerPending,
+    notifyPaneReady,
+  })
+
+  // Pane-keys whose scratch shell is running — drives the pane-button live cue.
+  const runningScratchPaneKeys = useMemo(
+    () =>
+      new Set(
+        [...runningScratchByPane]
+          .filter(([, status]) => status === 'running')
+          .map(([key]) => key)
+      ),
+    [runningScratchByPane]
+  )
 
   const requestFocus = useCallback((target: FocusTarget): void => {
     pendingFocusTarget.current = target
@@ -1479,6 +1493,7 @@ export const WorkspaceView = (): ReactElement => {
                 setActiveContainerId(TERMINAL_CONTAINER_ID)
               }}
               onScratch={(target): void => void toggleScratch(target)}
+              runningScratchPaneKeys={runningScratchPaneKeys}
             />
           </div>
           {!dockBeforeTerminal ? dockOrPeek : null}

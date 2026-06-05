@@ -47,6 +47,8 @@ export interface SplitViewProps {
   onClosePane?: (sessionId: string, paneId: string) => void
   /** Toggle a pane's ephemeral scratch terminal (VIM-53). */
   onScratch?: (target: ScratchTarget) => void
+  /** Pane-keys with a running scratch shell — drives the §8 cue. */
+  runningScratchPaneKeys?: ReadonlySet<string>
   areBrowserPanesOccluded?: boolean
   deferTerminalFit?: boolean
   showPaneFocusHighlight?: boolean
@@ -115,6 +117,7 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
       onAddPane = undefined,
       onClosePane = undefined,
       onScratch = undefined,
+      runningScratchPaneKeys = undefined,
       areBrowserPanesOccluded = false,
       deferTerminalFit = false,
       showPaneFocusHighlight = true,
@@ -352,6 +355,7 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
                           onRestart={onSessionRestart}
                           onClose={closeHandler}
                           onScratch={onScratch}
+                          runningScratchPaneKeys={runningScratchPaneKeys}
                           isActive={isActive}
                           deferFit={deferTerminalFit}
                           showFocusHighlight={showPaneFocusHighlight}

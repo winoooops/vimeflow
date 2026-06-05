@@ -95,6 +95,36 @@ describe('HeaderActions', () => {
     expect(onParentClick).not.toHaveBeenCalled()
   })
 
+  test('shows the live-but-hidden cue when the pane scratch is running', () => {
+    render(
+      <HeaderActions
+        isCollapsed={expanded}
+        onToggleCollapse={vi.fn()}
+        onScratch={vi.fn()}
+        scratchRunning
+      />
+    )
+
+    expect(screen.getByTestId('scratch-live-dot')).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', {
+        name: /open scratch terminal \(running\)/i,
+      })
+    ).toBeInTheDocument()
+  })
+
+  test('no live cue when the pane scratch is not running', () => {
+    render(
+      <HeaderActions
+        isCollapsed={expanded}
+        onToggleCollapse={vi.fn()}
+        onScratch={vi.fn()}
+      />
+    )
+
+    expect(screen.queryByTestId('scratch-live-dot')).toBeNull()
+  })
+
   test('hovering the collapse-status button shows a plain tooltip', async () => {
     const user = userEvent.setup()
     render(<HeaderActions isCollapsed={expanded} onToggleCollapse={vi.fn()} />)

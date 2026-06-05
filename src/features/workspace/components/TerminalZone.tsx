@@ -65,6 +65,8 @@ export interface TerminalZoneProps {
   onContainerFocus?: () => void
   /** Toggle a pane's ephemeral scratch terminal (VIM-53). */
   onScratch?: (target: ScratchTarget) => void
+  /** Pane-keys with a running scratch shell — drives the §8 cue. */
+  runningScratchPaneKeys?: ReadonlySet<string>
 }
 
 export interface TerminalZoneHandle {
@@ -91,6 +93,7 @@ export const TerminalZone = forwardRef<TerminalZoneHandle, TerminalZoneProps>(
       isZoneFocused = true,
       onContainerFocus = undefined,
       onScratch = undefined,
+      runningScratchPaneKeys = undefined,
     }: TerminalZoneProps,
     ref
   ): ReactElement {
@@ -264,6 +267,7 @@ export const TerminalZone = forwardRef<TerminalZoneHandle, TerminalZoneProps>(
                     onAddPane={addPane}
                     onClosePane={removePane}
                     onScratch={onScratch}
+                    runningScratchPaneKeys={runningScratchPaneKeys}
                     areBrowserPanesOccluded={areBrowserPanesOccluded}
                     deferTerminalFit={deferTerminalFit}
                     showPaneFocusHighlight={isZoneFocused}
