@@ -23,18 +23,20 @@ const tempEnvFile = (content) => {
 describe('loadWorkerEnvFile', () => {
   test('loads local worker secrets without printing or command transport', () => {
     const { file, cleanup } = tempEnvFile(
-      'OPENAI_API_KEY=sk-test\nAWS_REGION=us-west-1\n'
+      'CODEX_HOME=/etc/vimeflow/qa-runner/codex\nOPENAI_API_KEY=sk-openai\nAWS_REGION=us-west-1\n'
     )
     const env = {}
 
     try {
       expect(loadWorkerEnvFile(file, env)).toEqual([
+        'CODEX_HOME',
         'OPENAI_API_KEY',
         'AWS_REGION',
       ])
 
       expect(env).toMatchObject({
-        OPENAI_API_KEY: 'sk-test',
+        CODEX_HOME: '/etc/vimeflow/qa-runner/codex',
+        OPENAI_API_KEY: 'sk-openai',
         AWS_REGION: 'us-west-1',
       })
     } finally {
@@ -148,32 +150,44 @@ describe('loadWorkerEnvFile', () => {
 })
 
 describe('warnMissingWorkerEnv', () => {
-  test('warns when OPENAI_API_KEY is unset after loading worker env', () => {
+  test('warns when Codex auth context is unset after loading worker env', () => {
     const warnings = []
 
     warnMissingWorkerEnv({}, (message) => warnings.push(message))
 
     expect(warnings).toEqual([
-      'warning: worker env did not provide OPENAI_API_KEY; Codex API auth may fail\n',
+      'warning: worker env did not provide CODEX_HOME or CODEX_API_KEY; codex exec auth may fail\n',
     ])
   })
 
-  test('warns when worker env loaded keys but not OPENAI_API_KEY', () => {
+  test('warns when worker env loaded keys but not Codex auth context', () => {
     const warnings = []
 
-    warnMissingWorkerEnv({ AWS_REGION: 'us-west-1' }, (message) =>
-      warnings.push(message)
+    warnMissingWorkerEnv(
+      { AWS_REGION: 'us-west-1', OPENAI_API_KEY: 'from-env' },
+      (message) => warnings.push(message)
     )
 
     expect(warnings).toEqual([
-      'warning: worker env did not provide OPENAI_API_KEY; Codex API auth may fail\n',
+      'warning: worker env did not provide CODEX_HOME or CODEX_API_KEY; codex exec auth may fail\n',
     ])
   })
 
-  test('does not warn when OPENAI_API_KEY is already present', () => {
+  test('does not warn when CODEX_HOME is already present', () => {
     const warnings = []
 
-    warnMissingWorkerEnv({ OPENAI_API_KEY: 'from-env' }, (message) =>
+    warnMissingWorkerEnv(
+      { CODEX_HOME: '/etc/vimeflow/qa-runner/codex' },
+      (message) => warnings.push(message)
+    )
+
+    expect(warnings).toEqual([])
+  })
+
+  test('does not warn when CODEX_API_KEY is explicitly scoped to this process', () => {
+    const warnings = []
+
+    warnMissingWorkerEnv({ CODEX_API_KEY: 'from-env' }, (message) =>
       warnings.push(message)
     )
 

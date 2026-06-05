@@ -89,9 +89,9 @@ export const warnMissingWorkerEnv = (
   env = process.env,
   warn = (message) => process.stderr.write(message)
 ) => {
-  if (!env.OPENAI_API_KEY) {
+  if (!env.CODEX_HOME && !env.CODEX_API_KEY) {
     warn(
-      'warning: worker env did not provide OPENAI_API_KEY; Codex API auth may fail\n'
+      'warning: worker env did not provide CODEX_HOME or CODEX_API_KEY; codex exec auth may fail\n'
     )
   }
 }

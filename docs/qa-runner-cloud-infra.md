@@ -39,6 +39,10 @@ Control host credentials:
 
 - `GITHUB_WEBHOOK_SECRET`
 - `QA_STATUS_TOKEN`
+- `QA_WORKER_INSTANCE_ID`, stored under the control prefix so SSM dispatch knows
+  which worker to run
+- `GH_ORCH_TOKEN`, also materialized as ambient `GH_TOKEN` for daemon polling and
+  PR status reads
 - `orchestrator.env`
 - `linear-orchestrator.env`
 - Cloudflare Tunnel token or locally managed tunnel credentials
@@ -47,8 +51,14 @@ Worker credentials:
 
 - `bot.env`
 - `linear-agent.env`
-- `OPENAI_API_KEY`, initially sourced from
-  `/vimeflow/qa-runner/prod/worker/openai-api-key`
+- `CODEX_API_KEY`, sourced from
+  `/vimeflow/qa-runner/prod/worker/CODEX_API_KEY`, consumed by
+  `codex login --with-api-key` during worker bootstrap
+- optional `OPENAI_API_KEY`, sourced from
+  `/vimeflow/qa-runner/prod/worker/openai-api-key`, for generic OpenAI SDK or
+  provider usage outside `codex exec`
+- `/vimeflow/qa-runner/prod/worker/OPENAPI-API-KEY` is a legacy typo parameter
+  and is not read by the bootstrap scripts.
 - Kimi Code auth
 - GitHub CLI auth for the fixer account
 - Lifeline installation/config
@@ -72,9 +82,9 @@ files. They do not print secret values.
 
 On the worker, `worker-env-from-ssm.sh` also writes
 `/etc/vimeflow/qa-runner/worker.env` with `0600` permissions. `worker-cycle.js`
-loads that local file before running `watch.js`, so `OPENAI_API_KEY` reaches
-Kimi/Codex through the worker process environment without being included in SSM
-command arguments.
+loads that local file before running `watch.js`, so `CODEX_HOME` points
+`codex exec` at the root-owned cached API-key login without including the raw API
+key in SSM command arguments or repo-controlled process environments.
 
 ## Control Daemon Mode
 
@@ -106,6 +116,19 @@ QA_TICK_RUNNER=command \
 QA_TICK_COMMAND="node /opt/vimeflow/repo/scripts/qa-runner/dispatch-worker.js" \
 node /opt/vimeflow/repo/scripts/qa-runner/daemon.js
 ```
+
+In SSM mode, `control-env-from-ssm.sh` requires
+`/vimeflow/qa-runner/prod/control/QA_WORKER_INSTANCE_ID` and writes it into the
+local control env file. Worker refresh is explicit, not a code default. To turn
+it on, set both control SSM parameters:
+
+```bash
+QA_WORKER_REFRESH_RUNNER=1
+QA_WORKER_REF=main
+```
+
+Those values are non-secret and are forwarded to the worker cycle. If refresh is
+enabled without a ref, bootstrap fails before the daemon starts dispatching.
 
 `auto-review` opts a PR into daemon work. `auto-approve` only arms approval and
 merge for an already eligible PR.
@@ -201,7 +224,7 @@ Optional runner refresh:
 
 ```bash
 QA_WORKER_REFRESH_RUNNER=1
-QA_WORKER_REF=wip/linear-wiring
+QA_WORKER_REF=main
 ```
 
 When enabled, the worker refuses to refresh if the root checkout has tracked
@@ -325,12 +348,10 @@ Separate cost note:
 
 ## Current Blocker
 
-The first worker node is online and has the required toolchain, but the worker
-runtime still needs the latest `worker-cycle.js` / `worker-env-from-ssm.sh`
-bootstrap patch deployed before SSM dispatcher mode can rely on
-`OPENAI_API_KEY`. After that, run a no-PR bootstrap check that verifies:
+The first worker node is online and has the required toolchain. Before relying
+on SSM dispatcher mode, run a no-PR bootstrap check that verifies:
 
 - `/etc/vimeflow/qa-runner/worker.env` exists with `0600` permissions.
-- `OPENAI_API_KEY` is visible to `worker-cycle.js` without appearing in SSM
-  command arguments.
+- `CODEX_HOME` points to a root-owned Codex auth cache.
+- `codex login status` succeeds under that `CODEX_HOME`.
 - `bot.env` and `linear-agent.env` exist with `0600` permissions.
