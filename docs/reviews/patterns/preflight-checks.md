@@ -2,8 +2,8 @@
 id: preflight-checks
 category: error-handling
 created: 2026-04-20
-last_updated: 2026-06-02
-ref_count: 0
+last_updated: 2026-06-05
+ref_count: 1
 ---
 
 # Preflight Checks
@@ -57,3 +57,12 @@ When adding / removing / refactoring preflight checks:
 - **Finding:** `numericOption(val('max'), MAX_PARALLEL)` correctly preserves `0` as a parsed number (unlike the previous `Number(...) || fallback` which fell back for `0`). However, the bounded-concurrency `pool()` uses `Math.min(limit, items.length)` workers; with `limit = 0` it starts none. A user passing `--max 0` intending to throttle or test would silently block all `NEEDS_FIX` dispatches, and the tick would exit cleanly with no work done and no error surfaced.
 - **Fix:** Clamped `maxParallel` to at least 1 via `Math.max(1, numericOption(val('max'), MAX_PARALLEL))`. This restores the prior behavior where `0` falls back to `MAX_PARALLEL`, while still allowing `--max-ci-reruns 0` where zero is semantically intentional.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 5. JSON-parsed env var used without type guard causes opaque TypeError
+
+- **Source:** github-claude | PR #349 round 3 | 2026-06-05
+- **Severity:** MEDIUM
+- **File:** `scripts/qa-runner/lib/cloud-dispatch.js`
+- **Finding:** `dispatchConfig` returned `JSON.parse(env.QA_WORKER_SSH_OPTIONS_JSON)` directly, while `sshDispatchPlan` later spread `sshOptions` into an array. Valid but non-array JSON (`null`, `{}`, `42`) crashed dispatch with `TypeError: sshOptions is not iterable` — an opaque error that gave no hint the env var was malformed.
+- **Fix:** Added an `Array.isArray` check immediately after `JSON.parse`. Non-array values now throw `QA_WORKER_SSH_OPTIONS_JSON must be a JSON array` at config time, before any SSH spawn attempt. Added unit tests for array, object, null, and scalar JSON inputs.
+- **Commit:** same commit as this entry

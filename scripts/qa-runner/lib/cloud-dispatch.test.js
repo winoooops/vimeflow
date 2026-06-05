@@ -2,6 +2,7 @@ import { EventEmitter } from 'node:events'
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import {
   cycleEnv,
+  dispatchConfig,
   localDispatchPlan,
   remoteCycleCommand,
   runSsmDispatch,
@@ -82,6 +83,43 @@ describe('worker dispatch plans', () => {
     expect(() =>
       sshDispatchPlan({ repo: '/srv/vimeflow', env: cycle })
     ).toThrow('QA_WORKER_HOST is required')
+  })
+})
+
+describe('dispatchConfig', () => {
+  test('parses QA_WORKER_SSH_OPTIONS_JSON as a JSON array', () => {
+    const config = dispatchConfig({
+      QA_WORKER_SSH_OPTIONS_JSON: JSON.stringify(['-o', 'BatchMode=yes']),
+    })
+
+    expect(config.sshOptions).toEqual(['-o', 'BatchMode=yes'])
+  })
+
+  test('rejects non-array JSON for QA_WORKER_SSH_OPTIONS_JSON', () => {
+    expect(() =>
+      dispatchConfig({ QA_WORKER_SSH_OPTIONS_JSON: 'null' })
+    ).toThrow('QA_WORKER_SSH_OPTIONS_JSON must be a JSON array')
+
+    expect(() => dispatchConfig({ QA_WORKER_SSH_OPTIONS_JSON: '{}' })).toThrow(
+      'QA_WORKER_SSH_OPTIONS_JSON must be a JSON array'
+    )
+
+    expect(() => dispatchConfig({ QA_WORKER_SSH_OPTIONS_JSON: '42' })).toThrow(
+      'QA_WORKER_SSH_OPTIONS_JSON must be a JSON array'
+    )
+  })
+
+  test('falls back to QA_WORKER_SSH_OPTIONS when JSON env is absent', () => {
+    const config = dispatchConfig({
+      QA_WORKER_SSH_OPTIONS: '-o BatchMode=yes -o ConnectTimeout=5',
+    })
+
+    expect(config.sshOptions).toEqual([
+      '-o',
+      'BatchMode=yes',
+      '-o',
+      'ConnectTimeout=5',
+    ])
   })
 })
 

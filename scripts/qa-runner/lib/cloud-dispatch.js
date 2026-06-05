@@ -309,19 +309,26 @@ export const runSsmDispatch = async ({
   }
 }
 
-export const dispatchConfig = (env = process.env) => ({
-  mode: env.QA_WORKER_MODE || 'local',
-  repo: env.QA_WORKER_REPO || process.cwd(),
-  host: env.QA_WORKER_HOST || '',
-  user: env.QA_WORKER_USER || '',
-  instanceId: env.QA_WORKER_INSTANCE_ID || '',
-  region:
-    env.QA_WORKER_REGION || env.AWS_REGION || env.AWS_DEFAULT_REGION || '',
-  sshOptions: env.QA_WORKER_SSH_OPTIONS_JSON
+export const dispatchConfig = (env = process.env) => {
+  const sshOptions = env.QA_WORKER_SSH_OPTIONS_JSON
     ? JSON.parse(env.QA_WORKER_SSH_OPTIONS_JSON)
-    : compact((env.QA_WORKER_SSH_OPTIONS || '').split(/\s+/)),
-  timeoutSeconds: Number(env.QA_WORKER_TIMEOUT_SECONDS || 5400),
-})
+    : compact((env.QA_WORKER_SSH_OPTIONS || '').split(/\s+/))
+  if (env.QA_WORKER_SSH_OPTIONS_JSON && !Array.isArray(sshOptions)) {
+    throw new Error('QA_WORKER_SSH_OPTIONS_JSON must be a JSON array')
+  }
+
+  return {
+    mode: env.QA_WORKER_MODE || 'local',
+    repo: env.QA_WORKER_REPO || process.cwd(),
+    host: env.QA_WORKER_HOST || '',
+    user: env.QA_WORKER_USER || '',
+    instanceId: env.QA_WORKER_INSTANCE_ID || '',
+    region:
+      env.QA_WORKER_REGION || env.AWS_REGION || env.AWS_DEFAULT_REGION || '',
+    sshOptions,
+    timeoutSeconds: Number(env.QA_WORKER_TIMEOUT_SECONDS || 5400),
+  }
+}
 
 export const runDispatch = async ({
   config = dispatchConfig(),
