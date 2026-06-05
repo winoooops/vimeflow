@@ -65,7 +65,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Git Operations](patterns/git-operations.md)                                         | correctness        | 25       | 10   | 2026-05-31   |
 | [CI Orchestration State](patterns/ci-orchestration-state.md)                         | correctness        | 13       | 4    | 2026-06-04   |
 | [CodeMirror Integration](patterns/codemirror-integration.md)                         | editor             | 12       | 0    | 2026-04-11   |
-| [Error Surfacing](patterns/error-surfacing.md)                                       | error-handling     | 50       | 12   | 2026-06-05   |
+| [Error Surfacing](patterns/error-surfacing.md)                                       | error-handling     | 51       | 13   | 2026-06-05   |
 | [File Tree Paths](patterns/file-tree-paths.md)                                       | files              | 4        | 0    | 2026-04-10   |
 | [Scope Boundary](patterns/scope-boundary.md)                                         | review-process     | 7        | 2    | 2026-05-12   |
 | [E2E Testing](patterns/e2e-testing.md)                                               | e2e-testing        | 18       | 6    | 2026-05-20   |

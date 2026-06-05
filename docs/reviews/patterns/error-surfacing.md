@@ -3,7 +3,7 @@ id: error-surfacing
 category: error-handling
 created: 2026-04-10
 last_updated: 2026-06-05
-ref_count: 12
+ref_count: 13
 ---
 
 # Error Surfacing
@@ -475,6 +475,15 @@ failed" must mean the editor shows the original file, not the requested one.
 - **File:** `scripts/qa-runner/lib/cloud-dispatch.js`
 - **Finding:** `dispatchConfig` splits `QA_WORKER_SSH_OPTIONS` on whitespace and passes the result as an explicit args array to `spawn()` (no shell). An option whose value contains a space is incorrectly split into extra tokens. The documented examples (`-o BatchMode=yes`) work, but the limitation is invisible to operators.
 - **Fix:** Added `QA_WORKER_SSH_OPTIONS_JSON` env var that accepts a JSON array for complex SSH options containing spaces, providing an unambiguous escape hatch while preserving the simple string split for the common case.
+- **Commit:** same commit as this entry
+
+### 50. runSpawn silently drops OS-level spawn errors
+
+- **Source:** github-claude | PR #349 round 2 | 2026-06-05
+- **Severity:** HIGH
+- **File:** `scripts/qa-runner/lib/cloud-dispatch.js`
+- **Finding:** `runSpawn` returned `{ code: -1, signal: null, error }` from its catch block without writing `error.message` to the injected `stderr` stream. When the child process failed to start (ENOENT, EPERM, bad PATH), no child stderr was produced and the control daemon logs showed only a generic exit failure with no actionable diagnostic. The sibling `runCapture` already preserved `error.message` in its stderr return value, making `runSpawn` the inconsistent outlier.
+- **Fix:** Added a guarded `stderr.write(`${error.message}\n`)` in the catch block before returning the structured failure result. The guard checks `stderr && error?.message` so falsy streams or missing messages are handled safely. The function remains non-throwing and the contract is unchanged except for the now-visible error diagnostic.
 - **Commit:** same commit as this entry
 
 ### 49. abortOnFailure swallows OS-level spawn errors from spawnSync

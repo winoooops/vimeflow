@@ -77,6 +77,10 @@ export const runSpawn = async (
 
     return { code: code ?? -1, signal: signal ?? null }
   } catch (error) {
+    if (stderr && error?.message) {
+      stderr.write(`${error.message}\n`)
+    }
+
     return {
       code: -1,
       signal: null,
