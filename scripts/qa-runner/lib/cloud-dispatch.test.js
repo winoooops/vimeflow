@@ -1,8 +1,10 @@
-import { describe, expect, test } from 'vitest'
+import { EventEmitter } from 'node:events'
+import { afterEach, describe, expect, test, vi } from 'vitest'
 import {
   cycleEnv,
   localDispatchPlan,
   remoteCycleCommand,
+  runSsmDispatch,
   shellQuote,
   sshDispatchPlan,
   ssmSendCommandArgs,
@@ -130,5 +132,150 @@ describe('ssmSendCommandArgs', () => {
         env: cycle,
       })
     ).toThrow('QA_WORKER_REGION or AWS_REGION is required')
+  })
+})
+
+const makeMockSpawn = (responses) => {
+  let callIndex = 0
+
+  return vi.fn(() => {
+    const response = responses[callIndex++] || {
+      code: 1,
+      stderr: 'unexpected call',
+    }
+
+    const child = Object.assign(new EventEmitter(), {
+      stdout: new EventEmitter(),
+      stderr: new EventEmitter(),
+    })
+    setImmediate(() => {
+      if (response.stdout) {
+        child.stdout.emit('data', Buffer.from(response.stdout))
+      }
+      if (response.stderr) {
+        child.stderr.emit('data', Buffer.from(response.stderr))
+      }
+      child.stdout.emit('end')
+      child.stderr.emit('end')
+      child.emit('close', response.code ?? 0, response.signal ?? null)
+    })
+
+    return child
+  })
+}
+
+describe('runSsmDispatch', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.restoreAllMocks()
+  })
+
+  test('retries transient InvocationDoesNotExist errors before succeeding', async () => {
+    const mockSpawn = makeMockSpawn([
+      {
+        stdout: JSON.stringify({ Command: { CommandId: 'cmd-123' } }),
+      },
+      {
+        code: 254,
+        stderr:
+          'An error occurred (InvocationDoesNotExist) when calling the GetCommandInvocation operation: Invocation does not exist',
+      },
+      {
+        stdout: JSON.stringify({
+          Status: 'Success',
+          ResponseCode: 0,
+          StandardOutputContent: 'done\n',
+          StandardErrorContent: '',
+        }),
+      },
+    ])
+    const stdout = { write: vi.fn() }
+    const stderr = { write: vi.fn() }
+
+    const result = await runSsmDispatch({
+      instanceId: 'i-123',
+      region: 'us-west-2',
+      repo: '/srv/vimeflow',
+      env: { QA_PR: '349' },
+      timeoutSeconds: 30,
+      stdout,
+      stderr,
+      spawnImpl: mockSpawn,
+      pollIntervalMs: 10,
+    })
+
+    expect(mockSpawn).toHaveBeenCalledTimes(3)
+    expect(result).toEqual({ code: 0, signal: null })
+  })
+
+  test('retries transient InvalidCommandId errors before succeeding', async () => {
+    const mockSpawn = makeMockSpawn([
+      {
+        stdout: JSON.stringify({ Command: { CommandId: 'cmd-456' } }),
+      },
+      {
+        code: 254,
+        stderr:
+          'An error occurred (InvalidCommandId) when calling the GetCommandInvocation operation',
+      },
+      {
+        stdout: JSON.stringify({
+          Status: 'Success',
+          ResponseCode: 42,
+          StandardOutputContent: 'worker output\n',
+          StandardErrorContent: '',
+        }),
+      },
+    ])
+    const stdout = { write: vi.fn() }
+    const stderr = { write: vi.fn() }
+
+    const result = await runSsmDispatch({
+      instanceId: 'i-456',
+      region: 'us-east-1',
+      repo: '/srv/vimeflow',
+      env: { QA_PR: '349' },
+      timeoutSeconds: 30,
+      stdout,
+      stderr,
+      spawnImpl: mockSpawn,
+      pollIntervalMs: 10,
+    })
+
+    expect(mockSpawn).toHaveBeenCalledTimes(3)
+    expect(result).toEqual({ code: 42, signal: null })
+    expect(stdout.write).toHaveBeenCalledWith('worker output\n')
+  })
+
+  test('returns immediately on non-transient get-command-invocation errors', async () => {
+    const mockSpawn = makeMockSpawn([
+      {
+        stdout: JSON.stringify({ Command: { CommandId: 'cmd-789' } }),
+      },
+      {
+        code: 255,
+        stderr:
+          'An error occurred (AccessDeniedException) when calling the GetCommandInvocation operation',
+      },
+    ])
+    const stdout = { write: vi.fn() }
+    const stderr = { write: vi.fn() }
+
+    const result = await runSsmDispatch({
+      instanceId: 'i-789',
+      region: 'us-west-2',
+      repo: '/srv/vimeflow',
+      env: { QA_PR: '349' },
+      timeoutSeconds: 30,
+      stdout,
+      stderr,
+      spawnImpl: mockSpawn,
+    })
+
+    expect(mockSpawn).toHaveBeenCalledTimes(2)
+    expect(result.code).toBe(255)
+    expect(stderr.write).toHaveBeenCalledWith(
+      expect.stringContaining('AccessDeniedException')
+    )
   })
 })

@@ -98,6 +98,15 @@ failed" must mean the editor shows the original file, not the requested one.
 - **Fix:** Add `|| return 1` after each `page_json=$(gh api graphql ...)` assignment so transient GraphQL failures actually propagate. Then loud-fail at every call site: Step 1 keeps its `|| echo "[]"` (best-effort reconciliation); Step 2B and 7.1 promote to `|| { echo "ERROR..."; exit 1; }` because a corrupted thread map there silently misses unresolved threads (Step 7.1 would declare clean exit prematurely) or breaks inline-comment lookup with no diagnostic.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
 
+### 48. SSM polling loop fatally returns on transient InvocationDoesNotExist errors
+
+- **Source:** github-claude | PR #349 round 1 | 2026-06-04
+- **Severity:** HIGH
+- **File:** `scripts/qa-runner/lib/cloud-dispatch.js`
+- **Finding:** The replacement manual polling loop for `aws ssm wait command-executed` called `get-command-invocation` immediately after `send-command` and treated any non-zero CLI exit as permanent failure. AWS SSM's eventually-consistent model means `InvocationDoesNotExist` and `InvalidCommandId` can appear briefly during the propagation window (1–5 seconds), causing false dispatch failures even though the command was accepted.
+- **Fix:** Inspect `get.stderr` for `InvocationDoesNotExist` / `InvalidCommandId` and retry with the poll interval instead of returning. Non-transient errors (e.g. `AccessDeniedException`) still return immediately so real permission failures are not masked.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
 ### 39. markRerunAttempt before gh run rerun drains budget on API failure
 
 - **Source:** github-claude | PR #331 round 2 | 2026-06-02

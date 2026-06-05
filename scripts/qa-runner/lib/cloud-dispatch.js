@@ -85,8 +85,12 @@ export const runSpawn = async (
   }
 }
 
-const runCapture = async (command, args, { env = process.env } = {}) => {
-  const child = spawn(command, args, {
+const runCapture = async (
+  command,
+  args,
+  { env = process.env, spawnImpl = spawn } = {}
+) => {
+  const child = spawnImpl(command, args, {
     env,
     stdio: ['ignore', 'pipe', 'pipe'],
   })
@@ -209,10 +213,13 @@ export const runSsmDispatch = async ({
   timeoutSeconds,
   stdout = process.stdout,
   stderr = process.stderr,
+  spawnImpl = spawn,
+  pollIntervalMs = 15000,
 }) => {
   const send = await runCapture(
     'aws',
-    ssmSendCommandArgs({ instanceId, region, repo, env, timeoutSeconds })
+    ssmSendCommandArgs({ instanceId, region, repo, env, timeoutSeconds }),
+    { spawnImpl }
   )
   if (send.code !== 0) {
     stderr.write(send.stderr || send.stdout)
@@ -222,7 +229,6 @@ export const runSsmDispatch = async ({
 
   const commandId = parseCommandId(send.stdout)
 
-  const pollIntervalMs = 15000
   const startTime = Date.now()
   const deadline = startTime + (timeoutSeconds || 5400) * 1000
 
@@ -241,20 +247,33 @@ export const runSsmDispatch = async ({
 
   let invocation = null
   while (Date.now() < deadline) {
-    const get = await runCapture('aws', [
-      'ssm',
-      'get-command-invocation',
-      '--region',
-      region,
-      '--command-id',
-      commandId,
-      '--instance-id',
-      instanceId,
-      '--output',
-      'json',
-    ])
+    const get = await runCapture(
+      'aws',
+      [
+        'ssm',
+        'get-command-invocation',
+        '--region',
+        region,
+        '--command-id',
+        commandId,
+        '--instance-id',
+        instanceId,
+        '--output',
+        'json',
+      ],
+      { spawnImpl }
+    )
     if (get.code !== 0) {
-      stderr.write(get.stderr || get.stdout)
+      const errorText = get.stderr || get.stdout || ''
+
+      const isTransient =
+        errorText.includes('InvocationDoesNotExist') ||
+        errorText.includes('InvalidCommandId')
+      if (isTransient) {
+        await new Promise((resolve) => setTimeout(resolve, pollIntervalMs))
+        continue
+      }
+      stderr.write(errorText)
 
       return get
     }
