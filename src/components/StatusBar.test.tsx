@@ -182,4 +182,18 @@ describe('StatusBar', () => {
       'max-[760px]:justify-end'
     )
   })
+
+  test('shows the scratch count segment when scratch shells are running', () => {
+    renderStatusBar({ scratchCount: 2 })
+
+    expect(screen.getByTestId('status-bar-scratch')).toHaveTextContent(
+      'scratch ×2'
+    )
+  })
+
+  test('omits the scratch count segment when none are running', () => {
+    renderStatusBar({ scratchCount: 0 })
+
+    expect(screen.queryByTestId('status-bar-scratch')).toBeNull()
+  })
 })

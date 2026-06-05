@@ -3,16 +3,16 @@ import {
   Fragment,
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from 'react'
 import type { ReactNode } from 'react'
 import { ScratchTerminalPopup } from '../components/ScratchTerminalPopup'
 import { registerChord } from '../../command-palette/chordRegistry'
-import { findActivePane } from '../../sessions/utils/activeSessionPane'
 import type { ITerminalService } from '../services/terminalService'
 import type { NotifyPaneReady } from './useTerminal'
-import type { Session } from '../../sessions/types'
+import type { FocusedPaneRef } from '../../command-palette/hooks/usePaneRenameChord'
 
 type ScratchStatus = 'running' | 'exited'
 
@@ -23,11 +23,25 @@ interface ScratchEntry {
   cwd: string
 }
 
+/**
+ * A pane to open a scratch shell against. The chord derives it from the focused
+ * pane; the pane-header button passes its own pane's identity + live cwd.
+ */
+export interface ScratchTarget {
+  sessionId: string
+  paneId: string
+  cwd: string
+}
+
+/** Stable per-pane key — NOT the host ptyId, which rotates on pane restart. */
+const paneKey = (sessionId: string, paneId: string): string =>
+  `${sessionId}:${paneId}`
+
 export interface UseScratchTerminalsArgs {
   service: ITerminalService
-  /** Resolve the currently-active session — the chord / button target. */
-  resolveActiveSession: () => Session | null
-  /** Gate spawning until the boot reap resolves (wired in a later task). */
+  /** Resolve the focused pane — the chord's target when `toggle()` has no arg. */
+  resolveFocusedPane: () => FocusedPaneRef | null
+  /** Gate spawning until the boot reap resolves. */
   ready?: boolean
   /** Buffer early `pty-data` from spawn until the popup's terminal attaches. */
   registerPending?: (ptyId: string) => void
@@ -42,26 +56,26 @@ export interface UseScratchTerminals {
    * `WorkspaceView` like `usePaneRenameChord`'s node.
    */
   renderNode: ReactNode
-  /** Toggle the popup for the active session (chord + pane-button entry points). */
-  toggle: () => Promise<void>
+  /** Toggle the popup for a target pane (defaults to the focused pane). */
+  toggle: (target?: ScratchTarget) => Promise<void>
   /**
-   * Running scratch shells keyed by `sessionId` (PR1 is session-scoped; PR2
-   * generalizes the key to `${sessionId}:${paneId}` and renames to
-   * `runningByPane`). Drives the live-but-hidden cues.
+   * Running scratch shells keyed by `${sessionId}:${paneId}` — drives the
+   * live-but-hidden cues. Global across sessions (hide ≠ kill survives a
+   * session switch), so the bound is ≤4 per session, not ≤4 total.
    */
-  running: ReadonlyMap<string, ScratchStatus>
+  runningByPane: ReadonlyMap<string, ScratchStatus>
 }
 
 /**
- * Owns the lifecycle of ephemeral "scratch" terminals (VIM-53). PR1: one
- * scratch shell per session, spawned at the focused pane's live cwd (falling
- * back to the session's `workingDirectory`) with
- * `{ ephemeral: true, enableAgentBridge: false }`. The hook owns spawn/kill;
- * the popup renders the existing `<Body>` in `attach` mode. Hide ≠ kill.
+ * Owns the lifecycle of ephemeral "scratch" terminals (VIM-53). One scratch
+ * shell per host pane, keyed by `${sessionId}:${paneId}`, spawned at that pane's
+ * live cwd with `{ ephemeral: true, enableAgentBridge: false }`. The hook owns
+ * spawn/kill; the popup renders the existing `<Body>` in `attach` mode. Hide ≠
+ * kill — each scratch `<Body>` stays mounted-hidden for its shell's whole life.
  */
 export const useScratchTerminals = ({
   service,
-  resolveActiveSession,
+  resolveFocusedPane,
   ready = true,
   registerPending,
   notifyPaneReady,
@@ -70,49 +84,40 @@ export const useScratchTerminals = ({
   // is mirrored into state so renderNode + cues re-render.
   const entriesRef = useRef<Map<string, ScratchEntry>>(new Map())
   const [entries, setEntries] = useState<Map<string, ScratchEntry>>(new Map())
-  const [visibleSessionId, setVisibleSessionId] = useState<string | null>(null)
+  const [visibleKey, setVisibleKey] = useState<string | null>(null)
   const spawningRef = useRef<Set<string>>(new Set())
+  /** Show-intent guard: prevents a late-resolving spawn from stealing visibility. */
+  const showIntentRef = useRef<string | null>(null)
 
   const commit = useCallback((): void => {
     setEntries(new Map(entriesRef.current))
   }, [])
 
   const hide = useCallback((): void => {
-    setVisibleSessionId(null)
+    showIntentRef.current = null
+    setVisibleKey(null)
   }, [])
 
-  const toggle = useCallback(async (): Promise<void> => {
-    const session = resolveActiveSession()
-    if (!session) {
-      return
-    }
-    const key = session.id
-
-    // Already showing this session's scratch → hide (never kill).
-    if (visibleSessionId === key) {
-      setVisibleSessionId(null)
-
-      return
-    }
-
-    // Lazily spawn the session's scratch shell on first open.
-    if (
-      !entriesRef.current.has(key) &&
-      ready &&
-      !spawningRef.current.has(key)
-    ) {
+  // Lazily spawn a pane's scratch shell on first open. Idempotent + guarded.
+  const spawnIfNeeded = useCallback(
+    async (target: ScratchTarget, key: string): Promise<void> => {
+      if (
+        entriesRef.current.has(key) ||
+        !ready ||
+        spawningRef.current.has(key)
+      ) {
+        return
+      }
       spawningRef.current.add(key)
       try {
         const result = await service.spawn({
-          // The focused pane's live (OSC 7-tracked) cwd, not the session's
-          // static initial wd; falls back when no single active pane resolves.
-          cwd: findActivePane(session)?.cwd ?? session.workingDirectory,
+          // The pane's live (OSC 7-tracked) cwd, not the session's static wd.
+          cwd: target.cwd,
           ephemeral: true,
           enableAgentBridge: false,
         })
         // Buffer prompt/rc output emitted before the popup's terminal attaches.
         registerPending?.(result.sessionId)
-        // Orphaned by a session close: reaped on the next boot/shutdown sweep.
         entriesRef.current.set(key, {
           scratchPtyId: result.sessionId,
           pid: result.pid,
@@ -121,26 +126,66 @@ export const useScratchTerminals = ({
         })
         commit()
       } catch (err) {
-        // Contain the rejection (chord calls toggle with `void`); no entry is
-        // created, so the next toggle retries.
+        // Contain the rejection (chord/pill call with `void`); no entry is
+        // created, so the next attempt retries.
         // eslint-disable-next-line no-console
         console.warn('scratch spawn failed', err)
       } finally {
         spawningRef.current.delete(key)
       }
-    }
+    },
+    [ready, service, commit, registerPending]
+  )
 
-    if (entriesRef.current.has(key)) {
-      setVisibleSessionId(key)
-    }
-  }, [
-    resolveActiveSession,
-    visibleSessionId,
-    ready,
-    service,
-    commit,
-    registerPending,
-  ])
+  // Reveal a pane's scratch (spawning on first open). The pane button and the
+  // pane-switcher pills land here; only the chord toggles (hide-if-shown).
+  const show = useCallback(
+    async (target: ScratchTarget): Promise<void> => {
+      const key = paneKey(target.sessionId, target.paneId)
+      showIntentRef.current = key
+      await spawnIfNeeded(target, key)
+      if (entriesRef.current.has(key) && showIntentRef.current === key) {
+        setVisibleKey(key)
+      }
+    },
+    [spawnIfNeeded]
+  )
+
+  const toggle = useCallback(
+    async (target?: ScratchTarget): Promise<void> => {
+      // Chord (no target): hide whatever is shown, else open the focused pane.
+      // Keying off `visibleKey` (not the focused pane's key) keeps it a true
+      // toggle even after the pills switched the popup to a non-focused pane.
+      if (!target) {
+        if (visibleKey !== null) {
+          hide()
+
+          return
+        }
+        const focused = resolveFocusedPane()
+        if (!focused) {
+          return
+        }
+        await show({
+          sessionId: focused.session.id,
+          paneId: focused.pane.id,
+          cwd: focused.pane.cwd,
+        })
+
+        return
+      }
+
+      // Targeted (pane button): toggle that specific pane's scratch.
+      const key = paneKey(target.sessionId, target.paneId)
+      if (visibleKey === key) {
+        hide()
+
+        return
+      }
+      await show(target)
+    },
+    [resolveFocusedPane, visibleKey, show, hide]
+  )
 
   // `Mod+;` then backtick chord — registered once, calls the latest toggle via a ref.
   const toggleRef = useRef(toggle)
@@ -155,8 +200,13 @@ export const useScratchTerminals = ({
     []
   )
 
-  const running = new Map<string, ScratchStatus>()
-  entries.forEach((entry, key) => running.set(key, entry.status))
+  // Memoized so consumers threading it down only re-render on actual change.
+  const runningByPane = useMemo(() => {
+    const map = new Map<string, ScratchStatus>()
+    entries.forEach((entry, key) => map.set(key, entry.status))
+
+    return map
+  }, [entries])
 
   const renderNode: ReactNode =
     entries.size > 0
@@ -166,7 +216,7 @@ export const useScratchTerminals = ({
           [...entries.entries()].map(([key, entry]) =>
             createElement(ScratchTerminalPopup, {
               key,
-              open: visibleSessionId === key,
+              open: visibleKey === key,
               scratchPtyId: entry.scratchPtyId,
               cwd: entry.cwd,
               pid: entry.pid,
@@ -178,5 +228,5 @@ export const useScratchTerminals = ({
         )
       : null
 
-  return { renderNode, toggle, running }
+  return { renderNode, toggle, runningByPane }
 }

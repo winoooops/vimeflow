@@ -72,11 +72,7 @@ import { isShellPane } from '../sessions/utils/paneKind'
 import { lineDelta } from '../sessions/utils/lineDelta'
 import { pickNextVisibleSessionId } from '../sessions/utils/pickNextVisibleSessionId'
 import { AGENTS, agentTypeToRegistryKey } from '../../agents/registry'
-import type {
-  Session,
-  SessionCloseResult,
-  SessionStatus,
-} from '../sessions/types'
+import type { SessionCloseResult, SessionStatus } from '../sessions/types'
 import {
   buildWorkspaceCommands,
   WORKSPACE_TAB_KEYS,
@@ -655,14 +651,28 @@ export const WorkspaceView = (): ReactElement => {
     }
   }, [terminalService])
 
-  const { renderNode: scratchTerminalNode, toggle: toggleScratch } =
-    useScratchTerminals({
-      service: terminalService,
-      resolveActiveSession: (): Session | null => activeSession ?? null,
-      ready: scratchReapDone,
-      registerPending,
-      notifyPaneReady,
-    })
+  const {
+    renderNode: scratchTerminalNode,
+    toggle: toggleScratch,
+    runningByPane: runningScratchByPane,
+  } = useScratchTerminals({
+    service: terminalService,
+    resolveFocusedPane,
+    ready: scratchReapDone,
+    registerPending,
+    notifyPaneReady,
+  })
+
+  // Pane-keys whose scratch shell is running — drives the pane-button live cue.
+  const runningScratchPaneKeys = useMemo(
+    () =>
+      new Set(
+        [...runningScratchByPane]
+          .filter(([, status]) => status === 'running')
+          .map(([key]) => key)
+      ),
+    [runningScratchByPane]
+  )
 
   const requestFocus = useCallback((target: FocusTarget): void => {
     pendingFocusTarget.current = target
@@ -1482,7 +1492,8 @@ export const WorkspaceView = (): ReactElement => {
               onContainerFocus={() => {
                 setActiveContainerId(TERMINAL_CONTAINER_ID)
               }}
-              onScratch={(): void => void toggleScratch()}
+              onScratch={(target): void => void toggleScratch(target)}
+              runningScratchPaneKeys={runningScratchPaneKeys}
             />
           </div>
           {!dockBeforeTerminal ? dockOrPeek : null}
@@ -1526,6 +1537,7 @@ export const WorkspaceView = (): ReactElement => {
           contextPct={statusBarContextPct}
           paletteShortcut={COMMAND_PALETTE_SHORTCUT_KEYS}
           onOpenPalette={commandPalette.open}
+          scratchCount={runningScratchPaneKeys.size}
         />
       </div>
 

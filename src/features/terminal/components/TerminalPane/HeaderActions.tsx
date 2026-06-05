@@ -5,8 +5,10 @@ export interface HeaderActionsProps {
   isCollapsed: boolean
   onToggleCollapse: () => void
   onClose?: () => void
-  /** Toggle this session's ephemeral scratch terminal (VIM-53). */
+  /** Toggle this pane's ephemeral scratch terminal (VIM-53). */
   onScratch?: () => void
+  /** This pane has a running scratch shell — show the live-but-hidden cue (§8). */
+  scratchRunning?: boolean
 }
 
 export const HeaderActions = ({
@@ -14,18 +16,32 @@ export const HeaderActions = ({
   onToggleCollapse,
   onClose = undefined,
   onScratch = undefined,
+  scratchRunning = false,
 }: HeaderActionsProps): ReactElement => (
   <>
     {onScratch && (
-      <Tooltip content="Scratch terminal" placement="bottom">
+      <Tooltip
+        content={
+          scratchRunning ? 'Scratch terminal · running' : 'Scratch terminal'
+        }
+        placement="bottom"
+      >
         <button
           type="button"
-          aria-label="open scratch terminal"
+          aria-label={
+            scratchRunning
+              ? 'open scratch terminal (running)'
+              : 'open scratch terminal'
+          }
           onClick={(event) => {
             event.stopPropagation()
             onScratch()
           }}
-          className="inline-flex h-[22px] w-[22px] items-center justify-center rounded border-0 bg-transparent text-[#f0c674]/70 hover:bg-white/5 hover:text-[#f0c674]"
+          className={`inline-flex h-[22px] w-[22px] items-center justify-center rounded border-0 hover:bg-white/5 ${
+            scratchRunning
+              ? 'bg-[#f0c674]/15 text-[#f0c674]'
+              : 'bg-transparent text-[#f0c674]/70 hover:text-[#f0c674]'
+          }`}
         >
           <span
             className="material-symbols-outlined text-[13px]"

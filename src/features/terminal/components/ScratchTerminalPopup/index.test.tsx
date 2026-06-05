@@ -20,7 +20,11 @@ vi.mock('../TerminalPane/Body', async () => {
   return {
     Body: forwardRef<
       { focusTerminal: () => void },
-      { mode?: string; onPaneReady?: NotifyPaneReady }
+      {
+        mode?: string
+        onPaneReady?: NotifyPaneReady
+        onCwdChange?: (cwd: string) => void
+      }
     >(function BodyStub(props, ref) {
       captured.onPaneReady = props.onPaneReady
       useImperativeHandle(ref, () => ({ focusTerminal }), [])
@@ -30,6 +34,7 @@ vi.mock('../TerminalPane/Body', async () => {
           data-testid="body-stub"
           data-body-mode={props.mode}
           data-has-on-ready={props.onPaneReady ? 'yes' : 'no'}
+          data-has-on-cwd-change={props.onCwdChange ? 'yes' : 'no'}
         />
       )
     }),
@@ -69,6 +74,17 @@ test('renders Body in attach mode for the scratch ptyId', () => {
   expect(screen.getByTestId('body-stub')).toHaveAttribute(
     'data-body-mode',
     'attach'
+  )
+})
+
+test('does not wire OSC 7 → updatePaneCwd, so a scratch cd stays isolated', () => {
+  render(popup(true))
+
+  // The popup never passes onCwdChange to Body, so a `cd` in the scratch shell
+  // emits OSC 7 but moves nothing in the host pane/session (spec §6, invariant 5).
+  expect(screen.getByTestId('body-stub')).toHaveAttribute(
+    'data-has-on-cwd-change',
+    'no'
   )
 })
 

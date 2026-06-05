@@ -16,6 +16,7 @@ import { useGitWorktree } from '../../../diff/hooks/useGitWorktree'
 import type { Pane, Session, SessionStatus } from '../../../sessions/types'
 import { agentForPane } from '../../../sessions/utils/agentForSession'
 import type { NotifyPaneReady } from '../../hooks/useTerminal'
+import type { ScratchTarget } from '../../hooks/useScratchTerminals'
 import type { ITerminalService } from '../../services/terminalService'
 import { aggregateLineDelta } from './aggregateLineDelta'
 import { Body, type BodyHandle } from './Body'
@@ -37,8 +38,12 @@ export interface TerminalPaneProps {
   onPaneReady?: NotifyPaneReady
   mode?: TerminalPaneMode
   onClose?: (sessionId: string, paneId: string) => void
-  /** Toggle this session's ephemeral scratch terminal (VIM-53). */
-  onScratch?: () => void
+  /** Toggle this pane's ephemeral scratch terminal (VIM-53). */
+  onScratch?: (target: ScratchTarget) => void
+  /** Make this pane active — the scratch button focuses its pane (spec §8). */
+  onRequestActive?: (sessionId: string, paneId: string) => void
+  /** Pane-keys (`${sessionId}:${paneId}`) with a running scratch — §8 cue. */
+  runningScratchPaneKeys?: ReadonlySet<string>
   onCwdChange?: (cwd: string) => void
   onRestart?: (sessionId: string) => void
   deferFit?: boolean
@@ -67,6 +72,8 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
       mode = 'spawn',
       onClose = undefined,
       onScratch = undefined,
+      onRequestActive = undefined,
+      runningScratchPaneKeys = undefined,
       onCwdChange = undefined,
       onRestart = undefined,
       deferFit = false,
@@ -153,6 +160,16 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
       onClose?.(session.id, pane.id)
     }, [onClose, pane.id, session.id])
 
+    // The header button toggles THIS pane's scratch — not whatever is focused —
+    // so it passes its own identity + live cwd (spec §8).
+    const handleScratch = useCallback((): void => {
+      // Focus this pane first (spec §8): the button stops propagation, so the
+      // slot's click-to-activate never runs — without this the active-pane
+      // state would stay on the previously-focused pane.
+      onRequestActive?.(session.id, pane.id)
+      onScratch?.({ sessionId: session.id, paneId: pane.id, cwd: pane.cwd })
+    }, [onRequestActive, onScratch, session.id, pane.id, pane.cwd])
+
     const handleRestart = useCallback(
       (restartSessionId: string): void => {
         // TODO(#202): for multi-pane sessions, this needs to thread `pane.id`
@@ -232,7 +249,10 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
           paneUserLabel={pane.userLabel}
           onToggleCollapse={handleToggleCollapse}
           onClose={onClose ? handleClose : undefined}
-          onScratch={onScratch}
+          onScratch={onScratch ? handleScratch : undefined}
+          scratchRunning={
+            runningScratchPaneKeys?.has(`${session.id}:${pane.id}`) ?? false
+          }
         />
 
         {isAwaitingRestart ? (

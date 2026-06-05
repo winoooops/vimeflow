@@ -1,23 +1,20 @@
 import { test, expect, vi } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
-import { useScratchTerminals } from './useScratchTerminals'
-import type { Session } from '../../sessions/types'
+import type { ReactElement } from 'react'
+import { useScratchTerminals, type ScratchTarget } from './useScratchTerminals'
+import type { FocusedPaneRef } from '../../command-palette/hooks/usePaneRenameChord'
 import type { ITerminalService } from '../services/terminalService'
 import * as chordRegistry from '../../command-palette/chordRegistry'
 
-const makeSession = (
-  id = 's1',
-  workingDirectory = '/repo',
-  activePaneCwd?: string
-): Session =>
+const makeFocusedPane = (
+  sessionId = 's1',
+  paneId = 'p0',
+  cwd = '/repo'
+): FocusedPaneRef =>
   ({
-    id,
-    workingDirectory,
-    panes:
-      activePaneCwd === undefined
-        ? []
-        : [{ id: 'p0', active: true, cwd: activePaneCwd }],
-  }) as unknown as Session
+    pane: { id: paneId, cwd },
+    session: { id: sessionId, panes: [{ id: paneId, cwd }] },
+  }) as unknown as FocusedPaneRef
 
 const makeService = (): ITerminalService =>
   ({
@@ -27,12 +24,12 @@ const makeService = (): ITerminalService =>
     kill: vi.fn().mockResolvedValue(undefined),
   }) as unknown as ITerminalService
 
-test('toggle spawns an ephemeral, no-bridge shell, falling back to the session workingDirectory when no active pane', async () => {
+test('toggle (no target) spawns an ephemeral, no-bridge shell at the focused pane cwd, keyed by pane', async () => {
   const service = makeService()
-  const session = makeSession() // no panes → findActivePane undefined → fallback
+  const focused = makeFocusedPane('s1', 'p0', '/repo/projects/vimeflow')
 
   const { result } = renderHook(() =>
-    useScratchTerminals({ service, resolveActiveSession: () => session })
+    useScratchTerminals({ service, resolveFocusedPane: () => focused })
   )
 
   await act(async () => {
@@ -41,39 +38,97 @@ test('toggle spawns an ephemeral, no-bridge shell, falling back to the session w
 
   expect(service.spawn).toHaveBeenCalledWith(
     expect.objectContaining({
-      cwd: '/repo',
+      cwd: '/repo/projects/vimeflow',
       ephemeral: true,
       enableAgentBridge: false,
     })
   )
-  expect([...result.current.running.keys()]).toEqual(['s1'])
+  expect([...result.current.runningByPane.keys()]).toEqual(['s1:p0'])
   expect(result.current.renderNode).not.toBeNull()
 })
 
-test('toggle spawns the scratch at the focused pane live cwd, not the session wd', async () => {
+test('toggle(target) spawns at the target pane cwd, keyed by that pane (button path)', async () => {
   const service = makeService()
-  // Session opened at /repo, but the pane has since cd'd into a subdir.
-  const session = makeSession('s1', '/repo', '/repo/projects/vimeflow')
+  // Focused pane is p0, but the button targets p1 explicitly.
+  const focused = makeFocusedPane('s1', 'p0', '/repo')
 
   const { result } = renderHook(() =>
-    useScratchTerminals({ service, resolveActiveSession: () => session })
+    useScratchTerminals({ service, resolveFocusedPane: () => focused })
   )
 
+  const target: ScratchTarget = {
+    sessionId: 's1',
+    paneId: 'p1',
+    cwd: '/repo/other',
+  }
+  await act(async () => {
+    await result.current.toggle(target)
+  })
+
+  expect(service.spawn).toHaveBeenCalledWith(
+    expect.objectContaining({ cwd: '/repo/other' })
+  )
+  expect([...result.current.runningByPane.keys()]).toEqual(['s1:p1'])
+})
+
+test('different panes get independent shells (keyed per pane)', async () => {
+  const service = makeService()
+  const focused = makeFocusedPane('s1', 'p0', '/a')
+
+  const { result } = renderHook(() =>
+    useScratchTerminals({ service, resolveFocusedPane: () => focused })
+  )
+
+  // Open each pane's scratch by target (the pane-button / pill path).
+  await act(async () => {
+    await result.current.toggle({ sessionId: 's1', paneId: 'p0', cwd: '/a' })
+  })
+
+  await act(async () => {
+    await result.current.toggle({ sessionId: 's1', paneId: 'p1', cwd: '/b' })
+  })
+
+  expect(service.spawn).toHaveBeenCalledTimes(2)
+  expect([...result.current.runningByPane.keys()].sort()).toEqual([
+    's1:p0',
+    's1:p1',
+  ])
+})
+
+test('the no-target chord hides a visible scratch instead of switching to the focused pane', async () => {
+  const service = makeService()
+  let focused = makeFocusedPane('s1', 'p0', '/a')
+
+  const { result } = renderHook(() =>
+    useScratchTerminals({ service, resolveFocusedPane: () => focused })
+  )
+
+  await act(async () => {
+    await result.current.toggle() // chord opens the focused pane p0
+  })
+
+  await act(async () => {
+    // A pill switches the popup to p1 (which is NOT the focused pane).
+    await result.current.toggle({ sessionId: 's1', paneId: 'p1', cwd: '/b' })
+  })
+  expect(service.spawn).toHaveBeenCalledTimes(2)
+
+  // Focus has moved to a fresh pane p2 with no scratch. The chord must HIDE the
+  // visible p1 popup (spec §7 "hides when shown"), not spawn/switch to p2.
+  focused = makeFocusedPane('s1', 'p2', '/c')
   await act(async () => {
     await result.current.toggle()
   })
 
-  expect(service.spawn).toHaveBeenCalledWith(
-    expect.objectContaining({ cwd: '/repo/projects/vimeflow' })
-  )
+  expect(service.spawn).toHaveBeenCalledTimes(2) // hid — no p2 spawn
 })
 
 test('hiding the popup does not kill the shell', async () => {
   const service = makeService()
-  const session = makeSession()
+  const focused = makeFocusedPane()
 
   const { result } = renderHook(() =>
-    useScratchTerminals({ service, resolveActiveSession: () => session })
+    useScratchTerminals({ service, resolveFocusedPane: () => focused })
   )
 
   await act(async () => {
@@ -81,7 +136,7 @@ test('hiding the popup does not kill the shell', async () => {
   })
 
   await act(async () => {
-    await result.current.toggle() // hide
+    await result.current.toggle() // hide (same pane)
   })
 
   expect(service.kill).not.toHaveBeenCalled()
@@ -89,10 +144,10 @@ test('hiding the popup does not kill the shell', async () => {
 
 test('renderNode stays non-null when hidden while a shell is alive', async () => {
   const service = makeService()
-  const session = makeSession()
+  const focused = makeFocusedPane()
 
   const { result } = renderHook(() =>
-    useScratchTerminals({ service, resolveActiveSession: () => session })
+    useScratchTerminals({ service, resolveFocusedPane: () => focused })
   )
 
   await act(async () => {
@@ -108,12 +163,12 @@ test('renderNode stays non-null when hidden while a shell is alive', async () =>
 
 test('does not spawn until ready', async () => {
   const service = makeService()
-  const session = makeSession()
+  const focused = makeFocusedPane()
 
   const { result } = renderHook(() =>
     useScratchTerminals({
       service,
-      resolveActiveSession: () => session,
+      resolveFocusedPane: () => focused,
       ready: false,
     })
   )
@@ -125,11 +180,11 @@ test('does not spawn until ready', async () => {
   expect(service.spawn).not.toHaveBeenCalled()
 })
 
-test('toggle is a no-op when there is no active session', async () => {
+test('toggle is a no-op when there is no focused pane', async () => {
   const service = makeService()
 
   const { result } = renderHook(() =>
-    useScratchTerminals({ service, resolveActiveSession: () => null })
+    useScratchTerminals({ service, resolveFocusedPane: () => null })
   )
 
   await act(async () => {
@@ -142,13 +197,13 @@ test('toggle is a no-op when there is no active session', async () => {
 
 test('arms the spawn→attach buffer for the new pty before mounting', async () => {
   const service = makeService()
-  const session = makeSession()
+  const focused = makeFocusedPane()
   const registerPending = vi.fn()
 
   const { result } = renderHook(() =>
     useScratchTerminals({
       service,
-      resolveActiveSession: () => session,
+      resolveFocusedPane: () => focused,
       registerPending,
     })
   )
@@ -165,29 +220,85 @@ test('contains a spawn rejection instead of rejecting from the chord path', asyn
     spawn: vi.fn().mockRejectedValue(new Error('pty cap reached')),
     kill: vi.fn().mockResolvedValue(undefined),
   } as unknown as ITerminalService
-  const session = makeSession()
+  const focused = makeFocusedPane()
   const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
 
   const { result } = renderHook(() =>
-    useScratchTerminals({ service, resolveActiveSession: () => session })
+    useScratchTerminals({ service, resolveFocusedPane: () => focused })
   )
 
   await act(async () => {
     await expect(result.current.toggle()).resolves.toBeUndefined()
   })
 
-  expect([...result.current.running.keys()]).toEqual([])
+  expect([...result.current.runningByPane.keys()]).toEqual([])
   expect(result.current.renderNode).toBeNull()
   expect(warn).toHaveBeenCalled()
   warn.mockRestore()
 })
 
+test('show() does not overwrite a later pane selection when an earlier spawn resolves late', async () => {
+  const service = makeService()
+  const focused = makeFocusedPane('s1', 'p0', '/a')
+
+  let resolveP1: (value: {
+    sessionId: string
+    pid: number
+    cwd: string
+  }) => void = () => undefined
+
+  const spawnMock = vi.fn().mockImplementation((args: { cwd: string }) => {
+    if (args.cwd === '/a') {
+      return Promise.resolve({ sessionId: 'scratch-a', pid: 1, cwd: '/a' })
+    }
+
+    return new Promise<{ sessionId: string; pid: number; cwd: string }>(
+      (resolve) => {
+        resolveP1 = resolve
+      }
+    )
+  })
+  service.spawn = spawnMock
+
+  const { result } = renderHook(() =>
+    useScratchTerminals({ service, resolveFocusedPane: () => focused })
+  )
+
+  // Start p1 (slow spawn), then immediately open p0 (fast spawn).
+  await act(async () => {
+    const p1Promise = result.current.toggle({
+      sessionId: 's1',
+      paneId: 'p1',
+      cwd: '/b',
+    })
+    await result.current.toggle({ sessionId: 's1', paneId: 'p0', cwd: '/a' })
+    resolveP1({ sessionId: 'scratch-b', pid: 2, cwd: '/b' })
+    await p1Promise
+  })
+
+  expect(spawnMock).toHaveBeenCalledTimes(2)
+  expect([...result.current.runningByPane.keys()].sort()).toEqual([
+    's1:p0',
+    's1:p1',
+  ])
+
+  // p0 was opened after p1, so it is the first child (Map insertion order).
+  const fragment = result.current.renderNode as ReactElement<{
+    children: ReactElement<{ open: boolean }>[]
+  }>
+  const popups = fragment.props.children
+
+  expect(popups).toHaveLength(2)
+  expect(popups[0].props.open).toBe(true) // p0 — visible as the latest intent
+  expect(popups[1].props.open).toBe(false) // p1 — hidden despite late resolution
+})
+
 test('registers a backtick chord that toggles and consumes the event', async () => {
   const service = makeService()
-  const session = makeSession()
+  const focused = makeFocusedPane()
 
   renderHook(() =>
-    useScratchTerminals({ service, resolveActiveSession: () => session })
+    useScratchTerminals({ service, resolveFocusedPane: () => focused })
   )
 
   let consumed = false
