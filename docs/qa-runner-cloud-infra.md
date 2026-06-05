@@ -232,17 +232,17 @@ running the PR cycle.
 
 Read-only inventory on 2026-06-04 PDT / 2026-06-05 UTC found:
 
-- Account: `852499864701`.
+- Account: `<aws-account-id>`.
 - Active Savings Plan: EC2 Instance, `t2`, `us-west-1`, active until
   2026-09-02.
-- Control host: `i-01ae8a883476f5f7c`, `t2.micro`, Amazon Linux 2023,
+- Control host: `i-<control-host-id>`, `t2.micro`, Amazon Linux 2023,
   `vimeflow-qa-control`, SSM online, instance profile
   `vimeflow-qa-control-profile`.
-- Existing non-QA host: `i-0a56358fbc68ba6b7`, `t2.micro`, Ubuntu 24.04,
+- Existing non-QA host: `i-<existing-non-qa-host-id>`, `t2.micro`, Ubuntu 24.04,
   SSM connection lost, no instance profile.
 - QA security group: `vimeflow-qa-runner-sg`, no ingress, egress only HTTPS and
   Cloudflare Tunnel `7844` TCP/UDP.
-- Control root EBS: `vol-072f96adc91f9b7e8`, 20 GiB gp3, encrypted,
+- Control root EBS: `vol-<control-root-ebs-id>`, 20 GiB gp3, encrypted,
   delete-on-termination.
 - No `Project=vimeflow,Role=worker` EC2 instance exists yet.
 - No QA worker EBS volume exists yet.

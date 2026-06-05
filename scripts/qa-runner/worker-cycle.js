@@ -48,7 +48,9 @@ const abortOnFailure = (label, result) => {
     return
   }
   const status = result.status ?? 1
-  throw new Error(`${label} failed with exit ${status}`)
+  throw new Error(
+    `${label} failed with exit ${status}${result.error ? ': ' + result.error.message : ''}`
+  )
 }
 
 const ensureCleanTrackedTree = (repoRoot) => {

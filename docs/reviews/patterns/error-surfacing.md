@@ -2,7 +2,7 @@
 id: error-surfacing
 category: error-handling
 created: 2026-04-10
-last_updated: 2026-06-04
+last_updated: 2026-06-05
 ref_count: 12
 ---
 
@@ -467,3 +467,21 @@ failed" must mean the editor shows the original file, not the requested one.
 - **Finding:** `adjudicateReviews` throws after bounded retries, and `computeState` did not catch that around the new call. A Codex transient failure therefore propagated to the generic tick error path and set `exitCode 2`, contradicting the documented transient `WAITING` behavior. The retry logic existed inside `adjudicateReviews`, but the final throw was not translated back into a state inside `computeState`.
 - **Fix:** Wrapped the `adjudicateReviews` call in `computeState` in a `try/catch`. On failure, set `state = 'WAITING'` and `detail` to a message that includes the artifact path (`e.artifactPath`) so operators can inspect the failure evidence. The tick remains in observation mode and retries on the next poll instead of counting as a transient infra failure.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 48. QA_WORKER_SSH_OPTIONS whitespace split breaks space-valued SSH options
+
+- **Source:** github-claude | PR #349 round 1 | 2026-06-05
+- **Severity:** LOW
+- **File:** `scripts/qa-runner/lib/cloud-dispatch.js`
+- **Finding:** `dispatchConfig` splits `QA_WORKER_SSH_OPTIONS` on whitespace and passes the result as an explicit args array to `spawn()` (no shell). An option whose value contains a space is incorrectly split into extra tokens. The documented examples (`-o BatchMode=yes`) work, but the limitation is invisible to operators.
+- **Fix:** Added `QA_WORKER_SSH_OPTIONS_JSON` env var that accepts a JSON array for complex SSH options containing spaces, providing an unambiguous escape hatch while preserving the simple string split for the common case.
+- **Commit:** same commit as this entry
+
+### 49. abortOnFailure swallows OS-level spawn errors from spawnSync
+
+- **Source:** github-claude | PR #349 round 1 | 2026-06-05
+- **Severity:** LOW
+- **File:** `scripts/qa-runner/worker-cycle.js`
+- **Finding:** When `spawnSync` fails to launch a process (ENOENT, EPERM), it sets `result.status = null` and `result.error` to the OS error. `abortOnFailure` checks `result.status === 0` (false), then throws a generic exit-1 message discarding `result.error.message`. On a fresh worker EC2 instance where git may not be on PATH, this produces a misleading error rather than the actionable spawn ENOENT cause.
+- **Fix:** Appended `result.error.message` to the thrown error when OS-level spawn errors occur, so operators see the real cause (e.g., "spawn ENOENT") instead of a generic exit code.
+- **Commit:** same commit as this entry

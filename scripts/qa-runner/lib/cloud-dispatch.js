@@ -313,7 +313,9 @@ export const dispatchConfig = (env = process.env) => ({
   instanceId: env.QA_WORKER_INSTANCE_ID || '',
   region:
     env.QA_WORKER_REGION || env.AWS_REGION || env.AWS_DEFAULT_REGION || '',
-  sshOptions: compact((env.QA_WORKER_SSH_OPTIONS || '').split(/\s+/)),
+  sshOptions: env.QA_WORKER_SSH_OPTIONS_JSON
+    ? JSON.parse(env.QA_WORKER_SSH_OPTIONS_JSON)
+    : compact((env.QA_WORKER_SSH_OPTIONS || '').split(/\s+/)),
   timeoutSeconds: Number(env.QA_WORKER_TIMEOUT_SECONDS || 5400),
 })
 
