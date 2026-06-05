@@ -46,6 +46,7 @@ export const createBrowserPane = async (
           url: request.initialUrl,
           title: null,
           active: true,
+          favicon: null,
         },
       ],
       navState: { canGoBack: false, canGoForward: false, isLoading: false },

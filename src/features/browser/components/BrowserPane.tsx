@@ -120,7 +120,7 @@ export const BrowserPane = ({
   const receivedLiveNavRef = useRef(false)
 
   const [tabs, setTabs] = useState<BrowserPaneTab[]>([
-    { id: 'tab-0', url, title: null, active: true },
+    { id: 'tab-0', url, title: null, active: true, favicon: null },
   ])
   const browserSessionId = browserSessionIdForSession(session)
 

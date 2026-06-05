@@ -3,6 +3,7 @@ import {
   BrowserAddressBar,
   type BrowserAddressBarProps,
 } from './BrowserAddressBar'
+import { BROWSER_IDENTITY } from '../browserIdentity'
 
 export interface BrowserToolbarProps extends BrowserAddressBarProps {
   onOpenExternal: () => void
@@ -61,7 +62,7 @@ export const BrowserToolbar = ({
 
   return (
     <div
-      className="grid h-[40px] shrink-0 items-center gap-[6px] overflow-hidden bg-surface-container-lowest px-[10px]"
+      className="relative grid h-[40px] shrink-0 items-center gap-[6px] overflow-hidden bg-surface-container-lowest px-[10px]"
       style={{
         gridTemplateColumns:
           'minmax(min-content,1fr) auto minmax(min-content,1fr)',
@@ -105,6 +106,20 @@ export const BrowserToolbar = ({
           open_in_new
         </span>
       </button>
+
+      {isLoading ? (
+        <div
+          data-testid="browser-load-bar"
+          className="pointer-events-none absolute inset-x-0 bottom-0 h-[2px] overflow-hidden"
+        >
+          <div
+            className="h-full w-2/5 motion-safe:animate-browser-load-bar motion-reduce:w-full motion-reduce:opacity-60"
+            style={{
+              background: `linear-gradient(90deg, transparent, ${BROWSER_IDENTITY.accent}, transparent)`,
+            }}
+          />
+        </div>
+      ) : null}
     </div>
   )
 }
