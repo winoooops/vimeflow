@@ -75,6 +75,7 @@ sudo /opt/vimeflow/repo/scripts/qa-runner/deploy/control-env-from-ssm.sh
 
 # worker host
 sudo /opt/vimeflow/repo/scripts/qa-runner/deploy/worker-env-from-ssm.sh
+sudo /opt/vimeflow/repo/scripts/qa-runner/deploy/worker-bootstrap-check.sh
 ```
 
 The scripts fetch SecureString values with decryption and write only local env
@@ -349,7 +350,15 @@ Separate cost note:
 ## Current Blocker
 
 The first worker node is online and has the required toolchain. Before relying
-on SSM dispatcher mode, run a no-PR bootstrap check that verifies:
+on SSM dispatcher mode, refresh local AWS auth with `aws login`, deploy the
+latest `wip/linear-wiring` checkout to the control and worker hosts, rerun the
+worker env bootstrap, then run:
+
+```bash
+sudo /opt/vimeflow/repo/scripts/qa-runner/deploy/worker-bootstrap-check.sh
+```
+
+The check verifies:
 
 - `/etc/vimeflow/qa-runner/worker.env` exists with `0600` permissions.
 - `CODEX_HOME` points to a root-owned Codex auth cache.
