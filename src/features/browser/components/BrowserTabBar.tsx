@@ -64,7 +64,8 @@ export const BrowserTabBar = ({
           return (
             <div
               key={tab.id}
-              className={`group flex h-[27px] min-w-[96px] max-w-[210px] items-center gap-2 rounded-lg border px-2 transition ${
+              data-testid="browser-tab"
+              className={`group flex h-[27px] min-w-[96px] max-w-[210px] flex-1 items-center gap-2 rounded-lg border px-2 transition ${
                 tab.active
                   ? 'border-white/10 bg-browser-tab-active shadow-[0_2px_8px_rgba(0,0,0,0.4)]'
                   : 'border-transparent hover:bg-white/[0.04]'

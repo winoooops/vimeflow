@@ -53,6 +53,23 @@ test('passes tab.favicon through to the favicon slot', () => {
   )
 })
 
+test('tabs share an equal-width (flex-1) capsule', () => {
+  render(
+    <BrowserTabBar
+      tabs={tabs}
+      onActivate={noop}
+      onClose={noop}
+      onNewTab={noop}
+    />
+  )
+
+  const capsules = screen.getAllByTestId('browser-tab')
+  expect(capsules.length).toBeGreaterThan(1)
+  for (const capsule of capsules) {
+    expect(capsule).toHaveClass('flex-1')
+  }
+})
+
 test('a PR-URL tab uses the merge favicon glyph', () => {
   render(
     <BrowserTabBar
