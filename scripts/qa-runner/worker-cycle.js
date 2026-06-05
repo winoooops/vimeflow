@@ -3,6 +3,7 @@
 // the local daemon, but from the burst worker checkout and with role credentials
 // already present on that worker.
 import { spawnSync } from 'node:child_process'
+import { readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { shouldRefreshRunner } from './lib/cloud-dispatch.js'
@@ -10,9 +11,90 @@ import { watchArgs } from './lib/worker.js'
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url))
 const REPO_ROOT = resolve(SCRIPT_DIR, '..', '..')
+const DEFAULT_WORKER_ENV_FILE = '/etc/vimeflow/qa-runner/worker.env'
 
 const boolEnv = (value) =>
   ['1', 'true', 'yes', 'on'].includes(String(value || '').toLowerCase())
+
+const stripMatchingOuterQuotes = (value) => {
+  const trimmed = value.trim()
+  const quote = trimmed[0]
+
+  if (
+    (quote === '"' || quote === "'") &&
+    trimmed[trimmed.length - 1] === quote
+  ) {
+    return trimmed.slice(1, -1)
+  }
+
+  return trimmed
+}
+
+const shouldWarnEnvFileError = (error) =>
+  ['EACCES', 'EPERM', 'EISDIR'].includes(error?.code)
+
+const parseEnvLine = (line) => {
+  const match = line.match(/^\s*(?:export\s+)?([A-Z0-9_]+)\s*=\s*(.*?)\s*$/)
+  if (!match) {
+    return null
+  }
+
+  return [match[1], stripMatchingOuterQuotes(match[2])]
+}
+
+export const loadWorkerEnvFile = (
+  path = process.env.QA_WORKER_ENV_FILE || DEFAULT_WORKER_ENV_FILE,
+  env = process.env,
+  readFile = readFileSync,
+  warn = (message) => process.stderr.write(message)
+) => {
+  if (!path) {
+    return []
+  }
+
+  let content
+  try {
+    content = readFile(path, 'utf8')
+  } catch (error) {
+    if (error?.code === 'ENOENT') {
+      return []
+    }
+
+    if (shouldWarnEnvFileError(error)) {
+      warn(`warning: cannot read worker env file ${path}: ${error.code}\n`)
+
+      return []
+    }
+
+    throw error
+  }
+
+  const loaded = []
+  for (const line of content.split('\n')) {
+    const parsed = parseEnvLine(line)
+    if (!parsed) {
+      continue
+    }
+    const [key, value] = parsed
+    if (env[key] == null) {
+      env[key] = value
+      loaded.push(key)
+    }
+  }
+
+  return loaded
+}
+
+export const warnMissingWorkerEnv = (
+  env = process.env,
+  warn = (message) => process.stderr.write(message)
+) => {
+  if (!env.OPENAI_API_KEY) {
+    warn(
+      'warning: worker env did not provide OPENAI_API_KEY; Codex API auth may fail\n'
+    )
+  }
+}
 
 export const workerConfigFromEnv = (env = process.env) => ({
   label: env.QA_LABEL || 'auto-review',
@@ -89,6 +171,8 @@ const refreshRunner = (env, repoRoot) => {
 }
 
 export const main = () => {
+  loadWorkerEnvFile()
+  warnMissingWorkerEnv()
   const repoRoot = process.env.QA_WORKER_REPO || REPO_ROOT
   refreshRunner(process.env, repoRoot)
 

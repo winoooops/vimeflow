@@ -47,7 +47,8 @@ Worker credentials:
 
 - `bot.env`
 - `linear-agent.env`
-- Codex auth
+- `OPENAI_API_KEY`, initially sourced from
+  `/vimeflow/qa-runner/prod/worker/openai-api-key`
 - Kimi Code auth
 - GitHub CLI auth for the fixer account
 - Lifeline installation/config
@@ -68,6 +69,12 @@ sudo /opt/vimeflow/repo/scripts/qa-runner/deploy/worker-env-from-ssm.sh
 
 The scripts fetch SecureString values with decryption and write only local env
 files. They do not print secret values.
+
+On the worker, `worker-env-from-ssm.sh` also writes
+`/etc/vimeflow/qa-runner/worker.env` with `0600` permissions. `worker-cycle.js`
+loads that local file before running `watch.js`, so `OPENAI_API_KEY` reaches
+Kimi/Codex through the worker process environment without being included in SSM
+command arguments.
 
 ## Control Daemon Mode
 
@@ -185,6 +192,11 @@ It appends:
 - `--linear-team "$QA_LINEAR_TEAM_KEY"` when set.
 - `--max-ci-reruns "$QA_MAX_CI_RERUNS"` when set.
 
+Before building that command, it loads
+`/etc/vimeflow/qa-runner/worker.env` unless `QA_WORKER_ENV_FILE` points
+elsewhere. Values already present in the SSM command environment win over the
+local file, but the SSM command should not carry secrets.
+
 Optional runner refresh:
 
 ```bash
@@ -244,8 +256,15 @@ Read-only inventory on 2026-06-04 PDT / 2026-06-05 UTC found:
   Cloudflare Tunnel `7844` TCP/UDP.
 - Control root EBS: `vol-<control-root-ebs-id>`, 20 GiB gp3, encrypted,
   delete-on-termination.
-- No `Project=vimeflow,Role=worker` EC2 instance exists yet.
-- No QA worker EBS volume exists yet.
+- Worker host: `i-07c6c3c9b818dbf37`, `t3.medium`, Amazon Linux 2023,
+  `vimeflow-qa-worker-1`, SSM online, instance profile
+  `vimeflow-qa-worker-profile`.
+- Worker repo checkout is `/opt/vimeflow/repo`, branch `wip/linear-wiring`,
+  observed head `98dfa58`.
+- Worker toolchain exists: `git`, `gh`, Node `22.22.2`, npm `10.9.7`,
+  Codex CLI `0.137.0`, Kimi `1.46.0`, AWS CLI `2.33.15`, and `jq`.
+- No worker systemd unit is installed; the first worker pass uses SSM dispatcher
+  mode rather than an always-running worker service.
 - IAM roles exist:
   - `vimeflow-qa-control-role`
   - `vimeflow-qa-worker-role`
@@ -255,6 +274,8 @@ Read-only inventory on 2026-06-04 PDT / 2026-06-05 UTC found:
 - SSM SecureString parameters exist under:
   - `/vimeflow/qa-runner/prod/control/*`
   - `/vimeflow/qa-runner/prod/worker/*`
+- Worker OpenAI key parameter:
+  `/vimeflow/qa-runner/prod/worker/openai-api-key`.
 
 Control host runtime gaps from read-only SSM inspection:
 
@@ -304,11 +325,12 @@ Separate cost note:
 
 ## Current Blocker
 
-Local AWS access currently reports an expired session:
+The first worker node is online and has the required toolchain, but the worker
+runtime still needs the latest `worker-cycle.js` / `worker-env-from-ssm.sh`
+bootstrap patch deployed before SSM dispatcher mode can rely on
+`OPENAI_API_KEY`. After that, run a no-PR bootstrap check that verifies:
 
-```text
-aws: [ERROR]: Your session has expired. Please reauthenticate using 'aws login'.
-```
-
-AWS inventory and provisioning should resume after reauth. Until then, local mode
-can validate the dispatcher contract without creating resources or spending money.
+- `/etc/vimeflow/qa-runner/worker.env` exists with `0600` permissions.
+- `OPENAI_API_KEY` is visible to `worker-cycle.js` without appearing in SSM
+  command arguments.
+- `bot.env` and `linear-agent.env` exist with `0600` permissions.
