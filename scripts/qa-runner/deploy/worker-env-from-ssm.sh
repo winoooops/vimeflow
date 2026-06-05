@@ -27,15 +27,6 @@ single_line_optional_value() {
   optional_value "$1" | tr -d '\r\n'
 }
 
-write_env_line() {
-  local key="$1"
-  local value
-  value="$(printf "%s" "$2" | tr -d "\r\n")"
-  if [ -n "$value" ]; then
-    printf "%s=%s\n" "$key" "$value"
-  fi
-}
-
 write_secret_file() {
   local path="$1"
   local mode="$2"
@@ -64,7 +55,10 @@ EOF
 codex_api_key="$(single_line_value CODEX_API_KEY)"
 printf "%s" "$codex_api_key" | CODEX_HOME="$codex_home" codex login --with-api-key >/dev/null
 
-openai_api_key="${OPENAI_API_KEY:-$(single_line_optional_value openai-api-key)}"
+openai_api_key="${OPENAI_API_KEY:-}"
+if [ -z "$openai_api_key" ]; then
+  openai_api_key="$(single_line_optional_value openai-api-key)" || exit 1
+fi
 
 {
   cat <<EOF

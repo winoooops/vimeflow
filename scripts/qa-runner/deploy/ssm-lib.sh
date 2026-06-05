@@ -28,3 +28,12 @@ optional_value() {
   rm -f "$err"
   return "$status"
 }
+
+write_env_line() {
+  local key="$1"
+  local value
+  value="$(printf "%s" "$2" | tr -d "\r\n")"
+  if [ -n "$value" ]; then
+    printf "%s=%s\n" "$key" "$value"
+  fi
+}
