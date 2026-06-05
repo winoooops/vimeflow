@@ -57,7 +57,7 @@ write_env_line() {
 }
 
 bool_enabled() {
-  case "$(printf "%s" "$1" | tr "[:upper:]" "[:lower:]")" in
+  case "$(printf "%s" "$1" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | tr "[:upper:]" "[:lower:]")" in
     1 | true | yes | on) return 0 ;;
     *) return 1 ;;
   esac
@@ -100,7 +100,6 @@ install -d -m 0700 -o "$service_user" -g "$service_user" "$repo/scripts/qa-runne
   cat <<EOF
 GITHUB_WEBHOOK_SECRET=$(value GITHUB_WEBHOOK_SECRET)
 QA_STATUS_TOKEN=$(value QA_STATUS_TOKEN)
-GH_TOKEN=$(value GH_ORCH_TOKEN)
 GH_PROMPT_DISABLED=1
 QA_HOST=127.0.0.1
 QA_PORT=8787
@@ -117,6 +116,7 @@ QA_WORKER_MODE=$worker_mode
 QA_WORKER_REGION=$worker_region
 QA_WORKER_REPO=$worker_repo
 EOF
+  write_env_line GH_TOKEN "$(value GH_ORCH_TOKEN)"
   write_env_line QA_WORKER_INSTANCE_ID "$worker_instance_id"
   write_env_line QA_WORKER_TIMEOUT_SECONDS "$worker_timeout_seconds"
   write_env_line QA_WORKER_REFRESH_RUNNER "$worker_refresh_runner"
