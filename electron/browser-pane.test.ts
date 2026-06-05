@@ -408,8 +408,7 @@ const faviconHarness = async (pageUrl: string): Promise<FaviconHarness> => {
     emitFavicon: (urls): void =>
       callAllListeners(0, 'page-favicon-updated', {}, urls),
     emitNavigate: (): void => callAllListeners(0, 'did-navigate'),
-    emitNavigateInPage: (): void =>
-      callAllListeners(0, 'did-navigate-in-page'),
+    emitNavigateInPage: (): void => callAllListeners(0, 'did-navigate-in-page'),
     tabsChanged: (): { tabs: { id: string; favicon: string | null }[] }[] =>
       vi
         .mocked(electronMock.win.webContents.send)
@@ -515,7 +514,9 @@ describe('BrowserPaneController', () => {
     const h = await faviconHarness('https://example.com/')
     electronMock.fakeSession.fetch = vi
       .fn()
-      .mockResolvedValue(imageResponse('image/png', new Uint8Array([1, 2, 3, 4])))
+      .mockResolvedValue(
+        imageResponse('image/png', new Uint8Array([1, 2, 3, 4]))
+      )
     h.clearSends()
     h.emitFavicon(['https://example.com/favicon.png'])
     await flushMicrotasks()
@@ -548,7 +549,9 @@ describe('BrowserPaneController', () => {
       .fn()
       .mockResolvedValue(imageResponse('image/png', new Uint8Array([1])))
     vi.mocked(electronMock.win.webContents.send).mockClear()
-    callAllListeners(1, 'page-favicon-updated', {}, ['https://b.com/favicon.png'])
+    callAllListeners(1, 'page-favicon-updated', {}, [
+      'https://b.com/favicon.png',
+    ])
     await flushMicrotasks()
 
     const calls = vi
@@ -650,6 +653,46 @@ describe('BrowserPaneController', () => {
     await flushMicrotasks()
     expect(electronMock.fakeSession.fetch).toHaveBeenCalledTimes(1)
     expect(lastFaviconOf(h)).toMatch(/^data:image\/png;base64,/)
+  })
+
+  test('a public domain beginning with fd is not misread as private', async () => {
+    const h = await faviconHarness('https://fd-attacker.example/')
+    electronMock.fakeSession.fetch = vi.fn()
+    h.clearSends()
+    h.emitFavicon(['http://127.0.0.1/favicon.ico'])
+    await flushMicrotasks()
+    expect(electronMock.fakeSession.fetch).not.toHaveBeenCalled()
+    expect(lastFaviconOf(h)).toBe(null)
+  })
+
+  test('a private-range IPv6 favicon target is blocked from a public page', async () => {
+    const h = await faviconHarness('https://example.com/')
+    electronMock.fakeSession.fetch = vi.fn()
+    h.clearSends()
+    h.emitFavicon(['http://[fd00::1]/favicon.ico'])
+    await flushMicrotasks()
+    expect(electronMock.fakeSession.fetch).not.toHaveBeenCalled()
+    expect(lastFaviconOf(h)).toBe(null)
+  })
+
+  test('a trailing-dot loopback favicon target is blocked from a public page', async () => {
+    const h = await faviconHarness('https://example.com/')
+    electronMock.fakeSession.fetch = vi.fn()
+    h.clearSends()
+    h.emitFavicon(['http://localhost./favicon.ico'])
+    await flushMicrotasks()
+    expect(electronMock.fakeSession.fetch).not.toHaveBeenCalled()
+    expect(lastFaviconOf(h)).toBe(null)
+  })
+
+  test('an IPv4-mapped IPv6 loopback favicon target is blocked from a public page', async () => {
+    const h = await faviconHarness('https://example.com/')
+    electronMock.fakeSession.fetch = vi.fn()
+    h.clearSends()
+    h.emitFavicon(['http://[::ffff:7f00:1]/favicon.ico'])
+    await flushMicrotasks()
+    expect(electronMock.fakeSession.fetch).not.toHaveBeenCalled()
+    expect(lastFaviconOf(h)).toBe(null)
   })
 
   test('a pre-navigation in-flight fetch never overwrites the new tab', async () => {

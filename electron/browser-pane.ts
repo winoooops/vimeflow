@@ -621,18 +621,44 @@ const faviconKey = (candidates: string[]): string =>
 const isImageDataUrl = (url: string): boolean =>
   /^data:image\/[a-z0-9.+-]+;base64,/i.test(url)
 
+// Unwrap an IPv4-mapped IPv6 suffix (dotted `127.0.0.1` or hex `7f00:1`) to dotted IPv4.
+const ipv4FromMapped = (mapped: string): string | null => {
+  if (/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(mapped)) {
+    return mapped
+  }
+  const hex = /^([0-9a-f]{1,4}):([0-9a-f]{1,4})$/.exec(mapped)
+  if (!hex) {
+    return null
+  }
+  const high = Number.parseInt(hex[1], 16)
+  const low = Number.parseInt(hex[2], 16)
+
+  return `${high >> 8}.${high & 0xff}.${low >> 8}.${low & 0xff}`
+}
+
 const isPrivateHost = (hostname: string): boolean => {
-  const h = hostname.toLowerCase().replace(/^\[|\]$/g, '')
+  const h = hostname
+    .toLowerCase()
+    .replace(/^\[|\]$/g, '')
+    .replace(/\.$/, '')
   if (h === 'localhost' || h.endsWith('.localhost')) {
     return true
   }
-  if (
-    h === '::1' ||
-    h.startsWith('fc') ||
-    h.startsWith('fd') ||
-    h.startsWith('fe80')
-  ) {
-    return true
+  if (h.includes(':')) {
+    // IPv6 literal: unwrap IPv4-mapped (::ffff:...) then classify; else loopback / ULA / link-local.
+    const mapped = /^::ffff:(.+)$/.exec(h)
+    const v4 = mapped ? ipv4FromMapped(mapped[1]) : null
+    if (v4) {
+      return isPrivateHost(v4)
+    }
+
+    return (
+      h === '::' ||
+      h === '::1' ||
+      h.startsWith('fc') ||
+      h.startsWith('fd') ||
+      h.startsWith('fe80')
+    )
   }
   const m = /^(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(h)
   if (!m) {
@@ -654,7 +680,10 @@ const isPrivateHost = (hostname: string): boolean => {
 }
 
 // PNA: a private favicon target is allowed only when the page is itself private.
-const isFaviconHostAllowed = (pageUrl: string, faviconHost: string): boolean => {
+const isFaviconHostAllowed = (
+  pageUrl: string,
+  faviconHost: string
+): boolean => {
   if (!isPrivateHost(faviconHost)) {
     return true
   }
@@ -931,7 +960,10 @@ export class BrowserPaneController {
       ownerWebContentsId: event.sender.id,
       view,
       tabs: new Map([
-        ['tab-0', { id: 'tab-0', view, requestedUrl: initialUrl, favicon: null }],
+        [
+          'tab-0',
+          { id: 'tab-0', view, requestedUrl: initialUrl, favicon: null },
+        ],
       ]),
       activeTabId: 'tab-0',
       nextTabIndex: 1,

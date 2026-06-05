@@ -70,6 +70,7 @@ words:
   # Browser / WebAuthn
   - webauthn
   - favicons
+  - ipv6
 
   # Workspace domain abbreviations
   - sess # session
