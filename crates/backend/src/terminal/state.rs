@@ -146,6 +146,19 @@ pub(crate) fn is_foreground_busy(foreground_leader: Option<i32>, shell_pid: Opti
     }
 }
 
+/// The PTY's foreground process-group leader. `MasterPty::process_group_leader`
+/// is Unix-only in portable-pty, so non-Unix targets compile against the
+/// `None` arm — the cue degrades to amber-only rather than over-claiming.
+#[cfg(unix)]
+fn read_foreground_leader(master: &(dyn MasterPty + Send)) -> Option<i32> {
+    master.process_group_leader()
+}
+
+#[cfg(not(unix))]
+fn read_foreground_leader(_master: &(dyn MasterPty + Send)) -> Option<i32> {
+    None
+}
+
 impl PtyState {
     /// Create a new empty PTY state
     pub fn new() -> Self {
@@ -268,7 +281,7 @@ impl PtyState {
             .filter_map(|id| {
                 let session = sessions.get(&id)?;
                 let running = is_foreground_busy(
-                    session.master.process_group_leader(),
+                    read_foreground_leader(session.master.as_ref()),
                     session.child.process_id(),
                 );
                 Some((id, running))
