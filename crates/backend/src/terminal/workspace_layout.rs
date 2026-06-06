@@ -227,8 +227,7 @@ pub fn repair_workspace_layout(
             layout = layout_for_count(panes.len()).to_string();
         }
 
-        // At most one active session (first wins); none-active is fine — the
-        // renderer selects on restore (§2.2), so repair does not force one.
+        // At most one active session in the loop (first active:true wins).
         let raw_active = bool_field(rs, "active").unwrap_or(false);
         let active = raw_active && !active_session_seen;
         if active {
@@ -243,6 +242,14 @@ pub fn repair_workspace_layout(
             active,
             panes,
         });
+    }
+
+    // Exactly one active session: if none was marked, the first wins (a
+    // deterministic default; the renderer may still re-select on restore).
+    if !active_session_seen {
+        if let Some(first) = sessions.first_mut() {
+            first.active = true;
+        }
     }
 
     WorkspaceLayoutStore {
@@ -881,5 +888,58 @@ mod tests {
         let b = browser_tab(&store.sessions[0].panes[0]);
         assert_eq!(b.tabs[0].history.len(), 1); // overlong url dropped
         assert_eq!(b.tabs[0].history[0].url, "https://ok");
+    }
+
+    #[test]
+    fn forces_first_session_active_when_none_active() {
+        let store = repair_workspace_layout(
+            json!({ "version": 1, "sessions": [
+                { "id": "a", "layout": "single", "active": false, "panes": [{ "kind": "browser", "paneId": "p0", "paneIndex": 0, "active": true, "tabs": [] }] },
+                { "id": "b", "layout": "single", "active": false, "panes": [{ "kind": "browser", "paneId": "p0", "paneIndex": 0, "active": true, "tabs": [] }] } ] }),
+            "proj",
+            "/",
+        );
+        assert!(store.sessions[0].active); // none active → first forced active
+        assert!(!store.sessions[1].active);
+    }
+
+    #[test]
+    fn caps_session_count() {
+        let sessions: Vec<_> = (0..60)
+            .map(|i| json!({ "id": format!("s{i}"), "layout": "single", "active": i == 0, "panes": [{ "kind": "browser", "paneId": "p0", "paneIndex": 0, "active": true, "tabs": [] }] }))
+            .collect();
+        let store = repair_workspace_layout(json!({ "version": 1, "sessions": sessions }), "proj", "/");
+        assert_eq!(store.sessions.len(), MAX_SESSIONS);
+    }
+
+    #[test]
+    fn caps_tab_count() {
+        let tabs: Vec<_> = (0..60)
+            .map(|i| json!({ "active": i == 0, "historyIndex": 0, "history": [{ "url": format!("https://t{i}"), "title": null }] }))
+            .collect();
+        let store = repair_workspace_layout(
+            json!({ "version": 1, "sessions": [{ "id": "s", "layout": "single", "active": true,
+                "panes": [{ "kind": "browser", "paneId": "p0", "paneIndex": 0, "active": true, "tabs": tabs }] }] }),
+            "proj",
+            "/",
+        );
+        assert_eq!(browser_tab(&store.sessions[0].panes[0]).tabs.len(), MAX_TABS);
+    }
+
+    #[test]
+    fn truncates_overlong_title() {
+        let long_title = "t".repeat(MAX_TITLE_LEN + 50);
+        let store = repair_workspace_layout(
+            json!({ "version": 1, "sessions": [{ "id": "s", "layout": "single", "active": true,
+                "panes": [{ "kind": "browser", "paneId": "p0", "paneIndex": 0, "active": true,
+                    "tabs": [{ "active": true, "historyIndex": 0, "history": [{ "url": "https://x", "title": long_title }] }] }] }] }),
+            "proj",
+            "/",
+        );
+        let b = browser_tab(&store.sessions[0].panes[0]);
+        assert_eq!(
+            b.tabs[0].history[0].title.as_ref().unwrap().chars().count(),
+            MAX_TITLE_LEN
+        );
     }
 }
