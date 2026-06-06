@@ -313,6 +313,47 @@ describe('PriorityPlus', () => {
     expect(wrapperFor('item-0').className).not.toContain('hidden')
   })
 
+  test('restores overflowed items when the toolbar expands', () => {
+    render(<PriorityPlus maxRows={1}>{renderItems(4)}</PriorityPlus>)
+
+    const root = rootContainer('item-0')
+
+    stubLayout(
+      root,
+      [
+        { offsetTop: 0, offsetHeight: 24, offsetLeft: 0, offsetWidth: 60 },
+        { offsetTop: 0, offsetHeight: 24, offsetLeft: 72, offsetWidth: 60 },
+        { offsetTop: 30, offsetHeight: 24, offsetLeft: 0, offsetWidth: 60 },
+        { offsetTop: 30, offsetHeight: 24, offsetLeft: 72, offsetWidth: 60 },
+      ],
+      180
+    )
+    fireResize()
+
+    expect(
+      screen.getByRole('button', { name: /more controls/i })
+    ).toHaveAttribute('aria-label', 'Show 2 more controls')
+    expect(wrapperFor('item-2').className).toContain('hidden')
+
+    stubLayout(
+      root,
+      [
+        { offsetTop: 0, offsetHeight: 24, offsetLeft: 0, offsetWidth: 60 },
+        { offsetTop: 0, offsetHeight: 24, offsetLeft: 72, offsetWidth: 60 },
+        { offsetTop: 0, offsetHeight: 24, offsetLeft: 144, offsetWidth: 60 },
+        { offsetTop: 0, offsetHeight: 24, offsetLeft: 216, offsetWidth: 60 },
+      ],
+      420
+    )
+    fireResize()
+
+    expect(
+      screen.queryByRole('button', { name: /more controls/i })
+    ).not.toBeInTheDocument()
+    expect(wrapperFor('item-2').className).not.toContain('hidden')
+    expect(wrapperFor('item-3').className).not.toContain('hidden')
+  })
+
   test('reserves chip space — pulls cutoff back when the chip will not fit on the last allowed row', () => {
     render(<PriorityPlus maxRows={1}>{renderItems(4)}</PriorityPlus>)
 

@@ -29,7 +29,7 @@ import { extractHunkPatch } from '../services/gitPatch'
 import { createGitService } from '../services/gitService'
 import { enqueuePoolWrite } from '../services/workerPoolWrites'
 import { useNotifyInfo } from '../../workspace/hooks/useNotifyInfo'
-import type { ChangedFile, SelectedDiffFile } from '../types'
+import type { ChangedFile, FileDiff, SelectedDiffFile } from '../types'
 import {
   useFeedbackBatch,
   parseBatchKey,
@@ -113,6 +113,63 @@ let feedbackCommentSeq = 0
 
 const nextFeedbackCommentId = (): string =>
   `feedback-comment-${(feedbackCommentSeq += 1)}`
+
+interface ComposerTarget {
+  lineNumber: number
+  side: AnnotationSide
+  filePath: string
+  staged: boolean
+  editId?: string
+}
+
+const composerTargetKey = (target: ComposerTarget): string =>
+  `${target.filePath}:${target.staged}:${target.side}:${target.lineNumber}:${
+    target.editId ?? 'draft'
+  }`
+
+const diffContainsComposerTarget = (
+  fileDiff: FileDiff,
+  target: ComposerTarget
+): boolean => {
+  for (const hunk of fileDiff.hunks) {
+    let oldLine = hunk.oldStart
+    let newLine = hunk.newStart
+
+    for (const line of hunk.lines) {
+      const oldLineNumber =
+        line.oldLineNumber ?? (line.type === 'added' ? undefined : oldLine)
+
+      const newLineNumber =
+        line.newLineNumber ?? (line.type === 'removed' ? undefined : newLine)
+
+      if (
+        target.side === 'deletions' &&
+        line.type !== 'added' &&
+        oldLineNumber === target.lineNumber
+      ) {
+        return true
+      }
+
+      if (
+        target.side === 'additions' &&
+        line.type !== 'removed' &&
+        newLineNumber === target.lineNumber
+      ) {
+        return true
+      }
+
+      if (line.type !== 'added') {
+        oldLine += 1
+      }
+
+      if (line.type !== 'removed') {
+        newLine += 1
+      }
+    }
+  }
+
+  return false
+}
 
 // Small inline status cards. They previously lived as an inline JSX ladder in
 // the right-pane block; extracting them keeps the populated-state JSX readable
@@ -218,8 +275,17 @@ export const DiffPanelContent = ({
     [isControlled, onSelectedFileChange]
   )
 
-  // Reset selection when cwd changes (belt-and-suspenders, render guard is primary)
+  // Reset selection when cwd actually changes (belt-and-suspenders, render
+  // guard is primary). Do not fire on initial mount: WorkspaceView owns this
+  // value across dock close/reopen, and clearing it on mount loses the user's
+  // previously selected changed file before auto-select falls back to row 1.
+  const previousSelectionCwdRef = useRef(cwd)
   useEffect(() => {
+    if (previousSelectionCwdRef.current === cwd) {
+      return
+    }
+
+    previousSelectionCwdRef.current = cwd
     commitSelection(null)
   }, [cwd, commitSelection])
 
@@ -333,13 +399,10 @@ export const DiffPanelContent = ({
   // Composer target state: which line currently has an open composer.
   // `editId` set => editing an existing comment in place; absent => a new
   // draft on that line.
-  const [composerTarget, setComposerTarget] = useState<{
-    lineNumber: number
-    side: AnnotationSide
-    filePath: string
-    staged: boolean
-    editId?: string
-  } | null>(null)
+  const [composerTarget, setComposerTarget] = useState<ComposerTarget | null>(
+    null
+  )
+  const [composerDraftText, setComposerDraftText] = useState('')
 
   // Finish feedback popover open state.
   const [finishOpen, setFinishOpen] = useState(false)
@@ -351,13 +414,41 @@ export const DiffPanelContent = ({
     selectedFileStaged
   )
 
+  const composerTargetIsCurrentFile =
+    composerTarget !== null &&
+    composerTarget.filePath === selectedFilePath &&
+    composerTarget.staged === selectedFileStaged
+
+  const composerTargetLineExists = useMemo((): boolean => {
+    if (
+      composerTarget === null ||
+      !composerTargetIsCurrentFile ||
+      activeResponse === null
+    ) {
+      return false
+    }
+
+    return diffContainsComposerTarget(activeResponse.fileDiff, composerTarget)
+  }, [activeResponse, composerTarget, composerTargetIsCurrentFile])
+
+  const composerDraftIsRecoverable =
+    composerTarget !== null &&
+    composerDraftText.trim().length > 0 &&
+    activeResponse !== null &&
+    (!composerTargetIsCurrentFile || !composerTargetLineExists)
+
   // Merge a transient draft annotation in only while composing a NEW comment,
   // so the composer renders inline below the target line. Editing reuses the
   // existing annotation's slot, so no draft is added there. When idle we pass
   // `realAnnotations` straight through to keep its identity stable (avoids
   // Pierre re-tokenizing on every render).
   const lineAnnotations = useMemo((): DiffLineAnnotation<ReviewComment>[] => {
-    if (composerTarget !== null && composerTarget.editId === undefined) {
+    if (
+      composerTarget !== null &&
+      composerTarget.editId === undefined &&
+      composerTargetIsCurrentFile &&
+      (activeResponse === null || composerTargetLineExists)
+    ) {
       const draft: DiffLineAnnotation<ReviewComment> = {
         side: composerTarget.side,
         lineNumber: composerTarget.lineNumber,
@@ -368,7 +459,13 @@ export const DiffPanelContent = ({
     }
 
     return realAnnotations
-  }, [realAnnotations, composerTarget])
+  }, [
+    realAnnotations,
+    composerTarget,
+    composerTargetIsCurrentFile,
+    composerTargetLineExists,
+    activeResponse,
+  ])
 
   const confirmComposer = useCallback(
     (text: string): void => {
@@ -385,6 +482,7 @@ export const DiffPanelContent = ({
         composerTarget.staged !== selectedFileStaged
       ) {
         setComposerTarget(null)
+        setComposerDraftText('')
 
         return
       }
@@ -398,6 +496,7 @@ export const DiffPanelContent = ({
           { text }
         )
         setComposerTarget(null)
+        setComposerDraftText('')
       } else {
         const result = feedback.addAnnotation(
           cwd,
@@ -420,6 +519,7 @@ export const DiffPanelContent = ({
           )
         } else {
           setComposerTarget(null)
+          setComposerDraftText('')
         }
       }
     },
@@ -435,6 +535,7 @@ export const DiffPanelContent = ({
 
   const closeComposer = useCallback((): void => {
     setComposerTarget(null)
+    setComposerDraftText('')
   }, [])
 
   const sendingFeedbackRef = useRef(false)
@@ -512,6 +613,7 @@ export const DiffPanelContent = ({
   // file is not accidentally submitted against another.
   useEffect(() => {
     setComposerTarget(null)
+    setComposerDraftText('')
   }, [selectedFilePath, selectedFileStaged])
 
   const hunkCount = activeResponse?.fileDiff.hunks.length ?? 0
@@ -1167,6 +1269,20 @@ export const DiffPanelContent = ({
               {notifyMessage}
             </div>
           ) : null}
+          {composerDraftIsRecoverable ? (
+            <div
+              role="status"
+              data-testid="diff-draft-recovery"
+              className="mx-3 mb-2 rounded-md bg-surface-container-high/70 px-3 py-2 text-[11px] leading-4 text-on-surface-variant"
+            >
+              Draft preserved for line{' '}
+              {composerTarget.side === 'deletions' ? 'L' : 'R'}
+              {composerTarget.lineNumber}:{' '}
+              <span className="font-medium text-on-surface">
+                {composerDraftText}
+              </span>
+            </div>
+          ) : null}
           {finishOpen && toolbarShellRef.current !== null ? (
             <FinishFeedbackPopover
               anchor={toolbarShellRef.current}
@@ -1237,12 +1353,21 @@ export const DiffPanelContent = ({
                     onClick={(): void => {
                       const hovered = getHoveredLine()
                       if (hovered && selectedFilePath !== null) {
-                        setComposerTarget({
+                        const nextTarget: ComposerTarget = {
                           lineNumber: hovered.lineNumber,
                           side: hovered.side,
                           filePath: selectedFilePath,
                           staged: selectedFileStaged,
-                        })
+                        }
+
+                        setComposerDraftText((current) =>
+                          composerTarget !== null &&
+                          composerTargetKey(composerTarget) ===
+                            composerTargetKey(nextTarget)
+                            ? current
+                            : ''
+                        )
+                        setComposerTarget(nextTarget)
                       }
                     }}
                   >
@@ -1276,7 +1401,8 @@ export const DiffPanelContent = ({
                         }`}
                         lineNumber={annotation.lineNumber}
                         side={annotation.side}
-                        initialText={isEditing ? annotation.metadata.text : ''}
+                        value={composerDraftText}
+                        onTextChange={setComposerDraftText}
                         onConfirm={confirmComposer}
                         onCancel={closeComposer}
                       />
@@ -1286,7 +1412,7 @@ export const DiffPanelContent = ({
                   return (
                     <ReviewCommentRow
                       comment={annotation.metadata}
-                      onEdit={(): void =>
+                      onEdit={(): void => {
                         setComposerTarget({
                           lineNumber: annotation.lineNumber,
                           side: annotation.side,
@@ -1294,7 +1420,8 @@ export const DiffPanelContent = ({
                           staged: selectedFileStaged,
                           editId: annotation.metadata.id,
                         })
-                      }
+                        setComposerDraftText(annotation.metadata.text)
+                      }}
                       onDelete={(): void =>
                         feedback.removeAnnotation(
                           cwd,
