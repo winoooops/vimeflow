@@ -95,7 +95,7 @@ describe('HeaderActions', () => {
     expect(onParentClick).not.toHaveBeenCalled()
   })
 
-  test('a live (but idle) scratch shell shows the amber tint and no dot', () => {
+  test('a live (but idle) scratch shell is transparent but labelled live for AT', () => {
     render(
       <HeaderActions
         isCollapsed={expanded}
@@ -105,16 +105,16 @@ describe('HeaderActions', () => {
       />
     )
 
-    // Amber tint + a "(live)" label expose the hidden-but-alive shell to AT;
-    // with no foreground command it isn't labelled running and shows no dot.
+    // Idle = transparent; the amber tint is reserved for an actually-running
+    // command. The "(live)" label still exposes the hidden shell to AT.
     const button = screen.getByRole('button', {
       name: 'open scratch terminal (live)',
     })
-    expect(button.className).toContain('bg-[#f0c674]/15')
+    expect(button.className).toContain('bg-transparent')
     expect(screen.queryByTestId('scratch-live-dot')).toBeNull()
   })
 
-  test('the mint live-dot shows only when a foreground command is running', () => {
+  test('an active scratch shows the amber button tint (the cue, no dot)', () => {
     render(
       <HeaderActions
         isCollapsed={expanded}
@@ -128,8 +128,9 @@ describe('HeaderActions', () => {
     const button = screen.getByRole('button', {
       name: /open scratch terminal \(running\)/i,
     })
-    expect(button.className).toContain('bg-[#f0c674]/15') // still amber (has shell)
-    expect(screen.getByTestId('scratch-live-dot')).toBeInTheDocument()
+    expect(button.className).toContain('bg-[#f0c674]/15')
+    // The amber background IS the running cue — no separate live-dot.
+    expect(screen.queryByTestId('scratch-live-dot')).toBeNull()
   })
 
   test('no running cue when the pane scratch is not running', () => {
