@@ -88,6 +88,7 @@ describe('prepareReviewWorktree', () => {
     )
 
     expect(result.ok).toBe(true)
+
     expect(git).toHaveBeenNthCalledWith(4, [
       '-C',
       expectedPath,
@@ -95,6 +96,7 @@ describe('prepareReviewWorktree', () => {
       '--hard',
       view.headRefOid,
     ])
+
     expect(git).toHaveBeenNthCalledWith(5, [
       '-C',
       expectedPath,
@@ -102,6 +104,7 @@ describe('prepareReviewWorktree', () => {
       '--detach',
       view.headRefOid,
     ])
+
     expect(git).toHaveBeenNthCalledWith(6, [
       '-C',
       expectedPath,
@@ -119,10 +122,12 @@ describe('prepareReviewWorktree', () => {
     )
 
     expect(result.ok).toBe(true)
+
     const resetIndex = git.mock.calls.findIndex(
       (args) =>
         args[0][0] === '-C' && args[0].includes('reset') && args[0].includes('--hard')
     )
+
     const checkoutIndex = git.mock.calls.findIndex(
       (args) =>
         args[0][0] === '-C' && args[0].includes('checkout') && args[0].includes('--detach')
