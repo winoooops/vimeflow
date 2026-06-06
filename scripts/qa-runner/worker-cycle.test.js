@@ -245,7 +245,11 @@ describe('workerRunArgs', () => {
         QA_PR: '348',
         QA_APPROVE: '1',
       })
-    ).not.toContain('--approve')
+    ).toEqual([
+      expect.stringContaining('run.js'),
+      '348',
+      '--push',
+    ])
   })
 
   test('requires the PR number', () => {

@@ -854,7 +854,7 @@ const fixCommandEnv = ({ pr, fixContext, ctx }) => ({
   QA_LINEAR_TEAM_KEY: ctx.linearTeamKey || '',
   QA_MAX_CI_RERUNS: ctx.maxCiReruns == null ? '' : String(ctx.maxCiReruns),
   ...(fixContext
-    ? { QA_FIX_CONTEXT: JSON.stringify(fixContext, null, 2) }
+    ? { QA_FIX_CONTEXT: JSON.stringify(fixContext) }
     : {}),
 })
 
@@ -877,14 +877,17 @@ const dispatchFix = ({ pr, fixContext }, ctx) =>
         : `${tag} → run.js ${pr} --push   (log: ${logPath})`
     )
 
-    const child = command
-      ? spawn(command, {
-          shell: true,
-          env: fixCommandEnv({ pr, fixContext, ctx }),
-        })
-      : spawn('node', [join(SCRIPT_DIR, 'run.js'), String(pr), '--push'], {
-          env: fixCommandEnv({ pr, fixContext, ctx }),
-        })
+    let child
+    if (command) {
+      const [cmd, ...fixArgs] = command.split(/\s+/)
+      child = spawn(cmd, fixArgs, {
+        env: fixCommandEnv({ pr, fixContext, ctx }),
+      })
+    } else {
+      child = spawn('node', [join(SCRIPT_DIR, 'run.js'), String(pr), '--push'], {
+        env: fixCommandEnv({ pr, fixContext, ctx }),
+      })
+    }
 
     const pipe = (stream) => {
       let buf = ''
@@ -1037,6 +1040,7 @@ const tick = async (ctx) => {
     out(
       `Dispatching ${needsFix.length} fix run(s), up to ${ctx.maxParallel} in parallel…\n`
     )
+
     const results = await pool(needsFix, ctx.maxParallel, (item) =>
       dispatchFix(item, ctx)
     )
