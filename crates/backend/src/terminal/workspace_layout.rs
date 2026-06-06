@@ -468,6 +468,7 @@ impl WorkspaceLayoutCache {
     }
 
     /// The in-memory mirror (main serves restore-time tabs from it).
+    #[allow(dead_code)] // consumed by the main-side restore path, wired later
     pub fn snapshot(&self) -> Option<WorkspaceLayoutStore> {
         self.mirror
             .lock()
