@@ -47,11 +47,11 @@ export interface AgentStatusCardProps {
 const CARD_BODY_H = 92
 
 const STATE_WASH: Record<AgentCardState, string> = {
-  running: 'rgba(80,250,123,0.08)',
-  awaiting: 'rgba(255,148,165,0.09)',
-  completed: 'rgba(203,166,247,0.09)',
-  errored: 'rgba(255,180,171,0.09)',
-  idle: 'rgba(138,130,153,0.05)',
+  running: 'var(--wash-running)',
+  awaiting: 'var(--wash-awaiting)',
+  completed: 'var(--wash-completed)',
+  errored: 'var(--wash-errored)',
+  idle: 'var(--wash-idle)',
 }
 
 interface MetricCell {
@@ -72,14 +72,14 @@ const Metric = ({
     title={cell.title}
   >
     <span
-      className="material-symbols-outlined"
+      className="material-symbols-outlined text-syn-comment"
       aria-hidden="true"
-      style={{ fontSize: 12, color: '#6c7086', lineHeight: 1 }}
+      style={{ fontSize: 12, lineHeight: 1 }}
     >
       {cell.icon}
     </span>
-    <span style={{ marginLeft: 4, color: '#cdc3d1' }}>{cell.value}</span>
-    {!last && <span style={{ margin: '0 9px', color: '#3a3450' }}>·</span>}
+    <span className="ml-1 text-on-surface-variant">{cell.value}</span>
+    {!last && <span className="mx-[9px] text-[#3a3450]">·</span>}
   </span>
 )
 
@@ -88,71 +88,27 @@ const Metric = ({
 const ShellBody = (): ReactElement => (
   <div
     data-testid="agent-status-card-shell-body"
-    style={{
-      height: CARD_BODY_H,
-      marginTop: 11,
-      borderRadius: 9,
-      border: '1px dashed rgba(74,68,79,0.5)',
-      background: 'rgba(13,13,28,0.28)',
-      display: 'flex',
-      alignItems: 'center',
-      gap: 11,
-      padding: '0 13px',
-    }}
+    className="mt-[11px] flex items-center gap-[11px] rounded-[9px] border border-dashed border-outline-variant/50 bg-surface-container-lowest/28 py-0 px-[13px]"
+    style={{ height: CARD_BODY_H }}
   >
     <div
-      style={{
-        width: 34,
-        height: 34,
-        borderRadius: 8,
-        flexShrink: 0,
-        background: 'rgba(108,112,134,0.14)',
-        display: 'grid',
-        placeItems: 'center',
-      }}
+      className="grid shrink-0 place-items-center rounded-lg bg-syn-comment/14"
+      style={{ width: 34, height: 34 }}
     >
       <span
-        className="material-symbols-outlined"
+        className="material-symbols-outlined text-[18px] text-[#9b93ab]"
         aria-hidden="true"
-        style={{ fontSize: 18, color: '#9b93ab' }}
       >
         terminal
       </span>
     </div>
-    <div style={{ minWidth: 0 }}>
-      <div
-        style={{
-          fontFamily: "'Instrument Sans', system-ui, sans-serif",
-          fontSize: 13,
-          fontWeight: 600,
-          color: '#cdc3d1',
-        }}
-      >
+    <div className="min-w-0">
+      <div className="truncate font-display text-[13px] font-semibold text-on-surface-variant">
         No active agent
       </div>
-      <div
-        style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 }}
-      >
-        <span
-          style={{
-            display: 'inline-block',
-            width: 6,
-            height: 6,
-            borderRadius: 999,
-            border: '1.5px solid #4a444f',
-            flexShrink: 0,
-          }}
-        />
-        <span
-          style={{
-            fontFamily: "'JetBrains Mono', monospace",
-            fontSize: 9,
-            fontWeight: 600,
-            letterSpacing: '0.14em',
-            textTransform: 'uppercase',
-            color: '#8a8299',
-          }}
-        >
+      <div className="mt-1 flex items-center gap-1.5">
+        <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full border-[1.5px] border-solid border-outline-variant" />
+        <span className="font-mono text-[9px] font-semibold uppercase tracking-[0.14em] text-on-surface-muted">
           Idle · shell only
         </span>
       </div>
@@ -217,19 +173,7 @@ export const AgentStatusCard = ({
           data-testid="sidebar-toggle-incard"
           shortcutHint={sidebarShortcutHint}
         />
-        <div
-          style={{
-            flex: 1,
-            minWidth: 0,
-            fontFamily: "'Instrument Sans', system-ui, sans-serif",
-            fontSize: 14,
-            fontWeight: 600,
-            color: '#e9e6fb',
-            whiteSpace: 'nowrap',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-          }}
-        >
+        <div className="min-w-0 flex-1 truncate font-display text-sm font-semibold text-on-surface">
           {isShell ? 'SHELL' : title}
         </div>
       </div>
@@ -239,16 +183,7 @@ export const AgentStatusCard = ({
       ) : (
         <div style={{ height: CARD_BODY_H, marginTop: 11 }}>
           {metrics.length > 0 && (
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                flexWrap: 'wrap',
-                fontFamily: "'JetBrains Mono', monospace",
-                fontSize: 10,
-                color: '#8a8299',
-              }}
-            >
+            <div className="flex flex-wrap items-center font-mono text-[10px] text-on-surface-muted">
               {metrics.map((cell, index) => (
                 <Metric
                   key={cell.icon}

@@ -216,8 +216,7 @@ export const WorkspaceView = (): ReactElement => {
     return detected.startsWith('mac') ? 'meta' : 'ctrl'
   }, [])
 
-  const sidebarShortcutHint =
-    preferModifier === 'meta' ? '⌘B' : 'Ctrl+⇧B'
+  const sidebarShortcutHint = preferModifier === 'meta' ? '⌘B' : 'Ctrl+⇧B'
 
   const { message: infoMessage, notifyInfo, dismiss } = useNotifyInfo()
   const { activeTab, setActiveTab } = useSidebarTab()

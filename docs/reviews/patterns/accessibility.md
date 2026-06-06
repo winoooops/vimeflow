@@ -250,6 +250,6 @@ handlers must not trap focus without implementing the promised behavior.
 - **Source:** github-claude | PR #352 round 1 | 2026-06-06
 - **Severity:** MEDIUM
 - **File:** `src/features/workspace/components/SidebarToggle.tsx`
-- **Finding:** When `collapsed=true`, the button rendered `aria-label="Show sidebar"` and `aria-pressed="true"`. A screen reader announced "Show sidebar, toggle button, pressed" — "pressed" in ARIA means the toggle's *on* state is active, which a listener interprets as "the show-sidebar action is currently engaged" (sidebar is visible). But the sidebar is actually hidden, directly contradicting the signal.
+- **Finding:** When `collapsed=true`, the button rendered `aria-label="Show sidebar"` and `aria-pressed="true"`. A screen reader announced "Show sidebar, toggle button, pressed" — "pressed" in ARIA means the toggle's _on_ state is active, which a listener interprets as "the show-sidebar action is currently engaged" (sidebar is visible). But the sidebar is actually hidden, directly contradicting the signal.
 - **Fix:** Replaced `aria-pressed={collapsed}` with `aria-expanded={!collapsed}` — the WAI-ARIA-recommended attribute for controls that reveal/hide a panel. Updated co-located test assertions accordingly.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

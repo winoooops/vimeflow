@@ -99,6 +99,13 @@
   --shadow-glow-primary: 0 0 24px rgba(203, 166, 247, 0.35);
   --shadow-glow-success: 0 0 10px var(--success);
 
+  /* ── Agent status card corner washes ── */
+  --wash-running: rgba(80, 250, 123, 0.08);
+  --wash-awaiting: rgba(255, 148, 165, 0.09);
+  --wash-completed: rgba(203, 166, 247, 0.09);
+  --wash-errored: rgba(255, 180, 171, 0.09);
+  --wash-idle: rgba(138, 130, 153, 0.05);
+
   /* ── Focus ring (ghost, never a solid border) ── */
   --ring-primary: 0 0 0 3px rgba(203, 166, 247, 0.28);
 }
