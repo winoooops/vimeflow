@@ -10,6 +10,7 @@ export const CYCLE_ENV_KEYS = [
   'QA_LINEAR_TEAM_KEY',
   'QA_MAX_CI_RERUNS',
   'QA_FIX_CONTEXT',
+  'QA_LINEAR_PARENT_COMMENT_ID',
   'QA_WORKER_REFRESH_RUNNER',
   'QA_WORKER_REF',
   // Legacy alias consumed by worker-cycle; pass-through only, not SSM-sourced.

@@ -47,6 +47,9 @@ const KIMI_TIMEOUT_MS = 45 * 60 * 1000
 
 const out = (s = '') => process.stdout.write(`${s}\n`)
 
+const linearParentCommentId = () =>
+  process.env.QA_LINEAR_PARENT_COMMENT_ID?.trim() || null
+
 const die = (s, code = 1) => {
   const err = new Error(s)
   err.exitCode = code
@@ -381,11 +384,11 @@ const run = async (pr, live) => {
           worktreeClean: !worktreeStatus,
         })
 
-        const parentId = fixCycleThreadParentId(
-          readDecisionStore(decisionStorePath(pr)),
-          pr,
-          { headSha: startHead }
-        )
+        const parentId =
+          linearParentCommentId() ||
+          fixCycleThreadParentId(readDecisionStore(decisionStorePath(pr)), pr, {
+            headSha: startHead,
+          })
 
         const args = [
           join(SCRIPT_DIR, 'lib', 'linear-status.js'),

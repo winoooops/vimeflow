@@ -21,6 +21,7 @@ const cycle = {
   QA_LINEAR_TEAM_KEY: 'VIM',
   QA_MAX_CI_RERUNS: '3',
   QA_FIX_CONTEXT: '{"kind":"review_adjudication"}',
+  QA_LINEAR_PARENT_COMMENT_ID: 'linear-parent-comment',
 }
 
 describe('cycleEnv', () => {
@@ -172,6 +173,10 @@ describe('ssmSendCommandArgs', () => {
     expect(params.commands[0]).toContain("QA_PR='348'")
     expect(params.commands[0]).toContain(
       'QA_FIX_CONTEXT=\'{"kind":"review_adjudication"}\''
+    )
+
+    expect(params.commands[0]).toContain(
+      "QA_LINEAR_PARENT_COMMENT_ID='linear-parent-comment'"
     )
     expect(params.commands[0]).not.toContain('QA_APPROVE')
     expect(params.commands[0]).not.toContain('GH_TOKEN')

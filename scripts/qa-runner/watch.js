@@ -45,6 +45,7 @@ import {
   decisionKey,
   decisionStorePath,
   decisionThreadTarget,
+  fixCycleThreadParentId,
   formatDecisionComment,
   formatMergedComment,
   markDecisionPosted,
@@ -644,10 +645,11 @@ const postGithubPrComment = ({ owner, name, pr, body }) => {
 
 const maybePostDecisionLinear = (pr, s, ctx) => {
   if (!ctx.linearDecisions) {
-    return
+    return { fixCycleParentId: null }
   }
 
   const action = s.action || actionForDecision(s.state, ctx)
+  const fixerWillRun = s.state === 'NEEDS_FIX' && action === 'dispatch fixer'
 
   const key = decisionKey({
     pr: pr.number,
@@ -700,13 +702,17 @@ const maybePostDecisionLinear = (pr, s, ctx) => {
   }
 
   if (!s.vim) {
-    return
+    return { fixCycleParentId: null }
   }
 
   if (!shouldPostDecision(store, pr.number, key)) {
     out(`           ↳ Linear ${s.vim}: decision unchanged`)
 
-    return
+    return {
+      fixCycleParentId: fixerWillRun
+        ? fixCycleThreadParentId(store, pr.number, { headSha: s.headSha })
+        : null,
+    }
   }
 
   const body = formatDecisionComment({
@@ -731,23 +737,28 @@ const maybePostDecisionLinear = (pr, s, ctx) => {
     reviewAdjudication: s.reviewAdjudication,
   })
 
-  const stateName =
-    s.state === 'NEEDS_FIX' && action === 'dispatch fixer'
-      ? 'In Progress'
-      : undefined
+  const stateName = fixerWillRun ? 'In Progress' : undefined
 
   const { parentId } = decisionThreadTarget(store, pr.number, {
     state: s.state,
     headSha: s.headSha,
   })
   const posted = postLinear(s.vim, body, stateName, { parentId })
-  if (posted.ok) {
-    markDecisionPosted(store, pr.number, key, storeFile, {
-      commentId: posted.commentId,
-      state: s.state,
-      headSha: s.headSha,
-      action,
-    })
+  if (!posted.ok) {
+    return { fixCycleParentId: null }
+  }
+
+  const nextStore = markDecisionPosted(store, pr.number, key, storeFile, {
+    commentId: posted.commentId,
+    state: s.state,
+    headSha: s.headSha,
+    action,
+  })
+
+  return {
+    fixCycleParentId: fixerWillRun
+      ? fixCycleThreadParentId(nextStore, pr.number, { headSha: s.headSha })
+      : null,
   }
 }
 
@@ -843,7 +854,7 @@ const approve = (pr, vim, headSha, ctx) => {
   }
 }
 
-const fixCommandEnv = ({ pr, fixContext, ctx }) => ({
+const fixCommandEnv = ({ pr, fixContext, linearParentId, ctx }) => ({
   ...process.env,
   QA_PR: String(pr),
   QA_REASON: ctx.reason || '',
@@ -854,13 +865,14 @@ const fixCommandEnv = ({ pr, fixContext, ctx }) => ({
   QA_LINEAR_TEAM_KEY: ctx.linearTeamKey || '',
   QA_MAX_CI_RERUNS: ctx.maxCiReruns == null ? '' : String(ctx.maxCiReruns),
   ...(fixContext ? { QA_FIX_CONTEXT: JSON.stringify(fixContext) } : {}),
+  ...(linearParentId ? { QA_LINEAR_PARENT_COMMENT_ID: linearParentId } : {}),
 })
 
 // Run one fixer for one PR, teeing output to a per-PR log and prefixing the
 // console so concurrent runs stay legible. On a single-host daemon this runs
 // run.js locally. In split-plane cloud mode QA_FIX_COMMAND dispatches the same
 // fixer-only contract to a burst worker; classification and merge stay here.
-const dispatchFix = ({ pr, fixContext }, ctx) =>
+const dispatchFix = ({ pr, fixContext, linearParentId }, ctx) =>
   new Promise((resolve) => {
     mkdirSync(LOG_DIR, { recursive: true })
     const logPath = join(LOG_DIR, `pr-${pr}.log`)
@@ -879,14 +891,14 @@ const dispatchFix = ({ pr, fixContext }, ctx) =>
     if (command) {
       const [cmd, ...fixArgs] = command.split(/\s+/)
       child = spawn(cmd, fixArgs, {
-        env: fixCommandEnv({ pr, fixContext, ctx }),
+        env: fixCommandEnv({ pr, fixContext, linearParentId, ctx }),
       })
     } else {
       child = spawn(
         'node',
         [join(SCRIPT_DIR, 'run.js'), String(pr), '--push'],
         {
-          env: fixCommandEnv({ pr, fixContext, ctx }),
+          env: fixCommandEnv({ pr, fixContext, linearParentId, ctx }),
         }
       )
     }
@@ -1007,10 +1019,14 @@ const tick = async (ctx) => {
       `${s.state.padEnd(10)} #${pr.number}  ${pr.headRefName}${s.vim ? `  (${s.vim})` : ''}`
     )
     out(`           ${s.detail}`)
-    maybePostDecisionLinear(pr, s, ctx)
+    const linearDecision = maybePostDecisionLinear(pr, s, ctx)
     if (s.state === 'NEEDS_FIX') {
       if (ctx.execute) {
-        needsFix.push({ pr: pr.number, fixContext: s.fixContext })
+        needsFix.push({
+          pr: pr.number,
+          fixContext: s.fixContext,
+          linearParentId: linearDecision?.fixCycleParentId,
+        })
       } else {
         out(`           (report-only — pass --execute to run the cycle)`)
       }
