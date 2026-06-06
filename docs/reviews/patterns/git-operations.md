@@ -2,8 +2,8 @@
 id: git-operations
 category: correctness
 created: 2026-04-09
-last_updated: 2026-05-31
-ref_count: 11
+last_updated: 2026-06-06
+ref_count: 12
 ---
 
 # Git Operations
@@ -247,4 +247,13 @@ between display and mutation operations.
 - **File:** `scripts/qa-runner/lib/review-worktree.js`
 - **Finding:** `prepareReviewWorktree` runs `git checkout --detach headSha` before `git reset --hard headSha`. If the worktree has uncommitted modifications to tracked files (e.g., an interrupted fixer agent), checkout fails and the outer catch returns `{ ok: false }`. Because reset and clean never run, the dirty state persists on every subsequent cycle, leaving the PR stuck in WAITING indefinitely.
 - **Fix:** Reorder the sequence to `reset --hard` → `checkout --detach` → `clean -ffd`. The reset discards all local changes first so checkout always succeeds. Added a targeted regression test asserting reset precedes checkout.
+- **Commit:** same commit as this entry
+
+### 27. Existing review worktree reset can silently move the checked-out branch ref
+
+- **Source:** github-claude | PR #361 round 3 | 2026-06-06
+- **Severity:** MEDIUM
+- **File:** `scripts/qa-runner/lib/review-worktree.js`, `scripts/qa-runner/lib/fixer-worktree.js`
+- **Finding:** `prepareReviewWorktree` reuses the managed `qa-pr-{N}` worktree path, which may previously have been used by a fixer worktree on `qa/dryrun-{N}` or the live PR branch. Running `git reset --hard <headSha>` while still on that named branch changes the branch ref before `checkout --detach` runs. That is plausible in normal daemon operation because review and fixer flows share the same managed path.
+- **Fix:** Replaced `reset --hard` + `checkout --detach` with a single `git checkout -f --detach <headSha>` followed by `git clean -ffd`. The force-checkout discards local changes and detaches in one step without mutating any named branch ref. Updated tests to assert the new sequence.
 - **Commit:** same commit as this entry

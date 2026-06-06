@@ -121,18 +121,12 @@ describe('worktreePlan', () => {
         join('/srv/vimeflow', '.claude', 'worktrees', 'qa-pr-352'),
         'abc123',
       ],
-      checkoutArgs: [
+      forceCheckoutArgs: [
         '-C',
         join('/srv/vimeflow', '.claude', 'worktrees', 'qa-pr-352'),
         'checkout',
+        '-f',
         '--detach',
-        'abc123',
-      ],
-      resetArgs: [
-        '-C',
-        join('/srv/vimeflow', '.claude', 'worktrees', 'qa-pr-352'),
-        'reset',
-        '--hard',
         'abc123',
       ],
       cleanArgs: [

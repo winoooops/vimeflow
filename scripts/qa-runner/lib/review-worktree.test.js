@@ -79,7 +79,7 @@ describe('prepareReviewWorktree', () => {
     ])
   })
 
-  test('resets an existing worktree to the exact PR head', () => {
+  test('force-checkouts an existing worktree to the exact PR head', () => {
     const git = gitFor()
 
     const result = prepareReviewWorktree(
@@ -92,20 +92,13 @@ describe('prepareReviewWorktree', () => {
     expect(git).toHaveBeenNthCalledWith(4, [
       '-C',
       expectedPath,
-      'reset',
-      '--hard',
-      view.headRefOid,
-    ])
-
-    expect(git).toHaveBeenNthCalledWith(5, [
-      '-C',
-      expectedPath,
       'checkout',
+      '-f',
       '--detach',
       view.headRefOid,
     ])
 
-    expect(git).toHaveBeenNthCalledWith(6, [
+    expect(git).toHaveBeenNthCalledWith(5, [
       '-C',
       expectedPath,
       'clean',
@@ -113,7 +106,7 @@ describe('prepareReviewWorktree', () => {
     ])
   })
 
-  test('recovers a dirty worktree by resetting before checkout', () => {
+  test('recovers a dirty worktree by force-checkout', () => {
     const git = gitFor()
 
     const result = prepareReviewWorktree(
@@ -123,22 +116,23 @@ describe('prepareReviewWorktree', () => {
 
     expect(result.ok).toBe(true)
 
-    const resetIndex = git.mock.calls.findIndex(
-      (args) =>
-        args[0][0] === '-C' &&
-        args[0].includes('reset') &&
-        args[0].includes('--hard')
-    )
-
-    const checkoutIndex = git.mock.calls.findIndex(
+    const forceCheckoutIndex = git.mock.calls.findIndex(
       (args) =>
         args[0][0] === '-C' &&
         args[0].includes('checkout') &&
+        args[0].includes('-f') &&
         args[0].includes('--detach')
     )
-    expect(resetIndex).toBeGreaterThan(-1)
-    expect(checkoutIndex).toBeGreaterThan(-1)
-    expect(resetIndex).toBeLessThan(checkoutIndex)
+
+    const cleanIndex = git.mock.calls.findIndex(
+      (args) =>
+        args[0][0] === '-C' &&
+        args[0].includes('clean') &&
+        args[0].includes('-ffd')
+    )
+    expect(forceCheckoutIndex).toBeGreaterThan(-1)
+    expect(cleanIndex).toBeGreaterThan(-1)
+    expect(forceCheckoutIndex).toBeLessThan(cleanIndex)
   })
 
   test('refuses stale review evidence when the remote branch moved', () => {

@@ -62,8 +62,7 @@ export const adjudicationWorktreePlan = ({
     fetchHeadArgs: fetchRemoteBranchArgs(branch),
     fetchBaseArgs: baseBranch ? fetchRemoteBranchArgs(baseBranch) : null,
     addArgs: ['worktree', 'add', '--detach', path, headSha],
-    checkoutArgs: ['-C', path, 'checkout', '--detach', headSha],
-    resetArgs: ['-C', path, 'reset', '--hard', headSha],
+    forceCheckoutArgs: ['-C', path, 'checkout', '-f', '--detach', headSha],
     cleanArgs: ['-C', path, 'clean', '-ffd'],
     diffArgs: [
       '-C',
