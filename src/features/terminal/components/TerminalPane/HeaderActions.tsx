@@ -48,7 +48,7 @@ export const HeaderActions = ({
       <Tooltip content={burnerButtonTooltip(burnerActive)} placement="bottom">
         <button
           type="button"
-          aria-label={burnerButtonLabel(burnerActive, burnerShellExists)} 
+          aria-label={burnerButtonLabel(burnerActive, burnerShellExists)}
           onClick={(event) => {
             event.stopPropagation()
             onBurner()
