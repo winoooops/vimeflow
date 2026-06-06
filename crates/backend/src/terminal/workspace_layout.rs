@@ -218,8 +218,8 @@ pub fn repair_workspace_layout(
         let Some(id) = str_field(rs, "id").filter(|s| !s.is_empty()) else {
             continue; // no usable id → drop
         };
-        if !seen_session_ids.insert(id.clone()) {
-            continue; // duplicate session id → first wins
+        if seen_session_ids.contains(&id) {
+            continue; // duplicate session id → first wins (reserved below, if kept)
         }
         let working_directory = str_field(rs, "workingDirectory")
             .filter(|s| !s.is_empty())
@@ -253,6 +253,9 @@ pub fn repair_workspace_layout(
             active_session_seen = true;
         }
 
+        // Session survived pane repair — reserve its id now (not earlier, or a
+        // dropped malformed session would block a later valid duplicate id).
+        seen_session_ids.insert(id.clone());
         sessions.push(WorkspaceSession {
             id,
             project_id,
@@ -357,7 +360,15 @@ fn repair_panes(
     built.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)));
     // Truncate to capacity BEFORE active-normalization, so an active pane beyond
     // quad cannot be dropped after being chosen (which would leave none active).
-    built.truncate(MAX_PANES);
+    // Un-reserve the ptyIds of capped panes so a later valid pane can reuse them.
+    if built.len() > MAX_PANES {
+        for (_, _, pane) in &built[MAX_PANES..] {
+            if let WorkspacePane::Shell(s) = pane {
+                seen_pty_ids.remove(&s.pty_id);
+            }
+        }
+        built.truncate(MAX_PANES);
+    }
 
     let any_active = built.iter().any(|(_, _, p)| pane_active(p));
     let mut active_seen = false;
@@ -489,12 +500,15 @@ impl WorkspaceLayoutCache {
     /// Missing / unreadable / corrupt → empty store (never fails — this is a
     /// convenience cache that must not block lifecycle).
     pub fn load(&self, project_id: &str, cwd: &str) -> WorkspaceLayoutStore {
+        // Hold the lock across read + repair + mirror update so a load cannot
+        // race a save's mid-flush file and return/cache a stale layout.
+        let mut guard = self.mirror.lock().expect("workspace-layout mirror poisoned");
         let raw: serde_json::Value = match fs::read(&self.path) {
             Ok(bytes) => serde_json::from_slice(&bytes).unwrap_or(serde_json::Value::Null),
             Err(_) => serde_json::Value::Null,
         };
         let store = repair_workspace_layout(raw, project_id, cwd);
-        *self.mirror.lock().expect("workspace-layout mirror poisoned") = Some(store.clone());
+        *guard = Some(store.clone());
         store
     }
 
@@ -965,6 +979,39 @@ mod tests {
         );
         assert!(store.sessions[0].active); // none active → first forced active
         assert!(!store.sessions[1].active);
+    }
+
+    #[test]
+    fn dropped_session_does_not_reserve_id() {
+        let store = repair_workspace_layout(
+            json!({ "version": 1, "sessions": [
+                // first "s": only an unknown-kind pane → 0 valid panes → session dropped
+                { "id": "s", "layout": "single", "active": true, "panes": [{ "kind": "frob", "paneId": "p0", "paneIndex": 0, "active": true }] },
+                // second "s": valid → must be KEPT (the dropped one didn't reserve "s")
+                { "id": "s", "layout": "single", "active": false, "panes": [{ "kind": "browser", "paneId": "p0", "paneIndex": 0, "active": true, "tabs": [] }] } ] }),
+            "proj",
+            "/",
+        );
+        assert_eq!(store.sessions.len(), 1);
+        assert!(matches!(store.sessions[0].panes[0], WorkspacePane::Browser(_)));
+    }
+
+    #[test]
+    fn truncated_pane_does_not_poison_pty_id() {
+        let panes: Vec<_> = (0..5)
+            .map(|i| json!({ "kind": "shell", "paneId": format!("p{i}"), "paneIndex": i, "active": i == 0, "ptyId": format!("pty{i}"), "cwd": "/", "agentType": "generic" }))
+            .collect();
+        let store = repair_workspace_layout(
+            json!({ "version": 1, "sessions": [
+                { "id": "s1", "layout": "quad", "active": true, "panes": panes },
+                // reuses pty4 (the 5th pane of s1, dropped by the quad cap) → must be KEPT
+                { "id": "s2", "layout": "single", "active": false, "panes": [{ "kind": "shell", "paneId": "p0", "paneIndex": 0, "active": true, "ptyId": "pty4", "cwd": "/", "agentType": "generic" }] } ] }),
+            "proj",
+            "/",
+        );
+        assert_eq!(store.sessions[0].panes.len(), 4); // s1 capped to quad
+        assert_eq!(store.sessions.len(), 2); // s2 survived (pty4 un-reserved after the cap)
+        assert_eq!(shell(&store.sessions[1].panes[0]).pty_id, "pty4");
     }
 
     #[test]
