@@ -55,6 +55,8 @@ describe('e2e terminal input guard', () => {
   test('does not use batched browser.keys calls in e2e files', async () => {
     const filePaths = await listTypeScriptFiles(E2E_ROOT)
 
+    expect(filePaths.length).toBeGreaterThan(0)
+
     const findings = (
       await Promise.all(
         filePaths.map(async (filePath): Promise<string[]> => {
