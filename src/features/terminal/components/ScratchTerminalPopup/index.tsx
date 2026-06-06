@@ -215,27 +215,6 @@ export const ScratchTerminalPopup = ({
               </span>
             </button>
           </div>
-
-          <div className="flex items-center gap-[10px] font-mono text-[10.5px]">
-            <span className="inline-flex items-center gap-[6px]">
-              <span
-                className="material-symbols-outlined text-[13px] leading-none"
-                style={{ color: SHELL_ACCENT }}
-              >
-                folder_open
-              </span>
-              <span className="truncate" style={{ color: '#a8c8ff' }}>
-                {cwd}
-              </span>
-            </span>
-            <span className="text-on-surface-muted">·</span>
-            <span className="text-on-surface-muted inline-flex shrink-0 items-center gap-[5px]">
-              <span className="material-symbols-outlined text-[13px] leading-none">
-                link_off
-              </span>
-              cd stays in scratch
-            </span>
-          </div>
         </header>
 
         <div
