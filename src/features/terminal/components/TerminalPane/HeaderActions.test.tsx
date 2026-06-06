@@ -130,6 +130,23 @@ describe('HeaderActions', () => {
     expect(button.className).toContain('text-on-surface-muted') // gray icon, not amber
   })
 
+  test('idle-but-live shell exposes live state to assistive tech', () => {
+    render(
+      <HeaderActions
+        isCollapsed={expanded}
+        onToggleCollapse={vi.fn()}
+        onBurner={vi.fn()}
+        burnerShellExists
+      />
+    )
+
+    const button = screen.getByRole('button', {
+      name: 'open burner terminal (live)',
+    })
+    expect(button.className).toContain('bg-transparent')
+    expect(button.className).toContain('text-on-surface-muted') // still gray, not amber
+  })
+
   test('hovering the collapse-status button shows a plain tooltip', async () => {
     const user = userEvent.setup()
     render(<HeaderActions isCollapsed={expanded} onToggleCollapse={vi.fn()} />)

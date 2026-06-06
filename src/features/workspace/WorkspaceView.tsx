@@ -1517,6 +1517,7 @@ export const WorkspaceView = (): ReactElement => {
               }}
               onBurner={(target): void => void toggleBurner(target)}
               activeBurnerPaneKeys={activeBurnerPaneKeys}
+              runningBurnerPaneKeys={runningBurnerPaneKeys}
             />
           </div>
           {!dockBeforeTerminal ? dockOrPeek : null}

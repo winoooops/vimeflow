@@ -2,8 +2,8 @@
 id: accessibility
 category: a11y
 created: 2026-04-09
-last_updated: 2026-05-08
-ref_count: 6
+last_updated: 2026-06-06
+ref_count: 7
 ---
 
 # Accessibility
@@ -244,3 +244,12 @@ handlers must not trap focus without implementing the promised behavior.
 - **Finding:** Cycle-3's fix wrapped the `>` glyph + a decorative `readOnly tabIndex={-1} aria-hidden="true"` `<input>` inside a real `<button aria-label="Focus terminal">` to give the click-to-focus affordance a keyboard-discoverable surface. Per HTML5 §4.10.6, `<button>` content cannot include interactive content (`<input>` is interactive content), and per §4.10.6.1 `<button>` cannot contain any element carrying a `tabindex` attribute. Both rules are violated here. Modern browsers + jsdom handle the nesting correctly in practice (event bubbling works, `aria-hidden` suppresses AT exposure), but the markup fails HTML validators and accessibility-audit tools, and could break in stricter parsers or future browser versions. Class of bug: a "fake-input" rendered with a real `<input>` element to inherit the native placeholder pseudo-element.
 - **Fix:** Replaced the `<input>` with a `<span>` displaying the placeholder text directly. The span has no a11y semantics, no tabindex, and no interactive role — purely text content inside the `<button>`, which is fully spec-compliant. Visual result is identical because the input's only visible state was its placeholder, which is the same string the span now renders. Code-review heuristic: when wrapping a row in a `<button>` for keyboard activation, audit every descendant for interactive content (input, select, textarea, anchor, another button) AND for `tabindex` — both rules are independent. Decorative "input-shaped" UI should be a `<span>` or `<div>`, not `<input>`.
 - **Commit:** _(see git log for the cycle-4 fix commit on PR #190)_
+
+### 26. Idle-but-live shell state removed from `aria-label` — assistive tech cannot distinguish "no shell" from "shell idle"
+
+- **Source:** github-claude | PR #367 | 2026-06-06
+- **Severity:** MEDIUM
+- **File:** `src/features/terminal/components/TerminalPane/HeaderActions.tsx`
+- **Finding:** A PR renaming Scratch → Burner narrowed the visual running cue to foreground commands only (`burnerActive`) and simultaneously removed the separate accessible shell-exists state. The result: `aria-label` read identically for "no burner shell" and "burner shell alive but idle." In normal hide-not-kill use (e.g. after a shell returns to the prompt while background work continues), screen-reader users lost the pane-local cue that sighted users still get indirectly through visual/global status surfaces. The foreground-only amber tint is a reasonable visual design choice, but removing the separate accessible state conflates lifecycle and foreground activity for assistive technology.
+- **Fix:** Added a new `burnerShellExists` boolean prop to `HeaderActions` (threaded through `Header` → `TerminalPane` → `SplitView` → `TerminalZone` → `WorkspaceView` from the existing `runningBurnerPaneKeys` set computed by `useBurnerTerminals`). The `aria-label` now has three honest states: `open burner terminal (running)` when active, `open burner terminal (live)` when the shell exists but is idle, and `open burner terminal` when no shell exists. Visual styling (amber tint vs. gray) remains driven solely by `burnerActive` — no visual change for the idle-but-live case. Added a regression test asserting the button resolves with the `(live)` accessible name when `burnerShellExists` is true and `burnerActive` is false.
+- **Commit:** _(see git log for the cycle-1 fix commit on PR #367)_

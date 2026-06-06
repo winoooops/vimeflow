@@ -1,10 +1,17 @@
 import type { ReactElement } from 'react'
 import { Tooltip } from '../../../../components/Tooltip'
 
-// Two honest button states: a foreground command is running, or it isn't. An
-// idle-but-alive shell reads the same as no shell — nothing claims "active".
-const burnerButtonLabel = (active: boolean): string =>
-  active ? 'open burner terminal (running)' : 'open burner terminal'
+const burnerButtonLabel = (active: boolean, shellExists: boolean): string => {
+  if (active) {
+    return 'open burner terminal (running)'
+  }
+
+  if (shellExists) {
+    return 'open burner terminal (live)'
+  }
+
+  return 'open burner terminal'
+}
 
 const burnerButtonTooltip = (active: boolean): string =>
   active ? 'Burner terminal · running' : 'Burner terminal'
@@ -20,6 +27,12 @@ export interface HeaderActionsProps {
    * drives the amber button tint (the sole running cue).
    */
   burnerActive?: boolean
+  /**
+   * A burner shell exists for this pane but no foreground command is running.
+   * Exposed to assistive tech so an idle-but-live shell is distinguishable
+   * from "no shell" (VIM-53 a11y).
+   */
+  burnerShellExists?: boolean
 }
 
 export const HeaderActions = ({
@@ -28,13 +41,14 @@ export const HeaderActions = ({
   onClose = undefined,
   onBurner = undefined,
   burnerActive = false,
+  burnerShellExists = false,
 }: HeaderActionsProps): ReactElement => (
   <>
     {onBurner && (
       <Tooltip content={burnerButtonTooltip(burnerActive)} placement="bottom">
         <button
           type="button"
-          aria-label={burnerButtonLabel(burnerActive)}
+          aria-label={burnerButtonLabel(burnerActive, burnerShellExists)} 
           onClick={(event) => {
             event.stopPropagation()
             onBurner()

@@ -44,6 +44,8 @@ export interface TerminalPaneProps {
   onRequestActive?: (sessionId: string, paneId: string) => void
   /** Pane-keys with a foreground command running — drives the amber button tint (VIM-71). */
   activeBurnerPaneKeys?: ReadonlySet<string>
+  /** Pane-keys with a live burner shell (idle or active) — drives a11y state (VIM-53). */
+  runningBurnerPaneKeys?: ReadonlySet<string>
   onCwdChange?: (cwd: string) => void
   onRestart?: (sessionId: string) => void
   deferFit?: boolean
@@ -74,6 +76,7 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
       onBurner = undefined,
       onRequestActive = undefined,
       activeBurnerPaneKeys = undefined,
+      runningBurnerPaneKeys = undefined,
       onCwdChange = undefined,
       onRestart = undefined,
       deferFit = false,
@@ -252,6 +255,9 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
           onBurner={onBurner ? handleBurner : undefined}
           burnerActive={
             activeBurnerPaneKeys?.has(`${session.id}:${pane.id}`) ?? false
+          }
+          burnerShellExists={
+            runningBurnerPaneKeys?.has(`${session.id}:${pane.id}`) ?? false
           }
         />
 

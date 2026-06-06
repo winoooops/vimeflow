@@ -67,6 +67,8 @@ export interface TerminalZoneProps {
   onBurner?: (target: BurnerTarget) => void
   /** Pane-keys with a foreground command running — drives the amber button tint (VIM-71). */
   activeBurnerPaneKeys?: ReadonlySet<string>
+  /** Pane-keys with a live burner shell (idle or active) — drives a11y state (VIM-53). */
+  runningBurnerPaneKeys?: ReadonlySet<string>
 }
 
 export interface TerminalZoneHandle {
@@ -94,6 +96,7 @@ export const TerminalZone = forwardRef<TerminalZoneHandle, TerminalZoneProps>(
       onContainerFocus = undefined,
       onBurner = undefined,
       activeBurnerPaneKeys = undefined,
+      runningBurnerPaneKeys = undefined,
     }: TerminalZoneProps,
     ref
   ): ReactElement {
@@ -268,6 +271,7 @@ export const TerminalZone = forwardRef<TerminalZoneHandle, TerminalZoneProps>(
                     onClosePane={removePane}
                     onBurner={onBurner}
                     activeBurnerPaneKeys={activeBurnerPaneKeys}
+                    runningBurnerPaneKeys={runningBurnerPaneKeys}
                     areBrowserPanesOccluded={areBrowserPanesOccluded}
                     deferTerminalFit={deferTerminalFit}
                     showPaneFocusHighlight={isZoneFocused}
