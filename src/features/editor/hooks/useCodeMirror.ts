@@ -310,6 +310,10 @@ const editorClipboardKeymap = Prec.highest(
     {
       key: 'Mod-a',
       run: (view: EditorView): boolean => {
+        if (!isMacPlatform()) {
+          return false
+        }
+
         selectAllInView(view)
 
         return true

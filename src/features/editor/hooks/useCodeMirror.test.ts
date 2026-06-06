@@ -447,9 +447,13 @@ describe('useCodeMirror', () => {
         ctrlKey: true,
       })
 
-      expect(selectAllEvent.defaultPrevented).toBe(true)
-      expect(view.state.selection.main.from).toBe(0)
-      expect(view.state.selection.main.to).toBe(view.state.doc.length)
+      // On non-mac platforms the Mod-a binding intentionally falls through
+      // so Vim Ctrl+A (increment) is preserved. After the native paste the
+      // editor is in insert mode, where Ctrl+A is unbound, so the event is
+      // not consumed and the selection remains unchanged.
+      expect(selectAllEvent.defaultPrevented).toBe(false)
+      expect(view.state.selection.main.from).not.toBe(0)
+      expect(view.state.selection.main.to).not.toBe(view.state.doc.length)
     } finally {
       clipboard.restore()
       restoreRangeRectStubs()
@@ -554,6 +558,49 @@ describe('useCodeMirror', () => {
       })
       expect(copyEvent.defaultPrevented).toBe(true)
       expect(clipboard.writeTextMock).not.toHaveBeenCalled()
+    } finally {
+      clipboard.restore()
+      restoreRangeRectStubs()
+    }
+  })
+
+  test('Ctrl+A falls through to vim increment handling on non-mac', async () => {
+    const clipboard = installClipboardMock('')
+    const restoreRangeRectStubs = installRangeRectStubs()
+
+    try {
+      const { result } = renderHook(() =>
+        useCodeMirror({
+          initialContent: 'value 41',
+          language: null,
+          onSave: vi.fn(),
+        })
+      )
+
+      act(() => {
+        result.current.setContainer(containerDiv)
+      })
+
+      const view = result.current.editorView
+
+      if (!view) {
+        throw new Error('EditorView was not created')
+      }
+
+      act(() => {
+        view.dispatch({ selection: { anchor: 7, head: 7 } })
+      })
+
+      const incrementEvent = dispatchEditorKey(view, {
+        key: 'a',
+        code: 'KeyA',
+        ctrlKey: true,
+      })
+
+      await waitFor(() => {
+        expect(view.state.doc.toString()).toBe('value 42')
+      })
+      expect(incrementEvent.defaultPrevented).toBe(true)
     } finally {
       clipboard.restore()
       restoreRangeRectStubs()

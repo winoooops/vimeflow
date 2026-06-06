@@ -2,8 +2,8 @@
 id: codemirror-integration
 category: editor
 created: 2026-04-10
-last_updated: 2026-04-11
-ref_count: 0
+last_updated: 2026-06-06
+ref_count: 1
 ---
 
 # CodeMirror 6 + Vim Integration
@@ -136,3 +136,12 @@ affects event/command routing.
 - **Finding:** The scroll extender was originally named `scrollCursorOnVimMotion` and its JSDoc described it as catching vim normal-mode motions specifically. But the guard `!tr.selection || tr.docChanged` catches EVERY pure-selection transaction — mouse clicks that move the cursor, arrow-key navigation, find-replace jumps, programmatic selections from other extensions. CM6 has no general-purpose API to identify transaction origin, so narrowing to vim-only isn't actually possible without inspecting `Transaction.userEvent` and coupling to vim-extension internals.
 - **Fix:** Rename to `scrollCursorOnSelectionChange` and rewrite the JSDoc to describe the actual scope — the behavior is deliberately inclusive, every pure-selection transaction is a cursor move the user expects the viewport to follow. Behavior unchanged.
 - **Commit:** `3f8bf2c fix(editor): address Claude review round 2 — test guard, naming, symmetry`
+
+### 13. Mod-a select-all keymap intercepts Vim Ctrl+A increment on non-Mac platforms
+
+- **Source:** github-claude | PR #368 round 1 | 2026-06-06
+- **Severity:** MEDIUM
+- **File:** `src/features/editor/hooks/useCodeMirror.ts`
+- **Finding:** A `Prec.highest` keymap bound `Mod-a` unconditionally to `selectAllInView`, returning `true` on all platforms. On Linux/Windows `Mod` resolves to `Ctrl`, so `Ctrl+A` — which `@replit/codemirror-vim` uses for increment-number in NORMAL mode — was consumed by the select-all handler before vim ever saw it. This broke a common vim editing command for non-mac users.
+- **Fix:** Added an `isMacPlatform()` guard inside the `Mod-a` handler so it returns `false` on non-mac platforms, allowing the event to fall through to the vim keymap. On macOS `Mod-a` is `Cmd+A`, which does not conflict with vim increment (`Ctrl+A` on mac). Added a test verifying `Ctrl+A` increments a number in vim NORMAL mode on non-mac.
+- **Commit:** same commit as this entry
