@@ -3,8 +3,30 @@ import { render, screen } from '@testing-library/react'
 import { describe, test, expect, vi } from 'vitest'
 import userEvent from '@testing-library/user-event'
 import { AgentStatusCard } from './AgentStatusCard'
+import { useAgentStatus } from '../../agent-status/hooks/useAgentStatus'
+
+vi.mock('../../agent-status/hooks/useAgentStatus', () => ({
+  useAgentStatus: vi.fn(() => {
+    throw new Error('AgentStatusCard must not subscribe to useAgentStatus')
+  }),
+}))
 
 describe('AgentStatusCard', () => {
+  test('does not subscribe to useAgentStatus so the single-subscription invariant stays in WorkspaceView', () => {
+    expect(() =>
+      render(
+        <AgentStatusCard
+          title="ignored"
+          state="idle"
+          isShell
+          onToggleSidebar={vi.fn()}
+        />
+      )
+    ).not.toThrow()
+
+    expect(useAgentStatus).not.toHaveBeenCalled()
+  })
+
   test('renders the model-name title for an agent pane', () => {
     render(
       <AgentStatusCard

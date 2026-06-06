@@ -259,15 +259,17 @@ describe('WorkspaceView lifted-subscription contract', () => {
   })
 
   test('AgentStatusCard and AgentStatusPanel both render from the single useAgentStatus subscription', async () => {
-    // WorkspaceView calls useAgentStatus ONCE and feeds both the sidebar's
-    // AgentStatusCard (derived props, via the Sidebar.header slot) and the
-    // AgentStatusPanel (direct agentStatus prop). The card no longer consumes
-    // the raw agentStatus object — it takes derived title/state/metrics — so
-    // the old reference-equality probe (header.status === panel.agentStatus) is
-    // retired. The single-subscription invariant is now structural: no
+    // WorkspaceView calls useAgentStatus ONCE per render and feeds both the
+    // sidebar's AgentStatusCard (derived props, via the Sidebar.header slot)
+    // and the AgentStatusPanel (direct agentStatus prop). The card no longer
+    // consumes the raw agentStatus object — it takes derived title/state/metrics
+    // — so the old reference-equality probe (header.status === panel.agentStatus)
+    // is retired. The single-subscription invariant is now structural: no
     // component below WorkspaceView calls useAgentStatus, so duplicate Tauri
     // listeners cannot reappear via the sidebar header. We assert both
-    // consumers are populated and the hook ran.
+    // consumers are populated and the hook ran; the strict once-count assertion
+    // is exercised in AgentStatusCard.test.tsx, which renders the real card in
+    // isolation and asserts it never subscribes to useAgentStatus.
     render(<WorkspaceView />)
     await screen.findByTestId('agent-status-card-mock')
     await screen.findByTestId('agent-status-panel-mock')

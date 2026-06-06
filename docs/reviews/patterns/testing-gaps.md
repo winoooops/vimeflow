@@ -2,8 +2,8 @@
 id: testing-gaps
 category: testing
 created: 2026-04-09
-last_updated: 2026-05-28
-ref_count: 25
+last_updated: 2026-06-06
+ref_count: 26
 ---
 
 # Testing Gaps
@@ -582,3 +582,12 @@ filesystem scope restrictions).
 - **Finding:** Cycle 4's signal-based refactor (#56) eliminated SCHEDULER flakiness — the watcher emits explicit phase signals (`"initial-read"`, `"mtime-update"`) the test waits on with `recv_timeout`, so thread-startup timing doesn't matter. But the test still calls `write_index` to seed the file and then later calls `std::fs::write` to rewrite — and the watcher's change-detection compares `modified_time(&path)` against the previously-observed `last_mtime`. On any filesystem with 1-second mtime resolution (HFS+ pre-APFS, FAT32, some FUSE-mounted tmpdirs), the seed write and the rewrite can both land in the same wall-clock second when the test runs fast. Identical mtimes → `current_mtime == last_mtime` → watcher skips the change → `"mtime-update"` signal never sent → test's 5-second `recv_timeout` expires as a spurious flake that looks indistinguishable from a real deadlock. The dominant CI surfaces use ext4 / APFS / NTFS (nanosecond resolution) so this rarely materializes, but it's a real portability hole that future macOS pre-Catalina runners or atypical CI mounts would trip.
 - **Fix:** After the initial `write_index` and BEFORE spawning the watcher, force the seed file's mtime two seconds into the past via `std::fs::File::set_modified(SystemTime::now() - Duration::from_secs(2))`. `File::set_modified` is stable since Rust 1.75, so this works without a direct dep on the `filetime` crate (which is already transitively pulled in by `notify`). The watcher's `last_mtime = modified_time(&path)` now records a value 2 seconds in the past; the test's subsequent rewrite at NOW has an mtime unambiguously later than `last_mtime` regardless of filesystem resolution (1-second or finer). 2 seconds is enough margin to cover the worst-case 1-second resolution + clock skew without making the test wait. Code-review heuristic: filesystem timestamp tests that mutate a file twice in rapid succession have a latent flake mode on coarse-resolution filesystems unless they explicitly control the mtime ordering. The fix is mechanical: either force the first write's mtime backward (cheap, what we did here), or force the second write's mtime forward (also works but awkward since you'd be writing a future-dated mtime). The naive "two `fs::write` calls separated by sleep" pattern has BOTH this issue AND the scheduler-flake issue #56 addresses; both fixes are independent and both should be applied to any new poll-loop FS test.
 - **Commit:** _(PR #302 upsource cycle 7 fix commit)_
+
+### 59. Weakened subscription-invariant assertion after prop-boundary refactor
+
+- **Source:** github-claude | PR #352 round 5 | 2026-06-06
+- **Severity:** MEDIUM
+- **File:** `src/features/workspace/WorkspaceView.subscription.test.tsx` L261-283, `src/features/workspace/components/AgentStatusCard.test.tsx`
+- **Finding:** A reference-equality test that proved exactly one `useAgentStatus()` call fed both the sidebar card and the activity panel was retired when the card switched from raw `agentStatus` props to derived scalar props. The replacement assertion (`expect(useAgentStatus).toHaveBeenCalled()`) passes for any call count ≥ 1, so a future change that adds `useAgentStatus()` inside `AgentStatusCard` would silently introduce duplicate Tauri event listeners without failing the suite.
+- **Fix:** Added an executable structural guard in `AgentStatusCard.test.tsx`: mock `useAgentStatus` to throw, render the real card in isolation, assert no throw and that the hook was never called. This preserves the single-subscription invariant without requiring a strict once-count assertion that React re-renders would break. Updated the WorkspaceView test comment to point to the new guard.
+- **Commit:** same commit as this entry
