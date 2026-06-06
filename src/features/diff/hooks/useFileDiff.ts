@@ -18,6 +18,19 @@ export interface UseFileDiffReturn {
   refetch: () => void
 }
 
+interface FileDiffRequest {
+  filePath: string
+  staged: boolean
+  cwd: string
+  untracked: boolean | undefined
+  refetchKey: number
+}
+
+interface FileDiffResponseState {
+  request: FileDiffRequest
+  response: GetGitDiffResponse
+}
+
 /**
  * Hook to fetch diff for a specific file
  * @param filePath - Path to the file
@@ -31,7 +44,8 @@ export const useFileDiff = (
   cwd = '.',
   untracked?: boolean
 ): UseFileDiffReturn => {
-  const [response, setResponse] = useState<GetGitDiffResponse | null>(null)
+  const [responseState, setResponseState] =
+    useState<FileDiffResponseState | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<Error | null>(null)
   const [refetchKey, setRefetchKey] = useState(0)
@@ -42,7 +56,7 @@ export const useFileDiff = (
 
   useEffect(() => {
     if (!filePath) {
-      setResponse(null)
+      setResponseState(null)
       setLoading(false)
       setError(null)
 
@@ -51,9 +65,16 @@ export const useFileDiff = (
 
     let cancelled = false
 
+    const request: FileDiffRequest = {
+      filePath,
+      staged,
+      cwd,
+      untracked,
+      refetchKey,
+    }
+
     const fetchDiff = async (): Promise<void> => {
       try {
-        setResponse(null)
         setLoading(true)
         setError(null)
 
@@ -61,7 +82,7 @@ export const useFileDiff = (
         const result = await service.getDiff(filePath, staged, untracked)
 
         if (!cancelled) {
-          setResponse(result)
+          setResponseState({ request, response: result })
         }
       } catch (err) {
         if (!cancelled) {
@@ -70,7 +91,7 @@ export const useFileDiff = (
               ? err
               : new Error(`Failed to fetch diff for ${filePath}`)
           )
-          setResponse(null)
+          setResponseState(null)
         }
       } finally {
         if (!cancelled) {
@@ -85,6 +106,17 @@ export const useFileDiff = (
       cancelled = true
     }
   }, [filePath, staged, untracked, cwd, refetchKey])
+
+  const response =
+    filePath !== null &&
+    responseState?.request.filePath === filePath &&
+    responseState.request.staged === staged &&
+    responseState.request.cwd === cwd &&
+    responseState.request.untracked === untracked &&
+    responseState.request.refetchKey === refetchKey &&
+    !loading
+      ? responseState.response
+      : null
 
   const fileDiff = response?.fileDiff ?? null
 
