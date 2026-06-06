@@ -67,7 +67,7 @@ export const HeaderActions = ({
           className={`inline-flex h-[22px] w-[22px] items-center justify-center rounded border-0 hover:bg-white/5 ${
             scratchActive
               ? 'bg-[#f0c674]/15 text-[#f0c674]'
-              : 'bg-transparent text-[#f0c674]/70 hover:text-[#f0c674]'
+              : 'text-on-surface-muted bg-transparent'
           }`}
         >
           <span
