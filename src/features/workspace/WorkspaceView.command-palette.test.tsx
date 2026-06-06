@@ -1,7 +1,7 @@
 import { render, screen, waitFor, act, within } from '@testing-library/react'
 import { describe, test, expect, vi, beforeEach } from 'vitest'
 import userEvent from '@testing-library/user-event'
-import type { ReactElement } from 'react'
+import type { ReactElement, ReactNode } from 'react'
 import { WorkspaceView } from './WorkspaceView'
 import type { SessionManager } from '../sessions/hooks/useSessionManager'
 import type { AgentStatus } from '../agent-status/types'
@@ -52,30 +52,14 @@ vi.mock('../files/services/fileSystemService')
 vi.mock('../terminal/services/terminalService')
 vi.mock('../terminal/hooks/usePaneShortcuts')
 
-// Mock child components to keep test focused on integration
-vi.mock('./components/IconRail', () => ({
-  IconRail: ({
-    onCommand = undefined,
-  }: {
-    onCommand?: () => void
-    settingsIssueNumber: number
-  }): ReactElement => (
-    <div data-testid="icon-rail">
-      <button
-        type="button"
-        aria-label="Command Palette"
-        onClick={(): void => {
-          onCommand?.()
-        }}
-      >
-        palette
-      </button>
-    </div>
-  ),
-}))
-
+// Mock child components to keep test focused on integration. The Sidebar mock
+// renders its `topBar` slot so the real SidebarTopBar (VIM-76: home of the
+// Command Palette button that replaced the old icon rail) mounts and its
+// onCommand wiring stays under test.
 vi.mock('../../components/sidebar/Sidebar', () => ({
-  Sidebar: (): ReactElement => <div data-testid="sidebar" />,
+  Sidebar: ({ topBar = undefined }: { topBar?: ReactNode }): ReactElement => (
+    <div data-testid="sidebar">{topBar}</div>
+  ),
 }))
 
 vi.mock('./components/TerminalZone', () => ({
@@ -845,7 +829,7 @@ describe('WorkspaceView - Command Palette Integration', () => {
     })
   })
 
-  test('rail command button opens the palette', async () => {
+  test('top-bar command button opens the palette', async () => {
     const user = userEvent.setup()
     render(<WorkspaceView />)
 

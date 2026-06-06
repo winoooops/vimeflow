@@ -1,0 +1,92 @@
+import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { describe, test, expect, vi } from 'vitest'
+import { SidebarTopBar, type SidebarTopBarProps } from './SidebarTopBar'
+
+const renderTopBar = (
+  props: Partial<SidebarTopBarProps> = {}
+): ReturnType<typeof render> =>
+  render(
+    <SidebarTopBar
+      onToggleSidebar={vi.fn()}
+      commandShortcutHint="Ctrl+;"
+      {...props}
+    />
+  )
+
+describe('SidebarTopBar', () => {
+  test('renders the collapse toggle on the left', () => {
+    renderTopBar()
+
+    expect(screen.getByTestId('sidebar-toggle-topbar')).toBeInTheDocument()
+  })
+
+  test('the toggle invokes onToggleSidebar', async () => {
+    const user = userEvent.setup()
+    const onToggleSidebar = vi.fn()
+    renderTopBar({ onToggleSidebar })
+
+    await user.click(screen.getByTestId('sidebar-toggle-topbar'))
+
+    expect(onToggleSidebar).toHaveBeenCalledTimes(1)
+  })
+
+  test('the Command Palette button shows the shortcut hint and fires onCommand', async () => {
+    const user = userEvent.setup()
+    const onCommand = vi.fn()
+    renderTopBar({ onCommand, commandShortcutHint: 'Ctrl+;' })
+
+    const button = screen.getByRole('button', { name: 'Command Palette' })
+    expect(button).toHaveTextContent('Ctrl+;')
+
+    await user.click(button)
+
+    expect(onCommand).toHaveBeenCalledTimes(1)
+  })
+
+  test('utilities use the project tooltip, not a native title attribute', () => {
+    renderTopBar({ onCommand: vi.fn() })
+
+    expect(
+      screen.getByRole('button', { name: 'Command Palette' })
+    ).not.toHaveAttribute('title')
+  })
+
+  test('hovering the Command Palette button surfaces the project tooltip', async () => {
+    const user = userEvent.setup()
+    renderTopBar({ onCommand: vi.fn() })
+
+    await user.hover(screen.getByRole('button', { name: 'Command Palette' }))
+
+    expect(await screen.findByRole('tooltip')).toHaveTextContent(
+      'Command Palette'
+    )
+  })
+
+  test('Settings renders as a disabled stub when no handler is wired', async () => {
+    const user = userEvent.setup()
+    const onCommand = vi.fn()
+    renderTopBar({ onCommand, settingsIssueNumber: 252 })
+
+    const settings = screen.getByRole('button', { name: /^Settings/ })
+    expect(settings).toHaveAttribute('aria-disabled', 'true')
+    expect(settings).toHaveAccessibleName(/issue #252/)
+
+    // Clicking the disabled stub is a no-op (must not throw / call anything).
+    await user.click(settings)
+    expect(onCommand).not.toHaveBeenCalled()
+  })
+
+  test('Settings enables and fires onSettings when a handler is provided', async () => {
+    const user = userEvent.setup()
+    const onSettings = vi.fn()
+    renderTopBar({ onSettings })
+
+    const settings = screen.getByRole('button', { name: /^Settings/ })
+    expect(settings).not.toHaveAttribute('aria-disabled')
+
+    await user.click(settings)
+
+    expect(onSettings).toHaveBeenCalledTimes(1)
+  })
+})

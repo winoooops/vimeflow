@@ -1,7 +1,6 @@
 // cspell:ignore incard
 import { render, screen } from '@testing-library/react'
 import { describe, test, expect, vi } from 'vitest'
-import userEvent from '@testing-library/user-event'
 import { AgentStatusCard } from './AgentStatusCard'
 import { useAgentStatus } from '../../agent-status/hooks/useAgentStatus'
 
@@ -14,39 +13,29 @@ vi.mock('../../agent-status/hooks/useAgentStatus', () => ({
 describe('AgentStatusCard', () => {
   test('does not subscribe to useAgentStatus so the single-subscription invariant stays in WorkspaceView', () => {
     expect(() =>
-      render(
-        <AgentStatusCard
-          title="ignored"
-          state="idle"
-          isShell
-          onToggleSidebar={vi.fn()}
-        />
-      )
+      render(<AgentStatusCard title="ignored" state="idle" isShell />)
     ).not.toThrow()
 
     expect(useAgentStatus).not.toHaveBeenCalled()
   })
 
   test('renders the model-name title for an agent pane', () => {
-    render(
-      <AgentStatusCard
-        title="claude-sonnet-4-6"
-        state="running"
-        onToggleSidebar={vi.fn()}
-      />
-    )
+    render(<AgentStatusCard title="claude-sonnet-4-6" state="running" />)
 
     expect(screen.getByText('claude-sonnet-4-6')).toBeInTheDocument()
   })
 
+  test('no longer renders the in-card sidebar toggle (moved to the top bar / tab bar)', () => {
+    render(<AgentStatusCard title="m" state="running" />)
+
+    expect(
+      screen.queryByTestId('sidebar-toggle-incard')
+    ).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Hide sidebar')).not.toBeInTheDocument()
+  })
+
   test('does not render an explicit running status indicator (removed)', () => {
-    render(
-      <AgentStatusCard
-        title="claude"
-        state="running"
-        onToggleSidebar={vi.fn()}
-      />
-    )
+    render(<AgentStatusCard title="claude" state="running" />)
 
     expect(screen.queryByText('Running')).not.toBeInTheDocument()
     expect(
@@ -55,14 +44,7 @@ describe('AgentStatusCard', () => {
   })
 
   test('renders the SHELL placeholder for a shell pane', () => {
-    render(
-      <AgentStatusCard
-        title="ignored-model"
-        state="idle"
-        isShell
-        onToggleSidebar={vi.fn()}
-      />
-    )
+    render(<AgentStatusCard title="ignored-model" state="idle" isShell />)
 
     expect(screen.getByText('SHELL')).toBeInTheDocument()
     expect(screen.queryByText('ignored-model')).not.toBeInTheDocument()
@@ -85,7 +67,6 @@ describe('AgentStatusCard', () => {
         contextPct={57}
         fiveHourPct={12}
         weekPct={34}
-        onToggleSidebar={vi.fn()}
       />
     )
 
@@ -102,7 +83,6 @@ describe('AgentStatusCard', () => {
         elapsed="2m"
         turns={12}
         contextPct={64}
-        onToggleSidebar={vi.fn()}
       />
     )
 
@@ -121,7 +101,6 @@ describe('AgentStatusCard', () => {
         state="running"
         fiveHourPct={12}
         weekPct={34}
-        onToggleSidebar={vi.fn()}
       />
     )
 
@@ -138,7 +117,6 @@ describe('AgentStatusCard', () => {
         state="running"
         fiveHourPct={null}
         weekPct={null}
-        onToggleSidebar={vi.fn()}
       />
     )
 
@@ -154,7 +132,6 @@ describe('AgentStatusCard', () => {
         elapsed="2m"
         turns={0}
         contextPct={64}
-        onToggleSidebar={vi.fn()}
       />
     )
 
@@ -162,21 +139,5 @@ describe('AgentStatusCard', () => {
     expect(screen.queryByText('0')).not.toBeInTheDocument()
     expect(screen.getByText('schedule')).toBeInTheDocument()
     expect(screen.getByText('data_usage')).toBeInTheDocument()
-  })
-
-  test('renders the in-card toggle and invokes onToggleSidebar on click', async () => {
-    const user = userEvent.setup()
-    const onToggleSidebar = vi.fn()
-    render(
-      <AgentStatusCard
-        title="m"
-        state="running"
-        onToggleSidebar={onToggleSidebar}
-      />
-    )
-
-    await user.click(screen.getByTestId('sidebar-toggle-incard'))
-
-    expect(onToggleSidebar).toHaveBeenCalledTimes(1)
   })
 })

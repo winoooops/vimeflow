@@ -1,5 +1,6 @@
 /* eslint-disable react/require-default-props -- forwardRef components: ESLint cannot see through forwardRef to find destructuring defaults */
 import { forwardRef, type ReactElement } from 'react'
+import { Tooltip } from '../../../components/Tooltip'
 
 export type SidebarToggleVariant = 'ghost' | 'inset'
 
@@ -16,7 +17,7 @@ export interface SidebarToggleProps {
    */
   variant?: SidebarToggleVariant
   'data-testid'?: string
-  /** Platform-appropriate shortcut hint for the tooltip (e.g. '⌘B' or 'Ctrl+⇧B'). Default '⌘B'. */
+  /** Platform-appropriate shortcut hint shown as the tooltip chip (e.g. '⌘B' or 'Ctrl+⇧B'). Default '⌘B'. */
   shortcutHint?: string
 }
 
@@ -31,6 +32,8 @@ const VARIANT_CLASS: Record<SidebarToggleVariant, string> = {
 // ALWAYS drawn so the control reads as a side-panel toggle (never a bare
 // square); the rail FILL is the on/off signal — present only when the sidebar
 // is showing. Geometry is fixed at viewBox 16 and scaled via the button box.
+// The label + shortcut surface through the project Tooltip (not a native title)
+// so the hover affordance matches the rest of the app chrome.
 export const SidebarToggle = forwardRef<HTMLButtonElement, SidebarToggleProps>(
   (
     {
@@ -43,47 +46,52 @@ export const SidebarToggle = forwardRef<HTMLButtonElement, SidebarToggleProps>(
     },
     ref
   ): ReactElement => (
-    <button
-      ref={ref}
-      type="button"
-      data-testid={testId}
-      onClick={onClick}
-      title={`${collapsed ? 'Show sidebar' : 'Hide sidebar'}  ${shortcutHint}`}
-      aria-label={collapsed ? 'Show sidebar' : 'Hide sidebar'}
-      aria-expanded={!collapsed}
-      style={{ width: size, height: size }}
-      className={`grid shrink-0 cursor-pointer place-items-center rounded-[7px] transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary-container ${VARIANT_CLASS[variant]}`}
+    <Tooltip
+      content={collapsed ? 'Show sidebar' : 'Hide sidebar'}
+      shortcut={shortcutHint}
+      placement="bottom"
     >
-      <svg
-        width="16"
-        height="16"
-        viewBox="0 0 16 16"
-        fill="none"
-        aria-hidden="true"
+      <button
+        ref={ref}
+        type="button"
+        data-testid={testId}
+        onClick={onClick}
+        aria-label={collapsed ? 'Show sidebar' : 'Hide sidebar'}
+        aria-expanded={!collapsed}
+        style={{ width: size, height: size }}
+        className={`grid shrink-0 cursor-pointer place-items-center rounded-[7px] transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary-container ${VARIANT_CLASS[variant]}`}
       >
-        <rect
-          x="1.6"
-          y="2.6"
-          width="12.8"
-          height="10.8"
-          rx="2.4"
-          stroke="currentColor"
-          strokeWidth="1.3"
-        />
-        <path d="M5.9 2.9V13.1" stroke="currentColor" strokeWidth="1.3" />
-        {!collapsed && (
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 16 16"
+          fill="none"
+          aria-hidden="true"
+        >
           <rect
-            x="2.2"
-            y="3.2"
-            width="3.1"
-            height="9.6"
-            rx="1.4"
-            fill="currentColor"
-            fillOpacity="0.28"
+            x="1.6"
+            y="2.6"
+            width="12.8"
+            height="10.8"
+            rx="2.4"
+            stroke="currentColor"
+            strokeWidth="1.3"
           />
-        )}
-      </svg>
-    </button>
+          <path d="M5.9 2.9V13.1" stroke="currentColor" strokeWidth="1.3" />
+          {!collapsed && (
+            <rect
+              x="2.2"
+              y="3.2"
+              width="3.1"
+              height="9.6"
+              rx="1.4"
+              fill="currentColor"
+              fillOpacity="0.28"
+            />
+          )}
+        </svg>
+      </button>
+    </Tooltip>
   )
 )
 SidebarToggle.displayName = 'SidebarToggle'

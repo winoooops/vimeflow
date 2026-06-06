@@ -90,26 +90,27 @@ vi.mock('../../hooks/useElasticContainer', () => ({
 }))
 
 // eslint-disable-next-line import/first
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 // eslint-disable-next-line import/first
 import userEvent from '@testing-library/user-event'
 // eslint-disable-next-line import/first
 import { WorkspaceView } from './WorkspaceView'
 
 describe('Feature 23: Final Phase 2 Verification', () => {
-  describe('1. 5-zone layout renders', () => {
-    test('renders icon rail, sidebar, terminal, dock panel, and activity zones', () => {
+  describe('1. workspace zones render (VIM-76: icon rail removed)', () => {
+    test('renders sidebar (with top bar), terminal, dock panel, and activity zones', () => {
       render(<WorkspaceView />)
 
-      expect(screen.getByTestId('icon-rail')).toBeInTheDocument()
+      // VIM-76: icon rail removed — its utilities moved to the sidebar top bar.
       expect(screen.getByTestId('sidebar')).toBeInTheDocument()
+      expect(screen.getByTestId('sidebar-top-bar')).toBeInTheDocument()
       expect(screen.getByTestId('terminal-zone')).toBeInTheDocument()
       expect(screen.getByTestId('dock-panel')).toBeInTheDocument()
       expect(screen.getByTestId('agent-status-panel')).toBeInTheDocument()
     })
   })
 
-  describe('2. Icon rail shows utility actions', () => {
+  describe('2. Sidebar top bar shows utility actions', () => {
     test('no longer renders a placeholder account avatar (removed, VIM-66)', () => {
       render(<WorkspaceView />)
 
@@ -119,14 +120,16 @@ describe('Feature 23: Final Phase 2 Verification', () => {
     test('displays command palette and disabled settings buttons', () => {
       render(<WorkspaceView />)
 
+      const topBar = screen.getByTestId('sidebar-top-bar')
+
       expect(
-        screen.getByRole('button', { name: 'Command Palette' })
+        within(topBar).getByRole('button', { name: 'Command Palette' })
       ).toBeInTheDocument()
 
-      expect(screen.getByRole('button', { name: 'Settings' })).toHaveAttribute(
-        'aria-disabled',
-        'true'
-      )
+      // Settings aria-label is "Settings — coming (see issue #252)".
+      expect(
+        within(topBar).getByRole('button', { name: /^Settings/ })
+      ).toHaveAttribute('aria-disabled', 'true')
     })
   })
 
@@ -252,8 +255,7 @@ describe('Feature 23: Final Phase 2 Verification', () => {
     test('workspace view renders without errors', () => {
       render(<WorkspaceView />)
 
-      // Verify all 5 zones are present
-      expect(screen.getByTestId('icon-rail')).toBeInTheDocument()
+      // Verify all zones are present (VIM-76: icon rail removed).
       expect(screen.getByTestId('sidebar')).toBeInTheDocument()
       expect(screen.getByTestId('terminal-zone')).toBeInTheDocument()
       expect(screen.getByTestId('dock-panel')).toBeInTheDocument()

@@ -17,22 +17,10 @@ describe('SidebarToggle', () => {
     expect(screen.getByRole('button')).toBeInTheDocument()
   })
 
-  test('uses default shortcut hint ⌘B in title', () => {
+  test('uses the project tooltip, not a native title attribute', () => {
     renderToggle({ collapsed: false })
 
-    expect(screen.getByRole('button')).toHaveAttribute(
-      'title',
-      'Hide sidebar  ⌘B'
-    )
-  })
-
-  test('uses custom shortcut hint when provided', () => {
-    renderToggle({ collapsed: true, shortcutHint: 'Ctrl+⇧B' })
-
-    expect(screen.getByRole('button')).toHaveAttribute(
-      'title',
-      'Show sidebar  Ctrl+⇧B'
-    )
+    expect(screen.getByRole('button')).not.toHaveAttribute('title')
   })
 
   test('collapsed=false: shows the "hide" a11y state', () => {
@@ -41,10 +29,6 @@ describe('SidebarToggle', () => {
     const button = screen.getByRole('button')
     expect(button).toHaveAttribute('aria-expanded', 'true')
     expect(button).toHaveAttribute('aria-label', 'Hide sidebar')
-    expect(button).toHaveAttribute(
-      'title',
-      expect.stringContaining('Hide sidebar')
-    )
   })
 
   test('collapsed=true: shows the "show" a11y state', () => {
@@ -53,10 +37,17 @@ describe('SidebarToggle', () => {
     const button = screen.getByRole('button')
     expect(button).toHaveAttribute('aria-expanded', 'false')
     expect(button).toHaveAttribute('aria-label', 'Show sidebar')
-    expect(button).toHaveAttribute(
-      'title',
-      expect.stringContaining('Show sidebar')
-    )
+  })
+
+  test('hover surfaces the project tooltip with the label + shortcut chip', async () => {
+    const user = userEvent.setup()
+    renderToggle({ collapsed: true, shortcutHint: 'Ctrl+⇧B' })
+
+    await user.hover(screen.getByRole('button'))
+
+    const tooltip = await screen.findByRole('tooltip')
+    expect(tooltip).toHaveTextContent('Show sidebar')
+    expect(screen.getByTestId('tooltip-shortcut')).toHaveTextContent('Ctrl+⇧B')
   })
 
   // Open glyph = outline rect + rail-fill rect (2); collapsed glyph drops the
@@ -111,14 +102,6 @@ describe('SidebarToggle', () => {
 
   test('default variant (ghost): className omits the inset background', () => {
     renderToggle({ collapsed: false })
-
-    expect(screen.getByRole('button')).not.toHaveClass(
-      'bg-[rgba(13,13,28,0.45)]'
-    )
-  })
-
-  test('variant=ghost: className omits the inset background', () => {
-    renderToggle({ collapsed: false, variant: 'ghost' })
 
     expect(screen.getByRole('button')).not.toHaveClass(
       'bg-[rgba(13,13,28,0.45)]'

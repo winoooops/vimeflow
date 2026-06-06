@@ -1,6 +1,5 @@
 // cspell:ignore incard
 import type { ReactElement } from 'react'
-import { SidebarToggle } from './SidebarToggle'
 import { RateLimitBar } from '../../agent-status/components/RateLimitBar'
 
 // Fused agent-status card (VIM-66 — AGENT-STATUS-CARD-HANDOFF + SHELL-CARD-KIT).
@@ -36,9 +35,6 @@ export interface AgentStatusCardProps {
   fiveHourPct?: number | null
   /** 7-day (weekly) rate-limit usage percent; omitted when null. */
   weekPct?: number | null
-  onToggleSidebar: () => void
-  /** Platform-appropriate shortcut hint forwarded to the sidebar toggle tooltip. */
-  sidebarShortcutHint?: string
 }
 
 // Fixed below-header body height — the whole point of the SHELL kit. Agent
@@ -125,8 +121,6 @@ export const AgentStatusCard = ({
   contextPct = null,
   fiveHourPct = null,
   weekPct = null,
-  onToggleSidebar,
-  sidebarShortcutHint = '⌘B',
 }: AgentStatusCardProps): ReactElement => {
   // Guard each metric so a metric-less agent pane collapses gracefully (the
   // fixed-height body keeps the card the same size regardless).
@@ -165,17 +159,8 @@ export const AgentStatusCard = ({
         cursor: 'default',
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        <SidebarToggle
-          onClick={onToggleSidebar}
-          size={28}
-          variant="inset"
-          data-testid="sidebar-toggle-incard"
-          shortcutHint={sidebarShortcutHint}
-        />
-        <div className="min-w-0 flex-1 truncate font-display text-sm font-semibold text-on-surface">
-          {isShell ? 'SHELL' : title}
-        </div>
+      <div className="min-w-0 truncate font-display text-sm font-semibold text-on-surface">
+        {isShell ? 'SHELL' : title}
       </div>
 
       {isShell ? (

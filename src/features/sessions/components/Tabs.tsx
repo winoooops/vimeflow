@@ -1,4 +1,4 @@
-import { type ReactElement } from 'react'
+import { type ReactElement, type ReactNode } from 'react'
 import type { Session, SessionCloseResult } from '../types'
 import { agentForSession } from '../utils/agentForSession'
 import {
@@ -13,6 +13,8 @@ export interface TabsProps {
   onSelect: (sessionId: string) => void
   onClose: (sessionId: string) => SessionCloseResult
   onNew: () => void
+  /** Optional in-flow control seated at the bar's left (the sidebar toggle when the sidebar is collapsed); tabs flow after it, so they never sit under it. */
+  leading?: ReactNode
 }
 
 export const Tabs = ({
@@ -21,6 +23,7 @@ export const Tabs = ({
   onSelect,
   onClose,
   onNew,
+  leading = undefined,
 }: TabsProps): ReactElement => {
   // Single source of truth for "what's visible in the strip" — see
   // `getVisibleSessions` for the predicate. Both this component and
@@ -84,8 +87,15 @@ export const Tabs = ({
   return (
     <div
       data-testid="session-tabs"
-      className="flex h-[38px] shrink-0 items-end gap-0.5 border-b border-outline-variant/25 bg-surface-container-lowest px-2"
+      className={`flex h-[38px] shrink-0 items-end gap-0.5 border-b border-outline-variant/25 bg-surface-container-lowest pr-2 ${
+        leading ? 'pl-[12px]' : 'pl-2'
+      }`}
     >
+      {leading && (
+        <div className="mr-2 flex shrink-0 items-center self-center">
+          {leading}
+        </div>
+      )}
       {/* WAI-ARIA 1.2 §3.27 requires `tablist` to own only `tab` children.
           Keeping the `+` button and the spacer outside the tablist boundary. */}
       <div
