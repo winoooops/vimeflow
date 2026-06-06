@@ -11,6 +11,7 @@
   "maxParallel": 2,
   "maxNoops": 15,
   "maxCiReruns": 3,
+  "workerIdleStopSeconds": 2100,
   "linearDecisionComments": true,
   "linearCreateIssues": false,
   "triggerPhrase": "/upsource-review",

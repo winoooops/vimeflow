@@ -2,7 +2,7 @@
 id: async-race-conditions
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-06-02
+last_updated: 2026-06-06
 ref_count: 15
 ---
 
@@ -492,4 +492,13 @@ prevent showing previous data.
 - **File:** `scripts/qa-runner/lib/decision-comment.js`
 - **Finding:** After round 1 switched decision storage to per-PR files (`decisionStorePath(pr.number)`), `markDecisionPosted` and `readDecisionStore` retained `file = DEFAULT_DECISION_STORE` as their default parameter. Every current call site passes an explicit path, so no regression exists today. A future caller that omits the argument — or a maintenance edit that drops the fourth parameter — silently reverts to the shared global store, reintroducing the concurrent-read-modify-write race the per-PR redesign eliminated.
 - **Fix:** Removed the `DEFAULT_DECISION_STORE` default from both functions, making the per-PR path a required argument. Call sites in `watch.js` and tests already pass explicit paths, so the change is non-breaking.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 51. Idle-stop request dropped while a stop is already in progress
+
+- **Source:** github-claude | PR #362 round 2 | 2026-06-06
+- **Severity:** MEDIUM
+- **File:** `scripts/qa-runner/daemon.js`
+- **Finding:** `scheduleIdleStop()` returns early when `idleStopRunning` is true. If a job arrives and then drains while `stopIdleBurstWorker()` is awaiting `stopSsmWorkerBestEffort()`, the completion path calls `scheduleIdleStop()`, that call is discarded, and `stopIdleBurstWorker()` clears `idleStopRunning` without re-checking. Because daemon-owned burst dispatches intentionally pass keep-alive, losing this idle-stop rearm can leave the EC2 worker running until another job or daemon restart occurs.
+- **Fix:** Added `idleStopPending` flag. When `scheduleIdleStop()` is called during `idleStopRunning`, it sets `idleStopPending = true`. In `stopIdleBurstWorker()`'s `finally` block, after clearing `idleStopRunning`, if `idleStopPending` is true, the flag is cleared and `scheduleIdleStop()` is re-invoked so the normal queue/config guards decide whether to schedule a new stop.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

@@ -11,6 +11,7 @@ export const CYCLE_ENV_KEYS = [
   'QA_MAX_CI_RERUNS',
   'QA_FIX_CONTEXT',
   'QA_LINEAR_PARENT_COMMENT_ID',
+  'QA_WORKER_KEEP_ALIVE',
   'QA_WORKER_REFRESH_RUNNER',
   'QA_WORKER_REF',
   // Legacy alias consumed by worker-cycle; pass-through only, not SSM-sourced.
@@ -197,6 +198,175 @@ const parseCommandId = (stdout) => {
   return commandId
 }
 
+const parseJson = (stdout, label) => {
+  try {
+    return JSON.parse(stdout || '{}')
+  } catch {
+    throw new Error(`${label} returned invalid JSON`)
+  }
+}
+
+const awsCapture = async (args, { env, spawnImpl }) =>
+  runCapture('aws', args, { env, spawnImpl })
+
+const instanceStateFromDescribe = (stdout) => {
+  const parsed = parseJson(stdout, 'ec2 describe-instances')
+
+  return parsed.Reservations?.[0]?.Instances?.[0]?.State?.Name || 'unknown'
+}
+
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+
+const describeInstanceState = async ({
+  instanceId,
+  region,
+  env,
+  spawnImpl,
+}) => {
+  const result = await awsCapture(
+    [
+      'ec2',
+      'describe-instances',
+      '--region',
+      region,
+      '--instance-ids',
+      instanceId,
+      '--output',
+      'json',
+    ],
+    { env, spawnImpl }
+  )
+  if (result.code !== 0) {
+    throw new Error(
+      result.stderr || result.stdout || 'describe-instances failed'
+    )
+  }
+
+  return instanceStateFromDescribe(result.stdout)
+}
+
+const startInstance = async ({ instanceId, region, env, spawnImpl }) => {
+  const result = await awsCapture(
+    [
+      'ec2',
+      'start-instances',
+      '--region',
+      region,
+      '--instance-ids',
+      instanceId,
+      '--output',
+      'json',
+    ],
+    { env, spawnImpl }
+  )
+  if (result.code !== 0) {
+    throw new Error(result.stderr || result.stdout || 'start-instances failed')
+  }
+}
+
+const stopInstance = async ({ instanceId, region, env, spawnImpl }) => {
+  const result = await awsCapture(
+    [
+      'ec2',
+      'stop-instances',
+      '--region',
+      region,
+      '--instance-ids',
+      instanceId,
+      '--output',
+      'json',
+    ],
+    { env, spawnImpl }
+  )
+
+  return result
+}
+
+export const ensureWorkerInstanceRunning = async ({
+  instanceId,
+  region,
+  timeoutSeconds = 600,
+  pollIntervalMs = 15000,
+  stdout = process.stdout,
+  env = process.env,
+  spawnImpl = spawn,
+  onStarted,
+}) => {
+  const deadline = Date.now() + timeoutSeconds * 1000
+  let state = await describeInstanceState({
+    instanceId,
+    region,
+    env,
+    spawnImpl,
+  })
+  let started = false
+
+  if (state === 'stopped') {
+    stdout.write(`worker ${instanceId}: starting stopped instance\n`)
+    await startInstance({ instanceId, region, env, spawnImpl })
+    started = true
+    onStarted?.()
+    state = 'pending'
+  }
+
+  while (Date.now() < deadline) {
+    if (state === 'running') {
+      stdout.write(`worker ${instanceId}: EC2 running\n`)
+
+      return { started, state }
+    }
+
+    if (
+      ['terminated', 'shutting-down'].includes(state) ||
+      state === 'unknown'
+    ) {
+      throw new Error(`worker ${instanceId} cannot be started (${state})`)
+    }
+
+    if (state === 'stopped' && !started) {
+      stdout.write(`worker ${instanceId}: starting stopped instance\n`)
+      await startInstance({ instanceId, region, env, spawnImpl })
+      started = true
+      onStarted?.()
+      state = 'pending'
+      await wait(pollIntervalMs)
+      state = await describeInstanceState({
+        instanceId,
+        region,
+        env,
+        spawnImpl,
+      })
+      continue
+    }
+
+    await wait(pollIntervalMs)
+    state = await describeInstanceState({ instanceId, region, env, spawnImpl })
+  }
+
+  throw new Error(
+    `worker ${instanceId} did not become EC2 running within ${timeoutSeconds}s`
+  )
+}
+
+export const stopSsmWorkerBestEffort = async ({
+  instanceId,
+  region,
+  stderr = process.stderr,
+  env = process.env,
+  spawnImpl = spawn,
+}) => {
+  const result = await stopInstance({ instanceId, region, env, spawnImpl })
+  if (result.code !== 0) {
+    stderr.write(
+      `warning: failed to stop worker ${instanceId}: ${
+        result.stderr || result.stdout || 'unknown error'
+      }\n`
+    )
+  }
+
+  return result
+}
+
 const printInvocation = ({ invocation, stdout, stderr }) => {
   const out = invocation.StandardOutputContent || ''
   const err = invocation.StandardErrorContent || ''
@@ -214,103 +384,243 @@ const printInvocation = ({ invocation, stdout, stderr }) => {
   }
 }
 
-export const runSsmDispatch = async ({
+const sendSsmWorkerCommand = ({
+  instanceId,
+  region,
+  repo,
+  env: commandEnv,
+  timeoutSeconds,
+  awsEnv,
+  spawnImpl,
+}) =>
+  runCapture(
+    'aws',
+    ssmSendCommandArgs({
+      instanceId,
+      region,
+      repo,
+      env: commandEnv,
+      timeoutSeconds,
+    }),
+    { env: awsEnv, spawnImpl }
+  )
+
+const isTransientSendCommandFailure = (text) =>
+  text.includes('InvalidInstanceId') ||
+  text.includes('TargetNotConnected') ||
+  text.includes('not in a valid state') ||
+  text.includes('not connected')
+
+const sendSsmWorkerCommandWithRetry = async ({
   instanceId,
   region,
   repo,
   env,
   timeoutSeconds,
+  readyTimeoutSeconds,
+  stdout,
+  awsEnv,
+  spawnImpl,
+  pollIntervalMs,
+}) => {
+  const deadline = Date.now() + readyTimeoutSeconds * 1000
+  let loggedWait = false
+  let result = null
+
+  while (Date.now() < deadline) {
+    result = await sendSsmWorkerCommand({
+      instanceId,
+      region,
+      repo,
+      env,
+      timeoutSeconds,
+      awsEnv,
+      spawnImpl,
+    })
+    if (result.code === 0) {
+      return result
+    }
+
+    const errorText = result.stderr || result.stdout || ''
+    if (!isTransientSendCommandFailure(errorText)) {
+      return result
+    }
+
+    if (!loggedWait) {
+      stdout.write(`worker ${instanceId}: waiting for SSM command target\n`)
+      loggedWait = true
+    }
+
+    await wait(pollIntervalMs)
+  }
+
+  return (
+    result || {
+      code: 1,
+      signal: null,
+      stderr: `worker ${instanceId} did not accept SSM command within ${readyTimeoutSeconds}s\n`,
+    }
+  )
+}
+
+export const runSsmDispatch = async ({
+  instanceId,
+  region,
+  repo,
+  env: commandEnv,
+  timeoutSeconds,
+  burst = false,
+  stopAfterRun = false,
+  keepAlive = false,
+  readyTimeoutSeconds = 600,
   stdout = process.stdout,
   stderr = process.stderr,
+  awsEnv = process.env,
   spawnImpl = spawn,
   pollIntervalMs = 15000,
 }) => {
-  const send = await runCapture(
-    'aws',
-    ssmSendCommandArgs({ instanceId, region, repo, env, timeoutSeconds }),
-    { spawnImpl }
-  )
-  if (send.code !== 0) {
-    stderr.write(send.stderr || send.stdout)
+  let shouldStop = false
 
-    return send
-  }
-
-  const commandId = parseCommandId(send.stdout)
-
-  const startTime = Date.now()
-  const deadline = startTime + (timeoutSeconds || 5400) * 1000
-
-  const terminalStatuses = new Set([
-    'Success',
-    'Cancelled',
-    'TimedOut',
-    'Failed',
-    'AccessDenied',
-    'DeliveryTimedOut',
-    'ExecutionTimedOut',
-    'InvalidInstanceId',
-    'InvalidParameters',
-    'Undeliverable',
-  ])
-
-  let invocation = null
-  while (Date.now() < deadline) {
-    const get = await runCapture(
-      'aws',
-      [
-        'ssm',
-        'get-command-invocation',
-        '--region',
-        region,
-        '--command-id',
-        commandId,
-        '--instance-id',
+  try {
+    let send
+    if (burst) {
+      const readinessDeadline = Date.now() + readyTimeoutSeconds * 1000
+      await ensureWorkerInstanceRunning({
         instanceId,
-        '--output',
-        'json',
-      ],
-      { spawnImpl }
-    )
-    if (get.code !== 0) {
-      const errorText = get.stderr || get.stdout || ''
+        region,
+        timeoutSeconds: readyTimeoutSeconds,
+        pollIntervalMs,
+        stdout,
+        env: awsEnv,
+        spawnImpl,
+        onStarted: () => {
+          shouldStop = stopAfterRun
+        },
+      })
+      shouldStop = stopAfterRun
 
-      const isTransient =
-        errorText.includes('InvocationDoesNotExist') ||
-        errorText.includes('InvalidCommandId')
-      if (isTransient) {
-        await new Promise((resolve) => setTimeout(resolve, pollIntervalMs))
-        continue
+      const remainingReadySeconds = Math.max(
+        0,
+        Math.ceil((readinessDeadline - Date.now()) / 1000)
+      )
+      send = await sendSsmWorkerCommandWithRetry({
+        instanceId,
+        region,
+        repo,
+        env: commandEnv,
+        timeoutSeconds,
+        readyTimeoutSeconds: remainingReadySeconds,
+        stdout,
+        awsEnv,
+        spawnImpl,
+        pollIntervalMs,
+      })
+    } else {
+      send = await sendSsmWorkerCommand({
+        instanceId,
+        region,
+        repo,
+        env: commandEnv,
+        timeoutSeconds,
+        awsEnv,
+        spawnImpl,
+      })
+    }
+    if (send.code !== 0) {
+      stderr.write(send.stderr || send.stdout)
+
+      return send
+    }
+
+    const commandId = parseCommandId(send.stdout)
+
+    const startTime = Date.now()
+    const deadline = startTime + (timeoutSeconds || 5400) * 1000
+
+    const terminalStatuses = new Set([
+      'Success',
+      'Cancelled',
+      'TimedOut',
+      'Failed',
+      'AccessDenied',
+      'DeliveryTimedOut',
+      'ExecutionTimedOut',
+      'InvalidInstanceId',
+      'InvalidParameters',
+      'Undeliverable',
+    ])
+
+    let invocation = null
+    while (Date.now() < deadline) {
+      const get = await runCapture(
+        'aws',
+        [
+          'ssm',
+          'get-command-invocation',
+          '--region',
+          region,
+          '--command-id',
+          commandId,
+          '--instance-id',
+          instanceId,
+          '--output',
+          'json',
+        ],
+        { env: awsEnv, spawnImpl }
+      )
+      if (get.code !== 0) {
+        const errorText = get.stderr || get.stdout || ''
+
+        const isTransient =
+          errorText.includes('InvocationDoesNotExist') ||
+          errorText.includes('InvalidCommandId')
+        if (isTransient) {
+          await new Promise((resolve) => setTimeout(resolve, pollIntervalMs))
+          continue
+        }
+        stderr.write(errorText)
+
+        return get
       }
-      stderr.write(errorText)
 
-      return get
+      invocation = JSON.parse(get.stdout || '{}')
+      if (terminalStatuses.has(invocation.Status)) {
+        break
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, pollIntervalMs))
     }
 
-    invocation = JSON.parse(get.stdout || '{}')
-    if (terminalStatuses.has(invocation.Status)) {
-      break
+    if (!terminalStatuses.has(invocation?.Status)) {
+      stderr.write(
+        `SSM command ${commandId} timed out after ${timeoutSeconds || 5400}s\n`
+      )
+
+      return { code: 1, signal: null }
     }
 
-    await new Promise((resolve) => setTimeout(resolve, pollIntervalMs))
-  }
+    printInvocation({ invocation, stdout, stderr })
 
-  if (!terminalStatuses.has(invocation?.Status)) {
-    stderr.write(
-      `SSM command ${commandId} timed out after ${timeoutSeconds || 5400}s\n`
-    )
-
-    return { code: 1, signal: null }
-  }
-
-  printInvocation({ invocation, stdout, stderr })
-
-  return {
-    code:
-      Number.isInteger(invocation.ResponseCode) && invocation.ResponseCode >= 0
-        ? invocation.ResponseCode
-        : 1,
-    signal: null,
+    return {
+      code:
+        Number.isInteger(invocation.ResponseCode) &&
+        invocation.ResponseCode >= 0
+          ? invocation.ResponseCode
+          : 1,
+      signal: null,
+    }
+  } finally {
+    if (shouldStop && keepAlive) {
+      stdout.write(`worker ${instanceId}: keep alive requested; skip stop\n`)
+    } else if (shouldStop) {
+      await stopSsmWorkerBestEffort({
+        instanceId,
+        region,
+        stderr,
+        env: awsEnv,
+        spawnImpl,
+      })
+    }
   }
 }
 
@@ -332,6 +642,10 @@ export const dispatchConfig = (env = process.env) => {
       env.QA_WORKER_REGION || env.AWS_REGION || env.AWS_DEFAULT_REGION || '',
     sshOptions,
     timeoutSeconds: Number(env.QA_WORKER_TIMEOUT_SECONDS || 5400),
+    burst: boolEnv(env.QA_WORKER_BURST),
+    stopAfterRun: boolEnv(env.QA_WORKER_STOP_AFTER_RUN),
+    keepAlive: boolEnv(env.QA_WORKER_KEEP_ALIVE),
+    readyTimeoutSeconds: Number(env.QA_WORKER_READY_TIMEOUT_SECONDS || 600),
   }
 }
 
@@ -375,6 +689,10 @@ export const runDispatch = async ({
       repo: config.repo,
       env,
       timeoutSeconds: config.timeoutSeconds,
+      burst: config.burst,
+      stopAfterRun: config.stopAfterRun,
+      keepAlive: config.keepAlive,
+      readyTimeoutSeconds: config.readyTimeoutSeconds,
       stdout,
       stderr,
     })

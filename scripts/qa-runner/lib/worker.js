@@ -95,6 +95,7 @@ export const watchArgs = (
     linearTeamKey,
     maxCiReruns,
     reason,
+    workerKeepAlive = false,
   } = {}
 ) => {
   const args = [WATCH, 'tick', '--pr', String(pr), '--execute']
@@ -118,6 +119,9 @@ export const watchArgs = (
   }
   if (label) {
     args.push('--label', label)
+  }
+  if (workerKeepAlive) {
+    args.push('--worker-keep-alive')
   }
 
   return args

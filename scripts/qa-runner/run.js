@@ -20,6 +20,7 @@ import { execFileSync, spawn, spawnSync } from 'node:child_process'
 import {
   existsSync,
   mkdirSync,
+  readFileSync,
   readdirSync,
   rmSync,
   symlinkSync,
@@ -44,6 +45,8 @@ import { runUntilChange } from './lib/run-until-change.js'
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url))
 const LOCK_DIR = join(SCRIPT_DIR, '.locks')
 const KIMI_TIMEOUT_MS = 45 * 60 * 1000
+const KIMI_DEFAULT_MODEL = 'kimi-code/kimi-for-coding'
+const KIMI_DEFAULT_OUTPUT_FORMAT = 'stream-json'
 
 const out = (s = '') => process.stdout.write(`${s}\n`)
 
@@ -65,6 +68,10 @@ const sh = (cmd, args, opts = {}) =>
 
 // Latest lifeline version in the plugin cache that ships the skill.
 const lifelineSkillsDir = () => {
+  if (process.env.QA_LIFELINE_SKILLS_DIR) {
+    return process.env.QA_LIFELINE_SKILLS_DIR
+  }
+
   const root = join(
     homedir(),
     '.claude',
@@ -218,31 +225,89 @@ const invocation = (pr, live) => {
   )
 }
 
-const run = async (pr, live) => {
-  mkdirSync(LOCK_DIR, { recursive: true })
-  const lock = join(LOCK_DIR, `pr-${pr}.lock`)
+const kimiModelArgs = () => {
+  if (process.env.KIMI_MODEL) {
+    return ['-m', process.env.KIMI_MODEL]
+  }
+
+  if (process.env.KIMI_MODEL_NAME) {
+    return []
+  }
+
+  return ['-m', KIMI_DEFAULT_MODEL]
+}
+
+const lockOwnerIsActiveRunner = (pid) => {
+  if (!(pid > 0)) {
+    return false
+  }
+
+  try {
+    process.kill(pid, 0)
+  } catch (e) {
+    return e.code === 'EPERM'
+  }
+
+  try {
+    return readFileSync(`/proc/${pid}/cmdline`, 'utf8').includes('run.js')
+  } catch {
+    return true
+  }
+}
+
+const reapStaleLock = (lock) => {
+  let pid = 0
+  try {
+    pid = Number((readFileSync(lock, 'utf8').match(/pid (\d+)/) || [])[1])
+  } catch {
+    return true
+  }
+  if (lockOwnerIsActiveRunner(pid)) {
+    return false
+  }
+  rmSync(lock, { force: true })
+
+  return true
+}
+
+const acquireLock = (lock, pr) => {
   try {
     writeFileSync(lock, `pid ${process.pid}\n`, { flag: 'wx' })
+
+    return
   } catch (e) {
+    if (e.code === 'EEXIST' && reapStaleLock(lock)) {
+      writeFileSync(lock, `pid ${process.pid}\n`, { flag: 'wx' })
+
+      return
+    }
     if (e.code === 'EEXIST') {
       die(`PR #${pr} locked (run in flight). rm ${lock} to override.`, 3)
     }
-    try {
-      unlinkSync(lock)
-    } catch {
-      /* lock may not exist */
-    }
     throw e
   }
+}
+
+const run = async (pr, live) => {
+  mkdirSync(LOCK_DIR, { recursive: true })
+  const lock = join(LOCK_DIR, `pr-${pr}.lock`)
+  acquireLock(lock, pr)
   try {
+    const bot = loadBot(SCRIPT_DIR, 'bot.env', 'GH_BOT')
+    const ghEnv = bot ? { env: { ...process.env, ...botEnv(bot) } } : {}
+
     const info = JSON.parse(
-      sh('gh', [
-        'pr',
-        'view',
-        String(pr),
-        '--json',
-        'number,headRefName,url,body,state,isCrossRepository',
-      ])
+      sh(
+        'gh',
+        [
+          'pr',
+          'view',
+          String(pr),
+          '--json',
+          'number,headRefName,url,body,state,isCrossRepository',
+        ],
+        ghEnv
+      )
     )
     if (info.state !== 'OPEN') {
       die(`PR #${pr} is ${info.state}, not OPEN.`)
@@ -254,10 +319,9 @@ const run = async (pr, live) => {
       )
     }
     const branch = info.headRefName
-    const bot = loadBot(SCRIPT_DIR, 'bot.env', 'GH_BOT')
 
     const repo = JSON.parse(
-      sh('gh', ['repo', 'view', '--json', 'nameWithOwner'])
+      sh('gh', ['repo', 'view', '--json', 'nameWithOwner'], ghEnv)
     ).nameWithOwner
     const skillsDir = lifelineSkillsDir()
     const wt = ensureWorktree(pr, branch, live, skillsDir, bot, repo)
@@ -275,16 +339,16 @@ const run = async (pr, live) => {
         spawn(
           'kimi',
           [
-            '--afk',
-            '--print',
-            '-w',
-            wt,
             '--skills-dir',
             skillsDir,
+            ...kimiModelArgs(),
             '-p',
             invocation(pr, live),
+            '--output-format',
+            process.env.KIMI_OUTPUT_FORMAT || KIMI_DEFAULT_OUTPUT_FORMAT,
           ],
           {
+            cwd: wt,
             stdio: 'inherit',
             env: {
               ...process.env,

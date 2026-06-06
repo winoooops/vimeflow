@@ -17,7 +17,7 @@ Design + rationale: [`docs/explorations/linear-agent-cicd-pilot.html`](../../doc
        CI_RED     → report only once automatic reruns are exhausted/unavailable
                  │
                  ▼  per NEEDS_FIX PR, concurrently, each in its own worktree:
- ② run.js → kimi --afk (as the FIXER bot) · upsource-review skill  — poll → fix →
+ ② run.js → kimi -p (as the FIXER bot) · upsource-review skill  — poll → fix →
     CODEX GATE → commit → push → reply/resolve threads → repeat until clean.
                  │
                  ▼
@@ -36,6 +36,11 @@ branch protection): the **fixer** runs as `bot.env`, the **orchestrator** merges
 
 - **codex** is the verify **gate** — kimi writes the fix, codex gates it (the
   quality backstop). Confirmed callable (`codex exec` + `codex review`).
+- **Kimi Code** runs through the official headless CLI path:
+  `kimi --skills-dir <dir> -p <prompt> --output-format stream-json`. Configured
+  OAuth/model aliases can set `KIMI_MODEL` to add `-m <alias>`; clean API-key
+  workers use `KIMI_MODEL_NAME` / `KIMI_MODEL_API_KEY` and intentionally omit
+  `-m` so Kimi Code can synthesize the temporary model from env.
 - **Honest scope:** this runs on **your host** — the toolchain (`kimi`, `codex`,
   `gh`, `git`) cannot run serverless. Linear observes; it does not execute.
 
@@ -216,6 +221,7 @@ The command receives the fixer contract through environment variables:
 | `QA_LINEAR_CREATE_ISSUES`     | `1` when missing Linear issues may be created                       |
 | `QA_LINEAR_TEAM_KEY`          | Linear team key for issue creation                                  |
 | `QA_MAX_CI_RERUNS`            | Bounded transient reviewer rerun cap                                |
+| `QA_WORKER_KEEP_ALIVE`        | `1` when the daemon owns burst-worker stop through its idle timer   |
 | `QA_FIX_CONTEXT`              | Structured control-plane reason/findings for the fixer              |
 | `QA_LINEAR_PARENT_COMMENT_ID` | Active `NEEDS_FIX` Linear comment id for fixer status replies       |
 
@@ -233,6 +239,19 @@ supports:
 - `QA_WORKER_MODE=ssh` for an already-running worker reachable by SSH.
 - `QA_WORKER_MODE=ssm` for AWS Systems Manager `AWS-RunShellScript` dispatch with
   no inbound SSH.
+- `QA_WORKER_BURST=1` for SSM workers that may be stopped between fix cycles.
+  The dispatcher starts the instance when needed, waits for EC2 `running`, then
+  retries the actual SSM worker command until the target accepts it.
+- `QA_WORKER_STOP_AFTER_RUN=1` enables daemon-owned idle stop for SSM burst
+  workers. When the daemon dispatches a fixer, it always sends
+  `QA_WORKER_KEEP_ALIVE=1` so the SSM dispatch layer never makes a stale
+  per-command stop decision. The daemon performs a best-effort idle stop after
+  the queue drains. Standalone `dispatch-worker.js` runs can still stop after
+  the command unless they also pass keep-alive. Stop failures are logged as
+  warnings and do not replace the fixer exit code.
+- `QA_WORKER_IDLE_STOP_SECONDS=2100` controls the daemon's idle-stop grace
+  period after a keep-alive run drains the queue. The default keeps the worker
+  warm through slow CI/Claude review rounds before stopping it.
 
 The remote side runs `worker-cycle.js`, which maps the daemon's environment
 contract into one `run.js <PR> --push` fixer pass. It never arms approval; the

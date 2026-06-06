@@ -63,9 +63,20 @@ Worker credentials:
 - optional `OPENAI_API_KEY`, sourced from
   `/vimeflow/qa-runner/prod/worker/openai-api-key`, for generic OpenAI SDK or
   provider usage outside `codex exec`
+- optional `KIMI_MODEL_API_KEY`, sourced from
+  `/vimeflow/qa-runner/prod/worker/KIMI-API-KEY` or
+  `/vimeflow/qa-runner/prod/worker/KIMI_API_KEY`, and written into
+  `KIMI_MODEL_*` env variables for official Kimi Code API-mode auth on clean
+  burst workers
+- optional `KIMI_MODEL_BASE_URL`, sourced from
+  `/vimeflow/qa-runner/prod/worker/KIMI_MODEL_BASE_URL`; set it to
+  `https://api.kimi.com/coding/v1` for `sk-kim...` Kimi Code keys
+- optional `QA_LIFELINE_SKILLS_DIR`, sourced from
+  `/vimeflow/qa-runner/prod/worker/QA_LIFELINE_SKILLS_DIR`, so clean burst
+  workers can point `run.js` at a cloned Lifeline `skills/` directory instead
+  of a user-specific Claude plugin cache
 - `/vimeflow/qa-runner/prod/worker/OPENAPI-API-KEY` is a legacy typo parameter
   and is not read by the bootstrap scripts.
-- Kimi Code auth
 - GitHub CLI auth for the fixer account
 - Lifeline installation/config
 
@@ -89,8 +100,13 @@ files. They do not print secret values.
 On the worker, `worker-env-from-ssm.sh` also writes
 `/etc/vimeflow/qa-runner/worker.env` with `0600` permissions. `worker-cycle.js`
 loads that local file before running `run.js --push`, so `CODEX_HOME` points
-`codex exec` at the root-owned cached API-key login without including the raw API
-key in SSM command arguments or repo-controlled process environments.
+`codex exec` at the root-owned cached API-key login. Kimi Code state is kept
+under root-owned `KIMI_CODE_HOME`, and the Kimi API key is exposed to the worker
+process through the official `KIMI_MODEL_NAME` / `KIMI_MODEL_API_KEY` path
+without including raw API keys in SSM command arguments or repo-controlled
+process environments. Clean burst workers should clone
+`https://github.com/winoooops/lifeline` and set
+`QA_LIFELINE_SKILLS_DIR=/opt/vimeflow/lifeline/skills` during bootstrap.
 
 ## Control Daemon Mode
 
@@ -202,6 +218,48 @@ node /opt/vimeflow/repo/scripts/qa-runner/dispatch-worker.js
 The dispatcher calls `AWS-RunShellScript`, waits for the command invocation, then
 exits with the worker command response code. The SSM payload contains only the
 non-secret fixer variables and structured `QA_FIX_CONTEXT`.
+
+For burst workers that are stopped between PR fix cycles, enable the lifecycle
+wrapper on the control host:
+
+```bash
+QA_WORKER_BURST=1
+QA_WORKER_STOP_AFTER_RUN=1
+QA_WORKER_READY_TIMEOUT_SECONDS=900
+QA_WORKER_IDLE_STOP_SECONDS=2100
+```
+
+With `QA_WORKER_BURST=1`, the dispatcher starts a stopped worker instance,
+waits until EC2 reports `running`, then retries the actual SSM fixer command
+until the target accepts it. With `QA_WORKER_STOP_AFTER_RUN=1`, the daemon owns
+the stop decision for SSM burst workers: it always sends
+`QA_WORKER_KEEP_ALIVE=1` to the fixer contract so the dispatch layer never stops
+the instance from a stale job-claim snapshot. When the queue drains, the daemon waits
+`QA_WORKER_IDLE_STOP_SECONDS` and then performs a best-effort stop. The default
+35 minute grace keeps the worker warm through slow CI/Claude review rounds
+without keeping it alive indefinitely. A stop failure is only logged as a
+warning; the dispatcher still exits with the real fixer result.
+
+Standalone `dispatch-worker.js` runs can still stop after their command reaches
+a terminal SSM status unless they explicitly pass keep-alive.
+
+Spot workers should use the same SSM dispatch path. For the first realistic
+smoke, prefer a reusable EBS-backed Spot worker whose credentials are
+materialized from SSM at bootstrap time, not a private AMI made from a live
+worker disk that already contains auth caches.
+
+Use `scripts/qa-runner/deploy/worker-spot-user-data.sh` as the clean Spot worker
+bootstrap user-data. Set `QA_RUNNER_REF` explicitly to the runner branch or tag
+to install; branch smoke tests use the branch under test, and production should
+pin the deployed runner ref rather than relying on a hidden WIP default.
+The script installs Node 22, GitHub CLI, Codex CLI, the official
+`@moonshot-ai/kimi-code` CLI, `libsecret`, the Vimeflow repo, Lifeline skills,
+worker env files from SSM, and project npm dependencies. The fixer invokes Kimi
+Code in non-interactive mode with `kimi --skills-dir <dir> -p <prompt>
+--output-format stream-json`. Configured OAuth/model-alias hosts can set
+`KIMI_MODEL` to add `-m <alias>`; clean API-key workers default the model to
+`kimi-for-coding` through `KIMI_MODEL_NAME` and omit `-m` so the official
+`KIMI_MODEL_*` temporary provider path is used.
 
 ## Worker Cycle Entrypoint
 
