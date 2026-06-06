@@ -586,6 +586,54 @@ describe('burst worker helpers', () => {
     ).rejects.toThrow('worker i-gone cannot be started')
   })
 
+  test('starts a worker that transitions from stopping to stopped while polling', async () => {
+    const mockSpawn = makeMockSpawn([
+      {
+        stdout: JSON.stringify({
+          Reservations: [{ Instances: [{ State: { Name: 'stopping' } }] }],
+        }),
+      },
+      {
+        stdout: JSON.stringify({
+          Reservations: [{ Instances: [{ State: { Name: 'stopped' } }] }],
+        }),
+      },
+      { stdout: JSON.stringify({ StartingInstances: [] }) },
+      {
+        stdout: JSON.stringify({
+          Reservations: [{ Instances: [{ State: { Name: 'pending' } }] }],
+        }),
+      },
+      {
+        stdout: JSON.stringify({
+          Reservations: [{ Instances: [{ State: { Name: 'running' } }] }],
+        }),
+      },
+    ])
+    const stdout = { write: vi.fn() }
+    const onStarted = vi.fn()
+
+    const result = await ensureWorkerInstanceRunning({
+      instanceId: 'i-stop-then-start',
+      region: 'us-west-1',
+      timeoutSeconds: 5,
+      pollIntervalMs: 1,
+      stdout,
+      spawnImpl: mockSpawn,
+      onStarted,
+    })
+
+    expect(result).toEqual({ started: true, state: 'running' })
+    expect(onStarted).toHaveBeenCalledTimes(1)
+    expect(stdout.write).toHaveBeenCalledWith(
+      'worker i-stop-then-start: starting stopped instance\n'
+    )
+
+    expect(stdout.write).toHaveBeenCalledWith(
+      'worker i-stop-then-start: EC2 running\n'
+    )
+  })
+
   test('returns the stop-instances result for direct best-effort calls', async () => {
     const mockSpawn = makeMockSpawn([
       { stdout: JSON.stringify({ StoppingInstances: [] }) },

@@ -322,6 +322,17 @@ export const ensureWorkerInstanceRunning = async ({
       throw new Error(`worker ${instanceId} cannot be started (${state})`)
     }
 
+    if (state === 'stopped' && !started) {
+      stdout.write(`worker ${instanceId}: starting stopped instance\n`)
+      await startInstance({ instanceId, region, env, spawnImpl })
+      started = true
+      onStarted?.()
+      state = 'pending'
+      await wait(pollIntervalMs)
+      state = await describeInstanceState({ instanceId, region, env, spawnImpl })
+      continue
+    }
+
     await wait(pollIntervalMs)
     state = await describeInstanceState({ instanceId, region, env, spawnImpl })
   }
