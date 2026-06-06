@@ -1,4 +1,4 @@
-import { useState, type CSSProperties, type ReactElement } from 'react'
+import { useState, type CSSProperties, type ReactElement, type Ref } from 'react'
 import { SidebarToggle } from './SidebarToggle'
 import { Tooltip } from '../../../components/Tooltip'
 
@@ -82,6 +82,8 @@ export interface SidebarTopBarProps {
   sidebarShortcutHint?: string
   /** Settings follow-up issue number, surfaced in the (disabled) tooltip. */
   settingsIssueNumber?: number
+  /** Ref forwarded to the collapse-toggle button for imperative focus. */
+  toggleRef?: Ref<HTMLButtonElement>
 }
 
 // The new sidebar chrome row (38px). Uses the sidebar's own surface
@@ -96,6 +98,7 @@ export const SidebarTopBar = ({
   commandShortcutHint,
   sidebarShortcutHint = '⌘B',
   settingsIssueNumber = undefined,
+  toggleRef = undefined,
 }: SidebarTopBarProps): ReactElement => (
   <div
     data-testid="sidebar-top-bar"
@@ -111,6 +114,7 @@ export const SidebarTopBar = ({
     }}
   >
     <SidebarToggle
+      ref={toggleRef}
       onClick={onToggleSidebar}
       size={28}
       variant="inset"

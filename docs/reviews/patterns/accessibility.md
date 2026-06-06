@@ -3,7 +3,7 @@ id: accessibility
 category: a11y
 created: 2026-04-09
 last_updated: 2026-06-06
-ref_count: 8
+ref_count: 9
 ---
 
 # Accessibility
@@ -279,4 +279,13 @@ handlers must not trap focus without implementing the promised behavior.
 - **File:** `src/features/agent-status/components/RateLimitBar.tsx`
 - **Finding:** The progressbar `<div>` had `role="progressbar"` and `aria-value*` attributes but no `aria-label` or `aria-labelledby`. The visible label lived in a preceding sibling `<span>` with no programmatic association. Screen readers announced a bare percentage with no context about what the bar measures, violating WCAG 2.1 SC 4.1.2 (Name, Role, Value).
 - **Fix:** Added `aria-label={label}` to the progressbar `<div>` so the accessible name matches the visible label text. No test changes were needed beyond the existing `getByRole('progressbar')` query which now implicitly verifies the name.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 30. Production focus guard depends on `data-testid` selectors
+
+- **Source:** github-claude | PR #364 round 1 | 2026-06-06
+- **Severity:** MEDIUM
+- **File:** `src/features/workspace/WorkspaceView.tsx`
+- **Finding:** The post-toggle focus guard used `document.querySelector('[data-testid="sidebar-toggle-tabs"]')` / `sidebar-toggle-topbar` to restore focus after collapse or expand. Runtime a11y behavior was coupled to test-only string names, so a routine test-id rename could silently strand keyboard focus on `<body>` after every sidebar toggle. Same finding-class as #14 (focus restoration via raw CSS selector) — focus-management code paths must enforce their own invariants because the symptom (focus on `<body>`) is invisible until a real keyboard user notices.
+- **Fix:** Replaced the `data-testid` DOM query with `useRef<HTMLButtonElement>` refs forwarded to the top-bar and tabs toggle instances, and focused the selected ref inside the deferred guard. `SidebarToggle` already forwarded refs via `forwardRef`, so the change was localized: two new refs in `WorkspaceView`, a new `toggleRef` prop on `SidebarTopBar` that forwards to its `SidebarToggle`, and the guard selects the appropriate ref instead of querying the DOM.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

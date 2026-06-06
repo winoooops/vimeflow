@@ -233,6 +233,11 @@ export const WorkspaceView = (): ReactElement => {
   const { collapsed: sidebarCollapsed, toggle: toggleSidebar } =
     useSidebarCollapsed()
 
+  // Imperative refs to the two SidebarToggle instances so the post-toggle focus
+  // guard can refocus the visible one without relying on data-testid selectors.
+  const sidebarToggleTopbarRef = useRef<HTMLButtonElement>(null)
+  const sidebarToggleTabsRef = useRef<HTMLButtonElement>(null)
+
   // Post-toggle focus guard: collapse/expand removes the active toggle from the
   // tab order (open toggle's shell goes inert; collapsed toggle's slot unmounts),
   // dropping focus to <body>. Refocus the now-visible toggle when that happens.
@@ -249,16 +254,13 @@ export const WorkspaceView = (): ReactElement => {
       return
     }
 
-    const targetTestId = sidebarCollapsed
-      ? 'sidebar-toggle-tabs'
-      : 'sidebar-toggle-topbar'
-
     const frame = requestAnimationFrame((): void => {
       const active = document.activeElement
       if (!active || active === document.body) {
-        document
-          .querySelector<HTMLElement>(`[data-testid="${targetTestId}"]`)
-          ?.focus()
+        const target = sidebarCollapsed
+          ? sidebarToggleTabsRef.current
+          : sidebarToggleTopbarRef.current
+        target?.focus()
       }
     })
 
@@ -1478,6 +1480,7 @@ export const WorkspaceView = (): ReactElement => {
                   commandShortcutHint={commandShortcutHint}
                   sidebarShortcutHint={sidebarShortcutHint}
                   settingsIssueNumber={SETTINGS_FOLLOWUP_ISSUE_NUMBER}
+                  toggleRef={sidebarToggleTopbarRef}
                 />
               )
             }
@@ -1555,6 +1558,7 @@ export const WorkspaceView = (): ReactElement => {
           leading={
             sidebarCollapsed ? (
               <SidebarToggle
+                ref={sidebarToggleTabsRef}
                 collapsed
                 onClick={toggleSidebar}
                 size={28}
