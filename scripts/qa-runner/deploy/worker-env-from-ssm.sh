@@ -5,7 +5,6 @@ region="${AWS_REGION:-${AWS_DEFAULT_REGION:-us-west-1}}"
 repo="${QA_REPO:-/opt/vimeflow/repo}"
 etc_dir="${QA_ETC_DIR:-/etc/vimeflow/qa-runner}"
 prefix="${QA_WORKER_PARAM_PREFIX:-/vimeflow/qa-runner/prod/worker}"
-codex_home="${CODEX_HOME:-$etc_dir/codex}"
 kimi_code_home="${KIMI_CODE_HOME:-$etc_dir/kimi-code}"
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -28,6 +27,57 @@ single_line_optional_value() {
   optional_value "$1" | tr -d '\r\n'
 }
 
+env_or_optional_value() {
+  local env_name="$1"
+  local param_name="${2:-$1}"
+  local value="${!env_name-}"
+  if [ -z "$value" ]; then
+    value="$(single_line_optional_value "$param_name")" || exit 1
+  fi
+  printf "%s" "$value"
+}
+
+resolve_codex_home() {
+  local value="${CODEX_HOME-}"
+  if [ -z "$value" ]; then
+    value="${QA_WORKER_CODEX_HOME-}"
+  fi
+  if [ -z "$value" ]; then
+    value="$(single_line_optional_value QA_WORKER_CODEX_HOME)" || exit 1
+  fi
+  if [ -z "$value" ]; then
+    value="$(single_line_optional_value CODEX_HOME)" || exit 1
+  fi
+  if [ -z "$value" ]; then
+    value="$etc_dir/codex"
+  fi
+  printf "%s" "$value"
+}
+
+configure_codex_auth() {
+  case "$codex_auth_mode" in
+    existing)
+      if [ ! -f "$codex_home/auth.json" ]; then
+        echo "error: QA_WORKER_CODEX_AUTH_MODE=existing requires $codex_home/auth.json" >&2
+        exit 1
+      fi
+      chmod 0700 "$codex_home"
+      chmod 0600 "$codex_home/auth.json"
+      ;;
+    api-key)
+      local codex_api_key="${CODEX_API_KEY-}"
+      if [ -z "$codex_api_key" ]; then
+        codex_api_key="$(single_line_value CODEX_API_KEY)"
+      fi
+      printf "%s" "$codex_api_key" | CODEX_HOME="$codex_home" codex login --with-api-key >/dev/null
+      ;;
+    *)
+      echo "error: unsupported QA_WORKER_CODEX_AUTH_MODE '$codex_auth_mode' (expected existing or api-key)" >&2
+      exit 1
+      ;;
+  esac
+}
+
 write_secret_file() {
   local path="$1"
   local mode="$2"
@@ -38,6 +88,12 @@ write_secret_file() {
   mv "$tmp" "$path"
   chmod "$mode" "$path"
 }
+
+codex_home="$(resolve_codex_home)"
+codex_auth_mode="$(env_or_optional_value QA_WORKER_CODEX_AUTH_MODE)"
+if [ -z "$codex_auth_mode" ]; then
+  codex_auth_mode="api-key"
+fi
 
 install -d -m 0700 "$repo/scripts/qa-runner" "$etc_dir" "$codex_home" "$kimi_code_home"
 
@@ -53,8 +109,7 @@ LINEAR_CLIENT_SECRET=$(single_line_value LINEAR_CLIENT_SECRET)
 LINEAR_SCOPES=read,write
 EOF
 
-codex_api_key="$(single_line_value CODEX_API_KEY)"
-printf "%s" "$codex_api_key" | CODEX_HOME="$codex_home" codex login --with-api-key >/dev/null
+configure_codex_auth
 
 openai_api_key="${OPENAI_API_KEY:-}"
 if [ -z "$openai_api_key" ]; then
@@ -110,6 +165,7 @@ fi
 AWS_REGION=$region
 AWS_DEFAULT_REGION=$region
 CODEX_HOME=$codex_home
+QA_WORKER_CODEX_AUTH_MODE=$codex_auth_mode
 KIMI_CODE_HOME=$kimi_code_home
 KIMI_DISABLE_TELEMETRY=1
 EOF

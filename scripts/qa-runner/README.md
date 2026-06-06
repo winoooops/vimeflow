@@ -248,8 +248,13 @@ Run the interactive login once on the control host:
 sudo -u vimeflow-qa -H env CODEX_HOME=/etc/vimeflow/qa-runner/codex codex login
 ```
 
-Burst workers are the opposite boundary: `worker-env-from-ssm.sh` consumes
-worker-only API key parameters, logs Codex in with the worker key, and writes
+Burst workers can use either a mounted Codex auth volume or worker-only API
+keys. The preferred production path is
+`QA_WORKER_CODEX_AUTH_MODE=existing` with `QA_WORKER_CODEX_HOME` pointing at the
+attached EBS volume that contains `auth.json`; `worker-env-from-ssm.sh` validates
+that cache and does not read `CODEX_API_KEY`. For usage-based hot-swap, set
+`QA_WORKER_CODEX_AUTH_MODE=api-key`; the same script then consumes the worker
+`CODEX_API_KEY` parameter, runs `codex login --with-api-key`, and writes
 `/etc/vimeflow/qa-runner/worker.env` for fixer-side `codex exec` and related
 provider use.
 
