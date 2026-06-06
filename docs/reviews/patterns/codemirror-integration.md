@@ -3,7 +3,7 @@ id: codemirror-integration
 category: editor
 created: 2026-04-10
 last_updated: 2026-06-06
-ref_count: 2
+ref_count: 3
 ---
 
 # CodeMirror 6 + Vim Integration
@@ -162,4 +162,22 @@ affects event/command routing.
 - **File:** `src/features/editor/components/CodeEditor.tsx`
 - **Finding:** `handleContextMenu` stored raw `clientX` and `clientY` from the right-click event. The fixed-size `ContextMenu` overlay could be positioned partially outside the Electron viewport near the right or bottom edges, making clipboard actions unreachable.
 - **Fix:** Clamped the stored coordinates in `handleContextMenu` against `window.innerWidth` and `window.innerHeight` using the declared fixed menu dimensions (192×192 px) before calling `setContextMenu`.
+- **Commit:** same commit as this entry
+
+### 16. Mod-a keymap removes standard Ctrl+A select-all on non-Mac platforms
+
+- **Source:** github-codex-connector | PR #368 round 3 | 2026-06-06
+- **Severity:** MEDIUM
+- **File:** `src/features/editor/hooks/useCodeMirror.ts`
+- **Finding:** Returning `false` from the `Mod-a` binding on every non-Mac platform preserved Vim normal-mode `Ctrl+A` (increment), but it also removed the standard OS select-all shortcut for Linux/Windows users in insert mode. The fix overcorrected by dropping select-all entirely rather than preserving both paths based on Vim mode context.
+- **Fix:** Gate the `Mod-a` handler on Vim mode state via `getCM(view).state.vim?.insertMode`. On macOS, `Mod-a` always selects all. On non-Mac, insert mode selects all (users expect platform edit shortcuts), while normal mode falls through to Vim increment. Added/updated tests covering both behaviors.
+- **Commit:** same commit as this entry
+
+### 17. Custom context-menu actions operate on stale focus/selection
+
+- **Source:** github-codex-connector | PR #368 round 3 | 2026-06-06
+- **Severity:** MEDIUM
+- **File:** `src/features/editor/components/CodeEditor.tsx`
+- **Finding:** `handleContextMenu` recorded mouse coordinates but did not focus the CodeMirror view or update the selection at the clicked position before rendering Copy/Cut/Paste/Select All. Users right-clicking an unfocused editor or a different location than the current cursor would cause menu actions to operate on the previous selection or cursor position, copying/cutting the wrong text or pasting at the wrong location.
+- **Fix:** On context-menu open, focus the editor via `editorView.focus()` and synchronize the CodeMirror selection to the right-click position using `editorView.posAtCoords({x, y})` before dispatching a cursor selection update. If `posAtCoords` returns `null`, the menu still opens but no selection change occurs. Added tests verifying focus, selection sync, and the null-position fallback.
 - **Commit:** same commit as this entry

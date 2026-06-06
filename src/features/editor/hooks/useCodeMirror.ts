@@ -18,7 +18,7 @@ import {
   Compartment,
 } from '@codemirror/state'
 import { history } from '@codemirror/commands'
-import { vim, Vim } from '@replit/codemirror-vim'
+import { vim, Vim, getCM } from '@replit/codemirror-vim'
 import { catppuccinMocha } from '../theme/catppuccin'
 
 /**
@@ -309,13 +309,25 @@ const editorClipboardKeymap = Prec.highest(
     {
       key: 'Mod-a',
       run: (view: EditorView): boolean => {
-        if (!isMacPlatform()) {
-          return false
+        if (isMacPlatform()) {
+          selectAllInView(view)
+
+          return true
         }
 
-        selectAllInView(view)
+        const cm = getCM(view)
+        const isVimInsert = cm?.state.vim?.insertMode === true
 
-        return true
+        // On non-Mac, preserve Vim normal-mode Ctrl+A (increment), but
+        // provide select-all in insert mode where users expect standard
+        // platform shortcuts.
+        if (isVimInsert) {
+          selectAllInView(view)
+
+          return true
+        }
+
+        return false
       },
     },
   ])

@@ -447,13 +447,12 @@ describe('useCodeMirror', () => {
         ctrlKey: true,
       })
 
-      // On non-mac platforms the Mod-a binding intentionally falls through
-      // so Vim Ctrl+A (increment) is preserved. After the native paste the
-      // editor is in insert mode, where Ctrl+A is unbound, so the event is
-      // not consumed and the selection remains unchanged.
-      expect(selectAllEvent.defaultPrevented).toBe(false)
-      expect(view.state.selection.main.from).not.toBe(0)
-      expect(view.state.selection.main.to).not.toBe(view.state.doc.length)
+      // On non-mac platforms the Mod-a binding provides select-all in
+      // insert mode (where users expect standard platform shortcuts) while
+      // still falling through to Vim increment in normal mode.
+      expect(selectAllEvent.defaultPrevented).toBe(true)
+      expect(view.state.selection.main.from).toBe(0)
+      expect(view.state.selection.main.to).toBe(view.state.doc.length)
     } finally {
       clipboard.restore()
       restoreRangeRectStubs()

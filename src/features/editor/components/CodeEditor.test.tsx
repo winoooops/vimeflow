@@ -16,7 +16,12 @@ describe('CodeEditor', () => {
   const mockEditorView = {
     destroy: vi.fn(),
     focus: vi.fn(),
-    state: { doc: { toString: (): string => 'test content' } },
+    posAtCoords: vi.fn().mockReturnValue(3),
+    dispatch: vi.fn(),
+    state: {
+      doc: { toString: (): string => 'test content' },
+      selection: { ranges: [{ from: 0, to: 0, empty: true }] },
+    },
   }
 
   const mockUpdateContent = vi.fn()
@@ -287,5 +292,52 @@ describe('CodeEditor', () => {
 
     clickMenuItem(/select all/i)
     expect(mockSelectAll).toHaveBeenCalledOnce()
+  })
+
+  test('right-click focuses editor and syncs selection to click position', () => {
+    render(<CodeEditor filePath="/home/user/test.ts" content="hello" />)
+
+    const container = screen.getByTestId('codemirror-container')
+
+    fireEvent.contextMenu(container, { clientX: 40, clientY: 80 })
+
+    expect(mockEditorView.focus).toHaveBeenCalledOnce()
+    expect(mockEditorView.posAtCoords).toHaveBeenCalledWith({ x: 40, y: 80 })
+    expect(mockEditorView.dispatch).toHaveBeenCalledWith({
+      selection: { anchor: 3, head: 3 },
+    })
+  })
+
+  test('right-click still shows menu when posAtCoords returns null', () => {
+    mockEditorView.posAtCoords.mockReturnValueOnce(null)
+
+    render(<CodeEditor filePath="/home/user/test.ts" content="hello" />)
+
+    const container = screen.getByTestId('codemirror-container')
+
+    fireEvent.contextMenu(container, { clientX: 40, clientY: 80 })
+
+    expect(mockEditorView.focus).toHaveBeenCalledOnce()
+    expect(mockEditorView.posAtCoords).toHaveBeenCalledWith({ x: 40, y: 80 })
+    expect(mockEditorView.dispatch).not.toHaveBeenCalled()
+    expect(screen.getByRole('menu', { name: 'Context menu' })).toBeInTheDocument()
+  })
+
+  test('right-click preserves existing selection when clicking inside it', () => {
+    mockEditorView.posAtCoords.mockReturnValueOnce(3)
+    mockEditorView.state.selection.ranges = [
+      { from: 0, to: 5, empty: false },
+    ]
+
+    render(<CodeEditor filePath="/home/user/test.ts" content="hello" />)
+
+    const container = screen.getByTestId('codemirror-container')
+
+    fireEvent.contextMenu(container, { clientX: 40, clientY: 80 })
+
+    expect(mockEditorView.focus).toHaveBeenCalledOnce()
+    expect(mockEditorView.posAtCoords).toHaveBeenCalledWith({ x: 40, y: 80 })
+    expect(mockEditorView.dispatch).not.toHaveBeenCalled()
+    expect(screen.getByRole('menu', { name: 'Context menu' })).toBeInTheDocument()
   })
 })

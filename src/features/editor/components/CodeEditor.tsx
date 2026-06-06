@@ -120,6 +120,25 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(
         event.preventDefault()
         event.stopPropagation()
 
+        if (editorView) {
+          editorView.focus()
+          const pos = editorView.posAtCoords({
+            x: event.clientX,
+            y: event.clientY,
+          })
+          if (pos !== null) {
+            const insideExistingSelection = editorView.state.selection.ranges.some(
+              (range) =>
+                !range.empty && range.from <= pos && pos <= range.to
+            )
+            if (!insideExistingSelection) {
+              editorView.dispatch({
+                selection: { anchor: pos, head: pos },
+              })
+            }
+          }
+        }
+
         const x = Math.max(
           0,
           Math.min(event.clientX, window.innerWidth - MENU_WIDTH)
@@ -135,7 +154,7 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(
           y,
         })
       },
-      []
+      [editorView]
     )
 
     const clipboardActions = useMemo<ContextMenuAction[]>(
