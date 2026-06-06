@@ -15,6 +15,8 @@ export interface SidebarToggleProps {
    */
   variant?: SidebarToggleVariant
   'data-testid'?: string
+  /** Platform-appropriate shortcut hint for the tooltip (e.g. '⌘B' or 'Ctrl+⇧B'). Default '⌘B'. */
+  shortcutHint?: string
 }
 
 const VARIANT_CLASS: Record<SidebarToggleVariant, string> = {
@@ -34,14 +36,15 @@ export const SidebarToggle = ({
   size = 28,
   variant = 'ghost',
   'data-testid': testId = 'sidebar-toggle',
+  shortcutHint = '⌘B',
 }: SidebarToggleProps): ReactElement => (
   <button
     type="button"
     data-testid={testId}
     onClick={onClick}
-    title={collapsed ? 'Show sidebar  ⌘B' : 'Hide sidebar  ⌘B'}
+    title={`${collapsed ? 'Show sidebar' : 'Hide sidebar'}  ${shortcutHint}`}
     aria-label={collapsed ? 'Show sidebar' : 'Hide sidebar'}
-    aria-pressed={collapsed}
+    aria-expanded={!collapsed}
     style={{ width: size, height: size }}
     className={`grid shrink-0 cursor-pointer place-items-center rounded-[7px] transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary-container ${VARIANT_CLASS[variant]}`}
   >

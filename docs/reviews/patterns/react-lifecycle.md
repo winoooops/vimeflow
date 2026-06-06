@@ -2,8 +2,8 @@
 id: react-lifecycle
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-05-31
-ref_count: 9
+last_updated: 2026-06-06
+ref_count: 10
 ---
 
 # React Lifecycle
@@ -238,4 +238,13 @@ to avoid unintended re-runs (e.g., PTY respawning on every cwd change).
 - **File:** `src/features/sessions/hooks/useSessionManager.ts`
 - **Finding:** The cycle-0 fix introduced a sticky guard in the `agent-session-title` listener: when `pane.agentTitleSource === 'user-renamed'`, subsequent `ai-generated` events were supposed to be ignored so a user-typed rename couldn't be silently overwritten by Claude's later auto-summary or Codex's transient `read_thread_name` clear. The ai-generated branch carried a `payload.title !== pane.agentTitle` discriminator intended to let "idempotent" same-title ai-generated events pass through harmlessly. "Pass through" meant the listener fell through to the standard write at lines 589–594, which unconditionally set `agentTitleSource: nextSource` where `nextSource = 'ai-generated'` — silently downgrading the protected state. After that downgrade, the next ai-generated event with a different title was no longer blocked, defeating the entire guard. Triggered cleanly by the Codex sequence the cycle-0 commit message itself described: `session_index.jsonl` rewrite → transient empty-title clear (blocked by the guard) → watcher re-reads the persisted title with no pending rename claim → emits `ai-generated` with the user's title → discriminator says "same as agentTitle, let through" → source downgrades to `ai-generated` → next Claude auto-summary clobbers. Class of bug: a guard whose predicate references the very state it's supposed to protect lets the state be flipped by any event the guard was supposed to swallow — the protection only survives until the FIRST "harmless" let-through.
 - **Fix:** Dropped the `payload.title !== pane.agentTitle` clause. The guard now blocks ALL `ai-generated` events whenever `agentTitleSource === 'user-renamed'`, regardless of title value. A same-title ai-generated re-emit is now a no-op (state already matches, source stays `'user-renamed'`); a different-title ai-generated event is blocked. Also restructured the guard to check `source` before `cleared`, so the documented `user-renamed + empty` lifecycle-reset escape hatch falls through to the standard cleared path instead of being trapped (see [[documentation-accuracy]] §74). Added regression tests covering (a) same-title ai-generated followed by a different-title ai-generated and (b) the lifecycle-reset path. Code-review heuristic: when a guard's predicate references the state it's supposed to protect, every "let through harmlessly" branch must guarantee the protected state is NOT written by the downstream code — otherwise the gate opens itself on the first such event.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 26. Treat exited agents as shell in the sidebar card
+
+- **Source:** github-codex-connector | PR #352 round 1 | 2026-06-06
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/workspace/WorkspaceView.tsx`
+- **Finding:** When an agent exits but the PTY remains open, `useAgentStatus` sets `agentExited: true`/`isActive: false` while retaining `agentType` and the final metrics during its 5s exit-hold window. Because `sidebarCardIsShell` only looked at `agentType`, that scenario rendered the fused card as an agent card with stale model/rate-limit data instead of the SHELL placeholder.
+- **Fix:** Changed `const sidebarCardIsShell = !agentStatus.agentType` to `const sidebarCardIsShell = !agentStatus.agentType || !agentStatus.isActive` so an inactive agent (including the post-exit hold window) renders the shell placeholder.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

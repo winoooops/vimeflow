@@ -17,11 +17,29 @@ describe('SidebarToggle', () => {
     expect(screen.getByRole('button')).toBeInTheDocument()
   })
 
+  test('uses default shortcut hint ⌘B in title', () => {
+    renderToggle({ collapsed: false })
+
+    expect(screen.getByRole('button')).toHaveAttribute(
+      'title',
+      'Hide sidebar  ⌘B'
+    )
+  })
+
+  test('uses custom shortcut hint when provided', () => {
+    renderToggle({ collapsed: true, shortcutHint: 'Ctrl+⇧B' })
+
+    expect(screen.getByRole('button')).toHaveAttribute(
+      'title',
+      'Show sidebar  Ctrl+⇧B'
+    )
+  })
+
   test('collapsed=false: shows the "hide" a11y state', () => {
     renderToggle({ collapsed: false })
 
     const button = screen.getByRole('button')
-    expect(button).toHaveAttribute('aria-pressed', 'false')
+    expect(button).toHaveAttribute('aria-expanded', 'true')
     expect(button).toHaveAttribute('aria-label', 'Hide sidebar')
     expect(button).toHaveAttribute(
       'title',
@@ -33,7 +51,7 @@ describe('SidebarToggle', () => {
     renderToggle({ collapsed: true })
 
     const button = screen.getByRole('button')
-    expect(button).toHaveAttribute('aria-pressed', 'true')
+    expect(button).toHaveAttribute('aria-expanded', 'false')
     expect(button).toHaveAttribute('aria-label', 'Show sidebar')
     expect(button).toHaveAttribute(
       'title',

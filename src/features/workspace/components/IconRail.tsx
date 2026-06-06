@@ -26,6 +26,8 @@ export interface IconRailProps {
   sidebarCollapsed?: boolean
   /** Toggle the sidebar collapse flag (shared with the in-card toggle, ⌘B, and the palette). */
   onToggleSidebar?: () => void
+  /** Platform-appropriate shortcut hint forwarded to the sidebar toggle tooltip. */
+  sidebarShortcutHint?: string
   /**
    * @deprecated Ignored by the new rail body — the rail no longer
    * iterates this array. Kept for one cycle so existing callers
@@ -103,6 +105,7 @@ export const IconRail = ({
   onSettings = undefined,
   sidebarCollapsed = false,
   onToggleSidebar = undefined,
+  sidebarShortcutHint,
 }: IconRailProps): ReactElement => {
   const settingsTooltip = `Settings panel coming — see issue #${settingsIssueNumber}`
 
@@ -130,6 +133,7 @@ export const IconRail = ({
             size={28}
             variant="inset"
             data-testid="sidebar-toggle-rail"
+            shortcutHint={sidebarShortcutHint}
           />
         </div>
       )}

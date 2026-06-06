@@ -216,6 +216,9 @@ export const WorkspaceView = (): ReactElement => {
     return detected.startsWith('mac') ? 'meta' : 'ctrl'
   }, [])
 
+  const sidebarShortcutHint =
+    preferModifier === 'meta' ? '⌘B' : 'Ctrl+⇧B'
+
   const { message: infoMessage, notifyInfo, dismiss } = useNotifyInfo()
   const { activeTab, setActiveTab } = useSidebarTab()
 
@@ -938,7 +941,7 @@ export const WorkspaceView = (): ReactElement => {
   // A pure shell pane has no detected agent (and therefore no model / usage);
   // the card renders its fixed-height "SHELL" placeholder in that case so the
   // session list below never reflows when switching panes.
-  const sidebarCardIsShell = !agentStatus.agentType
+  const sidebarCardIsShell = !agentStatus.agentType || !agentStatus.isActive
 
   // Card title is the active agent's model name (the old StatusCard surfaced
   // the model — the fused card now uses it as the title). Falls back to the
@@ -1407,6 +1410,7 @@ export const WorkspaceView = (): ReactElement => {
         settingsItem={mockSettingsItem}
         sidebarCollapsed={sidebarCollapsed}
         onToggleSidebar={toggleSidebar}
+        sidebarShortcutHint={sidebarShortcutHint}
       />
 
       {/* Sidebar — resizable + drawer-collapsible (VIM-66 spike). Kept mounted
@@ -1447,6 +1451,7 @@ export const WorkspaceView = (): ReactElement => {
                 fiveHourPct={sidebarCardFiveHourPct}
                 weekPct={sidebarCardWeekPct}
                 onToggleSidebar={toggleSidebar}
+                sidebarShortcutHint={sidebarShortcutHint}
               />
             }
             content={
