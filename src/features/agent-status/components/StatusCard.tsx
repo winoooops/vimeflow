@@ -6,7 +6,8 @@ import { BudgetMetrics } from './BudgetMetrics'
 type AgentType = 'claude-code' | 'codex' | 'aider' | 'generic'
 type StatusType = 'running' | 'paused' | 'completed' | 'errored'
 
-export interface StatusCardProps {
+interface ActiveStatusCardProps {
+  mode?: 'active'
   agentType: AgentType
   modelId: string | null
   modelDisplayName: string | null
@@ -17,11 +18,24 @@ export interface StatusCardProps {
   totalOutputTokens: number
 }
 
+interface IdleStatusCardProps {
+  mode: 'idle'
+  title: string
+}
+
+export type StatusCardProps = ActiveStatusCardProps | IdleStatusCardProps
+
 const agentNames: Record<AgentType, string> = {
   'claude-code': 'Claude Code',
   codex: 'Codex',
   aider: 'Aider',
   generic: 'Agent',
+}
+
+const idleStatusConfig = {
+  color: 'bg-on-surface/30',
+  glowClass: '',
+  label: 'Idle',
 }
 
 const getStatusConfig = (
@@ -56,22 +70,20 @@ const getStatusConfig = (
   return configs[status]
 }
 
-export const StatusCard = ({
-  agentType,
-  modelId,
-  modelDisplayName,
-  status,
-  cost,
-  rateLimits,
-  totalInputTokens,
-  totalOutputTokens,
-}: StatusCardProps): ReactElement => {
-  const statusConfig = getStatusConfig(status)
-  const displayModel = modelDisplayName ?? modelId
+export const StatusCard = (props: StatusCardProps): ReactElement => {
+  const isIdle = props.mode === 'idle'
+  const statusConfig = isIdle ? idleStatusConfig : getStatusConfig(props.status)
+  const title = isIdle ? props.title : agentNames[props.agentType]
+  const displayModel = isIdle ? null : (props.modelDisplayName ?? props.modelId)
+
+  const titleClassName = isIdle
+    ? 'truncate font-headline text-[13.5px] font-[800] text-on-surface'
+    : 'shrink-0 whitespace-nowrap font-headline text-sm font-[800] text-on-surface'
 
   return (
     <div
       data-testid="agent-status-card"
+      data-agent-state={isIdle ? 'idle' : 'active'}
       className="flex min-h-44 flex-col gap-3 rounded-xl bg-surface-container-high p-3"
     >
       {/* Agent identity row */}
@@ -81,9 +93,7 @@ export const StatusCard = ({
 
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
           <div className="flex min-w-0 items-center gap-2">
-            <span className="shrink-0 whitespace-nowrap font-headline text-sm font-[800] text-on-surface">
-              {agentNames[agentType]}
-            </span>
+            <span className={titleClassName}>{title}</span>
             {displayModel ? (
               <Tooltip content={displayModel} placement="bottom">
                 <span
@@ -110,12 +120,14 @@ export const StatusCard = ({
       </div>
 
       {/* Budget metrics */}
-      <BudgetMetrics
-        cost={cost}
-        rateLimits={rateLimits}
-        totalInputTokens={totalInputTokens}
-        totalOutputTokens={totalOutputTokens}
-      />
+      {isIdle ? null : (
+        <BudgetMetrics
+          cost={props.cost}
+          rateLimits={props.rateLimits}
+          totalInputTokens={props.totalInputTokens}
+          totalOutputTokens={props.totalOutputTokens}
+        />
+      )}
     </div>
   )
 }
