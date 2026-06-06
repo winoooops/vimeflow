@@ -16,12 +16,16 @@ import {
 } from '../../editor/components/CodeEditor'
 import { MarkdownReadingView } from '../../editor/components/MarkdownReadingView'
 import { ReadingStyleMenu } from '../../editor/components/ReadingStyleMenu'
-import { DiffPanelContent } from '../../diff/components/DiffPanelContent'
+import {
+  DiffPanelContent,
+  type FeedbackRepoRootRef,
+} from '../../diff/components/DiffPanelContent'
 import { DockSwitcher, type DockPosition } from './DockSwitcher'
 import { DockTab } from './DockTab'
 import { ViewModeToggle, type ViewMode } from './ViewModeToggle'
 import type { SelectedDiffFile } from '../../diff/types'
 import type { UseGitStatusReturn } from '../../diff/hooks/useGitStatus'
+import type { UseFeedbackBatchReturn } from '../../diff/hooks/useFeedbackBatch'
 import type { FeedbackDispatchTarget } from '../../diff/services/activePanePicker'
 import { DOCK_CONTAINER_ID } from '../containerIds'
 import {
@@ -80,6 +84,10 @@ interface DockPanelBaseProps {
   cwd?: string
   /** Optional shared git status from WorkspaceView. */
   gitStatus?: UseGitStatusReturn
+  /** Optional workspace-owned inline review feedback batch. */
+  feedbackBatch?: UseFeedbackBatchReturn
+  /** Optional workspace-owned repo root cache for feedback dispatch. */
+  feedbackRepoRootRef?: FeedbackRepoRootRef
   /** Optional feedback dispatch target for inline review comments. */
   feedbackDispatch?: FeedbackDispatchTarget
   isFocused?: boolean
@@ -121,6 +129,8 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
       isLoading = false,
       cwd = '.',
       gitStatus = undefined,
+      feedbackBatch = undefined,
+      feedbackRepoRootRef = undefined,
       feedbackDispatch = undefined,
       isFocused = false,
       onContainerFocus = undefined,
@@ -422,12 +432,16 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
                     gitStatus={gitStatus}
                     selectedFile={selectedDiffFile}
                     onSelectedFileChange={onSelectedDiffFileChange}
+                    feedbackBatch={feedbackBatch}
+                    feedbackRepoRootRef={feedbackRepoRootRef}
                     feedbackDispatch={feedbackDispatch}
                   />
                 ) : (
                   <DiffPanelContent
                     cwd={cwd}
                     gitStatus={gitStatus}
+                    feedbackBatch={feedbackBatch}
+                    feedbackRepoRootRef={feedbackRepoRootRef}
                     feedbackDispatch={feedbackDispatch}
                   />
                 )}
