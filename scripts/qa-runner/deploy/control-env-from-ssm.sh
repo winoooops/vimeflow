@@ -6,7 +6,8 @@ repo="${QA_REPO:-/opt/vimeflow/repo}"
 etc_dir="${QA_ETC_DIR:-/etc/vimeflow/qa-runner}"
 prefix="${QA_CONTROL_PARAM_PREFIX:-/vimeflow/qa-runner/prod/control}"
 codex_home="${CODEX_HOME:-$etc_dir/codex}"
-codex_api_key_param="${QA_CODEX_API_KEY_PARAM:-/vimeflow/qa-runner/prod/worker/CODEX_API_KEY}"
+codex_auth_file="${QA_CODEX_AUTH_FILE:-$codex_home/auth.json}"
+require_codex_auth="${QA_REQUIRE_CONTROL_CODEX_AUTH:-1}"
 worker_mode="${QA_WORKER_MODE:-ssm}"
 worker_region="${QA_WORKER_REGION:-$region}"
 worker_repo="${QA_WORKER_REPO:-/opt/vimeflow/repo}"
@@ -23,19 +24,6 @@ value() {
     --with-decryption \
     --query Parameter.Value \
     --output text
-}
-
-value_by_name() {
-  aws ssm get-parameter \
-    --region "$region" \
-    --name "$1" \
-    --with-decryption \
-    --query Parameter.Value \
-    --output text
-}
-
-single_line_param_by_name() {
-  value_by_name "$1" | tr -d '\r\n'
 }
 
 bool_enabled() {
@@ -122,8 +110,18 @@ install -d -m 0700 -o "$service_user" -g "$service_user" "$repo/scripts/qa-runne
   chown "$service_user:$service_user" "$repo/scripts/qa-runner"
 }
 
-codex_api_key="$(single_line_param_by_name "$codex_api_key_param")"
-printf "%s" "$codex_api_key" | sudo -u "$service_user" -H env CODEX_HOME="$codex_home" codex login --with-api-key >/dev/null
+if [ -e "$codex_auth_file" ]; then
+  chown "$service_user:$service_user" "$codex_auth_file"
+  chmod 0600 "$codex_auth_file"
+elif bool_enabled "$require_codex_auth"; then
+  cat >&2 <<EOF
+error: control Codex auth not found at $codex_auth_file
+Run an interactive Codex login for the service user before installing control.env:
+  sudo -u $service_user -H env CODEX_HOME=$codex_home codex login
+Set QA_REQUIRE_CONTROL_CODEX_AUTH=0 only for non-adjudicating smoke installs.
+EOF
+  exit 1
+fi
 
 {
   cat <<EOF

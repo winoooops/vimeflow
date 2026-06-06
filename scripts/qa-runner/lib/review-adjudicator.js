@@ -31,6 +31,7 @@ const STATE_DIR = join(SCRIPT_DIR, '.state', 'review-adjudication')
 const SCHEMA_FILE = join(SCRIPT_DIR, 'review-adjudication.schema.json')
 const MAX_DIFF_CHARS = 80000
 const MAX_REVIEW_CHARS = 60000
+const CONTROL_CODEX_API_ENV = ['CODEX_API_KEY', 'OPENAI_API_KEY']
 
 export const CLAUDE_REVIEW_HEADING = '## Claude Code Review'
 
@@ -234,6 +235,7 @@ const runCodexAttempt = ({ input, key, stateDir, prompt, opts, attempt }) => {
     spawnImpl: opts.spawnImpl,
     timeoutSeconds: opts.timeoutSeconds,
     cwd: opts.cwd,
+    env: opts.env,
   })
 
   if (result.error) {
@@ -265,6 +267,7 @@ const runCodex = ({
   spawnImpl = spawnSync,
   timeoutSeconds = 300,
   cwd = process.cwd(),
+  env = process.env,
 }) => {
   const args = [
     String(timeoutSeconds),
@@ -282,9 +285,20 @@ const runCodex = ({
   return spawnImpl('timeout', args, {
     cwd,
     encoding: 'utf8',
+    env: controlCodexEnv(env),
     input: prompt,
     maxBuffer: 20 * 1024 * 1024,
   })
+}
+
+export const controlCodexEnv = (env = process.env) => {
+  const next = { ...env }
+
+  for (const key of CONTROL_CODEX_API_ENV) {
+    delete next[key]
+  }
+
+  return next
 }
 
 const parseCodexOutput = (outputFile) => {
