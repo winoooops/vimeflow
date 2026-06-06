@@ -189,6 +189,9 @@ pub fn repair_workspace_layout(
         .unwrap_or_default();
 
     let mut seen_session_ids = std::collections::HashSet::new();
+    // ptyId must be unique across the WHOLE store (restore overlays live PTYs
+    // by ptyId), so this set is store-level, not per-session.
+    let mut seen_pty_ids = std::collections::HashSet::new();
     let mut active_session_seen = false;
     let mut sessions: Vec<WorkspaceSession> = Vec::new();
 
@@ -214,7 +217,7 @@ pub fn repair_workspace_layout(
             .and_then(|v| v.as_array())
             .cloned()
             .unwrap_or_default();
-        let panes = repair_panes(&raw_panes, &working_directory, active_cwd);
+        let panes = repair_panes(&raw_panes, &working_directory, active_cwd, &mut seen_pty_ids);
         if panes.is_empty() {
             continue; // session emptied by repair → drop (floor: ≥1 pane)
         }
@@ -262,9 +265,9 @@ fn repair_panes(
     raw_panes: &[serde_json::Value],
     session_cwd: &str,
     active_cwd: &str,
+    seen_pty_ids: &mut std::collections::HashSet<String>,
 ) -> Vec<WorkspacePane> {
     let mut seen_pane_ids = std::collections::HashSet::new();
-    let mut seen_pty_ids = std::collections::HashSet::new();
     // (sort_key, original_index, pane); sort_key = paneIndex, missing → last.
     let mut built: Vec<(u64, usize, WorkspacePane)> = Vec::new();
 
@@ -901,6 +904,22 @@ mod tests {
         );
         assert!(store.sessions[0].active); // none active → first forced active
         assert!(!store.sessions[1].active);
+    }
+
+    #[test]
+    fn dedupes_pty_id_across_sessions() {
+        let store = repair_workspace_layout(
+            json!({ "version": 1, "sessions": [
+                { "id": "s1", "layout": "single", "active": true, "panes": [
+                    { "kind": "shell", "paneId": "p0", "paneIndex": 0, "active": true, "ptyId": "shared", "cwd": "/", "agentType": "generic" } ] },
+                { "id": "s2", "layout": "single", "active": false, "panes": [
+                    { "kind": "shell", "paneId": "p0", "paneIndex": 0, "active": true, "ptyId": "shared", "cwd": "/", "agentType": "generic" } ] } ] }),
+            "proj",
+            "/",
+        );
+        // s2's shell reuses ptyId "shared" → dropped → s2 emptied → s2 dropped
+        assert_eq!(store.sessions.len(), 1);
+        assert_eq!(store.sessions[0].id, "s1");
     }
 
     #[test]
