@@ -170,7 +170,7 @@ export const AgentStatusCard = ({
   fiveHourPct = null,
   weekPct = null,
   onToggleSidebar,
-  sidebarShortcutHint,
+  sidebarShortcutHint = '⌘B',
 }: AgentStatusCardProps): ReactElement => {
   // Guard each metric so a metric-less agent pane collapses gracefully (the
   // fixed-height body keeps the card the same size regardless).

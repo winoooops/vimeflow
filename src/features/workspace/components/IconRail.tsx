@@ -105,7 +105,7 @@ export const IconRail = ({
   onSettings = undefined,
   sidebarCollapsed = false,
   onToggleSidebar = undefined,
-  sidebarShortcutHint,
+  sidebarShortcutHint = '⌘B',
 }: IconRailProps): ReactElement => {
   const settingsTooltip = `Settings panel coming — see issue #${settingsIssueNumber}`
 
