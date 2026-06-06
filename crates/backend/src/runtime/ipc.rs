@@ -1841,7 +1841,7 @@ mod tests {
             state.clone(),
             "spawn_pty",
             serde_json::json!({
-                "request": { "sessionId": "scratch-router", "cwd": cwd, "ephemeral": true }
+                "request": { "sessionId": "burner-router", "cwd": cwd, "ephemeral": true }
             }),
         )
         .await
@@ -1853,7 +1853,7 @@ mod tests {
                 .await
                 .expect("kill_ephemeral_ptys dispatch");
         let killed: Vec<String> = serde_json::from_value(value).expect("Vec<String>");
-        assert_eq!(killed, vec!["scratch-router".to_string()]);
+        assert_eq!(killed, vec!["burner-router".to_string()]);
     }
 
     #[tokio::test]

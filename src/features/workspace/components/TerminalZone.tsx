@@ -9,7 +9,7 @@ import {
 } from 'react'
 import type { LayoutId, PaneKind, Session } from '../../sessions/types'
 import type { ITerminalService } from '../../terminal/services/terminalService'
-import type { ScratchTarget } from '../../terminal/hooks/useScratchTerminals'
+import type { BurnerTarget } from '../../terminal/hooks/useBurnerTerminals'
 import type {
   PaneEventHandler,
   NotifyPaneReadyResult,
@@ -63,12 +63,12 @@ export interface TerminalZoneProps {
   areBrowserPanesOccluded?: boolean
   isZoneFocused?: boolean
   onContainerFocus?: () => void
-  /** Toggle a pane's ephemeral scratch terminal (VIM-53). */
-  onScratch?: (target: ScratchTarget) => void
-  /** Pane-keys with a running scratch shell — drives the §8 cue. */
-  runningScratchPaneKeys?: ReadonlySet<string>
+  /** Toggle a pane's ephemeral burner terminal (VIM-53). */
+  onBurner?: (target: BurnerTarget) => void
   /** Pane-keys with a foreground command running — drives the amber button tint (VIM-71). */
-  activeScratchPaneKeys?: ReadonlySet<string>
+  activeBurnerPaneKeys?: ReadonlySet<string>
+  /** Pane-keys with a live burner shell (idle or active) — drives a11y state (VIM-53). */
+  runningBurnerPaneKeys?: ReadonlySet<string>
 }
 
 export interface TerminalZoneHandle {
@@ -94,9 +94,9 @@ export const TerminalZone = forwardRef<TerminalZoneHandle, TerminalZoneProps>(
       areBrowserPanesOccluded = false,
       isZoneFocused = true,
       onContainerFocus = undefined,
-      onScratch = undefined,
-      runningScratchPaneKeys = undefined,
-      activeScratchPaneKeys = undefined,
+      onBurner = undefined,
+      activeBurnerPaneKeys = undefined,
+      runningBurnerPaneKeys = undefined,
     }: TerminalZoneProps,
     ref
   ): ReactElement {
@@ -269,9 +269,9 @@ export const TerminalZone = forwardRef<TerminalZoneHandle, TerminalZoneProps>(
                     onRequestFocus={onContainerFocus}
                     onAddPane={addPane}
                     onClosePane={removePane}
-                    onScratch={onScratch}
-                    runningScratchPaneKeys={runningScratchPaneKeys}
-                    activeScratchPaneKeys={activeScratchPaneKeys}
+                    onBurner={onBurner}
+                    activeBurnerPaneKeys={activeBurnerPaneKeys}
+                    runningBurnerPaneKeys={runningBurnerPaneKeys}
                     areBrowserPanesOccluded={areBrowserPanesOccluded}
                     deferTerminalFit={deferTerminalFit}
                     showPaneFocusHighlight={isZoneFocused}

@@ -76,7 +76,7 @@ export interface PTYSpawnParams {
    * created a `.vimeflow/sessions/` tree that showed up in `git status`.
    */
   enableAgentBridge?: boolean
-  /** Ephemeral (scratch) PTY: skip the session cache and the agent-bridge dir. */
+  /** Ephemeral (burner) PTY: skip the session cache and the agent-bridge dir. */
   ephemeral?: boolean
 }
 

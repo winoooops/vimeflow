@@ -1,17 +1,17 @@
-# Implementation prompt — Scratch Terminal Popup (VIM-53)
+# Implementation prompt — Burner Terminal Popup (VIM-53)
 
 Paste the block below into a Claude Code session that has this app checked out.
 
 ---
 
 ```
-Implement the ephemeral per-pane "scratch" terminal popup (Linear VIM-53). This is an
+Implement the ephemeral per-pane "burner" terminal popup (Linear VIM-53). This is an
 IMPLEMENTATION task with a finished visual contract — match it, don't redesign it.
 
 VISUAL CONTRACT (read first)
-- scratch-terminal-handoff/Scratch Terminal Popup.html  — the approved mockup. Open it and
+- burner-terminal-handoff/Burner Terminal Popup.html  — the approved mockup. Open it and
   press A / B / C / Esc to see all states. Lift exact structure, spacing, colors, and copy from it.
-- scratch-terminal-handoff/SCRATCH-TERMINAL-HANDOFF.md  — component anatomy, tokens, and the
+- burner-terminal-handoff/BURNER-TERMINAL-HANDOFF.md  — component anatomy, tokens, and the
   resolved design decisions. Authoritative for layout/states.
 
 RESPECT THE ESTABLISHED DESIGN SYSTEM (do not invent new patterns)
@@ -28,19 +28,19 @@ RESPECT THE ESTABLISHED DESIGN SYSTEM (do not invent new patterns)
 
 WHAT TO BUILD (new UI)
 1) The popup overlay — centered 760×600 glass panel, NOT a docked pane and NOT a 5th layout
-   slot. Amber "shell" identity (#f0c674, the existing `shell` agent accent) on the SCRATCH
+   slot. Amber "shell" identity (#f0c674, the existing `shell` agent accent) on the BURNER
    chip, prompt caret ❯, top hairline, and throwaway marker; mint = running/live.
-   Anatomy: header (SCRATCH chip · pane-switcher pills with live dots · throwaway marker · hide ✕;
-   sub-row: cwd · "cd stays in scratch" isolation note) → dismissable empty-state banner →
+   Anatomy: header (BURNER chip · pane-switcher pills with live dots · throwaway marker · hide ✕;
+   sub-row: cwd · "cd stays in burner" isolation note) → dismissable empty-state banner →
    terminal body (fresh prompt / streaming npm-run-dev output) → input bar → footer key hints
    (↵ run · ⌃C cancel · ⌃: ` toggle · "esc hides — shell keeps running").
-2) Pane-header scratch affordance — add a SECONDARY, low-key ghost icon button (terminal icon)
+2) Pane-header burner affordance — add a SECONDARY, low-key ghost icon button (terminal icon)
    to the EXISTING pane header's utility cluster, next to collapse/close. Do NOT restructure the
    header (keep: agent chip · status dot · title · worktree›branch · diff · reltime · icons).
-3) Live-but-hidden cue — when a scratch shell runs while its popup is hidden, the pane button
+3) Live-but-hidden cue — when a burner shell runs while its popup is hidden, the pane button
    gains a faint amber tint + a small mint live-dot. Add the hover/focus tooltip (compact:
-   SCRATCH·pane N, a mint status line, one hint line, the chord). Secondary cues: amber count
-   badge on the rail terminal icon + "● scratch ×N" in the status bar.
+   BURNER·pane N, a mint status line, one hint line, the chord). Secondary cues: amber count
+   badge on the rail terminal icon + "● burner ×N" in the status bar.
 
 BEHAVIOR (drives the visuals — full spec in VIM-53)
 - Per pane, up to 4; popup shows ONE shell at a time (the focused pane's).

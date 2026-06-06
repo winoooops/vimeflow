@@ -74,15 +74,15 @@ impl BackendState {
     }
 
     pub fn shutdown(&self) {
-        // Best-effort kill of scratch PTYs (reap-on-boot is the authoritative net).
+        // Best-effort kill of burner PTYs (reap-on-boot is the authoritative net).
         let _ = self.kill_ephemeral_ptys();
         if let Err(err) = self.sessions.clear_all() {
             log::warn!("BackendState::shutdown: cache clear failed: {err}");
         }
     }
 
-    /// Spawn the scratch-terminal foreground poll loop (VIM-71). Call once at
-    /// startup: it emits `scratch-foreground` events as scratch shells begin
+    /// Spawn the burner-terminal foreground poll loop (VIM-71). Call once at
+    /// startup: it emits `burner-foreground` events as burner shells begin
     /// and finish foreground commands, driving the live "running" cue. Requires
     /// a running Tokio runtime (the sidecar binary's `#[tokio::main]`).
     pub fn start_foreground_poll(&self) {
@@ -182,7 +182,7 @@ impl BackendState {
         crate::terminal::commands::kill_pty_inner(&self.pty, &self.sessions, request)
     }
 
-    /// Reap all ephemeral (scratch) PTYs. Returns the ids killed.
+    /// Reap all ephemeral (burner) PTYs. Returns the ids killed.
     pub fn kill_ephemeral_ptys(&self) -> Vec<String> {
         crate::terminal::commands::kill_ephemeral_ptys_inner(&self.pty)
     }
@@ -504,7 +504,7 @@ mod tests {
 
         state
             .spawn_pty(crate::terminal::types::SpawnPtyRequest {
-                session_id: "scratch-shutdown".to_string(),
+                session_id: "burner-shutdown".to_string(),
                 cwd,
                 shell: None,
                 env: None,
@@ -517,12 +517,12 @@ mod tests {
         state.shutdown();
 
         let write = state.write_pty(crate::terminal::types::WritePtyRequest {
-            session_id: "scratch-shutdown".to_string(),
+            session_id: "burner-shutdown".to_string(),
             data: "x".to_string(),
         });
         assert!(
             write.is_err(),
-            "shutdown should have reaped the scratch PTY"
+            "shutdown should have reaped the burner PTY"
         );
     }
 

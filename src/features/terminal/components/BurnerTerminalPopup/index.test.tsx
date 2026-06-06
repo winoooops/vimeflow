@@ -1,7 +1,7 @@
 import { test, expect, vi, beforeEach } from 'vitest'
 import { render, screen, act, fireEvent } from '@testing-library/react'
 import type { ReactElement } from 'react'
-import { ScratchTerminalPopup } from './index'
+import { BurnerTerminalPopup } from './index'
 import type { ITerminalService } from '../../services/terminalService'
 import type { NotifyPaneReady } from '../../hooks/useTerminal'
 
@@ -42,7 +42,7 @@ vi.mock('../TerminalPane/Body', async () => {
 })
 
 const baseProps = {
-  scratchPtyId: 'scratch-pty',
+  burnerPtyId: 'burner-pty',
   cwd: '/repo',
   pid: 7,
   service: {} as ITerminalService,
@@ -54,19 +54,17 @@ const baseProps = {
 const popup = (
   open: boolean,
   extra: { onPaneReady?: NotifyPaneReady; onHide?: () => void } = {}
-): ReactElement => (
-  <ScratchTerminalPopup open={open} {...baseProps} {...extra} />
-)
+): ReactElement => <BurnerTerminalPopup open={open} {...baseProps} {...extra} />
 
 beforeEach(() => {
   focusTerminal.mockClear()
   captured.onPaneReady = undefined
 })
 
-test('renders Body in attach mode for the scratch ptyId', () => {
+test('renders Body in attach mode for the burner ptyId', () => {
   render(popup(true))
 
-  expect(screen.getByTestId('scratch-body')).toHaveAttribute(
+  expect(screen.getByTestId('burner-body')).toHaveAttribute(
     'data-mode',
     'attach'
   )
@@ -77,10 +75,10 @@ test('renders Body in attach mode for the scratch ptyId', () => {
   )
 })
 
-test('does not wire OSC 7 → updatePaneCwd, so a scratch cd stays isolated', () => {
+test('does not wire OSC 7 → updatePaneCwd, so a burner cd stays isolated', () => {
   render(popup(true))
 
-  // The popup never passes onCwdChange to Body, so a `cd` in the scratch shell
+  // The popup never passes onCwdChange to Body, so a `cd` in the burner shell
   // emits OSC 7 but moves nothing in the host pane/session (spec §6, invariant 5).
   expect(screen.getByTestId('body-stub')).toHaveAttribute(
     'data-has-on-cwd-change',
@@ -90,12 +88,12 @@ test('does not wire OSC 7 → updatePaneCwd, so a scratch cd stays isolated', ()
 
 test('stays mounted (hidden) when dismissed — not unmounted', () => {
   const { rerender } = render(popup(true))
-  const node = screen.getByTestId('scratch-body')
+  const node = screen.getByTestId('burner-body')
 
   rerender(popup(false))
 
-  expect(screen.getByTestId('scratch-body')).toBe(node) // same node, still mounted
-  expect(screen.getByTestId('scratch-popup')).toHaveAttribute(
+  expect(screen.getByTestId('burner-body')).toBe(node) // same node, still mounted
+  expect(screen.getByTestId('burner-popup')).toHaveAttribute(
     'aria-hidden',
     'true'
   )
@@ -107,13 +105,13 @@ test('drains the buffer through the provided onPaneReady when Body attaches', ()
   render(popup(true, { onPaneReady }))
   const handler = vi.fn()
   act(() => {
-    captured.onPaneReady?.('scratch-pty', handler)
+    captured.onPaneReady?.('burner-pty', handler)
   })
 
-  expect(onPaneReady).toHaveBeenCalledWith('scratch-pty', handler)
+  expect(onPaneReady).toHaveBeenCalledWith('burner-pty', handler)
 })
 
-test('focuses the scratch terminal when shown', () => {
+test('focuses the burner terminal when shown', () => {
   const { rerender } = render(popup(false))
   expect(focusTerminal).not.toHaveBeenCalled()
 
@@ -127,7 +125,7 @@ test('focuses once the terminal attaches on first open', () => {
   focusTerminal.mockClear() // ignore the show-effect's eager focus
 
   act(() => {
-    captured.onPaneReady?.('scratch-pty', vi.fn())
+    captured.onPaneReady?.('burner-pty', vi.fn())
   })
 
   expect(focusTerminal).toHaveBeenCalled()
@@ -138,7 +136,7 @@ test('does not focus when Body attaches while the popup is hidden', () => {
   focusTerminal.mockClear()
 
   act(() => {
-    captured.onPaneReady?.('scratch-pty', vi.fn())
+    captured.onPaneReady?.('burner-pty', vi.fn())
   })
 
   expect(focusTerminal).not.toHaveBeenCalled()
@@ -159,7 +157,7 @@ test('Escape does nothing while the popup is hidden', () => {
   const onHide = vi.fn()
   render(popup(false, { onHide }))
 
-  fireEvent.keyDown(screen.getByTestId('scratch-popup'), { key: 'Escape' })
+  fireEvent.keyDown(screen.getByTestId('burner-popup'), { key: 'Escape' })
 
   expect(onHide).not.toHaveBeenCalled()
 })

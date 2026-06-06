@@ -96,7 +96,7 @@ pub struct ManagedSession {
 #[derive(Default, Clone)]
 pub struct PtyState {
     sessions: Arc<Mutex<HashMap<SessionId, ManagedSession>>>,
-    /// Ids of ephemeral (scratch) PTYs — reaped by kill_ephemeral_ptys.
+    /// Ids of ephemeral (burner) PTYs — reaped by kill_ephemeral_ptys.
     ephemeral_ptys: Arc<Mutex<HashSet<SessionId>>>,
 }
 
@@ -132,9 +132,9 @@ pub enum KillError {
     KillFailed(String),
 }
 
-/// True when a foreground command (not the shell itself) holds the scratch
+/// True when a foreground command (not the shell itself) holds the burner
 /// terminal. `foreground_leader` is the PTY's foreground process-group leader
-/// (`MasterPty::process_group_leader`); `shell_pid` is the scratch shell's own
+/// (`MasterPty::process_group_leader`); `shell_pid` is the burner shell's own
 /// pid. They differ exactly when a child command runs in the foreground. A
 /// missing value — no controlling foreground group, or a platform that can't
 /// report it (e.g. Windows ConPTY) — reads as not-busy, so the cue never
@@ -219,7 +219,7 @@ impl PtyState {
         Ok(())
     }
 
-    /// Record a session id as ephemeral (scratch) — reaped by kill_ephemeral_ptys.
+    /// Record a session id as ephemeral (burner) — reaped by kill_ephemeral_ptys.
     pub fn mark_ephemeral(&self, session_id: SessionId) {
         self.ephemeral_ptys
             .lock()
@@ -264,14 +264,14 @@ impl PtyState {
         }
     }
 
-    /// Snapshot the foreground-running state of every ephemeral (scratch) PTY:
+    /// Snapshot the foreground-running state of every ephemeral (burner) PTY:
     /// `true` when a foreground command holds its terminal, `false` when the
     /// shell is idle at its prompt (or the platform can't introspect). Drives
     /// the live "running" cue (VIM-71). Locks the ephemeral set first (cloned,
     /// then released) before the sessions map, matching `remove`'s lock order.
     ///
     /// Also prunes ids that no longer map to a live session: a self-exited
-    /// scratch is dropped from `sessions` by the read loop's
+    /// burner is dropped from `sessions` by the read loop's
     /// `remove_if_generation`, which does not touch `ephemeral_ptys`. Without
     /// this lazy reconciliation, the set — cloned and scanned every poll —
     /// would grow unbounded across self-exit/reopen cycles.
@@ -567,13 +567,13 @@ mod tests {
     fn ephemeral_foreground_snapshot_covers_only_ephemeral_sessions() {
         let state = PtyState::new();
         state.insert("plain".into(), make_test_session());
-        state.insert("scratch".into(), make_test_session());
-        state.mark_ephemeral("scratch".into());
+        state.insert("burner".into(), make_test_session());
+        state.mark_ephemeral("burner".into());
 
         let snapshot = state.ephemeral_foreground_snapshot();
 
         let ids: Vec<&str> = snapshot.iter().map(|(id, _)| id.as_str()).collect();
-        assert_eq!(ids, vec!["scratch"]); // the non-ephemeral "plain" is excluded
+        assert_eq!(ids, vec!["burner"]); // the non-ephemeral "plain" is excluded
     }
 
     #[test]

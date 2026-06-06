@@ -1,71 +1,60 @@
 import type { ReactElement } from 'react'
 import { Tooltip } from '../../../../components/Tooltip'
 
-// Three honest scratch-button states for AT + tooltip: a foreground command is
-// running, a shell exists but is idle (`live`), or there's no shell. The idle
-// `live` wording keeps a hidden-but-alive shell discoverable to screen readers,
-// since the amber tint alone is a visual-only cue.
-const scratchButtonLabel = (running: boolean, active: boolean): string => {
+const burnerButtonLabel = (active: boolean, shellExists: boolean): string => {
   if (active) {
-    return 'open scratch terminal (running)'
-  }
-  if (running) {
-    return 'open scratch terminal (live)'
+    return 'open burner terminal (running)'
   }
 
-  return 'open scratch terminal'
+  if (shellExists) {
+    return 'open burner terminal (live)'
+  }
+
+  return 'open burner terminal'
 }
 
-const scratchButtonTooltip = (running: boolean, active: boolean): string => {
-  if (active) {
-    return 'Scratch terminal · running'
-  }
-  if (running) {
-    return 'Scratch terminal · live'
-  }
-
-  return 'Scratch terminal'
-}
+const burnerButtonTooltip = (active: boolean): string =>
+  active ? 'Burner terminal · running' : 'Burner terminal'
 
 export interface HeaderActionsProps {
   isCollapsed: boolean
   onToggleCollapse: () => void
   onClose?: () => void
-  /** Toggle this pane's ephemeral scratch terminal (VIM-53). */
-  onScratch?: () => void
-  /** This pane has a live scratch shell — surfaced to AT via a "(live)" label. */
-  scratchRunning?: boolean
+  /** Toggle this pane's ephemeral burner terminal (VIM-53). */
+  onBurner?: () => void
   /**
-   * A foreground command is actually running in the scratch shell (VIM-71) —
-   * drives the amber button tint. Distinct from `scratchRunning`, which only
-   * means a shell exists.
+   * A foreground command is actually running in the burner shell (VIM-71) —
+   * drives the amber button tint (the sole running cue).
    */
-  scratchActive?: boolean
+  burnerActive?: boolean
+  /**
+   * A burner shell exists for this pane but no foreground command is running.
+   * Exposed to assistive tech so an idle-but-live shell is distinguishable
+   * from "no shell" (VIM-53 a11y).
+   */
+  burnerShellExists?: boolean
 }
 
 export const HeaderActions = ({
   isCollapsed,
   onToggleCollapse,
   onClose = undefined,
-  onScratch = undefined,
-  scratchRunning = false,
-  scratchActive = false,
+  onBurner = undefined,
+  burnerActive = false,
+  burnerShellExists = false,
 }: HeaderActionsProps): ReactElement => (
   <>
-    {onScratch && (
-      <Tooltip
-        content={scratchButtonTooltip(scratchRunning, scratchActive)}
-        placement="bottom"
-      >
+    {onBurner && (
+      <Tooltip content={burnerButtonTooltip(burnerActive)} placement="bottom">
         <button
           type="button"
-          aria-label={scratchButtonLabel(scratchRunning, scratchActive)}
+          aria-label={burnerButtonLabel(burnerActive, burnerShellExists)}
           onClick={(event) => {
             event.stopPropagation()
-            onScratch()
+            onBurner()
           }}
           className={`inline-flex h-[22px] w-[22px] items-center justify-center rounded border-0 hover:bg-white/5 ${
-            scratchActive
+            burnerActive
               ? 'bg-[#f0c674]/15 text-[#f0c674]'
               : 'text-on-surface-muted bg-transparent'
           }`}

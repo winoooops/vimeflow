@@ -165,7 +165,7 @@ pub(crate) async fn spawn_pty_inner(
         return Err(format!("invalid session_id: {}", request.session_id));
     }
 
-    // Generate statusline bridge files — skipped for ephemeral (scratch) PTYs.
+    // Generate statusline bridge files — skipped for ephemeral (burner) PTYs.
     let (bridge_files, bridge_cleanup_dir) = if request.enable_agent_bridge && !request.ephemeral {
         let dir = cwd
             .join(".vimeflow")
@@ -378,7 +378,7 @@ pub(crate) async fn spawn_pty_inner(
     // Cache write — under the same `mutate` lock as every other state
     // change. On failure we roll back the PtyState insert via the
     // infallible `state.remove` and reap the child it carries.
-    // Skipped for ephemeral (scratch) PTYs so they never persist.
+    // Skipped for ephemeral (burner) PTYs so they never persist.
     if !request.ephemeral {
         let created_at = chrono::Utc::now().to_rfc3339();
         if let Err(e) = cache.mutate(|data| {
@@ -411,7 +411,7 @@ pub(crate) async fn spawn_pty_inner(
             return Err(format!("failed to write cache: {}", e));
         }
     } else {
-        // Ephemeral (scratch) PTY: record for reap, never cached.
+        // Ephemeral (burner) PTY: record for reap, never cached.
         state.mark_ephemeral(request.session_id.clone());
     }
 
@@ -552,7 +552,7 @@ pub(crate) fn kill_pty_inner(
     Ok(())
 }
 
-/// Reap every ephemeral (scratch) PTY: kill the child and drop it from
+/// Reap every ephemeral (burner) PTY: kill the child and drop it from
 /// PtyState, returning the ids killed. Ephemeral PTYs are never in the
 /// cache, so there is no cache cleanup. Called on renderer boot (to reap
 /// reload orphans) and on shutdown.
@@ -1066,7 +1066,7 @@ mod tests {
         let (state, cache, events, _temp_dir) = create_test_state_with_cache();
 
         let request = SpawnPtyRequest {
-            session_id: "scratch-1".to_string(),
+            session_id: "burner-1".to_string(),
             cwd: std::env::current_dir()
                 .unwrap()
                 .to_string_lossy()
@@ -1082,11 +1082,11 @@ mod tests {
 
         let snapshot = cache.snapshot();
         assert!(
-            snapshot.sessions.get("scratch-1").is_none(),
+            snapshot.sessions.get("burner-1").is_none(),
             "ephemeral PTY must not be written to the session cache"
         );
         assert!(
-            !snapshot.session_order.contains(&"scratch-1".to_string()),
+            !snapshot.session_order.contains(&"burner-1".to_string()),
             "ephemeral PTY must not enter session_order"
         );
 
@@ -1094,13 +1094,13 @@ mod tests {
         write_pty_inner(
             &state,
             WritePtyRequest {
-                session_id: "scratch-1".to_string(),
+                session_id: "burner-1".to_string(),
                 data: "echo hi\n".to_string(),
             },
         )
         .expect("ephemeral PTY should accept writes");
 
-        let _ = state.remove(&"scratch-1".to_string());
+        let _ = state.remove(&"burner-1".to_string());
     }
 
     #[tokio::test]
@@ -1133,9 +1133,9 @@ mod tests {
     #[tokio::test]
     async fn ephemeral_spawn_creates_no_bridge_dir_even_if_bridge_requested() {
         let (state, cache, events, temp_dir) = create_test_state_with_cache();
-        let cwd = temp_dir.path().join("scratch-workspace");
+        let cwd = temp_dir.path().join("burner-workspace");
         std::fs::create_dir_all(&cwd).expect("create cwd");
-        let session_id = "scratch-no-bridge".to_string();
+        let session_id = "burner-no-bridge".to_string();
         let bridge_dir = cwd.join(".vimeflow").join("sessions").join(&session_id);
 
         let request = SpawnPtyRequest {
@@ -1181,12 +1181,12 @@ mod tests {
         .await
         .expect("keep spawn");
 
-        let scratch = spawn_pty_inner(
+        let burner = spawn_pty_inner(
             state.clone(),
             cache.clone(),
             events.clone(),
             SpawnPtyRequest {
-                session_id: "scratch".to_string(),
+                session_id: "burner".to_string(),
                 cwd: cwd.clone(),
                 shell: None,
                 env: None,
@@ -1195,20 +1195,20 @@ mod tests {
             },
         )
         .await
-        .expect("scratch spawn");
+        .expect("burner spawn");
 
         let killed = kill_ephemeral_ptys_inner(&state);
-        assert_eq!(killed, vec![scratch.id.clone()]);
+        assert_eq!(killed, vec![burner.id.clone()]);
 
-        // Scratch PTY is gone; the non-ephemeral one is untouched.
-        let scratch_write = write_pty_inner(
+        // Burner PTY is gone; the non-ephemeral one is untouched.
+        let burner_write = write_pty_inner(
             &state,
             WritePtyRequest {
-                session_id: scratch.id.clone(),
+                session_id: burner.id.clone(),
                 data: "x".to_string(),
             },
         );
-        assert!(scratch_write.is_err(), "scratch PTY should be reaped");
+        assert!(burner_write.is_err(), "burner PTY should be reaped");
         let keep_write = write_pty_inner(
             &state,
             WritePtyRequest {

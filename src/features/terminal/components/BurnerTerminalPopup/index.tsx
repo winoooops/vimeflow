@@ -7,7 +7,7 @@ import type { RestoreData } from '../../types'
 import type { ITerminalService } from '../../services/terminalService'
 import type { NotifyPaneReady } from '../../hooks/useTerminal'
 
-// Scratch wears the registered `shell` agent's amber identity (design handoff).
+// Burner wears the registered `shell` agent's amber identity (design handoff).
 const SHELL_ACCENT = AGENTS.shell.accent
 const SHELL_ACCENT_DIM = AGENTS.shell.accentDim
 
@@ -28,14 +28,14 @@ const Kbd = ({ children }: { children: ReactNode }): ReactElement => (
   </span>
 )
 
-export interface ScratchTerminalPopupProps {
+export interface BurnerTerminalPopupProps {
   /** Whether the popup is visible. Hidden ≠ unmounted — the shell keeps running. */
   open: boolean
   /** The ephemeral PTY id this popup is attached to (distinct from any pane). */
-  scratchPtyId: string
-  /** The cwd the scratch shell was spawned at (shown in the header). */
+  burnerPtyId: string
+  /** The cwd the burner shell was spawned at (shown in the header). */
   cwd: string
-  /** The scratch shell's OS process id (for the attach snapshot). */
+  /** The burner shell's OS process id (for the attach snapshot). */
   pid: number
   service: ITerminalService
   /** Hide the popup (does NOT kill the shell). */
@@ -45,26 +45,26 @@ export interface ScratchTerminalPopupProps {
 }
 
 /**
- * Ephemeral "scratch" terminal popup — the command-palette's sibling overlay.
+ * Ephemeral "burner" terminal popup — the command-palette's sibling overlay.
  *
  * Kept mounted for its shell's whole life; `open` toggles CSS visibility so the
  * PTY keeps running while hidden (hide ≠ kill). Renders the existing terminal
- * `<Body>` in `attach` mode against `scratchPtyId`.
+ * `<Body>` in `attach` mode against `burnerPtyId`.
  *
  * Because it renders `<Body>` directly (no `TerminalPane` wrapper to drive
- * focus), it moves DOM focus into the scratch xterm itself when shown —
+ * focus), it moves DOM focus into the burner xterm itself when shown —
  * otherwise a chord-opened popup leaves focus on the pane underneath and sends
  * keystrokes there.
  */
-export const ScratchTerminalPopup = ({
+export const BurnerTerminalPopup = ({
   open,
-  scratchPtyId,
+  burnerPtyId,
   cwd,
   pid,
   service,
   onHide,
   onPaneReady = undefined,
-}: ScratchTerminalPopupProps): ReactElement => {
+}: BurnerTerminalPopupProps): ReactElement => {
   const bodyRef = useRef<BodyHandle>(null)
   const overlayRef = useRef<HTMLDivElement>(null)
   const openRef = useRef(open)
@@ -77,7 +77,7 @@ export const ScratchTerminalPopup = ({
     }
   }, [open])
 
-  // Esc hides the popup. The scratch xterm holds focus, so without a native
+  // Esc hides the popup. The burner xterm holds focus, so without a native
   // capture-phase intercept the keydown reaches the terminal and is sent to the
   // shell as ^[. Capturing on the overlay fires before xterm's textarea handler.
   useEffect(() => {
@@ -117,7 +117,7 @@ export const ScratchTerminalPopup = ({
   // from spawn onward; the spawn→attach gap is covered by the buffer-drain
   // (registerPending at spawn, onPaneReady on subscribe).
   const snapshot: RestoreData = {
-    sessionId: scratchPtyId,
+    sessionId: burnerPtyId,
     cwd,
     pid,
     replayData: '',
@@ -128,16 +128,16 @@ export const ScratchTerminalPopup = ({
   return (
     <div
       ref={overlayRef}
-      data-testid="scratch-popup"
+      data-testid="burner-popup"
       role="dialog"
-      aria-label="Scratch terminal"
+      aria-label="Burner terminal"
       aria-hidden={!open}
       className="fixed inset-0 z-[100] flex items-start justify-center pt-[12vh]"
       style={{ display: open ? 'flex' : 'none' }}
     >
       <button
         type="button"
-        aria-label="Dismiss scratch terminal"
+        aria-label="Dismiss burner terminal"
         onClick={onHide}
         className="absolute inset-0 cursor-default"
         style={{
@@ -146,7 +146,7 @@ export const ScratchTerminalPopup = ({
         }}
       />
       <div
-        data-testid="scratch-panel"
+        data-testid="burner-panel"
         className="relative flex h-[600px] w-[760px] max-w-[92vw] flex-col overflow-hidden rounded-[14px]"
         style={{
           background: 'rgba(24, 22, 30, 0.9)',
@@ -185,7 +185,7 @@ export const ScratchTerminalPopup = ({
               <span className="material-symbols-outlined text-[14px] leading-none">
                 terminal
               </span>
-              SCRATCH
+              BURNER
             </span>
 
             <span className="flex-1" />
@@ -205,8 +205,8 @@ export const ScratchTerminalPopup = ({
 
             <button
               type="button"
-              data-testid="scratch-hide"
-              aria-label="Hide scratch terminal"
+              data-testid="burner-hide"
+              aria-label="Hide burner terminal"
               onClick={onHide}
               className="text-on-surface-muted hover:text-on-surface grid h-[26px] w-[26px] place-items-center rounded-[7px] hover:bg-white/5"
             >
@@ -218,14 +218,14 @@ export const ScratchTerminalPopup = ({
         </header>
 
         <div
-          data-testid="scratch-body"
+          data-testid="burner-body"
           data-mode="attach"
           className="min-h-0 flex-1"
         >
           <Body
             ref={bodyRef}
             mode="attach"
-            sessionId={scratchPtyId}
+            sessionId={burnerPtyId}
             cwd={cwd}
             service={service}
             restoredFrom={snapshot}

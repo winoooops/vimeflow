@@ -297,7 +297,7 @@ describe('WorkspaceView - Command Palette Integration', () => {
       onData: vi.fn().mockResolvedValue(vi.fn()),
       onExit: vi.fn().mockReturnValue(vi.fn()),
       onError: vi.fn().mockReturnValue(vi.fn()),
-      onScratchForeground: vi.fn().mockReturnValue(vi.fn()),
+      onBurnerForeground: vi.fn().mockReturnValue(vi.fn()),
       listSessions: vi.fn().mockResolvedValue({
         activeSessionId: null,
         sessions: [],

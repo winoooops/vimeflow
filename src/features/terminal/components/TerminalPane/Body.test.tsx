@@ -40,7 +40,7 @@ const createDefaultMockService = (): ITerminalService =>
         // eslint-disable-next-line @typescript-eslint/no-empty-function
         Promise.resolve((): void => {})
     ),
-    onScratchForeground: vi.fn(
+    onBurnerForeground: vi.fn(
       (): Promise<() => void> => Promise.resolve((): void => undefined)
     ),
     listSessions: vi.fn().mockResolvedValue({
@@ -2085,9 +2085,7 @@ describe('Body', () => {
           // eslint-disable-next-line @typescript-eslint/no-empty-function
           Promise.resolve((): void => {})
         ),
-        onScratchForeground: vi.fn(() =>
-          Promise.resolve((): void => undefined)
-        ),
+        onBurnerForeground: vi.fn(() => Promise.resolve((): void => undefined)),
         listSessions: vi.fn().mockResolvedValue({
           activeSessionId: null,
           sessions: [],
@@ -2149,9 +2147,7 @@ describe('Body', () => {
           // eslint-disable-next-line @typescript-eslint/no-empty-function
           Promise.resolve((): void => {})
         ),
-        onScratchForeground: vi.fn(() =>
-          Promise.resolve((): void => undefined)
-        ),
+        onBurnerForeground: vi.fn(() => Promise.resolve((): void => undefined)),
         listSessions: vi.fn().mockResolvedValue({
           activeSessionId: null,
           sessions: [],
@@ -2213,9 +2209,7 @@ describe('Body', () => {
           // eslint-disable-next-line @typescript-eslint/no-empty-function
           Promise.resolve((): void => {})
         ),
-        onScratchForeground: vi.fn(() =>
-          Promise.resolve((): void => undefined)
-        ),
+        onBurnerForeground: vi.fn(() => Promise.resolve((): void => undefined)),
         listSessions: vi.fn().mockResolvedValue({
           activeSessionId: null,
           sessions: [],

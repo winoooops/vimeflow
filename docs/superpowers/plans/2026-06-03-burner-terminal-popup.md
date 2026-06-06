@@ -1,16 +1,16 @@
-# Scratch Terminal Popup Implementation Plan
+# Burner Terminal Popup Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build an ephemeral, throwaway per-pane "scratch" terminal that opens as a centered popup (command-palette sibling), runs ad-hoc commands without hijacking a pane's agent PTY or consuming a layout slot, and is never persisted.
+**Goal:** Build an ephemeral, throwaway per-pane "burner" terminal that opens as a centered popup (command-palette sibling), runs ad-hoc commands without hijacking a pane's agent PTY or consuming a layout slot, and is never persisted.
 
-**Architecture:** A new `ephemeral` flag on the existing `spawn_pty` skips the `sessions.json` cache write and the agent-bridge dir; a per-`PtyState` ephemeral-id set + a `kill_ephemeral_ptys` reap IPC (called awaited on renderer boot) prevents reload-orphans. The frontend `useScratchTerminals` hook owns scratch PTY spawn/kill and renders the existing `<Body>` in **`attach` mode, kept mounted-hidden** so hide ≠ kill. Invoked by the `Mod+;` then `` ` `` chord.
+**Architecture:** A new `ephemeral` flag on the existing `spawn_pty` skips the `sessions.json` cache write and the agent-bridge dir; a per-`PtyState` ephemeral-id set + a `kill_ephemeral_ptys` reap IPC (called awaited on renderer boot) prevents reload-orphans. The frontend `useBurnerTerminals` hook owns burner PTY spawn/kill and renders the existing `<Body>` in **`attach` mode, kept mounted-hidden** so hide ≠ kill. Invoked by the `Mod+;` then `` ` `` chord.
 
 **Tech Stack:** Rust (portable_pty, the `vimeflow-backend` Electron sidecar), React + TypeScript, xterm.js, Vitest, Rust `#[test]`.
 
-**Spec:** `docs/superpowers/specs/2026-06-03-scratch-terminal-popup-design.md` (committed + codex-reviewed). Section refs below (§N) point there.
+**Spec:** `docs/superpowers/specs/2026-06-03-burner-terminal-popup-design.md` (committed + codex-reviewed). Section refs below (§N) point there.
 
-**Scope of this plan:** PR1 is fully detailed (TDD, bite-sized). PR2 and PR3 are task-level outlines — their detailed, code-bearing plans are written after PR1 merges, once the real PR1 APIs exist and the spec's build-time questions (§5 OSC-7 wiring; §5 buffer-producer globality) are resolved. All three stack on the `feat/scratch-terminal` integration branch; the final PR targets `main` (`Refs VIM-53` on child PRs, `Closes VIM-53` on the final).
+**Scope of this plan:** PR1 is fully detailed (TDD, bite-sized). PR2 and PR3 are task-level outlines — their detailed, code-bearing plans are written after PR1 merges, once the real PR1 APIs exist and the spec's build-time questions (§5 OSC-7 wiring; §5 buffer-producer globality) are resolved. All three stack on the `feat/burner-terminal` integration branch; the final PR targets `main` (`Refs VIM-53` on child PRs, `Closes VIM-53` on the final).
 
 ---
 
@@ -30,8 +30,8 @@
 - Modify `src/features/terminal/types/index.ts` — add `ephemeral?: boolean` to `PTYSpawnParams`.
 - Modify `src/features/terminal/services/desktopTerminalService.ts` + `terminalService.ts` — default `ephemeral`, add `killEphemeralPtys()`.
 - Modify `electron/backend-methods.ts` — allowlist `kill_ephemeral_ptys`.
-- Create `src/features/terminal/hooks/useScratchTerminals.ts` (+ `.test.ts`) — the state/lifecycle hook.
-- Create `src/features/terminal/components/ScratchTerminalPopup/index.tsx` (+ `.test.tsx`) — the overlay + attach-mode `<Body>` host.
+- Create `src/features/terminal/hooks/useBurnerTerminals.ts` (+ `.test.ts`) — the state/lifecycle hook.
+- Create `src/features/terminal/components/BurnerTerminalPopup/index.tsx` (+ `.test.tsx`) — the overlay + attach-mode `<Body>` host.
 - Modify `src/features/workspace/WorkspaceView.tsx` — mount the popup's `renderNode`; call the awaited reap-on-boot.
 
 **PR2/PR3:** enumerated in their outline sections below.
@@ -57,7 +57,7 @@
 fn ephemeral_spawn_is_absent_from_cache_and_list() {
     let (state, _tmp) = test_backend(); // existing helper that builds BackendState with a temp app_data_dir
     let req = SpawnPtyRequest {
-        session_id: "scratch-1".into(),
+        session_id: "burner-1".into(),
         cwd: tmp_cwd(),
         shell: None,
         env: None,
@@ -142,7 +142,7 @@ git commit -m "feat(terminal): add ephemeral spawn flag that skips session cache
 #[test]
 fn ephemeral_spawn_creates_no_bridge_dir_even_if_bridge_requested() {
     let (state, tmp) = test_backend();
-    let mut req = spawn_req("scratch-nb", true); // ephemeral
+    let mut req = spawn_req("burner-nb", true); // ephemeral
     req.enable_agent_bridge = true;              // deliberately conflicting
     let res = state.spawn_pty(req).unwrap();
     let bridge = tmp.path().join(".vimeflow").join("sessions").join(&res.id);
@@ -194,10 +194,10 @@ git commit -m "feat(terminal): ephemeral spawn skips agent-bridge generation"
 fn kill_ephemeral_ptys_kills_only_ephemeral() {
     let (state, _tmp) = test_backend();
     let keep = state.spawn_pty(spawn_req("keep", false)).unwrap();
-    let scratch = state.spawn_pty(spawn_req("scratch", true)).unwrap();
+    let burner = state.spawn_pty(spawn_req("burner", true)).unwrap();
     let killed = state.kill_ephemeral_ptys().unwrap();
-    assert_eq!(killed, vec![scratch.id.clone()]);
-    assert!(state.write_pty(&scratch.id, b"x").is_err(), "scratch PTY gone");
+    assert_eq!(killed, vec![burner.id.clone()]);
+    assert!(state.write_pty(&burner.id, b"x").is_err(), "burner PTY gone");
     assert!(state.write_pty(&keep.id, b"x").is_ok(), "non-ephemeral untouched");
 }
 ```
@@ -253,11 +253,11 @@ git commit -m "feat(terminal): track ephemeral ptyIds and add kill_ephemeral_pty
 #[test]
 fn ipc_kill_ephemeral_ptys_routes_to_inner() {
     let (state, _tmp) = test_backend();
-    let scratch = state.spawn_pty(spawn_req("scratch", true)).unwrap();
+    let burner = state.spawn_pty(spawn_req("burner", true)).unwrap();
     // drive through the same router the wire uses:
     let resp = dispatch_ipc(&state, "kill_ephemeral_ptys", json!({})); // existing router test helper
     assert!(resp.is_ok());
-    assert!(state.write_pty(&scratch.id, b"x").is_err());
+    assert!(state.write_pty(&burner.id, b"x").is_err());
 }
 ```
 
@@ -314,9 +314,9 @@ git commit -m "feat(terminal): expose kill_ephemeral_ptys over IPC"
 #[test]
 fn shutdown_kills_ephemeral_ptys() {
     let (state, _tmp) = test_backend();
-    let scratch = state.spawn_pty(spawn_req("scratch", true)).unwrap();
+    let burner = state.spawn_pty(spawn_req("burner", true)).unwrap();
     state.shutdown();
-    assert!(state.write_pty(&scratch.id, b"x").is_err());
+    assert!(state.write_pty(&burner.id, b"x").is_err());
 }
 ```
 
@@ -405,28 +405,28 @@ git add src/features/terminal/types/index.ts src/features/terminal/services/term
 git commit -m "feat(terminal): service support for ephemeral spawn + killEphemeralPtys"
 ```
 
-### Task 7: `useScratchTerminals` — spawn (ephemeral) + ref map + runningByPane
+### Task 7: `useBurnerTerminals` — spawn (ephemeral) + ref map + runningByPane
 
 **Files:**
 
-- Create: `src/features/terminal/hooks/useScratchTerminals.ts`
-- Test: `src/features/terminal/hooks/useScratchTerminals.test.ts`
+- Create: `src/features/terminal/hooks/useBurnerTerminals.ts`
+- Test: `src/features/terminal/hooks/useBurnerTerminals.test.ts`
 
 - [ ] **Step 1: Write the failing test (spawn params + lifecycle ownership)**
 
 ```ts
 import { test, expect, vi } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
-import { useScratchTerminals } from './useScratchTerminals'
+import { useBurnerTerminals } from './useBurnerTerminals'
 
 test('open spawns an ephemeral, no-bridge shell at the session workingDirectory', async () => {
-  const service = makeFakeService() // spawn → { sessionId: 'scratch-pty', pid: 1, cwd: '/repo' }
+  const service = makeFakeService() // spawn → { sessionId: 'burner-pty', pid: 1, cwd: '/repo' }
   const focused = {
     session: { id: 's1', workingDirectory: '/repo' },
     pane: { id: 'p0', ptyId: 'main', cwd: '/repo' },
   }
   const { result } = renderHook(() =>
-    useScratchTerminals({
+    useBurnerTerminals({
       service,
       resolveFocusedPane: () => focused,
       sessions: [focused.session],
@@ -448,7 +448,7 @@ test('open spawns an ephemeral, no-bridge shell at the session workingDirectory'
 test('hide does NOT kill', async () => {
   const service = makeFakeService()
   const { result } = renderHook(() =>
-    useScratchTerminals({
+    useBurnerTerminals({
       service,
       resolveFocusedPane: () => focused(),
       sessions: [sess()],
@@ -466,7 +466,7 @@ test('hide does NOT kill', async () => {
 test('renderNode stays mounted (non-null) when hidden while a shell is alive', async () => {
   const service = makeFakeService()
   const { result } = renderHook(() =>
-    useScratchTerminals({
+    useBurnerTerminals({
       service,
       resolveFocusedPane: () => focused(),
       sessions: [sess()],
@@ -484,102 +484,102 @@ test('renderNode stays mounted (non-null) when hidden while a shell is alive', a
 
 - [ ] **Step 2: Run it, verify FAIL** (module missing)
 
-Run: `npx vitest run src/features/terminal/hooks/useScratchTerminals.test.ts`
-Expected: FAIL — cannot find `useScratchTerminals`.
+Run: `npx vitest run src/features/terminal/hooks/useBurnerTerminals.test.ts`
+Expected: FAIL — cannot find `useBurnerTerminals`.
 
 - [ ] **Step 3: Implement the hook skeleton**
 
-PR1 is **session-scoped** (spec §9): one scratch shell per session, keyed by `sessionId` (PR2 generalizes the key to `${sessionId}:${paneId}` and renames the projection to `runningByPane`, spec §4/§6). `toggle()` lazily `service.spawn({ cwd: session.workingDirectory, ephemeral: true, enableAgentBridge: false })`, stores `{ scratchPtyId, pid, status: 'running', cwd }` in a `useRef<Map<string, ScratchEntry>>`, and flips popup visibility; `running` is a `useState`-mirrored projection; `renderNode` returns the popup (Task 8) and is **null only when no shell is alive** (otherwise kept mounted-hidden, spec §5). Hide flips visibility only — no `service.kill`.
+PR1 is **session-scoped** (spec §9): one burner shell per session, keyed by `sessionId` (PR2 generalizes the key to `${sessionId}:${paneId}` and renames the projection to `runningByPane`, spec §4/§6). `toggle()` lazily `service.spawn({ cwd: session.workingDirectory, ephemeral: true, enableAgentBridge: false })`, stores `{ burnerPtyId, pid, status: 'running', cwd }` in a `useRef<Map<string, BurnerEntry>>`, and flips popup visibility; `running` is a `useState`-mirrored projection; `renderNode` returns the popup (Task 8) and is **null only when no shell is alive** (otherwise kept mounted-hidden, spec §5). Hide flips visibility only — no `service.kill`.
 
 - [ ] **Step 4: Run it, verify PASS**
 
-Run: `npx vitest run src/features/terminal/hooks/useScratchTerminals.test.ts`
+Run: `npx vitest run src/features/terminal/hooks/useBurnerTerminals.test.ts`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/features/terminal/hooks/useScratchTerminals.ts src/features/terminal/hooks/useScratchTerminals.test.ts
-git commit -m "feat(terminal): useScratchTerminals hook (ephemeral spawn, hide != kill)"
+git add src/features/terminal/hooks/useBurnerTerminals.ts src/features/terminal/hooks/useBurnerTerminals.test.ts
+git commit -m "feat(terminal): useBurnerTerminals hook (ephemeral spawn, hide != kill)"
 ```
 
-### Task 8: `ScratchTerminalPopup` — attach-mode `<Body>`, kept mounted-hidden
+### Task 8: `BurnerTerminalPopup` — attach-mode `<Body>`, kept mounted-hidden
 
 **Files:**
 
-- Create: `src/features/terminal/components/ScratchTerminalPopup/index.tsx`
-- Test: `src/features/terminal/components/ScratchTerminalPopup/index.test.tsx`
+- Create: `src/features/terminal/components/BurnerTerminalPopup/index.tsx`
+- Test: `src/features/terminal/components/BurnerTerminalPopup/index.test.tsx`
 
 - [ ] **Step 1: Write the failing tests**
 
 ```tsx
 import { test, expect } from 'vitest'
 import { render } from '@testing-library/react'
-import { ScratchTerminalPopup } from './index'
+import { BurnerTerminalPopup } from './index'
 
-test('renders Body in attach mode for the scratch ptyId', () => {
+test('renders Body in attach mode for the burner ptyId', () => {
   const { getByTestId } = render(
-    <ScratchTerminalPopup open scratchPtyId="scratch-pty" /* ...props */ />
+    <BurnerTerminalPopup open burnerPtyId="burner-pty" /* ...props */ />
   )
-  expect(getByTestId('scratch-body')).toHaveAttribute('data-mode', 'attach')
+  expect(getByTestId('burner-body')).toHaveAttribute('data-mode', 'attach')
 })
 
 test('stays mounted (hidden) when dismissed — not unmounted', () => {
   const { getByTestId, rerender } = render(
-    <ScratchTerminalPopup open scratchPtyId="scratch-pty" />
+    <BurnerTerminalPopup open burnerPtyId="burner-pty" />
   )
-  const node = getByTestId('scratch-body')
-  rerender(<ScratchTerminalPopup open={false} scratchPtyId="scratch-pty" />)
-  expect(getByTestId('scratch-body')).toBe(node) // same node, still mounted
-  expect(getByTestId('scratch-popup')).toHaveAttribute('aria-hidden', 'true')
+  const node = getByTestId('burner-body')
+  rerender(<BurnerTerminalPopup open={false} burnerPtyId="burner-pty" />)
+  expect(getByTestId('burner-body')).toBe(node) // same node, still mounted
+  expect(getByTestId('burner-popup')).toHaveAttribute('aria-hidden', 'true')
 })
 ```
 
 - [ ] **Step 2: Run it, verify FAIL**
 
-Run: `npx vitest run src/features/terminal/components/ScratchTerminalPopup/index.test.tsx`
+Run: `npx vitest run src/features/terminal/components/BurnerTerminalPopup/index.test.tsx`
 Expected: FAIL — component missing.
 
 - [ ] **Step 3: Implement the popup**
 
-Per spec §5 + the handoff (`docs/design/scratch-terminal-popup/scratch-terminal-handoff/`): a `fixed inset-0` overlay with the Lens-Blur backdrop, a 760×600 glass panel, header (SCRATCH chip / cwd / hide ✕), the `<Body mode="attach" sessionId={scratchPtyId} restoredFrom={emptySnapshot} ...>` host, footer hints. Dismiss toggles `aria-hidden` / `display`, never unmounts. Lift exact tokens/structure from `Scratch Terminal Popup.html`. Use Material Symbols only; pull colors from `docs/design/tokens.css` (amber `#f0c674`, mint `--success`).
+Per spec §5 + the handoff (`docs/design/burner-terminal-popup/burner-terminal-handoff/`): a `fixed inset-0` overlay with the Lens-Blur backdrop, a 760×600 glass panel, header (BURNER chip / cwd / hide ✕), the `<Body mode="attach" sessionId={burnerPtyId} restoredFrom={emptySnapshot} ...>` host, footer hints. Dismiss toggles `aria-hidden` / `display`, never unmounts. Lift exact tokens/structure from `Burner Terminal Popup.html`. Use Material Symbols only; pull colors from `docs/design/tokens.css` (amber `#f0c674`, mint `--success`).
 
 - [ ] **Step 4: Run it, verify PASS**; render it in a browser to confirm the `terminal` Material Symbol ligature shows (per spec §10 ligature trap).
 
-Run: `npx vitest run src/features/terminal/components/ScratchTerminalPopup/index.test.tsx`
+Run: `npx vitest run src/features/terminal/components/BurnerTerminalPopup/index.test.tsx`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/features/terminal/components/ScratchTerminalPopup/
-git commit -m "feat(terminal): scratch terminal popup (attach-mode, keep-mounted)"
+git add src/features/terminal/components/BurnerTerminalPopup/
+git commit -m "feat(terminal): burner terminal popup (attach-mode, keep-mounted)"
 ```
 
 ### Task 9: spawn→attach buffer-drain (no lost prompt)
 
 **Files:**
 
-- Modify: `src/features/terminal/hooks/useScratchTerminals.ts` (+ test)
+- Modify: `src/features/terminal/hooks/useBurnerTerminals.ts` (+ test)
 
 - [ ] **Step 1: First resolve the build-time check (spec §5):** read `usePtyBufferDrain.ts` + its producer wiring; determine whether the `service.onData → bufferEvent` producer is global to all ptyIds. Record the answer in a code comment.
-- [ ] **Step 2: Write the failing test** — assert `registerPending(scratchPtyId)` is called after `spawn()` and before the `<Body>` mounts, and that an early `pty-data` event is replayed via `notifyPaneReady` (mock the drain APIs).
-- [ ] **Step 3: Implement** — if the producer is NOT global, attach a scratch-owned `service.onData → bufferEvent` listener at spawn; call `registerPending` post-spawn; pass `notifyPaneReady` as the popup `<Body>`'s `onPaneReady`; `dropAllForPty` on kill.
+- [ ] **Step 2: Write the failing test** — assert `registerPending(burnerPtyId)` is called after `spawn()` and before the `<Body>` mounts, and that an early `pty-data` event is replayed via `notifyPaneReady` (mock the drain APIs).
+- [ ] **Step 3: Implement** — if the producer is NOT global, attach a burner-owned `service.onData → bufferEvent` listener at spawn; call `registerPending` post-spawn; pass `notifyPaneReady` as the popup `<Body>`'s `onPaneReady`; `dropAllForPty` on kill.
 - [ ] **Step 4: Run the test, verify PASS.**
-- [ ] **Step 5: Commit** — `feat(terminal): buffer scratch output across spawn→attach`.
+- [ ] **Step 5: Commit** — `feat(terminal): buffer burner output across spawn→attach`.
 
 ### Task 10: `Mod+;` then `` ` `` chord (toggle)
 
 **Files:**
 
-- Modify: `src/features/terminal/hooks/useScratchTerminals.ts` (register chord) (+ test)
+- Modify: `src/features/terminal/hooks/useBurnerTerminals.ts` (register chord) (+ test)
 
 - [ ] **Step 1: Write the failing test** — `registerChord` is called with key ``'`'``; firing the handler calls `toggle()` (mock `chordRegistry`).
 
 ```ts
 test('registers the backtick chord and toggles on fire', () => {
   const reg = vi.spyOn(chordRegistry, 'registerChord')
-  const { result } = renderHook(() => useScratchTerminals(props()))
+  const { result } = renderHook(() => useBurnerTerminals(props()))
   const [key, handler] = reg.mock.calls[0]
   expect(key).toBe('`')
   const toggleSpy = vi.spyOn(result.current, 'toggle')
@@ -593,48 +593,48 @@ test('registers the backtick chord and toggles on fire', () => {
 - [ ] **Step 2: Run it, verify FAIL.**
 - [ ] **Step 3: Implement** — `useEffect(() => registerChord('`', () => { toggle(); return true }), [])`, mirroring `usePaneRenameChord`. No palette suppression (spec §7).
 - [ ] **Step 4: Run it, verify PASS.**
-- [ ] **Step 5: Commit** — `feat(terminal): Mod+; backtick chord opens the scratch popup`.
+- [ ] **Step 5: Commit** — `feat(terminal): Mod+; backtick chord opens the burner popup`.
 
 ### Task 11: mount in WorkspaceView + awaited reap-on-boot + kill-on-session-close
 
 **Files:**
 
 - Modify: `src/features/workspace/WorkspaceView.tsx` (mount `renderNode`; await `killEphemeralPtys()` on init, gating first spawn)
-- Modify: `src/features/terminal/hooks/useScratchTerminals.ts` (kill on session close — minimal reconcile for PR1) (+ tests)
+- Modify: `src/features/terminal/hooks/useBurnerTerminals.ts` (kill on session close — minimal reconcile for PR1) (+ tests)
 
-- [ ] **Step 1: Write the failing tests** — (a) `WorkspaceView` awaits `service.killEphemeralPtys()` on mount before the hook will spawn (gate flag); (b) closing the session calls `service.kill(scratchPtyId)` + `dropAllForPty`.
+- [ ] **Step 1: Write the failing tests** — (a) `WorkspaceView` awaits `service.killEphemeralPtys()` on mount before the hook will spawn (gate flag); (b) closing the session calls `service.kill(burnerPtyId)` + `dropAllForPty`.
 - [ ] **Step 2: Run them, verify FAIL.**
-- [ ] **Step 3: Implement** — app-init effect `await service.killEphemeralPtys()` setting a `reapDone` flag the hook checks before spawning; on session-close, kill+drop the session's scratch entry. Keep `WorkspaceView` lean — the hook returns a single `renderNode` (it's already over the 800-LOC cap, spec §risks).
+- [ ] **Step 3: Implement** — app-init effect `await service.killEphemeralPtys()` setting a `reapDone` flag the hook checks before spawning; on session-close, kill+drop the session's burner entry. Keep `WorkspaceView` lean — the hook returns a single `renderNode` (it's already over the 800-LOC cap, spec §risks).
 - [ ] **Step 4: Run them, verify PASS;** then `npm run test`, `npm run lint`, `npm run type-check`.
-- [ ] **Step 5: Commit** — `feat(workspace): mount scratch popup + reap ephemeral ptys on boot`.
+- [ ] **Step 5: Commit** — `feat(workspace): mount burner popup + reap ephemeral ptys on boot`.
 
 ### Task 12: PR1 wrap-up
 
 - [ ] Run the full gate: `npm run build && npm run test && npm run lint && cargo test --manifest-path crates/backend/Cargo.toml`.
-- [ ] Manual (spec §10): start `npm run dev` in the scratch popup → hide → confirm it keeps running → reopen sees output; `Cmd+R` reload → no orphan, no ghost tab.
-- [ ] Open PR1 against `feat/scratch-terminal` with `Refs VIM-53`; run codex verify; address findings via `/lifeline:upsource-review`.
+- [ ] Manual (spec §10): start `npm run dev` in the burner popup → hide → confirm it keeps running → reopen sees output; `Cmd+R` reload → no orphan, no ghost tab.
+- [ ] Open PR1 against `feat/burner-terminal` with `Refs VIM-53`; run codex verify; address findings via `/lifeline:upsource-review`.
 
 ---
 
-## PR2 — one scratch shell per pane (deferred follow-up plan)
+## PR2 — one burner shell per pane (deferred follow-up plan)
 
 **NOT executable from this document.** Its detailed, code-bearing TDD steps are authored after PR1 merges — gated on PR1's real APIs and the spec §5 build-time questions (OSC-7 wiring location; buffer-producer globality). Scope:
 
 1. **Per-pane keying** — generalize the map key to `${sessionId}:${paneId}` for real (PR1 used the session); `toggle({ sessionId, paneId })` target (spec §4/§6). Tests: switch focused pane → different shell; ≤4 per session.
 2. **Spawn at `Pane.cwd`** — change the spawn cwd from `session.workingDirectory` to the host `Pane.cwd` (spec §6). Test: spawn cwd = focused pane's cwd.
-3. **cwd isolation** — ensure the scratch `<Body>` does NOT wire `OSC 7 → updatePaneCwd` (resolve the spec §5 open question first: flag on `<Body>` vs wiring living in `TerminalPane`). Test: a `cd` in the scratch shell does not call `updatePaneCwd`.
+3. **cwd isolation** — ensure the burner `<Body>` does NOT wire `OSC 7 → updatePaneCwd` (resolve the spec §5 open question first: flag on `<Body>` vs wiring living in `TerminalPane`). Test: a `cd` in the burner shell does not call `updatePaneCwd`.
 4. **Pane-switcher pills** — header pills listing the active session's panes with live dots from `runningByPane`; selecting one reveals that pane's mounted `<Body>` (spec §6). Tests: pill live-dot reflects running; selecting switches the shown shell.
-5. **Live-but-hidden cues** (spec §8) — pane-header ghost button (`TerminalPane/Header.tsx` + `HeaderActions.tsx`) with amber tint + mint live-dot; tooltip via the shared `Tooltip`; status-bar `● scratch ×N` (all-sessions count). Tests per cue; browser-render the icon (ligature trap).
-6. **PR2 wrap-up** — full gate, manual cwd-isolation check, PR against `feat/scratch-terminal` (`Refs VIM-53`).
+5. **Live-but-hidden cues** (spec §8) — pane-header ghost button (`TerminalPane/Header.tsx` + `HeaderActions.tsx`) with amber tint + mint live-dot; tooltip via the shared `Tooltip`; status-bar `● burner ×N` (all-sessions count). Tests per cue; browser-render the icon (ligature trap).
+6. **PR2 wrap-up** — full gate, manual cwd-isolation check, PR against `feat/burner-terminal` (`Refs VIM-53`).
 
 ## PR3 — pane-bound lifecycle via lazy reconciliation (deferred follow-up plan)
 
 **NOT executable from this document.** Detailed steps authored after PR2 merges. Scope:
 
-1. **Lazy reconciliation effect** in `useScratchTerminals` (spec §4): given the live sessions/panes, kill + drop (`service.kill` + `dropAllForPty`) any scratch entry whose `${sessionId}:${paneId}` no longer maps to a live pane. Tests: pane close → its scratch killed+dropped; session close → all its scratch killed.
-2. **Restart keeps** — assert a pane restart (ptyId rotation, same paneId) does NOT kill the scratch entry (stable key). Test with a simulated restart.
-3. **Self-exit reconcile** — a scratch child that exits on its own flips to `exited` (via `onExit`) and is dropped on the next reconcile/open. Test the exit→drop path.
-4. **PR3 wrap-up** — full gate; manual: close a pane with a running scratch → process gone; final PR `feat/scratch-terminal` → `main` with `Closes VIM-53`.
+1. **Lazy reconciliation effect** in `useBurnerTerminals` (spec §4): given the live sessions/panes, kill + drop (`service.kill` + `dropAllForPty`) any burner entry whose `${sessionId}:${paneId}` no longer maps to a live pane. Tests: pane close → its burner killed+dropped; session close → all its burner killed.
+2. **Restart keeps** — assert a pane restart (ptyId rotation, same paneId) does NOT kill the burner entry (stable key). Test with a simulated restart.
+3. **Self-exit reconcile** — a burner child that exits on its own flips to `exited` (via `onExit`) and is dropped on the next reconcile/open. Test the exit→drop path.
+4. **PR3 wrap-up** — full gate; manual: close a pane with a running burner → process gone; final PR `feat/burner-terminal` → `main` with `Closes VIM-53`.
 
 ---
 
@@ -644,6 +644,6 @@ test('registers the backtick chord and toggles on fire', () => {
 
 **Placeholder scan:** PR1 steps carry concrete test code + impl deltas + exact commands. PR2/PR3 are explicitly outlines (deferred detailed plans), not placeholder-laden steps — gated on PR1's real APIs and the two §5 build-time questions.
 
-**Type consistency:** `ephemeral` (Rust `SpawnPtyRequest` + TS `PTYSpawnParams`), `kill_ephemeral_ptys` (inner / `BackendState` / IPC string / `killEphemeralPtys` TS), `scratchPtyId`, `runningByPane` keyed `${sessionId}:${paneId}`, `toggle(target?)` — names consistent across tasks and with the spec.
+**Type consistency:** `ephemeral` (Rust `SpawnPtyRequest` + TS `PTYSpawnParams`), `kill_ephemeral_ptys` (inner / `BackendState` / IPC string / `killEphemeralPtys` TS), `burnerPtyId`, `runningByPane` keyed `${sessionId}:${paneId}`, `toggle(target?)` — names consistent across tasks and with the spec.
 
 <!-- codex-reviewed: 2026-06-03T14:48:06Z -->

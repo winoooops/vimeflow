@@ -183,17 +183,17 @@ describe('StatusBar', () => {
     )
   })
 
-  test('shows the scratch count segment when scratch shells are running', () => {
-    renderStatusBar({ scratchCount: 2 })
+  test('shows the burner count segment when burner shells are running', () => {
+    renderStatusBar({ burnerCount: 2 })
 
-    expect(screen.getByTestId('status-bar-scratch')).toHaveTextContent(
-      'scratch ×2'
+    expect(screen.getByTestId('status-bar-burner')).toHaveTextContent(
+      'burner ×2'
     )
   })
 
-  test('omits the scratch count segment when none are running', () => {
-    renderStatusBar({ scratchCount: 0 })
+  test('omits the burner count segment when none are running', () => {
+    renderStatusBar({ burnerCount: 0 })
 
-    expect(screen.queryByTestId('status-bar-scratch')).toBeNull()
+    expect(screen.queryByTestId('status-bar-burner')).toBeNull()
   })
 })

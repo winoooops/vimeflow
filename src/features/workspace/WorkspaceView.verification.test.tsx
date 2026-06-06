@@ -55,7 +55,7 @@ vi.mock('../terminal/services/terminalService', () => ({
     // eslint-disable-next-line @typescript-eslint/no-empty-function
     onError: vi.fn((): (() => void) => (): void => {}),
     // eslint-disable-next-line @typescript-eslint/no-empty-function
-    onScratchForeground: vi.fn((): (() => void) => (): void => {}),
+    onBurnerForeground: vi.fn((): (() => void) => (): void => {}),
     listSessions: vi.fn().mockResolvedValue({
       activeSessionId: 'sess-1',
       sessions: [

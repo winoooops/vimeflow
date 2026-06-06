@@ -61,7 +61,7 @@ vi.mock('../terminal/services/terminalService', () => ({
     onError: vi.fn((): (() => void) => (): void => {
       /* noop */
     }),
-    onScratchForeground: vi.fn((): (() => void) => (): void => {
+    onBurnerForeground: vi.fn((): (() => void) => (): void => {
       /* noop */
     }),
     listSessions: vi.fn().mockResolvedValue({
