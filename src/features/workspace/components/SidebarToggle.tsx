@@ -86,10 +86,3 @@ export const SidebarToggle = forwardRef<HTMLButtonElement, SidebarToggleProps>(
   )
 )
 SidebarToggle.displayName = 'SidebarToggle'
-SidebarToggle.defaultProps = {
-  collapsed: false,
-  size: 28,
-  variant: 'ghost' as const,
-  'data-testid': 'sidebar-toggle',
-  shortcutHint: '⌘B',
-}
