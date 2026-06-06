@@ -853,9 +853,7 @@ const fixCommandEnv = ({ pr, fixContext, ctx }) => ({
   QA_LINEAR_CREATE_ISSUES: ctx.linearCreateIssues ? '1' : '0',
   QA_LINEAR_TEAM_KEY: ctx.linearTeamKey || '',
   QA_MAX_CI_RERUNS: ctx.maxCiReruns == null ? '' : String(ctx.maxCiReruns),
-  ...(fixContext
-    ? { QA_FIX_CONTEXT: JSON.stringify(fixContext) }
-    : {}),
+  ...(fixContext ? { QA_FIX_CONTEXT: JSON.stringify(fixContext) } : {}),
 })
 
 // Run one fixer for one PR, teeing output to a per-PR log and prefixing the
@@ -884,9 +882,13 @@ const dispatchFix = ({ pr, fixContext }, ctx) =>
         env: fixCommandEnv({ pr, fixContext, ctx }),
       })
     } else {
-      child = spawn('node', [join(SCRIPT_DIR, 'run.js'), String(pr), '--push'], {
-        env: fixCommandEnv({ pr, fixContext, ctx }),
-      })
+      child = spawn(
+        'node',
+        [join(SCRIPT_DIR, 'run.js'), String(pr), '--push'],
+        {
+          env: fixCommandEnv({ pr, fixContext, ctx }),
+        }
+      )
     }
 
     const pipe = (stream) => {
