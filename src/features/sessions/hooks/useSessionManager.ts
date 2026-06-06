@@ -1307,18 +1307,6 @@ export const useSessionManager = (
         return
       }
 
-      if (
-        isShellPane(target) &&
-        session.panes.filter(isShellPane).length <= 1
-      ) {
-        // eslint-disable-next-line no-console
-        console.warn(
-          `removePane: refusing to remove the last shell pane in ${sessionId}`
-        )
-
-        return
-      }
-
       pendingPaneOps.current.add(sessionId)
 
       void (async (): Promise<void> => {
