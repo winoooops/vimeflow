@@ -120,7 +120,7 @@ const worker = async (id) => {
       const outcome = await runOne(job.pr, job.reason, {
         config: {
           ...config,
-          workerKeepAlive,
+          workerKeepAlive: keepWorkerAlive,
         },
         state,
         log,
