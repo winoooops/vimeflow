@@ -36,6 +36,7 @@ let running = true
 let shuttingDown = false
 let idleStopTimer = null
 let idleStopRunning = false
+let idleStopPending = false
 
 const deprecatedApproveEnvSet = ['1', 'true', 'yes', 'on'].includes(
   String(process.env.QA_APPROVE || '').toLowerCase()
@@ -77,6 +78,10 @@ const stopIdleBurstWorker = async () => {
     })
   } finally {
     idleStopRunning = false
+    if (idleStopPending) {
+      idleStopPending = false
+      scheduleIdleStop()
+    }
   }
 }
 
@@ -87,6 +92,9 @@ const scheduleIdleStop = () => {
     idleStopTimer ||
     idleStopRunning
   ) {
+    if (idleStopRunning) {
+      idleStopPending = true
+    }
     return
   }
   idleStopTimer = setTimeout(
