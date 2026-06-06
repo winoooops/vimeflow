@@ -20,7 +20,6 @@ export const LIQUID_DEFAULTS = {
   maxShift: 1.0,
   maxLift: 1.0,
   meniscus: 2.3,
-  speedup: 1.02,
 } as const
 
 export type LiquidTune = { [K in keyof typeof LIQUID_DEFAULTS]: number }
@@ -31,7 +30,6 @@ type Signal =
   | 'shiftX'
   | 'lift'
   | 'skew'
-  | 'speedT'
   | 'sheenX'
   | 'sheenA'
 
@@ -43,7 +41,6 @@ const initialTarget = (): SignalState => ({
   shiftX: 0,
   lift: 0,
   skew: 0,
-  speedT: 0,
   sheenX: 0,
   sheenA: 0,
 })
@@ -54,7 +51,6 @@ const initialVel = (): SignalState => ({
   shiftX: 0,
   lift: 0,
   skew: 0,
-  speedT: 0,
   sheenX: 0,
   sheenA: 0,
 })
@@ -66,8 +62,7 @@ export const useWaterCursor = (
   refsRef: RefObject<LiquidRefs | null>,
   tune: Partial<LiquidTune> = EMPTY_TUNE
 ): void => {
-  const { halo, omega, maxTilt, ampMax, maxShift, maxLift, meniscus, speedup } =
-    tune
+  const { halo, omega, maxTilt, ampMax, maxShift, maxLift, meniscus } = tune
 
   useEffect(() => {
     const wrap = wrapRef.current
@@ -85,7 +80,6 @@ export const useWaterCursor = (
       ...(maxShift !== undefined && { maxShift }),
       ...(maxLift !== undefined && { maxLift }),
       ...(meniscus !== undefined && { meniscus }),
-      ...(speedup !== undefined && { speedup }),
     }
 
     const target = initialTarget()
@@ -122,7 +116,6 @@ export const useWaterCursor = (
       target.shiftX = norm * proximity * T.maxShift
       target.lift = -aboveBelow * proximity * T.maxLift
       target.skew = norm * proximity * T.meniscus
-      target.speedT = proximity
       target.sheenX = norm
       target.sheenA = proximity
       ensureLoop()
@@ -134,7 +127,6 @@ export const useWaterCursor = (
       target.shiftX = 0
       target.lift = 0
       target.skew = 0
-      target.speedT = 0
       target.sheenA = 0
       target.sheenX = 0
       ensureLoop()
@@ -155,16 +147,15 @@ export const useWaterCursor = (
 
       // Hover-driven writes are skipped on pure-wake frames (pct change
       // with no hover). On a pure wake, hover targets stay at ambient,
-      // so the slosh/wave/animationDuration writes here would be no-op
-      // identity values that clearInline() reverses in the same frame —
-      // unnecessary DOM work and fragile against future style-flushes.
+      // so the slosh/wave writes here would be no-op identity values that
+      // clearInline() reverses in the same frame — unnecessary DOM work and
+      // fragile against future style-flushes.
       const hoverActive =
         target.tilt !== 0 ||
         target.amp !== 1 ||
         target.shiftX !== 0 ||
         target.lift !== 0 ||
         target.skew !== 0 ||
-        target.speedT !== 0 ||
         target.sheenA !== 0 ||
         target.sheenX !== 0
 
@@ -189,13 +180,6 @@ export const useWaterCursor = (
         ).toFixed(3)}px) skewX(${(-cur.skew).toFixed(3)}deg)`
         refs.waveAShift.style.transform = txA
         refs.waveBShift.style.transform = tx
-
-        const speedFactor = 1 + cur.speedT * (T.speedup - 1)
-        refs.waveAAnim.style.animationDuration =
-          (3.4 / speedFactor).toFixed(3) + 's'
-
-        refs.waveBAnim.style.animationDuration =
-          (4.8 / speedFactor).toFixed(3) + 's'
       }
 
       // Sheen position + opacity track currentWaterTop on every frame
@@ -231,8 +215,6 @@ export const useWaterCursor = (
       // next hover.
       refs.waveAShift.style.transform = ''
       refs.waveBShift.style.transform = ''
-      refs.waveAAnim.style.animationDuration = ''
-      refs.waveBAnim.style.animationDuration = ''
       refs.sheen.setAttribute('fill-opacity', '0')
     }
 
@@ -253,7 +235,6 @@ export const useWaterCursor = (
           'shiftX',
           'lift',
           'skew',
-          'speedT',
           'sheenX',
           'sheenA',
         ]
@@ -284,7 +265,6 @@ export const useWaterCursor = (
           Math.abs(cur.shiftX - target.shiftX) < 0.02 &&
           Math.abs(cur.lift - target.lift) < 0.02 &&
           Math.abs(cur.skew - target.skew) < 0.02 &&
-          Math.abs(cur.speedT - target.speedT) < 0.01 &&
           Math.abs(cur.sheenA - target.sheenA) < 0.01 &&
           Math.abs(cur.sheenX - target.sheenX) < 0.01 &&
           // Keep looping while waterTop is still chasing the CSS transition.
@@ -301,7 +281,6 @@ export const useWaterCursor = (
           target.shiftX === 0 &&
           target.lift === 0 &&
           target.skew === 0 &&
-          target.speedT === 0 &&
           target.sheenA === 0 &&
           target.sheenX === 0
         if (settled) {
@@ -313,7 +292,6 @@ export const useWaterCursor = (
             target.shiftX = 0
             target.lift = 0
             target.skew = 0
-            target.speedT = 0
             target.sheenX = 0
             target.sheenA = 0
             clearInline()
@@ -371,7 +349,6 @@ export const useWaterCursor = (
       target.shiftX = 0
       target.lift = 0
       target.skew = 0
-      target.speedT = 0
       target.sheenX = 0
       target.sheenA = 0
     }
@@ -405,6 +382,5 @@ export const useWaterCursor = (
     maxShift,
     maxLift,
     meniscus,
-    speedup,
   ])
 }
