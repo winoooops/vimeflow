@@ -44,7 +44,9 @@ Control host credentials:
 - `GH_ORCH_TOKEN`, also materialized as ambient `GH_TOKEN` for daemon polling and
   PR status reads
 - `orchestrator.env`
-- `linear-orchestrator.env`
+- `LINEAR_CLIENT_ID`, `LINEAR_CLIENT_SECRET`, and `LINEAR_SCOPES` in
+  `/etc/vimeflow/qa-runner/control.env`; `linear-orchestrator.env` remains a
+  local/compatibility fallback
 - `CODEX_HOME`, populated by `codex login --with-api-key` during control
   bootstrap so review adjudication can run on the control host
 - Cloudflare Tunnel token or locally managed tunnel credentials
@@ -52,7 +54,9 @@ Control host credentials:
 Worker credentials:
 
 - `bot.env`
-- `linear-agent.env`
+- `LINEAR_CLIENT_ID`, `LINEAR_CLIENT_SECRET`, and `LINEAR_SCOPES` in
+  `/etc/vimeflow/qa-runner/worker.env`; `linear-agent.env` remains a
+  local/compatibility fallback
 - `CODEX_API_KEY`, sourced from
   `/vimeflow/qa-runner/prod/worker/CODEX_API_KEY`, consumed by
   `codex login --with-api-key` during worker bootstrap

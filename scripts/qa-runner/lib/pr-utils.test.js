@@ -29,6 +29,30 @@ describe('linkedVim', () => {
     expect(linkedVim('Related VIM-1\nCloses VIM-20')).toBe('VIM-20')
     expect(linkedVim('', 'feature/vim-21-ci-fixes')).toBe('VIM-21')
   })
+
+  test('prefers explicit refs over incidental body mentions', () => {
+    expect(
+      linkedVim(
+        [
+          'Cloud smoke against PR #353 passed:',
+          '',
+          'GOOD_SHAPE #353 feat/browser-pane (VIM-56)',
+          '',
+          'Refs VIM-70',
+        ].join('\n'),
+        'feature/vim-70-control-owned-merge'
+      )
+    ).toBe('VIM-70')
+  })
+
+  test('prefers branch issue over generic body mentions', () => {
+    expect(
+      linkedVim(
+        'Follow-up from an older smoke test on VIM-56.',
+        'feature/vim-70-linear-env-split'
+      )
+    ).toBe('VIM-70')
+  })
 })
 
 describe('linked issue cache', () => {

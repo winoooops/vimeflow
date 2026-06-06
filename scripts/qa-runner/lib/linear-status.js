@@ -34,11 +34,22 @@ const isRealSecret = (value) => value && !/PASTE|xxxx/i.test(value)
 
 export const readEnvFile = (file) => {
   const env = {}
-  if (!existsSync(file)) {
-    return env
+  let content
+  try {
+    if (!existsSync(file)) {
+      return env
+    }
+
+    content = readFileSync(file, 'utf8')
+  } catch (e) {
+    if (['ENOENT', 'EACCES', 'EPERM', 'EISDIR'].includes(e?.code)) {
+      return env
+    }
+
+    throw e
   }
 
-  for (const line of readFileSync(file, 'utf8').split(/\r?\n/)) {
+  for (const line of content.split(/\r?\n/)) {
     const m = line.match(
       /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$/
     )
@@ -61,6 +72,22 @@ const ROLE_FILE = {
 
 const readEnvVar = (file, key) => readEnvFile(file)[key]
 
+const LINEAR_AUTH_ENV_KEYS = [
+  'LINEAR_CLIENT_ID',
+  'LINEAR_CLIENT_SECRET',
+  'LINEAR_SCOPES',
+  'LINEAR_ACCESS_TOKEN',
+  'LINEAR_AGENT_TOKEN',
+]
+
+const pickProcessLinearAuth = (env = process.env) =>
+  Object.fromEntries(
+    LINEAR_AUTH_ENV_KEYS.filter((key) => env[key] != null).map((key) => [
+      key,
+      env[key],
+    ])
+  )
+
 const roleFile = (root, role) => {
   const file = ROLE_FILE[role]
   if (!file) {
@@ -69,6 +96,11 @@ const roleFile = (root, role) => {
 
   return join(root, file)
 }
+
+const loadRoleAuthEnv = (root, role, processEnv = process.env) => ({
+  ...readEnvFile(roleFile(root, role)),
+  ...pickProcessLinearAuth(processEnv),
+})
 
 const mintClientCredentialsAuth = async (role, env, fetchImpl) => {
   if (
@@ -107,9 +139,14 @@ const mintClientCredentialsAuth = async (role, env, fetchImpl) => {
 // Authorization for a role: prefer role app client credentials (Bearer, posts as
 // the app), then a stored role access token, else the personal key (raw header,
 // posts as you). Returns { header, who }.
-export const loadAuthFromRoot = async (role, root, fetchImpl = fetch) => {
+export const loadAuthFromRoot = async (
+  role,
+  root,
+  fetchImpl = fetch,
+  processEnv = process.env
+) => {
   if (role) {
-    const env = readEnvFile(roleFile(root, role))
+    const env = loadRoleAuthEnv(root, role, processEnv)
     let clientCredentialsError
     try {
       const auth = await mintClientCredentialsAuth(role, env, fetchImpl)
@@ -130,7 +167,7 @@ export const loadAuthFromRoot = async (role, root, fetchImpl = fetch) => {
   }
 
   const key =
-    process.env.LINEAR_API_KEY ||
+    processEnv.LINEAR_API_KEY ||
     readEnvVar(join(root, 'linear.env'), 'LINEAR_API_KEY')
   if (key) {
     return { header: key, who: 'you (personal key)' }

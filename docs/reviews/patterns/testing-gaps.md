@@ -2,7 +2,7 @@
 id: testing-gaps
 category: testing
 created: 2026-04-09
-last_updated: 2026-06-02
+last_updated: 2026-06-06
 ref_count: 26
 ---
 
@@ -562,3 +562,12 @@ filesystem scope restrictions).
 - **Finding:** Both exported sets contained identical three entries. In `classifyChecks`, `review` was first filtered by `reviewChecks`, so every element was already in `reviewChecks`. Since `REVIEW_RERUN_CHECKS === REVIEW_CHECKS`, `reviewRerunChecks.has(check.name)` was always true for elements of `review` — the filter was a no-op. Adding a name to one set without updating the other would silently diverge behavior, and no test covered the divergent case.
 - **Fix:** Made `REVIEW_RERUN_CHECKS` an explicit alias of `REVIEW_CHECKS` so the sameness is intentional rather than coincidental. Added a test asserting that checks absent from `reviewRerunChecks` are excluded from `reviewRerunFailures`, pinning the contract against future drift.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 57. Test setup manipulates the wrong file — chmod has no effect on code under test
+
+- **Source:** github-claude | PR #359 cycle 1 | 2026-06-06
+- **Severity:** MEDIUM
+- **File:** `scripts/qa-runner/lib/linear-status.test.js`
+- **Finding:** A test titled `ignores unreadable fallback env files when process env auth is available` called `loadAuthFromRoot('fixer', root, fetchImpl)`, which reads role credentials from `linear-agent.env`. But the test wrote and chmod'd `linear.env` (the personal-key fallback file). The chmod had zero effect on the file the code under test actually opened, so the EACCES-handling path for role files was never exercised. If the `readEnvFile` EACCES catch were accidentally regressed (e.g., narrowed to `ENOENT` only), the test would still pass, leaving a silent production credential-failure path uncovered.
+- **Fix:** Changed `writeEnv(root, 'linear.env', ...)` + `chmodSync(join(root, 'linear.env'), 0)` to target `linear-agent.env` instead, matching the role file that `loadAuthFromRoot('fixer', ...)` reads via `ROLE_FILE.fixer`. Code-review heuristic: whenever a test sets up filesystem state (writes, chmods, deletes, renames) to drive a code path, verify that the manipulated path is exactly the path the production code resolves for the given test inputs — not a related file, not a fallback file, not the file from a different test scenario.
+- **Commit:** same commit as this entry

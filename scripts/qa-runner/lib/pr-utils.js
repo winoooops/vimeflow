@@ -6,14 +6,24 @@ import { fileURLToPath } from 'node:url'
 const QA_DIR = dirname(dirname(fileURLToPath(import.meta.url)))
 const STATE_DIR = join(QA_DIR, '.state')
 
-// The Linear issue this PR closes — prefer the `Closes/Fixes/Resolves VIM-N` magic
-// word, fall back to the first VIM-N mention. Deterministic so status never posts
-// to a related/historical ticket mentioned earlier in the body.
+// The Linear issue this PR is meant to update. Explicit link words are strongest,
+// then the branch name, then generic body mentions. This keeps smoke-test logs or
+// historical issue references in the PR body from stealing the status thread.
 export const linkedVim = (...texts) => {
+  const [body = '', ...rest] = texts
+  const branchText = rest.filter(Boolean).join('\n')
   const b = texts.filter(Boolean).join('\n')
-  const closing = b.match(/\b(?:closes|fixes|resolves)\s+(VIM-\d+)\b/i)
 
-  return (closing?.[1] || b.match(/\bVIM-\d+\b/i)?.[0])?.toUpperCase()
+  const explicit = b.match(
+    /\b(?:closes|fixes|resolves|refs|references)\s+(VIM-\d+)\b/i
+  )
+  const branch = branchText.match(/\bVIM-\d+\b/i)
+
+  return (
+    explicit?.[1] ||
+    branch?.[0] ||
+    body.match(/\bVIM-\d+\b/i)?.[0]
+  )?.toUpperCase()
 }
 
 export const linkedIssueStorePath = (pr) =>
