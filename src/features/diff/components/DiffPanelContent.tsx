@@ -273,6 +273,14 @@ export const DiffPanelContent = ({
     selectedFileUntracked
   )
 
+  const responseMatchesSelection =
+    response !== null &&
+    selectedFilePath !== null &&
+    response.fileDiff.filePath === selectedFilePath
+
+  const activeResponse =
+    !diffLoading && responseMatchesSelection ? response : null
+
   // Notification hook — reused for the "Pierre split differently" and
   // "could not isolate hunk" informational messages.
   const { message: notifyMessage, notifyInfo } = useNotifyInfo()
@@ -483,7 +491,7 @@ export const DiffPanelContent = ({
   // Single-flight staging flag — drops clicks while an IPC is in flight.
   const [staging, setStaging] = useState(false)
 
-  // PR3: focusedHunkIndex is the 0-based index into response.fileDiff.hunks.
+  // PR3: focusedHunkIndex is the 0-based index into activeResponse.fileDiff.hunks.
   // Replaced the PR2 hardcoded `[0]` so prev/next navigation can step through
   // hunks. Null when there are no hunks (whole-file operations only).
   const [focusedHunkIndex, setFocusedHunkIndex] = useState(0)
@@ -503,7 +511,7 @@ export const DiffPanelContent = ({
     setComposerTarget(null)
   }, [selectedFilePath, selectedFileStaged])
 
-  const hunkCount = response?.fileDiff.hunks.length ?? 0
+  const hunkCount = activeResponse?.fileDiff.hunks.length ?? 0
 
   // Clamp focusedHunkIndex when the hunk array shrinks WITHOUT a file change.
   // Staging/discarding a hunk reloads the SAME file with fewer hunks, so the
@@ -525,13 +533,13 @@ export const DiffPanelContent = ({
   const clampedHunkIndex =
     hunkCount > 0 ? Math.min(focusedHunkIndex, hunkCount - 1) : 0
 
-  const focusedHunk = response?.fileDiff.hunks[clampedHunkIndex] ?? null
+  const focusedHunk = activeResponse?.fileDiff.hunks[clampedHunkIndex] ?? null
 
   // Map a hunk to its Pierre line range. Deletion-only hunks (newLines === 0)
   // use old-side coordinates so the highlight lands on the deletions column.
   const hunkToRange = useCallback(
     (
-      hunk: NonNullable<typeof response>['fileDiff']['hunks'][number]
+      hunk: NonNullable<typeof activeResponse>['fileDiff']['hunks'][number]
     ): SelectedLineRange => {
       const isDeletionOnly = hunk.newLines === 0
       const lineStart = isDeletionOnly ? hunk.oldStart : hunk.newStart
@@ -566,7 +574,9 @@ export const DiffPanelContent = ({
   }, [])
 
   const flashHunkSelection = useCallback(
-    (hunk: NonNullable<typeof response>['fileDiff']['hunks'][number]): void => {
+    (
+      hunk: NonNullable<typeof activeResponse>['fileDiff']['hunks'][number]
+    ): void => {
       setNavSelection(hunkToRange(hunk))
       clearNavSelectionTimer()
       navClearTimerRef.current = setTimeout(() => {
@@ -587,11 +597,11 @@ export const DiffPanelContent = ({
   }, [selectedFilePath, selectedFileStaged, clearNavSelectionTimer])
 
   const onPrevHunk = useCallback((): void => {
-    if (!response) {
+    if (!activeResponse) {
       return
     }
 
-    const hunks = response.fileDiff.hunks
+    const hunks = activeResponse.fileDiff.hunks
     if (hunks.length === 0) {
       return
     }
@@ -599,14 +609,14 @@ export const DiffPanelContent = ({
     const next = (clampedHunkIndex + hunks.length - 1) % hunks.length
     setFocusedHunkIndex(next)
     flashHunkSelection(hunks[next])
-  }, [response, clampedHunkIndex, flashHunkSelection])
+  }, [activeResponse, clampedHunkIndex, flashHunkSelection])
 
   const onNextHunk = useCallback((): void => {
-    if (!response) {
+    if (!activeResponse) {
       return
     }
 
-    const hunks = response.fileDiff.hunks
+    const hunks = activeResponse.fileDiff.hunks
     if (hunks.length === 0) {
       return
     }
@@ -614,7 +624,7 @@ export const DiffPanelContent = ({
     const next = (clampedHunkIndex + 1) % hunks.length
     setFocusedHunkIndex(next)
     flashHunkSelection(hunks[next])
-  }, [response, clampedHunkIndex, flashHunkSelection])
+  }, [activeResponse, clampedHunkIndex, flashHunkSelection])
 
   // Only the transient nav flash drives Pierre's selection — see the comment on
   // `navSelection` above for why a persistent focused-hunk selection is avoided.
@@ -634,13 +644,13 @@ export const DiffPanelContent = ({
       if (
         staging ||
         !selectedFilePath ||
-        response === null ||
+        activeResponse === null ||
         focusedHunk === null
       ) {
         return
       }
 
-      const rawIndex = findRawDiffHunkIndex(response, focusedHunk)
+      const rawIndex = findRawDiffHunkIndex(activeResponse, focusedHunk)
       if (rawIndex === -1) {
         notifyInfo(
           `Pierre split this hunk differently than git — cannot ${verb} this region; use Discard All or the file-level chip`
@@ -649,7 +659,7 @@ export const DiffPanelContent = ({
         return
       }
 
-      const hunkPatch = extractHunkPatch(response.rawDiff, rawIndex)
+      const hunkPatch = extractHunkPatch(activeResponse.rawDiff, rawIndex)
       if (hunkPatch === null) {
         notifyInfo('Could not isolate this hunk — try refreshing the diff')
 
@@ -673,7 +683,7 @@ export const DiffPanelContent = ({
     [
       staging,
       selectedFilePath,
-      response,
+      activeResponse,
       focusedHunk,
       notifyInfo,
       refetchDiff,

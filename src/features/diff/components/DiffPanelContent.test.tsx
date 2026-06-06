@@ -1854,6 +1854,84 @@ describe('DiffPanelContent', () => {
       ).toBeInTheDocument()
     })
 
+    test('shows 0/0 instead of the previous file hunk count while next diff loads', (): void => {
+      vi.spyOn(useGitStatusModule, 'useGitStatus').mockReturnValue({
+        files: [
+          { path: 'src/multi.ts', status: 'modified', staged: false },
+          { path: 'src/other.ts', status: 'modified', staged: false },
+        ],
+        filesCwd: '/repo',
+        loading: false,
+        error: null,
+        refresh: vi.fn(),
+        idle: false,
+      })
+
+      const { rerender } = render(
+        <DiffPanelContent
+          cwd="/repo"
+          selectedFile={{ path: 'src/multi.ts', staged: false, cwd: '/repo' }}
+          onSelectedFileChange={vi.fn()}
+        />
+      )
+
+      expect(
+        screen.getByRole('group', { name: /hunk 1\/3/i })
+      ).toBeInTheDocument()
+
+      vi.spyOn(useFileDiffModule, 'useFileDiff').mockReturnValue(
+        fileDiffMock({
+          diff: threeHunkDiff,
+          loading: true,
+          error: null,
+          oldText: 'old',
+          newText: 'new',
+          rawDiff: '',
+        })
+      )
+
+      rerender(
+        <DiffPanelContent
+          cwd="/repo"
+          selectedFile={{ path: 'src/other.ts', staged: false, cwd: '/repo' }}
+          onSelectedFileChange={vi.fn()}
+        />
+      )
+
+      expect(
+        screen.getByRole('group', { name: /hunk 0\/0/i })
+      ).toBeInTheDocument()
+      expect(screen.queryByLabelText(/hunk 1\/3/i)).not.toBeInTheDocument()
+
+      vi.spyOn(useFileDiffModule, 'useFileDiff').mockReturnValue(
+        fileDiffMock({
+          diff: {
+            filePath: 'src/other.ts',
+            oldPath: 'src/other.ts',
+            newPath: 'src/other.ts',
+            hunks: [threeHunkDiff.hunks[0]],
+          },
+          loading: false,
+          error: null,
+          oldText: 'old',
+          newText: 'new',
+          rawDiff: '',
+        })
+      )
+
+      rerender(
+        <DiffPanelContent
+          cwd="/repo"
+          selectedFile={{ path: 'src/other.ts', staged: false, cwd: '/repo' }}
+          onSelectedFileChange={vi.fn()}
+        />
+      )
+
+      expect(
+        screen.getByRole('group', { name: /hunk 1\/1/i })
+      ).toBeInTheDocument()
+    })
+
     test('clicking next-hunk advances focus: counter 2/3 and selectedLines from hunk 1', async (): Promise<void> => {
       const user = userEvent.setup()
 
