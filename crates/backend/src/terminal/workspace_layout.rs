@@ -529,9 +529,21 @@ impl WorkspaceLayoutCache {
                 store.version
             ));
         }
+        // Defense-in-depth: run the same repair/validation that load applies,
+        // so invalid URLs or malformed panes cannot be persisted. Derive the
+        // default project/cwd context from the first session so a stale shell
+        // pane cwd never falls back to an empty string (which would cause the
+        // pane to be dropped on the next load).
+        let (default_project, default_cwd) = store
+            .sessions
+            .first()
+            .map(|s| (s.project_id.as_str(), s.working_directory.as_str()))
+            .unwrap_or(("", ""));
+        let raw = serde_json::to_value(store).map_err(|e| format!("serialize: {e}"))?;
+        let repaired = repair_workspace_layout(raw, default_project, default_cwd);
         let mut guard = self.mirror.lock().expect("workspace-layout mirror poisoned");
-        self.flush_to_disk(store)?;
-        *guard = Some(store.clone());
+        self.flush_to_disk(&repaired)?;
+        *guard = Some(repaired);
         Ok(())
     }
 
@@ -851,6 +863,49 @@ mod tests {
         assert!(cache.save(&bad).is_err());
         let loaded = WorkspaceLayoutCache::new(path).load("proj", "/");
         assert_eq!(loaded.sessions.len(), 1); // original survived
+    }
+
+    #[test]
+    fn save_repair_drops_invalid_urls_before_persisting() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("workspace-layouts.json");
+        let cache = WorkspaceLayoutCache::new(path);
+
+        let store = WorkspaceLayoutStore {
+            version: CURRENT_WORKSPACE_LAYOUT_VERSION,
+            sessions: vec![WorkspaceSession {
+                id: "s".into(),
+                project_id: "proj".into(),
+                layout: "single".into(),
+                working_directory: "/".into(),
+                active: true,
+                panes: vec![WorkspacePane::Browser(BrowserPane {
+                    pane_id: "p0".into(),
+                    pane_index: 0,
+                    active: true,
+                    tabs: vec![PersistedTab {
+                        active: true,
+                        history: vec![
+                            NavEntry {
+                                url: "javascript:alert(1)".into(),
+                                title: None,
+                            },
+                            NavEntry {
+                                url: "https://ok".into(),
+                                title: None,
+                            },
+                        ],
+                        history_index: 1,
+                    }],
+                })],
+            }],
+        };
+        cache.save(&store).unwrap();
+        let snap = cache.snapshot().unwrap();
+        let b = browser_tab(&snap.sessions[0].panes[0]);
+        assert_eq!(b.tabs[0].history.len(), 1);
+        assert_eq!(b.tabs[0].history[0].url, "https://ok");
+        assert_eq!(b.tabs[0].history_index, 0);
     }
 
     #[test]
