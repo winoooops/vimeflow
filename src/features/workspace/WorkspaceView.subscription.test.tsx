@@ -1,14 +1,35 @@
 import type { ReactElement, ReactNode } from 'react'
 import { describe, test, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { WorkspaceView } from './WorkspaceView'
+import type { DiffLineAnnotation } from '@pierre/diffs'
 import type { AgentStatus } from '../agent-status/types'
 import { useGitStatus } from '../diff/hooks/useGitStatus'
 import { useAgentStatus } from '../agent-status/hooks/useAgentStatus'
+import type { FeedbackRepoRootRef } from '../diff/components/DiffPanelContent'
+import type {
+  ReviewComment,
+  UseFeedbackBatchReturn,
+} from '../diff/hooks/useFeedbackBatch'
 
 // Mock TerminalPane / TerminalZone deps to avoid xterm.js in jsdom
+interface MockTerminalPaneProps {
+  onCwdChange?: (cwd: string) => void
+}
+
 vi.mock('../terminal/components/TerminalPane', () => ({
-  TerminalPane: vi.fn(() => <div data-testid="terminal-pane-mock" />),
+  TerminalPane: vi.fn(
+    ({ onCwdChange = undefined }: MockTerminalPaneProps): ReactElement => (
+      <div data-testid="terminal-pane-mock">
+        <button
+          data-testid="mock-terminal-cwd-change"
+          onClick={() => onCwdChange?.('/repo/next')}
+        >
+          change cwd
+        </button>
+      </div>
+    )
+  ),
 }))
 
 interface MockEditorBuffer {
@@ -145,7 +166,12 @@ vi.mock('../../hooks/useElasticContainer', () => ({
 
 const capturedPanelProps: { agentStatus?: AgentStatus; gitStatus?: unknown } =
   {}
-const capturedDockPanelProps: { gitStatus?: unknown } = {}
+
+const capturedDockPanelProps: {
+  gitStatus?: unknown
+  feedbackBatch?: UseFeedbackBatchReturn
+  feedbackRepoRootRef?: FeedbackRepoRootRef
+} = {}
 
 interface MockPanelProps {
   agentStatus?: AgentStatus
@@ -154,6 +180,8 @@ interface MockPanelProps {
 
 interface MockDockPanelProps {
   gitStatus?: unknown
+  feedbackBatch?: UseFeedbackBatchReturn
+  feedbackRepoRootRef?: FeedbackRepoRootRef
   tab?: 'editor' | 'diff'
   onTabChange?: (tab: 'editor' | 'diff') => void
   onClose?: () => void
@@ -206,10 +234,14 @@ vi.mock('../agent-status/components/AgentStatusPanel', () => ({
 vi.mock('./components/DockPanel', () => ({
   default: ({
     gitStatus = undefined,
+    feedbackBatch = undefined,
+    feedbackRepoRootRef = undefined,
     onTabChange,
     onClose,
   }: MockDockPanelProps): ReactElement => {
     capturedDockPanelProps.gitStatus = gitStatus
+    capturedDockPanelProps.feedbackBatch = feedbackBatch
+    capturedDockPanelProps.feedbackRepoRootRef = feedbackRepoRootRef
 
     return (
       <div data-testid="dock-panel-mock">
@@ -236,6 +268,8 @@ describe('WorkspaceView lifted-subscription contract', () => {
     capturedPanelProps.agentStatus = undefined
     capturedPanelProps.gitStatus = undefined
     capturedDockPanelProps.gitStatus = undefined
+    capturedDockPanelProps.feedbackBatch = undefined
+    capturedDockPanelProps.feedbackRepoRootRef = undefined
     capturedStatusHeaderProps.status = undefined
     // Clear the mock between tests so `toHaveBeenCalledWith` assertions
     // see only the calls from THIS test's render. Without this,
@@ -296,6 +330,47 @@ describe('WorkspaceView lifted-subscription contract', () => {
     expect(capturedPanelProps.gitStatus).toBeDefined()
     expect(capturedDockPanelProps.gitStatus).toBeDefined()
     expect(capturedPanelProps.gitStatus).toBe(capturedDockPanelProps.gitStatus)
+  })
+
+  test('DockPanel receives a workspace feedback batch that clears on cwd change', async () => {
+    render(<WorkspaceView />)
+
+    await screen.findByTestId('dock-panel-mock')
+    await screen.findByTestId('terminal-pane-mock')
+
+    const feedbackBatch = capturedDockPanelProps.feedbackBatch
+    expect(feedbackBatch).toBeDefined()
+    const feedbackRepoRootRef = capturedDockPanelProps.feedbackRepoRootRef
+    expect(feedbackRepoRootRef).toBeDefined()
+
+    const annotation: DiffLineAnnotation<ReviewComment> = {
+      side: 'additions',
+      lineNumber: 1,
+      metadata: {
+        id: 'feedback-comment-test',
+        text: 'Review this change',
+        author: 'self',
+        createdAt: 1,
+      },
+    }
+
+    act(() => {
+      feedbackBatch?.addAnnotation('~', 'src/foo.ts', false, annotation)
+    })
+
+    await waitFor(() =>
+      expect(capturedDockPanelProps.feedbackBatch?.totalAnnotations()).toBe(1)
+    )
+    if (feedbackRepoRootRef) {
+      feedbackRepoRootRef.current = '/repo'
+    }
+
+    fireEvent.click(screen.getByTestId('mock-terminal-cwd-change'))
+
+    await waitFor(() =>
+      expect(capturedDockPanelProps.feedbackBatch?.totalAnnotations()).toBe(0)
+    )
+    expect(capturedDockPanelProps.feedbackRepoRootRef?.current).toBe('')
   })
 
   test('WorkspaceView calls useGitStatus with enabled: true when an agent is active', async () => {

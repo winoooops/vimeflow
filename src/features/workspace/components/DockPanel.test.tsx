@@ -1,13 +1,23 @@
-import { render, screen, within, fireEvent } from '@testing-library/react'
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react'
 import { describe, test, expect, vi, beforeEach } from 'vitest'
 import userEvent from '@testing-library/user-event'
-import { createRef, forwardRef, type ReactElement } from 'react'
+import { createRef, forwardRef, useRef, type ReactElement } from 'react'
 import DockPanel, { type DockPanelHandle } from './DockPanel'
 import * as useCodeMirrorModule from '../../editor/hooks/useCodeMirror'
 import * as useVimModeModule from '../../editor/hooks/useVimMode'
 import * as languageServiceModule from '../../editor/services/languageService'
 import * as useGitStatusModule from '../../diff/hooks/useGitStatus'
 import * as useFileDiffModule from '../../diff/hooks/useFileDiff'
+import { useFeedbackBatch } from '../../diff/hooks/useFeedbackBatch'
+import type { UseFileDiffReturn } from '../../diff/hooks/useFileDiff'
+import type { ChangedFile } from '../../diff/types'
+import type { FeedbackDispatchTarget } from '../../diff/services/activePanePicker'
 import { javascript } from '@codemirror/lang-javascript'
 
 vi.mock('../../editor/hooks/useCodeMirror')
@@ -15,9 +25,53 @@ vi.mock('../../editor/hooks/useVimMode')
 vi.mock('../../editor/services/languageService')
 vi.mock('../../diff/hooks/useGitStatus')
 vi.mock('../../diff/hooks/useFileDiff')
+
+interface MockLineAnnotation {
+  lineNumber: number
+  side: string
+  metadata: {
+    id: string
+    text: string
+    author: string
+    createdAt: number
+  }
+}
+
 vi.mock('@pierre/diffs/react', () => ({
   useWorkerPool: vi.fn(() => null),
-  MultiFileDiff: vi.fn(() => <div data-testid="multi-file-diff" />),
+  MultiFileDiff: vi.fn(
+    ({
+      renderGutterUtility = undefined,
+      lineAnnotations = undefined,
+      renderAnnotation = undefined,
+    }: {
+      renderGutterUtility?: (
+        getHovered: () => { lineNumber: number; side: string }
+      ) => ReactElement
+      lineAnnotations?: MockLineAnnotation[]
+      renderAnnotation?: (annotation: MockLineAnnotation) => ReactElement
+    }) => (
+      <div data-testid="multi-file-diff">
+        {renderGutterUtility ? (
+          <div data-testid="gutter-utility-slot">
+            {renderGutterUtility(() => ({
+              lineNumber: 1,
+              side: 'additions',
+            }))}
+          </div>
+        ) : null}
+        {lineAnnotations && renderAnnotation ? (
+          <div data-testid="annotation-slot">
+            {lineAnnotations.map((annotation, index) => (
+              <div key={annotation.metadata.id ?? index}>
+                {renderAnnotation(annotation)}
+              </div>
+            ))}
+          </div>
+        ) : null}
+      </div>
+    )
+  ),
 }))
 
 // react-markdown is ESM-only and heavy in jsdom; the DockPanel test only needs
@@ -38,6 +92,120 @@ vi.mock('../../editor/components/MarkdownReadingView', () => ({
 }))
 
 type DockPanelTestProps = Parameters<typeof DockPanel>[0]
+
+const inlineChangedFile: ChangedFile = {
+  path: 'src/foo.ts',
+  status: 'modified',
+  staged: false,
+}
+
+const inlineDiffResponse: NonNullable<UseFileDiffReturn['response']> = {
+  fileDiff: {
+    filePath: 'src/foo.ts',
+    oldPath: 'src/foo.ts',
+    newPath: 'src/foo.ts',
+    hunks: [
+      {
+        id: 'hunk-0',
+        header: '@@ -1,3 +1,3 @@',
+        oldStart: 1,
+        oldLines: 3,
+        newStart: 1,
+        newLines: 3,
+        lines: [
+          { type: 'context', content: 'alpha' },
+          { type: 'added', content: 'beta' },
+          { type: 'context', content: 'gamma' },
+        ],
+      },
+    ],
+  },
+  oldText: 'old',
+  newText: 'new',
+  rawDiff: '',
+  repoRoot: '/repo',
+}
+
+const SharedFeedbackDockHarness = ({
+  tab,
+  open,
+  cwd = '/repo',
+  feedbackDispatch = undefined,
+}: {
+  tab: 'editor' | 'diff'
+  open: boolean
+  cwd?: string
+  feedbackDispatch?: FeedbackDispatchTarget
+}): ReactElement => {
+  const feedbackBatch = useFeedbackBatch()
+  const feedbackRepoRootRef = useRef('')
+  const isResizing = false
+
+  if (!open) {
+    return <div data-testid="dock-closed" />
+  }
+
+  return (
+    <DockPanel
+      position="bottom"
+      tab={tab}
+      onTabChange={vi.fn()}
+      onPositionChange={vi.fn()}
+      onClose={vi.fn()}
+      verticalSize={400}
+      onVerticalResizeMouseDown={vi.fn()}
+      isVerticalResizing={isResizing}
+      onVerticalSizeAdjust={vi.fn()}
+      verticalPixelMin={40}
+      verticalPixelMax={640}
+      horizontalSize={360}
+      onHorizontalResizeMouseDown={vi.fn()}
+      isHorizontalResizing={isResizing}
+      onHorizontalSizeAdjust={vi.fn()}
+      horizontalPixelMin={40}
+      horizontalPixelMax={640}
+      selectedFilePath={null}
+      content=""
+      cwd={cwd}
+      gitStatus={{
+        files: [inlineChangedFile],
+        filesCwd: cwd,
+        loading: false,
+        error: null,
+        refresh: vi.fn(),
+        idle: false,
+      }}
+      selectedDiffFile={{
+        path: inlineChangedFile.path,
+        staged: inlineChangedFile.staged,
+        cwd,
+      }}
+      onSelectedDiffFileChange={vi.fn()}
+      feedbackBatch={feedbackBatch}
+      feedbackRepoRootRef={feedbackRepoRootRef}
+      feedbackDispatch={feedbackDispatch}
+    />
+  )
+}
+
+const addInlineComment = async (
+  user: ReturnType<typeof userEvent.setup>,
+  text: string
+): Promise<void> => {
+  const gutterSlot = screen.getByTestId('gutter-utility-slot')
+
+  await user.click(
+    within(gutterSlot).getByRole('button', {
+      name: 'Add comment on this line',
+    })
+  )
+
+  const dialog = screen.getByRole('dialog', { name: /Comment on line/ })
+  await user.type(within(dialog).getByPlaceholderText('Request change'), text)
+  await user.keyboard('{Enter}')
+
+  await screen.findByRole('button', { name: /finish feedback \(1\)/i })
+}
 
 const renderDockPanel = (
   overrides: Partial<DockPanelTestProps> = {}
@@ -747,6 +915,131 @@ describe('DockPanel', () => {
       expect.anything(),
       expect.objectContaining({ enabled: false })
     )
+  })
+
+  test('keeps pending inline feedback across Editor and Diff tab switches when parent-owned', async () => {
+    const user = userEvent.setup()
+    vi.spyOn(useFileDiffModule, 'useFileDiff').mockReturnValue({
+      response: inlineDiffResponse,
+      diff: inlineDiffResponse.fileDiff,
+      loading: false,
+      error: null,
+      refetch: vi.fn(),
+    })
+
+    const { rerender } = render(<SharedFeedbackDockHarness tab="diff" open />)
+
+    await addInlineComment(user, 'Survives tab switch')
+
+    rerender(<SharedFeedbackDockHarness tab="editor" open />)
+
+    expect(screen.queryByTestId('diff-panel')).not.toBeInTheDocument()
+
+    rerender(<SharedFeedbackDockHarness tab="diff" open />)
+
+    expect(
+      await screen.findByRole('button', { name: /finish feedback \(1\)/i })
+    ).toBeInTheDocument()
+    expect(screen.getByText('Survives tab switch')).toBeInTheDocument()
+  })
+
+  test('keeps pending inline feedback after the dock unmounts and reopens when parent-owned', async () => {
+    const user = userEvent.setup()
+    vi.spyOn(useFileDiffModule, 'useFileDiff').mockReturnValue({
+      response: inlineDiffResponse,
+      diff: inlineDiffResponse.fileDiff,
+      loading: false,
+      error: null,
+      refetch: vi.fn(),
+    })
+
+    const { rerender } = render(<SharedFeedbackDockHarness tab="diff" open />)
+
+    await addInlineComment(user, 'Survives dock reopen')
+
+    const closed = false
+    rerender(<SharedFeedbackDockHarness tab="diff" open={closed} />)
+
+    expect(screen.getByTestId('dock-closed')).toBeInTheDocument()
+
+    rerender(<SharedFeedbackDockHarness tab="diff" open />)
+
+    expect(
+      await screen.findByRole('button', { name: /finish feedback \(1\)/i })
+    ).toBeInTheDocument()
+    expect(screen.getByText('Survives dock reopen')).toBeInTheDocument()
+  })
+
+  test('keeps absolute feedback paths after dock reopen while the diff reloads', async () => {
+    const user = userEvent.setup()
+    let diffLoaded = true
+
+    vi.spyOn(useFileDiffModule, 'useFileDiff').mockImplementation(() => ({
+      response: diffLoaded ? inlineDiffResponse : null,
+      diff: diffLoaded ? inlineDiffResponse.fileDiff : null,
+      loading: !diffLoaded,
+      error: null,
+      refetch: vi.fn(),
+    }))
+
+    const writePty = vi.fn().mockResolvedValue(undefined)
+
+    const feedbackDispatch: FeedbackDispatchTarget = {
+      candidates: [
+        {
+          paneId: 'pane-1',
+          ptyId: 'pty-1',
+          tabName: 'Agent',
+          agentLabel: 'Claude Code',
+          cwd: '/repo/subdir',
+          status: 'running',
+          isFocused: true,
+        },
+      ],
+      writePty,
+    }
+
+    const { rerender } = render(
+      <SharedFeedbackDockHarness
+        tab="diff"
+        open
+        feedbackDispatch={feedbackDispatch}
+      />
+    )
+
+    await addInlineComment(user, 'Preserve the absolute path')
+
+    const closed = false
+    rerender(
+      <SharedFeedbackDockHarness
+        tab="diff"
+        open={closed}
+        feedbackDispatch={feedbackDispatch}
+      />
+    )
+
+    diffLoaded = false
+    rerender(
+      <SharedFeedbackDockHarness
+        tab="diff"
+        open
+        feedbackDispatch={feedbackDispatch}
+      />
+    )
+
+    await user.click(
+      await screen.findByRole('button', { name: /finish feedback \(1\)/i })
+    )
+
+    const popover = await screen.findByRole('dialog', {
+      name: 'Finish feedback',
+    })
+    await user.click(within(popover).getByRole('button', { name: 'Confirm' }))
+
+    await waitFor(() => expect(writePty).toHaveBeenCalledTimes(1))
+
+    const [, payload] = writePty.mock.calls[0]
+    expect(payload as string).toContain('/repo/src/foo.ts')
   })
 
   describe('focus highlight', () => {

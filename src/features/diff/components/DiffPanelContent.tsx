@@ -35,6 +35,7 @@ import {
   parseBatchKey,
   DRAFT_ID,
   type ReviewComment,
+  type UseFeedbackBatchReturn,
 } from '../hooks/useFeedbackBatch'
 import { ReviewCommentComposer } from './ReviewCommentComposer'
 import { ReviewCommentRow } from './ReviewCommentRow'
@@ -86,11 +87,19 @@ type DiffPanelSelectionControl =
       onSelectedFileChange: (file: SelectedDiffFile | null) => void
     }
 
+export interface FeedbackRepoRootRef {
+  current: string
+}
+
 interface DiffPanelContentBaseProps {
   /** Working directory for git commands */
   cwd?: string
   /** Optional shared git status from a parent-level watcher subscription */
   gitStatus?: UseGitStatusReturn
+  /** Optional shared feedback batch from the workspace shell. */
+  feedbackBatch?: UseFeedbackBatchReturn
+  /** Optional shared repo-root cache for feedback dispatch path resolution. */
+  feedbackRepoRootRef?: FeedbackRepoRootRef
   /** Optional feedback dispatch target for inline review comments */
   feedbackDispatch?: FeedbackDispatchTarget
 }
@@ -142,6 +151,8 @@ export const DiffPanelContent = ({
   gitStatus = undefined,
   selectedFile: controlledSelectedFile,
   onSelectedFileChange,
+  feedbackBatch = undefined,
+  feedbackRepoRootRef = undefined,
   feedbackDispatch = undefined,
 }: DiffPanelContentProps): ReactElement => {
   const internalGitStatus = useGitStatus(cwd, {
@@ -285,24 +296,16 @@ export const DiffPanelContent = ({
   // "could not isolate hunk" informational messages.
   const { message: notifyMessage, notifyInfo } = useNotifyInfo()
 
-  // Inline review comment batch state.
-  //
-  // KNOWN LIMITATION (deferred — tracked in #307; part of the workspace-layer
-  // refactor #306): DockPanel conditionally mounts DiffPanelContent only while
-  // the diff tab is active and unmounts it on dock close, so leaving the diff
-  // tab before Finish/Discard tears this component down and silently drops an
-  // unsent batch. The fix is to hoist the batch (and its cwd-invalidation)
-  // above the dock lifecycle; deferred here to avoid a risky partial lift that
-  // could leak stale comments across cwd changes.
-  const feedback = useFeedbackBatch()
-  // Destructured so the cwd-clear effect can depend on the stable `clearBatch`
-  // identity (memoized, empty deps) rather than the whole `feedback` object —
-  // which is a fresh reference each render and would re-fire the effect every
-  // render (the if-guard makes it a no-op, but it is needless work).
-  const { clearBatch } = feedback
+  const localFeedback = useFeedbackBatch()
+  const { clearBatch: clearLocalFeedbackBatch } = localFeedback
+  const hasParentFeedbackBatch = feedbackBatch !== undefined
+  const feedback: UseFeedbackBatchReturn = feedbackBatch ?? localFeedback
+  const localRepoRootRef = useRef('')
+  const repoRootRef = feedbackRepoRootRef ?? localRepoRootRef
 
-  // Clear the feedback batch when cwd changes so stale comments from a
-  // previous workspace do not leak into the new one.
+  // Track cwd transitions that invalidate per-repo derived state. The
+  // workspace shell owns feedback-batch clearing when a parent batch is passed;
+  // standalone/uncontrolled usage keeps the prior local clear behavior.
   const previousCwdRef = useRef(cwd)
 
   // Last non-empty git repo root seen for the current cwd. `response.repoRoot`
@@ -311,21 +314,21 @@ export const DiffPanelContent = ({
   // an in-flight feedback batch sent during that window would fall back to
   // repo-relative paths and mis-resolve for agents in a repo subdirectory.
   // Reset on cwd change below (a new repo invalidates the old root).
-  const lastRepoRootRef = useRef('')
-
   useEffect(() => {
     if (previousCwdRef.current !== cwd) {
       previousCwdRef.current = cwd
-      lastRepoRootRef.current = ''
-      clearBatch()
+      repoRootRef.current = ''
+      if (!hasParentFeedbackBatch) {
+        clearLocalFeedbackBatch()
+      }
     }
-  }, [cwd, clearBatch])
+  }, [cwd, clearLocalFeedbackBatch, hasParentFeedbackBatch, repoRootRef])
 
   useEffect(() => {
     if (response?.repoRoot) {
-      lastRepoRootRef.current = response.repoRoot
+      repoRootRef.current = response.repoRoot
     }
-  }, [response])
+  }, [response, repoRootRef])
 
   // Composer target state: which line currently has an open composer.
   // `editId` set => editing an existing comment in place; absent => a new
@@ -455,7 +458,7 @@ export const DiffPanelContent = ({
         // in-flight batch keeps absolute paths. The empty-string (non-repo)
         // case needs no fallback — the ref is empty there too — so `??` (null/
         // undefined only) is exactly right.
-        const repoRoot = response?.repoRoot ?? lastRepoRootRef.current
+        const repoRoot = response?.repoRoot ?? repoRootRef.current
         const entries: DispatchEntry[] = []
         // parseBatchKey is the single source of truth for the key format (it
         // lives next to makeBatchKey in useFeedbackBatch). The staged flag rides
@@ -485,7 +488,7 @@ export const DiffPanelContent = ({
         }
       })()
     },
-    [feedback, feedbackDispatch, notifyInfo, response]
+    [feedback, feedbackDispatch, notifyInfo, repoRootRef, response]
   )
 
   // Single-flight staging flag — drops clicks while an IPC is in flight.
