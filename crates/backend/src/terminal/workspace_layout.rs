@@ -122,49 +122,17 @@ fn is_allowed_url(u: &str) -> bool {
     if u == "about:blank" {
         return true;
     }
-    // http(s) with a structurally valid host. No URL crate (its 2.5.x ICU deps
-    // break the crate MSRV), so validate the host shape directly: reg-name or
-    // bracketed IPv6 literal, with an optional numeric port. Defensively strict
-    // (real navigations yield ASCII/punycode hosts), so corrupt entries —
-    // "https://" (no host), "https://foo:bar" (bad port), "http://[::1"
-    // (unclosed bracket), "https://exa mple.com" (space) — are dropped.
-    let Some(rest) = u.strip_prefix("https://").or_else(|| u.strip_prefix("http://")) else {
-        return false;
-    };
-    let host = rest.split(['/', '?', '#']).next().unwrap_or("");
-    is_valid_host(host)
-}
-
-fn is_valid_host(host: &str) -> bool {
-    if host.is_empty() {
-        return false;
-    }
-    // IPv6 literal: "[" hex/colons "]" with an optional ":" numeric port.
-    if let Some(after) = host.strip_prefix('[') {
-        let Some(close) = after.find(']') else {
-            return false; // unclosed bracket
-        };
-        let inner = &after[..close];
-        if inner.is_empty() || !inner.chars().all(|c| c.is_ascii_hexdigit() || c == ':') {
-            return false;
+    // Parse with the same WHATWG URL semantics as the runtime navigation guard
+    // (Chromium): an http(s) URL with a host. This avoids a hand-rolled host
+    // filter that is alternately too lenient (bad ports / unclosed brackets) or
+    // too strict (rejecting Chromium-valid hosts like `foo_bar`).
+    match url::Url::parse(u) {
+        Ok(parsed) => {
+            matches!(parsed.scheme(), "http" | "https")
+                && parsed.host_str().is_some_and(|h| !h.is_empty())
         }
-        let tail = &after[close + 1..];
-        return tail.is_empty() || tail.strip_prefix(':').is_some_and(is_numeric_port);
+        Err(_) => false,
     }
-    // reg-name with an optional ":" numeric port.
-    let (name, port) = match host.split_once(':') {
-        Some((n, p)) => (n, Some(p)),
-        None => (host, None),
-    };
-    !name.is_empty()
-        && name
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '.'))
-        && port.map_or(true, is_numeric_port)
-}
-
-fn is_numeric_port(p: &str) -> bool {
-    !p.is_empty() && p.chars().all(|c| c.is_ascii_digit())
 }
 
 fn str_field(v: &serde_json::Value, k: &str) -> Option<String> {
@@ -1043,6 +1011,7 @@ mod tests {
             "http://localhost:8080",
             "https://[::1]:443/path",
             "http://192.168.0.1",
+            "http://foo_bar:3000/", // underscore host: Chromium-valid, must survive
             "about:blank",
         ] {
             let store = repair_workspace_layout(
