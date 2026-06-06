@@ -398,6 +398,7 @@ describe('runOne', () => {
 
   test('does not post a duplicate merged Linear event after approval already posted it', async () => {
     markMergeLinearPosted({}, 42, decisionStorePath(42))
+    const cleanupWorktree = vi.fn()
 
     const deps = makeDeps({
       snapshotExec: vi
@@ -407,6 +408,7 @@ describe('runOne', () => {
           prSnapshot({ headSha: 'clean-head', state: 'MERGED' })
         ),
       tickRunner: vi.fn(async () => 0),
+      cleanupWorktree,
     })
 
     const outcome = await runOne(42, 'approval', deps)
@@ -420,6 +422,22 @@ describe('runOne', () => {
       },
       undefined
     )
+    expect(cleanupWorktree).toHaveBeenCalledWith(42)
+  })
+
+  test('does not clean the managed worktree for ordinary waiting cycles', async () => {
+    const cleanupWorktree = vi.fn()
+
+    const deps = makeDeps({
+      snapshotExec: openPrSnapshotExec(),
+      tickRunner: vi.fn(async () => 0),
+      cleanupWorktree,
+    })
+
+    const outcome = await runOne(42, 'poll', deps)
+
+    expect(outcome).toBe('waiting')
+    expect(cleanupWorktree).not.toHaveBeenCalled()
   })
 
   test('records retryable watch exits with reason and log metadata', async () => {
