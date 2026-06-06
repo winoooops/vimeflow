@@ -91,7 +91,9 @@ pub struct NavEntry {
 // renderer's `DEFAULT_BROWSER_URL` (cross-process boundary prevents sharing).
 const DEFAULT_BROWSER_URL: &str = "https://www.google.com/";
 
-const MAX_SESSIONS: usize = 50;
+// Mirrors the spawn-path session cap (`commands.rs` try_insert(..., 64)) so a
+// valid full workspace is never treated as malformed and partly dropped.
+const MAX_SESSIONS: usize = 64;
 const MAX_PANES: usize = 4; // quad capacity
 const MAX_TABS: usize = 50;
 const MAX_HISTORY: usize = 100;
@@ -1126,7 +1128,17 @@ mod tests {
 
     #[test]
     fn caps_session_count() {
-        let sessions: Vec<_> = (0..60)
+        let sessions: Vec<_> = (0..(MAX_SESSIONS + 6))
+            .map(|i| json!({ "id": format!("s{i}"), "layout": "single", "active": i == 0, "panes": [{ "kind": "browser", "paneId": "p0", "paneIndex": 0, "active": true, "tabs": [] }] }))
+            .collect();
+        let store = repair_workspace_layout(json!({ "version": 1, "sessions": sessions }), "proj", "/");
+        assert_eq!(store.sessions.len(), MAX_SESSIONS);
+    }
+
+    #[test]
+    fn keeps_a_full_session_workspace() {
+        // 64 sessions (the spawn cap) must all survive — not be partly dropped.
+        let sessions: Vec<_> = (0..MAX_SESSIONS)
             .map(|i| json!({ "id": format!("s{i}"), "layout": "single", "active": i == 0, "panes": [{ "kind": "browser", "paneId": "p0", "paneIndex": 0, "active": true, "tabs": [] }] }))
             .collect();
         let store = repair_workspace_layout(json!({ "version": 1, "sessions": sessions }), "proj", "/");
