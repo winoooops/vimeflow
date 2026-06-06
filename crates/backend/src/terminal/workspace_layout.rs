@@ -7,6 +7,10 @@
 //! struct) because `#[serde(flatten)]` under an internally-tagged enum is a
 //! serde footgun; the wire shape is identical.
 use serde::{Deserialize, Serialize};
+use std::fs;
+use std::io::Write;
+use std::path::PathBuf;
+use std::sync::Mutex;
 // ts-rs is a dev-dependency; derive TS only under cfg(test), matching `terminal/types.rs`.
 
 pub const CURRENT_WORKSPACE_LAYOUT_VERSION: u32 = 1;
@@ -425,6 +429,67 @@ fn repair_tabs(raw_tabs: &[serde_json::Value]) -> Vec<PersistedTab> {
     tabs
 }
 
+/// Rust-owned durable cache for `app_data_dir/workspace-layouts.json`.
+/// Atomic write (`tempfile.persist`) + in-memory mirror, mirroring
+/// `SessionCache`. Distinct file from `sessions.json`, so `clear_all` (which
+/// only wipes `sessions.json`) never touches it — the durability invariant.
+#[derive(Debug)]
+pub struct WorkspaceLayoutCache {
+    path: PathBuf,
+    mirror: Mutex<Option<WorkspaceLayoutStore>>,
+}
+
+impl WorkspaceLayoutCache {
+    pub fn new(path: PathBuf) -> Self {
+        Self {
+            path,
+            mirror: Mutex::new(None),
+        }
+    }
+
+    /// Load + repair (spec §2.2) using active-project context for defaults.
+    /// Missing / unreadable / corrupt → empty store (never fails — this is a
+    /// convenience cache that must not block lifecycle).
+    pub fn load(&self, project_id: &str, cwd: &str) -> WorkspaceLayoutStore {
+        let raw: serde_json::Value = match fs::read(&self.path) {
+            Ok(bytes) => serde_json::from_slice(&bytes).unwrap_or(serde_json::Value::Null),
+            Err(_) => serde_json::Value::Null,
+        };
+        let store = repair_workspace_layout(raw, project_id, cwd);
+        *self.mirror.lock().expect("workspace-layout mirror poisoned") = Some(store.clone());
+        store
+    }
+
+    /// Atomically persist the assembled store + refresh the mirror.
+    pub fn save(&self, store: &WorkspaceLayoutStore) -> Result<(), String> {
+        self.flush_to_disk(store)?;
+        *self.mirror.lock().expect("workspace-layout mirror poisoned") = Some(store.clone());
+        Ok(())
+    }
+
+    /// The in-memory mirror (main serves restore-time tabs from it).
+    pub fn snapshot(&self) -> Option<WorkspaceLayoutStore> {
+        self.mirror
+            .lock()
+            .expect("workspace-layout mirror poisoned")
+            .clone()
+    }
+
+    fn flush_to_disk(&self, store: &WorkspaceLayoutStore) -> Result<(), String> {
+        let parent = self
+            .path
+            .parent()
+            .ok_or_else(|| "workspace-layout path has no parent".to_string())?;
+        fs::create_dir_all(parent).map_err(|e| format!("mkdir: {e}"))?;
+        let mut tmp = tempfile::NamedTempFile::new_in(parent)
+            .map_err(|e| format!("create tempfile: {e}"))?;
+        let bytes = serde_json::to_vec_pretty(store).map_err(|e| format!("serialize: {e}"))?;
+        tmp.write_all(&bytes).map_err(|e| format!("write: {e}"))?;
+        tmp.persist(&self.path).map_err(|e| format!("persist: {e}"))?;
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -640,5 +705,41 @@ mod tests {
         assert_eq!(b.tabs.len(), 1); // seeded one default tab
         assert!(b.tabs[0].active);
         assert_eq!(b.tabs[0].history[0].url, DEFAULT_BROWSER_URL);
+    }
+
+    #[test]
+    fn cache_save_then_load_round_trips_and_missing_loads_empty() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("workspace-layouts.json");
+        let cache = WorkspaceLayoutCache::new(path.clone());
+        assert!(cache.load("proj", "/").sessions.is_empty()); // missing → empty
+
+        let store = WorkspaceLayoutStore {
+            version: CURRENT_WORKSPACE_LAYOUT_VERSION,
+            sessions: vec![WorkspaceSession {
+                id: "s".into(),
+                project_id: "proj".into(),
+                layout: "single".into(),
+                working_directory: "/".into(),
+                active: true,
+                panes: vec![WorkspacePane::Shell(ShellPane {
+                    pane_id: "p0".into(),
+                    pane_index: 0,
+                    active: true,
+                    pty_id: "x".into(),
+                    cwd: "/".into(),
+                    agent_type: "generic".into(),
+                    agent_session_id: None,
+                })],
+            }],
+        };
+        cache.save(&store).unwrap();
+        assert_eq!(cache.snapshot().unwrap().sessions.len(), 1); // mirror refreshed
+
+        // Fresh cache instance reads the persisted file.
+        let loaded = WorkspaceLayoutCache::new(path).load("proj", "/");
+        assert_eq!(loaded.version, CURRENT_WORKSPACE_LAYOUT_VERSION);
+        assert_eq!(loaded.sessions.len(), 1);
+        assert_eq!(loaded.sessions[0].id, "s");
     }
 }
