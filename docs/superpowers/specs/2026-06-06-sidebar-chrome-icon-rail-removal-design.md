@@ -85,3 +85,5 @@ Remove the in-card `SidebarToggle`, its `onToggleSidebar` / `sidebarShortcutHint
 5. Collapsed: the floating toggle never overlaps the first session tab (tab strip padded to 48px).
 6. Command Palette opens via the top-bar button and its shortcut; Settings is an `aria-disabled` no-op stub pending #252.
 7. `npm run lint` / `type-check` / `test` green; coverage ≥ 80% (finalization).
+
+<!-- codex-reviewed: 2026-06-06T12:33:38Z -->
