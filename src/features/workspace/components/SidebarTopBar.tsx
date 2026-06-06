@@ -37,9 +37,9 @@ const TopBarUtil = ({
     borderRadius: 8,
     cursor: disabled ? 'not-allowed' : 'pointer',
     background: lit ? 'rgba(226,199,255,0.08)' : 'rgba(26,26,42,0.6)',
-    border: lit
-      ? '1px solid rgba(203,166,247,0.4)'
-      : '1px solid rgba(74,68,79,0.3)',
+    // No border-color change on hover — only the background highlights (modern,
+    // matches the toggle). The resting hairline stays constant.
+    border: '1px solid rgba(74,68,79,0.3)',
     color: disabled ? '#6c7086' : lit ? '#e2c7ff' : '#9b93ab',
     opacity: disabled ? 0.6 : 1,
     transition: 'all 140ms ease',

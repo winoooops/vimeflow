@@ -25,7 +25,7 @@ const VARIANT_CLASS: Record<SidebarToggleVariant, string> = {
   ghost:
     'border border-transparent text-on-surface-muted hover:bg-primary/[0.08] hover:text-primary',
   inset:
-    'border border-[rgba(74,68,79,0.35)] bg-[rgba(13,13,28,0.45)] text-on-surface-muted hover:border-[rgba(203,166,247,0.4)] hover:text-primary',
+    'border border-[rgba(74,68,79,0.35)] bg-[rgba(13,13,28,0.45)] text-on-surface-muted hover:bg-[rgba(226,199,255,0.08)] hover:text-primary',
 }
 
 // Codex / VS-Code-style "panel-left" glyph. Outline + left-rail divider are
