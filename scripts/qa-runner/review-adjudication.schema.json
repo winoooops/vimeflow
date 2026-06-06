@@ -65,6 +65,10 @@
         "reason": {
           "type": "string"
         },
+        "fix_direction": {
+          "type": "string",
+          "description": "One concise, actionable sentence that tells the fixer the preferred implementation direction for this finding."
+        },
         "idea": {
           "type": "object",
           "additionalProperties": false,
@@ -93,6 +97,7 @@
         "real_world_risk",
         "fix_cost",
         "reason",
+        "fix_direction",
         "idea"
       ]
     }

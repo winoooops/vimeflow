@@ -76,7 +76,10 @@ blocking. Reviewer severity is evidence, not policy; a MEDIUM finding can block
 when the IDEA/reality/fix-cost checks justify fixing it now, and can be ignored
 when the danger is weak or the fix is disproportionate. Results are cached by PR
 head + review-comment hash + diff hash, so unchanged evidence does not call
-Codex repeatedly. When adjudication returns `REVOKE`, the daemon posts the
+Codex repeatedly. Every adjudicated finding includes a short `fix_direction`
+sentence; blocking directions are passed into `QA_FIX_CONTEXT` so the fixer gets
+the adjudicator's preferred implementation route instead of re-deriving it from
+scratch. When adjudication returns `REVOKE`, the daemon posts the
 structured decision directly to the GitHub PR and to the linked Linear issue, then
 stops; it does not enter the Kimi fixer loop even when `--execute` is armed.
 

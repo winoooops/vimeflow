@@ -535,7 +535,7 @@ const computeState = async (pr, ctx) => {
           fixContext = {
             kind: 'review_adjudication',
             instruction:
-              'The orchestrator dispatched this fixer because Codex adjudicated the reviewer comments under agents/code-reviewer.md and found blocking findings. Fix the blocking findings, run relevant verification locally, commit, and push.',
+              'The orchestrator dispatched this fixer because Codex adjudicated the reviewer comments under agents/code-reviewer.md and found blocking findings. Fix the blocking findings, use each finding.fix_direction as the preferred implementation direction, run relevant verification locally, commit, and push.',
             summary: adjudication.summary,
             findings: adjudication.blocking_findings,
           }
