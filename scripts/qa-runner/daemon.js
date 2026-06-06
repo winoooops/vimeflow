@@ -144,9 +144,9 @@ const worker = async (id) => {
       } catch (e) {
         log(`worker ${id}: queue.done failed — ${e.message}`)
       }
-      if (keepWorkerAlive) {
-        scheduleIdleStop()
-      }
+      // Also covers daemon restarts and WAITING cycles where a burst worker may
+      // already be running even though this cycle did not dispatch a fixer.
+      scheduleIdleStop()
     }
   }
 }
@@ -215,6 +215,7 @@ for (let i = 0; i < config.maxParallel; i++) {
   worker(i + 1)
 }
 poll()
+scheduleIdleStop()
 
 // Graceful-ish shutdown: stop accepting + claiming; let in-flight cycles finish
 // (state is checkpointed each tick); force-exit after a grace window.
