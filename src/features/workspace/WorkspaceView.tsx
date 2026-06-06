@@ -56,7 +56,7 @@ import { useSidebarTab, type SidebarTab } from '../../hooks/useSidebarTab'
 import { useNotifyInfo } from './hooks/useNotifyInfo'
 import { createFileSystemService } from '../files/services/fileSystemService'
 import { createTerminalService } from '../terminal/services/terminalService'
-import { useScratchTerminals } from '../terminal/hooks/useScratchTerminals'
+import { useBurnerTerminals } from '../terminal/hooks/useBurnerTerminals'
 import {
   usePaneShortcuts,
   type PaneShortcutModifier,
@@ -626,8 +626,8 @@ export const WorkspaceView = (): ReactElement => {
     setPaneUserLabel
   )
 
-  // Scratch terminal popup (VIM-53) — reap reload-orphaned ephemeral PTYs before the first spawn.
-  const [scratchReapDone, setScratchReapDone] = useState(false)
+  // Burner terminal popup (VIM-53) — reap reload-orphaned ephemeral PTYs before the first spawn.
+  const [burnerReapDone, setBurnerReapDone] = useState(false)
   useEffect(() => {
     let cancelled = false
 
@@ -635,13 +635,13 @@ export const WorkspaceView = (): ReactElement => {
       try {
         await terminalService.killEphemeralPtys()
       } catch (err) {
-        // Best-effort: a failed sweep still enables scratch; any orphan is
+        // Best-effort: a failed sweep still enables burner; any orphan is
         // reaped on shutdown or the next boot.
         // eslint-disable-next-line no-console
-        console.warn('scratch reap failed', err)
+        console.warn('burner reap failed', err)
       } finally {
         if (!cancelled) {
-          setScratchReapDone(true)
+          setBurnerReapDone(true)
         }
       }
     }
@@ -652,8 +652,8 @@ export const WorkspaceView = (): ReactElement => {
     }
   }, [terminalService])
 
-  // Live pane keys across all sessions — drives the scratch lazy reconciliation
-  // (a scratch whose host pane/session is gone gets killed + dropped).
+  // Live pane keys across all sessions — drives the burner lazy reconciliation
+  // (a burner whose host pane/session is gone gets killed + dropped).
   const livePaneKeys = useMemo(
     () =>
       new Set(sessions.flatMap((s) => s.panes.map((p) => `${s.id}:${p.id}`))),
@@ -661,40 +661,40 @@ export const WorkspaceView = (): ReactElement => {
   )
 
   const {
-    renderNode: scratchTerminalNode,
-    toggle: toggleScratch,
-    runningByPane: runningScratchByPane,
-    activeByPane: activeScratchByPane,
-  } = useScratchTerminals({
+    renderNode: burnerTerminalNode,
+    toggle: toggleBurner,
+    runningByPane: runningBurnerByPane,
+    activeByPane: activeBurnerByPane,
+  } = useBurnerTerminals({
     service: terminalService,
     resolveFocusedPane,
-    ready: scratchReapDone,
+    ready: burnerReapDone,
     registerPending,
     notifyPaneReady,
     livePaneKeys,
     dropAllForPty,
   })
 
-  // Pane-keys whose scratch shell is running — drives the pane-button live cue.
-  const runningScratchPaneKeys = useMemo(
+  // Pane-keys whose burner shell is running — drives the pane-button live cue.
+  const runningBurnerPaneKeys = useMemo(
     () =>
       new Set(
-        [...runningScratchByPane]
+        [...runningBurnerByPane]
           .filter(([, status]) => status === 'running')
           .map(([key]) => key)
       ),
-    [runningScratchByPane]
+    [runningBurnerByPane]
   )
 
   // Pane-keys with a foreground command running — drives the amber button tint (VIM-71).
-  const activeScratchPaneKeys = useMemo(
+  const activeBurnerPaneKeys = useMemo(
     () =>
       new Set(
-        [...activeScratchByPane]
+        [...activeBurnerByPane]
           .filter(([, active]) => active)
           .map(([key]) => key)
       ),
-    [activeScratchByPane]
+    [activeBurnerByPane]
   )
 
   const requestFocus = useCallback((target: FocusTarget): void => {
@@ -1515,9 +1515,9 @@ export const WorkspaceView = (): ReactElement => {
               onContainerFocus={() => {
                 setActiveContainerId(TERMINAL_CONTAINER_ID)
               }}
-              onScratch={(target): void => void toggleScratch(target)}
-              runningScratchPaneKeys={runningScratchPaneKeys}
-              activeScratchPaneKeys={activeScratchPaneKeys}
+              onBurner={(target): void => void toggleBurner(target)}
+              runningBurnerPaneKeys={runningBurnerPaneKeys}
+              activeBurnerPaneKeys={activeBurnerPaneKeys}
             />
           </div>
           {!dockBeforeTerminal ? dockOrPeek : null}
@@ -1561,7 +1561,7 @@ export const WorkspaceView = (): ReactElement => {
           contextPct={statusBarContextPct}
           paletteShortcut={COMMAND_PALETTE_SHORTCUT_KEYS}
           onOpenPalette={commandPalette.open}
-          scratchCount={runningScratchPaneKeys.size}
+          burnerCount={runningBurnerPaneKeys.size}
         />
       </div>
 
@@ -1625,7 +1625,7 @@ export const WorkspaceView = (): ReactElement => {
       {isDragging && <div className="fixed inset-0 z-50 cursor-col-resize" />}
 
       {paneRenameNode}
-      {scratchTerminalNode}
+      {burnerTerminalNode}
 
       {/* Command Palette — workspace-scoped command dispatcher */}
       <CommandPalette

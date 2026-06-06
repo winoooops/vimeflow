@@ -104,7 +104,7 @@ describe('DesktopTerminalService', () => {
       expect(eventListeners.has('pty-data')).toBe(true)
       expect(eventListeners.has('pty-exit')).toBe(true)
       expect(eventListeners.has('pty-error')).toBe(true)
-      expect(eventListeners.has('scratch-foreground')).toBe(true)
+      expect(eventListeners.has('burner-foreground')).toBe(true)
     })
 
     test('spawn forwards enableAgentBridge=true when caller opts in', async () => {
@@ -155,12 +155,12 @@ describe('DesktopTerminalService', () => {
 
   describe('killEphemeralPtys', () => {
     test('invokes kill_ephemeral_ptys and returns the killed ids', async () => {
-      mockInvokeOnce(['scratch-a', 'scratch-b'])
+      mockInvokeOnce(['burner-a', 'burner-b'])
 
       const killed = await service.killEphemeralPtys()
 
       expect(invoke).toHaveBeenCalledWith('kill_ephemeral_ptys')
-      expect(killed).toEqual(['scratch-a', 'scratch-b'])
+      expect(killed).toEqual(['burner-a', 'burner-b'])
     })
   })
 
@@ -246,12 +246,12 @@ describe('DesktopTerminalService', () => {
       expect(callback).toHaveBeenCalledWith('sess-1', 'PTY read error')
     })
 
-    test('onScratchForeground delivers scratch-foreground events to callback', async () => {
+    test('onBurnerForeground delivers burner-foreground events to callback', async () => {
       const callback = vi.fn()
-      await service.onScratchForeground(callback)
+      await service.onBurnerForeground(callback)
       await mockSpawnAndInit(service)
 
-      emitDesktopEvent('scratch-foreground', {
+      emitDesktopEvent('burner-foreground', {
         sessionId: 'sess-1',
         running: true,
       })
@@ -499,12 +499,12 @@ describe('DesktopTerminalService', () => {
           'pty-data',
           'pty-exit',
           'pty-error',
-          'scratch-foreground',
+          'burner-foreground',
         ])
         expect(eventListeners.get('pty-data')).toEqual([])
         expect(eventListeners.get('pty-exit')).toEqual([])
         expect(eventListeners.get('pty-error')).toEqual([])
-        expect(eventListeners.get('scratch-foreground')).toEqual([])
+        expect(eventListeners.get('burner-foreground')).toEqual([])
       } finally {
         if (originalImpl) {
           listenMock.mockImplementation(originalImpl)

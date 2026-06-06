@@ -1,7 +1,7 @@
 import { test, expect, vi } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
 import type { ReactElement } from 'react'
-import { useScratchTerminals, type ScratchTarget } from './useScratchTerminals'
+import { useBurnerTerminals, type BurnerTarget } from './useBurnerTerminals'
 import type { FocusedPaneRef } from '../../command-palette/hooks/usePaneRenameChord'
 import type { ITerminalService } from '../services/terminalService'
 import * as chordRegistry from '../../command-palette/chordRegistry'
@@ -20,10 +20,10 @@ const makeService = (): ITerminalService =>
   ({
     spawn: vi
       .fn()
-      .mockResolvedValue({ sessionId: 'scratch-pty', pid: 7, cwd: '/repo' }),
+      .mockResolvedValue({ sessionId: 'burner-pty', pid: 7, cwd: '/repo' }),
     kill: vi.fn().mockResolvedValue(undefined),
     onExit: vi.fn().mockResolvedValue(() => undefined),
-    onScratchForeground: vi.fn().mockResolvedValue(() => undefined),
+    onBurnerForeground: vi.fn().mockResolvedValue(() => undefined),
   }) as unknown as ITerminalService
 
 // The reconcile effect (VIM-62) keys spawned shells by ptyId; a counter mints a
@@ -34,7 +34,7 @@ const countingSpawn = (): ITerminalService['spawn'] => {
   return vi.fn().mockImplementation((args: { cwd: string }) => {
     n += 1
 
-    return Promise.resolve({ sessionId: `scratch-${n}`, pid: n, cwd: args.cwd })
+    return Promise.resolve({ sessionId: `burner-${n}`, pid: n, cwd: args.cwd })
   })
 }
 
@@ -43,7 +43,7 @@ test('toggle (no target) spawns an ephemeral, no-bridge shell at the focused pan
   const focused = makeFocusedPane('s1', 'p0', '/repo/projects/vimeflow')
 
   const { result } = renderHook(() =>
-    useScratchTerminals({ service, resolveFocusedPane: () => focused })
+    useBurnerTerminals({ service, resolveFocusedPane: () => focused })
   )
 
   await act(async () => {
@@ -67,10 +67,10 @@ test('toggle(target) spawns at the target pane cwd, keyed by that pane (button p
   const focused = makeFocusedPane('s1', 'p0', '/repo')
 
   const { result } = renderHook(() =>
-    useScratchTerminals({ service, resolveFocusedPane: () => focused })
+    useBurnerTerminals({ service, resolveFocusedPane: () => focused })
   )
 
-  const target: ScratchTarget = {
+  const target: BurnerTarget = {
     sessionId: 's1',
     paneId: 'p1',
     cwd: '/repo/other',
@@ -90,10 +90,10 @@ test('different panes get independent shells (keyed per pane)', async () => {
   const focused = makeFocusedPane('s1', 'p0', '/a')
 
   const { result } = renderHook(() =>
-    useScratchTerminals({ service, resolveFocusedPane: () => focused })
+    useBurnerTerminals({ service, resolveFocusedPane: () => focused })
   )
 
-  // Open each pane's scratch by target (the pane-button / pill path).
+  // Open each pane's burner by target (the pane-button / pill path).
   await act(async () => {
     await result.current.toggle({ sessionId: 's1', paneId: 'p0', cwd: '/a' })
   })
@@ -109,12 +109,12 @@ test('different panes get independent shells (keyed per pane)', async () => {
   ])
 })
 
-test('the no-target chord hides a visible scratch instead of switching to the focused pane', async () => {
+test('the no-target chord hides a visible burner instead of switching to the focused pane', async () => {
   const service = makeService()
   let focused = makeFocusedPane('s1', 'p0', '/a')
 
   const { result } = renderHook(() =>
-    useScratchTerminals({ service, resolveFocusedPane: () => focused })
+    useBurnerTerminals({ service, resolveFocusedPane: () => focused })
   )
 
   await act(async () => {
@@ -127,7 +127,7 @@ test('the no-target chord hides a visible scratch instead of switching to the fo
   })
   expect(service.spawn).toHaveBeenCalledTimes(2)
 
-  // Focus has moved to a fresh pane p2 with no scratch. The chord must HIDE the
+  // Focus has moved to a fresh pane p2 with no burner. The chord must HIDE the
   // visible p1 popup (spec §7 "hides when shown"), not spawn/switch to p2.
   focused = makeFocusedPane('s1', 'p2', '/c')
   await act(async () => {
@@ -142,7 +142,7 @@ test('hiding the popup does not kill the shell', async () => {
   const focused = makeFocusedPane()
 
   const { result } = renderHook(() =>
-    useScratchTerminals({ service, resolveFocusedPane: () => focused })
+    useBurnerTerminals({ service, resolveFocusedPane: () => focused })
   )
 
   await act(async () => {
@@ -161,7 +161,7 @@ test('renderNode stays non-null when hidden while a shell is alive', async () =>
   const focused = makeFocusedPane()
 
   const { result } = renderHook(() =>
-    useScratchTerminals({ service, resolveFocusedPane: () => focused })
+    useBurnerTerminals({ service, resolveFocusedPane: () => focused })
   )
 
   await act(async () => {
@@ -180,7 +180,7 @@ test('does not spawn until ready', async () => {
   const focused = makeFocusedPane()
 
   const { result } = renderHook(() =>
-    useScratchTerminals({
+    useBurnerTerminals({
       service,
       resolveFocusedPane: () => focused,
       ready: false,
@@ -198,7 +198,7 @@ test('toggle is a no-op when there is no focused pane', async () => {
   const service = makeService()
 
   const { result } = renderHook(() =>
-    useScratchTerminals({ service, resolveFocusedPane: () => null })
+    useBurnerTerminals({ service, resolveFocusedPane: () => null })
   )
 
   await act(async () => {
@@ -215,7 +215,7 @@ test('arms the spawn→attach buffer for the new pty before mounting', async () 
   const registerPending = vi.fn()
 
   const { result } = renderHook(() =>
-    useScratchTerminals({
+    useBurnerTerminals({
       service,
       resolveFocusedPane: () => focused,
       registerPending,
@@ -226,7 +226,7 @@ test('arms the spawn→attach buffer for the new pty before mounting', async () 
     await result.current.toggle()
   })
 
-  expect(registerPending).toHaveBeenCalledWith('scratch-pty')
+  expect(registerPending).toHaveBeenCalledWith('burner-pty')
 })
 
 test('contains a spawn rejection instead of rejecting from the chord path', async () => {
@@ -234,13 +234,13 @@ test('contains a spawn rejection instead of rejecting from the chord path', asyn
     spawn: vi.fn().mockRejectedValue(new Error('pty cap reached')),
     kill: vi.fn().mockResolvedValue(undefined),
     onExit: vi.fn().mockResolvedValue(() => undefined),
-    onScratchForeground: vi.fn().mockResolvedValue(() => undefined),
+    onBurnerForeground: vi.fn().mockResolvedValue(() => undefined),
   } as unknown as ITerminalService
   const focused = makeFocusedPane()
   const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
 
   const { result } = renderHook(() =>
-    useScratchTerminals({ service, resolveFocusedPane: () => focused })
+    useBurnerTerminals({ service, resolveFocusedPane: () => focused })
   )
 
   await act(async () => {
@@ -265,7 +265,7 @@ test('show() does not overwrite a later pane selection when an earlier spawn res
 
   const spawnMock = vi.fn().mockImplementation((args: { cwd: string }) => {
     if (args.cwd === '/a') {
-      return Promise.resolve({ sessionId: 'scratch-a', pid: 1, cwd: '/a' })
+      return Promise.resolve({ sessionId: 'burner-a', pid: 1, cwd: '/a' })
     }
 
     return new Promise<{ sessionId: string; pid: number; cwd: string }>(
@@ -277,7 +277,7 @@ test('show() does not overwrite a later pane selection when an earlier spawn res
   service.spawn = spawnMock
 
   const { result } = renderHook(() =>
-    useScratchTerminals({ service, resolveFocusedPane: () => focused })
+    useBurnerTerminals({ service, resolveFocusedPane: () => focused })
   )
 
   // Start p1 (slow spawn), then immediately open p0 (fast spawn).
@@ -288,7 +288,7 @@ test('show() does not overwrite a later pane selection when an earlier spawn res
       cwd: '/b',
     })
     await result.current.toggle({ sessionId: 's1', paneId: 'p0', cwd: '/a' })
-    resolveP1({ sessionId: 'scratch-b', pid: 2, cwd: '/b' })
+    resolveP1({ sessionId: 'burner-b', pid: 2, cwd: '/b' })
     await p1Promise
   })
 
@@ -314,7 +314,7 @@ test('registers a backtick chord that toggles and consumes the event', async () 
   const focused = makeFocusedPane()
 
   renderHook(() =>
-    useScratchTerminals({ service, resolveFocusedPane: () => focused })
+    useBurnerTerminals({ service, resolveFocusedPane: () => focused })
   )
 
   let consumed = false
@@ -331,7 +331,7 @@ test('registers a backtick chord that toggles and consumes the event', async () 
 
 // --- PR3 (VIM-62): pane-bound lifecycle via lazy reconciliation ---
 
-test('closing a pane kills + drops its scratch and removes the entry', async () => {
+test('closing a pane kills + drops its burner and removes the entry', async () => {
   const service = makeService()
   service.spawn = countingSpawn()
   const dropAllForPty = vi.fn<(ptyId: string) => void>()
@@ -339,7 +339,7 @@ test('closing a pane kills + drops its scratch and removes the entry', async () 
 
   const { result, rerender } = renderHook(
     (props: { live: ReadonlySet<string> }) =>
-      useScratchTerminals({
+      useBurnerTerminals({
         service,
         resolveFocusedPane: () => focused,
         livePaneKeys: props.live,
@@ -358,13 +358,13 @@ test('closing a pane kills + drops its scratch and removes the entry', async () 
     rerender({ live: new Set<string>() })
   })
 
-  expect(service.kill).toHaveBeenCalledWith({ sessionId: 'scratch-1' })
-  expect(dropAllForPty).toHaveBeenCalledWith('scratch-1')
+  expect(service.kill).toHaveBeenCalledWith({ sessionId: 'burner-1' })
+  expect(dropAllForPty).toHaveBeenCalledWith('burner-1')
   expect([...result.current.runningByPane.keys()]).toEqual([])
   expect(result.current.renderNode).toBeNull()
 })
 
-test('closing a session reaps every scratch in it at once', async () => {
+test('closing a session reaps every burner in it at once', async () => {
   const service = makeService()
   service.spawn = countingSpawn()
   const dropAllForPty = vi.fn<(ptyId: string) => void>()
@@ -372,7 +372,7 @@ test('closing a session reaps every scratch in it at once', async () => {
 
   const { result, rerender } = renderHook(
     (props: { live: ReadonlySet<string> }) =>
-      useScratchTerminals({
+      useBurnerTerminals({
         service,
         resolveFocusedPane: () => focused,
         livePaneKeys: props.live,
@@ -399,16 +399,16 @@ test('closing a session reaps every scratch in it at once', async () => {
     rerender({ live: new Set<string>() })
   })
 
-  expect(service.kill).toHaveBeenCalledWith({ sessionId: 'scratch-1' })
-  expect(service.kill).toHaveBeenCalledWith({ sessionId: 'scratch-2' })
+  expect(service.kill).toHaveBeenCalledWith({ sessionId: 'burner-1' })
+  expect(service.kill).toHaveBeenCalledWith({ sessionId: 'burner-2' })
   expect(dropAllForPty.mock.calls.map((call) => call[0]).sort()).toEqual([
-    'scratch-1',
-    'scratch-2',
+    'burner-1',
+    'burner-2',
   ])
   expect([...result.current.runningByPane.keys()]).toEqual([])
 })
 
-test('a pane restart keeps its scratch — the stable key survives a live-set change', async () => {
+test('a pane restart keeps its burner — the stable key survives a live-set change', async () => {
   const service = makeService()
   service.spawn = countingSpawn()
   const dropAllForPty = vi.fn<(ptyId: string) => void>()
@@ -416,7 +416,7 @@ test('a pane restart keeps its scratch — the stable key survives a live-set ch
 
   const { result, rerender } = renderHook(
     (props: { live: ReadonlySet<string> }) =>
-      useScratchTerminals({
+      useBurnerTerminals({
         service,
         resolveFocusedPane: () => focused,
         livePaneKeys: props.live,
@@ -430,7 +430,7 @@ test('a pane restart keeps its scratch — the stable key survives a live-set ch
   })
 
   // p0 restarts (its host ptyId rotates) and a sibling p1 opens. The live set
-  // changes, but p0's stable `s1:p0` key is still present, so its scratch lives.
+  // changes, but p0's stable `s1:p0` key is still present, so its burner lives.
   act(() => {
     rerender({ live: new Set<string>(['s1:p0', 's1:p1']) })
   })
@@ -440,14 +440,14 @@ test('a pane restart keeps its scratch — the stable key survives a live-set ch
   expect([...result.current.runningByPane.keys()]).toEqual(['s1:p0'])
 })
 
-test('a self-exited scratch flips to `exited` but stays mounted while its pane lives', async () => {
+test('a self-exited burner flips to `exited` but stays mounted while its pane lives', async () => {
   const service = makeService()
   service.spawn = countingSpawn()
   const focused = makeFocusedPane('s1', 'p0', '/a')
 
   const { result } = renderHook(
     (props: { live: ReadonlySet<string> }) =>
-      useScratchTerminals({
+      useBurnerTerminals({
         service,
         resolveFocusedPane: () => focused,
         livePaneKeys: props.live,
@@ -463,7 +463,7 @@ test('a self-exited scratch flips to `exited` but stays mounted while its pane l
   // The shell exits on its own (`exit` / Ctrl-D); the backend emits onExit.
   const exitCb = vi.mocked(service.onExit).mock.calls[0][0]
   act(() => {
-    exitCb('scratch-1', 0)
+    exitCb('burner-1', 0)
   })
 
   // Cue goes dark (status !== running), but the pane is alive so reconcile keeps
@@ -480,7 +480,7 @@ test('re-opening a self-exited pane spawns a fresh shell and drops the dead buff
 
   const { result } = renderHook(
     (props: { live: ReadonlySet<string> }) =>
-      useScratchTerminals({
+      useBurnerTerminals({
         service,
         resolveFocusedPane: () => focused,
         livePaneKeys: props.live,
@@ -495,7 +495,7 @@ test('re-opening a self-exited pane spawns a fresh shell and drops the dead buff
 
   const exitCb = vi.mocked(service.onExit).mock.calls[0][0]
   act(() => {
-    exitCb('scratch-1', 0)
+    exitCb('burner-1', 0)
   })
   expect(result.current.runningByPane.get('s1:p0')).toBe('exited')
 
@@ -511,12 +511,12 @@ test('re-opening a self-exited pane spawns a fresh shell and drops the dead buff
   // spawnIfNeeded saw an `exited` entry: it dropped the dead shell's buffer and
   // spawned a fresh ptyId. The pane key was never dead, so reconcile never ran.
   expect(service.spawn).toHaveBeenCalledTimes(2)
-  expect(dropAllForPty).toHaveBeenCalledWith('scratch-1')
+  expect(dropAllForPty).toHaveBeenCalledWith('burner-1')
   expect(dropAllForPty).toHaveBeenCalledTimes(1)
   expect(result.current.runningByPane.get('s1:p0')).toBe('running')
 })
 
-test('a scratch whose pane closes mid-spawn is reaped, not left orphaned', async () => {
+test('a burner whose pane closes mid-spawn is reaped, not left orphaned', async () => {
   const service = makeService()
   const dropAllForPty = vi.fn<(ptyId: string) => void>()
   const focused = makeFocusedPane('s1', 'p0', '/a')
@@ -538,7 +538,7 @@ test('a scratch whose pane closes mid-spawn is reaped, not left orphaned', async
 
   const { result, rerender } = renderHook(
     (props: { live: ReadonlySet<string> }) =>
-      useScratchTerminals({
+      useBurnerTerminals({
         service,
         resolveFocusedPane: () => focused,
         livePaneKeys: props.live,
@@ -557,14 +557,14 @@ test('a scratch whose pane closes mid-spawn is reaped, not left orphaned', async
     // for it yet, so the only `livePaneKeys` change slips past.
     rerender({ live: new Set<string>() })
     // Now the spawn resolves against a pane that is already gone.
-    resolveSpawn({ sessionId: 'scratch-1', pid: 1, cwd: '/a' })
+    resolveSpawn({ sessionId: 'burner-1', pid: 1, cwd: '/a' })
     await togglePromise
   })
 
   // spawnIfNeeded re-checks liveness post-spawn and reaps the orphan instead of
-  // tracking a scratch shell for a dead pane.
-  expect(service.kill).toHaveBeenCalledWith({ sessionId: 'scratch-1' })
-  expect(dropAllForPty).toHaveBeenCalledWith('scratch-1')
+  // tracking a burner shell for a dead pane.
+  expect(service.kill).toHaveBeenCalledWith({ sessionId: 'burner-1' })
+  expect(dropAllForPty).toHaveBeenCalledWith('burner-1')
   expect([...result.current.runningByPane.keys()]).toEqual([])
   expect(result.current.renderNode).toBeNull()
 })
@@ -590,7 +590,7 @@ test('a spawn whose pane id is reused mid-flight is reaped, not attached to the 
 
   const { result, rerender } = renderHook(
     (props: { live: ReadonlySet<string> }) =>
-      useScratchTerminals({
+      useBurnerTerminals({
         service,
         resolveFocusedPane: () => focused,
         livePaneKeys: props.live,
@@ -619,13 +619,13 @@ test('a spawn whose pane id is reused mid-flight is reaped, not attached to the 
   })
 
   await act(async () => {
-    resolveSpawn({ sessionId: 'scratch-1', pid: 1, cwd: '/a' })
+    resolveSpawn({ sessionId: 'burner-1', pid: 1, cwd: '/a' })
     await togglePromise
   })
 
-  // The reused-id pane must NOT inherit the old request's scratch shell.
-  expect(service.kill).toHaveBeenCalledWith({ sessionId: 'scratch-1' })
-  expect(dropAllForPty).toHaveBeenCalledWith('scratch-1')
+  // The reused-id pane must NOT inherit the old request's burner shell.
+  expect(service.kill).toHaveBeenCalledWith({ sessionId: 'burner-1' })
+  expect(dropAllForPty).toHaveBeenCalledWith('burner-1')
   expect([...result.current.runningByPane.keys()]).toEqual([])
   expect(result.current.renderNode).toBeNull()
 })
@@ -648,12 +648,12 @@ test('a failed in-flight spawn does not leave a tombstone that kills a later val
       )
     }
 
-    return Promise.resolve({ sessionId: 'scratch-2', pid: 2, cwd: args.cwd })
+    return Promise.resolve({ sessionId: 'burner-2', pid: 2, cwd: args.cwd })
   })
 
   const { result, rerender } = renderHook(
     (props: { live: ReadonlySet<string> }) =>
-      useScratchTerminals({
+      useBurnerTerminals({
         service,
         resolveFocusedPane: () => focused,
         livePaneKeys: props.live,
@@ -681,7 +681,7 @@ test('a failed in-flight spawn does not leave a tombstone that kills a later val
     await togglePromise
   })
 
-  // A new pane reuses `p0` and opens a scratch — it must spawn and survive.
+  // A new pane reuses `p0` and opens a burner — it must spawn and survive.
   act(() => {
     rerender({ live: new Set<string>(['s1:p0']) })
   })
@@ -697,13 +697,13 @@ test('a failed in-flight spawn does not leave a tombstone that kills a later val
 
 // --- VIM-71: honest "running" cue from foreground-process detection ---
 
-test('a scratch-foreground running event lights the pane as active', async () => {
+test('a burner-foreground running event lights the pane as active', async () => {
   const service = makeService()
   service.spawn = countingSpawn()
   const focused = makeFocusedPane('s1', 'p0', '/a')
 
   const { result } = renderHook(() =>
-    useScratchTerminals({ service, resolveFocusedPane: () => focused })
+    useBurnerTerminals({ service, resolveFocusedPane: () => focused })
   )
 
   await act(async () => {
@@ -712,89 +712,89 @@ test('a scratch-foreground running event lights the pane as active', async () =>
   // A freshly-spawned shell is idle at its prompt — not active.
   expect(result.current.activeByPane.get('s1:p0')).toBe(false)
 
-  // The backend reports a foreground command started in scratch-1.
-  const fgCb = vi.mocked(service.onScratchForeground).mock.calls[0][0]
+  // The backend reports a foreground command started in burner-1.
+  const fgCb = vi.mocked(service.onBurnerForeground).mock.calls[0][0]
   act(() => {
-    fgCb('scratch-1', true)
+    fgCb('burner-1', true)
   })
 
   expect(result.current.activeByPane.get('s1:p0')).toBe(true)
 })
 
-test('a scratch-foreground idle event clears the active cue', async () => {
+test('a burner-foreground idle event clears the active cue', async () => {
   const service = makeService()
   service.spawn = countingSpawn()
   const focused = makeFocusedPane('s1', 'p0', '/a')
 
   const { result } = renderHook(() =>
-    useScratchTerminals({ service, resolveFocusedPane: () => focused })
+    useBurnerTerminals({ service, resolveFocusedPane: () => focused })
   )
 
   await act(async () => {
     await result.current.toggle({ sessionId: 's1', paneId: 'p0', cwd: '/a' })
   })
-  const fgCb = vi.mocked(service.onScratchForeground).mock.calls[0][0]
+  const fgCb = vi.mocked(service.onBurnerForeground).mock.calls[0][0]
   act(() => {
-    fgCb('scratch-1', true)
+    fgCb('burner-1', true)
   })
   expect(result.current.activeByPane.get('s1:p0')).toBe(true)
 
   act(() => {
-    fgCb('scratch-1', false)
+    fgCb('burner-1', false)
   })
   expect(result.current.activeByPane.get('s1:p0')).toBe(false)
 })
 
-test('a self-exited scratch clears its active cue', async () => {
+test('a self-exited burner clears its active cue', async () => {
   const service = makeService()
   service.spawn = countingSpawn()
   const focused = makeFocusedPane('s1', 'p0', '/a')
 
   const { result } = renderHook(() =>
-    useScratchTerminals({ service, resolveFocusedPane: () => focused })
+    useBurnerTerminals({ service, resolveFocusedPane: () => focused })
   )
 
   await act(async () => {
     await result.current.toggle({ sessionId: 's1', paneId: 'p0', cwd: '/a' })
   })
-  const fgCb = vi.mocked(service.onScratchForeground).mock.calls[0][0]
+  const fgCb = vi.mocked(service.onBurnerForeground).mock.calls[0][0]
   act(() => {
-    fgCb('scratch-1', true)
+    fgCb('burner-1', true)
   })
   expect(result.current.activeByPane.get('s1:p0')).toBe(true)
 
   // The shell exits while a command was "running" — the cue must go dark.
   const exitCb = vi.mocked(service.onExit).mock.calls[0][0]
   act(() => {
-    exitCb('scratch-1', 0)
+    exitCb('burner-1', 0)
   })
 
   expect(result.current.activeByPane.get('s1:p0')).toBe(false)
 })
 
-test('a foreground event arriving after exit does not re-light a dead scratch', async () => {
+test('a foreground event arriving after exit does not re-light a dead burner', async () => {
   const service = makeService()
   service.spawn = countingSpawn()
   const focused = makeFocusedPane('s1', 'p0', '/a')
 
   const { result } = renderHook(() =>
-    useScratchTerminals({ service, resolveFocusedPane: () => focused })
+    useBurnerTerminals({ service, resolveFocusedPane: () => focused })
   )
 
   await act(async () => {
     await result.current.toggle({ sessionId: 's1', paneId: 'p0', cwd: '/a' })
   })
-  const fgCb = vi.mocked(service.onScratchForeground).mock.calls[0][0]
+  const fgCb = vi.mocked(service.onBurnerForeground).mock.calls[0][0]
   const exitCb = vi.mocked(service.onExit).mock.calls[0][0]
 
   // The shell exits, then a stale foreground=true event arrives — the poll loop
   // and the PTY reader are independent tasks and can deliver out of order.
   act(() => {
-    exitCb('scratch-1', 0)
+    exitCb('burner-1', 0)
   })
 
   act(() => {
-    fgCb('scratch-1', true)
+    fgCb('burner-1', true)
   })
 
   expect(result.current.activeByPane.get('s1:p0')).toBe(false)

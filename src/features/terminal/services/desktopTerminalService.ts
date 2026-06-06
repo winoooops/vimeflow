@@ -12,7 +12,7 @@ import type {
   PtyDataEvent,
   PtyExitEvent,
   PtyErrorEvent,
-  ScratchForegroundEvent,
+  BurnerForegroundEvent,
   SessionList,
   SetActiveSessionRequest,
   ReorderSessionsRequest,
@@ -37,7 +37,7 @@ export class DesktopTerminalService implements ITerminalService {
   private exitCallbacks: ((sessionId: string, code: number | null) => void)[] =
     []
   private errorCallbacks: ((sessionId: string, message: string) => void)[] = []
-  private scratchForegroundCallbacks: ((
+  private burnerForegroundCallbacks: ((
     sessionId: string,
     running: boolean
   ) => void)[] = []
@@ -120,16 +120,16 @@ export class DesktopTerminalService implements ITerminalService {
         )
         pendingUnlistenFns.push(unlistenError)
 
-        const unlistenScratchForeground = await listen<ScratchForegroundEvent>(
-          'scratch-foreground',
+        const unlistenBurnerForeground = await listen<BurnerForegroundEvent>(
+          'burner-foreground',
           (payload) => {
             const { sessionId, running } = payload
-            this.scratchForegroundCallbacks.forEach((cb) =>
+            this.burnerForegroundCallbacks.forEach((cb) =>
               cb(sessionId, running)
             )
           }
         )
-        pendingUnlistenFns.push(unlistenScratchForeground)
+        pendingUnlistenFns.push(unlistenBurnerForeground)
 
         if (initGeneration !== this.listenerInitGeneration) {
           this.cleanupListeners(pendingUnlistenFns)
@@ -169,12 +169,12 @@ export class DesktopTerminalService implements ITerminalService {
     }
   }
 
-  private removeScratchForegroundCallback(
+  private removeBurnerForegroundCallback(
     callback: (sessionId: string, running: boolean) => void
   ): void {
-    const index = this.scratchForegroundCallbacks.indexOf(callback)
+    const index = this.burnerForegroundCallbacks.indexOf(callback)
     if (index > -1) {
-      this.scratchForegroundCallbacks.splice(index, 1)
+      this.burnerForegroundCallbacks.splice(index, 1)
     }
   }
 
@@ -300,20 +300,20 @@ export class DesktopTerminalService implements ITerminalService {
     }
   }
 
-  async onScratchForeground(
+  async onBurnerForeground(
     callback: (sessionId: string, running: boolean) => void
   ): Promise<() => void> {
-    this.scratchForegroundCallbacks.push(callback)
+    this.burnerForegroundCallbacks.push(callback)
 
     try {
       await this.ensureListeners()
     } catch (error) {
-      this.removeScratchForegroundCallback(callback)
+      this.removeBurnerForegroundCallback(callback)
       throw error
     }
 
     return () => {
-      this.removeScratchForegroundCallback(callback)
+      this.removeBurnerForegroundCallback(callback)
     }
   }
 
@@ -327,7 +327,7 @@ export class DesktopTerminalService implements ITerminalService {
     this.dataCallbacks = []
     this.exitCallbacks = []
     this.errorCallbacks = []
-    this.scratchForegroundCallbacks = []
+    this.burnerForegroundCallbacks = []
     this.initPromise = null
   }
 

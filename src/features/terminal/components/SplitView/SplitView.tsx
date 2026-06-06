@@ -14,7 +14,7 @@ import type { LayoutId, Pane, Session } from '../../../sessions/types'
 import { isShellPane } from '../../../sessions/utils/paneKind'
 import { BrowserPane, focusBrowserPane } from '../../../browser'
 import type { NotifyPaneReady } from '../../hooks/useTerminal'
-import type { ScratchTarget } from '../../hooks/useScratchTerminals'
+import type { BurnerTarget } from '../../hooks/useBurnerTerminals'
 import type { ITerminalService } from '../../services/terminalService'
 import {
   TerminalPane,
@@ -45,12 +45,12 @@ export interface SplitViewProps {
   onRequestFocus?: () => void
   onAddPane?: (sessionId: string, kind?: Pane['kind']) => void
   onClosePane?: (sessionId: string, paneId: string) => void
-  /** Toggle a pane's ephemeral scratch terminal (VIM-53). */
-  onScratch?: (target: ScratchTarget) => void
-  /** Pane-keys with a running scratch shell — drives the §8 cue. */
-  runningScratchPaneKeys?: ReadonlySet<string>
+  /** Toggle a pane's ephemeral burner terminal (VIM-53). */
+  onBurner?: (target: BurnerTarget) => void
+  /** Pane-keys with a running burner shell — drives the §8 cue. */
+  runningBurnerPaneKeys?: ReadonlySet<string>
   /** Pane-keys with a foreground command running — drives the amber button tint (VIM-71). */
-  activeScratchPaneKeys?: ReadonlySet<string>
+  activeBurnerPaneKeys?: ReadonlySet<string>
   areBrowserPanesOccluded?: boolean
   deferTerminalFit?: boolean
   showPaneFocusHighlight?: boolean
@@ -118,9 +118,9 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
       onRequestFocus = undefined,
       onAddPane = undefined,
       onClosePane = undefined,
-      onScratch = undefined,
-      runningScratchPaneKeys = undefined,
-      activeScratchPaneKeys = undefined,
+      onBurner = undefined,
+      runningBurnerPaneKeys = undefined,
+      activeBurnerPaneKeys = undefined,
       areBrowserPanesOccluded = false,
       deferTerminalFit = false,
       showPaneFocusHighlight = true,
@@ -357,10 +357,10 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
                           onPaneReady={onPaneReady}
                           onRestart={onSessionRestart}
                           onClose={closeHandler}
-                          onScratch={onScratch}
+                          onBurner={onBurner}
                           onRequestActive={onSetActivePane}
-                          runningScratchPaneKeys={runningScratchPaneKeys}
-                          activeScratchPaneKeys={activeScratchPaneKeys}
+                          runningBurnerPaneKeys={runningBurnerPaneKeys}
+                          activeBurnerPaneKeys={activeBurnerPaneKeys}
                           isActive={isActive}
                           deferFit={deferTerminalFit}
                           showFocusHighlight={showPaneFocusHighlight}

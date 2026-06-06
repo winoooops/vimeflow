@@ -31,8 +31,8 @@ export interface StatusBarProps {
   contextPct: number | null
   paletteShortcut: readonly ShortcutKey[]
   onOpenPalette: () => void
-  // Total running scratch shells across all sessions (§8 secondary cue).
-  scratchCount?: number
+  // Total running burner shells across all sessions (§8 secondary cue).
+  burnerCount?: number
 }
 
 interface Segment {
@@ -186,7 +186,7 @@ const buildSegments = ({
   contextPct,
   paletteShortcut,
   onOpenPalette,
-  scratchCount = 0,
+  burnerCount = 0,
 }: StatusBarProps): Segment[] => {
   const paletteSegment = {
     id: 'palette',
@@ -196,13 +196,13 @@ const buildSegments = ({
   }
 
   // Global across sessions, so it shows even when no session is active.
-  const scratchSegment: Segment | null =
-    scratchCount > 0
+  const burnerSegment: Segment | null =
+    burnerCount > 0
       ? {
-          id: 'scratch',
+          id: 'burner',
           node: (
             <span
-              data-testid="status-bar-scratch"
+              data-testid="status-bar-burner"
               className="inline-flex items-center gap-1 whitespace-nowrap"
               style={{ color: '#f0c674' }}
             >
@@ -210,14 +210,14 @@ const buildSegments = ({
                 aria-hidden="true"
                 className="h-[5px] w-[5px] rounded-full bg-current"
               />
-              scratch ×{scratchCount}
+              burner ×{burnerCount}
             </span>
           ),
         }
       : null
 
   if (session === null) {
-    return scratchSegment ? [scratchSegment, paletteSegment] : [paletteSegment]
+    return burnerSegment ? [burnerSegment, paletteSegment] : [paletteSegment]
   }
 
   const segments: Segment[] = []
@@ -306,8 +306,8 @@ const buildSegments = ({
     })
   }
 
-  if (scratchSegment) {
-    segments.push(scratchSegment)
+  if (burnerSegment) {
+    segments.push(burnerSegment)
   }
   segments.push(paletteSegment)
 
@@ -319,14 +319,14 @@ export const StatusBar = ({
   contextPct,
   paletteShortcut,
   onOpenPalette,
-  scratchCount = 0,
+  burnerCount = 0,
 }: StatusBarProps): ReactElement => {
   const segments = buildSegments({
     session,
     contextPct,
     paletteShortcut,
     onOpenPalette,
-    scratchCount,
+    burnerCount,
   })
 
   return (

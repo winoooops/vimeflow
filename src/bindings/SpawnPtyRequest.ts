@@ -25,7 +25,7 @@ export type SpawnPtyRequest = {
    */
   enableAgentBridge: boolean
   /**
-   * Ephemeral (scratch) PTY: skip the session cache and the agent-bridge dir.
+   * Ephemeral (burner) PTY: skip the session cache and the agent-bridge dir.
    */
   ephemeral: boolean
 }

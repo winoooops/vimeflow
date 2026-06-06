@@ -37,7 +37,7 @@ async fn main() {
     let sink: Arc<dyn EventSink> = Arc::new(ipc::StdoutEventSink::new(tx.clone()));
     let state = Arc::new(BackendState::new(app_data_dir, sink));
 
-    // Drive the scratch-terminal live "running" cue (VIM-71).
+    // Drive the burner-terminal live "running" cue (VIM-71).
     state.start_foreground_poll();
 
     let run_result = ipc::run(state.clone(), tokio::io::stdin(), tx, cancel.clone()).await;

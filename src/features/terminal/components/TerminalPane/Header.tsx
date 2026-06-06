@@ -23,9 +23,9 @@ export interface HeaderProps {
   paneUserLabel?: string
   onToggleCollapse: () => void
   onClose?: () => void
-  onScratch?: () => void
-  scratchRunning?: boolean
-  scratchActive?: boolean
+  onBurner?: () => void
+  burnerRunning?: boolean
+  burnerActive?: boolean
 }
 
 export const Header = ({
@@ -44,9 +44,9 @@ export const Header = ({
   paneUserLabel = undefined,
   onToggleCollapse,
   onClose = undefined,
-  onScratch = undefined,
-  scratchRunning = false,
-  scratchActive = false,
+  onBurner = undefined,
+  burnerRunning = false,
+  burnerActive = false,
 }: HeaderProps): ReactElement => {
   const titleRef = useRef<HTMLSpanElement | null>(null)
 
@@ -110,9 +110,9 @@ export const Header = ({
         isCollapsed={isCollapsed}
         onToggleCollapse={onToggleCollapse}
         onClose={onClose}
-        onScratch={onScratch}
-        scratchRunning={scratchRunning}
-        scratchActive={scratchActive}
+        onBurner={onBurner}
+        burnerRunning={burnerRunning}
+        burnerActive={burnerActive}
       />
     </div>
   )

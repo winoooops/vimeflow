@@ -79,12 +79,12 @@ export interface ITerminalService {
   ): Promise<() => void>
 
   /**
-   * Subscribe to scratch-terminal foreground-state events (VIM-71). `running`
-   * is true while a foreground command holds the scratch shell's terminal,
+   * Subscribe to burner-terminal foreground-state events (VIM-71). `running`
+   * is true while a foreground command holds the burner shell's terminal,
    * false when it returns to its prompt. Drives the live "running" cue.
    * Resolves after the underlying transport listener is attached.
    */
-  onScratchForeground(
+  onBurnerForeground(
     callback: (sessionId: string, running: boolean) => void
   ): Promise<() => void>
 
@@ -116,7 +116,7 @@ export interface ITerminalService {
   ): Promise<void>
 
   /**
-   * Reap all ephemeral (scratch) PTYs; returns the ids killed. Called on
+   * Reap all ephemeral (burner) PTYs; returns the ids killed. Called on
    * renderer boot to clear reload orphans.
    */
   killEphemeralPtys(): Promise<string[]>
@@ -145,7 +145,7 @@ export class MockTerminalService implements ITerminalService {
   private exitCallbacks: ((sessionId: string, code: number | null) => void)[] =
     []
   private errorCallbacks: ((sessionId: string, message: string) => void)[] = []
-  private scratchForegroundCallbacks: ((
+  private burnerForegroundCallbacks: ((
     sessionId: string,
     running: boolean
   ) => void)[] = []
@@ -321,15 +321,15 @@ export class MockTerminalService implements ITerminalService {
     })
   }
 
-  onScratchForeground(
+  onBurnerForeground(
     callback: (sessionId: string, running: boolean) => void
   ): Promise<() => void> {
-    this.scratchForegroundCallbacks.push(callback)
+    this.burnerForegroundCallbacks.push(callback)
 
     return Promise.resolve(() => {
-      const index = this.scratchForegroundCallbacks.indexOf(callback)
+      const index = this.burnerForegroundCallbacks.indexOf(callback)
       if (index > -1) {
-        this.scratchForegroundCallbacks.splice(index, 1)
+        this.burnerForegroundCallbacks.splice(index, 1)
       }
     })
   }
@@ -363,8 +363,8 @@ export class MockTerminalService implements ITerminalService {
     this.exitCallbacks.forEach((cb) => cb(sessionId, code))
   }
 
-  emitScratchForeground(sessionId: string, running: boolean): void {
-    this.scratchForegroundCallbacks.forEach((cb) => cb(sessionId, running))
+  emitBurnerForeground(sessionId: string, running: boolean): void {
+    this.burnerForegroundCallbacks.forEach((cb) => cb(sessionId, running))
   }
 
   emitError(sessionId: string, message: string): void {

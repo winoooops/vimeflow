@@ -8,28 +8,28 @@ import {
   useState,
 } from 'react'
 import type { ReactNode } from 'react'
-import { ScratchTerminalPopup } from '../components/ScratchTerminalPopup'
+import { BurnerTerminalPopup } from '../components/BurnerTerminalPopup'
 import { registerChord } from '../../command-palette/chordRegistry'
 import type { ITerminalService } from '../services/terminalService'
 import type { NotifyPaneReady } from './useTerminal'
 import type { FocusedPaneRef } from '../../command-palette/hooks/usePaneRenameChord'
 
-type ScratchStatus = 'running' | 'exited'
+type BurnerStatus = 'running' | 'exited'
 
-interface ScratchEntry {
-  scratchPtyId: string
+interface BurnerEntry {
+  burnerPtyId: string
   pid: number
-  status: ScratchStatus
+  status: BurnerStatus
   cwd: string
   /** A foreground command is currently running in the shell (VIM-71). */
   active: boolean
 }
 
 /**
- * A pane to open a scratch shell against. The chord derives it from the focused
+ * A pane to open a burner shell against. The chord derives it from the focused
  * pane; the pane-header button passes its own pane's identity + live cwd.
  */
-export interface ScratchTarget {
+export interface BurnerTarget {
   sessionId: string
   paneId: string
   cwd: string
@@ -39,7 +39,7 @@ export interface ScratchTarget {
 const paneKey = (sessionId: string, paneId: string): string =>
   `${sessionId}:${paneId}`
 
-export interface UseScratchTerminalsArgs {
+export interface UseBurnerTerminalsArgs {
   service: ITerminalService
   /** Resolve the focused pane — the chord's target when `toggle()` has no arg. */
   resolveFocusedPane: () => FocusedPaneRef | null
@@ -50,33 +50,33 @@ export interface UseScratchTerminalsArgs {
   /** Drain the spawn→attach buffer once the popup's terminal subscribes. */
   notifyPaneReady?: NotifyPaneReady
   /**
-   * Live `${sessionId}:${paneId}` keys across all sessions. A scratch entry
+   * Live `${sessionId}:${paneId}` keys across all sessions. A burner entry
    * whose key drops out (pane close / session close) is reaped — killed +
-   * dropped. A pane restart keeps the key (stable paneId), so its scratch
+   * dropped. A pane restart keeps the key (stable paneId), so its burner
    * survives. Omitted ⇒ no reconciliation (PR1/PR2 behavior).
    */
   livePaneKeys?: ReadonlySet<string>
-  /** Drop the spawn→attach buffer for a killed / self-exited scratch pty. */
+  /** Drop the spawn→attach buffer for a killed / self-exited burner pty. */
   dropAllForPty?: (ptyId: string) => void
 }
 
-export interface UseScratchTerminals {
+export interface UseBurnerTerminals {
   /**
-   * Mounted while any scratch shell lives; visibility-toggled so hiding the
+   * Mounted while any burner shell lives; visibility-toggled so hiding the
    * popup does NOT unmount (and so the shell keeps running). Mount in
    * `WorkspaceView` like `usePaneRenameChord`'s node.
    */
   renderNode: ReactNode
   /** Toggle the popup for a target pane (defaults to the focused pane). */
-  toggle: (target?: ScratchTarget) => Promise<void>
+  toggle: (target?: BurnerTarget) => Promise<void>
   /**
-   * Running scratch shells keyed by `${sessionId}:${paneId}` — drives the
+   * Running burner shells keyed by `${sessionId}:${paneId}` — drives the
    * live-but-hidden cues. Global across sessions (hide ≠ kill survives a
    * session switch), so the bound is ≤4 per session, not ≤4 total.
    */
-  runningByPane: ReadonlyMap<string, ScratchStatus>
+  runningByPane: ReadonlyMap<string, BurnerStatus>
   /**
-   * Scratch shells with a foreground command actually running, keyed by
+   * Burner shells with a foreground command actually running, keyed by
    * `${sessionId}:${paneId}` (VIM-71). Drives the amber button tint —
    * distinct from `runningByPane`, which only means a shell exists.
    */
@@ -84,13 +84,13 @@ export interface UseScratchTerminals {
 }
 
 /**
- * Owns the lifecycle of ephemeral "scratch" terminals (VIM-53). One scratch
+ * Owns the lifecycle of ephemeral "burner" terminals (VIM-53). One burner
  * shell per host pane, keyed by `${sessionId}:${paneId}`, spawned at that pane's
  * live cwd with `{ ephemeral: true, enableAgentBridge: false }`. The hook owns
  * spawn/kill; the popup renders the existing `<Body>` in `attach` mode. Hide ≠
- * kill — each scratch `<Body>` stays mounted-hidden for its shell's whole life.
+ * kill — each burner `<Body>` stays mounted-hidden for its shell's whole life.
  */
-export const useScratchTerminals = ({
+export const useBurnerTerminals = ({
   service,
   resolveFocusedPane,
   ready = true,
@@ -98,11 +98,11 @@ export const useScratchTerminals = ({
   notifyPaneReady,
   livePaneKeys,
   dropAllForPty,
-}: UseScratchTerminalsArgs): UseScratchTerminals => {
+}: UseBurnerTerminalsArgs): UseBurnerTerminals => {
   // Authoritative handles live in a ref so they never serialize; a projection
   // is mirrored into state so renderNode + cues re-render.
-  const entriesRef = useRef<Map<string, ScratchEntry>>(new Map())
-  const [entries, setEntries] = useState<Map<string, ScratchEntry>>(new Map())
+  const entriesRef = useRef<Map<string, BurnerEntry>>(new Map())
+  const [entries, setEntries] = useState<Map<string, BurnerEntry>>(new Map())
   const [visibleKey, setVisibleKey] = useState<string | null>(null)
   const spawningRef = useRef<Set<string>>(new Set())
   /** Show-intent guard: prevents a late-resolving spawn from stealing visibility. */
@@ -127,17 +127,17 @@ export const useScratchTerminals = ({
     setVisibleKey(null)
   }, [])
 
-  // Kill + drop a scratch pty. The kill rejection is contained so a backend
+  // Kill + drop a burner pty. The kill rejection is contained so a backend
   // failure logs instead of becoming an unhandled rejection; the boot sweep and
   // shutdown kill are the backstop if the kill never lands (spec §4).
-  const killScratch = useCallback(
+  const killBurner = useCallback(
     (ptyId: string): void => {
       void (async (): Promise<void> => {
         try {
           await service.kill({ sessionId: ptyId })
         } catch (err) {
           // eslint-disable-next-line no-console
-          console.warn('scratch kill failed', err)
+          console.warn('burner kill failed', err)
         }
       })()
       dropAllForPty?.(ptyId)
@@ -145,9 +145,9 @@ export const useScratchTerminals = ({
     [service, dropAllForPty]
   )
 
-  // Lazily spawn a pane's scratch shell on first open. Idempotent + guarded.
+  // Lazily spawn a pane's burner shell on first open. Idempotent + guarded.
   const spawnIfNeeded = useCallback(
-    async (target: ScratchTarget, key: string): Promise<void> => {
+    async (target: BurnerTarget, key: string): Promise<void> => {
       const existing = entriesRef.current.get(key)
       if (
         (existing && existing.status !== 'exited') ||
@@ -156,10 +156,10 @@ export const useScratchTerminals = ({
       ) {
         return
       }
-      // Re-opening a self-exited scratch: drop the dead shell's stale buffer
+      // Re-opening a self-exited burner: drop the dead shell's stale buffer
       // before the fresh spawn replaces the entry (VIM-62 self-exit reconcile).
       if (existing) {
-        dropAllForPty?.(existing.scratchPtyId)
+        dropAllForPty?.(existing.burnerPtyId)
       }
       spawningRef.current.add(key)
       try {
@@ -176,7 +176,7 @@ export const useScratchTerminals = ({
         const invalidated = invalidatedSpawnsRef.current.has(key)
         const live = livePaneKeysRef.current
         if (invalidated || (live && !live.has(key))) {
-          killScratch(result.sessionId)
+          killBurner(result.sessionId)
           if (showIntentRef.current === key) {
             showIntentRef.current = null
           }
@@ -186,7 +186,7 @@ export const useScratchTerminals = ({
         // Buffer prompt/rc output emitted before the popup's terminal attaches.
         registerPending?.(result.sessionId)
         entriesRef.current.set(key, {
-          scratchPtyId: result.sessionId,
+          burnerPtyId: result.sessionId,
           pid: result.pid,
           status: 'running',
           cwd: result.cwd,
@@ -197,7 +197,7 @@ export const useScratchTerminals = ({
         // Contain the rejection (chord/pill call with `void`); no entry is
         // created, so the next attempt retries.
         // eslint-disable-next-line no-console
-        console.warn('scratch spawn failed', err)
+        console.warn('burner spawn failed', err)
       } finally {
         spawningRef.current.delete(key)
         // Clear the tombstone once the spawn settles (success, reap, or failure)
@@ -205,13 +205,13 @@ export const useScratchTerminals = ({
         invalidatedSpawnsRef.current.delete(key)
       }
     },
-    [ready, service, commit, registerPending, dropAllForPty, killScratch]
+    [ready, service, commit, registerPending, dropAllForPty, killBurner]
   )
 
-  // Reveal a pane's scratch (spawning on first open). The pane button and the
+  // Reveal a pane's burner (spawning on first open). The pane button and the
   // pane-switcher pills land here; only the chord toggles (hide-if-shown).
   const show = useCallback(
-    async (target: ScratchTarget): Promise<void> => {
+    async (target: BurnerTarget): Promise<void> => {
       const key = paneKey(target.sessionId, target.paneId)
       showIntentRef.current = key
       await spawnIfNeeded(target, key)
@@ -223,7 +223,7 @@ export const useScratchTerminals = ({
   )
 
   const toggle = useCallback(
-    async (target?: ScratchTarget): Promise<void> => {
+    async (target?: BurnerTarget): Promise<void> => {
       // Chord (no target): hide whatever is shown, else open the focused pane.
       // Keying off `visibleKey` (not the focused pane's key) keeps it a true
       // toggle even after the pills switched the popup to a non-focused pane.
@@ -246,7 +246,7 @@ export const useScratchTerminals = ({
         return
       }
 
-      // Targeted (pane button): toggle that specific pane's scratch.
+      // Targeted (pane button): toggle that specific pane's burner.
       const key = paneKey(target.sessionId, target.paneId)
       if (visibleKey === key) {
         hide()
@@ -271,7 +271,7 @@ export const useScratchTerminals = ({
     []
   )
 
-  // Self-exit (VIM-62): a scratch child that exits on its own (`exit`/Ctrl-D)
+  // Self-exit (VIM-62): a burner child that exits on its own (`exit`/Ctrl-D)
   // flips its entry to `exited`. The button cue goes dark (status !== running);
   // it's dropped on the next reconcile or replaced on the next open
   // (spawnIfNeeded re-spawns an exited entry).
@@ -287,7 +287,7 @@ export const useScratchTerminals = ({
       const off = await service.onExit((ptyId) => {
         const affected = [...entriesRef.current.entries()].filter(
           ([, entry]) =>
-            entry.scratchPtyId === ptyId && entry.status !== 'exited'
+            entry.burnerPtyId === ptyId && entry.status !== 'exited'
         )
         if (affected.length === 0) {
           return
@@ -317,8 +317,8 @@ export const useScratchTerminals = ({
     }
   }, [service, commit])
 
-  // Live "running" cue (VIM-71): the backend polls each scratch shell's
-  // foreground process group and emits `scratch-foreground` when a command
+  // Live "running" cue (VIM-71): the backend polls each burner shell's
+  // foreground process group and emits `burner-foreground` when a command
   // starts or finishes. Mirror it onto the matching entry's `active` flag,
   // which drives the amber button tint. Same async-subscribe / sync-cleanup shape as
   // the self-exit effect above.
@@ -328,13 +328,13 @@ export const useScratchTerminals = ({
       off: null,
     }
     void (async (): Promise<void> => {
-      const off = await service.onScratchForeground((ptyId, running) => {
+      const off = await service.onBurnerForeground((ptyId, running) => {
         // Gate on `status === 'running'`: the poll loop and the PTY reader emit
         // from independent backend tasks, so a stale `running: true` can arrive
         // after `pty-exit` — without this it would re-light a dead shell.
         const affected = [...entriesRef.current.entries()].filter(
           ([, entry]) =>
-            entry.scratchPtyId === ptyId &&
+            entry.burnerPtyId === ptyId &&
             entry.status === 'running' &&
             entry.active !== running
         )
@@ -360,7 +360,7 @@ export const useScratchTerminals = ({
     }
   }, [service, commit])
 
-  // Lazy reconciliation (VIM-62): a scratch whose host pane no longer exists
+  // Lazy reconciliation (VIM-62): a burner whose host pane no longer exists
   // (pane close / session close) is killed + dropped. A pane restart keeps it —
   // the key is the stable `${sessionId}:${paneId}`, not the rotating host ptyId.
   useEffect(() => {
@@ -386,7 +386,7 @@ export const useScratchTerminals = ({
     for (const key of deadKeys) {
       const entry = entriesRef.current.get(key)
       if (entry) {
-        killScratch(entry.scratchPtyId)
+        killBurner(entry.burnerPtyId)
       }
       entriesRef.current.delete(key)
     }
@@ -398,11 +398,11 @@ export const useScratchTerminals = ({
       current !== null && !entriesRef.current.has(current) ? null : current
     )
     commit()
-  }, [livePaneKeys, killScratch, commit])
+  }, [livePaneKeys, killBurner, commit])
 
   // Memoized so consumers threading it down only re-render on actual change.
   const runningByPane = useMemo(() => {
-    const map = new Map<string, ScratchStatus>()
+    const map = new Map<string, BurnerStatus>()
     entries.forEach((entry, key) => map.set(key, entry.status))
 
     return map
@@ -421,12 +421,12 @@ export const useScratchTerminals = ({
           Fragment,
           null,
           [...entries.entries()].map(([key, entry]) =>
-            createElement(ScratchTerminalPopup, {
+            createElement(BurnerTerminalPopup, {
               // Keyed by pty so a re-spawned (post-exit) shell remounts a fresh
               // <Body>; `open` still tracks the stable pane key.
-              key: `${key}:${entry.scratchPtyId}`,
+              key: `${key}:${entry.burnerPtyId}`,
               open: visibleKey === key,
-              scratchPtyId: entry.scratchPtyId,
+              burnerPtyId: entry.burnerPtyId,
               cwd: entry.cwd,
               pid: entry.pid,
               service,

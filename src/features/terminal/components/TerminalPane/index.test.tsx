@@ -135,27 +135,27 @@ describe('TerminalPane index', () => {
     )
   })
 
-  test('the scratch button activates its pane (spec §8) then toggles its scratch', async () => {
-    const onScratch = vi.fn()
+  test('the burner button activates its pane (spec §8) then toggles its burner', async () => {
+    const onBurner = vi.fn()
     const onRequestActive = vi.fn()
     const user = userEvent.setup()
 
     render(
       <TerminalPane
         {...baseProps}
-        onScratch={onScratch}
+        onBurner={onBurner}
         onRequestActive={onRequestActive}
       />
     )
 
     await user.click(
-      screen.getByRole('button', { name: /open scratch terminal/i })
+      screen.getByRole('button', { name: /open burner terminal/i })
     )
 
     // Focuses THIS pane (so the active-pane state tracks the popup), then
-    // toggles its own pane's scratch with its identity + live cwd.
+    // toggles its own pane's burner with its identity + live cwd.
     expect(onRequestActive).toHaveBeenCalledWith('s1', 'p0')
-    expect(onScratch).toHaveBeenCalledWith({
+    expect(onBurner).toHaveBeenCalledWith({
       sessionId: 's1',
       paneId: 'p0',
       cwd: '/home/user/repo',

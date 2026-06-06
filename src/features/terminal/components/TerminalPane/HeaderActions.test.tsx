@@ -63,8 +63,8 @@ describe('HeaderActions', () => {
     expect(onParentClick).not.toHaveBeenCalled()
   })
 
-  test('renders scratch control only when onScratch is defined', () => {
-    const onScratch = vi.fn()
+  test('renders burner control only when onBurner is defined', () => {
+    const onBurner = vi.fn()
     const onParentClick = vi.fn()
 
     const { rerender } = render(
@@ -74,7 +74,7 @@ describe('HeaderActions', () => {
     )
 
     expect(
-      screen.queryByRole('button', { name: /open scratch terminal/i })
+      screen.queryByRole('button', { name: /open burner terminal/i })
     ).toBeNull()
 
     rerender(
@@ -82,26 +82,26 @@ describe('HeaderActions', () => {
         <HeaderActions
           isCollapsed={expanded}
           onToggleCollapse={vi.fn()}
-          onScratch={onScratch}
+          onBurner={onBurner}
         />
       </div>
     )
 
     fireEvent.click(
-      screen.getByRole('button', { name: /open scratch terminal/i })
+      screen.getByRole('button', { name: /open burner terminal/i })
     )
 
-    expect(onScratch).toHaveBeenCalledTimes(1)
+    expect(onBurner).toHaveBeenCalledTimes(1)
     expect(onParentClick).not.toHaveBeenCalled()
   })
 
-  test('a live (but idle) scratch shell is transparent but labelled live for AT', () => {
+  test('a live (but idle) burner shell is transparent but labelled live for AT', () => {
     render(
       <HeaderActions
         isCollapsed={expanded}
         onToggleCollapse={vi.fn()}
-        onScratch={vi.fn()}
-        scratchRunning
+        onBurner={vi.fn()}
+        burnerRunning
       />
     )
 
@@ -109,44 +109,44 @@ describe('HeaderActions', () => {
     // reserved for an actually-running command. The "(live)" label still
     // exposes the hidden shell to AT.
     const button = screen.getByRole('button', {
-      name: 'open scratch terminal (live)',
+      name: 'open burner terminal (live)',
     })
     expect(button.className).toContain('bg-transparent')
     expect(button.className).toContain('text-on-surface-muted')
-    expect(screen.queryByTestId('scratch-live-dot')).toBeNull()
+    expect(screen.queryByTestId('burner-live-dot')).toBeNull()
   })
 
-  test('an active scratch shows the amber button tint (the cue, no dot)', () => {
+  test('an active burner shows the amber button tint (the cue, no dot)', () => {
     render(
       <HeaderActions
         isCollapsed={expanded}
         onToggleCollapse={vi.fn()}
-        onScratch={vi.fn()}
-        scratchRunning
-        scratchActive
+        onBurner={vi.fn()}
+        burnerRunning
+        burnerActive
       />
     )
 
     const button = screen.getByRole('button', {
-      name: /open scratch terminal \(running\)/i,
+      name: /open burner terminal \(running\)/i,
     })
     expect(button.className).toContain('bg-[#f0c674]/15')
     expect(button.className).toContain('text-[#f0c674]') // amber icon when active
     // The amber background IS the running cue — no separate live-dot.
-    expect(screen.queryByTestId('scratch-live-dot')).toBeNull()
+    expect(screen.queryByTestId('burner-live-dot')).toBeNull()
   })
 
-  test('no running cue when the pane scratch is not running', () => {
+  test('no running cue when the pane burner is not running', () => {
     render(
       <HeaderActions
         isCollapsed={expanded}
         onToggleCollapse={vi.fn()}
-        onScratch={vi.fn()}
+        onBurner={vi.fn()}
       />
     )
 
     const button = screen.getByRole('button', {
-      name: 'open scratch terminal',
+      name: 'open burner terminal',
     })
     expect(button.className).toContain('bg-transparent')
     expect(button.className).toContain('text-on-surface-muted') // gray icon, not amber
