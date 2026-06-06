@@ -226,14 +226,19 @@ wrapper on the control host:
 QA_WORKER_BURST=1
 QA_WORKER_STOP_AFTER_RUN=1
 QA_WORKER_READY_TIMEOUT_SECONDS=900
+QA_WORKER_IDLE_STOP_SECONDS=15
 ```
 
 With `QA_WORKER_BURST=1`, the dispatcher starts a stopped worker instance,
 waits until EC2 reports `running`, then retries the actual SSM fixer command
-until the target accepts it. With `QA_WORKER_STOP_AFTER_RUN=1`, it calls
-`ec2 stop-instances` after the worker command reaches a terminal SSM status. A
-stop failure is only logged as a warning; the dispatcher still exits with the
-real fixer result.
+until the target accepts it. With `QA_WORKER_STOP_AFTER_RUN=1`, a standalone
+dispatch calls `ec2 stop-instances` after the worker command reaches a terminal
+SSM status. Under the daemon, queued or concurrent work adds
+`QA_WORKER_KEEP_ALIVE=1` to the fixer contract so the worker stays warm while
+there is backlog; when the queue drains, the daemon waits
+`QA_WORKER_IDLE_STOP_SECONDS` and then performs a best-effort stop. A stop
+failure is only logged as a warning; the dispatcher still exits with the real
+fixer result.
 
 Spot workers should use the same SSM dispatch path. For the first realistic
 smoke, prefer a reusable EBS-backed Spot worker whose credentials are

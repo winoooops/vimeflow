@@ -221,6 +221,7 @@ The command receives the fixer contract through environment variables:
 | `QA_LINEAR_CREATE_ISSUES`     | `1` when missing Linear issues may be created                       |
 | `QA_LINEAR_TEAM_KEY`          | Linear team key for issue creation                                  |
 | `QA_MAX_CI_RERUNS`            | Bounded transient reviewer rerun cap                                |
+| `QA_WORKER_KEEP_ALIVE`        | `1` when the daemon has queued/in-flight work after this fix cycle  |
 | `QA_FIX_CONTEXT`              | Structured control-plane reason/findings for the fixer              |
 | `QA_LINEAR_PARENT_COMMENT_ID` | Active `NEEDS_FIX` Linear comment id for fixer status replies       |
 
@@ -241,8 +242,13 @@ supports:
 - `QA_WORKER_BURST=1` for SSM workers that may be stopped between fix cycles.
   The dispatcher starts the instance when needed, waits for EC2 `running`, then
   retries the actual SSM worker command until the target accepts it.
-- `QA_WORKER_STOP_AFTER_RUN=1` stops the SSM worker after the command completes.
-  Stop failures are logged as warnings and do not replace the fixer exit code.
+- `QA_WORKER_STOP_AFTER_RUN=1` stops the SSM worker after the command completes
+  unless `QA_WORKER_KEEP_ALIVE=1` is present. The daemon sets keep-alive while
+  it still has queued or concurrent work, then performs a best-effort idle stop
+  once the queue drains. Stop failures are logged as warnings and do not replace
+  the fixer exit code.
+- `QA_WORKER_IDLE_STOP_SECONDS=15` controls the daemon's idle-stop grace period
+  after a keep-alive run drains the queue.
 
 The remote side runs `worker-cycle.js`, which maps the daemon's environment
 contract into one `run.js <PR> --push` fixer pass. It never arms approval; the

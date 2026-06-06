@@ -79,6 +79,11 @@ if [ -z "$worker_ready_timeout_seconds" ]; then
   worker_ready_timeout_seconds="$(optional_value QA_WORKER_READY_TIMEOUT_SECONDS)" || exit 1
 fi
 
+worker_idle_stop_seconds="${QA_WORKER_IDLE_STOP_SECONDS:-}"
+if [ -z "$worker_idle_stop_seconds" ]; then
+  worker_idle_stop_seconds="$(optional_value QA_WORKER_IDLE_STOP_SECONDS)" || exit 1
+fi
+
 github_webhook_secret="$(value GITHUB_WEBHOOK_SECRET)"
 qa_status_token="$(value QA_STATUS_TOKEN)"
 gh_orch_token="$(value GH_ORCH_TOKEN)"
@@ -149,6 +154,7 @@ EOF
   write_env_line QA_WORKER_BURST "$worker_burst"
   write_env_line QA_WORKER_STOP_AFTER_RUN "$worker_stop_after_run"
   write_env_line QA_WORKER_READY_TIMEOUT_SECONDS "$worker_ready_timeout_seconds"
+  write_env_line QA_WORKER_IDLE_STOP_SECONDS "$worker_idle_stop_seconds"
   write_env_line LINEAR_CLIENT_ID "$linear_client_id"
   write_env_line LINEAR_CLIENT_SECRET "$linear_client_secret"
   write_env_line LINEAR_SCOPES "read,write"

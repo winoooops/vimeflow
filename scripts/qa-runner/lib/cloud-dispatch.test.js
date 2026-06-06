@@ -43,6 +43,7 @@ describe('cycleEnv', () => {
         ...cycle,
         QA_WORKER_REFRESH_RUNNER: '1',
         QA_WORKER_REF: 'main',
+        QA_WORKER_KEEP_ALIVE: '1',
         QA_RUNNER_REF: 'main',
         QA_APPROVE: '1',
         QA_WORKER_INSTANCE_ID: 'i-123',
@@ -50,6 +51,7 @@ describe('cycleEnv', () => {
       })
     ).toEqual({
       ...cycle,
+      QA_WORKER_KEEP_ALIVE: '1',
       QA_WORKER_REFRESH_RUNNER: '1',
       QA_WORKER_REF: 'main',
       QA_RUNNER_REF: 'main',
@@ -149,11 +151,13 @@ describe('dispatchConfig', () => {
       dispatchConfig({
         QA_WORKER_BURST: '1',
         QA_WORKER_STOP_AFTER_RUN: 'true',
+        QA_WORKER_KEEP_ALIVE: 'yes',
         QA_WORKER_READY_TIMEOUT_SECONDS: '900',
       })
     ).toMatchObject({
       burst: true,
       stopAfterRun: true,
+      keepAlive: true,
       readyTimeoutSeconds: 900,
     })
   })
@@ -521,6 +525,54 @@ describe('runSsmDispatch', () => {
     expect(stderr.write).toHaveBeenCalledWith('worker failed\n')
     expect(stderr.write).toHaveBeenCalledWith(
       expect.stringContaining('warning: failed to stop worker i-burst')
+    )
+  })
+
+  test('keeps a burst worker running when keep-alive is requested', async () => {
+    const mockSpawn = makeMockSpawn([
+      {
+        stdout: JSON.stringify({
+          Reservations: [{ Instances: [{ State: { Name: 'running' } }] }],
+        }),
+      },
+      {
+        stdout: JSON.stringify({ Command: { CommandId: 'cmd-burst' } }),
+      },
+      {
+        stdout: JSON.stringify({
+          Status: 'Success',
+          ResponseCode: 0,
+          StandardOutputContent: 'fixed\n',
+          StandardErrorContent: '',
+        }),
+      },
+    ])
+    const stdout = { write: vi.fn() }
+
+    const result = await runSsmDispatch({
+      instanceId: 'i-burst',
+      region: 'us-west-1',
+      repo: '/srv/vimeflow',
+      env: { QA_PR: '361' },
+      timeoutSeconds: 30,
+      burst: true,
+      stopAfterRun: true,
+      keepAlive: true,
+      stdout,
+      stderr: { write: vi.fn() },
+      spawnImpl: mockSpawn,
+      pollIntervalMs: 1,
+    })
+
+    expect(result).toEqual({ code: 0, signal: null })
+    expect(mockSpawn.mock.calls.map(([, args]) => args.slice(0, 2))).toEqual([
+      ['ec2', 'describe-instances'],
+      ['ssm', 'send-command'],
+      ['ssm', 'get-command-invocation'],
+    ])
+
+    expect(stdout.write).toHaveBeenCalledWith(
+      'worker i-burst: keep alive requested; skip stop\n'
     )
   })
 

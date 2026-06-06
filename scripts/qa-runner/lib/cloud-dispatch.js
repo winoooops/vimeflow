@@ -11,6 +11,7 @@ export const CYCLE_ENV_KEYS = [
   'QA_MAX_CI_RERUNS',
   'QA_FIX_CONTEXT',
   'QA_LINEAR_PARENT_COMMENT_ID',
+  'QA_WORKER_KEEP_ALIVE',
   'QA_WORKER_REFRESH_RUNNER',
   'QA_WORKER_REF',
   // Legacy alias consumed by worker-cycle; pass-through only, not SSM-sourced.
@@ -329,7 +330,12 @@ export const ensureWorkerInstanceRunning = async ({
       onStarted?.()
       state = 'pending'
       await wait(pollIntervalMs)
-      state = await describeInstanceState({ instanceId, region, env, spawnImpl })
+      state = await describeInstanceState({
+        instanceId,
+        region,
+        env,
+        spawnImpl,
+      })
       continue
     }
 
@@ -465,6 +471,7 @@ export const runSsmDispatch = async ({
   timeoutSeconds,
   burst = false,
   stopAfterRun = false,
+  keepAlive = false,
   readyTimeoutSeconds = 600,
   stdout = process.stdout,
   stderr = process.stderr,
@@ -597,7 +604,9 @@ export const runSsmDispatch = async ({
       signal: null,
     }
   } finally {
-    if (shouldStop) {
+    if (shouldStop && keepAlive) {
+      stdout.write(`worker ${instanceId}: keep alive requested; skip stop\n`)
+    } else if (shouldStop) {
       await stopSsmWorkerBestEffort({
         instanceId,
         region,
@@ -629,6 +638,7 @@ export const dispatchConfig = (env = process.env) => {
     timeoutSeconds: Number(env.QA_WORKER_TIMEOUT_SECONDS || 5400),
     burst: boolEnv(env.QA_WORKER_BURST),
     stopAfterRun: boolEnv(env.QA_WORKER_STOP_AFTER_RUN),
+    keepAlive: boolEnv(env.QA_WORKER_KEEP_ALIVE),
     readyTimeoutSeconds: Number(env.QA_WORKER_READY_TIMEOUT_SECONDS || 600),
   }
 }
@@ -675,6 +685,7 @@ export const runDispatch = async ({
       timeoutSeconds: config.timeoutSeconds,
       burst: config.burst,
       stopAfterRun: config.stopAfterRun,
+      keepAlive: config.keepAlive,
       readyTimeoutSeconds: config.readyTimeoutSeconds,
       stdout,
       stderr,

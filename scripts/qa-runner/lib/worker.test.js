@@ -156,6 +156,15 @@ describe('watchArgs', () => {
       })
     ).toContain('0')
   })
+
+  test('passes burst-worker keep-alive intent into watch args', () => {
+    expect(
+      watchArgs(123, {
+        label: 'auto-review',
+        workerKeepAlive: true,
+      })
+    ).toContain('--worker-keep-alive')
+  })
 })
 
 describe('approveForLabels', () => {
@@ -297,6 +306,32 @@ describe('runOne', () => {
       42,
       expect.objectContaining({
         approve: true,
+      }),
+      'poll'
+    )
+  })
+
+  test('forwards daemon queue keep-alive state into the tick config', async () => {
+    const tickRunner = vi.fn(async () => 0)
+
+    const deps = makeDeps({
+      config: {
+        label: 'auto-review',
+        approveLabel: 'auto-approve',
+        maxNoops: 3,
+        workerKeepAlive: true,
+      },
+      snapshotExec: openPrSnapshotExec(),
+      tickRunner,
+    })
+
+    const outcome = await runOne(42, 'poll', deps)
+
+    expect(outcome).toBe('waiting')
+    expect(tickRunner).toHaveBeenCalledWith(
+      42,
+      expect.objectContaining({
+        workerKeepAlive: true,
       }),
       'poll'
     )

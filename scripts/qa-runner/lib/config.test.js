@@ -25,4 +25,10 @@ describe('loadConfig', () => {
 
     expect(loadConfig().approveLabel).toBe('merge-me')
   })
+
+  test('allows overriding burst worker idle stop delay through env', () => {
+    process.env.QA_WORKER_IDLE_STOP_SECONDS = '3'
+
+    expect(loadConfig().workerIdleStopSeconds).toBe(3)
+  })
 })

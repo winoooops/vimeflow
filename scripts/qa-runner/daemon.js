@@ -15,6 +15,10 @@ import { createHost } from './lib/host.js'
 import { runOne } from './lib/worker.js'
 import { createEvents } from './lib/events.js'
 import { createTickRunner } from './lib/tick-runner.js'
+import {
+  dispatchConfig,
+  stopSsmWorkerBestEffort,
+} from './lib/cloud-dispatch.js'
 
 const log = (s) => process.stdout.write(`${new Date().toISOString()} ${s}\n`)
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
@@ -27,12 +31,72 @@ const state = createState()
 const queue = createQueue()
 const events = createEvents(log)
 const tickRunner = createTickRunner(config, log)
+const workerDispatchConfig = dispatchConfig(process.env)
 let running = true
 let shuttingDown = false
+let idleStopTimer = null
+let idleStopRunning = false
 
 const deprecatedApproveEnvSet = ['1', 'true', 'yes', 'on'].includes(
   String(process.env.QA_APPROVE || '').toLowerCase()
 )
+
+const queueHasWork = () => queue.depth() > 0 || queue.inFlight().length > 0
+
+const shouldKeepBurstWorkerAlive = () =>
+  queue.depth() > 0 || queue.inFlight().length > 1
+
+const canStopIdleBurstWorker = () =>
+  workerDispatchConfig.mode === 'ssm' &&
+  workerDispatchConfig.burst &&
+  workerDispatchConfig.stopAfterRun &&
+  workerDispatchConfig.instanceId &&
+  workerDispatchConfig.region
+
+const cancelIdleStop = () => {
+  if (!idleStopTimer) {
+    return
+  }
+  clearTimeout(idleStopTimer)
+  idleStopTimer = null
+}
+
+const stopIdleBurstWorker = async () => {
+  idleStopRunning = true
+  try {
+    if (!canStopIdleBurstWorker() || queueHasWork()) {
+      return
+    }
+    log(`worker idle: stopping burst worker ${workerDispatchConfig.instanceId}`)
+    await stopSsmWorkerBestEffort({
+      instanceId: workerDispatchConfig.instanceId,
+      region: workerDispatchConfig.region,
+      stderr: {
+        write: (message) => log(message.trim()),
+      },
+    })
+  } finally {
+    idleStopRunning = false
+  }
+}
+
+const scheduleIdleStop = () => {
+  if (
+    !canStopIdleBurstWorker() ||
+    queueHasWork() ||
+    idleStopTimer ||
+    idleStopRunning
+  ) {
+    return
+  }
+  idleStopTimer = setTimeout(
+    () => {
+      idleStopTimer = null
+      stopIdleBurstWorker()
+    },
+    Math.max(0, config.workerIdleStopSeconds) * 1000
+  )
+}
 
 // One worker: claim a PR, run a single cycle, release, repeat. Live concurrency
 // is capped by the worker count (config.maxParallel).
@@ -50,9 +114,14 @@ const worker = async (id) => {
       await sleep(1500)
       continue
     }
+    cancelIdleStop()
+    const keepWorkerAlive = shouldKeepBurstWorkerAlive()
     try {
       const outcome = await runOne(job.pr, job.reason, {
-        config,
+        config: {
+          ...config,
+          workerKeepAlive,
+        },
         state,
         log,
         events,
@@ -74,6 +143,9 @@ const worker = async (id) => {
         queue.done(job.pr)
       } catch (e) {
         log(`worker ${id}: queue.done failed — ${e.message}`)
+      }
+      if (keepWorkerAlive) {
+        scheduleIdleStop()
       }
     }
   }

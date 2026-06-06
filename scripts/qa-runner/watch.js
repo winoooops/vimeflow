@@ -127,6 +127,9 @@ const numericOption = (raw, fallback) => {
   return Number.isFinite(n) ? n : fallback
 }
 
+const boolOption = (raw) =>
+  ['1', 'true', 'yes', 'on'].includes(String(raw || '').toLowerCase())
+
 const repoSlug = () => {
   const r = ghJson(['repo', 'view', '--json', 'owner,name'])
 
@@ -895,7 +898,13 @@ const approve = (pr, vim, headSha, ctx) => {
   }
 }
 
-const fixCommandEnv = ({ pr, fixContext, linearParentId, ctx }) => ({
+const fixCommandEnv = ({
+  pr,
+  fixContext,
+  linearParentId,
+  ctx,
+  keepWorkerAlive = false,
+}) => ({
   ...process.env,
   QA_PR: String(pr),
   QA_REASON: ctx.reason || '',
@@ -905,6 +914,7 @@ const fixCommandEnv = ({ pr, fixContext, linearParentId, ctx }) => ({
   QA_LINEAR_CREATE_ISSUES: ctx.linearCreateIssues ? '1' : '0',
   QA_LINEAR_TEAM_KEY: ctx.linearTeamKey || '',
   QA_MAX_CI_RERUNS: ctx.maxCiReruns == null ? '' : String(ctx.maxCiReruns),
+  QA_WORKER_KEEP_ALIVE: keepWorkerAlive ? '1' : '0',
   ...(fixContext ? { QA_FIX_CONTEXT: JSON.stringify(fixContext) } : {}),
   ...(linearParentId ? { QA_LINEAR_PARENT_COMMENT_ID: linearParentId } : {}),
 })
@@ -913,7 +923,10 @@ const fixCommandEnv = ({ pr, fixContext, linearParentId, ctx }) => ({
 // console so concurrent runs stay legible. On a single-host daemon this runs
 // run.js locally. In split-plane cloud mode QA_FIX_COMMAND dispatches the same
 // fixer-only contract to a burst worker; classification and merge stay here.
-const dispatchFix = ({ pr, fixContext, linearParentId }, ctx) =>
+const dispatchFix = (
+  { pr, fixContext, linearParentId, keepWorkerAlive = false },
+  ctx
+) =>
   new Promise((resolve) => {
     mkdirSync(LOG_DIR, { recursive: true })
     const logPath = join(LOG_DIR, `pr-${pr}.log`)
@@ -932,14 +945,26 @@ const dispatchFix = ({ pr, fixContext, linearParentId }, ctx) =>
     if (command) {
       const [cmd, ...fixArgs] = command.split(/\s+/)
       child = spawn(cmd, fixArgs, {
-        env: fixCommandEnv({ pr, fixContext, linearParentId, ctx }),
+        env: fixCommandEnv({
+          pr,
+          fixContext,
+          linearParentId,
+          ctx,
+          keepWorkerAlive,
+        }),
       })
     } else {
       child = spawn(
         'node',
         [join(SCRIPT_DIR, 'run.js'), String(pr), '--push'],
         {
-          env: fixCommandEnv({ pr, fixContext, linearParentId, ctx }),
+          env: fixCommandEnv({
+            pr,
+            fixContext,
+            linearParentId,
+            ctx,
+            keepWorkerAlive,
+          }),
         }
       )
     }
@@ -1100,7 +1125,12 @@ const tick = async (ctx) => {
       `Dispatching ${needsFix.length} fix run(s), up to ${ctx.maxParallel} in parallel…\n`
     )
 
-    const results = await pool(needsFix, ctx.maxParallel, (item) =>
+    const queueAwareNeedsFix = needsFix.map((item) => ({
+      ...item,
+      keepWorkerAlive: ctx.workerKeepAlive,
+    }))
+
+    const results = await pool(queueAwareNeedsFix, ctx.maxParallel, (item) =>
       dispatchFix(item, ctx)
     )
     // dispatchFix resolves a real run.js exit code, null (signal-killed), or -1
@@ -1210,6 +1240,8 @@ const main = () => {
     maxCiReruns: numericOption(val('max-ci-reruns'), MAX_CI_RERUNS),
     linearTeamKey: val('linear-team') || 'VIM',
     fixCommand: val('fix-command') || process.env.QA_FIX_COMMAND || '',
+    workerKeepAlive:
+      has('worker-keep-alive') || boolOption(process.env.QA_WORKER_KEEP_ALIVE),
     orchBot,
     approverLogin: orchBot?.user ?? ghJson(['api', 'user']).login,
   }
@@ -1223,7 +1255,7 @@ const main = () => {
     return watch(ctx)
   }
   err(
-    `unknown command: ${cmd}. Use: scan | tick | watch  [--pr N] [--approve] [--execute] [--linear-decisions] [--linear-create-issues] [--max-ci-reruns N] [--linear-team KEY] [--fix-command COMMAND] [--reason EVENT] [--all] [--max N] [--label NAME]`
+    `unknown command: ${cmd}. Use: scan | tick | watch  [--pr N] [--approve] [--execute] [--linear-decisions] [--linear-create-issues] [--max-ci-reruns N] [--linear-team KEY] [--fix-command COMMAND] [--worker-keep-alive] [--reason EVENT] [--all] [--max N] [--label NAME]`
   )
   process.exit(1)
 }
