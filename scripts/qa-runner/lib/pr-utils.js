@@ -13,6 +13,7 @@ export const linkedVim = (...texts) => {
   const [body = '', ...rest] = texts
   const branchText = rest.filter(Boolean).join('\n')
   const b = texts.filter(Boolean).join('\n')
+
   const explicit = b.match(
     /\b(?:closes|fixes|resolves|refs|references)\s+(VIM-\d+)\b/i
   )

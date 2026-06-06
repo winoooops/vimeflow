@@ -9,6 +9,7 @@ import {
 } from './linear-status.js'
 
 const tempRoots = []
+
 const ENV_KEYS = [
   'LINEAR_API_KEY',
   'LINEAR_CLIENT_ID',
@@ -17,6 +18,7 @@ const ENV_KEYS = [
   'LINEAR_ACCESS_TOKEN',
   'LINEAR_AGENT_TOKEN',
 ]
+
 const originalEnv = Object.fromEntries(
   ENV_KEYS.map((key) => [key, process.env[key]])
 )
@@ -162,8 +164,8 @@ describe('loadAuthFromRoot', () => {
 
   test('ignores unreadable fallback env files when process env auth is available', async () => {
     const root = makeRoot()
-    writeEnv(root, 'linear.env', 'LINEAR_API_KEY=lin_api_file')
-    chmodSync(join(root, 'linear.env'), 0)
+    writeEnv(root, 'linear-agent.env', 'LINEAR_API_KEY=lin_api_file')
+    chmodSync(join(root, 'linear-agent.env'), 0)
     process.env.LINEAR_CLIENT_ID = 'env-client-id'
     process.env.LINEAR_CLIENT_SECRET = 'env-client-secret'
 
