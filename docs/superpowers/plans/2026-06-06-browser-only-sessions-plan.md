@@ -661,3 +661,5 @@ Expected: all green.
 - `Cmd+R` reload → tabs + history intact (reconnect to live views).
 - **Graceful quit, relaunch** → browser-only session + tabs + history restored; shell panes return as restartable placeholders; restart one (no stale-PTY-kill failure).
 - macOS: close window (app alive) then reopen → later quit still persists.
+
+<!-- codex-reviewed: 2026-06-06T16:51:08Z -->
