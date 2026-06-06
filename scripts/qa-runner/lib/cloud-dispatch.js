@@ -289,6 +289,7 @@ export const ensureWorkerInstanceRunning = async ({
   stdout = process.stdout,
   env = process.env,
   spawnImpl = spawn,
+  onStarted,
 }) => {
   const deadline = Date.now() + timeoutSeconds * 1000
   let state = await describeInstanceState({
@@ -303,6 +304,7 @@ export const ensureWorkerInstanceRunning = async ({
     stdout.write(`worker ${instanceId}: starting stopped instance\n`)
     await startInstance({ instanceId, region, env, spawnImpl })
     started = true
+    onStarted?.()
     state = 'pending'
   }
 
@@ -369,14 +371,20 @@ const sendSsmWorkerCommand = ({
   instanceId,
   region,
   repo,
-  env,
+  env: commandEnv,
   timeoutSeconds,
   awsEnv,
   spawnImpl,
 }) =>
   runCapture(
     'aws',
-    ssmSendCommandArgs({ instanceId, region, repo, env, timeoutSeconds }),
+    ssmSendCommandArgs({
+      instanceId,
+      region,
+      repo,
+      env: commandEnv,
+      timeoutSeconds,
+    }),
     { env: awsEnv, spawnImpl }
   )
 
@@ -442,14 +450,14 @@ export const runSsmDispatch = async ({
   instanceId,
   region,
   repo,
-  env,
+  env: commandEnv,
   timeoutSeconds,
   burst = false,
   stopAfterRun = false,
   readyTimeoutSeconds = 600,
   stdout = process.stdout,
   stderr = process.stderr,
-  env: awsEnv = process.env,
+  awsEnv = process.env,
   spawnImpl = spawn,
   pollIntervalMs = 15000,
 }) => {
@@ -465,6 +473,9 @@ export const runSsmDispatch = async ({
         stdout,
         env: awsEnv,
         spawnImpl,
+        onStarted: () => {
+          shouldStop = stopAfterRun
+        },
       })
       shouldStop = stopAfterRun
     }
@@ -474,7 +485,7 @@ export const runSsmDispatch = async ({
           instanceId,
           region,
           repo,
-          env,
+          env: commandEnv,
           timeoutSeconds,
           readyTimeoutSeconds,
           stdout,
@@ -486,7 +497,7 @@ export const runSsmDispatch = async ({
           instanceId,
           region,
           repo,
-          env,
+          env: commandEnv,
           timeoutSeconds,
           awsEnv,
           spawnImpl,

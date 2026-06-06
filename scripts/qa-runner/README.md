@@ -17,7 +17,7 @@ Design + rationale: [`docs/explorations/linear-agent-cicd-pilot.html`](../../doc
        CI_RED     → report only once automatic reruns are exhausted/unavailable
                  │
                  ▼  per NEEDS_FIX PR, concurrently, each in its own worktree:
- ② run.js → kimi --afk (as the FIXER bot) · upsource-review skill  — poll → fix →
+ ② run.js → kimi -p (as the FIXER bot) · upsource-review skill  — poll → fix →
     CODEX GATE → commit → push → reply/resolve threads → repeat until clean.
                  │
                  ▼
@@ -36,6 +36,11 @@ branch protection): the **fixer** runs as `bot.env`, the **orchestrator** merges
 
 - **codex** is the verify **gate** — kimi writes the fix, codex gates it (the
   quality backstop). Confirmed callable (`codex exec` + `codex review`).
+- **Kimi Code** runs through the official headless CLI path:
+  `kimi --skills-dir <dir> -p <prompt> --output-format stream-json`. Configured
+  OAuth/model aliases can set `KIMI_MODEL` to add `-m <alias>`; clean API-key
+  workers use `KIMI_MODEL_NAME` / `KIMI_MODEL_API_KEY` and intentionally omit
+  `-m` so Kimi Code can synthesize the temporary model from env.
 - **Honest scope:** this runs on **your host** — the toolchain (`kimi`, `codex`,
   `gh`, `git`) cannot run serverless. Linear observes; it does not execute.
 

@@ -6,10 +6,15 @@ exec > >(tee -a /var/log/vimeflow-worker-bootstrap.log) 2>&1
 region="${AWS_REGION:-${AWS_DEFAULT_REGION:-us-west-1}}"
 repo="${QA_REPO:-/opt/vimeflow/repo}"
 repo_url="${QA_REPO_URL:-https://github.com/winoooops/vimeflow.git}"
-runner_ref="${QA_RUNNER_REF:-wip/linear-wiring}"
+runner_ref="${QA_RUNNER_REF:-}"
 lifeline_dir="${QA_LIFELINE_DIR:-/opt/vimeflow/lifeline}"
 lifeline_url="${QA_LIFELINE_URL:-https://github.com/winoooops/lifeline.git}"
 node_version="${QA_NODE_VERSION:-22}"
+
+if [ -z "$runner_ref" ]; then
+  echo "error: QA_RUNNER_REF is required; set it to the exact runner branch or tag to bootstrap" >&2
+  exit 1
+fi
 
 export AWS_REGION="$region"
 export AWS_DEFAULT_REGION="$region"
@@ -28,7 +33,7 @@ npm install -g n
 n "$node_version"
 hash -r
 
-npm install -g @openai/codex kimi-code
+npm install -g @openai/codex @moonshot-ai/kimi-code
 
 rm -rf "$repo" "$lifeline_dir"
 git clone --branch "$runner_ref" "$repo_url" "$repo"

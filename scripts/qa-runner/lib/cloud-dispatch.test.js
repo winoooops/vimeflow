@@ -361,6 +361,48 @@ describe('runSsmDispatch', () => {
     )
   })
 
+  test('keeps AWS CLI env separate from forwarded PR cycle env', async () => {
+    const awsEnv = { AWS_PROFILE: 'qa-control', PATH: '/usr/bin' }
+
+    const mockSpawn = makeMockSpawn([
+      {
+        stdout: JSON.stringify({ Command: { CommandId: 'cmd-env' } }),
+      },
+      {
+        stdout: JSON.stringify({
+          Status: 'Success',
+          ResponseCode: 0,
+          StandardOutputContent: '',
+          StandardErrorContent: '',
+        }),
+      },
+    ])
+
+    const result = await runSsmDispatch({
+      instanceId: 'i-env',
+      region: 'us-west-1',
+      repo: '/srv/vimeflow',
+      env: { QA_PR: '362' },
+      awsEnv,
+      timeoutSeconds: 30,
+      stdout: { write: vi.fn() },
+      stderr: { write: vi.fn() },
+      spawnImpl: mockSpawn,
+      pollIntervalMs: 1,
+    })
+
+    expect(result).toEqual({ code: 0, signal: null })
+    expect(
+      mockSpawn.mock.calls.every(([, , opts]) => opts.env === awsEnv)
+    ).toBe(true)
+
+    const sendArgs = mockSpawn.mock.calls[0][1]
+    const params = JSON.parse(sendArgs[sendArgs.indexOf('--parameters') + 1])
+
+    expect(params.commands[0]).toContain("QA_PR='362'")
+    expect(params.commands[0]).not.toContain('AWS_PROFILE')
+  })
+
   test('starts a stopped burst worker before SSM dispatch and stops it after success', async () => {
     const mockSpawn = makeMockSpawn([
       {
@@ -480,6 +522,41 @@ describe('runSsmDispatch', () => {
     expect(stderr.write).toHaveBeenCalledWith(
       expect.stringContaining('warning: failed to stop worker i-burst')
     )
+  })
+
+  test('stops a burst worker that times out after being started', async () => {
+    const mockSpawn = makeMockSpawn([
+      {
+        stdout: JSON.stringify({
+          Reservations: [{ Instances: [{ State: { Name: 'stopped' } }] }],
+        }),
+      },
+      { stdout: JSON.stringify({ StartingInstances: [] }) },
+      { stdout: JSON.stringify({ StoppingInstances: [] }) },
+    ])
+
+    await expect(
+      runSsmDispatch({
+        instanceId: 'i-timeout',
+        region: 'us-west-1',
+        repo: '/srv/vimeflow',
+        env: { QA_PR: '362' },
+        timeoutSeconds: 30,
+        burst: true,
+        stopAfterRun: true,
+        readyTimeoutSeconds: 0,
+        stdout: { write: vi.fn() },
+        stderr: { write: vi.fn() },
+        spawnImpl: mockSpawn,
+        pollIntervalMs: 1,
+      })
+    ).rejects.toThrow('worker i-timeout did not become EC2 running')
+
+    expect(mockSpawn.mock.calls.map(([, args]) => args.slice(0, 2))).toEqual([
+      ['ec2', 'describe-instances'],
+      ['ec2', 'start-instances'],
+      ['ec2', 'stop-instances'],
+    ])
   })
 })
 

@@ -44,6 +44,8 @@ import { runUntilChange } from './lib/run-until-change.js'
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url))
 const LOCK_DIR = join(SCRIPT_DIR, '.locks')
 const KIMI_TIMEOUT_MS = 45 * 60 * 1000
+const KIMI_DEFAULT_MODEL = 'kimi-code/kimi-for-coding'
+const KIMI_DEFAULT_OUTPUT_FORMAT = 'stream-json'
 
 const out = (s = '') => process.stdout.write(`${s}\n`)
 
@@ -222,6 +224,18 @@ const invocation = (pr, live) => {
   )
 }
 
+const kimiModelArgs = () => {
+  if (process.env.KIMI_MODEL) {
+    return ['-m', process.env.KIMI_MODEL]
+  }
+
+  if (process.env.KIMI_MODEL_NAME) {
+    return []
+  }
+
+  return ['-m', KIMI_DEFAULT_MODEL]
+}
+
 const run = async (pr, live) => {
   mkdirSync(LOCK_DIR, { recursive: true })
   const lock = join(LOCK_DIR, `pr-${pr}.lock`)
@@ -285,16 +299,16 @@ const run = async (pr, live) => {
         spawn(
           'kimi',
           [
-            '--afk',
-            '--print',
-            '-w',
-            wt,
             '--skills-dir',
             skillsDir,
+            ...kimiModelArgs(),
             '-p',
             invocation(pr, live),
+            '--output-format',
+            process.env.KIMI_OUTPUT_FORMAT || KIMI_DEFAULT_OUTPUT_FORMAT,
           ],
           {
+            cwd: wt,
             stdio: 'inherit',
             env: {
               ...process.env,
