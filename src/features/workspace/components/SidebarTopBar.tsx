@@ -1,4 +1,9 @@
-import { useState, type CSSProperties, type ReactElement, type Ref } from 'react'
+import {
+  useState,
+  type CSSProperties,
+  type ReactElement,
+  type Ref,
+} from 'react'
 import { SidebarToggle } from './SidebarToggle'
 import { Tooltip } from '../../../components/Tooltip'
 
