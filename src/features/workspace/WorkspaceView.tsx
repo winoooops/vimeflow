@@ -664,6 +664,7 @@ export const WorkspaceView = (): ReactElement => {
     renderNode: scratchTerminalNode,
     toggle: toggleScratch,
     runningByPane: runningScratchByPane,
+    activeByPane: activeScratchByPane,
   } = useScratchTerminals({
     service: terminalService,
     resolveFocusedPane,
@@ -683,6 +684,17 @@ export const WorkspaceView = (): ReactElement => {
           .map(([key]) => key)
       ),
     [runningScratchByPane]
+  )
+
+  // Pane-keys with a foreground command running — drives the mint live-dot (VIM-71).
+  const activeScratchPaneKeys = useMemo(
+    () =>
+      new Set(
+        [...activeScratchByPane]
+          .filter(([, active]) => active)
+          .map(([key]) => key)
+      ),
+    [activeScratchByPane]
   )
 
   const requestFocus = useCallback((target: FocusTarget): void => {
@@ -1505,6 +1517,7 @@ export const WorkspaceView = (): ReactElement => {
               }}
               onScratch={(target): void => void toggleScratch(target)}
               runningScratchPaneKeys={runningScratchPaneKeys}
+              activeScratchPaneKeys={activeScratchPaneKeys}
             />
           </div>
           {!dockBeforeTerminal ? dockOrPeek : null}

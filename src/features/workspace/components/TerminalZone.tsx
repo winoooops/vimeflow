@@ -67,6 +67,8 @@ export interface TerminalZoneProps {
   onScratch?: (target: ScratchTarget) => void
   /** Pane-keys with a running scratch shell — drives the §8 cue. */
   runningScratchPaneKeys?: ReadonlySet<string>
+  /** Pane-keys with a foreground command running — drives the mint dot (VIM-71). */
+  activeScratchPaneKeys?: ReadonlySet<string>
 }
 
 export interface TerminalZoneHandle {
@@ -94,6 +96,7 @@ export const TerminalZone = forwardRef<TerminalZoneHandle, TerminalZoneProps>(
       onContainerFocus = undefined,
       onScratch = undefined,
       runningScratchPaneKeys = undefined,
+      activeScratchPaneKeys = undefined,
     }: TerminalZoneProps,
     ref
   ): ReactElement {
@@ -268,6 +271,7 @@ export const TerminalZone = forwardRef<TerminalZoneHandle, TerminalZoneProps>(
                     onClosePane={removePane}
                     onScratch={onScratch}
                     runningScratchPaneKeys={runningScratchPaneKeys}
+                    activeScratchPaneKeys={activeScratchPaneKeys}
                     areBrowserPanesOccluded={areBrowserPanesOccluded}
                     deferTerminalFit={deferTerminalFit}
                     showPaneFocusHighlight={isZoneFocused}

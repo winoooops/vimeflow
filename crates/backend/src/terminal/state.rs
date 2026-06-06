@@ -132,6 +132,20 @@ pub enum KillError {
     KillFailed(String),
 }
 
+/// True when a foreground command (not the shell itself) holds the scratch
+/// terminal. `foreground_leader` is the PTY's foreground process-group leader
+/// (`MasterPty::process_group_leader`); `shell_pid` is the scratch shell's own
+/// pid. They differ exactly when a child command runs in the foreground. A
+/// missing value — no controlling foreground group, or a platform that can't
+/// report it (e.g. Windows ConPTY) — reads as not-busy, so the cue never
+/// over-claims "running" when it can't actually tell.
+pub(crate) fn is_foreground_busy(foreground_leader: Option<i32>, shell_pid: Option<u32>) -> bool {
+    match (foreground_leader, shell_pid) {
+        (Some(fg), Some(pid)) => i64::from(fg) != i64::from(pid),
+        _ => false,
+    }
+}
+
 impl PtyState {
     /// Create a new empty PTY state
     pub fn new() -> Self {
@@ -235,6 +249,31 @@ impl PtyState {
         } else {
             None
         }
+    }
+
+    /// Snapshot the foreground-running state of every ephemeral (scratch) PTY:
+    /// `true` when a foreground command holds its terminal, `false` when the
+    /// shell is idle at its prompt (or the platform can't introspect). Drives
+    /// the live "running" cue (VIM-71). Locks the ephemeral set first (cloned,
+    /// then released) before the sessions map, matching `remove`'s lock order.
+    pub fn ephemeral_foreground_snapshot(&self) -> Vec<(SessionId, bool)> {
+        let ephemeral: HashSet<SessionId> = self
+            .ephemeral_ptys
+            .lock()
+            .expect("failed to lock ephemeral_ptys")
+            .clone();
+        let sessions = self.sessions.lock().expect("failed to lock sessions");
+        ephemeral
+            .into_iter()
+            .filter_map(|id| {
+                let session = sessions.get(&id)?;
+                let running = is_foreground_busy(
+                    session.master.process_group_leader(),
+                    session.child.process_id(),
+                );
+                Some((id, running))
+            })
+            .collect()
     }
 
     /// Check if a session exists
@@ -464,6 +503,38 @@ mod tests {
         assert_eq!(buf.end_offset(), 6);
         assert_eq!(buf.bytes_snapshot(), b"cdef");
         assert!(buf.bytes.len() <= buf.capacity);
+    }
+
+    #[test]
+    fn is_foreground_busy_idle_shell_is_not_running() {
+        // Foreground group == the shell's own pid → idle at the prompt.
+        assert!(!super::is_foreground_busy(Some(4242), Some(4242)));
+    }
+
+    #[test]
+    fn is_foreground_busy_foreground_command_is_running() {
+        // A different foreground group → a child command holds the terminal.
+        assert!(super::is_foreground_busy(Some(4243), Some(4242)));
+    }
+
+    #[test]
+    fn is_foreground_busy_unknown_foreground_never_over_claims() {
+        // No reportable foreground group (e.g. Windows) → not running.
+        assert!(!super::is_foreground_busy(None, Some(4242)));
+        assert!(!super::is_foreground_busy(Some(4243), None));
+    }
+
+    #[test]
+    fn ephemeral_foreground_snapshot_covers_only_ephemeral_sessions() {
+        let state = PtyState::new();
+        state.insert("plain".into(), make_test_session());
+        state.insert("scratch".into(), make_test_session());
+        state.mark_ephemeral("scratch".into());
+
+        let snapshot = state.ephemeral_foreground_snapshot();
+
+        let ids: Vec<&str> = snapshot.iter().map(|(id, _)| id.as_str()).collect();
+        assert_eq!(ids, vec!["scratch"]); // the non-ephemeral "plain" is excluded
     }
 
     /// Build a real but ephemeral `ManagedSession` for tests that need

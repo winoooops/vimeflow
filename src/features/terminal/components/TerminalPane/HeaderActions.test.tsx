@@ -95,7 +95,7 @@ describe('HeaderActions', () => {
     expect(onParentClick).not.toHaveBeenCalled()
   })
 
-  test('the running cue is the amber button background (no dot)', () => {
+  test('a live (but idle) scratch shell shows the amber tint and no dot', () => {
     render(
       <HeaderActions
         isCollapsed={expanded}
@@ -105,12 +105,31 @@ describe('HeaderActions', () => {
       />
     )
 
+    // Amber tint means "this pane has a scratch shell"; with no foreground
+    // command the button is not labelled running and shows no live-dot.
+    const button = screen.getByRole('button', {
+      name: 'open scratch terminal',
+    })
+    expect(button.className).toContain('bg-[#f0c674]/15')
+    expect(screen.queryByTestId('scratch-live-dot')).toBeNull()
+  })
+
+  test('the mint live-dot shows only when a foreground command is running', () => {
+    render(
+      <HeaderActions
+        isCollapsed={expanded}
+        onToggleCollapse={vi.fn()}
+        onScratch={vi.fn()}
+        scratchRunning
+        scratchActive
+      />
+    )
+
     const button = screen.getByRole('button', {
       name: /open scratch terminal \(running\)/i,
     })
-    expect(button.className).toContain('bg-[#f0c674]/15')
-    // The green live-dot was removed — the amber background is the only cue.
-    expect(screen.queryByTestId('scratch-live-dot')).toBeNull()
+    expect(button.className).toContain('bg-[#f0c674]/15') // still amber (has shell)
+    expect(screen.getByTestId('scratch-live-dot')).toBeInTheDocument()
   })
 
   test('no running cue when the pane scratch is not running', () => {

@@ -44,6 +44,8 @@ export interface TerminalPaneProps {
   onRequestActive?: (sessionId: string, paneId: string) => void
   /** Pane-keys (`${sessionId}:${paneId}`) with a running scratch — §8 cue. */
   runningScratchPaneKeys?: ReadonlySet<string>
+  /** Pane-keys with a foreground command running — drives the mint dot (VIM-71). */
+  activeScratchPaneKeys?: ReadonlySet<string>
   onCwdChange?: (cwd: string) => void
   onRestart?: (sessionId: string) => void
   deferFit?: boolean
@@ -74,6 +76,7 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
       onScratch = undefined,
       onRequestActive = undefined,
       runningScratchPaneKeys = undefined,
+      activeScratchPaneKeys = undefined,
       onCwdChange = undefined,
       onRestart = undefined,
       deferFit = false,
@@ -252,6 +255,9 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
           onScratch={onScratch ? handleScratch : undefined}
           scratchRunning={
             runningScratchPaneKeys?.has(`${session.id}:${pane.id}`) ?? false
+          }
+          scratchActive={
+            activeScratchPaneKeys?.has(`${session.id}:${pane.id}`) ?? false
           }
         />
 

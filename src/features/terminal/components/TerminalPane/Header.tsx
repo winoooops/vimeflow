@@ -25,6 +25,7 @@ export interface HeaderProps {
   onClose?: () => void
   onScratch?: () => void
   scratchRunning?: boolean
+  scratchActive?: boolean
 }
 
 export const Header = ({
@@ -45,6 +46,7 @@ export const Header = ({
   onClose = undefined,
   onScratch = undefined,
   scratchRunning = false,
+  scratchActive = false,
 }: HeaderProps): ReactElement => {
   const titleRef = useRef<HTMLSpanElement | null>(null)
 
@@ -110,6 +112,7 @@ export const Header = ({
         onClose={onClose}
         onScratch={onScratch}
         scratchRunning={scratchRunning}
+        scratchActive={scratchActive}
       />
     </div>
   )

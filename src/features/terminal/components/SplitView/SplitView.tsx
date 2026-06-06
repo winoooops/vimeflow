@@ -49,6 +49,8 @@ export interface SplitViewProps {
   onScratch?: (target: ScratchTarget) => void
   /** Pane-keys with a running scratch shell — drives the §8 cue. */
   runningScratchPaneKeys?: ReadonlySet<string>
+  /** Pane-keys with a foreground command running — drives the mint dot (VIM-71). */
+  activeScratchPaneKeys?: ReadonlySet<string>
   areBrowserPanesOccluded?: boolean
   deferTerminalFit?: boolean
   showPaneFocusHighlight?: boolean
@@ -118,6 +120,7 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
       onClosePane = undefined,
       onScratch = undefined,
       runningScratchPaneKeys = undefined,
+      activeScratchPaneKeys = undefined,
       areBrowserPanesOccluded = false,
       deferTerminalFit = false,
       showPaneFocusHighlight = true,
@@ -357,6 +360,7 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
                           onScratch={onScratch}
                           onRequestActive={onSetActivePane}
                           runningScratchPaneKeys={runningScratchPaneKeys}
+                          activeScratchPaneKeys={activeScratchPaneKeys}
                           isActive={isActive}
                           deferFit={deferTerminalFit}
                           showFocusHighlight={showPaneFocusHighlight}

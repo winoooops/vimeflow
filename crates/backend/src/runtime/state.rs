@@ -81,6 +81,17 @@ impl BackendState {
         }
     }
 
+    /// Spawn the scratch-terminal foreground poll loop (VIM-71). Call once at
+    /// startup: it emits `scratch-foreground` events as scratch shells begin
+    /// and finish foreground commands, driving the live "running" cue. Requires
+    /// a running Tokio runtime (the sidecar binary's `#[tokio::main]`).
+    pub fn start_foreground_poll(&self) {
+        tokio::spawn(crate::terminal::foreground::foreground_poll_loop(
+            self.pty.clone(),
+            self.events.clone(),
+        ));
+    }
+
     pub async fn spawn_pty(
         &self,
         request: crate::terminal::types::SpawnPtyRequest,

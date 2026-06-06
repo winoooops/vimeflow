@@ -113,6 +113,21 @@ pub struct PtyExitEvent {
     pub code: Option<i32>,
 }
 
+/// Scratch foreground-state event (emitted when a scratch shell's foreground
+/// process changes). `running` is true while a foreground command holds the
+/// terminal, false when the shell is idle at its prompt or the platform can't
+/// introspect the foreground group.
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct ScratchForegroundEvent {
+    /// Session ID of the scratch (ephemeral) PTY
+    pub session_id: SessionId,
+    /// Whether a foreground command is currently running in the scratch shell
+    pub running: bool,
+}
+
 /// PTY error event payload (emitted on errors)
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]

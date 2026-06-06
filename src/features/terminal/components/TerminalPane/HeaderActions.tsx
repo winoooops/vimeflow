@@ -7,8 +7,14 @@ export interface HeaderActionsProps {
   onClose?: () => void
   /** Toggle this pane's ephemeral scratch terminal (VIM-53). */
   onScratch?: () => void
-  /** This pane has a running scratch shell — show the live-but-hidden cue (§8). */
+  /** This pane has a live scratch shell — amber button tint (§8). */
   scratchRunning?: boolean
+  /**
+   * A foreground command is actually running in the scratch shell (VIM-71) —
+   * shows the honest mint live-dot. Distinct from `scratchRunning`, which only
+   * means a shell exists.
+   */
+  scratchActive?: boolean
 }
 
 export const HeaderActions = ({
@@ -17,19 +23,20 @@ export const HeaderActions = ({
   onClose = undefined,
   onScratch = undefined,
   scratchRunning = false,
+  scratchActive = false,
 }: HeaderActionsProps): ReactElement => (
   <>
     {onScratch && (
       <Tooltip
         content={
-          scratchRunning ? 'Scratch terminal · running' : 'Scratch terminal'
+          scratchActive ? 'Scratch terminal · running' : 'Scratch terminal'
         }
         placement="bottom"
       >
         <button
           type="button"
           aria-label={
-            scratchRunning
+            scratchActive
               ? 'open scratch terminal (running)'
               : 'open scratch terminal'
           }
@@ -37,7 +44,7 @@ export const HeaderActions = ({
             event.stopPropagation()
             onScratch()
           }}
-          className={`inline-flex h-[22px] w-[22px] items-center justify-center rounded border-0 hover:bg-white/5 ${
+          className={`relative inline-flex h-[22px] w-[22px] items-center justify-center rounded border-0 hover:bg-white/5 ${
             scratchRunning
               ? 'bg-[#f0c674]/15 text-[#f0c674]'
               : 'bg-transparent text-[#f0c674]/70 hover:text-[#f0c674]'
@@ -49,6 +56,17 @@ export const HeaderActions = ({
           >
             terminal
           </span>
+          {scratchActive && (
+            <span
+              data-testid="scratch-live-dot"
+              aria-hidden="true"
+              className="absolute -right-0.5 -top-0.5 h-1.5 w-1.5 rounded-full"
+              style={{
+                background: '#50fa7b',
+                boxShadow: '0 0 4px rgba(80, 250, 123, 0.7)',
+              }}
+            />
+          )}
         </button>
       </Tooltip>
     )}

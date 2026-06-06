@@ -58,6 +58,9 @@ const workspaceTerminalMock = vi.hoisted(() => {
         // eslint-disable-next-line @typescript-eslint/no-empty-function
         Promise.resolve((): void => {})
     ),
+    onScratchForeground: vi.fn(
+      (): Promise<() => void> => Promise.resolve((): void => undefined)
+    ),
     listSessions: vi.fn().mockResolvedValue(defaultSessionList()),
     setActiveSession: vi.fn().mockResolvedValue(undefined),
     reorderSessions: vi.fn().mockResolvedValue(undefined),

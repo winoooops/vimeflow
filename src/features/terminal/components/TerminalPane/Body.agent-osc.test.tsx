@@ -153,6 +153,9 @@ const createService = (): ControlledTerminalService => {
     onError: vi.fn(
       (): Promise<() => void> => Promise.resolve((): void => undefined)
     ),
+    onScratchForeground: vi.fn(
+      (): Promise<() => void> => Promise.resolve((): void => undefined)
+    ),
     listSessions: vi.fn().mockResolvedValue({
       activeSessionId: null,
       sessions: [],
