@@ -52,6 +52,31 @@ describe('buildWorkspaceCommands - happy paths', () => {
     expect(createSession).toHaveBeenCalledOnce()
   })
 
+  test(':toggle-sidebar command calls toggleSidebar', () => {
+    const toggleSidebar = vi.fn()
+
+    const commands = buildWorkspaceCommands({
+      sessions: mockSessions,
+      activeSessionId: 'session-1',
+      createSession,
+      removeSession,
+      renameSession,
+      setPaneUserLabel,
+      renameAgentSession,
+      activePanePtyId: 'pty-active',
+      setActiveSessionId,
+      notifyInfo,
+      toggleSidebar,
+    })
+
+    const cmd = commands.find((c) => c.id === 'toggle-sidebar')
+    expect(cmd).toBeDefined()
+    expect(cmd?.label).toBe(':toggle-sidebar')
+
+    cmd?.execute?.('')
+    expect(toggleSidebar).toHaveBeenCalledOnce()
+  })
+
   test(':close command removes active session', () => {
     const commands = buildWorkspaceCommands({
       sessions: mockSessions,

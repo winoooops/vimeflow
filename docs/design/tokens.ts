@@ -118,6 +118,14 @@ export const glass = {
   ringPrimary: '0 0 0 3px rgba(203, 166, 247, 0.28)',
 } as const
 
+export const wash = {
+  running: 'rgba(80, 250, 123, 0.08)',
+  awaiting: 'rgba(255, 148, 165, 0.09)',
+  completed: 'rgba(203, 166, 247, 0.09)',
+  errored: 'rgba(255, 180, 171, 0.09)',
+  idle: 'rgba(138, 130, 153, 0.05)',
+} as const
+
 /* ------------------------------------------------------------------
  * Agent session state -> visual tokens
  * Source of truth: UNIFIED.md §4.1.
@@ -204,6 +212,7 @@ const tokens = {
   layout,
   motion,
   glass,
+  wash,
   stateToken,
   contextSmiley,
 }

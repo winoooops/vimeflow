@@ -16,7 +16,10 @@ import {
   type SidebarTabItem,
 } from '../../components/sidebar/SidebarTabs'
 import { StatusBar, type StatusBarSession } from '../../components/StatusBar'
-import { SidebarStatusHeader } from './components/SidebarStatusHeader'
+import {
+  AgentStatusCard,
+  type AgentCardState,
+} from './components/AgentStatusCard'
 import { FilesView } from './components/FilesView'
 import { SessionsView } from './components/SessionsView'
 import {
@@ -61,6 +64,8 @@ import {
   type PaneShortcutModifier,
 } from '../terminal/hooks/usePaneShortcuts'
 import { useDockShortcuts } from './hooks/useDockShortcuts'
+import { useSidebarShortcut } from './hooks/useSidebarShortcut'
+import { useSidebarCollapsed } from './hooks/useSidebarCollapsed'
 import { useEditorBuffer } from '../editor/hooks/useEditorBuffer'
 import { useAgentStatus } from '../agent-status/hooks/useAgentStatus'
 import { useGitStatus } from '../diff/hooks/useGitStatus'
@@ -211,8 +216,35 @@ export const WorkspaceView = (): ReactElement => {
     return detected.startsWith('mac') ? 'meta' : 'ctrl'
   }, [])
 
+  const sidebarShortcutHint = preferModifier === 'meta' ? '⌘B' : 'Ctrl+⇧B'
+
   const { message: infoMessage, notifyInfo, dismiss } = useNotifyInfo()
   const { activeTab, setActiveTab } = useSidebarTab()
+
+  // VIM-66 spike: workspace-global sidebar collapse flag.
+  const { collapsed: sidebarCollapsed, toggle: toggleSidebar } =
+    useSidebarCollapsed()
+  const railToggleRef = useRef<HTMLButtonElement>(null)
+  const focusRailAfterCollapseRef = useRef(false)
+
+  const handleInCardToggleSidebar = useCallback((): void => {
+    if (!sidebarCollapsed) {
+      focusRailAfterCollapseRef.current = true
+    }
+    toggleSidebar()
+  }, [sidebarCollapsed, toggleSidebar])
+
+  useEffect(() => {
+    if (
+      sidebarCollapsed &&
+      focusRailAfterCollapseRef.current &&
+      railToggleRef.current
+    ) {
+      focusRailAfterCollapseRef.current = false
+      railToggleRef.current.focus()
+    }
+  }, [sidebarCollapsed])
+
   const paneRenameRequestIdRef = useRef(0)
 
   const nextPaneRenameRequestId = useCallback((): number => {
@@ -792,6 +824,7 @@ export const WorkspaceView = (): ReactElement => {
         isCurrentPaneRenameRequest,
         setActiveSessionId,
         notifyInfo,
+        toggleSidebar,
       }),
     // sessionsSignature captures every field the closures read; activity-only
     // changes keep the signature stable so the memo (and downstream
@@ -811,6 +844,7 @@ export const WorkspaceView = (): ReactElement => {
       isCurrentPaneRenameRequest,
       setActiveSessionId,
       notifyInfo,
+      toggleSidebar,
     ]
   )
 
@@ -833,6 +867,12 @@ export const WorkspaceView = (): ReactElement => {
     openDock,
     claimTerminal,
     modKey: preferModifier === 'meta' ? '⌘' : 'Ctrl',
+  })
+
+  useSidebarShortcut({
+    onToggle: toggleSidebar,
+    modKey: preferModifier === 'meta' ? '⌘' : 'Ctrl',
+    activeContainerId,
   })
 
   // One elastic size per axis so values survive dock unmounts and position changes.
@@ -899,6 +939,52 @@ export const WorkspaceView = (): ReactElement => {
   // misleading 😊0% that implies a healthy reading before any data arrives.
   const statusBarContextPct = isStatusBarAgentActive
     ? (agentStatus.contextWindow?.usedPercentage ?? null)
+    : null
+
+  // Fused AgentStatusCard props, derived from the same live signals the status
+  // bar uses (VIM-66). Each metric is guarded inside the card, so an idle
+  // session renders gracefully with an empty metric row.
+  // Completed/errored come from the pane lifecycle and must NOT be masked by
+  // the agent going inactive after it finishes; `running` requires a live
+  // agent; everything else (no session, paused, inactive) reads as idle.
+  // (`awaiting` is supported by the card but not emitted yet — no data feed,
+  // same as `subtitle`.)
+  const sidebarCardState: AgentCardState = !activeSession
+    ? 'idle'
+    : activityPanelStatus === 'completed'
+      ? 'completed'
+      : activityPanelStatus === 'errored'
+        ? 'errored'
+        : agentStatus.isActive && activityPanelStatus === 'running'
+          ? 'running'
+          : 'idle'
+
+  // A pure shell pane has no detected agent (and therefore no model / usage);
+  // the card renders its fixed-height "SHELL" placeholder in that case so the
+  // session list below never reflows when switching panes.
+  const sidebarCardIsShell =
+    !agentStatus.agentType || !agentStatus.isActive || agentStatus.agentExited
+
+  // Card title is the active agent's model name (the old StatusCard surfaced
+  // the model — the fused card now uses it as the title). Falls back to the
+  // session name, then a placeholder, when no model is known (e.g. idle).
+  const sidebarCardTitle =
+    agentStatus.modelDisplayName ??
+    agentStatus.modelId ??
+    activeSession?.name ??
+    'No session'
+  const sidebarCardElapsed = statusBarSession?.startedAgo ?? null
+  const sidebarCardTurns = statusBarSession?.turns ?? null
+
+  const sidebarCardContextPct =
+    statusBarContextPct !== null ? Math.round(statusBarContextPct) : null
+
+  const sidebarCardFiveHourPct = agentStatus.rateLimits
+    ? Math.round(agentStatus.rateLimits.fiveHour.usedPercentage)
+    : null
+
+  const sidebarCardWeekPct = agentStatus.rateLimits?.sevenDay
+    ? Math.round(agentStatus.rateLimits.sevenDay.usedPercentage)
     : null
 
   // Open a file directly (no unsaved-changes guard). Errors were previously
@@ -1332,7 +1418,10 @@ export const WorkspaceView = (): ReactElement => {
         {
           // `--workspace-sidebar-width` is owned by previewSidebarWidth so
           // React rerenders cannot overwrite an in-progress drag preview.
-          gridTemplateColumns: `48px var(--workspace-sidebar-width, ${SIDEBAR_INITIAL}px) 1fr auto`,
+          // Sidebar track is `auto` so it follows the sidebar shell's animated
+          // width (VIM-66 drawer): width 0 → track 0 → main (1fr) reclaims it
+          // with no gutter, while the slide stays smooth.
+          gridTemplateColumns: `48px auto 1fr auto`,
         } as CSSProperties
       }
     >
@@ -1341,60 +1430,99 @@ export const WorkspaceView = (): ReactElement => {
         onCommand={commandPalette.open}
         items={mockNavigationItems}
         settingsItem={mockSettingsItem}
+        sidebarCollapsed={sidebarCollapsed}
+        onToggleSidebar={toggleSidebar}
+        sidebarShortcutHint={sidebarShortcutHint}
+        railToggleRef={railToggleRef}
       />
 
-      {/* Sidebar - resizable */}
-      <div className="relative flex h-full">
-        <Sidebar
-          header={
-            <SidebarStatusHeader
-              status={agentStatus}
-              activeSessionName={activeSession?.name ?? null}
-            />
-          }
-          content={
-            <div className="flex h-full min-h-0 flex-col">
-              <SidebarTabs<SidebarTab>
-                tabs={SIDEBAR_TAB_ITEMS}
-                activeId={activeTab}
-                onChange={setActiveTab}
-              />
-              <SessionsView
-                hidden={activeTab !== 'sessions'}
-                sessions={sessions}
-                activeSessionId={activeSessionId}
-                onSessionClick={handleSetActiveSessionId}
-                onCreateSession={handleCreateSession}
-                onRemoveSession={handleRemoveSession}
-                onRenameSession={renameSession}
-                onReorderSessions={reorderSessions}
-              />
-              <FilesView
-                hidden={activeTab !== 'files'}
-                cwd={fileExplorerCwd}
-                onFileSelect={handleFileSelect}
-              />
-            </div>
-          }
-        />
-
-        {/* Resize handle */}
+      {/* Sidebar — resizable + drawer-collapsible (VIM-66 spike). Kept mounted
+          and animated to width 0 so it slides like a drawer; the `auto` grid
+          track follows this shell's width, so width 0 = no gutter. The width
+          transition is disabled mid-resize-drag (isDragging) so dragging the
+          handle stays snappy. */}
+      <div
+        aria-hidden={sidebarCollapsed || undefined}
+        inert={sidebarCollapsed || undefined}
+        className={`relative h-full overflow-hidden ${
+          isDragging ? '' : 'transition-[width] duration-[220ms] ease-pane'
+        }`}
+        style={{
+          width: sidebarCollapsed
+            ? 0
+            : `var(--workspace-sidebar-width, ${SIDEBAR_INITIAL}px)`,
+        }}
+      >
+        {/* Inner panel keeps its full expanded width so the drawer SLIDES
+            (clipped by the shell's overflow-hidden) instead of squishing its
+            content as the shell animates to 0. */}
         <div
-          ref={setSidebarResizeHandle}
-          data-testid="sidebar-resize-handle"
-          role="separator"
-          aria-orientation="vertical"
-          aria-valuemin={SIDEBAR_MIN}
-          aria-valuemax={SIDEBAR_MAX}
-          // aria-valuenow is set by the layout effect and drag preview path
-          // so previews do not need per-frame React state commits.
-          onMouseDown={handleMouseDown}
-          className={`
+          className="relative flex h-full"
+          style={{
+            width: `var(--workspace-sidebar-width, ${SIDEBAR_INITIAL}px)`,
+          }}
+        >
+          <Sidebar
+            header={
+              <AgentStatusCard
+                title={sidebarCardTitle}
+                state={sidebarCardState}
+                isShell={sidebarCardIsShell}
+                elapsed={sidebarCardElapsed}
+                turns={sidebarCardTurns}
+                contextPct={sidebarCardContextPct}
+                fiveHourPct={sidebarCardFiveHourPct}
+                weekPct={sidebarCardWeekPct}
+                onToggleSidebar={handleInCardToggleSidebar}
+                sidebarShortcutHint={sidebarShortcutHint}
+              />
+            }
+            content={
+              <div className="flex h-full min-h-0 flex-col">
+                <SidebarTabs<SidebarTab>
+                  tabs={SIDEBAR_TAB_ITEMS}
+                  activeId={activeTab}
+                  onChange={setActiveTab}
+                />
+                <SessionsView
+                  hidden={activeTab !== 'sessions'}
+                  sessions={sessions}
+                  activeSessionId={activeSessionId}
+                  onSessionClick={handleSetActiveSessionId}
+                  onCreateSession={handleCreateSession}
+                  onRemoveSession={handleRemoveSession}
+                  onRenameSession={renameSession}
+                  onReorderSessions={reorderSessions}
+                />
+                <FilesView
+                  hidden={activeTab !== 'files'}
+                  cwd={fileExplorerCwd}
+                  onFileSelect={handleFileSelect}
+                />
+              </div>
+            }
+          />
+
+          {/* Resize handle (hidden while collapsed) */}
+          {!sidebarCollapsed && (
+            <div
+              ref={setSidebarResizeHandle}
+              data-testid="sidebar-resize-handle"
+              role="separator"
+              aria-orientation="vertical"
+              aria-valuemin={SIDEBAR_MIN}
+              aria-valuemax={SIDEBAR_MAX}
+              // aria-valuenow is set by the layout effect and drag preview path
+              // so previews do not need per-frame React state commits.
+              onMouseDown={handleMouseDown}
+              className={`
             absolute right-0 top-0 z-10 h-full w-1 cursor-col-resize
             transition-colors hover:bg-primary/50
             ${isDragging ? 'bg-primary/70' : 'bg-transparent'}
           `}
-        />
+            />
+          )}
+        </div>
       </div>
 
       {/* Main workspace area - TerminalZone + DockPanel.

@@ -2,8 +2,8 @@
 id: keyboard-shortcut-guards
 category: keyboard-shortcuts
 created: 2026-05-18
-last_updated: 2026-05-26
-ref_count: 0
+last_updated: 2026-06-06
+ref_count: 1
 ---
 
 # Keyboard Shortcut Guards
@@ -269,4 +269,13 @@ against three classes of false-fire:
   or dropping `stopImmediatePropagation` for the non-toggle paths based on the name alone.
 - **Fix:** Renamed the module-local helper to `fullyConsumeEvent` (def + 6 call sites) and added
   a contract comment documenting the full-consume behavior across all call sites. No logic change.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 19. SidebarToggle tooltip hardcodes ⌘B hint on all platforms
+
+- **Source:** github-claude | PR #352 round 1 | 2026-06-06
+- **Severity:** MEDIUM
+- **File:** `src/features/workspace/components/SidebarToggle.tsx`
+- **Finding:** The toggle button always rendered `'Show sidebar  ⌘B'` / `'Hide sidebar  ⌘B'` as the `title` tooltip, regardless of platform. On Linux and Windows the actual shortcut is `Ctrl+⇧B`, so hovering the button showed the wrong hint.
+- **Fix:** Added an optional `shortcutHint?: string` prop to `SidebarToggleProps` (defaulting to `'⌘B'`) and threaded a platform-appropriate value (`preferModifier === 'meta' ? '⌘B' : 'Ctrl+⇧B'`) from `WorkspaceView` through `AgentStatusCard` and `IconRail`.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

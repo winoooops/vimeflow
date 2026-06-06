@@ -1,6 +1,6 @@
 /* eslint-disable testing-library/no-node-access */
 /* eslint-disable vitest/expect-expect */
-// cspell:ignore worktree worktrees
+// cspell:ignore worktree worktrees incard
 import type { ReactElement } from 'react'
 import { describe, test, expect, vi, beforeEach } from 'vitest'
 import {
@@ -17,6 +17,7 @@ import { useEditorBuffer } from '../editor/hooks/useEditorBuffer'
 import type { AgentStatus } from '../agent-status/types'
 import { useAgentStatus } from '../agent-status/hooks/useAgentStatus'
 import { usePaneShortcuts } from '../terminal/hooks/usePaneShortcuts'
+import { setSidebarCollapsed } from './utils/sidebarCollapsedStore'
 import type { SessionList } from '../../bindings'
 
 const workspaceTerminalMock = vi.hoisted(() => {
@@ -167,6 +168,8 @@ vi.mock('../terminal/services/terminalService', () => ({
 describe('WorkspaceView', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    window.localStorage.clear()
+    setSidebarCollapsed(false)
     Object.defineProperty(navigator, 'platform', {
       value: 'Linux x86_64',
       configurable: true,
@@ -815,9 +818,7 @@ describe('WorkspaceView', () => {
     const container = screen.getByTestId('workspace-view')
 
     expect(container).toHaveClass('grid')
-    expect(container.style.gridTemplateColumns).toBe(
-      '48px var(--workspace-sidebar-width, 272px) 1fr auto'
-    )
+    expect(container.style.gridTemplateColumns).toBe('48px auto 1fr auto')
 
     expect(container.style.getPropertyValue('--workspace-sidebar-width')).toBe(
       '272px'
@@ -832,14 +833,12 @@ describe('WorkspaceView', () => {
     expect(container).toHaveClass('h-screen')
   })
 
-  test('renders IconRail identity and utility buttons', () => {
+  test('renders IconRail utility buttons (no account avatar)', () => {
     render(<WorkspaceView />)
 
     const iconRail = screen.getByTestId('icon-rail')
 
-    expect(
-      within(iconRail).getByRole('img', { name: 'Account' })
-    ).toHaveTextContent('w')
+    expect(within(iconRail).queryByRole('img', { name: 'Account' })).toBeNull()
 
     expect(
       within(iconRail).getByRole('button', { name: 'Command Palette' })
@@ -1216,21 +1215,28 @@ describe('WorkspaceView', () => {
     expect(screen.getByRole('button', { name: /editor/i })).toBeInTheDocument()
   })
 
-  test('grid columns: icon-rail 48px, sidebar 272px, main 1fr, activity auto', () => {
+  test('grid columns: icon-rail 48px, sidebar auto (drawer), main 1fr, activity auto', () => {
     render(<WorkspaceView />)
 
     const container = screen.getByTestId('workspace-view')
 
-    expect(container.style.gridTemplateColumns).toContain('48px')
-    expect(container.style.gridTemplateColumns).toContain(
-      'var(--workspace-sidebar-width, 272px)'
-    )
+    expect(container.style.gridTemplateColumns).toBe('48px auto 1fr auto')
 
+    // The resizable width still lives in the CSS var (now applied to the
+    // sidebar shell instead of the grid track) so the drawer can animate.
     expect(container.style.getPropertyValue('--workspace-sidebar-width')).toBe(
       '272px'
     )
-    expect(container.style.gridTemplateColumns).toContain('1fr')
-    expect(container.style.gridTemplateColumns).toContain('auto')
+  })
+
+  test('moves focus to the rail toggle after collapsing the sidebar from the in-card toggle', async () => {
+    const user = userEvent.setup()
+    render(<WorkspaceView />)
+
+    await user.click(screen.getByTestId('sidebar-toggle-incard'))
+
+    const railToggle = await screen.findByTestId('sidebar-toggle-rail')
+    expect(railToggle).toHaveFocus()
   })
 
   test('previews sidebar drag width through CSS variable before committing React state', () => {

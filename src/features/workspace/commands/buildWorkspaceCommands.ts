@@ -52,6 +52,12 @@ export interface WorkspaceCommandDeps {
   isCurrentPaneRenameRequest?: (requestId: number) => boolean
   setActiveSessionId: (id: string) => void
   notifyInfo: (message: string) => void
+  /**
+   * Toggle the workspace-global sidebar-collapse flag (VIM-66). Optional so
+   * callers/tests that don't exercise `:toggle-sidebar` stay valid; the real
+   * WorkspaceView always provides it.
+   */
+  toggleSidebar?: () => void
 }
 
 interface FallbackPaneRenameRequestState {
@@ -98,6 +104,7 @@ export const buildWorkspaceCommands = (
     isCurrentPaneRenameRequest,
     setActiveSessionId,
     notifyInfo,
+    toggleSidebar,
   } = deps
 
   const fallbackPaneRenameRequestState =
@@ -371,6 +378,15 @@ export const buildWorkspaceCommands = (
         }
 
         notifyInfo(`No tab matching '${trimmed}'`)
+      },
+    },
+    {
+      id: 'toggle-sidebar',
+      label: ':toggle-sidebar',
+      description: 'Show or hide the sidebar',
+      icon: 'left_panel_close',
+      execute: (): void => {
+        toggleSidebar?.()
       },
     },
     {

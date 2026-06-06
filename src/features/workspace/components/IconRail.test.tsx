@@ -4,37 +4,32 @@ import userEvent from '@testing-library/user-event'
 import { IconRail } from './IconRail'
 
 describe('IconRail', () => {
-  test('renders the identity slot with default "w"', () => {
+  test('does not render the placeholder account avatar (removed, VIM-66)', () => {
     render(<IconRail settingsIssueNumber={1} />)
-    const avatar = screen.getByRole('img', { name: 'Account' })
-    expect(avatar).toHaveTextContent('w')
+    expect(screen.queryByRole('img', { name: 'Account' })).toBeNull()
   })
 
-  test('renders a custom initial from identity prop', () => {
-    render(<IconRail settingsIssueNumber={1} identity={{ initial: 'M' }} />)
-    expect(screen.getByRole('img', { name: 'Account' })).toHaveTextContent('M')
+  test('does not render the sidebar toggle while the sidebar is expanded', () => {
+    render(<IconRail settingsIssueNumber={1} onToggleSidebar={vi.fn()} />)
+    expect(screen.queryByTestId('sidebar-toggle-rail')).toBeNull()
   })
 
-  test('truncates a multi-char initial to the first grapheme', () => {
-    render(<IconRail settingsIssueNumber={1} identity={{ initial: 'AB' }} />)
-    expect(screen.getByRole('img', { name: 'Account' })).toHaveTextContent('A')
-  })
-
-  test('preserves an emoji grapheme via Array.from', () => {
-    render(<IconRail settingsIssueNumber={1} identity={{ initial: '🚀' }} />)
-    expect(screen.getByRole('img', { name: 'Account' })).toHaveTextContent('🚀')
-  })
-
-  test('falls back to "Account" when ariaLabel is an empty string', () => {
+  test('renders the expand toggle when collapsed and fires onToggleSidebar', async () => {
+    const user = userEvent.setup()
+    const onToggleSidebar = vi.fn()
     render(
       <IconRail
         settingsIssueNumber={1}
-        identity={{ initial: 'w', ariaLabel: '' }}
+        sidebarCollapsed
+        onToggleSidebar={onToggleSidebar}
       />
     )
-    const avatar = screen.getByRole('img', { name: 'Account' })
+    const toggle = screen.getByTestId('sidebar-toggle-rail')
 
-    expect(avatar).toHaveAttribute('aria-label', 'Account')
+    expect(toggle).toHaveAttribute('aria-label', 'Show sidebar')
+
+    await user.click(toggle)
+    expect(onToggleSidebar).toHaveBeenCalledTimes(1)
   })
 
   test('renders the command palette button with stable aria-label', () => {

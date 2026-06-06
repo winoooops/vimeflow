@@ -2,8 +2,8 @@
 id: accessibility
 category: a11y
 created: 2026-04-09
-last_updated: 2026-05-08
-ref_count: 6
+last_updated: 2026-06-06
+ref_count: 8
 ---
 
 # Accessibility
@@ -244,3 +244,39 @@ handlers must not trap focus without implementing the promised behavior.
 - **Finding:** Cycle-3's fix wrapped the `>` glyph + a decorative `readOnly tabIndex={-1} aria-hidden="true"` `<input>` inside a real `<button aria-label="Focus terminal">` to give the click-to-focus affordance a keyboard-discoverable surface. Per HTML5 §4.10.6, `<button>` content cannot include interactive content (`<input>` is interactive content), and per §4.10.6.1 `<button>` cannot contain any element carrying a `tabindex` attribute. Both rules are violated here. Modern browsers + jsdom handle the nesting correctly in practice (event bubbling works, `aria-hidden` suppresses AT exposure), but the markup fails HTML validators and accessibility-audit tools, and could break in stricter parsers or future browser versions. Class of bug: a "fake-input" rendered with a real `<input>` element to inherit the native placeholder pseudo-element.
 - **Fix:** Replaced the `<input>` with a `<span>` displaying the placeholder text directly. The span has no a11y semantics, no tabindex, and no interactive role — purely text content inside the `<button>`, which is fully spec-compliant. Visual result is identical because the input's only visible state was its placeholder, which is the same string the span now renders. Code-review heuristic: when wrapping a row in a `<button>` for keyboard activation, audit every descendant for interactive content (input, select, textarea, anchor, another button) AND for `tabindex` — both rules are independent. Decorative "input-shaped" UI should be a `<span>` or `<div>`, not `<input>`.
 - **Commit:** _(see git log for the cycle-4 fix commit on PR #190)_
+
+### 26. aria-pressed={collapsed} inverted when paired with action label
+
+- **Source:** github-claude | PR #352 round 1 | 2026-06-06
+- **Severity:** MEDIUM
+- **File:** `src/features/workspace/components/SidebarToggle.tsx`
+- **Finding:** When `collapsed=true`, the button rendered `aria-label="Show sidebar"` and `aria-pressed="true"`. A screen reader announced "Show sidebar, toggle button, pressed" — "pressed" in ARIA means the toggle's _on_ state is active, which a listener interprets as "the show-sidebar action is currently engaged" (sidebar is visible). But the sidebar is actually hidden, directly contradicting the signal.
+- **Fix:** Replaced `aria-pressed={collapsed}` with `aria-expanded={!collapsed}` — the WAI-ARIA-recommended attribute for controls that reveal/hide a panel. Updated co-located test assertions accordingly.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 27. Focus lost to body when in-card toggle collapses the sidebar
+
+- **Source:** github-claude | PR #352 round 2 | 2026-06-06
+- **Severity:** MEDIUM
+- **File:** `src/features/workspace/WorkspaceView.tsx`
+- **Finding:** When a keyboard or assistive-technology user activates the `SidebarToggle` inside `AgentStatusCard`, the button lives inside the sidebar subtree that is about to become `inert`. Browsers remove focus from elements in an inert subtree (Chromium drops it on `document.body`), and the replacement rail toggle does not receive focus automatically. The result is a confusing loss of focus context every time the sidebar is collapsed from the card.
+- **Fix:** Forward a `railToggleRef` from `WorkspaceView` through `IconRail` to the rail `SidebarToggle`, set a `focusRailAfterCollapseRef` flag in the in-card toggle callback, and use a `useEffect` that focuses the rail toggle after `sidebarCollapsed` transitions to `true`. Keyboard shortcut and palette paths keep the original `toggleSidebar` so they do not steal focus from the terminal/editor.
+- **Commit:** same commit as this entry
+
+### 28. RateLimitBar lacks `role=progressbar` and `aria-value*` attributes
+
+- **Source:** github-claude | PR #352 round 2 | 2026-06-06
+- **Severity:** LOW
+- **File:** `src/features/agent-status/components/RateLimitBar.tsx`
+- **Finding:** The shared `RateLimitBar` component rendered a visual progress bar as two nested `<div>` elements with no ARIA role or value attributes. Screen readers could not interpret the fill width as a bounded value, so AT users only heard the adjacent label and percentage text without the programmatic range semantics.
+- **Fix:** Added `role="progressbar"`, `aria-valuenow={Math.round(percentage)}`, `aria-valuemin={0}`, and `aria-valuemax={100}` to the outer track `<div>`, and added a co-located test asserting the role and value attributes.
+- **Commit:** same commit as this entry
+
+### 29. RateLimitBar progressbar lacks accessible name
+
+- **Source:** github-claude | PR #352 round 3 | 2026-06-06
+- **Severity:** HIGH
+- **File:** `src/features/agent-status/components/RateLimitBar.tsx`
+- **Finding:** The progressbar `<div>` had `role="progressbar"` and `aria-value*` attributes but no `aria-label` or `aria-labelledby`. The visible label lived in a preceding sibling `<span>` with no programmatic association. Screen readers announced a bare percentage with no context about what the bar measures, violating WCAG 2.1 SC 4.1.2 (Name, Role, Value).
+- **Fix:** Added `aria-label={label}` to the progressbar `<div>` so the accessible name matches the visible label text. No test changes were needed beyond the existing `getByRole('progressbar')` query which now implicitly verifies the name.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
