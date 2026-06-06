@@ -214,10 +214,7 @@ pub fn repair_workspace_layout(
             .and_then(|v| v.as_array())
             .cloned()
             .unwrap_or_default();
-        let mut panes = repair_panes(&raw_panes, &working_directory, active_cwd);
-        if panes.len() > MAX_PANES {
-            panes.truncate(MAX_PANES);
-        }
+        let panes = repair_panes(&raw_panes, &working_directory, active_cwd);
         if panes.is_empty() {
             continue; // session emptied by repair → drop (floor: ≥1 pane)
         }
@@ -230,7 +227,8 @@ pub fn repair_workspace_layout(
             layout = layout_for_count(panes.len()).to_string();
         }
 
-        // At most one active session (first with active:true wins).
+        // At most one active session (first wins); none-active is fine — the
+        // renderer selects on restore (§2.2), so repair does not force one.
         let raw_active = bool_field(rs, "active").unwrap_or(false);
         let active = raw_active && !active_session_seen;
         if active {
@@ -283,10 +281,11 @@ fn repair_panes(
                 if !seen_pty_ids.insert(pty_id.clone()) {
                     continue; // duplicate shell ptyId → first wins
                 }
-                let mut cwd = str_field(rp, "cwd")
-                    .filter(|s| !s.is_empty())
-                    .unwrap_or_else(|| session_cwd.to_string());
+                let Some(mut cwd) = str_field(rp, "cwd").filter(|s| !s.is_empty()) else {
+                    continue; // shell missing cwd → drop (required scalar)
+                };
                 if !std::path::Path::new(&cwd).is_dir() {
+                    // present but stale (directory gone) → fall back to a valid cwd
                     cwd = if std::path::Path::new(session_cwd).is_dir() {
                         session_cwd.to_string()
                     } else {
@@ -325,6 +324,9 @@ fn repair_panes(
     }
 
     built.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)));
+    // Truncate to capacity BEFORE active-normalization, so an active pane beyond
+    // quad cannot be dropped after being chosen (which would leave none active).
+    built.truncate(MAX_PANES);
 
     let any_active = built.iter().any(|(_, _, p)| pane_active(p));
     let mut active_seen = false;
@@ -386,9 +388,14 @@ fn repair_tabs(raw_tabs: &[serde_json::Value]) -> Vec<PersistedTab> {
             history_index = 0;
         }
         if history.len() > MAX_HISTORY {
-            let drop = history.len() - MAX_HISTORY;
-            history.drain(0..drop);
-            history_index = history_index.saturating_sub(drop);
+            // Keep a window of MAX_HISTORY entries around the active index.
+            let half = MAX_HISTORY / 2;
+            let start = history_index
+                .saturating_sub(half)
+                .min(history.len() - MAX_HISTORY);
+            history.drain(0..start);
+            history.truncate(MAX_HISTORY);
+            history_index -= start;
         }
         if history_index >= history.len() {
             history_index = history.len() - 1;
@@ -791,5 +798,88 @@ mod tests {
         assert!(layouts_path.exists()); // workspace-layouts.json untouched
         let reloaded = WorkspaceLayoutCache::new(layouts_path).load("proj", "/");
         assert_eq!(reloaded.sessions.len(), 1); // content intact
+    }
+
+    #[test]
+    fn drops_shell_missing_cwd() {
+        let store = repair_workspace_layout(
+            json!({ "version": 1, "sessions": [{
+                "id": "s", "layout": "vsplit", "active": true, "panes": [
+                    { "kind": "shell", "paneId": "p0", "paneIndex": 0, "active": true, "ptyId": "x", "agentType": "generic" },
+                    { "kind": "browser", "paneId": "p1", "paneIndex": 1, "active": false, "tabs": [] } ] }] }),
+            "proj",
+            "/",
+        );
+        // shell missing cwd dropped → only the browser pane remains, forced active
+        assert_eq!(store.sessions[0].panes.len(), 1);
+        assert!(matches!(store.sessions[0].panes[0], WorkspacePane::Browser(_)));
+        assert!(pane_active(&store.sessions[0].panes[0]));
+    }
+
+    #[test]
+    fn falls_back_when_cwd_is_stale() {
+        let store = repair_workspace_layout(
+            json!({ "version": 1, "sessions": [{
+                "id": "s", "layout": "single", "active": true, "panes": [
+                    { "kind": "shell", "paneId": "p0", "paneIndex": 0, "active": true,
+                      "ptyId": "x", "cwd": "/no/such/dir/xyz", "agentType": "generic" } ] }] }),
+            "proj",
+            "/",
+        );
+        // present-but-stale cwd → fell back to active_cwd "/" (kept, not dropped)
+        assert_eq!(shell(&store.sessions[0].panes[0]).cwd, "/");
+    }
+
+    #[test]
+    fn active_pane_beyond_quad_still_leaves_exactly_one_active() {
+        let panes: Vec<_> = (0..6)
+            .map(|i| json!({ "kind": "shell", "paneId": format!("p{i}"), "paneIndex": i, "active": i == 5, "ptyId": format!("pty{i}"), "cwd": "/", "agentType": "generic" }))
+            .collect();
+        let store = repair_workspace_layout(
+            json!({ "version": 1, "sessions": [{ "id": "s", "layout": "single", "active": true, "panes": panes }] }),
+            "proj",
+            "/",
+        );
+        assert_eq!(store.sessions[0].panes.len(), 4); // truncated to quad
+        let actives = store.sessions[0].panes.iter().filter(|p| pane_active(p)).count();
+        assert_eq!(actives, 1); // exactly one, never zero (the beyond-quad active was truncated)
+    }
+
+    #[test]
+    fn history_cap_keeps_window_around_active() {
+        let history: Vec<_> = (0..150)
+            .map(|i| json!({ "url": format!("https://e{i}"), "title": null }))
+            .collect();
+        let store = repair_workspace_layout(
+            json!({ "version": 1, "sessions": [{ "id": "s", "layout": "single", "active": true,
+                "panes": [{ "kind": "browser", "paneId": "p0", "paneIndex": 0, "active": true,
+                    "tabs": [{ "active": true, "historyIndex": 120, "history": history }] }] }] }),
+            "proj",
+            "/",
+        );
+        let b = browser_tab(&store.sessions[0].panes[0]);
+        assert_eq!(b.tabs[0].history.len(), MAX_HISTORY); // capped
+        // the formerly-active entry is preserved at the remapped index
+        assert_eq!(
+            b.tabs[0].history[b.tabs[0].history_index as usize].url,
+            "https://e120"
+        );
+    }
+
+    #[test]
+    fn drops_overlong_url() {
+        let long = format!("https://{}", "a".repeat(MAX_URL_LEN));
+        let store = repair_workspace_layout(
+            json!({ "version": 1, "sessions": [{ "id": "s", "layout": "single", "active": true,
+                "panes": [{ "kind": "browser", "paneId": "p0", "paneIndex": 0, "active": true,
+                    "tabs": [{ "active": true, "historyIndex": 0, "history": [
+                        { "url": long, "title": null },
+                        { "url": "https://ok", "title": null } ] }] }] }] }),
+            "proj",
+            "/",
+        );
+        let b = browser_tab(&store.sessions[0].panes[0]);
+        assert_eq!(b.tabs[0].history.len(), 1); // overlong url dropped
+        assert_eq!(b.tabs[0].history[0].url, "https://ok");
     }
 }
