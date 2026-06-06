@@ -67,6 +67,9 @@ AWS_DEFAULT_REGION=$region
 CODEX_HOME=$codex_home
 EOF
   write_env_line OPENAI_API_KEY "$openai_api_key"
+  write_env_line LINEAR_CLIENT_ID "$(single_line_value LINEAR_CLIENT_ID)"
+  write_env_line LINEAR_CLIENT_SECRET "$(single_line_value LINEAR_CLIENT_SECRET)"
+  write_env_line LINEAR_SCOPES "read,write"
 } | write_secret_file "$etc_dir/worker.env" 0600
 
 echo "worker env installed under $repo and $etc_dir"

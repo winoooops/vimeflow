@@ -131,6 +131,9 @@ EOF
   write_env_line QA_WORKER_TIMEOUT_SECONDS "$worker_timeout_seconds"
   write_env_line QA_WORKER_REFRESH_RUNNER "$worker_refresh_runner"
   write_env_line QA_WORKER_REF "$worker_ref"
+  write_env_line LINEAR_CLIENT_ID "$linear_client_id"
+  write_env_line LINEAR_CLIENT_SECRET "$linear_client_secret"
+  write_env_line LINEAR_SCOPES "read,write"
 } | write_secret_file "$etc_dir/control.env" 0600
 
 write_secret_file "$repo/scripts/qa-runner/orchestrator.env" 0600 <<EOF

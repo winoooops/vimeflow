@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, test, vi } from 'vitest'
@@ -9,7 +9,17 @@ import {
 } from './linear-status.js'
 
 const tempRoots = []
-const originalLinearApiKey = process.env.LINEAR_API_KEY
+const ENV_KEYS = [
+  'LINEAR_API_KEY',
+  'LINEAR_CLIENT_ID',
+  'LINEAR_CLIENT_SECRET',
+  'LINEAR_SCOPES',
+  'LINEAR_ACCESS_TOKEN',
+  'LINEAR_AGENT_TOKEN',
+]
+const originalEnv = Object.fromEntries(
+  ENV_KEYS.map((key) => [key, process.env[key]])
+)
 
 const makeRoot = () => {
   const root = mkdtempSync(join(tmpdir(), 'linear-status-'))
@@ -26,10 +36,13 @@ afterEach(() => {
   for (const root of tempRoots.splice(0)) {
     rmSync(root, { force: true, recursive: true })
   }
-  if (originalLinearApiKey == null) {
-    delete process.env.LINEAR_API_KEY
-  } else {
-    process.env.LINEAR_API_KEY = originalLinearApiKey
+
+  for (const key of ENV_KEYS) {
+    if (originalEnv[key] == null) {
+      delete process.env[key]
+    } else {
+      process.env[key] = originalEnv[key]
+    }
   }
 })
 
@@ -85,6 +98,29 @@ describe('loadAuthFromRoot', () => {
     expect(fetchImpl).not.toHaveBeenCalled()
   })
 
+  test('mints a role app token from process env credentials', async () => {
+    const root = makeRoot()
+    process.env.LINEAR_CLIENT_ID = 'env-client-id'
+    process.env.LINEAR_CLIENT_SECRET = 'env-client-secret'
+    process.env.LINEAR_SCOPES = 'read,write'
+
+    const fetchImpl = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ access_token: 'env-app-token' }),
+    }))
+
+    await expect(
+      loadAuthFromRoot('orchestrator', root, fetchImpl)
+    ).resolves.toEqual({
+      header: 'Bearer env-app-token',
+      who: 'orchestrator app',
+    })
+
+    expect(String(fetchImpl.mock.calls[0][1].body)).toContain(
+      'client_id=env-client-id'
+    )
+  })
+
   test('falls back to stored role access token when client credentials fail', async () => {
     const root = makeRoot()
     writeEnv(
@@ -122,6 +158,34 @@ describe('loadAuthFromRoot', () => {
       header: 'lin_api_test',
       who: 'you (personal key)',
     })
+  })
+
+  test('ignores unreadable fallback env files when process env auth is available', async () => {
+    const root = makeRoot()
+    writeEnv(root, 'linear.env', 'LINEAR_API_KEY=lin_api_file')
+    chmodSync(join(root, 'linear.env'), 0)
+    process.env.LINEAR_CLIENT_ID = 'env-client-id'
+    process.env.LINEAR_CLIENT_SECRET = 'env-client-secret'
+
+    const fetchImpl = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ access_token: 'env-app-token' }),
+    }))
+
+    await expect(loadAuthFromRoot('fixer', root, fetchImpl)).resolves.toEqual({
+      header: 'Bearer env-app-token',
+      who: 'fixer app',
+    })
+  })
+
+  test('does not hard-fail when the personal fallback env file is unreadable', async () => {
+    const root = makeRoot()
+    writeEnv(root, 'linear.env', 'LINEAR_API_KEY=lin_api_file')
+    chmodSync(join(root, 'linear.env'), 0)
+
+    await expect(loadAuthFromRoot(undefined, root, vi.fn())).rejects.toThrow(
+      'no Linear auth'
+    )
   })
 })
 

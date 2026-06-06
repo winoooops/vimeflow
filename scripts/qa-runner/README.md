@@ -276,6 +276,9 @@ commit author (`GIT_AUTHOR_*`), and HTTPS push (the `gh` credential helper).
 Two optional, gitignored env files — each a **separate Linear OAuth app** with
 Client credentials enabled. `linear-status.js --as fixer|orchestrator` mints an
 app-actor token on demand, so issue comments show the bot app identity in Linear.
+Cloud/systemd deployments may provide the same keys through the process env
+(`EnvironmentFile=/etc/vimeflow/qa-runner/*.env`); those values override the
+repo-root files so the daemon and worker do not depend on repo file permissions.
 
 | File                      | Keys                                       | Role                   | Used by                       |
 | ------------------------- | ------------------------------------------ | ---------------------- | ----------------------------- |
