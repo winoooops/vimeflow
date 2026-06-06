@@ -15,6 +15,7 @@ import {
   packagedContentSecurityPolicy,
 } from './csp'
 import { installCommandPaletteShortcutOverride } from './command-palette-shortcut'
+import { installApplicationEditMenu } from './edit-menu'
 import { installNavigationGuard } from './navigation-guard'
 import { BACKEND_EVENT, BACKEND_INVOKE } from './ipc-channels'
 import { spawnSidecar, type Sidecar } from './sidecar'
@@ -307,6 +308,7 @@ const createWindow = (): void => {
 const setupApp = async (): Promise<void> => {
   await app.whenReady()
   installContentSecurityPolicy()
+  installApplicationEditMenu()
   configureBrowserPaneWebAuthn()
 
   if (app.isPackaged) {
