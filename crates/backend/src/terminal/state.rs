@@ -269,24 +269,50 @@ impl PtyState {
     /// shell is idle at its prompt (or the platform can't introspect). Drives
     /// the live "running" cue (VIM-71). Locks the ephemeral set first (cloned,
     /// then released) before the sessions map, matching `remove`'s lock order.
+    ///
+    /// Also prunes ids that no longer map to a live session: a self-exited
+    /// scratch is dropped from `sessions` by the read loop's
+    /// `remove_if_generation`, which does not touch `ephemeral_ptys`. Without
+    /// this lazy reconciliation, the set — cloned and scanned every poll —
+    /// would grow unbounded across self-exit/reopen cycles.
     pub fn ephemeral_foreground_snapshot(&self) -> Vec<(SessionId, bool)> {
-        let ephemeral: HashSet<SessionId> = self
+        let ephemeral: Vec<SessionId> = self
             .ephemeral_ptys
             .lock()
             .expect("failed to lock ephemeral_ptys")
-            .clone();
-        let sessions = self.sessions.lock().expect("failed to lock sessions");
-        ephemeral
-            .into_iter()
-            .filter_map(|id| {
-                let session = sessions.get(&id)?;
-                let running = is_foreground_busy(
-                    read_foreground_leader(session.master.as_ref()),
-                    session.child.process_id(),
-                );
-                Some((id, running))
-            })
-            .collect()
+            .iter()
+            .cloned()
+            .collect();
+        let mut dead: Vec<SessionId> = Vec::new();
+        let snapshot: Vec<(SessionId, bool)> = {
+            let sessions = self.sessions.lock().expect("failed to lock sessions");
+            ephemeral
+                .into_iter()
+                .filter_map(|id| match sessions.get(&id) {
+                    Some(session) => {
+                        let running = is_foreground_busy(
+                            read_foreground_leader(session.master.as_ref()),
+                            session.child.process_id(),
+                        );
+                        Some((id, running))
+                    }
+                    None => {
+                        dead.push(id);
+                        None
+                    }
+                })
+                .collect()
+        };
+        if !dead.is_empty() {
+            let mut set = self
+                .ephemeral_ptys
+                .lock()
+                .expect("failed to lock ephemeral_ptys");
+            for id in &dead {
+                set.remove(id);
+            }
+        }
+        snapshot
     }
 
     /// Check if a session exists
@@ -548,6 +574,25 @@ mod tests {
 
         let ids: Vec<&str> = snapshot.iter().map(|(id, _)| id.as_str()).collect();
         assert_eq!(ids, vec!["scratch"]); // the non-ephemeral "plain" is excluded
+    }
+
+    #[test]
+    fn ephemeral_foreground_snapshot_prunes_self_exited_ids() {
+        let state = PtyState::new();
+        state.insert("live".into(), make_test_session());
+        state.insert("dead".into(), make_test_session());
+        state.mark_ephemeral("live".into());
+        state.mark_ephemeral("dead".into());
+
+        // Self-exit: the read loop drops the session (sessions only) but leaves
+        // its id stranded in `ephemeral_ptys`. make_test_session uses gen 0.
+        state.remove_if_generation(&"dead".to_string(), 0);
+
+        let snapshot = state.ephemeral_foreground_snapshot();
+
+        let ids: Vec<&str> = snapshot.iter().map(|(id, _)| id.as_str()).collect();
+        assert_eq!(ids, vec!["live"]); // dead id excluded from the snapshot
+        assert_eq!(state.drain_ephemeral(), vec!["live"]); // and pruned from the set
     }
 
     /// Build a real but ephemeral `ManagedSession` for tests that need
