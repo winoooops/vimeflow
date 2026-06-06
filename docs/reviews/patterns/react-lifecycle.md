@@ -3,7 +3,7 @@ id: react-lifecycle
 category: react-patterns
 created: 2026-04-09
 last_updated: 2026-06-06
-ref_count: 10
+ref_count: 11
 ---
 
 # React Lifecycle
@@ -194,6 +194,15 @@ to avoid unintended re-runs (e.g., PTY respawning on every cwd change).
 - **File:** `src/features/diff/components/toolbar/PriorityPlus.tsx`
 - **Finding:** `PriorityPlus` wrapped each keyed toolbar chip in a `<div key={index}>`. When a chip was inserted or removed before stateful controls such as dropdowns, React reused the wrapper at the same index for a different logical child, allowing open/active state to migrate to the wrong chip.
 - **Fix:** Key wrapper nodes from each child's stable React key, falling back to the index only for unkeyed children. Added a regression test with a stateful keyed child that preserves state when another child is inserted before it.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 29. Single-subscription invariant test weakened after derived-props refactor
+
+- **Source:** github-claude | PR #352 | 2026-06-06
+- **Severity:** MEDIUM
+- **File:** `src/features/workspace/WorkspaceView.subscription.test.tsx`
+- **Finding:** The old test used reference-equality (`toBe`) to prove a single `useAgentStatus()` call site: both `AgentStatusPanel` and `SidebarStatusHeader` received the SAME object from a mock that returns a fresh object per call. After VIM-66 refactored `AgentStatusCard` to receive derived props (`title`, `state`) instead of the raw `agentStatus` object, the reference-equality probe was retired and replaced with `expect(useAgentStatus).toHaveBeenCalled()`. That assertion passes whether the hook is called once or five times per render, so a future child component adding its own `useAgentStatus()` call would go undetected — creating duplicate Tauri event listeners and possible stale-state divergence. The per-component `AgentStatusCard.test.tsx` guards only the card in isolation, not the broader tree.
+- **Fix:** Replaced the presence-only assertion with a count-level guarantee pinned to `useGitStatus` call count. Both hooks are lifted once-per-render in `WorkspaceView` and neither is called by children in this test setup, so the counts must match. Added `vi.mocked(useAgentStatus).mockClear()` in `beforeEach` so the count starts fresh per test. If a future child adds a `useAgentStatus()` call, the counts diverge and the test fails.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
 
 ### 25. Sticky title state survives PTY restart because `replacementPane` spreads `...oldPane`

@@ -245,6 +245,7 @@ describe('WorkspaceView lifted-subscription contract', () => {
     // vacuously — e.g. tests 1+2 already trigger `enabled: true` calls,
     // making test 3's assertion pass even if test 3's own render
     // computed `enabled: false`.
+    vi.mocked(useAgentStatus).mockClear()
     vi.mocked(useGitStatus).mockClear()
   })
 
@@ -270,6 +271,12 @@ describe('WorkspaceView lifted-subscription contract', () => {
     // consumers are populated and the hook ran; the strict once-count assertion
     // is exercised in AgentStatusCard.test.tsx, which renders the real card in
     // isolation and asserts it never subscribes to useAgentStatus.
+    //
+    // Because WorkspaceView re-renders during mount (state changes from hooks),
+    // useAgentStatus is called multiple times. We pin the count to the
+    // useGitStatus call count — both are lifted once-per-render in WorkspaceView
+    // and neither is called by children in this test setup. If a future child
+    // adds its own useAgentStatus() call, the counts diverge and the test fails.
     render(<WorkspaceView />)
     await screen.findByTestId('agent-status-card-mock')
     await screen.findByTestId('agent-status-panel-mock')
@@ -277,7 +284,9 @@ describe('WorkspaceView lifted-subscription contract', () => {
     expect(capturedPanelProps.agentStatus).toBeDefined()
     expect(capturedCardProps.title).toBeDefined()
     expect(capturedCardProps.state).toBeDefined()
-    expect(useAgentStatus).toHaveBeenCalled()
+    expect(useAgentStatus).toHaveBeenCalledTimes(
+      vi.mocked(useGitStatus).mock.calls.length
+    )
   })
 
   test('AgentStatusPanel and DockPanel receive one shared git status object', async () => {
