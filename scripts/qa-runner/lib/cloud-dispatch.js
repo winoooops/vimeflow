@@ -482,7 +482,9 @@ export const runSsmDispatch = async ({
   let shouldStop = false
 
   try {
+    let send
     if (burst) {
+      const readinessDeadline = Date.now() + readyTimeoutSeconds * 1000
       await ensureWorkerInstanceRunning({
         instanceId,
         region,
@@ -496,30 +498,34 @@ export const runSsmDispatch = async ({
         },
       })
       shouldStop = stopAfterRun
-    }
 
-    const send = burst
-      ? await sendSsmWorkerCommandWithRetry({
-          instanceId,
-          region,
-          repo,
-          env: commandEnv,
-          timeoutSeconds,
-          readyTimeoutSeconds,
-          stdout,
-          awsEnv,
-          spawnImpl,
-          pollIntervalMs,
-        })
-      : await sendSsmWorkerCommand({
-          instanceId,
-          region,
-          repo,
-          env: commandEnv,
-          timeoutSeconds,
-          awsEnv,
-          spawnImpl,
-        })
+      const remainingReadySeconds = Math.max(
+        0,
+        Math.ceil((readinessDeadline - Date.now()) / 1000)
+      )
+      send = await sendSsmWorkerCommandWithRetry({
+        instanceId,
+        region,
+        repo,
+        env: commandEnv,
+        timeoutSeconds,
+        readyTimeoutSeconds: remainingReadySeconds,
+        stdout,
+        awsEnv,
+        spawnImpl,
+        pollIntervalMs,
+      })
+    } else {
+      send = await sendSsmWorkerCommand({
+        instanceId,
+        region,
+        repo,
+        env: commandEnv,
+        timeoutSeconds,
+        awsEnv,
+        spawnImpl,
+      })
+    }
     if (send.code !== 0) {
       stderr.write(send.stderr || send.stdout)
 

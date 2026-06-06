@@ -3,7 +3,7 @@ id: ci-orchestration-state
 category: correctness
 created: 2026-06-02
 last_updated: 2026-06-06
-ref_count: 6
+ref_count: 7
 ---
 
 # CI Orchestration State
@@ -155,3 +155,12 @@ Findings in the CI orchestration / QA runner pipeline where state is either lost
 - **Finding:** `ensureWorkerInstanceRunning` starts a stopped instance only when the _initial_ describe call returns `stopped`. If the initial state is `stopping`, the code enters the readiness polling loop without calling `startInstance`. When AWS later transitions the instance to `stopped`, the loop observes the new state but never starts the instance — it just keeps polling until the readiness timeout expires. This wastes the full timeout and fails a recoverable burst dispatch.
 - **Fix:** Inside the polling loop, when `state === 'stopped'` and `!started`, call `startInstance`, set `started = true`, invoke `onStarted`, transition `state` to `pending`, and continue polling. Added a regression test that mocks the `stopping → stopped → pending → running` sequence and asserts the instance is started and `onStarted` fires exactly once.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 15. Burst readiness timeout applied as two sequential full deadlines
+
+- **Source:** github-claude | PR #362 round 3 | 2026-06-06
+- **Severity:** MEDIUM
+- **File:** `scripts/qa-runner/lib/cloud-dispatch.js`
+- **Finding:** `runSsmDispatch` waited up to `readyTimeoutSeconds` for EC2 running, then started a fresh `readyTimeoutSeconds` deadline for SSM command acceptance. Operators configuring `QA_WORKER_READY_TIMEOUT_SECONDS` as a startup cap could see up to double the expected wait, holding queue capacity and cloud resources longer than configured.
+- **Fix:** In burst mode, compute a single `readinessDeadline = Date.now() + readyTimeoutSeconds * 1000` before `ensureWorkerInstanceRunning`. After EC2 readiness returns, calculate the remaining seconds and pass only that budget to `sendSsmWorkerCommandWithRetry`, so the total wait never exceeds the configured single knob.
+- **Commit:** cycle 3

@@ -59,11 +59,11 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Credential Leakage](patterns/credential-leakage.md)                                 | security           | 1        | 0    | 2026-05-31   |
 | [Policy Judge Hygiene](patterns/policy-judge-hygiene.md)                             | security           | 16       | 1    | 2026-06-04   |
 | [Fail-Closed Hooks](patterns/fail-closed-hooks.md)                                   | security           | 3        | 1    | 2026-04-20   |
-| [Preflight Checks](patterns/preflight-checks.md)                                     | error-handling     | 5        | 1    | 2026-06-05   |
+| [Preflight Checks](patterns/preflight-checks.md)                                     | error-handling     | 6        | 2    | 2026-06-06   |
 | [CSP Configuration](patterns/csp-configuration.md)                                   | security           | 8        | 5    | 2026-05-16   |
 | [PTY Session Management](patterns/pty-session-management.md)                         | backend            | 8        | 2    | 2026-05-28   |
 | [Git Operations](patterns/git-operations.md)                                         | correctness        | 27       | 12   | 2026-06-06   |
-| [CI Orchestration State](patterns/ci-orchestration-state.md)                         | correctness        | 14       | 5    | 2026-06-06   |
+| [CI Orchestration State](patterns/ci-orchestration-state.md)                         | correctness        | 15       | 7    | 2026-06-06   |
 | [CodeMirror Integration](patterns/codemirror-integration.md)                         | editor             | 12       | 0    | 2026-04-11   |
 | [Error Surfacing](patterns/error-surfacing.md)                                       | error-handling     | 51       | 13   | 2026-06-05   |
 | [File Tree Paths](patterns/file-tree-paths.md)                                       | files              | 4        | 0    | 2026-04-10   |

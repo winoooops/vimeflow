@@ -2,8 +2,8 @@
 id: preflight-checks
 category: error-handling
 created: 2026-04-20
-last_updated: 2026-06-05
-ref_count: 1
+last_updated: 2026-06-06
+ref_count: 2
 ---
 
 # Preflight Checks
@@ -66,3 +66,12 @@ When adding / removing / refactoring preflight checks:
 - **Finding:** `dispatchConfig` returned `JSON.parse(env.QA_WORKER_SSH_OPTIONS_JSON)` directly, while `sshDispatchPlan` later spread `sshOptions` into an array. Valid but non-array JSON (`null`, `{}`, `42`) crashed dispatch with `TypeError: sshOptions is not iterable` — an opaque error that gave no hint the env var was malformed.
 - **Fix:** Added an `Array.isArray` check immediately after `JSON.parse`. Non-array values now throw `QA_WORKER_SSH_OPTIONS_JSON must be a JSON array` at config time, before any SSH spawn attempt. Added unit tests for array, object, null, and scalar JSON inputs.
 - **Commit:** same commit as this entry
+
+### 6. Spot bootstrap installs mutable upstream packages and Lifeline as root
+
+- **Source:** github-claude | PR #362 round 3 | 2026-06-06
+- **Severity:** MEDIUM
+- **File:** `scripts/qa-runner/deploy/worker-spot-user-data.sh`
+- **Finding:** The bootstrap installed `@openai/codex` and `@moonshot-ai/kimi-code` without version pins and cloned Lifeline from the default branch. Because the script runs as root before worker credentials materialize, any upstream malicious or breaking release could compromise or break the runner fleet without any repository change.
+- **Fix:** Added required env vars `QA_CODEX_VERSION`, `QA_KIMI_CODE_VERSION`, and `QA_LIFELINE_REF`. The script now validates exact semver for npm packages and a full 40-character commit SHA for Lifeline, failing fast when production values are missing or mutable. Lifeline is fetched via `git init` + `fetch --depth=1` + `checkout FETCH_HEAD` so SHA pins actually resolve.
+- **Commit:** cycle 3
