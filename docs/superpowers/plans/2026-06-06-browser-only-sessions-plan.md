@@ -14,7 +14,7 @@
 
 **Already landed (foundation, on this branch):** the two guard-relaxation commits — `canClosePane` (`SplitView.tsx`) and `removePane` (`useSessionManager.ts`) no longer gate on shell count — plus their tests. This plan builds the rest.
 
-**Conventions:** commit per task; `feat|test|refactor(scope): …` lowercase subject ≤100 chars; `git commit --no-verify` (pre-commit `tsc` OOMs in this env — run `npm run lint`/`type-check`/`test` manually first). Frontend tests: explicit `import { test, expect } from 'vitest'`. Inline comments: one short line, no task/PR refs.
+**Conventions:** commit per task; `feat|test|refactor(scope): …` lowercase subject ≤100 chars; `git commit --no-verify` (pre-commit `tsc` OOMs in this env — run `npm run lint`/`type-check`/`test` manually first). Frontend tests: explicit `import { test, expect } from 'vitest'`. Inline comments: one short line, no task/PR refs. **Every "Run, fail/green" step runs the task's named test file** — `npx vitest run <path>` (frontend) or `cargo test -p vimeflow <module>` (Rust). Each commit carries your executing agent's `Co-Authored-By:` trailer.
 
 ---
 
@@ -79,7 +79,7 @@ mod tests {
 
 - [ ] **Step 2: Run it and watch it fail**
 
-Run: `cargo test -p vimeflow-backend workspace_layout::tests::round_trips`
+Run: `cargo test -p vimeflow workspace_layout::tests::round_trips`
 Expected: FAIL — types not defined.
 
 - [ ] **Step 3: Define the types (spec §2)**
@@ -88,20 +88,22 @@ Expected: FAIL — types not defined.
 //! Durable workspace-shape store (`app_data_dir/workspace-layouts.json`).
 //! Survives graceful quit (never wiped by `clear_all`). See the design spec.
 use serde::{Deserialize, Serialize};
-use ts_rs::TS;
+// ts-rs is a dev-dependency; derive TS only under cfg(test), matching `terminal/types.rs`.
 
 pub const CURRENT_WORKSPACE_LAYOUT_VERSION: u32 = 1;
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
 pub struct WorkspaceLayoutStore {
     pub version: u32,
     pub sessions: Vec<WorkspaceSession>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[cfg_attr(test, ts(export))]
 pub struct WorkspaceSession {
     pub id: String,
     pub project_id: String,
@@ -111,26 +113,29 @@ pub struct WorkspaceSession {
     pub panes: Vec<WorkspacePane>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(tag = "kind", rename_all = "lowercase")]
-#[ts(export)]
+#[cfg_attr(test, ts(export))]
 pub enum WorkspacePane {
     Shell(ShellPane),
     Browser(BrowserPane),
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[cfg_attr(test, ts(export))]
 pub struct PaneBase {
     pub pane_id: String,
     pub pane_index: u32,
     pub active: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[cfg_attr(test, ts(export))]
 pub struct ShellPane {
     #[serde(flatten)]
     pub base: PaneBase,
@@ -140,25 +145,28 @@ pub struct ShellPane {
     pub agent_session_id: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[cfg_attr(test, ts(export))]
 pub struct BrowserPane {
     #[serde(flatten)]
     pub base: PaneBase,
     pub tabs: Vec<PersistedTab>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[cfg_attr(test, ts(export))]
 pub struct PersistedTab {
     pub active: bool,
     pub history: Vec<NavEntry>,
     pub history_index: u32,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct NavEntry {
     pub url: String,
     pub title: Option<String>,
@@ -169,7 +177,7 @@ Note: `#[serde(tag = "kind")]` requires the variant payloads be structs (they ar
 
 - [ ] **Step 4: Run the test to green**
 
-Run: `cargo test -p vimeflow-backend workspace_layout::tests::round_trips`
+Run: `cargo test -p vimeflow workspace_layout::tests::round_trips`
 Expected: PASS.
 
 - [ ] **Step 5: Regenerate + commit**
@@ -251,7 +259,9 @@ fn repair_defaults_missing_project_context_and_drops_invalid_urls() {
 }
 ```
 
-- [ ] **Step 2: Run, watch fail** — `cargo test -p vimeflow-backend workspace_layout::tests::repair` → FAIL (`repair_workspace_layout` undefined).
+Add sibling tests for the remaining §2.2 rules (one each): unknown-`version` → empty store; duplicate session `id` / `paneId` / shell `ptyId` → first-wins; zero/multiple active tab → pane → session normalization; `paneIndex` gaps/dupes → re-index `0..n`; invalid `layout` + >`quad` capacity → drop panes beyond four; stale-`cwd` → fall back to session `workingDirectory`; size caps (history/tabs/panes/sessions/url/title); empty-after-repair session dropped.
+
+- [ ] **Step 2: Run, watch fail** — `cargo test -p vimeflow workspace_layout::tests::repair` → FAIL (`repair_workspace_layout` undefined).
 
 - [ ] **Step 3: Implement `repair_workspace_layout(raw: serde_json::Value, active_project_id: &str, active_cwd: &str) -> WorkspaceLayoutStore`**
 
@@ -264,7 +274,7 @@ Two-stage per spec §2.2: read each field tolerantly from `serde_json::Value` (n
 5. per session: stale `cwd` (missing on disk) → fall back to session `workingDirectory` else `active_cwd`; sort panes by `paneIndex` (missing = `+∞`, ties by array order) then re-index `0..n`; force exactly one active pane (first by index); invalid `layout` → smallest fitting, then widen to fit count capped at `quad`, dropping panes beyond 4; drop session emptied of panes.
 6. across sessions: dedupe session `id` (first wins); at most one active session (first wins); apply size caps (history ~100 around active, tab/pane/session counts, url/title lengths).
 
-- [ ] **Step 4: Run to green** — `cargo test -p vimeflow-backend workspace_layout::tests` → PASS.
+- [ ] **Step 4: Run to green** — `cargo test -p vimeflow workspace_layout::tests` → PASS.
 
 - [ ] **Step 5: Commit**
 
@@ -302,7 +312,7 @@ fn save_then_load_round_trips_and_missing_loads_empty() {
 
 - [ ] **Step 3: Implement** — `WorkspaceLayoutCache { path, data: Mutex<Option<WorkspaceLayoutStore>> }` mirroring `cache.rs`: `save` writes atomically via `tempfile::NamedTempFile::persist` + updates the mirror; `load(project_id, cwd)` reads the file → `repair_workspace_layout(value, project_id, cwd)` (lenient) → caches + returns; missing file → empty default. All errors are non-fatal (return empty, log) — the store is a convenience cache, never blocks lifecycle.
 
-- [ ] **Step 4: Green** — `cargo test -p vimeflow-backend workspace_layout::tests::save_then_load` → PASS.
+- [ ] **Step 4: Green** — `cargo test -p vimeflow workspace_layout::tests::save_then_load` → PASS.
 
 - [ ] **Step 5: Commit** — `feat(backend): atomic workspace-layout file cache`
 
@@ -321,7 +331,7 @@ fn save_then_load_round_trips_and_missing_loads_empty() {
 
 - [ ] **Step 3: Implement** — ensure `SessionCache::clear_all` only targets `sessions.json`; the `WorkspaceLayoutCache` is a distinct file/owner and is never cleared on quit. Add a one-line comment at `clear_all` noting the workspace-layout store is intentionally excluded.
 
-- [ ] **Step 4: Green** — `cargo test -p vimeflow-backend` (cache + workspace_layout) → PASS.
+- [ ] **Step 4: Green** — `cargo test -p vimeflow` (cache + workspace_layout) → PASS.
 
 - [ ] **Step 5: Commit** — `test(backend): pin workspace-layout survives clear_all`
 
@@ -343,7 +353,7 @@ fn save_then_load_round_trips_and_missing_loads_empty() {
 
 - [ ] **Step 3: Implement** — `load_workspace_layout_inner(state, project_id, cwd) -> WorkspaceLayoutStore` and `save_workspace_layout_inner(state, store) -> ()` delegating to `WorkspaceLayoutCache`; `BackendState` holds the cache; add the two `ipc.rs` match arms. Hold the cache in `BackendState` next to `SessionCache`.
 
-- [ ] **Step 4: Green** — `cargo test -p vimeflow-backend` → PASS.
+- [ ] **Step 4: Green** — `cargo test -p vimeflow` → PASS.
 
 - [ ] **Step 5: Commit** — `feat(backend): main-only load/save workspace-layout IPC`
 
@@ -353,7 +363,50 @@ fn save_then_load_round_trips_and_missing_loads_empty() {
 
 > Exact line targets in `electron/browser-pane.ts` / `electron/main.ts` resolve against the merged base. Each task names the function + spec § as the contract.
 
-### Task 6: Capture per-tab navigation history in main
+### Task 6: Main-side workspace-layout controller + renderer↔main preload IPC
+
+**Files:**
+
+- Create: `electron/workspace-layout-controller.ts`
+- Modify: `electron/preload.ts` (contextBridge channels) + the renderer-side bridge under `src/features/browser/` (or `src/lib/`)
+- Test: `electron/workspace-layout-controller.test.ts`
+
+The connective tissue (spec §3.2 "IPC surface"): the renderer↔main channels + main's in-memory loaded store that Tasks 9 / 11 / 15 depend on. These are Electron preload channels, **not** `electron/backend-methods.ts` (that allowlist is renderer→Rust).
+
+- [ ] **Step 1: Failing tests** — (a) `pushWorkspaceShape` (renderer→main) updates the controller's latest shape DTO; (b) `loadWorkspaceForRestore` (renderer→main, carrying `projectId` + `workingDirectory`) calls the Rust `loadWorkspaceLayout` IPC (Task 5), **retains the repaired store in memory**, and returns the **shape** to the renderer while keeping tab/history main-side; (c) `requestFinalShape` (main→renderer→ack) for the close flush (Task 10); (d) `beginHydration` / `endHydration` (renderer→main) toggle the writer's `hydrating` flag (Task 9) so the renderer can bracket a restore — `endHydration` always fires (even on partial failure) so suppression can't stick.
+
+- [ ] **Step 2: Run, fail** — `npx vitest run electron/workspace-layout-controller.test.ts`.
+
+- [ ] **Step 3: Implement** — `WorkspaceLayoutController` holds `latestShapeDto` + `loadedStore` (populated by `loadWorkspaceForRestore`) and exposes the four preload channels (`pushWorkspaceShape`, `loadWorkspaceForRestore`, `requestFinalShape`, `beginHydration`/`endHydration`). It **defines the interfaces** the `WorkspaceLayoutWriter` (wired in Task 9) and the restore-tab serving to `createBrowserPane` (wired in Task 11) plug into; Task 6 ships the controller skeleton + `loadedStore` + channels with those two pieces stubbed behind interfaces, attached in their later tasks.
+
+- [ ] **Step 4: Green** — `npx vitest run electron/workspace-layout-controller.test.ts`.
+
+- [ ] **Step 5: Commit** — `feat(app): main-side workspace-layout controller + IPC`
+
+---
+
+### Task 7: Restartable placeholder — skip the stale-PTY kill on restart (spec §5)
+
+**Files:**
+
+- Modify: the restart path in `src/features/sessions/hooks/useSessionManager.ts` (the spawn-then-kill `restartSession` flow)
+- Test: `src/features/sessions/hooks/useSessionManager.test.ts`
+
+(A sessions-hook change, grouped here as a restore prerequisite — Phase C restore creates the placeholders this restarts.) A graceful-quit placeholder's seeded `ptyId` is already gone (`clear_all`), so the existing spawn-then-kill restart (which treats kill failure as fatal) must no-op the kill for an absent seed.
+
+- [ ] **Step 1: Failing test** — restarting a placeholder shell whose seed `ptyId` is absent from `listSessions()` spawns fresh in `cwd` and **succeeds**; `service.kill` is **not** called for the absent old PTY.
+
+- [ ] **Step 2: Run, fail** — `npx vitest run src/features/sessions/hooks/useSessionManager.test.ts -t "restart placeholder"`.
+
+- [ ] **Step 3: Implement** — in the restart path, skip the old-PTY `service.kill` when the seed `ptyId` is absent from the live set (treat as already-gone success), so a restored placeholder restarts cleanly.
+
+- [ ] **Step 4: Green.**
+
+- [ ] **Step 5: Commit** — `fix(sessions): restart restored placeholder without stale-PTY kill`
+
+---
+
+### Task 8: Capture per-tab navigation history in main
 
 **Files:**
 
@@ -364,7 +417,7 @@ fn save_then_load_round_trips_and_missing_loads_empty() {
 
 - [ ] **Step 2: Run, fail.**
 
-- [ ] **Step 3: Implement** — extend the main-side tab record so each tab carries `history`/`historyIndex` captured from `webContents.navigationHistory`. This is **not** added to the main→renderer `tabs-changed` event (spec §3.2 — that stays history-free); it feeds the assembler (Task 7).
+- [ ] **Step 3: Implement** — extend the main-side tab record so each tab carries `history`/`historyIndex` captured from `webContents.navigationHistory`. This is **not** added to the main→renderer `tabs-changed` event (spec §3.2 — that stays history-free); it feeds the assembler (Task 9).
 
 - [ ] **Step 4: Green.**
 
@@ -372,18 +425,19 @@ fn save_then_load_round_trips_and_missing_loads_empty() {
 
 ---
 
-### Task 7: Main-side assembler + serialized generation-ordered writes (spec §3.2)
+### Task 9: Main-side assembler + serialized generation-ordered writes (spec §3.2)
 
 **Files:**
 
 - Create: `electron/workspace-layout-writer.ts` (the assembler + write queue)
-- Test: `electron/workspace-layout-writer.test.ts`
+- Modify: `electron/browser-pane.ts` (tab open/close/active-switch hooks call the writer's `markStructural`; in-tab navigation calls `markVolatile`)
+- Test: `electron/workspace-layout-writer.test.ts` + `electron/browser-pane.test.ts` (the event→writer wiring)
 
-- [ ] **Step 1: Failing tests** — (a) assemble merges a shape DTO with main's per-pane `tabs[]` by `(sessionId, paneId)` into a `WorkspaceLayoutStore`; (b) writes are generation-ordered: a stale (lower-generation) snapshot submitted after a newer one is dropped (last-write-wins); (c) a structural change writes immediately while a navigation change debounces.
+- [ ] **Step 1: Failing tests** — (a) assemble merges a shape DTO with main's per-pane `tabs[]` by `(sessionId, paneId)` into a `WorkspaceLayoutStore`; (b) writes are generation-ordered: a stale (lower-generation) snapshot submitted after a newer one is dropped (last-write-wins); (c) a structural change writes immediately while a navigation change debounces; (d) **hydration guard:** while `hydrating` is set, both cadences suppress all writes (no save IPC fires); (e) a browser tab open/close/active-tab switch calls `markStructural` (immediate), in-tab navigation calls `markVolatile`.
 
 - [ ] **Step 2: Run, fail.**
 
-- [ ] **Step 3: Implement** — `WorkspaceLayoutWriter` holds the latest shape DTO + reads main's tab/history; `assemble()` joins by `(sessionId, paneId)`; a single in-order write queue stamps a monotonic generation and drops stale snapshots; `markStructural()` flushes immediately (awaited save IPC), `markVolatile()` debounces. Persists via the Task 5 `saveWorkspaceLayout` IPC.
+- [ ] **Step 3: Implement** — `WorkspaceLayoutWriter` holds the latest shape DTO + reads main's tab/history; `assemble()` joins by `(sessionId, paneId)`; a single in-order write queue stamps a monotonic generation and drops stale snapshots; `markStructural()` flushes immediately (awaited save IPC), `markVolatile()` debounces. **Hydration guard (spec §3.2/§5):** a `hydrating` flag suppresses all persistence — toggled via the controller's `beginHydration`/`endHydration` channels (Task 6), which the renderer brackets around restore (Task 15; `endHydration` always fires, even on partial failure, so suppression can't stick) — so restore-time pushes/events can't overwrite saved history with empty tabs. Browser-pane tab-lifecycle events (open/close/active-switch) call `markStructural`; in-tab navigation calls `markVolatile`. Persists via the Task 5 `saveWorkspaceLayout` IPC.
 
 - [ ] **Step 4: Green.**
 
@@ -391,7 +445,7 @@ fn save_then_load_round_trips_and_missing_loads_empty() {
 
 ---
 
-### Task 8: Window-close flush lifecycle (spec §3.2 durability flush)
+### Task 10: Window-close flush lifecycle (spec §3.2 durability flush)
 
 **Files:**
 
@@ -410,19 +464,19 @@ fn save_then_load_round_trips_and_missing_loads_empty() {
 
 ---
 
-### Task 9: Restore-mode browser-pane creation (spec §3.2 / §5)
+### Task 11: Restore-mode browser-pane creation (spec §3.2 / §5)
 
 **Files:**
 
-- Modify: `electron/browser-pane.ts` (`createBrowserPane`; `BrowserPaneCreateRequest` gains `restore?: true`)
+- Modify: `electron/browser-pane.ts` (`createBrowserPane`; `BrowserPaneCreateRequest` gains `restore?: true`; **scope the `render-process-gone` handler — ~`browser-pane.ts:1866` — to genuine teardown so views survive reload/crash for reconnect**)
 - Modify: `src/features/browser/types.ts` (`BrowserPaneCreateRequest.restore?: boolean`; `initialUrl` optional under restore)
 - Test: `electron/browser-pane.test.ts`
 
-- [ ] **Step 1: Failing tests** — (a) `createBrowserPane({restore:true})` (no `initialUrl`) creates one `WebContentsView` per persisted tab with fresh runtime tab ids and calls `navigationHistory.restore({index, entries})` (titles `null→''`) **before** any `loadURL`; (b) on `did-fail-load` the tab keeps its restored URL/history (no reset to `DEFAULT_BROWSER_URL`) and suppresses durable overwrite; a malformed payload defaults; (c) reload-reconnect: when a live view exists for `(sessionId, paneId)`, restore rebinds it (no new view, no `restore`); (d) a fresh `createBrowserPane({initialUrl})` still `loadURL`s.
+- [ ] **Step 1: Failing tests** — (a) `createBrowserPane({restore:true})` (no `initialUrl`) creates one `WebContentsView` per persisted tab with fresh runtime tab ids and calls `navigationHistory.restore({index, entries})` (titles `null→''`) **before** any `loadURL`; (b) on `did-fail-load` the tab keeps its restored URL/history (no reset to `DEFAULT_BROWSER_URL`) and suppresses durable overwrite; a malformed payload defaults; (c) reload-reconnect: when a live view exists for `(sessionId, paneId)`, restore rebinds it (no new view, no `restore`); (d) a fresh `createBrowserPane({initialUrl})` still `loadURL`s; (e) on renderer reload/crash (`render-process-gone`) the browser view + owner record **survive** (not disposed), so (c) can rebind them.
 
 - [ ] **Step 2: Run, fail.**
 
-- [ ] **Step 3: Implement** — discriminated request; restore branch reads repaired `tabs` from the in-memory loaded store (served by main), creates per-tab views + ids, restores history before load, marks active tab, seeds `nextTabIndex`; best-effort per-pane with a per-pane timeout; reconnect to live views; malformed-vs-load-failure handling.
+- [ ] **Step 3: Implement** — discriminated request; restore branch reads repaired `tabs` from the in-memory loaded store (served by main), creates per-tab views + ids, restores history before load, marks active tab, seeds `nextTabIndex`; best-effort per-pane with a per-pane timeout; reconnect to live views; malformed-vs-load-failure handling. **Scope the `render-process-gone` handler so it does not dispose browser views/owner records on renderer reload/crash** — only on genuine pane teardown — so live tab state survives for reconnect.
 
 - [ ] **Step 4: Green.**
 
@@ -432,7 +486,29 @@ fn save_then_load_round_trips_and_missing_loads_empty() {
 
 ## Phase C — Renderer (base: #290 + browser-pane-redesign)
 
-### Task 10: Shape-only DTO push (renderer → main) (spec §3.2)
+### Task 12: Decouple browser identity — `browserSessionIdForSession()` → `session.id` (spec §2.1)
+
+**Files:**
+
+- Modify: the `browserSessionIdForSession()` helper + `Session` type (`src/features/sessions/types/index.ts` — remove `browserSessionId`) + its assignment sites (session creation, `src/features/sessions/utils/sessionFromInfo.ts`)
+- Modify: `src/features/browser/components/BrowserPane.tsx` + `SplitView` (use `session.id` as the browser IPC `sessionId`)
+- Test: the affected siblings' `.test.ts`
+
+Load-bearing prerequisite for browser-only restore + cookie continuity (spec §2.1): the partition/reconnect key must derive from `session.id`, not the first shell's stale ptyId.
+
+- [ ] **Step 1: Failing tests** — (a) `browserSessionIdForSession(session)` returns `session.id` for shell-backed, mixed, and browser-only sessions; (b) `Session` no longer carries `browserSessionId` (type + creation + `sessionFromInfo`); (c) a browser pane's IPC `sessionId` == `session.id`, so the partition is `persist:vimeflow-browser:${projectId}:${session.id}`.
+
+- [ ] **Step 2: Run, fail** — `npx vitest run src/features/sessions/utils/` (the helper + `sessionFromInfo` tests).
+
+- [ ] **Step 3: Implement** — `browserSessionIdForSession()` returns `session.id` unconditionally; drop the `Session.browserSessionId` field + all assignments; update `BrowserPane.tsx`/`SplitView` to pass `session.id`. No user migration (spec §2.1 — browser panes are not in `main`).
+
+- [ ] **Step 4: Green.**
+
+- [ ] **Step 5: Commit** — `refactor(browser): derive browser identity from session.id`
+
+---
+
+### Task 13: Shape-only DTO push (renderer → main) (spec §3.2)
 
 **Files:**
 
@@ -451,7 +527,7 @@ fn save_then_load_round_trips_and_missing_loads_empty() {
 
 ---
 
-### Task 11: `setActiveSessionId` browser-capable (spec §4)
+### Task 14: `setActiveSessionId` browser-capable (spec §4)
 
 **Files:**
 
@@ -470,19 +546,19 @@ fn save_then_load_round_trips_and_missing_loads_empty() {
 
 ---
 
-### Task 12: Store-driven restore reconstruction + hydration guard (spec §5 / §3.2)
+### Task 15: Store-driven restore reconstruction (spec §5 / §3.2)
 
 **Files:**
 
 - Modify: `src/features/sessions/utils/groupSessionsFromInfos.ts` (extend #290's reconstruction to be store-driven)
-- Modify: `src/features/sessions/hooks/useSessionRestore.ts` (renderer-initiated load with project context; restore-pending set; hydration guard)
+- Modify: `src/features/sessions/hooks/useSessionRestore.ts` (renderer-initiated load with project context; restore-pending set; signals main hydration start/complete)
 - Test: both siblings' `.test.ts`
 
-- [ ] **Step 1: Failing tests** — (a) store-driven reconstruction builds shell-only, mixed, and browser-only sessions; (b) a live PTY absent from the store is still reconstructed #290-style (never dropped); store absent → pure PTY fallback; (c) a shell pane's PTY alive → reattach, absent → restartable placeholder seeded with `cwd`/`agentType`; (d) the persisted `active` session is selected via the browser-capable `setActiveSessionId`; (e) restore is renderer-initiated with `projectId`/`workingDirectory`; (f) writes are suppressed until every restore pane settles (hydration guard).
+- [ ] **Step 1: Failing tests** — (a) store-driven reconstruction builds shell-only, mixed, and browser-only sessions; (b) a live PTY absent from the store is still reconstructed #290-style (never dropped); store absent → pure PTY fallback; (c) a shell pane's PTY alive → reattach, absent → restartable placeholder seeded with `cwd`/`agentType`; (d) the persisted `active` session is selected via the browser-capable `setActiveSessionId`; (e) restore is renderer-initiated with `projectId`/`workingDirectory`; (f) restore **signals main to begin hydration** at start and signals **completion** once every restore pane has settled (the write-suppression itself lives in main's writer, Task 9 — not here).
 
 - [ ] **Step 2: Run, fail.**
 
-- [ ] **Step 3: Implement** — per spec §5: iterate the store as the shape source, overlay live PTYs by `ptyId` (union), trigger browser panes via the restore-pending set → `createBrowserPane({restore:true})`, activate the persisted-active session, gate writes with the hydration guard (settle = resolved/rejected/timed-out).
+- [ ] **Step 3: Implement** — per spec §5: iterate the store as the shape source, overlay live PTYs by `ptyId` (union), trigger browser panes via the restore-pending set → `createBrowserPane({restore:true})`, activate the persisted-active session, and **signal main's hydration guard (Task 9)** at restore start + on settle (settle = resolved/rejected/timed-out). The write-suppression lives in the main writer, not the renderer.
 
 - [ ] **Step 4: Green.**
 
@@ -490,15 +566,15 @@ fn save_then_load_round_trips_and_missing_loads_empty() {
 
 ---
 
-### Task 13: `createBrowserSession()` (browser-only from scratch) (spec §6.2)
+### Task 16: `createBrowserSession()` (browser-only from scratch) (spec §6.2)
 
 **Files:**
 
 - Modify: `src/features/sessions/hooks/useSessionManager.ts` (add `createBrowserSession`)
 - Modify: `src/features/command-palette/*` (a `:new-browser` command)
-- Test: `src/features/sessions/hooks/useSessionManager.test.ts`
+- Test: `src/features/sessions/hooks/useSessionManager.test.ts` + the command-palette command's sibling `.test.ts`
 
-- [ ] **Step 1: Failing test** — `createBrowserSession()` builds a single-pane session with one runtime browser `Pane` (`kind:'browser'`, `ptyId:'browser:<uuid>'`, `agentType:'generic'`, `status:'running'`, active), **no `service.spawn`**, and invokes `createBrowserPane({initialUrl: DEFAULT_BROWSER_URL})`; the session is selectable.
+- [ ] **Step 1: Failing tests** — (a) `createBrowserSession()` builds a single-pane session with one runtime browser `Pane` (`kind:'browser'`, `ptyId:'browser:<uuid>'`, `agentType:'generic'`, `status:'running'`, active), **no `service.spawn`**, and invokes `createBrowserPane({initialUrl: DEFAULT_BROWSER_URL})`; the session is selectable. (b) **the `:new-browser` palette command is registered and, when invoked, calls `createBrowserSession()`** (proving the spec's primary entry point, not just the underlying function).
 
 - [ ] **Step 2: Run, fail.**
 
@@ -510,7 +586,7 @@ fn save_then_load_round_trips_and_missing_loads_empty() {
 
 ---
 
-### Task 14: Session status for mixed/browser-only (spec §5 "Restored session status")
+### Task 17: Session status for mixed/browser-only (spec §5 "Restored session status")
 
 **Files:**
 
@@ -529,14 +605,16 @@ fn save_then_load_round_trips_and_missing_loads_empty() {
 
 ---
 
-### Task 15: Retire the legacy localStorage browser cache + migration gate (spec §3.4)
+### Task 18: Retire the legacy localStorage browser cache + migration gate (spec §3.4)
 
 **Files:**
 
 - Modify: `src/features/sessions/hooks/useSessionManager.ts` (delete `readStoredBrowserPanes` / `writeStoredBrowserPanesJson` / `storedBrowserPanesForSessions` / `restoreStoredBrowserPanes` / `BROWSER_PANE_STORE_KEY`)
 - Test: `src/features/sessions/hooks/useSessionManager.test.ts`
 
-- [ ] **Step 1: Failing/again-green test** — the unified store is the only browser persistence; `vimeflow:browser-panes:v1` is no longer written. If the release gate (§3.4/§7) requires migration, add a one-time renderer read of `vimeflow:browser-panes:v1` → main migration payload → clear key (the single shape-only-rule exception), tested once.
+- [ ] **Step 0: Preflight gate decision (record it)** — determine whether `feat/browser-pane-redesign` has reached users with the localStorage cache. **No →** remove outright (branch A). **Yes →** the read-migrate is **required** before deleting the key (branch B). Write the decision into the PR description; do not leave it to runtime guesswork.
+
+- [ ] **Step 1: Failing/again-green test** — the unified store is the only browser persistence; `vimeflow:browser-panes:v1` is no longer written. **Branch B only:** a one-time renderer read of `vimeflow:browser-panes:v1` → main migration payload → clear key (the single shape-only-rule exception), with a test proving the migrate-then-clear order.
 
 - [ ] **Step 2: Run, fail/observe.**
 
@@ -550,7 +628,7 @@ fn save_then_load_round_trips_and_missing_loads_empty() {
 
 ## Phase D — Integration & verification
 
-### Task 16: Round-trip integration + gates
+### Task 19: Round-trip integration + gates
 
 **Files:**
 
@@ -566,7 +644,7 @@ fn save_then_load_round_trips_and_missing_loads_empty() {
 
 ```bash
 npm run lint && npm run type-check && npm run test
-cargo test -p vimeflow-backend
+cargo test -p vimeflow
 npm run format:check
 ```
 
