@@ -63,9 +63,12 @@ Worker credentials:
 - optional `OPENAI_API_KEY`, sourced from
   `/vimeflow/qa-runner/prod/worker/openai-api-key`, for generic OpenAI SDK or
   provider usage outside `codex exec`
+- optional `KIMI_API_KEY`, sourced from
+  `/vimeflow/qa-runner/prod/worker/KIMI-API-KEY` or
+  `/vimeflow/qa-runner/prod/worker/KIMI_API_KEY`, for Kimi CLI API-mode auth on
+  clean burst workers
 - `/vimeflow/qa-runner/prod/worker/OPENAPI-API-KEY` is a legacy typo parameter
   and is not read by the bootstrap scripts.
-- Kimi Code auth
 - GitHub CLI auth for the fixer account
 - Lifeline installation/config
 
@@ -89,8 +92,9 @@ files. They do not print secret values.
 On the worker, `worker-env-from-ssm.sh` also writes
 `/etc/vimeflow/qa-runner/worker.env` with `0600` permissions. `worker-cycle.js`
 loads that local file before running `run.js --push`, so `CODEX_HOME` points
-`codex exec` at the root-owned cached API-key login without including the raw API
-key in SSM command arguments or repo-controlled process environments.
+`codex exec` at the root-owned cached API-key login and `KIMI_API_KEY` is scoped
+to the worker process without including raw API keys in SSM command arguments or
+repo-controlled process environments.
 
 ## Control Daemon Mode
 

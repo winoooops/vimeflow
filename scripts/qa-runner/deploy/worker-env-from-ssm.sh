@@ -60,6 +60,14 @@ if [ -z "$openai_api_key" ]; then
   openai_api_key="$(single_line_optional_value openai-api-key)" || exit 1
 fi
 
+kimi_api_key="${KIMI_API_KEY:-}"
+if [ -z "$kimi_api_key" ]; then
+  kimi_api_key="$(single_line_optional_value KIMI-API-KEY)" || exit 1
+fi
+if [ -z "$kimi_api_key" ]; then
+  kimi_api_key="$(single_line_optional_value KIMI_API_KEY)" || exit 1
+fi
+
 {
   cat <<EOF
 AWS_REGION=$region
@@ -67,6 +75,7 @@ AWS_DEFAULT_REGION=$region
 CODEX_HOME=$codex_home
 EOF
   write_env_line OPENAI_API_KEY "$openai_api_key"
+  write_env_line KIMI_API_KEY "$kimi_api_key"
   write_env_line LINEAR_CLIENT_ID "$(single_line_value LINEAR_CLIENT_ID)"
   write_env_line LINEAR_CLIENT_SECRET "$(single_line_value LINEAR_CLIENT_SECRET)"
   write_env_line LINEAR_SCOPES "read,write"
