@@ -24,14 +24,7 @@ export const LIQUID_DEFAULTS = {
 
 export type LiquidTune = { [K in keyof typeof LIQUID_DEFAULTS]: number }
 
-type Signal =
-  | 'tilt'
-  | 'amp'
-  | 'shiftX'
-  | 'lift'
-  | 'skew'
-  | 'sheenX'
-  | 'sheenA'
+type Signal = 'tilt' | 'amp' | 'shiftX' | 'lift' | 'skew' | 'sheenX' | 'sheenA'
 
 type SignalState = Record<Signal, number>
 
