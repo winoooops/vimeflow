@@ -67,7 +67,7 @@ export interface TerminalZoneProps {
   onScratch?: (target: ScratchTarget) => void
   /** Pane-keys with a running scratch shell — drives the §8 cue. */
   runningScratchPaneKeys?: ReadonlySet<string>
-  /** Pane-keys with a foreground command running — drives the mint dot (VIM-71). */
+  /** Pane-keys with a foreground command running — drives the amber button tint (VIM-71). */
   activeScratchPaneKeys?: ReadonlySet<string>
 }
 

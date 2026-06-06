@@ -77,7 +77,7 @@ export interface UseScratchTerminals {
   runningByPane: ReadonlyMap<string, ScratchStatus>
   /**
    * Scratch shells with a foreground command actually running, keyed by
-   * `${sessionId}:${paneId}` (VIM-71). Drives the honest mint "running" dot —
+   * `${sessionId}:${paneId}` (VIM-71). Drives the amber button tint —
    * distinct from `runningByPane`, which only means a shell exists.
    */
   activeByPane: ReadonlyMap<string, boolean>
@@ -320,7 +320,7 @@ export const useScratchTerminals = ({
   // Live "running" cue (VIM-71): the backend polls each scratch shell's
   // foreground process group and emits `scratch-foreground` when a command
   // starts or finishes. Mirror it onto the matching entry's `active` flag,
-  // which drives the mint dot. Same async-subscribe / sync-cleanup shape as
+  // which drives the amber button tint. Same async-subscribe / sync-cleanup shape as
   // the self-exit effect above.
   useEffect(() => {
     const subscription: { cancelled: boolean; off: (() => void) | null } = {

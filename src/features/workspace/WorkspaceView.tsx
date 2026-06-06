@@ -686,7 +686,7 @@ export const WorkspaceView = (): ReactElement => {
     [runningScratchByPane]
   )
 
-  // Pane-keys with a foreground command running — drives the mint live-dot (VIM-71).
+  // Pane-keys with a foreground command running — drives the amber button tint (VIM-71).
   const activeScratchPaneKeys = useMemo(
     () =>
       new Set(

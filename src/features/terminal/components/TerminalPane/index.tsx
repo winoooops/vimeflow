@@ -44,7 +44,7 @@ export interface TerminalPaneProps {
   onRequestActive?: (sessionId: string, paneId: string) => void
   /** Pane-keys (`${sessionId}:${paneId}`) with a running scratch — §8 cue. */
   runningScratchPaneKeys?: ReadonlySet<string>
-  /** Pane-keys with a foreground command running — drives the mint dot (VIM-71). */
+  /** Pane-keys with a foreground command running — drives the amber button tint (VIM-71). */
   activeScratchPaneKeys?: ReadonlySet<string>
   onCwdChange?: (cwd: string) => void
   onRestart?: (sessionId: string) => void
