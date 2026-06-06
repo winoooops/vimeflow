@@ -231,15 +231,17 @@ QA_WORKER_IDLE_STOP_SECONDS=2100
 
 With `QA_WORKER_BURST=1`, the dispatcher starts a stopped worker instance,
 waits until EC2 reports `running`, then retries the actual SSM fixer command
-until the target accepts it. With `QA_WORKER_STOP_AFTER_RUN=1`, a standalone
-dispatch calls `ec2 stop-instances` after the worker command reaches a terminal
-SSM status. Under the daemon, queued or concurrent work adds
-`QA_WORKER_KEEP_ALIVE=1` to the fixer contract so the worker stays warm while
-there is backlog; when the queue drains, the daemon waits
+until the target accepts it. With `QA_WORKER_STOP_AFTER_RUN=1`, the daemon owns
+the stop decision for SSM burst workers: it always sends
+`QA_WORKER_KEEP_ALIVE=1` to the fixer contract so the dispatch layer never stops
+the instance from a stale job-claim snapshot. When the queue drains, the daemon waits
 `QA_WORKER_IDLE_STOP_SECONDS` and then performs a best-effort stop. The default
 35 minute grace keeps the worker warm through slow CI/Claude review rounds
 without keeping it alive indefinitely. A stop failure is only logged as a
 warning; the dispatcher still exits with the real fixer result.
+
+Standalone `dispatch-worker.js` runs can still stop after their command reaches
+a terminal SSM status unless they explicitly pass keep-alive.
 
 Spot workers should use the same SSM dispatch path. For the first realistic
 smoke, prefer a reusable EBS-backed Spot worker whose credentials are

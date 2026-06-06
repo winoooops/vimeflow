@@ -20,6 +20,7 @@ import { execFileSync, spawn, spawnSync } from 'node:child_process'
 import {
   existsSync,
   mkdirSync,
+  readFileSync,
   readdirSync,
   rmSync,
   symlinkSync,
@@ -236,22 +237,61 @@ const kimiModelArgs = () => {
   return ['-m', KIMI_DEFAULT_MODEL]
 }
 
-const run = async (pr, live) => {
-  mkdirSync(LOCK_DIR, { recursive: true })
-  const lock = join(LOCK_DIR, `pr-${pr}.lock`)
+const lockOwnerIsActiveRunner = (pid) => {
+  if (!(pid > 0)) {
+    return false
+  }
+
+  try {
+    process.kill(pid, 0)
+  } catch (e) {
+    return e.code === 'EPERM'
+  }
+
+  try {
+    return readFileSync(`/proc/${pid}/cmdline`, 'utf8').includes('run.js')
+  } catch {
+    return true
+  }
+}
+
+const reapStaleLock = (lock) => {
+  let pid = 0
+  try {
+    pid = Number((readFileSync(lock, 'utf8').match(/pid (\d+)/) || [])[1])
+  } catch {
+    return true
+  }
+  if (lockOwnerIsActiveRunner(pid)) {
+    return false
+  }
+  rmSync(lock, { force: true })
+
+  return true
+}
+
+const acquireLock = (lock, pr) => {
   try {
     writeFileSync(lock, `pid ${process.pid}\n`, { flag: 'wx' })
+
+    return
   } catch (e) {
+    if (e.code === 'EEXIST' && reapStaleLock(lock)) {
+      writeFileSync(lock, `pid ${process.pid}\n`, { flag: 'wx' })
+
+      return
+    }
     if (e.code === 'EEXIST') {
       die(`PR #${pr} locked (run in flight). rm ${lock} to override.`, 3)
     }
-    try {
-      unlinkSync(lock)
-    } catch {
-      /* lock may not exist */
-    }
     throw e
   }
+}
+
+const run = async (pr, live) => {
+  mkdirSync(LOCK_DIR, { recursive: true })
+  const lock = join(LOCK_DIR, `pr-${pr}.lock`)
+  acquireLock(lock, pr)
   try {
     const bot = loadBot(SCRIPT_DIR, 'bot.env', 'GH_BOT')
     const ghEnv = bot ? { env: { ...process.env, ...botEnv(bot) } } : {}

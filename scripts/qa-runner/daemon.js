@@ -43,15 +43,15 @@ const deprecatedApproveEnvSet = ['1', 'true', 'yes', 'on'].includes(
 
 const queueHasWork = () => queue.depth() > 0 || queue.inFlight().length > 0
 
-const shouldKeepBurstWorkerAlive = () =>
-  queue.depth() > 0 || queue.inFlight().length > 1
-
 const canStopIdleBurstWorker = () =>
   workerDispatchConfig.mode === 'ssm' &&
   workerDispatchConfig.burst &&
   workerDispatchConfig.stopAfterRun &&
   workerDispatchConfig.instanceId &&
   workerDispatchConfig.region
+
+const shouldKeepBurstWorkerAlive = () =>
+  canStopIdleBurstWorker() || queue.depth() > 0 || queue.inFlight().length > 1
 
 const cancelIdleStop = () => {
   if (!idleStopTimer) {
@@ -115,6 +115,9 @@ const worker = async (id) => {
       continue
     }
     cancelIdleStop()
+    // For daemon-owned SSM burst workers, every dispatch must stay warm and let
+    // the daemon's idle timer decide when to stop. A job-claim snapshot goes
+    // stale during long fixer runs, so per-dispatch stop decisions are too early.
     const keepWorkerAlive = shouldKeepBurstWorkerAlive()
     try {
       const outcome = await runOne(job.pr, job.reason, {
