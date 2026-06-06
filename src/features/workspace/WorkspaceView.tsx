@@ -958,10 +958,12 @@ export const WorkspaceView = (): ReactElement => {
         : agentStatus.isActive && activityPanelStatus === 'running'
           ? 'running'
           : 'idle'
+
   // A pure shell pane has no detected agent (and therefore no model / usage);
   // the card renders its fixed-height "SHELL" placeholder in that case so the
   // session list below never reflows when switching panes.
-  const sidebarCardIsShell = !agentStatus.agentType || !agentStatus.isActive || agentStatus.agentExited
+  const sidebarCardIsShell =
+    !agentStatus.agentType || !agentStatus.isActive || agentStatus.agentExited
 
   // Card title is the active agent's model name (the old StatusCard surfaced
   // the model — the fused card now uses it as the title). Falls back to the
