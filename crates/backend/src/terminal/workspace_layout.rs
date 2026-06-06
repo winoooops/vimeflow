@@ -742,4 +742,53 @@ mod tests {
         assert_eq!(loaded.sessions.len(), 1);
         assert_eq!(loaded.sessions[0].id, "s");
     }
+
+    #[test]
+    fn clear_all_leaves_workspace_layouts_intact() {
+        use crate::terminal::cache::SessionCache;
+        let dir = tempfile::tempdir().unwrap();
+        let sessions_path = dir.path().join("sessions.json");
+        let layouts_path = dir.path().join("workspace-layouts.json");
+
+        // Populate the PTY session cache (sessions.json).
+        let sc = SessionCache::load(sessions_path.clone()).unwrap();
+        sc.mutate(|d| {
+            d.session_order.push("a".into());
+            Ok(())
+        })
+        .unwrap();
+        assert!(sessions_path.exists());
+
+        // Populate the durable workspace-layout store (workspace-layouts.json).
+        let wc = WorkspaceLayoutCache::new(layouts_path.clone());
+        wc.save(&WorkspaceLayoutStore {
+            version: CURRENT_WORKSPACE_LAYOUT_VERSION,
+            sessions: vec![WorkspaceSession {
+                id: "s".into(),
+                project_id: "proj".into(),
+                layout: "single".into(),
+                working_directory: "/".into(),
+                active: true,
+                panes: vec![WorkspacePane::Shell(ShellPane {
+                    pane_id: "p0".into(),
+                    pane_index: 0,
+                    active: true,
+                    pty_id: "x".into(),
+                    cwd: "/".into(),
+                    agent_type: "generic".into(),
+                    agent_session_id: None,
+                })],
+            }],
+        })
+        .unwrap();
+        assert!(layouts_path.exists());
+
+        // The durability invariant: clear_all wipes sessions.json but NOT
+        // workspace-layouts.json.
+        sc.clear_all().unwrap();
+        assert!(sc.snapshot().session_order.is_empty()); // sessions.json wiped
+        assert!(layouts_path.exists()); // workspace-layouts.json untouched
+        let reloaded = WorkspaceLayoutCache::new(layouts_path).load("proj", "/");
+        assert_eq!(reloaded.sessions.len(), 1); // content intact
+    }
 }
