@@ -35,6 +35,7 @@ describe('CodeEditor', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    mockEditorView.state.selection.ranges = [{ from: 0, to: 0, empty: true }]
 
     mockUseCodeMirror.mockReturnValue({
       editorView: mockEditorView,
