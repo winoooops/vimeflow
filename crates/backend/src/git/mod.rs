@@ -1024,6 +1024,8 @@ fn decode_git_patch_path(path: &str) -> String {
 
         match escaped {
             '0'..='7' => {
+                let mut octal_escape = String::with_capacity(3);
+                octal_escape.push(escaped);
                 let mut value = escaped.to_digit(8).unwrap_or(0) as u16;
                 for _ in 0..2 {
                     let Some(next) = chars.peek().copied() else {
@@ -1032,10 +1034,16 @@ fn decode_git_patch_path(path: &str) -> String {
                     let Some(digit) = next.to_digit(8) else {
                         break;
                     };
+                    octal_escape.push(next);
                     value = (value * 8) + digit as u16;
                     chars.next();
                 }
-                bytes.push(value as u8);
+                if let Ok(byte) = u8::try_from(value) {
+                    bytes.push(byte);
+                } else {
+                    bytes.push(b'\\');
+                    bytes.extend_from_slice(octal_escape.as_bytes());
+                }
             }
             'a' => bytes.push(0x07),
             'b' => bytes.push(0x08),
@@ -1047,6 +1055,7 @@ fn decode_git_patch_path(path: &str) -> String {
             '\\' => bytes.push(b'\\'),
             '"' => bytes.push(b'"'),
             other => {
+                bytes.push(b'\\');
                 let mut buf = [0; 4];
                 bytes.extend_from_slice(other.encode_utf8(&mut buf).as_bytes());
             }
@@ -2453,6 +2462,22 @@ rename to "new\nname.txt"
     #[test]
     fn test_decode_git_patch_path_handles_octal_utf8() {
         assert_eq!(decode_git_patch_path(r#""caf\303\251.txt""#), "café.txt");
+    }
+
+    #[test]
+    fn test_decode_git_patch_path_preserves_unknown_escape_backslash() {
+        assert_eq!(
+            decode_git_patch_path(r#""dir\qfile.txt""#),
+            r"dir\qfile.txt"
+        );
+    }
+
+    #[test]
+    fn test_decode_git_patch_path_preserves_octal_overflow_escape() {
+        assert_eq!(
+            decode_git_patch_path(r#""bad\400path.txt""#),
+            r"bad\400path.txt"
+        );
     }
 
     #[test]
