@@ -234,6 +234,13 @@ smoke, prefer a reusable EBS-backed Spot worker whose credentials are
 materialized from SSM at bootstrap time, not a private AMI made from a live
 worker disk that already contains auth caches.
 
+Use `scripts/qa-runner/deploy/worker-spot-user-data.sh` as the clean Spot worker
+bootstrap user-data. For branch smoke tests, set `QA_RUNNER_REF` to the runner
+branch under test; for production, leave it at the default `wip/linear-wiring`.
+The script installs Node 22, GitHub CLI, Codex CLI, Kimi CLI, `libsecret`, the
+Vimeflow repo, Lifeline skills, worker env files from SSM, and project npm
+dependencies.
+
 ## Worker Cycle Entrypoint
 
 On the worker, `worker-cycle.js` loads the local worker env, optionally refreshes
