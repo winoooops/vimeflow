@@ -203,6 +203,26 @@ The dispatcher calls `AWS-RunShellScript`, waits for the command invocation, the
 exits with the worker command response code. The SSM payload contains only the
 non-secret fixer variables and structured `QA_FIX_CONTEXT`.
 
+For burst workers that are stopped between PR fix cycles, enable the lifecycle
+wrapper on the control host:
+
+```bash
+QA_WORKER_BURST=1
+QA_WORKER_STOP_AFTER_RUN=1
+QA_WORKER_READY_TIMEOUT_SECONDS=900
+```
+
+With `QA_WORKER_BURST=1`, the dispatcher starts a stopped worker instance,
+waits until EC2 reports `running` and SSM reports `Online`, then sends the fixer
+command. With `QA_WORKER_STOP_AFTER_RUN=1`, it calls `ec2 stop-instances` after
+the worker command reaches a terminal SSM status. A stop failure is only logged
+as a warning; the dispatcher still exits with the real fixer result.
+
+Spot workers should use the same SSM dispatch path. For the first realistic
+smoke, prefer a reusable EBS-backed Spot worker whose credentials are
+materialized from SSM at bootstrap time, not a private AMI made from a live
+worker disk that already contains auth caches.
+
 ## Worker Cycle Entrypoint
 
 On the worker, `worker-cycle.js` loads the local worker env, optionally refreshes

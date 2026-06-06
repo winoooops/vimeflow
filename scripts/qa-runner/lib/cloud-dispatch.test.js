@@ -3,11 +3,13 @@ import { afterEach, describe, expect, test, vi } from 'vitest'
 import {
   cycleEnv,
   dispatchConfig,
+  ensureSsmWorkerReady,
   localDispatchPlan,
   remoteCycleCommand,
   runSsmDispatch,
   shellQuote,
   sshDispatchPlan,
+  stopSsmWorkerBestEffort,
   ssmSendCommandArgs,
   workerCycleScript,
 } from './cloud-dispatch.js'
@@ -140,6 +142,20 @@ describe('dispatchConfig', () => {
       '-o',
       'ConnectTimeout=5',
     ])
+  })
+
+  test('parses burst worker lifecycle flags', () => {
+    expect(
+      dispatchConfig({
+        QA_WORKER_BURST: '1',
+        QA_WORKER_STOP_AFTER_RUN: 'true',
+        QA_WORKER_READY_TIMEOUT_SECONDS: '900',
+      })
+    ).toMatchObject({
+      burst: true,
+      stopAfterRun: true,
+      readyTimeoutSeconds: 900,
+    })
   })
 })
 
@@ -343,5 +359,179 @@ describe('runSsmDispatch', () => {
     expect(stderr.write).toHaveBeenCalledWith(
       expect.stringContaining('AccessDeniedException')
     )
+  })
+
+  test('starts a stopped burst worker before SSM dispatch and stops it after success', async () => {
+    const mockSpawn = makeMockSpawn([
+      {
+        stdout: JSON.stringify({
+          Reservations: [{ Instances: [{ State: { Name: 'stopped' } }] }],
+        }),
+      },
+      { stdout: JSON.stringify({ StartingInstances: [] }) },
+      {
+        stdout: JSON.stringify({
+          Reservations: [{ Instances: [{ State: { Name: 'pending' } }] }],
+        }),
+      },
+      {
+        stdout: JSON.stringify({
+          Reservations: [{ Instances: [{ State: { Name: 'running' } }] }],
+        }),
+      },
+      {
+        stdout: JSON.stringify({
+          InstanceInformationList: [
+            { InstanceId: 'i-burst', PingStatus: 'Online' },
+          ],
+        }),
+      },
+      {
+        stdout: JSON.stringify({ Command: { CommandId: 'cmd-burst' } }),
+      },
+      {
+        stdout: JSON.stringify({
+          Status: 'Success',
+          ResponseCode: 0,
+          StandardOutputContent: 'fixed\n',
+          StandardErrorContent: '',
+        }),
+      },
+      { stdout: JSON.stringify({ StoppingInstances: [] }) },
+    ])
+    const stdout = { write: vi.fn() }
+    const stderr = { write: vi.fn() }
+
+    const result = await runSsmDispatch({
+      instanceId: 'i-burst',
+      region: 'us-west-1',
+      repo: '/srv/vimeflow',
+      env: { QA_PR: '361' },
+      timeoutSeconds: 30,
+      burst: true,
+      stopAfterRun: true,
+      readyTimeoutSeconds: 60,
+      stdout,
+      stderr,
+      spawnImpl: mockSpawn,
+      pollIntervalMs: 1,
+    })
+
+    expect(result).toEqual({ code: 0, signal: null })
+    expect(mockSpawn.mock.calls.map(([, args]) => args.slice(0, 2))).toEqual([
+      ['ec2', 'describe-instances'],
+      ['ec2', 'start-instances'],
+      ['ec2', 'describe-instances'],
+      ['ec2', 'describe-instances'],
+      ['ssm', 'describe-instance-information'],
+      ['ssm', 'send-command'],
+      ['ssm', 'get-command-invocation'],
+      ['ec2', 'stop-instances'],
+    ])
+
+    expect(stdout.write).toHaveBeenCalledWith(
+      'worker i-burst: starting stopped instance\n'
+    )
+
+    expect(stdout.write).toHaveBeenCalledWith(
+      'worker i-burst: running and SSM online\n'
+    )
+    expect(stdout.write).toHaveBeenCalledWith('fixed\n')
+  })
+
+  test('preserves worker exit code when best-effort stop fails', async () => {
+    const mockSpawn = makeMockSpawn([
+      {
+        stdout: JSON.stringify({
+          Reservations: [{ Instances: [{ State: { Name: 'running' } }] }],
+        }),
+      },
+      {
+        stdout: JSON.stringify({
+          InstanceInformationList: [
+            { InstanceId: 'i-burst', PingStatus: 'Online' },
+          ],
+        }),
+      },
+      {
+        stdout: JSON.stringify({ Command: { CommandId: 'cmd-burst' } }),
+      },
+      {
+        stdout: JSON.stringify({
+          Status: 'Failed',
+          ResponseCode: 9,
+          StandardOutputContent: '',
+          StandardErrorContent: 'worker failed\n',
+        }),
+      },
+      {
+        code: 255,
+        stderr: 'stop denied',
+      },
+    ])
+    const stdout = { write: vi.fn() }
+    const stderr = { write: vi.fn() }
+
+    const result = await runSsmDispatch({
+      instanceId: 'i-burst',
+      region: 'us-west-1',
+      repo: '/srv/vimeflow',
+      env: { QA_PR: '361' },
+      timeoutSeconds: 30,
+      burst: true,
+      stopAfterRun: true,
+      stdout,
+      stderr,
+      spawnImpl: mockSpawn,
+      pollIntervalMs: 1,
+    })
+
+    expect(result).toEqual({ code: 9, signal: null })
+    expect(stderr.write).toHaveBeenCalledWith('worker failed\n')
+    expect(stderr.write).toHaveBeenCalledWith(
+      expect.stringContaining('warning: failed to stop worker i-burst')
+    )
+  })
+})
+
+describe('burst worker helpers', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  test('fails readiness when the worker reaches a terminal instance state', async () => {
+    const mockSpawn = makeMockSpawn([
+      {
+        stdout: JSON.stringify({
+          Reservations: [{ Instances: [{ State: { Name: 'terminated' } }] }],
+        }),
+      },
+    ])
+
+    await expect(
+      ensureSsmWorkerReady({
+        instanceId: 'i-gone',
+        region: 'us-west-1',
+        timeoutSeconds: 1,
+        pollIntervalMs: 1,
+        stdout: { write: vi.fn() },
+        spawnImpl: mockSpawn,
+      })
+    ).rejects.toThrow('worker i-gone cannot be started')
+  })
+
+  test('returns the stop-instances result for direct best-effort calls', async () => {
+    const mockSpawn = makeMockSpawn([
+      { stdout: JSON.stringify({ StoppingInstances: [] }) },
+    ])
+
+    await expect(
+      stopSsmWorkerBestEffort({
+        instanceId: 'i-burst',
+        region: 'us-west-1',
+        stderr: { write: vi.fn() },
+        spawnImpl: mockSpawn,
+      })
+    ).resolves.toMatchObject({ code: 0 })
   })
 })

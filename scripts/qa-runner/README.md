@@ -233,6 +233,11 @@ supports:
 - `QA_WORKER_MODE=ssh` for an already-running worker reachable by SSH.
 - `QA_WORKER_MODE=ssm` for AWS Systems Manager `AWS-RunShellScript` dispatch with
   no inbound SSH.
+- `QA_WORKER_BURST=1` for SSM workers that may be stopped between fix cycles.
+  The dispatcher starts the instance when needed, waits for EC2 `running` plus
+  SSM `Online`, then sends the worker command.
+- `QA_WORKER_STOP_AFTER_RUN=1` stops the SSM worker after the command completes.
+  Stop failures are logged as warnings and do not replace the fixer exit code.
 
 The remote side runs `worker-cycle.js`, which maps the daemon's environment
 contract into one `run.js <PR> --push` fixer pass. It never arms approval; the
