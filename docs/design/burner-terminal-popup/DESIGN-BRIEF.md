@@ -1,8 +1,8 @@
-# Scratch Terminal Popup — Design Brief
+# Burner Terminal Popup — Design Brief
 
-Design brief for the ephemeral, throwaway per-pane scratch terminal popup.
+Design brief for the ephemeral, throwaway per-pane burner terminal popup.
 
-- **Tracking issue:** [VIM-53](https://linear.app/vimeflow/issue/VIM-53/featterminal-ephemeral-per-pane-scratch-terminal-popup-ctrl-then) — `feat(terminal): ephemeral per-pane scratch terminal popup (Ctrl+: then backtick)`
+- **Tracking issue:** [VIM-53](https://linear.app/vimeflow/issue/VIM-53/featterminal-ephemeral-per-pane-burner-terminal-popup-ctrl-then) — `feat(terminal): ephemeral per-pane burner terminal popup (Ctrl+: then backtick)`
 - **Status:** design pre-requisite — to be mocked before PR 1. UI is **not decided**.
 - **Why this exists:** the popup's visuals are undecided; this brief is the handoff prompt for a design pass (hand-built HTML mockup in the Obsidian Lens system, rendered in-browser and iterated), so PR 1 has a real visual contract to build against — the same way the Settings dialog handoff bundle worked.
 
@@ -14,7 +14,7 @@ Paste the prompt block below into a Claude Code session that already has this ap
 
 ```
 Design task — NOT implementation. Produce a standalone, throwaway HTML/CSS mockup
-(drop it in /tmp, open in a browser, iterate) for a new ephemeral "scratch" terminal
+(drop it in /tmp, open in a browser, iterate) for a new ephemeral "burner" terminal
 popup. The full written spec is Linear VIM-53 — read it for the behavioral contract;
 this is just the design brief.
 
@@ -28,13 +28,13 @@ BEHAVIORS THAT DRIVE THE VISUAL DESIGN (only the parts that surface in UI)
 - Lives per pane — up to 4. The popup shows ONE shell at a time: the focused pane's.
   So it needs a header identifying which pane/shell and its cwd.
 - Hide ≠ kill: closing the popup only HIDES it; the shell keeps running (npm run dev
-  stays alive). So there must be a cue — on the pane and/or icon rail — that a scratch
+  stays alive). So there must be a cue — on the pane and/or icon rail — that a burner
   shell is live-but-hidden.
 - cwd starts at the host pane's cwd; `cd` inside stays isolated (does NOT move the pane
   or session). Worth a subtle "this won't change your pane" affordance.
 - Toggled by a chord (Ctrl+: then backtick); Esc hides. Show the key hints in a footer
   the way the command palette does.
-- Ephemeral — never persisted, gone on restart. A small "scratch / throwaway" marker so
+- Ephemeral — never persisted, gone on restart. A small "burner / throwaway" marker so
   it reads as disposable, not a real session.
 
 DESIGN SYSTEM
@@ -47,9 +47,9 @@ OPEN QUESTIONS — make a call, show it, note the tradeoff
 1. Size: command-palette-sized card, or a taller centered panel? A terminal wants height
    for npm run dev output — lean larger, but keep it clearly a centered overlay, not a
    docked pane.
-2. Per-pane identity: how the header shows e.g. "pane 2 · scratch · ~/projects/foo", and
-   whether you can glance at / switch between panes' scratch shells from inside the popup.
-3. Live-but-hidden cue: what the pane (or icon rail) shows when a hidden scratch shell is
+2. Per-pane identity: how the header shows e.g. "pane 2 · burner · ~/projects/foo", and
+   whether you can glance at / switch between panes' burner shells from inside the popup.
+3. Live-but-hidden cue: what the pane (or icon rail) shows when a hidden burner shell is
    still running in the background.
 
 DELIVERABLE
