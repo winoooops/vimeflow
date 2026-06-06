@@ -122,20 +122,49 @@ fn is_allowed_url(u: &str) -> bool {
     if u == "about:blank" {
         return true;
     }
-    // http(s) with a non-empty, well-formed host. Defensively strict (no URL
-    // crate — it would pull an MSRV-incompatible ICU dependency): the host may
-    // contain only conservative host characters, so malformed strings a prefix
-    // check would miss are rejected ("https://", "https://exa mple.com" — space,
-    // "https://%zz" — stray percent). Real navigations yield ASCII hosts
-    // (punycode for IDN), so legitimate history survives.
+    // http(s) with a structurally valid host. No URL crate (its 2.5.x ICU deps
+    // break the crate MSRV), so validate the host shape directly: reg-name or
+    // bracketed IPv6 literal, with an optional numeric port. Defensively strict
+    // (real navigations yield ASCII/punycode hosts), so corrupt entries —
+    // "https://" (no host), "https://foo:bar" (bad port), "http://[::1"
+    // (unclosed bracket), "https://exa mple.com" (space) — are dropped.
     let Some(rest) = u.strip_prefix("https://").or_else(|| u.strip_prefix("http://")) else {
         return false;
     };
     let host = rest.split(['/', '?', '#']).next().unwrap_or("");
-    !host.is_empty()
-        && host
+    is_valid_host(host)
+}
+
+fn is_valid_host(host: &str) -> bool {
+    if host.is_empty() {
+        return false;
+    }
+    // IPv6 literal: "[" hex/colons "]" with an optional ":" numeric port.
+    if let Some(after) = host.strip_prefix('[') {
+        let Some(close) = after.find(']') else {
+            return false; // unclosed bracket
+        };
+        let inner = &after[..close];
+        if inner.is_empty() || !inner.chars().all(|c| c.is_ascii_hexdigit() || c == ':') {
+            return false;
+        }
+        let tail = &after[close + 1..];
+        return tail.is_empty() || tail.strip_prefix(':').is_some_and(is_numeric_port);
+    }
+    // reg-name with an optional ":" numeric port.
+    let (name, port) = match host.split_once(':') {
+        Some((n, p)) => (n, Some(p)),
+        None => (host, None),
+    };
+    !name.is_empty()
+        && name
             .chars()
-            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '.' | ':' | '[' | ']'))
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '.'))
+        && port.map_or(true, is_numeric_port)
+}
+
+fn is_numeric_port(p: &str) -> bool {
+    !p.is_empty() && p.chars().all(|c| c.is_ascii_digit())
 }
 
 fn str_field(v: &serde_json::Value, k: &str) -> Option<String> {
@@ -995,6 +1024,8 @@ mod tests {
                         { "url": "https://", "title": null },
                         { "url": "https://exa mple.com", "title": null },
                         { "url": "https://%zz", "title": null },
+                        { "url": "https://foo:bar", "title": null },
+                        { "url": "http://[::1", "title": null },
                         { "url": "ftp://host/x", "title": null },
                         { "url": "https://real.example", "title": null } ] }] }] }] }),
             "proj",
@@ -1003,6 +1034,27 @@ mod tests {
         let b = browser_tab(&store.sessions[0].panes[0]);
         assert_eq!(b.tabs[0].history.len(), 1); // only the well-formed http(s) url survives
         assert_eq!(b.tabs[0].history[0].url, "https://real.example");
+    }
+
+    #[test]
+    fn keeps_valid_host_forms() {
+        for url in [
+            "https://example.com",
+            "http://localhost:8080",
+            "https://[::1]:443/path",
+            "http://192.168.0.1",
+            "about:blank",
+        ] {
+            let store = repair_workspace_layout(
+                json!({ "version": 1, "sessions": [{ "id": "s", "layout": "single", "active": true,
+                    "panes": [{ "kind": "browser", "paneId": "p0", "paneIndex": 0, "active": true,
+                        "tabs": [{ "active": true, "historyIndex": 0, "history": [{ "url": url, "title": null }] }] }] }] }),
+                "proj",
+                "/",
+            );
+            let b = browser_tab(&store.sessions[0].panes[0]);
+            assert_eq!(b.tabs[0].history[0].url, url, "should keep {url}");
+        }
     }
 
     #[test]
