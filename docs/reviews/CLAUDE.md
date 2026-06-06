@@ -59,7 +59,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Credential Leakage](patterns/credential-leakage.md)                                 | security           | 1        | 0    | 2026-05-31   |
 | [Policy Judge Hygiene](patterns/policy-judge-hygiene.md)                             | security           | 16       | 1    | 2026-06-04   |
 | [Fail-Closed Hooks](patterns/fail-closed-hooks.md)                                   | security           | 3        | 1    | 2026-04-20   |
-| [Preflight Checks](patterns/preflight-checks.md)                                     | error-handling     | 6        | 2    | 2026-06-06   |
+| [Preflight Checks](patterns/preflight-checks.md)                                     | error-handling     | 7        | 3    | 2026-06-06   |
 | [CSP Configuration](patterns/csp-configuration.md)                                   | security           | 8        | 5    | 2026-05-16   |
 | [PTY Session Management](patterns/pty-session-management.md)                         | backend            | 8        | 2    | 2026-05-28   |
 | [Git Operations](patterns/git-operations.md)                                         | correctness        | 27       | 12   | 2026-06-06   |

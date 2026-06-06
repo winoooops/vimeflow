@@ -3,7 +3,7 @@ id: preflight-checks
 category: error-handling
 created: 2026-04-20
 last_updated: 2026-06-06
-ref_count: 2
+ref_count: 3
 ---
 
 # Preflight Checks
@@ -75,3 +75,12 @@ When adding / removing / refactoring preflight checks:
 - **Finding:** The bootstrap installed `@openai/codex` and `@moonshot-ai/kimi-code` without version pins and cloned Lifeline from the default branch. Because the script runs as root before worker credentials materialize, any upstream malicious or breaking release could compromise or break the runner fleet without any repository change.
 - **Fix:** Added required env vars `QA_CODEX_VERSION`, `QA_KIMI_CODE_VERSION`, and `QA_LIFELINE_REF`. The script now validates exact semver for npm packages and a full 40-character commit SHA for Lifeline, failing fast when production values are missing or mutable. Lifeline is fetched via `git init` + `fetch --depth=1` + `checkout FETCH_HEAD` so SHA pins actually resolve.
 - **Commit:** cycle 3
+
+### 7. Spot bootstrap still installs unpinned root npm package `n`
+
+- **Source:** github-claude | PR #362 round 4 | 2026-06-06
+- **Severity:** MEDIUM
+- **File:** `scripts/qa-runner/deploy/worker-spot-user-data.sh`
+- **Finding:** The PR fixed the reviewed unpinned codex/kimi installs but still ran `npm install -g n` without a version pin. This user-data script runs as root on the worker and the instance has the permissions needed to fetch worker secrets, so a breaking or compromised `n` release can affect new Spot workers without any repository change.
+- **Fix:** Added required env var `QA_N_VERSION` with the same exact-semver validation used for codex/kimi. Changed `npm install -g n` to `npm install -g "n@${n_version}"` so the bootstrap resolves an immutable version.
+- **Commit:** cycle 4

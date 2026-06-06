@@ -13,6 +13,7 @@ lifeline_ref="${QA_LIFELINE_REF:-}"
 codex_version="${QA_CODEX_VERSION:-}"
 kimi_code_version="${QA_KIMI_CODE_VERSION:-}"
 node_version="${QA_NODE_VERSION:-22}"
+n_version="${QA_N_VERSION:-}"
 
 if [ -z "$runner_ref" ]; then
   echo "error: QA_RUNNER_REF is required; set it to the exact runner branch or tag to bootstrap" >&2
@@ -46,6 +47,16 @@ if [[ ! "$kimi_code_version" =~ $semver_re ]]; then
   exit 1
 fi
 
+if [ -z "$n_version" ]; then
+  echo "error: QA_N_VERSION is required; set it to the exact n version to install" >&2
+  exit 1
+fi
+
+if [[ ! "$n_version" =~ $semver_re ]]; then
+  echo "error: QA_N_VERSION must be an exact semver (e.g. 1.2.3 or 1.2.3-beta.1); got '${n_version}'" >&2
+  exit 1
+fi
+
 # Require a full 40-char commit SHA for immutable Lifeline checkout.
 sha_re='^[0-9a-fA-F]{40}$'
 if [[ ! "$lifeline_ref" =~ $sha_re ]]; then
@@ -66,7 +77,7 @@ if ! command -v gh >/dev/null 2>&1; then
   dnf install -y gh
 fi
 
-npm install -g n
+npm install -g "n@${n_version}"
 n "$node_version"
 hash -r
 
