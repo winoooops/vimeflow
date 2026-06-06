@@ -122,15 +122,16 @@ fn is_allowed_url(u: &str) -> bool {
     if u == "about:blank" {
         return true;
     }
-    // http(s) must have a non-empty host (reject bare "https://"), matching the
-    // runtime navigation guard rather than a prefix check.
-    for scheme in ["http://", "https://"] {
-        if let Some(rest) = u.strip_prefix(scheme) {
-            let host = rest.split(['/', '?', '#']).next().unwrap_or("");
-            return !host.is_empty();
+    // Parse with the same URL semantics as the runtime navigation guard: an
+    // http(s) URL with a non-empty host. Rejects malformed strings a prefix
+    // check would miss (e.g. "https://", "https://exa mple.com", "https://%zz").
+    match url::Url::parse(u) {
+        Ok(parsed) => {
+            matches!(parsed.scheme(), "http" | "https")
+                && parsed.host_str().is_some_and(|h| !h.is_empty())
         }
+        Err(_) => false,
     }
-    false
 }
 
 fn str_field(v: &serde_json::Value, k: &str) -> Option<String> {
@@ -286,8 +287,8 @@ fn repair_panes(
         let Some(pane_id) = str_field(rp, "paneId").filter(|s| !s.is_empty()) else {
             continue; // missing paneId → drop
         };
-        if !seen_pane_ids.insert(pane_id.clone()) {
-            continue; // duplicate paneId → first wins
+        if seen_pane_ids.contains(&pane_id) {
+            continue; // duplicate paneId → first wins (reserved below, only if kept)
         }
         let sort_key = u32_field(rp, "paneIndex")
             .map(|n| n as u64)
@@ -299,8 +300,8 @@ fn repair_panes(
                 let Some(pty_id) = str_field(rp, "ptyId").filter(|s| !s.is_empty()) else {
                     continue; // shell missing ptyId → drop
                 };
-                if !seen_pty_ids.insert(pty_id.clone()) {
-                    continue; // duplicate shell ptyId → first wins
+                if seen_pty_ids.contains(&pty_id) {
+                    continue; // duplicate shell ptyId → first wins (reserved below)
                 }
                 let Some(mut cwd) = str_field(rp, "cwd").filter(|s| !s.is_empty()) else {
                     continue; // shell missing cwd → drop (required scalar)
@@ -316,8 +317,11 @@ fn repair_panes(
                 let agent_type = str_field(rp, "agentType")
                     .filter(|a| KNOWN_AGENTS.contains(&a.as_str()))
                     .unwrap_or_else(|| "generic".to_string());
+                // Pane is now definitely kept — reserve its ptyId (not before, or
+                // a later-dropped malformed pane would steal it from a valid one).
+                seen_pty_ids.insert(pty_id.clone());
                 WorkspacePane::Shell(ShellPane {
-                    pane_id,
+                    pane_id: pane_id.clone(),
                     pane_index: 0,
                     active,
                     pty_id,
@@ -333,14 +337,16 @@ fn repair_panes(
                     .cloned()
                     .unwrap_or_default();
                 WorkspacePane::Browser(BrowserPane {
-                    pane_id,
+                    pane_id: pane_id.clone(),
                     pane_index: 0,
                     active,
                     tabs: repair_tabs(&raw_tabs),
                 })
             }
-            _ => continue, // unrecognized kind → drop
+            _ => continue, // unrecognized kind → drop (paneId not reserved)
         };
+        // Pane confirmed kept — reserve its paneId now.
+        seen_pane_ids.insert(pane_id);
         built.push((sort_key, i, pane));
     }
 
@@ -488,10 +494,13 @@ impl WorkspaceLayoutCache {
         store
     }
 
-    /// Atomically persist the assembled store + refresh the mirror.
+    /// Atomically persist the assembled store + refresh the mirror, holding the
+    /// lock across the disk write so overlapping saves cannot persist out of
+    /// order (mirrors `SessionCache::mutate`).
     pub fn save(&self, store: &WorkspaceLayoutStore) -> Result<(), String> {
+        let mut guard = self.mirror.lock().expect("workspace-layout mirror poisoned");
         self.flush_to_disk(store)?;
-        *self.mirror.lock().expect("workspace-layout mirror poisoned") = Some(store.clone());
+        *guard = Some(store.clone());
         Ok(())
     }
 
@@ -918,6 +927,24 @@ mod tests {
         let b = browser_tab(&store.sessions[0].panes[0]);
         assert_eq!(b.tabs[0].history.len(), 1); // bare "https://" (no host) dropped
         assert_eq!(b.tabs[0].history[0].url, "https://real.example");
+    }
+
+    #[test]
+    fn dropped_malformed_shell_does_not_reserve_pty_id() {
+        let store = repair_workspace_layout(
+            json!({ "version": 1, "sessions": [{
+                "id": "s", "layout": "vsplit", "active": true, "panes": [
+                    // malformed: has ptyId "live" but missing cwd → dropped
+                    { "kind": "shell", "paneId": "p0", "paneIndex": 0, "active": true, "ptyId": "live", "agentType": "generic" },
+                    // valid, reuses ptyId "live" → must be KEPT (the dropped one didn't reserve it)
+                    { "kind": "shell", "paneId": "p1", "paneIndex": 1, "active": false, "ptyId": "live", "cwd": "/", "agentType": "generic" } ] }] }),
+            "proj",
+            "/",
+        );
+        assert_eq!(store.sessions[0].panes.len(), 1);
+        let s = shell(&store.sessions[0].panes[0]);
+        assert_eq!(s.pane_id, "p1"); // the valid pane survived
+        assert_eq!(s.pty_id, "live");
     }
 
     #[test]
