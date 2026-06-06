@@ -675,7 +675,7 @@ export const WorkspaceView = (): ReactElement => {
     dropAllForPty,
   })
 
-  // Pane-keys whose burner shell is running — drives the pane-button live cue.
+  // Pane-keys with a live burner shell — drives the status-bar count.
   const runningBurnerPaneKeys = useMemo(
     () =>
       new Set(
@@ -1516,7 +1516,6 @@ export const WorkspaceView = (): ReactElement => {
                 setActiveContainerId(TERMINAL_CONTAINER_ID)
               }}
               onBurner={(target): void => void toggleBurner(target)}
-              runningBurnerPaneKeys={runningBurnerPaneKeys}
               activeBurnerPaneKeys={activeBurnerPaneKeys}
             />
           </div>

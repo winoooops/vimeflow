@@ -42,8 +42,6 @@ export interface TerminalPaneProps {
   onBurner?: (target: BurnerTarget) => void
   /** Make this pane active — the burner button focuses its pane (spec §8). */
   onRequestActive?: (sessionId: string, paneId: string) => void
-  /** Pane-keys (`${sessionId}:${paneId}`) with a running burner — §8 cue. */
-  runningBurnerPaneKeys?: ReadonlySet<string>
   /** Pane-keys with a foreground command running — drives the amber button tint (VIM-71). */
   activeBurnerPaneKeys?: ReadonlySet<string>
   onCwdChange?: (cwd: string) => void
@@ -75,7 +73,6 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
       onClose = undefined,
       onBurner = undefined,
       onRequestActive = undefined,
-      runningBurnerPaneKeys = undefined,
       activeBurnerPaneKeys = undefined,
       onCwdChange = undefined,
       onRestart = undefined,
@@ -253,9 +250,6 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
           onToggleCollapse={handleToggleCollapse}
           onClose={onClose ? handleClose : undefined}
           onBurner={onBurner ? handleBurner : undefined}
-          burnerRunning={
-            runningBurnerPaneKeys?.has(`${session.id}:${pane.id}`) ?? false
-          }
           burnerActive={
             activeBurnerPaneKeys?.has(`${session.id}:${pane.id}`) ?? false
           }

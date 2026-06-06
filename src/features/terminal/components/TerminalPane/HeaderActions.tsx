@@ -1,31 +1,13 @@
 import type { ReactElement } from 'react'
 import { Tooltip } from '../../../../components/Tooltip'
 
-// Three honest burner-button states for AT + tooltip: a foreground command is
-// running, a shell exists but is idle (`live`), or there's no shell. The idle
-// `live` wording keeps a hidden-but-alive shell discoverable to screen readers,
-// since the amber tint alone is a visual-only cue.
-const burnerButtonLabel = (running: boolean, active: boolean): string => {
-  if (active) {
-    return 'open burner terminal (running)'
-  }
-  if (running) {
-    return 'open burner terminal (live)'
-  }
+// Two honest button states: a foreground command is running, or it isn't. An
+// idle-but-alive shell reads the same as no shell — nothing claims "active".
+const burnerButtonLabel = (active: boolean): string =>
+  active ? 'open burner terminal (running)' : 'open burner terminal'
 
-  return 'open burner terminal'
-}
-
-const burnerButtonTooltip = (running: boolean, active: boolean): string => {
-  if (active) {
-    return 'Burner terminal · running'
-  }
-  if (running) {
-    return 'Burner terminal · live'
-  }
-
-  return 'Burner terminal'
-}
+const burnerButtonTooltip = (active: boolean): string =>
+  active ? 'Burner terminal · running' : 'Burner terminal'
 
 export interface HeaderActionsProps {
   isCollapsed: boolean
@@ -33,12 +15,9 @@ export interface HeaderActionsProps {
   onClose?: () => void
   /** Toggle this pane's ephemeral burner terminal (VIM-53). */
   onBurner?: () => void
-  /** This pane has a live burner shell — surfaced to AT via a "(live)" label. */
-  burnerRunning?: boolean
   /**
    * A foreground command is actually running in the burner shell (VIM-71) —
-   * drives the amber button tint. Distinct from `burnerRunning`, which only
-   * means a shell exists.
+   * drives the amber button tint (the sole running cue).
    */
   burnerActive?: boolean
 }
@@ -48,18 +27,14 @@ export const HeaderActions = ({
   onToggleCollapse,
   onClose = undefined,
   onBurner = undefined,
-  burnerRunning = false,
   burnerActive = false,
 }: HeaderActionsProps): ReactElement => (
   <>
     {onBurner && (
-      <Tooltip
-        content={burnerButtonTooltip(burnerRunning, burnerActive)}
-        placement="bottom"
-      >
+      <Tooltip content={burnerButtonTooltip(burnerActive)} placement="bottom">
         <button
           type="button"
-          aria-label={burnerButtonLabel(burnerRunning, burnerActive)}
+          aria-label={burnerButtonLabel(burnerActive)}
           onClick={(event) => {
             event.stopPropagation()
             onBurner()

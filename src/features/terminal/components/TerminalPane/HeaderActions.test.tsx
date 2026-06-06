@@ -95,34 +95,12 @@ describe('HeaderActions', () => {
     expect(onParentClick).not.toHaveBeenCalled()
   })
 
-  test('a live (but idle) burner shell is transparent but labelled live for AT', () => {
-    render(
-      <HeaderActions
-        isCollapsed={expanded}
-        onToggleCollapse={vi.fn()}
-        onBurner={vi.fn()}
-        burnerRunning
-      />
-    )
-
-    // Idle = transparent with a gray icon; the amber tint + amber icon are
-    // reserved for an actually-running command. The "(live)" label still
-    // exposes the hidden shell to AT.
-    const button = screen.getByRole('button', {
-      name: 'open burner terminal (live)',
-    })
-    expect(button.className).toContain('bg-transparent')
-    expect(button.className).toContain('text-on-surface-muted')
-    expect(screen.queryByTestId('burner-live-dot')).toBeNull()
-  })
-
   test('an active burner shows the amber button tint (the cue, no dot)', () => {
     render(
       <HeaderActions
         isCollapsed={expanded}
         onToggleCollapse={vi.fn()}
         onBurner={vi.fn()}
-        burnerRunning
         burnerActive
       />
     )

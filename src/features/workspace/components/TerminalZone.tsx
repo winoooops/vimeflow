@@ -65,8 +65,6 @@ export interface TerminalZoneProps {
   onContainerFocus?: () => void
   /** Toggle a pane's ephemeral burner terminal (VIM-53). */
   onBurner?: (target: BurnerTarget) => void
-  /** Pane-keys with a running burner shell — drives the §8 cue. */
-  runningBurnerPaneKeys?: ReadonlySet<string>
   /** Pane-keys with a foreground command running — drives the amber button tint (VIM-71). */
   activeBurnerPaneKeys?: ReadonlySet<string>
 }
@@ -95,7 +93,6 @@ export const TerminalZone = forwardRef<TerminalZoneHandle, TerminalZoneProps>(
       isZoneFocused = true,
       onContainerFocus = undefined,
       onBurner = undefined,
-      runningBurnerPaneKeys = undefined,
       activeBurnerPaneKeys = undefined,
     }: TerminalZoneProps,
     ref
@@ -270,7 +267,6 @@ export const TerminalZone = forwardRef<TerminalZoneHandle, TerminalZoneProps>(
                     onAddPane={addPane}
                     onClosePane={removePane}
                     onBurner={onBurner}
-                    runningBurnerPaneKeys={runningBurnerPaneKeys}
                     activeBurnerPaneKeys={activeBurnerPaneKeys}
                     areBrowserPanesOccluded={areBrowserPanesOccluded}
                     deferTerminalFit={deferTerminalFit}

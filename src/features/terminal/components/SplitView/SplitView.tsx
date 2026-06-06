@@ -47,8 +47,6 @@ export interface SplitViewProps {
   onClosePane?: (sessionId: string, paneId: string) => void
   /** Toggle a pane's ephemeral burner terminal (VIM-53). */
   onBurner?: (target: BurnerTarget) => void
-  /** Pane-keys with a running burner shell — drives the §8 cue. */
-  runningBurnerPaneKeys?: ReadonlySet<string>
   /** Pane-keys with a foreground command running — drives the amber button tint (VIM-71). */
   activeBurnerPaneKeys?: ReadonlySet<string>
   areBrowserPanesOccluded?: boolean
@@ -119,7 +117,6 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
       onAddPane = undefined,
       onClosePane = undefined,
       onBurner = undefined,
-      runningBurnerPaneKeys = undefined,
       activeBurnerPaneKeys = undefined,
       areBrowserPanesOccluded = false,
       deferTerminalFit = false,
@@ -359,7 +356,6 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
                           onClose={closeHandler}
                           onBurner={onBurner}
                           onRequestActive={onSetActivePane}
-                          runningBurnerPaneKeys={runningBurnerPaneKeys}
                           activeBurnerPaneKeys={activeBurnerPaneKeys}
                           isActive={isActive}
                           deferFit={deferTerminalFit}
