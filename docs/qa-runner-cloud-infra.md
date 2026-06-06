@@ -67,6 +67,10 @@ Worker credentials:
   `/vimeflow/qa-runner/prod/worker/KIMI-API-KEY` or
   `/vimeflow/qa-runner/prod/worker/KIMI_API_KEY`, for Kimi CLI API-mode auth on
   clean burst workers
+- optional `QA_LIFELINE_SKILLS_DIR`, sourced from
+  `/vimeflow/qa-runner/prod/worker/QA_LIFELINE_SKILLS_DIR`, so clean burst
+  workers can point `run.js` at a cloned Lifeline `skills/` directory instead
+  of a user-specific Claude plugin cache
 - `/vimeflow/qa-runner/prod/worker/OPENAPI-API-KEY` is a legacy typo parameter
   and is not read by the bootstrap scripts.
 - GitHub CLI auth for the fixer account
@@ -94,7 +98,9 @@ On the worker, `worker-env-from-ssm.sh` also writes
 loads that local file before running `run.js --push`, so `CODEX_HOME` points
 `codex exec` at the root-owned cached API-key login and `KIMI_API_KEY` is scoped
 to the worker process without including raw API keys in SSM command arguments or
-repo-controlled process environments.
+repo-controlled process environments. Clean burst workers should clone
+`https://github.com/winoooops/lifeline` and set
+`QA_LIFELINE_SKILLS_DIR=/opt/vimeflow/lifeline/skills` during bootstrap.
 
 ## Control Daemon Mode
 

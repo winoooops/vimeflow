@@ -65,6 +65,10 @@ const sh = (cmd, args, opts = {}) =>
 
 // Latest lifeline version in the plugin cache that ships the skill.
 const lifelineSkillsDir = () => {
+  if (process.env.QA_LIFELINE_SKILLS_DIR) {
+    return process.env.QA_LIFELINE_SKILLS_DIR
+  }
+
   const root = join(
     homedir(),
     '.claude',

@@ -68,6 +68,11 @@ if [ -z "$kimi_api_key" ]; then
   kimi_api_key="$(single_line_optional_value KIMI_API_KEY)" || exit 1
 fi
 
+lifeline_skills_dir="${QA_LIFELINE_SKILLS_DIR:-}"
+if [ -z "$lifeline_skills_dir" ]; then
+  lifeline_skills_dir="$(single_line_optional_value QA_LIFELINE_SKILLS_DIR)" || exit 1
+fi
+
 {
   cat <<EOF
 AWS_REGION=$region
@@ -76,6 +81,7 @@ CODEX_HOME=$codex_home
 EOF
   write_env_line OPENAI_API_KEY "$openai_api_key"
   write_env_line KIMI_API_KEY "$kimi_api_key"
+  write_env_line QA_LIFELINE_SKILLS_DIR "$lifeline_skills_dir"
   write_env_line LINEAR_CLIENT_ID "$(single_line_value LINEAR_CLIENT_ID)"
   write_env_line LINEAR_CLIENT_SECRET "$(single_line_value LINEAR_CLIENT_SECRET)"
   write_env_line LINEAR_SCOPES "read,write"
