@@ -119,7 +119,18 @@ fn layout_for_count(n: usize) -> &'static str {
 }
 
 fn is_allowed_url(u: &str) -> bool {
-    u == "about:blank" || u.starts_with("http://") || u.starts_with("https://")
+    if u == "about:blank" {
+        return true;
+    }
+    // http(s) must have a non-empty host (reject bare "https://"), matching the
+    // runtime navigation guard rather than a prefix check.
+    for scheme in ["http://", "https://"] {
+        if let Some(rest) = u.strip_prefix(scheme) {
+            let host = rest.split(['/', '?', '#']).next().unwrap_or("");
+            return !host.is_empty();
+        }
+    }
+    false
 }
 
 fn str_field(v: &serde_json::Value, k: &str) -> Option<String> {
@@ -891,6 +902,22 @@ mod tests {
         let b = browser_tab(&store.sessions[0].panes[0]);
         assert_eq!(b.tabs[0].history.len(), 1); // overlong url dropped
         assert_eq!(b.tabs[0].history[0].url, "https://ok");
+    }
+
+    #[test]
+    fn drops_url_without_host() {
+        let store = repair_workspace_layout(
+            json!({ "version": 1, "sessions": [{ "id": "s", "layout": "single", "active": true,
+                "panes": [{ "kind": "browser", "paneId": "p0", "paneIndex": 0, "active": true,
+                    "tabs": [{ "active": true, "historyIndex": 0, "history": [
+                        { "url": "https://", "title": null },
+                        { "url": "https://real.example", "title": null } ] }] }] }] }),
+            "proj",
+            "/",
+        );
+        let b = browser_tab(&store.sessions[0].panes[0]);
+        assert_eq!(b.tabs[0].history.len(), 1); // bare "https://" (no host) dropped
+        assert_eq!(b.tabs[0].history[0].url, "https://real.example");
     }
 
     #[test]
