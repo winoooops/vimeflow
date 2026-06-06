@@ -1,7 +1,8 @@
 #!/usr/bin/env node
-// Control-host dispatcher for split-plane QA runner deployments. The daemon runs
-// this through QA_TICK_COMMAND; this script forwards the non-secret PR-cycle
-// contract to a local, SSH, or SSM worker and exits with the worker's result.
+// Control-host dispatcher for split-plane QA runner deployments. watch.js runs
+// this through QA_FIX_COMMAND only after it classifies a PR as NEEDS_FIX; this
+// script forwards the non-secret fixer contract to a local, SSH, or SSM worker
+// and exits with the worker's result.
 import { pathToFileURL } from 'node:url'
 import { runDispatch } from './lib/cloud-dispatch.js'
 

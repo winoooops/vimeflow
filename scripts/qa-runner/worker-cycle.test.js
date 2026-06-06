@@ -6,7 +6,7 @@ import {
   loadWorkerEnvFile,
   warnMissingWorkerEnv,
   workerConfigFromEnv,
-  workerWatchArgs,
+  workerRunArgs,
 } from './worker-cycle.js'
 
 const tempEnvFile = (content) => {
@@ -209,7 +209,7 @@ describe('workerConfigFromEnv', () => {
       })
     ).toEqual({
       label: 'auto-review',
-      approve: true,
+      approve: false,
       linearDecisionComments: true,
       linearCreateIssues: false,
       linearTeamKey: 'VIM',
@@ -219,10 +219,10 @@ describe('workerConfigFromEnv', () => {
   })
 })
 
-describe('workerWatchArgs', () => {
-  test('builds the expected one-cycle watch.js command', () => {
+describe('workerRunArgs', () => {
+  test('builds the expected fixer-only run.js command', () => {
     expect(
-      workerWatchArgs({
+      workerRunArgs({
         QA_PR: '348',
         QA_LABEL: 'auto-review',
         QA_APPROVE: '1',
@@ -233,35 +233,22 @@ describe('workerWatchArgs', () => {
         QA_REASON: 'poll',
       })
     ).toEqual([
-      expect.stringContaining('scripts/qa-runner/watch.js'),
-      'tick',
-      '--pr',
+      expect.stringContaining('scripts/qa-runner/run.js'),
       '348',
-      '--execute',
-      '--approve',
-      '--linear-decisions',
-      '--linear-create-issues',
-      '--linear-team',
-      'VIM',
-      '--max-ci-reruns',
-      '3',
-      '--reason',
-      'poll',
-      '--label',
-      'auto-review',
+      '--push',
     ])
   })
 
-  test('does not arm approval unless QA_APPROVE is true', () => {
+  test('never passes approval flags to the worker fixer', () => {
     expect(
-      workerWatchArgs({
+      workerRunArgs({
         QA_PR: '348',
-        QA_APPROVE: '0',
+        QA_APPROVE: '1',
       })
-    ).not.toContain('--approve')
+    ).toEqual([expect.stringContaining('run.js'), '348', '--push'])
   })
 
   test('requires the PR number', () => {
-    expect(() => workerWatchArgs({})).toThrow('QA_PR is required')
+    expect(() => workerRunArgs({})).toThrow('QA_PR is required')
   })
 })

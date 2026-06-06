@@ -187,39 +187,40 @@ approval globally.
 
 ### Split-plane worker dispatch
 
-The daemon owns webhooks, queue state, polling, and Linear observability. By
-default, claimed PR work still runs locally through `watch.js tick --execute`.
-For the cloud split-plane rollout, keep the control host light and delegate each
-claimed PR cycle to a burst-worker dispatcher:
+The daemon owns webhooks, queue state, polling, review adjudication, merge
+decisions, and Linear observability. By default, `NEEDS_FIX` work runs locally
+through `run.js <pr> --push`. For the cloud split-plane rollout, keep the
+control host light and delegate only the expensive fixer pass to a burst-worker
+dispatcher:
 
 ```bash
 QA_MAX_PARALLEL=1 \
-QA_TICK_RUNNER=command \
-QA_TICK_COMMAND="node /opt/vimeflow/repo/scripts/qa-runner/dispatch-worker.js" \
+QA_TICK_RUNNER=local \
+QA_FIX_COMMAND="node /opt/vimeflow/repo/scripts/qa-runner/dispatch-worker.js" \
 node scripts/qa-runner/daemon.js
 ```
 
-`QA_TICK_RUNNER=command` makes the daemon run `QA_TICK_COMMAND` instead of local
-`watch.js`. The command receives the one-cycle contract through environment
-variables:
+`QA_FIX_COMMAND` makes `watch.js` keep classification and `GOOD_SHAPE` approval
+on the control host, while `NEEDS_FIX` dispatches the fixer-only worker command.
+The command receives the fixer contract through environment variables:
 
 | Env                           | Meaning                                                             |
 | ----------------------------- | ------------------------------------------------------------------- |
 | `QA_PR`                       | GitHub PR number claimed from the daemon queue                      |
 | `QA_REASON`                   | Webhook/poll reason such as `pr:labeled`, `ci:check_run`, or `poll` |
 | `QA_LABEL`                    | Opt-in label, normally `auto-review`                                |
-| `QA_APPROVE`                  | `1` only for an `auto-review` PR that also has `auto-approve`       |
 | `QA_LINEAR_DECISION_COMMENTS` | `1` when decision comments should be posted                         |
 | `QA_LINEAR_CREATE_ISSUES`     | `1` when missing Linear issues may be created                       |
 | `QA_LINEAR_TEAM_KEY`          | Linear team key for issue creation                                  |
 | `QA_MAX_CI_RERUNS`            | Bounded transient reviewer rerun cap                                |
+| `QA_FIX_CONTEXT`              | Structured control-plane reason/findings for the fixer              |
 
-The dispatcher must block until the burst worker completes that PR cycle and then
-exit with the worker's `watch.js tick` exit code. The control daemon keeps its
-existing post-cycle behavior: it re-snapshots the PR, records progress or retry
-state, writes `.state/events.jsonl`, and posts Linear milestones. This keeps the
+The dispatcher must block until the burst worker completes that fixer pass and
+then exit with `run.js`'s exit code. The control daemon keeps its existing
+post-cycle behavior: it re-snapshots the PR, records progress or retry state,
+writes `.state/events.jsonl`, and posts Linear milestones. This keeps the
 `t2.micro` from doing expensive Kimi/Codex/test work while preserving one
-authoritative queue and one Linear status surface.
+authoritative queue, one classifier, and one Linear status surface.
 
 `dispatch-worker.js` is the built-in dispatcher for the production rollout. It
 supports:
@@ -230,7 +231,8 @@ supports:
   no inbound SSH.
 
 The remote side runs `worker-cycle.js`, which maps the daemon's environment
-contract back into one `watch.js tick --pr <N> --execute` cycle. See
+contract into one `run.js <PR> --push` fixer pass. It never arms approval; the
+control host keeps `GOOD_SHAPE` approve/merge under the orchestrator identity. See
 [`docs/qa-runner-cloud-infra.md`](../../docs/qa-runner-cloud-infra.md) for the
 VIM-70 AWS, Cloudflare, credential, and smoke-test runbook.
 

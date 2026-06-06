@@ -5,6 +5,8 @@ region="${AWS_REGION:-${AWS_DEFAULT_REGION:-us-west-1}}"
 repo="${QA_REPO:-/opt/vimeflow/repo}"
 etc_dir="${QA_ETC_DIR:-/etc/vimeflow/qa-runner}"
 prefix="${QA_CONTROL_PARAM_PREFIX:-/vimeflow/qa-runner/prod/control}"
+codex_home="${CODEX_HOME:-$etc_dir/codex}"
+codex_api_key_param="${QA_CODEX_API_KEY_PARAM:-/vimeflow/qa-runner/prod/worker/CODEX_API_KEY}"
 worker_mode="${QA_WORKER_MODE:-ssm}"
 worker_region="${QA_WORKER_REGION:-$region}"
 worker_repo="${QA_WORKER_REPO:-/opt/vimeflow/repo}"
@@ -21,6 +23,19 @@ value() {
     --with-decryption \
     --query Parameter.Value \
     --output text
+}
+
+value_by_name() {
+  aws ssm get-parameter \
+    --region "$region" \
+    --name "$1" \
+    --with-decryption \
+    --query Parameter.Value \
+    --output text
+}
+
+single_line_param_by_name() {
+  value_by_name "$1" | tr -d '\r\n'
 }
 
 bool_enabled() {
@@ -78,16 +93,24 @@ install -d -m 0700 -o "$service_user" -g "$service_user" "$etc_dir" || {
   install -d -m 0700 "$etc_dir"
   chown "$service_user:$service_user" "$etc_dir"
 }
+install -d -m 0700 -o "$service_user" -g "$service_user" "$codex_home" || {
+  install -d -m 0700 "$codex_home"
+  chown "$service_user:$service_user" "$codex_home"
+}
 install -d -m 0700 -o "$service_user" -g "$service_user" "$repo/scripts/qa-runner" || {
   install -d -m 0700 "$repo/scripts/qa-runner"
   chown "$service_user:$service_user" "$repo/scripts/qa-runner"
 }
+
+codex_api_key="$(single_line_param_by_name "$codex_api_key_param")"
+printf "%s" "$codex_api_key" | sudo -u "$service_user" -H env CODEX_HOME="$codex_home" codex login --with-api-key >/dev/null
 
 {
   cat <<EOF
 GITHUB_WEBHOOK_SECRET=$github_webhook_secret
 QA_STATUS_TOKEN=$qa_status_token
 GH_PROMPT_DISABLED=1
+CODEX_HOME=$codex_home
 QA_HOST=127.0.0.1
 QA_PORT=8787
 QA_LABEL=auto-review
@@ -97,8 +120,8 @@ QA_MAX_CI_RERUNS=3
 QA_LINEAR_DECISION_COMMENTS=1
 QA_LINEAR_CREATE_ISSUES=0
 QA_LINEAR_TEAM_KEY=VIM
-QA_TICK_RUNNER=command
-QA_TICK_COMMAND="node $repo/scripts/qa-runner/dispatch-worker.js"
+QA_TICK_RUNNER=local
+QA_FIX_COMMAND="node $repo/scripts/qa-runner/dispatch-worker.js"
 QA_WORKER_MODE=$worker_mode
 QA_WORKER_REGION=$worker_region
 QA_WORKER_REPO=$worker_repo

@@ -1,7 +1,7 @@
 // Selects where one queued PR cycle runs. The default is the existing local
-// watch.js tick path inside worker.js. Command mode is the split-plane seam: the
-// control daemon keeps queue/state ownership, while an operator-supplied command
-// can dispatch the expensive tick to a burst worker and return the worker exit.
+// watch.js tick path inside worker.js. Command mode remains a legacy escape hatch
+// for full-cycle command smokes; production split-plane deployments should keep
+// ticks local and use QA_FIX_COMMAND so classification and merge stay on control.
 import { spawn } from 'node:child_process'
 
 const boolEnv = (value) => (value ? '1' : '0')
