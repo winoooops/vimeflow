@@ -771,3 +771,32 @@ test('a self-exited scratch clears its active cue', async () => {
 
   expect(result.current.activeByPane.get('s1:p0')).toBe(false)
 })
+
+test('a foreground event arriving after exit does not re-light a dead scratch', async () => {
+  const service = makeService()
+  service.spawn = countingSpawn()
+  const focused = makeFocusedPane('s1', 'p0', '/a')
+
+  const { result } = renderHook(() =>
+    useScratchTerminals({ service, resolveFocusedPane: () => focused })
+  )
+
+  await act(async () => {
+    await result.current.toggle({ sessionId: 's1', paneId: 'p0', cwd: '/a' })
+  })
+  const fgCb = vi.mocked(service.onScratchForeground).mock.calls[0][0]
+  const exitCb = vi.mocked(service.onExit).mock.calls[0][0]
+
+  // The shell exits, then a stale foreground=true event arrives — the poll loop
+  // and the PTY reader are independent tasks and can deliver out of order.
+  act(() => {
+    exitCb('scratch-1', 0)
+  })
+
+  act(() => {
+    fgCb('scratch-1', true)
+  })
+
+  expect(result.current.activeByPane.get('s1:p0')).toBe(false)
+  expect(result.current.runningByPane.get('s1:p0')).toBe('exited')
+})

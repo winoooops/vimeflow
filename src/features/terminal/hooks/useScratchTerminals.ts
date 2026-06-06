@@ -329,9 +329,14 @@ export const useScratchTerminals = ({
     }
     void (async (): Promise<void> => {
       const off = await service.onScratchForeground((ptyId, running) => {
+        // Gate on `status === 'running'`: the poll loop and the PTY reader emit
+        // from independent backend tasks, so a stale `running: true` can arrive
+        // after `pty-exit` — without this it would re-light a dead shell.
         const affected = [...entriesRef.current.entries()].filter(
           ([, entry]) =>
-            entry.scratchPtyId === ptyId && entry.active !== running
+            entry.scratchPtyId === ptyId &&
+            entry.status === 'running' &&
+            entry.active !== running
         )
         if (affected.length === 0) {
           return
