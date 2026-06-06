@@ -7,6 +7,7 @@ use crate::agent::types::{
 use crate::agent::{sanitize_title, AgentWatcherState, TranscriptState};
 use crate::git::watcher::GitWatcherState;
 use crate::terminal::cache::SessionCache;
+use crate::terminal::workspace_layout::{WorkspaceLayoutCache, WorkspaceLayoutStore};
 use crate::terminal::state::PtyState;
 use crate::terminal::types::SessionId;
 
@@ -38,6 +39,7 @@ fn ensure_rename_supported(agent_type: &AgentType) -> Result<(), RenameAgentSess
 pub struct BackendState {
     pty: PtyState,
     sessions: Arc<SessionCache>,
+    workspace_layouts: Arc<WorkspaceLayoutCache>,
     agents: AgentWatcherState,
     transcripts: TranscriptState,
     git: GitWatcherState,
@@ -49,9 +51,11 @@ pub struct BackendState {
 impl BackendState {
     pub fn new(app_data_dir: PathBuf, events: Arc<dyn EventSink>) -> Self {
         let cache_path = app_data_dir.join("sessions.json");
+        let layouts_path = app_data_dir.join("workspace-layouts.json");
         Self {
             pty: PtyState::new(),
             sessions: Arc::new(SessionCache::load_or_recover(cache_path)),
+            workspace_layouts: Arc::new(WorkspaceLayoutCache::new(layouts_path)),
             agents: AgentWatcherState::new(),
             transcripts: TranscriptState::new(),
             git: GitWatcherState::new(),
@@ -77,6 +81,21 @@ impl BackendState {
         if let Err(err) = self.sessions.clear_all() {
             log::warn!("BackendState::shutdown: cache clear failed: {err}");
         }
+    }
+
+    /// Load + repair the durable workspace-layout store (spec §2.2), using the
+    /// active project context for defaults. Main-invoked (not renderer).
+    pub fn load_workspace_layout(
+        &self,
+        project_id: &str,
+        working_directory: &str,
+    ) -> WorkspaceLayoutStore {
+        self.workspace_layouts.load(project_id, working_directory)
+    }
+
+    /// Persist the assembled workspace-layout store. Main-invoked (not renderer).
+    pub fn save_workspace_layout(&self, store: &WorkspaceLayoutStore) -> Result<(), String> {
+        self.workspace_layouts.save(store)
     }
 
     pub async fn spawn_pty(

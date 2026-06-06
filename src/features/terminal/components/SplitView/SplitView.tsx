@@ -66,17 +66,9 @@ const paneMode = (pane: Pane): TerminalPaneMode => {
   return 'spawn'
 }
 
-const canClosePane = (pane: Pane, session: Session): boolean => {
-  if (session.panes.length <= 1) {
-    return false
-  }
-
-  if (!isShellPane(pane)) {
-    return true
-  }
-
-  return session.panes.filter(isShellPane).length > 1
-}
+// Closable whenever removing it still leaves the session at least one pane.
+export const canClosePane = (session: Session): boolean =>
+  session.panes.length > 1
 
 /** Pick the panes that should be rendered for `layout.capacity` slots.
  *  Normally the prefix slice; if the active pane is beyond the slice,
@@ -260,9 +252,7 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
               const mode = isBrowserPane ? 'browser' : paneMode(pane)
 
               const closeHandler =
-                onClosePane && canClosePane(pane, session)
-                  ? onClosePane
-                  : undefined
+                onClosePane && canClosePane(session) ? onClosePane : undefined
 
               return (
                 <motion.div

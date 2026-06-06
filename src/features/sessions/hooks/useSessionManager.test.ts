@@ -4183,6 +4183,40 @@ describe('useSessionManager', () => {
       warn.mockRestore()
     })
 
+    test('removePane closes the last shell pane when a browser pane remains', async () => {
+      const service = createSequentialSpawnService()
+
+      const { result } = renderHook(() =>
+        useSessionManager(service, { autoCreateOnEmpty: false })
+      )
+      await waitFor(() => expect(result.current.loading).toBe(false))
+
+      const sessionId = await createInitialSession(result)
+
+      act(() => result.current.setSessionLayout(sessionId, 'vsplit'))
+      act(() => result.current.addPane(sessionId, 'browser'))
+
+      await waitFor(() =>
+        expect(
+          result.current.sessions[0].panes.some(
+            (pane) => pane.kind === 'browser'
+          )
+        ).toBe(true)
+      )
+      ;(service.kill as ReturnType<typeof vi.fn>).mockClear()
+
+      act(() => result.current.removePane(sessionId, 'p0'))
+
+      await waitFor(() =>
+        expect(result.current.sessions[0].panes).toHaveLength(1)
+      )
+
+      const session = result.current.sessions[0]
+      expect(service.kill).toHaveBeenCalledWith({ sessionId: 'pty-0' })
+      expect(session.panes[0].kind).toBe('browser')
+      expect(session.panes[0].active).toBe(true)
+    })
+
     test('setSessionActivePane syncs Rust when rotating panes in the active session', async () => {
       const service = createSequentialSpawnService()
 
