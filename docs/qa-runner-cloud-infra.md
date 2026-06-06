@@ -59,9 +59,17 @@ Worker credentials:
 - `LINEAR_CLIENT_ID`, `LINEAR_CLIENT_SECRET`, and `LINEAR_SCOPES` in
   `/etc/vimeflow/qa-runner/worker.env`; `linear-agent.env` remains a
   local/compatibility fallback
-- `CODEX_API_KEY`, sourced from
+- `QA_WORKER_CODEX_AUTH_MODE`, sourced from
+  `/vimeflow/qa-runner/prod/worker/QA_WORKER_CODEX_AUTH_MODE`; set it to
+  `existing` for the mounted Codex auth EBS volume, or `api-key` for
+  usage-based hot-swap
+- `QA_WORKER_CODEX_HOME`, sourced from
+  `/vimeflow/qa-runner/prod/worker/QA_WORKER_CODEX_HOME`; for the production EBS
+  path this is `/var/lib/vimeflow/codex-auth`
+- optional `CODEX_API_KEY`, sourced from
   `/vimeflow/qa-runner/prod/worker/CODEX_API_KEY`, consumed by
-  `codex login --with-api-key` during worker bootstrap
+  `codex login --with-api-key` only when
+  `QA_WORKER_CODEX_AUTH_MODE=api-key`
 - optional `OPENAI_API_KEY`, sourced from
   `/vimeflow/qa-runner/prod/worker/openai-api-key`, for generic OpenAI SDK or
   provider usage outside `codex exec`
@@ -105,17 +113,22 @@ files. They do not print secret values.
 `control-env-from-ssm.sh` does not fetch `CODEX_API_KEY` or `OPENAI_API_KEY`.
 It validates `/etc/vimeflow/qa-runner/codex/auth.json` by default so the control
 daemon keeps using browser-based Codex auth for adjudication. Worker bootstrap
-remains the only place that consumes worker API keys.
+remains the only place that consumes worker API keys, and only when the worker
+auth mode is explicitly set to `api-key`.
 
 On the worker, `worker-env-from-ssm.sh` also writes
 `/etc/vimeflow/qa-runner/worker.env` with `0600` permissions. `worker-cycle.js`
 loads that local file before running `run.js --push`, so `CODEX_HOME` points
-`codex exec` at the root-owned cached API-key login. Kimi Code state is kept
-under root-owned `KIMI_CODE_HOME`, and the Kimi API key is exposed to the worker
-process through the official `KIMI_MODEL_NAME` / `KIMI_MODEL_API_KEY` path
-without including raw API keys in SSM command arguments or repo-controlled
-process environments. Clean burst workers should clone
-`https://github.com/winoooops/lifeline` and set
+`codex exec` at the root-owned Codex auth context. In the preferred production
+mode, `CODEX_HOME=/var/lib/vimeflow/codex-auth` is backed by the retained EBS
+volume and the script validates that `auth.json` exists before continuing. For
+usage-based hot-swap, set `QA_WORKER_CODEX_AUTH_MODE=api-key`; bootstrap will
+use the worker `CODEX_API_KEY` parameter and refresh the local Codex login.
+Kimi Code state is kept under root-owned `KIMI_CODE_HOME`, and the Kimi API key
+is exposed to the worker process through the official `KIMI_MODEL_NAME` /
+`KIMI_MODEL_API_KEY` path without including raw API keys in SSM command
+arguments or repo-controlled process environments. Clean burst workers should
+clone `https://github.com/winoooops/lifeline` and set
 `QA_LIFELINE_SKILLS_DIR=/opt/vimeflow/lifeline/skills` during bootstrap.
 
 ## Control Daemon Mode

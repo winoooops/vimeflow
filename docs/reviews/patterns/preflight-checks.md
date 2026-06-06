@@ -84,3 +84,12 @@ When adding / removing / refactoring preflight checks:
 - **Finding:** The PR fixed the reviewed unpinned codex/kimi installs but still ran `npm install -g n` without a version pin. This user-data script runs as root on the worker and the instance has the permissions needed to fetch worker secrets, so a breaking or compromised `n` release can affect new Spot workers without any repository change.
 - **Fix:** Added required env var `QA_N_VERSION` with the same exact-semver validation used for codex/kimi. Changed `npm install -g n` to `npm install -g "n@${n_version}"` so the bootstrap resolves an immutable version.
 - **Commit:** cycle 4
+
+### 8. Undocumented SSM CODEX_HOME fallback can silently change auth location
+
+- **Source:** github-codex-connector | PR #366 round 1 | 2026-06-06
+- **Severity:** MEDIUM
+- **File:** `scripts/qa-runner/deploy/worker-env-from-ssm.sh`
+- **Finding:** `resolve_codex_home` checked a generic SSM `CODEX_HOME` parameter after `QA_WORKER_CODEX_HOME`, but the PR documentation only described `QA_WORKER_CODEX_HOME`. If that parameter existed under the worker prefix, the worker could silently use a different auth directory than operators expect, leading to auth failure or login into the wrong directory.
+- **Fix:** Removed the generic SSM `CODEX_HOME` fallback from `resolve_codex_home`, leaving only the explicit env var `CODEX_HOME`, the worker-specific env var `QA_WORKER_CODEX_HOME`, the worker-specific SSM parameter, and the default path.
+- **Commit:** same commit as this entry
