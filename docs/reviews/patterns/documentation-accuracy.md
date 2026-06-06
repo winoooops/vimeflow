@@ -3,7 +3,7 @@ id: documentation-accuracy
 category: code-quality
 created: 2026-04-09
 last_updated: 2026-06-02
-ref_count: 24
+ref_count: 25
 ---
 
 # Documentation Accuracy
@@ -719,4 +719,13 @@ Stale documentation misleads future contributors and review agents.
 - **File:** `docs/qa-runner-cloudflare-local-host.md`
 - **Finding:** Human reviewer requested concrete webhook proof evidence (hook id, signed ping result, public `/status` auth result, unsigned webhook 401 result) be added to the Phase 0 host proof document. The proof sequence listed steps but did not record the actual verification outcomes.
 - **Fix:** Added a `## Proof Evidence` section with live endpoint test results: hook ID `635125484`, signed ping HTTP 200 OK, public `/status` HTTP 401 Unauthorized, authenticated `/status` HTTP 200 OK, unsigned webhook HTTP 401 Unauthorized.
+- **Commit:** same commit as this entry
+
+### 77. Stale `--max-ci-reruns` worker CLI documentation contradicts new env-only worker contract
+
+- **Source:** github-codex-connector | PR #358 | 2026-06-06
+- **Severity:** MEDIUM
+- **File:** `docs/qa-runner-cloud-infra.md`
+- **Finding:** The worker entrypoint section listed `--max-ci-reruns "$QA_MAX_CI_RERUNS"` as a CLI argument appended by `worker-cycle.js`, but the changed worker runtime only executes `node scripts/qa-runner/run.js "$QA_PR" --push`. `QA_MAX_CI_RERUNS` is forwarded through the environment via `CYCLE_ENV_KEYS`, not as a worker CLI argument. This operational runbook documents production cloud operations; the stale bullet can mislead operators debugging CI rerun behavior or future maintainers validating the split-plane contract.
+- **Fix:** Removed the stale bullet and added a sentence that `QA_MAX_CI_RERUNS` is forwarded in the environment for `run.js` to consume.
 - **Commit:** same commit as this entry

@@ -212,7 +212,7 @@ The worker never appends approval flags. It only fixes and replies as the fixer
 identity; approval and merge remain on the control host under the orchestrator
 identity.
 
-- `--max-ci-reruns "$QA_MAX_CI_RERUNS"` when set.
+`QA_MAX_CI_RERUNS` is forwarded in the environment for `run.js` to consume.
 
 Before building that command, it loads
 `/etc/vimeflow/qa-runner/worker.env` unless `QA_WORKER_ENV_FILE` points
