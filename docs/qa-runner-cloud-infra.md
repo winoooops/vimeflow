@@ -20,7 +20,8 @@ Lifeline, tests, and PR fix pushes only when a PR needs compute.
   - GitHub webhook HMAC verification.
   - `/status` protected by `QA_STATUS_TOKEN`.
   - GitHub/Linear orchestrator credentials.
-- Does not run Kimi/Codex/test compute in cloud mode.
+- Runs only the lightweight Codex review adjudicator on the control plane.
+  Kimi, fixer-side Codex verify, and tests stay on the worker.
 
 ### Burst Worker
 
@@ -47,8 +48,9 @@ Control host credentials:
 - `LINEAR_CLIENT_ID`, `LINEAR_CLIENT_SECRET`, and `LINEAR_SCOPES` in
   `/etc/vimeflow/qa-runner/control.env`; `linear-orchestrator.env` remains a
   local/compatibility fallback
-- `CODEX_HOME`, populated by `codex login --with-api-key` during control
-  bootstrap so review adjudication can run on the control host
+- `CODEX_HOME`, populated by an interactive `codex login` for the service user
+  so review adjudication runs through the control account's Codex auth, not a
+  usage-based API key
 - Cloudflare Tunnel token or locally managed tunnel credentials
 
 Worker credentials:
@@ -76,6 +78,9 @@ arguments, systemd unit text, GitHub comments, or Linear comments.
 Use the checked-in bootstrap helpers to materialize role-specific env files:
 
 ```bash
+# control host: run once before control-env-from-ssm.sh
+sudo -u vimeflow-qa -H env CODEX_HOME=/etc/vimeflow/qa-runner/codex codex login
+
 # control host
 sudo /opt/vimeflow/repo/scripts/qa-runner/deploy/control-env-from-ssm.sh
 
@@ -85,6 +90,11 @@ sudo /opt/vimeflow/repo/scripts/qa-runner/deploy/worker-env-from-ssm.sh
 
 The scripts fetch SecureString values with decryption and write only local env
 files. They do not print secret values.
+
+`control-env-from-ssm.sh` does not fetch `CODEX_API_KEY` or `OPENAI_API_KEY`.
+It validates `/etc/vimeflow/qa-runner/codex/auth.json` by default so the control
+daemon keeps using browser-based Codex auth for adjudication. Worker bootstrap
+remains the only place that consumes worker API keys.
 
 On the worker, `worker-env-from-ssm.sh` also writes
 `/etc/vimeflow/qa-runner/worker.env` with `0600` permissions. `worker-cycle.js`

@@ -226,6 +226,27 @@ writes `.state/events.jsonl`, and posts Linear milestones. This keeps the
 `t2.micro` from doing expensive Kimi/Codex/test work while preserving one
 authoritative queue, one classifier, and one Linear status surface.
 
+### Codex Auth Split
+
+The control daemon uses Codex only for review adjudication. It should use the
+service user's browser-based Codex login under `CODEX_HOME`, not usage-based API
+keys. `control-env-from-ssm.sh` writes `CODEX_HOME` to `control.env`, verifies
+that `auth.json` exists by default, and intentionally does not read
+`CODEX_API_KEY` or `OPENAI_API_KEY` from SSM. The adjudicator also removes those
+API-key env vars before spawning `codex exec` so accidental ambient worker keys
+cannot switch control-plane decisions onto usage-based billing.
+
+Run the interactive login once on the control host:
+
+```bash
+sudo -u vimeflow-qa -H env CODEX_HOME=/etc/vimeflow/qa-runner/codex codex login
+```
+
+Burst workers are the opposite boundary: `worker-env-from-ssm.sh` consumes
+worker-only API key parameters, logs Codex in with the worker key, and writes
+`/etc/vimeflow/qa-runner/worker.env` for fixer-side `codex exec` and related
+provider use.
+
 `dispatch-worker.js` is the built-in dispatcher for the production rollout. It
 supports:
 

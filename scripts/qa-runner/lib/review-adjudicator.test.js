@@ -13,6 +13,7 @@ import {
   adjudicationCacheKey,
   buildAdjudicationPrompt,
   CLAUDE_REVIEW_HEADING,
+  controlCodexEnv,
   latestTrustedClaudeReview,
   normalizeAdjudication,
   REVIEW_DECISIONS,
@@ -250,8 +251,14 @@ describe('review adjudicator helpers', () => {
   test('runs Codex on a cold path and caches the normalized result', () => {
     let spawnCalls = 0
 
-    const spawnImpl = (_command, args) => {
+    const spawnImpl = (_command, args, opts) => {
       spawnCalls += 1
+      expect(opts.env).toMatchObject({
+        CODEX_HOME: '/control/codex',
+        KEEP_ME: 'yes',
+      })
+      expect(opts.env.CODEX_API_KEY).toBeUndefined()
+      expect(opts.env.OPENAI_API_KEY).toBeUndefined()
       writeCodexOutput(args, {
         decision: REVIEW_DECISIONS.goodShape,
         summary: 'review evidence is clean',
@@ -266,6 +273,12 @@ describe('review adjudicator helpers', () => {
     const cold = adjudicateReviews(adjudicationInput, {
       spawnImpl,
       stateDir: testStateDir,
+      env: {
+        CODEX_HOME: '/control/codex',
+        CODEX_API_KEY: 'worker-only',
+        OPENAI_API_KEY: 'worker-only',
+        KEEP_ME: 'yes',
+      },
     })
 
     const warm = adjudicateReviews(adjudicationInput, {
@@ -286,6 +299,20 @@ describe('review adjudicator helpers', () => {
     })
 
     expect(spawnCalls).toBe(1)
+  })
+
+  test('removes usage-based API keys from control-plane Codex env', () => {
+    expect(
+      controlCodexEnv({
+        CODEX_HOME: '/control/codex',
+        CODEX_API_KEY: 'worker-only',
+        OPENAI_API_KEY: 'worker-only',
+        GH_TOKEN: 'keep',
+      })
+    ).toEqual({
+      CODEX_HOME: '/control/codex',
+      GH_TOKEN: 'keep',
+    })
   })
 
   test('records failed structured output and retries before succeeding', () => {
