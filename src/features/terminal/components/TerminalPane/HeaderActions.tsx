@@ -1,6 +1,32 @@
 import type { ReactElement } from 'react'
 import { Tooltip } from '../../../../components/Tooltip'
 
+// Three honest scratch-button states for AT + tooltip: a foreground command is
+// running, a shell exists but is idle (`live`), or there's no shell. The idle
+// `live` wording keeps a hidden-but-alive shell discoverable to screen readers,
+// since the amber tint alone is a visual-only cue.
+const scratchButtonLabel = (running: boolean, active: boolean): string => {
+  if (active) {
+    return 'open scratch terminal (running)'
+  }
+  if (running) {
+    return 'open scratch terminal (live)'
+  }
+
+  return 'open scratch terminal'
+}
+
+const scratchButtonTooltip = (running: boolean, active: boolean): string => {
+  if (active) {
+    return 'Scratch terminal · running'
+  }
+  if (running) {
+    return 'Scratch terminal · live'
+  }
+
+  return 'Scratch terminal'
+}
+
 export interface HeaderActionsProps {
   isCollapsed: boolean
   onToggleCollapse: () => void
@@ -28,18 +54,12 @@ export const HeaderActions = ({
   <>
     {onScratch && (
       <Tooltip
-        content={
-          scratchActive ? 'Scratch terminal · running' : 'Scratch terminal'
-        }
+        content={scratchButtonTooltip(scratchRunning, scratchActive)}
         placement="bottom"
       >
         <button
           type="button"
-          aria-label={
-            scratchActive
-              ? 'open scratch terminal (running)'
-              : 'open scratch terminal'
-          }
+          aria-label={scratchButtonLabel(scratchRunning, scratchActive)}
           onClick={(event) => {
             event.stopPropagation()
             onScratch()

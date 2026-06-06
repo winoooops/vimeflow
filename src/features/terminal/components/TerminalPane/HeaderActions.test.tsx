@@ -105,10 +105,10 @@ describe('HeaderActions', () => {
       />
     )
 
-    // Amber tint means "this pane has a scratch shell"; with no foreground
-    // command the button is not labelled running and shows no live-dot.
+    // Amber tint + a "(live)" label expose the hidden-but-alive shell to AT;
+    // with no foreground command it isn't labelled running and shows no dot.
     const button = screen.getByRole('button', {
-      name: 'open scratch terminal',
+      name: 'open scratch terminal (live)',
     })
     expect(button.className).toContain('bg-[#f0c674]/15')
     expect(screen.queryByTestId('scratch-live-dot')).toBeNull()
