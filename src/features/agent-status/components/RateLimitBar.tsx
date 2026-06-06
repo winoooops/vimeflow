@@ -23,6 +23,7 @@ export const RateLimitBar = ({
     </div>
     <div
       role="progressbar"
+      aria-label={label}
       aria-valuenow={Math.round(percentage)}
       aria-valuemin={0}
       aria-valuemax={100}

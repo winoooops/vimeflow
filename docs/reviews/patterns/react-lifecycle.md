@@ -248,3 +248,21 @@ to avoid unintended re-runs (e.g., PTY respawning on every cwd change).
 - **Finding:** When an agent exits but the PTY remains open, `useAgentStatus` sets `agentExited: true`/`isActive: false` while retaining `agentType` and the final metrics during its 5s exit-hold window. Because `sidebarCardIsShell` only looked at `agentType`, that scenario rendered the fused card as an agent card with stale model/rate-limit data instead of the SHELL placeholder.
 - **Fix:** Changed `const sidebarCardIsShell = !agentStatus.agentType` to `const sidebarCardIsShell = !agentStatus.agentType || !agentStatus.isActive` so an inactive agent (including the post-exit hold window) renders the shell placeholder.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 27. Exited-agent shell guard must check `agentExited` during the exit-hold window
+
+- **Source:** github-codex-connector + local refinement | PR #352 round 3 | 2026-06-06
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/workspace/WorkspaceView.tsx`
+- **Finding:** The prior round-1 fix added `!agentStatus.isActive` to `sidebarCardIsShell`, but during the 5s exit-hold window `isActive` remains `true` while `agentExited` is `true`. The card therefore continued to render stale model/rate-limit data instead of the SHELL placeholder.
+- **Fix:** Added `|| agentStatus.agentExited` to the `sidebarCardIsShell` derivation so the shell placeholder shows immediately when an agent exits, even during the exit-hold window where `isActive` has not yet flipped to false.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 28. forwardRef component optional props trigger `react/require-default-props` after removing `defaultProps`
+
+- **Source:** local-codex (CI failure) | PR #352 round 3 | 2026-06-06
+- **Severity:** HIGH
+- **File:** `src/features/workspace/components/SidebarToggle.tsx`
+- **Finding:** Removing deprecated `defaultProps` from a `forwardRef` component caused ESLint `react/require-default-props` errors because the rule cannot see destructuring defaults through `forwardRef`. The CI Code Quality Check job failed. All defaults were already handled via destructuring, so re-adding `defaultProps` would reintroduce the React 18.3 deprecation warning.
+- **Fix:** Added the repository-standard `/* eslint-disable react/require-default-props -- forwardRef components: ESLint cannot see through forwardRef to find destructuring defaults */` comment at the top of the file, matching the convention used in six other forwardRef files in the repo.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

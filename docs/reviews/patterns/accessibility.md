@@ -271,3 +271,12 @@ handlers must not trap focus without implementing the promised behavior.
 - **Finding:** The shared `RateLimitBar` component rendered a visual progress bar as two nested `<div>` elements with no ARIA role or value attributes. Screen readers could not interpret the fill width as a bounded value, so AT users only heard the adjacent label and percentage text without the programmatic range semantics.
 - **Fix:** Added `role="progressbar"`, `aria-valuenow={Math.round(percentage)}`, `aria-valuemin={0}`, and `aria-valuemax={100}` to the outer track `<div>`, and added a co-located test asserting the role and value attributes.
 - **Commit:** same commit as this entry
+
+### 29. RateLimitBar progressbar lacks accessible name
+
+- **Source:** github-claude | PR #352 round 3 | 2026-06-06
+- **Severity:** HIGH
+- **File:** `src/features/agent-status/components/RateLimitBar.tsx`
+- **Finding:** The progressbar `<div>` had `role="progressbar"` and `aria-value*` attributes but no `aria-label` or `aria-labelledby`. The visible label lived in a preceding sibling `<span>` with no programmatic association. Screen readers announced a bare percentage with no context about what the bar measures, violating WCAG 2.1 SC 4.1.2 (Name, Role, Value).
+- **Fix:** Added `aria-label={label}` to the progressbar `<div>` so the accessible name matches the visible label text. No test changes were needed beyond the existing `getByRole('progressbar')` query which now implicitly verifies the name.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
