@@ -214,6 +214,7 @@ The command receives the fixer contract through environment variables:
 | `QA_LINEAR_TEAM_KEY`          | Linear team key for issue creation                                  |
 | `QA_MAX_CI_RERUNS`            | Bounded transient reviewer rerun cap                                |
 | `QA_FIX_CONTEXT`              | Structured control-plane reason/findings for the fixer              |
+| `QA_LINEAR_PARENT_COMMENT_ID` | Active `NEEDS_FIX` Linear comment id for fixer status replies       |
 
 The dispatcher must block until the burst worker completes that fixer pass and
 then exit with `run.js`'s exit code. The control daemon keeps its existing
