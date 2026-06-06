@@ -95,7 +95,7 @@ describe('HeaderActions', () => {
     expect(onParentClick).not.toHaveBeenCalled()
   })
 
-  test('the running cue is the amber button background (no dot)', () => {
+  test('a live (but idle) scratch shell is transparent but labelled live for AT', () => {
     render(
       <HeaderActions
         isCollapsed={expanded}
@@ -105,11 +105,34 @@ describe('HeaderActions', () => {
       />
     )
 
+    // Idle = transparent with a gray icon; the amber tint + amber icon are
+    // reserved for an actually-running command. The "(live)" label still
+    // exposes the hidden shell to AT.
+    const button = screen.getByRole('button', {
+      name: 'open scratch terminal (live)',
+    })
+    expect(button.className).toContain('bg-transparent')
+    expect(button.className).toContain('text-on-surface-muted')
+    expect(screen.queryByTestId('scratch-live-dot')).toBeNull()
+  })
+
+  test('an active scratch shows the amber button tint (the cue, no dot)', () => {
+    render(
+      <HeaderActions
+        isCollapsed={expanded}
+        onToggleCollapse={vi.fn()}
+        onScratch={vi.fn()}
+        scratchRunning
+        scratchActive
+      />
+    )
+
     const button = screen.getByRole('button', {
       name: /open scratch terminal \(running\)/i,
     })
     expect(button.className).toContain('bg-[#f0c674]/15')
-    // The green live-dot was removed — the amber background is the only cue.
+    expect(button.className).toContain('text-[#f0c674]') // amber icon when active
+    // The amber background IS the running cue — no separate live-dot.
     expect(screen.queryByTestId('scratch-live-dot')).toBeNull()
   })
 
@@ -126,6 +149,7 @@ describe('HeaderActions', () => {
       name: 'open scratch terminal',
     })
     expect(button.className).toContain('bg-transparent')
+    expect(button.className).toContain('text-on-surface-muted') // gray icon, not amber
   })
 
   test('hovering the collapse-status button shows a plain tooltip', async () => {

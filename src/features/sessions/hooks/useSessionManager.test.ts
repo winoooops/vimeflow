@@ -52,6 +52,9 @@ const createMockService = (): ITerminalService => ({
       // eslint-disable-next-line @typescript-eslint/no-empty-function
       Promise.resolve((): void => {})
   ),
+  onScratchForeground: vi.fn(
+    (): Promise<() => void> => Promise.resolve((): void => undefined)
+  ),
   listSessions: vi.fn().mockResolvedValue({
     activeSessionId: null,
     sessions: [],

@@ -2,7 +2,7 @@
 
 use crate::runtime::{serialize_event, EventSink};
 
-use super::types::{PtyDataEvent, PtyErrorEvent, PtyExitEvent};
+use super::types::{PtyDataEvent, PtyErrorEvent, PtyExitEvent, ScratchForegroundEvent};
 
 pub(crate) fn emit_pty_data(events: &dyn EventSink, payload: &PtyDataEvent) -> Result<(), String> {
     events.emit_json("pty-data", serialize_event(payload)?)
@@ -17,4 +17,11 @@ pub(crate) fn emit_pty_error(
     payload: &PtyErrorEvent,
 ) -> Result<(), String> {
     events.emit_json("pty-error", serialize_event(payload)?)
+}
+
+pub(crate) fn emit_scratch_foreground(
+    events: &dyn EventSink,
+    payload: &ScratchForegroundEvent,
+) -> Result<(), String> {
+    events.emit_json("scratch-foreground", serialize_event(payload)?)
 }

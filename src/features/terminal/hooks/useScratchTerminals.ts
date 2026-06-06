@@ -21,6 +21,8 @@ interface ScratchEntry {
   pid: number
   status: ScratchStatus
   cwd: string
+  /** A foreground command is currently running in the shell (VIM-71). */
+  active: boolean
 }
 
 /**
@@ -73,6 +75,12 @@ export interface UseScratchTerminals {
    * session switch), so the bound is ≤4 per session, not ≤4 total.
    */
   runningByPane: ReadonlyMap<string, ScratchStatus>
+  /**
+   * Scratch shells with a foreground command actually running, keyed by
+   * `${sessionId}:${paneId}` (VIM-71). Drives the amber button tint —
+   * distinct from `runningByPane`, which only means a shell exists.
+   */
+  activeByPane: ReadonlyMap<string, boolean>
 }
 
 /**
@@ -182,6 +190,7 @@ export const useScratchTerminals = ({
           pid: result.pid,
           status: 'running',
           cwd: result.cwd,
+          active: false,
         })
         commit()
       } catch (err) {
@@ -284,7 +293,56 @@ export const useScratchTerminals = ({
           return
         }
         for (const [key, entry] of affected) {
-          entriesRef.current.set(key, { ...entry, status: 'exited' })
+          // A dead shell can't be running a foreground command, so the mint
+          // "running" dot clears alongside the lifecycle flip.
+          entriesRef.current.set(key, {
+            ...entry,
+            status: 'exited',
+            active: false,
+          })
+        }
+        commit()
+      })
+      if (subscription.cancelled) {
+        off()
+
+        return
+      }
+      subscription.off = off
+    })()
+
+    return (): void => {
+      subscription.cancelled = true
+      subscription.off?.()
+    }
+  }, [service, commit])
+
+  // Live "running" cue (VIM-71): the backend polls each scratch shell's
+  // foreground process group and emits `scratch-foreground` when a command
+  // starts or finishes. Mirror it onto the matching entry's `active` flag,
+  // which drives the amber button tint. Same async-subscribe / sync-cleanup shape as
+  // the self-exit effect above.
+  useEffect(() => {
+    const subscription: { cancelled: boolean; off: (() => void) | null } = {
+      cancelled: false,
+      off: null,
+    }
+    void (async (): Promise<void> => {
+      const off = await service.onScratchForeground((ptyId, running) => {
+        // Gate on `status === 'running'`: the poll loop and the PTY reader emit
+        // from independent backend tasks, so a stale `running: true` can arrive
+        // after `pty-exit` — without this it would re-light a dead shell.
+        const affected = [...entriesRef.current.entries()].filter(
+          ([, entry]) =>
+            entry.scratchPtyId === ptyId &&
+            entry.status === 'running' &&
+            entry.active !== running
+        )
+        if (affected.length === 0) {
+          return
+        }
+        for (const [key, entry] of affected) {
+          entriesRef.current.set(key, { ...entry, active: running })
         }
         commit()
       })
@@ -350,6 +408,13 @@ export const useScratchTerminals = ({
     return map
   }, [entries])
 
+  const activeByPane = useMemo(() => {
+    const map = new Map<string, boolean>()
+    entries.forEach((entry, key) => map.set(key, entry.active))
+
+    return map
+  }, [entries])
+
   const renderNode: ReactNode =
     entries.size > 0
       ? createElement(
@@ -372,5 +437,5 @@ export const useScratchTerminals = ({
         )
       : null
 
-  return { renderNode, toggle, runningByPane }
+  return { renderNode, toggle, runningByPane, activeByPane }
 }

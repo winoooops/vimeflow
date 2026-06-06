@@ -40,6 +40,9 @@ const createDefaultMockService = (): ITerminalService =>
         // eslint-disable-next-line @typescript-eslint/no-empty-function
         Promise.resolve((): void => {})
     ),
+    onScratchForeground: vi.fn(
+      (): Promise<() => void> => Promise.resolve((): void => undefined)
+    ),
     listSessions: vi.fn().mockResolvedValue({
       activeSessionId: null,
       sessions: [],
@@ -2082,6 +2085,9 @@ describe('Body', () => {
           // eslint-disable-next-line @typescript-eslint/no-empty-function
           Promise.resolve((): void => {})
         ),
+        onScratchForeground: vi.fn(() =>
+          Promise.resolve((): void => undefined)
+        ),
         listSessions: vi.fn().mockResolvedValue({
           activeSessionId: null,
           sessions: [],
@@ -2143,6 +2149,9 @@ describe('Body', () => {
           // eslint-disable-next-line @typescript-eslint/no-empty-function
           Promise.resolve((): void => {})
         ),
+        onScratchForeground: vi.fn(() =>
+          Promise.resolve((): void => undefined)
+        ),
         listSessions: vi.fn().mockResolvedValue({
           activeSessionId: null,
           sessions: [],
@@ -2203,6 +2212,9 @@ describe('Body', () => {
         onError: vi.fn(() =>
           // eslint-disable-next-line @typescript-eslint/no-empty-function
           Promise.resolve((): void => {})
+        ),
+        onScratchForeground: vi.fn(() =>
+          Promise.resolve((): void => undefined)
         ),
         listSessions: vi.fn().mockResolvedValue({
           activeSessionId: null,

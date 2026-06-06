@@ -79,6 +79,16 @@ export interface ITerminalService {
   ): Promise<() => void>
 
   /**
+   * Subscribe to scratch-terminal foreground-state events (VIM-71). `running`
+   * is true while a foreground command holds the scratch shell's terminal,
+   * false when it returns to its prompt. Drives the live "running" cue.
+   * Resolves after the underlying transport listener is attached.
+   */
+  onScratchForeground(
+    callback: (sessionId: string, running: boolean) => void
+  ): Promise<() => void>
+
+  /**
    * List all sessions with their status (Alive or Exited)
    */
   listSessions(): Promise<SessionList>
@@ -135,6 +145,10 @@ export class MockTerminalService implements ITerminalService {
   private exitCallbacks: ((sessionId: string, code: number | null) => void)[] =
     []
   private errorCallbacks: ((sessionId: string, message: string) => void)[] = []
+  private scratchForegroundCallbacks: ((
+    sessionId: string,
+    running: boolean
+  ) => void)[] = []
 
   spawn(params: PTYSpawnParams): Promise<PTYSpawnResult> {
     // Mock implementation - params unused in mock but required by interface
@@ -307,6 +321,19 @@ export class MockTerminalService implements ITerminalService {
     })
   }
 
+  onScratchForeground(
+    callback: (sessionId: string, running: boolean) => void
+  ): Promise<() => void> {
+    this.scratchForegroundCallbacks.push(callback)
+
+    return Promise.resolve(() => {
+      const index = this.scratchForegroundCallbacks.indexOf(callback)
+      if (index > -1) {
+        this.scratchForegroundCallbacks.splice(index, 1)
+      }
+    })
+  }
+
   // Test helpers
   /**
    * Emit a pty-data event. When `offsetStart` is omitted, the mock auto-assigns
@@ -334,6 +361,10 @@ export class MockTerminalService implements ITerminalService {
 
   emitExit(sessionId: string, code: number | null): void {
     this.exitCallbacks.forEach((cb) => cb(sessionId, code))
+  }
+
+  emitScratchForeground(sessionId: string, running: boolean): void {
+    this.scratchForegroundCallbacks.forEach((cb) => cb(sessionId, running))
   }
 
   emitError(sessionId: string, message: string): void {

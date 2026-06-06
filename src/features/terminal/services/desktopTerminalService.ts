@@ -12,6 +12,7 @@ import type {
   PtyDataEvent,
   PtyExitEvent,
   PtyErrorEvent,
+  ScratchForegroundEvent,
   SessionList,
   SetActiveSessionRequest,
   ReorderSessionsRequest,
@@ -36,6 +37,10 @@ export class DesktopTerminalService implements ITerminalService {
   private exitCallbacks: ((sessionId: string, code: number | null) => void)[] =
     []
   private errorCallbacks: ((sessionId: string, message: string) => void)[] = []
+  private scratchForegroundCallbacks: ((
+    sessionId: string,
+    running: boolean
+  ) => void)[] = []
 
   private unlistenFns: UnlistenFn[] = []
   private initPromise: Promise<void> | null = null
@@ -115,6 +120,17 @@ export class DesktopTerminalService implements ITerminalService {
         )
         pendingUnlistenFns.push(unlistenError)
 
+        const unlistenScratchForeground = await listen<ScratchForegroundEvent>(
+          'scratch-foreground',
+          (payload) => {
+            const { sessionId, running } = payload
+            this.scratchForegroundCallbacks.forEach((cb) =>
+              cb(sessionId, running)
+            )
+          }
+        )
+        pendingUnlistenFns.push(unlistenScratchForeground)
+
         if (initGeneration !== this.listenerInitGeneration) {
           this.cleanupListeners(pendingUnlistenFns)
 
@@ -150,6 +166,15 @@ export class DesktopTerminalService implements ITerminalService {
     const index = this.errorCallbacks.indexOf(callback)
     if (index > -1) {
       this.errorCallbacks.splice(index, 1)
+    }
+  }
+
+  private removeScratchForegroundCallback(
+    callback: (sessionId: string, running: boolean) => void
+  ): void {
+    const index = this.scratchForegroundCallbacks.indexOf(callback)
+    if (index > -1) {
+      this.scratchForegroundCallbacks.splice(index, 1)
     }
   }
 
@@ -275,6 +300,23 @@ export class DesktopTerminalService implements ITerminalService {
     }
   }
 
+  async onScratchForeground(
+    callback: (sessionId: string, running: boolean) => void
+  ): Promise<() => void> {
+    this.scratchForegroundCallbacks.push(callback)
+
+    try {
+      await this.ensureListeners()
+    } catch (error) {
+      this.removeScratchForegroundCallback(callback)
+      throw error
+    }
+
+    return () => {
+      this.removeScratchForegroundCallback(callback)
+    }
+  }
+
   /**
    * Dispose all backend event listeners. Call when the service is no longer needed.
    */
@@ -285,6 +327,7 @@ export class DesktopTerminalService implements ITerminalService {
     this.dataCallbacks = []
     this.exitCallbacks = []
     this.errorCallbacks = []
+    this.scratchForegroundCallbacks = []
     this.initPromise = null
   }
 

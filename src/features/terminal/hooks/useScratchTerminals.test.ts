@@ -23,6 +23,7 @@ const makeService = (): ITerminalService =>
       .mockResolvedValue({ sessionId: 'scratch-pty', pid: 7, cwd: '/repo' }),
     kill: vi.fn().mockResolvedValue(undefined),
     onExit: vi.fn().mockResolvedValue(() => undefined),
+    onScratchForeground: vi.fn().mockResolvedValue(() => undefined),
   }) as unknown as ITerminalService
 
 // The reconcile effect (VIM-62) keys spawned shells by ptyId; a counter mints a
@@ -233,6 +234,7 @@ test('contains a spawn rejection instead of rejecting from the chord path', asyn
     spawn: vi.fn().mockRejectedValue(new Error('pty cap reached')),
     kill: vi.fn().mockResolvedValue(undefined),
     onExit: vi.fn().mockResolvedValue(() => undefined),
+    onScratchForeground: vi.fn().mockResolvedValue(() => undefined),
   } as unknown as ITerminalService
   const focused = makeFocusedPane()
   const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
@@ -691,4 +693,110 @@ test('a failed in-flight spawn does not leave a tombstone that kills a later val
   expect(service.kill).not.toHaveBeenCalled()
   expect(result.current.runningByPane.get('s1:p0')).toBe('running')
   warn.mockRestore()
+})
+
+// --- VIM-71: honest "running" cue from foreground-process detection ---
+
+test('a scratch-foreground running event lights the pane as active', async () => {
+  const service = makeService()
+  service.spawn = countingSpawn()
+  const focused = makeFocusedPane('s1', 'p0', '/a')
+
+  const { result } = renderHook(() =>
+    useScratchTerminals({ service, resolveFocusedPane: () => focused })
+  )
+
+  await act(async () => {
+    await result.current.toggle({ sessionId: 's1', paneId: 'p0', cwd: '/a' })
+  })
+  // A freshly-spawned shell is idle at its prompt — not active.
+  expect(result.current.activeByPane.get('s1:p0')).toBe(false)
+
+  // The backend reports a foreground command started in scratch-1.
+  const fgCb = vi.mocked(service.onScratchForeground).mock.calls[0][0]
+  act(() => {
+    fgCb('scratch-1', true)
+  })
+
+  expect(result.current.activeByPane.get('s1:p0')).toBe(true)
+})
+
+test('a scratch-foreground idle event clears the active cue', async () => {
+  const service = makeService()
+  service.spawn = countingSpawn()
+  const focused = makeFocusedPane('s1', 'p0', '/a')
+
+  const { result } = renderHook(() =>
+    useScratchTerminals({ service, resolveFocusedPane: () => focused })
+  )
+
+  await act(async () => {
+    await result.current.toggle({ sessionId: 's1', paneId: 'p0', cwd: '/a' })
+  })
+  const fgCb = vi.mocked(service.onScratchForeground).mock.calls[0][0]
+  act(() => {
+    fgCb('scratch-1', true)
+  })
+  expect(result.current.activeByPane.get('s1:p0')).toBe(true)
+
+  act(() => {
+    fgCb('scratch-1', false)
+  })
+  expect(result.current.activeByPane.get('s1:p0')).toBe(false)
+})
+
+test('a self-exited scratch clears its active cue', async () => {
+  const service = makeService()
+  service.spawn = countingSpawn()
+  const focused = makeFocusedPane('s1', 'p0', '/a')
+
+  const { result } = renderHook(() =>
+    useScratchTerminals({ service, resolveFocusedPane: () => focused })
+  )
+
+  await act(async () => {
+    await result.current.toggle({ sessionId: 's1', paneId: 'p0', cwd: '/a' })
+  })
+  const fgCb = vi.mocked(service.onScratchForeground).mock.calls[0][0]
+  act(() => {
+    fgCb('scratch-1', true)
+  })
+  expect(result.current.activeByPane.get('s1:p0')).toBe(true)
+
+  // The shell exits while a command was "running" — the cue must go dark.
+  const exitCb = vi.mocked(service.onExit).mock.calls[0][0]
+  act(() => {
+    exitCb('scratch-1', 0)
+  })
+
+  expect(result.current.activeByPane.get('s1:p0')).toBe(false)
+})
+
+test('a foreground event arriving after exit does not re-light a dead scratch', async () => {
+  const service = makeService()
+  service.spawn = countingSpawn()
+  const focused = makeFocusedPane('s1', 'p0', '/a')
+
+  const { result } = renderHook(() =>
+    useScratchTerminals({ service, resolveFocusedPane: () => focused })
+  )
+
+  await act(async () => {
+    await result.current.toggle({ sessionId: 's1', paneId: 'p0', cwd: '/a' })
+  })
+  const fgCb = vi.mocked(service.onScratchForeground).mock.calls[0][0]
+  const exitCb = vi.mocked(service.onExit).mock.calls[0][0]
+
+  // The shell exits, then a stale foreground=true event arrives — the poll loop
+  // and the PTY reader are independent tasks and can deliver out of order.
+  act(() => {
+    exitCb('scratch-1', 0)
+  })
+
+  act(() => {
+    fgCb('scratch-1', true)
+  })
+
+  expect(result.current.activeByPane.get('s1:p0')).toBe(false)
+  expect(result.current.runningByPane.get('s1:p0')).toBe('exited')
 })

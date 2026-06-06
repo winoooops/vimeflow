@@ -104,6 +104,7 @@ describe('DesktopTerminalService', () => {
       expect(eventListeners.has('pty-data')).toBe(true)
       expect(eventListeners.has('pty-exit')).toBe(true)
       expect(eventListeners.has('pty-error')).toBe(true)
+      expect(eventListeners.has('scratch-foreground')).toBe(true)
     })
 
     test('spawn forwards enableAgentBridge=true when caller opts in', async () => {
@@ -243,6 +244,19 @@ describe('DesktopTerminalService', () => {
       })
 
       expect(callback).toHaveBeenCalledWith('sess-1', 'PTY read error')
+    })
+
+    test('onScratchForeground delivers scratch-foreground events to callback', async () => {
+      const callback = vi.fn()
+      await service.onScratchForeground(callback)
+      await mockSpawnAndInit(service)
+
+      emitDesktopEvent('scratch-foreground', {
+        sessionId: 'sess-1',
+        running: true,
+      })
+
+      expect(callback).toHaveBeenCalledWith('sess-1', true)
     })
 
     test('unsubscribe removes callback', async () => {
@@ -481,10 +495,16 @@ describe('DesktopTerminalService', () => {
 
         await expect(unsubscribePromise).resolves.toEqual(expect.any(Function))
 
-        expect(unlistenCalls).toEqual(['pty-data', 'pty-exit', 'pty-error'])
+        expect(unlistenCalls).toEqual([
+          'pty-data',
+          'pty-exit',
+          'pty-error',
+          'scratch-foreground',
+        ])
         expect(eventListeners.get('pty-data')).toEqual([])
         expect(eventListeners.get('pty-exit')).toEqual([])
         expect(eventListeners.get('pty-error')).toEqual([])
+        expect(eventListeners.get('scratch-foreground')).toEqual([])
       } finally {
         if (originalImpl) {
           listenMock.mockImplementation(originalImpl)
