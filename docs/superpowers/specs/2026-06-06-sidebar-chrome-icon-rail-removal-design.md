@@ -96,3 +96,5 @@ Wrap the button in `components/Tooltip` (`content` = "Show/Hide sidebar", `short
 5. `⌘B` / `Ctrl+⇧B` / `:toggle-sidebar` / the toggle all flip the same persisted flag and stay in sync; reload restores state; collapsing while focus is in the sidebar moves focus to the toggle.
 6. The toggle and both utilities use the project `Tooltip` (no native `title`); Command Palette opens via its button + shortcut; Settings is an `aria-disabled` stub pending #252.
 7. `npm run lint` / `type-check` / `test` green; coverage ≥ 80% (finalization).
+
+<!-- codex-reviewed: 2026-06-06T13:47:55Z -->
