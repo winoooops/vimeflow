@@ -274,3 +274,5 @@ TDD, ≥80% coverage, tests co-located (sibling `.test.ts(x)`), explicit `import
 
 - push → write → reload → reconstruct: browser tabs + history survive; browser-only session survives; on graceful quit a shell pane returns as a restartable placeholder (not auto-running).
 - legacy `vimeflow:browser-panes:v1` removed/ignored.
+
+<!-- codex-reviewed: 2026-06-06T16:18:35Z -->
