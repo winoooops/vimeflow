@@ -211,10 +211,10 @@ describe('WorkspaceView', () => {
     })
   })
 
-  test('renders all five zones (icon rail, sidebar, terminal, dock panel, agent status panel)', () => {
+  test('renders workspace zones (sidebar, terminal, dock panel, agent status panel)', () => {
     render(<WorkspaceView />)
 
-    expect(screen.getByTestId('icon-rail')).toBeInTheDocument()
+    // VIM-76: icon rail removed; sidebar | main | activity.
     expect(screen.getByTestId('sidebar')).toBeInTheDocument()
     expect(screen.getByTestId('terminal-zone')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /editor/i })).toBeInTheDocument() // DockPanel
@@ -812,13 +812,14 @@ describe('WorkspaceView', () => {
     })
   })
 
-  test('applies correct grid layout with 4 columns (dynamic sidebar width)', () => {
+  test('applies correct grid layout with 3 columns (dynamic sidebar width)', () => {
     render(<WorkspaceView />)
 
     const container = screen.getByTestId('workspace-view')
 
     expect(container).toHaveClass('grid')
-    expect(container.style.gridTemplateColumns).toBe('48px auto 1fr auto')
+    // VIM-76: icon rail removed — sidebar (auto) | main (1fr) | activity (auto).
+    expect(container.style.gridTemplateColumns).toBe('auto 1fr auto')
 
     expect(container.style.getPropertyValue('--workspace-sidebar-width')).toBe(
       '272px'
@@ -833,19 +834,21 @@ describe('WorkspaceView', () => {
     expect(container).toHaveClass('h-screen')
   })
 
-  test('renders IconRail utility buttons (no account avatar)', () => {
+  test('renders sidebar top-bar utility buttons (no account avatar)', () => {
     render(<WorkspaceView />)
 
-    const iconRail = screen.getByTestId('icon-rail')
+    // VIM-76: utilities moved from the icon rail to the sidebar top bar.
+    const topBar = screen.getByTestId('sidebar-top-bar')
 
-    expect(within(iconRail).queryByRole('img', { name: 'Account' })).toBeNull()
+    expect(within(topBar).queryByRole('img', { name: 'Account' })).toBeNull()
 
     expect(
-      within(iconRail).getByRole('button', { name: 'Command Palette' })
+      within(topBar).getByRole('button', { name: 'Command Palette' })
     ).toBeInTheDocument()
 
+    // Settings aria-label is "Settings — coming (see issue #252)".
     expect(
-      within(iconRail).getByRole('button', { name: 'Settings' })
+      within(topBar).getByRole('button', { name: /^Settings/ })
     ).toHaveAttribute('aria-disabled', 'true')
   })
 
@@ -879,17 +882,17 @@ describe('WorkspaceView', () => {
     expect(panel).toBeInTheDocument()
   })
 
-  test('renders rail utility actions in IconRail', () => {
+  test('renders utility actions in the sidebar top bar', () => {
     render(<WorkspaceView />)
 
-    const iconRail = screen.getByTestId('icon-rail')
+    const topBar = screen.getByTestId('sidebar-top-bar')
 
     expect(
-      within(iconRail).getByRole('button', { name: 'Command Palette' })
+      within(topBar).getByRole('button', { name: 'Command Palette' })
     ).toBeInTheDocument()
 
     expect(
-      within(iconRail).getByRole('button', { name: 'Settings' })
+      within(topBar).getByRole('button', { name: /^Settings/ })
     ).toBeInTheDocument()
   })
 
@@ -1017,7 +1020,7 @@ describe('WorkspaceView', () => {
     await screen.findByRole('button', { name: 'session 2' })
   })
 
-  test('opens command palette from the rail command button', async () => {
+  test('opens command palette from the top-bar command button', async () => {
     const user = userEvent.setup()
     render(<WorkspaceView />)
 
@@ -1168,8 +1171,9 @@ describe('WorkspaceView', () => {
 
     const workspaceView = screen.getByTestId('workspace-view')
 
-    // 3rd grid child = main wrapper (after icon rail, sidebar wrapper).
-    const mainWorkspace = workspaceView.children[2] as HTMLElement
+    // VIM-76: icon rail removed — 2nd grid child = main wrapper (after the
+    // sidebar wrapper, before the activity panel).
+    const mainWorkspace = workspaceView.children[1] as HTMLElement
     expect(mainWorkspace).toHaveClass('flex')
     expect(mainWorkspace).toHaveClass('flex-col')
   })
@@ -1207,20 +1211,20 @@ describe('WorkspaceView', () => {
     // Component should render all zones even when there are no active sessions
     render(<WorkspaceView />)
 
-    // All main zones should still render
-    expect(screen.getByTestId('icon-rail')).toBeInTheDocument()
+    // All main zones should still render (VIM-76: icon rail removed).
     expect(screen.getByTestId('sidebar')).toBeInTheDocument()
     expect(screen.getByTestId('terminal-zone')).toBeInTheDocument()
     expect(screen.getByTestId('agent-status-panel')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /editor/i })).toBeInTheDocument()
   })
 
-  test('grid columns: icon-rail 48px, sidebar auto (drawer), main 1fr, activity auto', () => {
+  test('grid columns: sidebar auto (drawer), main 1fr, activity auto', () => {
     render(<WorkspaceView />)
 
     const container = screen.getByTestId('workspace-view')
 
-    expect(container.style.gridTemplateColumns).toBe('48px auto 1fr auto')
+    // VIM-76: icon rail removed — three columns sidebar | main | activity.
+    expect(container.style.gridTemplateColumns).toBe('auto 1fr auto')
 
     // The resizable width still lives in the CSS var (now applied to the
     // sidebar shell instead of the grid track) so the drawer can animate.
@@ -1229,15 +1233,12 @@ describe('WorkspaceView', () => {
     )
   })
 
-  test('moves focus to the rail toggle after collapsing the sidebar from the in-card toggle', async () => {
-    const user = userEvent.setup()
-    render(<WorkspaceView />)
-
-    await user.click(screen.getByTestId('sidebar-toggle-incard'))
-
-    const railToggle = await screen.findByTestId('sidebar-toggle-rail')
-    expect(railToggle).toHaveFocus()
-  })
+  // VIM-76: the in-card and rail toggles were removed. The collapse toggle now
+  // lives in the sidebar top bar (open) / session-tab bar (collapsed), and the
+  // post-collapse focus guard refocuses the now-visible toggle via
+  // requestAnimationFrame inside a body-focus check. jsdom does not flush that
+  // frame against a real focus/inert lifecycle, so the focus handoff is
+  // browser-verified rather than asserted here.
 
   test('previews sidebar drag width through CSS variable before committing React state', () => {
     const frameCallbacks: FrameRequestCallback[] = []
@@ -1347,15 +1348,16 @@ describe('WorkspaceView', () => {
     ).toBeTruthy()
   })
 
-  test('mounts StatusBar inside the main column (right of rail/sidebar)', () => {
+  test('mounts StatusBar inside the main column (right of the sidebar)', () => {
     render(<WorkspaceView />)
 
     const workspaceView = screen.getByTestId('workspace-view')
-    const mainWorkspace = workspaceView.children[2] as HTMLElement
+    // VIM-76: icon rail removed — main column is the 2nd grid child.
+    const mainWorkspace = workspaceView.children[1] as HTMLElement
     const statusBar = screen.getByTestId('status-bar')
 
     expect(statusBar).toBeInTheDocument()
-    // Inside main column → icon rail + sidebar fill full viewport height.
+    // Inside main column → the sidebar fills full viewport height alongside it.
     expect(mainWorkspace.contains(statusBar)).toBe(true)
   })
 

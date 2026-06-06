@@ -9,5 +9,6 @@ playwright-report
 *.d.ts
 docs/design/*.html
 docs/design/*/code.html
+docs/design/*/*.html
 docs/diagrams/*.html
 docs/explorations/*.html

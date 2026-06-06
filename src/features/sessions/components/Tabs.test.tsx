@@ -60,6 +60,31 @@ const renderTabs = (
     />
   )
 
+describe('Tabs — leading slot', () => {
+  test('renders the leading control before the tabs and pads the bar to clear it', () => {
+    render(
+      <Tabs
+        sessions={[buildSession()]}
+        activeSessionId="sess-1"
+        onSelect={vi.fn()}
+        onClose={vi.fn()}
+        onNew={vi.fn()}
+        leading={<button data-testid="leading-fixture">L</button>}
+      />
+    )
+
+    expect(screen.getByTestId('leading-fixture')).toBeInTheDocument()
+    expect(screen.getByTestId('session-tabs')).toHaveClass('pl-[12px]')
+  })
+
+  test('omitting leading uses the default left padding', () => {
+    renderTabs([buildSession()], 'sess-1')
+
+    expect(screen.queryByTestId('leading-fixture')).not.toBeInTheDocument()
+    expect(screen.getByTestId('session-tabs')).toHaveClass('pl-2')
+  })
+})
+
 describe('Tabs', () => {
   test('renders the strip at 38px tall per handoff §4.3', () => {
     renderTabs([buildSession()], 'sess-1')

@@ -8,7 +8,8 @@ import {
   useRef,
   useState,
 } from 'react'
-import { IconRail } from './components/IconRail'
+import { SidebarToggle } from './components/SidebarToggle'
+import { SidebarTopBar } from './components/SidebarTopBar'
 import { Tabs } from '../sessions/components/Tabs'
 import { Sidebar } from '../../components/sidebar/Sidebar'
 import {
@@ -50,7 +51,7 @@ import {
   usePaneRenameChord,
   type FocusedPaneRef,
 } from '../command-palette/hooks/usePaneRenameChord'
-import { mockNavigationItems, mockSettingsItem } from './data/mockNavigation'
+import { formatShortcut } from '../../lib/formatShortcut'
 import { renameAgentSession } from '../../lib/backend'
 import { useSessionManager } from '../sessions/hooks/useSessionManager'
 import { clampSize, useResizable } from '../../hooks/useResizable'
@@ -217,31 +218,54 @@ export const WorkspaceView = (): ReactElement => {
   }, [])
 
   const sidebarShortcutHint = preferModifier === 'meta' ? '⌘B' : 'Ctrl+⇧B'
+  // Real command-palette chord for the top-bar utility hint (Ctrl+; / ⌘;),
+  // not the ⌘K placeholder in the static design mock.
+  const commandShortcutHint = formatShortcut(COMMAND_PALETTE_SHORTCUT_KEYS)
 
   const { message: infoMessage, notifyInfo, dismiss } = useNotifyInfo()
   const { activeTab, setActiveTab } = useSidebarTab()
 
-  // VIM-66 spike: workspace-global sidebar collapse flag.
+  // VIM-66 / VIM-76: workspace-global sidebar collapse flag. The collapse toggle
+  // lives in the sidebar top bar when open and in the session-tab bar's leading
+  // slot when collapsed — both in-flow at the same {12,5} box. The sidebar is
+  // hidden instantly (no drawer slide), so there is no transition window where
+  // the toggle floats or a tab slips under it.
   const { collapsed: sidebarCollapsed, toggle: toggleSidebar } =
     useSidebarCollapsed()
-  const railToggleRef = useRef<HTMLButtonElement>(null)
-  const focusRailAfterCollapseRef = useRef(false)
 
-  const handleInCardToggleSidebar = useCallback((): void => {
-    if (!sidebarCollapsed) {
-      focusRailAfterCollapseRef.current = true
-    }
-    toggleSidebar()
-  }, [sidebarCollapsed, toggleSidebar])
+  // Imperative refs to the two SidebarToggle instances so the post-toggle focus
+  // guard can refocus the visible one without relying on data-testid selectors.
+  const sidebarToggleTopbarRef = useRef<HTMLButtonElement>(null)
+  const sidebarToggleTabsRef = useRef<HTMLButtonElement>(null)
 
+  // Post-toggle focus guard: collapse/expand removes the active toggle from the
+  // tab order (open toggle's shell goes inert; collapsed toggle's slot unmounts),
+  // dropping focus to <body>. Refocus the now-visible toggle when that happens.
+  // Skips the initial mount; deferred a frame so it runs after the inert flip /
+  // palette focus-restore settles.
+  const sidebarFocusGuardMountedRef = useRef(false)
   useEffect(() => {
-    if (
-      sidebarCollapsed &&
-      focusRailAfterCollapseRef.current &&
-      railToggleRef.current
-    ) {
-      focusRailAfterCollapseRef.current = false
-      railToggleRef.current.focus()
+    if (!sidebarFocusGuardMountedRef.current) {
+      sidebarFocusGuardMountedRef.current = true
+
+      return
+    }
+    if (typeof requestAnimationFrame !== 'function') {
+      return
+    }
+
+    const frame = requestAnimationFrame((): void => {
+      const active = document.activeElement
+      if (!active || active === document.body) {
+        const target = sidebarCollapsed
+          ? sidebarToggleTabsRef.current
+          : sidebarToggleTopbarRef.current
+        target?.focus()
+      }
+    })
+
+    return (): void => {
+      cancelAnimationFrame(frame)
     }
   }, [sidebarCollapsed])
 
@@ -1418,44 +1442,28 @@ export const WorkspaceView = (): ReactElement => {
         {
           // `--workspace-sidebar-width` is owned by previewSidebarWidth so
           // React rerenders cannot overwrite an in-progress drag preview.
-          // Sidebar track is `auto` so it follows the sidebar shell's animated
-          // width (VIM-66 drawer): width 0 → track 0 → main (1fr) reclaims it
-          // with no gutter, while the slide stays smooth.
-          gridTemplateColumns: `48px auto 1fr auto`,
+          // VIM-76: icon rail removed — layout is [sidebar | main | activity].
+          // The sidebar `auto` track follows the shell width; collapse sets it
+          // to 0 INSTANTLY (no slide), so <main> (1fr) reclaims with no gutter
+          // and no transition window.
+          gridTemplateColumns: `auto 1fr auto`,
         } as CSSProperties
       }
     >
-      <IconRail
-        settingsIssueNumber={SETTINGS_FOLLOWUP_ISSUE_NUMBER}
-        onCommand={commandPalette.open}
-        items={mockNavigationItems}
-        settingsItem={mockSettingsItem}
-        sidebarCollapsed={sidebarCollapsed}
-        onToggleSidebar={toggleSidebar}
-        sidebarShortcutHint={sidebarShortcutHint}
-        railToggleRef={railToggleRef}
-      />
-
-      {/* Sidebar — resizable + drawer-collapsible (VIM-66 spike). Kept mounted
-          and animated to width 0 so it slides like a drawer; the `auto` grid
-          track follows this shell's width, so width 0 = no gutter. The width
-          transition is disabled mid-resize-drag (isDragging) so dragging the
-          handle stays snappy. */}
+      {/* Sidebar — collapses instantly (VIM-76: no drawer slide). The shell
+          width snaps to 0 and the inner panel unmounts, so the `auto` track is
+          0 and <main> reclaims. The collapse toggle's collapsed-state home is
+          the session-tab bar's leading slot (below), not a floating overlay. */}
       <div
         aria-hidden={sidebarCollapsed || undefined}
         inert={sidebarCollapsed || undefined}
-        className={`relative h-full overflow-hidden ${
-          isDragging ? '' : 'transition-[width] duration-[220ms] ease-pane'
-        }`}
+        className="relative h-full overflow-hidden"
         style={{
           width: sidebarCollapsed
             ? 0
             : `var(--workspace-sidebar-width, ${SIDEBAR_INITIAL}px)`,
         }}
       >
-        {/* Inner panel keeps its full expanded width so the drawer SLIDES
-            (clipped by the shell's overflow-hidden) instead of squishing its
-            content as the shell animates to 0. */}
         <div
           className="relative flex h-full"
           style={{
@@ -1463,6 +1471,19 @@ export const WorkspaceView = (): ReactElement => {
           }}
         >
           <Sidebar
+            // Gate on !collapsed: unmounts the top bar + its portaled tooltips on collapse (they would otherwise escape the inert, clipped shell and linger); header/content stay mounted for state.
+            topBar={
+              sidebarCollapsed ? undefined : (
+                <SidebarTopBar
+                  onToggleSidebar={toggleSidebar}
+                  onCommand={commandPalette.open}
+                  commandShortcutHint={commandShortcutHint}
+                  sidebarShortcutHint={sidebarShortcutHint}
+                  settingsIssueNumber={SETTINGS_FOLLOWUP_ISSUE_NUMBER}
+                  toggleRef={sidebarToggleTopbarRef}
+                />
+              )
+            }
             header={
               <AgentStatusCard
                 title={sidebarCardTitle}
@@ -1473,8 +1494,6 @@ export const WorkspaceView = (): ReactElement => {
                 contextPct={sidebarCardContextPct}
                 fiveHourPct={sidebarCardFiveHourPct}
                 weekPct={sidebarCardWeekPct}
-                onToggleSidebar={handleInCardToggleSidebar}
-                sidebarShortcutHint={sidebarShortcutHint}
               />
             }
             content={
@@ -1536,6 +1555,19 @@ export const WorkspaceView = (): ReactElement => {
           onSelect={handleSetActiveSessionId}
           onClose={handleRemoveSession}
           onNew={handleCreateSession}
+          leading={
+            sidebarCollapsed ? (
+              <SidebarToggle
+                ref={sidebarToggleTabsRef}
+                collapsed
+                onClick={toggleSidebar}
+                size={28}
+                variant="inset"
+                data-testid="sidebar-toggle-tabs"
+                shortcutHint={sidebarShortcutHint}
+              />
+            ) : undefined
+          }
         />
 
         <div
