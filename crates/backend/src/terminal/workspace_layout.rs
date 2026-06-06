@@ -521,6 +521,15 @@ impl WorkspaceLayoutCache {
     /// lock across the disk write so overlapping saves cannot persist out of
     /// order (mirrors `SessionCache::mutate`).
     pub fn save(&self, store: &WorkspaceLayoutStore) -> Result<(), String> {
+        // Fail closed: never overwrite the durable file with a version `load`
+        // would discard (which would silently delete the saved workspace on the
+        // next restore). The assembler always writes the current version.
+        if store.version != CURRENT_WORKSPACE_LAYOUT_VERSION {
+            return Err(format!(
+                "refusing to save unsupported workspace-layout version {} (current {CURRENT_WORKSPACE_LAYOUT_VERSION})",
+                store.version
+            ));
+        }
         let mut guard = self.mirror.lock().expect("workspace-layout mirror poisoned");
         self.flush_to_disk(store)?;
         *guard = Some(store.clone());
@@ -802,6 +811,47 @@ mod tests {
         assert_eq!(loaded.version, CURRENT_WORKSPACE_LAYOUT_VERSION);
         assert_eq!(loaded.sessions.len(), 1);
         assert_eq!(loaded.sessions[0].id, "s");
+    }
+
+    #[test]
+    fn save_rejects_unsupported_version_failing_closed() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("workspace-layouts.json");
+        let cache = WorkspaceLayoutCache::new(path.clone());
+        cache
+            .save(&WorkspaceLayoutStore {
+                version: CURRENT_WORKSPACE_LAYOUT_VERSION,
+                sessions: vec![WorkspaceSession {
+                    id: "s".into(),
+                    project_id: "proj".into(),
+                    layout: "single".into(),
+                    working_directory: "/".into(),
+                    active: true,
+                    panes: vec![WorkspacePane::Browser(BrowserPane {
+                        pane_id: "p0".into(),
+                        pane_index: 0,
+                        active: true,
+                        tabs: vec![PersistedTab {
+                            active: true,
+                            history: vec![NavEntry {
+                                url: "https://x".into(),
+                                title: None,
+                            }],
+                            history_index: 0,
+                        }],
+                    })],
+                }],
+            })
+            .unwrap();
+
+        // A skewed-version save fails closed, leaving the good file intact.
+        let bad = WorkspaceLayoutStore {
+            version: 999,
+            sessions: Vec::new(),
+        };
+        assert!(cache.save(&bad).is_err());
+        let loaded = WorkspaceLayoutCache::new(path).load("proj", "/");
+        assert_eq!(loaded.sessions.len(), 1); // original survived
     }
 
     #[test]
