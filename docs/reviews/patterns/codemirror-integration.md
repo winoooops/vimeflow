@@ -3,7 +3,7 @@ id: codemirror-integration
 category: editor
 created: 2026-04-10
 last_updated: 2026-06-06
-ref_count: 1
+ref_count: 2
 ---
 
 # CodeMirror 6 + Vim Integration
@@ -144,4 +144,22 @@ affects event/command routing.
 - **File:** `src/features/editor/hooks/useCodeMirror.ts`
 - **Finding:** A `Prec.highest` keymap bound `Mod-a` unconditionally to `selectAllInView`, returning `true` on all platforms. On Linux/Windows `Mod` resolves to `Ctrl`, so `Ctrl+A` — which `@replit/codemirror-vim` uses for increment-number in NORMAL mode — was consumed by the select-all handler before vim ever saw it. This broke a common vim editing command for non-mac users.
 - **Fix:** Added an `isMacPlatform()` guard inside the `Mod-a` handler so it returns `false` on non-mac platforms, allowing the event to fall through to the vim keymap. On macOS `Mod-a` is `Cmd+A`, which does not conflict with vim increment (`Ctrl+A` on mac). Added a test verifying `Ctrl+A` increments a number in vim NORMAL mode on non-mac.
+- **Commit:** same commit as this entry
+
+### 14. Select All scrolls long documents to the end
+
+- **Source:** github-codex-connector | PR #368 round 2 | 2026-06-06
+- **Severity:** MEDIUM
+- **File:** `src/features/editor/hooks/useCodeMirror.ts`
+- **Finding:** `selectAllInView` dispatched a full-document selection transaction with `scrollIntoView: true`. Because the selection head sits at `view.state.doc.length`, CodeMirror scrolled the viewport to the document tail whenever Select All was invoked on a file taller than the viewport, disrupting copy/cut context.
+- **Fix:** Removed `scrollIntoView: true` from the transaction in `selectAllInView` so a full-document selection no longer moves the viewport.
+- **Commit:** same commit as this entry
+
+### 15. Context menu can render off-screen near window edges
+
+- **Source:** github-codex-connector | PR #368 round 2 | 2026-06-06
+- **Severity:** MEDIUM
+- **File:** `src/features/editor/components/CodeEditor.tsx`
+- **Finding:** `handleContextMenu` stored raw `clientX` and `clientY` from the right-click event. The fixed-size `ContextMenu` overlay could be positioned partially outside the Electron viewport near the right or bottom edges, making clipboard actions unreachable.
+- **Fix:** Clamped the stored coordinates in `handleContextMenu` against `window.innerWidth` and `window.innerHeight` using the declared fixed menu dimensions (192×192 px) before calling `setContextMenu`.
 - **Commit:** same commit as this entry

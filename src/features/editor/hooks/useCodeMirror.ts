@@ -239,7 +239,6 @@ const pasteClipboardIntoView = async (view: EditorView): Promise<void> => {
 const selectAllInView = (view: EditorView): void => {
   view.dispatch({
     selection: EditorSelection.single(0, view.state.doc.length),
-    scrollIntoView: true,
   })
   view.focus()
 }

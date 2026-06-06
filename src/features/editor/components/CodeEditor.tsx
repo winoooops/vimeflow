@@ -110,14 +110,29 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(
       setContextMenu({ visible: false, x: 0, y: 0 })
     }, [])
 
+    // Keep the fixed-size context menu inside the viewport so right-clicks
+    // near the right/bottom edge don't place actions off-screen.
+    const MENU_WIDTH = 192
+    const MENU_HEIGHT = 192
+
     const handleContextMenu = useCallback(
       (event: MouseEvent<HTMLDivElement>): void => {
         event.preventDefault()
         event.stopPropagation()
+
+        const x = Math.max(
+          0,
+          Math.min(event.clientX, window.innerWidth - MENU_WIDTH)
+        )
+
+        const y = Math.max(
+          0,
+          Math.min(event.clientY, window.innerHeight - MENU_HEIGHT)
+        )
         setContextMenu({
           visible: true,
-          x: event.clientX,
-          y: event.clientY,
+          x,
+          y,
         })
       },
       []
