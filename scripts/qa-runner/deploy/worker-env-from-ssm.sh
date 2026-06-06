@@ -46,9 +46,6 @@ resolve_codex_home() {
     value="$(single_line_optional_value QA_WORKER_CODEX_HOME)" || exit 1
   fi
   if [ -z "$value" ]; then
-    value="$(single_line_optional_value CODEX_HOME)" || exit 1
-  fi
-  if [ -z "$value" ]; then
     value="$etc_dir/codex"
   fi
   printf "%s" "$value"

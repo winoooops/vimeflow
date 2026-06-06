@@ -571,3 +571,21 @@ filesystem scope restrictions).
 - **Finding:** A test titled `ignores unreadable fallback env files when process env auth is available` called `loadAuthFromRoot('fixer', root, fetchImpl)`, which reads role credentials from `linear-agent.env`. But the test wrote and chmod'd `linear.env` (the personal-key fallback file). The chmod had zero effect on the file the code under test actually opened, so the EACCES-handling path for role files was never exercised. If the `readEnvFile` EACCES catch were accidentally regressed (e.g., narrowed to `ENOENT` only), the test would still pass, leaving a silent production credential-failure path uncovered.
 - **Fix:** Changed `writeEnv(root, 'linear.env', ...)` + `chmodSync(join(root, 'linear.env'), 0)` to target `linear-agent.env` instead, matching the role file that `loadAuthFromRoot('fixer', ...)` reads via `ROLE_FILE.fixer`. Code-review heuristic: whenever a test sets up filesystem state (writes, chmods, deletes, renames) to drive a code path, verify that the manipulated path is exactly the path the production code resolves for the given test inputs — not a related file, not a fallback file, not the file from a different test scenario.
 - **Commit:** same commit as this entry
+
+### 58. Test harness leaks host CODEX_HOME into bootstrap subprocess
+
+- **Source:** github-codex-connector | PR #366 round 1 | 2026-06-06
+- **Severity:** HIGH
+- **File:** `scripts/qa-runner/deploy/worker-env-from-ssm.test.js`
+- **Finding:** `runBootstrap` spread `process.env` before test-controlled variables, while `resolve_codex_home` in the shell script gives `CODEX_HOME` priority over `QA_WORKER_CODEX_HOME`. On developer or CI machines with `CODEX_HOME` set, the existing-auth tests could exercise the wrong auth directory and fail nondeterministically.
+- **Fix:** Destructured `CODEX_HOME`, `QA_WORKER_CODEX_HOME`, and `QA_WORKER_CODEX_AUTH_MODE` out of `process.env` before spreading the remaining env values into the bootstrap subprocess.
+- **Commit:** same commit as this entry
+
+### 59. Missing negative test for existing mode without auth.json
+
+- **Source:** github-codex-connector | PR #366 round 1 | 2026-06-06
+- **Severity:** MEDIUM
+- **File:** `scripts/qa-runner/deploy/worker-env-from-ssm.test.js`
+- **Finding:** The new existing-auth mode relies on an `auth.json` guard to prevent a misconfigured worker from proceeding without usable Codex auth. The guard was present in `configure_codex_auth`, but tests only covered success paths and api-key mode, so a future edit could remove the guard without test failure.
+- **Fix:** Added a test that creates an empty `QA_WORKER_CODEX_HOME` directory (no `auth.json`) and asserts `runBootstrap` throws when `QA_WORKER_CODEX_AUTH_MODE=existing`.
+- **Commit:** same commit as this entry

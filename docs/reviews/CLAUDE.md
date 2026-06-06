@@ -49,7 +49,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Cross-Platform Paths](patterns/cross-platform-paths.md)                             | cross-platform     | 4        | 3    | 2026-05-07   |
 | [Debug Artifacts](patterns/debug-artifacts.md)                                       | code-quality       | 5        | 0    | 2026-05-09   |
 | [Generated Artifacts](patterns/generated-artifacts.md)                               | code-quality       | 3        | 2    | 2026-05-25   |
-| [Testing Gaps](patterns/testing-gaps.md)                                             | testing            | 57       | 26   | 2026-06-06   |
+| [Testing Gaps](patterns/testing-gaps.md)                                             | testing            | 59       | 26   | 2026-06-06   |
 | [Terminal Input Handling](patterns/terminal-input-handling.md)                       | terminal           | 4        | 2    | 2026-05-24   |
 | [Documentation Accuracy](patterns/documentation-accuracy.md)                         | code-quality       | 77       | 25   | 2026-06-06   |
 | [Accessibility](patterns/accessibility.md)                                           | a11y               | 25       | 6    | 2026-05-09   |
@@ -59,7 +59,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Credential Leakage](patterns/credential-leakage.md)                                 | security           | 1        | 0    | 2026-05-31   |
 | [Policy Judge Hygiene](patterns/policy-judge-hygiene.md)                             | security           | 16       | 1    | 2026-06-04   |
 | [Fail-Closed Hooks](patterns/fail-closed-hooks.md)                                   | security           | 3        | 1    | 2026-04-20   |
-| [Preflight Checks](patterns/preflight-checks.md)                                     | error-handling     | 7        | 3    | 2026-06-06   |
+| [Preflight Checks](patterns/preflight-checks.md)                                     | error-handling     | 8        | 3    | 2026-06-06   |
 | [CSP Configuration](patterns/csp-configuration.md)                                   | security           | 8        | 5    | 2026-05-16   |
 | [PTY Session Management](patterns/pty-session-management.md)                         | backend            | 8        | 2    | 2026-05-28   |
 | [Git Operations](patterns/git-operations.md)                                         | correctness        | 27       | 12   | 2026-06-06   |

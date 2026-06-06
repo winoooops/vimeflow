@@ -142,9 +142,14 @@ const createHarness = () => {
 }
 
 const runBootstrap = (harness, env = {}) => {
+  const baseEnv = { ...process.env }
+  delete baseEnv.CODEX_HOME
+  delete baseEnv.QA_WORKER_CODEX_HOME
+  delete baseEnv.QA_WORKER_CODEX_AUTH_MODE
+
   execFileSync('bash', [SCRIPT], {
     env: {
-      ...process.env,
+      ...baseEnv,
       AWS_REGION: 'us-west-1',
       CODEX_FAKE_LOG: harness.codexLog,
       PATH: `${harness.binDir}:${process.env.PATH}`,
@@ -228,6 +233,24 @@ describe('worker-env-from-ssm.sh', () => {
       expect(readFileSync(harness.codexLog, 'utf8')).toContain(
         `CODEX_HOME=${expectedCodexHome}\nARGS=login --with-api-key\n`
       )
+    } finally {
+      harness.cleanup()
+    }
+  })
+
+  test('exits non-zero when existing mode is missing auth.json', () => {
+    const harness = createHarness()
+    const codexHome = join(harness.root, 'empty-codex-auth')
+
+    try {
+      mkdirSync(codexHome)
+
+      expect(() =>
+        runBootstrap(harness, {
+          QA_WORKER_CODEX_AUTH_MODE: 'existing',
+          QA_WORKER_CODEX_HOME: codexHome,
+        })
+      ).toThrow()
     } finally {
       harness.cleanup()
     }
