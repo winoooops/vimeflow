@@ -31,13 +31,14 @@ describe('SidebarTopBar', () => {
     expect(onToggleSidebar).toHaveBeenCalledTimes(1)
   })
 
-  test('the Command Palette button shows the shortcut hint and fires onCommand', async () => {
+  test('the Command Palette button is icon-only and fires onCommand', async () => {
     const user = userEvent.setup()
     const onCommand = vi.fn()
     renderTopBar({ onCommand, commandShortcutHint: 'Ctrl+;' })
 
     const button = screen.getByRole('button', { name: 'Command Palette' })
-    expect(button).toHaveTextContent('Ctrl+;')
+    // Icon-only: the shortcut lives in the tooltip, not inline on the button.
+    expect(button).not.toHaveTextContent('Ctrl+;')
 
     await user.click(button)
 
@@ -52,15 +53,15 @@ describe('SidebarTopBar', () => {
     ).not.toHaveAttribute('title')
   })
 
-  test('hovering the Command Palette button surfaces the project tooltip', async () => {
+  test('hovering the Command Palette button surfaces the tooltip with the shortcut chip', async () => {
     const user = userEvent.setup()
-    renderTopBar({ onCommand: vi.fn() })
+    renderTopBar({ onCommand: vi.fn(), commandShortcutHint: 'Ctrl+;' })
 
     await user.hover(screen.getByRole('button', { name: 'Command Palette' }))
 
-    expect(await screen.findByRole('tooltip')).toHaveTextContent(
-      'Command Palette'
-    )
+    const tooltip = await screen.findByRole('tooltip')
+    expect(tooltip).toHaveTextContent('Command Palette')
+    expect(screen.getByTestId('tooltip-shortcut')).toHaveTextContent('Ctrl+;')
   })
 
   test('Settings renders as a disabled stub when no handler is wired', async () => {
