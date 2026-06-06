@@ -1469,14 +1469,17 @@ export const WorkspaceView = (): ReactElement => {
           }}
         >
           <Sidebar
+            // Gate on !collapsed: unmounts the top bar + its portaled tooltips on collapse (they would otherwise escape the inert, clipped shell and linger); header/content stay mounted for state.
             topBar={
-              <SidebarTopBar
-                onToggleSidebar={toggleSidebar}
-                onCommand={commandPalette.open}
-                commandShortcutHint={commandShortcutHint}
-                sidebarShortcutHint={sidebarShortcutHint}
-                settingsIssueNumber={SETTINGS_FOLLOWUP_ISSUE_NUMBER}
-              />
+              sidebarCollapsed ? undefined : (
+                <SidebarTopBar
+                  onToggleSidebar={toggleSidebar}
+                  onCommand={commandPalette.open}
+                  commandShortcutHint={commandShortcutHint}
+                  sidebarShortcutHint={sidebarShortcutHint}
+                  settingsIssueNumber={SETTINGS_FOLLOWUP_ISSUE_NUMBER}
+                />
+              )
             }
             header={
               <AgentStatusCard
