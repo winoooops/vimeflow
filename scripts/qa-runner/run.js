@@ -235,14 +235,21 @@ const run = async (pr, live) => {
     throw e
   }
   try {
+    const bot = loadBot(SCRIPT_DIR, 'bot.env', 'GH_BOT')
+    const ghEnv = bot ? { env: { ...process.env, ...botEnv(bot) } } : {}
+
     const info = JSON.parse(
-      sh('gh', [
-        'pr',
-        'view',
-        String(pr),
-        '--json',
-        'number,headRefName,url,body,state,isCrossRepository',
-      ])
+      sh(
+        'gh',
+        [
+          'pr',
+          'view',
+          String(pr),
+          '--json',
+          'number,headRefName,url,body,state,isCrossRepository',
+        ],
+        ghEnv
+      )
     )
     if (info.state !== 'OPEN') {
       die(`PR #${pr} is ${info.state}, not OPEN.`)
@@ -254,10 +261,9 @@ const run = async (pr, live) => {
       )
     }
     const branch = info.headRefName
-    const bot = loadBot(SCRIPT_DIR, 'bot.env', 'GH_BOT')
 
     const repo = JSON.parse(
-      sh('gh', ['repo', 'view', '--json', 'nameWithOwner'])
+      sh('gh', ['repo', 'view', '--json', 'nameWithOwner'], ghEnv)
     ).nameWithOwner
     const skillsDir = lifelineSkillsDir()
     const wt = ensureWorktree(pr, branch, live, skillsDir, bot, repo)
