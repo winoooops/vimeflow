@@ -1,15 +1,20 @@
 /* eslint-disable react/require-default-props */
 import {
   forwardRef,
+  useCallback,
   useEffect,
   useImperativeHandle,
   useMemo,
+  useState,
   type ReactElement,
+  type MouseEvent,
 } from 'react'
 import { useCodeMirror } from '../hooks/useCodeMirror'
 import { useVimMode } from '../hooks/useVimMode'
 import { VimStatusBar } from './VimStatusBar'
 import { getLanguageExtension } from '../services/languageService'
+import { ContextMenu } from './ContextMenu'
+import type { ContextMenuAction } from '../types'
 
 interface CodeEditorProps {
   filePath: string | null
@@ -33,6 +38,12 @@ interface CodeEditorProps {
 export interface CodeEditorHandle {
   /** Returns true if editorView focused, false if no file is loaded. */
   focus(): boolean
+}
+
+interface ContextMenuState {
+  visible: boolean
+  x: number
+  y: number
 }
 
 export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(
@@ -71,7 +82,15 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(
       onSave?.()
     }
 
-    const { editorView, updateContent, setContainer } = useCodeMirror({
+    const {
+      editorView,
+      updateContent,
+      copySelection,
+      cutSelection,
+      pasteClipboard,
+      selectAll,
+      setContainer,
+    } = useCodeMirror({
       initialContent: content,
       language,
       onSave: handleSave,
@@ -80,6 +99,61 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(
     })
 
     const vimMode = useVimMode(editorView)
+
+    const [contextMenu, setContextMenu] = useState<ContextMenuState>({
+      visible: false,
+      x: 0,
+      y: 0,
+    })
+
+    const closeContextMenu = useCallback((): void => {
+      setContextMenu({ visible: false, x: 0, y: 0 })
+    }, [])
+
+    const handleContextMenu = useCallback(
+      (event: MouseEvent<HTMLDivElement>): void => {
+        event.preventDefault()
+        event.stopPropagation()
+        setContextMenu({
+          visible: true,
+          x: event.clientX,
+          y: event.clientY,
+        })
+      },
+      []
+    )
+
+    const clipboardActions = useMemo<ContextMenuAction[]>(
+      () => [
+        {
+          label: 'Copy',
+          icon: 'content_copy',
+          onSelect: (): void => {
+            void copySelection()
+          },
+        },
+        {
+          label: 'Cut',
+          icon: 'content_cut',
+          onSelect: (): void => {
+            void cutSelection()
+          },
+        },
+        {
+          label: 'Paste',
+          icon: 'content_paste',
+          onSelect: (): void => {
+            void pasteClipboard()
+          },
+        },
+        {
+          label: 'Select All',
+          icon: 'select_all',
+          onSelect: selectAll,
+        },
+      ],
+      [copySelection, cutSelection, pasteClipboard, selectAll]
+    )
 
     useImperativeHandle(ref, () => ({
       focus(): boolean {
@@ -131,6 +205,7 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(
             ref={setContainer}
             data-testid="codemirror-container"
             className="h-full w-full"
+            onContextMenu={handleContextMenu}
           />
           {isLoading && (
             <div
@@ -150,6 +225,13 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(
           )}
         </div>
         <VimStatusBar vimMode={vimMode} isDirty={isDirty} />
+        <ContextMenu
+          visible={contextMenu.visible}
+          x={contextMenu.x}
+          y={contextMenu.y}
+          actions={clipboardActions}
+          onClose={closeContextMenu}
+        />
       </div>
     )
   }

@@ -1,5 +1,5 @@
 import { describe, test, expect, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { createRef } from 'react'
 import { CodeEditor, type CodeEditorHandle } from './CodeEditor'
 import * as useCodeMirrorModule from '../hooks/useCodeMirror'
@@ -20,6 +20,10 @@ describe('CodeEditor', () => {
   }
 
   const mockUpdateContent = vi.fn()
+  const mockCopySelection = vi.fn()
+  const mockCutSelection = vi.fn()
+  const mockPasteClipboard = vi.fn()
+  const mockSelectAll = vi.fn()
   const mockUseCodeMirror = vi.fn()
   const mockUseVimMode = vi.fn()
   const mockGetLanguageExtension = vi.fn()
@@ -31,6 +35,10 @@ describe('CodeEditor', () => {
       editorView: mockEditorView,
       updateContent: mockUpdateContent,
       setContainer: vi.fn(),
+      copySelection: mockCopySelection,
+      cutSelection: mockCutSelection,
+      pasteClipboard: mockPasteClipboard,
+      selectAll: mockSelectAll,
     })
 
     mockUseVimMode.mockReturnValue('NORMAL')
@@ -130,6 +138,10 @@ describe('CodeEditor', () => {
         editorView: mockEditorView,
         updateContent: mockUpdateContent,
         setContainer: vi.fn(),
+        copySelection: mockCopySelection,
+        cutSelection: mockCutSelection,
+        pasteClipboard: mockPasteClipboard,
+        selectAll: mockSelectAll,
       }
     })
 
@@ -157,6 +169,10 @@ describe('CodeEditor', () => {
         editorView: mockEditorView,
         updateContent: mockUpdateContent,
         setContainer: vi.fn(),
+        copySelection: mockCopySelection,
+        cutSelection: mockCutSelection,
+        pasteClipboard: mockPasteClipboard,
+        selectAll: mockSelectAll,
       }
     })
 
@@ -248,5 +264,28 @@ describe('CodeEditor', () => {
 
     expect(ref.current).not.toBeNull()
     expect(ref.current!.focus()).toBe(false)
+  })
+
+  test('right-click menu routes editor clipboard actions', () => {
+    render(<CodeEditor filePath="/home/user/test.ts" content="hello" />)
+
+    const container = screen.getByTestId('codemirror-container')
+
+    const clickMenuItem = (name: RegExp): void => {
+      fireEvent.contextMenu(container, { clientX: 40, clientY: 80 })
+      fireEvent.click(screen.getByRole('menuitem', { name }))
+    }
+
+    clickMenuItem(/copy/i)
+    expect(mockCopySelection).toHaveBeenCalledOnce()
+
+    clickMenuItem(/cut/i)
+    expect(mockCutSelection).toHaveBeenCalledOnce()
+
+    clickMenuItem(/paste/i)
+    expect(mockPasteClipboard).toHaveBeenCalledOnce()
+
+    clickMenuItem(/select all/i)
+    expect(mockSelectAll).toHaveBeenCalledOnce()
   })
 })

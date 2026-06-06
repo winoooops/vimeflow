@@ -105,6 +105,10 @@ const createMockUseCodeMirror =
     return {
       editorView: mockEditorView as never,
       updateContent: vi.fn(),
+      copySelection: vi.fn(),
+      cutSelection: vi.fn(),
+      pasteClipboard: vi.fn(),
+      selectAll: vi.fn(),
       setContainer: vi.fn(),
     }
   }

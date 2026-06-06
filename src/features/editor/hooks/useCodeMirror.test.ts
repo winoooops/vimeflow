@@ -1,5 +1,5 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
-import { renderHook, act } from '@testing-library/react'
+import { renderHook, act, waitFor } from '@testing-library/react'
 import { useCodeMirror, scrollCursorOnSelectionChange } from './useCodeMirror'
 import { EditorView } from '@codemirror/view'
 import {
@@ -7,6 +7,7 @@ import {
   StateEffect,
   type StateEffectType,
 } from '@codemirror/state'
+import { getCM } from '@replit/codemirror-vim'
 
 /**
  * Read the target position out of an `EditorView.scrollIntoView` effect.
@@ -66,6 +67,135 @@ const readScrollTargetPos = (
   const head = value?.range?.head
 
   return typeof head === 'number' ? head : undefined
+}
+
+interface ClipboardMockControls {
+  readTextMock: ReturnType<typeof vi.fn>
+  restore: () => void
+  writeTextMock: ReturnType<typeof vi.fn>
+}
+
+const installClipboardMock = (
+  text: string,
+  overrides: {
+    readText?: () => Promise<string>
+    writeText?: (text: string) => Promise<void>
+  } = {}
+): ClipboardMockControls => {
+  const original = window.navigator.clipboard
+
+  const readTextMock = vi.fn(
+    overrides.readText ?? ((): Promise<string> => Promise.resolve(text))
+  )
+
+  const writeTextMock = vi.fn(
+    overrides.writeText ?? ((): Promise<void> => Promise.resolve())
+  )
+
+  Object.defineProperty(window.navigator, 'clipboard', {
+    value: { readText: readTextMock, writeText: writeTextMock },
+    configurable: true,
+    writable: true,
+  })
+
+  return {
+    readTextMock,
+    writeTextMock,
+    restore: (): void => {
+      Object.defineProperty(window.navigator, 'clipboard', {
+        value: original,
+        configurable: true,
+        writable: true,
+      })
+    },
+  }
+}
+
+const dispatchEditorKey = (
+  view: EditorView,
+  eventInit: KeyboardEventInit
+): KeyboardEvent => {
+  const event = new KeyboardEvent('keydown', {
+    bubbles: true,
+    cancelable: true,
+    ...eventInit,
+  })
+
+  view.contentDOM.dispatchEvent(event)
+
+  return event
+}
+
+const dispatchEditorPaste = (
+  view: EditorView,
+  text: string
+): ClipboardEvent => {
+  const event = new Event('paste', {
+    bubbles: true,
+    cancelable: true,
+  }) as ClipboardEvent
+
+  Object.defineProperty(event, 'clipboardData', {
+    value: {
+      getData: (format: string): string =>
+        format === 'text/plain' ? text : '',
+    },
+  })
+
+  view.contentDOM.dispatchEvent(event)
+
+  return event
+}
+
+const installRangeRectStubs = (): (() => void) => {
+  const rangePrototype = window.Range.prototype as Range & {
+    getBoundingClientRect?: () => DOMRect
+    getClientRects?: () => DOMRectList
+  }
+
+  const clientRectsDescriptor = Object.getOwnPropertyDescriptor(
+    rangePrototype,
+    'getClientRects'
+  )
+
+  const boundingRectDescriptor = Object.getOwnPropertyDescriptor(
+    rangePrototype,
+    'getBoundingClientRect'
+  )
+
+  Object.defineProperty(rangePrototype, 'getClientRects', {
+    configurable: true,
+    value: (): DOMRectList => [] as unknown as DOMRectList,
+  })
+
+  Object.defineProperty(rangePrototype, 'getBoundingClientRect', {
+    configurable: true,
+    value: (): DOMRect => new DOMRect(0, 0, 0, 0),
+  })
+
+  return (): void => {
+    if (clientRectsDescriptor) {
+      Object.defineProperty(
+        rangePrototype,
+        'getClientRects',
+        clientRectsDescriptor
+      )
+    } else {
+      delete (rangePrototype as { getClientRects?: () => DOMRectList })
+        .getClientRects
+    }
+
+    if (boundingRectDescriptor) {
+      Object.defineProperty(
+        rangePrototype,
+        'getBoundingClientRect',
+        boundingRectDescriptor
+      )
+    } else {
+      delete (rangePrototype as { getBoundingClientRect?: () => DOMRect })
+        .getBoundingClientRect
+    }
+  }
 }
 
 describe('useCodeMirror', () => {
@@ -229,6 +359,335 @@ describe('useCodeMirror', () => {
     })
 
     expect(result.current.editorView).toBeInstanceOf(EditorView)
+  })
+
+  test('platform edit shortcuts use the system clipboard', async () => {
+    const clipboard = installClipboardMock('pasted ')
+    const restoreRangeRectStubs = installRangeRectStubs()
+
+    try {
+      const { result } = renderHook(() =>
+        useCodeMirror({
+          initialContent: 'alpha beta gamma',
+          language: null,
+          onSave: vi.fn(),
+        })
+      )
+
+      act(() => {
+        result.current.setContainer(containerDiv)
+      })
+
+      const view = result.current.editorView
+
+      if (!view) {
+        throw new Error('EditorView was not created')
+      }
+
+      act(() => {
+        view.dispatch({ selection: { anchor: 0, head: 5 } })
+      })
+
+      const copyEvent = dispatchEditorKey(view, {
+        key: 'c',
+        code: 'KeyC',
+        ctrlKey: true,
+      })
+
+      await waitFor(() => {
+        expect(clipboard.writeTextMock).toHaveBeenCalledWith('alpha')
+      })
+      expect(copyEvent.defaultPrevented).toBe(true)
+      expect(view.state.doc.toString()).toBe('alpha beta gamma')
+
+      clipboard.writeTextMock.mockClear()
+
+      act(() => {
+        view.dispatch({ selection: { anchor: 6, head: 11 } })
+      })
+
+      const cutEvent = dispatchEditorKey(view, {
+        key: 'x',
+        code: 'KeyX',
+        ctrlKey: true,
+      })
+
+      await waitFor(() => {
+        expect(clipboard.writeTextMock).toHaveBeenCalledWith('beta ')
+      })
+
+      await waitFor(() => {
+        expect(view.state.doc.toString()).toBe('alpha gamma')
+      })
+      expect(cutEvent.defaultPrevented).toBe(true)
+
+      act(() => {
+        view.dispatch({ selection: { anchor: 5, head: 5 } })
+      })
+
+      const pasteShortcutEvent = dispatchEditorKey(view, {
+        key: 'v',
+        code: 'KeyV',
+        ctrlKey: true,
+      })
+
+      expect(pasteShortcutEvent.defaultPrevented).toBe(false)
+      expect(clipboard.readTextMock).not.toHaveBeenCalled()
+
+      const pasteEvent = dispatchEditorPaste(view, 'pasted ')
+
+      await waitFor(() => {
+        expect(view.state.doc.toString()).toBe('alpha pasted gamma')
+      })
+      expect(pasteEvent.defaultPrevented).toBe(true)
+
+      const selectAllEvent = dispatchEditorKey(view, {
+        key: 'a',
+        code: 'KeyA',
+        ctrlKey: true,
+      })
+
+      expect(selectAllEvent.defaultPrevented).toBe(true)
+      expect(view.state.selection.main.from).toBe(0)
+      expect(view.state.selection.main.to).toBe(view.state.doc.length)
+    } finally {
+      clipboard.restore()
+      restoreRangeRectStubs()
+    }
+  })
+
+  test('platform paste shortcut falls through to native paste events', async () => {
+    const clipboard = installClipboardMock('', {
+      readText: (): Promise<string> => Promise.reject(new Error('denied')),
+    })
+    const restoreRangeRectStubs = installRangeRectStubs()
+
+    try {
+      const { result } = renderHook(() =>
+        useCodeMirror({
+          initialContent: 'alpha gamma',
+          language: null,
+          onSave: vi.fn(),
+        })
+      )
+
+      act(() => {
+        result.current.setContainer(containerDiv)
+      })
+
+      const view = result.current.editorView
+
+      if (!view) {
+        throw new Error('EditorView was not created')
+      }
+
+      act(() => {
+        view.dispatch({ selection: { anchor: 5, head: 5 } })
+      })
+
+      const pasteShortcutEvent = dispatchEditorKey(view, {
+        key: 'v',
+        code: 'KeyV',
+        ctrlKey: true,
+      })
+
+      expect(pasteShortcutEvent.defaultPrevented).toBe(false)
+      expect(clipboard.readTextMock).not.toHaveBeenCalled()
+
+      const pasteEvent = dispatchEditorPaste(view, 'native ')
+
+      await waitFor(() => {
+        expect(view.state.doc.toString()).toBe('alpha native gamma')
+      })
+      expect(pasteEvent.defaultPrevented).toBe(true)
+    } finally {
+      clipboard.restore()
+      restoreRangeRectStubs()
+    }
+  })
+
+  test('empty Ctrl+C falls through to vim escape handling', async () => {
+    const clipboard = installClipboardMock('')
+    const restoreRangeRectStubs = installRangeRectStubs()
+
+    try {
+      const { result } = renderHook(() =>
+        useCodeMirror({
+          initialContent: 'alpha beta gamma',
+          language: null,
+          onSave: vi.fn(),
+        })
+      )
+
+      act(() => {
+        result.current.setContainer(containerDiv)
+      })
+
+      const view = result.current.editorView
+
+      if (!view) {
+        throw new Error('EditorView was not created')
+      }
+
+      const cm = getCM(view)
+      if (!cm?.state.vim) {
+        throw new Error('Vim state was not created')
+      }
+
+      dispatchEditorKey(view, {
+        key: 'i',
+        code: 'KeyI',
+      })
+
+      await waitFor(() => {
+        expect(cm.state.vim?.insertMode).toBe(true)
+      })
+
+      const copyEvent = dispatchEditorKey(view, {
+        key: 'c',
+        code: 'KeyC',
+        ctrlKey: true,
+      })
+
+      await waitFor(() => {
+        expect(cm.state.vim?.insertMode).toBe(false)
+      })
+      expect(copyEvent.defaultPrevented).toBe(true)
+      expect(clipboard.writeTextMock).not.toHaveBeenCalled()
+    } finally {
+      clipboard.restore()
+      restoreRangeRectStubs()
+    }
+  })
+
+  test('empty Ctrl+X falls through to vim decrement handling', async () => {
+    const clipboard = installClipboardMock('')
+    const restoreRangeRectStubs = installRangeRectStubs()
+
+    try {
+      const { result } = renderHook(() =>
+        useCodeMirror({
+          initialContent: 'value 42',
+          language: null,
+          onSave: vi.fn(),
+        })
+      )
+
+      act(() => {
+        result.current.setContainer(containerDiv)
+      })
+
+      const view = result.current.editorView
+
+      if (!view) {
+        throw new Error('EditorView was not created')
+      }
+
+      act(() => {
+        view.dispatch({ selection: { anchor: 6, head: 6 } })
+      })
+
+      const cutEvent = dispatchEditorKey(view, {
+        key: 'x',
+        code: 'KeyX',
+        ctrlKey: true,
+      })
+
+      await waitFor(() => {
+        expect(view.state.doc.toString()).toBe('value 41')
+      })
+      expect(cutEvent.defaultPrevented).toBe(true)
+      expect(clipboard.writeTextMock).not.toHaveBeenCalled()
+    } finally {
+      clipboard.restore()
+      restoreRangeRectStubs()
+    }
+  })
+
+  test('async clipboard edits do not mutate a newer editor state', async () => {
+    let resolveRead: ((text: string) => void) | undefined
+    let resolveWrite: (() => void) | undefined
+
+    const clipboard = installClipboardMock('', {
+      readText: (): Promise<string> =>
+        new Promise((resolve) => {
+          resolveRead = resolve
+        }),
+      writeText: (): Promise<void> =>
+        new Promise((resolve) => {
+          resolveWrite = resolve
+        }),
+    })
+    const restoreRangeRectStubs = installRangeRectStubs()
+
+    try {
+      const { result } = renderHook(() =>
+        useCodeMirror({
+          initialContent: 'alpha beta gamma',
+          language: null,
+          onSave: vi.fn(),
+        })
+      )
+
+      act(() => {
+        result.current.setContainer(containerDiv)
+      })
+
+      const view = result.current.editorView
+
+      if (!view) {
+        throw new Error('EditorView was not created')
+      }
+
+      act(() => {
+        view.dispatch({ selection: { anchor: 6, head: 11 } })
+      })
+
+      dispatchEditorKey(view, {
+        key: 'x',
+        code: 'KeyX',
+        ctrlKey: true,
+      })
+
+      await waitFor(() => {
+        expect(clipboard.writeTextMock).toHaveBeenCalledWith('beta ')
+      })
+
+      act(() => {
+        result.current.updateContent('next file content')
+      })
+
+      await act(async () => {
+        resolveWrite?.()
+        await Promise.resolve()
+      })
+
+      expect(view.state.doc.toString()).toBe('next file content')
+
+      act(() => {
+        view.dispatch({ selection: { anchor: 5, head: 5 } })
+      })
+
+      void result.current.pasteClipboard()
+
+      await waitFor(() => {
+        expect(clipboard.readTextMock).toHaveBeenCalledOnce()
+      })
+
+      act(() => {
+        result.current.updateContent('newer file content')
+      })
+
+      await act(async () => {
+        resolveRead?.('stale ')
+        await Promise.resolve()
+      })
+
+      expect(view.state.doc.toString()).toBe('newer file content')
+    } finally {
+      clipboard.restore()
+      restoreRangeRectStubs()
+    }
   })
 })
 

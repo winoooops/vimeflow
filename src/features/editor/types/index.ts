@@ -94,6 +94,7 @@ export interface FileNode {
 export interface ContextMenuAction {
   label: string
   icon: string
+  onSelect?: () => void
   variant?: 'danger'
   separator?: boolean
 }
@@ -226,6 +227,10 @@ export const isContextMenuAction = (
 
   // Validate optional variant
   if (obj.variant !== undefined && obj.variant !== 'danger') {
+    return false
+  }
+
+  if (obj.onSelect !== undefined && typeof obj.onSelect !== 'function') {
     return false
   }
 

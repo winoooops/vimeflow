@@ -98,6 +98,11 @@ describe('DockPanel', () => {
     mockUseCodeMirror.mockReturnValue({
       editorView: mockEditorView,
       updateContent: vi.fn(),
+      copySelection: vi.fn(),
+      cutSelection: vi.fn(),
+      pasteClipboard: vi.fn(),
+      selectAll: vi.fn(),
+      setContainer: vi.fn(),
     })
 
     mockUseVimMode.mockReturnValue('NORMAL')
@@ -822,6 +827,10 @@ describe('DockPanel', () => {
     vi.spyOn(useCodeMirrorModule, 'useCodeMirror').mockReturnValueOnce({
       editorView: null,
       updateContent: vi.fn(),
+      copySelection: vi.fn(),
+      cutSelection: vi.fn(),
+      pasteClipboard: vi.fn(),
+      selectAll: vi.fn(),
       setContainer: vi.fn(),
     })
     const ref = createRef<DockPanelHandle>()
@@ -842,6 +851,10 @@ describe('DockPanel', () => {
     vi.spyOn(useCodeMirrorModule, 'useCodeMirror').mockReturnValueOnce({
       editorView: null,
       updateContent: vi.fn(),
+      copySelection: vi.fn(),
+      cutSelection: vi.fn(),
+      pasteClipboard: vi.fn(),
+      selectAll: vi.fn(),
       setContainer: vi.fn(),
     })
     const ref = createRef<DockPanelHandle>()
