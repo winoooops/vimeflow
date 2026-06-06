@@ -422,7 +422,21 @@ describe('useCodeMirror', () => {
       expect(cutEvent.defaultPrevented).toBe(true)
 
       act(() => {
-        view.dispatch({ selection: { anchor: 5, head: 5 } })
+        view.dispatch({ selection: { anchor: 6, head: 6 } })
+      })
+
+      const cm = getCM(view)
+      if (!cm?.state.vim) {
+        throw new Error('Vim state was not created')
+      }
+
+      dispatchEditorKey(view, {
+        key: 'i',
+        code: 'KeyI',
+      })
+
+      await waitFor(() => {
+        expect(cm.state.vim?.insertMode).toBe(true)
       })
 
       const pasteShortcutEvent = dispatchEditorKey(view, {
@@ -485,7 +499,21 @@ describe('useCodeMirror', () => {
       }
 
       act(() => {
-        view.dispatch({ selection: { anchor: 5, head: 5 } })
+        view.dispatch({ selection: { anchor: 6, head: 6 } })
+      })
+
+      const cm = getCM(view)
+      if (!cm?.state.vim) {
+        throw new Error('Vim state was not created')
+      }
+
+      dispatchEditorKey(view, {
+        key: 'i',
+        code: 'KeyI',
+      })
+
+      await waitFor(() => {
+        expect(cm.state.vim?.insertMode).toBe(true)
       })
 
       const pasteShortcutEvent = dispatchEditorKey(view, {

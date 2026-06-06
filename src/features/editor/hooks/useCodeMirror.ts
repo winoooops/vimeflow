@@ -13,7 +13,7 @@ import {
   Prec,
   type SelectionRange,
   type Extension,
-  type Transaction,
+  Transaction,
   type TransactionSpec,
   Compartment,
 } from '@codemirror/state'
@@ -58,7 +58,7 @@ import { catppuccinMocha } from '../theme/catppuccin'
 export const scrollCursorOnSelectionChange = (
   tr: Transaction
 ): TransactionSpec | null => {
-  if (!tr.selection || tr.docChanged) {
+  if (!tr.selection || tr.docChanged || tr.isUserEvent('select.all')) {
     return null
   }
 
@@ -239,6 +239,7 @@ const pasteClipboardIntoView = async (view: EditorView): Promise<void> => {
 const selectAllInView = (view: EditorView): void => {
   view.dispatch({
     selection: EditorSelection.single(0, view.state.doc.length),
+    annotations: Transaction.userEvent.of('select.all'),
   })
   view.focus()
 }
@@ -262,6 +263,11 @@ const nativePasteShortcutBypass = ViewPlugin.fromClass(
 
     private readonly onKeydown = (event: KeyboardEvent): void => {
       if (!isPlatformPasteShortcut(event)) {
+        return
+      }
+
+      const cm = getCM(this.view)
+      if (!cm?.state.vim?.insertMode) {
         return
       }
 

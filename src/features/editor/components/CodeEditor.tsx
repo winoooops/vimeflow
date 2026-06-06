@@ -122,15 +122,16 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(
 
         if (editorView) {
           editorView.focus()
+
           const pos = editorView.posAtCoords({
             x: event.clientX,
             y: event.clientY,
           })
           if (pos !== null) {
-            const insideExistingSelection = editorView.state.selection.ranges.some(
-              (range) =>
-                !range.empty && range.from <= pos && pos <= range.to
-            )
+            const insideExistingSelection =
+              editorView.state.selection.ranges.some(
+                (range) => !range.empty && range.from <= pos && pos <= range.to
+              )
             if (!insideExistingSelection) {
               editorView.dispatch({
                 selection: { anchor: pos, head: pos },

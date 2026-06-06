@@ -320,14 +320,14 @@ describe('CodeEditor', () => {
     expect(mockEditorView.focus).toHaveBeenCalledOnce()
     expect(mockEditorView.posAtCoords).toHaveBeenCalledWith({ x: 40, y: 80 })
     expect(mockEditorView.dispatch).not.toHaveBeenCalled()
-    expect(screen.getByRole('menu', { name: 'Context menu' })).toBeInTheDocument()
+    expect(
+      screen.getByRole('menu', { name: 'Context menu' })
+    ).toBeInTheDocument()
   })
 
   test('right-click preserves existing selection when clicking inside it', () => {
     mockEditorView.posAtCoords.mockReturnValueOnce(3)
-    mockEditorView.state.selection.ranges = [
-      { from: 0, to: 5, empty: false },
-    ]
+    mockEditorView.state.selection.ranges = [{ from: 0, to: 5, empty: false }]
 
     render(<CodeEditor filePath="/home/user/test.ts" content="hello" />)
 
@@ -338,6 +338,8 @@ describe('CodeEditor', () => {
     expect(mockEditorView.focus).toHaveBeenCalledOnce()
     expect(mockEditorView.posAtCoords).toHaveBeenCalledWith({ x: 40, y: 80 })
     expect(mockEditorView.dispatch).not.toHaveBeenCalled()
-    expect(screen.getByRole('menu', { name: 'Context menu' })).toBeInTheDocument()
+    expect(
+      screen.getByRole('menu', { name: 'Context menu' })
+    ).toBeInTheDocument()
   })
 })
