@@ -137,7 +137,7 @@ vi.mock('@pierre/diffs/react', () => ({
         </div>
       ) : null}
       {lineAnnotations != null && renderAnnotation != null ? (
-        <div data-testid="annotation-slot">
+        <div key={newFile.contents} data-testid="annotation-slot">
           {lineAnnotations.map((annotation, index) => (
             <div key={annotation.metadata.id ?? index}>
               {renderAnnotation(annotation)}
@@ -2237,6 +2237,107 @@ describe('DiffPanelContent', () => {
       expect(
         within(annotationSlot).getByText('Great change!')
       ).toBeInTheDocument()
+    })
+
+    test('preserves composer draft text across a same-file diff refresh remount', async (): Promise<void> => {
+      const user = userEvent.setup()
+      let newText = 'new'
+
+      vi.spyOn(useFileDiffModule, 'useFileDiff').mockImplementation(() =>
+        fileDiffMock({
+          diff: inlineFileDiff,
+          loading: false,
+          error: null,
+          oldText: 'old',
+          newText,
+          rawDiff: '',
+        })
+      )
+
+      const props = {
+        cwd: '/repo',
+        selectedFile: { path: 'src/foo.ts', staged: false, cwd: '/repo' },
+        onSelectedFileChange: vi.fn(),
+      } as const
+
+      const { rerender } = render(<DiffPanelContent {...props} />)
+
+      setPaneWidth(SPLIT_MIN_WIDTH_PX + 100)
+
+      const gutterSlot = screen.getByTestId('gutter-utility-slot')
+
+      await user.click(
+        within(gutterSlot).getByRole('button', {
+          name: 'Add comment on this line',
+        })
+      )
+
+      const textarea = within(
+        screen.getByRole('dialog', { name: /Comment on line/ })
+      ).getByPlaceholderText('Request change')
+
+      await user.type(textarea, 'Draft while agent edits')
+      expect(textarea).toHaveValue('Draft while agent edits')
+
+      newText = 'new after agent edit'
+      rerender(<DiffPanelContent {...props} />)
+
+      expect(screen.getByPlaceholderText('Request change')).toHaveValue(
+        'Draft while agent edits'
+      )
+    })
+
+    test('keeps a recoverable draft notice when refresh removes the target line', async (): Promise<void> => {
+      const user = userEvent.setup()
+      let currentDiff: FileDiff = inlineFileDiff
+
+      vi.spyOn(useFileDiffModule, 'useFileDiff').mockImplementation(() =>
+        fileDiffMock({
+          diff: currentDiff,
+          loading: false,
+          error: null,
+          oldText: 'old',
+          newText: 'new',
+          rawDiff: '',
+        })
+      )
+
+      const props = {
+        cwd: '/repo',
+        selectedFile: { path: 'src/foo.ts', staged: false, cwd: '/repo' },
+        onSelectedFileChange: vi.fn(),
+      } as const
+
+      const { rerender } = render(<DiffPanelContent {...props} />)
+
+      setPaneWidth(SPLIT_MIN_WIDTH_PX + 100)
+
+      await user.click(
+        within(screen.getByTestId('gutter-utility-slot')).getByRole('button', {
+          name: 'Add comment on this line',
+        })
+      )
+
+      await user.type(
+        within(
+          screen.getByRole('dialog', { name: /Comment on line/ })
+        ).getByPlaceholderText('Request change'),
+        'Draft after disappearing hunk'
+      )
+
+      currentDiff = {
+        ...inlineFileDiff,
+        hunks: [],
+      }
+      rerender(<DiffPanelContent {...props} />)
+
+      expect(
+        screen.queryByRole('dialog', { name: /Comment on line/ })
+      ).not.toBeInTheDocument()
+
+      expect(screen.getByTestId('diff-draft-recovery')).toHaveTextContent(
+        'Draft after disappearing hunk'
+      )
     })
 
     test('onDiscardFeedback (Discard action) clears the batch', async (): Promise<void> => {
