@@ -3,7 +3,7 @@ import { afterEach, describe, expect, test, vi } from 'vitest'
 import {
   cycleEnv,
   dispatchConfig,
-  ensureSsmWorkerReady,
+  ensureWorkerInstanceRunning,
   localDispatchPlan,
   remoteCycleCommand,
   runSsmDispatch,
@@ -379,13 +379,7 @@ describe('runSsmDispatch', () => {
           Reservations: [{ Instances: [{ State: { Name: 'running' } }] }],
         }),
       },
-      {
-        stdout: JSON.stringify({
-          InstanceInformationList: [
-            { InstanceId: 'i-burst', PingStatus: 'Online' },
-          ],
-        }),
-      },
+      { code: 254, stderr: 'InvalidInstanceId: not in a valid state' },
       {
         stdout: JSON.stringify({ Command: { CommandId: 'cmd-burst' } }),
       },
@@ -423,7 +417,7 @@ describe('runSsmDispatch', () => {
       ['ec2', 'start-instances'],
       ['ec2', 'describe-instances'],
       ['ec2', 'describe-instances'],
-      ['ssm', 'describe-instance-information'],
+      ['ssm', 'send-command'],
       ['ssm', 'send-command'],
       ['ssm', 'get-command-invocation'],
       ['ec2', 'stop-instances'],
@@ -433,8 +427,10 @@ describe('runSsmDispatch', () => {
       'worker i-burst: starting stopped instance\n'
     )
 
+    expect(stdout.write).toHaveBeenCalledWith('worker i-burst: EC2 running\n')
+
     expect(stdout.write).toHaveBeenCalledWith(
-      'worker i-burst: running and SSM online\n'
+      'worker i-burst: waiting for SSM command target\n'
     )
     expect(stdout.write).toHaveBeenCalledWith('fixed\n')
   })
@@ -444,13 +440,6 @@ describe('runSsmDispatch', () => {
       {
         stdout: JSON.stringify({
           Reservations: [{ Instances: [{ State: { Name: 'running' } }] }],
-        }),
-      },
-      {
-        stdout: JSON.stringify({
-          InstanceInformationList: [
-            { InstanceId: 'i-burst', PingStatus: 'Online' },
-          ],
         }),
       },
       {
@@ -509,7 +498,7 @@ describe('burst worker helpers', () => {
     ])
 
     await expect(
-      ensureSsmWorkerReady({
+      ensureWorkerInstanceRunning({
         instanceId: 'i-gone',
         region: 'us-west-1',
         timeoutSeconds: 1,
