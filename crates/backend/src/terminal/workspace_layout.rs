@@ -143,7 +143,12 @@ fn str_field(v: &serde_json::Value, k: &str) -> Option<String> {
 }
 
 fn u32_field(v: &serde_json::Value, k: &str) -> Option<u32> {
-    v.get(k).and_then(|x| x.as_u64()).map(|n| n as u32)
+    // try_from (not `as u32`): an oversized value (> u32::MAX) becomes None and
+    // is treated as missing — not wrapped to 0, which would sort a bad pane to
+    // the front or restore the first history entry.
+    v.get(k)
+        .and_then(|x| x.as_u64())
+        .and_then(|n| u32::try_from(n).ok())
 }
 
 fn bool_field(v: &serde_json::Value, k: &str) -> Option<bool> {
@@ -979,6 +984,24 @@ mod tests {
         );
         assert!(store.sessions[0].active); // none active → first forced active
         assert!(!store.sessions[1].active);
+    }
+
+    #[test]
+    fn oversized_pane_index_sorts_last_not_front() {
+        let store = repair_workspace_layout(
+            json!({ "version": 1, "sessions": [{ "id": "s", "layout": "vsplit", "active": true, "panes": [
+                { "kind": "shell", "paneId": "huge", "paneIndex": 4294967296u64, "active": false, "ptyId": "a", "cwd": "/", "agentType": "generic" },
+                { "kind": "shell", "paneId": "first", "paneIndex": 0, "active": true, "ptyId": "b", "cwd": "/", "agentType": "generic" } ] }] }),
+            "proj",
+            "/",
+        );
+        // paneIndex > u32::MAX → treated as missing → sorts LAST (not wrapped to 0)
+        let ids: Vec<&str> = store.sessions[0]
+            .panes
+            .iter()
+            .map(|p| shell(p).pane_id.as_str())
+            .collect();
+        assert_eq!(ids, vec!["first", "huge"]);
     }
 
     #[test]
