@@ -44,8 +44,8 @@ export const prepareReviewWorktree = (
     }
 
     if (exists(plan.path)) {
-      git(plan.checkoutArgs)
       git(plan.resetArgs)
+      git(plan.checkoutArgs)
       git(plan.cleanArgs)
     } else {
       git(plan.addArgs)

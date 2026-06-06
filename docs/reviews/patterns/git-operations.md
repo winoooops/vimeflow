@@ -3,7 +3,7 @@ id: git-operations
 category: correctness
 created: 2026-04-09
 last_updated: 2026-05-31
-ref_count: 10
+ref_count: 11
 ---
 
 # Git Operations
@@ -238,4 +238,14 @@ between display and mutation operations.
 - **File:** `scripts/qa-runner/watch.js`
 - **Finding:** `approve()` unconditionally deleted the remote branch via base-repo API after merge. For fork PRs, `headRefName` is the contributor's branch name; the deletion would remove a same-named base-repo branch instead.
 - **Fix:** Fetched `isCrossRepository` from `gh pr view\' and gated the remote ref-delete on `!isCrossRepository`.
+- **Commit:** same commit as this entry
+
+
+### 26. Checkout before reset leaves dirty worktree stuck in WAITING permanently
+
+- **Source:** github-claude | PR #361 round 1 | 2026-06-06
+- **Severity:** MEDIUM
+- **File:** `scripts/qa-runner/lib/review-worktree.js`
+- **Finding:** `prepareReviewWorktree` runs `git checkout --detach headSha` before `git reset --hard headSha`. If the worktree has uncommitted modifications to tracked files (e.g., an interrupted fixer agent), checkout fails and the outer catch returns `{ ok: false }`. Because reset and clean never run, the dirty state persists on every subsequent cycle, leaving the PR stuck in WAITING indefinitely.
+- **Fix:** Reorder the sequence to `reset --hard` → `checkout --detach` → `clean -ffd`. The reset discards all local changes first so checkout always succeeds. Added a targeted regression test asserting reset precedes checkout.
 - **Commit:** same commit as this entry
