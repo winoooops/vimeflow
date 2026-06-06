@@ -67,6 +67,15 @@ interface BackendEventSubscription {
 
 const backendEventSubscriptions = new Map<string, BackendEventSubscription>()
 
+/**
+ * Test-only helper: clears the module-level backend event subscription
+ * registry so that a failed test cannot leak listeners into subsequent
+ * tests.  This is NOT part of the public production API.
+ */
+export const __resetBackendEventSubscriptions = (): void => {
+  backendEventSubscriptions.clear()
+}
+
 const requireBridge = (): BackendApi => {
   if (typeof window === 'undefined' || !window.vimeflow) {
     throw new Error(

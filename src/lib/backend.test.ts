@@ -6,9 +6,14 @@ import {
   listenCommandPaletteToggle,
   renameAgentSession,
   type BackendApi,
+  __resetBackendEventSubscriptions,
 } from './backend'
 
 const noop = (): void => undefined
+
+afterEach(() => {
+  __resetBackendEventSubscriptions()
+})
 
 const observeResolution = async (
   promise: Promise<unknown>,
