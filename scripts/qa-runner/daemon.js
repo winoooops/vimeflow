@@ -95,6 +95,7 @@ const scheduleIdleStop = () => {
     if (idleStopRunning) {
       idleStopPending = true
     }
+
     return
   }
   idleStopTimer = setTimeout(
