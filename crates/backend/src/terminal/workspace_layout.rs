@@ -122,16 +122,20 @@ fn is_allowed_url(u: &str) -> bool {
     if u == "about:blank" {
         return true;
     }
-    // Parse with the same URL semantics as the runtime navigation guard: an
-    // http(s) URL with a non-empty host. Rejects malformed strings a prefix
-    // check would miss (e.g. "https://", "https://exa mple.com", "https://%zz").
-    match url::Url::parse(u) {
-        Ok(parsed) => {
-            matches!(parsed.scheme(), "http" | "https")
-                && parsed.host_str().is_some_and(|h| !h.is_empty())
-        }
-        Err(_) => false,
-    }
+    // http(s) with a non-empty, well-formed host. Defensively strict (no URL
+    // crate — it would pull an MSRV-incompatible ICU dependency): the host may
+    // contain only conservative host characters, so malformed strings a prefix
+    // check would miss are rejected ("https://", "https://exa mple.com" — space,
+    // "https://%zz" — stray percent). Real navigations yield ASCII hosts
+    // (punycode for IDN), so legitimate history survives.
+    let Some(rest) = u.strip_prefix("https://").or_else(|| u.strip_prefix("http://")) else {
+        return false;
+    };
+    let host = rest.split(['/', '?', '#']).next().unwrap_or("");
+    !host.is_empty()
+        && host
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '.' | ':' | '[' | ']'))
 }
 
 fn str_field(v: &serde_json::Value, k: &str) -> Option<String> {
@@ -914,18 +918,21 @@ mod tests {
     }
 
     #[test]
-    fn drops_url_without_host() {
+    fn drops_malformed_urls() {
         let store = repair_workspace_layout(
             json!({ "version": 1, "sessions": [{ "id": "s", "layout": "single", "active": true,
                 "panes": [{ "kind": "browser", "paneId": "p0", "paneIndex": 0, "active": true,
                     "tabs": [{ "active": true, "historyIndex": 0, "history": [
                         { "url": "https://", "title": null },
+                        { "url": "https://exa mple.com", "title": null },
+                        { "url": "https://%zz", "title": null },
+                        { "url": "ftp://host/x", "title": null },
                         { "url": "https://real.example", "title": null } ] }] }] }] }),
             "proj",
             "/",
         );
         let b = browser_tab(&store.sessions[0].panes[0]);
-        assert_eq!(b.tabs[0].history.len(), 1); // bare "https://" (no host) dropped
+        assert_eq!(b.tabs[0].history.len(), 1); // only the well-formed http(s) url survives
         assert_eq!(b.tabs[0].history[0].url, "https://real.example");
     }
 
