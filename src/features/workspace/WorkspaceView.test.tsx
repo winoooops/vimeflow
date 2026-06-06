@@ -1,6 +1,6 @@
 /* eslint-disable testing-library/no-node-access */
 /* eslint-disable vitest/expect-expect */
-// cspell:ignore worktree worktrees
+// cspell:ignore worktree worktrees incard
 import type { ReactElement } from 'react'
 import { describe, test, expect, vi, beforeEach } from 'vitest'
 import {
@@ -17,6 +17,7 @@ import { useEditorBuffer } from '../editor/hooks/useEditorBuffer'
 import type { AgentStatus } from '../agent-status/types'
 import { useAgentStatus } from '../agent-status/hooks/useAgentStatus'
 import { usePaneShortcuts } from '../terminal/hooks/usePaneShortcuts'
+import { setSidebarCollapsed } from './utils/sidebarCollapsedStore'
 import type { SessionList } from '../../bindings'
 
 const workspaceTerminalMock = vi.hoisted(() => {
@@ -167,6 +168,8 @@ vi.mock('../terminal/services/terminalService', () => ({
 describe('WorkspaceView', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    window.localStorage.clear()
+    setSidebarCollapsed(false)
     Object.defineProperty(navigator, 'platform', {
       value: 'Linux x86_64',
       configurable: true,
@@ -1224,6 +1227,16 @@ describe('WorkspaceView', () => {
     expect(container.style.getPropertyValue('--workspace-sidebar-width')).toBe(
       '272px'
     )
+  })
+
+  test('moves focus to the rail toggle after collapsing the sidebar from the in-card toggle', async () => {
+    const user = userEvent.setup()
+    render(<WorkspaceView />)
+
+    await user.click(screen.getByTestId('sidebar-toggle-incard'))
+
+    const railToggle = await screen.findByTestId('sidebar-toggle-rail')
+    expect(railToggle).toHaveFocus()
   })
 
   test('previews sidebar drag width through CSS variable before committing React state', () => {

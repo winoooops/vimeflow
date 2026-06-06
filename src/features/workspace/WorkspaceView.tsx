@@ -224,6 +224,27 @@ export const WorkspaceView = (): ReactElement => {
   // VIM-66 spike: workspace-global sidebar collapse flag.
   const { collapsed: sidebarCollapsed, toggle: toggleSidebar } =
     useSidebarCollapsed()
+  const railToggleRef = useRef<HTMLButtonElement>(null)
+  const focusRailAfterCollapseRef = useRef(false)
+
+  const handleInCardToggleSidebar = useCallback((): void => {
+    if (!sidebarCollapsed) {
+      focusRailAfterCollapseRef.current = true
+    }
+    toggleSidebar()
+  }, [sidebarCollapsed, toggleSidebar])
+
+  useEffect(() => {
+    if (
+      sidebarCollapsed &&
+      focusRailAfterCollapseRef.current &&
+      railToggleRef.current
+    ) {
+      focusRailAfterCollapseRef.current = false
+      railToggleRef.current.focus()
+    }
+  }, [sidebarCollapsed])
+
   const paneRenameRequestIdRef = useRef(0)
 
   const nextPaneRenameRequestId = useCallback((): number => {
@@ -1410,6 +1431,7 @@ export const WorkspaceView = (): ReactElement => {
         sidebarCollapsed={sidebarCollapsed}
         onToggleSidebar={toggleSidebar}
         sidebarShortcutHint={sidebarShortcutHint}
+        railToggleRef={railToggleRef}
       />
 
       {/* Sidebar — resizable + drawer-collapsible (VIM-66 spike). Kept mounted
@@ -1449,7 +1471,7 @@ export const WorkspaceView = (): ReactElement => {
                 contextPct={sidebarCardContextPct}
                 fiveHourPct={sidebarCardFiveHourPct}
                 weekPct={sidebarCardWeekPct}
-                onToggleSidebar={toggleSidebar}
+                onToggleSidebar={handleInCardToggleSidebar}
                 sidebarShortcutHint={sidebarShortcutHint}
               />
             }

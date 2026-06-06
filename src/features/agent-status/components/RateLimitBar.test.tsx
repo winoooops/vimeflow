@@ -25,4 +25,13 @@ describe('RateLimitBar', () => {
       width: '100%',
     })
   })
+
+  test('exposes progressbar semantics with aria-value* attributes', () => {
+    render(<RateLimitBar label="5-hour Session" percentage={42.6} />)
+
+    const bar = screen.getByRole('progressbar')
+    expect(bar).toHaveAttribute('aria-valuenow', '43')
+    expect(bar).toHaveAttribute('aria-valuemin', '0')
+    expect(bar).toHaveAttribute('aria-valuemax', '100')
+  })
 })

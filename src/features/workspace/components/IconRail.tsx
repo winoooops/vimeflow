@@ -1,4 +1,4 @@
-import type { ReactElement } from 'react'
+import { type ReactElement, type RefObject } from 'react'
 import { Tooltip } from '../../../components/Tooltip'
 import { formatShortcut } from '../../../lib/formatShortcut'
 import { COMMAND_PALETTE_SHORTCUT_KEYS } from '../../command-palette/shortcutConfig'
@@ -26,6 +26,8 @@ export interface IconRailProps {
   sidebarCollapsed?: boolean
   /** Toggle the sidebar collapse flag (shared with the in-card toggle, ⌘B, and the palette). */
   onToggleSidebar?: () => void
+  /** Ref forwarded to the rail's expand-toggle button so the in-card collapse path can move focus here. */
+  railToggleRef?: RefObject<HTMLButtonElement | null>
   /** Platform-appropriate shortcut hint forwarded to the sidebar toggle tooltip. */
   sidebarShortcutHint?: string
   /**
@@ -106,6 +108,7 @@ export const IconRail = ({
   sidebarCollapsed = false,
   onToggleSidebar = undefined,
   sidebarShortcutHint = '⌘B',
+  railToggleRef = undefined,
 }: IconRailProps): ReactElement => {
   const settingsTooltip = `Settings panel coming — see issue #${settingsIssueNumber}`
 
@@ -128,6 +131,7 @@ export const IconRail = ({
       {sidebarCollapsed && onToggleSidebar && (
         <div style={{ marginTop: RAIL_TOGGLE_TOP_OFFSET_PX }}>
           <SidebarToggle
+            ref={railToggleRef}
             collapsed
             onClick={onToggleSidebar}
             size={28}

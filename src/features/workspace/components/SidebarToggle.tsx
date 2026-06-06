@@ -1,4 +1,4 @@
-import type { ReactElement } from 'react'
+import { forwardRef, type ReactElement } from 'react'
 
 export type SidebarToggleVariant = 'ghost' | 'inset'
 
@@ -30,52 +30,66 @@ const VARIANT_CLASS: Record<SidebarToggleVariant, string> = {
 // ALWAYS drawn so the control reads as a side-panel toggle (never a bare
 // square); the rail FILL is the on/off signal — present only when the sidebar
 // is showing. Geometry is fixed at viewBox 16 and scaled via the button box.
-export const SidebarToggle = ({
-  collapsed = false,
-  onClick,
-  size = 28,
-  variant = 'ghost',
-  'data-testid': testId = 'sidebar-toggle',
-  shortcutHint = '⌘B',
-}: SidebarToggleProps): ReactElement => (
-  <button
-    type="button"
-    data-testid={testId}
-    onClick={onClick}
-    title={`${collapsed ? 'Show sidebar' : 'Hide sidebar'}  ${shortcutHint}`}
-    aria-label={collapsed ? 'Show sidebar' : 'Hide sidebar'}
-    aria-expanded={!collapsed}
-    style={{ width: size, height: size }}
-    className={`grid shrink-0 cursor-pointer place-items-center rounded-[7px] transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary-container ${VARIANT_CLASS[variant]}`}
-  >
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 16 16"
-      fill="none"
-      aria-hidden="true"
+export const SidebarToggle = forwardRef<HTMLButtonElement, SidebarToggleProps>(
+  (
+    {
+      collapsed = false,
+      onClick,
+      size = 28,
+      variant = 'ghost',
+      'data-testid': testId = 'sidebar-toggle',
+      shortcutHint = '⌘B',
+    },
+    ref
+  ): ReactElement => (
+    <button
+      ref={ref}
+      type="button"
+      data-testid={testId}
+      onClick={onClick}
+      title={`${collapsed ? 'Show sidebar' : 'Hide sidebar'}  ${shortcutHint}`}
+      aria-label={collapsed ? 'Show sidebar' : 'Hide sidebar'}
+      aria-expanded={!collapsed}
+      style={{ width: size, height: size }}
+      className={`grid shrink-0 cursor-pointer place-items-center rounded-[7px] transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary-container ${VARIANT_CLASS[variant]}`}
     >
-      <rect
-        x="1.6"
-        y="2.6"
-        width="12.8"
-        height="10.8"
-        rx="2.4"
-        stroke="currentColor"
-        strokeWidth="1.3"
-      />
-      <path d="M5.9 2.9V13.1" stroke="currentColor" strokeWidth="1.3" />
-      {!collapsed && (
+      <svg
+        width="16"
+        height="16"
+        viewBox="0 0 16 16"
+        fill="none"
+        aria-hidden="true"
+      >
         <rect
-          x="2.2"
-          y="3.2"
-          width="3.1"
-          height="9.6"
-          rx="1.4"
-          fill="currentColor"
-          fillOpacity="0.28"
+          x="1.6"
+          y="2.6"
+          width="12.8"
+          height="10.8"
+          rx="2.4"
+          stroke="currentColor"
+          strokeWidth="1.3"
         />
-      )}
-    </svg>
-  </button>
+        <path d="M5.9 2.9V13.1" stroke="currentColor" strokeWidth="1.3" />
+        {!collapsed && (
+          <rect
+            x="2.2"
+            y="3.2"
+            width="3.1"
+            height="9.6"
+            rx="1.4"
+            fill="currentColor"
+            fillOpacity="0.28"
+          />
+        )}
+      </svg>
+    </button>
+  )
 )
+SidebarToggle.displayName = 'SidebarToggle'
+SidebarToggle.defaultProps = {
+  collapsed: false,
+  size: 28,
+  variant: 'ghost' as const,
+  'data-testid': 'sidebar-toggle',
+  shortcutHint: '⌘B',
+}

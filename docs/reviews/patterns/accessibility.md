@@ -3,7 +3,7 @@ id: accessibility
 category: a11y
 created: 2026-04-09
 last_updated: 2026-06-06
-ref_count: 7
+ref_count: 8
 ---
 
 # Accessibility
@@ -253,3 +253,21 @@ handlers must not trap focus without implementing the promised behavior.
 - **Finding:** When `collapsed=true`, the button rendered `aria-label="Show sidebar"` and `aria-pressed="true"`. A screen reader announced "Show sidebar, toggle button, pressed" — "pressed" in ARIA means the toggle's _on_ state is active, which a listener interprets as "the show-sidebar action is currently engaged" (sidebar is visible). But the sidebar is actually hidden, directly contradicting the signal.
 - **Fix:** Replaced `aria-pressed={collapsed}` with `aria-expanded={!collapsed}` — the WAI-ARIA-recommended attribute for controls that reveal/hide a panel. Updated co-located test assertions accordingly.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 27. Focus lost to body when in-card toggle collapses the sidebar
+
+- **Source:** github-claude | PR #352 round 2 | 2026-06-06
+- **Severity:** MEDIUM
+- **File:** `src/features/workspace/WorkspaceView.tsx`
+- **Finding:** When a keyboard or assistive-technology user activates the `SidebarToggle` inside `AgentStatusCard`, the button lives inside the sidebar subtree that is about to become `inert`. Browsers remove focus from elements in an inert subtree (Chromium drops it on `document.body`), and the replacement rail toggle does not receive focus automatically. The result is a confusing loss of focus context every time the sidebar is collapsed from the card.
+- **Fix:** Forward a `railToggleRef` from `WorkspaceView` through `IconRail` to the rail `SidebarToggle`, set a `focusRailAfterCollapseRef` flag in the in-card toggle callback, and use a `useEffect` that focuses the rail toggle after `sidebarCollapsed` transitions to `true`. Keyboard shortcut and palette paths keep the original `toggleSidebar` so they do not steal focus from the terminal/editor.
+- **Commit:** same commit as this entry
+
+### 28. RateLimitBar lacks `role=progressbar` and `aria-value*` attributes
+
+- **Source:** github-claude | PR #352 round 2 | 2026-06-06
+- **Severity:** LOW
+- **File:** `src/features/agent-status/components/RateLimitBar.tsx`
+- **Finding:** The shared `RateLimitBar` component rendered a visual progress bar as two nested `<div>` elements with no ARIA role or value attributes. Screen readers could not interpret the fill width as a bounded value, so AT users only heard the adjacent label and percentage text without the programmatic range semantics.
+- **Fix:** Added `role="progressbar"`, `aria-valuenow={Math.round(percentage)}`, `aria-valuemin={0}`, and `aria-valuemax={100}` to the outer track `<div>`, and added a co-located test asserting the role and value attributes.
+- **Commit:** same commit as this entry

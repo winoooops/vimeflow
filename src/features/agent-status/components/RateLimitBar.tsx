@@ -21,7 +21,13 @@ export const RateLimitBar = ({
         {Math.round(percentage)}%
       </span>
     </div>
-    <div className="h-[3px] w-full overflow-hidden rounded-full bg-surface">
+    <div
+      role="progressbar"
+      aria-valuenow={Math.round(percentage)}
+      aria-valuemin={0}
+      aria-valuemax={100}
+      className="h-[3px] w-full overflow-hidden rounded-full bg-surface"
+    >
       <div
         data-testid="rate-limit-bar-fill"
         className="h-full rounded-full bg-primary-container"
