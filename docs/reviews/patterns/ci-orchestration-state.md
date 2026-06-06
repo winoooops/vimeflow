@@ -3,7 +3,7 @@ id: ci-orchestration-state
 category: correctness
 created: 2026-06-02
 last_updated: 2026-06-04
-ref_count: 4
+ref_count: 5
 ---
 
 # CI Orchestration State
@@ -21,6 +21,15 @@ Findings in the CI orchestration / QA runner pipeline where state is either lost
 - **File:** `scripts/qa-runner/lib/rerun-state.js`
 - **Finding:** `rerunKey` delegated to `checkIdentity`, which includes the GitHub Actions run ID extracted from `check.link`. Every rerun gets a new run ID, so the cap key changes on every attempt and the counter never accumulates past zero. The advertised safety guarantee (capped at 3 reruns) never trips.
 - **Fix:** Added `stableCheckIdentity` to `ci-policy.js` that keys by check name and workflow only (no run ID). Updated `rerun-state.js` to use the stable identity for cap keys while preserving `checkIdentity` for deduplication use cases.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 14. Post-adjudication head check outside try/catch discards valid result on transient gh failure
+
+- **Source:** github-claude | PR #361 round 2 | 2026-06-06
+- **Severity:** MEDIUM
+- **File:** `scripts/qa-runner/watch.js`
+- **Finding:** `currentPrHeadSha(pr.number)` is called after the try/catch that guards `adjudicateReviews`. A transient `gh pr view` failure propagates unhandled, discarding the valid adjudication result and causing the tick to exit 2 (retry) instead of gracefully falling to WAITING. Before this PR, `prDiff(pr.number)` was evaluated inline inside the `adjudicateReviews()` argument list, so a `gh pr diff` failure was caught by the same try/catch and gracefully set state to WAITING.
+- **Fix:** Wrapped the head-check in a try/catch that sets `[state, detail] = ['WAITING', 'head check unavailable (transient)']` on failure, mirroring the adjudication catch above. The downstream decision branches already gate on `state !== 'WAITING'`, so the catch naturally prevents NEEDS_FIX/REVOKE dispatch when the freshness check is unavailable.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
 
 ### 2. threads: null in outer return is a regression — NEEDS_FIX thread count lost

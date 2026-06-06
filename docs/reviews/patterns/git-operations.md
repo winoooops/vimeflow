@@ -240,7 +240,6 @@ between display and mutation operations.
 - **Fix:** Fetched `isCrossRepository` from `gh pr view\' and gated the remote ref-delete on `!isCrossRepository`.
 - **Commit:** same commit as this entry
 
-
 ### 26. Checkout before reset leaves dirty worktree stuck in WAITING permanently
 
 - **Source:** github-claude | PR #361 round 1 | 2026-06-06

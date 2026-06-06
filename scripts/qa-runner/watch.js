@@ -503,18 +503,23 @@ const computeState = async (pr, ctx) => {
         }
       }
       if (adjudication) {
-        const freshHeadSha = currentPrHeadSha(pr.number)
-        if (freshHeadSha !== view.headRefOid) {
-          stateHeadSha = freshHeadSha
-          claude = 'head moved during adjudication'
-          state = 'WAITING'
-          detail = `PR head moved during review adjudication (${shortSha(view.headRefOid)} → ${shortSha(freshHeadSha)}); waiting for latest checks/review`
-        } else {
-          reviewAdjudication = reviewAdjudicationObservation(
-            adjudication,
-            trustedReviews
-          )
-          claude = `adjudicated ${adjudication.decision}${adjudication.cacheHit ? ' (cached)' : ''}`
+        try {
+          const freshHeadSha = currentPrHeadSha(pr.number)
+          if (freshHeadSha !== view.headRefOid) {
+            stateHeadSha = freshHeadSha
+            claude = 'head moved during adjudication'
+            state = 'WAITING'
+            detail = `PR head moved during review adjudication (${shortSha(view.headRefOid)} → ${shortSha(freshHeadSha)}); waiting for latest checks/review`
+          } else {
+            reviewAdjudication = reviewAdjudicationObservation(
+              adjudication,
+              trustedReviews
+            )
+            claude = `adjudicated ${adjudication.decision}${adjudication.cacheHit ? ' (cached)' : ''}`
+          }
+        } catch (e) {
+          claude = `head check unavailable (transient): ${e.message.split('\n')[0]}`
+          ;[state, detail] = ['WAITING', claude]
         }
 
         if (

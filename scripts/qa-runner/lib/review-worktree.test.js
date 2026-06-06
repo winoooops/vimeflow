@@ -125,12 +125,16 @@ describe('prepareReviewWorktree', () => {
 
     const resetIndex = git.mock.calls.findIndex(
       (args) =>
-        args[0][0] === '-C' && args[0].includes('reset') && args[0].includes('--hard')
+        args[0][0] === '-C' &&
+        args[0].includes('reset') &&
+        args[0].includes('--hard')
     )
 
     const checkoutIndex = git.mock.calls.findIndex(
       (args) =>
-        args[0][0] === '-C' && args[0].includes('checkout') && args[0].includes('--detach')
+        args[0][0] === '-C' &&
+        args[0].includes('checkout') &&
+        args[0].includes('--detach')
     )
     expect(resetIndex).toBeGreaterThan(-1)
     expect(checkoutIndex).toBeGreaterThan(-1)
