@@ -1,8 +1,11 @@
 import { join } from 'node:path'
 import { describe, expect, test } from 'vitest'
 import {
+  adjudicationWorktreePlan,
+  fetchRemoteBranchArgs,
   fixerWorktreePath,
   isSelfReviewConflict,
+  remoteTrackingRef,
   worktreePlan,
 } from './fixer-worktree.js'
 
@@ -85,5 +88,61 @@ describe('worktreePlan', () => {
         fixerPath,
       })
     ).toBe(false)
+  })
+
+  test('plans exact-head review adjudication worktrees', () => {
+    const plan = adjudicationWorktreePlan({
+      repoRoot: '/srv/vimeflow',
+      pr: 352,
+      branch: 'feat/vim-66-sidebar-collapsible',
+      headSha: 'abc123',
+      baseBranch: 'wip/linear-wiring',
+    })
+
+    expect(fetchRemoteBranchArgs('feat/vim-66-sidebar-collapsible')).toEqual([
+      'fetch',
+      'origin',
+      '+refs/heads/feat/vim-66-sidebar-collapsible:refs/remotes/origin/feat/vim-66-sidebar-collapsible',
+      '-q',
+    ])
+
+    expect(remoteTrackingRef('wip/linear-wiring')).toBe(
+      'refs/remotes/origin/wip/linear-wiring'
+    )
+
+    expect(plan).toMatchObject({
+      path: join('/srv/vimeflow', '.claude', 'worktrees', 'qa-pr-352'),
+      headRef: 'refs/remotes/origin/feat/vim-66-sidebar-collapsible',
+      baseRef: 'refs/remotes/origin/wip/linear-wiring',
+      addArgs: [
+        'worktree',
+        'add',
+        '--detach',
+        join('/srv/vimeflow', '.claude', 'worktrees', 'qa-pr-352'),
+        'abc123',
+      ],
+      forceCheckoutArgs: [
+        '-C',
+        join('/srv/vimeflow', '.claude', 'worktrees', 'qa-pr-352'),
+        'checkout',
+        '-f',
+        '--detach',
+        'abc123',
+      ],
+      cleanArgs: [
+        '-C',
+        join('/srv/vimeflow', '.claude', 'worktrees', 'qa-pr-352'),
+        'clean',
+        '-ffd',
+      ],
+      diffArgs: [
+        '-C',
+        join('/srv/vimeflow', '.claude', 'worktrees', 'qa-pr-352'),
+        'diff',
+        '--patch',
+        '--color=never',
+        'refs/remotes/origin/wip/linear-wiring...HEAD',
+      ],
+    })
   })
 })

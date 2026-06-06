@@ -161,6 +161,8 @@ describe('formatDecisionComment', () => {
             confidence_score: 0.97,
             reason:
               'WAITING behavior is correct; the duplicated path is operator-visible noise only.',
+            fix_direction:
+              'Do not dispatch a fixer; clean up the artifact wording only if this file is touched again.',
           },
         ],
       },
@@ -175,6 +177,10 @@ describe('formatDecisionComment', () => {
     expect(body).toContain('Blocking findings:\n- none')
     expect(body).toContain(
       '- LOW: Artifact path duplicated (risk=low, fix=low, confidence=0.97)'
+    )
+
+    expect(body).toContain(
+      'Direction: Do not dispatch a fixer; clean up the artifact wording only if this file is touched again.'
     )
   })
 

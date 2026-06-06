@@ -27,6 +27,7 @@ import {
   dispatchBlockerDetail,
   readDispatchBlocker,
 } from './dispatch-blocker.js'
+import { fixerWorktreePath } from './fixer-worktree.js'
 import { linkedVimForPr } from './pr-utils.js'
 
 const WATCH = join(dirname(dirname(fileURLToPath(import.meta.url))), 'watch.js')
@@ -218,6 +219,26 @@ const needsFixParentId = (pr, headSha) =>
 const shouldPostMergedLinear = (pr) =>
   !hasMergeLinearPosted(decisionStore(pr), pr)
 
+const cleanupPrWorktree = (pr, exec = execFileSync) => {
+  try {
+    const repoRoot = dirname(
+      exec('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], {
+        encoding: 'utf8',
+      }).trim()
+    )
+
+    exec('git', [
+      'worktree',
+      'remove',
+      '--force',
+      fixerWorktreePath(repoRoot, pr),
+    ])
+  } catch {
+    // Best-effort cleanup only. A missing worktree or transient git failure must not
+    // change terminal PR handling.
+  }
+}
+
 const normalizeTickResult = (result) => {
   if (typeof result === 'number' || result == null) {
     return {
@@ -250,6 +271,7 @@ export const runOne = async (pr, reason, deps) => {
     now = () => new Date().toISOString(),
     snapshotExec = execFileSync,
     tickRunner = tick,
+    cleanupWorktree = cleanupPrWorktree,
   } = deps
   const st = state.get(pr)
   const tracked = state.has(pr)
@@ -277,6 +299,7 @@ export const runOne = async (pr, reason, deps) => {
   // is forgotten silently rather than posting a milestone we never earned.
   if (before.state === 'MERGED' || before.state === 'CLOSED') {
     state.forget(pr)
+    cleanupWorktree(pr)
     if (tracked) {
       const type = before.state === 'MERGED' ? 'merged' : 'closed'
       events.emit(
@@ -342,6 +365,7 @@ export const runOne = async (pr, reason, deps) => {
   // "merged" milestone for a PR a human just closed.
   if (after.state === 'MERGED') {
     state.forget(pr)
+    cleanupWorktree(pr)
     events.emit(
       { type: 'merged', pr, detail: after.state },
       shouldPostMergedLinear(pr) ? after.vim : undefined
@@ -351,6 +375,7 @@ export const runOne = async (pr, reason, deps) => {
   }
   if (after.state === 'CLOSED') {
     state.forget(pr)
+    cleanupWorktree(pr)
     events.emit({ type: 'closed', pr, detail: after.state }, after.vim)
 
     return 'done'

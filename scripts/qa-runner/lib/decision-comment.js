@@ -43,9 +43,13 @@ const formatFindingLine = (finding) => {
     .filter(Boolean)
     .join(', ')
 
-  return `- ${tableValue(findingTitle(finding))}${
+  const line = `- ${tableValue(findingTitle(finding))}${
     basis ? ` (${tableValue(basis)})` : ''
   } - ${conciseValue(finding?.reason || 'no reason provided')}`
+
+  return finding?.fix_direction
+    ? `${line} Direction: ${conciseValue(finding.fix_direction)}`
+    : line
 }
 
 const appendFindings = (lines, heading, findings = []) => {

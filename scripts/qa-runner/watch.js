@@ -83,6 +83,7 @@ import {
   trustedClaudeReviewComments,
 } from './lib/review-adjudicator.js'
 import { pickReviewRerunCheck } from './lib/review-rerun.js'
+import { prepareReviewWorktree, shortSha } from './lib/review-worktree.js'
 
 const reviewAdjudicationObservation = (adjudication, reviewComments = []) => ({
   decision: adjudication.decision,
@@ -214,8 +215,8 @@ const issueComments = (owner, name, pr) =>
     ])
   ).flat()
 
-const prDiff = (pr) =>
-  gh(['pr', 'diff', String(pr), '--patch', '--color=never'])
+const currentPrHeadSha = (pr) =>
+  ghJson(['pr', 'view', String(pr), '--json', 'headRefOid']).headRefOid
 
 const checksFor = (pr) =>
   ghJson(['pr', 'checks', String(pr), '--json', 'name,bucket,link,workflow'])
@@ -399,7 +400,7 @@ const computeState = async (pr, ctx) => {
     'view',
     String(pr.number),
     '--json',
-    'mergeable,mergeStateStatus,body,headRefOid,url',
+    'mergeable,mergeStateStatus,body,headRefOid,url,baseRefName',
   ])
   const vim = await resolveLinkedIssue(pr, view, ctx)
   let state, detail
@@ -410,6 +411,7 @@ const computeState = async (pr, ctx) => {
   let checkSummaries = []
   let fixContext
   let reviewAdjudication
+  let stateHeadSha = view.headRefOid
   let threads = null
 
   const openThreads = () => {
@@ -470,27 +472,60 @@ const computeState = async (pr, ctx) => {
       ;[state, detail] = ['WAITING', 'no Claude review yet']
     } else {
       let adjudication = null
-      try {
-        adjudication = adjudicateReviews({
-          owner: ctx.owner,
-          name: ctx.name,
-          pr: pr.number,
-          headSha: view.headRefOid,
-          reviewComments: trustedReviews,
-          diffText: prDiff(pr.number),
-        })
-      } catch (e) {
-        const artifact = e.artifactPath ? ` (artifact: ${e.artifactPath})` : ''
-        claude = `adjudication transient: ${e.message.split('\n')[0]}${artifact}`
-        ;[state, detail] = ['WAITING', claude]
+
+      const worktree = prepareReviewWorktree({
+        repoRoot: mainRoot(),
+        pr,
+        view,
+      })
+      if (!worktree.ok) {
+        claude = worktree.detail
+        ;[state, detail] = ['WAITING', worktree.detail]
+      } else {
+        try {
+          adjudication = adjudicateReviews(
+            {
+              owner: ctx.owner,
+              name: ctx.name,
+              pr: pr.number,
+              headSha: view.headRefOid,
+              reviewComments: trustedReviews,
+              diffText: worktree.diffText,
+            },
+            { cwd: worktree.path }
+          )
+        } catch (e) {
+          const artifact = e.artifactPath
+            ? ` (artifact: ${e.artifactPath})`
+            : ''
+          claude = `adjudication transient: ${e.message.split('\n')[0]}${artifact}`
+          ;[state, detail] = ['WAITING', claude]
+        }
       }
       if (adjudication) {
-        reviewAdjudication = reviewAdjudicationObservation(
-          adjudication,
-          trustedReviews
-        )
-        claude = `adjudicated ${adjudication.decision}${adjudication.cacheHit ? ' (cached)' : ''}`
-        if (adjudication.decision === REVIEW_DECISIONS.needsFix) {
+        try {
+          const freshHeadSha = currentPrHeadSha(pr.number)
+          if (freshHeadSha !== view.headRefOid) {
+            stateHeadSha = freshHeadSha
+            claude = 'head moved during adjudication'
+            state = 'WAITING'
+            detail = `PR head moved during review adjudication (${shortSha(view.headRefOid)} → ${shortSha(freshHeadSha)}); waiting for latest checks/review`
+          } else {
+            reviewAdjudication = reviewAdjudicationObservation(
+              adjudication,
+              trustedReviews
+            )
+            claude = `adjudicated ${adjudication.decision}${adjudication.cacheHit ? ' (cached)' : ''}`
+          }
+        } catch (e) {
+          claude = `head check unavailable (transient): ${e.message.split('\n')[0]}`
+          ;[state, detail] = ['WAITING', claude]
+        }
+
+        if (
+          adjudication.decision === REVIEW_DECISIONS.needsFix &&
+          state !== 'WAITING'
+        ) {
           const findingSummary = summarizeBlockingFindings(
             adjudication.blocking_findings
           )
@@ -505,11 +540,14 @@ const computeState = async (pr, ctx) => {
           fixContext = {
             kind: 'review_adjudication',
             instruction:
-              'The orchestrator dispatched this fixer because Codex adjudicated the reviewer comments under agents/code-reviewer.md and found blocking findings. Fix the blocking findings, run relevant verification locally, commit, and push.',
+              'The orchestrator dispatched this fixer because Codex adjudicated the reviewer comments under agents/code-reviewer.md and found blocking findings. Fix the blocking findings, use each finding.fix_direction as the preferred implementation direction, run relevant verification locally, commit, and push.',
             summary: adjudication.summary,
             findings: adjudication.blocking_findings,
           }
-        } else if (adjudication.decision === REVIEW_DECISIONS.revoke) {
+        } else if (
+          adjudication.decision === REVIEW_DECISIONS.revoke &&
+          state !== 'WAITING'
+        ) {
           const findingSummary = summarizeBlockingFindings(
             adjudication.blocking_findings
           )
@@ -520,6 +558,9 @@ const computeState = async (pr, ctx) => {
               ? `Codex review adjudication requires PR rework: ${findingSummary}`
               : adjudication.summary,
           ]
+        } else if (state === 'WAITING') {
+          // The head moved after the exact-head worktree was reviewed. The next
+          // webhook/poll cycle will rebuild the worktree for the new head.
         } else if (adjudication.decision === REVIEW_DECISIONS.waiting) {
           ;[state, detail] = ['WAITING', adjudication.summary]
         } else if (view.mergeable !== 'MERGEABLE') {
@@ -541,7 +582,7 @@ const computeState = async (pr, ctx) => {
       detail,
       vim,
       threads,
-      headSha: view.headRefOid,
+      headSha: stateHeadSha,
       ci: ciResult.ci,
       claude,
       mergeable: view.mergeable,
@@ -561,7 +602,7 @@ const computeState = async (pr, ctx) => {
     detail,
     vim,
     threads,
-    headSha: view.headRefOid,
+    headSha: stateHeadSha,
     ci: ciResult.ci,
     claude,
     mergeable: view.mergeable,

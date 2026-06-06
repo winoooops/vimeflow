@@ -185,7 +185,7 @@ const fixContextText = () => {
     '```json\n' +
     context +
     '\n```\n' +
-    'If this context describes deterministic CI failures, inspect the linked GitHub check logs and fix those failures even when there are no unresolved review threads.'
+    'If this context describes review adjudication findings, use each finding.fix_direction as the preferred implementation direction. If it describes deterministic CI failures, inspect the linked GitHub check logs and fix those failures even when there are no unresolved review threads.'
   )
 }
 
