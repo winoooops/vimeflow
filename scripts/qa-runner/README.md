@@ -247,8 +247,9 @@ supports:
   it still has queued or concurrent work, then performs a best-effort idle stop
   once the queue drains. Stop failures are logged as warnings and do not replace
   the fixer exit code.
-- `QA_WORKER_IDLE_STOP_SECONDS=15` controls the daemon's idle-stop grace period
-  after a keep-alive run drains the queue.
+- `QA_WORKER_IDLE_STOP_SECONDS=2100` controls the daemon's idle-stop grace
+  period after a keep-alive run drains the queue. The default keeps the worker
+  warm through slow CI/Claude review rounds before stopping it.
 
 The remote side runs `worker-cycle.js`, which maps the daemon's environment
 contract into one `run.js <PR> --push` fixer pass. It never arms approval; the

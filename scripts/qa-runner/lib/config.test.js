@@ -26,6 +26,12 @@ describe('loadConfig', () => {
     expect(loadConfig().approveLabel).toBe('merge-me')
   })
 
+  test('keeps burst workers warm long enough for slow review rounds by default', () => {
+    delete process.env.QA_WORKER_IDLE_STOP_SECONDS
+
+    expect(loadConfig().workerIdleStopSeconds).toBe(2100)
+  })
+
   test('allows overriding burst worker idle stop delay through env', () => {
     process.env.QA_WORKER_IDLE_STOP_SECONDS = '3'
 
