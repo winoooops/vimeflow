@@ -98,7 +98,7 @@ export const List = ({
 
   return (
     <>
-      <Group.Header label="Active" />
+      <Group.Header label="Active" count={activeGroup.length} />
 
       <motion.div
         data-testid="session-scroll"
@@ -150,7 +150,7 @@ export const List = ({
 
         {recentGroup.length > 0 && (
           <>
-            <Group.Header label="Recent" />
+            <Group.Header label="Recent" count={recentGroup.length} />
             <Group variant="recent" sessions={recentGroup}>
               {recentGroup.map((session) => (
                 <Card

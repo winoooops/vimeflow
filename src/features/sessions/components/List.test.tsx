@@ -161,6 +161,24 @@ describe('List', () => {
     )
   })
 
+  test('section headers show per-group counts', () => {
+    render(
+      <List
+        sessions={mockSessions}
+        activeSessionId="sess-1"
+        onSessionClick={mockOnSessionClick}
+      />
+    )
+
+    expect(screen.getByTestId('session-group-active')).toHaveTextContent(
+      'Active · 2'
+    )
+
+    expect(screen.getByTestId('session-group-recent')).toHaveTextContent(
+      'Recent · 1'
+    )
+  })
+
   test('splits sessions: running/paused in Active, completed/errored in Recent', () => {
     render(
       <List
