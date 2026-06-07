@@ -101,11 +101,19 @@ export interface LoadWorkspaceForRestoreRequest {
   workingDirectory: string
 }
 
-// Port the single-writer assembler (Task 9) plugs into; Task 6 ships a no-op so
-// the controller works standalone before the writer lands.
+// Port the single-writer assembler plugs into so the controller can drive it
+// without depending on the concrete writer (a no-op default ships in Task 6).
 export interface WorkspaceLayoutWriterPort {
   onShapePushed: (dto: WorkspaceShapeDto) => void
   setHydrating: (hydrating: boolean) => void
+}
+
+// Write-cadence signals the browser-pane controller raises: a tab
+// open/close/active-switch is structural (immediate), an in-tab navigation is
+// volatile (debounced). Kept minimal so browser-pane.ts needn't know the writer.
+export interface WorkspaceLayoutWriteSignals {
+  markStructural: () => void
+  markVolatile: () => void
 }
 
 // Minimal subset of Electron's ipcMain the controller installs onto; injectable

@@ -24,6 +24,8 @@ import {
   setupWorkspaceLayoutController,
   type WorkspaceLayoutController,
 } from './workspace-layout-controller'
+import { WorkspaceLayoutWriter } from './workspace-layout-writer'
+import type { PersistedTab } from './workspace-layout-types'
 
 // Keep the GPU serving this window while it is occluded (covered by another
 // window) or unfocused. Chromium otherwise backgrounds the occluded window and
@@ -327,9 +329,17 @@ const setupApp = async (): Promise<void> => {
 
   sidecar = spawnedSidecar
   browserPaneController = setupBrowserPaneIpc()
+
+  const layoutWriter = new WorkspaceLayoutWriter({
+    sidecar: spawnedSidecar,
+    captureTabsForPane: (sessionId, paneId): PersistedTab[] | null =>
+      browserPaneController?.captureTabsForPane(sessionId, paneId) ?? null,
+  })
+  browserPaneController.setWriteSignals(layoutWriter)
   workspaceLayoutController = setupWorkspaceLayoutController({
     sidecar: spawnedSidecar,
     ipcMain,
+    writer: layoutWriter,
   })
   const allowE2eBackendMethods = !app.isPackaged && isE2eRuntime()
 

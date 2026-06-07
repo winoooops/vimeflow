@@ -39,7 +39,10 @@ import {
   commandPaletteToggleDispatcherForWindow,
   isCommandPaletteShortcutInput,
 } from './command-palette-shortcut'
-import type { PersistedTab } from './workspace-layout-types'
+import type {
+  PersistedTab,
+  WorkspaceLayoutWriteSignals,
+} from './workspace-layout-types'
 
 // cspell:ignore cdp debuggee mediaKeySystem websocket WebContentsView
 interface BrowserPaneBounds {
@@ -849,6 +852,8 @@ const resolveFaviconDataUrl = async (
 export class BrowserPaneController {
   private readonly panes = new Map<string, BrowserPaneRecord>()
 
+  private writeSignals: WorkspaceLayoutWriteSignals | null = null
+
   private readonly cdpAttachments = new Map<string, CdpAttachment>()
 
   private readonly partitionHandlers = new Set<string>()
@@ -914,6 +919,11 @@ export class BrowserPaneController {
     ipcMain.handle(BROWSER_PANE_NAV_ACTION, (_event, payload) =>
       this.handleNavAction(payload)
     )
+  }
+
+  // Connect the workspace-layout writer so tab lifecycle + navigation persist.
+  setWriteSignals(signals: WorkspaceLayoutWriteSignals): void {
+    this.writeSignals = signals
   }
 
   dispose(): void {
@@ -1415,6 +1425,8 @@ export class BrowserPaneController {
       return
     }
 
+    this.writeSignals?.markVolatile()
+
     const tabs = this.tabSnapshots(record)
     this.emitTabsChanged(record, tabs)
     if (record.activeTabId !== tabId) {
@@ -1630,6 +1642,7 @@ export class BrowserPaneController {
       url: payload.url ?? DEFAULT_BROWSER_URL,
       activate: true,
     })
+    this.writeSignals?.markStructural()
   }
 
   private destroyPane(payload: unknown): void {
@@ -1732,6 +1745,7 @@ export class BrowserPaneController {
     }
 
     this.setActiveTab(record, payload.tabId, true)
+    this.writeSignals?.markStructural()
   }
 
   private closeTab(payload: unknown): void {
@@ -1767,10 +1781,13 @@ export class BrowserPaneController {
         this.setActiveTab(record, nextTabId, true)
       }
 
+      this.writeSignals?.markStructural()
+
       return
     }
 
     this.emitTabsChanged(record)
+    this.writeSignals?.markStructural()
   }
 
   private async cdpInfo(payload: unknown): Promise<BrowserCdpInfo> {

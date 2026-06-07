@@ -535,6 +535,51 @@ describe('BrowserPaneController', () => {
     expect(controller.captureTabsForPane('nope', 'p1')).toBeNull()
   })
 
+  test('write signals: tab lifecycle is structural, navigation is volatile', async () => {
+    const signals = { markStructural: vi.fn(), markVolatile: vi.fn() }
+    controller.setWriteSignals(signals)
+
+    const created = (await handler(BROWSER_PANE_CREATE)(eventForSender(), {
+      sessionId: 'pty-1',
+      paneId: 'p1',
+      workspaceId: 'w',
+      initialUrl: 'https://a.example/',
+    })) as { tabs: { id: string }[] }
+    const firstTabId = created.tabs[0].id
+
+    // In-tab navigation → volatile (debounced).
+    signals.markVolatile.mockClear()
+    callAllListeners(0, 'did-navigate')
+    expect(signals.markVolatile).toHaveBeenCalled()
+
+    // Open a tab → structural (immediate).
+    signals.markStructural.mockClear()
+    await handler(BROWSER_PANE_NEW_TAB)(eventForSender(), {
+      sessionId: 'pty-1',
+      paneId: 'p1',
+      url: 'https://b.example/',
+    })
+    expect(signals.markStructural).toHaveBeenCalled()
+
+    // Switch active tab → structural.
+    signals.markStructural.mockClear()
+    await handler(BROWSER_PANE_ACTIVATE_TAB)(eventForSender(), {
+      sessionId: 'pty-1',
+      paneId: 'p1',
+      tabId: firstTabId,
+    })
+    expect(signals.markStructural).toHaveBeenCalled()
+
+    // Close a tab (two open) → structural.
+    signals.markStructural.mockClear()
+    await handler(BROWSER_PANE_CLOSE_TAB)(eventForSender(), {
+      sessionId: 'pty-1',
+      paneId: 'p1',
+      tabId: firstTabId,
+    })
+    expect(signals.markStructural).toHaveBeenCalled()
+  })
+
   test('a data: image favicon candidate is stored verbatim', async () => {
     const h = await faviconHarness('https://example.com/')
     h.clearSends()
