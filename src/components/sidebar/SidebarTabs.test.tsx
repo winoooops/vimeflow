@@ -153,6 +153,16 @@ describe('SidebarTabs', () => {
     expect(screen.queryAllByTestId('sidebar-tabs-accent')).toHaveLength(0)
   })
 
+  test('renders a single decorative active thumb', () => {
+    render(
+      <SidebarTabs<Tab> tabs={TABS} activeId="sessions" onChange={vi.fn()} />
+    )
+
+    const thumbs = screen.getAllByTestId('sidebar-tabs-thumb')
+    expect(thumbs).toHaveLength(1)
+    expect(thumbs[0]).toHaveAttribute('aria-hidden', 'true')
+  })
+
   test('default data-testid is sidebar-tabs; can be overridden', () => {
     const { rerender } = render(
       <SidebarTabs<Tab> tabs={TABS} activeId="sessions" onChange={vi.fn()} />

@@ -219,10 +219,10 @@ export const WorkspaceView = (): ReactElement => {
   }, [])
 
   const sidebarShortcutHint = preferModifier === 'meta' ? '⌘B' : 'Ctrl+⇧B'
-  const newSessionShortcutHint = preferModifier === 'meta' ? '⌘N' : 'Ctrl+N'
+  const newSessionShortcutHint = preferModifier === 'meta' ? '⌘N' : 'Ctrl+⇧N'
 
   const newSessionAriaKeyshortcuts =
-    preferModifier === 'meta' ? 'Meta+N' : 'Control+N'
+    preferModifier === 'meta' ? 'Meta+N' : 'Control+Shift+N'
   // Real command-palette chord for the top-bar utility hint (Ctrl+; / ⌘;),
   // not the ⌘K placeholder in the static design mock.
   const commandShortcutHint = formatShortcut(COMMAND_PALETTE_SHORTCUT_KEYS)
@@ -1503,7 +1503,7 @@ export const WorkspaceView = (): ReactElement => {
             }
             content={
               <div className="flex h-full min-h-0 flex-col">
-                <div className="flex items-center justify-between pr-2">
+                <div className="flex items-stretch gap-2 px-3 pb-3 pt-2.5">
                   <SidebarTabs<SidebarTab>
                     tabs={SIDEBAR_TAB_ITEMS}
                     activeId={activeTab}
