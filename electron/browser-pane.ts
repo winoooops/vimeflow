@@ -39,6 +39,7 @@ import {
   commandPaletteToggleDispatcherForWindow,
   isCommandPaletteShortcutInput,
 } from './command-palette-shortcut'
+import type { PersistedTab } from './workspace-layout-types'
 
 // cspell:ignore cdp debuggee mediaKeySystem websocket WebContentsView
 interface BrowserPaneBounds {
@@ -1129,6 +1130,28 @@ export class BrowserPaneController {
       active: tab.id === record.activeTabId,
       favicon: tab.favicon,
     }))
+  }
+
+  // Durable per-tab nav history for a pane, read fresh from navigationHistory;
+  // feeds the workspace-layout assembler (the tabs-changed event stays history-free).
+  captureTabsForPane(sessionId: string, paneId: string): PersistedTab[] | null {
+    const record = this.panes.get(paneKey(sessionId, paneId))
+    if (!record) {
+      return null
+    }
+
+    return [...record.tabs.values()].map((tab) => {
+      const nav = tab.view.webContents.navigationHistory
+
+      return {
+        active: tab.id === record.activeTabId,
+        history: nav.getAllEntries().map((entry) => ({
+          url: entry.url,
+          title: entry.title,
+        })),
+        historyIndex: nav.getActiveIndex(),
+      }
+    })
   }
 
   private emitTabsChanged(
