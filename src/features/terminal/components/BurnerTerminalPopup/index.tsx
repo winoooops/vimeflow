@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react'
 import type { ReactElement, ReactNode } from 'react'
+import { Tooltip } from '../../../../components/Tooltip'
 import { Body } from '../TerminalPane/Body'
 import type { BodyHandle } from '../TerminalPane/Body'
 import { AGENTS } from '../../../../agents/registry'
@@ -7,9 +8,8 @@ import type { RestoreData } from '../../types'
 import type { ITerminalService } from '../../services/terminalService'
 import type { NotifyPaneReady } from '../../hooks/useTerminal'
 
-// Burner wears the registered `shell` agent's amber identity (design handoff).
+// Amber shell accent — kept for the footer hint and panel glow.
 const SHELL_ACCENT = AGENTS.shell.accent
-const SHELL_ACCENT_DIM = AGENTS.shell.accentDim
 
 // Release-handle fallback when no drain notifier is wired.
 const releaseNoop = (): void => undefined
@@ -42,6 +42,17 @@ export interface BurnerTerminalPopupProps {
   onHide: () => void
   /** Drain the spawn→attach buffer once the terminal subscribes. */
   onPaneReady?: NotifyPaneReady
+  /**
+   * Pull the host pane's current cwd into the burner shell (VIM-81) — one
+   * directional. Omitted when the live host cwd can't be resolved, in which
+   * case the button does not render.
+   */
+  onAlignCwd?: () => void
+  /**
+   * A foreground command is running in the burner (VIM-71). Aligning would feed
+   * `cd` to that program's stdin instead of the shell, so the button disables.
+   */
+  alignBusy?: boolean
 }
 
 /**
@@ -64,6 +75,8 @@ export const BurnerTerminalPopup = ({
   service,
   onHide,
   onPaneReady = undefined,
+  onAlignCwd = undefined,
+  alignBusy = false,
 }: BurnerTerminalPopupProps): ReactElement => {
   const bodyRef = useRef<BodyHandle>(null)
   const overlayRef = useRef<HTMLDivElement>(null)
@@ -113,6 +126,13 @@ export const BurnerTerminalPopup = ({
     [onPaneReady]
   )
 
+  // Aligning moves DOM focus onto the toolbar button; hand it back to the xterm
+  // so the next keystrokes land in the burner instead of the document.
+  const handleAlign = useCallback((): void => {
+    onAlignCwd?.()
+    bodyRef.current?.focusTerminal()
+  }, [onAlignCwd])
+
   // Fresh attach: no prior history. The live subscription streams everything
   // from spawn onward; the spawn→attach gap is covered by the buffer-drain
   // (registerPending at spawn, onPaneReady on subscribe).
@@ -156,33 +176,23 @@ export const BurnerTerminalPopup = ({
             '0 24px 70px rgba(0,0,0,0.62), 0 0 0 1px rgba(240,198,116,0.08), 0 0 40px rgba(240,198,116,0.18)',
         }}
       >
-        {/* amber identity hairline at the very top */}
-        <span
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-x-0 top-0 h-0.5 opacity-60"
-          style={{
-            background:
-              'linear-gradient(90deg, transparent, #f0c674, transparent)',
-          }}
-        />
-
         <header
-          className="flex flex-col gap-[9px] px-[14px] pb-[11px] pt-[13px]"
+          className="flex flex-col gap-[9px] px-[12px] py-[7px]"
           style={{
             borderBottom: '1px solid rgba(74,68,79,0.18)',
             background: 'rgba(13,13,28,0.35)',
           }}
         >
           <div className="flex items-center gap-[9px]">
+            {/* Dashed gray pill — the burner's "throwaway" identity. */}
             <span
-              className="inline-flex items-center gap-[7px] rounded-[7px] py-1 pl-2 pr-2.5 font-mono text-[11px] font-bold tracking-[0.06em]"
+              className="inline-flex items-center gap-[7px] rounded-[7px] py-[3px] pr-[9px] pl-[7px] font-mono text-[10.5px] font-bold tracking-[0.06em]"
               style={{
-                color: SHELL_ACCENT,
-                background: SHELL_ACCENT_DIM,
-                border: '1px solid rgba(240,198,116,0.34)',
+                color: '#8a8299',
+                border: '1px dashed rgba(138,130,153,0.45)',
               }}
             >
-              <span className="material-symbols-outlined text-[14px] leading-none">
+              <span className="material-symbols-outlined text-[13px] leading-none">
                 terminal
               </span>
               BURNER
@@ -190,18 +200,39 @@ export const BurnerTerminalPopup = ({
 
             <span className="flex-1" />
 
-            <span
-              className="inline-flex h-[23px] items-center gap-[5px] rounded-md px-2 font-mono text-[9.5px] uppercase tracking-[0.04em]"
-              style={{
-                border: '1px dashed rgba(138,130,153,0.45)',
-                color: '#8a8299',
-              }}
-            >
-              <span className="material-symbols-outlined text-[13px] leading-none">
-                auto_delete
-              </span>
-              throwaway
-            </span>
+            {onAlignCwd && (
+              <Tooltip
+                content={
+                  alignBusy
+                    ? 'Finish the command to align'
+                    : "Align to pane's directory"
+                }
+                placement="bottom"
+                // Lift above the z-[100] popup — the shared tooltip portals to
+                // body at z-50 and would otherwise paint behind the overlay.
+                className="!z-[110]"
+              >
+                <button
+                  type="button"
+                  data-testid="burner-align"
+                  aria-label="Align burner to pane directory"
+                  onClick={handleAlign}
+                  disabled={alignBusy}
+                  className={`grid h-[26px] w-[26px] place-items-center rounded-[7px] ${
+                    alignBusy
+                      ? 'text-on-surface-muted/40 cursor-not-allowed'
+                      : 'text-on-surface-muted hover:text-on-surface hover:bg-white/5'
+                  }`}
+                >
+                  <span
+                    className="material-symbols-outlined text-[15px] leading-none"
+                    aria-hidden="true"
+                  >
+                    sync
+                  </span>
+                </button>
+              </Tooltip>
+            )}
 
             <button
               type="button"

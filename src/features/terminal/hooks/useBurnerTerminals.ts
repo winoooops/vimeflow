@@ -39,6 +39,30 @@ export interface BurnerTarget {
 const paneKey = (sessionId: string, paneId: string): string =>
   `${sessionId}:${paneId}`
 
+// POSIX single-quote a path so spaces / shell metacharacters reach the burner
+// shell as a single `cd` argument (a literal ' becomes the four chars '\'').
+// Unix shells only — Windows PowerShell/cmd quoting is a separate follow-up.
+const singleQuote = (value: string): string =>
+  `'${value.replace(/'/g, "'\\''")}'`
+
+// True if the path carries any C0 control byte or DEL. These survive shell
+// quoting but the terminal line editor acts on them before the shell parses the
+// line, so a cwd containing one is refused rather than injected.
+const hasControlBytes = (value: string): boolean => {
+  for (let i = 0; i < value.length; i += 1) {
+    const code = value.charCodeAt(i)
+    if (code < 0x20 || code === 0x7f) {
+      return true
+    }
+  }
+
+  return false
+}
+
+// Ctrl-E then Ctrl-U: move to end of line and kill it, so the injected cd runs
+// on a clean prompt instead of merging with whatever the user half-typed.
+const CLEAR_LINE = '\x05\x15'
+
 export interface UseBurnerTerminalsArgs {
   service: ITerminalService
   /** Resolve the focused pane — the chord's target when `toggle()` has no arg. */
@@ -58,6 +82,18 @@ export interface UseBurnerTerminalsArgs {
   livePaneKeys?: ReadonlySet<string>
   /** Drop the spawn→attach buffer for a killed / self-exited burner pty. */
   dropAllForPty?: (ptyId: string) => void
+  /**
+   * Live `${sessionId}:${paneId}` → current pane cwd, for the align-to-pane
+   * button (VIM-81). Read at click-time so the burner snaps to where its host
+   * pane is *now*, not the cwd it spawned at. Omitted ⇒ no align button.
+   */
+  livePaneCwds?: ReadonlyMap<string, string>
+  /**
+   * Whether this platform reports reliable foreground-process state (VIM-71).
+   * When false the busy-guard can't tell idle from running, so the align button
+   * is withheld entirely. Defaults true (Unix); false on Windows ConPTY.
+   */
+  alignSupported?: boolean
 }
 
 export interface UseBurnerTerminals {
@@ -98,6 +134,8 @@ export const useBurnerTerminals = ({
   notifyPaneReady,
   livePaneKeys,
   dropAllForPty,
+  livePaneCwds,
+  alignSupported = true,
 }: UseBurnerTerminalsArgs): UseBurnerTerminals => {
   // Authoritative handles live in a ref so they never serialize; a projection
   // is mirrored into state so renderNode + cues re-render.
@@ -113,6 +151,10 @@ export const useBurnerTerminals = ({
   // otherwise slip past it.
   const livePaneKeysRef = useRef(livePaneKeys)
   livePaneKeysRef.current = livePaneKeys
+  // Latest live pane cwds, mirrored so the align button resolves the host pane's
+  // current cwd at click-time instead of capturing a stale render snapshot.
+  const livePaneCwdsRef = useRef(livePaneCwds)
+  livePaneCwdsRef.current = livePaneCwds
   // Keys whose in-flight spawn was invalidated because the pane left the live set
   // mid-spawn. Checked when the spawn resolves so the shell is reaped even when a
   // new pane has since reused the freed id (`nextFreePaneId` recycles ids).
@@ -143,6 +185,47 @@ export const useBurnerTerminals = ({
       dropAllForPty?.(ptyId)
     },
     [service, dropAllForPty]
+  )
+
+  // Pull the host pane's live cwd into the burner shell — one-directional
+  // (VIM-81). A real `cd` (queues behind any running command, shows in history),
+  // resolved at call-time from the ref so it tracks the pane's current cwd. The
+  // burner's own `cd` still never moves the pane (no OSC 7 wiring on the popup).
+  const alignCwd = useCallback(
+    (key: string): void => {
+      const entry = entriesRef.current.get(key)
+      const cwd = livePaneCwdsRef.current?.get(key)
+      // Skip while a foreground command owns the shell (VIM-71 active cue): the
+      // `cd` would be delivered to that program's stdin, not the shell prompt.
+      // `active` is the last ~750ms poll, so a command started inside that window
+      // can still slip through — a server-side guarded write closes it (VIM-90).
+      if (entry?.status !== 'running' || entry.active || !cwd) {
+        return
+      }
+      // The cwd is untrusted (OSC 7 / agent state). C0/DEL control bytes survive
+      // shell quoting but the terminal line editor acts on them before the shell
+      // parses the line — an embedded Ctrl-U would clear the `cd '` prefix and
+      // run the rest. Refuse any path that carries them rather than inject it.
+      if (hasControlBytes(cwd)) {
+        // eslint-disable-next-line no-console
+        console.warn('burner cwd-align: refusing cwd with control characters')
+
+        return
+      }
+      const ptyId = entry.burnerPtyId
+      void (async (): Promise<void> => {
+        try {
+          await service.write({
+            sessionId: ptyId,
+            data: `${CLEAR_LINE}cd ${singleQuote(cwd)}\r`,
+          })
+        } catch (err) {
+          // eslint-disable-next-line no-console
+          console.warn('burner cwd-align write failed', err)
+        }
+      })()
+    },
+    [service]
   )
 
   // Lazily spawn a pane's burner shell on first open. Idempotent + guarded.
@@ -432,6 +515,14 @@ export const useBurnerTerminals = ({
               service,
               onHide: hide,
               onPaneReady: notifyPaneReady,
+              // Offer the align button only with a live cwd map, reliable
+              // foreground detection, and a live shell — a dead shell can't cd.
+              onAlignCwd:
+                livePaneCwds && alignSupported && entry.status === 'running'
+                  ? (): void => alignCwd(key)
+                  : undefined,
+              // ...and disable it while a foreground command owns the shell.
+              alignBusy: entry.active,
             })
           )
         )
