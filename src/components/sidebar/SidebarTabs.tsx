@@ -3,6 +3,7 @@ import type { ReactElement } from 'react'
 export interface SidebarTabItem<TId extends string = string> {
   id: TId
   label: string
+  icon?: string
 }
 
 export interface SidebarTabsProps<TId extends string = string> {
@@ -32,7 +33,7 @@ export const SidebarTabs = <TId extends string = string>({
     role="group"
     aria-label={ariaLabel}
     data-testid={testId}
-    className="flex flex-row items-center gap-4 px-3 py-2"
+    className="flex flex-row items-center gap-1.5 px-3 py-2"
   >
     {tabs.map((item) => {
       const isActive = item.id === activeId
@@ -45,24 +46,21 @@ export const SidebarTabs = <TId extends string = string>({
           onClick={() => {
             onChange(item.id)
           }}
-          // `pl-3` is on every tab (not only the active one) so the accent
-          // bar appears in place without shifting the label horizontally
-          // on selection. The bar's `left-1` (4 px) sits inside the 12 px
-          // padding region — clearance is `pl-3 - left-1 - w-0.5` ≈ 6 px
-          // before the first glyph.
-          className={`relative py-1 pl-3 font-mono text-[13px] font-semibold uppercase tracking-[0.08em] transition-colors ${
+          // Active-pill border sits on every tab (transparent when idle) so selection never reflows the row.
+          className={`flex items-center gap-1.5 rounded-md border px-2.5 py-1 font-mono text-[12px] font-semibold uppercase tracking-[0.08em] transition-colors ${
             isActive
-              ? 'text-primary-container'
-              : 'cursor-pointer text-on-surface-muted hover:text-on-surface-variant'
+              ? 'border-primary/40 bg-primary/15 text-primary-container'
+              : 'cursor-pointer border-transparent text-on-surface-muted hover:text-on-surface-variant'
           }`}
         >
-          {isActive && (
+          {item.icon ? (
             <span
               aria-hidden="true"
-              data-testid="sidebar-tabs-accent"
-              className="absolute bottom-2 left-1 top-2 w-0.5 rounded-sm bg-primary-container"
-            />
-          )}
+              className="material-symbols-outlined text-[15px]"
+            >
+              {item.icon}
+            </span>
+          ) : null}
           {item.label}
         </button>
       )

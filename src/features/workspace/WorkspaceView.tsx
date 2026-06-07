@@ -143,8 +143,8 @@ const SIDEBAR_DEFAULT = 272
 const SIDEBAR_INITIAL = clampSize(SIDEBAR_DEFAULT, SIDEBAR_MIN, SIDEBAR_MAX)
 
 const SIDEBAR_TAB_ITEMS: readonly SidebarTabItem<SidebarTab>[] = [
-  { id: 'sessions', label: 'SESSIONS' },
-  { id: 'files', label: 'FILES' },
+  { id: 'sessions', label: 'SESSIONS', icon: 'view_agenda' },
+  { id: 'files', label: 'FILES', icon: 'folder_open' },
 ]
 
 type DockTab = 'editor' | 'diff'
