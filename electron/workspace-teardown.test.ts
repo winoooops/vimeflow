@@ -65,4 +65,21 @@ describe('WorkspaceTeardown', () => {
     expect(flush).toHaveBeenCalledTimes(1)
     expect(teardown.hasFlushed).toBe(true)
   })
+
+  test('a failed flush is caught and forwarded to onFlushError without throwing', async () => {
+    const error = new Error('disk full')
+    const onFlushError = vi.fn()
+
+    const teardown = new WorkspaceTeardown({
+      drainFinalShape: vi.fn().mockResolvedValue(undefined),
+      flush: vi.fn().mockRejectedValue(error),
+      onFlushError,
+    })
+
+    await teardown.flushOnce()
+
+    expect(teardown.hasFlushed).toBe(true)
+    expect(onFlushError).toHaveBeenCalledTimes(1)
+    expect(onFlushError).toHaveBeenCalledWith(error)
+  })
 })

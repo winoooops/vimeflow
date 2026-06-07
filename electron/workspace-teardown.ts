@@ -14,6 +14,9 @@ export interface WorkspaceTeardownDeps {
   drainFinalShape: () => Promise<void>
   // Assemble the latest snapshot and await the durable save.
   flush: () => Promise<void>
+  // Optional observer for flush failures so callers can log without the
+  // coordinator throwing.
+  onFlushError?: (error: unknown) => void
 }
 
 export class WorkspaceTeardown {
@@ -40,7 +43,11 @@ export class WorkspaceTeardown {
     } catch {
       // An unresponsive renderer must not block the save; proceed last-known.
     }
-    await this.deps.flush()
+    try {
+      await this.deps.flush()
+    } catch (error) {
+      this.deps.onFlushError?.(error)
+    }
   }
 
   // Re-arm for the next teardown (non-quit close, or a new window opens).

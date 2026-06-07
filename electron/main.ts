@@ -376,6 +376,10 @@ const setupApp = async (): Promise<void> => {
       }
     },
     flush: (): Promise<void> => layoutWriter.flush(),
+    onFlushError: (error: unknown): void => {
+      // eslint-disable-next-line no-console
+      console.warn('Workspace flush failed during teardown', error)
+    },
   })
   const allowE2eBackendMethods = !app.isPackaged && isE2eRuntime()
 
