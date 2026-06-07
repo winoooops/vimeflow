@@ -1935,6 +1935,55 @@ describe('useSessionManager', () => {
     )
   })
 
+  test('restartSession skips killing a seed PTY already gone from the live set', async () => {
+    const service = createMockService()
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: 'dead-pty',
+      sessions: [
+        {
+          id: 'dead-pty',
+          cwd: '/home/user/projects/foo',
+          status: { kind: 'Exited', last_exit_code: 0 },
+        },
+      ],
+    })
+
+    service.spawn = vi.fn().mockResolvedValue({
+      sessionId: 'fresh-id',
+      pid: 999,
+      cwd: '/home/user/projects/foo',
+    })
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.sessions[0].id).toBe('dead-pty')
+
+    // The seed PTY is gone by restart time (graceful-quit clear_all).
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: null,
+      sessions: [],
+    })
+
+    act(() => result.current.restartSession('dead-pty'))
+
+    await waitFor(() =>
+      expect(service.spawn).toHaveBeenCalledWith(
+        expect.objectContaining({ cwd: '/home/user/projects/foo' })
+      )
+    )
+
+    // Restart succeeds: the pane rotates to the fresh PTY and runs again.
+    await waitFor(() => {
+      expect(result.current.sessions[0].panes[0].ptyId).toBe('fresh-id')
+      expect(result.current.sessions[0].status).toBe('running')
+    })
+
+    // The doomed kill of the absent seed PTY is never issued.
+    expect(service.kill).not.toHaveBeenCalledWith({ sessionId: 'dead-pty' })
+  })
+
   // Round 9, Finding 3 (codex P2): the `wasActive` capture in restartSession
   // used a closure-bound `activeSessionId`. If the user switched tabs during
   // the spawn / kill roundtrip, promoting the restarted session would
