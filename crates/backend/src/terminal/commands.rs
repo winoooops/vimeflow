@@ -610,12 +610,36 @@ pub(crate) fn kill_pty_inner(
                 // verify cycle 18 caught that `return Ok(())` here was
                 // a closure-scope early return that would have skipped
                 // that cleanup, leaving a dangling active id.
-                let new_layout: Option<&'static str> = match sibling_ids.len() {
-                    0 => None,
-                    1 => Some("single"),
-                    2 => Some("vsplit"),
-                    3 => Some("threeRight"),
-                    _ => Some("quad"), // 4+ defensively maps to quad
+                // Prefer the survivors' existing layout when the count is
+                // still compatible (e.g. keep hsplit when N=2, threeRight
+                // when N=3) and only downgrade when N no longer fits.
+                // Falls back to count-based defaults when the original
+                // layout is incompatible or absent. Claude MEDIUM on PR #381.
+                let new_layout: Option<&'static str> = if sibling_ids.is_empty() {
+                    None
+                } else {
+                    let existing = sibling_ids
+                        .first()
+                        .and_then(|id| data.groupings.get(id))
+                        .map(|g| g.layout.as_str());
+                    let count = sibling_ids.len();
+                    let compatible = match existing {
+                        Some("single") => count == 1,
+                        Some("vsplit") | Some("hsplit") => count == 2,
+                        Some("threeRight") => count == 3,
+                        Some("quad") => count >= 4,
+                        _ => false,
+                    };
+                    if compatible {
+                        existing
+                    } else {
+                        match count {
+                            1 => Some("single"),
+                            2 => Some("vsplit"),
+                            3 => Some("threeRight"),
+                            _ => Some("quad"),
+                        }
+                    }
                 };
 
                 if let Some(new_layout) = new_layout {

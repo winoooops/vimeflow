@@ -70,4 +70,3 @@ statements must not ship to production. Gate debug visuals behind
 - **Finding:** The rewritten `reorderSessions` warning path used `// eslint-disable-next-line no-console` + `console.warn(...)` — the anti-pattern that `src/lib/log.ts` was introduced to consolidate. This meant the warning did not appear under the `[vimeflow:sessions]` namespace, making it harder to correlate with other session-lifecycle log lines during debugging.
 - **Fix:** Added `const log = createLogger("sessions")` at the top of `useSessionManager.ts` and migrated all ~30 existing `console.warn` calls in the file to `log.warn(...)`, removing the corresponding `eslint-disable-next-line no-console` comments. Updated co-located test expectations to match the new `[vimeflow:sessions]` prefix.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
-

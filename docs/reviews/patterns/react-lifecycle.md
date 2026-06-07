@@ -248,4 +248,3 @@ to avoid unintended re-runs (e.g., PTY respawning on every cwd change).
 - **Finding:** `retryTimerRef` is used in the mount-lifecycle `useEffect` cleanup but declared 17 lines later. The forward reference is invisible to ESLint and TypeScript; a future early return or conditional before the ref declaration would produce a silent cleanup bug where the orphaned timer is never cleared on unmount.
 - **Fix:** Moved `retryTimerRef`, `latestDrainRef`, and `lastPushedJsonRef` to immediately after `mountedRef` (before the first `useEffect`), eliminating the forward reference and making the declaration order match the runtime initialization order.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
-
