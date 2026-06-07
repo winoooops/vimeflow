@@ -118,7 +118,7 @@ export const useSessionRestore = ({
         // groupings with both fields contribute, and a future schema
         // regression that drops `workspaceSessionId` would compile-fail
         // here. Claude review on PR #290 cycle 15 (MEDIUM).
-        const persistedWorkspaceDirs = new Set(
+        const workspacesWithPersistedBaseline = new Set(
           list.sessions.flatMap((info) =>
             info.grouping?.workspaceDirectory !== undefined
               ? [info.grouping.workspaceSessionId]
@@ -135,7 +135,9 @@ export const useSessionRestore = ({
                 return session
               }
 
-              const overrideBaseline = !persistedWorkspaceDirs.has(session.id)
+              const overrideBaseline = !workspacesWithPersistedBaseline.has(
+                session.id
+              )
 
               return {
                 ...session,
