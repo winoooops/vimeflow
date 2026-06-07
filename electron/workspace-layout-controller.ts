@@ -162,6 +162,13 @@ export class WorkspaceLayoutController {
 
   install(ipcMain: IpcMainLike): void {
     ipcMain.handle(WORKSPACE_LAYOUT_PUSH_SHAPE, (_event, dto): void => {
+      if (
+        !dto ||
+        typeof dto !== 'object' ||
+        !Array.isArray((dto as Record<string, unknown>).sessions)
+      ) {
+        return
+      }
       this.pushShape(dto as WorkspaceShapeDto)
     })
 

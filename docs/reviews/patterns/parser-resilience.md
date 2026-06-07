@@ -2,7 +2,7 @@
 id: parser-resilience
 category: code-quality
 created: 2026-05-24
-last_updated: 2026-05-30
+last_updated: 2026-06-07
 ref_count: 4
 ---
 
@@ -158,3 +158,12 @@ true` and drop the chunk.
 - **Regression-test discipline:** Cycle 20's first regression test ended with `Step::EofStop` (returns `Ok(0)`), which gave the pre-cycle-20 Ok-arm-only watchdog a final EOF to fire from — so the test passed against both old and new implementations and didn't actually distinguish the fix. Codex-verify retry-1 (MED 0.93) caught this. Added a `Step::ErrStop` variant to the scripted reader that flips `stop` while returning `Err(...)`, so the loop exits via the Err arm with NO `Ok(0)` ever served. Pre-cycle-20 implementation has `caught.load() == 0` on this script; cycle-20 fires the watchdog and `caught.load() >= 1`.
 - **Code-review heuristic (extends #4's "deferred-until-X" rule):** When the recovery escape hatch is placed inside ONE specific arm of a state machine, audit whether there are other arms that can also fail to make progress without ever reaching that arm. The natural placement (the "nothing-to-read" branch) is rarely the only branch where the precondition holds. Hoist the escape to a shared point that EVERY non-progress branch reaches, or replicate it in each — but never let a single arm silently swallow the recovery path. **Test discipline:** when a regression test scripts an error scenario, end the script through the same arm that triggers the bug, not through an adjacent arm that happens to terminate the loop. Otherwise the test passes against the unfixed code and gives false confidence. The `ErrStop` shape (flips `stop` while returning the variant of interest) generalizes: when a scripted-reader / state-machine test harness has terminator variants, every error or boundary case needs its own terminator that exits via the same code path.
 - **Commit:** _(PR #302 upsource cycle 20 fix commit)_
+
+### 6. Malformed pushShape IPC payload can poison the layout writer state
+
+- **Source:** github-codex-connector | PR #384 round 1 | 2026-06-07
+- **Severity:** MEDIUM
+- **File:** `electron/workspace-layout-controller.ts` L163-166
+- **Finding:** The installed IPC handler casts an unknown renderer payload to `WorkspaceShapeDto` and `pushShape` stores it before `writer.onShapePushed` synchronously assembles the store. If `sessions` is missing, null, or not an array, `assemble` throws and the corrupt shape remains stored, so later layout writes can keep failing until a valid shape is pushed.
+- **Fix:** Added a runtime guard in the IPC handler before calling `pushShape`: reject payloads that are not objects or lack an array `sessions` field. The fix also adds a regression test covering null, missing `sessions`, and wrong-type `sessions` payloads, plus a happy-path assertion that valid shapes still flow through.
+- **Commit:** same commit as this entry

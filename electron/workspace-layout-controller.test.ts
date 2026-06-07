@@ -271,6 +271,47 @@ describe('WorkspaceLayoutController', () => {
     expect(shape).toEqual(sampleShape())
   })
 
+  test('pushShape IPC handler rejects malformed payloads', () => {
+    const handlers = new Map<
+      string,
+      (event: unknown, ...args: unknown[]) => unknown
+    >()
+
+    const ipcMain: IpcMainLike = {
+      handle: (channel, listener) => handlers.set(channel, listener),
+      removeHandler: () => undefined,
+    }
+
+    const writer = makeWriter()
+
+    const controller = new WorkspaceLayoutController({
+      sidecar: makeSidecar(null),
+      writer,
+    })
+    controller.install(ipcMain)
+
+    handlers.get(WORKSPACE_LAYOUT_PUSH_SHAPE)?.({}, null)
+    expect(controller.latestShapeDto).toBeNull()
+    expect(writer.onShapePushed).not.toHaveBeenCalled()
+
+    handlers.get(WORKSPACE_LAYOUT_PUSH_SHAPE)?.({}, {})
+    expect(controller.latestShapeDto).toBeNull()
+    expect(writer.onShapePushed).not.toHaveBeenCalled()
+
+    handlers.get(WORKSPACE_LAYOUT_PUSH_SHAPE)?.({}, { sessions: null })
+    expect(controller.latestShapeDto).toBeNull()
+    expect(writer.onShapePushed).not.toHaveBeenCalled()
+
+    handlers.get(WORKSPACE_LAYOUT_PUSH_SHAPE)?.({}, { sessions: 'not-array' })
+    expect(controller.latestShapeDto).toBeNull()
+    expect(writer.onShapePushed).not.toHaveBeenCalled()
+
+    const dto = sampleShape()
+    handlers.get(WORKSPACE_LAYOUT_PUSH_SHAPE)?.({}, dto)
+    expect(controller.latestShapeDto).toEqual(dto)
+    expect(writer.onShapePushed).toHaveBeenCalledWith(dto)
+  })
+
   test('setupWorkspaceLayoutController installs onto the provided ipcMain', () => {
     const handlers = new Map<string, unknown>()
 
