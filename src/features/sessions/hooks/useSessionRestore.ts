@@ -5,6 +5,7 @@ import type { PtyBufferDrain } from '../../terminal/orchestration/usePtyBufferDr
 import { registerPtySession } from '../../terminal/ptySessionMap'
 import { createLogger } from '../../../lib/log'
 import { groupSessionsFromInfos } from '../utils/groupSessionsFromInfos'
+import { tabName } from '../utils/tabName'
 
 const log = createLogger('restore')
 
@@ -127,7 +128,7 @@ export const useSessionRestore = ({
         )
 
         const reconciled = activePtyId
-          ? grouped.map((session) => {
+          ? grouped.map((session, sessionIndex) => {
               const newActivePane = session.panes.find(
                 (pane) => pane.ptyId === activePtyId
               )
@@ -147,7 +148,10 @@ export const useSessionRestore = ({
                 })),
                 agentType: newActivePane.agentType,
                 ...(overrideBaseline
-                  ? { workingDirectory: newActivePane.cwd }
+                  ? {
+                      workingDirectory: newActivePane.cwd,
+                      name: tabName(newActivePane.cwd, sessionIndex),
+                    }
                   : {}),
               }
             })

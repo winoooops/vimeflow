@@ -404,6 +404,9 @@ describe('useSessionRestore', () => {
     }
     const ws1 = restored[0]
     expect(ws1.workingDirectory).toBe('/home/will/repo-b')
+    // The tab name must also follow the canonical active pane, not the
+    // fixup-promoted pane 0 (Codex review on PR #381 round 5).
+    expect(ws1.name).toBe('repo-b')
     // The active pane is pty-b post-reconciliation.
     expect(ws1.panes.find((pane) => pane.active)?.ptyId).toBe('pty-b')
   })
