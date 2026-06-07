@@ -63,14 +63,14 @@ When appending findings to a pattern file, label the source so future readers ca
 | [CSP Configuration](patterns/csp-configuration.md)                   | security           | 8        | 5    | 2026-05-16   |
 | [PTY Session Management](patterns/pty-session-management.md)         | backend            | 9        | 2    | 2026-06-03   |
 | [Git Operations](patterns/git-operations.md)                         | correctness        | 25       | 10   | 2026-05-31   |
-| [CodeMirror Integration](patterns/codemirror-integration.md)         | editor             | 12       | 0    | 2026-04-11   |
+| [CodeMirror Integration](patterns/codemirror-integration.md)         | editor             | 19       | 4    | 2026-06-06   |
 | [Error Surfacing](patterns/error-surfacing.md)                       | error-handling     | 34       | 8    | 2026-05-31   |
 | [File Tree Paths](patterns/file-tree-paths.md)                       | files              | 4        | 0    | 2026-04-10   |
 | [Scope Boundary](patterns/scope-boundary.md)                         | review-process     | 8        | 3    | 2026-06-01   |
-| [E2E Testing](patterns/e2e-testing.md)                               | e2e-testing        | 18       | 6    | 2026-05-20   |
+| [E2E Testing](patterns/e2e-testing.md)                               | e2e-testing        | 19       | 7    | 2026-06-06   |
 | [Module Boundaries](patterns/module-boundaries.md)                   | code-quality       | 12       | 1    | 2026-05-30   |
 | [Diagnostic Instrumentation](patterns/diagnostic-instrumentation.md) | code-quality       | 7        | 2    | 2026-05-02   |
-| [Keyboard Shortcut Guards](patterns/keyboard-shortcut-guards.md)     | keyboard-shortcuts | 18       | 0    | 2026-05-26   |
+| [Keyboard Shortcut Guards](patterns/keyboard-shortcut-guards.md)     | keyboard-shortcuts | 18       | 1    | 2026-05-26   |
 | [Verify Render Target](patterns/verify-render-target.md)             | code-quality       | 2        | 0    | 2026-05-24   |
 | [Status Indicator Display](patterns/status-indicator-display.md)     | code-quality       | 3        | 0    | 2026-05-26   |
 | [Parser Resilience](patterns/parser-resilience.md)                   | code-quality       | 5        | 4    | 2026-05-31   |

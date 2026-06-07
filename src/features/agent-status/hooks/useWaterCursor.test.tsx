@@ -185,6 +185,22 @@ describe('useWaterCursor — spring loop', () => {
     expect(refs.slosh.style.transform).not.toMatch(/rotate\(0(\.0+)?deg\)/)
   })
 
+  test('pointermove does not rewrite CSS wave animation durations', async () => {
+    mockMatchMedia(makeMql(false))
+    const refs = makeRefs()
+    render(<Harness refs={refs} addSpy={vi.fn()} removeSpy={vi.fn()} />)
+    const wrap = screen.getByTestId('wrap')
+    stubRect(wrap, 100, 100)
+
+    act(() => {
+      firePointer(wrap, 'pointermove', { clientX: 80, clientY: 50 })
+    })
+    await flushRaf(3)
+
+    expect(refs.waveAAnim.style.animationDuration).toBe('')
+    expect(refs.waveBAnim.style.animationDuration).toBe('')
+  })
+
   test('pointerleave settles back and clears inline', async () => {
     mockMatchMedia(makeMql(false))
     const refs = makeRefs()

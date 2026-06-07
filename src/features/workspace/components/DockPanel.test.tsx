@@ -7,7 +7,13 @@ import {
 } from '@testing-library/react'
 import { describe, test, expect, vi, beforeEach } from 'vitest'
 import userEvent from '@testing-library/user-event'
-import { createRef, forwardRef, useRef, type ReactElement } from 'react'
+import {
+  createRef,
+  forwardRef,
+  useRef,
+  useState,
+  type ReactElement,
+} from 'react'
 import DockPanel, { type DockPanelHandle } from './DockPanel'
 import * as useCodeMirrorModule from '../../editor/hooks/useCodeMirror'
 import * as useVimModeModule from '../../editor/hooks/useVimMode'
@@ -16,7 +22,7 @@ import * as useGitStatusModule from '../../diff/hooks/useGitStatus'
 import * as useFileDiffModule from '../../diff/hooks/useFileDiff'
 import { useFeedbackBatch } from '../../diff/hooks/useFeedbackBatch'
 import type { UseFileDiffReturn } from '../../diff/hooks/useFileDiff'
-import type { ChangedFile } from '../../diff/types'
+import type { ChangedFile, SelectedDiffFile } from '../../diff/types'
 import type { FeedbackDispatchTarget } from '../../diff/services/activePanePicker'
 import { javascript } from '@codemirror/lang-javascript'
 
@@ -188,6 +194,72 @@ const SharedFeedbackDockHarness = ({
   )
 }
 
+const firstChangedFile: ChangedFile = {
+  path: 'src/first.ts',
+  status: 'modified',
+  staged: false,
+}
+
+const secondChangedFile: ChangedFile = {
+  path: 'src/second.ts',
+  status: 'modified',
+  staged: false,
+}
+
+const SelectedDiffLifecycleHarness = ({
+  open,
+}: {
+  open: boolean
+}): ReactElement => {
+  const isResizing = false
+
+  const [selectedDiffFile, setSelectedDiffFile] =
+    useState<SelectedDiffFile | null>({
+      path: secondChangedFile.path,
+      staged: secondChangedFile.staged,
+      cwd: '/repo',
+    })
+
+  if (!open) {
+    return <div data-testid="dock-closed" />
+  }
+
+  return (
+    <DockPanel
+      position="bottom"
+      tab="diff"
+      onTabChange={vi.fn()}
+      onPositionChange={vi.fn()}
+      onClose={vi.fn()}
+      verticalSize={400}
+      onVerticalResizeMouseDown={vi.fn()}
+      isVerticalResizing={isResizing}
+      onVerticalSizeAdjust={vi.fn()}
+      verticalPixelMin={40}
+      verticalPixelMax={640}
+      horizontalSize={360}
+      onHorizontalResizeMouseDown={vi.fn()}
+      isHorizontalResizing={isResizing}
+      onHorizontalSizeAdjust={vi.fn()}
+      horizontalPixelMin={40}
+      horizontalPixelMax={640}
+      selectedFilePath={null}
+      content=""
+      cwd="/repo"
+      gitStatus={{
+        files: [firstChangedFile, secondChangedFile],
+        filesCwd: '/repo',
+        loading: false,
+        error: null,
+        refresh: vi.fn(),
+        idle: false,
+      }}
+      selectedDiffFile={selectedDiffFile}
+      onSelectedDiffFileChange={setSelectedDiffFile}
+    />
+  )
+}
+
 const addInlineComment = async (
   user: ReturnType<typeof userEvent.setup>,
   text: string
@@ -266,6 +338,11 @@ describe('DockPanel', () => {
     mockUseCodeMirror.mockReturnValue({
       editorView: mockEditorView,
       updateContent: vi.fn(),
+      copySelection: vi.fn(),
+      cutSelection: vi.fn(),
+      pasteClipboard: vi.fn(),
+      selectAll: vi.fn(),
+      setContainer: vi.fn(),
     })
 
     mockUseVimMode.mockReturnValue('NORMAL')
@@ -868,6 +945,39 @@ describe('DockPanel', () => {
     expect(screen.getByTestId('diff-panel')).toBeInTheDocument()
   })
 
+  test('preserves selected diff file when the dock closes and reopens', () => {
+    const useFileDiffSpy = vi.mocked(useFileDiffModule.useFileDiff)
+    const { rerender } = render(<SelectedDiffLifecycleHarness open />)
+
+    expect(useFileDiffSpy).toHaveBeenLastCalledWith(
+      'src/second.ts',
+      false,
+      '/repo',
+      false
+    )
+
+    const closed = false
+
+    rerender(<SelectedDiffLifecycleHarness open={closed} />)
+    expect(screen.getByTestId('dock-closed')).toBeInTheDocument()
+
+    rerender(<SelectedDiffLifecycleHarness open />)
+
+    expect(useFileDiffSpy).toHaveBeenLastCalledWith(
+      'src/second.ts',
+      false,
+      '/repo',
+      false
+    )
+
+    const selectedButton = screen
+      .getAllByText('second.ts')
+      // eslint-disable-next-line testing-library/no-node-access -- find selected file-list row
+      .map((label) => label.closest('button'))
+      .find((button): button is HTMLButtonElement => button !== null)
+    expect(selectedButton).toHaveClass('bg-surface-container-highest/40')
+  })
+
   test('forwards parent-provided gitStatus to DiffPanelContent on the unselected-file render branch', () => {
     vi.mocked(useGitStatusModule.useGitStatus).mockClear()
 
@@ -1115,6 +1225,10 @@ describe('DockPanel', () => {
     vi.spyOn(useCodeMirrorModule, 'useCodeMirror').mockReturnValueOnce({
       editorView: null,
       updateContent: vi.fn(),
+      copySelection: vi.fn(),
+      cutSelection: vi.fn(),
+      pasteClipboard: vi.fn(),
+      selectAll: vi.fn(),
       setContainer: vi.fn(),
     })
     const ref = createRef<DockPanelHandle>()
@@ -1135,6 +1249,10 @@ describe('DockPanel', () => {
     vi.spyOn(useCodeMirrorModule, 'useCodeMirror').mockReturnValueOnce({
       editorView: null,
       updateContent: vi.fn(),
+      copySelection: vi.fn(),
+      cutSelection: vi.fn(),
+      pasteClipboard: vi.fn(),
+      selectAll: vi.fn(),
       setContainer: vi.fn(),
     })
     const ref = createRef<DockPanelHandle>()

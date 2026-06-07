@@ -81,6 +81,7 @@ export const ContextMenu = ({
             }`}
             role="menuitem"
             onClick={() => {
+              action.onSelect?.()
               onClose()
             }}
           >

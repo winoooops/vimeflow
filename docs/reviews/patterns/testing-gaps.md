@@ -583,7 +583,16 @@ filesystem scope restrictions).
 - **Fix:** After the initial `write_index` and BEFORE spawning the watcher, force the seed file's mtime two seconds into the past via `std::fs::File::set_modified(SystemTime::now() - Duration::from_secs(2))`. `File::set_modified` is stable since Rust 1.75, so this works without a direct dep on the `filetime` crate (which is already transitively pulled in by `notify`). The watcher's `last_mtime = modified_time(&path)` now records a value 2 seconds in the past; the test's subsequent rewrite at NOW has an mtime unambiguously later than `last_mtime` regardless of filesystem resolution (1-second or finer). 2 seconds is enough margin to cover the worst-case 1-second resolution + clock skew without making the test wait. Code-review heuristic: filesystem timestamp tests that mutate a file twice in rapid succession have a latent flake mode on coarse-resolution filesystems unless they explicitly control the mtime ordering. The fix is mechanical: either force the first write's mtime backward (cheap, what we did here), or force the second write's mtime forward (also works but awkward since you'd be writing a future-dated mtime). The naive "two `fs::write` calls separated by sleep" pattern has BOTH this issue AND the scheduler-flake issue #56 addresses; both fixes are independent and both should be applied to any new poll-loop FS test.
 - **Commit:** _(PR #302 upsource cycle 7 fix commit)_
 
-### 59. Module-level backend event subscription registry leaks across tests, causing cascading failures when a listener test fails before cleanup
+### 59. Shared mock object mutated directly without cleanup in test
+
+- **Source:** github-claude | PR #368 round 5 | 2026-06-06
+- **Severity:** MEDIUM
+- **File:** `src/features/editor/components/CodeEditor.test.tsx`
+- **Finding:** `mockEditorView` is declared at `describe`-block scope and shared across all tests. The right-click selection-preservation test assigns `mockEditorView.state.selection.ranges = [{ from: 0, to: 5, empty: false }]` directly. `vi.clearAllMocks()` only resets spy call history, not plain object properties, so the mutated selection state persists after the test ends. Future tests or test-order shuffling inherit the non-empty selection and fail for reasons unrelated to their own setup.
+- **Fix:** Reset `mockEditorView.state.selection.ranges` to the default empty-selection shape in `beforeEach`, immediately after `vi.clearAllMocks()`. Every test now starts with a known selection state regardless of what prior tests mutated.
+- **Commit:** same commit as this entry
+
+### 60. Module-level backend event subscription registry leaks across tests, causing cascading failures when a listener test fails before cleanup
 
 - **Source:** github-claude | PR #375 round 1 | 2026-06-06
 - **Severity:** MEDIUM
