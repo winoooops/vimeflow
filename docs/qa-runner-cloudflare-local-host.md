@@ -10,7 +10,7 @@ moving the same control-plane role to AWS.
 - Tunnel: Cloudflare Tunnel `qa-runner`
 - Origin service: `http://127.0.0.1:8787`
 - Daemon mode: `QA_APPROVE=0`
-- Concurrency: `QA_MAX_PARALLEL=1`
+- Concurrency: `QA_MAX_PARALLEL=3`
 
 ## Security
 

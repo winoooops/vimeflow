@@ -8,7 +8,7 @@
   "tickCommand": "",
   "host": "0.0.0.0",
   "port": 8787,
-  "maxParallel": 2,
+  "maxParallel": 3,
   "maxNoops": 15,
   "maxCiReruns": 3,
   "workerIdleStopSeconds": 2100,
