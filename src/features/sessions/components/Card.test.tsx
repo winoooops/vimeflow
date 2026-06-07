@@ -14,6 +14,7 @@ const session = (overrides: Partial<Session> = {}): Session =>
     status: 'running',
     workingDirectory: '/home/user/projects/Vimeflow',
     agentType: 'claude-code',
+    layout: 'single',
     terminalPid: 12345,
     createdAt: '2026-04-07T03:45:00Z',
     lastActivityAt: '2026-04-07T03:45:00Z',
@@ -58,149 +59,147 @@ describe('Card — active variant', () => {
     expect(screen.getByTestId('session-row')).toBeInTheDocument()
   })
 
-  test('renders StatusDot reflecting session.status', () => {
-    renderActiveCard(session({ status: 'running' }))
-    // StatusDot exposes data-testid="status-dot" (verified at
-    // src/features/sessions/components/StatusDot.tsx:40). Asserting
-    // its presence guards against Card accidentally dropping the dot
-    // — the previous draft of this test only checked session-row
-    // existence, which would pass even if Card removed StatusDot
-    // entirely.
-    expect(screen.getByTestId('status-dot')).toBeInTheDocument()
+  test('row is a role=button named after the session', () => {
+    renderActiveCard(session())
+    const row = screen.getByRole('button', { name: 'auth middleware' })
+    expect(row).toBe(screen.getByTestId('session-row'))
+    expect(row).toHaveAttribute('id', 'sidebar-activate-sess-1')
   })
 
-  test('renders state pill with bright tone class for the status', () => {
-    renderActiveCard(session({ status: 'running' }))
-    const pill = screen.getByTestId('state-pill')
-    expect(pill).toHaveClass('text-success')
-    expect(pill).toHaveClass('bg-success/10')
-  })
-
-  test('selection bar rendered iff isActive', () => {
-    const { rerender } = renderActiveCard(session(), { isActive: true })
+  test('drops the old chrome: no status dot, state pill, line delta, or accent bar', () => {
+    renderActiveCard(session({ status: 'running' }), { isActive: true })
+    expect(screen.queryByTestId('status-dot')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('state-pill')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('line-delta')).not.toBeInTheDocument()
     const row = screen.getByTestId('session-row')
-    expect(row.querySelector('.bg-primary-container')).not.toBeNull()
-
-    rerender(
-      <Reorder.Group axis="y" values={[session()]} onReorder={vi.fn()}>
-        <Card session={session()} variant="active" onClick={vi.fn()} />
-      </Reorder.Group>
-    )
-
-    expect(
-      screen
-        .queryByTestId('session-row')
-        ?.querySelector('.bg-primary-container')
-    ).toBeNull()
+    expect(row.querySelector('.bg-primary-container')).toBeNull()
   })
 
-  test('onClick fires when activation overlay button is clicked', async () => {
-    const onClick = vi.fn()
-    renderActiveCard(session({ id: 'X' }), { onClick })
-    await userEvent.click(screen.getByLabelText('auth middleware'))
-    expect(onClick).toHaveBeenCalledWith('X')
+  test('renders status as plain colored text', () => {
+    renderActiveCard(session({ status: 'running' }))
+    expect(screen.getByText('Running')).toBeInTheDocument()
   })
 
-  test('onClick fires when title span is single-clicked (regression guard for pointer-events-auto interception)', async () => {
-    const onClick = vi.fn()
-    renderActiveCard(session({ id: 'X' }), { onClick })
-    // The title span carries aria-hidden so getByText still works.
-    const title = screen.getByText('auth middleware')
-    await userEvent.click(title)
-    expect(onClick).toHaveBeenCalledWith('X')
-  })
-
-  test('renders subtitle below title (full row)', () => {
+  test('renders subtitle (row 2)', () => {
     renderActiveCard(session({ workingDirectory: '/a/b/projects/X' }))
     expect(screen.getByText('projects/X')).toBeInTheDocument()
   })
 
-  test('renders line-delta only when added or removed > 0', () => {
-    renderActiveCard(
-      session({
-        activity: {
-          ...session().activity,
-          fileChanges: [
-            { path: 'a.ts', linesAdded: 5, linesRemoved: 2 },
-          ] as Session['activity']['fileChanges'],
-        },
-      })
+  test('multi-pane session shows the pane-layout glyph; single-pane does not', () => {
+    const { rerender } = renderActiveCard(session({ layout: 'vsplit' }))
+    expect(screen.getByTestId('session-layout-glyph')).toBeInTheDocument()
+
+    rerender(
+      <Reorder.Group axis="y" values={[session()]} onReorder={vi.fn()}>
+        <Card
+          session={session({ layout: 'single' })}
+          variant="active"
+          onClick={vi.fn()}
+        />
+      </Reorder.Group>
     )
-    expect(screen.getByTestId('line-delta')).toBeInTheDocument()
+    expect(screen.queryByTestId('session-layout-glyph')).not.toBeInTheDocument()
   })
 
-  test('rename: double-click title with onRename enters edit mode; Enter commits', async () => {
+  test('clicking the row calls onClick with the session id', async () => {
+    const onClick = vi.fn()
+    renderActiveCard(session({ id: 'X' }), { onClick })
+    await userEvent.click(
+      screen.getByRole('button', { name: 'auth middleware' })
+    )
+    expect(onClick).toHaveBeenCalledWith('X')
+  })
+
+  test('Enter on the focused row activates it', async () => {
+    const onClick = vi.fn()
+    renderActiveCard(session({ id: 'X' }), { onClick })
+    screen.getByRole('button', { name: 'auth middleware' }).focus()
+    await userEvent.keyboard('{Enter}')
+    expect(onClick).toHaveBeenCalledWith('X')
+  })
+
+  test('kebab opens a Rename/Remove menu', async () => {
+    const user = userEvent.setup()
+    renderActiveCard(session(), { onRename: vi.fn(), onRemove: vi.fn() })
+
+    await user.click(screen.getByRole('button', { name: 'Session actions' }))
+
+    expect(screen.getByRole('button', { name: 'Rename' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Remove' })).toBeInTheDocument()
+  })
+
+  test('kebab Remove calls onRemove with the session id', async () => {
+    const onRemove = vi.fn()
+    const user = userEvent.setup()
+    renderActiveCard(session({ id: 'X' }), { onRemove })
+
+    await user.click(screen.getByRole('button', { name: 'Session actions' }))
+    await user.click(screen.getByRole('button', { name: 'Remove' }))
+
+    expect(onRemove).toHaveBeenCalledWith('X')
+  })
+
+  test('kebab Rename enters inline edit; Enter commits via onRename', async () => {
     const onRename = vi.fn()
+    const user = userEvent.setup()
     renderActiveCard(session({ id: 'X' }), { onRename })
-    const title = screen.getByText('auth middleware')
-    await userEvent.dblClick(title)
+
+    await user.click(screen.getByRole('button', { name: 'Session actions' }))
+    await user.click(screen.getByRole('button', { name: 'Rename' }))
+
     const input = screen.getByRole('textbox', { name: 'Rename session' })
     expect(input).toHaveFocus()
-    await userEvent.clear(input)
-    await userEvent.type(input, 'new name{Enter}')
+    await user.clear(input)
+    await user.type(input, 'new name{Enter}')
     expect(onRename).toHaveBeenCalledWith('X', 'new name')
   })
 
-  test('rename: Escape cancels without calling onRename', async () => {
+  test('double-click title also enters edit mode', async () => {
+    const onRename = vi.fn()
+    renderActiveCard(session({ id: 'X' }), { onRename })
+    await userEvent.dblClick(screen.getByText('auth middleware'))
+    expect(
+      screen.getByRole('textbox', { name: 'Rename session' })
+    ).toHaveFocus()
+  })
+
+  test('Escape cancels rename without calling onRename', async () => {
     const onRename = vi.fn()
     renderActiveCard(session(), { onRename })
-    const title = screen.getByText('auth middleware')
-    await userEvent.dblClick(title)
-    const input = screen.getByRole('textbox', { name: 'Rename session' })
-    await userEvent.type(input, 'x{Escape}')
+    await userEvent.dblClick(screen.getByText('auth middleware'))
+    await userEvent.type(
+      screen.getByRole('textbox', { name: 'Rename session' }),
+      'x{Escape}'
+    )
     expect(onRename).not.toHaveBeenCalled()
   })
 
-  test('edit/remove buttons hidden when callbacks are omitted', () => {
+  test('no kebab when neither onRename nor onRemove is supplied', () => {
     renderActiveCard(session())
     expect(
-      screen.queryByRole('button', { name: 'Rename session' })
+      screen.queryByRole('button', { name: 'Session actions' })
     ).not.toBeInTheDocument()
-
-    expect(
-      screen.queryByRole('button', { name: 'Remove session' })
-    ).not.toBeInTheDocument()
-  })
-
-  test('onRemove fires when remove button is clicked', async () => {
-    const onRemove = vi.fn()
-    renderActiveCard(session({ id: 'X' }), { onRemove })
-    await userEvent.click(
-      screen.getByRole('button', { name: 'Remove session' })
-    )
-    expect(onRemove).toHaveBeenCalledWith('X')
   })
 })
 
 describe('Card — recent variant', () => {
-  test('renders as <li> with data-testid="recent-session-row"', () => {
+  test('renders as <li> with data-testid="recent-session-row" and role=button', () => {
     renderRecentCard(session({ status: 'completed' }))
-    expect(screen.getByTestId('recent-session-row').tagName).toBe('LI')
+    const row = screen.getByTestId('recent-session-row')
+    expect(row.tagName).toBe('LI')
+    expect(row).toHaveAttribute('role', 'button')
   })
 
-  test('renders state pill with dim tone class', () => {
-    renderRecentCard(session({ status: 'completed' }))
-    expect(screen.getByTestId('state-pill')).toHaveClass(
-      'text-success-muted/70'
+  test('renders status text and subtitle', () => {
+    renderRecentCard(
+      session({ status: 'completed', workingDirectory: '/a/projects/X' })
     )
+    expect(screen.getByText('Done')).toBeInTheDocument()
+    expect(screen.getByText('projects/X')).toBeInTheDocument()
   })
 
-  test('subtitle inline at right of state-pill row (ml-auto)', () => {
-    renderRecentCard(session({ workingDirectory: '/a/projects/X' }))
-    const subtitle = screen.getByText('projects/X')
-    expect(subtitle).toHaveClass('ml-auto')
-  })
-
-  test('inactive title carries dim text class', () => {
-    renderRecentCard(session({ status: 'completed' }), { isActive: false })
-    const title = screen.getByText('auth middleware')
-    expect(title).toHaveClass('text-on-surface-variant/60')
-  })
-
-  test('without onRemove, remove button is hidden', () => {
-    renderRecentCard(session({ status: 'completed' }))
-    expect(
-      screen.queryByRole('button', { name: 'Remove session' })
-    ).not.toBeInTheDocument()
+  test('multi-pane recent session shows the layout glyph', () => {
+    renderRecentCard(session({ status: 'completed', layout: 'quad' }))
+    expect(screen.getByTestId('session-layout-glyph')).toBeInTheDocument()
   })
 })

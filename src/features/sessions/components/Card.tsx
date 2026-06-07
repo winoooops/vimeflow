@@ -1,16 +1,11 @@
-import { type ReactElement } from 'react'
+import { useState, type KeyboardEvent, type ReactElement } from 'react'
 import { Reorder } from 'framer-motion'
 import type { Session } from '../types'
-import { StatusDot } from './StatusDot'
 import { useRenameState } from '../hooks/useRenameState'
 import { formatRelativeTime } from '../../agent-status/utils/relativeTime'
-import {
-  STATE_PILL_LABEL,
-  STATE_PILL_TONE,
-  STATE_PILL_TONE_DIM,
-} from '../utils/statePill'
-import { lineDelta } from '../utils/lineDelta'
 import { subtitle } from '../utils/subtitle'
+import { LayoutGlyph } from '../../terminal/components/LayoutSwitcher'
+import { LAYOUTS } from '../../terminal/components/SplitView/layouts'
 
 export interface CardProps {
   session: Session
@@ -21,24 +16,41 @@ export interface CardProps {
   onRename?: (id: string, name: string) => void
 }
 
-const activeCardClass = (isActive: boolean): string => `
-  relative mb-1 cursor-grab rounded-[8px] px-3 py-2.5 transition-colors
-  active:cursor-grabbing group
-  ${
-    isActive
-      ? 'bg-primary/10 text-on-surface'
-      : 'text-on-surface-variant hover:bg-on-surface/[0.04]'
+// Status → flat colored text (no chip pill, no dot), per handoff §3.3.
+const STATUS_TEXT: Record<Session['status'], { tone: string; label: string }> =
+  {
+    running: { tone: '#7defa1', label: 'Running' },
+    paused: { tone: '#ff94a5', label: 'Awaiting you' },
+    completed: { tone: '#c9b3f0', label: 'Done' },
+    errored: { tone: '#ffb4ab', label: 'Errored' },
   }
-`
 
-const recentCardClass = (isActive: boolean): string => `
-  group relative mb-1 rounded-[8px] px-3 py-2 transition-colors
-  ${
-    isActive
-      ? 'bg-primary/10 text-on-surface'
-      : 'text-on-surface-variant hover:bg-on-surface/[0.04]'
-  }
-`
+const MenuRow = ({
+  icon,
+  label,
+  danger = false,
+  onClick,
+}: {
+  icon: string
+  label: string
+  danger?: boolean
+  onClick: () => void
+}): ReactElement => (
+  <button
+    type="button"
+    onClick={onClick}
+    className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left font-label text-[12px] transition-colors ${
+      danger
+        ? 'text-[#d99aa6] hover:bg-[rgba(255,148,165,0.12)] hover:text-[#ff94a5]'
+        : 'text-[#cdc3d1] hover:bg-[rgba(226,199,255,0.1)] hover:text-[#f3eeff]'
+    }`}
+  >
+    <span className="material-symbols-outlined text-[14px]" aria-hidden="true">
+      {icon}
+    </span>
+    {label}
+  </button>
+)
 
 export const Card = ({
   session,
@@ -57,189 +69,180 @@ export const Card = ({
     commitRename,
     cancelRename,
   } = useRenameState(session, onRename)
-  const { added, removed } = lineDelta(session)
-  const subtitleText = subtitle(session)
+  const [menuOpen, setMenuOpen] = useState(false)
 
-  // Inner content shared by both variants — only the outer wrapper and
-  // class lookups differ. Two render paths keep TypeScript happy around
-  // the Reorder.Item-vs-li polymorphism.
+  const subtitleText = subtitle(session)
+  const status = STATUS_TEXT[session.status]
+  const showGlyph = session.layout !== 'single'
+  const hasActions = onRename !== undefined || onRemove !== undefined
+
+  const handleKeyDown = (event: KeyboardEvent<HTMLElement>): void => {
+    // Only the row itself activates — keystrokes from the rename input or
+    // the kebab/menu (descendants) must not trigger row activation.
+    if (event.target !== event.currentTarget) {
+      return
+    }
+
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault()
+      onClick(session.id)
+    }
+  }
+
+  // Flat fill only — no border, no left accent bar, no status dot. Hover and
+  // open-menu share the soft fill; active stays lavender.
+  const fillClass = isActive
+    ? 'bg-[rgba(203,166,247,0.13)]'
+    : menuOpen
+      ? 'bg-[rgba(255,255,255,0.04)]'
+      : 'hover:bg-[rgba(255,255,255,0.04)]'
+
+  const cardClass = `group relative mb-0.5 rounded-[10px] px-3 py-[11px] outline-none transition-colors focus-visible:ring-1 focus-visible:ring-[rgba(203,166,247,0.5)] ${
+    variant === 'active'
+      ? 'cursor-grab active:cursor-grabbing'
+      : 'cursor-pointer'
+  } ${fillClass}`
+
+  const rowProps = {
+    role: 'button' as const,
+    tabIndex: isEditing ? -1 : 0,
+    'aria-label': session.name,
+    id: `sidebar-activate-${session.id}`,
+    'data-session-id': session.id,
+    'data-active': isActive,
+    className: cardClass,
+    onClick: (): void => onClick(session.id),
+    onKeyDown: handleKeyDown,
+  }
+
   const inner = (
     <>
-      {isActive && (
-        <span
-          aria-hidden="true"
-          className="absolute inset-y-2 left-0 w-0.5 rounded-r bg-primary-container"
-        />
-      )}
-
-      {/* Click-to-activate button covers the whole row as an absolute
-          background layer. Foreground content sits above with
-          pointer-events-none so clicks fall through to this button —
-          except interactive bits (rename input, hover buttons, the
-          title span) which opt back in via pointer-events-auto. */}
-      <button
-        type="button"
-        onClick={() => onClick(session.id)}
-        aria-label={session.name}
-        id={`sidebar-activate-${session.id}`}
-        data-role="activate"
-        className="absolute inset-0 rounded-[8px]"
-        tabIndex={isEditing ? -1 : 0}
-      />
-
-      <div className="pointer-events-none relative flex flex-col gap-1">
-        <div className="flex items-center gap-2">
-          {variant === 'active' ? (
-            <StatusDot status={session.status} />
-          ) : (
-            <StatusDot status={session.status} size={6} dim />
-          )}
-          {isEditing ? (
-            <input
-              ref={inputRef}
-              type="text"
-              value={editValue}
-              onChange={(e) => setEditValue(e.target.value)}
-              onBlur={commitRename}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  commitRename()
-                }
-                if (e.key === 'Escape') {
-                  cancelRename()
-                }
-              }}
-              className={
-                variant === 'active'
-                  ? 'pointer-events-auto min-w-0 flex-1 truncate rounded bg-surface-container-high px-1 font-label text-[13.5px] font-semibold text-on-surface outline-none ring-1 ring-primary'
-                  : 'pointer-events-auto min-w-0 flex-1 truncate rounded bg-surface-container-high px-1 font-label text-[13px] text-on-surface outline-none ring-1 ring-primary'
+      {/* Row 1 — title (or inline rename input) */}
+      <div className="flex items-center gap-2">
+        {isEditing ? (
+          <input
+            ref={inputRef}
+            type="text"
+            value={editValue}
+            onChange={(e) => setEditValue(e.target.value)}
+            onBlur={commitRename}
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                commitRename()
               }
-              aria-label="Rename session"
-            />
-          ) : (
-            <span
-              // aria-hidden so AT doesn't announce the name twice — the
-              // sibling overlay button already carries aria-label=name.
-              aria-hidden="true"
-              className={
-                variant === 'active'
-                  ? 'pointer-events-auto min-w-0 flex-1 cursor-pointer truncate font-label text-[13.5px] font-semibold text-on-surface'
-                  : `pointer-events-auto min-w-0 flex-1 cursor-pointer truncate font-label text-[13px] ${isActive ? 'text-on-surface' : 'text-on-surface-variant/60'}`
+              if (e.key === 'Escape') {
+                cancelRename()
               }
-              // Title-click activation — REQUIRED. Without an explicit
-              // onClick, single clicks on the title would NOT bubble to
-              // the sibling overlay button (the button is not an
-              // ancestor); pointer-events-auto would intercept and
-              // primary row activation would silently break.
-              onClick={() => onClick(session.id)}
-              onDoubleClick={(e) => {
-                if (!onRename) {
-                  return
-                }
-                e.stopPropagation()
-                beginEdit()
-              }}
-            >
-              {session.name}
-            </span>
-          )}
-          {/* Hide on hover so the absolute-positioned edit/close
-              actions in the top-right corner don't overlap. */}
+            }}
+            aria-label="Rename session"
+            className="min-w-0 flex-1 truncate rounded bg-surface-container-high px-1 font-label text-[13.5px] font-semibold text-on-surface outline-none ring-1 ring-primary"
+          />
+        ) : (
           <span
-            className={
-              variant === 'active'
-                ? 'shrink-0 font-mono text-[10px] text-on-surface-variant/70 transition-opacity group-hover:opacity-0'
-                : 'shrink-0 font-mono text-[10px] text-on-surface-variant/50 transition-opacity group-hover:opacity-0'
-            }
-          >
-            {formatRelativeTime(session.lastActivityAt)}
-          </span>
-        </div>
-
-        {variant === 'active' && (
-          <div className="block truncate pl-[15px] font-label text-[11.5px] text-on-surface-variant">
-            {subtitleText}
-          </div>
-        )}
-
-        <div className="flex items-center gap-2 pl-[15px] font-mono text-[10px]">
-          <span
-            data-testid="state-pill"
-            className={`rounded-full px-1.5 py-px uppercase tracking-wide ${
-              variant === 'active'
-                ? STATE_PILL_TONE[session.status]
-                : STATE_PILL_TONE_DIM[session.status]
-            }`}
-          >
-            {STATE_PILL_LABEL[session.status]}
-          </span>
-          {(added > 0 || removed > 0) && (
-            <span
-              data-testid="line-delta"
-              className={
-                variant === 'active'
-                  ? 'text-on-surface-variant/70'
-                  : 'text-on-surface-variant/50'
+            className="min-w-0 flex-1 truncate font-label text-[13.5px] font-semibold"
+            style={{ color: isActive ? '#f3eeff' : '#e3e0f7' }}
+            onDoubleClick={(e) => {
+              if (onRename === undefined) {
+                return
               }
-            >
-              <span
-                className={
-                  variant === 'active' ? 'text-success' : 'text-success/70'
-                }
-              >
-                +{added}
-              </span>{' '}
-              <span
-                className={
-                  variant === 'active' ? 'text-error' : 'text-error/70'
-                }
-              >
-                -{removed}
-              </span>
-            </span>
-          )}
-          {variant === 'recent' && (
-            <span className="ml-auto truncate font-label text-[10.5px] text-on-surface-variant/50 transition-opacity group-hover:opacity-0">
-              {subtitleText}
-            </span>
-          )}
-        </div>
-      </div>
-
-      <div className="pointer-events-auto absolute right-2 top-2 flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
-        {onRename && (
-          <button
-            type="button"
-            onClick={(e) => {
               e.stopPropagation()
               beginEdit()
             }}
-            className="rounded p-0.5 text-on-surface-variant/60 transition-colors hover:bg-surface-container-high hover:text-on-surface"
-            aria-label="Rename session"
-            title="Rename"
           >
-            <span className="material-symbols-outlined text-sm">edit</span>
-          </button>
-        )}
-        {onRemove && (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation()
-              onRemove(session.id)
-            }}
-            className={`rounded p-0.5 transition-colors hover:bg-error/20 hover:text-error ${
-              variant === 'active'
-                ? 'text-on-surface-variant/60'
-                : 'text-on-surface-variant/40'
-            }`}
-            aria-label="Remove session"
-            title="Remove"
-          >
-            <span className="material-symbols-outlined text-sm">close</span>
-          </button>
+            {session.name}
+          </span>
         )}
       </div>
+
+      {/* Row 2 — subtitle */}
+      {subtitleText !== '' && (
+        <div className="mt-1 truncate font-label text-[11.5px] text-[#9a93ab]">
+          {subtitleText}
+        </div>
+      )}
+
+      {/* Row 3 — status text + time + pane-layout glyph */}
+      <div className="mt-1.5 flex items-baseline gap-1.5 font-mono text-[10px]">
+        <span className="font-semibold" style={{ color: status.tone }}>
+          {status.label}
+        </span>
+        <span className="text-[#6c7086]">
+          · {formatRelativeTime(session.lastActivityAt)}
+        </span>
+        <span className="flex-1" />
+        {showGlyph && (
+          <span
+            data-testid="session-layout-glyph"
+            aria-hidden="true"
+            title={LAYOUTS[session.layout].name}
+            className="inline-flex shrink-0"
+            style={{ color: isActive ? '#cba6f7' : '#7c7689' }}
+          >
+            <LayoutGlyph layoutId={session.layout} />
+          </span>
+        )}
+      </div>
+
+      {/* Kebab — absolute overlay (row height stays constant); revealed on
+          hover/focus, kept mounted so keyboard users can reach it. */}
+      {hasActions && (
+        <div
+          className={`absolute right-2 top-[7px] opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100 ${
+            menuOpen ? 'opacity-100' : ''
+          }`}
+          onBlur={(e) => {
+            if (!e.currentTarget.contains(e.relatedTarget)) {
+              setMenuOpen(false)
+            }
+          }}
+        >
+          <button
+            type="button"
+            aria-label="Session actions"
+            onClick={(e) => {
+              e.stopPropagation()
+              setMenuOpen((open) => !open)
+            }}
+            className="grid h-6 w-6 place-items-center rounded-md bg-[rgba(20,20,36,0.55)] text-[#9a93ab] backdrop-blur-sm transition-colors hover:text-[#e2c7ff]"
+          >
+            <span
+              className="material-symbols-outlined text-[16px]"
+              aria-hidden="true"
+            >
+              more_horiz
+            </span>
+          </button>
+          {menuOpen && (
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className="absolute right-0 top-7 z-40 min-w-[132px] rounded-[9px] border border-[rgba(74,68,79,0.45)] bg-[#1c1c30] p-1 shadow-[0_10px_28px_rgba(0,0,0,0.45)]"
+            >
+              {onRename !== undefined && (
+                <MenuRow
+                  icon="edit"
+                  label="Rename"
+                  onClick={() => {
+                    setMenuOpen(false)
+                    beginEdit()
+                  }}
+                />
+              )}
+              {onRemove !== undefined && (
+                <MenuRow
+                  icon="delete"
+                  label="Remove"
+                  danger
+                  onClick={() => {
+                    setMenuOpen(false)
+                    onRemove(session.id)
+                  }}
+                />
+              )}
+            </div>
+          )}
+        </div>
+      )}
     </>
   )
 
@@ -247,17 +250,14 @@ export const Card = ({
     return (
       <Reorder.Item
         value={session}
-        id={session.id}
         data-testid="session-row"
-        data-session-id={session.id}
-        data-active={isActive}
-        className={activeCardClass(isActive)}
         whileDrag={{
           scale: 1.02,
           boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
           zIndex: 50,
         }}
         layout="position"
+        {...rowProps}
       >
         {inner}
       </Reorder.Item>
@@ -265,12 +265,7 @@ export const Card = ({
   }
 
   return (
-    <li
-      data-testid="recent-session-row"
-      data-session-id={session.id}
-      data-active={isActive}
-      className={recentCardClass(isActive)}
-    >
+    <li data-testid="recent-session-row" {...rowProps}>
       {inner}
     </li>
   )

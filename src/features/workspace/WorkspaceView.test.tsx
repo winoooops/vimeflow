@@ -907,9 +907,8 @@ describe('WorkspaceView', () => {
       name: 'session 1',
     })
     const listItem = firstSession.closest('li')!
-    // Active row uses lavender-tinted background per handoff §4.2.
-    expect(listItem.className).toContain('bg-primary/10')
-    expect(listItem.className).toContain('text-on-surface')
+    // Active row uses the flat lavender fill per the session-list handoff.
+    expect(listItem.className).toContain('bg-[rgba(203,166,247,0.13)]')
   })
 
   test('renders FileExplorer in sidebar', () => {
@@ -1212,7 +1211,9 @@ describe('WorkspaceView', () => {
     const firstSession = await screen.findByRole('button', {
       name: 'session 1',
     })
-    expect(firstSession.closest('li')!.className).toContain('bg-primary/10')
+    expect(firstSession.closest('li')!.className).toContain(
+      'bg-[rgba(203,166,247,0.13)]'
+    )
 
     const newSessionButton = within(screen.getByTestId('sidebar')).getByRole(
       'button',
@@ -1223,8 +1224,13 @@ describe('WorkspaceView', () => {
     const secondSession = await screen.findByRole('button', {
       name: 'session 2',
     })
-    expect(secondSession.closest('li')!.className).toContain('bg-primary/10')
-    expect(firstSession.closest('li')!.className).not.toContain('bg-primary/10')
+    expect(secondSession.closest('li')!.className).toContain(
+      'bg-[rgba(203,166,247,0.13)]'
+    )
+
+    expect(firstSession.closest('li')!.className).not.toContain(
+      'bg-[rgba(203,166,247,0.13)]'
+    )
   })
 
   test('handles empty sessions gracefully without crashing', () => {

@@ -238,11 +238,10 @@ describe('List', () => {
     const list = screen.getByTestId('session-list')
     const activeRow = within(list).getByText('first-active').closest('li')!
 
-    const removeBtn = within(activeRow).getByRole('button', {
-      name: 'Remove session',
-    })
-
-    await user.click(removeBtn)
+    await user.click(
+      within(activeRow).getByRole('button', { name: 'Session actions' })
+    )
+    await user.click(within(activeRow).getByRole('button', { name: 'Remove' }))
 
     expect(onSessionClick).toHaveBeenCalledWith('B')
     expect(onRemoveSession).toHaveBeenCalledWith('A')
@@ -267,7 +266,7 @@ describe('List', () => {
 
     const recentList = screen.getByTestId('recent-list')
     expect(
-      within(recentList).queryByRole('button', { name: 'Remove session' })
+      within(recentList).queryByRole('button', { name: 'Session actions' })
     ).toBeNull()
   })
 
