@@ -26,6 +26,11 @@ export const useNewSessionShortcut = ({
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent): void => {
+      // Auto-repeat (held key) would spawn a PTY per repeat — fire once.
+      if (event.repeat) {
+        return
+      }
+
       if (event.key.toLowerCase() !== 'n' || event.altKey) {
         return
       }

@@ -161,4 +161,14 @@ describe('useNewSessionShortcut', () => {
 
     expect(props.onNewSession).not.toHaveBeenCalled()
   })
+
+  test('ignores auto-repeat (held key) events', () => {
+    const props = makeProps({ modKey: '⌘' })
+    const target = append(document.createElement('div'))
+    renderHook(() => useNewSessionShortcut(props))
+
+    fireFrom(target, { metaKey: true, repeat: true })
+
+    expect(props.onNewSession).not.toHaveBeenCalled()
+  })
 })

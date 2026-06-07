@@ -101,6 +101,14 @@ describe('Card — active variant', () => {
     expect(screen.queryByTestId('session-layout-glyph')).not.toBeInTheDocument()
   })
 
+  test('hides the layout glyph for an unknown/stale layout id', () => {
+    renderActiveCard(
+      session({ layout: 'legacy-grid' as unknown as Session['layout'] })
+    )
+
+    expect(screen.queryByTestId('session-layout-glyph')).not.toBeInTheDocument()
+  })
+
   test('clicking the row calls onClick with the session id', async () => {
     const onClick = vi.fn()
     renderActiveCard(session({ id: 'X' }), { onClick })

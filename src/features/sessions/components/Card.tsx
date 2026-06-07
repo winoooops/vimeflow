@@ -73,7 +73,12 @@ export const Card = ({
 
   const subtitleText = subtitle(session)
   const status = STATUS_TEXT[session.status]
-  const showGlyph = session.layout !== 'single'
+
+  // Guard against a persisted/stale layout id that is no longer in LAYOUTS so
+  // a restored session can't crash the sidebar on the `.name` lookup below.
+  const showGlyph =
+    session.layout !== 'single' &&
+    Object.prototype.hasOwnProperty.call(LAYOUTS, session.layout)
   const hasActions = onRename !== undefined || onRemove !== undefined
 
   const handleKeyDown = (event: KeyboardEvent<HTMLElement>): void => {
