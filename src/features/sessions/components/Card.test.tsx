@@ -182,6 +182,40 @@ describe('Card — active variant', () => {
     expect(onRename).not.toHaveBeenCalled()
   })
 
+  test('kebab menu can be dismissed with Escape and returns focus to trigger', async () => {
+    const user = userEvent.setup()
+    renderActiveCard(session(), { onRename: vi.fn(), onRemove: vi.fn() })
+
+    const trigger = screen.getByRole('button', { name: 'Session actions' })
+    await user.click(trigger)
+    expect(screen.getByRole('button', { name: 'Rename' })).toBeInTheDocument()
+
+    await user.keyboard('{Escape}')
+    expect(
+      screen.queryByRole('button', { name: 'Rename' })
+    ).not.toBeInTheDocument()
+    expect(trigger).toHaveFocus()
+  })
+
+  test('clicking the title while kebab is open closes the kebab and still activates the session', async () => {
+    const onClick = vi.fn()
+    const user = userEvent.setup()
+    renderActiveCard(session({ id: 'X' }), {
+      onClick,
+      onRename: vi.fn(),
+      onRemove: vi.fn(),
+    })
+
+    await user.click(screen.getByRole('button', { name: 'Session actions' }))
+    expect(screen.getByRole('button', { name: 'Rename' })).toBeInTheDocument()
+
+    await user.click(screen.getByText('auth middleware'))
+    expect(
+      screen.queryByRole('button', { name: 'Rename' })
+    ).not.toBeInTheDocument()
+    expect(onClick).toHaveBeenCalledWith('X')
+  })
+
   test('no kebab when neither onRename nor onRemove is supplied', () => {
     renderActiveCard(session())
     expect(

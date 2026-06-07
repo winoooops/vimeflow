@@ -1,4 +1,4 @@
-import { useState, type ReactElement } from 'react'
+import { useState, useRef, useEffect, type ReactElement } from 'react'
 import { Reorder } from 'framer-motion'
 import type { Session } from '../types'
 import { useRenameState } from '../hooks/useRenameState'
@@ -70,6 +70,26 @@ export const Card = ({
     cancelRename,
   } = useRenameState(session, onRename)
   const [menuOpen, setMenuOpen] = useState(false)
+  const triggerRef = useRef<HTMLButtonElement>(null)
+
+  // Close the actions menu on Escape and return focus to the trigger button.
+  useEffect(() => {
+    if (!menuOpen) {
+      return
+    }
+
+    const handler = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        setMenuOpen(false)
+        triggerRef.current?.focus()
+      }
+    }
+
+    document.addEventListener('keydown', handler)
+
+    return (): void => document.removeEventListener('keydown', handler)
+  }, [menuOpen])
 
   const subtitleText = subtitle(session)
   const status = STATUS_TEXT[session.status]
@@ -142,7 +162,10 @@ export const Card = ({
               aria-hidden="true"
               className="pointer-events-auto min-w-0 flex-1 cursor-pointer truncate font-label text-[13.5px] font-semibold"
               style={{ color: isActive ? '#f3eeff' : '#e3e0f7' }}
-              onClick={() => onClick(session.id)}
+              onClick={() => {
+                setMenuOpen(false)
+                onClick(session.id)
+              }}
               onDoubleClick={(e) => {
                 if (onRename === undefined) {
                   return
@@ -201,10 +224,10 @@ export const Card = ({
           }}
         >
           <button
+            ref={triggerRef}
             type="button"
             aria-label="Session actions"
             aria-expanded={menuOpen}
-            aria-haspopup="menu"
             onClick={(e) => {
               e.stopPropagation()
               setMenuOpen((open) => !open)
