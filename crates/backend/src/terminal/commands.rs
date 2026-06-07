@@ -615,15 +615,15 @@ pub(crate) fn kill_pty_inner(
                 // when N=3) and only downgrade when N no longer fits.
                 // Falls back to count-based defaults when the original
                 // layout is incompatible or absent. Claude MEDIUM on PR #381.
-                let new_layout: Option<&'static str> = if sibling_ids.is_empty() {
+                let new_layout: Option<String> = if sibling_ids.is_empty() {
                     None
                 } else {
                     let existing = sibling_ids
                         .first()
                         .and_then(|id| data.groupings.get(id))
-                        .map(|g| g.layout.as_str());
+                        .map(|g| g.layout.clone());
                     let count = sibling_ids.len();
-                    let compatible = match existing {
+                    let compatible = match existing.as_deref() {
                         Some("single") => count == 1,
                         Some("vsplit") | Some("hsplit") => count == 2,
                         Some("threeRight") => count == 3,
@@ -634,15 +634,15 @@ pub(crate) fn kill_pty_inner(
                         existing
                     } else {
                         match count {
-                            1 => Some("single"),
-                            2 => Some("vsplit"),
-                            3 => Some("threeRight"),
-                            _ => Some("quad"),
+                            1 => Some("single".to_string()),
+                            2 => Some("vsplit".to_string()),
+                            3 => Some("threeRight".to_string()),
+                            _ => Some("quad".to_string()),
                         }
                     }
                 };
 
-                if let Some(new_layout) = new_layout {
+                if let Some(ref new_layout) = new_layout {
                     // Promote first surviving sibling to active when the
                     // killed pane held the active flag. Otherwise preserve
                     // whatever active marker already exists on a survivor.
@@ -656,7 +656,7 @@ pub(crate) fn kill_pty_inner(
 
                     for (idx, sibling_id) in sibling_ids.iter().enumerate() {
                         if let Some(grouping) = data.groupings.get_mut(sibling_id) {
-                            grouping.layout = new_layout.to_string();
+                            grouping.layout = new_layout.clone();
                             grouping.pane_index = idx as u32;
                             grouping.pane_id = format!("p{}", idx);
                             if needs_active_promotion && idx == 0 {
