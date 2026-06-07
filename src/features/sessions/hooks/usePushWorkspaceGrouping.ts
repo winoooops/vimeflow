@@ -170,6 +170,11 @@ export const usePushWorkspaceGrouping = ({
   // HIGH on PR #290 cycle 16.
   useEffect(() => {
     lastPushedJsonRef.current = null
+    if (retryTimerRef.current !== null) {
+      clearTimeout(retryTimerRef.current)
+      retryTimerRef.current = null
+    }
+    retryTargetJsonRef.current = null
   }, [service])
 
   useEffect(() => {

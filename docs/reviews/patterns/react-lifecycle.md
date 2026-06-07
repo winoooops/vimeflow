@@ -248,3 +248,12 @@ to avoid unintended re-runs (e.g., PTY respawning on every cwd change).
 - **Finding:** `retryTimerRef` is used in the mount-lifecycle `useEffect` cleanup but declared 17 lines later. The forward reference is invisible to ESLint and TypeScript; a future early return or conditional before the ref declaration would produce a silent cleanup bug where the orphaned timer is never cleared on unmount.
 - **Fix:** Moved `retryTimerRef`, `latestDrainRef`, and `lastPushedJsonRef` to immediately after `mountedRef` (before the first `useEffect`), eliminating the forward reference and making the declaration order match the runtime initialization order.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 27. Service-swap effect omits timer cancel; new-backend push delayed up to 5s
+
+- **Source:** github-claude | PR #381 round 4 | 2026-06-07
+- **Severity:** MEDIUM
+- **File:** `src/features/sessions/hooks/usePushWorkspaceGrouping.ts`
+- **Finding:** The `[service]` effect only cleared `lastPushedJsonRef`. If an IPC failure had armed `retryTimerRef`, rerendering with a new service queued the same snapshot but the drain gate saw `pendingJson === retryTargetJsonRef.current` and waited for the old 5s timer. During that window the restarted backend could have no grouping cache, so a crash/reload would fragment restored multi-pane sessions.
+- **Fix:** In the `[service]` effect, clear any existing retry timer via `clearTimeout`, reset `retryTimerRef` to null, and reset `retryTargetJsonRef` to null alongside `lastPushedJsonRef` so the current snapshot drains immediately to the new service.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
