@@ -25,6 +25,7 @@ import {
   type WorkspaceLayoutController,
 } from './workspace-layout-controller'
 import { WorkspaceLayoutWriter } from './workspace-layout-writer'
+import { WorkspaceTeardown } from './workspace-teardown'
 import type { PersistedTab } from './workspace-layout-types'
 
 // Keep the GPU serving this window while it is occluded (covered by another
@@ -188,6 +189,7 @@ type InvokeEnvelope =
 let sidecar: Sidecar | null = null
 let browserPaneController: BrowserPaneController | null = null
 let workspaceLayoutController: WorkspaceLayoutController | null = null
+let workspaceTeardown: WorkspaceTeardown | null = null
 let quitting = false
 
 const RENDERER_DIAGNOSTIC_PREFIXES = [
@@ -280,6 +282,25 @@ const createWindow = (): void => {
     },
   })
 
+  // Re-arm the teardown flush for this window's lifecycle (spec §3.2).
+  workspaceTeardown?.reset()
+
+  let closeFlushed = false
+  win.on('close', (event) => {
+    if (closeFlushed) {
+      return
+    }
+
+    // Defer the close, flush the durable store while the WebContents are still
+    // alive, then re-issue so teardown proceeds (no prevent/flush loop).
+    event.preventDefault()
+    void (async (): Promise<void> => {
+      await workspaceTeardown?.flushOnce()
+      closeFlushed = true
+      win.close()
+    })()
+  })
+
   installRendererDiagnosticLogging(win)
   installCommandPaletteShortcutOverride(win)
   installNavigationGuard(win, (url) => {
@@ -340,6 +361,16 @@ const setupApp = async (): Promise<void> => {
     sidecar: spawnedSidecar,
     ipcMain,
     writer: layoutWriter,
+  })
+
+  workspaceTeardown = new WorkspaceTeardown({
+    drainFinalShape: async (): Promise<void> => {
+      const win = BrowserWindow.getAllWindows().at(0)
+      if (win && !win.webContents.isDestroyed()) {
+        await workspaceLayoutController?.requestFinalShape(win.webContents)
+      }
+    },
+    flush: (): Promise<void> => layoutWriter.flush(),
   })
   const allowE2eBackendMethods = !app.isPackaged && isE2eRuntime()
 
@@ -402,16 +433,22 @@ app.on('before-quit', (event) => {
   quitting = true
 
   const currentSidecar = sidecar
-  browserPaneController?.dispose()
-  browserPaneController = null
-  workspaceLayoutController?.dispose()
-  workspaceLayoutController = null
 
   void (async (): Promise<void> => {
     try {
-      await currentSidecar.shutdown()
+      // Flush before disposal (skips if a window-close flush already ran).
+      await workspaceTeardown?.flushOnce()
     } finally {
-      app.exit(0)
+      browserPaneController?.dispose()
+      browserPaneController = null
+      workspaceLayoutController?.dispose()
+      workspaceLayoutController = null
+
+      try {
+        await currentSidecar.shutdown()
+      } finally {
+        app.exit(0)
+      }
     }
   })()
 })
