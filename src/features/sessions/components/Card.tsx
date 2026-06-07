@@ -200,10 +200,16 @@ export const Card = ({
               data-testid="session-layout-glyph"
               aria-hidden="true"
               title={LAYOUTS[session.layout].name}
-              className="inline-flex shrink-0"
+              className="inline-flex shrink-0 items-center gap-1"
               style={{ color: isActive ? '#cba6f7' : '#7c7689' }}
             >
               <LayoutGlyph layoutId={session.layout} />
+              <span
+                data-testid="session-pane-count"
+                className="font-mono text-[10px] font-semibold leading-none"
+              >
+                {LAYOUTS[session.layout].capacity}
+              </span>
             </span>
           )}
         </div>
