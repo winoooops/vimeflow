@@ -4,11 +4,12 @@
 //   scan   — read-only: list eligible PRs (auto-review label) + why.
 //   tick   — one pass: per eligible PR, compute the review state and act:
 //              NEEDS_FIX  → (with --execute) run.js <pr> --push   (review/CI fix)
-//                           dispatched CONCURRENTLY, capped at --max (default 2).
+//                           dispatched CONCURRENTLY, capped at --max (default 3).
 //              REVOKE     → post PR/Linear rework request; do not dispatch fixer.
 //              GOOD_SHAPE → (with --approve) squash-merge AS THE ORCHESTRATOR BOT
 //                           (orchestrator.env) + delete branch.
 //              WAITING   → report only, or rerun transient reviewer checks.
+//              WAITING_CONFLICT → report conflict to GitHub/Linear; no fixer.
 //              CI_RED    → report only after reruns are exhausted/unavailable.
 //            State is mirrored to the linked Linear issue (a VIM-N in the PR body)
 //            via lib/linear-status.js — Linear is the control plane / observability.
@@ -49,10 +50,10 @@ import {
   formatDecisionComment,
   formatMergedComment,
   markDecisionPosted,
+  markGithubDecisionPosted,
   markMergeLinearPosted,
-  markRevokeGithubDecisionPosted,
   readDecisionStore,
-  shouldPostRevokeGithubDecision,
+  shouldPostGithubDecision,
   shouldPostDecision,
 } from './lib/decision-comment.js'
 import {
@@ -103,7 +104,7 @@ const LOCK_DIR = join(SCRIPT_DIR, '.locks')
 const LOG_DIR = join(SCRIPT_DIR, 'logs')
 const DEFAULT_LABEL = 'auto-review'
 const POLL_SECONDS = 60
-const MAX_PARALLEL = 2
+const MAX_PARALLEL = 3
 const MAX_CI_RERUNS = 3
 
 const out = (s = '') => process.stdout.write(`${s}\n`)
@@ -129,6 +130,16 @@ const numericOption = (raw, fallback) => {
 
 const boolOption = (raw) =>
   ['1', 'true', 'yes', 'on'].includes(String(raw || '').toLowerCase())
+
+const isConflictMergeState = (view) =>
+  view.mergeable === 'CONFLICTING' ||
+  ['DIRTY', 'CONFLICTING'].includes(String(view.mergeStateStatus || ''))
+
+const conflictDecision = (view) => ({
+  state: 'WAITING_CONFLICT',
+  detail: `PR has merge conflicts with \`${view.baseRefName || 'base branch'}\` (${view.mergeStateStatus || 'unknown'})`,
+  claude: 'not evaluated; merge conflict blocks review completion',
+})
 
 const repoSlug = () => {
   const r = ghJson(['repo', 'view', '--json', 'owner,name'])
@@ -425,7 +436,12 @@ const computeState = async (pr, ctx) => {
     return threads
   }
 
-  if (ciResult.deterministicFailures.length) {
+  if (isConflictMergeState(view)) {
+    const conflict = conflictDecision(view)
+    state = conflict.state
+    detail = conflict.detail
+    claude = conflict.claude
+  } else if (ciResult.deterministicFailures.length) {
     checkSummaries = summarizeChecks(ciResult.deterministicFailures)
     ciClassification = 'deterministic failure'
     state = 'NEEDS_FIX'
@@ -660,7 +676,7 @@ const postLinear = (
   }
 }
 
-const postGithubPrComment = ({ owner, name, pr, body }) => {
+const postGithubPrComment = ({ owner, name, pr, state, body }) => {
   const r = spawnSync(
     'gh',
     [
@@ -675,19 +691,19 @@ const postGithubPrComment = ({ owner, name, pr, body }) => {
   )
   if (r.status === 0) {
     const commentId = (r.stdout || '').trim() || null
-    out(`           ↳ GitHub #${pr}: revoke comment posted`)
+    out(`           ↳ GitHub #${pr}: ${state} comment posted`)
 
     return { ok: true, commentId }
   }
 
   out(
-    `           ↳ GitHub #${pr}: revoke comment skipped (${(r.stderr || '').trim().split('\n')[0] || 'gh failed'})`
+    `           ↳ GitHub #${pr}: ${state} comment skipped (${(r.stderr || '').trim().split('\n')[0] || 'gh failed'})`
   )
 
   return { ok: false, commentId: null }
 }
 
-const maybePostDecisionLinear = (pr, s, ctx) => {
+const maybePostDecisionComments = (pr, s, ctx) => {
   if (!ctx.linearDecisions) {
     return { fixCycleParentId: null }
   }
@@ -709,13 +725,14 @@ const maybePostDecisionLinear = (pr, s, ctx) => {
   let store = readDecisionStore(storeFile)
 
   if (
-    s.state === 'REVOKE' &&
-    shouldPostRevokeGithubDecision(store, pr.number, key)
+    ['REVOKE', 'WAITING_CONFLICT'].includes(s.state) &&
+    shouldPostGithubDecision(store, pr.number, s.state, key)
   ) {
     const posted = postGithubPrComment({
       owner: ctx.owner,
       name: ctx.name,
       pr: pr.number,
+      state: s.state,
       body: formatDecisionComment({
         pr: pr.number,
         branch: pr.headRefName,
@@ -739,9 +756,16 @@ const maybePostDecisionLinear = (pr, s, ctx) => {
       }),
     })
     if (posted.ok) {
-      store = markRevokeGithubDecisionPosted(store, pr.number, key, storeFile, {
-        commentId: posted.commentId,
-      })
+      store = markGithubDecisionPosted(
+        store,
+        pr.number,
+        s.state,
+        key,
+        storeFile,
+        {
+          commentId: posted.commentId,
+        }
+      )
     }
   }
 
@@ -1085,7 +1109,7 @@ const tick = async (ctx) => {
       `${s.state.padEnd(10)} #${pr.number}  ${pr.headRefName}${s.vim ? `  (${s.vim})` : ''}`
     )
     out(`           ${s.detail}`)
-    const linearDecision = maybePostDecisionLinear(pr, s, ctx)
+    const linearDecision = maybePostDecisionComments(pr, s, ctx)
     if (s.state === 'NEEDS_FIX') {
       if (ctx.execute) {
         needsFix.push({
@@ -1099,6 +1123,10 @@ const tick = async (ctx) => {
     } else if (s.state === 'REVOKE') {
       out(
         `           (revoked — author/operator rework required; fixer not dispatched)`
+      )
+    } else if (s.state === 'WAITING_CONFLICT') {
+      out(
+        `           (conflict — returned to dev; fixer and merge are not dispatched)`
       )
     } else if (s.state === 'GOOD_SHAPE') {
       if (ctx.approve) {

@@ -14,6 +14,7 @@ Design + rationale: [`docs/explorations/linear-agent-cicd-pilot.html`](../../doc
        REVOKE     → post PR/Linear rework request; do not dispatch fixer
        GOOD_SHAPE → squash-merge as the orchestrator bot + delete branch (--approve)
        WAITING    → report only, or rerun transient reviewer checks when armed
+       WAITING_CONFLICT → post PR/Linear conflict handoff; do not dispatch fixer
        CI_RED     → report only once automatic reruns are exhausted/unavailable
                  │
                  ▼  per NEEDS_FIX PR, concurrently, each in its own worktree:
@@ -46,17 +47,18 @@ branch protection): the **fixer** runs as `bot.env`, the **orchestrator** merges
 
 ## The review state machine
 
-`computeState(pr)` returns exactly one of four states. The **reviewer** CI checks
+`computeState(pr)` returns exactly one review-loop state. The **reviewer** CI checks
 (`Claude Code Review`, `Codex Code Review`, `Post Review Comment`) are excluded
 from the CI gate, so a clean patch is never held `WAITING` by its own reviewers.
 
-| State          | When                                                                                                                                                      | Action (armed)                                 |
-| -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
-| **NEEDS_FIX**  | unresolved review threads > 0, Codex review adjudication says reviewer findings are localized and should be fixed, or deterministic non-review CI failure | `--execute` → `run.js <pr> --push`             |
-| **REVOKE**     | Codex review adjudication says the PR needs author/operator redesign, re-scoping, or security/architecture rework before a safe fixer cycle               | post GitHub + Linear decision; no fixer        |
-| **CI_RED**     | transient reviewer reruns are exhausted/unavailable                                                                                                       | report only                                    |
-| **WAITING**    | CI/Claude still running · draft · not mergeable · no trusted Claude review yet · adjudication evidence insufficient · transient check rerun               | report only or rerun transient reviewer checks |
-| **GOOD_SHAPE** | 0 threads · trusted reviewer comments adjudicated clean by Codex · non-review CI green · `MERGEABLE`                                                      | `--approve` → squash-merge + delete            |
+| State                | When                                                                                                                                                      | Action (armed)                                 |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
+| **NEEDS_FIX**        | unresolved review threads > 0, Codex review adjudication says reviewer findings are localized and should be fixed, or deterministic non-review CI failure | `--execute` → `run.js <pr> --push`             |
+| **REVOKE**           | Codex review adjudication says the PR needs author/operator redesign, re-scoping, or security/architecture rework before a safe fixer cycle               | post GitHub + Linear decision; no fixer        |
+| **CI_RED**           | transient reviewer reruns are exhausted/unavailable                                                                                                       | report only                                    |
+| **WAITING**          | CI/Claude still running · draft · not mergeable · no trusted Claude review yet · adjudication evidence insufficient · transient check rerun               | report only or rerun transient reviewer checks |
+| **WAITING_CONFLICT** | GitHub reports `CONFLICTING` or `DIRTY`, so the PR cannot merge cleanly into its base branch                                                              | post GitHub + Linear decision; no fixer        |
+| **GOOD_SHAPE**       | 0 threads · trusted reviewer comments adjudicated clean by Codex · non-review CI green · `MERGEABLE`                                                      | `--approve` → squash-merge + delete            |
 
 Deterministic non-review CI failures include unit tests, Rust tests, type/check
 binding verification, code quality/lint, and build failures. The watcher passes
@@ -96,7 +98,7 @@ structured-output text when present, and attempt number. If all attempts fail,
 tries again on the next poll and webhook/manual work is requeued by daemon
 backoff.
 
-`NEEDS_FIX` PRs are dispatched **concurrently**, capped at `--max` (default **2**) —
+`NEEDS_FIX` PRs are dispatched **concurrently**, capped at `--max` (default **3**) —
 each kimi runs in its own `qa-pr-N` worktree behind its own `.locks/pr-N.lock`, so
 parallel runs never collide. Output is teed to `logs/pr-N.log` and prefixed `[#N]`
 on the console so you can watch interleaved runs.
@@ -132,7 +134,7 @@ node scripts/qa-runner/watch.js tick            # classify every eligible PR, do
 node scripts/qa-runner/watch.js tick --pr 317   # classify one PR
 
 # arm the actions (each is independent and opt-in)
-node scripts/qa-runner/watch.js tick --execute            # NEEDS_FIX  → run upsource cycles (parallel, cap 2)
+node scripts/qa-runner/watch.js tick --execute            # NEEDS_FIX  → run upsource cycles (parallel, cap 3)
 node scripts/qa-runner/watch.js tick --execute --max 3    # …up to 3 at once
 node scripts/qa-runner/watch.js tick --approve            # GOOD_SHAPE → squash-merge
 node scripts/qa-runner/watch.js tick --execute --approve  # full autonomy
@@ -202,7 +204,7 @@ control host light and delegate only the expensive fixer pass to a burst-worker
 dispatcher:
 
 ```bash
-QA_MAX_PARALLEL=1 \
+QA_MAX_PARALLEL=3 \
 QA_TICK_RUNNER=local \
 QA_FIX_COMMAND="node /opt/vimeflow/repo/scripts/qa-runner/dispatch-worker.js" \
 node scripts/qa-runner/daemon.js

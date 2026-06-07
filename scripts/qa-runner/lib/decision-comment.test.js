@@ -15,9 +15,11 @@ import {
   hasMergeLinearPosted,
   markDecisionPosted,
   markFixCycleProgress,
+  markGithubDecisionPosted,
   markMergeLinearPosted,
   markRevokeGithubDecisionPosted,
   readDecisionStore,
+  shouldPostGithubDecision,
   shouldPostRevokeGithubDecision,
   shouldPostDecision,
 } from './decision-comment.js'
@@ -256,6 +258,35 @@ describe('formatDecisionComment', () => {
     expect(body).toContain('| Decision | `REVOKE` |')
     expect(body).toContain(
       'Reason: Review adjudication found blockers that require PR-author or operator rework; the fixer loop is intentionally not dispatched.'
+    )
+  })
+
+  test('formats a WAITING_CONFLICT decision as a dev handoff', () => {
+    const body = formatDecisionComment({
+      pr: 375,
+      branch: 'feature/vim-26',
+      state: 'WAITING_CONFLICT',
+      detail: 'PR has merge conflicts with `main` (DIRTY)',
+      sourceEvent: 'poll',
+      action: 'none',
+      approve: true,
+      execute: true,
+      headSha: 'aa81183d09c43a196262b13f1766bcc5a9f3b54b',
+      ci: 'green',
+      claude: 'not evaluated; merge conflict blocks review completion',
+      threads: null,
+      mergeable: 'CONFLICTING',
+      mergeStateStatus: 'DIRTY',
+    })
+
+    expect(body).toContain('## QA runner decision: WAITING_CONFLICT')
+    expect(body).toContain(
+      '| Detail | PR has merge conflicts with `main` (DIRTY) |'
+    )
+    expect(body).toContain('| Action | none |')
+    expect(body).toContain('- Mergeable: CONFLICTING (DIRTY)')
+    expect(body).toContain(
+      'Reason: The PR has merge conflicts with its base branch. The runner will not dispatch a fixer or merge until the branch is synced and conflicts are resolved.'
     )
   })
 })
@@ -630,6 +661,69 @@ describe('decision store', () => {
     expect(shouldPostRevokeGithubDecision(afterGithub, 349, revokeKey)).toBe(
       false
     )
+  })
+
+  test('keeps legacy REVOKE GitHub comment dedupe state valid', () => {
+    const legacyStore = {
+      349: {
+        revokeGithubKey: 'legacy-revoke-key',
+        revokeGithubCommentId: '123456',
+      },
+    }
+
+    expect(
+      shouldPostRevokeGithubDecision(legacyStore, 349, 'legacy-revoke-key')
+    ).toBe(false)
+  })
+
+  test('WAITING_CONFLICT replies to the active fix cycle and dedupes GitHub comments by state', () => {
+    const file = makeStore()
+
+    const afterNeedsFix = markDecisionPosted({}, 375, 'needs-fix-key', file, {
+      commentId: 'needs-fix-comment',
+      state: 'NEEDS_FIX',
+      headSha: 'old-head',
+      action: 'dispatch fixer',
+    })
+
+    const afterProgress = markFixCycleProgress(afterNeedsFix, 375, file, {
+      headSha: 'fixed-head',
+    })
+
+    expect(
+      decisionThreadTarget(afterProgress, 375, {
+        state: 'WAITING_CONFLICT',
+        headSha: 'fixed-head',
+      })
+    ).toEqual({ mode: 'reply', parentId: 'needs-fix-comment' })
+
+    const key = decisionKey({
+      pr: 375,
+      state: 'WAITING_CONFLICT',
+      detail: 'PR has merge conflicts with `main` (DIRTY)',
+      headSha: 'fixed-head',
+      action: 'none',
+      approve: true,
+      execute: true,
+    })
+
+    expect(
+      shouldPostGithubDecision(afterProgress, 375, 'WAITING_CONFLICT', key)
+    ).toBe(true)
+
+    const afterGithub = markGithubDecisionPosted(
+      afterProgress,
+      375,
+      'WAITING_CONFLICT',
+      key,
+      file,
+      { commentId: '4641316288' }
+    )
+
+    expect(
+      shouldPostGithubDecision(afterGithub, 375, 'WAITING_CONFLICT', key)
+    ).toBe(false)
+    expect(shouldPostRevokeGithubDecision(afterGithub, 375, key)).toBe(true)
   })
 
   test('builds a reply target for merge detail comments', () => {

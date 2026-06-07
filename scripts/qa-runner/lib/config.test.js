@@ -32,6 +32,12 @@ describe('loadConfig', () => {
     expect(loadConfig().workerIdleStopSeconds).toBe(2100)
   })
 
+  test('processes up to three PRs in parallel by default', () => {
+    delete process.env.QA_MAX_PARALLEL
+
+    expect(loadConfig().maxParallel).toBe(3)
+  })
+
   test('allows overriding burst worker idle stop delay through env', () => {
     process.env.QA_WORKER_IDLE_STOP_SECONDS = '3'
 

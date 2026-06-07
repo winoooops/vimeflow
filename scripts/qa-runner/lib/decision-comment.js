@@ -130,6 +130,9 @@ export const explainDecision = (state, action) => {
   if (state === 'REVOKE') {
     return 'Review adjudication found blockers that require PR-author or operator rework; the fixer loop is intentionally not dispatched.'
   }
+  if (state === 'WAITING_CONFLICT') {
+    return 'The PR has merge conflicts with its base branch. The runner will not dispatch a fixer or merge until the branch is synced and conflicts are resolved.'
+  }
   if (state === 'CI_RED') {
     return 'CI is red and no automatic action is available for this state.'
   }
@@ -304,6 +307,7 @@ const decisionEntry = (store, pr) => {
 // This keeps a new NEEDS_FIX cycle top-level and prevents stale-thread replies.
 const FIX_CYCLE_CONTINUATION_STATES = new Set([
   'WAITING',
+  'WAITING_CONFLICT',
   'RETRYING',
   'GOOD_SHAPE',
 ])
@@ -356,11 +360,22 @@ export const decisionCommentId = (
   return entry.commentId
 }
 
-export const shouldPostRevokeGithubDecision = (store, pr, key) => {
+export const shouldPostGithubDecision = (store, pr, state, key) => {
   const entry = decisionEntry(store, pr)
+  const posted = entry.githubDecisionComments?.[state]
+  if (
+    state === 'REVOKE' &&
+    entry.revokeGithubKey === key &&
+    entry.revokeGithubCommentId
+  ) {
+    return false
+  }
 
-  return entry.revokeGithubKey !== key || !entry.revokeGithubCommentId
+  return posted?.key !== key || !posted?.commentId
 }
+
+export const shouldPostRevokeGithubDecision = (store, pr, key) =>
+  shouldPostGithubDecision(store, pr, 'REVOKE', key)
 
 export const commentReplyTarget = (commentId) =>
   commentId
@@ -450,9 +465,10 @@ export const markDecisionPosted = (
   return writeDecisionStore(next, file)
 }
 
-export const markRevokeGithubDecisionPosted = (
+export const markGithubDecisionPosted = (
   store,
   pr,
+  state,
   key,
   file,
   { commentId } = {}
@@ -463,13 +479,26 @@ export const markRevokeGithubDecisionPosted = (
     ...store,
     [String(pr)]: {
       ...previous,
-      revokeGithubKey: key,
-      revokeGithubCommentId: commentId ?? null,
+      githubDecisionComments: {
+        ...(previous.githubDecisionComments || {}),
+        [state]: {
+          key,
+          commentId: commentId ?? null,
+        },
+      },
     },
   }
 
   return writeDecisionStore(next, file)
 }
+
+export const markRevokeGithubDecisionPosted = (
+  store,
+  pr,
+  key,
+  file,
+  { commentId } = {}
+) => markGithubDecisionPosted(store, pr, 'REVOKE', key, file, { commentId })
 
 // Called after the worker sees the fixer pushed a new head. From that point,
 // WAITING/RETRYING/GOOD_SHAPE decisions for that head can continue the thread.

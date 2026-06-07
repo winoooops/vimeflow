@@ -54,7 +54,7 @@ export const loadConfig = () => {
     port: num(env.QA_PORT, num(file.port, 8787)),
     label: env.QA_LABEL || file.label || 'auto-review',
     approveLabel: env.QA_APPROVE_LABEL ?? file.approveLabel ?? 'auto-approve',
-    maxParallel: num(env.QA_MAX_PARALLEL, num(file.maxParallel, 2)),
+    maxParallel: num(env.QA_MAX_PARALLEL, num(file.maxParallel, 3)),
     maxNoops: num(env.QA_MAX_NOOPS, num(file.maxNoops, 15)),
     maxCiReruns: num(env.QA_MAX_CI_RERUNS, num(file.maxCiReruns, 3)),
     pollSeconds: num(env.QA_POLL_SECONDS, num(file.pollSeconds, 60)),

@@ -158,7 +158,7 @@ The service receives its environment from
 `/etc/vimeflow/qa-runner/control.env`. The equivalent daemon shape is:
 
 ```bash
-QA_MAX_PARALLEL=1 \
+QA_MAX_PARALLEL=3 \
 QA_TICK_RUNNER=local \
 QA_FIX_COMMAND="node /opt/vimeflow/repo/scripts/qa-runner/dispatch-worker.js" \
 node /opt/vimeflow/repo/scripts/qa-runner/daemon.js
@@ -394,7 +394,7 @@ Control host runtime gaps from read-only SSM inspection:
 - Node is `v18.20.8`; the repo requires Node `>=22`.
 - Amazon Linux package `nodejs22` is available.
 - `scripts/qa-runner/config.json` exists and uses command mode, but
-  `maxParallel` is `0`; set it to `1` before expecting queued work to run.
+  `maxParallel` is `0`; set it to `3` before expecting queued work to run.
 - `orchestrator.env` exists on the host.
 - `bot.env`, `linear-orchestrator.env`, and `linear-agent.env` were not present
   in the repo checkout.
