@@ -137,7 +137,9 @@ export const Card = ({
               // Title opts back into pointer events for rename; an explicit
               // onClick re-activates the row because the overlay button is a
               // sibling, not an ancestor, so the click wouldn't otherwise reach
-              // it.
+              // it. aria-hidden prevents AT from announcing the name twice —
+              // the sibling overlay button already carries aria-label=name.
+              aria-hidden="true"
               className="pointer-events-auto min-w-0 flex-1 cursor-pointer truncate font-label text-[13.5px] font-semibold"
               style={{ color: isActive ? '#f3eeff' : '#e3e0f7' }}
               onClick={() => onClick(session.id)}
@@ -201,6 +203,8 @@ export const Card = ({
           <button
             type="button"
             aria-label="Session actions"
+            aria-expanded={menuOpen}
+            aria-haspopup="menu"
             onClick={(e) => {
               e.stopPropagation()
               setMenuOpen((open) => !open)
