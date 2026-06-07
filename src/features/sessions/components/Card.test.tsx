@@ -59,11 +59,11 @@ describe('Card — active variant', () => {
     expect(screen.getByTestId('session-row')).toBeInTheDocument()
   })
 
-  test('row is a role=button named after the session', () => {
+  test('exposes an activation button named after the session', () => {
     renderActiveCard(session())
-    const row = screen.getByRole('button', { name: 'auth middleware' })
-    expect(row).toBe(screen.getByTestId('session-row'))
-    expect(row).toHaveAttribute('id', 'sidebar-activate-sess-1')
+    const activate = screen.getByRole('button', { name: 'auth middleware' })
+    expect(activate).toHaveAttribute('id', 'sidebar-activate-sess-1')
+    expect(screen.getByTestId('session-row').tagName).toBe('LI')
   })
 
   test('drops the old chrome: no status dot, state pill, line delta, or accent bar', () => {
@@ -118,7 +118,7 @@ describe('Card — active variant', () => {
     expect(onClick).toHaveBeenCalledWith('X')
   })
 
-  test('Enter on the focused row activates it', async () => {
+  test('Enter on the focused activation button activates it', async () => {
     const onClick = vi.fn()
     renderActiveCard(session({ id: 'X' }), { onClick })
     screen.getByRole('button', { name: 'auth middleware' }).focus()
@@ -191,11 +191,9 @@ describe('Card — active variant', () => {
 })
 
 describe('Card — recent variant', () => {
-  test('renders as <li> with data-testid="recent-session-row" and role=button', () => {
+  test('renders as <li> with data-testid="recent-session-row"', () => {
     renderRecentCard(session({ status: 'completed' }))
-    const row = screen.getByTestId('recent-session-row')
-    expect(row.tagName).toBe('LI')
-    expect(row).toHaveAttribute('role', 'button')
+    expect(screen.getByTestId('recent-session-row').tagName).toBe('LI')
   })
 
   test('renders status text and subtitle', () => {

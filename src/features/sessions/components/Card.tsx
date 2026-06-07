@@ -1,4 +1,4 @@
-import { useState, type KeyboardEvent, type ReactElement } from 'react'
+import { useState, type ReactElement } from 'react'
 import { Reorder } from 'framer-motion'
 import type { Session } from '../types'
 import { useRenameState } from '../hooks/useRenameState'
@@ -81,19 +81,6 @@ export const Card = ({
     Object.prototype.hasOwnProperty.call(LAYOUTS, session.layout)
   const hasActions = onRename !== undefined || onRemove !== undefined
 
-  const handleKeyDown = (event: KeyboardEvent<HTMLElement>): void => {
-    // Only the row itself activates — keystrokes from the rename input or
-    // the kebab/menu (descendants) must not trigger row activation.
-    if (event.target !== event.currentTarget) {
-      return
-    }
-
-    if (event.key === 'Enter' || event.key === ' ') {
-      event.preventDefault()
-      onClick(session.id)
-    }
-  }
-
   // Flat fill only — no border, no left accent bar, no status dot. Hover and
   // open-menu share the soft fill; active stays lavender.
   const fillClass = isActive
@@ -102,98 +89,107 @@ export const Card = ({
       ? 'bg-[rgba(255,255,255,0.04)]'
       : 'hover:bg-[rgba(255,255,255,0.04)]'
 
-  const cardClass = `group relative mb-0.5 rounded-[10px] px-3 py-[11px] outline-none transition-colors focus-visible:ring-1 focus-visible:ring-[rgba(203,166,247,0.5)] ${
+  const cardClass = `group relative mb-0.5 rounded-[10px] px-3 py-[11px] transition-colors ${
     variant === 'active'
       ? 'cursor-grab active:cursor-grabbing'
       : 'cursor-pointer'
   } ${fillClass}`
 
-  const rowProps = {
-    role: 'button' as const,
-    tabIndex: isEditing ? -1 : 0,
-    'aria-label': session.name,
-    id: `sidebar-activate-${session.id}`,
-    'data-session-id': session.id,
-    'data-active': isActive,
-    className: cardClass,
-    onClick: (): void => onClick(session.id),
-    onKeyDown: handleKeyDown,
-  }
-
   const inner = (
     <>
-      {/* Row 1 — title (or inline rename input) */}
-      <div className="flex items-center gap-2">
-        {isEditing ? (
-          <input
-            ref={inputRef}
-            type="text"
-            value={editValue}
-            onChange={(e) => setEditValue(e.target.value)}
-            onBlur={commitRename}
-            onClick={(e) => e.stopPropagation()}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                commitRename()
-              }
-              if (e.key === 'Escape') {
-                cancelRename()
-              }
-            }}
-            aria-label="Rename session"
-            className="min-w-0 flex-1 truncate rounded bg-surface-container-high px-1 font-label text-[13.5px] font-semibold text-on-surface outline-none ring-1 ring-primary"
-          />
-        ) : (
-          <span
-            className="min-w-0 flex-1 truncate font-label text-[13.5px] font-semibold"
-            style={{ color: isActive ? '#f3eeff' : '#e3e0f7' }}
-            onDoubleClick={(e) => {
-              if (onRename === undefined) {
-                return
-              }
-              e.stopPropagation()
-              beginEdit()
-            }}
-          >
-            {session.name}
-          </span>
-        )}
-      </div>
+      {/* Full-row activation button as an absolute background layer. Foreground
+          content is pointer-events-none so clicks fall through to it; the kebab
+          opts back in as a SIBLING (not nested) so this stays a real <button>
+          with no interactive descendants. */}
+      <button
+        type="button"
+        onClick={() => onClick(session.id)}
+        aria-label={session.name}
+        id={`sidebar-activate-${session.id}`}
+        data-role="activate"
+        tabIndex={isEditing ? -1 : 0}
+        className="absolute inset-0 rounded-[10px] outline-none focus-visible:ring-1 focus-visible:ring-[rgba(203,166,247,0.5)]"
+      />
 
-      {/* Row 2 — subtitle */}
-      {subtitleText !== '' && (
-        <div className="mt-1 truncate font-label text-[11.5px] text-[#9a93ab]">
-          {subtitleText}
+      <div className="pointer-events-none relative flex flex-col">
+        {/* Row 1 — title (or inline rename input) */}
+        <div className="flex items-center gap-2">
+          {isEditing ? (
+            <input
+              ref={inputRef}
+              type="text"
+              value={editValue}
+              onChange={(e) => setEditValue(e.target.value)}
+              onBlur={commitRename}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  commitRename()
+                }
+                if (e.key === 'Escape') {
+                  cancelRename()
+                }
+              }}
+              aria-label="Rename session"
+              className="pointer-events-auto min-w-0 flex-1 truncate rounded bg-surface-container-high px-1 font-label text-[13.5px] font-semibold text-on-surface outline-none ring-1 ring-primary"
+            />
+          ) : (
+            <span
+              // Title opts back into pointer events for rename; an explicit
+              // onClick re-activates the row because the overlay button is a
+              // sibling, not an ancestor, so the click wouldn't otherwise reach
+              // it.
+              className="pointer-events-auto min-w-0 flex-1 cursor-pointer truncate font-label text-[13.5px] font-semibold"
+              style={{ color: isActive ? '#f3eeff' : '#e3e0f7' }}
+              onClick={() => onClick(session.id)}
+              onDoubleClick={(e) => {
+                if (onRename === undefined) {
+                  return
+                }
+                e.stopPropagation()
+                beginEdit()
+              }}
+            >
+              {session.name}
+            </span>
+          )}
         </div>
-      )}
 
-      {/* Row 3 — status text + time + pane-layout glyph */}
-      <div className="mt-1.5 flex items-baseline gap-1.5 font-mono text-[10px]">
-        <span className="font-semibold" style={{ color: status.tone }}>
-          {status.label}
-        </span>
-        <span className="text-[#6c7086]">
-          · {formatRelativeTime(session.lastActivityAt)}
-        </span>
-        <span className="flex-1" />
-        {showGlyph && (
-          <span
-            data-testid="session-layout-glyph"
-            aria-hidden="true"
-            title={LAYOUTS[session.layout].name}
-            className="inline-flex shrink-0"
-            style={{ color: isActive ? '#cba6f7' : '#7c7689' }}
-          >
-            <LayoutGlyph layoutId={session.layout} />
-          </span>
+        {/* Row 2 — subtitle */}
+        {subtitleText !== '' && (
+          <div className="mt-1 truncate font-label text-[11.5px] text-[#9a93ab]">
+            {subtitleText}
+          </div>
         )}
+
+        {/* Row 3 — status text + time + pane-layout glyph */}
+        <div className="mt-1.5 flex items-baseline gap-1.5 font-mono text-[10px]">
+          <span className="font-semibold" style={{ color: status.tone }}>
+            {status.label}
+          </span>
+          <span className="text-[#6c7086]">
+            · {formatRelativeTime(session.lastActivityAt)}
+          </span>
+          <span className="flex-1" />
+          {showGlyph && (
+            <span
+              data-testid="session-layout-glyph"
+              aria-hidden="true"
+              title={LAYOUTS[session.layout].name}
+              className="inline-flex shrink-0"
+              style={{ color: isActive ? '#cba6f7' : '#7c7689' }}
+            >
+              <LayoutGlyph layoutId={session.layout} />
+            </span>
+          )}
+        </div>
       </div>
 
-      {/* Kebab — absolute overlay (row height stays constant); revealed on
-          hover/focus, kept mounted so keyboard users can reach it. */}
+      {/* Kebab — sibling of the activation button (not nested), absolutely
+          positioned so the row height stays constant; revealed on hover/focus
+          and kept mounted so keyboard users can reach it. */}
       {hasActions && (
         <div
-          className={`absolute right-2 top-[7px] opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100 ${
+          className={`pointer-events-auto absolute right-2 top-[7px] opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100 ${
             menuOpen ? 'opacity-100' : ''
           }`}
           onBlur={(e) => {
@@ -256,13 +252,15 @@ export const Card = ({
       <Reorder.Item
         value={session}
         data-testid="session-row"
+        data-session-id={session.id}
+        data-active={isActive}
+        className={cardClass}
         whileDrag={{
           scale: 1.02,
           boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
           zIndex: 50,
         }}
         layout="position"
-        {...rowProps}
       >
         {inner}
       </Reorder.Item>
@@ -270,7 +268,12 @@ export const Card = ({
   }
 
   return (
-    <li data-testid="recent-session-row" {...rowProps}>
+    <li
+      data-testid="recent-session-row"
+      data-session-id={session.id}
+      data-active={isActive}
+      className={cardClass}
+    >
       {inner}
     </li>
   )
