@@ -368,6 +368,11 @@ const setupApp = async (): Promise<void> => {
     writer: layoutWriter,
   })
 
+  browserPaneController.setRestoreTabsProvider(
+    (sessionId, paneId): PersistedTab[] | null =>
+      workspaceLayoutController?.tabsForPane(sessionId, paneId) ?? null
+  )
+
   workspaceTeardown = new WorkspaceTeardown({
     drainFinalShape: async (): Promise<void> => {
       const win = BrowserWindow.getAllWindows().at(0)
