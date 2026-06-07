@@ -260,7 +260,11 @@ describe('WorkspaceView', () => {
         ).toBe(true)
       })
 
-      await user.click(screen.getByRole('button', { name: 'new session' }))
+      await user.click(
+        within(screen.getByTestId('sidebar')).getByRole('button', {
+          name: 'New session',
+        })
+      )
       await screen.findByRole('button', { name: 'session 2' })
 
       await waitFor(() => {
@@ -995,7 +999,7 @@ describe('WorkspaceView', () => {
     expect(filesViewAfter).not.toHaveClass('hidden')
   })
 
-  test('clicking the new session ghost button creates a new session', async () => {
+  test('clicking the switcher-row New session button creates a new session', async () => {
     const user = userEvent.setup()
 
     render(<WorkspaceView />)
@@ -1006,9 +1010,10 @@ describe('WorkspaceView', () => {
     // 'session ${index + 1}').
     await screen.findByRole('button', { name: 'session 1' })
 
-    const newSessionButton = screen.getByRole('button', {
-      name: 'new session',
-    })
+    const newSessionButton = within(screen.getByTestId('sidebar')).getByRole(
+      'button',
+      { name: 'New session' }
+    )
     await user.click(newSessionButton)
 
     // After clicking, the spawn() mock resolves with a new sessionId
@@ -1018,6 +1023,20 @@ describe('WorkspaceView', () => {
     // a regression of the onClick handler being dropped (e.g. during
     // a future Sidebar.footer slot refactor) would fail this test.
     await screen.findByRole('button', { name: 'session 2' })
+  })
+
+  test('new-session button lives in the switcher row, not the list bottom', () => {
+    render(<WorkspaceView />)
+
+    expect(
+      within(screen.getByTestId('sidebar')).getByRole('button', {
+        name: 'New session',
+      })
+    ).toBeInTheDocument()
+
+    expect(
+      screen.queryByTestId('sessions-list-new-session')
+    ).not.toBeInTheDocument()
   })
 
   test('opens command palette from the top-bar command button', async () => {
@@ -1195,9 +1214,10 @@ describe('WorkspaceView', () => {
     })
     expect(firstSession.closest('li')!.className).toContain('bg-primary/10')
 
-    const newSessionButton = screen.getByRole('button', {
-      name: 'new session',
-    })
+    const newSessionButton = within(screen.getByTestId('sidebar')).getByRole(
+      'button',
+      { name: 'New session' }
+    )
     await user.click(newSessionButton)
 
     const secondSession = await screen.findByRole('button', {

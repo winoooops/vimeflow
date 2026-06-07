@@ -7,7 +7,6 @@ export interface SessionsViewProps {
   sessions: Session[]
   activeSessionId: string | null
   onSessionClick: (id: string) => void
-  onCreateSession: () => void
   onRemoveSession: (id: string) => SessionCloseResult
   onRenameSession: (id: string, name: string) => void
   onReorderSessions: (reordered: Session[]) => void
@@ -18,7 +17,6 @@ export const SessionsView = ({
   sessions,
   activeSessionId,
   onSessionClick,
-  onCreateSession,
   onRemoveSession,
   onRenameSession,
   onReorderSessions,
@@ -39,7 +37,6 @@ export const SessionsView = ({
       sessions={sessions}
       activeSessionId={activeSessionId}
       onSessionClick={onSessionClick}
-      onCreateSession={onCreateSession}
       onRemoveSession={onRemoveSession}
       onRenameSession={onRenameSession}
       onReorderSessions={onReorderSessions}

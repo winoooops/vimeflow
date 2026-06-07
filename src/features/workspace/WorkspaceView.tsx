@@ -22,6 +22,7 @@ import {
   type AgentCardState,
 } from './components/AgentStatusCard'
 import { FilesView } from './components/FilesView'
+import { NewSessionButton } from './components/NewSessionButton'
 import { SessionsView } from './components/SessionsView'
 import {
   TerminalZone,
@@ -218,6 +219,10 @@ export const WorkspaceView = (): ReactElement => {
   }, [])
 
   const sidebarShortcutHint = preferModifier === 'meta' ? '⌘B' : 'Ctrl+⇧B'
+  const newSessionShortcutHint = preferModifier === 'meta' ? '⌘N' : 'Ctrl+N'
+
+  const newSessionAriaKeyshortcuts =
+    preferModifier === 'meta' ? 'Meta+N' : 'Control+N'
   // Real command-palette chord for the top-bar utility hint (Ctrl+; / ⌘;),
   // not the ⌘K placeholder in the static design mock.
   const commandShortcutHint = formatShortcut(COMMAND_PALETTE_SHORTCUT_KEYS)
@@ -1498,17 +1503,23 @@ export const WorkspaceView = (): ReactElement => {
             }
             content={
               <div className="flex h-full min-h-0 flex-col">
-                <SidebarTabs<SidebarTab>
-                  tabs={SIDEBAR_TAB_ITEMS}
-                  activeId={activeTab}
-                  onChange={setActiveTab}
-                />
+                <div className="flex items-center justify-between pr-2">
+                  <SidebarTabs<SidebarTab>
+                    tabs={SIDEBAR_TAB_ITEMS}
+                    activeId={activeTab}
+                    onChange={setActiveTab}
+                  />
+                  <NewSessionButton
+                    onClick={handleCreateSession}
+                    shortcutHint={newSessionShortcutHint}
+                    ariaKeyshortcuts={newSessionAriaKeyshortcuts}
+                  />
+                </div>
                 <SessionsView
                   hidden={activeTab !== 'sessions'}
                   sessions={sessions}
                   activeSessionId={activeSessionId}
                   onSessionClick={handleSetActiveSessionId}
-                  onCreateSession={handleCreateSession}
                   onRemoveSession={handleRemoveSession}
                   onRenameSession={renameSession}
                   onReorderSessions={reorderSessions}

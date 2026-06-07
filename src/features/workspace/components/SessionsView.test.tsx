@@ -1,6 +1,5 @@
-import { describe, test, expect, vi } from 'vitest'
+import { describe, test, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
 import { mockSessions } from '../data/mockSessions'
 import { SessionsView } from './SessionsView'
 
@@ -10,7 +9,6 @@ const baseProps = {
   sessions: mockSessions,
   activeSessionId: mockSessions[0]?.id ?? null,
   onSessionClick: noop,
-  onCreateSession: noop,
   onRemoveSession: noop,
   onRenameSession: noop,
   onReorderSessions: noop,
@@ -22,25 +20,6 @@ describe('SessionsView', () => {
 
     expect(screen.getByTestId('sessions-view')).toBeInTheDocument()
     expect(screen.getByTestId('session-list')).toBeInTheDocument()
-  })
-
-  test('new session button fires onCreateSession on click', async () => {
-    const onCreateSession = vi.fn()
-    const user = userEvent.setup()
-
-    render(<SessionsView {...baseProps} onCreateSession={onCreateSession} />)
-
-    const newSessionButton = screen.getByRole('button', {
-      name: 'new session',
-    })
-    expect(newSessionButton).toHaveAttribute(
-      'data-testid',
-      'sessions-list-new-session'
-    )
-
-    await user.click(newSessionButton)
-
-    expect(onCreateSession).toHaveBeenCalledTimes(1)
   })
 
   test('hidden=true applies the `hidden` Tailwind utility class on the testid root', () => {
