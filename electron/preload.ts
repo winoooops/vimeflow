@@ -23,6 +23,10 @@ import {
   BROWSER_PANE_URL_CHANGED,
 } from './browser-pane-channels'
 
+const BACKEND_EVENT_MAX_LISTENERS = 64
+
+ipcRenderer.setMaxListeners(BACKEND_EVENT_MAX_LISTENERS)
+
 type InvokeEnvelope<T> =
   | { ok: true; result: T }
   | { ok: false; error: string; errorReason?: string }

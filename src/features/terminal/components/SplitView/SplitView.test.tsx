@@ -152,6 +152,7 @@ const makeMockService = (): ITerminalService => ({
   reorderSessions: vi.fn(() => Promise.resolve(undefined)),
   updateSessionCwd: vi.fn(() => Promise.resolve(undefined)),
   setSessionActivityPanelCollapsed: vi.fn(() => Promise.resolve(undefined)),
+  setWorkspaceSessions: vi.fn(() => Promise.resolve(undefined)),
 })
 
 // Literal `isActive={false}` is stripped by the project's jsx-boolean-value

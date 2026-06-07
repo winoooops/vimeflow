@@ -1,14 +1,24 @@
+// cspell:ignore keymap Prec
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { EditorView, ViewUpdate, drawSelection } from '@codemirror/view'
+import {
+  EditorView,
+  ViewPlugin,
+  ViewUpdate,
+  drawSelection,
+  keymap,
+} from '@codemirror/view'
 import {
   EditorState,
+  EditorSelection,
+  Prec,
+  type SelectionRange,
   type Extension,
-  type Transaction,
+  Transaction,
   type TransactionSpec,
   Compartment,
 } from '@codemirror/state'
 import { history } from '@codemirror/commands'
-import { vim, Vim } from '@replit/codemirror-vim'
+import { vim, Vim, getCM } from '@replit/codemirror-vim'
 import { catppuccinMocha } from '../theme/catppuccin'
 
 /**
@@ -48,7 +58,7 @@ import { catppuccinMocha } from '../theme/catppuccin'
 export const scrollCursorOnSelectionChange = (
   tr: Transaction
 ): TransactionSpec | null => {
-  if (!tr.selection || tr.docChanged) {
+  if (!tr.selection || tr.docChanged || tr.isUserEvent('select.all')) {
     return null
   }
 
@@ -102,9 +112,232 @@ export interface UseCodeMirrorOptions {
 export interface UseCodeMirrorReturn {
   editorView: EditorView | null
   updateContent: (content: string) => void
+  copySelection: () => Promise<void>
+  cutSelection: () => Promise<void>
+  pasteClipboard: () => Promise<void>
+  selectAll: () => void
   /** Callback ref — attach to the container div */
   setContainer: (node: HTMLDivElement | null) => void
 }
+
+interface ClipboardLike {
+  readText?: () => Promise<string>
+  writeText?: (text: string) => Promise<void>
+}
+
+const selectedTextFromState = (state: EditorState): string =>
+  state.selection.ranges
+    .filter((range) => !range.empty)
+    .map((range) => state.sliceDoc(range.from, range.to))
+    .join('\n')
+
+const hasSelection = (state: EditorState): boolean =>
+  state.selection.ranges.some((range) => !range.empty)
+
+const deletionForRange = (
+  range: SelectionRange
+): {
+  changes: { from: number; to: number; insert: string }
+  range: SelectionRange
+} => ({
+  changes: { from: range.from, to: range.to, insert: '' },
+  range: EditorSelection.cursor(range.from),
+})
+
+const writeViaTextarea = (text: string): boolean => {
+  const execCommand = (
+    document as unknown as {
+      execCommand?: (command: string) => boolean
+    }
+  ).execCommand
+  if (typeof execCommand !== 'function') {
+    return false
+  }
+
+  const textarea = document.createElement('textarea')
+  textarea.value = text
+  textarea.setAttribute('readonly', '')
+  textarea.style.position = 'fixed'
+  textarea.style.opacity = '0'
+  textarea.style.pointerEvents = 'none'
+  document.body.appendChild(textarea)
+  textarea.select()
+
+  try {
+    return execCommand.call(document, 'copy')
+  } catch {
+    return false
+  } finally {
+    document.body.removeChild(textarea)
+  }
+}
+
+const writeClipboardText = async (text: string): Promise<boolean> => {
+  if (text === '') {
+    return false
+  }
+
+  const clipboard = window.navigator.clipboard as ClipboardLike | undefined
+
+  try {
+    if (clipboard?.writeText === undefined) {
+      return writeViaTextarea(text)
+    }
+
+    await clipboard.writeText(text)
+
+    return true
+  } catch {
+    return writeViaTextarea(text)
+  }
+}
+
+const copySelectionFromView = async (view: EditorView): Promise<void> => {
+  await writeClipboardText(selectedTextFromState(view.state))
+  view.focus()
+}
+
+const cutSelectionFromView = async (view: EditorView): Promise<void> => {
+  const state = view.state
+  if (!hasSelection(state)) {
+    return
+  }
+
+  const copied = await writeClipboardText(selectedTextFromState(state))
+  if (!copied || view.state !== state) {
+    return
+  }
+
+  view.dispatch(state.changeByRange(deletionForRange))
+  view.focus()
+}
+
+const pasteClipboardIntoView = async (view: EditorView): Promise<void> => {
+  const state = view.state
+  const clipboard = window.navigator.clipboard as ClipboardLike | undefined
+  if (clipboard?.readText === undefined) {
+    return
+  }
+
+  try {
+    const text = await clipboard.readText()
+    if (text === '') {
+      return
+    }
+
+    if (view.state !== state) {
+      return
+    }
+
+    view.dispatch(state.replaceSelection(text))
+    view.focus()
+  } catch {
+    // Clipboard permission failures should not bubble out of key bindings.
+  }
+}
+
+const selectAllInView = (view: EditorView): void => {
+  view.dispatch({
+    selection: EditorSelection.single(0, view.state.doc.length),
+    annotations: Transaction.userEvent.of('select.all'),
+  })
+  view.focus()
+}
+
+const isMacPlatform = (): boolean =>
+  window.navigator.platform.toLowerCase().includes('mac')
+
+const isPlatformPasteShortcut = (event: KeyboardEvent): boolean => {
+  if (event.key.toLowerCase() !== 'v' || event.altKey || event.shiftKey) {
+    return false
+  }
+
+  return isMacPlatform()
+    ? event.metaKey && !event.ctrlKey
+    : event.ctrlKey && !event.metaKey
+}
+
+const nativePasteShortcutBypass = ViewPlugin.fromClass(
+  class {
+    private readonly view: EditorView
+
+    private readonly onKeydown = (event: KeyboardEvent): void => {
+      if (!isPlatformPasteShortcut(event)) {
+        return
+      }
+
+      const cm = getCM(this.view)
+      if (!cm?.state.vim?.insertMode) {
+        return
+      }
+
+      event.stopImmediatePropagation()
+    }
+
+    constructor(view: EditorView) {
+      this.view = view
+      this.view.contentDOM.addEventListener('keydown', this.onKeydown, true)
+    }
+
+    destroy(): void {
+      this.view.contentDOM.removeEventListener('keydown', this.onKeydown, true)
+    }
+  }
+)
+
+// Vim y/p keep codemirror-vim registers; platform edit commands use the OS clipboard.
+const editorClipboardKeymap = Prec.highest(
+  keymap.of([
+    {
+      key: 'Mod-c',
+      run: (view: EditorView): boolean => {
+        if (!hasSelection(view.state)) {
+          return false
+        }
+
+        void copySelectionFromView(view)
+
+        return true
+      },
+    },
+    {
+      key: 'Mod-x',
+      run: (view: EditorView): boolean => {
+        if (!hasSelection(view.state)) {
+          return false
+        }
+
+        void cutSelectionFromView(view)
+
+        return true
+      },
+    },
+    {
+      key: 'Mod-a',
+      run: (view: EditorView): boolean => {
+        if (isMacPlatform()) {
+          selectAllInView(view)
+
+          return true
+        }
+
+        const cm = getCM(view)
+        const isVimInsert = cm?.state.vim?.insertMode === true
+
+        // On non-Mac, preserve Vim normal-mode Ctrl+A (increment), but
+        // provide select-all in insert mode where users expect standard
+        // platform shortcuts.
+        if (isVimInsert) {
+          selectAllInView(view)
+
+          return true
+        }
+
+        return false
+      },
+    },
+  ])
+)
 
 /**
  * Hook to manage CodeMirror 6 EditorView instance with vim mode.
@@ -162,6 +395,8 @@ export function useCodeMirror(
     }
 
     const extensions: Extension[] = [
+      nativePasteShortcutBypass,
+      editorClipboardKeymap,
       vim(),
       // history() is NOT included by default in CodeMirror 6 — it must
       // be explicitly added. The vim extension's `u` / `ctrl-r` handlers
@@ -282,9 +517,49 @@ export function useCodeMirror(
     }
   }, [])
 
+  const copySelection = useCallback(async (): Promise<void> => {
+    const view = viewRef.current
+    if (!view) {
+      return
+    }
+
+    await copySelectionFromView(view)
+  }, [])
+
+  const cutSelection = useCallback(async (): Promise<void> => {
+    const view = viewRef.current
+    if (!view) {
+      return
+    }
+
+    await cutSelectionFromView(view)
+  }, [])
+
+  const pasteClipboard = useCallback(async (): Promise<void> => {
+    const view = viewRef.current
+    if (!view) {
+      return
+    }
+
+    await pasteClipboardIntoView(view)
+  }, [])
+
+  const selectAll = useCallback((): void => {
+    const view = viewRef.current
+    if (!view) {
+      return
+    }
+
+    selectAllInView(view)
+  }, [])
+
   return {
     editorView,
     updateContent,
+    copySelection,
+    cutSelection,
+    pasteClipboard,
+    selectAll,
     setContainer,
   }
 }

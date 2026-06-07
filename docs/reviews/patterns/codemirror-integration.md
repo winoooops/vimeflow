@@ -2,8 +2,8 @@
 id: codemirror-integration
 category: editor
 created: 2026-04-10
-last_updated: 2026-04-11
-ref_count: 0
+last_updated: 2026-06-06
+ref_count: 4
 ---
 
 # CodeMirror 6 + Vim Integration
@@ -136,3 +136,66 @@ affects event/command routing.
 - **Finding:** The scroll extender was originally named `scrollCursorOnVimMotion` and its JSDoc described it as catching vim normal-mode motions specifically. But the guard `!tr.selection || tr.docChanged` catches EVERY pure-selection transaction — mouse clicks that move the cursor, arrow-key navigation, find-replace jumps, programmatic selections from other extensions. CM6 has no general-purpose API to identify transaction origin, so narrowing to vim-only isn't actually possible without inspecting `Transaction.userEvent` and coupling to vim-extension internals.
 - **Fix:** Rename to `scrollCursorOnSelectionChange` and rewrite the JSDoc to describe the actual scope — the behavior is deliberately inclusive, every pure-selection transaction is a cursor move the user expects the viewport to follow. Behavior unchanged.
 - **Commit:** `3f8bf2c fix(editor): address Claude review round 2 — test guard, naming, symmetry`
+
+### 13. Mod-a select-all keymap intercepts Vim Ctrl+A increment on non-Mac platforms
+
+- **Source:** github-claude | PR #368 round 1 | 2026-06-06
+- **Severity:** MEDIUM
+- **File:** `src/features/editor/hooks/useCodeMirror.ts`
+- **Finding:** A `Prec.highest` keymap bound `Mod-a` unconditionally to `selectAllInView`, returning `true` on all platforms. On Linux/Windows `Mod` resolves to `Ctrl`, so `Ctrl+A` — which `@replit/codemirror-vim` uses for increment-number in NORMAL mode — was consumed by the select-all handler before vim ever saw it. This broke a common vim editing command for non-mac users.
+- **Fix:** Added an `isMacPlatform()` guard inside the `Mod-a` handler so it returns `false` on non-mac platforms, allowing the event to fall through to the vim keymap. On macOS `Mod-a` is `Cmd+A`, which does not conflict with vim increment (`Ctrl+A` on mac). Added a test verifying `Ctrl+A` increments a number in vim NORMAL mode on non-mac.
+- **Commit:** same commit as this entry
+
+### 14. Select All scrolls long documents to the end
+
+- **Source:** github-codex-connector | PR #368 round 2 | 2026-06-06
+- **Severity:** MEDIUM
+- **File:** `src/features/editor/hooks/useCodeMirror.ts`
+- **Finding:** `selectAllInView` dispatched a full-document selection transaction with `scrollIntoView: true`. Because the selection head sits at `view.state.doc.length`, CodeMirror scrolled the viewport to the document tail whenever Select All was invoked on a file taller than the viewport, disrupting copy/cut context.
+- **Fix:** Removed `scrollIntoView: true` from the transaction in `selectAllInView` so a full-document selection no longer moves the viewport.
+- **Commit:** same commit as this entry
+
+### 15. Context menu can render off-screen near window edges
+
+- **Source:** github-codex-connector | PR #368 round 2 | 2026-06-06
+- **Severity:** MEDIUM
+- **File:** `src/features/editor/components/CodeEditor.tsx`
+- **Finding:** `handleContextMenu` stored raw `clientX` and `clientY` from the right-click event. The fixed-size `ContextMenu` overlay could be positioned partially outside the Electron viewport near the right or bottom edges, making clipboard actions unreachable.
+- **Fix:** Clamped the stored coordinates in `handleContextMenu` against `window.innerWidth` and `window.innerHeight` using the declared fixed menu dimensions (192×192 px) before calling `setContextMenu`.
+- **Commit:** same commit as this entry
+
+### 16. Mod-a keymap removes standard Ctrl+A select-all on non-Mac platforms
+
+- **Source:** github-codex-connector | PR #368 round 3 | 2026-06-06
+- **Severity:** MEDIUM
+- **File:** `src/features/editor/hooks/useCodeMirror.ts`
+- **Finding:** Returning `false` from the `Mod-a` binding on every non-Mac platform preserved Vim normal-mode `Ctrl+A` (increment), but it also removed the standard OS select-all shortcut for Linux/Windows users in insert mode. The fix overcorrected by dropping select-all entirely rather than preserving both paths based on Vim mode context.
+- **Fix:** Gate the `Mod-a` handler on Vim mode state via `getCM(view).state.vim?.insertMode`. On macOS, `Mod-a` always selects all. On non-Mac, insert mode selects all (users expect platform edit shortcuts), while normal mode falls through to Vim increment. Added/updated tests covering both behaviors.
+- **Commit:** same commit as this entry
+
+### 17. Custom context-menu actions operate on stale focus/selection
+
+- **Source:** github-codex-connector | PR #368 round 3 | 2026-06-06
+- **Severity:** MEDIUM
+- **File:** `src/features/editor/components/CodeEditor.tsx`
+- **Finding:** `handleContextMenu` recorded mouse coordinates but did not focus the CodeMirror view or update the selection at the clicked position before rendering Copy/Cut/Paste/Select All. Users right-clicking an unfocused editor or a different location than the current cursor would cause menu actions to operate on the previous selection or cursor position, copying/cutting the wrong text or pasting at the wrong location.
+- **Fix:** On context-menu open, focus the editor via `editorView.focus()` and synchronize the CodeMirror selection to the right-click position using `editorView.posAtCoords({x, y})` before dispatching a cursor selection update. If `posAtCoords` returns `null`, the menu still opens but no selection change occurs. Added tests verifying focus, selection sync, and the null-position fallback.
+- **Commit:** same commit as this entry
+
+### 18. Select All still scrolls via transactionExtender after explicit flag removal
+
+- **Source:** github-claude | PR #368 round 4 | 2026-06-06
+- **Severity:** MEDIUM
+- **File:** `src/features/editor/hooks/useCodeMirror.ts`
+- **Finding:** `selectAllInView` dispatched a full-document selection transaction without any user-event annotation, so `scrollCursorOnSelectionChange` (a `TransactionExtender` that fires on every pure-selection change) still attached `EditorView.scrollIntoView(doc.length, {y: 'nearest'})`. On files taller than the viewport the viewport jumped to the document tail after every Select All. The round-2 fix removed an explicit `scrollIntoView: true` flag from the dispatch but did not update the extender path.
+- **Fix:** Annotate the `selectAllInView` dispatch with `Transaction.userEvent.of('select.all')` and add `|| tr.isUserEvent('select.all')` to the early-return guard in `scrollCursorOnSelectionChange`.
+- **Commit:** same commit as this entry
+
+### 19. Native paste shortcut bypass intercepts Ctrl+V in Vim NORMAL mode
+
+- **Source:** github-claude | PR #368 round 4 | 2026-06-06
+- **Severity:** MEDIUM
+- **File:** `src/features/editor/hooks/useCodeMirror.ts`
+- **Finding:** `nativePasteShortcutBypass` called `stopImmediatePropagation()` on every platform paste shortcut keydown, unconditionally blocking `@replit/codemirror-vim` from seeing the event. On Linux/Windows `Ctrl+V` is the paste shortcut, but in Vim NORMAL mode it enters VISUAL BLOCK. After the bypass, NORMAL-mode `Ctrl+V` silently triggered a clipboard paste instead.
+- **Fix:** Gate the bypass on `getCM(view)?.state.vim?.insertMode`. Only call `stopImmediatePropagation()` in INSERT mode (where `Ctrl+V` has no vim meaning). In NORMAL mode the event falls through to vim, preserving VISUAL BLOCK entry. Updated tests to enter INSERT mode before exercising the paste bypass.
+- **Commit:** same commit as this entry

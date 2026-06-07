@@ -137,7 +137,7 @@ vi.mock('@pierre/diffs/react', () => ({
         </div>
       ) : null}
       {lineAnnotations != null && renderAnnotation != null ? (
-        <div data-testid="annotation-slot">
+        <div key={newFile.contents} data-testid="annotation-slot">
           {lineAnnotations.map((annotation, index) => (
             <div key={annotation.metadata.id ?? index}>
               {renderAnnotation(annotation)}
@@ -1854,6 +1854,84 @@ describe('DiffPanelContent', () => {
       ).toBeInTheDocument()
     })
 
+    test('shows 0/0 instead of the previous file hunk count while next diff loads', (): void => {
+      vi.spyOn(useGitStatusModule, 'useGitStatus').mockReturnValue({
+        files: [
+          { path: 'src/multi.ts', status: 'modified', staged: false },
+          { path: 'src/other.ts', status: 'modified', staged: false },
+        ],
+        filesCwd: '/repo',
+        loading: false,
+        error: null,
+        refresh: vi.fn(),
+        idle: false,
+      })
+
+      const { rerender } = render(
+        <DiffPanelContent
+          cwd="/repo"
+          selectedFile={{ path: 'src/multi.ts', staged: false, cwd: '/repo' }}
+          onSelectedFileChange={vi.fn()}
+        />
+      )
+
+      expect(
+        screen.getByRole('group', { name: /hunk 1\/3/i })
+      ).toBeInTheDocument()
+
+      vi.spyOn(useFileDiffModule, 'useFileDiff').mockReturnValue(
+        fileDiffMock({
+          diff: threeHunkDiff,
+          loading: true,
+          error: null,
+          oldText: 'old',
+          newText: 'new',
+          rawDiff: '',
+        })
+      )
+
+      rerender(
+        <DiffPanelContent
+          cwd="/repo"
+          selectedFile={{ path: 'src/other.ts', staged: false, cwd: '/repo' }}
+          onSelectedFileChange={vi.fn()}
+        />
+      )
+
+      expect(
+        screen.getByRole('group', { name: /hunk 0\/0/i })
+      ).toBeInTheDocument()
+      expect(screen.queryByLabelText(/hunk 1\/3/i)).not.toBeInTheDocument()
+
+      vi.spyOn(useFileDiffModule, 'useFileDiff').mockReturnValue(
+        fileDiffMock({
+          diff: {
+            filePath: 'src/other.ts',
+            oldPath: 'src/other.ts',
+            newPath: 'src/other.ts',
+            hunks: [threeHunkDiff.hunks[0]],
+          },
+          loading: false,
+          error: null,
+          oldText: 'old',
+          newText: 'new',
+          rawDiff: '',
+        })
+      )
+
+      rerender(
+        <DiffPanelContent
+          cwd="/repo"
+          selectedFile={{ path: 'src/other.ts', staged: false, cwd: '/repo' }}
+          onSelectedFileChange={vi.fn()}
+        />
+      )
+
+      expect(
+        screen.getByRole('group', { name: /hunk 1\/1/i })
+      ).toBeInTheDocument()
+    })
+
     test('clicking next-hunk advances focus: counter 2/3 and selectedLines from hunk 1', async (): Promise<void> => {
       const user = userEvent.setup()
 
@@ -2159,6 +2237,107 @@ describe('DiffPanelContent', () => {
       expect(
         within(annotationSlot).getByText('Great change!')
       ).toBeInTheDocument()
+    })
+
+    test('preserves composer draft text across a same-file diff refresh remount', async (): Promise<void> => {
+      const user = userEvent.setup()
+      let newText = 'new'
+
+      vi.spyOn(useFileDiffModule, 'useFileDiff').mockImplementation(() =>
+        fileDiffMock({
+          diff: inlineFileDiff,
+          loading: false,
+          error: null,
+          oldText: 'old',
+          newText,
+          rawDiff: '',
+        })
+      )
+
+      const props = {
+        cwd: '/repo',
+        selectedFile: { path: 'src/foo.ts', staged: false, cwd: '/repo' },
+        onSelectedFileChange: vi.fn(),
+      } as const
+
+      const { rerender } = render(<DiffPanelContent {...props} />)
+
+      setPaneWidth(SPLIT_MIN_WIDTH_PX + 100)
+
+      const gutterSlot = screen.getByTestId('gutter-utility-slot')
+
+      await user.click(
+        within(gutterSlot).getByRole('button', {
+          name: 'Add comment on this line',
+        })
+      )
+
+      const textarea = within(
+        screen.getByRole('dialog', { name: /Comment on line/ })
+      ).getByPlaceholderText('Request change')
+
+      await user.type(textarea, 'Draft while agent edits')
+      expect(textarea).toHaveValue('Draft while agent edits')
+
+      newText = 'new after agent edit'
+      rerender(<DiffPanelContent {...props} />)
+
+      expect(screen.getByPlaceholderText('Request change')).toHaveValue(
+        'Draft while agent edits'
+      )
+    })
+
+    test('keeps a recoverable draft notice when refresh removes the target line', async (): Promise<void> => {
+      const user = userEvent.setup()
+      let currentDiff: FileDiff = inlineFileDiff
+
+      vi.spyOn(useFileDiffModule, 'useFileDiff').mockImplementation(() =>
+        fileDiffMock({
+          diff: currentDiff,
+          loading: false,
+          error: null,
+          oldText: 'old',
+          newText: 'new',
+          rawDiff: '',
+        })
+      )
+
+      const props = {
+        cwd: '/repo',
+        selectedFile: { path: 'src/foo.ts', staged: false, cwd: '/repo' },
+        onSelectedFileChange: vi.fn(),
+      } as const
+
+      const { rerender } = render(<DiffPanelContent {...props} />)
+
+      setPaneWidth(SPLIT_MIN_WIDTH_PX + 100)
+
+      await user.click(
+        within(screen.getByTestId('gutter-utility-slot')).getByRole('button', {
+          name: 'Add comment on this line',
+        })
+      )
+
+      await user.type(
+        within(
+          screen.getByRole('dialog', { name: /Comment on line/ })
+        ).getByPlaceholderText('Request change'),
+        'Draft after disappearing hunk'
+      )
+
+      currentDiff = {
+        ...inlineFileDiff,
+        hunks: [],
+      }
+      rerender(<DiffPanelContent {...props} />)
+
+      expect(
+        screen.queryByRole('dialog', { name: /Comment on line/ })
+      ).not.toBeInTheDocument()
+
+      expect(screen.getByTestId('diff-draft-recovery')).toHaveTextContent(
+        'Draft after disappearing hunk'
+      )
     })
 
     test('onDiscardFeedback (Discard action) clears the batch', async (): Promise<void> => {

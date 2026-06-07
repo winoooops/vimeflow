@@ -65,34 +65,27 @@ describe('useFeedbackBatch', () => {
     expect(first).toBe(second)
   })
 
-  test('add 50 then 51st addAnnotation returns cap-reached and totalAnnotations stays 50', () => {
+  test('batched 51st addAnnotation returns cap-reached and totalAnnotations stays 50', () => {
     const { result } = renderHook(() => useFeedbackBatch())
+    const returnValues: ('ok' | 'cap-reached')[] = []
 
-    // Add 50 annotations across multiple files to hit the cap
+    // Add 51 annotations in one React batch to exercise the stale-closure
+    // window that can otherwise let the soft cap drift past 50.
     act(() => {
-      for (let i = 0; i < 50; i++) {
-        result.current.addAnnotation(
-          '/repo',
-          `file-${i}.ts`,
-          false,
-          makeAnnotation(`id-${i}`, 'x', i + 1)
+      for (let i = 0; i < 51; i++) {
+        returnValues.push(
+          result.current.addAnnotation(
+            '/repo',
+            `file-${i}.ts`,
+            false,
+            makeAnnotation(`id-${i}`, 'x', i + 1)
+          )
         )
       }
     })
 
-    expect(result.current.totalAnnotations()).toBe(50)
-
-    let returnValue: 'ok' | 'cap-reached' = 'ok'
-    act(() => {
-      returnValue = result.current.addAnnotation(
-        '/repo',
-        'extra.ts',
-        false,
-        makeAnnotation('id-extra')
-      )
-    })
-
-    expect(returnValue).toBe('cap-reached')
+    expect(returnValues.slice(0, 50)).toEqual(Array(50).fill('ok'))
+    expect(returnValues[50]).toBe('cap-reached')
     expect(result.current.totalAnnotations()).toBe(50)
   })
 

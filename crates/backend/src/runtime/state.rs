@@ -223,6 +223,13 @@ impl BackendState {
         )
     }
 
+    pub fn set_workspace_sessions(
+        &self,
+        request: crate::terminal::types::SetWorkspaceSessionsRequest,
+    ) -> Result<(), String> {
+        crate::terminal::commands::set_workspace_sessions_inner(&self.sessions, request)
+    }
+
     pub fn list_dir(
         &self,
         request: crate::filesystem::types::ListDirRequest,
