@@ -67,6 +67,7 @@ import {
 } from '../terminal/hooks/usePaneShortcuts'
 import { useDockShortcuts } from './hooks/useDockShortcuts'
 import { useSidebarShortcut } from './hooks/useSidebarShortcut'
+import { useNewSessionShortcut } from './hooks/useNewSessionShortcut'
 import { useSidebarCollapsed } from './hooks/useSidebarCollapsed'
 import { useEditorBuffer } from '../editor/hooks/useEditorBuffer'
 import { useAgentStatus } from '../agent-status/hooks/useAgentStatus'
@@ -902,6 +903,11 @@ export const WorkspaceView = (): ReactElement => {
     onToggle: toggleSidebar,
     modKey: preferModifier === 'meta' ? '⌘' : 'Ctrl',
     activeContainerId,
+  })
+
+  useNewSessionShortcut({
+    onNewSession: handleCreateSession,
+    modKey: preferModifier === 'meta' ? '⌘' : 'Ctrl',
   })
 
   // One elastic size per axis so values survive dock unmounts and position changes.

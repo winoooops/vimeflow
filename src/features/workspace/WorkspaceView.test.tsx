@@ -1038,6 +1038,25 @@ describe('WorkspaceView', () => {
     ).not.toBeInTheDocument()
   })
 
+  test('Ctrl+⇧N creates a new session (keyboard shortcut)', async () => {
+    render(<WorkspaceView />)
+
+    await screen.findByRole('button', { name: 'session 1' })
+
+    act(() => {
+      document.dispatchEvent(
+        new KeyboardEvent('keydown', {
+          key: 'n',
+          ctrlKey: true,
+          shiftKey: true,
+          bubbles: true,
+        })
+      )
+    })
+
+    await screen.findByRole('button', { name: 'session 2' })
+  })
+
   test('opens command palette from the top-bar command button', async () => {
     const user = userEvent.setup()
     render(<WorkspaceView />)
