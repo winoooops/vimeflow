@@ -3,7 +3,7 @@ id: async-race-conditions
 category: react-patterns
 created: 2026-04-09
 last_updated: 2026-06-07
-ref_count: 16
+ref_count: 17
 ---
 
 # Async Race Conditions
@@ -586,3 +586,12 @@ prevent showing previous data.
 - **Fix:** Track the JSON of the snapshot whose failure armed the retry timer in `retryTargetJsonRef`. In the effect's drain kick, compare the pending snapshot's JSON to the retry target: identical payloads keep the backoff (preventing no-op flood during a sidecar outage), while a differing payload cancels the stale timer and drains immediately. In the catch path, when a newer snapshot is already sitting in `pending`, skip scheduling the stale backoff entirely and signal `drainAfterFailure` so the `finally` block drains the newer snapshot as soon as `inFlight` clears.
 - **Code-review heuristic:** "Latest wins" collapse is not enough when there is also a failure-recovery timer. The queue state has two dimensions: (a) which snapshot is newest, and (b) whether the last failure was for the same snapshot. Flood-guard timers should key off the _identity_ of the failed work item, not just a one-bit "timer armed" flag, or genuinely new work gets trapped behind backoff intended for duplicate retries.
 - **Commit:** _(PR #381 upsource cycle 1 fix commit)_
+
+### 58. Concurrent close events can re-close a destroyed BrowserWindow
+
+- **Source:** github-claude | PR #387 round 1 | 2026-06-07
+- **Severity:** MEDIUM
+- **File:** `electron/main.ts` L288-305
+- **Finding:** The `close` event handler leaves `closeFlushed` false until the async `workspaceTeardown.flushOnce()` finishes. A rapid second close event enters a second async IIFE; `flushOnce()` marks its own guard before awaiting, so the second IIFE skips the flush and calls `win.close()`, destroying the window. When the first IIFE's `finally` block later calls `win.close()` again, the window is already destroyed, risking an unhandled rejection or unclean main-process shutdown.
+- **Fix:** Guard the reissued `win.close()` in the `finally` block with `!win.isDestroyed()`. `closeFlushed` is still assigned before the guarded call so subsequent close events correctly no-op.
+- **Commit:** _(PR #387 upsource-review cycle 1 fix commit)_

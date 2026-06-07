@@ -299,7 +299,9 @@ const createWindow = (): void => {
         await workspaceTeardown?.flushOnce()
       } finally {
         closeFlushed = true
-        win.close()
+        if (!win.isDestroyed()) {
+          win.close()
+        }
       }
     })()
   })
