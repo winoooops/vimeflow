@@ -6,9 +6,14 @@ import {
   listenCommandPaletteToggle,
   renameAgentSession,
   type BackendApi,
+  __resetBackendEventSubscriptions,
 } from './backend'
 
 const noop = (): void => undefined
+
+afterEach(() => {
+  __resetBackendEventSubscriptions()
+})
 
 const observeResolution = async (
   promise: Promise<unknown>,
@@ -80,9 +85,12 @@ describe('backend (window.vimeflow bridge)', () => {
       expect.any(Function)
     )
     expect(typeof unlisten).toBe('function')
+
+    unlisten()
   })
 
   test('listen callback receives bare payload', async () => {
+    const rawUnlisten = vi.fn()
     mockListen.mockImplementationOnce(
       (
         _event: string,
@@ -90,18 +98,24 @@ describe('backend (window.vimeflow bridge)', () => {
       ): Promise<() => void> => {
         cb({ sessionId: 's1', data: 'hi' })
 
-        return Promise.resolve(vi.fn())
+        return Promise.resolve(rawUnlisten)
       }
     )
     const cb = vi.fn()
 
-    await listen<{ sessionId: string; data: string }>('pty-data', cb)
+    const unlisten = await listen<{ sessionId: string; data: string }>(
+      'pty-data',
+      cb
+    )
 
     expect(cb).toHaveBeenCalledWith({ sessionId: 's1', data: 'hi' })
+
+    unlisten()
   })
 
   test('listen resolves only after window.vimeflow.listen resolves', async () => {
     let resolveTransport!: (unlisten: () => void) => void
+    const rawUnlisten = vi.fn()
     mockListen.mockReturnValueOnce(
       new Promise<() => void>((resolve) => {
         resolveTransport = resolve
@@ -117,10 +131,98 @@ describe('backend (window.vimeflow bridge)', () => {
 
     await Promise.resolve()
     expect(resolved).toBe(false)
-    resolveTransport(vi.fn())
-    await bridgePromise
+    resolveTransport(rawUnlisten)
+    const unlisten = await bridgePromise
     await resolutionPromise
     expect(resolved).toBe(true)
+
+    unlisten()
+  })
+
+  test('listen shares one bridge listener per backend event', async () => {
+    let bridgeCallback!: (payload: { value: string }) => void
+    const rawUnlisten = vi.fn()
+    mockListen.mockImplementationOnce(
+      (
+        _event: string,
+        cb: (payload: { value: string }) => void
+      ): Promise<() => void> => {
+        bridgeCallback = cb
+
+        return Promise.resolve(rawUnlisten)
+      }
+    )
+    const first = vi.fn()
+    const second = vi.fn()
+
+    const unlistenFirst = await listen<{ value: string }>('shared-event', first)
+
+    const unlistenSecond = await listen<{ value: string }>(
+      'shared-event',
+      second
+    )
+
+    expect(mockListen).toHaveBeenCalledTimes(1)
+
+    bridgeCallback({ value: 'first-payload' })
+    expect(first).toHaveBeenCalledWith({ value: 'first-payload' })
+    expect(second).toHaveBeenCalledWith({ value: 'first-payload' })
+
+    unlistenFirst()
+    bridgeCallback({ value: 'second-payload' })
+    expect(first).toHaveBeenCalledTimes(1)
+    expect(second).toHaveBeenCalledWith({ value: 'second-payload' })
+    expect(rawUnlisten).not.toHaveBeenCalled()
+
+    unlistenSecond()
+    expect(rawUnlisten).toHaveBeenCalledTimes(1)
+  })
+
+  test('listen shares an in-flight bridge attachment for same-event subscribers', async () => {
+    let resolveTransport!: (unlisten: () => void) => void
+    const rawUnlisten = vi.fn()
+    mockListen.mockReturnValueOnce(
+      new Promise<() => void>((resolve) => {
+        resolveTransport = resolve
+      })
+    )
+
+    const firstPromise = listen('pending-event', noop)
+    const secondPromise = listen('pending-event', noop)
+
+    expect(mockListen).toHaveBeenCalledTimes(1)
+
+    resolveTransport(rawUnlisten)
+
+    const [unlistenFirst, unlistenSecond] = await Promise.all([
+      firstPromise,
+      secondPromise,
+    ])
+
+    unlistenFirst()
+    expect(rawUnlisten).not.toHaveBeenCalled()
+
+    unlistenSecond()
+    expect(rawUnlisten).toHaveBeenCalledTimes(1)
+  })
+
+  test('listen retries bridge attachment after rejection instead of reusing failed subscription', async () => {
+    mockListen.mockRejectedValueOnce(new Error('bridge attach failed'))
+
+    await expect(listen('retry-event', noop)).rejects.toThrow(
+      'bridge attach failed'
+    )
+
+    const rawUnlisten = vi.fn()
+    mockListen.mockResolvedValueOnce(rawUnlisten)
+
+    const cb = vi.fn()
+    const unlisten = await listen('retry-event', cb)
+
+    expect(mockListen).toHaveBeenCalledTimes(2)
+    expect(typeof unlisten).toBe('function')
+
+    unlisten()
   })
 
   test('UnlistenFn is idempotent', async () => {
