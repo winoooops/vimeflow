@@ -701,6 +701,16 @@ export const WorkspaceView = (): ReactElement => {
     alignSupported: burnerAlignSupported,
   })
 
+  // Stable wrapper for the `:burner` palette command so the command-list memo
+  // stays put while still invoking the latest toggle, whose identity changes as
+  // the popup opens/closes.
+  const toggleBurnerRef = useRef(toggleBurner)
+  toggleBurnerRef.current = toggleBurner
+
+  const toggleBurnerCommand = useCallback((): void => {
+    void toggleBurnerRef.current()
+  }, [])
+
   // Pane-keys with a live burner shell — drives the status-bar count.
   const runningBurnerPaneKeys = useMemo(
     () =>
@@ -892,6 +902,7 @@ export const WorkspaceView = (): ReactElement => {
         isCurrentPaneRenameRequest,
         setActiveSessionId,
         notifyInfo,
+        toggleBurner: toggleBurnerCommand,
       }),
     // sessionsSignature captures every field the closures read; activity-only
     // changes keep the signature stable so the memo (and downstream
@@ -911,6 +922,7 @@ export const WorkspaceView = (): ReactElement => {
       isCurrentPaneRenameRequest,
       setActiveSessionId,
       notifyInfo,
+      toggleBurnerCommand,
     ]
   )
 
