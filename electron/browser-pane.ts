@@ -1887,23 +1887,16 @@ export class BrowserPaneController {
 
     this.rendererLifecycleHandlers.add(sender.id)
 
-    const cleanup = (): void => {
+    // Dispose records only on genuine teardown (the owner WebContents being
+    // destroyed), NOT on render-process-gone: a renderer reload/crash must leave
+    // the browser views alive so restore can reconnect to them.
+    const handleDestroyed = (): void => {
       sender.removeListener('destroyed', handleDestroyed)
-      sender.removeListener('render-process-gone', handleRenderProcessGone)
       this.rendererLifecycleHandlers.delete(sender.id)
       this.removeRecordsForOwner(sender.id)
     }
 
-    const handleDestroyed = (): void => {
-      cleanup()
-    }
-
-    const handleRenderProcessGone = (): void => {
-      cleanup()
-    }
-
     sender.once('destroyed', handleDestroyed)
-    sender.once('render-process-gone', handleRenderProcessGone)
   }
 
   private removeRecordsForOwner(ownerWebContentsId: number): void {

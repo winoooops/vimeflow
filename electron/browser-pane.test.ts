@@ -580,6 +580,30 @@ describe('BrowserPaneController', () => {
     expect(signals.markStructural).toHaveBeenCalled()
   })
 
+  test('render-process-gone preserves records for reconnect; destroyed disposes', async () => {
+    await handler(BROWSER_PANE_CREATE)(eventForSender(), {
+      sessionId: 'pty-1',
+      paneId: 'p1',
+      workspaceId: 'w',
+      initialUrl: 'https://a.example/',
+    })
+    expect(controller.captureTabsForPane('pty-1', 'p1')).not.toBeNull()
+
+    const onceCalls = vi.mocked(electronMock.sender.once).mock.calls
+    // A renderer crash/reload must NOT tear the pane down (no such listener).
+    expect(onceCalls.map(([event]) => event)).not.toContain(
+      'render-process-gone'
+    )
+
+    // Genuine teardown (owner WebContents destroyed) still disposes the record.
+    const destroyed = onceCalls.find(
+      ([event]) => event === 'destroyed'
+    )?.[1] as (() => void) | undefined
+    expect(destroyed).toBeDefined()
+    destroyed?.()
+    expect(controller.captureTabsForPane('pty-1', 'p1')).toBeNull()
+  })
+
   test('a data: image favicon candidate is stored verbatim', async () => {
     const h = await faviconHarness('https://example.com/')
     h.clearSends()
