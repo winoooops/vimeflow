@@ -672,18 +672,6 @@ export const WorkspaceView = (): ReactElement => {
     [sessions]
   )
 
-  // The align busy-guard relies on foreground-process detection, which the
-  // backend only reports on Unix today. Withhold align where it's unavailable
-  // (Windows) so a cd can't be typed into a running program.
-  const burnerAlignSupported = useMemo(() => {
-    const uad = (
-      navigator as Navigator & { userAgentData?: { platform?: string } }
-    ).userAgentData
-    const detected = (uad?.platform ?? navigator.platform).toLowerCase()
-
-    return !detected.startsWith('win')
-  }, [])
-
   const {
     renderNode: burnerTerminalNode,
     toggle: toggleBurner,
@@ -698,7 +686,6 @@ export const WorkspaceView = (): ReactElement => {
     livePaneKeys,
     dropAllForPty,
     livePaneCwds,
-    alignSupported: burnerAlignSupported,
   })
 
   // Stable wrapper for the `:burner` palette command so the command-list memo

@@ -1014,29 +1014,6 @@ test('no align callback is wired into the popup when livePaneCwds is not provide
   expect(firstPopup(result.current.renderNode).props.onAlignCwd).toBeUndefined()
 })
 
-test('withholds the align button where foreground detection is unreliable', async () => {
-  const service = makeService()
-  const focused = makeFocusedPane('s1', 'p0', '/repo')
-  const livePaneCwds = new Map([['s1:p0', '/repo/moved']])
-
-  const { result } = renderHook(() =>
-    useBurnerTerminals({
-      service,
-      resolveFocusedPane: () => focused,
-      livePaneCwds,
-      alignSupported: false,
-    })
-  )
-
-  await act(async () => {
-    await result.current.toggle({ sessionId: 's1', paneId: 'p0', cwd: '/repo' })
-  })
-
-  // Without reliable foreground detection (e.g. Windows ConPTY) the busy-guard
-  // can't protect the shell, so the align affordance is withheld entirely.
-  expect(firstPopup(result.current.renderNode).props.onAlignCwd).toBeUndefined()
-})
-
 test('the align callback is a no-op while a foreground command is running', async () => {
   const service = makeService()
   const focused = makeFocusedPane('s1', 'p0', '/repo')
