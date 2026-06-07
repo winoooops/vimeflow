@@ -3,7 +3,11 @@ import type { Session } from '../types'
 import type { ITerminalService } from '../../terminal/services/terminalService'
 import type { PtyBufferDrain } from '../../terminal/orchestration/usePtyBufferDrain'
 import { registerPtySession } from '../../terminal/ptySessionMap'
-import { sessionFromInfo } from '../utils/sessionFromInfo'
+import { createLogger } from '../../../lib/log'
+import { groupSessionsFromInfos } from '../utils/groupSessionsFromInfos'
+import { tabName } from '../utils/tabName'
+
+const log = createLogger('restore')
 
 export interface UseSessionRestoreOptions {
   service: ITerminalService
@@ -60,35 +64,143 @@ export const useSessionRestore = ({
           return
         }
 
-        const restored = list.sessions.map((info, index) => {
-          const session = sessionFromInfo(info, index)
-          if (info.status.kind !== 'Alive') {
-            return session
+        log.info(
+          `listSessions returned ${list.sessions.length} PTY session(s)`,
+          {
+            ptySessionIds: list.sessions.map((info) => info.id),
+            activeSessionId: list.activeSessionId,
           }
+        )
 
-          const pane = session.panes[0]
-          if (!pane.restoreData) {
-            return session
-          }
+        // Reconstruct workspace sessions, collapsing grouped PTYs back into
+        // the multi-pane shape they had before the reload. Ungrouped PTYs
+        // (legacy cache entries) keep the single-pane shape via
+        // `groupSessionsFromInfos` -> `sessionFromInfo`.
+        const grouped = groupSessionsFromInfos(list.sessions)
 
-          bufferRef.current.registerPending(info.id)
-          registerPtySession(info.id, info.id, info.cwd)
+        // Reconcile the active pane against `list.activeSessionId`. Two
+        // cache fields can disagree on which pane is active when the
+        // grouping-snapshot push and `set_active_session` IPCs interleave
+        // (or when the snapshot push fails): `set_active_session` lands
+        // immediately, but the grouping snapshot carries the old pane.active
+        // flags. After a reload, `list.activeSessionId` holds the canonical
+        // active PTY while the grouping says otherwise. Trust the backend's
+        // `activeSessionId` as the source of truth for which pane is focused
+        // within the workspace it belongs to.
+        //
+        // Recompute the session-level fields that depend on which pane
+        // is active. `agentType` always follows the new active pane.
+        //
+        // `workingDirectory` / `name` are normally LEFT ALONE — they come
+        // from the persisted workspace baseline (`grouping.workspaceDirectory`),
+        // NOT from any pane's live cwd, so overwriting from the new
+        // active pane would silently reintroduce the OSC 7 drift bug
+        // Codex P2 flagged on PR #290 cycle 7.
+        //
+        // EXCEPTION: a back-compat case from PR #290 cycle 13 (Claude
+        // MEDIUM). For caches written before `workspaceDirectory` existed,
+        // `groupSessionsFromInfos` defaulted `workingDirectory` to
+        // `panes[0].cwd` (the fixup-promoted pane, which may NOT be the
+        // real active pane). In that case the fallback can be wrong, so
+        // we override it here using the cache's canonical active pane —
+        // the closest available approximation of the baseline. We only
+        // do this when NO pane in the workspace recorded a persisted
+        // value, so a real persisted baseline survives untouched.
+        const activePtyId = list.activeSessionId
 
-          return {
-            ...session,
-            panes: [
-              {
-                ...pane,
-                restoreData: {
-                  ...pane.restoreData,
-                  bufferedEvents: bufferRef.current.getBufferedSnapshot(
-                    info.id
-                  ),
-                },
+        // `flatMap` over the grouping (narrowed by the `if`) instead of
+        // `filter().map(...?.workspaceSessionId ?? '')`. The previous
+        // form silently fell back to `''` if the backend ever sent a
+        // PaneGrouping with `workspaceDirectory` set but
+        // `workspaceSessionId` absent — `''` would enter the set, no
+        // session.id would match, and every restored workspace's
+        // baseline would be silently overridden with the active pane's
+        // drifted cwd. The flatMap form keeps TypeScript honest: only
+        // groupings with both fields contribute, and a future schema
+        // regression that drops `workspaceSessionId` would compile-fail
+        // here. Claude review on PR #290 cycle 15 (MEDIUM).
+        const workspacesWithPersistedBaseline = new Set(
+          list.sessions.flatMap((info) =>
+            info.grouping?.workspaceDirectory !== undefined
+              ? [info.grouping.workspaceSessionId]
+              : []
+          )
+        )
+
+        const reconciled = activePtyId
+          ? grouped.map((session, sessionIndex) => {
+              const newActivePane = session.panes.find(
+                (pane) => pane.ptyId === activePtyId
+              )
+              if (!newActivePane) {
+                return session
+              }
+
+              const overrideBaseline = !workspacesWithPersistedBaseline.has(
+                session.id
+              )
+
+              return {
+                ...session,
+                panes: session.panes.map((pane) => ({
+                  ...pane,
+                  active: pane.ptyId === activePtyId,
+                })),
+                agentType: newActivePane.agentType,
+                ...(overrideBaseline
+                  ? {
+                      workingDirectory: newActivePane.cwd,
+                      name: tabName(newActivePane.cwd, sessionIndex),
+                    }
+                  : {}),
+              }
+            })
+          : grouped
+
+        // Register the buffer + ptySessionMap side effects for every Alive
+        // pane, then attach the buffered-events snapshot to each pane's
+        // restoreData. Doing this AFTER reconstruction (instead of inline as
+        // the previous one-pass map did) keeps `groupSessionsFromInfos` pure
+        // and testable, and naturally extends to multi-pane sessions.
+        const restored = reconciled.map((session) => ({
+          ...session,
+          panes: session.panes.map((pane) => {
+            if (!pane.restoreData) {
+              return pane
+            }
+            bufferRef.current.registerPending(pane.ptyId)
+            registerPtySession(pane.ptyId, pane.ptyId, pane.cwd)
+
+            return {
+              ...pane,
+              restoreData: {
+                ...pane.restoreData,
+                bufferedEvents: bufferRef.current.getBufferedSnapshot(
+                  pane.ptyId
+                ),
               },
-            ],
-          } satisfies Session
-        })
+            }
+          }),
+        })) satisfies Session[]
+
+        // Observability for the fragmentation bug: compare PTY count to the
+        // number of reconstructed workspace sessions. While the cache stores
+        // no pane grouping, this is 1:1 (every PTY becomes its own single-pane
+        // session) — which is exactly the symptom. Once grouping is persisted
+        // and reconstructed, a quad session of 4 PTYs collapses back to 1
+        // workspace session and this line shows `4 PTY → 1 workspace`.
+        log.info(
+          `reconstructed ${restored.length} workspace session(s) from ` +
+            `${list.sessions.length} PTY session(s)`,
+          {
+            workspaceSessions: restored.map((session) => ({
+              id: session.id,
+              layout: session.layout,
+              paneCount: session.panes.length,
+              paneIds: session.panes.map((pane) => pane.id),
+            })),
+          }
+        )
 
         onRestoreRef.current(restored)
 
@@ -107,8 +219,7 @@ export const useSessionRestore = ({
 
         setLoading(false)
       } catch (err) {
-        // eslint-disable-next-line no-console
-        console.warn('listSessions failed; starting empty', err)
+        log.error('listSessions failed; starting empty', err)
         // F15 (claude LOW): intentionally do NOT call stopBuffering() here.
         // The pty-data buffering listener stays alive for the lifetime of
         // useSessionManager so createSession (post-restore) still benefits
