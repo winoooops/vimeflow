@@ -893,6 +893,80 @@ describe('usePushWorkspaceGrouping', () => {
     )
   })
 
+  // PR #381: Claude MEDIUM — the broad retry backoff delayed
+  // structurally newer snapshots for up to 5s. The narrowing tracks the
+  // failed snapshot's JSON and bypasses the backoff when a pending
+  // snapshot differs, so a pane/layout change after a transient IPC
+  // failure reaches the cache immediately while identical no-op retries
+  // still respect the 5s flood gate.
+  test('structurally newer snapshot drains immediately after a failed push', async () => {
+    vi.useFakeTimers()
+    try {
+      let rejectFirst: ((err: unknown) => void) | undefined
+
+      const setWorkspaceSessions = vi
+        .fn()
+        .mockImplementationOnce(
+          () =>
+            new Promise<void>((_resolve, reject) => {
+              rejectFirst = reject
+            })
+        )
+        .mockResolvedValue(undefined)
+      const service = { setWorkspaceSessions } as unknown as ITerminalService
+
+      const initial = [
+        session('ws-1', 'single', [
+          pane({ id: 'p0', ptyId: 'pty-a', active: true }),
+        ]),
+      ]
+
+      const updated = [
+        session('ws-1', 'vsplit', [
+          pane({ id: 'p0', ptyId: 'pty-a', active: true }),
+          pane({ id: 'p1', ptyId: 'pty-b', active: false }),
+        ]),
+      ]
+
+      const { rerender } = renderHook(
+        ({ sessions }) =>
+          usePushWorkspaceGrouping({ service, loading: false, sessions }),
+        { initialProps: { sessions: initial as readonly Session[] } }
+      )
+
+      await vi.advanceTimersByTimeAsync(0)
+      expect(setWorkspaceSessions).toHaveBeenCalledTimes(1)
+
+      // Reject the in-flight push and let the catch's microtasks run.
+      rejectFirst?.(new Error('transient'))
+      await vi.advanceTimersByTimeAsync(0)
+
+      // Rerender with a structurally different snapshot while a retry
+      // timer for the failed payload is pending.
+      rerender({ sessions: updated as readonly Session[] })
+      await vi.advanceTimersByTimeAsync(0)
+
+      // The newer snapshot must drain immediately, not sit behind 5s.
+      await vi.waitFor(() =>
+        expect(setWorkspaceSessions).toHaveBeenCalledTimes(2)
+      )
+
+      const secondPayload = setWorkspaceSessions.mock.calls[1]?.[0] as
+        | { sessions: { panes: { ptyId: string }[] }[] }
+        | undefined
+      expect(secondPayload?.sessions[0]?.panes.map((p) => p.ptyId)).toEqual([
+        'pty-a',
+        'pty-b',
+      ])
+
+      // The stale backoff timer should not fire another identical retry.
+      await vi.advanceTimersByTimeAsync(5000)
+      expect(setWorkspaceSessions).toHaveBeenCalledTimes(2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   // PR #290 cycle 16: Claude MEDIUM — repeated dep-change rerenders
   // during a sidecar outage must not bypass the 5s backoff. The cycle-6
   // backoff timer is the only thing keeping us from flooding a down

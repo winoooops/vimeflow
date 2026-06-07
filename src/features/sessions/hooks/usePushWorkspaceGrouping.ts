@@ -131,6 +131,13 @@ export const usePushWorkspaceGrouping = ({
   // cancels the same handle.
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  // JSON of the snapshot whose failure caused the currently-armed retry
+  // timer. Used to distinguish "identical no-op retry" (keep the 5s
+  // backoff) from "structurally newer snapshot arrived" (drain
+  // immediately) so a pane/layout change after a transient IPC error is
+  // not trapped behind the flood gate (Claude MEDIUM on PR #381).
+  const retryTargetJsonRef = useRef<string | null>(null)
+
   // Latest drain function. Codex re-verify caught that the cancel ref
   // alone wasn't enough: the timer callback still invoked the OLD
   // effect's `drain` closure (which captured the OLD `service`), so if
@@ -188,6 +195,8 @@ export const usePushWorkspaceGrouping = ({
       const next = queueRef.current.pending
       queueRef.current.pending = null
       queueRef.current.inFlight = true
+      const failedJson = JSON.stringify(next)
+      let drainAfterFailure = false
       try {
         await service.setWorkspaceSessions(next)
       } catch (err) {
@@ -218,22 +227,46 @@ export const usePushWorkspaceGrouping = ({
         // stay stale until the next reload fragments. `inFlight` is
         // cleared by the `finally` below so the next entry isn't
         // blocked.
+        //
+        // Narrowing: a structurally newer snapshot that arrived during
+        // the failed await should NOT sit behind the 5s backoff — it
+        // drains as soon as `inFlight` clears. Only identical retries
+        // (same JSON as the failed snapshot) get the backoff so a
+        // stream of non-structural rerenders can't flood a down sidecar
+        // (Claude MEDIUM on PR #381).
+        const pendingAfterRestore = queueRef.current.pending
         if (mountedRef.current) {
-          retryTimerRef.current ??= setTimeout(() => {
-            retryTimerRef.current = null
-            if (mountedRef.current && queueRef.current.pending !== null) {
-              // Dispatch through `latestDrainRef`, NOT the local
-              // `drain`, so a service swap between effect runs takes
-              // effect even if this timer was scheduled by an old
-              // closure.
-              void latestDrainRef.current?.()
-            }
-          }, RETRY_BACKOFF_MS)
+          const pendingJson = JSON.stringify(pendingAfterRestore)
+          if (pendingJson === failedJson) {
+            retryTargetJsonRef.current = failedJson
+            retryTimerRef.current ??= setTimeout(() => {
+              retryTimerRef.current = null
+              retryTargetJsonRef.current = null
+              if (mountedRef.current && queueRef.current.pending !== null) {
+                // Dispatch through `latestDrainRef`, NOT the local
+                // `drain`, so a service swap between effect runs takes
+                // effect even if this timer was scheduled by an old
+                // closure.
+                void latestDrainRef.current?.()
+              }
+            }, RETRY_BACKOFF_MS)
+          } else {
+            // Newer structurally-different snapshot is waiting. Drain
+            // it immediately after `finally` clears `inFlight` instead
+            // of making it wait for the stale backoff.
+            retryTargetJsonRef.current = null
+            drainAfterFailure = true
+          }
         }
 
         return
       } finally {
         queueRef.current.inFlight = false
+        if (drainAfterFailure && mountedRef.current) {
+          if (queueRef.current.pending !== null) {
+            void latestDrainRef.current?.()
+          }
+        }
       }
 
       // Successful push — if more arrived during the await, continue via
@@ -296,30 +329,27 @@ export const usePushWorkspaceGrouping = ({
       queueRef.current.pending = snapshot
     }
 
-    // Drive a drain whenever there's something to drain — UNLESS the
-    // catch already scheduled a backoff timer for that pending snapshot.
-    // The previous main-effect cleanup cleared `retryTimerRef` on every
-    // dep change, so a `cd`-flood during a sidecar outage (each OSC 7
-    // update is a non-structural sessions change with the same memoized
-    // JSON) would re-enter here, find `pending` non-null from the
-    // restored failure, and immediately retry — bypassing the 5s
-    // backoff entirely. Cycle 16 moves the timer-clear into the
-    // unmount-only effect AND gates this kick on the timer's presence.
-    //
-    // The gate is intentionally BROAD: when a retry timer is armed, ANY
-    // rerender (no-op OR structural) is held back until the timer fires.
-    // The flood case (OSC 7 no-op reruns) is what motivated the gate,
-    // but structurally-new snapshots that arrive during the 5s window
-    // are also blocked — they're picked up by `latest-wins` on
-    // `queueRef.current.pending` and dispatched when the timer drains.
-    // Letting structural changes through immediately would re-open the
-    // flood window for any case where the inputs happen to mutate
-    // (e.g. an active-pane swap during outage). The sub-5s persistence
-    // delay is the deliberate trade for flood protection. Claude MEDIUM
-    // on PR #290 cycles 16 (gate added) and 17 (comment broadened to
-    // match the actual condition).
-    if (queueRef.current.pending !== null && retryTimerRef.current === null) {
-      void drain()
+    // Drive a drain whenever there's something to drain. If a retry
+    // timer is already armed, compare the pending snapshot's JSON to the
+    // failed snapshot that scheduled the timer: identical means the
+    // timer is protecting against a no-op flood, so keep it; different
+    // means a structurally newer snapshot arrived and should NOT sit
+    // behind the 5s backoff — cancel the stale timer and drain now
+    // (Claude MEDIUM on PR #381).
+    if (queueRef.current.pending !== null) {
+      if (retryTimerRef.current !== null) {
+        const pendingJson = JSON.stringify(queueRef.current.pending)
+        if (pendingJson === retryTargetJsonRef.current) {
+          // Backoff already scheduled for this exact payload; wait.
+        } else {
+          clearTimeout(retryTimerRef.current)
+          retryTimerRef.current = null
+          retryTargetJsonRef.current = null
+          void drain()
+        }
+      } else {
+        void drain()
+      }
     }
 
     // Cycle 16 restructure: NO timer clear in the dep-change cleanup
