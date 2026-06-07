@@ -39,6 +39,10 @@ import {
   commandPaletteToggleDispatcherForWindow,
   isCommandPaletteShortcutInput,
 } from './command-palette-shortcut'
+import type {
+  PersistedTab,
+  WorkspaceLayoutWriteSignals,
+} from './workspace-layout-types'
 
 // cspell:ignore cdp debuggee mediaKeySystem websocket WebContentsView
 interface BrowserPaneBounds {
@@ -848,6 +852,8 @@ const resolveFaviconDataUrl = async (
 export class BrowserPaneController {
   private readonly panes = new Map<string, BrowserPaneRecord>()
 
+  private writeSignals: WorkspaceLayoutWriteSignals | null = null
+
   private readonly cdpAttachments = new Map<string, CdpAttachment>()
 
   private readonly partitionHandlers = new Set<string>()
@@ -913,6 +919,11 @@ export class BrowserPaneController {
     ipcMain.handle(BROWSER_PANE_NAV_ACTION, (_event, payload) =>
       this.handleNavAction(payload)
     )
+  }
+
+  // Connect the workspace-layout writer so tab lifecycle + navigation persist.
+  setWriteSignals(signals: WorkspaceLayoutWriteSignals): void {
+    this.writeSignals = signals
   }
 
   dispose(): void {
@@ -1129,6 +1140,28 @@ export class BrowserPaneController {
       active: tab.id === record.activeTabId,
       favicon: tab.favicon,
     }))
+  }
+
+  // Durable per-tab nav history for a pane, read fresh from navigationHistory;
+  // feeds the workspace-layout assembler (the tabs-changed event stays history-free).
+  captureTabsForPane(sessionId: string, paneId: string): PersistedTab[] | null {
+    const record = this.panes.get(paneKey(sessionId, paneId))
+    if (!record) {
+      return null
+    }
+
+    return [...record.tabs.values()].map((tab) => {
+      const nav = tab.view.webContents.navigationHistory
+
+      return {
+        active: tab.id === record.activeTabId,
+        history: nav.getAllEntries().map((entry) => ({
+          url: entry.url,
+          title: entry.title,
+        })),
+        historyIndex: nav.getActiveIndex(),
+      }
+    })
   }
 
   private emitTabsChanged(
@@ -1392,6 +1425,8 @@ export class BrowserPaneController {
       return
     }
 
+    this.writeSignals?.markVolatile()
+
     const tabs = this.tabSnapshots(record)
     this.emitTabsChanged(record, tabs)
     if (record.activeTabId !== tabId) {
@@ -1607,6 +1642,7 @@ export class BrowserPaneController {
       url: payload.url ?? DEFAULT_BROWSER_URL,
       activate: true,
     })
+    this.writeSignals?.markStructural()
   }
 
   private destroyPane(payload: unknown): void {
@@ -1709,6 +1745,7 @@ export class BrowserPaneController {
     }
 
     this.setActiveTab(record, payload.tabId, true)
+    this.writeSignals?.markStructural()
   }
 
   private closeTab(payload: unknown): void {
@@ -1744,10 +1781,13 @@ export class BrowserPaneController {
         this.setActiveTab(record, nextTabId, true)
       }
 
+      this.writeSignals?.markStructural()
+
       return
     }
 
     this.emitTabsChanged(record)
+    this.writeSignals?.markStructural()
   }
 
   private async cdpInfo(payload: unknown): Promise<BrowserCdpInfo> {

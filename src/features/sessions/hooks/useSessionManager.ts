@@ -1420,17 +1420,33 @@ export const useSessionManager = (
           return
         }
 
+        // Skip the kill when the seed ptyId is already gone (restore placeholder).
+        let oldPtyPresent = true
         try {
-          await service.kill({ sessionId: oldPane.ptyId })
+          const live = await service.listSessions()
+          oldPtyPresent = live.sessions.some(
+            (info) => info.id === oldPane.ptyId
+          )
         } catch (err) {
           log.warn(
-            'restartSession: kill of old ptyId failed; killing new orphan',
+            'restartSession: listSessions failed; assuming old pty present',
             err
           )
-          // eslint-disable-next-line promise/prefer-await-to-then,@typescript-eslint/no-empty-function
-          service.kill({ sessionId: result.sessionId }).catch((): void => {})
+        }
 
-          return
+        if (oldPtyPresent) {
+          try {
+            await service.kill({ sessionId: oldPane.ptyId })
+          } catch (err) {
+            log.warn(
+              'restartSession: kill of old ptyId failed; killing new orphan',
+              err
+            )
+            // eslint-disable-next-line promise/prefer-await-to-then,@typescript-eslint/no-empty-function
+            service.kill({ sessionId: result.sessionId }).catch((): void => {})
+
+            return
+          }
         }
 
         dropAllForPty(oldPane.ptyId)

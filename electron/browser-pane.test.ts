@@ -101,6 +101,8 @@ const electronMock = vi.hoisted(() => {
       canGoForward: () => boolean
       goBack: () => void
       goForward: () => void
+      getAllEntries: () => { url: string; title: string }[]
+      getActiveIndex: () => number
     }
     isLoading: () => boolean
     reload: () => void
@@ -169,6 +171,8 @@ const electronMock = vi.hoisted(() => {
         canGoForward: vi.fn(() => false),
         goBack: vi.fn(),
         goForward: vi.fn(),
+        getAllEntries: vi.fn((): { url: string; title: string }[] => []),
+        getActiveIndex: vi.fn(() => -1),
       },
       isLoading: vi.fn(() => false),
       reload: vi.fn(),
@@ -500,6 +504,80 @@ describe('BrowserPaneController', () => {
       initialUrl: 'https://example.com/',
     })) as { tabs: { favicon: string | null }[] }
     expect(result.tabs[0].favicon).toBe(null)
+  })
+
+  test('captureTabsForPane returns per-tab nav history + active index', async () => {
+    await handler(BROWSER_PANE_CREATE)(eventForSender(), {
+      sessionId: 'pty-1',
+      paneId: 'p1',
+      workspaceId: 'w',
+      initialUrl: 'https://a.example/',
+    })
+
+    const wc = electronMock.views[0].webContents
+    vi.mocked(wc.navigationHistory.getAllEntries).mockReturnValue([
+      { url: 'https://a.example/', title: 'A' },
+      { url: 'https://a.example/sub', title: 'Sub' },
+    ])
+    vi.mocked(wc.navigationHistory.getActiveIndex).mockReturnValue(1)
+
+    expect(controller.captureTabsForPane('pty-1', 'p1')).toEqual([
+      {
+        active: true,
+        historyIndex: 1,
+        history: [
+          { url: 'https://a.example/', title: 'A' },
+          { url: 'https://a.example/sub', title: 'Sub' },
+        ],
+      },
+    ])
+
+    expect(controller.captureTabsForPane('nope', 'p1')).toBeNull()
+  })
+
+  test('write signals: tab lifecycle is structural, navigation is volatile', async () => {
+    const signals = { markStructural: vi.fn(), markVolatile: vi.fn() }
+    controller.setWriteSignals(signals)
+
+    const created = (await handler(BROWSER_PANE_CREATE)(eventForSender(), {
+      sessionId: 'pty-1',
+      paneId: 'p1',
+      workspaceId: 'w',
+      initialUrl: 'https://a.example/',
+    })) as { tabs: { id: string }[] }
+    const firstTabId = created.tabs[0].id
+
+    // In-tab navigation → volatile (debounced).
+    signals.markVolatile.mockClear()
+    callAllListeners(0, 'did-navigate')
+    expect(signals.markVolatile).toHaveBeenCalled()
+
+    // Open a tab → structural (immediate).
+    signals.markStructural.mockClear()
+    await handler(BROWSER_PANE_NEW_TAB)(eventForSender(), {
+      sessionId: 'pty-1',
+      paneId: 'p1',
+      url: 'https://b.example/',
+    })
+    expect(signals.markStructural).toHaveBeenCalled()
+
+    // Switch active tab → structural.
+    signals.markStructural.mockClear()
+    await handler(BROWSER_PANE_ACTIVATE_TAB)(eventForSender(), {
+      sessionId: 'pty-1',
+      paneId: 'p1',
+      tabId: firstTabId,
+    })
+    expect(signals.markStructural).toHaveBeenCalled()
+
+    // Close a tab (two open) → structural.
+    signals.markStructural.mockClear()
+    await handler(BROWSER_PANE_CLOSE_TAB)(eventForSender(), {
+      sessionId: 'pty-1',
+      paneId: 'p1',
+      tabId: firstTabId,
+    })
+    expect(signals.markStructural).toHaveBeenCalled()
   })
 
   test('a data: image favicon candidate is stored verbatim', async () => {
