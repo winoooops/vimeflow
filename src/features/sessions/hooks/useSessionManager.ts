@@ -40,6 +40,7 @@ import { useAutoCreateOnEmpty } from './useAutoCreateOnEmpty'
 import { useActiveSessionController } from './useActiveSessionController'
 import { usePushWorkspaceGrouping } from './usePushWorkspaceGrouping'
 import { useSessionRestore } from './useSessionRestore'
+import { createLogger } from '../../../lib/log'
 
 export type { RestoreData, PaneEventHandler, NotifyPaneReadyResult }
 
@@ -397,6 +398,8 @@ export interface UseSessionManagerOptions {
   autoCreateOnEmpty?: boolean
 }
 
+const log = createLogger('sessions')
+
 export const useSessionManager = (
   service: ITerminalService,
   options: UseSessionManagerOptions = {}
@@ -734,8 +737,7 @@ export const useSessionManager = (
         setActiveSessionId(newSessionId)
         registerPtySession(result.sessionId, result.sessionId, result.cwd)
       } catch (err) {
-        // eslint-disable-next-line no-console
-        console.warn('spawn failed', err)
+        log.warn('spawn failed', err)
       } finally {
         setPendingSpawns((c) => c - 1)
       }
@@ -806,8 +808,7 @@ export const useSessionManager = (
       void (async (): Promise<void> => {
         const target = sessionsRef.current.find((s) => s.id === id)
         if (!target) {
-          // eslint-disable-next-line no-console
-          console.warn(`removeSession: no session with id ${id}`)
+          log.warn(`removeSession: no session with id ${id}`)
 
           return
         }
@@ -829,8 +830,7 @@ export const useSessionManager = (
         )
         if (rejected.length > 0) {
           for (const result of rejected) {
-            // eslint-disable-next-line no-console
-            console.warn('removeSession: kill failed for a pane', result.reason)
+            log.warn('removeSession: kill failed for a pane', result.reason)
           }
 
           // F2 (codex MEDIUM follow-up — step 5b): this all-or-nothing bail
@@ -869,8 +869,7 @@ export const useSessionManager = (
           )
           if (orphanRejected.length > 0) {
             for (const result of orphanRejected) {
-              // eslint-disable-next-line no-console
-              console.warn(
+              log.warn(
                 'removeSession: kill of post-await orphan PTY failed',
                 result.reason
               )
@@ -904,8 +903,7 @@ export const useSessionManager = (
 
         if (browserRejected.length > 0) {
           for (const result of browserRejected) {
-            // eslint-disable-next-line no-console
-            console.warn(
+            log.warn(
               'removeSession: browser pane cleanup failed',
               result.reason
             )
@@ -977,8 +975,7 @@ export const useSessionManager = (
       // (when present) still uses the updater's `prev` for correctness.
       const session = sessionsRef.current.find((s) => s.id === sessionId)
       if (!session) {
-        // eslint-disable-next-line no-console
-        console.warn(`setSessionLayout: no session ${sessionId}`)
+        log.warn(`setSessionLayout: no session ${sessionId}`)
 
         return
       }
@@ -1024,8 +1021,7 @@ export const useSessionManager = (
       // nothing in devtools and can't distinguish the transient
       // suppression from a real bug.
       if (pendingPaneOps.current.has(sessionId)) {
-        // eslint-disable-next-line no-console
-        console.warn(
+        log.warn(
           `setSessionActivePane: pane op in flight for ${sessionId}; ignoring`
         )
 
@@ -1033,15 +1029,13 @@ export const useSessionManager = (
       }
       const session = sessionsRef.current.find((s) => s.id === sessionId)
       if (!session) {
-        // eslint-disable-next-line no-console
-        console.warn(`setSessionActivePane: no session ${sessionId}`)
+        log.warn(`setSessionActivePane: no session ${sessionId}`)
 
         return
       }
       const target = session.panes.find((p) => p.id === paneId)
       if (!target) {
-        // eslint-disable-next-line no-console
-        console.warn(
+        log.warn(
           `setSessionActivePane: no pane ${paneId} in session ${sessionId}`
         )
 
@@ -1062,8 +1056,7 @@ export const useSessionManager = (
       if (sessionId === activeSessionIdRef.current && isShellPane(target)) {
         // eslint-disable-next-line promise/prefer-await-to-then
         service.setActiveSession(target.ptyId).catch((err) => {
-          // eslint-disable-next-line no-console
-          console.warn('setSessionActivePane: setActiveSession failed', err)
+          log.warn('setSessionActivePane: setActiveSession failed', err)
         })
       }
     },
@@ -1073,8 +1066,7 @@ export const useSessionManager = (
   const addPane = useCallback(
     (sessionId: string, kind: PaneKind = 'shell'): void => {
       if (pendingPaneOps.current.has(sessionId)) {
-        // eslint-disable-next-line no-console
-        console.warn(
+        log.warn(
           `addPane: another pane op in flight for ${sessionId}; ignoring`
         )
 
@@ -1083,23 +1075,20 @@ export const useSessionManager = (
 
       const session = sessionsRef.current.find((s) => s.id === sessionId)
       if (!session) {
-        // eslint-disable-next-line no-console
-        console.warn(`addPane: no session ${sessionId}`)
+        log.warn(`addPane: no session ${sessionId}`)
 
         return
       }
 
       const activePane = findActivePane(session)
       if (!activePane) {
-        // eslint-disable-next-line no-console
-        console.warn(`addPane: session ${sessionId} has no active pane`)
+        log.warn(`addPane: session ${sessionId} has no active pane`)
 
         return
       }
 
       if (session.panes.length >= LAYOUTS[session.layout].capacity) {
-        // eslint-disable-next-line no-console
-        console.warn(
+        log.warn(
           `addPane: session ${sessionId} is at capacity for layout ${session.layout}`
         )
 
@@ -1111,8 +1100,7 @@ export const useSessionManager = (
         try {
           const fresh = sessionsRef.current.find((s) => s.id === sessionId)
           if (!fresh) {
-            // eslint-disable-next-line no-console
-            console.warn(`addPane: no session ${sessionId}`)
+            log.warn(`addPane: no session ${sessionId}`)
 
             return
           }
@@ -1141,8 +1129,7 @@ export const useSessionManager = (
           })
 
           if (!appended) {
-            // eslint-disable-next-line no-console
-            console.warn(`addPane: reducer rejected browser pane ${sessionId}`)
+            log.warn(`addPane: reducer rejected browser pane ${sessionId}`)
           }
         } finally {
           pendingPaneOps.current.delete(sessionId)
@@ -1179,8 +1166,7 @@ export const useSessionManager = (
             try {
               await service.kill({ sessionId: result.sessionId })
             } catch (err) {
-              // eslint-disable-next-line no-console
-              console.warn('addPane: failed to kill orphan PTY', err)
+              log.warn('addPane: failed to kill orphan PTY', err)
             }
 
             return
@@ -1226,11 +1212,9 @@ export const useSessionManager = (
             try {
               await service.kill({ sessionId: result.sessionId })
             } catch (err) {
-              // eslint-disable-next-line no-console
-              console.warn('addPane: failed to kill reducer-rejected PTY', err)
+              log.warn('addPane: failed to kill reducer-rejected PTY', err)
             }
-            // eslint-disable-next-line no-console
-            console.warn(
+            log.warn(
               `addPane: reducer rejected commit for ${sessionId}; orphan killed`
             )
 
@@ -1240,15 +1224,13 @@ export const useSessionManager = (
           if (sessionId === activeSessionIdRef.current) {
             // eslint-disable-next-line promise/prefer-await-to-then
             service.setActiveSession(result.sessionId).catch((err) => {
-              // eslint-disable-next-line no-console
-              console.warn('addPane: setActiveSession failed', err)
+              log.warn('addPane: setActiveSession failed', err)
             })
           }
 
           registerPtySession(result.sessionId, result.sessionId, result.cwd)
         } catch (err) {
-          // eslint-disable-next-line no-console
-          console.warn('addPane: spawn failed', err)
+          log.warn('addPane: spawn failed', err)
         } finally {
           setPendingSpawns((count) => count - 1)
           pendingPaneOps.current.delete(sessionId)
@@ -1261,8 +1243,7 @@ export const useSessionManager = (
   const removePane = useCallback(
     (sessionId: string, paneId: string): void => {
       if (pendingPaneOps.current.has(sessionId)) {
-        // eslint-disable-next-line no-console
-        console.warn(
+        log.warn(
           `removePane: another pane op in flight for ${sessionId}; ignoring`
         )
 
@@ -1271,23 +1252,20 @@ export const useSessionManager = (
 
       const session = sessionsRef.current.find((s) => s.id === sessionId)
       if (!session) {
-        // eslint-disable-next-line no-console
-        console.warn(`removePane: no session ${sessionId}`)
+        log.warn(`removePane: no session ${sessionId}`)
 
         return
       }
 
       const target = session.panes.find((pane) => pane.id === paneId)
       if (!target) {
-        // eslint-disable-next-line no-console
-        console.warn(`removePane: no pane ${paneId} in session ${sessionId}`)
+        log.warn(`removePane: no pane ${paneId} in session ${sessionId}`)
 
         return
       }
 
       if (session.panes.length === 1) {
-        // eslint-disable-next-line no-console
-        console.warn(
+        log.warn(
           `removePane: refusing to remove the last pane in ${sessionId}; use removeSession instead`
         )
 
@@ -1298,8 +1276,7 @@ export const useSessionManager = (
         isShellPane(target) &&
         session.panes.filter(isShellPane).length <= 1
       ) {
-        // eslint-disable-next-line no-console
-        console.warn(
+        log.warn(
           `removePane: refusing to remove the last shell pane in ${sessionId}`
         )
 
@@ -1314,8 +1291,7 @@ export const useSessionManager = (
             try {
               await service.kill({ sessionId: target.ptyId })
             } catch (err) {
-              // eslint-disable-next-line no-console
-              console.warn('removePane: kill failed; pane preserved', err)
+              log.warn('removePane: kill failed; pane preserved', err)
 
               return
             }
@@ -1330,8 +1306,7 @@ export const useSessionManager = (
                 paneId,
               })
             } catch (err) {
-              // eslint-disable-next-line no-console
-              console.warn('removePane: browser pane cleanup failed', err)
+              log.warn('removePane: browser pane cleanup failed', err)
 
               return
             }
@@ -1373,8 +1348,7 @@ export const useSessionManager = (
           ) {
             // eslint-disable-next-line promise/prefer-await-to-then
             service.setActiveSession(backendActivePtyId).catch((err) => {
-              // eslint-disable-next-line no-console
-              console.warn('removePane: setActiveSession failed', err)
+              log.warn('removePane: setActiveSession failed', err)
             })
           }
         } finally {
@@ -1424,8 +1398,7 @@ export const useSessionManager = (
       void (async (): Promise<void> => {
         const oldSession = sessionsRef.current.find((s) => s.id === sessionId)
         if (!oldSession) {
-          // eslint-disable-next-line no-console
-          console.warn(`restartSession: no session with id ${sessionId}`)
+          log.warn(`restartSession: no session with id ${sessionId}`)
 
           return
         }
@@ -1439,8 +1412,7 @@ export const useSessionManager = (
           ? activePane
           : oldSession.panes.find(isShellPane)
         if (!oldPane || !isShellPane(oldPane)) {
-          // eslint-disable-next-line no-console
-          console.warn('restartSession: no shell pane found')
+          log.warn('restartSession: no shell pane found')
 
           return
         }
@@ -1454,11 +1426,7 @@ export const useSessionManager = (
             enableAgentBridge: true,
           })
         } catch (err) {
-          // eslint-disable-next-line no-console
-          console.warn(
-            'restartSession: spawn failed; old session preserved',
-            err
-          )
+          log.warn('restartSession: spawn failed; old session preserved', err)
 
           return
         }
@@ -1466,8 +1434,7 @@ export const useSessionManager = (
         try {
           await service.kill({ sessionId: oldPane.ptyId })
         } catch (err) {
-          // eslint-disable-next-line no-console
-          console.warn(
+          log.warn(
             'restartSession: kill of old ptyId failed; killing new orphan',
             err
           )
@@ -1657,8 +1624,7 @@ export const useSessionManager = (
       (s) => findActivePane(s) === undefined
     )
     if (hasInvariantHole) {
-      // eslint-disable-next-line no-console
-      console.warn(
+      log.warn(
         'reorderSessions: skipping — at least one session has no active pane'
       )
 
@@ -1713,8 +1679,7 @@ export const useSessionManager = (
 
       // eslint-disable-next-line promise/prefer-await-to-then
       service.updateSessionCwd(targetPane.ptyId, cwd).catch((err) => {
-        // eslint-disable-next-line no-console
-        console.warn('updatePaneCwd IPC failed', err)
+        log.warn('updatePaneCwd IPC failed', err)
       })
     },
     [service]
@@ -1821,8 +1786,7 @@ export const useSessionManager = (
     }
 
     if (import.meta.env.DEV && import.meta.env.MODE !== 'test') {
-      // eslint-disable-next-line no-console
-      console.warn(
+      log.warn(
         'updateSessionCwd is deprecated; use updatePaneCwd for live PTY cwd sync'
       )
     }

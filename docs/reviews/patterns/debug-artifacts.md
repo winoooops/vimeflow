@@ -2,7 +2,7 @@
 id: debug-artifacts
 category: code-quality
 created: 2026-04-09
-last_updated: 2026-04-12
+last_updated: 2026-06-07
 ref_count: 0
 ---
 
@@ -61,3 +61,13 @@ statements must not ship to production. Gate debug visuals behind
 - **Finding:** A hard-coded yellow `DEBUG TerminalZone: N sessions | active=…` JSX block was rendered conditionally on `import.meta.env.DEV`. ESLint's `no-console` rule does not catch JSX nodes, so this slipped past lint. The strip occupies visible vertical space in dev mode (pushes xterm's viewport down), distracts every developer running `tauri:dev`, and is functionally redundant — the same data is observable via React DevTools or by inspecting `useSessionManager` state.
 - **Fix:** Removed the JSX block entirely. If session-count inspection is still useful during active development, use `console.debug('[TerminalZone]', ...)` behind the same `import.meta.env.DEV` guard — that way ESLint's `no-console` rule can catch strays in future and the rendered layout is unaffected. Code-review heuristic: dev-only debug rendering belongs in DevTools or `console.debug`, never in JSX shipped to the production bundle (even when gated on `DEV`) — the visual cost is paid daily by every developer; the diagnostic value is paid once.
 - **Commit:** _(see git log for the cycle-1 fix commit on PR #190)_
+
+### 6. Rewritten reorderSessions still uses console.warn instead of createLogger
+
+- **Source:** github-claude | PR #381 round 2 | 2026-06-07
+- **Severity:** LOW
+- **File:** `src/features/sessions/hooks/useSessionManager.ts`
+- **Finding:** The rewritten `reorderSessions` warning path used `// eslint-disable-next-line no-console` + `console.warn(...)` — the anti-pattern that `src/lib/log.ts` was introduced to consolidate. This meant the warning did not appear under the `[vimeflow:sessions]` namespace, making it harder to correlate with other session-lifecycle log lines during debugging.
+- **Fix:** Added `const log = createLogger("sessions")` at the top of `useSessionManager.ts` and migrated all ~30 existing `console.warn` calls in the file to `log.warn(...)`, removing the corresponding `eslint-disable-next-line no-console` comments. Updated co-located test expectations to match the new `[vimeflow:sessions]` prefix.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+

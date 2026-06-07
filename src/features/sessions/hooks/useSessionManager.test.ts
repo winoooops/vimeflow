@@ -4137,7 +4137,7 @@ describe('useSessionManager', () => {
 
       expect(result.current.sessions).toBe(before)
       expect(warn).toHaveBeenCalledWith(
-        'setSessionLayout: no session does-not-exist'
+        '[vimeflow:sessions] setSessionLayout: no session does-not-exist'
       )
       warn.mockRestore()
     })
@@ -4186,7 +4186,7 @@ describe('useSessionManager', () => {
       act(() => result.current.setSessionActivePane('no-such-session', 'p0'))
 
       expect(warn).toHaveBeenCalledWith(
-        'setSessionActivePane: no session no-such-session'
+        '[vimeflow:sessions] setSessionActivePane: no session no-such-session'
       )
       warn.mockRestore()
     })
@@ -4213,7 +4213,7 @@ describe('useSessionManager', () => {
 
       expect(result.current.sessions).toBe(before)
       expect(warn).toHaveBeenCalledWith(
-        `setSessionActivePane: no pane ghost-pane in session ${sessionId}`
+        `[vimeflow:sessions] setSessionActivePane: no pane ghost-pane in session ${sessionId}`
       )
       warn.mockRestore()
     })
@@ -4329,7 +4329,7 @@ describe('useSessionManager', () => {
 
       expect(service.spawn).not.toHaveBeenCalled()
       expect(warn).toHaveBeenCalledWith(
-        `addPane: session ${sessionId} is at capacity for layout single`
+        `[vimeflow:sessions] addPane: session ${sessionId} is at capacity for layout single`
       )
       warn.mockRestore()
     })
@@ -4382,7 +4382,7 @@ describe('useSessionManager', () => {
       expect(service.kill).not.toHaveBeenCalled()
       expect(result.current.sessions[0].panes).toHaveLength(1)
       expect(warn).toHaveBeenCalledWith(
-        `removePane: refusing to remove the last pane in ${sessionId}; use removeSession instead`
+        `[vimeflow:sessions] removePane: refusing to remove the last pane in ${sessionId}; use removeSession instead`
       )
       warn.mockRestore()
     })

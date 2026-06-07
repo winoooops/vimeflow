@@ -103,21 +103,6 @@ export const usePushWorkspaceGrouping = ({
   // the second setup leaves the ref stuck at `false` for the whole
   // mounted lifetime, and the retry gate degrades to "never schedule".
   const mountedRef = useRef(true)
-  useEffect(() => {
-    mountedRef.current = true
-
-    return (): void => {
-      mountedRef.current = false
-      // Unmount-only timer clear. The main effect's cleanup deliberately
-      // does NOT clear `retryTimerRef` (cycle 16 restructure): dep-change
-      // cleanups must NOT reset the 5s backoff or a `cd`-flood during a
-      // sidecar outage would retry on every OSC 7 update.
-      if (retryTimerRef.current !== null) {
-        clearTimeout(retryTimerRef.current)
-        retryTimerRef.current = null
-      }
-    }
-  }, [])
 
   // Mount-lifetime ref for the deferred retry timer. Was a per-effect
   // local in cycle 7; Claude reviewer caught the leak (PR #290 cycle 8):
@@ -130,13 +115,6 @@ export const usePushWorkspaceGrouping = ({
   // cleanup — regardless of which effect invocation it belongs to —
   // cancels the same handle.
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  // JSON of the snapshot whose failure caused the currently-armed retry
-  // timer. Used to distinguish "identical no-op retry" (keep the 5s
-  // backoff) from "structurally newer snapshot arrived" (drain
-  // immediately) so a pane/layout change after a transient IPC error is
-  // not trapped behind the flood gate (Claude MEDIUM on PR #381).
-  const retryTargetJsonRef = useRef<string | null>(null)
 
   // Latest drain function. Codex re-verify caught that the cancel ref
   // alone wasn't enough: the timer callback still invoked the OLD
@@ -159,6 +137,29 @@ export const usePushWorkspaceGrouping = ({
   // here: the snapshot is small (workspace + pane scalars only) and the
   // shape is deterministic.
   const lastPushedJsonRef = useRef<string | null>(null)
+
+  useEffect(() => {
+    mountedRef.current = true
+
+    return (): void => {
+      mountedRef.current = false
+      // Unmount-only timer clear. The main effect's cleanup deliberately
+      // does NOT clear `retryTimerRef` (cycle 16 restructure): dep-change
+      // cleanups must NOT reset the 5s backoff or a `cd`-flood during a
+      // sidecar outage would retry on every OSC 7 update.
+      if (retryTimerRef.current !== null) {
+        clearTimeout(retryTimerRef.current)
+        retryTimerRef.current = null
+      }
+    }
+  }, [])
+
+  // JSON of the snapshot whose failure caused the currently-armed retry
+  // timer. Used to distinguish "identical no-op retry" (keep the 5s
+  // backoff) from "structurally newer snapshot arrived" (drain
+  // immediately) so a pane/layout change after a transient IPC error is
+  // not trapped behind the flood gate (Claude MEDIUM on PR #381).
+  const retryTargetJsonRef = useRef<string | null>(null)
 
   // Reset the memoization on a service swap. Without this, a sidecar
   // restart that reconnects with a fresh empty cache would silently skip
