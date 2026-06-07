@@ -188,6 +188,15 @@ describe('Card — active variant', () => {
       screen.queryByRole('button', { name: 'Session actions' })
     ).not.toBeInTheDocument()
   })
+
+  test('kebab reveals on row keyboard focus (group-focus-within)', () => {
+    renderActiveCard(session(), { onRemove: vi.fn() })
+
+    const wrapper = screen.getByRole('button', {
+      name: 'Session actions',
+    }).parentElement
+    expect(wrapper?.className).toContain('group-focus-within:opacity-100')
+  })
 })
 
 describe('Card — recent variant', () => {

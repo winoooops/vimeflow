@@ -189,7 +189,7 @@ export const Card = ({
           and kept mounted so keyboard users can reach it. */}
       {hasActions && (
         <div
-          className={`pointer-events-auto absolute right-2 top-[7px] opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100 ${
+          className={`pointer-events-auto absolute right-2 top-[7px] opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 ${
             menuOpen ? 'opacity-100' : ''
           }`}
           onBlur={(e) => {
