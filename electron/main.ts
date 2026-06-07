@@ -295,9 +295,12 @@ const createWindow = (): void => {
     // alive, then re-issue so teardown proceeds (no prevent/flush loop).
     event.preventDefault()
     void (async (): Promise<void> => {
-      await workspaceTeardown?.flushOnce()
-      closeFlushed = true
-      win.close()
+      try {
+        await workspaceTeardown?.flushOnce()
+      } finally {
+        closeFlushed = true
+        win.close()
+      }
     })()
   })
 
