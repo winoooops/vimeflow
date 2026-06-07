@@ -80,6 +80,9 @@ VISUAL_VERIFICATION.md
 # Vimeflow runtime data (statusline sessions, etc.)
 .vimeflow/
 
+# QA-runner daemon runtime state (regenerated each run)
+scripts/qa-runner/.state/
+
 # Verification screenshots (testing artifacts)
 feedback*.png
 feedbacak*.png
@@ -111,3 +114,6 @@ feedbacak*.png
 !build/
 !build/icon.png
 release/
+
+# local Linear API key (never commit) — see linear.env.example + rules/common/linear-workflow.md
+linear.env

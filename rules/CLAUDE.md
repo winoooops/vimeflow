@@ -40,6 +40,7 @@ Each directory contains files covering the same topics:
 | `worktrees.md`            | Git worktree lifecycle, lock guardrails, cleanup (common only)                                                                                                        |
 | `design-philosophy.md`    | Strategic design, deep modules, complexity budget, and error-prevention principles from _A Philosophy of Software Design_ (common only)                               |
 | `idea-framework.md`       | IDEA (Intent/Danger/Explain/Alternatives) for code-review findings and option comparisons (common only) — **canonical home**; `agents/code-reviewer.md` references it |
+| `linear-workflow.md`      | Linear issue tracking — MCP for agents, GitHub PR auto-status, personal-key API access (common only)                                                                  |
 
 ## Precedence
 

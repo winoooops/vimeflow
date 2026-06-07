@@ -96,7 +96,7 @@ import { WorkspaceView } from './WorkspaceView'
 /**
  * Visual Verification Test Suite for Feature #20
  *
- * Verifies the rendered workspace matches the Stitch mockup from:
+ * Verifies the rendered workspace matches the design mockup at:
  * docs/design/agent_workspace/screen.png
  *
  * This test validates:

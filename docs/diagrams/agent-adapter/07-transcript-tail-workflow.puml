@@ -1,0 +1,59 @@
+@startuml
+title 7. Workflow — tailing a transcript line through the shared engine
+
+skinparam responseMessageBelowArrow true
+
+participant "TranscriptStreamer\n::start_tailing\n(Claude | Codex)" as start
+participant "TranscriptTailService\n::run (loop)" as svc
+participant "<provider>\nTranscriptDecoder" as dec
+participant "process_line\n(typed DTOs, Phase 1)" as pl
+participant "EventSink" as sink
+
+start -> start : open file, build decoder
+start -> svc : new(decoder, label)\n.run(BufReader, stop)
+note right of start
+  start_tailing is now thin: open → build decoder
+  → hand to the service → spawn the thread.
+  Both providers share this; tail_loop is deleted.
+end note
+
+== Replay (initial catch-up) ==
+
+loop until stop is set (Ordering::Acquire)
+  svc -> svc : read_line(&mut buf)
+
+  alt Ok(0) — EOF
+    svc -> dec : on_caught_up()
+    dec -> sink : flush replay snapshot\n(first EOF only)
+    svc -> svc : sleep(POLL_INTERVAL)
+  else Ok(n) — line has no '\n' yet
+    svc -> svc : push to `partial`, continue
+    note right of svc
+      G3 carve-out: a tool_use line split here is
+      buffered, then rejoined when the rest arrives —
+      so it still emits. The old Claude loop dropped it.
+    end note
+  else Ok(n) — complete line
+    svc -> svc : join partial, strip CRLF, skip blank
+    svc -> dec : decode_line(line)
+    dec -> pl : parse line ONCE → typed DTO
+    note right of pl
+      Codex: payload parsed ONCE, shared by the cwd
+      transition AND the dispatch (the delay fix —
+      was 2× per response_item line pre-C).
+    end note
+    pl -> sink : agent-cwd (on cwd change, deduped)
+    pl -> sink : agent-tool-call / agent-turn / test-run
+  else Err(e)
+    svc -> svc : warn → sleep → continue
+  end
+end
+
+== Live tail (after the first EOF) ==
+note over svc, sink
+  Same loop, now past the replay→live boundary:
+  the emitter emits every snapshot live instead of
+  buffering. stop() flips the AtomicBool → loop exits.
+end note
+
+@enduml

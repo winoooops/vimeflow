@@ -1,6 +1,6 @@
 import type { ReactElement } from 'react'
 import { List } from '../../sessions/components/List'
-import type { Session } from '../../sessions/types'
+import type { Session, SessionCloseResult } from '../../sessions/types'
 
 export interface SessionsViewProps {
   hidden?: boolean
@@ -8,7 +8,7 @@ export interface SessionsViewProps {
   activeSessionId: string | null
   onSessionClick: (id: string) => void
   onCreateSession: () => void
-  onRemoveSession: (id: string) => void
+  onRemoveSession: (id: string) => SessionCloseResult
   onRenameSession: (id: string, name: string) => void
   onReorderSessions: (reordered: Session[]) => void
 }

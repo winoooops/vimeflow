@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Session } from '../types'
 import type { ITerminalService } from '../../terminal/services/terminalService'
-import { findActivePane } from '../utils/activeSessionPane'
+import { findBackendSessionPane } from '../utils/findBackendPane'
 
 export interface UseActiveSessionControllerOptions {
   service: ITerminalService
@@ -45,7 +45,7 @@ export const useActiveSessionController = ({
       if (!session) {
         return
       }
-      const pane = findActivePane(session)
+      const pane = findBackendSessionPane(session)
       if (!pane) {
         return
       }

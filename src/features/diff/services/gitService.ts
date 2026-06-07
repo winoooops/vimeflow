@@ -60,6 +60,8 @@ const synthesizeDiffResponse = (fileDiff: FileDiff): GetGitDiffResponse => {
     oldText: linesToText(oldLines),
     newText: linesToText(newLines),
     rawDiff: rawLinesToText(rawDiffLines),
+    // The mock service has no real repository; the toplevel is unknown.
+    repoRoot: '',
   }
 }
 

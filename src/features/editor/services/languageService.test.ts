@@ -56,6 +56,18 @@ describe('languageService', () => {
     expect(ext).not.toBeNull()
   })
 
+  test('maps .md files to markdown', () => {
+    const ext = getLanguageExtension('notes.md')
+
+    expect(ext).not.toBeNull()
+  })
+
+  test('maps .markdown files to markdown', () => {
+    const ext = getLanguageExtension('notes.markdown')
+
+    expect(ext).not.toBeNull()
+  })
+
   test('returns null for unknown extensions', () => {
     const ext = getLanguageExtension('file.unknown')
 

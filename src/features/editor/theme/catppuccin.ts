@@ -32,6 +32,10 @@ const colors = {
   rosewater: '#f5e0dc',
 }
 
+// Editing-surface mono stack; mirrors Tailwind's `mono` token.
+export const EDITOR_MONO_FONT_FAMILY =
+  '"Ioskeley Mono", "JetBrains Mono", ui-monospace, monospace'
+
 /**
  * Editor theme - UI elements
  */
@@ -54,6 +58,7 @@ const theme = EditorView.theme(
     },
     '.cm-scroller': {
       overflow: 'auto',
+      fontFamily: EDITOR_MONO_FONT_FAMILY,
     },
     '.cm-content': {
       caretColor: colors.primary,

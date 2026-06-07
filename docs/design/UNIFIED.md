@@ -57,7 +57,7 @@ The original `DESIGN.md` specified a 4-zone layout. Later Stitch screens added a
 - **No floating brand header.** The brand mark lives at the top of the icon rail only. Rail, not banner.
 - **Session tabs and layout controls are scoped to the main region.** They do NOT span the full header width; the sidebar sits flush against them.
 - **DockPanel is inside the main canvas.** The old `BottomDrawer` component is gone. Editor and Diff mount in `DockPanel`, which can dock bottom / top / left / right and resize elastically. Files remains a sidebar tab in the current app.
-- **No persistent chat pane.** Agent interaction happens in the **Terminal** view. The deprecated `chat_or_main/` directory should not be referenced for new work.
+- **No persistent chat pane.** Agent interaction happens in the **Terminal** view.
 
 ---
 

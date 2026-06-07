@@ -8,25 +8,11 @@ import {
   isCommandPaletteShortcutInput,
 } from './command-palette-shortcut'
 
-// `electron`'s entry point (`node_modules/electron/index.js`) reads
-// `node_modules/electron/path.txt` at top-level evaluation to resolve the
-// runtime binary path. Under Vitest the binary is never used — every
-// surface the test touches goes through dependency-injected fixtures —
-// but the eager read still has to succeed. In CI, electron 42.x's
-// install.js exits before its async `extractFile` writes `path.txt`,
-// leaving the file missing and crashing the module import. Mock the
-// module to a minimal shape that satisfies the imports in
-// `./command-palette-shortcut` without touching the filesystem. Vitest
-// hoists `vi.mock` calls to the top of the file so the mock is in
-// place before the source import is resolved.
 vi.mock('electron', () => ({
   globalShortcut: {
-    register: vi.fn(),
+    register: vi.fn(() => true),
     unregister: vi.fn(),
-    isRegistered: vi.fn(() => false),
-    unregisterAll: vi.fn(),
   },
-  BrowserWindow: class {},
 }))
 
 type ShortcutInput = Parameters<typeof isCommandPaletteShortcutInput>[0]

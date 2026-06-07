@@ -2,15 +2,15 @@
 
 use std::collections::HashMap;
 use std::fs::{self, File};
-use std::io::{self, BufRead, BufReader};
+use std::io::{self, BufReader};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use serde_json::Value;
 
-use crate::agent::adapter::base::TranscriptHandle;
+use crate::agent::adapter::base::{TranscriptDecoder, TranscriptHandle, TranscriptTailService};
 use crate::agent::adapter::claude_code::test_runners::build::{maybe_build_snapshot, BuildArgs};
 use crate::agent::adapter::claude_code::test_runners::emitter::TestRunEmitter;
 use crate::agent::adapter::claude_code::test_runners::matcher::{match_command, MatchedCommand};
@@ -22,8 +22,18 @@ use crate::agent::events::{emit_agent_cwd, emit_agent_tool_call, emit_agent_turn
 use crate::agent::types::{AgentCwdEvent, AgentToolCallEvent, AgentTurnEvent, ToolCallStatus};
 use crate::runtime::EventSink;
 
-const POLL_INTERVAL: Duration = Duration::from_millis(500);
-const MAX_ARGS_LEN: usize = 100;
+use super::transcript_dto::{
+    CodexCustomToolOutputDto, CodexExecArgsDto, CodexLineDto, CodexPayloadDto, CodexPayloadType,
+    CodexRecordType,
+};
+
+// PR #302 (this branch) extracted the per-provider tail loop into the
+// shared `TranscriptTailService` engine; `POLL_INTERVAL` is no longer
+// referenced from this file (the engine owns the poll cadence).
+// PR #303 (merged to main) widened `MAX_ARGS_LEN` from 100 to 1024 so
+// the agent-status activity-detail card can show the full wrapped
+// command/path. Both kept here.
+const MAX_ARGS_LEN: usize = 1024;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum CompletionMode {
@@ -53,16 +63,11 @@ type InFlightToolCalls = HashMap<String, InFlightToolCall>;
 /// would cause false reverts on reasoning-only turns after an
 /// `exec_command.workdir` transition has already moved us to a new
 /// directory. See spec section 1.
-fn extract_session_cwd(value: &Value) -> Option<&str> {
-    let event_type = value.get("type").and_then(Value::as_str)?;
-    if event_type != "session_meta" {
+fn extract_session_cwd(record_type: CodexRecordType, payload: &CodexPayloadDto) -> Option<String> {
+    if !matches!(record_type, CodexRecordType::SessionMeta) {
         return None;
     }
-    value
-        .get("payload")?
-        .get("cwd")
-        .and_then(Value::as_str)
-        .filter(|s| !s.is_empty())
+    payload.cwd.clone().filter(|s| !s.is_empty())
 }
 
 /// Pull the mid-session workdir off a Codex `exec_command` function-call
@@ -73,23 +78,19 @@ fn extract_session_cwd(value: &Value) -> Option<&str> {
 /// `arguments` is a JSON-encoded string per Codex's rollout schema —
 /// it must be parsed before reading `workdir`. Malformed JSON, missing
 /// fields, or empty strings all short-circuit to `None`.
-fn extract_exec_workdir(value: &Value) -> Option<String> {
-    if value.get("type").and_then(Value::as_str)? != "response_item" {
+fn extract_exec_workdir(record_type: CodexRecordType, payload: &CodexPayloadDto) -> Option<String> {
+    if !matches!(record_type, CodexRecordType::ResponseItem) {
         return None;
     }
-    let payload = value.get("payload")?;
-    if payload.get("type").and_then(Value::as_str)? != "function_call" {
+    if payload.payload_type() != CodexPayloadType::FunctionCall {
         return None;
     }
-    if payload.get("name").and_then(Value::as_str)? != "exec_command" {
+    if payload.name.as_deref() != Some("exec_command") {
         return None;
     }
-    let raw = payload.get("arguments").and_then(Value::as_str)?;
-    let args: Value = serde_json::from_str(raw).ok()?;
-    args.get("workdir")
-        .and_then(Value::as_str)
-        .filter(|s| !s.is_empty())
-        .map(|s| s.to_string())
+    let raw = payload.arguments.as_deref()?;
+    let args: CodexExecArgsDto = serde_json::from_str(raw).ok()?;
+    args.workdir.filter(|s| !s.is_empty())
 }
 
 /// Dispatcher returning the observed cwd from whichever source carries
@@ -97,11 +98,11 @@ fn extract_exec_workdir(value: &Value) -> Option<String> {
 /// falls back to the exec_command workdir path. Returns
 /// `Option<String>` because the workdir path must return owned strings
 /// (parsed JSON allocates).
-fn extract_codex_cwd(value: &Value) -> Option<String> {
-    if let Some(cwd) = extract_session_cwd(value) {
-        return Some(cwd.to_string());
+fn extract_codex_cwd(record_type: CodexRecordType, payload: &CodexPayloadDto) -> Option<String> {
+    if let Some(cwd) = extract_session_cwd(record_type, payload) {
+        return Some(cwd);
     }
-    extract_exec_workdir(value)
+    extract_exec_workdir(record_type, payload)
 }
 
 pub(super) fn validate_transcript_path(
@@ -180,78 +181,64 @@ pub(super) fn start_tailing(
     let stop_flag = Arc::new(AtomicBool::new(false));
     let stop_clone = stop_flag.clone();
 
+    let decoder = CodexTranscriptDecoder::new(events, session_id, cwd);
+    let service = TranscriptTailService::new(Box::new(decoder), "Codex rollout transcript");
+
     let join_handle = std::thread::spawn(move || {
-        tail_loop(events, session_id, cwd, file, stop_clone);
+        service.run(BufReader::new(file), stop_clone);
     });
 
     Ok(TranscriptHandle::new(stop_flag, join_handle))
 }
 
-fn tail_loop(
+/// Per-session Codex decoder: owns the in-flight tool-call map (each entry
+/// carrying its `CompletionMode`), turn count, last-seen cwd, and the
+/// replay-aware emitter, and turns each complete rollout line into `agent-*`
+/// events. Driven by [`TranscriptTailService`], which owns the
+/// read/buffer/poll loop (including the partial-line buffering Codex's old
+/// `tail_loop` did inline).
+struct CodexTranscriptDecoder {
     events: Arc<dyn EventSink>,
     session_id: String,
     cwd: Option<PathBuf>,
-    file: File,
-    stop_flag: Arc<AtomicBool>,
-) {
-    let mut reader = BufReader::new(file);
-    let mut line_buf = String::new();
-    let mut partial_line = String::new();
-    let mut in_flight: InFlightToolCalls = HashMap::new();
-    let mut num_turns = 0_u32;
-    let mut last_cwd: Option<String> = None;
-    let mut emitter = TestRunEmitter::new(events.clone());
+    in_flight: InFlightToolCalls,
+    num_turns: u32,
+    last_cwd: Option<String>,
+    emitter: TestRunEmitter,
+}
 
-    while !stop_flag.load(Ordering::Acquire) {
-        line_buf.clear();
-        match reader.read_line(&mut line_buf) {
-            Ok(0) => {
-                emitter.finish_replay();
-                std::thread::sleep(POLL_INTERVAL);
-            }
-            Ok(_) => {
-                if !line_buf.ends_with('\n') {
-                    partial_line.push_str(&line_buf);
-                    continue;
-                }
-
-                if !partial_line.is_empty() {
-                    partial_line.push_str(&line_buf);
-                    process_line(
-                        partial_line.trim_end_matches('\n'),
-                        &session_id,
-                        cwd.as_deref(),
-                        &events,
-                        &mut emitter,
-                        &mut in_flight,
-                        &mut num_turns,
-                        &mut last_cwd,
-                    );
-                    partial_line.clear();
-                    continue;
-                }
-
-                let line = line_buf.trim_end_matches('\n');
-                if line.is_empty() {
-                    continue;
-                }
-
-                process_line(
-                    line,
-                    &session_id,
-                    cwd.as_deref(),
-                    &events,
-                    &mut emitter,
-                    &mut in_flight,
-                    &mut num_turns,
-                    &mut last_cwd,
-                );
-            }
-            Err(e) => {
-                log::warn!("Error reading Codex rollout transcript line: {}", e);
-                std::thread::sleep(POLL_INTERVAL);
-            }
+impl CodexTranscriptDecoder {
+    fn new(events: Arc<dyn EventSink>, session_id: String, cwd: Option<PathBuf>) -> Self {
+        let emitter = TestRunEmitter::new(events.clone());
+        Self {
+            events,
+            session_id,
+            cwd,
+            in_flight: HashMap::new(),
+            num_turns: 0,
+            last_cwd: None,
+            emitter,
         }
+    }
+}
+
+impl TranscriptDecoder for CodexTranscriptDecoder {
+    fn decode_line(&mut self, line: &str) {
+        process_line(
+            line,
+            &self.session_id,
+            self.cwd.as_deref(),
+            &self.events,
+            &mut self.emitter,
+            &mut self.in_flight,
+            &mut self.num_turns,
+            &mut self.last_cwd,
+        );
+    }
+
+    /// First EOF marks the end of replay; subsequent EOFs are idempotent.
+    fn on_caught_up(&mut self) {
+        self.emitter.finish_replay();
     }
 }
 
@@ -265,10 +252,23 @@ fn process_line(
     num_turns: &mut u32,
     last_cwd: &mut Option<String>,
 ) {
-    let value: Value = match serde_json::from_str(line) {
-        Ok(value) => value,
+    let dto: CodexLineDto = match serde_json::from_str(line) {
+        Ok(dto) => dto,
         Err(_) => return,
     };
+    let record_type = dto.record_type();
+
+    // Unknown record types carry nothing we consume — skip the payload parse
+    // entirely (pre-C never parsed the payload for them either).
+    if matches!(record_type, CodexRecordType::Other) {
+        return;
+    }
+
+    // Parse the payload ONCE per line; the cwd transition and the dispatch
+    // share it. Pre-C, response_item lines parsed this twice — extract_exec_
+    // workdir for the cwd, then process_response_item for the dispatch.
+    let payload =
+        serde_json::from_value::<CodexPayloadDto>(dto.payload.clone()).unwrap_or_default();
 
     // Emit agent-cwd on transitions only. Codex's two cwd sources are
     // session_meta.payload.cwd (session start) and
@@ -276,7 +276,7 @@ fn process_line(
     // calls (mid-session). turn_context.cwd is intentionally NOT a
     // source — see spec section 1 and the regression test
     // `process_line_turn_context_after_exec_command_does_not_revert`.
-    if let Some(observed) = extract_codex_cwd(&value) {
+    if let Some(observed) = extract_codex_cwd(record_type, &payload) {
         if last_cwd
             .as_deref()
             .map_or(true, |seen| seen != observed.as_str())
@@ -292,13 +292,13 @@ fn process_line(
         }
     }
 
-    match value.get("type").and_then(Value::as_str) {
-        Some("response_item") => {
-            process_response_item(&value, session_id, cwd, events, in_flight);
+    match record_type {
+        CodexRecordType::ResponseItem => {
+            process_response_item(&dto, &payload, session_id, cwd, events, in_flight);
         }
-        Some("event_msg") => {
+        CodexRecordType::EventMsg => {
             process_event_msg(
-                &value, session_id, cwd, events, emitter, in_flight, num_turns,
+                &dto, &payload, session_id, cwd, events, emitter, in_flight, num_turns,
             );
         }
         _ => {}
@@ -306,26 +306,26 @@ fn process_line(
 }
 
 fn process_response_item(
-    value: &Value,
+    dto: &CodexLineDto,
+    payload: &CodexPayloadDto,
     session_id: &str,
     cwd: Option<&Path>,
     events: &Arc<dyn EventSink>,
     in_flight: &mut InFlightToolCalls,
 ) {
-    let payload = value.get("payload").unwrap_or(&Value::Null);
-    let timestamp = extract_timestamp(value);
+    let timestamp = dto.timestamp.clone().unwrap_or_else(now_iso8601);
 
-    match payload.get("type").and_then(Value::as_str) {
-        Some("function_call") => {
+    match payload.payload_type() {
+        CodexPayloadType::FunctionCall => {
             start_function_call(payload, session_id, cwd, events, in_flight, &timestamp);
         }
-        Some("custom_tool_call") => {
+        CodexPayloadType::CustomToolCall => {
             start_custom_tool_call(payload, session_id, events, in_flight, &timestamp);
         }
-        Some("function_call_output") => {
+        CodexPayloadType::FunctionCallOutput => {
             process_output_completion(payload, session_id, events, in_flight, &timestamp, false);
         }
-        Some("custom_tool_call_output") => {
+        CodexPayloadType::CustomToolCallOutput => {
             process_output_completion(payload, session_id, events, in_flight, &timestamp, true);
         }
         _ => {}
@@ -333,7 +333,8 @@ fn process_response_item(
 }
 
 fn process_event_msg(
-    value: &Value,
+    dto: &CodexLineDto,
+    payload: &CodexPayloadDto,
     session_id: &str,
     cwd: Option<&Path>,
     events: &Arc<dyn EventSink>,
@@ -341,19 +342,18 @@ fn process_event_msg(
     in_flight: &mut InFlightToolCalls,
     num_turns: &mut u32,
 ) {
-    let payload = value.get("payload").unwrap_or(&Value::Null);
-    let timestamp = extract_timestamp(value);
+    let timestamp = dto.timestamp.clone().unwrap_or_else(now_iso8601);
 
-    match payload.get("type").and_then(Value::as_str) {
-        Some("user_message") => {
+    match payload.payload_type() {
+        CodexPayloadType::UserMessage => {
             process_user_message(payload, session_id, events, num_turns);
         }
-        Some("exec_command_end") => {
+        CodexPayloadType::ExecCommandEnd => {
             process_exec_command_end(
                 payload, session_id, cwd, events, emitter, in_flight, &timestamp,
             );
         }
-        Some("patch_apply_end") => {
+        CodexPayloadType::PatchApplyEnd => {
             process_patch_apply_end(payload, session_id, events, in_flight, &timestamp);
         }
         _ => {}
@@ -361,12 +361,12 @@ fn process_event_msg(
 }
 
 fn process_user_message(
-    payload: &Value,
+    payload: &CodexPayloadDto,
     session_id: &str,
     events: &Arc<dyn EventSink>,
     num_turns: &mut u32,
 ) {
-    let Some(message) = payload.get("message").and_then(Value::as_str) else {
+    let Some(message) = payload.message.as_deref() else {
         return;
     };
     if message.trim().is_empty() {
@@ -385,23 +385,19 @@ fn process_user_message(
 }
 
 fn start_function_call(
-    payload: &Value,
+    payload: &CodexPayloadDto,
     session_id: &str,
     cwd: Option<&Path>,
     events: &Arc<dyn EventSink>,
     in_flight: &mut InFlightToolCalls,
     timestamp: &str,
 ) {
-    let Some(call_id) = payload.get("call_id").and_then(Value::as_str) else {
+    let Some(call_id) = payload.call_id.as_deref() else {
         return;
     };
-    let tool = payload
-        .get("name")
-        .and_then(Value::as_str)
-        .unwrap_or("unknown")
-        .to_string();
-    let args = summarize_function_call_args(payload);
-    let cmd = function_call_cmd(payload);
+    let tool = payload.name.as_deref().unwrap_or("unknown").to_string();
+    let args = summarize_function_call_args(payload.arguments.as_deref());
+    let cmd = function_call_cmd(payload.arguments.as_deref());
     let test_match = cmd
         .as_deref()
         .filter(|_| tool == "exec_command")
@@ -440,22 +436,18 @@ fn start_function_call(
 }
 
 fn start_custom_tool_call(
-    payload: &Value,
+    payload: &CodexPayloadDto,
     session_id: &str,
     events: &Arc<dyn EventSink>,
     in_flight: &mut InFlightToolCalls,
     timestamp: &str,
 ) {
-    let Some(call_id) = payload.get("call_id").and_then(Value::as_str) else {
+    let Some(call_id) = payload.call_id.as_deref() else {
         return;
     };
-    let tool = payload
-        .get("name")
-        .and_then(Value::as_str)
-        .unwrap_or("unknown")
-        .to_string();
-    let args = summarize_custom_tool_input(payload);
-    let is_test_file = custom_tool_is_test_file(payload);
+    let tool = payload.name.as_deref().unwrap_or("unknown").to_string();
+    let args = summarize_custom_tool_input(payload.input.as_deref());
+    let is_test_file = custom_tool_is_test_file(payload.input.as_deref());
 
     in_flight.insert(
         call_id.to_string(),
@@ -490,14 +482,14 @@ fn start_custom_tool_call(
 }
 
 fn process_output_completion(
-    payload: &Value,
+    payload: &CodexPayloadDto,
     session_id: &str,
     events: &Arc<dyn EventSink>,
     in_flight: &mut InFlightToolCalls,
     timestamp: &str,
     is_custom_tool_output: bool,
 ) {
-    let Some(call_id) = payload.get("call_id").and_then(Value::as_str) else {
+    let Some(call_id) = payload.call_id.as_deref() else {
         return;
     };
 
@@ -516,7 +508,7 @@ fn process_output_completion(
         None => return,
     };
 
-    let status = if is_custom_tool_output && custom_tool_output_failed(payload) {
+    let status = if is_custom_tool_output && custom_tool_output_failed(payload.output.as_deref()) {
         ToolCallStatus::Failed
     } else {
         ToolCallStatus::Done
@@ -542,7 +534,7 @@ fn process_output_completion(
 }
 
 fn process_exec_command_end(
-    payload: &Value,
+    payload: &CodexPayloadDto,
     session_id: &str,
     cwd: Option<&Path>,
     events: &Arc<dyn EventSink>,
@@ -550,7 +542,7 @@ fn process_exec_command_end(
     in_flight: &mut InFlightToolCalls,
     timestamp: &str,
 ) {
-    let Some(call_id) = payload.get("call_id").and_then(Value::as_str) else {
+    let Some(call_id) = payload.call_id.as_deref() else {
         return;
     };
 
@@ -561,15 +553,8 @@ fn process_exec_command_end(
     if let Some(matched) = call.test_match {
         if let Some(cwd_ref) = cwd {
             let captured = CapturedOutput {
-                content: payload
-                    .get("aggregated_output")
-                    .and_then(Value::as_str)
-                    .unwrap_or("")
-                    .to_string(),
-                is_error: payload
-                    .get("exit_code")
-                    .and_then(Value::as_i64)
-                    .is_some_and(|code| code != 0),
+                content: payload.aggregated_output.as_deref().unwrap_or("").to_string(),
+                is_error: payload.exit_code.is_some_and(|code| code != 0),
             };
             if let Some(snapshot) = maybe_build_snapshot(BuildArgs {
                 session_id,
@@ -590,11 +575,7 @@ fn process_exec_command_end(
         }
     }
 
-    let status = if payload
-        .get("exit_code")
-        .and_then(Value::as_i64)
-        .is_some_and(|code| code != 0)
-    {
+    let status = if payload.exit_code.is_some_and(|code| code != 0) {
         ToolCallStatus::Failed
     } else {
         ToolCallStatus::Done
@@ -618,13 +599,13 @@ fn process_exec_command_end(
 }
 
 fn process_patch_apply_end(
-    payload: &Value,
+    payload: &CodexPayloadDto,
     session_id: &str,
     events: &Arc<dyn EventSink>,
     in_flight: &mut InFlightToolCalls,
     timestamp: &str,
 ) {
-    let Some(call_id) = payload.get("call_id").and_then(Value::as_str) else {
+    let Some(call_id) = payload.call_id.as_deref() else {
         return;
     };
 
@@ -632,11 +613,7 @@ fn process_patch_apply_end(
         return;
     };
 
-    let status = if payload
-        .get("success")
-        .and_then(Value::as_bool)
-        .unwrap_or(false)
-    {
+    let status = if payload.success.unwrap_or(false) {
         ToolCallStatus::Done
     } else {
         ToolCallStatus::Failed
@@ -667,66 +644,38 @@ fn emit_tool_call(events: &Arc<dyn EventSink>, event: AgentToolCallEvent) {
     }
 }
 
-fn extract_timestamp(value: &Value) -> String {
-    value
-        .get("timestamp")
-        .and_then(Value::as_str)
-        .map(str::to_string)
-        .unwrap_or_else(now_iso8601)
+fn function_call_cmd(arguments: Option<&str>) -> Option<String> {
+    let raw = arguments?;
+    let args: CodexExecArgsDto = serde_json::from_str(raw).ok()?;
+    args.cmd.or(args.command)
 }
 
-fn function_call_cmd(payload: &Value) -> Option<String> {
-    let raw = payload.get("arguments").and_then(Value::as_str)?;
-    let args: Value = serde_json::from_str(raw).ok()?;
-    args.get("cmd")
-        .and_then(Value::as_str)
-        .map(str::to_string)
-        .or_else(|| {
-            args.get("command")
-                .and_then(Value::as_str)
-                .map(str::to_string)
-        })
-}
-
-fn summarize_function_call_args(payload: &Value) -> String {
-    if let Some(cmd) = function_call_cmd(payload) {
+fn summarize_function_call_args(arguments: Option<&str>) -> String {
+    if let Some(cmd) = function_call_cmd(arguments) {
         return truncate_string(&cmd, MAX_ARGS_LEN);
     }
 
-    let raw = payload
-        .get("arguments")
-        .and_then(Value::as_str)
-        .unwrap_or_default();
+    let raw = arguments.unwrap_or_default();
 
-    if let Ok(args) = serde_json::from_str::<Value>(raw) {
-        if let Some(path) = args
-            .get("path")
-            .and_then(Value::as_str)
-            .or_else(|| args.get("file_path").and_then(Value::as_str))
-        {
-            return truncate_string(path, MAX_ARGS_LEN);
+    if let Ok(args) = serde_json::from_str::<CodexExecArgsDto>(raw) {
+        if let Some(path) = args.path.or(args.file_path) {
+            return truncate_string(&path, MAX_ARGS_LEN);
         }
     }
 
     truncate_string(raw, MAX_ARGS_LEN)
 }
 
-fn summarize_custom_tool_input(payload: &Value) -> String {
-    let input = payload
-        .get("input")
-        .and_then(Value::as_str)
-        .unwrap_or_default();
+fn summarize_custom_tool_input(input: Option<&str>) -> String {
+    let input = input.unwrap_or_default();
     if let Some(first_path) = extract_patch_paths(input).into_iter().next() {
         return truncate_string(&first_path, MAX_ARGS_LEN);
     }
     truncate_string(input, MAX_ARGS_LEN)
 }
 
-fn custom_tool_is_test_file(payload: &Value) -> bool {
-    let input = payload
-        .get("input")
-        .and_then(Value::as_str)
-        .unwrap_or_default();
+fn custom_tool_is_test_file(input: Option<&str>) -> bool {
+    let input = input.unwrap_or_default();
 
     extract_patch_paths(input)
         .into_iter()
@@ -745,25 +694,21 @@ fn extract_patch_paths(input: &str) -> Vec<String> {
         .collect()
 }
 
-fn custom_tool_output_failed(payload: &Value) -> bool {
-    let raw = payload
-        .get("output")
-        .and_then(Value::as_str)
-        .unwrap_or_default();
-    let parsed: Value = match serde_json::from_str(raw) {
+fn custom_tool_output_failed(output: Option<&str>) -> bool {
+    let raw = output.unwrap_or_default();
+    let parsed: CodexCustomToolOutputDto = match serde_json::from_str(&raw) {
         Ok(parsed) => parsed,
         Err(_) => return false,
     };
 
-    parsed
-        .get("metadata")
-        .and_then(|meta| meta.get("exit_code"))
-        .and_then(Value::as_i64)
-        .is_some_and(|code| code != 0)
+    parsed.metadata.and_then(|m| m.exit_code).is_some_and(|code| code != 0)
 }
 
-fn exec_command_duration_ms(payload: &Value) -> Option<u64> {
-    let duration = payload.get("duration")?;
+fn exec_command_duration_ms(payload: &CodexPayloadDto) -> Option<u64> {
+    if !payload.rest.contains_key("duration") {
+        return None;
+    }
+    let duration = payload.rest.get("duration")?;
     let secs = duration.get("secs").and_then(Value::as_u64).unwrap_or(0);
     let nanos = duration.get("nanos").and_then(Value::as_u64).unwrap_or(0);
     Some(
@@ -974,9 +919,27 @@ mod tests {
         )
         .expect("tailing should start");
 
-        std::thread::sleep(Duration::from_millis(750));
+        // PR #302 cycle 9 — replaced two wall-clock sleeps
+        // (750ms + 100ms) with event-based sync via the existing
+        // `wait_for_count` helper. The sibling test
+        // `rollout_replay_collapses_then_live_test_run_emits` already
+        // uses this pattern; the sleep version was a stale copy from
+        // earlier work, copied before the helper was added. Wait for
+        // each event type the assertions below count so the tail has
+        // demonstrably emitted all of them before we stop and snapshot.
+        assert!(
+            sink.wait_for_count("agent-tool-call", 4, Duration::from_secs(5)),
+            "expected 4 agent-tool-call events within 5s",
+        );
+        assert!(
+            sink.wait_for_count("agent-turn", 1, Duration::from_secs(5)),
+            "expected 1 agent-turn event within 5s",
+        );
+        assert!(
+            sink.wait_for_count("test-run", 1, Duration::from_secs(5)),
+            "expected 1 test-run event within 5s",
+        );
         handle.stop();
-        std::thread::sleep(Duration::from_millis(100));
 
         let recorded = sink.recorded();
         let tool_call_payloads: Vec<Value> = recorded
@@ -1016,33 +979,141 @@ mod tests {
         assert_eq!(test_run_payloads[0]["summary"]["failed"], 0);
     }
 
+    /// Append `\n`-terminated JSONL records to an existing rollout (live-tail tests).
+    fn append_rollout(path: &Path, lines: &[Value]) {
+        use std::io::Write;
+        let mut file = std::fs::OpenOptions::new()
+            .append(true)
+            .open(path)
+            .expect("open rollout for append");
+        for line in lines {
+            let serialized = serde_json::to_string(line).expect("serialize rollout line");
+            writeln!(file, "{serialized}").expect("append rollout line");
+        }
+    }
+
+    /// An `exec_command` `function_call` + its `exec_command_end` (a passing
+    /// `cargo test` run → one `test-run` snapshot), matched by `call_id`.
+    fn exec_test_pair(call_id: &str, ts_start: &str, ts_end: &str) -> [Value; 2] {
+        [
+            json!({
+                "timestamp": ts_start,
+                "type": "response_item",
+                "payload": {
+                    "type": "function_call",
+                    "name": "exec_command",
+                    "arguments": "{\"cmd\":\"cargo test\",\"workdir\":\"/tmp/ws\"}",
+                    "call_id": call_id
+                }
+            }),
+            json!({
+                "timestamp": ts_end,
+                "type": "event_msg",
+                "payload": {
+                    "type": "exec_command_end",
+                    "call_id": call_id,
+                    "command": ["/bin/bash", "-lc", "cargo test"],
+                    "aggregated_output": "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out\n",
+                    "exit_code": 0,
+                    "duration": { "secs": 1, "nanos": 0 },
+                    "status": "completed"
+                }
+            }),
+        ]
+    }
+
+    /// Phase 0 (Task 0.2): pin the replay→live boundary via `test-run` (Codex).
+    ///
+    /// Characterization test — it must PASS against current code. Three
+    /// `exec_command` test-run pairs replay-collapse to one `test-run` at
+    /// `finish_replay`; a fourth pair appended *after* catch-up emits a second,
+    /// live `test-run`. A sentinel `user_message` (→ agent-turn) is the drain
+    /// barrier. We author >=3 pairs (the existing fixture has only one) so the
+    /// collapse is observable: `count(test-run) == 2` uniquely means
+    /// "1 collapsed + 1 live" (an uncollapsed replay would total >=3).
+    #[test]
+    fn rollout_replay_collapses_then_live_test_run_emits() {
+        let sink = Arc::new(FakeEventSink::new());
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let workspace = tmp.path().join("workspace");
+        std::fs::create_dir_all(&workspace).expect("workspace dir");
+        let transcript_path = tmp.path().join("rollout.jsonl");
+
+        let mut records = Vec::new();
+        records.extend(exec_test_pair("call_exec1", "2026-05-04T10:00:00Z", "2026-05-04T10:00:01Z"));
+        records.extend(exec_test_pair("call_exec2", "2026-05-04T10:00:02Z", "2026-05-04T10:00:03Z"));
+        records.extend(exec_test_pair("call_exec3", "2026-05-04T10:00:04Z", "2026-05-04T10:00:05Z"));
+        write_rollout(&transcript_path, &records);
+
+        let handle = start_tailing(
+            sink.clone(),
+            "sid-replay-live".to_string(),
+            transcript_path.clone(),
+            Some(workspace.clone()), // cwd: test-run snapshot is skipped when None
+        )
+        .expect("tailing should start");
+
+        // (a) Catch-up barrier: replay collapses the 3 snapshots to one test-run.
+        assert!(
+            sink.wait_for_count("test-run", 1, Duration::from_secs(5)),
+            "replay should emit one collapsed test-run",
+        );
+
+        // (b) Append a NEW live pair (call_exec4).
+        append_rollout(
+            &transcript_path,
+            &exec_test_pair("call_exec4", "2026-05-04T10:00:06Z", "2026-05-04T10:00:07Z"),
+        );
+
+        // (c) Drain barrier: a sentinel user_message -> agent-turn (baseline-relative).
+        let turns_before = sink.count("agent-turn");
+        append_rollout(
+            &transcript_path,
+            &[json!({
+                "timestamp": "2026-05-04T10:00:08Z",
+                "type": "event_msg",
+                "payload": { "type": "user_message", "message": "sentinel" }
+            })],
+        );
+        assert!(
+            sink.wait_for_count("agent-turn", turns_before + 1, Duration::from_secs(5)),
+            "sentinel agent-turn should drain past the live pair",
+        );
+
+        handle.stop();
+
+        // (d) Exactly two test-runs: 1 replay-collapsed + 1 live.
+        assert_eq!(sink.count("test-run"), 2, "1 replay-collapsed + 1 live");
+    }
+
     #[test]
     fn summarize_function_call_args_prefers_exec_command_cmd() {
-        let payload = json!({
-            "arguments": "{\"cmd\":\"cargo test --workspace --all-features\",\"workdir\":\"/tmp/ws\"}"
-        });
-
         assert_eq!(
-            summarize_function_call_args(&payload),
+            summarize_function_call_args(Some("{\"cmd\":\"cargo test --workspace --all-features\",\"workdir\":\"/tmp/ws\"}")),
             "cargo test --workspace --all-features"
         );
     }
 
     #[test]
     fn custom_tool_output_failed_reads_metadata_exit_code() {
-        let payload = json!({
-            "output": "{\"output\":\"nope\",\"metadata\":{\"exit_code\":1}}"
-        });
-
-        assert!(custom_tool_output_failed(&payload));
+        assert!(custom_tool_output_failed(Some("{\"output\":\"nope\",\"metadata\":{\"exit_code\":1}}")));
     }
 
     // ---- extract_session_cwd unit tests (v2: session_meta ONLY) ----
 
+    /// Parse a rollout line into the payload the cwd extractors now take —
+    /// mirrors the single parse `process_line` does before calling them.
+    fn payload_of(dto: &CodexLineDto) -> CodexPayloadDto {
+        serde_json::from_value::<CodexPayloadDto>(dto.payload.clone()).unwrap_or_default()
+    }
+
     #[test]
     fn extract_session_cwd_session_meta_returns_cwd() {
-        let v = json!({"type": "session_meta", "payload": {"cwd": "/workspace/A"}});
-        assert_eq!(extract_session_cwd(&v), Some("/workspace/A"));
+        let dto: CodexLineDto = serde_json::from_str(r#"{"type":"session_meta","payload":{"cwd":"/workspace/A"}}"#).unwrap();
+        assert_eq!(
+            extract_session_cwd(dto.record_type(), &payload_of(&dto)),
+            Some("/workspace/A".to_string())
+        );
     }
 
     #[test]
@@ -1051,103 +1122,63 @@ mod tests {
         // Codex's turn_context.cwd is pinned to session-start and treating
         // it as live would cause false reverts after exec_command transitions.
         // This test is a defensive guard against re-introduction.
-        let v = json!({"type": "turn_context", "payload": {"cwd": "/workspace/A"}});
-        assert_eq!(extract_session_cwd(&v), None);
+        let dto: CodexLineDto = serde_json::from_str(r#"{"type":"turn_context","payload":{"cwd":"/workspace/A"}}"#).unwrap();
+        assert_eq!(extract_session_cwd(dto.record_type(), &payload_of(&dto)), None);
     }
 
     #[test]
     fn extract_session_cwd_other_type_returns_none() {
-        let v = json!({"type": "event_msg", "payload": {"cwd": "/workspace/A"}});
-        assert_eq!(extract_session_cwd(&v), None);
+        let dto: CodexLineDto = serde_json::from_str(r#"{"type":"event_msg","payload":{"cwd":"/workspace/A"}}"#).unwrap();
+        assert_eq!(extract_session_cwd(dto.record_type(), &payload_of(&dto)), None);
     }
 
     #[test]
     fn extract_session_cwd_empty_string_returns_none() {
-        let v = json!({"type": "session_meta", "payload": {"cwd": ""}});
-        assert_eq!(extract_session_cwd(&v), None);
+        let dto: CodexLineDto = serde_json::from_str(r#"{"type":"session_meta","payload":{"cwd":""}}"#).unwrap();
+        assert_eq!(extract_session_cwd(dto.record_type(), &payload_of(&dto)), None);
     }
 
     // ---- extract_exec_workdir unit tests (the mid-session signal) ----
 
     #[test]
     fn extract_exec_workdir_happy_path() {
-        let v = json!({
-            "type": "response_item",
-            "payload": {
-                "type": "function_call",
-                "name": "exec_command",
-                "call_id": "c1",
-                "arguments": "{\"cmd\":\"ls\",\"workdir\":\"/workspace/B\"}"
-            }
-        });
-        assert_eq!(extract_exec_workdir(&v).as_deref(), Some("/workspace/B"));
+        let dto: CodexLineDto = serde_json::from_str(r#"{"type":"response_item","payload":{"type":"function_call","name":"exec_command","call_id":"c1","arguments":"{\"cmd\":\"ls\",\"workdir\":\"/workspace/B\"}"}}"#).unwrap();
+        assert_eq!(
+            extract_exec_workdir(dto.record_type(), &payload_of(&dto)).as_deref(),
+            Some("/workspace/B")
+        );
     }
 
     #[test]
     fn extract_exec_workdir_other_event_type_returns_none() {
         // event_msg carrying a function_call-shaped payload should still
         // be rejected — the outer event type gate is response_item.
-        let v = json!({
-            "type": "event_msg",
-            "payload": {
-                "type": "function_call",
-                "name": "exec_command",
-                "arguments": "{\"workdir\":\"/x\"}"
-            }
-        });
-        assert_eq!(extract_exec_workdir(&v), None);
+        let dto: CodexLineDto = serde_json::from_str(r#"{"type":"event_msg","payload":{"type":"function_call","name":"exec_command","arguments":"{\"workdir\":\"/x\"}"}}"#).unwrap();
+        assert_eq!(extract_exec_workdir(dto.record_type(), &payload_of(&dto)), None);
     }
 
     #[test]
     fn extract_exec_workdir_non_function_call_returns_none() {
-        let v = json!({
-            "type": "response_item",
-            "payload": {
-                "type": "custom_tool_call",
-                "name": "exec_command",
-                "input": "{\"workdir\":\"/x\"}"
-            }
-        });
-        assert_eq!(extract_exec_workdir(&v), None);
+        let dto: CodexLineDto = serde_json::from_str(r#"{"type":"response_item","payload":{"type":"custom_tool_call","name":"exec_command","input":"{\"workdir\":\"/x\"}"}}"#).unwrap();
+        assert_eq!(extract_exec_workdir(dto.record_type(), &payload_of(&dto)), None);
     }
 
     #[test]
     fn extract_exec_workdir_non_exec_command_returns_none() {
-        let v = json!({
-            "type": "response_item",
-            "payload": {
-                "type": "function_call",
-                "name": "read_file",
-                "arguments": "{\"path\":\"/x\"}"
-            }
-        });
-        assert_eq!(extract_exec_workdir(&v), None);
+        let dto: CodexLineDto = serde_json::from_str(r#"{"type":"response_item","payload":{"type":"function_call","name":"read_file","arguments":"{\"path\":\"/x\"}"}}"#).unwrap();
+        assert_eq!(extract_exec_workdir(dto.record_type(), &payload_of(&dto)), None);
     }
 
     #[test]
     fn extract_exec_workdir_malformed_arguments_json_returns_none() {
-        let v = json!({
-            "type": "response_item",
-            "payload": {
-                "type": "function_call",
-                "name": "exec_command",
-                "arguments": "{not json"
-            }
-        });
-        assert_eq!(extract_exec_workdir(&v), None);
+        let dto: CodexLineDto = serde_json::from_str(r#"{"type":"response_item","payload":{"type":"function_call","name":"exec_command","arguments":"{not json"}}"#).unwrap();
+        assert_eq!(extract_exec_workdir(dto.record_type(), &payload_of(&dto)), None);
     }
 
     #[test]
     fn extract_exec_workdir_missing_workdir_field_returns_none() {
-        let v = json!({
-            "type": "response_item",
-            "payload": {
-                "type": "function_call",
-                "name": "exec_command",
-                "arguments": "{\"cmd\":\"ls\"}"
-            }
-        });
-        assert_eq!(extract_exec_workdir(&v), None);
+        let dto: CodexLineDto = serde_json::from_str(r#"{"type":"response_item","payload":{"type":"function_call","name":"exec_command","arguments":"{\"cmd\":\"ls\"}"}}"#).unwrap();
+        assert_eq!(extract_exec_workdir(dto.record_type(), &payload_of(&dto)), None);
     }
 
     // ---- process_line transition-semantics tests ----
@@ -1312,6 +1343,84 @@ mod tests {
         assert_eq!(last_cwd.as_deref(), Some("/workspace/B"));
     }
 
+    // ---- DTO-migration regression tests (Task 1.6) ----
+
+    #[test]
+    fn process_line_wrong_typed_exit_code_emits_done() {
+        let sink = Arc::new(FakeEventSink::new());
+        let events: Arc<dyn EventSink> = sink.clone();
+        let mut emitter = TestRunEmitter::new(events.clone());
+        let mut in_flight = empty_in_flight();
+        let mut num_turns = 0u32;
+        let mut last_cwd: Option<String> = None;
+
+        let start = r#"{"timestamp":"2026-05-22T10:00:00Z","type":"response_item","payload":{"type":"function_call","name":"exec_command","call_id":"c1","arguments":"{\"cmd\":\"ls\"}"}}"#;
+        process_line(start, "sid", None, &events, &mut emitter, &mut in_flight, &mut num_turns, &mut last_cwd);
+
+        let end = r#"{"timestamp":"2026-05-22T10:00:01Z","type":"event_msg","payload":{"type":"exec_command_end","call_id":"c1","exit_code":"bad","aggregated_output":"ok"}}"#;
+        process_line(end, "sid", None, &events, &mut emitter, &mut in_flight, &mut num_turns, &mut last_cwd);
+
+        let tool_calls: Vec<_> = sink.recorded().into_iter().filter(|(n, _)| n == "agent-tool-call").collect();
+        assert_eq!(tool_calls.len(), 2);
+        assert_eq!(tool_calls[1].1["status"], "done");
+    }
+
+    #[test]
+    fn process_line_wrong_typed_success_emits_failed() {
+        let sink = Arc::new(FakeEventSink::new());
+        let events: Arc<dyn EventSink> = sink.clone();
+        let mut emitter = TestRunEmitter::new(events.clone());
+        let mut in_flight = empty_in_flight();
+        let mut num_turns = 0u32;
+        let mut last_cwd: Option<String> = None;
+
+        let start = r#"{"timestamp":"2026-05-22T10:00:00Z","type":"response_item","payload":{"type":"custom_tool_call","name":"apply_patch","call_id":"c1","input":"*** Begin Patch\n*** Update File: foo.ts\n*** End Patch"}}"#;
+        process_line(start, "sid", None, &events, &mut emitter, &mut in_flight, &mut num_turns, &mut last_cwd);
+
+        let end = r#"{"timestamp":"2026-05-22T10:00:01Z","type":"event_msg","payload":{"type":"patch_apply_end","call_id":"c1","success":"bad"}}"#;
+        process_line(end, "sid", None, &events, &mut emitter, &mut in_flight, &mut num_turns, &mut last_cwd);
+
+        let tool_calls: Vec<_> = sink.recorded().into_iter().filter(|(n, _)| n == "agent-tool-call").collect();
+        assert_eq!(tool_calls.len(), 2);
+        assert_eq!(tool_calls[1].1["status"], "failed");
+    }
+
+    #[test]
+    fn process_line_duration_null_yields_zero_duration() {
+        let sink = Arc::new(FakeEventSink::new());
+        let events: Arc<dyn EventSink> = sink.clone();
+        let mut emitter = TestRunEmitter::new(events.clone());
+        let mut in_flight = empty_in_flight();
+        let mut num_turns = 0u32;
+        let mut last_cwd: Option<String> = None;
+
+        let start = r#"{"timestamp":"2026-05-22T10:00:00Z","type":"response_item","payload":{"type":"function_call","name":"exec_command","call_id":"c1","arguments":"{\"cmd\":\"ls\"}"}}"#;
+        process_line(start, "sid", None, &events, &mut emitter, &mut in_flight, &mut num_turns, &mut last_cwd);
+
+        let end = r#"{"timestamp":"2026-05-22T10:00:01Z","type":"event_msg","payload":{"type":"exec_command_end","call_id":"c1","exit_code":0,"duration":null}}"#;
+        process_line(end, "sid", None, &events, &mut emitter, &mut in_flight, &mut num_turns, &mut last_cwd);
+
+        let tool_calls: Vec<_> = sink.recorded().into_iter().filter(|(n, _)| n == "agent-tool-call").collect();
+        assert_eq!(tool_calls.len(), 2);
+        assert_eq!(tool_calls[1].1["durationMs"], 0);
+    }
+
+    #[test]
+    fn process_line_non_string_timestamp_emits_not_drops() {
+        let sink = Arc::new(FakeEventSink::new());
+        let events: Arc<dyn EventSink> = sink.clone();
+        let mut emitter = TestRunEmitter::new(events.clone());
+        let mut in_flight = empty_in_flight();
+        let mut num_turns = 0u32;
+        let mut last_cwd: Option<String> = None;
+
+        let line = r#"{"timestamp":42,"type":"event_msg","payload":{"type":"user_message","message":"hello"}}"#;
+        process_line(line, "sid", None, &events, &mut emitter, &mut in_flight, &mut num_turns, &mut last_cwd);
+
+        let turns: Vec<_> = sink.recorded().into_iter().filter(|(n, _)| n == "agent-turn").collect();
+        assert_eq!(turns.len(), 1);
+    }
+
     // ---- end-to-end watcher test (with v2 regression guard inline) ----
 
     #[test]
@@ -1345,9 +1454,13 @@ mod tests {
         let handle = start_tailing(sink.clone(), "sid-cwd".to_string(), transcript_path, None)
             .expect("start tailing");
 
-        std::thread::sleep(Duration::from_millis(750));
+        // PR #302 cycle 9 — replaced wall-clock sleeps with
+        // event-based sync (see the sibling-test fix above).
+        assert!(
+            sink.wait_for_count("agent-cwd", 3, Duration::from_secs(5)),
+            "expected 3 agent-cwd events within 5s",
+        );
         handle.stop();
-        std::thread::sleep(Duration::from_millis(100));
 
         let cwd_events: Vec<Value> = sink
             .recorded()

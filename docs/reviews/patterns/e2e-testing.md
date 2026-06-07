@@ -3,7 +3,7 @@ id: e2e-testing
 category: e2e-testing
 created: 2026-04-19
 last_updated: 2026-05-20
-ref_count: 6
+ref_count: 7
 ---
 
 # E2E Testing
@@ -209,3 +209,12 @@ completely different root causes. The generic fast-failure modes:
 - **Finding:** Even after narrowing the detection to Linux hosts without display variables, `electron:dev` still inferred `--no-sandbox` automatically on headless Linux. That made every CI/container/dev-shell run in that state silently drop Chromium's renderer sandbox with no visible opt-in.
 - **Fix:** Removed runtime auto-detection from the Vite startup path. `electron:dev` now passes `--no-sandbox` only when `VIMEFLOW_NO_SANDBOX=1` is explicitly set, keeping normal dev and CI sandboxed by default while preserving a documented escape hatch for Linux hosts that cannot launch Chromium's sandbox.
 - **Commit:** _(see git log for the PR #214 explicit sandbox opt-in review-fix commit)_
+
+### 19. E2E input guard passes vacuously when `E2E_ROOT` contains no `.ts` files
+
+- **Source:** github-claude | PR #374 cycle 1 | 2026-06-06
+- **Severity:** MEDIUM
+- **File:** `src/test/e2eInputGuard.test.ts`
+- **Finding:** After computing `filePaths` from `listTypeScriptFiles(E2E_ROOT)`, the test immediately evaluates `expect(findings).toEqual([])`. If `tests/e2e` is empty, or if all e2e files are temporarily moved or renamed (e.g., during a directory restructure), `filePaths` is `[]`, `findings` is `[]`, and the assertion trivially passes — the guard silently grants a clean bill of health without having scanned a single file. The guard's stated purpose (preventing `browser.keys(...)` usage in e2e tests) evaporates silently.
+- **Fix:** Added `expect(filePaths.length).toBeGreaterThan(0)` immediately after computing `filePaths`, requiring the guard to scan at least one e2e TypeScript file before checking findings. This distinguishes "no violations found" from "no files scanned".
+- **Commit:** _(this cycle)_

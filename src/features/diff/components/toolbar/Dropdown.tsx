@@ -24,6 +24,10 @@ interface DropdownProps<T extends string | number> {
   options: readonly DropdownOption<T>[]
   onChange: (next: T) => void
   width?: number
+  // Optional leading material-symbol ligature rendered before the value label
+  // on the trigger (e.g. `palette` for the theme dropdown). Tinted with the
+  // `primary-dim` accent. Omit for a caret-only trigger.
+  leadingIcon?: string
 }
 
 // Floating-UI portal-rendered popover so the menu escapes Pierre's diff
@@ -35,6 +39,7 @@ export const Dropdown = <T extends string | number>({
   options,
   onChange,
   width = 200,
+  leadingIcon = undefined,
 }: DropdownProps<T>): ReactElement => {
   const [open, setOpen] = useState(false)
   const current = options.find((option) => option.value === value)
@@ -104,6 +109,14 @@ export const Dropdown = <T extends string | number>({
           onClick: (): void => handleOpenChange(!open),
         })}
       >
+        {leadingIcon !== undefined ? (
+          <span
+            aria-hidden="true"
+            className="material-symbols-outlined text-[15px] leading-none text-primary-dim shrink-0"
+          >
+            {leadingIcon}
+          </span>
+        ) : null}
         <span className="truncate max-w-[7rem]">
           {current?.label ?? String(value)}
         </span>

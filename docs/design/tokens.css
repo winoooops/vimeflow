@@ -20,6 +20,8 @@
   --surface-container-highest: #333344;
   --surface-bright: #383849;
   --surface-tint: #e2c7ff;
+  --browser-bar: #121226;
+  --browser-tab-active: #23233b;
 
   /* ── Primary (lavender) ── */
   --primary: #e2c7ff;

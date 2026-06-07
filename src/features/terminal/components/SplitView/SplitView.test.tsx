@@ -498,7 +498,13 @@ describe('SplitView - under-capacity', () => {
 
     expect(screen.getAllByTestId('split-view-slot')).toHaveLength(1)
     expect(screen.getAllByTestId('split-view-empty-slot')).toHaveLength(1)
-    expect(screen.getByRole('button', { name: 'add pane' })).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: 'add shell pane' })
+    ).toBeInTheDocument()
+
+    expect(
+      screen.getByRole('button', { name: 'add browser pane' })
+    ).toBeInTheDocument()
   })
 
   test('quad with 2 panes renders two empty slots when add handler exists', () => {
@@ -532,7 +538,7 @@ describe('SplitView - under-capacity', () => {
     ).not.toBeInTheDocument()
 
     expect(
-      screen.queryByRole('button', { name: 'add pane' })
+      screen.queryByRole('button', { name: 'add shell pane' })
     ).not.toBeInTheDocument()
   })
 
@@ -549,10 +555,10 @@ describe('SplitView - under-capacity', () => {
       />
     )
 
-    await user.click(screen.getByRole('button', { name: 'add pane' }))
+    await user.click(screen.getByRole('button', { name: 'add shell pane' }))
 
     expect(onAddPane).toHaveBeenCalledOnce()
-    expect(onAddPane).toHaveBeenCalledWith('sess-fix')
+    expect(onAddPane).toHaveBeenCalledWith('sess-fix', 'shell')
   })
 })
 

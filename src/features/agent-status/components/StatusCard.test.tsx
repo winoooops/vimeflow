@@ -110,6 +110,24 @@ describe('StatusCard', () => {
     render(<StatusCard {...defaultProps} />)
 
     expect(screen.getByTestId('agent-status-card')).toBeInTheDocument()
+    expect(screen.getByTestId('agent-status-card')).toHaveAttribute(
+      'data-agent-state',
+      'active'
+    )
+  })
+
+  test('renders idle content inside the status card shell', () => {
+    render(<StatusCard mode="idle" title="my session" />)
+
+    expect(screen.getByTestId('agent-status-card')).toHaveClass('min-h-44')
+    expect(screen.getByTestId('agent-status-card')).toHaveAttribute(
+      'data-agent-state',
+      'idle'
+    )
+    expect(screen.getByText('my session')).toBeInTheDocument()
+    expect(screen.getByText('Idle')).toBeInTheDocument()
+    expect(screen.getByTestId('status-dot')).toHaveClass('bg-on-surface/30')
+    expect(screen.queryByText('Tokens In')).not.toBeInTheDocument()
   })
 
   test('keeps card height and agent names stable across claude and codex', () => {

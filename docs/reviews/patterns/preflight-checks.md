@@ -2,7 +2,7 @@
 id: preflight-checks
 category: error-handling
 created: 2026-04-20
-last_updated: 2026-04-20
+last_updated: 2026-05-31
 ref_count: 0
 ---
 
@@ -30,3 +30,21 @@ When adding / removing / refactoring preflight checks:
 1. **What did the removed check catch?** If it caught "the harness can't work without X", you need a replacement check for the new "X" under the new architecture — not just silently deletion.
 2. **Check entry points, not call sites.** `shutil.which("tool")`, env var presence, auth token files — verify at `main()` / `preflight_checks()`, not on first use inside a subprocess.
 3. **Offer the escape hatch in the error message.** "Install X" is fine, but "or pass `--client sdk` to use the legacy backend" closes the decision loop for the user who wants to move forward without installing.
+
+### 2. Expensive paginated APIs called before cheap early-exit checks
+
+- **Source:** github-claude | PR #320 round 1 | 2026-05-31
+- **Severity:** MEDIUM
+- **File:** `scripts/qa-runner/watch.mjs`
+- **Finding:** `computeState()\'s` two most expensive calls — `unresolvedThreads()` (paginated GraphQL) and `claudeVerdictClean()` (paginated REST) — ran before the CI fail / Claude pending early-exits, wasting API quota on PRs that would exit cheaply.
+- **Fix:** Deferred both expensive calls until inside the `else` branch after all cheap guard checks pass.
+- **Commit:** same commit as this entry
+
+### 3. Require a positive-pass gate instead of enumerating blocked states
+
+- **Source:** github-codex-connector | PR #320 round 1 | 2026-05-31
+- **Severity:** P1 / HIGH
+- **File:** `scripts/qa-runner/watch.mjs`
+- **Finding:** `computeState()` enumerated negative states (missing, pending, fail) to block on Claude check status, but `skipping` and `cancel` buckets bypassed the gate. An old clean Claude comment could still let the PR reach `GOOD_SHAPE` and auto-merge without a fresh review.
+- **Fix:** Replaced negative-state enumeration with a single positive gate `claudeReady = claudeCheck?.bucket === 'pass'`; block on `!claudeReady` so any non-pass state (including skipped/cancelled) waits.
+- **Commit:** same commit as this entry

@@ -45,7 +45,9 @@ describe('Agent detection (fake-claude)', function () {
     await pressEnterInActiveTerminal()
 
     // Detector polls /proc every ~2s for argv[0]="claude".
-    const statusCard = await $('[data-testid="agent-status-card"]')
+    const statusCard = await $(
+      '[data-testid="agent-status-card"][data-agent-state="active"]'
+    )
     await statusCard.waitForDisplayed({ timeout: 30_000 })
 
     const panel = await $('[data-testid="agent-status-panel"]')

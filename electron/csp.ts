@@ -5,6 +5,18 @@ export const DEV_REACT_REFRESH_NONCE_ENV = 'VIMEFLOW_DEV_REACT_REFRESH_NONCE'
 const localhostHttpSources = ['http://localhost:*', 'http://127.0.0.1:*']
 const localhostWebSocketSources = ['ws://localhost:*', 'ws://127.0.0.1:*']
 
+// Specific image CDNs the markdown reading view is allowed to load — shields.io
+// badges and GitHub-hosted images (raw content, the image proxy, and user
+// uploads all sit under *.githubusercontent.com). Deliberately NOT a bare
+// `https:` wildcard: an
+// untrusted local .md must not be able to beacon to an arbitrary host via an
+// <img> sub-resource (which the navigation guard cannot intercept). Broader
+// image support (local files, an explicit remote policy) is a planned follow-up.
+const imageCdnSources = [
+  'https://img.shields.io',
+  'https://*.githubusercontent.com',
+]
+
 const directive = (name: string, sources: string[]): string =>
   `${name} ${sources.join(' ')}`
 
@@ -12,7 +24,7 @@ export const packagedContentSecurityPolicy = [
   directive('default-src', ["'self'"]),
   directive('script-src', ["'self'"]),
   directive('style-src', ["'self'", "'unsafe-inline'"]),
-  directive('img-src', ["'self'", 'data:', 'blob:']),
+  directive('img-src', ["'self'", 'data:', 'blob:', ...imageCdnSources]),
   directive('font-src', ["'self'", 'data:']),
   directive('connect-src', ["'self'"]),
 ].join('; ')
@@ -78,7 +90,16 @@ const devE2eScriptSources = [
 ]
 
 const devStyleSources = ["'self'", "'unsafe-inline'", ...localhostHttpSources]
-const devAssetSources = ["'self'", 'data:', 'blob:', ...localhostHttpSources]
+
+// The reading view's allowed image CDNs (see `imageCdnSources`) plus the dev
+// server origins; the rest of the policy stays tight.
+const devAssetSources = [
+  "'self'",
+  'data:',
+  'blob:',
+  ...imageCdnSources,
+  ...localhostHttpSources,
+]
 const devFontSources = ["'self'", 'data:', ...localhostHttpSources]
 
 const devConnectSources = [

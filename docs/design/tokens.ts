@@ -24,6 +24,11 @@ export const surface = {
   tint: '#e2c7ff',
 } as const
 
+export const browser = {
+  bar: '#121226',
+  tabActive: '#23233b',
+} as const
+
 export const primary = {
   base: '#e2c7ff',
   container: '#cba6f7',

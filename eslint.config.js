@@ -38,6 +38,10 @@ export default defineConfig([
       // tests/e2e/tsconfig.json, WDIO globals, and domain terms
       // (tput, xterm, wdio, pty, …) rather than extending the main one.
       'tests/e2e/**',
+      // QA-runner ops scripts: standalone node tooling (run via `node`, not
+      // bundled) with their own idioms; the app's React/TS/cspell rules don't
+      // carry. Covered by `node --check` + Prettier. Same rationale as e2e above.
+      'scripts/qa-runner/**',
     ],
   },
   {
@@ -120,6 +124,19 @@ export default defineConfig([
       '@typescript-eslint/explicit-function-return-type': 'error',
       '@typescript-eslint/no-unnecessary-condition': 'error',
       '@typescript-eslint/no-shadow': 'error',
+    },
+  },
+  {
+    // The react-markdown component map pulls `node`/`className` out to drop
+    // them before spreading `...props`; those discarded siblings are
+    // intentional, not dead code. Scope the strip-and-spread relaxation to just
+    // this file so the rest of the repo keeps strict unused-var checking.
+    files: ['src/features/editor/components/markdownComponents.tsx'],
+    rules: {
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        { ignoreRestSiblings: true },
+      ],
     },
   },
   {
