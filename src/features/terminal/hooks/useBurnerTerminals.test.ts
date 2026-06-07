@@ -1,6 +1,6 @@
 import { test, expect, vi } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
-import type { ReactElement } from 'react'
+import type { ReactElement, ReactNode } from 'react'
 import { useBurnerTerminals, type BurnerTarget } from './useBurnerTerminals'
 import type { FocusedPaneRef } from '../../command-palette/hooks/usePaneRenameChord'
 import type { ITerminalService } from '../services/terminalService'
@@ -22,9 +22,32 @@ const makeService = (): ITerminalService =>
       .fn()
       .mockResolvedValue({ sessionId: 'burner-pty', pid: 7, cwd: '/repo' }),
     kill: vi.fn().mockResolvedValue(undefined),
+    write: vi.fn().mockResolvedValue(undefined),
     onExit: vi.fn().mockResolvedValue(() => undefined),
     onBurnerForeground: vi.fn().mockResolvedValue(() => undefined),
   }) as unknown as ITerminalService
+
+// The hook renders one popup per pane in a Fragment; pull a mounted popup's
+// props out so a test can drive its onAlignCwd handler directly.
+const firstPopup = (
+  renderNode: ReactNode
+): ReactElement<{
+  open: boolean
+  burnerPtyId: string
+  onAlignCwd?: () => void
+  alignBusy?: boolean
+}> => {
+  const fragment = renderNode as ReactElement<{
+    children: ReactElement<{
+      open: boolean
+      burnerPtyId: string
+      onAlignCwd?: () => void
+      alignBusy?: boolean
+    }>[]
+  }>
+
+  return fragment.props.children[0]
+}
 
 // The reconcile effect (VIM-62) keys spawned shells by ptyId; a counter mints a
 // distinct id per spawn so a test can assert the right shell was killed/dropped.
@@ -799,4 +822,304 @@ test('a foreground event arriving after exit does not re-light a dead burner', a
 
   expect(result.current.activeByPane.get('s1:p0')).toBe(false)
   expect(result.current.runningByPane.get('s1:p0')).toBe('exited')
+})
+
+// --- VIM-81: align the burner to the host pane's current cwd ---
+
+test('the align callback writes `cd <live host cwd>` + Enter to the burner pty', async () => {
+  const service = makeService() // spawns the burner at /repo
+  const focused = makeFocusedPane('s1', 'p0', '/repo')
+  // The host pane has since navigated away from the spawn cwd.
+  const livePaneCwds = new Map([['s1:p0', '/repo/projects/simple-tui']])
+
+  const { result } = renderHook(() =>
+    useBurnerTerminals({
+      service,
+      resolveFocusedPane: () => focused,
+      livePaneCwds,
+    })
+  )
+
+  await act(async () => {
+    await result.current.toggle({ sessionId: 's1', paneId: 'p0', cwd: '/repo' })
+  })
+
+  act(() => {
+    firstPopup(result.current.renderNode).props.onAlignCwd?.()
+  })
+
+  // The LIVE pane cwd is sent, not the stale spawn cwd (/repo). The \x05\x15
+  // prefix (Ctrl-E, Ctrl-U) clears any half-typed input so the cd runs clean.
+  expect(service.write).toHaveBeenCalledWith({
+    sessionId: 'burner-pty',
+    data: "\x05\x15cd '/repo/projects/simple-tui'\r",
+  })
+})
+
+test('the align callback resolves the latest host cwd at click-time, not a stale snapshot', async () => {
+  const service = makeService()
+  const focused = makeFocusedPane('s1', 'p0', '/repo')
+
+  const { result, rerender } = renderHook(
+    (props: { cwds: ReadonlyMap<string, string> }) =>
+      useBurnerTerminals({
+        service,
+        resolveFocusedPane: () => focused,
+        livePaneCwds: props.cwds,
+      }),
+    { initialProps: { cwds: new Map([['s1:p0', '/repo/first']]) } }
+  )
+
+  await act(async () => {
+    await result.current.toggle({ sessionId: 's1', paneId: 'p0', cwd: '/repo' })
+  })
+
+  // The host pane navigates after the burner is open (OSC 7 moves pane.cwd).
+  act(() => {
+    rerender({ cwds: new Map([['s1:p0', '/repo/second']]) })
+  })
+
+  act(() => {
+    firstPopup(result.current.renderNode).props.onAlignCwd?.()
+  })
+
+  expect(service.write).toHaveBeenCalledWith({
+    sessionId: 'burner-pty',
+    data: "\x05\x15cd '/repo/second'\r",
+  })
+})
+
+test('quotes the cwd so spaces and apostrophes survive as one cd argument', async () => {
+  const service = makeService()
+  const focused = makeFocusedPane('s1', 'p0', '/repo')
+  const livePaneCwds = new Map([['s1:p0', "/repo/my proj's dir"]])
+
+  const { result } = renderHook(() =>
+    useBurnerTerminals({
+      service,
+      resolveFocusedPane: () => focused,
+      livePaneCwds,
+    })
+  )
+
+  await act(async () => {
+    await result.current.toggle({ sessionId: 's1', paneId: 'p0', cwd: '/repo' })
+  })
+
+  act(() => {
+    firstPopup(result.current.renderNode).props.onAlignCwd?.()
+  })
+
+  // POSIX single-quote escaping: a literal ' becomes '\'' , whole path wrapped.
+  expect(service.write).toHaveBeenCalledWith({
+    sessionId: 'burner-pty',
+    data: "\x05\x15cd '/repo/my proj'\\''s dir'\r",
+  })
+})
+
+test('refuses to align when the host cwd contains terminal control bytes', async () => {
+  const service = makeService()
+  const focused = makeFocusedPane('s1', 'p0', '/repo')
+  // cwd comes from OSC 7 / agent state (untrusted). A Ctrl-U (\x15) embedded in
+  // a dir name survives shell quoting but is acted on by the line editor — it
+  // would clear the prefixed `cd '` and run the rest. Refuse, don't inject.
+  const livePaneCwds = new Map([['s1:p0', '/tmp/\x15echo pwned #']])
+
+  const { result } = renderHook(() =>
+    useBurnerTerminals({
+      service,
+      resolveFocusedPane: () => focused,
+      livePaneCwds,
+    })
+  )
+
+  await act(async () => {
+    await result.current.toggle({ sessionId: 's1', paneId: 'p0', cwd: '/repo' })
+  })
+
+  act(() => {
+    firstPopup(result.current.renderNode).props.onAlignCwd?.()
+  })
+
+  expect(service.write).not.toHaveBeenCalled()
+})
+
+test('the align callback is a no-op when the host pane has no live cwd', async () => {
+  const service = makeService()
+  const focused = makeFocusedPane('s1', 'p0', '/repo')
+  // Map is wired but this pane's key is absent (cwd not resolvable).
+  const livePaneCwds = new Map<string, string>([['s1:other', '/x']])
+
+  const { result } = renderHook(() =>
+    useBurnerTerminals({
+      service,
+      resolveFocusedPane: () => focused,
+      livePaneCwds,
+    })
+  )
+
+  await act(async () => {
+    await result.current.toggle({ sessionId: 's1', paneId: 'p0', cwd: '/repo' })
+  })
+
+  act(() => {
+    firstPopup(result.current.renderNode).props.onAlignCwd?.()
+  })
+
+  expect(service.write).not.toHaveBeenCalled()
+})
+
+test('the align callback does not write to a self-exited burner', async () => {
+  const service = makeService()
+  const focused = makeFocusedPane('s1', 'p0', '/repo')
+  const livePaneCwds = new Map([['s1:p0', '/repo/moved']])
+
+  const { result } = renderHook(() =>
+    useBurnerTerminals({
+      service,
+      resolveFocusedPane: () => focused,
+      livePaneCwds,
+    })
+  )
+
+  await act(async () => {
+    await result.current.toggle({ sessionId: 's1', paneId: 'p0', cwd: '/repo' })
+  })
+
+  // The shell exits on its own before the user presses align.
+  const exitCb = vi.mocked(service.onExit).mock.calls[0][0]
+  act(() => {
+    exitCb('burner-pty', 0)
+  })
+
+  act(() => {
+    firstPopup(result.current.renderNode).props.onAlignCwd?.()
+  })
+
+  expect(service.write).not.toHaveBeenCalled()
+})
+
+test('no align callback is wired into the popup when livePaneCwds is not provided', async () => {
+  const service = makeService()
+  const focused = makeFocusedPane('s1', 'p0', '/repo')
+
+  const { result } = renderHook(() =>
+    useBurnerTerminals({ service, resolveFocusedPane: () => focused })
+  )
+
+  await act(async () => {
+    await result.current.toggle({ sessionId: 's1', paneId: 'p0', cwd: '/repo' })
+  })
+
+  expect(firstPopup(result.current.renderNode).props.onAlignCwd).toBeUndefined()
+})
+
+test('withholds the align button where foreground detection is unreliable', async () => {
+  const service = makeService()
+  const focused = makeFocusedPane('s1', 'p0', '/repo')
+  const livePaneCwds = new Map([['s1:p0', '/repo/moved']])
+
+  const { result } = renderHook(() =>
+    useBurnerTerminals({
+      service,
+      resolveFocusedPane: () => focused,
+      livePaneCwds,
+      alignSupported: false,
+    })
+  )
+
+  await act(async () => {
+    await result.current.toggle({ sessionId: 's1', paneId: 'p0', cwd: '/repo' })
+  })
+
+  // Without reliable foreground detection (e.g. Windows ConPTY) the busy-guard
+  // can't protect the shell, so the align affordance is withheld entirely.
+  expect(firstPopup(result.current.renderNode).props.onAlignCwd).toBeUndefined()
+})
+
+test('the align callback is a no-op while a foreground command is running', async () => {
+  const service = makeService()
+  const focused = makeFocusedPane('s1', 'p0', '/repo')
+  const livePaneCwds = new Map([['s1:p0', '/repo/moved']])
+
+  const { result } = renderHook(() =>
+    useBurnerTerminals({
+      service,
+      resolveFocusedPane: () => focused,
+      livePaneCwds,
+    })
+  )
+
+  await act(async () => {
+    await result.current.toggle({ sessionId: 's1', paneId: 'p0', cwd: '/repo' })
+  })
+
+  // A foreground command starts (VIM-71 active cue) — the shell is not at its
+  // prompt, so a `cd` would land in the running program's stdin, not the shell.
+  const fgCb = vi.mocked(service.onBurnerForeground).mock.calls[0][0]
+  act(() => {
+    fgCb('burner-pty', true)
+  })
+
+  act(() => {
+    firstPopup(result.current.renderNode).props.onAlignCwd?.()
+  })
+
+  expect(service.write).not.toHaveBeenCalled()
+})
+
+test('marks the popup align button busy while a foreground command runs', async () => {
+  const service = makeService()
+  const focused = makeFocusedPane('s1', 'p0', '/repo')
+  const livePaneCwds = new Map([['s1:p0', '/repo/moved']])
+
+  const { result } = renderHook(() =>
+    useBurnerTerminals({
+      service,
+      resolveFocusedPane: () => focused,
+      livePaneCwds,
+    })
+  )
+
+  await act(async () => {
+    await result.current.toggle({ sessionId: 's1', paneId: 'p0', cwd: '/repo' })
+  })
+  // Idle at the prompt — the button is available.
+  expect(firstPopup(result.current.renderNode).props.alignBusy).toBe(false)
+
+  const fgCb = vi.mocked(service.onBurnerForeground).mock.calls[0][0]
+  act(() => {
+    fgCb('burner-pty', true)
+  })
+
+  // A command is running — the popup is told to disable the align button.
+  expect(firstPopup(result.current.renderNode).props.alignBusy).toBe(true)
+})
+
+test('removes the align affordance once the burner has exited', async () => {
+  const service = makeService()
+  const focused = makeFocusedPane('s1', 'p0', '/repo')
+  const livePaneCwds = new Map([['s1:p0', '/repo/moved']])
+
+  const { result } = renderHook(() =>
+    useBurnerTerminals({
+      service,
+      resolveFocusedPane: () => focused,
+      livePaneCwds,
+    })
+  )
+
+  await act(async () => {
+    await result.current.toggle({ sessionId: 's1', paneId: 'p0', cwd: '/repo' })
+  })
+  expect(firstPopup(result.current.renderNode).props.onAlignCwd).toBeDefined()
+
+  // The shell exits on its own — a dead shell can't cd, so drop the button
+  // rather than leave an enabled control that silently no-ops.
+  const exitCb = vi.mocked(service.onExit).mock.calls[0][0]
+  act(() => {
+    exitCb('burner-pty', 0)
+  })
+
+  expect(firstPopup(result.current.renderNode).props.onAlignCwd).toBeUndefined()
 })

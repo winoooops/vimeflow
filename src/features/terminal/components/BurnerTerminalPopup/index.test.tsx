@@ -53,7 +53,12 @@ const baseProps = {
 // rejects a literal `open={false}` under this config.
 const popup = (
   open: boolean,
-  extra: { onPaneReady?: NotifyPaneReady; onHide?: () => void } = {}
+  extra: {
+    onPaneReady?: NotifyPaneReady
+    onHide?: () => void
+    onAlignCwd?: () => void
+    alignBusy?: boolean
+  } = {}
 ): ReactElement => <BurnerTerminalPopup open={open} {...baseProps} {...extra} />
 
 beforeEach(() => {
@@ -160,4 +165,60 @@ test('Escape does nothing while the popup is hidden', () => {
   fireEvent.keyDown(screen.getByTestId('burner-popup'), { key: 'Escape' })
 
   expect(onHide).not.toHaveBeenCalled()
+})
+
+test('renders the align-to-directory button only when onAlignCwd is provided', () => {
+  const { rerender } = render(popup(true))
+
+  // No alignment affordance until the host pane's live cwd can be resolved.
+  expect(
+    screen.queryByRole('button', { name: /align burner to pane directory/i })
+  ).toBeNull()
+
+  rerender(popup(true, { onAlignCwd: vi.fn() }))
+
+  expect(
+    screen.getByRole('button', { name: /align burner to pane directory/i })
+  ).toBeInTheDocument()
+})
+
+test('clicking the align button calls onAlignCwd', () => {
+  const onAlignCwd = vi.fn()
+  render(popup(true, { onAlignCwd }))
+
+  fireEvent.click(
+    screen.getByRole('button', { name: /align burner to pane directory/i })
+  )
+
+  expect(onAlignCwd).toHaveBeenCalledTimes(1)
+})
+
+test('disables the align button while the burner is busy', () => {
+  const { rerender } = render(popup(true, { onAlignCwd: vi.fn() }))
+
+  // Idle burner: the align button is available.
+  expect(
+    screen.getByRole('button', { name: /align burner to pane directory/i })
+  ).not.toBeDisabled()
+
+  // A foreground command is running — a `cd` would hit its stdin, so disable.
+  rerender(popup(true, { onAlignCwd: vi.fn(), alignBusy: true }))
+
+  expect(
+    screen.getByRole('button', { name: /align burner to pane directory/i })
+  ).toBeDisabled()
+})
+
+test('refocuses the burner terminal after aligning so typing continues there', () => {
+  const onAlignCwd = vi.fn()
+  render(popup(true, { onAlignCwd }))
+  focusTerminal.mockClear() // ignore the eager show-effect focus
+
+  fireEvent.click(
+    screen.getByRole('button', { name: /align burner to pane directory/i })
+  )
+
+  // The button took focus on click; hand it back to xterm so keys land there.
+  expect(onAlignCwd).toHaveBeenCalledTimes(1)
+  expect(focusTerminal).toHaveBeenCalled()
 })
