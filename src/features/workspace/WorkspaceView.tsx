@@ -22,6 +22,7 @@ import {
   type AgentCardState,
 } from './components/AgentStatusCard'
 import { FilesView } from './components/FilesView'
+import { NewSessionButton } from './components/NewSessionButton'
 import { SessionsView } from './components/SessionsView'
 import {
   TerminalZone,
@@ -66,6 +67,7 @@ import {
 } from '../terminal/hooks/usePaneShortcuts'
 import { useDockShortcuts } from './hooks/useDockShortcuts'
 import { useSidebarShortcut } from './hooks/useSidebarShortcut'
+import { useNewSessionShortcut } from './hooks/useNewSessionShortcut'
 import { useSidebarCollapsed } from './hooks/useSidebarCollapsed'
 import { useEditorBuffer } from '../editor/hooks/useEditorBuffer'
 import { useAgentStatus } from '../agent-status/hooks/useAgentStatus'
@@ -143,8 +145,8 @@ const SIDEBAR_DEFAULT = 272
 const SIDEBAR_INITIAL = clampSize(SIDEBAR_DEFAULT, SIDEBAR_MIN, SIDEBAR_MAX)
 
 const SIDEBAR_TAB_ITEMS: readonly SidebarTabItem<SidebarTab>[] = [
-  { id: 'sessions', label: 'SESSIONS' },
-  { id: 'files', label: 'FILES' },
+  { id: 'sessions', label: 'SESSIONS', icon: 'view_agenda' },
+  { id: 'files', label: 'FILES', icon: 'folder_open' },
 ]
 
 type DockTab = 'editor' | 'diff'
@@ -218,6 +220,10 @@ export const WorkspaceView = (): ReactElement => {
   }, [])
 
   const sidebarShortcutHint = preferModifier === 'meta' ? '⌘B' : 'Ctrl+⇧B'
+  const newSessionShortcutHint = preferModifier === 'meta' ? '⌘N' : 'Ctrl+⇧N'
+
+  const newSessionAriaKeyshortcuts =
+    preferModifier === 'meta' ? 'Meta+N' : 'Control+Shift+N'
   // Real command-palette chord for the top-bar utility hint (Ctrl+; / ⌘;),
   // not the ⌘K placeholder in the static design mock.
   const commandShortcutHint = formatShortcut(COMMAND_PALETTE_SHORTCUT_KEYS)
@@ -899,6 +905,11 @@ export const WorkspaceView = (): ReactElement => {
     activeContainerId,
   })
 
+  useNewSessionShortcut({
+    onNewSession: handleCreateSession,
+    modKey: preferModifier === 'meta' ? '⌘' : 'Ctrl',
+  })
+
   // One elastic size per axis so values survive dock unmounts and position changes.
   const verticalDockElastic = useElasticContainer({
     containerRef: dockCanvasRef,
@@ -1498,17 +1509,23 @@ export const WorkspaceView = (): ReactElement => {
             }
             content={
               <div className="flex h-full min-h-0 flex-col">
-                <SidebarTabs<SidebarTab>
-                  tabs={SIDEBAR_TAB_ITEMS}
-                  activeId={activeTab}
-                  onChange={setActiveTab}
-                />
+                <div className="flex items-stretch gap-2 px-3 pb-3 pt-2.5">
+                  <SidebarTabs<SidebarTab>
+                    tabs={SIDEBAR_TAB_ITEMS}
+                    activeId={activeTab}
+                    onChange={setActiveTab}
+                  />
+                  <NewSessionButton
+                    onClick={handleCreateSession}
+                    shortcutHint={newSessionShortcutHint}
+                    ariaKeyshortcuts={newSessionAriaKeyshortcuts}
+                  />
+                </div>
                 <SessionsView
                   hidden={activeTab !== 'sessions'}
                   sessions={sessions}
                   activeSessionId={activeSessionId}
                   onSessionClick={handleSetActiveSessionId}
-                  onCreateSession={handleCreateSession}
                   onRemoveSession={handleRemoveSession}
                   onRenameSession={renameSession}
                   onReorderSessions={reorderSessions}

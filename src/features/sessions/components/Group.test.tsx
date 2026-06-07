@@ -22,6 +22,13 @@ describe('Group.Header', () => {
     )
   })
 
+  test('appends the count to the label when count is provided', () => {
+    render(<Group.Header label="Active" count={3} />)
+    expect(screen.getByTestId('session-group-active')).toHaveTextContent(
+      'Active · 3'
+    )
+  })
+
   test('renders headerAction next to the label when provided', () => {
     render(
       <Group.Header

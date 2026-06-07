@@ -141,8 +141,8 @@ describe('WorkspaceView Integration Tests', () => {
       const terminalZone = screen.getByTestId('terminal-zone')
 
       // Create a second session so we can test switching
-      const newSessionButton = screen.getByRole('button', {
-        name: 'new session',
+      const newSessionButton = within(sidebar).getByRole('button', {
+        name: 'New session',
       })
       await user.click(newSessionButton)
 
@@ -187,8 +187,8 @@ describe('WorkspaceView Integration Tests', () => {
       const sidebar = screen.getByTestId('sidebar')
 
       // Create a second session so we can test switching
-      const newSessionButton = screen.getByRole('button', {
-        name: 'new session',
+      const newSessionButton = within(sidebar).getByRole('button', {
+        name: 'New session',
       })
       await user.click(newSessionButton)
 

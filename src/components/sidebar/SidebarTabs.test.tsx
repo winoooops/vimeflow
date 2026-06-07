@@ -6,8 +6,8 @@ import { SidebarTabs, type SidebarTabItem } from './SidebarTabs'
 type Tab = 'sessions' | 'files'
 
 const TABS: readonly SidebarTabItem<Tab>[] = [
-  { id: 'sessions', label: 'SESSIONS' },
-  { id: 'files', label: 'FILES' },
+  { id: 'sessions', label: 'SESSIONS', icon: 'view_agenda' },
+  { id: 'files', label: 'FILES', icon: 'folder_open' },
 ]
 
 describe('SidebarTabs', () => {
@@ -128,16 +128,39 @@ describe('SidebarTabs', () => {
     )
   })
 
-  test('active button shows the accent bar; inactive does not', () => {
+  test('renders each tab icon as an aria-hidden material symbol', () => {
     render(
       <SidebarTabs<Tab> tabs={TABS} activeId="sessions" onChange={vi.fn()} />
     )
 
-    const accents = screen.getAllByTestId('sidebar-tabs-accent')
-    expect(accents).toHaveLength(1)
-    expect(screen.getByRole('button', { name: 'SESSIONS' })).toContainElement(
-      accents[0]
+    for (const [name, glyph] of [
+      ['SESSIONS', 'view_agenda'],
+      ['FILES', 'folder_open'],
+    ] as const) {
+      const button = screen.getByRole('button', { name })
+      // eslint-disable-next-line testing-library/no-node-access -- verify decorative icon glyph
+      const icon = button.querySelector('.material-symbols-outlined')
+      expect(icon).toHaveTextContent(glyph)
+      expect(icon).toHaveAttribute('aria-hidden', 'true')
+    }
+  })
+
+  test('no longer renders the legacy underline accent bar', () => {
+    render(
+      <SidebarTabs<Tab> tabs={TABS} activeId="sessions" onChange={vi.fn()} />
     )
+
+    expect(screen.queryAllByTestId('sidebar-tabs-accent')).toHaveLength(0)
+  })
+
+  test('renders a single decorative active thumb', () => {
+    render(
+      <SidebarTabs<Tab> tabs={TABS} activeId="sessions" onChange={vi.fn()} />
+    )
+
+    const thumbs = screen.getAllByTestId('sidebar-tabs-thumb')
+    expect(thumbs).toHaveLength(1)
+    expect(thumbs[0]).toHaveAttribute('aria-hidden', 'true')
   })
 
   test('default data-testid is sidebar-tabs; can be overridden', () => {

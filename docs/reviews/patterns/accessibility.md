@@ -2,8 +2,8 @@
 id: accessibility
 category: a11y
 created: 2026-04-09
-last_updated: 2026-06-06
-ref_count: 9
+last_updated: 2026-06-07
+ref_count: 11
 ---
 
 # Accessibility
@@ -289,3 +289,48 @@ handlers must not trap focus without implementing the promised behavior.
 - **Finding:** The post-toggle focus guard used `document.querySelector('[data-testid="sidebar-toggle-tabs"]')` / `sidebar-toggle-topbar` to restore focus after collapse or expand. Runtime a11y behavior was coupled to test-only string names, so a routine test-id rename could silently strand keyboard focus on `<body>` after every sidebar toggle. Same finding-class as #14 (focus restoration via raw CSS selector) — focus-management code paths must enforce their own invariants because the symptom (focus on `<body>`) is invisible until a real keyboard user notices.
 - **Fix:** Replaced the `data-testid` DOM query with `useRef<HTMLButtonElement>` refs forwarded to the top-bar and tabs toggle instances, and focused the selected ref inside the deferred guard. `SidebarToggle` already forwarded refs via `forwardRef`, so the change was localized: two new refs in `WorkspaceView`, a new `toggleRef` prop on `SidebarTopBar` that forwards to its `SidebarToggle`, and the guard selects the appropriate ref instead of querying the DOM.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 31. Session actions menu toggle does not expose expanded/collapsed state
+
+- **Source:** github-claude | PR #383 round 1 | 2026-06-07
+- **Severity:** MEDIUM
+- **File:** `src/features/sessions/components/Card.tsx`
+- **Finding:** The PR added a new kebab menu toggle button whose visible state is controlled by `menuOpen`, but the button only had `aria-label="Session actions"` and did not expose `aria-expanded`. Screen-reader users could focus and activate the control but received no feedback about whether the action menu was open or closed, leaving assistive tech without the control's current value. WCAG 4.1.2 (Name, Role, Value) violation.
+- **Fix:** Added `aria-expanded={menuOpen}` and `aria-haspopup="menu"` to the Session actions button. The `menuOpen` state already existed; wiring it into ARIA closes the gap with minimal regression risk.
+- **Commit:** see `git blame` / `git log` on this line
+
+### 32. Removed aria-hidden on visible title span reinstates double-announcement
+
+- **Source:** github-claude | PR #383 round 1 | 2026-06-07
+- **Severity:** LOW
+- **File:** `src/features/sessions/components/Card.tsx`
+- **Finding:** During a className refactor the `aria-hidden="true"` attribute was dropped from the session-name `<span>`. The sibling overlay activation `<button>` already carries `aria-label={session.name}`, so browse-mode screen readers now encounter the same text twice: once as the button's accessible name, once as the span's text content.
+- **Fix:** Restored `aria-hidden="true"` on the title span with an updated comment explaining the rationale. Zero visual or interaction impact.
+- **Commit:** same commit as finding #31
+
+### 33. `aria-haspopup="menu"` declared without matching menu role semantics
+
+- **Source:** github-claude | PR #383 round 2 | 2026-06-07
+- **Severity:** HIGH
+- **File:** `src/features/sessions/components/Card.tsx`
+- **Finding:** The Session actions button carried `aria-haspopup="menu"`, promising assistive technology a menu widget. The popup was a plain `<div>` and `MenuRow` rendered plain `<button>` elements with no `role="menu"` or `role="menuitem"`. Screen readers announced a menu that did not exist, breaking the ARIA contract and potentially trapping users in an unexpected navigation mode.
+- **Fix:** Removed `aria-haspopup="menu"` from the trigger button. The popup remains a simple disclosure-style button group; `aria-expanded` already communicates open/closed state. This avoids the cost of implementing the full APG menu keyboard contract (arrow keys, Home/End, focus management) for a two-item action list.
+- **Commit:** see `git blame` / `git log` on this line
+
+### 34. Kebab popup has no Escape dismissal path
+
+- **Source:** github-claude | PR #383 round 2 | 2026-06-07
+- **Severity:** MEDIUM
+- **File:** `src/features/sessions/components/Card.tsx`
+- **Finding:** The actions menu could be opened from the keyboard but had no Escape handler. Keyboard-only or AT users who opened the popover and decided not to choose an action were forced to Tab away or activate an unintended item. The existing `onBlur` close logic only fired when focus moved to another focusable element.
+- **Fix:** Added a document-level `keydown` listener (scoped to `menuOpen === true`) that calls `setMenuOpen(false)` and returns focus to the trigger button via a `useRef`. The listener is cleaned up on unmount or when the menu closes. Co-located tests assert Escape dismissal and focus restoration.
+- **Commit:** see `git blame` / `git log` on this line
+
+### 35. Title-click activation leaves the kebab menu visually open
+
+- **Source:** github-claude | PR #383 round 2 | 2026-06-07
+- **Severity:** MEDIUM
+- **File:** `src/features/sessions/components/Card.tsx`
+- **Finding:** The session title `<span>` has its own `onClick` handler that forwards to `onClick(session.id)`. Because the span is not focusable, clicking it does not move focus and therefore does not trigger the kebab wrapper's `onBlur` close path. The result: the session activates while the actions popover remains visible, producing misleading stale UI.
+- **Fix:** Prepended `setMenuOpen(false)` to the title span's `onClick` handler before forwarding to `onClick(session.id)`. A co-located test asserts that the menu closes and the session still activates.
+- **Commit:** same commit as finding #33

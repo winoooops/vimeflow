@@ -4,11 +4,13 @@ import type { Session } from '../types'
 
 export interface GroupHeaderProps {
   label: string
+  count?: number
   headerAction?: ReactNode
 }
 
 const GroupHeader = ({
   label,
+  count = undefined,
   headerAction = undefined,
 }: GroupHeaderProps): ReactElement => (
   <div className="flex items-center justify-between pr-3">
@@ -16,7 +18,7 @@ const GroupHeader = ({
       data-testid={`session-group-${label.toLowerCase()}`}
       className="px-3 pb-1 pt-2 font-mono text-[10.5px] uppercase tracking-[0.08em] text-on-surface-variant/70"
     >
-      {label}
+      {count !== undefined ? `${label} · ${count}` : label}
     </h3>
     {headerAction}
   </div>

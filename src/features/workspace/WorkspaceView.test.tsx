@@ -260,7 +260,11 @@ describe('WorkspaceView', () => {
         ).toBe(true)
       })
 
-      await user.click(screen.getByRole('button', { name: 'new session' }))
+      await user.click(
+        within(screen.getByTestId('sidebar')).getByRole('button', {
+          name: 'New session',
+        })
+      )
       await screen.findByRole('button', { name: 'session 2' })
 
       await waitFor(() => {
@@ -903,9 +907,8 @@ describe('WorkspaceView', () => {
       name: 'session 1',
     })
     const listItem = firstSession.closest('li')!
-    // Active row uses lavender-tinted background per handoff §4.2.
-    expect(listItem.className).toContain('bg-primary/10')
-    expect(listItem.className).toContain('text-on-surface')
+    // Active row uses the flat lavender fill per the session-list handoff.
+    expect(listItem.className).toContain('bg-[rgba(203,166,247,0.13)]')
   })
 
   test('renders FileExplorer in sidebar', () => {
@@ -995,7 +998,7 @@ describe('WorkspaceView', () => {
     expect(filesViewAfter).not.toHaveClass('hidden')
   })
 
-  test('clicking the new session ghost button creates a new session', async () => {
+  test('clicking the switcher-row New session button creates a new session', async () => {
     const user = userEvent.setup()
 
     render(<WorkspaceView />)
@@ -1006,9 +1009,10 @@ describe('WorkspaceView', () => {
     // 'session ${index + 1}').
     await screen.findByRole('button', { name: 'session 1' })
 
-    const newSessionButton = screen.getByRole('button', {
-      name: 'new session',
-    })
+    const newSessionButton = within(screen.getByTestId('sidebar')).getByRole(
+      'button',
+      { name: 'New session' }
+    )
     await user.click(newSessionButton)
 
     // After clicking, the spawn() mock resolves with a new sessionId
@@ -1017,6 +1021,39 @@ describe('WorkspaceView', () => {
     // appears proves createSession was wired through end-to-end —
     // a regression of the onClick handler being dropped (e.g. during
     // a future Sidebar.footer slot refactor) would fail this test.
+    await screen.findByRole('button', { name: 'session 2' })
+  })
+
+  test('new-session button lives in the switcher row, not the list bottom', () => {
+    render(<WorkspaceView />)
+
+    expect(
+      within(screen.getByTestId('sidebar')).getByRole('button', {
+        name: 'New session',
+      })
+    ).toBeInTheDocument()
+
+    expect(
+      screen.queryByTestId('sessions-list-new-session')
+    ).not.toBeInTheDocument()
+  })
+
+  test('Ctrl+⇧N creates a new session (keyboard shortcut)', async () => {
+    render(<WorkspaceView />)
+
+    await screen.findByRole('button', { name: 'session 1' })
+
+    act(() => {
+      document.dispatchEvent(
+        new KeyboardEvent('keydown', {
+          key: 'n',
+          ctrlKey: true,
+          shiftKey: true,
+          bubbles: true,
+        })
+      )
+    })
+
     await screen.findByRole('button', { name: 'session 2' })
   })
 
@@ -1193,18 +1230,26 @@ describe('WorkspaceView', () => {
     const firstSession = await screen.findByRole('button', {
       name: 'session 1',
     })
-    expect(firstSession.closest('li')!.className).toContain('bg-primary/10')
+    expect(firstSession.closest('li')!.className).toContain(
+      'bg-[rgba(203,166,247,0.13)]'
+    )
 
-    const newSessionButton = screen.getByRole('button', {
-      name: 'new session',
-    })
+    const newSessionButton = within(screen.getByTestId('sidebar')).getByRole(
+      'button',
+      { name: 'New session' }
+    )
     await user.click(newSessionButton)
 
     const secondSession = await screen.findByRole('button', {
       name: 'session 2',
     })
-    expect(secondSession.closest('li')!.className).toContain('bg-primary/10')
-    expect(firstSession.closest('li')!.className).not.toContain('bg-primary/10')
+    expect(secondSession.closest('li')!.className).toContain(
+      'bg-[rgba(203,166,247,0.13)]'
+    )
+
+    expect(firstSession.closest('li')!.className).not.toContain(
+      'bg-[rgba(203,166,247,0.13)]'
+    )
   })
 
   test('handles empty sessions gracefully without crashing', () => {
