@@ -2,8 +2,8 @@
 id: error-surfacing
 category: error-handling
 created: 2026-04-10
-last_updated: 2026-05-31
-ref_count: 8
+last_updated: 2026-06-07
+ref_count: 9
 ---
 
 # Error Surfacing
@@ -342,3 +342,12 @@ failed" must mean the editor shows the original file, not the requested one.
 - **Finding:** `postLinear(…, 'In Progress')` was called before the `ctx.execute` guard, so every report-only tick falsely transitioned linked Linear issues to "In Progress" even when no fix cycle ran.
 - **Fix:** Moved `postLinear` inside the `ctx.execute` block so it only fires when a real fix cycle is dispatched.
 - **Commit:** same commit as this entry
+
+### 35. Async teardown IIFE with `try/finally` but no `catch` lets flush rejection escape as unhandled promise rejection
+
+- **Source:** github-claude | PR #387 round 1 | 2026-06-07
+- **Severity:** MEDIUM
+- **File:** `electron/workspace-teardown.ts` (`flushOnce`) + `electron/main.ts` (close handler, before-quit handler)
+- **Finding:** `WorkspaceTeardown.flushOnce()` caught `drainFinalShape()` failures but directly awaited `this.deps.flush()` with no catch. Both the `close` and `before-quit` handlers launched the flush via `void (async () => { try { ... } finally { ... } })()` — the `try/finally` ensured progress flags and disposal ran, but the absence of `catch` meant a `flush()` rejection escaped as an unhandled promise rejection in the Electron main process. In production this can surface a crash dialog and the workspace snapshot is lost without diagnostics.
+- **Fix:** (1) Make `flushOnce()` non-throwing by wrapping `await this.deps.flush()` in `try/catch` and forwarding errors to an optional `onFlushError` observer on `WorkspaceTeardownDeps`. (2) Wire the observer in `main.ts` to `console.warn` so failures are visible in logs. (3) Add a test asserting the rejection is caught and forwarded without throwing.
+- **Commit:** _(PR #387 upsource cycle 1 fix commit)_
