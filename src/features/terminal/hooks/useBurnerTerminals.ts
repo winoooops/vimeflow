@@ -88,12 +88,6 @@ export interface UseBurnerTerminalsArgs {
    * pane is *now*, not the cwd it spawned at. Omitted ⇒ no align button.
    */
   livePaneCwds?: ReadonlyMap<string, string>
-  /**
-   * Whether this platform reports reliable foreground-process state (VIM-71).
-   * When false the busy-guard can't tell idle from running, so the align button
-   * is withheld entirely. Defaults true (Unix); false on Windows ConPTY.
-   */
-  alignSupported?: boolean
 }
 
 export interface UseBurnerTerminals {
@@ -135,7 +129,6 @@ export const useBurnerTerminals = ({
   livePaneKeys,
   dropAllForPty,
   livePaneCwds,
-  alignSupported = true,
 }: UseBurnerTerminalsArgs): UseBurnerTerminals => {
   // Authoritative handles live in a ref so they never serialize; a projection
   // is mirrored into state so renderNode + cues re-render.
@@ -515,10 +508,11 @@ export const useBurnerTerminals = ({
               service,
               onHide: hide,
               onPaneReady: notifyPaneReady,
-              // Offer the align button only with a live cwd map, reliable
-              // foreground detection, and a live shell — a dead shell can't cd.
+              // Offer the align button with a live cwd map and a live shell.
+              // macOS/Linux only: foreground detection is cfg(unix), so the
+              // busy-guard is reliable on every platform we ship to.
               onAlignCwd:
-                livePaneCwds && alignSupported && entry.status === 'running'
+                livePaneCwds && entry.status === 'running'
                   ? (): void => alignCwd(key)
                   : undefined,
               // ...and disable it while a foreground command owns the shell.
