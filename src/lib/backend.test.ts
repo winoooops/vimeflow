@@ -206,6 +206,25 @@ describe('backend (window.vimeflow bridge)', () => {
     expect(rawUnlisten).toHaveBeenCalledTimes(1)
   })
 
+  test('listen retries bridge attachment after rejection instead of reusing failed subscription', async () => {
+    mockListen.mockRejectedValueOnce(new Error('bridge attach failed'))
+
+    await expect(listen('retry-event', noop)).rejects.toThrow(
+      'bridge attach failed'
+    )
+
+    const rawUnlisten = vi.fn()
+    mockListen.mockResolvedValueOnce(rawUnlisten)
+
+    const cb = vi.fn()
+    const unlisten = await listen('retry-event', cb)
+
+    expect(mockListen).toHaveBeenCalledTimes(2)
+    expect(typeof unlisten).toBe('function')
+
+    unlisten()
+  })
+
   test('UnlistenFn is idempotent', async () => {
     const rawUnlisten = vi.fn()
     mockListen.mockResolvedValueOnce(rawUnlisten)

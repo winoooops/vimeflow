@@ -2,8 +2,8 @@
 id: testing-gaps
 category: testing
 created: 2026-04-09
-last_updated: 2026-06-06
-ref_count: 26
+last_updated: 2026-06-07
+ref_count: 27
 ---
 
 # Testing Gaps
@@ -601,3 +601,13 @@ filesystem scope restrictions).
 - **Fix:** Exported a test-only helper `__resetBackendEventSubscriptions(): void` from `backend.ts` that calls `backendEventSubscriptions.clear()`. Added a top-level `afterEach(() => { __resetBackendEventSubscriptions() })` in `backend.test.ts` so every test starts with a clean registry regardless of prior test outcome.
 - **Code-review heuristic:** Any module-level singleton state (Maps, Sets, counters, caches) that outlives a single test must have an explicit reset path called from `afterEach` or `beforeEach`. Relying on per-test cleanup callbacks (like `unlisten()`) is insufficient because assertion failures can short-circuit cleanup. The reset helper should be clearly marked as test-only (`__` prefix or `/* @test-only */` comment) so it doesn't leak into production usage.
 - **Commit:** _(PR #375 upsource cycle 1 fix commit)_
+
+### 61. New attach-failure cleanup path lacks regression coverage
+
+- **Source:** github-claude | PR #375 round 2 | 2026-06-07
+- **Severity:** MEDIUM
+- **File:** `src/lib/backend.ts` L124-140 and `src/lib/backend.test.ts`
+- **Finding:** The PR introduces module-level subscription state plus a new catch path that deletes the failed event entry and clears callbacks when `bridge.listen` rejects. That behavior is correctness-critical for retryability: if a future edit drops the map delete, later `listen` calls for the same event will reuse a subscription whose `attachPromise` is already rejected; if callback clearing is dropped, stale callbacks can remain registered after a failed attach. The existing happy-path tests do not exercise this rejection-and-retry sequence.
+- **Fix:** Added a focused `backend.test.ts` case where `bridge.listen` rejects once, `listen` rejects, and a second `listen` for the same event retries the bridge instead of reusing the rejected subscription. Asserts `mockListen` is called twice and the retry succeeds with a fresh subscription.
+- **Code-review heuristic:** When a PR changes direct bridge delegation into shared module-level subscription state, the bridge rejection path now performs important state mutation that did not exist before. A single retry-focused test is sufficient to guard the cleanup contract; validate through mock call counts and successful retry rather than test-only introspection of internal maps.
+- **Commit:** _(PR #375 upsource cycle 2 fix commit)_
