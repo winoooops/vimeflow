@@ -23,6 +23,7 @@ const DEFAULT_MAX_TRACE_BYTES: u64 = 5 * 1024 * 1024;
 const DEFAULT_MAX_TRACE_GENERATIONS: usize = 3;
 const SCHEMA_VERSION: u8 = 1;
 const MAX_TRACE_ID_BYTES: usize = 128;
+const MAX_SESSION_ID_BYTES: usize = 128;
 const MAX_EVENT_NAME_BYTES: usize = 96;
 const MAX_ATTRIBUTE_KEY_BYTES: usize = 64;
 const MAX_ATTRIBUTE_VALUE_CHARS: usize = 256;
@@ -95,7 +96,9 @@ impl TraceContext {
         Some(Self {
             correlation_id: correlation_id.to_string(),
             parent_span_id,
-            session_id: session_id.map(str::to_string),
+            session_id: session_id
+                .filter(|value| is_valid_session_id(value))
+                .map(str::to_string),
             agent_type,
         })
     }
@@ -282,6 +285,8 @@ impl TraceService {
                 .store
                 .ensure_parent()
                 .map_err(|err| format!("trace log dir: {err}"))?;
+        } else {
+            state.session_contexts.clear();
         }
 
         state.enabled = enabled;
@@ -298,6 +303,9 @@ impl TraceService {
             validate_trace_id(parent_span_id, "parentSpanId")?;
         }
         validate_event_name(&request.event)?;
+        let session_id =
+            allowed_frontend_session_id(&request.event, request.session_id.as_deref())?;
+        let attributes = frontend_interaction_attributes(&request.event, &request.attributes)?;
 
         let state = self
             .inner
@@ -317,13 +325,10 @@ impl TraceService {
             parent_span_id: request.parent_span_id,
             layer: "frontend",
             event: "user.interaction".to_string(),
-            session_id: request.session_id,
+            session_id,
             agent_type: request.agent_type.map(agent_type_label),
             status: None,
-            attributes: trace_attributes([("interaction", request.event)])
-                .into_iter()
-                .chain(redact_attributes(request.attributes))
-                .collect(),
+            attributes,
         };
 
         state
@@ -600,6 +605,24 @@ fn is_valid_trace_id(value: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
 }
 
+fn validate_session_id(value: &str, field: &str) -> Result<(), String> {
+    if is_valid_session_id(value) {
+        return Ok(());
+    }
+
+    Err(format!(
+        "{field} must be 1-{MAX_SESSION_ID_BYTES} chars of [A-Za-z0-9_-]"
+    ))
+}
+
+fn is_valid_session_id(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= MAX_SESSION_ID_BYTES
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
+}
+
 fn validate_event_name(event: &str) -> Result<(), String> {
     if event.is_empty() || event.len() > MAX_EVENT_NAME_BYTES {
         return Err(format!("event must be 1-{MAX_EVENT_NAME_BYTES} bytes"));
@@ -613,6 +636,48 @@ fn validate_event_name(event: &str) -> Result<(), String> {
     }
 
     Err("event contains unsupported characters".to_string())
+}
+
+fn allowed_frontend_session_id(
+    event: &str,
+    session_id: Option<&str>,
+) -> Result<Option<String>, String> {
+    let Some(session_id) = session_id else {
+        return Ok(None);
+    };
+
+    match event {
+        "pane.rename" => {
+            validate_session_id(session_id, "sessionId")?;
+            Ok(Some(session_id.to_string()))
+        }
+        _ => Ok(None),
+    }
+}
+
+fn frontend_interaction_attributes(
+    event: &str,
+    attributes: &BTreeMap<String, String>,
+) -> Result<BTreeMap<String, String>, String> {
+    match event {
+        "pane.rename" => {
+            let mut safe_attributes = trace_attributes([("interaction", "pane.rename")]);
+
+            if let Some(title_length) = allowed_title_length(attributes.get("titleLength")) {
+                safe_attributes.extend(trace_attributes([("titleLength", title_length)]));
+            }
+
+            Ok(safe_attributes)
+        }
+        _ => Err(format!("unsupported trace interaction event: {event}")),
+    }
+}
+
+fn allowed_title_length(value: Option<&String>) -> Option<String> {
+    value?
+        .parse::<u16>()
+        .ok()
+        .map(|title_length| title_length.to_string())
 }
 
 fn timestamp() -> String {

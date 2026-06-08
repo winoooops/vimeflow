@@ -138,6 +138,103 @@ fn redaction_removes_secret_keys_tokens_and_newlines() {
 }
 
 #[test]
+fn user_interaction_allowlists_renderer_metadata() {
+    let temp_dir = tempfile::tempdir().expect("temp dir");
+    let path = temp_dir.path().join("logs").join(TRACE_LOG_NAME);
+    let tracing = TraceService::with_store(test_store(path.clone(), DEFAULT_MAX_TRACE_BYTES));
+    tracing.set_enabled(true).expect("enable tracing");
+
+    tracing
+        .record_user_interaction(TraceUserInteractionRequest {
+            correlation_id: "vf_corr_allowlist".to_string(),
+            span_id: "vf_root_allowlist".to_string(),
+            parent_span_id: None,
+            event: "pane.rename".to_string(),
+            session_id: Some("pty-1".to_string()),
+            agent_type: Some(AgentType::Codex),
+            attributes: BTreeMap::from([
+                ("titleLength".to_string(), "9".to_string()),
+                ("interaction".to_string(), "spoofed".to_string()),
+                ("prompt".to_string(), "do not persist".to_string()),
+                (
+                    "filePath".to_string(),
+                    "/secret/worktree/src/main.ts".to_string(),
+                ),
+                ("apiKey".to_string(), "sk-proj-secretsecret".to_string()),
+            ]),
+        })
+        .expect("record allowlisted frontend trace");
+
+    let records = read_jsonl(&path);
+    assert_eq!(records[0]["sessionId"], "pty-1");
+    assert_eq!(records[0]["attributes"]["interaction"], "pane.rename");
+    assert_eq!(records[0]["attributes"]["titleLength"], "9");
+    assert!(records[0]["attributes"].get("prompt").is_none());
+    assert!(records[0]["attributes"].get("filePath").is_none());
+    assert!(records[0]["attributes"].get("apiKey").is_none());
+}
+
+#[test]
+fn user_interaction_rejects_unsafe_session_id() {
+    let temp_dir = tempfile::tempdir().expect("temp dir");
+    let path = temp_dir.path().join("logs").join(TRACE_LOG_NAME);
+    let tracing = TraceService::with_store(test_store(path.clone(), DEFAULT_MAX_TRACE_BYTES));
+    tracing.set_enabled(true).expect("enable tracing");
+
+    let err = tracing
+        .record_user_interaction(TraceUserInteractionRequest {
+            correlation_id: "vf_corr_bad_session".to_string(),
+            span_id: "vf_root_bad_session".to_string(),
+            parent_span_id: None,
+            event: "pane.rename".to_string(),
+            session_id: Some("pty-1\nsecret".to_string()),
+            agent_type: Some(AgentType::Codex),
+            attributes: BTreeMap::from([("titleLength".to_string(), "9".to_string())]),
+        })
+        .expect_err("unsafe session id should fail closed");
+
+    assert!(err.contains("sessionId"));
+    assert!(
+        !path.exists(),
+        "unsafe renderer metadata must not create a trace file"
+    );
+}
+
+#[test]
+fn disabling_tracing_clears_remembered_session_contexts() {
+    let temp_dir = tempfile::tempdir().expect("temp dir");
+    let path = temp_dir.path().join("logs").join(TRACE_LOG_NAME);
+    let tracing = TraceService::with_store(test_store(path.clone(), DEFAULT_MAX_TRACE_BYTES));
+    tracing.set_enabled(true).expect("enable tracing");
+    let context = TraceContext::from_optional(
+        Some("vf_corr_stale"),
+        Some("vf_root_stale"),
+        Some("pty-1"),
+        Some(AgentType::Codex),
+    )
+    .expect("valid context");
+    tracing.remember_session_context("pty-1", context);
+
+    tracing.set_enabled(false).expect("disable tracing");
+    tracing.set_enabled(true).expect("re-enable tracing");
+    tracing
+        .record_agent_event(
+            "agent-session-title",
+            &json!({
+                "sessionId": "pty-1",
+                "title": "New title",
+                "source": "user-renamed",
+            }),
+        )
+        .expect("agent event after re-enable");
+
+    assert!(
+        !path.exists(),
+        "stale pre-disable correlation must not be reused after re-enable"
+    );
+}
+
+#[test]
 fn tracing_event_sink_forwards_agent_event_unchanged_and_records_trace() {
     let temp_dir = tempfile::tempdir().expect("temp dir");
     let path = temp_dir.path().join("logs").join(TRACE_LOG_NAME);
