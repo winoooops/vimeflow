@@ -35,7 +35,10 @@ import {
 import { isBrowserPane, isShellPane } from '../utils/paneKind'
 import { DEFAULT_BROWSER_URL } from '../../browser/types'
 import { usePtyExitListener } from '../../terminal/hooks/usePtyExitListener'
-import { destroyBrowserPane } from '../../browser/browserBridge'
+import {
+  createBrowserPane,
+  destroyBrowserPane,
+} from '../../browser/browserBridge'
 import { useAutoCreateOnEmpty } from './useAutoCreateOnEmpty'
 import { useActiveSessionController } from './useActiveSessionController'
 import { usePushWorkspaceGrouping } from './usePushWorkspaceGrouping'
@@ -49,6 +52,7 @@ export interface SessionManager {
   activeSessionId: string | null
   setActiveSessionId: (id: string) => void
   createSession: () => void
+  createBrowserSession: () => void
   removeSession: (id: string) => void
   setSessionLayout: (sessionId: string, layoutId: LayoutId) => void
   setSessionActivePane: (sessionId: string, paneId: string) => void
@@ -756,6 +760,66 @@ export const useSessionManager = (
       }
     })()
   }, [registerPending, service, setActiveSessionId])
+
+  // Create a browser-only session from scratch (spec §6.2): one runtime browser
+  // pane, NO PTY spawn. Main creates the WebContents seeded with the default
+  // url; the partition derives from the session id. A shell added later via
+  // addPane spawns from `workingDirectory`.
+  const createBrowserSession = useCallback((): void => {
+    const now = new Date().toISOString()
+    const newSessionId = crypto.randomUUID()
+    const workingDirectory = '~'
+
+    flushSync(() => {
+      setSessions((prev) => {
+        const newSession: Session = {
+          id: newSessionId,
+          projectId: 'proj-1',
+          name: `browser ${prev.length + 1}`,
+          status: 'running',
+          workingDirectory,
+          agentType: 'generic',
+          layout: 'single',
+          activityPanelCollapsed: false,
+          panes: [
+            {
+              kind: 'browser',
+              id: 'p0',
+              ptyId: `browser:${crypto.randomUUID()}`,
+              cwd: workingDirectory,
+              agentType: 'generic',
+              status: 'running',
+              active: true,
+              browserUrl: DEFAULT_BROWSER_URL,
+            },
+          ],
+          createdAt: now,
+          lastActivityAt: now,
+          activity: { ...emptyActivity },
+        }
+
+        return [...prev, newSession]
+      })
+    })
+
+    // Fire-and-forget but guarded: a rejection (bridge/main unavailable during
+    // startup/shutdown) must not surface as an unhandled rejection. BrowserPane
+    // re-issues the create on mount via main's reconnect path.
+    void (async (): Promise<void> => {
+      try {
+        await createBrowserPane({
+          sessionId: newSessionId,
+          paneId: 'p0',
+          workspaceId: 'proj-1',
+          initialUrl: DEFAULT_BROWSER_URL,
+        })
+      } catch (err) {
+        log.warn('createBrowserSession: createBrowserPane failed', err)
+      }
+    })()
+
+    setActiveSessionId(newSessionId)
+  }, [setActiveSessionId])
 
   // Auto-create one default tab on clean launch.
   //
@@ -1841,6 +1905,7 @@ export const useSessionManager = (
     activeSessionId,
     setActiveSessionId,
     createSession,
+    createBrowserSession,
     removeSession,
     setSessionLayout,
     setSessionActivePane,

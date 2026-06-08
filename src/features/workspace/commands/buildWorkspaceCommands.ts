@@ -28,6 +28,7 @@ export interface WorkspaceCommandDeps {
   activePanePtyId: string | null
   activePaneAgentType?: Session['agentType'] | null
   createSession: () => void
+  createBrowserSession?: () => void
   removeSession: (id: string) => SessionCloseResult
   renameSession: (id: string, name: string) => void
   /**
@@ -90,6 +91,7 @@ export const buildWorkspaceCommands = (
     activePanePtyId,
     activePaneAgentType = null,
     createSession,
+    createBrowserSession,
     removeSession,
     renameSession,
     setPaneUserLabel,
@@ -136,6 +138,15 @@ export const buildWorkspaceCommands = (
       icon: 'add',
       execute: (): void => {
         createSession()
+      },
+    },
+    {
+      id: 'new-browser',
+      label: ':new-browser',
+      description: 'Create a new browser-only session',
+      icon: 'public',
+      execute: (): void => {
+        createBrowserSession?.()
       },
     },
     {

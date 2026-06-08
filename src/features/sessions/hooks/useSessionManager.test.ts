@@ -15,6 +15,8 @@ import {
   loadWorkspaceForRestore,
   pushWorkspaceShape,
 } from '../workspaceLayoutBridge'
+import { DEFAULT_BROWSER_URL } from '../../browser/types'
+import { createBrowserPane } from '../../browser/browserBridge'
 
 const mockListen = vi.hoisted(() =>
   vi.fn(
@@ -40,6 +42,14 @@ vi.mock('../workspaceLayoutBridge', () => ({
   loadWorkspaceForRestore: vi.fn(() => Promise.resolve(null)),
   beginWorkspaceHydration: vi.fn(() => Promise.resolve()),
   endWorkspaceHydration: vi.fn(() => Promise.resolve()),
+}))
+
+// Partial mock: only spy on createBrowserPane; keep destroyBrowserPane /
+// focusBrowserPane as their real (no-bridge) no-ops so removeSession and the
+// active-session controller still behave.
+vi.mock('../../browser/browserBridge', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../browser/browserBridge')>()),
+  createBrowserPane: vi.fn(() => Promise.resolve(null)),
 }))
 
 const createMockService = (): ITerminalService => ({
@@ -1351,6 +1361,71 @@ describe('useSessionManager', () => {
     expect(
       panes.some((p) => p.kind === 'browser' && p.ptyId === 'browser:legacy')
     ).toBe(true)
+  })
+
+  // Browser-only session from scratch (spec §6.2): one runtime browser pane,
+  // no PTY spawn, main asked to create the WebContents at the default url.
+  test('createBrowserSession builds a browser-only session with no PTY spawn', async () => {
+    const service = createMockService()
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    act(() => {
+      result.current.createBrowserSession()
+    })
+
+    await waitFor(() => expect(result.current.sessions).toHaveLength(1))
+    const session = result.current.sessions[0]
+    expect(session.layout).toBe('single')
+    expect(session.panes).toHaveLength(1)
+    const pane = session.panes[0]
+    expect(pane.kind).toBe('browser')
+    expect(pane.id).toBe('p0')
+    expect(pane.ptyId.startsWith('browser:')).toBe(true)
+    expect(pane.agentType).toBe('generic')
+    expect(pane.status).toBe('running')
+    expect(pane.active).toBe(true)
+    // No PTY spawn for a browser-only session.
+    expect(service.spawn).not.toHaveBeenCalled()
+    // Main creates the WebContents seeded with the default url.
+    expect(vi.mocked(createBrowserPane)).toHaveBeenCalledWith({
+      sessionId: session.id,
+      paneId: 'p0',
+      workspaceId: 'proj-1',
+      initialUrl: DEFAULT_BROWSER_URL,
+    })
+    // The new session is selected.
+    expect(result.current.activeSessionId).toBe(session.id)
+  })
+
+  // A failed eager create (bridge/main unavailable) must not throw or leave an
+  // unhandled rejection — the session is still created and selected, and
+  // BrowserPane re-issues the create on mount.
+  test('createBrowserSession survives a createBrowserPane rejection', async () => {
+    vi.mocked(createBrowserPane).mockRejectedValueOnce(new Error('bridge down'))
+
+    const service = createMockService()
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    act(() => {
+      result.current.createBrowserSession()
+    })
+
+    await waitFor(() => expect(result.current.sessions).toHaveLength(1))
+    // Let the rejected eager-create settle so any unhandled rejection surfaces.
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    expect(result.current.sessions[0].panes[0].kind).toBe('browser')
+    expect(result.current.activeSessionId).toBe(result.current.sessions[0].id)
   })
 
   // Post-crash recovery: the previous app died without a graceful exit

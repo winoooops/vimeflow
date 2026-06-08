@@ -52,6 +52,31 @@ describe('buildWorkspaceCommands - happy paths', () => {
     expect(createSession).toHaveBeenCalledOnce()
   })
 
+  test(':new-browser command calls createBrowserSession', () => {
+    const createBrowserSession = vi.fn()
+
+    const commands = buildWorkspaceCommands({
+      sessions: mockSessions,
+      activeSessionId: 'session-1',
+      createSession,
+      createBrowserSession,
+      removeSession,
+      renameSession,
+      setPaneUserLabel,
+      renameAgentSession,
+      activePanePtyId: 'pty-active',
+      setActiveSessionId,
+      notifyInfo,
+    })
+
+    const cmd = commands.find((c) => c.id === 'new-browser')
+    expect(cmd).toBeDefined()
+    expect(cmd?.label).toBe(':new-browser')
+
+    cmd?.execute?.('')
+    expect(createBrowserSession).toHaveBeenCalledOnce()
+  })
+
   test(':close command removes active session', () => {
     const commands = buildWorkspaceCommands({
       sessions: mockSessions,
