@@ -112,10 +112,7 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
     const layout = LAYOUTS[session.layout]
     const outerDivRef = useRef<HTMLDivElement>(null)
 
-    const browserSessionId =
-      session.browserSessionId ??
-      session.panes.find(isShellPane)?.ptyId ??
-      session.id
+    const browserSessionId = session.id
 
     const [ratios, setRatios] = useState<
       Partial<Record<LayoutId, LayoutRatios>>

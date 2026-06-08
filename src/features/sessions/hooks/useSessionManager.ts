@@ -150,10 +150,9 @@ const normalizePaneUserLabel = (
   return trimmed && trimmed.length > 0 ? trimmed : undefined
 }
 
-const browserSessionIdForSession = (session: Session): string =>
-  session.browserSessionId ??
-  session.panes.find(isShellPane)?.ptyId ??
-  session.id
+// The browser partition's sessionId segment is the workspace session id,
+// decoupled from any shell PTY so browser-only sessions are first-class.
+const browserSessionIdForSession = (session: Session): string => session.id
 
 interface StoredBrowserPane {
   sessionId: string
@@ -347,12 +346,8 @@ const restoreStoredBrowserPanes = (sessions: Session[]): Session[] => {
 
     const activePane = findActivePane({ ...session, panes })
 
-    const restoredBrowserSessionId =
-      storedForSession[0]?.sessionId ?? browserSessionIdForSession(session)
-
     return {
       ...session,
-      browserSessionId: restoredBrowserSessionId,
       panes,
       layout: layoutForPaneCount(session.layout, panes.length),
       // Pass the full pane set (like every other caller) — deriveShellSessionStatus
@@ -699,7 +694,6 @@ export const useSessionManager = (
               name: `session ${prev.length + 1}`,
               status: 'running',
               workingDirectory: result.cwd,
-              browserSessionId: result.sessionId,
               agentType: 'generic',
               layout: 'single',
               activityPanelCollapsed: false,

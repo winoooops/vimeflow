@@ -64,7 +64,6 @@ const session: Session = {
   name: 'session 1',
   status: 'running',
   workingDirectory: '/project',
-  browserSessionId: 'pty-shell',
   agentType: 'generic',
   layout: 'vsplit',
   activityPanelCollapsed: false,
@@ -202,7 +201,7 @@ describe('BrowserPane', () => {
     await settle()
 
     expect(bridgeMocks.setBrowserPaneBounds).toHaveBeenLastCalledWith({
-      sessionId: 'pty-shell',
+      sessionId: 'session-1',
       paneId: 'p1',
       bounds: { x: 10, y: 20, width: 640, height: 360 },
       shortcutContext: { activePaneId: 'p1', paneIds: ['p0', 'p1'] },
@@ -253,7 +252,7 @@ describe('BrowserPane', () => {
     await user.keyboard('{Enter}')
 
     expect(bridgeMocks.navigateBrowserPane).toHaveBeenCalledWith({
-      sessionId: 'pty-shell',
+      sessionId: 'session-1',
       paneId: 'p1',
       url: 'https://github.com/login',
     })
@@ -265,7 +264,7 @@ describe('BrowserPane', () => {
 
     act(() =>
       navStateCallback()({
-        sessionId: 'pty-shell',
+        sessionId: 'session-1',
         paneId: 'p1',
         tabId: 'tab-0',
         canGoBack: true,
@@ -302,7 +301,7 @@ describe('BrowserPane', () => {
 
     act(() =>
       tabsCallback()({
-        sessionId: 'pty-shell',
+        sessionId: 'session-1',
         paneId: 'p1',
         tabs: [
           {
@@ -328,7 +327,7 @@ describe('BrowserPane', () => {
 
     act(() =>
       navStateCallback()({
-        sessionId: 'pty-shell',
+        sessionId: 'session-1',
         paneId: 'p1',
         tabId: 'tab-0',
         canGoBack: false,
@@ -347,7 +346,7 @@ describe('BrowserPane', () => {
 
     act(() =>
       navStateCallback()({
-        sessionId: 'pty-shell',
+        sessionId: 'session-1',
         paneId: 'p1',
         tabId: 'tab-0',
         canGoBack: true,
@@ -360,13 +359,13 @@ describe('BrowserPane', () => {
     await user.click(screen.getByRole('button', { name: 'reload' }))
 
     expect(bridgeMocks.navActionBrowserPane).toHaveBeenCalledWith({
-      sessionId: 'pty-shell',
+      sessionId: 'session-1',
       paneId: 'p1',
       action: 'back',
     })
 
     expect(bridgeMocks.navActionBrowserPane).toHaveBeenCalledWith({
-      sessionId: 'pty-shell',
+      sessionId: 'session-1',
       paneId: 'p1',
       action: 'reload',
     })
@@ -395,7 +394,7 @@ describe('BrowserPane', () => {
     // Live event arrives before createBrowserPane resolves.
     act(() =>
       navStateCallback()({
-        sessionId: 'pty-shell',
+        sessionId: 'session-1',
         paneId: 'p1',
         tabId: 'tab-0',
         canGoBack: false,
@@ -422,7 +421,7 @@ describe('BrowserPane', () => {
 
     act(() => {
       urlCallback()({
-        sessionId: 'pty-shell',
+        sessionId: 'session-1',
         paneId: 'p1',
         tabId: 'tab-0',
         url: 'https://example.com/',
@@ -454,7 +453,7 @@ describe('BrowserPane', () => {
 
     act(() => {
       urlCallback()({
-        sessionId: 'pty-shell',
+        sessionId: 'session-1',
         paneId: 'p1',
         tabId: 'tab-0',
         url: 'https://example.com/page',
@@ -490,7 +489,7 @@ describe('BrowserPane', () => {
 
     act(() => {
       urlCallback()({
-        sessionId: 'pty-shell',
+        sessionId: 'session-1',
         paneId: 'p1',
         tabId: 'tab-0',
         url: 'https://github.com/dashboard',
@@ -534,13 +533,13 @@ describe('BrowserPane', () => {
     const cb = bridgeMocks.onBrowserPaneFocusAddress.mock
       .calls[0][0] as (event: { sessionId: string; paneId: string }) => void
 
-    act(() => cb({ sessionId: 'pty-shell', paneId: 'WRONG' }))
+    act(() => cb({ sessionId: 'session-1', paneId: 'WRONG' }))
     expect(screen.queryByLabelText('browser address')).toBeNull()
 
     act(() => cb({ sessionId: 'WRONG', paneId: 'p1' }))
     expect(screen.queryByLabelText('browser address')).toBeNull()
 
-    act(() => cb({ sessionId: 'pty-shell', paneId: 'p1' }))
+    act(() => cb({ sessionId: 'session-1', paneId: 'p1' }))
     expect(screen.getByLabelText('browser address')).toBeInTheDocument()
   })
 
@@ -554,7 +553,7 @@ describe('BrowserPane', () => {
     )
 
     expect(bridgeMocks.openExternalBrowserPane).toHaveBeenCalledWith({
-      sessionId: 'pty-shell',
+      sessionId: 'session-1',
       paneId: 'p1',
     })
   })
@@ -610,14 +609,14 @@ describe('BrowserPane', () => {
 
     await user.click(screen.getByRole('tab', { name: 'browser tab Other' }))
     expect(bridgeMocks.activateBrowserPaneTab).toHaveBeenCalledWith({
-      sessionId: 'pty-shell',
+      sessionId: 'session-1',
       paneId: 'p1',
       tabId: 'tab-1',
     })
 
     await user.click(screen.getByRole('button', { name: 'new browser tab' }))
     expect(bridgeMocks.newBrowserPaneTab).toHaveBeenCalledWith(
-      expect.objectContaining({ sessionId: 'pty-shell', paneId: 'p1' })
+      expect.objectContaining({ sessionId: 'session-1', paneId: 'p1' })
     )
 
     await user.click(
@@ -625,7 +624,7 @@ describe('BrowserPane', () => {
     )
 
     expect(bridgeMocks.closeBrowserPaneTab).toHaveBeenCalledWith({
-      sessionId: 'pty-shell',
+      sessionId: 'session-1',
       paneId: 'p1',
       tabId: 'tab-1',
     })
@@ -644,7 +643,7 @@ describe('BrowserPane', () => {
 
     act(() =>
       callback({
-        sessionId: 'pty-shell',
+        sessionId: 'session-1',
         paneId: 'p1',
         tabs: [
           {
@@ -675,7 +674,7 @@ describe('BrowserPane', () => {
     }) => void
 
     expect(() => {
-      act(() => callback({ sessionId: 'pty-shell', paneId: 'p1', tabs: [] }))
+      act(() => callback({ sessionId: 'session-1', paneId: 'p1', tabs: [] }))
     }).not.toThrow()
 
     expect(screen.getByTestId('browser-pane')).toBeInTheDocument()
