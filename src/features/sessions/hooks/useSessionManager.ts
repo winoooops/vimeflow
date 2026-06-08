@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { flushSync } from 'react-dom'
 import type { LayoutId, Pane, PaneKind, Session } from '../types'
 import type { AgentSessionTitleEvent } from '../../../bindings'
@@ -158,212 +158,6 @@ const normalizePaneUserLabel = (
 // decoupled from any shell PTY so browser-only sessions are first-class.
 const browserSessionIdForSession = (session: Session): string => session.id
 
-interface StoredBrowserPane {
-  sessionId: string
-  shellPtyId?: string
-  paneId: string
-  ptyId: string
-  cwd: string
-  browserUrl: string
-  active: boolean
-}
-
-const BROWSER_PANE_STORE_KEY = 'vimeflow:browser-panes:v1'
-
-const canUseLocalStorage = (): boolean => typeof window !== 'undefined'
-
-const isStoredBrowserPane = (value: unknown): value is StoredBrowserPane =>
-  typeof value === 'object' &&
-  value !== null &&
-  !Array.isArray(value) &&
-  typeof (value as StoredBrowserPane).sessionId === 'string' &&
-  ((value as StoredBrowserPane).shellPtyId === undefined ||
-    typeof (value as StoredBrowserPane).shellPtyId === 'string') &&
-  typeof (value as StoredBrowserPane).paneId === 'string' &&
-  typeof (value as StoredBrowserPane).ptyId === 'string' &&
-  typeof (value as StoredBrowserPane).cwd === 'string' &&
-  typeof (value as StoredBrowserPane).browserUrl === 'string' &&
-  typeof (value as StoredBrowserPane).active === 'boolean'
-
-const readStoredBrowserPanes = (): StoredBrowserPane[] => {
-  if (!canUseLocalStorage()) {
-    return []
-  }
-
-  try {
-    const raw = window.localStorage.getItem(BROWSER_PANE_STORE_KEY)
-    if (!raw) {
-      return []
-    }
-
-    const parsed: unknown = JSON.parse(raw)
-
-    return Array.isArray(parsed) ? parsed.filter(isStoredBrowserPane) : []
-  } catch {
-    return []
-  }
-}
-
-const writeStoredBrowserPanesJson = (json: string): void => {
-  if (!canUseLocalStorage()) {
-    return
-  }
-
-  try {
-    if (json === '[]') {
-      window.localStorage.removeItem(BROWSER_PANE_STORE_KEY)
-
-      return
-    }
-
-    window.localStorage.setItem(BROWSER_PANE_STORE_KEY, json)
-  } catch {
-    // Browser pane restore is a convenience cache; quota or storage failures
-    // must not affect terminal session lifecycle.
-  }
-}
-
-const storedBrowserPanesForSessions = (
-  sessions: Session[]
-): StoredBrowserPane[] =>
-  sessions.flatMap((session) => {
-    const shellPtyId = session.panes.find(isShellPane)?.ptyId ?? session.id
-
-    return session.panes.filter(isBrowserPane).map((pane) => ({
-      sessionId: browserSessionIdForSession(session),
-      shellPtyId,
-      paneId: pane.id,
-      ptyId: pane.ptyId,
-      cwd: pane.cwd,
-      browserUrl:
-        pane.browserUrl && pane.browserUrl.length > 0
-          ? pane.browserUrl
-          : DEFAULT_BROWSER_URL,
-      active: pane.active,
-    }))
-  })
-
-const layoutForPaneCount = (
-  currentLayoutId: LayoutId,
-  paneCount: number
-): LayoutId => {
-  if (LAYOUTS[currentLayoutId].capacity >= paneCount) {
-    return currentLayoutId
-  }
-
-  const matchingLayout = Object.values(LAYOUTS).find(
-    (layout) => layout.capacity >= paneCount
-  )
-
-  return matchingLayout?.id ?? currentLayoutId
-}
-
-const restoreStoredBrowserPanes = (sessions: Session[]): Session[] => {
-  const stored = readStoredBrowserPanes()
-  if (stored.length === 0) {
-    return sessions
-  }
-
-  const storedBySession = new Map<string, StoredBrowserPane[]>()
-  const storedByShellPty = new Map<string, StoredBrowserPane[]>()
-  for (const pane of stored) {
-    storedBySession.set(pane.sessionId, [
-      ...(storedBySession.get(pane.sessionId) ?? []),
-      pane,
-    ])
-
-    if (pane.shellPtyId) {
-      storedByShellPty.set(pane.shellPtyId, [
-        ...(storedByShellPty.get(pane.shellPtyId) ?? []),
-        pane,
-      ])
-    }
-  }
-
-  return sessions.map((session) => {
-    const shellPtyId = session.panes.find(isShellPane)?.ptyId ?? session.id
-
-    const storedByStableKey =
-      storedBySession.get(browserSessionIdForSession(session)) ?? []
-    const storedByCurrentShell = storedByShellPty.get(shellPtyId) ?? []
-    const storedByPaneId = new Map<string, StoredBrowserPane>()
-
-    for (const pane of [...storedByStableKey, ...storedByCurrentShell]) {
-      storedByPaneId.set(pane.paneId, pane)
-    }
-
-    const storedForSession = [...storedByPaneId.values()]
-    if (storedForSession.length === 0) {
-      return session
-    }
-
-    const existingPaneIds = new Set(session.panes.map((pane) => pane.id))
-    let restoredActiveBrowser = false
-
-    const restoredBrowserPanes = storedForSession
-      .filter((pane) => {
-        if (existingPaneIds.has(pane.paneId)) {
-          return false
-        }
-
-        existingPaneIds.add(pane.paneId)
-
-        return true
-      })
-      .map((pane) => {
-        const active = pane.active && !restoredActiveBrowser
-        if (active) {
-          restoredActiveBrowser = true
-        }
-
-        return {
-          kind: 'browser',
-          id: pane.paneId,
-          ptyId: pane.ptyId,
-          cwd: pane.cwd,
-          agentType: 'generic',
-          status: 'running',
-          active,
-          browserUrl:
-            pane.browserUrl && pane.browserUrl.length > 0
-              ? pane.browserUrl
-              : DEFAULT_BROWSER_URL,
-        } satisfies Pane
-      })
-
-    if (restoredBrowserPanes.length === 0) {
-      return session
-    }
-
-    const hasRestoredActiveBrowser = restoredBrowserPanes.some(
-      (pane) => pane.active
-    )
-
-    const panes = hasRestoredActiveBrowser
-      ? [
-          ...session.panes.map((pane) =>
-            pane.active ? { ...pane, active: false } : pane
-          ),
-          ...restoredBrowserPanes,
-        ]
-      : [...session.panes, ...restoredBrowserPanes]
-
-    const activePane = findActivePane({ ...session, panes })
-
-    return {
-      ...session,
-      panes,
-      layout: layoutForPaneCount(session.layout, panes.length),
-      // Pass the full pane set (like every other caller) — deriveShellSessionStatus
-      // filters to shells internally and falls back to all panes when none remain,
-      // so a restored browser-only session reads 'running' instead of the
-      // empty-slice 'errored' guard the pre-filter produced.
-      status: deriveShellSessionStatus(panes),
-      agentType: activePane?.agentType ?? session.agentType,
-    }
-  })
-}
-
 /**
  * Manage the session list, restore data, and tab orchestration for the
  * workspace.
@@ -431,17 +225,8 @@ export const useSessionManager = (
   const { loading } = useSessionRestore({
     service,
     buffer,
-    onRestore: (restored, { storePresent }): void => {
-      // The durable store is authoritative for browser panes when present, so
-      // skip the legacy localStorage merge — otherwise a pane closed before a
-      // crash (never cleared from localStorage) would be resurrected. The
-      // localStorage cache is only consulted when no store loaded (retired in
-      // a follow-up).
-      const restoredWithBrowserPanes = storePresent
-        ? restored
-        : restoreStoredBrowserPanes(restored)
-
-      for (const session of restoredWithBrowserPanes) {
+    onRestore: (restored): void => {
+      for (const session of restored) {
         for (const pane of session.panes) {
           if (pane.restoreData) {
             restoreDataRef.current.set(pane.ptyId, pane.restoreData)
@@ -455,7 +240,7 @@ export const useSessionManager = (
             prev.flatMap((session) => session.panes.map((pane) => pane.ptyId))
           )
 
-          const restoredOnly = restoredWithBrowserPanes.filter(
+          const restoredOnly = restored.filter(
             (session) =>
               !session.panes.some((pane) => inMemoryPtyIds.has(pane.ptyId))
           )
@@ -871,19 +656,6 @@ export const useSessionManager = (
   // restore can reconstruct the multi-pane layout instead of fragmenting
   // each PTY into its own single-pane session. Debounced inside the hook.
   usePushWorkspaceGrouping({ sessions, activeSessionId, loading })
-
-  const browserPaneStoreJson = useMemo(
-    () => JSON.stringify(storedBrowserPanesForSessions(sessions)),
-    [sessions]
-  )
-
-  useEffect(() => {
-    if (loading) {
-      return
-    }
-
-    writeStoredBrowserPanesJson(browserPaneStoreJson)
-  }, [loading, browserPaneStoreJson])
 
   // Remove session — kill + filter + advance active
   const removeSession = useCallback(

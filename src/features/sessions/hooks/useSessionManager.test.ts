@@ -1312,11 +1312,7 @@ describe('useSessionManager', () => {
     expect(result.current.sessions[0].panes[0].ptyId).toBe('pty-shell')
   })
 
-  // An EMPTY store (Electron returns `{ sessions: [] }` for a missing / corrupt
-  // / version-discarded file, not null) is NOT authoritative — restore falls
-  // back to PTY reconstruction, so the legacy browser cache must still apply or
-  // existing browser panes vanish on a reload before the first store write.
-  test('falls back to the localStorage browser cache when the durable store is empty', async () => {
+  test('does not restore browser panes from the legacy localStorage cache', async () => {
     vi.mocked(loadWorkspaceForRestore).mockResolvedValueOnce({ sessions: [] })
     window.localStorage.setItem(
       'vimeflow:browser-panes:v1',
@@ -1355,12 +1351,49 @@ describe('useSessionManager', () => {
     await waitFor(() => expect(result.current.loading).toBe(false))
     await waitFor(() => expect(result.current.sessions).toHaveLength(1))
 
-    // Empty store is NOT authoritative → the legacy cache restores the pane.
     const panes = result.current.sessions[0].panes
-    expect(panes).toHaveLength(2)
+    expect(panes).toHaveLength(1)
+    expect(panes[0].ptyId).toBe('pty-1')
+  })
+
+  test('does not write the legacy localStorage browser cache after restore', async () => {
+    vi.mocked(loadWorkspaceForRestore).mockResolvedValueOnce({
+      sessions: [
+        {
+          id: 'ws-browser',
+          projectId: 'proj-1',
+          layout: 'single',
+          workingDirectory: '/home/will/proj',
+          active: true,
+          panes: [
+            { kind: 'browser', paneId: 'p0', paneIndex: 0, active: true },
+          ],
+        },
+      ],
+    })
+    const setItemSpy = vi.spyOn(Storage.prototype, 'setItem')
+    const removeItemSpy = vi.spyOn(Storage.prototype, 'removeItem')
+
+    const service = createMockService()
+    service.listSessions = vi
+      .fn()
+      .mockResolvedValue({ activeSessionId: null, sessions: [] })
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    await waitFor(() => expect(result.current.sessions).toHaveLength(1))
+
     expect(
-      panes.some((p) => p.kind === 'browser' && p.ptyId === 'browser:legacy')
-    ).toBe(true)
+      setItemSpy.mock.calls.some(([key]) => key === 'vimeflow:browser-panes:v1')
+    ).toBe(false)
+
+    expect(
+      removeItemSpy.mock.calls.some(
+        ([key]) => key === 'vimeflow:browser-panes:v1'
+      )
+    ).toBe(false)
   })
 
   // Browser-only session from scratch (spec §6.2): one runtime browser pane,
