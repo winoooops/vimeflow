@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { Session } from '../types'
+import type { Pane, Session } from '../types'
 import type { ITerminalService } from '../../terminal/services/terminalService'
 import { isShellPane } from '../utils/paneKind'
 import { focusBrowserPane } from '../../browser/browserBridge'
@@ -47,15 +47,23 @@ export const useActiveSessionController = ({
         return
       }
 
-      // Resolve a LIVE shell PTY across ALL shell panes (running/paused), not
-      // findBackendSessionPane's `?? shellPanes[0]` fallback which can return a
-      // dead placeholder whose setActiveSession the backend rejects — rolling
-      // back the very selection we just made. Spec §4.
-      const liveShell = session.panes.find(
-        (pane) =>
-          isShellPane(pane) &&
-          (pane.status === 'running' || pane.status === 'paused')
-      )
+      const activePane = session.panes.find((pane) => pane.active)
+
+      const isLiveShell = (pane: Pane): boolean =>
+        isShellPane(pane) &&
+        (pane.status === 'running' || pane.status === 'paused')
+
+      // Resolve the LIVE shell PTY to activate. Prefer the session's active
+      // pane when it is a live shell so restore (and a tab switch) target the
+      // pane the UI shows — otherwise Rust's active PTY diverges from the
+      // restored active pane. Fall back to ANY live shell so a session whose
+      // active pane is a dead placeholder is still selectable (not
+      // findBackendSessionPane's `?? shellPanes[0]`, which can return a dead
+      // placeholder the backend rejects). Spec §4.
+      const liveShell =
+        activePane && isLiveShell(activePane)
+          ? activePane
+          : session.panes.find(isLiveShell)
 
       // Bump the request id BEFORE branching so a prior in-flight shell
       // rollback (older myReq) can no longer revert this selection.
@@ -88,7 +96,6 @@ export const useActiveSessionController = ({
       // restartable placeholders (dead PTYs from a graceful-quit restore).
       // Skip the PTY IPC (its rollback would revert this selection) and focus
       // the browser pane when the active pane is one.
-      const activePane = session.panes.find((pane) => pane.active)
       if (activePane && !isShellPane(activePane)) {
         void focusBrowserPane({ sessionId: session.id, paneId: activePane.id })
       }

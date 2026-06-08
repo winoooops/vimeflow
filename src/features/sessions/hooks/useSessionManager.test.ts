@@ -10,7 +10,11 @@ import {
   registerPtySession,
 } from '../../terminal/ptySessionMap'
 import { readActivityPanelCollapsed } from '../utils/activityPanelCollapsedStore'
-import { pushWorkspaceShape } from '../workspaceLayoutBridge'
+import type { WorkspaceShapeDto } from '../workspaceLayoutBridge'
+import {
+  loadWorkspaceForRestore,
+  pushWorkspaceShape,
+} from '../workspaceLayoutBridge'
 
 const mockListen = vi.hoisted(() =>
   vi.fn(
@@ -31,7 +35,12 @@ vi.mock('../../../lib/backend', () => ({
   listen: mockListen,
 }))
 
-vi.mock('../workspaceLayoutBridge', () => ({ pushWorkspaceShape: vi.fn() }))
+vi.mock('../workspaceLayoutBridge', () => ({
+  pushWorkspaceShape: vi.fn(),
+  loadWorkspaceForRestore: vi.fn(() => Promise.resolve(null)),
+  beginWorkspaceHydration: vi.fn(() => Promise.resolve()),
+  endWorkspaceHydration: vi.fn(() => Promise.resolve()),
+}))
 
 const createMockService = (): ITerminalService => ({
   spawn: vi
@@ -1184,6 +1193,164 @@ describe('useSessionManager', () => {
     // No auto-create — restored session populates the list.
     expect(service.spawn).not.toHaveBeenCalled()
     expect(result.current.sessions[0].id).toBe('restored-1')
+  })
+
+  // A browser-only session restored from the durable store has no shell PTY,
+  // but its live browser pane makes it a usable workspace — auto-create must
+  // NOT seed an extra terminal tab on top of it.
+  test('auto-create is skipped for a restored browser-only session', async () => {
+    const store: WorkspaceShapeDto = {
+      sessions: [
+        {
+          id: 'ws-browser',
+          projectId: 'proj-1',
+          layout: 'single',
+          workingDirectory: '/home/will/proj',
+          active: true,
+          panes: [
+            { kind: 'browser', paneId: 'p0', paneIndex: 0, active: true },
+          ],
+        },
+      ],
+    }
+    vi.mocked(loadWorkspaceForRestore).mockResolvedValueOnce(store)
+
+    const service = createMockService()
+    service.listSessions = vi
+      .fn()
+      .mockResolvedValue({ activeSessionId: null, sessions: [] })
+
+    const { result } = renderHook(() => useSessionManager(service))
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    await waitFor(() => expect(result.current.sessions).toHaveLength(1))
+
+    expect(result.current.sessions[0].id).toBe('ws-browser')
+    expect(result.current.sessions[0].panes[0].kind).toBe('browser')
+    // The live browser pane counts as a live session → no seeded terminal.
+    expect(service.spawn).not.toHaveBeenCalled()
+  })
+
+  // When the durable store is authoritative, the legacy localStorage browser
+  // cache must NOT be merged — otherwise a pane closed before a crash (never
+  // cleared from localStorage) would be resurrected on the next restore.
+  test('store-driven restore ignores the stale localStorage browser cache', async () => {
+    const store: WorkspaceShapeDto = {
+      sessions: [
+        {
+          id: 'ws-shell',
+          projectId: 'proj-1',
+          layout: 'single',
+          workingDirectory: '/home/will/proj',
+          active: true,
+          panes: [
+            {
+              kind: 'shell',
+              paneId: 'p0',
+              paneIndex: 0,
+              active: true,
+              ptyId: 'pty-shell',
+              cwd: '/home/will/proj',
+              agentType: 'generic',
+              agentSessionId: null,
+            },
+          ],
+        },
+      ],
+    }
+    vi.mocked(loadWorkspaceForRestore).mockResolvedValueOnce(store)
+    // A browser pane closed before a crash, still lingering in the legacy key.
+    window.localStorage.setItem(
+      'vimeflow:browser-panes:v1',
+      JSON.stringify([
+        {
+          sessionId: 'ws-shell',
+          paneId: 'p1',
+          ptyId: 'browser:stale',
+          cwd: '/home/will/proj',
+          browserUrl: 'https://example.com/',
+          active: false,
+        },
+      ])
+    )
+
+    const service = createMockService()
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: 'pty-shell',
+      sessions: [
+        {
+          id: 'pty-shell',
+          cwd: '/home/will/proj',
+          status: {
+            kind: 'Alive',
+            pid: 1,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+      ],
+    })
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    await waitFor(() => expect(result.current.sessions).toHaveLength(1))
+
+    // The durable store is authoritative — the stale browser pane is dropped.
+    expect(result.current.sessions[0].id).toBe('ws-shell')
+    expect(result.current.sessions[0].panes).toHaveLength(1)
+    expect(result.current.sessions[0].panes[0].ptyId).toBe('pty-shell')
+  })
+
+  // An EMPTY store (Electron returns `{ sessions: [] }` for a missing / corrupt
+  // / version-discarded file, not null) is NOT authoritative — restore falls
+  // back to PTY reconstruction, so the legacy browser cache must still apply or
+  // existing browser panes vanish on a reload before the first store write.
+  test('falls back to the localStorage browser cache when the durable store is empty', async () => {
+    vi.mocked(loadWorkspaceForRestore).mockResolvedValueOnce({ sessions: [] })
+    window.localStorage.setItem(
+      'vimeflow:browser-panes:v1',
+      JSON.stringify([
+        {
+          sessionId: 'pty-1',
+          paneId: 'p1',
+          ptyId: 'browser:legacy',
+          cwd: '/home/will/proj',
+          browserUrl: 'https://example.com/',
+          active: false,
+        },
+      ])
+    )
+
+    const service = createMockService()
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: 'pty-1',
+      sessions: [
+        {
+          id: 'pty-1',
+          cwd: '/home/will/proj',
+          status: {
+            kind: 'Alive',
+            pid: 1,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+      ],
+    })
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    await waitFor(() => expect(result.current.sessions).toHaveLength(1))
+
+    // Empty store is NOT authoritative → the legacy cache restores the pane.
+    const panes = result.current.sessions[0].panes
+    expect(panes).toHaveLength(2)
+    expect(
+      panes.some((p) => p.kind === 'browser' && p.ptyId === 'browser:legacy')
+    ).toBe(true)
   })
 
   // Post-crash recovery: the previous app died without a graceful exit

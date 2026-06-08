@@ -1,6 +1,14 @@
 import { describe, expect, test } from 'vitest'
 import type { PaneGrouping, SessionInfo } from '../../../bindings'
-import { groupSessionsFromInfos } from './groupSessionsFromInfos'
+import type {
+  WorkspaceShapeBrowserPane,
+  WorkspaceShapeDto,
+  WorkspaceShapeShellPane,
+} from '../workspaceLayoutBridge'
+import {
+  groupSessionsFromInfos,
+  reconstructWorkspace,
+} from './groupSessionsFromInfos'
 
 const alive = (id: string, cwd: string): SessionInfo => ({
   id,
@@ -303,5 +311,334 @@ describe('groupSessionsFromInfos', () => {
     expect(sessions).toHaveLength(1)
     expect(sessions[0].panes[0].ptyId).toBe('pty-dup')
     expect(sessions[0].panes[0].cwd).toBe('/repo/a')
+  })
+})
+
+const shellShape = (
+  overrides: Partial<WorkspaceShapeShellPane> = {}
+): WorkspaceShapeShellPane => ({
+  kind: 'shell',
+  paneId: 'p0',
+  paneIndex: 0,
+  active: false,
+  ptyId: 'pty-a',
+  cwd: '/home/will/repo',
+  agentType: 'generic',
+  agentSessionId: null,
+  ...overrides,
+})
+
+const browserShape = (
+  overrides: Partial<WorkspaceShapeBrowserPane> = {}
+): WorkspaceShapeBrowserPane => ({
+  kind: 'browser',
+  paneId: 'p0',
+  paneIndex: 0,
+  active: false,
+  ...overrides,
+})
+
+const storeOf = (
+  sessions: WorkspaceShapeDto['sessions']
+): WorkspaceShapeDto => ({ sessions })
+
+const storeSession = (
+  overrides: Partial<WorkspaceShapeDto['sessions'][number]> = {}
+): WorkspaceShapeDto['sessions'][number] => ({
+  id: 'ws-1',
+  projectId: 'proj-1',
+  layout: 'single',
+  workingDirectory: '/home/will/repo',
+  active: true,
+  panes: [shellShape({ active: true })],
+  ...overrides,
+})
+
+describe('reconstructWorkspace', () => {
+  // Store absent (unknown version / corrupt / first run) → fall back entirely
+  // to the PTY-driven #290 reconstruction, so a reload with no durable store
+  // behaves exactly like today.
+  test('null store falls back to PTY-driven groupSessionsFromInfos', () => {
+    const live = [alive('pty-x', '/repo/x'), alive('pty-y', '/repo/y')]
+
+    const sessions = reconstructWorkspace(null, live, 'pty-x')
+    const baseline = groupSessionsFromInfos(live)
+
+    expect(sessions.map((s) => s.id)).toEqual(baseline.map((s) => s.id))
+    expect(sessions.map((s) => s.panes.map((p) => p.ptyId))).toEqual(
+      baseline.map((s) => s.panes.map((p) => p.ptyId))
+    )
+    expect(sessions.map((s) => s.layout)).toEqual(baseline.map((s) => s.layout))
+  })
+
+  // Store present: a shell pane whose ptyId is alive reattaches under the
+  // STORE's session id (not the PTY-driven solo id), preserving replay data.
+  test('reattaches an alive shell under the store session id', () => {
+    const store = storeOf([
+      storeSession({
+        id: 'ws-alive',
+        panes: [shellShape({ ptyId: 'pty-a', active: true })],
+      }),
+    ])
+
+    const live: SessionInfo[] = [
+      {
+        id: 'pty-a',
+        cwd: '/home/will/repo',
+        status: {
+          kind: 'Alive',
+          pid: 4321,
+          replay_data: 'scrollback',
+          replay_end_offset: 9n,
+        },
+      },
+    ]
+
+    const sessions = reconstructWorkspace(store, live, 'pty-a')
+
+    expect(sessions).toHaveLength(1)
+    expect(sessions[0].id).toBe('ws-alive')
+    expect(sessions[0].panes).toHaveLength(1)
+    const pane = sessions[0].panes[0]
+    expect(pane.ptyId).toBe('pty-a')
+    expect(pane.status).toBe('running')
+    expect(pane.restoreData?.replayData).toBe('scrollback')
+    expect(pane.restoreData?.replayEndOffset).toBe(9)
+    expect(sessions[0].status).toBe('running')
+  })
+
+  // A shell pane whose PTY is gone (graceful quit / crash) returns as a
+  // restartable `completed` placeholder seeded with the persisted cwd + agent.
+  test('returns a restartable placeholder for a dead shell ptyId', () => {
+    const store = storeOf([
+      storeSession({
+        id: 'ws-dead',
+        workingDirectory: '/home/will/proj',
+        panes: [
+          shellShape({
+            ptyId: 'pty-gone',
+            cwd: '/home/will/proj/sub',
+            agentType: 'codex',
+            active: true,
+          }),
+        ],
+      }),
+    ])
+
+    const sessions = reconstructWorkspace(store, [], null)
+
+    expect(sessions).toHaveLength(1)
+    const pane = sessions[0].panes[0]
+    expect(pane.ptyId).toBe('pty-gone')
+    expect(pane.status).toBe('completed')
+    expect(pane.cwd).toBe('/home/will/proj/sub')
+    expect(pane.agentType).toBe('codex')
+    expect(pane.restoreData).toBeUndefined()
+    expect(pane.pid).toBeUndefined()
+    expect(sessions[0].status).toBe('completed')
+    expect(sessions[0].agentType).toBe('codex')
+  })
+
+  // Browser-only session: no PTY exists; the store is the sole source.
+  test('builds a browser-only session from a browser pane shape', () => {
+    const store = storeOf([
+      storeSession({
+        id: 'ws-browser',
+        workingDirectory: '/home/will/proj',
+        panes: [browserShape({ paneId: 'p0', paneIndex: 0, active: true })],
+      }),
+    ])
+
+    const sessions = reconstructWorkspace(store, [], null)
+
+    expect(sessions).toHaveLength(1)
+    expect(sessions[0].id).toBe('ws-browser')
+    expect(sessions[0].status).toBe('running')
+    const pane = sessions[0].panes[0]
+    expect(pane.kind).toBe('browser')
+    expect(pane.ptyId.startsWith('browser:')).toBe(true)
+    expect(pane.agentType).toBe('generic')
+    expect(pane.status).toBe('running')
+    expect(pane.cwd).toBe('/home/will/proj')
+    expect(pane.active).toBe(true)
+  })
+
+  // Mixed session: a live browser keeps the session `running` even though its
+  // only shell came back as a `completed` placeholder. Panes sort by paneIndex.
+  test('mixed dead-shell + browser → running, paneIndex order, one active', () => {
+    const store = storeOf([
+      storeSession({
+        id: 'ws-mixed',
+        layout: 'vsplit',
+        workingDirectory: '/home/will/proj',
+        // Deliberately out of paneIndex order — reconstruction must sort.
+        panes: [
+          browserShape({ paneId: 'p1', paneIndex: 1, active: true }),
+          shellShape({
+            paneId: 'p0',
+            paneIndex: 0,
+            ptyId: 'pty-dead',
+            active: false,
+          }),
+        ],
+      }),
+    ])
+
+    const sessions = reconstructWorkspace(store, [], null)
+
+    expect(sessions).toHaveLength(1)
+    const s = sessions[0]
+    expect(s.panes.map((p) => p.id)).toEqual(['p0', 'p1'])
+    expect(s.panes[0].status).toBe('completed')
+    expect(s.panes[1].kind).toBe('browser')
+    expect(s.panes.filter((p) => p.active)).toHaveLength(1)
+    expect(s.panes.find((p) => p.active)?.id).toBe('p1')
+    expect(s.status).toBe('running')
+    expect(s.layout).toBe('vsplit')
+  })
+
+  // Multiple active store panes (a transient push race wrote >1) → exactly one,
+  // first-flagged wins.
+  test('fixes up multiple active store panes to exactly one', () => {
+    const store = storeOf([
+      storeSession({
+        id: 'ws-multi',
+        layout: 'vsplit',
+        panes: [
+          browserShape({ paneId: 'p0', paneIndex: 0, active: true }),
+          browserShape({ paneId: 'p1', paneIndex: 1, active: true }),
+        ],
+      }),
+    ])
+
+    const active = reconstructWorkspace(store, [], null)[0].panes.filter(
+      (p) => p.active
+    )
+    expect(active).toHaveLength(1)
+    expect(active[0].id).toBe('p0')
+  })
+
+  // Union: a live PTY the store never references must still come back (a tab
+  // created since the last store write) — appended as a #290 solo session.
+  test('reconstructs a live PTY the store does not reference', () => {
+    const store = storeOf([
+      storeSession({
+        id: 'ws-1',
+        panes: [shellShape({ ptyId: 'pty-a', active: true })],
+      }),
+    ])
+    const live = [alive('pty-a', '/home/will/repo'), alive('pty-new', '/other')]
+
+    const sessions = reconstructWorkspace(store, live, 'pty-a')
+
+    expect(sessions).toHaveLength(2)
+    expect(sessions.map((s) => s.id)).toContain('ws-1')
+    expect(sessions.map((s) => s.id)).toContain('pty-new')
+  })
+
+  // The store is authoritative for shape: a live-only session whose grouping id
+  // The store is authoritative for shape, BUT a live PTY is never dropped: when
+  // a reconstructed live-only session's id collides with a store session (a live
+  // cache newer than the store), it is re-keyed to its first PTY and kept, so
+  // the running agent still gets a tab.
+  test('re-keys (never drops) a live PTY whose grouping id collides with a store session', () => {
+    const store = storeOf([
+      storeSession({
+        id: 'ws-1',
+        panes: [shellShape({ ptyId: 'pty-a', active: true })],
+      }),
+    ])
+
+    const live: SessionInfo[] = [
+      alive('pty-a', '/home/will/repo'),
+      {
+        ...alive('pty-orphan', '/home/will/repo'),
+        grouping: grouping({
+          workspaceSessionId: 'ws-1',
+          layout: 'single',
+          paneId: 'p9',
+          paneIndex: 0,
+          active: true,
+        }),
+      },
+    ]
+
+    const sessions = reconstructWorkspace(store, live, 'pty-a')
+
+    // The store session is untouched; the orphan PTY survives under a
+    // non-colliding id (its own ptyId), never dropped.
+    expect(sessions).toHaveLength(2)
+    const storeSession1 = sessions.find((s) => s.id === 'ws-1')
+    expect(storeSession1?.panes.map((p) => p.ptyId)).toEqual(['pty-a'])
+    const recovered = sessions.find((s) => s.id === 'pty-orphan')
+    expect(recovered).toBeDefined()
+    expect(recovered?.panes.map((p) => p.ptyId)).toEqual(['pty-orphan'])
+    // No duplicate session ids in the result.
+    expect(new Set(sessions.map((s) => s.id)).size).toBe(2)
+  })
+
+  // Fallback path keeps #290's active-pane reconcile: when no store exists,
+  // `activeSessionId` overrides stale grouping `active` flags.
+  test('null store reconciles active pane from activeSessionId', () => {
+    const ws = 'ws-recon'
+
+    const live: SessionInfo[] = [
+      {
+        ...alive('pty-a', '/home/will/repo'),
+        grouping: grouping({
+          workspaceSessionId: ws,
+          layout: 'vsplit',
+          workspaceDirectory: '/home/will/repo',
+          paneId: 'p0',
+          paneIndex: 0,
+          active: true,
+          agentType: 'claude-code',
+        }),
+      },
+      {
+        ...alive('pty-b', '/home/will/repo'),
+        grouping: grouping({
+          workspaceSessionId: ws,
+          layout: 'vsplit',
+          workspaceDirectory: '/home/will/repo',
+          paneId: 'p1',
+          paneIndex: 1,
+          active: false,
+          agentType: 'codex',
+        }),
+      },
+    ]
+
+    const sessions = reconstructWorkspace(null, live, 'pty-b')
+
+    expect(sessions).toHaveLength(1)
+    expect(sessions[0].panes.find((p) => p.active)?.ptyId).toBe('pty-b')
+    expect(sessions[0].agentType).toBe('codex')
+  })
+
+  // A persisted session with zero panes is malformed (partial write / crash /
+  // migration gap). It must be skipped — not crash — and the remaining valid
+  // sessions plus live PTYs must still restore.
+  test('skips zero-pane store sessions without aborting restore', () => {
+    const store = storeOf([
+      storeSession({
+        id: 'ws-empty',
+        panes: [],
+      }),
+      storeSession({
+        id: 'ws-valid',
+        panes: [shellShape({ ptyId: 'pty-a', active: true })],
+      }),
+    ])
+    const live = [alive('pty-a', '/home/will/repo'), alive('pty-b', '/other')]
+
+    const sessions = reconstructWorkspace(store, live, 'pty-a')
+
+    // The empty session is dropped; the valid store session and the live PTY
+    // both survive.
+    expect(sessions).toHaveLength(2)
+    expect(sessions.map((s) => s.id)).toContain('ws-valid')
+    expect(sessions.map((s) => s.id)).toContain('pty-b')
+    expect(sessions.find((s) => s.id === 'ws-valid')?.panes).toHaveLength(1)
   })
 })
