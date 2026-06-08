@@ -111,7 +111,7 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
         ? pane.status
         : ptyStatusToSessionStatus(ptyStatus)
 
-    const isPaused = (pipStatus as string) === 'paused'
+    const isIdle = pipStatus === 'idle'
 
     const { branch } = useGitBranch(pane.cwd, {
       enabled: isActive,
@@ -259,7 +259,7 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
           agent={agent}
           pipStatus={pipStatus}
           isFocused={isFocusHighlightVisible}
-          isPaused={isPaused}
+          isIdle={isIdle}
           onClickFocus={handleContainerClick}
           placeholder={footerPlaceholder}
         />
