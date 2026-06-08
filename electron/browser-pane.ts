@@ -61,7 +61,9 @@ interface BrowserPaneCreateRequest {
   sessionId: string
   paneId: string
   workspaceId: string
-  initialUrl: string
+  // Optional under restore: main loads each tab via navigationHistory instead.
+  initialUrl?: string
+  restore?: boolean
   shortcutContext?: BrowserPaneShortcutContext
 }
 
@@ -286,7 +288,7 @@ const isCreateRequest = (value: unknown): value is BrowserPaneCreateRequest =>
   isString(value.sessionId) &&
   isString(value.paneId) &&
   isString(value.workspaceId) &&
-  isString(value.initialUrl)
+  (value.restore === true || isString(value.initialUrl))
 
 const isBounds = (value: unknown): value is BrowserPaneBounds =>
   isRecord(value) &&
@@ -854,6 +856,10 @@ export class BrowserPaneController {
 
   private writeSignals: WorkspaceLayoutWriteSignals | null = null
 
+  private restoreTabsProvider:
+    | ((sessionId: string, paneId: string) => PersistedTab[] | null)
+    | null = null
+
   private readonly cdpAttachments = new Map<string, CdpAttachment>()
 
   private readonly partitionHandlers = new Set<string>()
@@ -926,6 +932,13 @@ export class BrowserPaneController {
     this.writeSignals = signals
   }
 
+  // Connect the loaded-store tab source so restore replays per-tab history.
+  setRestoreTabsProvider(
+    provider: (sessionId: string, paneId: string) => PersistedTab[] | null
+  ): void {
+    this.restoreTabsProvider = provider
+  }
+
   dispose(): void {
     ipcMain.removeHandler(BROWSER_PANE_CREATE)
     ipcMain.removeHandler(BROWSER_PANE_SET_BOUNDS)
@@ -985,7 +998,7 @@ export class BrowserPaneController {
       return {
         url: activeTab
           ? this.tabUrl(activeTab)
-          : normalizeUrl(payload.initialUrl),
+          : normalizeUrl(payload.initialUrl ?? DEFAULT_BROWSER_URL),
         title: this.activeWebContents(existing)?.getTitle() ?? null,
         partition: existing.partition,
         tabs: this.tabSnapshots(existing),
@@ -1011,7 +1024,7 @@ export class BrowserPaneController {
       },
     })
 
-    const initialUrl = normalizeUrl(payload.initialUrl)
+    const initialUrl = normalizeUrl(payload.initialUrl ?? DEFAULT_BROWSER_URL)
 
     const handleWindowClosed = (): void => {
       void this.destroyPane(payload)
@@ -1103,14 +1116,41 @@ export class BrowserPaneController {
     win.once('closed', record.windowClosedHandler)
 
     await this.ensureCdpServer()
-    void loadBrowserUrl(view.webContents, initialUrl)
+
+    const restoreTabs =
+      payload.restore === true
+        ? (this.restoreTabsProvider?.(payload.sessionId, payload.paneId) ??
+          null)
+        : null
+
+    if (restoreTabs && restoreTabs.length > 0) {
+      this.restoreTabHistory(record, 'tab-0', restoreTabs[0])
+      for (let i = 1; i < restoreTabs.length; i += 1) {
+        this.createOwnedTab(record, win, ses, {
+          url: DEFAULT_BROWSER_URL,
+          activate: false,
+          restore: restoreTabs[i],
+        })
+      }
+
+      const activeIndex = restoreTabs.findIndex((tab) => tab.active)
+      if (activeIndex > 0) {
+        this.setActiveTab(record, `tab-${activeIndex.toString()}`, true)
+      }
+    } else {
+      void loadBrowserUrl(view.webContents, initialUrl)
+    }
+
+    const activeTab = this.activeTab(record)
 
     return {
-      url: this.tabUrl(record.tabs.get('tab-0')!),
-      title: view.webContents.getTitle() || null,
+      url: activeTab ? this.tabUrl(activeTab) : initialUrl,
+      title: this.activeWebContents(record)?.getTitle() ?? null,
       partition,
       tabs: this.tabSnapshots(record),
-      navState: this.readNavState(view.webContents),
+      navState: activeTab
+        ? this.readNavState(activeTab.view.webContents)
+        : { canGoBack: false, canGoForward: false, isLoading: false },
     }
   }
 
@@ -1328,11 +1368,43 @@ export class BrowserPaneController {
     })
   }
 
+  // Replay a persisted tab's nav history onto its view (restore-before-load):
+  // navigationHistory.restore navigates to the active entry, so it must run
+  // instead of loadURL. Empty history falls back to a default load.
+  private restoreTabHistory(
+    record: BrowserPaneRecord,
+    tabId: string,
+    persisted: PersistedTab
+  ): void {
+    const tab = record.tabs.get(tabId)
+    if (!tab) {
+      return
+    }
+
+    const entries = persisted.history.map((entry) => ({
+      url: entry.url,
+      title: entry.title ?? '',
+    }))
+    if (entries.length === 0) {
+      tab.requestedUrl = DEFAULT_BROWSER_URL
+      void loadBrowserUrl(tab.view.webContents, DEFAULT_BROWSER_URL)
+
+      return
+    }
+
+    const index = Math.max(
+      0,
+      Math.min(persisted.historyIndex, entries.length - 1)
+    )
+    tab.requestedUrl = entries[index].url
+    void tab.view.webContents.navigationHistory.restore({ index, entries })
+  }
+
   private createOwnedTab(
     record: BrowserPaneRecord,
     win: BrowserWindow,
     ses: ElectronSession,
-    options: { url: string; activate: boolean }
+    options: { url: string; activate: boolean; restore?: PersistedTab }
   ): void {
     if (record.tabs.size >= MAX_TABS_PER_PANE) {
       return
@@ -1409,13 +1481,17 @@ export class BrowserPaneController {
       this.emitPaneNavStateChanged(record, record.activeTabId)
     })
 
+    if (options.restore) {
+      this.restoreTabHistory(record, tabId, options.restore)
+    } else {
+      void loadBrowserUrl(view.webContents, normalizeTabUrl(options.url))
+    }
+
     if (options.activate) {
       this.setActiveTab(record, tabId, true)
     } else {
       this.emitTabsChanged(record)
     }
-
-    void loadBrowserUrl(view.webContents, normalizeTabUrl(options.url))
   }
 
   private emitPaneUrlChanged(record: BrowserPaneRecord, tabId: string): void {
@@ -1887,23 +1963,16 @@ export class BrowserPaneController {
 
     this.rendererLifecycleHandlers.add(sender.id)
 
-    const cleanup = (): void => {
+    // Dispose records only on genuine teardown (the owner WebContents being
+    // destroyed), NOT on render-process-gone: a renderer reload/crash must leave
+    // the browser views alive so restore can reconnect to them.
+    const handleDestroyed = (): void => {
       sender.removeListener('destroyed', handleDestroyed)
-      sender.removeListener('render-process-gone', handleRenderProcessGone)
       this.rendererLifecycleHandlers.delete(sender.id)
       this.removeRecordsForOwner(sender.id)
     }
 
-    const handleDestroyed = (): void => {
-      cleanup()
-    }
-
-    const handleRenderProcessGone = (): void => {
-      cleanup()
-    }
-
     sender.once('destroyed', handleDestroyed)
-    sender.once('render-process-gone', handleRenderProcessGone)
   }
 
   private removeRecordsForOwner(ownerWebContentsId: number): void {

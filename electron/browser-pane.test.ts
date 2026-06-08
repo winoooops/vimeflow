@@ -103,6 +103,10 @@ const electronMock = vi.hoisted(() => {
       goForward: () => void
       getAllEntries: () => { url: string; title: string }[]
       getActiveIndex: () => number
+      restore: (options: {
+        index?: number
+        entries: { url: string; title: string }[]
+      }) => void
     }
     isLoading: () => boolean
     reload: () => void
@@ -173,6 +177,7 @@ const electronMock = vi.hoisted(() => {
         goForward: vi.fn(),
         getAllEntries: vi.fn((): { url: string; title: string }[] => []),
         getActiveIndex: vi.fn(() => -1),
+        restore: vi.fn(),
       },
       isLoading: vi.fn(() => false),
       reload: vi.fn(),
@@ -578,6 +583,98 @@ describe('BrowserPaneController', () => {
       tabId: firstTabId,
     })
     expect(signals.markStructural).toHaveBeenCalled()
+  })
+
+  test('render-process-gone preserves records for reconnect; destroyed disposes', async () => {
+    await handler(BROWSER_PANE_CREATE)(eventForSender(), {
+      sessionId: 'pty-1',
+      paneId: 'p1',
+      workspaceId: 'w',
+      initialUrl: 'https://a.example/',
+    })
+    expect(controller.captureTabsForPane('pty-1', 'p1')).not.toBeNull()
+
+    const onceCalls = vi.mocked(electronMock.sender.once).mock.calls
+    // A renderer crash/reload must NOT tear the pane down (no such listener).
+    expect(onceCalls.map(([event]) => event)).not.toContain(
+      'render-process-gone'
+    )
+
+    // Genuine teardown (owner WebContents destroyed) still disposes the record.
+    const destroyed = onceCalls.find(
+      ([event]) => event === 'destroyed'
+    )?.[1] as (() => void) | undefined
+    expect(destroyed).toBeDefined()
+    destroyed?.()
+    expect(controller.captureTabsForPane('pty-1', 'p1')).toBeNull()
+  })
+
+  test('restore-mode create replays per-tab history before any load', async () => {
+    controller.setRestoreTabsProvider((sessionId, paneId) =>
+      sessionId === 'pty-1' && paneId === 'p1'
+        ? [
+            {
+              active: true,
+              historyIndex: 1,
+              history: [
+                { url: 'https://a.example/', title: 'A' },
+                { url: 'https://a.example/sub', title: null },
+              ],
+            },
+            {
+              active: false,
+              historyIndex: 0,
+              history: [{ url: 'https://b.example/', title: 'B' }],
+            },
+          ]
+        : null
+    )
+
+    await handler(BROWSER_PANE_CREATE)(eventForSender(), {
+      sessionId: 'pty-1',
+      paneId: 'p1',
+      workspaceId: 'w',
+      restore: true,
+    })
+
+    // One WebContentsView per persisted tab.
+    expect(electronMock.views).toHaveLength(2)
+
+    // History restored (titles null→'') instead of a load (restore-before-load).
+    expect(
+      electronMock.views[0].webContents.navigationHistory.restore
+    ).toHaveBeenCalledWith({
+      index: 1,
+      entries: [
+        { url: 'https://a.example/', title: 'A' },
+        { url: 'https://a.example/sub', title: '' },
+      ],
+    })
+
+    expect(
+      electronMock.views[1].webContents.navigationHistory.restore
+    ).toHaveBeenCalledWith({
+      index: 0,
+      entries: [{ url: 'https://b.example/', title: 'B' }],
+    })
+    expect(electronMock.views[0].webContents.loadURL).not.toHaveBeenCalled()
+  })
+
+  test('restore-mode with no persisted tabs falls back to a default load', async () => {
+    controller.setRestoreTabsProvider(() => null)
+
+    await handler(BROWSER_PANE_CREATE)(eventForSender(), {
+      sessionId: 'pty-1',
+      paneId: 'p1',
+      workspaceId: 'w',
+      restore: true,
+    })
+
+    expect(electronMock.views).toHaveLength(1)
+    expect(electronMock.views[0].webContents.loadURL).toHaveBeenCalled()
+    expect(
+      electronMock.views[0].webContents.navigationHistory.restore
+    ).not.toHaveBeenCalled()
   })
 
   test('a data: image favicon candidate is stored verbatim', async () => {

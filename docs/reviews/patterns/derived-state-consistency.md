@@ -2,8 +2,8 @@
 id: derived-state-consistency
 category: code-quality
 created: 2026-06-07
-last_updated: 2026-06-07
-ref_count: 0
+last_updated: 2026-06-08
+ref_count: 1
 ---
 
 # Derived State Consistency
@@ -36,5 +36,43 @@ base data is technically "correct."
   `name: tabName(newActivePane.cwd, sessionIndex)` alongside
   `workingDirectory`. Added the missing `name` assertion to the legacy-
   cache test.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on
+  this line)
+
+### 2. Background restored tabs emit stale default URL before history restore
+
+- **Source:** github-claude | PR #390 round 1 | 2026-06-08
+- **Severity:** MEDIUM
+- **File:** `electron/browser-pane.ts`
+- **Finding:** In `createOwnedTab`, when `options.restore` is set and
+  `options.activate` is false, `emitTabsChanged(record)` fires before
+  `restoreTabHistory` has run. The new tab's `requestedUrl` is still
+  `DEFAULT_BROWSER_URL` (set at tab creation), so the renderer receives a
+  `BROWSER_PANE_TABS_CHANGED` snapshot carrying the wrong URL for every
+  background restored tab. The corrected event arrives only after the async
+  `navigationHistory.restore()` completes.
+- **Fix:** Swapped the order so `restoreTabHistory` (which synchronously
+  updates `tab.requestedUrl` to the persisted active URL) runs before the
+  `activate`/`emitTabsChanged` block, ensuring the first snapshot is built
+  from the correct URL.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on
+  this line)
+
+### 3. createBrowserPane return snapshot reads tab-0 after restoring a non-zero active tab
+
+- **Source:** github-codex-connector | PR #390 round 2 | 2026-06-08
+- **Severity:** MEDIUM
+- **File:** `electron/browser-pane.ts`
+- **Finding:** After restoring all browser tabs and calling `setActiveTab`
+  for a non-zero active index, the `createBrowserPane` return block still
+  reads `url`, `title`, and `navState` from the original `tab-0`
+  `WebContentsView`. The renderer receives an initial IPC response where
+  `tabs` says tab-N is active while the top-level `url`/`navState` reflect
+  tab-0, causing a brief flash of inconsistent address-bar / navigation
+  state before the corrective event arrives.
+- **Fix:** Replaced the hard-coded tab-0 references with
+  `this.activeTab(record)` / `this.activeWebContents(record)` so the
+  returned snapshot always reflects the currently active tab, matching the
+  `tabs` array already emitted by `this.tabSnapshots(record)`.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on
   this line)
