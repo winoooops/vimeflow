@@ -944,3 +944,5 @@ git commit -m "feat(sessions): bridge agent-lifecycle events into pane status"
 **Known soft spots (for the executor):** Task 1's child-handle retention (which PTY-spawn site holds the `child`, and behind which lock) isn't fully quoted — the task cites where to read it and provides the test that pins `last_exit_code`. Task 10's strict restart stale-tail drop is **out of scope** (deferred to VIM-93b, last-writer-wins in v1) — not a gap, by design.
 
 **Deferred (VIM-93b, intentionally not in any task):** reliable `awaiting` emission; teardown-`idle` for a mid-turn agent crash with the PTY alive; strict restart stale-tail de-dup (needs a backend attach epoch).
+
+<!-- codex-reviewed: 2026-06-08T05:34:52Z -->
