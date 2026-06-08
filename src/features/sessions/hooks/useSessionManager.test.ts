@@ -3,7 +3,11 @@ import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
 import { renderHook, act, waitFor } from '@testing-library/react'
 import { useSessionManager } from './useSessionManager'
 import type { ITerminalService } from '../../terminal/services/terminalService'
-import type { AgentSessionTitleEvent, SessionList } from '../../../bindings'
+import type {
+  AgentLifecycleEvent,
+  AgentSessionTitleEvent,
+  SessionList,
+} from '../../../bindings'
 import {
   clearPtySessionMap,
   getAllPtySessionIds,
@@ -836,6 +840,87 @@ describe('useSessionManager', () => {
 
     await waitFor(() => expect(service.listSessions).toHaveBeenCalled())
     expect(mockListen).not.toHaveBeenCalled()
+  })
+
+  const getLifecycleCallback = ():
+    | ((payload: AgentLifecycleEvent) => void)
+    | undefined =>
+    mockListen.mock.calls.find(
+      ([event]) => event === 'agent-lifecycle'
+    )?.[1] as ((payload: AgentLifecycleEvent) => void) | undefined
+
+  const aliveSession = (id: string): SessionList => ({
+    activeSessionId: id,
+    sessions: [
+      {
+        id,
+        cwd: '/tmp',
+        status: {
+          kind: 'Alive',
+          pid: 1,
+          replay_data: '',
+          replay_end_offset: BigInt(0),
+        },
+      },
+    ],
+  })
+
+  test('agent-lifecycle drives a live pane between running and idle', async () => {
+    const service = createMockService()
+    service.listSessions = vi.fn().mockResolvedValue(aliveSession('a'))
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    await waitFor(() => expect(getLifecycleCallback()).toBeDefined())
+
+    // Alive hydrates running; an idle event moves the pane (and session) idle.
+    act(() => {
+      getLifecycleCallback()?.({
+        sessionId: 'a',
+        agentSessionId: 'x',
+        phase: 'idle',
+      })
+    })
+    expect(result.current.sessions[0].panes[0].status).toBe('idle')
+    expect(result.current.sessions[0].status).toBe('idle')
+
+    // ...and a running event moves it back.
+    act(() => {
+      getLifecycleCallback()?.({
+        sessionId: 'a',
+        agentSessionId: 'x',
+        phase: 'running',
+      })
+    })
+    expect(result.current.sessions[0].panes[0].status).toBe('running')
+  })
+
+  test('agent-lifecycle never overrides a terminal (exited) pane', async () => {
+    const service = createMockService()
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: 'a',
+      sessions: [
+        { id: 'a', cwd: '/tmp', status: { kind: 'Exited', last_exit_code: 0 } },
+      ],
+    } satisfies SessionList)
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    await waitFor(() => expect(getLifecycleCallback()).toBeDefined())
+
+    // The pane hydrated completed; a running event must not resurrect it.
+    act(() => {
+      getLifecycleCallback()?.({
+        sessionId: 'a',
+        agentSessionId: 'x',
+        phase: 'running',
+      })
+    })
+    expect(result.current.sessions[0].panes[0].status).toBe('completed')
   })
 
   test('events received between listSessions call and drain land in restoreData buffer', async () => {

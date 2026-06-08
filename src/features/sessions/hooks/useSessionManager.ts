@@ -1,7 +1,11 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import { flushSync } from 'react-dom'
 import type { LayoutId, Pane, PaneKind, Session, SessionStatus } from '../types'
-import type { AgentSessionTitleEvent } from '../../../bindings'
+import type {
+  AgentLifecycleEvent,
+  AgentPhase,
+  AgentSessionTitleEvent,
+} from '../../../bindings'
 import { listen, type UnlistenFn } from '../../../lib/backend'
 import { isDesktop } from '../../../lib/environment'
 import type { ITerminalService } from '../../terminal/services/terminalService'
@@ -27,7 +31,11 @@ import {
   applyRemovePane,
   nextFreePaneId,
 } from '../utils/paneLifecycle'
-import { deriveShellSessionStatus, isLiveStatus } from '../utils/sessionStatus'
+import {
+  deriveShellSessionStatus,
+  isLiveStatus,
+  isTerminalStatus,
+} from '../utils/sessionStatus'
 import {
   deleteActivityPanelCollapsed,
   writeActivityPanelCollapsed,
@@ -397,6 +405,13 @@ export interface UseSessionManagerOptions {
   autoCreateOnEmpty?: boolean
 }
 
+// Generated AgentPhase is lower-camel (serde rename_all camelCase).
+const phaseToStatus: Record<AgentPhase, SessionStatus> = {
+  running: 'running',
+  idle: 'idle',
+  awaiting: 'awaiting',
+}
+
 export const useSessionManager = (
   service: ITerminalService,
   options: UseSessionManagerOptions = {}
@@ -673,6 +688,66 @@ export const useSessionManager = (
       }
 
       // cancelled may flip while the listener promise is awaiting.
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+      if (cancelled) {
+        fn()
+      } else {
+        unlistenFn = fn
+      }
+    })()
+
+    return (): void => {
+      cancelled = true
+      unlistenFn?.()
+    }
+  }, [])
+
+  // Bridge: write the agent's derived lifecycle phase into pane.status.
+  useEffect(() => {
+    if (!isDesktop()) {
+      return
+    }
+
+    let cancelled = false
+    let unlistenFn: UnlistenFn | undefined
+
+    void (async (): Promise<void> => {
+      let fn: UnlistenFn
+      try {
+        fn = await listen<AgentLifecycleEvent>('agent-lifecycle', (payload) => {
+          setSessions((prev) =>
+            prev.map((session) => {
+              const idx = session.panes.findIndex(
+                (pane) => pane.ptyId === payload.sessionId
+              )
+              if (idx === -1) {
+                return session
+              }
+
+              // Sticky terminal: a late/replayed event must not resurrect an
+              // exited pane. v1 is last-writer-wins among live phases.
+              if (isTerminalStatus(session.panes[idx].status)) {
+                return session
+              }
+
+              const newPanes = session.panes.map((pane, i) =>
+                i === idx
+                  ? { ...pane, status: phaseToStatus[payload.phase] }
+                  : pane
+              )
+
+              return {
+                ...session,
+                status: deriveShellSessionStatus(newPanes),
+                panes: newPanes,
+              }
+            })
+          )
+        })
+      } catch {
+        return
+      }
+
       // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
       if (cancelled) {
         fn()
