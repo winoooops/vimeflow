@@ -206,8 +206,7 @@ impl TraceStore {
         let line = serde_json::to_string(record)
             .map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err))?;
         writeln!(file, "{line}")?;
-        file.flush()?;
-        file.sync_data()
+        file.flush()
     }
 
     fn rotate_if_needed(&self) -> io::Result<()> {
@@ -291,6 +290,14 @@ impl TraceService {
 
         state.enabled = enabled;
         Ok(())
+    }
+
+    pub(crate) fn is_enabled(&self) -> bool {
+        self.inner
+            .state
+            .lock()
+            .map(|state| state.enabled)
+            .unwrap_or(false)
     }
 
     pub(crate) fn record_user_interaction(
@@ -530,6 +537,10 @@ impl TraceService {
 impl EventSink for TracingEventSink {
     fn emit_json(&self, event: &str, payload: Value) -> Result<(), String> {
         if !event.starts_with("agent-") {
+            return self.inner.emit_json(event, payload);
+        }
+
+        if !self.tracing.is_enabled() {
             return self.inner.emit_json(event, payload);
         }
 
