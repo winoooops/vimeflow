@@ -8,6 +8,7 @@ use std::fs;
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
+use std::io::Write;
 
 /// Result of generating statusline bridge files
 #[derive(Debug, Clone)]
@@ -29,6 +30,28 @@ pub struct BridgeFiles {
     pub zsh_env_path: PathBuf,
     /// Path to generated zsh rc file used when the user's shell is zsh
     pub zsh_rc_path: PathBuf,
+}
+
+/// Write a script file atomically and make it executable on Unix.
+///
+/// Uses a temp-file + rename pattern to avoid `ETXTBSY` ("Text file busy")
+/// when the script is executed immediately after creation, which can happen
+/// in heavily loaded CI environments.
+#[cfg(unix)]
+fn write_executable_script(path: &Path, content: &str) -> std::io::Result<()> {
+    let tmp_path = path.with_extension("tmp");
+    let mut file = std::fs::File::create(&tmp_path)?;
+    file.write_all(content.as_bytes())?;
+    file.sync_all()?;
+    drop(file);
+    std::fs::rename(&tmp_path, path)?;
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755))?;
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn write_executable_script(path: &Path, content: &str) -> std::io::Result<()> {
+    std::fs::write(path, content)
 }
 
 /// Generate the statusline bridge files for a session.
@@ -79,7 +102,7 @@ pub fn generate_bridge_files(
         session_id = session_id,
     );
 
-    fs::write(&script_path, &script_content)
+    write_executable_script(&script_path, &script_content)
         .map_err(|e| format!("failed to write statusline script: {}", e))?;
 
     fs::create_dir_all(&shim_dir_path)
@@ -116,18 +139,8 @@ pub fn generate_bridge_files(
          exit 127\n",
         session_id = session_id,
     );
-    fs::write(&claude_shim_path, &claude_shim_content)
+    write_executable_script(&claude_shim_path, &claude_shim_content)
         .map_err(|e| format!("failed to write claude shim: {}", e))?;
-
-    // Make generated scripts executable on Unix (no-op on Windows — scripts
-    // aren't used there).
-    #[cfg(unix)]
-    {
-        fs::set_permissions(&script_path, fs::Permissions::from_mode(0o755))
-            .map_err(|e| format!("failed to set script permissions: {}", e))?;
-        fs::set_permissions(&claude_shim_path, fs::Permissions::from_mode(0o755))
-            .map_err(|e| format!("failed to set claude shim permissions: {}", e))?;
-    }
 
     // Generate the settings.json overlay using serde_json for proper escaping
     let settings = serde_json::json!({
