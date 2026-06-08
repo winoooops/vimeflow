@@ -130,6 +130,18 @@ export const buildWorkspaceCommands = (
   const findActiveIndex = (): number =>
     sessions.findIndex((s) => s.id === activeSessionId)
 
+  const browserCommand: Command | undefined = createBrowserSession
+    ? {
+        id: 'new-browser',
+        label: ':new-browser',
+        description: 'Create a new browser-only session',
+        icon: 'public',
+        execute: (): void => {
+          createBrowserSession()
+        },
+      }
+    : undefined
+
   return [
     {
       id: 'new',
@@ -140,15 +152,7 @@ export const buildWorkspaceCommands = (
         createSession()
       },
     },
-    {
-      id: 'new-browser',
-      label: ':new-browser',
-      description: 'Create a new browser-only session',
-      icon: 'public',
-      execute: (): void => {
-        createBrowserSession?.()
-      },
-    },
+    ...(browserCommand ? [browserCommand] : []),
     {
       id: 'close',
       label: ':close',

@@ -77,6 +77,24 @@ describe('buildWorkspaceCommands - happy paths', () => {
     expect(createBrowserSession).toHaveBeenCalledOnce()
   })
 
+  test(':new-browser command is absent when createBrowserSession is not provided', () => {
+    const commands = buildWorkspaceCommands({
+      sessions: mockSessions,
+      activeSessionId: 'session-1',
+      createSession,
+      removeSession,
+      renameSession,
+      setPaneUserLabel,
+      renameAgentSession,
+      activePanePtyId: 'pty-active',
+      setActiveSessionId,
+      notifyInfo,
+    })
+
+    const cmd = commands.find((c) => c.id === 'new-browser')
+    expect(cmd).toBeUndefined()
+  })
+
   test(':close command removes active session', () => {
     const commands = buildWorkspaceCommands({
       sessions: mockSessions,
