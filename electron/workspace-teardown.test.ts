@@ -79,17 +79,18 @@ describe('WorkspaceTeardown', () => {
     expect(flush).toHaveBeenCalledTimes(2)
   })
 
-  test('reset keeps an in-flight flush shared until it settles', async () => {
-    let blockDrain = true
-    let releaseDrain = (): void => undefined
+  test('reset queues the next teardown behind an in-flight flush', async () => {
+    let drainCalls = 0
+    let releaseFirstDrain = (): void => undefined
 
     const drainFinalShape = vi.fn((): Promise<void> => {
-      if (!blockDrain) {
+      drainCalls += 1
+      if (drainCalls > 1) {
         return Promise.resolve()
       }
 
       return new Promise<void>((resolve) => {
-        releaseDrain = resolve
+        releaseFirstDrain = resolve
       })
     })
     const flush = vi.fn().mockResolvedValue(undefined)
@@ -107,14 +108,11 @@ describe('WorkspaceTeardown', () => {
     expect(drainFinalShape).toHaveBeenCalledTimes(1)
     expect(flush).not.toHaveBeenCalled()
 
-    blockDrain = false
-    releaseDrain()
+    releaseFirstDrain()
     await expect(Promise.all([first, second])).resolves.toEqual([
       undefined,
       undefined,
     ])
-
-    await teardown.flushOnce()
 
     expect(drainFinalShape).toHaveBeenCalledTimes(2)
     expect(flush).toHaveBeenCalledTimes(2)

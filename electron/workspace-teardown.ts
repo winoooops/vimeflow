@@ -19,10 +19,16 @@ export interface WorkspaceTeardownDeps {
   onFlushError?: (error: unknown) => void
 }
 
+interface InFlightFlush {
+  generation: number
+  promise: Promise<void>
+}
+
 export class WorkspaceTeardown {
   private readonly deps: WorkspaceTeardownDeps
+  private generation = 0
   private flushed = false
-  private inFlight: Promise<void> | null = null
+  private inFlight: InFlightFlush | null = null
 
   constructor(deps: WorkspaceTeardownDeps) {
     this.deps = deps
@@ -32,26 +38,49 @@ export class WorkspaceTeardown {
     return this.flushed
   }
 
-  // Flush once per teardown transaction; concurrent callers share the in-flight
-  // promise, and completed calls are a no-op.
+  // Flush once per teardown transaction. Same-generation callers share the
+  // in-flight promise; a reset starts a new generation that queues behind any
+  // previous flush still running.
   async flushOnce(): Promise<void> {
-    if (this.inFlight !== null) {
-      return this.inFlight
+    const existing = this.inFlight
+    if (existing !== null && existing.generation === this.generation) {
+      return existing.promise
     }
     if (this.flushed) {
       return
     }
     this.flushed = true
 
-    const current = this.runFlush()
+    const promise = this.runAfterPreviousFlush(existing?.promise ?? null)
+
+    const current = {
+      generation: this.generation,
+      promise,
+    }
+
     this.inFlight = current
+
     try {
-      await current
+      await promise
     } finally {
       if (this.inFlight === current) {
         this.inFlight = null
       }
     }
+  }
+
+  private async runAfterPreviousFlush(
+    previous: Promise<void> | null
+  ): Promise<void> {
+    if (previous !== null) {
+      try {
+        await previous
+      } catch {
+        // Still run the current generation even if an older flush rejects.
+      }
+    }
+
+    await this.runFlush()
   }
 
   private async runFlush(): Promise<void> {
@@ -69,6 +98,7 @@ export class WorkspaceTeardown {
 
   // Re-arm for the next teardown (non-quit close, or a new window opens).
   reset(): void {
+    this.generation += 1
     this.flushed = false
   }
 }

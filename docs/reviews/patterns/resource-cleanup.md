@@ -3,7 +3,7 @@ id: resource-cleanup
 category: react-patterns
 created: 2026-04-09
 last_updated: 2026-06-08
-ref_count: 9
+ref_count: 10
 ---
 
 # Resource Cleanup
@@ -97,7 +97,7 @@ causes listener accumulation and duplicate event handling.
 - **Severity:** MEDIUM
 - **File:** `electron/workspace-teardown.ts`
 - **Finding:** `WorkspaceTeardown.reset()` cleared `inFlight` unconditionally. If a user closed the last window, reopened before the close flush completed, then closed again, the second close could start a concurrent flush instead of sharing the first in-flight teardown transaction.
-- **Fix:** `reset()` now only clears the flushed guard and leaves `inFlight` intact until the original promise settles. Added a regression test that resets during a blocked drain, verifies the second close shares the same promise, then confirms a later teardown is re-armed after settlement.
+- **Fix:** Initially kept `inFlight` intact during reset; later refined in finding #11 to track teardown generations so same-generation callers share the flush while a new teardown still persists its own final shape.
 - **Commit:** same commit as this entry
 
 ### 10. Process-global IPC handler registration should be idempotent at setup boundaries
@@ -107,4 +107,13 @@ causes listener accumulation and duplicate event handling.
 - **File:** `electron/main.ts`
 - **Finding:** Electron `ipcMain.handle()` channels are process-global and throw when registered twice. Even when a setup path is intended to run once, controller installation should dispose any previous handler owner before installing a replacement so lifecycle drift or future setup re-entry cannot wedge the main process with duplicate handlers.
 - **Fix:** Dispose and clear the previous browser-pane and workspace-layout IPC controller owners immediately before installing replacements.
+- **Commit:** same commit as this entry
+
+### 11. Reused in-flight workspace flush skipped a new teardown epoch
+
+- **Source:** github-claude | PR #404 round 4 | 2026-06-08
+- **Severity:** HIGH
+- **File:** `electron/workspace-teardown.ts`
+- **Finding:** Keeping one global `inFlight` promise across `reset()` avoided duplicate flushes, but a new window that opened and closed while the old flush was still running would return the old promise and never drain or persist the new window's final shape.
+- **Fix:** Track a teardown generation. Same-generation callers still share the in-flight flush, but `reset()` advances the generation and a new teardown queues its own flush behind any older flush still running.
 - **Commit:** same commit as this entry
