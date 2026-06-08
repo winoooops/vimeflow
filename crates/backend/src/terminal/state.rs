@@ -251,7 +251,10 @@ impl PtyState {
             return None;
         }
         let status = session.child.try_wait().ok().flatten()?;
-        i32::try_from(status.exit_code()).ok()
+        // exit_code() is u32; a code that overflows i32 (e.g. a Windows crash
+        // code) must stay non-zero so a failed exit is never read as clean.
+        let raw = status.exit_code();
+        Some(i32::try_from(raw).unwrap_or(i32::MAX))
     }
 
     /// Get the resolved CWD for a session
