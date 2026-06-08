@@ -140,73 +140,65 @@ export const TokenCache = ({
   return (
     <div
       data-testid="token-cache"
-      className="flex cursor-default flex-col gap-2.5"
+      className="cursor-default overflow-hidden"
+      style={cardStyle}
     >
-      <div
-        className="px-0.5 text-[10px] font-bold uppercase tracking-[0.18em] text-on-surface-muted"
-        style={{ fontFamily: JETBRAINS }}
-      >
-        Token cache
-      </div>
-
-      <div className="overflow-hidden" style={cardStyle}>
-        <div className="flex items-end gap-3 px-3.5 py-3">
-          <div>
-            <div className="flex items-baseline gap-1">
-              <span
-                data-testid="token-cache-percent"
-                data-tone={tone}
-                className="font-display text-[28px] font-semibold leading-none tracking-[-0.02em] tabular-nums text-on-surface"
-              >
-                {pct}
-              </span>
-              <span
-                className="text-[13px] font-semibold"
-                style={{ fontFamily: JETBRAINS, color: toneHex }}
-              >
-                %
-              </span>
-            </div>
-            <div
-              className="mt-0.5 text-[9.5px] uppercase tracking-[0.06em] text-on-surface-muted"
-              style={{ fontFamily: JETBRAINS }}
+      <div className="flex items-end gap-3 px-3.5 py-3">
+        <div>
+          <div className="flex items-baseline gap-1">
+            <span
+              data-testid="token-cache-percent"
+              data-tone={tone}
+              className="font-display text-[28px] font-semibold leading-none tracking-[-0.02em] tabular-nums text-on-surface"
             >
-              cached this turn
-            </div>
+              {pct}
+            </span>
+            <span
+              className="text-[13px] font-semibold"
+              style={{ fontFamily: JETBRAINS, color: toneHex }}
+            >
+              %
+            </span>
           </div>
-          <div className="h-9 min-w-0 flex-1">
-            <Sparkline data={history} color={toneHex} />
+          <div
+            className="mt-0.5 text-[9.5px] uppercase tracking-[0.06em] text-on-surface-muted"
+            style={{ fontFamily: JETBRAINS }}
+          >
+            cached this turn
           </div>
         </div>
+        <div className="h-9 min-w-0 flex-1">
+          <Sparkline data={history} color={toneHex} />
+        </div>
+      </div>
 
-        <div
-          style={{
-            padding: '11px 14px 13px',
-            borderTop: '1px solid rgba(74,68,79,0.2)',
-            background: 'rgba(13,13,28,0.25)',
-          }}
-        >
-          <StackBar {...buckets} />
-          <div className="mt-2.5 grid grid-cols-3 gap-2">
-            <StatCell
-              label="cached"
-              value={fmt(buckets.cached)}
-              tooltip="Tokens reused from the prompt cache — free, no new cost"
-              testId="token-cache-stat-cached"
-            />
-            <StatCell
-              label="wrote"
-              value={fmt(buckets.wrote)}
-              tooltip="Tokens written to the prompt cache this turn"
-              testId="token-cache-stat-wrote"
-            />
-            <StatCell
-              label="fresh"
-              value={fmt(buckets.fresh)}
-              tooltip="Brand-new tokens sent this turn — full price"
-              testId="token-cache-stat-fresh"
-            />
-          </div>
+      <div
+        style={{
+          padding: '11px 14px 13px',
+          borderTop: '1px solid rgba(74,68,79,0.2)',
+          background: 'rgba(13,13,28,0.25)',
+        }}
+      >
+        <StackBar {...buckets} />
+        <div className="mt-2.5 grid grid-cols-3 gap-2">
+          <StatCell
+            label="cached"
+            value={fmt(buckets.cached)}
+            tooltip="Tokens reused from the prompt cache — free, no new cost"
+            testId="token-cache-stat-cached"
+          />
+          <StatCell
+            label="wrote"
+            value={fmt(buckets.wrote)}
+            tooltip="Tokens written to the prompt cache this turn"
+            testId="token-cache-stat-wrote"
+          />
+          <StatCell
+            label="fresh"
+            value={fmt(buckets.fresh)}
+            tooltip="Brand-new tokens sent this turn — full price"
+            testId="token-cache-stat-fresh"
+          />
         </div>
       </div>
     </div>
