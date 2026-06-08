@@ -856,7 +856,7 @@ async fn read_pty_output(
                 let mut exit_code = state.try_wait_exit_code(&session_id, generation);
                 let mut tries = 0;
                 while exit_code.is_none() && tries < 20 {
-                    std::thread::sleep(std::time::Duration::from_millis(10));
+                    tokio::time::sleep(std::time::Duration::from_millis(10)).await;
                     exit_code = state.try_wait_exit_code(&session_id, generation);
                     tries += 1;
                 }
