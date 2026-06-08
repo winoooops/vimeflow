@@ -24,7 +24,7 @@ const RESTORE_PANE_TIMEOUT_MS = 4000
 export interface UseSessionRestoreOptions {
   service: ITerminalService
   buffer: PtyBufferDrain
-  onRestore: (sessions: Session[], context: { storePresent: boolean }) => void
+  onRestore: (sessions: Session[]) => void
   onActiveResolved: (sessionId: string) => void
   onActiveFallback?: (sessionId: string) => void
   /** Activate the store's persisted-active session (browser-capable, §5). */
@@ -260,15 +260,7 @@ export const useSessionRestore = ({
           return
         }
 
-        // Authoritative only when the store actually has usable sessions — an
-        // empty shape (missing / corrupt / version-discarded file returns
-        // `{ sessions: [] }`, not null) or all-zero-pane records are treated as
-        // absent by `reconstructWorkspace`, so the legacy browser fallback must
-        // still run.
-        const storeAuthoritative =
-          storeShape?.sessions.some((session) => session.panes.length > 0) ??
-          false
-        onRestoreRef.current(restored, { storePresent: storeAuthoritative })
+        onRestoreRef.current(restored)
         activate(storeShape, restored, list.activeSessionId)
 
         setLoading(false)

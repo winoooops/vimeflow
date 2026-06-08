@@ -202,6 +202,25 @@ describe('WorkspaceLayoutController', () => {
     await expect(pending).resolves.toEqual(fresh)
   })
 
+  test('requestFinalShape rejects while another request is pending', async () => {
+    const controller = new WorkspaceLayoutController({
+      sidecar: makeSidecar(null),
+    })
+    const sender = { send: vi.fn() }
+
+    const pending = controller.requestFinalShape(sender, 1000)
+
+    expect(() => controller.requestFinalShape(sender, 1000)).toThrow(
+      'workspace layout final shape request already pending'
+    )
+    expect(sender.send).toHaveBeenCalledTimes(1)
+
+    const fresh = sampleShape()
+    controller.pushShape(fresh)
+
+    await expect(pending).resolves.toEqual(fresh)
+  })
+
   test('requestFinalShape falls back to the last-known shape on timeout', async () => {
     vi.useFakeTimers()
 

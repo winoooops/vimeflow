@@ -215,12 +215,15 @@ export class WorkspaceLayoutController {
 
   // Ask the renderer for one fresh shape during the close flush; resolves with
   // the renderer's ack push, or the last-known shape on timeout (never hangs
-  // quit). Supersedes any in-flight request.
+  // quit). Exactly one request may be pending at a time.
   requestFinalShape(
     sender: RendererSender,
     timeoutMs = DEFAULT_FINAL_SHAPE_TIMEOUT_MS
   ): Promise<WorkspaceShapeDto | null> {
-    this.resolveFinalShape(this.shape)
+    if (this.pendingFinalShape !== null) {
+      throw new Error('workspace layout final shape request already pending')
+    }
+
     sender.send(WORKSPACE_LAYOUT_REQUEST_FINAL_SHAPE, {})
 
     return new Promise<WorkspaceShapeDto | null>((resolve) => {

@@ -3,7 +3,7 @@ id: async-race-conditions
 category: react-patterns
 created: 2026-04-09
 last_updated: 2026-06-08
-ref_count: 19
+ref_count: 20
 ---
 
 # Async Race Conditions
@@ -622,4 +622,13 @@ prevent showing previous data.
 - **File:** `src/features/sessions/hooks/useSessionRestore.ts`, `electron/workspace-layout-controller.ts`
 - **Finding:** `useSessionRestore` brackets each restore with `beginWorkspaceHydration` / `endWorkspaceHydration`, but the main-side controller represented hydration as a single boolean. If a stale restore effect reached its `finally` after a newer restore had already called `begin`, the stale `end` flipped the writer out of hydration and allowed renderer shape pushes to persist during the active restore window.
 - **Fix:** Make the main-side hydration guard reference-counted. Nested `beginHydration` calls only set the writer flag on the 0->1 transition, and `endHydration` only clears it on the 1->0 transition. Added controller coverage for nested begin/end ordering and stray extra end calls.
+- **Commit:** same commit as this entry
+
+### 61. Final-shape request API silently superseded an in-flight request
+
+- **Source:** github-claude | PR #404 final review | 2026-06-08
+- **Severity:** MEDIUM
+- **File:** `electron/workspace-layout-controller.ts`
+- **Finding:** `requestFinalShape` resolved any existing pending final-shape request with the last-known shape before sending a new request. The current teardown path is single-call, but the API encoded "supersede with stale data" rather than enforcing the exactly-one in-flight contract.
+- **Fix:** Replace silent supersession with a synchronous assertion when a request is already pending. Added controller coverage proving a second request throws and the original request still resolves on the renderer ack.
 - **Commit:** same commit as this entry

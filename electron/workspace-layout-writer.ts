@@ -288,6 +288,9 @@ export class WorkspaceLayoutWriter
     }
 
     if (this.removedBrowserPaneKeys.has(key)) {
+      // If a removed pane key is reintroduced before main has a live view, do
+      // not resurrect the deleted pane's preserved tabs. The next live capture
+      // establishes the new pane identity.
       return null
     }
 
