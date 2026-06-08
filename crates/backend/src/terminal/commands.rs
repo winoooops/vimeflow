@@ -852,8 +852,14 @@ async fn read_pty_output(
             Ok(0) => {
                 // EOF - process exited
                 log::info!("PTY session {} exited (EOF)", session_id);
-                // Reap the child to capture its real exit code (None if unavailable)
-                let exit_code = state.try_wait_exit_code(&session_id, generation);
+                // EOF can precede the child's reaped status under load; retry briefly so a non-zero code is not lost as None.
+                let mut exit_code = state.try_wait_exit_code(&session_id, generation);
+                let mut tries = 0;
+                while exit_code.is_none() && tries < 20 {
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                    exit_code = state.try_wait_exit_code(&session_id, generation);
+                    tries += 1;
+                }
                 let _ = cache.mutate(|d| {
                     if let Some(s) = d.sessions.get_mut(&session_id) {
                         s.exited = true;
