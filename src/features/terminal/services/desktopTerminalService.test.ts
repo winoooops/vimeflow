@@ -104,6 +104,7 @@ describe('DesktopTerminalService', () => {
       expect(eventListeners.has('pty-data')).toBe(true)
       expect(eventListeners.has('pty-exit')).toBe(true)
       expect(eventListeners.has('pty-error')).toBe(true)
+      expect(eventListeners.has('burner-foreground')).toBe(true)
     })
 
     test('spawn forwards enableAgentBridge=true when caller opts in', async () => {
@@ -131,6 +132,35 @@ describe('DesktopTerminalService', () => {
       expect(invoke).toHaveBeenCalledWith('spawn_pty', {
         request: expect.objectContaining({ enableAgentBridge: false }),
       })
+    })
+
+    test('spawn forwards ephemeral=true when caller opts in', async () => {
+      mockInvokeOnce({ id: 's1', pid: 1, cwd: '/repo' })
+      await service.spawn({ cwd: '/repo', ephemeral: true })
+
+      expect(invoke).toHaveBeenCalledWith('spawn_pty', {
+        request: expect.objectContaining({ ephemeral: true }),
+      })
+    })
+
+    test('spawn defaults ephemeral to false when caller omits it', async () => {
+      mockInvokeOnce({ id: 's1', pid: 1, cwd: '/tmp' })
+      await service.spawn({ cwd: '/tmp' })
+
+      expect(invoke).toHaveBeenCalledWith('spawn_pty', {
+        request: expect.objectContaining({ ephemeral: false }),
+      })
+    })
+  })
+
+  describe('killEphemeralPtys', () => {
+    test('invokes kill_ephemeral_ptys and returns the killed ids', async () => {
+      mockInvokeOnce(['burner-a', 'burner-b'])
+
+      const killed = await service.killEphemeralPtys()
+
+      expect(invoke).toHaveBeenCalledWith('kill_ephemeral_ptys')
+      expect(killed).toEqual(['burner-a', 'burner-b'])
     })
   })
 
@@ -214,6 +244,19 @@ describe('DesktopTerminalService', () => {
       })
 
       expect(callback).toHaveBeenCalledWith('sess-1', 'PTY read error')
+    })
+
+    test('onBurnerForeground delivers burner-foreground events to callback', async () => {
+      const callback = vi.fn()
+      await service.onBurnerForeground(callback)
+      await mockSpawnAndInit(service)
+
+      emitDesktopEvent('burner-foreground', {
+        sessionId: 'sess-1',
+        running: true,
+      })
+
+      expect(callback).toHaveBeenCalledWith('sess-1', true)
     })
 
     test('unsubscribe removes callback', async () => {
@@ -452,10 +495,16 @@ describe('DesktopTerminalService', () => {
 
         await expect(unsubscribePromise).resolves.toEqual(expect.any(Function))
 
-        expect(unlistenCalls).toEqual(['pty-data', 'pty-exit', 'pty-error'])
+        expect(unlistenCalls).toEqual([
+          'pty-data',
+          'pty-exit',
+          'pty-error',
+          'burner-foreground',
+        ])
         expect(eventListeners.get('pty-data')).toEqual([])
         expect(eventListeners.get('pty-exit')).toEqual([])
         expect(eventListeners.get('pty-error')).toEqual([])
+        expect(eventListeners.get('burner-foreground')).toEqual([])
       } finally {
         if (originalImpl) {
           listenMock.mockImplementation(originalImpl)

@@ -58,11 +58,15 @@ const workspaceTerminalMock = vi.hoisted(() => {
         // eslint-disable-next-line @typescript-eslint/no-empty-function
         Promise.resolve((): void => {})
     ),
+    onBurnerForeground: vi.fn(
+      (): Promise<() => void> => Promise.resolve((): void => undefined)
+    ),
     listSessions: vi.fn().mockResolvedValue(defaultSessionList()),
     setActiveSession: vi.fn().mockResolvedValue(undefined),
     reorderSessions: vi.fn().mockResolvedValue(undefined),
     updateSessionCwd: vi.fn().mockResolvedValue(undefined),
     setSessionActivityPanelCollapsed: vi.fn().mockResolvedValue(undefined),
+    killEphemeralPtys: vi.fn(),
     setWorkspaceSessions: vi.fn().mockResolvedValue(undefined),
   }
 

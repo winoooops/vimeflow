@@ -136,6 +136,19 @@ export interface SessionManager {
     ptyId: string,
     handler: PaneEventHandler
   ) => NotifyPaneReadyResult
+  /**
+   * Arm the spawn→attach buffer for a freshly-spawned PTY so `pty-data`
+   * emitted before the terminal subscribes is held, not dropped. Used by the
+   * burner terminal, whose PTY spawns outside the session-restore path.
+   */
+  registerPending: (ptyId: string) => void
+  /**
+   * Drop the spawn→attach buffer for a PTY. The burner hook calls this when it
+   * reaps a burner shell (host pane / session closed) or re-spawns one that
+   * self-exited, so the dead shell's buffered output never reaches a new
+   * subscriber.
+   */
+  dropAllForPty: (ptyId: string) => void
 }
 
 export interface SetPaneUserLabelOptions {
@@ -1840,5 +1853,7 @@ export const useSessionManager = (
     restoreData: restoreDataRef.current,
     loading,
     notifyPaneReady,
+    registerPending,
+    dropAllForPty,
   }
 }

@@ -63,6 +63,90 @@ describe('HeaderActions', () => {
     expect(onParentClick).not.toHaveBeenCalled()
   })
 
+  test('renders burner control only when onBurner is defined', () => {
+    const onBurner = vi.fn()
+    const onParentClick = vi.fn()
+
+    const { rerender } = render(
+      <div onClick={onParentClick}>
+        <HeaderActions isCollapsed={expanded} onToggleCollapse={vi.fn()} />
+      </div>
+    )
+
+    expect(
+      screen.queryByRole('button', { name: /open burner terminal/i })
+    ).toBeNull()
+
+    rerender(
+      <div onClick={onParentClick}>
+        <HeaderActions
+          isCollapsed={expanded}
+          onToggleCollapse={vi.fn()}
+          onBurner={onBurner}
+        />
+      </div>
+    )
+
+    fireEvent.click(
+      screen.getByRole('button', { name: /open burner terminal/i })
+    )
+
+    expect(onBurner).toHaveBeenCalledTimes(1)
+    expect(onParentClick).not.toHaveBeenCalled()
+  })
+
+  test('an active burner shows the amber button tint (the cue, no dot)', () => {
+    render(
+      <HeaderActions
+        isCollapsed={expanded}
+        onToggleCollapse={vi.fn()}
+        onBurner={vi.fn()}
+        burnerActive
+      />
+    )
+
+    const button = screen.getByRole('button', {
+      name: /open burner terminal \(running\)/i,
+    })
+    expect(button.className).toContain('bg-[#f0c674]/15')
+    expect(button.className).toContain('text-[#f0c674]') // amber icon when active
+    // The amber background IS the running cue — no separate live-dot.
+    expect(screen.queryByTestId('burner-live-dot')).toBeNull()
+  })
+
+  test('no running cue when the pane burner is not running', () => {
+    render(
+      <HeaderActions
+        isCollapsed={expanded}
+        onToggleCollapse={vi.fn()}
+        onBurner={vi.fn()}
+      />
+    )
+
+    const button = screen.getByRole('button', {
+      name: 'open burner terminal',
+    })
+    expect(button.className).toContain('bg-transparent')
+    expect(button.className).toContain('text-on-surface-muted') // gray icon, not amber
+  })
+
+  test('idle-but-live shell exposes live state to assistive tech', () => {
+    render(
+      <HeaderActions
+        isCollapsed={expanded}
+        onToggleCollapse={vi.fn()}
+        onBurner={vi.fn()}
+        burnerShellExists
+      />
+    )
+
+    const button = screen.getByRole('button', {
+      name: 'open burner terminal (live)',
+    })
+    expect(button.className).toContain('bg-transparent')
+    expect(button.className).toContain('text-on-surface-muted') // still gray, not amber
+  })
+
   test('hovering the collapse-status button shows a plain tooltip', async () => {
     const user = userEvent.setup()
     render(<HeaderActions isCollapsed={expanded} onToggleCollapse={vi.fn()} />)
