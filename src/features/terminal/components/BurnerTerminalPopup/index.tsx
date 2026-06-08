@@ -96,6 +96,8 @@ export const BurnerTerminalPopup = ({
   // Esc hides the popup. The burner xterm holds focus, so without a native
   // capture-phase intercept the keydown reaches the terminal and is sent to the
   // shell as ^[. Capturing on the overlay fires before xterm's textarea handler.
+  // Tab / Shift+Tab are also trapped so focus cannot escape to background
+  // workspace controls while the modal is open.
   useEffect(() => {
     const overlay = overlayRef.current
     if (!open || !overlay) {
@@ -107,6 +109,72 @@ export const BurnerTerminalPopup = ({
         event.preventDefault()
         event.stopPropagation()
         onHide()
+        return
+      }
+
+      if (event.key !== 'Tab') {
+        return
+      }
+
+      const panel = overlay.querySelector<HTMLElement>(
+        '[data-testid="burner-panel"]'
+      )
+      if (!panel) {
+        return
+      }
+
+      const alignBtn = panel.querySelector<HTMLButtonElement>(
+        '[data-testid="burner-align"]'
+      )
+      const hideBtn = panel.querySelector<HTMLButtonElement>(
+        '[data-testid="burner-hide"]'
+      )
+
+      const focusables: HTMLElement[] = []
+      if (alignBtn && !alignBtn.disabled) {
+        focusables.push(alignBtn)
+      }
+      if (hideBtn) {
+        focusables.push(hideBtn)
+      }
+
+      const bodyEl = panel.querySelector('[data-testid="burner-body"]')
+      const isFocusInTerminal =
+        bodyEl?.contains(document.activeElement) ?? false
+
+      if (isFocusInTerminal) {
+        event.preventDefault()
+        event.stopPropagation()
+        if (event.shiftKey) {
+          focusables[focusables.length - 1]?.focus()
+        } else {
+          focusables[0]?.focus()
+        }
+        return
+      }
+
+      const currentIndex = focusables.findIndex(
+        (el) => el === document.activeElement
+      )
+      if (currentIndex === -1) {
+        return
+      }
+
+      event.preventDefault()
+      event.stopPropagation()
+
+      if (event.shiftKey) {
+        if (currentIndex === 0) {
+          bodyRef.current?.focusTerminal()
+        } else {
+          focusables[currentIndex - 1]?.focus()
+        }
+      } else {
+        if (currentIndex === focusables.length - 1) {
+          bodyRef.current?.focusTerminal()
+        } else {
+          focusables[currentIndex + 1]?.focus()
+        }
       }
     }
     overlay.addEventListener('keydown', onKeyDown, { capture: true })

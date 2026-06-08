@@ -3,7 +3,7 @@ id: accessibility
 category: a11y
 created: 2026-04-09
 last_updated: 2026-06-08
-ref_count: 8
+ref_count: 9
 ---
 
 # Accessibility
@@ -280,3 +280,12 @@ handlers must not trap focus without implementing the promised behavior.
 - **Finding:** The overlay backdrop was implemented as an absolutely-positioned `<button>` spanning the full viewport with no explicit `tabIndex`. Because it precedes the panel content in DOM order, it becomes the first tab stop inside the dialog — an invisible element with no visible focus ring. This violates WCAG 2.1 SC 2.4.7 (Focus Visible) and confuses keyboard-only users.
 - **Fix:** Added `tabIndex={-1}` to the backdrop button. Pointer users still dismiss by clicking the backdrop; keyboard users dismiss via the existing Escape capture listener. Added a regression test asserting `tabIndex="-1"`.
 - **Commit:** _(see git log for the cycle-2 fix commit on PR #389)_
+
+### 30. Modal dialog with aria-modal lacks Tab focus trap
+
+- **Source:** github-codex-connector | PR #389 round 3 | 2026-06-08
+- **Severity:** HIGH
+- **File:** `src/features/terminal/components/BurnerTerminalPopup/index.tsx`
+- **Finding:** The popup declared `role="dialog"` and `aria-modal={open}`, focused the terminal on open, and handled Escape, but it did not intercept Tab or Shift+Tab. From the align or hide buttons, keyboard focus could move to background workspace controls or terminal elements while the popup remained visually open.
+- **Fix:** Extended the existing capture-phase `keydown` listener on `overlayRef` to handle `Tab` and `Shift+Tab`. When focus is inside the terminal body, Tab moves to the first header button and Shift+Tab moves to the last. When focus is on a button, Tab cycles forward and Shift+Tab cycles backward, wrapping from the last button back to the terminal via `bodyRef.current?.focusTerminal()`. The trap respects the optional align button (omitted when `onAlignCwd` is absent) and the disabled state (skipped when `alignBusy` is true). Added regression tests for forward/backward cycling with and without the align button.
+- **Commit:** _(see git log for the cycle-3 fix commit on PR #389)_

@@ -35,7 +35,11 @@ vi.mock('../TerminalPane/Body', async () => {
           data-body-mode={props.mode}
           data-has-on-ready={props.onPaneReady ? 'yes' : 'no'}
           data-has-on-cwd-change={props.onCwdChange ? 'yes' : 'no'}
-        />
+        >
+          {/* xterm renders a textarea for keyboard input; keep one in the stub
+              so focus-trap tests can simulate the terminal holding focus. */}
+          <textarea data-testid="xterm-textarea" />
+        </div>
       )
     }),
   }
@@ -260,4 +264,90 @@ test('backdrop dismiss button is removed from the tab order', () => {
   expect(
     screen.getByRole('button', { name: /dismiss burner terminal/i })
   ).toHaveAttribute('tabIndex', '-1')
+})
+
+test('Tab from terminal traps focus to the first button', () => {
+  render(popup(true, { onAlignCwd: vi.fn() }))
+
+  const textarea = screen.getByTestId('xterm-textarea')
+  textarea.focus()
+  expect(textarea).toHaveFocus()
+
+  fireEvent.keyDown(textarea, { key: 'Tab' })
+
+  expect(
+    screen.getByRole('button', { name: /align burner to pane directory/i })
+  ).toHaveFocus()
+})
+
+test('Tab from last button wraps focus back to the terminal', () => {
+  render(popup(true, { onAlignCwd: vi.fn() }))
+  focusTerminal.mockClear()
+
+  const hideBtn = screen.getByRole('button', { name: /hide burner terminal/i })
+  hideBtn.focus()
+  expect(hideBtn).toHaveFocus()
+
+  fireEvent.keyDown(hideBtn, { key: 'Tab' })
+
+  expect(focusTerminal).toHaveBeenCalledTimes(1)
+})
+
+test('Shift+Tab from first button wraps focus back to the terminal', () => {
+  render(popup(true, { onAlignCwd: vi.fn() }))
+  focusTerminal.mockClear()
+
+  const alignBtn = screen.getByRole('button', {
+    name: /align burner to pane directory/i,
+  })
+  alignBtn.focus()
+  expect(alignBtn).toHaveFocus()
+
+  fireEvent.keyDown(alignBtn, { key: 'Tab', shiftKey: true })
+
+  expect(focusTerminal).toHaveBeenCalledTimes(1)
+})
+
+test('Shift+Tab from terminal traps focus to the last button', () => {
+  render(popup(true, { onAlignCwd: vi.fn() }))
+
+  const textarea = screen.getByTestId('xterm-textarea')
+  textarea.focus()
+  expect(textarea).toHaveFocus()
+
+  fireEvent.keyDown(textarea, { key: 'Tab', shiftKey: true })
+
+  expect(
+    screen.getByRole('button', { name: /hide burner terminal/i })
+  ).toHaveFocus()
+})
+
+test('Tab cycles between terminal and hide button when align is absent', () => {
+  render(popup(true))
+  focusTerminal.mockClear()
+
+  const textarea = screen.getByTestId('xterm-textarea')
+  textarea.focus()
+
+  fireEvent.keyDown(textarea, { key: 'Tab' })
+
+  expect(
+    screen.getByRole('button', { name: /hide burner terminal/i })
+  ).toHaveFocus()
+
+  fireEvent.keyDown(
+    screen.getByRole('button', { name: /hide burner terminal/i }),
+    { key: 'Tab' }
+  )
+
+  expect(focusTerminal).toHaveBeenCalledTimes(1)
+})
+
+test('Tab does nothing while the popup is hidden', () => {
+  const onHide = vi.fn()
+  render(popup(false, { onHide }))
+
+  fireEvent.keyDown(screen.getByTestId('burner-popup'), { key: 'Tab' })
+
+  expect(onHide).not.toHaveBeenCalled()
 })
