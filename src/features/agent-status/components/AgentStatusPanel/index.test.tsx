@@ -1,5 +1,5 @@
 import { describe, test, expect, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { AGENTS } from '../../../../agents/registry'
 import type { AgentStatus } from '../../types'
@@ -403,5 +403,147 @@ describe('AgentStatusPanel', () => {
       screen.getByRole('button', { name: /collapse activity panel/i })
     )
     expect(onCollapse).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('AgentStatusPanel — live action card', () => {
+  const runningEditStatus: AgentStatus = {
+    ...activeAgentStatus,
+    cwd: '/tmp/repo',
+    toolCalls: {
+      total: 1,
+      byType: { Edit: 1 },
+      active: {
+        tool: 'Edit',
+        args: 'a.ts',
+        startedAt: '2026-04-22T11:59:42Z',
+        toolUseId: 'live-1',
+      },
+    },
+    recentToolCalls: [],
+  }
+
+  test('renders the NOW live-action card while a tool call is active', () => {
+    render(
+      <AgentStatusPanel
+        {...defaultProps}
+        cwd="/tmp/repo"
+        agentStatus={runningEditStatus}
+      />
+    )
+
+    expect(screen.getByText('NOW')).toBeInTheDocument()
+    expect(screen.getByText('LIVE')).toBeInTheDocument()
+  })
+
+  test('omits the live card when no tool call is active', () => {
+    render(
+      <AgentStatusPanel
+        {...defaultProps}
+        cwd="/tmp/repo"
+        agentStatus={activeAgentStatus}
+      />
+    )
+
+    expect(screen.queryByText('NOW')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('live-action-card')).not.toBeInTheDocument()
+  })
+
+  test('does not also list the running action in the activity feed', () => {
+    render(
+      <AgentStatusPanel
+        {...defaultProps}
+        cwd="/tmp/repo"
+        agentStatus={{
+          ...runningEditStatus,
+          recentToolCalls: [
+            {
+              id: 'r-1',
+              tool: 'Read',
+              args: 'b.ts',
+              status: 'done',
+              durationMs: 100,
+              timestamp: '2026-04-22T11:59:00Z',
+              isTestFile: false,
+            },
+          ],
+        }}
+      />
+    )
+
+    // 1 active + 1 recent: the active row is promoted to the NOW card, so the
+    // feed lists only the single recent event (count 1, not 2).
+    expect(
+      screen.getByRole('button', { name: /activity\s*1/i })
+    ).toBeInTheDocument()
+    expect(screen.getByText('LIVE')).toBeInTheDocument()
+  })
+
+  test('shows the real git diff counts on the live card', () => {
+    render(
+      <AgentStatusPanel
+        {...defaultProps}
+        cwd="/tmp/repo"
+        agentStatus={runningEditStatus}
+      />
+    )
+
+    const card = screen.getByTestId('live-action-card')
+    expect(within(card).getByText('+5')).toBeInTheDocument()
+    expect(within(card).getByText('−2')).toBeInTheDocument()
+  })
+
+  test('clicking the live card opens the running file diff in the dock', async () => {
+    const onOpenDiff = vi.fn()
+    const user = userEvent.setup()
+    render(
+      <AgentStatusPanel
+        {...defaultProps}
+        cwd="/tmp/repo"
+        onOpenDiff={onOpenDiff}
+        agentStatus={runningEditStatus}
+      />
+    )
+
+    await user.click(screen.getByTestId('live-action-card'))
+
+    expect(onOpenDiff).toHaveBeenCalledWith(
+      expect.objectContaining({ path: 'a.ts' })
+    )
+  })
+
+  test('matches by absolute tool path and opens the repo-relative diff', async () => {
+    const onOpenDiff = vi.fn()
+    const user = userEvent.setup()
+    render(
+      <AgentStatusPanel
+        {...defaultProps}
+        cwd="/tmp/repo"
+        onOpenDiff={onOpenDiff}
+        agentStatus={{
+          ...runningEditStatus,
+          toolCalls: {
+            total: 1,
+            byType: { Edit: 1 },
+            active: {
+              tool: 'Edit',
+              args: '/tmp/repo/a.ts',
+              startedAt: '2026-04-22T11:59:42Z',
+              toolUseId: 'live-abs',
+            },
+          },
+        }}
+      />
+    )
+
+    const card = screen.getByTestId('live-action-card')
+    // diff counts resolve from git status despite the absolute tool path
+    expect(within(card).getByText('+5')).toBeInTheDocument()
+
+    await user.click(card)
+    // opened with the repo-relative path the diff viewer requires, not absolute
+    expect(onOpenDiff).toHaveBeenCalledWith(
+      expect.objectContaining({ path: 'a.ts' })
+    )
   })
 })
