@@ -351,7 +351,8 @@ fn claude_live_emits_running_then_idle_transition() {
 ```
 
 (`run_claude_replay` writes all lines then tails to EOF; `start_claude_replay` + `append` + `wait_replay_done` mirror the existing fixture-test append/wait helpers so you can drive the live path.)
-```
+
+````
 
 - [ ] **Step 2: Run, verify it fails**
 
@@ -368,7 +369,7 @@ pub(super) struct ClaudeMessageDto {
     #[serde(default, deserialize_with = "lenient_string")]
     pub stop_reason: Option<String>,
 }
-```
+````
 
 - [ ] **Step 4: Implement the lifecycle emit** (`transcript.rs`)
 
@@ -533,26 +534,46 @@ git commit -m "feat(agent): emit agent-lifecycle from codex task events"
 
 ```ts
 import { test, expect } from 'vitest'
-import { deriveSessionStatus, isTerminalStatus, isLiveStatus } from './sessionStatus'
+import {
+  deriveSessionStatus,
+  isTerminalStatus,
+  isLiveStatus,
+} from './sessionStatus'
 import type { Pane } from '../types'
 
 const pane = (status: Pane['status']): Pane =>
-  ({ kind: 'shell', id: 'p', ptyId: 'x', cwd: '/', agentType: 'generic', status, active: true }) as Pane
+  ({
+    kind: 'shell',
+    id: 'p',
+    ptyId: 'x',
+    cwd: '/',
+    agentType: 'generic',
+    status,
+    active: true,
+  }) as Pane
 
 test('precedence: errored beats every other state', () => {
-  expect(deriveSessionStatus([pane('errored'), pane('idle'), pane('running')])).toBe('errored')
+  expect(
+    deriveSessionStatus([pane('errored'), pane('idle'), pane('running')])
+  ).toBe('errored')
 })
 test('precedence: awaiting beats running/idle/completed', () => {
-  expect(deriveSessionStatus([pane('awaiting'), pane('running'), pane('idle')])).toBe('awaiting')
+  expect(
+    deriveSessionStatus([pane('awaiting'), pane('running'), pane('idle')])
+  ).toBe('awaiting')
 })
 test('precedence: running beats idle/completed', () => {
-  expect(deriveSessionStatus([pane('running'), pane('idle'), pane('completed')])).toBe('running')
+  expect(
+    deriveSessionStatus([pane('running'), pane('idle'), pane('completed')])
+  ).toBe('running')
 })
 test('precedence: idle beats completed', () => {
   expect(deriveSessionStatus([pane('idle'), pane('completed')])).toBe('idle')
 })
 test('all completed folds to completed', () => {
-  expect(deriveSessionStatus([pane('completed'), pane('completed')])).toBe('completed')
+  expect(deriveSessionStatus([pane('completed'), pane('completed')])).toBe(
+    'completed'
+  )
 })
 test('empty panes is errored (invariant guard)', () => {
   expect(deriveSessionStatus([])).toBe('errored')
@@ -574,7 +595,12 @@ Expected: FAIL — `awaiting`/`idle` not assignable; `isTerminalStatus`/`isLiveS
 - [ ] **Step 3: Change the type** (`types/index.ts:4`)
 
 ```ts
-export type SessionStatus = 'running' | 'awaiting' | 'idle' | 'completed' | 'errored'
+export type SessionStatus =
+  | 'running'
+  | 'awaiting'
+  | 'idle'
+  | 'completed'
+  | 'errored'
 ```
 
 - [ ] **Step 4: Rewrite `sessionStatus.ts`** (data-driven precedence + helpers)
@@ -608,7 +634,9 @@ export const deriveSessionStatus = (panes: Pane[]): SessionStatus => {
   if (panes.length === 0) return 'errored'
   return panes.reduce<SessionStatus>(
     (top, pane) =>
-      STATUS_PRECEDENCE[pane.status] < STATUS_PRECEDENCE[top] ? pane.status : top,
+      STATUS_PRECEDENCE[pane.status] < STATUS_PRECEDENCE[top]
+        ? pane.status
+        : top,
     'completed'
   )
 }
@@ -767,7 +795,8 @@ Expected: FAIL — handler ignores the code, always `completed`.
 ```ts
 onPtyExitRef.current = (ptyId: string, code: number | null): void => {
   const exitedAt = new Date().toISOString()
-  const status: SessionStatus = code != null && code !== 0 ? 'errored' : 'completed'
+  const status: SessionStatus =
+    code != null && code !== 0 ? 'errored' : 'completed'
   setSessions((prev) =>
     prev.map((s) => {
       const idx = s.panes.findIndex((p) => p.ptyId === ptyId)
@@ -785,7 +814,10 @@ onPtyExitRef.current = (ptyId: string, code: number | null): void => {
     })
   )
 }
-usePtyExitListener({ service, onExit: (ptyId, code) => onPtyExitRef.current(ptyId, code) })
+usePtyExitListener({
+  service,
+  onExit: (ptyId, code) => onPtyExitRef.current(ptyId, code),
+})
 ```
 
 Add a sibling `onError` handler (read error → `errored`) wired to `service.onError`:
@@ -819,12 +851,24 @@ git commit -m "feat(sessions): map pty exit code and read error to errored"
 
 ```ts
 test('an Exited session with a non-zero last_exit_code hydrates as errored', () => {
-  const info = { id: 's', cwd: '/', status: { kind: 'Exited', last_exit_code: 3 } } as SessionInfo
+  const info = {
+    id: 's',
+    cwd: '/',
+    status: { kind: 'Exited', last_exit_code: 3 },
+  } as SessionInfo
   expect(sessionFromInfo(info, 0).status).toBe('errored')
 })
 test('an Exited session with code 0 or null hydrates as completed', () => {
-  const ok = { id: 's', cwd: '/', status: { kind: 'Exited', last_exit_code: 0 } } as SessionInfo
-  const unknown = { id: 's', cwd: '/', status: { kind: 'Exited', last_exit_code: null } } as SessionInfo
+  const ok = {
+    id: 's',
+    cwd: '/',
+    status: { kind: 'Exited', last_exit_code: 0 },
+  } as SessionInfo
+  const unknown = {
+    id: 's',
+    cwd: '/',
+    status: { kind: 'Exited', last_exit_code: null },
+  } as SessionInfo
   expect(sessionFromInfo(ok, 0).status).toBe('completed')
   expect(sessionFromInfo(unknown, 0).status).toBe('completed')
 })
@@ -908,7 +952,11 @@ onAgentLifecycleRef.current = (e: AgentLifecycleEvent): void => {
       const newPanes = s.panes.map((p, i) =>
         i === idx ? { ...p, status: phaseToStatus[e.phase] } : p
       )
-      return { ...s, status: deriveShellSessionStatus(newPanes), panes: newPanes }
+      return {
+        ...s,
+        status: deriveShellSessionStatus(newPanes),
+        panes: newPanes,
+      }
     })
   )
 }
