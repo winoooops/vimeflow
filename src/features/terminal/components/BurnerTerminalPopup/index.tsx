@@ -161,6 +161,18 @@ export const BurnerTerminalPopup = ({
         (el) => el === document.activeElement
       )
       if (currentIndex === -1) {
+        event.preventDefault()
+        event.stopPropagation()
+        if (focusableElements.length > 0) {
+          if (event.shiftKey) {
+            focusableElements[focusableElements.length - 1]?.focus()
+          } else {
+            focusableElements[0]?.focus()
+          }
+        } else {
+          bodyRef.current?.focusTerminal()
+        }
+
         return
       }
 

@@ -3,7 +3,7 @@ id: accessibility
 category: a11y
 created: 2026-04-09
 last_updated: 2026-06-08
-ref_count: 9
+ref_count: 10
 ---
 
 # Accessibility
@@ -289,3 +289,12 @@ handlers must not trap focus without implementing the promised behavior.
 - **Finding:** The popup declared `role="dialog"` and `aria-modal={open}`, focused the terminal on open, and handled Escape, but it did not intercept Tab or Shift+Tab. From the align or hide buttons, keyboard focus could move to background workspace controls or terminal elements while the popup remained visually open.
 - **Fix:** Extended the existing capture-phase `keydown` listener on `overlayRef` to handle `Tab` and `Shift+Tab`. When focus is inside the terminal body, Tab moves to the first header button and Shift+Tab moves to the last. When focus is on a button, Tab cycles forward and Shift+Tab cycles backward, wrapping from the last button back to the terminal via `bodyRef.current?.focusTerminal()`. The trap respects the optional align button (omitted when `onAlignCwd` is absent) and the disabled state (skipped when `alignBusy` is true). Added regression tests for forward/backward cycling with and without the align button.
 - **Commit:** _(see git log for the cycle-3 fix commit on PR #389)_
+
+### 31. Focus trap leaks focus when the focused element becomes disabled mid-focus
+
+- **Source:** github-codex-connector | PR #389 round 5 | 2026-06-08
+- **Severity:** MEDIUM
+- **File:** `src/features/terminal/components/BurnerTerminalPopup/index.tsx`
+- **Finding:** The Tab focus-trap handler computed `focusableElements` dynamically from the DOM, excluding the align button when `alignBusy` made it `disabled`. If keyboard focus was on that button at the moment it became disabled, the next `Tab` event computed `currentIndex === -1` and the handler returned early without `preventDefault()`, letting focus escape the `aria-modal` dialog into background workspace controls.
+- **Fix:** In the `currentIndex === -1` branch, call `event.preventDefault()` and `event.stopPropagation()`, then move focus to the first focusable element (or the last when `shiftKey` is true). If no focusable elements remain, fall back to `bodyRef.current?.focusTerminal()`. Added regression tests for both `Tab` and `Shift+Tab` from a disabled align button.
+- **Commit:** _(see git log for the cycle-5 fix commit on PR #389)_

@@ -351,3 +351,43 @@ test('Tab does nothing while the popup is hidden', () => {
 
   expect(onHide).not.toHaveBeenCalled()
 })
+
+test('Tab from a disabled align button traps focus to the next valid target', () => {
+  const { rerender } = render(popup(true, { onAlignCwd: vi.fn() }))
+
+  const alignBtn = screen.getByRole('button', {
+    name: /align burner to pane directory/i,
+  })
+  alignBtn.focus()
+  expect(alignBtn).toHaveFocus()
+
+  // Simulate alignBusy becoming true while the button still holds focus.
+  rerender(popup(true, { onAlignCwd: vi.fn(), alignBusy: true }))
+
+  fireEvent.keyDown(alignBtn, { key: 'Tab' })
+
+  expect(
+    screen.getByRole('button', { name: /hide burner terminal/i })
+  ).toHaveFocus()
+})
+
+test('Shift+Tab from a disabled align button traps focus to the last valid target', () => {
+  const { rerender } = render(popup(true, { onAlignCwd: vi.fn() }))
+
+  const alignBtn = screen.getByRole('button', {
+    name: /align burner to pane directory/i,
+  })
+  alignBtn.focus()
+  expect(alignBtn).toHaveFocus()
+
+  // Simulate alignBusy becoming true while the button still holds focus.
+  rerender(popup(true, { onAlignCwd: vi.fn(), alignBusy: true }))
+
+  fireEvent.keyDown(alignBtn, { key: 'Tab', shiftKey: true })
+
+  // When the previously-focused element is no longer in the focusable list,
+  // Shift+Tab falls back to the last valid focus target.
+  expect(
+    screen.getByRole('button', { name: /hide burner terminal/i })
+  ).toHaveFocus()
+})
