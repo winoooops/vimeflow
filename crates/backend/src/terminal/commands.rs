@@ -825,6 +825,9 @@ pub(crate) fn set_session_activity_panel_collapsed_inner(
     })
 }
 
+/// Sentinel exit code for a PTY read error (no real OS exit status exists).
+const PTY_READ_ERROR_EXIT_CODE: i32 = -1;
+
 /// Background task to read PTY output and emit events
 async fn read_pty_output(
     events: Arc<dyn EventSink>,
@@ -849,12 +852,12 @@ async fn read_pty_output(
             Ok(0) => {
                 // EOF - process exited
                 log::info!("PTY session {} exited (EOF)", session_id);
-                // Mark cache as exited
+                // Reap the child to capture its real exit code (None if unavailable)
+                let exit_code = state.try_wait_exit_code(&session_id, generation);
                 let _ = cache.mutate(|d| {
                     if let Some(s) = d.sessions.get_mut(&session_id) {
                         s.exited = true;
-                        // last_exit_code stays None in v1 — capturing requires
-                        // child.try_wait() with locking; deferred to follow-up.
+                        s.last_exit_code = exit_code;
                     }
                     Ok(())
                 });
@@ -862,7 +865,7 @@ async fn read_pty_output(
                     events.as_ref(),
                     &PtyExitEvent {
                         session_id: session_id.clone(),
-                        code: None,
+                        code: exit_code,
                     },
                 )
                 .ok();
@@ -913,6 +916,15 @@ async fn read_pty_output(
             Err(e) => {
                 // Error - emit error event and exit
                 log::error!("PTY read error for session {}: {}", session_id, e);
+                // A read error is a failure, not a clean exit: mark the cache
+                // errored with a sentinel so hydration reads errored too.
+                let _ = cache.mutate(|d| {
+                    if let Some(s) = d.sessions.get_mut(&session_id) {
+                        s.exited = true;
+                        s.last_exit_code = Some(PTY_READ_ERROR_EXIT_CODE);
+                    }
+                    Ok(())
+                });
                 emit_pty_error(
                     events.as_ref(),
                     &PtyErrorEvent {
@@ -1791,6 +1803,56 @@ mod tests {
         }
 
         assert!(exited, "cache entry should be marked exited after EOF");
+    }
+
+    #[tokio::test]
+    async fn read_loop_captures_nonzero_exit_code() {
+        let (state, cache, events, _temp_dir) = create_test_state_with_cache();
+        let cwd = std::env::current_dir()
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
+
+        spawn_pty_inner(
+            state.clone(),
+            cache.clone(),
+            events.clone(),
+            SpawnPtyRequest {
+                session_id: "exit-code-test".into(),
+                cwd,
+                shell: None,
+                env: None,
+                enable_agent_bridge: false,
+            },
+        )
+        .await
+        .unwrap();
+
+        write_pty_inner(
+            &state,
+            WritePtyRequest {
+                session_id: "exit-code-test".into(),
+                data: "exit 3\n".into(),
+            },
+        )
+        .unwrap();
+
+        let mut code = None;
+        for _ in 0..100 {
+            let snap = cache.snapshot();
+            let entry = snap
+                .sessions
+                .get("exit-code-test")
+                .expect("session should still be in cache after exit");
+            if entry.exited {
+                code = entry.last_exit_code;
+                break;
+            }
+
+            tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+        }
+
+        assert_eq!(code, Some(3), "non-zero shell exit code should be captured");
     }
 
     #[tokio::test]
