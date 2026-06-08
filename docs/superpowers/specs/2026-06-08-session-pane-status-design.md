@@ -309,3 +309,5 @@ The card and tab strip render the single aggregated `session.status`; no per-pan
 ### Out of scope for §5
 
 Nothing new deferred — detection (§3), bridge (§4), and data model (§2) own the rest.
+
+<!-- codex-reviewed: 2026-06-08T05:14:30Z -->
