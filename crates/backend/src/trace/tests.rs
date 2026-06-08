@@ -185,6 +185,33 @@ fn tracing_event_sink_forwards_agent_event_unchanged_and_records_trace() {
 }
 
 #[test]
+fn tracing_event_sink_forwards_non_agent_event_without_trace_record() {
+    let temp_dir = tempfile::tempdir().expect("temp dir");
+    let path = temp_dir.path().join("logs").join(TRACE_LOG_NAME);
+    let tracing = TraceService::with_store(test_store(path.clone(), DEFAULT_MAX_TRACE_BYTES));
+    tracing.set_enabled(true).expect("enable tracing");
+
+    let raw_sink = Arc::new(FakeEventSink::new());
+    let sink = TracingEventSink {
+        inner: raw_sink.clone(),
+        tracing,
+    };
+    let payload = json!({
+        "sessionId": "pty-1",
+        "data": "terminal output",
+    });
+
+    sink.emit_json("pty-data", payload.clone())
+        .expect("emit should forward");
+
+    assert_eq!(raw_sink.recorded(), vec![("pty-data".to_string(), payload)]);
+    assert!(
+        !path.exists(),
+        "non-agent events must not be persisted as traces"
+    );
+}
+
+#[test]
 fn correlation_id_propagates_from_user_interaction_to_ipc_backend_and_agent() {
     let temp_dir = tempfile::tempdir().expect("temp dir");
     let path = temp_dir.path().join("logs").join(TRACE_LOG_NAME);

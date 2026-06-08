@@ -524,12 +524,15 @@ impl TraceService {
 
 impl EventSink for TracingEventSink {
     fn emit_json(&self, event: &str, payload: Value) -> Result<(), String> {
-        let result = self.inner.emit_json(event, payload.clone());
+        if !event.starts_with("agent-") {
+            return self.inner.emit_json(event, payload);
+        }
 
-        if event.starts_with("agent-") {
-            if let Err(err) = self.tracing.record_agent_event(event, &payload) {
-                log::warn!("failed to write agent trace event: {err}");
-            }
+        let trace_payload = payload.clone();
+        let result = self.inner.emit_json(event, payload);
+
+        if let Err(err) = self.tracing.record_agent_event(event, &trace_payload) {
+            log::warn!("failed to write agent trace event: {err}");
         }
 
         result

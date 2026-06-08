@@ -399,6 +399,42 @@ mod router {
             .map_err(|e| super::IpcError::new(format!("result encode: {e}")))
     }
 
+    struct IpcTraceResultGuard<'a> {
+        state: &'a BackendState,
+        method: &'a str,
+        context: Option<&'a crate::trace::TraceContext>,
+        finished: bool,
+    }
+
+    impl<'a> IpcTraceResultGuard<'a> {
+        fn new(
+            state: &'a BackendState,
+            method: &'a str,
+            context: Option<&'a crate::trace::TraceContext>,
+        ) -> Self {
+            Self {
+                state,
+                method,
+                context,
+                finished: false,
+            }
+        }
+
+        fn finish(mut self, ok: bool) {
+            self.state.trace_ipc_result(self.method, self.context, ok);
+            self.finished = true;
+        }
+    }
+
+    impl Drop for IpcTraceResultGuard<'_> {
+        fn drop(&mut self) {
+            if !self.finished {
+                self.state
+                    .trace_ipc_result(self.method, self.context, false);
+            }
+        }
+    }
+
     pub async fn dispatch(
         state: Arc<BackendState>,
         method: &str,
@@ -409,6 +445,8 @@ mod router {
         if should_trace_ipc {
             state.trace_ipc_request(method, trace_context.as_ref());
         }
+        let mut trace_result_guard = should_trace_ipc
+            .then(|| IpcTraceResultGuard::new(state.as_ref(), method, trace_context.as_ref()));
 
         let outcome = match method {
             "set_tracing_enabled" => {
@@ -715,7 +753,9 @@ mod router {
         };
 
         if should_trace_ipc {
-            state.trace_ipc_result(method, trace_context.as_ref(), outcome.is_ok());
+            if let Some(guard) = trace_result_guard.take() {
+                guard.finish(outcome.is_ok());
+            }
         }
         outcome
     }
@@ -1999,6 +2039,55 @@ mod tests {
             "agent-session-title"
         );
         assert_eq!(sink.count("agent-session-title"), 1);
+    }
+
+    #[tokio::test]
+    async fn dispatch_tracing_records_error_result_on_failure() {
+        let temp_dir = tempfile::tempdir().expect("temp dir");
+        let sink = std::sync::Arc::new(crate::runtime::FakeEventSink::new());
+        let events: std::sync::Arc<dyn crate::runtime::EventSink> = sink;
+        let state = std::sync::Arc::new(crate::runtime::BackendState::new(
+            temp_dir.path().to_path_buf(),
+            events,
+        ));
+
+        super::router::dispatch(
+            state.clone(),
+            "set_tracing_enabled",
+            serde_json::json!({ "enabled": true }),
+        )
+        .await
+        .expect("enable tracing");
+        let error = super::router::dispatch(
+            state,
+            "rename_agent_session",
+            serde_json::json!({
+                "ptyId": "missing-pty",
+                "title": "name",
+                "correlationId": "vf_corr_error",
+                "parentSpanId": "vf_root_error"
+            }),
+        )
+        .await
+        .expect_err("rename should fail without a live agent");
+
+        assert!(error.message.contains("no live agent"));
+
+        let path = temp_dir.path().join("logs").join("trace.jsonl");
+        let records: Vec<serde_json::Value> = std::fs::read_to_string(path)
+            .expect("trace file")
+            .lines()
+            .map(|line| serde_json::from_str::<serde_json::Value>(line).expect("trace json"))
+            .filter(|record| record["correlationId"] == "vf_corr_error")
+            .collect();
+        let events: Vec<_> = records
+            .iter()
+            .map(|record| record["event"].as_str().expect("event"))
+            .collect();
+
+        assert_eq!(events, vec!["ipc.request", "ipc.result"]);
+        assert_eq!(records[1]["status"], "error");
+        assert_eq!(records[1]["attributes"]["method"], "rename_agent_session");
     }
 
     #[tokio::test]
