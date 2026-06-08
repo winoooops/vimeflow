@@ -43,7 +43,8 @@ A quad session with one busy pane and three finished-and-waiting panes reads a f
   - **Backend capture** — populate `last_exit_code` in the PTY read-loop (`child.try_wait()` + locking; pulls the deferred `commands.rs:856` follow-up into scope). The `Exited { last_exit_code }` status variant is **already on the wire** end-to-end (`bindings/SessionStatus.ts`, `commands.rs:606`); today it is always `null` only because the read-loop never captures it.
   - **Live path** — thread the code through `usePtyExitListener` (today it drops `code`): non-zero → `errored`, `0` → `completed`.
   - **Hydration path** — `sessionFromInfo.ts:9` currently maps every `Exited` session to `completed` unconditionally; change it to read `last_exit_code` (non-zero → `errored`) so a crashed pane stays `errored` across reload / `list_sessions` rehydration instead of silently reverting to `completed`.
-  - `null` = exit status genuinely unavailable (rare once capture lands) → `completed`; only a captured non-zero yields `errored`, so a known crash is never masked and an unknown exit never spuriously errors.
+  - **Read-error path** — the read-loop's `pty-error` arm (`commands.rs`, distinct from `pty-exit`: it emits `PtyErrorEvent` and breaks **without** touching `last_exit_code`) must also yield `errored`. Frontend: a `service.onError` handler sets the pane `errored` (today `onError` exists on the service but is unconsumed by session state). Backend: the `pty-error` arm marks the cache `exited` with a **sentinel non-zero** `last_exit_code`, so hydration reads `errored` too rather than `completed` — a read error is a failure, not a clean exit.
+  - `null` = exit status genuinely unavailable (rare once capture lands) → `completed`; only a captured non-zero (or the read-error sentinel) yields `errored`, so a known crash is never masked and an unknown exit never spuriously errors.
 - The agent→`pane.status` bridge (§4).
 - The `deriveSessionStatus` precedence update (§5).
 - The session card display of the new states (§5). (`statePill.ts` is dead since #383 and gets **deleted**, not migrated — see §2.)
@@ -148,6 +149,11 @@ pub enum AgentPhase {
 #[serde(rename_all = "camelCase")]
 pub struct AgentLifecycleEvent {
     pub session_id: String,
+    /// The agent's OWN session identity (Claude: transcript `.jsonl`
+    /// stem; Codex: `session_meta.id`). Lets the bridge drop a stale
+    /// event from a superseded tail across an agent restart — see
+    /// *Restart identity*. State events need this; counters don't.
+    pub agent_session_id: String,
     pub phase: AgentPhase,
 }
 
@@ -163,6 +169,7 @@ pub(crate) fn emit_agent_lifecycle(
 pub(crate) fn emit_lifecycle_on_change(
     events: &dyn EventSink,
     session_id: &str,
+    agent_session_id: &str,
     last: &mut Option<AgentPhase>,
     phase: AgentPhase,
 ) {
@@ -170,7 +177,11 @@ pub(crate) fn emit_lifecycle_on_change(
         return;
     }
     *last = Some(phase);
-    let payload = AgentLifecycleEvent { session_id: session_id.to_string(), phase };
+    let payload = AgentLifecycleEvent {
+        session_id: session_id.to_string(),
+        agent_session_id: agent_session_id.to_string(),
+        phase,
+    };
     if let Err(e) = emit_agent_lifecycle(events, &payload) {
         log::warn!("Failed to emit agent-lifecycle event: {}", e);
     }
@@ -194,7 +205,9 @@ A correct fix needs a reliable _per-pane_ "agent process gone" signal, and the b
 
 ### Edge-triggering & dedup
 
-`emit_lifecycle_on_change` makes live emission edge-triggered — one event per Running ↔ Idle transition, no per-line spam. The restart-boundary duplicate window is the bounded ≤500 ms / ≤2-event one documented for `agent-turn` (`types.rs:278`); harmless here since the §4 bridge sets `pane.status` idempotently (re-setting to the same phase is a no-op).
+`emit_lifecycle_on_change` makes live emission edge-triggered — one event per Running ↔ Idle transition, no per-line spam. Within a single agent session a re-sent same-phase event is a no-op (the §4 bridge sets `pane.status` idempotently).
+
+**Restart identity (a lifecycle event is _state_, not a counter).** The `agent-turn` duplicate-window doc (`types.rs:278`) calls restart-boundary duplicates harmless because an over-counted turn is transient. That reasoning does **not** transfer to lifecycle: a stale event from the **old** tail in its ≤500 ms shutdown window can carry a _different_ phase and overwrite the new agent's — last-writer-wins, and §4's sticky-terminal guard only protects `completed` / `errored`, not `running ↔ idle`. So `AgentLifecycleEvent` carries `agent_session_id` (already derived per tail — Claude's transcript stem, Codex's `session_meta.id`); the §4 bridge records each pane's current agent session (set by the detection/attach that sequences restarts) and **drops events whose `agent_session_id` is not the current one**. A superseded tail's late event is ignored, so restart is deterministic, not last-writer-wins. (Identity-keyed drop is the offset/cursor discipline the project already uses for replay-then-stream attach.)
 
 **Replay-bounded (one-shot boundary flush).** Transcript tailers replay the file from byte 0 on attach/restart, so naive edge-triggering would re-emit every historical Running ↔ Idle transition before settling — violating "no per-line spam." The tracker is replay-bounded like the existing `TestRunEmitter`, carrying three fields:
 
@@ -216,16 +229,16 @@ Today nothing writes the agent's phase into `pane.status` — `useAgentStatus` c
 
 `pane.status` (materialized) is written by two independent sources:
 
-| Writer                     | Sets                                       | Where                                                                                   |
-| -------------------------- | ------------------------------------------ | --------------------------------------------------------------------------------------- |
-| **PTY exit (terminal)**    | `completed` / `errored`                    | `useSessionManager` exit handler (§1: thread `code`) + `sessionFromInfo` hydration (§1) |
-| **Agent lifecycle (live)** | `running` / `idle` / (`awaiting` reserved) | **new** `agent-lifecycle` listener                                                      |
+| Writer                                  | Sets                                       | Where                                                                                         |
+| --------------------------------------- | ------------------------------------------ | --------------------------------------------------------------------------------------------- |
+| **PTY terminal (exit _or_ read-error)** | `completed` / `errored`                    | `useSessionManager` exit + `service.onError` handlers (§1) + `sessionFromInfo` hydration (§1) |
+| **Agent lifecycle (live)**              | `running` / `idle` / (`awaiting` reserved) | **new** `agent-lifecycle` listener                                                            |
 
 ### Merge rule (per pane)
 
 ```
-PTY exited?  → completed | errored        (exit code; STICKY — lifecycle never overrides)
-else         → running | idle | awaiting  (agent-lifecycle; 'running' default at spawn until first settle)
+PTY exited / read-error?  → completed | errored   (exit code or pty-error; STICKY — lifecycle never overrides)
+else                      → running | idle | awaiting   (agent-lifecycle; 'running' default at spawn until first settle)
 ```
 
 Terminal states are **sticky**: the lifecycle listener writes a pane only when `!isTerminalStatus(pane.status)` (the §2 helper). This guards against a late or replayed lifecycle event resurrecting an exited pane (`completed → running`).
@@ -235,8 +248,9 @@ Terminal states are **sticky**: the lifecycle listener writes a pane only when `
 Mirror the existing `onPtyExitRef` + `usePtyExitListener` pattern in `useSessionManager` (owner of `panes[]`): a new `onAgentLifecycleRef`, subscribed via the same `listen('agent-lifecycle', cb)` + `addUnlisten` mechanism `useAgentStatus` already uses for `agent-status` / `agent-turn`. On each event:
 
 1. Find the pane by `ptyId === event.sessionId` (same match as the exit handler).
-2. If `isTerminalStatus(pane.status)` → skip (sticky terminal).
-3. Else set `pane.status = phaseToStatus(event.phase)` and re-derive the session status (§5).
+2. If `event.agentSessionId` is not the pane's current agent session → skip (stale tail from before a restart — see §3 _Restart identity_).
+3. If `isTerminalStatus(pane.status)` → skip (sticky terminal).
+4. Else set `pane.status = phaseToStatus(event.phase)` and re-derive the session status (§5).
 
 `phaseToStatus` is a 1:1 `Record<AgentPhase, …>` off the generated binding enum — exhaustiveness-checked, so a future phase rename/add is `tsc`-caught.
 
