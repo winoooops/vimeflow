@@ -2,7 +2,7 @@
 id: documentation-accuracy
 category: code-quality
 created: 2026-04-09
-last_updated: 2026-06-03
+last_updated: 2026-06-08
 ref_count: 24
 ---
 
@@ -782,4 +782,13 @@ Stale documentation misleads future contributors and review agents.
 - **File:** `crates/backend/src/terminal/bridge.rs`
 - **Finding:** The `# Arguments` block at `generate_bridge_files` documented only `agent_status_dir` and `session_id`. The new `shim_dir: Option<&str>` parameter had no entry, so callers couldn't tell whether `None` is valid or what it defaults to. The `Creates:` list also named only `statusline.sh` and `settings.json`, omitting the shim executable, `init.sh`, `.zshenv`, and `.zshrc`.
 - **Fix:** Added a `* shim_dir` bullet with description, and expanded the `Creates:` list to include all five generated artifacts with their correct paths (`<dir>/init.sh`, `<dir>/.zshenv`, `<dir>/.zshrc`, `<shim_dir>/claude`).
+- **Commit:** same commit as this entry
+
+### 84. Design handoff HTML mockup still listed as active reference after implementation landed
+
+- **Source:** github-human | PR #389 round 1 | 2026-06-08
+- **Severity:** HUMAN
+- **File:** `docs/design/burner-terminal-popup/burner-terminal-handoff/BURNER-TERMINAL-HANDOFF.md`
+- **Finding:** The Files section described `Burner Terminal Popup.html` as a self-contained mockup with interactive state walkthrough ("Press A · B · C · Esc"), implying it was the current design reference. The full burner terminal implementation had already landed across multiple PRs (#343, #351, #354, #382, #385, #386), so the HTML mockup was historical scaffolding, not an active spec source. A new contributor reading the handoff could spend time reviewing the mockup instead of the real components.
+- **Fix:** Rewrote the bullet to state the HTML is archived for historical reference and explicitly note that the full implementation context now lives in the codebase.
 - **Commit:** same commit as this entry

@@ -11,9 +11,9 @@ VIM-53**; this doc inlines only what surfaces in the UI.
 
 ## Files
 
-- `Burner Terminal Popup.html` — self-contained mockup (markup + CSS, design tokens inlined).
-  Defaults to the streaming state. **Press `A` (fresh) · `B` (npm run dev) · `C`
-  (live-but-hidden cue) · `Esc` (hide)** to walk the states. No build step — open in a browser.
+- `Burner Terminal Popup.html` — archived HTML mockup. The full implementation
+  context is now captured in the codebase; this file is kept for historical
+  reference but is no longer the active design source.
 - `BURNER-TERMINAL-HANDOFF.md` — this file.
 - `PROMPT.md` — ready-to-paste implementation prompt for the coding agent.
 

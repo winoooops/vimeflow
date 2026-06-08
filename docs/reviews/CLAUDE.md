@@ -45,7 +45,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | -------------------------------------------------------------------- | ------------------ | -------- | ---- | ------------ |
 | [Filesystem Scope](patterns/filesystem-scope.md)                     | security           | 21       | 3    | 2026-05-20   |
 | [React Lifecycle](patterns/react-lifecycle.md)                       | react-patterns     | 27       | 9    | 2026-06-07   |
-| [Resource Cleanup](patterns/resource-cleanup.md)                     | react-patterns     | 4        | 3    | 2026-05-30   |
+| [Resource Cleanup](patterns/resource-cleanup.md)                     | react-patterns     | 5        | 3    | 2026-06-08   |
 | [Cross-Platform Paths](patterns/cross-platform-paths.md)             | cross-platform     | 6        | 3    | 2026-05-30   |
 | [Debug Artifacts](patterns/debug-artifacts.md)                       | code-quality       | 6        | 0    | 2026-06-07   |
 | [Derived State Consistency](patterns/derived-state-consistency.md)   | code-quality       | 1        | 0    | 2026-06-07   |
@@ -53,7 +53,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Generated Shell Scripts](patterns/generated-shell-scripts.md)       | backend            | 7        | 1    | 2026-06-03   |
 | [Testing Gaps](patterns/testing-gaps.md)                             | testing            | 61       | 27   | 2026-06-07   |
 | [Terminal Input Handling](patterns/terminal-input-handling.md)       | terminal           | 4        | 2    | 2026-05-24   |
-| [Documentation Accuracy](patterns/documentation-accuracy.md)         | code-quality       | 83       | 24   | 2026-06-03   |
+| [Documentation Accuracy](patterns/documentation-accuracy.md)         | code-quality       | 84       | 24   | 2026-06-08   |
 | [Accessibility](patterns/accessibility.md)                           | a11y               | 26       | 7    | 2026-06-06   |
 | [Async Race Conditions](patterns/async-race-conditions.md)           | react-patterns     | 58       | 16   | 2026-06-07   |
 | [Tokio Blocking On Async](patterns/tokio-blocking-on-async.md)       | backend            | 2        | 1    | 2026-05-20   |

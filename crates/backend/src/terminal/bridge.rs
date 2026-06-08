@@ -40,13 +40,19 @@ pub struct BridgeFiles {
 #[cfg(unix)]
 fn write_executable_script(path: &Path, content: &str) -> std::io::Result<()> {
     let tmp_path = path.with_extension("tmp");
-    let mut file = std::fs::File::create(&tmp_path)?;
-    file.write_all(content.as_bytes())?;
-    file.sync_all()?;
-    drop(file);
-    std::fs::rename(&tmp_path, path)?;
-    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755))?;
-    Ok(())
+    let result = (|| {
+        let mut file = std::fs::File::create(&tmp_path)?;
+        file.write_all(content.as_bytes())?;
+        file.sync_all()?;
+        drop(file);
+        std::fs::rename(&tmp_path, path)?;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755))?;
+        Ok(())
+    })();
+    if result.is_err() {
+        let _ = std::fs::remove_file(&tmp_path);
+    }
+    result
 }
 
 #[cfg(not(unix))]
