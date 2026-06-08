@@ -2,17 +2,16 @@
 
 > **Paste-to-agent prompt:**
 >
-> Migrate the **Token Cache card** from the right-hand activity panel into our app. It's a single self-contained React component, `CacheBlock`, plus three tiny dependencies (`SectionLabel`, `Sparkline`, `CacheStackBar`). `Token Cache Card.html` is **runnable** — open it, copy the four functions out. The card is **scoped to the current session only** (no cross-session history). Match the exact colors, fonts, and tone logic below.
+> Migrate the **Token Cache card** from the right-hand activity panel into our app. It's a single self-contained React component, `CacheBlock`, plus three tiny dependencies (`SectionLabel`, `Sparkline`, `CacheStackBar`). The card is **scoped to the current session only** (no cross-session history). Match the exact colors, fonts, and tone logic below.
 
 ---
 
 ## Files in this kit
 
-| File                            | What it is                                                                                                    |
-| ------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| `Token Cache Card.html`         | **Self-contained, runnable.** The card + its 3 dependencies + the right `<link>` tags. Open it; copy from it. |
-| `TOKEN-CACHE-CARD-MIGRATION.md` | This doc.                                                                                                     |
-| `screenshot.png`                | Reference render of the card.                                                                                 |
+| File                            | What it is                    |
+| ------------------------------- | ----------------------------- |
+| `TOKEN-CACHE-CARD-MIGRATION.md` | This doc.                     |
+| `screenshot.png`                | Reference render of the card. |
 
 ---
 
