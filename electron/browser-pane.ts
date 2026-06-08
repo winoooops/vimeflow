@@ -907,10 +907,14 @@ const toDataImage = (contentType: string, body: Buffer): string =>
     'base64'
   )}`
 
+type FaviconFetchResult =
+  | { kind: 'image'; contentType: string; body: Buffer }
+  | { kind: 'redirect'; location: string }
+
 const fetchFaviconViaVettedAddress = (
   target: FaviconFetchTarget,
   signal: AbortSignal
-): Promise<{ contentType: string; body: Buffer } | null> =>
+): Promise<FaviconFetchResult | null> =>
   new Promise((resolve) => {
     if (signal.aborted) {
       resolve(null)
@@ -928,9 +932,7 @@ const fetchFaviconViaVettedAddress = (
       signal.removeEventListener('abort', abort)
     }
 
-    function settle(
-      result: { contentType: string; body: Buffer } | null
-    ): void {
+    function settle(result: FaviconFetchResult | null): void {
       if (settled) {
         return
       }
@@ -967,6 +969,14 @@ const fetchFaviconViaVettedAddress = (
         const contentType = headerString(response.headers, 'content-type') ?? ''
         const declaredLength = headerString(response.headers, 'content-length')
 
+        if (status >= 300 && status < 400) {
+          const location = headerString(response.headers, 'location')
+          response.resume()
+          settle(location === null ? null : { kind: 'redirect', location })
+
+          return
+        }
+
         if (
           status < 200 ||
           status >= 300 ||
@@ -1002,7 +1012,7 @@ const fetchFaviconViaVettedAddress = (
 
             return
           }
-          settle({ contentType, body: Buffer.concat(chunks) })
+          settle({ kind: 'image', contentType, body: Buffer.concat(chunks) })
         })
         response.on('error', () => settle(null))
       }
@@ -1019,6 +1029,28 @@ const fetchFaviconViaVettedAddress = (
 
 const isAllowedFaviconProtocol = (protocol: string): boolean =>
   protocol === 'http:' || protocol === 'https:'
+
+const resolveFaviconRedirectUrl = (
+  sourceUrl: URL,
+  location: string
+): URL | null => {
+  let redirectUrl: URL
+  try {
+    redirectUrl = new URL(location, sourceUrl)
+  } catch {
+    return null
+  }
+
+  if (
+    !isAllowedFaviconProtocol(redirectUrl.protocol) ||
+    redirectUrl.username !== '' ||
+    redirectUrl.password !== ''
+  ) {
+    return null
+  }
+
+  return redirectUrl
+}
 
 const resolveFaviconHttpDataUrl = async (
   pageUrl: string,
@@ -1043,7 +1075,30 @@ const resolveFaviconHttpDataUrl = async (
     return null
   }
 
-  return toDataImage(fetched.contentType, fetched.body)
+  if (fetched.kind === 'image') {
+    return toDataImage(fetched.contentType, fetched.body)
+  }
+
+  const redirectUrl = resolveFaviconRedirectUrl(faviconUrl, fetched.location)
+  if (redirectUrl === null) {
+    return null
+  }
+
+  const redirectTarget = await resolveFaviconFetchTarget(
+    pageUrl,
+    redirectUrl,
+    signal
+  )
+  if (redirectTarget === null) {
+    return null
+  }
+
+  const redirected = await fetchFaviconViaVettedAddress(redirectTarget, signal)
+  if (redirected?.kind !== 'image') {
+    return null
+  }
+
+  return toDataImage(redirected.contentType, redirected.body)
 }
 
 const resolveFaviconDataUrl = async (

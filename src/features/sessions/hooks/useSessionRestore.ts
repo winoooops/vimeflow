@@ -254,6 +254,11 @@ export const useSessionRestore = ({
           }
         )
 
+        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+        if (cancelled) {
+          return
+        }
+
         await restoreBrowserPanes(restored)
         // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
         if (cancelled) {

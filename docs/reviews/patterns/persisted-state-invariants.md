@@ -3,7 +3,7 @@ id: persisted-state-invariants
 category: correctness
 created: 2026-06-08
 last_updated: 2026-06-08
-ref_count: 2
+ref_count: 3
 ---
 
 # Persisted State Invariants
@@ -57,4 +57,13 @@ Durable user-facing state (workspace shapes, caches, settings files) can be malf
 - **File:** `electron/workspace-layout-writer.ts`
 - **Finding:** `tabsForBrowserPane` cloned live or preserved tabs, stored that clone in `lastTabsByBrowserPane`, then cloned the clone for the assembled store. That extra pass obscured the real invariant: the writer cache and returned snapshot should be separate cloned objects so callers cannot mutate the cached durable fallback.
 - **Fix:** Clone the original live or preserved tabs separately for the cache and the assembled store, avoiding clone-of-clone work while preserving object isolation between the cache and the returned snapshot.
+- **Commit:** same commit as this entry
+
+### 6. Reappearing browser pane keys must clear removed-state before flush
+
+- **Source:** github-claude | PR #404 final review | 2026-06-08
+- **Severity:** HIGH
+- **File:** `electron/workspace-layout-writer.ts`
+- **Finding:** `noteBrowserPaneShape` added disappearing browser pane keys to `removedBrowserPaneKeys` but did not clear that set when a key reappeared. A pane that briefly disappeared and then reappeared before its live view was capturable caused `tabsForBrowserPane` to return `null`, making teardown flush skip persistence.
+- **Fix:** Clear `removedBrowserPaneKeys` for every key present in the next shape. Updated assemble and flush coverage so a reappearing pane with no live capture persists as `tabs: []` rather than blocking the save.
 - **Commit:** same commit as this entry

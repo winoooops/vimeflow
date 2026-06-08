@@ -3,7 +3,7 @@ id: async-race-conditions
 category: react-patterns
 created: 2026-04-09
 last_updated: 2026-06-08
-ref_count: 20
+ref_count: 21
 ---
 
 # Async Race Conditions
@@ -631,4 +631,13 @@ prevent showing previous data.
 - **File:** `electron/workspace-layout-controller.ts`
 - **Finding:** `requestFinalShape` resolved any existing pending final-shape request with the last-known shape before sending a new request. The current teardown path is single-call, but the API encoded "supersede with stale data" rather than enforcing the exactly-one in-flight contract.
 - **Fix:** Replace silent supersession with a synchronous assertion when a request is already pending. Added controller coverage proving a second request throws and the original request still resolves on the renderer ack.
+- **Commit:** same commit as this entry
+
+### 62. Cancelled restore can enter bounded browser-pane creation anyway
+
+- **Source:** github-claude | PR #404 final review | 2026-06-08
+- **Severity:** LOW
+- **File:** `src/features/sessions/hooks/useSessionRestore.ts`
+- **Finding:** `useSessionRestore` checked `cancelled` after loading sessions but not immediately before `restoreBrowserPanes`. If cleanup ran after reconstruction, the stale restore still waited through bounded browser-pane creation timeouts before releasing hydration.
+- **Fix:** Add a cancellation guard immediately before `restoreBrowserPanes(restored)` so a cancelled restore reaches `finally` and releases hydration without waiting on per-pane timeouts.
 - **Commit:** same commit as this entry

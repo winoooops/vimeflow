@@ -909,7 +909,7 @@ describe('BrowserPaneController', () => {
     expect(lastFaviconOf(h)).toBe('data:image/png;base64,iVBORw0KGgo=')
   })
 
-  test('an http image favicon is fetched (no credentials, no redirects) and inlined', async () => {
+  test('an http image favicon is fetched through the vetted address and inlined', async () => {
     const h = await faviconHarness('https://example.com/')
     queueNodeImage(new Uint8Array([1, 2, 3, 4]))
     h.clearSends()
@@ -925,6 +925,48 @@ describe('BrowserPaneController', () => {
         lookup: expect.any(Function),
       })
     )
+  })
+
+  test('an http favicon follows one vetted redirect and embeds the image', async () => {
+    const h = await faviconHarness('https://example.com/')
+    queueNodeResponse({
+      statusCode: 302,
+      headers: { location: 'https://cdn.example/favicon.png' },
+      body: new Uint8Array(),
+    })
+    queueNodeImage(new Uint8Array([5, 6]))
+    h.clearSends()
+
+    h.emitFavicon(['https://example.com/favicon.png'])
+    await flushMicrotasks()
+
+    expect(lastFaviconOf(h)).toMatch(/^data:image\/png;base64,/)
+    expect(nodeRequestMock.httpsRequest).toHaveBeenCalledTimes(2)
+    expect(nodeRequestMock.requests[1].options).toEqual(
+      expect.objectContaining({
+        hostname: 'cdn.example',
+        path: '/favicon.png',
+        headers: expect.objectContaining({ host: 'cdn.example' }),
+        lookup: expect.any(Function),
+      })
+    )
+  })
+
+  test('a public page blocks a favicon redirect to a private target', async () => {
+    const h = await faviconHarness('https://example.com/')
+    queueNodeResponse({
+      statusCode: 302,
+      headers: { location: 'http://127.0.0.1/favicon.png' },
+      body: new Uint8Array(),
+    })
+    h.clearSends()
+
+    h.emitFavicon(['https://example.com/favicon.png'])
+    await flushMicrotasks()
+
+    expect(lastFaviconOf(h)).toBe(null)
+    expect(nodeRequestMock.httpsRequest).toHaveBeenCalledTimes(1)
+    expect(nodeRequestMock.httpRequest).not.toHaveBeenCalled()
   })
 
   test('domain favicons are resolved once and fetched through the vetted address', async () => {
