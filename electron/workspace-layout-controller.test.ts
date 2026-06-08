@@ -159,6 +159,31 @@ describe('WorkspaceLayoutController', () => {
     expect(controller.tabsForPane('nope', 'p1')).toBeNull()
   })
 
+  test('tabsForPane returns cloned repaired tabs', async () => {
+    const sidecar = makeSidecar(sampleStore())
+    const controller = new WorkspaceLayoutController({ sidecar })
+    await controller.loadForRestore({
+      projectId: 'proj-1',
+      workingDirectory: '/repo',
+    })
+
+    const tabs = controller.tabsForPane('s1', 'p1')
+    if (tabs === null) {
+      throw new Error('expected restored browser tabs')
+    }
+
+    tabs[0].history[0].url = 'https://mutated.example'
+    tabs.push({
+      active: false,
+      historyIndex: 0,
+      history: [{ url: 'https://new.example', title: 'New' }],
+    })
+
+    const nextTabs = controller.tabsForPane('s1', 'p1')
+    expect(nextTabs).toHaveLength(1)
+    expect(nextTabs?.[0].history[0].url).toBe('https://a.example')
+  })
+
   test('requestFinalShape resolves with the renderer ack push', async () => {
     const controller = new WorkspaceLayoutController({
       sidecar: makeSidecar(null),
@@ -192,7 +217,7 @@ describe('WorkspaceLayoutController', () => {
     await expect(pending).resolves.toEqual(lastKnown)
   })
 
-  test('beginHydration / endHydration toggle the writer hydrating flag', () => {
+  test('beginHydration / endHydration hold the writer flag until the final end', () => {
     const writer = makeWriter()
 
     const controller = new WorkspaceLayoutController({
@@ -201,10 +226,19 @@ describe('WorkspaceLayoutController', () => {
     })
 
     controller.beginHydration()
+    controller.beginHydration()
+    expect(writer.setHydrating).toHaveBeenCalledTimes(1)
     expect(writer.setHydrating).toHaveBeenLastCalledWith(true)
 
     controller.endHydration()
+    expect(writer.setHydrating).toHaveBeenCalledTimes(1)
+
+    controller.endHydration()
+    expect(writer.setHydrating).toHaveBeenCalledTimes(2)
     expect(writer.setHydrating).toHaveBeenLastCalledWith(false)
+
+    controller.endHydration()
+    expect(writer.setHydrating).toHaveBeenCalledTimes(2)
   })
 
   test('install registers the invoke channels and dispose removes them', () => {
@@ -290,21 +324,62 @@ describe('WorkspaceLayoutController', () => {
     })
     controller.install(ipcMain)
 
-    handlers.get(WORKSPACE_LAYOUT_PUSH_SHAPE)?.({}, null)
-    expect(controller.latestShapeDto).toBeNull()
-    expect(writer.onShapePushed).not.toHaveBeenCalled()
+    const malformedPayloads: unknown[] = [
+      null,
+      {},
+      { sessions: null },
+      { sessions: 'not-array' },
+      { sessions: [null] },
+      { sessions: [{ id: 's1', panes: [] }] },
+      {
+        sessions: [
+          {
+            id: 's1',
+            projectId: 'proj-1',
+            layout: 'vsplit',
+            workingDirectory: '/repo',
+            active: true,
+            panes: [
+              {
+                kind: 'browser',
+                paneId: 'p1',
+                paneIndex: '1',
+                active: false,
+              },
+            ],
+          },
+        ],
+      },
+      {
+        sessions: [
+          {
+            id: 's1',
+            projectId: 'proj-1',
+            layout: 'vsplit',
+            workingDirectory: '/repo',
+            active: true,
+            panes: [
+              {
+                kind: 'shell',
+                paneId: 'p0',
+                paneIndex: 0,
+                active: true,
+                ptyId: 'pty-1',
+                cwd: '/repo',
+                agentType: 'claude-code',
+                agentSessionId: 42,
+              },
+            ],
+          },
+        ],
+      },
+    ]
 
-    handlers.get(WORKSPACE_LAYOUT_PUSH_SHAPE)?.({}, {})
-    expect(controller.latestShapeDto).toBeNull()
-    expect(writer.onShapePushed).not.toHaveBeenCalled()
-
-    handlers.get(WORKSPACE_LAYOUT_PUSH_SHAPE)?.({}, { sessions: null })
-    expect(controller.latestShapeDto).toBeNull()
-    expect(writer.onShapePushed).not.toHaveBeenCalled()
-
-    handlers.get(WORKSPACE_LAYOUT_PUSH_SHAPE)?.({}, { sessions: 'not-array' })
-    expect(controller.latestShapeDto).toBeNull()
-    expect(writer.onShapePushed).not.toHaveBeenCalled()
+    for (const payload of malformedPayloads) {
+      handlers.get(WORKSPACE_LAYOUT_PUSH_SHAPE)?.({}, payload)
+      expect(controller.latestShapeDto).toBeNull()
+      expect(writer.onShapePushed).not.toHaveBeenCalled()
+    }
 
     const dto = sampleShape()
     handlers.get(WORKSPACE_LAYOUT_PUSH_SHAPE)?.({}, dto)

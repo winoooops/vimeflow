@@ -3,7 +3,7 @@ id: persisted-state-invariants
 category: correctness
 created: 2026-06-08
 last_updated: 2026-06-08
-ref_count: 1
+ref_count: 2
 ---
 
 # Persisted State Invariants
@@ -48,4 +48,13 @@ Durable user-facing state (workspace shapes, caches, settings files) can be malf
 - **File:** `electron/workspace-layout-writer.ts`
 - **Finding:** `WorkspaceLayoutWriter.assemble()` returned `null` whenever any browser pane lacked live, remembered, or preserved tabs. A newly-created browser pane can enter the renderer shape before its main-side `WebContentsView` exists, so a close during that gap made `flush()` fail and skipped persistence of the latest workspace shape.
 - **Fix:** Treat a pane with no live, remembered, removed, or preserved source as a brand-new pane and persist `tabs: []`; Rust repair seeds the default tab if that snapshot is restored. Kept the removed-and-readded guard returning `null`, and added writer tests for both cases plus close-flush persistence.
+- **Commit:** same commit as this entry
+
+### 5. Browser-tab cache and assembled snapshots need separate cloned objects
+
+- **Source:** github-claude | PR #404 final review | 2026-06-08
+- **Severity:** LOW
+- **File:** `electron/workspace-layout-writer.ts`
+- **Finding:** `tabsForBrowserPane` cloned live or preserved tabs, stored that clone in `lastTabsByBrowserPane`, then cloned the clone for the assembled store. That extra pass obscured the real invariant: the writer cache and returned snapshot should be separate cloned objects so callers cannot mutate the cached durable fallback.
+- **Fix:** Clone the original live or preserved tabs separately for the cache and the assembled store, avoiding clone-of-clone work while preserving object isolation between the cache and the returned snapshot.
 - **Commit:** same commit as this entry

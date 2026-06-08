@@ -2,8 +2,8 @@
 id: parser-resilience
 category: code-quality
 created: 2026-05-24
-last_updated: 2026-06-07
-ref_count: 4
+last_updated: 2026-06-08
+ref_count: 5
 ---
 
 # Parser Resilience
@@ -166,4 +166,13 @@ true` and drop the chunk.
 - **File:** `electron/workspace-layout-controller.ts` L163-166
 - **Finding:** The installed IPC handler casts an unknown renderer payload to `WorkspaceShapeDto` and `pushShape` stores it before `writer.onShapePushed` synchronously assembles the store. If `sessions` is missing, null, or not an array, `assemble` throws and the corrupt shape remains stored, so later layout writes can keep failing until a valid shape is pushed.
 - **Fix:** Added a runtime guard in the IPC handler before calling `pushShape`: reject payloads that are not objects or lack an array `sessions` field. The fix also adds a regression test covering null, missing `sessions`, and wrong-type `sessions` payloads, plus a happy-path assertion that valid shapes still flow through.
+- **Commit:** same commit as this entry
+
+### 7. Renderer workspace-shape IPC guard must validate nested sessions and panes
+
+- **Source:** github-claude | PR #404 final review | 2026-06-08
+- **Severity:** MEDIUM
+- **File:** `electron/workspace-layout-controller.ts`
+- **Finding:** The push-shape IPC guard rejected missing or wrong-type `sessions`, but still accepted any array contents and cast them to `WorkspaceShapeDto`. Payloads such as `sessions: [null]`, sessions without `panes`, or panes with wrong-typed scalar fields could still reach `writer.onShapePushed` and throw inside the writer.
+- **Fix:** Replace the shallow guard with recursive runtime validation for the DTO root, sessions, browser panes, shell panes, and nullable shell `agentSessionId`. Extended regression coverage with malformed nested sessions and panes.
 - **Commit:** same commit as this entry

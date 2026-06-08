@@ -2,8 +2,8 @@
 id: async-race-conditions
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-06-07
-ref_count: 18
+last_updated: 2026-06-08
+ref_count: 19
 ---
 
 # Async Race Conditions
@@ -614,3 +614,12 @@ prevent showing previous data.
 - **Finding:** The `close` event handler leaves `closeFlushed` false until the async `workspaceTeardown.flushOnce()` finishes. A rapid second close event enters a second async IIFE; `flushOnce()` marks its own guard before awaiting, so the second IIFE skips the flush and calls `win.close()`, destroying the window. When the first IIFE's `finally` block later calls `win.close()` again, the window is already destroyed, risking an unhandled rejection or unclean main-process shutdown.
 - **Fix:** Guard the reissued `win.close()` in the `finally` block with `!win.isDestroyed()`. `closeFlushed` is still assigned before the guarded call so subsequent close events correctly no-op.
 - **Commit:** _(PR #387 upsource-review cycle 1 fix commit)_
+
+### 60. Overlapping restore effects can release a shared hydration guard early
+
+- **Source:** github-claude | PR #404 final review | 2026-06-08
+- **Severity:** HIGH
+- **File:** `src/features/sessions/hooks/useSessionRestore.ts`, `electron/workspace-layout-controller.ts`
+- **Finding:** `useSessionRestore` brackets each restore with `beginWorkspaceHydration` / `endWorkspaceHydration`, but the main-side controller represented hydration as a single boolean. If a stale restore effect reached its `finally` after a newer restore had already called `begin`, the stale `end` flipped the writer out of hydration and allowed renderer shape pushes to persist during the active restore window.
+- **Fix:** Make the main-side hydration guard reference-counted. Nested `beginHydration` calls only set the writer flag on the 0->1 transition, and `endHydration` only clears it on the 1->0 transition. Added controller coverage for nested begin/end ordering and stray extra end calls.
+- **Commit:** same commit as this entry

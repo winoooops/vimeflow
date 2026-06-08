@@ -22,6 +22,7 @@ import type {
   WorkspaceLayoutWriterPort,
   WorkspaceShapeDto,
   WorkspaceShapePane,
+  WorkspaceShapeSession,
 } from './workspace-layout-types'
 
 interface SidecarInvoker {
@@ -76,20 +77,81 @@ const storeToShape = (
 
 const emptyWorkspaceShape = (): WorkspaceShapeDto => ({ sessions: [] })
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+
+const isNullableString = (value: unknown): value is string | null =>
+  value === null || typeof value === 'string'
+
 const isLoadWorkspaceForRestoreRequest = (
   request: unknown
 ): request is LoadWorkspaceForRestoreRequest => {
-  if (!request || typeof request !== 'object') {
+  if (!isRecord(request)) {
     return false
   }
 
-  const record = request as Record<string, unknown>
-
   return (
-    typeof record.projectId === 'string' &&
-    typeof record.workingDirectory === 'string'
+    typeof request.projectId === 'string' &&
+    typeof request.workingDirectory === 'string'
   )
 }
+
+const hasShapePaneBase = (pane: Record<string, unknown>): boolean =>
+  typeof pane.paneId === 'string' &&
+  typeof pane.paneIndex === 'number' &&
+  Number.isFinite(pane.paneIndex) &&
+  typeof pane.active === 'boolean'
+
+const isWorkspaceShapePane = (pane: unknown): pane is WorkspaceShapePane => {
+  if (!isRecord(pane) || !hasShapePaneBase(pane)) {
+    return false
+  }
+
+  if (pane.kind === 'browser') {
+    return true
+  }
+
+  return (
+    pane.kind === 'shell' &&
+    typeof pane.ptyId === 'string' &&
+    typeof pane.cwd === 'string' &&
+    typeof pane.agentType === 'string' &&
+    isNullableString(pane.agentSessionId)
+  )
+}
+
+const isWorkspaceShapeSession = (
+  session: unknown
+): session is WorkspaceShapeSession => {
+  if (!isRecord(session)) {
+    return false
+  }
+
+  return (
+    typeof session.id === 'string' &&
+    typeof session.projectId === 'string' &&
+    typeof session.layout === 'string' &&
+    typeof session.workingDirectory === 'string' &&
+    typeof session.active === 'boolean' &&
+    Array.isArray(session.panes) &&
+    session.panes.every(isWorkspaceShapePane)
+  )
+}
+
+const isWorkspaceShapeDto = (dto: unknown): dto is WorkspaceShapeDto =>
+  isRecord(dto) &&
+  Array.isArray(dto.sessions) &&
+  dto.sessions.every(isWorkspaceShapeSession)
+
+const cloneTabs = (tabs: PersistedTab[]): PersistedTab[] =>
+  tabs.map((tab) => ({
+    active: tab.active,
+    historyIndex: tab.historyIndex,
+    history: tab.history.map((entry) => ({
+      url: entry.url,
+      title: entry.title,
+    })),
+  }))
 
 interface PendingFinalShape {
   resolve: (dto: WorkspaceShapeDto | null) => void
@@ -103,6 +165,7 @@ export class WorkspaceLayoutController {
   private store: PersistedWorkspaceLayoutStore | null = null
   private pendingFinalShape: PendingFinalShape | null = null
   private installedOn: IpcMainLike | null = null
+  private hydrationDepth = 0
 
   constructor(deps: WorkspaceLayoutControllerDeps) {
     this.sidecar = deps.sidecar
@@ -147,7 +210,7 @@ export class WorkspaceLayoutController {
       return null
     }
 
-    return pane.tabs
+    return cloneTabs(pane.tabs)
   }
 
   // Ask the renderer for one fresh shape during the close flush; resolves with
@@ -170,23 +233,33 @@ export class WorkspaceLayoutController {
   }
 
   beginHydration(): void {
-    this.writer.setHydrating(true)
+    const wasHydrating = this.hydrationDepth > 0
+    this.hydrationDepth += 1
+
+    if (!wasHydrating) {
+      this.writer.setHydrating(true)
+    }
   }
 
   endHydration(): void {
-    this.writer.setHydrating(false)
+    if (this.hydrationDepth === 0) {
+      return
+    }
+
+    this.hydrationDepth -= 1
+
+    if (this.hydrationDepth === 0) {
+      this.writer.setHydrating(false)
+    }
   }
 
   install(ipcMain: IpcMainLike): void {
     ipcMain.handle(WORKSPACE_LAYOUT_PUSH_SHAPE, (_event, dto): void => {
-      if (
-        !dto ||
-        typeof dto !== 'object' ||
-        !Array.isArray((dto as Record<string, unknown>).sessions)
-      ) {
+      if (!isWorkspaceShapeDto(dto)) {
         return
       }
-      this.pushShape(dto as WorkspaceShapeDto)
+
+      this.pushShape(dto)
     })
 
     ipcMain.handle(WORKSPACE_LAYOUT_LOAD_FOR_RESTORE, (_event, request) => {

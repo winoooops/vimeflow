@@ -3,7 +3,7 @@ id: derived-state-consistency
 category: code-quality
 created: 2026-06-07
 last_updated: 2026-06-08
-ref_count: 2
+ref_count: 3
 ---
 
 # Derived State Consistency
@@ -84,4 +84,13 @@ base data is technically "correct."
 - **File:** `electron/browser-pane.ts`
 - **Finding:** `resolveHostForFaviconFetch` derived several candidate targets from DNS answers but selected the first private target before the PNA gate ran. For a split-horizon hostname with both private and public answers, a public page rejected the private target and never tried the public address, so favicons silently failed even though a safe public target existed.
 - **Fix:** Prefer the first public resolved target, falling back to a private target only when all answers are private. Added a regression test that verifies the pinned lookup uses the public address when DNS returns private then public addresses.
+- **Commit:** same commit as this entry
+
+### 5. Restore-tab serving returned a mutable reference to the retained store
+
+- **Source:** github-claude | PR #404 final review | 2026-06-08
+- **Severity:** MEDIUM
+- **File:** `electron/workspace-layout-controller.ts`
+- **Finding:** `tabsForPane` returned `pane.tabs` directly from the controller's retained repaired store. A caller that mutated the returned array or nested history entries could corrupt the in-memory restore source, so later writer fallbacks could persist caller-owned mutations instead of the repaired durable state.
+- **Fix:** Clone tab arrays and nested history entries before returning them from `tabsForPane`. Added a regression test that mutates the returned tabs and verifies a later lookup still reads the original repaired history.
 - **Commit:** same commit as this entry

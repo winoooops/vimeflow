@@ -276,11 +276,10 @@ export class WorkspaceLayoutWriter
     const key = browserPaneKey(sessionId, paneId)
     const liveTabs = this.captureTabsForPane(sessionId, paneId)
     if (liveTabs !== null) {
-      const cloned = cloneTabs(liveTabs)
       this.removedBrowserPaneKeys.delete(key)
-      this.lastTabsByBrowserPane.set(key, cloned)
+      this.lastTabsByBrowserPane.set(key, cloneTabs(liveTabs))
 
-      return cloneTabs(cloned)
+      return cloneTabs(liveTabs)
     }
 
     const rememberedTabs = this.lastTabsByBrowserPane.get(key)
@@ -294,10 +293,9 @@ export class WorkspaceLayoutWriter
 
     const preservedTabs = this.preservedTabsForPane?.(sessionId, paneId) ?? null
     if (preservedTabs !== null) {
-      const cloned = cloneTabs(preservedTabs)
-      this.lastTabsByBrowserPane.set(key, cloned)
+      this.lastTabsByBrowserPane.set(key, cloneTabs(preservedTabs))
 
-      return cloneTabs(cloned)
+      return cloneTabs(preservedTabs)
     }
 
     // A newly-created browser pane can reach the renderer shape before main has
