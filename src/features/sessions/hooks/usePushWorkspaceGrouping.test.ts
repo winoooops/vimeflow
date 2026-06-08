@@ -219,4 +219,86 @@ describe('usePushWorkspaceGrouping', () => {
     })
     expect(pushWorkspaceShape).toHaveBeenCalledTimes(2)
   })
+
+  test('cancels pending drift debounce when loading becomes true', () => {
+    vi.useFakeTimers()
+
+    const { rerender } = renderHook(
+      (props: UsePushWorkspaceGroupingOptions) =>
+        usePushWorkspaceGrouping(props),
+      {
+        initialProps: {
+          sessions: [makeSession()],
+          activeSessionId: 's1',
+          loading: false,
+        },
+      }
+    )
+    pushWorkspaceShape.mockClear()
+
+    // Schedule a drift debounce
+    rerender({
+      sessions: [
+        makeSession({
+          panes: [shellPane({ cwd: '/repo/sub' }), browserPane()],
+        }),
+      ],
+      activeSessionId: 's1',
+      loading: false,
+    })
+    expect(pushWorkspaceShape).not.toHaveBeenCalled()
+
+    // Enter loading before the debounce fires
+    rerender({
+      sessions: [
+        makeSession({
+          panes: [shellPane({ cwd: '/repo/sub' }), browserPane()],
+        }),
+      ],
+      activeSessionId: 's1',
+      loading: true,
+    })
+
+    vi.advanceTimersByTime(500)
+    expect(pushWorkspaceShape).not.toHaveBeenCalled()
+  })
+
+  test('cancels pending drift debounce when sessions become empty', () => {
+    vi.useFakeTimers()
+
+    const { rerender } = renderHook(
+      (props: UsePushWorkspaceGroupingOptions) =>
+        usePushWorkspaceGrouping(props),
+      {
+        initialProps: {
+          sessions: [makeSession()],
+          activeSessionId: 's1' as string | null,
+          loading: false,
+        },
+      }
+    )
+    pushWorkspaceShape.mockClear()
+
+    // Schedule a drift debounce
+    rerender({
+      sessions: [
+        makeSession({
+          panes: [shellPane({ cwd: '/repo/sub' }), browserPane()],
+        }),
+      ],
+      activeSessionId: 's1',
+      loading: false,
+    })
+    expect(pushWorkspaceShape).not.toHaveBeenCalled()
+
+    // Drain sessions before the debounce fires
+    rerender({
+      sessions: [],
+      activeSessionId: null,
+      loading: false,
+    })
+
+    vi.advanceTimersByTime(500)
+    expect(pushWorkspaceShape).not.toHaveBeenCalled()
+  })
 })

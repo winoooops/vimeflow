@@ -122,6 +122,11 @@ export const usePushWorkspaceGrouping = ({
 
   useEffect(() => {
     if (loading || sessions.length === 0) {
+      if (debounceRef.current !== null) {
+        clearTimeout(debounceRef.current)
+        debounceRef.current = null
+      }
+
       return
     }
 
