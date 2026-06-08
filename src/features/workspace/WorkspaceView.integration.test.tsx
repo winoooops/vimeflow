@@ -73,6 +73,7 @@ vi.mock('../terminal/services/terminalService', () => ({
     updateSessionCwd: vi.fn().mockResolvedValue(undefined),
     setSessionActivityPanelCollapsed: vi.fn().mockResolvedValue(undefined),
     killEphemeralPtys: vi.fn(),
+    setWorkspaceSessions: vi.fn().mockResolvedValue(undefined),
   })),
 }))
 
@@ -108,6 +109,10 @@ const createMockUseCodeMirror =
     return {
       editorView: mockEditorView as never,
       updateContent: vi.fn(),
+      copySelection: vi.fn(),
+      cutSelection: vi.fn(),
+      pasteClipboard: vi.fn(),
+      selectAll: vi.fn(),
       setContainer: vi.fn(),
     }
   }

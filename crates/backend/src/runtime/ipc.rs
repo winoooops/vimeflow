@@ -510,6 +510,17 @@ mod router {
                 state.set_session_activity_panel_collapsed(p.request)?;
                 Ok(Value::Null)
             }
+            "set_workspace_sessions" => {
+                #[derive(Deserialize)]
+                #[serde(rename_all = "camelCase")]
+                struct P {
+                    request: crate::terminal::types::SetWorkspaceSessionsRequest,
+                }
+
+                let p: P = serde_json::from_value(params).map_err(|e| format!("params: {e}"))?;
+                state.set_workspace_sessions(p.request)?;
+                Ok(Value::Null)
+            }
             "detect_agent_in_session" => {
                 #[derive(Deserialize)]
                 #[serde(rename_all = "camelCase")]

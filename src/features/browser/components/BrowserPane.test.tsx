@@ -15,13 +15,21 @@ const bridgeMocks = vi.hoisted(() => ({
   getBrowserCdpInfo: vi.fn(),
   navigateBrowserPane: vi.fn().mockResolvedValue(undefined),
   newBrowserPaneTab: vi.fn().mockResolvedValue(undefined),
+  openExternalBrowserPane: vi.fn().mockResolvedValue(undefined),
+  navActionBrowserPane: vi.fn().mockResolvedValue(undefined),
   onBrowserPaneFocus: vi.fn(() => (): void => undefined) as Mock<
+    (callback: (event: unknown) => void) => () => void
+  >,
+  onBrowserPaneFocusAddress: vi.fn(() => (): void => undefined) as Mock<
     (callback: (event: unknown) => void) => () => void
   >,
   onBrowserPaneTabsChange: vi.fn(() => (): void => undefined) as Mock<
     (callback: (event: unknown) => void) => () => void
   >,
   onBrowserPaneUrlChange: vi.fn(() => (): void => undefined) as Mock<
+    (callback: (event: unknown) => void) => () => void
+  >,
+  onBrowserPaneNavStateChange: vi.fn(() => (): void => undefined) as Mock<
     (callback: (event: unknown) => void) => () => void
   >,
   setBrowserPaneBounds: vi.fn().mockResolvedValue(undefined),
@@ -78,6 +86,49 @@ const rect = {
   toJSON: (): Record<string, number> => ({}),
 } as DOMRect
 
+const singleTab: BrowserPaneCreateResult = {
+  url: 'https://example.com/',
+  title: 'Example',
+  partition: 'persist:vimeflow-browser:proj-1:pty-shell',
+  tabs: [
+    {
+      id: 'tab-0',
+      url: 'https://example.com/',
+      title: 'Example',
+      active: true,
+    },
+  ],
+  navState: { canGoBack: false, canGoForward: false, isLoading: false },
+}
+
+interface UrlEvent {
+  sessionId: string
+  paneId: string
+  tabId: string
+  url: string
+  title: string | null
+  tabs: { id: string; url: string; title: string | null; active: boolean }[]
+}
+
+const urlCallback = (): ((event: UrlEvent) => void) =>
+  bridgeMocks.onBrowserPaneUrlChange.mock.calls[0][0] as (
+    event: UrlEvent
+  ) => void
+
+interface NavStateEvent {
+  sessionId: string
+  paneId: string
+  tabId: string
+  canGoBack: boolean
+  canGoForward: boolean
+  isLoading: boolean
+}
+
+const navStateCallback = (): ((event: NavStateEvent) => void) =>
+  bridgeMocks.onBrowserPaneNavStateChange.mock.calls[0][0] as (
+    event: NavStateEvent
+  ) => void
+
 describe('BrowserPane', () => {
   let resolveCreate: (result: BrowserPaneCreateResult) => void
   let rectSpy: ReturnType<typeof vi.spyOn>
@@ -107,6 +158,21 @@ describe('BrowserPane', () => {
     rectSpy.mockRestore()
   })
 
+  const settle = async (): Promise<void> => {
+    act(() => resolveCreate(singleTab))
+    await waitFor(() => {
+      expect(bridgeMocks.getBrowserCdpInfo).toHaveBeenCalled()
+    })
+  }
+
+  const beginEdit = async (
+    user: ReturnType<typeof userEvent.setup>
+  ): Promise<HTMLElement> => {
+    await user.click(screen.getByRole('button', { name: /address bar/ }))
+
+    return screen.getByLabelText('browser address')
+  }
+
   test('applies bounds only after the native browser pane is created', async () => {
     render(<BrowserPane session={session} pane={browserPane} isActive />)
 
@@ -114,38 +180,8 @@ describe('BrowserPane', () => {
       expect(bridgeMocks.createBrowserPane).toHaveBeenCalledOnce()
     })
 
-    // Before the native pane resolves, bounds IPC is suppressed — main would
-    // silently drop it (pane not yet registered).
     expect(bridgeMocks.setBrowserPaneBounds).not.toHaveBeenCalled()
-
-    const callsBeforeCreate = bridgeMocks.setBrowserPaneBounds.mock.calls.length
-
-    act(() => {
-      resolveCreate({
-        url: 'https://example.com/',
-        title: 'Example',
-        partition: 'persist:vimeflow-browser:proj-1:pty-shell',
-        tabs: [
-          {
-            id: 'tab-0',
-            url: 'https://example.com/',
-            title: 'Example',
-            active: true,
-          },
-        ],
-      })
-    })
-
-    await waitFor(() => {
-      expect(bridgeMocks.getBrowserCdpInfo).toHaveBeenCalledWith({
-        sessionId: 'pty-shell',
-        paneId: 'p1',
-      })
-
-      expect(
-        bridgeMocks.setBrowserPaneBounds.mock.calls.length
-      ).toBeGreaterThan(callsBeforeCreate)
-    })
+    await settle()
 
     expect(bridgeMocks.setBrowserPaneBounds).toHaveBeenLastCalledWith({
       sessionId: 'pty-shell',
@@ -156,148 +192,46 @@ describe('BrowserPane', () => {
     })
   })
 
-  test('keeps chrome input focus when it activates an inactive browser pane', async () => {
-    const user = userEvent.setup()
-    const onRequestActive = vi.fn()
-    const inactivePane = { ...browserPane, active: false }
-
-    const inactiveSession = {
-      ...session,
-      panes: [shellPane, inactivePane],
-    }
-
-    const { rerender } = render(
-      <BrowserPane
-        session={inactiveSession}
-        pane={inactivePane}
-        isActive
-        onRequestActive={onRequestActive}
-      />
-    )
-
-    await user.click(screen.getByLabelText('browser address'))
-
-    expect(onRequestActive).toHaveBeenCalledWith(session.id, browserPane.id)
-
-    const activePane = { ...inactivePane, active: true }
-    rerender(
-      <BrowserPane
-        session={{ ...inactiveSession, panes: [shellPane, activePane] }}
-        pane={activePane}
-        isActive
-        onRequestActive={onRequestActive}
-      />
-    )
-
-    await act(async () => {
-      await Promise.resolve()
-    })
-
-    expect(bridgeMocks.focusBrowserPane).not.toHaveBeenCalled()
-    expect(screen.getByLabelText('browser address')).toHaveFocus()
-  })
-
-  test('close button fires before chrome click propagation is stopped', async () => {
-    const user = userEvent.setup()
-    const onClose = vi.fn()
-
-    render(
-      <BrowserPane
-        session={session}
-        pane={browserPane}
-        isActive
-        onClose={onClose}
-      />
-    )
-
-    await user.click(screen.getByRole('button', { name: 'close browser pane' }))
-
-    expect(onClose).toHaveBeenCalledOnce()
-    expect(onClose).toHaveBeenCalledWith(session.id, browserPane.id)
-  })
-
-  test('preserves address drafts when pane metadata changes', async () => {
-    const user = userEvent.setup()
-
+  test('the focus border uses the cyan WEB accent only when the pane is active', () => {
     const { rerender } = render(
       <BrowserPane session={session} pane={browserPane} isActive />
     )
-
-    act(() => {
-      resolveCreate({
-        url: 'https://example.com/',
-        title: 'Example',
-        partition: 'persist:vimeflow-browser:proj-1:pty-shell',
-        tabs: [
-          {
-            id: 'tab-0',
-            url: 'https://example.com/',
-            title: 'Example',
-            active: true,
-          },
-        ],
-      })
-    })
-
-    await waitFor(() => {
-      expect(bridgeMocks.getBrowserCdpInfo).toHaveBeenCalled()
-    })
-
-    const address = screen.getByLabelText('browser address')
-
-    await user.clear(address)
-    await user.type(address, 'github.com/login')
+    // #4fc8d6 — the WEB accent, which jsdom serializes to rgb().
+    expect(screen.getByTestId('browser-pane').style.border).toContain(
+      'rgb(79, 200, 214)'
+    )
 
     rerender(
       <BrowserPane
-        session={{
-          ...session,
-          panes: [shellPane, { ...browserPane, agentTitle: 'metadata change' }],
-        }}
-        pane={{ ...browserPane, agentTitle: 'metadata change' }}
+        session={session}
+        pane={{ ...browserPane, active: false }}
         isActive
       />
     )
 
-    expect(screen.getByLabelText('browser address')).toHaveValue(
-      'github.com/login'
+    expect(screen.getByTestId('browser-pane').style.border).toContain(
+      'rgba(74, 68, 79, 0.22)'
     )
-    expect(bridgeMocks.createBrowserPane).toHaveBeenCalledOnce()
   })
 
-  test('submits the typed draft even after the address input blurs', async () => {
+  test('the address bar is a display button until it is edited', async () => {
     const user = userEvent.setup()
     render(<BrowserPane session={session} pane={browserPane} isActive />)
+    await settle()
 
-    act(() => {
-      resolveCreate({
-        url: 'https://example.com/',
-        title: 'Example',
-        partition: 'persist:vimeflow-browser:proj-1:pty-shell',
-        tabs: [
-          {
-            id: 'tab-0',
-            url: 'https://example.com/',
-            title: 'Example',
-            active: true,
-          },
-        ],
-      })
-    })
+    expect(screen.queryByLabelText('browser address')).toBeNull()
+    const input = await beginEdit(user)
+    expect(input).toHaveFocus()
+  })
 
-    await waitFor(() => {
-      expect(bridgeMocks.getBrowserCdpInfo).toHaveBeenCalled()
-    })
+  test('submitting the address normalizes and navigates', async () => {
+    const user = userEvent.setup()
+    render(<BrowserPane session={session} pane={browserPane} isActive />)
+    await settle()
 
-    const address = screen.getByLabelText('browser address')
-    await user.clear(address)
-    await user.type(address, 'github.com/login')
-
-    // Keyboard Tab-to-Go: focus leaves the input (it blurs and reverts its
-    // DISPLAY to the committed URL), then the Go button is activated by
-    // keyboard. The submit must still navigate the typed draft, not the
-    // committed URL the display reverted to.
-    await user.tab()
+    const input = await beginEdit(user)
+    await user.clear(input)
+    await user.type(input, 'github.com/login')
     await user.keyboard('{Enter}')
 
     expect(bridgeMocks.navigateBrowserPane).toHaveBeenCalledWith({
@@ -307,60 +241,135 @@ describe('BrowserPane', () => {
     })
   })
 
-  test('idle Go submits the current page URL after a background navigation', async () => {
+  test('a nav-state event lights up back and toggles reload to stop', async () => {
+    render(<BrowserPane session={session} pane={browserPane} isActive />)
+    await settle()
+
+    act(() =>
+      navStateCallback()({
+        sessionId: 'pty-shell',
+        paneId: 'p1',
+        tabId: 'tab-0',
+        canGoBack: true,
+        canGoForward: false,
+        isLoading: true,
+      })
+    )
+
+    expect(screen.getByRole('button', { name: 'back' })).not.toBeDisabled()
+    expect(screen.getByRole('button', { name: 'stop' })).toBeInTheDocument()
+  })
+
+  test('a nav-state event for a different pane is ignored', async () => {
+    render(<BrowserPane session={session} pane={browserPane} isActive />)
+    await settle()
+
+    act(() =>
+      navStateCallback()({
+        sessionId: 'other',
+        paneId: 'other',
+        tabId: 'tab-0',
+        canGoBack: true,
+        canGoForward: true,
+        isLoading: false,
+      })
+    )
+
+    expect(screen.getByRole('button', { name: 'back' })).toBeDisabled()
+  })
+
+  test('back and reload dispatch nav-action through the bridge', async () => {
     const user = userEvent.setup()
     render(<BrowserPane session={session} pane={browserPane} isActive />)
+    await settle()
 
-    act(() => {
-      resolveCreate({
-        url: 'https://example.com/',
-        title: 'Example',
-        partition: 'persist:vimeflow-browser:proj-1:pty-shell',
-        tabs: [
-          {
-            id: 'tab-0',
-            url: 'https://example.com/',
-            title: 'Example',
-            active: true,
-          },
-        ],
+    act(() =>
+      navStateCallback()({
+        sessionId: 'pty-shell',
+        paneId: 'p1',
+        tabId: 'tab-0',
+        canGoBack: true,
+        canGoForward: false,
+        isLoading: false,
       })
+    )
+
+    await user.click(screen.getByRole('button', { name: 'back' }))
+    await user.click(screen.getByRole('button', { name: 'reload' }))
+
+    expect(bridgeMocks.navActionBrowserPane).toHaveBeenCalledWith({
+      sessionId: 'pty-shell',
+      paneId: 'p1',
+      action: 'back',
     })
+
+    expect(bridgeMocks.navActionBrowserPane).toHaveBeenCalledWith({
+      sessionId: 'pty-shell',
+      paneId: 'p1',
+      action: 'reload',
+    })
+  })
+
+  test('the create-result navState seeds the toolbar', async () => {
+    render(<BrowserPane session={session} pane={browserPane} isActive />)
+
+    act(() =>
+      resolveCreate({
+        ...singleTab,
+        navState: { canGoBack: true, canGoForward: false, isLoading: false },
+      })
+    )
 
     await waitFor(() => {
       expect(bridgeMocks.getBrowserCdpInfo).toHaveBeenCalled()
     })
 
-    // The page navigates while the address bar is NOT focused. The bar must
-    // follow the live URL so an idle Go submits what is displayed, not a
-    // stale hidden draft.
-    const urlCallback = bridgeMocks.onBrowserPaneUrlChange.mock
-      .calls[0][0] as (event: {
-      sessionId: string
-      paneId: string
-      tabId: string
-      url: string
-      title: string | null
-      tabs: {
-        id: string
-        url: string
-        title: string | null
-        active: boolean
-      }[]
-    }) => void
+    expect(screen.getByRole('button', { name: 'back' })).not.toBeDisabled()
+  })
 
-    act(() => {
-      urlCallback({
+  test('a live nav-state event before create resolves is not clobbered by the seed', async () => {
+    render(<BrowserPane session={session} pane={browserPane} isActive />)
+
+    // Live event arrives before createBrowserPane resolves.
+    act(() =>
+      navStateCallback()({
         sessionId: 'pty-shell',
         paneId: 'p1',
         tabId: 'tab-0',
-        url: 'https://youtube.com/watch',
-        title: 'Watch',
+        canGoBack: false,
+        canGoForward: false,
+        isLoading: true,
+      })
+    )
+
+    // Create resolves with a stale snapshot (isLoading: false).
+    await settle()
+
+    // The live event wins: the guard keeps the toolbar on stop.
+    expect(screen.getByRole('button', { name: 'stop' })).toBeInTheDocument()
+  })
+
+  test('the draft survives native url events while editing', async () => {
+    const user = userEvent.setup()
+    render(<BrowserPane session={session} pane={browserPane} isActive />)
+    await settle()
+
+    const input = await beginEdit(user)
+    await user.clear(input)
+    await user.type(input, 'github.com/login')
+
+    act(() => {
+      urlCallback()({
+        sessionId: 'pty-shell',
+        paneId: 'p1',
+        tabId: 'tab-0',
+        url: 'https://example.com/',
+        title: 'Example - updated',
         tabs: [
           {
             id: 'tab-0',
-            url: 'https://youtube.com/watch',
-            title: 'Watch',
+            url: 'https://example.com/',
+            title: 'Example',
             active: true,
           },
         ],
@@ -368,143 +377,21 @@ describe('BrowserPane', () => {
     })
 
     expect(screen.getByLabelText('browser address')).toHaveValue(
-      'https://youtube.com/watch'
-    )
-
-    // Click Go without focusing the input first.
-    await user.click(screen.getByRole('button', { name: 'Go' }))
-
-    expect(bridgeMocks.navigateBrowserPane).toHaveBeenCalledWith({
-      sessionId: 'pty-shell',
-      paneId: 'p1',
-      url: 'https://youtube.com/watch',
-    })
-  })
-
-  test('address bar follows post-submit redirects', async () => {
-    const user = userEvent.setup()
-    render(<BrowserPane session={session} pane={browserPane} isActive />)
-
-    act(() => {
-      resolveCreate({
-        url: 'https://example.com/',
-        title: 'Example',
-        partition: 'persist:vimeflow-browser:proj-1:pty-shell',
-        tabs: [
-          {
-            id: 'tab-0',
-            url: 'https://example.com/',
-            title: 'Example',
-            active: true,
-          },
-        ],
-      })
-    })
-
-    await waitFor(() => {
-      expect(bridgeMocks.getBrowserCdpInfo).toHaveBeenCalled()
-    })
-
-    const address = screen.getByLabelText('browser address')
-    await user.clear(address)
-    await user.type(address, 'github.com')
-    // Submit by pressing Enter while the input still has focus.
-    await user.keyboard('{Enter}')
-
-    expect(bridgeMocks.navigateBrowserPane).toHaveBeenCalledWith({
-      sessionId: 'pty-shell',
-      paneId: 'p1',
-      url: 'https://github.com',
-    })
-
-    // A redirect resolves to a different URL after submit. Edit mode was
-    // cleared on submit, so the bar must follow the redirect even though the
-    // input never blurred.
-    const urlCallback = bridgeMocks.onBrowserPaneUrlChange.mock
-      .calls[0][0] as (event: {
-      sessionId: string
-      paneId: string
-      tabId: string
-      url: string
-      title: string | null
-      tabs: {
-        id: string
-        url: string
-        title: string | null
-        active: boolean
-      }[]
-    }) => void
-
-    act(() => {
-      urlCallback({
-        sessionId: 'pty-shell',
-        paneId: 'p1',
-        tabId: 'tab-0',
-        url: 'https://github.com/dashboard',
-        title: 'Dashboard',
-        tabs: [
-          {
-            id: 'tab-0',
-            url: 'https://github.com/dashboard',
-            title: 'Dashboard',
-            active: true,
-          },
-        ],
-      })
-    })
-
-    expect(screen.getByLabelText('browser address')).toHaveValue(
-      'https://github.com/dashboard'
+      'github.com/login'
     )
   })
 
-  test('reverts an abandoned draft to the live URL when editing is cancelled', async () => {
+  test('blur cancels editing and reverts the display to the committed URL', async () => {
     const user = userEvent.setup()
     render(<BrowserPane session={session} pane={browserPane} isActive />)
+    await settle()
+
+    const input = await beginEdit(user)
+    await user.clear(input)
+    await user.type(input, 'abandoned')
 
     act(() => {
-      resolveCreate({
-        url: 'https://example.com/',
-        title: 'Example',
-        partition: 'persist:vimeflow-browser:proj-1:pty-shell',
-        tabs: [
-          {
-            id: 'tab-0',
-            url: 'https://example.com/',
-            title: 'Example',
-            active: true,
-          },
-        ],
-      })
-    })
-
-    await waitFor(() => {
-      expect(bridgeMocks.getBrowserCdpInfo).toHaveBeenCalled()
-    })
-
-    const address = screen.getByLabelText('browser address')
-    await user.clear(address)
-    await user.type(address, 'abc')
-
-    // A background navigation lands while the bar is focused — the idle mirror
-    // is paused, so the draft does NOT update.
-    const urlCallback = bridgeMocks.onBrowserPaneUrlChange.mock
-      .calls[0][0] as (event: {
-      sessionId: string
-      paneId: string
-      tabId: string
-      url: string
-      title: string | null
-      tabs: {
-        id: string
-        url: string
-        title: string | null
-        active: boolean
-      }[]
-    }) => void
-
-    act(() => {
-      urlCallback({
+      urlCallback()({
         sessionId: 'pty-shell',
         paneId: 'p1',
         tabId: 'tab-0',
@@ -521,25 +408,119 @@ describe('BrowserPane', () => {
       })
     })
 
-    // Cancel: blur to something other than the submit button. The abandoned
-    // 'abc' draft must revert to the live committed URL, not linger.
-    fireEvent.blur(address, { relatedTarget: document.body })
+    fireEvent.blur(input)
 
-    expect(screen.getByLabelText('browser address')).toHaveValue(
-      'https://example.com/page'
-    )
+    expect(screen.queryByLabelText('browser address')).toBeNull()
+    expect(
+      screen.getByRole('button', { name: /example\.com\/page/ })
+    ).toBeInTheDocument()
   })
 
-  test('clicking a tab calls activateBrowserPaneTab', async () => {
+  test('the display follows redirects after a submit (not editing)', async () => {
     const user = userEvent.setup()
-
     render(<BrowserPane session={session} pane={browserPane} isActive />)
+    await settle()
+
+    const input = await beginEdit(user)
+    await user.clear(input)
+    await user.type(input, 'github.com')
+    await user.keyboard('{Enter}')
 
     act(() => {
+      urlCallback()({
+        sessionId: 'pty-shell',
+        paneId: 'p1',
+        tabId: 'tab-0',
+        url: 'https://github.com/dashboard',
+        title: 'Dashboard',
+        tabs: [
+          {
+            id: 'tab-0',
+            url: 'https://github.com/dashboard',
+            title: 'Dashboard',
+            active: true,
+          },
+        ],
+      })
+    })
+
+    expect(
+      screen.getByRole('button', { name: /github\.com\/dashboard/ })
+    ).toBeInTheDocument()
+  })
+
+  test('Cmd/Ctrl+L from the chrome enters address edit', async () => {
+    render(<BrowserPane session={session} pane={browserPane} isActive />)
+    await waitFor(() => {
+      expect(bridgeMocks.createBrowserPane).toHaveBeenCalledOnce()
+    })
+
+    fireEvent.keyDown(screen.getByTestId('browser-pane'), {
+      code: 'KeyL',
+      ctrlKey: true,
+    })
+
+    expect(screen.getByLabelText('browser address')).toBeInTheDocument()
+  })
+
+  test('a focus-address event enters edit only for the matching pane', async () => {
+    render(<BrowserPane session={session} pane={browserPane} isActive />)
+    await waitFor(() => {
+      expect(bridgeMocks.onBrowserPaneFocusAddress).toHaveBeenCalled()
+    })
+
+    const cb = bridgeMocks.onBrowserPaneFocusAddress.mock
+      .calls[0][0] as (event: { sessionId: string; paneId: string }) => void
+
+    act(() => cb({ sessionId: 'pty-shell', paneId: 'WRONG' }))
+    expect(screen.queryByLabelText('browser address')).toBeNull()
+
+    act(() => cb({ sessionId: 'WRONG', paneId: 'p1' }))
+    expect(screen.queryByLabelText('browser address')).toBeNull()
+
+    act(() => cb({ sessionId: 'pty-shell', paneId: 'p1' }))
+    expect(screen.getByLabelText('browser address')).toBeInTheDocument()
+  })
+
+  test('open-external calls the bridge with the derived pane ref', async () => {
+    const user = userEvent.setup()
+    render(<BrowserPane session={session} pane={browserPane} isActive />)
+    await settle()
+
+    await user.click(
+      screen.getByRole('button', { name: 'open in system browser' })
+    )
+
+    expect(bridgeMocks.openExternalBrowserPane).toHaveBeenCalledWith({
+      sessionId: 'pty-shell',
+      paneId: 'p1',
+    })
+  })
+
+  test('close-pane fires onClose with the session pane ref', async () => {
+    const user = userEvent.setup()
+    const onClose = vi.fn()
+    render(
+      <BrowserPane
+        session={session}
+        pane={browserPane}
+        isActive
+        onClose={onClose}
+      />
+    )
+
+    await user.click(screen.getByRole('button', { name: 'close browser pane' }))
+
+    expect(onClose).toHaveBeenCalledWith(session.id, browserPane.id)
+  })
+
+  test('tab activate / new / close call the bridge with the derived pane ref', async () => {
+    const user = userEvent.setup()
+    render(<BrowserPane session={session} pane={browserPane} isActive />)
+
+    act(() =>
       resolveCreate({
-        url: 'https://example.com/',
-        title: 'Example',
-        partition: 'persist:vimeflow-browser:proj-1:pty-shell',
+        ...singleTab,
         tabs: [
           {
             id: 'tab-0',
@@ -555,7 +536,7 @@ describe('BrowserPane', () => {
           },
         ],
       })
-    })
+    )
 
     await waitFor(() => {
       expect(
@@ -564,83 +545,16 @@ describe('BrowserPane', () => {
     })
 
     await user.click(screen.getByRole('tab', { name: 'browser tab Other' }))
-
     expect(bridgeMocks.activateBrowserPaneTab).toHaveBeenCalledWith({
       sessionId: 'pty-shell',
       paneId: 'p1',
       tabId: 'tab-1',
     })
-  })
-
-  test('clicking the new-tab button calls newBrowserPaneTab', async () => {
-    const user = userEvent.setup()
-
-    render(<BrowserPane session={session} pane={browserPane} isActive />)
-
-    act(() => {
-      resolveCreate({
-        url: 'https://example.com/',
-        title: 'Example',
-        partition: 'persist:vimeflow-browser:proj-1:pty-shell',
-        tabs: [
-          {
-            id: 'tab-0',
-            url: 'https://example.com/',
-            title: 'Example',
-            active: true,
-          },
-        ],
-      })
-    })
-
-    await waitFor(() => {
-      expect(
-        screen.getByRole('button', { name: 'new browser tab' })
-      ).toBeInTheDocument()
-    })
 
     await user.click(screen.getByRole('button', { name: 'new browser tab' }))
-
     expect(bridgeMocks.newBrowserPaneTab).toHaveBeenCalledWith(
-      expect.objectContaining({
-        sessionId: 'pty-shell',
-        paneId: 'p1',
-      })
+      expect.objectContaining({ sessionId: 'pty-shell', paneId: 'p1' })
     )
-  })
-
-  test('clicking a tab close button calls closeBrowserPaneTab', async () => {
-    const user = userEvent.setup()
-
-    render(<BrowserPane session={session} pane={browserPane} isActive />)
-
-    act(() => {
-      resolveCreate({
-        url: 'https://example.com/',
-        title: 'Example',
-        partition: 'persist:vimeflow-browser:proj-1:pty-shell',
-        tabs: [
-          {
-            id: 'tab-0',
-            url: 'https://example.com/',
-            title: 'Example',
-            active: true,
-          },
-          {
-            id: 'tab-1',
-            url: 'https://other.com/',
-            title: 'Other',
-            active: false,
-          },
-        ],
-      })
-    })
-
-    await waitFor(() => {
-      expect(
-        screen.getByRole('button', { name: 'close browser tab Other' })
-      ).toBeInTheDocument()
-    })
 
     await user.click(
       screen.getByRole('button', { name: 'close browser tab Other' })
@@ -653,42 +567,18 @@ describe('BrowserPane', () => {
     })
   })
 
-  test('firing onBrowserPaneTabsChange updates the tab strip', async () => {
+  test('a tabs-changed event updates the tab strip', async () => {
     render(<BrowserPane session={session} pane={browserPane} isActive />)
-
-    act(() => {
-      resolveCreate({
-        url: 'https://example.com/',
-        title: 'Example',
-        partition: 'persist:vimeflow-browser:proj-1:pty-shell',
-        tabs: [
-          {
-            id: 'tab-0',
-            url: 'https://example.com/',
-            title: 'Example',
-            active: true,
-          },
-        ],
-      })
-    })
-
-    await waitFor(() => {
-      expect(bridgeMocks.onBrowserPaneTabsChange).toHaveBeenCalled()
-    })
+    await settle()
 
     const callback = bridgeMocks.onBrowserPaneTabsChange.mock
       .calls[0][0] as (event: {
       sessionId: string
       paneId: string
-      tabs: {
-        id: string
-        url: string
-        title: string | null
-        active: boolean
-      }[]
+      tabs: { id: string; url: string; title: string | null; active: boolean }[]
     }) => void
 
-    act(() => {
+    act(() =>
       callback({
         sessionId: 'pty-shell',
         paneId: 'p1',
@@ -699,130 +589,31 @@ describe('BrowserPane', () => {
             title: 'Example',
             active: false,
           },
-          {
-            id: 'tab-1',
-            url: 'https://new.com/',
-            title: 'New',
-            active: true,
-          },
+          { id: 'tab-1', url: 'https://new.com/', title: 'New', active: true },
         ],
       })
-    })
+    )
 
     expect(
       screen.getByRole('tab', { name: 'browser tab New' })
     ).toBeInTheDocument()
   })
 
-  test('survives an empty tabs-changed event during teardown', async () => {
+  test('an empty tabs-changed event during teardown does not crash', async () => {
     render(<BrowserPane session={session} pane={browserPane} isActive />)
-
-    act(() => {
-      resolveCreate({
-        url: 'https://example.com/',
-        title: 'Example',
-        partition: 'persist:vimeflow-browser:proj-1:pty-shell',
-        tabs: [
-          {
-            id: 'tab-0',
-            url: 'https://example.com/',
-            title: 'Example',
-            active: true,
-          },
-        ],
-      })
-    })
-
-    await waitFor(() => {
-      expect(bridgeMocks.onBrowserPaneTabsChange).toHaveBeenCalled()
-    })
+    await settle()
 
     const callback = bridgeMocks.onBrowserPaneTabsChange.mock
       .calls[0][0] as (event: {
       sessionId: string
       paneId: string
-      tabs: {
-        id: string
-        url: string
-        title: string | null
-        active: boolean
-      }[]
+      tabs: unknown[]
     }) => void
 
     expect(() => {
-      act(() => {
-        callback({ sessionId: 'pty-shell', paneId: 'p1', tabs: [] })
-      })
+      act(() => callback({ sessionId: 'pty-shell', paneId: 'p1', tabs: [] }))
     }).not.toThrow()
 
-    expect(screen.getByLabelText('browser address')).toBeInTheDocument()
-  })
-
-  test('keeps a typed address draft when native url events arrive', async () => {
-    const user = userEvent.setup()
-    render(<BrowserPane session={session} pane={browserPane} isActive />)
-
-    act(() => {
-      resolveCreate({
-        url: 'https://example.com/',
-        title: 'Example',
-        partition: 'persist:vimeflow-browser:proj-1:pty-shell',
-        tabs: [
-          {
-            id: 'tab-0',
-            url: 'https://example.com/',
-            title: 'Example',
-            active: true,
-          },
-        ],
-      })
-    })
-
-    await waitFor(() => {
-      expect(bridgeMocks.getBrowserCdpInfo).toHaveBeenCalled()
-    })
-
-    const address = screen.getByLabelText('browser address')
-    await user.clear(address)
-    await user.type(address, 'github.com/login')
-
-    // A SPA title change forwards a url-changed event for the same page URL —
-    // it must NOT clobber the user's in-progress draft.
-    const urlCallback = bridgeMocks.onBrowserPaneUrlChange.mock
-      .calls[0][0] as (event: {
-      sessionId: string
-      paneId: string
-      tabId: string
-      url: string
-      title: string | null
-      tabs: {
-        id: string
-        url: string
-        title: string | null
-        active: boolean
-      }[]
-    }) => void
-
-    act(() => {
-      urlCallback({
-        sessionId: 'pty-shell',
-        paneId: 'p1',
-        tabId: 'tab-0',
-        url: 'https://example.com/',
-        title: 'Example - updated',
-        tabs: [
-          {
-            id: 'tab-0',
-            url: 'https://example.com/',
-            title: 'Example - updated',
-            active: true,
-          },
-        ],
-      })
-    })
-
-    expect(screen.getByLabelText('browser address')).toHaveValue(
-      'github.com/login'
-    )
+    expect(screen.getByTestId('browser-pane')).toBeInTheDocument()
   })
 })

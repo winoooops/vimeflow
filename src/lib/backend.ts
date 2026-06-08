@@ -57,6 +57,25 @@ const isStructuredBackendError = (
 
 const noop = (): void => undefined
 
+type BackendEventCallback = (payload: unknown) => void
+
+interface BackendEventSubscription {
+  attachPromise: Promise<void> | null
+  callbacks: Set<BackendEventCallback>
+  rawUnlisten: UnlistenFn | null
+}
+
+const backendEventSubscriptions = new Map<string, BackendEventSubscription>()
+
+/**
+ * Test-only helper: clears the module-level backend event subscription
+ * registry so that a failed test cannot leak listeners into subsequent
+ * tests.  This is NOT part of the public production API.
+ */
+export const __resetBackendEventSubscriptions = (): void => {
+  backendEventSubscriptions.clear()
+}
+
 const requireBridge = (): BackendApi => {
   if (typeof window === 'undefined' || !window.vimeflow) {
     throw new Error(
@@ -65,6 +84,81 @@ const requireBridge = (): BackendApi => {
   }
 
   return window.vimeflow
+}
+
+const getEventSubscription = (event: string): BackendEventSubscription => {
+  const existing = backendEventSubscriptions.get(event)
+
+  if (existing) {
+    return existing
+  }
+
+  const subscription: BackendEventSubscription = {
+    attachPromise: null,
+    callbacks: new Set(),
+    rawUnlisten: null,
+  }
+  backendEventSubscriptions.set(event, subscription)
+
+  return subscription
+}
+
+const dispatchBackendEvent = (event: string, payload: unknown): void => {
+  const subscription = backendEventSubscriptions.get(event)
+
+  if (!subscription) {
+    return
+  }
+
+  Array.from(subscription.callbacks).forEach((callback) => {
+    callback(payload)
+  })
+}
+
+const ensureEventSubscriptionAttached = (
+  bridge: BackendApi,
+  event: string,
+  subscription: BackendEventSubscription
+): Promise<void> => {
+  if (subscription.attachPromise) {
+    return subscription.attachPromise
+  }
+
+  subscription.attachPromise = (async (): Promise<void> => {
+    try {
+      const rawUnlisten = await bridge.listen<unknown>(event, (payload) => {
+        dispatchBackendEvent(event, payload)
+      })
+      subscription.rawUnlisten = rawUnlisten
+    } catch (error) {
+      if (backendEventSubscriptions.get(event) === subscription) {
+        backendEventSubscriptions.delete(event)
+      }
+
+      subscription.callbacks.clear()
+      throw error
+    }
+  })()
+
+  return subscription.attachPromise
+}
+
+const detachBackendEventCallback = (
+  event: string,
+  subscription: BackendEventSubscription,
+  callback: BackendEventCallback
+): void => {
+  subscription.callbacks.delete(callback)
+
+  if (subscription.callbacks.size > 0) {
+    return
+  }
+
+  subscription.rawUnlisten?.()
+
+  if (backendEventSubscriptions.get(event) === subscription) {
+    backendEventSubscriptions.delete(event)
+  }
 }
 
 /**
@@ -106,7 +200,20 @@ export const listen = async <T>(
   event: string,
   callback: (payload: T) => void
 ): Promise<UnlistenFn> => {
-  const rawUnlisten = await requireBridge().listen<T>(event, callback)
+  const bridge = requireBridge()
+  const subscription = getEventSubscription(event)
+
+  const wrappedCallback = (payload: unknown): void => {
+    callback(payload as T)
+  }
+  subscription.callbacks.add(wrappedCallback)
+
+  try {
+    await ensureEventSubscriptionAttached(bridge, event, subscription)
+  } catch (error) {
+    subscription.callbacks.delete(wrappedCallback)
+    throw error
+  }
 
   let called = false
 
@@ -116,7 +223,7 @@ export const listen = async <T>(
     }
 
     called = true
-    rawUnlisten()
+    detachBackendEventCallback(event, subscription, wrappedCallback)
   }
 }
 

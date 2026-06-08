@@ -41,6 +41,10 @@ export default {
         'surface-tint': '#d9b9ff',
         'surface-variant': '#333344',
 
+        // Browser pane chrome surfaces
+        'browser-bar': '#121226',
+        'browser-tab-active': '#23233b',
+
         // Text & Borders
         'on-surface': '#e3e0f7',
         'on-surface-variant': '#cdc3d1',
@@ -97,7 +101,7 @@ export default {
         headline: ['Manrope', 'sans-serif'],
         body: ['Inter', 'sans-serif'],
         label: ['Inter', 'sans-serif'],
-        mono: ['JetBrains Mono', 'ui-monospace', 'monospace'],
+        mono: ['Ioskeley Mono', 'JetBrains Mono', 'ui-monospace', 'monospace'],
         sans: ['Inter', 'ui-sans-serif', 'system-ui'],
         display: ['Instrument Sans', 'Manrope', 'system-ui'],
       },

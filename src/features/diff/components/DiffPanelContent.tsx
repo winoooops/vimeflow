@@ -29,12 +29,13 @@ import { extractHunkPatch } from '../services/gitPatch'
 import { createGitService } from '../services/gitService'
 import { enqueuePoolWrite } from '../services/workerPoolWrites'
 import { useNotifyInfo } from '../../workspace/hooks/useNotifyInfo'
-import type { ChangedFile, SelectedDiffFile } from '../types'
+import type { ChangedFile, FileDiff, SelectedDiffFile } from '../types'
 import {
   useFeedbackBatch,
   parseBatchKey,
   DRAFT_ID,
   type ReviewComment,
+  type UseFeedbackBatchReturn,
 } from '../hooks/useFeedbackBatch'
 import { ReviewCommentComposer } from './ReviewCommentComposer'
 import { ReviewCommentRow } from './ReviewCommentRow'
@@ -86,11 +87,19 @@ type DiffPanelSelectionControl =
       onSelectedFileChange: (file: SelectedDiffFile | null) => void
     }
 
+export interface FeedbackRepoRootRef {
+  current: string
+}
+
 interface DiffPanelContentBaseProps {
   /** Working directory for git commands */
   cwd?: string
   /** Optional shared git status from a parent-level watcher subscription */
   gitStatus?: UseGitStatusReturn
+  /** Optional shared feedback batch from the workspace shell. */
+  feedbackBatch?: UseFeedbackBatchReturn
+  /** Optional shared repo-root cache for feedback dispatch path resolution. */
+  feedbackRepoRootRef?: FeedbackRepoRootRef
   /** Optional feedback dispatch target for inline review comments */
   feedbackDispatch?: FeedbackDispatchTarget
 }
@@ -104,6 +113,63 @@ let feedbackCommentSeq = 0
 
 const nextFeedbackCommentId = (): string =>
   `feedback-comment-${(feedbackCommentSeq += 1)}`
+
+interface ComposerTarget {
+  lineNumber: number
+  side: AnnotationSide
+  filePath: string
+  staged: boolean
+  editId?: string
+}
+
+const composerTargetKey = (target: ComposerTarget): string =>
+  `${target.filePath}:${target.staged}:${target.side}:${target.lineNumber}:${
+    target.editId ?? 'draft'
+  }`
+
+const diffContainsComposerTarget = (
+  fileDiff: FileDiff,
+  target: ComposerTarget
+): boolean => {
+  for (const hunk of fileDiff.hunks) {
+    let oldLine = hunk.oldStart
+    let newLine = hunk.newStart
+
+    for (const line of hunk.lines) {
+      const oldLineNumber =
+        line.oldLineNumber ?? (line.type === 'added' ? undefined : oldLine)
+
+      const newLineNumber =
+        line.newLineNumber ?? (line.type === 'removed' ? undefined : newLine)
+
+      if (
+        target.side === 'deletions' &&
+        line.type !== 'added' &&
+        oldLineNumber === target.lineNumber
+      ) {
+        return true
+      }
+
+      if (
+        target.side === 'additions' &&
+        line.type !== 'removed' &&
+        newLineNumber === target.lineNumber
+      ) {
+        return true
+      }
+
+      if (line.type !== 'added') {
+        oldLine += 1
+      }
+
+      if (line.type !== 'removed') {
+        newLine += 1
+      }
+    }
+  }
+
+  return false
+}
 
 // Small inline status cards. They previously lived as an inline JSX ladder in
 // the right-pane block; extracting them keeps the populated-state JSX readable
@@ -142,6 +208,8 @@ export const DiffPanelContent = ({
   gitStatus = undefined,
   selectedFile: controlledSelectedFile,
   onSelectedFileChange,
+  feedbackBatch = undefined,
+  feedbackRepoRootRef = undefined,
   feedbackDispatch = undefined,
 }: DiffPanelContentProps): ReactElement => {
   const internalGitStatus = useGitStatus(cwd, {
@@ -207,8 +275,17 @@ export const DiffPanelContent = ({
     [isControlled, onSelectedFileChange]
   )
 
-  // Reset selection when cwd changes (belt-and-suspenders, render guard is primary)
+  // Reset selection when cwd actually changes (belt-and-suspenders, render
+  // guard is primary). Do not fire on initial mount: WorkspaceView owns this
+  // value across dock close/reopen, and clearing it on mount loses the user's
+  // previously selected changed file before auto-select falls back to row 1.
+  const previousSelectionCwdRef = useRef(cwd)
   useEffect(() => {
+    if (previousSelectionCwdRef.current === cwd) {
+      return
+    }
+
+    previousSelectionCwdRef.current = cwd
     commitSelection(null)
   }, [cwd, commitSelection])
 
@@ -273,28 +350,28 @@ export const DiffPanelContent = ({
     selectedFileUntracked
   )
 
+  const responseMatchesSelection =
+    response !== null &&
+    selectedFilePath !== null &&
+    response.fileDiff.filePath === selectedFilePath
+
+  const activeResponse =
+    !diffLoading && responseMatchesSelection ? response : null
+
   // Notification hook — reused for the "Pierre split differently" and
   // "could not isolate hunk" informational messages.
   const { message: notifyMessage, notifyInfo } = useNotifyInfo()
 
-  // Inline review comment batch state.
-  //
-  // KNOWN LIMITATION (deferred — tracked in #307; part of the workspace-layer
-  // refactor #306): DockPanel conditionally mounts DiffPanelContent only while
-  // the diff tab is active and unmounts it on dock close, so leaving the diff
-  // tab before Finish/Discard tears this component down and silently drops an
-  // unsent batch. The fix is to hoist the batch (and its cwd-invalidation)
-  // above the dock lifecycle; deferred here to avoid a risky partial lift that
-  // could leak stale comments across cwd changes.
-  const feedback = useFeedbackBatch()
-  // Destructured so the cwd-clear effect can depend on the stable `clearBatch`
-  // identity (memoized, empty deps) rather than the whole `feedback` object —
-  // which is a fresh reference each render and would re-fire the effect every
-  // render (the if-guard makes it a no-op, but it is needless work).
-  const { clearBatch } = feedback
+  const localFeedback = useFeedbackBatch()
+  const { clearBatch: clearLocalFeedbackBatch } = localFeedback
+  const hasParentFeedbackBatch = feedbackBatch !== undefined
+  const feedback: UseFeedbackBatchReturn = feedbackBatch ?? localFeedback
+  const localRepoRootRef = useRef('')
+  const repoRootRef = feedbackRepoRootRef ?? localRepoRootRef
 
-  // Clear the feedback batch when cwd changes so stale comments from a
-  // previous workspace do not leak into the new one.
+  // Track cwd transitions that invalidate per-repo derived state. The
+  // workspace shell owns feedback-batch clearing when a parent batch is passed;
+  // standalone/uncontrolled usage keeps the prior local clear behavior.
   const previousCwdRef = useRef(cwd)
 
   // Last non-empty git repo root seen for the current cwd. `response.repoRoot`
@@ -303,32 +380,29 @@ export const DiffPanelContent = ({
   // an in-flight feedback batch sent during that window would fall back to
   // repo-relative paths and mis-resolve for agents in a repo subdirectory.
   // Reset on cwd change below (a new repo invalidates the old root).
-  const lastRepoRootRef = useRef('')
-
   useEffect(() => {
     if (previousCwdRef.current !== cwd) {
       previousCwdRef.current = cwd
-      lastRepoRootRef.current = ''
-      clearBatch()
+      repoRootRef.current = ''
+      if (!hasParentFeedbackBatch) {
+        clearLocalFeedbackBatch()
+      }
     }
-  }, [cwd, clearBatch])
+  }, [cwd, clearLocalFeedbackBatch, hasParentFeedbackBatch, repoRootRef])
 
   useEffect(() => {
     if (response?.repoRoot) {
-      lastRepoRootRef.current = response.repoRoot
+      repoRootRef.current = response.repoRoot
     }
-  }, [response])
+  }, [response, repoRootRef])
 
   // Composer target state: which line currently has an open composer.
   // `editId` set => editing an existing comment in place; absent => a new
   // draft on that line.
-  const [composerTarget, setComposerTarget] = useState<{
-    lineNumber: number
-    side: AnnotationSide
-    filePath: string
-    staged: boolean
-    editId?: string
-  } | null>(null)
+  const [composerTarget, setComposerTarget] = useState<ComposerTarget | null>(
+    null
+  )
+  const [composerDraftText, setComposerDraftText] = useState('')
 
   // Finish feedback popover open state.
   const [finishOpen, setFinishOpen] = useState(false)
@@ -340,13 +414,41 @@ export const DiffPanelContent = ({
     selectedFileStaged
   )
 
+  const composerTargetIsCurrentFile =
+    composerTarget !== null &&
+    composerTarget.filePath === selectedFilePath &&
+    composerTarget.staged === selectedFileStaged
+
+  const composerTargetLineExists = useMemo((): boolean => {
+    if (
+      composerTarget === null ||
+      !composerTargetIsCurrentFile ||
+      activeResponse === null
+    ) {
+      return false
+    }
+
+    return diffContainsComposerTarget(activeResponse.fileDiff, composerTarget)
+  }, [activeResponse, composerTarget, composerTargetIsCurrentFile])
+
+  const composerDraftIsRecoverable =
+    composerTarget !== null &&
+    composerDraftText.trim().length > 0 &&
+    activeResponse !== null &&
+    (!composerTargetIsCurrentFile || !composerTargetLineExists)
+
   // Merge a transient draft annotation in only while composing a NEW comment,
   // so the composer renders inline below the target line. Editing reuses the
   // existing annotation's slot, so no draft is added there. When idle we pass
   // `realAnnotations` straight through to keep its identity stable (avoids
   // Pierre re-tokenizing on every render).
   const lineAnnotations = useMemo((): DiffLineAnnotation<ReviewComment>[] => {
-    if (composerTarget !== null && composerTarget.editId === undefined) {
+    if (
+      composerTarget !== null &&
+      composerTarget.editId === undefined &&
+      composerTargetIsCurrentFile &&
+      (activeResponse === null || composerTargetLineExists)
+    ) {
       const draft: DiffLineAnnotation<ReviewComment> = {
         side: composerTarget.side,
         lineNumber: composerTarget.lineNumber,
@@ -357,7 +459,13 @@ export const DiffPanelContent = ({
     }
 
     return realAnnotations
-  }, [realAnnotations, composerTarget])
+  }, [
+    realAnnotations,
+    composerTarget,
+    composerTargetIsCurrentFile,
+    composerTargetLineExists,
+    activeResponse,
+  ])
 
   const confirmComposer = useCallback(
     (text: string): void => {
@@ -374,6 +482,7 @@ export const DiffPanelContent = ({
         composerTarget.staged !== selectedFileStaged
       ) {
         setComposerTarget(null)
+        setComposerDraftText('')
 
         return
       }
@@ -387,6 +496,7 @@ export const DiffPanelContent = ({
           { text }
         )
         setComposerTarget(null)
+        setComposerDraftText('')
       } else {
         const result = feedback.addAnnotation(
           cwd,
@@ -409,6 +519,7 @@ export const DiffPanelContent = ({
           )
         } else {
           setComposerTarget(null)
+          setComposerDraftText('')
         }
       }
     },
@@ -424,6 +535,7 @@ export const DiffPanelContent = ({
 
   const closeComposer = useCallback((): void => {
     setComposerTarget(null)
+    setComposerDraftText('')
   }, [])
 
   const sendingFeedbackRef = useRef(false)
@@ -447,7 +559,7 @@ export const DiffPanelContent = ({
         // in-flight batch keeps absolute paths. The empty-string (non-repo)
         // case needs no fallback — the ref is empty there too — so `??` (null/
         // undefined only) is exactly right.
-        const repoRoot = response?.repoRoot ?? lastRepoRootRef.current
+        const repoRoot = response?.repoRoot ?? repoRootRef.current
         const entries: DispatchEntry[] = []
         // parseBatchKey is the single source of truth for the key format (it
         // lives next to makeBatchKey in useFeedbackBatch). The staged flag rides
@@ -477,13 +589,13 @@ export const DiffPanelContent = ({
         }
       })()
     },
-    [feedback, feedbackDispatch, notifyInfo, response]
+    [feedback, feedbackDispatch, notifyInfo, repoRootRef, response]
   )
 
   // Single-flight staging flag — drops clicks while an IPC is in flight.
   const [staging, setStaging] = useState(false)
 
-  // PR3: focusedHunkIndex is the 0-based index into response.fileDiff.hunks.
+  // PR3: focusedHunkIndex is the 0-based index into activeResponse.fileDiff.hunks.
   // Replaced the PR2 hardcoded `[0]` so prev/next navigation can step through
   // hunks. Null when there are no hunks (whole-file operations only).
   const [focusedHunkIndex, setFocusedHunkIndex] = useState(0)
@@ -501,9 +613,10 @@ export const DiffPanelContent = ({
   // file is not accidentally submitted against another.
   useEffect(() => {
     setComposerTarget(null)
+    setComposerDraftText('')
   }, [selectedFilePath, selectedFileStaged])
 
-  const hunkCount = response?.fileDiff.hunks.length ?? 0
+  const hunkCount = activeResponse?.fileDiff.hunks.length ?? 0
 
   // Clamp focusedHunkIndex when the hunk array shrinks WITHOUT a file change.
   // Staging/discarding a hunk reloads the SAME file with fewer hunks, so the
@@ -525,13 +638,13 @@ export const DiffPanelContent = ({
   const clampedHunkIndex =
     hunkCount > 0 ? Math.min(focusedHunkIndex, hunkCount - 1) : 0
 
-  const focusedHunk = response?.fileDiff.hunks[clampedHunkIndex] ?? null
+  const focusedHunk = activeResponse?.fileDiff.hunks[clampedHunkIndex] ?? null
 
   // Map a hunk to its Pierre line range. Deletion-only hunks (newLines === 0)
   // use old-side coordinates so the highlight lands on the deletions column.
   const hunkToRange = useCallback(
     (
-      hunk: NonNullable<typeof response>['fileDiff']['hunks'][number]
+      hunk: NonNullable<typeof activeResponse>['fileDiff']['hunks'][number]
     ): SelectedLineRange => {
       const isDeletionOnly = hunk.newLines === 0
       const lineStart = isDeletionOnly ? hunk.oldStart : hunk.newStart
@@ -566,7 +679,9 @@ export const DiffPanelContent = ({
   }, [])
 
   const flashHunkSelection = useCallback(
-    (hunk: NonNullable<typeof response>['fileDiff']['hunks'][number]): void => {
+    (
+      hunk: NonNullable<typeof activeResponse>['fileDiff']['hunks'][number]
+    ): void => {
       setNavSelection(hunkToRange(hunk))
       clearNavSelectionTimer()
       navClearTimerRef.current = setTimeout(() => {
@@ -587,11 +702,11 @@ export const DiffPanelContent = ({
   }, [selectedFilePath, selectedFileStaged, clearNavSelectionTimer])
 
   const onPrevHunk = useCallback((): void => {
-    if (!response) {
+    if (!activeResponse) {
       return
     }
 
-    const hunks = response.fileDiff.hunks
+    const hunks = activeResponse.fileDiff.hunks
     if (hunks.length === 0) {
       return
     }
@@ -599,14 +714,14 @@ export const DiffPanelContent = ({
     const next = (clampedHunkIndex + hunks.length - 1) % hunks.length
     setFocusedHunkIndex(next)
     flashHunkSelection(hunks[next])
-  }, [response, clampedHunkIndex, flashHunkSelection])
+  }, [activeResponse, clampedHunkIndex, flashHunkSelection])
 
   const onNextHunk = useCallback((): void => {
-    if (!response) {
+    if (!activeResponse) {
       return
     }
 
-    const hunks = response.fileDiff.hunks
+    const hunks = activeResponse.fileDiff.hunks
     if (hunks.length === 0) {
       return
     }
@@ -614,7 +729,7 @@ export const DiffPanelContent = ({
     const next = (clampedHunkIndex + 1) % hunks.length
     setFocusedHunkIndex(next)
     flashHunkSelection(hunks[next])
-  }, [response, clampedHunkIndex, flashHunkSelection])
+  }, [activeResponse, clampedHunkIndex, flashHunkSelection])
 
   // Only the transient nav flash drives Pierre's selection — see the comment on
   // `navSelection` above for why a persistent focused-hunk selection is avoided.
@@ -634,13 +749,13 @@ export const DiffPanelContent = ({
       if (
         staging ||
         !selectedFilePath ||
-        response === null ||
+        activeResponse === null ||
         focusedHunk === null
       ) {
         return
       }
 
-      const rawIndex = findRawDiffHunkIndex(response, focusedHunk)
+      const rawIndex = findRawDiffHunkIndex(activeResponse, focusedHunk)
       if (rawIndex === -1) {
         notifyInfo(
           `Pierre split this hunk differently than git — cannot ${verb} this region; use Discard All or the file-level chip`
@@ -649,7 +764,7 @@ export const DiffPanelContent = ({
         return
       }
 
-      const hunkPatch = extractHunkPatch(response.rawDiff, rawIndex)
+      const hunkPatch = extractHunkPatch(activeResponse.rawDiff, rawIndex)
       if (hunkPatch === null) {
         notifyInfo('Could not isolate this hunk — try refreshing the diff')
 
@@ -673,7 +788,7 @@ export const DiffPanelContent = ({
     [
       staging,
       selectedFilePath,
-      response,
+      activeResponse,
       focusedHunk,
       notifyInfo,
       refetchDiff,
@@ -1154,6 +1269,20 @@ export const DiffPanelContent = ({
               {notifyMessage}
             </div>
           ) : null}
+          {composerDraftIsRecoverable ? (
+            <div
+              role="status"
+              data-testid="diff-draft-recovery"
+              className="mx-3 mb-2 rounded-md bg-surface-container-high/70 px-3 py-2 text-[11px] leading-4 text-on-surface-variant"
+            >
+              Draft preserved for line{' '}
+              {composerTarget.side === 'deletions' ? 'L' : 'R'}
+              {composerTarget.lineNumber}:{' '}
+              <span className="font-medium text-on-surface">
+                {composerDraftText}
+              </span>
+            </div>
+          ) : null}
           {finishOpen && toolbarShellRef.current !== null ? (
             <FinishFeedbackPopover
               anchor={toolbarShellRef.current}
@@ -1224,12 +1353,21 @@ export const DiffPanelContent = ({
                     onClick={(): void => {
                       const hovered = getHoveredLine()
                       if (hovered && selectedFilePath !== null) {
-                        setComposerTarget({
+                        const nextTarget: ComposerTarget = {
                           lineNumber: hovered.lineNumber,
                           side: hovered.side,
                           filePath: selectedFilePath,
                           staged: selectedFileStaged,
-                        })
+                        }
+
+                        setComposerDraftText((current) =>
+                          composerTarget !== null &&
+                          composerTargetKey(composerTarget) ===
+                            composerTargetKey(nextTarget)
+                            ? current
+                            : ''
+                        )
+                        setComposerTarget(nextTarget)
                       }
                     }}
                   >
@@ -1263,7 +1401,8 @@ export const DiffPanelContent = ({
                         }`}
                         lineNumber={annotation.lineNumber}
                         side={annotation.side}
-                        initialText={isEditing ? annotation.metadata.text : ''}
+                        value={composerDraftText}
+                        onTextChange={setComposerDraftText}
                         onConfirm={confirmComposer}
                         onCancel={closeComposer}
                       />
@@ -1273,7 +1412,7 @@ export const DiffPanelContent = ({
                   return (
                     <ReviewCommentRow
                       comment={annotation.metadata}
-                      onEdit={(): void =>
+                      onEdit={(): void => {
                         setComposerTarget({
                           lineNumber: annotation.lineNumber,
                           side: annotation.side,
@@ -1281,7 +1420,8 @@ export const DiffPanelContent = ({
                           staged: selectedFileStaged,
                           editId: annotation.metadata.id,
                         })
-                      }
+                        setComposerDraftText(annotation.metadata.text)
+                      }}
                       onDelete={(): void =>
                         feedback.removeAnnotation(
                           cwd,

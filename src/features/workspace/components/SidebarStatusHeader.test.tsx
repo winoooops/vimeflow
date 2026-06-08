@@ -49,6 +49,10 @@ describe('SidebarStatusHeader', () => {
     )
 
     expect(screen.getByTestId('agent-status-card')).toBeInTheDocument()
+    expect(screen.getByTestId('agent-status-card')).toHaveAttribute(
+      'data-agent-state',
+      'active'
+    )
     expect(screen.getByText('Claude Code')).toBeInTheDocument()
     expect(screen.getByText('Running')).toBeInTheDocument()
   })
@@ -61,12 +65,16 @@ describe('SidebarStatusHeader', () => {
       />
     )
 
-    expect(screen.queryByTestId('agent-status-card')).not.toBeInTheDocument()
+    expect(screen.getByTestId('agent-status-card')).toBeInTheDocument()
+    expect(screen.getByTestId('agent-status-card')).toHaveAttribute(
+      'data-agent-state',
+      'idle'
+    )
     expect(screen.getByText('my session')).toBeInTheDocument()
     expect(screen.getByText('Idle')).toBeInTheDocument()
   })
 
-  test('keeps the idle placeholder at the live card height', () => {
+  test('keeps the idle state at the live card height', () => {
     render(
       <SidebarStatusHeader
         status={inactiveStatus}
@@ -74,9 +82,7 @@ describe('SidebarStatusHeader', () => {
       />
     )
 
-    expect(screen.getByTestId('sidebar-status-header-idle')).toHaveClass(
-      'min-h-44'
-    )
+    expect(screen.getByTestId('agent-status-card')).toHaveClass('min-h-44')
   })
 
   test('falls back to "No session" when there is no active session', () => {
@@ -96,7 +102,55 @@ describe('SidebarStatusHeader', () => {
       />
     )
 
-    expect(screen.queryByTestId('agent-status-card')).not.toBeInTheDocument()
+    expect(screen.getByTestId('agent-status-card')).toBeInTheDocument()
     expect(screen.getByText('my session')).toBeInTheDocument()
+  })
+
+  test('keeps the status card DOM node through agent switch idle gap', () => {
+    const { rerender } = render(
+      <SidebarStatusHeader
+        status={activeStatus}
+        activeSessionName="claude session"
+      />
+    )
+
+    const card = screen.getByTestId('agent-status-card')
+    expect(screen.getByText('Claude Code')).toBeInTheDocument()
+
+    rerender(
+      <SidebarStatusHeader
+        status={inactiveStatus}
+        activeSessionName="switching session"
+      />
+    )
+
+    expect(screen.getByTestId('agent-status-card')).toBe(card)
+    expect(screen.getByTestId('agent-status-card')).toHaveAttribute(
+      'data-agent-state',
+      'idle'
+    )
+    expect(screen.getByText('switching session')).toBeInTheDocument()
+    expect(screen.getByText('Idle')).toBeInTheDocument()
+
+    rerender(
+      <SidebarStatusHeader
+        status={{
+          ...activeStatus,
+          agentType: 'codex',
+          modelId: 'gpt-5.4',
+          modelDisplayName: 'GPT-5.4',
+          sessionId: 'session-2',
+        }}
+        activeSessionName="codex session"
+      />
+    )
+
+    expect(screen.getByTestId('agent-status-card')).toBe(card)
+    expect(screen.getByTestId('agent-status-card')).toHaveAttribute(
+      'data-agent-state',
+      'active'
+    )
+    expect(screen.getByText('Codex')).toBeInTheDocument()
+    expect(screen.getByText('GPT-5.4')).toBeInTheDocument()
   })
 })

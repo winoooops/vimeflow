@@ -166,13 +166,23 @@ pub(crate) async fn spawn_pty_inner(
     }
 
     // Generate statusline bridge files — skipped for ephemeral (burner) PTYs.
-    let (bridge_files, bridge_cleanup_dir) = if request.enable_agent_bridge && !request.ephemeral {
+    let bridge_enabled = request.enable_agent_bridge && !request.ephemeral;
+    let (bridge_files, bridge_cleanup_dir, shim_cleanup_dir) = if bridge_enabled {
         let dir = cwd
             .join(".vimeflow")
             .join("sessions")
             .join(&request.session_id);
         let cleanup_dir = (!dir.exists()).then_some(dir.clone());
-        match super::bridge::generate_bridge_files(&dir.to_string_lossy(), &request.session_id) {
+        let shim_dir = dirs::cache_dir()
+            .map(|c| c.join("vimeflow-shims"))
+            .unwrap_or_else(|| std::env::temp_dir().join("vimeflow-shims"))
+            .join(&request.session_id);
+        let shim_cleanup = (!shim_dir.exists()).then_some(shim_dir.clone());
+        match super::bridge::generate_bridge_files(
+            &dir.to_string_lossy(),
+            &request.session_id,
+            Some(&shim_dir.to_string_lossy()),
+        ) {
             Ok(files) => {
                 debug_log(
                     "bridge",
@@ -182,20 +192,21 @@ pub(crate) async fn spawn_pty_inner(
                         files.shell_init_path.display()
                     ),
                 );
-                (Some(files), cleanup_dir)
+                (Some(files), cleanup_dir, shim_cleanup)
             }
             Err(e) => {
                 cleanup_generated_bridge_dir(cleanup_dir.as_deref());
+                cleanup_generated_bridge_dir(shim_cleanup.as_deref());
                 log::warn!(
                     "Failed to generate statusline bridge for session {}: {}",
                     request.session_id,
                     e
                 );
-                (None, None)
+                (None, None, None)
             }
         }
     } else {
-        (None, None)
+        (None, None, None)
     };
 
     // Build command — env from IPC is ignored for security (prevents injection)
@@ -243,6 +254,7 @@ pub(crate) async fn spawn_pty_inner(
         cmd.env("BASH_ENV", files.shell_init_path.as_os_str());
         cmd.env("ENV", files.shell_init_path.as_os_str());
         cmd.env("VIMEFLOW_AGENT_INIT", files.shell_init_path.as_os_str());
+        cmd.env("VIMEFLOW_CLAUDE_SHIM_DIR", files.shim_dir_path.as_os_str());
         cmd.env("VIMEFLOW_CLAUDE_SETTINGS", files.settings_path.as_os_str());
         cmd.env("VIMEFLOW_STATUS_FILE", files.status_file_path.as_os_str());
 
@@ -250,6 +262,7 @@ pub(crate) async fn spawn_pty_inner(
         // both ~/.bashrc (user config) and our init script
         let Some(init_dir) = files.shell_init_path.parent() else {
             cleanup_generated_bridge_dir(bridge_cleanup_dir.as_deref());
+            cleanup_generated_bridge_dir(shim_cleanup_dir.as_deref());
             return Err("shell init path has no parent directory".to_string());
         };
         let rcfile_path = init_dir.join("bashrc");
@@ -289,6 +302,7 @@ pub(crate) async fn spawn_pty_inner(
         Ok(child) => child,
         Err(e) => {
             cleanup_generated_bridge_dir(bridge_cleanup_dir.as_deref());
+            cleanup_generated_bridge_dir(shim_cleanup_dir.as_deref());
             return Err(format!("failed to spawn shell: {}", e));
         }
     };
@@ -297,6 +311,7 @@ pub(crate) async fn spawn_pty_inner(
         let _ = child.kill();
         let _ = child.wait();
         cleanup_generated_bridge_dir(bridge_cleanup_dir.as_deref());
+        cleanup_generated_bridge_dir(shim_cleanup_dir.as_deref());
         return Err("failed to get process ID".to_string());
     };
 
@@ -309,6 +324,7 @@ pub(crate) async fn spawn_pty_inner(
             let _ = child.kill();
             let _ = child.wait();
             cleanup_generated_bridge_dir(bridge_cleanup_dir.as_deref());
+            cleanup_generated_bridge_dir(shim_cleanup_dir.as_deref());
             return Err(format!("failed to get PTY writer: {}", e));
         }
     };
@@ -351,6 +367,7 @@ pub(crate) async fn spawn_pty_inner(
         writer,
         child,
         cwd: cwd.to_string_lossy().to_string(),
+        shim_dir: bridge_files.as_ref().map(|f| f.shim_dir_path.to_string_lossy().to_string()),
         generation,
         ring,
         cancelled,
@@ -364,6 +381,7 @@ pub(crate) async fn spawn_pty_inner(
         let _ = rejected.child.kill();
         let _ = rejected.child.wait();
         cleanup_generated_bridge_dir(bridge_cleanup_dir.as_deref());
+        cleanup_generated_bridge_dir(shim_cleanup_dir.as_deref());
         return Err(match reason {
             crate::terminal::state::TryInsertError::AlreadyExists => format!(
                 "session '{}' already exists — cannot spawn duplicate session ID",
@@ -408,6 +426,7 @@ pub(crate) async fn spawn_pty_inner(
                 let _ = removed.child.wait();
             }
             cleanup_generated_bridge_dir(bridge_cleanup_dir.as_deref());
+            cleanup_generated_bridge_dir(shim_cleanup_dir.as_deref());
             return Err(format!("failed to write cache: {}", e));
         }
     } else {
@@ -528,13 +547,132 @@ pub(crate) fn kill_pty_inner(
     state.set_cancelled(&request.session_id);
 
     // Remove from state (no-op if NotPresent, the safe path above).
-    state.remove(&request.session_id);
+    let removed = state.remove(&request.session_id);
+
+    // Clean up bridge files and shim directory for the session.
+    if let Some(session) = removed {
+        let cwd = std::path::Path::new(&session.cwd);
+        let bridge_dir = cwd.join(".vimeflow").join("sessions").join(&request.session_id);
+        let _ = super::bridge::cleanup_bridge_files(
+            &bridge_dir.to_string_lossy(),
+            session.shim_dir.as_deref(),
+        );
+    }
 
     // Clean up cache: remove from sessions map and session_order
     cache
         .mutate(|data| {
             data.sessions.remove(&request.session_id);
             data.session_order.retain(|id| id != &request.session_id);
+            // Drop any workspace grouping for this PTY — the pane no longer
+            // exists, so it must not be reconstructed on the next restore.
+            // Capture its workspace_session_id BEFORE removal so we can
+            // re-index surviving siblings (cycle 18 MEDIUM): without this
+            // step, sibling groupings retain the pre-kill layout (e.g.,
+            // `quad` with 4 pane_indexes occupied) but the workspace now
+            // only has N-1 alive PTYs. In the crash window between
+            // `kill_pty` and the next `set_workspace_sessions` push (the
+            // frontend heals via that effect), restore would reconstruct
+            // the workspace at the stale layout with an empty slot the
+            // user cannot interact with. Re-indexing here keeps the
+            // workspace internally consistent in that window. Claude
+            // MEDIUM on PR #290 cycle 17.
+            let workspace_session_id = data
+                .groupings
+                .get(&request.session_id)
+                .map(|g| g.workspace_session_id.clone());
+            let was_active = data
+                .groupings
+                .get(&request.session_id)
+                .map(|g| g.active)
+                .unwrap_or(false);
+            data.groupings.remove(&request.session_id);
+
+            if let Some(ws_id) = workspace_session_id {
+                // Collect surviving siblings in stable pane_index order.
+                // Cloning keys to release the borrow before mutation.
+                let mut sibling_ids: Vec<String> = data
+                    .groupings
+                    .iter()
+                    .filter(|(_, g)| g.workspace_session_id == ws_id)
+                    .map(|(id, _)| id.clone())
+                    .collect();
+                sibling_ids.sort_by_key(|id| {
+                    data.groupings
+                        .get(id)
+                        .map(|g| g.pane_index)
+                        .unwrap_or(u32::MAX)
+                });
+
+                // Layout-by-count for the crash window. The next
+                // `set_workspace_sessions` push from the frontend
+                // overwrites these with the authoritative user choice;
+                // for the crash-recovery path we pick a sensible
+                // default (vsplit over hsplit when N=2 — the more
+                // common choice in this codebase's defaults).
+                //
+                // No-survivor case (workspace gone) falls through this
+                // `if` block without an early return so the
+                // `active_session_id` cleanup BELOW still runs. Codex
+                // verify cycle 18 caught that `return Ok(())` here was
+                // a closure-scope early return that would have skipped
+                // that cleanup, leaving a dangling active id.
+                // Prefer the survivors' existing layout when the count is
+                // still compatible (e.g. keep hsplit when N=2, threeRight
+                // when N=3) and only downgrade when N no longer fits.
+                // Falls back to count-based defaults when the original
+                // layout is incompatible or absent. Claude MEDIUM on PR #381.
+                let new_layout: Option<String> = if sibling_ids.is_empty() {
+                    None
+                } else {
+                    let existing = sibling_ids
+                        .first()
+                        .and_then(|id| data.groupings.get(id))
+                        .map(|g| g.layout.clone());
+                    let count = sibling_ids.len();
+                    let compatible = match existing.as_deref() {
+                        Some("single") => count == 1,
+                        Some("vsplit") | Some("hsplit") => count == 2,
+                        Some("threeRight") => count == 3,
+                        Some("quad") => count >= 4,
+                        _ => false,
+                    };
+                    if compatible {
+                        existing
+                    } else {
+                        match count {
+                            1 => Some("single".to_string()),
+                            2 => Some("vsplit".to_string()),
+                            3 => Some("threeRight".to_string()),
+                            _ => Some("quad".to_string()),
+                        }
+                    }
+                };
+
+                if let Some(ref new_layout) = new_layout {
+                    // Promote first surviving sibling to active when the
+                    // killed pane held the active flag. Otherwise preserve
+                    // whatever active marker already exists on a survivor.
+                    let needs_active_promotion = was_active
+                        && !sibling_ids.iter().any(|id| {
+                            data.groupings
+                                .get(id)
+                                .map(|g| g.active)
+                                .unwrap_or(false)
+                        });
+
+                    for (idx, sibling_id) in sibling_ids.iter().enumerate() {
+                        if let Some(grouping) = data.groupings.get_mut(sibling_id) {
+                            grouping.layout = new_layout.clone();
+                            grouping.pane_index = idx as u32;
+                            grouping.pane_id = format!("p{}", idx);
+                            if needs_active_promotion && idx == 0 {
+                                grouping.active = true;
+                            }
+                        }
+                    }
+                }
+            }
 
             // Clear active_session_id if the killed session was active.
             // The frontend owns tab-neighbor selection and persists the
@@ -644,6 +782,7 @@ pub(crate) fn list_sessions_inner(
             cwd: cached.cwd,
             status,
             activity_panel_collapsed: cached.activity_panel_collapsed,
+            grouping: snapshot.groupings.get(id).cloned(),
         });
     }
 
@@ -705,6 +844,33 @@ pub(crate) fn list_sessions_inner(
             Ok(())
         })?;
     }
+
+    // Restore observability: one summary line per list_sessions call. This is
+    // the backend half of the fragmentation trace (the frontend logs how many
+    // workspace sessions it reconstructs from these PTYs). `reconciled` counts
+    // entries the cache had marked alive but PtyState no longer holds — the
+    // post-crash path that flips them to Exited.
+    let alive = session_infos
+        .iter()
+        .filter(|info| matches!(info.status, SessionStatus::Alive { .. }))
+        .count();
+    log::info!(
+        "list_sessions: {} PTY session(s) ({} alive, {} reconciled-to-exited), active={:?}",
+        session_infos.len(),
+        alive,
+        reconciled_to_exited.len(),
+        active_session_id
+    );
+    debug_log(
+        "restore",
+        &format!(
+            "list_sessions: total={}, alive={}, reconciled={}, order={:?}",
+            session_infos.len(),
+            alive,
+            reconciled_to_exited.len(),
+            snapshot.session_order
+        ),
+    );
 
     Ok(SessionList {
         active_session_id,
@@ -827,6 +993,97 @@ pub(crate) fn set_session_activity_panel_collapsed_inner(
     })
 }
 
+/// Persist the frontend's full workspace-session grouping snapshot so a later
+/// restore can reconstruct the multi-pane layout instead of fragmenting each
+/// PTY into its own single-pane session.
+///
+/// Two cache fields are rebuilt under one `mutate`:
+///
+/// 1. `groupings` — keyed by PTY id; rewritten from scratch from the snapshot.
+///    Panes closed since the previous push simply don't appear and their
+///    grouping is dropped. PTYs the snapshot references but the cache does
+///    not know about (spawn/kill race) are skipped — they would be dangling
+///    grouping entries that `list_sessions` could never surface anyway.
+///
+/// 2. `session_order` — the canonical PTY display order. Pre-multi-pane this
+///    field was owned by `reorder_sessions`, but that IPC validates against a
+///    permutation of all PTYs while the frontend's reorder payload contains
+///    only one active PTY per workspace; for any workspace with >1 pane the
+///    permutation check rejects the request and the cache's order silently
+///    diverges from the UI. Rebuilding `session_order` here closes that gap
+///    atomically with the grouping write. PTYs that exist in the cache but
+///    were absent from the snapshot (spawn/kill race, or any never-grouped
+///    legacy PTY) keep their existing relative order and are appended after
+///    the snapshot's ordering, so a transient race never drops a tab.
+pub(crate) fn set_workspace_sessions_inner(
+    cache: &Arc<crate::terminal::cache::SessionCache>,
+    request: SetWorkspaceSessionsRequest,
+) -> Result<(), String> {
+    cache.mutate(|d| {
+        let mut groupings = std::collections::HashMap::new();
+        let mut new_order: Vec<String> = Vec::new();
+        let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+        for session in &request.sessions {
+            for pane in &session.panes {
+                if !d.sessions.contains_key(&pane.pty_id) {
+                    continue;
+                }
+                // Both `groupings.insert` and `new_order.push` are gated by
+                // the same `seen` dedup. Without this, a malformed snapshot
+                // that lists the same `pty_id` under two workspace sessions
+                // would silently overwrite the first session's grouping
+                // with the second's (PR #290 cycle 11 — Claude MEDIUM). The
+                // first-wins policy preserves the earlier workspace and
+                // logs a warning so a regression in the frontend snapshot
+                // builder is visible.
+                if seen.insert(pane.pty_id.clone()) {
+                    groupings.insert(
+                        pane.pty_id.clone(),
+                        PaneGrouping {
+                            workspace_session_id: session.id.clone(),
+                            layout: session.layout.clone(),
+                            workspace_directory: session.working_directory.clone(),
+                            pane_id: pane.pane_id.clone(),
+                            pane_index: pane.pane_index,
+                            agent_type: pane.agent_type.clone(),
+                            active: pane.active,
+                        },
+                    );
+                    new_order.push(pane.pty_id.clone());
+                } else {
+                    log::warn!(
+                        "set_workspace_sessions: duplicate pty_id '{}' in request — \
+                         keeping first occurrence, ignoring later entry under workspace '{}'",
+                        pane.pty_id,
+                        session.id,
+                    );
+                }
+            }
+        }
+
+        // Preserve PTYs in cache that the snapshot didn't mention — appended
+        // in their existing relative order so a transient race window cannot
+        // drop a session. Symmetrically preserve their grouping entry too:
+        // wiping `d.groupings` while keeping the PTY alive in `session_order`
+        // would surface those panes as solo single-pane sessions on the next
+        // `list_sessions`, peeling them out of their original workspace
+        // (caught by Claude reviewer as a MEDIUM during PR #290 cycle 3).
+        for pty_id in &d.session_order {
+            if !seen.contains(pty_id) && d.sessions.contains_key(pty_id) {
+                new_order.push(pty_id.clone());
+                if let Some(existing) = d.groupings.get(pty_id) {
+                    groupings.insert(pty_id.clone(), existing.clone());
+                }
+            }
+        }
+
+        d.groupings = groupings;
+        d.session_order = new_order;
+        Ok(())
+    })
+}
+
 /// Background task to read PTY output and emit events
 async fn read_pty_output(
     events: Arc<dyn EventSink>,
@@ -930,7 +1187,17 @@ async fn read_pty_output(
 
     // Clean up session only if this reader's generation still owns it.
     // If the session was replaced (ID reuse), a newer generation owns the slot.
-    state.remove_if_generation(&session_id, generation);
+    let removed = state.remove_if_generation(&session_id, generation);
+
+    // Clean up bridge files and shim directory for the session.
+    if let Some(session) = removed {
+        let cwd = std::path::Path::new(&session.cwd);
+        let bridge_dir = cwd.join(".vimeflow").join("sessions").join(&session_id);
+        let _ = super::bridge::cleanup_bridge_files(
+            &bridge_dir.to_string_lossy(),
+            session.shim_dir.as_deref(),
+        );
+    }
 
     Ok(())
 }
@@ -1680,6 +1947,7 @@ mod tests {
             writer,
             child: Box::new(FailingKillChild),
             cwd: "/tmp".into(),
+            shim_dir: None,
             generation: 0,
             ring: Arc::new(Mutex::new(RingBuffer::new(64))),
             cancelled: Arc::new(AtomicBool::new(false)),
@@ -1905,6 +2173,280 @@ mod tests {
         // Cleanup
         let _ = state.remove(&"session-2".to_string());
         let _ = state.remove(&"session-3".to_string());
+    }
+
+    // PR #290 cycle 18 — Claude MEDIUM. kill_pty was only removing the
+    // killed PTY's grouping entry but left sibling groupings in the same
+    // workspace at the pre-kill (layout, pane_index) values. In the
+    // crash window between kill_pty and the next set_workspace_sessions
+    // push, restore would reconstruct the workspace at the stale layout
+    // (e.g. quad with an empty slot). kill_pty now re-indexes survivors
+    // and shrinks the layout to match the new pane count.
+    #[tokio::test]
+    async fn kill_pty_reindexes_sibling_groupings_in_same_workspace() {
+        let (state, cache, events, _temp_dir) = create_test_state_with_cache();
+
+        let cwd = std::env::current_dir()
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
+
+        // Spawn four PTYs that share one quad workspace.
+        for id in ["pty-a", "pty-b", "pty-c", "pty-d"] {
+            spawn_pty_inner(
+                state.clone(),
+                cache.clone(),
+                events.clone(),
+                SpawnPtyRequest {
+                    session_id: id.into(),
+                    cwd: cwd.clone(),
+                    shell: None,
+                    env: None,
+                    enable_agent_bridge: false,
+                    ephemeral: false,
+                },
+            )
+            .await
+            .expect("spawn should succeed");
+        }
+
+        set_workspace_sessions_inner(
+            &cache,
+            SetWorkspaceSessionsRequest {
+                sessions: vec![WorkspaceSessionSnapshot {
+                    id: "ws-quad".into(),
+                    layout: "quad".into(),
+                    working_directory: Some(cwd.clone()),
+                    panes: vec![
+                        WorkspacePaneSnapshot {
+                            pty_id: "pty-a".into(),
+                            pane_id: "p0".into(),
+                            pane_index: 0,
+                            agent_type: "claude-code".into(),
+                            active: true,
+                        },
+                        WorkspacePaneSnapshot {
+                            pty_id: "pty-b".into(),
+                            pane_id: "p1".into(),
+                            pane_index: 1,
+                            agent_type: "generic".into(),
+                            active: false,
+                        },
+                        WorkspacePaneSnapshot {
+                            pty_id: "pty-c".into(),
+                            pane_id: "p2".into(),
+                            pane_index: 2,
+                            agent_type: "generic".into(),
+                            active: false,
+                        },
+                        WorkspacePaneSnapshot {
+                            pty_id: "pty-d".into(),
+                            pane_id: "p3".into(),
+                            pane_index: 3,
+                            agent_type: "generic".into(),
+                            active: false,
+                        },
+                    ],
+                }],
+            },
+        )
+        .expect("set_workspace_sessions should succeed");
+
+        // Kill the middle pane (pane_index = 2).
+        kill_pty_inner(
+            &state,
+            &cache,
+            KillPtyRequest {
+                session_id: "pty-c".into(),
+            },
+        )
+        .expect("kill_pty should succeed");
+
+        let snap = cache.snapshot();
+
+        // Killed pane's grouping gone.
+        assert!(!snap.groupings.contains_key("pty-c"));
+
+        // Three survivors re-indexed 0/1/2 in original pane_index order,
+        // layout shrunk to threeRight (3-capacity), pane_id renumbered.
+        let a = snap.groupings.get("pty-a").expect("pty-a grouping");
+        let b = snap.groupings.get("pty-b").expect("pty-b grouping");
+        let d = snap.groupings.get("pty-d").expect("pty-d grouping");
+
+        for g in [a, b, d] {
+            assert_eq!(g.layout, "threeRight");
+            assert_eq!(g.workspace_session_id, "ws-quad");
+        }
+
+        assert_eq!(a.pane_index, 0);
+        assert_eq!(a.pane_id, "p0");
+        assert!(a.active, "originally active pane stays active");
+        assert_eq!(b.pane_index, 1);
+        assert_eq!(b.pane_id, "p1");
+        assert!(!b.active);
+        assert_eq!(d.pane_index, 2);
+        assert_eq!(d.pane_id, "p2");
+        assert!(!d.active);
+
+        for id in ["pty-a", "pty-b", "pty-d"] {
+            let _ = state.remove(&id.to_string());
+        }
+    }
+
+    // Cycle 18 follow-up: when the killed pane was active and survivors
+    // remain, the first surviving pane (by pane_index) is promoted to
+    // active so restore always has exactly one active pane per workspace.
+    #[tokio::test]
+    async fn kill_pty_promotes_first_sibling_when_active_killed() {
+        let (state, cache, events, _temp_dir) = create_test_state_with_cache();
+
+        let cwd = std::env::current_dir()
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
+
+        for id in ["pty-a", "pty-b"] {
+            spawn_pty_inner(
+                state.clone(),
+                cache.clone(),
+                events.clone(),
+                SpawnPtyRequest {
+                    session_id: id.into(),
+                    cwd: cwd.clone(),
+                    shell: None,
+                    env: None,
+                    enable_agent_bridge: false,
+                    ephemeral: false,
+                },
+            )
+            .await
+            .expect("spawn should succeed");
+        }
+
+        // pty-b is active; we'll kill it and expect pty-a to be promoted.
+        set_workspace_sessions_inner(
+            &cache,
+            SetWorkspaceSessionsRequest {
+                sessions: vec![WorkspaceSessionSnapshot {
+                    id: "ws-vs".into(),
+                    layout: "vsplit".into(),
+                    working_directory: Some(cwd.clone()),
+                    panes: vec![
+                        WorkspacePaneSnapshot {
+                            pty_id: "pty-a".into(),
+                            pane_id: "p0".into(),
+                            pane_index: 0,
+                            agent_type: "generic".into(),
+                            active: false,
+                        },
+                        WorkspacePaneSnapshot {
+                            pty_id: "pty-b".into(),
+                            pane_id: "p1".into(),
+                            pane_index: 1,
+                            agent_type: "generic".into(),
+                            active: true,
+                        },
+                    ],
+                }],
+            },
+        )
+        .expect("set_workspace_sessions should succeed");
+
+        kill_pty_inner(
+            &state,
+            &cache,
+            KillPtyRequest {
+                session_id: "pty-b".into(),
+            },
+        )
+        .expect("kill_pty should succeed");
+
+        let snap = cache.snapshot();
+        let a = snap.groupings.get("pty-a").expect("pty-a grouping");
+        assert_eq!(a.layout, "single");
+        assert_eq!(a.pane_index, 0);
+        assert_eq!(a.pane_id, "p0");
+        assert!(
+            a.active,
+            "first surviving pane promoted to active when the killed pane was active"
+        );
+
+        let _ = state.remove(&"pty-a".to_string());
+    }
+
+    // Cycle 18 codex-verify rev 2: when the killed pane was the LAST in
+    // its grouped workspace, the no-survivor branch must not bypass the
+    // `active_session_id` cleanup that runs later in the same
+    // `cache.mutate` closure. The original draft used `return Ok(())`
+    // inside the closure for the zero-sibling case, which exited the
+    // whole closure and left a dangling active id pointing at a removed
+    // PTY. The fix structures the sibling-repair as an `if let
+    // Some(layout)` so the no-survivor case falls through.
+    #[tokio::test]
+    async fn kill_pty_clears_active_when_last_grouped_pane_killed() {
+        let (state, cache, events, _temp_dir) = create_test_state_with_cache();
+
+        let cwd = std::env::current_dir()
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
+
+        spawn_pty_inner(
+            state.clone(),
+            cache.clone(),
+            events.clone(),
+            SpawnPtyRequest {
+                session_id: "pty-only".into(),
+                cwd: cwd.clone(),
+                shell: None,
+                env: None,
+                enable_agent_bridge: false,
+                ephemeral: false,
+            },
+        )
+        .await
+        .expect("spawn should succeed");
+
+        set_workspace_sessions_inner(
+            &cache,
+            SetWorkspaceSessionsRequest {
+                sessions: vec![WorkspaceSessionSnapshot {
+                    id: "ws-solo".into(),
+                    layout: "single".into(),
+                    working_directory: Some(cwd),
+                    panes: vec![WorkspacePaneSnapshot {
+                        pty_id: "pty-only".into(),
+                        pane_id: "p0".into(),
+                        pane_index: 0,
+                        agent_type: "generic".into(),
+                        active: true,
+                    }],
+                }],
+            },
+        )
+        .expect("set_workspace_sessions should succeed");
+
+        // spawn_pty_inner sets active; confirm precondition.
+        assert_eq!(
+            cache.snapshot().active_session_id.as_deref(),
+            Some("pty-only")
+        );
+
+        kill_pty_inner(
+            &state,
+            &cache,
+            KillPtyRequest {
+                session_id: "pty-only".into(),
+            },
+        )
+        .expect("kill_pty should succeed");
+
+        let snap = cache.snapshot();
+        assert!(
+            snap.active_session_id.is_none(),
+            "active_session_id must be cleared for the killed pane even when its workspace has no surviving siblings"
+        );
+        assert!(!snap.groupings.contains_key("pty-only"));
     }
 
     #[tokio::test]
@@ -2859,5 +3401,493 @@ mod tests {
             post_snapshot.active_session_id,
             pre_snapshot.active_session_id
         );
+    }
+
+    /// `set_workspace_sessions` persists pane grouping for every PTY in the
+    /// snapshot that the cache still knows about, and `list_sessions` then
+    /// surfaces it on each `SessionInfo`. PTYs not mentioned in the snapshot
+    /// have their grouping dropped (e.g. a pane that was closed since the last
+    /// push). PTYs referenced by the snapshot but not in cache (spawn/kill
+    /// race) are silently skipped — no dangling entries.
+    #[tokio::test]
+    async fn set_workspace_sessions_persists_grouping_and_list_sessions_surfaces_it() {
+        let (state, cache, events, _temp_dir) = create_test_state_with_cache();
+        let cwd = std::env::current_dir()
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
+
+        // Spawn two PTYs that will be the panes of one workspace session, plus
+        // a third PTY that simulates a separate single-pane session.
+        for id in &["pty-a", "pty-b", "pty-solo"] {
+            spawn_pty_inner(
+                state.clone(),
+                cache.clone(),
+                events.clone(),
+                SpawnPtyRequest {
+                    session_id: id.to_string(),
+                    cwd: cwd.clone(),
+                    shell: None,
+                    env: None,
+                    enable_agent_bridge: false,
+                    ephemeral: false,
+                },
+            )
+            .await
+            .expect("spawn should succeed");
+        }
+
+        // Push a snapshot: pty-a + pty-b form a vsplit workspace; pty-solo is
+        // a single. Also include a phantom pty-id the backend doesn't know
+        // about — must be skipped without error.
+        set_workspace_sessions_inner(
+            &cache,
+            SetWorkspaceSessionsRequest {
+                sessions: vec![
+                    WorkspaceSessionSnapshot {
+                        id: "ws-quad".into(),
+                        layout: "vsplit".into(),
+                        working_directory: None,
+                        panes: vec![
+                            WorkspacePaneSnapshot {
+                                pty_id: "pty-a".into(),
+                                pane_id: "p0".into(),
+                                pane_index: 0,
+                                agent_type: "claude-code".into(),
+                                active: true,
+                            },
+                            WorkspacePaneSnapshot {
+                                pty_id: "pty-b".into(),
+                                pane_id: "p1".into(),
+                                pane_index: 1,
+                                agent_type: "generic".into(),
+                                active: false,
+                            },
+                            WorkspacePaneSnapshot {
+                                pty_id: "pty-ghost".into(), // unknown to cache
+                                pane_id: "p2".into(),
+                                pane_index: 2,
+                                agent_type: "generic".into(),
+                                active: false,
+                            },
+                        ],
+                    },
+                    WorkspaceSessionSnapshot {
+                        id: "ws-solo".into(),
+                        layout: "single".into(),
+                        working_directory: None,
+                        panes: vec![WorkspacePaneSnapshot {
+                            pty_id: "pty-solo".into(),
+                            pane_id: "p0".into(),
+                            pane_index: 0,
+                            agent_type: "generic".into(),
+                            active: true,
+                        }],
+                    },
+                ],
+            },
+        )
+        .expect("set_workspace_sessions should succeed");
+
+        // list_sessions surfaces the grouping on the right PTYs.
+        let list = list_sessions_inner(&state, &cache).expect("list_sessions");
+        let by_id: std::collections::HashMap<_, _> =
+            list.sessions.iter().map(|s| (s.id.clone(), s)).collect();
+
+        let a = by_id.get("pty-a").expect("pty-a");
+        let a_group = a.grouping.as_ref().expect("pty-a grouping");
+        assert_eq!(a_group.workspace_session_id, "ws-quad");
+        assert_eq!(a_group.layout, "vsplit");
+        assert_eq!(a_group.pane_id, "p0");
+        assert_eq!(a_group.pane_index, 0);
+        assert!(a_group.active);
+        assert_eq!(a_group.agent_type, "claude-code");
+
+        let b_group = by_id
+            .get("pty-b")
+            .and_then(|s| s.grouping.as_ref())
+            .expect("pty-b grouping");
+        assert_eq!(b_group.workspace_session_id, "ws-quad");
+        assert!(!b_group.active);
+
+        let solo_group = by_id
+            .get("pty-solo")
+            .and_then(|s| s.grouping.as_ref())
+            .expect("pty-solo grouping");
+        assert_eq!(solo_group.workspace_session_id, "ws-solo");
+        assert_eq!(solo_group.layout, "single");
+
+        // The phantom pty was skipped: no entry in the cache groupings map.
+        assert!(!cache.snapshot().groupings.contains_key("pty-ghost"));
+
+        // session_order now reflects the snapshot's workspace * pane-index
+        // ordering, atomically with the grouping write. This is what closes
+        // the multi-pane reorder bug: the legacy `reorder_sessions` IPC could
+        // only express active-pane-per-workspace and silently rejected for
+        // multi-pane workspaces; `set_workspace_sessions` is now the canonical
+        // owner of session_order.
+        assert_eq!(
+            cache.snapshot().session_order,
+            vec!["pty-a".to_string(), "pty-b".into(), "pty-solo".into()],
+        );
+
+        // Push a NEW snapshot that REORDERS the workspaces (ws-solo first,
+        // then ws-quad) AND drops pty-b — verifies (a) session_order follows
+        // the new snapshot order, (b) PTYs the snapshot omits keep their
+        // grouping cleared, and (c) PTYs omitted but still alive in cache
+        // are appended in their existing relative order rather than dropped.
+        set_workspace_sessions_inner(
+            &cache,
+            SetWorkspaceSessionsRequest {
+                sessions: vec![
+                    WorkspaceSessionSnapshot {
+                        id: "ws-solo".into(),
+                        layout: "single".into(),
+                        working_directory: None,
+                        panes: vec![WorkspacePaneSnapshot {
+                            pty_id: "pty-solo".into(),
+                            pane_id: "p0".into(),
+                            pane_index: 0,
+                            agent_type: "generic".into(),
+                            active: true,
+                        }],
+                    },
+                    WorkspaceSessionSnapshot {
+                        id: "ws-quad".into(),
+                        layout: "single".into(),
+                        working_directory: None,
+                        panes: vec![WorkspacePaneSnapshot {
+                            pty_id: "pty-a".into(),
+                            pane_id: "p0".into(),
+                            pane_index: 0,
+                            agent_type: "claude-code".into(),
+                            active: true,
+                        }],
+                    },
+                ],
+            },
+        )
+        .expect("reorder snapshot should succeed");
+
+        assert_eq!(
+            cache.snapshot().session_order,
+            // ws-solo first, then ws-quad (snapshot order); pty-b not in the
+            // snapshot but still in cache — appended last preserving its
+            // existing relative order from the previous session_order.
+            vec!["pty-solo".to_string(), "pty-a".into(), "pty-b".into()],
+        );
+
+        // Push a third snapshot that omits both pty-b and pty-solo. They
+        // are still alive in cache (kill_pty wasn't called for them), so
+        // the preservation loop must keep BOTH `session_order` AND
+        // `groupings` for them — see the dedicated
+        // `set_workspace_sessions_preserves_grouping_for_race_window_ptys`
+        // test below for why dropping the grouping here would incorrectly
+        // peel race-window panes out of their original workspace on
+        // the next restore.
+        set_workspace_sessions_inner(
+            &cache,
+            SetWorkspaceSessionsRequest {
+                sessions: vec![WorkspaceSessionSnapshot {
+                    id: "ws-quad".into(),
+                    layout: "single".into(),
+                    working_directory: None,
+                    panes: vec![WorkspacePaneSnapshot {
+                        pty_id: "pty-a".into(),
+                        pane_id: "p0".into(),
+                        pane_index: 0,
+                        agent_type: "claude-code".into(),
+                        active: true,
+                    }],
+                }],
+            },
+        )
+        .expect("third snapshot should succeed");
+
+        let list = list_sessions_inner(&state, &cache).expect("list_sessions");
+        let by_id: std::collections::HashMap<_, _> =
+            list.sessions.iter().map(|s| (s.id.clone(), s)).collect();
+        // Omitted-but-alive PTYs keep their grouping from the previous push.
+        assert!(by_id.get("pty-a").unwrap().grouping.is_some());
+        assert!(
+            by_id.get("pty-b").unwrap().grouping.is_some(),
+            "pty-b grouping must be preserved across a race-window omission"
+        );
+        assert!(
+            by_id.get("pty-solo").unwrap().grouping.is_some(),
+            "pty-solo grouping must be preserved across a race-window omission"
+        );
+
+        // Cleanup
+        for id in &["pty-a", "pty-b", "pty-solo"] {
+            let _ = state.remove(&id.to_string());
+        }
+    }
+
+    /// Claude reviewer MEDIUM on PR #290 cycle 3: the preservation loop for
+    /// race-window PTYs writes back to `session_order` but not to
+    /// `groupings`. That asymmetry would peel a race-window pane out of its
+    /// original workspace on the next restore (grouping `None` → solo
+    /// single-pane session). Both must be preserved symmetrically.
+    #[tokio::test]
+    async fn set_workspace_sessions_preserves_grouping_for_race_window_ptys() {
+        let (state, cache, events, _temp_dir) = create_test_state_with_cache();
+        let cwd = std::env::current_dir()
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
+
+        // Spawn two PTYs that form a vsplit workspace.
+        for id in &["pty-1", "pty-2"] {
+            spawn_pty_inner(
+                state.clone(),
+                cache.clone(),
+                events.clone(),
+                SpawnPtyRequest {
+                    session_id: id.to_string(),
+                    cwd: cwd.clone(),
+                    shell: None,
+                    env: None,
+                    enable_agent_bridge: false,
+                    ephemeral: false,
+                },
+            )
+            .await
+            .expect("spawn");
+        }
+
+        // First snapshot groups both into one workspace.
+        set_workspace_sessions_inner(
+            &cache,
+            SetWorkspaceSessionsRequest {
+                sessions: vec![WorkspaceSessionSnapshot {
+                    id: "ws-1".into(),
+                    layout: "vsplit".into(),
+                    working_directory: None,
+                    panes: vec![
+                        WorkspacePaneSnapshot {
+                            pty_id: "pty-1".into(),
+                            pane_id: "p0".into(),
+                            pane_index: 0,
+                            agent_type: "claude-code".into(),
+                            active: true,
+                        },
+                        WorkspacePaneSnapshot {
+                            pty_id: "pty-2".into(),
+                            pane_id: "p1".into(),
+                            pane_index: 1,
+                            agent_type: "generic".into(),
+                            active: false,
+                        },
+                    ],
+                }],
+            },
+        )
+        .expect("initial snapshot");
+        assert!(cache.snapshot().groupings.contains_key("pty-2"));
+
+        // A second snapshot lands that — because of a race — omits pty-2
+        // (e.g. an addPane was in flight when the push was built). The
+        // preservation loop must keep pty-2 in BOTH session_order AND the
+        // groupings map. Without the symmetric preservation, pty-2 would
+        // survive in session_order but lose grouping and restore as a solo
+        // single-pane session on the next reload.
+        set_workspace_sessions_inner(
+            &cache,
+            SetWorkspaceSessionsRequest {
+                sessions: vec![WorkspaceSessionSnapshot {
+                    id: "ws-1".into(),
+                    layout: "vsplit".into(),
+                    working_directory: None,
+                    panes: vec![WorkspacePaneSnapshot {
+                        pty_id: "pty-1".into(),
+                        pane_id: "p0".into(),
+                        pane_index: 0,
+                        agent_type: "claude-code".into(),
+                        active: true,
+                    }],
+                }],
+            },
+        )
+        .expect("race-window snapshot");
+
+        let snap = cache.snapshot();
+        // Both PTYs survive in order.
+        assert_eq!(
+            snap.session_order,
+            vec!["pty-1".to_string(), "pty-2".into()]
+        );
+        // Both groupings survive — pty-2's original entry is preserved.
+        let pty_2_grouping = snap
+            .groupings
+            .get("pty-2")
+            .expect("pty-2 grouping must be preserved across the race window");
+        assert_eq!(pty_2_grouping.workspace_session_id, "ws-1");
+        assert_eq!(pty_2_grouping.pane_id, "p1");
+
+        // Cleanup
+        for id in &["pty-1", "pty-2"] {
+            let _ = state.remove(&id.to_string());
+        }
+    }
+
+    /// Codex P2 on PR #290 cycle 7: a workspace session's baseline cwd
+    /// (used by `addPane` for new shells) must be persisted alongside the
+    /// grouping. Without it, restore derives `workingDirectory` from the
+    /// active pane's live cwd, so a session whose active pane drifted via
+    /// OSC 7 into a worktree subdir would have new panes opening there
+    /// instead of the original project root. Pin: `working_directory` on
+    /// `WorkspaceSessionSnapshot` lands on every pane's
+    /// `PaneGrouping.workspace_directory` after `set_workspace_sessions`.
+    #[tokio::test]
+    async fn set_workspace_sessions_persists_workspace_directory() {
+        let (state, cache, events, _temp_dir) = create_test_state_with_cache();
+        let cwd = std::env::current_dir()
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
+
+        for id in &["pty-x", "pty-y"] {
+            spawn_pty_inner(
+                state.clone(),
+                cache.clone(),
+                events.clone(),
+                SpawnPtyRequest {
+                    session_id: id.to_string(),
+                    cwd: cwd.clone(),
+                    shell: None,
+                    env: None,
+                    enable_agent_bridge: false,
+                    ephemeral: false,
+                },
+            )
+            .await
+            .expect("spawn");
+        }
+
+        set_workspace_sessions_inner(
+            &cache,
+            SetWorkspaceSessionsRequest {
+                sessions: vec![WorkspaceSessionSnapshot {
+                    id: "ws-project".into(),
+                    layout: "vsplit".into(),
+                    working_directory: Some("/home/will/project-root".into()),
+                    panes: vec![
+                        WorkspacePaneSnapshot {
+                            pty_id: "pty-x".into(),
+                            pane_id: "p0".into(),
+                            pane_index: 0,
+                            agent_type: "claude-code".into(),
+                            active: true,
+                        },
+                        WorkspacePaneSnapshot {
+                            pty_id: "pty-y".into(),
+                            pane_id: "p1".into(),
+                            pane_index: 1,
+                            agent_type: "generic".into(),
+                            active: false,
+                        },
+                    ],
+                }],
+            },
+        )
+        .expect("snapshot");
+
+        let snap = cache.snapshot();
+        for id in &["pty-x", "pty-y"] {
+            let g = snap
+                .groupings
+                .get(*id)
+                .unwrap_or_else(|| panic!("missing grouping for {id}"));
+            assert_eq!(
+                g.workspace_directory.as_deref(),
+                Some("/home/will/project-root")
+            );
+        }
+
+        // Cleanup
+        for id in &["pty-x", "pty-y"] {
+            let _ = state.remove(&id.to_string());
+        }
+    }
+
+    /// Claude reviewer MEDIUM on PR #290 cycle 10: `groupings.insert` was
+    /// called for every pane BEFORE the `seen` dedup, so a malformed
+    /// snapshot listing the same `pty_id` under two workspaces would
+    /// silently overwrite the first session's grouping with the second's.
+    /// Both writes must go through the same dedup. First-wins.
+    #[tokio::test]
+    async fn set_workspace_sessions_dedups_duplicate_pty_id_first_wins() {
+        let (state, cache, events, _temp_dir) = create_test_state_with_cache();
+        let cwd = std::env::current_dir()
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
+
+        spawn_pty_inner(
+            state.clone(),
+            cache.clone(),
+            events.clone(),
+            SpawnPtyRequest {
+                session_id: "pty-shared".into(),
+                cwd: cwd.clone(),
+                shell: None,
+                env: None,
+                enable_agent_bridge: false,
+                ephemeral: false,
+            },
+        )
+        .await
+        .expect("spawn");
+
+        // Both ws-first and ws-second claim pty-shared. The dedup must
+        // keep the FIRST workspace's grouping and ignore the later
+        // duplicate without crashing or corrupting state.
+        set_workspace_sessions_inner(
+            &cache,
+            SetWorkspaceSessionsRequest {
+                sessions: vec![
+                    WorkspaceSessionSnapshot {
+                        id: "ws-first".into(),
+                        layout: "single".into(),
+                        working_directory: None,
+                        panes: vec![WorkspacePaneSnapshot {
+                            pty_id: "pty-shared".into(),
+                            pane_id: "p0".into(),
+                            pane_index: 0,
+                            agent_type: "claude-code".into(),
+                            active: true,
+                        }],
+                    },
+                    WorkspaceSessionSnapshot {
+                        id: "ws-second".into(),
+                        layout: "single".into(),
+                        working_directory: None,
+                        panes: vec![WorkspacePaneSnapshot {
+                            pty_id: "pty-shared".into(),
+                            pane_id: "p0".into(),
+                            pane_index: 0,
+                            agent_type: "generic".into(),
+                            active: true,
+                        }],
+                    },
+                ],
+            },
+        )
+        .expect("snapshot");
+
+        let snap = cache.snapshot();
+        // The PTY appears EXACTLY ONCE in session_order.
+        assert_eq!(snap.session_order, vec!["pty-shared".to_string()]);
+        // Its grouping points at the FIRST workspace, not the duplicate.
+        let g = snap
+            .groupings
+            .get("pty-shared")
+            .expect("pty-shared grouping");
+        assert_eq!(g.workspace_session_id, "ws-first");
+        assert_eq!(g.agent_type, "claude-code");
+
+        // Cleanup
+        let _ = state.remove(&"pty-shared".to_string());
     }
 }

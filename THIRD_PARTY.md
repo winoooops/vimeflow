@@ -16,6 +16,12 @@ This file inventories the licenses of third-party packages bundled into the Vime
 
 For the full transitive list, see `package-lock.json`. Apache-2.0 packages preserve their LICENSE / NOTICE files inside `node_modules/<package>/` during normal `npm install`; the AppImage build copies the relevant LICENSE files into the bundle.
 
+## Bundled fonts
+
+| Font          | License | Notes                                                                                                                                                                                                                |
+| ------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Ioskeley Mono | OFL-1.1 | UI / code monospace face. © 2025 Ahmed Hatem. Vendored woff2 under `src/assets/fonts/ioskeley/`; the full OFL text ships at `resources/licenses/IoskeleyMono-OFL.txt` (see `electron-builder.yml` `extraResources`). |
+
 ## Rust dependencies
 
 For the Rust sidecar (`vimeflow-backend`), see `Cargo.lock` and the `LICENSE` files in each crate's source. The sidecar depends only on MIT / Apache-2.0 / BSD-3-Clause crates as of this release.

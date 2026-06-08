@@ -55,6 +55,59 @@ type UserWithRole = User & {
 }
 ```
 
+### Discriminated unions over non-discriminated unions + `as`
+
+When a type can be in one of several variants, encode the variant tag and
+the variant-specific data **together** in a discriminated union. Do not pair
+a string-literal `kind` field with a union-typed payload field at the same
+level — TypeScript cannot prove the two are aligned, so every use site is
+forced to write an `as` cast that silences a check it cannot otherwise
+make. A future refactor that adds a new tag value, reorders branches, or
+copy-pastes a branch then compiles cleanly while silently applying the
+wrong shape at runtime.
+
+```typescript
+// WRONG: non-discriminated — `kind` and `entries` are unrelated
+interface Bucket {
+  kind: 'grouped' | 'ungrouped'
+  entries: GroupedEntry[] | SessionInfo[]
+}
+
+// Every use needs an unsafe cast — silenced future bugs.
+if (bucket.kind === 'grouped') {
+  ;(bucket.entries as GroupedEntry[]).push(entry) // future bug invisible
+}
+```
+
+```typescript
+// CORRECT: discriminated — `kind` narrows `entries` automatically
+type Bucket =
+  | { kind: 'grouped'; entries: GroupedEntry[] }
+  | { kind: 'ungrouped'; entries: SessionInfo[] }
+
+if (bucket.kind === 'grouped') {
+  // Narrows to GroupedEntry[]; no cast needed.
+  // Note: this rebuild is immutable per the Immutability section below
+  // (`.push` is forbidden everywhere, including discriminated-union
+  // examples).
+  const updated: Bucket = {
+    ...bucket,
+    entries: [...bucket.entries, entry],
+  }
+}
+```
+
+If a discriminated union does not fit the shape (e.g. the variant data is
+genuinely heterogeneous in structure, not just in element type), prefer
+two separate maps/collections over a non-discriminated union with `as`.
+
+The same principle applies to function return shapes (`{ ok: true; value }
+| { ok: false; error }`), reducer action types, and Result/Either
+patterns. Reach for `as` only when narrowing legitimately cannot be
+expressed — at a system boundary (parsing JSON / IPC / DOM input). Inside
+the app, `as` on a union is a signal the type is wrong, not that the
+checker is wrong.
+
 ### Avoid `any`
 
 - Avoid `any` in application code

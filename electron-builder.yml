@@ -16,6 +16,8 @@ files:
 extraResources:
   - from: target/release/vimeflow-backend
     to: bin/vimeflow-backend
+  - from: src/assets/fonts/ioskeley/LICENSE-OFL.txt
+    to: licenses/IoskeleyMono-OFL.txt
 
 asar: true
 

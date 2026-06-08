@@ -84,7 +84,7 @@ describe('Pane lifecycle split focus', () => {
       }
     )
 
-    await clickBySelector('button[aria-label="add pane"]')
+    await clickBySelector('button[aria-label="add shell pane"]')
     await waitForPaneCount(2)
 
     await clickBySelector('[data-testid="split-view-slot"][data-pane-id="p0"]')

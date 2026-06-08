@@ -115,6 +115,8 @@ words:
   - FiraCode
   - Cascadia
   - Menlo
+  - Ioskeley
+  - Iosevka
   - backgrounding
 
   # Git apply flag — `--whitespace=nowarn` suppresses whitespace warnings

@@ -29,6 +29,40 @@
     format('woff2-variations');
 }
 
+/* Ioskeley Mono — global mono/code face (SIL OFL 1.1, vendored woff2). */
+@font-face {
+  font-family: 'Ioskeley Mono';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400;
+  src: url('./assets/fonts/ioskeley/IoskeleyMono-Regular.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Ioskeley Mono';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 500;
+  src: url('./assets/fonts/ioskeley/IoskeleyMono-Medium.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Ioskeley Mono';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 600;
+  src: url('./assets/fonts/ioskeley/IoskeleyMono-SemiBold.woff2')
+    format('woff2');
+}
+
+@font-face {
+  font-family: 'Ioskeley Mono';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 700;
+  src: url('./assets/fonts/ioskeley/IoskeleyMono-Bold.woff2') format('woff2');
+}
+
 @font-face {
   font-family: 'Material Symbols Outlined Variable';
   font-style: normal;

@@ -8,6 +8,7 @@ import type {
 import type {
   SessionList,
   SetSessionActivityPanelCollapsedRequest,
+  SetWorkspaceSessionsRequest,
 } from '../../../bindings'
 import { isDesktop } from '../../../lib/environment'
 import { DesktopTerminalService } from './desktopTerminalService'
@@ -120,6 +121,15 @@ export interface ITerminalService {
    * renderer boot to clear reload orphans.
    */
   killEphemeralPtys(): Promise<string[]>
+
+  /**
+   * Persist the full workspace-session grouping snapshot so a later restore
+   * can reconstruct the multi-pane layout instead of fragmenting each PTY
+   * into its own single-pane session. The backend rebuilds its grouping map
+   * from this snapshot on every call — panes omitted since the previous push
+   * have their grouping dropped.
+   */
+  setWorkspaceSessions(request: SetWorkspaceSessionsRequest): Promise<void>
 }
 
 /**
@@ -439,6 +449,14 @@ export class MockTerminalService implements ITerminalService {
   killEphemeralPtys(): Promise<string[]> {
     // Mock no-op
     return Promise.resolve([])
+  }
+
+  setWorkspaceSessions(
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    _request: SetWorkspaceSessionsRequest
+  ): Promise<void> {
+    // Mock no-op
+    return Promise.resolve()
   }
 }
 

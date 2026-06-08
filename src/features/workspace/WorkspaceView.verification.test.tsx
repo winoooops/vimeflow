@@ -76,6 +76,7 @@ vi.mock('../terminal/services/terminalService', () => ({
     updateSessionCwd: vi.fn().mockResolvedValue(undefined),
     setSessionActivityPanelCollapsed: vi.fn().mockResolvedValue(undefined),
     killEphemeralPtys: vi.fn(),
+    setWorkspaceSessions: vi.fn().mockResolvedValue(undefined),
   })),
 }))
 
@@ -234,7 +235,7 @@ describe('Feature 23: Final Phase 2 Verification', () => {
     })
   })
 
-  describe('7. Design matches Stitch mockup', () => {
+  describe('7. Design matches the design spec', () => {
     test('workspace has correct grid layout', () => {
       render(<WorkspaceView />)
 

@@ -43,34 +43,11 @@ const mapStatusToCardProps = (
 export const SidebarStatusHeader = ({
   status,
   activeSessionName,
-}: SidebarStatusHeaderProps): ReactElement => {
-  if (status.isActive && status.agentType) {
-    return (
-      <StatusCard
-        {...mapStatusToCardProps({ ...status, agentType: status.agentType })}
-      />
-    )
-  }
-
-  const title = activeSessionName ?? 'No session'
-
-  return (
-    <div
-      data-testid="sidebar-status-header-idle"
-      className="flex min-h-44 flex-col gap-3 rounded-xl bg-surface-container-high p-3"
-    >
-      <div className="flex items-center gap-2.5">
-        <div className="h-8 w-8 shrink-0 rounded-lg bg-gradient-to-br from-primary-container to-secondary" />
-        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <span className="truncate font-headline text-sm font-[800] text-on-surface">
-            {title}
-          </span>
-          <div className="flex items-center gap-1.5">
-            <span className="inline-block h-2 w-2 rounded-full bg-on-surface/30" />
-            <span className="text-[10px] font-medium text-outline">Idle</span>
-          </div>
-        </div>
-      </div>
-    </div>
+}: SidebarStatusHeaderProps): ReactElement =>
+  status.isActive && status.agentType ? (
+    <StatusCard
+      {...mapStatusToCardProps({ ...status, agentType: status.agentType })}
+    />
+  ) : (
+    <StatusCard mode="idle" title={activeSessionName ?? 'No session'} />
   )
-}

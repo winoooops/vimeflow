@@ -65,6 +65,7 @@ import { useDockShortcuts } from './hooks/useDockShortcuts'
 import { useEditorBuffer } from '../editor/hooks/useEditorBuffer'
 import { useAgentStatus } from '../agent-status/hooks/useAgentStatus'
 import { useGitStatus } from '../diff/hooks/useGitStatus'
+import { useFeedbackBatch } from '../diff/hooks/useFeedbackBatch'
 import type { PaneCandidate } from '../diff/services/activePanePicker'
 import { sumLines } from '../diff/utils/sumLines'
 import { findActivePane } from '../sessions/utils/activeSessionPane'
@@ -952,6 +953,19 @@ export const WorkspaceView = (): ReactElement => {
   const [selectedDiffFile, setSelectedDiffFile] =
     useState<SelectedDiffFile | null>(null)
 
+  const feedbackBatch = useFeedbackBatch()
+  const feedbackRepoRootRef = useRef('')
+  const { clearBatch: clearFeedbackBatch } = feedbackBatch
+  const previousFeedbackCwdRef = useRef(activeCwd)
+
+  useEffect(() => {
+    if (previousFeedbackCwdRef.current !== activeCwd) {
+      previousFeedbackCwdRef.current = activeCwd
+      feedbackRepoRootRef.current = ''
+      clearFeedbackBatch()
+    }
+  }, [activeCwd, clearFeedbackBatch])
+
   const gitStatus = useGitStatus(activeCwd, {
     watch: true,
     enabled: agentStatus.isActive || (isDockOpen && dockTab === 'diff'),
@@ -1402,6 +1416,8 @@ export const WorkspaceView = (): ReactElement => {
       onContainerFocus={() => {
         setActiveContainerId(DOCK_CONTAINER_ID)
       }}
+      feedbackBatch={feedbackBatch}
+      feedbackRepoRootRef={feedbackRepoRootRef}
       feedbackDispatch={feedbackDispatch}
     />
   ) : (

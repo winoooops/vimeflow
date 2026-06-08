@@ -19,6 +19,10 @@ export type { SetActiveSessionRequest } from './SetActiveSessionRequest'
 export type { ReorderSessionsRequest } from './ReorderSessionsRequest'
 export type { UpdateSessionCwdRequest } from './UpdateSessionCwdRequest'
 export type { SetSessionActivityPanelCollapsedRequest } from './SetSessionActivityPanelCollapsedRequest'
+export type { PaneGrouping } from './PaneGrouping'
+export type { WorkspacePaneSnapshot } from './WorkspacePaneSnapshot'
+export type { WorkspaceSessionSnapshot } from './WorkspaceSessionSnapshot'
+export type { SetWorkspaceSessionsRequest } from './SetWorkspaceSessionsRequest'
 
 // Filesystem types
 export type { ListDirRequest } from './ListDirRequest'

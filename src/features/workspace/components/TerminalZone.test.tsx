@@ -45,6 +45,7 @@ const mockService: ITerminalService = {
   updateSessionCwd: vi.fn().mockResolvedValue(undefined),
   setSessionActivityPanelCollapsed: vi.fn().mockResolvedValue(undefined),
   killEphemeralPtys: vi.fn(),
+  setWorkspaceSessions: vi.fn().mockResolvedValue(undefined),
 }
 
 // Mock TerminalPane to avoid xterm.js issues in tests

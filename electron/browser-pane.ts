@@ -3,6 +3,7 @@ import {
   WebContentsView,
   ipcMain,
   session as electronSession,
+  shell,
   type Event as ElectronEvent,
   type IpcMainInvokeEvent,
   type Session as ElectronSession,
@@ -24,8 +25,12 @@ import {
   BROWSER_PANE_DESTROY,
   BROWSER_PANE_FOCUS,
   BROWSER_PANE_FOCUSED,
+  BROWSER_PANE_FOCUS_ADDRESS,
   BROWSER_PANE_NAVIGATE,
+  BROWSER_PANE_NAV_ACTION,
+  BROWSER_PANE_NAV_STATE_CHANGED,
   BROWSER_PANE_NEW_TAB,
+  BROWSER_PANE_OPEN_EXTERNAL,
   BROWSER_PANE_SET_BOUNDS,
   BROWSER_PANE_TABS_CHANGED,
   BROWSER_PANE_URL_CHANGED,
@@ -106,6 +111,7 @@ interface BrowserPaneCreateResult {
   title: string | null
   partition: string
   tabs: BrowserPaneTabSnapshot[]
+  navState: { canGoBack: boolean; canGoForward: boolean; isLoading: boolean }
 }
 
 interface BrowserCdpInfo {
@@ -160,7 +166,7 @@ interface CdpCommand {
 
 const BROWSER_CDP_ORIGIN = 'vimeflow://agent-plugin/local'
 // Keep in sync with src/features/browser/types.ts DEFAULT_BROWSER_URL (main/renderer project boundary prevents sharing a module).
-const DEFAULT_BROWSER_URL = 'https://www.youtube.com/'
+const DEFAULT_BROWSER_URL = 'https://www.google.com/'
 const MAX_TABS_PER_PANE = 20
 const WS_GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11'
 
@@ -330,6 +336,14 @@ const isTabRequest = (value: unknown): value is BrowserPaneTabRequest =>
   isString(value.paneId) &&
   isString(value.tabId)
 
+const isNavActionRequest = (
+  value: unknown
+): value is { sessionId: string; paneId: string; action: string } =>
+  isRecord(value) &&
+  isString(value.sessionId) &&
+  isString(value.paneId) &&
+  isString(value.action)
+
 const isCdpInfoRequest = (value: unknown): value is BrowserCdpInfoRequest =>
   isRecord(value) && isString(value.sessionId) && isString(value.paneId)
 
@@ -379,6 +393,16 @@ const hasPlatformShortcutModifier = (
     ? input.meta && !input.control
     : input.control && !input.meta
 }
+
+export const isFocusAddressShortcut = (
+  input: BrowserPaneShortcutInput,
+  platform: NodeJS.Platform = process.platform
+): boolean =>
+  input.code === 'KeyL' &&
+  !input.alt &&
+  input.shift !== true &&
+  !input.isAutoRepeat &&
+  hasPlatformShortcutModifier(input, platform)
 
 const isBrowserPaneWorkspaceShortcutInput = (
   input: BrowserPaneShortcutInput
@@ -645,6 +669,14 @@ export class BrowserPaneController {
     ipcMain.handle(BROWSER_PANE_CLOSE_TAB, (_event, payload) =>
       this.closeTab(payload)
     )
+
+    ipcMain.handle(BROWSER_PANE_OPEN_EXTERNAL, (_event, payload) =>
+      this.openExternal(payload)
+    )
+
+    ipcMain.handle(BROWSER_PANE_NAV_ACTION, (_event, payload) =>
+      this.handleNavAction(payload)
+    )
   }
 
   dispose(): void {
@@ -657,6 +689,8 @@ export class BrowserPaneController {
     ipcMain.removeHandler(BROWSER_PANE_CDP_INFO)
     ipcMain.removeHandler(BROWSER_PANE_ACTIVATE_TAB)
     ipcMain.removeHandler(BROWSER_PANE_CLOSE_TAB)
+    ipcMain.removeHandler(BROWSER_PANE_OPEN_EXTERNAL)
+    ipcMain.removeHandler(BROWSER_PANE_NAV_ACTION)
 
     for (const record of this.panes.values()) {
       this.removeRecord(record)
@@ -708,6 +742,9 @@ export class BrowserPaneController {
         title: this.activeWebContents(existing)?.getTitle() ?? null,
         partition: existing.partition,
         tabs: this.tabSnapshots(existing),
+        navState: activeTab
+          ? this.readNavState(activeTab.view.webContents)
+          : { canGoBack: false, canGoForward: false, isLoading: false },
       }
     }
 
@@ -786,6 +823,7 @@ export class BrowserPaneController {
         this.applyRecordBounds(record)
       }
       this.emitTabsChanged(record)
+      this.emitPaneNavStateChanged(record, record.activeTabId)
     })
 
     view.webContents.on('focus', () => {
@@ -808,6 +846,7 @@ export class BrowserPaneController {
     view.webContents.on('did-navigate', emitUrlChanged)
     view.webContents.on('did-navigate-in-page', emitUrlChanged)
     view.webContents.on('page-title-updated', emitUrlChanged)
+    this.installNavStateEmitters(record, view, 'tab-0')
 
     win.once('closed', record.windowClosedHandler)
 
@@ -819,6 +858,7 @@ export class BrowserPaneController {
       title: view.webContents.getTitle() || null,
       partition,
       tabs: this.tabSnapshots(record),
+      navState: this.readNavState(view.webContents),
     }
   }
 
@@ -863,6 +903,52 @@ export class BrowserPaneController {
       paneId: record.paneId,
       tabs: tabs ?? this.tabSnapshots(record),
     })
+  }
+
+  private readNavState(wc: WebContents): {
+    canGoBack: boolean
+    canGoForward: boolean
+    isLoading: boolean
+  } {
+    return {
+      canGoBack: wc.navigationHistory.canGoBack(),
+      canGoForward: wc.navigationHistory.canGoForward(),
+      isLoading: wc.isLoading(),
+    }
+  }
+
+  private emitPaneNavStateChanged(
+    record: BrowserPaneRecord,
+    tabId: string
+  ): void {
+    if (record.activeTabId !== tabId) {
+      return
+    }
+
+    const tab = record.tabs.get(tabId)
+    const win = BrowserWindow.fromId(record.windowId)
+    if (!tab || !win || win.isDestroyed() || win.webContents.isDestroyed()) {
+      return
+    }
+
+    win.webContents.send(BROWSER_PANE_NAV_STATE_CHANGED, {
+      sessionId: record.sessionId,
+      paneId: record.paneId,
+      tabId,
+      ...this.readNavState(tab.view.webContents),
+    })
+  }
+
+  private installNavStateEmitters(
+    record: BrowserPaneRecord,
+    view: WebContentsView,
+    tabId: string
+  ): void {
+    const emit = (): void => this.emitPaneNavStateChanged(record, tabId)
+    view.webContents.on('did-navigate', emit)
+    view.webContents.on('did-navigate-in-page', emit)
+    view.webContents.on('did-start-loading', emit)
+    view.webContents.on('did-stop-loading', emit)
   }
 
   private installNavigationPolicy(webContents: WebContents): void {
@@ -944,6 +1030,7 @@ export class BrowserPaneController {
     view.webContents.on('did-navigate', emitUrlChanged)
     view.webContents.on('did-navigate-in-page', emitUrlChanged)
     view.webContents.on('page-title-updated', emitUrlChanged)
+    this.installNavStateEmitters(record, view, tabId)
     view.webContents.on('focus', () => {
       if (win.webContents.isDestroyed()) {
         return
@@ -973,6 +1060,7 @@ export class BrowserPaneController {
         this.applyRecordBounds(record)
       }
       this.emitTabsChanged(record)
+      this.emitPaneNavStateChanged(record, record.activeTabId)
     })
 
     if (options.activate) {
@@ -1022,6 +1110,20 @@ export class BrowserPaneController {
     }
 
     webContents.on('before-input-event', (event, input) => {
+      if (isFocusAddressShortcut(input)) {
+        event.preventDefault()
+        const win = BrowserWindow.fromId(record.windowId)
+        if (win && !win.isDestroyed() && !win.webContents.isDestroyed()) {
+          win.webContents.focus()
+          win.webContents.send(BROWSER_PANE_FOCUS_ADDRESS, {
+            sessionId: record.sessionId,
+            paneId: record.paneId,
+          })
+        }
+
+        return
+      }
+
       if (isCommandPaletteShortcutInput(input)) {
         event.preventDefault()
         dispatchCommandPaletteToggle()
@@ -1122,6 +1224,7 @@ export class BrowserPaneController {
     if (active) {
       this.emitPaneUrlChanged(record, active.id)
     }
+    this.emitPaneNavStateChanged(record, tabId)
   }
 
   private applyRecordBounds(record: BrowserPaneRecord): void {
@@ -1223,6 +1326,63 @@ export class BrowserPaneController {
     }
 
     this.activeWebContents(record)?.focus()
+  }
+
+  private openExternal(payload: unknown): void {
+    if (!isCdpInfoRequest(payload)) {
+      throw new Error('invalid browser pane open-external payload')
+    }
+
+    const record = this.panes.get(paneKey(payload.sessionId, payload.paneId))
+    if (!record) {
+      return
+    }
+
+    const url = this.activeWebContents(record)?.getURL() ?? ''
+    if (/^https?:\/\//i.test(url)) {
+      void shell.openExternal(url)
+    }
+  }
+
+  private handleNavAction(payload: unknown): void {
+    if (!isNavActionRequest(payload)) {
+      throw new Error('invalid browser pane nav-action payload')
+    }
+
+    const record = this.panes.get(paneKey(payload.sessionId, payload.paneId))
+    if (!record) {
+      return
+    }
+
+    this.runNavAction(record, payload.action)
+  }
+
+  private runNavAction(record: BrowserPaneRecord, action: string): void {
+    const wc = this.activeWebContents(record)
+    if (!wc || wc.isDestroyed()) {
+      return
+    }
+
+    switch (action) {
+      case 'back':
+        if (wc.navigationHistory.canGoBack()) {
+          wc.navigationHistory.goBack()
+        }
+        break
+      case 'forward':
+        if (wc.navigationHistory.canGoForward()) {
+          wc.navigationHistory.goForward()
+        }
+        break
+      case 'reload':
+        wc.reload()
+        break
+      case 'stop':
+        wc.stop()
+        break
+      default:
+        break
+    }
   }
 
   private activateTab(payload: unknown): void {

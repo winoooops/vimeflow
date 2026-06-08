@@ -3,7 +3,7 @@ id: keyboard-shortcut-guards
 category: keyboard-shortcuts
 created: 2026-05-18
 last_updated: 2026-05-26
-ref_count: 0
+ref_count: 1
 ---
 
 # Keyboard Shortcut Guards

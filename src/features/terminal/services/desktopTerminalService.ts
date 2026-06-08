@@ -18,6 +18,7 @@ import type {
   ReorderSessionsRequest,
   UpdateSessionCwdRequest,
   SetSessionActivityPanelCollapsedRequest,
+  SetWorkspaceSessionsRequest,
 } from '../../../bindings'
 import type { ITerminalService } from './terminalService'
 
@@ -361,5 +362,11 @@ export class DesktopTerminalService implements ITerminalService {
 
   async killEphemeralPtys(): Promise<string[]> {
     return invoke<string[]>('kill_ephemeral_ptys')
+  }
+
+  async setWorkspaceSessions(
+    request: SetWorkspaceSessionsRequest
+  ): Promise<void> {
+    await invoke('set_workspace_sessions', { request })
   }
 }

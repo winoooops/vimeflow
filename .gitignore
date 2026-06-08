@@ -80,6 +80,9 @@ VISUAL_VERIFICATION.md
 # Vimeflow runtime data (statusline sessions, etc.)
 .vimeflow/
 
+# QA-runner daemon runtime state (regenerated each run)
+scripts/qa-runner/.state/
+
 # Verification screenshots (testing artifacts)
 feedback*.png
 feedbacak*.png

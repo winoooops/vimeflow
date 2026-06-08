@@ -222,6 +222,13 @@ impl BackendState {
         )
     }
 
+    pub fn set_workspace_sessions(
+        &self,
+        request: crate::terminal::types::SetWorkspaceSessionsRequest,
+    ) -> Result<(), String> {
+        crate::terminal::commands::set_workspace_sessions_inner(&self.sessions, request)
+    }
+
     pub fn list_dir(
         &self,
         request: crate::filesystem::types::ListDirRequest,
@@ -431,6 +438,7 @@ mod tests {
             }),
             child: Box::new(NoopChild),
             cwd: "/tmp".into(),
+            shim_dir: None,
             generation: 0,
             ring: Arc::new(Mutex::new(RingBuffer::new(64))),
             cancelled: Arc::new(AtomicBool::new(false)),

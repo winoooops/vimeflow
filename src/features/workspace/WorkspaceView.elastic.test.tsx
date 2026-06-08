@@ -62,6 +62,7 @@ vi.mock('../terminal/services/terminalService', () => ({
     updateSessionCwd: vi.fn().mockResolvedValue(undefined),
     setSessionActivityPanelCollapsed: vi.fn().mockResolvedValue(undefined),
     killEphemeralPtys: vi.fn(),
+    setWorkspaceSessions: vi.fn().mockResolvedValue(undefined),
   })),
 }))
 

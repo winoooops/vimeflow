@@ -50,7 +50,7 @@ export const SidebarTabs = <TId extends string = string>({
           // on selection. The bar's `left-1` (4 px) sits inside the 12 px
           // padding region — clearance is `pl-3 - left-1 - w-0.5` ≈ 6 px
           // before the first glyph.
-          className={`relative py-1 pl-3 font-mono text-[11px] font-semibold uppercase tracking-[0.08em] transition-colors ${
+          className={`relative py-1 pl-3 font-mono text-[13px] font-semibold uppercase tracking-[0.08em] transition-colors ${
             isActive
               ? 'text-primary-container'
               : 'cursor-pointer text-on-surface-muted hover:text-on-surface-variant'

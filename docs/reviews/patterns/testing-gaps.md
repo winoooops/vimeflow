@@ -2,8 +2,8 @@
 id: testing-gaps
 category: testing
 created: 2026-04-09
-last_updated: 2026-05-28
-ref_count: 25
+last_updated: 2026-06-07
+ref_count: 27
 ---
 
 # Testing Gaps
@@ -582,3 +582,32 @@ filesystem scope restrictions).
 - **Finding:** Cycle 4's signal-based refactor (#56) eliminated SCHEDULER flakiness — the watcher emits explicit phase signals (`"initial-read"`, `"mtime-update"`) the test waits on with `recv_timeout`, so thread-startup timing doesn't matter. But the test still calls `write_index` to seed the file and then later calls `std::fs::write` to rewrite — and the watcher's change-detection compares `modified_time(&path)` against the previously-observed `last_mtime`. On any filesystem with 1-second mtime resolution (HFS+ pre-APFS, FAT32, some FUSE-mounted tmpdirs), the seed write and the rewrite can both land in the same wall-clock second when the test runs fast. Identical mtimes → `current_mtime == last_mtime` → watcher skips the change → `"mtime-update"` signal never sent → test's 5-second `recv_timeout` expires as a spurious flake that looks indistinguishable from a real deadlock. The dominant CI surfaces use ext4 / APFS / NTFS (nanosecond resolution) so this rarely materializes, but it's a real portability hole that future macOS pre-Catalina runners or atypical CI mounts would trip.
 - **Fix:** After the initial `write_index` and BEFORE spawning the watcher, force the seed file's mtime two seconds into the past via `std::fs::File::set_modified(SystemTime::now() - Duration::from_secs(2))`. `File::set_modified` is stable since Rust 1.75, so this works without a direct dep on the `filetime` crate (which is already transitively pulled in by `notify`). The watcher's `last_mtime = modified_time(&path)` now records a value 2 seconds in the past; the test's subsequent rewrite at NOW has an mtime unambiguously later than `last_mtime` regardless of filesystem resolution (1-second or finer). 2 seconds is enough margin to cover the worst-case 1-second resolution + clock skew without making the test wait. Code-review heuristic: filesystem timestamp tests that mutate a file twice in rapid succession have a latent flake mode on coarse-resolution filesystems unless they explicitly control the mtime ordering. The fix is mechanical: either force the first write's mtime backward (cheap, what we did here), or force the second write's mtime forward (also works but awkward since you'd be writing a future-dated mtime). The naive "two `fs::write` calls separated by sleep" pattern has BOTH this issue AND the scheduler-flake issue #56 addresses; both fixes are independent and both should be applied to any new poll-loop FS test.
 - **Commit:** _(PR #302 upsource cycle 7 fix commit)_
+
+### 59. Shared mock object mutated directly without cleanup in test
+
+- **Source:** github-claude | PR #368 round 5 | 2026-06-06
+- **Severity:** MEDIUM
+- **File:** `src/features/editor/components/CodeEditor.test.tsx`
+- **Finding:** `mockEditorView` is declared at `describe`-block scope and shared across all tests. The right-click selection-preservation test assigns `mockEditorView.state.selection.ranges = [{ from: 0, to: 5, empty: false }]` directly. `vi.clearAllMocks()` only resets spy call history, not plain object properties, so the mutated selection state persists after the test ends. Future tests or test-order shuffling inherit the non-empty selection and fail for reasons unrelated to their own setup.
+- **Fix:** Reset `mockEditorView.state.selection.ranges` to the default empty-selection shape in `beforeEach`, immediately after `vi.clearAllMocks()`. Every test now starts with a known selection state regardless of what prior tests mutated.
+- **Commit:** same commit as this entry
+
+### 60. Module-level backend event subscription registry leaks across tests, causing cascading failures when a listener test fails before cleanup
+
+- **Source:** github-claude | PR #375 round 1 | 2026-06-06
+- **Severity:** MEDIUM
+- **File:** `src/lib/backend.test.ts` L34-36, `src/lib/backend.ts` L68
+- **Finding:** `backendEventSubscriptions` is a module-level `Map<string, BackendEventSubscription>` that persists across test boundaries. The existing `afterEach` only deleted `window.vimeflow` but never cleared the Map. In the happy path each test calls its returned `unlisten()`, which cleans up the entry. But if an assertion fails before `unlisten()` runs, the stale subscription — with its stale `rawUnlisten` mock and callback Set — remains. A subsequent test using the same event name reuses the leaked subscription, skips `bridge.listen()`, and asserts against stale mocks, producing confusing cascading failures.
+- **Fix:** Exported a test-only helper `__resetBackendEventSubscriptions(): void` from `backend.ts` that calls `backendEventSubscriptions.clear()`. Added a top-level `afterEach(() => { __resetBackendEventSubscriptions() })` in `backend.test.ts` so every test starts with a clean registry regardless of prior test outcome.
+- **Code-review heuristic:** Any module-level singleton state (Maps, Sets, counters, caches) that outlives a single test must have an explicit reset path called from `afterEach` or `beforeEach`. Relying on per-test cleanup callbacks (like `unlisten()`) is insufficient because assertion failures can short-circuit cleanup. The reset helper should be clearly marked as test-only (`__` prefix or `/* @test-only */` comment) so it doesn't leak into production usage.
+- **Commit:** _(PR #375 upsource cycle 1 fix commit)_
+
+### 61. New attach-failure cleanup path lacks regression coverage
+
+- **Source:** github-claude | PR #375 round 2 | 2026-06-07
+- **Severity:** MEDIUM
+- **File:** `src/lib/backend.ts` L124-140 and `src/lib/backend.test.ts`
+- **Finding:** The PR introduces module-level subscription state plus a new catch path that deletes the failed event entry and clears callbacks when `bridge.listen` rejects. That behavior is correctness-critical for retryability: if a future edit drops the map delete, later `listen` calls for the same event will reuse a subscription whose `attachPromise` is already rejected; if callback clearing is dropped, stale callbacks can remain registered after a failed attach. The existing happy-path tests do not exercise this rejection-and-retry sequence.
+- **Fix:** Added a focused `backend.test.ts` case where `bridge.listen` rejects once, `listen` rejects, and a second `listen` for the same event retries the bridge instead of reusing the rejected subscription. Asserts `mockListen` is called twice and the retry succeeds with a fresh subscription.
+- **Code-review heuristic:** When a PR changes direct bridge delegation into shared module-level subscription state, the bridge rejection path now performs important state mutation that did not exist before. A single retry-focused test is sufficient to guard the cleanup contract; validate through mock call counts and successful retry rather than test-only introspection of internal maps.
+- **Commit:** _(PR #375 upsource cycle 2 fix commit)_
