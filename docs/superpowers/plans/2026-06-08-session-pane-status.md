@@ -75,7 +75,7 @@ fn read_loop_captures_nonzero_exit_code() {
 
 - [ ] **Step 2: Run the test, verify it fails**
 
-Run: `cargo test -p vimeflow-backend read_loop_captures_nonzero_exit_code`
+Run: `cargo test -p vimeflow read_loop_captures_nonzero_exit_code`
 Expected: FAIL — `last_exit_code` is `None`.
 
 - [ ] **Step 3: Implement the capture**
@@ -110,8 +110,8 @@ Ok(0) => {
 
 - [ ] **Step 4: Run the test, verify it passes**
 
-Run: `cargo test -p vimeflow-backend read_loop_captures_nonzero_exit_code`
-Expected: PASS. Then `cargo test -p vimeflow-backend terminal::` — all green (watch the known-flaky `read_loop_eof_marks_cache_exited`; re-run single-threaded if it flakes).
+Run: `cargo test -p vimeflow read_loop_captures_nonzero_exit_code`
+Expected: PASS. Then `cargo test -p vimeflow terminal::` — all green (watch the known-flaky `read_loop_eof_marks_cache_exited`; re-run single-threaded if it flakes).
 
 - [ ] **Step 5: Commit**
 
@@ -149,7 +149,7 @@ fn read_error_marks_cache_errored() {
 
 - [ ] **Step 2: Run, verify it fails**
 
-Run: `cargo test -p vimeflow-backend read_error_marks_cache_errored`
+Run: `cargo test -p vimeflow read_error_marks_cache_errored`
 Expected: FAIL — `last_exit_code` is `None`.
 
 - [ ] **Step 3: Implement**
@@ -184,7 +184,7 @@ const PTY_READ_ERROR_EXIT_CODE: i32 = -1;
 
 - [ ] **Step 4: Run, verify it passes**
 
-Run: `cargo test -p vimeflow-backend read_error_marks_cache_errored` → PASS. Then the terminal suite green.
+Run: `cargo test -p vimeflow read_error_marks_cache_errored` → PASS. Then the terminal suite green.
 
 - [ ] **Step 5: Commit**
 
@@ -224,7 +224,7 @@ fn lifecycle_emits_only_on_change() {
 
 - [ ] **Step 2: Run, verify it fails**
 
-Run: `cargo test -p vimeflow-backend lifecycle_emits_only_on_change`
+Run: `cargo test -p vimeflow lifecycle_emits_only_on_change`
 Expected: FAIL — items don't exist.
 
 - [ ] **Step 3: Implement — `types.rs`** (append near `AgentTurnEvent`)
@@ -290,7 +290,7 @@ pub(crate) fn emit_lifecycle_on_change(
 
 - [ ] **Step 5: Run, verify it passes + bindings generate**
 
-Run: `cargo test -p vimeflow-backend lifecycle_emits_only_on_change` → PASS.
+Run: `cargo test -p vimeflow lifecycle_emits_only_on_change` → PASS.
 Then generate the TS bindings with the repo script: `npm run generate:bindings` (runs `cargo test --manifest-path crates/backend/Cargo.toml export_bindings && prettier --write src/bindings/`). Verify `src/bindings/AgentPhase.ts` (`"running" | "idle" | "awaiting"` — `serde rename_all = "camelCase"` lower-cases the variants) and `src/bindings/AgentLifecycleEvent.ts` exist.
 
 - [ ] **Step 6: Commit**
@@ -355,7 +355,7 @@ fn claude_live_emits_running_then_idle_transition() {
 
 - [ ] **Step 2: Run, verify it fails**
 
-Run: `cargo test -p vimeflow-backend claude_replay_flushes_only_the_settled_phase_once claude_live_emits_running_then_idle_transition`
+Run: `cargo test -p vimeflow claude_replay_flushes_only_the_settled_phase_once claude_live_emits_running_then_idle_transition`
 Expected: FAIL — no `agent-lifecycle` events emitted.
 
 - [ ] **Step 3: Add `stop_reason` to the DTO** (`transcript_dto.rs`, in `ClaudeMessageDto`)
@@ -427,7 +427,7 @@ if !self.replay_done {
 
 - [ ] **Step 5: Run, verify it passes**
 
-Run: `cargo test -p vimeflow-backend claude_` → the new test PASS, existing Claude transcript tests green.
+Run: `cargo test -p vimeflow claude_` → the new test PASS, existing Claude transcript tests green.
 
 - [ ] **Step 6: Commit**
 
@@ -487,7 +487,7 @@ fn codex_live_emits_running_then_idle_transition() {
 
 - [ ] **Step 2: Run, verify it fails**
 
-Run: `cargo test -p vimeflow-backend codex_replay_flushes_only_the_settled_phase_once codex_live_emits_running_then_idle_transition` → FAIL.
+Run: `cargo test -p vimeflow codex_replay_flushes_only_the_settled_phase_once codex_live_emits_running_then_idle_transition` → FAIL.
 
 - [ ] **Step 3: Implement**
 
@@ -508,7 +508,7 @@ Add `TaskStarted` / `TaskComplete` arms to `CodexPayloadType` + its `payload_typ
 
 - [ ] **Step 4: Run, verify it passes**
 
-Run: `cargo test -p vimeflow-backend codex_` → green. Then full `cargo test -p vimeflow-backend` green.
+Run: `cargo test -p vimeflow codex_` → green. Then full `cargo test -p vimeflow` green.
 
 - [ ] **Step 5: Commit**
 
