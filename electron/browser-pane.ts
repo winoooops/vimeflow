@@ -1141,12 +1141,16 @@ export class BrowserPaneController {
       void loadBrowserUrl(view.webContents, initialUrl)
     }
 
+    const activeTab = this.activeTab(record)
+
     return {
-      url: this.tabUrl(record.tabs.get('tab-0')!),
-      title: view.webContents.getTitle() || null,
+      url: activeTab ? this.tabUrl(activeTab) : initialUrl,
+      title: this.activeWebContents(record)?.getTitle() ?? null,
       partition,
       tabs: this.tabSnapshots(record),
-      navState: this.readNavState(view.webContents),
+      navState: activeTab
+        ? this.readNavState(activeTab.view.webContents)
+        : { canGoBack: false, canGoForward: false, isLoading: false },
     }
   }
 

@@ -3,7 +3,7 @@ id: derived-state-consistency
 category: code-quality
 created: 2026-06-07
 last_updated: 2026-06-08
-ref_count: 0
+ref_count: 1
 ---
 
 # Derived State Consistency
@@ -55,5 +55,24 @@ base data is technically "correct."
   updates `tab.requestedUrl` to the persisted active URL) runs before the
   `activate`/`emitTabsChanged` block, ensuring the first snapshot is built
   from the correct URL.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on
+  this line)
+
+### 3. createBrowserPane return snapshot reads tab-0 after restoring a non-zero active tab
+
+- **Source:** github-codex-connector | PR #390 round 2 | 2026-06-08
+- **Severity:** MEDIUM
+- **File:** `electron/browser-pane.ts`
+- **Finding:** After restoring all browser tabs and calling `setActiveTab`
+  for a non-zero active index, the `createBrowserPane` return block still
+  reads `url`, `title`, and `navState` from the original `tab-0`
+  `WebContentsView`. The renderer receives an initial IPC response where
+  `tabs` says tab-N is active while the top-level `url`/`navState` reflect
+  tab-0, causing a brief flash of inconsistent address-bar / navigation
+  state before the corrective event arrives.
+- **Fix:** Replaced the hard-coded tab-0 references with
+  `this.activeTab(record)` / `this.activeWebContents(record)` so the
+  returned snapshot always reflects the currently active tab, matching the
+  `tabs` array already emitted by `this.tabSnapshots(record)`.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on
   this line)
