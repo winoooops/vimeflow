@@ -79,6 +79,47 @@ describe('WorkspaceTeardown', () => {
     expect(flush).toHaveBeenCalledTimes(2)
   })
 
+  test('reset keeps an in-flight flush shared until it settles', async () => {
+    let blockDrain = true
+    let releaseDrain = (): void => undefined
+
+    const drainFinalShape = vi.fn((): Promise<void> => {
+      if (!blockDrain) {
+        return Promise.resolve()
+      }
+
+      return new Promise<void>((resolve) => {
+        releaseDrain = resolve
+      })
+    })
+    const flush = vi.fn().mockResolvedValue(undefined)
+    const teardown = new WorkspaceTeardown({ drainFinalShape, flush })
+
+    const first = teardown.flushOnce()
+    await Promise.resolve()
+
+    teardown.reset()
+    expect(teardown.hasFlushed).toBe(false)
+
+    const second = teardown.flushOnce()
+    await Promise.resolve()
+
+    expect(drainFinalShape).toHaveBeenCalledTimes(1)
+    expect(flush).not.toHaveBeenCalled()
+
+    blockDrain = false
+    releaseDrain()
+    await expect(Promise.all([first, second])).resolves.toEqual([
+      undefined,
+      undefined,
+    ])
+
+    await teardown.flushOnce()
+
+    expect(drainFinalShape).toHaveBeenCalledTimes(2)
+    expect(flush).toHaveBeenCalledTimes(2)
+  })
+
   test('a failed final-shape drain still proceeds to the save', async () => {
     const flush = vi.fn().mockResolvedValue(undefined)
 

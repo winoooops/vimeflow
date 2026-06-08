@@ -3,7 +3,7 @@ id: persisted-state-invariants
 category: correctness
 created: 2026-06-08
 last_updated: 2026-06-08
-ref_count: 0
+ref_count: 1
 ---
 
 # Persisted State Invariants
@@ -39,4 +39,13 @@ Durable user-facing state (workspace shapes, caches, settings files) can be malf
 - **File:** `src/features/sessions/hooks/useSessionRestore.ts`
 - **Finding:** `activate` called `onActivePersistedRef.current?.(activeStoreId)` and then unconditionally returned. The exported hook declares `onActivePersisted` optional; any caller that omits it while restoring an active store session skips both PTY-based activation and fallback activation, leaving no selected session.
 - **Fix:** Guard the callback invocation and return: only return after persisted activation when `onActivePersistedRef.current` exists and was invoked; otherwise fall through to the existing PTY/fallback activation paths.
+- **Commit:** same commit as this entry
+
+### 4. Brand-new browser pane with no live tabs blocked the whole durable write
+
+- **Source:** github-claude | PR #404 round 2 | 2026-06-08
+- **Severity:** HIGH
+- **File:** `electron/workspace-layout-writer.ts`
+- **Finding:** `WorkspaceLayoutWriter.assemble()` returned `null` whenever any browser pane lacked live, remembered, or preserved tabs. A newly-created browser pane can enter the renderer shape before its main-side `WebContentsView` exists, so a close during that gap made `flush()` fail and skipped persistence of the latest workspace shape.
+- **Fix:** Treat a pane with no live, remembered, removed, or preserved source as a brand-new pane and persist `tabs: []`; Rust repair seeds the default tab if that snapshot is restored. Kept the removed-and-readded guard returning `null`, and added writer tests for both cases plus close-flush persistence.
 - **Commit:** same commit as this entry

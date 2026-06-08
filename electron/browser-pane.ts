@@ -1345,6 +1345,7 @@ export class BrowserPaneController {
       })
     })
 
+    // Must precede history restore/load; page-favicon-updated can fire during it.
     this.installFaviconEmitter(record, view, 'tab-0')
 
     const emitUrlChanged = (): void => {

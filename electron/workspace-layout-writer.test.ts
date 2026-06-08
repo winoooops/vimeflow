@@ -148,7 +148,7 @@ describe('WorkspaceLayoutWriter', () => {
     )
   })
 
-  test('assemble returns null when a browser pane has no live or preserved tabs', () => {
+  test('assemble seeds a new browser pane with empty tabs before live capture exists', () => {
     const writer = new WorkspaceLayoutWriter({
       sidecar: makeSidecar(),
       captureTabsForPane: (): PersistedTab[] | null => null,
@@ -156,7 +156,13 @@ describe('WorkspaceLayoutWriter', () => {
 
     writer.onShapePushed(shape())
 
-    expect(writer.assemble()).toBeNull()
+    expect(writer.assemble()?.sessions[0].panes[1]).toEqual({
+      kind: 'browser',
+      paneId: 'p1',
+      paneIndex: 1,
+      active: false,
+      tabs: [],
+    })
   })
 
   test('assemble does not reuse preserved tabs after the browser pane was removed', () => {
@@ -275,13 +281,53 @@ describe('WorkspaceLayoutWriter', () => {
       sidecar,
       captureTabsForPane: (): PersistedTab[] | null => null,
     })
+    const withoutBrowser = shape()
+    withoutBrowser.sessions[0].panes = withoutBrowser.sessions[0].panes.filter(
+      (pane) => pane.kind !== 'browser'
+    )
 
+    writer.setHydrating(true)
     writer.onShapePushed(shape())
+    writer.onShapePushed(withoutBrowser)
+    writer.onShapePushed(shape())
+    writer.setHydrating(false)
 
     await expect(writer.flush()).rejects.toThrow(
       'workspace layout flush could not assemble current shape'
     )
     expect(sidecar.invoke).not.toHaveBeenCalled()
+  })
+
+  test('flush persists a new browser pane before live capture exists', async () => {
+    const sidecar = makeSidecar()
+
+    const writer = new WorkspaceLayoutWriter({
+      sidecar,
+      captureTabsForPane: (): PersistedTab[] | null => null,
+    })
+
+    writer.onShapePushed(shape())
+
+    await expect(writer.flush()).resolves.toBeUndefined()
+    expect(sidecar.invoke).toHaveBeenCalledTimes(1)
+    expect(sidecar.invoke).toHaveBeenCalledWith(
+      'save_workspace_layout',
+      expect.objectContaining({
+        store: expect.objectContaining({
+          sessions: [
+            expect.objectContaining({
+              panes: expect.arrayContaining([
+                expect.objectContaining({
+                  kind: 'browser',
+                  paneId: 'p1',
+                  tabs: [],
+                }),
+              ]),
+            }),
+          ],
+        }),
+      })
+    )
   })
 
   test('flush waits for a superseding write and surfaces its failure', async () => {

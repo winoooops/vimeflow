@@ -3,7 +3,7 @@ id: resource-cleanup
 category: react-patterns
 created: 2026-04-09
 last_updated: 2026-06-08
-ref_count: 7
+ref_count: 8
 ---
 
 # Resource Cleanup
@@ -89,4 +89,13 @@ causes listener accumulation and duplicate event handling.
 - **File:** `crates/backend/src/terminal/bridge.rs` L49-55 (`write_executable_script`)
 - **Finding:** After `std::fs::rename(&tmp_path, path)` succeeds, the script exists at its final executable path. If the subsequent parent-directory `sync_all()` fails, `write_executable_script` returns an error, `generate_bridge_files` reports a failed script write, and the PTY spawn path can abort even though the script was written correctly. This is rare on common local Linux filesystems, but plausible on some mounted or unusual filesystems and affects the core session-spawn path when the agent bridge is enabled.
 - **Fix:** Demoted the directory `fsync` to best-effort using `let _ = std::fs::File::open(parent).and_then(|dir| dir.sync_all());` so a failed directory sync no longer aborts the spawn after a successful rename.
+- **Commit:** same commit as this entry
+
+### 9. Reset cleared an in-flight workspace flush during macOS reopen
+
+- **Source:** github-claude | PR #404 round 2 | 2026-06-08
+- **Severity:** MEDIUM
+- **File:** `electron/workspace-teardown.ts`
+- **Finding:** `WorkspaceTeardown.reset()` cleared `inFlight` unconditionally. If a user closed the last window, reopened before the close flush completed, then closed again, the second close could start a concurrent flush instead of sharing the first in-flight teardown transaction.
+- **Fix:** `reset()` now only clears the flushed guard and leaves `inFlight` intact until the original promise settles. Added a regression test that resets during a blocked drain, verifies the second close shares the same promise, then confirms a later teardown is re-armed after settlement.
 - **Commit:** same commit as this entry

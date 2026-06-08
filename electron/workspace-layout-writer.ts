@@ -293,13 +293,16 @@ export class WorkspaceLayoutWriter
     }
 
     const preservedTabs = this.preservedTabsForPane?.(sessionId, paneId) ?? null
-    if (preservedTabs === null) {
-      return null
+    if (preservedTabs !== null) {
+      const cloned = cloneTabs(preservedTabs)
+      this.lastTabsByBrowserPane.set(key, cloned)
+
+      return cloneTabs(cloned)
     }
 
-    const cloned = cloneTabs(preservedTabs)
-    this.lastTabsByBrowserPane.set(key, cloned)
-
-    return cloneTabs(cloned)
+    // A newly-created browser pane can reach the renderer shape before main has
+    // created its WebContentsView. Persist an empty tab set; Rust repair seeds
+    // the default tab on restore if this is the last snapshot before teardown.
+    return []
   }
 }

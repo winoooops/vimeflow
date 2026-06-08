@@ -70,6 +70,5 @@ export class WorkspaceTeardown {
   // Re-arm for the next teardown (non-quit close, or a new window opens).
   reset(): void {
     this.flushed = false
-    this.inFlight = null
   }
 }
