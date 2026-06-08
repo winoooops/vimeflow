@@ -1394,6 +1394,7 @@ describe('useSessionManager', () => {
         ([key]) => key === 'vimeflow:browser-panes:v1'
       )
     ).toBe(false)
+    expect(window.localStorage.getItem('vimeflow:browser-panes:v1')).toBeNull()
   })
 
   // Browser-only session from scratch (spec §6.2): one runtime browser pane,
