@@ -34,8 +34,8 @@ import {
   AgentStatusRail,
   RAIL_WIDTH_PX,
 } from '../agent-status/components/AgentStatusRail'
-import { cacheHitRate } from '../agent-status/utils/cacheRate'
-import type { CurrentUsageState } from '../agent-status/types'
+import { cacheHitPercentage } from '../agent-status/utils/cacheRate'
+import { useCacheHistoryCollector } from '../agent-status/hooks/useCacheHistoryCollector'
 import { UnsavedChangesDialog } from '../editor/components/UnsavedChangesDialog'
 import { InfoBanner } from './components/InfoBanner'
 import { CommandPalette } from '../command-palette/CommandPalette'
@@ -88,14 +88,6 @@ import {
   DOCK_VERTICAL_ELASTIC_CONFIG,
   DOCK_HORIZONTAL_ELASTIC_CONFIG,
 } from './panelConfig'
-
-const cacheHitPercentage = (
-  usage: CurrentUsageState | null | undefined
-): number | null => {
-  const rate = cacheHitRate(usage)
-
-  return rate === null ? null : Math.round(rate * 100)
-}
 
 const formatStatusDuration = (durationMs: number): string | undefined => {
   if (!Number.isFinite(durationMs) || durationMs <= 0) {
@@ -173,6 +165,7 @@ export const WorkspaceView = (): ReactElement => {
     setPaneUserLabel,
     reorderSessions,
     updatePaneCwd,
+    appendPaneCacheReading,
     updatePaneAgentType,
     updateBrowserPaneUrl,
     setSessionActivityPanelCollapsed,
@@ -284,6 +277,18 @@ export const WorkspaceView = (): ReactElement => {
   const activePtyBackedPanePtyId = activePtyBackedPane?.ptyId
 
   const agentStatus = useAgentStatus(activePtyBackedPanePtyId ?? null)
+
+  useCacheHistoryCollector({
+    ptyId: activePtyBackedPanePtyId ?? null,
+    sessionId: activeSessionId,
+    paneId: activePtyBackedPaneId ?? null,
+    usage:
+      agentStatus.sessionId === activePtyBackedPanePtyId
+        ? (agentStatus.contextWindow?.currentUsage ?? null)
+        : null,
+    onReading: appendPaneCacheReading,
+  })
+
   const activityPanelCollapsed = activeSession?.activityPanelCollapsed ?? false
 
   const activityPanelAgent = useMemo(
@@ -1638,6 +1643,7 @@ export const WorkspaceView = (): ReactElement => {
         ) : (
           <AgentStatusPanel
             agentStatus={agentStatus}
+            cacheHistory={activePtyBackedPane?.cacheHistory ?? []}
             cwd={activeCwd}
             gitStatus={gitStatus}
             onOpenDiff={handleOpenDiff}

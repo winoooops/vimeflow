@@ -257,3 +257,12 @@ to avoid unintended re-runs (e.g., PTY respawning on every cwd change).
 - **Finding:** The `[service]` effect only cleared `lastPushedJsonRef`. If an IPC failure had armed `retryTimerRef`, rerendering with a new service queued the same snapshot but the drain gate saw `pendingJson === retryTargetJsonRef.current` and waited for the old 5s timer. During that window the restarted backend could have no grouping cache, so a crash/reload would fragment restored multi-pane sessions.
 - **Fix:** In the `[service]` effect, clear any existing retry timer via `clearTimeout`, reset `retryTimerRef` to null, and reset `retryTargetJsonRef` to null alongside `lastPushedJsonRef` so the current snapshot drains immediately to the new service.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 28. localStorage write inside a React functional state updater
+
+- **Source:** github-claude | PR #395 round 1 | 2026-06-08
+- **Severity:** MEDIUM
+- **File:** `src/features/sessions/hooks/useSessionManager.ts`
+- **Finding:** `appendPaneCacheReading` called `writeCacheHistory` (a `localStorage` writer) from inside the functional `setSessions` updater. React state updaters are expected to be pure; in StrictMode they can be invoked twice, and any non-idempotent side effect creates a durability/state-consistency hazard. Even though the current write was mostly idempotent, future additions of timestamps, counters, or interrupted render paths could persist history that React never committed.
+- **Fix:** Moved the `writeCacheHistory` call outside the updater. The callback now reads the target pane from `sessionsRef.current`, computes the next `cacheHistory` array with `pushCacheReading`, writes to `localStorage` once, then calls `setSessions` with a pure updater that only maps the in-memory state. The updater no longer touches `localStorage` and is safe under StrictMode double-invocation.
+- **Commit:** _(PR #395 round 1)_

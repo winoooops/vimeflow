@@ -33,6 +33,7 @@ interface AgentStatusPanelProps {
   agent: Agent
   status: SessionStatus
   onCollapse: () => void
+  cacheHistory: number[]
 }
 
 // Exported so WorkspaceView can target this width as the
@@ -51,6 +52,7 @@ export const AgentStatusPanel = ({
   agent,
   status: sessionStatus,
   onCollapse,
+  cacheHistory,
 }: AgentStatusPanelProps): ReactElement => {
   const status = agentStatus
   const events = useActivityEvents(status)
@@ -148,7 +150,10 @@ export const AgentStatusPanel = ({
           totalInputTokens={status.contextWindow?.totalInputTokens ?? 0}
           totalOutputTokens={status.contextWindow?.totalOutputTokens ?? 0}
         />
-        <TokenCache usage={status.contextWindow?.currentUsage ?? null} />
+        <TokenCache
+          usage={status.contextWindow?.currentUsage ?? null}
+          history={cacheHistory}
+        />
       </div>
 
       <div className="thin-scrollbar min-h-0 flex-1 overflow-y-auto overflow-x-clip">

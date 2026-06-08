@@ -307,3 +307,12 @@ handlers must not trap focus without implementing the promised behavior.
 - **Finding:** The popup's close path unconditionally called `(document.activeElement as HTMLElement | null)?.blur()` when `open` became `false`. In the common keyboard flow (user opens burner from a focused terminal, presses Escape), focus moved to `document.body`, so subsequent keystrokes were swallowed until the user manually refocused a pane. The prior cycle-2 fix (#27) removed focus from the hidden subtree, but a direct blur is the wrong tool for modal dialogs — it discards the return destination.
 - **Fix:** Added `priorFocusRef` to capture `document.activeElement` on the `false→true` open transition, then call `.focus()` on that saved element during the `true→false` close transition and clear the ref. This is the standard modal focus-restore pattern already used in `UnsavedChangesDialog` (#11).
 - **Commit:** _(see git log for the cycle-7 fix commit on PR #389)_
+
+### 33. Tooltip-wrapped stat cell reverts prior dl/dt/dd fix to bare spans — a11y regression
+
+- **Source:** github-claude | PR #395 round 1 | 2026-06-08
+- **Severity:** LOW
+- **File:** `src/features/agent-status/components/TokenCache.tsx`
+- **Finding:** A PR refactor that introduced `Tooltip` around each `StatCell` replaced the previous `<dl>` / `<dt>` / `<dd>` structure (see §12) with `<div>` / `<span>` nodes. The visual layout remained identical, but assistive technologies lost the explicit name/value relationship for the cached/wrote/fresh metrics. Screen readers announced the three cells as flattened text fragments rather than structured term/value pairs, re-introducing the WCAG 1.3.1 violation that §12 had already fixed.
+- **Fix:** Restored the outer metric grid as `<dl>` and changed each `StatCell` inner markup to `<dd>` (value) + `<dt>` (label) while keeping the `Tooltip` wrapper and all Tailwind classes unchanged. The `<div>` wrapper inside `<dl>` around each `<dd>`/`<dt>` pair remains valid HTML5 per the living standard (added in 2015) and preserves the existing grid layout. Zero visual change, full semantic restoration.
+- **Commit:** _(PR #395 round 1)_
