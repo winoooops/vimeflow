@@ -360,3 +360,12 @@ failed" must mean the editor shows the original file, not the requested one.
 - **Finding:** Both the eager structural branch and the drift debounce callback called `void pushWorkspaceShape(shape)` with no catch. If Electron main IPC rejected, the renderer received an unhandled promise rejection and the workspace store could remain stale without an application log signal, making layout restore bugs hard to diagnose.
 - **Fix:** Extracted `pushShapeWithLog` helper that `await`s `pushWorkspaceShape(shape)` inside `try/catch` and forwards rejections to `log.warn('pushWorkspaceShape failed', err)`. Replaced both fire-and-forget call sites with `void pushShapeWithLog(shape)` so failures are observable while preserving the renderer's no-retry architecture.
 - **Commit:** same commit as this entry
+
+### 37. Optional handler dependency registered as unconditional user-visible command creates silent no-op
+
+- **Source:** github-codex-connector | PR #397 round 1 | 2026-06-08
+- **Severity:** MEDIUM
+- **File:** `src/features/workspace/commands/buildWorkspaceCommands.ts`
+- **Finding:** `WorkspaceCommandDeps` declared `createBrowserSession?: () => void` as optional, but `buildWorkspaceCommands` unconditionally added a `:new-browser` command whose `execute` callback was `createBrowserSession?.()`. Any caller or test harness that omitted the optional dependency would expose a visible command that silently did nothing — no compile-time error, no runtime warning, and no UI feedback. The optional type was consistent with other optional deps (e.g. `activePaneAgentType?`, `nextPaneRenameRequestId?`) that control internal guard behavior, but inconsistent when the optional dep drives a user-visible palette entry.
+- **Fix:** Conditionally include `:new-browser` in the returned command array only when `createBrowserSession` is provided. Added a regression test asserting the command is absent when the handler is omitted. Keeps the dependency optional (backward-compatible for callers that don't need browser sessions) while eliminating the silent no-op surface.
+- **Commit:** same commit as this entry
