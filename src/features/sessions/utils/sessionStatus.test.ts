@@ -54,10 +54,27 @@ describe('deriveSessionStatus', () => {
     expect(deriveSessionStatus([])).toBe('errored')
   })
 
-  test('shell liveness ignores running browser panes', () => {
+  test('a live browser keeps a mixed session running despite placeholder shells', () => {
+    // The shell came back as a completed placeholder (graceful-quit restore)
+    // but the browser pane is live — the session is 'running', not 'completed'
+    // (spec §5 "Restored session status").
     expect(
       deriveShellSessionStatus([pane('completed'), browserPane('running')])
+    ).toBe('running')
+  })
+
+  test('shell-only placeholders with no browser -> completed', () => {
+    // No browser pane and every shell is a completed placeholder: the session
+    // is 'completed' so its panes show the Restart affordance.
+    expect(
+      deriveShellSessionStatus([pane('completed'), pane('completed')])
     ).toBe('completed')
+  })
+
+  test('a running shell keeps the session running alongside a browser', () => {
+    expect(
+      deriveShellSessionStatus([pane('running'), browserPane('running')])
+    ).toBe('running')
   })
 
   test('browser-only liveness derives from browser panes (running, not errored)', () => {
