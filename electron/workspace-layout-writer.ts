@@ -179,14 +179,28 @@ export class WorkspaceLayoutWriter
   // to drain — used by the window-close flush (spec §3.2) and tests.
   async flush(): Promise<void> {
     this.cancelVolatile()
-    const generation = this.enqueueWrite()
-    await this.chain
-    if (
-      generation !== null &&
-      this.failedWrite !== null &&
-      this.failedWrite.generation === generation
-    ) {
-      throw this.failedWrite.error
+    this.enqueueWrite()
+
+    for (;;) {
+      const pending = this.chain
+      await pending
+
+      if (this.committedGeneration >= this.latestGeneration) {
+        return
+      }
+
+      if (
+        this.failedWrite !== null &&
+        this.failedWrite.generation === this.latestGeneration
+      ) {
+        throw this.failedWrite.error
+      }
+
+      if (pending === this.chain) {
+        throw new Error(
+          'workspace layout flush did not commit latest generation'
+        )
+      }
     }
   }
 

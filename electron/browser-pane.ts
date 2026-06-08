@@ -792,8 +792,32 @@ const literalFaviconTarget = (url: URL): FaviconFetchTarget | null => {
   }
 }
 
+const awaitUnlessAborted = async <T>(
+  promise: Promise<T>,
+  signal: AbortSignal
+): Promise<T | null> => {
+  if (signal.aborted) {
+    return null
+  }
+
+  let removeAbortListener = (): void => undefined
+
+  const aborted = new Promise<null>((resolve) => {
+    const abort = (): void => resolve(null)
+    signal.addEventListener('abort', abort, { once: true })
+    removeAbortListener = (): void => signal.removeEventListener('abort', abort)
+  })
+
+  try {
+    return await Promise.race([promise, aborted])
+  } finally {
+    removeAbortListener()
+  }
+}
+
 const resolveHostForFaviconFetch = async (
-  url: URL
+  url: URL,
+  signal: AbortSignal
 ): Promise<FaviconFetchTarget | null> => {
   const literal = literalFaviconTarget(url)
   if (literal !== null) {
@@ -802,7 +826,14 @@ const resolveHostForFaviconFetch = async (
 
   let addresses: { address: string; family: number }[]
   try {
-    addresses = await lookup(url.hostname, { all: true, verbatim: true })
+    const resolved = await awaitUnlessAborted(
+      lookup(url.hostname, { all: true, verbatim: true }),
+      signal
+    )
+    if (resolved === null) {
+      return null
+    }
+    addresses = resolved
   } catch {
     return null
   }
@@ -835,9 +866,10 @@ const resolveHostForFaviconFetch = async (
 // PNA: a private favicon target is allowed only when the page is itself private.
 const resolveFaviconFetchTarget = async (
   pageUrl: string,
-  faviconUrl: URL
+  faviconUrl: URL,
+  signal: AbortSignal
 ): Promise<FaviconFetchTarget | null> => {
-  const target = await resolveHostForFaviconFetch(faviconUrl)
+  const target = await resolveHostForFaviconFetch(faviconUrl, signal)
   if (target === null) {
     return null
   }
@@ -1001,7 +1033,7 @@ const resolveFaviconHttpDataUrl = async (
     return null
   }
 
-  const target = await resolveFaviconFetchTarget(pageUrl, faviconUrl)
+  const target = await resolveFaviconFetchTarget(pageUrl, faviconUrl, signal)
   if (target === null) {
     return null
   }

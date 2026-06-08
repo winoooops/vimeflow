@@ -42,6 +42,19 @@ const makeSidecar = (): { invoke: ReturnType<typeof vi.fn> } => ({
   invoke: vi.fn().mockResolvedValue(null),
 })
 
+const makeDeferred = <T>(): {
+  promise: Promise<T>
+  resolve: (value: T) => void
+} => {
+  let resolveFn: (value: T) => void = () => undefined
+
+  const promise = new Promise<T>((resolve) => {
+    resolveFn = resolve
+  })
+
+  return { promise, resolve: resolveFn }
+}
+
 describe('WorkspaceLayoutWriter', () => {
   afterEach(() => {
     vi.useRealTimers()
@@ -252,6 +265,35 @@ describe('WorkspaceLayoutWriter', () => {
 
     await expect(writer.flush()).rejects.toThrow(error)
     await expect(writer.flush()).resolves.toBeUndefined()
+    expect(sidecar.invoke).toHaveBeenCalledTimes(2)
+  })
+
+  test('flush waits for a superseding write and surfaces its failure', async () => {
+    const firstSave = makeDeferred<null>()
+    const error = new Error('second write failed')
+
+    const sidecar = {
+      invoke: vi
+        .fn()
+        .mockReturnValueOnce(firstSave.promise)
+        .mockRejectedValue(error),
+    }
+
+    const writer = new WorkspaceLayoutWriter({
+      sidecar,
+      captureTabsForPane: (): PersistedTab[] => [],
+    })
+
+    writer.onShapePushed(shape())
+    await Promise.resolve()
+    expect(sidecar.invoke).toHaveBeenCalledTimes(1)
+
+    const flushPromise = writer.flush()
+    writer.markStructural()
+
+    firstSave.resolve(null)
+
+    await expect(flushPromise).rejects.toThrow(error)
     expect(sidecar.invoke).toHaveBeenCalledTimes(2)
   })
 })
