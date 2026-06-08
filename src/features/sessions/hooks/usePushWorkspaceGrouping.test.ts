@@ -8,7 +8,7 @@ import {
 import { emptyActivity } from '../constants'
 import type { Pane, Session } from '../types'
 
-const pushWorkspaceShape = vi.hoisted(() => vi.fn())
+const pushWorkspaceShape = vi.hoisted(() => vi.fn(() => Promise.resolve()))
 vi.mock('../workspaceLayoutBridge', () => ({ pushWorkspaceShape }))
 
 const shellPane = (over: Partial<Pane> = {}): Pane => ({

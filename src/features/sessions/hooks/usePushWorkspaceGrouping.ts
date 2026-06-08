@@ -30,6 +30,14 @@ const log = createLogger('grouping')
 
 const DRIFT_DEBOUNCE_MS = 500
 
+const pushShapeWithLog = async (shape: WorkspaceShapeDto): Promise<void> => {
+  try {
+    await pushWorkspaceShape(shape)
+  } catch (err) {
+    log.warn('pushWorkspaceShape failed', err)
+  }
+}
+
 /**
  * Pure conversion of the in-memory `Session[]` shape into the shape-only DTO
  * main consumes. Browser tab/history is omitted (main owns it); shell panes
@@ -153,14 +161,15 @@ export const usePushWorkspaceGrouping = ({
         `pushing workspace shape: ${shape.sessions.length} session(s), ` +
           `${shape.sessions.reduce((n, s) => n + s.panes.length, 0)} pane(s)`
       )
-      void pushWorkspaceShape(shape)
+
+      void pushShapeWithLog(shape)
 
       return
     }
 
     debounceRef.current = setTimeout(() => {
       debounceRef.current = null
-      void pushWorkspaceShape(shape)
+      void pushShapeWithLog(shape)
     }, DRIFT_DEBOUNCE_MS)
   }, [sessions, activeSessionId, loading])
 }

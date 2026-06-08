@@ -2,8 +2,8 @@
 id: error-surfacing
 category: error-handling
 created: 2026-04-10
-last_updated: 2026-06-07
-ref_count: 9
+last_updated: 2026-06-08
+ref_count: 10
 ---
 
 # Error Surfacing
@@ -351,3 +351,12 @@ failed" must mean the editor shows the original file, not the requested one.
 - **Finding:** `WorkspaceTeardown.flushOnce()` caught `drainFinalShape()` failures but directly awaited `this.deps.flush()` with no catch. Both the `close` and `before-quit` handlers launched the flush via `void (async () => { try { ... } finally { ... } })()` — the `try/finally` ensured progress flags and disposal ran, but the absence of `catch` meant a `flush()` rejection escaped as an unhandled promise rejection in the Electron main process. In production this can surface a crash dialog and the workspace snapshot is lost without diagnostics.
 - **Fix:** (1) Make `flushOnce()` non-throwing by wrapping `await this.deps.flush()` in `try/catch` and forwarding errors to an optional `onFlushError` observer on `WorkspaceTeardownDeps`. (2) Wire the observer in `main.ts` to `console.warn` so failures are visible in logs. (3) Add a test asserting the rejection is caught and forwarded without throwing.
 - **Commit:** _(PR #387 upsource cycle 1 fix commit)_
+
+### 36. Fire-and-forget workspace shape push lacks rejection logging
+
+- **Source:** github-codex-connector | PR #393 round 2 | 2026-06-08
+- **Severity:** MEDIUM
+- **File:** `src/features/sessions/hooks/usePushWorkspaceGrouping.ts`
+- **Finding:** Both the eager structural branch and the drift debounce callback called `void pushWorkspaceShape(shape)` with no catch. If Electron main IPC rejected, the renderer received an unhandled promise rejection and the workspace store could remain stale without an application log signal, making layout restore bugs hard to diagnose.
+- **Fix:** Extracted `pushShapeWithLog` helper that `await`s `pushWorkspaceShape(shape)` inside `try/catch` and forwards rejections to `log.warn('pushWorkspaceShape failed', err)`. Replaced both fire-and-forget call sites with `void pushShapeWithLog(shape)` so failures are observable while preserving the renderer's no-retry architecture.
+- **Commit:** same commit as this entry
