@@ -103,7 +103,7 @@ const StatCell = ({
   testId: string
 }): ReactElement => (
   <Tooltip content={tooltip} placement="bottom">
-    <div data-testid={testId} className="flex flex-col gap-0.5">
+    <div data-testid={testId} className="flex cursor-pointer flex-col gap-0.5">
       <span
         className="text-[11.5px] font-semibold tabular-nums text-on-surface"
         style={{ fontFamily: JETBRAINS }}
@@ -138,7 +138,10 @@ export const TokenCache = ({
   }
 
   return (
-    <div data-testid="token-cache" className="flex flex-col gap-2.5">
+    <div
+      data-testid="token-cache"
+      className="flex cursor-default flex-col gap-2.5"
+    >
       <div
         className="px-0.5 text-[10px] font-bold uppercase tracking-[0.18em] text-on-surface-muted"
         style={{ fontFamily: JETBRAINS }}
