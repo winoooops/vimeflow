@@ -427,8 +427,15 @@ export const useSessionManager = (
   const { loading } = useSessionRestore({
     service,
     buffer,
-    onRestore: (restored): void => {
-      const restoredWithBrowserPanes = restoreStoredBrowserPanes(restored)
+    onRestore: (restored, { storePresent }): void => {
+      // The durable store is authoritative for browser panes when present, so
+      // skip the legacy localStorage merge — otherwise a pane closed before a
+      // crash (never cleared from localStorage) would be resurrected. The
+      // localStorage cache is only consulted when no store loaded (retired in
+      // a follow-up).
+      const restoredWithBrowserPanes = storePresent
+        ? restored
+        : restoreStoredBrowserPanes(restored)
 
       for (const session of restoredWithBrowserPanes) {
         for (const pane of session.panes) {
@@ -465,6 +472,18 @@ export const useSessionManager = (
         setActiveSessionId(id)
       }
     },
+    // The store's persisted-active session is selected through the
+    // browser-capable setActiveSessionId so a browser-only session is
+    // selectable on restore (spec §5).
+    onActivePersisted: (id): void => {
+      if (activeSessionIdRef.current === null) {
+        setActiveSessionId(id)
+      }
+    },
+    // Single-project defaults until real multi-project state exists; the load
+    // command uses them as repair fallbacks for records missing the fields.
+    projectId: 'proj-1',
+    workingDirectory: '~',
   })
 
   // Round 3 (codex P2 follow-up to Finding 3): mark sessions completed when
@@ -766,8 +785,14 @@ export const useSessionManager = (
   // terminal on first paint. Treat that case the same as empty cache
   // and seed a fresh tab; the Exited tabs remain available for the user
   // to Restart in their original cwd if they want to.
+  // A live session = a running shell PTY OR a browser pane. A browser-only
+  // session restored from the durable store has no shell but is a usable
+  // workspace, so it must not trigger the empty-workspace seed.
   const hasLiveSession = sessions.some((s) =>
-    s.panes.some((pane) => isShellPane(pane) && pane.status === 'running')
+    s.panes.some(
+      (pane) =>
+        (isShellPane(pane) && pane.status === 'running') || isBrowserPane(pane)
+    )
   )
   useAutoCreateOnEmpty({
     enabled: autoCreateOnEmpty,

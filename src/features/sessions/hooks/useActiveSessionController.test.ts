@@ -248,6 +248,33 @@ describe('useActiveSessionController', () => {
     expect(setActive).toHaveBeenCalledWith('live')
   })
 
+  // Restore persists which pane was active; activating the session must target
+  // THAT pane's PTY, not the first live shell, or Rust's active PTY diverges
+  // from the pane the UI restored as active.
+  test('activates the active pane PTY, not the first live shell', () => {
+    const setActive = vi.fn().mockResolvedValue(undefined)
+    const service = buildService(setActive)
+
+    const multi = {
+      id: 'sess-multi',
+      panes: [
+        { id: 'p0', ptyId: 'pty-first', status: 'running', active: false },
+        { id: 'p1', ptyId: 'pty-active', status: 'running', active: true },
+      ],
+    } as unknown as Session
+    const sessionsRef = { current: [multi] }
+
+    const { result } = renderHook(() =>
+      useActiveSessionController({ service, sessionsRef })
+    )
+
+    act(() => {
+      result.current.setActiveSessionId('sess-multi')
+    })
+
+    expect(setActive).toHaveBeenCalledWith('pty-active')
+  })
+
   test('a browser-only selection supersedes a prior in-flight shell rollback', async () => {
     let rejectActive: (err: Error) => void = () => undefined
 
