@@ -45,10 +45,10 @@ When appending findings to a pattern file, label the source so future readers ca
 | -------------------------------------------------------------------- | ------------------ | -------- | ---- | ------------ |
 | [Filesystem Scope](patterns/filesystem-scope.md)                     | security           | 21       | 3    | 2026-05-20   |
 | [React Lifecycle](patterns/react-lifecycle.md)                       | react-patterns     | 28       | 9    | 2026-06-08   |
-| [Resource Cleanup](patterns/resource-cleanup.md)                     | react-patterns     | 9        | 8    | 2026-06-08   |
+| [Resource Cleanup](patterns/resource-cleanup.md)                     | react-patterns     | 10       | 9    | 2026-06-08   |
 | [Cross-Platform Paths](patterns/cross-platform-paths.md)             | cross-platform     | 6        | 3    | 2026-05-30   |
 | [Debug Artifacts](patterns/debug-artifacts.md)                       | code-quality       | 6        | 0    | 2026-06-07   |
-| [Derived State Consistency](patterns/derived-state-consistency.md)   | code-quality       | 3        | 1    | 2026-06-08   |
+| [Derived State Consistency](patterns/derived-state-consistency.md)   | code-quality       | 4        | 2    | 2026-06-08   |
 | [Generated Artifacts](patterns/generated-artifacts.md)               | code-quality       | 3        | 2    | 2026-05-25   |
 | [Generated Shell Scripts](patterns/generated-shell-scripts.md)       | backend            | 7        | 1    | 2026-06-03   |
 | [Testing Gaps](patterns/testing-gaps.md)                             | testing            | 61       | 27   | 2026-06-07   |

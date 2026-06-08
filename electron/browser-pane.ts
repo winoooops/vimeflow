@@ -860,7 +860,7 @@ const resolveHostForFaviconFetch = async (
     return null
   }
 
-  return targets.find((target) => target.private) ?? targets[0]
+  return targets.find((target) => !target.private) ?? targets[0]
 }
 
 // PNA: a private favicon target is allowed only when the page is itself private.

@@ -354,6 +354,8 @@ const setupApp = async (): Promise<void> => {
   })
 
   sidecar = spawnedSidecar
+  browserPaneController?.dispose()
+  browserPaneController = null
   browserPaneController = setupBrowserPaneIpc()
 
   const layoutWriter = new WorkspaceLayoutWriter({
@@ -364,6 +366,8 @@ const setupApp = async (): Promise<void> => {
       workspaceLayoutController?.tabsForPane(sessionId, paneId) ?? null,
   })
   browserPaneController.setWriteSignals(layoutWriter)
+  workspaceLayoutController?.dispose()
+  workspaceLayoutController = null
   workspaceLayoutController = setupWorkspaceLayoutController({
     sidecar: spawnedSidecar,
     ipcMain,

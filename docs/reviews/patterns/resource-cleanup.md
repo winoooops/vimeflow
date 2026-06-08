@@ -3,7 +3,7 @@ id: resource-cleanup
 category: react-patterns
 created: 2026-04-09
 last_updated: 2026-06-08
-ref_count: 8
+ref_count: 9
 ---
 
 # Resource Cleanup
@@ -98,4 +98,13 @@ causes listener accumulation and duplicate event handling.
 - **File:** `electron/workspace-teardown.ts`
 - **Finding:** `WorkspaceTeardown.reset()` cleared `inFlight` unconditionally. If a user closed the last window, reopened before the close flush completed, then closed again, the second close could start a concurrent flush instead of sharing the first in-flight teardown transaction.
 - **Fix:** `reset()` now only clears the flushed guard and leaves `inFlight` intact until the original promise settles. Added a regression test that resets during a blocked drain, verifies the second close shares the same promise, then confirms a later teardown is re-armed after settlement.
+- **Commit:** same commit as this entry
+
+### 10. Process-global IPC handler registration should be idempotent at setup boundaries
+
+- **Source:** github-claude | PR #404 round 3 | 2026-06-08
+- **Severity:** HIGH
+- **File:** `electron/main.ts`
+- **Finding:** Electron `ipcMain.handle()` channels are process-global and throw when registered twice. Even when a setup path is intended to run once, controller installation should dispose any previous handler owner before installing a replacement so lifecycle drift or future setup re-entry cannot wedge the main process with duplicate handlers.
+- **Fix:** Dispose and clear the previous browser-pane and workspace-layout IPC controller owners immediately before installing replacements.
 - **Commit:** same commit as this entry

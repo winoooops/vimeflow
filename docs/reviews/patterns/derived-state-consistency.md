@@ -3,7 +3,7 @@ id: derived-state-consistency
 category: code-quality
 created: 2026-06-07
 last_updated: 2026-06-08
-ref_count: 1
+ref_count: 2
 ---
 
 # Derived State Consistency
@@ -76,3 +76,12 @@ base data is technically "correct."
   `tabs` array already emitted by `this.tabSnapshots(record)`.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on
   this line)
+
+### 4. Split-horizon favicon DNS dropped the public resolved target
+
+- **Source:** github-claude | PR #404 round 3 | 2026-06-08
+- **Severity:** LOW
+- **File:** `electron/browser-pane.ts`
+- **Finding:** `resolveHostForFaviconFetch` derived several candidate targets from DNS answers but selected the first private target before the PNA gate ran. For a split-horizon hostname with both private and public answers, a public page rejected the private target and never tried the public address, so favicons silently failed even though a safe public target existed.
+- **Fix:** Prefer the first public resolved target, falling back to a private target only when all answers are private. Added a regression test that verifies the pinned lookup uses the public address when DNS returns private then public addresses.
+- **Commit:** same commit as this entry

@@ -1084,6 +1084,32 @@ describe('BrowserPaneController', () => {
     expect(lastFaviconOf(h)).toBe(null)
   })
 
+  test('public page with split-horizon favicon DNS uses the public address', async () => {
+    const h = await faviconHarness('https://example.com/')
+    mockDnsAddresses([
+      { address: '10.0.0.5', family: 4 },
+      { address: '203.0.113.10', family: 4 },
+    ])
+    queueNodeImage(new Uint8Array([1, 2]))
+    h.clearSends()
+
+    h.emitFavicon(['https://assets.example/favicon.ico'])
+    await flushMicrotasks()
+
+    expect(nodeRequestMock.httpsRequest).toHaveBeenCalledTimes(1)
+
+    const pinnedLookup = nodeRequestMock.requests[0].options.lookup as (
+      hostname: string,
+      options: unknown,
+      callback: (error: Error | null, address: string, family: number) => void
+    ) => void
+    const callback = vi.fn()
+    pinnedLookup('assets.example', {}, callback)
+
+    expect(callback).toHaveBeenCalledWith(null, '203.0.113.10', 4)
+    expect(lastFaviconOf(h)).toMatch(/^data:image\/png;base64,/)
+  })
+
   test('localhost page keeps its own localhost favicon (private allowed)', async () => {
     const h = await faviconHarness('http://localhost:3000/')
     mockDnsAddresses([{ address: '127.0.0.1', family: 4 }])
