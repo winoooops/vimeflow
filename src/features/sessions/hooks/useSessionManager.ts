@@ -781,7 +781,7 @@ export const useSessionManager = (
   // cache whenever the React `sessions[]` structure changes, so a later
   // restore can reconstruct the multi-pane layout instead of fragmenting
   // each PTY into its own single-pane session. Debounced inside the hook.
-  usePushWorkspaceGrouping({ service, sessions, loading })
+  usePushWorkspaceGrouping({ sessions, activeSessionId, loading })
 
   const browserPaneStoreJson = useMemo(
     () => JSON.stringify(storedBrowserPanesForSessions(sessions)),

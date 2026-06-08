@@ -10,6 +10,7 @@ import {
   registerPtySession,
 } from '../../terminal/ptySessionMap'
 import { readActivityPanelCollapsed } from '../utils/activityPanelCollapsedStore'
+import { pushWorkspaceShape } from '../workspaceLayoutBridge'
 
 const mockListen = vi.hoisted(() =>
   vi.fn(
@@ -29,6 +30,8 @@ const mockListen = vi.hoisted(() =>
 vi.mock('../../../lib/backend', () => ({
   listen: mockListen,
 }))
+
+vi.mock('../workspaceLayoutBridge', () => ({ pushWorkspaceShape: vi.fn() }))
 
 const createMockService = (): ITerminalService => ({
   spawn: vi
@@ -1341,10 +1344,9 @@ describe('useSessionManager', () => {
     // with the grouping write). Assert the push reached the backend with
     // the new session in the snapshot.
     await waitFor(() => {
-      expect(service.setWorkspaceSessions).toHaveBeenCalled()
+      expect(pushWorkspaceShape).toHaveBeenCalled()
 
-      const calls = (service.setWorkspaceSessions as ReturnType<typeof vi.fn>)
-        .mock.calls
+      const calls = vi.mocked(pushWorkspaceShape).mock.calls
 
       const lastPayload = calls[calls.length - 1]?.[0] as
         | { sessions: { panes: { ptyId: string }[] }[] }
@@ -1460,8 +1462,7 @@ describe('useSessionManager', () => {
     // Persistence is via `set_workspace_sessions` now (see PR #290):
     // assert the latest snapshot's flattened pty order matches.
     await waitFor(() => {
-      const calls = (service.setWorkspaceSessions as ReturnType<typeof vi.fn>)
-        .mock.calls
+      const calls = vi.mocked(pushWorkspaceShape).mock.calls
 
       const lastPayload = calls[calls.length - 1]?.[0] as
         | { sessions: { panes: { ptyId: string }[] }[] }
@@ -2509,7 +2510,7 @@ describe('useSessionManager', () => {
     expect(result.current.sessions.map((s) => s.id)).toEqual(['a', 'b', 'c'])
 
     // Clear any IPC calls from listSessions / restore.
-    ;(service.setWorkspaceSessions as ReturnType<typeof vi.fn>).mockClear()
+    vi.mocked(pushWorkspaceShape).mockClear()
 
     act(() => result.current.restartSession('b'))
 
@@ -2524,8 +2525,7 @@ describe('useSessionManager', () => {
     // would render the tabs in the wrong order. The latest grouping
     // snapshot push carries it.
     await waitFor(() => {
-      const calls = (service.setWorkspaceSessions as ReturnType<typeof vi.fn>)
-        .mock.calls
+      const calls = vi.mocked(pushWorkspaceShape).mock.calls
 
       const lastPayload = calls[calls.length - 1]?.[0] as
         | { sessions: { panes: { ptyId: string }[] }[] }
@@ -2816,8 +2816,7 @@ describe('useSessionManager', () => {
     act(() => result.current.reorderSessions(reversed))
 
     await waitFor(() => {
-      const calls = (service.setWorkspaceSessions as ReturnType<typeof vi.fn>)
-        .mock.calls
+      const calls = vi.mocked(pushWorkspaceShape).mock.calls
 
       const lastPayload = calls[calls.length - 1]?.[0] as
         | { sessions: { panes: { ptyId: string }[] }[] }
@@ -3524,8 +3523,7 @@ describe('useSessionManager', () => {
     // tab-2. This is the F3 invariant: the persisted order is derived from
     // the latest setSessions state, not from any closure's stale view.
     await waitFor(() => {
-      const calls = (service.setWorkspaceSessions as ReturnType<typeof vi.fn>)
-        .mock.calls
+      const calls = vi.mocked(pushWorkspaceShape).mock.calls
 
       const lastPayload = calls[calls.length - 1]?.[0] as
         | { sessions: { panes: { ptyId: string }[] }[] }
@@ -3652,9 +3650,7 @@ describe('useSessionManager', () => {
       expect(sharedService.setActiveSession).toHaveBeenCalledWith('spawned')
     )
 
-    await waitFor(() =>
-      expect(sharedService.setWorkspaceSessions).toHaveBeenCalled()
-    )
+    await waitFor(() => expect(pushWorkspaceShape).toHaveBeenCalled())
   })
 
   // Re-renders MUST NOT swap the backend. Without the round-4 fix, the
