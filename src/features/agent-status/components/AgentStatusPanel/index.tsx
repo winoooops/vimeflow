@@ -91,11 +91,11 @@ export const AgentStatusPanel = ({
           totalInputTokens={status.contextWindow?.totalInputTokens ?? 0}
           totalOutputTokens={status.contextWindow?.totalOutputTokens ?? 0}
         />
+        <TokenCache
+          usage={status.contextWindow?.currentUsage ?? null}
+          history={cacheHistory}
+        />
       </div>
-      <TokenCache
-        usage={status.contextWindow?.currentUsage ?? null}
-        history={cacheHistory}
-      />
 
       <div className="thin-scrollbar min-h-0 flex-1 overflow-y-auto overflow-x-clip">
         <ToolCallSummary

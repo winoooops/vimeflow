@@ -1,5 +1,6 @@
 import { describe, test, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { TokenCache } from './TokenCache'
 import type { CurrentUsageState } from '../types'
 
@@ -81,11 +82,17 @@ describe('TokenCache — populated', () => {
     )
   })
 
-  test('renders the three hints', () => {
+  test('reveals a metric explanation on hover, hidden by default', async () => {
+    const user = userEvent.setup()
     render(<TokenCache usage={makeUsage(7500, 1800, 700)} history={[75]} />)
-    expect(screen.getByText(/free reuse/i)).toBeInTheDocument()
-    expect(screen.getByText(/uploaded/i)).toBeInTheDocument()
-    expect(screen.getByText(/new tokens/i)).toBeInTheDocument()
+
+    expect(screen.queryByText(/reused from the prompt cache/i)).toBeNull()
+
+    await user.hover(screen.getByTestId('token-cache-stat-cached'))
+
+    expect(
+      await screen.findByText(/reused from the prompt cache/i)
+    ).toBeInTheDocument()
   })
 })
 

@@ -6,6 +6,7 @@ import {
   type CacheTone,
 } from '../utils/cacheRate'
 import { Sparkline } from './Sparkline'
+import { Tooltip } from '../../../components/Tooltip'
 
 export interface TokenCacheProps {
   usage: CurrentUsageState | null
@@ -93,30 +94,30 @@ const StackBar = ({
 const StatCell = ({
   label,
   value,
-  hint,
+  tooltip,
   testId,
 }: {
   label: string
   value: string
-  hint: string
+  tooltip: string
   testId: string
 }): ReactElement => (
-  <div className="flex flex-col gap-0.5">
-    <span
-      data-testid={testId}
-      className="text-[11.5px] font-semibold tabular-nums text-on-surface"
-      style={{ fontFamily: JETBRAINS }}
-    >
-      {value}
-    </span>
-    <span
-      className="text-[9px] uppercase tracking-[0.06em] text-on-surface-muted"
-      style={{ fontFamily: JETBRAINS }}
-    >
-      {label}
-    </span>
-    <span className="font-sans text-[10px] text-[#6c7086]">{hint}</span>
-  </div>
+  <Tooltip content={tooltip} placement="bottom">
+    <div data-testid={testId} className="flex flex-col gap-0.5">
+      <span
+        className="text-[11.5px] font-semibold tabular-nums text-on-surface"
+        style={{ fontFamily: JETBRAINS }}
+      >
+        {value}
+      </span>
+      <span
+        className="text-[9px] uppercase tracking-[0.06em] text-on-surface-muted"
+        style={{ fontFamily: JETBRAINS }}
+      >
+        {label}
+      </span>
+    </div>
+  </Tooltip>
 )
 
 export const TokenCache = ({
@@ -137,15 +138,9 @@ export const TokenCache = ({
   }
 
   return (
-    <div
-      data-testid="token-cache"
-      style={{
-        padding: '14px 16px',
-        borderBottom: '1px solid rgba(74,68,79,0.18)',
-      }}
-    >
+    <div data-testid="token-cache" className="flex flex-col gap-2.5">
       <div
-        className="mb-2.5 px-0.5 text-[10px] font-bold uppercase tracking-[0.18em] text-on-surface-muted"
+        className="px-0.5 text-[10px] font-bold uppercase tracking-[0.18em] text-on-surface-muted"
         style={{ fontFamily: JETBRAINS }}
       >
         Token cache
@@ -193,19 +188,19 @@ export const TokenCache = ({
             <StatCell
               label="cached"
               value={fmt(buckets.cached)}
-              hint="free reuse"
+              tooltip="Tokens reused from the prompt cache — free, no new cost"
               testId="token-cache-stat-cached"
             />
             <StatCell
               label="wrote"
               value={fmt(buckets.wrote)}
-              hint="uploaded"
+              tooltip="Tokens written to the prompt cache this turn"
               testId="token-cache-stat-wrote"
             />
             <StatCell
               label="fresh"
               value={fmt(buckets.fresh)}
-              hint="new tokens"
+              tooltip="Brand-new tokens sent this turn — full price"
               testId="token-cache-stat-fresh"
             />
           </div>
