@@ -20,7 +20,7 @@ const buildSession = (overrides: Partial<Session> = {}): Session => ({
       ptyId: 'sess-1',
       cwd: '~',
       agentType: 'claude-code',
-      status: 'running',
+      status: overrides.status ?? 'running',
       active: true,
     },
   ],

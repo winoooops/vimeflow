@@ -381,15 +381,18 @@ export const WorkspaceView = (): ReactElement => {
   // (status completed/errored). The PTY-exit reset effect below owns that
   // path; without this guard, a delayed status update could re-stamp stale
   // agent chrome onto a completed session.
-  const activeSessionStatus = activeSession?.status
+  // Pane-level, not the errored-dominant aggregate: a crashed sibling pane
+  // must not short-circuit the active pane's agent/cwd bridges.
+  const isActivePaneLive =
+    activePtyBackedPane !== undefined &&
+    isLiveStatus(activePtyBackedPane.status)
 
   const isStatusBarAgentActive =
     activePtyBackedPanePtyId !== undefined &&
     agentStatus.sessionId === activePtyBackedPanePtyId &&
     agentStatus.isActive &&
     !agentStatus.agentExited &&
-    !!activeSessionStatus &&
-    isLiveStatus(activeSessionStatus)
+    isActivePaneLive
 
   useEffect(() => {
     if (!activeSessionId) {
@@ -401,7 +404,7 @@ export const WorkspaceView = (): ReactElement => {
     if (agentStatus.sessionId !== activePtyBackedPanePtyId) {
       return
     }
-    if (!activeSessionStatus || !isLiveStatus(activeSessionStatus)) {
+    if (!isActivePaneLive) {
       return
     }
 
@@ -426,7 +429,7 @@ export const WorkspaceView = (): ReactElement => {
     activeSessionId,
     activePtyBackedPaneId,
     activePtyBackedPanePtyId,
-    activeSessionStatus,
+    isActivePaneLive,
     agentStatus.agentExited,
     agentStatus.isActive,
     agentStatus.agentType,
@@ -470,7 +473,7 @@ export const WorkspaceView = (): ReactElement => {
     if (agentStatus.sessionId !== activePtyBackedPanePtyId) {
       return
     }
-    if (!activeSessionStatus || !isLiveStatus(activeSessionStatus)) {
+    if (!isActivePaneLive) {
       return
     }
     if (!agentIsActive || agentHasExited) {
@@ -486,7 +489,7 @@ export const WorkspaceView = (): ReactElement => {
     activePtyBackedPaneId,
     activePtyBackedPanePtyId,
     activePtyBackedPaneCwd,
-    activeSessionStatus,
+    isActivePaneLive,
     agentCwd,
     agentHasExited,
     agentIsActive,

@@ -23,6 +23,11 @@ export const isTerminalStatus = (s: SessionStatus): boolean => TERMINAL[s]
 
 export const isLiveStatus = (s: SessionStatus): boolean => !TERMINAL[s]
 
+// Pane-level liveness for visibility/guards: the aggregate status is
+// errored-dominant (display), so check panes, not the rolled-up status.
+export const hasLivePane = (panes: Pane[]): boolean =>
+  panes.some((pane) => isLiveStatus(pane.status))
+
 export const deriveSessionStatus = (panes: Pane[]): SessionStatus => {
   // empty panes is an invariant violation; flag it errored, not vacuously completed
   if (panes.length === 0) {

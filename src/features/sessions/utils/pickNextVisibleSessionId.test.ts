@@ -1,5 +1,8 @@
 import { describe, test, expect } from 'vitest'
-import { pickNextVisibleSessionId } from './pickNextVisibleSessionId'
+import {
+  getVisibleSessions,
+  pickNextVisibleSessionId,
+} from './pickNextVisibleSessionId'
 import type { Session, SessionStatus } from '../types'
 
 const buildSession = (id: string, status: SessionStatus): Session => ({
@@ -35,6 +38,38 @@ const buildSession = (id: string, status: SessionStatus): Session => ({
       tokens: { input: 0, output: 0, total: 0 },
     },
   },
+})
+
+describe('getVisibleSessions', () => {
+  test('a split session with one errored pane and one live pane stays visible', () => {
+    // Aggregate status is errored (errored-dominant display), but the session
+    // still has a live pane — visibility is pane-level, so it must not drop.
+    const mixed: Session = {
+      ...buildSession('mixed', 'errored'),
+      panes: [
+        {
+          id: 'p0',
+          ptyId: 'mixed',
+          cwd: '~',
+          agentType: 'claude-code',
+          status: 'errored',
+          active: false,
+        },
+        {
+          id: 'p1',
+          ptyId: 'mixed',
+          cwd: '~',
+          agentType: 'claude-code',
+          status: 'running',
+          active: true,
+        },
+      ] as Session['panes'],
+    }
+
+    expect(getVisibleSessions([mixed], null).map((s) => s.id)).toEqual([
+      'mixed',
+    ])
+  })
 })
 
 describe('pickNextVisibleSessionId', () => {
