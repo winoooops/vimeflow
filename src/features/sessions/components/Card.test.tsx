@@ -101,6 +101,30 @@ describe('Card — active variant', () => {
     expect(screen.queryByTestId('session-layout-glyph')).not.toBeInTheDocument()
   })
 
+  test('multi-pane session shows the pane count (layout capacity)', () => {
+    renderActiveCard(session({ layout: 'threeRight' }))
+    expect(screen.getByTestId('session-pane-count')).toHaveTextContent('3')
+  })
+
+  test('single-pane session shows no pane count', () => {
+    renderActiveCard(session({ layout: 'single' }))
+    expect(screen.queryByTestId('session-pane-count')).not.toBeInTheDocument()
+  })
+
+  test('multi-pane session exposes pane count in activation button accessible name', () => {
+    renderActiveCard(session({ layout: 'threeRight' }))
+    expect(
+      screen.getByRole('button', { name: 'auth middleware (3 panes)' })
+    ).toBeInTheDocument()
+  })
+
+  test('single-pane session activation button has no pane suffix', () => {
+    renderActiveCard(session({ layout: 'single' }))
+    expect(
+      screen.getByRole('button', { name: 'auth middleware' })
+    ).toBeInTheDocument()
+  })
+
   test('hides the layout glyph for an unknown/stale layout id', () => {
     renderActiveCard(
       session({ layout: 'legacy-grid' as unknown as Session['layout'] })
