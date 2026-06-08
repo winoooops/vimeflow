@@ -1,5 +1,13 @@
 import { describe, test, expect } from 'vitest'
-import { cacheBuckets, cacheHitRate, cacheTone } from './cacheRate'
+import {
+  cacheBuckets,
+  cacheHitRate,
+  cacheTone,
+  cacheHitPercentage,
+  cacheToneFromPercent,
+  pushCacheReading,
+  CACHE_HISTORY_LIMIT,
+} from './cacheRate'
 import type { CurrentUsageState } from '../types'
 
 const makeUsage = (
@@ -104,5 +112,41 @@ describe('cacheTone', () => {
     expect(cacheTone(0.7)).toBe('healthy')
     expect(cacheTone(0.85)).toBe('healthy')
     expect(cacheTone(1.0)).toBe('healthy')
+  })
+})
+
+describe('cacheHitPercentage', () => {
+  test('rounds the rate to an integer percent', () => {
+    expect(cacheHitPercentage(makeUsage(7500, 1800, 700))).toBe(75)
+  })
+
+  test('returns null when there is no usage', () => {
+    expect(cacheHitPercentage(null)).toBeNull()
+  })
+})
+
+describe('cacheToneFromPercent', () => {
+  test('cold below 40', () => expect(cacheToneFromPercent(39)).toBe('cold'))
+  test('warming at 40', () => expect(cacheToneFromPercent(40)).toBe('warming'))
+  test('warming at 69', () => expect(cacheToneFromPercent(69)).toBe('warming'))
+  test('healthy at 70', () => expect(cacheToneFromPercent(70)).toBe('healthy'))
+})
+
+describe('pushCacheReading', () => {
+  test('appends a changed reading', () => {
+    expect(pushCacheReading([42, 51], 49)).toEqual([42, 51, 49])
+  })
+
+  test('returns the SAME reference on a consecutive duplicate', () => {
+    const h = [42, 51]
+    expect(pushCacheReading(h, 51)).toBe(h)
+  })
+
+  test('caps to the most recent CACHE_HISTORY_LIMIT and keeps the newest', () => {
+    const full = Array.from({ length: CACHE_HISTORY_LIMIT }, (_, i) => i)
+    const next = pushCacheReading(full, 999)
+    expect(next).toHaveLength(CACHE_HISTORY_LIMIT)
+    expect(next[next.length - 1]).toBe(999)
+    expect(next[0]).toBe(1)
   })
 })

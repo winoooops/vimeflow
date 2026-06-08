@@ -23,6 +23,9 @@ export interface HeaderProps {
   paneUserLabel?: string
   onToggleCollapse: () => void
   onClose?: () => void
+  onBurner?: () => void
+  burnerActive?: boolean
+  burnerShellExists?: boolean
 }
 
 export const Header = ({
@@ -41,6 +44,9 @@ export const Header = ({
   paneUserLabel = undefined,
   onToggleCollapse,
   onClose = undefined,
+  onBurner = undefined,
+  burnerActive = false,
+  burnerShellExists = false,
 }: HeaderProps): ReactElement => {
   const titleRef = useRef<HTMLSpanElement | null>(null)
 
@@ -104,6 +110,9 @@ export const Header = ({
         isCollapsed={isCollapsed}
         onToggleCollapse={onToggleCollapse}
         onClose={onClose}
+        onBurner={onBurner}
+        burnerActive={burnerActive}
+        burnerShellExists={burnerShellExists}
       />
     </div>
   )

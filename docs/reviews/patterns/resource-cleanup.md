@@ -3,7 +3,7 @@ id: resource-cleanup
 category: react-patterns
 created: 2026-04-09
 last_updated: 2026-06-08
-ref_count: 5
+ref_count: 7
 ---
 
 # Resource Cleanup
@@ -71,4 +71,22 @@ causes listener accumulation and duplicate event handling.
 - **File:** `src/features/sessions/hooks/useSessionRestore.ts` L274-280
 - **Finding:** The restore effect launches a voided async IIFE that calls `await beginWorkspaceHydration()` and later awaits `await endWorkspaceHydration()` inside the `finally` block. Because the IIFE is discarded with `void`, any rejection from `endWorkspaceHydration()` — which delegates to renderer IPC and can fail during teardown, reload, or backend disruption — escapes as an unhandled Promise rejection. It also means the release command may never land, leaving main's hydration guard pinned open and persistence writes suppressed.
 - **Fix:** Wrap the `await endWorkspaceHydration()` call in a nested `try/catch` inside the `finally` block. On rejection, log the error via the module logger and swallow it, so the voided IIFE always settles cleanly and the guard is released as best-effort.
+- **Commit:** same commit as this entry
+
+### 7. Atomic write helper leaves orphaned .tmp file on mid-write failure
+
+- **Source:** github-claude | PR #389 round 1 | 2026-06-08
+- **Severity:** LOW
+- **File:** `crates/backend/src/terminal/bridge.rs` L41-52 (`write_executable_script`)
+- **Finding:** `write_executable_script` creates a `.tmp` sibling file, writes content, syncs, renames to target, and sets permissions. Every intermediate step uses `?` for early return on error. If `write_all`, `sync_all`, or `rename` fails, the function returns before the `.tmp` file is removed. The name is fixed (same `.tmp` extension for every call), so repeated failures don't accumulate many files — but a single persistent error (e.g. disk full) leaves the orphan until the session directory is cleaned up.
+- **Fix:** Wrapped the write→rename→permissions sequence in a closure, stored the `Result`, and called `let _ = std::fs::remove_file(&tmp_path)` whenever the result is `Err`. The `remove_file` no-op on a non-existent path (e.g. if `rename` already succeeded but `set_permissions` failed) is harmless.
+- **Commit:** same commit as this entry
+
+### 8. Atomic write helper fails spawn after successful rename when directory fsync errors
+
+- **Source:** github-claude | PR #389 round 6 | 2026-06-08
+- **Severity:** MEDIUM
+- **File:** `crates/backend/src/terminal/bridge.rs` L49-55 (`write_executable_script`)
+- **Finding:** After `std::fs::rename(&tmp_path, path)` succeeds, the script exists at its final executable path. If the subsequent parent-directory `sync_all()` fails, `write_executable_script` returns an error, `generate_bridge_files` reports a failed script write, and the PTY spawn path can abort even though the script was written correctly. This is rare on common local Linux filesystems, but plausible on some mounted or unusual filesystems and affects the core session-spawn path when the agent bridge is enabled.
+- **Fix:** Demoted the directory `fsync` to best-effort using `let _ = std::fs::File::open(parent).and_then(|dir| dir.sync_all());` so a failed directory sync no longer aborts the spawn after a successful rename.
 - **Commit:** same commit as this entry

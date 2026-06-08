@@ -205,6 +205,7 @@ describe('WorkspaceView - Command Palette Integration', () => {
       setPaneUserLabel: vi.fn(),
       reorderSessions: vi.fn(),
       updatePaneCwd: vi.fn(),
+      appendPaneCacheReading: vi.fn(),
       updatePaneAgentType: vi.fn(),
       setSessionActivityPanelCollapsed: vi.fn(),
       updateSessionCwd: vi.fn(),
@@ -212,6 +213,8 @@ describe('WorkspaceView - Command Palette Integration', () => {
       restoreData: new Map(),
       loading: false,
       notifyPaneReady: vi.fn(),
+      registerPending: vi.fn(),
+      dropAllForPty: vi.fn(),
     }
 
     // Mock useSessionManager
@@ -296,6 +299,7 @@ describe('WorkspaceView - Command Palette Integration', () => {
       onData: vi.fn().mockResolvedValue(vi.fn()),
       onExit: vi.fn().mockReturnValue(vi.fn()),
       onError: vi.fn().mockReturnValue(vi.fn()),
+      onBurnerForeground: vi.fn().mockReturnValue(vi.fn()),
       listSessions: vi.fn().mockResolvedValue({
         activeSessionId: null,
         sessions: [],
@@ -304,6 +308,7 @@ describe('WorkspaceView - Command Palette Integration', () => {
       reorderSessions: vi.fn().mockResolvedValue(undefined),
       updateSessionCwd: vi.fn().mockResolvedValue(undefined),
       setSessionActivityPanelCollapsed: vi.fn().mockResolvedValue(undefined),
+      killEphemeralPtys: vi.fn(),
       setWorkspaceSessions: vi.fn().mockResolvedValue(undefined),
     })
   })
@@ -858,5 +863,64 @@ describe('WorkspaceView - Command Palette Integration', () => {
     expect(
       screen.getByRole('dialog', { name: 'Command palette' })
     ).toBeInTheDocument()
+  })
+
+  test('does not append a stale pane reading when agentStatus.sessionId mismatches the active pane', async () => {
+    const { useAgentStatus } =
+      await import('../agent-status/hooks/useAgentStatus')
+    vi.mocked(useAgentStatus).mockReturnValue(
+      createAgentStatus({
+        sessionId: 'pty-stale',
+        contextWindow: {
+          usedPercentage: 10,
+          contextWindowSize: 200000,
+          totalInputTokens: 0,
+          totalOutputTokens: 0,
+          currentUsage: {
+            inputTokens: 700,
+            outputTokens: 0,
+            cacheCreationInputTokens: 1800,
+            cacheReadInputTokens: 7500,
+          },
+        },
+      })
+    )
+
+    render(<WorkspaceView />)
+
+    expect(await screen.findByTestId('terminal-zone')).toBeInTheDocument()
+    expect(mockSessionManager.appendPaneCacheReading).not.toHaveBeenCalled()
+  })
+
+  test('appends the reading when agentStatus.sessionId matches the active pane', async () => {
+    const { useAgentStatus } =
+      await import('../agent-status/hooks/useAgentStatus')
+    vi.mocked(useAgentStatus).mockReturnValue(
+      createAgentStatus({
+        sessionId: 'pty-session-1',
+        contextWindow: {
+          usedPercentage: 10,
+          contextWindowSize: 200000,
+          totalInputTokens: 0,
+          totalOutputTokens: 0,
+          currentUsage: {
+            inputTokens: 700,
+            outputTokens: 0,
+            cacheCreationInputTokens: 1800,
+            cacheReadInputTokens: 7500,
+          },
+        },
+      })
+    )
+
+    render(<WorkspaceView />)
+
+    await waitFor(() =>
+      expect(mockSessionManager.appendPaneCacheReading).toHaveBeenCalledWith(
+        'session-1',
+        'p0',
+        75
+      )
+    )
   })
 })

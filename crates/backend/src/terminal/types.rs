@@ -40,6 +40,9 @@ pub struct SpawnPtyRequest {
     /// Generate statusline bridge files for agent status tracking
     #[serde(default)]
     pub enable_agent_bridge: bool,
+    /// Ephemeral (burner) PTY: skip the session cache and the agent-bridge dir.
+    #[serde(default)]
+    pub ephemeral: bool,
 }
 
 /// Request payload for writing data to a PTY session
@@ -108,6 +111,21 @@ pub struct PtyExitEvent {
     pub session_id: SessionId,
     /// Exit code (if available)
     pub code: Option<i32>,
+}
+
+/// Burner foreground-state event (emitted when a burner shell's foreground
+/// process changes). `running` is true while a foreground command holds the
+/// terminal, false when the shell is idle at its prompt or the platform can't
+/// introspect the foreground group.
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct BurnerForegroundEvent {
+    /// Session ID of the burner (ephemeral) PTY
+    pub session_id: SessionId,
+    /// Whether a foreground command is currently running in the burner shell
+    pub running: bool,
 }
 
 /// PTY error event payload (emitted on errors)

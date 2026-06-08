@@ -63,6 +63,7 @@ words:
   - catppuccin
   - Catppuccin
   - wght # Material Symbols font-variation axis (weight)
+  - sparkline
 
   # Custom DOM events
   - vfliquidwake

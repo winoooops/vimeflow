@@ -53,6 +53,12 @@ export interface WorkspaceCommandDeps {
   isCurrentPaneRenameRequest?: (requestId: number) => boolean
   setActiveSessionId: (id: string) => void
   notifyInfo: (message: string) => void
+  /**
+   * Toggle the focused pane's burner terminal (VIM-72). Resolves the focused
+   * pane and hides-if-shown, same as the `Mod+;` then backtick chord. Optional
+   * so the builder's unit tests need not thread it; WorkspaceView always wires it.
+   */
+  toggleBurner?: () => void
 }
 
 interface FallbackPaneRenameRequestState {
@@ -100,6 +106,7 @@ export const buildWorkspaceCommands = (
     isCurrentPaneRenameRequest,
     setActiveSessionId,
     notifyInfo,
+    toggleBurner,
   } = deps
 
   const fallbackPaneRenameRequestState =
@@ -386,6 +393,15 @@ export const buildWorkspaceCommands = (
         }
 
         notifyInfo(`No tab matching '${trimmed}'`)
+      },
+    },
+    {
+      id: 'burner',
+      label: ':burner',
+      description: 'Toggle the burner terminal for the focused pane',
+      icon: 'terminal',
+      execute: (): void => {
+        toggleBurner?.()
       },
     },
     {

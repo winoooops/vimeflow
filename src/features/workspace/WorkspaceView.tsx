@@ -34,8 +34,8 @@ import {
   AgentStatusRail,
   RAIL_WIDTH_PX,
 } from '../agent-status/components/AgentStatusRail'
-import { cacheHitRate } from '../agent-status/utils/cacheRate'
-import type { CurrentUsageState } from '../agent-status/types'
+import { cacheHitPercentage } from '../agent-status/utils/cacheRate'
+import { useCacheHistoryCollector } from '../agent-status/hooks/useCacheHistoryCollector'
 import { UnsavedChangesDialog } from '../editor/components/UnsavedChangesDialog'
 import { InfoBanner } from './components/InfoBanner'
 import { CommandPalette } from '../command-palette/CommandPalette'
@@ -56,6 +56,7 @@ import { useSidebarTab, type SidebarTab } from '../../hooks/useSidebarTab'
 import { useNotifyInfo } from './hooks/useNotifyInfo'
 import { createFileSystemService } from '../files/services/fileSystemService'
 import { createTerminalService } from '../terminal/services/terminalService'
+import { useBurnerTerminals } from '../terminal/hooks/useBurnerTerminals'
 import {
   usePaneShortcuts,
   type PaneShortcutModifier,
@@ -87,14 +88,6 @@ import {
   DOCK_VERTICAL_ELASTIC_CONFIG,
   DOCK_HORIZONTAL_ELASTIC_CONFIG,
 } from './panelConfig'
-
-const cacheHitPercentage = (
-  usage: CurrentUsageState | null | undefined
-): number | null => {
-  const rate = cacheHitRate(usage)
-
-  return rate === null ? null : Math.round(rate * 100)
-}
 
 const formatStatusDuration = (durationMs: number): string | undefined => {
   if (!Number.isFinite(durationMs) || durationMs <= 0) {
@@ -173,6 +166,7 @@ export const WorkspaceView = (): ReactElement => {
     setPaneUserLabel,
     reorderSessions,
     updatePaneCwd,
+    appendPaneCacheReading,
     updatePaneAgentType,
     updateBrowserPaneUrl,
     setSessionActivityPanelCollapsed,
@@ -182,6 +176,8 @@ export const WorkspaceView = (): ReactElement => {
     removePane,
     loading,
     notifyPaneReady,
+    registerPending,
+    dropAllForPty,
   } = useSessionManager(terminalService)
 
   // Detect which modifier the toolbar advertises on this platform so
@@ -282,6 +278,18 @@ export const WorkspaceView = (): ReactElement => {
   const activePtyBackedPanePtyId = activePtyBackedPane?.ptyId
 
   const agentStatus = useAgentStatus(activePtyBackedPanePtyId ?? null)
+
+  useCacheHistoryCollector({
+    ptyId: activePtyBackedPanePtyId ?? null,
+    sessionId: activeSessionId,
+    paneId: activePtyBackedPaneId ?? null,
+    usage:
+      agentStatus.sessionId === activePtyBackedPanePtyId
+        ? (agentStatus.contextWindow?.currentUsage ?? null)
+        : null,
+    onReading: appendPaneCacheReading,
+  })
+
   const activityPanelCollapsed = activeSession?.activityPanelCollapsed ?? false
 
   const activityPanelAgent = useMemo(
@@ -625,6 +633,108 @@ export const WorkspaceView = (): ReactElement => {
     setPaneUserLabel
   )
 
+  // Burner terminal popup (VIM-53) — reap reload-orphaned ephemeral PTYs before the first spawn.
+  const [burnerReapDone, setBurnerReapDone] = useState(false)
+  useEffect(() => {
+    let cancelled = false
+
+    const reap = async (): Promise<void> => {
+      try {
+        await terminalService.killEphemeralPtys()
+      } catch (err) {
+        // Best-effort: a failed sweep still enables burner; any orphan is
+        // reaped on shutdown or the next boot.
+        // eslint-disable-next-line no-console
+        console.warn('burner reap failed', err)
+      } finally {
+        if (!cancelled) {
+          setBurnerReapDone(true)
+        }
+      }
+    }
+    void reap()
+
+    return (): void => {
+      cancelled = true
+    }
+  }, [terminalService])
+
+  // Live pane keys across all sessions — drives the burner lazy reconciliation
+  // (a burner whose host pane/session is gone gets killed + dropped).
+  const topologyKey = useMemo(
+    () =>
+      sessions
+        .flatMap((s) => s.panes.map((p) => `${s.id}:${p.id}`))
+        .sort()
+        .join(','),
+    [sessions]
+  )
+
+  const livePaneKeys = useMemo(
+    () => new Set(topologyKey === '' ? [] : topologyKey.split(',')),
+    [topologyKey]
+  )
+
+  // Live pane cwds keyed the same way — feeds the burner align-to-pane button
+  // (VIM-81), which snaps a burner to its host pane's current directory.
+  const livePaneCwds = useMemo(
+    () =>
+      new Map(
+        sessions.flatMap((s) =>
+          s.panes.map((p) => [`${s.id}:${p.id}`, p.cwd] as const)
+        )
+      ),
+    [sessions]
+  )
+
+  const {
+    renderNode: burnerTerminalNode,
+    toggle: toggleBurner,
+    runningByPane: runningBurnerByPane,
+    activeByPane: activeBurnerByPane,
+  } = useBurnerTerminals({
+    service: terminalService,
+    resolveFocusedPane,
+    ready: burnerReapDone,
+    registerPending,
+    notifyPaneReady,
+    livePaneKeys,
+    dropAllForPty,
+    livePaneCwds,
+  })
+
+  // Stable wrapper for the `:burner` palette command so the command-list memo
+  // stays put while still invoking the latest toggle, whose identity changes as
+  // the popup opens/closes.
+  const toggleBurnerRef = useRef(toggleBurner)
+  toggleBurnerRef.current = toggleBurner
+
+  const toggleBurnerCommand = useCallback((): void => {
+    void toggleBurnerRef.current()
+  }, [])
+
+  // Pane-keys with a live burner shell — drives the status-bar count.
+  const runningBurnerPaneKeys = useMemo(
+    () =>
+      new Set(
+        [...runningBurnerByPane]
+          .filter(([, status]) => status === 'running')
+          .map(([key]) => key)
+      ),
+    [runningBurnerByPane]
+  )
+
+  // Pane-keys with a foreground command running — drives the amber button tint (VIM-71).
+  const activeBurnerPaneKeys = useMemo(
+    () =>
+      new Set(
+        [...activeBurnerByPane]
+          .filter(([, active]) => active)
+          .map(([key]) => key)
+      ),
+    [activeBurnerByPane]
+  )
+
   const requestFocus = useCallback((target: FocusTarget): void => {
     pendingFocusTarget.current = target
     setFocusRequestSeq((value) => value + 1)
@@ -795,6 +905,7 @@ export const WorkspaceView = (): ReactElement => {
         isCurrentPaneRenameRequest,
         setActiveSessionId,
         notifyInfo,
+        toggleBurner: toggleBurnerCommand,
       }),
     // sessionsSignature captures every field the closures read; activity-only
     // changes keep the signature stable so the memo (and downstream
@@ -815,6 +926,7 @@ export const WorkspaceView = (): ReactElement => {
       isCurrentPaneRenameRequest,
       setActiveSessionId,
       notifyInfo,
+      toggleBurnerCommand,
     ]
   )
 
@@ -1460,6 +1572,9 @@ export const WorkspaceView = (): ReactElement => {
               onContainerFocus={() => {
                 setActiveContainerId(TERMINAL_CONTAINER_ID)
               }}
+              onBurner={(target): void => void toggleBurner(target)}
+              activeBurnerPaneKeys={activeBurnerPaneKeys}
+              runningBurnerPaneKeys={runningBurnerPaneKeys}
             />
           </div>
           {!dockBeforeTerminal ? dockOrPeek : null}
@@ -1503,6 +1618,7 @@ export const WorkspaceView = (): ReactElement => {
           contextPct={statusBarContextPct}
           paletteShortcut={COMMAND_PALETTE_SHORTCUT_KEYS}
           onOpenPalette={commandPalette.open}
+          burnerCount={runningBurnerPaneKeys.size}
         />
       </div>
 
@@ -1530,6 +1646,7 @@ export const WorkspaceView = (): ReactElement => {
         ) : (
           <AgentStatusPanel
             agentStatus={agentStatus}
+            cacheHistory={activePtyBackedPane?.cacheHistory ?? []}
             cwd={activeCwd}
             gitStatus={gitStatus}
             onOpenDiff={handleOpenDiff}
@@ -1566,6 +1683,7 @@ export const WorkspaceView = (): ReactElement => {
       {isDragging && <div className="fixed inset-0 z-50 cursor-col-resize" />}
 
       {paneRenameNode}
+      {burnerTerminalNode}
 
       {/* Command Palette — workspace-scoped command dispatcher */}
       <CommandPalette

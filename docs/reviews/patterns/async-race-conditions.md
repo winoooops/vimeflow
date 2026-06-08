@@ -577,7 +577,16 @@ prevent showing previous data.
 - **Fix:** Replace with `fs.openSync(lock, 'wx')` wrapped in try/catch; `EEXIST` means another process holds the lock.
 - **Commit:** `7644ec4` + cycle-2 fix
 
-### 57. Retry backoff gate must distinguish identical no-op retries from structurally newer snapshots
+### 57. Post-spawn show() can overwrite a later scratch-pane selection
+
+- **Source:** github-claude | PR #351 round 1 | 2026-06-04
+- **Severity:** MEDIUM
+- **File:** `src/features/terminal/hooks/useScratchTerminals.ts`
+- **Finding:** `show()` awaited `spawnIfNeeded` and then unconditionally called `setVisibleKey(key)`. If the user clicked a second pane's scratch button while the first pane's pty was still spawning, the second click correctly set `visibleKey` to paneB (spawn already done, immediate return). When paneA's spawn finished milliseconds later, `setVisibleKey(keyA)` fired and silently stole the popup back from paneB.
+- **Fix:** Added a `showIntentRef` that stores the latest intended visible key before the async spawn. `hide()` clears the intent. After `spawnIfNeeded` resolves, `setVisibleKey(key)` only runs when `showIntentRef.current === key`. Added regression test with a deferred spawn to verify p0 stays visible when p1's late resolution would otherwise steal it.
+- **Commit:** _(see git log for PR #351 cycle-1 fix commit)_
+
+### 58. Retry backoff gate must distinguish identical no-op retries from structurally newer snapshots
 
 - **Source:** github-claude | PR #381 round 1 | 2026-06-07
 - **Severity:** MEDIUM

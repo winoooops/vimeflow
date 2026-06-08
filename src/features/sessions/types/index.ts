@@ -80,6 +80,9 @@ export interface Pane {
   /** OS process id of the PTY. */
   pid?: number
 
+  /** Per-pane token-cache hit-rate trend (percent readings) for the sparkline; hydrated by ptyId. */
+  cacheHistory?: number[]
+
   /** Exactly one pane per session has `active === true`. */
   active: boolean
 }

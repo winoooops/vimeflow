@@ -462,6 +462,10 @@ mod router {
                 let res = state.list_sessions()?;
                 encode_result(res)
             }
+            "kill_ephemeral_ptys" => {
+                let res = state.kill_ephemeral_ptys();
+                encode_result(res)
+            }
             "set_active_session" => {
                 #[derive(Deserialize)]
                 #[serde(rename_all = "camelCase")]
@@ -1886,6 +1890,34 @@ mod tests {
         .expect("load");
         assert_eq!(loaded["sessions"][0]["id"], "s");
         assert_eq!(loaded["sessions"][0]["panes"][0]["kind"], "browser");
+    }
+
+    #[tokio::test]
+    async fn dispatch_kill_ephemeral_ptys_reaps_via_router() {
+        let (state, _sink) = crate::runtime::BackendState::with_fake_sink();
+        let cwd = std::env::current_dir()
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
+
+        // Spawn an ephemeral PTY through the real router path.
+        super::router::dispatch(
+            state.clone(),
+            "spawn_pty",
+            serde_json::json!({
+                "request": { "sessionId": "burner-router", "cwd": cwd, "ephemeral": true }
+            }),
+        )
+        .await
+        .expect("spawn_pty dispatch");
+
+        // Reap via the command string — exercises the match arm, not just the inner fn.
+        let value =
+            super::router::dispatch(state.clone(), "kill_ephemeral_ptys", serde_json::json!({}))
+                .await
+                .expect("kill_ephemeral_ptys dispatch");
+        let killed: Vec<String> = serde_json::from_value(value).expect("Vec<String>");
+        assert_eq!(killed, vec!["burner-router".to_string()]);
     }
 
     #[tokio::test]
