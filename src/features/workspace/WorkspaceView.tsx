@@ -77,7 +77,7 @@ import { sumLines } from '../diff/utils/sumLines'
 import { findActivePane } from '../sessions/utils/activeSessionPane'
 import { isShellPane } from '../sessions/utils/paneKind'
 import { lineDelta } from '../sessions/utils/lineDelta'
-import { isLiveStatus } from '../sessions/utils/sessionStatus'
+import { hasLivePane, isLiveStatus } from '../sessions/utils/sessionStatus'
 import { pickNextVisibleSessionId } from '../sessions/utils/pickNextVisibleSessionId'
 import { AGENTS, agentTypeToRegistryKey } from '../../agents/registry'
 import type { SessionCloseResult, SessionStatus } from '../sessions/types'
@@ -505,7 +505,7 @@ export const WorkspaceView = (): ReactElement => {
   // effect is cheap even though it fires on every sessions array change.
   useEffect(() => {
     for (const session of sessions) {
-      if (session.status !== 'completed' && session.status !== 'errored') {
+      if (hasLivePane(session.panes)) {
         continue
       }
       // Effect-path: skip silently on transient invariant violations

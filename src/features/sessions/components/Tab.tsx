@@ -60,9 +60,7 @@ export const Tab = ({
       id={`session-tab-${session.id}`}
       role="tab"
       aria-label={
-        session.status === 'completed' || session.status === 'errored'
-          ? `${session.name} (ended)`
-          : session.name
+        !hasLivePane(session.panes) ? `${session.name} (ended)` : session.name
       }
       aria-selected={isActive}
       aria-controls={`session-panel-${session.id}`}
