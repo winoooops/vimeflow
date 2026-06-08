@@ -3,10 +3,8 @@ import { motion } from 'framer-motion'
 import type { Session, SessionCloseResult } from '../types'
 import { Card } from './Card'
 import { Group } from './Group'
-import {
-  isOpenSessionStatus,
-  pickNextVisibleSessionId,
-} from '../utils/pickNextVisibleSessionId'
+import { isLiveStatus } from '../utils/sessionStatus'
+import { pickNextVisibleSessionId } from '../utils/pickNextVisibleSessionId'
 import { mediateReorder } from '../utils/mediateReorder'
 
 export interface ListProps {
@@ -30,8 +28,8 @@ export const List = ({
   // in pickNextVisibleSessionId.ts. Recent = the complement so any
   // future non-open status (e.g. `suspended`) lands in Recent rather
   // than being silently dropped from both groups.
-  const activeGroup = sessions.filter((s) => isOpenSessionStatus(s.status))
-  const recentGroup = sessions.filter((s) => !isOpenSessionStatus(s.status))
+  const activeGroup = sessions.filter((s) => isLiveStatus(s.status))
+  const recentGroup = sessions.filter((s) => !isLiveStatus(s.status))
 
   // Mirror `recentGroup` into a ref synchronously on every render so
   // Framer Motion's `onReorder` callback (which can be invoked mid-drag

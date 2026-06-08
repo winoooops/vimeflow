@@ -77,6 +77,7 @@ import { sumLines } from '../diff/utils/sumLines'
 import { findActivePane } from '../sessions/utils/activeSessionPane'
 import { isShellPane } from '../sessions/utils/paneKind'
 import { lineDelta } from '../sessions/utils/lineDelta'
+import { isLiveStatus } from '../sessions/utils/sessionStatus'
 import { pickNextVisibleSessionId } from '../sessions/utils/pickNextVisibleSessionId'
 import { AGENTS, agentTypeToRegistryKey } from '../../agents/registry'
 import type { SessionCloseResult, SessionStatus } from '../sessions/types'
@@ -357,7 +358,7 @@ export const WorkspaceView = (): ReactElement => {
   // running/paused/completed/errored — agent activity stays an orthogonal
   // signal that the "live" pulse next to the agent chip already reflects.
   const activityPanelStatus: SessionStatus =
-    activePtyBackedPane?.status ?? 'paused'
+    activePtyBackedPane?.status ?? 'idle'
 
   const handleActivityPanelCollapsed = useCallback(
     (collapsed: boolean): void => {
@@ -387,7 +388,8 @@ export const WorkspaceView = (): ReactElement => {
     agentStatus.sessionId === activePtyBackedPanePtyId &&
     agentStatus.isActive &&
     !agentStatus.agentExited &&
-    (activeSessionStatus === 'running' || activeSessionStatus === 'paused')
+    !!activeSessionStatus &&
+    isLiveStatus(activeSessionStatus)
 
   useEffect(() => {
     if (!activeSessionId) {
@@ -399,7 +401,7 @@ export const WorkspaceView = (): ReactElement => {
     if (agentStatus.sessionId !== activePtyBackedPanePtyId) {
       return
     }
-    if (activeSessionStatus !== 'running' && activeSessionStatus !== 'paused') {
+    if (!activeSessionStatus || !isLiveStatus(activeSessionStatus)) {
       return
     }
 
@@ -468,7 +470,7 @@ export const WorkspaceView = (): ReactElement => {
     if (agentStatus.sessionId !== activePtyBackedPanePtyId) {
       return
     }
-    if (activeSessionStatus !== 'running' && activeSessionStatus !== 'paused') {
+    if (!activeSessionStatus || !isLiveStatus(activeSessionStatus)) {
       return
     }
     if (!agentIsActive || agentHasExited) {

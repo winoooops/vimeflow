@@ -13,7 +13,7 @@ import type {
   PaneEventHandler,
   NotifyPaneReadyResult,
 } from '../../sessions/hooks/useSessionManager'
-import { isOpenSessionStatus } from '../../sessions/utils/pickNextVisibleSessionId'
+import { isLiveStatus } from '../../sessions/utils/sessionStatus'
 import { LayoutSwitcher } from '../../terminal/components/LayoutSwitcher'
 import {
   SplitView,
@@ -231,8 +231,7 @@ export const TerminalZone = forwardRef<TerminalZoneHandle, TerminalZoneProps>(
               // so a future non-open status (e.g. `suspended`) auto-flows
               // into both visibility surfaces without TerminalZone needing
               // a separate update.
-              const hasVisibleTab =
-                isActive || isOpenSessionStatus(session.status)
+              const hasVisibleTab = isActive || isLiveStatus(session.status)
 
               return (
                 <div

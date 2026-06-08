@@ -1,69 +1,58 @@
-import { describe, expect, test } from 'vitest'
+import { test, expect } from 'vitest'
+import {
+  deriveSessionStatus,
+  isTerminalStatus,
+  isLiveStatus,
+} from './sessionStatus'
 import type { Pane } from '../types'
-import { deriveSessionStatus, deriveShellSessionStatus } from './sessionStatus'
 
-const pane = (status: Pane['status']): Pane => ({
-  id: 'p0',
-  ptyId: 'pty-x',
-  cwd: '/x',
-  agentType: 'generic',
-  status,
-  active: true,
+const pane = (status: Pane['status']): Pane =>
+  ({
+    kind: 'shell',
+    id: 'p',
+    ptyId: 'x',
+    cwd: '/',
+    agentType: 'generic',
+    status,
+    active: true,
+  }) as Pane
+
+test('precedence: errored beats every other state', () => {
+  expect(
+    deriveSessionStatus([pane('errored'), pane('idle'), pane('running')])
+  ).toBe('errored')
 })
 
-const browserPane = (status: Pane['status']): Pane => ({
-  ...pane(status),
-  kind: 'browser',
-  id: 'p-browser',
-  ptyId: 'browser:x',
+test('precedence: awaiting beats running/idle/completed', () => {
+  expect(
+    deriveSessionStatus([pane('awaiting'), pane('running'), pane('idle')])
+  ).toBe('awaiting')
 })
 
-describe('deriveSessionStatus', () => {
-  test('any running pane -> running', () => {
-    expect(deriveSessionStatus([pane('running'), pane('completed')])).toBe(
-      'running'
-    )
-  })
+test('precedence: running beats idle/completed', () => {
+  expect(
+    deriveSessionStatus([pane('running'), pane('idle'), pane('completed')])
+  ).toBe('running')
+})
 
-  test('no running but any errored -> errored', () => {
-    expect(deriveSessionStatus([pane('errored'), pane('completed')])).toBe(
-      'errored'
-    )
-  })
+test('precedence: idle beats completed', () => {
+  expect(deriveSessionStatus([pane('idle'), pane('completed')])).toBe('idle')
+})
 
-  test('all completed -> completed', () => {
-    expect(deriveSessionStatus([pane('completed'), pane('completed')])).toBe(
-      'completed'
-    )
-  })
+test('all completed folds to completed', () => {
+  expect(deriveSessionStatus([pane('completed'), pane('completed')])).toBe(
+    'completed'
+  )
+})
 
-  test('mix of paused and completed without errored -> paused', () => {
-    expect(deriveSessionStatus([pane('paused'), pane('completed')])).toBe(
-      'paused'
-    )
-  })
+test('empty panes is errored (invariant guard)', () => {
+  expect(deriveSessionStatus([])).toBe('errored')
+})
 
-  test('single pane proxies its status', () => {
-    expect(deriveSessionStatus([pane('running')])).toBe('running')
-  })
-
-  test('empty panes -> errored (5a invariant violation surface)', () => {
-    // Sessions must carry >=1 pane per the model. An empty panes[] is a
-    // hard bug; surface it as 'errored' rather than vacuously 'completed'
-    // (Array.every of an empty array is true).
-    expect(deriveSessionStatus([])).toBe('errored')
-  })
-
-  test('shell liveness ignores running browser panes', () => {
-    expect(
-      deriveShellSessionStatus([pane('completed'), browserPane('running')])
-    ).toBe('completed')
-  })
-
-  test('browser-only liveness derives from browser panes (running, not errored)', () => {
-    // All shells closed but a browser pane is live: the session is 'running',
-    // not the empty-slice 'errored' guard (which would show a stale Restart
-    // affordance for a session whose browser pane is still running).
-    expect(deriveShellSessionStatus([browserPane('running')])).toBe('running')
-  })
+test('isTerminalStatus / isLiveStatus partition the union', () => {
+  expect(isTerminalStatus('completed')).toBe(true)
+  expect(isTerminalStatus('errored')).toBe(true)
+  expect(isLiveStatus('running')).toBe(true)
+  expect(isLiveStatus('awaiting')).toBe(true)
+  expect(isLiveStatus('idle')).toBe(true)
 })

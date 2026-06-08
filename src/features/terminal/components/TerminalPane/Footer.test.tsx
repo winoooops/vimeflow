@@ -26,7 +26,7 @@ describe('Footer', () => {
   })
 
   test('placeholder when focused and paused shows paused', () => {
-    render(<Footer {...baseProps} isFocused isPaused pipStatus="paused" />)
+    render(<Footer {...baseProps} isFocused isPaused pipStatus="idle" />)
 
     expect(screen.getByText('paused')).toBeInTheDocument()
   })

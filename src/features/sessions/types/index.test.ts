@@ -20,13 +20,14 @@ describe('Session Types', () => {
       // so a widening to `string` would have gone unnoticed.
       const validStatuses: SessionStatus[] = [
         'running',
-        'paused',
+        'awaiting',
+        'idle',
         'completed',
         'errored',
       ]
 
       expect(new Set(validStatuses)).toEqual(
-        new Set(['running', 'paused', 'completed', 'errored'])
+        new Set(['running', 'awaiting', 'idle', 'completed', 'errored'])
       )
     })
   })

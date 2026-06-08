@@ -84,7 +84,7 @@ export const agentTypeToRegistryKey = (
 
 export const agentStatusToSessionStatus = (
   agentStatus: AgentStatus
-): SessionStatus => (agentStatus.isActive ? 'running' : 'paused')
+): SessionStatus => (agentStatus.isActive ? 'running' : 'idle')
 
 export const vendorMarkFor = (agentId: AgentId): string | null => {
   switch (agentId) {

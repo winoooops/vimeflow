@@ -20,7 +20,8 @@ export interface CardProps {
 const STATUS_TEXT: Record<Session['status'], { tone: string; label: string }> =
   {
     running: { tone: '#7defa1', label: 'Running' },
-    paused: { tone: '#ff94a5', label: 'Awaiting you' },
+    awaiting: { tone: '#ff94a5', label: 'Awaiting you' },
+    idle: { tone: '#8a8299', label: 'Idle' },
     completed: { tone: '#c9b3f0', label: 'Done' },
     errored: { tone: '#ffb4ab', label: 'Errored' },
   }

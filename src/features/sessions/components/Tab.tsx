@@ -1,6 +1,7 @@
 import { type ReactElement, type KeyboardEvent } from 'react'
 import type { Session } from '../types'
 import type { Agent } from '../../../agents/registry'
+import { isLiveStatus } from '../utils/sessionStatus'
 import { StatusDot } from './StatusDot'
 
 export interface TabProps {
@@ -107,7 +108,7 @@ export const Tab = ({
       >
         {session.name}
       </span>
-      {(session.status === 'running' || session.status === 'paused') && (
+      {isLiveStatus(session.status) && (
         <StatusDot
           status={session.status}
           size={5}

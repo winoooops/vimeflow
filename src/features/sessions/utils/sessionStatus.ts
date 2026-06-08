@@ -1,37 +1,46 @@
 import type { Pane, SessionStatus } from '../types'
 import { isShellPane } from './paneKind'
 
-/** Aggregate a session's status from its panes.
- *
- *  Empty `panes[]` is a hard invariant violation (every Session must
- *  carry ≥1 pane per the 5a model — see `getActivePane`'s contract).
- *  Returning 'completed' for [] would be vacuously true via
- *  `Array.every` and would silently mask a corrupt session as done.
- *  Return 'errored' so the surface flags the problem instead of
- *  showing a misleading "Restart" affordance for an inert session. */
+// precedence high → low; exhaustive Record — a new SessionStatus must be ranked
+const STATUS_PRECEDENCE: Record<SessionStatus, number> = {
+  errored: 0,
+  awaiting: 1,
+  running: 2,
+  idle: 3,
+  completed: 4,
+}
+
+// terminal = exited; exhaustive Record so a new status must classify itself
+const TERMINAL: Record<SessionStatus, boolean> = {
+  running: false,
+  awaiting: false,
+  idle: false,
+  completed: true,
+  errored: true,
+}
+
+export const isTerminalStatus = (s: SessionStatus): boolean => TERMINAL[s]
+
+export const isLiveStatus = (s: SessionStatus): boolean => !TERMINAL[s]
+
 export const deriveSessionStatus = (panes: Pane[]): SessionStatus => {
+  // empty panes is an invariant violation; flag it errored, not vacuously completed
   if (panes.length === 0) {
     return 'errored'
   }
-  if (panes.some((p) => p.status === 'running')) {
-    return 'running'
-  }
-  if (panes.some((p) => p.status === 'errored')) {
-    return 'errored'
-  }
-  if (panes.every((p) => p.status === 'completed')) {
-    return 'completed'
-  }
 
-  return 'paused'
+  return panes.reduce<SessionStatus>(
+    (top, pane) =>
+      STATUS_PRECEDENCE[pane.status] < STATUS_PRECEDENCE[top]
+        ? pane.status
+        : top,
+    'completed'
+  )
 }
 
 export const deriveShellSessionStatus = (panes: Pane[]): SessionStatus => {
   const shellPanes = panes.filter(isShellPane)
 
-  // A browser-only session (all shells closed) has no shell status to derive;
-  // fall back to the full pane set so a running browser pane reads as 'running'
-  // rather than the empty-slice 'errored' guard (which shows a misleading
-  // Restart affordance for a live browser session).
+  // browser-only session (all shells closed): fall back to the full pane set
   return deriveSessionStatus(shellPanes.length > 0 ? shellPanes : panes)
 }

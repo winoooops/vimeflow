@@ -16,7 +16,8 @@ export interface StatusDotProps {
 // Bright tones — used in Active group rows + the SessionTabs strip.
 const TONE_CLASS: Record<SessionStatus, string> = {
   running: 'bg-success shadow-[0_0_4px_theme(colors.success)] animate-pulse',
-  paused: 'bg-warning animate-pulse',
+  awaiting: 'bg-warning animate-pulse',
+  idle: 'bg-on-surface-muted/70',
   completed: 'bg-success-muted',
   errored: 'bg-error',
 }
@@ -25,7 +26,8 @@ const TONE_CLASS: Record<SessionStatus, string> = {
 // outline so the dot reads as a marker rather than a heartbeat.
 const DIM_TONE_CLASS: Record<SessionStatus, string> = {
   running: 'border border-success/60',
-  paused: 'border border-warning/60',
+  awaiting: 'border border-warning/60',
+  idle: 'border border-on-surface-muted/40',
   completed: 'border border-success-muted/60',
   errored: 'border border-error/60',
 }

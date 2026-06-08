@@ -1,7 +1,12 @@
 // Session domain types — owned by src/features/sessions/.
 // cspell:ignore vsplit hsplit
 
-export type SessionStatus = 'running' | 'paused' | 'completed' | 'errored'
+export type SessionStatus =
+  | 'running'
+  | 'awaiting'
+  | 'idle'
+  | 'completed'
+  | 'errored'
 
 export type SessionCloseResult = false | void
 

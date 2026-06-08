@@ -1,14 +1,10 @@
-import type { Session, SessionStatus } from '../types'
-
-const OPEN_STATUSES: ReadonlySet<SessionStatus> = new Set(['running', 'paused'])
-
-export const isOpenSessionStatus = (status: SessionStatus): boolean =>
-  OPEN_STATUSES.has(status)
+import type { Session } from '../types'
+import { isLiveStatus } from './sessionStatus'
 
 /**
- * Returns the sessions visible in the SessionTabs strip — running or
- * paused sessions plus the currently active one (so a just-exited
- * active session keeps its tab even after status flips to
+ * Returns the sessions visible in the SessionTabs strip — running,
+ * awaiting, or idle sessions plus the currently active one (so a
+ * just-exited active session keeps its tab even after status flips to
  * completed/errored). This is the single source of truth for "open"
  * semantics; both `SessionTabs` and `pickNextVisibleSessionId`
  * consume it so the visible-set definition can never drift between
@@ -18,9 +14,7 @@ export const getVisibleSessions = (
   sessions: Session[],
   activeSessionId: string | null
 ): Session[] =>
-  sessions.filter(
-    (s) => isOpenSessionStatus(s.status) || s.id === activeSessionId
-  )
+  sessions.filter((s) => isLiveStatus(s.status) || s.id === activeSessionId)
 
 /**
  * Pick the next visible session id when the user removes the currently
