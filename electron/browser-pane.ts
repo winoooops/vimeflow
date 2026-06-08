@@ -1477,16 +1477,16 @@ export class BrowserPaneController {
       this.emitPaneNavStateChanged(record, record.activeTabId)
     })
 
-    if (options.activate) {
-      this.setActiveTab(record, tabId, true)
-    } else {
-      this.emitTabsChanged(record)
-    }
-
     if (options.restore) {
       this.restoreTabHistory(record, tabId, options.restore)
     } else {
       void loadBrowserUrl(view.webContents, normalizeTabUrl(options.url))
+    }
+
+    if (options.activate) {
+      this.setActiveTab(record, tabId, true)
+    } else {
+      this.emitTabsChanged(record)
     }
   }
 
