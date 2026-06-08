@@ -405,8 +405,10 @@ export const reconstructWorkspace = (
   const validStoreSessions = storeShape.sessions.filter((session) => {
     if (session.panes.length === 0) {
       log.warn(`Skipping persisted session with zero panes: ${session.id}`)
+
       return false
     }
+
     return true
   })
 
