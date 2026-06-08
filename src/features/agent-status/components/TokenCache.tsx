@@ -1,34 +1,37 @@
-import type { ReactElement } from 'react'
+import type { CSSProperties, ReactElement } from 'react'
 import type { CurrentUsageState } from '../types'
 import {
   cacheBuckets,
-  cacheHitRate,
-  cacheTone,
+  cacheToneFromPercent,
   type CacheTone,
 } from '../utils/cacheRate'
-import { formatTokens } from '../utils/format'
-
-// Pulse animation: use Tailwind's built-in `animate-pulse` to match the
-// existing pulse-dot pattern (ActivityEvent.tsx:180, ToolCallSummary.tsx:45,
-// FileStatusBar.tsx:37). Do NOT import `stateToken` from docs/design/tokens —
-// that file is the design reference, not a runtime token source, and is not
-// imported anywhere in src/.
+import { Sparkline } from './Sparkline'
 
 export interface TokenCacheProps {
   usage: CurrentUsageState | null
+  history: number[]
 }
 
-const TONE_TEXT: Record<CacheTone, string> = {
-  healthy: 'text-success',
-  warming: 'text-primary-container',
-  cold: 'text-tertiary',
+const JETBRAINS = "'JetBrains Mono', monospace"
+
+const TONE_HEX: Record<CacheTone, string> = {
+  healthy: '#7defa1',
+  warming: '#e2c7ff',
+  cold: '#ff94a5',
 }
 
-const TONE_BG: Record<CacheTone, string> = {
-  healthy: 'bg-success',
-  warming: 'bg-primary-container',
-  cold: 'bg-tertiary',
+const TONE_TINT: Record<CacheTone, string> = {
+  healthy: 'rgba(125,239,161,0.06)',
+  warming: 'rgba(203,166,247,0.06)',
+  cold: 'rgba(255,148,165,0.06)',
 }
+
+// Kit formatter — one decimal at >=1k (8.4k, 2.0k), raw below.
+const fmt = (n: number): string =>
+  n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n)
+
+const cachedShareHex = (sharePct: number): string =>
+  sharePct >= 70 ? '#7defa1' : sharePct >= 40 ? '#cba6f7' : '#ff94a5'
 
 const StackBar = ({
   cached,
@@ -42,51 +45,51 @@ const StackBar = ({
   total: number
 }): ReactElement => {
   if (total === 0) {
-    // Tonal empty band — no segments, no border. Per UNIFIED.md §8
-    // ("1px borders for sectioning — tonal shift only") and DESIGN.md §23
-    // (ghost borders only at 15% opacity), the empty state uses a slightly
-    // raised tonal background instead of a full-opacity outline.
     return (
       <div
         data-testid="token-cache-stack-empty"
-        className="h-1.5 w-full rounded-full bg-surface-container-high"
+        className="h-2 w-full rounded-full"
+        style={{ background: 'rgba(74,68,79,0.25)' }}
       />
     )
   }
 
-  const cachedPct = (cached / total) * 100
-  const wrotePct = (wrote / total) * 100
-  const freshPct = (fresh / total) * 100
+  const cPct = (cached / total) * 100
+  const wPct = (wrote / total) * 100
+  const fPct = (fresh / total) * 100
+  const cTone = cachedShareHex(cPct)
 
   return (
-    <div className="flex h-1.5 w-full gap-px overflow-hidden rounded-full">
+    <div
+      className="flex h-2 w-full overflow-hidden rounded-full"
+      style={{
+        background: 'rgba(13,13,28,0.6)',
+        border: '1px solid rgba(74,68,79,0.25)',
+      }}
+    >
       <div
         data-testid="token-cache-stack-cached"
-        className="bg-success"
-        style={{ width: `${cachedPct}%` }}
+        style={{
+          width: `${cPct}%`,
+          background: `linear-gradient(90deg, ${cTone}, ${cTone}cc)`,
+          boxShadow: `inset 0 0 6px ${cTone}55`,
+        }}
       />
       <div
         data-testid="token-cache-stack-wrote"
-        className="bg-primary-container"
-        style={{ width: `${wrotePct}%` }}
+        style={{
+          width: `${wPct}%`,
+          background: 'linear-gradient(90deg, #a8c8ff, #8aa9d8)',
+        }}
       />
       <div
         data-testid="token-cache-stack-fresh"
-        className="bg-tertiary"
-        style={{ width: `${freshPct}%` }}
+        style={{ width: `${fPct}%`, background: 'rgba(205,195,209,0.4)' }}
       />
     </div>
   )
 }
 
-// Each stat cell renders a definition-list group: <dt> term (label) + <dd>
-// value + <dd> description (hint). HTML5 allows multiple <dd> per <dt> when
-// the same term has multiple descriptions, which fits the
-// label / value / hint trio without needing visually-hidden text.
-// Wrapping <dt>/<dd> in a <div> inside <dl> is valid per the HTML living
-// standard (added in 2015) and lets us keep the existing card layout. Screen
-// readers announce the group as a name-value pair (WCAG 1.3.1) instead of
-// running text.
 const StatCell = ({
   label,
   value,
@@ -98,83 +101,116 @@ const StatCell = ({
   hint: string
   testId: string
 }): ReactElement => (
-  <div className="flex flex-col gap-1 rounded-lg bg-surface-container px-2.5 py-2">
-    <dt className="text-[8px] font-bold uppercase tracking-[0.08em] text-outline">
-      {label}
-    </dt>
-    <dd
+  <div className="flex flex-col gap-0.5">
+    <span
       data-testid={testId}
-      className="font-mono text-sm font-semibold tabular-nums text-on-surface"
+      className="text-[11.5px] font-semibold tabular-nums text-on-surface"
+      style={{ fontFamily: JETBRAINS }}
     >
       {value}
-    </dd>
-    <dd className="text-[8px] text-outline-variant">{hint}</dd>
+    </span>
+    <span
+      className="text-[9px] uppercase tracking-[0.06em] text-on-surface-muted"
+      style={{ fontFamily: JETBRAINS }}
+    >
+      {label}
+    </span>
+    <span className="font-sans text-[10px] text-[#6c7086]">{hint}</span>
   </div>
 )
 
-export const TokenCache = ({ usage }: TokenCacheProps): ReactElement => {
+export const TokenCache = ({
+  usage,
+  history,
+}: TokenCacheProps): ReactElement => {
   const buckets = cacheBuckets(usage)
-  const rate = cacheHitRate(usage)
-  const tone = cacheTone(rate)
-  const isEmpty = rate === null
+
+  const pct =
+    buckets.total > 0 ? Math.round((buckets.cached / buckets.total) * 100) : 0
+  const tone = cacheToneFromPercent(pct)
+  const toneHex = TONE_HEX[tone]
+
+  const cardStyle: CSSProperties = {
+    borderRadius: 10,
+    border: `1px solid ${toneHex}26`,
+    background: `linear-gradient(135deg, ${TONE_TINT[tone]}, rgba(13,13,28,0.5))`,
+  }
 
   return (
     <div
       data-testid="token-cache"
-      className="flex flex-col gap-2 rounded-lg bg-surface-container-low px-2.5 py-2"
+      style={{
+        padding: '14px 16px',
+        borderBottom: '1px solid rgba(74,68,79,0.18)',
+      }}
     >
-      <span className="text-[8px] font-bold uppercase tracking-[0.08em] text-outline">
-        Token Cache
-      </span>
-
-      <StackBar {...buckets} />
-
-      <div className="flex items-center gap-2">
-        <span
-          data-testid="token-cache-percent"
-          data-tone={tone ?? 'empty'}
-          className={`font-mono text-[2.25rem] leading-none font-semibold tabular-nums ${
-            tone ? TONE_TEXT[tone] : 'text-outline-variant'
-          }`}
-        >
-          {isEmpty ? '—' : `${Math.round(rate * 100)}%`}
-        </span>
-        {!isEmpty && tone ? (
-          <span
-            data-testid="token-cache-pulse"
-            className={`h-2 w-2 animate-pulse rounded-full ${TONE_BG[tone]}`}
-          />
-        ) : null}
+      <div
+        className="mb-2.5 px-0.5 text-[10px] font-bold uppercase tracking-[0.18em] text-on-surface-muted"
+        style={{ fontFamily: JETBRAINS }}
+      >
+        Token cache
       </div>
 
-      <span
-        className={`text-[8px] font-bold uppercase tracking-[0.08em] ${
-          isEmpty ? 'text-outline-variant' : 'text-outline'
-        }`}
-      >
-        {isEmpty ? 'no data yet' : 'cached this turn'}
-      </span>
+      <div className="overflow-hidden" style={cardStyle}>
+        <div className="flex items-end gap-3 px-3.5 py-3">
+          <div>
+            <div className="flex items-baseline gap-1">
+              <span
+                data-testid="token-cache-percent"
+                data-tone={tone}
+                className="font-display text-[28px] font-semibold leading-none tracking-[-0.02em] tabular-nums text-on-surface"
+              >
+                {pct}
+              </span>
+              <span
+                className="text-[13px] font-semibold"
+                style={{ fontFamily: JETBRAINS, color: toneHex }}
+              >
+                %
+              </span>
+            </div>
+            <div
+              className="mt-0.5 text-[9.5px] uppercase tracking-[0.06em] text-on-surface-muted"
+              style={{ fontFamily: JETBRAINS }}
+            >
+              cached this turn
+            </div>
+          </div>
+          <div className="h-9 min-w-0 flex-1">
+            <Sparkline data={history} color={toneHex} />
+          </div>
+        </div>
 
-      <dl className="grid grid-cols-3 gap-2">
-        <StatCell
-          label="cached"
-          value={formatTokens(buckets.cached)}
-          hint="free reuse"
-          testId="token-cache-stat-cached"
-        />
-        <StatCell
-          label="wrote"
-          value={formatTokens(buckets.wrote)}
-          hint="uploaded"
-          testId="token-cache-stat-wrote"
-        />
-        <StatCell
-          label="fresh"
-          value={formatTokens(buckets.fresh)}
-          hint="new tokens"
-          testId="token-cache-stat-fresh"
-        />
-      </dl>
+        <div
+          style={{
+            padding: '11px 14px 13px',
+            borderTop: '1px solid rgba(74,68,79,0.2)',
+            background: 'rgba(13,13,28,0.25)',
+          }}
+        >
+          <StackBar {...buckets} />
+          <div className="mt-2.5 grid grid-cols-3 gap-2">
+            <StatCell
+              label="cached"
+              value={fmt(buckets.cached)}
+              hint="free reuse"
+              testId="token-cache-stat-cached"
+            />
+            <StatCell
+              label="wrote"
+              value={fmt(buckets.wrote)}
+              hint="uploaded"
+              testId="token-cache-stat-wrote"
+            />
+            <StatCell
+              label="fresh"
+              value={fmt(buckets.fresh)}
+              hint="new tokens"
+              testId="token-cache-stat-fresh"
+            />
+          </div>
+        </div>
+      </div>
     </div>
   )
 }

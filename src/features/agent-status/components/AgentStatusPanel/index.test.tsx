@@ -95,6 +95,7 @@ const defaultProps = {
   agent: AGENTS.shell,
   status: 'paused' as const,
   onCollapse: (): void => undefined,
+  cacheHistory: [],
 }
 
 describe('AgentStatusPanel', () => {
@@ -319,7 +320,7 @@ describe('AgentStatusPanel', () => {
     )
 
     const percent = screen.getByTestId('token-cache-percent')
-    expect(percent).toHaveTextContent('75%')
+    expect(percent).toHaveTextContent('75')
   })
 
   test('renders TokenCache empty state when currentUsage is null', () => {
@@ -340,6 +341,7 @@ describe('AgentStatusPanel', () => {
     render(
       <AgentStatusPanel
         {...defaultProps}
+        cacheHistory={[42, 75]}
         agentStatus={{
           ...activeAgentStatus,
           contextWindow: {
@@ -360,24 +362,25 @@ describe('AgentStatusPanel', () => {
 
     const panel = screen.getByTestId('agent-status-panel')
     const tokenCache = screen.getByTestId('token-cache')
+    const context = screen.getByText(/CURRENT CONTEXT/)
 
     /* eslint-disable testing-library/no-node-access */
     const scrollable = panel.querySelector('.thin-scrollbar')
-
-    const staticTop = panel.children.item(1)
-    expect(staticTop).not.toBeNull()
-    expect(staticTop?.lastElementChild).toBe(tokenCache)
-
     expect(scrollable).not.toBeNull()
 
-    const positionRelativeToScrollable = tokenCache.compareDocumentPosition(
-      scrollable as Node
-    )
-    /* eslint-enable testing-library/no-node-access */
+    expect(
+      context.compareDocumentPosition(tokenCache) &
+        Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy()
 
     expect(
-      positionRelativeToScrollable & Node.DOCUMENT_POSITION_FOLLOWING
+      tokenCache.compareDocumentPosition(scrollable as Node) &
+        Node.DOCUMENT_POSITION_FOLLOWING
     ).toBeTruthy()
+    /* eslint-enable testing-library/no-node-access */
+
+    // Sparkline renders when history is present.
+    expect(screen.getByTestId('token-cache-sparkline')).toBeInTheDocument()
   })
 
   test('renders Header above the body with the provided agent status and onCollapse', async () => {

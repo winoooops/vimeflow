@@ -32,6 +32,11 @@ import {
   deleteActivityPanelCollapsed,
   writeActivityPanelCollapsed,
 } from '../utils/activityPanelCollapsedStore'
+import {
+  writeCacheHistory,
+  deleteCacheHistory,
+} from '../utils/cacheHistoryStore'
+import { pushCacheReading } from '../../agent-status/utils/cacheRate'
 import { isBrowserPane, isShellPane } from '../utils/paneKind'
 import { findBackendSessionPane } from '../utils/findBackendPane'
 import { DEFAULT_BROWSER_URL } from '../../browser/types'
@@ -84,6 +89,11 @@ export interface SessionManager {
     sessionId: string,
     paneId: string,
     agentType: Session['agentType']
+  ) => void
+  appendPaneCacheReading: (
+    sessionId: string,
+    paneId: string,
+    percentage: number
   ) => void
   updateBrowserPaneUrl?: (
     sessionId: string,
@@ -930,6 +940,7 @@ export const useSessionManager = (
         const allKilledPtyIds = [...snapshotPtyIds, ...newPtyIds]
         for (const ptyId of allKilledPtyIds) {
           dropAllForPty(ptyId)
+          deleteCacheHistory(ptyId)
           restoreDataRef.current.delete(ptyId)
           unregisterPtySession(ptyId)
         }
@@ -1334,6 +1345,7 @@ export const useSessionManager = (
             }
 
             dropAllForPty(target.ptyId)
+            deleteCacheHistory(target.ptyId)
             restoreDataRef.current.delete(target.ptyId)
             unregisterPtySession(target.ptyId)
           } else {
@@ -1491,6 +1503,7 @@ export const useSessionManager = (
         }
 
         dropAllForPty(oldPane.ptyId)
+        deleteCacheHistory(oldPane.ptyId)
         restoreDataRef.current.delete(oldPane.ptyId)
         restoreDataRef.current.delete(oldSession.id)
         unregisterPtySession(oldPane.ptyId)
@@ -1539,6 +1552,7 @@ export const useSessionManager = (
               agentTitle: undefined,
               agentTitleSource: undefined,
               userLabel: undefined,
+              cacheHistory: [],
             }
 
             next[idx] = {
@@ -1748,6 +1762,35 @@ export const useSessionManager = (
     [service]
   )
 
+  const appendPaneCacheReading = useCallback(
+    (sessionId: string, paneId: string, percentage: number): void => {
+      setSessions((prev) =>
+        prev.map((session) => {
+          if (session.id !== sessionId) {
+            return session
+          }
+
+          const panes = session.panes.map((pane) => {
+            if (pane.id !== paneId) {
+              return pane
+            }
+            const current = pane.cacheHistory ?? []
+            const next = pushCacheReading(current, percentage)
+            if (next === current) {
+              return pane
+            }
+            writeCacheHistory(pane.ptyId, next)
+
+            return { ...pane, cacheHistory: next }
+          })
+
+          return { ...session, panes }
+        })
+      )
+    },
+    []
+  )
+
   const updatePaneAgentType = useCallback(
     (
       sessionId: string,
@@ -1891,6 +1934,7 @@ export const useSessionManager = (
     setPaneUserLabel,
     reorderSessions,
     updatePaneCwd,
+    appendPaneCacheReading,
     updatePaneAgentType,
     updateBrowserPaneUrl,
     setSessionActivityPanelCollapsed,

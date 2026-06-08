@@ -204,6 +204,7 @@ describe('WorkspaceView - Command Palette Integration', () => {
       setPaneUserLabel: vi.fn(),
       reorderSessions: vi.fn(),
       updatePaneCwd: vi.fn(),
+      appendPaneCacheReading: vi.fn(),
       updatePaneAgentType: vi.fn(),
       setSessionActivityPanelCollapsed: vi.fn(),
       updateSessionCwd: vi.fn(),

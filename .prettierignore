@@ -11,3 +11,4 @@ docs/design/*.html
 docs/design/*/code.html
 docs/diagrams/*.html
 docs/explorations/*.html
+docs/design/agent_status_sidebar/token-cache-card-kit/*.html

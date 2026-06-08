@@ -227,6 +227,47 @@ describe('useSessionManager', () => {
     expect(pane?.agentTitleSource).toBe('ai-generated')
   })
 
+  test('appendPaneCacheReading appends a changed reading once and persists by ptyId', async () => {
+    window.localStorage.clear()
+    const service = createMockService()
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: 'pty-1',
+      sessions: [
+        {
+          id: 'pty-1',
+          cwd: '/tmp',
+          status: {
+            kind: 'Alive',
+            pid: 1,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+      ],
+    })
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    const sessionId = result.current.sessions[0].id
+    const paneId = result.current.sessions[0].panes[0].id
+
+    act(() => {
+      result.current.appendPaneCacheReading(sessionId, paneId, 75)
+      result.current.appendPaneCacheReading(sessionId, paneId, 75)
+    })
+
+    expect(result.current.sessions[0].panes[0].cacheHistory).toEqual([75])
+    expect(
+      JSON.parse(
+        window.localStorage.getItem('vimeflow:agent:cacheHistory:pty-1') ??
+          'null'
+      )
+    ).toEqual([75])
+  })
+
   test('empty agent-session-title clears agentTitle to undefined', async () => {
     const service = createMockService()
     service.listSessions = vi.fn().mockResolvedValue({

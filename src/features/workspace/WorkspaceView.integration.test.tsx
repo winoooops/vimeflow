@@ -1007,7 +1007,7 @@ describe('WorkspaceView Integration Tests', () => {
 
       await waitFor(() => {
         const percent = screen.getByTestId('token-cache-percent')
-        expect(percent).toHaveTextContent('75%')
+        expect(percent).toHaveTextContent('75')
       })
     })
 
