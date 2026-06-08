@@ -1764,25 +1764,29 @@ export const useSessionManager = (
 
   const appendPaneCacheReading = useCallback(
     (sessionId: string, paneId: string, percentage: number): void => {
+      const target = sessionsRef.current.find((s) => s.id === sessionId)
+      const targetPane = target?.panes.find((p) => p.id === paneId)
+      if (!targetPane) {
+        return
+      }
+
+      const current = targetPane.cacheHistory ?? []
+      const next = pushCacheReading(current, percentage)
+      if (next === current) {
+        return
+      }
+
+      writeCacheHistory(targetPane.ptyId, next)
+
       setSessions((prev) =>
         prev.map((session) => {
           if (session.id !== sessionId) {
             return session
           }
 
-          const panes = session.panes.map((pane) => {
-            if (pane.id !== paneId) {
-              return pane
-            }
-            const current = pane.cacheHistory ?? []
-            const next = pushCacheReading(current, percentage)
-            if (next === current) {
-              return pane
-            }
-            writeCacheHistory(pane.ptyId, next)
-
-            return { ...pane, cacheHistory: next }
-          })
+          const panes = session.panes.map((pane) =>
+            pane.id === paneId ? { ...pane, cacheHistory: next } : pane
+          )
 
           return { ...session, panes }
         })

@@ -2,7 +2,7 @@
 id: accessibility
 category: a11y
 created: 2026-04-09
-last_updated: 2026-05-08
+last_updated: 2026-06-08
 ref_count: 6
 ---
 
@@ -244,3 +244,12 @@ handlers must not trap focus without implementing the promised behavior.
 - **Finding:** Cycle-3's fix wrapped the `>` glyph + a decorative `readOnly tabIndex={-1} aria-hidden="true"` `<input>` inside a real `<button aria-label="Focus terminal">` to give the click-to-focus affordance a keyboard-discoverable surface. Per HTML5 §4.10.6, `<button>` content cannot include interactive content (`<input>` is interactive content), and per §4.10.6.1 `<button>` cannot contain any element carrying a `tabindex` attribute. Both rules are violated here. Modern browsers + jsdom handle the nesting correctly in practice (event bubbling works, `aria-hidden` suppresses AT exposure), but the markup fails HTML validators and accessibility-audit tools, and could break in stricter parsers or future browser versions. Class of bug: a "fake-input" rendered with a real `<input>` element to inherit the native placeholder pseudo-element.
 - **Fix:** Replaced the `<input>` with a `<span>` displaying the placeholder text directly. The span has no a11y semantics, no tabindex, and no interactive role — purely text content inside the `<button>`, which is fully spec-compliant. Visual result is identical because the input's only visible state was its placeholder, which is the same string the span now renders. Code-review heuristic: when wrapping a row in a `<button>` for keyboard activation, audit every descendant for interactive content (input, select, textarea, anchor, another button) AND for `tabindex` — both rules are independent. Decorative "input-shaped" UI should be a `<span>` or `<div>`, not `<input>`.
 - **Commit:** _(see git log for the cycle-4 fix commit on PR #190)_
+
+### 26. Tooltip-wrapped stat cell reverts prior dl/dt/dd fix to bare spans — a11y regression
+
+- **Source:** github-claude | PR #395 round 1 | 2026-06-08
+- **Severity:** LOW
+- **File:** `src/features/agent-status/components/TokenCache.tsx`
+- **Finding:** A PR refactor that introduced `Tooltip` around each `StatCell` replaced the previous `<dl>` / `<dt>` / `<dd>` structure (see §12) with `<div>` / `<span>` nodes. The visual layout remained identical, but assistive technologies lost the explicit name/value relationship for the cached/wrote/fresh metrics. Screen readers announced the three cells as flattened text fragments rather than structured term/value pairs, re-introducing the WCAG 1.3.1 violation that §12 had already fixed.
+- **Fix:** Restored the outer metric grid as `<dl>` and changed each `StatCell` inner markup to `<dd>` (value) + `<dt>` (label) while keeping the `Tooltip` wrapper and all Tailwind classes unchanged. The `<div>` wrapper inside `<dl>` around each `<dd>`/`<dt>` pair remains valid HTML5 per the living standard (added in 2015) and preserves the existing grid layout. Zero visual change, full semantic restoration.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
