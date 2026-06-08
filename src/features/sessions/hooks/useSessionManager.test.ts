@@ -2430,6 +2430,52 @@ describe('useSessionManager', () => {
     expect(ids).not.toContain('old-id')
   })
 
+  test('restartSession resets cacheHistory to [] and deletes the old ptyId key', async () => {
+    window.localStorage.clear()
+    const service = createMockService()
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: 'restart-old',
+      sessions: [
+        {
+          id: 'restart-old',
+          cwd: '/tmp',
+          status: { kind: 'Exited', last_exit_code: 0 },
+        },
+      ],
+    } satisfies SessionList)
+
+    service.spawn = vi.fn().mockResolvedValue({
+      sessionId: 'restart-new',
+      pid: 4242,
+      cwd: '/tmp',
+    })
+    registerPtySession('restart-old', 'restart-old', '/tmp')
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    act(() => {
+      result.current.appendPaneCacheReading('restart-old', 'p0', 80)
+    })
+    expect(result.current.sessions[0].panes[0].cacheHistory).toEqual([80])
+    expect(
+      window.localStorage.getItem('vimeflow:agent:cacheHistory:restart-old')
+    ).not.toBeNull()
+
+    act(() => result.current.restartSession('restart-old'))
+
+    await waitFor(() => {
+      expect(result.current.sessions[0].panes[0].ptyId).toBe('restart-new')
+    })
+
+    expect(result.current.sessions[0].panes[0].cacheHistory).toEqual([])
+    expect(
+      window.localStorage.getItem('vimeflow:agent:cacheHistory:restart-old')
+    ).toBeNull()
+  })
+
   test('F5 (round 2): restartSession of inactive session does NOT call setActiveSession', async () => {
     const service = createMockService()
     service.listSessions = vi.fn().mockResolvedValue({
