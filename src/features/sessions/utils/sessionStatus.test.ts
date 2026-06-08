@@ -1,6 +1,7 @@
 import { test, expect } from 'vitest'
 import {
   deriveSessionStatus,
+  deriveShellSessionStatus,
   isTerminalStatus,
   isLiveStatus,
 } from './sessionStatus'
@@ -15,6 +16,18 @@ const pane = (status: Pane['status']): Pane =>
     agentType: 'generic',
     status,
     active: true,
+  }) as Pane
+
+const browserPane = (status: Pane['status']): Pane =>
+  ({
+    kind: 'browser',
+    id: 'b',
+    ptyId: 'b',
+    cwd: '/',
+    agentType: 'generic',
+    status,
+    active: false,
+    browserUrl: 'https://example.com',
   }) as Pane
 
 test('precedence: errored beats every other state', () => {
@@ -55,4 +68,14 @@ test('isTerminalStatus / isLiveStatus partition the union', () => {
   expect(isLiveStatus('running')).toBe(true)
   expect(isLiveStatus('awaiting')).toBe(true)
   expect(isLiveStatus('idle')).toBe(true)
+})
+
+test('deriveShellSessionStatus derives from shell panes, ignoring browser panes', () => {
+  expect(
+    deriveShellSessionStatus([pane('completed'), browserPane('running')])
+  ).toBe('completed')
+})
+
+test('deriveShellSessionStatus falls back to the full pane set for a browser-only session', () => {
+  expect(deriveShellSessionStatus([browserPane('running')])).toBe('running')
 })
