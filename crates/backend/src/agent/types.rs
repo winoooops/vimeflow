@@ -362,3 +362,25 @@ pub struct AgentToolCallEvent {
     /// needing to glob the path itself.
     pub is_test_file: bool,
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+#[serde(rename_all = "camelCase")]
+pub enum AgentPhase {
+    Running,
+    Idle,
+    Awaiting, // reserved — never emitted until VIM-93b
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+#[serde(rename_all = "camelCase")]
+#[allow(dead_code)] // phase fields consumed by the frontend
+pub struct AgentLifecycleEvent {
+    pub session_id: String,
+    /// The agent's own session identity (Claude transcript stem, Codex session_meta.id); lets the bridge drop a stale tail across restart.
+    pub agent_session_id: String,
+    pub phase: AgentPhase,
+}
