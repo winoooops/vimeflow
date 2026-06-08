@@ -268,6 +268,55 @@ describe('useSessionManager', () => {
     ).toEqual([75])
   })
 
+  test('removeSession deletes the pane cacheHistory key for the killed pty', async () => {
+    window.localStorage.clear()
+    const service = createMockService()
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: 'pty-1',
+      sessions: [
+        {
+          id: 'pty-1',
+          cwd: '/tmp',
+          status: {
+            kind: 'Alive',
+            pid: 1,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+      ],
+    })
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    const sessionId = result.current.sessions[0].id
+    const paneId = result.current.sessions[0].panes[0].id
+    act(() => {
+      result.current.appendPaneCacheReading(sessionId, paneId, 75)
+    })
+
+    expect(
+      window.localStorage.getItem('vimeflow:agent:cacheHistory:pty-1')
+    ).not.toBeNull()
+
+    act(() => {
+      result.current.removeSession(sessionId)
+    })
+
+    await waitFor(() =>
+      expect(result.current.sessions.find((s) => s.id === sessionId)).toBe(
+        undefined
+      )
+    )
+
+    expect(
+      window.localStorage.getItem('vimeflow:agent:cacheHistory:pty-1')
+    ).toBeNull()
+  })
+
   test('empty agent-session-title clears agentTitle to undefined', async () => {
     const service = createMockService()
     service.listSessions = vi.fn().mockResolvedValue({
@@ -4200,6 +4249,37 @@ describe('useSessionManager', () => {
       expect(session.panes[0]).toMatchObject({ id: 'p0', active: true })
       expect(service.setActiveSession).toHaveBeenCalledWith('pty-0')
       expect(getAllPtySessionIds()).not.toContain('pty-1')
+    })
+
+    test('removePane deletes the cacheHistory key for the retired pty', async () => {
+      window.localStorage.clear()
+      const service = createSequentialSpawnService()
+
+      const { result } = renderHook(() =>
+        useSessionManager(service, { autoCreateOnEmpty: false })
+      )
+      await waitFor(() => expect(result.current.loading).toBe(false))
+
+      const sessionId = await createInitialSession(result)
+      await addSecondPane(result, sessionId)
+
+      act(() => {
+        result.current.appendPaneCacheReading(sessionId, 'p1', 60)
+      })
+
+      expect(
+        window.localStorage.getItem('vimeflow:agent:cacheHistory:pty-1')
+      ).not.toBeNull()
+
+      act(() => result.current.removePane(sessionId, 'p1'))
+
+      await waitFor(() =>
+        expect(result.current.sessions[0].panes).toHaveLength(1)
+      )
+
+      expect(
+        window.localStorage.getItem('vimeflow:agent:cacheHistory:pty-1')
+      ).toBeNull()
     })
 
     test('removePane refuses to remove the last pane', async () => {
