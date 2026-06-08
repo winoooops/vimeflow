@@ -31,19 +31,46 @@ interface SidecarSaver {
 }
 
 type CaptureTabs = (sessionId: string, paneId: string) => PersistedTab[] | null
+type TabsForPane = (sessionId: string, paneId: string) => PersistedTab[] | null
 
 export interface WorkspaceLayoutWriterDeps {
   sidecar: SidecarSaver
   // Reads the live per-tab history for a browser pane (browser-pane controller).
   captureTabsForPane: CaptureTabs
+  // Reads tabs from the loaded store before a live browser pane has been
+  // materialized. Used only as a fallback, never after the pane was removed.
+  preservedTabsForPane?: TabsForPane
   debounceMs?: number
 }
+
+const browserPaneKey = (sessionId: string, paneId: string): string =>
+  `${sessionId}:${paneId}`
+
+const cloneTabs = (tabs: PersistedTab[]): PersistedTab[] =>
+  tabs.map((tab) => ({
+    active: tab.active,
+    historyIndex: tab.historyIndex,
+    history: tab.history.map((entry) => ({
+      url: entry.url,
+      title: entry.title,
+    })),
+  }))
+
+const browserPaneKeysFromShape = (shape: WorkspaceShapeDto): Set<string> =>
+  new Set(
+    shape.sessions.flatMap((session) =>
+      session.panes
+        .filter((pane) => pane.kind === 'browser')
+        .map((pane) => browserPaneKey(session.id, pane.paneId))
+    )
+  )
 
 export class WorkspaceLayoutWriter
   implements WorkspaceLayoutWriterPort, WorkspaceLayoutWriteSignals
 {
   private readonly sidecar: SidecarSaver
   private readonly captureTabsForPane: CaptureTabs
+  private readonly preservedTabsForPane: TabsForPane | null
   private readonly debounceMs: number
   private shape: WorkspaceShapeDto | null = null
   private hydrating = false
@@ -51,14 +78,20 @@ export class WorkspaceLayoutWriter
   private committedGeneration = 0
   private chain: Promise<void> = Promise.resolve()
   private volatileTimer: ReturnType<typeof setTimeout> | null = null
+  private failedWrite: { generation: number; error: unknown } | null = null
+  private readonly lastTabsByBrowserPane = new Map<string, PersistedTab[]>()
+  private browserPaneKeys = new Set<string>()
+  private readonly removedBrowserPaneKeys = new Set<string>()
 
   constructor(deps: WorkspaceLayoutWriterDeps) {
     this.sidecar = deps.sidecar
     this.captureTabsForPane = deps.captureTabsForPane
+    this.preservedTabsForPane = deps.preservedTabsForPane ?? null
     this.debounceMs = deps.debounceMs ?? DEFAULT_VOLATILE_DEBOUNCE_MS
   }
 
   onShapePushed(dto: WorkspaceShapeDto): void {
+    this.noteBrowserPaneShape(dto)
     this.shape = dto
     this.markStructural()
   }
@@ -93,36 +126,52 @@ export class WorkspaceLayoutWriter
       return null
     }
 
-    return {
-      version: CURRENT_WORKSPACE_LAYOUT_VERSION,
-      sessions: this.shape.sessions.map((session) => ({
+    const sessions: PersistedWorkspaceLayoutStore['sessions'] = []
+    for (const session of this.shape.sessions) {
+      const panes: PersistedWorkspacePane[] = []
+      for (const pane of session.panes) {
+        if (pane.kind === 'shell') {
+          panes.push({
+            kind: 'shell',
+            paneId: pane.paneId,
+            paneIndex: pane.paneIndex,
+            active: pane.active,
+            ptyId: pane.ptyId,
+            cwd: pane.cwd,
+            agentType: pane.agentType,
+            agentSessionId: pane.agentSessionId,
+          })
+
+          continue
+        }
+
+        const tabs = this.tabsForBrowserPane(session.id, pane.paneId)
+        if (tabs === null) {
+          return null
+        }
+
+        panes.push({
+          kind: 'browser',
+          paneId: pane.paneId,
+          paneIndex: pane.paneIndex,
+          active: pane.active,
+          tabs,
+        })
+      }
+
+      sessions.push({
         id: session.id,
         projectId: session.projectId,
         layout: session.layout,
         workingDirectory: session.workingDirectory,
         active: session.active,
-        panes: session.panes.map(
-          (pane): PersistedWorkspacePane =>
-            pane.kind === 'shell'
-              ? {
-                  kind: 'shell',
-                  paneId: pane.paneId,
-                  paneIndex: pane.paneIndex,
-                  active: pane.active,
-                  ptyId: pane.ptyId,
-                  cwd: pane.cwd,
-                  agentType: pane.agentType,
-                  agentSessionId: pane.agentSessionId,
-                }
-              : {
-                  kind: 'browser',
-                  paneId: pane.paneId,
-                  paneIndex: pane.paneIndex,
-                  active: pane.active,
-                  tabs: this.captureTabsForPane(session.id, pane.paneId) ?? [],
-                }
-        ),
-      })),
+        panes,
+      })
+    }
+
+    return {
+      version: CURRENT_WORKSPACE_LAYOUT_VERSION,
+      sessions,
     }
   }
 
@@ -130,8 +179,15 @@ export class WorkspaceLayoutWriter
   // to drain — used by the window-close flush (spec §3.2) and tests.
   async flush(): Promise<void> {
     this.cancelVolatile()
-    this.enqueueWrite()
+    const generation = this.enqueueWrite()
     await this.chain
+    if (
+      generation !== null &&
+      this.failedWrite !== null &&
+      this.failedWrite.generation === generation
+    ) {
+      throw this.failedWrite.error
+    }
   }
 
   private cancelVolatile(): void {
@@ -141,14 +197,16 @@ export class WorkspaceLayoutWriter
     }
   }
 
-  private enqueueWrite(): void {
+  private enqueueWrite(): number | null {
     const store = this.assemble()
     if (!store) {
-      return
+      return null
     }
     const generation = (this.latestGeneration += 1)
     // eslint-disable-next-line promise/prefer-await-to-then
     this.chain = this.chain.then(() => this.commit(generation, store))
+
+    return generation
   }
 
   private async commit(
@@ -167,10 +225,64 @@ export class WorkspaceLayoutWriter
 
     try {
       await this.sidecar.invoke('save_workspace_layout', { store })
-    } catch {
+      if (
+        this.failedWrite !== null &&
+        this.failedWrite.generation <= generation
+      ) {
+        this.failedWrite = null
+      }
+    } catch (error) {
       // A failed save must not wedge the queue; the next change reassembles
       // and retries from the live shape.
+      this.failedWrite = { generation, error }
       this.committedGeneration = generation - 1
     }
+  }
+
+  private noteBrowserPaneShape(dto: WorkspaceShapeDto): void {
+    const nextKeys = browserPaneKeysFromShape(dto)
+
+    for (const key of this.browserPaneKeys) {
+      if (!nextKeys.has(key)) {
+        this.removedBrowserPaneKeys.add(key)
+        this.lastTabsByBrowserPane.delete(key)
+      }
+    }
+
+    this.browserPaneKeys = nextKeys
+  }
+
+  private tabsForBrowserPane(
+    sessionId: string,
+    paneId: string
+  ): PersistedTab[] | null {
+    const key = browserPaneKey(sessionId, paneId)
+    const liveTabs = this.captureTabsForPane(sessionId, paneId)
+    if (liveTabs !== null) {
+      const cloned = cloneTabs(liveTabs)
+      this.removedBrowserPaneKeys.delete(key)
+      this.lastTabsByBrowserPane.set(key, cloned)
+
+      return cloneTabs(cloned)
+    }
+
+    const rememberedTabs = this.lastTabsByBrowserPane.get(key)
+    if (rememberedTabs !== undefined) {
+      return cloneTabs(rememberedTabs)
+    }
+
+    if (this.removedBrowserPaneKeys.has(key)) {
+      return null
+    }
+
+    const preservedTabs = this.preservedTabsForPane?.(sessionId, paneId) ?? null
+    if (preservedTabs === null) {
+      return null
+    }
+
+    const cloned = cloneTabs(preservedTabs)
+    this.lastTabsByBrowserPane.set(key, cloned)
+
+    return cloneTabs(cloned)
   }
 }

@@ -8,8 +8,37 @@ import {
 import { emptyActivity } from '../constants'
 import type { Pane, Session } from '../types'
 
-const pushWorkspaceShape = vi.hoisted(() => vi.fn(() => Promise.resolve()))
-vi.mock('../workspaceLayoutBridge', () => ({ pushWorkspaceShape }))
+const workspaceLayoutMock = vi.hoisted(() => {
+  const finalShapeCallbacks: (() => void)[] = []
+
+  const onWorkspaceRequestFinalShape = vi.fn((callback: () => void) => {
+    finalShapeCallbacks.push(callback)
+
+    return (): void => {
+      const index = finalShapeCallbacks.indexOf(callback)
+      if (index !== -1) {
+        finalShapeCallbacks.splice(index, 1)
+      }
+    }
+  })
+
+  return {
+    finalShapeCallbacks,
+    onWorkspaceRequestFinalShape,
+    pushWorkspaceShape: vi.fn(() => Promise.resolve()),
+  }
+})
+vi.mock('../workspaceLayoutBridge', () => ({
+  onWorkspaceRequestFinalShape:
+    workspaceLayoutMock.onWorkspaceRequestFinalShape,
+  pushWorkspaceShape: workspaceLayoutMock.pushWorkspaceShape,
+}))
+
+const {
+  finalShapeCallbacks,
+  onWorkspaceRequestFinalShape,
+  pushWorkspaceShape,
+} = workspaceLayoutMock
 
 const shellPane = (over: Partial<Pane> = {}): Pane => ({
   id: 'p0',
@@ -86,6 +115,8 @@ describe('buildWorkspaceShape', () => {
 describe('usePushWorkspaceGrouping', () => {
   beforeEach(() => {
     pushWorkspaceShape.mockClear()
+    onWorkspaceRequestFinalShape.mockClear()
+    finalShapeCallbacks.length = 0
   })
 
   afterEach(() => {
@@ -103,12 +134,24 @@ describe('usePushWorkspaceGrouping', () => {
     expect(pushWorkspaceShape).not.toHaveBeenCalled()
   })
 
-  test('does not push when there are no sessions', () => {
+  test('pushes an empty shape when empty writes are allowed', () => {
     renderHook(() =>
       usePushWorkspaceGrouping({
         sessions: [],
         activeSessionId: null,
         loading: false,
+      })
+    )
+    expect(pushWorkspaceShape).toHaveBeenCalledWith({ sessions: [] })
+  })
+
+  test('does not push an empty shape when empty writes are disallowed', () => {
+    renderHook(() =>
+      usePushWorkspaceGrouping({
+        sessions: [],
+        activeSessionId: null,
+        loading: false,
+        canPushEmptyShape: false,
       })
     )
     expect(pushWorkspaceShape).not.toHaveBeenCalled()
@@ -263,7 +306,7 @@ describe('usePushWorkspaceGrouping', () => {
     expect(pushWorkspaceShape).not.toHaveBeenCalled()
   })
 
-  test('cancels pending drift debounce when sessions become empty', () => {
+  test('pushes and cancels pending drift debounce when sessions become empty', () => {
     vi.useFakeTimers()
 
     const { rerender } = renderHook(
@@ -297,8 +340,82 @@ describe('usePushWorkspaceGrouping', () => {
       activeSessionId: null,
       loading: false,
     })
+    expect(pushWorkspaceShape).toHaveBeenCalledWith({ sessions: [] })
 
     vi.advanceTimersByTime(500)
+    expect(pushWorkspaceShape).toHaveBeenCalledTimes(1)
+  })
+
+  test('final-shape request pushes immediately and cancels pending drift', () => {
+    vi.useFakeTimers()
+
+    const { rerender } = renderHook(
+      (props: UsePushWorkspaceGroupingOptions) =>
+        usePushWorkspaceGrouping(props),
+      {
+        initialProps: {
+          sessions: [makeSession()],
+          activeSessionId: 's1',
+          loading: false,
+        },
+      }
+    )
+    pushWorkspaceShape.mockClear()
+
+    rerender({
+      sessions: [
+        makeSession({
+          panes: [shellPane({ cwd: '/repo/sub' }), browserPane()],
+        }),
+      ],
+      activeSessionId: 's1',
+      loading: false,
+    })
+    expect(pushWorkspaceShape).not.toHaveBeenCalled()
+
+    finalShapeCallbacks[0]()
+    expect(pushWorkspaceShape).toHaveBeenCalledTimes(1)
+    expect(pushWorkspaceShape).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessions: [
+          expect.objectContaining({
+            panes: [
+              expect.objectContaining({ cwd: '/repo/sub' }),
+              expect.objectContaining({ kind: 'browser' }),
+            ],
+          }),
+        ],
+      })
+    )
+
+    vi.advanceTimersByTime(500)
+    expect(pushWorkspaceShape).toHaveBeenCalledTimes(1)
+  })
+
+  test('final-shape request is ignored while loading', () => {
+    renderHook(() =>
+      usePushWorkspaceGrouping({
+        sessions: [makeSession()],
+        activeSessionId: 's1',
+        loading: true,
+      })
+    )
+
+    finalShapeCallbacks[0]()
+    expect(pushWorkspaceShape).not.toHaveBeenCalled()
+  })
+
+  test('final-shape request does not push disallowed empty shapes', () => {
+    renderHook(() =>
+      usePushWorkspaceGrouping({
+        sessions: [],
+        activeSessionId: null,
+        loading: false,
+        canPushEmptyShape: false,
+      })
+    )
+
+    finalShapeCallbacks[0]()
     expect(pushWorkspaceShape).not.toHaveBeenCalled()
   })
 })

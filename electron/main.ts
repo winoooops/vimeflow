@@ -360,6 +360,8 @@ const setupApp = async (): Promise<void> => {
     sidecar: spawnedSidecar,
     captureTabsForPane: (sessionId, paneId): PersistedTab[] | null =>
       browserPaneController?.captureTabsForPane(sessionId, paneId) ?? null,
+    preservedTabsForPane: (sessionId, paneId): PersistedTab[] | null =>
+      workspaceLayoutController?.tabsForPane(sessionId, paneId) ?? null,
   })
   browserPaneController.setWriteSignals(layoutWriter)
   workspaceLayoutController = setupWorkspaceLayoutController({
