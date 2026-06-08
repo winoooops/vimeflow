@@ -45,8 +45,14 @@ fn write_executable_script(path: &Path, content: &str) -> std::io::Result<()> {
         file.write_all(content.as_bytes())?;
         file.sync_all()?;
         drop(file);
+        std::fs::set_permissions(&tmp_path, std::fs::Permissions::from_mode(0o755))?;
         std::fs::rename(&tmp_path, path)?;
-        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755))?;
+        // Sync parent directory so the rename is fully committed before callers
+        // try to execute the script, avoiding ETXTBSY on heavily loaded runners.
+        if let Some(parent) = path.parent() {
+            let dir = std::fs::File::open(parent)?;
+            dir.sync_all()?;
+        }
         Ok(())
     })();
     if result.is_err() {

@@ -655,10 +655,18 @@ export const WorkspaceView = (): ReactElement => {
 
   // Live pane keys across all sessions — drives the burner lazy reconciliation
   // (a burner whose host pane/session is gone gets killed + dropped).
-  const livePaneKeys = useMemo(
+  const topologyKey = useMemo(
     () =>
-      new Set(sessions.flatMap((s) => s.panes.map((p) => `${s.id}:${p.id}`))),
+      sessions
+        .flatMap((s) => s.panes.map((p) => `${s.id}:${p.id}`))
+        .sort()
+        .join(','),
     [sessions]
+  )
+
+  const livePaneKeys = useMemo(
+    () => new Set(topologyKey === '' ? [] : topologyKey.split(',')),
+    [topologyKey]
   )
 
   // Live pane cwds keyed the same way — feeds the burner align-to-pane button

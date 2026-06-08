@@ -109,6 +109,7 @@ export const BurnerTerminalPopup = ({
         event.preventDefault()
         event.stopPropagation()
         onHide()
+
         return
       }
 
@@ -126,19 +127,21 @@ export const BurnerTerminalPopup = ({
       const alignBtn = panel.querySelector<HTMLButtonElement>(
         '[data-testid="burner-align"]'
       )
+
       const hideBtn = panel.querySelector<HTMLButtonElement>(
         '[data-testid="burner-hide"]'
       )
 
-      const focusables: HTMLElement[] = []
+      const focusableElements: HTMLElement[] = []
       if (alignBtn && !alignBtn.disabled) {
-        focusables.push(alignBtn)
+        focusableElements.push(alignBtn)
       }
       if (hideBtn) {
-        focusables.push(hideBtn)
+        focusableElements.push(hideBtn)
       }
 
       const bodyEl = panel.querySelector('[data-testid="burner-body"]')
+
       const isFocusInTerminal =
         bodyEl?.contains(document.activeElement) ?? false
 
@@ -146,14 +149,15 @@ export const BurnerTerminalPopup = ({
         event.preventDefault()
         event.stopPropagation()
         if (event.shiftKey) {
-          focusables[focusables.length - 1]?.focus()
+          focusableElements[focusableElements.length - 1]?.focus()
         } else {
-          focusables[0]?.focus()
+          focusableElements[0]?.focus()
         }
+
         return
       }
 
-      const currentIndex = focusables.findIndex(
+      const currentIndex = focusableElements.findIndex(
         (el) => el === document.activeElement
       )
       if (currentIndex === -1) {
@@ -167,13 +171,13 @@ export const BurnerTerminalPopup = ({
         if (currentIndex === 0) {
           bodyRef.current?.focusTerminal()
         } else {
-          focusables[currentIndex - 1]?.focus()
+          focusableElements[currentIndex - 1]?.focus()
         }
       } else {
-        if (currentIndex === focusables.length - 1) {
+        if (currentIndex === focusableElements.length - 1) {
           bodyRef.current?.focusTerminal()
         } else {
-          focusables[currentIndex + 1]?.focus()
+          focusableElements[currentIndex + 1]?.focus()
         }
       }
     }
