@@ -222,3 +222,42 @@ test('refocuses the burner terminal after aligning so typing continues there', (
   expect(onAlignCwd).toHaveBeenCalledTimes(1)
   expect(focusTerminal).toHaveBeenCalled()
 })
+
+test('blurs the active element when hidden so focus does not remain on a hidden terminal', () => {
+  const { rerender } = render(popup(true))
+
+  const dismissButton = screen.getByRole('button', {
+    name: /dismiss burner terminal/i,
+  })
+  dismissButton.focus()
+
+  expect(dismissButton).toHaveFocus()
+
+  rerender(popup(false))
+
+  expect(dismissButton).not.toHaveFocus()
+})
+
+test('exposes aria-modal on the dialog when open', () => {
+  const { rerender } = render(popup(true))
+
+  expect(screen.getByTestId('burner-popup')).toHaveAttribute(
+    'aria-modal',
+    'true'
+  )
+
+  rerender(popup(false))
+
+  expect(screen.getByTestId('burner-popup')).toHaveAttribute(
+    'aria-modal',
+    'false'
+  )
+})
+
+test('backdrop dismiss button is removed from the tab order', () => {
+  render(popup(true))
+
+  expect(
+    screen.getByRole('button', { name: /dismiss burner terminal/i })
+  ).toHaveAttribute('tabIndex', '-1')
+})

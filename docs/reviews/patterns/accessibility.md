@@ -2,8 +2,8 @@
 id: accessibility
 category: a11y
 created: 2026-04-09
-last_updated: 2026-06-06
-ref_count: 7
+last_updated: 2026-06-08
+ref_count: 8
 ---
 
 # Accessibility
@@ -253,3 +253,30 @@ handlers must not trap focus without implementing the promised behavior.
 - **Finding:** A PR renaming Scratch → Burner narrowed the visual running cue to foreground commands only (`burnerActive`) and simultaneously removed the separate accessible shell-exists state. The result: `aria-label` read identically for "no burner shell" and "burner shell alive but idle." In normal hide-not-kill use (e.g. after a shell returns to the prompt while background work continues), screen-reader users lost the pane-local cue that sighted users still get indirectly through visual/global status surfaces. The foreground-only amber tint is a reasonable visual design choice, but removing the separate accessible state conflates lifecycle and foreground activity for assistive technology.
 - **Fix:** Added a new `burnerShellExists` boolean prop to `HeaderActions` (threaded through `Header` → `TerminalPane` → `SplitView` → `TerminalZone` → `WorkspaceView` from the existing `runningBurnerPaneKeys` set computed by `useBurnerTerminals`). The `aria-label` now has three honest states: `open burner terminal (running)` when active, `open burner terminal (live)` when the shell exists but is idle, and `open burner terminal` when no shell exists. Visual styling (amber tint vs. gray) remains driven solely by `burnerActive` — no visual change for the idle-but-live case. Added a regression test asserting the button resolves with the `(live)` accessible name when `burnerShellExists` is true and `burnerActive` is false.
 - **Commit:** _(see git log for the cycle-1 fix commit on PR #367)_
+
+### 27. Closing a modal dialog can leave DOM focus inside the hidden subtree
+
+- **Source:** github-claude | PR #389 round 2 | 2026-06-08
+- **Severity:** MEDIUM
+- **File:** `src/features/terminal/components/BurnerTerminalPopup/index.tsx`
+- **Finding:** The `useEffect([open])` called `focusTerminal()` when `open` became `true`, but had no symmetric branch for `open === false`. After dismissing the popup via Escape, the xterm `<textarea>` retained DOM focus while its ancestor was `display:none`. Subsequent global keyboard shortcuts (pane-navigation chords, command-palette trigger) fired in the context of the hidden element, requiring a mouse click on a visible pane to recover keyboard control.
+- **Fix:** Added an `else` branch to the focus effect: `(document.activeElement as HTMLElement | null)?.blur()`. This removes focus from any element inside the hidden popup without needing a return-focus ref to the opener. Added a regression test asserting that after hiding, the previously-focused backdrop button no longer has focus.
+- **Commit:** _(see git log for the cycle-2 fix commit on PR #389)_
+
+### 28. `role="dialog"` container missing `aria-modal`
+
+- **Source:** github-claude | PR #389 round 2 | 2026-06-08
+- **Severity:** MEDIUM
+- **File:** `src/features/terminal/components/BurnerTerminalPopup/index.tsx`
+- **Finding:** The burner popup rendered `role="dialog"` and `aria-label="Burner terminal"` but omitted `aria-modal`. Without it, screen readers (NVDA, JAWS browse mode, VoiceOver) do not restrict virtual cursor navigation to the dialog, so a screen-reader user can Tab or arrow-key into background terminal panes while the popup appears open.
+- **Fix:** Added `aria-modal={open}` to the outer `role="dialog"` div so the modal containment signal is present only while the popup is visible. Added a regression test asserting `aria-modal="true"` when open and `"false"` when hidden.
+- **Commit:** _(see git log for the cycle-2 fix commit on PR #389)_
+
+### 29. Full-screen backdrop dismiss button participates in sequential keyboard navigation
+
+- **Source:** github-claude | PR #389 round 2 | 2026-06-08
+- **Severity:** LOW
+- **File:** `src/features/terminal/components/BurnerTerminalPopup/index.tsx`
+- **Finding:** The overlay backdrop was implemented as an absolutely-positioned `<button>` spanning the full viewport with no explicit `tabIndex`. Because it precedes the panel content in DOM order, it becomes the first tab stop inside the dialog — an invisible element with no visible focus ring. This violates WCAG 2.1 SC 2.4.7 (Focus Visible) and confuses keyboard-only users.
+- **Fix:** Added `tabIndex={-1}` to the backdrop button. Pointer users still dismiss by clicking the backdrop; keyboard users dismiss via the existing Escape capture listener. Added a regression test asserting `tabIndex="-1"`.
+- **Commit:** _(see git log for the cycle-2 fix commit on PR #389)_

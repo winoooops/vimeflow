@@ -84,9 +84,12 @@ export const BurnerTerminalPopup = ({
   openRef.current = open
 
   // Re-show: the terminal is already attached, so focus lands immediately.
+  // On hide: blur so focus does not remain inside the hidden popup subtree.
   useEffect(() => {
     if (open) {
       bodyRef.current?.focusTerminal()
+    } else {
+      ;(document.activeElement as HTMLElement | null)?.blur()
     }
   }, [open])
 
@@ -151,12 +154,14 @@ export const BurnerTerminalPopup = ({
       data-testid="burner-popup"
       role="dialog"
       aria-label="Burner terminal"
+      aria-modal={open}
       aria-hidden={!open}
       className="fixed inset-0 z-[100] flex items-start justify-center pt-[12vh]"
       style={{ display: open ? 'flex' : 'none' }}
     >
       <button
         type="button"
+        tabIndex={-1}
         aria-label="Dismiss burner terminal"
         onClick={onHide}
         className="absolute inset-0 cursor-default"
