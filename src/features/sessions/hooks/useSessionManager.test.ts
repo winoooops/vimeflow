@@ -2231,10 +2231,10 @@ describe('useSessionManager', () => {
     })
 
     // Critical: setSessions was NOT swapped. The old 'exited' id is
-    // still in React state with status='completed'. The 'fresh' id is
-    // not present (orphan was killed without seeding bookkeeping).
+    // still in React state, hydrated errored from its non-zero last_exit_code.
+    // The 'fresh' id is not present (orphan killed without seeding bookkeeping).
     expect(result.current.sessions.map((s) => s.id)).toEqual(['exited'])
-    expect(result.current.sessions[0].status).toBe('completed')
+    expect(result.current.sessions[0].status).toBe('errored')
     expect(result.current.restoreData.has('fresh')).toBe(false)
 
     // Critical: reorderSessions was NOT called. The earlier code

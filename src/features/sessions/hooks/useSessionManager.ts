@@ -27,7 +27,7 @@ import {
   applyRemovePane,
   nextFreePaneId,
 } from '../utils/paneLifecycle'
-import { deriveShellSessionStatus } from '../utils/sessionStatus'
+import { deriveShellSessionStatus, isLiveStatus } from '../utils/sessionStatus'
 import {
   deleteActivityPanelCollapsed,
   writeActivityPanelCollapsed,
@@ -858,7 +858,7 @@ export const useSessionManager = (
   // and seed a fresh tab; the Exited tabs remain available for the user
   // to Restart in their original cwd if they want to.
   const hasLiveSession = sessions.some((s) =>
-    s.panes.some((pane) => isShellPane(pane) && pane.status === 'running')
+    s.panes.some((pane) => isShellPane(pane) && isLiveStatus(pane.status))
   )
   useAutoCreateOnEmpty({
     enabled: autoCreateOnEmpty,
