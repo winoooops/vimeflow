@@ -16,9 +16,10 @@
 // / setSessionActivePane / reorderSessions / restartSession): React commit
 // batching coalesces synchronous bursts into one effect run.
 
-import { useEffect, useRef } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { createLogger } from '../../../lib/log'
 import {
+  onWorkspaceRequestFinalShape,
   pushWorkspaceShape,
   type WorkspaceShapeDto,
   type WorkspaceShapePane,
@@ -105,18 +106,34 @@ export interface UsePushWorkspaceGroupingOptions {
   /** Skip pushes while the initial restore is still loading — pushing an empty
    *  shape before the restored sessions land would clobber the store. */
   loading: boolean
+  /** Allow an empty workspace to persist. Disabled until restore succeeds so a
+   *  failed restore cannot wipe a previously saved layout. */
+  canPushEmptyShape?: boolean
 }
 
 export const usePushWorkspaceGrouping = ({
   sessions,
   activeSessionId,
   loading,
+  canPushEmptyShape = true,
 }: UsePushWorkspaceGroupingOptions): void => {
+  const shape = useMemo(
+    () => buildWorkspaceShape(sessions, activeSessionId),
+    [sessions, activeSessionId]
+  )
+
   // Last full + structural shape JSON, to skip no-op rerenders and to tell a
   // structural change (eager) from a drift-only change (debounced).
   const lastFullRef = useRef<string | null>(null)
   const lastStructuralRef = useRef<string | null>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const latestShapeRef = useRef(shape)
+  const loadingRef = useRef(loading)
+  const canPushEmptyShapeRef = useRef(canPushEmptyShape)
+
+  latestShapeRef.current = shape
+  loadingRef.current = loading
+  canPushEmptyShapeRef.current = canPushEmptyShape
 
   // Clear a pending drift push on unmount.
   useEffect(
@@ -128,8 +145,30 @@ export const usePushWorkspaceGrouping = ({
     []
   )
 
+  useEffect(
+    () =>
+      onWorkspaceRequestFinalShape(() => {
+        if (loadingRef.current) {
+          return
+        }
+
+        const finalShape = latestShapeRef.current
+        if (finalShape.sessions.length === 0 && !canPushEmptyShapeRef.current) {
+          return
+        }
+
+        if (debounceRef.current !== null) {
+          clearTimeout(debounceRef.current)
+          debounceRef.current = null
+        }
+
+        void pushShapeWithLog(finalShape)
+      }),
+    []
+  )
+
   useEffect(() => {
-    if (loading || sessions.length === 0) {
+    if (loading || (shape.sessions.length === 0 && !canPushEmptyShape)) {
       if (debounceRef.current !== null) {
         clearTimeout(debounceRef.current)
         debounceRef.current = null
@@ -138,7 +177,6 @@ export const usePushWorkspaceGrouping = ({
       return
     }
 
-    const shape = buildWorkspaceShape(sessions, activeSessionId)
     const fullJson = JSON.stringify(shape)
     if (fullJson === lastFullRef.current) {
       // Non-shape rerender — leave any pending drift push alone.
@@ -171,5 +209,5 @@ export const usePushWorkspaceGrouping = ({
       debounceRef.current = null
       void pushShapeWithLog(shape)
     }, DRIFT_DEBOUNCE_MS)
-  }, [sessions, activeSessionId, loading])
+  }, [shape, loading, canPushEmptyShape])
 }

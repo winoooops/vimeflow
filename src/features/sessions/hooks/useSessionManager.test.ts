@@ -42,6 +42,7 @@ vi.mock('../workspaceLayoutBridge', () => ({
   loadWorkspaceForRestore: vi.fn(() => Promise.resolve(null)),
   beginWorkspaceHydration: vi.fn(() => Promise.resolve()),
   endWorkspaceHydration: vi.fn(() => Promise.resolve()),
+  onWorkspaceRequestFinalShape: vi.fn(() => (): void => undefined),
 }))
 
 // Partial mock: only spy on createBrowserPane; keep destroyBrowserPane /
@@ -1310,6 +1311,20 @@ describe('useSessionManager', () => {
     expect(result.current.sessions[0].id).toBe('ws-shell')
     expect(result.current.sessions[0].panes).toHaveLength(1)
     expect(result.current.sessions[0].panes[0].ptyId).toBe('pty-shell')
+  })
+
+  test('does not push an empty workspace shape after restore fails', async () => {
+    vi.mocked(loadWorkspaceForRestore).mockRejectedValueOnce(new Error('boom'))
+    const service = createMockService()
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    expect(result.current.sessions).toEqual([])
+    expect(pushWorkspaceShape).not.toHaveBeenCalled()
   })
 
   test('does not restore browser panes from the legacy localStorage cache', async () => {

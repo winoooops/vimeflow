@@ -36,6 +36,33 @@ describe('WorkspaceTeardown', () => {
     expect(flush).toHaveBeenCalledTimes(1)
   })
 
+  test('a concurrent flushOnce waits for the in-flight flush', async () => {
+    let releaseDrain = (): void => undefined
+
+    const drainFinalShape = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          releaseDrain = resolve
+        })
+    )
+    const flush = vi.fn().mockResolvedValue(undefined)
+    const teardown = new WorkspaceTeardown({ drainFinalShape, flush })
+
+    const first = teardown.flushOnce()
+    const second = teardown.flushOnce()
+    await Promise.resolve()
+
+    expect(drainFinalShape).toHaveBeenCalledTimes(1)
+    expect(flush).not.toHaveBeenCalled()
+
+    releaseDrain()
+    await expect(Promise.all([first, second])).resolves.toEqual([
+      undefined,
+      undefined,
+    ])
+    expect(flush).toHaveBeenCalledTimes(1)
+  })
+
   test('reset re-arms the guard so a later teardown flushes again', async () => {
     const flush = vi.fn().mockResolvedValue(undefined)
 

@@ -16,6 +16,205 @@ import {
 } from './browser-pane-channels'
 import { BrowserPaneController, isFocusAddressShortcut } from './browser-pane'
 
+interface MockLookupAddress {
+  address: string
+  family: 4 | 6
+}
+
+interface MockNodeResponse {
+  statusCode: number
+  headers: Record<string, string>
+  body: Uint8Array
+}
+
+const dnsMock = vi.hoisted(() => ({
+  lookup: vi.fn(
+    (): Promise<{ address: string; family: 4 | 6 }[]> =>
+      Promise.resolve([{ address: '93.184.216.34', family: 4 }])
+  ),
+}))
+
+const nodeRequestMock = vi.hoisted(() => {
+  interface QueuedResponse {
+    promise: Promise<{
+      statusCode: number
+      headers: Record<string, string>
+      body: Uint8Array
+    }>
+  }
+
+  type Callback = (response: {
+    statusCode: number
+    headers: Record<string, string>
+    on: (event: string, handler: (...args: unknown[]) => void) => unknown
+    resume: () => void
+  }) => void
+
+  const queued: QueuedResponse[] = []
+
+  const requests: {
+    protocol: 'http' | 'https'
+    options: Record<string, unknown>
+  }[] = []
+
+  const emit = (
+    handlers: Map<string, ((...args: unknown[]) => void)[]>,
+    event: string,
+    ...args: unknown[]
+  ): void => {
+    for (const handler of handlers.get(event) ?? []) {
+      handler(...args)
+    }
+  }
+
+  const createResponse = (response: {
+    statusCode: number
+    headers: Record<string, string>
+    body: Uint8Array
+  }): {
+    statusCode: number
+    headers: Record<string, string>
+    on: (event: string, handler: (...args: unknown[]) => void) => unknown
+    resume: () => void
+  } => {
+    const handlers = new Map<string, ((...args: unknown[]) => void)[]>()
+
+    const res = {
+      statusCode: response.statusCode,
+      headers: response.headers,
+      on: vi.fn((event: string, handler: (...args: unknown[]) => void) => {
+        handlers.set(event, [...(handlers.get(event) ?? []), handler])
+
+        return res
+      }),
+      resume: vi.fn(),
+    }
+
+    queueMicrotask(() => {
+      if (response.body.byteLength > 0) {
+        emit(handlers, 'data', Buffer.from(response.body))
+      }
+      emit(handlers, 'end')
+    })
+
+    return res
+  }
+
+  const requestFor = (
+    protocol: 'http' | 'https',
+    options: Record<string, unknown>,
+    callback: Callback
+  ): {
+    on: (event: string, handler: (...args: unknown[]) => void) => unknown
+    end: () => void
+    destroy: () => void
+  } => {
+    const handlers = new Map<string, ((...args: unknown[]) => void)[]>()
+    let destroyed = false
+
+    const req = {
+      on: vi.fn((event: string, handler: (...args: unknown[]) => void) => {
+        handlers.set(event, [...(handlers.get(event) ?? []), handler])
+
+        return req
+      }),
+      end: vi.fn(() => {
+        const next =
+          queued.shift() ??
+          ({
+            promise: Promise.resolve({
+              statusCode: 200,
+              headers: { 'content-type': 'image/png' },
+              body: new Uint8Array([1]),
+            }),
+          } satisfies QueuedResponse)
+
+        void (async (): Promise<void> => {
+          try {
+            const response = await next.promise
+            if (destroyed) {
+              return
+            }
+            callback(createResponse(response))
+          } catch (error) {
+            emit(handlers, 'error', error)
+          }
+        })()
+      }),
+      destroy: vi.fn(() => {
+        destroyed = true
+      }),
+    }
+
+    requests.push({ protocol, options })
+
+    return req
+  }
+
+  const httpRequest = vi.fn(
+    (options: Record<string, unknown>, callback: Callback) =>
+      requestFor('http', options, callback)
+  )
+
+  const httpsRequest = vi.fn(
+    (options: Record<string, unknown>, callback: Callback) =>
+      requestFor('https', options, callback)
+  )
+
+  return {
+    httpRequest,
+    httpsRequest,
+    queueResponse: (response: {
+      statusCode: number
+      headers: Record<string, string>
+      body: Uint8Array
+    }): void => {
+      queued.push({ promise: Promise.resolve(response) })
+    },
+    queueDeferred: (
+      promise: Promise<{
+        statusCode: number
+        headers: Record<string, string>
+        body: Uint8Array
+      }>
+    ): void => {
+      queued.push({ promise })
+    },
+    requests,
+    reset: (): void => {
+      queued.splice(0)
+      requests.splice(0)
+      httpRequest.mockClear()
+      httpsRequest.mockClear()
+    },
+  }
+})
+
+vi.mock('node:dns/promises', () => ({
+  default: { lookup: dnsMock.lookup },
+  lookup: dnsMock.lookup,
+}))
+
+vi.mock('node:http', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:http')>()
+
+  return {
+    ...actual,
+    default: { ...actual, request: nodeRequestMock.httpRequest },
+    request: nodeRequestMock.httpRequest,
+  }
+})
+
+vi.mock('node:https', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:https')>()
+
+  return {
+    ...actual,
+    default: { ...actual, request: nodeRequestMock.httpsRequest },
+    request: nodeRequestMock.httpsRequest,
+  }
+})
+
 // cspell:ignore debuggee Lkls
 type IpcHandler = (event: unknown, payload?: unknown) => unknown
 type EventHandler = (...args: unknown[]) => void
@@ -352,26 +551,27 @@ const flushMicrotasks = async (): Promise<void> => {
   }
 }
 
-const streamOf = (bytes: Uint8Array): ReadableStream<Uint8Array> =>
-  new ReadableStream({
-    start(controller): void {
-      if (bytes.byteLength > 0) {
-        controller.enqueue(bytes)
-      }
-      controller.close()
-    },
-  })
+const mockDnsAddresses = (addresses: MockLookupAddress[]): void => {
+  dnsMock.lookup.mockResolvedValue(addresses)
+}
 
-const imageResponse = (
+const nodeResponse = (
   type: string,
   bytes: Uint8Array,
   extra: Record<string, string> = {}
-): Response =>
-  ({
-    ok: true,
-    headers: new Headers({ 'content-type': type, ...extra }),
-    body: streamOf(bytes),
-  }) as unknown as Response
+): MockNodeResponse => ({
+  statusCode: 200,
+  headers: { 'content-type': type, ...extra },
+  body: bytes,
+})
+
+const queueNodeResponse = (response: MockNodeResponse): void => {
+  nodeRequestMock.queueResponse(response)
+}
+
+const queueNodeImage = (bytes: Uint8Array): void => {
+  queueNodeResponse(nodeResponse('image/png', bytes))
+}
 
 const makeDeferred = <T>(): {
   promise: Promise<T>
@@ -487,6 +687,9 @@ describe('BrowserPaneController', () => {
 
   beforeEach(() => {
     electronMock.reset()
+    dnsMock.lookup.mockReset()
+    mockDnsAddresses([{ address: '93.184.216.34', family: 4 }])
+    nodeRequestMock.reset()
     controller = new BrowserPaneController()
     controller.install()
   })
@@ -538,6 +741,27 @@ describe('BrowserPaneController', () => {
     ])
 
     expect(controller.captureTabsForPane('nope', 'p1')).toBeNull()
+  })
+
+  test('captureTabsForPane clamps an empty navigation history to index zero', async () => {
+    await handler(BROWSER_PANE_CREATE)(eventForSender(), {
+      sessionId: 'pty-1',
+      paneId: 'p1',
+      workspaceId: 'w',
+      initialUrl: 'https://a.example/',
+    })
+
+    const wc = electronMock.views[0].webContents
+    vi.mocked(wc.navigationHistory.getAllEntries).mockReturnValue([])
+    vi.mocked(wc.navigationHistory.getActiveIndex).mockReturnValue(-1)
+
+    expect(controller.captureTabsForPane('pty-1', 'p1')).toEqual([
+      {
+        active: true,
+        historyIndex: 0,
+        history: [],
+      },
+    ])
   })
 
   test('write signals: tab lifecycle is structural, navigation is volatile', async () => {
@@ -687,19 +911,45 @@ describe('BrowserPaneController', () => {
 
   test('an http image favicon is fetched (no credentials, no redirects) and inlined', async () => {
     const h = await faviconHarness('https://example.com/')
-    electronMock.fakeSession.fetch = vi
-      .fn()
-      .mockResolvedValue(
-        imageResponse('image/png', new Uint8Array([1, 2, 3, 4]))
-      )
+    queueNodeImage(new Uint8Array([1, 2, 3, 4]))
     h.clearSends()
     h.emitFavicon(['https://example.com/favicon.png'])
     await flushMicrotasks()
     expect(lastFaviconOf(h)).toMatch(/^data:image\/png;base64,/)
-    expect(electronMock.fakeSession.fetch).toHaveBeenCalledWith(
-      'https://example.com/favicon.png',
-      expect.objectContaining({ redirect: 'error', credentials: 'omit' })
+    expect(nodeRequestMock.httpsRequest).toHaveBeenCalledTimes(1)
+    expect(nodeRequestMock.requests[0].options).toEqual(
+      expect.objectContaining({
+        hostname: 'example.com',
+        path: '/favicon.png',
+        headers: expect.objectContaining({ host: 'example.com' }),
+        lookup: expect.any(Function),
+      })
     )
+  })
+
+  test('domain favicons are resolved once and fetched through the vetted address', async () => {
+    const h = await faviconHarness('https://example.com/')
+    mockDnsAddresses([{ address: '203.0.113.10', family: 4 }])
+    queueNodeImage(new Uint8Array([1, 2, 3, 4]))
+    h.clearSends()
+
+    h.emitFavicon(['https://assets.example/favicon.png'])
+    await flushMicrotasks()
+
+    expect(dnsMock.lookup).toHaveBeenCalledWith('assets.example', {
+      all: true,
+      verbatim: true,
+    })
+
+    const pinnedLookup = nodeRequestMock.requests[0].options.lookup as (
+      hostname: string,
+      options: unknown,
+      callback: (error: Error | null, address: string, family: number) => void
+    ) => void
+    const callback = vi.fn()
+    pinnedLookup('assets.example', {}, callback)
+    expect(callback).toHaveBeenCalledWith(null, '203.0.113.10', 4)
+    expect(lastFaviconOf(h)).toMatch(/^data:image\/png;base64,/)
   })
 
   test('the new-tab path also resolves favicons (view 1, not only create)', async () => {
@@ -720,9 +970,7 @@ describe('BrowserPaneController', () => {
       'https://b.com/'
     )
 
-    electronMock.fakeSession.fetch = vi
-      .fn()
-      .mockResolvedValue(imageResponse('image/png', new Uint8Array([1])))
+    queueNodeImage(new Uint8Array([1]))
     vi.mocked(electronMock.win.webContents.send).mockClear()
     callAllListeners(1, 'page-favicon-updated', {}, [
       'https://b.com/favicon.png',
@@ -741,25 +989,25 @@ describe('BrowserPaneController', () => {
   })
 
   test.each([
-    ['non-image content-type', imageResponse('text/html', new Uint8Array([1]))],
+    ['non-image content-type', nodeResponse('text/html', new Uint8Array([1]))],
     [
       'non-ok response',
       {
-        ok: false,
-        headers: new Headers(),
-        body: streamOf(new Uint8Array()),
-      } as unknown as Response,
+        statusCode: 500,
+        headers: {},
+        body: new Uint8Array(),
+      },
     ],
-    ['zero-byte image body', imageResponse('image/png', new Uint8Array())],
+    ['zero-byte image body', nodeResponse('image/png', new Uint8Array())],
     [
       'over-cap via content-length',
-      imageResponse('image/png', new Uint8Array([1]), {
+      nodeResponse('image/png', new Uint8Array([1]), {
         'content-length': String(40 * 1024),
       }),
     ],
   ])('http favicon %s yields null', async (_label, response) => {
     const h = await faviconHarness('https://example.com/')
-    electronMock.fakeSession.fetch = vi.fn().mockResolvedValue(response)
+    queueNodeResponse(response)
     h.clearSends()
     h.emitFavicon(['https://example.com/favicon.png'])
     await flushMicrotasks()
@@ -768,9 +1016,7 @@ describe('BrowserPaneController', () => {
 
   test('over-cap via streamed bytes yields null', async () => {
     const h = await faviconHarness('https://example.com/')
-    electronMock.fakeSession.fetch = vi
-      .fn()
-      .mockResolvedValue(imageResponse('image/png', new Uint8Array(40 * 1024)))
+    queueNodeResponse(nodeResponse('image/png', new Uint8Array(40 * 1024)))
     h.clearSends()
     h.emitFavicon(['https://example.com/favicon.png'])
     await flushMicrotasks()
@@ -787,19 +1033,28 @@ describe('BrowserPaneController', () => {
 
   test('candidate fallback: first non-ok, second image wins', async () => {
     const h = await faviconHarness('https://example.com/')
-    electronMock.fakeSession.fetch = vi
-      .fn()
-      .mockResolvedValueOnce({
-        ok: false,
-        headers: new Headers(),
-        body: streamOf(new Uint8Array()),
-      } as unknown as Response)
-      .mockResolvedValueOnce(imageResponse('image/png', new Uint8Array([9, 9])))
+    queueNodeResponse({
+      statusCode: 500,
+      headers: {},
+      body: new Uint8Array(),
+    })
+    queueNodeImage(new Uint8Array([9, 9]))
     h.clearSends()
     h.emitFavicon(['https://example.com/a.png', 'https://example.com/b.png'])
     await flushMicrotasks()
     expect(lastFaviconOf(h)).toMatch(/^data:image\/png;base64,/)
-    expect(electronMock.fakeSession.fetch).toHaveBeenCalledTimes(2)
+    expect(nodeRequestMock.httpsRequest).toHaveBeenCalledTimes(2)
+  })
+
+  test('credentialed http favicon URLs are rejected', async () => {
+    const h = await faviconHarness('https://example.com/')
+    h.clearSends()
+
+    h.emitFavicon(['https://user:pass@example.com/favicon.png'])
+    await flushMicrotasks()
+
+    expect(nodeRequestMock.httpsRequest).not.toHaveBeenCalled()
+    expect(lastFaviconOf(h)).toBe(null)
   })
 
   test.each([
@@ -810,136 +1065,134 @@ describe('BrowserPaneController', () => {
     '192.168.1.1',
   ])('public page to private favicon host %s is blocked', async (host) => {
     const h = await faviconHarness('https://example.com/')
-    electronMock.fakeSession.fetch = vi.fn()
     h.clearSends()
     h.emitFavicon([`http://${host}/favicon.ico`])
     await flushMicrotasks()
-    expect(electronMock.fakeSession.fetch).not.toHaveBeenCalled()
+    expect(nodeRequestMock.httpRequest).not.toHaveBeenCalled()
+    expect(lastFaviconOf(h)).toBe(null)
+  })
+
+  test('public page to DNS-resolved private favicon address is blocked', async () => {
+    const h = await faviconHarness('https://example.com/')
+    mockDnsAddresses([{ address: '10.0.0.5', family: 4 }])
+    h.clearSends()
+
+    h.emitFavicon(['https://assets.example/favicon.ico'])
+    await flushMicrotasks()
+
+    expect(nodeRequestMock.httpsRequest).not.toHaveBeenCalled()
     expect(lastFaviconOf(h)).toBe(null)
   })
 
   test('localhost page keeps its own localhost favicon (private allowed)', async () => {
     const h = await faviconHarness('http://localhost:3000/')
-    electronMock.fakeSession.fetch = vi
-      .fn()
-      .mockResolvedValue(imageResponse('image/png', new Uint8Array([1, 2])))
+    mockDnsAddresses([{ address: '127.0.0.1', family: 4 }])
+    queueNodeImage(new Uint8Array([1, 2]))
     h.clearSends()
     h.emitFavicon(['http://localhost:3000/favicon.png'])
     await flushMicrotasks()
-    expect(electronMock.fakeSession.fetch).toHaveBeenCalledTimes(1)
+    expect(nodeRequestMock.httpRequest).toHaveBeenCalledTimes(1)
     expect(lastFaviconOf(h)).toMatch(/^data:image\/png;base64,/)
   })
 
   test('a public domain beginning with fd is not misread as private', async () => {
     const h = await faviconHarness('https://fd-attacker.example/')
-    electronMock.fakeSession.fetch = vi.fn()
     h.clearSends()
     h.emitFavicon(['http://127.0.0.1/favicon.ico'])
     await flushMicrotasks()
-    expect(electronMock.fakeSession.fetch).not.toHaveBeenCalled()
+    expect(nodeRequestMock.httpRequest).not.toHaveBeenCalled()
     expect(lastFaviconOf(h)).toBe(null)
   })
 
   test('a private-range IPv6 favicon target is blocked from a public page', async () => {
     const h = await faviconHarness('https://example.com/')
-    electronMock.fakeSession.fetch = vi.fn()
     h.clearSends()
     h.emitFavicon(['http://[fd00::1]/favicon.ico'])
     await flushMicrotasks()
-    expect(electronMock.fakeSession.fetch).not.toHaveBeenCalled()
+    expect(nodeRequestMock.httpRequest).not.toHaveBeenCalled()
     expect(lastFaviconOf(h)).toBe(null)
   })
 
   test('a trailing-dot loopback favicon target is blocked from a public page', async () => {
     const h = await faviconHarness('https://example.com/')
-    electronMock.fakeSession.fetch = vi.fn()
     h.clearSends()
     h.emitFavicon(['http://localhost./favicon.ico'])
     await flushMicrotasks()
-    expect(electronMock.fakeSession.fetch).not.toHaveBeenCalled()
+    expect(nodeRequestMock.httpRequest).not.toHaveBeenCalled()
     expect(lastFaviconOf(h)).toBe(null)
   })
 
   test('an IPv4-mapped IPv6 loopback favicon target is blocked from a public page', async () => {
     const h = await faviconHarness('https://example.com/')
-    electronMock.fakeSession.fetch = vi.fn()
     h.clearSends()
     h.emitFavicon(['http://[::ffff:7f00:1]/favicon.ico'])
     await flushMicrotasks()
-    expect(electronMock.fakeSession.fetch).not.toHaveBeenCalled()
+    expect(nodeRequestMock.httpRequest).not.toHaveBeenCalled()
     expect(lastFaviconOf(h)).toBe(null)
   })
 
   test('a link-local IPv6 favicon target (fe90::) is blocked from a public page', async () => {
     const h = await faviconHarness('https://example.com/')
-    electronMock.fakeSession.fetch = vi.fn()
     h.clearSends()
     h.emitFavicon(['http://[fe90::1]/favicon.ico'])
     await flushMicrotasks()
-    expect(electronMock.fakeSession.fetch).not.toHaveBeenCalled()
+    expect(nodeRequestMock.httpRequest).not.toHaveBeenCalled()
     expect(lastFaviconOf(h)).toBe(null)
   })
 
   test('a public IPv6 favicon target is fetched normally', async () => {
     const h = await faviconHarness('https://example.com/')
-    electronMock.fakeSession.fetch = vi
-      .fn()
-      .mockResolvedValue(imageResponse('image/png', new Uint8Array([1, 2])))
+    queueNodeImage(new Uint8Array([1, 2]))
     h.clearSends()
     h.emitFavicon(['http://[2001:4860:4860::8888]/favicon.png'])
     await flushMicrotasks()
-    expect(electronMock.fakeSession.fetch).toHaveBeenCalledTimes(1)
+    expect(nodeRequestMock.httpRequest).toHaveBeenCalledTimes(1)
     expect(lastFaviconOf(h)).toMatch(/^data:image\/png;base64,/)
   })
 
   test('a pre-navigation in-flight fetch never overwrites the new tab', async () => {
     const h = await faviconHarness('https://a.com/')
-    const deferred = makeDeferred<Response>()
-    electronMock.fakeSession.fetch = vi.fn().mockReturnValue(deferred.promise)
-    h.emitFavicon(['https://a.com/icon.png'])
+    const deferred = makeDeferred<MockNodeResponse>()
+    nodeRequestMock.queueDeferred(deferred.promise)
+    h.emitFavicon(['http://93.184.216.34/icon.png'])
     h.emitNavigate()
     h.clearSends()
-    deferred.resolve(imageResponse('image/png', new Uint8Array([7])))
+    deferred.resolve(nodeResponse('image/png', new Uint8Array([7])))
     await flushMicrotasks()
     expect(h.tabsChanged().some((e) => e.tabs[0].favicon !== null)).toBe(false)
   })
 
   test('a newer favicon event supersedes an older in-flight fetch', async () => {
     const h = await faviconHarness('https://a.com/')
-    const first = makeDeferred<Response>()
-    electronMock.fakeSession.fetch = vi
-      .fn()
-      .mockReturnValueOnce(first.promise)
-      .mockResolvedValueOnce(
-        imageResponse('image/png', new Uint8Array([2, 2, 2]))
-      )
-    h.emitFavicon(['https://a.com/icon-a.png'])
-    h.emitFavicon(['https://a.com/icon-b.png'])
+    const first = makeDeferred<MockNodeResponse>()
+    nodeRequestMock.queueDeferred(first.promise)
+    queueNodeImage(new Uint8Array([2, 2, 2]))
+    h.emitFavicon(['http://93.184.216.34/icon-a.png'])
+    await flushMicrotasks()
+    expect(nodeRequestMock.httpRequest).toHaveBeenCalledTimes(1)
+
+    h.emitFavicon(['http://93.184.216.34/icon-b.png'])
     await flushMicrotasks()
     const afterB = lastFaviconOf(h)
     expect(afterB).toMatch(/^data:image\/png;base64,/)
-    first.resolve(imageResponse('image/png', new Uint8Array([9, 9, 9, 9])))
+    first.resolve(nodeResponse('image/png', new Uint8Array([9, 9, 9, 9])))
     await flushMicrotasks()
     expect(lastFaviconOf(h)).toBe(afterB)
   })
 
   test('dedup: a repeat same-favicon event does not refetch', async () => {
     const h = await faviconHarness('https://a.com/')
-    electronMock.fakeSession.fetch = vi
-      .fn()
-      .mockResolvedValue(imageResponse('image/png', new Uint8Array([3])))
+    queueNodeImage(new Uint8Array([3]))
     h.emitFavicon(['https://a.com/icon.png'])
     await flushMicrotasks()
     h.emitFavicon(['https://a.com/icon.png'])
     await flushMicrotasks()
-    expect(electronMock.fakeSession.fetch).toHaveBeenCalledTimes(1)
+    expect(nodeRequestMock.httpsRequest).toHaveBeenCalledTimes(1)
   })
 
   test('did-navigate clears the favicon in one cleared snapshot', async () => {
     const h = await faviconHarness('https://a.com/')
-    electronMock.fakeSession.fetch = vi
-      .fn()
-      .mockResolvedValue(imageResponse('image/png', new Uint8Array([5])))
+    queueNodeImage(new Uint8Array([5]))
     h.emitFavicon(['https://a.com/icon.png'])
     await flushMicrotasks()
     h.clearSends()
@@ -951,9 +1204,7 @@ describe('BrowserPaneController', () => {
 
   test('did-navigate-in-page does not reset the favicon', async () => {
     const h = await faviconHarness('https://a.com/')
-    electronMock.fakeSession.fetch = vi
-      .fn()
-      .mockResolvedValue(imageResponse('image/png', new Uint8Array([5])))
+    queueNodeImage(new Uint8Array([5]))
     h.emitFavicon(['https://a.com/icon.png'])
     await flushMicrotasks()
     h.clearSends()
@@ -964,9 +1215,7 @@ describe('BrowserPaneController', () => {
 
   test('reconnect createPane returns tabs carrying the current favicon', async () => {
     const h = await faviconHarness('https://a.com/')
-    electronMock.fakeSession.fetch = vi
-      .fn()
-      .mockResolvedValue(imageResponse('image/png', new Uint8Array([2])))
+    queueNodeImage(new Uint8Array([2]))
     h.emitFavicon(['https://a.com/icon.png'])
     await flushMicrotasks()
 

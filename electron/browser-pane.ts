@@ -10,13 +10,17 @@ import {
   type WebContents,
 } from 'electron'
 import { randomBytes, createHash, timingSafeEqual } from 'node:crypto'
+import { lookup } from 'node:dns/promises'
 import {
   createServer,
+  request as httpRequest,
+  type ClientRequest,
   type IncomingMessage,
   type Server,
   type ServerResponse,
 } from 'node:http'
-import type { Socket } from 'node:net'
+import { request as httpsRequest } from 'node:https'
+import type { LookupFunction, Socket } from 'node:net'
 import {
   BROWSER_PANE_ACTIVATE_TAB,
   BROWSER_PANE_CDP_INFO,
@@ -627,6 +631,13 @@ const faviconKey = (candidates: string[]): string =>
 const isImageDataUrl = (url: string): boolean =>
   /^data:image\/[a-z0-9.+-]+;base64,/i.test(url)
 
+interface FaviconFetchTarget {
+  url: URL
+  address: string
+  family: 4 | 6
+  private: boolean
+}
+
 // Parse an IPv6 literal (with `::` compression and/or an embedded IPv4 tail) to its 16 bytes.
 const parseIpv6 = (input: string): number[] | null => {
   const halves = input.split('%')[0].split('::')
@@ -716,11 +727,34 @@ const isPrivateIpv6 = (b: number[]): boolean => {
   return b[0] === 0xfe && (b[1] & 0xc0) === 0x80 // link-local fe80::/10
 }
 
-const isPrivateHost = (hostname: string): boolean => {
-  const h = hostname
+const normalizedHost = (hostname: string): string =>
+  hostname
     .toLowerCase()
     .replace(/^\[|\]$/g, '')
     .replace(/\.$/, '')
+
+const addressFamily = (hostname: string): 4 | 6 | null => {
+  const h = normalizedHost(hostname)
+  if (h.includes(':')) {
+    return parseIpv6(h) === null ? null : 6
+  }
+  const m = /^(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(h)
+  if (!m) {
+    return null
+  }
+  const octets = m.slice(1).map(Number)
+  if (octets.some((n) => n > 255)) {
+    return null
+  }
+
+  return 4
+}
+
+const isIpLiteralHost = (hostname: string): boolean =>
+  addressFamily(hostname) !== null
+
+const isPrivateHost = (hostname: string): boolean => {
+  const h = normalizedHost(hostname)
   if (h === 'localhost' || h.endsWith('.localhost')) {
     return true
   }
@@ -741,50 +775,246 @@ const isPrivateHost = (hostname: string): boolean => {
   return isPrivateIpv4(octets)
 }
 
-// PNA: a private favicon target is allowed only when the page is itself private.
-const isFaviconHostAllowed = (
-  pageUrl: string,
-  faviconHost: string
-): boolean => {
-  if (!isPrivateHost(faviconHost)) {
-    return true
+const literalFaviconTarget = (url: URL): FaviconFetchTarget | null => {
+  if (!isIpLiteralHost(url.hostname)) {
+    return null
   }
-  try {
-    return isPrivateHost(new URL(pageUrl).hostname)
-  } catch {
-    return false
+  const family = addressFamily(url.hostname)
+  if (family === null) {
+    return null
+  }
+
+  return {
+    url,
+    address: normalizedHost(url.hostname),
+    family,
+    private: isPrivateHost(url.hostname),
   }
 }
 
-const readCappedBody = async (
-  res: Response,
-  cap: number
-): Promise<Buffer | null> => {
-  const reader = (res.body as ReadableStream<Uint8Array> | null)?.getReader()
-  if (!reader) {
+const resolveHostForFaviconFetch = async (
+  url: URL
+): Promise<FaviconFetchTarget | null> => {
+  const literal = literalFaviconTarget(url)
+  if (literal !== null) {
+    return literal
+  }
+
+  let addresses: { address: string; family: number }[]
+  try {
+    addresses = await lookup(url.hostname, { all: true, verbatim: true })
+  } catch {
     return null
   }
-  const chunks: Uint8Array[] = []
-  let total = 0
-  for (;;) {
-    const { done, value } = await reader.read()
-    if (done) {
-      break
-    }
-    total += value.byteLength
-    if (total > cap) {
-      await reader.cancel()
 
-      return null
-    }
-    chunks.push(value)
+  const hostIsPrivate = isPrivateHost(url.hostname)
+
+  const targets = addresses
+    .map((entry): FaviconFetchTarget | null => {
+      const family = entry.family === 4 ? 4 : entry.family === 6 ? 6 : null
+      if (family === null) {
+        return null
+      }
+
+      return {
+        url,
+        address: entry.address,
+        family,
+        private: hostIsPrivate || isPrivateHost(entry.address),
+      }
+    })
+    .filter((target): target is FaviconFetchTarget => target !== null)
+
+  if (targets.length === 0) {
+    return null
   }
 
-  return total === 0 ? null : Buffer.concat(chunks)
+  return targets.find((target) => target.private) ?? targets[0]
+}
+
+// PNA: a private favicon target is allowed only when the page is itself private.
+const resolveFaviconFetchTarget = async (
+  pageUrl: string,
+  faviconUrl: URL
+): Promise<FaviconFetchTarget | null> => {
+  const target = await resolveHostForFaviconFetch(faviconUrl)
+  if (target === null) {
+    return null
+  }
+  if (!target.private) {
+    return target
+  }
+
+  try {
+    return isPrivateHost(new URL(pageUrl).hostname) ? target : null
+  } catch {
+    return null
+  }
+}
+
+const headerString = (
+  headers: IncomingMessage['headers'],
+  name: string
+): string | null => {
+  const value = headers[name.toLowerCase()]
+  if (Array.isArray(value)) {
+    return value[0] ?? null
+  }
+
+  return typeof value === 'string' ? value : null
+}
+
+const subtypeFromContentType = (contentType: string): string => {
+  const subtype = contentType.split(';')[0]?.split('/')[1]?.trim() ?? ''
+
+  return /^[a-z0-9.+-]+$/i.test(subtype) ? subtype : 'png'
+}
+
+const toDataImage = (contentType: string, body: Buffer): string =>
+  `data:image/${subtypeFromContentType(contentType)};base64,${body.toString(
+    'base64'
+  )}`
+
+const fetchFaviconViaVettedAddress = (
+  target: FaviconFetchTarget,
+  signal: AbortSignal
+): Promise<{ contentType: string; body: Buffer } | null> =>
+  new Promise((resolve) => {
+    if (signal.aborted) {
+      resolve(null)
+
+      return
+    }
+
+    let settled = false
+    let request: ClientRequest | null = null
+
+    const requestFn =
+      target.url.protocol === 'https:' ? httpsRequest : httpRequest
+
+    function cleanup(): void {
+      signal.removeEventListener('abort', abort)
+    }
+
+    function settle(
+      result: { contentType: string; body: Buffer } | null
+    ): void {
+      if (settled) {
+        return
+      }
+      settled = true
+      cleanup()
+      resolve(result)
+    }
+
+    function abort(): void {
+      request?.destroy()
+      settle(null)
+    }
+
+    const pinnedLookup: LookupFunction = (_hostname, _options, callback) => {
+      callback(null, target.address, target.family)
+    }
+
+    request = requestFn(
+      {
+        protocol: target.url.protocol,
+        hostname: normalizedHost(target.url.hostname),
+        port: target.url.port,
+        path: `${target.url.pathname}${target.url.search}`,
+        method: 'GET',
+        headers: {
+          accept: 'image/*',
+          host: target.url.host,
+        },
+        lookup: pinnedLookup,
+        timeout: FAVICON_FETCH_TIMEOUT_MS,
+      },
+      (response) => {
+        const status = response.statusCode ?? 0
+        const contentType = headerString(response.headers, 'content-type') ?? ''
+        const declaredLength = headerString(response.headers, 'content-length')
+
+        if (
+          status < 200 ||
+          status >= 300 ||
+          !/^image\//i.test(contentType) ||
+          (declaredLength !== null && Number(declaredLength) > FAVICON_BYTE_CAP)
+        ) {
+          response.resume()
+          settle(null)
+
+          return
+        }
+
+        const chunks: Buffer[] = []
+        let total = 0
+        response.on('data', (chunk: Buffer | string) => {
+          if (settled) {
+            return
+          }
+          const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
+          total += buf.byteLength
+          if (total > FAVICON_BYTE_CAP) {
+            request?.destroy()
+            settle(null)
+
+            return
+          }
+          chunks.push(buf)
+        })
+
+        response.on('end', () => {
+          if (total === 0) {
+            settle(null)
+
+            return
+          }
+          settle({ contentType, body: Buffer.concat(chunks) })
+        })
+        response.on('error', () => settle(null))
+      }
+    )
+
+    signal.addEventListener('abort', abort, { once: true })
+    request.on('timeout', () => {
+      request.destroy()
+      settle(null)
+    })
+    request.on('error', () => settle(null))
+    request.end()
+  })
+
+const isAllowedFaviconProtocol = (protocol: string): boolean =>
+  protocol === 'http:' || protocol === 'https:'
+
+const resolveFaviconHttpDataUrl = async (
+  pageUrl: string,
+  faviconUrl: URL,
+  signal: AbortSignal
+): Promise<string | null> => {
+  if (
+    !isAllowedFaviconProtocol(faviconUrl.protocol) ||
+    faviconUrl.username !== '' ||
+    faviconUrl.password !== ''
+  ) {
+    return null
+  }
+
+  const target = await resolveFaviconFetchTarget(pageUrl, faviconUrl)
+  if (target === null) {
+    return null
+  }
+
+  const fetched = await fetchFaviconViaVettedAddress(target, signal)
+  if (fetched === null) {
+    return null
+  }
+
+  return toDataImage(fetched.contentType, fetched.body)
 }
 
 const resolveFaviconDataUrl = async (
-  session: ElectronSession,
   pageUrl: string,
   url: string,
   resolutionSignal: AbortSignal
@@ -811,44 +1041,24 @@ const resolveFaviconDataUrl = async (
   } catch {
     return null
   }
-  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-    return null
-  }
-  if (!isFaviconHostAllowed(pageUrl, parsed.hostname)) {
-    return null
-  }
 
   const signal = AbortSignal.any([
     resolutionSignal,
     AbortSignal.timeout(FAVICON_FETCH_TIMEOUT_MS),
   ])
-  try {
-    const res = await session.fetch(url, {
-      signal,
-      redirect: 'error',
-      credentials: 'omit',
-    })
-    if (!res.ok) {
-      return null
-    }
-    const type = res.headers.get('content-type') ?? ''
-    if (!/^image\//i.test(type)) {
-      return null
-    }
-    const declared = res.headers.get('content-length')
-    if (declared && Number(declared) > FAVICON_BYTE_CAP) {
-      return null
-    }
-    const buf = await readCappedBody(res, FAVICON_BYTE_CAP)
-    if (!buf) {
-      return null
-    }
-    const subtype = type.split('/')[1]?.split(';')[0]?.trim() || 'png'
 
-    return `data:image/${subtype};base64,${buf.toString('base64')}`
-  } catch {
-    return null
+  return resolveFaviconHttpDataUrl(pageUrl, parsed, signal)
+}
+
+const clampedHistoryIndex = (
+  historyLength: number,
+  activeIndex: number
+): number => {
+  if (historyLength === 0) {
+    return 0
   }
+
+  return Math.max(0, Math.min(activeIndex, historyLength - 1))
 }
 
 export class BrowserPaneController {
@@ -1193,13 +1403,15 @@ export class BrowserPaneController {
     return [...record.tabs.values()].map((tab) => {
       const nav = tab.view.webContents.navigationHistory
 
+      const history = nav.getAllEntries().map((entry) => ({
+        url: entry.url,
+        title: entry.title,
+      }))
+
       return {
         active: tab.id === record.activeTabId,
-        history: nav.getAllEntries().map((entry) => ({
-          url: entry.url,
-          title: entry.title,
-        })),
-        historyIndex: nav.getActiveIndex(),
+        history,
+        historyIndex: clampedHistoryIndex(history.length, nav.getActiveIndex()),
       }
     })
   }
@@ -1298,7 +1510,6 @@ export class BrowserPaneController {
             break
           }
           dataUrl = await resolveFaviconDataUrl(
-            view.webContents.session,
             pageUrl,
             url,
             myController.signal

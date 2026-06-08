@@ -200,6 +200,7 @@ export const useSessionManager = (
   const { autoCreateOnEmpty = true } = options
 
   const [sessions, setSessions] = useState<Session[]>([])
+  const [restoreSucceeded, setRestoreSucceeded] = useState(false)
   const sessionsRef = useRef(sessions)
   sessionsRef.current = sessions
 
@@ -226,6 +227,7 @@ export const useSessionManager = (
     service,
     buffer,
     onRestore: (restored): void => {
+      setRestoreSucceeded(true)
       for (const session of restored) {
         for (const pane of session.panes) {
           if (pane.restoreData) {
@@ -655,7 +657,12 @@ export const useSessionManager = (
   // cache whenever the React `sessions[]` structure changes, so a later
   // restore can reconstruct the multi-pane layout instead of fragmenting
   // each PTY into its own single-pane session. Debounced inside the hook.
-  usePushWorkspaceGrouping({ sessions, activeSessionId, loading })
+  usePushWorkspaceGrouping({
+    sessions,
+    activeSessionId,
+    loading,
+    canPushEmptyShape: restoreSucceeded,
+  })
 
   // Remove session — kill + filter + advance active
   const removeSession = useCallback(

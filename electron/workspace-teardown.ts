@@ -22,6 +22,7 @@ export interface WorkspaceTeardownDeps {
 export class WorkspaceTeardown {
   private readonly deps: WorkspaceTeardownDeps
   private flushed = false
+  private inFlight: Promise<void> | null = null
 
   constructor(deps: WorkspaceTeardownDeps) {
     this.deps = deps
@@ -31,13 +32,29 @@ export class WorkspaceTeardown {
     return this.flushed
   }
 
-  // Flush once per teardown transaction; a later call is a no-op.
+  // Flush once per teardown transaction; concurrent callers share the in-flight
+  // promise, and completed calls are a no-op.
   async flushOnce(): Promise<void> {
+    if (this.inFlight !== null) {
+      return this.inFlight
+    }
     if (this.flushed) {
       return
     }
     this.flushed = true
 
+    const current = this.runFlush()
+    this.inFlight = current
+    try {
+      await current
+    } finally {
+      if (this.inFlight === current) {
+        this.inFlight = null
+      }
+    }
+  }
+
+  private async runFlush(): Promise<void> {
     try {
       await this.deps.drainFinalShape()
     } catch {
@@ -53,5 +70,6 @@ export class WorkspaceTeardown {
   // Re-arm for the next teardown (non-quit close, or a new window opens).
   reset(): void {
     this.flushed = false
+    this.inFlight = null
   }
 }
