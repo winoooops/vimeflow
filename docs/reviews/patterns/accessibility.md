@@ -3,7 +3,7 @@ id: accessibility
 category: a11y
 created: 2026-04-09
 last_updated: 2026-06-08
-ref_count: 10
+ref_count: 11
 ---
 
 # Accessibility
@@ -298,3 +298,12 @@ handlers must not trap focus without implementing the promised behavior.
 - **Finding:** The Tab focus-trap handler computed `focusableElements` dynamically from the DOM, excluding the align button when `alignBusy` made it `disabled`. If keyboard focus was on that button at the moment it became disabled, the next `Tab` event computed `currentIndex === -1` and the handler returned early without `preventDefault()`, letting focus escape the `aria-modal` dialog into background workspace controls.
 - **Fix:** In the `currentIndex === -1` branch, call `event.preventDefault()` and `event.stopPropagation()`, then move focus to the first focusable element (or the last when `shiftKey` is true). If no focusable elements remain, fall back to `bodyRef.current?.focusTerminal()`. Added regression tests for both `Tab` and `Shift+Tab` from a disabled align button.
 - **Commit:** _(see git log for the cycle-5 fix commit on PR #389)_
+
+### 32. Modal popup blur discards return focus — keyboard users lose their workspace focus after every close
+
+- **Source:** github-claude | PR #389 round 7 | 2026-06-08
+- **Severity:** MEDIUM
+- **File:** `src/features/terminal/components/BurnerTerminalPopup/index.tsx`
+- **Finding:** The popup's close path unconditionally called `(document.activeElement as HTMLElement | null)?.blur()` when `open` became `false`. In the common keyboard flow (user opens burner from a focused terminal, presses Escape), focus moved to `document.body`, so subsequent keystrokes were swallowed until the user manually refocused a pane. The prior cycle-2 fix (#27) removed focus from the hidden subtree, but a direct blur is the wrong tool for modal dialogs — it discards the return destination.
+- **Fix:** Added `priorFocusRef` to capture `document.activeElement` on the `false→true` open transition, then call `.focus()` on that saved element during the `true→false` close transition and clear the ref. This is the standard modal focus-restore pattern already used in `UnsavedChangesDialog` (#11).
+- **Commit:** _(see git log for the cycle-7 fix commit on PR #389)_

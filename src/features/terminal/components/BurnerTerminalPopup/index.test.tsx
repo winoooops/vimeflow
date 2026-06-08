@@ -257,19 +257,25 @@ test('refocuses the burner terminal after aligning so typing continues there', (
   expect(focusTerminal).toHaveBeenCalled()
 })
 
-test('blurs the active element when hidden so focus does not remain on a hidden terminal', () => {
+test('restores focus to the previously focused element when hidden', () => {
+  // Simulate a workspace pane holding focus before the popup opens.
+  const prior = document.createElement('button')
+  prior.setAttribute('data-testid', 'prior-focus')
+  document.body.appendChild(prior)
+  prior.focus()
+  expect(prior).toHaveFocus()
+
   const { rerender } = render(popup(true))
 
-  const dismissButton = screen.getByRole('button', {
-    name: /dismiss burner terminal/i,
-  })
-  dismissButton.focus()
-
-  expect(dismissButton).toHaveFocus()
+  // Opening the popup saved the prior focus and moved focus into the terminal.
+  expect(focusTerminal).toHaveBeenCalled()
 
   rerender(popup(false))
 
-  expect(dismissButton).not.toHaveFocus()
+  // Closing restores focus to the element that had it before the popup opened.
+  expect(prior).toHaveFocus()
+
+  document.body.removeChild(prior)
 })
 
 test('exposes aria-modal on the dialog when open', () => {

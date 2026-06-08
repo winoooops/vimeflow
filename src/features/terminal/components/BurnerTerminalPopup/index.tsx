@@ -92,16 +92,20 @@ export const BurnerTerminalPopup = ({
 }: BurnerTerminalPopupProps): ReactElement => {
   const bodyRef = useRef<BodyHandle>(null)
   const overlayRef = useRef<HTMLDivElement>(null)
+  const priorFocusRef = useRef<HTMLElement | null>(null)
   const openRef = useRef(open)
   openRef.current = open
 
   // Re-show: the terminal is already attached, so focus lands immediately.
-  // On hide: blur so focus does not remain inside the hidden popup subtree.
+  // On hide: restore focus to the element that had it before the popup opened
+  // so keyboard users resume typing in the workspace pane they came from.
   useEffect(() => {
     if (open) {
+      priorFocusRef.current = document.activeElement as HTMLElement | null
       bodyRef.current?.focusTerminal()
     } else {
-      ;(document.activeElement as HTMLElement | null)?.blur()
+      priorFocusRef.current?.focus()
+      priorFocusRef.current = null
     }
   }, [open])
 
