@@ -615,4 +615,30 @@ describe('reconstructWorkspace', () => {
     expect(sessions[0].panes.find((p) => p.active)?.ptyId).toBe('pty-b')
     expect(sessions[0].agentType).toBe('codex')
   })
+
+  // A persisted session with zero panes is malformed (partial write / crash /
+  // migration gap). It must be skipped — not crash — and the remaining valid
+  // sessions plus live PTYs must still restore.
+  test('skips zero-pane store sessions without aborting restore', () => {
+    const store = storeOf([
+      storeSession({
+        id: 'ws-empty',
+        panes: [],
+      }),
+      storeSession({
+        id: 'ws-valid',
+        panes: [shellShape({ ptyId: 'pty-a', active: true })],
+      }),
+    ])
+    const live = [alive('pty-a', '/home/will/repo'), alive('pty-b', '/other')]
+
+    const sessions = reconstructWorkspace(store, live, 'pty-a')
+
+    // The empty session is dropped; the valid store session and the live PTY
+    // both survive.
+    expect(sessions).toHaveLength(2)
+    expect(sessions.map((s) => s.id)).toContain('ws-valid')
+    expect(sessions.map((s) => s.id)).toContain('pty-b')
+    expect(sessions.find((s) => s.id === 'ws-valid')?.panes).toHaveLength(1)
+  })
 })

@@ -14,6 +14,7 @@
 
 import type { PaneGrouping, SessionInfo } from '../../../bindings'
 import { DEFAULT_BROWSER_URL } from '../../browser/types'
+import { createLogger } from '../../../lib/log'
 import { emptyActivity } from '../constants'
 import type { LayoutId, Pane, Session } from '../types'
 import type {
@@ -25,6 +26,8 @@ import { readActivityPanelCollapsed } from './activityPanelCollapsedStore'
 import { sessionFromInfo } from './sessionFromInfo'
 import { deriveSessionStatus } from './sessionStatus'
 import { tabName } from './tabName'
+
+const log = createLogger('sessions')
 
 type AgentType = Pane['agentType']
 
@@ -399,9 +402,17 @@ export const reconstructWorkspace = (
     )
   }
 
+  const validStoreSessions = storeShape.sessions.filter((session) => {
+    if (session.panes.length === 0) {
+      log.warn(`Skipping persisted session with zero panes: ${session.id}`)
+      return false
+    }
+    return true
+  })
+
   const liveByPtyId = new Map(liveSessions.map((info) => [info.id, info]))
   const referencedPtyIds = new Set<string>()
-  for (const session of storeShape.sessions) {
+  for (const session of validStoreSessions) {
     for (const pane of session.panes) {
       if (pane.kind === 'shell') {
         referencedPtyIds.add(pane.ptyId)
@@ -409,10 +420,10 @@ export const reconstructWorkspace = (
     }
   }
 
-  const storeSessions = storeShape.sessions.map((session, index) =>
+  const storeSessions = validStoreSessions.map((session, index) =>
     buildStoreSession(session, liveByPtyId, index)
   )
-  const storeSessionIds = new Set(storeShape.sessions.map((s) => s.id))
+  const storeSessionIds = new Set(validStoreSessions.map((s) => s.id))
 
   // Union, never drop live PTYs: any live PTY the store doesn't reference is
   // reconstructed #290-style (a session created since the last store write).
