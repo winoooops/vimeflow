@@ -2,8 +2,8 @@
 id: resource-cleanup
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-06-07
-ref_count: 4
+last_updated: 2026-06-08
+ref_count: 5
 ---
 
 # Resource Cleanup
@@ -63,3 +63,12 @@ causes listener accumulation and duplicate event handling.
 - **Finding:** The `close` event handler defers window close by calling `event.preventDefault()`, then launches an async IIFE that awaits `workspaceTeardown?.flushOnce()` before setting `closeFlushed = true` and re-issuing `win.close()`. If `flushOnce()` rejects (I/O error, writer not ready, etc.), the rejection propagates out of the unguarded await and skips both statements. The window is stuck because `event.preventDefault()` already fired and `closeFlushed` was never set. A second close attempt succeeds immediately because `WorkspaceTeardown.flushOnce()` sets its internal `flushed` guard _before_ calling `flush()`, so the once-guard fires and the second close skips persistence entirely — silently dropping the workspace snapshot.
 - **Fix:** Wrap the `await workspaceTeardown?.flushOnce()` in a `try` block and move `closeFlushed = true; win.close()` into the `finally` block. This mirrors the already-correct `before-quit` path which uses `try { await flushOnce() } finally { app.exit(0) }`.
 - **Commit:** _(see git log for PR #387 upsource cycle 1 fix commit)_
+
+### 6. Hydration release in voided async IIFE can reject and become unhandled
+
+- **Source:** github-claude | PR #396 round 1 | 2026-06-08
+- **Severity:** MEDIUM
+- **File:** `src/features/sessions/hooks/useSessionRestore.ts` L274-280
+- **Finding:** The restore effect launches a voided async IIFE that calls `await beginWorkspaceHydration()` and later awaits `await endWorkspaceHydration()` inside the `finally` block. Because the IIFE is discarded with `void`, any rejection from `endWorkspaceHydration()` — which delegates to renderer IPC and can fail during teardown, reload, or backend disruption — escapes as an unhandled Promise rejection. It also means the release command may never land, leaving main's hydration guard pinned open and persistence writes suppressed.
+- **Fix:** Wrap the `await endWorkspaceHydration()` call in a nested `try/catch` inside the `finally` block. On rejection, log the error via the module logger and swallow it, so the voided IIFE always settles cleanly and the guard is released as best-effort.
+- **Commit:** same commit as this entry

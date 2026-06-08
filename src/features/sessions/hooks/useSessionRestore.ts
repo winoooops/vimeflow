@@ -275,7 +275,11 @@ export const useSessionRestore = ({
         // Always release the hydration guard so main can never be stuck
         // suppressing writes (§3.2) — even on a restore error / cancel.
         if (hydrationStarted) {
-          await endWorkspaceHydration()
+          try {
+            await endWorkspaceHydration()
+          } catch (err) {
+            log.error('failed to release workspace hydration', err)
+          }
         }
       }
     })()
