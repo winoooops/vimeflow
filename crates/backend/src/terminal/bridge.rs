@@ -49,9 +49,10 @@ fn write_executable_script(path: &Path, content: &str) -> std::io::Result<()> {
         std::fs::rename(&tmp_path, path)?;
         // Sync parent directory so the rename is fully committed before callers
         // try to execute the script, avoiding ETXTBSY on heavily loaded runners.
+        // Best-effort: a failed directory fsync must not abort the spawn after the
+        // file has already been renamed into place.
         if let Some(parent) = path.parent() {
-            let dir = std::fs::File::open(parent)?;
-            dir.sync_all()?;
+            let _ = std::fs::File::open(parent).and_then(|dir| dir.sync_all());
         }
         Ok(())
     })();
