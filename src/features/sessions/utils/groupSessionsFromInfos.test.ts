@@ -497,6 +497,68 @@ describe('reconstructWorkspace', () => {
     expect(s.layout).toBe('vsplit')
   })
 
+  test('reload shape restores browser-only and mixed browser sessions together', () => {
+    const store = storeOf([
+      storeSession({
+        id: 'ws-browser',
+        workingDirectory: '/home/will/proj',
+        panes: [browserShape({ paneId: 'p0', paneIndex: 0, active: true })],
+      }),
+      storeSession({
+        id: 'ws-mixed',
+        layout: 'vsplit',
+        active: false,
+        workingDirectory: '/home/will/proj',
+        panes: [
+          shellShape({
+            paneId: 'p0',
+            paneIndex: 0,
+            ptyId: 'pty-dead',
+            cwd: '/home/will/proj/sub',
+            agentType: 'codex',
+            active: false,
+          }),
+          browserShape({ paneId: 'p1', paneIndex: 1, active: true }),
+        ],
+      }),
+    ])
+
+    const sessions = reconstructWorkspace(store, [], null)
+    const browserOnly = sessions.find((session) => session.id === 'ws-browser')
+    const mixed = sessions.find((session) => session.id === 'ws-mixed')
+
+    expect(browserOnly).toBeDefined()
+    expect(mixed).toBeDefined()
+    if (!browserOnly || !mixed) {
+      throw new Error('expected browser-only and mixed sessions')
+    }
+
+    expect(browserOnly.status).toBe('running')
+    expect(browserOnly.panes).toHaveLength(1)
+    expect(browserOnly.panes[0].kind).toBe('browser')
+
+    expect(mixed.status).toBe('running')
+    expect(mixed.panes.map((pane) => pane.id)).toEqual(['p0', 'p1'])
+    expect(mixed.panes[0].kind ?? 'shell').toBe('shell')
+    expect(mixed.panes[0]).toEqual(
+      expect.objectContaining({
+        ptyId: 'pty-dead',
+        status: 'completed',
+        cwd: '/home/will/proj/sub',
+        agentType: 'codex',
+      })
+    )
+    expect(mixed.panes[0]).not.toHaveProperty('pid')
+    expect(mixed.panes[0]).not.toHaveProperty('restoreData')
+    expect(mixed.panes[1]).toEqual(
+      expect.objectContaining({
+        kind: 'browser',
+        status: 'running',
+        active: true,
+      })
+    )
+  })
+
   // Multiple active store panes (a transient push race wrote >1) → exactly one,
   // first-flagged wins.
   test('fixes up multiple active store panes to exactly one', () => {
