@@ -40,6 +40,9 @@ pub struct SpawnPtyRequest {
     /// Generate statusline bridge files for agent status tracking
     #[serde(default)]
     pub enable_agent_bridge: bool,
+    /// Ephemeral (burner) PTY: skip the session cache and the agent-bridge dir.
+    #[serde(default)]
+    pub ephemeral: bool,
 }
 
 /// Request payload for writing data to a PTY session
@@ -110,6 +113,21 @@ pub struct PtyExitEvent {
     pub code: Option<i32>,
 }
 
+/// Burner foreground-state event (emitted when a burner shell's foreground
+/// process changes). `running` is true while a foreground command holds the
+/// terminal, false when the shell is idle at its prompt or the platform can't
+/// introspect the foreground group.
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct BurnerForegroundEvent {
+    /// Session ID of the burner (ephemeral) PTY
+    pub session_id: SessionId,
+    /// Whether a foreground command is currently running in the burner shell
+    pub running: bool,
+}
+
 /// PTY error event payload (emitted on errors)
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
@@ -138,6 +156,45 @@ pub enum SessionStatus {
     },
 }
 
+/// Grouping metadata tying a PTY to its owning frontend workspace session,
+/// its position in that session's layout, and its detected agent. Persisted
+/// in the session cache (`SessionCacheData.groupings`, keyed by PTY id) and
+/// surfaced per-PTY on `SessionInfo` so the frontend can reconstruct the
+/// original multi-pane layout on restore instead of fragmenting each PTY into
+/// its own single-pane session. `None` for any PTY the frontend never grouped
+/// (back-compat: restores as a single-pane session, the pre-grouping behavior).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct PaneGrouping {
+    /// The frontend `Session.id` (an independent React UUID) this PTY belongs
+    /// to. PTYs sharing this value were panes of one workspace session.
+    pub workspace_session_id: String,
+    /// `LayoutId` of the owning workspace: single|vsplit|hsplit|threeRight|quad.
+    pub layout: String,
+    /// Stable session baseline cwd — the directory new panes spawn from via
+    /// `addPane`. Distinct from each pane's live `info.cwd`: the active
+    /// pane's cwd can drift via OSC 7 (e.g. into a worktree subdir) while
+    /// the workspace baseline stays at the project root. Persisted in EACH
+    /// pane's grouping (denormalised: every pane in one workspace records
+    /// the same value) so restore can read it from any pane in the bucket
+    /// without a separate workspace-level table. Optional for back-compat
+    /// with caches written before this field existed; absent → restore
+    /// falls back to deriving from the active pane's cwd.
+    #[cfg_attr(test, ts(optional))]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_directory: Option<String>,
+    /// Session-scoped pane id, e.g. `"p0"`.
+    pub pane_id: String,
+    /// Stable pane order within the workspace session.
+    pub pane_index: u32,
+    /// Detected agent CLI: claude-code|codex|aider|generic.
+    pub agent_type: String,
+    /// Whether this pane is the workspace session's active pane.
+    pub active: bool,
+}
+
 /// Single session info returned by list_sessions
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
@@ -150,6 +207,15 @@ pub struct SessionInfo {
     #[cfg_attr(test, ts(optional))]
     #[cfg_attr(test, ts(type = "boolean | null"))]
     pub activity_panel_collapsed: Option<bool>,
+    /// Workspace grouping for this PTY, or `None` if it was never grouped.
+    /// `skip_serializing_if = "Option::is_none"` omits the field from the
+    /// IPC JSON when None instead of emitting `null`, so the generated TS
+    /// `grouping?: PaneGrouping` accurately matches the runtime shape —
+    /// a consumer that checks for `undefined` will never see a `null`
+    /// that the type system claims is `PaneGrouping`.
+    #[cfg_attr(test, ts(optional))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub grouping: Option<PaneGrouping>,
 }
 
 /// Response payload for list_sessions command
@@ -196,4 +262,52 @@ pub struct UpdateSessionCwdRequest {
 pub struct SetSessionActivityPanelCollapsedRequest {
     pub id: String,
     pub collapsed: bool,
+}
+
+/// One pane within a workspace session snapshot pushed by the frontend.
+#[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspacePaneSnapshot {
+    /// The PTY id this pane is bound to (frontend `Pane.ptyId`).
+    pub pty_id: String,
+    /// Session-scoped pane id, e.g. `"p0"`.
+    pub pane_id: String,
+    /// Stable pane order within the workspace session.
+    pub pane_index: u32,
+    /// Detected agent CLI: claude-code|codex|aider|generic.
+    pub agent_type: String,
+    /// Whether this pane is the workspace session's active pane.
+    pub active: bool,
+}
+
+/// One workspace session (a frontend `Session`) in a grouping snapshot.
+#[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceSessionSnapshot {
+    /// The frontend `Session.id` (React UUID).
+    pub id: String,
+    /// `LayoutId`: single|vsplit|hsplit|threeRight|quad.
+    pub layout: String,
+    /// Stable session baseline cwd that `addPane` uses for new shells.
+    /// Distinct from any pane's live cwd (which can drift via OSC 7).
+    /// Optional for back-compat with frontends that haven't yet sent it.
+    #[cfg_attr(test, ts(optional))]
+    #[serde(default)]
+    pub working_directory: Option<String>,
+    pub panes: Vec<WorkspacePaneSnapshot>,
+}
+
+/// Request payload for set_workspace_sessions — the full current set of
+/// workspace sessions and their panes. The backend rebuilds its grouping map
+/// from this snapshot (entries for PTYs no longer present are dropped).
+#[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct SetWorkspaceSessionsRequest {
+    pub sessions: Vec<WorkspaceSessionSnapshot>,
 }

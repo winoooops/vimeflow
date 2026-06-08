@@ -2,8 +2,8 @@
 id: async-race-conditions
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-05-31
-ref_count: 15
+last_updated: 2026-06-07
+ref_count: 16
 ---
 
 # Async Race Conditions
@@ -576,3 +576,22 @@ prevent showing previous data.
 - **Finding:** `existsSync(lock)` followed by `writeFileSync(lock, ...)` is non-atomic; two concurrent processes can both pass the existence check before either writes, resulting in double-dispatch.
 - **Fix:** Replace with `fs.openSync(lock, 'wx')` wrapped in try/catch; `EEXIST` means another process holds the lock.
 - **Commit:** `7644ec4` + cycle-2 fix
+
+### 57. Post-spawn show() can overwrite a later scratch-pane selection
+
+- **Source:** github-claude | PR #351 round 1 | 2026-06-04
+- **Severity:** MEDIUM
+- **File:** `src/features/terminal/hooks/useScratchTerminals.ts`
+- **Finding:** `show()` awaited `spawnIfNeeded` and then unconditionally called `setVisibleKey(key)`. If the user clicked a second pane's scratch button while the first pane's pty was still spawning, the second click correctly set `visibleKey` to paneB (spawn already done, immediate return). When paneA's spawn finished milliseconds later, `setVisibleKey(keyA)` fired and silently stole the popup back from paneB.
+- **Fix:** Added a `showIntentRef` that stores the latest intended visible key before the async spawn. `hide()` clears the intent. After `spawnIfNeeded` resolves, `setVisibleKey(key)` only runs when `showIntentRef.current === key`. Added regression test with a deferred spawn to verify p0 stays visible when p1's late resolution would otherwise steal it.
+- **Commit:** _(see git log for PR #351 cycle-1 fix commit)_
+
+### 58. Retry backoff gate must distinguish identical no-op retries from structurally newer snapshots
+
+- **Source:** github-claude | PR #381 round 1 | 2026-06-07
+- **Severity:** MEDIUM
+- **File:** `src/features/sessions/hooks/usePushWorkspaceGrouping.ts`
+- **Finding:** A broad `retryTimerRef` gate blocked ALL drains while a 5s backoff timer was pending, including snapshots whose JSON differed from the failed one. If `setWorkspaceSessions` transiently failed and the user then added or changed a pane, the structurally newer workspace snapshot could be delayed for up to 5s — leaving a real crash-reload window where the backend held the PTY cache entry from `spawn_pty` but had no matching workspace grouping metadata.
+- **Fix:** Track the JSON of the snapshot whose failure armed the retry timer in `retryTargetJsonRef`. In the effect's drain kick, compare the pending snapshot's JSON to the retry target: identical payloads keep the backoff (preventing no-op flood during a sidecar outage), while a differing payload cancels the stale timer and drains immediately. In the catch path, when a newer snapshot is already sitting in `pending`, skip scheduling the stale backoff entirely and signal `drainAfterFailure` so the `finally` block drains the newer snapshot as soon as `inFlight` clears.
+- **Code-review heuristic:** "Latest wins" collapse is not enough when there is also a failure-recovery timer. The queue state has two dimensions: (a) which snapshot is newest, and (b) whether the last failure was for the same snapshot. Flood-guard timers should key off the _identity_ of the failed work item, not just a one-bit "timer armed" flag, or genuinely new work gets trapped behind backoff intended for duplicate retries.
+- **Commit:** _(PR #381 upsource cycle 1 fix commit)_

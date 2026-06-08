@@ -12,11 +12,13 @@ import type {
   PtyDataEvent,
   PtyExitEvent,
   PtyErrorEvent,
+  BurnerForegroundEvent,
   SessionList,
   SetActiveSessionRequest,
   ReorderSessionsRequest,
   UpdateSessionCwdRequest,
   SetSessionActivityPanelCollapsedRequest,
+  SetWorkspaceSessionsRequest,
 } from '../../../bindings'
 import type { ITerminalService } from './terminalService'
 
@@ -36,6 +38,10 @@ export class DesktopTerminalService implements ITerminalService {
   private exitCallbacks: ((sessionId: string, code: number | null) => void)[] =
     []
   private errorCallbacks: ((sessionId: string, message: string) => void)[] = []
+  private burnerForegroundCallbacks: ((
+    sessionId: string,
+    running: boolean
+  ) => void)[] = []
 
   private unlistenFns: UnlistenFn[] = []
   private initPromise: Promise<void> | null = null
@@ -115,6 +121,17 @@ export class DesktopTerminalService implements ITerminalService {
         )
         pendingUnlistenFns.push(unlistenError)
 
+        const unlistenBurnerForeground = await listen<BurnerForegroundEvent>(
+          'burner-foreground',
+          (payload) => {
+            const { sessionId, running } = payload
+            this.burnerForegroundCallbacks.forEach((cb) =>
+              cb(sessionId, running)
+            )
+          }
+        )
+        pendingUnlistenFns.push(unlistenBurnerForeground)
+
         if (initGeneration !== this.listenerInitGeneration) {
           this.cleanupListeners(pendingUnlistenFns)
 
@@ -153,6 +170,15 @@ export class DesktopTerminalService implements ITerminalService {
     }
   }
 
+  private removeBurnerForegroundCallback(
+    callback: (sessionId: string, running: boolean) => void
+  ): void {
+    const index = this.burnerForegroundCallbacks.indexOf(callback)
+    if (index > -1) {
+      this.burnerForegroundCallbacks.splice(index, 1)
+    }
+  }
+
   async spawn(params: PTYSpawnParams): Promise<PTYSpawnResult> {
     await this.ensureListeners()
 
@@ -165,6 +191,7 @@ export class DesktopTerminalService implements ITerminalService {
       shell: params.shell,
       env: params.env,
       enableAgentBridge: params.enableAgentBridge ?? false,
+      ephemeral: params.ephemeral ?? false,
     }
 
     const response = await invoke<PtySession>('spawn_pty', {
@@ -274,6 +301,23 @@ export class DesktopTerminalService implements ITerminalService {
     }
   }
 
+  async onBurnerForeground(
+    callback: (sessionId: string, running: boolean) => void
+  ): Promise<() => void> {
+    this.burnerForegroundCallbacks.push(callback)
+
+    try {
+      await this.ensureListeners()
+    } catch (error) {
+      this.removeBurnerForegroundCallback(callback)
+      throw error
+    }
+
+    return () => {
+      this.removeBurnerForegroundCallback(callback)
+    }
+  }
+
   /**
    * Dispose all backend event listeners. Call when the service is no longer needed.
    */
@@ -284,6 +328,7 @@ export class DesktopTerminalService implements ITerminalService {
     this.dataCallbacks = []
     this.exitCallbacks = []
     this.errorCallbacks = []
+    this.burnerForegroundCallbacks = []
     this.initPromise = null
   }
 
@@ -313,5 +358,15 @@ export class DesktopTerminalService implements ITerminalService {
     request: SetSessionActivityPanelCollapsedRequest
   ): Promise<void> {
     await invoke('set_session_activity_panel_collapsed', { request })
+  }
+
+  async killEphemeralPtys(): Promise<string[]> {
+    return invoke<string[]>('kill_ephemeral_ptys')
+  }
+
+  async setWorkspaceSessions(
+    request: SetWorkspaceSessionsRequest
+  ): Promise<void> {
+    await invoke('set_workspace_sessions', { request })
   }
 }

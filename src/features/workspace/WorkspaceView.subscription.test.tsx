@@ -82,6 +82,9 @@ vi.mock('../terminal/services/terminalService', () => ({
     onError: vi.fn((): (() => void) => (): void => {
       /* noop */
     }),
+    onBurnerForeground: vi.fn((): (() => void) => (): void => {
+      /* noop */
+    }),
     listSessions: vi.fn().mockResolvedValue({
       activeSessionId: 'sess-1',
       sessions: [
@@ -101,6 +104,8 @@ vi.mock('../terminal/services/terminalService', () => ({
     reorderSessions: vi.fn().mockResolvedValue(undefined),
     updateSessionCwd: vi.fn().mockResolvedValue(undefined),
     setSessionActivityPanelCollapsed: vi.fn().mockResolvedValue(undefined),
+    killEphemeralPtys: vi.fn(),
+    setWorkspaceSessions: vi.fn().mockResolvedValue(undefined),
   })),
 }))
 

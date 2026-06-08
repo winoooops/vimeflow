@@ -2,8 +2,8 @@
 id: resource-cleanup
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-05-24
-ref_count: 3
+last_updated: 2026-06-08
+ref_count: 4
 ---
 
 # Resource Cleanup
@@ -53,4 +53,22 @@ causes listener accumulation and duplicate event handling.
 - **File:** `crates/backend/src/agent/adapter/base/watcher_runtime.rs` L110-121 (`WatcherHandle::Drop`)
 - **Finding:** `WatcherHandle::Drop` ran the teardown of its two background threads sequentially — signal poll-stop → join poll-thread → signal session_index-stop → join session_index-thread. Each thread's exit is bounded by a ~500ms poll sleep (`POLL_INTERVAL / INTERRUPT_SLICES`), so the worst-case Drop time was the SUM (~1s) instead of the MAX (~500ms). The bug wasn't a correctness issue — Drop runs outside the watchers mutex so it doesn't block concurrent readers — but it directly impacted `stop_agent_watcher` IPC response time and watcher-restart latency seen by the caller. The pattern was easy to miss because the file already had `_watcher → poll_stop → join_handle` in this sequential shape (notify + poll pair), and the codex `session_index` fields were ADDED at the end of Drop as "the next thing to tear down" — pattern-matching the existing structure carried the inefficiency forward.
 - **Fix:** Hoist the `session_index_stop.store(true, ...)` call BEFORE the poll-thread `.join()`. Now both threads receive their stop signals in rapid succession; the subsequent two `.join()` calls block on threads that are ALREADY racing toward exit in parallel. Total time is bounded by `max(poll_sleep, session_index_sleep)` ~ 500ms. The fix is one line moved; the comment around it explains the parallelism rationale so a future contributor adding a THIRD background thread knows to put its stop-signal in the same upper block (not as a "signal-join pair" tacked onto the end). Code-review heuristic: in any Drop / shutdown sequence that tears down N independent threads, the pattern is "signal all N → join all N" (max latency = slowest), NOT "signal-join, signal-join, …" (sum latency = total). The pair-by-pair shape is correct only when joins are causally ordered (e.g., thread B can't exit cleanly until thread A is gone). Independent threads are the common case; check whether the joins actually need ordering before defaulting to the sequential shape.
+- **Commit:** same commit as this entry
+
+### 5. Atomic write helper leaves orphaned .tmp file on mid-write failure
+
+- **Source:** github-claude | PR #389 round 1 | 2026-06-08
+- **Severity:** LOW
+- **File:** `crates/backend/src/terminal/bridge.rs` L41-52 (`write_executable_script`)
+- **Finding:** `write_executable_script` creates a `.tmp` sibling file, writes content, syncs, renames to target, and sets permissions. Every intermediate step uses `?` for early return on error. If `write_all`, `sync_all`, or `rename` fails, the function returns before the `.tmp` file is removed. The name is fixed (same `.tmp` extension for every call), so repeated failures don't accumulate many files — but a single persistent error (e.g. disk full) leaves the orphan until the session directory is cleaned up.
+- **Fix:** Wrapped the write→rename→permissions sequence in a closure, stored the `Result`, and called `let _ = std::fs::remove_file(&tmp_path)` whenever the result is `Err`. The `remove_file` no-op on a non-existent path (e.g. if `rename` already succeeded but `set_permissions` failed) is harmless.
+- **Commit:** same commit as this entry
+
+### 6. Atomic write helper fails spawn after successful rename when directory fsync errors
+
+- **Source:** github-claude | PR #389 round 6 | 2026-06-08
+- **Severity:** MEDIUM
+- **File:** `crates/backend/src/terminal/bridge.rs` L49-55 (`write_executable_script`)
+- **Finding:** After `std::fs::rename(&tmp_path, path)` succeeds, the script exists at its final executable path. If the subsequent parent-directory `sync_all()` fails, `write_executable_script` returns an error, `generate_bridge_files` reports a failed script write, and the PTY spawn path can abort even though the script was written correctly. This is rare on common local Linux filesystems, but plausible on some mounted or unusual filesystems and affects the core session-spawn path when the agent bridge is enabled.
+- **Fix:** Demoted the directory `fsync` to best-effort using `let _ = std::fs::File::open(parent).and_then(|dir| dir.sync_all());` so a failed directory sync no longer aborts the spawn after a successful rename.
 - **Commit:** same commit as this entry

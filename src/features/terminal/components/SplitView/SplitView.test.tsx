@@ -144,6 +144,7 @@ const makeMockService = (): ITerminalService => ({
   onData: vi.fn(() => Promise.resolve((): void => undefined)),
   onExit: vi.fn(() => Promise.resolve((): void => undefined)),
   onError: vi.fn(() => Promise.resolve((): void => undefined)),
+  onBurnerForeground: vi.fn(() => Promise.resolve((): void => undefined)),
   listSessions: vi.fn(() =>
     Promise.resolve({ sessions: [], activeSessionId: null })
   ),
@@ -151,6 +152,8 @@ const makeMockService = (): ITerminalService => ({
   reorderSessions: vi.fn(() => Promise.resolve(undefined)),
   updateSessionCwd: vi.fn(() => Promise.resolve(undefined)),
   setSessionActivityPanelCollapsed: vi.fn(() => Promise.resolve(undefined)),
+  killEphemeralPtys: vi.fn(),
+  setWorkspaceSessions: vi.fn(() => Promise.resolve(undefined)),
 })
 
 // Literal `isActive={false}` is stripped by the project's jsx-boolean-value

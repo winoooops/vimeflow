@@ -4,6 +4,7 @@ import {
   buildWorkspaceCommands,
   type WorkspaceTab,
 } from './buildWorkspaceCommands'
+import { fuzzyMatch } from '../../command-palette/registry/fuzzyMatch'
 
 describe('buildWorkspaceCommands - happy paths', () => {
   const mockSessions: WorkspaceTab[] = [
@@ -71,6 +72,57 @@ describe('buildWorkspaceCommands - happy paths', () => {
 
     closeCmd?.execute?.('')
     expect(removeSession).toHaveBeenCalledWith('session-2')
+  })
+
+  test(':burner command toggles the focused pane burner terminal', () => {
+    const toggleBurner = vi.fn()
+
+    const commands = buildWorkspaceCommands({
+      sessions: mockSessions,
+      activeSessionId: 'session-1',
+      createSession,
+      removeSession,
+      renameSession,
+      setPaneUserLabel,
+      renameAgentSession,
+      activePanePtyId: 'pty-active',
+      setActiveSessionId,
+      notifyInfo,
+      toggleBurner,
+    })
+
+    const burnerCmd = commands.find((c) => c.id === 'burner')
+    expect(burnerCmd).toBeDefined()
+    expect(burnerCmd?.label).toBe(':burner')
+
+    // No-arg toggle: resolves the focused pane and hides-if-shown (chord parity).
+    burnerCmd?.execute?.('')
+    expect(toggleBurner).toHaveBeenCalledOnce()
+  })
+
+  test('typing :bu surfaces only the :burner command (no collision)', () => {
+    const commands = buildWorkspaceCommands({
+      sessions: mockSessions,
+      activeSessionId: 'session-1',
+      createSession,
+      removeSession,
+      renameSession,
+      setPaneUserLabel,
+      renameAgentSession,
+      activePanePtyId: 'pty-active',
+      setActiveSessionId,
+      notifyInfo,
+      toggleBurner: vi.fn(),
+    })
+
+    // Mirror useCommandPalette's filter: score each label (minus ':') against
+    // the typed verb, keep score > 0. `:sc` once collided with :split-vertical;
+    // pin that `:bu` resolves uniquely to :burner.
+    const matched = commands
+      .filter((c) => fuzzyMatch('bu', c.label.replace(':', '')) > 0)
+      .map((c) => c.id)
+
+    expect(matched).toEqual(['burner'])
   })
 
   test(':rename-session command renames active session', () => {

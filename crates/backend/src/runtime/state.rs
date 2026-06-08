@@ -74,9 +74,22 @@ impl BackendState {
     }
 
     pub fn shutdown(&self) {
+        // Best-effort kill of burner PTYs (reap-on-boot is the authoritative net).
+        let _ = self.kill_ephemeral_ptys();
         if let Err(err) = self.sessions.clear_all() {
             log::warn!("BackendState::shutdown: cache clear failed: {err}");
         }
+    }
+
+    /// Spawn the burner-terminal foreground poll loop (VIM-71). Call once at
+    /// startup: it emits `burner-foreground` events as burner shells begin
+    /// and finish foreground commands, driving the live "running" cue. Requires
+    /// a running Tokio runtime (the sidecar binary's `#[tokio::main]`).
+    pub fn start_foreground_poll(&self) {
+        tokio::spawn(crate::terminal::foreground::foreground_poll_loop(
+            self.pty.clone(),
+            self.events.clone(),
+        ));
     }
 
     pub async fn spawn_pty(
@@ -169,6 +182,11 @@ impl BackendState {
         crate::terminal::commands::kill_pty_inner(&self.pty, &self.sessions, request)
     }
 
+    /// Reap all ephemeral (burner) PTYs. Returns the ids killed.
+    pub fn kill_ephemeral_ptys(&self) -> Vec<String> {
+        crate::terminal::commands::kill_ephemeral_ptys_inner(&self.pty)
+    }
+
     pub fn list_sessions(&self) -> Result<crate::terminal::types::SessionList, String> {
         crate::terminal::commands::list_sessions_inner(&self.pty, &self.sessions)
     }
@@ -202,6 +220,13 @@ impl BackendState {
             &self.sessions,
             request,
         )
+    }
+
+    pub fn set_workspace_sessions(
+        &self,
+        request: crate::terminal::types::SetWorkspaceSessionsRequest,
+    ) -> Result<(), String> {
+        crate::terminal::commands::set_workspace_sessions_inner(&self.sessions, request)
     }
 
     pub fn list_dir(
@@ -475,6 +500,38 @@ mod tests {
         let (state, _sink) = BackendState::with_fake_sink();
         state.shutdown();
         state.shutdown();
+    }
+
+    #[tokio::test]
+    async fn shutdown_kills_ephemeral_ptys() {
+        let (state, _sink) = BackendState::with_fake_sink();
+        let cwd = std::env::current_dir()
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
+
+        state
+            .spawn_pty(crate::terminal::types::SpawnPtyRequest {
+                session_id: "burner-shutdown".to_string(),
+                cwd,
+                shell: None,
+                env: None,
+                enable_agent_bridge: false,
+                ephemeral: true,
+            })
+            .await
+            .expect("ephemeral spawn");
+
+        state.shutdown();
+
+        let write = state.write_pty(crate::terminal::types::WritePtyRequest {
+            session_id: "burner-shutdown".to_string(),
+            data: "x".to_string(),
+        });
+        assert!(
+            write.is_err(),
+            "shutdown should have reaped the burner PTY"
+        );
     }
 
     #[test]

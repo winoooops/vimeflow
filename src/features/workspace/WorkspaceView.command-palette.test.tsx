@@ -212,6 +212,8 @@ describe('WorkspaceView - Command Palette Integration', () => {
       restoreData: new Map(),
       loading: false,
       notifyPaneReady: vi.fn(),
+      registerPending: vi.fn(),
+      dropAllForPty: vi.fn(),
     }
 
     // Mock useSessionManager
@@ -296,6 +298,7 @@ describe('WorkspaceView - Command Palette Integration', () => {
       onData: vi.fn().mockResolvedValue(vi.fn()),
       onExit: vi.fn().mockReturnValue(vi.fn()),
       onError: vi.fn().mockReturnValue(vi.fn()),
+      onBurnerForeground: vi.fn().mockReturnValue(vi.fn()),
       listSessions: vi.fn().mockResolvedValue({
         activeSessionId: null,
         sessions: [],
@@ -304,6 +307,8 @@ describe('WorkspaceView - Command Palette Integration', () => {
       reorderSessions: vi.fn().mockResolvedValue(undefined),
       updateSessionCwd: vi.fn().mockResolvedValue(undefined),
       setSessionActivityPanelCollapsed: vi.fn().mockResolvedValue(undefined),
+      killEphemeralPtys: vi.fn(),
+      setWorkspaceSessions: vi.fn().mockResolvedValue(undefined),
     })
   })
 

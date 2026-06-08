@@ -8,6 +8,7 @@ import type {
 import type {
   SessionList,
   SetSessionActivityPanelCollapsedRequest,
+  SetWorkspaceSessionsRequest,
 } from '../../../bindings'
 import { isDesktop } from '../../../lib/environment'
 import { DesktopTerminalService } from './desktopTerminalService'
@@ -79,6 +80,16 @@ export interface ITerminalService {
   ): Promise<() => void>
 
   /**
+   * Subscribe to burner-terminal foreground-state events (VIM-71). `running`
+   * is true while a foreground command holds the burner shell's terminal,
+   * false when it returns to its prompt. Drives the live "running" cue.
+   * Resolves after the underlying transport listener is attached.
+   */
+  onBurnerForeground(
+    callback: (sessionId: string, running: boolean) => void
+  ): Promise<() => void>
+
+  /**
    * List all sessions with their status (Alive or Exited)
    */
   listSessions(): Promise<SessionList>
@@ -104,6 +115,21 @@ export interface ITerminalService {
   setSessionActivityPanelCollapsed(
     request: SetSessionActivityPanelCollapsedRequest
   ): Promise<void>
+
+  /**
+   * Reap all ephemeral (burner) PTYs; returns the ids killed. Called on
+   * renderer boot to clear reload orphans.
+   */
+  killEphemeralPtys(): Promise<string[]>
+
+  /**
+   * Persist the full workspace-session grouping snapshot so a later restore
+   * can reconstruct the multi-pane layout instead of fragmenting each PTY
+   * into its own single-pane session. The backend rebuilds its grouping map
+   * from this snapshot on every call — panes omitted since the previous push
+   * have their grouping dropped.
+   */
+  setWorkspaceSessions(request: SetWorkspaceSessionsRequest): Promise<void>
 }
 
 /**
@@ -129,6 +155,10 @@ export class MockTerminalService implements ITerminalService {
   private exitCallbacks: ((sessionId: string, code: number | null) => void)[] =
     []
   private errorCallbacks: ((sessionId: string, message: string) => void)[] = []
+  private burnerForegroundCallbacks: ((
+    sessionId: string,
+    running: boolean
+  ) => void)[] = []
 
   spawn(params: PTYSpawnParams): Promise<PTYSpawnResult> {
     // Mock implementation - params unused in mock but required by interface
@@ -301,6 +331,19 @@ export class MockTerminalService implements ITerminalService {
     })
   }
 
+  onBurnerForeground(
+    callback: (sessionId: string, running: boolean) => void
+  ): Promise<() => void> {
+    this.burnerForegroundCallbacks.push(callback)
+
+    return Promise.resolve(() => {
+      const index = this.burnerForegroundCallbacks.indexOf(callback)
+      if (index > -1) {
+        this.burnerForegroundCallbacks.splice(index, 1)
+      }
+    })
+  }
+
   // Test helpers
   /**
    * Emit a pty-data event. When `offsetStart` is omitted, the mock auto-assigns
@@ -328,6 +371,10 @@ export class MockTerminalService implements ITerminalService {
 
   emitExit(sessionId: string, code: number | null): void {
     this.exitCallbacks.forEach((cb) => cb(sessionId, code))
+  }
+
+  emitBurnerForeground(sessionId: string, running: boolean): void {
+    this.burnerForegroundCallbacks.forEach((cb) => cb(sessionId, running))
   }
 
   emitError(sessionId: string, message: string): void {
@@ -394,6 +441,19 @@ export class MockTerminalService implements ITerminalService {
   setSessionActivityPanelCollapsed(
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _request: SetSessionActivityPanelCollapsedRequest
+  ): Promise<void> {
+    // Mock no-op
+    return Promise.resolve()
+  }
+
+  killEphemeralPtys(): Promise<string[]> {
+    // Mock no-op
+    return Promise.resolve([])
+  }
+
+  setWorkspaceSessions(
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    _request: SetWorkspaceSessionsRequest
   ): Promise<void> {
     // Mock no-op
     return Promise.resolve()
