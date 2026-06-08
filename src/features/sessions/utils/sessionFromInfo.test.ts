@@ -37,6 +37,26 @@ describe('sessionFromInfo (pre-pane shape)', () => {
     expect(session.status).toBe('completed')
   })
 
+  test('Exited with a non-zero last_exit_code hydrates as errored', () => {
+    const info: SessionInfo = {
+      id: 'pty-err',
+      cwd: '/x',
+      status: { kind: 'Exited', last_exit_code: 3 },
+    }
+    const session = sessionFromInfo(info, 0)
+    expect(session.status).toBe('errored')
+    expect(session.panes[0].status).toBe('errored')
+  })
+
+  test('Exited with exit code 0 hydrates as completed', () => {
+    const info: SessionInfo = {
+      id: 'pty-ok',
+      cwd: '/x',
+      status: { kind: 'Exited', last_exit_code: 0 },
+    }
+    expect(sessionFromInfo(info, 0).status).toBe('completed')
+  })
+
   test('Alive info produces a session with one running pane', () => {
     const session = sessionFromInfo(aliveInfo('pty-1', '/home/will/repo'), 0)
     expect(session.panes).toHaveLength(1)

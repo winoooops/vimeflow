@@ -1,6 +1,7 @@
 import { type ReactElement, type KeyboardEvent } from 'react'
 import type { Session } from '../types'
 import type { Agent } from '../../../agents/registry'
+import { hasLivePane } from '../utils/sessionStatus'
 import { StatusDot } from './StatusDot'
 
 export interface TabProps {
@@ -59,9 +60,7 @@ export const Tab = ({
       id={`session-tab-${session.id}`}
       role="tab"
       aria-label={
-        session.status === 'completed' || session.status === 'errored'
-          ? `${session.name} (ended)`
-          : session.name
+        !hasLivePane(session.panes) ? `${session.name} (ended)` : session.name
       }
       aria-selected={isActive}
       aria-controls={`session-panel-${session.id}`}
@@ -107,7 +106,7 @@ export const Tab = ({
       >
         {session.name}
       </span>
-      {(session.status === 'running' || session.status === 'paused') && (
+      {hasLivePane(session.panes) && (
         <StatusDot
           status={session.status}
           size={5}

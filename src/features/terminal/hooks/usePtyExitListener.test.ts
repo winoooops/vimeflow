@@ -5,15 +5,15 @@ import { usePtyExitListener } from './usePtyExitListener'
 
 const buildMockService = (): {
   service: ITerminalService
-  fireExit: (sid: string) => void
+  fireExit: (sid: string, code: number | null) => void
   unsubscribed: () => boolean
 } => {
-  let cb: ((sid: string) => void) | null = null
+  let cb: ((sid: string, code: number | null) => void) | null = null
   let didUnsubscribe = false
 
   return {
     service: {
-      onExit: (callback: (sid: string) => void) => {
+      onExit: (callback: (sid: string, code: number | null) => void) => {
         cb = callback
 
         return Promise.resolve(() => {
@@ -21,19 +21,19 @@ const buildMockService = (): {
         })
       },
     } as unknown as ITerminalService,
-    fireExit: (sid) => cb?.(sid),
+    fireExit: (sid, code) => cb?.(sid, code),
     unsubscribed: () => didUnsubscribe,
   }
 }
 
 describe('usePtyExitListener', () => {
-  test('subscribes to service.onExit and forwards ptyId to onExit callback', () => {
+  test('subscribes to service.onExit and forwards ptyId and code to onExit callback', () => {
     const { service, fireExit } = buildMockService()
     const onExit = vi.fn()
     renderHook(() => usePtyExitListener({ service, onExit }))
 
-    fireExit('pty-1')
-    expect(onExit).toHaveBeenCalledWith('pty-1')
+    fireExit('pty-1', 3)
+    expect(onExit).toHaveBeenCalledWith('pty-1', 3)
   })
 
   test('unsubscribes on unmount', async () => {

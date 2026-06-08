@@ -1,7 +1,11 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import { flushSync } from 'react-dom'
-import type { LayoutId, Pane, PaneKind, Session } from '../types'
-import type { AgentSessionTitleEvent } from '../../../bindings'
+import type { LayoutId, Pane, PaneKind, Session, SessionStatus } from '../types'
+import type {
+  AgentLifecycleEvent,
+  AgentPhase,
+  AgentSessionTitleEvent,
+} from '../../../bindings'
 import { listen, type UnlistenFn } from '../../../lib/backend'
 import { isDesktop } from '../../../lib/environment'
 import type { ITerminalService } from '../../terminal/services/terminalService'
@@ -27,7 +31,11 @@ import {
   applyRemovePane,
   nextFreePaneId,
 } from '../utils/paneLifecycle'
-import { deriveShellSessionStatus } from '../utils/sessionStatus'
+import {
+  deriveShellSessionStatus,
+  isLiveStatus,
+  isTerminalStatus,
+} from '../utils/sessionStatus'
 import {
   deleteActivityPanelCollapsed,
   writeActivityPanelCollapsed,
@@ -397,6 +405,13 @@ export interface UseSessionManagerOptions {
   autoCreateOnEmpty?: boolean
 }
 
+// Generated AgentPhase is lower-camel (serde rename_all camelCase).
+const phaseToStatus: Record<AgentPhase, SessionStatus> = {
+  running: 'running',
+  idle: 'idle',
+  awaiting: 'awaiting',
+}
+
 export const useSessionManager = (
   service: ITerminalService,
   options: UseSessionManagerOptions = {}
@@ -481,8 +496,46 @@ export const useSessionManager = (
   // exit. Idempotent — flipping an already-completed session to completed
   // just refreshes its exit-relative timestamp. Unsubscribes on unmount via
   // the returned cleanup.
-  const onPtyExitRef = useRef<(ptyId: string) => void>(() => undefined)
-  onPtyExitRef.current = (ptyId: string): void => {
+  const onPtyExitRef = useRef<(ptyId: string, code: number | null) => void>(
+    () => undefined
+  )
+  onPtyExitRef.current = (ptyId: string, code: number | null): void => {
+    const exitedAt = new Date().toISOString()
+
+    const status: SessionStatus =
+      code != null && code !== 0 ? 'errored' : 'completed'
+
+    setSessions((prev) =>
+      prev.map((s) => {
+        const idx = s.panes.findIndex((p) => p.ptyId === ptyId)
+        if (idx === -1) {
+          return s
+        }
+
+        const newPanes = s.panes.map((p, paneIdx) =>
+          paneIdx === idx
+            ? {
+                ...p,
+                status,
+                agentType: 'generic' as const,
+              }
+            : p
+        )
+        const activePane = newPanes.find((p) => p.active)
+
+        return {
+          ...s,
+          status: deriveShellSessionStatus(newPanes),
+          agentType: activePane?.agentType ?? s.agentType,
+          panes: newPanes,
+          lastActivityAt: exitedAt,
+        }
+      })
+    )
+  }
+
+  const onPtyErrorRef = useRef<(ptyId: string) => void>(() => undefined)
+  onPtyErrorRef.current = (ptyId: string): void => {
     const exitedAt = new Date().toISOString()
 
     setSessions((prev) =>
@@ -496,7 +549,7 @@ export const useSessionManager = (
           paneIdx === idx
             ? {
                 ...p,
-                status: 'completed' as const,
+                status: 'errored' as const,
                 agentType: 'generic' as const,
               }
             : p
@@ -516,8 +569,38 @@ export const useSessionManager = (
 
   usePtyExitListener({
     service,
-    onExit: (ptyId) => onPtyExitRef.current(ptyId),
+    onExit: (ptyId, code) => onPtyExitRef.current(ptyId, code),
   })
+
+  useEffect(() => {
+    let cancelled = false
+    let unsubscribeError: (() => void) | undefined
+
+    void (async (): Promise<void> => {
+      let fn: () => void
+      try {
+        fn = await service.onError((sessionId) => {
+          onPtyErrorRef.current(sessionId)
+        })
+      } catch {
+        return
+      }
+
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+      if (cancelled) {
+        fn()
+
+        return
+      }
+
+      unsubscribeError = fn
+    })()
+
+    return (): void => {
+      cancelled = true
+      unsubscribeError?.()
+    }
+  }, [service])
 
   useEffect(() => {
     if (!isDesktop()) {
@@ -605,6 +688,66 @@ export const useSessionManager = (
       }
 
       // cancelled may flip while the listener promise is awaiting.
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+      if (cancelled) {
+        fn()
+      } else {
+        unlistenFn = fn
+      }
+    })()
+
+    return (): void => {
+      cancelled = true
+      unlistenFn?.()
+    }
+  }, [])
+
+  // Bridge: write the agent's derived lifecycle phase into pane.status.
+  useEffect(() => {
+    if (!isDesktop()) {
+      return
+    }
+
+    let cancelled = false
+    let unlistenFn: UnlistenFn | undefined
+
+    void (async (): Promise<void> => {
+      let fn: UnlistenFn
+      try {
+        fn = await listen<AgentLifecycleEvent>('agent-lifecycle', (payload) => {
+          setSessions((prev) =>
+            prev.map((session) => {
+              const idx = session.panes.findIndex(
+                (pane) => pane.ptyId === payload.sessionId
+              )
+              if (idx === -1) {
+                return session
+              }
+
+              // Sticky terminal: a late/replayed event must not resurrect an
+              // exited pane. v1 is last-writer-wins among live phases.
+              if (isTerminalStatus(session.panes[idx].status)) {
+                return session
+              }
+
+              const newPanes = session.panes.map((pane, i) =>
+                i === idx
+                  ? { ...pane, status: phaseToStatus[payload.phase] }
+                  : pane
+              )
+
+              return {
+                ...session,
+                status: deriveShellSessionStatus(newPanes),
+                panes: newPanes,
+              }
+            })
+          )
+        })
+      } catch {
+        return
+      }
+
       // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
       if (cancelled) {
         fn()
@@ -790,7 +933,7 @@ export const useSessionManager = (
   // and seed a fresh tab; the Exited tabs remain available for the user
   // to Restart in their original cwd if they want to.
   const hasLiveSession = sessions.some((s) =>
-    s.panes.some((pane) => isShellPane(pane) && pane.status === 'running')
+    s.panes.some((pane) => isShellPane(pane) && isLiveStatus(pane.status))
   )
   useAutoCreateOnEmpty({
     enabled: autoCreateOnEmpty,

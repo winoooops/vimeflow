@@ -21,11 +21,12 @@ use crate::agent::adapter::base::{TranscriptDecoder, TranscriptHandle, Transcrip
 use crate::agent::adapter::types::ValidateTranscriptError;
 use crate::agent::events::{
     emit_agent_cwd, emit_agent_session_title, emit_agent_tool_call, emit_agent_turn,
+    emit_lifecycle_on_change, record_lifecycle,
 };
 use crate::agent::sanitize_title;
 use crate::agent::types::{
-    AgentCwdEvent, AgentSessionTitleEvent, AgentToolCallEvent, AgentTurnEvent, TitleSource,
-    ToolCallStatus,
+    AgentCwdEvent, AgentPhase, AgentSessionTitleEvent, AgentToolCallEvent, AgentTurnEvent,
+    TitleSource, ToolCallStatus,
 };
 use crate::runtime::EventSink;
 
@@ -242,6 +243,13 @@ struct ClaudeTranscriptDecoder {
     /// the title text hasn't changed (matches the pre-refactor
     /// `emit_title` dedup contract from PR #265).
     last_title_memo: Option<String>,
+    /// Live agent-lifecycle de-dup slot; left untouched during replay.
+    last_phase: Option<AgentPhase>,
+    /// Settled phase accumulated silently during replay, flushed once at
+    /// the replay->live boundary.
+    replay_phase: Option<AgentPhase>,
+    /// One-shot guard: false during replay, true after the first on_caught_up.
+    replay_done: bool,
 }
 
 impl ClaudeTranscriptDecoder {
@@ -262,6 +270,9 @@ impl ClaudeTranscriptDecoder {
             emitter,
             claude_agent_session_id,
             last_title_memo: None,
+            last_phase: None,
+            replay_phase: None,
+            replay_done: false,
         }
     }
 }
@@ -279,12 +290,27 @@ impl TranscriptDecoder for ClaudeTranscriptDecoder {
             &mut self.last_cwd,
             &self.claude_agent_session_id,
             &mut self.last_title_memo,
+            &mut self.last_phase,
+            &mut self.replay_phase,
+            self.replay_done,
         );
     }
 
     /// First EOF marks the end of replay; subsequent EOFs are idempotent.
     /// After this, every submit emits live.
     fn on_caught_up(&mut self) {
+        if !self.replay_done {
+            self.replay_done = true;
+            if let Some(phase) = self.replay_phase.take() {
+                emit_lifecycle_on_change(
+                    self.events.as_ref(),
+                    &self.session_id,
+                    &self.claude_agent_session_id,
+                    &mut self.last_phase,
+                    phase,
+                );
+            }
+        }
         self.emitter.finish_replay();
     }
 }
@@ -315,6 +341,9 @@ fn process_line(
     last_cwd: &mut Option<String>,
     claude_agent_session_id: &str,
     last_title_memo: &mut Option<String>,
+    last_phase: &mut Option<AgentPhase>,
+    replay_phase: &mut Option<AgentPhase>,
+    replay_done: bool,
 ) {
     let dto: ClaudeTranscriptLineDto = match serde_json::from_str(line) {
         Ok(v) => v,
@@ -342,6 +371,37 @@ fn process_line(
             }
             *last_cwd = Some(observed.to_string());
         }
+    }
+
+    // Agent lifecycle: a phase from the assistant turn boundary (stop_reason)
+    // or a real user prompt; replay-bounded via record_lifecycle.
+    let phase = match dto.line_type.as_deref() {
+        Some("assistant") => dto
+            .message
+            .as_ref()
+            .and_then(|m| m.stop_reason.as_deref())
+            .and_then(|reason| match reason {
+                "tool_use" => Some(AgentPhase::Running),
+                "end_turn" | "stop_sequence" | "max_tokens" => Some(AgentPhase::Idle),
+                _ => None,
+            }),
+        Some("user")
+            if dto.message.as_ref().is_some_and(|m| is_user_prompt(&m.content)) =>
+        {
+            Some(AgentPhase::Running)
+        }
+        _ => None,
+    };
+    if let Some(phase) = phase {
+        record_lifecycle(
+            phase,
+            session_id,
+            claude_agent_session_id,
+            events,
+            last_phase,
+            replay_phase,
+            replay_done,
+        );
     }
 
     match dto.line_type.as_deref().unwrap_or("") {
@@ -907,6 +967,49 @@ fn cap_with_head_and_tail(content: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::runtime::FakeEventSink;
+
+    fn lifecycle_phases(sink: &FakeEventSink) -> Vec<String> {
+        sink.recorded()
+            .into_iter()
+            .filter(|(name, _)| name == "agent-lifecycle")
+            .filter_map(|(_, p)| p["phase"].as_str().map(str::to_string))
+            .collect()
+    }
+
+    #[test]
+    fn claude_replay_flushes_only_the_settled_phase_once() {
+        let sink = Arc::new(FakeEventSink::new());
+        let mut decoder =
+            ClaudeTranscriptDecoder::new(sink.clone(), "sid".into(), None, "agent-1".into());
+        decoder.decode_line(r#"{"type":"user","message":{"content":"hi"}}"#);
+        decoder.decode_line(
+            r#"{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t1","name":"Read","input":{}}],"stop_reason":"tool_use"}}"#,
+        );
+        decoder.decode_line(
+            r#"{"type":"assistant","message":{"content":[{"type":"text","text":"done"}],"stop_reason":"end_turn"}}"#,
+        );
+        decoder.on_caught_up();
+        assert_eq!(lifecycle_phases(&sink), vec!["idle"]);
+    }
+
+    #[test]
+    fn claude_live_emits_running_then_idle_transition() {
+        let sink = Arc::new(FakeEventSink::new());
+        let mut decoder =
+            ClaudeTranscriptDecoder::new(sink.clone(), "sid".into(), None, "agent-1".into());
+        decoder.decode_line(
+            r#"{"type":"assistant","message":{"content":[{"type":"text","text":"ready"}],"stop_reason":"end_turn"}}"#,
+        );
+        decoder.on_caught_up();
+        decoder.decode_line(
+            r#"{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t2","name":"Read","input":{}}],"stop_reason":"tool_use"}}"#,
+        );
+        decoder.decode_line(
+            r#"{"type":"assistant","message":{"content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn"}}"#,
+        );
+        assert_eq!(lifecycle_phases(&sink), vec!["idle", "running", "idle"]);
+    }
 
     #[test]
     fn validate_transcript_path_rejects_path_outside_claude_root() {
@@ -1550,6 +1653,9 @@ mod tests {
             &mut last_cwd,
             "claude-agent-sid",
             &mut last_title_memo,
+            &mut None,
+            &mut None,
+            true,
         );
 
         assert_eq!(concrete.count("agent-tool-call"), 1);
@@ -1591,6 +1697,9 @@ mod tests {
             &mut last_cwd,
             claude_agent_session_id,
             last_title_memo,
+            &mut None,
+            &mut None,
+            true,
         );
 
         concrete

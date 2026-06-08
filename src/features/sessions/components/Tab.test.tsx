@@ -12,6 +12,7 @@ const session = (id: string, status: Session['status'] = 'running'): Session =>
     name: id,
     status,
     agentType: 'claude-code',
+    panes: [{ status }] as Session['panes'],
   }) as Session
 
 const renderTab = (

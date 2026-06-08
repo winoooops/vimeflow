@@ -20,7 +20,7 @@ const buildSession = (overrides: Partial<Session> = {}): Session => ({
       ptyId: 'sess-1',
       cwd: '~',
       agentType: 'claude-code',
-      status: 'running',
+      status: overrides.status ?? 'running',
       active: true,
     },
   ],
@@ -121,7 +121,7 @@ describe('Tabs', () => {
   test('renders one tab per open session (running + paused)', () => {
     const sessions: Session[] = [
       buildSession({ id: 'a', status: 'running', name: 'auth' }),
-      buildSession({ id: 'b', status: 'paused', name: 'tests' }),
+      buildSession({ id: 'b', status: 'idle', name: 'tests' }),
       buildSession({ id: 'c', status: 'completed', name: 'closed' }),
       buildSession({ id: 'd', status: 'errored', name: 'broken' }),
     ]

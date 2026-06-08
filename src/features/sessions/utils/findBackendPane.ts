@@ -1,6 +1,7 @@
 import type { Pane, Session } from '../types'
 import { findActivePane } from './activeSessionPane'
 import { isShellPane } from './paneKind'
+import { isLiveStatus } from './sessionStatus'
 
 export const findBackendSessionPane = (session: Session): Pane | undefined => {
   const activePane = findActivePane(session)
@@ -14,5 +15,5 @@ export const findBackendSessionPane = (session: Session): Pane | undefined => {
 
   const shellPanes = session.panes.filter(isShellPane)
 
-  return shellPanes.find((p) => p.status === 'running') ?? shellPanes[0]
+  return shellPanes.find((p) => isLiveStatus(p.status)) ?? shellPanes[0]
 }

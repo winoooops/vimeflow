@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'vitest'
 import {
-  isOpenSessionStatus,
+  getVisibleSessions,
   pickNextVisibleSessionId,
 } from './pickNextVisibleSessionId'
 import type { Session, SessionStatus } from '../types'
@@ -40,12 +40,35 @@ const buildSession = (id: string, status: SessionStatus): Session => ({
   },
 })
 
-describe('isOpenSessionStatus', () => {
-  test('running and paused are open; completed and errored are not', () => {
-    expect(isOpenSessionStatus('running')).toBe(true)
-    expect(isOpenSessionStatus('paused')).toBe(true)
-    expect(isOpenSessionStatus('completed')).toBe(false)
-    expect(isOpenSessionStatus('errored')).toBe(false)
+describe('getVisibleSessions', () => {
+  test('a split session with one errored pane and one live pane stays visible', () => {
+    // Aggregate status is errored (errored-dominant display), but the session
+    // still has a live pane — visibility is pane-level, so it must not drop.
+    const mixed: Session = {
+      ...buildSession('mixed', 'errored'),
+      panes: [
+        {
+          id: 'p0',
+          ptyId: 'mixed',
+          cwd: '~',
+          agentType: 'claude-code',
+          status: 'errored',
+          active: false,
+        },
+        {
+          id: 'p1',
+          ptyId: 'mixed',
+          cwd: '~',
+          agentType: 'claude-code',
+          status: 'running',
+          active: true,
+        },
+      ] as Session['panes'],
+    }
+
+    expect(getVisibleSessions([mixed], null).map((s) => s.id)).toEqual([
+      'mixed',
+    ])
   })
 })
 
@@ -68,7 +91,7 @@ describe('pickNextVisibleSessionId', () => {
     expect(pickNextVisibleSessionId(sessions, 'C', 'C')).toBe('B')
   })
 
-  test('skips sessions that are neither open nor the active one', () => {
+  test('skips sessions that are neither live nor the active one', () => {
     // Hidden Recent session B sits between two open ones in array order.
     const sessions = [
       buildSession('A', 'running'),
@@ -100,8 +123,14 @@ describe('pickNextVisibleSessionId', () => {
       buildSession('A', 'running'),
       buildSession('B', 'completed'),
     ]
-    // B is not active and not open → not visible → no fallback can be
+    // B is not active and not live → not visible → no fallback can be
     // computed from this set. Caller decides what to do.
     expect(pickNextVisibleSessionId(sessions, 'B', 'A')).toBeUndefined()
+  })
+
+  test('treats an idle session as live (not skipped)', () => {
+    const sessions = [buildSession('A', 'idle'), buildSession('B', 'completed')]
+    expect(pickNextVisibleSessionId(sessions, 'A', 'A')).toBeUndefined()
+    // A is idle and active, so it is visible; only one visible session.
   })
 })

@@ -12,8 +12,8 @@ describe('StatusDot', () => {
     expect(dot.className).toContain('animate-pulse')
   })
 
-  test('paused status uses warning amber', () => {
-    render(<StatusDot status="paused" />)
+  test('awaiting status uses warning amber', () => {
+    render(<StatusDot status="awaiting" />)
     expect(screen.getByTestId('status-dot').className).toContain('bg-warning')
   })
 

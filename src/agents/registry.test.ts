@@ -86,9 +86,9 @@ test('agentStatusToSessionStatus reports running when isActive', () => {
   )
 })
 
-test('agentStatusToSessionStatus reports paused when not isActive', () => {
+test('agentStatusToSessionStatus reports idle when not isActive', () => {
   expect(agentStatusToSessionStatus({ isActive: false } as AgentStatus)).toBe(
-    'paused'
+    'idle'
   )
 })
 

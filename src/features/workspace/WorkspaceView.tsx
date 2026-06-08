@@ -77,6 +77,7 @@ import { sumLines } from '../diff/utils/sumLines'
 import { findActivePane } from '../sessions/utils/activeSessionPane'
 import { isShellPane } from '../sessions/utils/paneKind'
 import { lineDelta } from '../sessions/utils/lineDelta'
+import { hasLivePane, isLiveStatus } from '../sessions/utils/sessionStatus'
 import { pickNextVisibleSessionId } from '../sessions/utils/pickNextVisibleSessionId'
 import { AGENTS, agentTypeToRegistryKey } from '../../agents/registry'
 import type { SessionCloseResult, SessionStatus } from '../sessions/types'
@@ -335,7 +336,7 @@ export const WorkspaceView = (): ReactElement => {
         : // Active pane is a browser: prefer a live shell so agent/cwd/status
           // state does not bind to an exited PTY when another shell is running.
           (activeSession?.panes.find(
-            (pane) => isShellPane(pane) && pane.status === 'running'
+            (pane) => isShellPane(pane) && isLiveStatus(pane.status)
           ) ?? activeSession?.panes.find(isShellPane))
 
   const activePtyBackedPaneId = activePtyBackedPane?.id
@@ -357,7 +358,7 @@ export const WorkspaceView = (): ReactElement => {
   // running/paused/completed/errored — agent activity stays an orthogonal
   // signal that the "live" pulse next to the agent chip already reflects.
   const activityPanelStatus: SessionStatus =
-    activePtyBackedPane?.status ?? 'paused'
+    activePtyBackedPane?.status ?? 'idle'
 
   const handleActivityPanelCollapsed = useCallback(
     (collapsed: boolean): void => {
@@ -380,14 +381,18 @@ export const WorkspaceView = (): ReactElement => {
   // (status completed/errored). The PTY-exit reset effect below owns that
   // path; without this guard, a delayed status update could re-stamp stale
   // agent chrome onto a completed session.
-  const activeSessionStatus = activeSession?.status
+  // Pane-level, not the errored-dominant aggregate: a crashed sibling pane
+  // must not short-circuit the active pane's agent/cwd bridges.
+  const isActivePaneLive =
+    activePtyBackedPane !== undefined &&
+    isLiveStatus(activePtyBackedPane.status)
 
   const isStatusBarAgentActive =
     activePtyBackedPanePtyId !== undefined &&
     agentStatus.sessionId === activePtyBackedPanePtyId &&
     agentStatus.isActive &&
     !agentStatus.agentExited &&
-    (activeSessionStatus === 'running' || activeSessionStatus === 'paused')
+    isActivePaneLive
 
   useEffect(() => {
     if (!activeSessionId) {
@@ -399,7 +404,7 @@ export const WorkspaceView = (): ReactElement => {
     if (agentStatus.sessionId !== activePtyBackedPanePtyId) {
       return
     }
-    if (activeSessionStatus !== 'running' && activeSessionStatus !== 'paused') {
+    if (!isActivePaneLive) {
       return
     }
 
@@ -424,7 +429,7 @@ export const WorkspaceView = (): ReactElement => {
     activeSessionId,
     activePtyBackedPaneId,
     activePtyBackedPanePtyId,
-    activeSessionStatus,
+    isActivePaneLive,
     agentStatus.agentExited,
     agentStatus.isActive,
     agentStatus.agentType,
@@ -468,7 +473,7 @@ export const WorkspaceView = (): ReactElement => {
     if (agentStatus.sessionId !== activePtyBackedPanePtyId) {
       return
     }
-    if (activeSessionStatus !== 'running' && activeSessionStatus !== 'paused') {
+    if (!isActivePaneLive) {
       return
     }
     if (!agentIsActive || agentHasExited) {
@@ -484,7 +489,7 @@ export const WorkspaceView = (): ReactElement => {
     activePtyBackedPaneId,
     activePtyBackedPanePtyId,
     activePtyBackedPaneCwd,
-    activeSessionStatus,
+    isActivePaneLive,
     agentCwd,
     agentHasExited,
     agentIsActive,
@@ -500,7 +505,7 @@ export const WorkspaceView = (): ReactElement => {
   // effect is cheap even though it fires on every sessions array change.
   useEffect(() => {
     for (const session of sessions) {
-      if (session.status !== 'completed' && session.status !== 'errored') {
+      if (hasLivePane(session.panes)) {
         continue
       }
       // Effect-path: skip silently on transient invariant violations
