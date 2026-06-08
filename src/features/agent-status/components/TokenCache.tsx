@@ -104,18 +104,18 @@ const StatCell = ({
 }): ReactElement => (
   <Tooltip content={tooltip} placement="bottom">
     <div data-testid={testId} className="flex cursor-pointer flex-col gap-0.5">
-      <span
+      <dd
         className="text-[11.5px] font-semibold tabular-nums text-on-surface"
         style={{ fontFamily: JETBRAINS }}
       >
         {value}
-      </span>
-      <span
+      </dd>
+      <dt
         className="text-[9px] uppercase tracking-[0.06em] text-on-surface-muted"
         style={{ fontFamily: JETBRAINS }}
       >
         {label}
-      </span>
+      </dt>
     </div>
   </Tooltip>
 )
@@ -180,7 +180,7 @@ export const TokenCache = ({
         }}
       >
         <StackBar {...buckets} />
-        <div className="mt-2.5 grid grid-cols-3 gap-2">
+        <dl className="mt-2.5 grid grid-cols-3 gap-2">
           <StatCell
             label="cached"
             value={fmt(buckets.cached)}
@@ -199,7 +199,7 @@ export const TokenCache = ({
             tooltip="Brand-new tokens sent this turn — full price"
             testId="token-cache-stat-fresh"
           />
-        </div>
+        </dl>
       </div>
     </div>
   )
