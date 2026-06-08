@@ -162,9 +162,11 @@ export const useSessionRestore = ({
       const activeStoreId =
         storeShape?.sessions.find((s) => s.active)?.id ?? null
       if (activeStoreId && sessions.some((s) => s.id === activeStoreId)) {
-        onActivePersistedRef.current?.(activeStoreId)
+        if (onActivePersistedRef.current) {
+          onActivePersistedRef.current(activeStoreId)
 
-        return
+          return
+        }
       }
 
       if (activePtyId !== null) {
@@ -251,12 +253,14 @@ export const useSessionRestore = ({
           return
         }
 
-        // Authoritative only when the store actually has sessions — an empty
-        // shape (missing / corrupt / version-discarded file returns
-        // `{ sessions: [] }`, not null) is treated as absent by
-        // `reconstructWorkspace`, so the legacy browser fallback must still run.
+        // Authoritative only when the store actually has usable sessions — an
+        // empty shape (missing / corrupt / version-discarded file returns
+        // `{ sessions: [] }`, not null) or all-zero-pane records are treated as
+        // absent by `reconstructWorkspace`, so the legacy browser fallback must
+        // still run.
         const storeAuthoritative =
-          storeShape !== null && storeShape.sessions.length > 0
+          storeShape !== null &&
+          storeShape.sessions.some((session) => session.panes.length > 0)
         onRestoreRef.current(restored, { storePresent: storeAuthoritative })
         activate(storeShape, restored, list.activeSessionId)
 
