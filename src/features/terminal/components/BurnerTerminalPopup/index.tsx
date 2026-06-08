@@ -53,6 +53,16 @@ export interface BurnerTerminalPopupProps {
    * `cd` to that program's stdin instead of the shell, so the button disables.
    */
   alignBusy?: boolean
+  /**
+   * The burner's current cwd differs from its host pane's (VIM-94) — highlight
+   * the align button amber to suggest syncing. Cleared once they converge.
+   */
+  outOfSync?: boolean
+  /**
+   * The burner shell's own OSC 7 cwd changed. The hook routes this to the
+   * per-burner `currentCwd` (never the host pane), which drives `outOfSync`.
+   */
+  onCwdChange?: (cwd: string) => void
 }
 
 /**
@@ -77,6 +87,8 @@ export const BurnerTerminalPopup = ({
   onPaneReady = undefined,
   onAlignCwd = undefined,
   alignBusy = false,
+  outOfSync = false,
+  onCwdChange = undefined,
 }: BurnerTerminalPopupProps): ReactElement => {
   const bodyRef = useRef<BodyHandle>(null)
   const overlayRef = useRef<HTMLDivElement>(null)
@@ -294,7 +306,9 @@ export const BurnerTerminalPopup = ({
                 content={
                   alignBusy
                     ? 'Finish the command to align'
-                    : "Align to pane's directory"
+                    : outOfSync
+                      ? 'Burner moved — sync to the pane directory'
+                      : "Align to pane's directory"
                 }
                 placement="bottom"
                 // Lift above the z-[100] popup — the shared tooltip portals to
@@ -310,7 +324,9 @@ export const BurnerTerminalPopup = ({
                   className={`grid h-[26px] w-[26px] place-items-center rounded-[7px] ${
                     alignBusy
                       ? 'text-on-surface-muted/40 cursor-not-allowed'
-                      : 'text-on-surface-muted hover:text-on-surface hover:bg-white/5'
+                      : outOfSync
+                        ? 'text-[#f0c674] bg-[#f0c674]/15 hover:bg-[#f0c674]/25'
+                        : 'text-on-surface-muted hover:text-on-surface hover:bg-white/5'
                   }`}
                 >
                   <span
@@ -350,6 +366,7 @@ export const BurnerTerminalPopup = ({
             service={service}
             restoredFrom={snapshot}
             onPaneReady={handlePaneReady}
+            onCwdChange={onCwdChange}
           />
         </div>
 

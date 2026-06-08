@@ -20,7 +20,13 @@ interface BurnerEntry {
   burnerPtyId: string
   pid: number
   status: BurnerStatus
+  /** The cwd the shell spawned at (the `<Body>` attach snapshot). */
   cwd: string
+  /**
+   * The burner shell's live cwd, tracked from its own OSC 7 (VIM-94). Starts at
+   * the spawn cwd; drives the out-of-sync highlight vs the host pane's cwd.
+   */
+  currentCwd: string
   /** A foreground command is currently running in the shell (VIM-71). */
   active: boolean
 }
@@ -62,6 +68,9 @@ const hasControlBytes = (value: string): boolean => {
 // Ctrl-E then Ctrl-U: move to end of line and kill it, so the injected cd runs
 // on a clean prompt instead of merging with whatever the user half-typed.
 const CLEAR_LINE = '\x05\x15'
+
+// Compare OSC 7 cwds forgiving a trailing slash (root stays "/").
+const normalizeCwd = (value: string): string => value.replace(/\/+$/, '') || '/'
 
 export interface UseBurnerTerminalsArgs {
   service: ITerminalService
@@ -161,6 +170,21 @@ export const useBurnerTerminals = ({
     showIntentRef.current = null
     setVisibleKey(null)
   }, [])
+
+  // Track the burner shell's own live cwd from its OSC 7 (VIM-94). Updates only
+  // the burner entry — never the host pane — so a `cd` inside the burner stays
+  // isolated; it just drives the out-of-sync highlight.
+  const setBurnerCwd = useCallback(
+    (key: string, cwd: string): void => {
+      const entry = entriesRef.current.get(key)
+      if (!entry || entry.currentCwd === cwd) {
+        return
+      }
+      entriesRef.current.set(key, { ...entry, currentCwd: cwd })
+      commit()
+    },
+    [commit]
+  )
 
   // Kill + drop a burner pty. The kill rejection is contained so a backend
   // failure logs instead of becoming an unhandled rejection; the boot sweep and
@@ -266,6 +290,7 @@ export const useBurnerTerminals = ({
           pid: result.pid,
           status: 'running',
           cwd: result.cwd,
+          currentCwd: result.cwd,
           active: false,
         })
         commit()
@@ -496,8 +521,10 @@ export const useBurnerTerminals = ({
       ? createElement(
           Fragment,
           null,
-          [...entries.entries()].map(([key, entry]) =>
-            createElement(BurnerTerminalPopup, {
+          [...entries.entries()].map(([key, entry]): ReactNode => {
+            const hostCwd = livePaneCwds?.get(key)
+
+            return createElement(BurnerTerminalPopup, {
               // Keyed by pty so a re-spawned (post-exit) shell remounts a fresh
               // <Body>; `open` still tracks the stable pane key.
               key: `${key}:${entry.burnerPtyId}`,
@@ -517,8 +544,15 @@ export const useBurnerTerminals = ({
                   : undefined,
               // ...and disable it while a foreground command owns the shell.
               alignBusy: entry.active,
+              // Track the burner's own cwd (isolated, never the host pane) and
+              // light the button amber once it has wandered from its host pane.
+              onCwdChange: (cwd: string): void => setBurnerCwd(key, cwd),
+              outOfSync:
+                entry.status === 'running' &&
+                hostCwd !== undefined &&
+                normalizeCwd(entry.currentCwd) !== normalizeCwd(hostCwd),
             })
-          )
+          })
         )
       : null
 

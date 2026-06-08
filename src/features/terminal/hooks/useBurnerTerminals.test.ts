@@ -36,6 +36,8 @@ const firstPopup = (
   burnerPtyId: string
   onAlignCwd?: () => void
   alignBusy?: boolean
+  outOfSync?: boolean
+  onCwdChange?: (cwd: string) => void
 }> => {
   const fragment = renderNode as ReactElement<{
     children: ReactElement<{
@@ -43,6 +45,8 @@ const firstPopup = (
       burnerPtyId: string
       onAlignCwd?: () => void
       alignBusy?: boolean
+      outOfSync?: boolean
+      onCwdChange?: (cwd: string) => void
     }>[]
   }>
 
@@ -1099,4 +1103,87 @@ test('removes the align affordance once the burner has exited', async () => {
   })
 
   expect(firstPopup(result.current.renderNode).props.onAlignCwd).toBeUndefined()
+})
+
+// --- VIM-94: out-of-sync highlight from burner cwd tracking ---
+
+test('marks the align button out-of-sync when the burner cwd differs from the host', async () => {
+  const service = makeService() // spawns at /repo
+  const focused = makeFocusedPane('s1', 'p0', '/repo')
+  const livePaneCwds = new Map([['s1:p0', '/repo']])
+
+  const { result } = renderHook(() =>
+    useBurnerTerminals({
+      service,
+      resolveFocusedPane: () => focused,
+      livePaneCwds,
+    })
+  )
+
+  await act(async () => {
+    await result.current.toggle({ sessionId: 's1', paneId: 'p0', cwd: '/repo' })
+  })
+  // Spawned at the host cwd → in sync.
+  expect(firstPopup(result.current.renderNode).props.outOfSync).toBe(false)
+
+  // The burner cd's elsewhere (its own OSC 7 fires) → out of sync.
+  act(() => {
+    firstPopup(result.current.renderNode).props.onCwdChange?.('/repo/sub')
+  })
+  expect(firstPopup(result.current.renderNode).props.outOfSync).toBe(true)
+
+  // Synced back (the cd lands, or the user cd's back) → highlight clears.
+  act(() => {
+    firstPopup(result.current.renderNode).props.onCwdChange?.('/repo')
+  })
+  expect(firstPopup(result.current.renderNode).props.outOfSync).toBe(false)
+})
+
+test('the host pane moving makes the burner out-of-sync', async () => {
+  const service = makeService()
+  const focused = makeFocusedPane('s1', 'p0', '/repo')
+
+  const { result, rerender } = renderHook(
+    (props: { cwds: ReadonlyMap<string, string> }) =>
+      useBurnerTerminals({
+        service,
+        resolveFocusedPane: () => focused,
+        livePaneCwds: props.cwds,
+      }),
+    { initialProps: { cwds: new Map([['s1:p0', '/repo']]) } }
+  )
+
+  await act(async () => {
+    await result.current.toggle({ sessionId: 's1', paneId: 'p0', cwd: '/repo' })
+  })
+  expect(firstPopup(result.current.renderNode).props.outOfSync).toBe(false)
+
+  // The host pane navigates while the burner stays at /repo → out of sync.
+  act(() => {
+    rerender({ cwds: new Map([['s1:p0', '/other']]) })
+  })
+  expect(firstPopup(result.current.renderNode).props.outOfSync).toBe(true)
+})
+
+test('a trailing-slash-only difference is not treated as out-of-sync', async () => {
+  const service = makeService()
+  const focused = makeFocusedPane('s1', 'p0', '/repo')
+  const livePaneCwds = new Map([['s1:p0', '/repo']])
+
+  const { result } = renderHook(() =>
+    useBurnerTerminals({
+      service,
+      resolveFocusedPane: () => focused,
+      livePaneCwds,
+    })
+  )
+
+  await act(async () => {
+    await result.current.toggle({ sessionId: 's1', paneId: 'p0', cwd: '/repo' })
+  })
+
+  act(() => {
+    firstPopup(result.current.renderNode).props.onCwdChange?.('/repo/')
+  })
+  expect(firstPopup(result.current.renderNode).props.outOfSync).toBe(false)
 })

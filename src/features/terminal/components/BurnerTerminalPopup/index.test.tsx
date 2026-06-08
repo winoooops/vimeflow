@@ -62,6 +62,8 @@ const popup = (
     onHide?: () => void
     onAlignCwd?: () => void
     alignBusy?: boolean
+    onCwdChange?: (cwd: string) => void
+    outOfSync?: boolean
   } = {}
 ): ReactElement => <BurnerTerminalPopup open={open} {...baseProps} {...extra} />
 
@@ -84,15 +86,43 @@ test('renders Body in attach mode for the burner ptyId', () => {
   )
 })
 
-test('does not wire OSC 7 → updatePaneCwd, so a burner cd stays isolated', () => {
-  render(popup(true))
-
-  // The popup never passes onCwdChange to Body, so a `cd` in the burner shell
-  // emits OSC 7 but moves nothing in the host pane/session (spec §6, invariant 5).
+test('forwards onCwdChange to Body for burner cwd tracking (isolation stays hook-level)', () => {
+  // No onCwdChange wired by default.
+  const { rerender } = render(popup(true))
   expect(screen.getByTestId('body-stub')).toHaveAttribute(
     'data-has-on-cwd-change',
     'no'
   )
+
+  // With onCwdChange the popup forwards it to Body so the burner's own cwd can
+  // be tracked (VIM-94). The hook routes it to the burner's `currentCwd`, never
+  // to updatePaneCwd, so a `cd` in the burner still moves nothing in the host
+  // pane/session (spec §6, invariant 5).
+  rerender(popup(true, { onCwdChange: vi.fn() }))
+  expect(screen.getByTestId('body-stub')).toHaveAttribute(
+    'data-has-on-cwd-change',
+    'yes'
+  )
+})
+
+test('highlights the align button amber when the burner is out of sync', () => {
+  // In sync (default): muted, no amber.
+  const { rerender } = render(popup(true, { onAlignCwd: vi.fn() }))
+
+  const inSync = screen.getByRole('button', {
+    name: /align burner to pane directory/i,
+  })
+  expect(inSync.className).toContain('text-on-surface-muted')
+  expect(inSync.className).not.toContain('#f0c674')
+
+  // Out of sync: amber tint signals the burner wandered from its host pane.
+  rerender(popup(true, { onAlignCwd: vi.fn(), outOfSync: true }))
+
+  const drift = screen.getByRole('button', {
+    name: /align burner to pane directory/i,
+  })
+  expect(drift.className).toContain('bg-[#f0c674]/15')
+  expect(drift.className).toContain('text-[#f0c674]')
 })
 
 test('stays mounted (hidden) when dismissed — not unmounted', () => {
