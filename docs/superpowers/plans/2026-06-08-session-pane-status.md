@@ -10,7 +10,7 @@
 
 **Source spec:** [`docs/superpowers/specs/2026-06-08-session-pane-status-design.md`](../specs/2026-06-08-session-pane-status-design.md) (codex-reviewed).
 
-**Branch:** `feat/vim-93-pane-status` (stacked off `feat/vim-66-sidebar`). Conventional commits, subject lowercase after the colon, body lines ≤100 chars.
+**Branch:** `feat/vim-93-pane-status` (stacked off `feat/vim-66-sidebar`). Conventional commits, subject lowercase after the colon, body lines ≤100 chars. Each commit must carry the repo's required `Co-Authored-By:` trailer for whoever authors it — the example `git commit -m …` lines below omit it for brevity, so add it (and prefer a body via `-F`/heredoc when the message needs a trailer).
 
 **Deferred to VIM-93b (NOT in this plan):** reliable `awaiting` detection; teardown-`idle` for an agent that crashes mid-turn while the PTY stays alive. `awaiting` ships as a wired-but-never-emitted enum value.
 
@@ -291,7 +291,7 @@ pub(crate) fn emit_lifecycle_on_change(
 - [ ] **Step 5: Run, verify it passes + bindings generate**
 
 Run: `cargo test -p vimeflow-backend lifecycle_emits_only_on_change` → PASS.
-The `#[cfg_attr(test, ts(export))]` writes `AgentPhase.ts` / `AgentLifecycleEvent.ts` under the ts-rs export dir; copy/confirm they land in `src/bindings/` per the repo's existing binding-export step (`grep -rn "ts(export)" crates/backend` shows the pattern). Verify `src/bindings/AgentLifecycleEvent.ts` exists.
+Then generate the TS bindings with the repo script: `npm run generate:bindings` (runs `cargo test --manifest-path crates/backend/Cargo.toml export_bindings && prettier --write src/bindings/`). Verify `src/bindings/AgentPhase.ts` (`"running" | "idle" | "awaiting"` — `serde rename_all = "camelCase"` lower-cases the variants) and `src/bindings/AgentLifecycleEvent.ts` exist.
 
 - [ ] **Step 6: Commit**
 
@@ -314,25 +314,48 @@ git commit -m "feat(agent): add agent-lifecycle event and edge-trigger helper"
 
 - [ ] **Step 1: Write the failing tests**
 
+Two distinct tests — replay-flush vs live-transition — because the tracker accumulates replay silently and flushes ONLY the settled phase once at the boundary (don't expect mid-replay Running to be emitted).
+
 ```rust
 #[test]
-fn claude_emits_running_then_idle_from_stop_reason() {
-    // Feed: user prompt, assistant stop_reason=tool_use, assistant stop_reason=end_turn.
-    // After replay→live, expect agent-lifecycle phases: Running (>=1) then Idle (last).
-    let sink = run_claude_lines(&[
+fn claude_replay_flushes_only_the_settled_phase_once() {
+    // All lines present BEFORE the first EOF => replay. The tracker accumulates
+    // silently and flushes ONE event at the replay->live boundary: the settled
+    // phase (Idle), NOT the mid-turn tool_use Running.
+    let sink = run_claude_replay(&[
         r#"{"type":"user","message":{"content":"hi"}}"#,
         r#"{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t1","name":"Read","input":{}}],"stop_reason":"tool_use"}}"#,
         r#"{"type":"assistant","message":{"content":[{"type":"text","text":"done"}],"stop_reason":"end_turn"}}"#,
     ]);
-    let phases = sink.payloads("agent-lifecycle"); // helper: parse phase out of each event
-    assert_eq!(phases.last().map(|e| &e.phase), Some(&AgentPhase::Idle));
-    assert!(phases.iter().any(|e| e.phase == AgentPhase::Running));
+    let phases = sink.payloads("agent-lifecycle"); // helper: parse phase per event
+    assert_eq!(phases.len(), 1);
+    assert_eq!(phases[0].phase, AgentPhase::Idle);
 }
+
+#[test]
+fn claude_live_emits_running_then_idle_transition() {
+    // Replay an idle baseline (flushes Idle at the boundary), THEN append live
+    // lines: tool_use (Running) then end_turn (Idle) => two live transitions.
+    let h = start_claude_replay(&[
+        r#"{"type":"assistant","message":{"content":[{"type":"text","text":"ready"}],"stop_reason":"end_turn"}}"#,
+    ]);
+    h.wait_replay_done();
+    h.append(r#"{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t2","name":"Read","input":{}}],"stop_reason":"tool_use"}}"#);
+    h.append(r#"{"type":"assistant","message":{"content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn"}}"#);
+    let phases = h.sink.wait_payloads("agent-lifecycle", 3); // Idle (flush), Running, Idle
+    assert_eq!(
+        phases.iter().map(|e| e.phase).collect::<Vec<_>>(),
+        vec![AgentPhase::Idle, AgentPhase::Running, AgentPhase::Idle]
+    );
+}
+```
+
+(`run_claude_replay` writes all lines then tails to EOF; `start_claude_replay` + `append` + `wait_replay_done` mirror the existing fixture-test append/wait helpers so you can drive the live path.)
 ```
 
 - [ ] **Step 2: Run, verify it fails**
 
-Run: `cargo test -p vimeflow-backend claude_emits_running_then_idle_from_stop_reason`
+Run: `cargo test -p vimeflow-backend claude_replay_flushes_only_the_settled_phase_once claude_live_emits_running_then_idle_transition`
 Expected: FAIL — no `agent-lifecycle` events emitted.
 
 - [ ] **Step 3: Add `stop_reason` to the DTO** (`transcript_dto.rs`, in `ClaudeMessageDto`)
@@ -426,24 +449,45 @@ git commit -m "feat(agent): emit agent-lifecycle from claude stop_reason"
 
 - [ ] **Step 1: Write the failing test**
 
+Same replay-flush vs live-transition split as Task 4 (replay accumulates silently, flushes the settled phase once).
+
 ```rust
 #[test]
-fn codex_emits_running_then_idle_from_task_events() {
-    let sink = run_codex_lines(&[
+fn codex_replay_flushes_only_the_settled_phase_once() {
+    // All lines pre-EOF => replay. Flush ONE event (settled Idle) at the boundary.
+    let sink = run_codex_replay(&[
         r#"{"type":"session_meta","payload":{"id":"cx-1","cwd":"/ws"}}"#,
         r#"{"type":"event_msg","payload":{"type":"user_message","message":"hi"}}"#,
         r#"{"type":"event_msg","payload":{"type":"task_started","model_context_window":1}}"#,
         r#"{"type":"event_msg","payload":{"type":"task_complete","duration_ms":5}}"#,
     ]);
     let phases = sink.payloads("agent-lifecycle");
-    assert_eq!(phases.last().map(|e| &e.phase), Some(&AgentPhase::Idle));
-    assert!(phases.iter().any(|e| e.phase == AgentPhase::Running));
+    assert_eq!(phases.len(), 1);
+    assert_eq!(phases[0].phase, AgentPhase::Idle);
+}
+
+#[test]
+fn codex_live_emits_running_then_idle_transition() {
+    // Replay a task_complete baseline (flush Idle), THEN append a live
+    // task_started (Running) + task_complete (Idle) => two live transitions.
+    let h = start_codex_replay(&[
+        r#"{"type":"session_meta","payload":{"id":"cx-1","cwd":"/ws"}}"#,
+        r#"{"type":"event_msg","payload":{"type":"task_complete","duration_ms":1}}"#,
+    ]);
+    h.wait_replay_done();
+    h.append(r#"{"type":"event_msg","payload":{"type":"task_started","model_context_window":1}}"#);
+    h.append(r#"{"type":"event_msg","payload":{"type":"task_complete","duration_ms":5}}"#);
+    let phases = h.sink.wait_payloads("agent-lifecycle", 3);
+    assert_eq!(
+        phases.iter().map(|e| e.phase).collect::<Vec<_>>(),
+        vec![AgentPhase::Idle, AgentPhase::Running, AgentPhase::Idle]
+    );
 }
 ```
 
 - [ ] **Step 2: Run, verify it fails**
 
-Run: `cargo test -p vimeflow-backend codex_emits_running_then_idle_from_task_events` → FAIL.
+Run: `cargo test -p vimeflow-backend codex_replay_flushes_only_the_settled_phase_once codex_live_emits_running_then_idle_transition` → FAIL.
 
 - [ ] **Step 3: Implement**
 
@@ -613,6 +657,16 @@ git rm src/features/sessions/utils/statePill.ts src/features/sessions/utils/stat
 
 Replace each `status: 'paused'` with `status: 'idle'` (finished-at-prompt fixtures) — there is no genuinely-blocked fixture, so none become `awaiting`.
 
+- [ ] **Step 8.5: Fix the `'paused'`-referencing liveness gates** (required to compile)
+
+These reference the now-removed `'paused'` literal, so `tsc` fails until they change — they MUST land in this task, not Task 7. Route each through `isLiveStatus`:
+
+- `pickNextVisibleSessionId.ts` — delete `OPEN_STATUSES = new Set(['running', 'paused'])`; gate on `isLiveStatus(session.status)`. (Add a test: an `idle` session is treated as open/active, not skipped.)
+- `Tab.tsx:110` — `session.status === 'running' || session.status === 'paused'` → `isLiveStatus(session.status)`.
+- `WorkspaceView.tsx` — `:390` (`running || paused`) → `isLiveStatus(activeSessionStatus)`; `:402` / `:471` (`!== 'running' && !== 'paused'`) → `!isLiveStatus(activeSessionStatus)`; `:360` (`?? 'paused'` fallback) → `?? 'idle'`.
+
+The remaining `=== 'running'`-only gates still compile (running is still valid) and are reclassified in Task 7.
+
 - [ ] **Step 9: Verify green**
 
 Run: `npx vitest run src/features/sessions/utils/sessionStatus.test.ts` → PASS.
@@ -631,33 +685,32 @@ git commit -m "refactor(sessions): rename paused to awaiting, add idle status"
 
 **Files:**
 
-- Modify: `useSessionManager.ts:793`, `pickNextVisibleSessionId.ts`, `WorkspaceView.tsx` (`:338`, `:390`), `Tab.tsx:110`, `findBackendPane.ts:17`
-- Test: `pickNextVisibleSessionId.test.ts`, `sessionStatus`-adjacent tests
+- Modify: `useSessionManager.ts:793`, `WorkspaceView.tsx:338`, `findBackendPane.ts:17`, and the per-site judgment gates (`Body.tsx`, `useTerminal.ts`, `activePanePicker.ts`)
+- Test: `useSessionManager` test (the `'paused'`-referencing gates were already fixed in Task 6 Step 8.5)
 
 - [ ] **Step 1: Write the failing test** (`pickNextVisibleSessionId.test.ts`)
 
 ```ts
-test('an idle session counts as open/active', () => {
-  const sessions = [session('s1', 'idle'), session('s2', 'completed')]
-  expect(pickNextVisibleSessionId(sessions, 's1')).toBe('s2') // idle is a live candidate, not skipped
+test('hasLiveSession counts an idle pane as live', () => {
+  // A session whose only shell pane is idle (agent finished its turn, PTY alive)
+  // must read as a live session, so the workspace does NOT seed a fresh tab.
+  // Drive whatever hasLiveSession gates (seed-fresh-tab) and assert it does not fire.
 })
 ```
 
-(Shape `session()` to your existing test helper; the assertion is "idle is treated as open.")
+(Assert via the behavior `hasLiveSession` drives — no auto-seed when an idle session exists.)
 
 - [ ] **Step 2: Run, verify it fails**
 
-Run: `npx vitest run src/features/sessions/utils/pickNextVisibleSessionId.test.ts`
-Expected: FAIL — `OPEN_STATUSES = {running, paused}` no longer compiles / excludes idle.
+Run the `useSessionManager` test.
+Expected: FAIL — `hasLiveSession` uses `=== 'running'`, so an all-`idle` session reads as not-live and a fresh tab is seeded.
 
 - [ ] **Step 3: Implement**
 
-`pickNextVisibleSessionId.ts` — delete `OPEN_STATUSES`; gate on `isLiveStatus(session.status)`.
 `useSessionManager.ts:793` `hasLiveSession` — `isShellPane(pane) && isLiveStatus(pane.status)`.
 `WorkspaceView.tsx:338` (active-backend-pane) and `findBackendPane.ts:17` — prefer `isLiveStatus(p.status)` (keep the `?? shellPanes[0]` fallback).
-`WorkspaceView.tsx:390` and `Tab.tsx:110` (`running || paused`) — `isLiveStatus(status)`.
 
-> For `Body.tsx:482`, `useTerminal.ts:644`/`:667`, `activePanePicker.ts:53`: read each; a gate that means "agent is mid-work" stays `=== 'running'`. Leave those unless the surrounding intent is "live".
+> The `'paused'`-referencing gates (`pickNextVisibleSessionId`, `Tab.tsx:110`, `WorkspaceView:390`/`:402`/`:471`) were already fixed in Task 6 Step 8.5. For `Body.tsx:482`, `useTerminal.ts:644`/`:667`, `activePanePicker.ts:53`: read each; a gate that means "agent is mid-work" legitimately stays `=== 'running'`. Reclassify only those whose intent is "session is live".
 
 - [ ] **Step 4: Run, verify it passes**
 
@@ -690,9 +743,15 @@ test('non-zero pty exit marks the pane errored', () => {
 test('zero pty exit marks the pane completed', () => {
   // drive onExit(ptyId, 0) → 'completed'
 })
+test('null pty exit (unknown status) marks the pane completed', () => {
+  // drive onExit(ptyId, null) → 'completed' (unknown is not a failure)
+})
+test('a pty read error marks the pane errored', () => {
+  // drive the new service.onError(ptyId) path and assert pane.status === 'errored'
+})
 ```
 
-(Extend the existing exit-handler test; the service test already asserts `onExit` is called with `(sessionId, code)`.)
+(Extend the existing exit-handler test; the service test already asserts `onExit` is called with `(sessionId, code)`. For the read-error case, the service exposes `onError` — drive it the same way the exit test drives `onExit`.)
 
 - [ ] **Step 2: Run, verify it fails**
 
@@ -806,16 +865,18 @@ git commit -m "feat(sessions): hydrate errored from last_exit_code"
 
 ```ts
 test('a Running lifecycle event sets a live pane to running', () => {
-  // seed an idle pane; dispatch agent-lifecycle {sessionId, agentSessionId, phase: Running}
+  // seed an idle pane; dispatch agent-lifecycle {sessionId, agentSessionId, phase: 'running'}
   // assert pane.status === 'running'
 })
+test('an Idle lifecycle event sets a running pane to idle', () => {
+  // seed a running pane; dispatch {phase: 'idle'}; assert pane.status === 'idle'
+})
 test('lifecycle never overrides a terminal pane', () => {
-  // seed a completed pane; dispatch {phase: Running}; assert it stays 'completed'
+  // seed a completed pane; dispatch {phase: 'running'}; assert it stays 'completed' (sticky)
 })
-test('a stale agent_session_id is ignored', () => {
-  // record current agentSessionId = 'a2'; dispatch {agentSessionId: 'a1', phase: Running}
-  // assert pane.status unchanged
-})
+// NOTE: strict stale-tail drop by agentSessionId is deferred to VIM-93b (needs a
+// backend attach epoch to order sessions); v1 is last-writer-wins, so there is no
+// "stale event ignored" test here — only the sticky-terminal guard above.
 ```
 
 - [ ] **Step 2: Run, verify it fails** → FAIL (no listener).
@@ -827,22 +888,18 @@ Add a `phaseToStatus` map + the listener, mirroring `onPtyExitRef`:
 ```ts
 import type { AgentPhase } from '../../../bindings/AgentPhase'
 
+// AgentPhase binding is lower-camel ('running' | 'idle' | 'awaiting') because
+// the Rust enum has serde rename_all = "camelCase" — NOT 'Running'/'Idle'.
 const phaseToStatus: Record<AgentPhase, SessionStatus> = {
-  Running: 'running',
-  Idle: 'idle',
-  Awaiting: 'awaiting',
+  running: 'running',
+  idle: 'idle',
+  awaiting: 'awaiting',
 }
 
-// per-pane current agent session, to drop stale tails across restart
-const currentAgentSessionRef = useRef<Map<string, string>>(new Map())
-
 onAgentLifecycleRef.current = (e: AgentLifecycleEvent): void => {
-  const current = currentAgentSessionRef.current.get(e.sessionId)
-  if (current === undefined) {
-    currentAgentSessionRef.current.set(e.sessionId, e.agentSessionId)
-  } else if (current !== e.agentSessionId) {
-    return // stale tail from before a restart — drop
-  }
+  // v1 = last-writer-wins among live phases. Strict stale-tail drop by
+  // e.agentSessionId is VIM-93b (needs a backend attach epoch to order
+  // sessions). The terminal-sticky guard below is the only drop v1 enforces.
   setSessions((prev) =>
     prev.map((s) => {
       const idx = s.panes.findIndex((p) => p.ptyId === e.sessionId)
@@ -857,7 +914,7 @@ onAgentLifecycleRef.current = (e: AgentLifecycleEvent): void => {
 }
 ```
 
-> "Current agent session" wiring: when the detection/attach starts a new agent on a PTY (the watcher-restart path in `useAgentStatus`), update `currentAgentSessionRef` for that `sessionId` so the new tail supersedes the old. If that signal isn't readily threaded here, the first-seen-wins map above is the minimum; tightening the restart supersede is acceptable to land in a follow-up commit within this task.
+`e.agentSessionId` is carried on the event (the binding has it) but unused by the v1 bridge — it ships now so VIM-93b's epoch-keyed stale-tail drop needs no wire change.
 
 Subscribe via the same `listen('agent-lifecycle', cb)` + `addUnlisten` mechanism `useAgentStatus` uses (import the `listen` wrapper it uses), unsubscribing on unmount.
 
@@ -884,4 +941,6 @@ git commit -m "feat(sessions): bridge agent-lifecycle events into pane status"
 
 **Type consistency:** `AgentPhase` variants `Running|Idle|Awaiting` are used identically in Tasks 3/4/5 (Rust) and Task 10 (`phaseToStatus`). `emit_lifecycle_on_change`'s `(events, session_id, agent_session_id, last, phase)` signature is the same in Tasks 3, 4, 5. `isTerminalStatus`/`isLiveStatus`/`deriveSessionStatus` defined in Task 6, consumed in 7/9/10.
 
-**Known soft spots (for the executor / plan-review):** Task 1's child-handle retention and Task 10's "current agent session" restart-supersede wiring depend on code not fully quoted here — both cite the exact files to read and provide the test that pins the behavior.
+**Known soft spots (for the executor):** Task 1's child-handle retention (which PTY-spawn site holds the `child`, and behind which lock) isn't fully quoted — the task cites where to read it and provides the test that pins `last_exit_code`. Task 10's strict restart stale-tail drop is **out of scope** (deferred to VIM-93b, last-writer-wins in v1) — not a gap, by design.
+
+**Deferred (VIM-93b, intentionally not in any task):** reliable `awaiting` emission; teardown-`idle` for a mid-turn agent crash with the PTY alive; strict restart stale-tail de-dup (needs a backend attach epoch).
