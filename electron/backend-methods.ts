@@ -1,5 +1,7 @@
 // cspell:ignore worktree
 const backendMethods = new Set([
+  'set_tracing_enabled',
+  'trace_user_interaction',
   'spawn_pty',
   'write_pty',
   'rename_agent_session',

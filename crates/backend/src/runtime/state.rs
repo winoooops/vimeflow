@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -9,6 +10,9 @@ use crate::git::watcher::GitWatcherState;
 use crate::terminal::cache::SessionCache;
 use crate::terminal::state::PtyState;
 use crate::terminal::types::SessionId;
+use crate::trace::{
+    SetTracingEnabledRequest, TraceContext, TraceService, TraceUserInteractionRequest,
+};
 
 use super::event_sink::EventSink;
 
@@ -42,6 +46,7 @@ pub struct BackendState {
     transcripts: TranscriptState,
     git: GitWatcherState,
     events: Arc<dyn EventSink>,
+    tracing: TraceService,
     #[cfg(any(test, feature = "e2e-test"))]
     _test_cache_dir: Option<tempfile::TempDir>,
 }
@@ -49,6 +54,8 @@ pub struct BackendState {
 impl BackendState {
     pub fn new(app_data_dir: PathBuf, events: Arc<dyn EventSink>) -> Self {
         let cache_path = app_data_dir.join("sessions.json");
+        let tracing = TraceService::new(app_data_dir);
+        let events = tracing.wrap_event_sink(events);
         Self {
             pty: PtyState::new(),
             sessions: Arc::new(SessionCache::load_or_recover(cache_path)),
@@ -56,6 +63,7 @@ impl BackendState {
             transcripts: TranscriptState::new(),
             git: GitWatcherState::new(),
             events,
+            tracing,
             #[cfg(any(test, feature = "e2e-test"))]
             _test_cache_dir: None,
         }
@@ -81,6 +89,26 @@ impl BackendState {
         }
     }
 
+    #[cfg(test)]
+    pub(crate) fn seed_live_agent_for_test(&self, pty_id: &str, agent_type: AgentType) {
+        self.pty.insert(
+            pty_id.to_string(),
+            crate::agent::adapter::make_test_session(),
+        );
+        self.agents.insert_agent_type_for_test(
+            self.transcripts.clone(),
+            pty_id.to_string(),
+            agent_type,
+        );
+    }
+
+    #[cfg(test)]
+    pub(crate) fn emit_event_for_test(&self, event: &str, payload: serde_json::Value) {
+        self.events
+            .emit_json(event, payload)
+            .expect("test event should emit");
+    }
+
     /// Spawn the burner-terminal foreground poll loop (VIM-71). Call once at
     /// startup: it emits `burner-foreground` events as burner shells begin
     /// and finish foreground commands, driving the live "running" cue. Requires
@@ -90,6 +118,39 @@ impl BackendState {
             self.pty.clone(),
             self.events.clone(),
         ));
+    }
+
+    pub(crate) fn set_tracing_enabled(
+        &self,
+        request: SetTracingEnabledRequest,
+    ) -> Result<(), String> {
+        self.tracing.set_enabled(request.enabled)
+    }
+
+    pub(crate) fn trace_user_interaction(
+        &self,
+        request: TraceUserInteractionRequest,
+    ) -> Result<(), String> {
+        self.tracing.record_user_interaction(request)
+    }
+
+    pub(crate) fn trace_context_from_params(
+        &self,
+        params: &serde_json::Value,
+    ) -> Option<TraceContext> {
+        self.tracing.context_from_params(params)
+    }
+
+    pub(crate) fn trace_ipc_request(&self, method: &str, context: Option<&TraceContext>) {
+        if let Err(err) = self.tracing.record_ipc_request(method, context) {
+            log::warn!("failed to write IPC request trace: {err}");
+        }
+    }
+
+    pub(crate) fn trace_ipc_result(&self, method: &str, context: Option<&TraceContext>, ok: bool) {
+        if let Err(err) = self.tracing.record_ipc_result(method, context, ok) {
+            log::warn!("failed to write IPC result trace: {err}");
+        }
     }
 
     pub async fn spawn_pty(
@@ -122,6 +183,12 @@ impl BackendState {
             .ok_or_else(|| no_live_agent_error(&request.pty_id))?;
 
         ensure_rename_supported(&agent_type)?;
+        let initial_trace_context = self.tracing.context_from_request(
+            request.correlation_id.as_deref(),
+            request.parent_span_id.as_deref(),
+            Some(&request.pty_id),
+            Some(agent_type),
+        );
 
         let title = sanitize_title(&request.title).ok_or_else(|| {
             RenameAgentSessionError::new(
@@ -141,6 +208,11 @@ impl BackendState {
         let session_id = SessionId::from(request.pty_id);
 
         if let Err(e) = self.pty.write(&session_id, command.as_bytes()) {
+            self.trace_rename_backend_work(
+                initial_trace_context.as_ref(),
+                session_id.as_str(),
+                "error",
+            );
             if self
                 .agents
                 .agent_type_for_pty(session_id.as_str())
@@ -160,6 +232,22 @@ impl BackendState {
             .agent_type_for_pty(session_id.as_str())
             .ok_or_else(|| no_live_agent_error(session_id.as_str()))?;
         ensure_rename_supported(&current_agent_type)?;
+        let trace_context = self.tracing.context_from_request(
+            request.correlation_id.as_deref(),
+            request.parent_span_id.as_deref(),
+            Some(session_id.as_str()),
+            Some(current_agent_type),
+        );
+
+        if let Some(context) = trace_context.clone() {
+            self.tracing
+                .remember_session_context(session_id.as_str(), context);
+        }
+        self.trace_rename_backend_work(
+            trace_context.as_ref(),
+            session_id.as_str(),
+            "ok",
+        );
 
         if matches!(current_agent_type, AgentType::Codex) {
             crate::agent::adapter::codex::session_index::record_user_rename(
@@ -169,6 +257,23 @@ impl BackendState {
         }
 
         Ok(())
+    }
+
+    fn trace_rename_backend_work(
+        &self,
+        context: Option<&TraceContext>,
+        pty_id: &str,
+        status: &'static str,
+    ) {
+        let attributes = BTreeMap::from([("ptyId".to_string(), pty_id.to_string())]);
+        if let Err(err) = self.tracing.record_backend_work(
+            context,
+            "rename_agent_session.write_pty",
+            status,
+            attributes,
+        ) {
+            log::warn!("failed to write rename trace: {err}");
+        }
     }
 
     pub fn resize_pty(
@@ -471,6 +576,8 @@ mod tests {
         RenameAgentSessionRequest {
             pty_id: pty_id.to_string(),
             title: title.to_string(),
+            correlation_id: None,
+            parent_span_id: None,
         }
     }
 
@@ -528,10 +635,7 @@ mod tests {
             session_id: "burner-shutdown".to_string(),
             data: "x".to_string(),
         });
-        assert!(
-            write.is_err(),
-            "shutdown should have reaped the burner PTY"
-        );
+        assert!(write.is_err(), "shutdown should have reaped the burner PTY");
     }
 
     #[test]

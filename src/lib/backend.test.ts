@@ -38,6 +38,7 @@ describe('backend (window.vimeflow bridge)', () => {
 
   afterEach(() => {
     delete window.vimeflow
+    window.localStorage.clear()
   })
 
   test('invoke delegates to window.vimeflow.invoke with same args', async () => {
@@ -71,6 +72,38 @@ describe('backend (window.vimeflow bridge)', () => {
       message: 'no live agent in pty pty-1 to rename',
       reason: 'no-live-agent',
     } satisfies Partial<AgentRenameError>)
+  })
+
+  test('renameAgentSession threads trace ids when tracing is enabled', async () => {
+    window.localStorage.setItem('vimeflow.tracing.enabled', 'true')
+    mockInvoke.mockResolvedValue(null)
+
+    await renameAgentSession('pty-1', 'new name')
+
+    expect(mockInvoke).toHaveBeenNthCalledWith(1, 'set_tracing_enabled', {
+      enabled: true,
+    })
+
+    const traceRequest = mockInvoke.mock.calls[1]?.[1] as
+      | { correlationId?: string; spanId?: string }
+      | undefined
+    expect(mockInvoke.mock.calls[1]?.[0]).toBe('trace_user_interaction')
+    expect(traceRequest).toMatchObject({
+      event: 'pane.rename',
+      sessionId: 'pty-1',
+      attributes: {
+        titleLength: '8',
+      },
+    })
+
+    const renameRequest = mockInvoke.mock.calls[2]?.[1]
+    expect(mockInvoke.mock.calls[2]?.[0]).toBe('rename_agent_session')
+    expect(renameRequest).toMatchObject({
+      ptyId: 'pty-1',
+      title: 'new name',
+      correlationId: traceRequest?.correlationId,
+      parentSpanId: traceRequest?.spanId,
+    })
   })
 
   test('listen delegates to window.vimeflow.listen', async () => {

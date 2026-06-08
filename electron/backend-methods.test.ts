@@ -4,6 +4,8 @@ import { isAllowedBackendMethod } from './backend-methods'
 
 describe('isAllowedBackendMethod', () => {
   test.each([
+    'set_tracing_enabled',
+    'trace_user_interaction',
     'spawn_pty',
     'write_pty',
     'rename_agent_session',

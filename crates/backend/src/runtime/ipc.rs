@@ -404,7 +404,27 @@ mod router {
         method: &str,
         params: Value,
     ) -> Result<Value, super::IpcError> {
-        match method {
+        let should_trace_ipc = !matches!(method, "set_tracing_enabled" | "trace_user_interaction");
+        let trace_context = state.trace_context_from_params(&params);
+        if should_trace_ipc {
+            state.trace_ipc_request(method, trace_context.as_ref());
+        }
+
+        let outcome = match method {
+            "set_tracing_enabled" => {
+                let request: crate::trace::SetTracingEnabledRequest =
+                    serde_json::from_value(params)
+                        .map_err(|e| format!("invalid tracing setting request: {e}"))?;
+                state.set_tracing_enabled(request)?;
+                Ok(Value::Null)
+            }
+            "trace_user_interaction" => {
+                let request: crate::trace::TraceUserInteractionRequest =
+                    serde_json::from_value(params)
+                        .map_err(|e| format!("invalid trace user interaction request: {e}"))?;
+                state.trace_user_interaction(request)?;
+                Ok(Value::Null)
+            }
             "spawn_pty" => {
                 #[derive(Deserialize)]
                 #[serde(rename_all = "camelCase")]
@@ -692,7 +712,12 @@ mod router {
                 Ok(Value::Null)
             }
             _ => Err(super::IpcError::new(format!("unknown method: {method}"))),
+        };
+
+        if should_trace_ipc {
+            state.trace_ipc_result(method, trace_context.as_ref(), outcome.is_ok());
         }
+        outcome
     }
 }
 
@@ -1881,6 +1906,99 @@ mod tests {
 
         assert_eq!(err.reason.as_deref(), Some("no-live-agent"));
         assert!(err.message.contains("no live agent"));
+    }
+
+    #[tokio::test]
+    async fn dispatch_tracing_records_correlated_rename_to_agent_event() {
+        let temp_dir = tempfile::tempdir().expect("temp dir");
+        let app_data_path = std::env::var_os("VIMEFLOW_TRACE_DEMO_APP_DATA")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| temp_dir.path().to_path_buf());
+        std::fs::create_dir_all(&app_data_path).expect("app data dir");
+        let sink = std::sync::Arc::new(crate::runtime::FakeEventSink::new());
+        let events: std::sync::Arc<dyn crate::runtime::EventSink> = sink.clone();
+        let state = std::sync::Arc::new(crate::runtime::BackendState::new(
+            app_data_path.clone(),
+            events,
+        ));
+        state.seed_live_agent_for_test("pty-trace", crate::agent::types::AgentType::Codex);
+
+        super::router::dispatch(
+            state.clone(),
+            "set_tracing_enabled",
+            serde_json::json!({ "enabled": true }),
+        )
+        .await
+        .expect("enable tracing");
+        super::router::dispatch(
+            state.clone(),
+            "trace_user_interaction",
+            serde_json::json!({
+                "correlationId": "vf_corr_router",
+                "spanId": "vf_root_router",
+                "event": "pane.rename",
+                "sessionId": "pty-trace",
+                "agentType": "codex",
+                "attributes": { "titleLength": "10" }
+            }),
+        )
+        .await
+        .expect("record frontend trace");
+        super::router::dispatch(
+            state.clone(),
+            "rename_agent_session",
+            serde_json::json!({
+                "ptyId": "pty-trace",
+                "title": "secret name",
+                "correlationId": "vf_corr_router",
+                "parentSpanId": "vf_root_router"
+            }),
+        )
+        .await
+        .expect("rename dispatch");
+        state.emit_event_for_test(
+            "agent-session-title",
+            serde_json::json!({
+                "sessionId": "pty-trace",
+                "agentSessionId": "agent-1",
+                "title": "secret name",
+                "source": "user-renamed"
+            }),
+        );
+
+        let path = app_data_path.join("logs").join("trace.jsonl");
+        let records: Vec<serde_json::Value> = std::fs::read_to_string(&path)
+            .expect("trace file")
+            .lines()
+            .map(|line| serde_json::from_str::<serde_json::Value>(line).expect("trace json"))
+            .filter(|record| record["correlationId"] == "vf_corr_router")
+            .collect();
+        let events: Vec<_> = records
+            .iter()
+            .map(|record| record["event"].as_str().expect("event"))
+            .collect();
+
+        assert_eq!(
+            events,
+            vec![
+                "user.interaction",
+                "ipc.request",
+                "backend.work",
+                "ipc.result",
+                "agent.event"
+            ]
+        );
+        assert!(records
+            .iter()
+            .all(|record| record["correlationId"] == "vf_corr_router"));
+        assert!(records
+            .iter()
+            .all(|record| record["attributes"].get("title").is_none()));
+        assert_eq!(
+            records[4]["attributes"]["agentEvent"],
+            "agent-session-title"
+        );
+        assert_eq!(sink.count("agent-session-title"), 1);
     }
 
     #[tokio::test]

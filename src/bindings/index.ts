@@ -49,3 +49,7 @@ export type { AgentTurnEvent } from './AgentTurnEvent'
 export type { AgentCwdEvent } from './AgentCwdEvent'
 export type { ToolCallStatus } from './ToolCallStatus'
 export type { AgentToolCallEvent } from './AgentToolCallEvent'
+
+// Tracing types
+export type { SetTracingEnabledRequest } from './SetTracingEnabledRequest'
+export type { TraceUserInteractionRequest } from './TraceUserInteractionRequest'

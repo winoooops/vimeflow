@@ -4,3 +4,4 @@ mod filesystem;
 mod git;
 pub mod runtime;
 mod terminal;
+mod trace;

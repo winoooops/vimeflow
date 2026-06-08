@@ -193,6 +193,12 @@ pub enum TitleSource {
 pub struct RenameAgentSessionRequest {
     pub pty_id: String,
     pub title: String,
+    #[cfg_attr(test, ts(optional))]
+    #[serde(default)]
+    pub correlation_id: Option<String>,
+    #[cfg_attr(test, ts(optional))]
+    #[serde(default)]
+    pub parent_span_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]

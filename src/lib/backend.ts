@@ -2,6 +2,10 @@ import type {
   RenameAgentSessionErrorReason,
   RenameAgentSessionRequest,
 } from '../bindings'
+import {
+  setTracingEnabledWithInvoke,
+  startUserInteractionTrace,
+} from './tracing'
 
 /**
  * Detach a previously-registered listener. Idempotent: a second call is
@@ -176,7 +180,23 @@ export const renameAgentSession = async (
   ptyId: string,
   title: string
 ): Promise<void> => {
-  const request = { ptyId, title } satisfies RenameAgentSessionRequest
+  const trace = await startUserInteractionTrace(invoke, 'pane.rename', {
+    sessionId: ptyId,
+    attributes: {
+      titleLength: title.length,
+    },
+  })
+
+  const request = {
+    ptyId,
+    title,
+    ...(trace
+      ? {
+          correlationId: trace.correlationId,
+          parentSpanId: trace.spanId,
+        }
+      : {}),
+  } satisfies RenameAgentSessionRequest
 
   try {
     await invoke<null>('rename_agent_session', request)
@@ -187,6 +207,10 @@ export const renameAgentSession = async (
 
     throw error
   }
+}
+
+export const setTracingEnabled = async (enabled: boolean): Promise<void> => {
+  await setTracingEnabledWithInvoke(invoke, enabled)
 }
 
 /**
