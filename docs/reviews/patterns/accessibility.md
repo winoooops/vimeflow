@@ -3,7 +3,7 @@ id: accessibility
 category: a11y
 created: 2026-04-09
 last_updated: 2026-06-07
-ref_count: 11
+ref_count: 12
 ---
 
 # Accessibility
@@ -334,3 +334,12 @@ handlers must not trap focus without implementing the promised behavior.
 - **Finding:** The session title `<span>` has its own `onClick` handler that forwards to `onClick(session.id)`. Because the span is not focusable, clicking it does not move focus and therefore does not trigger the kebab wrapper's `onBlur` close path. The result: the session activates while the actions popover remains visible, producing misleading stale UI.
 - **Fix:** Prepended `setMenuOpen(false)` to the title span's `onClick` handler before forwarding to `onClick(session.id)`. A co-located test asserts that the menu closes and the session still activates.
 - **Commit:** same commit as finding #33
+
+### 36. Pane count hidden from assistive technology inside `aria-hidden` glyph wrapper
+
+- **Source:** review-comment-4644952225 | PR #388 | 2026-06-08
+- **Severity:** MEDIUM
+- **File:** `src/features/sessions/components/Card.tsx`
+- **Finding:** The newly added `session-pane-count` span was nested inside a parent `<span aria-hidden="true">` that wraps the decorative layout glyph. The sibling overlay activation `<button>` carried only `aria-label={session.name}`, so screen-reader users navigating session cards received the session name but not the newly added multi-pane count — meaningful workspace state that sighted users see.
+- **Fix:** Computed an `ariaLabel` constant: when `showGlyph` is true, `${session.name} (${LAYOUTS[session.layout].capacity} panes)`; otherwise `session.name`. Wired `aria-label={ariaLabel}` into the activation button. Added co-located regression tests asserting both the multi-pane suffix and the single-pane absence.
+- **Commit:** see `git blame` / `git log` on this line

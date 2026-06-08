@@ -99,6 +99,10 @@ export const Card = ({
   const showGlyph =
     session.layout !== 'single' &&
     Object.prototype.hasOwnProperty.call(LAYOUTS, session.layout)
+
+  const ariaLabel = showGlyph
+    ? `${session.name} (${LAYOUTS[session.layout].capacity} panes)`
+    : session.name
   const hasActions = onRename !== undefined || onRemove !== undefined
 
   // Flat fill only — no border, no left accent bar, no status dot. Hover and
@@ -124,7 +128,7 @@ export const Card = ({
       <button
         type="button"
         onClick={() => onClick(session.id)}
-        aria-label={session.name}
+        aria-label={ariaLabel}
         id={`sidebar-activate-${session.id}`}
         data-role="activate"
         tabIndex={isEditing ? -1 : 0}
