@@ -3,7 +3,7 @@ import type { ITerminalService } from '../services/terminalService'
 
 export interface UsePtyExitListenerOptions {
   service: ITerminalService
-  onExit: (ptyId: string) => void
+  onExit: (ptyId: string, code: number | null) => void
 }
 
 /** Subscribe to PTY-exit events for the lifetime of the consumer.
@@ -25,8 +25,8 @@ export const usePtyExitListener = ({
     let unsubscribeExit: (() => void) | undefined
 
     void (async (): Promise<void> => {
-      const unsubscribe = await service.onExit((sessionId) => {
-        onExitRef.current(sessionId)
+      const unsubscribe = await service.onExit((sessionId, code) => {
+        onExitRef.current(sessionId, code)
       })
 
       // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition

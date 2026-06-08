@@ -2517,6 +2517,189 @@ describe('useSessionManager', () => {
     }
   })
 
+  test('non-zero pty exit marks the pane errored', async () => {
+    const service = createMockService()
+    let exitCallback:
+      | ((sessionId: string, code: number | null) => void)
+      | null = null
+    service.onExit = vi.fn((cb) => {
+      exitCallback = cb
+
+      // eslint-disable-next-line @typescript-eslint/no-empty-function
+      return Promise.resolve((): void => {})
+    })
+
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: 'a',
+      sessions: [
+        {
+          id: 'a',
+          cwd: '/tmp',
+          status: {
+            kind: 'Alive',
+            pid: 1,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+      ],
+    })
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    expect(result.current.sessions[0].status).toBe('running')
+
+    act(() => {
+      ;(exitCallback as (sessionId: string, code: number | null) => void)(
+        'a',
+        3
+      )
+    })
+
+    expect(result.current.sessions[0].status).toBe('errored')
+    expect(result.current.sessions[0].panes[0].status).toBe('errored')
+  })
+
+  test('zero pty exit marks the pane completed', async () => {
+    const service = createMockService()
+    let exitCallback:
+      | ((sessionId: string, code: number | null) => void)
+      | null = null
+    service.onExit = vi.fn((cb) => {
+      exitCallback = cb
+
+      // eslint-disable-next-line @typescript-eslint/no-empty-function
+      return Promise.resolve((): void => {})
+    })
+
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: 'a',
+      sessions: [
+        {
+          id: 'a',
+          cwd: '/tmp',
+          status: {
+            kind: 'Alive',
+            pid: 1,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+      ],
+    })
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    expect(result.current.sessions[0].status).toBe('running')
+
+    act(() => {
+      ;(exitCallback as (sessionId: string, code: number | null) => void)(
+        'a',
+        0
+      )
+    })
+
+    expect(result.current.sessions[0].status).toBe('completed')
+    expect(result.current.sessions[0].panes[0].status).toBe('completed')
+  })
+
+  test('null pty exit marks the pane completed', async () => {
+    const service = createMockService()
+    let exitCallback:
+      | ((sessionId: string, code: number | null) => void)
+      | null = null
+    service.onExit = vi.fn((cb) => {
+      exitCallback = cb
+
+      // eslint-disable-next-line @typescript-eslint/no-empty-function
+      return Promise.resolve((): void => {})
+    })
+
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: 'a',
+      sessions: [
+        {
+          id: 'a',
+          cwd: '/tmp',
+          status: {
+            kind: 'Alive',
+            pid: 1,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+      ],
+    })
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    expect(result.current.sessions[0].status).toBe('running')
+
+    act(() => {
+      ;(exitCallback as (sessionId: string, code: number | null) => void)(
+        'a',
+        null
+      )
+    })
+
+    expect(result.current.sessions[0].status).toBe('completed')
+    expect(result.current.sessions[0].panes[0].status).toBe('completed')
+  })
+
+  test('pty read error marks the pane errored', async () => {
+    const service = createMockService()
+    let errorCallback: ((sessionId: string, message: string) => void) | null =
+      null
+    service.onError = vi.fn((cb) => {
+      errorCallback = cb
+
+      // eslint-disable-next-line @typescript-eslint/no-empty-function
+      return Promise.resolve((): void => {})
+    })
+
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: 'a',
+      sessions: [
+        {
+          id: 'a',
+          cwd: '/tmp',
+          status: {
+            kind: 'Alive',
+            pid: 1,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+      ],
+    })
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    expect(result.current.sessions[0].status).toBe('running')
+
+    act(() => {
+      ;(errorCallback as (sessionId: string, message: string) => void)(
+        'a',
+        'read failed'
+      )
+    })
+
+    expect(result.current.sessions[0].status).toBe('errored')
+    expect(result.current.sessions[0].panes[0].status).toBe('errored')
+  })
+
   // Round 4, Finding 2 (codex P2) regression test.
   //
   // Before the spawn-then-kill reorder, a failed spawn (e.g. cwd deleted)

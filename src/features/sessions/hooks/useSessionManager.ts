@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import { flushSync } from 'react-dom'
-import type { LayoutId, Pane, PaneKind, Session } from '../types'
+import type { LayoutId, Pane, PaneKind, Session, SessionStatus } from '../types'
 import type { AgentSessionTitleEvent } from '../../../bindings'
 import { listen, type UnlistenFn } from '../../../lib/backend'
 import { isDesktop } from '../../../lib/environment'
@@ -481,8 +481,46 @@ export const useSessionManager = (
   // exit. Idempotent — flipping an already-completed session to completed
   // just refreshes its exit-relative timestamp. Unsubscribes on unmount via
   // the returned cleanup.
-  const onPtyExitRef = useRef<(ptyId: string) => void>(() => undefined)
-  onPtyExitRef.current = (ptyId: string): void => {
+  const onPtyExitRef = useRef<(ptyId: string, code: number | null) => void>(
+    () => undefined
+  )
+  onPtyExitRef.current = (ptyId: string, code: number | null): void => {
+    const exitedAt = new Date().toISOString()
+
+    const status: SessionStatus =
+      code != null && code !== 0 ? 'errored' : 'completed'
+
+    setSessions((prev) =>
+      prev.map((s) => {
+        const idx = s.panes.findIndex((p) => p.ptyId === ptyId)
+        if (idx === -1) {
+          return s
+        }
+
+        const newPanes = s.panes.map((p, paneIdx) =>
+          paneIdx === idx
+            ? {
+                ...p,
+                status,
+                agentType: 'generic' as const,
+              }
+            : p
+        )
+        const activePane = newPanes.find((p) => p.active)
+
+        return {
+          ...s,
+          status: deriveShellSessionStatus(newPanes),
+          agentType: activePane?.agentType ?? s.agentType,
+          panes: newPanes,
+          lastActivityAt: exitedAt,
+        }
+      })
+    )
+  }
+
+  const onPtyErrorRef = useRef<(ptyId: string) => void>(() => undefined)
+  onPtyErrorRef.current = (ptyId: string): void => {
     const exitedAt = new Date().toISOString()
 
     setSessions((prev) =>
@@ -496,7 +534,7 @@ export const useSessionManager = (
           paneIdx === idx
             ? {
                 ...p,
-                status: 'completed' as const,
+                status: 'errored' as const,
                 agentType: 'generic' as const,
               }
             : p
@@ -516,8 +554,38 @@ export const useSessionManager = (
 
   usePtyExitListener({
     service,
-    onExit: (ptyId) => onPtyExitRef.current(ptyId),
+    onExit: (ptyId, code) => onPtyExitRef.current(ptyId, code),
   })
+
+  useEffect(() => {
+    let cancelled = false
+    let unsubscribeError: (() => void) | undefined
+
+    void (async (): Promise<void> => {
+      let fn: () => void
+      try {
+        fn = await service.onError((sessionId) => {
+          onPtyErrorRef.current(sessionId)
+        })
+      } catch {
+        return
+      }
+
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+      if (cancelled) {
+        fn()
+
+        return
+      }
+
+      unsubscribeError = fn
+    })()
+
+    return (): void => {
+      cancelled = true
+      unsubscribeError?.()
+    }
+  }, [service])
 
   useEffect(() => {
     if (!isDesktop()) {
