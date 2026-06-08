@@ -1,5 +1,7 @@
 //! Agent event emission helpers.
 
+use std::sync::Arc;
+
 use crate::agent::types::{
     AgentCwdEvent, AgentLifecycleEvent, AgentPhase, AgentSessionTitleEvent, AgentStatusEvent,
     AgentToolCallEvent, AgentTurnEvent,
@@ -70,6 +72,30 @@ pub(crate) fn emit_lifecycle_on_change(
     };
     if let Err(e) = emit_agent_lifecycle(events, &payload) {
         log::warn!("Failed to emit agent-lifecycle event: {}", e);
+    }
+}
+
+/// Route a derived phase: emit live (edge-triggered) once replay is done,
+/// else accumulate the settled phase for the one-shot boundary flush.
+pub(crate) fn record_lifecycle(
+    phase: AgentPhase,
+    session_id: &str,
+    agent_session_id: &str,
+    events: &Arc<dyn EventSink>,
+    last_phase: &mut Option<AgentPhase>,
+    replay_phase: &mut Option<AgentPhase>,
+    replay_done: bool,
+) {
+    if replay_done {
+        emit_lifecycle_on_change(
+            events.as_ref(),
+            session_id,
+            agent_session_id,
+            last_phase,
+            phase,
+        );
+    } else {
+        *replay_phase = Some(phase);
     }
 }
 

@@ -21,7 +21,7 @@ use crate::agent::adapter::base::{TranscriptDecoder, TranscriptHandle, Transcrip
 use crate::agent::adapter::types::ValidateTranscriptError;
 use crate::agent::events::{
     emit_agent_cwd, emit_agent_session_title, emit_agent_tool_call, emit_agent_turn,
-    emit_lifecycle_on_change,
+    emit_lifecycle_on_change, record_lifecycle,
 };
 use crate::agent::sanitize_title;
 use crate::agent::types::{
@@ -454,30 +454,6 @@ fn process_line(
         _ => {
             // Other message types — ignore
         }
-    }
-}
-
-/// Route a derived phase: emit live (edge-triggered) once replay is done,
-/// else accumulate the settled phase for the one-shot boundary flush.
-fn record_lifecycle(
-    phase: AgentPhase,
-    session_id: &str,
-    agent_session_id: &str,
-    events: &Arc<dyn EventSink>,
-    last_phase: &mut Option<AgentPhase>,
-    replay_phase: &mut Option<AgentPhase>,
-    replay_done: bool,
-) {
-    if replay_done {
-        emit_lifecycle_on_change(
-            events.as_ref(),
-            session_id,
-            agent_session_id,
-            last_phase,
-            phase,
-        );
-    } else {
-        *replay_phase = Some(phase);
     }
 }
 
