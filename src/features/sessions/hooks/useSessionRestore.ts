@@ -259,8 +259,8 @@ export const useSessionRestore = ({
         // absent by `reconstructWorkspace`, so the legacy browser fallback must
         // still run.
         const storeAuthoritative =
-          storeShape !== null &&
-          storeShape.sessions.some((session) => session.panes.length > 0)
+          storeShape?.sessions.some((session) => session.panes.length > 0) ??
+          false
         onRestoreRef.current(restored, { storePresent: storeAuthoritative })
         activate(storeShape, restored, list.activeSessionId)
 
