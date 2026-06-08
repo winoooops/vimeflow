@@ -74,6 +74,23 @@ const storeToShape = (
   })),
 })
 
+const emptyWorkspaceShape = (): WorkspaceShapeDto => ({ sessions: [] })
+
+const isLoadWorkspaceForRestoreRequest = (
+  request: unknown
+): request is LoadWorkspaceForRestoreRequest => {
+  if (!request || typeof request !== 'object') {
+    return false
+  }
+
+  const record = request as Record<string, unknown>
+
+  return (
+    typeof record.projectId === 'string' &&
+    typeof record.workingDirectory === 'string'
+  )
+}
+
 interface PendingFinalShape {
   resolve: (dto: WorkspaceShapeDto | null) => void
   timer: ReturnType<typeof setTimeout>
@@ -172,9 +189,13 @@ export class WorkspaceLayoutController {
       this.pushShape(dto as WorkspaceShapeDto)
     })
 
-    ipcMain.handle(WORKSPACE_LAYOUT_LOAD_FOR_RESTORE, (_event, request) =>
-      this.loadForRestore(request as LoadWorkspaceForRestoreRequest)
-    )
+    ipcMain.handle(WORKSPACE_LAYOUT_LOAD_FOR_RESTORE, (_event, request) => {
+      if (!isLoadWorkspaceForRestoreRequest(request)) {
+        return emptyWorkspaceShape()
+      }
+
+      return this.loadForRestore(request)
+    })
 
     ipcMain.handle(WORKSPACE_LAYOUT_BEGIN_HYDRATION, (): void => {
       this.beginHydration()

@@ -179,7 +179,10 @@ export class WorkspaceLayoutWriter
   // to drain — used by the window-close flush (spec §3.2) and tests.
   async flush(): Promise<void> {
     this.cancelVolatile()
-    this.enqueueWrite()
+    const generation = this.enqueueWrite()
+    if (generation === null && this.shape !== null) {
+      throw new Error('workspace layout flush could not assemble current shape')
+    }
 
     for (;;) {
       const pending = this.chain

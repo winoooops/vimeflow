@@ -39,15 +39,22 @@ export interface SessionRestoreState {
 }
 
 // Resolve once `task` settles or the timeout elapses, so a single hung restore
-// can never block hydration completion. `task` must not reject (callers swallow
-// their own errors) — that keeps a late rejection after the timeout from
-// surfacing as an unhandled rejection.
+// can never block hydration completion. The helper absorbs late rejections after
+// the timeout wins the race.
 const withTimeout = async (task: Promise<void>, ms: number): Promise<void> => {
   let timer: ReturnType<typeof setTimeout> | undefined
 
+  const absorbTaskRejection = async (): Promise<void> => {
+    try {
+      await task
+    } catch {
+      // Late restore-create failures are best-effort once hydration has timed out.
+    }
+  }
+
   try {
     await Promise.race([
-      task,
+      absorbTaskRejection(),
       new Promise<void>((resolve) => {
         timer = setTimeout(() => {
           resolve()

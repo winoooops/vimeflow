@@ -312,6 +312,45 @@ describe('WorkspaceLayoutController', () => {
     expect(writer.onShapePushed).toHaveBeenCalledWith(dto)
   })
 
+  test('loadForRestore IPC handler ignores malformed payloads', async () => {
+    const handlers = new Map<
+      string,
+      (event: unknown, ...args: unknown[]) => unknown
+    >()
+
+    const ipcMain: IpcMainLike = {
+      handle: (channel, listener) => handlers.set(channel, listener),
+      removeHandler: () => undefined,
+    }
+
+    const sidecar = makeSidecar(sampleStore())
+    const controller = new WorkspaceLayoutController({ sidecar })
+    controller.install(ipcMain)
+
+    const loadForRestore = (payload: unknown): Promise<unknown> =>
+      Promise.resolve(
+        handlers.get(WORKSPACE_LAYOUT_LOAD_FOR_RESTORE)?.({}, payload)
+      )
+
+    await expect(loadForRestore(null)).resolves.toEqual({ sessions: [] })
+
+    await expect(loadForRestore({})).resolves.toEqual({ sessions: [] })
+
+    await expect(loadForRestore({ projectId: 'proj-1' })).resolves.toEqual({
+      sessions: [],
+    })
+
+    expect(sidecar.invoke).not.toHaveBeenCalled()
+
+    await expect(
+      loadForRestore({
+        projectId: 'proj-1',
+        workingDirectory: '/repo',
+      })
+    ).resolves.toEqual(sampleShape())
+    expect(sidecar.invoke).toHaveBeenCalledTimes(1)
+  })
+
   test('setupWorkspaceLayoutController installs onto the provided ipcMain', () => {
     const handlers = new Map<string, unknown>()
 

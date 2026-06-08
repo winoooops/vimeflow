@@ -268,6 +268,22 @@ describe('WorkspaceLayoutWriter', () => {
     expect(sidecar.invoke).toHaveBeenCalledTimes(2)
   })
 
+  test('flush rejects when the current browser shape is not writable', async () => {
+    const sidecar = makeSidecar()
+
+    const writer = new WorkspaceLayoutWriter({
+      sidecar,
+      captureTabsForPane: (): PersistedTab[] | null => null,
+    })
+
+    writer.onShapePushed(shape())
+
+    await expect(writer.flush()).rejects.toThrow(
+      'workspace layout flush could not assemble current shape'
+    )
+    expect(sidecar.invoke).not.toHaveBeenCalled()
+  })
+
   test('flush waits for a superseding write and surfaces its failure', async () => {
     const firstSave = makeDeferred<null>()
     const error = new Error('second write failed')
