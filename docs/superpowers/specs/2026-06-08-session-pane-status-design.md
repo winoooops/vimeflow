@@ -53,6 +53,7 @@ A quad session with one busy pane and three finished-and-waiting panes reads a f
 
 - _Reliable_ `awaiting` detection. The transcript carries no permission/approval event (a permission-blocked `tool_use` is indistinguishable from a running one), and the documented clean signals (Claude `Notification` hook, Codex app-server `waitingOnApproval`) require agent-side hook config or app-server launch mode the project does not use. The `awaiting` **value and precedence ship wired and ready**, but no session reads `awaiting` until that follow-up lands. This spec ships **no fragile timing heuristic** for awaiting.
 - _Teardown_ `idle` — flipping a pane out of `running` when its agent **crashes mid-turn while the PTY stays alive** (no closing `end_turn`). Needs a reliable per-pane "agent gone" backend signal the project doesn't push today (detection is frontend-poll-driven; `agentExited` is panel-scoped). Until VIM-93b, such a pane reads `running` until its PTY exits — see §3's _Limitation_ and §4's edge cases. Transcript-driven `idle` (the common turn-end case) ships now.
+- _Strict restart de-dup_ — dropping a stale ≤500 ms old-tail lifecycle event after a same-PTY agent restart. Needs a monotonic per-attach **epoch** to order sessions (`agent_session_id` is identity, not order), which the backend doesn't expose today. v1 is last-writer-wins (self-correcting on the next live event; terminal states stay sticky); the epoch-keyed drop lands in VIM-93b — see §3 _Restart identity_. `agent_session_id` ships on the event now so no wire change is needed then.
 
 ### Success criteria
 
@@ -150,9 +151,9 @@ pub enum AgentPhase {
 pub struct AgentLifecycleEvent {
     pub session_id: String,
     /// The agent's OWN session identity (Claude: transcript `.jsonl`
-    /// stem; Codex: `session_meta.id`). Lets the bridge drop a stale
-    /// event from a superseded tail across an agent restart — see
-    /// *Restart identity*. State events need this; counters don't.
+    /// stem; Codex: `session_meta.id`). Stable per-agent-session
+    /// identity; reserved for the VIM-93b epoch-keyed stale-tail drop
+    /// (the v1 bridge is last-writer-wins) — see *Restart identity*.
     pub agent_session_id: String,
     pub phase: AgentPhase,
 }
@@ -207,7 +208,9 @@ A correct fix needs a reliable _per-pane_ "agent process gone" signal, and the b
 
 `emit_lifecycle_on_change` makes live emission edge-triggered — one event per Running ↔ Idle transition, no per-line spam. Within a single agent session a re-sent same-phase event is a no-op (the §4 bridge sets `pane.status` idempotently).
 
-**Restart identity (a lifecycle event is _state_, not a counter).** The `agent-turn` duplicate-window doc (`types.rs:278`) calls restart-boundary duplicates harmless because an over-counted turn is transient. That reasoning does **not** transfer to lifecycle: a stale event from the **old** tail in its ≤500 ms shutdown window can carry a _different_ phase and overwrite the new agent's — last-writer-wins, and §4's sticky-terminal guard only protects `completed` / `errored`, not `running ↔ idle`. So `AgentLifecycleEvent` carries `agent_session_id` (already derived per tail — Claude's transcript stem, Codex's `session_meta.id`); the §4 bridge records each pane's current agent session (set by the detection/attach that sequences restarts) and **drops events whose `agent_session_id` is not the current one**. A superseded tail's late event is ignored, so restart is deterministic, not last-writer-wins. (Identity-keyed drop is the offset/cursor discipline the project already uses for replay-then-stream attach.)
+**Restart identity (a lifecycle event is _state_, not a counter).** The `agent-turn` duplicate-window doc (`types.rs:278`) calls restart-boundary duplicates harmless because an over-counted turn is transient. That reasoning does **not** fully transfer to lifecycle: across an agent restart, a stale event from the **old** tail in its ≤500 ms shutdown window can carry a _different_ phase, and §4's sticky-terminal guard only protects `completed` / `errored`, not `running ↔ idle`. So `AgentLifecycleEvent` carries `agent_session_id` (already derived per tail — Claude's transcript stem, Codex's `session_meta.id`) as a stable per-agent-session identity.
+
+A **strict** stale-tail drop needs a monotonic per-attach ordering to know which session supersedes which — identity alone can't order two UUIDs — and the backend exposes no such attach epoch today (`TranscriptStreamer::tail` carries no generation). Plumbing one is detection-architecture work, so **strict restart de-dup is deferred to VIM-93b** (alongside reliable `awaiting` and teardown-`idle`). In v1 the §4 bridge is **last-writer-wins** within a pane: a stale ≤500 ms old-tail event can momentarily show the wrong `running` / `idle`, but the next live event from the new tail re-settles it — a transient, self-correcting glitch only on a manual mid-session restart, never a terminal-state corruption (those stay sticky). `agent_session_id` ships now so VIM-93b can add the epoch-keyed drop without a wire change.
 
 **Replay-bounded (one-shot boundary flush).** Transcript tailers replay the file from byte 0 on attach/restart, so naive edge-triggering would re-emit every historical Running ↔ Idle transition before settling — violating "no per-line spam." The tracker is replay-bounded like the existing `TestRunEmitter`, carrying three fields:
 
@@ -248,9 +251,10 @@ Terminal states are **sticky**: the lifecycle listener writes a pane only when `
 Mirror the existing `onPtyExitRef` + `usePtyExitListener` pattern in `useSessionManager` (owner of `panes[]`): a new `onAgentLifecycleRef`, subscribed via the same `listen('agent-lifecycle', cb)` + `addUnlisten` mechanism `useAgentStatus` already uses for `agent-status` / `agent-turn`. On each event:
 
 1. Find the pane by `ptyId === event.sessionId` (same match as the exit handler).
-2. If `event.agentSessionId` is not the pane's current agent session → skip (stale tail from before a restart — see §3 _Restart identity_).
-3. If `isTerminalStatus(pane.status)` → skip (sticky terminal).
-4. Else set `pane.status = phaseToStatus(event.phase)` and re-derive the session status (§5).
+2. If `isTerminalStatus(pane.status)` → skip (sticky terminal — guards a late/replayed event from resurrecting an exited pane).
+3. Else set `pane.status = phaseToStatus(event.phase)` and re-derive the session status (§5).
+
+This is **last-writer-wins** among live phases (v1). The strict stale-tail drop keyed on `event.agentSessionId` is deferred to VIM-93b (§3 _Restart identity_) — it needs a backend attach epoch to order sessions. The terminal-sticky guard above is the only drop v1 enforces.
 
 `phaseToStatus` is a 1:1 `Record<AgentPhase, …>` off the generated binding enum — exhaustiveness-checked, so a future phase rename/add is `tsc`-caught.
 
