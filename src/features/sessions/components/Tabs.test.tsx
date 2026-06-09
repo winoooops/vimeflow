@@ -67,6 +67,16 @@ describe('Tabs', () => {
     expect(strip.className).toContain('h-[38px]')
   })
 
+  test('makes only empty tab-strip chrome draggable', () => {
+    renderTabs([buildSession()], 'sess-1')
+
+    expect(screen.getByTestId('session-tabs')).toHaveClass('vf-app-drag-region')
+    expect(screen.getByRole('tablist')).toHaveClass('vf-app-no-drag')
+    expect(screen.getByRole('button', { name: 'New session' })).toHaveClass(
+      'vf-app-no-drag'
+    )
+  })
+
   test('exposes a tablist for assistive navigation', () => {
     renderTabs([buildSession()], 'sess-1')
     expect(screen.getByRole('tablist')).toHaveAccessibleName('Open sessions')

@@ -15,6 +15,14 @@ describe('IconRail', () => {
     expect(screen.getByRole('img', { name: 'Account' })).toHaveTextContent('M')
   })
 
+  test('can reserve the macOS traffic-light area', () => {
+    render(<IconRail settingsIssueNumber={1} reserveWindowControls />)
+
+    expect(screen.getByTestId('icon-rail')).toHaveStyle({
+      paddingTop: '52px',
+    })
+  })
+
   test('truncates a multi-char initial to the first grapheme', () => {
     render(<IconRail settingsIssueNumber={1} identity={{ initial: 'AB' }} />)
     expect(screen.getByRole('img', { name: 'Account' })).toHaveTextContent('A')

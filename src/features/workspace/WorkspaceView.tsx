@@ -135,6 +135,19 @@ const SIDEBAR_TAB_ITEMS: readonly SidebarTabItem<SidebarTab>[] = [
   { id: 'files', label: 'FILES' },
 ]
 
+const isMacPlatform = (): boolean => {
+  if (typeof navigator === 'undefined') {
+    return false
+  }
+
+  const uad = (
+    navigator as Navigator & { userAgentData?: { platform?: string } }
+  ).userAgentData
+  const detected = (uad?.platform ?? navigator.platform).toLowerCase()
+
+  return detected.startsWith('mac')
+}
+
 type DockTab = 'editor' | 'diff'
 
 export const WorkspaceView = (): ReactElement => {
@@ -208,6 +221,8 @@ export const WorkspaceView = (): ReactElement => {
 
     return detected.startsWith('mac') ? 'meta' : 'ctrl'
   }, [])
+
+  const reserveWindowControls = preferModifier === 'meta' && isMacPlatform()
 
   const { message: infoMessage, notifyInfo, dismiss } = useNotifyInfo()
   const { activeTab, setActiveTab } = useSidebarTab()
@@ -1472,6 +1487,7 @@ export const WorkspaceView = (): ReactElement => {
         onCommand={commandPalette.open}
         items={mockNavigationItems}
         settingsItem={mockSettingsItem}
+        reserveWindowControls={reserveWindowControls}
       />
 
       {/* Sidebar - resizable */}

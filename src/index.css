@@ -106,6 +106,15 @@
     @apply bg-background text-on-surface font-body overflow-hidden m-0;
   }
 
+  .vf-app-drag-region {
+    -webkit-app-region: drag;
+    user-select: none;
+  }
+
+  .vf-app-no-drag {
+    -webkit-app-region: no-drag;
+  }
+
   .material-symbols-outlined {
     font-family: 'Material Symbols Outlined Variable';
     font-weight: normal;
