@@ -268,6 +268,7 @@ export const WorkspaceView = (): ReactElement => {
   // Real command-palette chord for the top-bar utility hint (Ctrl+; / ⌘;),
   // not the ⌘K placeholder in the static design mock.
   const commandShortcutHint = formatShortcut(COMMAND_PALETTE_SHORTCUT_KEYS)
+  const reserveWindowControls = preferModifier === 'meta'
 
   const { message: infoMessage, notifyInfo, dismiss } = useNotifyInfo()
   const { activeTab, setActiveTab } = useSidebarTab()
@@ -1818,6 +1819,7 @@ export const WorkspaceView = (): ReactElement => {
               />
             ) : undefined
           }
+          reserveWindowControls={reserveWindowControls}
         />
 
         <div
