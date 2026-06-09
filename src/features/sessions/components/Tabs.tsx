@@ -13,6 +13,7 @@ export interface TabsProps {
   onSelect: (sessionId: string) => void
   onClose: (sessionId: string) => SessionCloseResult
   onNew: () => void
+  reserveWindowControls?: boolean
 }
 
 export const Tabs = ({
@@ -21,6 +22,7 @@ export const Tabs = ({
   onSelect,
   onClose,
   onNew,
+  reserveWindowControls = false,
 }: TabsProps): ReactElement => {
   // Single source of truth for "what's visible in the strip" — see
   // `getVisibleSessions` for the predicate. Both this component and
@@ -84,7 +86,7 @@ export const Tabs = ({
   return (
     <div
       data-testid="session-tabs"
-      className="vf-app-drag-region flex h-[38px] shrink-0 items-end gap-0.5 border-b border-outline-variant/25 bg-surface-container-lowest px-2"
+      className={`flex h-[38px] shrink-0 items-end gap-0.5 border-b border-outline-variant/25 bg-surface-container-lowest px-2${reserveWindowControls ? ' vf-app-drag-region' : ''}`}
     >
       {/* WAI-ARIA 1.2 §3.27 requires `tablist` to own only `tab` children.
           Keeping the `+` button and the spacer outside the tablist boundary. */}

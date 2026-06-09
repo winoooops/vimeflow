@@ -48,7 +48,8 @@ const renderTabs = (
     onSelect: (id: string) => void
     onClose: (id: string) => void
     onNew: () => void
-  }> = {}
+  }> = {},
+  reserveWindowControls = false
 ): ReturnType<typeof render> =>
   render(
     <Tabs
@@ -57,6 +58,7 @@ const renderTabs = (
       onSelect={handlers.onSelect ?? vi.fn()}
       onClose={handlers.onClose ?? vi.fn()}
       onNew={handlers.onNew ?? vi.fn()}
+      reserveWindowControls={reserveWindowControls}
     />
   )
 
@@ -67,13 +69,21 @@ describe('Tabs', () => {
     expect(strip.className).toContain('h-[38px]')
   })
 
-  test('makes only empty tab-strip chrome draggable', () => {
-    renderTabs([buildSession()], 'sess-1')
+  test('makes only empty tab-strip chrome draggable on macOS', () => {
+    renderTabs([buildSession()], 'sess-1', {}, true)
 
     expect(screen.getByTestId('session-tabs')).toHaveClass('vf-app-drag-region')
     expect(screen.getByRole('tablist')).toHaveClass('vf-app-no-drag')
     expect(screen.getByRole('button', { name: 'New session' })).toHaveClass(
       'vf-app-no-drag'
+    )
+  })
+
+  test('does NOT apply drag region on non-macOS platforms', () => {
+    renderTabs([buildSession()], 'sess-1')
+
+    expect(screen.getByTestId('session-tabs')).not.toHaveClass(
+      'vf-app-drag-region'
     )
   })
 

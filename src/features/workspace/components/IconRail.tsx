@@ -44,6 +44,11 @@ interface RailBtnProps {
 
 type RailIconName = 'search' | 'settings'
 
+// Vertical padding that clears the macOS traffic-light buttons.
+// Matches trafficLightPosition.y (13) + button diameter (~28) + gap (~11)
+// from electron/main.ts.
+const MACOS_TRAFFIC_LIGHT_RESERVE_PX = 52
+
 const RailIcon = ({ icon }: { icon: RailIconName }): ReactElement => (
   <span
     aria-hidden="true"
@@ -110,11 +115,11 @@ export const IconRail = ({
   return (
     <nav
       data-testid="icon-rail"
-      className="
-        vf-app-drag-region relative z-[5] flex h-full w-12 flex-col items-center
+      className={`
+        ${reserveWindowControls ? 'vf-app-drag-region' : ''} relative z-[5] flex h-full ${reserveWindowControls ? 'w-[68px]' : 'w-12'} flex-col items-center
         bg-surface-container-lowest border-r border-outline-variant/25
-      "
-      style={{ paddingTop: reserveWindowControls ? 52 : 10, paddingBottom: 10 }}
+      `}
+      style={{ paddingTop: reserveWindowControls ? MACOS_TRAFFIC_LIGHT_RESERVE_PX : 10, paddingBottom: 10 }}
     >
       <Tooltip content={accountLabel} placement="right">
         <div
