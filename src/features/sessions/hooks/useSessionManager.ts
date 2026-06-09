@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { flushSync } from 'react-dom'
 import type { LayoutId, Pane, PaneKind, Session } from '../types'
 import type { AgentSessionTitleEvent } from '../../../bindings'
@@ -40,7 +40,10 @@ import { pushCacheReading } from '../../agent-status/utils/cacheRate'
 import { isBrowserPane, isShellPane } from '../utils/paneKind'
 import { DEFAULT_BROWSER_URL } from '../../browser/types'
 import { usePtyExitListener } from '../../terminal/hooks/usePtyExitListener'
-import { destroyBrowserPane } from '../../browser/browserBridge'
+import {
+  createBrowserPane,
+  destroyBrowserPane,
+} from '../../browser/browserBridge'
 import { useAutoCreateOnEmpty } from './useAutoCreateOnEmpty'
 import { useActiveSessionController } from './useActiveSessionController'
 import { usePushWorkspaceGrouping } from './usePushWorkspaceGrouping'
@@ -54,6 +57,7 @@ export interface SessionManager {
   activeSessionId: string | null
   setActiveSessionId: (id: string) => void
   createSession: () => void
+  createBrowserSession: () => void
   removeSession: (id: string) => void
   setSessionLayout: (sessionId: string, layoutId: LayoutId) => void
   setSessionActivePane: (sessionId: string, paneId: string) => void
@@ -173,220 +177,9 @@ const normalizePaneUserLabel = (
   return trimmed && trimmed.length > 0 ? trimmed : undefined
 }
 
-const browserSessionIdForSession = (session: Session): string =>
-  session.browserSessionId ??
-  session.panes.find(isShellPane)?.ptyId ??
-  session.id
-
-interface StoredBrowserPane {
-  sessionId: string
-  shellPtyId?: string
-  paneId: string
-  ptyId: string
-  cwd: string
-  browserUrl: string
-  active: boolean
-}
-
-const BROWSER_PANE_STORE_KEY = 'vimeflow:browser-panes:v1'
-
-const canUseLocalStorage = (): boolean => typeof window !== 'undefined'
-
-const isStoredBrowserPane = (value: unknown): value is StoredBrowserPane =>
-  typeof value === 'object' &&
-  value !== null &&
-  !Array.isArray(value) &&
-  typeof (value as StoredBrowserPane).sessionId === 'string' &&
-  ((value as StoredBrowserPane).shellPtyId === undefined ||
-    typeof (value as StoredBrowserPane).shellPtyId === 'string') &&
-  typeof (value as StoredBrowserPane).paneId === 'string' &&
-  typeof (value as StoredBrowserPane).ptyId === 'string' &&
-  typeof (value as StoredBrowserPane).cwd === 'string' &&
-  typeof (value as StoredBrowserPane).browserUrl === 'string' &&
-  typeof (value as StoredBrowserPane).active === 'boolean'
-
-const readStoredBrowserPanes = (): StoredBrowserPane[] => {
-  if (!canUseLocalStorage()) {
-    return []
-  }
-
-  try {
-    const raw = window.localStorage.getItem(BROWSER_PANE_STORE_KEY)
-    if (!raw) {
-      return []
-    }
-
-    const parsed: unknown = JSON.parse(raw)
-
-    return Array.isArray(parsed) ? parsed.filter(isStoredBrowserPane) : []
-  } catch {
-    return []
-  }
-}
-
-const writeStoredBrowserPanesJson = (json: string): void => {
-  if (!canUseLocalStorage()) {
-    return
-  }
-
-  try {
-    if (json === '[]') {
-      window.localStorage.removeItem(BROWSER_PANE_STORE_KEY)
-
-      return
-    }
-
-    window.localStorage.setItem(BROWSER_PANE_STORE_KEY, json)
-  } catch {
-    // Browser pane restore is a convenience cache; quota or storage failures
-    // must not affect terminal session lifecycle.
-  }
-}
-
-const storedBrowserPanesForSessions = (
-  sessions: Session[]
-): StoredBrowserPane[] =>
-  sessions.flatMap((session) => {
-    const shellPtyId = session.panes.find(isShellPane)?.ptyId ?? session.id
-
-    return session.panes.filter(isBrowserPane).map((pane) => ({
-      sessionId: browserSessionIdForSession(session),
-      shellPtyId,
-      paneId: pane.id,
-      ptyId: pane.ptyId,
-      cwd: pane.cwd,
-      browserUrl:
-        pane.browserUrl && pane.browserUrl.length > 0
-          ? pane.browserUrl
-          : DEFAULT_BROWSER_URL,
-      active: pane.active,
-    }))
-  })
-
-const layoutForPaneCount = (
-  currentLayoutId: LayoutId,
-  paneCount: number
-): LayoutId => {
-  if (LAYOUTS[currentLayoutId].capacity >= paneCount) {
-    return currentLayoutId
-  }
-
-  const matchingLayout = Object.values(LAYOUTS).find(
-    (layout) => layout.capacity >= paneCount
-  )
-
-  return matchingLayout?.id ?? currentLayoutId
-}
-
-const restoreStoredBrowserPanes = (sessions: Session[]): Session[] => {
-  const stored = readStoredBrowserPanes()
-  if (stored.length === 0) {
-    return sessions
-  }
-
-  const storedBySession = new Map<string, StoredBrowserPane[]>()
-  const storedByShellPty = new Map<string, StoredBrowserPane[]>()
-  for (const pane of stored) {
-    storedBySession.set(pane.sessionId, [
-      ...(storedBySession.get(pane.sessionId) ?? []),
-      pane,
-    ])
-
-    if (pane.shellPtyId) {
-      storedByShellPty.set(pane.shellPtyId, [
-        ...(storedByShellPty.get(pane.shellPtyId) ?? []),
-        pane,
-      ])
-    }
-  }
-
-  return sessions.map((session) => {
-    const shellPtyId = session.panes.find(isShellPane)?.ptyId ?? session.id
-
-    const storedByStableKey =
-      storedBySession.get(browserSessionIdForSession(session)) ?? []
-    const storedByCurrentShell = storedByShellPty.get(shellPtyId) ?? []
-    const storedByPaneId = new Map<string, StoredBrowserPane>()
-
-    for (const pane of [...storedByStableKey, ...storedByCurrentShell]) {
-      storedByPaneId.set(pane.paneId, pane)
-    }
-
-    const storedForSession = [...storedByPaneId.values()]
-    if (storedForSession.length === 0) {
-      return session
-    }
-
-    const existingPaneIds = new Set(session.panes.map((pane) => pane.id))
-    let restoredActiveBrowser = false
-
-    const restoredBrowserPanes = storedForSession
-      .filter((pane) => {
-        if (existingPaneIds.has(pane.paneId)) {
-          return false
-        }
-
-        existingPaneIds.add(pane.paneId)
-
-        return true
-      })
-      .map((pane) => {
-        const active = pane.active && !restoredActiveBrowser
-        if (active) {
-          restoredActiveBrowser = true
-        }
-
-        return {
-          kind: 'browser',
-          id: pane.paneId,
-          ptyId: pane.ptyId,
-          cwd: pane.cwd,
-          agentType: 'generic',
-          status: 'running',
-          active,
-          browserUrl:
-            pane.browserUrl && pane.browserUrl.length > 0
-              ? pane.browserUrl
-              : DEFAULT_BROWSER_URL,
-        } satisfies Pane
-      })
-
-    if (restoredBrowserPanes.length === 0) {
-      return session
-    }
-
-    const hasRestoredActiveBrowser = restoredBrowserPanes.some(
-      (pane) => pane.active
-    )
-
-    const panes = hasRestoredActiveBrowser
-      ? [
-          ...session.panes.map((pane) =>
-            pane.active ? { ...pane, active: false } : pane
-          ),
-          ...restoredBrowserPanes,
-        ]
-      : [...session.panes, ...restoredBrowserPanes]
-
-    const activePane = findActivePane({ ...session, panes })
-
-    const restoredBrowserSessionId =
-      storedForSession[0]?.sessionId ?? browserSessionIdForSession(session)
-
-    return {
-      ...session,
-      browserSessionId: restoredBrowserSessionId,
-      panes,
-      layout: layoutForPaneCount(session.layout, panes.length),
-      // Pass the full pane set (like every other caller) — deriveShellSessionStatus
-      // filters to shells internally and falls back to all panes when none remain,
-      // so a restored browser-only session reads 'running' instead of the
-      // empty-slice 'errored' guard the pre-filter produced.
-      status: deriveShellSessionStatus(panes),
-      agentType: activePane?.agentType ?? session.agentType,
-    }
-  })
-}
+// The browser partition's sessionId segment is the workspace session id,
+// decoupled from any shell PTY so browser-only sessions are first-class.
+const browserSessionIdForSession = (session: Session): string => session.id
 
 /**
  * Manage the session list, restore data, and tab orchestration for the
@@ -430,6 +223,7 @@ export const useSessionManager = (
   const { autoCreateOnEmpty = true } = options
 
   const [sessions, setSessions] = useState<Session[]>([])
+  const [restoreSucceeded, setRestoreSucceeded] = useState(false)
   const sessionsRef = useRef(sessions)
   sessionsRef.current = sessions
 
@@ -456,9 +250,8 @@ export const useSessionManager = (
     service,
     buffer,
     onRestore: (restored): void => {
-      const restoredWithBrowserPanes = restoreStoredBrowserPanes(restored)
-
-      for (const session of restoredWithBrowserPanes) {
+      setRestoreSucceeded(true)
+      for (const session of restored) {
         for (const pane of session.panes) {
           if (pane.restoreData) {
             restoreDataRef.current.set(pane.ptyId, pane.restoreData)
@@ -472,7 +265,7 @@ export const useSessionManager = (
             prev.flatMap((session) => session.panes.map((pane) => pane.ptyId))
           )
 
-          const restoredOnly = restoredWithBrowserPanes.filter(
+          const restoredOnly = restored.filter(
             (session) =>
               !session.panes.some((pane) => inMemoryPtyIds.has(pane.ptyId))
           )
@@ -493,6 +286,18 @@ export const useSessionManager = (
         setActiveSessionId(id)
       }
     },
+    // The store's persisted-active session is selected through the
+    // browser-capable setActiveSessionId so a browser-only session is
+    // selectable on restore (spec §5).
+    onActivePersisted: (id): void => {
+      if (activeSessionIdRef.current === null) {
+        setActiveSessionId(id)
+      }
+    },
+    // Single-project defaults until real multi-project state exists; the load
+    // command uses them as repair fallbacks for records missing the fields.
+    projectId: 'proj-1',
+    workingDirectory: '~',
   })
 
   // Round 3 (codex P2 follow-up to Finding 3): mark sessions completed when
@@ -722,7 +527,6 @@ export const useSessionManager = (
               name: `session ${prev.length + 1}`,
               status: 'running',
               workingDirectory: result.cwd,
-              browserSessionId: result.sessionId,
               agentType: 'generic',
               layout: 'single',
               activityPanelCollapsed: false,
@@ -767,6 +571,66 @@ export const useSessionManager = (
     })()
   }, [registerPending, service, setActiveSessionId])
 
+  // Create a browser-only session from scratch (spec §6.2): one runtime browser
+  // pane, NO PTY spawn. Main creates the WebContents seeded with the default
+  // url; the partition derives from the session id. A shell added later via
+  // addPane spawns from `workingDirectory`.
+  const createBrowserSession = useCallback((): void => {
+    const now = new Date().toISOString()
+    const newSessionId = crypto.randomUUID()
+    const workingDirectory = '~'
+
+    flushSync(() => {
+      setSessions((prev) => {
+        const newSession: Session = {
+          id: newSessionId,
+          projectId: 'proj-1',
+          name: `browser ${prev.length + 1}`,
+          status: 'running',
+          workingDirectory,
+          agentType: 'generic',
+          layout: 'single',
+          activityPanelCollapsed: false,
+          panes: [
+            {
+              kind: 'browser',
+              id: 'p0',
+              ptyId: `browser:${crypto.randomUUID()}`,
+              cwd: workingDirectory,
+              agentType: 'generic',
+              status: 'running',
+              active: true,
+              browserUrl: DEFAULT_BROWSER_URL,
+            },
+          ],
+          createdAt: now,
+          lastActivityAt: now,
+          activity: { ...emptyActivity },
+        }
+
+        return [...prev, newSession]
+      })
+    })
+
+    // Fire-and-forget but guarded: a rejection (bridge/main unavailable during
+    // startup/shutdown) must not surface as an unhandled rejection. BrowserPane
+    // re-issues the create on mount via main's reconnect path.
+    void (async (): Promise<void> => {
+      try {
+        await createBrowserPane({
+          sessionId: newSessionId,
+          paneId: 'p0',
+          workspaceId: 'proj-1',
+          initialUrl: DEFAULT_BROWSER_URL,
+        })
+      } catch (err) {
+        log.warn('createBrowserSession: createBrowserPane failed', err)
+      }
+    })()
+
+    setActiveSessionId(newSessionId)
+  }, [setActiveSessionId])
+
   // Auto-create one default tab on clean launch.
   //
   // Before the orchestrator rewrite, useSessionManager initialized state
@@ -795,8 +659,14 @@ export const useSessionManager = (
   // terminal on first paint. Treat that case the same as empty cache
   // and seed a fresh tab; the Exited tabs remain available for the user
   // to Restart in their original cwd if they want to.
+  // A live session = a running shell PTY OR a browser pane. A browser-only
+  // session restored from the durable store has no shell but is a usable
+  // workspace, so it must not trigger the empty-workspace seed.
   const hasLiveSession = sessions.some((s) =>
-    s.panes.some((pane) => isShellPane(pane) && pane.status === 'running')
+    s.panes.some(
+      (pane) =>
+        (isShellPane(pane) && pane.status === 'running') || isBrowserPane(pane)
+    )
   )
   useAutoCreateOnEmpty({
     enabled: autoCreateOnEmpty,
@@ -810,20 +680,12 @@ export const useSessionManager = (
   // cache whenever the React `sessions[]` structure changes, so a later
   // restore can reconstruct the multi-pane layout instead of fragmenting
   // each PTY into its own single-pane session. Debounced inside the hook.
-  usePushWorkspaceGrouping({ service, sessions, loading })
-
-  const browserPaneStoreJson = useMemo(
-    () => JSON.stringify(storedBrowserPanesForSessions(sessions)),
-    [sessions]
-  )
-
-  useEffect(() => {
-    if (loading) {
-      return
-    }
-
-    writeStoredBrowserPanesJson(browserPaneStoreJson)
-  }, [loading, browserPaneStoreJson])
+  usePushWorkspaceGrouping({
+    sessions,
+    activeSessionId,
+    loading,
+    canPushEmptyShape: restoreSucceeded,
+  })
 
   // Remove session — kill + filter + advance active
   const removeSession = useCallback(
@@ -1296,17 +1158,6 @@ export const useSessionManager = (
         return
       }
 
-      if (
-        isShellPane(target) &&
-        session.panes.filter(isShellPane).length <= 1
-      ) {
-        log.warn(
-          `removePane: refusing to remove the last shell pane in ${sessionId}`
-        )
-
-        return
-      }
-
       pendingPaneOps.current.add(sessionId)
 
       void (async (): Promise<void> => {
@@ -1456,17 +1307,33 @@ export const useSessionManager = (
           return
         }
 
+        // Skip the kill when the seed ptyId is already gone (restore placeholder).
+        let oldPtyPresent = true
         try {
-          await service.kill({ sessionId: oldPane.ptyId })
+          const live = await service.listSessions()
+          oldPtyPresent = live.sessions.some(
+            (info) => info.id === oldPane.ptyId
+          )
         } catch (err) {
           log.warn(
-            'restartSession: kill of old ptyId failed; killing new orphan',
+            'restartSession: listSessions failed; assuming old pty present',
             err
           )
-          // eslint-disable-next-line promise/prefer-await-to-then,@typescript-eslint/no-empty-function
-          service.kill({ sessionId: result.sessionId }).catch((): void => {})
+        }
 
-          return
+        if (oldPtyPresent) {
+          try {
+            await service.kill({ sessionId: oldPane.ptyId })
+          } catch (err) {
+            log.warn(
+              'restartSession: kill of old ptyId failed; killing new orphan',
+              err
+            )
+            // eslint-disable-next-line promise/prefer-await-to-then,@typescript-eslint/no-empty-function
+            service.kill({ sessionId: result.sessionId }).catch((): void => {})
+
+            return
+          }
         }
 
         dropAllForPty(oldPane.ptyId)
@@ -1877,6 +1744,7 @@ export const useSessionManager = (
     activeSessionId,
     setActiveSessionId,
     createSession,
+    createBrowserSession,
     removeSession,
     setSessionLayout,
     setSessionActivePane,

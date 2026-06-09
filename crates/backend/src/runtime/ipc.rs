@@ -677,6 +677,28 @@ mod router {
                 state.stop_git_watcher(p.cwd).await?;
                 Ok(Value::Null)
             }
+            "load_workspace_layout" => {
+                #[derive(Deserialize)]
+                #[serde(rename_all = "camelCase")]
+                struct P {
+                    project_id: String,
+                    working_directory: String,
+                }
+
+                let p: P = serde_json::from_value(params).map_err(|e| format!("params: {e}"))?;
+                encode_result(state.load_workspace_layout(&p.project_id, &p.working_directory))
+            }
+            "save_workspace_layout" => {
+                #[derive(Deserialize)]
+                #[serde(rename_all = "camelCase")]
+                struct P {
+                    store: crate::terminal::workspace_layout::WorkspaceLayoutStore,
+                }
+
+                let p: P = serde_json::from_value(params).map_err(|e| format!("params: {e}"))?;
+                state.save_workspace_layout(&p.store)?;
+                Ok(Value::Null)
+            }
             #[cfg(feature = "e2e-test")]
             "list_active_pty_sessions" => encode_result(state.list_active_pty_sessions()),
             #[cfg(test)]
@@ -1837,6 +1859,37 @@ mod tests {
             err.message.starts_with("unknown method: no_such_method"),
             "got {err}"
         );
+    }
+
+    #[tokio::test]
+    async fn dispatch_save_then_load_workspace_layout_round_trips() {
+        let (state, _sink) = crate::runtime::BackendState::with_fake_sink();
+        let store = serde_json::json!({
+            "version": 1,
+            "sessions": [{
+                "id": "s", "projectId": "proj", "layout": "single",
+                "workingDirectory": "/", "active": true,
+                "panes": [{ "kind": "browser", "paneId": "p0", "paneIndex": 0, "active": true,
+                    "tabs": [{ "active": true, "historyIndex": 0,
+                        "history": [{ "url": "https://x", "title": null }] }] }]
+            }]
+        });
+        super::router::dispatch(
+            state.clone(),
+            "save_workspace_layout",
+            serde_json::json!({ "store": store }),
+        )
+        .await
+        .expect("save");
+        let loaded = super::router::dispatch(
+            state,
+            "load_workspace_layout",
+            serde_json::json!({ "projectId": "proj", "workingDirectory": "/" }),
+        )
+        .await
+        .expect("load");
+        assert_eq!(loaded["sessions"][0]["id"], "s");
+        assert_eq!(loaded["sessions"][0]["panes"][0]["kind"], "browser");
     }
 
     #[tokio::test]

@@ -13,12 +13,21 @@
 // first encountered PTY in `infos`.
 
 import type { PaneGrouping, SessionInfo } from '../../../bindings'
+import { DEFAULT_BROWSER_URL } from '../../browser/types'
+import { createLogger } from '../../../lib/log'
 import { emptyActivity } from '../constants'
 import type { LayoutId, Pane, Session } from '../types'
+import type {
+  WorkspaceShapeDto,
+  WorkspaceShapeSession,
+  WorkspaceShapeShellPane,
+} from '../workspaceLayoutBridge'
 import { readActivityPanelCollapsed } from './activityPanelCollapsedStore'
 import { sessionFromInfo } from './sessionFromInfo'
 import { deriveSessionStatus } from './sessionStatus'
 import { tabName } from './tabName'
+
+const log = createLogger('sessions')
 
 type AgentType = Pane['agentType']
 
@@ -233,4 +242,211 @@ export const groupSessionsFromInfos = (
 
     return buildGroupedSession(bucket.id, bucket.layout, bucket.entries, index)
   })
+}
+
+// Trust the backend's `activeSessionId` as the canonical active PTY after a
+// reload: `set_active_session` lands immediately while a grouping snapshot can
+// carry stale `pane.active` flags (or fail to land). Recompute the active pane
+// flag plus the session fields that follow it. `workingDirectory` / `name` are
+// LEFT ALONE — they come from the persisted workspace baseline, not a pane's
+// live cwd — except the legacy back-compat case where no pane recorded a
+// persisted baseline, where the fallback `panes[0].cwd` may be the wrong pane.
+const reconcileActivePane = (
+  grouped: Session[],
+  infos: readonly SessionInfo[],
+  activePtyId: string | null
+): Session[] => {
+  if (!activePtyId) {
+    return grouped
+  }
+
+  const workspacesWithPersistedBaseline = new Set(
+    infos.flatMap((info) =>
+      info.grouping?.workspaceDirectory !== undefined
+        ? [info.grouping.workspaceSessionId]
+        : []
+    )
+  )
+
+  return grouped.map((session, sessionIndex) => {
+    const newActivePane = session.panes.find(
+      (pane) => pane.ptyId === activePtyId
+    )
+    if (!newActivePane) {
+      return session
+    }
+
+    const overrideBaseline = !workspacesWithPersistedBaseline.has(session.id)
+
+    return {
+      ...session,
+      panes: session.panes.map((pane) => ({
+        ...pane,
+        active: pane.ptyId === activePtyId,
+      })),
+      agentType: newActivePane.agentType,
+      ...(overrideBaseline
+        ? {
+            workingDirectory: newActivePane.cwd,
+            name: tabName(newActivePane.cwd, sessionIndex),
+          }
+        : {}),
+    }
+  })
+}
+
+// An alive shell pane reattaches via the existing replay protocol — `buildPane`
+// reads the live cwd + replay snapshot off the live `SessionInfo`, keyed by the
+// store pane's `paneId` / `agentType` / `active`.
+const buildReattachedShellPane = (
+  live: SessionInfo,
+  shape: WorkspaceShapeShellPane
+): Pane =>
+  buildPane(live, shape.paneId, toAgentType(shape.agentType), shape.active)
+
+// A shell pane whose PTY is gone (graceful quit / crash) returns as a
+// restartable `completed` placeholder seeded with the persisted cwd + agent —
+// the existing Restart UX spawns a fresh shell there.
+const buildPlaceholderShellPane = (shape: WorkspaceShapeShellPane): Pane => ({
+  id: shape.paneId,
+  ptyId: shape.ptyId,
+  cwd: shape.cwd,
+  agentType: toAgentType(shape.agentType),
+  status: 'completed',
+  active: shape.active,
+})
+
+// A browser pane returns as a runtime browser `Pane` with a fresh pseudo-ptyId;
+// main restores its tabs/history when the renderer triggers the restore create.
+const buildRestoredBrowserPane = (
+  paneId: string,
+  active: boolean,
+  workingDirectory: string
+): Pane => ({
+  kind: 'browser',
+  id: paneId,
+  ptyId: `browser:${crypto.randomUUID()}`,
+  cwd: workingDirectory,
+  agentType: 'generic',
+  status: 'running',
+  active,
+  browserUrl: DEFAULT_BROWSER_URL,
+})
+
+const buildStoreSession = (
+  shape: WorkspaceShapeSession,
+  liveByPtyId: Map<string, SessionInfo>,
+  fallbackIndex: number
+): Session => {
+  const ordered = [...shape.panes].sort((a, b) => a.paneIndex - b.paneIndex)
+
+  const rawPanes: Pane[] = ordered.map((pane) => {
+    if (pane.kind === 'browser') {
+      return buildRestoredBrowserPane(
+        pane.paneId,
+        pane.active,
+        shape.workingDirectory
+      )
+    }
+    const live = liveByPtyId.get(pane.ptyId)
+
+    return live?.status.kind === 'Alive'
+      ? buildReattachedShellPane(live, pane)
+      : buildPlaceholderShellPane(pane)
+  })
+
+  // Exactly one active pane (mirrors `buildGroupedSession`): the first flagged
+  // pane wins, else pane 0.
+  const firstActiveIdx = rawPanes.findIndex((pane) => pane.active)
+
+  const panes: Pane[] = rawPanes.map((pane, i) => ({
+    ...pane,
+    active: firstActiveIdx === -1 ? i === 0 : i === firstActiveIdx,
+  }))
+  const activePane = panes.find((pane) => pane.active) ?? panes[0]
+  const now = new Date().toISOString()
+
+  return {
+    id: shape.id,
+    projectId: shape.projectId,
+    name: tabName(shape.workingDirectory, fallbackIndex),
+    // Full pane set (not shell-only) so a running browser keeps a session with
+    // placeholder shells `running`.
+    status: deriveSessionStatus(panes),
+    workingDirectory: shape.workingDirectory,
+    agentType: activePane.agentType,
+    layout: toLayoutId(shape.layout),
+    activityPanelCollapsed: readActivityPanelCollapsed(shape.id),
+    panes,
+    createdAt: now,
+    lastActivityAt: now,
+    activity: { ...emptyActivity },
+  }
+}
+
+// Store-driven workspace reconstruction (spec §5). The durable workspace store
+// is the authoritative shape; live PTYs are an overlay matched by `ptyId`. When
+// the store is absent/empty/discarded, fall back entirely to the PTY-driven
+// `groupSessionsFromInfos` (+ active-pane reconcile) so a reload with no store
+// behaves exactly like #290.
+export const reconstructWorkspace = (
+  storeShape: WorkspaceShapeDto | null,
+  liveSessions: readonly SessionInfo[],
+  activeSessionId: string | null
+): Session[] => {
+  if (!storeShape || storeShape.sessions.length === 0) {
+    return reconcileActivePane(
+      groupSessionsFromInfos(liveSessions),
+      liveSessions,
+      activeSessionId
+    )
+  }
+
+  const validStoreSessions = storeShape.sessions.filter((session) => {
+    if (session.panes.length === 0) {
+      log.warn(`Skipping persisted session with zero panes: ${session.id}`)
+
+      return false
+    }
+
+    return true
+  })
+
+  const liveByPtyId = new Map(liveSessions.map((info) => [info.id, info]))
+  const referencedPtyIds = new Set<string>()
+  for (const session of validStoreSessions) {
+    for (const pane of session.panes) {
+      if (pane.kind === 'shell') {
+        referencedPtyIds.add(pane.ptyId)
+      }
+    }
+  }
+
+  const storeSessions = validStoreSessions.map((session, index) =>
+    buildStoreSession(session, liveByPtyId, index)
+  )
+  const storeSessionIds = new Set(validStoreSessions.map((s) => s.id))
+
+  // Union, never drop live PTYs: any live PTY the store doesn't reference is
+  // reconstructed #290-style (a session created since the last store write).
+  const unreferencedLive = liveSessions.filter(
+    (info) => !referencedPtyIds.has(info.id)
+  )
+
+  // A reconstructed live-only session can collide with a store session id when
+  // the live cache is newer than the store (a pane added just before the store
+  // write committed). The store wins on shape, but the live PTY must NOT be
+  // dropped — re-key the collider to its first PTY (the #290 solo convention,
+  // a distinct id space from store UUIDs) so the running agent keeps a tab.
+  const liveOnly = reconcileActivePane(
+    groupSessionsFromInfos(unreferencedLive),
+    unreferencedLive,
+    activeSessionId
+  ).map((session) =>
+    storeSessionIds.has(session.id)
+      ? { ...session, id: session.panes[0].ptyId }
+      : session
+  )
+
+  return [...storeSessions, ...liveOnly]
 }

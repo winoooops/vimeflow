@@ -4,6 +4,15 @@ export default {
   darkMode: 'class',
   theme: {
     extend: {
+      keyframes: {
+        'browser-load-bar': {
+          '0%': { transform: 'translateX(-110%)' },
+          '100%': { transform: 'translateX(340%)' },
+        },
+      },
+      animation: {
+        'browser-load-bar': 'browser-load-bar 1.4s ease-in-out infinite',
+      },
       colors: {
         // Primary & Secondary
         primary: '#e2c7ff',

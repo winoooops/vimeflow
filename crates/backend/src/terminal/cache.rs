@@ -211,6 +211,7 @@ impl SessionCache {
     /// Held under the same `mutate` lock + atomic disk flush as every other
     /// state change, so a concurrent IPC mutation can't race the wipe.
     pub fn clear_all(&self) -> Result<(), String> {
+        // workspace-layouts.json is a separate store (WorkspaceLayoutCache) and is intentionally NOT wiped here.
         self.mutate(|d| {
             d.sessions.clear();
             d.session_order.clear();

@@ -4,10 +4,22 @@ import type { ITerminalService } from '../../terminal/services/terminalService'
 import type { PtyBufferDrain } from '../../terminal/orchestration/usePtyBufferDrain'
 import { registerPtySession } from '../../terminal/ptySessionMap'
 import { createLogger } from '../../../lib/log'
-import { groupSessionsFromInfos } from '../utils/groupSessionsFromInfos'
-import { tabName } from '../utils/tabName'
+import { reconstructWorkspace } from '../utils/groupSessionsFromInfos'
+import { isBrowserPane } from '../utils/paneKind'
+import type { WorkspaceShapeDto } from '../workspaceLayoutBridge'
+import {
+  beginWorkspaceHydration,
+  endWorkspaceHydration,
+  loadWorkspaceForRestore,
+} from '../workspaceLayoutBridge'
+import { createBrowserPane } from '../../browser/browserBridge'
 
 const log = createLogger('restore')
+
+// A restored browser pane that neither resolves nor rejects must not pin the
+// hydration guard open forever — main keeps suppressing writes until restore
+// settles. Treat a stuck create as timed-out so hydration always completes.
+const RESTORE_PANE_TIMEOUT_MS = 4000
 
 export interface UseSessionRestoreOptions {
   service: ITerminalService
@@ -15,10 +27,45 @@ export interface UseSessionRestoreOptions {
   onRestore: (sessions: Session[]) => void
   onActiveResolved: (sessionId: string) => void
   onActiveFallback?: (sessionId: string) => void
+  /** Activate the store's persisted-active session (browser-capable, §5). */
+  onActivePersisted?: (sessionId: string) => void
+  /** Active project context for the load command's repair defaults (§2.2). */
+  projectId?: string
+  workingDirectory?: string
 }
 
 export interface SessionRestoreState {
   loading: boolean
+}
+
+// Resolve once `task` settles or the timeout elapses, so a single hung restore
+// can never block hydration completion. The helper absorbs late rejections after
+// the timeout wins the race.
+const withTimeout = async (task: Promise<void>, ms: number): Promise<void> => {
+  let timer: ReturnType<typeof setTimeout> | undefined
+
+  const absorbTaskRejection = async (): Promise<void> => {
+    try {
+      await task
+    } catch {
+      // Late restore-create failures are best-effort once hydration has timed out.
+    }
+  }
+
+  try {
+    await Promise.race([
+      absorbTaskRejection(),
+      new Promise<void>((resolve) => {
+        timer = setTimeout(() => {
+          resolve()
+        }, ms)
+      }),
+    ])
+  } finally {
+    if (timer) {
+      clearTimeout(timer)
+    }
+  }
 }
 
 export const useSessionRestore = ({
@@ -27,21 +74,125 @@ export const useSessionRestore = ({
   onRestore,
   onActiveResolved,
   onActiveFallback,
+  onActivePersisted,
+  projectId = 'proj-1',
+  workingDirectory = '~',
 }: UseSessionRestoreOptions): SessionRestoreState => {
   const [loading, setLoading] = useState(true)
   const bufferRef = useRef(buffer)
   const onRestoreRef = useRef(onRestore)
   const onActiveResolvedRef = useRef(onActiveResolved)
   const onActiveFallbackRef = useRef(onActiveFallback)
+  const onActivePersistedRef = useRef(onActivePersisted)
 
   bufferRef.current = buffer
   onRestoreRef.current = onRestore
   onActiveResolvedRef.current = onActiveResolved
   onActiveFallbackRef.current = onActiveFallback
+  onActivePersistedRef.current = onActivePersisted
 
   useEffect(() => {
     let cancelled = false
     let stopBuffering: (() => void) | null = null
+
+    // Register the buffer + ptySessionMap side effects for every Alive pane,
+    // then attach the buffered-events snapshot to each pane's restoreData.
+    // Browser/placeholder panes carry no restoreData and pass through.
+    const attachBuffers = (sessions: Session[]): Session[] =>
+      sessions.map((session) => ({
+        ...session,
+        panes: session.panes.map((pane) => {
+          if (!pane.restoreData) {
+            return pane
+          }
+          bufferRef.current.registerPending(pane.ptyId)
+          registerPtySession(pane.ptyId, pane.ptyId, pane.cwd)
+
+          return {
+            ...pane,
+            restoreData: {
+              ...pane.restoreData,
+              bufferedEvents: bufferRef.current.getBufferedSnapshot(pane.ptyId),
+            },
+          }
+        }),
+      }))
+
+    // Trigger main-owned restore creation for every browser pane BEFORE the
+    // React tree mounts them: main creates the WebContents + replays history,
+    // so when `BrowserPane` later issues its normal create it reconnects to the
+    // already-restored view (browser-pane.ts createPane) instead of loading a
+    // fresh default url. Awaiting these IS the hydration settle (§3.2): each is
+    // bounded by a per-pane timeout so the guard always clears.
+    const restoreBrowserPanes = async (sessions: Session[]): Promise<void> => {
+      // Per-pane best-effort: a create failure is logged by main and must not
+      // reject (one pane's failure can't block the others or the hydration
+      // settle).
+      const createOne = async (
+        session: Session,
+        paneId: string
+      ): Promise<void> => {
+        try {
+          await createBrowserPane({
+            sessionId: session.id,
+            paneId,
+            workspaceId: session.projectId,
+            restore: true,
+          })
+        } catch {
+          // ignore — restore is best-effort per pane
+        }
+      }
+
+      const creations = sessions.flatMap((session) =>
+        session.panes
+          .filter(isBrowserPane)
+          .map((pane) =>
+            withTimeout(createOne(session, pane.id), RESTORE_PANE_TIMEOUT_MS)
+          )
+      )
+      if (creations.length === 0) {
+        return
+      }
+
+      await Promise.allSettled(creations)
+    }
+
+    // Select the active session: the store's persisted-active wins (activated
+    // through the browser-capable `setActiveSessionId` so a browser-only
+    // session is selectable); otherwise fall back to the PTY-driven order.
+    const activate = (
+      storeShape: WorkspaceShapeDto | null,
+      sessions: Session[],
+      activePtyId: string | null
+    ): void => {
+      const activeStoreId =
+        storeShape?.sessions.find((s) => s.active)?.id ?? null
+      if (activeStoreId && sessions.some((s) => s.id === activeStoreId)) {
+        if (onActivePersistedRef.current) {
+          onActivePersistedRef.current(activeStoreId)
+
+          return
+        }
+      }
+
+      if (activePtyId !== null) {
+        const matched = sessions.find((s) =>
+          s.panes.some((pane) => pane.ptyId === activePtyId)
+        )
+        if (matched) {
+          onActiveResolvedRef.current(matched.id)
+
+          return
+        }
+      }
+
+      if (sessions.length > 0) {
+        onActiveFallbackRef.current?.(sessions[0].id)
+      }
+    }
+
+    let hydrationStarted = false
 
     void (async (): Promise<void> => {
       try {
@@ -58,6 +209,18 @@ export const useSessionRestore = ({
           return
         }
 
+        // Suppress main's persistence writes until restore settles, so a
+        // restore-time shape push can't overwrite the durable store with
+        // empty browser tabs before history is replayed (§3.2).
+        await beginWorkspaceHydration()
+        hydrationStarted = true
+
+        // The durable store is the authoritative shape; live PTYs overlay it
+        // by ptyId. Load both, then reconstruct.
+        const storeShape = await loadWorkspaceForRestore({
+          projectId,
+          workingDirectory,
+        })
         const list = await service.listSessions()
         // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
         if (cancelled) {
@@ -65,130 +228,19 @@ export const useSessionRestore = ({
         }
 
         log.info(
-          `listSessions returned ${list.sessions.length} PTY session(s)`,
+          `listSessions returned ${list.sessions.length} PTY session(s); ` +
+            `store ${storeShape ? 'present' : 'absent'}`,
           {
             ptySessionIds: list.sessions.map((info) => info.id),
             activeSessionId: list.activeSessionId,
+            storeSessionCount: storeShape?.sessions.length ?? 0,
           }
         )
 
-        // Reconstruct workspace sessions, collapsing grouped PTYs back into
-        // the multi-pane shape they had before the reload. Ungrouped PTYs
-        // (legacy cache entries) keep the single-pane shape via
-        // `groupSessionsFromInfos` -> `sessionFromInfo`.
-        const grouped = groupSessionsFromInfos(list.sessions)
-
-        // Reconcile the active pane against `list.activeSessionId`. Two
-        // cache fields can disagree on which pane is active when the
-        // grouping-snapshot push and `set_active_session` IPCs interleave
-        // (or when the snapshot push fails): `set_active_session` lands
-        // immediately, but the grouping snapshot carries the old pane.active
-        // flags. After a reload, `list.activeSessionId` holds the canonical
-        // active PTY while the grouping says otherwise. Trust the backend's
-        // `activeSessionId` as the source of truth for which pane is focused
-        // within the workspace it belongs to.
-        //
-        // Recompute the session-level fields that depend on which pane
-        // is active. `agentType` always follows the new active pane.
-        //
-        // `workingDirectory` / `name` are normally LEFT ALONE — they come
-        // from the persisted workspace baseline (`grouping.workspaceDirectory`),
-        // NOT from any pane's live cwd, so overwriting from the new
-        // active pane would silently reintroduce the OSC 7 drift bug
-        // Codex P2 flagged on PR #290 cycle 7.
-        //
-        // EXCEPTION: a back-compat case from PR #290 cycle 13 (Claude
-        // MEDIUM). For caches written before `workspaceDirectory` existed,
-        // `groupSessionsFromInfos` defaulted `workingDirectory` to
-        // `panes[0].cwd` (the fixup-promoted pane, which may NOT be the
-        // real active pane). In that case the fallback can be wrong, so
-        // we override it here using the cache's canonical active pane —
-        // the closest available approximation of the baseline. We only
-        // do this when NO pane in the workspace recorded a persisted
-        // value, so a real persisted baseline survives untouched.
-        const activePtyId = list.activeSessionId
-
-        // `flatMap` over the grouping (narrowed by the `if`) instead of
-        // `filter().map(...?.workspaceSessionId ?? '')`. The previous
-        // form silently fell back to `''` if the backend ever sent a
-        // PaneGrouping with `workspaceDirectory` set but
-        // `workspaceSessionId` absent — `''` would enter the set, no
-        // session.id would match, and every restored workspace's
-        // baseline would be silently overridden with the active pane's
-        // drifted cwd. The flatMap form keeps TypeScript honest: only
-        // groupings with both fields contribute, and a future schema
-        // regression that drops `workspaceSessionId` would compile-fail
-        // here. Claude review on PR #290 cycle 15 (MEDIUM).
-        const workspacesWithPersistedBaseline = new Set(
-          list.sessions.flatMap((info) =>
-            info.grouping?.workspaceDirectory !== undefined
-              ? [info.grouping.workspaceSessionId]
-              : []
-          )
+        const restored = attachBuffers(
+          reconstructWorkspace(storeShape, list.sessions, list.activeSessionId)
         )
 
-        const reconciled = activePtyId
-          ? grouped.map((session, sessionIndex) => {
-              const newActivePane = session.panes.find(
-                (pane) => pane.ptyId === activePtyId
-              )
-              if (!newActivePane) {
-                return session
-              }
-
-              const overrideBaseline = !workspacesWithPersistedBaseline.has(
-                session.id
-              )
-
-              return {
-                ...session,
-                panes: session.panes.map((pane) => ({
-                  ...pane,
-                  active: pane.ptyId === activePtyId,
-                })),
-                agentType: newActivePane.agentType,
-                ...(overrideBaseline
-                  ? {
-                      workingDirectory: newActivePane.cwd,
-                      name: tabName(newActivePane.cwd, sessionIndex),
-                    }
-                  : {}),
-              }
-            })
-          : grouped
-
-        // Register the buffer + ptySessionMap side effects for every Alive
-        // pane, then attach the buffered-events snapshot to each pane's
-        // restoreData. Doing this AFTER reconstruction (instead of inline as
-        // the previous one-pass map did) keeps `groupSessionsFromInfos` pure
-        // and testable, and naturally extends to multi-pane sessions.
-        const restored = reconciled.map((session) => ({
-          ...session,
-          panes: session.panes.map((pane) => {
-            if (!pane.restoreData) {
-              return pane
-            }
-            bufferRef.current.registerPending(pane.ptyId)
-            registerPtySession(pane.ptyId, pane.ptyId, pane.cwd)
-
-            return {
-              ...pane,
-              restoreData: {
-                ...pane.restoreData,
-                bufferedEvents: bufferRef.current.getBufferedSnapshot(
-                  pane.ptyId
-                ),
-              },
-            }
-          }),
-        })) satisfies Session[]
-
-        // Observability for the fragmentation bug: compare PTY count to the
-        // number of reconstructed workspace sessions. While the cache stores
-        // no pane grouping, this is 1:1 (every PTY becomes its own single-pane
-        // session) — which is exactly the symptom. Once grouping is persisted
-        // and reconstructed, a quad session of 4 PTYs collapses back to 1
-        // workspace session and this line shows `4 PTY → 1 workspace`.
         log.info(
           `reconstructed ${restored.length} workspace session(s) from ` +
             `${list.sessions.length} PTY session(s)`,
@@ -202,24 +254,23 @@ export const useSessionRestore = ({
           }
         )
 
-        onRestoreRef.current(restored)
-
-        if (list.activeSessionId !== null) {
-          const matched = restored.find((session) =>
-            session.panes.some((pane) => pane.ptyId === list.activeSessionId)
-          )
-          if (matched) {
-            onActiveResolvedRef.current(matched.id)
-          } else if (restored.length > 0) {
-            onActiveFallbackRef.current?.(restored[0].id)
-          }
-        } else if (restored.length > 0) {
-          onActiveFallbackRef.current?.(restored[0].id)
+        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+        if (cancelled) {
+          return
         }
+
+        await restoreBrowserPanes(restored)
+        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+        if (cancelled) {
+          return
+        }
+
+        onRestoreRef.current(restored)
+        activate(storeShape, restored, list.activeSessionId)
 
         setLoading(false)
       } catch (err) {
-        log.error('listSessions failed; starting empty', err)
+        log.error('restore failed; starting empty', err)
         // F15 (claude LOW): intentionally do NOT call stopBuffering() here.
         // The pty-data buffering listener stays alive for the lifetime of
         // useSessionManager so createSession (post-restore) still benefits
@@ -228,6 +279,16 @@ export const useSessionRestore = ({
         // would silently lose early pty-data on every fresh tab. Cleanup
         // happens via the effect's return path on unmount (see below).
         setLoading(false)
+      } finally {
+        // Always release the hydration guard so main can never be stuck
+        // suppressing writes (§3.2) — even on a restore error / cancel.
+        if (hydrationStarted) {
+          try {
+            await endWorkspaceHydration()
+          } catch (err) {
+            log.error('failed to release workspace hydration', err)
+          }
+        }
       }
     })()
 
@@ -235,7 +296,7 @@ export const useSessionRestore = ({
       cancelled = true
       stopBuffering?.()
     }
-  }, [service])
+  }, [service, projectId, workingDirectory])
 
   return { loading }
 }

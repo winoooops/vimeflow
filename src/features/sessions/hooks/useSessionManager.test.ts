@@ -10,6 +10,13 @@ import {
   registerPtySession,
 } from '../../terminal/ptySessionMap'
 import { readActivityPanelCollapsed } from '../utils/activityPanelCollapsedStore'
+import type { WorkspaceShapeDto } from '../workspaceLayoutBridge'
+import {
+  loadWorkspaceForRestore,
+  pushWorkspaceShape,
+} from '../workspaceLayoutBridge'
+import { DEFAULT_BROWSER_URL } from '../../browser/types'
+import { createBrowserPane } from '../../browser/browserBridge'
 
 const mockListen = vi.hoisted(() =>
   vi.fn(
@@ -28,6 +35,22 @@ const mockListen = vi.hoisted(() =>
 
 vi.mock('../../../lib/backend', () => ({
   listen: mockListen,
+}))
+
+vi.mock('../workspaceLayoutBridge', () => ({
+  pushWorkspaceShape: vi.fn(),
+  loadWorkspaceForRestore: vi.fn(() => Promise.resolve(null)),
+  beginWorkspaceHydration: vi.fn(() => Promise.resolve()),
+  endWorkspaceHydration: vi.fn(() => Promise.resolve()),
+  onWorkspaceRequestFinalShape: vi.fn(() => (): void => undefined),
+}))
+
+// Partial mock: only spy on createBrowserPane; keep destroyBrowserPane /
+// focusBrowserPane as their real (no-bridge) no-ops so removeSession and the
+// active-session controller still behave.
+vi.mock('../../browser/browserBridge', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../browser/browserBridge')>()),
+  createBrowserPane: vi.fn(() => Promise.resolve(null)),
 }))
 
 const createMockService = (): ITerminalService => ({
@@ -1277,6 +1300,277 @@ describe('useSessionManager', () => {
     expect(result.current.sessions[0].id).toBe('restored-1')
   })
 
+  // A browser-only session restored from the durable store has no shell PTY,
+  // but its live browser pane makes it a usable workspace — auto-create must
+  // NOT seed an extra terminal tab on top of it.
+  test('auto-create is skipped for a restored browser-only session', async () => {
+    const store: WorkspaceShapeDto = {
+      sessions: [
+        {
+          id: 'ws-browser',
+          projectId: 'proj-1',
+          layout: 'single',
+          workingDirectory: '/home/will/proj',
+          active: true,
+          panes: [
+            { kind: 'browser', paneId: 'p0', paneIndex: 0, active: true },
+          ],
+        },
+      ],
+    }
+    vi.mocked(loadWorkspaceForRestore).mockResolvedValueOnce(store)
+
+    const service = createMockService()
+    service.listSessions = vi
+      .fn()
+      .mockResolvedValue({ activeSessionId: null, sessions: [] })
+
+    const { result } = renderHook(() => useSessionManager(service))
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    await waitFor(() => expect(result.current.sessions).toHaveLength(1))
+
+    expect(result.current.sessions[0].id).toBe('ws-browser')
+    expect(result.current.sessions[0].panes[0].kind).toBe('browser')
+    // The live browser pane counts as a live session → no seeded terminal.
+    expect(service.spawn).not.toHaveBeenCalled()
+  })
+
+  // When the durable store is authoritative, the legacy localStorage browser
+  // cache must NOT be merged — otherwise a pane closed before a crash (never
+  // cleared from localStorage) would be resurrected on the next restore.
+  test('store-driven restore ignores the stale localStorage browser cache', async () => {
+    const store: WorkspaceShapeDto = {
+      sessions: [
+        {
+          id: 'ws-shell',
+          projectId: 'proj-1',
+          layout: 'single',
+          workingDirectory: '/home/will/proj',
+          active: true,
+          panes: [
+            {
+              kind: 'shell',
+              paneId: 'p0',
+              paneIndex: 0,
+              active: true,
+              ptyId: 'pty-shell',
+              cwd: '/home/will/proj',
+              agentType: 'generic',
+              agentSessionId: null,
+            },
+          ],
+        },
+      ],
+    }
+    vi.mocked(loadWorkspaceForRestore).mockResolvedValueOnce(store)
+    // A browser pane closed before a crash, still lingering in the legacy key.
+    window.localStorage.setItem(
+      'vimeflow:browser-panes:v1',
+      JSON.stringify([
+        {
+          sessionId: 'ws-shell',
+          paneId: 'p1',
+          ptyId: 'browser:stale',
+          cwd: '/home/will/proj',
+          browserUrl: 'https://example.com/',
+          active: false,
+        },
+      ])
+    )
+
+    const service = createMockService()
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: 'pty-shell',
+      sessions: [
+        {
+          id: 'pty-shell',
+          cwd: '/home/will/proj',
+          status: {
+            kind: 'Alive',
+            pid: 1,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+      ],
+    })
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    await waitFor(() => expect(result.current.sessions).toHaveLength(1))
+
+    // The durable store is authoritative — the stale browser pane is dropped.
+    expect(result.current.sessions[0].id).toBe('ws-shell')
+    expect(result.current.sessions[0].panes).toHaveLength(1)
+    expect(result.current.sessions[0].panes[0].ptyId).toBe('pty-shell')
+  })
+
+  test('does not push an empty workspace shape after restore fails', async () => {
+    vi.mocked(loadWorkspaceForRestore).mockRejectedValueOnce(new Error('boom'))
+    const service = createMockService()
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    expect(result.current.sessions).toEqual([])
+    expect(pushWorkspaceShape).not.toHaveBeenCalled()
+  })
+
+  test('does not restore browser panes from the legacy localStorage cache', async () => {
+    vi.mocked(loadWorkspaceForRestore).mockResolvedValueOnce({ sessions: [] })
+    window.localStorage.setItem(
+      'vimeflow:browser-panes:v1',
+      JSON.stringify([
+        {
+          sessionId: 'pty-1',
+          paneId: 'p1',
+          ptyId: 'browser:legacy',
+          cwd: '/home/will/proj',
+          browserUrl: 'https://example.com/',
+          active: false,
+        },
+      ])
+    )
+
+    const service = createMockService()
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: 'pty-1',
+      sessions: [
+        {
+          id: 'pty-1',
+          cwd: '/home/will/proj',
+          status: {
+            kind: 'Alive',
+            pid: 1,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+      ],
+    })
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    await waitFor(() => expect(result.current.sessions).toHaveLength(1))
+
+    const panes = result.current.sessions[0].panes
+    expect(panes).toHaveLength(1)
+    expect(panes[0].ptyId).toBe('pty-1')
+  })
+
+  test('does not write the legacy localStorage browser cache after restore', async () => {
+    vi.mocked(loadWorkspaceForRestore).mockResolvedValueOnce({
+      sessions: [
+        {
+          id: 'ws-browser',
+          projectId: 'proj-1',
+          layout: 'single',
+          workingDirectory: '/home/will/proj',
+          active: true,
+          panes: [
+            { kind: 'browser', paneId: 'p0', paneIndex: 0, active: true },
+          ],
+        },
+      ],
+    })
+    const setItemSpy = vi.spyOn(Storage.prototype, 'setItem')
+    const removeItemSpy = vi.spyOn(Storage.prototype, 'removeItem')
+
+    const service = createMockService()
+    service.listSessions = vi
+      .fn()
+      .mockResolvedValue({ activeSessionId: null, sessions: [] })
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    await waitFor(() => expect(result.current.sessions).toHaveLength(1))
+
+    expect(
+      setItemSpy.mock.calls.some(([key]) => key === 'vimeflow:browser-panes:v1')
+    ).toBe(false)
+
+    expect(
+      removeItemSpy.mock.calls.some(
+        ([key]) => key === 'vimeflow:browser-panes:v1'
+      )
+    ).toBe(false)
+    expect(window.localStorage.getItem('vimeflow:browser-panes:v1')).toBeNull()
+  })
+
+  // Browser-only session from scratch (spec §6.2): one runtime browser pane,
+  // no PTY spawn, main asked to create the WebContents at the default url.
+  test('createBrowserSession builds a browser-only session with no PTY spawn', async () => {
+    const service = createMockService()
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    act(() => {
+      result.current.createBrowserSession()
+    })
+
+    await waitFor(() => expect(result.current.sessions).toHaveLength(1))
+    const session = result.current.sessions[0]
+    expect(session.layout).toBe('single')
+    expect(session.panes).toHaveLength(1)
+    const pane = session.panes[0]
+    expect(pane.kind).toBe('browser')
+    expect(pane.id).toBe('p0')
+    expect(pane.ptyId.startsWith('browser:')).toBe(true)
+    expect(pane.agentType).toBe('generic')
+    expect(pane.status).toBe('running')
+    expect(pane.active).toBe(true)
+    // No PTY spawn for a browser-only session.
+    expect(service.spawn).not.toHaveBeenCalled()
+    // Main creates the WebContents seeded with the default url.
+    expect(vi.mocked(createBrowserPane)).toHaveBeenCalledWith({
+      sessionId: session.id,
+      paneId: 'p0',
+      workspaceId: 'proj-1',
+      initialUrl: DEFAULT_BROWSER_URL,
+    })
+    // The new session is selected.
+    expect(result.current.activeSessionId).toBe(session.id)
+  })
+
+  // A failed eager create (bridge/main unavailable) must not throw or leave an
+  // unhandled rejection — the session is still created and selected, and
+  // BrowserPane re-issues the create on mount.
+  test('createBrowserSession survives a createBrowserPane rejection', async () => {
+    vi.mocked(createBrowserPane).mockRejectedValueOnce(new Error('bridge down'))
+
+    const service = createMockService()
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    act(() => {
+      result.current.createBrowserSession()
+    })
+
+    await waitFor(() => expect(result.current.sessions).toHaveLength(1))
+    // Let the rejected eager-create settle so any unhandled rejection surfaces.
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    expect(result.current.sessions[0].panes[0].kind).toBe('browser')
+    expect(result.current.activeSessionId).toBe(result.current.sessions[0].id)
+  })
+
   // Post-crash recovery: the previous app died without a graceful exit
   // (SIGKILL, OOM, wdio teardown). The session cache still lists alive
   // entries, but no PTY survives — `list_sessions` reconciles them all to
@@ -1435,10 +1729,9 @@ describe('useSessionManager', () => {
     // with the grouping write). Assert the push reached the backend with
     // the new session in the snapshot.
     await waitFor(() => {
-      expect(service.setWorkspaceSessions).toHaveBeenCalled()
+      expect(pushWorkspaceShape).toHaveBeenCalled()
 
-      const calls = (service.setWorkspaceSessions as ReturnType<typeof vi.fn>)
-        .mock.calls
+      const calls = vi.mocked(pushWorkspaceShape).mock.calls
 
       const lastPayload = calls[calls.length - 1]?.[0] as
         | { sessions: { panes: { ptyId: string }[] }[] }
@@ -1554,8 +1847,7 @@ describe('useSessionManager', () => {
     // Persistence is via `set_workspace_sessions` now (see PR #290):
     // assert the latest snapshot's flattened pty order matches.
     await waitFor(() => {
-      const calls = (service.setWorkspaceSessions as ReturnType<typeof vi.fn>)
-        .mock.calls
+      const calls = vi.mocked(pushWorkspaceShape).mock.calls
 
       const lastPayload = calls[calls.length - 1]?.[0] as
         | { sessions: { panes: { ptyId: string }[] }[] }
@@ -2027,6 +2319,55 @@ describe('useSessionManager', () => {
     await waitFor(() =>
       expect(service.setActiveSession).toHaveBeenCalledWith('fresh-id')
     )
+  })
+
+  test('restartSession skips killing a seed PTY already gone from the live set', async () => {
+    const service = createMockService()
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: 'dead-pty',
+      sessions: [
+        {
+          id: 'dead-pty',
+          cwd: '/home/user/projects/foo',
+          status: { kind: 'Exited', last_exit_code: 0 },
+        },
+      ],
+    })
+
+    service.spawn = vi.fn().mockResolvedValue({
+      sessionId: 'fresh-id',
+      pid: 999,
+      cwd: '/home/user/projects/foo',
+    })
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.sessions[0].id).toBe('dead-pty')
+
+    // The seed PTY is gone by restart time (graceful-quit clear_all).
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: null,
+      sessions: [],
+    })
+
+    act(() => result.current.restartSession('dead-pty'))
+
+    await waitFor(() =>
+      expect(service.spawn).toHaveBeenCalledWith(
+        expect.objectContaining({ cwd: '/home/user/projects/foo' })
+      )
+    )
+
+    // Restart succeeds: the pane rotates to the fresh PTY and runs again.
+    await waitFor(() => {
+      expect(result.current.sessions[0].panes[0].ptyId).toBe('fresh-id')
+      expect(result.current.sessions[0].status).toBe('running')
+    })
+
+    // The doomed kill of the absent seed PTY is never issued.
+    expect(service.kill).not.toHaveBeenCalledWith({ sessionId: 'dead-pty' })
   })
 
   // Round 9, Finding 3 (codex P2): the `wasActive` capture in restartSession
@@ -2600,7 +2941,7 @@ describe('useSessionManager', () => {
     expect(result.current.sessions.map((s) => s.id)).toEqual(['a', 'b', 'c'])
 
     // Clear any IPC calls from listSessions / restore.
-    ;(service.setWorkspaceSessions as ReturnType<typeof vi.fn>).mockClear()
+    vi.mocked(pushWorkspaceShape).mockClear()
 
     act(() => result.current.restartSession('b'))
 
@@ -2615,8 +2956,7 @@ describe('useSessionManager', () => {
     // would render the tabs in the wrong order. The latest grouping
     // snapshot push carries it.
     await waitFor(() => {
-      const calls = (service.setWorkspaceSessions as ReturnType<typeof vi.fn>)
-        .mock.calls
+      const calls = vi.mocked(pushWorkspaceShape).mock.calls
 
       const lastPayload = calls[calls.length - 1]?.[0] as
         | { sessions: { panes: { ptyId: string }[] }[] }
@@ -2907,8 +3247,7 @@ describe('useSessionManager', () => {
     act(() => result.current.reorderSessions(reversed))
 
     await waitFor(() => {
-      const calls = (service.setWorkspaceSessions as ReturnType<typeof vi.fn>)
-        .mock.calls
+      const calls = vi.mocked(pushWorkspaceShape).mock.calls
 
       const lastPayload = calls[calls.length - 1]?.[0] as
         | { sessions: { panes: { ptyId: string }[] }[] }
@@ -3615,8 +3954,7 @@ describe('useSessionManager', () => {
     // tab-2. This is the F3 invariant: the persisted order is derived from
     // the latest setSessions state, not from any closure's stale view.
     await waitFor(() => {
-      const calls = (service.setWorkspaceSessions as ReturnType<typeof vi.fn>)
-        .mock.calls
+      const calls = vi.mocked(pushWorkspaceShape).mock.calls
 
       const lastPayload = calls[calls.length - 1]?.[0] as
         | { sessions: { panes: { ptyId: string }[] }[] }
@@ -3743,9 +4081,7 @@ describe('useSessionManager', () => {
       expect(sharedService.setActiveSession).toHaveBeenCalledWith('spawned')
     )
 
-    await waitFor(() =>
-      expect(sharedService.setWorkspaceSessions).toHaveBeenCalled()
-    )
+    await waitFor(() => expect(pushWorkspaceShape).toHaveBeenCalled())
   })
 
   // Re-renders MUST NOT swap the backend. Without the round-4 fix, the
@@ -4556,6 +4892,40 @@ describe('useSessionManager', () => {
         `[vimeflow:sessions] removePane: refusing to remove the last pane in ${sessionId}; use removeSession instead`
       )
       warn.mockRestore()
+    })
+
+    test('removePane closes the last shell pane when a browser pane remains', async () => {
+      const service = createSequentialSpawnService()
+
+      const { result } = renderHook(() =>
+        useSessionManager(service, { autoCreateOnEmpty: false })
+      )
+      await waitFor(() => expect(result.current.loading).toBe(false))
+
+      const sessionId = await createInitialSession(result)
+
+      act(() => result.current.setSessionLayout(sessionId, 'vsplit'))
+      act(() => result.current.addPane(sessionId, 'browser'))
+
+      await waitFor(() =>
+        expect(
+          result.current.sessions[0].panes.some(
+            (pane) => pane.kind === 'browser'
+          )
+        ).toBe(true)
+      )
+      ;(service.kill as ReturnType<typeof vi.fn>).mockClear()
+
+      act(() => result.current.removePane(sessionId, 'p0'))
+
+      await waitFor(() =>
+        expect(result.current.sessions[0].panes).toHaveLength(1)
+      )
+
+      const session = result.current.sessions[0]
+      expect(service.kill).toHaveBeenCalledWith({ sessionId: 'pty-0' })
+      expect(session.panes[0].kind).toBe('browser')
+      expect(session.panes[0].active).toBe(true)
     })
 
     test('setSessionActivePane syncs Rust when rotating panes in the active session', async () => {

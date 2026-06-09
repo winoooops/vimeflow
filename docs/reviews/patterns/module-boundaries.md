@@ -2,8 +2,8 @@
 id: module-boundaries
 category: code-quality
 created: 2026-04-30
-last_updated: 2026-05-24
-ref_count: 1
+last_updated: 2026-06-08
+ref_count: 2
 ---
 
 # Module Boundaries
@@ -150,3 +150,12 @@ Don't widen the coupling by adding a second importer.
 - **Finding:** PR #287 extracted the per-provider Claude `tail_loop` into the shared `TranscriptTailService` engine + a new `ClaudeTranscriptDecoder` whose `decode_line(&mut self, line: &str)` signature could no longer take the `claude_agent_session_id: &str` parameter the title-emit arms needed. The extraction ported the three core arms (`assistant`, `user`, `tool_result`) but silently dropped `ai-title` and `custom-title` — along with the `emit_title` helper, the per-tail `last_title_memo`, and 8 covering tests — because re-plumbing the session-id parameter as a decoder field was deferred. The drop sat behind acknowledgment comments at `types.rs:54` and `locator.rs:802` ("Claude title-sync parked") with no tracking issue or timeline. Effect: every Claude pane silently stopped receiving `agent-session-title` events for AI-generated and `/rename` titles. The asymmetry with Codex (whose title-sync was independently re-wired in PR #302 cycle 1 F5) made the bug user-visible only after the Codex side started working again. Same finding-class as #11 — a refactor that "moves orchestration" drops a feature arm because the new signature couldn't carry one of its parameters; deferring the re-plumbing without a hard tracker is the silent-regression vector.
 - **Fix:** Restored the pre-#287 contract by re-plumbing the missing parameters as decoder state. Added `claude_agent_session_id: String` and `last_title_memo: Option<String>` fields to `ClaudeTranscriptDecoder`; `start_tailing` derives `claude_agent_session_id` from `transcript_path.file_stem()` (Claude's JSONL file IS named after its agent session id) and passes it to `ClaudeTranscriptDecoder::new`. `decode_line` forwards both as references to a wider `process_line` signature (now `#[allow(clippy::too_many_arguments)]`-ed). Added the `ai-title` / `custom-title` match arms gated on `dto.session_id_field == Some(claude_agent_session_id)` — per-session isolation, never leak another Claude session's title through this tail thread. Restored the `emit_title` helper with the same dedup contract from PR #265 (`ai-generated` dedups against the memo; `user-renamed` always emits because `/rename` is user-initiated and the round-trip is itself the confirmation signal). Extended `ClaudeTranscriptLineDto` with three new lenient-string fields (`session_id_field` / `ai_title` / `custom_title`) so the same DTO covers title lines without a separate parse pass. Added 4 regression tests pinning: matching session-id → emit, custom-title bypasses memo, mismatched session-id is dropped, ai-title dedups. Code-review heuristic for refactors that change a function's signature: BEFORE deleting any caller's `else if`/match arm, enumerate every parameter the dropped arms read; if a parameter is "no longer wired" in the new signature, the right move is to (a) re-plumb it as state on the new decoder/struct, (b) keep the arm gated behind a `cfg(...)` or feature flag, or (c) explicitly document the regression in the PR description with a tracker, NOT a code comment. Single-PR refactors of orchestration are HIGH-risk for this class of silent drop; the test coverage of the dropped arms is the canary — if a refactor diff deletes test files, audit what production code the tests pinned.
 - **Commit:** _(PR #302 upsource cycle 2 fix commit)_
+
+### 13. Callback API carried unused restore metadata with no consumer
+
+- **Source:** github-claude | PR #404 final review | 2026-06-08
+- **Severity:** MEDIUM
+- **File:** `src/features/sessions/hooks/useSessionRestore.ts`, `src/features/sessions/hooks/useSessionManager.ts`
+- **Finding:** `UseSessionRestoreOptions.onRestore` exposed a `context.storePresent` parameter and `useSessionRestore` computed `storeAuthoritative`, but the only consumer ignored the second argument. The public hook contract implied downstream behavior that did not exist.
+- **Fix:** Remove the unused context parameter, delete the `storeAuthoritative` calculation, and call `onRestore(restored)` with the API shape that callers actually consume.
+- **Commit:** same commit as this entry

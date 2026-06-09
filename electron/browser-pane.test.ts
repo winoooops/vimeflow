@@ -16,6 +16,205 @@ import {
 } from './browser-pane-channels'
 import { BrowserPaneController, isFocusAddressShortcut } from './browser-pane'
 
+interface MockLookupAddress {
+  address: string
+  family: 4 | 6
+}
+
+interface MockNodeResponse {
+  statusCode: number
+  headers: Record<string, string>
+  body: Uint8Array
+}
+
+const dnsMock = vi.hoisted(() => ({
+  lookup: vi.fn(
+    (): Promise<{ address: string; family: 4 | 6 }[]> =>
+      Promise.resolve([{ address: '93.184.216.34', family: 4 }])
+  ),
+}))
+
+const nodeRequestMock = vi.hoisted(() => {
+  interface QueuedResponse {
+    promise: Promise<{
+      statusCode: number
+      headers: Record<string, string>
+      body: Uint8Array
+    }>
+  }
+
+  type Callback = (response: {
+    statusCode: number
+    headers: Record<string, string>
+    on: (event: string, handler: (...args: unknown[]) => void) => unknown
+    resume: () => void
+  }) => void
+
+  const queued: QueuedResponse[] = []
+
+  const requests: {
+    protocol: 'http' | 'https'
+    options: Record<string, unknown>
+  }[] = []
+
+  const emit = (
+    handlers: Map<string, ((...args: unknown[]) => void)[]>,
+    event: string,
+    ...args: unknown[]
+  ): void => {
+    for (const handler of handlers.get(event) ?? []) {
+      handler(...args)
+    }
+  }
+
+  const createResponse = (response: {
+    statusCode: number
+    headers: Record<string, string>
+    body: Uint8Array
+  }): {
+    statusCode: number
+    headers: Record<string, string>
+    on: (event: string, handler: (...args: unknown[]) => void) => unknown
+    resume: () => void
+  } => {
+    const handlers = new Map<string, ((...args: unknown[]) => void)[]>()
+
+    const res = {
+      statusCode: response.statusCode,
+      headers: response.headers,
+      on: vi.fn((event: string, handler: (...args: unknown[]) => void) => {
+        handlers.set(event, [...(handlers.get(event) ?? []), handler])
+
+        return res
+      }),
+      resume: vi.fn(),
+    }
+
+    queueMicrotask(() => {
+      if (response.body.byteLength > 0) {
+        emit(handlers, 'data', Buffer.from(response.body))
+      }
+      emit(handlers, 'end')
+    })
+
+    return res
+  }
+
+  const requestFor = (
+    protocol: 'http' | 'https',
+    options: Record<string, unknown>,
+    callback: Callback
+  ): {
+    on: (event: string, handler: (...args: unknown[]) => void) => unknown
+    end: () => void
+    destroy: () => void
+  } => {
+    const handlers = new Map<string, ((...args: unknown[]) => void)[]>()
+    let destroyed = false
+
+    const req = {
+      on: vi.fn((event: string, handler: (...args: unknown[]) => void) => {
+        handlers.set(event, [...(handlers.get(event) ?? []), handler])
+
+        return req
+      }),
+      end: vi.fn(() => {
+        const next =
+          queued.shift() ??
+          ({
+            promise: Promise.resolve({
+              statusCode: 200,
+              headers: { 'content-type': 'image/png' },
+              body: new Uint8Array([1]),
+            }),
+          } satisfies QueuedResponse)
+
+        void (async (): Promise<void> => {
+          try {
+            const response = await next.promise
+            if (destroyed) {
+              return
+            }
+            callback(createResponse(response))
+          } catch (error) {
+            emit(handlers, 'error', error)
+          }
+        })()
+      }),
+      destroy: vi.fn(() => {
+        destroyed = true
+      }),
+    }
+
+    requests.push({ protocol, options })
+
+    return req
+  }
+
+  const httpRequest = vi.fn(
+    (options: Record<string, unknown>, callback: Callback) =>
+      requestFor('http', options, callback)
+  )
+
+  const httpsRequest = vi.fn(
+    (options: Record<string, unknown>, callback: Callback) =>
+      requestFor('https', options, callback)
+  )
+
+  return {
+    httpRequest,
+    httpsRequest,
+    queueResponse: (response: {
+      statusCode: number
+      headers: Record<string, string>
+      body: Uint8Array
+    }): void => {
+      queued.push({ promise: Promise.resolve(response) })
+    },
+    queueDeferred: (
+      promise: Promise<{
+        statusCode: number
+        headers: Record<string, string>
+        body: Uint8Array
+      }>
+    ): void => {
+      queued.push({ promise })
+    },
+    requests,
+    reset: (): void => {
+      queued.splice(0)
+      requests.splice(0)
+      httpRequest.mockClear()
+      httpsRequest.mockClear()
+    },
+  }
+})
+
+vi.mock('node:dns/promises', () => ({
+  default: { lookup: dnsMock.lookup },
+  lookup: dnsMock.lookup,
+}))
+
+vi.mock('node:http', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:http')>()
+
+  return {
+    ...actual,
+    default: { ...actual, request: nodeRequestMock.httpRequest },
+    request: nodeRequestMock.httpRequest,
+  }
+})
+
+vi.mock('node:https', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:https')>()
+
+  return {
+    ...actual,
+    default: { ...actual, request: nodeRequestMock.httpsRequest },
+    request: nodeRequestMock.httpsRequest,
+  }
+})
+
 // cspell:ignore debuggee Lkls
 type IpcHandler = (event: unknown, payload?: unknown) => unknown
 type EventHandler = (...args: unknown[]) => void
@@ -101,6 +300,12 @@ const electronMock = vi.hoisted(() => {
       canGoForward: () => boolean
       goBack: () => void
       goForward: () => void
+      getAllEntries: () => { url: string; title: string }[]
+      getActiveIndex: () => number
+      restore: (options: {
+        index?: number
+        entries: { url: string; title: string }[]
+      }) => void
     }
     isLoading: () => boolean
     reload: () => void
@@ -169,6 +374,9 @@ const electronMock = vi.hoisted(() => {
         canGoForward: vi.fn(() => false),
         goBack: vi.fn(),
         goForward: vi.fn(),
+        getAllEntries: vi.fn((): { url: string; title: string }[] => []),
+        getActiveIndex: vi.fn(() => -1),
+        restore: vi.fn(),
       },
       isLoading: vi.fn(() => false),
       reload: vi.fn(),
@@ -182,6 +390,7 @@ const electronMock = vi.hoisted(() => {
   }
 
   const fakeSession = {
+    fetch: vi.fn(),
     on: vi.fn(),
     off: vi.fn(),
     removeAllListeners: vi.fn(),
@@ -336,6 +545,99 @@ const listenerFor = (viewIndex: number, eventName: string): EventHandler => {
   return found
 }
 
+const flushMicrotasks = async (): Promise<void> => {
+  for (let i = 0; i < 5; i += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  }
+}
+
+const mockDnsAddresses = (addresses: MockLookupAddress[]): void => {
+  dnsMock.lookup.mockResolvedValue(addresses)
+}
+
+const nodeResponse = (
+  type: string,
+  bytes: Uint8Array,
+  extra: Record<string, string> = {}
+): MockNodeResponse => ({
+  statusCode: 200,
+  headers: { 'content-type': type, ...extra },
+  body: bytes,
+})
+
+const queueNodeResponse = (response: MockNodeResponse): void => {
+  nodeRequestMock.queueResponse(response)
+}
+
+const queueNodeImage = (bytes: Uint8Array): void => {
+  queueNodeResponse(nodeResponse('image/png', bytes))
+}
+
+const makeDeferred = <T>(): {
+  promise: Promise<T>
+  resolve: (value: T) => void
+} => {
+  let resolveFn: (value: T) => void = () => undefined
+
+  const promise = new Promise<T>((resolve) => {
+    resolveFn = resolve
+  })
+
+  return { promise, resolve: resolveFn }
+}
+
+const callAllListeners = (
+  viewIndex: number,
+  eventName: string,
+  ...args: unknown[]
+): void => {
+  vi.mocked(electronMock.views[viewIndex].webContents.on)
+    .mock.calls.filter(([name]) => name === eventName)
+    .forEach(([, fn]) => (fn as (...a: unknown[]) => void)(...args))
+}
+
+interface FaviconHarness {
+  emitFavicon: (urls: string[]) => void
+  emitNavigate: () => void
+  emitNavigateInPage: () => void
+  tabsChanged: () => { tabs: { id: string; favicon: string | null }[] }[]
+  clearSends: () => void
+}
+
+const faviconHarness = async (pageUrl: string): Promise<FaviconHarness> => {
+  await handler(BROWSER_PANE_CREATE)(eventForSender(), {
+    sessionId: 'pty-1',
+    paneId: 'p1',
+    workspaceId: 'w',
+    initialUrl: pageUrl,
+  })
+  vi.mocked(electronMock.views[0].webContents.getURL).mockReturnValue(pageUrl)
+
+  return {
+    emitFavicon: (urls): void =>
+      callAllListeners(0, 'page-favicon-updated', {}, urls),
+    emitNavigate: (): void => callAllListeners(0, 'did-navigate'),
+    emitNavigateInPage: (): void => callAllListeners(0, 'did-navigate-in-page'),
+    tabsChanged: (): { tabs: { id: string; favicon: string | null }[] }[] =>
+      vi
+        .mocked(electronMock.win.webContents.send)
+        .mock.calls.filter(([ch]) => ch === BROWSER_PANE_TABS_CHANGED)
+        .map(
+          ([, payload]) =>
+            payload as { tabs: { id: string; favicon: string | null }[] }
+        ),
+    clearSends: (): void => {
+      vi.mocked(electronMock.win.webContents.send).mockClear()
+    },
+  }
+}
+
+const lastFaviconOf = (h: FaviconHarness): string | null => {
+  const calls = h.tabsChanged()
+
+  return calls[calls.length - 1].tabs[0].favicon
+}
+
 const requestRawUpgrade = (endpoint: string): Promise<string> =>
   new Promise((resolve, reject) => {
     const url = new URL(endpoint)
@@ -385,6 +687,9 @@ describe('BrowserPaneController', () => {
 
   beforeEach(() => {
     electronMock.reset()
+    dnsMock.lookup.mockReset()
+    mockDnsAddresses([{ address: '93.184.216.34', family: 4 }])
+    nodeRequestMock.reset()
     controller = new BrowserPaneController()
     controller.install()
   })
@@ -397,6 +702,598 @@ describe('BrowserPaneController', () => {
     await expect(
       handler(BROWSER_PANE_CREATE)(eventForSender(), { paneId: 'p1' })
     ).rejects.toThrow('invalid browser pane create payload')
+  })
+
+  test('createPane returns tabs with favicon null initially', async () => {
+    const result = (await handler(BROWSER_PANE_CREATE)(eventForSender(), {
+      sessionId: 'pty-1',
+      paneId: 'p1',
+      workspaceId: 'proj-1',
+      initialUrl: 'https://example.com/',
+    })) as { tabs: { favicon: string | null }[] }
+    expect(result.tabs[0].favicon).toBe(null)
+  })
+
+  test('captureTabsForPane returns per-tab nav history + active index', async () => {
+    await handler(BROWSER_PANE_CREATE)(eventForSender(), {
+      sessionId: 'pty-1',
+      paneId: 'p1',
+      workspaceId: 'w',
+      initialUrl: 'https://a.example/',
+    })
+
+    const wc = electronMock.views[0].webContents
+    vi.mocked(wc.navigationHistory.getAllEntries).mockReturnValue([
+      { url: 'https://a.example/', title: 'A' },
+      { url: 'https://a.example/sub', title: 'Sub' },
+    ])
+    vi.mocked(wc.navigationHistory.getActiveIndex).mockReturnValue(1)
+
+    expect(controller.captureTabsForPane('pty-1', 'p1')).toEqual([
+      {
+        active: true,
+        historyIndex: 1,
+        history: [
+          { url: 'https://a.example/', title: 'A' },
+          { url: 'https://a.example/sub', title: 'Sub' },
+        ],
+      },
+    ])
+
+    expect(controller.captureTabsForPane('nope', 'p1')).toBeNull()
+  })
+
+  test('captureTabsForPane clamps an empty navigation history to index zero', async () => {
+    await handler(BROWSER_PANE_CREATE)(eventForSender(), {
+      sessionId: 'pty-1',
+      paneId: 'p1',
+      workspaceId: 'w',
+      initialUrl: 'https://a.example/',
+    })
+
+    const wc = electronMock.views[0].webContents
+    vi.mocked(wc.navigationHistory.getAllEntries).mockReturnValue([])
+    vi.mocked(wc.navigationHistory.getActiveIndex).mockReturnValue(-1)
+
+    expect(controller.captureTabsForPane('pty-1', 'p1')).toEqual([
+      {
+        active: true,
+        historyIndex: 0,
+        history: [],
+      },
+    ])
+  })
+
+  test('write signals: tab lifecycle is structural, navigation is volatile', async () => {
+    const signals = { markStructural: vi.fn(), markVolatile: vi.fn() }
+    controller.setWriteSignals(signals)
+
+    const created = (await handler(BROWSER_PANE_CREATE)(eventForSender(), {
+      sessionId: 'pty-1',
+      paneId: 'p1',
+      workspaceId: 'w',
+      initialUrl: 'https://a.example/',
+    })) as { tabs: { id: string }[] }
+    const firstTabId = created.tabs[0].id
+
+    // In-tab navigation → volatile (debounced).
+    signals.markVolatile.mockClear()
+    callAllListeners(0, 'did-navigate')
+    expect(signals.markVolatile).toHaveBeenCalled()
+
+    // Open a tab → structural (immediate).
+    signals.markStructural.mockClear()
+    await handler(BROWSER_PANE_NEW_TAB)(eventForSender(), {
+      sessionId: 'pty-1',
+      paneId: 'p1',
+      url: 'https://b.example/',
+    })
+    expect(signals.markStructural).toHaveBeenCalled()
+
+    // Switch active tab → structural.
+    signals.markStructural.mockClear()
+    await handler(BROWSER_PANE_ACTIVATE_TAB)(eventForSender(), {
+      sessionId: 'pty-1',
+      paneId: 'p1',
+      tabId: firstTabId,
+    })
+    expect(signals.markStructural).toHaveBeenCalled()
+
+    // Close a tab (two open) → structural.
+    signals.markStructural.mockClear()
+    await handler(BROWSER_PANE_CLOSE_TAB)(eventForSender(), {
+      sessionId: 'pty-1',
+      paneId: 'p1',
+      tabId: firstTabId,
+    })
+    expect(signals.markStructural).toHaveBeenCalled()
+  })
+
+  test('render-process-gone preserves records for reconnect; destroyed disposes', async () => {
+    await handler(BROWSER_PANE_CREATE)(eventForSender(), {
+      sessionId: 'pty-1',
+      paneId: 'p1',
+      workspaceId: 'w',
+      initialUrl: 'https://a.example/',
+    })
+    expect(controller.captureTabsForPane('pty-1', 'p1')).not.toBeNull()
+
+    const onceCalls = vi.mocked(electronMock.sender.once).mock.calls
+    // A renderer crash/reload must NOT tear the pane down (no such listener).
+    expect(onceCalls.map(([event]) => event)).not.toContain(
+      'render-process-gone'
+    )
+
+    // Genuine teardown (owner WebContents destroyed) still disposes the record.
+    const destroyed = onceCalls.find(
+      ([event]) => event === 'destroyed'
+    )?.[1] as (() => void) | undefined
+    expect(destroyed).toBeDefined()
+    destroyed?.()
+    expect(controller.captureTabsForPane('pty-1', 'p1')).toBeNull()
+  })
+
+  test('restore-mode create replays per-tab history before any load', async () => {
+    controller.setRestoreTabsProvider((sessionId, paneId) =>
+      sessionId === 'pty-1' && paneId === 'p1'
+        ? [
+            {
+              active: true,
+              historyIndex: 1,
+              history: [
+                { url: 'https://a.example/', title: 'A' },
+                { url: 'https://a.example/sub', title: null },
+              ],
+            },
+            {
+              active: false,
+              historyIndex: 0,
+              history: [{ url: 'https://b.example/', title: 'B' }],
+            },
+          ]
+        : null
+    )
+
+    await handler(BROWSER_PANE_CREATE)(eventForSender(), {
+      sessionId: 'pty-1',
+      paneId: 'p1',
+      workspaceId: 'w',
+      restore: true,
+    })
+
+    // One WebContentsView per persisted tab.
+    expect(electronMock.views).toHaveLength(2)
+
+    // History restored (titles null→'') instead of a load (restore-before-load).
+    expect(
+      electronMock.views[0].webContents.navigationHistory.restore
+    ).toHaveBeenCalledWith({
+      index: 1,
+      entries: [
+        { url: 'https://a.example/', title: 'A' },
+        { url: 'https://a.example/sub', title: '' },
+      ],
+    })
+
+    expect(
+      electronMock.views[1].webContents.navigationHistory.restore
+    ).toHaveBeenCalledWith({
+      index: 0,
+      entries: [{ url: 'https://b.example/', title: 'B' }],
+    })
+    expect(electronMock.views[0].webContents.loadURL).not.toHaveBeenCalled()
+  })
+
+  test('restore-mode with no persisted tabs falls back to a default load', async () => {
+    controller.setRestoreTabsProvider(() => null)
+
+    await handler(BROWSER_PANE_CREATE)(eventForSender(), {
+      sessionId: 'pty-1',
+      paneId: 'p1',
+      workspaceId: 'w',
+      restore: true,
+    })
+
+    expect(electronMock.views).toHaveLength(1)
+    expect(electronMock.views[0].webContents.loadURL).toHaveBeenCalled()
+    expect(
+      electronMock.views[0].webContents.navigationHistory.restore
+    ).not.toHaveBeenCalled()
+  })
+
+  test('a data: image favicon candidate is stored verbatim', async () => {
+    const h = await faviconHarness('https://example.com/')
+    h.clearSends()
+    h.emitFavicon(['data:image/png;base64,iVBORw0KGgo='])
+    await flushMicrotasks()
+    expect(lastFaviconOf(h)).toBe('data:image/png;base64,iVBORw0KGgo=')
+  })
+
+  test('an http image favicon is fetched through the vetted address and inlined', async () => {
+    const h = await faviconHarness('https://example.com/')
+    queueNodeImage(new Uint8Array([1, 2, 3, 4]))
+    h.clearSends()
+    h.emitFavicon(['https://example.com/favicon.png'])
+    await flushMicrotasks()
+    expect(lastFaviconOf(h)).toMatch(/^data:image\/png;base64,/)
+    expect(nodeRequestMock.httpsRequest).toHaveBeenCalledTimes(1)
+    expect(nodeRequestMock.requests[0].options).toEqual(
+      expect.objectContaining({
+        hostname: 'example.com',
+        path: '/favicon.png',
+        headers: expect.objectContaining({ host: 'example.com' }),
+        lookup: expect.any(Function),
+      })
+    )
+  })
+
+  test('an http favicon follows one vetted redirect and embeds the image', async () => {
+    const h = await faviconHarness('https://example.com/')
+    queueNodeResponse({
+      statusCode: 302,
+      headers: { location: 'https://cdn.example/favicon.png' },
+      body: new Uint8Array(),
+    })
+    queueNodeImage(new Uint8Array([5, 6]))
+    h.clearSends()
+
+    h.emitFavicon(['https://example.com/favicon.png'])
+    await flushMicrotasks()
+
+    expect(lastFaviconOf(h)).toMatch(/^data:image\/png;base64,/)
+    expect(nodeRequestMock.httpsRequest).toHaveBeenCalledTimes(2)
+    expect(nodeRequestMock.requests[1].options).toEqual(
+      expect.objectContaining({
+        hostname: 'cdn.example',
+        path: '/favicon.png',
+        headers: expect.objectContaining({ host: 'cdn.example' }),
+        lookup: expect.any(Function),
+      })
+    )
+  })
+
+  test('a public page blocks a favicon redirect to a private target', async () => {
+    const h = await faviconHarness('https://example.com/')
+    queueNodeResponse({
+      statusCode: 302,
+      headers: { location: 'http://127.0.0.1/favicon.png' },
+      body: new Uint8Array(),
+    })
+    h.clearSends()
+
+    h.emitFavicon(['https://example.com/favicon.png'])
+    await flushMicrotasks()
+
+    expect(lastFaviconOf(h)).toBe(null)
+    expect(nodeRequestMock.httpsRequest).toHaveBeenCalledTimes(1)
+    expect(nodeRequestMock.httpRequest).not.toHaveBeenCalled()
+  })
+
+  test('domain favicons are resolved once and fetched through the vetted address', async () => {
+    const h = await faviconHarness('https://example.com/')
+    mockDnsAddresses([{ address: '203.0.113.10', family: 4 }])
+    queueNodeImage(new Uint8Array([1, 2, 3, 4]))
+    h.clearSends()
+
+    h.emitFavicon(['https://assets.example/favicon.png'])
+    await flushMicrotasks()
+
+    expect(dnsMock.lookup).toHaveBeenCalledWith('assets.example', {
+      all: true,
+      verbatim: true,
+    })
+
+    const pinnedLookup = nodeRequestMock.requests[0].options.lookup as (
+      hostname: string,
+      options: unknown,
+      callback: (error: Error | null, address: string, family: number) => void
+    ) => void
+    const callback = vi.fn()
+    pinnedLookup('assets.example', {}, callback)
+    expect(callback).toHaveBeenCalledWith(null, '203.0.113.10', 4)
+    expect(lastFaviconOf(h)).toMatch(/^data:image\/png;base64,/)
+  })
+
+  test('the new-tab path also resolves favicons (view 1, not only create)', async () => {
+    await handler(BROWSER_PANE_CREATE)(eventForSender(), {
+      sessionId: 'pty-1',
+      paneId: 'p1',
+      workspaceId: 'w',
+      initialUrl: 'https://a.com/',
+    })
+
+    await handler(BROWSER_PANE_NEW_TAB)(eventForSender(), {
+      sessionId: 'pty-1',
+      paneId: 'p1',
+      url: 'https://b.com/',
+    })
+
+    vi.mocked(electronMock.views[1].webContents.getURL).mockReturnValue(
+      'https://b.com/'
+    )
+
+    queueNodeImage(new Uint8Array([1]))
+    vi.mocked(electronMock.win.webContents.send).mockClear()
+    callAllListeners(1, 'page-favicon-updated', {}, [
+      'https://b.com/favicon.png',
+    ])
+    await flushMicrotasks()
+
+    const calls = vi
+      .mocked(electronMock.win.webContents.send)
+      .mock.calls.filter(([ch]) => ch === BROWSER_PANE_TABS_CHANGED)
+      .map(
+        ([, payload]) =>
+          payload as { tabs: { id: string; favicon: string | null }[] }
+      )
+    const newTab = calls[calls.length - 1].tabs.find((t) => t.id !== 'tab-0')
+    expect(newTab?.favicon).toMatch(/^data:image\/png;base64,/)
+  })
+
+  test.each([
+    ['non-image content-type', nodeResponse('text/html', new Uint8Array([1]))],
+    [
+      'non-ok response',
+      {
+        statusCode: 500,
+        headers: {},
+        body: new Uint8Array(),
+      },
+    ],
+    ['zero-byte image body', nodeResponse('image/png', new Uint8Array())],
+    [
+      'over-cap via content-length',
+      nodeResponse('image/png', new Uint8Array([1]), {
+        'content-length': String(40 * 1024),
+      }),
+    ],
+  ])('http favicon %s yields null', async (_label, response) => {
+    const h = await faviconHarness('https://example.com/')
+    queueNodeResponse(response)
+    h.clearSends()
+    h.emitFavicon(['https://example.com/favicon.png'])
+    await flushMicrotasks()
+    expect(lastFaviconOf(h)).toBe(null)
+  })
+
+  test('over-cap via streamed bytes yields null', async () => {
+    const h = await faviconHarness('https://example.com/')
+    queueNodeResponse(nodeResponse('image/png', new Uint8Array(40 * 1024)))
+    h.clearSends()
+    h.emitFavicon(['https://example.com/favicon.png'])
+    await flushMicrotasks()
+    expect(lastFaviconOf(h)).toBe(null)
+  })
+
+  test('empty favicons array yields null', async () => {
+    const h = await faviconHarness('https://example.com/')
+    h.clearSends()
+    h.emitFavicon([])
+    await flushMicrotasks()
+    expect(lastFaviconOf(h)).toBe(null)
+  })
+
+  test('candidate fallback: first non-ok, second image wins', async () => {
+    const h = await faviconHarness('https://example.com/')
+    queueNodeResponse({
+      statusCode: 500,
+      headers: {},
+      body: new Uint8Array(),
+    })
+    queueNodeImage(new Uint8Array([9, 9]))
+    h.clearSends()
+    h.emitFavicon(['https://example.com/a.png', 'https://example.com/b.png'])
+    await flushMicrotasks()
+    expect(lastFaviconOf(h)).toMatch(/^data:image\/png;base64,/)
+    expect(nodeRequestMock.httpsRequest).toHaveBeenCalledTimes(2)
+  })
+
+  test('credentialed http favicon URLs are rejected', async () => {
+    const h = await faviconHarness('https://example.com/')
+    h.clearSends()
+
+    h.emitFavicon(['https://user:pass@example.com/favicon.png'])
+    await flushMicrotasks()
+
+    expect(nodeRequestMock.httpsRequest).not.toHaveBeenCalled()
+    expect(lastFaviconOf(h)).toBe(null)
+  })
+
+  test.each([
+    '127.0.0.1',
+    '10.0.0.5',
+    '169.254.169.254',
+    'localhost',
+    '192.168.1.1',
+  ])('public page to private favicon host %s is blocked', async (host) => {
+    const h = await faviconHarness('https://example.com/')
+    h.clearSends()
+    h.emitFavicon([`http://${host}/favicon.ico`])
+    await flushMicrotasks()
+    expect(nodeRequestMock.httpRequest).not.toHaveBeenCalled()
+    expect(lastFaviconOf(h)).toBe(null)
+  })
+
+  test('public page to DNS-resolved private favicon address is blocked', async () => {
+    const h = await faviconHarness('https://example.com/')
+    mockDnsAddresses([{ address: '10.0.0.5', family: 4 }])
+    h.clearSends()
+
+    h.emitFavicon(['https://assets.example/favicon.ico'])
+    await flushMicrotasks()
+
+    expect(nodeRequestMock.httpsRequest).not.toHaveBeenCalled()
+    expect(lastFaviconOf(h)).toBe(null)
+  })
+
+  test('public page with split-horizon favicon DNS uses the public address', async () => {
+    const h = await faviconHarness('https://example.com/')
+    mockDnsAddresses([
+      { address: '10.0.0.5', family: 4 },
+      { address: '203.0.113.10', family: 4 },
+    ])
+    queueNodeImage(new Uint8Array([1, 2]))
+    h.clearSends()
+
+    h.emitFavicon(['https://assets.example/favicon.ico'])
+    await flushMicrotasks()
+
+    expect(nodeRequestMock.httpsRequest).toHaveBeenCalledTimes(1)
+
+    const pinnedLookup = nodeRequestMock.requests[0].options.lookup as (
+      hostname: string,
+      options: unknown,
+      callback: (error: Error | null, address: string, family: number) => void
+    ) => void
+    const callback = vi.fn()
+    pinnedLookup('assets.example', {}, callback)
+
+    expect(callback).toHaveBeenCalledWith(null, '203.0.113.10', 4)
+    expect(lastFaviconOf(h)).toMatch(/^data:image\/png;base64,/)
+  })
+
+  test('localhost page keeps its own localhost favicon (private allowed)', async () => {
+    const h = await faviconHarness('http://localhost:3000/')
+    mockDnsAddresses([{ address: '127.0.0.1', family: 4 }])
+    queueNodeImage(new Uint8Array([1, 2]))
+    h.clearSends()
+    h.emitFavicon(['http://localhost:3000/favicon.png'])
+    await flushMicrotasks()
+    expect(nodeRequestMock.httpRequest).toHaveBeenCalledTimes(1)
+    expect(lastFaviconOf(h)).toMatch(/^data:image\/png;base64,/)
+  })
+
+  test('a public domain beginning with fd is not misread as private', async () => {
+    const h = await faviconHarness('https://fd-attacker.example/')
+    h.clearSends()
+    h.emitFavicon(['http://127.0.0.1/favicon.ico'])
+    await flushMicrotasks()
+    expect(nodeRequestMock.httpRequest).not.toHaveBeenCalled()
+    expect(lastFaviconOf(h)).toBe(null)
+  })
+
+  test('a private-range IPv6 favicon target is blocked from a public page', async () => {
+    const h = await faviconHarness('https://example.com/')
+    h.clearSends()
+    h.emitFavicon(['http://[fd00::1]/favicon.ico'])
+    await flushMicrotasks()
+    expect(nodeRequestMock.httpRequest).not.toHaveBeenCalled()
+    expect(lastFaviconOf(h)).toBe(null)
+  })
+
+  test('a trailing-dot loopback favicon target is blocked from a public page', async () => {
+    const h = await faviconHarness('https://example.com/')
+    h.clearSends()
+    h.emitFavicon(['http://localhost./favicon.ico'])
+    await flushMicrotasks()
+    expect(nodeRequestMock.httpRequest).not.toHaveBeenCalled()
+    expect(lastFaviconOf(h)).toBe(null)
+  })
+
+  test('an IPv4-mapped IPv6 loopback favicon target is blocked from a public page', async () => {
+    const h = await faviconHarness('https://example.com/')
+    h.clearSends()
+    h.emitFavicon(['http://[::ffff:7f00:1]/favicon.ico'])
+    await flushMicrotasks()
+    expect(nodeRequestMock.httpRequest).not.toHaveBeenCalled()
+    expect(lastFaviconOf(h)).toBe(null)
+  })
+
+  test('a link-local IPv6 favicon target (fe90::) is blocked from a public page', async () => {
+    const h = await faviconHarness('https://example.com/')
+    h.clearSends()
+    h.emitFavicon(['http://[fe90::1]/favicon.ico'])
+    await flushMicrotasks()
+    expect(nodeRequestMock.httpRequest).not.toHaveBeenCalled()
+    expect(lastFaviconOf(h)).toBe(null)
+  })
+
+  test('a public IPv6 favicon target is fetched normally', async () => {
+    const h = await faviconHarness('https://example.com/')
+    queueNodeImage(new Uint8Array([1, 2]))
+    h.clearSends()
+    h.emitFavicon(['http://[2001:4860:4860::8888]/favicon.png'])
+    await flushMicrotasks()
+    expect(nodeRequestMock.httpRequest).toHaveBeenCalledTimes(1)
+    expect(lastFaviconOf(h)).toMatch(/^data:image\/png;base64,/)
+  })
+
+  test('a pre-navigation in-flight fetch never overwrites the new tab', async () => {
+    const h = await faviconHarness('https://a.com/')
+    const deferred = makeDeferred<MockNodeResponse>()
+    nodeRequestMock.queueDeferred(deferred.promise)
+    h.emitFavicon(['http://93.184.216.34/icon.png'])
+    h.emitNavigate()
+    h.clearSends()
+    deferred.resolve(nodeResponse('image/png', new Uint8Array([7])))
+    await flushMicrotasks()
+    expect(h.tabsChanged().some((e) => e.tabs[0].favicon !== null)).toBe(false)
+  })
+
+  test('a newer favicon event supersedes an older in-flight fetch', async () => {
+    const h = await faviconHarness('https://a.com/')
+    const first = makeDeferred<MockNodeResponse>()
+    nodeRequestMock.queueDeferred(first.promise)
+    queueNodeImage(new Uint8Array([2, 2, 2]))
+    h.emitFavicon(['http://93.184.216.34/icon-a.png'])
+    await flushMicrotasks()
+    expect(nodeRequestMock.httpRequest).toHaveBeenCalledTimes(1)
+
+    h.emitFavicon(['http://93.184.216.34/icon-b.png'])
+    await flushMicrotasks()
+    const afterB = lastFaviconOf(h)
+    expect(afterB).toMatch(/^data:image\/png;base64,/)
+    first.resolve(nodeResponse('image/png', new Uint8Array([9, 9, 9, 9])))
+    await flushMicrotasks()
+    expect(lastFaviconOf(h)).toBe(afterB)
+  })
+
+  test('dedup: a repeat same-favicon event does not refetch', async () => {
+    const h = await faviconHarness('https://a.com/')
+    queueNodeImage(new Uint8Array([3]))
+    h.emitFavicon(['https://a.com/icon.png'])
+    await flushMicrotasks()
+    h.emitFavicon(['https://a.com/icon.png'])
+    await flushMicrotasks()
+    expect(nodeRequestMock.httpsRequest).toHaveBeenCalledTimes(1)
+  })
+
+  test('did-navigate clears the favicon in one cleared snapshot', async () => {
+    const h = await faviconHarness('https://a.com/')
+    queueNodeImage(new Uint8Array([5]))
+    h.emitFavicon(['https://a.com/icon.png'])
+    await flushMicrotasks()
+    h.clearSends()
+    h.emitNavigate()
+    await flushMicrotasks()
+    expect(h.tabsChanged().length).toBeGreaterThan(0)
+    expect(h.tabsChanged().every((e) => e.tabs[0].favicon === null)).toBe(true)
+  })
+
+  test('did-navigate-in-page does not reset the favicon', async () => {
+    const h = await faviconHarness('https://a.com/')
+    queueNodeImage(new Uint8Array([5]))
+    h.emitFavicon(['https://a.com/icon.png'])
+    await flushMicrotasks()
+    h.clearSends()
+    h.emitNavigateInPage()
+    await flushMicrotasks()
+    expect(lastFaviconOf(h)).toMatch(/^data:image\/png;base64,/)
+  })
+
+  test('reconnect createPane returns tabs carrying the current favicon', async () => {
+    const h = await faviconHarness('https://a.com/')
+    queueNodeImage(new Uint8Array([2]))
+    h.emitFavicon(['https://a.com/icon.png'])
+    await flushMicrotasks()
+
+    const reconnect = (await handler(BROWSER_PANE_CREATE)(eventForSender(), {
+      sessionId: 'pty-1',
+      paneId: 'p1',
+      workspaceId: 'w',
+      initialUrl: 'https://a.com/',
+    })) as { tabs: { favicon: string | null }[] }
+    expect(reconnect.tabs[0].favicon).toMatch(/^data:image\/png;base64,/)
   })
 
   test('creates persistent app-scoped panes and resolves before page load settles', async () => {

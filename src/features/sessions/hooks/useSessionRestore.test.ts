@@ -1,9 +1,24 @@
 import { renderHook, waitFor } from '@testing-library/react'
-import { describe, expect, test, vi } from 'vitest'
+import { beforeEach, describe, expect, test, vi } from 'vitest'
 import type { Session } from '../types'
 import type { PtyBufferDrain } from '../../terminal/orchestration/usePtyBufferDrain'
 import type { ITerminalService } from '../../terminal/services/terminalService'
+import type { WorkspaceShapeDto } from '../workspaceLayoutBridge'
 import { useSessionRestore } from './useSessionRestore'
+
+const loadWorkspaceForRestore = vi.hoisted(() =>
+  vi.fn((): Promise<WorkspaceShapeDto | null> => Promise.resolve(null))
+)
+const beginWorkspaceHydration = vi.hoisted(() => vi.fn(() => Promise.resolve()))
+const endWorkspaceHydration = vi.hoisted(() => vi.fn(() => Promise.resolve()))
+vi.mock('../workspaceLayoutBridge', () => ({
+  loadWorkspaceForRestore,
+  beginWorkspaceHydration,
+  endWorkspaceHydration,
+}))
+
+const createBrowserPane = vi.hoisted(() => vi.fn(() => Promise.resolve(null)))
+vi.mock('../../browser/browserBridge', () => ({ createBrowserPane }))
 
 const buildBuffer = (): PtyBufferDrain =>
   ({
@@ -15,6 +30,17 @@ const buildBuffer = (): PtyBufferDrain =>
   }) as never
 
 describe('useSessionRestore', () => {
+  beforeEach(() => {
+    loadWorkspaceForRestore.mockReset()
+    loadWorkspaceForRestore.mockResolvedValue(null)
+    beginWorkspaceHydration.mockReset()
+    beginWorkspaceHydration.mockResolvedValue(undefined)
+    endWorkspaceHydration.mockReset()
+    endWorkspaceHydration.mockResolvedValue(undefined)
+    createBrowserPane.mockReset()
+    createBrowserPane.mockResolvedValue(null)
+  })
+
   test('attaches onData listener before listSessions', async () => {
     const order: string[] = []
 
@@ -433,5 +459,137 @@ describe('useSessionRestore', () => {
     await waitFor(() => expect(result.current.loading).toBe(false))
 
     expect(onActiveResolved).not.toHaveBeenCalled()
+  })
+
+  // Store-driven: a browser-only session (no PTY) is rebuilt from the durable
+  // store. Main-owned restore creation is triggered for the browser pane, the
+  // persisted-active session is selected via the browser-capable path, and the
+  // hydration guard is opened then released.
+  test('restores a browser-only session from the durable store', async () => {
+    const order: string[] = []
+
+    const store: WorkspaceShapeDto = {
+      sessions: [
+        {
+          id: 'ws-browser',
+          projectId: 'proj-1',
+          layout: 'single',
+          workingDirectory: '/home/will/proj',
+          active: true,
+          panes: [
+            { kind: 'browser', paneId: 'p0', paneIndex: 0, active: true },
+          ],
+        },
+      ],
+    }
+    loadWorkspaceForRestore.mockResolvedValue(store)
+    createBrowserPane.mockImplementation(() => {
+      order.push('createBrowserPane')
+
+      return Promise.resolve(null)
+    })
+
+    const service = {
+      onData: vi.fn().mockResolvedValue(() => undefined),
+      listSessions: vi
+        .fn()
+        .mockResolvedValue({ sessions: [], activeSessionId: null }),
+    } as unknown as ITerminalService
+
+    const onRestore = vi.fn<(sessions: Session[]) => void>(() => {
+      order.push('onRestore')
+    })
+    const onActiveResolved = vi.fn()
+    const onActivePersisted = vi.fn()
+
+    const { result } = renderHook(() =>
+      useSessionRestore({
+        service,
+        buffer: buildBuffer(),
+        onRestore,
+        onActiveResolved,
+        onActivePersisted,
+      })
+    )
+
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    const restoredSessions = onRestore.mock.calls[0]?.[0]
+    if (!restoredSessions) {
+      throw new Error('expected onRestore to be called')
+    }
+    expect(restoredSessions).toHaveLength(1)
+    expect(restoredSessions[0].id).toBe('ws-browser')
+    expect(restoredSessions[0].panes[0].kind).toBe('browser')
+
+    // Main-owned restore creation for the browser pane.
+    expect(createBrowserPane).toHaveBeenCalledTimes(1)
+    expect(createBrowserPane).toHaveBeenCalledWith({
+      sessionId: 'ws-browser',
+      paneId: 'p0',
+      workspaceId: 'proj-1',
+      restore: true,
+    })
+    // Restore-create runs BEFORE the tree mounts (so BrowserPane reconnects).
+    expect(order).toEqual(['createBrowserPane', 'onRestore'])
+
+    // Persisted-active session selected via the browser-capable path.
+    expect(onActivePersisted).toHaveBeenCalledWith('ws-browser')
+    expect(onActiveResolved).not.toHaveBeenCalled()
+
+    // Hydration guard opened then released.
+    expect(beginWorkspaceHydration).toHaveBeenCalledTimes(1)
+    expect(endWorkspaceHydration).toHaveBeenCalledTimes(1)
+  })
+
+  // The store load is renderer-initiated with the active project context.
+  test('loads the store with project context and always releases hydration', async () => {
+    const service = {
+      onData: vi.fn().mockResolvedValue(() => undefined),
+      listSessions: vi
+        .fn()
+        .mockResolvedValue({ sessions: [], activeSessionId: null }),
+    } as unknown as ITerminalService
+
+    const { result } = renderHook(() =>
+      useSessionRestore({
+        service,
+        buffer: buildBuffer(),
+        onRestore: vi.fn(),
+        onActiveResolved: vi.fn(),
+        projectId: 'proj-9',
+        workingDirectory: '/work/dir',
+      })
+    )
+
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    expect(loadWorkspaceForRestore).toHaveBeenCalledWith({
+      projectId: 'proj-9',
+      workingDirectory: '/work/dir',
+    })
+    expect(endWorkspaceHydration).toHaveBeenCalledTimes(1)
+  })
+
+  // Hydration must release even when restore throws, or main would suppress
+  // writes forever.
+  test('releases hydration even when listSessions rejects', async () => {
+    const service = {
+      onData: vi.fn().mockResolvedValue(() => undefined),
+      listSessions: vi.fn().mockRejectedValue(new Error('boom')),
+    } as unknown as ITerminalService
+
+    const { result } = renderHook(() =>
+      useSessionRestore({
+        service,
+        buffer: buildBuffer(),
+        onRestore: vi.fn(),
+        onActiveResolved: vi.fn(),
+      })
+    )
+
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    expect(endWorkspaceHydration).toHaveBeenCalledTimes(1)
   })
 })

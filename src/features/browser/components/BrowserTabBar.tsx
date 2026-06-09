@@ -1,7 +1,7 @@
 import { type MouseEvent, type ReactElement } from 'react'
 import type { BrowserPaneTab } from '../types'
 import { BROWSER_IDENTITY } from '../browserIdentity'
-import { faviconPlaceholder, type FaviconTone } from '../faviconPlaceholder'
+import { BrowserTabFavicon } from './BrowserTabFavicon'
 
 export interface BrowserTabBarProps {
   tabs: BrowserPaneTab[]
@@ -9,12 +9,6 @@ export interface BrowserTabBarProps {
   onClose: (tabId: string) => void
   onNewTab: () => void
   onClosePane?: () => void
-}
-
-const TONE_CLASS: Record<FaviconTone, string> = {
-  cyan: 'text-[#4fc8d6] bg-[rgba(79,200,214,0.12)]',
-  mauve: 'text-[#cba6f7] bg-[rgba(203,166,247,0.12)]',
-  coral: 'text-[#ff94a5] bg-[rgba(255,148,165,0.12)]',
 }
 
 const ICON_BTN =
@@ -60,7 +54,6 @@ export const BrowserTabBar = ({
         className="thin-scrollbar flex min-w-0 flex-1 items-center gap-[5px] overflow-x-auto"
       >
         {tabs.map((tab) => {
-          const fav = faviconPlaceholder(tab.url)
           const title = tab.title ?? tab.url
 
           const handleClose = (event: MouseEvent<HTMLButtonElement>): void => {
@@ -71,7 +64,8 @@ export const BrowserTabBar = ({
           return (
             <div
               key={tab.id}
-              className={`group flex h-[27px] min-w-[96px] max-w-[210px] items-center gap-2 rounded-lg border px-2 transition ${
+              data-testid="browser-tab"
+              className={`group flex h-[27px] min-w-[96px] max-w-[210px] flex-1 items-center gap-2 rounded-lg border px-2 transition ${
                 tab.active
                   ? 'border-white/10 bg-browser-tab-active shadow-[0_2px_8px_rgba(0,0,0,0.4)]'
                   : 'border-transparent hover:bg-white/[0.04]'
@@ -85,16 +79,7 @@ export const BrowserTabBar = ({
                 onClick={(): void => onActivate(tab.id)}
                 className="flex min-w-0 flex-1 items-center gap-2 focus:outline-none"
               >
-                <span
-                  className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-[5px] ${TONE_CLASS[fav.tone]}`}
-                >
-                  <span
-                    aria-hidden="true"
-                    className="material-symbols-outlined text-[10px]"
-                  >
-                    {fav.glyph}
-                  </span>
-                </span>
+                <BrowserTabFavicon favicon={tab.favicon} url={tab.url} />
                 <span
                   className={`min-w-0 flex-1 truncate text-left font-mono text-[10.5px] ${
                     tab.active ? 'text-on-surface' : 'text-on-surface-muted'

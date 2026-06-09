@@ -20,6 +20,13 @@ import { installNavigationGuard } from './navigation-guard'
 import { BACKEND_EVENT, BACKEND_INVOKE } from './ipc-channels'
 import { spawnSidecar, type Sidecar } from './sidecar'
 import { setupBrowserPaneIpc, type BrowserPaneController } from './browser-pane'
+import {
+  setupWorkspaceLayoutController,
+  type WorkspaceLayoutController,
+} from './workspace-layout-controller'
+import { WorkspaceLayoutWriter } from './workspace-layout-writer'
+import { WorkspaceTeardown } from './workspace-teardown'
+import type { PersistedTab } from './workspace-layout-types'
 
 // Keep the GPU serving this window while it is occluded (covered by another
 // window) or unfocused. Chromium otherwise backgrounds the occluded window and
@@ -181,6 +188,8 @@ type InvokeEnvelope =
 
 let sidecar: Sidecar | null = null
 let browserPaneController: BrowserPaneController | null = null
+let workspaceLayoutController: WorkspaceLayoutController | null = null
+let workspaceTeardown: WorkspaceTeardown | null = null
 let quitting = false
 
 const RENDERER_DIAGNOSTIC_PREFIXES = [
@@ -273,6 +282,30 @@ const createWindow = (): void => {
     },
   })
 
+  // Re-arm the teardown flush for this window's lifecycle (spec §3.2).
+  workspaceTeardown?.reset()
+
+  let closeFlushed = false
+  win.on('close', (event) => {
+    if (closeFlushed) {
+      return
+    }
+
+    // Defer the close, flush the durable store while the WebContents are still
+    // alive, then re-issue so teardown proceeds (no prevent/flush loop).
+    event.preventDefault()
+    void (async (): Promise<void> => {
+      try {
+        await workspaceTeardown?.flushOnce()
+      } finally {
+        closeFlushed = true
+        if (!win.isDestroyed()) {
+          win.close()
+        }
+      }
+    })()
+  })
+
   installRendererDiagnosticLogging(win)
   installCommandPaletteShortcutOverride(win)
   installNavigationGuard(win, (url) => {
@@ -321,7 +354,44 @@ const setupApp = async (): Promise<void> => {
   })
 
   sidecar = spawnedSidecar
+  browserPaneController?.dispose()
+  browserPaneController = null
   browserPaneController = setupBrowserPaneIpc()
+
+  const layoutWriter = new WorkspaceLayoutWriter({
+    sidecar: spawnedSidecar,
+    captureTabsForPane: (sessionId, paneId): PersistedTab[] | null =>
+      browserPaneController?.captureTabsForPane(sessionId, paneId) ?? null,
+    preservedTabsForPane: (sessionId, paneId): PersistedTab[] | null =>
+      workspaceLayoutController?.tabsForPane(sessionId, paneId) ?? null,
+  })
+  browserPaneController.setWriteSignals(layoutWriter)
+  workspaceLayoutController?.dispose()
+  workspaceLayoutController = null
+  workspaceLayoutController = setupWorkspaceLayoutController({
+    sidecar: spawnedSidecar,
+    ipcMain,
+    writer: layoutWriter,
+  })
+
+  browserPaneController.setRestoreTabsProvider(
+    (sessionId, paneId): PersistedTab[] | null =>
+      workspaceLayoutController?.tabsForPane(sessionId, paneId) ?? null
+  )
+
+  workspaceTeardown = new WorkspaceTeardown({
+    drainFinalShape: async (): Promise<void> => {
+      const win = BrowserWindow.getAllWindows().at(0)
+      if (win && !win.webContents.isDestroyed()) {
+        await workspaceLayoutController?.requestFinalShape(win.webContents)
+      }
+    },
+    flush: (): Promise<void> => layoutWriter.flush(),
+    onFlushError: (error: unknown): void => {
+      // eslint-disable-next-line no-console
+      console.warn('Workspace flush failed during teardown', error)
+    },
+  })
   const allowE2eBackendMethods = !app.isPackaged && isE2eRuntime()
 
   ipcMain.handle(
@@ -383,14 +453,22 @@ app.on('before-quit', (event) => {
   quitting = true
 
   const currentSidecar = sidecar
-  browserPaneController?.dispose()
-  browserPaneController = null
 
   void (async (): Promise<void> => {
     try {
-      await currentSidecar.shutdown()
+      // Flush before disposal (skips if a window-close flush already ran).
+      await workspaceTeardown?.flushOnce()
     } finally {
-      app.exit(0)
+      browserPaneController?.dispose()
+      browserPaneController = null
+      workspaceLayoutController?.dispose()
+      workspaceLayoutController = null
+
+      try {
+        await currentSidecar.shutdown()
+      } finally {
+        app.exit(0)
+      }
     }
   })()
 })

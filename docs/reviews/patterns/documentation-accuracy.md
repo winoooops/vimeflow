@@ -3,7 +3,7 @@ id: documentation-accuracy
 category: code-quality
 created: 2026-04-09
 last_updated: 2026-06-08
-ref_count: 24
+ref_count: 25
 ---
 
 # Documentation Accuracy
@@ -791,4 +791,13 @@ Stale documentation misleads future contributors and review agents.
 - **File:** `docs/design/burner-terminal-popup/burner-terminal-handoff/BURNER-TERMINAL-HANDOFF.md`
 - **Finding:** The Files section described `Burner Terminal Popup.html` as a self-contained mockup with interactive state walkthrough ("Press A · B · C · Esc"), implying it was the current design reference. The full burner terminal implementation had already landed across multiple PRs (#343, #351, #354, #382, #385, #386), so the HTML mockup was historical scaffolding, not an active spec source. A new contributor reading the handoff could spend time reviewing the mockup instead of the real components.
 - **Fix:** Rewrote the bullet to state the HTML is archived for historical reference and explicitly note that the full implementation context now lives in the codebase.
+- **Commit:** same commit as this entry
+
+### 85. Favicon emitter ordering was load-bearing but undocumented
+
+- **Source:** github-claude | PR #404 round 2 | 2026-06-08
+- **Severity:** LOW
+- **File:** `electron/browser-pane.ts`
+- **Finding:** `installFaviconEmitter` had to run before history restore or URL load because Electron can emit `page-favicon-updated` during replay, but no inline comment documented that ordering contract. A future refactor could move the emitter after restore and silently drop restored-tab favicons.
+- **Fix:** Added a short comment directly above `installFaviconEmitter` stating that it must precede history restore/load because the favicon event can fire during that work.
 - **Commit:** same commit as this entry
