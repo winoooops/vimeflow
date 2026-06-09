@@ -119,7 +119,10 @@ export const IconRail = ({
         ${reserveWindowControls ? 'vf-app-drag-region' : ''} relative z-[5] flex h-full ${reserveWindowControls ? 'w-[68px]' : 'w-12'} flex-col items-center
         bg-surface-container-lowest border-r border-outline-variant/25
       `}
-      style={{ paddingTop: reserveWindowControls ? MACOS_TRAFFIC_LIGHT_RESERVE_PX : 10, paddingBottom: 10 }}
+      style={{
+        paddingTop: reserveWindowControls ? MACOS_TRAFFIC_LIGHT_RESERVE_PX : 10,
+        paddingBottom: 10,
+      }}
     >
       <Tooltip content={accountLabel} placement="right">
         <div

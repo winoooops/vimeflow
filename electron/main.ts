@@ -72,6 +72,8 @@ const BINARY_NAME =
 const macosWindowChromeOptions =
   process.platform === 'darwin'
     ? {
+        // Matches Tailwind bg-background token — update if
+        // tailwind.config.js colors.background changes.
         backgroundColor: '#121221',
         titleBarStyle: 'hiddenInset' as const,
         trafficLightPosition: { x: 16, y: 13 },

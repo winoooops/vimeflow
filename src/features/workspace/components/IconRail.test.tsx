@@ -18,9 +18,20 @@ describe('IconRail', () => {
   test('can reserve the macOS traffic-light area', () => {
     render(<IconRail settingsIssueNumber={1} reserveWindowControls />)
 
-    expect(screen.getByTestId('icon-rail')).toHaveStyle({
+    const rail = screen.getByTestId('icon-rail')
+    expect(rail).toHaveClass('vf-app-drag-region')
+    expect(rail).toHaveClass('w-[68px]')
+    expect(rail).toHaveStyle({
       paddingTop: '52px',
     })
+  })
+
+  test('does NOT apply drag region on non-macOS platforms', () => {
+    render(<IconRail settingsIssueNumber={1} />)
+
+    expect(screen.getByTestId('icon-rail')).not.toHaveClass(
+      'vf-app-drag-region'
+    )
   })
 
   test('truncates a multi-char initial to the first grapheme', () => {

@@ -49,3 +49,19 @@ dimensions so the controls do not overlay adjacent UI columns.
 - **File:** `src/features/workspace/components/IconRail.tsx`
 - **Finding:** The `52` in `paddingTop: reserveWindowControls ? 52 : 10` encoded `trafficLightPosition.y (13) + button diameter (~28) + gap (~11)` from `electron/main.ts` with no comment or named constant.
 - **Fix:** Introduced `MACOS_TRAFFIC_LIGHT_RESERVE_PX = 52` with an inline comment explaining the derivation.
+
+### 5. IconRail.test.tsx missing conditional vf-app-drag-region assertions
+
+- **Source:** github-claude | PR #407 round 2 | 2026-06-09
+- **Severity:** MEDIUM
+- **File:** `src/features/workspace/components/IconRail.test.tsx`
+- **Finding:** The `reserveWindowControls` test only asserted `paddingTop: '52px'`; it did not check that `vf-app-drag-region` is present when the prop is true, nor that it is absent when false. A regression reverting the class to unconditional application would pass tests undetected.
+- **Fix:** Added `toHaveClass('vf-app-drag-region')` and `toHaveClass('w-[68px]')` assertions to the existing test, plus a mirroring no-reserve test asserting `not.toHaveClass('vf-app-drag-region')`.
+
+### 6. backgroundColor '#121221' undocumented in main-process options
+
+- **Source:** github-claude | PR #407 round 2 | 2026-06-09
+- **Severity:** LOW
+- **File:** `electron/main.ts`
+- **Finding:** `backgroundColor: '#121221'` in `macosWindowChromeOptions` mirrored the Tailwind `bg-background` token with no comment linking the two. A future design iteration updating the token would leave the native window flash color stale.
+- **Fix:** Added an inline comment documenting the relationship to the Tailwind token and warning to keep them in sync.
