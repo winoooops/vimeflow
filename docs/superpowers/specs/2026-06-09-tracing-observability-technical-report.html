@@ -1,0 +1,615 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Correlated Local Tracing for Vimeflow</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #11111b;
+        --surface: #181825;
+        --surface-2: #1e1e2e;
+        --text: #cdd6f4;
+        --muted: #a6adc8;
+        --subtle: #6c7086;
+        --accent: #94e2d5;
+        --accent-2: #f5c2e7;
+        --accent-3: #a6e3a1;
+        --warning: #f9e2af;
+        --shadow: rgba(0, 0, 0, 0.28);
+        --code: #313244;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background:
+          linear-gradient(135deg, rgba(148, 226, 213, 0.08), transparent 32rem),
+          radial-gradient(
+            circle at 80% 10%,
+            rgba(245, 194, 231, 0.08),
+            transparent 28rem
+          ),
+          var(--bg);
+        color: var(--text);
+        font:
+          16px/1.6 Inter,
+          ui-sans-serif,
+          system-ui,
+          -apple-system,
+          BlinkMacSystemFont,
+          'Segoe UI',
+          sans-serif;
+      }
+
+      main {
+        width: min(1080px, calc(100% - 40px));
+        margin: 0 auto;
+        padding: 56px 0 72px;
+      }
+
+      header {
+        margin-bottom: 40px;
+      }
+
+      .eyebrow {
+        color: var(--accent);
+        font-size: 0.78rem;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      h1 {
+        max-width: 850px;
+        margin: 12px 0 18px;
+        font-size: clamp(2.4rem, 6vw, 4.5rem);
+        line-height: 0.98;
+        letter-spacing: 0;
+      }
+
+      .dek {
+        max-width: 760px;
+        margin: 0;
+        color: var(--muted);
+        font-size: 1.15rem;
+      }
+
+      .meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 28px;
+      }
+
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        min-height: 30px;
+        padding: 5px 10px;
+        border-radius: 999px;
+        background: rgba(30, 30, 46, 0.76);
+        color: var(--muted);
+        box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset;
+        font-size: 0.86rem;
+      }
+
+      section {
+        margin-top: 32px;
+        padding: 28px;
+        border-radius: 8px;
+        background: rgba(24, 24, 37, 0.78);
+        box-shadow: 0 18px 48px var(--shadow);
+      }
+
+      h2 {
+        margin: 0 0 14px;
+        color: var(--text);
+        font-size: 1.45rem;
+        letter-spacing: 0;
+      }
+
+      h3 {
+        margin: 24px 0 8px;
+        color: var(--accent-2);
+        font-size: 1rem;
+        letter-spacing: 0;
+      }
+
+      p {
+        margin: 0 0 14px;
+      }
+
+      a {
+        color: var(--accent);
+      }
+
+      ul,
+      ol {
+        margin: 12px 0 0;
+        padding-left: 22px;
+      }
+
+      li {
+        margin: 8px 0;
+      }
+
+      code {
+        border-radius: 5px;
+        background: var(--code);
+        color: #bac2de;
+        padding: 0.14rem 0.32rem;
+        font-family:
+          'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+        font-size: 0.92em;
+      }
+
+      pre {
+        overflow-x: auto;
+        margin: 14px 0 0;
+        padding: 18px;
+        border-radius: 8px;
+        background: #0b0b12;
+        color: #cdd6f4;
+        box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset;
+      }
+
+      pre code {
+        background: transparent;
+        padding: 0;
+        color: inherit;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 16px;
+        overflow: hidden;
+        border-radius: 8px;
+        background: rgba(17, 17, 27, 0.72);
+      }
+
+      th,
+      td {
+        padding: 12px 14px;
+        text-align: left;
+        vertical-align: top;
+      }
+
+      th {
+        color: var(--accent);
+        font-size: 0.78rem;
+        letter-spacing: 0.07em;
+        text-transform: uppercase;
+      }
+
+      tr + tr td,
+      tr + tr th {
+        box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 14px;
+        margin-top: 16px;
+      }
+
+      .metric {
+        min-height: 132px;
+        padding: 18px;
+        border-radius: 8px;
+        background: rgba(30, 30, 46, 0.8);
+      }
+
+      .metric strong {
+        display: block;
+        color: var(--accent-3);
+        font-size: 1.7rem;
+        line-height: 1.15;
+      }
+
+      .metric span {
+        display: block;
+        margin-top: 8px;
+        color: var(--muted);
+        font-size: 0.92rem;
+      }
+
+      .callout {
+        margin-top: 18px;
+        padding: 16px 18px;
+        border-radius: 8px;
+        background: rgba(249, 226, 175, 0.1);
+        color: var(--warning);
+      }
+
+      .timeline {
+        list-style: none;
+        padding-left: 0;
+      }
+
+      .timeline li {
+        display: grid;
+        grid-template-columns: 160px 1fr;
+        gap: 16px;
+        margin: 0;
+        padding: 14px 0;
+        box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset;
+      }
+
+      .timeline li:first-child {
+        box-shadow: none;
+      }
+
+      .timeline b {
+        color: var(--accent);
+      }
+
+      .muted {
+        color: var(--muted);
+      }
+
+      @media (max-width: 760px) {
+        main {
+          width: min(100% - 28px, 1080px);
+          padding-top: 36px;
+        }
+
+        section {
+          padding: 20px;
+        }
+
+        .grid,
+        .timeline li {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <div class="eyebrow">Technical Report · June 9, 2026</div>
+        <h1>Correlated Local Tracing for Vimeflow</h1>
+        <p class="dek">
+          A purpose-built observability layer now ties a user action in the
+          React renderer to IPC traffic, Rust backend work, and later Claude
+          Code or Codex agent events, with each step persisted as privacy-safe
+          newline-delimited JSON on the local machine.
+        </p>
+        <div class="meta">
+          <span class="pill">Branch: feat/tracing-observability</span>
+          <span class="pill">Worktree: worktrees/tracing-observability</span>
+          <span class="pill">Store: app-data/logs/trace.jsonl</span>
+          <span class="pill">Status: committed, verified, reviewed</span>
+        </div>
+      </header>
+
+      <section>
+        <h2>Executive Summary</h2>
+        <p>
+          I added an opt-in tracing system to Vimeflow that records selected
+          user interactions, correlated backend IPC work, and sanitized agent
+          state transitions without changing the existing agent-status event
+          schema. The renderer still cannot write files; it sends trace-safe
+          metadata to the Rust sidecar, and the sidecar owns durable JSONL
+          persistence in the same app-data area already used by session state.
+        </p>
+        <p>
+          The first end-to-end path instruments pane rename because it naturally
+          crosses all required boundaries: frontend action, IPC request, backend
+          PTY write, agent adapter event, and result. The design is additive, so
+          broader interactions can be added without rewriting existing
+          diagnostic logging.
+        </p>
+        <div class="grid" aria-label="Implementation highlights">
+          <div class="metric">
+            <strong>5</strong>
+            <span>correlated records proven for one rename action</span>
+          </div>
+          <div class="metric">
+            <strong>0600</strong>
+            <span>Unix file permissions for trace log creation</span>
+          </div>
+          <div class="metric">
+            <strong>0</strong>
+            <span>structural findings after final Codex review</span>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>Architecture</h2>
+        <p>
+          The implementation centers on a new Rust
+          <code>TraceService</code> and a wrapped <code>TracingEventSink</code>.
+          <code>BackendState</code> owns the service, routes explicit trace IPC
+          commands into it, and uses it to stamp correlated records around
+          backend work. The event sink forwards existing
+          <code>agent-*</code> events unchanged, then records a separate
+          allowlisted trace entry only when tracing is enabled.
+        </p>
+        <table>
+          <thead>
+            <tr>
+              <th>Layer</th>
+              <th>Responsibility</th>
+              <th>Primary Files</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>React renderer</td>
+              <td>
+                Generate correlation IDs and send safe interaction metadata.
+              </td>
+              <td>
+                <a href="../../../src/lib/tracing.ts">src/lib/tracing.ts</a>,
+                <a href="../../../src/lib/backend.ts">src/lib/backend.ts</a>
+              </td>
+            </tr>
+            <tr>
+              <td>Electron bridge</td>
+              <td>
+                Allow the new tracing IPC methods through the backend allowlist.
+              </td>
+              <td>
+                <a href="../../../electron/backend-methods.ts"
+                  >electron/backend-methods.ts</a
+                >
+              </td>
+            </tr>
+            <tr>
+              <td>Rust runtime</td>
+              <td>
+                Trace IPC request/result records and backend work records.
+              </td>
+              <td>
+                <a href="../../../crates/backend/src/runtime/ipc.rs"
+                  >runtime/ipc.rs</a
+                >,
+                <a href="../../../crates/backend/src/runtime/state.rs"
+                  >runtime/state.rs</a
+                >
+              </td>
+            </tr>
+            <tr>
+              <td>Trace service</td>
+              <td>
+                Persist JSONL, rotate files, redact values, and map sessions to
+                trace contexts.
+              </td>
+              <td>
+                <a href="../../../crates/backend/src/trace/mod.rs"
+                  >trace/mod.rs</a
+                >
+              </td>
+            </tr>
+            <tr>
+              <td>Agent adapters</td>
+              <td>
+                Continue emitting existing agent events consumed by the UI.
+              </td>
+              <td>
+                <a href="../../../crates/backend/src/agent/"
+                  >crates/backend/src/agent/</a
+                >
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section>
+        <h2>Correlation Flow</h2>
+        <ol class="timeline">
+          <li>
+            <b>Frontend</b>
+            <span>
+              <code>startUserInteractionTrace</code> generates
+              <code>correlationId</code> and <code>spanId</code>, then records a
+              <code>frontend/user.interaction</code> event for
+              <code>pane.rename</code>.
+            </span>
+          </li>
+          <li>
+            <b>IPC request</b>
+            <span>
+              <code>renameAgentSession</code> attaches the same correlation ID
+              and parent span to the <code>rename_agent_session</code> request.
+            </span>
+          </li>
+          <li>
+            <b>Backend work</b>
+            <span>
+              The Rust runtime records <code>ipc.request</code>,
+              <code>backend.work</code>, and <code>ipc.result</code> with the
+              same correlation context.
+            </span>
+          </li>
+          <li>
+            <b>Agent event</b>
+            <span>
+              A short-lived session context lets a later
+              <code>agent-session-title</code> event inherit the original user
+              action correlation ID.
+            </span>
+          </li>
+          <li>
+            <b>Trace file</b>
+            <span>
+              The records are appended to <code>trace.jsonl</code>, making the
+              cross-boundary path queryable with tools such as <code>jq</code>.
+            </span>
+          </li>
+        </ol>
+      </section>
+
+      <section>
+        <h2>JSONL Event Shape</h2>
+        <p>
+          Each trace line is one JSON object with stable top-level fields and an
+          allowlisted <code>attributes</code> map. Prompt text, response text,
+          terminal data, file contents, and tool arguments are not persisted by
+          default.
+        </p>
+        <pre><code>{
+  "schemaVersion": 1,
+  "timestamp": "2026-06-09T00:00:00.000Z",
+  "correlationId": "vf_corr_...",
+  "spanId": "vf_span_...",
+  "parentSpanId": "vf_span_...",
+  "layer": "frontend|ipc|backend|agent",
+  "event": "user.interaction|ipc.request|backend.work|ipc.result|agent.event",
+  "sessionId": "pty-trace",
+  "agentType": "codex",
+  "status": "ok",
+  "attributes": {
+    "operation": "rename_agent_session.write_pty"
+  }
+}</code></pre>
+      </section>
+
+      <section>
+        <h2>Privacy, Durability, And Retention</h2>
+        <ul>
+          <li>
+            Tracing is disabled by default and must be enabled through an
+            explicit IPC-backed setting.
+          </li>
+          <li>Data is local-only. No trace data is transmitted off-device.</li>
+          <li>
+            The renderer never writes log files. The Rust sidecar owns all disk
+            writes.
+          </li>
+          <li>
+            Logs live at <code>&lt;app-data-dir&gt;/logs/trace.jsonl</code>,
+            matching the app-data path plumbed by <code>--app-data-dir</code>.
+          </li>
+          <li>
+            Linux default path:
+            <code>~/.local/share/vimeflow/logs/trace.jsonl</code>.
+          </li>
+          <li>
+            macOS default path:
+            <code>~/Library/Application Support/vimeflow/logs/trace.jsonl</code
+            >.
+          </li>
+          <li>Windows is intentionally unsupported for this feature.</li>
+          <li>
+            Unix files are created with <code>0600</code> permissions and
+            <code>O_NOFOLLOW</code>, extending the existing debug log security
+            posture into release-capable tracing.
+          </li>
+          <li>
+            Rotation is size bounded. The active file moves through
+            <code>.1</code>, <code>.2</code>, and <code>.3</code>, with the
+            oldest generation removed.
+          </li>
+          <li>
+            Newlines and carriage returns are escaped, values are capped, and
+            secret-looking keys or token patterns are redacted.
+          </li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>End-to-End Proof</h2>
+        <p>
+          I demonstrated the feature by running the correlated rename test with
+          a real app-data directory override, then reading the written JSONL
+          file with <code>jq</code>. The final artifact was written under:
+        </p>
+        <pre><code>/tmp/vimeflow-trace-demo-final-wITjW9/vimeflow/logs/trace.jsonl</code></pre>
+        <p>The correlated records for <code>vf_corr_router</code> were:</p>
+        <pre><code>{"layer":"frontend","event":"user.interaction","correlationId":"vf_corr_router","sessionId":"pty-trace","agentType":"codex","status":null,"attributes":{"interaction":"pane.rename","titleLength":"10"}}
+{"layer":"ipc","event":"ipc.request","correlationId":"vf_corr_router","sessionId":"pty-trace","agentType":null,"status":null,"attributes":{"method":"rename_agent_session"}}
+{"layer":"backend","event":"backend.work","correlationId":"vf_corr_router","sessionId":"pty-trace","agentType":"codex","status":"ok","attributes":{"operation":"rename_agent_session.write_pty","ptyId":"pty-trace"}}
+{"layer":"ipc","event":"ipc.result","correlationId":"vf_corr_router","sessionId":"pty-trace","agentType":null,"status":"ok","attributes":{"method":"rename_agent_session"}}
+{"layer":"agent","event":"agent.event","correlationId":"vf_corr_router","sessionId":"pty-trace","agentType":"codex","status":null,"attributes":{"agentEvent":"agent-session-title","source":"user-renamed","titleLength":"11"}}</code></pre>
+      </section>
+
+      <section>
+        <h2>Verification</h2>
+        <p>
+          The implementation was verified through the required frontend and
+          backend commands, plus focused tests covering append behavior,
+          rotation, retention, Linux and macOS path resolution, redaction,
+          disabled-mode behavior, and correlation propagation.
+        </p>
+        <pre><code>npm run build
+npm run test
+npm run lint
+npm run type-check
+npm run format:check
+cargo test --manifest-path crates/backend/Cargo.toml
+codex review --base main &lt; /dev/null</code></pre>
+        <div class="callout">
+          Final Codex review reported no discrete regression or security issue
+          meeting the repository's reporting threshold. The worktree was clean
+          after final verification.
+        </div>
+      </section>
+
+      <section>
+        <h2>Commit Trail</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Commit</th>
+              <th>Purpose</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>61e214b6</code></td>
+              <td>Committed the design plan before implementation.</td>
+            </tr>
+            <tr>
+              <td><code>f70469cb</code></td>
+              <td>Added the initial correlated local tracing layer.</td>
+            </tr>
+            <tr>
+              <td><code>62d292df</code></td>
+              <td>Ensured IPC result records are emitted on error paths.</td>
+            </tr>
+            <tr>
+              <td><code>d67b7e60</code></td>
+              <td>
+                Hardened renderer metadata boundaries and trace context reset
+                behavior.
+              </td>
+            </tr>
+            <tr>
+              <td><code>27c53437</code></td>
+              <td>Reduced trace hot-path overhead when tracing is disabled.</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section>
+        <h2>Next Expansion Points</h2>
+        <p>
+          The vertical slice is deliberately narrow. The next useful expansions
+          would be to add more renderer interactions, provide a small settings
+          surface for enabling tracing, and add a lightweight trace viewer or
+          export command. The core guardrails should remain unchanged: opt-in,
+          local-only, allowlisted attributes, no prompt or response bodies, and
+          no file contents persisted by default.
+        </p>
+        <p class="muted">
+          Related design plan:
+          <a href="./2026-06-08-tracing-observability-design.md"
+            >2026-06-08-tracing-observability-design.md</a
+          >.
+        </p>
+      </section>
+    </main>
+  </body>
+</html>
