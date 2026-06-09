@@ -504,7 +504,11 @@ impl TraceService {
             .state
             .lock()
             .map_err(|err| format!("trace state lock poisoned: {err}"))?;
-        state.session_contexts.remove(session_id);
+        if let Some(current) = state.session_contexts.get(session_id) {
+            if current.context.correlation_id == record.correlation_id {
+                state.session_contexts.remove(session_id);
+            }
+        }
 
         Ok(())
     }

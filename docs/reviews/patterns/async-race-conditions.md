@@ -3,7 +3,7 @@ id: async-race-conditions
 category: react-patterns
 created: 2026-04-09
 last_updated: 2026-06-08
-ref_count: 21
+ref_count: 22
 ---
 
 # Async Race Conditions
@@ -641,3 +641,12 @@ prevent showing previous data.
 - **Finding:** `useSessionRestore` checked `cancelled` after loading sessions but not immediately before `restoreBrowserPanes`. If cleanup ran after reconstruction, the stale restore still waited through bounded browser-pane creation timeouts before releasing hydration.
 - **Fix:** Add a cancellation guard immediately before `restoreBrowserPanes(restored)` so a cancelled restore reaches `finally` and releases hydration without waiting on per-pane timeouts.
 - **Commit:** same commit as this entry
+
+### 63. Double-lock cleanup in `record_agent_event` can erase a newer session trace context
+
+- **Source:** github-claude | PR #405 round 2 | 2026-06-09
+- **Severity:** MEDIUM
+- **File:** `crates/backend/src/trace/mod.rs` L455-510
+- **Finding:** `record_agent_event` clones the stored `TraceContext` from `session_contexts`, releases the mutex, appends the trace record to disk, then reacquires the mutex and unconditionally removes `session_contexts[session_id]`. If another pane rename on the same PTY stores a new correlation during the append window, the first event's cleanup deletes the newer context, breaking trace correlation for the next title event on that PTY.
+- **Fix:** Capture the consumed context's `correlation_id` in the `TraceRecord`. After disk append, reacquire the lock and only remove the session context if the currently stored correlation id still matches `record.correlation_id`. If a newer context was stored during the I/O window, it is preserved.
+- **Commit:** _(PR #405 upsource-review cycle 2 fix commit)_
