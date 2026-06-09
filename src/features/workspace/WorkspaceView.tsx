@@ -40,7 +40,7 @@ import {
   RAIL_WIDTH_PX,
 } from '../agent-status/components/AgentStatusRail'
 import { cacheHitRate } from '../agent-status/utils/cacheRate'
-import type { CurrentUsageState } from '../agent-status/types'
+import type { CurrentUsageState, RateLimitsState } from '../agent-status/types'
 import { UnsavedChangesDialog } from '../editor/components/UnsavedChangesDialog'
 import { InfoBanner } from './components/InfoBanner'
 import { CommandPalette } from '../command-palette/CommandPalette'
@@ -102,6 +102,23 @@ const cacheHitPercentage = (
   const rate = cacheHitRate(usage)
 
   return rate === null ? null : Math.round(rate * 100)
+}
+
+const rateLimitPercentage = (
+  limit: RateLimitsState['fiveHour'] | null | undefined
+): number | null => {
+  if (!limit || !Number.isFinite(limit.usedPercentage)) {
+    return null
+  }
+
+  if (
+    limit.usedPercentage === 0 &&
+    (!Number.isFinite(limit.resetsAt) || limit.resetsAt <= 0)
+  ) {
+    return null
+  }
+
+  return Math.round(limit.usedPercentage)
 }
 
 const formatStatusDuration = (durationMs: number): string | undefined => {
@@ -1015,13 +1032,13 @@ export const WorkspaceView = (): ReactElement => {
     'No session'
   const sidebarCardTurns = statusBarSession?.turns ?? null
 
-  const sidebarCardFiveHourPct = agentStatus.rateLimits
-    ? Math.round(agentStatus.rateLimits.fiveHour.usedPercentage)
-    : null
+  const sidebarCardFiveHourPct = rateLimitPercentage(
+    agentStatus.rateLimits?.fiveHour
+  )
 
-  const sidebarCardWeekPct = agentStatus.rateLimits?.sevenDay
-    ? Math.round(agentStatus.rateLimits.sevenDay.usedPercentage)
-    : null
+  const sidebarCardWeekPct = rateLimitPercentage(
+    agentStatus.rateLimits?.sevenDay
+  )
 
   // Open a file directly (no unsaved-changes guard). Errors were previously
   // swallowed via `void editorBuffer.openFile(...)`, leaving the user with

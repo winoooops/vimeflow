@@ -1,6 +1,7 @@
 //! Codex session locator.
 
 use super::types::BindContext;
+use crate::agent::types::{RateLimitInfo, RateLimits};
 use chrono::{Datelike, Duration as ChronoDuration, Local};
 use rusqlite::{named_params, Connection, OpenFlags};
 use serde_json::Value;
@@ -652,6 +653,116 @@ pub struct CompositeLocator {
     /// SQLite filter to exclude stale rollout rows from earlier
     /// processes.
     pty_start: SystemTime,
+    /// Lazy cache for the discovered logs database path.
+    /// `discover_db` enumerates and open-checks sqlite files in
+    /// `codex_home` on every call; the logs DB location is stable
+    /// for a locator/session lifetime, so caching avoids repeated
+    /// filesystem I/O on the status-poll hot path (PR #408 review
+    /// finding — logs database discovery runs on every status decode).
+    /// Only successful discoveries are cached; misses are retried on
+    /// subsequent calls so that early polling before the DB exists
+    /// does not permanently freeze account rate-limit reporting.
+    logs_db_cache: std::sync::OnceLock<PathBuf>,
+}
+
+impl CompositeLocator {
+    pub(super) fn latest_account_rate_limits(&self, thread_id: &str) -> Option<RateLimits> {
+        if thread_id.is_empty() {
+            return None;
+        }
+
+        let logs_db = match self.logs_db_cache.get() {
+            Some(path) => path,
+            None => {
+                let path = discover_db(&self.codex_home, "logs").ok().flatten()?;
+                let _ = self.logs_db_cache.set(path);
+                self.logs_db_cache.get().expect("just set")
+            }
+        };
+        let conn = Connection::open_with_flags(logs_db, OpenFlags::SQLITE_OPEN_READ_ONLY).ok()?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT feedback_log_body
+                 FROM logs
+                 WHERE thread_id = :thread_id
+                   AND feedback_log_body IS NOT NULL
+                   AND feedback_log_body LIKE '%x-codex-primary-used-percent%'
+                 ORDER BY ts DESC, ts_nanos DESC
+                 LIMIT 1",
+            )
+            .ok()?;
+        let body: String = stmt
+            .query_row(named_params! { ":thread_id": thread_id }, |row| row.get(0))
+            .ok()?;
+
+        account_rate_limits_from_log_body(&body)
+    }
+}
+
+fn account_rate_limits_from_log_body(body: &str) -> Option<RateLimits> {
+    let five_hour = RateLimitInfo {
+        used_percentage: header_f64(body, "x-codex-primary-used-percent")?,
+        resets_at: header_u64(body, "x-codex-primary-reset-at").unwrap_or(0),
+    };
+
+    let seven_day = match (
+        header_f64(body, "x-codex-secondary-used-percent"),
+        header_u64(body, "x-codex-secondary-reset-at"),
+    ) {
+        (Some(used_percentage), Some(resets_at)) => Some(RateLimitInfo {
+            used_percentage,
+            resets_at,
+        }),
+        (Some(used_percentage), None) => Some(RateLimitInfo {
+            used_percentage,
+            resets_at: 0,
+        }),
+        _ => None,
+    };
+
+    Some(RateLimits {
+        five_hour,
+        seven_day,
+    })
+}
+
+fn header_f64(body: &str, name: &str) -> Option<f64> {
+    header_value(body, name)?.parse::<f64>().ok()
+}
+
+fn header_u64(body: &str, name: &str) -> Option<u64> {
+    header_value(body, name)?.parse::<u64>().ok()
+}
+
+fn header_value<'a>(body: &'a str, name: &str) -> Option<&'a str> {
+    let key = format!("\"{}\"", name);
+    let mut rest = body;
+
+    loop {
+        let pos = rest.find(&key)?;
+        rest = &rest[pos + key.len()..];
+
+        // Skip whitespace after key
+        rest = rest.trim_start();
+
+        // Expect colon
+        if !rest.starts_with(':') {
+            continue;
+        }
+        rest = &rest[1..];
+
+        // Skip whitespace after colon
+        rest = rest.trim_start();
+
+        // Expect opening quote for value
+        if !rest.starts_with('"') {
+            continue;
+        }
+        rest = &rest[1..];
+
+        let end = rest.find('"')?;
+        return Some(&rest[..end]);
+    }
 }
 
 // ----- Step B' retry budget (moved here from `codex/mod.rs`) -----
@@ -700,6 +811,7 @@ impl CompositeLocator {
             codex_home,
             pid,
             pty_start,
+            logs_db_cache: std::sync::OnceLock::new(),
         }
     }
 }
@@ -915,6 +1027,109 @@ mod discovery_tests {
             .expect("discover logs")
             .expect("logs db");
         assert!(picked.ends_with("logs_1.sqlite"));
+    }
+}
+
+#[cfg(test)]
+mod rate_limit_header_tests {
+    use super::*;
+
+    const LOG_BODY: &str = r#"Request completed method=POST headers={"x-codex-primary-used-percent": "10", "x-codex-secondary-used-percent": "50", "x-codex-primary-reset-at": "1781020167", "x-codex-secondary-reset-at": "1781144090", "x-codex-bengalfox-primary-used-percent": "0", "x-codex-bengalfox-secondary-used-percent": "0"}"#;
+
+    #[test]
+    fn parses_account_rate_limits_from_codex_response_headers() {
+        let rate_limits =
+            account_rate_limits_from_log_body(LOG_BODY).expect("account headers parse");
+
+        assert_eq!(rate_limits.five_hour.used_percentage, 10.0);
+        assert_eq!(rate_limits.five_hour.resets_at, 1781020167);
+
+        let seven_day = rate_limits.seven_day.expect("weekly limit");
+        assert_eq!(seven_day.used_percentage, 50.0);
+        assert_eq!(seven_day.resets_at, 1781144090);
+    }
+
+    #[test]
+    fn returns_none_when_account_headers_are_absent() {
+        let body = r#"headers={"x-codex-bengalfox-primary-used-percent": "0"}"#;
+
+        assert!(account_rate_limits_from_log_body(body).is_none());
+    }
+
+    #[test]
+    fn latest_account_rate_limits_reads_newest_thread_log_row() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let logs_path = dir.path().join("logs_1.sqlite");
+        let conn = Connection::open(&logs_path).expect("open logs db");
+        conn.execute_batch(
+            "CREATE TABLE logs (
+                id INTEGER PRIMARY KEY,
+                ts INTEGER NOT NULL,
+                ts_nanos INTEGER NOT NULL,
+                thread_id TEXT,
+                feedback_log_body TEXT
+            );",
+        )
+        .expect("logs schema");
+        conn.execute(
+            "INSERT INTO logs (ts, ts_nanos, thread_id, feedback_log_body)
+             VALUES (1, 0, 'thread-A', ?1)",
+            rusqlite::params![r#"headers={"x-codex-primary-used-percent": "1", "x-codex-secondary-used-percent": "2", "x-codex-primary-reset-at": "100", "x-codex-secondary-reset-at": "200"}"#],
+        )
+        .expect("insert old row");
+        conn.execute(
+            "INSERT INTO logs (ts, ts_nanos, thread_id, feedback_log_body)
+             VALUES (2, 0, 'thread-B', ?1)",
+            rusqlite::params![r#"headers={"x-codex-primary-used-percent": "90", "x-codex-secondary-used-percent": "91", "x-codex-primary-reset-at": "900", "x-codex-secondary-reset-at": "910"}"#],
+        )
+        .expect("insert other thread row");
+        conn.execute(
+            "INSERT INTO logs (ts, ts_nanos, thread_id, feedback_log_body)
+             VALUES (3, 0, 'thread-A', ?1)",
+            rusqlite::params![LOG_BODY],
+        )
+        .expect("insert newest row");
+
+        let locator =
+            CompositeLocator::new(dir.path().to_path_buf(), 123, SystemTime::UNIX_EPOCH, None);
+        let rate_limits = locator
+            .latest_account_rate_limits("thread-A")
+            .expect("latest headers should parse");
+
+        assert_eq!(rate_limits.five_hour.used_percentage, 10.0);
+        assert_eq!(
+            rate_limits.seven_day.expect("weekly limit").used_percentage,
+            50.0
+        );
+    }
+
+    #[test]
+    fn parses_varied_json_whitespace() {
+        // compact — no spaces
+        let body_compact = r#"headers={"x-codex-primary-used-percent":"75","x-codex-primary-reset-at":"1781020167"}"#;
+        let rate_limits =
+            account_rate_limits_from_log_body(body_compact).expect("compact headers parse");
+        assert_eq!(rate_limits.five_hour.used_percentage, 75.0);
+        assert_eq!(rate_limits.five_hour.resets_at, 1781020167);
+
+        // extra spaces around colon
+        let body_spaced = r#"headers={"x-codex-primary-used-percent" : "60", "x-codex-primary-reset-at" : "1000"}"#;
+        let rate_limits =
+            account_rate_limits_from_log_body(body_spaced).expect("spaced headers parse");
+        assert_eq!(rate_limits.five_hour.used_percentage, 60.0);
+        assert_eq!(rate_limits.five_hour.resets_at, 1000);
+    }
+
+    #[test]
+    fn preserves_usage_when_reset_header_is_absent() {
+        let body = r#"headers={"x-codex-primary-used-percent": "80"}"#;
+
+        let rate_limits =
+            account_rate_limits_from_log_body(body).expect("usage without reset parses");
+
+        assert_eq!(rate_limits.five_hour.used_percentage, 80.0);
+        assert_eq!(rate_limits.five_hour.resets_at, 0);
+        assert!(rate_limits.seven_day.is_none());
     }
 }
 

@@ -1,0 +1,33 @@
+---
+id: hot-path-caching
+category: backend
+created: 2026-06-09
+last_updated: 2026-06-09
+ref_count: 0
+---
+
+# Hot-Path Caching
+
+## Summary
+
+Status-polling and decode hot paths must not repeat expensive I/O or
+computation whose inputs are stable for the session lifetime. A
+`read_dir` + per-file SQLite schema probe, a network discovery call, or a
+heavy derivation that runs on every tick accumulates avoidable latency
+and degrades the user-visible refresh rate. When the looked-up value is
+stable (a database path, a configuration root, a capability flag), cache
+it after the first successful resolution and reuse it for the remainder
+of the session. Cache misses must remain retryable so that early
+polling before a resource is ready does not permanently freeze the
+feature.
+
+## Findings
+
+### 1. `discover_db` directory scan runs on every `decode()` call
+
+- **Source:** github-claude | PR #408 round 2 | 2026-06-09
+- **Severity:** MEDIUM
+- **File:** `crates/backend/src/agent/adapter/codex/locator.rs`
+- **Finding:** `latest_account_rate_limits` called `discover_db(&self.codex_home, "logs")` on every invocation. `discover_db` does `std::fs::read_dir(codex_home)`, then opens a read-only SQLite connection for each `.sqlite` file and queries `sqlite_master` to check if the target table exists. Over a busy session this accumulates repeated directory reads and SQLite open/close cycles for every decoded status event.
+- **Fix:** Added a `logs_db_cache: std::sync::OnceLock<PathBuf>` field to `CompositeLocator`. `latest_account_rate_limits` checks the cache first; on a miss it runs `discover_db`, stores the result only on success, and retries on subsequent calls if the earlier discovery returned `None`. This eliminates repeated filesystem I/O without changing per-call read-query behavior.
+- **Commit:** same commit as this entry

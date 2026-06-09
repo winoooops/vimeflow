@@ -160,6 +160,29 @@ vi.mock('../agent-status/components/AgentStatusPanel', () => ({
   PANEL_WIDTH_PX: 280,
 }))
 
+const makeAgentStatus = (
+  sessionId: string | null,
+  overrides: Partial<AgentStatus> = {}
+): AgentStatus => ({
+  isActive: sessionId !== null,
+  agentExited: false,
+  agentType: sessionId === null ? null : 'claude-code',
+  modelId: null,
+  modelDisplayName: null,
+  version: null,
+  sessionId,
+  agentSessionId: null,
+  cwd: null,
+  contextWindow: null,
+  cost: null,
+  rateLimits: null,
+  numTurns: 0,
+  toolCalls: { total: 0, byType: {}, active: null },
+  recentToolCalls: [],
+  testRun: null,
+  ...overrides,
+})
+
 // Mock terminal service to return initial session data synchronously
 vi.mock('../terminal/services/terminalService', () => ({
   createTerminalService: vi.fn(() => workspaceTerminalMock.service),
@@ -1647,6 +1670,86 @@ describe('WorkspaceView', () => {
       isActive: true,
       agentType: 'claude-code',
     })
+  })
+
+  test('forwards real rate-limit usage to the sidebar agent card', async () => {
+    vi.mocked(useAgentStatus).mockImplementation(
+      (sessionId: string | null): AgentStatus =>
+        makeAgentStatus(sessionId, {
+          modelDisplayName: sessionId === null ? null : 'Claude Sonnet',
+          rateLimits:
+            sessionId === null
+              ? null
+              : {
+                  fiveHour: {
+                    usedPercentage: 12.4,
+                    resetsAt: 1_776_000_000_000,
+                  },
+                  sevenDay: {
+                    usedPercentage: 34.4,
+                    resetsAt: 1_776_086_400_000,
+                  },
+                },
+        })
+    )
+
+    render(<WorkspaceView />)
+
+    await screen.findByRole('button', { name: 'session 1' })
+
+    expect(await screen.findByText('5-hour Session')).toBeInTheDocument()
+    expect(screen.getByText('12%')).toBeInTheDocument()
+    expect(screen.getByText('Weekly Usage')).toBeInTheDocument()
+    expect(screen.getByText('34%')).toBeInTheDocument()
+  })
+
+  test('does not render empty rate-limit placeholders as sidebar usage', async () => {
+    vi.mocked(useAgentStatus).mockImplementation(
+      (sessionId: string | null): AgentStatus =>
+        makeAgentStatus(sessionId, {
+          modelDisplayName: sessionId === null ? null : 'Claude Sonnet',
+          rateLimits:
+            sessionId === null
+              ? null
+              : {
+                  fiveHour: { usedPercentage: 0, resetsAt: 0 },
+                  sevenDay: { usedPercentage: 0, resetsAt: 0 },
+                },
+        })
+    )
+
+    render(<WorkspaceView />)
+
+    await screen.findByRole('button', { name: 'session 1' })
+    await screen.findByText('Claude Sonnet')
+
+    expect(screen.queryByText('5-hour Session')).not.toBeInTheDocument()
+    expect(screen.queryByText('Weekly Usage')).not.toBeInTheDocument()
+  })
+
+  test('preserves real zero rate-limit usage when reset time is known', async () => {
+    vi.mocked(useAgentStatus).mockImplementation(
+      (sessionId: string | null): AgentStatus =>
+        makeAgentStatus(sessionId, {
+          modelDisplayName: sessionId === null ? null : 'Claude Sonnet',
+          rateLimits:
+            sessionId === null
+              ? null
+              : {
+                  fiveHour: {
+                    usedPercentage: 0,
+                    resetsAt: 1_776_000_000_000,
+                  },
+                },
+        })
+    )
+
+    render(<WorkspaceView />)
+
+    await screen.findByRole('button', { name: 'session 1' })
+
+    expect(await screen.findByText('5-hour Session')).toBeInTheDocument()
+    expect(screen.getByText('0%')).toBeInTheDocument()
   })
 
   test('mirrors agentStatus.cwd into the active pane.cwd', async () => {
