@@ -653,6 +653,16 @@ pub struct CompositeLocator {
     /// SQLite filter to exclude stale rollout rows from earlier
     /// processes.
     pty_start: SystemTime,
+    /// Lazy cache for the discovered logs database path.
+    /// `discover_db` enumerates and open-checks sqlite files in
+    /// `codex_home` on every call; the logs DB location is stable
+    /// for a locator/session lifetime, so caching avoids repeated
+    /// filesystem I/O on the status-poll hot path (PR #408 review
+    /// finding — logs database discovery runs on every status decode).
+    /// Only successful discoveries are cached; misses are retried on
+    /// subsequent calls so that early polling before the DB exists
+    /// does not permanently freeze account rate-limit reporting.
+    logs_db_cache: std::sync::OnceLock<PathBuf>,
 }
 
 impl CompositeLocator {
@@ -661,8 +671,15 @@ impl CompositeLocator {
             return None;
         }
 
-        let logs_db = discover_db(&self.codex_home, "logs").ok().flatten()?;
-        let conn = Connection::open_with_flags(&logs_db, OpenFlags::SQLITE_OPEN_READ_ONLY).ok()?;
+        let logs_db = match self.logs_db_cache.get() {
+            Some(path) => path,
+            None => {
+                let path = discover_db(&self.codex_home, "logs").ok().flatten()?;
+                let _ = self.logs_db_cache.set(path);
+                self.logs_db_cache.get().expect("just set")
+            }
+        };
+        let conn = Connection::open_with_flags(logs_db, OpenFlags::SQLITE_OPEN_READ_ONLY).ok()?;
         let mut stmt = conn
             .prepare(
                 "SELECT feedback_log_body
@@ -794,6 +811,7 @@ impl CompositeLocator {
             codex_home,
             pid,
             pty_start,
+            logs_db_cache: std::sync::OnceLock::new(),
         }
     }
 }
