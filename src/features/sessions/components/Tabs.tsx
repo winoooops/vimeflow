@@ -13,6 +13,7 @@ export interface TabsProps {
   onSelect: (sessionId: string) => void
   onClose: (sessionId: string) => SessionCloseResult
   onNew: () => void
+  reserveWindowControls?: boolean
 }
 
 export const Tabs = ({
@@ -21,6 +22,7 @@ export const Tabs = ({
   onSelect,
   onClose,
   onNew,
+  reserveWindowControls = false,
 }: TabsProps): ReactElement => {
   // Single source of truth for "what's visible in the strip" — see
   // `getVisibleSessions` for the predicate. Both this component and
@@ -84,7 +86,7 @@ export const Tabs = ({
   return (
     <div
       data-testid="session-tabs"
-      className="flex h-[38px] shrink-0 items-end gap-0.5 border-b border-outline-variant/25 bg-surface-container-lowest px-2"
+      className={`flex h-[38px] shrink-0 items-end gap-0.5 border-b border-outline-variant/25 bg-surface-container-lowest px-2${reserveWindowControls ? ' vf-app-drag-region' : ''}`}
     >
       {/* WAI-ARIA 1.2 §3.27 requires `tablist` to own only `tab` children.
           Keeping the `+` button and the spacer outside the tablist boundary. */}
@@ -103,7 +105,7 @@ export const Tabs = ({
         // currently active — pre-announcing #177's binding before it
         // lands would mislead AT users into trying a non-functional
         // shortcut.
-        className="flex items-end gap-0.5"
+        className="vf-app-no-drag flex items-end gap-0.5"
       >
         {open.map((session, idx) => {
           const isActive = session.id === activeSessionId
@@ -130,7 +132,7 @@ export const Tabs = ({
         onClick={onNew}
         aria-label="New session"
         title="New session"
-        className="mb-px ml-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-on-surface-variant transition-colors hover:bg-primary/10 hover:text-primary"
+        className="vf-app-no-drag mb-px ml-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-on-surface-variant transition-colors hover:bg-primary/10 hover:text-primary"
       >
         <span className="material-symbols-outlined text-[15px]">add</span>
       </button>

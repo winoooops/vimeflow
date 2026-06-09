@@ -15,6 +15,25 @@ describe('IconRail', () => {
     expect(screen.getByRole('img', { name: 'Account' })).toHaveTextContent('M')
   })
 
+  test('can reserve the macOS traffic-light area', () => {
+    render(<IconRail settingsIssueNumber={1} reserveWindowControls />)
+
+    const rail = screen.getByTestId('icon-rail')
+    expect(rail).toHaveClass('vf-app-drag-region')
+    expect(rail).toHaveClass('w-[68px]')
+    expect(rail).toHaveStyle({
+      paddingTop: '52px',
+    })
+  })
+
+  test('does NOT apply drag region on non-macOS platforms', () => {
+    render(<IconRail settingsIssueNumber={1} />)
+
+    expect(screen.getByTestId('icon-rail')).not.toHaveClass(
+      'vf-app-drag-region'
+    )
+  })
+
   test('truncates a multi-char initial to the first grapheme', () => {
     render(<IconRail settingsIssueNumber={1} identity={{ initial: 'AB' }} />)
     expect(screen.getByRole('img', { name: 'Account' })).toHaveTextContent('A')

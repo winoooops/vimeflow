@@ -209,6 +209,8 @@ export const WorkspaceView = (): ReactElement => {
     return detected.startsWith('mac') ? 'meta' : 'ctrl'
   }, [])
 
+  const reserveWindowControls = preferModifier === 'meta'
+
   const { message: infoMessage, notifyInfo, dismiss } = useNotifyInfo()
   const { activeTab, setActiveTab } = useSidebarTab()
   const paneRenameRequestIdRef = useRef(0)
@@ -1463,7 +1465,7 @@ export const WorkspaceView = (): ReactElement => {
         {
           // `--workspace-sidebar-width` is owned by previewSidebarWidth so
           // React rerenders cannot overwrite an in-progress drag preview.
-          gridTemplateColumns: `48px var(--workspace-sidebar-width, ${SIDEBAR_INITIAL}px) 1fr auto`,
+          gridTemplateColumns: `${reserveWindowControls ? 68 : 48}px var(--workspace-sidebar-width, ${SIDEBAR_INITIAL}px) 1fr auto`,
         } as CSSProperties
       }
     >
@@ -1472,6 +1474,7 @@ export const WorkspaceView = (): ReactElement => {
         onCommand={commandPalette.open}
         items={mockNavigationItems}
         settingsItem={mockSettingsItem}
+        reserveWindowControls={reserveWindowControls}
       />
 
       {/* Sidebar - resizable */}
@@ -1539,6 +1542,7 @@ export const WorkspaceView = (): ReactElement => {
           onSelect={handleSetActiveSessionId}
           onClose={handleRemoveSession}
           onNew={handleCreateSession}
+          reserveWindowControls={reserveWindowControls}
         />
 
         <div

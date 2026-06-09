@@ -14,6 +14,8 @@ export interface IconRailProps {
   onCommand?: () => void
   onSettings?: () => void
   identity?: IconRailIdentity
+  /** Reserve the macOS hidden-titlebar traffic-light area. */
+  reserveWindowControls?: boolean
   /**
    * @deprecated Ignored by the new rail body — the rail no longer
    * iterates this array. Kept for one cycle so existing callers
@@ -41,6 +43,11 @@ interface RailBtnProps {
 }
 
 type RailIconName = 'search' | 'settings'
+
+// Vertical padding that clears the macOS traffic-light buttons.
+// Matches trafficLightPosition.y (13) + button diameter (~28) + gap (~11)
+// from electron/main.ts.
+const MACOS_TRAFFIC_LIGHT_RESERVE_PX = 52
 
 const RailIcon = ({ icon }: { icon: RailIconName }): ReactElement => (
   <span
@@ -78,6 +85,7 @@ const RailBtn = ({
             ? 'cursor-not-allowed text-on-surface-muted/60'
             : 'cursor-pointer text-on-surface-muted hover:bg-primary/[0.06] hover:text-primary'
         }
+        vf-app-no-drag
       `}
     >
       <RailIcon icon={icon} />
@@ -90,6 +98,7 @@ export const IconRail = ({
   onCommand = undefined,
   onSettings = undefined,
   identity = undefined,
+  reserveWindowControls = false,
 }: IconRailProps): ReactElement => {
   const initial = Array.from(identity?.initial ?? 'w')[0] ?? 'w'
   const candidateAccountLabel = identity?.ariaLabel ?? 'Account'
@@ -106,17 +115,21 @@ export const IconRail = ({
   return (
     <nav
       data-testid="icon-rail"
-      className="
-        relative z-[5] flex h-full w-12 flex-col items-center
+      className={`
+        ${reserveWindowControls ? 'vf-app-drag-region' : ''} relative z-[5] flex h-full ${reserveWindowControls ? 'w-[68px]' : 'w-12'} flex-col items-center
         bg-surface-container-lowest border-r border-outline-variant/25
-        py-2.5
-      "
+      `}
+      style={{
+        paddingTop: reserveWindowControls ? MACOS_TRAFFIC_LIGHT_RESERVE_PX : 10,
+        paddingBottom: 10,
+      }}
     >
       <Tooltip content={accountLabel} placement="right">
         <div
           role="img"
           aria-label={accountLabel}
           className="
+            vf-app-no-drag
             mb-3.5 h-[30px] w-[30px] grid place-items-center
             rounded-full border border-primary/35
             bg-[linear-gradient(135deg,theme(colors.primary-deep),theme(colors.surface-container-low))]

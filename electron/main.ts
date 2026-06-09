@@ -69,6 +69,17 @@ protocol.registerSchemesAsPrivileged([
 const BINARY_NAME =
   process.platform === 'win32' ? 'vimeflow-backend.exe' : 'vimeflow-backend'
 
+const macosWindowChromeOptions =
+  process.platform === 'darwin'
+    ? {
+        // Matches Tailwind bg-background token — update if
+        // tailwind.config.js colors.background changes.
+        backgroundColor: '#121221',
+        titleBarStyle: 'hiddenInset' as const,
+        trafficLightPosition: { x: 16, y: 13 },
+      }
+    : {}
+
 const resolveSidecarBin = (): string => {
   if (app.isPackaged) {
     return path.join(process.resourcesPath, 'bin', BINARY_NAME)
@@ -274,6 +285,7 @@ const createWindow = (): void => {
     minHeight: 600,
     title: 'Vimeflow',
     resizable: true,
+    ...macosWindowChromeOptions,
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
