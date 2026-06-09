@@ -73,4 +73,4 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Keyboard Shortcut Guards](patterns/keyboard-shortcut-guards.md)     | keyboard-shortcuts | 19       | 1    | 2026-06-06   |
 | [Verify Render Target](patterns/verify-render-target.md)             | code-quality       | 2        | 0    | 2026-05-24   |
 | [Status Indicator Display](patterns/status-indicator-display.md)     | code-quality       | 3        | 0    | 2026-05-26   |
-| [Parser Resilience](patterns/parser-resilience.md)                   | code-quality       | 5        | 4    | 2026-05-31   |
+| [Parser Resilience](patterns/parser-resilience.md)                   | code-quality       | 7        | 5    | 2026-06-09   |

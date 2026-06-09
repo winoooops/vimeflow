@@ -685,7 +685,7 @@ impl CompositeLocator {
 fn account_rate_limits_from_log_body(body: &str) -> Option<RateLimits> {
     let five_hour = RateLimitInfo {
         used_percentage: header_f64(body, "x-codex-primary-used-percent")?,
-        resets_at: header_u64(body, "x-codex-primary-reset-at")?,
+        resets_at: header_u64(body, "x-codex-primary-reset-at").unwrap_or(0),
     };
 
     let seven_day = match (
@@ -695,6 +695,10 @@ fn account_rate_limits_from_log_body(body: &str) -> Option<RateLimits> {
         (Some(used_percentage), Some(resets_at)) => Some(RateLimitInfo {
             used_percentage,
             resets_at,
+        }),
+        (Some(used_percentage), None) => Some(RateLimitInfo {
+            used_percentage,
+            resets_at: 0,
         }),
         _ => None,
     };
@@ -714,11 +718,34 @@ fn header_u64(body: &str, name: &str) -> Option<u64> {
 }
 
 fn header_value<'a>(body: &'a str, name: &str) -> Option<&'a str> {
-    let needle = format!("\"{}\": \"", name);
-    let start = body.find(&needle)? + needle.len();
-    let rest = &body[start..];
-    let end = rest.find('"')?;
-    Some(&rest[..end])
+    let key = format!("\"{}\"", name);
+    let mut rest = body;
+
+    loop {
+        let pos = rest.find(&key)?;
+        rest = &rest[pos + key.len()..];
+
+        // Skip whitespace after key
+        rest = rest.trim_start();
+
+        // Expect colon
+        if !rest.starts_with(':') {
+            continue;
+        }
+        rest = &rest[1..];
+
+        // Skip whitespace after colon
+        rest = rest.trim_start();
+
+        // Expect opening quote for value
+        if !rest.starts_with('"') {
+            continue;
+        }
+        rest = &rest[1..];
+
+        let end = rest.find('"')?;
+        return Some(&rest[..end]);
+    }
 }
 
 // ----- Step B' retry budget (moved here from `codex/mod.rs`) -----
@@ -1056,6 +1083,35 @@ mod rate_limit_header_tests {
             rate_limits.seven_day.expect("weekly limit").used_percentage,
             50.0
         );
+    }
+
+    #[test]
+    fn parses_varied_json_whitespace() {
+        // compact — no spaces
+        let body_compact = r#"headers={"x-codex-primary-used-percent":"75","x-codex-primary-reset-at":"1781020167"}"#;
+        let rate_limits =
+            account_rate_limits_from_log_body(body_compact).expect("compact headers parse");
+        assert_eq!(rate_limits.five_hour.used_percentage, 75.0);
+        assert_eq!(rate_limits.five_hour.resets_at, 1781020167);
+
+        // extra spaces around colon
+        let body_spaced = r#"headers={"x-codex-primary-used-percent" : "60", "x-codex-primary-reset-at" : "1000"}"#;
+        let rate_limits =
+            account_rate_limits_from_log_body(body_spaced).expect("spaced headers parse");
+        assert_eq!(rate_limits.five_hour.used_percentage, 60.0);
+        assert_eq!(rate_limits.five_hour.resets_at, 1000);
+    }
+
+    #[test]
+    fn preserves_usage_when_reset_header_is_absent() {
+        let body = r#"headers={"x-codex-primary-used-percent": "80"}"#;
+
+        let rate_limits =
+            account_rate_limits_from_log_body(body).expect("usage without reset parses");
+
+        assert_eq!(rate_limits.five_hour.used_percentage, 80.0);
+        assert_eq!(rate_limits.five_hour.resets_at, 0);
+        assert!(rate_limits.seven_day.is_none());
     }
 }
 
