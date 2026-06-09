@@ -1,9 +1,8 @@
 // Main-side workspace-layout controller (spec §3.2). The connective tissue for
 // the single-writer durable store: it receives the renderer's shape-only DTO,
 // loads + retains the repaired store in memory for restore, brackets hydration,
-// and drives the close-flush "final shape" handshake. The assembler/writer
-// (Task 9) and restore-tab serving (Task 11) plug into the ports it defines;
-// this task ships the skeleton with a no-op writer.
+// and drives the close-flush "final shape" handshake. The assembler/writer and
+// restore-tab serving plug into the ports it defines.
 
 import {
   WORKSPACE_LAYOUT_BEGIN_HYDRATION,
@@ -201,8 +200,7 @@ export class WorkspaceLayoutController {
     return storeToShape(store)
   }
 
-  // Restore-tab serving (Task 11 consumer): the repaired tabs for a browser
-  // pane, looked up in the in-memory loaded store by (sessionId, paneId).
+  // Return repaired browser tabs from the in-memory loaded store.
   tabsForPane(sessionId: string, paneId: string): PersistedTab[] | null {
     const session = this.store?.sessions.find((s) => s.id === sessionId)
     const pane = session?.panes.find((p) => p.paneId === paneId)

@@ -102,7 +102,7 @@ export interface LoadWorkspaceForRestoreRequest {
 }
 
 // Port the single-writer assembler plugs into so the controller can drive it
-// without depending on the concrete writer (a no-op default ships in Task 6).
+// without depending on the concrete writer.
 export interface WorkspaceLayoutWriterPort {
   onShapePushed: (dto: WorkspaceShapeDto) => void
   setHydrating: (hydrating: boolean) => void
