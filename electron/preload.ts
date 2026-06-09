@@ -22,6 +22,13 @@ import {
   BROWSER_PANE_TABS_CHANGED,
   BROWSER_PANE_URL_CHANGED,
 } from './browser-pane-channels'
+import {
+  WORKSPACE_LAYOUT_BEGIN_HYDRATION,
+  WORKSPACE_LAYOUT_END_HYDRATION,
+  WORKSPACE_LAYOUT_LOAD_FOR_RESTORE,
+  WORKSPACE_LAYOUT_PUSH_SHAPE,
+  WORKSPACE_LAYOUT_REQUEST_FINAL_SHAPE,
+} from './workspace-layout-channels'
 
 const BACKEND_EVENT_MAX_LISTENERS = 64
 
@@ -170,6 +177,27 @@ contextBridge.exposeInMainWorld('vimeflow', {
 
       return (): void => {
         ipcRenderer.off(BROWSER_PANE_NAV_STATE_CHANGED, handler)
+      }
+    },
+  },
+  workspaceLayout: {
+    pushShape: (dto: unknown): Promise<unknown> =>
+      ipcRenderer.invoke(WORKSPACE_LAYOUT_PUSH_SHAPE, dto),
+    loadForRestore: (request: unknown): Promise<unknown> =>
+      ipcRenderer.invoke(WORKSPACE_LAYOUT_LOAD_FOR_RESTORE, request),
+    beginHydration: (): Promise<unknown> =>
+      ipcRenderer.invoke(WORKSPACE_LAYOUT_BEGIN_HYDRATION),
+    endHydration: (): Promise<unknown> =>
+      ipcRenderer.invoke(WORKSPACE_LAYOUT_END_HYDRATION),
+    onRequestFinalShape: (callback: () => void): (() => void) => {
+      const handler = (): void => {
+        callback()
+      }
+
+      ipcRenderer.on(WORKSPACE_LAYOUT_REQUEST_FINAL_SHAPE, handler)
+
+      return (): void => {
+        ipcRenderer.off(WORKSPACE_LAYOUT_REQUEST_FINAL_SHAPE, handler)
       }
     },
   },

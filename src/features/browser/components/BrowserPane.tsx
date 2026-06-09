@@ -11,7 +11,6 @@ import {
   type ReactElement,
 } from 'react'
 import type { Pane, Session } from '../../sessions/types'
-import { isShellPane } from '../../sessions/utils/paneKind'
 import { isMacPlatform } from '../../../lib/formatShortcut'
 import {
   activateBrowserPaneTab,
@@ -72,10 +71,7 @@ const normalizeUrl = (value: string): string => {
   return `https://${trimmed}`
 }
 
-const browserSessionIdForSession = (session: Session): string =>
-  session.browserSessionId ??
-  session.panes.find(isShellPane)?.ptyId ??
-  session.id
+const browserSessionIdForSession = (session: Session): string => session.id
 
 export const BrowserPane = ({
   session,
@@ -120,7 +116,7 @@ export const BrowserPane = ({
   const receivedLiveNavRef = useRef(false)
 
   const [tabs, setTabs] = useState<BrowserPaneTab[]>([
-    { id: 'tab-0', url, title: null, active: true },
+    { id: 'tab-0', url, title: null, active: true, favicon: null },
   ])
   const browserSessionId = browserSessionIdForSession(session)
 

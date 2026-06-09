@@ -10,13 +10,17 @@ import {
   type WebContents,
 } from 'electron'
 import { randomBytes, createHash, timingSafeEqual } from 'node:crypto'
+import { lookup } from 'node:dns/promises'
 import {
   createServer,
+  request as httpRequest,
+  type ClientRequest,
   type IncomingMessage,
   type Server,
   type ServerResponse,
 } from 'node:http'
-import type { Socket } from 'node:net'
+import { request as httpsRequest } from 'node:https'
+import type { LookupFunction, Socket } from 'node:net'
 import {
   BROWSER_PANE_ACTIVATE_TAB,
   BROWSER_PANE_CDP_INFO,
@@ -39,6 +43,10 @@ import {
   commandPaletteToggleDispatcherForWindow,
   isCommandPaletteShortcutInput,
 } from './command-palette-shortcut'
+import type {
+  PersistedTab,
+  WorkspaceLayoutWriteSignals,
+} from './workspace-layout-types'
 
 // cspell:ignore cdp debuggee mediaKeySystem websocket WebContentsView
 interface BrowserPaneBounds {
@@ -57,7 +65,9 @@ interface BrowserPaneCreateRequest {
   sessionId: string
   paneId: string
   workspaceId: string
-  initialUrl: string
+  // Optional under restore: main loads each tab via navigationHistory instead.
+  initialUrl?: string
+  restore?: boolean
   shortcutContext?: BrowserPaneShortcutContext
 }
 
@@ -144,6 +154,7 @@ interface BrowserPaneTabRecord {
   id: string
   view: WebContentsView
   requestedUrl: string
+  favicon: string | null
 }
 
 interface BrowserPaneTabSnapshot {
@@ -151,6 +162,7 @@ interface BrowserPaneTabSnapshot {
   url: string
   title: string | null
   active: boolean
+  favicon: string | null
 }
 
 interface CdpAttachment {
@@ -168,6 +180,10 @@ const BROWSER_CDP_ORIGIN = 'vimeflow://agent-plugin/local'
 // Keep in sync with src/features/browser/types.ts DEFAULT_BROWSER_URL (main/renderer project boundary prevents sharing a module).
 const DEFAULT_BROWSER_URL = 'https://www.google.com/'
 const MAX_TABS_PER_PANE = 20
+const FAVICON_BYTE_CAP = 32 * 1024 // max decoded favicon bytes
+const MAX_FAVICON_URL = 64 * 1024 // max favicon data: URL length
+const MAX_FAVICON_CANDIDATES = 4
+const FAVICON_FETCH_TIMEOUT_MS = 5000
 const WS_GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11'
 
 const ALLOWED_CDP_DOMAINS = new Set([
@@ -276,7 +292,7 @@ const isCreateRequest = (value: unknown): value is BrowserPaneCreateRequest =>
   isString(value.sessionId) &&
   isString(value.paneId) &&
   isString(value.workspaceId) &&
-  isString(value.initialUrl)
+  (value.restore === true || isString(value.initialUrl))
 
 const isBounds = (value: unknown): value is BrowserPaneBounds =>
   isRecord(value) &&
@@ -609,8 +625,537 @@ const decodeFrame = (buffer: Buffer): DecodedFrame | null => {
   return { fin, opcode, masked, payload, byteLength: frameLength }
 }
 
+const faviconKey = (candidates: string[]): string =>
+  createHash('sha1').update(candidates.join('\n')).digest('hex')
+
+const isImageDataUrl = (url: string): boolean =>
+  /^data:image\/[a-z0-9.+-]+;base64,/i.test(url)
+
+interface FaviconFetchTarget {
+  url: URL
+  address: string
+  family: 4 | 6
+  private: boolean
+}
+
+// Parse an IPv6 literal (with `::` compression and/or an embedded IPv4 tail) to its 16 bytes.
+const parseIpv6 = (input: string): number[] | null => {
+  const halves = input.split('%')[0].split('::')
+  if (halves.length > 2) {
+    return null
+  }
+
+  const toGroups = (part: string): number[] | null => {
+    if (part === '') {
+      return []
+    }
+    const tokens = part.split(':')
+    const out: number[] = []
+    for (let i = 0; i < tokens.length; i += 1) {
+      const tok = tokens[i]
+      if (tok.includes('.')) {
+        const v4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(tok)
+        if (i !== tokens.length - 1 || !v4) {
+          return null
+        }
+        const q = v4.slice(1).map(Number)
+        if (q.some((n) => n > 255)) {
+          return null
+        }
+        out.push((q[0] << 8) | q[1], (q[2] << 8) | q[3])
+      } else if (/^[0-9a-f]{1,4}$/.test(tok)) {
+        out.push(Number.parseInt(tok, 16))
+      } else {
+        return null
+      }
+    }
+
+    return out
+  }
+  const head = toGroups(halves[0])
+  const tail = halves.length === 2 ? toGroups(halves[1]) : []
+  if (head === null || tail === null) {
+    return null
+  }
+  let groups: number[]
+  if (halves.length === 2) {
+    const gap = 8 - head.length - tail.length
+    if (gap < 1) {
+      return null
+    }
+    groups = [...head, ...Array.from({ length: gap }, () => 0), ...tail]
+  } else {
+    groups = head
+  }
+  if (groups.length !== 8) {
+    return null
+  }
+
+  return groups.flatMap((g) => [(g >> 8) & 0xff, g & 0xff])
+}
+
+const isPrivateIpv4 = ([a, b]: number[]): boolean => {
+  if (a === 0 || a === 127 || a === 10) {
+    return true
+  }
+  if (a === 172 && b >= 16 && b <= 31) {
+    return true
+  }
+  if (a === 192 && b === 168) {
+    return true
+  }
+
+  return a === 169 && b === 254
+}
+
+const isPrivateIpv6 = (b: number[]): boolean => {
+  if (b.every((x) => x === 0)) {
+    return true // unspecified ::
+  }
+  // IPv4-mapped (::ffff:a.b.c.d) and IPv4-compatible (::a.b.c.d, incl. ::1) — classify the embedded v4.
+  const headZero = b.slice(0, 10).every((x) => x === 0)
+  if (headZero && b[10] === 0xff && b[11] === 0xff) {
+    return isPrivateIpv4([b[12], b[13], b[14], b[15]])
+  }
+  if (headZero && b[10] === 0 && b[11] === 0) {
+    return isPrivateIpv4([b[12], b[13], b[14], b[15]])
+  }
+  if ((b[0] & 0xfe) === 0xfc) {
+    return true // ULA fc00::/7
+  }
+
+  return b[0] === 0xfe && (b[1] & 0xc0) === 0x80 // link-local fe80::/10
+}
+
+const normalizedHost = (hostname: string): string =>
+  hostname
+    .toLowerCase()
+    .replace(/^\[|\]$/g, '')
+    .replace(/\.$/, '')
+
+const addressFamily = (hostname: string): 4 | 6 | null => {
+  const h = normalizedHost(hostname)
+  if (h.includes(':')) {
+    return parseIpv6(h) === null ? null : 6
+  }
+  const m = /^(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(h)
+  if (!m) {
+    return null
+  }
+  const octets = m.slice(1).map(Number)
+  if (octets.some((n) => n > 255)) {
+    return null
+  }
+
+  return 4
+}
+
+const isIpLiteralHost = (hostname: string): boolean =>
+  addressFamily(hostname) !== null
+
+const isPrivateHost = (hostname: string): boolean => {
+  const h = normalizedHost(hostname)
+  if (h === 'localhost' || h.endsWith('.localhost')) {
+    return true
+  }
+  if (h.includes(':')) {
+    const bytes = parseIpv6(h)
+
+    return bytes !== null && isPrivateIpv6(bytes)
+  }
+  const m = /^(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(h)
+  if (!m) {
+    return false
+  }
+  const octets = m.slice(1).map(Number)
+  if (octets.some((n) => n > 255)) {
+    return false
+  }
+
+  return isPrivateIpv4(octets)
+}
+
+const literalFaviconTarget = (url: URL): FaviconFetchTarget | null => {
+  if (!isIpLiteralHost(url.hostname)) {
+    return null
+  }
+  const family = addressFamily(url.hostname)
+  if (family === null) {
+    return null
+  }
+
+  return {
+    url,
+    address: normalizedHost(url.hostname),
+    family,
+    private: isPrivateHost(url.hostname),
+  }
+}
+
+const awaitUnlessAborted = async <T>(
+  promise: Promise<T>,
+  signal: AbortSignal
+): Promise<T | null> => {
+  if (signal.aborted) {
+    return null
+  }
+
+  let removeAbortListener = (): void => undefined
+
+  const aborted = new Promise<null>((resolve) => {
+    const abort = (): void => resolve(null)
+    signal.addEventListener('abort', abort, { once: true })
+    removeAbortListener = (): void => signal.removeEventListener('abort', abort)
+  })
+
+  try {
+    return await Promise.race([promise, aborted])
+  } finally {
+    removeAbortListener()
+  }
+}
+
+const resolveHostForFaviconFetch = async (
+  url: URL,
+  signal: AbortSignal
+): Promise<FaviconFetchTarget | null> => {
+  const literal = literalFaviconTarget(url)
+  if (literal !== null) {
+    return literal
+  }
+
+  let addresses: { address: string; family: number }[]
+  try {
+    const resolved = await awaitUnlessAborted(
+      lookup(url.hostname, { all: true, verbatim: true }),
+      signal
+    )
+    if (resolved === null) {
+      return null
+    }
+    addresses = resolved
+  } catch {
+    return null
+  }
+
+  const hostIsPrivate = isPrivateHost(url.hostname)
+
+  const targets = addresses
+    .map((entry): FaviconFetchTarget | null => {
+      const family = entry.family === 4 ? 4 : entry.family === 6 ? 6 : null
+      if (family === null) {
+        return null
+      }
+
+      return {
+        url,
+        address: entry.address,
+        family,
+        private: hostIsPrivate || isPrivateHost(entry.address),
+      }
+    })
+    .filter((target): target is FaviconFetchTarget => target !== null)
+
+  if (targets.length === 0) {
+    return null
+  }
+
+  return targets.find((target) => !target.private) ?? targets[0]
+}
+
+// PNA: a private favicon target is allowed only when the page is itself private.
+const resolveFaviconFetchTarget = async (
+  pageUrl: string,
+  faviconUrl: URL,
+  signal: AbortSignal
+): Promise<FaviconFetchTarget | null> => {
+  const target = await resolveHostForFaviconFetch(faviconUrl, signal)
+  if (target === null) {
+    return null
+  }
+  if (!target.private) {
+    return target
+  }
+
+  try {
+    return isPrivateHost(new URL(pageUrl).hostname) ? target : null
+  } catch {
+    return null
+  }
+}
+
+const headerString = (
+  headers: IncomingMessage['headers'],
+  name: string
+): string | null => {
+  const value = headers[name.toLowerCase()]
+  if (Array.isArray(value)) {
+    return value[0] ?? null
+  }
+
+  return typeof value === 'string' ? value : null
+}
+
+const subtypeFromContentType = (contentType: string): string => {
+  const subtype = contentType.split(';')[0]?.split('/')[1]?.trim() ?? ''
+
+  return /^[a-z0-9.+-]+$/i.test(subtype) ? subtype : 'png'
+}
+
+const toDataImage = (contentType: string, body: Buffer): string =>
+  `data:image/${subtypeFromContentType(contentType)};base64,${body.toString(
+    'base64'
+  )}`
+
+type FaviconFetchResult =
+  | { kind: 'image'; contentType: string; body: Buffer }
+  | { kind: 'redirect'; location: string }
+
+const fetchFaviconViaVettedAddress = (
+  target: FaviconFetchTarget,
+  signal: AbortSignal
+): Promise<FaviconFetchResult | null> =>
+  new Promise((resolve) => {
+    if (signal.aborted) {
+      resolve(null)
+
+      return
+    }
+
+    let settled = false
+    let request: ClientRequest | null = null
+
+    const requestFn =
+      target.url.protocol === 'https:' ? httpsRequest : httpRequest
+
+    function cleanup(): void {
+      signal.removeEventListener('abort', abort)
+    }
+
+    function settle(result: FaviconFetchResult | null): void {
+      if (settled) {
+        return
+      }
+      settled = true
+      cleanup()
+      resolve(result)
+    }
+
+    function abort(): void {
+      request?.destroy()
+      settle(null)
+    }
+
+    const pinnedLookup: LookupFunction = (_hostname, _options, callback) => {
+      callback(null, target.address, target.family)
+    }
+
+    request = requestFn(
+      {
+        protocol: target.url.protocol,
+        hostname: normalizedHost(target.url.hostname),
+        port: target.url.port,
+        path: `${target.url.pathname}${target.url.search}`,
+        method: 'GET',
+        headers: {
+          accept: 'image/*',
+          host: target.url.host,
+        },
+        lookup: pinnedLookup,
+        timeout: FAVICON_FETCH_TIMEOUT_MS,
+      },
+      (response) => {
+        const status = response.statusCode ?? 0
+        const contentType = headerString(response.headers, 'content-type') ?? ''
+        const declaredLength = headerString(response.headers, 'content-length')
+
+        if (status >= 300 && status < 400) {
+          const location = headerString(response.headers, 'location')
+          response.resume()
+          settle(location === null ? null : { kind: 'redirect', location })
+
+          return
+        }
+
+        if (
+          status < 200 ||
+          status >= 300 ||
+          !/^image\//i.test(contentType) ||
+          (declaredLength !== null && Number(declaredLength) > FAVICON_BYTE_CAP)
+        ) {
+          response.resume()
+          settle(null)
+
+          return
+        }
+
+        const chunks: Buffer[] = []
+        let total = 0
+        response.on('data', (chunk: Buffer | string) => {
+          if (settled) {
+            return
+          }
+          const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
+          total += buf.byteLength
+          if (total > FAVICON_BYTE_CAP) {
+            request?.destroy()
+            settle(null)
+
+            return
+          }
+          chunks.push(buf)
+        })
+
+        response.on('end', () => {
+          if (total === 0) {
+            settle(null)
+
+            return
+          }
+          settle({ kind: 'image', contentType, body: Buffer.concat(chunks) })
+        })
+        response.on('error', () => settle(null))
+      }
+    )
+
+    signal.addEventListener('abort', abort, { once: true })
+    request.on('timeout', () => {
+      request.destroy()
+      settle(null)
+    })
+    request.on('error', () => settle(null))
+    request.end()
+  })
+
+const isAllowedFaviconProtocol = (protocol: string): boolean =>
+  protocol === 'http:' || protocol === 'https:'
+
+const resolveFaviconRedirectUrl = (
+  sourceUrl: URL,
+  location: string
+): URL | null => {
+  let redirectUrl: URL
+  try {
+    redirectUrl = new URL(location, sourceUrl)
+  } catch {
+    return null
+  }
+
+  if (
+    !isAllowedFaviconProtocol(redirectUrl.protocol) ||
+    redirectUrl.username !== '' ||
+    redirectUrl.password !== ''
+  ) {
+    return null
+  }
+
+  return redirectUrl
+}
+
+const resolveFaviconHttpDataUrl = async (
+  pageUrl: string,
+  faviconUrl: URL,
+  signal: AbortSignal
+): Promise<string | null> => {
+  if (
+    !isAllowedFaviconProtocol(faviconUrl.protocol) ||
+    faviconUrl.username !== '' ||
+    faviconUrl.password !== ''
+  ) {
+    return null
+  }
+
+  const target = await resolveFaviconFetchTarget(pageUrl, faviconUrl, signal)
+  if (target === null) {
+    return null
+  }
+
+  const fetched = await fetchFaviconViaVettedAddress(target, signal)
+  if (fetched === null) {
+    return null
+  }
+
+  if (fetched.kind === 'image') {
+    return toDataImage(fetched.contentType, fetched.body)
+  }
+
+  const redirectUrl = resolveFaviconRedirectUrl(faviconUrl, fetched.location)
+  if (redirectUrl === null) {
+    return null
+  }
+
+  const redirectTarget = await resolveFaviconFetchTarget(
+    pageUrl,
+    redirectUrl,
+    signal
+  )
+  if (redirectTarget === null) {
+    return null
+  }
+
+  const redirected = await fetchFaviconViaVettedAddress(redirectTarget, signal)
+  if (redirected?.kind !== 'image') {
+    return null
+  }
+
+  return toDataImage(redirected.contentType, redirected.body)
+}
+
+const resolveFaviconDataUrl = async (
+  pageUrl: string,
+  url: string,
+  resolutionSignal: AbortSignal
+): Promise<string | null> => {
+  if (url.startsWith('data:')) {
+    if (!isImageDataUrl(url) || url.length > MAX_FAVICON_URL) {
+      return null
+    }
+    const payload = url.slice(url.indexOf(',') + 1)
+    if (payload.length === 0) {
+      return null
+    }
+    const bytes = Buffer.from(payload, 'base64')
+    if (bytes.length === 0 || bytes.length > FAVICON_BYTE_CAP) {
+      return null
+    }
+
+    return url
+  }
+
+  let parsed: URL
+  try {
+    parsed = new URL(url)
+  } catch {
+    return null
+  }
+
+  const signal = AbortSignal.any([
+    resolutionSignal,
+    AbortSignal.timeout(FAVICON_FETCH_TIMEOUT_MS),
+  ])
+
+  return resolveFaviconHttpDataUrl(pageUrl, parsed, signal)
+}
+
+const clampedHistoryIndex = (
+  historyLength: number,
+  activeIndex: number
+): number => {
+  if (historyLength === 0) {
+    return 0
+  }
+
+  return Math.max(0, Math.min(activeIndex, historyLength - 1))
+}
+
 export class BrowserPaneController {
   private readonly panes = new Map<string, BrowserPaneRecord>()
+
+  private writeSignals: WorkspaceLayoutWriteSignals | null = null
+
+  private restoreTabsProvider:
+    | ((sessionId: string, paneId: string) => PersistedTab[] | null)
+    | null = null
 
   private readonly cdpAttachments = new Map<string, CdpAttachment>()
 
@@ -679,6 +1224,18 @@ export class BrowserPaneController {
     )
   }
 
+  // Connect the workspace-layout writer so tab lifecycle + navigation persist.
+  setWriteSignals(signals: WorkspaceLayoutWriteSignals): void {
+    this.writeSignals = signals
+  }
+
+  // Connect the loaded-store tab source so restore replays per-tab history.
+  setRestoreTabsProvider(
+    provider: (sessionId: string, paneId: string) => PersistedTab[] | null
+  ): void {
+    this.restoreTabsProvider = provider
+  }
+
   dispose(): void {
     ipcMain.removeHandler(BROWSER_PANE_CREATE)
     ipcMain.removeHandler(BROWSER_PANE_SET_BOUNDS)
@@ -738,7 +1295,7 @@ export class BrowserPaneController {
       return {
         url: activeTab
           ? this.tabUrl(activeTab)
-          : normalizeUrl(payload.initialUrl),
+          : normalizeUrl(payload.initialUrl ?? DEFAULT_BROWSER_URL),
         title: this.activeWebContents(existing)?.getTitle() ?? null,
         partition: existing.partition,
         tabs: this.tabSnapshots(existing),
@@ -764,7 +1321,7 @@ export class BrowserPaneController {
       },
     })
 
-    const initialUrl = normalizeUrl(payload.initialUrl)
+    const initialUrl = normalizeUrl(payload.initialUrl ?? DEFAULT_BROWSER_URL)
 
     const handleWindowClosed = (): void => {
       void this.destroyPane(payload)
@@ -780,7 +1337,10 @@ export class BrowserPaneController {
       ownerWebContentsId: event.sender.id,
       view,
       tabs: new Map([
-        ['tab-0', { id: 'tab-0', view, requestedUrl: initialUrl }],
+        [
+          'tab-0',
+          { id: 'tab-0', view, requestedUrl: initialUrl, favicon: null },
+        ],
       ]),
       activeTabId: 'tab-0',
       nextTabIndex: 1,
@@ -840,6 +1400,9 @@ export class BrowserPaneController {
       })
     })
 
+    // Must precede history restore/load; page-favicon-updated can fire during it.
+    this.installFaviconEmitter(record, view, 'tab-0')
+
     const emitUrlChanged = (): void => {
       this.emitPaneUrlChanged(record, 'tab-0')
     }
@@ -851,14 +1414,41 @@ export class BrowserPaneController {
     win.once('closed', record.windowClosedHandler)
 
     await this.ensureCdpServer()
-    void loadBrowserUrl(view.webContents, initialUrl)
+
+    const restoreTabs =
+      payload.restore === true
+        ? (this.restoreTabsProvider?.(payload.sessionId, payload.paneId) ??
+          null)
+        : null
+
+    if (restoreTabs && restoreTabs.length > 0) {
+      this.restoreTabHistory(record, 'tab-0', restoreTabs[0])
+      for (let i = 1; i < restoreTabs.length; i += 1) {
+        this.createOwnedTab(record, win, ses, {
+          url: DEFAULT_BROWSER_URL,
+          activate: false,
+          restore: restoreTabs[i],
+        })
+      }
+
+      const activeIndex = restoreTabs.findIndex((tab) => tab.active)
+      if (activeIndex > 0) {
+        this.setActiveTab(record, `tab-${activeIndex.toString()}`, true)
+      }
+    } else {
+      void loadBrowserUrl(view.webContents, initialUrl)
+    }
+
+    const activeTab = this.activeTab(record)
 
     return {
-      url: this.tabUrl(record.tabs.get('tab-0')!),
-      title: view.webContents.getTitle() || null,
+      url: activeTab ? this.tabUrl(activeTab) : initialUrl,
+      title: this.activeWebContents(record)?.getTitle() ?? null,
       partition,
       tabs: this.tabSnapshots(record),
-      navState: this.readNavState(view.webContents),
+      navState: activeTab
+        ? this.readNavState(activeTab.view.webContents)
+        : { canGoBack: false, canGoForward: false, isLoading: false },
     }
   }
 
@@ -886,7 +1476,32 @@ export class BrowserPaneController {
       url: this.tabUrl(tab),
       title: tab.view.webContents.getTitle() || null,
       active: tab.id === record.activeTabId,
+      favicon: tab.favicon,
     }))
+  }
+
+  // Durable per-tab nav history for a pane, read fresh from navigationHistory;
+  // feeds the workspace-layout assembler (the tabs-changed event stays history-free).
+  captureTabsForPane(sessionId: string, paneId: string): PersistedTab[] | null {
+    const record = this.panes.get(paneKey(sessionId, paneId))
+    if (!record) {
+      return null
+    }
+
+    return [...record.tabs.values()].map((tab) => {
+      const nav = tab.view.webContents.navigationHistory
+
+      const history = nav.getAllEntries().map((entry) => ({
+        url: entry.url,
+        title: entry.title,
+      }))
+
+      return {
+        active: tab.id === record.activeTabId,
+        history,
+        historyIndex: clampedHistoryIndex(history.length, nav.getActiveIndex()),
+      }
+    })
   }
 
   private emitTabsChanged(
@@ -951,6 +1566,73 @@ export class BrowserPaneController {
     view.webContents.on('did-stop-loading', emit)
   }
 
+  private installFaviconEmitter(
+    record: BrowserPaneRecord,
+    view: WebContentsView,
+    tabId: string
+  ): void {
+    let gen = 0
+    let controller: AbortController | null = null
+    let pendingKey: string | null = null
+    let resolvedKey: string | null = null
+
+    view.webContents.on('page-favicon-updated', (_event, favicons) => {
+      const candidates = favicons
+        .filter((u) => u.length <= MAX_FAVICON_URL)
+        .slice(0, MAX_FAVICON_CANDIDATES)
+      const key = faviconKey(candidates)
+      if (key === resolvedKey || key === pendingKey) {
+        return
+      }
+      controller?.abort()
+      const myController = new AbortController()
+      controller = myController
+      pendingKey = key
+      gen += 1
+      const myGen = gen
+      void (async (): Promise<void> => {
+        const pageUrl = view.webContents.getURL()
+        let dataUrl: string | null = null
+        for (const url of candidates) {
+          if (myController.signal.aborted) {
+            break
+          }
+          dataUrl = await resolveFaviconDataUrl(
+            pageUrl,
+            url,
+            myController.signal
+          )
+          if (dataUrl !== null) {
+            break
+          }
+        }
+        const tab = record.tabs.get(tabId)
+        if (!tab || myGen !== gen) {
+          return
+        }
+        tab.favicon = dataUrl
+        resolvedKey = dataUrl ? key : null
+        pendingKey = null
+        if (controller === myController) {
+          controller = null
+        }
+        this.emitTabsChanged(record)
+      })()
+    })
+
+    view.webContents.on('did-navigate', () => {
+      controller?.abort()
+      controller = null
+      gen += 1
+      pendingKey = null
+      resolvedKey = null
+      const tab = record.tabs.get(tabId)
+      if (tab) {
+        tab.favicon = null
+      }
+    })
+  }
+
   private installNavigationPolicy(webContents: WebContents): void {
     webContents.on('will-frame-navigate', (event) => {
       if (event.isMainFrame && !isAllowedBrowserNavigationUrl(event.url)) {
@@ -985,11 +1667,43 @@ export class BrowserPaneController {
     })
   }
 
+  // Replay a persisted tab's nav history onto its view (restore-before-load):
+  // navigationHistory.restore navigates to the active entry, so it must run
+  // instead of loadURL. Empty history falls back to a default load.
+  private restoreTabHistory(
+    record: BrowserPaneRecord,
+    tabId: string,
+    persisted: PersistedTab
+  ): void {
+    const tab = record.tabs.get(tabId)
+    if (!tab) {
+      return
+    }
+
+    const entries = persisted.history.map((entry) => ({
+      url: entry.url,
+      title: entry.title ?? '',
+    }))
+    if (entries.length === 0) {
+      tab.requestedUrl = DEFAULT_BROWSER_URL
+      void loadBrowserUrl(tab.view.webContents, DEFAULT_BROWSER_URL)
+
+      return
+    }
+
+    const index = Math.max(
+      0,
+      Math.min(persisted.historyIndex, entries.length - 1)
+    )
+    tab.requestedUrl = entries[index].url
+    void tab.view.webContents.navigationHistory.restore({ index, entries })
+  }
+
   private createOwnedTab(
     record: BrowserPaneRecord,
     win: BrowserWindow,
     ses: ElectronSession,
-    options: { url: string; activate: boolean }
+    options: { url: string; activate: boolean; restore?: PersistedTab }
   ): void {
     if (record.tabs.size >= MAX_TABS_PER_PANE) {
       return
@@ -1016,6 +1730,7 @@ export class BrowserPaneController {
       id: tabId,
       view,
       requestedUrl: normalizeTabUrl(options.url),
+      favicon: null,
     })
     win.contentView.addChildView(view)
     view.setBounds({ x: 0, y: 0, width: 0, height: 0 })
@@ -1023,6 +1738,8 @@ export class BrowserPaneController {
     this.installNavigationPolicy(view.webContents)
     this.installPopupPolicy(view.webContents, win, ses, record)
     this.installAppShortcutForwarding(record, view.webContents)
+
+    this.installFaviconEmitter(record, view, tabId)
 
     const emitUrlChanged = (): void => {
       this.emitPaneUrlChanged(record, tabId)
@@ -1063,13 +1780,17 @@ export class BrowserPaneController {
       this.emitPaneNavStateChanged(record, record.activeTabId)
     })
 
+    if (options.restore) {
+      this.restoreTabHistory(record, tabId, options.restore)
+    } else {
+      void loadBrowserUrl(view.webContents, normalizeTabUrl(options.url))
+    }
+
     if (options.activate) {
       this.setActiveTab(record, tabId, true)
     } else {
       this.emitTabsChanged(record)
     }
-
-    void loadBrowserUrl(view.webContents, normalizeTabUrl(options.url))
   }
 
   private emitPaneUrlChanged(record: BrowserPaneRecord, tabId: string): void {
@@ -1078,6 +1799,8 @@ export class BrowserPaneController {
     if (!tab || !win || win.isDestroyed() || win.webContents.isDestroyed()) {
       return
     }
+
+    this.writeSignals?.markVolatile()
 
     const tabs = this.tabSnapshots(record)
     this.emitTabsChanged(record, tabs)
@@ -1294,6 +2017,7 @@ export class BrowserPaneController {
       url: payload.url ?? DEFAULT_BROWSER_URL,
       activate: true,
     })
+    this.writeSignals?.markStructural()
   }
 
   private destroyPane(payload: unknown): void {
@@ -1396,6 +2120,7 @@ export class BrowserPaneController {
     }
 
     this.setActiveTab(record, payload.tabId, true)
+    this.writeSignals?.markStructural()
   }
 
   private closeTab(payload: unknown): void {
@@ -1431,10 +2156,13 @@ export class BrowserPaneController {
         this.setActiveTab(record, nextTabId, true)
       }
 
+      this.writeSignals?.markStructural()
+
       return
     }
 
     this.emitTabsChanged(record)
+    this.writeSignals?.markStructural()
   }
 
   private async cdpInfo(payload: unknown): Promise<BrowserCdpInfo> {
@@ -1534,23 +2262,16 @@ export class BrowserPaneController {
 
     this.rendererLifecycleHandlers.add(sender.id)
 
-    const cleanup = (): void => {
+    // Dispose records only on genuine teardown (the owner WebContents being
+    // destroyed), NOT on render-process-gone: a renderer reload/crash must leave
+    // the browser views alive so restore can reconnect to them.
+    const handleDestroyed = (): void => {
       sender.removeListener('destroyed', handleDestroyed)
-      sender.removeListener('render-process-gone', handleRenderProcessGone)
       this.rendererLifecycleHandlers.delete(sender.id)
       this.removeRecordsForOwner(sender.id)
     }
 
-    const handleDestroyed = (): void => {
-      cleanup()
-    }
-
-    const handleRenderProcessGone = (): void => {
-      cleanup()
-    }
-
     sender.once('destroyed', handleDestroyed)
-    sender.once('render-process-gone', handleRenderProcessGone)
   }
 
   private removeRecordsForOwner(ownerWebContentsId: number): void {

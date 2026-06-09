@@ -2,8 +2,8 @@
 id: async-race-conditions
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-06-07
-ref_count: 16
+last_updated: 2026-06-08
+ref_count: 21
 ---
 
 # Async Race Conditions
@@ -595,3 +595,49 @@ prevent showing previous data.
 - **Fix:** Track the JSON of the snapshot whose failure armed the retry timer in `retryTargetJsonRef`. In the effect's drain kick, compare the pending snapshot's JSON to the retry target: identical payloads keep the backoff (preventing no-op flood during a sidecar outage), while a differing payload cancels the stale timer and drains immediately. In the catch path, when a newer snapshot is already sitting in `pending`, skip scheduling the stale backoff entirely and signal `drainAfterFailure` so the `finally` block drains the newer snapshot as soon as `inFlight` clears.
 - **Code-review heuristic:** "Latest wins" collapse is not enough when there is also a failure-recovery timer. The queue state has two dimensions: (a) which snapshot is newest, and (b) whether the last failure was for the same snapshot. Flood-guard timers should key off the _identity_ of the failed work item, not just a one-bit "timer armed" flag, or genuinely new work gets trapped behind backoff intended for duplicate retries.
 - **Commit:** _(PR #381 upsource cycle 1 fix commit)_
+
+### 59. Pending drift debounce survives loading transition and pushes stale shape
+
+- **Source:** github-claude | PR #393 round 1 | 2026-06-08
+- **Severity:** MEDIUM
+- **File:** `src/features/sessions/hooks/usePushWorkspaceGrouping.ts`
+- **Finding:** The effect returns immediately when `loading || sessions.length === 0`, but a previously scheduled drift debounce remains live and still calls `pushWorkspaceShape(shape)` with the stale captured DTO. In real use, this can occur if a cwd/agent drift schedules the 500 ms timer and then restore starts or sessions temporarily drain before it fires. The risk is a stale renderer push during the exact hydration/empty-state window the guard is intended to protect.
+- **Fix:** Clear and null any pending `debounceRef` timer inside the `loading || sessions.length === 0` early-return branch before returning. Same finding-class as #10 (uncancelled collapse timeout) — a scheduled async callback that outlives the guard condition that should suppress it.
+- **Verification:** Two regression tests (`cancels pending drift debounce when loading becomes true`, `cancels pending drift debounce when sessions become empty`) assert `pushWorkspaceShape` is never called after the guard transition.
+- **Commit:** _(PR #393 upsource-review cycle 1 fix commit)_
+
+### 58. Concurrent close events can re-close a destroyed BrowserWindow
+
+- **Source:** github-claude | PR #387 round 1 | 2026-06-07
+- **Severity:** MEDIUM
+- **File:** `electron/main.ts` L288-305
+- **Finding:** The `close` event handler leaves `closeFlushed` false until the async `workspaceTeardown.flushOnce()` finishes. A rapid second close event enters a second async IIFE; `flushOnce()` marks its own guard before awaiting, so the second IIFE skips the flush and calls `win.close()`, destroying the window. When the first IIFE's `finally` block later calls `win.close()` again, the window is already destroyed, risking an unhandled rejection or unclean main-process shutdown.
+- **Fix:** Guard the reissued `win.close()` in the `finally` block with `!win.isDestroyed()`. `closeFlushed` is still assigned before the guarded call so subsequent close events correctly no-op.
+- **Commit:** _(PR #387 upsource-review cycle 1 fix commit)_
+
+### 60. Overlapping restore effects can release a shared hydration guard early
+
+- **Source:** github-claude | PR #404 final review | 2026-06-08
+- **Severity:** HIGH
+- **File:** `src/features/sessions/hooks/useSessionRestore.ts`, `electron/workspace-layout-controller.ts`
+- **Finding:** `useSessionRestore` brackets each restore with `beginWorkspaceHydration` / `endWorkspaceHydration`, but the main-side controller represented hydration as a single boolean. If a stale restore effect reached its `finally` after a newer restore had already called `begin`, the stale `end` flipped the writer out of hydration and allowed renderer shape pushes to persist during the active restore window.
+- **Fix:** Make the main-side hydration guard reference-counted. Nested `beginHydration` calls only set the writer flag on the 0->1 transition, and `endHydration` only clears it on the 1->0 transition. Added controller coverage for nested begin/end ordering and stray extra end calls.
+- **Commit:** same commit as this entry
+
+### 61. Final-shape request API silently superseded an in-flight request
+
+- **Source:** github-claude | PR #404 final review | 2026-06-08
+- **Severity:** MEDIUM
+- **File:** `electron/workspace-layout-controller.ts`
+- **Finding:** `requestFinalShape` resolved any existing pending final-shape request with the last-known shape before sending a new request. The current teardown path is single-call, but the API encoded "supersede with stale data" rather than enforcing the exactly-one in-flight contract.
+- **Fix:** Replace silent supersession with a synchronous assertion when a request is already pending. Added controller coverage proving a second request throws and the original request still resolves on the renderer ack.
+- **Commit:** same commit as this entry
+
+### 62. Cancelled restore can enter bounded browser-pane creation anyway
+
+- **Source:** github-claude | PR #404 final review | 2026-06-08
+- **Severity:** LOW
+- **File:** `src/features/sessions/hooks/useSessionRestore.ts`
+- **Finding:** `useSessionRestore` checked `cancelled` after loading sessions but not immediately before `restoreBrowserPanes`. If cleanup ran after reconstruction, the stale restore still waited through bounded browser-pane creation timeouts before releasing hydration.
+- **Fix:** Add a cancellation guard immediately before `restoreBrowserPanes(restored)` so a cancelled restore reaches `finally` and releases hydration without waiting on per-pane timeouts.
+- **Commit:** same commit as this entry

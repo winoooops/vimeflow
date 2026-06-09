@@ -9,6 +9,7 @@ import type { BodyHandle, BodyProps } from '../TerminalPane/Body'
 import {
   SplitView,
   selectVisiblePanes,
+  canClosePane,
   type SplitViewHandle,
 } from './SplitView'
 import type { LayoutId, Pane, Session } from '../../../sessions/types'
@@ -763,6 +764,55 @@ describe('SplitView - close pane', () => {
     expect(
       screen.queryByRole('button', { name: 'close pane' })
     ).not.toBeInTheDocument()
+  })
+})
+
+describe('canClosePane', () => {
+  const shellPane = (id: string): Pane => ({
+    id,
+    ptyId: `pty-${id}`,
+    cwd: '/tmp/fixture',
+    agentType: 'generic',
+    status: 'running',
+    active: false,
+    pid: 1,
+  })
+
+  const browserPane = (id: string): Pane => ({
+    ...shellPane(id),
+    kind: 'browser',
+    ptyId: `browser:${id}`,
+  })
+
+  const sessionWith = (panes: Pane[]): Session => ({
+    ...makeSession('single', 1),
+    panes,
+  })
+
+  test('a sole shell pane cannot close so the session keeps a pane', () => {
+    const session = sessionWith([shellPane('p0')])
+    expect(canClosePane(session)).toBe(false)
+  })
+
+  test('a sole browser pane cannot close so the session keeps a pane', () => {
+    const session = sessionWith([browserPane('p0')])
+    expect(canClosePane(session)).toBe(false)
+  })
+
+  test('the last shell pane is closable when a browser pane remains', () => {
+    const session = sessionWith([shellPane('p0'), browserPane('p1')])
+    expect(canClosePane(session)).toBe(true)
+  })
+
+  test('a browser pane is closable when a shell pane remains', () => {
+    const session = sessionWith([shellPane('p0'), browserPane('p1')])
+    expect(canClosePane(session)).toBe(true)
+  })
+
+  test('either shell is closable when two shells remain', () => {
+    const session = sessionWith([shellPane('p0'), shellPane('p1')])
+    expect(canClosePane(session)).toBe(true)
+    expect(canClosePane(session)).toBe(true)
   })
 })
 

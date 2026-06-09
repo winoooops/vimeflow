@@ -1,5 +1,5 @@
 import type { Pane, SessionStatus } from '../types'
-import { isShellPane } from './paneKind'
+import { isBrowserPane, isShellPane } from './paneKind'
 
 /** Aggregate a session's status from its panes.
  *
@@ -27,11 +27,18 @@ export const deriveSessionStatus = (panes: Pane[]): SessionStatus => {
 }
 
 export const deriveShellSessionStatus = (panes: Pane[]): SessionStatus => {
+  // A live browser pane keeps the session 'running' even when its shells are
+  // all completed placeholders (a graceful-quit restore). Deriving from shells
+  // alone would wrongly read 'completed' and show a Restart affordance for a
+  // session whose browser is still live (spec §5 "Restored session status").
+  if (panes.some((pane) => isBrowserPane(pane) && pane.status === 'running')) {
+    return 'running'
+  }
+
   const shellPanes = panes.filter(isShellPane)
 
-  // A browser-only session (all shells closed) has no shell status to derive;
-  // fall back to the full pane set so a running browser pane reads as 'running'
-  // rather than the empty-slice 'errored' guard (which shows a misleading
-  // Restart affordance for a live browser session).
+  // No live browser: derive from the shells. With no shells either (an inert
+  // browser-only set) fall back to the full pane set so the empty-slice
+  // 'errored' guard doesn't misfire.
   return deriveSessionStatus(shellPanes.length > 0 ? shellPanes : panes)
 }

@@ -45,7 +45,6 @@ export const sessionFromInfo = (info: SessionInfo, index: number): Session => {
     activityPanelCollapsed: readActivityPanelCollapsed(info.id),
     panes: [pane],
     workingDirectory: info.cwd,
-    browserSessionId: info.id,
     agentType: 'generic',
     createdAt: new Date().toISOString(),
     lastActivityAt: new Date().toISOString(),
