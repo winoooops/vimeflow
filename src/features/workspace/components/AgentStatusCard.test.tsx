@@ -1,4 +1,4 @@
-// cspell:ignore incard
+// cspell:ignore cheatsheet incard powershell pwsh zsh
 import { render, screen } from '@testing-library/react'
 import { describe, test, expect, vi } from 'vitest'
 import { AgentStatusCard } from './AgentStatusCard'
@@ -43,17 +43,45 @@ describe('AgentStatusCard', () => {
     ).not.toBeInTheDocument()
   })
 
-  test('renders the SHELL placeholder for a shell pane', () => {
-    render(<AgentStatusCard title="ignored-model" state="idle" isShell />)
+  test('renders a shell placeholder without a SHELL title', () => {
+    render(
+      <AgentStatusCard
+        title="ignored-model"
+        state="idle"
+        isShell
+        shellName="/bin/zsh"
+      />
+    )
 
-    expect(screen.getByText('SHELL')).toBeInTheDocument()
+    expect(screen.queryByText('SHELL')).not.toBeInTheDocument()
     expect(screen.queryByText('ignored-model')).not.toBeInTheDocument()
     expect(
       screen.getByTestId('agent-status-card-shell-body')
     ).toBeInTheDocument()
     expect(screen.getByText('No active agent')).toBeInTheDocument()
-    expect(screen.getByText('Idle · shell only')).toBeInTheDocument()
+    expect(screen.getByText('Idle · zsh shell')).toBeInTheDocument()
     expect(screen.getByText('terminal')).toBeInTheDocument()
+  })
+
+  test('normalizes shell executable names for shell status and cheatsheet link', () => {
+    render(
+      <AgentStatusCard
+        title="ignored-model"
+        state="idle"
+        isShell
+        shellName="C:\\Program Files\\PowerShell\\7\\pwsh.exe"
+      />
+    )
+
+    expect(screen.getByText('Idle · pwsh shell')).toBeInTheDocument()
+
+    const link = screen.getByRole('link', { name: /pwsh cheatsheet/u })
+    expect(link).toHaveAttribute(
+      'href',
+      'https://www.google.com/search?q=pwsh%20commands%20cheatsheet'
+    )
+    expect(link).toHaveAttribute('target', '_blank')
+    expect(link).toHaveAttribute('rel', 'noopener noreferrer')
   })
 
   test('hides agent metrics and usage bars on a shell pane', () => {
@@ -75,7 +103,7 @@ describe('AgentStatusCard', () => {
     expect(screen.queryByText('Weekly Usage')).not.toBeInTheDocument()
   })
 
-  test('renders the session metrics when provided', () => {
+  test('renders only the turn count from the old metrics row', () => {
     render(
       <AgentStatusCard
         title="m"
@@ -86,12 +114,12 @@ describe('AgentStatusCard', () => {
       />
     )
 
-    expect(screen.getByText('schedule')).toBeInTheDocument()
-    expect(screen.getByText('2m')).toBeInTheDocument()
+    expect(screen.queryByText('schedule')).not.toBeInTheDocument()
+    expect(screen.queryByText('2m')).not.toBeInTheDocument()
+    expect(screen.queryByText('data_usage')).not.toBeInTheDocument()
+    expect(screen.queryByText('64%')).not.toBeInTheDocument()
     expect(screen.getByText('forum')).toBeInTheDocument()
-    expect(screen.getByText('12')).toBeInTheDocument()
-    expect(screen.getByText('data_usage')).toBeInTheDocument()
-    expect(screen.getByText('64%')).toBeInTheDocument()
+    expect(screen.getByText('12 turns')).toBeInTheDocument()
   })
 
   test('renders 5-hour and weekly usage bars when provided', () => {
@@ -124,7 +152,7 @@ describe('AgentStatusCard', () => {
     expect(screen.queryByText('Weekly Usage')).not.toBeInTheDocument()
   })
 
-  test('guards a zero turn count from the metric row', () => {
+  test('renders zero turns in the header pill', () => {
     render(
       <AgentStatusCard
         title="m"
@@ -135,9 +163,32 @@ describe('AgentStatusCard', () => {
       />
     )
 
-    expect(screen.queryByText('forum')).not.toBeInTheDocument()
-    expect(screen.queryByText('0')).not.toBeInTheDocument()
-    expect(screen.getByText('schedule')).toBeInTheDocument()
-    expect(screen.getByText('data_usage')).toBeInTheDocument()
+    expect(screen.getByText('forum')).toBeInTheDocument()
+    expect(screen.getByText('0 turns')).toBeInTheDocument()
+    expect(screen.queryByText('schedule')).not.toBeInTheDocument()
+    expect(screen.queryByText('data_usage')).not.toBeInTheDocument()
+  })
+
+  test('keeps the outer card height stable across agent and shell states', () => {
+    const { rerender } = render(
+      <AgentStatusCard
+        title="m"
+        state="running"
+        turns={3}
+        fiveHourPct={12}
+        weekPct={34}
+      />
+    )
+
+    const card = screen.getByTestId('sidebar-agent-status-card')
+    expect(card).toHaveStyle({ height: '125px' })
+
+    rerender(
+      <AgentStatusCard title="ignored" state="idle" isShell shellName="bash" />
+    )
+
+    expect(screen.getByTestId('sidebar-agent-status-card')).toHaveStyle({
+      height: '125px',
+    })
   })
 })

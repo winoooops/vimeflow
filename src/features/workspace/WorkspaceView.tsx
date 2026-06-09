@@ -982,8 +982,8 @@ export const WorkspaceView = (): ReactElement => {
     : null
 
   // Fused AgentStatusCard props, derived from the same live signals the status
-  // bar uses (VIM-66). Each metric is guarded inside the card, so an idle
-  // session renders gracefully with an empty metric row.
+  // bar uses (VIM-66). The compact card keeps only the turn count in the
+  // header and shows usage bars when live rate-limit data is present.
   // Completed/errored come from the pane lifecycle and must NOT be masked by
   // the agent going inactive after it finishes; `running` requires a live
   // agent; everything else (no session, paused, inactive) reads as idle.
@@ -1000,7 +1000,7 @@ export const WorkspaceView = (): ReactElement => {
           : 'idle'
 
   // A pure shell pane has no detected agent (and therefore no model / usage);
-  // the card renders its fixed-height "SHELL" placeholder in that case so the
+  // the card renders its fixed-height shell placeholder in that case so the
   // session list below never reflows when switching panes.
   const sidebarCardIsShell =
     !agentStatus.agentType || !agentStatus.isActive || agentStatus.agentExited
@@ -1013,11 +1013,7 @@ export const WorkspaceView = (): ReactElement => {
     agentStatus.modelId ??
     activeSession?.name ??
     'No session'
-  const sidebarCardElapsed = statusBarSession?.startedAgo ?? null
   const sidebarCardTurns = statusBarSession?.turns ?? null
-
-  const sidebarCardContextPct =
-    statusBarContextPct !== null ? Math.round(statusBarContextPct) : null
 
   const sidebarCardFiveHourPct = agentStatus.rateLimits
     ? Math.round(agentStatus.rateLimits.fiveHour.usedPercentage)
@@ -1505,11 +1501,10 @@ export const WorkspaceView = (): ReactElement => {
                 title={sidebarCardTitle}
                 state={sidebarCardState}
                 isShell={sidebarCardIsShell}
-                elapsed={sidebarCardElapsed}
                 turns={sidebarCardTurns}
-                contextPct={sidebarCardContextPct}
                 fiveHourPct={sidebarCardFiveHourPct}
                 weekPct={sidebarCardWeekPct}
+                shellName={activePtyBackedPane?.shell ?? null}
               />
             }
             content={

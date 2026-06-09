@@ -7,6 +7,7 @@ import type { SessionStatus } from './SessionStatus'
 export type SessionInfo = {
   id: string
   cwd: string
+  shell?: string
   status: SessionStatus
   activityPanelCollapsed?: boolean | null
 }

@@ -1,15 +1,13 @@
-// cspell:ignore incard
+// cspell:ignore cheatsheet incard powershell pwsh tcsh xonsh zsh
 import type { ReactElement } from 'react'
 import { RateLimitBar } from '../../agent-status/components/RateLimitBar'
 
 // Fused agent-status card (VIM-66 — AGENT-STATUS-CARD-HANDOFF + SHELL-CARD-KIT).
-// ONE fixed height in every state: the below-header body is locked to
-// CARD_BODY_H, so switching the active pane between an agent and a pure shell
-// never changes the card height (and never reflows the session list below it).
-// Agent panes fill the body with model metrics + rate-limit bars; a pure shell
-// fills the same box with a placeholder tile. Borderless elevated surface with
-// a faint state-tinted corner wash. The explicit running dot/label was removed
-// by request.
+// ONE fixed card height in every state: switching the active pane between an
+// agent and a pure shell never reflows the session list below it. Agent panes
+// keep only the turn count in the header and fill the body with usage bars; a
+// shell pane omits the header entirely and uses the same card height for its
+// two-zone empty state.
 
 export type AgentCardState =
   | 'running'
@@ -19,15 +17,15 @@ export type AgentCardState =
   | 'idle'
 
 export interface AgentStatusCardProps {
-  /** Agent model name shown as the title; ignored when `isShell` (shows "SHELL"). */
+  /** Agent model name shown as the title; ignored when `isShell`. */
   title: string
-  /** Drives the ambient corner wash. */
+  /** Retained for API stability; visual wash was removed from the compact card. */
   state: AgentCardState
   /** True when the active pane is a pure shell (no agent / model / usage). */
   isShell?: boolean
-  /** Elapsed-time string (e.g. "8m"); omitted when falsy. */
+  /** Retained for API stability; compact card shows turn count only. */
   elapsed?: string | null
-  /** Turn count; omitted when 0/absent. */
+  /** Turn count rendered in the compact header pill; absent values render as 0. */
   turns?: number | null
   /** Context-window usage percent; omitted when null. */
   contextPct?: number | null
@@ -35,80 +33,135 @@ export interface AgentStatusCardProps {
   fiveHourPct?: number | null
   /** 7-day (weekly) rate-limit usage percent; omitted when null. */
   weekPct?: number | null
+  /** Resolved shell path/name for pure shell panes, e.g. `/bin/zsh`. */
+  shellName?: string | null
 }
 
-// Fixed below-header body height — the whole point of the SHELL kit. Agent
-// content and the shell placeholder both render inside this exact height so the
-// card never changes height and nothing below it reflows.
-const CARD_BODY_H = 92
+// 125 = 12 (top pad) + 24 (header: h-6 pill / leading-6 title) + 9 (gap)
+// + 66 (CARD_BODY_H) + 14 (bottom pad). Still ONE fixed height across agent
+// and shell states, so switching panes never reflows the session list.
+const CARD_H = 125
+const CARD_BODY_H = 66
 
-const STATE_WASH: Record<AgentCardState, string> = {
-  running: 'var(--wash-running)',
-  awaiting: 'var(--wash-awaiting)',
-  completed: 'var(--wash-completed)',
-  errored: 'var(--wash-errored)',
-  idle: 'var(--wash-idle)',
+const KNOWN_SHELLS = new Set([
+  'bash',
+  'zsh',
+  'fish',
+  'sh',
+  'dash',
+  'ksh',
+  'csh',
+  'tcsh',
+  'nu',
+  'xonsh',
+  'powershell',
+  'pwsh',
+  'cmd',
+])
+
+const normalizeShellName = (shellName: string | null | undefined): string => {
+  if (!shellName) {
+    return 'shell'
+  }
+
+  const parts = shellName.replace(/\\/gu, '/').split('/')
+  const basename = parts[parts.length - 1]?.trim().toLowerCase() ?? ''
+  const stripped = basename.replace(/^-+/, '').replace(/\.exe$/, '')
+
+  if (!stripped) {
+    return 'shell'
+  }
+
+  if (stripped === 'powershell') {
+    return 'powershell'
+  }
+
+  if (KNOWN_SHELLS.has(stripped)) {
+    return stripped
+  }
+
+  return stripped
 }
 
-interface MetricCell {
-  icon: string
-  value: string
-  title: string
-}
+const shellCheatsheetUrl = (shellName: string): string =>
+  `https://www.google.com/search?q=${encodeURIComponent(
+    `${shellName} commands cheatsheet`
+  )}`
 
-const Metric = ({
-  cell,
-  last,
-}: {
-  cell: MetricCell
-  last: boolean
-}): ReactElement => (
+const TurnPill = ({ turns }: { turns: number | null }): ReactElement => (
   <span
-    style={{ display: 'inline-flex', alignItems: 'center' }}
-    title={cell.title}
+    className="inline-flex h-6 max-w-[86px] shrink-0 items-center justify-center whitespace-nowrap rounded-full border border-outline-variant/40 bg-surface-container-lowest/35 px-[7px] font-mono text-[10px] font-bold leading-none text-on-surface-variant"
+    title={`${turns ?? 0} turns`}
   >
-    <span
-      className="material-symbols-outlined text-syn-comment"
-      aria-hidden="true"
-      style={{ fontSize: 12, lineHeight: 1 }}
-    >
-      {cell.icon}
+    {/* Both the Material icon and the descender-less mono label ride ~1px high
+        in their own line-boxes. Wrap them in one flex row so items-center keeps
+        them aligned to each other, then nudge the whole row down ~1px to center
+        the pair in the pill. Relative offset → no layout/height change. */}
+    <span className="relative top-px inline-flex items-center gap-[5px]">
+      <span
+        className="material-symbols-outlined text-syn-comment"
+        aria-hidden="true"
+        style={{ fontSize: 12, lineHeight: 1 }}
+      >
+        forum
+      </span>
+      <span>{turns ?? 0} turns</span>
     </span>
-    <span className="ml-1 text-on-surface-variant">{cell.value}</span>
-    {!last && <span className="mx-[9px] text-[#3a3450]">·</span>}
   </span>
 )
 
-// Pure-shell placeholder. Fills the exact CARD_BODY_H so the card height
-// matches an agent pane's.
-const ShellBody = (): ReactElement => (
+const ShellBody = ({ shellName }: { shellName: string }): ReactElement => (
   <div
     data-testid="agent-status-card-shell-body"
-    className="mt-[11px] flex items-center gap-[11px] rounded-[9px] border border-dashed border-outline-variant/50 bg-surface-container-lowest/28 py-0 px-[13px]"
-    style={{ height: CARD_BODY_H }}
+    className="flex h-full flex-col justify-between rounded-[9px] border border-dashed border-outline-variant/50 bg-surface-container-lowest/30 py-2 pr-2 pl-[11px]"
   >
-    <div
-      className="grid shrink-0 place-items-center rounded-lg bg-syn-comment/14"
-      style={{ width: 34, height: 34 }}
-    >
-      <span
-        className="material-symbols-outlined text-[18px] text-[#9b93ab]"
-        aria-hidden="true"
+    <div className="flex min-w-0 items-center gap-2.5">
+      <div
+        className="grid shrink-0 place-items-center rounded-lg bg-syn-comment/14"
+        style={{ width: 30, height: 30 }}
       >
-        terminal
-      </span>
-    </div>
-    <div className="min-w-0">
-      <div className="truncate font-display text-[13px] font-semibold text-on-surface-variant">
-        No active agent
-      </div>
-      <div className="mt-1 flex items-center gap-1.5">
-        <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full border-[1.5px] border-solid border-outline-variant" />
-        <span className="font-mono text-[9px] font-semibold uppercase tracking-[0.14em] text-on-surface-muted">
-          Idle · shell only
+        <span
+          className="material-symbols-outlined text-[17px] text-[#9b93ab]"
+          aria-hidden="true"
+        >
+          terminal
         </span>
       </div>
+      <div className="min-w-0">
+        <div className="truncate font-display text-[12.5px] font-semibold text-on-surface-variant">
+          No active agent
+        </div>
+        <div className="mt-1 flex items-center gap-1.5">
+          <span className="inline-block h-[7px] w-[7px] shrink-0 rounded-full border-[1.5px] border-solid border-outline-variant" />
+          <span className="font-mono text-[9px] font-semibold uppercase tracking-[0.12em] text-on-surface-muted">
+            Idle · {shellName} shell
+          </span>
+        </div>
+      </div>
     </div>
+
+    <a
+      href={shellCheatsheetUrl(shellName)}
+      target="_blank"
+      rel="noopener noreferrer"
+      title={`${shellName} command cheatsheet`}
+      className="flex w-full items-center gap-[7px] rounded-[7px] bg-surface-container-lowest/45 py-[5px] pr-[7px] pl-[9px] font-mono text-[10.5px] leading-none text-[#9b93ab] no-underline transition-colors hover:bg-primary/10 hover:text-primary"
+    >
+      <span
+        className="material-symbols-outlined text-[15px]"
+        aria-hidden="true"
+      >
+        menu_book
+      </span>
+      <span>{shellName} cheatsheet</span>
+      <span className="flex-1" />
+      <span
+        className="material-symbols-outlined text-[13px] opacity-[0.55]"
+        aria-hidden="true"
+      >
+        open_in_new
+      </span>
+    </a>
   </div>
 )
 
@@ -121,26 +174,13 @@ export const AgentStatusCard = ({
   contextPct = null,
   fiveHourPct = null,
   weekPct = null,
+  shellName = null,
 }: AgentStatusCardProps): ReactElement => {
-  // Guard each metric so a metric-less agent pane collapses gracefully (the
-  // fixed-height body keeps the card the same size regardless).
-  const metrics: MetricCell[] = []
-  if (elapsed) {
-    metrics.push({ icon: 'schedule', value: elapsed, title: 'Elapsed' })
-  }
-  if (turns && turns > 0) {
-    metrics.push({ icon: 'forum', value: String(turns), title: 'Turns' })
-  }
-  if (contextPct !== null) {
-    metrics.push({
-      icon: 'data_usage',
-      value: `${contextPct}%`,
-      title: 'Context window',
-    })
-  }
-
   const hasUsage = fiveHourPct !== null || weekPct !== null
-  const wash = isShell ? STATE_WASH.idle : STATE_WASH[state]
+  const resolvedShellName = normalizeShellName(shellName)
+  void state
+  void elapsed
+  void contextPct
 
   return (
     <div
@@ -148,8 +188,9 @@ export const AgentStatusCard = ({
       style={{
         position: 'relative',
         borderRadius: 13,
-        padding: '13px 14px 14px',
-        background: `radial-gradient(120% 90% at 0% 0%, ${wash} 0%, rgba(34,34,52,0) 55%), rgba(33,33,51,0.55)`,
+        height: CARD_H,
+        padding: '12px 14px 14px',
+        background: 'rgba(33,33,51,0.55)',
         boxShadow:
           '0 5px 20px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,255,255,0.045)',
         overflow: 'hidden',
@@ -159,44 +200,41 @@ export const AgentStatusCard = ({
         cursor: 'default',
       }}
     >
-      <div className="min-w-0 truncate font-display text-sm font-semibold text-on-surface">
-        {isShell ? 'SHELL' : title}
-      </div>
-
       {isShell ? (
-        <ShellBody />
+        <ShellBody shellName={resolvedShellName} />
       ) : (
-        <div style={{ height: CARD_BODY_H, marginTop: 11 }}>
-          {metrics.length > 0 && (
-            <div className="flex flex-wrap items-center font-mono text-[10px] text-on-surface-muted">
-              {metrics.map((cell, index) => (
-                <Metric
-                  key={cell.icon}
-                  cell={cell}
-                  last={index === metrics.length - 1}
-                />
-              ))}
+        <>
+          <div className="flex min-h-6 items-center gap-2.5">
+            <div className="min-w-0 flex-1 truncate font-display text-[15px] font-semibold leading-6 text-on-surface">
+              {title}
             </div>
-          )}
-
-          {hasUsage && (
-            <div
-              style={{
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 8,
-                marginTop: metrics.length > 0 ? 12 : 0,
-              }}
-            >
-              {fiveHourPct !== null && (
-                <RateLimitBar label="5-hour Session" percentage={fiveHourPct} />
-              )}
-              {weekPct !== null && (
-                <RateLimitBar label="Weekly Usage" percentage={weekPct} />
-              )}
-            </div>
-          )}
-        </div>
+            <TurnPill turns={turns} />
+          </div>
+          <div
+            className="mt-[9px] flex flex-col justify-center"
+            style={{ height: CARD_BODY_H }}
+          >
+            {hasUsage && (
+              <div
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 9,
+                }}
+              >
+                {fiveHourPct !== null && (
+                  <RateLimitBar
+                    label="5-hour Session"
+                    percentage={fiveHourPct}
+                  />
+                )}
+                {weekPct !== null && (
+                  <RateLimitBar label="Weekly Usage" percentage={weekPct} />
+                )}
+              </div>
+            )}
+          </div>
+        </>
       )}
     </div>
   )
