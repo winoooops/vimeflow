@@ -56,7 +56,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Documentation Accuracy](patterns/documentation-accuracy.md)         | code-quality       | 85       | 25   | 2026-06-08   |
 | [Accessibility](patterns/accessibility.md)                           | a11y               | 33       | 11   | 2026-06-08   |
 | [Async Race Conditions](patterns/async-race-conditions.md)           | react-patterns     | 63       | 21   | 2026-06-08   |
-| [Tokio Blocking On Async](patterns/tokio-blocking-on-async.md)       | backend            | 2        | 1    | 2026-05-20   |
+| [Tokio Blocking On Async](patterns/tokio-blocking-on-async.md)       | backend            | 3        | 1    | 2026-06-09   |
 | [Command Injection](patterns/command-injection.md)                   | security           | 7        | 3    | 2026-05-02   |
 | [Policy Judge Hygiene](patterns/policy-judge-hygiene.md)             | security           | 15       | 2    | 2026-04-20   |
 | [Fail-Closed Hooks](patterns/fail-closed-hooks.md)                   | security           | 3        | 1    | 2026-04-20   |
@@ -71,7 +71,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Scope Boundary](patterns/scope-boundary.md)                         | review-process     | 8        | 3    | 2026-06-01   |
 | [E2E Testing](patterns/e2e-testing.md)                               | e2e-testing        | 19       | 7    | 2026-06-06   |
 | [Module Boundaries](patterns/module-boundaries.md)                   | code-quality       | 13       | 2    | 2026-06-08   |
-| [Diagnostic Instrumentation](patterns/diagnostic-instrumentation.md) | code-quality       | 7        | 2    | 2026-05-02   |
+| [Diagnostic Instrumentation](patterns/diagnostic-instrumentation.md) | code-quality       | 9        | 2    | 2026-06-09   |
 | [Keyboard Shortcut Guards](patterns/keyboard-shortcut-guards.md)     | keyboard-shortcuts | 18       | 1    | 2026-05-26   |
 | [Verify Render Target](patterns/verify-render-target.md)             | code-quality       | 2        | 0    | 2026-05-24   |
 | [Status Indicator Display](patterns/status-indicator-display.md)     | code-quality       | 3        | 0    | 2026-05-26   |

@@ -1,7 +1,10 @@
 import type { ReactElement } from 'react'
+import { useEffect } from 'react'
 import { WorkerPoolContextProvider } from '@pierre/diffs/react'
 import { WorkspaceView } from './features/workspace/WorkspaceView'
 import { InlineCommentDemo } from './features/diff/demo/InlineCommentDemo'
+import { isTracingEnabled, setTracingEnabledWithInvoke } from './lib/tracing'
+import { invoke } from './lib/backend'
 
 // Pierre's worker entry is exposed as a dedicated package export so Vite
 // bundles it via `new Worker(url, ...)` with the worker config in
@@ -31,13 +34,29 @@ const isInlineCommentDemo = (): boolean =>
   import.meta.env.DEV &&
   new URLSearchParams(window.location.search).get('demo') === 'inline-comments'
 
-const App = (): ReactElement => (
-  <WorkerPoolContextProvider
-    poolOptions={poolOptions}
-    highlighterOptions={highlighterOptions}
-  >
-    {isInlineCommentDemo() ? <InlineCommentDemo /> : <WorkspaceView />}
-  </WorkerPoolContextProvider>
-)
+const App = (): ReactElement => {
+  useEffect(() => {
+    const syncTracing = async (): Promise<void> => {
+      if (isTracingEnabled()) {
+        try {
+          await setTracingEnabledWithInvoke(invoke, true)
+        } catch {
+          // tracing init sync failure is non-fatal
+        }
+      }
+    }
+
+    void syncTracing()
+  }, [])
+
+  return (
+    <WorkerPoolContextProvider
+      poolOptions={poolOptions}
+      highlighterOptions={highlighterOptions}
+    >
+      {isInlineCommentDemo() ? <InlineCommentDemo /> : <WorkspaceView />}
+    </WorkerPoolContextProvider>
+  )
+}
 
 export default App

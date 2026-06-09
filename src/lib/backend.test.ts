@@ -80,14 +80,10 @@ describe('backend (window.vimeflow bridge)', () => {
 
     await renameAgentSession('pty-1', 'new name')
 
-    expect(mockInvoke).toHaveBeenNthCalledWith(1, 'set_tracing_enabled', {
-      enabled: true,
-    })
-
-    const traceRequest = mockInvoke.mock.calls[1]?.[1] as
+    const traceRequest = mockInvoke.mock.calls[0]?.[1] as
       | { correlationId?: string; spanId?: string }
       | undefined
-    expect(mockInvoke.mock.calls[1]?.[0]).toBe('trace_user_interaction')
+    expect(mockInvoke.mock.calls[0]?.[0]).toBe('trace_user_interaction')
     expect(traceRequest).toMatchObject({
       event: 'pane.rename',
       sessionId: 'pty-1',
@@ -96,8 +92,8 @@ describe('backend (window.vimeflow bridge)', () => {
       },
     })
 
-    const renameRequest = mockInvoke.mock.calls[2]?.[1]
-    expect(mockInvoke.mock.calls[2]?.[0]).toBe('rename_agent_session')
+    const renameRequest = mockInvoke.mock.calls[1]?.[1]
+    expect(mockInvoke.mock.calls[1]?.[0]).toBe('rename_agent_session')
     expect(renameRequest).toMatchObject({
       ptyId: 'pty-1',
       title: 'new name',

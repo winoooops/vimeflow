@@ -2,7 +2,7 @@
 id: tokio-blocking-on-async
 category: backend
 created: 2026-05-04
-last_updated: 2026-05-20
+last_updated: 2026-06-09
 ref_count: 1
 ---
 
@@ -38,3 +38,12 @@ original Tauri command wording.
 - **Finding:** `run_git_with_timeout` used synchronous `Command::new("taskkill").status()` in the async timeout branch. On Windows, `taskkill.exe` can block long enough to hold a Tokio worker thread while the timed-out git child is being cleaned up.
 - **Fix:** Wrap the Windows `taskkill` subprocess in `tokio::task::spawn_blocking` and detach the handle, matching the existing fire-and-forget Unix kill semantics without blocking the async worker.
 - **Commit:** _(see git log for the PR #214 Windows timeout cleanup review-fix commit)_
+
+### 3. Mutex held through synchronous disk I/O in async agent-event handler
+
+- **Source:** github-claude | PR #405 round 1 | 2026-06-09
+- **Severity:** MEDIUM
+- **File:** `crates/backend/src/trace/mod.rs`
+- **Finding:** Three methods — `record_user_interaction`, `record_agent_event`, and `record_context_event` — each acquired `Mutex<TraceRuntimeState>` and held it throughout `state.store.append()`, which performs synchronous `OpenOptions::open` + `write` + `flush` (plus possible `fs::rename` rotation). Since all three are called from async Tokio context, the blocking mutex+disk combo can stall the Tokio executor thread for the duration of every flush.
+- **Fix:** Reduced each critical section to extract `enabled` and clone the minimal fields needed (including `store.clone()`, which only copies `PathBuf` + `TraceStoreConfig`), then released the lock before calling `store.append` outside the critical section.
+- **Commit:** same commit as this entry

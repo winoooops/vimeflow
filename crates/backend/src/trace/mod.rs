@@ -314,15 +314,19 @@ impl TraceService {
             allowed_frontend_session_id(&request.event, request.session_id.as_deref())?;
         let attributes = frontend_interaction_attributes(&request.event, &request.attributes)?;
 
-        let state = self
-            .inner
-            .state
-            .lock()
-            .map_err(|err| format!("trace state lock poisoned: {err}"))?;
+        let store = {
+            let state = self
+                .inner
+                .state
+                .lock()
+                .map_err(|err| format!("trace state lock poisoned: {err}"))?;
 
-        if !state.enabled {
-            return Ok(());
-        }
+            if !state.enabled {
+                return Ok(());
+            }
+
+            state.store.clone()
+        };
 
         let record = TraceRecord {
             schema_version: SCHEMA_VERSION,
@@ -338,8 +342,7 @@ impl TraceService {
             attributes,
         };
 
-        state
-            .store
+        store
             .append(&record)
             .map_err(|err| format!("trace append: {err}"))
     }
@@ -454,19 +457,27 @@ impl TraceService {
             return Ok(());
         };
 
-        let mut state = self
-            .inner
-            .state
-            .lock()
-            .map_err(|err| format!("trace state lock poisoned: {err}"))?;
-
-        if !state.enabled {
+        if event != "agent-session-title" {
             return Ok(());
         }
 
-        state.prune_expired_contexts();
+        let (store, maybe_stored) = {
+            let mut state = self
+                .inner
+                .state
+                .lock()
+                .map_err(|err| format!("trace state lock poisoned: {err}"))?;
 
-        let Some(stored) = state.session_contexts.get(session_id).cloned() else {
+            if !state.enabled {
+                return Ok(());
+            }
+
+            state.prune_expired_contexts();
+            let stored = state.session_contexts.get(session_id).cloned();
+            (state.store.clone(), stored)
+        };
+
+        let Some(stored) = maybe_stored else {
             return Ok(());
         };
 
@@ -484,10 +495,18 @@ impl TraceService {
             attributes: agent_event_attributes(event, payload),
         };
 
-        state
-            .store
+        store
             .append(&record)
-            .map_err(|err| format!("trace append: {err}"))
+            .map_err(|err| format!("trace append: {err}"))?;
+
+        let mut state = self
+            .inner
+            .state
+            .lock()
+            .map_err(|err| format!("trace state lock poisoned: {err}"))?;
+        state.session_contexts.remove(session_id);
+
+        Ok(())
     }
 
     fn record_context_event(
@@ -498,15 +517,19 @@ impl TraceService {
         status: Option<&'static str>,
         attributes: BTreeMap<String, String>,
     ) -> Result<(), String> {
-        let state = self
-            .inner
-            .state
-            .lock()
-            .map_err(|err| format!("trace state lock poisoned: {err}"))?;
+        let store = {
+            let state = self
+                .inner
+                .state
+                .lock()
+                .map_err(|err| format!("trace state lock poisoned: {err}"))?;
 
-        if !state.enabled {
-            return Ok(());
-        }
+            if !state.enabled {
+                return Ok(());
+            }
+
+            state.store.clone()
+        };
 
         let record = TraceRecord {
             schema_version: SCHEMA_VERSION,
@@ -522,8 +545,7 @@ impl TraceService {
             attributes,
         };
 
-        state
-            .store
+        store
             .append(&record)
             .map_err(|err| format!("trace append: {err}"))
     }

@@ -117,9 +117,6 @@ export const startUserInteractionTrace = async (
   } satisfies TraceUserInteractionRequest
 
   try {
-    await invokeBackend<null>('set_tracing_enabled', {
-      enabled: true,
-    } satisfies SetTracingEnabledRequest)
     await invokeBackend<null>('trace_user_interaction', request)
 
     return trace

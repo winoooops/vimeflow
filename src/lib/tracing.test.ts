@@ -79,12 +79,9 @@ describe('tracing', () => {
     )
 
     expect(trace).not.toBeNull()
-    expect(invokeSpy).toHaveBeenNthCalledWith(1, 'set_tracing_enabled', {
-      enabled: true,
-    })
 
-    const traceRequest = invokeSpy.mock.calls[1]?.[1]
-    expect(invokeSpy.mock.calls[1]?.[0]).toBe('trace_user_interaction')
+    const traceRequest = invokeSpy.mock.calls[0]?.[1]
+    expect(invokeSpy.mock.calls[0]?.[0]).toBe('trace_user_interaction')
     expect(traceRequest).toMatchObject({
       correlationId: trace?.correlationId,
       spanId: trace?.spanId,

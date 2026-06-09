@@ -2,7 +2,7 @@
 id: diagnostic-instrumentation
 category: code-quality
 created: 2026-04-30
-last_updated: 2026-05-24
+last_updated: 2026-06-09
 ref_count: 2
 ---
 
@@ -125,3 +125,21 @@ The discipline:
 - **Finding:** Cycle 4's initial fix for #9 above moved the production Codex init log into `CompositeLocator::new`, since both `CodexAdapter::new` and `CodexAdapter::with_home` reach that constructor. But `AgentBindings::for_attach` for the Codex arm constructs `CompositeLocator::new` TWICE per attach — once for `bindings.locator` (the outer locator used by watcher*runtime) and once inside `CodexAdapter::with_home` (the adapter's internal locator for the transitional `adapter_for_transcript_state`). That meant every production attach emitted two identical init lines, weakening the observability F11 was trying to restore. Local codex verify caught this as a new LOW finding \_introduced by the F11 fix itself* before push.
 - **Fix:** Moved the log up one more level to `AgentBindings::for_attach` (single attach-once site, one log per attach regardless of how many CompositeLocator instances are constructed downstream). Reverted the log from `CompositeLocator::new`. Updated comments in both `CodexAdapter::new` and `CompositeLocator::new` to point at the actual log site. Lesson: when picking a logging site, count the call sites that reach it per logical operation, not just the number of constructors. "Shared constructor" sounds like the right place but isn't if any caller path traverses it more than once. Audit the call graph from the user-facing event (here: "Codex attach") to every emit site. Pre-push codex verify (the local layer) caught this in the same cycle that introduced it — keeping the verify gate before push paid for itself.
 - **Commit:** _(PR #261 round 4 `/lifeline:upsource-review` cycle 4)_
+
+### 11. Redundant backend sync call on every traced user interaction
+
+- **Source:** github-claude | PR #405 round 1 | 2026-06-09
+- **Severity:** HIGH
+- **File:** `src/lib/tracing.ts`
+- **Finding:** `startUserInteractionTrace` unconditionally sent `set_tracing_enabled { enabled: true }` to the backend on every invocation, even though the backend should already be configured when `isTracingEnabled()` returns true. This meant every traced user action fired two IPC round-trips instead of one. Worse, if `set_tracing_enabled` failed (e.g., log-dir permission error), the catch block swallowed the error and returned `null`, silently dropping the trace and leaving the caller with no correlation IDs.
+- **Fix:** Removed the `set_tracing_enabled` call from `startUserInteractionTrace`. Added a one-time sync in `App.tsx` via `useEffect` that calls `setTracingEnabledWithInvoke(invoke, true)` when `isTracingEnabled()` is true on app mount. Updated sibling tests to expect only the `trace_user_interaction` call.
+- **Commit:** same commit as this entry
+
+### 12. Tracing context scoped too broadly — unrelated agent events attributed to rename correlation
+
+- **Source:** github-codex-connector | PR #405 round 1 | 2026-06-09
+- **Severity:** P2 / MEDIUM
+- **File:** `crates/backend/src/runtime/state.rs` + `crates/backend/src/trace/mod.rs`
+- **Finding:** After a traced rename succeeded, `remember_session_context` stored the correlation under the PTY id. `TracingEventSink::emit_json` then recorded any `agent-*` event for that session from `session_contexts` until the 15-minute TTL. So if the user renamed a pane and then sent an unrelated prompt before the title event/TTL expired, subsequent `agent-turn`/`agent-tool-call` records were attributed to the rename correlation, corrupting the trace.
+- **Fix:** Gated `record_agent_event` to only use the stored context when the event is `agent-session-title`. The context is removed immediately after recording the title event, so no non-title event can ever see it.
+- **Commit:** same commit as this entry
