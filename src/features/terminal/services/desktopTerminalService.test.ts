@@ -63,6 +63,7 @@ describe('DesktopTerminalService', () => {
         id: 'test-session-id',
         pid: 12345,
         cwd: '/home/user',
+        shell: '/bin/zsh',
       })
 
       const result = await service.spawn({
@@ -80,6 +81,7 @@ describe('DesktopTerminalService', () => {
       })
       expect(result.sessionId).toBe('test-session-id')
       expect(result.pid).toBe(12345)
+      expect(result.shell).toBe('/bin/zsh')
     })
 
     test('generates a UUID sessionId in the request', async () => {

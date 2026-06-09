@@ -1,6 +1,6 @@
 //! PTY operation helpers consumed by the runtime-neutral backend state.
 
-use portable_pty::{native_pty_system, CommandBuilder, PtySize};
+use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 use std::io::Read;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -82,6 +82,14 @@ fn locale_env_plan(
     }
 }
 
+fn system_shell() -> String {
+    if cfg!(target_os = "windows") {
+        "powershell.exe".to_string()
+    } else {
+        std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string())
+    }
+}
+
 /// Spawn a new PTY session with a shell
 pub(crate) async fn spawn_pty_inner(
     state: PtyState,
@@ -104,11 +112,7 @@ pub(crate) async fn spawn_pty_inner(
 
     // Determine shell path — ignore user-supplied shell for security;
     // only allow the system default shell to prevent arbitrary binary execution.
-    let shell = if cfg!(target_os = "windows") {
-        "powershell.exe".to_string()
-    } else {
-        std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string())
-    };
+    let shell = system_shell();
 
     if request.shell.is_some() {
         log::warn!(
@@ -366,7 +370,9 @@ pub(crate) async fn spawn_pty_inner(
         writer,
         child,
         cwd: cwd.to_string_lossy().to_string(),
-        shim_dir: bridge_files.as_ref().map(|f| f.shim_dir_path.to_string_lossy().to_string()),
+        shim_dir: bridge_files
+            .as_ref()
+            .map(|f| f.shim_dir_path.to_string_lossy().to_string()),
         generation,
         ring,
         cancelled,
@@ -461,6 +467,7 @@ pub(crate) async fn spawn_pty_inner(
         id: request.session_id,
         pid,
         cwd: cwd.to_string_lossy().to_string(),
+        shell,
     })
 }
 
@@ -545,7 +552,10 @@ pub(crate) fn kill_pty_inner(
     // Clean up bridge files and shim directory for the session.
     if let Some(session) = removed {
         let cwd = std::path::Path::new(&session.cwd);
-        let bridge_dir = cwd.join(".vimeflow").join("sessions").join(&request.session_id);
+        let bridge_dir = cwd
+            .join(".vimeflow")
+            .join("sessions")
+            .join(&request.session_id);
         let _ = super::bridge::cleanup_bridge_files(
             &bridge_dir.to_string_lossy(),
             session.shim_dir.as_deref(),
@@ -640,6 +650,7 @@ pub(crate) fn list_sessions_inner(
         session_infos.push(SessionInfo {
             id: id.clone(),
             cwd: cached.cwd,
+            shell: Some(system_shell()),
             status,
             activity_panel_collapsed: cached.activity_panel_collapsed,
         });
@@ -1514,7 +1525,7 @@ mod tests {
 
     fn make_failing_kill_session() -> crate::terminal::state::ManagedSession {
         use crate::terminal::state::{ManagedSession, RingBuffer};
-        use portable_pty::{native_pty_system, CommandBuilder, PtySize};
+        use portable_pty::{CommandBuilder, PtySize, native_pty_system};
         let pty_system = native_pty_system();
         let pty_pair = pty_system
             .openpty(PtySize {

@@ -37,6 +37,9 @@ export interface Pane {
   /** Per-pane working directory. */
   cwd: string
 
+  /** Resolved shell path for shell panes, e.g. `/bin/zsh`. */
+  shell?: string
+
   /** Detected agent CLI for this pane. */
   agentType: 'claude-code' | 'codex' | 'aider' | 'generic'
 

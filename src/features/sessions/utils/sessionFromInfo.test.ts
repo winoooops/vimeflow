@@ -6,6 +6,7 @@ import { writeActivityPanelCollapsed } from './activityPanelCollapsedStore'
 const aliveInfo = (id: string, cwd: string): SessionInfo => ({
   id,
   cwd,
+  shell: '/bin/zsh',
   status: { kind: 'Alive', pid: 1234, replay_data: '', replay_end_offset: 0n },
 })
 
@@ -66,6 +67,7 @@ describe('sessionFromInfo (pre-pane shape)', () => {
     expect(session.panes[0].status).toBe('running')
     expect(session.panes[0].restoreData).toBeDefined()
     expect(session.panes[0].restoreData?.pid).toBe(1234)
+    expect(session.panes[0].shell).toBe('/bin/zsh')
     expect(session.layout).toBe('single')
   })
 

@@ -2037,10 +2037,20 @@ describe('useSessionManager', () => {
 
     // Suspend spawn so we can race a tab switch in.
     let resolveSpawn:
-      | ((v: { sessionId: string; pid: number; cwd: string }) => void)
+      | ((v: {
+          sessionId: string
+          pid: number
+          cwd: string
+          shell: string
+        }) => void)
       | null = null
     service.spawn = vi.fn(
-      (): Promise<{ sessionId: string; pid: number; cwd: string }> =>
+      (): Promise<{
+        sessionId: string
+        pid: number
+        cwd: string
+        shell: string
+      }> =>
         new Promise((resolve) => {
           resolveSpawn = resolve
         })
@@ -2065,7 +2075,12 @@ describe('useSessionManager', () => {
     // The fix reads activeSessionIdRef.current ('alive') so wasActive=false,
     // and the swap commits without promoting 'fresh'.
     act(() => {
-      resolveSpawn?.({ sessionId: 'fresh', pid: 9000, cwd: '/tmp' })
+      resolveSpawn?.({
+        sessionId: 'fresh',
+        pid: 9000,
+        cwd: '/tmp',
+        shell: '/bin/zsh',
+      })
     })
 
     // Wait for the swap to commit.
@@ -2214,10 +2229,20 @@ describe('useSessionManager', () => {
     })
 
     let resolveSpawn:
-      | ((v: { sessionId: string; pid: number; cwd: string }) => void)
+      | ((v: {
+          sessionId: string
+          pid: number
+          cwd: string
+          shell: string
+        }) => void)
       | null = null
     service.spawn = vi.fn(
-      (): Promise<{ sessionId: string; pid: number; cwd: string }> =>
+      (): Promise<{
+        sessionId: string
+        pid: number
+        cwd: string
+        shell: string
+      }> =>
         new Promise((resolve) => {
           resolveSpawn = resolve
         })
@@ -2242,7 +2267,12 @@ describe('useSessionManager', () => {
 
     // Step 3: spawn now resolves with the orphan id.
     act(() => {
-      resolveSpawn?.({ sessionId: 'orphan-fresh', pid: 1234, cwd: '/tmp' })
+      resolveSpawn?.({
+        sessionId: 'orphan-fresh',
+        pid: 1234,
+        cwd: '/tmp',
+        shell: '/bin/zsh',
+      })
     })
 
     // Wait until the orphan-kill IPC has fired. Cast through the typed
@@ -4301,6 +4331,7 @@ describe('useSessionManager', () => {
             sessionId: `pty-${index}`,
             pid: 100 + index,
             cwd: resolvedCwds[index] ?? `/workspace-${index}`,
+            shell: '/bin/zsh',
           })
         }
       )

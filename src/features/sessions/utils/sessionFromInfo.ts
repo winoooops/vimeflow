@@ -18,6 +18,7 @@ export const sessionFromInfo = (info: SessionInfo, index: number): Session => {
     id: 'p0',
     ptyId: info.id,
     cwd: info.cwd,
+    shell: info.shell,
     agentType: 'generic',
     status,
     active: true,

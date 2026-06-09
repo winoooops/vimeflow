@@ -850,6 +850,7 @@ export const useSessionManager = (
                   id: 'p0',
                   ptyId: result.sessionId,
                   cwd: result.cwd,
+                  shell: result.shell,
                   agentType: 'generic',
                   status: 'running',
                   active: true,
@@ -1356,6 +1357,7 @@ export const useSessionManager = (
             id: nextFreePaneId(fresh.panes),
             ptyId: result.sessionId,
             cwd: result.cwd,
+            shell: result.shell,
             agentType: 'generic',
             status: 'running',
             active: true,
@@ -1602,7 +1604,12 @@ export const useSessionManager = (
         }
         const cachedCwd = oldPane.cwd
 
-        let result: { sessionId: string; pid: number; cwd: string }
+        let result: {
+          sessionId: string
+          pid: number
+          cwd: string
+          shell: string
+        }
         try {
           result = await service.spawn({
             cwd: cachedCwd,
@@ -1672,6 +1679,7 @@ export const useSessionManager = (
               ...oldPane,
               ptyId: result.sessionId,
               cwd: result.cwd,
+              shell: result.shell,
               status: 'running',
               agentType: 'generic',
               pid: result.pid,

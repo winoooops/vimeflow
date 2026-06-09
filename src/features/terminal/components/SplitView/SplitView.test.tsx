@@ -136,7 +136,12 @@ const makeSession = (
 
 const makeMockService = (): ITerminalService => ({
   spawn: vi.fn(() =>
-    Promise.resolve({ sessionId: 'mock', pid: 0, cwd: '/tmp' })
+    Promise.resolve({
+      sessionId: 'mock',
+      pid: 0,
+      cwd: '/tmp',
+      shell: '/bin/zsh',
+    })
   ),
   write: vi.fn(() => Promise.resolve(undefined)),
   resize: vi.fn(() => Promise.resolve(undefined)),
