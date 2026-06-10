@@ -816,14 +816,14 @@ describe('WorkspaceView', () => {
     })
   })
 
-  test('applies correct grid layout with 3 columns (dynamic sidebar width)', () => {
+  test('applies correct grid layout with 2 columns (dynamic sidebar width)', () => {
     render(<WorkspaceView />)
 
     const container = screen.getByTestId('workspace-view')
 
     expect(container).toHaveClass('grid')
-    // VIM-76: icon rail removed — sidebar (auto) | main (1fr) | activity (auto).
-    expect(container.style.gridTemplateColumns).toBe('auto 1fr auto')
+    // Main-stage handoff: sidebar (auto) | floating stage (1fr).
+    expect(container.style.gridTemplateColumns).toBe('auto 1fr')
 
     expect(container.style.getPropertyValue('--workspace-sidebar-width')).toBe(
       '272px'
@@ -1206,11 +1206,9 @@ describe('WorkspaceView', () => {
   test('main workspace area uses flex-col layout', () => {
     render(<WorkspaceView />)
 
-    const workspaceView = screen.getByTestId('workspace-view')
-
-    // VIM-76: icon rail removed — 2nd grid child = main wrapper (after the
-    // sidebar wrapper, before the activity panel).
-    const mainWorkspace = workspaceView.children[1] as HTMLElement
+    // Main-stage handoff: the main column is the semantic <main> inside the
+    // floating stage (stage itself is a flex row of main + activity panel).
+    const mainWorkspace = screen.getByRole('main', { name: 'Main workspace' })
     expect(mainWorkspace).toHaveClass('flex')
     expect(mainWorkspace).toHaveClass('flex-col')
   })
@@ -1263,13 +1261,13 @@ describe('WorkspaceView', () => {
     expect(screen.getByRole('button', { name: /editor/i })).toBeInTheDocument()
   })
 
-  test('grid columns: sidebar auto (drawer), main 1fr, activity auto', () => {
+  test('grid columns: sidebar auto (drawer), floating stage 1fr', () => {
     render(<WorkspaceView />)
 
     const container = screen.getByTestId('workspace-view')
 
-    // VIM-76: icon rail removed — three columns sidebar | main | activity.
-    expect(container.style.gridTemplateColumns).toBe('auto 1fr auto')
+    // Main-stage handoff: main + activity live inside the stage column.
+    expect(container.style.gridTemplateColumns).toBe('auto 1fr')
 
     // The resizable width still lives in the CSS var (now applied to the
     // sidebar shell instead of the grid track) so the drawer can animate.

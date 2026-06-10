@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 /* eslint-disable testing-library/no-node-access */
 
-import { describe, test, expect, vi } from 'vitest'
+import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
 // @ts-expect-error - tailwind.config.js has no type declarations
 import tailwindConfig from '../../../tailwind.config'
 
@@ -86,11 +86,13 @@ vi.mock('../../hooks/useElasticContainer', () => ({
 }))
 
 // eslint-disable-next-line import/first
-import { render, screen } from '@testing-library/react'
+import { render, screen, act } from '@testing-library/react'
 // eslint-disable-next-line import/first
 import userEvent from '@testing-library/user-event'
 // eslint-disable-next-line import/first
 import { WorkspaceView } from './WorkspaceView'
+// eslint-disable-next-line import/first
+import { setSidebarCollapsed } from './utils/sidebarCollapsedStore'
 
 /**
  * Visual Verification Test Suite for Feature #20
@@ -109,12 +111,13 @@ import { WorkspaceView } from './WorkspaceView'
 
 describe('WorkspaceView - Visual Verification (Feature #20)', () => {
   describe('Layout: 3-Zone Architecture (VIM-76)', () => {
-    test('grid layout has correct zone widths (auto, 1fr, auto)', () => {
+    test('grid layout has correct zone widths (auto, 1fr)', () => {
       render(<WorkspaceView />)
       const workspace = screen.getByTestId('workspace-view')
 
-      // VIM-76: icon rail removed — three columns sidebar | main | activity.
-      expect(workspace.style.gridTemplateColumns).toBe('auto 1fr auto')
+      // Main-stage handoff: main + activity fuse into one floating-stage
+      // column, so the grid is sidebar (auto) | stage (1fr).
+      expect(workspace.style.gridTemplateColumns).toBe('auto 1fr')
 
       expect(
         workspace.style.getPropertyValue('--workspace-sidebar-width')
@@ -348,6 +351,90 @@ describe('WorkspaceView - Visual Verification (Feature #20)', () => {
       expect(panel).toBeInTheDocument()
       // Child sections (StatusCard, metrics, collapsible sections) will be
       // added in sub-specs 5-7
+    })
+  })
+
+  describe('Floating stage (main-stage handoff J1/J6a/J10)', () => {
+    beforeEach(() => {
+      act(() => {
+        setSidebarCollapsed(false)
+      })
+    })
+
+    afterEach(() => {
+      act(() => {
+        setSidebarCollapsed(false)
+      })
+    })
+
+    test('stage wraps the main column and the activity panel as one clipped surface', () => {
+      render(<WorkspaceView />)
+      const stage = screen.getByTestId('floating-stage')
+
+      expect(stage).toContainElement(screen.getByTestId('terminal-zone'))
+      expect(stage).toContainElement(screen.getByTestId('status-bar'))
+      expect(stage).toContainElement(screen.getByTestId('activity-panel-shell'))
+
+      const stageClasses = stage.className.split(/\s+/)
+      expect(stageClasses).toContain('overflow-hidden')
+      expect(stageClasses).toContain('relative')
+      expect(stageClasses).toContain('z-[2]')
+      expect(stageClasses).toContain('bg-surface-container-lowest')
+    })
+
+    test('sidebar open: stage has 14px left radii over a sidebar-colored shell background', () => {
+      render(<WorkspaceView />)
+
+      const stageClasses = screen
+        .getByTestId('floating-stage')
+        .className.split(/\s+/)
+      expect(stageClasses).toContain('rounded-l-[14px]')
+      expect(stageClasses).toContain('max-[760px]:rounded-l-[10px]')
+
+      const rootClasses = screen
+        .getByTestId('workspace-view')
+        .className.split(/\s+/)
+      expect(rootClasses).toContain('bg-surface-container-low')
+      expect(rootClasses).not.toContain('bg-surface-container-lowest')
+    })
+
+    test('sidebar collapsed: stage is square and edge-to-edge on the lowest surface', () => {
+      render(<WorkspaceView />)
+
+      act(() => {
+        setSidebarCollapsed(true)
+      })
+
+      const stage = screen.getByTestId('floating-stage')
+      expect(stage.className).not.toContain('rounded-l-[14px]')
+      expect(stage.className).not.toContain('max-[760px]:rounded-l-[10px]')
+
+      const rootClasses = screen
+        .getByTestId('workspace-view')
+        .className.split(/\s+/)
+      expect(rootClasses).toContain('bg-surface-container-lowest')
+      expect(rootClasses).not.toContain('bg-surface-container-low')
+    })
+
+    test('stage carries no shadow in either state — corner reveal comes from the parent background (J6a)', () => {
+      render(<WorkspaceView />)
+      const stage = screen.getByTestId('floating-stage')
+
+      expect(stage.className).not.toMatch(/shadow/)
+
+      act(() => {
+        setSidebarCollapsed(true)
+      })
+
+      expect(stage.className).not.toMatch(/shadow/)
+    })
+
+    test('main column is a semantic <main> labelled as the workspace', () => {
+      render(<WorkspaceView />)
+      const main = screen.getByRole('main', { name: 'Main workspace' })
+
+      expect(screen.getByTestId('floating-stage')).toContainElement(main)
+      expect(main).toContainElement(screen.getByTestId('terminal-zone'))
     })
   })
 

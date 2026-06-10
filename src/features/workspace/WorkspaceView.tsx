@@ -1453,16 +1453,23 @@ export const WorkspaceView = (): ReactElement => {
       // `grid-rows-1` pins the implicit row to `1fr`; without it
       // `grid-auto-rows: auto` lets the row grow to content size and
       // `h-full` stops propagating the 100vh constraint downward.
-      className="grid h-screen grid-rows-1 overflow-hidden"
+      // The shell background is what shows through the stage's clipped left
+      // corners: sidebar-colored while the sidebar is open, lowest surface
+      // when collapsed (square stage, nothing to reveal).
+      className={`grid h-screen grid-rows-1 overflow-hidden ${
+        sidebarCollapsed
+          ? 'bg-surface-container-lowest'
+          : 'bg-surface-container-low'
+      }`}
       style={
         {
           // `--workspace-sidebar-width` is owned by previewSidebarWidth so
           // React rerenders cannot overwrite an in-progress drag preview.
-          // VIM-76: icon rail removed — layout is [sidebar | main | activity].
-          // The sidebar `auto` track follows the shell width; collapse sets it
-          // to 0 INSTANTLY (no slide), so <main> (1fr) reclaims with no gutter
-          // and no transition window.
-          gridTemplateColumns: `auto 1fr auto`,
+          // Main-stage handoff: layout is [sidebar | floating stage]; the
+          // stage carries main + activity. The sidebar `auto` track follows
+          // the shell width; collapse sets it to 0 INSTANTLY (no slide), so
+          // the stage (1fr) reclaims with no gutter and no transition window.
+          gridTemplateColumns: `auto 1fr`,
         } as CSSProperties
       }
     >
@@ -1473,7 +1480,7 @@ export const WorkspaceView = (): ReactElement => {
       <div
         aria-hidden={sidebarCollapsed || undefined}
         inert={sidebarCollapsed || undefined}
-        className="relative h-full overflow-hidden"
+        className="relative z-[1] h-full overflow-hidden"
         style={{
           width: sidebarCollapsed
             ? 0
@@ -1566,144 +1573,161 @@ export const WorkspaceView = (): ReactElement => {
         </div>
       </div>
 
-      {/* Main workspace area - TerminalZone + DockPanel.
+      {/* Floating stage — the whole right side (main column + activity
+          panel) lifts off the sidebar as one clipped surface: rounded left
+          corners while the sidebar is open, square and edge-to-edge when it
+          is collapsed. No shadow — the raised read comes from the
+          sidebar-colored shell background filling the clipped corners. */}
+      <div
+        data-testid="floating-stage"
+        className={`relative z-[2] flex h-full min-w-0 overflow-hidden bg-surface-container-lowest ${
+          sidebarCollapsed
+            ? ''
+            : 'rounded-l-[14px] max-[760px]:rounded-l-[10px]'
+        }`}
+      >
+        {/* Main workspace area - TerminalZone + DockPanel.
           `relative` establishes a containing block so the fileError
           banner's `absolute` positioning is scoped to this column
           rather than climbing to the viewport. */}
-      <div className="relative flex flex-col overflow-hidden">
-        <Tabs
-          sessions={sessions}
-          activeSessionId={activeSessionId}
-          onSelect={handleSetActiveSessionId}
-          onClose={handleRemoveSession}
-          onNew={handleCreateSession}
-          leading={
-            sidebarCollapsed ? (
-              <SidebarToggle
-                ref={sidebarToggleTabsRef}
-                collapsed
-                onClick={toggleSidebar}
-                size={28}
-                variant="inset"
-                data-testid="sidebar-toggle-tabs"
-                shortcutHint={sidebarShortcutHint}
-              />
-            ) : undefined
-          }
-        />
-
-        <div
-          ref={dockCanvasRef}
-          data-testid="dock-canvas-wrapper"
-          className="flex min-h-0 min-w-0 flex-1 overflow-hidden"
-          style={{ flexDirection: dockCanvasFlexDirection }}
+        <main
+          aria-label="Main workspace"
+          className="relative flex min-w-0 flex-1 flex-col overflow-hidden bg-surface"
         >
-          {dockBeforeTerminal ? dockOrPeek : null}
-          <div
-            data-testid="terminal-zone-wrapper"
-            className="flex min-h-0 min-w-0 flex-1 overflow-hidden"
-          >
-            <TerminalZone
-              ref={terminalZoneRef}
-              sessions={sessions}
-              activeSessionId={activeSessionId}
-              onSessionCwdChange={updatePaneCwd}
-              deferTerminalFit={terminalFitDeferred}
-              loading={loading}
-              onPaneReady={notifyPaneReady}
-              onSessionRestart={restartSession}
-              service={terminalService}
-              setSessionActivePane={setSessionActivePane}
-              updateBrowserPaneUrl={updateBrowserPaneUrl}
-              setSessionLayout={setSessionLayout}
-              addPane={addPane}
-              removePane={removePane}
-              areBrowserPanesOccluded={areBrowserPanesOccluded}
-              isZoneFocused={activeContainerId === TERMINAL_CONTAINER_ID}
-              onContainerFocus={() => {
-                setActiveContainerId(TERMINAL_CONTAINER_ID)
-              }}
-            />
-          </div>
-          {!dockBeforeTerminal ? dockOrPeek : null}
-        </div>
+          <Tabs
+            sessions={sessions}
+            activeSessionId={activeSessionId}
+            onSelect={handleSetActiveSessionId}
+            onClose={handleRemoveSession}
+            onNew={handleCreateSession}
+            leading={
+              sidebarCollapsed ? (
+                <SidebarToggle
+                  ref={sidebarToggleTabsRef}
+                  collapsed
+                  onClick={toggleSidebar}
+                  size={28}
+                  variant="inset"
+                  data-testid="sidebar-toggle-tabs"
+                  shortcutHint={sidebarShortcutHint}
+                />
+              ) : undefined
+            }
+          />
 
-        {(fileError !== null || infoMessage !== null) && (
-          <div className="absolute top-2 left-1/2 z-40 flex w-[calc(100%-1rem)] max-w-2xl -translate-x-1/2 flex-col gap-2">
-            {/* File error banner — surfaces failures from direct file open
+          <div
+            ref={dockCanvasRef}
+            data-testid="dock-canvas-wrapper"
+            className="flex min-h-0 min-w-0 flex-1 overflow-hidden"
+            style={{ flexDirection: dockCanvasFlexDirection }}
+          >
+            {dockBeforeTerminal ? dockOrPeek : null}
+            <div
+              data-testid="terminal-zone-wrapper"
+              className="flex min-h-0 min-w-0 flex-1 overflow-hidden"
+            >
+              <TerminalZone
+                ref={terminalZoneRef}
+                sessions={sessions}
+                activeSessionId={activeSessionId}
+                onSessionCwdChange={updatePaneCwd}
+                deferTerminalFit={terminalFitDeferred}
+                loading={loading}
+                onPaneReady={notifyPaneReady}
+                onSessionRestart={restartSession}
+                service={terminalService}
+                setSessionActivePane={setSessionActivePane}
+                updateBrowserPaneUrl={updateBrowserPaneUrl}
+                setSessionLayout={setSessionLayout}
+                addPane={addPane}
+                removePane={removePane}
+                areBrowserPanesOccluded={areBrowserPanesOccluded}
+                isZoneFocused={activeContainerId === TERMINAL_CONTAINER_ID}
+                onContainerFocus={() => {
+                  setActiveContainerId(TERMINAL_CONTAINER_ID)
+                }}
+              />
+            </div>
+            {!dockBeforeTerminal ? dockOrPeek : null}
+          </div>
+
+          {(fileError !== null || infoMessage !== null) && (
+            <div className="absolute top-2 left-1/2 z-40 flex w-[calc(100%-1rem)] max-w-2xl -translate-x-1/2 flex-col gap-2">
+              {/* File error banner — surfaces failures from direct file open
                 (openFileSafely) and vim :w saves (handleVimSave). Rendered at
                 the top of the main area so the user always sees what went wrong. */}
-            {fileError && (
-              <div
-                role="alert"
-                className="flex items-center gap-3 rounded-lg bg-error/20 px-4 py-2 font-inter text-sm text-error shadow-lg backdrop-blur-sm"
-              >
-                <span className="flex-1">{fileError}</span>
-                <button
-                  type="button"
-                  aria-label="Dismiss error"
-                  onClick={() => {
-                    setFileError(null)
-                  }}
-                  className="text-error transition-colors hover:text-on-surface"
+              {fileError && (
+                <div
+                  role="alert"
+                  className="flex items-center gap-3 rounded-lg bg-error/20 px-4 py-2 font-inter text-sm text-error shadow-lg backdrop-blur-sm"
                 >
-                  ✕
-                </button>
-              </div>
-            )}
+                  <span className="flex-1">{fileError}</span>
+                  <button
+                    type="button"
+                    aria-label="Dismiss error"
+                    onClick={() => {
+                      setFileError(null)
+                    }}
+                    className="text-error transition-colors hover:text-on-surface"
+                  >
+                    ✕
+                  </button>
+                </div>
+              )}
 
-            {/* Info banner — surfaces workspace command failures (no active tab,
+              {/* Info banner — surfaces workspace command failures (no active tab,
                 invalid goto args, etc.). Stacked below file errors so command
                 feedback never obscures file-operation failures. */}
-            {infoMessage && (
-              <InfoBanner message={infoMessage} onDismiss={dismiss} />
-            )}
-          </div>
-        )}
+              {infoMessage && (
+                <InfoBanner message={infoMessage} onDismiss={dismiss} />
+              )}
+            </div>
+          )}
 
-        <StatusBar
-          session={statusBarSession}
-          contextPct={statusBarContextPct}
-          paletteShortcut={COMMAND_PALETTE_SHORTCUT_KEYS}
-          onOpenPalette={commandPalette.open}
-        />
-      </div>
+          <StatusBar
+            session={statusBarSession}
+            contextPct={statusBarContextPct}
+            paletteShortcut={COMMAND_PALETTE_SHORTCUT_KEYS}
+            onOpenPalette={commandPalette.open}
+          />
+        </main>
 
-      <div
-        data-testid="activity-panel-shell"
-        className="h-full shrink-0 overflow-hidden transition-[width] duration-[220ms] ease-pane"
-        style={{
-          width: activityPanelCollapsed ? RAIL_WIDTH_PX : PANEL_WIDTH_PX,
-        }}
-      >
-        {activityPanelCollapsed ? (
-          <AgentStatusRail
-            agent={activityPanelAgent}
-            contextUsedPercentage={
-              agentStatus.contextWindow?.usedPercentage ?? null
-            }
-            cacheHitPercentage={cacheHitPercentage(
-              agentStatus.contextWindow?.currentUsage
-            )}
-            isRunning={agentStatus.isActive}
-            onExpand={() => {
-              handleActivityPanelCollapsed(false)
-            }}
-          />
-        ) : (
-          <AgentStatusPanel
-            agentStatus={agentStatus}
-            cwd={activeCwd}
-            gitStatus={gitStatus}
-            onOpenDiff={handleOpenDiff}
-            onOpenFile={handleOpenTestFile}
-            agent={activityPanelAgent}
-            status={activityPanelStatus}
-            onCollapse={() => {
-              handleActivityPanelCollapsed(true)
-            }}
-          />
-        )}
+        <div
+          data-testid="activity-panel-shell"
+          className="h-full shrink-0 overflow-hidden transition-[width] duration-[220ms] ease-pane"
+          style={{
+            width: activityPanelCollapsed ? RAIL_WIDTH_PX : PANEL_WIDTH_PX,
+          }}
+        >
+          {activityPanelCollapsed ? (
+            <AgentStatusRail
+              agent={activityPanelAgent}
+              contextUsedPercentage={
+                agentStatus.contextWindow?.usedPercentage ?? null
+              }
+              cacheHitPercentage={cacheHitPercentage(
+                agentStatus.contextWindow?.currentUsage
+              )}
+              isRunning={agentStatus.isActive}
+              onExpand={() => {
+                handleActivityPanelCollapsed(false)
+              }}
+            />
+          ) : (
+            <AgentStatusPanel
+              agentStatus={agentStatus}
+              cwd={activeCwd}
+              gitStatus={gitStatus}
+              onOpenDiff={handleOpenDiff}
+              onOpenFile={handleOpenTestFile}
+              agent={activityPanelAgent}
+              status={activityPanelStatus}
+              onCollapse={() => {
+                handleActivityPanelCollapsed(true)
+              }}
+            />
+          )}
+        </div>
       </div>
 
       {/* Unsaved Changes Dialog — shows the CURRENTLY dirty file, not the
