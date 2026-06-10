@@ -167,21 +167,22 @@ const SESSION_AGENT_REGISTRY_KEY: Record<
   generic: 'shell',
 }
 
-// Auto-hide top chrome: hiding lingers 1.5s after the cursor/focus leaves
-// so the bar does not snap away mid-reach; revealing stays immediate via
-// the zero-delay variants below. Every variant-prefixed class is a full
+// Auto-hide top chrome: hiding waits 500ms after the cursor/focus leaves,
+// then glides out over 420ms on a soft curve — a short grace followed by
+// gradual motion, never frozen-then-snap. Revealing eases in over 200ms
+// with no delay via the variants below. Every variant-prefixed class is a full
 // literal — Tailwind's scanner cannot see classes assembled at runtime.
 const TOP_CHROME_HIDE_TRANSITION =
-  '[transition:opacity_140ms_ease_1500ms,transform_160ms_ease_1500ms,padding-left_180ms_cubic-bezier(0.4,0,0.2,1)]'
+  '[transition:opacity_420ms_cubic-bezier(0.4,0,0.2,1)_500ms,transform_420ms_cubic-bezier(0.4,0,0.2,1)_500ms,padding-left_180ms_cubic-bezier(0.4,0,0.2,1)]'
 
 const TOP_CHROME_SHOW_TRANSITION =
-  '[transition:opacity_140ms_ease,transform_160ms_ease,padding-left_180ms_cubic-bezier(0.4,0,0.2,1)]'
+  '[transition:opacity_200ms_ease-out,transform_200ms_ease-out,padding-left_180ms_cubic-bezier(0.4,0,0.2,1)]'
 
 // Reveal on hover or KEYBOARD focus (focus-visible) only — a mouse click on
 // the pin leaves plain :focus behind, and matching it (focus-within) would
 // hold the bar open after unpinning until the user clicked elsewhere.
 const TOP_CHROME_REVEAL_CLASSES =
-  'group-hover:translate-y-0 group-hover:opacity-100 group-hover:[transition:opacity_140ms_ease,transform_160ms_ease,padding-left_180ms_cubic-bezier(0.4,0,0.2,1)] group-focus-visible:translate-y-0 group-focus-visible:opacity-100 group-focus-visible:[transition:opacity_140ms_ease,transform_160ms_ease,padding-left_180ms_cubic-bezier(0.4,0,0.2,1)] group-has-[:focus-visible]:translate-y-0 group-has-[:focus-visible]:opacity-100 group-has-[:focus-visible]:[transition:opacity_140ms_ease,transform_160ms_ease,padding-left_180ms_cubic-bezier(0.4,0,0.2,1)]'
+  'group-hover:translate-y-0 group-hover:opacity-100 group-hover:[transition:opacity_200ms_ease-out,transform_200ms_ease-out,padding-left_180ms_cubic-bezier(0.4,0,0.2,1)] group-focus-visible:translate-y-0 group-focus-visible:opacity-100 group-focus-visible:[transition:opacity_200ms_ease-out,transform_200ms_ease-out,padding-left_180ms_cubic-bezier(0.4,0,0.2,1)] group-has-[:focus-visible]:translate-y-0 group-has-[:focus-visible]:opacity-100 group-has-[:focus-visible]:[transition:opacity_200ms_ease-out,transform_200ms_ease-out,padding-left_180ms_cubic-bezier(0.4,0,0.2,1)]'
 
 type DockTab = 'editor' | 'diff'
 
