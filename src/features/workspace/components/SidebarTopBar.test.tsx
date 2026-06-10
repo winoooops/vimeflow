@@ -6,13 +6,7 @@ import { SidebarTopBar, type SidebarTopBarProps } from './SidebarTopBar'
 const renderTopBar = (
   props: Partial<SidebarTopBarProps> = {}
 ): ReturnType<typeof render> =>
-  render(
-    <SidebarTopBar
-      onToggleSidebar={vi.fn()}
-      commandShortcutHint="Ctrl+;"
-      {...props}
-    />
-  )
+  render(<SidebarTopBar onToggleSidebar={vi.fn()} {...props} />)
 
 describe('SidebarTopBar', () => {
   test('renders the collapse toggle on the left', () => {
@@ -23,8 +17,6 @@ describe('SidebarTopBar', () => {
 
   test('keeps empty expanded top-bar chrome draggable while controls remain clickable on macOS', () => {
     renderTopBar({
-      onCommand: vi.fn(),
-      onSettings: vi.fn(),
       reserveWindowControls: true,
     })
 
@@ -35,20 +27,10 @@ describe('SidebarTopBar', () => {
     expect(screen.getByTestId('sidebar-toggle-topbar')).toHaveClass(
       'vf-app-no-drag'
     )
-
-    expect(screen.getByRole('button', { name: 'Command Palette' })).toHaveClass(
-      'vf-app-no-drag'
-    )
-
-    expect(screen.getByRole('button', { name: 'Settings' })).toHaveClass(
-      'vf-app-no-drag'
-    )
   })
 
   test('does not apply drag-region class on non-macOS platforms', () => {
     renderTopBar({
-      onCommand: vi.fn(),
-      onSettings: vi.fn(),
       reserveWindowControls: false,
     })
 
@@ -67,63 +49,15 @@ describe('SidebarTopBar', () => {
     expect(onToggleSidebar).toHaveBeenCalledTimes(1)
   })
 
-  test('the Command Palette button is icon-only and fires onCommand', async () => {
-    const user = userEvent.setup()
-    const onCommand = vi.fn()
-    renderTopBar({ onCommand, commandShortcutHint: 'Ctrl+;' })
-
-    const button = screen.getByRole('button', { name: 'Command Palette' })
-    // Icon-only: the shortcut lives in the tooltip, not inline on the button.
-    expect(button).not.toHaveTextContent('Ctrl+;')
-
-    await user.click(button)
-
-    expect(onCommand).toHaveBeenCalledTimes(1)
-  })
-
-  test('utilities use the project tooltip, not a native title attribute', () => {
-    renderTopBar({ onCommand: vi.fn() })
+  test('does not render sidebar utility buttons in the traffic-light row', () => {
+    renderTopBar()
 
     expect(
-      screen.getByRole('button', { name: 'Command Palette' })
-    ).not.toHaveAttribute('title')
-  })
+      screen.queryByRole('button', { name: 'Command Palette' })
+    ).not.toBeInTheDocument()
 
-  test('hovering the Command Palette button surfaces the tooltip with the shortcut chip', async () => {
-    const user = userEvent.setup()
-    renderTopBar({ onCommand: vi.fn(), commandShortcutHint: 'Ctrl+;' })
-
-    await user.hover(screen.getByRole('button', { name: 'Command Palette' }))
-
-    const tooltip = await screen.findByRole('tooltip')
-    expect(tooltip).toHaveTextContent('Command Palette')
-    expect(screen.getByTestId('tooltip-shortcut')).toHaveTextContent('Ctrl+;')
-  })
-
-  test('Settings renders as a disabled stub when no handler is wired', async () => {
-    const user = userEvent.setup()
-    const onCommand = vi.fn()
-    renderTopBar({ onCommand, settingsIssueNumber: 252 })
-
-    const settings = screen.getByRole('button', { name: /^Settings/ })
-    expect(settings).toHaveAttribute('aria-disabled', 'true')
-    expect(settings).toHaveAccessibleName(/issue #252/)
-
-    // Clicking the disabled stub is a no-op (must not throw / call anything).
-    await user.click(settings)
-    expect(onCommand).not.toHaveBeenCalled()
-  })
-
-  test('Settings enables and fires onSettings when a handler is provided', async () => {
-    const user = userEvent.setup()
-    const onSettings = vi.fn()
-    renderTopBar({ onSettings })
-
-    const settings = screen.getByRole('button', { name: /^Settings/ })
-    expect(settings).not.toHaveAttribute('aria-disabled')
-
-    await user.click(settings)
-
-    expect(onSettings).toHaveBeenCalledTimes(1)
+    expect(
+      screen.queryByRole('button', { name: /^Settings/ })
+    ).not.toBeInTheDocument()
   })
 })

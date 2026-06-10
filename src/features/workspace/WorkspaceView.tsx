@@ -10,6 +10,7 @@ import {
 } from 'react'
 import { SidebarToggle } from './components/SidebarToggle'
 import { SidebarTopBar } from './components/SidebarTopBar'
+import { SidebarSettingsFooter } from './components/SidebarSettingsFooter'
 import { Tabs } from '../sessions/components/Tabs'
 import { Sidebar } from '../../components/sidebar/Sidebar'
 import {
@@ -52,7 +53,6 @@ import {
   usePaneRenameChord,
   type FocusedPaneRef,
 } from '../command-palette/hooks/usePaneRenameChord'
-import { formatShortcut } from '../../lib/formatShortcut'
 import { renameAgentSession } from '../../lib/backend'
 import { useSessionManager } from '../sessions/hooks/useSessionManager'
 import {
@@ -266,9 +266,6 @@ export const WorkspaceView = (): ReactElement => {
 
   const newSessionAriaKeyshortcuts =
     preferModifier === 'meta' ? 'Meta+N' : 'Control+Shift+N'
-  // Real command-palette chord for the top-bar utility hint (Ctrl+; / ⌘;),
-  // not the ⌘K placeholder in the static design mock.
-  const commandShortcutHint = formatShortcut(COMMAND_PALETTE_SHORTCUT_KEYS)
   const reserveWindowControls = preferModifier === 'meta'
 
   const windowControlsInset = reserveWindowControls
@@ -1709,10 +1706,7 @@ export const WorkspaceView = (): ReactElement => {
               ) : (
                 <SidebarTopBar
                   onToggleSidebar={handleToggleSidebar}
-                  onCommand={commandPalette.open}
-                  commandShortcutHint={commandShortcutHint}
                   sidebarShortcutHint={sidebarShortcutHint}
-                  settingsIssueNumber={SETTINGS_FOLLOWUP_ISSUE_NUMBER}
                   toggleRef={sidebarToggleTopbarRef}
                   reserveWindowControls={reserveWindowControls}
                 />
@@ -1758,6 +1752,13 @@ export const WorkspaceView = (): ReactElement => {
                   onFileSelect={handleFileSelect}
                 />
               </div>
+            }
+            footer={
+              isSidebarClosed ? undefined : (
+                <SidebarSettingsFooter
+                  settingsIssueNumber={SETTINGS_FOLLOWUP_ISSUE_NUMBER}
+                />
+              )
             }
           />
 

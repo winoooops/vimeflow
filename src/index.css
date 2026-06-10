@@ -106,6 +106,38 @@
     -webkit-app-region: no-drag;
   }
 
+  .vf-new-session-button {
+    container-type: inline-size;
+  }
+
+  .vf-new-session-button-content {
+    gap: 0;
+    padding-inline: 0;
+    transition:
+      gap 140ms ease,
+      padding-inline 140ms ease;
+  }
+
+  .vf-new-session-label {
+    max-width: 0;
+    opacity: 0;
+    transition:
+      max-width 140ms ease,
+      opacity 140ms ease;
+  }
+
+  @container (min-width: 96px) {
+    .vf-new-session-button-content {
+      gap: 6px;
+      padding-inline: 10px;
+    }
+
+    .vf-new-session-label {
+      max-width: 7rem;
+      opacity: 1;
+    }
+  }
+
   .material-symbols-outlined {
     font-family: 'Material Symbols Outlined Variable';
     font-weight: normal;
