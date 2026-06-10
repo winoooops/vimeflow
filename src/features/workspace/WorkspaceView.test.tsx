@@ -319,9 +319,9 @@ describe('WorkspaceView', () => {
         screen.queryByTestId('activity-panel-shell')
       ).not.toBeInTheDocument()
       expect(screen.queryByTestId('sidebar-scrim')).not.toBeInTheDocument()
-      expect(screen.getByTestId('sidebar-toggle-tabs')).not.toHaveFocus()
+      expect(screen.getByTestId('sidebar-toggle-fixed')).not.toHaveFocus()
 
-      await user.click(screen.getByTestId('sidebar-toggle-tabs'))
+      await user.click(screen.getByTestId('sidebar-toggle-fixed'))
 
       expect(screen.getByTestId('sidebar-scrim')).toBeInTheDocument()
 
@@ -350,7 +350,7 @@ describe('WorkspaceView', () => {
         })
       }
 
-      expect(screen.getByTestId('sidebar-toggle-tabs')).toHaveFocus()
+      expect(screen.getByTestId('sidebar-toggle-fixed')).toHaveFocus()
     } finally {
       restoreMatchMedia()
       requestAnimationFrameSpy.mockRestore()
@@ -408,15 +408,15 @@ describe('WorkspaceView', () => {
         })
       }
 
-      // Focus should land on the now-visible topbar toggle inside the drawer
-      expect(screen.getByTestId('sidebar-toggle-topbar')).toHaveFocus()
+      // Focus should land on the persistent sidebar toggle.
+      expect(screen.getByTestId('sidebar-toggle-fixed')).toHaveFocus()
     } finally {
       restoreMatchMedia()
       requestAnimationFrameSpy.mockRestore()
     }
   })
 
-  test('compact sidebar shortcut from focused drawer content restores focus to the tabs toggle', async () => {
+  test('compact sidebar shortcut from focused drawer content restores focus to the persistent toggle', async () => {
     const restoreMatchMedia = mockMatchMedia(true)
     const user = userEvent.setup()
     const frameCallbacks: FrameRequestCallback[] = []
@@ -433,8 +433,8 @@ describe('WorkspaceView', () => {
       render(<WorkspaceView />)
       await screen.findByTestId('terminal-pane-mock')
 
-      // Open the compact sidebar via the tabs toggle
-      await user.click(screen.getByTestId('sidebar-toggle-tabs'))
+      // Open the compact sidebar via the persistent toggle.
+      await user.click(screen.getByTestId('sidebar-toggle-fixed'))
       expect(screen.getByTestId('sidebar-scrim')).toBeInTheDocument()
 
       // Move focus into the drawer content (Command Palette button), not the toggle
@@ -476,8 +476,8 @@ describe('WorkspaceView', () => {
         })
       }
 
-      // Focus should land on the now-visible tabs toggle
-      expect(screen.getByTestId('sidebar-toggle-tabs')).toHaveFocus()
+      // Focus should land on the persistent sidebar toggle.
+      expect(screen.getByTestId('sidebar-toggle-fixed')).toHaveFocus()
     } finally {
       restoreMatchMedia()
       requestAnimationFrameSpy.mockRestore()
@@ -1642,16 +1642,19 @@ describe('WorkspaceView', () => {
       expect(screen.queryByTestId('sidebar-resize-handle')).toBeNull()
     })
 
-    expect(screen.getByTestId('sidebar-toggle-tabs')).toBeInTheDocument()
+    expect(screen.getByTestId('sidebar-toggle-fixed')).toBeInTheDocument()
+    expect(screen.getByTestId('sidebar-toggle-tabs-spacer')).toBeInTheDocument()
     expect(
       screen.getByTestId('sidebar-top-bar-placeholder')
     ).toBeInTheDocument()
 
     const sidebarShell = screen.getByTestId('workspace-sidebar-shell')
+    const toggleSurface = screen.getByTestId('sidebar-toggle-slide-surface')
     const mainWorkspace = workspace.children[1] as HTMLElement
 
     expect(sidebarShell.className).toContain('transition-[width]')
     expect(sidebarShell).toHaveStyle({ width: '0px' })
+    expect(toggleSurface).toHaveStyle({ width: '0px' })
     expect(mainWorkspace.style.borderTopLeftRadius).toBe('0')
     expect(mainWorkspace.style.borderBottomLeftRadius).toBe('0')
   })
@@ -1682,7 +1685,10 @@ describe('WorkspaceView', () => {
         expect(screen.queryByTestId('sidebar-resize-handle')).toBeNull()
       })
 
-      expect(screen.getByTestId('sidebar-toggle-tabs')).toBeInTheDocument()
+      expect(screen.getByTestId('sidebar-toggle-fixed')).toBeInTheDocument()
+      expect(
+        screen.getByTestId('sidebar-toggle-tabs-spacer')
+      ).toBeInTheDocument()
     } finally {
       globalThis.ResizeObserver = originalResizeObserver
     }
@@ -1720,7 +1726,10 @@ describe('WorkspaceView', () => {
         expect(screen.queryByTestId('sidebar-resize-handle')).toBeNull()
       })
 
-      expect(screen.getByTestId('sidebar-toggle-tabs')).toBeInTheDocument()
+      expect(screen.getByTestId('sidebar-toggle-fixed')).toBeInTheDocument()
+      expect(
+        screen.getByTestId('sidebar-toggle-tabs-spacer')
+      ).toBeInTheDocument()
     } finally {
       globalThis.ResizeObserver = originalResizeObserver
     }

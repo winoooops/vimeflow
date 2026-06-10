@@ -168,6 +168,10 @@ const MAIN_AUTO_COLLAPSE_MAX = 500
 const MAIN_AUTO_COLLAPSE_RATIO = 0.36
 const SIDEBAR_MOTION_MS = 220
 const SIDEBAR_MOTION_EASING = 'cubic-bezier(0.32, 0.72, 0, 1)'
+const SIDEBAR_TOP_BAR_HEIGHT = 42
+const SIDEBAR_TOGGLE_SIZE = 28
+const SIDEBAR_TOGGLE_TOP = 7
+const SIDEBAR_TOGGLE_SURFACE_PADDING_END = 12
 const MACOS_WINDOW_CONTROL_SAFE_AREA_PX = 82
 
 const SIDEBAR_INITIAL = clampSize(SIDEBAR_DEFAULT, SIDEBAR_MIN, SIDEBAR_MAX)
@@ -275,14 +279,17 @@ export const WorkspaceView = (): ReactElement => {
     ? MACOS_WINDOW_CONTROL_SAFE_AREA_PX
     : 0
 
+  const sidebarToggleLeft = Math.max(12, windowControlsInset)
+
+  const sidebarToggleSlideSurfaceWidth =
+    sidebarToggleLeft + SIDEBAR_TOGGLE_SIZE + SIDEBAR_TOGGLE_SURFACE_PADDING_END
+
   const { message: infoMessage, notifyInfo, dismiss } = useNotifyInfo()
   const { activeTab, setActiveTab } = useSidebarTab()
 
   // VIM-66 / VIM-76: workspace-global sidebar collapse flag. The collapse toggle
-  // lives in the sidebar top bar when open and in the session-tab bar's leading
-  // slot when collapsed — both in-flow at the same {12,5} box. The sidebar is
-  // hidden instantly (no drawer slide), so there is no transition window where
-  // the toggle floats or a tab slips under it.
+  // is a persistent shell control; only the sidebar panel and its background
+  // slide. That keeps the control seated at the same coordinate in every state.
   const {
     collapsed: sidebarCollapsed,
     toggle: toggleSidebar,
@@ -315,10 +322,9 @@ export const WorkspaceView = (): ReactElement => {
     }
   }, [])
 
-  // Imperative refs to the two SidebarToggle instances so the post-toggle focus
-  // guard can refocus the visible one without relying on data-testid selectors.
-  const sidebarToggleTopbarRef = useRef<HTMLButtonElement>(null)
-  const sidebarToggleTabsRef = useRef<HTMLButtonElement>(null)
+  // Imperative ref to the persistent SidebarToggle so keyboard/scrim closes can
+  // restore focus without relying on data-testid selectors.
+  const sidebarToggleRef = useRef<HTMLButtonElement>(null)
   const shouldRestoreSidebarToggleFocusRef = useRef(false)
 
   useEffect(() => {
@@ -357,9 +363,7 @@ export const WorkspaceView = (): ReactElement => {
     const activeElement =
       typeof document === 'undefined' ? null : document.activeElement
 
-    const isToggleButtonFocused =
-      activeElement === sidebarToggleTopbarRef.current ||
-      activeElement === sidebarToggleTabsRef.current
+    const isToggleButtonFocused = activeElement === sidebarToggleRef.current
 
     if (isCompactViewport) {
       // User-triggered compact toggles (toggle button or keyboard shortcut)
@@ -376,12 +380,9 @@ export const WorkspaceView = (): ReactElement => {
     toggleSidebar()
   }, [isCompactViewport, toggleSidebar])
 
-  // Post-toggle focus guard: collapse/expand removes the active toggle from the
-  // tab order (open toggle's shell goes inert; collapsed toggle's slot unmounts),
-  // dropping focus to <body>. Refocus the now-visible toggle only when the user
-  // actually toggled from one of the toggle buttons. Plain viewport changes
-  // during first app launch must not programmatically focus the toggle and show
-  // a sticky ring.
+  // Post-toggle focus guard: compact drawer closes and some browser inert
+  // transitions can drop focus to <body>. Refocus the persistent toggle only
+  // when the user action asked for restoration.
   const sidebarFocusGuardMountedRef = useRef(false)
   useEffect(() => {
     if (!sidebarFocusGuardMountedRef.current) {
@@ -402,10 +403,7 @@ export const WorkspaceView = (): ReactElement => {
       shouldRestoreSidebarToggleFocusRef.current = false
       const active = document.activeElement
       if (!active || active === document.body) {
-        const target = isSidebarClosed
-          ? sidebarToggleTabsRef.current
-          : sidebarToggleTopbarRef.current
-        target?.focus()
+        sidebarToggleRef.current?.focus()
       }
     })
 
@@ -1655,18 +1653,17 @@ export const WorkspaceView = (): ReactElement => {
         />
       )}
 
-      {/* Sidebar — the shell clips the inner panel during animated desktop
-          collapse; compact viewports lift the same shell above main content. */}
+      {/* Sidebar — the shell owns the persistent toggle; the inner panel clips
+          during animated desktop collapse. Compact viewports lift the same
+          shell above main content. */}
       <div
-        aria-hidden={isSidebarClosed || undefined}
-        inert={isSidebarClosed || undefined}
         data-testid="workspace-sidebar-shell"
         role={isCompactViewport && !isSidebarClosed ? 'dialog' : undefined}
         aria-modal={isCompactViewport && !isSidebarClosed ? true : undefined}
         aria-label={
           isCompactViewport && !isSidebarClosed ? 'Sidebar' : undefined
         }
-        className={`relative h-full overflow-hidden will-change-[width] ${
+        className={`relative h-full overflow-visible will-change-[width] ${
           isDragging || isCompactViewport
             ? ''
             : 'transition-[width] duration-[220ms] ease-pane'
@@ -1686,100 +1683,133 @@ export const WorkspaceView = (): ReactElement => {
         }}
       >
         <div
-          className="relative flex h-full"
+          aria-hidden="true"
+          data-testid="sidebar-toggle-slide-surface"
+          className={`pointer-events-none absolute left-0 top-0 z-20 bg-surface-container-low ${
+            isDragging ? '' : 'transition-[width] duration-[220ms] ease-pane'
+          }`}
           style={{
-            width: isCompactViewport
-              ? `min(100vw, var(--workspace-sidebar-width, ${SIDEBAR_INITIAL}px))`
-              : `var(--workspace-sidebar-width, ${SIDEBAR_INITIAL}px)`,
+            height: SIDEBAR_TOP_BAR_HEIGHT,
+            width: isSidebarClosed ? 0 : sidebarToggleSlideSurfaceWidth,
+          }}
+        />
+        <div
+          data-testid="sidebar-toggle-anchor"
+          className="absolute z-30"
+          style={{
+            left: sidebarToggleLeft,
+            top: SIDEBAR_TOGGLE_TOP,
           }}
         >
-          <Sidebar
-            // Collapse keeps a same-height placeholder so the header/session
-            // list do not jump vertically while the shell width animates. The
-            // real top-bar controls still unmount so their portaled tooltips
-            // cannot escape the inert, clipped sidebar shell.
-            topBar={
-              isSidebarClosed ? (
-                <div
-                  aria-hidden="true"
-                  data-testid="sidebar-top-bar-placeholder"
-                  className="bg-surface-container-low"
-                  style={{ height: 42, flexShrink: 0 }}
-                />
-              ) : (
-                <SidebarTopBar
-                  onToggleSidebar={handleToggleSidebar}
-                  onCommand={commandPalette.open}
-                  commandShortcutHint={commandShortcutHint}
-                  sidebarShortcutHint={sidebarShortcutHint}
-                  settingsIssueNumber={SETTINGS_FOLLOWUP_ISSUE_NUMBER}
-                  toggleRef={sidebarToggleTopbarRef}
-                  reserveWindowControls={reserveWindowControls}
-                />
-              )
-            }
-            header={
-              <AgentStatusCard
-                title={sidebarCardTitle}
-                state={sidebarCardState}
-                isShell={sidebarCardIsShell}
-                turns={sidebarCardTurns}
-                fiveHourPct={sidebarCardFiveHourPct}
-                weekPct={sidebarCardWeekPct}
-                shellName={activePtyBackedPane?.shell ?? null}
-              />
-            }
-            content={
-              <div className="flex h-full min-h-0 flex-col">
-                <div className="flex items-stretch gap-2 px-3 pb-3 pt-2.5">
-                  <SidebarTabs<SidebarTab>
-                    tabs={SIDEBAR_TAB_ITEMS}
-                    activeId={activeTab}
-                    onChange={setActiveTab}
+          <SidebarToggle
+            ref={sidebarToggleRef}
+            collapsed={isSidebarClosed}
+            onClick={handleToggleSidebar}
+            size={SIDEBAR_TOGGLE_SIZE}
+            variant="inset"
+            data-testid="sidebar-toggle-fixed"
+            shortcutHint={sidebarShortcutHint}
+          />
+        </div>
+        <div
+          aria-hidden={isSidebarClosed || undefined}
+          inert={isSidebarClosed || undefined}
+          data-testid="workspace-sidebar-panel"
+          className="h-full overflow-hidden"
+        >
+          <div
+            className="relative flex h-full"
+            style={{
+              width: isCompactViewport
+                ? `min(100vw, var(--workspace-sidebar-width, ${SIDEBAR_INITIAL}px))`
+                : `var(--workspace-sidebar-width, ${SIDEBAR_INITIAL}px)`,
+            }}
+          >
+            <Sidebar
+              // Collapse keeps a same-height placeholder so the header/session
+              // list do not jump vertically while the shell width animates. The
+              // real top-bar controls still unmount so their portaled tooltips
+              // cannot escape the inert, clipped sidebar panel.
+              topBar={
+                isSidebarClosed ? (
+                  <div
+                    aria-hidden="true"
+                    data-testid="sidebar-top-bar-placeholder"
+                    className="bg-surface-container-low"
+                    style={{ height: SIDEBAR_TOP_BAR_HEIGHT, flexShrink: 0 }}
                   />
-                  <NewSessionButton
-                    onClick={handleCreateSession}
-                    shortcutHint={newSessionShortcutHint}
-                    ariaKeyshortcuts={newSessionAriaKeyshortcuts}
+                ) : (
+                  <SidebarTopBar
+                    onCommand={commandPalette.open}
+                    commandShortcutHint={commandShortcutHint}
+                    settingsIssueNumber={SETTINGS_FOLLOWUP_ISSUE_NUMBER}
+                    reserveWindowControls={reserveWindowControls}
+                  />
+                )
+              }
+              header={
+                <AgentStatusCard
+                  title={sidebarCardTitle}
+                  state={sidebarCardState}
+                  isShell={sidebarCardIsShell}
+                  turns={sidebarCardTurns}
+                  fiveHourPct={sidebarCardFiveHourPct}
+                  weekPct={sidebarCardWeekPct}
+                  shellName={activePtyBackedPane?.shell ?? null}
+                />
+              }
+              content={
+                <div className="flex h-full min-h-0 flex-col">
+                  <div className="flex items-stretch gap-2 px-3 pb-3 pt-2.5">
+                    <SidebarTabs<SidebarTab>
+                      tabs={SIDEBAR_TAB_ITEMS}
+                      activeId={activeTab}
+                      onChange={setActiveTab}
+                    />
+                    <NewSessionButton
+                      onClick={handleCreateSession}
+                      shortcutHint={newSessionShortcutHint}
+                      ariaKeyshortcuts={newSessionAriaKeyshortcuts}
+                    />
+                  </div>
+                  <SessionsView
+                    hidden={activeTab !== 'sessions'}
+                    sessions={sessions}
+                    activeSessionId={activeSessionId}
+                    onSessionClick={handleSetActiveSessionId}
+                    onRemoveSession={handleRemoveSession}
+                    onRenameSession={renameSession}
+                    onReorderSessions={reorderSessions}
+                  />
+                  <FilesView
+                    hidden={activeTab !== 'files'}
+                    cwd={fileExplorerCwd}
+                    onFileSelect={handleFileSelect}
                   />
                 </div>
-                <SessionsView
-                  hidden={activeTab !== 'sessions'}
-                  sessions={sessions}
-                  activeSessionId={activeSessionId}
-                  onSessionClick={handleSetActiveSessionId}
-                  onRemoveSession={handleRemoveSession}
-                  onRenameSession={renameSession}
-                  onReorderSessions={reorderSessions}
-                />
-                <FilesView
-                  hidden={activeTab !== 'files'}
-                  cwd={fileExplorerCwd}
-                  onFileSelect={handleFileSelect}
-                />
-              </div>
-            }
-          />
+              }
+            />
 
-          {/* Resize handle (hidden while collapsed) */}
-          {!isSidebarClosed && !isCompactViewport && (
-            <div
-              ref={setSidebarResizeHandle}
-              data-testid="sidebar-resize-handle"
-              role="separator"
-              aria-orientation="vertical"
-              aria-valuemin={SIDEBAR_MIN}
-              aria-valuemax={SIDEBAR_MAX}
-              // aria-valuenow is set by the layout effect and drag preview path
-              // so previews do not need per-frame React state commits.
-              onMouseDown={handleMouseDown}
-              className={`
+            {/* Resize handle (hidden while collapsed) */}
+            {!isSidebarClosed && !isCompactViewport && (
+              <div
+                ref={setSidebarResizeHandle}
+                data-testid="sidebar-resize-handle"
+                role="separator"
+                aria-orientation="vertical"
+                aria-valuemin={SIDEBAR_MIN}
+                aria-valuemax={SIDEBAR_MAX}
+                // aria-valuenow is set by the layout effect and drag preview path
+                // so previews do not need per-frame React state commits.
+                onMouseDown={handleMouseDown}
+                className={`
             absolute right-0 top-0 z-10 h-full w-1 cursor-col-resize
             transition-colors hover:bg-primary/50
             ${isDragging ? 'bg-primary/70' : 'bg-transparent'}
           `}
-            />
-          )}
+              />
+            )}
+          </div>
         </div>
       </div>
 
@@ -1815,14 +1845,13 @@ export const WorkspaceView = (): ReactElement => {
           onNew={handleCreateSession}
           leading={
             isSidebarClosed ? (
-              <SidebarToggle
-                ref={sidebarToggleTabsRef}
-                collapsed
-                onClick={handleToggleSidebar}
-                size={28}
-                variant="inset"
-                data-testid="sidebar-toggle-tabs"
-                shortcutHint={sidebarShortcutHint}
+              <div
+                aria-hidden="true"
+                data-testid="sidebar-toggle-tabs-spacer"
+                style={{
+                  width: SIDEBAR_TOGGLE_SIZE,
+                  height: SIDEBAR_TOGGLE_SIZE,
+                }}
               />
             ) : undefined
           }

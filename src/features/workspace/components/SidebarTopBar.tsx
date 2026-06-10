@@ -1,10 +1,4 @@
-import {
-  useState,
-  type CSSProperties,
-  type ReactElement,
-  type Ref,
-} from 'react'
-import { SidebarToggle } from './SidebarToggle'
+import { useState, type CSSProperties, type ReactElement } from 'react'
 import { Tooltip } from '../../../components/Tooltip'
 
 interface TopBarUtilProps {
@@ -76,37 +70,27 @@ const TopBarUtil = ({
 }
 
 export interface SidebarTopBarProps {
-  /** Toggle the sidebar collapse flag (shared with ⌘B and the palette command). */
-  onToggleSidebar: () => void
   /** Open the command palette. */
   onCommand?: () => void
   /** Open Settings; when omitted the button renders as a disabled stub. */
   onSettings?: () => void
   /** Real command-palette chord (e.g. 'Ctrl+;' / '⌘;'); shown in the button's tooltip. */
   commandShortcutHint: string
-  /** Platform-appropriate sidebar-toggle hint forwarded to the toggle tooltip. */
-  sidebarShortcutHint?: string
   /** Settings follow-up issue number, surfaced in the (disabled) tooltip. */
   settingsIssueNumber?: number
-  /** Ref forwarded to the collapse-toggle button for imperative focus. */
-  toggleRef?: Ref<HTMLButtonElement>
   /** Whether the platform reserves space for macOS inset window controls. */
   reserveWindowControls?: boolean
 }
 
 // The new sidebar chrome row. Uses the sidebar's own surface
 // (bg-surface-container-low) with no bottom divider, so the top bar blends into
-// the sidebar. The height seats the open-state toggle at the same
-// vertical position as the collapsed-state tab-bar toggle. Toggle pinned left;
-// Command Palette + Settings pinned right — all three are icon-only 28x28 buttons.
+// the sidebar. The persistent sidebar toggle is owned by WorkspaceView so it
+// never changes position while this row slides beneath it.
 export const SidebarTopBar = ({
-  onToggleSidebar,
   onCommand = undefined,
   onSettings = undefined,
   commandShortcutHint,
-  sidebarShortcutHint = '⌘B',
   settingsIssueNumber = undefined,
-  toggleRef = undefined,
   reserveWindowControls = false,
 }: SidebarTopBarProps): ReactElement => (
   <div
@@ -124,14 +108,6 @@ export const SidebarTopBar = ({
       paddingRight: 10,
     }}
   >
-    <SidebarToggle
-      ref={toggleRef}
-      onClick={onToggleSidebar}
-      size={28}
-      variant="inset"
-      data-testid="sidebar-toggle-topbar"
-      shortcutHint={sidebarShortcutHint}
-    />
     <div style={{ flex: 1 }} />
     <TopBarUtil
       icon="terminal"
