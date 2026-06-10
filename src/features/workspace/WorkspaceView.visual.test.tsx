@@ -262,11 +262,11 @@ describe('WorkspaceView - Visual Verification (Feature #20)', () => {
       expect(terminalContent.className).toContain('bg-surface')
     })
 
-    test('SessionTabs strip uses Level 0.5 surface (surface-container-lowest)', () => {
+    test('Top chrome bar uses Level 0.5 surface (surface-container-lowest)', () => {
       render(<WorkspaceView />)
-      const tabs = screen.getByTestId('session-tabs')
+      const chrome = screen.getByTestId('top-chrome')
 
-      expect(tabs.className).toContain('bg-surface-container-lowest')
+      expect(chrome.className).toContain('bg-surface-container-lowest')
     })
 
     test('Agent Status Panel uses surface-container background', () => {
@@ -323,7 +323,7 @@ describe('WorkspaceView - Visual Verification (Feature #20)', () => {
       // Active group header replaces the prior "Active Sessions" copy.
       expect(screen.getByTestId('session-group-active')).toBeInTheDocument()
 
-      expect(screen.getByTestId('session-tabs')).toBeInTheDocument()
+      expect(screen.getByTestId('top-hover-zone')).toBeInTheDocument()
       expect(screen.getByTestId('terminal-zone')).toBeInTheDocument()
       expect(screen.getByTestId('dock-panel')).toBeInTheDocument()
       expect(screen.getByTestId('agent-status-panel')).toBeInTheDocument()

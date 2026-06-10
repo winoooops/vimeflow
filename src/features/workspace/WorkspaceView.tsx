@@ -10,7 +10,7 @@ import {
 } from 'react'
 import { SidebarToggle } from './components/SidebarToggle'
 import { SidebarTopBar } from './components/SidebarTopBar'
-import { Tabs } from '../sessions/components/Tabs'
+import { LayoutSwitcher } from '../terminal/components/LayoutSwitcher'
 import { Sidebar } from '../../components/sidebar/Sidebar'
 import {
   SidebarTabs,
@@ -80,7 +80,12 @@ import { lineDelta } from '../sessions/utils/lineDelta'
 import { hasLivePane, isLiveStatus } from '../sessions/utils/sessionStatus'
 import { pickNextVisibleSessionId } from '../sessions/utils/pickNextVisibleSessionId'
 import { AGENTS, agentTypeToRegistryKey } from '../../agents/registry'
-import type { SessionCloseResult, SessionStatus } from '../sessions/types'
+import type {
+  LayoutId,
+  Session,
+  SessionCloseResult,
+  SessionStatus,
+} from '../sessions/types'
 import {
   buildWorkspaceCommands,
   WORKSPACE_TAB_KEYS,
@@ -149,6 +154,18 @@ const SIDEBAR_TAB_ITEMS: readonly SidebarTabItem<SidebarTab>[] = [
   { id: 'sessions', label: 'SESSIONS', icon: 'view_agenda' },
   { id: 'files', label: 'FILES', icon: 'folder_open' },
 ]
+
+// Maps a session's persisted agentType onto the AGENTS registry for the
+// single-pane top-chrome identity. tsc-exhaustive over Session['agentType'].
+const SESSION_AGENT_REGISTRY_KEY: Record<
+  Session['agentType'],
+  keyof typeof AGENTS
+> = {
+  'claude-code': 'claude',
+  codex: 'codex',
+  aider: 'shell',
+  generic: 'shell',
+}
 
 type DockTab = 'editor' | 'diff'
 
@@ -233,17 +250,22 @@ export const WorkspaceView = (): ReactElement => {
   const { activeTab, setActiveTab } = useSidebarTab()
 
   // VIM-66 / VIM-76: workspace-global sidebar collapse flag. The collapse toggle
-  // lives in the sidebar top bar when open and in the session-tab bar's leading
-  // slot when collapsed — both in-flow at the same {12,5} box. The sidebar is
+  // lives in the sidebar top bar when open; collapsed, it floats in the top
+  // chrome's reserved left gutter (main-stage handoff J4). The sidebar is
   // hidden instantly (no drawer slide), so there is no transition window where
-  // the toggle floats or a tab slips under it.
+  // a tab slips under the toggle.
   const { collapsed: sidebarCollapsed, toggle: toggleSidebar } =
     useSidebarCollapsed()
+
+  // Main-stage handoff J3a: the 44px top chrome is a hover/focus-revealed
+  // overlay by default; pinning it reserves a real row so panes shrink
+  // instead of being covered (the reflow runs the normal terminal fit path).
+  const [topChromePinned, setTopChromePinned] = useState(false)
 
   // Imperative refs to the two SidebarToggle instances so the post-toggle focus
   // guard can refocus the visible one without relying on data-testid selectors.
   const sidebarToggleTopbarRef = useRef<HTMLButtonElement>(null)
-  const sidebarToggleTabsRef = useRef<HTMLButtonElement>(null)
+  const sidebarToggleChromeRef = useRef<HTMLButtonElement>(null)
 
   // Post-toggle focus guard: collapse/expand removes the active toggle from the
   // tab order (open toggle's shell goes inert; collapsed toggle's slot unmounts),
@@ -265,7 +287,7 @@ export const WorkspaceView = (): ReactElement => {
       const active = document.activeElement
       if (!active || active === document.body) {
         const target = sidebarCollapsed
-          ? sidebarToggleTabsRef.current
+          ? sidebarToggleChromeRef.current
           : sidebarToggleTopbarRef.current
         target?.focus()
       }
@@ -327,6 +349,23 @@ export const WorkspaceView = (): ReactElement => {
   // Non-throwing variant: render-path callers cannot crash on transient
   // invariant violations. Mutation guards still use `getActivePane`.
   const activePane = activeSession ? findActivePane(activeSession) : undefined
+
+  // Main-stage handoff J3/J6: the top chrome owns the layout pills; picks
+  // forward to the same setSessionLayout the TerminalZone toolbar used, so
+  // pane add/remove, active-pane, and layout semantics are untouched.
+  const handlePickLayout = useCallback(
+    (layoutId: LayoutId): void => {
+      if (!activeSessionId) {
+        return
+      }
+      setSessionLayout(activeSessionId, layoutId)
+    },
+    [activeSessionId, setSessionLayout]
+  )
+
+  const topIdentityAgent = activeSession
+    ? AGENTS[SESSION_AGENT_REGISTRY_KEY[activeSession.agentType]]
+    : null
 
   const activePtyBackedPane =
     activePane === undefined
@@ -1594,26 +1633,169 @@ export const WorkspaceView = (): ReactElement => {
           aria-label="Main workspace"
           className="relative flex min-w-0 flex-1 flex-col overflow-hidden bg-surface"
         >
-          <Tabs
-            sessions={sessions}
-            activeSessionId={activeSessionId}
-            onSelect={handleSetActiveSessionId}
-            onClose={handleRemoveSession}
-            onNew={handleCreateSession}
-            leading={
-              sidebarCollapsed ? (
-                <SidebarToggle
-                  ref={sidebarToggleTabsRef}
-                  collapsed
-                  onClick={toggleSidebar}
-                  size={28}
-                  variant="inset"
-                  data-testid="sidebar-toggle-tabs"
-                  shortcutHint={sidebarShortcutHint}
+          {/* Top chrome (44px, main-stage handoff J3/J3a) — hover/focus
+              reveals the overlay; pinning reserves a real row so panes
+              shrink instead of being covered. Collapsed sidebar pads the
+              content 50px so the floating toggle never overlaps the pills. */}
+          <div
+            data-testid="top-hover-zone"
+            tabIndex={0}
+            aria-label="Reveal workspace controls"
+            className={`group ${
+              topChromePinned
+                ? 'relative h-[44px] w-full shrink-0'
+                : 'absolute inset-x-0 top-0 z-40 h-[44px]'
+            }`}
+          >
+            <div
+              data-testid="top-chrome"
+              className={`absolute inset-0 flex h-[44px] items-center gap-3 border-b border-[rgba(74,68,79,0.25)] bg-surface-container-lowest pr-[14px] ${
+                sidebarCollapsed ? 'pl-[50px]' : 'pl-[14px]'
+              } ${
+                topChromePinned
+                  ? 'translate-y-0 opacity-100'
+                  : '-translate-y-[5px] opacity-0 group-focus-within:translate-y-0 group-focus-within:opacity-100 group-hover:translate-y-0 group-hover:opacity-100'
+              }`}
+              style={{
+                transition:
+                  'opacity 140ms ease, transform 160ms ease, padding-left 180ms cubic-bezier(0.4,0,0.2,1)',
+              }}
+            >
+              {sidebarCollapsed && (
+                <div className="absolute left-3 top-2 z-30">
+                  <SidebarToggle
+                    ref={sidebarToggleChromeRef}
+                    collapsed
+                    onClick={toggleSidebar}
+                    size={28}
+                    variant="inset"
+                    data-testid="sidebar-toggle-chrome"
+                    shortcutHint={sidebarShortcutHint}
+                  />
+                </div>
+              )}
+
+              {activeSession?.layout === 'single' && topIdentityAgent && (
+                <div
+                  data-testid="top-identity"
+                  className="flex min-w-0 items-center gap-2"
+                >
+                  <span
+                    className="inline-flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-[5px] font-mono text-[10px] font-extrabold"
+                    style={{
+                      background: topIdentityAgent.accentDim,
+                      color: topIdentityAgent.accent,
+                    }}
+                  >
+                    {topIdentityAgent.glyph}
+                  </span>
+                  <span className="min-w-0 truncate font-mono text-xs font-medium text-on-surface-variant">
+                    {activeSession.name}
+                  </span>
+                  {activeSession.status === 'running' && (
+                    <span
+                      data-testid="top-identity-running-dot"
+                      className="h-[5px] w-[5px] shrink-0 animate-pulse rounded-full bg-success-muted shadow-[0_0_6px_#7defa1]"
+                    />
+                  )}
+                </div>
+              )}
+
+              <span className="min-w-[10px] flex-1" />
+
+              {activeSession && activeSession.layout !== 'single' && (
+                <LayoutSwitcher
+                  activeLayoutId={activeSession.layout}
+                  onPick={handlePickLayout}
                 />
-              ) : undefined
-            }
-          />
+              )}
+
+              <span
+                data-testid="top-action-group"
+                aria-label="Top chrome controls"
+                className="inline-flex h-7 items-center gap-[2px] rounded-lg border border-[rgba(74,68,79,0.42)] p-[2px]"
+              >
+                <button
+                  type="button"
+                  aria-label="Configure displayed layouts"
+                  title="Configure displayed layouts"
+                  className="inline-flex h-[22px] w-6 items-center justify-center rounded-[5px] text-on-surface-muted transition-colors hover:bg-[rgba(226,199,255,0.08)] hover:text-primary"
+                >
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 16 16"
+                    fill="none"
+                    aria-hidden="true"
+                  >
+                    <path
+                      d="M3 4.5H6.2M9.8 4.5H13M3 8H9.2M12.2 8H13M3 11.5H4.8M8.2 11.5H13"
+                      stroke="currentColor"
+                      strokeWidth="1.35"
+                      strokeLinecap="round"
+                    />
+                    <circle
+                      cx="8"
+                      cy="4.5"
+                      r="1.6"
+                      stroke="currentColor"
+                      strokeWidth="1.25"
+                    />
+                    <circle
+                      cx="10.7"
+                      cy="8"
+                      r="1.45"
+                      stroke="currentColor"
+                      strokeWidth="1.25"
+                    />
+                    <circle
+                      cx="6.5"
+                      cy="11.5"
+                      r="1.55"
+                      stroke="currentColor"
+                      strokeWidth="1.25"
+                    />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  aria-label={
+                    topChromePinned
+                      ? 'Auto-hide top banner'
+                      : 'Keep top banner visible'
+                  }
+                  title={
+                    topChromePinned
+                      ? 'Auto-hide top banner'
+                      : 'Keep top banner visible'
+                  }
+                  aria-pressed={topChromePinned}
+                  onClick={() => {
+                    setTopChromePinned((pinned) => !pinned)
+                  }}
+                  className={`inline-flex h-[22px] w-6 items-center justify-center rounded-[5px] transition-colors hover:bg-[rgba(226,199,255,0.08)] hover:text-primary ${
+                    topChromePinned ? 'text-primary' : 'text-on-surface-muted'
+                  }`}
+                >
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 16 16"
+                    fill="none"
+                    aria-hidden="true"
+                  >
+                    <path
+                      d="M6.2 2.8H9.8M7.1 2.8L6.5 7.1L4.4 9.1H11.6L9.5 7.1L8.9 2.8M8 9.2V13.4"
+                      stroke="currentColor"
+                      strokeWidth="1.35"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                </button>
+              </span>
+            </div>
+          </div>
 
           <div
             ref={dockCanvasRef}
@@ -1638,7 +1820,6 @@ export const WorkspaceView = (): ReactElement => {
                 service={terminalService}
                 setSessionActivePane={setSessionActivePane}
                 updateBrowserPaneUrl={updateBrowserPaneUrl}
-                setSessionLayout={setSessionLayout}
                 addPane={addPane}
                 removePane={removePane}
                 areBrowserPanesOccluded={areBrowserPanesOccluded}

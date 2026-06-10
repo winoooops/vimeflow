@@ -130,7 +130,7 @@ const switchToFilesTab = async (user: User): Promise<void> => {
  */
 describe('WorkspaceView Integration Tests', () => {
   describe('Session switching updates terminal and activity', () => {
-    test('clicking session updates terminal zone tabs', async (): Promise<void> => {
+    test('clicking session updates the top chrome identity', async (): Promise<void> => {
       const user = userEvent.setup()
       render(<WorkspaceView />)
 
@@ -160,18 +160,17 @@ describe('WorkspaceView Integration Tests', () => {
 
       expect(sessionButtons.length).toBeGreaterThan(1)
 
-      const firstSession = sessionButtons[1]
-      await user.click(firstSession)
+      const clickedSession = sessionButtons[1]
+      const clickedName = clickedSession.getAttribute('aria-label') ?? ''
+      await user.click(clickedSession)
 
-      // SessionTabs (above the terminal zone) should reflect the click.
-      const tabs = within(screen.getByTestId('session-tabs')).getAllByRole(
-        'tab'
-      )
-
-      const hasActiveTab = tabs.some(
-        (tab) => tab.getAttribute('aria-selected') === 'true'
-      )
-      expect(hasActiveTab).toBe(true)
+      // J2: the session-tab strip is gone — the single-pane top chrome
+      // identity is the main-view surface that reflects the active session.
+      await waitFor(() => {
+        expect(screen.getByTestId('top-identity')).toHaveTextContent(
+          clickedName
+        )
+      })
       // Terminal zone is still mounted (sanity check) — its panes follow
       // activeSessionId via the same useSessionManager hook.
       expect(terminalZone).toBeInTheDocument()
@@ -225,10 +224,10 @@ describe('WorkspaceView Integration Tests', () => {
 
       await user.click(sessionButtons[0])
 
-      const tabs = within(screen.getByTestId('session-tabs')).getAllByRole(
-        'tab'
-      )
-      expect(tabs.length).toBeGreaterThan(0)
+      // J2: no session-tab strip — the top chrome identity tracks the
+      // active single-layout session instead.
+      expect(screen.getByTestId('top-identity')).toBeInTheDocument()
+      expect(screen.queryByTestId('session-tabs')).toBeNull()
 
       expect(screen.getByTestId('agent-status-panel')).toBeInTheDocument()
     })

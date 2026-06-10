@@ -112,7 +112,6 @@ describe('TerminalZone', () => {
     activeSessionId: 'sess-1',
     service: mockService,
     setSessionActivePane: vi.fn(),
-    setSessionLayout: vi.fn(),
     addPane: vi.fn(),
     removePane: vi.fn(),
   }
@@ -339,7 +338,7 @@ describe('TerminalZone', () => {
 
     // Should show placeholder instead
     expect(
-      screen.getByText(/no active session.*click \+ in the session tab bar/i)
+      screen.getByText(/no active session.*click \+ in the sidebar/i)
     ).toBeInTheDocument()
   })
 
@@ -488,7 +487,6 @@ describe('TerminalZone', () => {
         activeSessionId="sess-vsplit"
         service={mockService}
         setSessionActivePane={vi.fn()}
-        setSessionLayout={vi.fn()}
         addPane={vi.fn()}
         removePane={vi.fn()}
       />
@@ -728,7 +726,7 @@ describe('TerminalZone', () => {
     ],
   })
 
-  test('mounts layout toolbar when sessions exist and not loading', () => {
+  test('renders no layout toolbar — the workspace top chrome owns layout controls (J3)', () => {
     render(
       <TerminalZone
         {...defaultProps}
@@ -737,48 +735,8 @@ describe('TerminalZone', () => {
       />
     )
 
-    expect(screen.getByTestId('layout-toolbar')).toBeInTheDocument()
-    expect(screen.getByTestId('layout-switcher')).toBeInTheDocument()
-  })
-
-  test('hides layout toolbar when loading=true', () => {
-    render(
-      <TerminalZone
-        {...defaultProps}
-        sessions={[]}
-        activeSessionId={null}
-        loading
-      />
-    )
-
     expect(screen.queryByTestId('layout-toolbar')).not.toBeInTheDocument()
-  })
-
-  test('hides layout toolbar when sessions is empty', () => {
-    render(
-      <TerminalZone {...defaultProps} sessions={[]} activeSessionId={null} />
-    )
-
-    expect(screen.queryByTestId('layout-toolbar')).not.toBeInTheDocument()
-  })
-
-  test('clicking a layout button calls setSessionLayout with active session id', async () => {
-    const user = userEvent.setup()
-    const setSessionLayout = vi.fn()
-
-    render(
-      <TerminalZone
-        {...defaultProps}
-        sessions={[makeToolbarSession('s1')]}
-        activeSessionId="s1"
-        setSessionLayout={setSessionLayout}
-      />
-    )
-
-    await user.click(screen.getByRole('button', { name: 'Vertical split' }))
-
-    expect(setSessionLayout).toHaveBeenCalledOnce()
-    expect(setSessionLayout).toHaveBeenCalledWith('s1', 'vsplit')
+    expect(screen.queryByTestId('layout-switcher')).not.toBeInTheDocument()
   })
 
   test('clicking the already-active split slot does NOT fire setSessionActivePane', async () => {

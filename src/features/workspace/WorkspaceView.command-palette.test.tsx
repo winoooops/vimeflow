@@ -424,7 +424,7 @@ describe('WorkspaceView - Command Palette Integration', () => {
     expect(mockSessionManager.updatePaneAgentType).not.toHaveBeenCalled()
   })
 
-  test('does not apply stale agent status from another session to the active shell tab', async () => {
+  test('does not apply stale agent status from another session to the active shell session identity', async () => {
     mockSessions[1] = {
       ...mockSessions[1],
       agentType: 'generic',
@@ -454,8 +454,8 @@ describe('WorkspaceView - Command Palette Integration', () => {
 
     render(<WorkspaceView />)
 
-    const activeTab = screen.getByRole('tab', { name: 'feature' })
-    expect(within(activeTab).getByText(AGENTS.shell.glyph)).toBeInTheDocument()
+    const identity = screen.getByTestId('top-identity')
+    expect(within(identity).getByText(AGENTS.shell.glyph)).toBeInTheDocument()
     expect(mockSessionManager.updatePaneAgentType).not.toHaveBeenCalled()
   })
 

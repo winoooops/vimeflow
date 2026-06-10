@@ -166,6 +166,21 @@ vi.mock('../terminal/services/terminalService', () => ({
 }))
 
 describe('WorkspaceView', () => {
+  // J2: the session-tab strip is gone — closing a session goes through the
+  // sidebar card's actions menu.
+  const removeSessionViaSidebar = async (
+    user: ReturnType<typeof userEvent.setup>,
+    name: string
+  ): Promise<void> => {
+    const row = await screen.findByRole('button', { name })
+    await user.click(
+      within(row.closest('li')!).getByRole('button', {
+        name: 'Session actions',
+      })
+    )
+    await user.click(await screen.findByRole('button', { name: 'Remove' }))
+  }
+
   beforeEach(() => {
     vi.clearAllMocks()
     window.localStorage.clear()
@@ -300,9 +315,16 @@ describe('WorkspaceView', () => {
 
     render(<WorkspaceView />)
 
-    const activeTab = await screen.findByRole('tab', { name: 'session 1' })
+    // J2: the main session-tab strip is gone — closing goes through the
+    // sidebar card's actions menu instead.
+    const sessionRow = await screen.findByRole('button', { name: 'session 1' })
 
-    await user.click(screen.getByRole('button', { name: 'Close session 1' }))
+    await user.click(
+      within(sessionRow.closest('li')!).getByRole('button', {
+        name: 'Session actions',
+      })
+    )
+    await user.click(screen.getByRole('button', { name: 'Remove' }))
 
     expect(hasUnsavedChanges).toHaveBeenCalledWith('sess-1')
 
@@ -312,7 +334,10 @@ describe('WorkspaceView', () => {
 
     expect(dialog).toHaveTextContent(/before closing this session/i)
     expect(within(dialog).getByText('src/current.ts')).toBeInTheDocument()
-    expect(activeTab).toHaveAttribute('aria-selected', 'true')
+    // The session stays active (highlighted card) while the dialog blocks.
+    expect(sessionRow.closest('li')!.className).toContain(
+      'bg-[rgba(203,166,247,0.13)]'
+    )
     expect(releaseScope).not.toHaveBeenCalled()
   })
 
@@ -372,19 +397,16 @@ describe('WorkspaceView', () => {
 
     render(<WorkspaceView />)
 
-    await screen.findByRole('tab', { name: 'first' })
+    await screen.findByRole('button', { name: 'first' })
 
-    await user.click(screen.getByRole('button', { name: 'Close second' }))
+    await removeSessionViaSidebar(user, 'second')
     await screen.findByRole('dialog', { name: /unsaved changes/i })
     await user.click(screen.getByRole('button', { name: 'Cancel' }))
 
     await waitFor(() => {
-      expect(screen.getByRole('tab', { name: 'first' })).toHaveAttribute(
-        'aria-selected',
-        'true'
-      )
+      expect(screen.getByTestId('top-identity')).toHaveTextContent('first')
     })
-    expect(screen.getByRole('tab', { name: 'second' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'second' })).toBeInTheDocument()
   })
 
   test('restores the original active session after discarding a dirty background close', async () => {
@@ -444,25 +466,19 @@ describe('WorkspaceView', () => {
 
     render(<WorkspaceView />)
 
-    await screen.findByRole('tab', { name: 'first' })
+    await screen.findByRole('button', { name: 'first' })
 
-    await user.click(screen.getByRole('button', { name: 'Close second' }))
+    await removeSessionViaSidebar(user, 'second')
     await screen.findByRole('dialog', { name: /unsaved changes/i })
     await user.click(screen.getByRole('button', { name: 'Discard' }))
 
     await waitFor(() => {
-      expect(screen.queryByRole('tab', { name: 'second' })).toBeNull()
+      expect(screen.queryByRole('button', { name: 'second' })).toBeNull()
     })
 
-    expect(screen.getByRole('tab', { name: 'first' })).toHaveAttribute(
-      'aria-selected',
-      'true'
-    )
+    expect(screen.getByTestId('top-identity')).toHaveTextContent('first')
 
-    expect(screen.getByRole('tab', { name: 'third' })).toHaveAttribute(
-      'aria-selected',
-      'false'
-    )
+    expect(screen.getByRole('button', { name: 'third' })).toBeInTheDocument()
     expect(releaseScope).toHaveBeenCalledWith('second')
   })
 
@@ -535,9 +551,9 @@ describe('WorkspaceView', () => {
     try {
       render(<WorkspaceView />)
 
-      await screen.findByRole('tab', { name: 'first' })
+      await screen.findByRole('button', { name: 'first' })
 
-      await user.click(screen.getByRole('button', { name: 'Close second' }))
+      await removeSessionViaSidebar(user, 'second')
 
       const dialog = await screen.findByRole('dialog', {
         name: /unsaved changes/i,
@@ -551,18 +567,12 @@ describe('WorkspaceView', () => {
       })
 
       await waitFor(() => {
-        expect(screen.queryByRole('tab', { name: 'second' })).toBeNull()
+        expect(screen.queryByRole('button', { name: 'second' })).toBeNull()
       })
 
-      expect(screen.getByRole('tab', { name: 'first' })).toHaveAttribute(
-        'aria-selected',
-        'true'
-      )
+      expect(screen.getByTestId('top-identity')).toHaveTextContent('first')
 
-      expect(screen.getByRole('tab', { name: 'third' })).toHaveAttribute(
-        'aria-selected',
-        'false'
-      )
+      expect(screen.getByRole('button', { name: 'third' })).toBeInTheDocument()
       expect(releaseScope).toHaveBeenCalledWith('second')
     } finally {
       consoleWarn.mockRestore()
@@ -623,9 +633,9 @@ describe('WorkspaceView', () => {
 
     render(<WorkspaceView />)
 
-    await screen.findByRole('tab', { name: 'first' })
+    await screen.findByRole('button', { name: 'first' })
 
-    await user.click(screen.getByRole('button', { name: 'Close second' }))
+    await removeSessionViaSidebar(user, 'second')
     await screen.findByRole('dialog', { name: /unsaved changes/i })
     await user.click(screen.getByRole('button', { name: 'Save' }))
 
@@ -646,7 +656,7 @@ describe('WorkspaceView', () => {
     })
 
     await waitFor(() => {
-      expect(screen.queryByRole('tab', { name: 'second' })).toBeNull()
+      expect(screen.queryByRole('button', { name: 'second' })).toBeNull()
     })
   })
 
@@ -701,18 +711,18 @@ describe('WorkspaceView', () => {
 
     render(<WorkspaceView />)
 
-    await screen.findByRole('tab', { name: 'first' })
+    await screen.findByRole('button', { name: 'first' })
 
-    await user.click(screen.getByRole('button', { name: 'Close first' }))
+    await removeSessionViaSidebar(user, 'first')
     await user.click(screen.getByRole('button', { name: 'Discard' }))
 
     await waitFor(() => {
-      expect(screen.getByRole('tab', { name: 'third' })).toHaveAttribute(
-        'aria-selected',
-        'true'
-      )
+      expect(screen.getByTestId('top-identity')).toHaveTextContent('third')
     })
-    expect(screen.queryByRole('tab', { name: 'hidden-ended' })).toBeNull()
+
+    expect(screen.getByTestId('top-identity')).not.toHaveTextContent(
+      'hidden-ended'
+    )
   })
 
   test('selects the next visible session after saving a dirty active-session close', async () => {
@@ -767,9 +777,9 @@ describe('WorkspaceView', () => {
 
     render(<WorkspaceView />)
 
-    await screen.findByRole('tab', { name: 'first' })
+    await screen.findByRole('button', { name: 'first' })
 
-    await user.click(screen.getByRole('button', { name: 'Close first' }))
+    await removeSessionViaSidebar(user, 'first')
     await user.click(screen.getByRole('button', { name: 'Save' }))
 
     await waitFor(() => {
@@ -777,12 +787,12 @@ describe('WorkspaceView', () => {
     })
 
     await waitFor(() => {
-      expect(screen.getByRole('tab', { name: 'third' })).toHaveAttribute(
-        'aria-selected',
-        'true'
-      )
+      expect(screen.getByTestId('top-identity')).toHaveTextContent('third')
     })
-    expect(screen.queryByRole('tab', { name: 'hidden-ended' })).toBeNull()
+
+    expect(screen.getByTestId('top-identity')).not.toHaveTextContent(
+      'hidden-ended'
+    )
   })
 
   test('releases an editor scope after a clean session is removed', async () => {
@@ -806,9 +816,14 @@ describe('WorkspaceView', () => {
 
     render(<WorkspaceView />)
 
-    await screen.findByRole('tab', { name: 'session 1' })
+    const sessionRow = await screen.findByRole('button', { name: 'session 1' })
 
-    await user.click(screen.getByRole('button', { name: 'Close session 1' }))
+    await user.click(
+      within(sessionRow.closest('li')!).getByRole('button', {
+        name: 'Session actions',
+      })
+    )
+    await user.click(screen.getByRole('button', { name: 'Remove' }))
 
     expect(hasUnsavedChanges).toHaveBeenCalledWith('sess-1')
     await waitFor(() => {
@@ -867,16 +882,13 @@ describe('WorkspaceView', () => {
     ).toBeInTheDocument()
   })
 
-  test('SessionTabs reflects the active session selection', async () => {
+  test('renders no session-tab strip in the main view (J2)', async () => {
     render(<WorkspaceView />)
 
     await screen.findByRole('button', { name: 'session 1' })
 
-    const tabs = within(screen.getByTestId('session-tabs')).getAllByRole('tab')
-    expect(tabs.length).toBeGreaterThan(0)
-    expect(
-      tabs.some((tab) => tab.getAttribute('aria-selected') === 'true')
-    ).toBe(true)
+    expect(screen.queryByTestId('session-tabs')).toBeNull()
+    expect(screen.queryByRole('tablist', { name: 'Open sessions' })).toBeNull()
   })
 
   test('renders AgentStatusPanel', () => {
@@ -1379,15 +1391,15 @@ describe('WorkspaceView', () => {
     }
   })
 
-  test('mounts SessionTabs above terminal zone', () => {
+  test('mounts the top hover zone above the terminal zone', () => {
     render(<WorkspaceView />)
 
-    const tabs = screen.getByTestId('session-tabs')
+    const zone = screen.getByTestId('top-hover-zone')
     const terminal = screen.getByTestId('terminal-zone')
 
-    expect(tabs).toBeInTheDocument()
+    expect(zone).toBeInTheDocument()
     expect(
-      tabs.compareDocumentPosition(terminal) & Node.DOCUMENT_POSITION_FOLLOWING
+      zone.compareDocumentPosition(terminal) & Node.DOCUMENT_POSITION_FOLLOWING
     ).toBeTruthy()
   })
 
