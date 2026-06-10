@@ -21,6 +21,26 @@ describe('SidebarTopBar', () => {
     expect(screen.getByTestId('sidebar-toggle-topbar')).toBeInTheDocument()
   })
 
+  test('keeps empty expanded top-bar chrome draggable while controls remain clickable', () => {
+    renderTopBar({ onCommand: vi.fn(), onSettings: vi.fn() })
+
+    expect(screen.getByTestId('sidebar-top-bar')).toHaveClass(
+      'vf-app-drag-region'
+    )
+
+    expect(screen.getByTestId('sidebar-toggle-topbar')).toHaveClass(
+      'vf-app-no-drag'
+    )
+
+    expect(screen.getByRole('button', { name: 'Command Palette' })).toHaveClass(
+      'vf-app-no-drag'
+    )
+
+    expect(screen.getByRole('button', { name: 'Settings' })).toHaveClass(
+      'vf-app-no-drag'
+    )
+  })
+
   test('the toggle invokes onToggleSidebar', async () => {
     const user = userEvent.setup()
     const onToggleSidebar = vi.fn()

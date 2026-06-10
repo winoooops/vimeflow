@@ -95,9 +95,22 @@ describe('Tabs', () => {
   })
 
   test('makes only empty tab-strip chrome draggable on macOS', () => {
-    renderTabs([buildSession()], 'sess-1', {}, true)
+    render(
+      <Tabs
+        sessions={[buildSession()]}
+        activeSessionId="sess-1"
+        onSelect={vi.fn()}
+        onClose={vi.fn()}
+        onNew={vi.fn()}
+        leading={<button data-testid="leading-fixture">L</button>}
+        reserveWindowControls
+      />
+    )
 
     expect(screen.getByTestId('session-tabs')).toHaveClass('vf-app-drag-region')
+    expect(screen.getByTestId('session-tabs-leading')).toHaveClass(
+      'vf-app-no-drag'
+    )
     expect(screen.getByRole('tablist')).toHaveClass('vf-app-no-drag')
     expect(screen.getByRole('button', { name: 'New session' })).toHaveClass(
       'vf-app-no-drag'
