@@ -307,7 +307,7 @@ describe('WorkspaceView – top chrome (main-stage handoff J2–J6)', () => {
     expect(chromeClasses).toContain('h-[44px]')
     // Auto-hide overlay is frosted glass: translucent lowest-surface tint
     // plus the app's glass-panel blur so content ghosts through underneath.
-    expect(chromeClasses).toContain('bg-[rgba(13,13,28,0.78)]')
+    expect(chromeClasses).toContain('bg-[rgba(13,13,28,0.65)]')
     expect(chromeClasses).toContain('glass-panel')
     expect(chromeClasses).not.toContain('bg-surface-container-lowest')
     expect(chromeClasses).toContain('border-b')
@@ -315,7 +315,19 @@ describe('WorkspaceView – top chrome (main-stage handoff J2–J6)', () => {
     expect(chromeClasses).toContain('opacity-0')
     expect(chromeClasses).toContain('-translate-y-[5px]')
     expect(chromeClasses).toContain('group-hover:opacity-100')
-    expect(chromeClasses).toContain('group-focus-within:opacity-100')
+    // Keyboard focus keeps the bar revealed, but a mouse click on the pin
+    // must not pin it open — focus-visible, not plain focus-within.
+    expect(chromeClasses).toContain('group-focus-visible:opacity-100')
+    expect(chromeClasses).toContain('group-has-[:focus-visible]:opacity-100')
+    expect(chromeClasses).not.toContain('group-focus-within:opacity-100')
+    // Hiding lingers 1.5s after the cursor leaves; revealing is immediate.
+    expect(chromeClasses).toContain(
+      '[transition:opacity_140ms_ease_1500ms,transform_160ms_ease_1500ms,padding-left_180ms_cubic-bezier(0.4,0,0.2,1)]'
+    )
+
+    expect(chromeClasses).toContain(
+      'group-hover:[transition:opacity_140ms_ease,transform_160ms_ease,padding-left_180ms_cubic-bezier(0.4,0,0.2,1)]'
+    )
   })
 
   test('sticky pin reserves a real 44px row and keeps the chrome revealed (J3a)', async () => {
@@ -403,7 +415,7 @@ describe('WorkspaceView – top chrome (main-stage handoff J2–J6)', () => {
     expect(mockSessionManager.setSessionActivePane).not.toHaveBeenCalled()
   })
 
-  test('single layout: identity fallback with agent glyph, title, and running pulse — no pills (J5)', () => {
+  test('single layout: identity fallback with agent glyph, title, and running pulse — pills stay (J5)', () => {
     render(<WorkspaceView />)
 
     const identity = screen.getByTestId('top-identity')
@@ -413,7 +425,9 @@ describe('WorkspaceView – top chrome (main-stage handoff J2–J6)', () => {
       within(identity).getByTestId('top-identity-running-dot')
     ).toBeInTheDocument()
 
-    expect(screen.queryByTestId('layout-switcher')).toBeNull()
+    // The pill group survives single layout — it is the affordance back
+    // into the split layouts (user call, supersedes the demo's hidden pills).
+    expect(screen.getByTestId('layout-switcher')).toBeInTheDocument()
 
     // The action group survives in single mode, and the layout-display
     // configuration control is never mislabelled as a split command.

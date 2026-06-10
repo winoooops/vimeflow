@@ -167,6 +167,22 @@ const SESSION_AGENT_REGISTRY_KEY: Record<
   generic: 'shell',
 }
 
+// Auto-hide top chrome: hiding lingers 1.5s after the cursor/focus leaves
+// so the bar does not snap away mid-reach; revealing stays immediate via
+// the zero-delay variants below. Every variant-prefixed class is a full
+// literal — Tailwind's scanner cannot see classes assembled at runtime.
+const TOP_CHROME_HIDE_TRANSITION =
+  '[transition:opacity_140ms_ease_1500ms,transform_160ms_ease_1500ms,padding-left_180ms_cubic-bezier(0.4,0,0.2,1)]'
+
+const TOP_CHROME_SHOW_TRANSITION =
+  '[transition:opacity_140ms_ease,transform_160ms_ease,padding-left_180ms_cubic-bezier(0.4,0,0.2,1)]'
+
+// Reveal on hover or KEYBOARD focus (focus-visible) only — a mouse click on
+// the pin leaves plain :focus behind, and matching it (focus-within) would
+// hold the bar open after unpinning until the user clicked elsewhere.
+const TOP_CHROME_REVEAL_CLASSES =
+  'group-hover:translate-y-0 group-hover:opacity-100 group-hover:[transition:opacity_140ms_ease,transform_160ms_ease,padding-left_180ms_cubic-bezier(0.4,0,0.2,1)] group-focus-visible:translate-y-0 group-focus-visible:opacity-100 group-focus-visible:[transition:opacity_140ms_ease,transform_160ms_ease,padding-left_180ms_cubic-bezier(0.4,0,0.2,1)] group-has-[:focus-visible]:translate-y-0 group-has-[:focus-visible]:opacity-100 group-has-[:focus-visible]:[transition:opacity_140ms_ease,transform_160ms_ease,padding-left_180ms_cubic-bezier(0.4,0,0.2,1)]'
+
 type DockTab = 'editor' | 'diff'
 
 export const WorkspaceView = (): ReactElement => {
@@ -1668,13 +1684,9 @@ export const WorkspaceView = (): ReactElement => {
                 sidebarCollapsed ? 'pl-[50px]' : 'pl-[14px]'
               } ${
                 topChromePinned
-                  ? 'bg-surface-container-lowest translate-y-0 opacity-100'
-                  : 'glass-panel bg-[rgba(13,13,28,0.78)] -translate-y-[5px] opacity-0 group-focus-within:translate-y-0 group-focus-within:opacity-100 group-hover:translate-y-0 group-hover:opacity-100'
+                  ? `bg-surface-container-lowest translate-y-0 opacity-100 ${TOP_CHROME_SHOW_TRANSITION}`
+                  : `glass-panel bg-[rgba(13,13,28,0.65)] -translate-y-[5px] opacity-0 ${TOP_CHROME_HIDE_TRANSITION} ${TOP_CHROME_REVEAL_CLASSES}`
               }`}
-              style={{
-                transition:
-                  'opacity 140ms ease, transform 160ms ease, padding-left 180ms cubic-bezier(0.4,0,0.2,1)',
-              }}
             >
               {sidebarCollapsed && (
                 <div className="absolute left-[12px] top-[8px] z-30">
@@ -1718,7 +1730,9 @@ export const WorkspaceView = (): ReactElement => {
 
               <span className="min-w-[10px] flex-1" />
 
-              {activeSession && activeSession.layout !== 'single' && (
+              {/* Pills stay in every layout — they are the affordance back
+                  into the splits, so single mode shows identity AND pills. */}
+              {activeSession && (
                 <LayoutSwitcher
                   activeLayoutId={activeSession.layout}
                   onPick={handlePickLayout}

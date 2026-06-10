@@ -266,7 +266,7 @@ describe('WorkspaceView - Visual Verification (Feature #20)', () => {
       render(<WorkspaceView />)
       const chrome = screen.getByTestId('top-chrome')
 
-      expect(chrome.className).toContain('bg-[rgba(13,13,28,0.78)]')
+      expect(chrome.className).toContain('bg-[rgba(13,13,28,0.65)]')
       expect(chrome.className).toContain('glass-panel')
     })
 
