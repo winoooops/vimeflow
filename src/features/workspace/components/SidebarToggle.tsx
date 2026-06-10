@@ -59,7 +59,7 @@ export const SidebarToggle = forwardRef<HTMLButtonElement, SidebarToggleProps>(
         aria-label={collapsed ? 'Show sidebar' : 'Hide sidebar'}
         aria-expanded={!collapsed}
         style={{ width: size, height: size }}
-        className={`grid shrink-0 cursor-pointer place-items-center rounded-[7px] transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary-container ${VARIANT_CLASS[variant]}`}
+        className={`vf-app-no-drag grid shrink-0 cursor-pointer place-items-center rounded-[7px] transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary-container ${VARIANT_CLASS[variant]}`}
       >
         <svg
           width="16"

@@ -15,6 +15,7 @@ export interface TabsProps {
   onNew: () => void
   /** Optional in-flow control seated at the bar's left (the sidebar toggle when the sidebar is collapsed); tabs flow after it, so they never sit under it. */
   leading?: ReactNode
+  reserveWindowControls?: boolean
 }
 
 export const Tabs = ({
@@ -24,6 +25,7 @@ export const Tabs = ({
   onClose,
   onNew,
   leading = undefined,
+  reserveWindowControls = false,
 }: TabsProps): ReactElement => {
   // Single source of truth for "what's visible in the strip" — see
   // `getVisibleSessions` for the predicate. Both this component and
@@ -89,10 +91,19 @@ export const Tabs = ({
       data-testid="session-tabs"
       className={`flex h-[38px] shrink-0 items-end gap-0.5 border-b border-outline-variant/25 bg-surface-container-lowest pr-2 ${
         leading ? 'pl-[12px]' : 'pl-2'
-      }`}
+      }${reserveWindowControls ? ' vf-app-drag-region' : ''}`}
+      style={{
+        paddingLeft:
+          leading && reserveWindowControls
+            ? 'max(12px, var(--workspace-window-controls-inset, 0px))'
+            : undefined,
+      }}
     >
       {leading && (
-        <div className="mr-2 flex shrink-0 items-center self-center">
+        <div
+          data-testid="session-tabs-leading"
+          className="vf-app-no-drag mr-2 flex shrink-0 items-center self-center"
+        >
           {leading}
         </div>
       )}
@@ -113,7 +124,7 @@ export const Tabs = ({
         // currently active — pre-announcing #177's binding before it
         // lands would mislead AT users into trying a non-functional
         // shortcut.
-        className="flex items-end gap-0.5"
+        className="vf-app-no-drag flex items-end gap-0.5"
       >
         {open.map((session, idx) => {
           const isActive = session.id === activeSessionId
@@ -140,7 +151,7 @@ export const Tabs = ({
         onClick={onNew}
         aria-label="New session"
         title="New session"
-        className="mb-px ml-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-on-surface-variant transition-colors hover:bg-primary/10 hover:text-primary"
+        className="vf-app-no-drag mb-px ml-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-on-surface-variant transition-colors hover:bg-primary/10 hover:text-primary"
       >
         <span className="material-symbols-outlined text-[15px]">add</span>
       </button>

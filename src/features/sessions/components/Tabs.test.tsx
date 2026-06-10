@@ -48,7 +48,8 @@ const renderTabs = (
     onSelect: (id: string) => void
     onClose: (id: string) => void
     onNew: () => void
-  }> = {}
+  }> = {},
+  reserveWindowControls = false
 ): ReturnType<typeof render> =>
   render(
     <Tabs
@@ -57,6 +58,7 @@ const renderTabs = (
       onSelect={handlers.onSelect ?? vi.fn()}
       onClose={handlers.onClose ?? vi.fn()}
       onNew={handlers.onNew ?? vi.fn()}
+      reserveWindowControls={reserveWindowControls}
     />
   )
 
@@ -90,6 +92,37 @@ describe('Tabs', () => {
     renderTabs([buildSession()], 'sess-1')
     const strip = screen.getByTestId('session-tabs')
     expect(strip.className).toContain('h-[38px]')
+  })
+
+  test('makes only empty tab-strip chrome draggable on macOS', () => {
+    render(
+      <Tabs
+        sessions={[buildSession()]}
+        activeSessionId="sess-1"
+        onSelect={vi.fn()}
+        onClose={vi.fn()}
+        onNew={vi.fn()}
+        leading={<button data-testid="leading-fixture">L</button>}
+        reserveWindowControls
+      />
+    )
+
+    expect(screen.getByTestId('session-tabs')).toHaveClass('vf-app-drag-region')
+    expect(screen.getByTestId('session-tabs-leading')).toHaveClass(
+      'vf-app-no-drag'
+    )
+    expect(screen.getByRole('tablist')).toHaveClass('vf-app-no-drag')
+    expect(screen.getByRole('button', { name: 'New session' })).toHaveClass(
+      'vf-app-no-drag'
+    )
+  })
+
+  test('does NOT apply drag region on non-macOS platforms', () => {
+    renderTabs([buildSession()], 'sess-1')
+
+    expect(screen.getByTestId('session-tabs')).not.toHaveClass(
+      'vf-app-drag-region'
+    )
   })
 
   test('exposes a tablist for assistive navigation', () => {
