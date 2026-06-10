@@ -350,6 +350,7 @@ export const WorkspaceView = (): ReactElement => {
   const handleToggleSidebar = useCallback((): void => {
     const activeElement =
       typeof document === 'undefined' ? null : document.activeElement
+
     const isToggleButtonFocused =
       activeElement === sidebarToggleTopbarRef.current ||
       activeElement === sidebarToggleTabsRef.current
