@@ -119,10 +119,11 @@ describe('useSidebarShortcut', () => {
     })
   })
 
-  test('bails when a dialog matching DIALOG_SELECTOR is in the DOM', () => {
+  test('bails when a real dialog matching DIALOG_SELECTOR is in the DOM', () => {
     const props = makeProps({ modKey: '⌘' })
     const dialog = document.createElement('div')
     dialog.setAttribute('role', 'dialog')
+    dialog.setAttribute('aria-label', 'Unsaved changes')
     append(dialog)
     const target = append(document.createElement('div'))
     renderHook(() => useSidebarShortcut(props))
@@ -130,6 +131,21 @@ describe('useSidebarShortcut', () => {
     fireFrom(target, { metaKey: true })
 
     expect(props.onToggle).not.toHaveBeenCalled()
+  })
+
+  test('toggles when the compact sidebar drawer (role=dialog aria-label=Sidebar) is open', () => {
+    const props = makeProps({ modKey: 'Ctrl' })
+    const sidebarDialog = document.createElement('div')
+    sidebarDialog.setAttribute('role', 'dialog')
+    sidebarDialog.setAttribute('aria-label', 'Sidebar')
+    const target = document.createElement('button')
+    sidebarDialog.appendChild(target)
+    append(sidebarDialog)
+    renderHook(() => useSidebarShortcut(props))
+
+    fireFrom(target, { ctrlKey: true, shiftKey: true })
+
+    expect(props.onToggle).toHaveBeenCalledOnce()
   })
 
   test('meta: bails when dock is active and target is inside the dock', () => {

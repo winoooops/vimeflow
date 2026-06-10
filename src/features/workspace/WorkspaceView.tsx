@@ -356,11 +356,11 @@ export const WorkspaceView = (): ReactElement => {
       activeElement === sidebarToggleTabsRef.current
 
     if (isCompactViewport) {
-      // When opening the compact sidebar from a non-toggle element (e.g. via
-      // keyboard shortcut from terminal/editor), force focus restoration so
-      // the focus guard moves focus into the newly opened modal drawer.
-      shouldRestoreSidebarToggleFocusRef.current =
-        isToggleButtonFocused || !compactSidebarOpen
+      // User-triggered compact toggles (toggle button or keyboard shortcut)
+      // always restore focus so the focus guard moves focus to the visible
+      // toggle. This prevents focus from being lost to document.body when
+      // closing the drawer from inside its content.
+      shouldRestoreSidebarToggleFocusRef.current = true
       setCompactSidebarOpen((open) => !open)
 
       return
@@ -368,7 +368,7 @@ export const WorkspaceView = (): ReactElement => {
 
     shouldRestoreSidebarToggleFocusRef.current = isToggleButtonFocused
     toggleSidebar()
-  }, [isCompactViewport, toggleSidebar, compactSidebarOpen])
+  }, [isCompactViewport, toggleSidebar])
 
   // Post-toggle focus guard: collapse/expand removes the active toggle from the
   // tab order (open toggle's shell goes inert; collapsed toggle's slot unmounts),

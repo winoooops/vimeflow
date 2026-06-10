@@ -3,7 +3,7 @@ id: accessibility
 category: a11y
 created: 2026-04-09
 last_updated: 2026-06-10
-ref_count: 14
+ref_count: 15
 ---
 
 # Accessibility
@@ -388,3 +388,12 @@ handlers must not trap focus without implementing the promised behavior.
 - **Finding:** `handleToggleSidebar` sets `shouldRestoreSidebarToggleFocusRef.current` only when the active element is one of the sidebar toggle buttons. `useSidebarShortcut` intentionally fires from terminal/editor focus, so on compact viewports the shortcut can open the dialog-style sidebar while the main workspace becomes `inert` and the focus guard returns early. This plausibly leaves keyboard users on `document.body` or otherwise outside the newly opened modal drawer, a WCAG focus-order regression in new compact-mode behavior.
 - **Fix:** When compact mode is about to open the sidebar, set `shouldRestoreSidebarToggleFocusRef.current = true` regardless of which element was focused (based on action intent `!compactSidebarOpen` rather than prior active element). Keep the guard for non-compact and close paths. Add a regression test that mocks `requestAnimationFrame`, fires the shortcut from `document.body`, simulates browser inert-focus-eviction by refocusing body, flushes the guard frame, and asserts the topbar toggle receives focus.
 - **Commit:** see `git blame` / `git log` on this line
+
+### 42. Compact sidebar shortcut close from drawer content drops focus to body
+
+- **Source:** github-codex-connector | PR #409 round 4 | 2026-06-10
+- **Severity:** HIGH
+- **File:** `src/features/workspace/WorkspaceView.tsx`
+- **Finding:** In compact mode, `handleToggleSidebar` sets `shouldRestoreSidebarToggleFocusRef.current = isToggleButtonFocused || !compactSidebarOpen`. On the close path, `compactSidebarOpen` is true, so a keyboard user who has tabbed from the drawer toggle into sidebar content and then uses the sidebar shortcut will leave the flag false. Closing makes the drawer content inert/hidden, the focus guard exits early, and focus can land on `document.body` with no visible focus target. This is a deterministic new compact-mode WCAG focus-order regression.
+- **Fix:** In the compact branch of `handleToggleSidebar`, unconditionally set `shouldRestoreSidebarToggleFocusRef.current = true` for all user-triggered compact toggles (both open and close). This aligns with the Escape and scrim dismissal paths. Also fixed `useSidebarShortcut` to not bail on the compact sidebar drawer itself (which carries `role="dialog"` for a11y) while preserving the existing bailout for real dialogs such as the command palette. Added a regression test that opens the drawer, focuses the Command Palette button inside it, fires the sidebar shortcut, and asserts focus lands back on the tabs toggle.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

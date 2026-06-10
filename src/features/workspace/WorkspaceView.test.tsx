@@ -416,6 +416,74 @@ describe('WorkspaceView', () => {
     }
   })
 
+  test('compact sidebar shortcut from focused drawer content restores focus to the tabs toggle', async () => {
+    const restoreMatchMedia = mockMatchMedia(true)
+    const user = userEvent.setup()
+    const frameCallbacks: FrameRequestCallback[] = []
+
+    const requestAnimationFrameSpy = vi
+      .spyOn(window, 'requestAnimationFrame')
+      .mockImplementation((callback: FrameRequestCallback): number => {
+        frameCallbacks.push(callback)
+
+        return frameCallbacks.length
+      })
+
+    try {
+      render(<WorkspaceView />)
+      await screen.findByTestId('terminal-pane-mock')
+
+      // Open the compact sidebar via the tabs toggle
+      await user.click(screen.getByTestId('sidebar-toggle-tabs'))
+      expect(screen.getByTestId('sidebar-scrim')).toBeInTheDocument()
+
+      // Move focus into the drawer content (Command Palette button), not the toggle
+      const commandButton = screen.getByRole('button', {
+        name: 'Command Palette',
+      })
+      act(() => {
+        commandButton.focus()
+      })
+      expect(commandButton).toHaveFocus()
+
+      // Fire the global sidebar shortcut to close the drawer
+      act(() => {
+        document.dispatchEvent(
+          new KeyboardEvent('keydown', {
+            key: 'b',
+            ctrlKey: true,
+            shiftKey: true,
+            bubbles: true,
+          })
+        )
+      })
+
+      await waitFor(() => {
+        expect(screen.queryByTestId('sidebar-scrim')).not.toBeInTheDocument()
+      })
+
+      // jsdom does not evict focus from inert elements; simulate the browser
+      // by moving focus to body before the focus guard frame fires.
+      act(() => {
+        document.body.focus()
+      })
+
+      // Flush the focus guard's animation frame
+      const lastFrame = frameCallbacks[frameCallbacks.length - 1]
+      if (lastFrame) {
+        act(() => {
+          lastFrame(16)
+        })
+      }
+
+      // Focus should land on the now-visible tabs toggle
+      expect(screen.getByTestId('sidebar-toggle-tabs')).toHaveFocus()
+    } finally {
+      restoreMatchMedia()
+      requestAnimationFrameSpy.mockRestore()
+    }
+  })
+
   test('wires usePaneShortcuts to session-manager handlers', () => {
     render(<WorkspaceView />)
 
