@@ -6,22 +6,18 @@ import { SidebarTopBar, type SidebarTopBarProps } from './SidebarTopBar'
 const renderTopBar = (
   props: Partial<SidebarTopBarProps> = {}
 ): ReturnType<typeof render> =>
-  render(
-    <SidebarTopBar
-      onToggleSidebar={vi.fn()}
-      commandShortcutHint="Ctrl+;"
-      {...props}
-    />
-  )
+  render(<SidebarTopBar commandShortcutHint="Ctrl+;" {...props} />)
 
 describe('SidebarTopBar', () => {
-  test('renders the collapse toggle on the left', () => {
+  test('does not render the persistent sidebar toggle', () => {
     renderTopBar()
 
-    expect(screen.getByTestId('sidebar-toggle-topbar')).toBeInTheDocument()
+    expect(
+      screen.queryByTestId('sidebar-toggle-topbar')
+    ).not.toBeInTheDocument()
   })
 
-  test('keeps empty expanded top-bar chrome draggable while controls remain clickable on macOS', () => {
+  test('keeps empty expanded top-bar chrome draggable while utilities remain clickable on macOS', () => {
     renderTopBar({
       onCommand: vi.fn(),
       onSettings: vi.fn(),
@@ -30,10 +26,6 @@ describe('SidebarTopBar', () => {
 
     expect(screen.getByTestId('sidebar-top-bar')).toHaveClass(
       'vf-app-drag-region'
-    )
-
-    expect(screen.getByTestId('sidebar-toggle-topbar')).toHaveClass(
-      'vf-app-no-drag'
     )
 
     expect(screen.getByRole('button', { name: 'Command Palette' })).toHaveClass(
@@ -55,16 +47,6 @@ describe('SidebarTopBar', () => {
     expect(screen.getByTestId('sidebar-top-bar')).not.toHaveClass(
       'vf-app-drag-region'
     )
-  })
-
-  test('the toggle invokes onToggleSidebar', async () => {
-    const user = userEvent.setup()
-    const onToggleSidebar = vi.fn()
-    renderTopBar({ onToggleSidebar })
-
-    await user.click(screen.getByTestId('sidebar-toggle-topbar'))
-
-    expect(onToggleSidebar).toHaveBeenCalledTimes(1)
   })
 
   test('the Command Palette button is icon-only and fires onCommand', async () => {
