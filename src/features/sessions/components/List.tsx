@@ -1,4 +1,10 @@
-import { useRef, type ReactElement } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactElement,
+} from 'react'
 import { motion } from 'framer-motion'
 import type { Session, SessionCloseResult } from '../types'
 import { Card } from './Card'
@@ -15,6 +21,8 @@ export interface ListProps {
   onRenameSession?: (sessionId: string, name: string) => void
   onReorderSessions?: (sessions: Session[]) => void
 }
+
+const REORDER_MOTION_SETTLE_MS = 260
 
 export const List = ({
   sessions,
@@ -44,6 +52,42 @@ export const List = ({
   const recentGroupRef = useRef(recentGroup)
   recentGroupRef.current = recentGroup
 
+  const [reorderMotionEnabled, setReorderMotionEnabled] = useState(false)
+
+  const reorderMotionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null
+  )
+
+  const clearReorderMotionTimeout = useCallback((): void => {
+    const timeoutId = reorderMotionTimeoutRef.current
+    if (timeoutId === null) {
+      return
+    }
+
+    clearTimeout(timeoutId)
+    reorderMotionTimeoutRef.current = null
+  }, [])
+
+  const handleReorderDragStart = useCallback((): void => {
+    clearReorderMotionTimeout()
+    setReorderMotionEnabled(true)
+  }, [clearReorderMotionTimeout])
+
+  const handleReorderDragEnd = useCallback((): void => {
+    clearReorderMotionTimeout()
+    reorderMotionTimeoutRef.current = setTimeout(() => {
+      reorderMotionTimeoutRef.current = null
+      setReorderMotionEnabled(false)
+    }, REORDER_MOTION_SETTLE_MS)
+  }, [clearReorderMotionTimeout])
+
+  useEffect(
+    () => (): void => {
+      clearReorderMotionTimeout()
+    },
+    [clearReorderMotionTimeout]
+  )
+
   // Mirror SessionTabs.handleClose using the shared visible-order helper.
   // useSessionManager.removeSession uses `flushSync` internally to apply
   // its own setActiveSessionId mid-call, so we must remove first and
@@ -66,33 +110,40 @@ export const List = ({
   // re-render, then lands focus on the new active row's overlay
   // activation button. Mirrors SessionTabs.handleClose §4.4.3 behavior
   // for keyboard users who navigate via group-focus-within.
-  const handleRemoveSession = onRemoveSession
-    ? (id: string): void => {
-        const nextId =
-          id === activeSessionId
-            ? pickNextVisibleSessionId(sessions, id, activeSessionId)
-            : undefined
-        const didRemove = onRemoveSession(id)
-        if (didRemove === false) {
-          return
-        }
-
-        if (nextId !== undefined) {
-          onSessionClick(nextId)
-          queueMicrotask(() => {
-            // Mirror SessionTabs' `getElementById('session-tab-...')`
-            // pattern: the overlay button carries
-            // `id="sidebar-activate-${session.id}"`, so id-based lookup
-            // is both consistent across the two strips AND avoids the
-            // CSS-attribute-selector escaping path entirely. A session
-            // id containing `"` or `]` would otherwise corrupt the
-            // selector and either silently fail (`querySelector` →
-            // null) or throw `SyntaxError`.
-            document.getElementById(`sidebar-activate-${nextId}`)?.focus()
-          })
-        }
+  const handleRemoveSession = useCallback(
+    (id: string): void => {
+      if (!onRemoveSession) {
+        return
       }
-    : undefined
+
+      const nextId =
+        id === activeSessionId
+          ? pickNextVisibleSessionId(sessions, id, activeSessionId)
+          : undefined
+      const didRemove = onRemoveSession(id)
+      if (didRemove === false) {
+        return
+      }
+
+      if (nextId !== undefined) {
+        onSessionClick(nextId)
+        queueMicrotask(() => {
+          // Mirror SessionTabs' `getElementById('session-tab-...')`
+          // pattern: the overlay button carries
+          // `id="sidebar-activate-${session.id}"`, so id-based lookup
+          // is both consistent across the two strips AND avoids the
+          // CSS-attribute-selector escaping path entirely. A session
+          // id containing `"` or `]` would otherwise corrupt the
+          // selector and either silently fail (`querySelector` →
+          // null) or throw `SyntaxError`.
+          document.getElementById(`sidebar-activate-${nextId}`)?.focus()
+        })
+      }
+    },
+    [activeSessionId, onRemoveSession, onSessionClick, sessions]
+  )
+
+  const cardRemoveSession = onRemoveSession ? handleRemoveSession : undefined
 
   return (
     <>
@@ -140,8 +191,11 @@ export const List = ({
               variant="active"
               isActive={session.id === activeSessionId}
               onClick={onSessionClick}
-              onRemove={handleRemoveSession}
+              onRemove={cardRemoveSession}
               onRename={onRenameSession}
+              reorderMotionEnabled={reorderMotionEnabled}
+              onReorderDragStart={handleReorderDragStart}
+              onReorderDragEnd={handleReorderDragEnd}
             />
           ))}
         </Group>
@@ -157,7 +211,7 @@ export const List = ({
                   variant="recent"
                   isActive={session.id === activeSessionId}
                   onClick={onSessionClick}
-                  onRemove={handleRemoveSession}
+                  onRemove={cardRemoveSession}
                   onRename={onRenameSession}
                 />
               ))}

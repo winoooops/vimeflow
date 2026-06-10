@@ -37,6 +37,10 @@ export interface AgentStatusCardProps {
   shellName?: string | null
 }
 
+// The 272px minimum/default sidebar gives this card 248px of available header
+// width after horizontal padding. Wider sidebars may give the card more room,
+// but cap at 320px so the chrome stays composed and left-pinned.
+const CARD_MAX_W = 320
 // 125 = 12 (top pad) + 24 (header: h-6 pill / leading-6 title) + 9 (gap)
 // + 66 (CARD_BODY_H) + 14 (bottom pad). Still ONE fixed height across agent
 // and shell states, so switching panes never reflows the session list.
@@ -188,6 +192,8 @@ export const AgentStatusCard = ({
       style={{
         position: 'relative',
         borderRadius: 13,
+        width: '100%',
+        maxWidth: CARD_MAX_W,
         height: CARD_H,
         padding: '12px 14px 14px',
         background: 'rgba(33,33,51,0.55)',

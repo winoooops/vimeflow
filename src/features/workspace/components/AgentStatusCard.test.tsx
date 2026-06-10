@@ -169,7 +169,7 @@ describe('AgentStatusCard', () => {
     expect(screen.queryByText('data_usage')).not.toBeInTheDocument()
   })
 
-  test('keeps the outer card height stable across agent and shell states', () => {
+  test('keeps a stable height and caps responsive width across agent and shell states', () => {
     const { rerender } = render(
       <AgentStatusCard
         title="m"
@@ -181,13 +181,19 @@ describe('AgentStatusCard', () => {
     )
 
     const card = screen.getByTestId('sidebar-agent-status-card')
-    expect(card).toHaveStyle({ height: '125px' })
+    expect(card).toHaveStyle({
+      width: '100%',
+      maxWidth: '320px',
+      height: '125px',
+    })
 
     rerender(
       <AgentStatusCard title="ignored" state="idle" isShell shellName="bash" />
     )
 
     expect(screen.getByTestId('sidebar-agent-status-card')).toHaveStyle({
+      width: '100%',
+      maxWidth: '320px',
       height: '125px',
     })
   })

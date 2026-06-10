@@ -19,6 +19,10 @@ import { useAgentStatus } from '../agent-status/hooks/useAgentStatus'
 import { usePaneShortcuts } from '../terminal/hooks/usePaneShortcuts'
 import { setSidebarCollapsed } from './utils/sidebarCollapsedStore'
 import type { SessionList } from '../../bindings'
+import {
+  MockResizeObserver,
+  installMockResizeObserver,
+} from '../../test/mockResizeObserver'
 
 const workspaceTerminalMock = vi.hoisted(() => {
   const defaultSessionList = (): SessionList => ({
@@ -187,6 +191,26 @@ const makeAgentStatus = (
 vi.mock('../terminal/services/terminalService', () => ({
   createTerminalService: vi.fn(() => workspaceTerminalMock.service),
 }))
+
+const createDomRect = (width: number, height: number): DOMRect =>
+  ({
+    width,
+    height,
+    top: 0,
+    left: 0,
+    right: width,
+    bottom: height,
+    x: 0,
+    y: 0,
+    toJSON: () => ({}),
+  }) as DOMRect
+
+const findObservedResizeObserver = (
+  element: HTMLElement
+): MockResizeObserver | undefined =>
+  MockResizeObserver.instances.find((instance) =>
+    instance.observe.mock.calls.some(([observed]) => observed === element)
+  )
 
 describe('WorkspaceView', () => {
   beforeEach(() => {
@@ -1238,6 +1262,20 @@ describe('WorkspaceView', () => {
     expect(mainWorkspace).toHaveClass('flex-col')
   })
 
+  test('main workspace uses a rounded sheet edge while the sidebar is visible', () => {
+    render(<WorkspaceView />)
+
+    const workspaceView = screen.getByTestId('workspace-view')
+    const mainWorkspace = workspaceView.children[1] as HTMLElement
+
+    expect(mainWorkspace).toHaveClass('bg-background')
+    expect(mainWorkspace.style.borderTopLeftRadius).toBe('16px')
+    expect(mainWorkspace.style.borderBottomLeftRadius).toBe('16px')
+    expect(mainWorkspace.style.boxShadow).toContain('-18px')
+    expect(mainWorkspace.style.boxShadow).toContain('36px')
+    expect(mainWorkspace.style.transition).toContain('border-radius 220ms')
+  })
+
   test('applies overflow-hidden to prevent scrollbars', () => {
     render(<WorkspaceView />)
 
@@ -1323,9 +1361,16 @@ describe('WorkspaceView', () => {
       const { rerender } = render(<WorkspaceView />)
 
       const workspace = screen.getByTestId('workspace-view')
+      const sidebarShell = screen.getByTestId('workspace-sidebar-shell')
+      const mainWorkspace = workspace.children[1] as HTMLElement
       const handle = screen.getByTestId('sidebar-resize-handle')
 
+      expect(sidebarShell.className).toContain('transition-[width]')
+
       fireEvent.mouseDown(handle, { clientX: 200 })
+
+      expect(sidebarShell.className).not.toContain('transition-[width]')
+      expect(mainWorkspace.style.transition).toBe('none')
 
       fireEvent.mouseMove(document, { clientX: 300 })
 
@@ -1360,6 +1405,108 @@ describe('WorkspaceView', () => {
       expect(handle).toHaveAttribute('aria-valuenow', '372')
     } finally {
       requestAnimationFrameSpy.mockRestore()
+    }
+  })
+
+  test('collapses the sidebar when drag ends below the default minimum width', async () => {
+    render(<WorkspaceView />)
+
+    const workspace = screen.getByTestId('workspace-view')
+    const handle = screen.getByTestId('sidebar-resize-handle')
+
+    expect(workspace.style.getPropertyValue('--workspace-sidebar-width')).toBe(
+      '272px'
+    )
+
+    fireEvent.mouseDown(handle, { clientX: 200 })
+    fireEvent.mouseMove(document, { clientX: 190 })
+    fireEvent.mouseUp(document)
+
+    await waitFor(() => {
+      expect(screen.queryByTestId('sidebar-resize-handle')).toBeNull()
+    })
+
+    expect(screen.getByTestId('sidebar-toggle-tabs')).toBeInTheDocument()
+    expect(
+      screen.getByTestId('sidebar-top-bar-placeholder')
+    ).toBeInTheDocument()
+
+    const sidebarShell = screen.getByTestId('workspace-sidebar-shell')
+    const mainWorkspace = workspace.children[1] as HTMLElement
+
+    expect(sidebarShell.className).toContain('transition-[width]')
+    expect(sidebarShell).toHaveStyle({ width: '0px' })
+    expect(mainWorkspace.style.borderTopLeftRadius).toBe('0')
+    expect(mainWorkspace.style.borderBottomLeftRadius).toBe('0')
+  })
+
+  test('collapses the sidebar below the capped main-column threshold on large workspaces', async () => {
+    const originalResizeObserver = globalThis.ResizeObserver
+    installMockResizeObserver()
+
+    try {
+      render(<WorkspaceView />)
+
+      const workspace = screen.getByTestId('workspace-view')
+      const mainWorkspace = workspace.children[1] as HTMLElement
+      vi.spyOn(workspace, 'getBoundingClientRect').mockReturnValue(
+        createDomRect(1600, 900)
+      )
+
+      const observer = findObservedResizeObserver(mainWorkspace)
+      if (!observer) {
+        throw new Error('Expected main workspace ResizeObserver')
+      }
+
+      act(() => {
+        observer.trigger({ width: 499, height: 700 })
+      })
+
+      await waitFor(() => {
+        expect(screen.queryByTestId('sidebar-resize-handle')).toBeNull()
+      })
+
+      expect(screen.getByTestId('sidebar-toggle-tabs')).toBeInTheDocument()
+    } finally {
+      globalThis.ResizeObserver = originalResizeObserver
+    }
+  })
+
+  test('keeps the sidebar open until the lower-resolution main-column threshold is crossed', async () => {
+    const originalResizeObserver = globalThis.ResizeObserver
+    installMockResizeObserver()
+
+    try {
+      render(<WorkspaceView />)
+
+      const workspace = screen.getByTestId('workspace-view')
+      const mainWorkspace = workspace.children[1] as HTMLElement
+      vi.spyOn(workspace, 'getBoundingClientRect').mockReturnValue(
+        createDomRect(900, 700)
+      )
+
+      const observer = findObservedResizeObserver(mainWorkspace)
+      if (!observer) {
+        throw new Error('Expected main workspace ResizeObserver')
+      }
+
+      act(() => {
+        observer.trigger({ width: 420, height: 700 })
+      })
+
+      expect(screen.getByTestId('sidebar-resize-handle')).toBeInTheDocument()
+
+      act(() => {
+        observer.trigger({ width: 359, height: 700 })
+      })
+
+      await waitFor(() => {
+        expect(screen.queryByTestId('sidebar-resize-handle')).toBeNull()
+      })
+
+      expect(screen.getByTestId('sidebar-toggle-tabs')).toBeInTheDocument()
+    } finally {
+      globalThis.ResizeObserver = originalResizeObserver
     }
   })
 
