@@ -82,7 +82,6 @@ import { pickNextVisibleSessionId } from '../sessions/utils/pickNextVisibleSessi
 import { AGENTS, agentTypeToRegistryKey } from '../../agents/registry'
 import type {
   LayoutId,
-  Session,
   SessionCloseResult,
   SessionStatus,
 } from '../sessions/types'
@@ -154,18 +153,6 @@ const SIDEBAR_TAB_ITEMS: readonly SidebarTabItem<SidebarTab>[] = [
   { id: 'sessions', label: 'SESSIONS', icon: 'view_agenda' },
   { id: 'files', label: 'FILES', icon: 'folder_open' },
 ]
-
-// Maps a session's persisted agentType onto the AGENTS registry for the
-// single-pane top-chrome identity. tsc-exhaustive over Session['agentType'].
-const SESSION_AGENT_REGISTRY_KEY: Record<
-  Session['agentType'],
-  keyof typeof AGENTS
-> = {
-  'claude-code': 'claude',
-  codex: 'codex',
-  aider: 'shell',
-  generic: 'shell',
-}
 
 // Auto-hide top chrome: the moment the cursor/focus leaves, the bar fades
 // out over 260ms on a soft curve — no hold beforehand (a delayed start
@@ -379,10 +366,6 @@ export const WorkspaceView = (): ReactElement => {
     },
     [activeSessionId, setSessionLayout]
   )
-
-  const topIdentityAgent = activeSession
-    ? AGENTS[SESSION_AGENT_REGISTRY_KEY[activeSession.agentType]]
-    : null
 
   const activePtyBackedPane =
     activePane === undefined
@@ -1703,36 +1686,10 @@ export const WorkspaceView = (): ReactElement => {
                 </div>
               )}
 
-              {activeSession?.layout === 'single' && topIdentityAgent && (
-                <div
-                  data-testid="top-identity"
-                  className="flex min-w-0 items-center gap-[8px]"
-                >
-                  <span
-                    className="inline-flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-[5px] font-mono text-[10px] font-extrabold"
-                    style={{
-                      background: topIdentityAgent.accentDim,
-                      color: topIdentityAgent.accent,
-                    }}
-                  >
-                    {topIdentityAgent.glyph}
-                  </span>
-                  <span className="min-w-0 truncate font-mono text-[12px] font-medium text-on-surface-variant">
-                    {activeSession.name}
-                  </span>
-                  {activeSession.status === 'running' && (
-                    <span
-                      data-testid="top-identity-running-dot"
-                      className="h-[5px] w-[5px] shrink-0 animate-pulse rounded-full bg-success-muted shadow-[0_0_6px_#7defa1]"
-                    />
-                  )}
-                </div>
-              )}
-
               <span className="min-w-[10px] flex-1" />
 
-              {/* Pills stay in every layout — they are the affordance back
-                  into the splits, so single mode shows identity AND pills. */}
+              {/* Pills render in every layout — the banner carries the same
+                  controls regardless of pane mode (no per-layout identity). */}
               {activeSession && (
                 <LayoutSwitcher
                   activeLayoutId={activeSession.layout}

@@ -376,9 +376,6 @@ describe('WorkspaceView – top chrome (main-stage handoff J2–J6)', () => {
     expect(switcher.previousElementSibling?.className).toContain('flex-1')
     expect(within(chrome).queryByText('Layout')).toBeNull()
 
-    // Single-pane identity is a different mode — not rendered in split.
-    expect(screen.queryByTestId('top-identity')).toBeNull()
-
     const group = within(chrome).getByTestId('top-action-group')
     const groupClasses = group.className.split(/\s+/)
     expect(groupClasses).toContain('border')
@@ -415,15 +412,12 @@ describe('WorkspaceView – top chrome (main-stage handoff J2–J6)', () => {
     expect(mockSessionManager.setSessionActivePane).not.toHaveBeenCalled()
   })
 
-  test('single layout: identity fallback with agent glyph, title, and running pulse — pills stay (J5)', () => {
+  test('single layout: same chrome as the splits — pills and actions, no identity row', () => {
     render(<WorkspaceView />)
 
-    const identity = screen.getByTestId('top-identity')
-    expect(identity).toHaveTextContent('∴')
-    expect(identity).toHaveTextContent('auth middleware refactor')
-    expect(
-      within(identity).getByTestId('top-identity-running-dot')
-    ).toBeInTheDocument()
+    // The session-title identity was removed: a readout that exists in one
+    // layout and vanishes in the others is inconsistent chrome (user call).
+    expect(screen.queryByTestId('top-identity')).toBeNull()
 
     // The pill group survives single layout — it is the affordance back
     // into the split layouts (user call, supersedes the demo's hidden pills).
@@ -436,21 +430,6 @@ describe('WorkspaceView – top chrome (main-stage handoff J2–J6)', () => {
       within(group).getByRole('button', { name: 'Configure displayed layouts' })
     ).toBeInTheDocument()
     expect(within(group).queryByRole('button', { name: /split/i })).toBeNull()
-  })
-
-  test('single layout without a live agent shows no running pulse (J5)', async () => {
-    await setupSessionManager(
-      [
-        createMockSession('session-1', 'auth middleware refactor', {
-          status: 'idle',
-        }),
-      ],
-      'session-1'
-    )
-    render(<WorkspaceView />)
-
-    expect(screen.getByTestId('top-identity')).toBeInTheDocument()
-    expect(screen.queryByTestId('top-identity-running-dot')).toBeNull()
   })
 
   test('collapsed sidebar opens the 50px gutter and floats the toggle at left 12 / top 8 (J4)', () => {

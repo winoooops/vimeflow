@@ -130,7 +130,7 @@ const switchToFilesTab = async (user: User): Promise<void> => {
  */
 describe('WorkspaceView Integration Tests', () => {
   describe('Session switching updates terminal and activity', () => {
-    test('clicking session updates the top chrome identity', async (): Promise<void> => {
+    test('clicking session moves the sidebar active highlight', async (): Promise<void> => {
       const user = userEvent.setup()
       render(<WorkspaceView />)
 
@@ -161,14 +161,13 @@ describe('WorkspaceView Integration Tests', () => {
       expect(sessionButtons.length).toBeGreaterThan(1)
 
       const clickedSession = sessionButtons[1]
-      const clickedName = clickedSession.getAttribute('aria-label') ?? ''
       await user.click(clickedSession)
 
-      // J2: the session-tab strip is gone — the single-pane top chrome
-      // identity is the main-view surface that reflects the active session.
+      // J2: the session-tab strip is gone — the sidebar's highlighted card
+      // is the surface that reflects the active session.
       await waitFor(() => {
-        expect(screen.getByTestId('top-identity')).toHaveTextContent(
-          clickedName
+        expect(clickedSession.closest('li')!.className).toContain(
+          'bg-[rgba(203,166,247,0.13)]'
         )
       })
       // Terminal zone is still mounted (sanity check) — its panes follow
@@ -224,9 +223,12 @@ describe('WorkspaceView Integration Tests', () => {
 
       await user.click(sessionButtons[0])
 
-      // J2: no session-tab strip — the top chrome identity tracks the
-      // active single-layout session instead.
-      expect(screen.getByTestId('top-identity')).toBeInTheDocument()
+      // J2: no session-tab strip — the sidebar card highlight tracks the
+      // active session instead.
+
+      expect(sessionButtons[0].closest('li')!.className).toContain(
+        'bg-[rgba(203,166,247,0.13)]'
+      )
       expect(screen.queryByTestId('session-tabs')).toBeNull()
 
       expect(screen.getByTestId('agent-status-panel')).toBeInTheDocument()

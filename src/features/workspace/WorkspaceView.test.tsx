@@ -404,7 +404,9 @@ describe('WorkspaceView', () => {
     await user.click(screen.getByRole('button', { name: 'Cancel' }))
 
     await waitFor(() => {
-      expect(screen.getByTestId('top-identity')).toHaveTextContent('first')
+      expect(
+        screen.getByRole('button', { name: 'first' }).closest('li')!.className
+      ).toContain('bg-[rgba(203,166,247,0.13)]')
     })
     expect(screen.getByRole('button', { name: 'second' })).toBeInTheDocument()
   })
@@ -476,7 +478,9 @@ describe('WorkspaceView', () => {
       expect(screen.queryByRole('button', { name: 'second' })).toBeNull()
     })
 
-    expect(screen.getByTestId('top-identity')).toHaveTextContent('first')
+    expect(
+      screen.getByRole('button', { name: 'first' }).closest('li')!.className
+    ).toContain('bg-[rgba(203,166,247,0.13)]')
 
     expect(screen.getByRole('button', { name: 'third' })).toBeInTheDocument()
     expect(releaseScope).toHaveBeenCalledWith('second')
@@ -570,7 +574,9 @@ describe('WorkspaceView', () => {
         expect(screen.queryByRole('button', { name: 'second' })).toBeNull()
       })
 
-      expect(screen.getByTestId('top-identity')).toHaveTextContent('first')
+      expect(
+        screen.getByRole('button', { name: 'first' }).closest('li')!.className
+      ).toContain('bg-[rgba(203,166,247,0.13)]')
 
       expect(screen.getByRole('button', { name: 'third' })).toBeInTheDocument()
       expect(releaseScope).toHaveBeenCalledWith('second')
@@ -717,12 +723,10 @@ describe('WorkspaceView', () => {
     await user.click(screen.getByRole('button', { name: 'Discard' }))
 
     await waitFor(() => {
-      expect(screen.getByTestId('top-identity')).toHaveTextContent('third')
+      expect(
+        screen.getByRole('button', { name: 'third' }).closest('li')!.className
+      ).toContain('bg-[rgba(203,166,247,0.13)]')
     })
-
-    expect(screen.getByTestId('top-identity')).not.toHaveTextContent(
-      'hidden-ended'
-    )
   })
 
   test('selects the next visible session after saving a dirty active-session close', async () => {
@@ -787,12 +791,10 @@ describe('WorkspaceView', () => {
     })
 
     await waitFor(() => {
-      expect(screen.getByTestId('top-identity')).toHaveTextContent('third')
+      expect(
+        screen.getByRole('button', { name: 'third' }).closest('li')!.className
+      ).toContain('bg-[rgba(203,166,247,0.13)]')
     })
-
-    expect(screen.getByTestId('top-identity')).not.toHaveTextContent(
-      'hidden-ended'
-    )
   })
 
   test('releases an editor scope after a clean session is removed', async () => {

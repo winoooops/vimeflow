@@ -1,4 +1,4 @@
-import { render, screen, waitFor, act, within } from '@testing-library/react'
+import { render, screen, waitFor, act } from '@testing-library/react'
 import { describe, test, expect, vi, beforeEach } from 'vitest'
 import userEvent from '@testing-library/user-event'
 import type { ReactElement, ReactNode } from 'react'
@@ -6,7 +6,6 @@ import { WorkspaceView } from './WorkspaceView'
 import type { SessionManager } from '../sessions/hooks/useSessionManager'
 import type { AgentStatus } from '../agent-status/types'
 import type { Session } from '../sessions/types'
-import { AGENTS } from '../../agents/registry'
 import type { TerminalZoneProps } from './components/TerminalZone'
 
 const terminalZonePropsSpy = vi.hoisted(() => vi.fn())
@@ -454,8 +453,9 @@ describe('WorkspaceView - Command Palette Integration', () => {
 
     render(<WorkspaceView />)
 
-    const identity = screen.getByTestId('top-identity')
-    expect(within(identity).getByText(AGENTS.shell.glyph)).toBeInTheDocument()
+    // The banner no longer renders a session identity; the guard under test
+    // is that the stale claude-code status never re-stamps the generic pane.
+    expect(screen.queryByTestId('top-identity')).toBeNull()
     expect(mockSessionManager.updatePaneAgentType).not.toHaveBeenCalled()
   })
 
