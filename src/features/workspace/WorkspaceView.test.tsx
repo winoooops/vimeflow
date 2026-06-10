@@ -316,9 +316,7 @@ describe('WorkspaceView', () => {
 
       expect(screen.getByTestId('sidebar-scrim')).toBeInTheDocument()
 
-      const mainWorkspace = screen.getByTestId(
-        'dock-canvas-wrapper'
-      ).parentElement!
+      const mainWorkspace = screen.getByTestId('workspace-main')
       expect(mainWorkspace).toHaveAttribute('inert')
       expect(mainWorkspace).toHaveAttribute('aria-hidden', 'true')
 

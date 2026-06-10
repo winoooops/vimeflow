@@ -326,6 +326,7 @@ export const WorkspaceView = (): ReactElement => {
       }
 
       event.preventDefault()
+      shouldRestoreSidebarToggleFocusRef.current = true
       setCompactSidebarOpen(false)
     }
 
@@ -1767,6 +1768,7 @@ export const WorkspaceView = (): ReactElement => {
           rather than climbing to the viewport. */}
       <div
         ref={mainWorkspaceRef}
+        data-testid="workspace-main"
         className="relative flex flex-col overflow-hidden bg-background"
         inert={isCompactViewport && !isSidebarClosed ? true : undefined}
         aria-hidden={isCompactViewport && !isSidebarClosed ? true : undefined}

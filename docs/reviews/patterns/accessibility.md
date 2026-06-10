@@ -2,7 +2,7 @@
 id: accessibility
 category: a11y
 created: 2026-04-09
-last_updated: 2026-06-07
+last_updated: 2026-06-10
 ref_count: 12
 ---
 
@@ -343,3 +343,21 @@ handlers must not trap focus without implementing the promised behavior.
 - **Finding:** The newly added `session-pane-count` span was nested inside a parent `<span aria-hidden="true">` that wraps the decorative layout glyph. The sibling overlay activation `<button>` carried only `aria-label={session.name}`, so screen-reader users navigating session cards received the session name but not the newly added multi-pane count — meaningful workspace state that sighted users see.
 - **Fix:** Computed an `ariaLabel` constant: when `showGlyph` is true, `${session.name} (${LAYOUTS[session.layout].capacity} panes)`; otherwise `session.name`. Wired `aria-label={ariaLabel}` into the activation button. Added co-located regression tests asserting both the multi-pane suffix and the single-pane absence.
 - **Commit:** see `git blame` / `git log` on this line
+
+### 37. Escape-close doesn't restore focus — keyboard users stranded on <body>
+
+- **Source:** github-claude | PR #409 round 1 | 2026-06-10
+- **Severity:** HIGH
+- **File:** `src/features/workspace/WorkspaceView.tsx`
+- **Finding:** When the compact sidebar is open and the user presses Escape to close it, `closeOnEscape` calls `setCompactSidebarOpen(false)` without setting `shouldRestoreSidebarToggleFocusRef.current = true`. The focus-guard effect then finds the flag false and returns early, leaving focus on `document.body` — a WCAG 2.4.3 violation.
+- **Fix:** Added `shouldRestoreSidebarToggleFocusRef.current = true` immediately before `setCompactSidebarOpen(false)` inside `closeOnEscape` so the existing focus-guard RAF picks it up and refocuses the tabs-bar toggle.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 38. Test locates inert wrapper via `parentElement!` — fragile DOM traversal
+
+- **Source:** github-claude | PR #409 round 1 | 2026-06-10
+- **Severity:** LOW
+- **File:** `src/features/workspace/WorkspaceView.test.tsx`
+- **Finding:** The test found the main workspace div with `screen.getByTestId('dock-canvas-wrapper').parentElement!`. If any intermediate wrapper were inserted, the assertion would check the wrong element's `inert` / `aria-hidden` attributes.
+- **Fix:** Added `data-testid="workspace-main"` to the main workspace div in `WorkspaceView.tsx` and updated the test to query `screen.getByTestId('workspace-main')` directly.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
