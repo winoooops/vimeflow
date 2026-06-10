@@ -2,8 +2,8 @@
 id: macos-window-chrome
 category: cross-platform
 created: 2026-06-09
-last_updated: 2026-06-09
-ref_count: 0
+last_updated: 2026-06-10
+ref_count: 1
 ---
 
 # macOS Window Chrome
@@ -65,3 +65,11 @@ dimensions so the controls do not overlay adjacent UI columns.
 - **File:** `electron/main.ts`
 - **Finding:** `backgroundColor: '#121221'` in `macosWindowChromeOptions` mirrored the Tailwind `bg-background` token with no comment linking the two. A future design iteration updating the token would leave the native window flash color stale.
 - **Fix:** Added an inline comment documenting the relationship to the Tailwind token and warning to keep them in sync.
+
+### 7. SidebarTopBar drag region applied unconditionally on all platforms
+
+- **Source:** github-codex-connector | PR #412 round 1 | 2026-06-10
+- **Severity:** HIGH
+- **File:** `src/features/workspace/components/SidebarTopBar.tsx`
+- **Finding:** `SidebarTopBar` unconditionally added `vf-app-drag-region` to its root element, while `WorkspaceView` already computed the macOS-only `reserveWindowControls` flag and `Tabs` correctly gated the same class behind it. Electron honors `-webkit-app-region: drag` on Windows and Linux, turning the expanded sidebar top bar into an unintended window-drag handle.
+- **Fix:** Added a `reserveWindowControls` prop to `SidebarTopBar`, made `vf-app-drag-region` conditional on it, passed the existing `reserveWindowControls` value from `WorkspaceView`, and added a non-macOS test asserting the class is absent.

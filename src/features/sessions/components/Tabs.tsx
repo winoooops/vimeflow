@@ -92,9 +92,18 @@ export const Tabs = ({
       className={`flex h-[38px] shrink-0 items-end gap-0.5 border-b border-outline-variant/25 bg-surface-container-lowest pr-2 ${
         leading ? 'pl-[12px]' : 'pl-2'
       }${reserveWindowControls ? ' vf-app-drag-region' : ''}`}
+      style={{
+        paddingLeft:
+          leading && reserveWindowControls
+            ? 'max(12px, var(--workspace-window-controls-inset, 0px))'
+            : undefined,
+      }}
     >
       {leading && (
-        <div className="mr-2 flex shrink-0 items-center self-center">
+        <div
+          data-testid="session-tabs-leading"
+          className="vf-app-no-drag mr-2 flex shrink-0 items-center self-center"
+        >
           {leading}
         </div>
       )}

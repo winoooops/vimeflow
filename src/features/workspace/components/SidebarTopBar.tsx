@@ -60,6 +60,7 @@ const TopBarUtil = ({
         onMouseEnter={() => setHover(true)}
         onMouseLeave={() => setHover(false)}
         aria-label={label}
+        className="vf-app-no-drag"
         style={style}
       >
         <span
@@ -89,11 +90,13 @@ export interface SidebarTopBarProps {
   settingsIssueNumber?: number
   /** Ref forwarded to the collapse-toggle button for imperative focus. */
   toggleRef?: Ref<HTMLButtonElement>
+  /** Whether the platform reserves space for macOS inset window controls. */
+  reserveWindowControls?: boolean
 }
 
-// The new sidebar chrome row (38px). Uses the sidebar's own surface
+// The new sidebar chrome row. Uses the sidebar's own surface
 // (bg-surface-container-low) with no bottom divider, so the top bar blends into
-// the sidebar. The 38px height still seats the open-state toggle at the same
+// the sidebar. The height seats the open-state toggle at the same
 // vertical position as the collapsed-state tab-bar toggle. Toggle pinned left;
 // Command Palette + Settings pinned right — all three are icon-only 28x28 buttons.
 export const SidebarTopBar = ({
@@ -104,17 +107,20 @@ export const SidebarTopBar = ({
   sidebarShortcutHint = '⌘B',
   settingsIssueNumber = undefined,
   toggleRef = undefined,
+  reserveWindowControls = false,
 }: SidebarTopBarProps): ReactElement => (
   <div
     data-testid="sidebar-top-bar"
-    className="bg-surface-container-low"
+    className={`bg-surface-container-low${
+      reserveWindowControls ? ' vf-app-drag-region' : ''
+    }`}
     style={{
-      height: 38,
+      height: 42,
       flexShrink: 0,
       display: 'flex',
       alignItems: 'center',
       gap: 6,
-      paddingLeft: 12,
+      paddingLeft: 'max(12px, var(--workspace-window-controls-inset, 0px))',
       paddingRight: 10,
     }}
   >

@@ -163,6 +163,7 @@ const MAIN_AUTO_COLLAPSE_MAX = 500
 const MAIN_AUTO_COLLAPSE_RATIO = 0.36
 const SIDEBAR_MOTION_MS = 220
 const SIDEBAR_MOTION_EASING = 'cubic-bezier(0.32, 0.72, 0, 1)'
+const MACOS_WINDOW_CONTROL_SAFE_AREA_PX = 82
 
 const SIDEBAR_INITIAL = clampSize(SIDEBAR_DEFAULT, SIDEBAR_MIN, SIDEBAR_MAX)
 const COMPACT_WORKSPACE_QUERY = '(max-width: 899px)'
@@ -268,6 +269,10 @@ export const WorkspaceView = (): ReactElement => {
   // not the ⌘K placeholder in the static design mock.
   const commandShortcutHint = formatShortcut(COMMAND_PALETTE_SHORTCUT_KEYS)
   const reserveWindowControls = preferModifier === 'meta'
+
+  const windowControlsInset = reserveWindowControls
+    ? MACOS_WINDOW_CONTROL_SAFE_AREA_PX
+    : 0
 
   const { message: infoMessage, notifyInfo, dismiss } = useNotifyInfo()
   const { activeTab, setActiveTab } = useSidebarTab()
@@ -1763,6 +1768,7 @@ export const WorkspaceView = (): ReactElement => {
           // VIM-76: icon rail removed — layout is [sidebar | main | activity].
           // Desktop collapse animates the sidebar shell width; compact viewports
           // switch to a single-column workspace with the sidebar as an overlay.
+          '--workspace-window-controls-inset': `${windowControlsInset}px`,
           gridTemplateColumns: isCompactViewport ? '1fr' : `auto 1fr auto`,
         } as CSSProperties
       }
@@ -1830,7 +1836,7 @@ export const WorkspaceView = (): ReactElement => {
                   aria-hidden="true"
                   data-testid="sidebar-top-bar-placeholder"
                   className="bg-surface-container-low"
-                  style={{ height: 38, flexShrink: 0 }}
+                  style={{ height: 42, flexShrink: 0 }}
                 />
               ) : (
                 <SidebarTopBar
@@ -1840,6 +1846,7 @@ export const WorkspaceView = (): ReactElement => {
                   sidebarShortcutHint={sidebarShortcutHint}
                   settingsIssueNumber={SETTINGS_FOLLOWUP_ISSUE_NUMBER}
                   toggleRef={sidebarToggleTopbarRef}
+                  reserveWindowControls={reserveWindowControls}
                 />
               )
             }
