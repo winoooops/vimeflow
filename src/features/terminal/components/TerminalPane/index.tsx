@@ -211,7 +211,7 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
           transition: 'box-shadow 220ms ease, opacity 220ms ease',
           opacity: isPaneActive ? 1 : 0.78,
         }}
-        className="relative flex h-full w-full flex-col overflow-hidden"
+        className="relative isolate flex h-full w-full flex-col overflow-hidden"
       >
         <Header
           agent={agent}

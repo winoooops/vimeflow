@@ -2,8 +2,8 @@
 id: accessibility
 category: a11y
 created: 2026-04-09
-last_updated: 2026-06-07
-ref_count: 12
+last_updated: 2026-06-10
+ref_count: 15
 ---
 
 # Accessibility
@@ -343,3 +343,57 @@ handlers must not trap focus without implementing the promised behavior.
 - **Finding:** The newly added `session-pane-count` span was nested inside a parent `<span aria-hidden="true">` that wraps the decorative layout glyph. The sibling overlay activation `<button>` carried only `aria-label={session.name}`, so screen-reader users navigating session cards received the session name but not the newly added multi-pane count — meaningful workspace state that sighted users see.
 - **Fix:** Computed an `ariaLabel` constant: when `showGlyph` is true, `${session.name} (${LAYOUTS[session.layout].capacity} panes)`; otherwise `session.name`. Wired `aria-label={ariaLabel}` into the activation button. Added co-located regression tests asserting both the multi-pane suffix and the single-pane absence.
 - **Commit:** see `git blame` / `git log` on this line
+
+### 37. Escape-close doesn't restore focus — keyboard users stranded on <body>
+
+- **Source:** github-claude | PR #409 round 1 | 2026-06-10
+- **Severity:** HIGH
+- **File:** `src/features/workspace/WorkspaceView.tsx`
+- **Finding:** When the compact sidebar is open and the user presses Escape to close it, `closeOnEscape` calls `setCompactSidebarOpen(false)` without setting `shouldRestoreSidebarToggleFocusRef.current = true`. The focus-guard effect then finds the flag false and returns early, leaving focus on `document.body` — a WCAG 2.4.3 violation.
+- **Fix:** Added `shouldRestoreSidebarToggleFocusRef.current = true` immediately before `setCompactSidebarOpen(false)` inside `closeOnEscape` so the existing focus-guard RAF picks it up and refocuses the tabs-bar toggle.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 38. Test locates inert wrapper via `parentElement!` — fragile DOM traversal
+
+- **Source:** github-claude | PR #409 round 1 | 2026-06-10
+- **Severity:** LOW
+- **File:** `src/features/workspace/WorkspaceView.test.tsx`
+- **Finding:** The test found the main workspace div with `screen.getByTestId('dock-canvas-wrapper').parentElement!`. If any intermediate wrapper were inserted, the assertion would check the wrong element's `inert` / `aria-hidden` attributes.
+- **Fix:** Added `data-testid="workspace-main"` to the main workspace div in `WorkspaceView.tsx` and updated the test to query `screen.getByTestId('workspace-main')` directly.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 39. Compact sidebar drawer lacks dialog semantics while behaving as a modal overlay
+
+- **Source:** github-codex-connector | PR #409 round 2 | 2026-06-10
+- **Severity:** HIGH
+- **File:** `src/features/workspace/WorkspaceView.tsx`
+- **Finding:** The changed compact sidebar path makes the main workspace inert/aria-hidden and displays a scrim, so the sidebar is presented as a modal overlay in real use whenever a compact viewport user opens it. Without `role="dialog"`, `aria-modal`, and an accessible label on the active drawer container, assistive technology users do not get a programmatic modal context.
+- **Fix:** Added conditional dialog semantics to the sidebar wrapper when the compact drawer is open: `role={isCompactViewport && !isSidebarClosed ? 'dialog' : undefined}`, `aria-modal={isCompactViewport && !isSidebarClosed ? true : undefined}`, and `aria-label={isCompactViewport && !isSidebarClosed ? 'Sidebar' : undefined}`. The props are only applied on the compact open path; the non-compact sidebar path is unchanged.
+- **Commit:** see `git blame` / `git log` on this line
+
+### 40. Scrim close path does not opt into focus restoration
+
+- **Source:** github-codex-connector | PR #409 round 2 | 2026-06-10
+- **Severity:** MEDIUM
+- **File:** `src/features/workspace/WorkspaceView.tsx`
+- **Finding:** The scrim is a newly added dismissal path for the compact drawer. Its `onClick` closes the drawer without setting the existing `shouldRestoreSidebarToggleFocusRef` flag, unlike the Escape path, so focus can fall back to `document.body` after the clicked scrim unmounts. This affects mixed pointer/keyboard users.
+- **Fix:** Set `shouldRestoreSidebarToggleFocusRef.current = true` before calling `setCompactSidebarOpen(false)` in the scrim `onClick` handler, aligning the scrim dismissal path with the existing Escape behavior and letting the post-toggle focus guard refocus the visible toggle.
+- **Commit:** see `git blame` / `git log` on this line
+
+### 41. Compact sidebar shortcut opens modal drawer without focus restoration
+
+- **Source:** github-claude | PR #409 round 3 | 2026-06-10
+- **Severity:** MEDIUM
+- **File:** `src/features/workspace/WorkspaceView.tsx`
+- **Finding:** `handleToggleSidebar` sets `shouldRestoreSidebarToggleFocusRef.current` only when the active element is one of the sidebar toggle buttons. `useSidebarShortcut` intentionally fires from terminal/editor focus, so on compact viewports the shortcut can open the dialog-style sidebar while the main workspace becomes `inert` and the focus guard returns early. This plausibly leaves keyboard users on `document.body` or otherwise outside the newly opened modal drawer, a WCAG focus-order regression in new compact-mode behavior.
+- **Fix:** When compact mode is about to open the sidebar, set `shouldRestoreSidebarToggleFocusRef.current = true` regardless of which element was focused (based on action intent `!compactSidebarOpen` rather than prior active element). Keep the guard for non-compact and close paths. Add a regression test that mocks `requestAnimationFrame`, fires the shortcut from `document.body`, simulates browser inert-focus-eviction by refocusing body, flushes the guard frame, and asserts the topbar toggle receives focus.
+- **Commit:** see `git blame` / `git log` on this line
+
+### 42. Compact sidebar shortcut close from drawer content drops focus to body
+
+- **Source:** github-codex-connector | PR #409 round 4 | 2026-06-10
+- **Severity:** HIGH
+- **File:** `src/features/workspace/WorkspaceView.tsx`
+- **Finding:** In compact mode, `handleToggleSidebar` sets `shouldRestoreSidebarToggleFocusRef.current = isToggleButtonFocused || !compactSidebarOpen`. On the close path, `compactSidebarOpen` is true, so a keyboard user who has tabbed from the drawer toggle into sidebar content and then uses the sidebar shortcut will leave the flag false. Closing makes the drawer content inert/hidden, the focus guard exits early, and focus can land on `document.body` with no visible focus target. This is a deterministic new compact-mode WCAG focus-order regression.
+- **Fix:** In the compact branch of `handleToggleSidebar`, unconditionally set `shouldRestoreSidebarToggleFocusRef.current = true` for all user-triggered compact toggles (both open and close). This aligns with the Escape and scrim dismissal paths. Also fixed `useSidebarShortcut` to not bail on the compact sidebar drawer itself (which carries `role="dialog"` for a11y) while preserving the existing bailout for real dialogs such as the command palette. Added a regression test that opens the drawer, focuses the Command Palette button inside it, fires the sidebar shortcut, and asserts focus lands back on the tabs toggle.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

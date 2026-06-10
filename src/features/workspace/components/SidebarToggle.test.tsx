@@ -100,6 +100,14 @@ describe('SidebarToggle', () => {
     expect(screen.getByRole('button')).toHaveClass('bg-[rgba(13,13,28,0.45)]')
   })
 
+  test('variant=inset: keeps the button border transparent', () => {
+    renderToggle({ collapsed: false, variant: 'inset' })
+
+    const button = screen.getByRole('button')
+    expect(button).toHaveClass('border-transparent')
+    expect(button).not.toHaveClass('border-[rgba(74,68,79,0.35)]')
+  })
+
   test('default variant (ghost): className omits the inset background', () => {
     renderToggle({ collapsed: false })
 
