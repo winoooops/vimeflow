@@ -241,8 +241,10 @@ describe('TerminalPane index', () => {
   test('renders focus ring overlay above scrollable terminal body', () => {
     render(<TerminalPane {...baseProps} />)
 
+    const wrapper = screen.getByTestId('terminal-pane-wrapper')
     const focusRing = screen.getByTestId('terminal-pane-focus-ring')
 
+    expect(wrapper).toHaveClass('isolate')
     expect(focusRing).toHaveClass('absolute')
     expect(focusRing).toHaveClass('z-30')
     expect(focusRing).toHaveClass('pointer-events-none')

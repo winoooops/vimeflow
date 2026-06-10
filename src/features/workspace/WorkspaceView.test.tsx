@@ -73,6 +73,33 @@ const workspaceTerminalMock = vi.hoisted(() => {
   return { defaultSessionList, service }
 })
 
+const mockMatchMedia = (matches: boolean): (() => void) => {
+  const originalMatchMedia = window.matchMedia
+
+  Object.defineProperty(window, 'matchMedia', {
+    configurable: true,
+    writable: true,
+    value: vi.fn((query: string) => ({
+      matches,
+      media: query,
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(() => false),
+    })),
+  })
+
+  return (): void => {
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      writable: true,
+      value: originalMatchMedia,
+    })
+  }
+}
+
 // Mock TerminalPane to avoid xterm.js issues in tests. Surface `pane.cwd`
 // as a data attribute so tests can observe the agent-cwd → pane.cwd bridge
 // without driving the full terminal mock surface.
@@ -266,6 +293,45 @@ describe('WorkspaceView', () => {
     expect(screen.getByTestId('terminal-zone')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /editor/i })).toBeInTheDocument() // DockPanel
     expect(screen.getByTestId('agent-status-panel')).toBeInTheDocument()
+  })
+
+  test('uses a single-column workspace with a dismissible inert sidebar drawer on compact viewports', async () => {
+    const restoreMatchMedia = mockMatchMedia(true)
+    const user = userEvent.setup()
+
+    try {
+      render(<WorkspaceView />)
+
+      await screen.findByTestId('terminal-pane-mock')
+
+      const workspace = screen.getByTestId('workspace-view')
+      expect(workspace.style.gridTemplateColumns).toBe('1fr')
+      expect(
+        screen.queryByTestId('activity-panel-shell')
+      ).not.toBeInTheDocument()
+      expect(screen.queryByTestId('sidebar-scrim')).not.toBeInTheDocument()
+      expect(screen.getByTestId('sidebar-toggle-tabs')).not.toHaveFocus()
+
+      await user.click(screen.getByTestId('sidebar-toggle-tabs'))
+
+      expect(screen.getByTestId('sidebar-scrim')).toBeInTheDocument()
+
+      const mainWorkspace = screen.getByTestId(
+        'dock-canvas-wrapper'
+      ).parentElement!
+      expect(mainWorkspace).toHaveAttribute('inert')
+      expect(mainWorkspace).toHaveAttribute('aria-hidden', 'true')
+
+      fireEvent.keyDown(document, { key: 'Escape' })
+
+      await waitFor(() => {
+        expect(screen.queryByTestId('sidebar-scrim')).not.toBeInTheDocument()
+      })
+      expect(mainWorkspace).not.toHaveAttribute('inert')
+      expect(mainWorkspace).not.toHaveAttribute('aria-hidden')
+    } finally {
+      restoreMatchMedia()
+    }
   })
 
   test('wires usePaneShortcuts to session-manager handlers', () => {
