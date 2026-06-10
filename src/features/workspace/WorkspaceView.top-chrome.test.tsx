@@ -305,7 +305,11 @@ describe('WorkspaceView – top chrome (main-stage handoff J2–J6)', () => {
     const chrome = screen.getByTestId('top-chrome')
     const chromeClasses = chrome.className.split(/\s+/)
     expect(chromeClasses).toContain('h-[44px]')
-    expect(chromeClasses).toContain('bg-surface-container-lowest')
+    // Auto-hide overlay is frosted glass: translucent lowest-surface tint
+    // plus the app's glass-panel blur so content ghosts through underneath.
+    expect(chromeClasses).toContain('bg-[rgba(13,13,28,0.78)]')
+    expect(chromeClasses).toContain('glass-panel')
+    expect(chromeClasses).not.toContain('bg-surface-container-lowest')
     expect(chromeClasses).toContain('border-b')
     expect(chromeClasses).toContain('border-[rgba(74,68,79,0.25)]')
     expect(chromeClasses).toContain('opacity-0')
@@ -338,6 +342,10 @@ describe('WorkspaceView – top chrome (main-stage handoff J2–J6)', () => {
       .className.split(/\s+/)
     expect(chromeClasses).toContain('opacity-100')
     expect(chromeClasses).not.toContain('opacity-0')
+    // Pinned reserves a real row — nothing renders underneath, so the bar
+    // returns to the solid handoff surface instead of frosted glass.
+    expect(chromeClasses).toContain('bg-surface-container-lowest')
+    expect(chromeClasses).not.toContain('glass-panel')
 
     await user.click(pin)
 

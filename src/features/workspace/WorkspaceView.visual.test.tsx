@@ -262,11 +262,12 @@ describe('WorkspaceView - Visual Verification (Feature #20)', () => {
       expect(terminalContent.className).toContain('bg-surface')
     })
 
-    test('Top chrome bar uses Level 0.5 surface (surface-container-lowest)', () => {
+    test('Top chrome overlay frosts the Level 0.5 surface (auto-hide glass)', () => {
       render(<WorkspaceView />)
       const chrome = screen.getByTestId('top-chrome')
 
-      expect(chrome.className).toContain('bg-surface-container-lowest')
+      expect(chrome.className).toContain('bg-[rgba(13,13,28,0.78)]')
+      expect(chrome.className).toContain('glass-panel')
     })
 
     test('Agent Status Panel uses surface-container background', () => {

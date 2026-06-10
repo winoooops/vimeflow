@@ -1648,7 +1648,10 @@ export const WorkspaceView = (): ReactElement => {
           {/* Top chrome (44px, main-stage handoff J3/J3a) — hover/focus
               reveals the overlay; pinning reserves a real row so panes
               shrink instead of being covered. Collapsed sidebar pads the
-              content 50px so the floating toggle never overlaps the pills. */}
+              content 50px so the floating toggle never overlaps the pills.
+              Auto-hide overlay is frosted glass (translucent lowest surface
+              + glass-panel blur) so covered content ghosts through; pinned
+              mode sits on the solid surface since nothing is underneath. */}
           <div
             data-testid="top-hover-zone"
             tabIndex={0}
@@ -1661,12 +1664,12 @@ export const WorkspaceView = (): ReactElement => {
           >
             <div
               data-testid="top-chrome"
-              className={`absolute inset-0 flex h-[44px] items-center gap-[12px] border-b border-[rgba(74,68,79,0.25)] bg-surface-container-lowest pr-[14px] ${
+              className={`absolute inset-0 flex h-[44px] items-center gap-[12px] border-b border-[rgba(74,68,79,0.25)] pr-[14px] ${
                 sidebarCollapsed ? 'pl-[50px]' : 'pl-[14px]'
               } ${
                 topChromePinned
-                  ? 'translate-y-0 opacity-100'
-                  : '-translate-y-[5px] opacity-0 group-focus-within:translate-y-0 group-focus-within:opacity-100 group-hover:translate-y-0 group-hover:opacity-100'
+                  ? 'bg-surface-container-lowest translate-y-0 opacity-100'
+                  : 'glass-panel bg-[rgba(13,13,28,0.78)] -translate-y-[5px] opacity-0 group-focus-within:translate-y-0 group-focus-within:opacity-100 group-hover:translate-y-0 group-hover:opacity-100'
               }`}
               style={{
                 transition:
