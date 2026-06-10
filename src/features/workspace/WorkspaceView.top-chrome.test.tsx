@@ -298,6 +298,7 @@ describe('WorkspaceView – top chrome (main-stage handoff J2–J6)', () => {
     expect(zoneClasses).toContain('h-[44px]')
     expect(zoneClasses).toContain('z-40')
     expect(zoneClasses).toContain('group')
+    expect(zoneClasses).toContain('focus:outline-none')
     expect(zone).toHaveAttribute('tabindex', '0')
     expect(zone).toHaveAttribute('aria-label', 'Reveal workspace controls')
 
@@ -362,7 +363,7 @@ describe('WorkspaceView – top chrome (main-stage handoff J2–J6)', () => {
     const groupClasses = group.className.split(/\s+/)
     expect(groupClasses).toContain('border')
     expect(groupClasses).toContain('border-[rgba(74,68,79,0.42)]')
-    expect(groupClasses).toContain('rounded-lg')
+    expect(groupClasses).toContain('rounded-[8px]')
 
     const buttons = within(group).getAllByRole('button')
     expect(buttons).toHaveLength(2)
@@ -449,8 +450,8 @@ describe('WorkspaceView – top chrome (main-stage handoff J2–J6)', () => {
     const gutter = toggle.closest('div.absolute')
     expect(gutter).not.toBeNull()
     const gutterClasses = gutter!.className.split(/\s+/)
-    expect(gutterClasses).toContain('left-3')
-    expect(gutterClasses).toContain('top-2')
+    expect(gutterClasses).toContain('left-[12px]')
+    expect(gutterClasses).toContain('top-[8px]')
     expect(gutterClasses).toContain('z-30')
 
     act(() => {

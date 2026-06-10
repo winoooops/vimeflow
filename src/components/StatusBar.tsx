@@ -150,7 +150,7 @@ const ContextSmiley = ({ pct }: { pct: number }): ReactElement => {
     <span
       data-testid="status-bar-context"
       aria-label={`Context ${normalizedPct}%`}
-      className="inline-flex items-center gap-1.5 whitespace-nowrap"
+      className="inline-flex items-center gap-[4px] whitespace-nowrap"
     >
       <span aria-hidden="true" className="text-sm leading-none">
         {presentation.face}
@@ -178,7 +178,7 @@ const buildSegments = ({
       node: (
         <span
           data-testid="status-bar-duration"
-          className="inline-flex items-center gap-1 whitespace-nowrap text-[var(--on-surface-variant)] max-[760px]:hidden"
+          className="inline-flex items-center gap-[4px] whitespace-nowrap text-[var(--on-surface-variant)] max-[760px]:hidden"
         >
           <MaterialIcon name="schedule" />
           <span>{session.startedAgo}</span>
@@ -204,7 +204,7 @@ const buildSegments = ({
       node: (
         <span
           data-testid="status-bar-cache"
-          className="inline-flex items-center gap-1 whitespace-nowrap"
+          className="inline-flex items-center gap-[4px] whitespace-nowrap"
         >
           <span className={toneClass}>
             <MaterialIcon name="bolt" />
@@ -280,11 +280,11 @@ export const StatusBar = ({
       data-testid="status-bar"
       aria-label="App status"
       style={barStyle}
-      className="flex h-[var(--status-bar-h)] shrink-0 items-center gap-x-[14px] border-t border-solid bg-[var(--surface-container-lowest)] px-3 font-mono text-[10px] text-[var(--on-surface-muted)] tabular-nums"
+      className="flex h-[var(--status-bar-h)] shrink-0 items-center gap-x-[14px] border-t border-solid bg-[var(--surface-container-lowest)] px-[12px] font-mono text-[10px] text-[var(--on-surface-muted)] tabular-nums"
     >
       <span
         data-testid="status-bar-actions"
-        className="inline-flex items-center gap-1.5"
+        className="inline-flex items-center gap-[6px]"
       >
         <button
           type="button"

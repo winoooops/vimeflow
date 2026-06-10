@@ -1653,7 +1653,7 @@ export const WorkspaceView = (): ReactElement => {
             data-testid="top-hover-zone"
             tabIndex={0}
             aria-label="Reveal workspace controls"
-            className={`group ${
+            className={`group focus:outline-none ${
               topChromePinned
                 ? 'relative h-[44px] w-full shrink-0'
                 : 'absolute inset-x-0 top-0 z-40 h-[44px]'
@@ -1661,7 +1661,7 @@ export const WorkspaceView = (): ReactElement => {
           >
             <div
               data-testid="top-chrome"
-              className={`absolute inset-0 flex h-[44px] items-center gap-3 border-b border-[rgba(74,68,79,0.25)] bg-surface-container-lowest pr-[14px] ${
+              className={`absolute inset-0 flex h-[44px] items-center gap-[12px] border-b border-[rgba(74,68,79,0.25)] bg-surface-container-lowest pr-[14px] ${
                 sidebarCollapsed ? 'pl-[50px]' : 'pl-[14px]'
               } ${
                 topChromePinned
@@ -1674,7 +1674,7 @@ export const WorkspaceView = (): ReactElement => {
               }}
             >
               {sidebarCollapsed && (
-                <div className="absolute left-3 top-2 z-30">
+                <div className="absolute left-[12px] top-[8px] z-30">
                   <SidebarToggle
                     ref={sidebarToggleChromeRef}
                     collapsed
@@ -1690,7 +1690,7 @@ export const WorkspaceView = (): ReactElement => {
               {activeSession?.layout === 'single' && topIdentityAgent && (
                 <div
                   data-testid="top-identity"
-                  className="flex min-w-0 items-center gap-2"
+                  className="flex min-w-0 items-center gap-[8px]"
                 >
                   <span
                     className="inline-flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-[5px] font-mono text-[10px] font-extrabold"
@@ -1701,7 +1701,7 @@ export const WorkspaceView = (): ReactElement => {
                   >
                     {topIdentityAgent.glyph}
                   </span>
-                  <span className="min-w-0 truncate font-mono text-xs font-medium text-on-surface-variant">
+                  <span className="min-w-0 truncate font-mono text-[12px] font-medium text-on-surface-variant">
                     {activeSession.name}
                   </span>
                   {activeSession.status === 'running' && (
@@ -1725,13 +1725,13 @@ export const WorkspaceView = (): ReactElement => {
               <span
                 data-testid="top-action-group"
                 aria-label="Top chrome controls"
-                className="inline-flex h-7 items-center gap-[2px] rounded-lg border border-[rgba(74,68,79,0.42)] p-[2px]"
+                className="inline-flex h-[28px] items-center gap-[2px] rounded-[8px] border border-[rgba(74,68,79,0.42)] p-[2px]"
               >
                 <button
                   type="button"
                   aria-label="Configure displayed layouts"
                   title="Configure displayed layouts"
-                  className="inline-flex h-[22px] w-6 items-center justify-center rounded-[5px] text-on-surface-muted transition-colors hover:bg-[rgba(226,199,255,0.08)] hover:text-primary"
+                  className="inline-flex h-[22px] w-[24px] items-center justify-center rounded-[5px] text-on-surface-muted transition-colors hover:bg-[rgba(226,199,255,0.08)] hover:text-primary"
                 >
                   <svg
                     width="14"
@@ -1785,7 +1785,7 @@ export const WorkspaceView = (): ReactElement => {
                   onClick={() => {
                     setTopChromePinned((pinned) => !pinned)
                   }}
-                  className={`inline-flex h-[22px] w-6 items-center justify-center rounded-[5px] transition-colors hover:bg-[rgba(226,199,255,0.08)] hover:text-primary ${
+                  className={`inline-flex h-[22px] w-[24px] items-center justify-center rounded-[5px] transition-colors hover:bg-[rgba(226,199,255,0.08)] hover:text-primary ${
                     topChromePinned ? 'text-primary' : 'text-on-surface-muted'
                   }`}
                 >
