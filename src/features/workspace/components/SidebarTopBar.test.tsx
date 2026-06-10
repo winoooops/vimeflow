@@ -21,8 +21,12 @@ describe('SidebarTopBar', () => {
     expect(screen.getByTestId('sidebar-toggle-topbar')).toBeInTheDocument()
   })
 
-  test('keeps empty expanded top-bar chrome draggable while controls remain clickable', () => {
-    renderTopBar({ onCommand: vi.fn(), onSettings: vi.fn() })
+  test('keeps empty expanded top-bar chrome draggable while controls remain clickable on macOS', () => {
+    renderTopBar({
+      onCommand: vi.fn(),
+      onSettings: vi.fn(),
+      reserveWindowControls: true,
+    })
 
     expect(screen.getByTestId('sidebar-top-bar')).toHaveClass(
       'vf-app-drag-region'
@@ -38,6 +42,18 @@ describe('SidebarTopBar', () => {
 
     expect(screen.getByRole('button', { name: 'Settings' })).toHaveClass(
       'vf-app-no-drag'
+    )
+  })
+
+  test('does not apply drag-region class on non-macOS platforms', () => {
+    renderTopBar({
+      onCommand: vi.fn(),
+      onSettings: vi.fn(),
+      reserveWindowControls: false,
+    })
+
+    expect(screen.getByTestId('sidebar-top-bar')).not.toHaveClass(
+      'vf-app-drag-region'
     )
   })
 

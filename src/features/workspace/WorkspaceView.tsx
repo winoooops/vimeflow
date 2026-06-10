@@ -1714,6 +1714,7 @@ export const WorkspaceView = (): ReactElement => {
                   sidebarShortcutHint={sidebarShortcutHint}
                   settingsIssueNumber={SETTINGS_FOLLOWUP_ISSUE_NUMBER}
                   toggleRef={sidebarToggleTopbarRef}
+                  reserveWindowControls={reserveWindowControls}
                 />
               )
             }

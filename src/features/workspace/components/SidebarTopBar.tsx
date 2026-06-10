@@ -90,6 +90,8 @@ export interface SidebarTopBarProps {
   settingsIssueNumber?: number
   /** Ref forwarded to the collapse-toggle button for imperative focus. */
   toggleRef?: Ref<HTMLButtonElement>
+  /** Whether the platform reserves space for macOS inset window controls. */
+  reserveWindowControls?: boolean
 }
 
 // The new sidebar chrome row. Uses the sidebar's own surface
@@ -105,10 +107,13 @@ export const SidebarTopBar = ({
   sidebarShortcutHint = '⌘B',
   settingsIssueNumber = undefined,
   toggleRef = undefined,
+  reserveWindowControls = false,
 }: SidebarTopBarProps): ReactElement => (
   <div
     data-testid="sidebar-top-bar"
-    className="vf-app-drag-region bg-surface-container-low"
+    className={`bg-surface-container-low${
+      reserveWindowControls ? ' vf-app-drag-region' : ''
+    }`}
     style={{
       height: 42,
       flexShrink: 0,
