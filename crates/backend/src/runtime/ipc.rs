@@ -462,6 +462,10 @@ mod router {
                 let res = state.list_sessions()?;
                 encode_result(res)
             }
+            "kill_ephemeral_ptys" => {
+                let res = state.kill_ephemeral_ptys();
+                encode_result(res)
+            }
             "set_active_session" => {
                 #[derive(Deserialize)]
                 #[serde(rename_all = "camelCase")]
@@ -504,6 +508,17 @@ mod router {
 
                 let p: P = serde_json::from_value(params).map_err(|e| format!("params: {e}"))?;
                 state.set_session_activity_panel_collapsed(p.request)?;
+                Ok(Value::Null)
+            }
+            "set_workspace_sessions" => {
+                #[derive(Deserialize)]
+                #[serde(rename_all = "camelCase")]
+                struct P {
+                    request: crate::terminal::types::SetWorkspaceSessionsRequest,
+                }
+
+                let p: P = serde_json::from_value(params).map_err(|e| format!("params: {e}"))?;
+                state.set_workspace_sessions(p.request)?;
                 Ok(Value::Null)
             }
             "detect_agent_in_session" => {
@@ -660,6 +675,28 @@ mod router {
 
                 let p: P = serde_json::from_value(params).map_err(|e| format!("params: {e}"))?;
                 state.stop_git_watcher(p.cwd).await?;
+                Ok(Value::Null)
+            }
+            "load_workspace_layout" => {
+                #[derive(Deserialize)]
+                #[serde(rename_all = "camelCase")]
+                struct P {
+                    project_id: String,
+                    working_directory: String,
+                }
+
+                let p: P = serde_json::from_value(params).map_err(|e| format!("params: {e}"))?;
+                encode_result(state.load_workspace_layout(&p.project_id, &p.working_directory))
+            }
+            "save_workspace_layout" => {
+                #[derive(Deserialize)]
+                #[serde(rename_all = "camelCase")]
+                struct P {
+                    store: crate::terminal::workspace_layout::WorkspaceLayoutStore,
+                }
+
+                let p: P = serde_json::from_value(params).map_err(|e| format!("params: {e}"))?;
+                state.save_workspace_layout(&p.store)?;
                 Ok(Value::Null)
             }
             #[cfg(feature = "e2e-test")]
@@ -1822,6 +1859,65 @@ mod tests {
             err.message.starts_with("unknown method: no_such_method"),
             "got {err}"
         );
+    }
+
+    #[tokio::test]
+    async fn dispatch_save_then_load_workspace_layout_round_trips() {
+        let (state, _sink) = crate::runtime::BackendState::with_fake_sink();
+        let store = serde_json::json!({
+            "version": 1,
+            "sessions": [{
+                "id": "s", "projectId": "proj", "layout": "single",
+                "workingDirectory": "/", "active": true,
+                "panes": [{ "kind": "browser", "paneId": "p0", "paneIndex": 0, "active": true,
+                    "tabs": [{ "active": true, "historyIndex": 0,
+                        "history": [{ "url": "https://x", "title": null }] }] }]
+            }]
+        });
+        super::router::dispatch(
+            state.clone(),
+            "save_workspace_layout",
+            serde_json::json!({ "store": store }),
+        )
+        .await
+        .expect("save");
+        let loaded = super::router::dispatch(
+            state,
+            "load_workspace_layout",
+            serde_json::json!({ "projectId": "proj", "workingDirectory": "/" }),
+        )
+        .await
+        .expect("load");
+        assert_eq!(loaded["sessions"][0]["id"], "s");
+        assert_eq!(loaded["sessions"][0]["panes"][0]["kind"], "browser");
+    }
+
+    #[tokio::test]
+    async fn dispatch_kill_ephemeral_ptys_reaps_via_router() {
+        let (state, _sink) = crate::runtime::BackendState::with_fake_sink();
+        let cwd = std::env::current_dir()
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
+
+        // Spawn an ephemeral PTY through the real router path.
+        super::router::dispatch(
+            state.clone(),
+            "spawn_pty",
+            serde_json::json!({
+                "request": { "sessionId": "burner-router", "cwd": cwd, "ephemeral": true }
+            }),
+        )
+        .await
+        .expect("spawn_pty dispatch");
+
+        // Reap via the command string — exercises the match arm, not just the inner fn.
+        let value =
+            super::router::dispatch(state.clone(), "kill_ephemeral_ptys", serde_json::json!({}))
+                .await
+                .expect("kill_ephemeral_ptys dispatch");
+        let killed: Vec<String> = serde_json::from_value(value).expect("Vec<String>");
+        assert_eq!(killed, vec!["burner-router".to_string()]);
     }
 
     #[tokio::test]

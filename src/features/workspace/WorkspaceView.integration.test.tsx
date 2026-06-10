@@ -51,6 +51,8 @@ vi.mock('../terminal/services/terminalService', () => ({
     onExit: vi.fn((): (() => void) => (): void => {}),
     // eslint-disable-next-line @typescript-eslint/no-empty-function
     onError: vi.fn((): (() => void) => (): void => {}),
+    // eslint-disable-next-line @typescript-eslint/no-empty-function
+    onBurnerForeground: vi.fn((): (() => void) => (): void => {}),
     listSessions: vi.fn().mockResolvedValue({
       activeSessionId: 'sess-1',
       sessions: [
@@ -70,6 +72,8 @@ vi.mock('../terminal/services/terminalService', () => ({
     reorderSessions: vi.fn().mockResolvedValue(undefined),
     updateSessionCwd: vi.fn().mockResolvedValue(undefined),
     setSessionActivityPanelCollapsed: vi.fn().mockResolvedValue(undefined),
+    killEphemeralPtys: vi.fn(),
+    setWorkspaceSessions: vi.fn().mockResolvedValue(undefined),
   })),
 }))
 
@@ -105,6 +109,10 @@ const createMockUseCodeMirror =
     return {
       editorView: mockEditorView as never,
       updateContent: vi.fn(),
+      copySelection: vi.fn(),
+      cutSelection: vi.fn(),
+      pasteClipboard: vi.fn(),
+      selectAll: vi.fn(),
       setContainer: vi.fn(),
     }
   }
@@ -1003,7 +1011,7 @@ describe('WorkspaceView Integration Tests', () => {
 
       await waitFor(() => {
         const percent = screen.getByTestId('token-cache-percent')
-        expect(percent).toHaveTextContent('75%')
+        expect(percent).toHaveTextContent('75')
       })
     })
 

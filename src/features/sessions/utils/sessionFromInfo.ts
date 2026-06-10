@@ -3,6 +3,7 @@ import type { Pane, Session } from '../types'
 import { emptyActivity } from '../constants'
 import { tabName } from './tabName'
 import { readActivityPanelCollapsed } from './activityPanelCollapsedStore'
+import { readCacheHistory } from './cacheHistoryStore'
 
 /** Build a `Session` from a Rust `SessionInfo`. */
 export const sessionFromInfo = (info: SessionInfo, index: number): Session => {
@@ -21,6 +22,7 @@ export const sessionFromInfo = (info: SessionInfo, index: number): Session => {
     shell: info.shell,
     agentType: 'generic',
     status,
+    cacheHistory: readCacheHistory(info.id),
     active: true,
   } satisfies Pane
 
@@ -49,7 +51,6 @@ export const sessionFromInfo = (info: SessionInfo, index: number): Session => {
     activityPanelCollapsed: readActivityPanelCollapsed(info.id),
     panes: [pane],
     workingDirectory: info.cwd,
-    browserSessionId: info.id,
     agentType: 'generic',
     createdAt: new Date().toISOString(),
     lastActivityAt: new Date().toISOString(),

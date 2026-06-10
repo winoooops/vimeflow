@@ -93,4 +93,18 @@ describe('sessionFromInfo (pre-pane shape)', () => {
     const session = sessionFromInfo(aliveInfo('pty-2', '/home/y'), 0)
     expect(session.activityPanelCollapsed).toBe(false)
   })
+
+  test('hydrates cacheHistory from the store for an Alive pane', () => {
+    window.localStorage.setItem(
+      'vimeflow:agent:cacheHistory:pty-1',
+      '[10,20,30]'
+    )
+    const session = sessionFromInfo(aliveInfo('pty-1', '/home/x'), 0)
+    expect(session.panes[0].cacheHistory).toEqual([10, 20, 30])
+  })
+
+  test('defaults cacheHistory to [] when nothing persisted', () => {
+    const session = sessionFromInfo(aliveInfo('pty-2', '/home/y'), 0)
+    expect(session.panes[0].cacheHistory).toEqual([])
+  })
 })

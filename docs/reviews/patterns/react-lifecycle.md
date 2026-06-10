@@ -2,8 +2,8 @@
 id: react-lifecycle
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-06-06
-ref_count: 11
+last_updated: 2026-06-07
+ref_count: 14
 ---
 
 # React Lifecycle
@@ -275,3 +275,29 @@ to avoid unintended re-runs (e.g., PTY respawning on every cwd change).
 - **Finding:** Removing deprecated `defaultProps` from a `forwardRef` component caused ESLint `react/require-default-props` errors because the rule cannot see destructuring defaults through `forwardRef`. The CI Code Quality Check job failed. All defaults were already handled via destructuring, so re-adding `defaultProps` would reintroduce the React 18.3 deprecation warning.
 - **Fix:** Added the repository-standard `/* eslint-disable react/require-default-props -- forwardRef components: ESLint cannot see through forwardRef to find destructuring defaults */` comment at the top of the file, matching the convention used in six other forwardRef files in the repo.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+### 26. retryTimerRef forward reference in mount-lifecycle cleanup
+
+- **Source:** github-claude | PR #381 round 2 | 2026-06-07
+- **Severity:** LOW
+- **File:** `src/features/sessions/hooks/usePushWorkspaceGrouping.ts`
+- **Finding:** `retryTimerRef` is used in the mount-lifecycle `useEffect` cleanup but declared 17 lines later. The forward reference is invisible to ESLint and TypeScript; a future early return or conditional before the ref declaration would produce a silent cleanup bug where the orphaned timer is never cleared on unmount.
+- **Fix:** Moved `retryTimerRef`, `latestDrainRef`, and `lastPushedJsonRef` to immediately after `mountedRef` (before the first `useEffect`), eliminating the forward reference and making the declaration order match the runtime initialization order.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 27. Service-swap effect omits timer cancel; new-backend push delayed up to 5s
+
+- **Source:** github-claude | PR #381 round 4 | 2026-06-07
+- **Severity:** MEDIUM
+- **File:** `src/features/sessions/hooks/usePushWorkspaceGrouping.ts`
+- **Finding:** The `[service]` effect only cleared `lastPushedJsonRef`. If an IPC failure had armed `retryTimerRef`, rerendering with a new service queued the same snapshot but the drain gate saw `pendingJson === retryTargetJsonRef.current` and waited for the old 5s timer. During that window the restarted backend could have no grouping cache, so a crash/reload would fragment restored multi-pane sessions.
+- **Fix:** In the `[service]` effect, clear any existing retry timer via `clearTimeout`, reset `retryTimerRef` to null, and reset `retryTargetJsonRef` to null alongside `lastPushedJsonRef` so the current snapshot drains immediately to the new service.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 28. localStorage write inside a React functional state updater
+
+- **Source:** github-claude | PR #395 round 1 | 2026-06-08
+- **Severity:** MEDIUM
+- **File:** `src/features/sessions/hooks/useSessionManager.ts`
+- **Finding:** `appendPaneCacheReading` called `writeCacheHistory` (a `localStorage` writer) from inside the functional `setSessions` updater. React state updaters are expected to be pure; in StrictMode they can be invoked twice, and any non-idempotent side effect creates a durability/state-consistency hazard. Even though the current write was mostly idempotent, future additions of timestamps, counters, or interrupted render paths could persist history that React never committed.
+- **Fix:** Moved the `writeCacheHistory` call outside the updater. The callback now reads the target pane from `sessionsRef.current`, computes the next `cacheHistory` array with `pushCacheReading`, writes to `localStorage` once, then calls `setSessions` with a pure updater that only maps the in-memory state. The updater no longer touches `localStorage` and is safe under StrictMode double-invocation.
+- **Commit:** _(PR #395 round 1)_

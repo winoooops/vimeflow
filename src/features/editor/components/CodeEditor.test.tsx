@@ -1,5 +1,5 @@
 import { describe, test, expect, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { createRef } from 'react'
 import { CodeEditor, type CodeEditorHandle } from './CodeEditor'
 import * as useCodeMirrorModule from '../hooks/useCodeMirror'
@@ -16,21 +16,35 @@ describe('CodeEditor', () => {
   const mockEditorView = {
     destroy: vi.fn(),
     focus: vi.fn(),
-    state: { doc: { toString: (): string => 'test content' } },
+    posAtCoords: vi.fn().mockReturnValue(3),
+    dispatch: vi.fn(),
+    state: {
+      doc: { toString: (): string => 'test content' },
+      selection: { ranges: [{ from: 0, to: 0, empty: true }] },
+    },
   }
 
   const mockUpdateContent = vi.fn()
+  const mockCopySelection = vi.fn()
+  const mockCutSelection = vi.fn()
+  const mockPasteClipboard = vi.fn()
+  const mockSelectAll = vi.fn()
   const mockUseCodeMirror = vi.fn()
   const mockUseVimMode = vi.fn()
   const mockGetLanguageExtension = vi.fn()
 
   beforeEach(() => {
     vi.clearAllMocks()
+    mockEditorView.state.selection.ranges = [{ from: 0, to: 0, empty: true }]
 
     mockUseCodeMirror.mockReturnValue({
       editorView: mockEditorView,
       updateContent: mockUpdateContent,
       setContainer: vi.fn(),
+      copySelection: mockCopySelection,
+      cutSelection: mockCutSelection,
+      pasteClipboard: mockPasteClipboard,
+      selectAll: mockSelectAll,
     })
 
     mockUseVimMode.mockReturnValue('NORMAL')
@@ -130,6 +144,10 @@ describe('CodeEditor', () => {
         editorView: mockEditorView,
         updateContent: mockUpdateContent,
         setContainer: vi.fn(),
+        copySelection: mockCopySelection,
+        cutSelection: mockCutSelection,
+        pasteClipboard: mockPasteClipboard,
+        selectAll: mockSelectAll,
       }
     })
 
@@ -157,6 +175,10 @@ describe('CodeEditor', () => {
         editorView: mockEditorView,
         updateContent: mockUpdateContent,
         setContainer: vi.fn(),
+        copySelection: mockCopySelection,
+        cutSelection: mockCutSelection,
+        pasteClipboard: mockPasteClipboard,
+        selectAll: mockSelectAll,
       }
     })
 
@@ -248,5 +270,77 @@ describe('CodeEditor', () => {
 
     expect(ref.current).not.toBeNull()
     expect(ref.current!.focus()).toBe(false)
+  })
+
+  test('right-click menu routes editor clipboard actions', () => {
+    render(<CodeEditor filePath="/home/user/test.ts" content="hello" />)
+
+    const container = screen.getByTestId('codemirror-container')
+
+    const clickMenuItem = (name: RegExp): void => {
+      fireEvent.contextMenu(container, { clientX: 40, clientY: 80 })
+      fireEvent.click(screen.getByRole('menuitem', { name }))
+    }
+
+    clickMenuItem(/copy/i)
+    expect(mockCopySelection).toHaveBeenCalledOnce()
+
+    clickMenuItem(/cut/i)
+    expect(mockCutSelection).toHaveBeenCalledOnce()
+
+    clickMenuItem(/paste/i)
+    expect(mockPasteClipboard).toHaveBeenCalledOnce()
+
+    clickMenuItem(/select all/i)
+    expect(mockSelectAll).toHaveBeenCalledOnce()
+  })
+
+  test('right-click focuses editor and syncs selection to click position', () => {
+    render(<CodeEditor filePath="/home/user/test.ts" content="hello" />)
+
+    const container = screen.getByTestId('codemirror-container')
+
+    fireEvent.contextMenu(container, { clientX: 40, clientY: 80 })
+
+    expect(mockEditorView.focus).toHaveBeenCalledOnce()
+    expect(mockEditorView.posAtCoords).toHaveBeenCalledWith({ x: 40, y: 80 })
+    expect(mockEditorView.dispatch).toHaveBeenCalledWith({
+      selection: { anchor: 3, head: 3 },
+    })
+  })
+
+  test('right-click still shows menu when posAtCoords returns null', () => {
+    mockEditorView.posAtCoords.mockReturnValueOnce(null)
+
+    render(<CodeEditor filePath="/home/user/test.ts" content="hello" />)
+
+    const container = screen.getByTestId('codemirror-container')
+
+    fireEvent.contextMenu(container, { clientX: 40, clientY: 80 })
+
+    expect(mockEditorView.focus).toHaveBeenCalledOnce()
+    expect(mockEditorView.posAtCoords).toHaveBeenCalledWith({ x: 40, y: 80 })
+    expect(mockEditorView.dispatch).not.toHaveBeenCalled()
+    expect(
+      screen.getByRole('menu', { name: 'Context menu' })
+    ).toBeInTheDocument()
+  })
+
+  test('right-click preserves existing selection when clicking inside it', () => {
+    mockEditorView.posAtCoords.mockReturnValueOnce(3)
+    mockEditorView.state.selection.ranges = [{ from: 0, to: 5, empty: false }]
+
+    render(<CodeEditor filePath="/home/user/test.ts" content="hello" />)
+
+    const container = screen.getByTestId('codemirror-container')
+
+    fireEvent.contextMenu(container, { clientX: 40, clientY: 80 })
+
+    expect(mockEditorView.focus).toHaveBeenCalledOnce()
+    expect(mockEditorView.posAtCoords).toHaveBeenCalledWith({ x: 40, y: 80 })
+    expect(mockEditorView.dispatch).not.toHaveBeenCalled()
+    expect(
+      screen.getByRole('menu', { name: 'Context menu' })
+    ).toBeInTheDocument()
   })
 })

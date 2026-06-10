@@ -17,7 +17,9 @@ export interface BrowserPaneCreateRequest {
   sessionId: string
   paneId: string
   workspaceId: string
-  initialUrl: string
+  // Optional under restore: main replays each tab's history instead of loading.
+  initialUrl?: string
+  restore?: boolean
   shortcutContext?: BrowserPaneShortcutContext
 }
 
@@ -26,6 +28,7 @@ export interface BrowserPaneTab {
   url: string
   title: string | null
   active: boolean
+  favicon: string | null
 }
 
 export interface BrowserPaneCreateResult {

@@ -63,6 +63,41 @@ describe('ReviewCommentComposer', () => {
     expect(textarea).toHaveValue('hello world')
   })
 
+  test('controlled value reports text changes without mutating display directly', async () => {
+    const user = userEvent.setup()
+    const handleTextChange = vi.fn()
+
+    const { rerender } = render(
+      <ReviewCommentComposer
+        lineNumber={1}
+        side="additions"
+        value="draft"
+        onTextChange={handleTextChange}
+        onConfirm={vi.fn()}
+        onCancel={vi.fn()}
+      />
+    )
+
+    const textarea = screen.getByRole('textbox')
+    await user.type(textarea, '!')
+
+    expect(handleTextChange).toHaveBeenCalledWith('draft!')
+    expect(textarea).toHaveValue('draft')
+
+    rerender(
+      <ReviewCommentComposer
+        lineNumber={1}
+        side="additions"
+        value="draft!"
+        onTextChange={handleTextChange}
+        onConfirm={vi.fn()}
+        onCancel={vi.fn()}
+      />
+    )
+
+    expect(screen.getByRole('textbox')).toHaveValue('draft!')
+  })
+
   test('Enter confirms with trimmed text', async () => {
     const user = userEvent.setup()
     const handleConfirm = vi.fn()

@@ -452,6 +452,8 @@ export const DiffChipToolbar = ({
   // Paired feedback actions — pinned right, NEVER overflow (rendered outside
   // PriorityPlus). Only present when there is pending inline-review feedback.
   const showActions = feedbackCount > 0
+  const canDiscardFeedback = onDiscardFeedback !== undefined
+  const canFinishFeedback = onFinishFeedback !== undefined
 
   return (
     <div
@@ -471,16 +473,18 @@ export const DiffChipToolbar = ({
             <button
               type="button"
               aria-label="discard all feedback"
+              disabled={!canDiscardFeedback}
               onClick={onDiscardFeedback}
-              className="inline-flex items-center gap-[7px] h-[30px] px-3.5 rounded-md font-body text-[0.78rem] font-semibold bg-surface-container-highest text-on-surface-variant hover:bg-error/15 hover:text-error transition-colors"
+              className="inline-flex items-center gap-[7px] h-[30px] px-3.5 rounded-md font-body text-[0.78rem] font-semibold bg-surface-container-highest text-on-surface-variant hover:bg-error/15 hover:text-error transition-colors disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-surface-container-highest disabled:hover:text-on-surface-variant"
             >
               Discard
             </button>
             <button
               type="button"
               aria-label={`finish feedback (${feedbackCount})`}
+              disabled={!canFinishFeedback}
               onClick={onFinishFeedback}
-              className="inline-flex items-center gap-[7px] h-[30px] px-3.5 rounded-md font-body text-[0.78rem] font-semibold text-on-primary bg-gradient-to-br from-primary to-primary-container shadow-[0_4px_14px_rgba(203,166,247,0.22)] transition-colors"
+              className="inline-flex items-center gap-[7px] h-[30px] px-3.5 rounded-md font-body text-[0.78rem] font-semibold text-on-primary bg-gradient-to-br from-primary to-primary-container shadow-[0_4px_14px_rgba(203,166,247,0.22)] transition-colors disabled:cursor-not-allowed disabled:opacity-50"
             >
               <span
                 aria-hidden="true"

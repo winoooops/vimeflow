@@ -695,6 +695,22 @@ describe('DiffChipToolbar', () => {
     ).toBeInTheDocument()
   })
 
+  test('disables the pinned feedback actions when their handlers are omitted', () => {
+    renderToolbar({
+      feedbackCount: 3,
+      onFinishFeedback: undefined,
+      onDiscardFeedback: undefined,
+    })
+
+    expect(
+      screen.getByRole('button', { name: /finish feedback/i })
+    ).toBeDisabled()
+
+    expect(
+      screen.getByRole('button', { name: /discard all feedback/i })
+    ).toBeDisabled()
+  })
+
   test('clicking the Finish action calls onFinishFeedback once', async () => {
     const user = userEvent.setup()
     const onFinishFeedback = vi.fn<() => void>()

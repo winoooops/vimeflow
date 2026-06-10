@@ -14,6 +14,7 @@ import type { LayoutId, Pane, Session } from '../../../sessions/types'
 import { isShellPane } from '../../../sessions/utils/paneKind'
 import { BrowserPane, focusBrowserPane } from '../../../browser'
 import type { NotifyPaneReady } from '../../hooks/useTerminal'
+import type { BurnerTarget } from '../../hooks/useBurnerTerminals'
 import type { ITerminalService } from '../../services/terminalService'
 import {
   TerminalPane,
@@ -44,6 +45,12 @@ export interface SplitViewProps {
   onRequestFocus?: () => void
   onAddPane?: (sessionId: string, kind?: Pane['kind']) => void
   onClosePane?: (sessionId: string, paneId: string) => void
+  /** Toggle a pane's ephemeral burner terminal (VIM-53). */
+  onBurner?: (target: BurnerTarget) => void
+  /** Pane-keys with a foreground command running — drives the amber button tint (VIM-71). */
+  activeBurnerPaneKeys?: ReadonlySet<string>
+  /** Pane-keys with a live burner shell (idle or active) — drives a11y state (VIM-53). */
+  runningBurnerPaneKeys?: ReadonlySet<string>
   areBrowserPanesOccluded?: boolean
   deferTerminalFit?: boolean
   showPaneFocusHighlight?: boolean
@@ -66,17 +73,9 @@ const paneMode = (pane: Pane): TerminalPaneMode => {
   return 'spawn'
 }
 
-const canClosePane = (pane: Pane, session: Session): boolean => {
-  if (session.panes.length <= 1) {
-    return false
-  }
-
-  if (!isShellPane(pane)) {
-    return true
-  }
-
-  return session.panes.filter(isShellPane).length > 1
-}
+// Closable whenever removing it still leaves the session at least one pane.
+export const canClosePane = (session: Session): boolean =>
+  session.panes.length > 1
 
 /** Pick the panes that should be rendered for `layout.capacity` slots.
  *  Normally the prefix slice; if the active pane is beyond the slice,
@@ -111,6 +110,9 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
       onRequestFocus = undefined,
       onAddPane = undefined,
       onClosePane = undefined,
+      onBurner = undefined,
+      activeBurnerPaneKeys = undefined,
+      runningBurnerPaneKeys = undefined,
       areBrowserPanesOccluded = false,
       deferTerminalFit = false,
       showPaneFocusHighlight = true,
@@ -120,10 +122,7 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
     const layout = LAYOUTS[session.layout]
     const outerDivRef = useRef<HTMLDivElement>(null)
 
-    const browserSessionId =
-      session.browserSessionId ??
-      session.panes.find(isShellPane)?.ptyId ??
-      session.id
+    const browserSessionId = session.id
 
     const [ratios, setRatios] = useState<
       Partial<Record<LayoutId, LayoutRatios>>
@@ -260,9 +259,7 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
               const mode = isBrowserPane ? 'browser' : paneMode(pane)
 
               const closeHandler =
-                onClosePane && canClosePane(pane, session)
-                  ? onClosePane
-                  : undefined
+                onClosePane && canClosePane(session) ? onClosePane : undefined
 
               return (
                 <motion.div
@@ -347,6 +344,10 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
                           onPaneReady={onPaneReady}
                           onRestart={onSessionRestart}
                           onClose={closeHandler}
+                          onBurner={onBurner}
+                          onRequestActive={onSetActivePane}
+                          activeBurnerPaneKeys={activeBurnerPaneKeys}
+                          runningBurnerPaneKeys={runningBurnerPaneKeys}
                           isActive={isActive}
                           deferFit={deferTerminalFit}
                           showFocusHighlight={showPaneFocusHighlight}

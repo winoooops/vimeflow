@@ -31,6 +31,8 @@ export interface StatusBarProps {
   contextPct: number | null
   paletteShortcut: readonly ShortcutKey[]
   onOpenPalette: () => void
+  // Total running burner shells across all sessions (§8 secondary cue).
+  burnerCount?: number
 }
 
 interface Segment {
@@ -184,6 +186,7 @@ const buildSegments = ({
   contextPct,
   paletteShortcut,
   onOpenPalette,
+  burnerCount = 0,
 }: StatusBarProps): Segment[] => {
   const paletteSegment = {
     id: 'palette',
@@ -192,8 +195,29 @@ const buildSegments = ({
     ),
   }
 
+  // Global across sessions, so it shows even when no session is active.
+  const burnerSegment: Segment | null =
+    burnerCount > 0
+      ? {
+          id: 'burner',
+          node: (
+            <span
+              data-testid="status-bar-burner"
+              className="inline-flex items-center gap-1 whitespace-nowrap"
+              style={{ color: '#f0c674' }}
+            >
+              <span
+                aria-hidden="true"
+                className="h-[5px] w-[5px] rounded-full bg-current"
+              />
+              burner ×{burnerCount}
+            </span>
+          ),
+        }
+      : null
+
   if (session === null) {
-    return [paletteSegment]
+    return burnerSegment ? [burnerSegment, paletteSegment] : [paletteSegment]
   }
 
   const segments: Segment[] = []
@@ -282,6 +306,9 @@ const buildSegments = ({
     })
   }
 
+  if (burnerSegment) {
+    segments.push(burnerSegment)
+  }
   segments.push(paletteSegment)
 
   return segments
@@ -292,12 +319,14 @@ export const StatusBar = ({
   contextPct,
   paletteShortcut,
   onOpenPalette,
+  burnerCount = 0,
 }: StatusBarProps): ReactElement => {
   const segments = buildSegments({
     session,
     contextPct,
     paletteShortcut,
     onOpenPalette,
+    burnerCount,
   })
 
   return (

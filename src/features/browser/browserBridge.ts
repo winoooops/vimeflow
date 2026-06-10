@@ -37,15 +37,16 @@ export const createBrowserPane = async (
   const browserBridge = bridge()
   if (!browserBridge) {
     return {
-      url: request.initialUrl,
+      url: request.initialUrl ?? '',
       title: null,
       partition: `persist:vimeflow-browser:${request.workspaceId}:${request.sessionId}`,
       tabs: [
         {
           id: 'tab-0',
-          url: request.initialUrl,
+          url: request.initialUrl ?? '',
           title: null,
           active: true,
+          favicon: null,
         },
       ],
       navState: { canGoBack: false, canGoForward: false, isLoading: false },
