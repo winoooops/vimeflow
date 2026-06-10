@@ -1779,13 +1779,13 @@ export const WorkspaceView = (): ReactElement => {
         inert={isCompactViewport && !isSidebarClosed ? true : undefined}
         aria-hidden={isCompactViewport && !isSidebarClosed ? true : undefined}
         style={{
-          borderTopLeftRadius:
-            sidebarCollapsed || isCompactViewport ? 0 : 16,
+          borderTopLeftRadius: sidebarCollapsed || isCompactViewport ? 0 : 16,
           borderBottomLeftRadius:
             sidebarCollapsed || isCompactViewport ? 0 : 16,
-          boxShadow: sidebarCollapsed || isCompactViewport
-            ? 'none'
-            : '-18px 0 36px rgba(0,0,0,0.22)',
+          boxShadow:
+            sidebarCollapsed || isCompactViewport
+              ? 'none'
+              : '-18px 0 36px rgba(0,0,0,0.22)',
           transition: isDragging
             ? 'none'
             : `border-radius ${SIDEBAR_MOTION_MS}ms ${SIDEBAR_MOTION_EASING}, box-shadow ${SIDEBAR_MOTION_MS}ms ${SIDEBAR_MOTION_EASING}`,
