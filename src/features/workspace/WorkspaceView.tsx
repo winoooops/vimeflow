@@ -55,7 +55,11 @@ import {
 import { formatShortcut } from '../../lib/formatShortcut'
 import { renameAgentSession } from '../../lib/backend'
 import { useSessionManager } from '../sessions/hooks/useSessionManager'
-import { clampSize, useResizable } from '../../hooks/useResizable'
+import {
+  clampSize,
+  useResizable,
+  type ResizeDragEndEvent,
+} from '../../hooks/useResizable'
 import { useElasticContainer } from '../../hooks/useElasticContainer'
 import { useSidebarTab, type SidebarTab } from '../../hooks/useSidebarTab'
 import { useNotifyInfo } from './hooks/useNotifyInfo'
@@ -156,9 +160,14 @@ const formatStatusDuration = (durationMs: number): string | undefined => {
 // this const and the gear's `aria-disabled` once the dialog lands.
 const SETTINGS_FOLLOWUP_ISSUE_NUMBER = 252
 
-const SIDEBAR_MIN = 240
-const SIDEBAR_MAX = 560
 const SIDEBAR_DEFAULT = 272
+const SIDEBAR_MIN = SIDEBAR_DEFAULT
+const SIDEBAR_MAX = 520
+const MAIN_AUTO_COLLAPSE_MIN = 360
+const MAIN_AUTO_COLLAPSE_MAX = 500
+const MAIN_AUTO_COLLAPSE_RATIO = 0.36
+const SIDEBAR_MOTION_MS = 220
+const SIDEBAR_MOTION_EASING = 'cubic-bezier(0.32, 0.72, 0, 1)'
 
 const SIDEBAR_INITIAL = clampSize(SIDEBAR_DEFAULT, SIDEBAR_MIN, SIDEBAR_MAX)
 
@@ -167,10 +176,18 @@ const SIDEBAR_TAB_ITEMS: readonly SidebarTabItem<SidebarTab>[] = [
   { id: 'files', label: 'FILES', icon: 'folder_open' },
 ]
 
+const mainAutoCollapseThreshold = (workspaceWidth: number): number =>
+  clampSize(
+    Math.round(workspaceWidth * MAIN_AUTO_COLLAPSE_RATIO),
+    MAIN_AUTO_COLLAPSE_MIN,
+    MAIN_AUTO_COLLAPSE_MAX
+  )
+
 type DockTab = 'editor' | 'diff'
 
 export const WorkspaceView = (): ReactElement => {
   const workspaceRef = useRef<HTMLDivElement>(null)
+  const mainWorkspaceRef = useRef<HTMLDivElement>(null)
   const sidebarResizeHandleRef = useRef<HTMLDivElement | null>(null)
   // Imperative resize previews keep this ref, the CSS variable, and
   // aria-valuenow in sync without per-frame React commits.
@@ -254,8 +271,11 @@ export const WorkspaceView = (): ReactElement => {
   // slot when collapsed — both in-flow at the same {12,5} box. The sidebar is
   // hidden instantly (no drawer slide), so there is no transition window where
   // the toggle floats or a tab slips under it.
-  const { collapsed: sidebarCollapsed, toggle: toggleSidebar } =
-    useSidebarCollapsed()
+  const {
+    collapsed: sidebarCollapsed,
+    toggle: toggleSidebar,
+    setCollapsed: setSidebarCollapsed,
+  } = useSidebarCollapsed()
 
   // Imperative refs to the two SidebarToggle instances so the post-toggle focus
   // guard can refocus the visible one without relying on data-testid selectors.
@@ -573,6 +593,15 @@ export const WorkspaceView = (): ReactElement => {
     resizeHandle.setAttribute('aria-valuenow', String(nextWidth))
   }, [])
 
+  const handleSidebarDragEnd = useCallback(
+    ({ rawSize }: ResizeDragEndEvent): void => {
+      if (rawSize < SIDEBAR_MIN) {
+        setSidebarCollapsed(true)
+      }
+    },
+    [setSidebarCollapsed]
+  )
+
   const {
     size: sidebarWidth,
     isDragging,
@@ -583,11 +612,43 @@ export const WorkspaceView = (): ReactElement => {
     max: SIDEBAR_MAX,
     updateMode: 'commit-on-end',
     onDragPreview: previewSidebarWidth,
+    onDragEnd: handleSidebarDragEnd,
   })
 
   useLayoutEffect(() => {
     previewSidebarWidth(sidebarWidth)
   }, [previewSidebarWidth, sidebarWidth])
+
+  useEffect(() => {
+    const mainWorkspace = mainWorkspaceRef.current
+
+    if (!mainWorkspace || typeof ResizeObserver === 'undefined') {
+      return
+    }
+
+    const observer = new ResizeObserver((entries) => {
+      const width =
+        entries[0]?.contentRect.width ??
+        mainWorkspace.getBoundingClientRect().width
+
+      const workspaceWidth =
+        workspaceRef.current?.getBoundingClientRect().width ?? window.innerWidth
+
+      if (
+        !sidebarCollapsed &&
+        width > 0 &&
+        width < mainAutoCollapseThreshold(workspaceWidth)
+      ) {
+        setSidebarCollapsed(true)
+      }
+    })
+
+    observer.observe(mainWorkspace)
+
+    return (): void => {
+      observer.disconnect()
+    }
+  }, [sidebarCollapsed, setSidebarCollapsed])
 
   const activeCwd = activePtyBackedPane?.cwd ?? '.'
   // Distinct fallback for the FILES-tab file explorer: when no session
@@ -1472,21 +1533,24 @@ export const WorkspaceView = (): ReactElement => {
           // `--workspace-sidebar-width` is owned by previewSidebarWidth so
           // React rerenders cannot overwrite an in-progress drag preview.
           // VIM-76: icon rail removed — layout is [sidebar | main | activity].
-          // The sidebar `auto` track follows the shell width; collapse sets it
-          // to 0 INSTANTLY (no slide), so <main> (1fr) reclaims with no gutter
-          // and no transition window.
+          // The sidebar `auto` track follows the shell width; collapse animates
+          // that shell to 0 so <main> reclaims the space like a responsive page.
           gridTemplateColumns: `auto 1fr auto`,
         } as CSSProperties
       }
     >
-      {/* Sidebar — collapses instantly (VIM-76: no drawer slide). The shell
-          width snaps to 0 and the inner panel unmounts, so the `auto` track is
-          0 and <main> reclaims. The collapse toggle's collapsed-state home is
-          the session-tab bar's leading slot (below), not a floating overlay. */}
+      {/* Sidebar — the shell clips the inner panel during animated collapse.
+          Live drag previews stay direct; only non-drag collapse/expand motions
+          use the page-turn width transition. The collapse toggle's collapsed-
+          state home is the session-tab bar's leading slot (below), not a
+          floating overlay. */}
       <div
         aria-hidden={sidebarCollapsed || undefined}
         inert={sidebarCollapsed || undefined}
-        className="relative h-full overflow-hidden"
+        data-testid="workspace-sidebar-shell"
+        className={`relative h-full overflow-hidden will-change-[width] ${
+          isDragging ? '' : 'transition-[width] duration-[220ms] ease-pane'
+        }`}
         style={{
           width: sidebarCollapsed
             ? 0
@@ -1500,9 +1564,19 @@ export const WorkspaceView = (): ReactElement => {
           }}
         >
           <Sidebar
-            // Gate on !collapsed: unmounts the top bar + its portaled tooltips on collapse (they would otherwise escape the inert, clipped shell and linger); header/content stay mounted for state.
+            // Collapse keeps a same-height placeholder so the header/session
+            // list do not jump vertically while the shell width animates. The
+            // real top-bar controls still unmount so their portaled tooltips
+            // cannot escape the inert, clipped sidebar shell.
             topBar={
-              sidebarCollapsed ? undefined : (
+              sidebarCollapsed ? (
+                <div
+                  aria-hidden="true"
+                  data-testid="sidebar-top-bar-placeholder"
+                  className="bg-surface-container-low"
+                  style={{ height: 38, flexShrink: 0 }}
+                />
+              ) : (
                 <SidebarTopBar
                   onToggleSidebar={toggleSidebar}
                   onCommand={commandPalette.open}
@@ -1582,7 +1656,21 @@ export const WorkspaceView = (): ReactElement => {
           `relative` establishes a containing block so the fileError
           banner's `absolute` positioning is scoped to this column
           rather than climbing to the viewport. */}
-      <div className="relative flex flex-col overflow-hidden">
+      <div
+        ref={mainWorkspaceRef}
+        className="relative flex flex-col overflow-hidden bg-background"
+        style={{
+          borderTopLeftRadius: sidebarCollapsed ? 0 : 16,
+          borderBottomLeftRadius: sidebarCollapsed ? 0 : 16,
+          boxShadow: sidebarCollapsed
+            ? 'none'
+            : '-18px 0 36px rgba(0,0,0,0.22)',
+          transition: isDragging
+            ? 'none'
+            : `border-radius ${SIDEBAR_MOTION_MS}ms ${SIDEBAR_MOTION_EASING}, box-shadow ${SIDEBAR_MOTION_MS}ms ${SIDEBAR_MOTION_EASING}`,
+          willChange: 'border-radius, box-shadow',
+        }}
+      >
         <Tabs
           sessions={sessions}
           activeSessionId={activeSessionId}

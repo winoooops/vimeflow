@@ -112,6 +112,17 @@ describe('SidebarTabs', () => {
     )
   })
 
+  test('uses the default sidebar width instead of flexing with the sidebar', () => {
+    render(
+      <SidebarTabs<Tab> tabs={TABS} activeId="sessions" onChange={vi.fn()} />
+    )
+
+    const tabs = screen.getByTestId('sidebar-tabs')
+    expect(tabs).toHaveStyle({ width: '202px' })
+    expect(tabs).toHaveClass('shrink-0')
+    expect(tabs).not.toHaveClass('flex-1')
+  })
+
   test('aria-label can be overridden', () => {
     render(
       <SidebarTabs<Tab>

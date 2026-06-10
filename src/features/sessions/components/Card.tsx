@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, type ReactElement } from 'react'
+import { memo, useState, useRef, useEffect, type ReactElement } from 'react'
 import { Reorder } from 'framer-motion'
 import type { Session } from '../types'
 import { useRenameState } from '../hooks/useRenameState'
@@ -14,7 +14,12 @@ export interface CardProps {
   onClick: (id: string) => void
   onRemove?: (id: string) => void
   onRename?: (id: string, name: string) => void
+  reorderMotionEnabled?: boolean
+  onReorderDragStart?: () => void
+  onReorderDragEnd?: () => void
 }
+
+type ReorderItemLayout = true | 'position' | undefined
 
 // Status → flat colored text (no chip pill, no dot), per handoff §3.3.
 const STATUS_TEXT: Record<Session['status'], { tone: string; label: string }> =
@@ -25,6 +30,13 @@ const STATUS_TEXT: Record<Session['status'], { tone: string; label: string }> =
     completed: { tone: '#c9b3f0', label: 'Done' },
     errored: { tone: '#ffb4ab', label: 'Errored' },
   }
+
+// Reorder.Item's public type in this Framer version omits `false`, but the
+// component forwards `layout` to motion.li where `false` is the supported way
+// to keep projection layout disabled. Without an explicit false, Reorder.Item's
+// internal default is `layout = true`.
+const REORDER_LAYOUT_OFF = false as unknown as ReorderItemLayout
+const REORDER_DRAG_INTENT_THRESHOLD_PX = 4
 
 const MenuRow = ({
   icon,
@@ -53,14 +65,20 @@ const MenuRow = ({
   </button>
 )
 
-export const Card = ({
+const CardComponent = ({
   session,
   variant,
   isActive = false,
   onClick,
   onRemove = undefined,
   onRename = undefined,
+  reorderMotionEnabled = false,
+  onReorderDragStart = undefined,
+  onReorderDragEnd = undefined,
 }: CardProps): ReactElement => {
+  const dragStartPointRef = useRef<{ x: number; y: number } | null>(null)
+  const reorderDragIntentActiveRef = useRef(false)
+
   const {
     isEditing,
     editValue,
@@ -72,6 +90,26 @@ export const Card = ({
   } = useRenameState(session, onRename)
   const [menuOpen, setMenuOpen] = useState(false)
   const triggerRef = useRef<HTMLButtonElement>(null)
+
+  const beginReorderDragIntent = (): void => {
+    if (reorderDragIntentActiveRef.current) {
+      return
+    }
+
+    reorderDragIntentActiveRef.current = true
+    onReorderDragStart?.()
+  }
+
+  const finishReorderDragIntent = (): void => {
+    dragStartPointRef.current = null
+
+    if (!reorderDragIntentActiveRef.current) {
+      return
+    }
+
+    reorderDragIntentActiveRef.current = false
+    onReorderDragEnd?.()
+  }
 
   // Close the actions menu on Escape and return focus to the trigger button.
   useEffect(() => {
@@ -298,7 +336,43 @@ export const Card = ({
           boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
           zIndex: 50,
         }}
-        layout="position"
+        layout={reorderMotionEnabled ? 'position' : REORDER_LAYOUT_OFF}
+        onPointerDownCapture={(e) => {
+          if (e.button > 0) {
+            return
+          }
+
+          dragStartPointRef.current = { x: e.clientX, y: e.clientY }
+          reorderDragIntentActiveRef.current = false
+        }}
+        onPointerMoveCapture={(e) => {
+          const dragStartPoint = dragStartPointRef.current
+          if (dragStartPoint === null || reorderDragIntentActiveRef.current) {
+            return
+          }
+
+          const distance = Math.hypot(
+            e.clientX - dragStartPoint.x,
+            e.clientY - dragStartPoint.y
+          )
+          if (distance < REORDER_DRAG_INTENT_THRESHOLD_PX) {
+            return
+          }
+
+          beginReorderDragIntent()
+        }}
+        onPointerUpCapture={() => {
+          finishReorderDragIntent()
+        }}
+        onPointerCancelCapture={() => {
+          finishReorderDragIntent()
+        }}
+        onDragStart={() => {
+          beginReorderDragIntent()
+        }}
+        onDragEnd={() => {
+          finishReorderDragIntent()
+        }}
       >
         {inner}
       </Reorder.Item>
@@ -316,3 +390,6 @@ export const Card = ({
     </li>
   )
 }
+
+export const Card = memo(CardComponent)
+Card.displayName = 'Card'
