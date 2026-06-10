@@ -1,6 +1,7 @@
+/* eslint-disable testing-library/no-node-access -- left/right anchoring asserts bar child order the queries API cannot reach */
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { beforeEach, describe, expect, test, vi } from 'vitest'
+import { describe, expect, test, vi } from 'vitest'
 import { StatusBar, type StatusBarProps } from './StatusBar'
 
 const defaultProps = {
@@ -11,8 +12,9 @@ const defaultProps = {
     changes: { added: 212, removed: 188 },
   },
   contextPct: 74,
-  paletteShortcut: ['Mod', ';'],
   onOpenPalette: vi.fn(),
+  dockOpen: false,
+  onToggleDock: vi.fn(),
 } satisfies StatusBarProps
 
 const renderStatusBar = (
@@ -20,21 +22,33 @@ const renderStatusBar = (
 ): ReturnType<typeof render> =>
   render(<StatusBar {...defaultProps} {...overrides} />)
 
-describe('StatusBar', () => {
-  beforeEach(() => {
-    Object.defineProperty(navigator, 'platform', {
-      value: 'Linux x86_64',
-      configurable: true,
-    })
-  })
+const staticBgClasses = (element: HTMLElement): string[] =>
+  element.className.split(/\s+/).filter((cls) => cls.startsWith('bg-'))
 
-  test('renders the running session state with every segment', () => {
+describe('StatusBar', () => {
+  test('renders left icon actions and right readouts on the 24px chrome bar (J7)', () => {
     renderStatusBar()
 
-    expect(screen.getByText('obsidian-cli')).toHaveClass(
-      'text-[var(--primary-container)]'
-    )
-    expect(screen.getByText(/^v\d+\.\d+\.\d+$/)).toBeInTheDocument()
+    const bar = screen.getByTestId('status-bar')
+    expect(bar).toHaveClass('h-[var(--status-bar-h)]')
+    expect(bar).toHaveClass('bg-[var(--surface-container-lowest)]')
+    expect(bar).toHaveClass('border-t')
+    expect(bar).not.toHaveClass('flex-wrap')
+
+    // Brand, version, and the kbd palette chips are gone in this treatment.
+    expect(screen.queryByText('obsidian-cli')).toBeNull()
+    expect(screen.queryByText(/^v\d+\.\d+\.\d+$/)).toBeNull()
+    expect(screen.queryByText('Ctrl')).toBeNull()
+
+    // Action buttons are anchored at the bar's left edge.
+    const actions = screen.getByTestId('status-bar-actions')
+    expect(bar.firstElementChild).toBe(actions)
+    expect(
+      screen.getByRole('button', { name: 'Open command palette' })
+    ).toBeInTheDocument()
+    expect(screen.getByTestId('status-bar-dock-toggle')).toBeInTheDocument()
+
+    // Readouts stay on the right with every segment live.
     expect(screen.getByTestId('status-bar-duration')).toHaveTextContent(
       'schedule4h 12m'
     )
@@ -42,29 +56,66 @@ describe('StatusBar', () => {
     expect(screen.getByTestId('status-bar-cache')).toHaveTextContent(
       'bolt73%cached'
     )
-
     expect(screen.getByTestId('status-bar-turns')).toHaveTextContent('37 turns')
     expect(screen.getByTestId('status-bar-diff')).toHaveTextContent('+212−188')
-    expect(
-      screen.getByRole('button', { name: /open command palette/i })
-    ).toBeInTheDocument()
-    expect(screen.getByText('Ctrl')).toBeInTheDocument()
-    expect(screen.getByText(';')).toBeInTheDocument()
+    expect(screen.getAllByTestId('status-bar-separator')).toHaveLength(4)
   })
 
-  test('renders the platform command key on macOS', () => {
-    Object.defineProperty(navigator, 'platform', {
-      value: 'MacIntel',
-      configurable: true,
-    })
-
+  test('action buttons are transparent compact icon buttons with hover fill only (J7)', () => {
     renderStatusBar()
 
-    expect(screen.getByText('⌘')).toBeInTheDocument()
-    expect(screen.getByText(';')).toBeInTheDocument()
+    const palette = screen.getByTestId('status-bar-palette')
+    expect(palette).toHaveAttribute('title', 'Command palette')
+    expect(staticBgClasses(palette)).toEqual([])
+    expect(palette.className).toContain('hover:bg-[rgba(226,199,255,0.1)]')
+    expect(palette.className).toContain('rounded-[5px]')
+
+    const dockToggle = screen.getByTestId('status-bar-dock-toggle')
+    expect(staticBgClasses(dockToggle)).toEqual([])
   })
 
-  test('omits duration cache and diff segments without orphan separators', () => {
+  test('dock toggle indicates open state through icon color, not a filled background (J8)', () => {
+    const { rerender } = renderStatusBar({ dockOpen: false })
+
+    const closedToggle = screen.getByTestId('status-bar-dock-toggle')
+    expect(closedToggle).toHaveAttribute('aria-pressed', 'false')
+    expect(closedToggle).toHaveAccessibleName('Show editor & diff panel')
+    expect(closedToggle.className).toContain('text-[#9b93ab]')
+    expect(closedToggle.className).not.toContain('text-[var(--success-muted)]')
+
+    rerender(<StatusBar {...defaultProps} dockOpen />)
+
+    const openToggle = screen.getByTestId('status-bar-dock-toggle')
+    expect(openToggle).toHaveAttribute('aria-pressed', 'true')
+    expect(openToggle).toHaveAccessibleName('Hide editor & diff panel')
+    expect(openToggle.className).toContain('text-[var(--success-muted)]')
+    expect(openToggle.className).toContain('hover:bg-[rgba(125,239,161,0.08)]')
+    expect(staticBgClasses(openToggle)).toEqual([])
+  })
+
+  test('clicking the dock toggle fires onToggleDock', async () => {
+    const user = userEvent.setup()
+    const onToggleDock = vi.fn()
+    renderStatusBar({ onToggleDock })
+
+    await user.click(screen.getByTestId('status-bar-dock-toggle'))
+
+    expect(onToggleDock).toHaveBeenCalledOnce()
+  })
+
+  test('opens the command palette from the left action button', async () => {
+    const user = userEvent.setup()
+    const onOpenPalette = vi.fn()
+    renderStatusBar({ onOpenPalette })
+
+    await user.click(
+      screen.getByRole('button', { name: /open command palette/i })
+    )
+
+    expect(onOpenPalette).toHaveBeenCalledOnce()
+  })
+
+  test('omits duration cache turns and diff segments without orphan separators (J9)', () => {
     renderStatusBar({
       session: {
         startedAgo: '—',
@@ -77,21 +128,20 @@ describe('StatusBar', () => {
 
     expect(screen.queryByTestId('status-bar-duration')).not.toBeInTheDocument()
     expect(screen.queryByTestId('status-bar-cache')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('status-bar-turns')).not.toBeInTheDocument()
     expect(screen.queryByTestId('status-bar-diff')).not.toBeInTheDocument()
     expect(screen.getByTestId('status-bar-context')).toHaveTextContent('😊12%')
-    expect(screen.getByTestId('status-bar-turns')).toHaveTextContent('0 turns')
-    expect(screen.getAllByTestId('status-bar-separator')).toHaveLength(3)
+    expect(screen.queryAllByTestId('status-bar-separator')).toHaveLength(0)
   })
 
-  test('renders only brand version and palette when no session is active', () => {
+  test('renders only the action buttons when no session is active', () => {
     renderStatusBar({ session: null })
 
-    expect(screen.getByText('obsidian-cli')).toBeInTheDocument()
-    expect(screen.getByText(/^v\d+\.\d+\.\d+$/)).toBeInTheDocument()
     expect(screen.getByTestId('status-bar-palette')).toBeInTheDocument()
+    expect(screen.getByTestId('status-bar-dock-toggle')).toBeInTheDocument()
     expect(screen.queryByTestId('status-bar-context')).not.toBeInTheDocument()
     expect(screen.queryByTestId('status-bar-turns')).not.toBeInTheDocument()
-    expect(screen.getAllByTestId('status-bar-separator')).toHaveLength(1)
+    expect(screen.queryAllByTestId('status-bar-separator')).toHaveLength(0)
   })
 
   test('uses critical context and cold cache tones with compact diff counts', () => {
@@ -114,6 +164,16 @@ describe('StatusBar', () => {
     )
 
     expect(screen.getByTestId('status-bar-diff')).toHaveTextContent('+540−1.2k')
+  })
+
+  test('maps the warm cache and diff additions to the soft success green', () => {
+    renderStatusBar()
+
+    // Handoff token: #7defa1 (success-muted), not the bright #50fa7b.
+    expect(screen.getByTestId('status-bar-cache-rate')).toHaveClass(
+      'text-[var(--success-muted)]'
+    )
+    expect(screen.getByText('+212')).toHaveClass('text-[var(--success-muted)]')
   })
 
   test('renders only the additions span when nothing was removed', () => {
@@ -160,26 +220,25 @@ describe('StatusBar', () => {
     expect(screen.getByTestId('status-bar-turns')).toHaveTextContent('5 turns')
   })
 
-  test('opens the command palette from the keyboard hint only', async () => {
-    const user = userEvent.setup()
-    const onOpenPalette = vi.fn()
-    renderStatusBar({ onOpenPalette })
-
-    await user.click(
-      screen.getByRole('button', { name: /open command palette/i })
-    )
-
-    expect(onOpenPalette).toHaveBeenCalledOnce()
-  })
-
-  test('keeps the mobile wrap contract in the rendered classes', () => {
+  test('narrow widths hide duration, the cached label, and turns instead of wrapping (J7)', () => {
     renderStatusBar()
 
-    expect(screen.getByTestId('status-bar')).toHaveClass('max-[760px]:h-[44px]')
+    const bar = screen.getByTestId('status-bar')
+    expect(bar.className).not.toContain('max-[760px]:h-[44px]')
 
-    expect(screen.getByTestId('status-bar-right')).toHaveClass(
-      'max-[760px]:basis-full',
-      'max-[760px]:justify-end'
+    expect(screen.getByTestId('status-bar-duration')).toHaveClass(
+      'max-[760px]:hidden'
     )
+
+    expect(screen.getByTestId('status-bar-cache-label')).toHaveClass(
+      'max-[760px]:hidden'
+    )
+
+    expect(screen.getByTestId('status-bar-turns')).toHaveClass(
+      'max-[760px]:hidden'
+    )
+
+    const readouts = screen.getByTestId('status-bar-right')
+    expect(readouts).toHaveClass('gap-x-[8px]', 'max-[760px]:gap-x-[5px]')
   })
 })

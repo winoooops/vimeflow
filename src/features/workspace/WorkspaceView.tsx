@@ -781,6 +781,18 @@ export const WorkspaceView = (): ReactElement => {
     claimTerminal()
   }, [claimTerminal])
 
+  // Main-stage handoff J8: one bottom-bar affordance for both directions.
+  // Closing focuses the terminal (closeDock → claimTerminal); reopening
+  // restores the previous dock tab/position and focuses the dock (openDock).
+  const handleToggleDock = useCallback((): void => {
+    if (isDockOpen) {
+      closeDock()
+
+      return
+    }
+    openDock()
+  }, [closeDock, isDockOpen, openDock])
+
   const handleSetActiveSessionId = useCallback(
     (id: string): void => {
       setActiveSessionId(id)
@@ -1868,8 +1880,9 @@ export const WorkspaceView = (): ReactElement => {
           <StatusBar
             session={statusBarSession}
             contextPct={statusBarContextPct}
-            paletteShortcut={COMMAND_PALETTE_SHORTCUT_KEYS}
             onOpenPalette={commandPalette.open}
+            dockOpen={isDockOpen}
+            onToggleDock={handleToggleDock}
           />
         </main>
 

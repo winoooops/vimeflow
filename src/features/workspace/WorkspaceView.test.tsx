@@ -232,7 +232,7 @@ describe('WorkspaceView', () => {
     // VIM-76: icon rail removed; sidebar | main | activity.
     expect(screen.getByTestId('sidebar')).toBeInTheDocument()
     expect(screen.getByTestId('terminal-zone')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /editor/i })).toBeInTheDocument() // DockPanel
+    expect(screen.getByRole('button', { name: 'Editor' })).toBeInTheDocument() // DockPanel
     expect(screen.getByTestId('agent-status-panel')).toBeInTheDocument()
   })
 
@@ -1101,7 +1101,7 @@ describe('WorkspaceView', () => {
     render(<WorkspaceView />)
 
     // DockPanel should render with Editor tab active
-    expect(screen.getByRole('button', { name: /editor/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Editor' })).toBeInTheDocument()
     expect(
       screen.getByRole('button', { name: /diff viewer/i })
     ).toBeInTheDocument()
@@ -1270,7 +1270,7 @@ describe('WorkspaceView', () => {
     expect(screen.getByTestId('sidebar')).toBeInTheDocument()
     expect(screen.getByTestId('terminal-zone')).toBeInTheDocument()
     expect(screen.getByTestId('agent-status-panel')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /editor/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Editor' })).toBeInTheDocument()
   })
 
   test('grid columns: sidebar auto (drawer), floating stage 1fr', () => {
@@ -1401,6 +1401,25 @@ describe('WorkspaceView', () => {
     expect(
       zone.compareDocumentPosition(terminal) & Node.DOCUMENT_POSITION_FOLLOWING
     ).toBeTruthy()
+  })
+
+  test('bottom bar dock toggle closes and reopens the dock (J8)', async () => {
+    const user = userEvent.setup()
+    render(<WorkspaceView />)
+
+    expect(screen.getByTestId('dock-panel')).toBeInTheDocument()
+    const toggle = screen.getByTestId('status-bar-dock-toggle')
+    expect(toggle).toHaveAttribute('aria-pressed', 'true')
+
+    await user.click(toggle)
+
+    expect(screen.queryByTestId('dock-panel')).toBeNull()
+    expect(toggle).toHaveAttribute('aria-pressed', 'false')
+
+    await user.click(toggle)
+
+    expect(screen.getByTestId('dock-panel')).toBeInTheDocument()
+    expect(toggle).toHaveAttribute('aria-pressed', 'true')
   })
 
   test('mounts StatusBar inside the main column (right of the sidebar)', () => {
