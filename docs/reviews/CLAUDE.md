@@ -54,7 +54,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Testing Gaps](patterns/testing-gaps.md)                             | testing            | 59       | 26   | 2026-06-06   |
 | [Terminal Input Handling](patterns/terminal-input-handling.md)       | terminal           | 4        | 2    | 2026-05-24   |
 | [Documentation Accuracy](patterns/documentation-accuracy.md)         | code-quality       | 83       | 24   | 2026-06-03   |
-| [Accessibility](patterns/accessibility.md)                           | a11y               | 38       | 11   | 2026-06-10   |
+| [Accessibility](patterns/accessibility.md)                           | a11y               | 40       | 12   | 2026-06-10   |
 | [Async Race Conditions](patterns/async-race-conditions.md)           | react-patterns     | 56       | 15   | 2026-05-31   |
 | [Tokio Blocking On Async](patterns/tokio-blocking-on-async.md)       | backend            | 2        | 1    | 2026-05-20   |
 | [Command Injection](patterns/command-injection.md)                   | security           | 7        | 3    | 2026-05-02   |

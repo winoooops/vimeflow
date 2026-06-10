@@ -1634,6 +1634,7 @@ export const WorkspaceView = (): ReactElement => {
           aria-label="Close sidebar"
           data-testid="sidebar-scrim"
           onClick={() => {
+            shouldRestoreSidebarToggleFocusRef.current = true
             setCompactSidebarOpen(false)
           }}
           className="fixed inset-0 z-20 cursor-default bg-background/55 backdrop-blur-[2px]"
@@ -1646,6 +1647,11 @@ export const WorkspaceView = (): ReactElement => {
         aria-hidden={isSidebarClosed || undefined}
         inert={isSidebarClosed || undefined}
         data-testid="workspace-sidebar-shell"
+        role={isCompactViewport && !isSidebarClosed ? 'dialog' : undefined}
+        aria-modal={isCompactViewport && !isSidebarClosed ? true : undefined}
+        aria-label={
+          isCompactViewport && !isSidebarClosed ? 'Sidebar' : undefined
+        }
         className={`relative h-full overflow-hidden will-change-[width] ${
           isDragging || isCompactViewport
             ? ''

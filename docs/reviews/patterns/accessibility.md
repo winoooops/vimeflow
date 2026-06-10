@@ -3,7 +3,7 @@ id: accessibility
 category: a11y
 created: 2026-04-09
 last_updated: 2026-06-10
-ref_count: 12
+ref_count: 13
 ---
 
 # Accessibility
@@ -361,3 +361,21 @@ handlers must not trap focus without implementing the promised behavior.
 - **Finding:** The test found the main workspace div with `screen.getByTestId('dock-canvas-wrapper').parentElement!`. If any intermediate wrapper were inserted, the assertion would check the wrong element's `inert` / `aria-hidden` attributes.
 - **Fix:** Added `data-testid="workspace-main"` to the main workspace div in `WorkspaceView.tsx` and updated the test to query `screen.getByTestId('workspace-main')` directly.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 39. Compact sidebar drawer lacks dialog semantics while behaving as a modal overlay
+
+- **Source:** github-codex-connector | PR #409 round 2 | 2026-06-10
+- **Severity:** HIGH
+- **File:** `src/features/workspace/WorkspaceView.tsx`
+- **Finding:** The changed compact sidebar path makes the main workspace inert/aria-hidden and displays a scrim, so the sidebar is presented as a modal overlay in real use whenever a compact viewport user opens it. Without `role="dialog"`, `aria-modal`, and an accessible label on the active drawer container, assistive technology users do not get a programmatic modal context.
+- **Fix:** Added conditional dialog semantics to the sidebar wrapper when the compact drawer is open: `role={isCompactViewport && !isSidebarClosed ? 'dialog' : undefined}`, `aria-modal={isCompactViewport && !isSidebarClosed ? true : undefined}`, and `aria-label={isCompactViewport && !isSidebarClosed ? 'Sidebar' : undefined}`. The props are only applied on the compact open path; the non-compact sidebar path is unchanged.
+- **Commit:** see `git blame` / `git log` on this line
+
+### 40. Scrim close path does not opt into focus restoration
+
+- **Source:** github-codex-connector | PR #409 round 2 | 2026-06-10
+- **Severity:** MEDIUM
+- **File:** `src/features/workspace/WorkspaceView.tsx`
+- **Finding:** The scrim is a newly added dismissal path for the compact drawer. Its `onClick` closes the drawer without setting the existing `shouldRestoreSidebarToggleFocusRef` flag, unlike the Escape path, so focus can fall back to `document.body` after the clicked scrim unmounts. This affects mixed pointer/keyboard users.
+- **Fix:** Set `shouldRestoreSidebarToggleFocusRef.current = true` before calling `setCompactSidebarOpen(false)` in the scrim `onClick` handler, aligning the scrim dismissal path with the existing Escape behavior and letting the post-toggle focus guard refocus the visible toggle.
+- **Commit:** see `git blame` / `git log` on this line
