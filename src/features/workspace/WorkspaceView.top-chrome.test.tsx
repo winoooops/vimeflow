@@ -320,9 +320,9 @@ describe('WorkspaceView – top chrome (main-stage handoff J2–J6)', () => {
     expect(chromeClasses).toContain('group-focus-visible:opacity-100')
     expect(chromeClasses).toContain('group-has-[:focus-visible]:opacity-100')
     expect(chromeClasses).not.toContain('group-focus-within:opacity-100')
-    // Hiding waits 500ms then fades over 240ms; revealing is immediate.
+    // Hiding starts the moment the cursor leaves; both directions stay smooth.
     expect(chromeClasses).toContain(
-      '[transition:opacity_420ms_cubic-bezier(0.4,0,0.2,1)_500ms,transform_420ms_cubic-bezier(0.4,0,0.2,1)_500ms,padding-left_180ms_cubic-bezier(0.4,0,0.2,1)]'
+      '[transition:opacity_260ms_cubic-bezier(0.4,0,0.2,1),transform_260ms_cubic-bezier(0.4,0,0.2,1),padding-left_180ms_cubic-bezier(0.4,0,0.2,1)]'
     )
 
     expect(chromeClasses).toContain(

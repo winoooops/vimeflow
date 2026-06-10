@@ -167,13 +167,13 @@ const SESSION_AGENT_REGISTRY_KEY: Record<
   generic: 'shell',
 }
 
-// Auto-hide top chrome: hiding waits 500ms after the cursor/focus leaves,
-// then glides out over 420ms on a soft curve — a short grace followed by
-// gradual motion, never frozen-then-snap. Revealing eases in over 200ms
-// with no delay via the variants below. Every variant-prefixed class is a full
+// Auto-hide top chrome: the moment the cursor/focus leaves, the bar fades
+// out over 260ms on a soft curve — no hold beforehand (a delayed start
+// reads as the glassy bar hanging half-faded). Revealing eases in over
+// 200ms via the variants below. Every variant-prefixed class is a full
 // literal — Tailwind's scanner cannot see classes assembled at runtime.
 const TOP_CHROME_HIDE_TRANSITION =
-  '[transition:opacity_420ms_cubic-bezier(0.4,0,0.2,1)_500ms,transform_420ms_cubic-bezier(0.4,0,0.2,1)_500ms,padding-left_180ms_cubic-bezier(0.4,0,0.2,1)]'
+  '[transition:opacity_260ms_cubic-bezier(0.4,0,0.2,1),transform_260ms_cubic-bezier(0.4,0,0.2,1),padding-left_180ms_cubic-bezier(0.4,0,0.2,1)]'
 
 const TOP_CHROME_SHOW_TRANSITION =
   '[transition:opacity_200ms_ease-out,transform_200ms_ease-out,padding-left_180ms_cubic-bezier(0.4,0,0.2,1)]'
