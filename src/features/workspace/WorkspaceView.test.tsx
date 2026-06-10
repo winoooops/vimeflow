@@ -298,6 +298,15 @@ describe('WorkspaceView', () => {
   test('uses a single-column workspace with a dismissible inert sidebar drawer on compact viewports', async () => {
     const restoreMatchMedia = mockMatchMedia(true)
     const user = userEvent.setup()
+    const frameCallbacks: FrameRequestCallback[] = []
+
+    const requestAnimationFrameSpy = vi
+      .spyOn(window, 'requestAnimationFrame')
+      .mockImplementation((callback: FrameRequestCallback): number => {
+        frameCallbacks.push(callback)
+
+        return frameCallbacks.length
+      })
 
     try {
       render(<WorkspaceView />)
@@ -327,8 +336,83 @@ describe('WorkspaceView', () => {
       })
       expect(mainWorkspace).not.toHaveAttribute('inert')
       expect(mainWorkspace).not.toHaveAttribute('aria-hidden')
+
+      // jsdom does not evict focus from inert elements; simulate the browser
+      // by moving focus to body before the focus guard frame fires.
+      act(() => {
+        document.body.focus()
+      })
+
+      const lastFrame = frameCallbacks[frameCallbacks.length - 1]
+      if (lastFrame) {
+        act(() => {
+          lastFrame(16)
+        })
+      }
+
+      expect(screen.getByTestId('sidebar-toggle-tabs')).toHaveFocus()
     } finally {
       restoreMatchMedia()
+      requestAnimationFrameSpy.mockRestore()
+    }
+  })
+
+  test('compact sidebar shortcut from main workspace restores focus into the opened drawer', async () => {
+    const restoreMatchMedia = mockMatchMedia(true)
+    const frameCallbacks: FrameRequestCallback[] = []
+
+    const requestAnimationFrameSpy = vi
+      .spyOn(window, 'requestAnimationFrame')
+      .mockImplementation((callback: FrameRequestCallback): number => {
+        frameCallbacks.push(callback)
+
+        return frameCallbacks.length
+      })
+
+    try {
+      render(<WorkspaceView />)
+      await screen.findByTestId('terminal-pane-mock')
+
+      // Focus body so the active element is not a sidebar toggle
+      act(() => {
+        document.body.focus()
+      })
+      expect(document.activeElement).toBe(document.body)
+
+      // Fire the global sidebar shortcut (Ctrl+⇧B on Linux)
+      act(() => {
+        document.dispatchEvent(
+          new KeyboardEvent('keydown', {
+            key: 'b',
+            ctrlKey: true,
+            shiftKey: true,
+            bubbles: true,
+          })
+        )
+      })
+
+      // The modal drawer is now open
+      expect(screen.getByTestId('sidebar-scrim')).toBeInTheDocument()
+
+      // jsdom does not evict focus from inert elements; simulate the browser
+      // by moving focus to body before the focus guard frame fires.
+      act(() => {
+        document.body.focus()
+      })
+
+      // Flush the focus guard's animation frame
+      const lastFrame = frameCallbacks[frameCallbacks.length - 1]
+      if (lastFrame) {
+        act(() => {
+          lastFrame(16)
+        })
+      }
+
+      // Focus should land on the now-visible topbar toggle inside the drawer
+      expect(screen.getByTestId('sidebar-toggle-topbar')).toHaveFocus()
+    } finally {
+      restoreMatchMedia()
+      requestAnimationFrameSpy.mockRestore()
     }
   })
 

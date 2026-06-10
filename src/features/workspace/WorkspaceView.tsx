@@ -309,6 +309,12 @@ export const WorkspaceView = (): ReactElement => {
     }
   }, [])
 
+  // Imperative refs to the two SidebarToggle instances so the post-toggle focus
+  // guard can refocus the visible one without relying on data-testid selectors.
+  const sidebarToggleTopbarRef = useRef<HTMLButtonElement>(null)
+  const sidebarToggleTabsRef = useRef<HTMLButtonElement>(null)
+  const shouldRestoreSidebarToggleFocusRef = useRef(false)
+
   useEffect(() => {
     if (!isCompactViewport) {
       setCompactSidebarOpen(false)
@@ -341,27 +347,27 @@ export const WorkspaceView = (): ReactElement => {
     ? !compactSidebarOpen
     : sidebarCollapsed
 
-  // Imperative refs to the two SidebarToggle instances so the post-toggle focus
-  // guard can refocus the visible one without relying on data-testid selectors.
-  const sidebarToggleTopbarRef = useRef<HTMLButtonElement>(null)
-  const sidebarToggleTabsRef = useRef<HTMLButtonElement>(null)
-  const shouldRestoreSidebarToggleFocusRef = useRef(false)
-
   const handleToggleSidebar = useCallback((): void => {
     const activeElement =
       typeof document === 'undefined' ? null : document.activeElement
-    shouldRestoreSidebarToggleFocusRef.current =
+    const isToggleButtonFocused =
       activeElement === sidebarToggleTopbarRef.current ||
       activeElement === sidebarToggleTabsRef.current
 
     if (isCompactViewport) {
+      // When opening the compact sidebar from a non-toggle element (e.g. via
+      // keyboard shortcut from terminal/editor), force focus restoration so
+      // the focus guard moves focus into the newly opened modal drawer.
+      shouldRestoreSidebarToggleFocusRef.current =
+        isToggleButtonFocused || !compactSidebarOpen
       setCompactSidebarOpen((open) => !open)
 
       return
     }
 
+    shouldRestoreSidebarToggleFocusRef.current = isToggleButtonFocused
     toggleSidebar()
-  }, [isCompactViewport, toggleSidebar])
+  }, [isCompactViewport, toggleSidebar, compactSidebarOpen])
 
   // Post-toggle focus guard: collapse/expand removes the active toggle from the
   // tab order (open toggle's shell goes inert; collapsed toggle's slot unmounts),

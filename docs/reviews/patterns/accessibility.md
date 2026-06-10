@@ -3,7 +3,7 @@ id: accessibility
 category: a11y
 created: 2026-04-09
 last_updated: 2026-06-10
-ref_count: 13
+ref_count: 14
 ---
 
 # Accessibility
@@ -378,4 +378,13 @@ handlers must not trap focus without implementing the promised behavior.
 - **File:** `src/features/workspace/WorkspaceView.tsx`
 - **Finding:** The scrim is a newly added dismissal path for the compact drawer. Its `onClick` closes the drawer without setting the existing `shouldRestoreSidebarToggleFocusRef` flag, unlike the Escape path, so focus can fall back to `document.body` after the clicked scrim unmounts. This affects mixed pointer/keyboard users.
 - **Fix:** Set `shouldRestoreSidebarToggleFocusRef.current = true` before calling `setCompactSidebarOpen(false)` in the scrim `onClick` handler, aligning the scrim dismissal path with the existing Escape behavior and letting the post-toggle focus guard refocus the visible toggle.
+- **Commit:** see `git blame` / `git log` on this line
+
+### 41. Compact sidebar shortcut opens modal drawer without focus restoration
+
+- **Source:** github-claude | PR #409 round 3 | 2026-06-10
+- **Severity:** MEDIUM
+- **File:** `src/features/workspace/WorkspaceView.tsx`
+- **Finding:** `handleToggleSidebar` sets `shouldRestoreSidebarToggleFocusRef.current` only when the active element is one of the sidebar toggle buttons. `useSidebarShortcut` intentionally fires from terminal/editor focus, so on compact viewports the shortcut can open the dialog-style sidebar while the main workspace becomes `inert` and the focus guard returns early. This plausibly leaves keyboard users on `document.body` or otherwise outside the newly opened modal drawer, a WCAG focus-order regression in new compact-mode behavior.
+- **Fix:** When compact mode is about to open the sidebar, set `shouldRestoreSidebarToggleFocusRef.current = true` regardless of which element was focused (based on action intent `!compactSidebarOpen` rather than prior active element). Keep the guard for non-compact and close paths. Add a regression test that mocks `requestAnimationFrame`, fires the shortcut from `document.body`, simulates browser inert-focus-eviction by refocusing body, flushes the guard frame, and asserts the topbar toggle receives focus.
 - **Commit:** see `git blame` / `git log` on this line
