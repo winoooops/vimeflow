@@ -1,10 +1,4 @@
-import {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-  type ReactElement,
-} from 'react'
+import { useCallback, useRef, type ReactElement } from 'react'
 import { motion } from 'framer-motion'
 import type { Session, SessionCloseResult } from '../types'
 import { Card } from './Card'
@@ -22,8 +16,6 @@ export interface ListProps {
   onReorderSessions?: (sessions: Session[]) => void
 }
 
-const REORDER_MOTION_SETTLE_MS = 260
-
 export const List = ({
   sessions,
   activeSessionId,
@@ -40,52 +32,18 @@ export const List = ({
   const recentGroup = sessions.filter((s) => !hasLivePane(s.panes))
 
   // Mirror `recentGroup` into a ref synchronously on every render so
-  // Framer Motion's `onReorder` callback (which can be invoked mid-drag
-  // across multiple frames) reads the current value rather than the
-  // closure-captured one. Without this ref, a session that transitions
-  // to `completed` mid-drag re-renders Sidebar with a fresh recentGroup
-  // but Framer Motion may keep dispatching the original onReorder
-  // closure that captured the pre-transition recentGroup; the resulting
-  // `[...reordered, ...staleRecentGroup]` would either drop or
-  // duplicate the newly-completed session for one frame, and a
-  // session-store that persists eagerly could write the stale array.
+  // Framer Motion's `onReorder` callback reads the current Recent section
+  // rather than a closure-captured one. Without this ref, a session that
+  // transitions to `completed` mid-drag could be appended from a stale
+  // Recent snapshot when the reordered Active subset is committed.
   const recentGroupRef = useRef(recentGroup)
   recentGroupRef.current = recentGroup
 
-  const [reorderMotionEnabled, setReorderMotionEnabled] = useState(false)
-
-  const reorderMotionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
-    null
-  )
-
-  const clearReorderMotionTimeout = useCallback((): void => {
-    const timeoutId = reorderMotionTimeoutRef.current
-    if (timeoutId === null) {
-      return
-    }
-
-    clearTimeout(timeoutId)
-    reorderMotionTimeoutRef.current = null
-  }, [])
-
-  const handleReorderDragStart = useCallback((): void => {
-    clearReorderMotionTimeout()
-    setReorderMotionEnabled(true)
-  }, [clearReorderMotionTimeout])
-
-  const handleReorderDragEnd = useCallback((): void => {
-    clearReorderMotionTimeout()
-    reorderMotionTimeoutRef.current = setTimeout(() => {
-      reorderMotionTimeoutRef.current = null
-      setReorderMotionEnabled(false)
-    }, REORDER_MOTION_SETTLE_MS)
-  }, [clearReorderMotionTimeout])
-
-  useEffect(
-    () => (): void => {
-      clearReorderMotionTimeout()
+  const handleActiveReorder = useCallback(
+    (reordered: Session[]): void => {
+      onReorderSessions?.(mediateReorder(reordered, recentGroupRef.current))
     },
-    [clearReorderMotionTimeout]
+    [onReorderSessions]
   )
 
   // Mirror SessionTabs.handleClose using the shared visible-order helper.
@@ -162,19 +120,7 @@ export const List = ({
         <Group
           variant="active"
           sessions={activeGroup}
-          onReorder={(reordered) => {
-            // Preserve Recent ordering — only the Active subset reorders.
-            // Read recentGroup via the ref (synced every render in the
-            // outer component body) so a mid-drag status transition that
-            // re-renders Sidebar can't leave Framer Motion holding a
-            // stale closure that drops or duplicates the just-transitioned
-            // session. The concat lives in `mediateReorder` (with its own
-            // unit test) so the production path and the test path share
-            // one implementation.
-            onReorderSessions?.(
-              mediateReorder(reordered, recentGroupRef.current)
-            )
-          }}
+          onReorder={handleActiveReorder}
           emptyState={
             <li
               data-testid="active-empty"
@@ -193,9 +139,6 @@ export const List = ({
               onClick={onSessionClick}
               onRemove={cardRemoveSession}
               onRename={onRenameSession}
-              reorderMotionEnabled={reorderMotionEnabled}
-              onReorderDragStart={handleReorderDragStart}
-              onReorderDragEnd={handleReorderDragEnd}
             />
           ))}
         </Group>
