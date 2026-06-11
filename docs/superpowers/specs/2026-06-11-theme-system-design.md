@@ -234,7 +234,7 @@ their next probe and may adapt their own light/dark rendering.
 Three phases, each independently verifiable and PR-sized
 (`rules/common/pr-scope.md`).
 
-### Phase A — Foundation (zero visual change)
+### Phase A — Foundation (visually identical except scrollbars)
 
 1. Create `src/theme/` (types, service, hook, `obsidian-lens.ts` populated
    per the conflict rule, `theme.css`, `base.css`).

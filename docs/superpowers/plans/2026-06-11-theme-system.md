@@ -165,7 +165,12 @@ if (mode === 'census') {
 node scripts/audit-colors.mjs census
 ```
 
-Expected: every `DIET_CANDIDATES` token prints `0` hits **except** `background` (one hit: `src/index.css:106` `bg-background`) and `surface-variant` (two hits: `src/features/editor/components/EditorTabs.tsx:65` `hover:bg-surface-variant`, `src/features/editor/components/FileTabs.tsx:52` `hover:bg-surface-variant/20`). Decision rule: a candidate whose consumers can be migrated **value-identically** still drops (`background` → `bg-surface`; `surface-variant` → `surface-container-highest`, both `#333344`) — Task 7 Step 8 performs those migrations; any other candidate with hits is kept in the token set instead. If the census surfaces hits beyond these three, stop and apply the same rule.
+Expected: every `DIET_CANDIDATES` token prints `0` hits **except**:
+
+- `background` (2): `src/index.css:106` `bg-background`; `src/features/editor/components/EditorStatusBar.tsx:30` `text-background` (also asserted in `EditorStatusBar.test.tsx:125`)
+- `surface-variant` (4): `EditorTabs.tsx:51` + `EditorTabs.tsx:65`, `FileTabs.tsx:52` + `FileTabs.tsx:89`
+
+Decision rule: a candidate whose consumers can be migrated **value-identically** still drops (`background` → `surface`, both `#121221`; `surface-variant` → `surface-container-highest`, both `#333344`) — Task 7 Step 8 performs those migrations; any other candidate with hits is kept in the token set instead. If the census surfaces hits beyond these, stop and apply the same rule. (The script counts per-match, so lines that also contain `on-surface-variant` are still caught — don't re-derive this list with a line-level grep.)
 
 - [ ] **Step 3: Run the leak inventory as a baseline**
 
@@ -1181,14 +1186,19 @@ Delete the entire `colors: { ... }` object and the `boxShadow: { ... }` object f
 grep -rn "thin-scrollbar" src/ | grep -v ".css"
 ```
 
-For every component hit, delete the `thin-scrollbar` class from the `className` (the global default now covers it). **Also update the five tests that assert the class** — `DiffPanelContent.test.tsx`, `CommandResults.test.tsx`, `sessions/components/List.test.tsx`, `AgentStatusPanel/index.test.tsx`, `ExplorerPane.test.tsx` — remove `thin-scrollbar` from their expected-class assertions.
+For every component hit, delete the `thin-scrollbar` class from the `className` (the global default now covers it). **Also update the five tests that reference the class** — `DiffPanelContent.test.tsx`, `CommandResults.test.tsx`, `sessions/components/List.test.tsx`, `AgentStatusPanel/index.test.tsx`, `ExplorerPane.test.tsx`:
+
+- `toHaveClass('thin-scrollbar')` assertions: remove (the convention no longer exists). Where that leaves a test asserting nothing meaningful (e.g. `AgentStatusPanel/index.test.tsx:256` "uses the thin-scrollbar convention"), delete the whole test.
+- **Selector usages**: `AgentStatusPanel/index.test.tsx:368` does `panel.querySelector('.thin-scrollbar')` to _find_ the scroll container — removing the class breaks the lookup, not just an assertion. Re-target the element by a class that remains on it (check its `className` after the edit, e.g. `.overflow-y-auto`) or add a `data-testid` to the container and query that.
 
 Then migrate the dropped diet-token consumers (census, Task 1):
 
+- `src/features/editor/components/EditorStatusBar.tsx:30`: `text-background` → `text-surface`; update the `toHaveClass('text-background')` assertion in `EditorStatusBar.test.tsx:125` to `text-surface`
+- `src/features/editor/components/EditorTabs.tsx:51`: `hover:bg-surface-variant/20` → `hover:bg-surface-container-highest/20`
 - `src/features/editor/components/EditorTabs.tsx:65`: `hover:bg-surface-variant` → `hover:bg-surface-container-highest`
-- `src/features/editor/components/FileTabs.tsx:52`: `hover:bg-surface-variant/20` → `hover:bg-surface-container-highest/20`
+- `src/features/editor/components/FileTabs.tsx:52` and `:89`: `hover:bg-surface-variant/20` → `hover:bg-surface-container-highest/20`
 
-(Same hex `#333344` — zero visual change.)
+(`background`→`surface` are both `#121221`; `surface-variant`→`surface-container-highest` are both `#333344` — zero visual change.)
 
 - [ ] **Step 9: Migrate the remaining `var(--…)` consumers**
 
@@ -1532,10 +1542,10 @@ import { toXtermTheme } from '../../theme/toXtermTheme'
         theme: toXtermTheme(themeService.current().terminal),
 ```
 
-Delete `src/features/terminal/theme/catppuccin-mocha.ts` **and** `src/features/terminal/theme/catppuccin-mocha.test.ts` (its `toXtermTheme` assertions are superseded by `toXtermTheme.test.ts`; its palette assertions live in `obsidian-lens.test.ts`). If `src/features/terminal/types/index.test.ts` imports `catppuccinMocha`, replace with `import { obsidianLens } from '../../../theme'` and assert against `obsidianLens.terminal`. Acceptance grep:
+Delete `src/features/terminal/theme/catppuccin-mocha.ts` **and** `src/features/terminal/theme/catppuccin-mocha.test.ts` (its `toXtermTheme` assertions are superseded by `toXtermTheme.test.ts`; its palette assertions live in `obsidian-lens.test.ts`). If `src/features/terminal/types/index.test.ts` imports `catppuccinMocha`, replace with `import { obsidianLens } from '../../../theme'` and assert against `obsidianLens.terminal`. Acceptance grep (narrowed to the identifier and the module path — Pierre's built-in `'catppuccin-mocha'` theme-name string in `DiffChipToolbar.tsx:93` is unrelated and stays):
 
 ```bash
-grep -rn "catppuccin-mocha\|catppuccinMocha" src/
+grep -rn "catppuccinMocha\|terminal/theme/catppuccin-mocha" src/
 ```
 
 Expected: zero hits.
