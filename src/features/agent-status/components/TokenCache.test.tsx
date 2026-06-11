@@ -150,14 +150,10 @@ describe('TokenCache — stack bar', () => {
   test('cached and fresh styles differ in cold-cache state', () => {
     render(<TokenCache usage={makeUsage(300, 200, 500)} history={[75]} />)
 
-    const cachedStyle = screen
-      .getByTestId('token-cache-stack-cached')
-      .getAttribute('style')
-
     const freshStyle = screen
       .getByTestId('token-cache-stack-fresh')
       .getAttribute('style')
 
-    expect(cachedStyle).not.toBe(freshStyle)
+    expect(freshStyle).not.toContain('#ff94a5')
   })
 })

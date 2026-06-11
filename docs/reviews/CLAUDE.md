@@ -51,7 +51,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Derived State Consistency](patterns/derived-state-consistency.md)   | code-quality       | 5        | 3    | 2026-06-08   |
 | [Generated Artifacts](patterns/generated-artifacts.md)               | code-quality       | 3        | 2    | 2026-05-25   |
 | [Generated Shell Scripts](patterns/generated-shell-scripts.md)       | backend            | 7        | 1    | 2026-06-03   |
-| [Testing Gaps](patterns/testing-gaps.md)                             | testing            | 61       | 27   | 2026-06-07   |
+| [Testing Gaps](patterns/testing-gaps.md)                             | testing            | 62       | 28   | 2026-06-11   |
 | [Terminal Input Handling](patterns/terminal-input-handling.md)       | terminal           | 4        | 2    | 2026-05-24   |
 | [Documentation Accuracy](patterns/documentation-accuracy.md)         | code-quality       | 85       | 25   | 2026-06-08   |
 | [Accessibility](patterns/accessibility.md)                           | a11y               | 33       | 11   | 2026-06-08   |
