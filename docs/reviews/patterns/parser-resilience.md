@@ -175,6 +175,7 @@ true` and drop the chunk.
 - **File:** `crates/backend/src/agent/adapter/codex/locator.rs`
 - **Finding:** `account_rate_limits_from_log_body` used `?` on both `header_f64(..., "x-codex-primary-used-percent")` and `header_u64(..., "x-codex-primary-reset-at")`. When the used-percent header was present but the reset-at header was absent (e.g. error responses or older header shapes), the `?` on the missing reset header made the entire function return `None`. The available usage percentage was lost and the sidebar showed the model-specific `0%` placeholder.
 - **Fix:** Changed the primary `five_hour` construction to require only `used_percentage` via `?`; `resets_at` now falls back to `0` (unknown reset) via `unwrap_or(0)`. Applied the same fallback to the optional `seven_day` block: `(Some(used), None) → Some(RateLimitInfo { used_percentage: used, resets_at: 0 })`. Added a regression test proving usage is preserved when reset headers are absent.
+
 ### 6. Malformed pushShape IPC payload can poison the layout writer state
 
 - **Source:** github-codex-connector | PR #384 round 1 | 2026-06-07

@@ -275,6 +275,7 @@ to avoid unintended re-runs (e.g., PTY respawning on every cwd change).
 - **Finding:** Removing deprecated `defaultProps` from a `forwardRef` component caused ESLint `react/require-default-props` errors because the rule cannot see destructuring defaults through `forwardRef`. The CI Code Quality Check job failed. All defaults were already handled via destructuring, so re-adding `defaultProps` would reintroduce the React 18.3 deprecation warning.
 - **Fix:** Added the repository-standard `/* eslint-disable react/require-default-props -- forwardRef components: ESLint cannot see through forwardRef to find destructuring defaults */` comment at the top of the file, matching the convention used in six other forwardRef files in the repo.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
 ### 26. retryTimerRef forward reference in mount-lifecycle cleanup
 
 - **Source:** github-claude | PR #381 round 2 | 2026-06-07

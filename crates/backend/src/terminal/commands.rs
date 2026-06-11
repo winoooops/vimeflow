@@ -2549,6 +2549,7 @@ mod tests {
                 shell: None,
                 env: None,
                 enable_agent_bridge: false,
+                ephemeral: false,
             },
         )
         .await

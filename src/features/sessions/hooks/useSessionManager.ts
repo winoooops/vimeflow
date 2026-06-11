@@ -257,6 +257,10 @@ export const useSessionManager = (
   // explicit: restoreData is read by consumers (TerminalZone) but
   // changes are coordinated by the sessions array, never by Map identity.
   const restoreDataRef = useRef(new Map<string, RestoreData>())
+  // Per-pty agent-session identity: rejects stale lifecycle events from a
+  // previous agent run that share the same ptyId but a different agentSessionId
+  // (Codex P2 finding on PR #421).
+  const agentSessionIdsRef = useRef(new Map<string, string>())
 
   const buffer = usePtyBufferDrain()
   const { notifyPaneReady, registerPending, dropAllForPty } = buffer
@@ -447,6 +451,14 @@ export const useSessionManager = (
         fn = await listen<AgentSessionTitleEvent>(
           'agent-session-title',
           (payload) => {
+            // Title events are a reliable run-start signal: a new
+            // agentSessionId here means the pane's active agent run has
+            // changed, so future lifecycle comparisons must use this id.
+            agentSessionIdsRef.current.set(
+              payload.sessionId,
+              payload.agentSessionId
+            )
+
             const cleared = payload.title.length === 0
             const nextTitle = cleared ? undefined : payload.title
             const nextSource = cleared ? undefined : payload.source
@@ -560,6 +572,22 @@ export const useSessionManager = (
               if (isTerminalStatus(session.panes[idx].status)) {
                 return session
               }
+
+              // Reject stale lifecycle events from an old agent run that
+              // share the same ptyId but carry a different agentSessionId.
+              const currentAgentId = agentSessionIdsRef.current.get(
+                payload.sessionId
+              )
+              if (
+                currentAgentId !== undefined &&
+                currentAgentId !== payload.agentSessionId
+              ) {
+                return session
+              }
+              agentSessionIdsRef.current.set(
+                payload.sessionId,
+                payload.agentSessionId
+              )
 
               const newPanes = session.panes.map((pane, i) =>
                 i === idx

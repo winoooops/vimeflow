@@ -397,6 +397,7 @@ handlers must not trap focus without implementing the promised behavior.
 - **Finding:** In compact mode, `handleToggleSidebar` sets `shouldRestoreSidebarToggleFocusRef.current = isToggleButtonFocused || !compactSidebarOpen`. On the close path, `compactSidebarOpen` is true, so a keyboard user who has tabbed from the drawer toggle into sidebar content and then uses the sidebar shortcut will leave the flag false. Closing makes the drawer content inert/hidden, the focus guard exits early, and focus can land on `document.body` with no visible focus target. This is a deterministic new compact-mode WCAG focus-order regression.
 - **Fix:** In the compact branch of `handleToggleSidebar`, unconditionally set `shouldRestoreSidebarToggleFocusRef.current = true` for all user-triggered compact toggles (both open and close). This aligns with the Escape and scrim dismissal paths. Also fixed `useSidebarShortcut` to not bail on the compact sidebar drawer itself (which carries `role="dialog"` for a11y) while preserving the existing bailout for real dialogs such as the command palette. Added a regression test that opens the drawer, focuses the Command Palette button inside it, fires the sidebar shortcut, and asserts focus lands back on the tabs toggle.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
 ### 26. Idle-but-live shell state removed from `aria-label` — assistive tech cannot distinguish "no shell" from "shell idle"
 
 - **Source:** github-claude | PR #367 | 2026-06-06
