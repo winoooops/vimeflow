@@ -1,31 +1,27 @@
 import { render, screen } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
-import { describe, test, expect, vi } from 'vitest'
+import { describe, test, expect } from 'vitest'
 import { SidebarTopBar, type SidebarTopBarProps } from './SidebarTopBar'
 
 const renderTopBar = (
   props: Partial<SidebarTopBarProps> = {}
-): ReturnType<typeof render> =>
-  render(<SidebarTopBar onToggleSidebar={vi.fn()} {...props} />)
+): ReturnType<typeof render> => render(<SidebarTopBar {...props} />)
 
 describe('SidebarTopBar', () => {
-  test('renders the collapse toggle on the left', () => {
+  test('does not render the persistent sidebar toggle', () => {
     renderTopBar()
 
-    expect(screen.getByTestId('sidebar-toggle-topbar')).toBeInTheDocument()
+    expect(
+      screen.queryByTestId('sidebar-toggle-topbar')
+    ).not.toBeInTheDocument()
   })
 
-  test('keeps empty expanded top-bar chrome draggable while controls remain clickable on macOS', () => {
+  test('keeps empty expanded top-bar chrome draggable on macOS', () => {
     renderTopBar({
       reserveWindowControls: true,
     })
 
     expect(screen.getByTestId('sidebar-top-bar')).toHaveClass(
       'vf-app-drag-region'
-    )
-
-    expect(screen.getByTestId('sidebar-toggle-topbar')).toHaveClass(
-      'vf-app-no-drag'
     )
   })
 
@@ -37,16 +33,6 @@ describe('SidebarTopBar', () => {
     expect(screen.getByTestId('sidebar-top-bar')).not.toHaveClass(
       'vf-app-drag-region'
     )
-  })
-
-  test('the toggle invokes onToggleSidebar', async () => {
-    const user = userEvent.setup()
-    const onToggleSidebar = vi.fn()
-    renderTopBar({ onToggleSidebar })
-
-    await user.click(screen.getByTestId('sidebar-toggle-topbar'))
-
-    expect(onToggleSidebar).toHaveBeenCalledTimes(1)
   })
 
   test('does not render sidebar utility buttons in the traffic-light row', () => {

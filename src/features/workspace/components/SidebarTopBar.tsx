@@ -1,26 +1,16 @@
-import { type ReactElement, type Ref } from 'react'
-import { SidebarToggle } from './SidebarToggle'
+import { type ReactElement } from 'react'
 
 export interface SidebarTopBarProps {
-  /** Toggle the sidebar collapse flag (shared with ⌘B and the palette command). */
-  onToggleSidebar: () => void
-  /** Platform-appropriate sidebar-toggle hint forwarded to the toggle tooltip. */
-  sidebarShortcutHint?: string
-  /** Ref forwarded to the collapse-toggle button for imperative focus. */
-  toggleRef?: Ref<HTMLButtonElement>
   /** Whether the platform reserves space for macOS inset window controls. */
   reserveWindowControls?: boolean
 }
 
 // The new sidebar chrome row. Uses the sidebar's own surface
 // (bg-surface-container-low) with no bottom divider, so the top bar blends into
-// the sidebar. The height seats the open-state toggle at the same
-// vertical position as the collapsed-state tab-bar toggle. The remaining
-// empty chrome is intentionally left open for the macOS drag region.
+// the sidebar. The persistent sidebar toggle is owned by WorkspaceView so it
+// never changes position while this row slides beneath it. This row intentionally
+// stays empty for macOS traffic-light and drag space.
 export const SidebarTopBar = ({
-  onToggleSidebar,
-  sidebarShortcutHint = '⌘B',
-  toggleRef = undefined,
   reserveWindowControls = false,
 }: SidebarTopBarProps): ReactElement => (
   <div
@@ -38,14 +28,6 @@ export const SidebarTopBar = ({
       paddingRight: 10,
     }}
   >
-    <SidebarToggle
-      ref={toggleRef}
-      onClick={onToggleSidebar}
-      size={28}
-      variant="inset"
-      data-testid="sidebar-toggle-topbar"
-      shortcutHint={sidebarShortcutHint}
-    />
     <div style={{ flex: 1 }} />
   </div>
 )
