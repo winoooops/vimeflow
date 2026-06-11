@@ -25,6 +25,9 @@ pub struct CachedSession {
     /// Per-pane UI preference for the right activity panel.
     #[serde(default)]
     pub activity_panel_collapsed: Option<bool>,
+    /// Shell path that was originally spawned for this session.
+    #[serde(default)]
+    pub last_shell: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -294,6 +297,7 @@ mod tests {
                         exited: false,
                         last_exit_code: None,
                         activity_panel_collapsed: None,
+                        last_shell: None,
                     },
                 );
                 Ok(())
@@ -533,6 +537,7 @@ mod tests {
                         exited: false,
                         last_exit_code: None,
                         activity_panel_collapsed: None,
+                        last_shell: None,
                     },
                 );
                 d.sessions.insert(
@@ -543,6 +548,7 @@ mod tests {
                         exited: true,
                         last_exit_code: None,
                         activity_panel_collapsed: None,
+                        last_shell: None,
                     },
                 );
                 Ok(())
@@ -590,6 +596,7 @@ mod tests {
                         exited: false,
                         last_exit_code: None,
                         activity_panel_collapsed: Some(true),
+                        last_shell: None,
                     },
                 );
                 Ok(())

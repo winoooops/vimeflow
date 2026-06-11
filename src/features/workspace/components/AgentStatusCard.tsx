@@ -78,10 +78,6 @@ const normalizeShellName = (shellName: string | null | undefined): string => {
     return 'shell'
   }
 
-  if (stripped === 'powershell') {
-    return 'powershell'
-  }
-
   if (KNOWN_SHELLS.has(stripped)) {
     return stripped
   }

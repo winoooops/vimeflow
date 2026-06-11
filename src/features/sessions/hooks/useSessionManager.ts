@@ -975,6 +975,7 @@ export const useSessionManager = (
           dropAllForPty(ptyId)
           deleteCacheHistory(ptyId)
           restoreDataRef.current.delete(ptyId)
+          agentSessionIdsRef.current.delete(ptyId)
           unregisterPtySession(ptyId)
         }
         restoreDataRef.current.delete(target.id)
@@ -1348,6 +1349,7 @@ export const useSessionManager = (
             dropAllForPty(target.ptyId)
             deleteCacheHistory(target.ptyId)
             restoreDataRef.current.delete(target.ptyId)
+            agentSessionIdsRef.current.delete(target.ptyId)
             unregisterPtySession(target.ptyId)
           } else {
             try {

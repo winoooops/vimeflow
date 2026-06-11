@@ -415,6 +415,7 @@ pub(crate) async fn spawn_pty_inner(
                     exited: false,
                     last_exit_code: None,
                     activity_panel_collapsed: None,
+                    last_shell: Some(shell.clone()),
                 },
             );
             data.session_order.push(request.session_id.clone());
@@ -790,7 +791,7 @@ pub(crate) fn list_sessions_inner(
         session_infos.push(SessionInfo {
             id: id.clone(),
             cwd: cached.cwd,
-            shell: Some(system_shell()),
+            shell: cached.last_shell.clone().or_else(|| Some(system_shell())),
             status,
             activity_panel_collapsed: cached.activity_panel_collapsed,
             grouping: snapshot.groupings.get(id).cloned(),
@@ -2026,6 +2027,7 @@ mod tests {
                         exited: false,
                         last_exit_code: None,
                         activity_panel_collapsed: None,
+                        last_shell: None,
                     },
                 );
                 data.session_order.push(id.clone());
@@ -2640,6 +2642,7 @@ mod tests {
                         exited: false,
                         last_exit_code: None,
                         activity_panel_collapsed: None,
+                        last_shell: None,
                     },
                 );
                 Ok(())
@@ -2702,6 +2705,7 @@ mod tests {
                         exited: false,
                         last_exit_code: None,
                         activity_panel_collapsed: None,
+                        last_shell: None,
                     },
                 );
                 d.active_session_id = Some("phantom".into());
@@ -3125,6 +3129,7 @@ mod tests {
                         exited: false,
                         last_exit_code: None,
                         activity_panel_collapsed: None,
+                        last_shell: None,
                     },
                 );
                 Ok(())
@@ -3178,6 +3183,7 @@ mod tests {
                         exited: false,
                         last_exit_code: None,
                         activity_panel_collapsed: Some(true),
+                        last_shell: None,
                     },
                 );
                 d.session_order.push("pty-1".into());
@@ -3237,6 +3243,7 @@ mod tests {
                             exited: false,
                             last_exit_code: None,
                             activity_panel_collapsed: None,
+                            last_shell: None,
                         },
                     );
                 }
@@ -3283,6 +3290,7 @@ mod tests {
                             exited: false,
                             last_exit_code: None,
                             activity_panel_collapsed: None,
+                            last_shell: None,
                         },
                     );
                     Ok(())
