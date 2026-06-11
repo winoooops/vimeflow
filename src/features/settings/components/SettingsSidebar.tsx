@@ -32,6 +32,7 @@ export const SettingsSidebar = ({
           <button
             key={s.id}
             type="button"
+            aria-current={isActive ? 'page' : undefined}
             onClick={() => onPick(s.id)}
             className={`relative mb-px flex w-full items-center gap-2 rounded-md border-none px-2.5 py-1.5 text-left font-body text-[13px] transition-colors ${
               isActive

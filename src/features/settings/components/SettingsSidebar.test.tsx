@@ -72,4 +72,16 @@ describe('SettingsSidebar', () => {
       'text-primary'
     )
   })
+
+  test('marks the active section with aria-current', () => {
+    render(<SettingsSidebar {...baseProps} />)
+
+    expect(
+      screen.getByRole('button', { name: 'Appearance', current: 'page' })
+    ).toBeInTheDocument()
+
+    expect(screen.getByRole('button', { name: 'Keymap' })).not.toHaveAttribute(
+      'aria-current'
+    )
+  })
 })

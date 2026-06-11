@@ -568,3 +568,21 @@ handlers must not trap focus without implementing the promised behavior.
 - **Finding:** The focusable-element filter in the Tab trap used `!el.hasAttribute('disabled')`, which only checks whether the DOM attribute is literally present on the element. Descendant controls inside a disabled `<fieldset>` inherit disabled state without the attribute, so they passed the filter and the trap tried to focus them, causing Tab to stall on alias-row controls when alias management is off.
 - **Fix:** Replaced `!el.hasAttribute('disabled')` with `!el.matches(':disabled')` so the filter respects the HTML spec's disabled-fieldset-descendant semantics.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 54. Active settings sidebar section button missing `aria-current` — invisible to AT
+
+- **Source:** github-claude | PR #422 round 7 | 2026-06-11
+- **Severity:** MEDIUM
+- **File:** `src/features/settings/components/SettingsSidebar.tsx`
+- **Finding:** The currently-active section button was distinguished only by CSS classes (`text-primary`, `bg-primary-container/10`). No accessible attribute communicated the selection state to assistive technology, so screen-reader users heard each item announced identically as a button with no indication of which section was shown in the pane.
+- **Fix:** Added `aria-current={isActive ? 'page' : undefined}` to the active section button and added a co-located test asserting the attribute on the active item and its absence on inactive items.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 55. AppearancePane scheme selector cards convey active state only via CSS, not ARIA
+
+- **Source:** github-claude | PR #422 round 7 | 2026-06-11
+- **Severity:** MEDIUM
+- **File:** `src/features/settings/components/panes/AppearancePane.tsx`
+- **Finding:** Each color-scheme card was a `<button>` whose selected state was indicated only by border/background CSS classes and an `aria-hidden` checkmark icon. Screen readers received no ARIA attribute communicating which scheme was currently active, so every button was announced identically.
+- **Fix:** Added `aria-pressed={isActive}` to each scheme button and added a co-located test asserting the pressed state for the default active scheme and an inactive scheme.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

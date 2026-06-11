@@ -34,6 +34,18 @@ describe('AppearancePane', () => {
     )
   })
 
+  test('marks the default active scheme with aria-pressed', () => {
+    render(<AppearancePane />)
+
+    expect(
+      screen.getByRole('button', { name: /Obsidian/i, pressed: true })
+    ).toBeInTheDocument()
+
+    expect(
+      screen.getByRole('button', { name: /Dense/i, pressed: false })
+    ).toBeInTheDocument()
+  })
+
   test('renders the accent hue slider', () => {
     render(<AppearancePane />)
 

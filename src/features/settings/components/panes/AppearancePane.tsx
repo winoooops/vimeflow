@@ -31,6 +31,7 @@ export const AppearancePane = (): ReactElement => {
               <button
                 key={s.id}
                 type="button"
+                aria-pressed={isActive}
                 onClick={() => setActiveScheme(s.id)}
                 className={`flex items-center gap-3 rounded-lg border p-2.5 text-left transition-colors ${
                   isActive
