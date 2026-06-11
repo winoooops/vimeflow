@@ -165,9 +165,9 @@ if (mode === 'census') {
 node scripts/audit-colors.mjs census
 ```
 
-Expected: every `DIET_CANDIDATES` token prints `0` hits **except**:
+Expected: every `DIET_CANDIDATES` token prints `0` hits **except** (the script scans test files too):
 
-- `background` (2): `src/index.css:106` `bg-background`; `src/features/editor/components/EditorStatusBar.tsx:30` `text-background` (also asserted in `EditorStatusBar.test.tsx:125`)
+- `background` (3): `src/index.css:106` `bg-background`; `src/features/editor/components/EditorStatusBar.tsx:30` `text-background`; `EditorStatusBar.test.tsx:125` (the `toHaveClass('text-background')` assertion)
 - `surface-variant` (4): `EditorTabs.tsx:51` + `EditorTabs.tsx:65`, `FileTabs.tsx:52` + `FileTabs.tsx:89`
 
 Decision rule: a candidate whose consumers can be migrated **value-identically** still drops (`background` → `surface`, both `#121221`; `surface-variant` → `surface-container-highest`, both `#333344`) — Task 7 Step 8 performs those migrations; any other candidate with hits is kept in the token set instead. If the census surfaces hits beyond these, stop and apply the same rule. (The script counts per-match, so lines that also contain `on-surface-variant` are still caught — don't re-derive this list with a line-level grep.)
@@ -1542,10 +1542,10 @@ import { toXtermTheme } from '../../theme/toXtermTheme'
         theme: toXtermTheme(themeService.current().terminal),
 ```
 
-Delete `src/features/terminal/theme/catppuccin-mocha.ts` **and** `src/features/terminal/theme/catppuccin-mocha.test.ts` (its `toXtermTheme` assertions are superseded by `toXtermTheme.test.ts`; its palette assertions live in `obsidian-lens.test.ts`). If `src/features/terminal/types/index.test.ts` imports `catppuccinMocha`, replace with `import { obsidianLens } from '../../../theme'` and assert against `obsidianLens.terminal`. Acceptance grep (narrowed to the identifier and the module path — Pierre's built-in `'catppuccin-mocha'` theme-name string in `DiffChipToolbar.tsx:93` is unrelated and stays):
+Delete `src/features/terminal/theme/catppuccin-mocha.ts` **and** `src/features/terminal/theme/catppuccin-mocha.test.ts` (its `toXtermTheme` assertions are superseded by `toXtermTheme.test.ts`; its palette assertions live in `obsidian-lens.test.ts`). If `src/features/terminal/types/index.test.ts` imports `catppuccinMocha`, replace with `import { obsidianLens } from '../../../theme'` and assert against `obsidianLens.terminal`. Acceptance grep, scoped to the terminal feature (the editor's identically-named `catppuccinMocha` export lives until Task 10; Pierre's `'catppuccin-mocha'` theme-name string in `DiffChipToolbar.tsx:93` is unrelated and stays):
 
 ```bash
-grep -rn "catppuccinMocha\|terminal/theme/catppuccin-mocha" src/
+grep -rn "catppuccinMocha\|theme/catppuccin-mocha" src/features/terminal/
 ```
 
 Expected: zero hits.
