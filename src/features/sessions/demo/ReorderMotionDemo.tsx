@@ -162,7 +162,7 @@ const NativeReorderList = ({
 }: NativeReorderListProps): ReactElement => (
   <div className="flex h-full min-h-0 flex-col">
     <Group.Header label="Active" count={sessions.length} />
-    <div className="thin-scrollbar min-h-0 flex-1 overflow-y-auto overflow-x-clip">
+    <div className="min-h-0 flex-1 overflow-y-auto overflow-x-clip">
       <Group variant="active" sessions={sessions} onReorder={onReorder}>
         {sessions.map((session) => (
           <Card
@@ -215,7 +215,7 @@ const GuardedNativeReorderList = ({
   return (
     <div className="flex h-full min-h-0 flex-col">
       <Group.Header label="Active" count={sessions.length} />
-      <div className="thin-scrollbar min-h-0 flex-1 overflow-y-auto overflow-x-clip">
+      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-clip">
         <Group variant="active" sessions={sessions} onReorder={handleReorder}>
           {sessions.map((session) => (
             <Card

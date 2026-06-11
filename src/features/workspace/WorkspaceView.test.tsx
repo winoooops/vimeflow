@@ -1583,7 +1583,7 @@ describe('WorkspaceView', () => {
     const workspaceView = screen.getByTestId('workspace-view')
     const mainWorkspace = workspaceView.children[1] as HTMLElement
 
-    expect(mainWorkspace).toHaveClass('bg-background')
+    expect(mainWorkspace).toHaveClass('bg-surface')
     expect(mainWorkspace.style.borderTopLeftRadius).toBe('16px')
     expect(mainWorkspace.style.borderBottomLeftRadius).toBe('16px')
     // No drop shadow: it would read as a dark gradient seam against the
