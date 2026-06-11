@@ -156,8 +156,8 @@ describe('Card — active variant', () => {
 
     await user.click(screen.getByRole('button', { name: 'Session actions' }))
 
-    expect(screen.getByRole('button', { name: 'Rename' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Remove' })).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: 'Rename' })).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: 'Remove' })).toBeInTheDocument()
   })
 
   test('kebab Remove calls onRemove with the session id', async () => {
@@ -166,7 +166,7 @@ describe('Card — active variant', () => {
     renderActiveCard(session({ id: 'X' }), { onRemove })
 
     await user.click(screen.getByRole('button', { name: 'Session actions' }))
-    await user.click(screen.getByRole('button', { name: 'Remove' }))
+    await user.click(screen.getByRole('menuitem', { name: 'Remove' }))
 
     expect(onRemove).toHaveBeenCalledWith('X')
   })
@@ -177,7 +177,7 @@ describe('Card — active variant', () => {
     renderActiveCard(session({ id: 'X' }), { onRename })
 
     await user.click(screen.getByRole('button', { name: 'Session actions' }))
-    await user.click(screen.getByRole('button', { name: 'Rename' }))
+    await user.click(screen.getByRole('menuitem', { name: 'Rename' }))
 
     const input = screen.getByRole('textbox', { name: 'Rename session' })
     expect(input).toHaveFocus()
@@ -229,11 +229,11 @@ describe('Card — active variant', () => {
 
     const trigger = screen.getByRole('button', { name: 'Session actions' })
     await user.click(trigger)
-    expect(screen.getByRole('button', { name: 'Rename' })).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: 'Rename' })).toBeInTheDocument()
 
     await user.keyboard('{Escape}')
     expect(
-      screen.queryByRole('button', { name: 'Rename' })
+      screen.queryByRole('menuitem', { name: 'Rename' })
     ).not.toBeInTheDocument()
     expect(trigger).toHaveFocus()
   })
@@ -248,11 +248,11 @@ describe('Card — active variant', () => {
     })
 
     await user.click(screen.getByRole('button', { name: 'Session actions' }))
-    expect(screen.getByRole('button', { name: 'Rename' })).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: 'Rename' })).toBeInTheDocument()
 
     await user.click(screen.getByText('auth middleware'))
     expect(
-      screen.queryByRole('button', { name: 'Rename' })
+      screen.queryByRole('menuitem', { name: 'Rename' })
     ).not.toBeInTheDocument()
     expect(onClick).toHaveBeenCalledWith('X')
   })
