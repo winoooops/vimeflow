@@ -19,7 +19,8 @@ import {
 } from '@codemirror/state'
 import { history } from '@codemirror/commands'
 import { vim, Vim, getCM } from '@replit/codemirror-vim'
-import { catppuccinMocha } from '../theme/catppuccin'
+import { themeService } from '../../../theme'
+import { createEditorTheme } from '../theme/editorTheme'
 
 /**
  * Scroll the viewport to follow the cursor on any PURE-selection change
@@ -378,12 +379,16 @@ export function useCodeMirror(
   }, [onChange])
 
   const languageCompartment = useRef(new Compartment())
+  const themeCompartment = useRef(new Compartment())
+  const themeUnsubscribeRef = useRef<(() => void) | null>(null)
   const viewRef = useRef<EditorView | null>(null)
 
   // Callback ref — triggers when the container div mounts/unmounts
   const setContainer = useCallback((node: HTMLDivElement | null) => {
     // Destroy existing view if container changes
     if (viewRef.current) {
+      themeUnsubscribeRef.current?.()
+      themeUnsubscribeRef.current = null
       vimSaveByView.delete(viewRef.current)
       viewRef.current.destroy()
       viewRef.current = null
@@ -406,7 +411,9 @@ export function useCodeMirror(
       // silent no-op — every user discovers it on their first typo.
       history(),
       drawSelection(),
-      catppuccinMocha,
+      themeCompartment.current.of(
+        createEditorTheme(themeService.current().kind)
+      ),
       languageCompartment.current.of([]),
       EditorView.updateListener.of((update: ViewUpdate) => {
         if (update.docChanged && onChangeRef.current) {
@@ -445,6 +452,14 @@ export function useCodeMirror(
     viewRef.current = view
     setEditorView(view)
 
+    themeUnsubscribeRef.current = themeService.subscribe((theme) => {
+      view.dispatch({
+        effects: themeCompartment.current.reconfigure(
+          createEditorTheme(theme.kind)
+        ),
+      })
+    })
+
     // Ensure proper layout measurement and focus after mount.
     // Guard against the view being destroyed before the frame fires
     // (hot reload, Strict Mode double-invoke, rapid tab switch) by
@@ -468,6 +483,8 @@ export function useCodeMirror(
   useEffect(
     () => (): void => {
       if (viewRef.current) {
+        themeUnsubscribeRef.current?.()
+        themeUnsubscribeRef.current = null
         vimSaveByView.delete(viewRef.current)
         viewRef.current.destroy()
         viewRef.current = null
