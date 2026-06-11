@@ -3,6 +3,9 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import './lib/e2e-bridge'
 import App from './App.tsx'
+import { themeService } from './theme'
+
+themeService.init()
 
 const rootElement = document.getElementById('root')
 
