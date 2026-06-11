@@ -29,6 +29,15 @@ describe('Group.Header', () => {
     )
   })
 
+  test('label is non-interactive chrome: default cursor, not text-selectable', () => {
+    render(<Group.Header label="Active" count={1} />)
+    // The "ACTIVE · 1" label is a heading, not editable text — hovering it
+    // must not flip to the text I-beam, and it should not select on drag.
+    const header = screen.getByTestId('session-group-active')
+    expect(header).toHaveClass('cursor-default')
+    expect(header).toHaveClass('select-none')
+  })
+
   test('renders headerAction next to the label when provided', () => {
     render(
       <Group.Header
