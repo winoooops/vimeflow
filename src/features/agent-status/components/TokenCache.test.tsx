@@ -134,4 +134,26 @@ describe('TokenCache — stack bar', () => {
     expect(sum).toBeGreaterThan(99.9)
     expect(sum).toBeLessThan(100.1)
   })
+
+  test('uses distinct bucket colors for wrote and fresh segments', () => {
+    render(<TokenCache usage={makeUsage(7500, 1800, 700)} history={[75]} />)
+
+    expect(
+      screen.getByTestId('token-cache-stack-wrote').getAttribute('style')
+    ).toContain('linear-gradient(90deg, #a8c8ff, #8aa9d8)')
+
+    expect(
+      screen.getByTestId('token-cache-stack-fresh').getAttribute('style')
+    ).toContain('linear-gradient(90deg, #fab387, #f9a87b)')
+  })
+
+  test('cached and fresh styles differ in cold-cache state', () => {
+    render(<TokenCache usage={makeUsage(300, 200, 500)} history={[75]} />)
+
+    const freshStyle = screen
+      .getByTestId('token-cache-stack-fresh')
+      .getAttribute('style')
+
+    expect(freshStyle).not.toContain('#ff94a5')
+  })
 })

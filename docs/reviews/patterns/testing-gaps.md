@@ -2,8 +2,8 @@
 id: testing-gaps
 category: testing
 created: 2026-04-09
-last_updated: 2026-06-07
-ref_count: 27
+last_updated: 2026-06-11
+ref_count: 28
 ---
 
 # Testing Gaps
@@ -611,3 +611,13 @@ filesystem scope restrictions).
 - **Fix:** Added a focused `backend.test.ts` case where `bridge.listen` rejects once, `listen` rejects, and a second `listen` for the same event retries the bridge instead of reusing the rejected subscription. Asserts `mockListen` is called twice and the retry succeeds with a fresh subscription.
 - **Code-review heuristic:** When a PR changes direct bridge delegation into shared module-level subscription state, the bridge rejection path now performs important state mutation that did not exist before. A single retry-focused test is sufficient to guard the cleanup contract; validate through mock call counts and successful retry rather than test-only introspection of internal maps.
 - **Commit:** _(PR #375 upsource cycle 2 fix commit)_
+
+### 62. Cold-cache color-collision test assertion is trivially true
+
+- **Source:** github-claude | PR #419 round 2 | 2026-06-11
+- **Severity:** MEDIUM
+- **File:** `src/features/agent-status/components/TokenCache.test.tsx` L150-162
+- **Finding:** The test `cached and fresh styles differ in cold-cache state` compared full `style` attribute strings via `expect(cachedStyle).not.toBe(freshStyle)`. The cached segment carries `boxShadow` and a different `width` than the fresh segment, so the strings always differ regardless of color values. If `FRESH_STACK_GRADIENT` were reverted to the colliding cold-state color `#ff94a5`, the test would still pass, providing zero protection against the regression.
+- **Fix:** Replaced the broad string inequality with a targeted `not.toContain('#ff94a5')` assertion on the fresh segment's style, directly verifying the fresh segment never carries the cold-cache pink color.
+- **Code-review heuristic:** When a test asserts inequality of two computed DOM style strings, check whether structural differences (width, box-shadow, margin, etc.) already guarantee the strings differ. If so, the test is trivially true. Narrow the assertion to the specific property or value that actually matters (e.g., `background`, `color`, or `not.toContain(expectedColor)`).
+- **Commit:** same commit as this entry
