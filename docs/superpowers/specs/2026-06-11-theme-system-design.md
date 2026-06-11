@@ -252,7 +252,9 @@ Three phases, each independently verifiable and PR-sized
    branch).
 
 Exit criterion: switching works end-to-end with one theme; the app renders
-pixel-identical to today.
+pixel-identical to today — except scrollbars, where globalization (§6
+batch 1, pulled into this phase as a cutover prerequisite) deliberately
+styles previously-default scroll containers.
 
 ### Phase B — Leak migration (mechanical inventory is the work list)
 

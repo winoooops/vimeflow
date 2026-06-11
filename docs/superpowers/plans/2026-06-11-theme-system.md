@@ -14,7 +14,9 @@
 
 ---
 
-## Phase A — Foundation (zero visual change)
+## Phase A — Foundation (visually identical, except scrollbars)
+
+One deliberate visual change ships in this phase: scrollbar styling becomes a themed global default (spec §6 batch 1), so scroll containers that never carried `thin-scrollbar` gain the thin scrollbar. Everything else renders pixel-identical to `main`.
 
 ### Task 0: Worktree bootstrap
 
@@ -73,7 +75,10 @@ const walk = (dir, out = []) => {
 const files = walk(SRC)
 
 const LEAK_PATTERNS = [
-  ['hex', /#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})\b/g],
+  // 6/8-digit only: 3/4-digit hex would false-positive on PR/issue refs
+  // like `#302` in code comments. Short hex inside string literals is
+  // still caught by the ESLint rule (Task 21).
+  ['hex', /#(?:[0-9a-fA-F]{6}|[0-9a-fA-F]{8})\b/g],
   ['color-fn', /\b(?:rgba?|hsla?|oklch)\(/g],
   [
     'raw-palette',
@@ -132,7 +137,7 @@ if (mode === 'census') {
 } else if (mode === 'leaks') {
   let total = 0
   for (const f of files) {
-    if (f.includes('/theme/themes/')) continue
+    if (f.includes('/src/theme/')) continue // theme defs + generated theme.css
     const text = readFileSync(f, 'utf8')
     const fileHits = []
     for (const [kind, re] of LEAK_PATTERNS) {
@@ -160,7 +165,7 @@ if (mode === 'census') {
 node scripts/audit-colors.mjs census
 ```
 
-Expected: every `DIET_CANDIDATES` token prints `0` hits **except** `background` (one hit: `src/index.css:106` `bg-background`). Decision rule: any candidate with a non-config hit is **kept** in the token set (and removed from the drop list in Task 2); `background`'s single hit is migrated in Task 7 instead.
+Expected: every `DIET_CANDIDATES` token prints `0` hits **except** `background` (one hit: `src/index.css:106` `bg-background`) and `surface-variant` (two hits: `src/features/editor/components/EditorTabs.tsx:65` `hover:bg-surface-variant`, `src/features/editor/components/FileTabs.tsx:52` `hover:bg-surface-variant/20`). Decision rule: a candidate whose consumers can be migrated **value-identically** still drops (`background` → `bg-surface`; `surface-variant` → `surface-container-highest`, both `#333344`) — Task 7 Step 8 performs those migrations; any other candidate with hits is kept in the token set instead. If the census surfaces hits beyond these three, stop and apply the same rule.
 
 - [ ] **Step 3: Run the leak inventory as a baseline**
 
@@ -168,7 +173,7 @@ Expected: every `DIET_CANDIDATES` token prints `0` hits **except** `background` 
 node scripts/audit-colors.mjs leaks > .lifeline-planner/leaks-baseline.txt; tail -3 .lifeline-planner/leaks-baseline.txt
 ```
 
-Expected: `TOTAL:` around 290 (codex recount; exact number is the baseline Phase B drives to zero).
+Expected: `TOTAL:` in the 250–300 range (hex matching is 6/8-digit only; the exact number is the baseline Phase B drives to zero).
 
 - [ ] **Step 4: Commit**
 
@@ -993,28 +998,39 @@ npx vitest run src/theme/themeCss.test.ts
 
 Expected: FAIL — cannot resolve `./theme.css?raw`.
 
-- [ ] **Step 3: Generate `src/theme/theme.css`**
+- [ ] **Step 3: Generate `src/theme/theme.css`** via a checked-in script
 
-The `@theme` block must contain exactly `toCssVars(obsidianLens)` — generate it instead of hand-typing 96 lines:
+The `@theme` block must contain exactly `toCssVars(obsidianLens)` — generate it instead of hand-typing 96 lines. Create `scripts/generate-theme-css.ts` and run it with `npx tsx` (tsx resolves this repo's extensionless TS imports; plain `node --experimental-strip-types` does not, and the local shell runs Node 22):
 
-```bash
-node --experimental-strip-types -e "
-import { toCssVars } from './src/theme/cssVars.ts'
-import { obsidianLens } from './src/theme/themes/obsidian-lens.ts'
+```ts
+// scripts/generate-theme-css.ts — regenerate src/theme/theme.css from the
+// Obsidian Lens definition. Run: npx tsx scripts/generate-theme-css.ts
+import { writeFileSync } from 'node:fs'
+import { toCssVars } from '../src/theme/cssVars'
+import { obsidianLens } from '../src/theme/themes/obsidian-lens'
+
 const body = Object.entries(toCssVars(obsidianLens))
-  .map(([k, v]) => \`  \${k}: \${v};\`)
+  .map(([name, value]) => `  ${name}: ${value};`)
   .join('\n')
-console.log('/* GENERATED defaults — single source of truth is')
-console.log(' * src/theme/themes/obsidian-lens.ts; themeCss.test.ts keeps')
-console.log(' * this block in sync. Regenerate via the Task 7 Step 3')
-console.log(' * one-liner in the implementation plan. */')
-console.log('@theme {')
-console.log(body)
-console.log('}')
-" > src/theme/theme.css
+
+writeFileSync(
+  'src/theme/theme.css',
+  [
+    '/* GENERATED defaults — single source of truth is',
+    ' * src/theme/themes/obsidian-lens.ts; themeCss.test.ts keeps this',
+    ' * block in sync. Regenerate: npx tsx scripts/generate-theme-css.ts */',
+    '@theme {',
+    body,
+    '}',
+    '',
+  ].join('\n')
+)
 ```
 
-(If `--experimental-strip-types` is unavailable on the installed Node, write the same content via a throwaway `npx tsx` invocation: `npx tsx -e "..."` with the identical script body.)
+```bash
+npx tsx scripts/generate-theme-css.ts && head -6 src/theme/theme.css
+git add scripts/generate-theme-css.ts src/theme/theme.css
+```
 
 - [ ] **Step 4: Run the sync test**
 
@@ -1159,13 +1175,20 @@ Replace the diff classes (lines 303–320):
 
 Delete the entire `colors: { ... }` object and the `boxShadow: { ... }` object from `theme.extend` (shadows now come from `--shadow-*` in `@theme`; `shadow-pane-focus`, `shadow-modal`, `shadow-pip-glow` utilities keep working with identical names). Everything else (keyframes, animation, fontFamily, fontSize, borderRadius, transitionTimingFunction, darkMode) stays.
 
-- [ ] **Step 8: Find any `thin-scrollbar` / `no-scrollbar` class usages and clean up**
+- [ ] **Step 8: Class cleanups — `thin-scrollbar` and dropped diet tokens**
 
 ```bash
 grep -rn "thin-scrollbar" src/ | grep -v ".css"
 ```
 
-For every hit, delete the `thin-scrollbar` class from the `className` (the global default now covers it). Expected: a handful of components; mechanical removal.
+For every component hit, delete the `thin-scrollbar` class from the `className` (the global default now covers it). **Also update the five tests that assert the class** — `DiffPanelContent.test.tsx`, `CommandResults.test.tsx`, `sessions/components/List.test.tsx`, `AgentStatusPanel/index.test.tsx`, `ExplorerPane.test.tsx` — remove `thin-scrollbar` from their expected-class assertions.
+
+Then migrate the dropped diet-token consumers (census, Task 1):
+
+- `src/features/editor/components/EditorTabs.tsx:65`: `hover:bg-surface-variant` → `hover:bg-surface-container-highest`
+- `src/features/editor/components/FileTabs.tsx:52`: `hover:bg-surface-variant/20` → `hover:bg-surface-container-highest/20`
+
+(Same hex `#333344` — zero visual change.)
 
 - [ ] **Step 9: Migrate the remaining `var(--…)` consumers**
 
@@ -1198,15 +1221,68 @@ Known consumers and their replacements:
 
 Then re-run the inventory grep: expected zero hits outside `src/theme/`.
 
-- [ ] **Step 10: Verify zero visual change**
+- [ ] **Step 10: Migrate the tests that read `tailwind.config.js` colors** (the object no longer exists — these fail otherwise)
+
+`src/features/workspace/WorkspaceView.visual.test.tsx` (lines 153–211): rewrite the four token tests against the theme definition and drop the `tailwindConfig` import if nothing else uses it:
+
+```tsx
+import { obsidianLens } from '../../theme'
+
+describe('Color Tokens: Obsidian Lens theme', () => {
+  test('surface hierarchy tokens', () => {
+    expect(obsidianLens.ui.surface).toBe('#121221')
+    expect(obsidianLens.ui['surface-container-lowest']).toBe('#0d0d1c')
+    expect(obsidianLens.ui['surface-container-low']).toBe('#1a1a2a')
+    expect(obsidianLens.ui['surface-container']).toBe('#1e1e2e')
+    expect(obsidianLens.ui['surface-container-high']).toBe('#292839')
+    expect(obsidianLens.ui['surface-container-highest']).toBe('#333344')
+    expect(obsidianLens.ui['surface-bright']).toBe('#383849')
+  })
+
+  test('primary tokens', () => {
+    expect(obsidianLens.ui.primary).toBe('#e2c7ff')
+    expect(obsidianLens.ui['primary-container']).toBe('#cba6f7')
+    expect(obsidianLens.ui['primary-dim']).toBe('#d3b9f0')
+  })
+
+  test('semantic feedback tokens', () => {
+    expect(obsidianLens.ui.success).toBe('#50fa7b')
+    expect(obsidianLens.ui['success-muted']).toBe('#7defa1')
+    expect(obsidianLens.ui.tertiary).toBe('#ff94a5')
+    expect(obsidianLens.ui['tertiary-container']).toBe('#fd7e94')
+    expect(obsidianLens.ui.error).toBe('#ffb4ab')
+    expect(obsidianLens.ui['error-dim']).toBe('#d73357')
+  })
+
+  test('text tokens', () => {
+    expect(obsidianLens.ui['on-surface']).toBe('#e3e0f7')
+    expect(obsidianLens.ui['on-surface-variant']).toBe('#cdc3d1')
+    expect(obsidianLens.ui['outline-variant']).toBe('#4a444f')
+  })
+})
+```
+
+`src/features/agent-status/components/liquidColors.test.ts` (imports `tailwind.config.js` at line 3): replace the config import + `cfg` plumbing with `import { obsidianLens } from '../../../theme'` and assert the constants against theme values:
+
+```ts
+expect(LIQUID_COLOR_PRIMARY_CONTAINER).toBe(
+  obsidianLens.ui['primary-container']
+)
+expect(LIQUID_COLOR_TERTIARY).toBe(obsidianLens.ui.tertiary)
+expect(LIQUID_COLOR_ERROR).toBe(obsidianLens.ui.error)
+```
+
+(`liquidColors.ts` itself keeps its literals until Task 17 migrates agent-status inline styles — add `liquidColors.ts` to that task's file list.)
+
+- [ ] **Step 11: Verify (visual change limited to scrollbars)**
 
 ```bash
 npm run type-check && npx vitest run && npm run build
 ```
 
-Expected: all pass. Then `npm run dev`, open the app, compare against `main` visually (surfaces, scrollbars, diff colors, status bar). Everything identical.
+Expected: all pass. Then `npm run dev`, open the app, compare against `main` visually (surfaces, diff colors, status bar). Identical **except one deliberate change**: scroll containers that previously had default/unstyled scrollbars now show the thin themed scrollbar (globalization — spec §6 batch 1).
 
-- [ ] **Step 11: Commit**
+- [ ] **Step 12: Commit**
 
 ```bash
 git add -A
@@ -1321,8 +1397,8 @@ git commit -m "feat(theme): pre-render theme init + :set theme palette command"
 - Create: `src/features/terminal/theme/toXtermTheme.ts`, `src/features/terminal/theme/themeBridge.ts`
 - Test: `src/features/terminal/theme/toXtermTheme.test.ts`, `src/features/terminal/theme/themeBridge.test.ts`
 - Modify: `src/features/terminal/components/TerminalPane/Body.tsx` (imports at line 19, terminal creation at ~line 610), `src/main.tsx`
-- Delete: `src/features/terminal/theme/catppuccin-mocha.ts` (its data now lives in `obsidian-lens.ts`)
-- Modify: `src/features/terminal/types/index.test.ts` (palette expectations move to importing `obsidianLens`)
+- Delete: `src/features/terminal/theme/catppuccin-mocha.ts` **and its sibling `catppuccin-mocha.test.ts`** (the palette values are asserted in `obsidian-lens.test.ts`; the `toXtermTheme` behavior moves to `toXtermTheme.test.ts`)
+- Check: `src/features/terminal/types/index.test.ts` for palette expectations (migrate any to `obsidianLens.terminal`)
 
 - [ ] **Step 1: Move `toXtermTheme` to its own file**
 
@@ -1456,7 +1532,13 @@ import { toXtermTheme } from '../../theme/toXtermTheme'
         theme: toXtermTheme(themeService.current().terminal),
 ```
 
-Delete `src/features/terminal/theme/catppuccin-mocha.ts`. Update `src/features/terminal/types/index.test.ts`: replace any import of `catppuccinMocha` with `import { obsidianLens } from '../../../theme'` and assert against `obsidianLens.terminal` (same values, e.g. `expect(obsidianLens.terminal.background).toBe('#1e1e2e')`).
+Delete `src/features/terminal/theme/catppuccin-mocha.ts` **and** `src/features/terminal/theme/catppuccin-mocha.test.ts` (its `toXtermTheme` assertions are superseded by `toXtermTheme.test.ts`; its palette assertions live in `obsidian-lens.test.ts`). If `src/features/terminal/types/index.test.ts` imports `catppuccinMocha`, replace with `import { obsidianLens } from '../../../theme'` and assert against `obsidianLens.terminal`. Acceptance grep:
+
+```bash
+grep -rn "catppuccin-mocha\|catppuccinMocha" src/
+```
+
+Expected: zero hits.
 
 In `src/main.tsx`, start the bridge right after init:
 
@@ -1632,13 +1714,16 @@ import { themeService } from '../../../theme'
 import { createEditorTheme } from '../theme/editorTheme'
 ```
 
-Inside the hook, next to the existing `languageCompartment` ref, add:
+**The view lives in a callback ref, not an effect** (`setContainer` at `useCodeMirror.ts:384` creates it; the destroy paths are the `setContainer` re-entry branch at ~line 386 and a separate unmount effect at ~line 468). Wire the subscription with a ref so every destroy path can release it:
+
+Inside the hook, next to the existing `languageCompartment` ref (~line 380), add:
 
 ```ts
 const themeCompartment = useRef(new Compartment())
+const themeUnsubscribeRef = useRef<(() => void) | null>(null)
 ```
 
-In the extensions array (~line 397), replace `catppuccinMocha,` with:
+In the extensions array (~line 409), replace `catppuccinMocha,` with:
 
 ```ts
       themeCompartment.current.of(
@@ -1646,10 +1731,17 @@ In the extensions array (~line 397), replace `catppuccinMocha,` with:
       ),
 ```
 
-After the view-creation effect, add a subscription effect (same effect that creates the view can register it; place it right after `const view = new EditorView({...})` so it captures `view`):
+In the `setContainer` destroy branch (~line 386), release the subscription **before** `viewRef.current.destroy()`:
 
 ```ts
-const unsubscribeTheme = themeService.subscribe((theme) => {
+themeUnsubscribeRef.current?.()
+themeUnsubscribeRef.current = null
+```
+
+Right after `setEditorView(view)` (~line 446), register the subscription for the new view:
+
+```ts
+themeUnsubscribeRef.current = themeService.subscribe((theme) => {
   view.dispatch({
     effects: themeCompartment.current.reconfigure(
       createEditorTheme(theme.kind)
@@ -1658,15 +1750,15 @@ const unsubscribeTheme = themeService.subscribe((theme) => {
 })
 ```
 
-…and call `unsubscribeTheme()` in that effect's existing cleanup (before `view.destroy()`).
+In the unmount effect (~line 468), add the same two release lines before its `destroy()` call.
 
-Delete `src/features/editor/theme/catppuccin.ts` and migrate any remaining importers of `EDITOR_MONO_FONT_FAMILY`:
+Delete `src/features/editor/theme/catppuccin.ts` **and** `src/features/editor/theme/catppuccin.test.ts` (replaced by `editorTheme.ts` / `editorTheme.test.ts`), then migrate any remaining importers:
 
 ```bash
-grep -rn "theme/catppuccin'" src/ --include="*.ts*"
+grep -rn "theme/catppuccin\|EDITOR_MONO_FONT_FAMILY" src/features/editor/ --include="*.ts*"
 ```
 
-Expected after edits: zero hits.
+Expected: hits only in `editorTheme.ts` / `editorTheme.test.ts` / `useCodeMirror.ts`.
 
 - [ ] **Step 5: Run editor tests + visual check, commit**
 
@@ -1770,9 +1862,9 @@ npm run type-check && npm run lint && npx vitest run && npm run build
 
 Expected: all green.
 
-- [ ] **Step 2: Manual smoke (zero visual change + working switch)**
+- [ ] **Step 2: Manual smoke (working switch + visual parity)**
 
-`npm run dev` (or `npm run electron:dev`): app renders identical to `main`. Open command palette → `:set theme flexoki` → entire UI, terminal, editor, diff flip live (Flexoki is still untuned — color correctness is Phase C; the mechanism is what's accepted here). `:set theme obsidian-lens` returns. Reload app — choice persisted.
+`npm run dev` (or `npm run electron:dev`): app renders identical to `main` **except the one deliberate change** — previously-unstyled scroll containers now show the thin themed scrollbar. Open command palette → `:set theme flexoki` → entire UI, terminal, editor, diff flip live (Flexoki is still untuned — color correctness is Phase C; the mechanism is what's accepted here). `:set theme obsidian-lens` returns. Reload app — choice persisted.
 
 - [ ] **Step 3: Commit any straggler fixes; tag the phase in the log**
 
@@ -1991,7 +2083,7 @@ git add -A && git commit -m "refactor(theme): dock components on semantic tokens
 
 **Files:**
 
-- Modify: `src/features/terminal/components/TerminalPane/index.tsx` (line 84–86), `TerminalPane/Header.tsx` (line 91), `BurnerTerminalPopup/index.tsx`, `src/features/agent-status/components/TokenCache.tsx`, `ActivityEvent.tsx`, `LiquidFill.tsx`, `src/features/browser/components/BrowserTabBar.tsx` (line 65), `BrowserTabFavicon.tsx`
+- Modify: `src/features/terminal/components/TerminalPane/index.tsx` (line 84–86), `TerminalPane/Header.tsx` (line 91), `BurnerTerminalPopup/index.tsx`, `src/features/agent-status/components/TokenCache.tsx`, `ActivityEvent.tsx`, `LiquidFill.tsx`, `liquidColors.ts` (constants → `var(--color-*)` references; its test already asserts theme values after Task 7), `src/features/browser/components/BrowserTabBar.tsx` (line 65), `BrowserTabFavicon.tsx`
 
 - [ ] **Step 1: Apply the mapping per file.** Representative complete transforms:
 
@@ -2057,48 +2149,15 @@ node scripts/audit-colors.mjs leaks
 
 Work the remaining files with the Task 13 table until `TOTAL: 0`. Any value without a mapping row → add a token (types + both themes + regenerate theme.css + sync test).
 
-- [ ] **Step 3: Migrate remaining color-asserting tests**
+- [ ] **Step 3: Confirm no test still reads removed sources**
 
-`src/features/workspace/WorkspaceView.visual.test.tsx` (lines 153–211): the `tailwindConfig.theme.extend.colors` object no longer exists. Rewrite the four token tests against the theme definition:
+The config-reading tests (`WorkspaceView.visual.test.tsx`, `liquidColors.test.ts`) were already migrated in Task 7 Step 10. Sweep for stragglers:
 
-```tsx
-import { obsidianLens } from '../../theme'
-
-describe('Color Tokens: Obsidian Lens theme', () => {
-  test('surface hierarchy tokens', () => {
-    expect(obsidianLens.ui.surface).toBe('#121221')
-    expect(obsidianLens.ui['surface-container-lowest']).toBe('#0d0d1c')
-    expect(obsidianLens.ui['surface-container-low']).toBe('#1a1a2a')
-    expect(obsidianLens.ui['surface-container']).toBe('#1e1e2e')
-    expect(obsidianLens.ui['surface-container-high']).toBe('#292839')
-    expect(obsidianLens.ui['surface-container-highest']).toBe('#333344')
-    expect(obsidianLens.ui['surface-bright']).toBe('#383849')
-  })
-
-  test('primary tokens', () => {
-    expect(obsidianLens.ui.primary).toBe('#e2c7ff')
-    expect(obsidianLens.ui['primary-container']).toBe('#cba6f7')
-    expect(obsidianLens.ui['primary-dim']).toBe('#d3b9f0')
-  })
-
-  test('semantic feedback tokens', () => {
-    expect(obsidianLens.ui.success).toBe('#50fa7b')
-    expect(obsidianLens.ui['success-muted']).toBe('#7defa1')
-    expect(obsidianLens.ui.tertiary).toBe('#ff94a5')
-    expect(obsidianLens.ui['tertiary-container']).toBe('#fd7e94')
-    expect(obsidianLens.ui.error).toBe('#ffb4ab')
-    expect(obsidianLens.ui['error-dim']).toBe('#d73357')
-  })
-
-  test('text tokens', () => {
-    expect(obsidianLens.ui['on-surface']).toBe('#e3e0f7')
-    expect(obsidianLens.ui['on-surface-variant']).toBe('#cdc3d1')
-    expect(obsidianLens.ui['outline-variant']).toBe('#4a444f')
-  })
-})
+```bash
+grep -rn "tailwind.config" src/ --include="*.test.*"
 ```
 
-(Remove the now-unused `tailwindConfig` import if nothing else uses it. `sections.test.ts` from the spec's batch 9 does not exist on this branch — the settings feature lives on `feat/settings-dialog-migration`; its integration note is in Task 22.)
+Expected: zero hits. (`sections.test.ts` from the spec's batch 9 does not exist on this branch — the settings feature lives on `feat/settings-dialog-migration`; its integration note is in Task 22.)
 
 - [ ] **Step 4: Phase B gate**
 
