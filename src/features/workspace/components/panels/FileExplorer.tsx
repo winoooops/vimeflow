@@ -107,7 +107,7 @@ export const FileExplorer = ({
           </div>
         )}
         {error && (
-          <div className="py-4 text-center font-mono text-xs text-red-400">
+          <div className="py-4 text-center font-mono text-xs text-error">
             {error}
           </div>
         )}
