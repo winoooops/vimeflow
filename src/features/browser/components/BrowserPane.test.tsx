@@ -213,9 +213,9 @@ describe('BrowserPane', () => {
     const { rerender } = render(
       <BrowserPane session={session} pane={browserPane} isActive />
     )
-    // #4fc8d6 — the WEB accent, which jsdom serializes to rgb().
+    // accent is now a CSS var reference; jsdom preserves var() in style strings.
     expect(screen.getByTestId('browser-pane').style.border).toContain(
-      'rgb(79, 200, 214)'
+      'var(--color-agent-browser-accent)'
     )
 
     rerender(

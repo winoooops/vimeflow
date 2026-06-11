@@ -43,5 +43,7 @@ test('gradient wash uses agent.accentDim in inline style', () => {
   )
   const header = screen.getByTestId('agent-status-panel-header')
   expect(header.getAttribute('style')).toMatch(/linear-gradient\(180deg/)
-  expect(header.getAttribute('style')).toMatch(/rgb\(125 239 161 \/ 0\.16\)/)
+  expect(header.getAttribute('style')).toMatch(
+    /var\(--color-agent-codex-accent-dim\)/
+  )
 })
