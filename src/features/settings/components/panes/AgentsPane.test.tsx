@@ -59,6 +59,22 @@ describe('AgentsPane', () => {
     })
   })
 
+  test('disables alias row controls when the shim toggle is turned off', async () => {
+    const user = userEvent.setup()
+    render(<AgentsPane />)
+
+    await user.click(
+      screen.getByRole('switch', { name: 'Manage agent shell aliases' })
+    )
+
+    const rows = screen.getAllByTestId('alias-row')
+    rows.forEach((row) => {
+      const fieldset = row.querySelector('fieldset')
+      expect(fieldset).toBeInTheDocument()
+      expect(fieldset).toBeDisabled()
+    })
+  })
+
   test('renders the info callout with the aliases.toml path', () => {
     render(<AgentsPane />)
 

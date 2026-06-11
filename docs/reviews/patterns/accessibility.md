@@ -3,7 +3,7 @@ id: accessibility
 category: a11y
 created: 2026-04-09
 last_updated: 2026-06-11
-ref_count: 22
+ref_count: 23
 ---
 
 # Accessibility
@@ -549,4 +549,13 @@ handlers must not trap focus without implementing the promised behavior.
 - **File:** `src/features/settings/components/SettingsHeader.tsx`
 - **Finding:** The "User" / "vimeflow" scope controls were plain `<button>` elements whose active state was represented only by CSS classes. Screen-reader users could activate the controls but could not determine which scope was selected or receive a semantic state change.
 - **Fix:** Wrapped the scope controls in a `<div role="radiogroup" aria-label="Settings scope">` and gave each scope button `role="radio"` with `aria-checked={scope === s}`. Updated co-located tests to query by `radio` role and assert `aria-checked` values.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 52. Alias rows look disabled but remain interactive when alias management is off
+
+- **Source:** github-claude | PR #422 round 5 | 2026-06-11
+- **Severity:** MEDIUM
+- **File:** `src/features/settings/components/panes/AgentsPane.tsx`
+- **Finding:** When the alias-management toggle was off, each alias row received only `opacity-45`; the descendant text inputs, selects, and remove button remained enabled and tabbable. This created a keyboard and assistive-technology mismatch because users encountered controls that were visually presented as inactive but announced and operated as active.
+- **Fix:** Wrapped the alias-row controls in a `<fieldset disabled={!shimOn} className="contents">` so that all descendant form controls and buttons are semantically disabled when alias management is off. Added a co-located test verifying the disabled fieldset state.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

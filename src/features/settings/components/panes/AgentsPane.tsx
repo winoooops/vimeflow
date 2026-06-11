@@ -89,55 +89,57 @@ export const AgentsPane = (): ReactElement => {
                   : 'border-b border-outline-variant/15'
               } ${shimOn ? '' : 'opacity-45'}`}
             >
-              <TextInput
-                width="100%"
-                mono
-                placeholder="cc"
-                value={a.alias}
-                onChange={(v) => update(a.id, 'alias', v)}
-                aria-label={`Alias for ${a.agent}`}
-              />
-              <Select
-                width="100%"
-                value={a.agent}
-                onChange={(v) => update(a.id, 'agent', v)}
-                aria-label={`Agent for ${a.alias || 'new alias'}`}
-                options={[
-                  { id: 'claude', label: 'Claude Code' },
-                  { id: 'codex', label: 'Codex CLI' },
-                  { id: 'gemini', label: 'Gemini CLI' },
-                  { id: 'shell', label: 'Shell only' },
-                ]}
-              />
-              <Select
-                width="100%"
-                value={a.model}
-                onChange={(v) => update(a.id, 'model', v)}
-                aria-label={`Model for ${a.alias || 'new alias'}`}
-                options={[
-                  { id: 'sonnet-4', label: 'sonnet-4' },
-                  { id: 'opus-4', label: 'opus-4' },
-                  { id: 'gpt-5-codex', label: 'gpt-5-codex' },
-                  { id: 'gemini-2.5', label: 'gemini-2.5' },
-                ]}
-              />
-              <TextInput
-                width="100%"
-                mono
-                placeholder="--continue"
-                value={a.extra}
-                onChange={(v) => update(a.id, 'extra', v)}
-                aria-label={`Extra flags for ${a.agent}`}
-              />
-              <button
-                type="button"
-                title="Remove alias"
-                onClick={() => remove(a.id)}
-                className="grid h-[22px] w-[22px] place-items-center rounded border-none bg-transparent text-on-surface-muted transition-colors hover:bg-tertiary/10 hover:text-tertiary"
-                data-testid="remove-alias"
-              >
-                <Icon name="delete" size={13} />
-              </button>
+              <fieldset disabled={!shimOn} className="contents">
+                <TextInput
+                  width="100%"
+                  mono
+                  placeholder="cc"
+                  value={a.alias}
+                  onChange={(v) => update(a.id, 'alias', v)}
+                  aria-label={`Alias for ${a.agent}`}
+                />
+                <Select
+                  width="100%"
+                  value={a.agent}
+                  onChange={(v) => update(a.id, 'agent', v)}
+                  aria-label={`Agent for ${a.alias || 'new alias'}`}
+                  options={[
+                    { id: 'claude', label: 'Claude Code' },
+                    { id: 'codex', label: 'Codex CLI' },
+                    { id: 'gemini', label: 'Gemini CLI' },
+                    { id: 'shell', label: 'Shell only' },
+                  ]}
+                />
+                <Select
+                  width="100%"
+                  value={a.model}
+                  onChange={(v) => update(a.id, 'model', v)}
+                  aria-label={`Model for ${a.alias || 'new alias'}`}
+                  options={[
+                    { id: 'sonnet-4', label: 'sonnet-4' },
+                    { id: 'opus-4', label: 'opus-4' },
+                    { id: 'gpt-5-codex', label: 'gpt-5-codex' },
+                    { id: 'gemini-2.5', label: 'gemini-2.5' },
+                  ]}
+                />
+                <TextInput
+                  width="100%"
+                  mono
+                  placeholder="--continue"
+                  value={a.extra}
+                  onChange={(v) => update(a.id, 'extra', v)}
+                  aria-label={`Extra flags for ${a.agent}`}
+                />
+                <button
+                  type="button"
+                  title="Remove alias"
+                  onClick={() => remove(a.id)}
+                  className="grid h-[22px] w-[22px] place-items-center rounded border-none bg-transparent text-on-surface-muted transition-colors hover:bg-tertiary/10 hover:text-tertiary"
+                  data-testid="remove-alias"
+                >
+                  <Icon name="delete" size={13} />
+                </button>
+              </fieldset>
             </div>
           ))}
         </div>
