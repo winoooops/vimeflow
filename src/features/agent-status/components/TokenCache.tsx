@@ -35,7 +35,7 @@ const cachedShareHex = (sharePct: number): string =>
   sharePct >= 70 ? '#7defa1' : sharePct >= 40 ? '#cba6f7' : '#ff94a5'
 
 const WROTE_STACK_GRADIENT = 'linear-gradient(90deg, #a8c8ff, #8aa9d8)'
-const FRESH_STACK_GRADIENT = 'linear-gradient(90deg, #ff94a5, #ffb4ab)'
+const FRESH_STACK_GRADIENT = 'linear-gradient(90deg, #fab387, #f9a87b)'
 
 const StackBar = ({
   cached,
