@@ -10,11 +10,11 @@ const SIDEBAR_TOGGLE_LEFT =
 const SIDEBAR_TOGGLE_SIZE = 'var(--workspace-sidebar-toggle-size, 28px)'
 const SIDEBAR_TOGGLE_TOP = 'var(--workspace-sidebar-toggle-top, 7px)'
 
-// The new sidebar chrome row. Uses the sidebar's own surface
-// (bg-surface-container-low) with no bottom divider, so the top bar blends into
-// the sidebar. The persistent sidebar toggle is owned by WorkspaceView so it
-// never changes position while this row slides beneath it. Native drag surrounds
-// the toggle slot but does not sit under the clickable toggle rectangle.
+// The new sidebar chrome row. Transparent so it blends into the now-transparent
+// sidebar surface with no bottom divider. The persistent sidebar toggle is owned
+// by WorkspaceView so it never changes position while this row slides beneath it.
+// Native drag surrounds the toggle slot but does not sit under the clickable
+// toggle rectangle.
 export const SidebarTopBar = ({
   reserveWindowControls = false,
 }: SidebarTopBarProps): ReactElement => {
@@ -23,7 +23,7 @@ export const SidebarTopBar = ({
   return (
     <div
       data-testid="sidebar-top-bar"
-      className="bg-surface-container-low"
+      className="bg-transparent"
       style={{
         height: 42,
         flexShrink: 0,

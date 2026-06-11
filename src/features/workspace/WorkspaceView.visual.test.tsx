@@ -245,11 +245,12 @@ describe('WorkspaceView - Visual Verification (Feature #20)', () => {
   })
 
   describe('Surface Hierarchy: Component Backgrounds', () => {
-    test('Sidebar uses Level 1 surface (surface-container-low)', () => {
+    test('Sidebar is transparent so it inherits the workspace surface', () => {
       render(<WorkspaceView />)
       const sidebar = screen.getByTestId('sidebar')
 
-      expect(sidebar.className).toContain('bg-surface-container-low')
+      expect(sidebar.className).toContain('bg-transparent')
+      expect(sidebar.className).not.toContain('bg-surface-container-low')
     })
 
     test('Terminal Zone content uses Level 0 surface (bg-surface)', () => {

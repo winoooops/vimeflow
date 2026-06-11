@@ -15,6 +15,14 @@ describe('SidebarTopBar', () => {
     ).not.toBeInTheDocument()
   })
 
+  test('renders a transparent surface so the top bar blends into the sidebar', () => {
+    renderTopBar()
+
+    const topBar = screen.getByTestId('sidebar-top-bar')
+    expect(topBar).toHaveClass('bg-transparent')
+    expect(topBar).not.toHaveClass('bg-surface-container-low')
+  })
+
   test('keeps expanded top-bar chrome draggable around the toggle slot on macOS', () => {
     renderTopBar({
       reserveWindowControls: true,

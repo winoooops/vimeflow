@@ -1581,8 +1581,9 @@ describe('WorkspaceView', () => {
     expect(mainWorkspace).toHaveClass('bg-background')
     expect(mainWorkspace.style.borderTopLeftRadius).toBe('16px')
     expect(mainWorkspace.style.borderBottomLeftRadius).toBe('16px')
-    expect(mainWorkspace.style.boxShadow).toContain('-18px')
-    expect(mainWorkspace.style.boxShadow).toContain('36px')
+    // No drop shadow: it would read as a dark gradient seam against the
+    // transparent sidebar. The rounded corners alone carry the sheet edge.
+    expect(mainWorkspace.style.boxShadow).toBe('')
     expect(mainWorkspace.style.transition).toContain('border-radius 220ms')
   })
 
@@ -1718,6 +1719,14 @@ describe('WorkspaceView', () => {
     }
   })
 
+  test('caps the sidebar resize range so the card + new-session row fit with even padding', () => {
+    render(<WorkspaceView />)
+
+    const handle = screen.getByTestId('sidebar-resize-handle')
+    expect(handle).toHaveAttribute('aria-valuemin', '272')
+    expect(handle).toHaveAttribute('aria-valuemax', '384')
+  })
+
   test('collapses the sidebar when drag ends below the default minimum width', async () => {
     render(<WorkspaceView />)
 
@@ -1749,6 +1758,11 @@ describe('WorkspaceView', () => {
     expect(sidebarShell.className).toContain('transition-[width]')
     expect(sidebarShell).toHaveStyle({ width: '0px' })
     expect(toggleSurface).toHaveStyle({ width: '0px' })
+    expect(toggleSurface.className).toContain('bg-transparent')
+    expect(toggleSurface.className).not.toContain('bg-surface-container-low')
+    expect(screen.getByTestId('sidebar-top-bar-placeholder')).toHaveClass(
+      'bg-transparent'
+    )
     expect(mainWorkspace.style.borderTopLeftRadius).toBe('0')
     expect(mainWorkspace.style.borderBottomLeftRadius).toBe('0')
   })
