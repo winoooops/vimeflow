@@ -41,7 +41,6 @@ const MenuRow = ({
 }): ReactElement => (
   <button
     type="button"
-    role="menuitem"
     onClick={onClick}
     className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left font-label text-[12px] transition-colors ${
       danger
@@ -77,6 +76,7 @@ const CardComponent = ({
   } = useRenameState(session, onRename)
   const [menuOpen, setMenuOpen] = useState(false)
   const triggerRef = useRef<HTMLButtonElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
 
   // Close the actions menu on Escape and return focus to the trigger button.
   useEffect(() => {
@@ -95,6 +95,26 @@ const CardComponent = ({
     document.addEventListener('keydown', handler)
 
     return (): void => document.removeEventListener('keydown', handler)
+  }, [menuOpen])
+
+  // Close the actions menu when clicking outside the kebab/menu container.
+  useEffect(() => {
+    if (!menuOpen) {
+      return
+    }
+
+    const handler = (e: MouseEvent): void => {
+      if (
+        menuRef.current !== null &&
+        !menuRef.current.contains(e.target as Node)
+      ) {
+        setMenuOpen(false)
+      }
+    }
+
+    document.addEventListener('mousedown', handler)
+
+    return (): void => document.removeEventListener('mousedown', handler)
   }, [menuOpen])
 
   const subtitleText = subtitle(session)
@@ -232,6 +252,7 @@ const CardComponent = ({
           group-focus-within) right on top of the full-width rename field. */}
       {hasActions && !isEditing && (
         <div
+          ref={menuRef}
           className={`pointer-events-auto absolute right-2 top-[7px] opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 ${
             menuOpen ? 'opacity-100' : ''
           }`}
@@ -245,7 +266,7 @@ const CardComponent = ({
             ref={triggerRef}
             type="button"
             aria-label="Session actions"
-            aria-haspopup="menu"
+            aria-haspopup="true"
             aria-expanded={menuOpen}
             onClick={(e) => {
               e.stopPropagation()
@@ -262,7 +283,6 @@ const CardComponent = ({
           </button>
           {menuOpen && (
             <div
-              role="menu"
               onClick={(e) => e.stopPropagation()}
               className="absolute right-0 top-7 z-40 min-w-[132px] rounded-[9px] border border-[rgba(74,68,79,0.45)] bg-[#1c1c30] p-1 shadow-[0_10px_28px_rgba(0,0,0,0.45)]"
             >

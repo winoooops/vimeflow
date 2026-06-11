@@ -3,7 +3,7 @@ id: accessibility
 category: a11y
 created: 2026-04-09
 last_updated: 2026-06-11
-ref_count: 20
+ref_count: 21
 ---
 
 # Accessibility
@@ -486,4 +486,22 @@ handlers must not trap focus without implementing the promised behavior.
 - **File:** `src/features/sessions/components/Card.tsx`
 - **Finding:** The kebab trigger button declares `aria-haspopup="menu"`, which commits to an ARIA menu popup contract requiring the popup element to carry `role="menu"` and each item to carry `role="menuitem"`. The popup `<div>` and `MenuRow` buttons had neither role, breaking the screen-reader menu-navigation contract.
 - **Fix:** Added `role="menu"` to the popup `<div>` and `role="menuitem"` to the `<button>` inside `MenuRow`.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 45. Menu roles without keyboard contract mislead assistive technology
+
+- **Source:** github-claude | PR #421 round 3 | 2026-06-11
+- **Severity:** MEDIUM
+- **File:** `src/features/sessions/components/Card.tsx`
+- **Finding:** A prior cycle added `role="menu"` and `role="menuitem"` to the kebab popup and its items, but the component did not implement the full APG menu keyboard contract (arrow-key navigation, initial focus into the menu, Home/End). Screen readers announced a menu widget that keyboard users could not operate with expected menu navigation, producing a broken ARIA contract.
+- **Fix:** Downgraded to generic popup semantics by removing `role="menu"` and `role="menuitem"`, changing `aria-haspopup="menu"` to `aria-haspopup="true"`, and keeping `aria-expanded` for open/closed state disclosure. The popup remains a simple two-item button group.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 46. Popup menu stays open on pointer clicks outside the container
+
+- **Source:** github-claude | PR #421 round 3 | 2026-06-11
+- **Severity:** MEDIUM
+- **File:** `src/features/sessions/components/Card.tsx`
+- **Finding:** The actions popup closed on `onBlur` (when focus left the wrapper) and on Escape, but clicking a non-focusable area of the sidebar did not move focus and therefore did not trigger blur, leaving the popup visibly stuck open during normal pointer use.
+- **Fix:** Added a document-level `mousedown` listener active while `menuOpen === true` that calls `setMenuOpen(false)` when the event target is outside the kebab/menu container. The listener is registered in a `useEffect` with cleanup on unmount or menu close.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
