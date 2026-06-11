@@ -89,9 +89,22 @@ const normalizeShellName = (shellName: string | null | undefined): string => {
   return stripped
 }
 
+// cheat.sh serves a real, populated cheatsheet at /<topic>; every normalized
+// shell name in KNOWN_SHELLS resolves to one, except for two topics cheat.sh
+// has no page of its own for:
+//   - `shell`: the sentinel normalizeShellName returns when no concrete shell
+//     is resolved (e.g. a shell pane whose `shell` is still null) — fall back
+//     to the POSIX `sh` cheatsheet rather than the unknown `shell` topic.
+//   - `pwsh`: cheat.sh treats it as a bare alias and serves no content — use
+//     the populated `powershell` topic.
+const CHEATSHEET_TOPIC: Record<string, string> = {
+  shell: 'sh',
+  pwsh: 'powershell',
+}
+
 const shellCheatsheetUrl = (shellName: string): string =>
-  `https://www.google.com/search?q=${encodeURIComponent(
-    `${shellName} commands cheatsheet`
+  `https://cheat.sh/${encodeURIComponent(
+    CHEATSHEET_TOPIC[shellName] ?? shellName
   )}`
 
 const TurnPill = ({ turns }: { turns: number | null }): ReactElement => (
