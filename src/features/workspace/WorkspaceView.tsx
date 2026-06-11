@@ -47,6 +47,7 @@ import {
   COMMAND_PALETTE_SHORTCUT_KEYS,
   useCommandPalette,
 } from '../command-palette/hooks/useCommandPalette'
+import { SettingsDialog, useSettingsDialog } from '../settings'
 import {
   usePaneRenameChord,
   type FocusedPaneRef,
@@ -146,11 +147,6 @@ const formatStatusDuration = (durationMs: number): string | undefined => {
 
   return `${minutes}m`
 }
-
-// Follow-up tracked at https://github.com/winoooops/vimeflow/issues/252
-// (Settings dialog — Zed-style modal with 14 categories). Remove
-// this const and the gear's `aria-disabled` once the dialog lands.
-const SETTINGS_FOLLOWUP_ISSUE_NUMBER = 252
 
 const SIDEBAR_DEFAULT = 272
 const SIDEBAR_MIN = SIDEBAR_DEFAULT
@@ -1176,8 +1172,10 @@ export const WorkspaceView = (): ReactElement => {
     ]
   )
 
+  const settings = useSettingsDialog()
+
   const commandPalette = useCommandPalette(workspaceCommands, {
-    enabled: !showUnsavedDialog,
+    enabled: !showUnsavedDialog && !settings.isOpen,
   })
 
   usePaneShortcuts({
@@ -1613,6 +1611,7 @@ export const WorkspaceView = (): ReactElement => {
     terminalFitDeferred ||
     showUnsavedDialog ||
     commandPalette.state.isOpen ||
+    settings.isOpen ||
     paneRenameNode !== null ||
     fileError !== null ||
     infoMessage !== null
@@ -1904,9 +1903,7 @@ export const WorkspaceView = (): ReactElement => {
               }
               footer={
                 isSidebarClosed ? undefined : (
-                  <SidebarSettingsFooter
-                    settingsIssueNumber={SETTINGS_FOLLOWUP_ISSUE_NUMBER}
-                  />
+                  <SidebarSettingsFooter onSettings={settings.open} />
                 )
               }
             />
@@ -2133,6 +2130,8 @@ export const WorkspaceView = (): ReactElement => {
         setQuery={commandPalette.setQuery}
         selectIndex={commandPalette.selectIndex}
       />
+
+      <SettingsDialog open={settings.isOpen} onClose={settings.close} />
     </div>
   )
 }

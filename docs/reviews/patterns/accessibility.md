@@ -3,7 +3,7 @@ id: accessibility
 category: a11y
 created: 2026-04-09
 last_updated: 2026-06-11
-ref_count: 21
+ref_count: 23
 ---
 
 # Accessibility
@@ -504,4 +504,85 @@ handlers must not trap focus without implementing the promised behavior.
 - **File:** `src/features/sessions/components/Card.tsx`
 - **Finding:** The actions popup closed on `onBlur` (when focus left the wrapper) and on Escape, but clicking a non-focusable area of the sidebar did not move focus and therefore did not trigger blur, leaving the popup visibly stuck open during normal pointer use.
 - **Fix:** Added a document-level `mousedown` listener active while `menuOpen === true` that calls `setMenuOpen(false)` when the event target is outside the kebab/menu container. The listener is registered in a `useEffect` with cleanup on unmount or menu close.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 47. SettingsDialog opens without focus management or Tab trap
+
+- **Source:** github-claude | PR #422 round 1 | 2026-06-11
+- **Severity:** MEDIUM
+- **File:** `src/features/settings/SettingsDialog.tsx`
+- **Finding:** The dialog declared `role="dialog"` and `aria-modal="true"` but performed no focus management on open or close. The triggering button retained focus, `Tab` could escape into the workspace behind the modal, and focus was not restored when the dialog closed.
+- **Fix:** Captured `previousFocusRef` on open, focused the close button via `useEffect`, added a document `keydown` listener that traps `Tab`/`Shift+Tab` within the dialog's focusable elements, and restored the prior focus on close.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 48. SettingsDialog lacks initial focus and Tab trap for modal keyboard users
+
+- **Source:** github-codex-connector | PR #422 round 1 | 2026-06-11
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/settings/SettingsDialog.tsx`
+- **Finding:** Opening the dialog from the sidebar footer left focus on the footer; there was no initial focus move, no Tab trap, and no inerting of the background workspace, so keyboard users could Tab into and activate underlying workspace controls while `aria-modal` advertised a modal dialog.
+- **Fix:** Same focus-management change as the previous entry: capture prior focus, focus the close button on open, trap Tab within the dialog, and restore focus on close.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 49. SettingsToggle button exposes only a label, not its on/off state
+
+- **Source:** github-codex-connector | PR #422 round 1 | 2026-06-11
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/settings/components/controls.tsx`
+- **Finding:** The settings toggles rendered as plain `<button>` elements with only an accessible label, so screen readers could not tell whether settings like "Use System Prompts" were currently on or off.
+- **Fix:** Added `role="switch"` and `aria-checked={on}` to the `Toggle` button so assistive technology exposes the current on/off state.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 50. Settings search input lacks a programmatic accessible name
+
+- **Source:** github-claude | PR #422 round 3 | 2026-06-11
+- **Severity:** MEDIUM
+- **File:** `src/features/settings/components/SettingsSidebar.tsx`
+- **Finding:** The sidebar search `<input>` carried only a `placeholder` attribute with no `aria-label`, `id`/`<label>` pair, or `aria-labelledby`. Placeholder text is not a reliable accessible name across screen reader and browser combinations, so a screen-reader user could encounter an unnamed primary search control inside the modal.
+- **Fix:** Added `aria-label="Search settings"` to the `<input>` and updated the co-located test to query by the accessible name (`getByRole('textbox', { name: 'Search settings' })`).
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 51. Settings scope switcher has no accessible selected state
+
+- **Source:** github-claude | PR #422 round 3 | 2026-06-11
+- **Severity:** MEDIUM
+- **File:** `src/features/settings/components/SettingsHeader.tsx`
+- **Finding:** The "User" / "vimeflow" scope controls were plain `<button>` elements whose active state was represented only by CSS classes. Screen-reader users could activate the controls but could not determine which scope was selected or receive a semantic state change.
+- **Fix:** Wrapped the scope controls in a `<div role="radiogroup" aria-label="Settings scope">` and gave each scope button `role="radio"` with `aria-checked={scope === s}`. Updated co-located tests to query by `radio` role and assert `aria-checked` values.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 52. Alias rows look disabled but remain interactive when alias management is off
+
+- **Source:** github-claude | PR #422 round 5 | 2026-06-11
+- **Severity:** MEDIUM
+- **File:** `src/features/settings/components/panes/AgentsPane.tsx`
+- **Finding:** When the alias-management toggle was off, each alias row received only `opacity-45`; the descendant text inputs, selects, and remove button remained enabled and tabbable. This created a keyboard and assistive-technology mismatch because users encountered controls that were visually presented as inactive but announced and operated as active.
+- **Fix:** Wrapped the alias-row controls in a `<fieldset disabled={!shimOn} className="contents">` so that all descendant form controls and buttons are semantically disabled when alias management is off. Added a co-located test verifying the disabled fieldset state.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 53. Tab trap hasAttribute check misses fieldset-inherited disabled state
+
+- **Source:** github-claude | PR #422 round 6 | 2026-06-11
+- **Severity:** MEDIUM
+- **File:** `src/features/settings/SettingsDialog.tsx`
+- **Finding:** The focusable-element filter in the Tab trap used `!el.hasAttribute('disabled')`, which only checks whether the DOM attribute is literally present on the element. Descendant controls inside a disabled `<fieldset>` inherit disabled state without the attribute, so they passed the filter and the trap tried to focus them, causing Tab to stall on alias-row controls when alias management is off.
+- **Fix:** Replaced `!el.hasAttribute('disabled')` with `!el.matches(':disabled')` so the filter respects the HTML spec's disabled-fieldset-descendant semantics.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 54. Active settings sidebar section button missing `aria-current` — invisible to AT
+
+- **Source:** github-claude | PR #422 round 7 | 2026-06-11
+- **Severity:** MEDIUM
+- **File:** `src/features/settings/components/SettingsSidebar.tsx`
+- **Finding:** The currently-active section button was distinguished only by CSS classes (`text-primary`, `bg-primary-container/10`). No accessible attribute communicated the selection state to assistive technology, so screen-reader users heard each item announced identically as a button with no indication of which section was shown in the pane.
+- **Fix:** Added `aria-current={isActive ? 'page' : undefined}` to the active section button and added a co-located test asserting the attribute on the active item and its absence on inactive items.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 55. AppearancePane scheme selector cards convey active state only via CSS, not ARIA
+
+- **Source:** github-claude | PR #422 round 7 | 2026-06-11
+- **Severity:** MEDIUM
+- **File:** `src/features/settings/components/panes/AppearancePane.tsx`
+- **Finding:** Each color-scheme card was a `<button>` whose selected state was indicated only by border/background CSS classes and an `aria-hidden` checkmark icon. Screen readers received no ARIA attribute communicating which scheme was currently active, so every button was announced identically.
+- **Fix:** Added `aria-pressed={isActive}` to each scheme button and added a co-located test asserting the pressed state for the default active scheme and an inactive scheme.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

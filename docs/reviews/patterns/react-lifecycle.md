@@ -3,7 +3,7 @@ id: react-lifecycle
 category: react-patterns
 created: 2026-04-09
 last_updated: 2026-06-11
-ref_count: 14
+ref_count: 15
 ---
 
 # React Lifecycle
@@ -310,4 +310,31 @@ to avoid unintended re-runs (e.g., PTY respawning on every cwd change).
 - **File:** `src/features/workspace/WorkspaceView.tsx`, `src/features/workspace/components/AgentStatusCard.tsx`
 - **Finding:** `sidebarCardState` was computed through a 5-branch ternary over `activityPanelStatus` and `agentStatus.isActive` on every render, then passed as `state={sidebarCardState}` to `AgentStatusCard` where it was immediately discarded via `void state`. No state-driven visual output existed in the card, so the computation served no purpose and misled the component interface.
 - **Fix:** Removed `sidebarCardState` computation from `WorkspaceView`, removed the `state` prop from `AgentStatusCardProps`, and updated co-located tests to match the new prop contract.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 31. AnimatePresence condition placed before the wrapper, killing exit animations
+
+- **Source:** github-claude | PR #422 round 1 | 2026-06-11
+- **Severity:** HIGH
+- **File:** `src/features/settings/SettingsDialog.tsx`
+- **Finding:** `SettingsDialog` returned `null` when `open` was false before reaching the `<AnimatePresence>` wrapper. When `open` flipped to false, React unmounted the entire `AnimatePresence>` tree immediately, so the backdrop and panel `exit` animations never ran and the dialog snapped closed.
+- **Fix:** Removed the early `if (!open) return null` guard and moved the condition inside `<AnimatePresence>` as `{open && (...)}`, matching the existing `CommandPalette` and `UnsavedChangesDialog` pattern.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 32. Unused `section` prop widens SettingsHeader public API surface
+
+- **Source:** github-claude | PR #422 round 1 | 2026-06-11
+- **Severity:** LOW
+- **File:** `src/features/settings/components/SettingsHeader.tsx`, `src/features/settings/types.ts`, `src/features/settings/SettingsDialog.tsx`
+- **Finding:** `SettingsHeaderProps` declared `section: SettingsSection | undefined` and `SettingsDialog` passed `section={activeSection}`, but `SettingsHeader` destructured only `{ scope, onScope }` — the prop was silently dropped. Callers were forced to provide a value for a field that had no consumer, and tests passed the prop without asserting on any section-related output.
+- **Fix:** Removed the `section` field from `SettingsHeaderProps`, removed `section={activeSection}` from the `SettingsDialog` call site, and cleaned up the co-located test props.
+- **Commit:** same commit as this entry
+
+### 33. Component state survives open/close cycles when the component is permanently mounted
+
+- **Source:** github-claude | PR #422 round 3 | 2026-06-11
+- **Severity:** LOW
+- **File:** `src/features/settings/SettingsDialog.tsx`
+- **Finding:** `SettingsDialog` is permanently mounted in `WorkspaceView` (inside `AnimatePresence` with an `{open && ...}` guard rather than being conditionally rendered). The `query` state lived in the component body above the `open` guard, so it survived dialog close and was still active when the dialog reopened. A user who typed a search term, closed the dialog, and reopened it would see a filtered sidebar with no visible indication that a filter was active.
+- **Fix:** Added `useEffect(() => { if (!open) setQuery('') }, [open])` to reset the search query whenever the dialog closes. Added a co-located test asserting the query is cleared on close/reopen.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

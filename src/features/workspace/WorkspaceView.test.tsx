@@ -1207,10 +1207,10 @@ describe('WorkspaceView', () => {
       within(topBar).queryByRole('button', { name: 'Command Palette' })
     ).not.toBeInTheDocument()
 
-    // Settings aria-label is "Settings — coming (see issue #252)".
+    // Settings button is now wired and enabled.
     expect(
       within(footer).getByRole('button', { name: /^Settings/ })
-    ).toHaveAttribute('aria-disabled', 'true')
+    ).not.toHaveAttribute('aria-disabled')
   })
 
   test('passes sessions to Sidebar', () => {

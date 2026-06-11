@@ -132,10 +132,10 @@ describe('Feature 23: Final Phase 2 Verification', () => {
         within(topBar).queryByRole('button', { name: 'Command Palette' })
       ).not.toBeInTheDocument()
 
-      // Settings aria-label is "Settings — coming (see issue #252)".
+      // Settings button is now wired and enabled.
       expect(
         within(footer).getByRole('button', { name: /^Settings/ })
-      ).toHaveAttribute('aria-disabled', 'true')
+      ).not.toHaveAttribute('aria-disabled')
     })
   })
 

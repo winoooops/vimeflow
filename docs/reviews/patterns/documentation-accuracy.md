@@ -2,7 +2,7 @@
 id: documentation-accuracy
 category: code-quality
 created: 2026-04-09
-last_updated: 2026-06-08
+last_updated: 2026-06-11
 ref_count: 25
 ---
 
@@ -800,4 +800,22 @@ Stale documentation misleads future contributors and review agents.
 - **File:** `electron/browser-pane.ts`
 - **Finding:** `installFaviconEmitter` had to run before history restore or URL load because Electron can emit `page-favicon-updated` during replay, but no inline comment documented that ordering contract. A future refactor could move the emitter after restore and silently drop restored-tab favicons.
 - **Fix:** Added a short comment directly above `installFaviconEmitter` stating that it must precede history restore/load because the favicon event can fire during that work.
+- **Commit:** same commit as this entry
+
+### 86. Corrupted YAML frontmatter in review-pattern files after count update
+
+- **Source:** github-claude | PR #422 round 1 | 2026-06-11
+- **Severity:** MEDIUM
+- **File:** `docs/reviews/patterns/accessibility.md`, `docs/reviews/patterns/react-lifecycle.md`
+- **Finding:** `last_updated: 2026-06-11` was replaced with the bare string `P26-06-11` (no key, no colon) in both files during an automated frontmatter edit. A bare scalar inside a YAML mapping block is a parse error; strict YAML parsers reject the document and lenient ones silently drop the field.
+- **Fix:** Restored both lines to `last_updated: 2026-06-11`.
+- **Commit:** same commit as this entry
+
+### 87. Review index table rows malformatted after count update
+
+- **Source:** github-claude | PR #422 round 1 | 2026-06-11
+- **Severity:** LOW
+- **File:** `docs/reviews/CLAUDE.md`
+- **Finding:** The React Lifecycle and Accessibility rows in the index table were rewritten with a leading space before the opening `|`, collapsed column widths, and an extra empty cell `|  |` at the end. Most Markdown renderers produce broken output for misaligned pipe tables.
+- **Fix:** Re-aligned both rows to match the surrounding pipe-table style and removed the trailing empty cell.
 - **Commit:** same commit as this entry
