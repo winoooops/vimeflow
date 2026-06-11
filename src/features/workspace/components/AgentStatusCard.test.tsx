@@ -25,6 +25,27 @@ describe('AgentStatusCard', () => {
     expect(screen.getByText('claude-sonnet-4-6')).toBeInTheDocument()
   })
 
+  test('splits a "(<size> context)" title into a name + compact context badge', () => {
+    render(<AgentStatusCard title="Opus 4.8 (1M context)" state="running" />)
+
+    expect(screen.getByText('Opus 4.8')).toBeInTheDocument()
+    expect(screen.getByTestId('agent-card-context-badge')).toHaveTextContent(
+      '1M'
+    )
+
+    // The raw "(1M context)" suffix must not render inline — it truncated to
+    // "Opus 4.8 (1M cont…" before this split.
+    expect(screen.queryByText('Opus 4.8 (1M context)')).not.toBeInTheDocument()
+  })
+
+  test('omits the context badge when the title has no context suffix', () => {
+    render(<AgentStatusCard title="claude-sonnet-4-6" state="running" />)
+
+    expect(
+      screen.queryByTestId('agent-card-context-badge')
+    ).not.toBeInTheDocument()
+  })
+
   test('no longer renders the in-card sidebar toggle (moved to the top bar / tab bar)', () => {
     render(<AgentStatusCard title="m" state="running" />)
 

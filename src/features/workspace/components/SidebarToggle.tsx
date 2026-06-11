@@ -24,19 +24,13 @@ export interface SidebarToggleProps {
 const VARIANT_CLASS: Record<SidebarToggleVariant, string> = {
   ghost:
     'border border-transparent text-on-surface-muted hover:bg-primary/[0.08] hover:text-primary',
-  // The inset hover *background* is applied separately (INSET_HOVER_BG) because
-  // it depends on collapse state; the recessed well + text hover live here.
+  // Inset = a recessed well at rest (surface-container-lowest); on hover it
+  // lifts with a primary (lavender) tint in both collapse states, matching the
+  // ghost variant's primary hover. An earlier revision deepened the well toward
+  // navy on hover when expanded, but against the now-transparent sidebar that
+  // read as no change at all — so the toggle always lifts lighter.
   inset:
-    'border border-transparent bg-[rgba(13,13,28,0.45)] text-on-surface-muted hover:text-primary',
-}
-
-// Inset-toggle hover tint, keyed by collapse state. The sidebar surface is now
-// transparent, so the toggle reads against a different backdrop in each state:
-// expanded deepens toward the navy well (darker), while collapsed lifts with a
-// lavender tint (lighter) since the control then floats over the main content.
-const INSET_HOVER_BG: Record<'expanded' | 'collapsed', string> = {
-  expanded: 'hover:bg-[rgba(13,13,28,0.72)]',
-  collapsed: 'hover:bg-[rgba(226,199,255,0.14)]',
+    'border border-transparent bg-surface-container-lowest/[0.45] text-on-surface-muted hover:bg-primary/[0.14] hover:text-primary',
 }
 
 // Codex / VS-Code-style "panel-left" glyph. Outline + left-rail divider are
@@ -70,7 +64,7 @@ export const SidebarToggle = forwardRef<HTMLButtonElement, SidebarToggleProps>(
         aria-label={collapsed ? 'Show sidebar' : 'Hide sidebar'}
         aria-expanded={!collapsed}
         style={{ width: size, height: size }}
-        className={`vf-app-no-drag grid shrink-0 cursor-pointer place-items-center rounded-[7px] transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary-container ${VARIANT_CLASS[variant]} ${variant === 'inset' ? (collapsed ? INSET_HOVER_BG.collapsed : INSET_HOVER_BG.expanded) : ''}`}
+        className={`vf-app-no-drag grid shrink-0 cursor-pointer place-items-center rounded-[7px] transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary-container ${VARIANT_CLASS[variant]}`}
       >
         <svg
           width="16"
