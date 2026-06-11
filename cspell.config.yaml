@@ -2,6 +2,18 @@ version: '0.2'
 language: en
 
 words:
+  # Settings dialog domain terms (UI labels / scheme + font names)
+  - keymap
+  - Keymap
+  - KEYMAPS
+  - collab
+  - flexoki
+  - Flexoki
+  - fraunces
+  - Fraunces
+  - fira
+  - Fira
+
   # Claude Code tool names (also used uppercased in UI labels)
   - webfetch
   - websearch

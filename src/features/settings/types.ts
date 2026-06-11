@@ -1,0 +1,133 @@
+import type { ReactNode } from 'react'
+
+export type SettingsSectionId =
+  | 'general'
+  | 'appearance'
+  | 'keymap'
+  | 'agents'
+  | 'editor'
+  | 'terminal'
+  | 'languages'
+  | 'search'
+  | 'window'
+  | 'panels'
+  | 'version'
+  | 'collab'
+  | 'ai'
+  | 'network'
+
+export interface SettingsSection {
+  id: SettingsSectionId
+  label: string
+  icon: string
+}
+
+export interface SettingsDialogProps {
+  open: boolean
+  onClose: () => void
+}
+
+export interface SettingsSidebarProps {
+  sections: SettingsSection[]
+  active: SettingsSectionId
+  onPick: (id: SettingsSectionId) => void
+  query: string
+  onQuery: (query: string) => void
+}
+
+export type SettingsScope = 'User' | 'vimeflow'
+
+export interface SettingsHeaderProps {
+  scope: SettingsScope
+  onScope: (scope: SettingsScope) => void
+  section: SettingsSection | undefined
+}
+
+export interface IconProps {
+  name: string
+  size?: number
+  fill?: boolean
+  className?: string
+}
+
+export interface KbdProps {
+  children: ReactNode
+}
+
+export interface RowProps {
+  label: string
+  hint?: string
+  children?: ReactNode
+  last?: boolean
+}
+
+export interface PaneTitleProps {
+  title: string
+  sub?: string
+}
+
+export interface ToggleProps {
+  on?: boolean
+  onChange: (value: boolean) => void
+  'aria-label'?: string
+}
+
+export interface SelectOption {
+  id: string
+  label: string
+}
+
+export interface SelectProps {
+  value: string
+  options: SelectOption[] | string[]
+  onChange: (value: string) => void
+  width?: string | number
+  'aria-label'?: string
+}
+
+export interface GhostButtonProps {
+  children: ReactNode
+  onClick?: () => void
+}
+
+export interface TextInputProps {
+  value: string
+  onChange: (value: string) => void
+  placeholder?: string
+  width?: string | number
+  mono?: boolean
+  'aria-label'?: string
+}
+
+export interface AppearanceScheme {
+  id: string
+  label: string
+  accent: string
+  surface: string
+  text: string
+}
+
+export interface KeymapBinding {
+  id: string
+  label: string
+  keys: string[]
+}
+
+export interface AgentAlias {
+  id: string
+  alias: string
+  agent: string
+  model: string
+  extra: string
+}
+
+export interface PlaceholderPaneProps {
+  section: SettingsSection
+}
+
+export interface UseSettingsDialogReturn {
+  isOpen: boolean
+  open: () => void
+  close: () => void
+  toggle: () => void
+}
