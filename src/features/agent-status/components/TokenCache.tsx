@@ -16,15 +16,16 @@ export interface TokenCacheProps {
 const JETBRAINS = "'JetBrains Mono', monospace"
 
 const TONE_HEX: Record<CacheTone, string> = {
-  healthy: '#7defa1',
-  warming: '#e2c7ff',
-  cold: '#ff94a5',
+  healthy: 'var(--color-agent-codex-accent)',
+  warming: 'var(--color-primary)',
+  cold: 'var(--color-tertiary)',
 }
 
 const TONE_TINT: Record<CacheTone, string> = {
-  healthy: 'rgba(125,239,161,0.06)',
-  warming: 'rgba(203,166,247,0.06)',
-  cold: 'rgba(255,148,165,0.06)',
+  healthy:
+    'color-mix(in srgb, var(--color-agent-codex-accent) 6%, transparent)',
+  warming: 'color-mix(in srgb, var(--color-primary-container) 6%, transparent)',
+  cold: 'color-mix(in srgb, var(--color-tertiary) 6%, transparent)',
 }
 
 // Kit formatter — one decimal at >=1k (8.4k, 2.0k), raw below.
@@ -32,10 +33,17 @@ const fmt = (n: number): string =>
   n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n)
 
 const cachedShareHex = (sharePct: number): string =>
-  sharePct >= 70 ? '#7defa1' : sharePct >= 40 ? '#cba6f7' : '#ff94a5'
+  sharePct >= 70
+    ? 'var(--color-agent-codex-accent)'
+    : sharePct >= 40
+      ? 'var(--color-primary-container)'
+      : 'var(--color-tertiary)'
 
-const WROTE_STACK_GRADIENT = 'linear-gradient(90deg, #a8c8ff, #8aa9d8)'
-const FRESH_STACK_GRADIENT = 'linear-gradient(90deg, #fab387, #f9a87b)'
+const WROTE_STACK_GRADIENT =
+  'linear-gradient(90deg, var(--color-secondary), color-mix(in srgb, var(--color-secondary) 70%, var(--color-surface-container)))'
+
+const FRESH_STACK_GRADIENT =
+  'linear-gradient(90deg, var(--color-warning), color-mix(in srgb, var(--color-warning) 70%, var(--color-surface-container)))'
 
 const StackBar = ({
   cached,
@@ -53,7 +61,10 @@ const StackBar = ({
       <div
         data-testid="token-cache-stack-empty"
         className="h-2 w-full rounded-full"
-        style={{ background: 'rgba(74,68,79,0.25)' }}
+        style={{
+          background:
+            'color-mix(in srgb, var(--color-outline-variant) 25%, transparent)',
+        }}
       />
     )
   }
@@ -67,16 +78,18 @@ const StackBar = ({
     <div
       className="flex h-2 w-full overflow-hidden rounded-full"
       style={{
-        background: 'rgba(13,13,28,0.6)',
-        border: '1px solid rgba(74,68,79,0.25)',
+        background:
+          'color-mix(in srgb, var(--color-surface-container-lowest) 60%, transparent)',
+        border:
+          '1px solid color-mix(in srgb, var(--color-outline-variant) 25%, transparent)',
       }}
     >
       <div
         data-testid="token-cache-stack-cached"
         style={{
           width: `${cPct}%`,
-          background: `linear-gradient(90deg, ${cTone}, ${cTone}cc)`,
-          boxShadow: `inset 0 0 6px ${cTone}55`,
+          background: `linear-gradient(90deg, ${cTone}, color-mix(in srgb, ${cTone} 80%, transparent))`,
+          boxShadow: `inset 0 0 6px color-mix(in srgb, ${cTone} 33%, transparent)`,
         }}
       />
       <div
@@ -139,8 +152,8 @@ export const TokenCache = ({
 
   const cardStyle: CSSProperties = {
     borderRadius: 10,
-    border: `1px solid ${toneHex}26`,
-    background: `linear-gradient(135deg, ${TONE_TINT[tone]}, rgba(13,13,28,0.5))`,
+    border: `1px solid color-mix(in srgb, ${toneHex} 15%, transparent)`,
+    background: `linear-gradient(135deg, ${TONE_TINT[tone]}, color-mix(in srgb, var(--color-surface-container-lowest) 50%, transparent))`,
   }
 
   return (
@@ -181,8 +194,10 @@ export const TokenCache = ({
       <div
         style={{
           padding: '11px 14px 13px',
-          borderTop: '1px solid rgba(74,68,79,0.2)',
-          background: 'rgba(13,13,28,0.25)',
+          borderTop:
+            '1px solid color-mix(in srgb, var(--color-outline-variant) 20%, transparent)',
+          background:
+            'color-mix(in srgb, var(--color-surface-container-lowest) 25%, transparent)',
         }}
       >
         <StackBar {...buckets} />

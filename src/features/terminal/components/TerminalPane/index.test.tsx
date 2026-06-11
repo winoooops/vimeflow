@@ -337,7 +337,8 @@ describe('TerminalPane index', () => {
     })
 
     expect(screen.getByTestId('terminal-pane-focus-ring')).toHaveStyle({
-      border: '1px solid rgba(74,68,79,0.22)',
+      border:
+        '1px solid color-mix(in srgb, var(--color-outline-variant) 22%, transparent)',
     })
   })
 

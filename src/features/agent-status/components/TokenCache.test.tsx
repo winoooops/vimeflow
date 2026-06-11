@@ -140,11 +140,11 @@ describe('TokenCache — stack bar', () => {
 
     expect(
       screen.getByTestId('token-cache-stack-wrote').getAttribute('style')
-    ).toContain('linear-gradient(90deg, #a8c8ff, #8aa9d8)')
+    ).toContain('linear-gradient(90deg, var(--color-secondary),')
 
     expect(
       screen.getByTestId('token-cache-stack-fresh').getAttribute('style')
-    ).toContain('linear-gradient(90deg, #fab387, #f9a87b)')
+    ).toContain('linear-gradient(90deg, var(--color-warning),')
   })
 
   test('cached and fresh styles differ in cold-cache state', () => {
@@ -154,6 +154,6 @@ describe('TokenCache — stack bar', () => {
       .getByTestId('token-cache-stack-fresh')
       .getAttribute('style')
 
-    expect(freshStyle).not.toContain('#ff94a5')
+    expect(freshStyle).not.toContain('rgba(255,148,165')
   })
 })

@@ -2,9 +2,11 @@ import { useEffect, useState, type ReactElement } from 'react'
 import { faviconPlaceholder, type FaviconTone } from '../faviconPlaceholder'
 
 const TONE_CLASS: Record<FaviconTone, string> = {
-  cyan: 'text-[#4fc8d6] bg-[rgba(79,200,214,0.12)]',
-  mauve: 'text-[#cba6f7] bg-[rgba(203,166,247,0.12)]',
-  coral: 'text-[#ff94a5] bg-[rgba(255,148,165,0.12)]',
+  cyan: 'text-[var(--color-agent-browser-accent)] bg-[color-mix(in_srgb,var(--color-agent-browser-accent)_12%,transparent)]',
+  mauve:
+    'text-primary-container bg-[color-mix(in_srgb,var(--color-primary-container)_12%,transparent)]',
+  coral:
+    'text-tertiary bg-[color-mix(in_srgb,var(--color-tertiary)_12%,transparent)]',
 }
 
 export interface BrowserTabFaviconProps {
