@@ -14,6 +14,7 @@ UI color and styling choices must be verified against the full state matrix of
 the component. A new gradient, border, or accent color can silently collide with
 an existing state color and render two distinct segments indistinguishable.
 Regressions are especially likely when:
+
 - A named palette constant (e.g. Catppuccin Mocha hex) is reused for a new
   semantic purpose without checking existing usages.
 - Tests exercise only the "healthy" or default state and omit edge states
