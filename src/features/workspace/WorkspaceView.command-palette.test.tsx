@@ -52,10 +52,8 @@ vi.mock('../files/services/fileSystemService')
 vi.mock('../terminal/services/terminalService')
 vi.mock('../terminal/hooks/usePaneShortcuts')
 
-// Mock child components to keep test focused on integration. The Sidebar mock
-// renders its `topBar` slot so the real SidebarTopBar (VIM-76: home of the
-// Command Palette button that replaced the old icon rail) mounts and its
-// onCommand wiring stays under test.
+// Mock child components to keep test focused on command dispatch while still
+// rendering sidebar chrome needed by WorkspaceView.
 vi.mock('../../components/sidebar/Sidebar', () => ({
   Sidebar: ({ topBar = undefined }: { topBar?: ReactNode }): ReactElement => (
     <div data-testid="sidebar">{topBar}</div>
@@ -694,7 +692,10 @@ describe('WorkspaceView - Command Palette Integration', () => {
       screen.queryByRole('dialog', { name: 'Command palette' })
     ).not.toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: 'Command Palette' }))
+    await user.click(
+      screen.getByRole('button', { name: /open command palette/i })
+    )
+
     expect(
       screen.queryByRole('dialog', { name: 'Command palette' })
     ).not.toBeInTheDocument()
@@ -829,13 +830,15 @@ describe('WorkspaceView - Command Palette Integration', () => {
     })
   })
 
-  test('top-bar command button opens the palette', async () => {
+  test('status-bar command button opens the palette', async () => {
     const user = userEvent.setup()
     render(<WorkspaceView />)
 
     expect(screen.queryByRole('dialog', { name: 'Command palette' })).toBeNull()
 
-    await user.click(screen.getByRole('button', { name: 'Command Palette' }))
+    await user.click(
+      screen.getByRole('button', { name: /open command palette/i })
+    )
 
     expect(
       screen.getByRole('dialog', { name: 'Command palette' })
