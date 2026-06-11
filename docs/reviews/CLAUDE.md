@@ -53,7 +53,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Generated Artifacts](patterns/generated-artifacts.md)               | code-quality       | 3        | 2    | 2026-05-25   |
 | [Generated Shell Scripts](patterns/generated-shell-scripts.md)       | backend            | 7        | 1    | 2026-06-03   |
 | [Hot-Path Caching](patterns/hot-path-caching.md)                     | backend            | 1        | 0    | 2026-06-09   |
-| [Testing Gaps](patterns/testing-gaps.md)                             | testing            | 62       | 30   | 2026-06-07   |
+| [Testing Gaps](patterns/testing-gaps.md)                             | testing            | 62       | 30   | 2026-06-11   |
 | [Terminal Input Handling](patterns/terminal-input-handling.md)       | terminal           | 4        | 2    | 2026-05-24   |
 | [Documentation Accuracy](patterns/documentation-accuracy.md)         | code-quality       | 85       | 25   | 2026-06-08   |
 | [Accessibility](patterns/accessibility.md)                           | a11y               | 45       | 19   | 2026-06-10   |
@@ -76,6 +76,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Diagnostic Instrumentation](patterns/diagnostic-instrumentation.md) | code-quality       | 7        | 2    | 2026-05-02   |
 | [Keyboard Shortcut Guards](patterns/keyboard-shortcut-guards.md)     | keyboard-shortcuts | 19       | 1    | 2026-06-06   |
 | [Verify Render Target](patterns/verify-render-target.md)             | code-quality       | 2        | 0    | 2026-05-24   |
+| [UI Visual Regression](patterns/ui-visual-regression.md)             | code-quality       | 1        | 0    | 2026-06-11   |
 | [Status Indicator Display](patterns/status-indicator-display.md)     | code-quality       | 3        | 0    | 2026-05-26   |
 | [Parser Resilience](patterns/parser-resilience.md)                   | code-quality       | 9        | 7    | 2026-06-09   |
 | [Persisted State Invariants](patterns/persisted-state-invariants.md) | correctness        | 6        | 3    | 2026-06-08   |
