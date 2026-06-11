@@ -155,4 +155,25 @@ describe('SettingsDialog', () => {
 
     expect(trigger).toHaveFocus()
   })
+
+  test('clears search query when the dialog is reopened', async () => {
+    const user = userEvent.setup()
+    render(<DialogWithTrigger />)
+
+    const trigger = screen.getByRole('button', { name: 'Open settings' })
+    await user.click(trigger)
+
+    await user.type(screen.getByPlaceholderText('Search settings...'), 'term')
+
+    expect(screen.queryByRole('button', { name: 'General' })).toBeNull()
+
+    await user.click(screen.getByTitle('close'))
+    await user.click(trigger)
+
+    expect(screen.getByRole('button', { name: 'General' })).toBeInTheDocument()
+
+    expect(
+      screen.getByRole('button', { name: 'Appearance' })
+    ).toBeInTheDocument()
+  })
 })

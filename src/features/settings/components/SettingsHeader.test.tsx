@@ -23,10 +23,12 @@ describe('SettingsHeader', () => {
       'aria-checked',
       'true'
     )
+
     expect(screen.getByRole('radio', { name: 'User' })).toHaveAttribute(
       'aria-checked',
       'false'
     )
+
     expect(screen.getByRole('radio', { name: 'vimeflow' })).toHaveClass(
       'border-primary-container'
     )

@@ -3,7 +3,7 @@ id: react-lifecycle
 category: react-patterns
 created: 2026-04-09
 last_updated: 2026-06-11
-ref_count: 14
+ref_count: 15
 ---
 
 # React Lifecycle
@@ -329,3 +329,12 @@ to avoid unintended re-runs (e.g., PTY respawning on every cwd change).
 - **Finding:** `SettingsHeaderProps` declared `section: SettingsSection | undefined` and `SettingsDialog` passed `section={activeSection}`, but `SettingsHeader` destructured only `{ scope, onScope }` — the prop was silently dropped. Callers were forced to provide a value for a field that had no consumer, and tests passed the prop without asserting on any section-related output.
 - **Fix:** Removed the `section` field from `SettingsHeaderProps`, removed `section={activeSection}` from the `SettingsDialog` call site, and cleaned up the co-located test props.
 - **Commit:** same commit as this entry
+
+### 33. Component state survives open/close cycles when the component is permanently mounted
+
+- **Source:** github-claude | PR #422 round 3 | 2026-06-11
+- **Severity:** LOW
+- **File:** `src/features/settings/SettingsDialog.tsx`
+- **Finding:** `SettingsDialog` is permanently mounted in `WorkspaceView` (inside `AnimatePresence` with an `{open && ...}` guard rather than being conditionally rendered). The `query` state lived in the component body above the `open` guard, so it survived dialog close and was still active when the dialog reopened. A user who typed a search term, closed the dialog, and reopened it would see a filtered sidebar with no visible indication that a filter was active.
+- **Fix:** Added `useEffect(() => { if (!open) setQuery('') }, [open])` to reset the search query whenever the dialog closes. Added a co-located test asserting the query is cleared on close/reopen.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

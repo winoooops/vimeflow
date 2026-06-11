@@ -106,6 +106,12 @@ export const SettingsDialog = ({
     }
   }, [open])
 
+  useEffect(() => {
+    if (!open) {
+      setQuery('')
+    }
+  }, [open])
+
   return (
     <AnimatePresence>
       {open && (
