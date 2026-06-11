@@ -266,7 +266,6 @@ const CardComponent = ({
             ref={triggerRef}
             type="button"
             aria-label="Session actions"
-            aria-haspopup="true"
             aria-expanded={menuOpen}
             onClick={(e) => {
               e.stopPropagation()

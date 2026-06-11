@@ -260,9 +260,7 @@ describe('List', () => {
       within(activeRow).getByRole('button', { name: 'Session actions' })
     )
 
-    await user.click(
-      within(activeRow).getByRole('button', { name: 'Remove' })
-    )
+    await user.click(within(activeRow).getByRole('button', { name: 'Remove' }))
 
     expect(onSessionClick).toHaveBeenCalledWith('B')
     expect(onRemoveSession).toHaveBeenCalledWith('A')
