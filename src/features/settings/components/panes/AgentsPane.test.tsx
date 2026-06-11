@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { DEFAULT_ALIASES } from '../../sections'
 import { AgentsPane } from './AgentsPane'
@@ -69,7 +69,7 @@ describe('AgentsPane', () => {
 
     const rows = screen.getAllByTestId('alias-row')
     rows.forEach((row) => {
-      const fieldset = row.querySelector('fieldset')
+      const fieldset = within(row).getByRole('group')
       expect(fieldset).toBeInTheDocument()
       expect(fieldset).toBeDisabled()
     })

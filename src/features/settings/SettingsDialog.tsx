@@ -73,7 +73,7 @@ export const SettingsDialog = ({
         )
       ).filter(
         (el) =>
-          !el.hasAttribute('disabled') &&
+          !el.matches(':disabled') &&
           el.getAttribute('aria-hidden') !== 'true'
       )
 

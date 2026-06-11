@@ -48,8 +48,8 @@ export const KeymapPane = (): ReactElement => {
                 {b.label}
               </span>
               <span className="flex gap-1">
-                {b.keys.map((k, j) => (
-                  <Kbd key={j}>{k}</Kbd>
+                {b.keys.map((k) => (
+                  <Kbd key={`${b.id}-${k}`}>{k}</Kbd>
                 ))}
               </span>
               <button

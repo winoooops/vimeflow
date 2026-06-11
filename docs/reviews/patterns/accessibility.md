@@ -559,3 +559,12 @@ handlers must not trap focus without implementing the promised behavior.
 - **Finding:** When the alias-management toggle was off, each alias row received only `opacity-45`; the descendant text inputs, selects, and remove button remained enabled and tabbable. This created a keyboard and assistive-technology mismatch because users encountered controls that were visually presented as inactive but announced and operated as active.
 - **Fix:** Wrapped the alias-row controls in a `<fieldset disabled={!shimOn} className="contents">` so that all descendant form controls and buttons are semantically disabled when alias management is off. Added a co-located test verifying the disabled fieldset state.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 53. Tab trap hasAttribute check misses fieldset-inherited disabled state
+
+- **Source:** github-claude | PR #422 round 6 | 2026-06-11
+- **Severity:** MEDIUM
+- **File:** `src/features/settings/SettingsDialog.tsx`
+- **Finding:** The focusable-element filter in the Tab trap used `!el.hasAttribute('disabled')`, which only checks whether the DOM attribute is literally present on the element. Descendant controls inside a disabled `<fieldset>` inherit disabled state without the attribute, so they passed the filter and the trap tried to focus them, causing Tab to stall on alias-row controls when alias management is off.
+- **Fix:** Replaced `!el.hasAttribute('disabled')` with `!el.matches(':disabled')` so the filter respects the HTML spec's disabled-fieldset-descendant semantics.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

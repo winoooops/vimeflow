@@ -19,7 +19,7 @@ export const AgentsPane = (): ReactElement => {
     setAliases((prev) => [
       ...prev,
       {
-        id: `a${Date.now()}`,
+        id: `a${crypto.randomUUID()}`,
         alias: '',
         agent: 'claude',
         model: 'sonnet-4',
