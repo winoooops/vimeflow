@@ -1632,6 +1632,9 @@ export const WorkspaceView = (): ReactElement => {
           // Desktop collapse animates the sidebar shell width; compact viewports
           // switch to a single-column workspace with the sidebar as an overlay.
           '--workspace-window-controls-inset': `${windowControlsInset}px`,
+          '--workspace-sidebar-toggle-left': `${sidebarToggleLeft}px`,
+          '--workspace-sidebar-toggle-size': `${SIDEBAR_TOGGLE_SIZE}px`,
+          '--workspace-sidebar-toggle-top': `${SIDEBAR_TOGGLE_TOP}px`,
           gridTemplateColumns: isCompactViewport ? '1fr' : `auto 1fr auto`,
         } as CSSProperties
       }
