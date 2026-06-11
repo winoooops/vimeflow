@@ -47,3 +47,12 @@ checks or leave a regeneration diff.
 - **Finding:** A review flagged `FileDiff.old_path` / `new_path` as if serde omitted them while the binding declared required nullable fields. Inspection showed the current struct does **not** use `#[serde(skip_serializing_if = "Option::is_none")]`, so serde serializes `None` as `null` and `src/bindings/FileDiff.ts` is correctly `oldPath: string | null` / `newPath: string | null`.
 - **Fix:** Kept `ts(optional)` off those fields, added an explicit serialization regression test proving absent rename/copy paths are emitted as JSON `null`, and documented the intentional required-nullable contract next to the Rust fields. Do not add `ts(optional)` unless the serde shape also omits the key.
 - **Verification:** `cargo test --manifest-path crates/backend/Cargo.toml git::tests::test_file_diff_serializes_absent_paths_as_null_keys`, `npm run generate:bindings`, `git diff --check`.
+
+### 4. Demo HTML/JSX prototypes should not ship in design-doc PRs
+
+- **Source:** github-human | PR #421 round 3 | 2026-06-11
+- **Severity:** MEDIUM
+- **File:** `docs/design/leftsidebar/Sidebar Chrome.html`
+- **Finding:** The PR included a React/Babel HTML prototype and JSX demo files under `docs/design/` alongside migration markdown. These are hand-authored throwaway demos, not generated artifacts or application code, and add noise to the repository and review surface.
+- **Fix:** Removed `docs/design/leftsidebar/Sidebar Chrome.html` and all JSX files under `docs/design/sidebar-toggle-handoff/src/`, keeping the markdown handoff documents.
+- **Commit:** same commit as this entry

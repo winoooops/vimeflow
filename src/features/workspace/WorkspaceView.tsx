@@ -8,7 +8,9 @@ import {
   useRef,
   useState,
 } from 'react'
-import { IconRail } from './components/IconRail'
+import { SidebarToggle } from './components/SidebarToggle'
+import { SidebarTopBar } from './components/SidebarTopBar'
+import { SidebarSettingsFooter } from './components/SidebarSettingsFooter'
 import { Tabs } from '../sessions/components/Tabs'
 import { Sidebar } from '../../components/sidebar/Sidebar'
 import {
@@ -16,8 +18,9 @@ import {
   type SidebarTabItem,
 } from '../../components/sidebar/SidebarTabs'
 import { StatusBar, type StatusBarSession } from '../../components/StatusBar'
-import { SidebarStatusHeader } from './components/SidebarStatusHeader'
+import { AgentStatusCard } from './components/AgentStatusCard'
 import { FilesView } from './components/FilesView'
+import { NewSessionButton } from './components/NewSessionButton'
 import { SessionsView } from './components/SessionsView'
 import {
   TerminalZone,
@@ -36,6 +39,7 @@ import {
 } from '../agent-status/components/AgentStatusRail'
 import { cacheHitPercentage } from '../agent-status/utils/cacheRate'
 import { useCacheHistoryCollector } from '../agent-status/hooks/useCacheHistoryCollector'
+import type { RateLimitsState } from '../agent-status/types'
 import { UnsavedChangesDialog } from '../editor/components/UnsavedChangesDialog'
 import { InfoBanner } from './components/InfoBanner'
 import { CommandPalette } from '../command-palette/CommandPalette'
@@ -47,10 +51,13 @@ import {
   usePaneRenameChord,
   type FocusedPaneRef,
 } from '../command-palette/hooks/usePaneRenameChord'
-import { mockNavigationItems, mockSettingsItem } from './data/mockNavigation'
 import { renameAgentSession } from '../../lib/backend'
 import { useSessionManager } from '../sessions/hooks/useSessionManager'
-import { clampSize, useResizable } from '../../hooks/useResizable'
+import {
+  clampSize,
+  useResizable,
+  type ResizeDragEndEvent,
+} from '../../hooks/useResizable'
 import { useElasticContainer } from '../../hooks/useElasticContainer'
 import { useSidebarTab, type SidebarTab } from '../../hooks/useSidebarTab'
 import { useNotifyInfo } from './hooks/useNotifyInfo'
@@ -62,6 +69,9 @@ import {
   type PaneShortcutModifier,
 } from '../terminal/hooks/usePaneShortcuts'
 import { useDockShortcuts } from './hooks/useDockShortcuts'
+import { useSidebarShortcut } from './hooks/useSidebarShortcut'
+import { useNewSessionShortcut } from './hooks/useNewSessionShortcut'
+import { useSidebarCollapsed } from './hooks/useSidebarCollapsed'
 import { useEditorBuffer } from '../editor/hooks/useEditorBuffer'
 import { useAgentStatus } from '../agent-status/hooks/useAgentStatus'
 import { useGitStatus } from '../diff/hooks/useGitStatus'
@@ -71,6 +81,7 @@ import { sumLines } from '../diff/utils/sumLines'
 import { findActivePane } from '../sessions/utils/activeSessionPane'
 import { isShellPane } from '../sessions/utils/paneKind'
 import { lineDelta } from '../sessions/utils/lineDelta'
+import { hasLivePane, isLiveStatus } from '../sessions/utils/sessionStatus'
 import { pickNextVisibleSessionId } from '../sessions/utils/pickNextVisibleSessionId'
 import { AGENTS, agentTypeToRegistryKey } from '../../agents/registry'
 import type { SessionCloseResult, SessionStatus } from '../sessions/types'
@@ -88,6 +99,23 @@ import {
   DOCK_VERTICAL_ELASTIC_CONFIG,
   DOCK_HORIZONTAL_ELASTIC_CONFIG,
 } from './panelConfig'
+
+const rateLimitPercentage = (
+  limit: RateLimitsState['fiveHour'] | null | undefined
+): number | null => {
+  if (!limit || !Number.isFinite(limit.usedPercentage)) {
+    return null
+  }
+
+  if (
+    limit.usedPercentage === 0 &&
+    (!Number.isFinite(limit.resetsAt) || limit.resetsAt <= 0)
+  ) {
+    return null
+  }
+
+  return Math.round(limit.usedPercentage)
+}
 
 const formatStatusDuration = (durationMs: number): string | undefined => {
   if (!Number.isFinite(durationMs) || durationMs <= 0) {
@@ -124,21 +152,50 @@ const formatStatusDuration = (durationMs: number): string | undefined => {
 // this const and the gear's `aria-disabled` once the dialog lands.
 const SETTINGS_FOLLOWUP_ISSUE_NUMBER = 252
 
-const SIDEBAR_MIN = 240
-const SIDEBAR_MAX = 560
 const SIDEBAR_DEFAULT = 272
+const SIDEBAR_MIN = SIDEBAR_DEFAULT
+// Cap the sidebar at the width where the agent-status card and the
+// tabs + new-session row both hit their own maximums and sit with even 12px
+// padding: 360px content cap (202 SidebarTabs + 8 gap + 150 NewSessionButton
+// max-width, matching AgentStatusCard's CARD_MAX_W) + 24px (px-3 left/right) =
+// 384. Past this the card/button stop growing, so extra width is dead space.
+const SIDEBAR_MAX = 384
+const MAIN_AUTO_COLLAPSE_MIN = 360
+const MAIN_AUTO_COLLAPSE_MAX = 500
+const MAIN_AUTO_COLLAPSE_RATIO = 0.36
+const SIDEBAR_MOTION_MS = 220
+const SIDEBAR_MOTION_EASING = 'cubic-bezier(0.32, 0.72, 0, 1)'
+const SIDEBAR_TOP_BAR_HEIGHT = 42
+const SIDEBAR_TOGGLE_SIZE = 28
+const SIDEBAR_TOGGLE_TOP = 7
+const SIDEBAR_TOGGLE_SURFACE_PADDING_END = 12
+const MACOS_WINDOW_CONTROL_SAFE_AREA_PX = 82
 
 const SIDEBAR_INITIAL = clampSize(SIDEBAR_DEFAULT, SIDEBAR_MIN, SIDEBAR_MAX)
+const COMPACT_WORKSPACE_QUERY = '(max-width: 899px)'
+
+const readCompactViewport = (): boolean =>
+  typeof window !== 'undefined' &&
+  typeof window.matchMedia === 'function' &&
+  window.matchMedia(COMPACT_WORKSPACE_QUERY).matches
 
 const SIDEBAR_TAB_ITEMS: readonly SidebarTabItem<SidebarTab>[] = [
-  { id: 'sessions', label: 'SESSIONS' },
-  { id: 'files', label: 'FILES' },
+  { id: 'sessions', label: 'SESSIONS', icon: 'view_agenda' },
+  { id: 'files', label: 'FILES', icon: 'folder_open' },
 ]
+
+const mainAutoCollapseThreshold = (workspaceWidth: number): number =>
+  clampSize(
+    Math.round(workspaceWidth * MAIN_AUTO_COLLAPSE_RATIO),
+    MAIN_AUTO_COLLAPSE_MIN,
+    MAIN_AUTO_COLLAPSE_MAX
+  )
 
 type DockTab = 'editor' | 'diff'
 
 export const WorkspaceView = (): ReactElement => {
   const workspaceRef = useRef<HTMLDivElement>(null)
+  const mainWorkspaceRef = useRef<HTMLDivElement>(null)
   const sidebarResizeHandleRef = useRef<HTMLDivElement | null>(null)
   // Imperative resize previews keep this ref, the CSS variable, and
   // aria-valuenow in sync without per-frame React commits.
@@ -209,10 +266,150 @@ export const WorkspaceView = (): ReactElement => {
     return detected.startsWith('mac') ? 'meta' : 'ctrl'
   }, [])
 
+  const sidebarShortcutHint = preferModifier === 'meta' ? '⌘B' : 'Ctrl+⇧B'
+  const newSessionShortcutHint = preferModifier === 'meta' ? '⌘N' : 'Ctrl+⇧N'
+
+  const newSessionAriaKeyshortcuts =
+    preferModifier === 'meta' ? 'Meta+N' : 'Control+Shift+N'
   const reserveWindowControls = preferModifier === 'meta'
+
+  const windowControlsInset = reserveWindowControls
+    ? MACOS_WINDOW_CONTROL_SAFE_AREA_PX
+    : 0
+
+  const sidebarToggleLeft = Math.max(12, windowControlsInset)
+
+  const sidebarToggleSlideSurfaceWidth =
+    sidebarToggleLeft + SIDEBAR_TOGGLE_SIZE + SIDEBAR_TOGGLE_SURFACE_PADDING_END
 
   const { message: infoMessage, notifyInfo, dismiss } = useNotifyInfo()
   const { activeTab, setActiveTab } = useSidebarTab()
+
+  // VIM-66 / VIM-76: workspace-global sidebar collapse flag. The collapse toggle
+  // is a persistent shell control; only the sidebar panel and its background
+  // slide. That keeps the control seated at the same coordinate in every state.
+  const {
+    collapsed: sidebarCollapsed,
+    toggle: toggleSidebar,
+    setCollapsed: setSidebarCollapsed,
+  } = useSidebarCollapsed()
+
+  const [isCompactViewport, setIsCompactViewport] =
+    useState(readCompactViewport)
+  const [compactSidebarOpen, setCompactSidebarOpen] = useState(false)
+
+  useEffect(() => {
+    if (
+      typeof window === 'undefined' ||
+      typeof window.matchMedia !== 'function'
+    ) {
+      return
+    }
+
+    const mediaQuery = window.matchMedia(COMPACT_WORKSPACE_QUERY)
+
+    const applyViewport = (): void => {
+      setIsCompactViewport(mediaQuery.matches)
+    }
+
+    applyViewport()
+    mediaQuery.addEventListener('change', applyViewport)
+
+    return (): void => {
+      mediaQuery.removeEventListener('change', applyViewport)
+    }
+  }, [])
+
+  // Imperative ref to the persistent SidebarToggle so keyboard/scrim closes can
+  // restore focus without relying on data-testid selectors.
+  const sidebarToggleRef = useRef<HTMLButtonElement>(null)
+  const shouldRestoreSidebarToggleFocusRef = useRef(false)
+
+  useEffect(() => {
+    if (!isCompactViewport) {
+      setCompactSidebarOpen(false)
+    }
+  }, [isCompactViewport])
+
+  useEffect(() => {
+    if (!isCompactViewport || !compactSidebarOpen) {
+      return
+    }
+
+    const closeOnEscape = (event: globalThis.KeyboardEvent): void => {
+      if (event.key !== 'Escape') {
+        return
+      }
+
+      event.preventDefault()
+      shouldRestoreSidebarToggleFocusRef.current = true
+      setCompactSidebarOpen(false)
+    }
+
+    document.addEventListener('keydown', closeOnEscape)
+
+    return (): void => {
+      document.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [compactSidebarOpen, isCompactViewport])
+
+  const isSidebarClosed = isCompactViewport
+    ? !compactSidebarOpen
+    : sidebarCollapsed
+
+  const handleToggleSidebar = useCallback((): void => {
+    const activeElement =
+      typeof document === 'undefined' ? null : document.activeElement
+
+    const isToggleButtonFocused = activeElement === sidebarToggleRef.current
+
+    if (isCompactViewport) {
+      // User-triggered compact toggles (toggle button or keyboard shortcut)
+      // always restore focus so the focus guard moves focus to the visible
+      // toggle. This prevents focus from being lost to document.body when
+      // closing the drawer from inside its content.
+      shouldRestoreSidebarToggleFocusRef.current = true
+      setCompactSidebarOpen((open) => !open)
+
+      return
+    }
+
+    shouldRestoreSidebarToggleFocusRef.current = isToggleButtonFocused
+    toggleSidebar()
+  }, [isCompactViewport, toggleSidebar])
+
+  // Post-toggle focus guard: compact drawer closes and some browser inert
+  // transitions can drop focus to <body>. Refocus the persistent toggle only
+  // when the user action asked for restoration.
+  const sidebarFocusGuardMountedRef = useRef(false)
+  useEffect(() => {
+    if (!sidebarFocusGuardMountedRef.current) {
+      sidebarFocusGuardMountedRef.current = true
+
+      return
+    }
+    if (!shouldRestoreSidebarToggleFocusRef.current) {
+      return
+    }
+    if (typeof requestAnimationFrame !== 'function') {
+      shouldRestoreSidebarToggleFocusRef.current = false
+
+      return
+    }
+
+    const frame = requestAnimationFrame((): void => {
+      shouldRestoreSidebarToggleFocusRef.current = false
+      const active = document.activeElement
+      if (!active || active === document.body) {
+        sidebarToggleRef.current?.focus()
+      }
+    })
+
+    return (): void => {
+      cancelAnimationFrame(frame)
+    }
+  }, [isSidebarClosed])
+
   const paneRenameRequestIdRef = useRef(0)
 
   const nextPaneRenameRequestId = useCallback((): number => {
@@ -273,7 +470,7 @@ export const WorkspaceView = (): ReactElement => {
         : // Active pane is a browser: prefer a live shell so agent/cwd/status
           // state does not bind to an exited PTY when another shell is running.
           (activeSession?.panes.find(
-            (pane) => isShellPane(pane) && pane.status === 'running'
+            (pane) => isShellPane(pane) && isLiveStatus(pane.status)
           ) ?? activeSession?.panes.find(isShellPane))
 
   const activePtyBackedPaneId = activePtyBackedPane?.id
@@ -307,7 +504,7 @@ export const WorkspaceView = (): ReactElement => {
   // running/paused/completed/errored — agent activity stays an orthogonal
   // signal that the "live" pulse next to the agent chip already reflects.
   const activityPanelStatus: SessionStatus =
-    activePtyBackedPane?.status ?? 'paused'
+    activePtyBackedPane?.status ?? 'idle'
 
   const handleActivityPanelCollapsed = useCallback(
     (collapsed: boolean): void => {
@@ -330,14 +527,18 @@ export const WorkspaceView = (): ReactElement => {
   // (status completed/errored). The PTY-exit reset effect below owns that
   // path; without this guard, a delayed status update could re-stamp stale
   // agent chrome onto a completed session.
-  const activeSessionStatus = activeSession?.status
+  // Pane-level, not the errored-dominant aggregate: a crashed sibling pane
+  // must not short-circuit the active pane's agent/cwd bridges.
+  const isActivePaneLive =
+    activePtyBackedPane !== undefined &&
+    isLiveStatus(activePtyBackedPane.status)
 
   const isStatusBarAgentActive =
     activePtyBackedPanePtyId !== undefined &&
     agentStatus.sessionId === activePtyBackedPanePtyId &&
     agentStatus.isActive &&
     !agentStatus.agentExited &&
-    (activeSessionStatus === 'running' || activeSessionStatus === 'paused')
+    isActivePaneLive
 
   useEffect(() => {
     if (!activeSessionId) {
@@ -349,7 +550,7 @@ export const WorkspaceView = (): ReactElement => {
     if (agentStatus.sessionId !== activePtyBackedPanePtyId) {
       return
     }
-    if (activeSessionStatus !== 'running' && activeSessionStatus !== 'paused') {
+    if (!isActivePaneLive) {
       return
     }
 
@@ -374,7 +575,7 @@ export const WorkspaceView = (): ReactElement => {
     activeSessionId,
     activePtyBackedPaneId,
     activePtyBackedPanePtyId,
-    activeSessionStatus,
+    isActivePaneLive,
     agentStatus.agentExited,
     agentStatus.isActive,
     agentStatus.agentType,
@@ -418,7 +619,7 @@ export const WorkspaceView = (): ReactElement => {
     if (agentStatus.sessionId !== activePtyBackedPanePtyId) {
       return
     }
-    if (activeSessionStatus !== 'running' && activeSessionStatus !== 'paused') {
+    if (!isActivePaneLive) {
       return
     }
     if (!agentIsActive || agentHasExited) {
@@ -434,7 +635,7 @@ export const WorkspaceView = (): ReactElement => {
     activePtyBackedPaneId,
     activePtyBackedPanePtyId,
     activePtyBackedPaneCwd,
-    activeSessionStatus,
+    isActivePaneLive,
     agentCwd,
     agentHasExited,
     agentIsActive,
@@ -450,7 +651,7 @@ export const WorkspaceView = (): ReactElement => {
   // effect is cheap even though it fires on every sessions array change.
   useEffect(() => {
     for (const session of sessions) {
-      if (session.status !== 'completed' && session.status !== 'errored') {
+      if (hasLivePane(session.panes)) {
         continue
       }
       // Effect-path: skip silently on transient invariant violations
@@ -501,6 +702,15 @@ export const WorkspaceView = (): ReactElement => {
     resizeHandle.setAttribute('aria-valuenow', String(nextWidth))
   }, [])
 
+  const handleSidebarDragEnd = useCallback(
+    ({ rawSize }: ResizeDragEndEvent): void => {
+      if (rawSize < SIDEBAR_MIN) {
+        setSidebarCollapsed(true)
+      }
+    },
+    [setSidebarCollapsed]
+  )
+
   const {
     size: sidebarWidth,
     isDragging,
@@ -511,11 +721,43 @@ export const WorkspaceView = (): ReactElement => {
     max: SIDEBAR_MAX,
     updateMode: 'commit-on-end',
     onDragPreview: previewSidebarWidth,
+    onDragEnd: handleSidebarDragEnd,
   })
 
   useLayoutEffect(() => {
     previewSidebarWidth(sidebarWidth)
   }, [previewSidebarWidth, sidebarWidth])
+
+  useEffect(() => {
+    const mainWorkspace = mainWorkspaceRef.current
+
+    if (!mainWorkspace || typeof ResizeObserver === 'undefined') {
+      return
+    }
+
+    const observer = new ResizeObserver((entries) => {
+      const width =
+        entries[0]?.contentRect.width ??
+        mainWorkspace.getBoundingClientRect().width
+
+      const workspaceWidth =
+        workspaceRef.current?.getBoundingClientRect().width ?? window.innerWidth
+
+      if (
+        !sidebarCollapsed &&
+        width > 0 &&
+        width < mainAutoCollapseThreshold(workspaceWidth)
+      ) {
+        setSidebarCollapsed(true)
+      }
+    })
+
+    observer.observe(mainWorkspace)
+
+    return (): void => {
+      observer.disconnect()
+    }
+  }, [sidebarCollapsed, setSidebarCollapsed])
 
   const activeCwd = activePtyBackedPane?.cwd ?? '.'
   // Distinct fallback for the FILES-tab file explorer: when no session
@@ -907,6 +1149,7 @@ export const WorkspaceView = (): ReactElement => {
         isCurrentPaneRenameRequest,
         setActiveSessionId,
         notifyInfo,
+        toggleSidebar: handleToggleSidebar,
         toggleBurner: toggleBurnerCommand,
       }),
     // sessionsSignature captures every field the closures read; activity-only
@@ -928,6 +1171,7 @@ export const WorkspaceView = (): ReactElement => {
       isCurrentPaneRenameRequest,
       setActiveSessionId,
       notifyInfo,
+      handleToggleSidebar,
       toggleBurnerCommand,
     ]
   )
@@ -950,6 +1194,17 @@ export const WorkspaceView = (): ReactElement => {
     activeContainerId,
     openDock,
     claimTerminal,
+    modKey: preferModifier === 'meta' ? '⌘' : 'Ctrl',
+  })
+
+  useSidebarShortcut({
+    onToggle: handleToggleSidebar,
+    modKey: preferModifier === 'meta' ? '⌘' : 'Ctrl',
+    activeContainerId,
+  })
+
+  useNewSessionShortcut({
+    onNewSession: handleCreateSession,
     modKey: preferModifier === 'meta' ? '⌘' : 'Ctrl',
   })
 
@@ -1031,6 +1286,32 @@ export const WorkspaceView = (): ReactElement => {
   const statusBarContextPct = isStatusBarAgentActive
     ? (agentStatus.contextWindow?.usedPercentage ?? null)
     : null
+
+  // Fused AgentStatusCard props, derived from the same live signals the status
+  // bar uses (VIM-66). The compact card keeps only the turn count in the
+  // A pure shell pane has no detected agent (and therefore no model / usage);
+  // the card renders its fixed-height shell placeholder in that case so the
+  // session list below never reflows when switching panes.
+  const sidebarCardIsShell =
+    !agentStatus.agentType || !agentStatus.isActive || agentStatus.agentExited
+
+  // Card title is the active agent's model name (the old StatusCard surfaced
+  // the model — the fused card now uses it as the title). Falls back to the
+  // session name, then a placeholder, when no model is known (e.g. idle).
+  const sidebarCardTitle =
+    agentStatus.modelDisplayName ??
+    agentStatus.modelId ??
+    activeSession?.name ??
+    'No session'
+  const sidebarCardTurns = statusBarSession?.turns ?? null
+
+  const sidebarCardFiveHourPct = rateLimitPercentage(
+    agentStatus.rateLimits?.fiveHour
+  )
+
+  const sidebarCardWeekPct = rateLimitPercentage(
+    agentStatus.rateLimits?.sevenDay
+  )
 
   // Open a file directly (no unsaved-changes guard). Errors were previously
   // swallowed via `void editorBuffer.openFile(...)`, leaving the user with
@@ -1460,88 +1741,240 @@ export const WorkspaceView = (): ReactElement => {
       // `grid-rows-1` pins the implicit row to `1fr`; without it
       // `grid-auto-rows: auto` lets the row grow to content size and
       // `h-full` stops propagating the 100vh constraint downward.
-      className="grid h-screen grid-rows-1 overflow-hidden"
+      className="relative grid h-screen grid-rows-1 overflow-hidden"
       style={
         {
           // `--workspace-sidebar-width` is owned by previewSidebarWidth so
           // React rerenders cannot overwrite an in-progress drag preview.
-          gridTemplateColumns: `${reserveWindowControls ? 68 : 48}px var(--workspace-sidebar-width, ${SIDEBAR_INITIAL}px) 1fr auto`,
+          // VIM-76: icon rail removed — layout is [sidebar | main | activity].
+          // Desktop collapse animates the sidebar shell width; compact viewports
+          // switch to a single-column workspace with the sidebar as an overlay.
+          '--workspace-window-controls-inset': `${windowControlsInset}px`,
+          '--workspace-sidebar-toggle-left': `${sidebarToggleLeft}px`,
+          '--workspace-sidebar-toggle-size': `${SIDEBAR_TOGGLE_SIZE}px`,
+          '--workspace-sidebar-toggle-top': `${SIDEBAR_TOGGLE_TOP}px`,
+          gridTemplateColumns: isCompactViewport ? '1fr' : `auto 1fr auto`,
         } as CSSProperties
       }
     >
-      <IconRail
-        settingsIssueNumber={SETTINGS_FOLLOWUP_ISSUE_NUMBER}
-        onCommand={commandPalette.open}
-        items={mockNavigationItems}
-        settingsItem={mockSettingsItem}
-        reserveWindowControls={reserveWindowControls}
-      />
-
-      {/* Sidebar - resizable */}
-      <div className="relative flex h-full">
-        <Sidebar
-          header={
-            <SidebarStatusHeader
-              status={agentStatus}
-              activeSessionName={activeSession?.name ?? null}
-            />
-          }
-          content={
-            <div className="flex h-full min-h-0 flex-col">
-              <SidebarTabs<SidebarTab>
-                tabs={SIDEBAR_TAB_ITEMS}
-                activeId={activeTab}
-                onChange={setActiveTab}
-              />
-              <SessionsView
-                hidden={activeTab !== 'sessions'}
-                sessions={sessions}
-                activeSessionId={activeSessionId}
-                onSessionClick={handleSetActiveSessionId}
-                onCreateSession={handleCreateSession}
-                onRemoveSession={handleRemoveSession}
-                onRenameSession={renameSession}
-                onReorderSessions={reorderSessions}
-              />
-              <FilesView
-                hidden={activeTab !== 'files'}
-                cwd={fileExplorerCwd}
-                onFileSelect={handleFileSelect}
-              />
-            </div>
-          }
+      {isCompactViewport && !isSidebarClosed && (
+        <button
+          type="button"
+          tabIndex={-1}
+          aria-label="Close sidebar"
+          data-testid="sidebar-scrim"
+          onClick={() => {
+            shouldRestoreSidebarToggleFocusRef.current = true
+            setCompactSidebarOpen(false)
+          }}
+          className="fixed inset-0 z-20 cursor-default bg-background/55 backdrop-blur-[2px]"
         />
+      )}
 
-        {/* Resize handle */}
+      {/* Sidebar — the shell owns the persistent toggle; the inner panel clips
+          during animated desktop collapse. Compact viewports lift the same
+          shell above main content. */}
+      <div
+        data-testid="workspace-sidebar-shell"
+        role={isCompactViewport && !isSidebarClosed ? 'dialog' : undefined}
+        aria-modal={isCompactViewport && !isSidebarClosed ? true : undefined}
+        aria-label={
+          isCompactViewport && !isSidebarClosed ? 'Sidebar' : undefined
+        }
+        className={`relative h-full overflow-visible will-change-[width] ${
+          isDragging || isCompactViewport
+            ? ''
+            : 'transition-[width] duration-[220ms] ease-pane'
+        }`}
+        style={{
+          position: isCompactViewport ? 'absolute' : undefined,
+          zIndex: isCompactViewport ? 30 : undefined,
+          left: isCompactViewport ? 0 : undefined,
+          top: isCompactViewport ? 0 : undefined,
+          bottom: isCompactViewport ? 0 : undefined,
+          maxWidth: isCompactViewport ? '100vw' : undefined,
+          width: isSidebarClosed
+            ? 0
+            : isCompactViewport
+              ? `min(100vw, var(--workspace-sidebar-width, ${SIDEBAR_INITIAL}px))`
+              : `var(--workspace-sidebar-width, ${SIDEBAR_INITIAL}px)`,
+        }}
+      >
         <div
-          ref={setSidebarResizeHandle}
-          data-testid="sidebar-resize-handle"
-          role="separator"
-          aria-orientation="vertical"
-          aria-valuemin={SIDEBAR_MIN}
-          aria-valuemax={SIDEBAR_MAX}
-          // aria-valuenow is set by the layout effect and drag preview path
-          // so previews do not need per-frame React state commits.
-          onMouseDown={handleMouseDown}
-          className={`
+          aria-hidden="true"
+          data-testid="sidebar-toggle-slide-surface"
+          className={`pointer-events-none absolute left-0 top-0 z-20 bg-transparent ${
+            isDragging ? '' : 'transition-[width] duration-[220ms] ease-pane'
+          }`}
+          style={{
+            height: SIDEBAR_TOP_BAR_HEIGHT,
+            width: isSidebarClosed ? 0 : sidebarToggleSlideSurfaceWidth,
+          }}
+        />
+        <div
+          data-testid="sidebar-toggle-anchor"
+          className="absolute z-30"
+          style={{
+            left: sidebarToggleLeft,
+            top: SIDEBAR_TOGGLE_TOP,
+          }}
+        >
+          <SidebarToggle
+            ref={sidebarToggleRef}
+            collapsed={isSidebarClosed}
+            onClick={handleToggleSidebar}
+            size={SIDEBAR_TOGGLE_SIZE}
+            variant="inset"
+            data-testid="sidebar-toggle-fixed"
+            shortcutHint={sidebarShortcutHint}
+          />
+        </div>
+        <div
+          aria-hidden={isSidebarClosed || undefined}
+          inert={isSidebarClosed || undefined}
+          data-testid="workspace-sidebar-panel"
+          className="h-full overflow-hidden"
+        >
+          <div
+            className="relative flex h-full"
+            style={{
+              width: isCompactViewport
+                ? `min(100vw, var(--workspace-sidebar-width, ${SIDEBAR_INITIAL}px))`
+                : `var(--workspace-sidebar-width, ${SIDEBAR_INITIAL}px)`,
+            }}
+          >
+            <Sidebar
+              // Collapse keeps a same-height placeholder so the header/session
+              // list do not jump vertically while the shell width animates. The
+              // real top-bar controls still unmount so their portaled tooltips
+              // cannot escape the inert, clipped sidebar panel.
+              topBar={
+                isSidebarClosed ? (
+                  <div
+                    aria-hidden="true"
+                    data-testid="sidebar-top-bar-placeholder"
+                    className="bg-transparent"
+                    style={{ height: SIDEBAR_TOP_BAR_HEIGHT, flexShrink: 0 }}
+                  />
+                ) : (
+                  <SidebarTopBar
+                    reserveWindowControls={reserveWindowControls}
+                  />
+                )
+              }
+              header={
+                <AgentStatusCard
+                  title={sidebarCardTitle}
+                  isShell={sidebarCardIsShell}
+                  turns={sidebarCardTurns}
+                  fiveHourPct={sidebarCardFiveHourPct}
+                  weekPct={sidebarCardWeekPct}
+                  shellName={activePtyBackedPane?.shell ?? null}
+                />
+              }
+              content={
+                <div className="flex h-full min-h-0 flex-col">
+                  <div className="flex items-stretch gap-2 px-3 pb-3 pt-2.5">
+                    <SidebarTabs<SidebarTab>
+                      tabs={SIDEBAR_TAB_ITEMS}
+                      activeId={activeTab}
+                      onChange={setActiveTab}
+                    />
+                    <NewSessionButton
+                      onClick={handleCreateSession}
+                      shortcutHint={newSessionShortcutHint}
+                      ariaKeyshortcuts={newSessionAriaKeyshortcuts}
+                    />
+                  </div>
+                  <SessionsView
+                    hidden={activeTab !== 'sessions'}
+                    sessions={sessions}
+                    activeSessionId={activeSessionId}
+                    onSessionClick={handleSetActiveSessionId}
+                    onRemoveSession={handleRemoveSession}
+                    onRenameSession={renameSession}
+                    onReorderSessions={reorderSessions}
+                  />
+                  <FilesView
+                    hidden={activeTab !== 'files'}
+                    cwd={fileExplorerCwd}
+                    onFileSelect={handleFileSelect}
+                  />
+                </div>
+              }
+              footer={
+                isSidebarClosed ? undefined : (
+                  <SidebarSettingsFooter
+                    settingsIssueNumber={SETTINGS_FOLLOWUP_ISSUE_NUMBER}
+                  />
+                )
+              }
+            />
+
+            {/* Resize handle (hidden while collapsed) */}
+            {!isSidebarClosed && !isCompactViewport && (
+              <div
+                ref={setSidebarResizeHandle}
+                data-testid="sidebar-resize-handle"
+                role="separator"
+                aria-orientation="vertical"
+                aria-valuemin={SIDEBAR_MIN}
+                aria-valuemax={SIDEBAR_MAX}
+                // aria-valuenow is set by the layout effect and drag preview path
+                // so previews do not need per-frame React state commits.
+                onMouseDown={handleMouseDown}
+                className={`
             absolute right-0 top-0 z-10 h-full w-1 cursor-col-resize
             transition-colors hover:bg-primary/50
             ${isDragging ? 'bg-primary/70' : 'bg-transparent'}
           `}
-        />
+              />
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Main workspace area - TerminalZone + DockPanel.
           `relative` establishes a containing block so the fileError
           banner's `absolute` positioning is scoped to this column
           rather than climbing to the viewport. */}
-      <div className="relative flex flex-col overflow-hidden">
+      <div
+        ref={mainWorkspaceRef}
+        data-testid="workspace-main"
+        className="relative flex flex-col overflow-hidden bg-background"
+        inert={isCompactViewport && !isSidebarClosed ? true : undefined}
+        aria-hidden={isCompactViewport && !isSidebarClosed ? true : undefined}
+        style={{
+          borderTopLeftRadius: sidebarCollapsed || isCompactViewport ? 0 : 16,
+          borderBottomLeftRadius:
+            sidebarCollapsed || isCompactViewport ? 0 : 16,
+          // No elevation shadow on the sheet edge: the sidebar is transparent,
+          // so a leftward drop shadow would read as a dark gradient seam against
+          // it. The rounded corners alone carry the inset-sheet treatment.
+          transition: isDragging
+            ? 'none'
+            : `border-radius ${SIDEBAR_MOTION_MS}ms ${SIDEBAR_MOTION_EASING}`,
+          willChange: 'border-radius',
+        }}
+      >
         <Tabs
           sessions={sessions}
           activeSessionId={activeSessionId}
           onSelect={handleSetActiveSessionId}
           onClose={handleRemoveSession}
           onNew={handleCreateSession}
+          leading={
+            isSidebarClosed ? (
+              <div
+                aria-hidden="true"
+                data-testid="sidebar-toggle-tabs-spacer"
+                style={{
+                  width: SIDEBAR_TOGGLE_SIZE,
+                  height: SIDEBAR_TOGGLE_SIZE,
+                }}
+              />
+            ) : undefined
+          }
           reserveWindowControls={reserveWindowControls}
         />
 
@@ -1626,43 +2059,45 @@ export const WorkspaceView = (): ReactElement => {
         />
       </div>
 
-      <div
-        data-testid="activity-panel-shell"
-        className="h-full shrink-0 overflow-hidden transition-[width] duration-[220ms] ease-pane"
-        style={{
-          width: activityPanelCollapsed ? RAIL_WIDTH_PX : PANEL_WIDTH_PX,
-        }}
-      >
-        {activityPanelCollapsed ? (
-          <AgentStatusRail
-            agent={activityPanelAgent}
-            contextUsedPercentage={
-              agentStatus.contextWindow?.usedPercentage ?? null
-            }
-            cacheHitPercentage={cacheHitPercentage(
-              agentStatus.contextWindow?.currentUsage
-            )}
-            isRunning={agentStatus.isActive}
-            onExpand={() => {
-              handleActivityPanelCollapsed(false)
-            }}
-          />
-        ) : (
-          <AgentStatusPanel
-            agentStatus={agentStatus}
-            cacheHistory={activePtyBackedPane?.cacheHistory ?? []}
-            cwd={activeCwd}
-            gitStatus={gitStatus}
-            onOpenDiff={handleOpenDiff}
-            onOpenFile={handleOpenTestFile}
-            agent={activityPanelAgent}
-            status={activityPanelStatus}
-            onCollapse={() => {
-              handleActivityPanelCollapsed(true)
-            }}
-          />
-        )}
-      </div>
+      {!isCompactViewport && (
+        <div
+          data-testid="activity-panel-shell"
+          className="h-full shrink-0 overflow-hidden transition-[width] duration-[220ms] ease-pane"
+          style={{
+            width: activityPanelCollapsed ? RAIL_WIDTH_PX : PANEL_WIDTH_PX,
+          }}
+        >
+          {activityPanelCollapsed ? (
+            <AgentStatusRail
+              agent={activityPanelAgent}
+              contextUsedPercentage={
+                agentStatus.contextWindow?.usedPercentage ?? null
+              }
+              cacheHitPercentage={cacheHitPercentage(
+                agentStatus.contextWindow?.currentUsage
+              )}
+              isRunning={agentStatus.isActive}
+              onExpand={() => {
+                handleActivityPanelCollapsed(false)
+              }}
+            />
+          ) : (
+            <AgentStatusPanel
+              agentStatus={agentStatus}
+              cacheHistory={activePtyBackedPane?.cacheHistory ?? []}
+              cwd={activeCwd}
+              gitStatus={gitStatus}
+              onOpenDiff={handleOpenDiff}
+              onOpenFile={handleOpenTestFile}
+              agent={activityPanelAgent}
+              status={activityPanelStatus}
+              onCollapse={() => {
+                handleActivityPanelCollapsed(true)
+              }}
+            />
+          )}
+        </div>
+      )}
 
       {/* Unsaved Changes Dialog — shows the CURRENTLY dirty file, not the
           destination the user is switching to. */}

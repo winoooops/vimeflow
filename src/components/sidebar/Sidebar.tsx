@@ -11,6 +11,8 @@ const ARROW_STEP = 8
 const PAGE_STEP = 40
 
 export interface SidebarProps {
+  /** Full-bleed chrome row above the header (e.g. the sidebar top bar). Rendered edge-to-edge with no padding. */
+  topBar?: ReactNode
   /** Top fixed-height region. */
   header?: ReactNode
   /** Middle scroll-eligible region (flex 1). Sidebar provides bounded space; the content's caller owns its own overflow. Required. */
@@ -34,6 +36,7 @@ export interface SidebarProps {
 }
 
 export const Sidebar = ({
+  topBar = undefined,
   header = undefined,
   content,
   bottomPane = undefined,
@@ -107,9 +110,11 @@ export const Sidebar = ({
 
   return (
     <div
-      className="flex h-full w-full flex-col bg-surface-container-low"
+      className="flex h-full w-full flex-col bg-transparent"
       data-testid={testId}
     >
+      {renderSlot(topBar) && topBar}
+
       {renderSlot(header) && (
         <div data-testid="sidebar-header-wrapper" className="px-3 pb-2 pt-3">
           {header}

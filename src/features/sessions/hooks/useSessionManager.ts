@@ -1,7 +1,11 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { flushSync } from 'react-dom'
-import type { LayoutId, Pane, PaneKind, Session } from '../types'
-import type { AgentSessionTitleEvent } from '../../../bindings'
+import type { LayoutId, Pane, PaneKind, Session, SessionStatus } from '../types'
+import type {
+  AgentLifecycleEvent,
+  AgentPhase,
+  AgentSessionTitleEvent,
+} from '../../../bindings'
 import { listen, type UnlistenFn } from '../../../lib/backend'
 import { isDesktop } from '../../../lib/environment'
 import type { ITerminalService } from '../../terminal/services/terminalService'
@@ -27,7 +31,11 @@ import {
   applyRemovePane,
   nextFreePaneId,
 } from '../utils/paneLifecycle'
-import { deriveShellSessionStatus } from '../utils/sessionStatus'
+import {
+  deriveShellSessionStatus,
+  isLiveStatus,
+  isTerminalStatus,
+} from '../utils/sessionStatus'
 import {
   deleteActivityPanelCollapsed,
   writeActivityPanelCollapsed,
@@ -214,6 +222,13 @@ export interface UseSessionManagerOptions {
   autoCreateOnEmpty?: boolean
 }
 
+// Generated AgentPhase is lower-camel (serde rename_all camelCase).
+const phaseToStatus: Record<AgentPhase, SessionStatus> = {
+  running: 'running',
+  idle: 'idle',
+  awaiting: 'awaiting',
+}
+
 const log = createLogger('sessions')
 
 export const useSessionManager = (
@@ -242,6 +257,10 @@ export const useSessionManager = (
   // explicit: restoreData is read by consumers (TerminalZone) but
   // changes are coordinated by the sessions array, never by Map identity.
   const restoreDataRef = useRef(new Map<string, RestoreData>())
+  // Per-pty agent-session identity: rejects stale lifecycle events from a
+  // previous agent run that share the same ptyId but a different agentSessionId
+  // (Codex P2 finding on PR #421).
+  const agentSessionIdsRef = useRef(new Map<string, string>())
 
   const buffer = usePtyBufferDrain()
   const { notifyPaneReady, registerPending, dropAllForPty } = buffer
@@ -312,8 +331,46 @@ export const useSessionManager = (
   // exit. Idempotent — flipping an already-completed session to completed
   // just refreshes its exit-relative timestamp. Unsubscribes on unmount via
   // the returned cleanup.
-  const onPtyExitRef = useRef<(ptyId: string) => void>(() => undefined)
-  onPtyExitRef.current = (ptyId: string): void => {
+  const onPtyExitRef = useRef<(ptyId: string, code: number | null) => void>(
+    () => undefined
+  )
+  onPtyExitRef.current = (ptyId: string, code: number | null): void => {
+    const exitedAt = new Date().toISOString()
+
+    const status: SessionStatus =
+      code != null && code !== 0 ? 'errored' : 'completed'
+
+    setSessions((prev) =>
+      prev.map((s) => {
+        const idx = s.panes.findIndex((p) => p.ptyId === ptyId)
+        if (idx === -1) {
+          return s
+        }
+
+        const newPanes = s.panes.map((p, paneIdx) =>
+          paneIdx === idx
+            ? {
+                ...p,
+                status,
+                agentType: 'generic' as const,
+              }
+            : p
+        )
+        const activePane = newPanes.find((p) => p.active)
+
+        return {
+          ...s,
+          status: deriveShellSessionStatus(newPanes),
+          agentType: activePane?.agentType ?? s.agentType,
+          panes: newPanes,
+          lastActivityAt: exitedAt,
+        }
+      })
+    )
+  }
+
+  const onPtyErrorRef = useRef<(ptyId: string) => void>(() => undefined)
+  onPtyErrorRef.current = (ptyId: string): void => {
     const exitedAt = new Date().toISOString()
 
     setSessions((prev) =>
@@ -327,7 +384,7 @@ export const useSessionManager = (
           paneIdx === idx
             ? {
                 ...p,
-                status: 'completed' as const,
+                status: 'errored' as const,
                 agentType: 'generic' as const,
               }
             : p
@@ -347,8 +404,38 @@ export const useSessionManager = (
 
   usePtyExitListener({
     service,
-    onExit: (ptyId) => onPtyExitRef.current(ptyId),
+    onExit: (ptyId, code) => onPtyExitRef.current(ptyId, code),
   })
+
+  useEffect(() => {
+    let cancelled = false
+    let unsubscribeError: (() => void) | undefined
+
+    void (async (): Promise<void> => {
+      let fn: () => void
+      try {
+        fn = await service.onError((sessionId) => {
+          onPtyErrorRef.current(sessionId)
+        })
+      } catch {
+        return
+      }
+
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+      if (cancelled) {
+        fn()
+
+        return
+      }
+
+      unsubscribeError = fn
+    })()
+
+    return (): void => {
+      cancelled = true
+      unsubscribeError?.()
+    }
+  }, [service])
 
   useEffect(() => {
     if (!isDesktop()) {
@@ -364,6 +451,14 @@ export const useSessionManager = (
         fn = await listen<AgentSessionTitleEvent>(
           'agent-session-title',
           (payload) => {
+            // Title events are a reliable run-start signal: a new
+            // agentSessionId here means the pane's active agent run has
+            // changed, so future lifecycle comparisons must use this id.
+            agentSessionIdsRef.current.set(
+              payload.sessionId,
+              payload.agentSessionId
+            )
+
             const cleared = payload.title.length === 0
             const nextTitle = cleared ? undefined : payload.title
             const nextSource = cleared ? undefined : payload.source
@@ -436,6 +531,82 @@ export const useSessionManager = (
       }
 
       // cancelled may flip while the listener promise is awaiting.
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+      if (cancelled) {
+        fn()
+      } else {
+        unlistenFn = fn
+      }
+    })()
+
+    return (): void => {
+      cancelled = true
+      unlistenFn?.()
+    }
+  }, [])
+
+  // Bridge: write the agent's derived lifecycle phase into pane.status.
+  useEffect(() => {
+    if (!isDesktop()) {
+      return
+    }
+
+    let cancelled = false
+    let unlistenFn: UnlistenFn | undefined
+
+    void (async (): Promise<void> => {
+      let fn: UnlistenFn
+      try {
+        fn = await listen<AgentLifecycleEvent>('agent-lifecycle', (payload) => {
+          setSessions((prev) =>
+            prev.map((session) => {
+              const idx = session.panes.findIndex(
+                (pane) => pane.ptyId === payload.sessionId
+              )
+              if (idx === -1) {
+                return session
+              }
+
+              // Sticky terminal: a late/replayed event must not resurrect an
+              // exited pane. v1 is last-writer-wins among live phases.
+              if (isTerminalStatus(session.panes[idx].status)) {
+                return session
+              }
+
+              // Reject stale lifecycle events from an old agent run that
+              // share the same ptyId but carry a different agentSessionId.
+              const currentAgentId = agentSessionIdsRef.current.get(
+                payload.sessionId
+              )
+              if (
+                currentAgentId !== undefined &&
+                currentAgentId !== payload.agentSessionId
+              ) {
+                return session
+              }
+              agentSessionIdsRef.current.set(
+                payload.sessionId,
+                payload.agentSessionId
+              )
+
+              const newPanes = session.panes.map((pane, i) =>
+                i === idx
+                  ? { ...pane, status: phaseToStatus[payload.phase] }
+                  : pane
+              )
+
+              return {
+                ...session,
+                status: deriveShellSessionStatus(newPanes),
+                panes: newPanes,
+              }
+            })
+          )
+        })
+      } catch {
+        return
+      }
+
       // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
       if (cancelled) {
         fn()
@@ -536,6 +707,7 @@ export const useSessionManager = (
                   id: 'p0',
                   ptyId: result.sessionId,
                   cwd: result.cwd,
+                  shell: result.shell,
                   agentType: 'generic',
                   status: 'running',
                   active: true,
@@ -665,7 +837,8 @@ export const useSessionManager = (
   const hasLiveSession = sessions.some((s) =>
     s.panes.some(
       (pane) =>
-        (isShellPane(pane) && pane.status === 'running') || isBrowserPane(pane)
+        (isShellPane(pane) && isLiveStatus(pane.status)) ||
+        (isBrowserPane(pane) && isLiveStatus(pane.status))
     )
   )
   useAutoCreateOnEmpty({
@@ -802,6 +975,7 @@ export const useSessionManager = (
           dropAllForPty(ptyId)
           deleteCacheHistory(ptyId)
           restoreDataRef.current.delete(ptyId)
+          agentSessionIdsRef.current.delete(ptyId)
           unregisterPtySession(ptyId)
         }
         restoreDataRef.current.delete(target.id)
@@ -1072,6 +1246,7 @@ export const useSessionManager = (
             id: nextFreePaneId(fresh.panes),
             ptyId: result.sessionId,
             cwd: result.cwd,
+            shell: result.shell,
             agentType: 'generic',
             status: 'running',
             active: true,
@@ -1174,6 +1349,7 @@ export const useSessionManager = (
             dropAllForPty(target.ptyId)
             deleteCacheHistory(target.ptyId)
             restoreDataRef.current.delete(target.ptyId)
+            agentSessionIdsRef.current.delete(target.ptyId)
             unregisterPtySession(target.ptyId)
           } else {
             try {
@@ -1294,7 +1470,12 @@ export const useSessionManager = (
         }
         const cachedCwd = oldPane.cwd
 
-        let result: { sessionId: string; pid: number; cwd: string }
+        let result: {
+          sessionId: string
+          pid: number
+          cwd: string
+          shell: string
+        }
         try {
           result = await service.spawn({
             cwd: cachedCwd,
@@ -1375,6 +1556,7 @@ export const useSessionManager = (
               ...oldPane,
               ptyId: result.sessionId,
               cwd: result.cwd,
+              shell: result.shell,
               status: 'running',
               agentType: 'generic',
               pid: result.pid,

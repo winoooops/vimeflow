@@ -17,6 +17,7 @@ describe('MockTerminalService', () => {
 
       expect(result.sessionId).toMatch(/^mock-session-\d+$/)
       expect(result.pid).toBeGreaterThan(0)
+      expect(result.shell).toBe('/bin/bash')
     })
 
     test('assigns unique session IDs', async () => {

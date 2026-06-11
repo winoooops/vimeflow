@@ -2,8 +2,8 @@
 id: accessibility
 category: a11y
 created: 2026-04-09
-last_updated: 2026-06-08
-ref_count: 11
+last_updated: 2026-06-11
+ref_count: 21
 ---
 
 # Accessibility
@@ -245,6 +245,159 @@ handlers must not trap focus without implementing the promised behavior.
 - **Fix:** Replaced the `<input>` with a `<span>` displaying the placeholder text directly. The span has no a11y semantics, no tabindex, and no interactive role — purely text content inside the `<button>`, which is fully spec-compliant. Visual result is identical because the input's only visible state was its placeholder, which is the same string the span now renders. Code-review heuristic: when wrapping a row in a `<button>` for keyboard activation, audit every descendant for interactive content (input, select, textarea, anchor, another button) AND for `tabindex` — both rules are independent. Decorative "input-shaped" UI should be a `<span>` or `<div>`, not `<input>`.
 - **Commit:** _(see git log for the cycle-4 fix commit on PR #190)_
 
+### 26. aria-pressed={collapsed} inverted when paired with action label
+
+- **Source:** github-claude | PR #352 round 1 | 2026-06-06
+- **Severity:** MEDIUM
+- **File:** `src/features/workspace/components/SidebarToggle.tsx`
+- **Finding:** When `collapsed=true`, the button rendered `aria-label="Show sidebar"` and `aria-pressed="true"`. A screen reader announced "Show sidebar, toggle button, pressed" — "pressed" in ARIA means the toggle's _on_ state is active, which a listener interprets as "the show-sidebar action is currently engaged" (sidebar is visible). But the sidebar is actually hidden, directly contradicting the signal.
+- **Fix:** Replaced `aria-pressed={collapsed}` with `aria-expanded={!collapsed}` — the WAI-ARIA-recommended attribute for controls that reveal/hide a panel. Updated co-located test assertions accordingly.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 27. Focus lost to body when in-card toggle collapses the sidebar
+
+- **Source:** github-claude | PR #352 round 2 | 2026-06-06
+- **Severity:** MEDIUM
+- **File:** `src/features/workspace/WorkspaceView.tsx`
+- **Finding:** When a keyboard or assistive-technology user activates the `SidebarToggle` inside `AgentStatusCard`, the button lives inside the sidebar subtree that is about to become `inert`. Browsers remove focus from elements in an inert subtree (Chromium drops it on `document.body`), and the replacement rail toggle does not receive focus automatically. The result is a confusing loss of focus context every time the sidebar is collapsed from the card.
+- **Fix:** Forward a `railToggleRef` from `WorkspaceView` through `IconRail` to the rail `SidebarToggle`, set a `focusRailAfterCollapseRef` flag in the in-card toggle callback, and use a `useEffect` that focuses the rail toggle after `sidebarCollapsed` transitions to `true`. Keyboard shortcut and palette paths keep the original `toggleSidebar` so they do not steal focus from the terminal/editor.
+- **Commit:** same commit as this entry
+
+### 28. RateLimitBar lacks `role=progressbar` and `aria-value*` attributes
+
+- **Source:** github-claude | PR #352 round 2 | 2026-06-06
+- **Severity:** LOW
+- **File:** `src/features/agent-status/components/RateLimitBar.tsx`
+- **Finding:** The shared `RateLimitBar` component rendered a visual progress bar as two nested `<div>` elements with no ARIA role or value attributes. Screen readers could not interpret the fill width as a bounded value, so AT users only heard the adjacent label and percentage text without the programmatic range semantics.
+- **Fix:** Added `role="progressbar"`, `aria-valuenow={Math.round(percentage)}`, `aria-valuemin={0}`, and `aria-valuemax={100}` to the outer track `<div>`, and added a co-located test asserting the role and value attributes.
+- **Commit:** same commit as this entry
+
+### 29. RateLimitBar progressbar lacks accessible name
+
+- **Source:** github-claude | PR #352 round 3 | 2026-06-06
+- **Severity:** HIGH
+- **File:** `src/features/agent-status/components/RateLimitBar.tsx`
+- **Finding:** The progressbar `<div>` had `role="progressbar"` and `aria-value*` attributes but no `aria-label` or `aria-labelledby`. The visible label lived in a preceding sibling `<span>` with no programmatic association. Screen readers announced a bare percentage with no context about what the bar measures, violating WCAG 2.1 SC 4.1.2 (Name, Role, Value).
+- **Fix:** Added `aria-label={label}` to the progressbar `<div>` so the accessible name matches the visible label text. No test changes were needed beyond the existing `getByRole('progressbar')` query which now implicitly verifies the name.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 30. Production focus guard depends on `data-testid` selectors
+
+- **Source:** github-claude | PR #364 round 1 | 2026-06-06
+- **Severity:** MEDIUM
+- **File:** `src/features/workspace/WorkspaceView.tsx`
+- **Finding:** The post-toggle focus guard used `document.querySelector('[data-testid="sidebar-toggle-tabs"]')` / `sidebar-toggle-topbar` to restore focus after collapse or expand. Runtime a11y behavior was coupled to test-only string names, so a routine test-id rename could silently strand keyboard focus on `<body>` after every sidebar toggle. Same finding-class as #14 (focus restoration via raw CSS selector) — focus-management code paths must enforce their own invariants because the symptom (focus on `<body>`) is invisible until a real keyboard user notices.
+- **Fix:** Replaced the `data-testid` DOM query with `useRef<HTMLButtonElement>` refs forwarded to the top-bar and tabs toggle instances, and focused the selected ref inside the deferred guard. `SidebarToggle` already forwarded refs via `forwardRef`, so the change was localized: two new refs in `WorkspaceView`, a new `toggleRef` prop on `SidebarTopBar` that forwards to its `SidebarToggle`, and the guard selects the appropriate ref instead of querying the DOM.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 31. Session actions menu toggle does not expose expanded/collapsed state
+
+- **Source:** github-claude | PR #383 round 1 | 2026-06-07
+- **Severity:** MEDIUM
+- **File:** `src/features/sessions/components/Card.tsx`
+- **Finding:** The PR added a new kebab menu toggle button whose visible state is controlled by `menuOpen`, but the button only had `aria-label="Session actions"` and did not expose `aria-expanded`. Screen-reader users could focus and activate the control but received no feedback about whether the action menu was open or closed, leaving assistive tech without the control's current value. WCAG 4.1.2 (Name, Role, Value) violation.
+- **Fix:** Added `aria-expanded={menuOpen}` and `aria-haspopup="menu"` to the Session actions button. The `menuOpen` state already existed; wiring it into ARIA closes the gap with minimal regression risk.
+- **Commit:** see `git blame` / `git log` on this line
+
+### 32. Removed aria-hidden on visible title span reinstates double-announcement
+
+- **Source:** github-claude | PR #383 round 1 | 2026-06-07
+- **Severity:** LOW
+- **File:** `src/features/sessions/components/Card.tsx`
+- **Finding:** During a className refactor the `aria-hidden="true"` attribute was dropped from the session-name `<span>`. The sibling overlay activation `<button>` already carries `aria-label={session.name}`, so browse-mode screen readers now encounter the same text twice: once as the button's accessible name, once as the span's text content.
+- **Fix:** Restored `aria-hidden="true"` on the title span with an updated comment explaining the rationale. Zero visual or interaction impact.
+- **Commit:** same commit as finding #31
+
+### 33. `aria-haspopup="menu"` declared without matching menu role semantics
+
+- **Source:** github-claude | PR #383 round 2 | 2026-06-07
+- **Severity:** HIGH
+- **File:** `src/features/sessions/components/Card.tsx`
+- **Finding:** The Session actions button carried `aria-haspopup="menu"`, promising assistive technology a menu widget. The popup was a plain `<div>` and `MenuRow` rendered plain `<button>` elements with no `role="menu"` or `role="menuitem"`. Screen readers announced a menu that did not exist, breaking the ARIA contract and potentially trapping users in an unexpected navigation mode.
+- **Fix:** Removed `aria-haspopup="menu"` from the trigger button. The popup remains a simple disclosure-style button group; `aria-expanded` already communicates open/closed state. This avoids the cost of implementing the full APG menu keyboard contract (arrow keys, Home/End, focus management) for a two-item action list.
+- **Commit:** see `git blame` / `git log` on this line
+
+### 34. Kebab popup has no Escape dismissal path
+
+- **Source:** github-claude | PR #383 round 2 | 2026-06-07
+- **Severity:** MEDIUM
+- **File:** `src/features/sessions/components/Card.tsx`
+- **Finding:** The actions menu could be opened from the keyboard but had no Escape handler. Keyboard-only or AT users who opened the popover and decided not to choose an action were forced to Tab away or activate an unintended item. The existing `onBlur` close logic only fired when focus moved to another focusable element.
+- **Fix:** Added a document-level `keydown` listener (scoped to `menuOpen === true`) that calls `setMenuOpen(false)` and returns focus to the trigger button via a `useRef`. The listener is cleaned up on unmount or when the menu closes. Co-located tests assert Escape dismissal and focus restoration.
+- **Commit:** see `git blame` / `git log` on this line
+
+### 35. Title-click activation leaves the kebab menu visually open
+
+- **Source:** github-claude | PR #383 round 2 | 2026-06-07
+- **Severity:** MEDIUM
+- **File:** `src/features/sessions/components/Card.tsx`
+- **Finding:** The session title `<span>` has its own `onClick` handler that forwards to `onClick(session.id)`. Because the span is not focusable, clicking it does not move focus and therefore does not trigger the kebab wrapper's `onBlur` close path. The result: the session activates while the actions popover remains visible, producing misleading stale UI.
+- **Fix:** Prepended `setMenuOpen(false)` to the title span's `onClick` handler before forwarding to `onClick(session.id)`. A co-located test asserts that the menu closes and the session still activates.
+- **Commit:** same commit as finding #33
+
+### 36. Pane count hidden from assistive technology inside `aria-hidden` glyph wrapper
+
+- **Source:** review-comment-4644952225 | PR #388 | 2026-06-08
+- **Severity:** MEDIUM
+- **File:** `src/features/sessions/components/Card.tsx`
+- **Finding:** The newly added `session-pane-count` span was nested inside a parent `<span aria-hidden="true">` that wraps the decorative layout glyph. The sibling overlay activation `<button>` carried only `aria-label={session.name}`, so screen-reader users navigating session cards received the session name but not the newly added multi-pane count — meaningful workspace state that sighted users see.
+- **Fix:** Computed an `ariaLabel` constant: when `showGlyph` is true, `${session.name} (${LAYOUTS[session.layout].capacity} panes)`; otherwise `session.name`. Wired `aria-label={ariaLabel}` into the activation button. Added co-located regression tests asserting both the multi-pane suffix and the single-pane absence.
+- **Commit:** see `git blame` / `git log` on this line
+
+### 37. Escape-close doesn't restore focus — keyboard users stranded on <body>
+
+- **Source:** github-claude | PR #409 round 1 | 2026-06-10
+- **Severity:** HIGH
+- **File:** `src/features/workspace/WorkspaceView.tsx`
+- **Finding:** When the compact sidebar is open and the user presses Escape to close it, `closeOnEscape` calls `setCompactSidebarOpen(false)` without setting `shouldRestoreSidebarToggleFocusRef.current = true`. The focus-guard effect then finds the flag false and returns early, leaving focus on `document.body` — a WCAG 2.4.3 violation.
+- **Fix:** Added `shouldRestoreSidebarToggleFocusRef.current = true` immediately before `setCompactSidebarOpen(false)` inside `closeOnEscape` so the existing focus-guard RAF picks it up and refocuses the tabs-bar toggle.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 38. Test locates inert wrapper via `parentElement!` — fragile DOM traversal
+
+- **Source:** github-claude | PR #409 round 1 | 2026-06-10
+- **Severity:** LOW
+- **File:** `src/features/workspace/WorkspaceView.test.tsx`
+- **Finding:** The test found the main workspace div with `screen.getByTestId('dock-canvas-wrapper').parentElement!`. If any intermediate wrapper were inserted, the assertion would check the wrong element's `inert` / `aria-hidden` attributes.
+- **Fix:** Added `data-testid="workspace-main"` to the main workspace div in `WorkspaceView.tsx` and updated the test to query `screen.getByTestId('workspace-main')` directly.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 39. Compact sidebar drawer lacks dialog semantics while behaving as a modal overlay
+
+- **Source:** github-codex-connector | PR #409 round 2 | 2026-06-10
+- **Severity:** HIGH
+- **File:** `src/features/workspace/WorkspaceView.tsx`
+- **Finding:** The changed compact sidebar path makes the main workspace inert/aria-hidden and displays a scrim, so the sidebar is presented as a modal overlay in real use whenever a compact viewport user opens it. Without `role="dialog"`, `aria-modal`, and an accessible label on the active drawer container, assistive technology users do not get a programmatic modal context.
+- **Fix:** Added conditional dialog semantics to the sidebar wrapper when the compact drawer is open: `role={isCompactViewport && !isSidebarClosed ? 'dialog' : undefined}`, `aria-modal={isCompactViewport && !isSidebarClosed ? true : undefined}`, and `aria-label={isCompactViewport && !isSidebarClosed ? 'Sidebar' : undefined}`. The props are only applied on the compact open path; the non-compact sidebar path is unchanged.
+- **Commit:** see `git blame` / `git log` on this line
+
+### 40. Scrim close path does not opt into focus restoration
+
+- **Source:** github-codex-connector | PR #409 round 2 | 2026-06-10
+- **Severity:** MEDIUM
+- **File:** `src/features/workspace/WorkspaceView.tsx`
+- **Finding:** The scrim is a newly added dismissal path for the compact drawer. Its `onClick` closes the drawer without setting the existing `shouldRestoreSidebarToggleFocusRef` flag, unlike the Escape path, so focus can fall back to `document.body` after the clicked scrim unmounts. This affects mixed pointer/keyboard users.
+- **Fix:** Set `shouldRestoreSidebarToggleFocusRef.current = true` before calling `setCompactSidebarOpen(false)` in the scrim `onClick` handler, aligning the scrim dismissal path with the existing Escape behavior and letting the post-toggle focus guard refocus the visible toggle.
+- **Commit:** see `git blame` / `git log` on this line
+
+### 41. Compact sidebar shortcut opens modal drawer without focus restoration
+
+- **Source:** github-claude | PR #409 round 3 | 2026-06-10
+- **Severity:** MEDIUM
+- **File:** `src/features/workspace/WorkspaceView.tsx`
+- **Finding:** `handleToggleSidebar` sets `shouldRestoreSidebarToggleFocusRef.current` only when the active element is one of the sidebar toggle buttons. `useSidebarShortcut` intentionally fires from terminal/editor focus, so on compact viewports the shortcut can open the dialog-style sidebar while the main workspace becomes `inert` and the focus guard returns early. This plausibly leaves keyboard users on `document.body` or otherwise outside the newly opened modal drawer, a WCAG focus-order regression in new compact-mode behavior.
+- **Fix:** When compact mode is about to open the sidebar, set `shouldRestoreSidebarToggleFocusRef.current = true` regardless of which element was focused (based on action intent `!compactSidebarOpen` rather than prior active element). Keep the guard for non-compact and close paths. Add a regression test that mocks `requestAnimationFrame`, fires the shortcut from `document.body`, simulates browser inert-focus-eviction by refocusing body, flushes the guard frame, and asserts the topbar toggle receives focus.
+- **Commit:** see `git blame` / `git log` on this line
+
+### 42. Compact sidebar shortcut close from drawer content drops focus to body
+
+- **Source:** github-codex-connector | PR #409 round 4 | 2026-06-10
+- **Severity:** HIGH
+- **File:** `src/features/workspace/WorkspaceView.tsx`
+- **Finding:** In compact mode, `handleToggleSidebar` sets `shouldRestoreSidebarToggleFocusRef.current = isToggleButtonFocused || !compactSidebarOpen`. On the close path, `compactSidebarOpen` is true, so a keyboard user who has tabbed from the drawer toggle into sidebar content and then uses the sidebar shortcut will leave the flag false. Closing makes the drawer content inert/hidden, the focus guard exits early, and focus can land on `document.body` with no visible focus target. This is a deterministic new compact-mode WCAG focus-order regression.
+- **Fix:** In the compact branch of `handleToggleSidebar`, unconditionally set `shouldRestoreSidebarToggleFocusRef.current = true` for all user-triggered compact toggles (both open and close). This aligns with the Escape and scrim dismissal paths. Also fixed `useSidebarShortcut` to not bail on the compact sidebar drawer itself (which carries `role="dialog"` for a11y) while preserving the existing bailout for real dialogs such as the command palette. Added a regression test that opens the drawer, focuses the Command Palette button inside it, fires the sidebar shortcut, and asserts focus lands back on the tabs toggle.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
 ### 26. Idle-but-live shell state removed from `aria-label` — assistive tech cannot distinguish "no shell" from "shell idle"
 
 - **Source:** github-claude | PR #367 | 2026-06-06
@@ -316,3 +469,39 @@ handlers must not trap focus without implementing the promised behavior.
 - **Finding:** A PR refactor that introduced `Tooltip` around each `StatCell` replaced the previous `<dl>` / `<dt>` / `<dd>` structure (see §12) with `<div>` / `<span>` nodes. The visual layout remained identical, but assistive technologies lost the explicit name/value relationship for the cached/wrote/fresh metrics. Screen readers announced the three cells as flattened text fragments rather than structured term/value pairs, re-introducing the WCAG 1.3.1 violation that §12 had already fixed.
 - **Fix:** Restored the outer metric grid as `<dl>` and changed each `StatCell` inner markup to `<dd>` (value) + `<dt>` (label) while keeping the `Tooltip` wrapper and all Tailwind classes unchanged. The `<div>` wrapper inside `<dl>` around each `<dd>`/`<dt>` pair remains valid HTML5 per the living standard (added in 2015) and preserves the existing grid layout. Zero visual change, full semantic restoration.
 - **Commit:** _(PR #395 round 1)_
+
+### 43. RateLimitBar aria-valuenow can exceed aria-valuemax
+
+- **Source:** github-codex-connector | PR #421 round 1 | 2026-06-11
+- **Severity:** MEDIUM
+- **File:** `src/features/agent-status/components/RateLimitBar.tsx`
+- **Finding:** RateLimitBar clamps the visual width to 100% but exposes `Math.round(percentage)` as `aria-valuenow` with `aria-valuemax` fixed at 100. If usage exceeds 100%, assistive technology receives an invalid progressbar range.
+- **Fix:** Clamped `aria-valuenow` to the same 0-100 range as the visual fill using `Math.min(Math.max(Math.round(percentage), 0), 100)`, while leaving the visible text free to show the raw rounded percentage. Added co-located regression tests for overflow and negative values.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 44. aria-haspopup="menu" without role="menu" on popup — ARIA contract broken
+
+- **Source:** github-claude | PR #421 round 2 | 2026-06-11
+- **Severity:** MEDIUM
+- **File:** `src/features/sessions/components/Card.tsx`
+- **Finding:** The kebab trigger button declares `aria-haspopup="menu"`, which commits to an ARIA menu popup contract requiring the popup element to carry `role="menu"` and each item to carry `role="menuitem"`. The popup `<div>` and `MenuRow` buttons had neither role, breaking the screen-reader menu-navigation contract.
+- **Fix:** Added `role="menu"` to the popup `<div>` and `role="menuitem"` to the `<button>` inside `MenuRow`.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 45. Menu roles without keyboard contract mislead assistive technology
+
+- **Source:** github-claude | PR #421 round 3 | 2026-06-11
+- **Severity:** MEDIUM
+- **File:** `src/features/sessions/components/Card.tsx`
+- **Finding:** A prior cycle added `role="menu"` and `role="menuitem"` to the kebab popup and its items, but the component did not implement the full APG menu keyboard contract (arrow-key navigation, initial focus into the menu, Home/End). Screen readers announced a menu widget that keyboard users could not operate with expected menu navigation, producing a broken ARIA contract.
+- **Fix:** Downgraded to generic popup semantics by removing `role="menu"` and `role="menuitem"`, changing `aria-haspopup="menu"` to `aria-haspopup="true"`, and keeping `aria-expanded` for open/closed state disclosure. The popup remains a simple two-item button group.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 46. Popup menu stays open on pointer clicks outside the container
+
+- **Source:** github-claude | PR #421 round 3 | 2026-06-11
+- **Severity:** MEDIUM
+- **File:** `src/features/sessions/components/Card.tsx`
+- **Finding:** The actions popup closed on `onBlur` (when focus left the wrapper) and on Escape, but clicking a non-focusable area of the sidebar did not move focus and therefore did not trigger blur, leaving the popup visibly stuck open during normal pointer use.
+- **Fix:** Added a document-level `mousedown` listener active while `menuOpen === true` that calls `setMenuOpen(false)` when the event target is outside the kebab/menu container. The listener is registered in a `useEffect` with cleanup on unmount or menu close.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

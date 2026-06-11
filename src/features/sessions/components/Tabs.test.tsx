@@ -20,7 +20,7 @@ const buildSession = (overrides: Partial<Session> = {}): Session => ({
       ptyId: 'sess-1',
       cwd: '~',
       agentType: 'claude-code',
-      status: 'running',
+      status: overrides.status ?? 'running',
       active: true,
     },
   ],
@@ -62,6 +62,34 @@ const renderTabs = (
     />
   )
 
+describe('Tabs — leading slot', () => {
+  test('renders the leading control before the tabs and spaces the bar to clear it', () => {
+    render(
+      <Tabs
+        sessions={[buildSession()]}
+        activeSessionId="sess-1"
+        onSelect={vi.fn()}
+        onClose={vi.fn()}
+        onNew={vi.fn()}
+        leading={<button data-testid="leading-fixture">L</button>}
+      />
+    )
+
+    expect(screen.getByTestId('leading-fixture')).toBeInTheDocument()
+    expect(screen.getByTestId('session-tabs')).not.toHaveClass('pl-[12px]')
+    expect(screen.getByTestId('session-tabs-leading-offset')).toHaveStyle({
+      width: '12px',
+    })
+  })
+
+  test('omitting leading uses the default left padding', () => {
+    renderTabs([buildSession()], 'sess-1')
+
+    expect(screen.queryByTestId('leading-fixture')).not.toBeInTheDocument()
+    expect(screen.getByTestId('session-tabs')).toHaveClass('pl-2')
+  })
+})
+
 describe('Tabs', () => {
   test('renders the strip at 38px tall per handoff §4.3', () => {
     renderTabs([buildSession()], 'sess-1')
@@ -70,12 +98,50 @@ describe('Tabs', () => {
   })
 
   test('makes only empty tab-strip chrome draggable on macOS', () => {
-    renderTabs([buildSession()], 'sess-1', {}, true)
+    render(
+      <Tabs
+        sessions={[buildSession()]}
+        activeSessionId="sess-1"
+        onSelect={vi.fn()}
+        onClose={vi.fn()}
+        onNew={vi.fn()}
+        leading={<button data-testid="leading-fixture">L</button>}
+        reserveWindowControls
+      />
+    )
 
-    expect(screen.getByTestId('session-tabs')).toHaveClass('vf-app-drag-region')
+    expect(screen.getByTestId('session-tabs')).not.toHaveClass(
+      'vf-app-drag-region'
+    )
+
+    expect(screen.getByTestId('session-tabs-leading-offset')).toHaveClass(
+      'vf-app-drag-region'
+    )
+
+    expect(
+      screen.getByTestId('session-tabs-leading-upper-drag-region')
+    ).toHaveClass('vf-app-drag-region')
+
+    expect(
+      screen.getByTestId('session-tabs-leading-toggle-clearance')
+    ).toHaveClass('vf-app-no-drag')
+
+    expect(
+      screen.getByTestId('session-tabs-leading-lower-drag-region')
+    ).toHaveClass('vf-app-drag-region')
+
+    expect(screen.getByTestId('session-tabs-leading')).not.toHaveClass(
+      'vf-app-drag-region'
+    )
+
     expect(screen.getByRole('tablist')).toHaveClass('vf-app-no-drag')
+
     expect(screen.getByRole('button', { name: 'New session' })).toHaveClass(
       'vf-app-no-drag'
+    )
+
+    expect(screen.getByTestId('session-tabs-drag-region')).toHaveClass(
+      'vf-app-drag-region'
     )
   })
 
@@ -83,6 +149,10 @@ describe('Tabs', () => {
     renderTabs([buildSession()], 'sess-1')
 
     expect(screen.getByTestId('session-tabs')).not.toHaveClass(
+      'vf-app-drag-region'
+    )
+
+    expect(screen.getByTestId('session-tabs-drag-region')).not.toHaveClass(
       'vf-app-drag-region'
     )
   })
@@ -116,7 +186,7 @@ describe('Tabs', () => {
   test('renders one tab per open session (running + paused)', () => {
     const sessions: Session[] = [
       buildSession({ id: 'a', status: 'running', name: 'auth' }),
-      buildSession({ id: 'b', status: 'paused', name: 'tests' }),
+      buildSession({ id: 'b', status: 'idle', name: 'tests' }),
       buildSession({ id: 'c', status: 'completed', name: 'closed' }),
       buildSession({ id: 'd', status: 'errored', name: 'broken' }),
     ]

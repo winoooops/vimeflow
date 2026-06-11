@@ -59,6 +59,10 @@ pub(super) struct ClaudeTranscriptLineDto {
 pub(super) struct ClaudeMessageDto {
     #[serde(default)]
     pub content: Value,
+    /// Assistant turn-boundary signal: `tool_use` = running, `end_turn` /
+    /// `stop_sequence` / `max_tokens` = idle. Absent on non-assistant lines.
+    #[serde(default, deserialize_with = "lenient_string")]
+    pub stop_reason: Option<String>,
 }
 
 /// A `tool_use` content block. Scalars are typed; `input` is presence-sensitive

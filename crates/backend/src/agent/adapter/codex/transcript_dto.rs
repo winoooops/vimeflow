@@ -35,6 +35,8 @@ pub(super) enum CodexPayloadType {
     PatchApplyEnd,
     CustomToolCall,
     CustomToolCallOutput,
+    TaskStarted,
+    TaskComplete,
     Other,
 }
 
@@ -67,6 +69,9 @@ impl CodexLineDto {
 pub(super) struct CodexPayloadDto {
     #[serde(rename = "type", default, deserialize_with = "lenient_string")]
     pub type_tag: Option<String>,
+    /// session_meta's own session id; captured as the agent-lifecycle identity.
+    #[serde(default, deserialize_with = "lenient_string")]
+    pub id: Option<String>,
     #[serde(default, deserialize_with = "lenient_string")]
     pub call_id: Option<String>,
     #[serde(default, deserialize_with = "lenient_string")]
@@ -104,6 +109,8 @@ impl CodexPayloadDto {
             Some("patch_apply_end") => CodexPayloadType::PatchApplyEnd,
             Some("custom_tool_call") => CodexPayloadType::CustomToolCall,
             Some("custom_tool_call_output") => CodexPayloadType::CustomToolCallOutput,
+            Some("task_started") => CodexPayloadType::TaskStarted,
+            Some("task_complete") => CodexPayloadType::TaskComplete,
             _ => CodexPayloadType::Other,
         }
     }

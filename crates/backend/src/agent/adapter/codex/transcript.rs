@@ -18,8 +18,13 @@ use crate::agent::adapter::claude_code::test_runners::test_file_patterns::is_tes
 use crate::agent::adapter::claude_code::test_runners::timestamps::compute_duration_ms;
 use crate::agent::adapter::claude_code::test_runners::types::CapturedOutput;
 use crate::agent::adapter::types::ValidateTranscriptError;
-use crate::agent::events::{emit_agent_cwd, emit_agent_tool_call, emit_agent_turn};
-use crate::agent::types::{AgentCwdEvent, AgentToolCallEvent, AgentTurnEvent, ToolCallStatus};
+use crate::agent::events::{
+    emit_agent_cwd, emit_agent_tool_call, emit_agent_turn, emit_lifecycle_on_change,
+    record_lifecycle,
+};
+use crate::agent::types::{
+    AgentCwdEvent, AgentPhase, AgentToolCallEvent, AgentTurnEvent, ToolCallStatus,
+};
 use crate::runtime::EventSink;
 
 use super::transcript_dto::{
@@ -205,6 +210,15 @@ struct CodexTranscriptDecoder {
     num_turns: u32,
     last_cwd: Option<String>,
     emitter: TestRunEmitter,
+    /// Codex's own session id (from session_meta), the agent-lifecycle identity.
+    codex_agent_session_id: String,
+    /// Live agent-lifecycle de-dup slot; left untouched during replay.
+    last_phase: Option<AgentPhase>,
+    /// Settled phase accumulated silently during replay, flushed once at
+    /// the replay->live boundary.
+    replay_phase: Option<AgentPhase>,
+    /// One-shot guard: false during replay, true after the first on_caught_up.
+    replay_done: bool,
 }
 
 impl CodexTranscriptDecoder {
@@ -218,6 +232,10 @@ impl CodexTranscriptDecoder {
             num_turns: 0,
             last_cwd: None,
             emitter,
+            codex_agent_session_id: String::new(),
+            last_phase: None,
+            replay_phase: None,
+            replay_done: false,
         }
     }
 }
@@ -233,15 +251,34 @@ impl TranscriptDecoder for CodexTranscriptDecoder {
             &mut self.in_flight,
             &mut self.num_turns,
             &mut self.last_cwd,
+            &mut self.codex_agent_session_id,
+            &mut self.last_phase,
+            &mut self.replay_phase,
+            self.replay_done,
         );
     }
 
     /// First EOF marks the end of replay; subsequent EOFs are idempotent.
     fn on_caught_up(&mut self) {
+        if !self.replay_done {
+            self.replay_done = true;
+            if !self.codex_agent_session_id.is_empty() {
+                if let Some(phase) = self.replay_phase.take() {
+                    emit_lifecycle_on_change(
+                        self.events.as_ref(),
+                        &self.session_id,
+                        &self.codex_agent_session_id,
+                        &mut self.last_phase,
+                        phase,
+                    );
+                }
+            }
+        }
         self.emitter.finish_replay();
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn process_line(
     line: &str,
     session_id: &str,
@@ -251,6 +288,10 @@ fn process_line(
     in_flight: &mut InFlightToolCalls,
     num_turns: &mut u32,
     last_cwd: &mut Option<String>,
+    codex_agent_session_id: &mut String,
+    last_phase: &mut Option<AgentPhase>,
+    replay_phase: &mut Option<AgentPhase>,
+    replay_done: bool,
 ) {
     let dto: CodexLineDto = match serde_json::from_str(line) {
         Ok(dto) => dto,
@@ -269,6 +310,36 @@ fn process_line(
     // workdir for the cwd, then process_response_item for the dispatch.
     let payload =
         serde_json::from_value::<CodexPayloadDto>(dto.payload.clone()).unwrap_or_default();
+
+    // Capture Codex's own session id (session_meta) as the lifecycle identity,
+    // then derive a phase from the event_msg turn boundary; replay-bounded.
+    if matches!(record_type, CodexRecordType::SessionMeta) {
+        if let Some(id) = payload.id.as_deref() {
+            *codex_agent_session_id = id.to_string();
+        }
+    }
+    if matches!(record_type, CodexRecordType::EventMsg) {
+        let phase = match payload.payload_type() {
+            CodexPayloadType::TaskStarted | CodexPayloadType::UserMessage => {
+                Some(AgentPhase::Running)
+            }
+            CodexPayloadType::TaskComplete => Some(AgentPhase::Idle),
+            _ => None,
+        };
+        if let Some(phase) = phase {
+            if !codex_agent_session_id.is_empty() {
+                record_lifecycle(
+                    phase,
+                    session_id,
+                    codex_agent_session_id,
+                    events,
+                    last_phase,
+                    replay_phase,
+                    replay_done,
+                );
+            }
+        }
+    }
 
     // Emit agent-cwd on transitions only. Codex's two cwd sources are
     // session_meta.payload.cwd (session start) and
@@ -770,6 +841,49 @@ mod tests {
     use crate::runtime::FakeEventSink;
     use serde_json::json;
 
+    fn lifecycle_phases(sink: &FakeEventSink) -> Vec<String> {
+        sink.recorded()
+            .into_iter()
+            .filter(|(name, _)| name == "agent-lifecycle")
+            .filter_map(|(_, p)| p["phase"].as_str().map(str::to_string))
+            .collect()
+    }
+
+    #[test]
+    fn codex_replay_flushes_only_the_settled_phase_once() {
+        let sink = Arc::new(FakeEventSink::new());
+        let mut decoder = CodexTranscriptDecoder::new(sink.clone(), "sid".into(), None);
+        decoder.decode_line(r#"{"type":"session_meta","payload":{"id":"cx-1","cwd":"/ws"}}"#);
+        decoder
+            .decode_line(r#"{"type":"event_msg","payload":{"type":"user_message","message":"hi"}}"#);
+        decoder.decode_line(
+            r#"{"type":"event_msg","payload":{"type":"task_started","model_context_window":1}}"#,
+        );
+        decoder.decode_line(
+            r#"{"type":"event_msg","payload":{"type":"task_complete","duration_ms":5}}"#,
+        );
+        decoder.on_caught_up();
+        assert_eq!(lifecycle_phases(&sink), vec!["idle"]);
+    }
+
+    #[test]
+    fn codex_live_emits_running_then_idle_transition() {
+        let sink = Arc::new(FakeEventSink::new());
+        let mut decoder = CodexTranscriptDecoder::new(sink.clone(), "sid".into(), None);
+        decoder.decode_line(r#"{"type":"session_meta","payload":{"id":"cx-1","cwd":"/ws"}}"#);
+        decoder.decode_line(
+            r#"{"type":"event_msg","payload":{"type":"task_complete","duration_ms":1}}"#,
+        );
+        decoder.on_caught_up();
+        decoder.decode_line(
+            r#"{"type":"event_msg","payload":{"type":"task_started","model_context_window":1}}"#,
+        );
+        decoder.decode_line(
+            r#"{"type":"event_msg","payload":{"type":"task_complete","duration_ms":5}}"#,
+        );
+        assert_eq!(lifecycle_phases(&sink), vec!["idle", "running", "idle"]);
+    }
+
     fn write_rollout(path: &Path, lines: &[Value]) {
         let body = lines
             .iter()
@@ -1206,6 +1320,10 @@ mod tests {
             &mut in_flight,
             &mut num_turns,
             &mut last_cwd,
+            &mut String::new(),
+            &mut None,
+            &mut None,
+            true,
         );
 
         let cwd_events: Vec<_> = sink
@@ -1241,6 +1359,10 @@ mod tests {
                 &mut in_flight,
                 &mut num_turns,
                 &mut last_cwd,
+                &mut String::new(),
+                &mut None,
+                &mut None,
+                true,
             );
         }
 
@@ -1277,6 +1399,10 @@ mod tests {
                 &mut in_flight,
                 &mut num_turns,
                 &mut last_cwd,
+                &mut String::new(),
+                &mut None,
+                &mut None,
+                true,
             );
         }
 
@@ -1323,6 +1449,10 @@ mod tests {
                 &mut in_flight,
                 &mut num_turns,
                 &mut last_cwd,
+                &mut String::new(),
+                &mut None,
+                &mut None,
+                true,
             );
         }
 
@@ -1355,10 +1485,10 @@ mod tests {
         let mut last_cwd: Option<String> = None;
 
         let start = r#"{"timestamp":"2026-05-22T10:00:00Z","type":"response_item","payload":{"type":"function_call","name":"exec_command","call_id":"c1","arguments":"{\"cmd\":\"ls\"}"}}"#;
-        process_line(start, "sid", None, &events, &mut emitter, &mut in_flight, &mut num_turns, &mut last_cwd);
+        process_line(start, "sid", None, &events, &mut emitter, &mut in_flight, &mut num_turns, &mut last_cwd, &mut String::new(), &mut None, &mut None, true);
 
         let end = r#"{"timestamp":"2026-05-22T10:00:01Z","type":"event_msg","payload":{"type":"exec_command_end","call_id":"c1","exit_code":"bad","aggregated_output":"ok"}}"#;
-        process_line(end, "sid", None, &events, &mut emitter, &mut in_flight, &mut num_turns, &mut last_cwd);
+        process_line(end, "sid", None, &events, &mut emitter, &mut in_flight, &mut num_turns, &mut last_cwd, &mut String::new(), &mut None, &mut None, true);
 
         let tool_calls: Vec<_> = sink.recorded().into_iter().filter(|(n, _)| n == "agent-tool-call").collect();
         assert_eq!(tool_calls.len(), 2);
@@ -1375,10 +1505,10 @@ mod tests {
         let mut last_cwd: Option<String> = None;
 
         let start = r#"{"timestamp":"2026-05-22T10:00:00Z","type":"response_item","payload":{"type":"custom_tool_call","name":"apply_patch","call_id":"c1","input":"*** Begin Patch\n*** Update File: foo.ts\n*** End Patch"}}"#;
-        process_line(start, "sid", None, &events, &mut emitter, &mut in_flight, &mut num_turns, &mut last_cwd);
+        process_line(start, "sid", None, &events, &mut emitter, &mut in_flight, &mut num_turns, &mut last_cwd, &mut String::new(), &mut None, &mut None, true);
 
         let end = r#"{"timestamp":"2026-05-22T10:00:01Z","type":"event_msg","payload":{"type":"patch_apply_end","call_id":"c1","success":"bad"}}"#;
-        process_line(end, "sid", None, &events, &mut emitter, &mut in_flight, &mut num_turns, &mut last_cwd);
+        process_line(end, "sid", None, &events, &mut emitter, &mut in_flight, &mut num_turns, &mut last_cwd, &mut String::new(), &mut None, &mut None, true);
 
         let tool_calls: Vec<_> = sink.recorded().into_iter().filter(|(n, _)| n == "agent-tool-call").collect();
         assert_eq!(tool_calls.len(), 2);
@@ -1395,10 +1525,10 @@ mod tests {
         let mut last_cwd: Option<String> = None;
 
         let start = r#"{"timestamp":"2026-05-22T10:00:00Z","type":"response_item","payload":{"type":"function_call","name":"exec_command","call_id":"c1","arguments":"{\"cmd\":\"ls\"}"}}"#;
-        process_line(start, "sid", None, &events, &mut emitter, &mut in_flight, &mut num_turns, &mut last_cwd);
+        process_line(start, "sid", None, &events, &mut emitter, &mut in_flight, &mut num_turns, &mut last_cwd, &mut String::new(), &mut None, &mut None, true);
 
         let end = r#"{"timestamp":"2026-05-22T10:00:01Z","type":"event_msg","payload":{"type":"exec_command_end","call_id":"c1","exit_code":0,"duration":null}}"#;
-        process_line(end, "sid", None, &events, &mut emitter, &mut in_flight, &mut num_turns, &mut last_cwd);
+        process_line(end, "sid", None, &events, &mut emitter, &mut in_flight, &mut num_turns, &mut last_cwd, &mut String::new(), &mut None, &mut None, true);
 
         let tool_calls: Vec<_> = sink.recorded().into_iter().filter(|(n, _)| n == "agent-tool-call").collect();
         assert_eq!(tool_calls.len(), 2);
@@ -1415,7 +1545,7 @@ mod tests {
         let mut last_cwd: Option<String> = None;
 
         let line = r#"{"timestamp":42,"type":"event_msg","payload":{"type":"user_message","message":"hello"}}"#;
-        process_line(line, "sid", None, &events, &mut emitter, &mut in_flight, &mut num_turns, &mut last_cwd);
+        process_line(line, "sid", None, &events, &mut emitter, &mut in_flight, &mut num_turns, &mut last_cwd, &mut String::new(), &mut None, &mut None, true);
 
         let turns: Vec<_> = sink.recorded().into_iter().filter(|(n, _)| n == "agent-turn").collect();
         assert_eq!(turns.len(), 1);

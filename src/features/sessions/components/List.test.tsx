@@ -50,7 +50,7 @@ const mockSessions: Session[] = [
     id: 'sess-2',
     projectId: 'proj-1',
     name: 'fix: login bug',
-    status: 'paused',
+    status: 'idle',
     workingDirectory: '/home/user/projects/Vimeflow',
     agentType: 'claude-code',
     layout: 'single',
@@ -61,7 +61,7 @@ const mockSessions: Session[] = [
         ptyId: 'sess-2',
         cwd: '/home/user/projects/Vimeflow',
         agentType: 'claude-code',
-        status: 'paused',
+        status: 'idle',
         active: true,
         pid: 12346,
       },
@@ -124,41 +124,26 @@ const mockSessions: Session[] = [
 
 describe('List', () => {
   const mockOnSessionClick = vi.fn()
-  const mockOnCreateSession = vi.fn()
 
   beforeEach(() => {
     mockOnSessionClick.mockClear()
-    mockOnCreateSession.mockClear()
   })
 
-  test('renders new session ghost button below the scroll area so it stays visible when sessions overflow', () => {
+  test('does not render a new-session button (relocated to the switcher row)', () => {
     render(
       <List
         sessions={mockSessions}
         activeSessionId="sess-1"
         onSessionClick={mockOnSessionClick}
-        onCreateSession={mockOnCreateSession}
       />
     )
 
-    expect(screen.getByTestId('session-group-active')).toHaveTextContent(
-      'Active'
-    )
-
-    const scroll = screen.getByTestId('session-scroll')
-
-    const newSessionButton = screen.getByRole('button', {
-      name: 'new session',
-    })
-
-    expect(newSessionButton).toHaveAttribute(
-      'data-testid',
-      'sessions-list-new-session'
-    )
-    expect(newSessionButton).toHaveClass('w-full')
-    expect(scroll).not.toContainElement(newSessionButton)
     expect(
-      screen.queryByRole('button', { name: 'Add session' })
+      screen.queryByTestId('sessions-list-new-session')
+    ).not.toBeInTheDocument()
+
+    expect(
+      screen.queryByRole('button', { name: 'new session' })
     ).not.toBeInTheDocument()
   })
 
@@ -173,6 +158,24 @@ describe('List', () => {
 
     expect(screen.getByTestId('session-group-recent')).toHaveTextContent(
       'Recent'
+    )
+  })
+
+  test('section headers show per-group counts', () => {
+    render(
+      <List
+        sessions={mockSessions}
+        activeSessionId="sess-1"
+        onSessionClick={mockOnSessionClick}
+      />
+    )
+
+    expect(screen.getByTestId('session-group-active')).toHaveTextContent(
+      'Active · 2'
+    )
+
+    expect(screen.getByTestId('session-group-recent')).toHaveTextContent(
+      'Recent · 1'
     )
   })
 
@@ -230,41 +233,6 @@ describe('List', () => {
     expect(mockOnSessionClick).toHaveBeenCalledWith('sess-2')
   })
 
-  test('calls onCreateSession when new session button is clicked', async () => {
-    const user = userEvent.setup()
-
-    render(
-      <List
-        sessions={mockSessions}
-        activeSessionId="sess-1"
-        onSessionClick={mockOnSessionClick}
-        onCreateSession={mockOnCreateSession}
-      />
-    )
-
-    const addButton = screen.getByRole('button', { name: 'new session' })
-    await user.click(addButton)
-
-    expect(mockOnCreateSession).toHaveBeenCalledOnce()
-  })
-
-  test('new session button is NOT rendered when onCreateSession is undefined', () => {
-    // Regression guard: omit the creation affordance when no callback is
-    // supplied so the button cannot render, accept focus, and silently no-op.
-    render(
-      <List
-        sessions={mockSessions}
-        activeSessionId="sess-1"
-        onSessionClick={mockOnSessionClick}
-        // intentionally NOT passing onCreateSession
-      />
-    )
-
-    expect(
-      screen.queryByRole('button', { name: 'new session' })
-    ).not.toBeInTheDocument()
-  })
-
   test('removing active session pre-selects next visible Active row', async () => {
     const onSessionClick = vi.fn()
     const onRemoveSession = vi.fn()
@@ -288,11 +256,11 @@ describe('List', () => {
     const list = screen.getByTestId('session-list')
     const activeRow = within(list).getByText('first-active').closest('li')!
 
-    const removeBtn = within(activeRow).getByRole('button', {
-      name: 'Remove session',
-    })
+    await user.click(
+      within(activeRow).getByRole('button', { name: 'Session actions' })
+    )
 
-    await user.click(removeBtn)
+    await user.click(within(activeRow).getByRole('button', { name: 'Remove' }))
 
     expect(onSessionClick).toHaveBeenCalledWith('B')
     expect(onRemoveSession).toHaveBeenCalledWith('A')
@@ -317,7 +285,7 @@ describe('List', () => {
 
     const recentList = screen.getByTestId('recent-list')
     expect(
-      within(recentList).queryByRole('button', { name: 'Remove session' })
+      within(recentList).queryByRole('button', { name: 'Session actions' })
     ).toBeNull()
   })
 

@@ -1,7 +1,12 @@
 // Session domain types — owned by src/features/sessions/.
 // cspell:ignore vsplit hsplit
 
-export type SessionStatus = 'running' | 'paused' | 'completed' | 'errored'
+export type SessionStatus =
+  | 'running'
+  | 'awaiting'
+  | 'idle'
+  | 'completed'
+  | 'errored'
 
 export type SessionCloseResult = false | void
 
@@ -31,6 +36,9 @@ export interface Pane {
 
   /** Per-pane working directory. */
   cwd: string
+
+  /** Resolved shell path for shell panes, e.g. `/bin/zsh`. */
+  shell?: string
 
   /** Detected agent CLI for this pane. */
   agentType: 'claude-code' | 'codex' | 'aider' | 'generic'

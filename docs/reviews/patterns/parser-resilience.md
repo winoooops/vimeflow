@@ -2,8 +2,8 @@
 id: parser-resilience
 category: code-quality
 created: 2026-05-24
-last_updated: 2026-06-08
-ref_count: 5
+last_updated: 2026-06-09
+ref_count: 7
 ---
 
 # Parser Resilience
@@ -159,6 +159,23 @@ true` and drop the chunk.
 - **Code-review heuristic (extends #4's "deferred-until-X" rule):** When the recovery escape hatch is placed inside ONE specific arm of a state machine, audit whether there are other arms that can also fail to make progress without ever reaching that arm. The natural placement (the "nothing-to-read" branch) is rarely the only branch where the precondition holds. Hoist the escape to a shared point that EVERY non-progress branch reaches, or replicate it in each — but never let a single arm silently swallow the recovery path. **Test discipline:** when a regression test scripts an error scenario, end the script through the same arm that triggers the bug, not through an adjacent arm that happens to terminate the loop. Otherwise the test passes against the unfixed code and gives false confidence. The `ErrStop` shape (flips `stop` while returning the variant of interest) generalizes: when a scripted-reader / state-machine test harness has terminator variants, every error or boundary case needs its own terminator that exits via the same code path.
 - **Commit:** _(PR #302 upsource cycle 20 fix commit)_
 
+### 6. Substring JSON parser embeds a whitespace assumption that silently disables the feature on format drift
+
+- **Source:** github-claude | PR #408 round 1 | 2026-06-09
+- **Severity:** MEDIUM
+- **File:** `crates/backend/src/agent/adapter/codex/locator.rs`
+- **Finding:** `header_value` searched for the exact substring `"name": "` (colon, space, quote). If Codex CLI ever serialized headers as compact JSON (`"name":"value"`) or with any other whitespace variant, every header lookup returned `None`. Because `account_rate_limits_from_log_body` propagated that `None` with `?`, the entire rate-limit snapshot was discarded and the sidebar fell back to rollout placeholder data — silently, with no diagnostic.
+- **Fix:** Replaced the exact-substring needle with a small state machine that locates the quoted key, skips optional whitespace, expects `:`, skips optional whitespace, then reads the quoted value. This handles compact, spaced, and any other valid JSON whitespace around the colon. Added regression tests for compact JSON and extra-space variants. Also added a test for the partial-data case (usage present, reset absent) which exercises the same code path.
+- **Commit:** same commit as this entry
+
+### 7. Strict all-or-nothing parsing of partial rate-limit headers discards available usage data
+
+- **Source:** github-codex-connector | PR #408 round 1 | 2026-06-09
+- **Severity:** P2 / MEDIUM
+- **File:** `crates/backend/src/agent/adapter/codex/locator.rs`
+- **Finding:** `account_rate_limits_from_log_body` used `?` on both `header_f64(..., "x-codex-primary-used-percent")` and `header_u64(..., "x-codex-primary-reset-at")`. When the used-percent header was present but the reset-at header was absent (e.g. error responses or older header shapes), the `?` on the missing reset header made the entire function return `None`. The available usage percentage was lost and the sidebar showed the model-specific `0%` placeholder.
+- **Fix:** Changed the primary `five_hour` construction to require only `used_percentage` via `?`; `resets_at` now falls back to `0` (unknown reset) via `unwrap_or(0)`. Applied the same fallback to the optional `seven_day` block: `(Some(used), None) → Some(RateLimitInfo { used_percentage: used, resets_at: 0 })`. Added a regression test proving usage is preserved when reset headers are absent.
+
 ### 6. Malformed pushShape IPC payload can poison the layout writer state
 
 - **Source:** github-codex-connector | PR #384 round 1 | 2026-06-07
@@ -175,4 +192,13 @@ true` and drop the chunk.
 - **File:** `electron/workspace-layout-controller.ts`
 - **Finding:** The push-shape IPC guard rejected missing or wrong-type `sessions`, but still accepted any array contents and cast them to `WorkspaceShapeDto`. Payloads such as `sessions: [null]`, sessions without `panes`, or panes with wrong-typed scalar fields could still reach `writer.onShapePushed` and throw inside the writer.
 - **Fix:** Replace the shallow guard with recursive runtime validation for the DTO root, sessions, browser panes, shell panes, and nullable shell `agentSessionId`. Extended regression coverage with malformed nested sessions and panes.
+- **Commit:** same commit as this entry
+
+### 10. Unterminated string in log-header parser aborts the whole search
+
+- **Source:** github-claude | PR #421 round 3 | 2026-06-11
+- **Severity:** LOW
+- **File:** `crates/backend/src/agent/adapter/codex/locator.rs` L763-765
+- **Finding:** `header_value` used `rest.find('"')?` after finding an opening quote for a header value. When a malformed occurrence had an opening quote but no closing quote, the `?` propagated `None` out of the entire function, abandoning any later well-formed occurrences of the same header.
+- **Fix:** Replaced the `?` with `let Some(end) = rest.find('"') else { continue; };` so an unterminated value skips to the next iteration, matching the existing `continue`-on-malformed logic for missing colon or opening quote.
 - **Commit:** same commit as this entry

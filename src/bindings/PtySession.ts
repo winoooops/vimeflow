@@ -16,4 +16,8 @@ export type PtySession = {
    * Current working directory
    */
   cwd: string
+  /**
+   * Resolved system shell path used for this PTY.
+   */
+  shell: string
 }

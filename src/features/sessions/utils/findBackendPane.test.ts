@@ -78,3 +78,13 @@ test('active browser + only exited shells -> returns the first shell', () => {
 
   expect(findBackendSessionPane(session)).toBe(firstShell)
 })
+
+test('active browser + an idle shell present -> returns the idle shell', () => {
+  const exitedShell = shellPane('p1', 'completed', false)
+  const idleShell = shellPane('p2', 'idle', false)
+
+  const session = makeSession([exitedShell, idleShell, browserPane('p3', true)])
+
+  // an idle agent (finished its turn, PTY alive) is still the backend pane
+  expect(findBackendSessionPane(session)).toBe(idleShell)
+})

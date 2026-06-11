@@ -340,8 +340,27 @@ mod tests {
         let mut child = Command::new(&files.script_path)
             .env("VIMEFLOW_STATUS_FILE", &files.status_file_path)
             .stdin(Stdio::piped())
-            .spawn()
-            .expect("spawn statusline script");
+            .spawn();
+
+        // Retry on ETXTBSY — some kernels hold the inode busy briefly
+        // after fs::write closes the handle.
+        for _ in 0..10 {
+            match child {
+                Ok(c) => {
+                    child = Ok(c);
+                    break;
+                }
+                Err(ref e) if e.kind() == std::io::ErrorKind::ExecutableFileBusy => {
+                    std::thread::sleep(std::time::Duration::from_millis(50));
+                    child = Command::new(&files.script_path)
+                        .env("VIMEFLOW_STATUS_FILE", &files.status_file_path)
+                        .stdin(Stdio::piped())
+                        .spawn();
+                }
+                Err(_) => break,
+            }
+        }
+        let mut child = child.expect("spawn statusline script");
 
         child
             .stdin

@@ -8,6 +8,14 @@ describe('Sidebar — slot composition', () => {
     expect(screen.getByTestId('sidebar')).toBeInTheDocument()
   })
 
+  test('root surface is transparent so the sidebar blends into its parent', () => {
+    render(<Sidebar content={<div>content</div>} />)
+
+    const root = screen.getByTestId('sidebar')
+    expect(root).toHaveClass('bg-transparent')
+    expect(root).not.toHaveClass('bg-surface-container-low')
+  })
+
   test('renders the header slot when provided', () => {
     render(
       <Sidebar
@@ -16,6 +24,22 @@ describe('Sidebar — slot composition', () => {
       />
     )
     expect(screen.getByTestId('header-fixture')).toBeInTheDocument()
+  })
+
+  test('renders the topBar slot when provided', () => {
+    render(
+      <Sidebar
+        topBar={<div data-testid="topbar-fixture">T</div>}
+        header={<div>H</div>}
+        content={<div>C</div>}
+      />
+    )
+    expect(screen.getByTestId('topbar-fixture')).toBeInTheDocument()
+  })
+
+  test('omits the topBar when not provided', () => {
+    render(<Sidebar content={<div>C</div>} />)
+    expect(screen.queryByTestId('topbar-fixture')).not.toBeInTheDocument()
   })
 
   test('renders the content slot', () => {

@@ -8,7 +8,7 @@ const baseProps = {
   agent: AGENTS.claude,
   pipStatus: 'running' as const,
   isFocused: false,
-  isPaused: false,
+  isIdle: false,
   onClickFocus: vi.fn(),
 }
 
@@ -25,10 +25,10 @@ describe('Footer', () => {
     expect(screen.getByText('click to focus claude')).toBeInTheDocument()
   })
 
-  test('placeholder when focused and paused shows paused', () => {
-    render(<Footer {...baseProps} isFocused isPaused pipStatus="paused" />)
+  test('placeholder when focused and idle shows idle', () => {
+    render(<Footer {...baseProps} isFocused isIdle pipStatus="idle" />)
 
-    expect(screen.getByText('paused')).toBeInTheDocument()
+    expect(screen.getByText('idle')).toBeInTheDocument()
   })
 
   test('placeholder when focused and running shows message cue', () => {

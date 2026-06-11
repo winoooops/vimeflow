@@ -296,6 +296,37 @@ describe('useResizable', () => {
     }
   })
 
+  test('drag end reports the raw size and the clamped size', () => {
+    const onDragEnd = vi.fn()
+
+    const { result } = renderHook(() =>
+      useResizable({
+        initial: 256,
+        min: 100,
+        max: 500,
+        onDragEnd,
+      })
+    )
+
+    act(() => {
+      result.current.handleMouseDown({
+        preventDefault: () => undefined,
+        clientX: 200,
+        clientY: 0,
+      } as React.MouseEvent)
+    })
+
+    act(() => {
+      document.dispatchEvent(new MouseEvent('mousemove', { clientX: -10 }))
+      document.dispatchEvent(new MouseEvent('mouseup'))
+    })
+
+    expect(onDragEnd).toHaveBeenCalledWith({
+      rawSize: 46,
+      size: 100,
+    })
+  })
+
   test('new drag cancels pending preview from previous drag', () => {
     const frameCallbacks: FrameRequestCallback[] = []
     const onDragPreview = vi.fn()
