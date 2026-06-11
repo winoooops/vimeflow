@@ -6,8 +6,8 @@
 
 ## 1. Context & Problem
 
-Vimeflow's colors live in two diverged sources of truth plus ~250 hardcoded
-leaks:
+Vimeflow's colors live in two diverged sources of truth plus roughly three
+hundred hardcoded leaks:
 
 - `tailwind.config.js` (legacy v3-style config, loaded through Tailwind v4's
   `@config` compatibility directive) defines semantic color tokens as hex.
@@ -15,15 +15,17 @@ leaks:
   overlapping CSS custom properties — with **different values** for several
   tokens (Appendix A). Components using `bg-secondary-container` and
   `var(--secondary-container)` render different colors today.
-- An audit found ~250 hardcoded color instances across ~40 files that bypass
-  both sources:
+- An initial audit plus a codex recount during spec review found ~290
+  color-literal hits across ~58 source files (pre-filter) that bypass both
+  sources. The table below is the categorized floor estimate; the
+  authoritative Phase B checklist is regenerated mechanically (§6, step 0):
 
 | Category                                     | Where                                                               | ~Count |
 | -------------------------------------------- | ------------------------------------------------------------------- | ------ |
 | xterm terminal theme                         | `src/features/terminal/theme/catppuccin-mocha.ts`                   | 21     |
 | CodeMirror editor theme                      | `src/features/editor/theme/catppuccin.ts`                           | 15     |
-| Agent accent identity                        | `src/agents/registry.ts`, `src/features/browser/browserIdentity.ts` | 24     |
-| Arbitrary Tailwind values (`text-[#e2c7ff]`) | DockTab, DockPanel, DockSwitcher, ViewModeToggle, BrowserTabBar, …  | ~60    |
+| Agent accent identity                        | `src/agents/registry.ts`, `src/features/browser/browserIdentity.ts` | 20     |
+| Arbitrary Tailwind values (`text-[#e2c7ff]`) | DockTab, DockPanel, DockSwitcher, ViewModeToggle, BrowserTabBar, … (26 files) | ~102   |
 | Inline `style={{}}` rgba/hex                 | BurnerTerminalPopup, TokenCache, ActivityEvent, TerminalPane, …     | ~50    |
 | Scrollbar + diff colors                      | `src/index.css`                                                     | 13     |
 | Raw palette classes (`text-amber-400`)       | FileTreeNode, FileExplorer                                          | 6      |
@@ -198,8 +200,9 @@ themeService.list(): ThemeDefinition[]  // for the settings picker
 | Consumer                                                       | Mechanism                                                                                                                                                                              | Switch-time work                       |
 | -------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
 | Tailwind utilities (99% of UI)                                 | compile to `var(--color-*)`                                                                                                                                                            | none — CSS engine repaints             |
-| CodeMirror theme (`catppuccin.ts` → `src/theme`-aware rewrite) | DOM-rendered; theme extension references `var(--color-*)`; alpha composites use `color-mix(in srgb, var(--color-syn-keyword) 30%, transparent)`                                        | none — no reconfigure                  |
+| CodeMirror theme (`catppuccin.ts` → `src/theme`-aware rewrite) | DOM-rendered; theme extension references `var(--color-*)`; alpha composites use `color-mix(in srgb, var(--color-syn-keyword) 30%, transparent)`                                        | `Compartment` reconfigure flips the `{ dark }` base-theme facet when `kind` changes — `EditorView.darkTheme` selects light/dark base styles and CSS variables alone cannot flip it |
 | xterm terminals                                                | canvas; holds concrete values                                                                                                                                                          | `subscribe` → reassign `options.theme` |
+| Diff viewer (`<MultiFileDiff>` from `@pierre/diffs`)           | owns an independent Pierre theme state (`'pierre-dark'` in `DiffPanelContent.tsx`) synced through the diff worker pool — the `.diff-*` CSS classes alone do not re-theme it            | bridge maps `kind` → `pierre-dark` / `pierre-light` through the existing render-options pool sync; the toolbar theme dropdown becomes a session override that resets on workspace switch |
 | Agent registry (`registry.ts`, `browserIdentity.ts`)           | color fields become `'var(--color-agent-…)'` strings; same object shape, consumers (inline styles, SVG) unchanged                                                                      | none                                   |
 | React components needing theme data (settings picker)          | `useTheme()` via `useSyncExternalStore(service.subscribe, …)`                                                                                                                          | re-render on switch                    |
 | Settings `AppearancePane`                                      | `useState` → `useTheme()`; card click → `themeService.apply(id)`; picker lists `themeService.list()`; preview swatches derive from each `ThemeDefinition` (accent/surface/text tokens) | —                                      |
@@ -217,9 +220,12 @@ active theme live — serving the "tune Flexoki on screen" acceptance flow.
 Programs in the PTY emit color _indices_ (SGR sequences); the emulator owns
 the index→RGB table. The theme therefore controls: default
 background/foreground, ANSI 0–15, cursor, selection — identical semantics to
-an iTerm2/Alacritty scheme switch. It does **not** control: truecolor
-(24-bit SGR) output a TUI hardcodes, or the fixed 256-color cube
-(16–255). Fonts, cell geometry, cursor shape are not theme members. Modern
+an iTerm2/Alacritty scheme switch. It does **not** control truecolor
+(24-bit SGR) output — those exact RGB values are the program's own choice.
+Indices 16–255 default to the standard xterm cube but _are_ themable via
+`ITheme.extendedAnsi`; the current `TerminalTheme` type models ANSI 0–15
+only, so `extendedAnsi` and `selectionInactiveBackground` are explicit v1
+non-goals. Fonts, cell geometry, cursor shape are not theme members. Modern
 CLIs that probe the terminal background (OSC 11) will see the new color on
 their next probe and may adapt their own light/dark rendering.
 
@@ -235,16 +241,23 @@ Three phases, each independently verifiable and PR-sized
 2. Tailwind cutover: `@theme` block declares all color/shadow tokens with
    Obsidian values; delete `colors` (and color-bearing `boxShadow`) from
    `tailwind.config.js`; `index.css` drops the `docs/design/tokens.css`
-   import; migrate the few `var(--surface)`-era consumers
-   (`MarkdownReadingView.css`, `AgentStatusRail.tsx`) to `--color-*` names.
-3. Wire `main.tsx` pre-render apply, the terminal subscription, and the
-   AppearancePane switch (kept to a minimal diff — the settings dialog
-   evolves on its own branch).
+   import — preceded by a repo-wide `var(--` inventory so no consumer is
+   orphaned. Known today: `StatusBar.tsx` (`--outline-variant`, `--success`,
+   plus non-color `--status-bar-h`, `--radius-sm`, `--ring-primary`) and
+   `MarkdownReadingView.css` (`--syn-*`). Color vars migrate to `--color-*`
+   names; required non-color vars move into `base.css`.
+3. Wire `main.tsx` pre-render apply, the terminal subscription, the diff
+   Pierre-theme bridge, and the AppearancePane switch (kept to a minimal
+   diff — the settings dialog evolves on its own branch).
 
 Exit criterion: switching works end-to-end with one theme; the app renders
 pixel-identical to today.
 
-### Phase B — Leak migration (the audit is the work list)
+### Phase B — Leak migration (mechanical inventory is the work list)
+
+Step 0 regenerates the leak inventory with a script (grep for hex / color
+functions / raw palette classes / washes over `src/`); that output — not the
+estimate table in §1 — is the batch checklist.
 
 | Batch | Content                               | Replacement rule                                                                                                                                                       |
 | ----- | ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -252,10 +265,11 @@ pixel-identical to today.
 | 2     | xterm theme file                      | `catppuccin-mocha.ts` content becomes `obsidian-lens.terminal`; file deleted                                                                                           |
 | 3     | CodeMirror theme                      | hex → `var(--color-*)`; alpha-suffix hex (`${mauve}4d`) → `color-mix()`                                                                                                |
 | 4     | agent registries ×2                   | hex → `'var(--color-agent-*)'` strings                                                                                                                                 |
-| 5     | ~60 arbitrary Tailwind values         | mapping table (Appendix B): `text-[#e2c7ff]` → `text-primary`; `bg-[rgba(203,166,247,0.15)]` → `bg-primary-container/15` (v4 resolves var-based alpha via `color-mix`) |
+| 5     | ~102 arbitrary Tailwind values        | mapping table (Appendix B): `text-[#e2c7ff]` → `text-primary`; `bg-[rgba(203,166,247,0.15)]` → `bg-primary-container/15` (v4 resolves var-based alpha via `color-mix`) |
 | 6     | ~50 inline styles                     | same mapping → `var()` or semantic classes                                                                                                                             |
 | 7     | git-status palette classes            | → `text-vcs-modified` etc.                                                                                                                                             |
 | 8     | 27 `white/[0.0x]` washes              | → `bg-wash-faint/subtle/soft`                                                                                                                                          |
+| 9     | tests asserting old sources           | `registry.test.ts`, `browserIdentity.test.ts`, `WorkspaceView.visual.test.tsx`, `sections.test.ts` re-assert against theme definitions / `themeService.list()`        |
 
 Batch acceptance: `npm run type-check && npm run lint && npm run test`, plus
 on-screen smoke in both themes once Flexoki exists.
@@ -319,8 +333,12 @@ convention.
 1. **ESLint custom rule** (`vimeflow/no-hardcoded-colors`, inline local
    plugin in the flat config — no new dependency). Scans string literals and
    template literals in `.ts`/`.tsx` for `#hex` (3/4/6/8), `rgb(`/`rgba(`,
-   `hsl(`/`hsla(`, `oklch(`. Exemption: `src/theme/themes/**` (the one
-   legitimate home). Rare legitimate literals elsewhere (e.g. a test
+   `hsl(`/`hsla(`, `oklch(`, **and** for class strings using raw Tailwind
+   palette colors (`text-amber-400`, `bg-zinc-800`, …) or `white`/`black`
+   utilities incl. alpha forms (`white/[0.05]`, `border-white/10`) — the
+   exact categories the migration removes. Semantic-token classes
+   (`text-on-surface`, `bg-primary`) don't match the banned patterns.
+   Exemption: `src/theme/themes/**` (the one legitimate home). Rare legitimate literals elsewhere (e.g. a test
    asserting a concrete hex) use `eslint-disable-next-line` with a reason —
    visible in review. Severity `error`, matching the `no-console: error`
    posture.
@@ -344,10 +362,14 @@ TDD per `rules/typescript/testing/` (vitest, `test()`, co-located files).
    expected custom properties, `data-theme`, `color-scheme`; subscribers are
    notified; `localStorage` written; unknown stored id falls back to
    default. All jsdom-supported.
-4. **Terminal wiring test:** mock xterm instances; switching themes
-   reassigns `options.theme` to `toXtermTheme(next.terminal)`.
+4. **Consumer wiring tests:** xterm — mock instances, switching reassigns
+   `options.theme` to `toXtermTheme(next.terminal)`; CodeMirror — a `kind`
+   change reconfigures the `dark` facet through the `Compartment`; diff —
+   the bridge maps `kind` to `pierre-dark`/`pierre-light` and routes it
+   through the worker-pool render-options sync.
 5. **Guard tests:** the ESLint rule gets RuleTester coverage (flags hex /
-   rgba / template literals; passes `var()` and `color-mix()`; respects the
+   rgba / template literals / raw palette classes / `white`-alpha washes;
+   passes `var()`, `color-mix()`, and semantic-token classes; respects the
    themes-dir exemption); the CSS guard test is itself the assertion.
 6. **Acceptance (manual, end of Phase C):** run the app; hot-swap Obsidian
    ⇄ Flexoki; verify terminal (scrollback recolors, session uninterrupted),
@@ -363,6 +385,7 @@ TDD per `rules/typescript/testing/` (vitest, `test()`, co-located files).
 | `@theme` defaults vs. `obsidian-lens.ts` drift                               | sync test (§8.2)                                                                                                   |
 | Missed leak keeps a surface dark on Flexoki                                  | guards catch new code; the Phase C visual pass catches stragglers; the audit table is the checklist                |
 | Truecolor TUI output ignores the theme                                       | documented boundary (§5); identical to every terminal emulator                                                     |
+| Diff content colors come from Pierre's built-in themes, not our tokens      | bridge picks the nearest Pierre theme per `kind`; Phase C visual pass validates; custom Pierre theme is a follow-up |
 | Legacy `@config` still carries non-color tokens                              | explicit non-goal; follow-up chore ticket                                                                          |
 
 ## Appendix A — Known source-of-truth divergences
