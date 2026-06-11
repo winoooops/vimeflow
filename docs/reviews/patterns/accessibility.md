@@ -2,8 +2,8 @@
 id: accessibility
 category: a11y
 created: 2026-04-09
-last_updated: 2026-06-10
-ref_count: 19
+last_updated: 2026-06-11
+ref_count: 20
 ---
 
 # Accessibility
@@ -469,3 +469,12 @@ handlers must not trap focus without implementing the promised behavior.
 - **Finding:** A PR refactor that introduced `Tooltip` around each `StatCell` replaced the previous `<dl>` / `<dt>` / `<dd>` structure (see §12) with `<div>` / `<span>` nodes. The visual layout remained identical, but assistive technologies lost the explicit name/value relationship for the cached/wrote/fresh metrics. Screen readers announced the three cells as flattened text fragments rather than structured term/value pairs, re-introducing the WCAG 1.3.1 violation that §12 had already fixed.
 - **Fix:** Restored the outer metric grid as `<dl>` and changed each `StatCell` inner markup to `<dd>` (value) + `<dt>` (label) while keeping the `Tooltip` wrapper and all Tailwind classes unchanged. The `<div>` wrapper inside `<dl>` around each `<dd>`/`<dt>` pair remains valid HTML5 per the living standard (added in 2015) and preserves the existing grid layout. Zero visual change, full semantic restoration.
 - **Commit:** _(PR #395 round 1)_
+
+### 43. RateLimitBar aria-valuenow can exceed aria-valuemax
+
+- **Source:** github-codex-connector | PR #421 round 1 | 2026-06-11
+- **Severity:** MEDIUM
+- **File:** `src/features/agent-status/components/RateLimitBar.tsx`
+- **Finding:** RateLimitBar clamps the visual width to 100% but exposes `Math.round(percentage)` as `aria-valuenow` with `aria-valuemax` fixed at 100. If usage exceeds 100%, assistive technology receives an invalid progressbar range.
+- **Fix:** Clamped `aria-valuenow` to the same 0-100 range as the visual fill using `Math.min(Math.max(Math.round(percentage), 0), 100)`, while leaving the visible text free to show the raw rounded percentage. Added co-located regression tests for overflow and negative values.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

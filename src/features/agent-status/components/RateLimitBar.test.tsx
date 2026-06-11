@@ -34,4 +34,18 @@ describe('RateLimitBar', () => {
     expect(bar).toHaveAttribute('aria-valuemin', '0')
     expect(bar).toHaveAttribute('aria-valuemax', '100')
   })
+
+  test('clamps aria-valuenow at 100 when percentage exceeds 100', () => {
+    render(<RateLimitBar label="Over" percentage={150} />)
+
+    const bar = screen.getByRole('progressbar')
+    expect(bar).toHaveAttribute('aria-valuenow', '100')
+  })
+
+  test('clamps aria-valuenow at 0 when percentage is negative', () => {
+    render(<RateLimitBar label="Under" percentage={-10} />)
+
+    const bar = screen.getByRole('progressbar')
+    expect(bar).toHaveAttribute('aria-valuenow', '0')
+  })
 })
