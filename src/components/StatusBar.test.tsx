@@ -32,7 +32,7 @@ describe('StatusBar', () => {
     renderStatusBar()
 
     expect(screen.getByText('obsidian-cli')).toHaveClass(
-      'text-[var(--primary-container)]'
+      'text-primary-container'
     )
     expect(screen.getByText(/^v\d+\.\d+\.\d+$/)).toBeInTheDocument()
     expect(screen.getByTestId('status-bar-duration')).toHaveTextContent(
@@ -106,11 +106,11 @@ describe('StatusBar', () => {
     })
 
     expect(screen.getByTestId('status-bar-context')).toHaveTextContent('🥵94%')
-    expect(screen.getByText('94%')).toHaveClass('text-[var(--error)]')
+    expect(screen.getByText('94%')).toHaveClass('text-error')
     expect(screen.getByTestId('status-bar-cache-rate')).toHaveTextContent('35%')
 
     expect(screen.getByTestId('status-bar-cache-rate')).toHaveClass(
-      'text-[var(--tertiary)]'
+      'text-tertiary'
     )
 
     expect(screen.getByTestId('status-bar-diff')).toHaveTextContent('+540−1.2k')

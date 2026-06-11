@@ -12,12 +12,15 @@ const walk = (dir, out = []) => {
   for (const name of readdirSync(dir)) {
     const full = join(dir, name)
     if (statSync(full).isDirectory()) {
-      if (name === 'node_modules') continue
+      if (name === 'node_modules') {
+        continue
+      }
       walk(full, out)
     } else if (/\.(tsx?|css|html)$/.test(name)) {
       out.push(full)
     }
   }
+
   return out
 }
 
@@ -86,7 +89,9 @@ if (mode === 'census') {
 } else if (mode === 'leaks') {
   let total = 0
   for (const f of files) {
-    if (f.includes('/src/theme/')) continue // theme defs + generated theme.css
+    if (f.includes('/src/theme/')) {
+      continue
+    } // theme defs + generated theme.css
     const text = readFileSync(f, 'utf8')
     const fileHits = []
     for (const [kind, re] of LEAK_PATTERNS) {

@@ -27,7 +27,7 @@ export const EditorStatusBar = ({
       className={`fixed bottom-0 left-[308px] ${isContextPanelOpen ? 'right-[280px]' : 'right-0'} h-6 bg-[#1a1a2a] border-t border-[#4a444f]/15 flex items-center justify-between z-30 font-label text-[10px] uppercase tracking-wider text-[#cdc3d1] transition-all duration-300`}
     >
       <div className="flex items-center gap-0">
-        <span className="bg-primary text-background px-3 h-6 flex items-center font-bold hover:bg-[#333344] transition-colors cursor-pointer">
+        <span className="bg-primary text-surface px-3 h-6 flex items-center font-bold hover:bg-[#333344] transition-colors cursor-pointer">
           -- {vimMode} --
         </span>
         <span className="flex items-center gap-2 px-3 border-r border-[#4a444f]/15 h-6 hover:bg-[#333344] transition-colors cursor-pointer">

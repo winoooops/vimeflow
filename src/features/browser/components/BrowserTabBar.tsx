@@ -51,7 +51,7 @@ export const BrowserTabBar = ({
       <div
         role="tablist"
         aria-label="browser tabs"
-        className="thin-scrollbar flex min-w-0 flex-1 items-center gap-[5px] overflow-x-auto"
+        className="flex min-w-0 flex-1 items-center gap-[5px] overflow-x-auto"
       >
         {tabs.map((tab) => {
           const title = tab.title ?? tab.url

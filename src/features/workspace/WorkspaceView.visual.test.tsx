@@ -4,6 +4,7 @@
 import { describe, test, expect, vi } from 'vitest'
 // @ts-expect-error - tailwind.config.js has no type declarations
 import tailwindConfig from '../../../tailwind.config'
+import { obsidianLens } from '../../theme'
 
 // Mock TerminalPane to avoid xterm.js issues in tests
 vi.mock('../terminal/components/TerminalPane', () => ({
@@ -150,63 +151,36 @@ describe('WorkspaceView - Visual Verification (Feature #20)', () => {
     })
   })
 
-  describe('Color Tokens: Catppuccin Mocha Palette', () => {
-    test('tailwind config has correct surface hierarchy tokens', () => {
-      const colors = tailwindConfig.theme.extend.colors
-
-      // Level 0 - Base
-      expect(colors.surface).toBe('#121221')
-      expect(colors.background).toBe('#121221')
-
-      // Level 0.5 - Deepest recessed
-      expect(colors['surface-container-lowest']).toBe('#0d0d1c')
-
-      // Level 1 - Navigation (Icon Rail, Sidebar, Activity)
-      expect(colors['surface-container-low']).toBe('#1a1a2a')
-
-      // Level 2 - Content (Cards)
-      expect(colors['surface-container']).toBe('#1e1e2e')
-
-      // Level 2.5 - Elevated cards
-      expect(colors['surface-container-high']).toBe('#292839')
-
-      // Level 3 - Modals, inputs
-      expect(colors['surface-container-highest']).toBe('#333344')
-
-      // Hover state
-      expect(colors['surface-bright']).toBe('#383849')
+  describe('Color Tokens: Obsidian Lens theme', () => {
+    test('surface hierarchy tokens', () => {
+      expect(obsidianLens.ui.surface).toBe('#121221')
+      expect(obsidianLens.ui['surface-container-lowest']).toBe('#0d0d1c')
+      expect(obsidianLens.ui['surface-container-low']).toBe('#1a1a2a')
+      expect(obsidianLens.ui['surface-container']).toBe('#1e1e2e')
+      expect(obsidianLens.ui['surface-container-high']).toBe('#292839')
+      expect(obsidianLens.ui['surface-container-highest']).toBe('#333344')
+      expect(obsidianLens.ui['surface-bright']).toBe('#383849')
     })
 
-    test('tailwind config has correct primary tokens', () => {
-      const colors = tailwindConfig.theme.extend.colors
-
-      expect(colors.primary).toBe('#e2c7ff')
-      expect(colors['primary-container']).toBe('#cba6f7')
-      expect(colors['primary-dim']).toBe('#d3b9f0')
+    test('primary tokens', () => {
+      expect(obsidianLens.ui.primary).toBe('#e2c7ff')
+      expect(obsidianLens.ui['primary-container']).toBe('#cba6f7')
+      expect(obsidianLens.ui['primary-dim']).toBe('#d3b9f0')
     })
 
-    test('tailwind config has correct semantic feedback tokens', () => {
-      const colors = tailwindConfig.theme.extend.colors
-
-      // Success (agent running status)
-      expect(colors.success).toBe('#50fa7b')
-      expect(colors['success-muted']).toBe('#7defa1')
-
-      // Warning
-      expect(colors.tertiary).toBe('#ff94a5')
-      expect(colors['tertiary-container']).toBe('#fd7e94')
-
-      // Error
-      expect(colors.error).toBe('#ffb4ab')
-      expect(colors['error-dim']).toBe('#d73357')
+    test('semantic feedback tokens', () => {
+      expect(obsidianLens.ui.success).toBe('#50fa7b')
+      expect(obsidianLens.ui['success-muted']).toBe('#7defa1')
+      expect(obsidianLens.ui.tertiary).toBe('#ff94a5')
+      expect(obsidianLens.ui['tertiary-container']).toBe('#fd7e94')
+      expect(obsidianLens.ui.error).toBe('#ffb4ab')
+      expect(obsidianLens.ui['error-dim']).toBe('#d73357')
     })
 
-    test('tailwind config has correct text tokens', () => {
-      const colors = tailwindConfig.theme.extend.colors
-
-      expect(colors['on-surface']).toBe('#e3e0f7')
-      expect(colors['on-surface-variant']).toBe('#cdc3d1')
-      expect(colors['outline-variant']).toBe('#4a444f')
+    test('text tokens', () => {
+      expect(obsidianLens.ui['on-surface']).toBe('#e3e0f7')
+      expect(obsidianLens.ui['on-surface-variant']).toBe('#cdc3d1')
+      expect(obsidianLens.ui['outline-variant']).toBe('#4a444f')
     })
   })
 

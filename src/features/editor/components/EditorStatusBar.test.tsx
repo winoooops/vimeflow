@@ -122,7 +122,7 @@ describe('EditorStatusBar', () => {
     const modeIndicator = screen.getByText(/NORMAL/i)
 
     expect(modeIndicator).toHaveClass('bg-primary')
-    expect(modeIndicator).toHaveClass('text-background')
+    expect(modeIndicator).toHaveClass('text-surface')
     expect(modeIndicator).toHaveClass('font-bold')
   })
 

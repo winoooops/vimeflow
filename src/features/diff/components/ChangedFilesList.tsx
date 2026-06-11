@@ -62,7 +62,7 @@ export const ChangedFilesList = ({
     </h2>
 
     {/* File List — scrollable with thin scrollbar */}
-    <div className="thin-scrollbar flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto pr-1">
+    <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto pr-1">
       {files.map((file) => {
         const isActive =
           selectedFile?.path === file.path &&

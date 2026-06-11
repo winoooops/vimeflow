@@ -147,7 +147,7 @@ const CommandBlock = ({
   cmd: string
   accent: string
 }): ReactElement => (
-  <pre className="relative m-0 max-h-[12rem] overflow-y-auto thin-scrollbar rounded-md border border-[rgba(74,68,79,0.3)] bg-[rgba(13,13,28,0.55)] p-2 pl-6 font-mono text-[11px] leading-[1.55] text-[#cdc3d1]">
+  <pre className="relative m-0 max-h-[12rem] overflow-y-auto rounded-md border border-[rgba(74,68,79,0.3)] bg-[rgba(13,13,28,0.55)] p-2 pl-6 font-mono text-[11px] leading-[1.55] text-[#cdc3d1]">
     <span
       className="absolute left-[10px] top-2 text-sm"
       style={{ color: accent, opacity: 0.8 }}

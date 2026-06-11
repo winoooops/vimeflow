@@ -1201,7 +1201,7 @@ export const DiffPanelContent = ({
       className="flex h-full w-full min-h-0 min-w-0 flex-1 overflow-hidden"
     >
       {/* Left: Changed files list (~240px fixed) */}
-      <div className="thin-scrollbar w-60 shrink-0 border-r border-white/5 overflow-y-auto">
+      <div className="w-60 shrink-0 border-r border-white/5 overflow-y-auto">
         <ChangedFilesList
           files={effectiveFiles}
           selectedFile={
@@ -1299,7 +1299,7 @@ export const DiffPanelContent = ({
         </div>
         <div
           data-testid="diff-scroll-body"
-          className="thin-scrollbar min-h-0 flex-1 overflow-auto"
+          className="min-h-0 flex-1 overflow-auto"
         >
           {diffError ? (
             <ErrorCard message={diffError.message} />

@@ -71,7 +71,7 @@ export const ExplorerPane = ({
       </div>
 
       {/* File tree content */}
-      <div className="flex-1 overflow-y-auto thin-scrollbar px-2 font-label text-[13px]">
+      <div className="flex-1 overflow-y-auto px-2 font-label text-[13px]">
         <FileTree
           nodes={fileTree}
           contextMenuActions={contextMenuActions}

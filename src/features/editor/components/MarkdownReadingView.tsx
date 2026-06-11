@@ -123,7 +123,7 @@ export const MarkdownReadingView = forwardRef<
         role="region"
         aria-label="Markdown reading view"
         tabIndex={0}
-        className="thin-scrollbar min-h-0 flex-1 overflow-auto py-8 [padding-inline:var(--rv-pad-inline)] focus:outline-none"
+        className="min-h-0 flex-1 overflow-auto py-8 [padding-inline:var(--rv-pad-inline)] focus:outline-none"
       >
         <div className="mx-auto [font-size:var(--rv-font-size)] [line-height:var(--rv-line-height)] [max-width:var(--rv-measure)]">
           {rendered}

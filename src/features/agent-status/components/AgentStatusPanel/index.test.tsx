@@ -253,18 +253,6 @@ describe('AgentStatusPanel', () => {
     )
   })
 
-  test('scrollable content area uses the thin-scrollbar convention', () => {
-    const { container } = render(
-      <AgentStatusPanel {...defaultProps} agentStatus={activeAgentStatus} />
-    )
-
-    // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access
-    const scrollableDiv = container.querySelector('.overflow-y-auto')
-    expect(scrollableDiv).toHaveClass('thin-scrollbar')
-    expect(scrollableDiv).toHaveClass('overflow-x-clip')
-    expect(scrollableDiv).toHaveClass('min-h-0')
-  })
-
   test('keeps ToolCallSummary consumer mounted alongside the ActivityFeed', () => {
     render(
       <AgentStatusPanel
@@ -365,7 +353,7 @@ describe('AgentStatusPanel', () => {
     const context = screen.getByText(/CURRENT CONTEXT/)
 
     /* eslint-disable testing-library/no-node-access */
-    const scrollable = panel.querySelector('.thin-scrollbar')
+    const scrollable = panel.querySelector('.overflow-y-auto')
     expect(scrollable).not.toBeNull()
 
     expect(

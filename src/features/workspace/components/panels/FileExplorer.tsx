@@ -100,7 +100,7 @@ export const FileExplorer = ({
           `min-height: auto` forces the container to grow to fit the entire
           tree, which pushed the scrollbar offscreen and made `scrollIntoView`
           walk up to the wrong ancestor. */}
-      <div className="thin-scrollbar min-h-0 flex-1 overflow-y-auto">
+      <div className="min-h-0 flex-1 overflow-y-auto">
         {isLoading && (
           <div className="py-4 text-center font-mono text-xs text-on-surface/40">
             Loading...

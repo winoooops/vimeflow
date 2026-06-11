@@ -104,12 +104,11 @@ export const List = ({
 
       <motion.div
         data-testid="session-scroll"
-        // `thin-scrollbar` routes WebKitGTK through `::-webkit-scrollbar`
-        // styling; without it the default GTK scrollbar path paints two
-        // synced vertical tracks. `overflow-x-clip` keeps the scroller
-        // vertical-only (CSS spec coerces `overflow-x: visible` to `auto`
-        // when y is `auto`).
-        className="thin-scrollbar flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-clip"
+        // Global scrollbar styles in base.css cover WebKitGTK via
+        // `::-webkit-scrollbar` pseudo-elements. `overflow-x-clip` keeps the
+        // scroller vertical-only (CSS spec coerces `overflow-x: visible` to
+        // `auto` when y is `auto`).
+        className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-clip"
         layoutScroll
       >
         <Group
