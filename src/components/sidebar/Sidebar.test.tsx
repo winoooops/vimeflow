@@ -164,7 +164,7 @@ describe('Sidebar — resize handle', () => {
   })
 })
 
-describe('Sidebar — separator keyboard a11y (closes #180)', () => {
+describe('Sidebar — separator keyboard a11y (issue VIM-180)', () => {
   // Imports lazy-loaded so the slot-composition tests above don't pay
   // the userEvent setup cost. Keep the new keyboard tests grouped.
   test('separator is focusable (tabIndex=0) and exposes aria-label', () => {

@@ -45,6 +45,9 @@ words:
   - reqwest
   - chrono
 
+  # ESLint / AST
+  - quasis # ESTree TemplateElement nodes in a TemplateLiteral
+
   # React / TypeScript
   - vitest
   - tsx
