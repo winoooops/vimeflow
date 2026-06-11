@@ -300,6 +300,93 @@ describe('WorkspaceView', () => {
     expect(screen.getByTestId('agent-status-panel')).toBeInTheDocument()
   })
 
+  test('keeps expanded macOS drag chrome clear of the fixed sidebar toggle', () => {
+    Object.defineProperty(navigator, 'platform', {
+      value: 'MacIntel',
+      configurable: true,
+    })
+
+    render(<WorkspaceView />)
+
+    const workspace = screen.getByTestId('workspace-view')
+    expect(
+      workspace.style.getPropertyValue('--workspace-sidebar-toggle-left')
+    ).toBe('82px')
+
+    expect(
+      workspace.style.getPropertyValue('--workspace-sidebar-toggle-size')
+    ).toBe('28px')
+
+    expect(
+      workspace.style.getPropertyValue('--workspace-sidebar-toggle-top')
+    ).toBe('7px')
+
+    expect(screen.getByTestId('sidebar-toggle-fixed')).toHaveClass(
+      'vf-app-no-drag'
+    )
+
+    expect(screen.getByTestId('sidebar-top-bar')).not.toHaveClass(
+      'vf-app-drag-region'
+    )
+
+    expect(screen.getByTestId('sidebar-top-bar-upper-drag-region')).toHaveClass(
+      'vf-app-drag-region'
+    )
+
+    expect(screen.getByTestId('sidebar-top-bar-toggle-clearance')).toHaveClass(
+      'vf-app-no-drag'
+    )
+
+    expect(screen.getByTestId('sidebar-top-bar-right-drag-region')).toHaveClass(
+      'vf-app-drag-region'
+    )
+  })
+
+  test('keeps collapsed macOS tab chrome clear of the fixed sidebar toggle', () => {
+    Object.defineProperty(navigator, 'platform', {
+      value: 'MacIntel',
+      configurable: true,
+    })
+
+    setSidebarCollapsed(true)
+
+    render(<WorkspaceView />)
+
+    expect(screen.getByTestId('sidebar-toggle-fixed')).toHaveClass(
+      'vf-app-no-drag'
+    )
+
+    expect(screen.getByTestId('sidebar-toggle-tabs-spacer')).toBeInTheDocument()
+
+    expect(screen.getByTestId('session-tabs')).not.toHaveClass(
+      'vf-app-drag-region'
+    )
+
+    expect(screen.getByTestId('session-tabs-leading-offset')).toHaveClass(
+      'vf-app-drag-region'
+    )
+
+    expect(
+      screen.getByTestId('session-tabs-leading-upper-drag-region')
+    ).toHaveClass('vf-app-drag-region')
+
+    expect(
+      screen.getByTestId('session-tabs-leading-toggle-clearance')
+    ).toHaveClass('vf-app-no-drag')
+
+    expect(
+      screen.getByTestId('session-tabs-leading-lower-drag-region')
+    ).toHaveClass('vf-app-drag-region')
+
+    expect(screen.getByTestId('session-tabs-leading')).not.toHaveClass(
+      'vf-app-drag-region'
+    )
+
+    expect(screen.getByTestId('session-tabs-drag-region')).toHaveClass(
+      'vf-app-drag-region'
+    )
+  })
+
   test('uses a single-column workspace with a dismissible inert sidebar drawer on compact viewports', async () => {
     const restoreMatchMedia = mockMatchMedia(true)
     const user = userEvent.setup()
@@ -1499,8 +1586,9 @@ describe('WorkspaceView', () => {
     expect(mainWorkspace).toHaveClass('bg-background')
     expect(mainWorkspace.style.borderTopLeftRadius).toBe('16px')
     expect(mainWorkspace.style.borderBottomLeftRadius).toBe('16px')
-    expect(mainWorkspace.style.boxShadow).toContain('-18px')
-    expect(mainWorkspace.style.boxShadow).toContain('36px')
+    // No drop shadow: it would read as a dark gradient seam against the
+    // transparent sidebar. The rounded corners alone carry the sheet edge.
+    expect(mainWorkspace.style.boxShadow).toBe('')
     expect(mainWorkspace.style.transition).toContain('border-radius 220ms')
   })
 
@@ -1636,6 +1724,14 @@ describe('WorkspaceView', () => {
     }
   })
 
+  test('caps the sidebar resize range so the card + new-session row fit with even padding', () => {
+    render(<WorkspaceView />)
+
+    const handle = screen.getByTestId('sidebar-resize-handle')
+    expect(handle).toHaveAttribute('aria-valuemin', '272')
+    expect(handle).toHaveAttribute('aria-valuemax', '384')
+  })
+
   test('collapses the sidebar when drag ends below the default minimum width', async () => {
     render(<WorkspaceView />)
 
@@ -1667,6 +1763,11 @@ describe('WorkspaceView', () => {
     expect(sidebarShell.className).toContain('transition-[width]')
     expect(sidebarShell).toHaveStyle({ width: '0px' })
     expect(toggleSurface).toHaveStyle({ width: '0px' })
+    expect(toggleSurface.className).toContain('bg-transparent')
+    expect(toggleSurface.className).not.toContain('bg-surface-container-low')
+    expect(screen.getByTestId('sidebar-top-bar-placeholder')).toHaveClass(
+      'bg-transparent'
+    )
     expect(mainWorkspace.style.borderTopLeftRadius).toBe('0')
     expect(mainWorkspace.style.borderBottomLeftRadius).toBe('0')
   })

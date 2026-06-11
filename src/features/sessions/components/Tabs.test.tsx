@@ -63,7 +63,7 @@ const renderTabs = (
   )
 
 describe('Tabs — leading slot', () => {
-  test('renders the leading control before the tabs and pads the bar to clear it', () => {
+  test('renders the leading control before the tabs and spaces the bar to clear it', () => {
     render(
       <Tabs
         sessions={[buildSession()]}
@@ -76,7 +76,10 @@ describe('Tabs — leading slot', () => {
     )
 
     expect(screen.getByTestId('leading-fixture')).toBeInTheDocument()
-    expect(screen.getByTestId('session-tabs')).toHaveClass('pl-[12px]')
+    expect(screen.getByTestId('session-tabs')).not.toHaveClass('pl-[12px]')
+    expect(screen.getByTestId('session-tabs-leading-offset')).toHaveStyle({
+      width: '12px',
+    })
   })
 
   test('omitting leading uses the default left padding', () => {
@@ -107,13 +110,38 @@ describe('Tabs', () => {
       />
     )
 
-    expect(screen.getByTestId('session-tabs')).toHaveClass('vf-app-drag-region')
-    expect(screen.getByTestId('session-tabs-leading')).toHaveClass(
-      'vf-app-no-drag'
+    expect(screen.getByTestId('session-tabs')).not.toHaveClass(
+      'vf-app-drag-region'
     )
+
+    expect(screen.getByTestId('session-tabs-leading-offset')).toHaveClass(
+      'vf-app-drag-region'
+    )
+
+    expect(
+      screen.getByTestId('session-tabs-leading-upper-drag-region')
+    ).toHaveClass('vf-app-drag-region')
+
+    expect(
+      screen.getByTestId('session-tabs-leading-toggle-clearance')
+    ).toHaveClass('vf-app-no-drag')
+
+    expect(
+      screen.getByTestId('session-tabs-leading-lower-drag-region')
+    ).toHaveClass('vf-app-drag-region')
+
+    expect(screen.getByTestId('session-tabs-leading')).not.toHaveClass(
+      'vf-app-drag-region'
+    )
+
     expect(screen.getByRole('tablist')).toHaveClass('vf-app-no-drag')
+
     expect(screen.getByRole('button', { name: 'New session' })).toHaveClass(
       'vf-app-no-drag'
+    )
+
+    expect(screen.getByTestId('session-tabs-drag-region')).toHaveClass(
+      'vf-app-drag-region'
     )
   })
 
@@ -121,6 +149,10 @@ describe('Tabs', () => {
     renderTabs([buildSession()], 'sess-1')
 
     expect(screen.getByTestId('session-tabs')).not.toHaveClass(
+      'vf-app-drag-region'
+    )
+
+    expect(screen.getByTestId('session-tabs-drag-region')).not.toHaveClass(
       'vf-app-drag-region'
     )
   })

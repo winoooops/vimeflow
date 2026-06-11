@@ -15,17 +15,52 @@ describe('SidebarTopBar', () => {
     ).not.toBeInTheDocument()
   })
 
-  test('keeps empty expanded top-bar chrome draggable on macOS', () => {
+  test('renders a transparent surface so the top bar blends into the sidebar', () => {
+    renderTopBar()
+
+    const topBar = screen.getByTestId('sidebar-top-bar')
+    expect(topBar).toHaveClass('bg-transparent')
+    expect(topBar).not.toHaveClass('bg-surface-container-low')
+  })
+
+  test('keeps expanded top-bar chrome draggable around the toggle slot on macOS', () => {
     renderTopBar({
       reserveWindowControls: true,
     })
 
-    expect(screen.getByTestId('sidebar-top-bar')).toHaveClass(
+    expect(screen.getByTestId('sidebar-top-bar')).not.toHaveClass(
+      'vf-app-drag-region'
+    )
+
+    expect(screen.getByTestId('sidebar-top-bar-upper-drag-region')).toHaveClass(
+      'vf-app-drag-region'
+    )
+
+    expect(screen.getByTestId('sidebar-top-bar-left-drag-region')).toHaveClass(
+      'vf-app-drag-region'
+    )
+
+    expect(screen.getByTestId('sidebar-top-bar-toggle-clearance')).toHaveClass(
+      'vf-app-no-drag'
+    )
+
+    expect(screen.getByTestId('sidebar-top-bar-right-drag-region')).toHaveClass(
+      'vf-app-drag-region'
+    )
+
+    expect(screen.getByTestId('sidebar-top-bar-lower-drag-region')).toHaveClass(
       'vf-app-drag-region'
     )
   })
 
   test('does not apply drag-region class on non-macOS platforms', () => {
+    const dragRegionTestIds = [
+      'sidebar-top-bar-upper-drag-region',
+      'sidebar-top-bar-left-drag-region',
+      'sidebar-top-bar-right-drag-region',
+      'sidebar-top-bar-lower-drag-region',
+    ]
+
     renderTopBar({
       reserveWindowControls: false,
     })
@@ -33,6 +68,10 @@ describe('SidebarTopBar', () => {
     expect(screen.getByTestId('sidebar-top-bar')).not.toHaveClass(
       'vf-app-drag-region'
     )
+
+    dragRegionTestIds.forEach((testId) => {
+      expect(screen.getByTestId(testId)).not.toHaveClass('vf-app-drag-region')
+    })
   })
 
   test('does not render sidebar utility buttons in the traffic-light row', () => {

@@ -248,12 +248,13 @@ describe('Feature 23: Final Phase 2 Verification', () => {
       expect(workspace).toHaveClass('h-screen')
     })
 
-    test('uses Obsidian Lens color tokens', () => {
+    test('sidebar is transparent so it blends into the workspace surface', () => {
       render(<WorkspaceView />)
 
       const sidebar = screen.getByTestId('sidebar')
 
-      expect(sidebar).toHaveClass('bg-surface-container-low')
+      expect(sidebar).toHaveClass('bg-transparent')
+      expect(sidebar).not.toHaveClass('bg-surface-container-low')
     })
   })
 

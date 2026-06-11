@@ -157,7 +157,12 @@ const SETTINGS_FOLLOWUP_ISSUE_NUMBER = 252
 
 const SIDEBAR_DEFAULT = 272
 const SIDEBAR_MIN = SIDEBAR_DEFAULT
-const SIDEBAR_MAX = 520
+// Cap the sidebar at the width where the agent-status card and the
+// tabs + new-session row both hit their own maximums and sit with even 12px
+// padding: 360px content cap (202 SidebarTabs + 8 gap + 150 NewSessionButton
+// max-width, matching AgentStatusCard's CARD_MAX_W) + 24px (px-3 left/right) =
+// 384. Past this the card/button stop growing, so extra width is dead space.
+const SIDEBAR_MAX = 384
 const MAIN_AUTO_COLLAPSE_MIN = 360
 const MAIN_AUTO_COLLAPSE_MAX = 500
 const MAIN_AUTO_COLLAPSE_RATIO = 0.36
@@ -1764,6 +1769,9 @@ export const WorkspaceView = (): ReactElement => {
           // Desktop collapse animates the sidebar shell width; compact viewports
           // switch to a single-column workspace with the sidebar as an overlay.
           '--workspace-window-controls-inset': `${windowControlsInset}px`,
+          '--workspace-sidebar-toggle-left': `${sidebarToggleLeft}px`,
+          '--workspace-sidebar-toggle-size': `${SIDEBAR_TOGGLE_SIZE}px`,
+          '--workspace-sidebar-toggle-top': `${SIDEBAR_TOGGLE_TOP}px`,
           gridTemplateColumns: isCompactViewport ? '1fr' : `auto 1fr auto`,
         } as CSSProperties
       }
@@ -1814,7 +1822,7 @@ export const WorkspaceView = (): ReactElement => {
         <div
           aria-hidden="true"
           data-testid="sidebar-toggle-slide-surface"
-          className={`pointer-events-none absolute left-0 top-0 z-20 bg-surface-container-low ${
+          className={`pointer-events-none absolute left-0 top-0 z-20 bg-transparent ${
             isDragging ? '' : 'transition-[width] duration-[220ms] ease-pane'
           }`}
           style={{
@@ -1864,7 +1872,7 @@ export const WorkspaceView = (): ReactElement => {
                   <div
                     aria-hidden="true"
                     data-testid="sidebar-top-bar-placeholder"
-                    className="bg-surface-container-low"
+                    className="bg-transparent"
                     style={{ height: SIDEBAR_TOP_BAR_HEIGHT, flexShrink: 0 }}
                   />
                 ) : (
@@ -1960,14 +1968,13 @@ export const WorkspaceView = (): ReactElement => {
           borderTopLeftRadius: sidebarCollapsed || isCompactViewport ? 0 : 16,
           borderBottomLeftRadius:
             sidebarCollapsed || isCompactViewport ? 0 : 16,
-          boxShadow:
-            sidebarCollapsed || isCompactViewport
-              ? 'none'
-              : '-18px 0 36px rgba(0,0,0,0.22)',
+          // No elevation shadow on the sheet edge: the sidebar is transparent,
+          // so a leftward drop shadow would read as a dark gradient seam against
+          // it. The rounded corners alone carry the inset-sheet treatment.
           transition: isDragging
             ? 'none'
-            : `border-radius ${SIDEBAR_MOTION_MS}ms ${SIDEBAR_MOTION_EASING}, box-shadow ${SIDEBAR_MOTION_MS}ms ${SIDEBAR_MOTION_EASING}`,
-          willChange: 'border-radius, box-shadow',
+            : `border-radius ${SIDEBAR_MOTION_MS}ms ${SIDEBAR_MOTION_EASING}`,
+          willChange: 'border-radius',
         }}
       >
         <Tabs

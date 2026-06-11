@@ -79,4 +79,4 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Status Indicator Display](patterns/status-indicator-display.md)     | code-quality       | 3        | 0    | 2026-05-26   |
 | [Parser Resilience](patterns/parser-resilience.md)                   | code-quality       | 9        | 7    | 2026-06-09   |
 | [Persisted State Invariants](patterns/persisted-state-invariants.md) | correctness        | 6        | 3    | 2026-06-08   |
-| [macOS Window Chrome](patterns/macos-window-chrome.md)               | cross-platform     | 7        | 1    | 2026-06-10   |
+| [macOS Window Chrome](patterns/macos-window-chrome.md)               | cross-platform     | 8        | 2    | 2026-06-11   |

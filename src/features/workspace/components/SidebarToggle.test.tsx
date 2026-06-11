@@ -116,6 +116,22 @@ describe('SidebarToggle', () => {
     )
   })
 
+  test('variant=inset, expanded (collapsed=false): uses the darker navy hover background', () => {
+    renderToggle({ collapsed: false, variant: 'inset' })
+
+    const button = screen.getByRole('button')
+    expect(button).toHaveClass('hover:bg-[rgba(13,13,28,0.72)]')
+    expect(button).not.toHaveClass('hover:bg-[rgba(226,199,255,0.14)]')
+  })
+
+  test('variant=inset, collapsed=true: uses the lighter lavender hover background', () => {
+    renderToggle({ collapsed: true, variant: 'inset' })
+
+    const button = screen.getByRole('button')
+    expect(button).toHaveClass('hover:bg-[rgba(226,199,255,0.14)]')
+    expect(button).not.toHaveClass('hover:bg-[rgba(13,13,28,0.72)]')
+  })
+
   test('size: sets the button width/height inline style', () => {
     renderToggle({ collapsed: false, size: 34 })
 
