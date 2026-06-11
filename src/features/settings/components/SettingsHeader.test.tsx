@@ -9,17 +9,25 @@ describe('SettingsHeader', () => {
     onScope: vi.fn(),
   }
 
-  test('renders User and vimeflow scope tabs', () => {
+  test('renders User and vimeflow scope radios', () => {
     render(<SettingsHeader {...baseProps} />)
 
-    expect(screen.getByRole('button', { name: 'User' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'vimeflow' })).toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: 'User' })).toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: 'vimeflow' })).toBeInTheDocument()
   })
 
-  test('active scope has accent underline styling', () => {
+  test('active scope has aria-checked and accent underline styling', () => {
     render(<SettingsHeader {...baseProps} scope="vimeflow" />)
 
-    expect(screen.getByRole('button', { name: 'vimeflow' })).toHaveClass(
+    expect(screen.getByRole('radio', { name: 'vimeflow' })).toHaveAttribute(
+      'aria-checked',
+      'true'
+    )
+    expect(screen.getByRole('radio', { name: 'User' })).toHaveAttribute(
+      'aria-checked',
+      'false'
+    )
+    expect(screen.getByRole('radio', { name: 'vimeflow' })).toHaveClass(
       'border-primary-container'
     )
   })
@@ -29,7 +37,7 @@ describe('SettingsHeader', () => {
     const onScope = vi.fn()
     render(<SettingsHeader {...baseProps} onScope={onScope} />)
 
-    await user.click(screen.getByRole('button', { name: 'vimeflow' }))
+    await user.click(screen.getByRole('radio', { name: 'vimeflow' }))
 
     expect(onScope).toHaveBeenCalledWith('vimeflow')
   })

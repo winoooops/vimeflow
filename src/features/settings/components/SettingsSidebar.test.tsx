@@ -28,11 +28,11 @@ describe('SettingsSidebar', () => {
     onQuery: vi.fn(),
   }
 
-  test('renders the search input with placeholder', () => {
+  test('renders the search input with accessible name', () => {
     render(<SettingsSidebar {...baseProps} />)
 
     expect(
-      screen.getByPlaceholderText('Search settings...')
+      screen.getByRole('textbox', { name: 'Search settings' })
     ).toBeInTheDocument()
   })
 

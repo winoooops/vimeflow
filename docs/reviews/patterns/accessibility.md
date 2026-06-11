@@ -3,7 +3,7 @@ id: accessibility
 category: a11y
 created: 2026-04-09
 last_updated: 2026-06-11
-ref_count: 21
+ref_count: 22
 ---
 
 # Accessibility
@@ -531,4 +531,22 @@ handlers must not trap focus without implementing the promised behavior.
 - **File:** `src/features/settings/components/controls.tsx`
 - **Finding:** The settings toggles rendered as plain `<button>` elements with only an accessible label, so screen readers could not tell whether settings like "Use System Prompts" were currently on or off.
 - **Fix:** Added `role="switch"` and `aria-checked={on}` to the `Toggle` button so assistive technology exposes the current on/off state.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 50. Settings search input lacks a programmatic accessible name
+
+- **Source:** github-claude | PR #422 round 3 | 2026-06-11
+- **Severity:** MEDIUM
+- **File:** `src/features/settings/components/SettingsSidebar.tsx`
+- **Finding:** The sidebar search `<input>` carried only a `placeholder` attribute with no `aria-label`, `id`/`<label>` pair, or `aria-labelledby`. Placeholder text is not a reliable accessible name across screen reader and browser combinations, so a screen-reader user could encounter an unnamed primary search control inside the modal.
+- **Fix:** Added `aria-label="Search settings"` to the `<input>` and updated the co-located test to query by the accessible name (`getByRole('textbox', { name: 'Search settings' })`).
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 51. Settings scope switcher has no accessible selected state
+
+- **Source:** github-claude | PR #422 round 3 | 2026-06-11
+- **Severity:** MEDIUM
+- **File:** `src/features/settings/components/SettingsHeader.tsx`
+- **Finding:** The "User" / "vimeflow" scope controls were plain `<button>` elements whose active state was represented only by CSS classes. Screen-reader users could activate the controls but could not determine which scope was selected or receive a semantic state change.
+- **Fix:** Wrapped the scope controls in a `<div role="radiogroup" aria-label="Settings scope">` and gave each scope button `role="radio"` with `aria-checked={scope === s}`. Updated co-located tests to query by `radio` role and assert `aria-checked` values.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

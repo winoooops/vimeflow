@@ -18,6 +18,7 @@ export const SettingsSidebar = ({
           value={query}
           onChange={(e) => onQuery(e.target.value)}
           placeholder="Search settings..."
+          aria-label="Search settings"
           className="min-w-0 flex-1 border-none bg-transparent font-body text-xs text-on-surface outline-none placeholder:text-on-surface-muted"
         />
       </div>
