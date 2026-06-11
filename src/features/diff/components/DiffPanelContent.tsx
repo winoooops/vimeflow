@@ -29,6 +29,8 @@ import { extractHunkPatch } from '../services/gitPatch'
 import { createGitService } from '../services/gitService'
 import { enqueuePoolWrite } from '../services/workerPoolWrites'
 import { useNotifyInfo } from '../../workspace/hooks/useNotifyInfo'
+import { useTheme } from '../../../theme'
+import { pierreThemeForKind } from '../pierreTheme'
 import type { ChangedFile, FileDiff, SelectedDiffFile } from '../types'
 import {
   useFeedbackBatch,
@@ -873,7 +875,19 @@ export const DiffPanelContent = ({
   // through `syncedRenderOptions` and the diff remount waits for the pool to
   // accept the new value first.
   const [diffStyle, setDiffStyle] = useState<DiffStyle>('split')
-  const [theme, setTheme] = useState<DiffsThemeNames>('pierre-dark')
+
+  const workspaceTheme = useTheme()
+
+  const [theme, setTheme] = useState<DiffsThemeNames>(() =>
+    pierreThemeForKind(workspaceTheme.kind)
+  )
+
+  // Workspace theme switch resets the diff theme to the mapped default,
+  // overriding any session-level dropdown choice (spec §5).
+  useEffect(() => {
+    setTheme(pierreThemeForKind(workspaceTheme.kind))
+  }, [workspaceTheme.kind])
+
   const [lineDiffType, setLineDiffType] = useState<LineDiffType>('word')
 
   const [diffIndicators, setDiffIndicators] =
