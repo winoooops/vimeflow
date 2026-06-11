@@ -9,8 +9,15 @@ const tabs: BrowserPaneTab[] = [
     url: 'https://github.com/o/r/pull/1',
     title: 'PR',
     active: true,
+    favicon: null,
   },
-  { id: 'tab-1', url: 'https://example.com/', title: null, active: false },
+  {
+    id: 'tab-1',
+    url: 'https://example.com/',
+    title: null,
+    active: false,
+    favicon: null,
+  },
 ]
 
 const noop = (): void => undefined
@@ -26,6 +33,47 @@ test('renders the WEB identity chip', () => {
   )
 
   expect(screen.getByText('WEB')).toBeInTheDocument()
+})
+
+test('passes tab.favicon through to the favicon slot', () => {
+  render(
+    <BrowserTabBar
+      tabs={[
+        {
+          id: 't',
+          url: 'https://x.com/',
+          title: 'X',
+          active: true,
+          favicon: 'data:image/png;base64,AAAA',
+        },
+      ]}
+      onActivate={noop}
+      onClose={noop}
+      onNewTab={noop}
+    />
+  )
+
+  expect(screen.getByTestId('browser-tab-favicon')).toHaveAttribute(
+    'src',
+    'data:image/png;base64,AAAA'
+  )
+})
+
+test('tabs share an equal-width (flex-1) capsule', () => {
+  render(
+    <BrowserTabBar
+      tabs={tabs}
+      onActivate={noop}
+      onClose={noop}
+      onNewTab={noop}
+    />
+  )
+
+  const capsules = screen.getAllByTestId('browser-tab')
+  expect(capsules.length).toBeGreaterThan(1)
+  for (const capsule of capsules) {
+    expect(capsule).toHaveClass('flex-1')
+  }
 })
 
 test('a PR-URL tab uses the merge favicon glyph', () => {

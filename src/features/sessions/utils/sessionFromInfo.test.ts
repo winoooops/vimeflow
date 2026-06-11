@@ -6,6 +6,7 @@ import { writeActivityPanelCollapsed } from './activityPanelCollapsedStore'
 const aliveInfo = (id: string, cwd: string): SessionInfo => ({
   id,
   cwd,
+  shell: '/bin/zsh',
   status: { kind: 'Alive', pid: 1234, replay_data: '', replay_end_offset: 0n },
 })
 
@@ -66,6 +67,7 @@ describe('sessionFromInfo (pre-pane shape)', () => {
     expect(session.panes[0].status).toBe('running')
     expect(session.panes[0].restoreData).toBeDefined()
     expect(session.panes[0].restoreData?.pid).toBe(1234)
+    expect(session.panes[0].shell).toBe('/bin/zsh')
     expect(session.layout).toBe('single')
   })
 
@@ -90,5 +92,19 @@ describe('sessionFromInfo (pre-pane shape)', () => {
   test('defaults session.activityPanelCollapsed to false when nothing persisted', () => {
     const session = sessionFromInfo(aliveInfo('pty-2', '/home/y'), 0)
     expect(session.activityPanelCollapsed).toBe(false)
+  })
+
+  test('hydrates cacheHistory from the store for an Alive pane', () => {
+    window.localStorage.setItem(
+      'vimeflow:agent:cacheHistory:pty-1',
+      '[10,20,30]'
+    )
+    const session = sessionFromInfo(aliveInfo('pty-1', '/home/x'), 0)
+    expect(session.panes[0].cacheHistory).toEqual([10, 20, 30])
+  })
+
+  test('defaults cacheHistory to [] when nothing persisted', () => {
+    const session = sessionFromInfo(aliveInfo('pty-2', '/home/y'), 0)
+    expect(session.panes[0].cacheHistory).toEqual([])
   })
 })

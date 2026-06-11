@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { Session } from '../types'
+import type { Pane, Session } from '../types'
 import type { ITerminalService } from '../../terminal/services/terminalService'
-import { findBackendSessionPane } from '../utils/findBackendPane'
+import { isShellPane } from '../utils/paneKind'
+import { isLiveStatus } from '../utils/sessionStatus'
+import { focusBrowserPane } from '../../browser/browserBridge'
 
 export interface UseActiveSessionControllerOptions {
   service: ITerminalService
@@ -45,32 +47,58 @@ export const useActiveSessionController = ({
       if (!session) {
         return
       }
-      const pane = findBackendSessionPane(session)
-      if (!pane) {
-        return
-      }
-      const ptyId = pane.ptyId
 
+      const activePane = session.panes.find((pane) => pane.active)
+
+      const isLiveShell = (pane: Pane): boolean =>
+        isShellPane(pane) && isLiveStatus(pane.status)
+
+      // Resolve the LIVE shell PTY to activate. Prefer the session's active
+      // pane when it is a live shell so restore (and a tab switch) target the
+      // pane the UI shows — otherwise Rust's active PTY diverges from the
+      // restored active pane. Fall back to ANY live shell so a session whose
+      // active pane is a dead placeholder is still selectable (not
+      // findBackendSessionPane's `?? shellPanes[0]`, which can return a dead
+      // placeholder the backend rejects). Spec §4.
+      const liveShell =
+        activePane && isLiveShell(activePane)
+          ? activePane
+          : session.panes.find(isLiveShell)
+
+      // Bump the request id BEFORE branching so a prior in-flight shell
+      // rollback (older myReq) can no longer revert this selection.
       const myReq = ++activeRequestIdRef.current
       const prev = activeSessionIdRef.current
       activeSessionIdRef.current = id
       setActiveSessionIdState(id)
 
-      // eslint-disable-next-line promise/prefer-await-to-then
-      service.setActiveSession(ptyId).catch((err) => {
-        if (myReq === activeRequestIdRef.current) {
-          // eslint-disable-next-line no-console
-          console.warn('setActiveSession IPC failed; reverting', err)
-          activeSessionIdRef.current = prev
-          setActiveSessionIdState(prev)
-        } else {
-          // eslint-disable-next-line no-console
-          console.warn(
-            'setActiveSession IPC failed but newer request superseded; not reverting',
-            err
-          )
-        }
-      })
+      if (liveShell) {
+        // eslint-disable-next-line promise/prefer-await-to-then
+        service.setActiveSession(liveShell.ptyId).catch((err) => {
+          if (myReq === activeRequestIdRef.current) {
+            // eslint-disable-next-line no-console
+            console.warn('setActiveSession IPC failed; reverting', err)
+            activeSessionIdRef.current = prev
+            setActiveSessionIdState(prev)
+          } else {
+            // eslint-disable-next-line no-console
+            console.warn(
+              'setActiveSession IPC failed but newer request superseded; not reverting',
+              err
+            )
+          }
+        })
+
+        return
+      }
+
+      // No live shell — a browser-only session, or shells that are all
+      // restartable placeholders (dead PTYs from a graceful-quit restore).
+      // Skip the PTY IPC (its rollback would revert this selection) and focus
+      // the browser pane when the active pane is one.
+      if (activePane && !isShellPane(activePane)) {
+        void focusBrowserPane({ sessionId: session.id, paneId: activePane.id })
+      }
     },
     [service, sessionsRef]
   )

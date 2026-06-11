@@ -29,6 +29,15 @@
     format('woff2-variations');
 }
 
+@font-face {
+  font-family: 'Instrument Sans';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400 700;
+  src: url('@fontsource-variable/instrument-sans/files/instrument-sans-latin-wght-normal.woff2')
+    format('woff2-variations');
+}
+
 /* Ioskeley Mono — global mono/code face (SIL OFL 1.1, vendored woff2). */
 @font-face {
   font-family: 'Ioskeley Mono';
@@ -95,6 +104,47 @@
 
   body {
     @apply bg-background text-on-surface font-body overflow-hidden m-0;
+  }
+
+  .vf-app-drag-region {
+    -webkit-app-region: drag;
+    user-select: none;
+  }
+
+  .vf-app-no-drag {
+    -webkit-app-region: no-drag;
+  }
+
+  .vf-new-session-button {
+    container-type: inline-size;
+  }
+
+  .vf-new-session-button-content {
+    gap: 0;
+    padding-inline: 0;
+    transition:
+      gap 140ms ease,
+      padding-inline 140ms ease;
+  }
+
+  .vf-new-session-label {
+    max-width: 0;
+    opacity: 0;
+    transition:
+      max-width 140ms ease,
+      opacity 140ms ease;
+  }
+
+  @container (min-width: 96px) {
+    .vf-new-session-button-content {
+      gap: 6px;
+      padding-inline: 10px;
+    }
+
+    .vf-new-session-label {
+      max-width: 7rem;
+      opacity: 1;
+    }
   }
 
   .material-symbols-outlined {

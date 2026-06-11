@@ -35,6 +35,7 @@ const electronMock = vi.hoisted(() => {
       invoke: vi.fn(),
       on: vi.fn(),
       off: vi.fn(),
+      setMaxListeners: vi.fn(),
     },
   }
 })
@@ -43,6 +44,10 @@ vi.mock('electron', () => ({
   contextBridge: electronMock.contextBridge,
   ipcRenderer: electronMock.ipcRenderer,
 }))
+
+const preloadSetMaxListenersCalls = [
+  ...electronMock.ipcRenderer.setMaxListeners.mock.calls,
+]
 
 const browserPane = (): Record<string, unknown> => {
   const api = electronMock.exposed
@@ -63,6 +68,10 @@ const browserPane = (): Record<string, unknown> => {
 describe('preload browserPane wiring', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+  })
+
+  test('raises the shared ipcRenderer listener cap during preload startup', () => {
+    expect(preloadSetMaxListenersCalls).toEqual([[64]])
   })
 
   test.each([

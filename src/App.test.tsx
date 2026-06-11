@@ -1,6 +1,14 @@
 import type { ReactElement } from 'react'
 import { render, screen } from '@testing-library/react'
-import { afterAll, beforeAll, describe, expect, test, vi } from 'vitest'
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  test,
+  vi,
+} from 'vitest'
 import App from './App'
 
 // Mock WorkspaceView to avoid rendering the full workspace in App tests.
@@ -12,6 +20,26 @@ vi.mock('./features/workspace/WorkspaceView', () => {
   return {
     WorkspaceView: MockedWorkspaceView,
     default: MockedWorkspaceView,
+  }
+})
+
+vi.mock('./features/diff/demo/InlineCommentDemo', () => {
+  const MockedInlineCommentDemo = (): ReactElement => (
+    <div data-testid="inline-comment-demo">Inline comment demo</div>
+  )
+
+  return {
+    InlineCommentDemo: MockedInlineCommentDemo,
+  }
+})
+
+vi.mock('./features/sessions/demo/ReorderMotionDemo', () => {
+  const MockedReorderMotionDemo = (): ReactElement => (
+    <div data-testid="session-reorder-demo">Session reorder demo</div>
+  )
+
+  return {
+    ReorderMotionDemo: MockedReorderMotionDemo,
   }
 })
 
@@ -48,6 +76,10 @@ describe('App', () => {
     vi.unstubAllGlobals()
   })
 
+  afterEach(() => {
+    window.history.replaceState(null, '', '/')
+  })
+
   test('renders without crashing', () => {
     render(<App />)
     expect(document.body).toBeTruthy()
@@ -72,5 +104,14 @@ describe('App', () => {
     expect(
       screen.queryByText('Workspace layout components will be added next')
     ).not.toBeInTheDocument()
+  })
+
+  test('renders session reorder demo behind dev query gate', () => {
+    window.history.replaceState(null, '', '/?demo=session-reorder')
+
+    render(<App />)
+
+    expect(screen.getByTestId('session-reorder-demo')).toBeInTheDocument()
+    expect(screen.queryByTestId('workspace-view')).not.toBeInTheDocument()
   })
 })

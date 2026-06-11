@@ -54,6 +54,8 @@ vi.mock('../terminal/services/terminalService', () => ({
     onExit: vi.fn((): (() => void) => (): void => {}),
     // eslint-disable-next-line @typescript-eslint/no-empty-function
     onError: vi.fn((): (() => void) => (): void => {}),
+    // eslint-disable-next-line @typescript-eslint/no-empty-function
+    onBurnerForeground: vi.fn((): (() => void) => (): void => {}),
     listSessions: vi.fn().mockResolvedValue({
       activeSessionId: 'sess-1',
       sessions: [
@@ -73,6 +75,8 @@ vi.mock('../terminal/services/terminalService', () => ({
     reorderSessions: vi.fn().mockResolvedValue(undefined),
     updateSessionCwd: vi.fn().mockResolvedValue(undefined),
     setSessionActivityPanelCollapsed: vi.fn().mockResolvedValue(undefined),
+    killEphemeralPtys: vi.fn(),
+    setWorkspaceSessions: vi.fn().mockResolvedValue(undefined),
   })),
 }))
 
@@ -101,34 +105,36 @@ describe('Feature 23: Final Phase 2 Verification', () => {
     test('renders sidebar (with top bar), terminal, dock panel, and activity zones', () => {
       render(<WorkspaceView />)
 
-      // VIM-76: icon rail removed — its utilities moved to the sidebar top bar.
+      // VIM-76: icon rail removed; sidebar chrome remains in the sidebar.
       expect(screen.getByTestId('sidebar')).toBeInTheDocument()
       expect(screen.getByTestId('sidebar-top-bar')).toBeInTheDocument()
+      expect(screen.getByTestId('sidebar-footer-wrapper')).toBeInTheDocument()
       expect(screen.getByTestId('terminal-zone')).toBeInTheDocument()
       expect(screen.getByTestId('dock-panel')).toBeInTheDocument()
       expect(screen.getByTestId('agent-status-panel')).toBeInTheDocument()
     })
   })
 
-  describe('2. Sidebar top bar shows utility actions', () => {
+  describe('2. Sidebar footer shows utility actions', () => {
     test('no longer renders a placeholder account avatar (removed, VIM-66)', () => {
       render(<WorkspaceView />)
 
       expect(screen.queryByRole('img', { name: 'Account' })).toBeNull()
     })
 
-    test('displays command palette and disabled settings buttons', () => {
+    test('moves Settings to the footer and removes the command palette button', () => {
       render(<WorkspaceView />)
 
       const topBar = screen.getByTestId('sidebar-top-bar')
+      const footer = screen.getByTestId('sidebar-footer-wrapper')
 
       expect(
-        within(topBar).getByRole('button', { name: 'Command Palette' })
-      ).toBeInTheDocument()
+        within(topBar).queryByRole('button', { name: 'Command Palette' })
+      ).not.toBeInTheDocument()
 
       // Settings aria-label is "Settings — coming (see issue #252)".
       expect(
-        within(topBar).getByRole('button', { name: /^Settings/ })
+        within(footer).getByRole('button', { name: /^Settings/ })
       ).toHaveAttribute('aria-disabled', 'true')
     })
   })
@@ -242,12 +248,13 @@ describe('Feature 23: Final Phase 2 Verification', () => {
       expect(workspace).toHaveClass('h-screen')
     })
 
-    test('uses Obsidian Lens color tokens', () => {
+    test('sidebar is transparent so it blends into the workspace surface', () => {
       render(<WorkspaceView />)
 
       const sidebar = screen.getByTestId('sidebar')
 
-      expect(sidebar).toHaveClass('bg-surface-container-low')
+      expect(sidebar).toHaveClass('bg-transparent')
+      expect(sidebar).not.toHaveClass('bg-surface-container-low')
     })
   })
 

@@ -7,6 +7,8 @@ interface ReviewCommentComposerProps {
   /** Which side of the diff the line lives on (additions => R, deletions => L). */
   side: AnnotationSide
   initialText?: string
+  value?: string
+  onTextChange?: (text: string) => void
   onConfirm: (text: string) => void
   onCancel: () => void
 }
@@ -19,11 +21,22 @@ export const ReviewCommentComposer = ({
   lineNumber,
   side,
   initialText = '',
+  value = undefined,
+  onTextChange = undefined,
   onConfirm,
   onCancel,
 }: ReviewCommentComposerProps): ReactElement => {
-  const [text, setText] = useState(initialText)
+  const [uncontrolledText, setUncontrolledText] = useState(initialText)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const text = value ?? uncontrolledText
+
+  const updateText = (next: string): void => {
+    if (value === undefined) {
+      setUncontrolledText(next)
+    }
+
+    onTextChange?.(next)
+  }
 
   useEffect((): void => {
     const node = textareaRef.current
@@ -67,7 +80,7 @@ export const ReviewCommentComposer = ({
       <textarea
         ref={textareaRef}
         value={text}
-        onChange={(e): void => setText(e.target.value)}
+        onChange={(e): void => updateText(e.target.value)}
         onKeyDown={(e): void => {
           if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault()

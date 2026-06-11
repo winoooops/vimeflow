@@ -14,6 +14,13 @@ import {
   registerPtySession,
 } from '../../terminal/ptySessionMap'
 import { readActivityPanelCollapsed } from '../utils/activityPanelCollapsedStore'
+import type { WorkspaceShapeDto } from '../workspaceLayoutBridge'
+import {
+  loadWorkspaceForRestore,
+  pushWorkspaceShape,
+} from '../workspaceLayoutBridge'
+import { DEFAULT_BROWSER_URL } from '../../browser/types'
+import { createBrowserPane } from '../../browser/browserBridge'
 
 const mockListen = vi.hoisted(() =>
   vi.fn(
@@ -32,6 +39,22 @@ const mockListen = vi.hoisted(() =>
 
 vi.mock('../../../lib/backend', () => ({
   listen: mockListen,
+}))
+
+vi.mock('../workspaceLayoutBridge', () => ({
+  pushWorkspaceShape: vi.fn(),
+  loadWorkspaceForRestore: vi.fn(() => Promise.resolve(null)),
+  beginWorkspaceHydration: vi.fn(() => Promise.resolve()),
+  endWorkspaceHydration: vi.fn(() => Promise.resolve()),
+  onWorkspaceRequestFinalShape: vi.fn(() => (): void => undefined),
+}))
+
+// Partial mock: only spy on createBrowserPane; keep destroyBrowserPane /
+// focusBrowserPane as their real (no-bridge) no-ops so removeSession and the
+// active-session controller still behave.
+vi.mock('../../browser/browserBridge', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../browser/browserBridge')>()),
+  createBrowserPane: vi.fn(() => Promise.resolve(null)),
 }))
 
 const createMockService = (): ITerminalService => ({
@@ -56,6 +79,9 @@ const createMockService = (): ITerminalService => ({
       // eslint-disable-next-line @typescript-eslint/no-empty-function
       Promise.resolve((): void => {})
   ),
+  onBurnerForeground: vi.fn(
+    (): Promise<() => void> => Promise.resolve((): void => undefined)
+  ),
   listSessions: vi.fn().mockResolvedValue({
     activeSessionId: null,
     sessions: [],
@@ -64,6 +90,8 @@ const createMockService = (): ITerminalService => ({
   reorderSessions: vi.fn().mockResolvedValue(undefined),
   updateSessionCwd: vi.fn().mockResolvedValue(undefined),
   setSessionActivityPanelCollapsed: vi.fn().mockResolvedValue(undefined),
+  killEphemeralPtys: vi.fn(),
+  setWorkspaceSessions: vi.fn().mockResolvedValue(undefined),
 })
 
 const titleListener = ():
@@ -229,6 +257,96 @@ describe('useSessionManager', () => {
     )
     expect(pane?.agentTitle).toBe('My Task')
     expect(pane?.agentTitleSource).toBe('ai-generated')
+  })
+
+  test('appendPaneCacheReading appends a changed reading once and persists by ptyId', async () => {
+    window.localStorage.clear()
+    const service = createMockService()
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: 'pty-1',
+      sessions: [
+        {
+          id: 'pty-1',
+          cwd: '/tmp',
+          status: {
+            kind: 'Alive',
+            pid: 1,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+      ],
+    })
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    const sessionId = result.current.sessions[0].id
+    const paneId = result.current.sessions[0].panes[0].id
+
+    act(() => {
+      result.current.appendPaneCacheReading(sessionId, paneId, 75)
+      result.current.appendPaneCacheReading(sessionId, paneId, 75)
+    })
+
+    expect(result.current.sessions[0].panes[0].cacheHistory).toEqual([75])
+    expect(
+      JSON.parse(
+        window.localStorage.getItem('vimeflow:agent:cacheHistory:pty-1') ??
+          'null'
+      )
+    ).toEqual([75])
+  })
+
+  test('removeSession deletes the pane cacheHistory key for the killed pty', async () => {
+    window.localStorage.clear()
+    const service = createMockService()
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: 'pty-1',
+      sessions: [
+        {
+          id: 'pty-1',
+          cwd: '/tmp',
+          status: {
+            kind: 'Alive',
+            pid: 1,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+      ],
+    })
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    const sessionId = result.current.sessions[0].id
+    const paneId = result.current.sessions[0].panes[0].id
+    act(() => {
+      result.current.appendPaneCacheReading(sessionId, paneId, 75)
+    })
+
+    expect(
+      window.localStorage.getItem('vimeflow:agent:cacheHistory:pty-1')
+    ).not.toBeNull()
+
+    act(() => {
+      result.current.removeSession(sessionId)
+    })
+
+    await waitFor(() =>
+      expect(result.current.sessions.find((s) => s.id === sessionId)).toBe(
+        undefined
+      )
+    )
+
+    expect(
+      window.localStorage.getItem('vimeflow:agent:cacheHistory:pty-1')
+    ).toBeNull()
   })
 
   test('empty agent-session-title clears agentTitle to undefined', async () => {
@@ -1267,6 +1385,277 @@ describe('useSessionManager', () => {
     expect(result.current.sessions[0].id).toBe('restored-1')
   })
 
+  // A browser-only session restored from the durable store has no shell PTY,
+  // but its live browser pane makes it a usable workspace — auto-create must
+  // NOT seed an extra terminal tab on top of it.
+  test('auto-create is skipped for a restored browser-only session', async () => {
+    const store: WorkspaceShapeDto = {
+      sessions: [
+        {
+          id: 'ws-browser',
+          projectId: 'proj-1',
+          layout: 'single',
+          workingDirectory: '/home/will/proj',
+          active: true,
+          panes: [
+            { kind: 'browser', paneId: 'p0', paneIndex: 0, active: true },
+          ],
+        },
+      ],
+    }
+    vi.mocked(loadWorkspaceForRestore).mockResolvedValueOnce(store)
+
+    const service = createMockService()
+    service.listSessions = vi
+      .fn()
+      .mockResolvedValue({ activeSessionId: null, sessions: [] })
+
+    const { result } = renderHook(() => useSessionManager(service))
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    await waitFor(() => expect(result.current.sessions).toHaveLength(1))
+
+    expect(result.current.sessions[0].id).toBe('ws-browser')
+    expect(result.current.sessions[0].panes[0].kind).toBe('browser')
+    // The live browser pane counts as a live session → no seeded terminal.
+    expect(service.spawn).not.toHaveBeenCalled()
+  })
+
+  // When the durable store is authoritative, the legacy localStorage browser
+  // cache must NOT be merged — otherwise a pane closed before a crash (never
+  // cleared from localStorage) would be resurrected on the next restore.
+  test('store-driven restore ignores the stale localStorage browser cache', async () => {
+    const store: WorkspaceShapeDto = {
+      sessions: [
+        {
+          id: 'ws-shell',
+          projectId: 'proj-1',
+          layout: 'single',
+          workingDirectory: '/home/will/proj',
+          active: true,
+          panes: [
+            {
+              kind: 'shell',
+              paneId: 'p0',
+              paneIndex: 0,
+              active: true,
+              ptyId: 'pty-shell',
+              cwd: '/home/will/proj',
+              agentType: 'generic',
+              agentSessionId: null,
+            },
+          ],
+        },
+      ],
+    }
+    vi.mocked(loadWorkspaceForRestore).mockResolvedValueOnce(store)
+    // A browser pane closed before a crash, still lingering in the legacy key.
+    window.localStorage.setItem(
+      'vimeflow:browser-panes:v1',
+      JSON.stringify([
+        {
+          sessionId: 'ws-shell',
+          paneId: 'p1',
+          ptyId: 'browser:stale',
+          cwd: '/home/will/proj',
+          browserUrl: 'https://example.com/',
+          active: false,
+        },
+      ])
+    )
+
+    const service = createMockService()
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: 'pty-shell',
+      sessions: [
+        {
+          id: 'pty-shell',
+          cwd: '/home/will/proj',
+          status: {
+            kind: 'Alive',
+            pid: 1,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+      ],
+    })
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    await waitFor(() => expect(result.current.sessions).toHaveLength(1))
+
+    // The durable store is authoritative — the stale browser pane is dropped.
+    expect(result.current.sessions[0].id).toBe('ws-shell')
+    expect(result.current.sessions[0].panes).toHaveLength(1)
+    expect(result.current.sessions[0].panes[0].ptyId).toBe('pty-shell')
+  })
+
+  test('does not push an empty workspace shape after restore fails', async () => {
+    vi.mocked(loadWorkspaceForRestore).mockRejectedValueOnce(new Error('boom'))
+    const service = createMockService()
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    expect(result.current.sessions).toEqual([])
+    expect(pushWorkspaceShape).not.toHaveBeenCalled()
+  })
+
+  test('does not restore browser panes from the legacy localStorage cache', async () => {
+    vi.mocked(loadWorkspaceForRestore).mockResolvedValueOnce({ sessions: [] })
+    window.localStorage.setItem(
+      'vimeflow:browser-panes:v1',
+      JSON.stringify([
+        {
+          sessionId: 'pty-1',
+          paneId: 'p1',
+          ptyId: 'browser:legacy',
+          cwd: '/home/will/proj',
+          browserUrl: 'https://example.com/',
+          active: false,
+        },
+      ])
+    )
+
+    const service = createMockService()
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: 'pty-1',
+      sessions: [
+        {
+          id: 'pty-1',
+          cwd: '/home/will/proj',
+          status: {
+            kind: 'Alive',
+            pid: 1,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+      ],
+    })
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    await waitFor(() => expect(result.current.sessions).toHaveLength(1))
+
+    const panes = result.current.sessions[0].panes
+    expect(panes).toHaveLength(1)
+    expect(panes[0].ptyId).toBe('pty-1')
+  })
+
+  test('does not write the legacy localStorage browser cache after restore', async () => {
+    vi.mocked(loadWorkspaceForRestore).mockResolvedValueOnce({
+      sessions: [
+        {
+          id: 'ws-browser',
+          projectId: 'proj-1',
+          layout: 'single',
+          workingDirectory: '/home/will/proj',
+          active: true,
+          panes: [
+            { kind: 'browser', paneId: 'p0', paneIndex: 0, active: true },
+          ],
+        },
+      ],
+    })
+    const setItemSpy = vi.spyOn(Storage.prototype, 'setItem')
+    const removeItemSpy = vi.spyOn(Storage.prototype, 'removeItem')
+
+    const service = createMockService()
+    service.listSessions = vi
+      .fn()
+      .mockResolvedValue({ activeSessionId: null, sessions: [] })
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    await waitFor(() => expect(result.current.sessions).toHaveLength(1))
+
+    expect(
+      setItemSpy.mock.calls.some(([key]) => key === 'vimeflow:browser-panes:v1')
+    ).toBe(false)
+
+    expect(
+      removeItemSpy.mock.calls.some(
+        ([key]) => key === 'vimeflow:browser-panes:v1'
+      )
+    ).toBe(false)
+    expect(window.localStorage.getItem('vimeflow:browser-panes:v1')).toBeNull()
+  })
+
+  // Browser-only session from scratch (spec §6.2): one runtime browser pane,
+  // no PTY spawn, main asked to create the WebContents at the default url.
+  test('createBrowserSession builds a browser-only session with no PTY spawn', async () => {
+    const service = createMockService()
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    act(() => {
+      result.current.createBrowserSession()
+    })
+
+    await waitFor(() => expect(result.current.sessions).toHaveLength(1))
+    const session = result.current.sessions[0]
+    expect(session.layout).toBe('single')
+    expect(session.panes).toHaveLength(1)
+    const pane = session.panes[0]
+    expect(pane.kind).toBe('browser')
+    expect(pane.id).toBe('p0')
+    expect(pane.ptyId.startsWith('browser:')).toBe(true)
+    expect(pane.agentType).toBe('generic')
+    expect(pane.status).toBe('running')
+    expect(pane.active).toBe(true)
+    // No PTY spawn for a browser-only session.
+    expect(service.spawn).not.toHaveBeenCalled()
+    // Main creates the WebContents seeded with the default url.
+    expect(vi.mocked(createBrowserPane)).toHaveBeenCalledWith({
+      sessionId: session.id,
+      paneId: 'p0',
+      workspaceId: 'proj-1',
+      initialUrl: DEFAULT_BROWSER_URL,
+    })
+    // The new session is selected.
+    expect(result.current.activeSessionId).toBe(session.id)
+  })
+
+  // A failed eager create (bridge/main unavailable) must not throw or leave an
+  // unhandled rejection — the session is still created and selected, and
+  // BrowserPane re-issues the create on mount.
+  test('createBrowserSession survives a createBrowserPane rejection', async () => {
+    vi.mocked(createBrowserPane).mockRejectedValueOnce(new Error('bridge down'))
+
+    const service = createMockService()
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    act(() => {
+      result.current.createBrowserSession()
+    })
+
+    await waitFor(() => expect(result.current.sessions).toHaveLength(1))
+    // Let the rejected eager-create settle so any unhandled rejection surfaces.
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    expect(result.current.sessions[0].panes[0].kind).toBe('browser')
+    expect(result.current.activeSessionId).toBe(result.current.sessions[0].id)
+  })
+
   // Post-crash recovery: the previous app died without a graceful exit
   // (SIGKILL, OOM, wdio teardown). The session cache still lists alive
   // entries, but no PTY survives — `list_sessions` reconciles them all to
@@ -1420,9 +1809,24 @@ describe('useSessionManager', () => {
       expect(service.setActiveSession).toHaveBeenCalledWith('new-id')
     )
 
-    await waitFor(() =>
-      expect(service.reorderSessions).toHaveBeenCalledWith(['new-id'])
-    )
+    // Cache order persistence is now owned by `set_workspace_sessions`
+    // (see PR #290 — it rebuilds session_order from the snapshot atomically
+    // with the grouping write). Assert the push reached the backend with
+    // the new session in the snapshot.
+    await waitFor(() => {
+      expect(pushWorkspaceShape).toHaveBeenCalled()
+
+      const calls = vi.mocked(pushWorkspaceShape).mock.calls
+
+      const lastPayload = calls[calls.length - 1]?.[0] as
+        | { sessions: { panes: { ptyId: string }[] }[] }
+        | undefined
+
+      const ptyIds = lastPayload?.sessions.flatMap((s) =>
+        s.panes.map((p) => p.ptyId)
+      )
+      expect(ptyIds).toContain('new-id')
+    })
   })
 
   // Round 5 regression: createSession must seed sessions[i].workingDirectory
@@ -1525,13 +1929,20 @@ describe('useSessionManager', () => {
 
     // Order: existing tabs keep their original order, then the new tab
     // lands at the bottom (matches the [...prev, newSession] append).
-    await waitFor(() =>
-      expect(service.reorderSessions).toHaveBeenCalledWith([
-        'existing-1',
-        'existing-2',
-        'new-tab',
-      ])
-    )
+    // Persistence is via `set_workspace_sessions` now (see PR #290):
+    // assert the latest snapshot's flattened pty order matches.
+    await waitFor(() => {
+      const calls = vi.mocked(pushWorkspaceShape).mock.calls
+
+      const lastPayload = calls[calls.length - 1]?.[0] as
+        | { sessions: { panes: { ptyId: string }[] }[] }
+        | undefined
+
+      const ptyIds = lastPayload?.sessions.flatMap((s) =>
+        s.panes.map((p) => p.ptyId)
+      )
+      expect(ptyIds).toEqual(['existing-1', 'existing-2', 'new-tab'])
+    })
   })
 
   test('removeSession kills PTY and filters from state', async () => {
@@ -1647,15 +2058,17 @@ describe('useSessionManager', () => {
   })
 
   // Round 9, Finding 6 (claude MEDIUM): React requires functional updaters to
-  // be PURE. The previous code fired `service.setActiveSession` and
-  // `service.reorderSessions` from INSIDE the setSessions updater in
-  // createSession, so StrictMode dev double-invoked them. After the fix
-  // (capture inside, fire outside via flushSync), each IPC fires EXACTLY
-  // once per createSession call.
+  // be PURE. The previous code fired `service.setActiveSession` from INSIDE
+  // the setSessions updater in createSession, so StrictMode dev
+  // double-invoked it. After the fix (capture inside, fire outside via
+  // flushSync), each IPC fires EXACTLY once per createSession call.
   //
-  // This test asserts that mock-call counts match the user-visible action
-  // count (1 click = 1 IPC), with no doubling under StrictMode.
-  test('round 9 F6: createSession fires setActiveSession + reorderSessions exactly once each (no StrictMode double)', async () => {
+  // PR #290 follow-up: the `service.reorderSessions` IPC was removed from
+  // createSession — cache order is now persisted via `set_workspace_sessions`
+  // (in `usePushWorkspaceGrouping`). This test still asserts the EXACTLY-once
+  // semantics for setActiveSession; the order-IPC half of the original
+  // assertion is dropped as no longer applicable.
+  test('round 9 F6: createSession fires setActiveSession exactly once (no StrictMode double)', async () => {
     const service = createMockService()
     service.listSessions = vi.fn().mockResolvedValue({
       activeSessionId: null,
@@ -1673,22 +2086,15 @@ describe('useSessionManager', () => {
 
     // Reset spies so the restore-time auto-create (if any) doesn't leak in.
     ;(service.setActiveSession as ReturnType<typeof vi.fn>).mockClear()
-    ;(service.reorderSessions as ReturnType<typeof vi.fn>).mockClear()
 
     act(() => result.current.createSession())
-
-    // Wait for the spawn + setSessions cascade to settle.
-    await waitFor(() =>
-      expect(service.reorderSessions).toHaveBeenCalledWith(['fresh'])
-    )
 
     await waitFor(() =>
       expect(service.setActiveSession).toHaveBeenCalledWith('fresh')
     )
 
-    // Each IPC fires EXACTLY once. Pre-fix (IPCs inside setSessions
+    // setActiveSession fires EXACTLY once. Pre-fix (IPC inside setSessions
     // updater), StrictMode dev's double-invoke would push the count to 2.
-    expect(service.reorderSessions).toHaveBeenCalledTimes(1)
     expect(service.setActiveSession).toHaveBeenCalledTimes(1)
   })
 
@@ -2000,6 +2406,55 @@ describe('useSessionManager', () => {
     )
   })
 
+  test('restartSession skips killing a seed PTY already gone from the live set', async () => {
+    const service = createMockService()
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: 'dead-pty',
+      sessions: [
+        {
+          id: 'dead-pty',
+          cwd: '/home/user/projects/foo',
+          status: { kind: 'Exited', last_exit_code: 0 },
+        },
+      ],
+    })
+
+    service.spawn = vi.fn().mockResolvedValue({
+      sessionId: 'fresh-id',
+      pid: 999,
+      cwd: '/home/user/projects/foo',
+    })
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.sessions[0].id).toBe('dead-pty')
+
+    // The seed PTY is gone by restart time (graceful-quit clear_all).
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: null,
+      sessions: [],
+    })
+
+    act(() => result.current.restartSession('dead-pty'))
+
+    await waitFor(() =>
+      expect(service.spawn).toHaveBeenCalledWith(
+        expect.objectContaining({ cwd: '/home/user/projects/foo' })
+      )
+    )
+
+    // Restart succeeds: the pane rotates to the fresh PTY and runs again.
+    await waitFor(() => {
+      expect(result.current.sessions[0].panes[0].ptyId).toBe('fresh-id')
+      expect(result.current.sessions[0].status).toBe('running')
+    })
+
+    // The doomed kill of the absent seed PTY is never issued.
+    expect(service.kill).not.toHaveBeenCalledWith({ sessionId: 'dead-pty' })
+  })
+
   // Round 9, Finding 3 (codex P2): the `wasActive` capture in restartSession
   // used a closure-bound `activeSessionId`. If the user switched tabs during
   // the spawn / kill roundtrip, promoting the restarted session would
@@ -2037,10 +2492,20 @@ describe('useSessionManager', () => {
 
     // Suspend spawn so we can race a tab switch in.
     let resolveSpawn:
-      | ((v: { sessionId: string; pid: number; cwd: string }) => void)
+      | ((v: {
+          sessionId: string
+          pid: number
+          cwd: string
+          shell: string
+        }) => void)
       | null = null
     service.spawn = vi.fn(
-      (): Promise<{ sessionId: string; pid: number; cwd: string }> =>
+      (): Promise<{
+        sessionId: string
+        pid: number
+        cwd: string
+        shell: string
+      }> =>
         new Promise((resolve) => {
           resolveSpawn = resolve
         })
@@ -2065,7 +2530,12 @@ describe('useSessionManager', () => {
     // The fix reads activeSessionIdRef.current ('alive') so wasActive=false,
     // and the swap commits without promoting 'fresh'.
     act(() => {
-      resolveSpawn?.({ sessionId: 'fresh', pid: 9000, cwd: '/tmp' })
+      resolveSpawn?.({
+        sessionId: 'fresh',
+        pid: 9000,
+        cwd: '/tmp',
+        shell: '/bin/zsh',
+      })
     })
 
     // Wait for the swap to commit.
@@ -2214,10 +2684,20 @@ describe('useSessionManager', () => {
     })
 
     let resolveSpawn:
-      | ((v: { sessionId: string; pid: number; cwd: string }) => void)
+      | ((v: {
+          sessionId: string
+          pid: number
+          cwd: string
+          shell: string
+        }) => void)
       | null = null
     service.spawn = vi.fn(
-      (): Promise<{ sessionId: string; pid: number; cwd: string }> =>
+      (): Promise<{
+        sessionId: string
+        pid: number
+        cwd: string
+        shell: string
+      }> =>
         new Promise((resolve) => {
           resolveSpawn = resolve
         })
@@ -2242,7 +2722,12 @@ describe('useSessionManager', () => {
 
     // Step 3: spawn now resolves with the orphan id.
     act(() => {
-      resolveSpawn?.({ sessionId: 'orphan-fresh', pid: 1234, cwd: '/tmp' })
+      resolveSpawn?.({
+        sessionId: 'orphan-fresh',
+        pid: 1234,
+        cwd: '/tmp',
+        shell: '/bin/zsh',
+      })
     })
 
     // Wait until the orphan-kill IPC has fired. Cast through the typed
@@ -2425,6 +2910,52 @@ describe('useSessionManager', () => {
     expect(ids).not.toContain('old-id')
   })
 
+  test('restartSession resets cacheHistory to [] and deletes the old ptyId key', async () => {
+    window.localStorage.clear()
+    const service = createMockService()
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: 'restart-old',
+      sessions: [
+        {
+          id: 'restart-old',
+          cwd: '/tmp',
+          status: { kind: 'Exited', last_exit_code: 0 },
+        },
+      ],
+    } satisfies SessionList)
+
+    service.spawn = vi.fn().mockResolvedValue({
+      sessionId: 'restart-new',
+      pid: 4242,
+      cwd: '/tmp',
+    })
+    registerPtySession('restart-old', 'restart-old', '/tmp')
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    act(() => {
+      result.current.appendPaneCacheReading('restart-old', 'p0', 80)
+    })
+    expect(result.current.sessions[0].panes[0].cacheHistory).toEqual([80])
+    expect(
+      window.localStorage.getItem('vimeflow:agent:cacheHistory:restart-old')
+    ).not.toBeNull()
+
+    act(() => result.current.restartSession('restart-old'))
+
+    await waitFor(() => {
+      expect(result.current.sessions[0].panes[0].ptyId).toBe('restart-new')
+    })
+
+    expect(result.current.sessions[0].panes[0].cacheHistory).toEqual([])
+    expect(
+      window.localStorage.getItem('vimeflow:agent:cacheHistory:restart-old')
+    ).toBeNull()
+  })
+
   test('F5 (round 2): restartSession of inactive session does NOT call setActiveSession', async () => {
     const service = createMockService()
     service.listSessions = vi.fn().mockResolvedValue({
@@ -2470,10 +3001,16 @@ describe('useSessionManager', () => {
 
   // Round 3, Finding 2 (codex P1): kill_pty in Rust REMOVES the old id from
   // cache.session_order and spawn_pty APPENDS the new id. Without an
-  // explicit reorderSessions IPC, a restarted MIDDLE tab persists as
+  // explicit order push, a restarted MIDDLE tab persists as
   // [A, C, fresh] in cache.session_order while the live UI shows
   // [A, fresh, C]. After a reload the restored order would diverge.
-  test('F5 (round 3): restartSession persists the new tab order via reorderSessions', async () => {
+  //
+  // PR #290: ordering persistence moved from the legacy `reorder_sessions`
+  // IPC to `set_workspace_sessions` (which rebuilds session_order from the
+  // snapshot atomically with grouping). The assertion shape changes
+  // accordingly; the underlying invariant ([a, fresh, c] reaches the cache)
+  // is unchanged.
+  test('F5 (round 3): restartSession persists the new tab order via the workspace snapshot', async () => {
     const service = createMockService()
     service.listSessions = vi.fn().mockResolvedValue({
       activeSessionId: 'a',
@@ -2517,8 +3054,9 @@ describe('useSessionManager', () => {
     await waitFor(() => expect(result.current.loading).toBe(false))
 
     expect(result.current.sessions.map((s) => s.id)).toEqual(['a', 'b', 'c'])
+
     // Clear any IPC calls from listSessions / restore.
-    ;(service.reorderSessions as ReturnType<typeof vi.fn>).mockClear()
+    vi.mocked(pushWorkspaceShape).mockClear()
 
     act(() => result.current.restartSession('b'))
 
@@ -2530,10 +3068,20 @@ describe('useSessionManager', () => {
 
     // Rust cache must learn the in-memory order [a, fresh, c] — otherwise
     // kill+spawn would leave session_order at [a, c, fresh] and a reload
-    // would render the tabs in the wrong order.
-    await waitFor(() =>
-      expect(service.reorderSessions).toHaveBeenCalledWith(['a', 'fresh', 'c'])
-    )
+    // would render the tabs in the wrong order. The latest grouping
+    // snapshot push carries it.
+    await waitFor(() => {
+      const calls = vi.mocked(pushWorkspaceShape).mock.calls
+
+      const lastPayload = calls[calls.length - 1]?.[0] as
+        | { sessions: { panes: { ptyId: string }[] }[] }
+        | undefined
+
+      const ptyIds = lastPayload?.sessions.flatMap((s) =>
+        s.panes.map((p) => p.ptyId)
+      )
+      expect(ptyIds).toEqual(['a', 'fresh', 'c'])
+    })
   })
 
   // Round 3 codex P2 (gap in Finding 3): the orchestrator must mark sessions
@@ -2957,7 +3505,9 @@ describe('useSessionManager', () => {
     expect(result.current.sessions.map((s) => s.id)).toEqual(['b', 'a'])
   })
 
-  test('reorderSessions calls IPC', async () => {
+  // PR #290: cache persistence moved from `reorder_sessions` to the
+  // grouping snapshot push. Assert the new path carries the reversed order.
+  test('reorderSessions pushes the new order via the workspace snapshot', async () => {
     const service = createMockService()
     service.listSessions = vi.fn().mockResolvedValue({
       activeSessionId: 'a',
@@ -2994,9 +3544,160 @@ describe('useSessionManager', () => {
 
     act(() => result.current.reorderSessions(reversed))
 
-    await waitFor(() =>
-      expect(service.reorderSessions).toHaveBeenCalledWith(['b', 'a'])
+    await waitFor(() => {
+      const calls = vi.mocked(pushWorkspaceShape).mock.calls
+
+      const lastPayload = calls[calls.length - 1]?.[0] as
+        | { sessions: { panes: { ptyId: string }[] }[] }
+        | undefined
+
+      const ptyIds = lastPayload?.sessions.flatMap((s) =>
+        s.panes.map((p) => p.ptyId)
+      )
+      expect(ptyIds).toEqual(['b', 'a'])
+    })
+  })
+
+  // PR #290 cycle 4: Claude HIGH — `reorderSessions` was using a plain
+  // `setSessions(reordered)` overwrite, so a drag-reorder that races an
+  // in-flight `addPane` would clobber the new pane (the reorder snapshot
+  // was built before the pane existed). The functional updater merges
+  // `reordered`'s order against the latest `prev` by session id, so any
+  // panes (or sessions) committed during the race window survive.
+  test('reorderSessions preserves a session committed during the reorder window', async () => {
+    const service = createMockService()
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: 'a',
+      sessions: [
+        {
+          id: 'a',
+          cwd: '/tmp',
+          status: {
+            kind: 'Alive',
+            pid: 1,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+        {
+          id: 'b',
+          cwd: '/tmp',
+          status: {
+            kind: 'Alive',
+            pid: 2,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+      ],
+    })
+
+    service.spawn = vi
+      .fn()
+      .mockResolvedValue({ sessionId: 'c-pty', pid: 3, cwd: '/tmp' })
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
     )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    // Snapshot the initial 2 sessions at "drag start".
+    const reorderedAtDragStart = [...result.current.sessions].reverse()
+
+    // While the drag was in flight, a third session is created. This
+    // simulates the createSession spawn completing between drag-start and
+    // setSessions landing.
+    await act(async () => {
+      result.current.createSession()
+      // Give createSession a tick to spawn + setSessions.
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    await waitFor(() => expect(result.current.sessions).toHaveLength(3))
+    const newlyCreatedId = result.current.sessions[2].id
+
+    // NOW the reorder lands with its stale snapshot of 2 sessions.
+    act(() => result.current.reorderSessions(reorderedAtDragStart))
+
+    // Functional updater: the 3rd session committed during the race is
+    // appended at the tail rather than being silently erased.
+    await waitFor(() => expect(result.current.sessions).toHaveLength(3))
+    expect(result.current.sessions.map((s) => s.id)).toEqual([
+      'b',
+      'a',
+      newlyCreatedId,
+    ])
+  })
+
+  // PR #290 cycle 5: Claude HIGH — the cycle-4 functional updater used
+  // `prevById.get(s.id) ?? s`, which falls back to the STALE `s` when
+  // `removeSession` evicted the id during the drag. That resurrects a
+  // dead PTY back into React state, leaving a zombie tab that
+  // kill_pty cannot close ("session not found"). The fix filters
+  // missing-from-prev ids out instead of falling back.
+  test('reorderSessions drops sessions removed during the reorder window (no zombie resurrection)', async () => {
+    const service = createMockService()
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: 'a',
+      sessions: [
+        {
+          id: 'a',
+          cwd: '/tmp',
+          status: {
+            kind: 'Alive',
+            pid: 1,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+        {
+          id: 'b',
+          cwd: '/tmp',
+          status: {
+            kind: 'Alive',
+            pid: 2,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+        {
+          id: 'c',
+          cwd: '/tmp',
+          status: {
+            kind: 'Alive',
+            pid: 3,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+      ],
+    })
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.sessions.map((s) => s.id)).toEqual(['a', 'b', 'c'])
+
+    // Snapshot at drag-start: user is reordering to [c, b, a].
+    const reorderedAtDragStart = [
+      result.current.sessions[2],
+      result.current.sessions[1],
+      result.current.sessions[0],
+    ]
+
+    // While the drag is in flight, session 'b' is removed.
+    act(() => result.current.removeSession('b'))
+    await waitFor(() => expect(result.current.sessions).toHaveLength(2))
+
+    // Reorder lands with its stale 3-session snapshot — must NOT
+    // resurrect 'b'. Order should be [c, a] (drop 'b' from the
+    // reordered list).
+    act(() => result.current.reorderSessions(reorderedAtDragStart))
+
+    await waitFor(() => {
+      expect(result.current.sessions.map((s) => s.id)).toEqual(['c', 'a'])
+    })
   })
 
   test('updateSessionCwd updates session cwd without touching pane cwd', async () => {
@@ -3489,12 +4190,16 @@ describe('useSessionManager', () => {
   })
 
   // F3 (round 2): two rapid createSession() calls before either spawn()
-  // resolves must produce a reorderSessions IPC payload that includes BOTH
-  // new tab ids. The previous code closed over the render-time `sessions`
-  // array; the second async closure therefore omitted the first new tab,
-  // and reorderSessions persisted an order that no longer matched the live
-  // tab strip after reload (or rejected as a non-permutation).
-  test('F3 (round 2): two rapid createSession calls persist both new tabs in reorderSessions', async () => {
+  // resolves must produce a persisted order that includes BOTH new tab ids.
+  // The previous code closed over the render-time `sessions` array; the
+  // second async closure therefore omitted the first new tab, and the cache
+  // persisted an order that no longer matched the live tab strip after
+  // reload (or rejected as a non-permutation).
+  //
+  // PR #290: persistence moved from `reorder_sessions` to the grouping
+  // snapshot push; the F3 invariant is unchanged but the assertion shape
+  // updates accordingly.
+  test('F3 (round 2): two rapid createSession calls persist both new tabs in the workspace snapshot', async () => {
     const service = createMockService()
     service.listSessions = vi
       .fn()
@@ -3543,16 +4248,21 @@ describe('useSessionManager', () => {
 
     await waitFor(() => expect(result.current.sessions).toHaveLength(2))
 
-    // The second reorderSessions call must include BOTH tab ids — not just
-    // tab-2. This is the F3 invariant: the order is derived from the latest
-    // setSessions state, not the closure's stale `sessions`.
-    const reorderCalls = (
-      service.reorderSessions as ReturnType<typeof vi.fn>
-    ).mock.calls.map((call) => call[0] as string[])
+    // The latest grouping snapshot must include BOTH tab ids — not just
+    // tab-2. This is the F3 invariant: the persisted order is derived from
+    // the latest setSessions state, not from any closure's stale view.
+    await waitFor(() => {
+      const calls = vi.mocked(pushWorkspaceShape).mock.calls
 
-    // The most recent reorder must contain both ids in append order.
-    const lastReorder = reorderCalls[reorderCalls.length - 1]
-    expect(lastReorder).toEqual(['tab-1', 'tab-2'])
+      const lastPayload = calls[calls.length - 1]?.[0] as
+        | { sessions: { panes: { ptyId: string }[] }[] }
+        | undefined
+
+      const ptyIds = lastPayload?.sessions.flatMap((s) =>
+        s.panes.map((p) => p.ptyId)
+      )
+      expect(ptyIds).toEqual(['tab-1', 'tab-2'])
+    })
   })
 
   // F2 (round 2): if the user creates a tab via createSession while the
@@ -3661,15 +4371,15 @@ describe('useSessionManager', () => {
       expect.objectContaining({ cwd: '~' })
     )
 
-    // setActiveSession + reorderSessions also hit the shared instance —
-    // catches a partial regression where only spawn was wired through.
+    // setActiveSession + setWorkspaceSessions also hit the shared instance
+    // — catches a partial regression where only spawn was wired through.
+    // (Pre PR #290 this checked reorderSessions; cache order persistence
+    // moved to the grouping snapshot push, see PR #290 review.)
     await waitFor(() =>
       expect(sharedService.setActiveSession).toHaveBeenCalledWith('spawned')
     )
 
-    await waitFor(() =>
-      expect(sharedService.reorderSessions).toHaveBeenCalledWith(['spawned'])
-    )
+    await waitFor(() => expect(pushWorkspaceShape).toHaveBeenCalled())
   })
 
   // Re-renders MUST NOT swap the backend. Without the round-4 fix, the
@@ -4201,7 +4911,7 @@ describe('useSessionManager', () => {
 
       expect(result.current.sessions).toBe(before)
       expect(warn).toHaveBeenCalledWith(
-        'setSessionLayout: no session does-not-exist'
+        '[vimeflow:sessions] setSessionLayout: no session does-not-exist'
       )
       warn.mockRestore()
     })
@@ -4250,7 +4960,7 @@ describe('useSessionManager', () => {
       act(() => result.current.setSessionActivePane('no-such-session', 'p0'))
 
       expect(warn).toHaveBeenCalledWith(
-        'setSessionActivePane: no session no-such-session'
+        '[vimeflow:sessions] setSessionActivePane: no session no-such-session'
       )
       warn.mockRestore()
     })
@@ -4277,7 +4987,7 @@ describe('useSessionManager', () => {
 
       expect(result.current.sessions).toBe(before)
       expect(warn).toHaveBeenCalledWith(
-        `setSessionActivePane: no pane ghost-pane in session ${sessionId}`
+        `[vimeflow:sessions] setSessionActivePane: no pane ghost-pane in session ${sessionId}`
       )
       warn.mockRestore()
     })
@@ -4301,6 +5011,7 @@ describe('useSessionManager', () => {
             sessionId: `pty-${index}`,
             pid: 100 + index,
             cwd: resolvedCwds[index] ?? `/workspace-${index}`,
+            shell: '/bin/zsh',
           })
         }
       )
@@ -4393,7 +5104,7 @@ describe('useSessionManager', () => {
 
       expect(service.spawn).not.toHaveBeenCalled()
       expect(warn).toHaveBeenCalledWith(
-        `addPane: session ${sessionId} is at capacity for layout single`
+        `[vimeflow:sessions] addPane: session ${sessionId} is at capacity for layout single`
       )
       warn.mockRestore()
     })
@@ -4429,6 +5140,37 @@ describe('useSessionManager', () => {
       expect(getAllPtySessionIds()).not.toContain('pty-1')
     })
 
+    test('removePane deletes the cacheHistory key for the retired pty', async () => {
+      window.localStorage.clear()
+      const service = createSequentialSpawnService()
+
+      const { result } = renderHook(() =>
+        useSessionManager(service, { autoCreateOnEmpty: false })
+      )
+      await waitFor(() => expect(result.current.loading).toBe(false))
+
+      const sessionId = await createInitialSession(result)
+      await addSecondPane(result, sessionId)
+
+      act(() => {
+        result.current.appendPaneCacheReading(sessionId, 'p1', 60)
+      })
+
+      expect(
+        window.localStorage.getItem('vimeflow:agent:cacheHistory:pty-1')
+      ).not.toBeNull()
+
+      act(() => result.current.removePane(sessionId, 'p1'))
+
+      await waitFor(() =>
+        expect(result.current.sessions[0].panes).toHaveLength(1)
+      )
+
+      expect(
+        window.localStorage.getItem('vimeflow:agent:cacheHistory:pty-1')
+      ).toBeNull()
+    })
+
     test('removePane refuses to remove the last pane', async () => {
       const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
       const service = createSequentialSpawnService()
@@ -4446,9 +5188,43 @@ describe('useSessionManager', () => {
       expect(service.kill).not.toHaveBeenCalled()
       expect(result.current.sessions[0].panes).toHaveLength(1)
       expect(warn).toHaveBeenCalledWith(
-        `removePane: refusing to remove the last pane in ${sessionId}; use removeSession instead`
+        `[vimeflow:sessions] removePane: refusing to remove the last pane in ${sessionId}; use removeSession instead`
       )
       warn.mockRestore()
+    })
+
+    test('removePane closes the last shell pane when a browser pane remains', async () => {
+      const service = createSequentialSpawnService()
+
+      const { result } = renderHook(() =>
+        useSessionManager(service, { autoCreateOnEmpty: false })
+      )
+      await waitFor(() => expect(result.current.loading).toBe(false))
+
+      const sessionId = await createInitialSession(result)
+
+      act(() => result.current.setSessionLayout(sessionId, 'vsplit'))
+      act(() => result.current.addPane(sessionId, 'browser'))
+
+      await waitFor(() =>
+        expect(
+          result.current.sessions[0].panes.some(
+            (pane) => pane.kind === 'browser'
+          )
+        ).toBe(true)
+      )
+      ;(service.kill as ReturnType<typeof vi.fn>).mockClear()
+
+      act(() => result.current.removePane(sessionId, 'p0'))
+
+      await waitFor(() =>
+        expect(result.current.sessions[0].panes).toHaveLength(1)
+      )
+
+      const session = result.current.sessions[0]
+      expect(service.kill).toHaveBeenCalledWith({ sessionId: 'pty-0' })
+      expect(session.panes[0].kind).toBe('browser')
+      expect(session.panes[0].active).toBe(true)
     })
 
     test('setSessionActivePane syncs Rust when rotating panes in the active session', async () => {

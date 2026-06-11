@@ -1,93 +1,88 @@
 import { render, screen } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
-import { describe, test, expect, vi } from 'vitest'
+import { describe, test, expect } from 'vitest'
 import { SidebarTopBar, type SidebarTopBarProps } from './SidebarTopBar'
 
 const renderTopBar = (
   props: Partial<SidebarTopBarProps> = {}
-): ReturnType<typeof render> =>
-  render(
-    <SidebarTopBar
-      onToggleSidebar={vi.fn()}
-      commandShortcutHint="Ctrl+;"
-      {...props}
-    />
-  )
+): ReturnType<typeof render> => render(<SidebarTopBar {...props} />)
 
 describe('SidebarTopBar', () => {
-  test('renders the collapse toggle on the left', () => {
+  test('does not render the persistent sidebar toggle', () => {
     renderTopBar()
 
-    expect(screen.getByTestId('sidebar-toggle-topbar')).toBeInTheDocument()
+    expect(
+      screen.queryByTestId('sidebar-toggle-topbar')
+    ).not.toBeInTheDocument()
   })
 
-  test('the toggle invokes onToggleSidebar', async () => {
-    const user = userEvent.setup()
-    const onToggleSidebar = vi.fn()
-    renderTopBar({ onToggleSidebar })
+  test('renders a transparent surface so the top bar blends into the sidebar', () => {
+    renderTopBar()
 
-    await user.click(screen.getByTestId('sidebar-toggle-topbar'))
-
-    expect(onToggleSidebar).toHaveBeenCalledTimes(1)
+    const topBar = screen.getByTestId('sidebar-top-bar')
+    expect(topBar).toHaveClass('bg-transparent')
+    expect(topBar).not.toHaveClass('bg-surface-container-low')
   })
 
-  test('the Command Palette button is icon-only and fires onCommand', async () => {
-    const user = userEvent.setup()
-    const onCommand = vi.fn()
-    renderTopBar({ onCommand, commandShortcutHint: 'Ctrl+;' })
+  test('keeps expanded top-bar chrome draggable around the toggle slot on macOS', () => {
+    renderTopBar({
+      reserveWindowControls: true,
+    })
 
-    const button = screen.getByRole('button', { name: 'Command Palette' })
-    // Icon-only: the shortcut lives in the tooltip, not inline on the button.
-    expect(button).not.toHaveTextContent('Ctrl+;')
+    expect(screen.getByTestId('sidebar-top-bar')).not.toHaveClass(
+      'vf-app-drag-region'
+    )
 
-    await user.click(button)
+    expect(screen.getByTestId('sidebar-top-bar-upper-drag-region')).toHaveClass(
+      'vf-app-drag-region'
+    )
 
-    expect(onCommand).toHaveBeenCalledTimes(1)
+    expect(screen.getByTestId('sidebar-top-bar-left-drag-region')).toHaveClass(
+      'vf-app-drag-region'
+    )
+
+    expect(screen.getByTestId('sidebar-top-bar-toggle-clearance')).toHaveClass(
+      'vf-app-no-drag'
+    )
+
+    expect(screen.getByTestId('sidebar-top-bar-right-drag-region')).toHaveClass(
+      'vf-app-drag-region'
+    )
+
+    expect(screen.getByTestId('sidebar-top-bar-lower-drag-region')).toHaveClass(
+      'vf-app-drag-region'
+    )
   })
 
-  test('utilities use the project tooltip, not a native title attribute', () => {
-    renderTopBar({ onCommand: vi.fn() })
+  test('does not apply drag-region class on non-macOS platforms', () => {
+    const dragRegionTestIds = [
+      'sidebar-top-bar-upper-drag-region',
+      'sidebar-top-bar-left-drag-region',
+      'sidebar-top-bar-right-drag-region',
+      'sidebar-top-bar-lower-drag-region',
+    ]
+
+    renderTopBar({
+      reserveWindowControls: false,
+    })
+
+    expect(screen.getByTestId('sidebar-top-bar')).not.toHaveClass(
+      'vf-app-drag-region'
+    )
+
+    dragRegionTestIds.forEach((testId) => {
+      expect(screen.getByTestId(testId)).not.toHaveClass('vf-app-drag-region')
+    })
+  })
+
+  test('does not render sidebar utility buttons in the traffic-light row', () => {
+    renderTopBar()
 
     expect(
-      screen.getByRole('button', { name: 'Command Palette' })
-    ).not.toHaveAttribute('title')
-  })
+      screen.queryByRole('button', { name: 'Command Palette' })
+    ).not.toBeInTheDocument()
 
-  test('hovering the Command Palette button surfaces the tooltip with the shortcut chip', async () => {
-    const user = userEvent.setup()
-    renderTopBar({ onCommand: vi.fn(), commandShortcutHint: 'Ctrl+;' })
-
-    await user.hover(screen.getByRole('button', { name: 'Command Palette' }))
-
-    const tooltip = await screen.findByRole('tooltip')
-    expect(tooltip).toHaveTextContent('Command Palette')
-    expect(screen.getByTestId('tooltip-shortcut')).toHaveTextContent('Ctrl+;')
-  })
-
-  test('Settings renders as a disabled stub when no handler is wired', async () => {
-    const user = userEvent.setup()
-    const onCommand = vi.fn()
-    renderTopBar({ onCommand, settingsIssueNumber: 252 })
-
-    const settings = screen.getByRole('button', { name: /^Settings/ })
-    expect(settings).toHaveAttribute('aria-disabled', 'true')
-    expect(settings).toHaveAccessibleName(/issue #252/)
-
-    // Clicking the disabled stub is a no-op (must not throw / call anything).
-    await user.click(settings)
-    expect(onCommand).not.toHaveBeenCalled()
-  })
-
-  test('Settings enables and fires onSettings when a handler is provided', async () => {
-    const user = userEvent.setup()
-    const onSettings = vi.fn()
-    renderTopBar({ onSettings })
-
-    const settings = screen.getByRole('button', { name: /^Settings/ })
-    expect(settings).not.toHaveAttribute('aria-disabled')
-
-    await user.click(settings)
-
-    expect(onSettings).toHaveBeenCalledTimes(1)
+    expect(
+      screen.queryByRole('button', { name: /^Settings/ })
+    ).not.toBeInTheDocument()
   })
 })

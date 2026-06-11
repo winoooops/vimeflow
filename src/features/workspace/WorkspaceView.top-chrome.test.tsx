@@ -158,6 +158,7 @@ describe('WorkspaceView – top chrome (main-stage handoff J2–J6)', () => {
       activeSessionId,
       setActiveSessionId: vi.fn(),
       createSession: vi.fn(),
+      createBrowserSession: vi.fn(),
       removeSession: vi.fn(),
       setSessionLayout: vi.fn(),
       setSessionActivePane: vi.fn(),
@@ -168,6 +169,7 @@ describe('WorkspaceView – top chrome (main-stage handoff J2–J6)', () => {
       setPaneUserLabel: vi.fn(),
       reorderSessions: vi.fn(),
       updatePaneCwd: vi.fn(),
+      appendPaneCacheReading: vi.fn(),
       updatePaneAgentType: vi.fn(),
       setSessionActivityPanelCollapsed: vi.fn(),
       updateSessionCwd: vi.fn(),
@@ -175,6 +177,8 @@ describe('WorkspaceView – top chrome (main-stage handoff J2–J6)', () => {
       restoreData: new Map(),
       loading: false,
       notifyPaneReady: vi.fn(),
+      registerPending: vi.fn(),
+      dropAllForPty: vi.fn(),
     }
 
     const { useSessionManager } =
@@ -265,6 +269,9 @@ describe('WorkspaceView – top chrome (main-stage handoff J2–J6)', () => {
       onData: vi.fn().mockResolvedValue(vi.fn()),
       onExit: vi.fn().mockReturnValue(vi.fn()),
       onError: vi.fn().mockReturnValue(vi.fn()),
+      onBurnerForeground: vi.fn().mockReturnValue(vi.fn()),
+      killEphemeralPtys: vi.fn(),
+      setWorkspaceSessions: vi.fn().mockResolvedValue(undefined),
       listSessions: vi.fn().mockResolvedValue({
         activeSessionId: null,
         sessions: [],
@@ -455,34 +462,36 @@ describe('WorkspaceView – top chrome (main-stage handoff J2–J6)', () => {
     ).toBeInTheDocument()
   })
 
-  test('collapsed sidebar opens the 50px gutter and floats the toggle at left 12 / top 8 (J4)', () => {
+  test('collapsed sidebar: the hover zone insets past the shell fixed toggle (J4)', () => {
     render(<WorkspaceView />)
 
+    // The collapsed-state sidebar toggle is owned by the sidebar shell
+    // (`sidebar-toggle-fixed`), not the top chrome — so the chrome never
+    // renders its own gutter toggle, and its padding stays constant.
     const chrome = screen.getByTestId('top-chrome')
     expect(chrome.className.split(/\s+/)).toContain('pl-[14px]')
     expect(screen.queryByTestId('sidebar-toggle-chrome')).toBeNull()
+
+    const zone = screen.getByTestId('top-hover-zone')
+    // Sidebar open: the hover zone starts flush at the left edge.
+    expect(zone.style.left).toBe('0px')
 
     act(() => {
       setSidebarCollapsed(true)
     })
 
-    const collapsedClasses = chrome.className.split(/\s+/)
-    expect(collapsedClasses).toContain('pl-[50px]')
-    expect(collapsedClasses).not.toContain('pl-[14px]')
-
-    const toggle = screen.getByTestId('sidebar-toggle-chrome')
-    const gutter = toggle.closest('div.absolute')
-    expect(gutter).not.toBeNull()
-    const gutterClasses = gutter!.className.split(/\s+/)
-    expect(gutterClasses).toContain('left-[12px]')
-    expect(gutterClasses).toContain('top-[8px]')
-    expect(gutterClasses).toContain('z-30')
+    // Sidebar collapsed: the always-present fixed toggle remains clickable,
+    // so the (unpinned) hover zone insets its left edge past it instead of
+    // covering it. Padding is unchanged (no 50px gutter).
+    expect(chrome.className.split(/\s+/)).toContain('pl-[14px]')
+    expect(screen.getByTestId('sidebar-toggle-fixed')).toBeInTheDocument()
+    expect(zone.style.left).not.toBe('0px')
+    expect(parseInt(zone.style.left, 10)).toBeGreaterThanOrEqual(40)
 
     act(() => {
       setSidebarCollapsed(false)
     })
 
-    expect(chrome.className.split(/\s+/)).toContain('pl-[14px]')
-    expect(screen.queryByTestId('sidebar-toggle-chrome')).toBeNull()
+    expect(zone.style.left).toBe('0px')
   })
 })

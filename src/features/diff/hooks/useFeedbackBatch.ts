@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { DiffLineAnnotation } from '@pierre/diffs'
 
 export interface ReviewComment {
@@ -59,6 +59,78 @@ export const parseBatchKey = (key: string): ParsedBatchKey => {
 
 const SOFT_CAP = 50
 
+const countAnnotationsInBatch = (batch: FeedbackBatch): number => {
+  let count = 0
+  for (const list of batch.values()) {
+    count += list.length
+  }
+
+  return count
+}
+
+const addAnnotationToBatch = (
+  batch: FeedbackBatch,
+  key: string,
+  annotation: DiffLineAnnotation<ReviewComment>
+): FeedbackBatch => {
+  const next = new Map(batch)
+  const existing = next.get(key) ?? []
+  next.set(key, [...existing, annotation])
+
+  return next
+}
+
+const updateAnnotationInBatch = (
+  batch: FeedbackBatch,
+  key: string,
+  id: string,
+  patch: Partial<ReviewComment>
+): FeedbackBatch => {
+  const list = batch.get(key)
+  if (!list) {
+    return batch
+  }
+  const idx = list.findIndex((a) => a.metadata.id === id)
+  if (idx === -1) {
+    return batch
+  }
+  const next = new Map(batch)
+
+  const updated = list.map((a, i) => {
+    if (i !== idx) {
+      return a
+    }
+
+    return {
+      ...a,
+      metadata: { ...a.metadata, ...patch },
+    }
+  })
+  next.set(key, updated)
+
+  return next
+}
+
+const removeAnnotationFromBatch = (
+  batch: FeedbackBatch,
+  key: string,
+  id: string
+): FeedbackBatch => {
+  const list = batch.get(key)
+  if (!list) {
+    return batch
+  }
+  const filtered = list.filter((a) => a.metadata.id !== id)
+  const next = new Map(batch)
+  if (filtered.length === 0) {
+    next.delete(key)
+  } else {
+    next.set(key, filtered)
+  }
+
+  return next
+}
+
 /**
  * Stable empty array returned for absent file keys.
  * Must be module-level and frozen so callers get referential equality
@@ -99,15 +171,17 @@ export interface UseFeedbackBatchReturn {
 
 export const useFeedbackBatch = (): UseFeedbackBatchReturn => {
   const [batch, setBatch] = useState<FeedbackBatch>(() => new Map())
+  const optimisticBatchRef = useRef<FeedbackBatch>(batch)
+  const addAnnotationResultRef = useRef<'ok' | 'cap-reached'>('ok')
 
-  const totalAnnotations = useCallback((): number => {
-    let count = 0
-    for (const list of batch.values()) {
-      count += list.length
-    }
-
-    return count
+  useEffect(() => {
+    optimisticBatchRef.current = batch
   }, [batch])
+
+  const totalAnnotations = useCallback(
+    (): number => countAnnotationsInBatch(batch),
+    [batch]
+  )
 
   const annotationsForFile = useCallback(
     (
@@ -129,21 +203,38 @@ export const useFeedbackBatch = (): UseFeedbackBatchReturn => {
       staged: boolean,
       annotation: DiffLineAnnotation<ReviewComment>
     ): 'ok' | 'cap-reached' => {
-      if (totalAnnotations() >= SOFT_CAP) {
-        return 'cap-reached'
-      }
       const key = makeBatchKey(cwd, filePath, staged)
+
+      if (countAnnotationsInBatch(optimisticBatchRef.current) >= SOFT_CAP) {
+        addAnnotationResultRef.current = 'cap-reached'
+
+        return addAnnotationResultRef.current
+      }
+
+      optimisticBatchRef.current = addAnnotationToBatch(
+        optimisticBatchRef.current,
+        key,
+        annotation
+      )
+      addAnnotationResultRef.current = 'ok'
       setBatch((prev) => {
-        const next = new Map(prev)
-        const existing = next.get(key) ?? []
-        next.set(key, [...existing, annotation])
+        if (countAnnotationsInBatch(prev) >= SOFT_CAP) {
+          addAnnotationResultRef.current = 'cap-reached'
+          optimisticBatchRef.current = prev
+
+          return prev
+        }
+
+        addAnnotationResultRef.current = 'ok'
+        const next = addAnnotationToBatch(prev, key, annotation)
+        optimisticBatchRef.current = next
 
         return next
       })
 
-      return 'ok'
+      return addAnnotationResultRef.current
     },
-    [totalAnnotations]
+    []
   )
 
   const updateAnnotation = useCallback(
@@ -155,28 +246,16 @@ export const useFeedbackBatch = (): UseFeedbackBatchReturn => {
       patch: Partial<ReviewComment>
     ): void => {
       const key = makeBatchKey(cwd, filePath, staged)
+      optimisticBatchRef.current = updateAnnotationInBatch(
+        optimisticBatchRef.current,
+        key,
+        id,
+        patch
+      )
+
       setBatch((prev) => {
-        const list = prev.get(key)
-        if (!list) {
-          return prev
-        }
-        const idx = list.findIndex((a) => a.metadata.id === id)
-        if (idx === -1) {
-          return prev
-        }
-        const next = new Map(prev)
-
-        const updated = list.map((a, i) => {
-          if (i !== idx) {
-            return a
-          }
-
-          return {
-            ...a,
-            metadata: { ...a.metadata, ...patch },
-          }
-        })
-        next.set(key, updated)
+        const next = updateAnnotationInBatch(prev, key, id, patch)
+        optimisticBatchRef.current = next
 
         return next
       })
@@ -187,18 +266,15 @@ export const useFeedbackBatch = (): UseFeedbackBatchReturn => {
   const removeAnnotation = useCallback(
     (cwd: string, filePath: string, staged: boolean, id: string): void => {
       const key = makeBatchKey(cwd, filePath, staged)
+      optimisticBatchRef.current = removeAnnotationFromBatch(
+        optimisticBatchRef.current,
+        key,
+        id
+      )
+
       setBatch((prev) => {
-        const list = prev.get(key)
-        if (!list) {
-          return prev
-        }
-        const filtered = list.filter((a) => a.metadata.id !== id)
-        const next = new Map(prev)
-        if (filtered.length === 0) {
-          next.delete(key)
-        } else {
-          next.set(key, filtered)
-        }
+        const next = removeAnnotationFromBatch(prev, key, id)
+        optimisticBatchRef.current = next
 
         return next
       })
@@ -207,7 +283,9 @@ export const useFeedbackBatch = (): UseFeedbackBatchReturn => {
   )
 
   const clearBatch = useCallback((): void => {
-    setBatch(() => new Map())
+    const next: FeedbackBatch = new Map()
+    optimisticBatchRef.current = next
+    setBatch(() => next)
   }, [])
 
   return {

@@ -9,6 +9,7 @@ import type { BodyHandle, BodyProps } from '../TerminalPane/Body'
 import {
   SplitView,
   selectVisiblePanes,
+  canClosePane,
   type SplitViewHandle,
 } from './SplitView'
 import type { LayoutId, Pane, Session } from '../../../sessions/types'
@@ -136,7 +137,12 @@ const makeSession = (
 
 const makeMockService = (): ITerminalService => ({
   spawn: vi.fn(() =>
-    Promise.resolve({ sessionId: 'mock', pid: 0, cwd: '/tmp' })
+    Promise.resolve({
+      sessionId: 'mock',
+      pid: 0,
+      cwd: '/tmp',
+      shell: '/bin/zsh',
+    })
   ),
   write: vi.fn(() => Promise.resolve(undefined)),
   resize: vi.fn(() => Promise.resolve(undefined)),
@@ -144,6 +150,7 @@ const makeMockService = (): ITerminalService => ({
   onData: vi.fn(() => Promise.resolve((): void => undefined)),
   onExit: vi.fn(() => Promise.resolve((): void => undefined)),
   onError: vi.fn(() => Promise.resolve((): void => undefined)),
+  onBurnerForeground: vi.fn(() => Promise.resolve((): void => undefined)),
   listSessions: vi.fn(() =>
     Promise.resolve({ sessions: [], activeSessionId: null })
   ),
@@ -151,6 +158,8 @@ const makeMockService = (): ITerminalService => ({
   reorderSessions: vi.fn(() => Promise.resolve(undefined)),
   updateSessionCwd: vi.fn(() => Promise.resolve(undefined)),
   setSessionActivityPanelCollapsed: vi.fn(() => Promise.resolve(undefined)),
+  killEphemeralPtys: vi.fn(),
+  setWorkspaceSessions: vi.fn(() => Promise.resolve(undefined)),
 })
 
 // Literal `isActive={false}` is stripped by the project's jsx-boolean-value
@@ -760,6 +769,55 @@ describe('SplitView - close pane', () => {
     expect(
       screen.queryByRole('button', { name: 'close pane' })
     ).not.toBeInTheDocument()
+  })
+})
+
+describe('canClosePane', () => {
+  const shellPane = (id: string): Pane => ({
+    id,
+    ptyId: `pty-${id}`,
+    cwd: '/tmp/fixture',
+    agentType: 'generic',
+    status: 'running',
+    active: false,
+    pid: 1,
+  })
+
+  const browserPane = (id: string): Pane => ({
+    ...shellPane(id),
+    kind: 'browser',
+    ptyId: `browser:${id}`,
+  })
+
+  const sessionWith = (panes: Pane[]): Session => ({
+    ...makeSession('single', 1),
+    panes,
+  })
+
+  test('a sole shell pane cannot close so the session keeps a pane', () => {
+    const session = sessionWith([shellPane('p0')])
+    expect(canClosePane(session)).toBe(false)
+  })
+
+  test('a sole browser pane cannot close so the session keeps a pane', () => {
+    const session = sessionWith([browserPane('p0')])
+    expect(canClosePane(session)).toBe(false)
+  })
+
+  test('the last shell pane is closable when a browser pane remains', () => {
+    const session = sessionWith([shellPane('p0'), browserPane('p1')])
+    expect(canClosePane(session)).toBe(true)
+  })
+
+  test('a browser pane is closable when a shell pane remains', () => {
+    const session = sessionWith([shellPane('p0'), browserPane('p1')])
+    expect(canClosePane(session)).toBe(true)
+  })
+
+  test('either shell is closable when two shells remain', () => {
+    const session = sessionWith([shellPane('p0'), shellPane('p1')])
+    expect(canClosePane(session)).toBe(true)
+    expect(canClosePane(session)).toBe(true)
   })
 })
 

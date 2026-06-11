@@ -262,14 +262,16 @@ impl TranscriptDecoder for CodexTranscriptDecoder {
     fn on_caught_up(&mut self) {
         if !self.replay_done {
             self.replay_done = true;
-            if let Some(phase) = self.replay_phase.take() {
-                emit_lifecycle_on_change(
-                    self.events.as_ref(),
-                    &self.session_id,
-                    &self.codex_agent_session_id,
-                    &mut self.last_phase,
-                    phase,
-                );
+            if !self.codex_agent_session_id.is_empty() {
+                if let Some(phase) = self.replay_phase.take() {
+                    emit_lifecycle_on_change(
+                        self.events.as_ref(),
+                        &self.session_id,
+                        &self.codex_agent_session_id,
+                        &mut self.last_phase,
+                        phase,
+                    );
+                }
             }
         }
         self.emitter.finish_replay();
@@ -325,15 +327,17 @@ fn process_line(
             _ => None,
         };
         if let Some(phase) = phase {
-            record_lifecycle(
-                phase,
-                session_id,
-                codex_agent_session_id,
-                events,
-                last_phase,
-                replay_phase,
-                replay_done,
-            );
+            if !codex_agent_session_id.is_empty() {
+                record_lifecycle(
+                    phase,
+                    session_id,
+                    codex_agent_session_id,
+                    events,
+                    last_phase,
+                    replay_phase,
+                    replay_done,
+                );
+            }
         }
     }
 

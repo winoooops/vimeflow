@@ -21,6 +21,7 @@ words:
   # General vocabulary flagged by cspell's defaults
   - unparseable
   - lossily
+  - dedup
 
   # Project
   - vibm
@@ -63,12 +64,15 @@ words:
   - Catppuccin
   - wght # Material Symbols font-variation axis (weight)
   - topbar # data-testid token for the sidebar top-bar toggle
+  - sparkline
 
   # Custom DOM events
   - vfliquidwake
 
   # Browser / WebAuthn
   - webauthn
+  - favicons
+  - ipv6
 
   # Workspace domain abbreviations
   - sess # session

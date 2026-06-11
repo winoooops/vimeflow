@@ -5,10 +5,9 @@ target
 crates/backend/bindings
 playwright-report
 .lifeline-planner
+.lifeline-iterate
 *.min.js
 *.d.ts
-docs/design/*.html
-docs/design/*/code.html
-docs/design/*/*.html
+docs/design/**/*.html
 docs/diagrams/*.html
 docs/explorations/*.html

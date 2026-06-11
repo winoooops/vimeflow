@@ -52,7 +52,7 @@ const KIND_COLOR: Record<ActivityEventKind, string> = {
   meta: 'text-outline',
 }
 
-const getLabel = (event: ActivityEventType): string => {
+export const getLabel = (event: ActivityEventType): string => {
   // `isTestFile` is typed on the base event so consumers can read it
   // without narrowing. The producer (`toolCallsToEvents`) only ever sets
   // it on ToolActivityEvents, but we still guard for `tool` to keep the
@@ -89,7 +89,9 @@ const getBodyClass = (kind: ActivityEventKind): string => {
 
 const COPY_FEEDBACK_MS = 1500
 
-const ACTIVITY_CARD_SURFACE =
+// Exported so the live-action card can wrap its own Tooltip in the identical
+// floating surface as the feed rows — keeps the two detail popovers in lockstep.
+export const ACTIVITY_CARD_SURFACE =
   'relative w-[min(24rem,calc(100vw-2rem))] overflow-hidden rounded-[10px] border border-[rgba(74,68,79,0.45)] bg-[rgba(20,18,32,0.96)] font-sans shadow-[0_16px_48px_rgba(0,0,0,0.55),0_0_0_1px_rgba(203,166,247,0.04)] backdrop-blur-[20px] backdrop-saturate-[150%]'
 
 type CopyState = 'idle' | 'copied' | 'failed'
@@ -194,9 +196,10 @@ const Kbd = ({ children }: { children: ReactNode }): ReactElement => (
   </span>
 )
 
-// Shared relative-time string for the feed row and the tooltip header so the
-// running-clock format and the negative-delta clamp can't drift between them.
-const computeAgo = (event: ActivityEventType, now: Date): string =>
+// Shared relative-time string for the feed row, the tooltip header, and the
+// live-action card so the running-clock format and the negative-delta clamp
+// can't drift between them.
+export const computeAgo = (event: ActivityEventType, now: Date): string =>
   event.status === 'running'
     ? // Clamp negative deltas to zero so a tool whose emitted timestamp beats
       // JS's Date.now() snapshot (sub-ms clock skew on fast machines, batch
@@ -204,7 +207,7 @@ const computeAgo = (event: ActivityEventType, now: Date): string =>
       `running ${formatDuration(Math.max(0, now.getTime() - new Date(event.timestamp).getTime()))}`
     : formatRelativeTime(event.timestamp, now)
 
-const ActivityTooltipContent = ({
+export const ActivityTooltipContent = ({
   event,
   now,
 }: ActivityTooltipContentProps): ReactElement => {

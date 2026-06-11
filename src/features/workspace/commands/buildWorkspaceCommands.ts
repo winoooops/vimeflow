@@ -28,6 +28,7 @@ export interface WorkspaceCommandDeps {
   activePanePtyId: string | null
   activePaneAgentType?: Session['agentType'] | null
   createSession: () => void
+  createBrowserSession?: () => void
   removeSession: (id: string) => SessionCloseResult
   renameSession: (id: string, name: string) => void
   /**
@@ -58,6 +59,12 @@ export interface WorkspaceCommandDeps {
    * WorkspaceView always provides it.
    */
   toggleSidebar?: () => void
+  /**
+   * Toggle the focused pane's burner terminal (VIM-72). Resolves the focused
+   * pane and hides-if-shown, same as the `Mod+;` then backtick chord. Optional
+   * so the builder's unit tests need not thread it; WorkspaceView always wires it.
+   */
+  toggleBurner?: () => void
 }
 
 interface FallbackPaneRenameRequestState {
@@ -96,6 +103,7 @@ export const buildWorkspaceCommands = (
     activePanePtyId,
     activePaneAgentType = null,
     createSession,
+    createBrowserSession,
     removeSession,
     renameSession,
     setPaneUserLabel,
@@ -105,6 +113,7 @@ export const buildWorkspaceCommands = (
     setActiveSessionId,
     notifyInfo,
     toggleSidebar,
+    toggleBurner,
   } = deps
 
   const fallbackPaneRenameRequestState =
@@ -135,6 +144,18 @@ export const buildWorkspaceCommands = (
   const findActiveIndex = (): number =>
     sessions.findIndex((s) => s.id === activeSessionId)
 
+  const browserCommand: Command | undefined = createBrowserSession
+    ? {
+        id: 'new-browser',
+        label: ':new-browser',
+        description: 'Create a new browser-only session',
+        icon: 'public',
+        execute: (): void => {
+          createBrowserSession()
+        },
+      }
+    : undefined
+
   return [
     {
       id: 'new',
@@ -145,6 +166,7 @@ export const buildWorkspaceCommands = (
         createSession()
       },
     },
+    ...(browserCommand ? [browserCommand] : []),
     {
       id: 'close',
       label: ':close',
@@ -387,6 +409,15 @@ export const buildWorkspaceCommands = (
       icon: 'left_panel_close',
       execute: (): void => {
         toggleSidebar?.()
+      },
+    },
+    {
+      id: 'burner',
+      label: ':burner',
+      description: 'Toggle the burner terminal for the focused pane',
+      icon: 'terminal',
+      execute: (): void => {
+        toggleBurner?.()
       },
     },
     {

@@ -12,8 +12,8 @@ export interface SidebarToggleProps {
   size?: number
   /**
    * `ghost` (default): transparent with a hover tint — for the icon rail.
-   * `inset`: a recessed well (fill + border, lavender hover border) so the
-   * control reads as belonging to the card it is docked inside.
+   * `inset`: a recessed well (fill only, no visible border) so the control
+   * belongs to the top bar without leaving a sticky outline after focus restore.
    */
   variant?: SidebarToggleVariant
   'data-testid'?: string
@@ -24,8 +24,13 @@ export interface SidebarToggleProps {
 const VARIANT_CLASS: Record<SidebarToggleVariant, string> = {
   ghost:
     'border border-transparent text-on-surface-muted hover:bg-primary/[0.08] hover:text-primary',
+  // Inset = a recessed well at rest (surface-container-lowest); on hover it
+  // lifts with a primary (lavender) tint in both collapse states, matching the
+  // ghost variant's primary hover. An earlier revision deepened the well toward
+  // navy on hover when expanded, but against the now-transparent sidebar that
+  // read as no change at all — so the toggle always lifts lighter.
   inset:
-    'border border-[rgba(74,68,79,0.35)] bg-[rgba(13,13,28,0.45)] text-on-surface-muted hover:bg-[rgba(226,199,255,0.08)] hover:text-primary',
+    'border border-transparent bg-surface-container-lowest/[0.45] text-on-surface-muted hover:bg-primary/[0.14] hover:text-primary',
 }
 
 // Codex / VS-Code-style "panel-left" glyph. Outline + left-rail divider are
@@ -59,7 +64,7 @@ export const SidebarToggle = forwardRef<HTMLButtonElement, SidebarToggleProps>(
         aria-label={collapsed ? 'Show sidebar' : 'Hide sidebar'}
         aria-expanded={!collapsed}
         style={{ width: size, height: size }}
-        className={`grid shrink-0 cursor-pointer place-items-center rounded-[7px] transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary-container ${VARIANT_CLASS[variant]}`}
+        className={`vf-app-no-drag grid shrink-0 cursor-pointer place-items-center rounded-[7px] transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary-container ${VARIANT_CLASS[variant]}`}
       >
         <svg
           width="16"

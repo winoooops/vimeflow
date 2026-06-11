@@ -9,18 +9,16 @@ import {
   useState,
 } from 'react'
 import { SidebarToggle } from './components/SidebarToggle'
-import { SidebarTopBar } from './components/SidebarTopBar'
 import { LayoutSwitcher } from '../terminal/components/LayoutSwitcher'
+import { SidebarTopBar } from './components/SidebarTopBar'
+import { SidebarSettingsFooter } from './components/SidebarSettingsFooter'
 import { Sidebar } from '../../components/sidebar/Sidebar'
 import {
   SidebarTabs,
   type SidebarTabItem,
 } from '../../components/sidebar/SidebarTabs'
 import { StatusBar, type StatusBarSession } from '../../components/StatusBar'
-import {
-  AgentStatusCard,
-  type AgentCardState,
-} from './components/AgentStatusCard'
+import { AgentStatusCard } from './components/AgentStatusCard'
 import { FilesView } from './components/FilesView'
 import { NewSessionButton } from './components/NewSessionButton'
 import { SessionsView } from './components/SessionsView'
@@ -39,28 +37,30 @@ import {
   AgentStatusRail,
   RAIL_WIDTH_PX,
 } from '../agent-status/components/AgentStatusRail'
-import { cacheHitRate } from '../agent-status/utils/cacheRate'
-import type { CurrentUsageState } from '../agent-status/types'
+import { cacheHitPercentage } from '../agent-status/utils/cacheRate'
+import { useCacheHistoryCollector } from '../agent-status/hooks/useCacheHistoryCollector'
+import type { RateLimitsState } from '../agent-status/types'
 import { UnsavedChangesDialog } from '../editor/components/UnsavedChangesDialog'
 import { InfoBanner } from './components/InfoBanner'
 import { CommandPalette } from '../command-palette/CommandPalette'
-import {
-  COMMAND_PALETTE_SHORTCUT_KEYS,
-  useCommandPalette,
-} from '../command-palette/hooks/useCommandPalette'
+import { useCommandPalette } from '../command-palette/hooks/useCommandPalette'
 import {
   usePaneRenameChord,
   type FocusedPaneRef,
 } from '../command-palette/hooks/usePaneRenameChord'
-import { formatShortcut } from '../../lib/formatShortcut'
 import { renameAgentSession } from '../../lib/backend'
 import { useSessionManager } from '../sessions/hooks/useSessionManager'
-import { clampSize, useResizable } from '../../hooks/useResizable'
+import {
+  clampSize,
+  useResizable,
+  type ResizeDragEndEvent,
+} from '../../hooks/useResizable'
 import { useElasticContainer } from '../../hooks/useElasticContainer'
 import { useSidebarTab, type SidebarTab } from '../../hooks/useSidebarTab'
 import { useNotifyInfo } from './hooks/useNotifyInfo'
 import { createFileSystemService } from '../files/services/fileSystemService'
 import { createTerminalService } from '../terminal/services/terminalService'
+import { useBurnerTerminals } from '../terminal/hooks/useBurnerTerminals'
 import {
   usePaneShortcuts,
   type PaneShortcutModifier,
@@ -72,6 +72,7 @@ import { useSidebarCollapsed } from './hooks/useSidebarCollapsed'
 import { useEditorBuffer } from '../editor/hooks/useEditorBuffer'
 import { useAgentStatus } from '../agent-status/hooks/useAgentStatus'
 import { useGitStatus } from '../diff/hooks/useGitStatus'
+import { useFeedbackBatch } from '../diff/hooks/useFeedbackBatch'
 import type { PaneCandidate } from '../diff/services/activePanePicker'
 import { sumLines } from '../diff/utils/sumLines'
 import { findActivePane } from '../sessions/utils/activeSessionPane'
@@ -100,12 +101,21 @@ import {
   DOCK_HORIZONTAL_ELASTIC_CONFIG,
 } from './panelConfig'
 
-const cacheHitPercentage = (
-  usage: CurrentUsageState | null | undefined
+const rateLimitPercentage = (
+  limit: RateLimitsState['fiveHour'] | null | undefined
 ): number | null => {
-  const rate = cacheHitRate(usage)
+  if (!limit || !Number.isFinite(limit.usedPercentage)) {
+    return null
+  }
 
-  return rate === null ? null : Math.round(rate * 100)
+  if (
+    limit.usedPercentage === 0 &&
+    (!Number.isFinite(limit.resetsAt) || limit.resetsAt <= 0)
+  ) {
+    return null
+  }
+
+  return Math.round(limit.usedPercentage)
 }
 
 const formatStatusDuration = (durationMs: number): string | undefined => {
@@ -143,20 +153,47 @@ const formatStatusDuration = (durationMs: number): string | undefined => {
 // this const and the gear's `aria-disabled` once the dialog lands.
 const SETTINGS_FOLLOWUP_ISSUE_NUMBER = 252
 
-const SIDEBAR_MIN = 240
-const SIDEBAR_MAX = 560
 const SIDEBAR_DEFAULT = 272
+const SIDEBAR_MIN = SIDEBAR_DEFAULT
+// Cap the sidebar at the width where the agent-status card and the
+// tabs + new-session row both hit their own maximums and sit with even 12px
+// padding: 360px content cap (202 SidebarTabs + 8 gap + 150 NewSessionButton
+// max-width, matching AgentStatusCard's CARD_MAX_W) + 24px (px-3 left/right) =
+// 384. Past this the card/button stop growing, so extra width is dead space.
+const SIDEBAR_MAX = 384
+const MAIN_AUTO_COLLAPSE_MIN = 360
+const MAIN_AUTO_COLLAPSE_MAX = 500
+const MAIN_AUTO_COLLAPSE_RATIO = 0.36
+const SIDEBAR_MOTION_MS = 220
+const SIDEBAR_MOTION_EASING = 'cubic-bezier(0.32, 0.72, 0, 1)'
+const SIDEBAR_TOP_BAR_HEIGHT = 42
+const SIDEBAR_TOGGLE_SIZE = 28
+const SIDEBAR_TOGGLE_TOP = 7
+const SIDEBAR_TOGGLE_SURFACE_PADDING_END = 12
+const MACOS_WINDOW_CONTROL_SAFE_AREA_PX = 82
 
 const SIDEBAR_INITIAL = clampSize(SIDEBAR_DEFAULT, SIDEBAR_MIN, SIDEBAR_MAX)
+const COMPACT_WORKSPACE_QUERY = '(max-width: 899px)'
+
+const readCompactViewport = (): boolean =>
+  typeof window !== 'undefined' &&
+  typeof window.matchMedia === 'function' &&
+  window.matchMedia(COMPACT_WORKSPACE_QUERY).matches
 
 const SIDEBAR_TAB_ITEMS: readonly SidebarTabItem<SidebarTab>[] = [
   { id: 'sessions', label: 'SESSIONS', icon: 'view_agenda' },
   { id: 'files', label: 'FILES', icon: 'folder_open' },
 ]
 
+const mainAutoCollapseThreshold = (workspaceWidth: number): number =>
+  clampSize(
+    Math.round(workspaceWidth * MAIN_AUTO_COLLAPSE_RATIO),
+    MAIN_AUTO_COLLAPSE_MIN,
+    MAIN_AUTO_COLLAPSE_MAX
+  )
+
 // Auto-hide top chrome: the moment the cursor/focus leaves, the bar fades
-// out over 260ms on a soft curve — no hold beforehand (a delayed start
-// reads as the glassy bar hanging half-faded). Revealing eases in over
+// out over 260ms on a soft curve — no hold beforehand. Revealing eases in over
 // 200ms via the variants below. Every variant-prefixed class is a full
 // literal — Tailwind's scanner cannot see classes assembled at runtime.
 const TOP_CHROME_HIDE_TRANSITION =
@@ -175,6 +212,7 @@ type DockTab = 'editor' | 'diff'
 
 export const WorkspaceView = (): ReactElement => {
   const workspaceRef = useRef<HTMLDivElement>(null)
+  const mainWorkspaceRef = useRef<HTMLDivElement>(null)
   const sidebarResizeHandleRef = useRef<HTMLDivElement | null>(null)
   // Imperative resize previews keep this ref, the CSS variable, and
   // aria-valuenow in sync without per-frame React commits.
@@ -195,12 +233,14 @@ export const WorkspaceView = (): ReactElement => {
     activeSessionId,
     setActiveSessionId,
     createSession,
+    createBrowserSession,
     removeSession,
     restartSession,
     renameSession,
     setPaneUserLabel,
     reorderSessions,
     updatePaneCwd,
+    appendPaneCacheReading,
     updatePaneAgentType,
     updateBrowserPaneUrl,
     setSessionActivityPanelCollapsed,
@@ -210,6 +250,8 @@ export const WorkspaceView = (): ReactElement => {
     removePane,
     loading,
     notifyPaneReady,
+    registerPending,
+    dropAllForPty,
   } = useSessionManager(terminalService)
 
   // Detect which modifier the toolbar advertises on this platform so
@@ -246,36 +288,116 @@ export const WorkspaceView = (): ReactElement => {
 
   const newSessionAriaKeyshortcuts =
     preferModifier === 'meta' ? 'Meta+N' : 'Control+Shift+N'
-  // Real command-palette chord for the top-bar utility hint (Ctrl+; / ⌘;),
-  // not the ⌘K placeholder in the static design mock.
-  const commandShortcutHint = formatShortcut(COMMAND_PALETTE_SHORTCUT_KEYS)
+  const reserveWindowControls = preferModifier === 'meta'
+
+  const windowControlsInset = reserveWindowControls
+    ? MACOS_WINDOW_CONTROL_SAFE_AREA_PX
+    : 0
+
+  const sidebarToggleLeft = Math.max(12, windowControlsInset)
+
+  const sidebarToggleSlideSurfaceWidth =
+    sidebarToggleLeft + SIDEBAR_TOGGLE_SIZE + SIDEBAR_TOGGLE_SURFACE_PADDING_END
 
   const { message: infoMessage, notifyInfo, dismiss } = useNotifyInfo()
   const { activeTab, setActiveTab } = useSidebarTab()
 
   // VIM-66 / VIM-76: workspace-global sidebar collapse flag. The collapse toggle
-  // lives in the sidebar top bar when open; collapsed, it floats in the top
-  // chrome's reserved left gutter (main-stage handoff J4). The sidebar is
-  // hidden instantly (no drawer slide), so there is no transition window where
-  // a tab slips under the toggle.
-  const { collapsed: sidebarCollapsed, toggle: toggleSidebar } =
-    useSidebarCollapsed()
+  // is a persistent shell control; only the sidebar panel and its background
+  // slide. That keeps the control seated at the same coordinate in every state.
+  const {
+    collapsed: sidebarCollapsed,
+    toggle: toggleSidebar,
+    setCollapsed: setSidebarCollapsed,
+  } = useSidebarCollapsed()
 
-  // Main-stage handoff J3a: the 44px top chrome is a hover/focus-revealed
-  // overlay by default; pinning it reserves a real row so panes shrink
-  // instead of being covered (the reflow runs the normal terminal fit path).
-  const [topChromePinned, setTopChromePinned] = useState(false)
+  const [isCompactViewport, setIsCompactViewport] =
+    useState(readCompactViewport)
+  const [compactSidebarOpen, setCompactSidebarOpen] = useState(false)
 
-  // Imperative refs to the two SidebarToggle instances so the post-toggle focus
-  // guard can refocus the visible one without relying on data-testid selectors.
-  const sidebarToggleTopbarRef = useRef<HTMLButtonElement>(null)
-  const sidebarToggleChromeRef = useRef<HTMLButtonElement>(null)
+  useEffect(() => {
+    if (
+      typeof window === 'undefined' ||
+      typeof window.matchMedia !== 'function'
+    ) {
+      return
+    }
 
-  // Post-toggle focus guard: collapse/expand removes the active toggle from the
-  // tab order (open toggle's shell goes inert; collapsed toggle's slot unmounts),
-  // dropping focus to <body>. Refocus the now-visible toggle when that happens.
-  // Skips the initial mount; deferred a frame so it runs after the inert flip /
-  // palette focus-restore settles.
+    const mediaQuery = window.matchMedia(COMPACT_WORKSPACE_QUERY)
+
+    const applyViewport = (): void => {
+      setIsCompactViewport(mediaQuery.matches)
+    }
+
+    applyViewport()
+    mediaQuery.addEventListener('change', applyViewport)
+
+    return (): void => {
+      mediaQuery.removeEventListener('change', applyViewport)
+    }
+  }, [])
+
+  // Imperative ref to the persistent SidebarToggle so keyboard/scrim closes can
+  // restore focus without relying on data-testid selectors.
+  const sidebarToggleRef = useRef<HTMLButtonElement>(null)
+  const shouldRestoreSidebarToggleFocusRef = useRef(false)
+
+  useEffect(() => {
+    if (!isCompactViewport) {
+      setCompactSidebarOpen(false)
+    }
+  }, [isCompactViewport])
+
+  useEffect(() => {
+    if (!isCompactViewport || !compactSidebarOpen) {
+      return
+    }
+
+    const closeOnEscape = (event: globalThis.KeyboardEvent): void => {
+      if (event.key !== 'Escape') {
+        return
+      }
+
+      event.preventDefault()
+      shouldRestoreSidebarToggleFocusRef.current = true
+      setCompactSidebarOpen(false)
+    }
+
+    document.addEventListener('keydown', closeOnEscape)
+
+    return (): void => {
+      document.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [compactSidebarOpen, isCompactViewport])
+
+  const isSidebarClosed = isCompactViewport
+    ? !compactSidebarOpen
+    : sidebarCollapsed
+
+  const handleToggleSidebar = useCallback((): void => {
+    const activeElement =
+      typeof document === 'undefined' ? null : document.activeElement
+
+    const isToggleButtonFocused = activeElement === sidebarToggleRef.current
+
+    if (isCompactViewport) {
+      // User-triggered compact toggles (toggle button or keyboard shortcut)
+      // always restore focus so the focus guard moves focus to the visible
+      // toggle. This prevents focus from being lost to document.body when
+      // closing the drawer from inside its content.
+      shouldRestoreSidebarToggleFocusRef.current = true
+      setCompactSidebarOpen((open) => !open)
+
+      return
+    }
+
+    shouldRestoreSidebarToggleFocusRef.current = isToggleButtonFocused
+    toggleSidebar()
+  }, [isCompactViewport, toggleSidebar])
+
+  // Post-toggle focus guard: compact drawer closes and some browser inert
+  // transitions can drop focus to <body>. Refocus the persistent toggle only
+  // when the user action asked for restoration.
   const sidebarFocusGuardMountedRef = useRef(false)
   useEffect(() => {
     if (!sidebarFocusGuardMountedRef.current) {
@@ -283,24 +405,27 @@ export const WorkspaceView = (): ReactElement => {
 
       return
     }
+    if (!shouldRestoreSidebarToggleFocusRef.current) {
+      return
+    }
     if (typeof requestAnimationFrame !== 'function') {
+      shouldRestoreSidebarToggleFocusRef.current = false
+
       return
     }
 
     const frame = requestAnimationFrame((): void => {
+      shouldRestoreSidebarToggleFocusRef.current = false
       const active = document.activeElement
       if (!active || active === document.body) {
-        const target = sidebarCollapsed
-          ? sidebarToggleChromeRef.current
-          : sidebarToggleTopbarRef.current
-        target?.focus()
+        sidebarToggleRef.current?.focus()
       }
     })
 
     return (): void => {
       cancelAnimationFrame(frame)
     }
-  }, [sidebarCollapsed])
+  }, [isSidebarClosed])
 
   const paneRenameRequestIdRef = useRef(0)
 
@@ -354,19 +479,6 @@ export const WorkspaceView = (): ReactElement => {
   // invariant violations. Mutation guards still use `getActivePane`.
   const activePane = activeSession ? findActivePane(activeSession) : undefined
 
-  // Main-stage handoff J3/J6: the top chrome owns the layout pills; picks
-  // forward to the same setSessionLayout the TerminalZone toolbar used, so
-  // pane add/remove, active-pane, and layout semantics are untouched.
-  const handlePickLayout = useCallback(
-    (layoutId: LayoutId): void => {
-      if (!activeSessionId) {
-        return
-      }
-      setSessionLayout(activeSessionId, layoutId)
-    },
-    [activeSessionId, setSessionLayout]
-  )
-
   const activePtyBackedPane =
     activePane === undefined
       ? undefined
@@ -382,6 +494,18 @@ export const WorkspaceView = (): ReactElement => {
   const activePtyBackedPanePtyId = activePtyBackedPane?.ptyId
 
   const agentStatus = useAgentStatus(activePtyBackedPanePtyId ?? null)
+
+  useCacheHistoryCollector({
+    ptyId: activePtyBackedPanePtyId ?? null,
+    sessionId: activeSessionId,
+    paneId: activePtyBackedPaneId ?? null,
+    usage:
+      agentStatus.sessionId === activePtyBackedPanePtyId
+        ? (agentStatus.contextWindow?.currentUsage ?? null)
+        : null,
+    onReading: appendPaneCacheReading,
+  })
+
   const activityPanelCollapsed = activeSession?.activityPanelCollapsed ?? false
 
   const activityPanelAgent = useMemo(
@@ -595,6 +719,15 @@ export const WorkspaceView = (): ReactElement => {
     resizeHandle.setAttribute('aria-valuenow', String(nextWidth))
   }, [])
 
+  const handleSidebarDragEnd = useCallback(
+    ({ rawSize }: ResizeDragEndEvent): void => {
+      if (rawSize < SIDEBAR_MIN) {
+        setSidebarCollapsed(true)
+      }
+    },
+    [setSidebarCollapsed]
+  )
+
   const {
     size: sidebarWidth,
     isDragging,
@@ -605,11 +738,43 @@ export const WorkspaceView = (): ReactElement => {
     max: SIDEBAR_MAX,
     updateMode: 'commit-on-end',
     onDragPreview: previewSidebarWidth,
+    onDragEnd: handleSidebarDragEnd,
   })
 
   useLayoutEffect(() => {
     previewSidebarWidth(sidebarWidth)
   }, [previewSidebarWidth, sidebarWidth])
+
+  useEffect(() => {
+    const mainWorkspace = mainWorkspaceRef.current
+
+    if (!mainWorkspace || typeof ResizeObserver === 'undefined') {
+      return
+    }
+
+    const observer = new ResizeObserver((entries) => {
+      const width =
+        entries[0]?.contentRect.width ??
+        mainWorkspace.getBoundingClientRect().width
+
+      const workspaceWidth =
+        workspaceRef.current?.getBoundingClientRect().width ?? window.innerWidth
+
+      if (
+        !sidebarCollapsed &&
+        width > 0 &&
+        width < mainAutoCollapseThreshold(workspaceWidth)
+      ) {
+        setSidebarCollapsed(true)
+      }
+    })
+
+    observer.observe(mainWorkspace)
+
+    return (): void => {
+      observer.disconnect()
+    }
+  }, [sidebarCollapsed, setSidebarCollapsed])
 
   const activeCwd = activePtyBackedPane?.cwd ?? '.'
   // Distinct fallback for the FILES-tab file explorer: when no session
@@ -696,6 +861,11 @@ export const WorkspaceView = (): ReactElement => {
   const dockCanvasRef = useRef<HTMLDivElement>(null)
   const [dockPosition, setDockPosition] = useState<DockPosition>('bottom')
   const [isDockOpen, setIsDockOpen] = useState(true)
+
+  // Main-stage handoff J3a: the 44px top chrome is a hover/focus-revealed
+  // overlay by default; pinning reserves a real row so panes shrink instead
+  // of being covered (the reflow runs the normal terminal fit path).
+  const [topChromePinned, setTopChromePinned] = useState(false)
   const [dockTab, setDockTab] = useState<DockTab>('editor')
 
   const [activeContainerId, setActiveContainerId] = useState<string>(
@@ -727,6 +897,108 @@ export const WorkspaceView = (): ReactElement => {
   const { renderNode: paneRenameNode } = usePaneRenameChord(
     resolveFocusedPane,
     setPaneUserLabel
+  )
+
+  // Burner terminal popup (VIM-53) — reap reload-orphaned ephemeral PTYs before the first spawn.
+  const [burnerReapDone, setBurnerReapDone] = useState(false)
+  useEffect(() => {
+    let cancelled = false
+
+    const reap = async (): Promise<void> => {
+      try {
+        await terminalService.killEphemeralPtys()
+      } catch (err) {
+        // Best-effort: a failed sweep still enables burner; any orphan is
+        // reaped on shutdown or the next boot.
+        // eslint-disable-next-line no-console
+        console.warn('burner reap failed', err)
+      } finally {
+        if (!cancelled) {
+          setBurnerReapDone(true)
+        }
+      }
+    }
+    void reap()
+
+    return (): void => {
+      cancelled = true
+    }
+  }, [terminalService])
+
+  // Live pane keys across all sessions — drives the burner lazy reconciliation
+  // (a burner whose host pane/session is gone gets killed + dropped).
+  const topologyKey = useMemo(
+    () =>
+      sessions
+        .flatMap((s) => s.panes.map((p) => `${s.id}:${p.id}`))
+        .sort()
+        .join(','),
+    [sessions]
+  )
+
+  const livePaneKeys = useMemo(
+    () => new Set(topologyKey === '' ? [] : topologyKey.split(',')),
+    [topologyKey]
+  )
+
+  // Live pane cwds keyed the same way — feeds the burner align-to-pane button
+  // (VIM-81), which snaps a burner to its host pane's current directory.
+  const livePaneCwds = useMemo(
+    () =>
+      new Map(
+        sessions.flatMap((s) =>
+          s.panes.map((p) => [`${s.id}:${p.id}`, p.cwd] as const)
+        )
+      ),
+    [sessions]
+  )
+
+  const {
+    renderNode: burnerTerminalNode,
+    toggle: toggleBurner,
+    runningByPane: runningBurnerByPane,
+    activeByPane: activeBurnerByPane,
+  } = useBurnerTerminals({
+    service: terminalService,
+    resolveFocusedPane,
+    ready: burnerReapDone,
+    registerPending,
+    notifyPaneReady,
+    livePaneKeys,
+    dropAllForPty,
+    livePaneCwds,
+  })
+
+  // Stable wrapper for the `:burner` palette command so the command-list memo
+  // stays put while still invoking the latest toggle, whose identity changes as
+  // the popup opens/closes.
+  const toggleBurnerRef = useRef(toggleBurner)
+  toggleBurnerRef.current = toggleBurner
+
+  const toggleBurnerCommand = useCallback((): void => {
+    void toggleBurnerRef.current()
+  }, [])
+
+  // Pane-keys with a live burner shell — drives the status-bar count.
+  const runningBurnerPaneKeys = useMemo(
+    () =>
+      new Set(
+        [...runningBurnerByPane]
+          .filter(([, status]) => status === 'running')
+          .map(([key]) => key)
+      ),
+    [runningBurnerByPane]
+  )
+
+  // Pane-keys with a foreground command running — drives the amber button tint (VIM-71).
+  const activeBurnerPaneKeys = useMemo(
+    () =>
+      new Set(
+        [...activeBurnerByPane]
+          .filter(([, active]) => active)
+          .map(([key]) => key)
+      ),
+    [activeBurnerByPane]
   )
 
   const requestFocus = useCallback((target: FocusTarget): void => {
@@ -780,6 +1052,19 @@ export const WorkspaceView = (): ReactElement => {
     setIsDockOpen(false)
     claimTerminal()
   }, [claimTerminal])
+
+  // Main-stage handoff J3/J6: the top chrome owns the layout pills; picks
+  // forward to the same setSessionLayout the TerminalZone toolbar used, so
+  // pane add/remove, active-pane, and layout semantics are untouched.
+  const handlePickLayout = useCallback(
+    (layoutId: LayoutId): void => {
+      if (!activeSessionId) {
+        return
+      }
+      setSessionLayout(activeSessionId, layoutId)
+    },
+    [activeSessionId, setSessionLayout]
+  )
 
   // Main-stage handoff J8: one bottom-bar affordance for both directions.
   // Closing focuses the terminal (closeDock → claimTerminal); reopening
@@ -902,6 +1187,7 @@ export const WorkspaceView = (): ReactElement => {
         activePanePtyId: activePanePtyIdForCommands,
         activePaneAgentType: activePaneAgentTypeForCommands,
         createSession,
+        createBrowserSession,
         removeSession: handleRemoveSession,
         renameSession,
         setPaneUserLabel,
@@ -910,7 +1196,8 @@ export const WorkspaceView = (): ReactElement => {
         isCurrentPaneRenameRequest,
         setActiveSessionId,
         notifyInfo,
-        toggleSidebar,
+        toggleSidebar: handleToggleSidebar,
+        toggleBurner: toggleBurnerCommand,
       }),
     // sessionsSignature captures every field the closures read; activity-only
     // changes keep the signature stable so the memo (and downstream
@@ -922,6 +1209,7 @@ export const WorkspaceView = (): ReactElement => {
       activePanePtyIdForCommands,
       activePaneAgentTypeForCommands,
       createSession,
+      createBrowserSession,
       handleRemoveSession,
       renameSession,
       setPaneUserLabel,
@@ -930,7 +1218,8 @@ export const WorkspaceView = (): ReactElement => {
       isCurrentPaneRenameRequest,
       setActiveSessionId,
       notifyInfo,
-      toggleSidebar,
+      handleToggleSidebar,
+      toggleBurnerCommand,
     ]
   )
 
@@ -956,7 +1245,7 @@ export const WorkspaceView = (): ReactElement => {
   })
 
   useSidebarShortcut({
-    onToggle: toggleSidebar,
+    onToggle: handleToggleSidebar,
     modKey: preferModifier === 'meta' ? '⌘' : 'Ctrl',
     activeContainerId,
   })
@@ -983,6 +1272,19 @@ export const WorkspaceView = (): ReactElement => {
 
   const [selectedDiffFile, setSelectedDiffFile] =
     useState<SelectedDiffFile | null>(null)
+
+  const feedbackBatch = useFeedbackBatch()
+  const feedbackRepoRootRef = useRef('')
+  const { clearBatch: clearFeedbackBatch } = feedbackBatch
+  const previousFeedbackCwdRef = useRef(activeCwd)
+
+  useEffect(() => {
+    if (previousFeedbackCwdRef.current !== activeCwd) {
+      previousFeedbackCwdRef.current = activeCwd
+      feedbackRepoRootRef.current = ''
+      clearFeedbackBatch()
+    }
+  }, [activeCwd, clearFeedbackBatch])
 
   const gitStatus = useGitStatus(activeCwd, {
     watch: true,
@@ -1033,25 +1335,9 @@ export const WorkspaceView = (): ReactElement => {
     : null
 
   // Fused AgentStatusCard props, derived from the same live signals the status
-  // bar uses (VIM-66). Each metric is guarded inside the card, so an idle
-  // session renders gracefully with an empty metric row.
-  // Completed/errored come from the pane lifecycle and must NOT be masked by
-  // the agent going inactive after it finishes; `running` requires a live
-  // agent; everything else (no session, paused, inactive) reads as idle.
-  // (`awaiting` is supported by the card but not emitted yet — no data feed,
-  // same as `subtitle`.)
-  const sidebarCardState: AgentCardState = !activeSession
-    ? 'idle'
-    : activityPanelStatus === 'completed'
-      ? 'completed'
-      : activityPanelStatus === 'errored'
-        ? 'errored'
-        : agentStatus.isActive && activityPanelStatus === 'running'
-          ? 'running'
-          : 'idle'
-
+  // bar uses (VIM-66). The compact card keeps only the turn count in the
   // A pure shell pane has no detected agent (and therefore no model / usage);
-  // the card renders its fixed-height "SHELL" placeholder in that case so the
+  // the card renders its fixed-height shell placeholder in that case so the
   // session list below never reflows when switching panes.
   const sidebarCardIsShell =
     !agentStatus.agentType || !agentStatus.isActive || agentStatus.agentExited
@@ -1064,19 +1350,15 @@ export const WorkspaceView = (): ReactElement => {
     agentStatus.modelId ??
     activeSession?.name ??
     'No session'
-  const sidebarCardElapsed = statusBarSession?.startedAgo ?? null
   const sidebarCardTurns = statusBarSession?.turns ?? null
 
-  const sidebarCardContextPct =
-    statusBarContextPct !== null ? Math.round(statusBarContextPct) : null
+  const sidebarCardFiveHourPct = rateLimitPercentage(
+    agentStatus.rateLimits?.fiveHour
+  )
 
-  const sidebarCardFiveHourPct = agentStatus.rateLimits
-    ? Math.round(agentStatus.rateLimits.fiveHour.usedPercentage)
-    : null
-
-  const sidebarCardWeekPct = agentStatus.rateLimits?.sevenDay
-    ? Math.round(agentStatus.rateLimits.sevenDay.usedPercentage)
-    : null
+  const sidebarCardWeekPct = rateLimitPercentage(
+    agentStatus.rateLimits?.sevenDay
+  )
 
   // Open a file directly (no unsaved-changes guard). Errors were previously
   // swallowed via `void editorBuffer.openFile(...)`, leaving the user with
@@ -1480,6 +1762,8 @@ export const WorkspaceView = (): ReactElement => {
       onContainerFocus={() => {
         setActiveContainerId(DOCK_CONTAINER_ID)
       }}
+      feedbackBatch={feedbackBatch}
+      feedbackRepoRootRef={feedbackRepoRootRef}
       feedbackDispatch={feedbackDispatch}
     />
   ) : (
@@ -1504,360 +1788,432 @@ export const WorkspaceView = (): ReactElement => {
       // `grid-rows-1` pins the implicit row to `1fr`; without it
       // `grid-auto-rows: auto` lets the row grow to content size and
       // `h-full` stops propagating the 100vh constraint downward.
-      // The shell background is what shows through the stage's clipped left
-      // corners: sidebar-colored while the sidebar is open, lowest surface
-      // when collapsed (square stage, nothing to reveal).
-      className={`grid h-screen grid-rows-1 overflow-hidden ${
-        sidebarCollapsed
-          ? 'bg-surface-container-lowest'
-          : 'bg-surface-container-low'
-      }`}
+      className="relative grid h-screen grid-rows-1 overflow-hidden"
       style={
         {
           // `--workspace-sidebar-width` is owned by previewSidebarWidth so
           // React rerenders cannot overwrite an in-progress drag preview.
-          // Main-stage handoff: layout is [sidebar | floating stage]; the
-          // stage carries main + activity. The sidebar `auto` track follows
-          // the shell width; collapse sets it to 0 INSTANTLY (no slide), so
-          // the stage (1fr) reclaims with no gutter and no transition window.
-          gridTemplateColumns: `auto 1fr`,
+          // VIM-76: icon rail removed — layout is [sidebar | main | activity].
+          // Desktop collapse animates the sidebar shell width; compact viewports
+          // switch to a single-column workspace with the sidebar as an overlay.
+          '--workspace-window-controls-inset': `${windowControlsInset}px`,
+          '--workspace-sidebar-toggle-left': `${sidebarToggleLeft}px`,
+          '--workspace-sidebar-toggle-size': `${SIDEBAR_TOGGLE_SIZE}px`,
+          '--workspace-sidebar-toggle-top': `${SIDEBAR_TOGGLE_TOP}px`,
+          gridTemplateColumns: isCompactViewport ? '1fr' : `auto 1fr auto`,
         } as CSSProperties
       }
     >
-      {/* Sidebar — collapses instantly (VIM-76: no drawer slide). The shell
-          width snaps to 0 and the inner panel unmounts, so the `auto` track is
-          0 and <main> reclaims. The collapse toggle's collapsed-state home is
-          the session-tab bar's leading slot (below), not a floating overlay. */}
+      {isCompactViewport && !isSidebarClosed && (
+        <button
+          type="button"
+          tabIndex={-1}
+          aria-label="Close sidebar"
+          data-testid="sidebar-scrim"
+          onClick={() => {
+            shouldRestoreSidebarToggleFocusRef.current = true
+            setCompactSidebarOpen(false)
+          }}
+          className="fixed inset-0 z-20 cursor-default bg-background/55 backdrop-blur-[2px]"
+        />
+      )}
+
+      {/* Sidebar — the shell owns the persistent toggle; the inner panel clips
+          during animated desktop collapse. Compact viewports lift the same
+          shell above main content. */}
       <div
-        aria-hidden={sidebarCollapsed || undefined}
-        inert={sidebarCollapsed || undefined}
-        className="relative z-[1] h-full overflow-hidden"
+        data-testid="workspace-sidebar-shell"
+        role={isCompactViewport && !isSidebarClosed ? 'dialog' : undefined}
+        aria-modal={isCompactViewport && !isSidebarClosed ? true : undefined}
+        aria-label={
+          isCompactViewport && !isSidebarClosed ? 'Sidebar' : undefined
+        }
+        className={`relative h-full overflow-visible will-change-[width] ${
+          isDragging || isCompactViewport
+            ? ''
+            : 'transition-[width] duration-[220ms] ease-pane'
+        }`}
         style={{
-          width: sidebarCollapsed
+          position: isCompactViewport ? 'absolute' : undefined,
+          zIndex: isCompactViewport ? 30 : undefined,
+          left: isCompactViewport ? 0 : undefined,
+          top: isCompactViewport ? 0 : undefined,
+          bottom: isCompactViewport ? 0 : undefined,
+          maxWidth: isCompactViewport ? '100vw' : undefined,
+          width: isSidebarClosed
             ? 0
-            : `var(--workspace-sidebar-width, ${SIDEBAR_INITIAL}px)`,
+            : isCompactViewport
+              ? `min(100vw, var(--workspace-sidebar-width, ${SIDEBAR_INITIAL}px))`
+              : `var(--workspace-sidebar-width, ${SIDEBAR_INITIAL}px)`,
         }}
       >
         <div
-          className="relative flex h-full"
+          aria-hidden="true"
+          data-testid="sidebar-toggle-slide-surface"
+          className={`pointer-events-none absolute left-0 top-0 z-20 bg-transparent ${
+            isDragging ? '' : 'transition-[width] duration-[220ms] ease-pane'
+          }`}
           style={{
-            width: `var(--workspace-sidebar-width, ${SIDEBAR_INITIAL}px)`,
+            height: SIDEBAR_TOP_BAR_HEIGHT,
+            width: isSidebarClosed ? 0 : sidebarToggleSlideSurfaceWidth,
+          }}
+        />
+        <div
+          data-testid="sidebar-toggle-anchor"
+          className="absolute z-30"
+          style={{
+            left: sidebarToggleLeft,
+            top: SIDEBAR_TOGGLE_TOP,
           }}
         >
-          <Sidebar
-            // Gate on !collapsed: unmounts the top bar + its portaled tooltips on collapse (they would otherwise escape the inert, clipped shell and linger); header/content stay mounted for state.
-            topBar={
-              sidebarCollapsed ? undefined : (
-                <SidebarTopBar
-                  onToggleSidebar={toggleSidebar}
-                  onCommand={commandPalette.open}
-                  commandShortcutHint={commandShortcutHint}
-                  sidebarShortcutHint={sidebarShortcutHint}
-                  settingsIssueNumber={SETTINGS_FOLLOWUP_ISSUE_NUMBER}
-                  toggleRef={sidebarToggleTopbarRef}
-                />
-              )
-            }
-            header={
-              <AgentStatusCard
-                title={sidebarCardTitle}
-                state={sidebarCardState}
-                isShell={sidebarCardIsShell}
-                elapsed={sidebarCardElapsed}
-                turns={sidebarCardTurns}
-                contextPct={sidebarCardContextPct}
-                fiveHourPct={sidebarCardFiveHourPct}
-                weekPct={sidebarCardWeekPct}
-              />
-            }
-            content={
-              <div className="flex h-full min-h-0 flex-col">
-                <div className="flex items-stretch gap-2 px-3 pb-3 pt-2.5">
-                  <SidebarTabs<SidebarTab>
-                    tabs={SIDEBAR_TAB_ITEMS}
-                    activeId={activeTab}
-                    onChange={setActiveTab}
+          <SidebarToggle
+            ref={sidebarToggleRef}
+            collapsed={isSidebarClosed}
+            onClick={handleToggleSidebar}
+            size={SIDEBAR_TOGGLE_SIZE}
+            variant="inset"
+            data-testid="sidebar-toggle-fixed"
+            shortcutHint={sidebarShortcutHint}
+          />
+        </div>
+        <div
+          aria-hidden={isSidebarClosed || undefined}
+          inert={isSidebarClosed || undefined}
+          data-testid="workspace-sidebar-panel"
+          className="h-full overflow-hidden"
+        >
+          <div
+            className="relative flex h-full"
+            style={{
+              width: isCompactViewport
+                ? `min(100vw, var(--workspace-sidebar-width, ${SIDEBAR_INITIAL}px))`
+                : `var(--workspace-sidebar-width, ${SIDEBAR_INITIAL}px)`,
+            }}
+          >
+            <Sidebar
+              // Collapse keeps a same-height placeholder so the header/session
+              // list do not jump vertically while the shell width animates. The
+              // real top-bar controls still unmount so their portaled tooltips
+              // cannot escape the inert, clipped sidebar panel.
+              topBar={
+                isSidebarClosed ? (
+                  <div
+                    aria-hidden="true"
+                    data-testid="sidebar-top-bar-placeholder"
+                    className="bg-transparent"
+                    style={{ height: SIDEBAR_TOP_BAR_HEIGHT, flexShrink: 0 }}
                   />
-                  <NewSessionButton
-                    onClick={handleCreateSession}
-                    shortcutHint={newSessionShortcutHint}
-                    ariaKeyshortcuts={newSessionAriaKeyshortcuts}
+                ) : (
+                  <SidebarTopBar
+                    reserveWindowControls={reserveWindowControls}
+                  />
+                )
+              }
+              header={
+                <AgentStatusCard
+                  title={sidebarCardTitle}
+                  isShell={sidebarCardIsShell}
+                  turns={sidebarCardTurns}
+                  fiveHourPct={sidebarCardFiveHourPct}
+                  weekPct={sidebarCardWeekPct}
+                  shellName={activePtyBackedPane?.shell ?? null}
+                />
+              }
+              content={
+                <div className="flex h-full min-h-0 flex-col">
+                  <div className="flex items-stretch gap-2 px-3 pb-3 pt-2.5">
+                    <SidebarTabs<SidebarTab>
+                      tabs={SIDEBAR_TAB_ITEMS}
+                      activeId={activeTab}
+                      onChange={setActiveTab}
+                    />
+                    <NewSessionButton
+                      onClick={handleCreateSession}
+                      shortcutHint={newSessionShortcutHint}
+                      ariaKeyshortcuts={newSessionAriaKeyshortcuts}
+                    />
+                  </div>
+                  <SessionsView
+                    hidden={activeTab !== 'sessions'}
+                    sessions={sessions}
+                    activeSessionId={activeSessionId}
+                    onSessionClick={handleSetActiveSessionId}
+                    onRemoveSession={handleRemoveSession}
+                    onRenameSession={renameSession}
+                    onReorderSessions={reorderSessions}
+                  />
+                  <FilesView
+                    hidden={activeTab !== 'files'}
+                    cwd={fileExplorerCwd}
+                    onFileSelect={handleFileSelect}
                   />
                 </div>
-                <SessionsView
-                  hidden={activeTab !== 'sessions'}
-                  sessions={sessions}
-                  activeSessionId={activeSessionId}
-                  onSessionClick={handleSetActiveSessionId}
-                  onRemoveSession={handleRemoveSession}
-                  onRenameSession={renameSession}
-                  onReorderSessions={reorderSessions}
-                />
-                <FilesView
-                  hidden={activeTab !== 'files'}
-                  cwd={fileExplorerCwd}
-                  onFileSelect={handleFileSelect}
-                />
-              </div>
-            }
-          />
+              }
+              footer={
+                isSidebarClosed ? undefined : (
+                  <SidebarSettingsFooter
+                    settingsIssueNumber={SETTINGS_FOLLOWUP_ISSUE_NUMBER}
+                  />
+                )
+              }
+            />
 
-          {/* Resize handle (hidden while collapsed) */}
-          {!sidebarCollapsed && (
-            <div
-              ref={setSidebarResizeHandle}
-              data-testid="sidebar-resize-handle"
-              role="separator"
-              aria-orientation="vertical"
-              aria-valuemin={SIDEBAR_MIN}
-              aria-valuemax={SIDEBAR_MAX}
-              // aria-valuenow is set by the layout effect and drag preview path
-              // so previews do not need per-frame React state commits.
-              onMouseDown={handleMouseDown}
-              className={`
+            {/* Resize handle (hidden while collapsed) */}
+            {!isSidebarClosed && !isCompactViewport && (
+              <div
+                ref={setSidebarResizeHandle}
+                data-testid="sidebar-resize-handle"
+                role="separator"
+                aria-orientation="vertical"
+                aria-valuemin={SIDEBAR_MIN}
+                aria-valuemax={SIDEBAR_MAX}
+                // aria-valuenow is set by the layout effect and drag preview path
+                // so previews do not need per-frame React state commits.
+                onMouseDown={handleMouseDown}
+                className={`
             absolute right-0 top-0 z-10 h-full w-1 cursor-col-resize
             transition-colors hover:bg-primary/50
             ${isDragging ? 'bg-primary/70' : 'bg-transparent'}
           `}
-            />
-          )}
+              />
+            )}
+          </div>
         </div>
       </div>
 
-      {/* Floating stage — the whole right side (main column + activity
-          panel) lifts off the sidebar as one clipped surface: rounded left
-          corners while the sidebar is open, square and edge-to-edge when it
-          is collapsed. No shadow — the raised read comes from the
-          sidebar-colored shell background filling the clipped corners. */}
-      <div
-        data-testid="floating-stage"
-        className={`relative z-[2] flex h-full min-w-0 overflow-hidden bg-surface-container-lowest ${
-          sidebarCollapsed
-            ? ''
-            : 'rounded-l-[14px] max-[760px]:rounded-l-[10px]'
-        }`}
-      >
-        {/* Main workspace area - TerminalZone + DockPanel.
+      {/* Main workspace area - TerminalZone + DockPanel.
           `relative` establishes a containing block so the fileError
           banner's `absolute` positioning is scoped to this column
           rather than climbing to the viewport. */}
-        <main
-          aria-label="Main workspace"
-          className="relative flex min-w-0 flex-1 flex-col overflow-hidden bg-surface"
+      <main
+        ref={mainWorkspaceRef}
+        data-testid="workspace-main"
+        aria-label="Main workspace"
+        className="relative flex flex-col overflow-hidden bg-background"
+        inert={isCompactViewport && !isSidebarClosed ? true : undefined}
+        aria-hidden={isCompactViewport && !isSidebarClosed ? true : undefined}
+        style={{
+          borderTopLeftRadius: sidebarCollapsed || isCompactViewport ? 0 : 16,
+          borderBottomLeftRadius:
+            sidebarCollapsed || isCompactViewport ? 0 : 16,
+          // No elevation shadow on the sheet edge: the sidebar is transparent,
+          // so a leftward drop shadow would read as a dark gradient seam against
+          // it. The rounded corners alone carry the inset-sheet treatment.
+          transition: isDragging
+            ? 'none'
+            : `border-radius ${SIDEBAR_MOTION_MS}ms ${SIDEBAR_MOTION_EASING}`,
+          willChange: 'border-radius',
+        }}
+      >
+        {/* Top chrome (44px, main-stage handoff J3/J3a) — hover/focus reveals
+            the overlay; pinning reserves a real row so panes shrink instead of
+            being covered. The collapsed-state sidebar toggle is the sidebar
+            shell's own fixed toggle, so when the sidebar is closed the hover
+            zone insets past it to keep that toggle clickable. */}
+        <div
+          data-testid="top-hover-zone"
+          tabIndex={0}
+          aria-label="Reveal workspace controls"
+          className={`group focus:outline-none ${
+            topChromePinned
+              ? 'relative h-[44px] w-full shrink-0'
+              : 'absolute right-0 top-0 z-40 h-[44px]'
+          }`}
+          style={
+            topChromePinned
+              ? undefined
+              : {
+                  left: isSidebarClosed
+                    ? sidebarToggleLeft + SIDEBAR_TOGGLE_SIZE
+                    : 0,
+                }
+          }
         >
-          {/* Top chrome (44px, main-stage handoff J3/J3a) — hover/focus
-              reveals the overlay; pinning reserves a real row so panes
-              shrink instead of being covered. Collapsed sidebar pads the
-              content 50px so the floating toggle never overlaps the pills.
-              Auto-hide overlay is frosted glass (translucent lowest surface
-              + glass-panel blur) so covered content ghosts through; pinned
-              mode sits on the solid surface since nothing is underneath. */}
           <div
-            data-testid="top-hover-zone"
-            tabIndex={0}
-            aria-label="Reveal workspace controls"
-            className={`group focus:outline-none ${
+            data-testid="top-chrome"
+            className={`absolute inset-0 flex h-[44px] items-center gap-[12px] border-b border-[rgba(74,68,79,0.25)] pl-[14px] pr-[14px] ${
               topChromePinned
-                ? 'relative h-[44px] w-full shrink-0'
-                : 'absolute inset-x-0 top-0 z-40 h-[44px]'
+                ? `bg-surface-container-lowest translate-y-0 opacity-100 ${TOP_CHROME_SHOW_TRANSITION}`
+                : `glass-panel bg-[rgba(13,13,28,0.65)] -translate-y-[5px] opacity-0 ${TOP_CHROME_HIDE_TRANSITION} ${TOP_CHROME_REVEAL_CLASSES}`
             }`}
           >
-            <div
-              data-testid="top-chrome"
-              className={`absolute inset-0 flex h-[44px] items-center gap-[12px] border-b border-[rgba(74,68,79,0.25)] pr-[14px] ${
-                sidebarCollapsed ? 'pl-[50px]' : 'pl-[14px]'
-              } ${
-                topChromePinned
-                  ? `bg-surface-container-lowest translate-y-0 opacity-100 ${TOP_CHROME_SHOW_TRANSITION}`
-                  : `glass-panel bg-[rgba(13,13,28,0.65)] -translate-y-[5px] opacity-0 ${TOP_CHROME_HIDE_TRANSITION} ${TOP_CHROME_REVEAL_CLASSES}`
-              }`}
-            >
-              {sidebarCollapsed && (
-                <div className="absolute left-[12px] top-[8px] z-30">
-                  <SidebarToggle
-                    ref={sidebarToggleChromeRef}
-                    collapsed
-                    onClick={toggleSidebar}
-                    size={28}
-                    variant="inset"
-                    data-testid="sidebar-toggle-chrome"
-                    shortcutHint={sidebarShortcutHint}
-                  />
-                </div>
-              )}
+            <span className="min-w-[10px] flex-1" />
 
-              <span className="min-w-[10px] flex-1" />
-
-              {/* Pills render in every layout, with the layout-display config
-                  button docked in the same pillar after a divider. The pin
-                  toggle stands alone (no wrapper) beside the pillar. */}
-              {activeSession && (
-                <LayoutSwitcher
-                  activeLayoutId={activeSession.layout}
-                  onPick={handlePickLayout}
-                  trailing={
-                    <button
-                      type="button"
-                      aria-label="Configure displayed layouts"
-                      title="Configure displayed layouts"
-                      className="inline-flex h-5 w-6 items-center justify-center rounded text-on-surface-muted transition-colors hover:bg-[rgba(226,199,255,0.08)] hover:text-primary"
-                    >
-                      <svg
-                        width="14"
-                        height="14"
-                        viewBox="0 0 16 16"
-                        fill="none"
-                        aria-hidden="true"
-                      >
-                        <path
-                          d="M3 4.5H6.2M9.8 4.5H13M3 8H9.2M12.2 8H13M3 11.5H4.8M8.2 11.5H13"
-                          stroke="currentColor"
-                          strokeWidth="1.35"
-                          strokeLinecap="round"
-                        />
-                        <circle
-                          cx="8"
-                          cy="4.5"
-                          r="1.6"
-                          stroke="currentColor"
-                          strokeWidth="1.25"
-                        />
-                        <circle
-                          cx="10.7"
-                          cy="8"
-                          r="1.45"
-                          stroke="currentColor"
-                          strokeWidth="1.25"
-                        />
-                        <circle
-                          cx="6.5"
-                          cy="11.5"
-                          r="1.55"
-                          stroke="currentColor"
-                          strokeWidth="1.25"
-                        />
-                      </svg>
-                    </button>
-                  }
-                />
-              )}
-
-              <button
-                type="button"
-                aria-label={
-                  topChromePinned
-                    ? 'Auto-hide top banner'
-                    : 'Keep top banner visible'
-                }
-                title={
-                  topChromePinned
-                    ? 'Auto-hide top banner'
-                    : 'Keep top banner visible'
-                }
-                aria-pressed={topChromePinned}
-                onClick={() => {
-                  setTopChromePinned((pinned) => !pinned)
-                }}
-                className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-[7px] transition-colors hover:bg-[rgba(226,199,255,0.08)] hover:text-primary ${
-                  topChromePinned ? 'text-primary' : 'text-on-surface-muted'
-                }`}
-              >
-                <svg
-                  width="14"
-                  height="14"
-                  viewBox="0 0 16 16"
-                  fill="none"
-                  aria-hidden="true"
-                >
-                  <path
-                    d="M6.2 2.8H9.8M7.1 2.8L6.5 7.1L4.4 9.1H11.6L9.5 7.1L8.9 2.8M8 9.2V13.4"
-                    stroke="currentColor"
-                    strokeWidth="1.35"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </svg>
-              </button>
-            </div>
-          </div>
-
-          <div
-            ref={dockCanvasRef}
-            data-testid="dock-canvas-wrapper"
-            className="flex min-h-0 min-w-0 flex-1 overflow-hidden"
-            style={{ flexDirection: dockCanvasFlexDirection }}
-          >
-            {dockBeforeTerminal ? dockOrPeek : null}
-            <div
-              data-testid="terminal-zone-wrapper"
-              className="flex min-h-0 min-w-0 flex-1 overflow-hidden"
-            >
-              <TerminalZone
-                ref={terminalZoneRef}
-                sessions={sessions}
-                activeSessionId={activeSessionId}
-                onSessionCwdChange={updatePaneCwd}
-                deferTerminalFit={terminalFitDeferred}
-                loading={loading}
-                onPaneReady={notifyPaneReady}
-                onSessionRestart={restartSession}
-                service={terminalService}
-                setSessionActivePane={setSessionActivePane}
-                updateBrowserPaneUrl={updateBrowserPaneUrl}
-                addPane={addPane}
-                removePane={removePane}
-                areBrowserPanesOccluded={areBrowserPanesOccluded}
-                isZoneFocused={activeContainerId === TERMINAL_CONTAINER_ID}
-                onContainerFocus={() => {
-                  setActiveContainerId(TERMINAL_CONTAINER_ID)
-                }}
-              />
-            </div>
-            {!dockBeforeTerminal ? dockOrPeek : null}
-          </div>
-
-          {(fileError !== null || infoMessage !== null) && (
-            <div className="absolute top-2 left-1/2 z-40 flex w-[calc(100%-1rem)] max-w-2xl -translate-x-1/2 flex-col gap-2">
-              {/* File error banner — surfaces failures from direct file open
-                (openFileSafely) and vim :w saves (handleVimSave). Rendered at
-                the top of the main area so the user always sees what went wrong. */}
-              {fileError && (
-                <div
-                  role="alert"
-                  className="flex items-center gap-3 rounded-lg bg-error/20 px-4 py-2 font-inter text-sm text-error shadow-lg backdrop-blur-sm"
-                >
-                  <span className="flex-1">{fileError}</span>
+            {/* Pills render in every layout, with the layout-display config
+                button docked in the same pillar after a divider. The pin
+                toggle stands alone (no wrapper) beside the pillar. */}
+            {activeSession && (
+              <LayoutSwitcher
+                activeLayoutId={activeSession.layout}
+                onPick={handlePickLayout}
+                trailing={
                   <button
                     type="button"
-                    aria-label="Dismiss error"
-                    onClick={() => {
-                      setFileError(null)
-                    }}
-                    className="text-error transition-colors hover:text-on-surface"
+                    aria-label="Configure displayed layouts"
+                    title="Configure displayed layouts"
+                    className="inline-flex h-5 w-6 items-center justify-center rounded text-on-surface-muted transition-colors hover:bg-[rgba(226,199,255,0.08)] hover:text-primary"
                   >
-                    ✕
+                    <svg
+                      width="14"
+                      height="14"
+                      viewBox="0 0 16 16"
+                      fill="none"
+                      aria-hidden="true"
+                    >
+                      <path
+                        d="M3 4.5H6.2M9.8 4.5H13M3 8H9.2M12.2 8H13M3 11.5H4.8M8.2 11.5H13"
+                        stroke="currentColor"
+                        strokeWidth="1.35"
+                        strokeLinecap="round"
+                      />
+                      <circle
+                        cx="8"
+                        cy="4.5"
+                        r="1.6"
+                        stroke="currentColor"
+                        strokeWidth="1.25"
+                      />
+                      <circle
+                        cx="10.7"
+                        cy="8"
+                        r="1.45"
+                        stroke="currentColor"
+                        strokeWidth="1.25"
+                      />
+                      <circle
+                        cx="6.5"
+                        cy="11.5"
+                        r="1.55"
+                        stroke="currentColor"
+                        strokeWidth="1.25"
+                      />
+                    </svg>
                   </button>
-                </div>
-              )}
+                }
+              />
+            )}
 
-              {/* Info banner — surfaces workspace command failures (no active tab,
+            <button
+              type="button"
+              aria-label={
+                topChromePinned
+                  ? 'Auto-hide top banner'
+                  : 'Keep top banner visible'
+              }
+              title={
+                topChromePinned
+                  ? 'Auto-hide top banner'
+                  : 'Keep top banner visible'
+              }
+              aria-pressed={topChromePinned}
+              onClick={() => {
+                setTopChromePinned((pinned) => !pinned)
+              }}
+              className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-[7px] transition-colors hover:bg-[rgba(226,199,255,0.08)] hover:text-primary ${
+                topChromePinned ? 'text-primary' : 'text-on-surface-muted'
+              }`}
+            >
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 16 16"
+                fill="none"
+                aria-hidden="true"
+              >
+                <path
+                  d="M6.2 2.8H9.8M7.1 2.8L6.5 7.1L4.4 9.1H11.6L9.5 7.1L8.9 2.8M8 9.2V13.4"
+                  stroke="currentColor"
+                  strokeWidth="1.35"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <div
+          ref={dockCanvasRef}
+          data-testid="dock-canvas-wrapper"
+          className="flex min-h-0 min-w-0 flex-1 overflow-hidden"
+          style={{ flexDirection: dockCanvasFlexDirection }}
+        >
+          {dockBeforeTerminal ? dockOrPeek : null}
+          <div
+            data-testid="terminal-zone-wrapper"
+            className="flex min-h-0 min-w-0 flex-1 overflow-hidden"
+          >
+            <TerminalZone
+              ref={terminalZoneRef}
+              sessions={sessions}
+              activeSessionId={activeSessionId}
+              onSessionCwdChange={updatePaneCwd}
+              deferTerminalFit={terminalFitDeferred}
+              loading={loading}
+              onPaneReady={notifyPaneReady}
+              onSessionRestart={restartSession}
+              service={terminalService}
+              setSessionActivePane={setSessionActivePane}
+              updateBrowserPaneUrl={updateBrowserPaneUrl}
+              addPane={addPane}
+              removePane={removePane}
+              areBrowserPanesOccluded={areBrowserPanesOccluded}
+              isZoneFocused={activeContainerId === TERMINAL_CONTAINER_ID}
+              onContainerFocus={() => {
+                setActiveContainerId(TERMINAL_CONTAINER_ID)
+              }}
+              onBurner={(target): void => void toggleBurner(target)}
+              activeBurnerPaneKeys={activeBurnerPaneKeys}
+              runningBurnerPaneKeys={runningBurnerPaneKeys}
+            />
+          </div>
+          {!dockBeforeTerminal ? dockOrPeek : null}
+        </div>
+
+        {(fileError !== null || infoMessage !== null) && (
+          <div className="absolute top-2 left-1/2 z-40 flex w-[calc(100%-1rem)] max-w-2xl -translate-x-1/2 flex-col gap-2">
+            {/* File error banner — surfaces failures from direct file open
+                (openFileSafely) and vim :w saves (handleVimSave). Rendered at
+                the top of the main area so the user always sees what went wrong. */}
+            {fileError && (
+              <div
+                role="alert"
+                className="flex items-center gap-3 rounded-lg bg-error/20 px-4 py-2 font-inter text-sm text-error shadow-lg backdrop-blur-sm"
+              >
+                <span className="flex-1">{fileError}</span>
+                <button
+                  type="button"
+                  aria-label="Dismiss error"
+                  onClick={() => {
+                    setFileError(null)
+                  }}
+                  className="text-error transition-colors hover:text-on-surface"
+                >
+                  ✕
+                </button>
+              </div>
+            )}
+
+            {/* Info banner — surfaces workspace command failures (no active tab,
                 invalid goto args, etc.). Stacked below file errors so command
                 feedback never obscures file-operation failures. */}
-              {infoMessage && (
-                <InfoBanner message={infoMessage} onDismiss={dismiss} />
-              )}
-            </div>
-          )}
+            {infoMessage && (
+              <InfoBanner message={infoMessage} onDismiss={dismiss} />
+            )}
+          </div>
+        )}
 
-          <StatusBar
-            session={statusBarSession}
-            contextPct={statusBarContextPct}
-            onOpenPalette={commandPalette.open}
-            dockOpen={isDockOpen}
-            onToggleDock={handleToggleDock}
-          />
-        </main>
+        <StatusBar
+          session={statusBarSession}
+          contextPct={statusBarContextPct}
+          onOpenPalette={commandPalette.open}
+          dockOpen={isDockOpen}
+          onToggleDock={handleToggleDock}
+          burnerCount={runningBurnerPaneKeys.size}
+        />
+      </main>
 
+      {!isCompactViewport && (
         <div
           data-testid="activity-panel-shell"
           className="h-full shrink-0 overflow-hidden transition-[width] duration-[220ms] ease-pane"
@@ -1882,6 +2238,7 @@ export const WorkspaceView = (): ReactElement => {
           ) : (
             <AgentStatusPanel
               agentStatus={agentStatus}
+              cacheHistory={activePtyBackedPane?.cacheHistory ?? []}
               cwd={activeCwd}
               gitStatus={gitStatus}
               onOpenDiff={handleOpenDiff}
@@ -1894,7 +2251,7 @@ export const WorkspaceView = (): ReactElement => {
             />
           )}
         </div>
-      </div>
+      )}
 
       {/* Unsaved Changes Dialog — shows the CURRENTLY dirty file, not the
           destination the user is switching to. */}
@@ -1919,6 +2276,7 @@ export const WorkspaceView = (): ReactElement => {
       {isDragging && <div className="fixed inset-0 z-50 cursor-col-resize" />}
 
       {paneRenameNode}
+      {burnerTerminalNode}
 
       {/* Command Palette — workspace-scoped command dispatcher */}
       <CommandPalette

@@ -153,6 +153,9 @@ const createService = (): ControlledTerminalService => {
     onError: vi.fn(
       (): Promise<() => void> => Promise.resolve((): void => undefined)
     ),
+    onBurnerForeground: vi.fn(
+      (): Promise<() => void> => Promise.resolve((): void => undefined)
+    ),
     listSessions: vi.fn().mockResolvedValue({
       activeSessionId: null,
       sessions: [],
@@ -161,6 +164,8 @@ const createService = (): ControlledTerminalService => {
     reorderSessions: vi.fn().mockResolvedValue(undefined),
     updateSessionCwd: vi.fn().mockResolvedValue(undefined),
     setSessionActivityPanelCollapsed: vi.fn().mockResolvedValue(undefined),
+    killEphemeralPtys: vi.fn().mockResolvedValue([]),
+    setWorkspaceSessions: vi.fn().mockResolvedValue(undefined),
     emitData(sessionId: string, data: string, offsetStart?: number): void {
       const offset = offsetStart ?? nextOffsets.get(sessionId) ?? 0
       const byteLen = new TextEncoder().encode(data).length

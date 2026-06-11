@@ -97,15 +97,44 @@ describe('SidebarToggle', () => {
   test('variant=inset: className includes the recessed-well background', () => {
     renderToggle({ collapsed: false, variant: 'inset' })
 
-    expect(screen.getByRole('button')).toHaveClass('bg-[rgba(13,13,28,0.45)]')
+    expect(screen.getByRole('button')).toHaveClass(
+      'bg-surface-container-lowest/[0.45]'
+    )
+  })
+
+  test('variant=inset: keeps the button border transparent', () => {
+    renderToggle({ collapsed: false, variant: 'inset' })
+
+    const button = screen.getByRole('button')
+    expect(button).toHaveClass('border-transparent')
+    expect(button).not.toHaveClass('border-[rgba(74,68,79,0.35)]')
   })
 
   test('default variant (ghost): className omits the inset background', () => {
     renderToggle({ collapsed: false })
 
     expect(screen.getByRole('button')).not.toHaveClass(
-      'bg-[rgba(13,13,28,0.45)]'
+      'bg-surface-container-lowest/[0.45]'
     )
+  })
+
+  test('variant=inset, expanded (collapsed=false): lifts with the lighter primary hover', () => {
+    renderToggle({ collapsed: false, variant: 'inset' })
+
+    const button = screen.getByRole('button')
+    expect(button).toHaveClass('hover:bg-primary/[0.14]')
+    // Regression guard (#416): the expanded toggle deepened toward a dark navy
+    // well on hover, which read as "no change" against the now-transparent
+    // sidebar. It must lift lighter instead.
+    expect(button).not.toHaveClass('hover:bg-[rgba(13,13,28,0.72)]')
+  })
+
+  test('variant=inset, collapsed=true: uses the lighter primary hover background', () => {
+    renderToggle({ collapsed: true, variant: 'inset' })
+
+    const button = screen.getByRole('button')
+    expect(button).toHaveClass('hover:bg-primary/[0.14]')
+    expect(button).not.toHaveClass('hover:bg-[rgba(13,13,28,0.72)]')
   })
 
   test('size: sets the button width/height inline style', () => {

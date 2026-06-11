@@ -19,6 +19,10 @@ import { useAgentStatus } from '../agent-status/hooks/useAgentStatus'
 import { usePaneShortcuts } from '../terminal/hooks/usePaneShortcuts'
 import { setSidebarCollapsed } from './utils/sidebarCollapsedStore'
 import type { SessionList } from '../../bindings'
+import {
+  MockResizeObserver,
+  installMockResizeObserver,
+} from '../../test/mockResizeObserver'
 
 const workspaceTerminalMock = vi.hoisted(() => {
   const defaultSessionList = (): SessionList => ({
@@ -59,15 +63,47 @@ const workspaceTerminalMock = vi.hoisted(() => {
         // eslint-disable-next-line @typescript-eslint/no-empty-function
         Promise.resolve((): void => {})
     ),
+    onBurnerForeground: vi.fn(
+      (): Promise<() => void> => Promise.resolve((): void => undefined)
+    ),
     listSessions: vi.fn().mockResolvedValue(defaultSessionList()),
     setActiveSession: vi.fn().mockResolvedValue(undefined),
     reorderSessions: vi.fn().mockResolvedValue(undefined),
     updateSessionCwd: vi.fn().mockResolvedValue(undefined),
     setSessionActivityPanelCollapsed: vi.fn().mockResolvedValue(undefined),
+    killEphemeralPtys: vi.fn(),
+    setWorkspaceSessions: vi.fn().mockResolvedValue(undefined),
   }
 
   return { defaultSessionList, service }
 })
+
+const mockMatchMedia = (matches: boolean): (() => void) => {
+  const originalMatchMedia = window.matchMedia
+
+  Object.defineProperty(window, 'matchMedia', {
+    configurable: true,
+    writable: true,
+    value: vi.fn((query: string) => ({
+      matches,
+      media: query,
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(() => false),
+    })),
+  })
+
+  return (): void => {
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      writable: true,
+      value: originalMatchMedia,
+    })
+  }
+}
 
 // Mock TerminalPane to avoid xterm.js issues in tests. Surface `pane.cwd`
 // as a data attribute so tests can observe the agent-cwd → pane.cwd bridge
@@ -160,14 +196,57 @@ vi.mock('../agent-status/components/AgentStatusPanel', () => ({
   PANEL_WIDTH_PX: 280,
 }))
 
+const makeAgentStatus = (
+  sessionId: string | null,
+  overrides: Partial<AgentStatus> = {}
+): AgentStatus => ({
+  isActive: sessionId !== null,
+  agentExited: false,
+  agentType: sessionId === null ? null : 'claude-code',
+  modelId: null,
+  modelDisplayName: null,
+  version: null,
+  sessionId,
+  agentSessionId: null,
+  cwd: null,
+  contextWindow: null,
+  cost: null,
+  rateLimits: null,
+  numTurns: 0,
+  toolCalls: { total: 0, byType: {}, active: null },
+  recentToolCalls: [],
+  testRun: null,
+  ...overrides,
+})
+
 // Mock terminal service to return initial session data synchronously
 vi.mock('../terminal/services/terminalService', () => ({
   createTerminalService: vi.fn(() => workspaceTerminalMock.service),
 }))
 
+const createDomRect = (width: number, height: number): DOMRect =>
+  ({
+    width,
+    height,
+    top: 0,
+    left: 0,
+    right: width,
+    bottom: height,
+    x: 0,
+    y: 0,
+    toJSON: () => ({}),
+  }) as DOMRect
+
+const findObservedResizeObserver = (
+  element: HTMLElement
+): MockResizeObserver | undefined =>
+  MockResizeObserver.instances.find((instance) =>
+    instance.observe.mock.calls.some(([observed]) => observed === element)
+  )
+
 describe('WorkspaceView', () => {
-  // J2: the session-tab strip is gone — closing a session goes through the
-  // sidebar card's actions menu.
+  // Session switching/closing is sidebar-owned (the main session-tab strip
+  // was removed in the main-stage chrome). Close via the sidebar card menu.
   const removeSessionViaSidebar = async (
     user: ReturnType<typeof userEvent.setup>,
     name: string
@@ -234,6 +313,243 @@ describe('WorkspaceView', () => {
     expect(screen.getByTestId('terminal-zone')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Editor' })).toBeInTheDocument() // DockPanel
     expect(screen.getByTestId('agent-status-panel')).toBeInTheDocument()
+  })
+
+  test('keeps expanded macOS drag chrome clear of the fixed sidebar toggle', () => {
+    Object.defineProperty(navigator, 'platform', {
+      value: 'MacIntel',
+      configurable: true,
+    })
+
+    render(<WorkspaceView />)
+
+    const workspace = screen.getByTestId('workspace-view')
+    expect(
+      workspace.style.getPropertyValue('--workspace-sidebar-toggle-left')
+    ).toBe('82px')
+
+    expect(
+      workspace.style.getPropertyValue('--workspace-sidebar-toggle-size')
+    ).toBe('28px')
+
+    expect(
+      workspace.style.getPropertyValue('--workspace-sidebar-toggle-top')
+    ).toBe('7px')
+
+    expect(screen.getByTestId('sidebar-toggle-fixed')).toHaveClass(
+      'vf-app-no-drag'
+    )
+
+    expect(screen.getByTestId('sidebar-top-bar')).not.toHaveClass(
+      'vf-app-drag-region'
+    )
+
+    expect(screen.getByTestId('sidebar-top-bar-upper-drag-region')).toHaveClass(
+      'vf-app-drag-region'
+    )
+
+    expect(screen.getByTestId('sidebar-top-bar-toggle-clearance')).toHaveClass(
+      'vf-app-no-drag'
+    )
+
+    expect(screen.getByTestId('sidebar-top-bar-right-drag-region')).toHaveClass(
+      'vf-app-drag-region'
+    )
+  })
+
+  // The main-stage chrome removes the session-tab strip, which previously
+  // carried the macOS window-drag regions. Per the merge decision we keep
+  // main's SidebarTopBar drag region (covered by SidebarTopBar.test) and do
+  // not re-home the drag region onto the auto-hide top chrome, so the old
+  // "collapsed macOS tab chrome" test no longer applies.
+
+  test('uses a single-column workspace with a dismissible inert sidebar drawer on compact viewports', async () => {
+    const restoreMatchMedia = mockMatchMedia(true)
+    const user = userEvent.setup()
+    const frameCallbacks: FrameRequestCallback[] = []
+
+    const requestAnimationFrameSpy = vi
+      .spyOn(window, 'requestAnimationFrame')
+      .mockImplementation((callback: FrameRequestCallback): number => {
+        frameCallbacks.push(callback)
+
+        return frameCallbacks.length
+      })
+
+    try {
+      render(<WorkspaceView />)
+
+      await screen.findByTestId('terminal-pane-mock')
+
+      const workspace = screen.getByTestId('workspace-view')
+      expect(workspace.style.gridTemplateColumns).toBe('1fr')
+      expect(
+        screen.queryByTestId('activity-panel-shell')
+      ).not.toBeInTheDocument()
+      expect(screen.queryByTestId('sidebar-scrim')).not.toBeInTheDocument()
+      expect(screen.getByTestId('sidebar-toggle-fixed')).not.toHaveFocus()
+
+      await user.click(screen.getByTestId('sidebar-toggle-fixed'))
+
+      expect(screen.getByTestId('sidebar-scrim')).toBeInTheDocument()
+
+      const mainWorkspace = screen.getByTestId('workspace-main')
+      expect(mainWorkspace).toHaveAttribute('inert')
+      expect(mainWorkspace).toHaveAttribute('aria-hidden', 'true')
+
+      fireEvent.keyDown(document, { key: 'Escape' })
+
+      await waitFor(() => {
+        expect(screen.queryByTestId('sidebar-scrim')).not.toBeInTheDocument()
+      })
+      expect(mainWorkspace).not.toHaveAttribute('inert')
+      expect(mainWorkspace).not.toHaveAttribute('aria-hidden')
+
+      // jsdom does not evict focus from inert elements; simulate the browser
+      // by moving focus to body before the focus guard frame fires.
+      act(() => {
+        document.body.focus()
+      })
+
+      const lastFrame = frameCallbacks[frameCallbacks.length - 1]
+      if (lastFrame) {
+        act(() => {
+          lastFrame(16)
+        })
+      }
+
+      expect(screen.getByTestId('sidebar-toggle-fixed')).toHaveFocus()
+    } finally {
+      restoreMatchMedia()
+      requestAnimationFrameSpy.mockRestore()
+    }
+  })
+
+  test('compact sidebar shortcut from main workspace restores focus into the opened drawer', async () => {
+    const restoreMatchMedia = mockMatchMedia(true)
+    const frameCallbacks: FrameRequestCallback[] = []
+
+    const requestAnimationFrameSpy = vi
+      .spyOn(window, 'requestAnimationFrame')
+      .mockImplementation((callback: FrameRequestCallback): number => {
+        frameCallbacks.push(callback)
+
+        return frameCallbacks.length
+      })
+
+    try {
+      render(<WorkspaceView />)
+      await screen.findByTestId('terminal-pane-mock')
+
+      // Focus body so the active element is not a sidebar toggle
+      act(() => {
+        document.body.focus()
+      })
+      expect(document.activeElement).toBe(document.body)
+
+      // Fire the global sidebar shortcut (Ctrl+⇧B on Linux)
+      act(() => {
+        document.dispatchEvent(
+          new KeyboardEvent('keydown', {
+            key: 'b',
+            ctrlKey: true,
+            shiftKey: true,
+            bubbles: true,
+          })
+        )
+      })
+
+      // The modal drawer is now open
+      expect(screen.getByTestId('sidebar-scrim')).toBeInTheDocument()
+
+      // jsdom does not evict focus from inert elements; simulate the browser
+      // by moving focus to body before the focus guard frame fires.
+      act(() => {
+        document.body.focus()
+      })
+
+      // Flush the focus guard's animation frame
+      const lastFrame = frameCallbacks[frameCallbacks.length - 1]
+      if (lastFrame) {
+        act(() => {
+          lastFrame(16)
+        })
+      }
+
+      // Focus should land on the persistent sidebar toggle.
+      expect(screen.getByTestId('sidebar-toggle-fixed')).toHaveFocus()
+    } finally {
+      restoreMatchMedia()
+      requestAnimationFrameSpy.mockRestore()
+    }
+  })
+
+  test('compact sidebar shortcut from focused drawer content restores focus to the persistent toggle', async () => {
+    const restoreMatchMedia = mockMatchMedia(true)
+    const user = userEvent.setup()
+    const frameCallbacks: FrameRequestCallback[] = []
+
+    const requestAnimationFrameSpy = vi
+      .spyOn(window, 'requestAnimationFrame')
+      .mockImplementation((callback: FrameRequestCallback): number => {
+        frameCallbacks.push(callback)
+
+        return frameCallbacks.length
+      })
+
+    try {
+      render(<WorkspaceView />)
+      await screen.findByTestId('terminal-pane-mock')
+
+      // Open the compact sidebar via the persistent toggle.
+      await user.click(screen.getByTestId('sidebar-toggle-fixed'))
+      expect(screen.getByTestId('sidebar-scrim')).toBeInTheDocument()
+
+      // Move focus into the drawer content (Settings footer), not the toggle.
+      const settingsButton = screen.getByRole('button', {
+        name: /^Settings/,
+      })
+      act(() => {
+        settingsButton.focus()
+      })
+      expect(settingsButton).toHaveFocus()
+
+      // Fire the global sidebar shortcut to close the drawer
+      act(() => {
+        document.dispatchEvent(
+          new KeyboardEvent('keydown', {
+            key: 'b',
+            ctrlKey: true,
+            shiftKey: true,
+            bubbles: true,
+          })
+        )
+      })
+
+      await waitFor(() => {
+        expect(screen.queryByTestId('sidebar-scrim')).not.toBeInTheDocument()
+      })
+
+      // jsdom does not evict focus from inert elements; simulate the browser
+      // by moving focus to body before the focus guard frame fires.
+      act(() => {
+        document.body.focus()
+      })
+
+      // Flush the focus guard's animation frame
+      const lastFrame = frameCallbacks[frameCallbacks.length - 1]
+      if (lastFrame) {
+        act(() => {
+          lastFrame(16)
+        })
+      }
+
+      // Focus should land on the persistent sidebar toggle.
+      expect(screen.getByTestId('sidebar-toggle-fixed')).toHaveFocus()
+    } finally {
+      restoreMatchMedia()
+      requestAnimationFrameSpy.mockRestore()
+    }
   })
 
   test('wires usePaneShortcuts to session-manager handlers', () => {
@@ -315,16 +631,9 @@ describe('WorkspaceView', () => {
 
     render(<WorkspaceView />)
 
-    // J2: the main session-tab strip is gone — closing goes through the
-    // sidebar card's actions menu instead.
-    const sessionRow = await screen.findByRole('button', { name: 'session 1' })
+    const activeRow = await screen.findByRole('button', { name: 'session 1' })
 
-    await user.click(
-      within(sessionRow.closest('li')!).getByRole('button', {
-        name: 'Session actions',
-      })
-    )
-    await user.click(screen.getByRole('button', { name: 'Remove' }))
+    await removeSessionViaSidebar(user, 'session 1')
 
     expect(hasUnsavedChanges).toHaveBeenCalledWith('sess-1')
 
@@ -334,8 +643,7 @@ describe('WorkspaceView', () => {
 
     expect(dialog).toHaveTextContent(/before closing this session/i)
     expect(within(dialog).getByText('src/current.ts')).toBeInTheDocument()
-    // The session stays active (highlighted card) while the dialog blocks.
-    expect(sessionRow.closest('li')!.className).toContain(
+    expect(activeRow.closest('li')!.className).toContain(
       'bg-[rgba(203,166,247,0.13)]'
     )
     expect(releaseScope).not.toHaveBeenCalled()
@@ -818,14 +1126,9 @@ describe('WorkspaceView', () => {
 
     render(<WorkspaceView />)
 
-    const sessionRow = await screen.findByRole('button', { name: 'session 1' })
+    await screen.findByRole('button', { name: 'session 1' })
 
-    await user.click(
-      within(sessionRow.closest('li')!).getByRole('button', {
-        name: 'Session actions',
-      })
-    )
-    await user.click(screen.getByRole('button', { name: 'Remove' }))
+    await removeSessionViaSidebar(user, 'session 1')
 
     expect(hasUnsavedChanges).toHaveBeenCalledWith('sess-1')
     await waitFor(() => {
@@ -833,14 +1136,14 @@ describe('WorkspaceView', () => {
     })
   })
 
-  test('applies correct grid layout with 2 columns (dynamic sidebar width)', () => {
+  test('applies correct grid layout with 3 columns (dynamic sidebar width)', () => {
     render(<WorkspaceView />)
 
     const container = screen.getByTestId('workspace-view')
 
     expect(container).toHaveClass('grid')
-    // Main-stage handoff: sidebar (auto) | floating stage (1fr).
-    expect(container.style.gridTemplateColumns).toBe('auto 1fr')
+    // VIM-76: icon rail removed — sidebar (auto) | main (1fr) | activity (auto).
+    expect(container.style.gridTemplateColumns).toBe('auto 1fr auto')
 
     expect(container.style.getPropertyValue('--workspace-sidebar-width')).toBe(
       '272px'
@@ -855,21 +1158,23 @@ describe('WorkspaceView', () => {
     expect(container).toHaveClass('h-screen')
   })
 
-  test('renders sidebar top-bar utility buttons (no account avatar)', () => {
+  test('renders Settings in the sidebar footer and keeps utility buttons out of the top bar', () => {
     render(<WorkspaceView />)
 
-    // VIM-76: utilities moved from the icon rail to the sidebar top bar.
+    // VIM-76: icon rail removed. VIM-66 follow-up keeps traffic-light chrome
+    // clear by moving Settings into the footer.
     const topBar = screen.getByTestId('sidebar-top-bar')
+    const footer = screen.getByTestId('sidebar-footer-wrapper')
 
     expect(within(topBar).queryByRole('img', { name: 'Account' })).toBeNull()
 
     expect(
-      within(topBar).getByRole('button', { name: 'Command Palette' })
-    ).toBeInTheDocument()
+      within(topBar).queryByRole('button', { name: 'Command Palette' })
+    ).not.toBeInTheDocument()
 
     // Settings aria-label is "Settings — coming (see issue #252)".
     expect(
-      within(topBar).getByRole('button', { name: /^Settings/ })
+      within(footer).getByRole('button', { name: /^Settings/ })
     ).toHaveAttribute('aria-disabled', 'true')
   })
 
@@ -884,13 +1189,15 @@ describe('WorkspaceView', () => {
     ).toBeInTheDocument()
   })
 
-  test('renders no session-tab strip in the main view (J2)', async () => {
+  test('no main session-tab strip — the sidebar reflects the active session', async () => {
     render(<WorkspaceView />)
 
-    await screen.findByRole('button', { name: 'session 1' })
+    const row = await screen.findByRole('button', { name: 'session 1' })
 
     expect(screen.queryByTestId('session-tabs')).toBeNull()
-    expect(screen.queryByRole('tablist', { name: 'Open sessions' })).toBeNull()
+    expect(row.closest('li')!.className).toContain(
+      'bg-[rgba(203,166,247,0.13)]'
+    )
   })
 
   test('renders AgentStatusPanel', () => {
@@ -900,17 +1207,18 @@ describe('WorkspaceView', () => {
     expect(panel).toBeInTheDocument()
   })
 
-  test('renders utility actions in the sidebar top bar', () => {
+  test('renders Settings in the sidebar footer', () => {
     render(<WorkspaceView />)
 
     const topBar = screen.getByTestId('sidebar-top-bar')
+    const footer = screen.getByTestId('sidebar-footer-wrapper')
 
     expect(
-      within(topBar).getByRole('button', { name: 'Command Palette' })
-    ).toBeInTheDocument()
+      within(topBar).queryByRole('button', { name: 'Command Palette' })
+    ).not.toBeInTheDocument()
 
     expect(
-      within(topBar).getByRole('button', { name: /^Settings/ })
+      within(footer).getByRole('button', { name: /^Settings/ })
     ).toBeInTheDocument()
   })
 
@@ -980,12 +1288,14 @@ describe('WorkspaceView', () => {
     expect(screen.getByTestId('files-view')).not.toHaveClass('hidden')
   })
 
-  test('Sidebar footer slot is suppressed in WorkspaceView', () => {
+  test('Sidebar footer seats Settings at the bottom of WorkspaceView', () => {
     render(<WorkspaceView />)
 
     expect(
-      screen.queryByTestId('sidebar-footer-wrapper')
-    ).not.toBeInTheDocument()
+      within(screen.getByTestId('sidebar-footer-wrapper')).getByRole('button', {
+        name: /^Settings/,
+      })
+    ).toBeInTheDocument()
   })
 
   test('bottom-pane resize handle is gone in WorkspaceView', () => {
@@ -1071,13 +1381,15 @@ describe('WorkspaceView', () => {
     await screen.findByRole('button', { name: 'session 2' })
   })
 
-  test('opens command palette from the top-bar command button', async () => {
+  test('opens command palette from the status-bar command button', async () => {
     const user = userEvent.setup()
     render(<WorkspaceView />)
 
     expect(screen.queryByRole('dialog', { name: 'Command palette' })).toBeNull()
 
-    await user.click(screen.getByRole('button', { name: 'Command Palette' }))
+    await user.click(
+      screen.getByRole('button', { name: /open command palette/i })
+    )
 
     expect(
       screen.getByRole('dialog', { name: 'Command palette' })
@@ -1220,11 +1532,28 @@ describe('WorkspaceView', () => {
   test('main workspace area uses flex-col layout', () => {
     render(<WorkspaceView />)
 
-    // Main-stage handoff: the main column is the semantic <main> inside the
-    // floating stage (stage itself is a flex row of main + activity panel).
-    const mainWorkspace = screen.getByRole('main', { name: 'Main workspace' })
+    const workspaceView = screen.getByTestId('workspace-view')
+
+    // VIM-76: icon rail removed — 2nd grid child = main wrapper (after the
+    // sidebar wrapper, before the activity panel).
+    const mainWorkspace = workspaceView.children[1] as HTMLElement
     expect(mainWorkspace).toHaveClass('flex')
     expect(mainWorkspace).toHaveClass('flex-col')
+  })
+
+  test('main workspace uses a rounded sheet edge while the sidebar is visible', () => {
+    render(<WorkspaceView />)
+
+    const workspaceView = screen.getByTestId('workspace-view')
+    const mainWorkspace = workspaceView.children[1] as HTMLElement
+
+    expect(mainWorkspace).toHaveClass('bg-background')
+    expect(mainWorkspace.style.borderTopLeftRadius).toBe('16px')
+    expect(mainWorkspace.style.borderBottomLeftRadius).toBe('16px')
+    // No drop shadow: it would read as a dark gradient seam against the
+    // transparent sidebar. The rounded corners alone carry the sheet edge.
+    expect(mainWorkspace.style.boxShadow).toBe('')
+    expect(mainWorkspace.style.transition).toContain('border-radius 220ms')
   })
 
   test('applies overflow-hidden to prevent scrollbars', () => {
@@ -1275,13 +1604,13 @@ describe('WorkspaceView', () => {
     expect(screen.getByRole('button', { name: 'Editor' })).toBeInTheDocument()
   })
 
-  test('grid columns: sidebar auto (drawer), floating stage 1fr', () => {
+  test('grid columns: sidebar auto (drawer), main 1fr, activity auto', () => {
     render(<WorkspaceView />)
 
     const container = screen.getByTestId('workspace-view')
 
-    // Main-stage handoff: main + activity live inside the stage column.
-    expect(container.style.gridTemplateColumns).toBe('auto 1fr')
+    // VIM-76: icon rail removed — three columns sidebar | main | activity.
+    expect(container.style.gridTemplateColumns).toBe('auto 1fr auto')
 
     // The resizable width still lives in the CSS var (now applied to the
     // sidebar shell instead of the grid track) so the drawer can animate.
@@ -1312,9 +1641,16 @@ describe('WorkspaceView', () => {
       const { rerender } = render(<WorkspaceView />)
 
       const workspace = screen.getByTestId('workspace-view')
+      const sidebarShell = screen.getByTestId('workspace-sidebar-shell')
+      const mainWorkspace = workspace.children[1] as HTMLElement
       const handle = screen.getByTestId('sidebar-resize-handle')
 
+      expect(sidebarShell.className).toContain('transition-[width]')
+
       fireEvent.mouseDown(handle, { clientX: 200 })
+
+      expect(sidebarShell.className).not.toContain('transition-[width]')
+      expect(mainWorkspace.style.transition).toBe('none')
 
       fireEvent.mouseMove(document, { clientX: 300 })
 
@@ -1349,6 +1685,133 @@ describe('WorkspaceView', () => {
       expect(handle).toHaveAttribute('aria-valuenow', '372')
     } finally {
       requestAnimationFrameSpy.mockRestore()
+    }
+  })
+
+  test('caps the sidebar resize range so the card + new-session row fit with even padding', () => {
+    render(<WorkspaceView />)
+
+    const handle = screen.getByTestId('sidebar-resize-handle')
+    expect(handle).toHaveAttribute('aria-valuemin', '272')
+    expect(handle).toHaveAttribute('aria-valuemax', '384')
+  })
+
+  test('collapses the sidebar when drag ends below the default minimum width', async () => {
+    render(<WorkspaceView />)
+
+    const workspace = screen.getByTestId('workspace-view')
+    const handle = screen.getByTestId('sidebar-resize-handle')
+
+    expect(workspace.style.getPropertyValue('--workspace-sidebar-width')).toBe(
+      '272px'
+    )
+
+    fireEvent.mouseDown(handle, { clientX: 200 })
+    fireEvent.mouseMove(document, { clientX: 190 })
+    fireEvent.mouseUp(document)
+
+    await waitFor(() => {
+      expect(screen.queryByTestId('sidebar-resize-handle')).toBeNull()
+    })
+
+    expect(screen.getByTestId('sidebar-toggle-fixed')).toBeInTheDocument()
+    expect(
+      screen.getByTestId('sidebar-top-bar-placeholder')
+    ).toBeInTheDocument()
+
+    expect(
+      screen.getByTestId('sidebar-top-bar-placeholder')
+    ).toBeInTheDocument()
+
+    const sidebarShell = screen.getByTestId('workspace-sidebar-shell')
+    const toggleSurface = screen.getByTestId('sidebar-toggle-slide-surface')
+    const mainWorkspace = workspace.children[1] as HTMLElement
+
+    expect(sidebarShell.className).toContain('transition-[width]')
+    expect(sidebarShell).toHaveStyle({ width: '0px' })
+    expect(toggleSurface).toHaveStyle({ width: '0px' })
+    expect(toggleSurface.className).toContain('bg-transparent')
+    expect(toggleSurface.className).not.toContain('bg-surface-container-low')
+    expect(screen.getByTestId('sidebar-top-bar-placeholder')).toHaveClass(
+      'bg-transparent'
+    )
+    expect(mainWorkspace.style.borderTopLeftRadius).toBe('0')
+    expect(mainWorkspace.style.borderBottomLeftRadius).toBe('0')
+  })
+
+  test('collapses the sidebar below the capped main-column threshold on large workspaces', async () => {
+    const originalResizeObserver = globalThis.ResizeObserver
+    installMockResizeObserver()
+
+    try {
+      render(<WorkspaceView />)
+
+      const workspace = screen.getByTestId('workspace-view')
+      const mainWorkspace = workspace.children[1] as HTMLElement
+      vi.spyOn(workspace, 'getBoundingClientRect').mockReturnValue(
+        createDomRect(1600, 900)
+      )
+
+      const observer = findObservedResizeObserver(mainWorkspace)
+      if (!observer) {
+        throw new Error('Expected main workspace ResizeObserver')
+      }
+
+      act(() => {
+        observer.trigger({ width: 499, height: 700 })
+      })
+
+      await waitFor(() => {
+        expect(screen.queryByTestId('sidebar-resize-handle')).toBeNull()
+      })
+
+      expect(screen.getByTestId('sidebar-toggle-fixed')).toBeInTheDocument()
+      expect(
+        screen.getByTestId('sidebar-top-bar-placeholder')
+      ).toBeInTheDocument()
+    } finally {
+      globalThis.ResizeObserver = originalResizeObserver
+    }
+  })
+
+  test('keeps the sidebar open until the lower-resolution main-column threshold is crossed', async () => {
+    const originalResizeObserver = globalThis.ResizeObserver
+    installMockResizeObserver()
+
+    try {
+      render(<WorkspaceView />)
+
+      const workspace = screen.getByTestId('workspace-view')
+      const mainWorkspace = workspace.children[1] as HTMLElement
+      vi.spyOn(workspace, 'getBoundingClientRect').mockReturnValue(
+        createDomRect(900, 700)
+      )
+
+      const observer = findObservedResizeObserver(mainWorkspace)
+      if (!observer) {
+        throw new Error('Expected main workspace ResizeObserver')
+      }
+
+      act(() => {
+        observer.trigger({ width: 420, height: 700 })
+      })
+
+      expect(screen.getByTestId('sidebar-resize-handle')).toBeInTheDocument()
+
+      act(() => {
+        observer.trigger({ width: 359, height: 700 })
+      })
+
+      await waitFor(() => {
+        expect(screen.queryByTestId('sidebar-resize-handle')).toBeNull()
+      })
+
+      expect(screen.getByTestId('sidebar-toggle-fixed')).toBeInTheDocument()
+      expect(
+        screen.getByTestId('sidebar-top-bar-placeholder')
+      ).toBeInTheDocument()
+    } finally {
+      globalThis.ResizeObserver = originalResizeObserver
     }
   })
 
@@ -1403,25 +1866,6 @@ describe('WorkspaceView', () => {
     expect(
       zone.compareDocumentPosition(terminal) & Node.DOCUMENT_POSITION_FOLLOWING
     ).toBeTruthy()
-  })
-
-  test('bottom bar dock toggle closes and reopens the dock (J8)', async () => {
-    const user = userEvent.setup()
-    render(<WorkspaceView />)
-
-    expect(screen.getByTestId('dock-panel')).toBeInTheDocument()
-    const toggle = screen.getByTestId('status-bar-dock-toggle')
-    expect(toggle).toHaveAttribute('aria-pressed', 'true')
-
-    await user.click(toggle)
-
-    expect(screen.queryByTestId('dock-panel')).toBeNull()
-    expect(toggle).toHaveAttribute('aria-pressed', 'false')
-
-    await user.click(toggle)
-
-    expect(screen.getByTestId('dock-panel')).toBeInTheDocument()
-    expect(toggle).toHaveAttribute('aria-pressed', 'true')
   })
 
   test('mounts StatusBar inside the main column (right of the sidebar)', () => {
@@ -1678,6 +2122,86 @@ describe('WorkspaceView', () => {
       isActive: true,
       agentType: 'claude-code',
     })
+  })
+
+  test('forwards real rate-limit usage to the sidebar agent card', async () => {
+    vi.mocked(useAgentStatus).mockImplementation(
+      (sessionId: string | null): AgentStatus =>
+        makeAgentStatus(sessionId, {
+          modelDisplayName: sessionId === null ? null : 'Claude Sonnet',
+          rateLimits:
+            sessionId === null
+              ? null
+              : {
+                  fiveHour: {
+                    usedPercentage: 12.4,
+                    resetsAt: 1_776_000_000_000,
+                  },
+                  sevenDay: {
+                    usedPercentage: 34.4,
+                    resetsAt: 1_776_086_400_000,
+                  },
+                },
+        })
+    )
+
+    render(<WorkspaceView />)
+
+    await screen.findByRole('button', { name: 'session 1' })
+
+    expect(await screen.findByText('5-hour Session')).toBeInTheDocument()
+    expect(screen.getByText('12%')).toBeInTheDocument()
+    expect(screen.getByText('Weekly Usage')).toBeInTheDocument()
+    expect(screen.getByText('34%')).toBeInTheDocument()
+  })
+
+  test('does not render empty rate-limit placeholders as sidebar usage', async () => {
+    vi.mocked(useAgentStatus).mockImplementation(
+      (sessionId: string | null): AgentStatus =>
+        makeAgentStatus(sessionId, {
+          modelDisplayName: sessionId === null ? null : 'Claude Sonnet',
+          rateLimits:
+            sessionId === null
+              ? null
+              : {
+                  fiveHour: { usedPercentage: 0, resetsAt: 0 },
+                  sevenDay: { usedPercentage: 0, resetsAt: 0 },
+                },
+        })
+    )
+
+    render(<WorkspaceView />)
+
+    await screen.findByRole('button', { name: 'session 1' })
+    await screen.findByText('Claude Sonnet')
+
+    expect(screen.queryByText('5-hour Session')).not.toBeInTheDocument()
+    expect(screen.queryByText('Weekly Usage')).not.toBeInTheDocument()
+  })
+
+  test('preserves real zero rate-limit usage when reset time is known', async () => {
+    vi.mocked(useAgentStatus).mockImplementation(
+      (sessionId: string | null): AgentStatus =>
+        makeAgentStatus(sessionId, {
+          modelDisplayName: sessionId === null ? null : 'Claude Sonnet',
+          rateLimits:
+            sessionId === null
+              ? null
+              : {
+                  fiveHour: {
+                    usedPercentage: 0,
+                    resetsAt: 1_776_000_000_000,
+                  },
+                },
+        })
+    )
+
+    render(<WorkspaceView />)
+
+    await screen.findByRole('button', { name: 'session 1' })
+
+    expect(await screen.findByText('5-hour Session')).toBeInTheDocument()
+    expect(screen.getByText('0%')).toBeInTheDocument()
   })
 
   test('mirrors agentStatus.cwd into the active pane.cwd', async () => {

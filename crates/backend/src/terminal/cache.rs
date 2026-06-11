@@ -6,6 +6,7 @@
 //! In-memory mirror (Mutex<SessionCache>) avoids re-reading the file on
 //! every IPC call.
 
+use super::types::PaneGrouping;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
@@ -24,6 +25,9 @@ pub struct CachedSession {
     /// Per-pane UI preference for the right activity panel.
     #[serde(default)]
     pub activity_panel_collapsed: Option<bool>,
+    /// Shell path that was originally spawned for this session.
+    #[serde(default)]
+    pub last_shell: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -35,6 +39,14 @@ pub struct SessionCacheData {
     pub session_order: Vec<String>,
     #[serde(default)]
     pub sessions: HashMap<String, CachedSession>,
+    /// Workspace grouping per PTY id (`pty_id -> PaneGrouping`). Lets restore
+    /// reconstruct the original multi-pane layout instead of fragmenting each
+    /// PTY into its own single-pane session. Kept as a sibling map rather than
+    /// a `CachedSession` field so per-PTY lifecycle state and workspace
+    /// metadata stay separable. Missing (legacy cache) -> empty -> every PTY
+    /// restores single-pane, the pre-grouping behavior.
+    #[serde(default)]
+    pub groupings: HashMap<String, PaneGrouping>,
 }
 
 impl Default for SessionCacheData {
@@ -44,6 +56,7 @@ impl Default for SessionCacheData {
             active_session_id: None,
             session_order: Vec::new(),
             sessions: HashMap::new(),
+            groupings: HashMap::new(),
         }
     }
 }
@@ -201,10 +214,12 @@ impl SessionCache {
     /// Held under the same `mutate` lock + atomic disk flush as every other
     /// state change, so a concurrent IPC mutation can't race the wipe.
     pub fn clear_all(&self) -> Result<(), String> {
+        // workspace-layouts.json is a separate store (WorkspaceLayoutCache) and is intentionally NOT wiped here.
         self.mutate(|d| {
             d.sessions.clear();
             d.session_order.clear();
             d.active_session_id = None;
+            d.groupings.clear();
             Ok(())
         })
     }
@@ -282,6 +297,7 @@ mod tests {
                         exited: false,
                         last_exit_code: None,
                         activity_panel_collapsed: None,
+                        last_shell: None,
                     },
                 );
                 Ok(())
@@ -521,6 +537,7 @@ mod tests {
                         exited: false,
                         last_exit_code: None,
                         activity_panel_collapsed: None,
+                        last_shell: None,
                     },
                 );
                 d.sessions.insert(
@@ -531,6 +548,7 @@ mod tests {
                         exited: true,
                         last_exit_code: None,
                         activity_panel_collapsed: None,
+                        last_shell: None,
                     },
                 );
                 Ok(())
@@ -578,6 +596,7 @@ mod tests {
                         exited: false,
                         last_exit_code: None,
                         activity_panel_collapsed: Some(true),
+                        last_shell: None,
                     },
                 );
                 Ok(())

@@ -37,6 +37,9 @@ export interface Pane {
   /** Per-pane working directory. */
   cwd: string
 
+  /** Resolved shell path for shell panes, e.g. `/bin/zsh`. */
+  shell?: string
+
   /** Detected agent CLI for this pane. */
   agentType: 'claude-code' | 'codex' | 'aider' | 'generic'
 
@@ -85,6 +88,9 @@ export interface Pane {
   /** OS process id of the PTY. */
   pid?: number
 
+  /** Per-pane token-cache hit-rate trend (percent readings) for the sparkline; hydrated by ptyId. */
+  cacheHistory?: number[]
+
   /** Exactly one pane per session has `active === true`. */
   active: boolean
 }
@@ -96,11 +102,6 @@ export interface Session {
   status: SessionStatus
   /** Stable session/project cwd used as the baseline for new panes. */
   workingDirectory: string
-  /** Stable native-browser owner key. Defaults to the first shell PTY for
-   *  older in-memory sessions, but once set it survives shell pane restarts
-   *  and close/reorder operations so WebContentsView partition/control keys
-   *  stay stable for the lifetime of the Vimeflow session. */
-  browserSessionId?: string
   /** Derived from `getActivePane(session).agentType`; retained for existing chrome. */
   agentType: 'claude-code' | 'codex' | 'aider' | 'generic'
   /** Per-session canvas layout. Default 'single' in step 5a. */

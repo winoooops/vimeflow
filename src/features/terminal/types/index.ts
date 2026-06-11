@@ -76,6 +76,8 @@ export interface PTYSpawnParams {
    * created a `.vimeflow/sessions/` tree that showed up in `git status`.
    */
   enableAgentBridge?: boolean
+  /** Ephemeral (burner) PTY: skip the session cache and the agent-bridge dir. */
+  ephemeral?: boolean
 }
 
 /**
@@ -88,6 +90,8 @@ export interface PTYSpawnResult {
   pid: number
   /** Resolved working directory (absolute path from Rust) — Rust always returns this */
   cwd: string
+  /** Resolved shell path used for this PTY. */
+  shell: string
 }
 
 /**

@@ -1,4 +1,4 @@
-import { useRef, type ReactElement } from 'react'
+import { useCallback, useRef, type ReactElement } from 'react'
 import { motion } from 'framer-motion'
 import type { Session, SessionCloseResult } from '../types'
 import { Card } from './Card'
@@ -32,17 +32,19 @@ export const List = ({
   const recentGroup = sessions.filter((s) => !hasLivePane(s.panes))
 
   // Mirror `recentGroup` into a ref synchronously on every render so
-  // Framer Motion's `onReorder` callback (which can be invoked mid-drag
-  // across multiple frames) reads the current value rather than the
-  // closure-captured one. Without this ref, a session that transitions
-  // to `completed` mid-drag re-renders Sidebar with a fresh recentGroup
-  // but Framer Motion may keep dispatching the original onReorder
-  // closure that captured the pre-transition recentGroup; the resulting
-  // `[...reordered, ...staleRecentGroup]` would either drop or
-  // duplicate the newly-completed session for one frame, and a
-  // session-store that persists eagerly could write the stale array.
+  // Framer Motion's `onReorder` callback reads the current Recent section
+  // rather than a closure-captured one. Without this ref, a session that
+  // transitions to `completed` mid-drag could be appended from a stale
+  // Recent snapshot when the reordered Active subset is committed.
   const recentGroupRef = useRef(recentGroup)
   recentGroupRef.current = recentGroup
+
+  const handleActiveReorder = useCallback(
+    (reordered: Session[]): void => {
+      onReorderSessions?.(mediateReorder(reordered, recentGroupRef.current))
+    },
+    [onReorderSessions]
+  )
 
   // Mirror SessionTabs.handleClose using the shared visible-order helper.
   // useSessionManager.removeSession uses `flushSync` internally to apply
@@ -66,33 +68,40 @@ export const List = ({
   // re-render, then lands focus on the new active row's overlay
   // activation button. Mirrors SessionTabs.handleClose §4.4.3 behavior
   // for keyboard users who navigate via group-focus-within.
-  const handleRemoveSession = onRemoveSession
-    ? (id: string): void => {
-        const nextId =
-          id === activeSessionId
-            ? pickNextVisibleSessionId(sessions, id, activeSessionId)
-            : undefined
-        const didRemove = onRemoveSession(id)
-        if (didRemove === false) {
-          return
-        }
-
-        if (nextId !== undefined) {
-          onSessionClick(nextId)
-          queueMicrotask(() => {
-            // Mirror SessionTabs' `getElementById('session-tab-...')`
-            // pattern: the overlay button carries
-            // `id="sidebar-activate-${session.id}"`, so id-based lookup
-            // is both consistent across the two strips AND avoids the
-            // CSS-attribute-selector escaping path entirely. A session
-            // id containing `"` or `]` would otherwise corrupt the
-            // selector and either silently fail (`querySelector` →
-            // null) or throw `SyntaxError`.
-            document.getElementById(`sidebar-activate-${nextId}`)?.focus()
-          })
-        }
+  const handleRemoveSession = useCallback(
+    (id: string): void => {
+      if (!onRemoveSession) {
+        return
       }
-    : undefined
+
+      const nextId =
+        id === activeSessionId
+          ? pickNextVisibleSessionId(sessions, id, activeSessionId)
+          : undefined
+      const didRemove = onRemoveSession(id)
+      if (didRemove === false) {
+        return
+      }
+
+      if (nextId !== undefined) {
+        onSessionClick(nextId)
+        queueMicrotask(() => {
+          // Mirror SessionTabs' `getElementById('session-tab-...')`
+          // pattern: the overlay button carries
+          // `id="sidebar-activate-${session.id}"`, so id-based lookup
+          // is both consistent across the two strips AND avoids the
+          // CSS-attribute-selector escaping path entirely. A session
+          // id containing `"` or `]` would otherwise corrupt the
+          // selector and either silently fail (`querySelector` →
+          // null) or throw `SyntaxError`.
+          document.getElementById(`sidebar-activate-${nextId}`)?.focus()
+        })
+      }
+    },
+    [activeSessionId, onRemoveSession, onSessionClick, sessions]
+  )
+
+  const cardRemoveSession = onRemoveSession ? handleRemoveSession : undefined
 
   return (
     <>
@@ -111,19 +120,7 @@ export const List = ({
         <Group
           variant="active"
           sessions={activeGroup}
-          onReorder={(reordered) => {
-            // Preserve Recent ordering — only the Active subset reorders.
-            // Read recentGroup via the ref (synced every render in the
-            // outer component body) so a mid-drag status transition that
-            // re-renders Sidebar can't leave Framer Motion holding a
-            // stale closure that drops or duplicates the just-transitioned
-            // session. The concat lives in `mediateReorder` (with its own
-            // unit test) so the production path and the test path share
-            // one implementation.
-            onReorderSessions?.(
-              mediateReorder(reordered, recentGroupRef.current)
-            )
-          }}
+          onReorder={handleActiveReorder}
           emptyState={
             <li
               data-testid="active-empty"
@@ -140,7 +137,7 @@ export const List = ({
               variant="active"
               isActive={session.id === activeSessionId}
               onClick={onSessionClick}
-              onRemove={handleRemoveSession}
+              onRemove={cardRemoveSession}
               onRename={onRenameSession}
             />
           ))}
@@ -157,7 +154,7 @@ export const List = ({
                   variant="recent"
                   isActive={session.id === activeSessionId}
                   onClick={onSessionClick}
-                  onRemove={handleRemoveSession}
+                  onRemove={cardRemoveSession}
                   onRename={onRenameSession}
                 />
               ))}

@@ -70,9 +70,15 @@ test('isTerminalStatus / isLiveStatus partition the union', () => {
   expect(isLiveStatus('idle')).toBe(true)
 })
 
-test('deriveShellSessionStatus derives from shell panes, ignoring browser panes', () => {
+test('deriveShellSessionStatus keeps a live browser session running', () => {
   expect(
     deriveShellSessionStatus([pane('completed'), browserPane('running')])
+  ).toBe('running')
+})
+
+test('deriveShellSessionStatus derives from shell panes when browsers are terminal', () => {
+  expect(
+    deriveShellSessionStatus([pane('completed'), browserPane('completed')])
   ).toBe('completed')
 })
 

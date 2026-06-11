@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, type ReactElement } from 'react'
+import { memo, useState, useRef, useEffect, type ReactElement } from 'react'
 import { Reorder } from 'framer-motion'
 import type { Session } from '../types'
 import { useRenameState } from '../hooks/useRenameState'
@@ -14,6 +14,8 @@ export interface CardProps {
   onClick: (id: string) => void
   onRemove?: (id: string) => void
   onRename?: (id: string, name: string) => void
+  onReorderDragStart?: () => void
+  onReorderDragEnd?: () => void
 }
 
 // Status → flat colored text (no chip pill, no dot), per handoff §3.3.
@@ -53,13 +55,15 @@ const MenuRow = ({
   </button>
 )
 
-export const Card = ({
+const CardComponent = ({
   session,
   variant,
   isActive = false,
   onClick,
   onRemove = undefined,
   onRename = undefined,
+  onReorderDragStart = undefined,
+  onReorderDragEnd = undefined,
 }: CardProps): ReactElement => {
   const {
     isEditing,
@@ -72,6 +76,7 @@ export const Card = ({
   } = useRenameState(session, onRename)
   const [menuOpen, setMenuOpen] = useState(false)
   const triggerRef = useRef<HTMLButtonElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
 
   // Close the actions menu on Escape and return focus to the trigger button.
   useEffect(() => {
@@ -90,6 +95,26 @@ export const Card = ({
     document.addEventListener('keydown', handler)
 
     return (): void => document.removeEventListener('keydown', handler)
+  }, [menuOpen])
+
+  // Close the actions menu when clicking outside the kebab/menu container.
+  useEffect(() => {
+    if (!menuOpen) {
+      return
+    }
+
+    const handler = (e: MouseEvent): void => {
+      if (
+        menuRef.current !== null &&
+        !menuRef.current.contains(e.target as Node)
+      ) {
+        setMenuOpen(false)
+      }
+    }
+
+    document.addEventListener('mousedown', handler)
+
+    return (): void => document.removeEventListener('mousedown', handler)
   }, [menuOpen])
 
   const subtitleText = subtitle(session)
@@ -222,9 +247,12 @@ export const Card = ({
 
       {/* Kebab — sibling of the activation button (not nested), absolutely
           positioned so the row height stays constant; revealed on hover/focus
-          and kept mounted so keyboard users can reach it. */}
-      {hasActions && (
+          and kept mounted so keyboard users can reach it. Suppressed while
+          renaming: focusing the input would otherwise reveal it (via
+          group-focus-within) right on top of the full-width rename field. */}
+      {hasActions && !isEditing && (
         <div
+          ref={menuRef}
           className={`pointer-events-auto absolute right-2 top-[7px] opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 ${
             menuOpen ? 'opacity-100' : ''
           }`}
@@ -299,6 +327,12 @@ export const Card = ({
           zIndex: 50,
         }}
         layout="position"
+        onDragStart={() => {
+          onReorderDragStart?.()
+        }}
+        onDragEnd={() => {
+          onReorderDragEnd?.()
+        }}
       >
         {inner}
       </Reorder.Item>
@@ -316,3 +350,6 @@ export const Card = ({
     </li>
   )
 }
+
+export const Card = memo(CardComponent)
+Card.displayName = 'Card'

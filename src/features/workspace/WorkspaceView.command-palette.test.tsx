@@ -51,10 +51,8 @@ vi.mock('../files/services/fileSystemService')
 vi.mock('../terminal/services/terminalService')
 vi.mock('../terminal/hooks/usePaneShortcuts')
 
-// Mock child components to keep test focused on integration. The Sidebar mock
-// renders its `topBar` slot so the real SidebarTopBar (VIM-76: home of the
-// Command Palette button that replaced the old icon rail) mounts and its
-// onCommand wiring stays under test.
+// Mock child components to keep test focused on command dispatch while still
+// rendering sidebar chrome needed by WorkspaceView.
 vi.mock('../../components/sidebar/Sidebar', () => ({
   Sidebar: ({ topBar = undefined }: { topBar?: ReactNode }): ReactElement => (
     <div data-testid="sidebar">{topBar}</div>
@@ -177,6 +175,7 @@ describe('WorkspaceView - Command Palette Integration', () => {
       activeSessionId: 'session-1',
       setActiveSessionId: vi.fn(),
       createSession: vi.fn(),
+      createBrowserSession: vi.fn(),
       removeSession: vi.fn(),
       setSessionLayout: vi.fn(),
       setSessionActivePane: vi.fn(),
@@ -187,6 +186,7 @@ describe('WorkspaceView - Command Palette Integration', () => {
       setPaneUserLabel: vi.fn(),
       reorderSessions: vi.fn(),
       updatePaneCwd: vi.fn(),
+      appendPaneCacheReading: vi.fn(),
       updatePaneAgentType: vi.fn(),
       setSessionActivityPanelCollapsed: vi.fn(),
       updateSessionCwd: vi.fn(),
@@ -194,6 +194,8 @@ describe('WorkspaceView - Command Palette Integration', () => {
       restoreData: new Map(),
       loading: false,
       notifyPaneReady: vi.fn(),
+      registerPending: vi.fn(),
+      dropAllForPty: vi.fn(),
     }
 
     // Mock useSessionManager
@@ -278,6 +280,7 @@ describe('WorkspaceView - Command Palette Integration', () => {
       onData: vi.fn().mockResolvedValue(vi.fn()),
       onExit: vi.fn().mockReturnValue(vi.fn()),
       onError: vi.fn().mockReturnValue(vi.fn()),
+      onBurnerForeground: vi.fn().mockReturnValue(vi.fn()),
       listSessions: vi.fn().mockResolvedValue({
         activeSessionId: null,
         sessions: [],
@@ -286,6 +289,8 @@ describe('WorkspaceView - Command Palette Integration', () => {
       reorderSessions: vi.fn().mockResolvedValue(undefined),
       updateSessionCwd: vi.fn().mockResolvedValue(undefined),
       setSessionActivityPanelCollapsed: vi.fn().mockResolvedValue(undefined),
+      killEphemeralPtys: vi.fn(),
+      setWorkspaceSessions: vi.fn().mockResolvedValue(undefined),
     })
   })
 
@@ -423,7 +428,7 @@ describe('WorkspaceView - Command Palette Integration', () => {
     expect(mockSessionManager.updatePaneAgentType).not.toHaveBeenCalled()
   })
 
-  test('does not apply stale agent status from another session to the active shell session identity', async () => {
+  test('does not apply stale agent status from another session to the active shell session', async () => {
     mockSessions[1] = {
       ...mockSessions[1],
       agentType: 'generic',
@@ -453,9 +458,9 @@ describe('WorkspaceView - Command Palette Integration', () => {
 
     render(<WorkspaceView />)
 
-    // The banner no longer renders a session identity; the guard under test
-    // is that the stale claude-code status never re-stamps the generic pane.
-    expect(screen.queryByTestId('top-identity')).toBeNull()
+    // The main session-tab strip is gone, so there is no per-tab agent glyph
+    // to inspect. The guard under test is purely that the stale claude-code
+    // status never re-stamps the active generic pane.
     expect(mockSessionManager.updatePaneAgentType).not.toHaveBeenCalled()
   })
 
@@ -694,7 +699,10 @@ describe('WorkspaceView - Command Palette Integration', () => {
       screen.queryByRole('dialog', { name: 'Command palette' })
     ).not.toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: 'Command Palette' }))
+    await user.click(
+      screen.getByRole('button', { name: /open command palette/i })
+    )
+
     expect(
       screen.queryByRole('dialog', { name: 'Command palette' })
     ).not.toBeInTheDocument()
@@ -829,16 +837,77 @@ describe('WorkspaceView - Command Palette Integration', () => {
     })
   })
 
-  test('top-bar command button opens the palette', async () => {
+  test('status-bar command button opens the palette', async () => {
     const user = userEvent.setup()
     render(<WorkspaceView />)
 
     expect(screen.queryByRole('dialog', { name: 'Command palette' })).toBeNull()
 
-    await user.click(screen.getByRole('button', { name: 'Command Palette' }))
+    await user.click(
+      screen.getByRole('button', { name: /open command palette/i })
+    )
 
     expect(
       screen.getByRole('dialog', { name: 'Command palette' })
     ).toBeInTheDocument()
+  })
+
+  test('does not append a stale pane reading when agentStatus.sessionId mismatches the active pane', async () => {
+    const { useAgentStatus } =
+      await import('../agent-status/hooks/useAgentStatus')
+    vi.mocked(useAgentStatus).mockReturnValue(
+      createAgentStatus({
+        sessionId: 'pty-stale',
+        contextWindow: {
+          usedPercentage: 10,
+          contextWindowSize: 200000,
+          totalInputTokens: 0,
+          totalOutputTokens: 0,
+          currentUsage: {
+            inputTokens: 700,
+            outputTokens: 0,
+            cacheCreationInputTokens: 1800,
+            cacheReadInputTokens: 7500,
+          },
+        },
+      })
+    )
+
+    render(<WorkspaceView />)
+
+    expect(await screen.findByTestId('terminal-zone')).toBeInTheDocument()
+    expect(mockSessionManager.appendPaneCacheReading).not.toHaveBeenCalled()
+  })
+
+  test('appends the reading when agentStatus.sessionId matches the active pane', async () => {
+    const { useAgentStatus } =
+      await import('../agent-status/hooks/useAgentStatus')
+    vi.mocked(useAgentStatus).mockReturnValue(
+      createAgentStatus({
+        sessionId: 'pty-session-1',
+        contextWindow: {
+          usedPercentage: 10,
+          contextWindowSize: 200000,
+          totalInputTokens: 0,
+          totalOutputTokens: 0,
+          currentUsage: {
+            inputTokens: 700,
+            outputTokens: 0,
+            cacheCreationInputTokens: 1800,
+            cacheReadInputTokens: 7500,
+          },
+        },
+      })
+    )
+
+    render(<WorkspaceView />)
+
+    await waitFor(() =>
+      expect(mockSessionManager.appendPaneCacheReading).toHaveBeenCalledWith(
+        'session-1',
+        'p0',
+        75
+      )
+    )
   })
 })

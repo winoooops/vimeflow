@@ -56,16 +56,24 @@ export const useSidebarShortcut = ({
         return
       }
 
-      if (document.querySelector(DIALOG_SELECTOR)) {
-        return
-      }
-
       const target =
         event.target instanceof Element
           ? event.target
           : document.activeElement instanceof Element
             ? document.activeElement
             : document.body
+
+      // Bail on real dialogs (command palette, unsaved-changes, etc.), but
+      // allow the shortcut when the compact sidebar drawer is open — it has
+      // role="dialog" for a11y, yet the sidebar shortcut must still close it.
+      const openDialogs = document.querySelectorAll(DIALOG_SELECTOR)
+
+      const inSidebarDialog = !!target.closest(
+        '[role="dialog"][aria-label="Sidebar"]'
+      )
+      if (openDialogs.length > 0 && !inSidebarDialog) {
+        return
+      }
 
       // On macOS, defer to the dock's ⌘B (close dock) when the dock is focused.
       if (

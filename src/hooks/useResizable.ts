@@ -40,6 +40,17 @@ export interface UseResizableOptions {
    * should mirror committed keyboard resize through their normal render path.
    */
   onDragPreview?: (size: number) => void
+  /**
+   * Receives both the unclamped and clamped size when a mouse drag ends.
+   * Useful for controls that treat dragging past a clamp as a semantic action,
+   * such as collapsing a pane when the user pulls below its minimum size.
+   */
+  onDragEnd?: (event: ResizeDragEndEvent) => void
+}
+
+export interface ResizeDragEndEvent {
+  rawSize: number
+  size: number
 }
 
 export interface UseResizableResult {
@@ -71,6 +82,7 @@ export const useResizable = ({
   invert = false,
   updateMode = 'live',
   onDragPreview = undefined,
+  onDragEnd = undefined,
 }: UseResizableOptions): UseResizableResult => {
   // Clamp `initial` on mount so an out-of-range default doesn't briefly
   // surface (in ARIA attributes, in the rendered size) before the first
@@ -81,6 +93,7 @@ export const useResizable = ({
   const previewSize = useRef(size)
   const updateModeRef = useRef(updateMode)
   const onDragPreviewRef = useRef(onDragPreview)
+  const onDragEndRef = useRef(onDragEnd)
   const isDraggingRef = useRef(false)
   const startPos = useRef(0)
   const startSize = useRef(0)
@@ -99,6 +112,10 @@ export const useResizable = ({
   useLayoutEffect(() => {
     onDragPreviewRef.current = onDragPreview
   }, [onDragPreview])
+
+  useLayoutEffect(() => {
+    onDragEndRef.current = onDragEnd
+  }, [onDragEnd])
 
   const preview = useCallback((nextSize: number): void => {
     if (previewSize.current === nextSize) {
@@ -229,6 +246,14 @@ export const useResizable = ({
       ) {
         commitSize(finalSize, updateModeRef.current === 'commit-on-end')
       }
+
+      const rawDelta = currentPos.current - startPos.current
+      const delta = invert ? -rawDelta : rawDelta
+      const rawSize = Math.round(startSize.current + delta)
+      onDragEndRef.current?.({
+        rawSize,
+        size: clampSize(rawSize, min, max),
+      })
 
       isDraggingRef.current = false
       setIsDragging(false)
