@@ -30,7 +30,6 @@ export const SidebarTopBar = ({
         display: 'grid',
         gridTemplateColumns: `${SIDEBAR_TOGGLE_LEFT} ${SIDEBAR_TOGGLE_SIZE} minmax(0, 1fr)`,
         gridTemplateRows: `${SIDEBAR_TOGGLE_TOP} ${SIDEBAR_TOGGLE_SIZE} minmax(0, 1fr)`,
-        paddingRight: 10,
       }}
     >
       <div
@@ -55,7 +54,7 @@ export const SidebarTopBar = ({
         aria-hidden="true"
         data-testid="sidebar-top-bar-right-drag-region"
         className={dragClassName}
-        style={{ gridColumn: 3, gridRow: 2 }}
+        style={{ gridColumn: 3, gridRow: 2, paddingRight: 10 }}
       />
       <div
         aria-hidden="true"

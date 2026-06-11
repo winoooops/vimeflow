@@ -2,8 +2,8 @@
 id: macos-window-chrome
 category: cross-platform
 created: 2026-06-09
-last_updated: 2026-06-10
-ref_count: 1
+last_updated: 2026-06-11
+ref_count: 2
 ---
 
 # macOS Window Chrome
@@ -73,3 +73,11 @@ dimensions so the controls do not overlay adjacent UI columns.
 - **File:** `src/features/workspace/components/SidebarTopBar.tsx`
 - **Finding:** `SidebarTopBar` unconditionally added `vf-app-drag-region` to its root element, while `WorkspaceView` already computed the macOS-only `reserveWindowControls` flag and `Tabs` correctly gated the same class behind it. Electron honors `-webkit-app-region: drag` on Windows and Linux, turning the expanded sidebar top bar into an unintended window-drag handle.
 - **Fix:** Added a `reserveWindowControls` prop to `SidebarTopBar`, made `vf-app-drag-region` conditional on it, passed the existing `reserveWindowControls` value from `WorkspaceView`, and added a non-macOS test asserting the class is absent.
+
+### 8. Outer right padding excluded from drag region after moving class to inner children
+
+- **Source:** github-claude | PR #415 round 1 | 2026-06-11
+- **Severity:** MEDIUM
+- **File:** `src/features/workspace/components/SidebarTopBar.tsx`, `src/features/sessions/components/Tabs.tsx`
+- **Finding:** Both bars moved `vf-app-drag-region` from the outer container to inner grid/flex children, but left `paddingRight: 10` (`SidebarTopBar`) and `pr-2` (`Tabs`) on the non-draggable outer containers. CSS grid/flex children occupy the content box, not the parent padding area, so the rightmost 10 px / 8 px strips stopped being draggable on macOS compared with the previous behavior.
+- **Fix:** Removed the outer right padding from both containers and placed the same spacing on the rightmost inner element that already owns the drag/no-drag behavior, restoring the full right-edge draggable strip.

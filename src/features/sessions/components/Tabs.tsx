@@ -95,7 +95,7 @@ export const Tabs = ({
   return (
     <div
       data-testid="session-tabs"
-      className={`flex h-[38px] shrink-0 items-end gap-0.5 border-b border-outline-variant/25 bg-surface-container-lowest pr-2 ${
+      className={`flex h-[38px] shrink-0 items-end gap-0.5 border-b border-outline-variant/25 bg-surface-container-lowest ${
         leading ? '' : 'pl-2'
       }`}
     >
@@ -189,7 +189,7 @@ export const Tabs = ({
       <div
         aria-hidden="true"
         data-testid="session-tabs-drag-region"
-        className={`h-full flex-1 self-stretch${
+        className={`h-full flex-1 self-stretch pr-2${
           reserveWindowControls ? ' vf-app-drag-region' : ''
         }`}
       />
