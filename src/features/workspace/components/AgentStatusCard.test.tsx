@@ -183,7 +183,7 @@ describe('AgentStatusCard', () => {
     const card = screen.getByTestId('sidebar-agent-status-card')
     expect(card).toHaveStyle({
       width: '100%',
-      maxWidth: '320px',
+      maxWidth: '360px',
       height: '125px',
     })
 
@@ -193,7 +193,7 @@ describe('AgentStatusCard', () => {
 
     expect(screen.getByTestId('sidebar-agent-status-card')).toHaveStyle({
       width: '100%',
-      maxWidth: '320px',
+      maxWidth: '360px',
       height: '125px',
     })
   })

@@ -16,6 +16,24 @@ describe('NewSessionButton', () => {
     expect(
       screen.getByRole('button', { name: 'New session' })
     ).toBeInTheDocument()
+    expect(screen.getByText('New session')).toBeInTheDocument()
+  })
+
+  test('keeps the compact icon size while allowing the button to expand', () => {
+    render(
+      <NewSessionButton
+        onClick={vi.fn()}
+        shortcutHint="⌘N"
+        ariaKeyshortcuts="Meta+N"
+      />
+    )
+
+    expect(screen.getByTestId('sidebar-new-session')).toHaveClass(
+      'min-w-[38px]',
+      'max-w-[150px]',
+      'flex-1',
+      'vf-new-session-button'
+    )
   })
 
   test('clicking calls onClick', async () => {

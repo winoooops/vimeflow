@@ -324,9 +324,9 @@ describe('WorkspaceView', () => {
         screen.queryByTestId('activity-panel-shell')
       ).not.toBeInTheDocument()
       expect(screen.queryByTestId('sidebar-scrim')).not.toBeInTheDocument()
-      expect(screen.getByTestId('sidebar-toggle-tabs')).not.toHaveFocus()
+      expect(screen.getByTestId('sidebar-toggle-fixed')).not.toHaveFocus()
 
-      await user.click(screen.getByTestId('sidebar-toggle-tabs'))
+      await user.click(screen.getByTestId('sidebar-toggle-fixed'))
 
       expect(screen.getByTestId('sidebar-scrim')).toBeInTheDocument()
 
@@ -355,7 +355,7 @@ describe('WorkspaceView', () => {
         })
       }
 
-      expect(screen.getByTestId('sidebar-toggle-tabs')).toHaveFocus()
+      expect(screen.getByTestId('sidebar-toggle-fixed')).toHaveFocus()
     } finally {
       restoreMatchMedia()
       requestAnimationFrameSpy.mockRestore()
@@ -413,15 +413,15 @@ describe('WorkspaceView', () => {
         })
       }
 
-      // Focus should land on the now-visible topbar toggle inside the drawer
-      expect(screen.getByTestId('sidebar-toggle-topbar')).toHaveFocus()
+      // Focus should land on the persistent sidebar toggle.
+      expect(screen.getByTestId('sidebar-toggle-fixed')).toHaveFocus()
     } finally {
       restoreMatchMedia()
       requestAnimationFrameSpy.mockRestore()
     }
   })
 
-  test('compact sidebar shortcut from focused drawer content restores focus to the tabs toggle', async () => {
+  test('compact sidebar shortcut from focused drawer content restores focus to the persistent toggle', async () => {
     const restoreMatchMedia = mockMatchMedia(true)
     const user = userEvent.setup()
     const frameCallbacks: FrameRequestCallback[] = []
@@ -438,18 +438,18 @@ describe('WorkspaceView', () => {
       render(<WorkspaceView />)
       await screen.findByTestId('terminal-pane-mock')
 
-      // Open the compact sidebar via the tabs toggle
-      await user.click(screen.getByTestId('sidebar-toggle-tabs'))
+      // Open the compact sidebar via the persistent toggle.
+      await user.click(screen.getByTestId('sidebar-toggle-fixed'))
       expect(screen.getByTestId('sidebar-scrim')).toBeInTheDocument()
 
-      // Move focus into the drawer content (Command Palette button), not the toggle
-      const commandButton = screen.getByRole('button', {
-        name: 'Command Palette',
+      // Move focus into the drawer content (Settings footer), not the toggle.
+      const settingsButton = screen.getByRole('button', {
+        name: /^Settings/,
       })
       act(() => {
-        commandButton.focus()
+        settingsButton.focus()
       })
-      expect(commandButton).toHaveFocus()
+      expect(settingsButton).toHaveFocus()
 
       // Fire the global sidebar shortcut to close the drawer
       act(() => {
@@ -481,8 +481,8 @@ describe('WorkspaceView', () => {
         })
       }
 
-      // Focus should land on the now-visible tabs toggle
-      expect(screen.getByTestId('sidebar-toggle-tabs')).toHaveFocus()
+      // Focus should land on the persistent sidebar toggle.
+      expect(screen.getByTestId('sidebar-toggle-fixed')).toHaveFocus()
     } finally {
       restoreMatchMedia()
       requestAnimationFrameSpy.mockRestore()
@@ -1106,21 +1106,23 @@ describe('WorkspaceView', () => {
     expect(container).toHaveClass('h-screen')
   })
 
-  test('renders sidebar top-bar utility buttons (no account avatar)', () => {
+  test('renders Settings in the sidebar footer and keeps utility buttons out of the top bar', () => {
     render(<WorkspaceView />)
 
-    // VIM-76: utilities moved from the icon rail to the sidebar top bar.
+    // VIM-76: icon rail removed. VIM-66 follow-up keeps traffic-light chrome
+    // clear by moving Settings into the footer.
     const topBar = screen.getByTestId('sidebar-top-bar')
+    const footer = screen.getByTestId('sidebar-footer-wrapper')
 
     expect(within(topBar).queryByRole('img', { name: 'Account' })).toBeNull()
 
     expect(
-      within(topBar).getByRole('button', { name: 'Command Palette' })
-    ).toBeInTheDocument()
+      within(topBar).queryByRole('button', { name: 'Command Palette' })
+    ).not.toBeInTheDocument()
 
     // Settings aria-label is "Settings — coming (see issue #252)".
     expect(
-      within(topBar).getByRole('button', { name: /^Settings/ })
+      within(footer).getByRole('button', { name: /^Settings/ })
     ).toHaveAttribute('aria-disabled', 'true')
   })
 
@@ -1154,17 +1156,18 @@ describe('WorkspaceView', () => {
     expect(panel).toBeInTheDocument()
   })
 
-  test('renders utility actions in the sidebar top bar', () => {
+  test('renders Settings in the sidebar footer', () => {
     render(<WorkspaceView />)
 
     const topBar = screen.getByTestId('sidebar-top-bar')
+    const footer = screen.getByTestId('sidebar-footer-wrapper')
 
     expect(
-      within(topBar).getByRole('button', { name: 'Command Palette' })
-    ).toBeInTheDocument()
+      within(topBar).queryByRole('button', { name: 'Command Palette' })
+    ).not.toBeInTheDocument()
 
     expect(
-      within(topBar).getByRole('button', { name: /^Settings/ })
+      within(footer).getByRole('button', { name: /^Settings/ })
     ).toBeInTheDocument()
   })
 
@@ -1234,12 +1237,14 @@ describe('WorkspaceView', () => {
     expect(screen.getByTestId('files-view')).not.toHaveClass('hidden')
   })
 
-  test('Sidebar footer slot is suppressed in WorkspaceView', () => {
+  test('Sidebar footer seats Settings at the bottom of WorkspaceView', () => {
     render(<WorkspaceView />)
 
     expect(
-      screen.queryByTestId('sidebar-footer-wrapper')
-    ).not.toBeInTheDocument()
+      within(screen.getByTestId('sidebar-footer-wrapper')).getByRole('button', {
+        name: /^Settings/,
+      })
+    ).toBeInTheDocument()
   })
 
   test('bottom-pane resize handle is gone in WorkspaceView', () => {
@@ -1325,13 +1330,15 @@ describe('WorkspaceView', () => {
     await screen.findByRole('button', { name: 'session 2' })
   })
 
-  test('opens command palette from the top-bar command button', async () => {
+  test('opens command palette from the status-bar command button', async () => {
     const user = userEvent.setup()
     render(<WorkspaceView />)
 
     expect(screen.queryByRole('dialog', { name: 'Command palette' })).toBeNull()
 
-    await user.click(screen.getByRole('button', { name: 'Command Palette' }))
+    await user.click(
+      screen.getByRole('button', { name: /open command palette/i })
+    )
 
     expect(
       screen.getByRole('dialog', { name: 'Command palette' })
@@ -1647,16 +1654,19 @@ describe('WorkspaceView', () => {
       expect(screen.queryByTestId('sidebar-resize-handle')).toBeNull()
     })
 
-    expect(screen.getByTestId('sidebar-toggle-tabs')).toBeInTheDocument()
+    expect(screen.getByTestId('sidebar-toggle-fixed')).toBeInTheDocument()
+    expect(screen.getByTestId('sidebar-toggle-tabs-spacer')).toBeInTheDocument()
     expect(
       screen.getByTestId('sidebar-top-bar-placeholder')
     ).toBeInTheDocument()
 
     const sidebarShell = screen.getByTestId('workspace-sidebar-shell')
+    const toggleSurface = screen.getByTestId('sidebar-toggle-slide-surface')
     const mainWorkspace = workspace.children[1] as HTMLElement
 
     expect(sidebarShell.className).toContain('transition-[width]')
     expect(sidebarShell).toHaveStyle({ width: '0px' })
+    expect(toggleSurface).toHaveStyle({ width: '0px' })
     expect(mainWorkspace.style.borderTopLeftRadius).toBe('0')
     expect(mainWorkspace.style.borderBottomLeftRadius).toBe('0')
   })
@@ -1687,7 +1697,10 @@ describe('WorkspaceView', () => {
         expect(screen.queryByTestId('sidebar-resize-handle')).toBeNull()
       })
 
-      expect(screen.getByTestId('sidebar-toggle-tabs')).toBeInTheDocument()
+      expect(screen.getByTestId('sidebar-toggle-fixed')).toBeInTheDocument()
+      expect(
+        screen.getByTestId('sidebar-toggle-tabs-spacer')
+      ).toBeInTheDocument()
     } finally {
       globalThis.ResizeObserver = originalResizeObserver
     }
@@ -1725,7 +1738,10 @@ describe('WorkspaceView', () => {
         expect(screen.queryByTestId('sidebar-resize-handle')).toBeNull()
       })
 
-      expect(screen.getByTestId('sidebar-toggle-tabs')).toBeInTheDocument()
+      expect(screen.getByTestId('sidebar-toggle-fixed')).toBeInTheDocument()
+      expect(
+        screen.getByTestId('sidebar-toggle-tabs-spacer')
+      ).toBeInTheDocument()
     } finally {
       globalThis.ResizeObserver = originalResizeObserver
     }
