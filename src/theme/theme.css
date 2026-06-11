@@ -1,6 +1,11 @@
 /* GENERATED defaults — single source of truth is
  * src/theme/themes/obsidian-lens.ts; themeCss.test.ts keeps this
- * block in sync. Regenerate: npx tsx scripts/generate-theme-css.ts */
+ * block in sync. Regenerate: npx tsx scripts/generate-theme-css.ts
+ * && npx prettier --write src/theme/theme.css
+ *
+ * NOTE: Tailwind bakes --shadow-* values into shadow-* utilities at
+ * build time — those do NOT re-theme at runtime. Consume themed
+ * shadows via var(--shadow-…) (arbitrary value or inline style). */
 @theme {
   --color-surface: #121221;
   --color-surface-container-lowest: #0d0d1c;
