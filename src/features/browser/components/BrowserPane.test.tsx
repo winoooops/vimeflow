@@ -227,7 +227,7 @@ describe('BrowserPane', () => {
     )
 
     expect(screen.getByTestId('browser-pane').style.border).toContain(
-      'rgba(74, 68, 79, 0.22)'
+      'color-mix(in srgb, var(--color-outline-variant) 22%, transparent)'
     )
   })
 

@@ -41,7 +41,7 @@ const splitUrl = (url: string): UrlSegments | null => {
 const shortcutHint = (): string => (isMacPlatform() ? '⌘L' : 'Ctrl+L')
 
 const PILL_CLASS =
-  'mx-auto flex h-[29px] w-[min(520px,100%)] min-w-0 items-center gap-[9px] rounded-full bg-[rgba(13,13,28,0.6)] px-3'
+  'mx-auto flex h-[29px] w-[min(520px,100%)] min-w-0 items-center gap-[9px] rounded-full bg-surface-container-lowest/60 px-3'
 
 export const BrowserAddressBar = ({
   committedUrl,
@@ -126,7 +126,7 @@ export const BrowserAddressBar = ({
           <span className="text-on-surface">{committedUrl}</span>
         )}
       </span>
-      <span className="shrink-0 rounded-[5px] border border-outline-variant/20 bg-white/[0.03] px-[5px] py-[2px] font-mono text-[9px] text-syn-comment">
+      <span className="shrink-0 rounded-[5px] border border-outline-variant/20 bg-wash-subtle px-[5px] py-[2px] font-mono text-[9px] text-syn-comment">
         {shortcutHint()}
       </span>
     </button>

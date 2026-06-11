@@ -1215,7 +1215,7 @@ export const DiffPanelContent = ({
       className="flex h-full w-full min-h-0 min-w-0 flex-1 overflow-hidden"
     >
       {/* Left: Changed files list (~240px fixed) */}
-      <div className="w-60 shrink-0 border-r border-white/5 overflow-y-auto">
+      <div className="w-60 shrink-0 border-r border-wash-subtle overflow-y-auto">
         <ChangedFilesList
           files={effectiveFiles}
           selectedFile={
@@ -1269,7 +1269,7 @@ export const DiffPanelContent = ({
           {renderSyncError !== null ? (
             <div
               role="alert"
-              className="px-3 pb-2 text-[11px] leading-4 text-[#f38ba8]"
+              className="px-3 pb-2 text-[11px] leading-4 text-vcs-deleted"
             >
               Diff render sync failed: {renderSyncError}
             </div>

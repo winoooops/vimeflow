@@ -140,7 +140,7 @@ export const Sidebar = ({
               h-1 shrink-0 cursor-row-resize transition-colors
               hover:bg-primary/50 focus-visible:bg-primary/70
               focus-visible:outline-none
-              ${isDragging ? 'bg-primary/70' : 'border-t border-white/5'}
+              ${isDragging ? 'bg-primary/70' : 'border-t border-wash-subtle'}
             `}
           />
           <div style={{ height: bottomHeight }} className="shrink-0">

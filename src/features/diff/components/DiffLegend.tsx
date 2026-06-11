@@ -15,7 +15,7 @@ const DiffLegend = (): ReactElement => (
     <div className="flex items-center gap-2">
       <div
         data-testid="added-dot"
-        className="h-2 w-2 rounded-full bg-[#a6e3a1]"
+        className="h-2 w-2 rounded-full bg-vcs-added"
       />
       <span className="text-[0.7rem] font-bold uppercase tracking-wider text-on-surface">
         ADDED
@@ -26,7 +26,7 @@ const DiffLegend = (): ReactElement => (
     <div className="flex items-center gap-2">
       <div
         data-testid="removed-dot"
-        className="h-2 w-2 rounded-full bg-[#f38ba8]"
+        className="h-2 w-2 rounded-full bg-vcs-deleted"
       />
       <span className="text-[0.7rem] font-bold uppercase tracking-wider text-on-surface">
         REMOVED

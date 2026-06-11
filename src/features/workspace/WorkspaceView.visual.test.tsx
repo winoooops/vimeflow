@@ -4,7 +4,6 @@
 import { describe, test, expect, vi } from 'vitest'
 // @ts-expect-error - tailwind.config.js has no type declarations
 import tailwindConfig from '../../../tailwind.config'
-import { obsidianLens } from '../../theme'
 
 // Mock TerminalPane to avoid xterm.js issues in tests
 vi.mock('../terminal/components/TerminalPane', () => ({
@@ -150,38 +149,7 @@ describe('WorkspaceView - Visual Verification (Feature #20)', () => {
     })
   })
 
-  describe('Color Tokens: Obsidian Lens theme', () => {
-    test('surface hierarchy tokens', () => {
-      expect(obsidianLens.ui.surface).toBe('#121221')
-      expect(obsidianLens.ui['surface-container-lowest']).toBe('#0d0d1c')
-      expect(obsidianLens.ui['surface-container-low']).toBe('#1a1a2a')
-      expect(obsidianLens.ui['surface-container']).toBe('#1e1e2e')
-      expect(obsidianLens.ui['surface-container-high']).toBe('#292839')
-      expect(obsidianLens.ui['surface-container-highest']).toBe('#333344')
-      expect(obsidianLens.ui['surface-bright']).toBe('#383849')
-    })
-
-    test('primary tokens', () => {
-      expect(obsidianLens.ui.primary).toBe('#e2c7ff')
-      expect(obsidianLens.ui['primary-container']).toBe('#cba6f7')
-      expect(obsidianLens.ui['primary-dim']).toBe('#d3b9f0')
-    })
-
-    test('semantic feedback tokens', () => {
-      expect(obsidianLens.ui.success).toBe('#50fa7b')
-      expect(obsidianLens.ui['success-muted']).toBe('#7defa1')
-      expect(obsidianLens.ui.tertiary).toBe('#ff94a5')
-      expect(obsidianLens.ui['tertiary-container']).toBe('#fd7e94')
-      expect(obsidianLens.ui.error).toBe('#ffb4ab')
-      expect(obsidianLens.ui['error-dim']).toBe('#d73357')
-    })
-
-    test('text tokens', () => {
-      expect(obsidianLens.ui['on-surface']).toBe('#e3e0f7')
-      expect(obsidianLens.ui['on-surface-variant']).toBe('#cdc3d1')
-      expect(obsidianLens.ui['outline-variant']).toBe('#4a444f')
-    })
-  })
+  // Color token assertions moved to src/theme/themes/obsidian-lens.test.ts
 
   describe('Typography: Manrope + Inter + JetBrains Mono', () => {
     test('tailwind config has Manrope for headlines', () => {

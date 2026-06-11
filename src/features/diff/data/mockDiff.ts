@@ -97,7 +97,8 @@ const navBarDiff: FileDiff = {
           type: 'context',
           oldLineNumber: 6,
           newLineNumber: 8,
-          content: '    <header className="border-b border-gray-800 p-4">',
+          content:
+            '    <header className="border-b border-outline-variant p-4">',
         },
         {
           type: 'context',

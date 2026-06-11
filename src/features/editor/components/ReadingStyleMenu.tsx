@@ -55,7 +55,7 @@ export const ReadingStyleMenu = (): ReactElement => {
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen((prev) => !prev)}
-        className="grid h-6 w-6 cursor-pointer place-items-center rounded-[5px] bg-transparent text-[#8a8299] transition-colors hover:bg-white/5 hover:text-[#e2c7ff] focus:bg-white/5 focus:text-[#e2c7ff] focus:outline-none"
+        className="grid h-6 w-6 cursor-pointer place-items-center rounded-[5px] bg-transparent text-on-surface-muted transition-colors hover:bg-wash-subtle hover:text-primary focus:bg-wash-subtle focus:text-primary focus:outline-none"
       >
         <span
           className="material-symbols-outlined text-[16px]"
@@ -70,7 +70,7 @@ export const ReadingStyleMenu = (): ReactElement => {
           role="menu"
           aria-label="Reading style"
           data-testid="reading-style-menu"
-          className="absolute right-0 top-[28px] z-50 flex min-w-[180px] flex-col gap-0.5 rounded-lg border border-[rgba(74,68,79,0.35)] bg-[#0d0d1c] p-1.5 shadow-xl"
+          className="absolute right-0 top-[28px] z-50 flex min-w-[180px] flex-col gap-0.5 rounded-lg border border-outline-variant/35 bg-surface-container-lowest p-1.5 shadow-xl"
         >
           {READING_STYLES.map((style) => {
             const active = style.id === styleId
@@ -87,11 +87,14 @@ export const ReadingStyleMenu = (): ReactElement => {
                 }}
                 className={`flex items-center gap-2 rounded-md px-2.5 py-1.5 text-left font-label text-[12.5px] transition-colors ${
                   active
-                    ? 'bg-[rgba(226,199,255,0.1)] text-[#e2c7ff]'
-                    : 'text-on-surface hover:bg-white/5'
+                    ? 'bg-primary/10 text-primary'
+                    : 'text-on-surface hover:bg-wash-subtle'
                 }`}
               >
-                <span className="w-3.5 text-[#cba6f7]" aria-hidden="true">
+                <span
+                  className="w-3.5 text-primary-container"
+                  aria-hidden="true"
+                >
                   {active ? '✓' : ''}
                 </span>
                 {style.label}

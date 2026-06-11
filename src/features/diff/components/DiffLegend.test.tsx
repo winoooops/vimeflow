@@ -65,7 +65,7 @@ describe('DiffLegend', () => {
 
     const greenDot = container.querySelector('[data-testid="added-dot"]')
 
-    expect(greenDot).toHaveClass('bg-[#a6e3a1]')
+    expect(greenDot).toHaveClass('bg-vcs-added')
     /* eslint-enable testing-library/no-container, testing-library/no-node-access */
   })
 
@@ -75,7 +75,7 @@ describe('DiffLegend', () => {
 
     const redDot = container.querySelector('[data-testid="removed-dot"]')
 
-    expect(redDot).toHaveClass('bg-[#f38ba8]')
+    expect(redDot).toHaveClass('bg-vcs-deleted')
     /* eslint-enable testing-library/no-container, testing-library/no-node-access */
   })
 

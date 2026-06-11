@@ -47,13 +47,13 @@ export const SidebarTabs = <TId extends string = string>({
       aria-label={ariaLabel}
       data-testid={testId}
       style={{ width: SIDEBAR_TABS_W }}
-      className="relative flex min-w-0 shrink-0 rounded-[10px] border border-[rgba(74,68,79,0.3)] bg-[rgba(13,13,28,0.7)] p-[3px] shadow-[inset_0_1px_2px_rgba(0,0,0,0.4)]"
+      className="relative flex min-w-0 shrink-0 rounded-[10px] border border-outline-variant/30 bg-surface-container-lowest/70 p-[3px] shadow-[inset_0_1px_2px_rgba(0,0,0,0.4)]"
     >
       <div
         aria-hidden="true"
         data-testid="sidebar-tabs-thumb"
         style={thumbStyle}
-        className="pointer-events-none absolute bottom-[3px] left-[3px] top-[3px] z-0 rounded-[7px] border border-[rgba(203,166,247,0.4)] bg-[rgba(203,166,247,0.16)] shadow-[0_1px_2px_rgba(0,0,0,0.25)] transition-transform duration-200 ease-[cubic-bezier(.4,0,.2,1)]"
+        className="pointer-events-none absolute bottom-[3px] left-[3px] top-[3px] z-0 rounded-[7px] border border-primary-container/40 bg-primary-container/16 shadow-[0_1px_2px_rgba(0,0,0,0.25)] transition-transform duration-200 ease-[cubic-bezier(.4,0,.2,1)]"
       />
       {tabs.map((item) => {
         const isActive = item.id === activeId
@@ -68,8 +68,8 @@ export const SidebarTabs = <TId extends string = string>({
             }}
             className={`relative z-[1] flex h-[30px] min-w-0 flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-[7px] font-mono text-[12px] font-semibold uppercase tracking-[0.08em] transition-colors ${
               isActive
-                ? 'text-[#e2c7ff]'
-                : 'text-[#8a8299] hover:text-[#cdc3d1]'
+                ? 'text-primary'
+                : 'text-on-surface-muted hover:text-on-surface-variant'
             }`}
           >
             {item.icon ? (

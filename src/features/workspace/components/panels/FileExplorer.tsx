@@ -79,7 +79,7 @@ export const FileExplorer = ({
           className={`material-symbols-outlined shrink-0 rounded p-0.5 text-sm transition-colors ${
             isRoot
               ? 'text-on-surface/20'
-              : 'text-on-surface/50 hover:bg-white/5 hover:text-on-surface'
+              : 'text-on-surface/50 hover:bg-wash-subtle hover:text-on-surface'
           }`}
           aria-label="Go to parent directory"
           title="Parent directory"

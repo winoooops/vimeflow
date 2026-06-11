@@ -45,15 +45,15 @@ const getFileIcon = (filename: string, customIcon?: string): string => {
 const getGitStatusColor = (status: GitStatus): string => {
   switch (status) {
     case 'modified':
-      return 'bg-[#f9e2af] text-[#1e1e2e]' // Yellow for modified
+      return 'bg-syn-class text-surface-container' // Yellow for modified
     case 'added':
-      return 'bg-[#a6e3a1] text-[#1e1e2e]' // Green for added
+      return 'bg-syn-string text-surface-container' // Green for added
     case 'deleted':
-      return 'bg-[#f38ba8] text-[#1e1e2e]' // Red for deleted
+      return 'bg-syn-tag text-surface-container' // Red for deleted
     case 'renamed':
-      return 'bg-[#89dceb] text-[#1e1e2e]' // Cyan for renamed
+      return 'bg-syn-operator text-surface-container' // Cyan for renamed
     case 'untracked':
-      return 'bg-[#cba6f7] text-[#1e1e2e]' // Purple for untracked
+      return 'bg-syn-keyword text-surface-container' // Purple for untracked
   }
 }
 
@@ -121,7 +121,7 @@ export const FileTreeNode = ({
         <span
           className={`material-symbols-outlined text-base ${
             isFolder && isExpanded
-              ? 'text-[#a8c8ff]'
+              ? 'text-secondary'
               : 'text-on-surface-variant'
           }`}
           style={
@@ -152,7 +152,7 @@ export const FileTreeNode = ({
 
       {/* Children (recursive) */}
       {isFolder && isExpanded && node.children && node.children.length > 0 && (
-        <div className="pl-6 border-l border-[#4a444f]/20 ml-5">
+        <div className="pl-6 border-l border-outline-variant/20 ml-5">
           {node.children.map((child) => (
             <FileTreeNode
               key={child.id}

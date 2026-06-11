@@ -548,10 +548,12 @@ export const BrowserPane = ({
       className="flex h-full w-full flex-col overflow-hidden rounded-[10px] bg-surface"
       style={{
         border: `2px solid ${
-          isFocusVisible ? BROWSER_IDENTITY.accent : 'rgba(74,68,79,0.22)'
+          isFocusVisible
+            ? BROWSER_IDENTITY.accent
+            : 'color-mix(in srgb, var(--color-outline-variant) 22%, transparent)'
         }`,
         boxShadow: isFocusVisible
-          ? `0 0 0 6px ${BROWSER_IDENTITY.accentDim}, 0 8px 32px rgba(0,0,0,0.35)`
+          ? `0 0 0 6px ${BROWSER_IDENTITY.accentDim}, 0 8px 32px color-mix(in srgb, var(--color-scrim) 35%, transparent)`
           : 'none',
         transition: 'border-color 180ms ease, box-shadow 220ms ease',
       }}

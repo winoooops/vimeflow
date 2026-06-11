@@ -205,7 +205,7 @@ const buildSegments = ({
             <span
               data-testid="status-bar-burner"
               className="inline-flex items-center gap-1 whitespace-nowrap"
-              style={{ color: '#f0c674' }}
+              style={{ color: 'var(--color-agent-shell-accent)' }}
             >
               <span
                 aria-hidden="true"

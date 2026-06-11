@@ -96,12 +96,14 @@ const DemoPanel = ({
   const [activeTab, setActiveTab] = useState<'sessions' | 'other'>('sessions')
 
   return (
-    <section className="flex min-h-0 flex-1 flex-col rounded-[10px] bg-[rgba(18,18,33,0.82)] shadow-[0_18px_60px_rgba(0,0,0,0.28)]">
+    <section className="flex min-h-0 flex-1 flex-col rounded-[10px] bg-surface-container-lowest/80 shadow-[0_18px_60px_rgba(0,0,0,0.28)]">
       <div className="flex shrink-0 items-center justify-between px-4 py-3">
-        <h2 className="font-label text-sm font-semibold text-[#f3eeff]">
+        <h2 className="font-label text-sm font-semibold text-on-surface">
           {title}
         </h2>
-        <span className="font-mono text-[10px] text-[#8a8299]">{order}</span>
+        <span className="font-mono text-[10px] text-on-surface-muted">
+          {order}
+        </span>
       </div>
       <div className="flex shrink-0 items-center gap-2 px-3 pb-2">
         <button
@@ -109,8 +111,8 @@ const DemoPanel = ({
           onClick={() => setActiveTab('sessions')}
           className={`h-7 rounded-[7px] px-2.5 font-label text-[11px] font-semibold transition-colors ${
             activeTab === 'sessions'
-              ? 'bg-[rgba(203,166,247,0.16)] text-[#e2c7ff]'
-              : 'text-[#8a8299] hover:bg-[rgba(255,255,255,0.05)]'
+              ? 'bg-primary-container/15 text-primary'
+              : 'text-on-surface-muted hover:bg-wash-subtle'
           }`}
         >
           Sessions
@@ -120,8 +122,8 @@ const DemoPanel = ({
           onClick={() => setActiveTab('other')}
           className={`h-7 rounded-[7px] px-2.5 font-label text-[11px] font-semibold transition-colors ${
             activeTab === 'other'
-              ? 'bg-[rgba(203,166,247,0.16)] text-[#e2c7ff]'
-              : 'text-[#8a8299] hover:bg-[rgba(255,255,255,0.05)]'
+              ? 'bg-primary-container/15 text-primary'
+              : 'text-on-surface-muted hover:bg-wash-subtle'
           }`}
         >
           Other
@@ -139,7 +141,7 @@ const DemoPanel = ({
           activeTab === 'other' ? 'grid' : 'hidden'
         }`}
       >
-        <div className="rounded-[9px] bg-[rgba(255,255,255,0.04)] px-4 py-3 text-center font-label text-xs text-[#8a8299]">
+        <div className="rounded-[9px] bg-wash-faint px-4 py-3 text-center font-label text-xs text-on-surface-muted">
           Sessions stay mounted while this panel is visible.
         </div>
       </div>
@@ -256,20 +258,20 @@ export const ReorderMotionDemo = (): ReactElement => {
   }
 
   return (
-    <main className="flex h-screen flex-col bg-[#0d0d1c] px-6 py-5 text-on-surface">
+    <main className="flex h-screen flex-col bg-surface-container-lowest px-6 py-5 text-on-surface">
       <div className="flex shrink-0 items-center justify-between pb-4">
         <div>
-          <h1 className="font-headline text-xl font-semibold text-[#f3eeff]">
+          <h1 className="font-headline text-xl font-semibold text-on-surface">
             Session Reorder
           </h1>
-          <p className="mt-1 font-label text-xs text-[#8a8299]">
+          <p className="mt-1 font-label text-xs text-on-surface-muted">
             Drag session 3 between session 1 and 2.
           </p>
         </div>
         <button
           type="button"
           onClick={reset}
-          className="inline-flex h-8 items-center gap-2 rounded-[8px] bg-[rgba(203,166,247,0.14)] px-3 font-label text-xs font-semibold text-[#e2c7ff] transition-colors hover:bg-[rgba(203,166,247,0.22)]"
+          className="inline-flex h-8 items-center gap-2 rounded-[8px] bg-primary-container/15 px-3 font-label text-xs font-semibold text-primary transition-colors hover:bg-primary-container/25"
         >
           <span
             className="material-symbols-outlined text-[16px]"

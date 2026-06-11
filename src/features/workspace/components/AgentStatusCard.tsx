@@ -127,7 +127,7 @@ const ShellBody = ({ shellName }: { shellName: string }): ReactElement => (
         style={{ width: 30, height: 30 }}
       >
         <span
-          className="material-symbols-outlined text-[17px] text-[#9b93ab]"
+          className="material-symbols-outlined text-[17px] text-on-surface-muted"
           aria-hidden="true"
         >
           terminal
@@ -151,7 +151,7 @@ const ShellBody = ({ shellName }: { shellName: string }): ReactElement => (
       target="_blank"
       rel="noopener noreferrer"
       title={`${shellName} command cheatsheet`}
-      className="flex w-full items-center gap-[7px] rounded-[7px] bg-surface-container-lowest/45 py-[5px] pr-[7px] pl-[9px] font-mono text-[10.5px] leading-none text-[#9b93ab] no-underline transition-colors hover:bg-primary/10 hover:text-primary"
+      className="flex w-full items-center gap-[7px] rounded-[7px] bg-surface-container-lowest/45 py-[5px] pr-[7px] pl-[9px] font-mono text-[10.5px] leading-none text-on-surface-muted no-underline transition-colors hover:bg-primary/10 hover:text-primary"
     >
       <span
         className="material-symbols-outlined text-[15px]"
@@ -200,9 +200,10 @@ export const AgentStatusCard = ({
         maxWidth: CARD_MAX_W,
         height: CARD_H,
         padding: '12px 14px 14px',
-        background: 'rgba(33,33,51,0.55)',
+        background:
+          'color-mix(in srgb, var(--color-surface-container) 55%, transparent)',
         boxShadow:
-          '0 5px 20px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,255,255,0.045)',
+          '0 5px 20px color-mix(in srgb, black 22%, transparent), inset 0 1px 0 var(--color-wash-faint)',
         overflow: 'hidden',
         // The card is chrome, not editable text — show the default arrow rather
         // than the text I-beam over the title/labels. `cursor` inherits, so this

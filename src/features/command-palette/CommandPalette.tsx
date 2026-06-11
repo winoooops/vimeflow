@@ -50,7 +50,7 @@ export const CommandPalette = ({
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.15 }}
-          className="absolute inset-0 backdrop-blur-sm bg-black/40"
+          className="absolute inset-0 backdrop-blur-sm bg-surface-container-lowest/40"
           onClick={close}
         />
 
@@ -64,7 +64,7 @@ export const CommandPalette = ({
             stiffness: 400,
             damping: 30,
           }}
-          className="relative w-full max-w-2xl mx-4 bg-[#1e1e2e]/90 glass-panel rounded-2xl border border-[#4a444f]/30 shadow-2xl overflow-hidden flex flex-col h-fit"
+          className="relative w-full max-w-2xl mx-4 bg-surface-container/90 glass-panel rounded-2xl border border-outline-variant/30 shadow-2xl overflow-hidden flex flex-col h-fit"
         >
           {/* Input section */}
           <CommandInput

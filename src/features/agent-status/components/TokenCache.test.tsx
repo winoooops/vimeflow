@@ -154,6 +154,6 @@ describe('TokenCache — stack bar', () => {
       .getByTestId('token-cache-stack-fresh')
       .getAttribute('style')
 
-    expect(freshStyle).not.toContain('rgba(255,148,165')
+    expect(freshStyle).not.toContain('var(--color-tertiary)')
   })
 })
