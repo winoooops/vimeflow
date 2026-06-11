@@ -1,4 +1,12 @@
 /*
+ * SUPERSEDED (2026-06-11): runtime color tokens now live in
+ * src/theme/themes/*.ts (single source of truth; applied as CSS
+ * variables by src/theme/service.ts). This file is design reference
+ * only — it is no longer imported at runtime. Non-color vars moved to
+ * src/theme/base.css.
+ */
+
+/*
  * Vimeflow -- Design Tokens (TypeScript export)
  *
  * Mirror of tokens.css. Intended for CSS-adjacent JS/TS consumers:

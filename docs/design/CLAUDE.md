@@ -12,7 +12,7 @@ Canonical spec layered on top of `DESIGN.md`. Defines the current shell layout (
 
 ### `tokens.css` / `tokens.ts`
 
-Copy-pasteable token values. Same data in two formats: CSS custom properties for stylesheets, typed TS export (with `stateToken` map and `contextSmiley()` helper) for programmatic use. Keep them in sync when evolving.
+Copy-pasteable token values. Same data in two formats: CSS custom properties for stylesheets, typed TS export (with `stateToken` map and `contextSmiley()` helper) for programmatic use. Keep them in sync when evolving. Superseded for runtime color tokens (2026-06-11): the live source of truth is src/theme/themes/\*.ts; these files remain as design reference.
 
 ### `DESIGN.md`
 

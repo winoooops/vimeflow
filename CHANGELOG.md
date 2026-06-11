@@ -6,6 +6,10 @@ This file records the supported user-facing state of Vimeflow. For the detailed 
 
 ## [Unreleased]
 
+### Added
+
+- Runtime theme system: Obsidian Lens (dark, default) and Flexoki (light) are now switchable live via the command palette (`:set theme <name>`) without reloading the app. Terminals (xterm.js), the code editor (CodeMirror), and the diff viewer (Pierre) all re-theme instantly through their respective bridge adapters. All previously hardcoded hex colors have been migrated to semantic CSS-variable tokens defined in `src/theme/themes/*.ts` and applied at runtime by `src/theme/service.ts`. A new ESLint rule `vimeflow/no-hardcoded-colors` and a CSS guard test prevent color regressions. Spec: [`docs/superpowers/specs/2026-06-11-theme-system-design.md`](./docs/superpowers/specs/2026-06-11-theme-system-design.md).
+
 ### Changed
 
 - Shortened the English and Chinese README files into source-build guides for the current `0.1.0` line, with deeper implementation details moved behind references.

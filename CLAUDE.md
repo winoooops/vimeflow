@@ -80,9 +80,9 @@ crates/backend/
 
 ## Design System: "The Obsidian Lens"
 
-Dark atmospheric UI built on Catppuccin Mocha palette. Colors defined as semantic tokens in `tailwind.config.js` (e.g. `bg-surface-container`, `text-on-surface`, `text-primary`). Fonts: Manrope (headlines), Inter (body/labels), JetBrains Mono (code). No visible borders — use tonal depth and glassmorphism.
+Dark atmospheric UI built on Catppuccin Mocha palette. Colors defined as semantic theme tokens in `src/theme/` (TS theme definitions applied as CSS variables at runtime — see `docs/superpowers/specs/2026-06-11-theme-system-design.md`; utilities like `bg-surface-container`, `text-on-surface`, `text-primary` resolve through them). Fonts: Manrope (headlines), Inter (body/labels), JetBrains Mono (code). No visible borders — use tonal depth and glassmorphism.
 
-**Read order:** `docs/design/UNIFIED.md` (authoritative — 5-zone layout, agent-state contract, component APIs), then `docs/design/DESIGN.md` (foundational tokens/typography), then `docs/design/tokens.css` / `tokens.ts` for copy-pasteable values. Stitch `code.html` files under `docs/design/<screen>/` are illustrative; when they conflict with `UNIFIED.md`, UNIFIED wins.
+**Read order:** `docs/design/UNIFIED.md` (authoritative — 5-zone layout, agent-state contract, component APIs), then `docs/design/DESIGN.md` (foundational tokens/typography), then `docs/design/tokens.css` / `tokens.ts` for copy-pasteable values, then `src/theme/themes/obsidian-lens.ts` for current values. Stitch `code.html` files under `docs/design/<screen>/` are illustrative; when they conflict with `UNIFIED.md`, UNIFIED wins.
 
 ## Git Hooks (Husky)
 
@@ -94,21 +94,21 @@ Dark atmospheric UI built on Catppuccin Mocha palette. Colors defined as semanti
 
 This file covers what you need to start working. For deeper topics, read the linked doc — do NOT inline their content back here.
 
-| Topic                                                    | Where                                                                                                                              |
-| -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| Architecture decisions, Electron sidecar IPC patterns    | `ARCHITECT.md`                                                                                                                     |
-| UI design system, screens, components                    | `docs/design/UNIFIED.md` (authoritative) -> `docs/design/DESIGN.md` (foundation) -> `docs/design/tokens.css` / `tokens.ts`         |
-| AI agent specs (planner, tdd-guide, code-reviewer, etc.) | `agents/CLAUDE.md`                                                                                                                 |
-| Development standards (coding style, testing, security)  | `rules/CLAUDE.md`                                                                                                                  |
-| Autonomous development loop and Codex review workflows   | Lifeline plugin — see [Plugin Setup](#lifeline-plugin-setup)                                                                       |
-| Architecture specs, exploration notes                    | `docs/CLAUDE.md`                                                                                                                   |
-| Codex code review (project context for Codex)            | `AGENTS.md`                                                                                                                        |
-| Historical Codex review specs                            | `docs/superpowers/specs/2026-04-02-codex-code-review-design.md`, `docs/superpowers/specs/2026-04-03-codex-feedback-loop-design.md` |
-| Progress tracking (roadmap status)                       | `docs/roadmap/progress.yaml`                                                                                                       |
-| Linear change timeline (paired with reviews)             | `CHANGELOG.md` / `CHANGELOG.zh-CN.md`                                                                                              |
-| Shell OSC 7 setup (file explorer cwd sync)               | `README.md` → "Shell Setup (OSC 7)"                                                                                                |
-| Review knowledge base (patterns from past reviews)       | `docs/reviews/CLAUDE.md`                                                                                                           |
-| Technical decision records (library choices, etc.)       | `docs/decisions/CLAUDE.md`                                                                                                         |
+| Topic                                                    | Where                                                                                                                                                       |
+| -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Architecture decisions, Electron sidecar IPC patterns    | `ARCHITECT.md`                                                                                                                                              |
+| UI design system, screens, components                    | `docs/design/UNIFIED.md` (authoritative) -> `docs/design/DESIGN.md` (foundation) -> `docs/design/tokens.css` / `tokens.ts` -> `src/theme/` (runtime tokens) |
+| AI agent specs (planner, tdd-guide, code-reviewer, etc.) | `agents/CLAUDE.md`                                                                                                                                          |
+| Development standards (coding style, testing, security)  | `rules/CLAUDE.md`                                                                                                                                           |
+| Autonomous development loop and Codex review workflows   | Lifeline plugin — see [Plugin Setup](#lifeline-plugin-setup)                                                                                                |
+| Architecture specs, exploration notes                    | `docs/CLAUDE.md`                                                                                                                                            |
+| Codex code review (project context for Codex)            | `AGENTS.md`                                                                                                                                                 |
+| Historical Codex review specs                            | `docs/superpowers/specs/2026-04-02-codex-code-review-design.md`, `docs/superpowers/specs/2026-04-03-codex-feedback-loop-design.md`                          |
+| Progress tracking (roadmap status)                       | `docs/roadmap/progress.yaml`                                                                                                                                |
+| Linear change timeline (paired with reviews)             | `CHANGELOG.md` / `CHANGELOG.zh-CN.md`                                                                                                                       |
+| Shell OSC 7 setup (file explorer cwd sync)               | `README.md` → "Shell Setup (OSC 7)"                                                                                                                         |
+| Review knowledge base (patterns from past reviews)       | `docs/reviews/CLAUDE.md`                                                                                                                                    |
+| Technical decision records (library choices, etc.)       | `docs/decisions/CLAUDE.md`                                                                                                                                  |
 
 ## Lifeline Plugin Setup
 
