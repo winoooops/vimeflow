@@ -10,18 +10,9 @@ import { parseModelTitle } from '../utils/parseModelTitle'
 // shell pane omits the header entirely and uses the same card height for its
 // two-zone empty state.
 
-export type AgentCardState =
-  | 'running'
-  | 'awaiting'
-  | 'completed'
-  | 'errored'
-  | 'idle'
-
 export interface AgentStatusCardProps {
   /** Agent model name shown as the title; ignored when `isShell`. */
   title: string
-  /** Retained for API stability; visual wash was removed from the compact card. */
-  state: AgentCardState
   /** True when the active pane is a pure shell (no agent / model / usage). */
   isShell?: boolean
   /** Retained for API stability; compact card shows turn count only. */
@@ -182,7 +173,6 @@ const ShellBody = ({ shellName }: { shellName: string }): ReactElement => (
 
 export const AgentStatusCard = ({
   title,
-  state,
   isShell = false,
   elapsed = null,
   turns = null,
@@ -197,7 +187,6 @@ export const AgentStatusCard = ({
   // truncates to "Opus 4.8 (1M cont…". Peel the context size off so the name
   // shows in full beside a compact badge.
   const { name: modelName, contextLabel } = parseModelTitle(title)
-  void state
   void elapsed
   void contextPct
 

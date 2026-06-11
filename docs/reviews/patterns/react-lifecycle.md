@@ -2,7 +2,7 @@
 id: react-lifecycle
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-06-07
+last_updated: 2026-06-11
 ref_count: 14
 ---
 
@@ -302,3 +302,12 @@ to avoid unintended re-runs (e.g., PTY respawning on every cwd change).
 - **Finding:** `appendPaneCacheReading` called `writeCacheHistory` (a `localStorage` writer) from inside the functional `setSessions` updater. React state updaters are expected to be pure; in StrictMode they can be invoked twice, and any non-idempotent side effect creates a durability/state-consistency hazard. Even though the current write was mostly idempotent, future additions of timestamps, counters, or interrupted render paths could persist history that React never committed.
 - **Fix:** Moved the `writeCacheHistory` call outside the updater. The callback now reads the target pane from `sessionsRef.current`, computes the next `cacheHistory` array with `pushCacheReading`, writes to `localStorage` once, then calls `setSessions` with a pure updater that only maps the in-memory state. The updater no longer touches `localStorage` and is safe under StrictMode double-invocation.
 - **Commit:** _(PR #395 round 1)_
+
+### 30. Derived sidebarCardState computed every render but voided by AgentStatusCard
+
+- **Source:** github-claude | PR #421 round 2 | 2026-06-11
+- **Severity:** MEDIUM
+- **File:** `src/features/workspace/WorkspaceView.tsx`, `src/features/workspace/components/AgentStatusCard.tsx`
+- **Finding:** `sidebarCardState` was computed through a 5-branch ternary over `activityPanelStatus` and `agentStatus.isActive` on every render, then passed as `state={sidebarCardState}` to `AgentStatusCard` where it was immediately discarded via `void state`. No state-driven visual output existed in the card, so the computation served no purpose and misled the component interface.
+- **Fix:** Removed `sidebarCardState` computation from `WorkspaceView`, removed the `state` prop from `AgentStatusCardProps`, and updated co-located tests to match the new prop contract.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

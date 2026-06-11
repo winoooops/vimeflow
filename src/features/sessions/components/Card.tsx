@@ -41,6 +41,7 @@ const MenuRow = ({
 }): ReactElement => (
   <button
     type="button"
+    role="menuitem"
     onClick={onClick}
     className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left font-label text-[12px] transition-colors ${
       danger
@@ -261,6 +262,7 @@ const CardComponent = ({
           </button>
           {menuOpen && (
             <div
+              role="menu"
               onClick={(e) => e.stopPropagation()}
               className="absolute right-0 top-7 z-40 min-w-[132px] rounded-[9px] border border-[rgba(74,68,79,0.45)] bg-[#1c1c30] p-1 shadow-[0_10px_28px_rgba(0,0,0,0.45)]"
             >

@@ -205,20 +205,17 @@ vi.mock('../../components/sidebar/Sidebar', () => ({
   ),
 }))
 
-const capturedCardProps: { title?: string; state?: string } = {}
+const capturedCardProps: { title?: string } = {}
 
 interface MockAgentStatusCardProps {
   title?: string
-  state?: string
 }
 
 vi.mock('./components/AgentStatusCard', () => ({
   AgentStatusCard: ({
     title = undefined,
-    state = undefined,
   }: MockAgentStatusCardProps): ReactElement => {
     capturedCardProps.title = title
-    capturedCardProps.state = state
 
     return <div data-testid="agent-status-card-mock" />
   },
@@ -275,7 +272,6 @@ describe('WorkspaceView lifted-subscription contract', () => {
     capturedPanelProps.gitStatus = undefined
     capturedDockPanelProps.gitStatus = undefined
     capturedCardProps.title = undefined
-    capturedCardProps.state = undefined
     capturedDockPanelProps.feedbackBatch = undefined
     capturedDockPanelProps.feedbackRepoRootRef = undefined
     // Clear the mock between tests so `toHaveBeenCalledWith` assertions
@@ -322,7 +318,6 @@ describe('WorkspaceView lifted-subscription contract', () => {
 
     expect(capturedPanelProps.agentStatus).toBeDefined()
     expect(capturedCardProps.title).toBeDefined()
-    expect(capturedCardProps.state).toBeDefined()
     expect(useAgentStatus).toHaveBeenCalledTimes(
       vi.mocked(useGitStatus).mock.calls.length
     )

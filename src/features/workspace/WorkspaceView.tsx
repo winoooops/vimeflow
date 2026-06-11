@@ -18,10 +18,7 @@ import {
   type SidebarTabItem,
 } from '../../components/sidebar/SidebarTabs'
 import { StatusBar, type StatusBarSession } from '../../components/StatusBar'
-import {
-  AgentStatusCard,
-  type AgentCardState,
-} from './components/AgentStatusCard'
+import { AgentStatusCard } from './components/AgentStatusCard'
 import { FilesView } from './components/FilesView'
 import { NewSessionButton } from './components/NewSessionButton'
 import { SessionsView } from './components/SessionsView'
@@ -1292,22 +1289,6 @@ export const WorkspaceView = (): ReactElement => {
 
   // Fused AgentStatusCard props, derived from the same live signals the status
   // bar uses (VIM-66). The compact card keeps only the turn count in the
-  // header and shows usage bars when live rate-limit data is present.
-  // Completed/errored come from the pane lifecycle and must NOT be masked by
-  // the agent going inactive after it finishes; `running` requires a live
-  // agent; everything else (no session, paused, inactive) reads as idle.
-  // (`awaiting` is supported by the card but not emitted yet — no data feed,
-  // same as `subtitle`.)
-  const sidebarCardState: AgentCardState = !activeSession
-    ? 'idle'
-    : activityPanelStatus === 'completed'
-      ? 'completed'
-      : activityPanelStatus === 'errored'
-        ? 'errored'
-        : agentStatus.isActive && activityPanelStatus === 'running'
-          ? 'running'
-          : 'idle'
-
   // A pure shell pane has no detected agent (and therefore no model / usage);
   // the card renders its fixed-height shell placeholder in that case so the
   // session list below never reflows when switching panes.
@@ -1884,7 +1865,6 @@ export const WorkspaceView = (): ReactElement => {
               header={
                 <AgentStatusCard
                   title={sidebarCardTitle}
-                  state={sidebarCardState}
                   isShell={sidebarCardIsShell}
                   turns={sidebarCardTurns}
                   fiveHourPct={sidebarCardFiveHourPct}

@@ -13,20 +13,20 @@ vi.mock('../../agent-status/hooks/useAgentStatus', () => ({
 describe('AgentStatusCard', () => {
   test('does not subscribe to useAgentStatus so the single-subscription invariant stays in WorkspaceView', () => {
     expect(() =>
-      render(<AgentStatusCard title="ignored" state="idle" isShell />)
+      render(<AgentStatusCard title="ignored" isShell />)
     ).not.toThrow()
 
     expect(useAgentStatus).not.toHaveBeenCalled()
   })
 
   test('renders the model-name title for an agent pane', () => {
-    render(<AgentStatusCard title="claude-sonnet-4-6" state="running" />)
+    render(<AgentStatusCard title="claude-sonnet-4-6" />)
 
     expect(screen.getByText('claude-sonnet-4-6')).toBeInTheDocument()
   })
 
   test('splits a "(<size> context)" title into a name + compact context badge', () => {
-    render(<AgentStatusCard title="Opus 4.8 (1M context)" state="running" />)
+    render(<AgentStatusCard title="Opus 4.8 (1M context)" />)
 
     expect(screen.getByText('Opus 4.8')).toBeInTheDocument()
     expect(screen.getByTestId('agent-card-context-badge')).toHaveTextContent(
@@ -39,7 +39,7 @@ describe('AgentStatusCard', () => {
   })
 
   test('omits the context badge when the title has no context suffix', () => {
-    render(<AgentStatusCard title="claude-sonnet-4-6" state="running" />)
+    render(<AgentStatusCard title="claude-sonnet-4-6" />)
 
     expect(
       screen.queryByTestId('agent-card-context-badge')
@@ -47,7 +47,7 @@ describe('AgentStatusCard', () => {
   })
 
   test('no longer renders the in-card sidebar toggle (moved to the top bar / tab bar)', () => {
-    render(<AgentStatusCard title="m" state="running" />)
+    render(<AgentStatusCard title="m" />)
 
     expect(
       screen.queryByTestId('sidebar-toggle-incard')
@@ -56,7 +56,7 @@ describe('AgentStatusCard', () => {
   })
 
   test('does not render an explicit running status indicator (removed)', () => {
-    render(<AgentStatusCard title="claude" state="running" />)
+    render(<AgentStatusCard title="claude" />)
 
     expect(screen.queryByText('Running')).not.toBeInTheDocument()
     expect(
@@ -68,7 +68,7 @@ describe('AgentStatusCard', () => {
     render(
       <AgentStatusCard
         title="ignored-model"
-        state="idle"
+       
         isShell
         shellName="/bin/zsh"
       />
@@ -88,7 +88,7 @@ describe('AgentStatusCard', () => {
     render(
       <AgentStatusCard
         title="ignored-model"
-        state="idle"
+       
         isShell
         shellName="C:\\Program Files\\PowerShell\\7\\pwsh.exe"
       />
@@ -107,7 +107,7 @@ describe('AgentStatusCard', () => {
 
   test('links to the cheat.sh cheatsheet for the resolved shell (bash, not just zsh)', () => {
     const { rerender } = render(
-      <AgentStatusCard title="x" state="idle" isShell shellName="/bin/zsh" />
+      <AgentStatusCard title="x" isShell shellName="/bin/zsh" />
     )
 
     expect(
@@ -115,7 +115,7 @@ describe('AgentStatusCard', () => {
     ).toHaveAttribute('href', 'https://cheat.sh/zsh')
 
     rerender(
-      <AgentStatusCard title="x" state="idle" isShell shellName="/bin/bash" />
+      <AgentStatusCard title="x" isShell shellName="/bin/bash" />
     )
 
     expect(
@@ -127,7 +127,7 @@ describe('AgentStatusCard', () => {
     // `activePtyBackedPane?.shell ?? null` can pass null for a shell pane;
     // normalizeShellName yields the `shell` sentinel, which is NOT a cheat.sh
     // topic — so the link must resolve to the real POSIX `sh` cheatsheet.
-    render(<AgentStatusCard title="x" state="idle" isShell shellName={null} />)
+    render(<AgentStatusCard title="x" isShell shellName={null} />)
 
     expect(
       screen.getByRole('link', { name: /shell cheatsheet/u })
@@ -140,7 +140,7 @@ describe('AgentStatusCard', () => {
     render(
       <AgentStatusCard
         title="x"
-        state="idle"
+       
         isShell
         shellName="/opt/bin/nushell"
       />
@@ -155,7 +155,7 @@ describe('AgentStatusCard', () => {
     render(
       <AgentStatusCard
         title="x"
-        state="idle"
+       
         isShell
         elapsed="8m"
         turns={6}
@@ -174,7 +174,7 @@ describe('AgentStatusCard', () => {
     render(
       <AgentStatusCard
         title="m"
-        state="running"
+       
         elapsed="2m"
         turns={12}
         contextPct={64}
@@ -193,7 +193,7 @@ describe('AgentStatusCard', () => {
     render(
       <AgentStatusCard
         title="m"
-        state="running"
+       
         fiveHourPct={12}
         weekPct={34}
       />
@@ -209,7 +209,7 @@ describe('AgentStatusCard', () => {
     render(
       <AgentStatusCard
         title="m"
-        state="running"
+       
         fiveHourPct={null}
         weekPct={null}
       />
@@ -223,7 +223,7 @@ describe('AgentStatusCard', () => {
     render(
       <AgentStatusCard
         title="m"
-        state="running"
+       
         elapsed="2m"
         turns={0}
         contextPct={64}
@@ -240,7 +240,7 @@ describe('AgentStatusCard', () => {
     const { rerender } = render(
       <AgentStatusCard
         title="m"
-        state="running"
+       
         turns={3}
         fiveHourPct={12}
         weekPct={34}
@@ -255,7 +255,7 @@ describe('AgentStatusCard', () => {
     })
 
     rerender(
-      <AgentStatusCard title="ignored" state="idle" isShell shellName="bash" />
+      <AgentStatusCard title="ignored" isShell shellName="bash" />
     )
 
     expect(screen.getByTestId('sidebar-agent-status-card')).toHaveStyle({

@@ -478,3 +478,12 @@ handlers must not trap focus without implementing the promised behavior.
 - **Finding:** RateLimitBar clamps the visual width to 100% but exposes `Math.round(percentage)` as `aria-valuenow` with `aria-valuemax` fixed at 100. If usage exceeds 100%, assistive technology receives an invalid progressbar range.
 - **Fix:** Clamped `aria-valuenow` to the same 0-100 range as the visual fill using `Math.min(Math.max(Math.round(percentage), 0), 100)`, while leaving the visible text free to show the raw rounded percentage. Added co-located regression tests for overflow and negative values.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 44. aria-haspopup="menu" without role="menu" on popup — ARIA contract broken
+
+- **Source:** github-claude | PR #421 round 2 | 2026-06-11
+- **Severity:** MEDIUM
+- **File:** `src/features/sessions/components/Card.tsx`
+- **Finding:** The kebab trigger button declares `aria-haspopup="menu"`, which commits to an ARIA menu popup contract requiring the popup element to carry `role="menu"` and each item to carry `role="menuitem"`. The popup `<div>` and `MenuRow` buttons had neither role, breaking the screen-reader menu-navigation contract.
+- **Fix:** Added `role="menu"` to the popup `<div>` and `role="menuitem"` to the `<button>` inside `MenuRow`.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
