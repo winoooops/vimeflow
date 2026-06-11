@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Pane, Session } from '../types'
 import type { ITerminalService } from '../../terminal/services/terminalService'
 import { isShellPane } from '../utils/paneKind'
+import { isLiveStatus } from '../utils/sessionStatus'
 import { focusBrowserPane } from '../../browser/browserBridge'
 
 export interface UseActiveSessionControllerOptions {
@@ -50,8 +51,7 @@ export const useActiveSessionController = ({
       const activePane = session.panes.find((pane) => pane.active)
 
       const isLiveShell = (pane: Pane): boolean =>
-        isShellPane(pane) &&
-        (pane.status === 'running' || pane.status === 'paused')
+        isShellPane(pane) && isLiveStatus(pane.status)
 
       // Resolve the LIVE shell PTY to activate. Prefer the session's active
       // pane when it is a live shell so restore (and a tab switch) target the

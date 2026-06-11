@@ -12,6 +12,6 @@ export const ptyStatusToSessionStatus = (status: PtyStatus): SessionStatus => {
       return 'errored'
     case 'idle':
     default:
-      return 'paused'
+      return 'idle'
   }
 }

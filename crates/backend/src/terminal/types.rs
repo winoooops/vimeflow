@@ -18,6 +18,8 @@ pub struct PtySession {
     pub pid: u32,
     /// Current working directory
     pub cwd: String,
+    /// Resolved system shell path used for this PTY.
+    pub shell: String,
 }
 
 /// Request payload for spawning a new PTY session
@@ -203,6 +205,8 @@ pub struct PaneGrouping {
 pub struct SessionInfo {
     pub id: String,
     pub cwd: String,
+    #[cfg_attr(test, ts(optional))]
+    pub shell: Option<String>,
     pub status: SessionStatus,
     #[cfg_attr(test, ts(optional))]
     #[cfg_attr(test, ts(type = "boolean | null"))]

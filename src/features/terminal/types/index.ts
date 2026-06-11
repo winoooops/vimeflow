@@ -90,6 +90,8 @@ export interface PTYSpawnResult {
   pid: number
   /** Resolved working directory (absolute path from Rust) — Rust always returns this */
   cwd: string
+  /** Resolved shell path used for this PTY. */
+  shell: string
 }
 
 /**

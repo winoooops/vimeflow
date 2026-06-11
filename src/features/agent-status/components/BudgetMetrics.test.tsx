@@ -58,13 +58,13 @@ describe('BudgetMetrics', () => {
       />
     )
 
-    expect(screen.getByText('5h Limit')).toBeInTheDocument()
+    expect(screen.getByText('5-hour Session')).toBeInTheDocument()
     expect(screen.getByText('35%')).toBeInTheDocument()
     expect(screen.getByText('API Time')).toBeInTheDocument()
     expect(screen.getByText('Tokens')).toBeInTheDocument()
   })
 
-  test('renders 7d limit bar when sevenDay exists', () => {
+  test('renders weekly usage bar when sevenDay exists', () => {
     render(
       <BudgetMetrics
         cost={makeCost()}
@@ -76,7 +76,7 @@ describe('BudgetMetrics', () => {
       />
     )
 
-    expect(screen.getByText('7d Limit')).toBeInTheDocument()
+    expect(screen.getByText('Weekly Usage')).toBeInTheDocument()
     expect(screen.getByText('12%')).toBeInTheDocument()
   })
 

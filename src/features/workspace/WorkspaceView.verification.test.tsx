@@ -94,45 +94,48 @@ vi.mock('../../hooks/useElasticContainer', () => ({
 }))
 
 // eslint-disable-next-line import/first
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 // eslint-disable-next-line import/first
 import userEvent from '@testing-library/user-event'
 // eslint-disable-next-line import/first
 import { WorkspaceView } from './WorkspaceView'
 
 describe('Feature 23: Final Phase 2 Verification', () => {
-  describe('1. 5-zone layout renders', () => {
-    test('renders icon rail, sidebar, terminal, dock panel, and activity zones', () => {
+  describe('1. workspace zones render (VIM-76: icon rail removed)', () => {
+    test('renders sidebar (with top bar), terminal, dock panel, and activity zones', () => {
       render(<WorkspaceView />)
 
-      expect(screen.getByTestId('icon-rail')).toBeInTheDocument()
+      // VIM-76: icon rail removed; sidebar chrome remains in the sidebar.
       expect(screen.getByTestId('sidebar')).toBeInTheDocument()
+      expect(screen.getByTestId('sidebar-top-bar')).toBeInTheDocument()
+      expect(screen.getByTestId('sidebar-footer-wrapper')).toBeInTheDocument()
       expect(screen.getByTestId('terminal-zone')).toBeInTheDocument()
       expect(screen.getByTestId('dock-panel')).toBeInTheDocument()
       expect(screen.getByTestId('agent-status-panel')).toBeInTheDocument()
     })
   })
 
-  describe('2. Icon rail shows utility actions', () => {
-    test('displays the account identity', () => {
+  describe('2. Sidebar footer shows utility actions', () => {
+    test('no longer renders a placeholder account avatar (removed, VIM-66)', () => {
       render(<WorkspaceView />)
 
-      const account = screen.getByRole('img', { name: 'Account' })
-
-      expect(account).toHaveTextContent('w')
+      expect(screen.queryByRole('img', { name: 'Account' })).toBeNull()
     })
 
-    test('displays command palette and disabled settings buttons', () => {
+    test('moves Settings to the footer and removes the command palette button', () => {
       render(<WorkspaceView />)
 
-      expect(
-        screen.getByRole('button', { name: 'Command Palette' })
-      ).toBeInTheDocument()
+      const topBar = screen.getByTestId('sidebar-top-bar')
+      const footer = screen.getByTestId('sidebar-footer-wrapper')
 
-      expect(screen.getByRole('button', { name: 'Settings' })).toHaveAttribute(
-        'aria-disabled',
-        'true'
-      )
+      expect(
+        within(topBar).queryByRole('button', { name: 'Command Palette' })
+      ).not.toBeInTheDocument()
+
+      // Settings aria-label is "Settings — coming (see issue #252)".
+      expect(
+        within(footer).getByRole('button', { name: /^Settings/ })
+      ).toHaveAttribute('aria-disabled', 'true')
     })
   })
 
@@ -245,12 +248,13 @@ describe('Feature 23: Final Phase 2 Verification', () => {
       expect(workspace).toHaveClass('h-screen')
     })
 
-    test('uses Obsidian Lens color tokens', () => {
+    test('sidebar is transparent so it blends into the workspace surface', () => {
       render(<WorkspaceView />)
 
       const sidebar = screen.getByTestId('sidebar')
 
-      expect(sidebar).toHaveClass('bg-surface-container-low')
+      expect(sidebar).toHaveClass('bg-transparent')
+      expect(sidebar).not.toHaveClass('bg-surface-container-low')
     })
   })
 
@@ -258,8 +262,7 @@ describe('Feature 23: Final Phase 2 Verification', () => {
     test('workspace view renders without errors', () => {
       render(<WorkspaceView />)
 
-      // Verify all 5 zones are present
-      expect(screen.getByTestId('icon-rail')).toBeInTheDocument()
+      // Verify all zones are present (VIM-76: icon rail removed).
       expect(screen.getByTestId('sidebar')).toBeInTheDocument()
       expect(screen.getByTestId('terminal-zone')).toBeInTheDocument()
       expect(screen.getByTestId('dock-panel')).toBeInTheDocument()

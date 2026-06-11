@@ -2,8 +2,8 @@
 id: react-lifecycle
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-06-07
-ref_count: 9
+last_updated: 2026-06-11
+ref_count: 14
 ---
 
 # React Lifecycle
@@ -196,6 +196,15 @@ to avoid unintended re-runs (e.g., PTY respawning on every cwd change).
 - **Fix:** Key wrapper nodes from each child's stable React key, falling back to the index only for unkeyed children. Added a regression test with a stateful keyed child that preserves state when another child is inserted before it.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
 
+### 29. Single-subscription invariant test weakened after derived-props refactor
+
+- **Source:** github-claude | PR #352 | 2026-06-06
+- **Severity:** MEDIUM
+- **File:** `src/features/workspace/WorkspaceView.subscription.test.tsx`
+- **Finding:** The old test used reference-equality (`toBe`) to prove a single `useAgentStatus()` call site: both `AgentStatusPanel` and `SidebarStatusHeader` received the SAME object from a mock that returns a fresh object per call. After VIM-66 refactored `AgentStatusCard` to receive derived props (`title`, `state`) instead of the raw `agentStatus` object, the reference-equality probe was retired and replaced with `expect(useAgentStatus).toHaveBeenCalled()`. That assertion passes whether the hook is called once or five times per render, so a future child component adding its own `useAgentStatus()` call would go undetected — creating duplicate Tauri event listeners and possible stale-state divergence. The per-component `AgentStatusCard.test.tsx` guards only the card in isolation, not the broader tree.
+- **Fix:** Replaced the presence-only assertion with a count-level guarantee pinned to `useGitStatus` call count. Both hooks are lifted once-per-render in `WorkspaceView` and neither is called by children in this test setup, so the counts must match. Added `vi.mocked(useAgentStatus).mockClear()` in `beforeEach` so the count starts fresh per test. If a future child adds a `useAgentStatus()` call, the counts diverge and the test fails.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
 ### 25. Sticky title state survives PTY restart because `replacementPane` spreads `...oldPane`
 
 - **Source:** github-codex-connector | PR #317 cycle 2 | 2026-05-31
@@ -240,6 +249,33 @@ to avoid unintended re-runs (e.g., PTY respawning on every cwd change).
 - **Fix:** Dropped the `payload.title !== pane.agentTitle` clause. The guard now blocks ALL `ai-generated` events whenever `agentTitleSource === 'user-renamed'`, regardless of title value. A same-title ai-generated re-emit is now a no-op (state already matches, source stays `'user-renamed'`); a different-title ai-generated event is blocked. Also restructured the guard to check `source` before `cleared`, so the documented `user-renamed + empty` lifecycle-reset escape hatch falls through to the standard cleared path instead of being trapped (see [[documentation-accuracy]] §74). Added regression tests covering (a) same-title ai-generated followed by a different-title ai-generated and (b) the lifecycle-reset path. Code-review heuristic: when a guard's predicate references the state it's supposed to protect, every "let through harmlessly" branch must guarantee the protected state is NOT written by the downstream code — otherwise the gate opens itself on the first such event.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
 
+### 26. Treat exited agents as shell in the sidebar card
+
+- **Source:** github-codex-connector | PR #352 round 1 | 2026-06-06
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/workspace/WorkspaceView.tsx`
+- **Finding:** When an agent exits but the PTY remains open, `useAgentStatus` sets `agentExited: true`/`isActive: false` while retaining `agentType` and the final metrics during its 5s exit-hold window. Because `sidebarCardIsShell` only looked at `agentType`, that scenario rendered the fused card as an agent card with stale model/rate-limit data instead of the SHELL placeholder.
+- **Fix:** Changed `const sidebarCardIsShell = !agentStatus.agentType` to `const sidebarCardIsShell = !agentStatus.agentType || !agentStatus.isActive` so an inactive agent (including the post-exit hold window) renders the shell placeholder.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 27. Exited-agent shell guard must check `agentExited` during the exit-hold window
+
+- **Source:** github-codex-connector + local refinement | PR #352 round 3 | 2026-06-06
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/workspace/WorkspaceView.tsx`
+- **Finding:** The prior round-1 fix added `!agentStatus.isActive` to `sidebarCardIsShell`, but during the 5s exit-hold window `isActive` remains `true` while `agentExited` is `true`. The card therefore continued to render stale model/rate-limit data instead of the SHELL placeholder.
+- **Fix:** Added `|| agentStatus.agentExited` to the `sidebarCardIsShell` derivation so the shell placeholder shows immediately when an agent exits, even during the exit-hold window where `isActive` has not yet flipped to false.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 28. forwardRef component optional props trigger `react/require-default-props` after removing `defaultProps`
+
+- **Source:** local-codex (CI failure) | PR #352 round 3 | 2026-06-06
+- **Severity:** HIGH
+- **File:** `src/features/workspace/components/SidebarToggle.tsx`
+- **Finding:** Removing deprecated `defaultProps` from a `forwardRef` component caused ESLint `react/require-default-props` errors because the rule cannot see destructuring defaults through `forwardRef`. The CI Code Quality Check job failed. All defaults were already handled via destructuring, so re-adding `defaultProps` would reintroduce the React 18.3 deprecation warning.
+- **Fix:** Added the repository-standard `/* eslint-disable react/require-default-props -- forwardRef components: ESLint cannot see through forwardRef to find destructuring defaults */` comment at the top of the file, matching the convention used in six other forwardRef files in the repo.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
 ### 26. retryTimerRef forward reference in mount-lifecycle cleanup
 
 - **Source:** github-claude | PR #381 round 2 | 2026-06-07
@@ -266,3 +302,12 @@ to avoid unintended re-runs (e.g., PTY respawning on every cwd change).
 - **Finding:** `appendPaneCacheReading` called `writeCacheHistory` (a `localStorage` writer) from inside the functional `setSessions` updater. React state updaters are expected to be pure; in StrictMode they can be invoked twice, and any non-idempotent side effect creates a durability/state-consistency hazard. Even though the current write was mostly idempotent, future additions of timestamps, counters, or interrupted render paths could persist history that React never committed.
 - **Fix:** Moved the `writeCacheHistory` call outside the updater. The callback now reads the target pane from `sessionsRef.current`, computes the next `cacheHistory` array with `pushCacheReading`, writes to `localStorage` once, then calls `setSessions` with a pure updater that only maps the in-memory state. The updater no longer touches `localStorage` and is safe under StrictMode double-invocation.
 - **Commit:** _(PR #395 round 1)_
+
+### 30. Derived sidebarCardState computed every render but voided by AgentStatusCard
+
+- **Source:** github-claude | PR #421 round 2 | 2026-06-11
+- **Severity:** MEDIUM
+- **File:** `src/features/workspace/WorkspaceView.tsx`, `src/features/workspace/components/AgentStatusCard.tsx`
+- **Finding:** `sidebarCardState` was computed through a 5-branch ternary over `activityPanelStatus` and `agentStatus.isActive` on every render, then passed as `state={sidebarCardState}` to `AgentStatusCard` where it was immediately discarded via `void state`. No state-driven visual output existed in the card, so the computation served no purpose and misled the component interface.
+- **Fix:** Removed `sidebarCardState` computation from `WorkspaceView`, removed the `state` prop from `AgentStatusCardProps`, and updated co-located tests to match the new prop contract.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

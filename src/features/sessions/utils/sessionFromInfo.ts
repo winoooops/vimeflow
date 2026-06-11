@@ -7,13 +7,19 @@ import { readCacheHistory } from './cacheHistoryStore'
 
 /** Build a `Session` from a Rust `SessionInfo`. */
 export const sessionFromInfo = (info: SessionInfo, index: number): Session => {
-  const status = info.status.kind === 'Alive' ? 'running' : 'completed'
+  const status =
+    info.status.kind === 'Alive'
+      ? 'running'
+      : info.status.last_exit_code != null && info.status.last_exit_code !== 0
+        ? 'errored'
+        : 'completed'
 
   const paneBase = {
     kind: 'shell',
     id: 'p0',
     ptyId: info.id,
     cwd: info.cwd,
+    shell: info.shell,
     agentType: 'generic',
     status,
     cacheHistory: readCacheHistory(info.id),

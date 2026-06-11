@@ -4,7 +4,7 @@ import type { CostState, RateLimitsState } from '../types'
 import { BudgetMetrics } from './BudgetMetrics'
 
 type AgentType = 'claude-code' | 'codex' | 'aider' | 'generic'
-type StatusType = 'running' | 'paused' | 'completed' | 'errored'
+type StatusType = 'running' | 'awaiting' | 'idle' | 'completed' | 'errored'
 
 interface ActiveStatusCardProps {
   mode?: 'active'
@@ -50,10 +50,15 @@ const getStatusConfig = (
       glowClass: 'shadow-[0_0_6px_theme(colors.success)]',
       label: 'Running',
     },
-    paused: {
-      color: 'bg-secondary',
+    awaiting: {
+      color: 'bg-warning',
       glowClass: '',
-      label: 'Paused',
+      label: 'Awaiting you',
+    },
+    idle: {
+      color: 'bg-on-surface-muted',
+      glowClass: '',
+      label: 'Idle',
     },
     completed: {
       color: 'bg-on-surface',

@@ -26,7 +26,13 @@ describe('mockSessions', () => {
   })
 
   test('session statuses are valid', () => {
-    const validStatuses = ['running', 'paused', 'completed', 'errored']
+    const validStatuses = [
+      'running',
+      'awaiting',
+      'idle',
+      'completed',
+      'errored',
+    ]
 
     mockSessions.forEach((session) => {
       expect(validStatuses).toContain(session.status)

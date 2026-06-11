@@ -111,11 +111,13 @@ describe('Terminal Types', () => {
         sessionId: 'session-1',
         pid: 12345,
         cwd: '/home/user',
+        shell: '/bin/bash',
       }
 
       expect(result.sessionId).toBe('session-1')
       expect(result.pid).toBe(12345)
       expect(result.cwd).toBe('/home/user')
+      expect(result.shell).toBe('/bin/bash')
     })
 
     test('PTYWriteParams structure', () => {

@@ -202,6 +202,7 @@ export class DesktopTerminalService implements ITerminalService {
       sessionId: response.id,
       pid: response.pid,
       cwd: response.cwd,
+      shell: response.shell,
     }
   }
 

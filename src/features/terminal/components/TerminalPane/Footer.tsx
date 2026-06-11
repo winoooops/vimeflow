@@ -7,7 +7,7 @@ export interface FooterProps {
   agent: Agent
   pipStatus: SessionStatus
   isFocused: boolean
-  isPaused: boolean
+  isIdle: boolean
   onClickFocus: () => void
   placeholder?: string
 }
@@ -15,13 +15,13 @@ export interface FooterProps {
 const derivePlaceholder = (
   agent: Agent,
   isFocused: boolean,
-  isPaused: boolean
+  isIdle: boolean
 ): string => {
   if (!isFocused) {
     return `click to focus ${agent.short.toLowerCase()}`
   }
-  if (isPaused) {
-    return 'paused'
+  if (isIdle) {
+    return 'idle'
   }
 
   return `message ${agent.short.toLowerCase()}...`
@@ -31,11 +31,11 @@ export const Footer = ({
   agent,
   pipStatus,
   isFocused,
-  isPaused,
+  isIdle,
   onClickFocus,
   placeholder = undefined,
 }: FooterProps): ReactElement => {
-  const text = placeholder ?? derivePlaceholder(agent, isFocused, isPaused)
+  const text = placeholder ?? derivePlaceholder(agent, isFocused, isIdle)
 
   return (
     <div

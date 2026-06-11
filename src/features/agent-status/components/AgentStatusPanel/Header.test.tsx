@@ -37,7 +37,7 @@ test('gradient wash uses agent.accentDim in inline style', () => {
   render(
     <AgentStatusPanelHeader
       agent={AGENTS.codex}
-      status="paused"
+      status="idle"
       onCollapse={() => undefined}
     />
   )

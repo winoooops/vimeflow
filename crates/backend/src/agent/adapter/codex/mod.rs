@@ -131,12 +131,15 @@ impl StateDecoder for CodexAdapter {
     /// multi-session debugging could correlate the warning to the
     /// affected PTY session. The session id is NOT incorporated into
     /// the returned `StatusSnapshot` (R2.2 — output is identity-free).
-    fn decode(
-        &self,
-        session_id: Option<&str>,
-        raw: &str,
-    ) -> Result<StatusSnapshot, String> {
-        parser::parse_rollout_snapshot(session_id, raw)
+    fn decode(&self, session_id: Option<&str>, raw: &str) -> Result<StatusSnapshot, String> {
+        let mut snapshot = parser::parse_rollout_snapshot(session_id, raw)?;
+        if let Some(rate_limits) = self
+            .locator()
+            .latest_account_rate_limits(&snapshot.agent_session_id)
+        {
+            snapshot.rate_limits = rate_limits;
+        }
+        Ok(snapshot)
     }
 }
 
@@ -200,6 +203,7 @@ impl AgentAdapter for CodexAdapter {
 #[cfg(test)]
 mod adapter_tests {
     use super::*;
+    use rusqlite::Connection;
     use std::time::SystemTime;
 
     /// Cycle-11 F31 single-allocation invariant, pinned at its source.
@@ -240,6 +244,49 @@ mod adapter_tests {
             .expect("minimal codex status parses");
 
         assert_eq!(parsed.event.agent_session_id, "sess");
+    }
+
+    #[test]
+    fn decode_prefers_account_rate_limits_from_response_headers() {
+        let codex_home = tempfile::tempdir().expect("tempdir");
+        let logs_path = codex_home.path().join("logs_1.sqlite");
+        let logs = Connection::open(logs_path).expect("open logs db");
+        logs.execute_batch(
+            "CREATE TABLE logs (
+                id INTEGER PRIMARY KEY,
+                ts INTEGER NOT NULL,
+                ts_nanos INTEGER NOT NULL,
+                thread_id TEXT,
+                feedback_log_body TEXT
+            );",
+        )
+        .expect("logs schema");
+        logs.execute(
+            "INSERT INTO logs (ts, ts_nanos, thread_id, feedback_log_body)
+             VALUES (1, 0, 'thread-headers', ?1)",
+            rusqlite::params![r#"Request completed headers={"x-codex-primary-used-percent": "10", "x-codex-secondary-used-percent": "50", "x-codex-primary-reset-at": "1781020167", "x-codex-secondary-reset-at": "1781144090", "x-codex-bengalfox-primary-used-percent": "0", "x-codex-bengalfox-secondary-used-percent": "0"}"#],
+        )
+        .expect("insert headers row");
+
+        let adapter = CodexAdapter::with_locator(Arc::new(CompositeLocator::new(
+            codex_home.path().to_path_buf(),
+            12345,
+            SystemTime::UNIX_EPOCH,
+            None,
+        )));
+        let raw = r#"{"timestamp":"...","type":"session_meta","payload":{"id":"thread-headers","cli_version":"0.138.0"}}
+{"timestamp":"...","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":1000,"output_tokens":200,"cached_input_tokens":0,"total_tokens":1200},"model_context_window":200000},"rate_limits":{"limit_id":"codex_bengalfox","limit_name":"GPT-5.3-Codex-Spark","primary":{"used_percent":0,"resets_at":1781035343},"secondary":{"used_percent":0,"resets_at":1781622143}}}}
+"#;
+
+        let snapshot = <CodexAdapter as StateDecoder>::decode(&adapter, Some("pty"), raw)
+            .expect("codex snapshot");
+
+        assert_eq!(snapshot.rate_limits.five_hour.used_percentage, 10.0);
+        assert_eq!(snapshot.rate_limits.five_hour.resets_at, 1781020167);
+
+        let seven_day = snapshot.rate_limits.seven_day.expect("weekly limit");
+        assert_eq!(seven_day.used_percentage, 50.0);
+        assert_eq!(seven_day.resets_at, 1781144090);
     }
 
     // Step B': the former `parse_status_includes_resolved_rollout_path_when_available`

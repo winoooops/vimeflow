@@ -344,6 +344,21 @@ impl PtyState {
         sessions.get(session_id).and_then(|s| s.child.process_id())
     }
 
+    /// Reap an exited session's child and return its exit code, gated on
+    /// generation so a stale reader never waits a replaced session's child.
+    pub fn try_wait_exit_code(&self, session_id: &SessionId, generation: u64) -> Option<i32> {
+        let mut sessions = self.sessions.lock().expect("failed to lock sessions");
+        let session = sessions.get_mut(session_id)?;
+        if session.generation != generation {
+            return None;
+        }
+        let status = session.child.try_wait().ok().flatten()?;
+        // exit_code() is u32; a code that overflows i32 (e.g. a Windows crash
+        // code) must stay non-zero so a failed exit is never read as clean.
+        let raw = status.exit_code();
+        Some(i32::try_from(raw).unwrap_or(i32::MAX))
+    }
+
     /// Get the resolved CWD for a session
     pub fn get_cwd(&self, session_id: &SessionId) -> Option<String> {
         let sessions = self.sessions.lock().expect("failed to lock sessions");

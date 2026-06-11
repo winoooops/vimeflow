@@ -67,6 +67,7 @@ words:
   - Steph # Flexoki author first name
   - Ango # Flexoki author surname
   - wght # Material Symbols font-variation axis (weight)
+  - topbar # data-testid token for the sidebar top-bar toggle
   - sparkline
 
   # Custom DOM events

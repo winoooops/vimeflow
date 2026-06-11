@@ -177,7 +177,12 @@ export class MockTerminalService implements ITerminalService {
     // Mock returns the cwd that was requested. Real Desktop side resolves
     // '~' to the absolute home dir; we keep the mock pass-through so test
     // expectations stay deterministic without depending on the host.
-    return Promise.resolve({ sessionId, pid, cwd: params.cwd })
+    return Promise.resolve({
+      sessionId,
+      pid,
+      cwd: params.cwd,
+      shell: params.shell ?? '/bin/bash',
+    })
   }
 
   write(params: PTYWriteParams): Promise<void> {

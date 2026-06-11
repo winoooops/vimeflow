@@ -113,14 +113,13 @@ import { WorkspaceView } from './WorkspaceView'
  */
 
 describe('WorkspaceView - Visual Verification (Feature #20)', () => {
-  describe('Layout: 5-Zone Architecture (v2)', () => {
-    test('grid layout has correct zone widths (48px, 272px, 1fr, auto)', () => {
+  describe('Layout: 3-Zone Architecture (VIM-76)', () => {
+    test('grid layout has correct zone widths (auto, 1fr, auto)', () => {
       render(<WorkspaceView />)
       const workspace = screen.getByTestId('workspace-view')
 
-      expect(workspace.style.gridTemplateColumns).toBe(
-        '48px var(--workspace-sidebar-width, 272px) 1fr auto'
-      )
+      // VIM-76: icon rail removed — three columns sidebar | main | activity.
+      expect(workspace.style.gridTemplateColumns).toBe('auto 1fr auto')
 
       expect(
         workspace.style.getPropertyValue('--workspace-sidebar-width')
@@ -224,18 +223,12 @@ describe('WorkspaceView - Visual Verification (Feature #20)', () => {
   })
 
   describe('Surface Hierarchy: Component Backgrounds', () => {
-    test('Icon Rail uses Level 0 surface (bg-surface)', () => {
-      render(<WorkspaceView />)
-      const iconRail = screen.getByTestId('icon-rail')
-
-      expect(iconRail.className).toContain('bg-surface')
-    })
-
-    test('Sidebar uses Level 1 surface (surface-container-low)', () => {
+    test('Sidebar is transparent so it inherits the workspace surface', () => {
       render(<WorkspaceView />)
       const sidebar = screen.getByTestId('sidebar')
 
-      expect(sidebar.className).toContain('bg-surface-container-low')
+      expect(sidebar.className).toContain('bg-transparent')
+      expect(sidebar.className).not.toContain('bg-surface-container-low')
     })
 
     test('Terminal Zone content uses Level 0 surface (bg-surface)', () => {
@@ -297,11 +290,12 @@ describe('WorkspaceView - Visual Verification (Feature #20)', () => {
   })
 
   describe('Design System Compliance Checklist', () => {
-    test('all 5 zones render with correct structure (v2)', () => {
+    test('all 3 zones render with correct structure (VIM-76)', () => {
       render(<WorkspaceView />)
 
-      expect(screen.getByTestId('icon-rail')).toBeInTheDocument()
+      // VIM-76: icon rail removed — sidebar (with its top bar) | main | activity.
       expect(screen.getByTestId('sidebar')).toBeInTheDocument()
+      expect(screen.getByTestId('sidebar-top-bar')).toBeInTheDocument()
       // Active group header replaces the prior "Active Sessions" copy.
       expect(screen.getByTestId('session-group-active')).toBeInTheDocument()
 
@@ -357,20 +351,6 @@ describe('WorkspaceView - Visual Verification (Feature #20)', () => {
       expect(sessionButtons.length).toBeGreaterThan(0)
 
       // Success: Mock data renders correctly, just different from screenshot
-    })
-
-    test('documented deviation: no backdrop-blur on icon rail (reference implementation)', () => {
-      // DEVIATION DOCUMENTED:
-      // Design spec mentions backdrop-blur on icon rail.
-      // Reference implementation (code.html) does NOT use backdrop-blur.
-      // We follow the reference implementation for consistency.
-
-      render(<WorkspaceView />)
-      const iconRail = screen.getByTestId('icon-rail')
-
-      // Icon rail may or may not have backdrop-blur - both are acceptable
-      // Reference implementation doesn't use it, so we don't require it
-      expect(iconRail).toBeInTheDocument()
     })
   })
 })

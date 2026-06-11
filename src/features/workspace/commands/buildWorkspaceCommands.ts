@@ -54,6 +54,12 @@ export interface WorkspaceCommandDeps {
   setActiveSessionId: (id: string) => void
   notifyInfo: (message: string) => void
   /**
+   * Toggle the workspace-global sidebar-collapse flag (VIM-66). Optional so
+   * callers/tests that don't exercise `:toggle-sidebar` stay valid; the real
+   * WorkspaceView always provides it.
+   */
+  toggleSidebar?: () => void
+  /**
    * Toggle the focused pane's burner terminal (VIM-72). Resolves the focused
    * pane and hides-if-shown, same as the `Mod+;` then backtick chord. Optional
    * so the builder's unit tests need not thread it; WorkspaceView always wires it.
@@ -106,6 +112,7 @@ export const buildWorkspaceCommands = (
     isCurrentPaneRenameRequest,
     setActiveSessionId,
     notifyInfo,
+    toggleSidebar,
     toggleBurner,
   } = deps
 
@@ -393,6 +400,15 @@ export const buildWorkspaceCommands = (
         }
 
         notifyInfo(`No tab matching '${trimmed}'`)
+      },
+    },
+    {
+      id: 'toggle-sidebar',
+      label: ':toggle-sidebar',
+      description: 'Show or hide the sidebar',
+      icon: 'left_panel_close',
+      execute: (): void => {
+        toggleSidebar?.()
       },
     },
     {

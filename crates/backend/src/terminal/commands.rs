@@ -1,6 +1,6 @@
 //! PTY operation helpers consumed by the runtime-neutral backend state.
 
-use portable_pty::{native_pty_system, CommandBuilder, PtySize};
+use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 use std::io::Read;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -82,6 +82,14 @@ fn locale_env_plan(
     }
 }
 
+fn system_shell() -> String {
+    if cfg!(target_os = "windows") {
+        "powershell.exe".to_string()
+    } else {
+        std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string())
+    }
+}
+
 /// Spawn a new PTY session with a shell
 pub(crate) async fn spawn_pty_inner(
     state: PtyState,
@@ -104,11 +112,7 @@ pub(crate) async fn spawn_pty_inner(
 
     // Determine shell path — ignore user-supplied shell for security;
     // only allow the system default shell to prevent arbitrary binary execution.
-    let shell = if cfg!(target_os = "windows") {
-        "powershell.exe".to_string()
-    } else {
-        std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string())
-    };
+    let shell = system_shell();
 
     if request.shell.is_some() {
         log::warn!(
@@ -367,7 +371,9 @@ pub(crate) async fn spawn_pty_inner(
         writer,
         child,
         cwd: cwd.to_string_lossy().to_string(),
-        shim_dir: bridge_files.as_ref().map(|f| f.shim_dir_path.to_string_lossy().to_string()),
+        shim_dir: bridge_files
+            .as_ref()
+            .map(|f| f.shim_dir_path.to_string_lossy().to_string()),
         generation,
         ring,
         cancelled,
@@ -409,6 +415,7 @@ pub(crate) async fn spawn_pty_inner(
                     exited: false,
                     last_exit_code: None,
                     activity_panel_collapsed: None,
+                    last_shell: Some(shell.clone()),
                 },
             );
             data.session_order.push(request.session_id.clone());
@@ -468,6 +475,7 @@ pub(crate) async fn spawn_pty_inner(
         id: request.session_id,
         pid,
         cwd: cwd.to_string_lossy().to_string(),
+        shell,
     })
 }
 
@@ -552,7 +560,10 @@ pub(crate) fn kill_pty_inner(
     // Clean up bridge files and shim directory for the session.
     if let Some(session) = removed {
         let cwd = std::path::Path::new(&session.cwd);
-        let bridge_dir = cwd.join(".vimeflow").join("sessions").join(&request.session_id);
+        let bridge_dir = cwd
+            .join(".vimeflow")
+            .join("sessions")
+            .join(&request.session_id);
         let _ = super::bridge::cleanup_bridge_files(
             &bridge_dir.to_string_lossy(),
             session.shim_dir.as_deref(),
@@ -780,6 +791,7 @@ pub(crate) fn list_sessions_inner(
         session_infos.push(SessionInfo {
             id: id.clone(),
             cwd: cached.cwd,
+            shell: cached.last_shell.clone().or_else(|| Some(system_shell())),
             status,
             activity_panel_collapsed: cached.activity_panel_collapsed,
             grouping: snapshot.groupings.get(id).cloned(),
@@ -1084,6 +1096,9 @@ pub(crate) fn set_workspace_sessions_inner(
     })
 }
 
+/// Sentinel exit code for a PTY read error (no real OS exit status exists).
+const PTY_READ_ERROR_EXIT_CODE: i32 = -1;
+
 /// Background task to read PTY output and emit events
 async fn read_pty_output(
     events: Arc<dyn EventSink>,
@@ -1108,12 +1123,18 @@ async fn read_pty_output(
             Ok(0) => {
                 // EOF - process exited
                 log::info!("PTY session {} exited (EOF)", session_id);
-                // Mark cache as exited
+                // EOF can precede the child's reaped status under load; retry briefly so a non-zero code is not lost as None.
+                let mut exit_code = state.try_wait_exit_code(&session_id, generation);
+                let mut tries = 0;
+                while exit_code.is_none() && tries < 20 {
+                    tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+                    exit_code = state.try_wait_exit_code(&session_id, generation);
+                    tries += 1;
+                }
                 let _ = cache.mutate(|d| {
                     if let Some(s) = d.sessions.get_mut(&session_id) {
                         s.exited = true;
-                        // last_exit_code stays None in v1 — capturing requires
-                        // child.try_wait() with locking; deferred to follow-up.
+                        s.last_exit_code = exit_code;
                     }
                     Ok(())
                 });
@@ -1121,7 +1142,7 @@ async fn read_pty_output(
                     events.as_ref(),
                     &PtyExitEvent {
                         session_id: session_id.clone(),
-                        code: None,
+                        code: exit_code,
                     },
                 )
                 .ok();
@@ -1172,6 +1193,15 @@ async fn read_pty_output(
             Err(e) => {
                 // Error - emit error event and exit
                 log::error!("PTY read error for session {}: {}", session_id, e);
+                // A read error is a failure, not a clean exit: mark the cache
+                // errored with a sentinel so hydration reads errored too.
+                let _ = cache.mutate(|d| {
+                    if let Some(s) = d.sessions.get_mut(&session_id) {
+                        s.exited = true;
+                        s.last_exit_code = Some(PTY_READ_ERROR_EXIT_CODE);
+                    }
+                    Ok(())
+                });
                 emit_pty_error(
                     events.as_ref(),
                     &PtyErrorEvent {
@@ -1925,7 +1955,7 @@ mod tests {
 
     fn make_failing_kill_session() -> crate::terminal::state::ManagedSession {
         use crate::terminal::state::{ManagedSession, RingBuffer};
-        use portable_pty::{native_pty_system, CommandBuilder, PtySize};
+        use portable_pty::{CommandBuilder, PtySize, native_pty_system};
         let pty_system = native_pty_system();
         let pty_pair = pty_system
             .openpty(PtySize {
@@ -1997,6 +2027,7 @@ mod tests {
                         exited: false,
                         last_exit_code: None,
                         activity_panel_collapsed: None,
+                        last_shell: None,
                     },
                 );
                 data.session_order.push(id.clone());
@@ -2503,6 +2534,57 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn read_loop_captures_nonzero_exit_code() {
+        let (state, cache, events, _temp_dir) = create_test_state_with_cache();
+        let cwd = std::env::current_dir()
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
+
+        spawn_pty_inner(
+            state.clone(),
+            cache.clone(),
+            events.clone(),
+            SpawnPtyRequest {
+                session_id: "exit-code-test".into(),
+                cwd,
+                shell: None,
+                env: None,
+                enable_agent_bridge: false,
+                ephemeral: false,
+            },
+        )
+        .await
+        .unwrap();
+
+        write_pty_inner(
+            &state,
+            WritePtyRequest {
+                session_id: "exit-code-test".into(),
+                data: "exit 3\n".into(),
+            },
+        )
+        .unwrap();
+
+        let mut code = None;
+        for _ in 0..100 {
+            let snap = cache.snapshot();
+            let entry = snap
+                .sessions
+                .get("exit-code-test")
+                .expect("session should still be in cache after exit");
+            if entry.exited {
+                code = entry.last_exit_code;
+                break;
+            }
+
+            tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+        }
+
+        assert_eq!(code, Some(3), "non-zero shell exit code should be captured");
+    }
+
+    #[tokio::test]
     async fn list_sessions_returns_alive_for_running_pty() {
         let (state, cache, events, _temp_dir) = create_test_state_with_cache();
 
@@ -2560,6 +2642,7 @@ mod tests {
                         exited: false,
                         last_exit_code: None,
                         activity_panel_collapsed: None,
+                        last_shell: None,
                     },
                 );
                 Ok(())
@@ -2622,6 +2705,7 @@ mod tests {
                         exited: false,
                         last_exit_code: None,
                         activity_panel_collapsed: None,
+                        last_shell: None,
                     },
                 );
                 d.active_session_id = Some("phantom".into());
@@ -3045,6 +3129,7 @@ mod tests {
                         exited: false,
                         last_exit_code: None,
                         activity_panel_collapsed: None,
+                        last_shell: None,
                     },
                 );
                 Ok(())
@@ -3098,6 +3183,7 @@ mod tests {
                         exited: false,
                         last_exit_code: None,
                         activity_panel_collapsed: Some(true),
+                        last_shell: None,
                     },
                 );
                 d.session_order.push("pty-1".into());
@@ -3157,6 +3243,7 @@ mod tests {
                             exited: false,
                             last_exit_code: None,
                             activity_panel_collapsed: None,
+                            last_shell: None,
                         },
                     );
                 }
@@ -3203,6 +3290,7 @@ mod tests {
                             exited: false,
                             last_exit_code: None,
                             activity_panel_collapsed: None,
+                            last_shell: None,
                         },
                     );
                     Ok(())

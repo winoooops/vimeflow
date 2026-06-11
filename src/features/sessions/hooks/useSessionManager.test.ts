@@ -3,7 +3,11 @@ import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
 import { renderHook, act, waitFor } from '@testing-library/react'
 import { useSessionManager } from './useSessionManager'
 import type { ITerminalService } from '../../terminal/services/terminalService'
-import type { AgentSessionTitleEvent, SessionList } from '../../../bindings'
+import type {
+  AgentLifecycleEvent,
+  AgentSessionTitleEvent,
+  SessionList,
+} from '../../../bindings'
 import {
   clearPtySessionMap,
   getAllPtySessionIds,
@@ -954,6 +958,87 @@ describe('useSessionManager', () => {
 
     await waitFor(() => expect(service.listSessions).toHaveBeenCalled())
     expect(mockListen).not.toHaveBeenCalled()
+  })
+
+  const getLifecycleCallback = ():
+    | ((payload: AgentLifecycleEvent) => void)
+    | undefined =>
+    mockListen.mock.calls.find(
+      ([event]) => event === 'agent-lifecycle'
+    )?.[1] as ((payload: AgentLifecycleEvent) => void) | undefined
+
+  const aliveSession = (id: string): SessionList => ({
+    activeSessionId: id,
+    sessions: [
+      {
+        id,
+        cwd: '/tmp',
+        status: {
+          kind: 'Alive',
+          pid: 1,
+          replay_data: '',
+          replay_end_offset: BigInt(0),
+        },
+      },
+    ],
+  })
+
+  test('agent-lifecycle drives a live pane between running and idle', async () => {
+    const service = createMockService()
+    service.listSessions = vi.fn().mockResolvedValue(aliveSession('a'))
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    await waitFor(() => expect(getLifecycleCallback()).toBeDefined())
+
+    // Alive hydrates running; an idle event moves the pane (and session) idle.
+    act(() => {
+      getLifecycleCallback()?.({
+        sessionId: 'a',
+        agentSessionId: 'x',
+        phase: 'idle',
+      })
+    })
+    expect(result.current.sessions[0].panes[0].status).toBe('idle')
+    expect(result.current.sessions[0].status).toBe('idle')
+
+    // ...and a running event moves it back.
+    act(() => {
+      getLifecycleCallback()?.({
+        sessionId: 'a',
+        agentSessionId: 'x',
+        phase: 'running',
+      })
+    })
+    expect(result.current.sessions[0].panes[0].status).toBe('running')
+  })
+
+  test('agent-lifecycle never overrides a terminal (exited) pane', async () => {
+    const service = createMockService()
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: 'a',
+      sessions: [
+        { id: 'a', cwd: '/tmp', status: { kind: 'Exited', last_exit_code: 0 } },
+      ],
+    } satisfies SessionList)
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    await waitFor(() => expect(getLifecycleCallback()).toBeDefined())
+
+    // The pane hydrated completed; a running event must not resurrect it.
+    act(() => {
+      getLifecycleCallback()?.({
+        sessionId: 'a',
+        agentSessionId: 'x',
+        phase: 'running',
+      })
+    })
+    expect(result.current.sessions[0].panes[0].status).toBe('completed')
   })
 
   test('events received between listSessions call and drain land in restoreData buffer', async () => {
@@ -2407,10 +2492,20 @@ describe('useSessionManager', () => {
 
     // Suspend spawn so we can race a tab switch in.
     let resolveSpawn:
-      | ((v: { sessionId: string; pid: number; cwd: string }) => void)
+      | ((v: {
+          sessionId: string
+          pid: number
+          cwd: string
+          shell: string
+        }) => void)
       | null = null
     service.spawn = vi.fn(
-      (): Promise<{ sessionId: string; pid: number; cwd: string }> =>
+      (): Promise<{
+        sessionId: string
+        pid: number
+        cwd: string
+        shell: string
+      }> =>
         new Promise((resolve) => {
           resolveSpawn = resolve
         })
@@ -2435,7 +2530,12 @@ describe('useSessionManager', () => {
     // The fix reads activeSessionIdRef.current ('alive') so wasActive=false,
     // and the swap commits without promoting 'fresh'.
     act(() => {
-      resolveSpawn?.({ sessionId: 'fresh', pid: 9000, cwd: '/tmp' })
+      resolveSpawn?.({
+        sessionId: 'fresh',
+        pid: 9000,
+        cwd: '/tmp',
+        shell: '/bin/zsh',
+      })
     })
 
     // Wait for the swap to commit.
@@ -2584,10 +2684,20 @@ describe('useSessionManager', () => {
     })
 
     let resolveSpawn:
-      | ((v: { sessionId: string; pid: number; cwd: string }) => void)
+      | ((v: {
+          sessionId: string
+          pid: number
+          cwd: string
+          shell: string
+        }) => void)
       | null = null
     service.spawn = vi.fn(
-      (): Promise<{ sessionId: string; pid: number; cwd: string }> =>
+      (): Promise<{
+        sessionId: string
+        pid: number
+        cwd: string
+        shell: string
+      }> =>
         new Promise((resolve) => {
           resolveSpawn = resolve
         })
@@ -2612,7 +2722,12 @@ describe('useSessionManager', () => {
 
     // Step 3: spawn now resolves with the orphan id.
     act(() => {
-      resolveSpawn?.({ sessionId: 'orphan-fresh', pid: 1234, cwd: '/tmp' })
+      resolveSpawn?.({
+        sessionId: 'orphan-fresh',
+        pid: 1234,
+        cwd: '/tmp',
+        shell: '/bin/zsh',
+      })
     })
 
     // Wait until the orphan-kill IPC has fired. Cast through the typed
@@ -2686,10 +2801,10 @@ describe('useSessionManager', () => {
     })
 
     // Critical: setSessions was NOT swapped. The old 'exited' id is
-    // still in React state with status='completed'. The 'fresh' id is
-    // not present (orphan was killed without seeding bookkeeping).
+    // still in React state, hydrated errored from its non-zero last_exit_code.
+    // The 'fresh' id is not present (orphan killed without seeding bookkeeping).
     expect(result.current.sessions.map((s) => s.id)).toEqual(['exited'])
-    expect(result.current.sessions[0].status).toBe('completed')
+    expect(result.current.sessions[0].status).toBe('errored')
     expect(result.current.restoreData.has('fresh')).toBe(false)
 
     // Critical: reorderSessions was NOT called. The earlier code
@@ -3033,6 +3148,189 @@ describe('useSessionManager', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  test('non-zero pty exit marks the pane errored', async () => {
+    const service = createMockService()
+    let exitCallback:
+      | ((sessionId: string, code: number | null) => void)
+      | null = null
+    service.onExit = vi.fn((cb) => {
+      exitCallback = cb
+
+      // eslint-disable-next-line @typescript-eslint/no-empty-function
+      return Promise.resolve((): void => {})
+    })
+
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: 'a',
+      sessions: [
+        {
+          id: 'a',
+          cwd: '/tmp',
+          status: {
+            kind: 'Alive',
+            pid: 1,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+      ],
+    })
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    expect(result.current.sessions[0].status).toBe('running')
+
+    act(() => {
+      ;(exitCallback as (sessionId: string, code: number | null) => void)(
+        'a',
+        3
+      )
+    })
+
+    expect(result.current.sessions[0].status).toBe('errored')
+    expect(result.current.sessions[0].panes[0].status).toBe('errored')
+  })
+
+  test('zero pty exit marks the pane completed', async () => {
+    const service = createMockService()
+    let exitCallback:
+      | ((sessionId: string, code: number | null) => void)
+      | null = null
+    service.onExit = vi.fn((cb) => {
+      exitCallback = cb
+
+      // eslint-disable-next-line @typescript-eslint/no-empty-function
+      return Promise.resolve((): void => {})
+    })
+
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: 'a',
+      sessions: [
+        {
+          id: 'a',
+          cwd: '/tmp',
+          status: {
+            kind: 'Alive',
+            pid: 1,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+      ],
+    })
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    expect(result.current.sessions[0].status).toBe('running')
+
+    act(() => {
+      ;(exitCallback as (sessionId: string, code: number | null) => void)(
+        'a',
+        0
+      )
+    })
+
+    expect(result.current.sessions[0].status).toBe('completed')
+    expect(result.current.sessions[0].panes[0].status).toBe('completed')
+  })
+
+  test('null pty exit marks the pane completed', async () => {
+    const service = createMockService()
+    let exitCallback:
+      | ((sessionId: string, code: number | null) => void)
+      | null = null
+    service.onExit = vi.fn((cb) => {
+      exitCallback = cb
+
+      // eslint-disable-next-line @typescript-eslint/no-empty-function
+      return Promise.resolve((): void => {})
+    })
+
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: 'a',
+      sessions: [
+        {
+          id: 'a',
+          cwd: '/tmp',
+          status: {
+            kind: 'Alive',
+            pid: 1,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+      ],
+    })
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    expect(result.current.sessions[0].status).toBe('running')
+
+    act(() => {
+      ;(exitCallback as (sessionId: string, code: number | null) => void)(
+        'a',
+        null
+      )
+    })
+
+    expect(result.current.sessions[0].status).toBe('completed')
+    expect(result.current.sessions[0].panes[0].status).toBe('completed')
+  })
+
+  test('pty read error marks the pane errored', async () => {
+    const service = createMockService()
+    let errorCallback: ((sessionId: string, message: string) => void) | null =
+      null
+    service.onError = vi.fn((cb) => {
+      errorCallback = cb
+
+      // eslint-disable-next-line @typescript-eslint/no-empty-function
+      return Promise.resolve((): void => {})
+    })
+
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: 'a',
+      sessions: [
+        {
+          id: 'a',
+          cwd: '/tmp',
+          status: {
+            kind: 'Alive',
+            pid: 1,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+      ],
+    })
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    expect(result.current.sessions[0].status).toBe('running')
+
+    act(() => {
+      ;(errorCallback as (sessionId: string, message: string) => void)(
+        'a',
+        'read failed'
+      )
+    })
+
+    expect(result.current.sessions[0].status).toBe('errored')
+    expect(result.current.sessions[0].panes[0].status).toBe('errored')
   })
 
   // Round 4, Finding 2 (codex P2) regression test.
@@ -4713,6 +5011,7 @@ describe('useSessionManager', () => {
             sessionId: `pty-${index}`,
             pid: 100 + index,
             cwd: resolvedCwds[index] ?? `/workspace-${index}`,
+            shell: '/bin/zsh',
           })
         }
       )

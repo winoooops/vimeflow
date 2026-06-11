@@ -2,7 +2,7 @@
 id: debug-artifacts
 category: code-quality
 created: 2026-04-09
-last_updated: 2026-06-07
+last_updated: 2026-06-11
 ref_count: 0
 ---
 
@@ -69,4 +69,13 @@ statements must not ship to production. Gate debug visuals behind
 - **File:** `src/features/sessions/hooks/useSessionManager.ts`
 - **Finding:** The rewritten `reorderSessions` warning path used `// eslint-disable-next-line no-console` + `console.warn(...)` — the anti-pattern that `src/lib/log.ts` was introduced to consolidate. This meant the warning did not appear under the `[vimeflow:sessions]` namespace, making it harder to correlate with other session-lifecycle log lines during debugging.
 - **Fix:** Added `const log = createLogger("sessions")` at the top of `useSessionManager.ts` and migrated all ~30 existing `console.warn` calls in the file to `log.warn(...)`, removing the corresponding `eslint-disable-next-line no-console` comments. Updated co-located test expectations to match the new `[vimeflow:sessions]` prefix.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 7. Demo .js files included in design handoff directory
+
+- **Source:** github-human | PR #421 round 2 | 2026-06-11
+- **Severity:** MEDIUM
+- **File:** `docs/design/sidebar-toggle-handoff/src/agents.js`, `docs/design/sidebar-toggle-handoff/src/data.js`, `docs/design/sidebar-toggle-handoff/src/tokens.js`
+- **Finding:** Design handoff directory contained demo JavaScript files (`agents.js`, `data.js`, `tokens.js`) that were not part of the production application and duplicated existing design-token sources of truth (`docs/design/tokens.css` / `tokens.ts`).
+- **Fix:** Removed all `.js` files from `docs/design/sidebar-toggle-handoff/src/`, leaving only the necessary markdown handoff docs.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

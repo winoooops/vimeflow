@@ -2,8 +2,8 @@ import { describe, expect, test } from 'vitest'
 import { ptyStatusToSessionStatus } from './ptyStatusToSessionStatus'
 
 describe('ptyStatusToSessionStatus', () => {
-  test('idle maps to paused', () => {
-    expect(ptyStatusToSessionStatus('idle')).toBe('paused')
+  test('idle maps to idle', () => {
+    expect(ptyStatusToSessionStatus('idle')).toBe('idle')
   })
 
   test('running maps to running', () => {
