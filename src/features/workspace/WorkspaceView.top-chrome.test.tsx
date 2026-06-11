@@ -365,30 +365,41 @@ describe('WorkspaceView – top chrome (main-stage handoff J2–J6)', () => {
     expect(zone.className.split(/\s+/)).toContain('absolute')
   })
 
-  test('split layout: label-free pills right-aligned plus a two-button action group with one wrapping border (J3)', async () => {
+  test('split layout: label-free pills right-aligned; config docked in the pillar, pin standalone (J3)', async () => {
     await setupSessionManager(mockSessions, 'session-2')
     render(<WorkspaceView />)
 
     const chrome = screen.getByTestId('top-chrome')
     const switcher = within(chrome).getByTestId('layout-switcher')
 
-    // Right-aligned: a flex-1 spacer sits immediately before the pills.
+    // Right-aligned: a flex-1 spacer sits immediately before the pillar.
     expect(switcher.previousElementSibling?.className).toContain('flex-1')
     expect(within(chrome).queryByText('Layout')).toBeNull()
 
-    const group = within(chrome).getByTestId('top-action-group')
-    const groupClasses = group.className.split(/\s+/)
-    expect(groupClasses).toContain('border')
-    expect(groupClasses).toContain('border-[rgba(74,68,79,0.42)]')
-    expect(groupClasses).toContain('rounded-[8px]')
+    // Config button docks INSIDE the pill pillar, right after a divider.
+    const config = within(switcher).getByRole('button', {
+      name: 'Configure displayed layouts',
+    })
+    const divider = within(switcher).getByTestId('layout-switcher-divider')
+    expect(config.previousElementSibling).toBe(divider)
 
-    const buttons = within(group).getAllByRole('button')
-    expect(buttons).toHaveLength(2)
-    expect(buttons[0]).toHaveAccessibleName('Configure displayed layouts')
-    expect(buttons[1]).toHaveAccessibleName('Keep top banner visible')
+    // The old bordered action-group wrapper is gone entirely.
+    expect(within(chrome).queryByTestId('top-action-group')).toBeNull()
 
-    // Child buttons are transparent (hover fill only): no static bg utility.
-    for (const button of buttons) {
+    // Pin stands alone — a direct child of the chrome, not inside the
+    // pillar and not wrapped in any group.
+    const pin = within(chrome).getByRole('button', {
+      name: 'Keep top banner visible',
+    })
+    expect(pin.parentElement).toBe(chrome)
+    expect(
+      within(switcher).queryByRole('button', {
+        name: 'Keep top banner visible',
+      })
+    ).toBeNull()
+
+    // Both relocated controls stay transparent (hover fill only).
+    for (const button of [config, pin]) {
       const staticBg = button.className
         .split(/\s+/)
         .filter((cls) => cls.startsWith('bg-'))
@@ -412,24 +423,36 @@ describe('WorkspaceView – top chrome (main-stage handoff J2–J6)', () => {
     expect(mockSessionManager.setSessionActivePane).not.toHaveBeenCalled()
   })
 
-  test('single layout: same chrome as the splits — pills and actions, no identity row', () => {
+  test('single layout: same chrome as the splits — config docked in the pillar, pin standalone', () => {
     render(<WorkspaceView />)
 
     // The session-title identity was removed: a readout that exists in one
     // layout and vanishes in the others is inconsistent chrome (user call).
     expect(screen.queryByTestId('top-identity')).toBeNull()
 
-    // The pill group survives single layout — it is the affordance back
+    // The pill pillar survives single layout — it is the affordance back
     // into the split layouts (user call, supersedes the demo's hidden pills).
-    expect(screen.getByTestId('layout-switcher')).toBeInTheDocument()
+    const switcher = screen.getByTestId('layout-switcher')
 
-    // The action group survives in single mode, and the layout-display
-    // configuration control is never mislabelled as a split command.
-    const group = screen.getByTestId('top-action-group')
+    // The layout-display config control docks in the pillar here too, and is
+    // never mislabelled as a split command.
+    const config = within(switcher).getByRole('button', {
+      name: 'Configure displayed layouts',
+    })
+    expect(config).not.toHaveAccessibleName(/split/i)
+
+    // The pin stands alone outside the pillar; the bordered action group
+    // wrapper no longer exists.
+    expect(screen.queryByTestId('top-action-group')).toBeNull()
     expect(
-      within(group).getByRole('button', { name: 'Configure displayed layouts' })
+      within(switcher).queryByRole('button', {
+        name: 'Keep top banner visible',
+      })
+    ).toBeNull()
+
+    expect(
+      screen.getByRole('button', { name: 'Keep top banner visible' })
     ).toBeInTheDocument()
-    expect(within(group).queryByRole('button', { name: /split/i })).toBeNull()
   })
 
   test('collapsed sidebar opens the 50px gutter and floats the toggle at left 12 / top 8 (J4)', () => {

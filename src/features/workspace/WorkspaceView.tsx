@@ -1688,99 +1688,96 @@ export const WorkspaceView = (): ReactElement => {
 
               <span className="min-w-[10px] flex-1" />
 
-              {/* Pills render in every layout — the banner carries the same
-                  controls regardless of pane mode (no per-layout identity). */}
+              {/* Pills render in every layout, with the layout-display config
+                  button docked in the same pillar after a divider. The pin
+                  toggle stands alone (no wrapper) beside the pillar. */}
               {activeSession && (
                 <LayoutSwitcher
                   activeLayoutId={activeSession.layout}
                   onPick={handlePickLayout}
+                  trailing={
+                    <button
+                      type="button"
+                      aria-label="Configure displayed layouts"
+                      title="Configure displayed layouts"
+                      className="inline-flex h-5 w-6 items-center justify-center rounded text-on-surface-muted transition-colors hover:bg-[rgba(226,199,255,0.08)] hover:text-primary"
+                    >
+                      <svg
+                        width="14"
+                        height="14"
+                        viewBox="0 0 16 16"
+                        fill="none"
+                        aria-hidden="true"
+                      >
+                        <path
+                          d="M3 4.5H6.2M9.8 4.5H13M3 8H9.2M12.2 8H13M3 11.5H4.8M8.2 11.5H13"
+                          stroke="currentColor"
+                          strokeWidth="1.35"
+                          strokeLinecap="round"
+                        />
+                        <circle
+                          cx="8"
+                          cy="4.5"
+                          r="1.6"
+                          stroke="currentColor"
+                          strokeWidth="1.25"
+                        />
+                        <circle
+                          cx="10.7"
+                          cy="8"
+                          r="1.45"
+                          stroke="currentColor"
+                          strokeWidth="1.25"
+                        />
+                        <circle
+                          cx="6.5"
+                          cy="11.5"
+                          r="1.55"
+                          stroke="currentColor"
+                          strokeWidth="1.25"
+                        />
+                      </svg>
+                    </button>
+                  }
                 />
               )}
 
-              <span
-                data-testid="top-action-group"
-                aria-label="Top chrome controls"
-                className="inline-flex h-[28px] items-center gap-[2px] rounded-[8px] border border-[rgba(74,68,79,0.42)] p-[2px]"
+              <button
+                type="button"
+                aria-label={
+                  topChromePinned
+                    ? 'Auto-hide top banner'
+                    : 'Keep top banner visible'
+                }
+                title={
+                  topChromePinned
+                    ? 'Auto-hide top banner'
+                    : 'Keep top banner visible'
+                }
+                aria-pressed={topChromePinned}
+                onClick={() => {
+                  setTopChromePinned((pinned) => !pinned)
+                }}
+                className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-[7px] transition-colors hover:bg-[rgba(226,199,255,0.08)] hover:text-primary ${
+                  topChromePinned ? 'text-primary' : 'text-on-surface-muted'
+                }`}
               >
-                <button
-                  type="button"
-                  aria-label="Configure displayed layouts"
-                  title="Configure displayed layouts"
-                  className="inline-flex h-[22px] w-[24px] items-center justify-center rounded-[5px] text-on-surface-muted transition-colors hover:bg-[rgba(226,199,255,0.08)] hover:text-primary"
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 16 16"
+                  fill="none"
+                  aria-hidden="true"
                 >
-                  <svg
-                    width="14"
-                    height="14"
-                    viewBox="0 0 16 16"
-                    fill="none"
-                    aria-hidden="true"
-                  >
-                    <path
-                      d="M3 4.5H6.2M9.8 4.5H13M3 8H9.2M12.2 8H13M3 11.5H4.8M8.2 11.5H13"
-                      stroke="currentColor"
-                      strokeWidth="1.35"
-                      strokeLinecap="round"
-                    />
-                    <circle
-                      cx="8"
-                      cy="4.5"
-                      r="1.6"
-                      stroke="currentColor"
-                      strokeWidth="1.25"
-                    />
-                    <circle
-                      cx="10.7"
-                      cy="8"
-                      r="1.45"
-                      stroke="currentColor"
-                      strokeWidth="1.25"
-                    />
-                    <circle
-                      cx="6.5"
-                      cy="11.5"
-                      r="1.55"
-                      stroke="currentColor"
-                      strokeWidth="1.25"
-                    />
-                  </svg>
-                </button>
-                <button
-                  type="button"
-                  aria-label={
-                    topChromePinned
-                      ? 'Auto-hide top banner'
-                      : 'Keep top banner visible'
-                  }
-                  title={
-                    topChromePinned
-                      ? 'Auto-hide top banner'
-                      : 'Keep top banner visible'
-                  }
-                  aria-pressed={topChromePinned}
-                  onClick={() => {
-                    setTopChromePinned((pinned) => !pinned)
-                  }}
-                  className={`inline-flex h-[22px] w-[24px] items-center justify-center rounded-[5px] transition-colors hover:bg-[rgba(226,199,255,0.08)] hover:text-primary ${
-                    topChromePinned ? 'text-primary' : 'text-on-surface-muted'
-                  }`}
-                >
-                  <svg
-                    width="14"
-                    height="14"
-                    viewBox="0 0 16 16"
-                    fill="none"
-                    aria-hidden="true"
-                  >
-                    <path
-                      d="M6.2 2.8H9.8M7.1 2.8L6.5 7.1L4.4 9.1H11.6L9.5 7.1L8.9 2.8M8 9.2V13.4"
-                      stroke="currentColor"
-                      strokeWidth="1.35"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                  </svg>
-                </button>
-              </span>
+                  <path
+                    d="M6.2 2.8H9.8M7.1 2.8L6.5 7.1L4.4 9.1H11.6L9.5 7.1L8.9 2.8M8 9.2V13.4"
+                    stroke="currentColor"
+                    strokeWidth="1.35"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              </button>
             </div>
           </div>
 
