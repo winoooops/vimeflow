@@ -1,16 +1,12 @@
 import { describe, expect, test, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { SETTINGS_SECTIONS } from '../sections'
 import { SettingsHeader } from './SettingsHeader'
 
 describe('SettingsHeader', () => {
-  const section = SETTINGS_SECTIONS[0]
-
   const baseProps = {
     scope: 'User' as const,
     onScope: vi.fn(),
-    section,
   }
 
   test('renders User and vimeflow scope tabs', () => {

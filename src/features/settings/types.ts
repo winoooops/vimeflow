@@ -40,7 +40,6 @@ export type SettingsScope = 'User' | 'vimeflow'
 export interface SettingsHeaderProps {
   scope: SettingsScope
   onScope: (scope: SettingsScope) => void
-  section: SettingsSection | undefined
 }
 
 export interface IconProps {

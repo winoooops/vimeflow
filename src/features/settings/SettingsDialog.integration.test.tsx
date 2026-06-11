@@ -1,6 +1,10 @@
 import { type ReactElement } from 'react'
 import { describe, expect, test } from 'vitest'
-import { render, screen, waitForElementToBeRemoved } from '@testing-library/react'
+import {
+  render,
+  screen,
+  waitForElementToBeRemoved,
+} from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { SettingsDialog } from './SettingsDialog'
 import { useSettingsDialog } from './hooks/useSettingsDialog'

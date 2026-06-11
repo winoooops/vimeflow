@@ -161,11 +161,7 @@ export const SettingsDialog = ({
               />
 
               <div className="flex min-w-0 flex-1 flex-col">
-                <SettingsHeader
-                  scope={scope}
-                  onScope={setScope}
-                  section={activeSection}
-                />
+                <SettingsHeader scope={scope} onScope={setScope} />
 
                 <div className="thin-scrollbar flex-1 overflow-auto px-7 py-5">
                   {section === 'general' && <GeneralPane />}

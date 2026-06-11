@@ -44,7 +44,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | Pattern                                                              | Category           | Findings | Refs | Last Updated |
 | -------------------------------------------------------------------- | ------------------ | -------- | ---- | ------------ |
 | [Filesystem Scope](patterns/filesystem-scope.md)                     | security           | 21       | 3    | 2026-05-20   |
- | [React Lifecycle](patterns/react-lifecycle.md) | react-patterns | 34 | 14 | 2026-06-11 |  |
+| [React Lifecycle](patterns/react-lifecycle.md)                       | react-patterns     | 35       | 14   | 2026-06-11   |
 | [Motion Layout Projection](patterns/motion-layout-projection.md)     | react-patterns     | 1        | 0    | 2026-06-10   |
 | [Resource Cleanup](patterns/resource-cleanup.md)                     | react-patterns     | 11       | 10   | 2026-06-08   |
 | [Cross-Platform Paths](patterns/cross-platform-paths.md)             | cross-platform     | 6        | 3    | 2026-05-30   |
@@ -55,8 +55,8 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Hot-Path Caching](patterns/hot-path-caching.md)                     | backend            | 1        | 0    | 2026-06-09   |
 | [Testing Gaps](patterns/testing-gaps.md)                             | testing            | 62       | 30   | 2026-06-11   |
 | [Terminal Input Handling](patterns/terminal-input-handling.md)       | terminal           | 4        | 2    | 2026-05-24   |
-| [Documentation Accuracy](patterns/documentation-accuracy.md)         | code-quality       | 85       | 25   | 2026-06-08   |
- | [Accessibility](patterns/accessibility.md) | a11y | 57 | 21 | 2026-06-11 |  |
+| [Documentation Accuracy](patterns/documentation-accuracy.md)         | code-quality       | 87       | 25   | 2026-06-11   |
+| [Accessibility](patterns/accessibility.md)                           | a11y               | 57       | 21   | 2026-06-11   |
 | [Event Identity Guard](patterns/event-identity-guard.md)             | backend            | 1        | 0    | 2026-06-11   |
 | [Async Race Conditions](patterns/async-race-conditions.md)           | react-patterns     | 63       | 21   | 2026-06-08   |
 | [Tokio Blocking On Async](patterns/tokio-blocking-on-async.md)       | backend            | 2        | 1    | 2026-05-20   |

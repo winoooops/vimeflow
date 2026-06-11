@@ -2,7 +2,7 @@
 id: react-lifecycle
 category: react-patterns
 created: 2026-04-09
-P26-06-11
+last_updated: 2026-06-11
 ref_count: 14
 ---
 
@@ -320,3 +320,12 @@ to avoid unintended re-runs (e.g., PTY respawning on every cwd change).
 - **Finding:** `SettingsDialog` returned `null` when `open` was false before reaching the `<AnimatePresence>` wrapper. When `open` flipped to false, React unmounted the entire `AnimatePresence>` tree immediately, so the backdrop and panel `exit` animations never ran and the dialog snapped closed.
 - **Fix:** Removed the early `if (!open) return null` guard and moved the condition inside `<AnimatePresence>` as `{open && (...)}`, matching the existing `CommandPalette` and `UnsavedChangesDialog` pattern.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 32. Unused `section` prop widens SettingsHeader public API surface
+
+- **Source:** github-claude | PR #422 round 1 | 2026-06-11
+- **Severity:** LOW
+- **File:** `src/features/settings/components/SettingsHeader.tsx`, `src/features/settings/types.ts`, `src/features/settings/SettingsDialog.tsx`
+- **Finding:** `SettingsHeaderProps` declared `section: SettingsSection | undefined` and `SettingsDialog` passed `section={activeSection}`, but `SettingsHeader` destructured only `{ scope, onScope }` — the prop was silently dropped. Callers were forced to provide a value for a field that had no consumer, and tests passed the prop without asserting on any section-related output.
+- **Fix:** Removed the `section` field from `SettingsHeaderProps`, removed `section={activeSection}` from the `SettingsDialog` call site, and cleaned up the co-located test props.
+- **Commit:** same commit as this entry
