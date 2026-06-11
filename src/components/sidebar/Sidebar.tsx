@@ -110,7 +110,7 @@ export const Sidebar = ({
 
   return (
     <div
-      className="flex h-full w-full flex-col bg-surface-container-low"
+      className="flex h-full w-full flex-col bg-transparent"
       data-testid={testId}
     >
       {renderSlot(topBar) && topBar}
