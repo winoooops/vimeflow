@@ -295,6 +295,93 @@ describe('WorkspaceView', () => {
     expect(screen.getByTestId('agent-status-panel')).toBeInTheDocument()
   })
 
+  test('keeps expanded macOS drag chrome clear of the fixed sidebar toggle', () => {
+    Object.defineProperty(navigator, 'platform', {
+      value: 'MacIntel',
+      configurable: true,
+    })
+
+    render(<WorkspaceView />)
+
+    const workspace = screen.getByTestId('workspace-view')
+    expect(
+      workspace.style.getPropertyValue('--workspace-sidebar-toggle-left')
+    ).toBe('82px')
+
+    expect(
+      workspace.style.getPropertyValue('--workspace-sidebar-toggle-size')
+    ).toBe('28px')
+
+    expect(
+      workspace.style.getPropertyValue('--workspace-sidebar-toggle-top')
+    ).toBe('7px')
+
+    expect(screen.getByTestId('sidebar-toggle-fixed')).toHaveClass(
+      'vf-app-no-drag'
+    )
+
+    expect(screen.getByTestId('sidebar-top-bar')).not.toHaveClass(
+      'vf-app-drag-region'
+    )
+
+    expect(screen.getByTestId('sidebar-top-bar-upper-drag-region')).toHaveClass(
+      'vf-app-drag-region'
+    )
+
+    expect(screen.getByTestId('sidebar-top-bar-toggle-clearance')).toHaveClass(
+      'vf-app-no-drag'
+    )
+
+    expect(screen.getByTestId('sidebar-top-bar-right-drag-region')).toHaveClass(
+      'vf-app-drag-region'
+    )
+  })
+
+  test('keeps collapsed macOS tab chrome clear of the fixed sidebar toggle', () => {
+    Object.defineProperty(navigator, 'platform', {
+      value: 'MacIntel',
+      configurable: true,
+    })
+
+    setSidebarCollapsed(true)
+
+    render(<WorkspaceView />)
+
+    expect(screen.getByTestId('sidebar-toggle-fixed')).toHaveClass(
+      'vf-app-no-drag'
+    )
+
+    expect(screen.getByTestId('sidebar-toggle-tabs-spacer')).toBeInTheDocument()
+
+    expect(screen.getByTestId('session-tabs')).not.toHaveClass(
+      'vf-app-drag-region'
+    )
+
+    expect(screen.getByTestId('session-tabs-leading-offset')).toHaveClass(
+      'vf-app-drag-region'
+    )
+
+    expect(
+      screen.getByTestId('session-tabs-leading-upper-drag-region')
+    ).toHaveClass('vf-app-drag-region')
+
+    expect(
+      screen.getByTestId('session-tabs-leading-toggle-clearance')
+    ).toHaveClass('vf-app-no-drag')
+
+    expect(
+      screen.getByTestId('session-tabs-leading-lower-drag-region')
+    ).toHaveClass('vf-app-drag-region')
+
+    expect(screen.getByTestId('session-tabs-leading')).not.toHaveClass(
+      'vf-app-drag-region'
+    )
+
+    expect(screen.getByTestId('session-tabs-drag-region')).toHaveClass(
+      'vf-app-drag-region'
+    )
+  })
+
   test('uses a single-column workspace with a dismissible inert sidebar drawer on compact viewports', async () => {
     const restoreMatchMedia = mockMatchMedia(true)
     const user = userEvent.setup()

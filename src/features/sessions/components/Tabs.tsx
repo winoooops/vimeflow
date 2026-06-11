@@ -7,6 +7,12 @@ import {
 } from '../utils/pickNextVisibleSessionId'
 import { Tab } from './Tab'
 
+const SIDEBAR_TOGGLE_SIZE = 'var(--workspace-sidebar-toggle-size, 28px)'
+const SIDEBAR_TOGGLE_TOP = 'var(--workspace-sidebar-toggle-top, 7px)'
+
+const WINDOW_CONTROLS_INSET =
+  'max(12px, var(--workspace-window-controls-inset, 0px))'
+
 export interface TabsProps {
   sessions: Session[]
   activeSessionId: string | null
@@ -90,22 +96,47 @@ export const Tabs = ({
     <div
       data-testid="session-tabs"
       className={`flex h-[38px] shrink-0 items-end gap-0.5 border-b border-outline-variant/25 bg-surface-container-lowest pr-2 ${
-        leading ? 'pl-[12px]' : 'pl-2'
-      }${reserveWindowControls ? ' vf-app-drag-region' : ''}`}
-      style={{
-        paddingLeft:
-          leading && reserveWindowControls
-            ? 'max(12px, var(--workspace-window-controls-inset, 0px))'
-            : undefined,
-      }}
+        leading ? '' : 'pl-2'
+      }`}
     >
       {leading && (
-        <div
-          data-testid="session-tabs-leading"
-          className="vf-app-no-drag mr-2 flex shrink-0 items-center self-center"
-        >
-          {leading}
-        </div>
+        <>
+          <div
+            aria-hidden="true"
+            data-testid="session-tabs-leading-offset"
+            className={`h-full shrink-0 self-stretch${
+              reserveWindowControls ? ' vf-app-drag-region' : ''
+            }`}
+            style={{
+              width: reserveWindowControls ? WINDOW_CONTROLS_INSET : 12,
+            }}
+          />
+          <div
+            data-testid="session-tabs-leading"
+            className="mr-2 grid shrink-0 self-stretch"
+            style={{
+              width: SIDEBAR_TOGGLE_SIZE,
+              gridTemplateRows: `${SIDEBAR_TOGGLE_TOP} ${SIDEBAR_TOGGLE_SIZE} minmax(0, 1fr)`,
+            }}
+          >
+            <div
+              aria-hidden="true"
+              data-testid="session-tabs-leading-upper-drag-region"
+              className={reserveWindowControls ? 'vf-app-drag-region' : ''}
+            />
+            <div
+              data-testid="session-tabs-leading-toggle-clearance"
+              className="vf-app-no-drag flex items-center justify-center"
+            >
+              {leading}
+            </div>
+            <div
+              aria-hidden="true"
+              data-testid="session-tabs-leading-lower-drag-region"
+              className={reserveWindowControls ? 'vf-app-drag-region' : ''}
+            />
+          </div>
+        </>
       )}
       {/* WAI-ARIA 1.2 §3.27 requires `tablist` to own only `tab` children.
           Keeping the `+` button and the spacer outside the tablist boundary. */}
@@ -155,7 +186,13 @@ export const Tabs = ({
       >
         <span className="material-symbols-outlined text-[15px]">add</span>
       </button>
-      <span className="flex-1" />
+      <div
+        aria-hidden="true"
+        data-testid="session-tabs-drag-region"
+        className={`h-full flex-1 self-stretch${
+          reserveWindowControls ? ' vf-app-drag-region' : ''
+        }`}
+      />
     </div>
   )
 }
