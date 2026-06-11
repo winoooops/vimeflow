@@ -268,7 +268,7 @@ describe('WorkspaceView - Visual Verification (Feature #20)', () => {
 
       // Bottom-docked DockPanel keeps its border on the edge facing terminal.
       expect(dockPanel.className).toContain('border-t')
-      expect(dockPanel.className).toContain('border-[rgba(74,68,79,0.3)]')
+      expect(dockPanel.className).toContain('border-outline-variant/30')
     })
 
     test('sidebar session cards have no visible borders', () => {

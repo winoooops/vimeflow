@@ -244,9 +244,9 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
       ? { height: `${verticalSize}px` }
       : { width: `${horizontalSize}px` }
 
-    // Border edge varies by position; color literals are kept static so
-    // Tailwind JIT can scan and emit both border-[#cba6f7] and
-    // border-[rgba(74,68,79,0.3)] in the production CSS bundle.
+    // Border edge varies by position; semantic token classes are kept static so
+    // Tailwind JIT can scan and emit both border-primary-container and
+    // border-outline-variant/30 in the production CSS bundle.
     const borderEdge =
       position === 'top'
         ? 'border-b'
@@ -257,8 +257,8 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
             : 'border-l'
 
     const borderClass = isFocused
-      ? `${borderEdge} border-[#cba6f7]`
-      : `${borderEdge} border-[rgba(74,68,79,0.3)]`
+      ? `${borderEdge} border-primary-container`
+      : `${borderEdge} border-outline-variant/30`
 
     const collapseIconName =
       position === 'top'
@@ -325,19 +325,19 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
         style={{
           ...containerStyle,
           boxShadow: isFocused
-            ? '0 0 0 1px #cba6f7 inset, 0 0 0 6px rgba(203,166,247,0.12)'
+            ? 'inset 0 0 0 1px var(--color-primary-container), 0 0 0 6px color-mix(in srgb, var(--color-primary-container) 12%, transparent)'
             : undefined,
           transition: 'box-shadow 220ms ease',
         }}
         onPointerDown={handlePointerDown}
         onFocus={onContainerFocus}
-        className={`relative z-30 flex shrink-0 flex-col bg-[#121221] focus:outline-none ${borderClass}`}
+        className={`relative z-30 flex shrink-0 flex-col bg-surface focus:outline-none ${borderClass}`}
       >
         {isFocused ? (
           <span
             data-testid="dock-focus-outline"
             aria-hidden="true"
-            className="pointer-events-none absolute inset-0 z-40 border border-[#cba6f7]"
+            className="pointer-events-none absolute inset-0 z-40 border border-primary-container"
           />
         ) : null}
 

@@ -46,15 +46,15 @@ describe('DockSwitcher', () => {
     render(<DockSwitcher position="left" onPick={vi.fn()} />)
 
     const active = screen.getByRole('button', { name: /dock: left/i })
-    expect(active).toHaveClass('text-[#cba6f7]')
-    expect(active).toHaveClass('bg-[rgba(203,166,247,0.15)]')
+    expect(active).toHaveClass('text-primary-container')
+    expect(active).toHaveClass('bg-primary-container/15')
   })
 
   test('inactive button has muted color', () => {
     render(<DockSwitcher position="bottom" onPick={vi.fn()} />)
 
     expect(screen.getByRole('button', { name: /dock: left/i })).toHaveClass(
-      'text-[#8a8299]'
+      'text-on-surface-muted'
     )
   })
 

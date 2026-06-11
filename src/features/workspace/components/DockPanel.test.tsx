@@ -798,7 +798,7 @@ describe('DockPanel', () => {
     renderDockPanel({ tab: 'diff' })
 
     expect(screen.getByRole('button', { name: /diff viewer/i })).toHaveClass(
-      'text-[#e2c7ff]'
+      'text-primary'
     )
   })
 
@@ -869,9 +869,9 @@ describe('DockPanel', () => {
 
     const editorTab = screen.getByRole('button', { name: /editor/i })
     expect(editorTab).toHaveClass('rounded-md')
-    expect(editorTab).toHaveClass('bg-[rgba(226,199,255,0.08)]')
-    expect(editorTab).toHaveClass('border-[rgba(203,166,247,0.3)]')
-    expect(editorTab).toHaveClass('text-[#e2c7ff]')
+    expect(editorTab).toHaveClass('bg-primary/[0.08]')
+    expect(editorTab).toHaveClass('border-primary-container/30')
+    expect(editorTab).toHaveClass('text-primary')
   })
 
   test('inactive tab has transparent border', () => {
@@ -916,7 +916,7 @@ describe('DockPanel', () => {
       name: /dock: left/i,
     })
     expect(leftSwitcherButton).toBeInTheDocument()
-    expect(leftSwitcherButton).toHaveClass('text-[#cba6f7]')
+    expect(leftSwitcherButton).toHaveClass('text-primary-container')
   })
 
   test('clicking a DockSwitcher button calls onPositionChange', async () => {
@@ -1159,7 +1159,7 @@ describe('DockPanel', () => {
       // border-t is the edge class; border-[color] is the shared shorthand
       const section = screen.getByTestId('dock-panel')
       expect(section).toHaveClass('border-t')
-      expect(section).toHaveClass('border-[#cba6f7]')
+      expect(section).toHaveClass('border-primary-container')
     })
 
     test('isFocused=false uses neutral bottom junction edge', () => {
@@ -1167,8 +1167,8 @@ describe('DockPanel', () => {
       const section = screen.getByTestId('dock-panel')
 
       expect(section).toHaveClass('border-t')
-      expect(section).toHaveClass('border-[rgba(74,68,79,0.3)]')
-      expect(section).not.toHaveClass('border-[#cba6f7]')
+      expect(section).toHaveClass('border-outline-variant/30')
+      expect(section).not.toHaveClass('border-primary-container')
     })
 
     test('isFocused=true applies box shadow', () => {
@@ -1181,7 +1181,7 @@ describe('DockPanel', () => {
       renderDockPanel({ isFocused: true })
 
       expect(screen.getByTestId('dock-focus-outline')).toHaveClass(
-        'border-[#cba6f7]'
+        'border-primary-container'
       )
     })
 

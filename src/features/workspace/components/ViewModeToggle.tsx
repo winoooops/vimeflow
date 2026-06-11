@@ -9,13 +9,13 @@ interface ViewModeToggleProps {
 
 // Mirrors the DockTab `tabButtonClass` look (font-mono, ~10.5px, rounded-md,
 // primary-tinted when active) so the Source/Reading toggle reads as the same
-// dock-chrome family as the Editor/Diff tabs. The hex literals here are the
-// established dock convention (same values asserted in DockPanel.test.tsx).
+// dock-chrome family as the Editor/Diff tabs. Semantic tokens match DockTab
+// (same values asserted in DockPanel.test.tsx).
 const segmentClass = (active: boolean): string =>
   `flex items-center justify-center font-mono text-[10.5px] h-[26px] rounded-md border px-[11px] transition-colors ${
     active
-      ? 'bg-[rgba(226,199,255,0.08)] border-[rgba(203,166,247,0.3)] text-[#e2c7ff]'
-      : 'bg-transparent border-transparent text-[#8a8299] hover:text-[#e2c7ff]'
+      ? 'bg-primary/[0.08] border-primary-container/30 text-primary'
+      : 'bg-transparent border-transparent text-on-surface-muted hover:text-primary'
   }`
 
 /**

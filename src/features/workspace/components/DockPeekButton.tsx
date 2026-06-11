@@ -31,19 +31,19 @@ export const DockPeekButton = ({
 
   const borderClass =
     position === 'top'
-      ? 'border-b border-[rgba(74,68,79,0.25)]'
+      ? 'border-b border-outline-variant/25'
       : position === 'bottom'
-        ? 'border-t border-[rgba(74,68,79,0.25)]'
+        ? 'border-t border-outline-variant/25'
         : position === 'left'
-          ? 'border-r border-[rgba(74,68,79,0.25)]'
-          : 'border-l border-[rgba(74,68,79,0.25)]'
+          ? 'border-r border-outline-variant/25'
+          : 'border-l border-outline-variant/25'
 
   return (
     <button
       type="button"
       aria-label={ARIA[position]}
       onClick={onOpen}
-      className={`flex cursor-pointer items-center justify-center gap-2 bg-[#0d0d1c] text-[#8a8299] transition-colors hover:bg-[rgba(203,166,247,0.10)] hover:text-[#e2c7ff] ${sizeClass} ${borderClass}`}
+      className={`flex cursor-pointer items-center justify-center gap-2 bg-surface-container-lowest text-on-surface-muted transition-colors hover:bg-primary-container/10 hover:text-primary ${sizeClass} ${borderClass}`}
     >
       <span
         className="material-symbols-outlined text-[14px]"
