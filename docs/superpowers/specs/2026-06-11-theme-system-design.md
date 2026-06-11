@@ -20,16 +20,16 @@ hundred hardcoded leaks:
   sources. The table below is the categorized floor estimate; the
   authoritative Phase B checklist is regenerated mechanically (§6, step 0):
 
-| Category                                     | Where                                                               | ~Count |
-| -------------------------------------------- | ------------------------------------------------------------------- | ------ |
-| xterm terminal theme                         | `src/features/terminal/theme/catppuccin-mocha.ts`                   | 21     |
-| CodeMirror editor theme                      | `src/features/editor/theme/catppuccin.ts`                           | 15     |
-| Agent accent identity                        | `src/agents/registry.ts`, `src/features/browser/browserIdentity.ts` | 20     |
+| Category                                     | Where                                                                         | ~Count |
+| -------------------------------------------- | ----------------------------------------------------------------------------- | ------ |
+| xterm terminal theme                         | `src/features/terminal/theme/catppuccin-mocha.ts`                             | 21     |
+| CodeMirror editor theme                      | `src/features/editor/theme/catppuccin.ts`                                     | 15     |
+| Agent accent identity                        | `src/agents/registry.ts`, `src/features/browser/browserIdentity.ts`           | 20     |
 | Arbitrary Tailwind values (`text-[#e2c7ff]`) | DockTab, DockPanel, DockSwitcher, ViewModeToggle, BrowserTabBar, … (26 files) | ~102   |
-| Inline `style={{}}` rgba/hex                 | BurnerTerminalPopup, TokenCache, ActivityEvent, TerminalPane, …     | ~50    |
-| Scrollbar + diff colors                      | `src/index.css`                                                     | 13     |
-| Raw palette classes (`text-amber-400`)       | FileTreeNode, FileExplorer                                          | 6      |
-| `white/[0.05]`-style glass washes            | 7 features                                                          | 27     |
+| Inline `style={{}}` rgba/hex                 | BurnerTerminalPopup, TokenCache, ActivityEvent, TerminalPane, …               | ~50    |
+| Scrollbar + diff colors                      | `src/index.css`                                                               | 13     |
+| Raw palette classes (`text-amber-400`)       | FileTreeNode, FileExplorer                                                    | 6      |
+| `white/[0.05]`-style glass washes            | 7 features                                                                    | 27     |
 
 The project runs **Tailwind v4.2.2**, whose native theming model (tokens
 declared in `@theme` compile utilities to `var(--color-*)`) is exactly the
@@ -197,15 +197,15 @@ themeService.list(): ThemeDefinition[]  // for the settings picker
 
 ### Consumer integration matrix
 
-| Consumer                                                       | Mechanism                                                                                                                                                                              | Switch-time work                       |
-| -------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
-| Tailwind utilities (99% of UI)                                 | compile to `var(--color-*)`                                                                                                                                                            | none — CSS engine repaints             |
-| CodeMirror theme (`catppuccin.ts` → `src/theme`-aware rewrite) | DOM-rendered; theme extension references `var(--color-*)`; alpha composites use `color-mix(in srgb, var(--color-syn-keyword) 30%, transparent)`                                        | `Compartment` reconfigure flips the `{ dark }` base-theme facet when `kind` changes — `EditorView.darkTheme` selects light/dark base styles and CSS variables alone cannot flip it |
-| xterm terminals                                                | canvas; holds concrete values                                                                                                                                                          | `subscribe` → reassign `options.theme` |
-| Diff viewer (`<MultiFileDiff>` from `@pierre/diffs`)           | owns an independent Pierre theme state (`'pierre-dark'` in `DiffPanelContent.tsx`) synced through the diff worker pool — the `.diff-*` CSS classes alone do not re-theme it            | bridge maps `kind` → `pierre-dark` / `pierre-light` through the existing render-options pool sync; the toolbar theme dropdown becomes a session override that resets on workspace switch |
-| Agent registry (`registry.ts`, `browserIdentity.ts`)           | color fields become `'var(--color-agent-…)'` strings; same object shape, consumers (inline styles, SVG) unchanged                                                                      | none                                   |
-| React components needing theme data (settings picker)          | `useTheme()` via `useSyncExternalStore(service.subscribe, …)`                                                                                                                          | re-render on switch                    |
-| Settings `AppearancePane`                                      | `useState` → `useTheme()`; card click → `themeService.apply(id)`; picker lists `themeService.list()`; preview swatches derive from each `ThemeDefinition` (accent/surface/text tokens) | —                                      |
+| Consumer                                                       | Mechanism                                                                                                                                                                                                                                                                                                                                                                                                                                | Switch-time work                                                                                                                                                                         |
+| -------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Tailwind utilities (99% of UI)                                 | compile to `var(--color-*)`                                                                                                                                                                                                                                                                                                                                                                                                              | none — CSS engine repaints                                                                                                                                                               |
+| CodeMirror theme (`catppuccin.ts` → `src/theme`-aware rewrite) | DOM-rendered; theme extension references `var(--color-*)`; alpha composites use `color-mix(in srgb, var(--color-syn-keyword) 30%, transparent)`                                                                                                                                                                                                                                                                                          | `Compartment` reconfigure flips the `{ dark }` base-theme facet when `kind` changes — `EditorView.darkTheme` selects light/dark base styles and CSS variables alone cannot flip it       |
+| xterm terminals                                                | canvas; holds concrete values                                                                                                                                                                                                                                                                                                                                                                                                            | `subscribe` → reassign `options.theme`                                                                                                                                                   |
+| Diff viewer (`<MultiFileDiff>` from `@pierre/diffs`)           | owns an independent Pierre theme state (`'pierre-dark'` in `DiffPanelContent.tsx`) synced through the diff worker pool — the `.diff-*` CSS classes alone do not re-theme it                                                                                                                                                                                                                                                              | bridge maps `kind` → `pierre-dark` / `pierre-light` through the existing render-options pool sync; the toolbar theme dropdown becomes a session override that resets on workspace switch |
+| Agent registry (`registry.ts`, `browserIdentity.ts`)           | color fields become `'var(--color-agent-…)'` strings; same object shape, consumers (inline styles, SVG) unchanged                                                                                                                                                                                                                                                                                                                        | none                                                                                                                                                                                     |
+| React components needing theme data (settings picker)          | `useTheme()` via `useSyncExternalStore(service.subscribe, …)`                                                                                                                                                                                                                                                                                                                                                                            | re-render on switch                                                                                                                                                                      |
+| Settings `AppearancePane`                                      | `useState` → `useTheme()`; card click → `themeService.apply(id)`; picker lists `themeService.list()`; preview swatches derive from each `ThemeDefinition` (accent/surface/text tokens). The settings feature lives on `feat/settings-dialog-migration`, not this branch — v1 ships the switch as the existing command-palette `:set theme` stub made real; the pane wires up when that branch lands (snippet in the implementation plan) | —                                                                                                                                                                                        |
 
 **First paint:** `main.tsx` reads `localStorage` and calls `apply()` before
 `createRoot().render()` — synchronous, pre-paint, so a Flexoki user never
@@ -247,8 +247,9 @@ Three phases, each independently verifiable and PR-sized
    `MarkdownReadingView.css` (`--syn-*`). Color vars migrate to `--color-*`
    names; required non-color vars move into `base.css`.
 3. Wire `main.tsx` pre-render apply, the terminal subscription, the diff
-   Pierre-theme bridge, and the AppearancePane switch (kept to a minimal
-   diff — the settings dialog evolves on its own branch).
+   Pierre-theme bridge, and the command-palette `:set theme` command (the
+   existing stub made real — the AppearancePane wires up on its own
+   branch).
 
 Exit criterion: switching works end-to-end with one theme; the app renders
 pixel-identical to today.
@@ -269,7 +270,7 @@ estimate table in §1 — is the batch checklist.
 | 6     | ~50 inline styles                     | same mapping → `var()` or semantic classes                                                                                                                             |
 | 7     | git-status palette classes            | → `text-vcs-modified` etc.                                                                                                                                             |
 | 8     | 27 `white/[0.0x]` washes              | → `bg-wash-faint/subtle/soft`                                                                                                                                          |
-| 9     | tests asserting old sources           | `registry.test.ts`, `browserIdentity.test.ts`, `WorkspaceView.visual.test.tsx`, `sections.test.ts` re-assert against theme definitions / `themeService.list()`        |
+| 9     | tests asserting old sources           | `registry.test.ts`, `browserIdentity.test.ts`, `WorkspaceView.visual.test.tsx`, `sections.test.ts` re-assert against theme definitions / `themeService.list()`         |
 
 Batch acceptance: `npm run type-check && npm run lint && npm run test`, plus
 on-screen smoke in both themes once Flexoki exists.
@@ -378,15 +379,15 @@ TDD per `rules/typescript/testing/` (vitest, `test()`, co-located files).
 
 ## 9. Risks & Mitigations
 
-| Risk                                                                         | Mitigation                                                                                                         |
-| ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| Light-theme contrast surprises (glass, shadows, washes tuned for dark)       | washes/shadows/glass are per-theme tokens; dedicated contrast pass in Phase C                                      |
-| Settings-dialog branch collision (`AppearancePane` is WIP on another branch) | theme work exposes `useTheme`/`themeService` API; AppearancePane diff kept minimal (state-hook swap + list source) |
-| `@theme` defaults vs. `obsidian-lens.ts` drift                               | sync test (§8.2)                                                                                                   |
-| Missed leak keeps a surface dark on Flexoki                                  | guards catch new code; the Phase C visual pass catches stragglers; the audit table is the checklist                |
-| Truecolor TUI output ignores the theme                                       | documented boundary (§5); identical to every terminal emulator                                                     |
-| Diff content colors come from Pierre's built-in themes, not our tokens      | bridge picks the nearest Pierre theme per `kind`; Phase C visual pass validates; custom Pierre theme is a follow-up |
-| Legacy `@config` still carries non-color tokens                              | explicit non-goal; follow-up chore ticket                                                                          |
+| Risk                                                                         | Mitigation                                                                                                          |
+| ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| Light-theme contrast surprises (glass, shadows, washes tuned for dark)       | washes/shadows/glass are per-theme tokens; dedicated contrast pass in Phase C                                       |
+| Settings-dialog branch collision (`AppearancePane` is WIP on another branch) | theme work exposes `useTheme`/`themeService` API; AppearancePane diff kept minimal (state-hook swap + list source)  |
+| `@theme` defaults vs. `obsidian-lens.ts` drift                               | sync test (§8.2)                                                                                                    |
+| Missed leak keeps a surface dark on Flexoki                                  | guards catch new code; the Phase C visual pass catches stragglers; the audit table is the checklist                 |
+| Truecolor TUI output ignores the theme                                       | documented boundary (§5); identical to every terminal emulator                                                      |
+| Diff content colors come from Pierre's built-in themes, not our tokens       | bridge picks the nearest Pierre theme per `kind`; Phase C visual pass validates; custom Pierre theme is a follow-up |
+| Legacy `@config` still carries non-color tokens                              | explicit non-goal; follow-up chore ticket                                                                           |
 
 ## Appendix A — Known source-of-truth divergences
 
