@@ -4,7 +4,7 @@ import { obsidianLens } from './themes/obsidian-lens'
 import themeCss from './theme.css?raw'
 
 const parseThemeBlock = (css: string): Record<string, string> => {
-  const block = /@theme\s*\{([\s\S]*?)\n\}/.exec(css)?.[1] ?? ''
+  const block = /@theme(?:\s+static)?\s*\{([\s\S]*?)\n\}/.exec(css)?.[1] ?? ''
   const vars: Record<string, string> = {}
 
   for (const match of block.matchAll(/(--[\w-]+):\s*([^;]+);/g)) {

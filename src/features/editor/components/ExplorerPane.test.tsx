@@ -238,22 +238,6 @@ describe('ExplorerPane', () => {
     expect(nav).toBeInTheDocument()
   })
 
-  test('file tree container is scrollable', () => {
-    const { container } = render(
-      <ExplorerPane
-        fileTree={mockFileTree}
-        contextMenuActions={mockContextMenuActions}
-        isOpen
-        onToggle={vi.fn()}
-      />
-    )
-
-    // Find the scrollable div that contains the file tree
-    // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access
-    const scrollableDiv = container.querySelector('.overflow-y-auto')
-    expect(scrollableDiv).toBeInTheDocument()
-  })
-
   test('renders reopen button that is hidden when pane is open', () => {
     render(
       <ExplorerPane

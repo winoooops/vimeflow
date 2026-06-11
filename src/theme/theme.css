@@ -6,7 +6,7 @@
  * NOTE: Tailwind bakes --shadow-* values into shadow-* utilities at
  * build time — those do NOT re-theme at runtime. Consume themed
  * shadows via var(--shadow-…) (arbitrary value or inline style). */
-@theme {
+@theme static {
   --color-surface: #121221;
   --color-surface-container-lowest: #0d0d1c;
   --color-surface-container-low: #1a1a2a;

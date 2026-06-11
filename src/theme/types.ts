@@ -5,7 +5,11 @@ import type { TerminalTheme } from '../features/terminal/types'
  * Token diet applied per scripts/audit-colors.mjs census — Material 3
  * leftovers with zero consumers (fixed/inverse variants, surface-dim,
  * surface-variant, on-background, on-primary-container, background)
- * did not migrate. */
+ * did not migrate.
+ *
+ * Theme VALUES must be written in prettier's CSS normal form — lowercase
+ * hex, no trailing zeros in alphas (0.3, not 0.30) — because theme.css
+ * is prettier-formatted and the sync test compares strings. */
 
 export const UI_TOKENS = [
   'surface',

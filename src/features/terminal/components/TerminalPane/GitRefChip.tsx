@@ -65,8 +65,8 @@ export const GitRefChip = ({
 
   // Two-tone coral when detached, per docs/design/git-chip/GitRefChip.html:
   // worktree uses `text-error` (#ffb4ab — lighter coral), branch uses
-  // `text-tertiary` (#ff94a5 — deeper coral). Despite its name, `error` in
-  // tailwind.config.js is a coral shade, NOT Catppuccin red.
+  // `text-tertiary` (#ff94a5 — deeper coral). Despite its name, the `error`
+  // theme token (src/theme/) is a coral shade, NOT Catppuccin red.
   const frameClasses = detached
     ? `${frameBase} bg-tertiary/[0.06] border-tertiary/25`
     : `${frameBase} bg-primary-container/[0.06] border-primary-container/20`
