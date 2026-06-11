@@ -134,13 +134,13 @@ export const obsidianLens: ThemeDefinition = {
     shell: {
       accent: '#f0c674',
       accentDim: 'rgb(240 198 116 / 0.14)',
-      accentSoft: 'rgb(240 198 116 / 0.30)',
+      accentSoft: 'rgb(240 198 116 / 0.3)',
       onAccent: '#2a1f08',
     },
     browser: {
       accent: '#4fc8d6',
       accentDim: 'rgb(79 200 214 / 0.16)',
-      accentSoft: 'rgb(79 200 214 / 0.30)',
+      accentSoft: 'rgb(79 200 214 / 0.3)',
       onAccent: '#06232a',
     },
   },
