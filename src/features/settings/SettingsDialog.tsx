@@ -73,8 +73,7 @@ export const SettingsDialog = ({
         )
       ).filter(
         (el) =>
-          !el.matches(':disabled') &&
-          el.getAttribute('aria-hidden') !== 'true'
+          !el.matches(':disabled') && el.getAttribute('aria-hidden') !== 'true'
       )
 
       if (focusable.length === 0) {
