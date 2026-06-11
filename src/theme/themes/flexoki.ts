@@ -60,7 +60,7 @@ export const flexoki: ThemeDefinition = {
     'scrollbar-thumb-hover': '#b7b5ac',
     'diff-added': 'rgba(102, 128, 11, 0.14)',
     'diff-removed': 'rgba(175, 48, 41, 0.12)',
-    'diff-highlight-added': 'rgba(102, 128, 11, 0.30)',
+    'diff-highlight-added': 'rgba(102, 128, 11, 0.3)',
     'diff-highlight-removed': 'rgba(175, 48, 41, 0.28)',
     'wash-faint': 'rgba(16, 15, 15, 0.04)',
     'wash-subtle': 'rgba(16, 15, 15, 0.05)',

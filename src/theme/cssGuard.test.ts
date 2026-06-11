@@ -1,7 +1,7 @@
 // src/theme/cssGuard.test.ts
 import { expect, test } from 'vitest'
 
-const cssFiles: Record<string, string> = import.meta.glob('../**/*.css', {
+const cssFiles: Record<string, string> = import.meta.glob('/src/**/*.css', {
   query: '?raw',
   import: 'default',
   eager: true,
@@ -12,7 +12,7 @@ const COLOR_LITERAL =
 
 test('no CSS file outside src/theme contains color literals', () => {
   const offenders = Object.entries(cssFiles)
-    .filter(([path]) => !path.includes('/theme/') && !path.startsWith('./'))
+    .filter(([path]) => !path.startsWith('/src/theme/'))
     .filter(([, text]) => COLOR_LITERAL.test(text))
     .map(([path]) => path)
 

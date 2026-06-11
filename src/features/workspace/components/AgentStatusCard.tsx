@@ -203,7 +203,7 @@ export const AgentStatusCard = ({
         background:
           'color-mix(in srgb, var(--color-surface-container) 55%, transparent)',
         boxShadow:
-          '0 5px 20px color-mix(in srgb, black 22%, transparent), inset 0 1px 0 var(--color-wash-faint)',
+          '0 5px 20px color-mix(in srgb, var(--color-surface-container-lowest) 22%, transparent), inset 0 1px 0 var(--color-wash-faint)',
         overflow: 'hidden',
         // The card is chrome, not editable text — show the default arrow rather
         // than the text I-beam over the title/labels. `cursor` inherits, so this
