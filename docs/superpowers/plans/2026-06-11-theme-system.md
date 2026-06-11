@@ -169,6 +169,7 @@ Expected: every `DIET_CANDIDATES` token prints `0` hits **except** (the script s
 
 - `background` (3): `src/index.css:106` `bg-background`; `src/features/editor/components/EditorStatusBar.tsx:30` `text-background`; `EditorStatusBar.test.tsx:125` (the `toHaveClass('text-background')` assertion)
 - `surface-variant` (4): `EditorTabs.tsx:51` + `EditorTabs.tsx:65`, `FileTabs.tsx:52` + `FileTabs.tsx:89`
+- `on-primary-container` (3, found at execution time): `src/features/editor/data/mockEditorData.ts:192` + `:405`, `mockFiles.ts:48` — all inside mock _file-content strings_ (displayed as code text, never applied as styles); migrated to `text-primary-deep` (identical `#57377f`) in Task 7 Step 8 for coherence
 
 Decision rule: a candidate whose consumers can be migrated **value-identically** still drops (`background` → `surface`, both `#121221`; `surface-variant` → `surface-container-highest`, both `#333344`) — Task 7 Step 8 performs those migrations; any other candidate with hits is kept in the token set instead. If the census surfaces hits beyond these, stop and apply the same rule. (The script counts per-match, so lines that also contain `on-surface-variant` are still caught — don't re-derive this list with a line-level grep.)
 
@@ -178,7 +179,7 @@ Decision rule: a candidate whose consumers can be migrated **value-identically**
 node scripts/audit-colors.mjs leaks > .lifeline-planner/leaks-baseline.txt; tail -3 .lifeline-planner/leaks-baseline.txt
 ```
 
-Expected: `TOTAL:` in the 250–300 range (hex matching is 6/8-digit only; the exact number is the baseline Phase B drives to zero).
+Expected: `TOTAL:` is the baseline Phase B drives to zero. Recorded at execution time: **510** (counts every match including test files and mock data; tests asserting palette values account for ~120 and are removed/migrated by Tasks 7/9/10/14/18).
 
 - [ ] **Step 4: Commit**
 
@@ -1197,6 +1198,7 @@ Then migrate the dropped diet-token consumers (census, Task 1):
 - `src/features/editor/components/EditorTabs.tsx:51`: `hover:bg-surface-variant/20` → `hover:bg-surface-container-highest/20`
 - `src/features/editor/components/EditorTabs.tsx:65`: `hover:bg-surface-variant` → `hover:bg-surface-container-highest`
 - `src/features/editor/components/FileTabs.tsx:52` and `:89`: `hover:bg-surface-variant/20` → `hover:bg-surface-container-highest/20`
+- mock-content strings (text only, never applied): `mockEditorData.ts:192` + `:405`, `mockFiles.ts:48`: `text-on-primary-container` → `text-primary-deep`
 
 (`background`→`surface` are both `#121221`; `surface-variant`→`surface-container-highest` are both `#333344` — zero visual change.)
 
