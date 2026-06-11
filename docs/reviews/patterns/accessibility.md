@@ -2,7 +2,7 @@
 id: accessibility
 category: a11y
 created: 2026-04-09
-last_updated: 2026-06-11
+P26-06-11
 ref_count: 21
 ---
 
@@ -504,4 +504,31 @@ handlers must not trap focus without implementing the promised behavior.
 - **File:** `src/features/sessions/components/Card.tsx`
 - **Finding:** The actions popup closed on `onBlur` (when focus left the wrapper) and on Escape, but clicking a non-focusable area of the sidebar did not move focus and therefore did not trigger blur, leaving the popup visibly stuck open during normal pointer use.
 - **Fix:** Added a document-level `mousedown` listener active while `menuOpen === true` that calls `setMenuOpen(false)` when the event target is outside the kebab/menu container. The listener is registered in a `useEffect` with cleanup on unmount or menu close.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 47. SettingsDialog opens without focus management or Tab trap
+
+- **Source:** github-claude | PR #422 round 1 | 2026-06-11
+- **Severity:** MEDIUM
+- **File:** `src/features/settings/SettingsDialog.tsx`
+- **Finding:** The dialog declared `role="dialog"` and `aria-modal="true"` but performed no focus management on open or close. The triggering button retained focus, `Tab` could escape into the workspace behind the modal, and focus was not restored when the dialog closed.
+- **Fix:** Captured `previousFocusRef` on open, focused the close button via `useEffect`, added a document `keydown` listener that traps `Tab`/`Shift+Tab` within the dialog's focusable elements, and restored the prior focus on close.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 48. SettingsDialog lacks initial focus and Tab trap for modal keyboard users
+
+- **Source:** github-codex-connector | PR #422 round 1 | 2026-06-11
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/settings/SettingsDialog.tsx`
+- **Finding:** Opening the dialog from the sidebar footer left focus on the footer; there was no initial focus move, no Tab trap, and no inerting of the background workspace, so keyboard users could Tab into and activate underlying workspace controls while `aria-modal` advertised a modal dialog.
+- **Fix:** Same focus-management change as the previous entry: capture prior focus, focus the close button on open, trap Tab within the dialog, and restore focus on close.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 49. SettingsToggle button exposes only a label, not its on/off state
+
+- **Source:** github-codex-connector | PR #422 round 1 | 2026-06-11
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/settings/components/controls.tsx`
+- **Finding:** The settings toggles rendered as plain `<button>` elements with only an accessible label, so screen readers could not tell whether settings like "Use System Prompts" were currently on or off.
+- **Fix:** Added `role="switch"` and `aria-checked={on}` to the `Toggle` button so assistive technology exposes the current on/off state.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

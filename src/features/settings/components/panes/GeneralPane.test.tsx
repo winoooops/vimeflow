@@ -26,7 +26,7 @@ describe('GeneralPane', () => {
     const user = userEvent.setup()
     render(<GeneralPane />)
 
-    const toggle = screen.getByRole('button', {
+    const toggle = screen.getByRole('switch', {
       name: 'Redact Private Values',
     })
     expect(toggle).toHaveClass('bg-outline-variant/50')

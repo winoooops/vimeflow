@@ -1,6 +1,6 @@
 import { type ReactElement } from 'react'
 import { describe, expect, test } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitForElementToBeRemoved } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { SettingsDialog } from './SettingsDialog'
 import { useSettingsDialog } from './hooks/useSettingsDialog'
@@ -28,7 +28,7 @@ describe('SettingsDialog integration', () => {
 
     await user.keyboard('{Escape}')
 
-    expect(screen.queryByRole('dialog')).toBeNull()
+    await waitForElementToBeRemoved(() => screen.queryByRole('dialog'))
   })
 
   test('closes when backdrop is clicked', async () => {
@@ -41,6 +41,6 @@ describe('SettingsDialog integration', () => {
 
     await user.click(screen.getByTestId('settings-dialog-backdrop'))
 
-    expect(screen.queryByRole('dialog')).toBeNull()
+    await waitForElementToBeRemoved(() => screen.queryByRole('dialog'))
   })
 })

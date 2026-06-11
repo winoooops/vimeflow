@@ -1,8 +1,26 @@
 import { describe, expect, test, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { useState, type ReactElement } from 'react'
 import { SettingsDialog } from './SettingsDialog'
 import { SETTINGS_SECTIONS } from './sections'
+
+const DialogWithTrigger = ({
+  initialOpen = false,
+}: {
+  initialOpen?: boolean
+}): ReactElement => {
+  const [open, setOpen] = useState(initialOpen)
+
+  return (
+    <>
+      <button type="button" onClick={() => setOpen(true)}>
+        Open settings
+      </button>
+      <SettingsDialog open={open} onClose={() => setOpen(false)} />
+    </>
+  )
+}
 
 describe('SettingsDialog', () => {
   test('returns null and renders no dialog when open is false', () => {
@@ -102,5 +120,39 @@ describe('SettingsDialog', () => {
     expect(
       screen.getByText(/Terminal settings haven't been wired yet/)
     ).toBeInTheDocument()
+  })
+
+  test('moves focus to the close button when opened', async () => {
+    const user = userEvent.setup()
+    render(<DialogWithTrigger />)
+
+    await user.click(screen.getByRole('button', { name: 'Open settings' }))
+
+    expect(screen.getByTitle('close')).toHaveFocus()
+  })
+
+  test('traps Tab focus inside the dialog', async () => {
+    const user = userEvent.setup()
+    render(<DialogWithTrigger initialOpen />)
+
+    // Move focus to the last focusable element in the default Appearance pane
+    // and press Tab; focus should wrap back to the close button.
+    const lastFocusable = screen.getByLabelText('Mono font')
+
+    lastFocusable.focus()
+    await user.tab()
+
+    expect(screen.getByTitle('close')).toHaveFocus()
+  })
+
+  test('restores focus to the triggering element on close', async () => {
+    const user = userEvent.setup()
+    render(<DialogWithTrigger />)
+
+    const trigger = screen.getByRole('button', { name: 'Open settings' })
+    await user.click(trigger)
+    await user.click(screen.getByTitle('close'))
+
+    expect(trigger).toHaveFocus()
   })
 })

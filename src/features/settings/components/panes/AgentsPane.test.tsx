@@ -50,7 +50,7 @@ describe('AgentsPane', () => {
     render(<AgentsPane />)
 
     await user.click(
-      screen.getByRole('button', { name: 'Manage agent shell aliases' })
+      screen.getByRole('switch', { name: 'Manage agent shell aliases' })
     )
 
     const rows = screen.getAllByTestId('alias-row')

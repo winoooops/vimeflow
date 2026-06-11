@@ -55,7 +55,9 @@ export const Toggle = ({
 }: ToggleProps): ReactElement => (
   <button
     type="button"
+    role="switch"
     aria-label={ariaLabel}
+    aria-checked={on}
     onClick={() => onChange(!on)}
     className={`relative h-5 w-9 cursor-pointer rounded-full border-none p-0 transition-colors duration-150 ${
       on ? 'bg-primary-container' : 'bg-outline-variant/50'

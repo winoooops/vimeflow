@@ -2,7 +2,7 @@
 id: react-lifecycle
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-06-11
+P26-06-11
 ref_count: 14
 ---
 
@@ -310,4 +310,13 @@ to avoid unintended re-runs (e.g., PTY respawning on every cwd change).
 - **File:** `src/features/workspace/WorkspaceView.tsx`, `src/features/workspace/components/AgentStatusCard.tsx`
 - **Finding:** `sidebarCardState` was computed through a 5-branch ternary over `activityPanelStatus` and `agentStatus.isActive` on every render, then passed as `state={sidebarCardState}` to `AgentStatusCard` where it was immediately discarded via `void state`. No state-driven visual output existed in the card, so the computation served no purpose and misled the component interface.
 - **Fix:** Removed `sidebarCardState` computation from `WorkspaceView`, removed the `state` prop from `AgentStatusCardProps`, and updated co-located tests to match the new prop contract.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 31. AnimatePresence condition placed before the wrapper, killing exit animations
+
+- **Source:** github-claude | PR #422 round 1 | 2026-06-11
+- **Severity:** HIGH
+- **File:** `src/features/settings/SettingsDialog.tsx`
+- **Finding:** `SettingsDialog` returned `null` when `open` was false before reaching the `<AnimatePresence>` wrapper. When `open` flipped to false, React unmounted the entire `AnimatePresence>` tree immediately, so the backdrop and panel `exit` animations never ran and the dialog snapped closed.
+- **Fix:** Removed the early `if (!open) return null` guard and moved the condition inside `<AnimatePresence>` as `{open && (...)}`, matching the existing `CommandPalette` and `UnsavedChangesDialog` pattern.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

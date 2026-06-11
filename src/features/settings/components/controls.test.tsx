@@ -57,7 +57,7 @@ describe('Toggle', () => {
     const onChange = vi.fn()
     render(<Toggle onChange={onChange} aria-label="Enable" />)
 
-    await user.click(screen.getByRole('button', { name: 'Enable' }))
+    await user.click(screen.getByRole('switch', { name: 'Enable' }))
 
     expect(onChange).toHaveBeenCalledWith(true)
   })
@@ -67,9 +67,27 @@ describe('Toggle', () => {
     const onChange = vi.fn()
     render(<Toggle on onChange={onChange} aria-label="Enable" />)
 
-    await user.click(screen.getByRole('button', { name: 'Enable' }))
+    await user.click(screen.getByRole('switch', { name: 'Enable' }))
 
     expect(onChange).toHaveBeenCalledWith(false)
+  })
+
+  test('exposes toggle state as aria-checked', () => {
+    const { rerender } = render(
+      <Toggle onChange={() => undefined} aria-label="Enable" />
+    )
+
+    expect(screen.getByRole('switch', { name: 'Enable' })).toHaveAttribute(
+      'aria-checked',
+      'false'
+    )
+
+    rerender(<Toggle on onChange={() => undefined} aria-label="Enable" />)
+
+    expect(screen.getByRole('switch', { name: 'Enable' })).toHaveAttribute(
+      'aria-checked',
+      'true'
+    )
   })
 })
 
