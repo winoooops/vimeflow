@@ -34,6 +34,9 @@ const fmt = (n: number): string =>
 const cachedShareHex = (sharePct: number): string =>
   sharePct >= 70 ? '#7defa1' : sharePct >= 40 ? '#cba6f7' : '#ff94a5'
 
+const WROTE_STACK_GRADIENT = 'linear-gradient(90deg, #a8c8ff, #8aa9d8)'
+const FRESH_STACK_GRADIENT = 'linear-gradient(90deg, #ff94a5, #ffb4ab)'
+
 const StackBar = ({
   cached,
   wrote,
@@ -80,12 +83,15 @@ const StackBar = ({
         data-testid="token-cache-stack-wrote"
         style={{
           width: `${wPct}%`,
-          background: 'linear-gradient(90deg, #a8c8ff, #8aa9d8)',
+          background: WROTE_STACK_GRADIENT,
         }}
       />
       <div
         data-testid="token-cache-stack-fresh"
-        style={{ width: `${fPct}%`, background: 'rgba(205,195,209,0.4)' }}
+        style={{
+          width: `${fPct}%`,
+          background: FRESH_STACK_GRADIENT,
+        }}
       />
     </div>
   )
