@@ -137,7 +137,14 @@ describe('AgentStatusCard', () => {
   test('falls back to the POSIX sh cheatsheet for unknown shells', () => {
     // Unknown shells (e.g. nushell installed to a custom path, or a company
     // wrapper) must not be passed through to cheat.sh as a 404 topic.
-    render(<AgentStatusCard title="x" state="idle" isShell shellName="/opt/bin/nushell" />)
+    render(
+      <AgentStatusCard
+        title="x"
+        state="idle"
+        isShell
+        shellName="/opt/bin/nushell"
+      />
+    )
 
     expect(
       screen.getByRole('link', { name: /shell cheatsheet/u })
