@@ -226,8 +226,10 @@ const CardComponent = ({
 
       {/* Kebab — sibling of the activation button (not nested), absolutely
           positioned so the row height stays constant; revealed on hover/focus
-          and kept mounted so keyboard users can reach it. */}
-      {hasActions && (
+          and kept mounted so keyboard users can reach it. Suppressed while
+          renaming: focusing the input would otherwise reveal it (via
+          group-focus-within) right on top of the full-width rename field. */}
+      {hasActions && !isEditing && (
         <div
           className={`pointer-events-auto absolute right-2 top-[7px] opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 ${
             menuOpen ? 'opacity-100' : ''

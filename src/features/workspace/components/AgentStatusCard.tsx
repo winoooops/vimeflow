@@ -1,6 +1,7 @@
 // cspell:ignore cheatsheet incard powershell pwsh tcsh xonsh zsh
 import type { ReactElement } from 'react'
 import { RateLimitBar } from '../../agent-status/components/RateLimitBar'
+import { parseModelTitle } from '../utils/parseModelTitle'
 
 // Fused agent-status card (VIM-66 — AGENT-STATUS-CARD-HANDOFF + SHELL-CARD-KIT).
 // ONE fixed card height in every state: switching the active pane between an
@@ -183,6 +184,10 @@ export const AgentStatusCard = ({
 }: AgentStatusCardProps): ReactElement => {
   const hasUsage = fiveHourPct !== null || weekPct !== null
   const resolvedShellName = normalizeShellName(shellName)
+  // Claude reports the model as "Opus 4.8 (1M context)"; rendered whole it
+  // truncates to "Opus 4.8 (1M cont…". Peel the context size off so the name
+  // shows in full beside a compact badge.
+  const { name: modelName, contextLabel } = parseModelTitle(title)
   void state
   void elapsed
   void contextPct
@@ -212,8 +217,19 @@ export const AgentStatusCard = ({
       ) : (
         <>
           <div className="flex min-h-6 items-center gap-2.5">
-            <div className="min-w-0 flex-1 truncate font-display text-[15px] font-semibold leading-6 text-on-surface">
-              {title}
+            <div className="flex min-w-0 flex-1 items-center gap-1.5">
+              <span className="min-w-0 truncate font-display text-[15px] font-semibold leading-6 text-on-surface">
+                {modelName}
+              </span>
+              {contextLabel !== null && (
+                <span
+                  data-testid="agent-card-context-badge"
+                  title={`${contextLabel} context window`}
+                  className="shrink-0 rounded-[5px] bg-surface-container-highest px-[5px] py-[2px] font-mono text-[9.5px] font-semibold leading-none text-on-surface-variant"
+                >
+                  {contextLabel}
+                </span>
+              )}
             </div>
             <TurnPill turns={turns} />
           </div>

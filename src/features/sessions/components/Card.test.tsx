@@ -195,6 +195,23 @@ describe('Card — active variant', () => {
     ).toHaveFocus()
   })
 
+  test('hides the kebab while renaming so it cannot overlap the input', async () => {
+    const user = userEvent.setup()
+    renderActiveCard(session(), { onRename: vi.fn(), onRemove: vi.fn() })
+
+    // Focusing the rename input would otherwise reveal the kebab via
+    // group-focus-within, landing it on top of the full-width input.
+    await user.dblClick(screen.getByText('auth middleware'))
+
+    expect(
+      screen.getByRole('textbox', { name: 'Rename session' })
+    ).toHaveFocus()
+
+    expect(
+      screen.queryByRole('button', { name: 'Session actions' })
+    ).not.toBeInTheDocument()
+  })
+
   test('Escape cancels rename without calling onRename', async () => {
     const onRename = vi.fn()
     renderActiveCard(session(), { onRename })

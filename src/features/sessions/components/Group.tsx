@@ -16,7 +16,7 @@ const GroupHeader = ({
   <div className="flex items-center justify-between pr-3">
     <h3
       data-testid={`session-group-${label.toLowerCase()}`}
-      className="px-3 pb-1 pt-2 font-mono text-[10.5px] uppercase tracking-[0.08em] text-on-surface-variant/70"
+      className="cursor-default select-none px-3 pb-1 pt-2 font-mono text-[10.5px] uppercase tracking-[0.08em] text-on-surface-variant/70"
     >
       {count !== undefined ? `${label} · ${count}` : label}
     </h3>
