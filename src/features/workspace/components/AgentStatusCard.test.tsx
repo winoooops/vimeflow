@@ -96,13 +96,42 @@ describe('AgentStatusCard', () => {
 
     expect(screen.getByText('Idle · pwsh shell')).toBeInTheDocument()
 
+    // pwsh has no cheat.sh topic of its own — cheat.sh serves it as a bare
+    // "alias of powershell" stub — so the link maps to the populated
+    // `powershell` topic while the label still names the real binary.
     const link = screen.getByRole('link', { name: /pwsh cheatsheet/u })
-    expect(link).toHaveAttribute(
-      'href',
-      'https://www.google.com/search?q=pwsh%20commands%20cheatsheet'
-    )
+    expect(link).toHaveAttribute('href', 'https://cheat.sh/powershell')
     expect(link).toHaveAttribute('target', '_blank')
     expect(link).toHaveAttribute('rel', 'noopener noreferrer')
+  })
+
+  test('links to the cheat.sh cheatsheet for the resolved shell (bash, not just zsh)', () => {
+    const { rerender } = render(
+      <AgentStatusCard title="x" state="idle" isShell shellName="/bin/zsh" />
+    )
+
+    expect(
+      screen.getByRole('link', { name: /zsh cheatsheet/u })
+    ).toHaveAttribute('href', 'https://cheat.sh/zsh')
+
+    rerender(
+      <AgentStatusCard title="x" state="idle" isShell shellName="/bin/bash" />
+    )
+
+    expect(
+      screen.getByRole('link', { name: /bash cheatsheet/u })
+    ).toHaveAttribute('href', 'https://cheat.sh/bash')
+  })
+
+  test('falls back to the POSIX sh cheatsheet when no concrete shell name is resolved', () => {
+    // `activePtyBackedPane?.shell ?? null` can pass null for a shell pane;
+    // normalizeShellName yields the `shell` sentinel, which is NOT a cheat.sh
+    // topic — so the link must resolve to the real POSIX `sh` cheatsheet.
+    render(<AgentStatusCard title="x" state="idle" isShell shellName={null} />)
+
+    expect(
+      screen.getByRole('link', { name: /shell cheatsheet/u })
+    ).toHaveAttribute('href', 'https://cheat.sh/sh')
   })
 
   test('hides agent metrics and usage bars on a shell pane', () => {
