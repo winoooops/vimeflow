@@ -760,7 +760,10 @@ fn header_value<'a>(body: &'a str, name: &str) -> Option<&'a str> {
         }
         rest = &rest[1..];
 
-        let end = rest.find('"')?;
+        let end = match rest.find('"') {
+            Some(end) => end,
+            None => continue,
+        };
         return Some(&rest[..end]);
     }
 }

@@ -193,3 +193,12 @@ true` and drop the chunk.
 - **Finding:** The push-shape IPC guard rejected missing or wrong-type `sessions`, but still accepted any array contents and cast them to `WorkspaceShapeDto`. Payloads such as `sessions: [null]`, sessions without `panes`, or panes with wrong-typed scalar fields could still reach `writer.onShapePushed` and throw inside the writer.
 - **Fix:** Replace the shallow guard with recursive runtime validation for the DTO root, sessions, browser panes, shell panes, and nullable shell `agentSessionId`. Extended regression coverage with malformed nested sessions and panes.
 - **Commit:** same commit as this entry
+
+### 10. Unterminated string in log-header parser aborts the whole search
+
+- **Source:** github-claude | PR #421 round 3 | 2026-06-11
+- **Severity:** LOW
+- **File:** `crates/backend/src/agent/adapter/codex/locator.rs` L763-765
+- **Finding:** `header_value` used `rest.find('"')?` after finding an opening quote for a header value. When a malformed occurrence had an opening quote but no closing quote, the `?` propagated `None` out of the entire function, abandoning any later well-formed occurrences of the same header.
+- **Fix:** Replaced the `?` with `let Some(end) = rest.find('"') else { continue; };` so an unterminated value skips to the next iteration, matching the existing `continue`-on-malformed logic for missing colon or opening quote.
+- **Commit:** same commit as this entry

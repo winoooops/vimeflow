@@ -50,7 +50,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Cross-Platform Paths](patterns/cross-platform-paths.md)             | cross-platform     | 6        | 3    | 2026-05-30   |
 | [Debug Artifacts](patterns/debug-artifacts.md)                       | code-quality       | 6        | 0    | 2026-06-07   |
 | [Derived State Consistency](patterns/derived-state-consistency.md)   | code-quality       | 5        | 3    | 2026-06-08   |
-| [Generated Artifacts](patterns/generated-artifacts.md)               | code-quality       | 3        | 2    | 2026-05-25   |
+| [Generated Artifacts](patterns/generated-artifacts.md)               | code-quality       | 4        | 2    | 2026-06-11   |
 | [Generated Shell Scripts](patterns/generated-shell-scripts.md)       | backend            | 7        | 1    | 2026-06-03   |
 | [Hot-Path Caching](patterns/hot-path-caching.md)                     | backend            | 1        | 0    | 2026-06-09   |
 | [Testing Gaps](patterns/testing-gaps.md)                             | testing            | 62       | 30   | 2026-06-11   |
@@ -78,6 +78,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Verify Render Target](patterns/verify-render-target.md)             | code-quality       | 2        | 0    | 2026-05-24   |
 | [UI Visual Regression](patterns/ui-visual-regression.md)             | code-quality       | 1        | 0    | 2026-06-11   |
 | [Status Indicator Display](patterns/status-indicator-display.md)     | code-quality       | 3        | 0    | 2026-05-26   |
-| [Parser Resilience](patterns/parser-resilience.md)                   | code-quality       | 9        | 7    | 2026-06-09   |
+| [Parser Resilience](patterns/parser-resilience.md)                   | code-quality       | 10       | 7    | 2026-06-11   |
 | [Persisted State Invariants](patterns/persisted-state-invariants.md) | correctness        | 6        | 3    | 2026-06-08   |
 | [macOS Window Chrome](patterns/macos-window-chrome.md)               | cross-platform     | 8        | 2    | 2026-06-11   |
+| [Guard Branch Correctness](patterns/guard-branch-correctness.md)     | correctness        | 1        | 0    | 2026-06-11   |

@@ -82,7 +82,7 @@ const normalizeShellName = (shellName: string | null | undefined): string => {
     return stripped
   }
 
-  return stripped
+  return 'shell'
 }
 
 // cheat.sh serves a real, populated cheatsheet at /<topic>; every normalized
