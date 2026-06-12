@@ -2,8 +2,8 @@
 id: generated-artifacts
 category: code-quality
 created: 2026-04-14
-last_updated: 2026-05-25
-ref_count: 2
+last_updated: 2026-06-12
+ref_count: 3
 ---
 
 # Generated Artifacts
@@ -55,4 +55,16 @@ checks or leave a regeneration diff.
 - **File:** `docs/design/leftsidebar/Sidebar Chrome.html`
 - **Finding:** The PR included a React/Babel HTML prototype and JSX demo files under `docs/design/` alongside migration markdown. These are hand-authored throwaway demos, not generated artifacts or application code, and add noise to the repository and review surface.
 - **Fix:** Removed `docs/design/leftsidebar/Sidebar Chrome.html` and all JSX files under `docs/design/sidebar-toggle-handoff/src/`, keeping the markdown handoff documents.
+- **Commit:** same commit as this entry
+
+---
+
+### 5. `generate:bindings` dropped stale-file cleanup, risking stale TypeScript bindings locally
+
+- **Source:** github-claude | PR #440 round 1 | 2026-06-12
+- **Severity:** MEDIUM
+- **File:** `package.json` L28
+- **Finding:** The `generate:bindings` npm script was rewritten to skip the previous `npm run clean:bindings` pre-step. CI still cleaned before regeneration, but the canonical local command no longer deleted stale `.ts` files in `src/bindings/`. If a Rust type was renamed or removed, the old binding persisted alongside the new one, making local type-checks and imports appear valid until `git status` or the `bindings-check` CI job caught the stale file.
+- **Fix:** Restored the `clean:bindings` script (`mkdir -p src/bindings && find src/bindings -name '*.ts' ! -name 'index.ts' -delete`) and re-added `npm run clean:bindings &&` to the start of `generate:bindings`, preserving the committed `src/bindings/index.ts` re-export.
+- **Verification:** `npx prettier --check package.json`; codex verify on the staged diff (findings: [], `overall_correctness`: "patch is correct").
 - **Commit:** same commit as this entry
