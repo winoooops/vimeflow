@@ -1,0 +1,453 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Vimeflow QA runner split-plane infrastructure: a low-cost control EC2 host,
+  an on-demand Spot worker, SSM access, and a retained worker auth volume.
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Network
+        Parameters:
+          - VpcId
+          - SubnetId
+          - AssociatePublicIpAddress
+          - KeyName
+      - Label:
+          default: Instances
+        Parameters:
+          - ControlAmiId
+          - ControlInstanceType
+          - WorkerAmiId
+          - WorkerInstanceType
+          - EnableWorkerSpot
+          - WorkerSpotMaxPrice
+      - Label:
+          default: Storage
+        Parameters:
+          - ControlRootVolumeSizeGiB
+          - WorkerRootVolumeSizeGiB
+          - WorkerAuthVolumeSizeGiB
+      - Label:
+          default: Runtime Configuration
+        Parameters:
+          - EnvironmentName
+          - RepositoryUrl
+          - WorkerRunnerRef
+          - ControlParameterPrefix
+          - WorkerParameterPrefix
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: prod
+    AllowedPattern: '^[a-z][a-z0-9-]{1,20}$'
+    ConstraintDescription: Use 2-21 lowercase letters, numbers, and hyphens.
+    Description: Environment label used in tags and dynamic resource names.
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC that contains the QA runner subnet.
+  SubnetId:
+    Type: AWS::EC2::Subnet::Id
+    Description: Subnet for both control and worker instances.
+  AssociatePublicIpAddress:
+    Type: String
+    Default: 'true'
+    AllowedValues:
+      - 'true'
+      - 'false'
+    Description: Assign public IPs when deploying into a public subnet without NAT.
+  KeyName:
+    Type: String
+    Default: ''
+    Description: Optional EC2 key pair name. Leave blank to rely on SSM Session Manager.
+  ControlAmiId:
+    Type: AWS::EC2::Image::Id
+    Description: AMI ID for the always-on control host.
+  WorkerAmiId:
+    Type: AWS::EC2::Image::Id
+    Description: AMI ID for the burst worker host.
+  ControlInstanceType:
+    Type: String
+    Default: t2.micro
+    AllowedValues:
+      - t2.micro
+      - t3.micro
+      - t3.small
+    Description: Control host type. t2.micro consumes the current t2 Savings Plan.
+  WorkerInstanceType:
+    Type: String
+    Default: t3.medium
+    AllowedValues:
+      - t3.small
+      - t3.medium
+      - t3.large
+    Description: Worker host type for Kimi/Codex/npm/Rust fixer work.
+  EnableWorkerSpot:
+    Type: String
+    Default: 'true'
+    AllowedValues:
+      - 'true'
+      - 'false'
+    Description: Use Spot for the worker instance when true.
+  WorkerSpotMaxPrice:
+    Type: String
+    Default: ''
+    AllowedPattern: '^$|^[0-9]+(\.[0-9]+)?$'
+    Description: Optional Spot max price. Blank uses the current Spot price.
+  ControlRootVolumeSizeGiB:
+    Type: Number
+    Default: 20
+    MinValue: 8
+    MaxValue: 128
+    Description: Control root gp3 volume size.
+  WorkerRootVolumeSizeGiB:
+    Type: Number
+    Default: 20
+    MinValue: 16
+    MaxValue: 256
+    Description: Worker root gp3 volume size.
+  WorkerAuthVolumeSizeGiB:
+    Type: Number
+    Default: 8
+    MinValue: 1
+    MaxValue: 64
+    Description: Retained encrypted gp3 volume for worker Codex/Kimi auth state.
+  RepositoryUrl:
+    Type: String
+    Default: https://github.com/winoooops/vimeflow.git
+    AllowedPattern: '^https://github\.com/.+/.+\.git$'
+    Description: Repository cloned by bootstrap/runbook steps.
+  WorkerRunnerRef:
+    Type: String
+    Default: wip/linear-wiring
+    AllowedPattern: '^[A-Za-z0-9._/-]+$'
+    Description: Git ref the worker refreshes before fixer cycles.
+  ControlParameterPrefix:
+    Type: String
+    Default: /vimeflow/qa-runner/prod/control/
+    AllowedPattern: '^/[A-Za-z0-9_.\-/]+/$'
+    Description: SSM Parameter Store prefix for control-host runtime values.
+  WorkerParameterPrefix:
+    Type: String
+    Default: /vimeflow/qa-runner/prod/worker/
+    AllowedPattern: '^/[A-Za-z0-9_.\-/]+/$'
+    Description: SSM Parameter Store prefix for worker runtime values.
+
+Conditions:
+  AssignPublicIp: !Equals [!Ref AssociatePublicIpAddress, 'true']
+  HasKeyName: !Not [!Equals [!Ref KeyName, '']]
+  UseWorkerSpot: !Equals [!Ref EnableWorkerSpot, 'true']
+  HasWorkerSpotMaxPrice: !Not [!Equals [!Ref WorkerSpotMaxPrice, '']]
+
+Resources:
+  ControlSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub '${AWS::StackName} control host egress-only security group'
+      VpcId: !Ref VpcId
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+          Description: Outbound to GitHub, Cloudflare Tunnel, AWS APIs, and package repos.
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-control-sg'
+        - Key: Application
+          Value: vimeflow
+        - Key: Component
+          Value: qa-runner-control
+        - Key: Environment
+          Value: !Ref EnvironmentName
+
+  WorkerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub '${AWS::StackName} worker egress-only security group'
+      VpcId: !Ref VpcId
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+          Description: Outbound to GitHub, AWS APIs, model providers, and package repos.
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-worker-sg'
+        - Key: Application
+          Value: vimeflow
+        - Key: Component
+          Value: qa-runner-worker
+        - Key: Environment
+          Value: !Ref EnvironmentName
+
+  ControlRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${AWS::StackName}-control-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/AmazonSSMManagedInstanceCore'
+      Policies:
+        - PolicyName: qa-runner-control-runtime
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: ReadControlParameters
+                Effect: Allow
+                Action:
+                  - ssm:GetParameter
+                  - ssm:GetParameters
+                  - ssm:GetParametersByPath
+                Resource: !Sub 'arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter${ControlParameterPrefix}*'
+              - Sid: StartStopWorker
+                Effect: Allow
+                Action:
+                  - ec2:StartInstances
+                  - ec2:StopInstances
+                Resource: !Sub 'arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:instance/${WorkerInstance}'
+              - Sid: DescribeWorkerState
+                Effect: Allow
+                Action:
+                  - ec2:DescribeInstances
+                  - ec2:DescribeInstanceStatus
+                Resource: '*'
+              - Sid: SendWorkerCommand
+                Effect: Allow
+                Action:
+                  - ssm:SendCommand
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:instance/${WorkerInstance}'
+                  - !Sub 'arn:${AWS::Partition}:ssm:${AWS::Region}::document/AWS-RunShellScript'
+              - Sid: ReadWorkerCommandResult
+                Effect: Allow
+                Action:
+                  - ssm:GetCommandInvocation
+                  - ssm:ListCommandInvocations
+                Resource: '*'
+      Tags:
+        - Key: Application
+          Value: vimeflow
+        - Key: Component
+          Value: qa-runner-control
+        - Key: Environment
+          Value: !Ref EnvironmentName
+
+  WorkerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${AWS::StackName}-worker-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/AmazonSSMManagedInstanceCore'
+      Policies:
+        - PolicyName: qa-runner-worker-runtime
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: ReadWorkerParameters
+                Effect: Allow
+                Action:
+                  - ssm:GetParameter
+                  - ssm:GetParameters
+                  - ssm:GetParametersByPath
+                Resource: !Sub 'arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter${WorkerParameterPrefix}*'
+      Tags:
+        - Key: Application
+          Value: vimeflow
+        - Key: Component
+          Value: qa-runner-worker
+        - Key: Environment
+          Value: !Ref EnvironmentName
+
+  ControlInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: !Sub '${AWS::StackName}-control-profile'
+      Roles:
+        - !Ref ControlRole
+
+  WorkerInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: !Sub '${AWS::StackName}-worker-profile'
+      Roles:
+        - !Ref WorkerRole
+
+  ControlInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Ref ControlAmiId
+      InstanceType: !Ref ControlInstanceType
+      IamInstanceProfile: !Ref ControlInstanceProfile
+      KeyName: !If [HasKeyName, !Ref KeyName, !Ref AWS::NoValue]
+      MetadataOptions:
+        HttpEndpoint: enabled
+        HttpTokens: required
+      NetworkInterfaces:
+        - AssociatePublicIpAddress: !If [AssignPublicIp, true, false]
+          DeviceIndex: '0'
+          GroupSet:
+            - !Ref ControlSecurityGroup
+          SubnetId: !Ref SubnetId
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            DeleteOnTermination: true
+            Encrypted: true
+            VolumeSize: !Ref ControlRootVolumeSizeGiB
+            VolumeType: gp3
+      UserData:
+        Fn::Base64: !Sub |
+          #!/usr/bin/env bash
+          set -euxo pipefail
+          install -d -o root -g root -m 0755 /opt/vimeflow /etc/vimeflow/qa-runner
+          cat >/etc/vimeflow/qa-runner/stack.env <<'EOF'
+          QA_ENVIRONMENT=${EnvironmentName}
+          QA_REPOSITORY_URL=${RepositoryUrl}
+          QA_CONTROL_PARAMETER_PREFIX=${ControlParameterPrefix}
+          QA_WORKER_INSTANCE_ID=${WorkerInstance}
+          QA_WORKER_REGION=${AWS::Region}
+          QA_WORKER_REF=${WorkerRunnerRef}
+          EOF
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-control'
+        - Key: Application
+          Value: vimeflow
+        - Key: Component
+          Value: qa-runner-control
+        - Key: Environment
+          Value: !Ref EnvironmentName
+
+  WorkerLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: !Sub '${AWS::StackName}-worker'
+      LaunchTemplateData:
+        ImageId: !Ref WorkerAmiId
+        InstanceType: !Ref WorkerInstanceType
+        IamInstanceProfile:
+          Name: !Ref WorkerInstanceProfile
+        InstanceMarketOptions: !If
+          - UseWorkerSpot
+          - MarketType: spot
+            SpotOptions:
+              InstanceInterruptionBehavior: stop
+              SpotInstanceType: persistent
+              MaxPrice: !If [HasWorkerSpotMaxPrice, !Ref WorkerSpotMaxPrice, !Ref AWS::NoValue]
+          - !Ref AWS::NoValue
+        KeyName: !If [HasKeyName, !Ref KeyName, !Ref AWS::NoValue]
+        MetadataOptions:
+          HttpEndpoint: enabled
+          HttpTokens: required
+        NetworkInterfaces:
+          - AssociatePublicIpAddress: !If [AssignPublicIp, true, false]
+            DeviceIndex: 0
+            Groups:
+              - !Ref WorkerSecurityGroup
+            SubnetId: !Ref SubnetId
+        BlockDeviceMappings:
+          - DeviceName: /dev/xvda
+            Ebs:
+              DeleteOnTermination: true
+              Encrypted: true
+              VolumeSize: !Ref WorkerRootVolumeSizeGiB
+              VolumeType: gp3
+        UserData:
+          Fn::Base64: !Sub |
+            #!/usr/bin/env bash
+            set -euxo pipefail
+            install -d -o root -g root -m 0755 /opt/vimeflow /etc/vimeflow/qa-runner /var/lib/vimeflow
+            cat >/etc/vimeflow/qa-runner/stack.env <<'EOF'
+            QA_ENVIRONMENT=${EnvironmentName}
+            QA_REPOSITORY_URL=${RepositoryUrl}
+            QA_WORKER_PARAMETER_PREFIX=${WorkerParameterPrefix}
+            QA_WORKER_REF=${WorkerRunnerRef}
+            QA_WORKER_CODEX_HOME=/var/lib/vimeflow/codex-auth
+            EOF
+        TagSpecifications:
+          - ResourceType: instance
+            Tags:
+              - Key: Name
+                Value: !Sub '${AWS::StackName}-worker'
+              - Key: Application
+                Value: vimeflow
+              - Key: Component
+                Value: qa-runner-worker
+              - Key: Environment
+                Value: !Ref EnvironmentName
+          - ResourceType: volume
+            Tags:
+              - Key: Application
+                Value: vimeflow
+              - Key: Component
+                Value: qa-runner-worker-root
+              - Key: Environment
+                Value: !Ref EnvironmentName
+
+  WorkerInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      LaunchTemplate:
+        LaunchTemplateId: !Ref WorkerLaunchTemplate
+        Version: !GetAtt WorkerLaunchTemplate.LatestVersionNumber
+
+  WorkerAuthVolume:
+    Type: AWS::EC2::Volume
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      AvailabilityZone: !GetAtt WorkerInstance.AvailabilityZone
+      Encrypted: true
+      Size: !Ref WorkerAuthVolumeSizeGiB
+      VolumeType: gp3
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-worker-auth'
+        - Key: Application
+          Value: vimeflow
+        - Key: Component
+          Value: qa-runner-worker-auth
+        - Key: Environment
+          Value: !Ref EnvironmentName
+
+  WorkerAuthVolumeAttachment:
+    Type: AWS::EC2::VolumeAttachment
+    Properties:
+      Device: /dev/sdf
+      InstanceId: !Ref WorkerInstance
+      VolumeId: !Ref WorkerAuthVolume
+
+Outputs:
+  ControlInstanceId:
+    Description: Control EC2 instance ID.
+    Value: !Ref ControlInstance
+  WorkerInstanceId:
+    Description: Worker EC2 instance ID.
+    Value: !Ref WorkerInstance
+  WorkerAuthVolumeId:
+    Description: Retained encrypted EBS volume for worker auth state.
+    Value: !Ref WorkerAuthVolume
+  ControlInstanceProfileName:
+    Description: IAM instance profile attached to the control host.
+    Value: !Ref ControlInstanceProfile
+  WorkerInstanceProfileName:
+    Description: IAM instance profile attached to the worker.
+    Value: !Ref WorkerInstanceProfile
+  ControlParameterPrefix:
+    Description: SSM Parameter Store prefix the control role may read.
+    Value: !Ref ControlParameterPrefix
+  WorkerParameterPrefix:
+    Description: SSM Parameter Store prefix the worker role may read.
+    Value: !Ref WorkerParameterPrefix

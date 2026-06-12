@@ -116,6 +116,11 @@ node scripts/qa-runner/run.mjs 317 --push --linear-team VIM
   (or `watch`). Everything's already authed locally.
 - **v2 — a self-hosted GitHub Actions runner** on a small always-on box, triggered by
   `pull_request_review`: event-driven for free, full toolchain, your secrets.
+- **CloudFormation scaffold:** see
+  [`deploy/cloudformation/qa-runner-split-plane.yml`](deploy/cloudformation/qa-runner-split-plane.yml)
+  and
+  [`docs/architecture/qa-runner-split-plane-cloudformation.md`](../../docs/architecture/qa-runner-split-plane-cloudformation.md)
+  for the split-plane EC2 control/worker architecture tracked in `VIM-73`.
 
 ## Identity (`lib/bot-identity.mjs`)
 
