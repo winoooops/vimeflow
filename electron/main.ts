@@ -558,7 +558,10 @@ app.on('window-all-closed', () => {
 
       // Only honor values written by the current app version. A newer or
       // unsupported version is treated as a mismatch and falls back to default.
-      if (parsed.version === SETTINGS_SCHEMA_VERSION) {
+      if (
+        parsed.version === SETTINGS_SCHEMA_VERSION &&
+        typeof parsed.onLastWindowClosed === 'string'
+      ) {
         onLastWindowClosed = parsed.onLastWindowClosed
       }
     } catch {

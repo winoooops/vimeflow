@@ -81,7 +81,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [UI Visual Regression](patterns/ui-visual-regression.md)                                          | code-quality       | 1        | 0    | 2026-06-11   |
 | [Status Indicator Display](patterns/status-indicator-display.md)                                  | code-quality       | 3        | 0    | 2026-05-26   |
 | [Parser Resilience](patterns/parser-resilience.md)                                                | code-quality       | 10       | 7    | 2026-06-11   |
-| [Persisted State Invariants](patterns/persisted-state-invariants.md)                              | correctness        | 9        | 5    | 2026-06-12   |
+| [Persisted State Invariants](patterns/persisted-state-invariants.md)                              | correctness        | 10       | 6    | 2026-06-12   |
 | [macOS Window Chrome](patterns/macos-window-chrome.md)                                            | cross-platform     | 8        | 2    | 2026-06-11   |
 | [Guard Branch Correctness](patterns/guard-branch-correctness.md)                                  | correctness        | 1        | 0    | 2026-06-11   |
 | [IPC Trust Boundary](patterns/ipc-trust-boundary.md)                                              | security           | 1        | 0    | 2026-06-12   |
