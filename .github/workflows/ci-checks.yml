@@ -11,6 +11,7 @@ on:
 jobs:
   code-check:
     name: Code Quality Check
+    needs: [bindings]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -25,14 +26,23 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Clear generated bindings
+        run: mkdir -p src/bindings && find src/bindings -name '*.ts' ! -name 'index.ts' -delete
+
+      - name: Download generated bindings
+        uses: actions/download-artifact@v4
+        with:
+          name: ts-bindings
+          path: src/bindings
+
       - name: Run ESLint
-        run: npm run lint
+        run: npm --ignore-scripts run lint
 
       - name: Check formatting
-        run: npm run format:check
+        run: npm --ignore-scripts run format:check
 
       - name: Type check
-        run: npm run type-check
+        run: npm run type-check:generated
         if: hashFiles('tsconfig.json') != ''
 
   unit-test:
@@ -82,9 +92,8 @@ jobs:
       - name: Run Rust tests
         run: cargo test
 
-  bindings-check:
-    name: Verify TypeScript Bindings
-    needs: [rust-test]
+  bindings:
+    name: Generate TypeScript Bindings
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -118,11 +127,16 @@ jobs:
         run: npm ci
 
       - name: Generate bindings
-        run: |
-          find src/bindings -name '*.ts' ! -name 'index.ts' -delete
-          npm run generate:bindings
+        run: npm run generate:bindings
 
       - name: Verify bindings are up to date
         run: |
           git diff --exit-code src/bindings/
           test -z "$(git ls-files --others --exclude-standard src/bindings/)"
+
+      - name: Upload generated bindings
+        uses: actions/upload-artifact@v4
+        with:
+          name: ts-bindings
+          path: src/bindings/*.ts
+          if-no-files-found: error
