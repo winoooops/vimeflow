@@ -394,36 +394,34 @@ describe('WorkspaceView – top chrome (main-stage handoff J2–J6)', () => {
     ).toBeNull()
   })
 
-  test('collapsed sidebar: the expand toggle relocates into the in-flow chrome (J4)', () => {
+  test('the sidebar toggle is one persistent root control — it never relocates on collapse (J4)', () => {
     render(<WorkspaceView />)
 
     const chrome = screen.getByTestId('top-chrome')
 
-    // Sidebar open: the toggle lives in the sidebar shell anchor, not the
-    // chrome.
-    expect(screen.getByTestId('sidebar-toggle-anchor')).toBeInTheDocument()
-    expect(chrome).not.toContainElement(
-      screen.getByTestId('sidebar-toggle-fixed')
-    )
+    // Open: a single toggle, anchored to the workspace root — NOT inside the
+    // chrome, and there is no separate in-shell anchor element anymore.
+    const toggleOpen = screen.getByTestId('sidebar-toggle-fixed')
+    expect(toggleOpen).toBeInTheDocument()
+    expect(chrome).not.toContainElement(toggleOpen)
+    expect(screen.queryByTestId('sidebar-toggle-anchor')).toBeNull()
 
     act(() => {
       setSidebarCollapsed(true)
     })
 
-    // Collapsed: the toggle relocates INTO the in-flow chrome. Because the
-    // chrome pushes the panes down (it is not an overlay) the floating toggle
-    // overlaps nothing. The shell anchor is gone.
-    expect(screen.queryByTestId('sidebar-toggle-anchor')).toBeNull()
-    expect(chrome).toContainElement(screen.getByTestId('sidebar-toggle-fixed'))
+    // Collapsed: it is the SAME DOM node (never unmounted/remounted), still
+    // outside the chrome. Because it does not relocate, it cannot jump as the
+    // shell and main columns animate.
+    const toggleCollapsed = screen.getByTestId('sidebar-toggle-fixed')
+    expect(toggleCollapsed).toBe(toggleOpen)
+    expect(chrome).not.toContainElement(toggleCollapsed)
 
     act(() => {
       setSidebarCollapsed(false)
     })
 
-    // Back to the shell anchor when re-opened.
-    expect(screen.getByTestId('sidebar-toggle-anchor')).toBeInTheDocument()
-    expect(chrome).not.toContainElement(
-      screen.getByTestId('sidebar-toggle-fixed')
-    )
+    expect(screen.getByTestId('sidebar-toggle-fixed')).toBe(toggleOpen)
+    expect(screen.queryByTestId('sidebar-toggle-anchor')).toBeNull()
   })
 })

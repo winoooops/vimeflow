@@ -1807,9 +1807,10 @@ export const WorkspaceView = (): ReactElement => {
         />
       )}
 
-      {/* Sidebar — the shell owns the persistent toggle; the inner panel clips
-          during animated desktop collapse. Compact viewports lift the same
-          shell above main content. */}
+      {/* Sidebar — the shell's panel clips during animated desktop collapse;
+          the toggle that controls it is a root-level child (above), so it does
+          not slide with the shell. Compact viewports lift the shell above main
+          content. */}
       <div
         data-testid="workspace-sidebar-shell"
         role={isCompactViewport && !isSidebarClosed ? 'dialog' : undefined}
@@ -1847,29 +1848,6 @@ export const WorkspaceView = (): ReactElement => {
             width: isSidebarClosed ? 0 : sidebarToggleSlideSurfaceWidth,
           }}
         />
-        {/* Sidebar OPEN: the collapse toggle lives here in the shell, over the
-            sidebar's top bar. When the sidebar is collapsed it relocates into
-            the top chrome (which is in-flow, so it no longer floats over the
-            panes). */}
-        {!isSidebarClosed && (
-          <div
-            data-testid="sidebar-toggle-anchor"
-            className="absolute z-30"
-            style={{
-              left: sidebarToggleLeft,
-              top: SIDEBAR_TOGGLE_TOP,
-            }}
-          >
-            <SidebarToggle
-              ref={sidebarToggleRef}
-              onClick={handleToggleSidebar}
-              size={SIDEBAR_TOGGLE_SIZE}
-              variant="inset"
-              data-testid="sidebar-toggle-fixed"
-              shortcutHint={sidebarShortcutHint}
-            />
-          </div>
-        )}
         <div
           aria-hidden={isSidebarClosed || undefined}
           inert={isSidebarClosed || undefined}
@@ -2000,35 +1978,15 @@ export const WorkspaceView = (): ReactElement => {
         }}
       >
         {/* Top chrome — an always-visible 44px in-flow bar (panes sit BELOW it,
-            so the floating sidebar toggle never overlaps pane content, the way
-            main's session-tab strip behaved). Solid lowest surface + hairline
-            bottom rule. The old auto-hide/pin behavior was removed; its
-            reusable frosted-glass treatment now lives in <GlassSurface>. */}
+            so the root-anchored sidebar toggle, which floats over this bar's
+            left edge when collapsed, never overlaps pane content the way main's
+            session-tab strip behaved). Solid lowest surface + hairline bottom
+            rule. The old auto-hide/pin behavior was removed; its reusable
+            frosted-glass treatment now lives in <GlassSurface>. */}
         <div
           data-testid="top-chrome"
           className="relative flex h-[44px] shrink-0 items-center gap-[12px] border-b border-[rgba(74,68,79,0.25)] bg-surface-container-lowest pl-[14px] pr-[14px]"
         >
-          {/* Collapsed sidebar: the expand toggle floats at the chrome's left
-              edge. Because the chrome is in-flow (panes are below it) the
-              toggle overlaps nothing. When the sidebar is open the toggle
-              lives in the sidebar shell anchor instead. */}
-          {isSidebarClosed && (
-            <div
-              className="absolute z-30"
-              style={{ left: sidebarToggleLeft, top: SIDEBAR_TOGGLE_TOP }}
-            >
-              <SidebarToggle
-                ref={sidebarToggleRef}
-                collapsed
-                onClick={handleToggleSidebar}
-                size={SIDEBAR_TOGGLE_SIZE}
-                variant="inset"
-                data-testid="sidebar-toggle-fixed"
-                shortcutHint={sidebarShortcutHint}
-              />
-            </div>
-          )}
-
           <span className="min-w-[10px] flex-1" />
 
           {/* Pills render in every layout, with the layout-display config
@@ -2240,6 +2198,28 @@ export const WorkspaceView = (): ReactElement => {
         setQuery={commandPalette.setQuery}
         selectIndex={commandPalette.selectIndex}
       />
+
+      {/* Persistent sidebar toggle — anchored to the workspace root, which
+          never moves, so the control sits at one fixed coordinate in every
+          state. Parenting it to the sliding sidebar shell (open) or the main
+          column (collapsed) made it ride along as those containers animated,
+          so it visibly jumped on collapse/expand. A single root child with
+          absolute left/top stays put; ⌘B just flips its glyph. Rendered last
+          (z-40 keeps it on top) so it never overlaps the panes underneath. */}
+      <div
+        className="absolute z-40"
+        style={{ left: sidebarToggleLeft, top: SIDEBAR_TOGGLE_TOP }}
+      >
+        <SidebarToggle
+          ref={sidebarToggleRef}
+          collapsed={isSidebarClosed}
+          onClick={handleToggleSidebar}
+          size={SIDEBAR_TOGGLE_SIZE}
+          variant="inset"
+          data-testid="sidebar-toggle-fixed"
+          shortcutHint={sidebarShortcutHint}
+        />
+      </div>
     </div>
   )
 }
