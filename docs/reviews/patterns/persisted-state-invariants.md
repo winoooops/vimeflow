@@ -2,8 +2,8 @@
 id: persisted-state-invariants
 category: correctness
 created: 2026-06-08
-last_updated: 2026-06-08
-ref_count: 3
+last_updated: 2026-06-12
+ref_count: 4
 ---
 
 # Persisted State Invariants
@@ -66,4 +66,13 @@ Durable user-facing state (workspace shapes, caches, settings files) can be malf
 - **File:** `electron/workspace-layout-writer.ts`
 - **Finding:** `noteBrowserPaneShape` added disappearing browser pane keys to `removedBrowserPaneKeys` but did not clear that set when a key reappeared. A pane that briefly disappeared and then reappeared before its live view was capturable caused `tabsForBrowserPane` to return `null`, making teardown flush skip persistence.
 - **Fix:** Clear `removedBrowserPaneKeys` for every key present in the next shape. Updated assemble and flush coverage so a reappearing pane with no live capture persists as `tabs: []` rather than blocking the save.
+- **Commit:** same commit as this entry
+
+### 7. "Open settings.json" does nothing on a fresh profile because the file was never created
+
+- **Source:** github-codex-connector | PR #430 round 1 | 2026-06-12
+- **Severity:** MEDIUM
+- **File:** `electron/main.ts` L452-454
+- **Finding:** The `SETTINGS_OPEN_FILE` handler called `shell.openPath` on `userData/settings.json`. On a fresh profile, `load_app_settings` returns defaults without writing them, so the file does not exist and the open action silently fails (the renderer also ignores the returned error string).
+- **Fix:** Before opening, the handler checks whether `settings.json` exists; if missing, it asks the sidecar to `load_app_settings` (which returns defaults) and then `save_app_settings` so the default file is materialized on disk. The open is still attempted even if seeding fails, letting the OS surface any residual error.
 - **Commit:** same commit as this entry

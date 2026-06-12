@@ -107,18 +107,11 @@ impl AppSettingsCache {
     }
 
     /// The in-memory mirror (consumed by the renderer-facing IPC path).
-    #[allow(dead_code)]
     pub fn current(&self) -> Option<AppSettings> {
         self.mirror
             .lock()
             .expect("app settings mirror poisoned")
             .clone()
-    }
-
-    /// Alias for [`Self::current`].
-    #[allow(dead_code)]
-    pub fn get(&self) -> Option<AppSettings> {
-        self.current()
     }
 
     fn flush_to_disk(&self, settings: &AppSettings) -> Result<(), String> {
@@ -295,15 +288,14 @@ mod tests {
     }
 
     #[test]
-    fn get_returns_mirror_after_load() {
+    fn current_returns_mirror_after_load() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("settings.json");
         let cache = AppSettingsCache::new(path);
-        assert!(cache.get().is_none());
+        assert!(cache.current().is_none());
 
         let settings = custom_settings();
         cache.save(&settings).unwrap();
-        assert_eq!(cache.get().unwrap(), settings);
         assert_eq!(cache.current().unwrap(), settings);
     }
 }

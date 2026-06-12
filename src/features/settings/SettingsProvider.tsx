@@ -2,6 +2,7 @@ import {
   createContext,
   useCallback,
   useEffect,
+  useRef,
   useState,
   type ReactElement,
   type ReactNode,
@@ -11,6 +12,7 @@ import { DEFAULT_SETTINGS } from './store/settingsDefaults'
 
 export interface SettingsContextValue {
   settings: AppSettings
+  saveError: Error | null
   update: (patch: Partial<AppSettings>) => void
 }
 
@@ -26,6 +28,11 @@ export const SettingsProvider = ({
   children,
 }: SettingsProviderProps): ReactElement => {
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS)
+  const [saveError, setSaveError] = useState<Error | null>(null)
+  const settingsRef = useRef<AppSettings>(settings)
+  const saveQueueRef = useRef<Promise<void>>(Promise.resolve())
+
+  settingsRef.current = settings
 
   useEffect(() => {
     const load = async (): Promise<void> => {
@@ -39,6 +46,7 @@ export const SettingsProvider = ({
       try {
         const loaded = await bridge.load()
         setSettings(loaded)
+        settingsRef.current = loaded
       } catch {
         // Fall back to defaults if the backend load fails.
       }
@@ -47,23 +55,44 @@ export const SettingsProvider = ({
     void load()
   }, [])
 
-  const update = useCallback((patch: Partial<AppSettings>): void => {
-    setSettings((prev) => {
-      const merged = { ...prev, ...patch }
+  const saveNext = useCallback(
+    async (previous: Promise<void>, next: AppSettings): Promise<void> => {
+      try {
+        await previous
+      } catch {
+        // Swallow prior save errors so the queue keeps moving.
+      }
 
       const bridge =
         typeof window !== 'undefined' ? window.vimeflow?.settings : undefined
 
-      if (bridge) {
-        void bridge.save(merged)
+      if (!bridge) {
+        return
       }
 
-      return merged
-    })
-  }, [])
+      try {
+        await bridge.save(next)
+      } catch (error: unknown) {
+        setSaveError(error instanceof Error ? error : new Error(String(error)))
+      }
+    },
+    []
+  )
+
+  const update = useCallback(
+    (patch: Partial<AppSettings>): void => {
+      const next = { ...settingsRef.current, ...patch }
+      settingsRef.current = next
+      setSettings(next)
+      setSaveError(null)
+
+      saveQueueRef.current = saveNext(saveQueueRef.current, next)
+    },
+    [saveNext]
+  )
 
   return (
-    <SettingsContext.Provider value={{ settings, update }}>
+    <SettingsContext.Provider value={{ settings, saveError, update }}>
       {children}
     </SettingsContext.Provider>
   )

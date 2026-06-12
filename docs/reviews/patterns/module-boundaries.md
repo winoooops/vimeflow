@@ -2,8 +2,8 @@
 id: module-boundaries
 category: code-quality
 created: 2026-04-30
-last_updated: 2026-06-08
-ref_count: 2
+last_updated: 2026-06-12
+ref_count: 3
 ---
 
 # Module Boundaries
@@ -158,4 +158,13 @@ Don't widen the coupling by adding a second importer.
 - **File:** `src/features/sessions/hooks/useSessionRestore.ts`, `src/features/sessions/hooks/useSessionManager.ts`
 - **Finding:** `UseSessionRestoreOptions.onRestore` exposed a `context.storePresent` parameter and `useSessionRestore` computed `storeAuthoritative`, but the only consumer ignored the second argument. The public hook contract implied downstream behavior that did not exist.
 - **Fix:** Remove the unused context parameter, delete the `storeAuthoritative` calculation, and call `onRestore(restored)` with the API shape that callers actually consume.
+- **Commit:** same commit as this entry
+
+### 14. `AppSettingsCache` exposes two identical accessor names for one concept
+
+- **Source:** github-claude | PR #430 round 1 | 2026-06-12
+- **Severity:** LOW
+- **File:** `crates/backend/src/settings/app_settings.rs` L109-122
+- **Finding:** `current()` and `get()` were both `#[allow(dead_code)]` accessors returning the in-memory mirror; `get()` simply delegated to `current()`. Follow-up panes would arbitrarily pick one name, leaving the other permanently dead and creating a small but real API-surface drift risk.
+- **Fix:** Removed the `get()` alias and its `#[allow(dead_code)]` marker. Only `current()` remains as the single mirror accessor, so future callers have one obvious name and the compiler will enforce usage once the renderer-facing IPC path is wired.
 - **Commit:** same commit as this entry

@@ -2,8 +2,8 @@
 id: error-surfacing
 category: error-handling
 created: 2026-04-10
-last_updated: 2026-06-08
-ref_count: 10
+last_updated: 2026-06-12
+ref_count: 11
 ---
 
 # Error Surfacing
@@ -368,4 +368,13 @@ failed" must mean the editor shows the original file, not the requested one.
 - **File:** `src/features/workspace/commands/buildWorkspaceCommands.ts`
 - **Finding:** `WorkspaceCommandDeps` declared `createBrowserSession?: () => void` as optional, but `buildWorkspaceCommands` unconditionally added a `:new-browser` command whose `execute` callback was `createBrowserSession?.()`. Any caller or test harness that omitted the optional dependency would expose a visible command that silently did nothing — no compile-time error, no runtime warning, and no UI feedback. The optional type was consistent with other optional deps (e.g. `activePaneAgentType?`, `nextPaneRenameRequestId?`) that control internal guard behavior, but inconsistent when the optional dep drives a user-visible palette entry.
 - **Fix:** Conditionally include `:new-browser` in the returned command array only when `createBrowserSession` is provided. Added a regression test asserting the command is absent when the handler is omitted. Keeps the dependency optional (backward-compatible for callers that don't need browser sessions) while eliminating the silent no-op surface.
+- **Commit:** same commit as this entry
+
+### 38. Silent `bridge.save()` rejection reverts user settings on next launch
+
+- **Source:** github-claude | PR #430 round 1 | 2026-06-12
+- **Severity:** MEDIUM
+- **File:** `src/features/settings/SettingsProvider.tsx` L57-59
+- **Finding:** `update()` called `void bridge.save(merged)` and discarded all errors. If the Rust backend rejected the save (disk full, permission denied, version mismatch), the in-memory React state advanced but the on-disk snapshot did not, so the next app launch restored the old settings and silently reverted the user's change.
+- **Fix:** Added `saveError: Error | null` to `SettingsContextValue` and a `saveQueueRef`-backed save loop. Each save is `await`ed inside `try/catch`; rejections are captured in `saveError` so future panes can observe persistence failures without a breaking API change.
 - **Commit:** same commit as this entry

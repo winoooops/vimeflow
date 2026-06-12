@@ -7,8 +7,10 @@ import {
   session,
   shell,
 } from 'electron'
+import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import type { AppSettings } from '../src/bindings/AppSettings'
 import { isAllowedBackendMethod } from './backend-methods'
 import {
   developmentContentSecurityPolicy,
@@ -449,9 +451,22 @@ const setupApp = async (): Promise<void> => {
     }
   )
 
-  ipcMain.handle(SETTINGS_OPEN_FILE, () =>
-    shell.openPath(path.join(app.getPath('userData'), 'settings.json'))
-  )
+  ipcMain.handle(SETTINGS_OPEN_FILE, async (): Promise<string> => {
+    const settingsPath = path.join(app.getPath('userData'), 'settings.json')
+
+    if (!fs.existsSync(settingsPath)) {
+      try {
+        const defaults =
+          await spawnedSidecar.invoke<AppSettings>('load_app_settings')
+        await spawnedSidecar.invoke('save_app_settings', { settings: defaults })
+      } catch {
+        // Best-effort: if ensuring the default file fails, still try to open
+        // so the OS surfaces the missing-file error to the user.
+      }
+    }
+
+    return shell.openPath(settingsPath)
+  })
 
   spawnedSidecar.onEvent((event, payload) => {
     for (const win of BrowserWindow.getAllWindows()) {

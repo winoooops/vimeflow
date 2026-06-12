@@ -44,7 +44,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | Pattern                                                              | Category           | Findings | Refs | Last Updated |
 | -------------------------------------------------------------------- | ------------------ | -------- | ---- | ------------ |
 | [Filesystem Scope](patterns/filesystem-scope.md)                     | security           | 21       | 3    | 2026-05-20   |
-| [React Lifecycle](patterns/react-lifecycle.md)                       | react-patterns     | 36       | 15   | 2026-06-11   |
+| [React Lifecycle](patterns/react-lifecycle.md)                       | react-patterns     | 37       | 16   | 2026-06-12   |
 | [React Key Stability](patterns/react-key-stability.md)               | react-patterns     | 2        | 0    | 2026-06-11   |
 | [Motion Layout Projection](patterns/motion-layout-projection.md)     | react-patterns     | 1        | 0    | 2026-06-10   |
 | [Resource Cleanup](patterns/resource-cleanup.md)                     | react-patterns     | 11       | 10   | 2026-06-08   |
@@ -59,7 +59,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Documentation Accuracy](patterns/documentation-accuracy.md)         | code-quality       | 87       | 25   | 2026-06-11   |
 | [Accessibility](patterns/accessibility.md)                           | a11y               | 63       | 23   | 2026-06-11   |
 | [Event Identity Guard](patterns/event-identity-guard.md)             | backend            | 1        | 0    | 2026-06-11   |
-| [Async Race Conditions](patterns/async-race-conditions.md)           | react-patterns     | 63       | 21   | 2026-06-08   |
+| [Async Race Conditions](patterns/async-race-conditions.md)           | react-patterns     | 64       | 22   | 2026-06-12   |
 | [Tokio Blocking On Async](patterns/tokio-blocking-on-async.md)       | backend            | 2        | 1    | 2026-05-20   |
 | [Command Injection](patterns/command-injection.md)                   | security           | 7        | 3    | 2026-05-02   |
 | [Policy Judge Hygiene](patterns/policy-judge-hygiene.md)             | security           | 15       | 2    | 2026-04-20   |
@@ -70,17 +70,17 @@ When appending findings to a pattern file, label the source so future readers ca
 | [PTY Session Management](patterns/pty-session-management.md)         | backend            | 9        | 2    | 2026-06-03   |
 | [Git Operations](patterns/git-operations.md)                         | correctness        | 25       | 10   | 2026-05-31   |
 | [CodeMirror Integration](patterns/codemirror-integration.md)         | editor             | 19       | 4    | 2026-06-06   |
-| [Error Surfacing](patterns/error-surfacing.md)                       | error-handling     | 37       | 11   | 2026-06-08   |
+| [Error Surfacing](patterns/error-surfacing.md)                       | error-handling     | 38       | 12   | 2026-06-12   |
 | [File Tree Paths](patterns/file-tree-paths.md)                       | files              | 4        | 0    | 2026-04-10   |
 | [Scope Boundary](patterns/scope-boundary.md)                         | review-process     | 8        | 3    | 2026-06-01   |
 | [E2E Testing](patterns/e2e-testing.md)                               | e2e-testing        | 19       | 7    | 2026-06-06   |
-| [Module Boundaries](patterns/module-boundaries.md)                   | code-quality       | 13       | 2    | 2026-06-08   |
+| [Module Boundaries](patterns/module-boundaries.md)                   | code-quality       | 14       | 3    | 2026-06-12   |
 | [Diagnostic Instrumentation](patterns/diagnostic-instrumentation.md) | code-quality       | 7        | 2    | 2026-05-02   |
 | [Keyboard Shortcut Guards](patterns/keyboard-shortcut-guards.md)     | keyboard-shortcuts | 19       | 1    | 2026-06-06   |
 | [Verify Render Target](patterns/verify-render-target.md)             | code-quality       | 2        | 0    | 2026-05-24   |
 | [UI Visual Regression](patterns/ui-visual-regression.md)             | code-quality       | 1        | 0    | 2026-06-11   |
 | [Status Indicator Display](patterns/status-indicator-display.md)     | code-quality       | 3        | 0    | 2026-05-26   |
 | [Parser Resilience](patterns/parser-resilience.md)                   | code-quality       | 10       | 7    | 2026-06-11   |
-| [Persisted State Invariants](patterns/persisted-state-invariants.md) | correctness        | 6        | 3    | 2026-06-08   |
+| [Persisted State Invariants](patterns/persisted-state-invariants.md) | correctness        | 7        | 4    | 2026-06-12   |
 | [macOS Window Chrome](patterns/macos-window-chrome.md)               | cross-platform     | 8        | 2    | 2026-06-11   |
 | [Guard Branch Correctness](patterns/guard-branch-correctness.md)     | correctness        | 1        | 0    | 2026-06-11   |
