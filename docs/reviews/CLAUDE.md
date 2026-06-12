@@ -84,3 +84,4 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Persisted State Invariants](patterns/persisted-state-invariants.md) | correctness        | 6        | 3    | 2026-06-08   |
 | [macOS Window Chrome](patterns/macos-window-chrome.md)               | cross-platform     | 8        | 2    | 2026-06-11   |
 | [Guard Branch Correctness](patterns/guard-branch-correctness.md)     | correctness        | 1        | 0    | 2026-06-11   |
+| [Identifier Prefix Matching](patterns/identifier-prefix-matching.md) | correctness        | 2        | 0    | 2026-06-12   |

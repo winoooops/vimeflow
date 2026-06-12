@@ -90,10 +90,17 @@ export const teamByKey = async (key, teamKey) => {
 export const findIssueForPr = async (key, { teamKey, prNumber, prUrl }) => {
   const d = await gql(
     key,
-    'query($teamKey:String!,$url:String!,$titlePrefix:String!){issues(filter:{team:{key:{eqIgnoreCase:$teamKey}},or:[{description:{contains:$url}},{title:{contains:$titlePrefix}}]},first:10){nodes{id identifier title url}}}',
-    { teamKey, url: prUrl, titlePrefix: `PR #${prNumber}` }
+    'query($teamKey:String!,$url:String!,$titlePrefix:String!){issues(filter:{team:{key:{eqIgnoreCase:$teamKey}},or:[{description:{contains:$url}},{title:{contains:$titlePrefix}}]},first:10){nodes{id identifier title url description}}}',
+    { teamKey, url: `${prUrl}\n`, titlePrefix: `PR #${prNumber}:` }
   )
-  return d.issues.nodes[0]
+  const candidate = d.issues.nodes[0]
+  if (!candidate) return null
+  const expectedPrLine = `PR: ${prUrl}\n`
+  const titleOk = candidate.title?.startsWith(`PR #${prNumber}:`) ?? false
+  const descriptionOk =
+    typeof candidate.description === 'string' &&
+    candidate.description.includes(expectedPrLine)
+  return titleOk || descriptionOk ? candidate : null
 }
 
 export const createIssueForPr = async (
