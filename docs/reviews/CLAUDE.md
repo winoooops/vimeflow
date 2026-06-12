@@ -80,7 +80,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Verify Render Target](patterns/verify-render-target.md)             | code-quality       | 2        | 0    | 2026-05-24   |
 | [UI Visual Regression](patterns/ui-visual-regression.md)             | code-quality       | 3        | 0    | 2026-06-12   |
 | [Status Indicator Display](patterns/status-indicator-display.md)     | code-quality       | 3        | 0    | 2026-05-26   |
-| [Parser Resilience](patterns/parser-resilience.md)                   | code-quality       | 10       | 7    | 2026-06-11   |
+| [Parser Resilience](patterns/parser-resilience.md)                   | code-quality       | 11       | 8    | 2026-06-12   |
 | [Persisted State Invariants](patterns/persisted-state-invariants.md) | correctness        | 6        | 3    | 2026-06-08   |
 | [macOS Window Chrome](patterns/macos-window-chrome.md)               | cross-platform     | 8        | 2    | 2026-06-11   |
 | [Guard Branch Correctness](patterns/guard-branch-correctness.md)     | correctness        | 1        | 0    | 2026-06-11   |

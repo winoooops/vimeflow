@@ -38,6 +38,18 @@ tester.run('no-hardcoded-colors', rule, {
       errors: [{ messageId: 'hardcoded' }],
     },
     {
+      code: "const cls = 'from-white/5'",
+      errors: [{ messageId: 'hardcoded' }],
+    },
+    {
+      code: "const cls = 'via-black'",
+      errors: [{ messageId: 'hardcoded' }],
+    },
+    {
+      code: "const cls = 'to-white/20'",
+      errors: [{ messageId: 'hardcoded' }],
+    },
+    {
       code: "const cls = 'shadow-[0_10px_28px_rgba(0,0,0,0.4)]'",
       errors: [{ messageId: 'hardcoded' }],
     },
