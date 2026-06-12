@@ -86,3 +86,4 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Guard Branch Correctness](patterns/guard-branch-correctness.md)       | correctness        | 1        | 0    | 2026-06-11   |
 | [Identifier Prefix Matching](patterns/identifier-prefix-matching.md)   | correctness        | 3        | 1    | 2026-06-12   |
 | [Prototype Handoff Artifacts](patterns/prototype-handoff-artifacts.md) | review-process     | 2        | 0    | 2026-06-12   |
+| [CloudFormation Stale References](patterns/cloudformation-stale-references.md) | infrastructure | 1 | 0 | 2026-06-12 |

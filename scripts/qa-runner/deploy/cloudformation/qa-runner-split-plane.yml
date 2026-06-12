@@ -209,7 +209,11 @@ Resources:
                 Action:
                   - ec2:StartInstances
                   - ec2:StopInstances
-                Resource: !Sub 'arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:instance/${WorkerInstance}'
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    'aws:ResourceTag/Component': qa-runner-worker
+                    'aws:ResourceTag/StackName': !Ref AWS::StackName
               - Sid: DescribeWorkerState
                 Effect: Allow
                 Action:
@@ -220,9 +224,16 @@ Resources:
                 Effect: Allow
                 Action:
                   - ssm:SendCommand
-                Resource:
-                  - !Sub 'arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:instance/${WorkerInstance}'
-                  - !Sub 'arn:${AWS::Partition}:ssm:${AWS::Region}::document/AWS-RunShellScript'
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    'aws:ResourceTag/Component': qa-runner-worker
+                    'aws:ResourceTag/StackName': !Ref AWS::StackName
+              - Sid: SendWorkerCommandDocument
+                Effect: Allow
+                Action:
+                  - ssm:SendCommand
+                Resource: !Sub 'arn:${AWS::Partition}:ssm:${AWS::Region}::document/AWS-RunShellScript'
               - Sid: ReadWorkerCommandResult
                 Effect: Allow
                 Action:
@@ -316,7 +327,7 @@ Resources:
           QA_ENVIRONMENT=${EnvironmentName}
           QA_REPOSITORY_URL=${RepositoryUrl}
           QA_CONTROL_PARAMETER_PREFIX=${ControlParameterPrefix}
-          QA_WORKER_INSTANCE_ID=${WorkerInstance}
+          QA_WORKER_INSTANCE_ID_PARAMETER=${ControlParameterPrefix}worker-instance-id
           QA_WORKER_REGION=${AWS::Region}
           QA_WORKER_REF=${WorkerRunnerRef}
           EOF
@@ -386,6 +397,8 @@ Resources:
             Tags:
               - Key: Name
                 Value: !Sub '${AWS::StackName}-worker'
+              - Key: StackName
+                Value: !Ref AWS::StackName
               - Key: Application
                 Value: vimeflow
               - Key: Component
@@ -394,6 +407,10 @@ Resources:
                 Value: !Ref EnvironmentName
           - ResourceType: volume
             Tags:
+              - Key: Name
+                Value: !Sub '${AWS::StackName}-worker-root'
+              - Key: StackName
+                Value: !Ref AWS::StackName
               - Key: Application
                 Value: vimeflow
               - Key: Component
@@ -407,6 +424,20 @@ Resources:
       LaunchTemplate:
         LaunchTemplateId: !Ref WorkerLaunchTemplate
         Version: !GetAtt WorkerLaunchTemplate.LatestVersionNumber
+
+  WorkerInstanceIdParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '${ControlParameterPrefix}worker-instance-id'
+      Type: String
+      Value: !Ref WorkerInstance
+      Description: Current QA runner worker EC2 instance ID. Updated by CloudFormation on worker replacement.
+      Tier: Standard
+      Tags:
+        Name: !Sub '${AWS::StackName}-worker-instance-id'
+        Application: vimeflow
+        Component: qa-runner-control
+        Environment: !Ref EnvironmentName
 
   WorkerAuthVolume:
     Type: AWS::EC2::Volume

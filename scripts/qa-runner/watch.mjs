@@ -26,6 +26,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { botLabel, botProcessEnv, loadBot } from './lib/bot-identity.mjs'
 import { linkedVim } from './lib/pr-utils.mjs'
+import { resolveWorkerInstanceId } from './lib/worker-instance.mjs'
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url))
 const LOCK_DIR = join(SCRIPT_DIR, '.locks')
@@ -55,6 +56,15 @@ const ghJson = (args) => JSON.parse(gh(args))
 const repoSlug = () => {
   const r = ghJson(['repo', 'view', '--json', 'owner,name'])
   return { owner: r.owner.login, name: r.name }
+}
+
+const logWorkerInstanceId = () => {
+  if (!process.env.QA_WORKER_INSTANCE_ID_PARAMETER) return
+  try {
+    out(`worker     ${resolveWorkerInstanceId()}`)
+  } catch (e) {
+    err(`worker     unable to resolve worker instance ID: ${e.message.split('\n')[0]}`)
+  }
 }
 
 const mainRoot = () =>
@@ -374,6 +384,7 @@ const pool = async (items, limit, worker) => {
 }
 
 const tick = async (ctx) => {
+  logWorkerInstanceId()
   let prs = openPRs().filter(
     (p) => (ctx.all || hasLabel(p, ctx.label)) && !p.isDraft
   )
@@ -438,6 +449,7 @@ const tick = async (ctx) => {
 }
 
 const watch = async (ctx) => {
+  logWorkerInstanceId()
   out(
     `QA watcher — looping every ${POLL_SECONDS}s ` +
       `(approve=${ctx.approve} execute=${ctx.execute} ensureLinear=${ctx.ensureLinear} max=${ctx.maxParallel}). Ctrl-C to stop.\n`
