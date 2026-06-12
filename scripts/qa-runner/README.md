@@ -20,8 +20,10 @@ Design + rationale: [`docs/explorations/linear-agent-cicd-pilot.html`](../../doc
                  │
                  ▼
  ③ Linear  — control plane / observability. Each state transition mirrors to the
-    linked issue (a `VIM-N` in the PR body). The native GitHub↔Linear sync moves
-    the issue → Done on merge; the watcher's own posts use the `linear.env` API key
+    linked issue (a `VIM-N` in the PR body). Armed runs ensure that link first:
+    if the PR body has no `VIM-N`, the watcher finds/creates a Linear issue and
+    patches the PR body with `Refs VIM-N`. The native GitHub↔Linear sync moves the
+    issue → Done on merge; the watcher's own posts use the `linear.env` API key
     (headless ⇒ scoped API key, not interactive MCP — see
     rules/common/linear-workflow.md) and no-op gracefully when no key is set.
 ```
@@ -84,11 +86,15 @@ node scripts/qa-runner/watch.mjs scan --pr 317   # a single PR
 node scripts/qa-runner/watch.mjs tick            # classify every eligible PR, do nothing
 node scripts/qa-runner/watch.mjs tick --pr 317   # classify one PR
 
+# explicitly ensure Linear PR-body links without fixing/merging
+node scripts/qa-runner/watch.mjs tick --ensure-linear
+
 # arm the actions (each is independent and opt-in)
 node scripts/qa-runner/watch.mjs tick --execute            # NEEDS_FIX  → run upsource cycles (parallel, cap 2)
 node scripts/qa-runner/watch.mjs tick --execute --max 3    # …up to 3 at once
 node scripts/qa-runner/watch.mjs tick --approve            # GOOD_SHAPE → squash-merge
 node scripts/qa-runner/watch.mjs tick --execute --approve  # full autonomy
+node scripts/qa-runner/watch.mjs tick --ensure-linear --linear-team VIM
 
 # loop forever (Ctrl-C to stop)
 node scripts/qa-runner/watch.mjs watch --execute --approve
@@ -99,8 +105,9 @@ default**, `--push` arms the live path, and it adopts the fixer bot identity fro
 `bot.env` if present:
 
 ```bash
-node scripts/qa-runner/run.mjs 317          # dry-run: kimi fixes + codex gate, nothing pushed
-node scripts/qa-runner/run.mjs 317 --push   # live: commit/push as the fixer bot, reply/resolve, Linear status
+node scripts/qa-runner/run.mjs 317                       # dry-run: kimi fixes + codex gate, nothing pushed
+node scripts/qa-runner/run.mjs 317 --push                # live: commit/push as the fixer bot, reply/resolve, Linear status
+node scripts/qa-runner/run.mjs 317 --push --linear-team VIM
 ```
 
 ## Host (v1 → v2)
@@ -130,6 +137,8 @@ commit author (`GIT_AUTHOR_*`), and HTTPS push (the `gh` credential helper).
 
 - **Opt-in only** (`auto-review` label) — narrow blast radius for the pilot.
 - **Report-only by default** — `--execute` / `--approve` must be passed explicitly.
+- `scan` is always read-only. PR-body patching only happens with `--ensure-linear`,
+  `--execute`, or `--approve`.
 - **One run per PR** — lock files under `.locks/` (gitignored); concurrency capped at `--max` (2).
 - kimi works **only on the PR branch in an isolated worktree**; never `main`, never `--force`.
 - **codex gate + bounded retry** before any commit.
