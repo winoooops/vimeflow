@@ -125,14 +125,14 @@ Parameters:
     Description: Git ref the worker refreshes before fixer cycles.
   ControlParameterPrefix:
     Type: String
-    Default: /vimeflow/qa-runner/prod/control/
     AllowedPattern: '^/[A-Za-z0-9_.\-/]+/$'
-    Description: SSM Parameter Store prefix for control-host runtime values.
+    ConstraintDescription: Must be an absolute SSM path ending in a slash and should include the EnvironmentName segment.
+    Description: Required SSM Parameter Store prefix for control-host runtime values. This prefix is coupled to EnvironmentName; non-prod deployments must supply a path that includes the target environment and cannot silently reuse a prod prefix.
   WorkerParameterPrefix:
     Type: String
-    Default: /vimeflow/qa-runner/prod/worker/
     AllowedPattern: '^/[A-Za-z0-9_.\-/]+/$'
-    Description: SSM Parameter Store prefix for worker runtime values.
+    ConstraintDescription: Must be an absolute SSM path ending in a slash and should include the EnvironmentName segment.
+    Description: Required SSM Parameter Store prefix for worker runtime values. This prefix is coupled to EnvironmentName; non-prod deployments must supply a path that includes the target environment and cannot silently reuse a prod prefix.
 
 Conditions:
   AssignPublicIp: !Equals [!Ref AssociatePublicIpAddress, 'true']

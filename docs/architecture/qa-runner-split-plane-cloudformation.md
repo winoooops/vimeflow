@@ -53,6 +53,8 @@ The template avoids hardcoded resource IDs and physical names. Deployment suppli
 - `AssociatePublicIpAddress`, default `true`, to avoid a NAT Gateway when using a public subnet.
 - `ControlParameterPrefix` and `WorkerParameterPrefix` to scope IAM reads.
 
+`ControlParameterPrefix` and `WorkerParameterPrefix` are required and have no defaults. The deployment command must explicitly supply a prefix, which makes the environment/prefix coupling visible and prevents a non-prod `EnvironmentName` from silently reusing a prod SSM path.
+
 ## Deployment Flow
 
 Recommended preflight:
@@ -74,6 +76,26 @@ aws cloudformation deploy \
   --region us-west-1 \
   --parameter-overrides \
     EnvironmentName=prod \
+    ControlParameterPrefix=/vimeflow/qa-runner/prod/control/ \
+    WorkerParameterPrefix=/vimeflow/qa-runner/prod/worker/ \
+    VpcId=vpc-REPLACE \
+    SubnetId=subnet-REPLACE \
+    ControlAmiId=ami-REPLACE \
+    WorkerAmiId=ami-REPLACE
+```
+
+For a non-prod environment, use a matching prefix that includes the target environment so the stack cannot read the prod parameter tree:
+
+```bash
+aws cloudformation deploy \
+  --stack-name vimeflow-qa-runner-dev \
+  --template-file scripts/qa-runner/deploy/cloudformation/qa-runner-split-plane.yml \
+  --capabilities CAPABILITY_NAMED_IAM \
+  --region us-west-1 \
+  --parameter-overrides \
+    EnvironmentName=dev \
+    ControlParameterPrefix=/vimeflow/qa-runner/dev/control/ \
+    WorkerParameterPrefix=/vimeflow/qa-runner/dev/worker/ \
     VpcId=vpc-REPLACE \
     SubnetId=subnet-REPLACE \
     ControlAmiId=ami-REPLACE \
