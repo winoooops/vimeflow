@@ -345,7 +345,12 @@ Resources:
             SpotOptions:
               InstanceInterruptionBehavior: stop
               SpotInstanceType: persistent
-              MaxPrice: !If [HasWorkerSpotMaxPrice, !Ref WorkerSpotMaxPrice, !Ref AWS::NoValue]
+              MaxPrice:
+                !If [
+                  HasWorkerSpotMaxPrice,
+                  !Ref WorkerSpotMaxPrice,
+                  !Ref AWS::NoValue,
+                ]
           - !Ref AWS::NoValue
         KeyName: !If [HasKeyName, !Ref KeyName, !Ref AWS::NoValue]
         MetadataOptions:
