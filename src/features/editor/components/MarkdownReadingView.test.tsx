@@ -232,6 +232,7 @@ describe('MarkdownReadingView', () => {
       configurable: true,
       writable: true,
     })
+
     Object.defineProperty(document, 'execCommand', {
       value: execCommandMock,
       configurable: true,
