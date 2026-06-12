@@ -1,3 +1,4 @@
+import type { AppSettings } from '../bindings/AppSettings'
 import type {
   RenameAgentSessionErrorReason,
   RenameAgentSessionRequest,
@@ -12,6 +13,12 @@ import type {
  */
 export type UnlistenFn = () => void
 
+export interface SettingsBridge {
+  load: () => Promise<AppSettings>
+  save: (settings: AppSettings) => Promise<void>
+  openFile: () => Promise<void>
+}
+
 export interface BackendApi {
   invoke: <T>(method: string, args?: Record<string, unknown>) => Promise<T>
 
@@ -21,6 +28,8 @@ export interface BackendApi {
   ) => Promise<UnlistenFn>
 
   onCommandPaletteToggle?: (callback: () => void) => UnlistenFn
+
+  settings?: SettingsBridge
 }
 
 const renameAgentSessionErrorReasons: readonly RenameAgentSessionErrorReason[] =

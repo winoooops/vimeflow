@@ -2,8 +2,8 @@
 id: async-race-conditions
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-06-08
-ref_count: 21
+last_updated: 2026-06-12
+ref_count: 22
 ---
 
 # Async Race Conditions
@@ -640,4 +640,13 @@ prevent showing previous data.
 - **File:** `src/features/sessions/hooks/useSessionRestore.ts`
 - **Finding:** `useSessionRestore` checked `cancelled` after loading sessions but not immediately before `restoreBrowserPanes`. If cleanup ran after reconstruction, the stale restore still waited through bounded browser-pane creation timeouts before releasing hydration.
 - **Fix:** Add a cancellation guard immediately before `restoreBrowserPanes(restored)` so a cancelled restore reaches `finally` and releases hydration without waiting on per-pane timeouts.
+- **Commit:** same commit as this entry
+
+### 63. Overlapping settings saves can persist an older snapshot after a newer update
+
+- **Source:** github-codex-connector | PR #430 round 1 | 2026-06-12
+- **Severity:** MEDIUM
+- **File:** `src/features/settings/SettingsProvider.tsx` L58
+- **Finding:** `update()` fired `bridge.save(merged)` as a fire-and-forget promise. If two updates happened before the first save resolved, both full snapshots were dispatched concurrently; the sidecar processes IPC requests concurrently, so an older snapshot could reach the Rust save mutex after a newer one and overwrite the newer preferences on disk.
+- **Fix:** Replaced fire-and-forget with a single-producer save queue. `saveQueueRef` always holds the tail promise; each new update awaits the previous save before invoking `bridge.save(next)`, guaranteeing that the last update to run is the last one persisted.
 - **Commit:** same commit as this entry

@@ -2,8 +2,8 @@
 id: react-lifecycle
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-06-11
-ref_count: 15
+last_updated: 2026-06-12
+ref_count: 16
 ---
 
 # React Lifecycle
@@ -338,3 +338,12 @@ to avoid unintended re-runs (e.g., PTY respawning on every cwd change).
 - **Finding:** `SettingsDialog` is permanently mounted in `WorkspaceView` (inside `AnimatePresence` with an `{open && ...}` guard rather than being conditionally rendered). The `query` state lived in the component body above the `open` guard, so it survived dialog close and was still active when the dialog reopened. A user who typed a search term, closed the dialog, and reopened it would see a filtered sidebar with no visible indication that a filter was active.
 - **Fix:** Added `useEffect(() => { if (!open) setQuery('') }, [open])` to reset the search query whenever the dialog closes. Added a co-located test asserting the query is cleared on close/reopen.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 34. `bridge.save()` side effect inside `setSettings` updater double-saves in Strict Mode
+
+- **Source:** github-claude | PR #430 round 1 | 2026-06-12
+- **Severity:** HIGH
+- **File:** `src/features/settings/SettingsProvider.tsx` L51-62
+- **Finding:** The `update()` callback computed the merged settings and called `bridge.save(merged)` from inside the functional `setSettings` updater. React Strict Mode double-invokes updaters in development, so every user-triggered settings change would emit two `save_app_settings` IPC requests and break the `toHaveBeenCalledTimes(1)` test assertion under StrictMode.
+- **Fix:** Moved the merged-state computation and persistence out of the updater. A `settingsRef` tracks the latest state, `update()` computes `next` synchronously, calls `setSettings(next)` with a pure value setter, then enqueues `bridge.save(next)` through an async queue so saves remain ordered and the updater stays pure.
+- **Commit:** same commit as this entry

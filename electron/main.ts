@@ -7,8 +7,10 @@ import {
   session,
   shell,
 } from 'electron'
+import { access } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import type { AppSettings } from '../src/bindings/AppSettings'
 import { isAllowedBackendMethod } from './backend-methods'
 import {
   developmentContentSecurityPolicy,
@@ -17,7 +19,11 @@ import {
 import { installCommandPaletteShortcutOverride } from './command-palette-shortcut'
 import { installApplicationEditMenu } from './edit-menu'
 import { installNavigationGuard } from './navigation-guard'
-import { BACKEND_EVENT, BACKEND_INVOKE } from './ipc-channels'
+import {
+  BACKEND_EVENT,
+  BACKEND_INVOKE,
+  SETTINGS_OPEN_FILE,
+} from './ipc-channels'
 import { spawnSidecar, type Sidecar } from './sidecar'
 import { setupBrowserPaneIpc, type BrowserPaneController } from './browser-pane'
 import {
@@ -444,6 +450,31 @@ const setupApp = async (): Promise<void> => {
       }
     }
   )
+
+  ipcMain.handle(SETTINGS_OPEN_FILE, async (): Promise<void> => {
+    const settingsPath = path.join(app.getPath('userData'), 'settings.json')
+
+    const fileExists = await access(settingsPath)
+      .then(() => true)
+      .catch(() => false)
+
+    if (!fileExists) {
+      try {
+        const defaults =
+          await spawnedSidecar.invoke<AppSettings>('load_app_settings')
+        await spawnedSidecar.invoke('save_app_settings', { settings: defaults })
+      } catch {
+        // Best-effort: if ensuring the default file fails, still try to open
+        // so the OS surfaces the missing-file error to the user.
+      }
+    }
+
+    const errorMessage = await shell.openPath(settingsPath)
+
+    if (errorMessage) {
+      throw new Error(errorMessage)
+    }
+  })
 
   spawnedSidecar.onEvent((event, payload) => {
     for (const win of BrowserWindow.getAllWindows()) {

@@ -3,6 +3,7 @@ import { WorkerPoolContextProvider } from '@pierre/diffs/react'
 import { WorkspaceView } from './features/workspace/WorkspaceView'
 import { InlineCommentDemo } from './features/diff/demo/InlineCommentDemo'
 import { ReorderMotionDemo } from './features/sessions/demo/ReorderMotionDemo'
+import { SettingsProvider } from './features/settings/SettingsProvider'
 
 // Pierre's worker entry is exposed as a dedicated package export so Vite
 // bundles it via `new Worker(url, ...)` with the worker config in
@@ -47,7 +48,7 @@ const App = (): ReactElement => (
     poolOptions={poolOptions}
     highlighterOptions={highlighterOptions}
   >
-    {renderDemo(devDemoName())}
+    <SettingsProvider>{renderDemo(devDemoName())}</SettingsProvider>
   </WorkerPoolContextProvider>
 )
 
