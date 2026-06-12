@@ -64,10 +64,13 @@ if (import.meta.hot) {
     ([obsMod, flexMod]) => {
       const nextObsidian =
         (obsMod as { obsidianLens?: ThemeDefinition } | undefined)
-          ?.obsidianLens ?? obsidianLens
+          ?.obsidianLens ??
+        themes.find((t) => t.id === 'obsidian-lens') ??
+        obsidianLens
 
       const nextFlexoki =
         (flexMod as { flexoki?: ThemeDefinition } | undefined)?.flexoki ??
+        themes.find((t) => t.id === 'flexoki') ??
         flexoki
 
       themes = [nextObsidian, nextFlexoki]
