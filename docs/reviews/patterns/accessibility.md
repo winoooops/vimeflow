@@ -2,7 +2,7 @@
 id: accessibility
 category: a11y
 created: 2026-04-09
-last_updated: 2026-06-11
+last_updated: 2026-06-12
 ref_count: 21
 ---
 
@@ -504,4 +504,13 @@ handlers must not trap focus without implementing the promised behavior.
 - **File:** `src/features/sessions/components/Card.tsx`
 - **Finding:** The actions popup closed on `onBlur` (when focus left the wrapper) and on Escape, but clicking a non-focusable area of the sidebar did not move focus and therefore did not trigger blur, leaving the popup visibly stuck open during normal pointer use.
 - **Fix:** Added a document-level `mousedown` listener active while `menuOpen === true` that calls `setMenuOpen(false)` when the event target is outside the kebab/menu container. The listener is registered in a `useEffect` with cleanup on unmount or menu close.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 47. Inert layout config button remains focusable and hover-styled
+
+- **Source:** github-claude | PR #433 round 1 | 2026-06-12
+- **Severity:** MEDIUM
+- **File:** `src/features/workspace/WorkspaceView.tsx`
+- **Finding:** The layout-display config button in `LayoutSwitcher`'s trailing slot was fully styled as an interactive control (hover fill, focus styling, aria-label, title) but had no `onClick` handler, leaving keyboard and screen-reader users with a silent no-op activation path.
+- **Fix:** Added `disabled`, `aria-disabled="true"`, and `tabIndex={-1}` and muted opacity so the element is clearly non-interactive until the feature lands.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

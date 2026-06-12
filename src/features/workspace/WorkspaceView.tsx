@@ -2032,7 +2032,10 @@ export const WorkspaceView = (): ReactElement => {
                   type="button"
                   aria-label="Configure displayed layouts"
                   title="Configure displayed layouts"
-                  className="inline-flex h-5 w-6 items-center justify-center rounded text-on-surface-muted transition-colors hover:bg-primary/[0.08] hover:text-primary"
+                  disabled
+                  aria-disabled="true"
+                  tabIndex={-1}
+                  className="inline-flex h-5 w-6 items-center justify-center rounded text-on-surface-muted opacity-50 transition-colors enabled:hover:bg-primary/[0.08] enabled:hover:text-primary"
                 >
                   <svg
                     width="14"
