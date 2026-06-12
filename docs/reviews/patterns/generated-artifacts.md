@@ -3,7 +3,7 @@ id: generated-artifacts
 category: code-quality
 created: 2026-04-14
 last_updated: 2026-06-12
-ref_count: 2
+ref_count: 3
 ---
 
 # Generated Artifacts
@@ -67,3 +67,14 @@ checks or leave a regeneration diff.
 - **Finding:** After adding `/src/bindings/*.ts` to `.gitignore`, a clean checkout contained only the tracked barrel `src/bindings/index.ts`, which re-exports generated modules such as `./PtySession`. Local dev and test scripts (`electron:dev`, `test`, `lint`) did not run `generate:bindings`, so any command that resolved those imports before `build`/`type-check` started from missing modules.
 - **Fix:** Prepended `npm run generate:bindings` to the `electron:dev`, `test`, and `lint` npm scripts so the generated modules are produced before TypeScript-aware tooling needs them. This mirrors the existing pattern used by `build` and `type-check`.
 - **Commit:** same commit as this entry
+
+---
+
+### 6. Unconditional binding generation in Node-only CI jobs
+
+- **Source:** github-codex-connector | PR #441 round 2 | 2026-06-12
+- **Severity:** P1 / HIGH
+- **Files:** `package.json`, `.github/workflows/ci-checks.yml`
+- **Finding:** After prepending `npm run generate:bindings` to `lint`, `test`, and related npm scripts in round 1, the `code-check` and `unit-test` CI jobs invoked `cargo test` even though they do not install Rust or the system dependencies required by the backend. `--ignore-scripts` does not suppress commands inside an npm script body, so the Node-only jobs failed.
+- **Fix:** Added a `generate:bindings:if-missing` script (`scripts/generate-bindings-if-missing.mjs`) that regenerates bindings only when a module referenced by `src/bindings/index.ts` is missing. Routed `lint`, `lint:fix`, `test`, and `test:coverage` through this guard. Updated the `unit-test` job to depend on the `bindings` job and download the `ts-bindings` artifact before running tests, mirroring the `code-check` setup.
+- **Verification:** With generated binding files present, `npm run generate:bindings:if-missing` exits without invoking cargo. With files absent, it falls back to `npm run generate:bindings`.
