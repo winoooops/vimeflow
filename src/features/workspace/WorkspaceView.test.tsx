@@ -1499,11 +1499,7 @@ describe('WorkspaceView', () => {
   test('main workspace area uses flex-col layout', () => {
     render(<WorkspaceView />)
 
-    const workspaceView = screen.getByTestId('workspace-view')
-
-    // VIM-76: icon rail removed — 2nd grid child = main wrapper (after the
-    // sidebar wrapper, before the activity panel).
-    const mainWorkspace = workspaceView.children[1] as HTMLElement
+    const mainWorkspace = screen.getByTestId('workspace-main')
     expect(mainWorkspace).toHaveClass('flex')
     expect(mainWorkspace).toHaveClass('flex-col')
   })
@@ -1511,8 +1507,7 @@ describe('WorkspaceView', () => {
   test('main workspace uses a rounded sheet edge while the sidebar is visible', () => {
     render(<WorkspaceView />)
 
-    const workspaceView = screen.getByTestId('workspace-view')
-    const mainWorkspace = workspaceView.children[1] as HTMLElement
+    const mainWorkspace = screen.getByTestId('workspace-main')
 
     expect(mainWorkspace).toHaveClass('bg-surface')
     expect(mainWorkspace.style.borderTopLeftRadius).toBe('16px')
@@ -1609,7 +1604,7 @@ describe('WorkspaceView', () => {
 
       const workspace = screen.getByTestId('workspace-view')
       const sidebarShell = screen.getByTestId('workspace-sidebar-shell')
-      const mainWorkspace = workspace.children[1] as HTMLElement
+      const mainWorkspace = screen.getByTestId('workspace-main')
       const handle = screen.getByTestId('sidebar-resize-handle')
 
       expect(sidebarShell.className).toContain('transition-[width]')
@@ -1692,7 +1687,7 @@ describe('WorkspaceView', () => {
 
     const sidebarShell = screen.getByTestId('workspace-sidebar-shell')
     const toggleSurface = screen.getByTestId('sidebar-toggle-slide-surface')
-    const mainWorkspace = workspace.children[1] as HTMLElement
+    const mainWorkspace = screen.getByTestId('workspace-main')
 
     expect(sidebarShell.className).toContain('transition-[width]')
     expect(sidebarShell).toHaveStyle({ width: '0px' })
@@ -1714,7 +1709,7 @@ describe('WorkspaceView', () => {
       render(<WorkspaceView />)
 
       const workspace = screen.getByTestId('workspace-view')
-      const mainWorkspace = workspace.children[1] as HTMLElement
+      const mainWorkspace = screen.getByTestId('workspace-main')
       vi.spyOn(workspace, 'getBoundingClientRect').mockReturnValue(
         createDomRect(1600, 900)
       )
@@ -1749,7 +1744,7 @@ describe('WorkspaceView', () => {
       render(<WorkspaceView />)
 
       const workspace = screen.getByTestId('workspace-view')
-      const mainWorkspace = workspace.children[1] as HTMLElement
+      const mainWorkspace = screen.getByTestId('workspace-main')
       vi.spyOn(workspace, 'getBoundingClientRect').mockReturnValue(
         createDomRect(900, 700)
       )
@@ -1839,9 +1834,7 @@ describe('WorkspaceView', () => {
   test('mounts StatusBar inside the main column (right of the sidebar)', () => {
     render(<WorkspaceView />)
 
-    const workspaceView = screen.getByTestId('workspace-view')
-    // VIM-76: icon rail removed — main column is the 2nd grid child.
-    const mainWorkspace = workspaceView.children[1] as HTMLElement
+    const mainWorkspace = screen.getByTestId('workspace-main')
     const statusBar = screen.getByTestId('status-bar')
 
     expect(statusBar).toBeInTheDocument()

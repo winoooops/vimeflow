@@ -1839,6 +1839,29 @@ export const WorkspaceView = (): ReactElement => {
         />
       )}
 
+      {/* Persistent sidebar toggle — anchored to the workspace root, which
+          never moves, so the control sits at one fixed coordinate in every
+          state. Parenting it to the sliding sidebar shell (open) or the main
+          column (collapsed) made it ride along as those containers animated,
+          so it visibly jumped on collapse/expand. A single root child with
+          absolute left/top stays put; ⌘B just flips its glyph. Placed before
+          the sidebar and main surfaces so focus order matches its visual
+          position; z-40 keeps it on top. */}
+      <div
+        className="absolute z-40"
+        style={{ left: sidebarToggleLeft, top: SIDEBAR_TOGGLE_TOP }}
+      >
+        <SidebarToggle
+          ref={sidebarToggleRef}
+          collapsed={isSidebarClosed}
+          onClick={handleToggleSidebar}
+          size={SIDEBAR_TOGGLE_SIZE}
+          variant="inset"
+          data-testid="sidebar-toggle-fixed"
+          shortcutHint={sidebarShortcutHint}
+        />
+      </div>
+
       {/* Sidebar — the shell's panel clips during animated desktop collapse;
           the toggle that controls it is a root-level child (above), so it does
           not slide with the shell. Compact viewports lift the shell above main
@@ -2233,28 +2256,6 @@ export const WorkspaceView = (): ReactElement => {
         setQuery={commandPalette.setQuery}
         selectIndex={commandPalette.selectIndex}
       />
-
-      {/* Persistent sidebar toggle — anchored to the workspace root, which
-          never moves, so the control sits at one fixed coordinate in every
-          state. Parenting it to the sliding sidebar shell (open) or the main
-          column (collapsed) made it ride along as those containers animated,
-          so it visibly jumped on collapse/expand. A single root child with
-          absolute left/top stays put; ⌘B just flips its glyph. Rendered last
-          (z-40 keeps it on top) so it never overlaps the panes underneath. */}
-      <div
-        className="absolute z-40"
-        style={{ left: sidebarToggleLeft, top: SIDEBAR_TOGGLE_TOP }}
-      >
-        <SidebarToggle
-          ref={sidebarToggleRef}
-          collapsed={isSidebarClosed}
-          onClick={handleToggleSidebar}
-          size={SIDEBAR_TOGGLE_SIZE}
-          variant="inset"
-          data-testid="sidebar-toggle-fixed"
-          shortcutHint={sidebarShortcutHint}
-        />
-      </div>
     </div>
   )
 }

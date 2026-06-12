@@ -3,7 +3,7 @@ id: accessibility
 category: a11y
 created: 2026-04-09
 last_updated: 2026-06-12
-ref_count: 21
+ref_count: 22
 ---
 
 # Accessibility
@@ -514,3 +514,12 @@ handlers must not trap focus without implementing the promised behavior.
 - **Finding:** The layout-display config button in `LayoutSwitcher`'s trailing slot was fully styled as an interactive control (hover fill, focus styling, aria-label, title) but had no `onClick` handler, leaving keyboard and screen-reader users with a silent no-op activation path.
 - **Fix:** Added `disabled`, `aria-disabled="true"`, and `tabIndex={-1}` and muted opacity so the element is clearly non-interactive until the feature lands.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 48. Root-anchored sidebar toggle rendered last in DOM — focus order regression
+
+- **Source:** github-claude | PR #433 round 2 | 2026-06-12
+- **Severity:** MEDIUM
+- **File:** `src/features/workspace/WorkspaceView.tsx`
+- **Finding:** The persistent `SidebarToggle` was absolutely positioned at the workspace root so it stayed visually fixed during sidebar collapse/expand animations, but it was rendered as the last child of the workspace root. Keyboard users therefore reached it only after tabbing through the main workspace, activity panel, overlays, and command palette — a WCAG focus-order regression relative to its visual position at the top-left boundary.
+- **Fix:** Moved the same root-anchored, absolutely positioned toggle wrapper earlier in the DOM (right after the compact scrim and before the sidebar shell) so sequential focus order matches the visual layout. Preserved `z-40` and the existing left/top absolute coordinates. Updated co-located tests that asserted on `workspace.children[1]` to query `screen.getByTestId('workspace-main')` directly, since the DOM reordering changed sibling indices.
+- **Commit:** _(see git blame / git log on this line)_
