@@ -281,7 +281,7 @@ const CardComponent = ({
           {menuOpen && (
             <div
               onClick={(e) => e.stopPropagation()}
-              className="absolute right-0 top-7 z-40 min-w-[132px] rounded-[9px] border border-outline-variant/45 bg-surface-container-lowest p-1 shadow-[0_10px_28px_rgba(0,0,0,0.45)]"
+              className="absolute right-0 top-7 z-40 min-w-[132px] rounded-[9px] border border-outline-variant/45 bg-surface-container-lowest p-1 shadow-[0_10px_28px_color-mix(in_srgb,var(--color-scrim)_45%,transparent)]"
             >
               {onRename !== undefined && (
                 <MenuRow

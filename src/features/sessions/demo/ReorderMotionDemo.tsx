@@ -96,7 +96,7 @@ const DemoPanel = ({
   const [activeTab, setActiveTab] = useState<'sessions' | 'other'>('sessions')
 
   return (
-    <section className="flex min-h-0 flex-1 flex-col rounded-[10px] bg-surface-container-lowest/80 shadow-[0_18px_60px_rgba(0,0,0,0.28)]">
+    <section className="flex min-h-0 flex-1 flex-col rounded-[10px] bg-surface-container-lowest/80 shadow-[0_18px_60px_color-mix(in_srgb,var(--color-scrim)_28%,transparent)]">
       <div className="flex shrink-0 items-center justify-between px-4 py-3">
         <h2 className="font-label text-sm font-semibold text-on-surface">
           {title}

@@ -4,7 +4,7 @@
 // var(--color-*)). Escape hatch: eslint-disable-next-line with a reason.
 const COLOR_PATTERNS = [
   /#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})\b/,
-  /\b(?:rgba?|hsla?|oklch)\(/,
+  /(?<![a-zA-Z0-9])(?:rgba?|hsla?|oklch)\(/,
   /(?:text|bg|border|ring|fill|stroke|from|via|to|divide|outline|decoration|shadow|accent|caret)-(?:red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose|slate|gray|zinc|neutral|stone)-\d{2,3}\b/,
   /(?:text|bg|border|ring|fill|stroke|divide|outline)-(?:white|black)(?:\/(?:\d{1,3}|\[[^\]]+\]))?\b/,
 ]

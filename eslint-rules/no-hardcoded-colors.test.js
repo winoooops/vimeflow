@@ -37,5 +37,9 @@ tester.run('no-hardcoded-colors', rule, {
       code: "const cls = 'border-white/[0.08]'",
       errors: [{ messageId: 'hardcoded' }],
     },
+    {
+      code: "const cls = 'shadow-[0_10px_28px_rgba(0,0,0,0.4)]'",
+      errors: [{ messageId: 'hardcoded' }],
+    },
   ],
 })
