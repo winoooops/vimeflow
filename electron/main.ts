@@ -7,6 +7,7 @@ import {
   session,
   shell,
 } from 'electron'
+import { readFileSync } from 'node:fs'
 import { access } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -32,6 +33,7 @@ import {
 } from './workspace-layout-controller'
 import { WorkspaceLayoutWriter } from './workspace-layout-writer'
 import { WorkspaceTeardown } from './workspace-teardown'
+import { shouldQuitOnAllWindowsClosed } from './last-window-close'
 import type { PersistedTab } from './workspace-layout-types'
 
 // Keep the GPU serving this window while it is occluded (covered by another
@@ -517,7 +519,23 @@ app.on('before-quit', (event) => {
 })
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
+  let onLastWindowClosed: string | undefined
+
+  try {
+    const settingsPath = path.join(app.getPath('userData'), 'settings.json')
+    const raw = readFileSync(settingsPath, 'utf8')
+    const parsed = JSON.parse(raw) as { onLastWindowClosed?: string }
+    onLastWindowClosed = parsed.onLastWindowClosed
+  } catch {
+    // Missing or corrupt settings.json falls back to the platform default.
+  }
+
+  if (
+    shouldQuitOnAllWindowsClosed(
+      onLastWindowClosed ?? 'platform',
+      process.platform
+    )
+  ) {
     app.quit()
   }
 })
