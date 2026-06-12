@@ -9,6 +9,13 @@ const repoRoot = dirname(__dirname)
 const bindingsDir = join(repoRoot, 'src', 'bindings')
 const indexPath = join(bindingsDir, 'index.ts')
 
+if (process.env.CI) {
+  process.stdout.write(
+    'CI environment detected; skipping on-demand binding generation.\n'
+  )
+  process.exit(0)
+}
+
 const indexSource = readFileSync(indexPath, 'utf8')
 const importPattern = /from\s+['"](\.\/[^'"]+)['"]/gu
 const matches = [...indexSource.matchAll(importPattern)]
