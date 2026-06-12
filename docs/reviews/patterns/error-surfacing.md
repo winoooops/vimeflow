@@ -3,7 +3,7 @@ id: error-surfacing
 category: error-handling
 created: 2026-04-10
 last_updated: 2026-06-12
-ref_count: 11
+ref_count: 12
 ---
 
 # Error Surfacing
@@ -378,3 +378,12 @@ failed" must mean the editor shows the original file, not the requested one.
 - **Finding:** `update()` called `void bridge.save(merged)` and discarded all errors. If the Rust backend rejected the save (disk full, permission denied, version mismatch), the in-memory React state advanced but the on-disk snapshot did not, so the next app launch restored the old settings and silently reverted the user's change.
 - **Fix:** Added `saveError: Error | null` to `SettingsContextValue` and a `saveQueueRef`-backed save loop. Each save is `await`ed inside `try/catch`; rejections are captured in `saveError` so future panes can observe persistence failures without a breaking API change.
 - **Commit:** same commit as this entry
+
+### 39. `settings:open-file` IPC swallows `shell.openPath` failure string
+
+- **Source:** github-codex-connector | PR #430 round 2 | 2026-06-12
+- **Severity:** MEDIUM
+- **File:** `electron/main.ts`, `electron/preload.ts`, `src/features/settings/components/SettingsHeader.tsx`
+- **Finding:** The `settings:open-file` handler returned `shell.openPath(settingsPath)` directly. Electron resolves `openPath` with an empty string on success and a non-empty error string on failure, but the preload bridge typed the renderer surface as `Promise<void>` and `SettingsHeader` invoked it as `void bridge.openFile()`. A failure (no JSON file association, missing file handler, Linux `xdg-open` misconfiguration) therefore produced a silent no-op with zero user feedback.
+- **Fix:** Change the main-process handler to `await shell.openPath(...)` and `throw new Error(errorMessage)` when the result is non-empty. In `SettingsHeader`, catch the rejection and render an inline `role="alert"` error message next to the button. Add a regression test asserting the error text appears when `openFile` rejects.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

@@ -451,7 +451,7 @@ const setupApp = async (): Promise<void> => {
     }
   )
 
-  ipcMain.handle(SETTINGS_OPEN_FILE, async (): Promise<string> => {
+  ipcMain.handle(SETTINGS_OPEN_FILE, async (): Promise<void> => {
     const settingsPath = path.join(app.getPath('userData'), 'settings.json')
 
     if (!fs.existsSync(settingsPath)) {
@@ -465,7 +465,11 @@ const setupApp = async (): Promise<void> => {
       }
     }
 
-    return shell.openPath(settingsPath)
+    const errorMessage = await shell.openPath(settingsPath)
+
+    if (errorMessage) {
+      throw new Error(errorMessage)
+    }
   })
 
   spawnedSidecar.onEvent((event, payload) => {

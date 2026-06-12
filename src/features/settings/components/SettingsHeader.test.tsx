@@ -73,6 +73,29 @@ describe('SettingsHeader', () => {
     expect(openFile).toHaveBeenCalledTimes(1)
   })
 
+  test('shows an error message when opening settings.json fails', async () => {
+    const user = userEvent.setup()
+    const openFile = vi.fn().mockRejectedValue(new Error('failed'))
+
+    window.vimeflow = {
+      settings: {
+        load: vi.fn(),
+        save: vi.fn(),
+        openFile,
+      },
+    } as unknown as Window['vimeflow']
+
+    render(<SettingsHeader {...baseProps} />)
+
+    await user.click(
+      screen.getByRole('button', { name: 'Edit in settings.json' })
+    )
+
+    expect(
+      await screen.findByRole('alert')
+    ).toHaveTextContent('Could not open settings.json')
+  })
+
   afterEach(() => {
     delete window.vimeflow
   })
