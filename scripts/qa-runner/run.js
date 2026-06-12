@@ -333,7 +333,11 @@ const run = async (pr, live) => {
         `(branch ${branch}, as ${botLabel(bot)}, worktree ${wt})`
     )
 
-    // Single-pass guard: stop kimi once it commits (probe = worktree HEAD) so the skill can't POLL_NEXT.
+    // Single-pass guard: stop kimi once the push lands (probe = origin/<branch>)
+    // so the skill can't POLL_NEXT. Local HEAD changes too early: stopping at
+    // commit time can kill the child before Step 6.7 pushes the fix.
+    const remoteRef = `origin/${branch}`
+
     const r = await runUntilChange(
       () =>
         spawn(
@@ -359,7 +363,7 @@ const run = async (pr, live) => {
         ),
       () => {
         try {
-          return sh('git', ['-C', wt, 'rev-parse', 'HEAD']).trim()
+          return sh('git', ['-C', wt, 'rev-parse', remoteRef]).trim()
         } catch {
           return null
         }
@@ -388,8 +392,8 @@ const run = async (pr, live) => {
     //      none (HEAD never left startHead). Looks identical to a WAITING tick to the
     //      daemon, so without this it would reset the failure streak and poll forever.
     //   2. Committed but the push never landed (bad credentials, non-fast-forward,
-    //      killed mid-push) — the probe is the LOCAL HEAD, so grace tripped on the
-    //      commit; origin/<branch> stays behind, so the daemon sees an unchanged remote.
+    //      killed mid-push, or the skill skipped push) — origin/<branch> stays behind,
+    //      so the daemon sees an unchanged remote.
     let pushedHead = null
     if (live) {
       const head = sh('git', ['-C', wt, 'rev-parse', 'HEAD']).trim()
@@ -398,13 +402,13 @@ const run = async (pr, live) => {
       }
       let remote = null
       try {
-        remote = sh('git', ['-C', wt, 'rev-parse', `origin/${branch}`]).trim()
+        remote = sh('git', ['-C', wt, 'rev-parse', remoteRef]).trim()
       } catch {
         /* remote-tracking ref missing — treated as not-pushed below */
       }
       if (remote !== head) {
         die(
-          `kimi committed but the push did not land (local ${head.slice(0, 7)} ≠ origin/${branch} ${remote ? remote.slice(0, 7) : 'unknown'})`,
+          `kimi committed but the push did not land (local ${head.slice(0, 7)} ≠ ${remoteRef} ${remote ? remote.slice(0, 7) : 'unknown'})`,
           8
         )
       }

@@ -6,8 +6,9 @@
 //
 // Generic on purpose — reusable for any "run a process until its work shows up,
 // then stop it from over-running" case. The QA runner uses it to enforce a
-// single review round: probe = the worktree HEAD, so once kimi commits the fix,
-// it is stopped before the upsource-review skill can POLL_NEXT into another round.
+// single review round: probe = the remote-tracking branch, so once kimi pushes
+// the fix, it is stopped before the upsource-review skill can POLL_NEXT into
+// another round.
 //
 // Deps are injected so it is unit-testable without a real child or git:
 //   spawnChild() → a ChildProcess-like { kill(sig), on('exit'|'error', cb) }
