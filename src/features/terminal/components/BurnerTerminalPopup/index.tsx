@@ -19,9 +19,11 @@ const Kbd = ({ children }: { children: ReactNode }): ReactElement => (
   <span
     className="inline-flex h-4 min-w-[17px] items-center justify-center rounded px-1 font-mono text-[9.5px]"
     style={{
-      background: 'rgba(51,51,68,0.6)',
-      border: '1px solid rgba(74,68,79,0.6)',
-      color: '#cdc3d1',
+      background:
+        'color-mix(in srgb, var(--color-surface-container-highest) 60%, transparent)',
+      border:
+        '1px solid color-mix(in srgb, var(--color-outline-variant) 60%, transparent)',
+      color: 'var(--color-on-surface-variant)',
     }}
   >
     {children}
@@ -259,7 +261,8 @@ export const BurnerTerminalPopup = ({
         onClick={onHide}
         className="absolute inset-0 cursor-default"
         style={{
-          background: 'rgba(13, 13, 28, 0.55)',
+          background:
+            'color-mix(in srgb, var(--color-surface-container-lowest) 55%, transparent)',
           backdropFilter: 'blur(14px) saturate(120%)',
         }}
       />
@@ -267,18 +270,22 @@ export const BurnerTerminalPopup = ({
         data-testid="burner-panel"
         className="relative flex h-[600px] w-[760px] max-w-[92vw] flex-col overflow-hidden rounded-[14px]"
         style={{
-          background: 'rgba(24, 22, 30, 0.9)',
+          background:
+            'color-mix(in srgb, var(--color-surface-container) 90%, transparent)',
           backdropFilter: 'blur(24px) saturate(160%)',
-          border: '1px solid rgba(240, 198, 116, 0.2)',
+          border:
+            '1px solid color-mix(in srgb, var(--color-agent-shell-accent) 20%, transparent)',
           boxShadow:
-            '0 24px 70px rgba(0,0,0,0.62), 0 0 0 1px rgba(240,198,116,0.08), 0 0 40px rgba(240,198,116,0.18)',
+            '0 24px 70px color-mix(in srgb, var(--color-surface-container-lowest) 62%, transparent), 0 0 0 1px color-mix(in srgb, var(--color-agent-shell-accent) 8%, transparent), 0 0 40px color-mix(in srgb, var(--color-agent-shell-accent) 18%, transparent)',
         }}
       >
         <header
           className="flex flex-col gap-[9px] px-[12px] py-[7px]"
           style={{
-            borderBottom: '1px solid rgba(74,68,79,0.18)',
-            background: 'rgba(13,13,28,0.35)',
+            borderBottom:
+              '1px solid color-mix(in srgb, var(--color-outline-variant) 18%, transparent)',
+            background:
+              'color-mix(in srgb, var(--color-surface-container-lowest) 35%, transparent)',
           }}
         >
           <div className="flex items-center gap-[9px]">
@@ -286,8 +293,9 @@ export const BurnerTerminalPopup = ({
             <span
               className="inline-flex items-center gap-[7px] rounded-[7px] py-[3px] pr-[9px] pl-[7px] font-mono text-[10.5px] font-bold tracking-[0.06em]"
               style={{
-                color: '#8a8299',
-                border: '1px dashed rgba(138,130,153,0.45)',
+                color: 'var(--color-on-surface-muted)',
+                border:
+                  '1px dashed color-mix(in srgb, var(--color-on-surface-muted) 45%, transparent)',
               }}
             >
               <span className="material-symbols-outlined text-[13px] leading-none">
@@ -322,8 +330,8 @@ export const BurnerTerminalPopup = ({
                     alignBusy
                       ? 'text-on-surface-muted/40 cursor-not-allowed'
                       : outOfSync
-                        ? 'text-[#f0c674] bg-[#f0c674]/15 hover:bg-[#f0c674]/25'
-                        : 'text-on-surface-muted hover:text-on-surface hover:bg-white/5'
+                        ? 'text-[var(--color-agent-shell-accent)] bg-[color-mix(in_srgb,var(--color-agent-shell-accent)_15%,transparent)] hover:bg-[color-mix(in_srgb,var(--color-agent-shell-accent)_25%,transparent)]'
+                        : 'text-on-surface-muted hover:text-on-surface hover:bg-wash-subtle'
                   }`}
                 >
                   <span
@@ -341,7 +349,7 @@ export const BurnerTerminalPopup = ({
               data-testid="burner-hide"
               aria-label="Hide burner terminal"
               onClick={onHide}
-              className="text-on-surface-muted hover:text-on-surface grid h-[26px] w-[26px] place-items-center rounded-[7px] hover:bg-white/5"
+              className="text-on-surface-muted hover:text-on-surface grid h-[26px] w-[26px] place-items-center rounded-[7px] hover:bg-wash-subtle"
             >
               <span className="material-symbols-outlined text-[15px] leading-none">
                 close
@@ -370,9 +378,11 @@ export const BurnerTerminalPopup = ({
         <footer
           className="flex items-center gap-2 px-[14px] py-[9px] font-mono text-[10px]"
           style={{
-            borderTop: '1px solid rgba(74,68,79,0.18)',
-            background: 'rgba(13,13,28,0.5)',
-            color: '#6c7086',
+            borderTop:
+              '1px solid color-mix(in srgb, var(--color-outline-variant) 18%, transparent)',
+            background:
+              'color-mix(in srgb, var(--color-surface-container-lowest) 50%, transparent)',
+            color: 'var(--color-syn-comment)',
           }}
         >
           <span className="inline-flex items-center gap-[5px]">

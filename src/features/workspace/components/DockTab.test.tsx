@@ -35,9 +35,9 @@ describe('DockTab', () => {
 
     const diffTab = screen.getByRole('button', { name: /diff viewer/i })
     expect(diffTab).toHaveClass('rounded-md')
-    expect(diffTab).toHaveClass('bg-[rgba(226,199,255,0.08)]')
-    expect(diffTab).toHaveClass('border-[rgba(203,166,247,0.3)]')
-    expect(diffTab).toHaveClass('text-[#e2c7ff]')
+    expect(diffTab).toHaveClass('bg-primary/[0.08]')
+    expect(diffTab).toHaveClass('border-primary-container/30')
+    expect(diffTab).toHaveClass('text-primary')
   })
 
   test('clicking a tab calls onTabChange with the right id', async () => {

@@ -24,7 +24,7 @@ export const NewSessionButton = ({
       aria-label="New session"
       aria-keyshortcuts={ariaKeyshortcuts}
       data-testid="sidebar-new-session"
-      className="vf-new-session-button group grid min-w-[38px] max-w-[150px] flex-1 shrink place-items-center self-stretch overflow-hidden rounded-[10px] border border-[rgba(243,234,255,0.26)] bg-[linear-gradient(180deg,rgba(214,174,255,0.98)_0%,rgba(166,110,224,0.98)_100%)] text-[#20122c] shadow-[0_8px_18px_rgba(166,110,224,0.2),inset_0_1px_0_rgba(255,255,255,0.36)] transition-[filter,transform,box-shadow] hover:brightness-110 active:translate-y-px focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
+      className="vf-new-session-button group grid min-w-[38px] max-w-[150px] flex-1 shrink place-items-center self-stretch overflow-hidden rounded-[10px] border border-primary/25 bg-[linear-gradient(180deg,var(--color-primary-dim)_0%,var(--color-primary-deep)_100%)] text-surface-container-lowest shadow-[0_8px_18px_color-mix(in_srgb,var(--color-primary-deep)_20%,transparent),inset_0_1px_0_var(--color-wash-soft)] transition-[filter,transform,box-shadow] hover:brightness-110 active:translate-y-px focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
     >
       <span className="vf-new-session-button-content flex min-w-0 items-center justify-center">
         <span

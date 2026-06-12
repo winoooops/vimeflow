@@ -79,7 +79,7 @@ export const FileExplorer = ({
           className={`material-symbols-outlined shrink-0 rounded p-0.5 text-sm transition-colors ${
             isRoot
               ? 'text-on-surface/20'
-              : 'text-on-surface/50 hover:bg-white/5 hover:text-on-surface'
+              : 'text-on-surface/50 hover:bg-wash-subtle hover:text-on-surface'
           }`}
           aria-label="Go to parent directory"
           title="Parent directory"
@@ -100,14 +100,14 @@ export const FileExplorer = ({
           `min-height: auto` forces the container to grow to fit the entire
           tree, which pushed the scrollbar offscreen and made `scrollIntoView`
           walk up to the wrong ancestor. */}
-      <div className="thin-scrollbar min-h-0 flex-1 overflow-y-auto">
+      <div className="min-h-0 flex-1 overflow-y-auto">
         {isLoading && (
           <div className="py-4 text-center font-mono text-xs text-on-surface/40">
             Loading...
           </div>
         )}
         {error && (
-          <div className="py-4 text-center font-mono text-xs text-red-400">
+          <div className="py-4 text-center font-mono text-xs text-error">
             {error}
           </div>
         )}

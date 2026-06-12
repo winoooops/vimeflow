@@ -1266,7 +1266,7 @@ describe('WorkspaceView', () => {
     })
     const listItem = firstSession.closest('li')!
     // Active row uses the flat lavender fill per the session-list handoff.
-    expect(listItem.className).toContain('bg-[rgba(203,166,247,0.13)]')
+    expect(listItem.className).toContain('bg-primary-container/15')
   })
 
   test('renders FileExplorer in sidebar', () => {
@@ -1583,7 +1583,7 @@ describe('WorkspaceView', () => {
     const workspaceView = screen.getByTestId('workspace-view')
     const mainWorkspace = workspaceView.children[1] as HTMLElement
 
-    expect(mainWorkspace).toHaveClass('bg-background')
+    expect(mainWorkspace).toHaveClass('bg-surface')
     expect(mainWorkspace.style.borderTopLeftRadius).toBe('16px')
     expect(mainWorkspace.style.borderBottomLeftRadius).toBe('16px')
     // No drop shadow: it would read as a dark gradient seam against the
@@ -1608,7 +1608,7 @@ describe('WorkspaceView', () => {
       name: 'session 1',
     })
     expect(firstSession.closest('li')!.className).toContain(
-      'bg-[rgba(203,166,247,0.13)]'
+      'bg-primary-container/15'
     )
 
     const newSessionButton = within(screen.getByTestId('sidebar')).getByRole(
@@ -1621,11 +1621,11 @@ describe('WorkspaceView', () => {
       name: 'session 2',
     })
     expect(secondSession.closest('li')!.className).toContain(
-      'bg-[rgba(203,166,247,0.13)]'
+      'bg-primary-container/15'
     )
 
     expect(firstSession.closest('li')!.className).not.toContain(
-      'bg-[rgba(203,166,247,0.13)]'
+      'bg-primary-container/15'
     )
   })
 

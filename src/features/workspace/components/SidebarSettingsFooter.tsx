@@ -35,7 +35,7 @@ export const SidebarSettingsFooter = ({
         className={`vf-app-no-drag flex h-10 w-full items-center gap-2 rounded-[8px] px-3 text-left text-[13px] transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary ${
           disabled
             ? 'text-on-surface-muted'
-            : 'text-on-surface-variant hover:bg-white/[0.06] hover:text-on-surface'
+            : 'text-on-surface-variant hover:bg-wash-subtle hover:text-on-surface'
         }`}
       >
         <span

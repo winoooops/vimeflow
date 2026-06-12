@@ -166,7 +166,7 @@ export const PaneRenameInput = ({
       ref={frameRef}
       data-testid="pane-rename-frame"
       style={style}
-      className="z-50 rounded-md bg-surface-container/90 p-1 shadow-[0_12px_40px_rgba(0,0,0,0.42)] backdrop-blur-md"
+      className="z-50 rounded-md bg-surface-container/90 p-1 shadow-[0_12px_40px_color-mix(in_srgb,var(--color-scrim)_42%,transparent)] backdrop-blur-md"
     >
       <input
         ref={inputRef}

@@ -300,10 +300,9 @@ describe('List', () => {
 
     const scroll = screen.getByTestId('session-scroll')
     expect(scroll).toHaveClass('overflow-y-auto')
-    // `overflow-x-clip` + `thin-scrollbar` are required to avoid the
-    // WebKitGTK double-painted-track on the default scrollbar path.
+    // `overflow-x-clip` keeps the scroller vertical-only (CSS spec coerces
+    // `overflow-x: visible` to `auto` when y is `auto`).
     expect(scroll).toHaveClass('overflow-x-clip')
-    expect(scroll).toHaveClass('thin-scrollbar')
     expect(scroll).toHaveClass('flex-1')
     expect(scroll).toHaveClass('min-h-0')
 

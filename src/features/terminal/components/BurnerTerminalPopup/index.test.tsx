@@ -138,7 +138,7 @@ test('highlights the align button amber when the burner is out of sync', () => {
     name: /align burner to pane directory/i,
   })
   expect(inSync.className).toContain('text-on-surface-muted')
-  expect(inSync.className).not.toContain('#f0c674')
+  expect(inSync.className).not.toContain('agent-shell-accent')
 
   // Out of sync: amber tint signals the burner wandered from its host pane.
   rerender(popup(true, { onAlignCwd: vi.fn(), outOfSync: true }))
@@ -146,8 +146,8 @@ test('highlights the align button amber when the burner is out of sync', () => {
   const drift = screen.getByRole('button', {
     name: /align burner to pane directory/i,
   })
-  expect(drift.className).toContain('bg-[#f0c674]/15')
-  expect(drift.className).toContain('text-[#f0c674]')
+  expect(drift.className).toContain('var(--color-agent-shell-accent)')
+  expect(drift.className).toContain('text-[var(--color-agent-shell-accent)]')
 })
 
 test('stays mounted (hidden) when dismissed — not unmounted', () => {

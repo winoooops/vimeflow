@@ -107,7 +107,8 @@ describe('SidebarToggle', () => {
 
     const button = screen.getByRole('button')
     expect(button).toHaveClass('border-transparent')
-    expect(button).not.toHaveClass('border-[rgba(74,68,79,0.35)]')
+    // Must not use a raw outline-variant rgba for the border
+    expect(button.className).not.toMatch(/border-\[rgba\(74,68,79/)
   })
 
   test('default variant (ghost): className omits the inset background', () => {
@@ -126,7 +127,8 @@ describe('SidebarToggle', () => {
     // Regression guard (#416): the expanded toggle deepened toward a dark navy
     // well on hover, which read as "no change" against the now-transparent
     // sidebar. It must lift lighter instead.
-    expect(button).not.toHaveClass('hover:bg-[rgba(13,13,28,0.72)]')
+    // Regression guard (#416): must not revert to the old dark-navy hover class
+    expect(button.className).not.toMatch(/hover:bg-\[rgba\(13,13,28/)
   })
 
   test('variant=inset, collapsed=true: uses the lighter primary hover background', () => {
@@ -134,7 +136,8 @@ describe('SidebarToggle', () => {
 
     const button = screen.getByRole('button')
     expect(button).toHaveClass('hover:bg-primary/[0.14]')
-    expect(button).not.toHaveClass('hover:bg-[rgba(13,13,28,0.72)]')
+    // Regression guard (#416): must not revert to the old dark-navy hover class
+    expect(button.className).not.toMatch(/hover:bg-\[rgba\(13,13,28/)
   })
 
   test('size: sets the button width/height inline style', () => {

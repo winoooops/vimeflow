@@ -195,7 +195,7 @@ export const markdownComponents: Components = {
     ...props
   }: IntrinsicProps<'pre'>): ReactElement => (
     <pre
-      className="thin-scrollbar my-4 overflow-x-auto rounded-md bg-surface-container-lowest p-4 font-mono text-[0.85em]"
+      className="my-4 overflow-x-auto rounded-md bg-surface-container-lowest p-4 font-mono text-[0.85em]"
       {...props}
     />
   ),

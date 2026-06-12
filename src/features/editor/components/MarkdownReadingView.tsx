@@ -264,7 +264,7 @@ export const MarkdownReadingView = forwardRef<
         role="region"
         aria-label="Markdown reading view"
         tabIndex={0}
-        className="thin-scrollbar min-h-0 flex-1 overflow-auto py-8 [padding-inline:var(--rv-pad-inline)] focus:outline-none"
+        className="min-h-0 flex-1 overflow-auto py-8 [padding-inline:var(--rv-pad-inline)] focus:outline-none"
         onContextMenu={handleContextMenu}
       >
         <div

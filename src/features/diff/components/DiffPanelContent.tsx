@@ -29,6 +29,8 @@ import { extractHunkPatch } from '../services/gitPatch'
 import { createGitService } from '../services/gitService'
 import { enqueuePoolWrite } from '../services/workerPoolWrites'
 import { useNotifyInfo } from '../../workspace/hooks/useNotifyInfo'
+import { useTheme } from '../../../theme'
+import { pierreThemeForKind } from '../pierreTheme'
 import type { ChangedFile, FileDiff, SelectedDiffFile } from '../types'
 import {
   useFeedbackBatch,
@@ -873,7 +875,19 @@ export const DiffPanelContent = ({
   // through `syncedRenderOptions` and the diff remount waits for the pool to
   // accept the new value first.
   const [diffStyle, setDiffStyle] = useState<DiffStyle>('split')
-  const [theme, setTheme] = useState<DiffsThemeNames>('pierre-dark')
+
+  const workspaceTheme = useTheme()
+
+  const [theme, setTheme] = useState<DiffsThemeNames>(() =>
+    pierreThemeForKind(workspaceTheme.kind)
+  )
+
+  // Workspace theme switch resets the diff theme to the mapped default,
+  // overriding any session-level dropdown choice (spec §5).
+  useEffect(() => {
+    setTheme(pierreThemeForKind(workspaceTheme.kind))
+  }, [workspaceTheme.kind])
+
   const [lineDiffType, setLineDiffType] = useState<LineDiffType>('word')
 
   const [diffIndicators, setDiffIndicators] =
@@ -1201,7 +1215,7 @@ export const DiffPanelContent = ({
       className="flex h-full w-full min-h-0 min-w-0 flex-1 overflow-hidden"
     >
       {/* Left: Changed files list (~240px fixed) */}
-      <div className="thin-scrollbar w-60 shrink-0 border-r border-white/5 overflow-y-auto">
+      <div className="w-60 shrink-0 border-r border-wash-subtle overflow-y-auto">
         <ChangedFilesList
           files={effectiveFiles}
           selectedFile={
@@ -1255,7 +1269,7 @@ export const DiffPanelContent = ({
           {renderSyncError !== null ? (
             <div
               role="alert"
-              className="px-3 pb-2 text-[11px] leading-4 text-[#f38ba8]"
+              className="px-3 pb-2 text-[11px] leading-4 text-vcs-deleted"
             >
               Diff render sync failed: {renderSyncError}
             </div>
@@ -1299,7 +1313,7 @@ export const DiffPanelContent = ({
         </div>
         <div
           data-testid="diff-scroll-body"
-          className="thin-scrollbar min-h-0 flex-1 overflow-auto"
+          className="min-h-0 flex-1 overflow-auto"
         >
           {diffError ? (
             <ErrorCard message={diffError.message} />

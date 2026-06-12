@@ -108,8 +108,8 @@ describe('HeaderActions', () => {
     const button = screen.getByRole('button', {
       name: /open burner terminal \(running\)/i,
     })
-    expect(button.className).toContain('bg-[#f0c674]/15')
-    expect(button.className).toContain('text-[#f0c674]') // amber icon when active
+    expect(button.className).toContain('bg-agent-shell-accent/15')
+    expect(button.className).toContain('text-agent-shell-accent') // amber icon when active
     // The amber background IS the running cue — no separate live-dot.
     expect(screen.queryByTestId('burner-live-dot')).toBeNull()
   })

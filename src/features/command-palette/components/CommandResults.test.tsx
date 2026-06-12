@@ -214,12 +214,7 @@ describe('CommandResults', () => {
 
     const listbox = screen.getByRole('listbox')
 
-    expect(listbox).toHaveClass(
-      'thin-scrollbar',
-      'p-2',
-      'overflow-y-auto',
-      'max-h-96'
-    )
+    expect(listbox).toHaveClass('p-2', 'overflow-y-auto', 'max-h-96')
   })
 
   test('renders descriptions when present', () => {

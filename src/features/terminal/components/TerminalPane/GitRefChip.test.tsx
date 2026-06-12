@@ -63,8 +63,8 @@ test('worktree label has max-w-[120px] + truncate + shrink-0 classes', () => {
 
 test('detached=true applies two-tone coral (text-tertiary branch, text-error worktree)', () => {
   // Two-tone coral matches docs/design/git-chip/GitRefChip.html:
-  //   - branch icon + label render in `text-tertiary` (#ff94a5, deeper coral)
-  //   - worktree icon + label render in `text-error` (#ffb4ab, lighter coral)
+  //   - branch icon + label render in `text-tertiary` (deeper coral)
+  //   - worktree icon + label render in `text-error` (lighter coral)
   // `text-error` is intentionally NOT Catppuccin red — this repo's `error`
   // token maps to a coral shade (see tailwind.config.js).
   render(<GitRefChip worktreeName="feat-jose" branch="a7f23c" detached />)

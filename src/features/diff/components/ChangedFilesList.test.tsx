@@ -247,12 +247,12 @@ describe('ChangedFilesList', () => {
     )
 
     // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access
-    const insertionText = container.querySelector('.text-\\[\\#a6e3a1\\]')
+    const insertionText = container.querySelector('.text-vcs-added')
 
     expect(insertionText).toBeInTheDocument()
 
     // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access
-    const deletionText = container.querySelector('.text-\\[\\#f38ba8\\]')
+    const deletionText = container.querySelector('.text-vcs-deleted')
 
     expect(deletionText).toBeInTheDocument()
   })

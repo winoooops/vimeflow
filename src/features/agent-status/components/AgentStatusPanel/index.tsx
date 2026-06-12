@@ -129,7 +129,7 @@ export const AgentStatusPanel = ({
   return (
     <div
       data-testid="agent-status-panel"
-      className="flex h-full shrink-0 flex-col overflow-hidden bg-surface-container"
+      className="flex h-full shrink-0 flex-col overflow-hidden bg-surface"
       style={{
         width: `${PANEL_WIDTH_PX}px`,
       }}
@@ -156,7 +156,7 @@ export const AgentStatusPanel = ({
         />
       </div>
 
-      <div className="thin-scrollbar min-h-0 flex-1 overflow-y-auto overflow-x-clip">
+      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-clip">
         <ToolCallSummary
           total={status.toolCalls.total}
           byType={status.toolCalls.byType}

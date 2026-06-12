@@ -459,7 +459,7 @@ export const DiffChipToolbar = ({
     <div
       role="toolbar"
       aria-label="Diff toolbar"
-      className="px-3 py-2 rounded-lg bg-surface-container-low/[0.88] backdrop-blur-xl backdrop-saturate-150 border border-outline-variant/15 shadow-[0_10px_40px_rgba(0,0,0,0.4)]"
+      className="px-3 py-2 rounded-lg bg-surface-container-low/[0.88] backdrop-blur-xl backdrop-saturate-150 border border-outline-variant/15 shadow-[0_10px_40px_color-mix(in_srgb,var(--color-scrim)_40%,transparent)]"
     >
       <div className="flex w-full items-center">
         <PriorityPlus
@@ -484,7 +484,7 @@ export const DiffChipToolbar = ({
               aria-label={`finish feedback (${feedbackCount})`}
               disabled={!canFinishFeedback}
               onClick={onFinishFeedback}
-              className="inline-flex items-center gap-[7px] h-[30px] px-3.5 rounded-md font-body text-[0.78rem] font-semibold text-on-primary bg-gradient-to-br from-primary to-primary-container shadow-[0_4px_14px_rgba(203,166,247,0.22)] transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+              className="inline-flex items-center gap-[7px] h-[30px] px-3.5 rounded-md font-body text-[0.78rem] font-semibold text-on-primary bg-gradient-to-br from-primary to-primary-container shadow-[0_4px_14px_color-mix(in_srgb,var(--color-primary-container)_22%,transparent)] transition-colors disabled:cursor-not-allowed disabled:opacity-50"
             >
               <span
                 aria-hidden="true"

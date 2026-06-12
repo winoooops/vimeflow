@@ -1799,7 +1799,7 @@ export const WorkspaceView = (): ReactElement => {
             shouldRestoreSidebarToggleFocusRef.current = true
             setCompactSidebarOpen(false)
           }}
-          className="fixed inset-0 z-20 cursor-default bg-background/55 backdrop-blur-[2px]"
+          className="fixed inset-0 z-20 cursor-default bg-surface/55 backdrop-blur-[2px]"
         />
       )}
 
@@ -1973,7 +1973,7 @@ export const WorkspaceView = (): ReactElement => {
       <div
         ref={mainWorkspaceRef}
         data-testid="workspace-main"
-        className="relative flex flex-col overflow-hidden bg-background"
+        className="relative flex flex-col overflow-hidden bg-surface"
         inert={isCompactViewport && !isSidebarClosed ? true : undefined}
         aria-hidden={isCompactViewport && !isSidebarClosed ? true : undefined}
         style={{

@@ -46,11 +46,12 @@ interface ContextPresentation {
 }
 
 const separatorStyle = {
-  color: 'color-mix(in srgb, var(--outline-variant) 70%, transparent)',
+  color: 'color-mix(in srgb, var(--color-outline-variant) 70%, transparent)',
 } satisfies CSSProperties
 
 const barStyle = {
-  borderTopColor: 'color-mix(in srgb, var(--outline-variant) 20%, transparent)',
+  borderTopColor:
+    'color-mix(in srgb, var(--color-outline-variant) 20%, transparent)',
 } satisfies CSSProperties
 
 const normalizePct = (pct: number): number =>
@@ -58,30 +59,30 @@ const normalizePct = (pct: number): number =>
 
 const contextPresentation = (pct: number): ContextPresentation => {
   if (pct < 50) {
-    return { face: '😊', toneClass: 'text-[var(--success)]' }
+    return { face: '😊', toneClass: 'text-success' }
   }
 
   if (pct < 75) {
-    return { face: '😐', toneClass: 'text-[var(--on-surface-variant)]' }
+    return { face: '😐', toneClass: 'text-on-surface-variant' }
   }
 
   if (pct < 90) {
-    return { face: '😟', toneClass: 'text-[var(--tertiary)]' }
+    return { face: '😟', toneClass: 'text-tertiary' }
   }
 
-  return { face: '🥵', toneClass: 'text-[var(--error)]' }
+  return { face: '🥵', toneClass: 'text-error' }
 }
 
 const cacheToneClass = (rate: number): string => {
   if (rate >= 70) {
-    return 'text-[var(--success)]'
+    return 'text-success'
   }
 
   if (rate >= 40) {
-    return 'text-[var(--primary)]'
+    return 'text-primary'
   }
 
-  return 'text-[var(--tertiary)]'
+  return 'text-tertiary'
 }
 
 const cacheRate = (cache: StatusBarCache | undefined): number | null => {
@@ -136,7 +137,7 @@ const MaterialIcon = ({ name }: { name: string }): ReactElement => (
 )
 
 const Kbd = ({ children }: { children: ReactNode }): ReactElement => (
-  <kbd className="inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-[4px] border border-[color:color-mix(in_srgb,var(--outline-variant)_60%,transparent)] bg-[color-mix(in_srgb,var(--surface-container-high)_60%,transparent)] px-[5px] font-mono text-[10px] font-semibold leading-none text-[var(--on-surface-variant)]">
+  <kbd className="inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-[4px] border border-outline-variant/60 bg-surface-container-high/60 px-[5px] font-mono text-[10px] font-semibold leading-none text-on-surface-variant">
     {children}
   </kbd>
 )
@@ -173,7 +174,7 @@ const PaletteHint = ({
     aria-label="Open command palette"
     data-testid="status-bar-palette"
     onClick={onOpenPalette}
-    className="inline-flex cursor-pointer items-center gap-1 rounded-[var(--radius-sm)] px-1 py-0.5 transition-colors hover:bg-[var(--surface-container-low)] focus-visible:outline-none focus-visible:shadow-[var(--ring-primary)]"
+    className="inline-flex cursor-pointer items-center gap-1 rounded-[var(--radius-sm)] px-1 py-0.5 transition-colors hover:bg-surface-container-low focus-visible:outline-none focus-visible:shadow-[var(--shadow-ring-primary)]"
   >
     {shortcut.map((key, index) => (
       <Kbd key={`${key}-${index}`}>{formatShortcut(key)}</Kbd>
@@ -204,7 +205,7 @@ const buildSegments = ({
             <span
               data-testid="status-bar-burner"
               className="inline-flex items-center gap-1 whitespace-nowrap"
-              style={{ color: '#f0c674' }}
+              style={{ color: 'var(--color-agent-shell-accent)' }}
             >
               <span
                 aria-hidden="true"
@@ -228,7 +229,7 @@ const buildSegments = ({
       node: (
         <span
           data-testid="status-bar-duration"
-          className="inline-flex items-center gap-1 whitespace-nowrap text-[var(--on-surface-variant)]"
+          className="inline-flex items-center gap-1 whitespace-nowrap text-on-surface-variant"
         >
           <MaterialIcon name="schedule" />
           <span>{session.startedAgo}</span>
@@ -265,7 +266,7 @@ const buildSegments = ({
           >
             {rate}%
           </span>
-          <span className="text-[var(--on-surface-muted)]">cached</span>
+          <span className="text-on-surface-muted">cached</span>
         </span>
       ),
     })
@@ -276,7 +277,7 @@ const buildSegments = ({
     node: (
       <span
         data-testid="status-bar-turns"
-        className="whitespace-nowrap text-[var(--on-surface-muted)]"
+        className="whitespace-nowrap text-on-surface-muted"
       >
         <span className="tabular-nums">{Math.max(0, session.turns)}</span> turns
       </span>
@@ -292,12 +293,12 @@ const buildSegments = ({
           className="inline-flex whitespace-nowrap font-semibold tabular-nums"
         >
           {session.changes.added > 0 && (
-            <span className="text-[var(--success)]">
+            <span className="text-success">
               +{formatCompactCount(session.changes.added)}
             </span>
           )}
           {session.changes.removed > 0 && (
-            <span className="text-[var(--tertiary)]">
+            <span className="text-tertiary">
               −{formatCompactCount(session.changes.removed)}
             </span>
           )}
@@ -334,13 +335,13 @@ export const StatusBar = ({
       data-testid="status-bar"
       aria-label="App status"
       style={barStyle}
-      className="flex h-[var(--status-bar-h)] shrink-0 flex-wrap items-center gap-x-[14px] border-t border-solid bg-[var(--surface-container-lowest)] px-3 font-mono text-[10px] text-[var(--on-surface-muted)] tabular-nums max-[760px]:h-[44px] max-[760px]:content-between max-[760px]:items-start max-[760px]:py-1"
+      className="flex h-[var(--status-bar-h)] shrink-0 flex-wrap items-center gap-x-[14px] border-t border-solid bg-surface-container-lowest px-3 font-mono text-[10px] text-on-surface-muted tabular-nums max-[760px]:h-[44px] max-[760px]:content-between max-[760px]:items-start max-[760px]:py-1"
     >
-      <span className="whitespace-nowrap text-[var(--primary-container)]">
+      <span className="whitespace-nowrap text-primary-container">
         obsidian-cli
       </span>
       <Separator />
-      <span className="whitespace-nowrap text-[var(--on-surface-muted)]">
+      <span className="whitespace-nowrap text-on-surface-muted">
         v{__APP_VERSION__}
       </span>
       <span className="min-w-0 flex-1 max-[760px]:hidden" />

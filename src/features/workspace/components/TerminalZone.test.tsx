@@ -128,7 +128,7 @@ describe('TerminalZone', () => {
     const terminalContent = screen.getByTestId('terminal-content')
 
     expect(terminalContent).toBeInTheDocument()
-    // Dark background matching design spec (#121221)
+    // Dark background matching design spec (bg-surface token)
     expect(terminalContent).toHaveClass('bg-surface')
     expect(screen.getAllByTestId('split-view')).toHaveLength(2)
     // Should have TerminalPanes (mocked) - one for each session

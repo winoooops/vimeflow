@@ -1,10 +1,10 @@
 // Single source of truth for liquid-fill colors used by SVG `fill` attributes.
-// Each constant mirrors a Tailwind token in tailwind.config.js — the
-// cross-check test in liquidColors.test.ts forces the two to stay in sync.
-// SVG fill cannot take a Tailwind class name, hence the hex duplication.
+// Each constant is a CSS variable reference — SVG fill resolves var() in DOM
+// so the values theme-switch automatically without hex duplication.
+// The cross-check test in liquidColors.test.ts asserts the var() strings.
 
-export const LIQUID_COLOR_PRIMARY_CONTAINER = '#cba6f7'
+export const LIQUID_COLOR_PRIMARY_CONTAINER = 'var(--color-primary-container)'
 
-export const LIQUID_COLOR_TERTIARY = '#ff94a5'
+export const LIQUID_COLOR_TERTIARY = 'var(--color-tertiary)'
 
-export const LIQUID_COLOR_ERROR = '#ffb4ab'
+export const LIQUID_COLOR_ERROR = 'var(--color-error)'

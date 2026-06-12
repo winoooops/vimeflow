@@ -149,65 +149,7 @@ describe('WorkspaceView - Visual Verification (Feature #20)', () => {
     })
   })
 
-  describe('Color Tokens: Catppuccin Mocha Palette', () => {
-    test('tailwind config has correct surface hierarchy tokens', () => {
-      const colors = tailwindConfig.theme.extend.colors
-
-      // Level 0 - Base
-      expect(colors.surface).toBe('#121221')
-      expect(colors.background).toBe('#121221')
-
-      // Level 0.5 - Deepest recessed
-      expect(colors['surface-container-lowest']).toBe('#0d0d1c')
-
-      // Level 1 - Navigation (Sidebar, Activity)
-      expect(colors['surface-container-low']).toBe('#1a1a2a')
-
-      // Level 2 - Content (Cards)
-      expect(colors['surface-container']).toBe('#1e1e2e')
-
-      // Level 2.5 - Elevated cards
-      expect(colors['surface-container-high']).toBe('#292839')
-
-      // Level 3 - Modals, inputs
-      expect(colors['surface-container-highest']).toBe('#333344')
-
-      // Hover state
-      expect(colors['surface-bright']).toBe('#383849')
-    })
-
-    test('tailwind config has correct primary tokens', () => {
-      const colors = tailwindConfig.theme.extend.colors
-
-      expect(colors.primary).toBe('#e2c7ff')
-      expect(colors['primary-container']).toBe('#cba6f7')
-      expect(colors['primary-dim']).toBe('#d3b9f0')
-    })
-
-    test('tailwind config has correct semantic feedback tokens', () => {
-      const colors = tailwindConfig.theme.extend.colors
-
-      // Success (agent running status)
-      expect(colors.success).toBe('#50fa7b')
-      expect(colors['success-muted']).toBe('#7defa1')
-
-      // Warning
-      expect(colors.tertiary).toBe('#ff94a5')
-      expect(colors['tertiary-container']).toBe('#fd7e94')
-
-      // Error
-      expect(colors.error).toBe('#ffb4ab')
-      expect(colors['error-dim']).toBe('#d73357')
-    })
-
-    test('tailwind config has correct text tokens', () => {
-      const colors = tailwindConfig.theme.extend.colors
-
-      expect(colors['on-surface']).toBe('#e3e0f7')
-      expect(colors['on-surface-variant']).toBe('#cdc3d1')
-      expect(colors['outline-variant']).toBe('#4a444f')
-    })
-  })
+  // Color token assertions moved to src/theme/themes/obsidian-lens.test.ts
 
   describe('Typography: Manrope + Inter + JetBrains Mono', () => {
     test('tailwind config has Manrope for headlines', () => {
@@ -249,33 +191,37 @@ describe('WorkspaceView - Visual Verification (Feature #20)', () => {
   })
 
   describe('Surface Hierarchy: Component Backgrounds', () => {
-    test('Sidebar is transparent so it inherits the workspace surface', () => {
+    // Zone hierarchy: chrome (left sidebar, session-tabs strip, status bar)
+    // shares the recessed surface-container-lowest; content (main canvas,
+    // agent status panel) shares `surface` — chrome always reads darker.
+    test('Sidebar carries the recessed chrome shade', () => {
       render(<WorkspaceView />)
       const sidebar = screen.getByTestId('sidebar')
 
-      expect(sidebar.className).toContain('bg-transparent')
-      expect(sidebar.className).not.toContain('bg-surface-container-low')
+      expect(sidebar.className).toContain('bg-surface-container-lowest')
+      expect(sidebar.className).not.toContain('bg-transparent')
     })
 
-    test('Terminal Zone content uses Level 0 surface (bg-surface)', () => {
+    test('Terminal Zone content uses the canvas surface (bg-surface)', () => {
       render(<WorkspaceView />)
       const terminalContent = screen.getByTestId('terminal-content')
 
       expect(terminalContent.className).toContain('bg-surface')
     })
 
-    test('SessionTabs strip uses Level 0.5 surface (surface-container-lowest)', () => {
+    test('SessionTabs strip shares the chrome shade (surface-container-lowest)', () => {
       render(<WorkspaceView />)
       const tabs = screen.getByTestId('session-tabs')
 
       expect(tabs.className).toContain('bg-surface-container-lowest')
     })
 
-    test('Agent Status Panel uses surface-container background', () => {
+    test('Agent Status Panel shares the canvas surface (bg-surface)', () => {
       render(<WorkspaceView />)
       const panel = screen.getByTestId('agent-status-panel')
 
-      expect(panel.className).toContain('bg-surface-container')
+      expect(panel.className).toContain('bg-surface')
+      expect(panel.className).not.toContain('bg-surface-container')
     })
   })
 
@@ -294,7 +240,7 @@ describe('WorkspaceView - Visual Verification (Feature #20)', () => {
 
       // Bottom-docked DockPanel keeps its border on the edge facing terminal.
       expect(dockPanel.className).toContain('border-t')
-      expect(dockPanel.className).toContain('border-[rgba(74,68,79,0.3)]')
+      expect(dockPanel.className).toContain('border-outline-variant/30')
     })
 
     test('sidebar session cards have no visible borders', () => {

@@ -204,7 +204,7 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
 
     const containerStyle = isFocusHighlightVisible
       ? {
-          boxShadow: `0 0 0 6px ${agent.accentDim}, 0 8px 32px rgba(0,0,0,0.35)`,
+          boxShadow: `0 0 0 6px ${agent.accentDim}, var(--shadow-ambient)`,
           cursor: 'default' as const,
         }
       : {
@@ -215,7 +215,7 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
     const focusRingStyle = {
       border: isFocusHighlightVisible
         ? `2px solid ${agent.accent}`
-        : '1px solid rgba(74,68,79,0.22)',
+        : '1px solid color-mix(in srgb, var(--color-outline-variant) 22%, transparent)',
       transition:
         'border-color 180ms ease, box-shadow 220ms ease, opacity 220ms ease',
     }
@@ -229,7 +229,7 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
         onClick={handleContainerClick}
         style={{
           ...containerStyle,
-          background: '#121221',
+          background: 'var(--color-surface)',
           borderRadius: 10,
           transition: 'box-shadow 220ms ease, opacity 220ms ease',
           opacity: isPaneActive ? 1 : 0.78,
