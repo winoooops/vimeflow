@@ -1857,28 +1857,24 @@ export const WorkspaceView = (): ReactElement => {
             width: isSidebarClosed ? 0 : sidebarToggleSlideSurfaceWidth,
           }}
         />
-        {/* Sidebar OPEN: the collapse toggle lives here in the shell. When the
-            sidebar is collapsed it relocates into the top chrome (above) so it
-            auto-hides instead of floating over the panes. */}
-        {!isSidebarClosed && (
-          <div
-            data-testid="sidebar-toggle-anchor"
-            className="absolute z-30"
-            style={{
-              left: sidebarToggleLeft,
-              top: SIDEBAR_TOGGLE_TOP,
-            }}
-          >
-            <SidebarToggle
-              ref={sidebarToggleRef}
-              onClick={handleToggleSidebar}
-              size={SIDEBAR_TOGGLE_SIZE}
-              variant="inset"
-              data-testid="sidebar-toggle-fixed"
-              shortcutHint={sidebarShortcutHint}
-            />
-          </div>
-        )}
+        <div
+          data-testid="sidebar-toggle-anchor"
+          className="absolute z-30"
+          style={{
+            left: sidebarToggleLeft,
+            top: SIDEBAR_TOGGLE_TOP,
+          }}
+        >
+          <SidebarToggle
+            ref={sidebarToggleRef}
+            collapsed={isSidebarClosed}
+            onClick={handleToggleSidebar}
+            size={SIDEBAR_TOGGLE_SIZE}
+            variant="inset"
+            data-testid="sidebar-toggle-fixed"
+            shortcutHint={sidebarShortcutHint}
+          />
+        </div>
         <div
           aria-hidden={isSidebarClosed || undefined}
           inert={isSidebarClosed || undefined}
@@ -2010,9 +2006,9 @@ export const WorkspaceView = (): ReactElement => {
       >
         {/* Top chrome (44px, main-stage handoff J3/J3a) — hover/focus reveals
             the overlay; pinning reserves a real row so panes shrink instead of
-            being covered. When the sidebar is collapsed the expand toggle is
-            rendered inside this chrome (below) so it auto-hides with the banner
-            rather than floating over the panes. */}
+            being covered. The collapsed-state sidebar toggle is the sidebar
+            shell's own fixed toggle, so when the sidebar is closed the hover
+            zone insets past it to keep that toggle clickable. */}
         <div
           data-testid="top-hover-zone"
           tabIndex={0}
@@ -2020,8 +2016,17 @@ export const WorkspaceView = (): ReactElement => {
           className={`group focus:outline-none ${
             topChromePinned
               ? 'relative h-[44px] w-full shrink-0'
-              : 'absolute inset-x-0 top-0 z-40 h-[44px]'
+              : 'absolute right-0 top-0 z-40 h-[44px]'
           }`}
+          style={
+            topChromePinned
+              ? undefined
+              : {
+                  left: isSidebarClosed
+                    ? sidebarToggleLeft + SIDEBAR_TOGGLE_SIZE
+                    : 0,
+                }
+          }
         >
           <div
             data-testid="top-chrome"
@@ -2031,26 +2036,6 @@ export const WorkspaceView = (): ReactElement => {
                 : `glass-panel bg-[rgba(13,13,28,0.65)] -translate-y-[5px] opacity-0 ${TOP_CHROME_HIDE_TRANSITION} ${TOP_CHROME_REVEAL_CLASSES}`
             }`}
           >
-            {/* Collapsed sidebar: the expand toggle lives in the top chrome so
-                it auto-hides with the banner instead of floating over the
-                panes. When the sidebar is open it lives in the sidebar shell. */}
-            {isSidebarClosed && (
-              <div
-                className="absolute z-30"
-                style={{ left: sidebarToggleLeft, top: SIDEBAR_TOGGLE_TOP }}
-              >
-                <SidebarToggle
-                  ref={sidebarToggleRef}
-                  collapsed
-                  onClick={handleToggleSidebar}
-                  size={SIDEBAR_TOGGLE_SIZE}
-                  variant="inset"
-                  data-testid="sidebar-toggle-fixed"
-                  shortcutHint={sidebarShortcutHint}
-                />
-              </div>
-            )}
-
             <span className="min-w-[10px] flex-1" />
 
             {/* Pills render in every layout, with the layout-display config
