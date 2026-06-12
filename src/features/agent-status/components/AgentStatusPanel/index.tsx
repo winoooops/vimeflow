@@ -129,7 +129,7 @@ export const AgentStatusPanel = ({
   return (
     <div
       data-testid="agent-status-panel"
-      className="flex h-full shrink-0 flex-col overflow-hidden bg-surface-container"
+      className="flex h-full shrink-0 flex-col overflow-hidden bg-surface"
       style={{
         width: `${PANEL_WIDTH_PX}px`,
       }}

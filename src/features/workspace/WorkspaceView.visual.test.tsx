@@ -191,33 +191,37 @@ describe('WorkspaceView - Visual Verification (Feature #20)', () => {
   })
 
   describe('Surface Hierarchy: Component Backgrounds', () => {
-    test('Sidebar is transparent so it inherits the workspace surface', () => {
+    // Zone hierarchy: chrome (left sidebar, session-tabs strip, status bar)
+    // shares the recessed surface-container-lowest; content (main canvas,
+    // agent status panel) shares `surface` — chrome always reads darker.
+    test('Sidebar carries the recessed chrome shade', () => {
       render(<WorkspaceView />)
       const sidebar = screen.getByTestId('sidebar')
 
-      expect(sidebar.className).toContain('bg-transparent')
-      expect(sidebar.className).not.toContain('bg-surface-container-low')
+      expect(sidebar.className).toContain('bg-surface-container-lowest')
+      expect(sidebar.className).not.toContain('bg-transparent')
     })
 
-    test('Terminal Zone content uses Level 0 surface (bg-surface)', () => {
+    test('Terminal Zone content uses the canvas surface (bg-surface)', () => {
       render(<WorkspaceView />)
       const terminalContent = screen.getByTestId('terminal-content')
 
       expect(terminalContent.className).toContain('bg-surface')
     })
 
-    test('SessionTabs strip uses Level 0.5 surface (surface-container-lowest)', () => {
+    test('SessionTabs strip shares the chrome shade (surface-container-lowest)', () => {
       render(<WorkspaceView />)
       const tabs = screen.getByTestId('session-tabs')
 
       expect(tabs.className).toContain('bg-surface-container-lowest')
     })
 
-    test('Agent Status Panel uses surface-container background', () => {
+    test('Agent Status Panel shares the canvas surface (bg-surface)', () => {
       render(<WorkspaceView />)
       const panel = screen.getByTestId('agent-status-panel')
 
-      expect(panel.className).toContain('bg-surface-container')
+      expect(panel.className).toContain('bg-surface')
+      expect(panel.className).not.toContain('bg-surface-container')
     })
   })
 
