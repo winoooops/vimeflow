@@ -1,68 +1,63 @@
 import { describe, test, expect } from 'vitest'
 import tailwindConfig from './tailwind.config.js'
+import { obsidianLens } from './src/theme/index.ts'
 
 describe('Tailwind Config - Obsidian Lens Design Tokens', () => {
-  const colors = tailwindConfig.theme.extend.colors
-
   describe('Primary & Secondary Tokens', () => {
     test('has primary-dim token for subdued icon states', () => {
-      expect(colors['primary-dim']).toBe('#d3b9f0')
+      expect(obsidianLens.ui['primary-dim']).toBe('#d3b9f0')
     })
 
     test('has secondary-dim token for dimmed accent states', () => {
-      expect(colors['secondary-dim']).toBe('#c39eee')
+      expect(obsidianLens.ui['secondary-dim']).toBe('#c39eee')
     })
 
     test('has primary-container token (brand purple)', () => {
-      expect(colors['primary-container']).toBe('#cba6f7')
+      expect(obsidianLens.ui['primary-container']).toBe('#cba6f7')
     })
   })
 
   describe('Semantic & Feedback Tokens', () => {
     test('has success token for agent running status (#50fa7b)', () => {
-      expect(colors.success).toBe('#50fa7b')
+      expect(obsidianLens.ui.success).toBe('#50fa7b')
     })
 
     test('has success-muted token for diff added lines (#7defa1)', () => {
-      expect(colors['success-muted']).toBe('#7defa1')
+      expect(obsidianLens.ui['success-muted']).toBe('#7defa1')
     })
 
     test('has tertiary token for warning accents (#ff94a5)', () => {
-      expect(colors.tertiary).toBe('#ff94a5')
+      expect(obsidianLens.ui.tertiary).toBe('#ff94a5')
     })
 
     test('has tertiary-container token for warning badge backgrounds (#fd7e94)', () => {
-      expect(colors['tertiary-container']).toBe('#fd7e94')
+      expect(obsidianLens.ui['tertiary-container']).toBe('#fd7e94')
     })
 
     test('has error-dim token for error backgrounds (#d73357)', () => {
-      expect(colors['error-dim']).toBe('#d73357')
+      expect(obsidianLens.ui['error-dim']).toBe('#d73357')
     })
   })
 
   describe('Surface Hierarchy Tokens', () => {
-    test('has surface-dim token (#121221)', () => {
-      expect(colors['surface-dim']).toBe('#121221')
-    })
-
     test('has surface-bright token (#383849)', () => {
-      expect(colors['surface-bright']).toBe('#383849')
+      expect(obsidianLens.ui['surface-bright']).toBe('#383849')
     })
 
     test('has surface-container-low token (#1a1a2a)', () => {
-      expect(colors['surface-container-low']).toBe('#1a1a2a')
+      expect(obsidianLens.ui['surface-container-low']).toBe('#1a1a2a')
     })
 
     test('has surface-container token (#1e1e2e)', () => {
-      expect(colors['surface-container']).toBe('#1e1e2e')
+      expect(obsidianLens.ui['surface-container']).toBe('#1e1e2e')
     })
 
     test('has surface-container-high token (#292839)', () => {
-      expect(colors['surface-container-high']).toBe('#292839')
+      expect(obsidianLens.ui['surface-container-high']).toBe('#292839')
     })
 
     test('has surface-container-highest token (#333344)', () => {
-      expect(colors['surface-container-highest']).toBe('#333344')
+      expect(obsidianLens.ui['surface-container-highest']).toBe('#333344')
     })
   })
 
@@ -106,25 +101,22 @@ describe('Tailwind Config - Obsidian Lens Design Tokens', () => {
     })
   })
 
-  // Handoff additive tokens — added per
-  // docs/superpowers/specs/2026-05-05-ui-handoff-migration-design.md.
-  // These tokens are net-new; existing tokens above remain untouched
-  // until step 10 cleanup of the migration.
+  // Handoff additive tokens — colors now live in obsidianLens theme definition
   describe('Handoff Additive Tokens (handoff §6)', () => {
-    test('colors expose primary-deep / on-surface-muted / warning', () => {
-      expect(colors['primary-deep']).toBe('#57377f')
-      expect(colors['on-surface-muted']).toBe('#8a8299')
+    test('theme exposes primary-deep / on-surface-muted / warning', () => {
+      expect(obsidianLens.ui['primary-deep']).toBe('#57377f')
+      expect(obsidianLens.ui['on-surface-muted']).toBe('#8a8299')
       // warning is amber (matches prototype StatusDot awaiting), not pink —
       // pink is `tertiary` / errored in the prototype.
-      expect(colors.warning).toBe('#fab387')
+      expect(obsidianLens.ui.warning).toBe('#fab387')
     })
 
-    test('colors.syn exposes Catppuccin syntax subset', () => {
-      expect(colors.syn).toMatchObject({
+    test('syntax tokens expose Catppuccin syntax subset', () => {
+      expect(obsidianLens.syntax).toMatchObject({
         keyword: '#cba6f7',
         string: '#a6e3a1',
         fn: '#89b4fa',
-        var: '#f5e0dc',
+        variable: '#f5e0dc',
         comment: '#6c7086',
         type: '#fab387',
         tag: '#f38ba8',
@@ -170,8 +162,8 @@ describe('Tailwind Config - Obsidian Lens Design Tokens', () => {
       })
     })
 
-    test('boxShadow exposes pane-focus / modal / pip-glow', () => {
-      expect(tailwindConfig.theme.extend.boxShadow).toMatchObject({
+    test('shadows expose pane-focus / modal / pip-glow', () => {
+      expect(obsidianLens.shadows).toMatchObject({
         'pane-focus':
           '0 0 0 6px rgb(203 166 247 / 0.16), 0 8px 32px rgb(0 0 0 / 0.35)',
         modal: '0 24px 80px rgb(0 0 0 / 0.5)',
@@ -185,12 +177,12 @@ describe('Tailwind Config - Obsidian Lens Design Tokens', () => {
       )
     })
 
-    test('existing tokens remain untouched (additive-only invariant)', () => {
-      expect(colors.primary).toBe('#e2c7ff')
-      expect(colors['surface-container']).toBe('#1e1e2e')
-      expect(colors.tertiary).toBe('#ff94a5')
-      expect(colors['surface-tint']).toBe('#d9b9ff')
-      expect(colors['secondary-container']).toBe('#124988')
+    test('existing tokens remain in theme definition (additive-only invariant)', () => {
+      expect(obsidianLens.ui.primary).toBe('#e2c7ff')
+      expect(obsidianLens.ui['surface-container']).toBe('#1e1e2e')
+      expect(obsidianLens.ui.tertiary).toBe('#ff94a5')
+      expect(obsidianLens.ui['surface-tint']).toBe('#d9b9ff')
+      expect(obsidianLens.ui['secondary-container']).toBe('#124988')
     })
   })
 })

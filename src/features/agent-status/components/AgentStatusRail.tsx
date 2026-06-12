@@ -17,20 +17,20 @@ export const RAIL_WIDTH_PX = 44
 
 // Bucket fill tones — semantic mapping per the bucket-redesign spec.
 // These literals mirror tokens defined in `docs/design/tokens.ts`
-// (semantic.tertiary, semantic.error, semantic.successMuted, primary.base);
+// (tertiary, error, success-muted, primary);
 // `tokens.ts` is the design reference and is NOT imported from `src/` (see
 // the rationale in `TokenCache.tsx`). If the palette migrates, update these
 // constants in lockstep with tokens.ts.
-// Annotations match the runtime hex values to their `docs/design/tokens.ts`
+// Annotations match the runtime CSS variables to their `docs/design/tokens.ts`
 // names. Severity hierarchy: DANGER > WARN > NEUTRAL/HEALTHY. The Catppuccin
-// Mocha palette names are non-obvious — `semantic.tertiary` is the strong
-// pink (highest severity), `semantic.error` is the softer coral
+// Mocha palette names are non-obvious — `tertiary` is the strong
+// pink (highest severity), `error` is the softer coral
 // (intermediate). If the palette migrates, update each constant from the
 // named token so the severity ordering survives.
-const TONE_DANGER = '#ff94a5' // semantic.tertiary  (strong pink, peak severity)
-const TONE_WARN = '#ffb4ab' // semantic.error      (soft coral, warning)
-const TONE_HEALTHY = '#7defa1' // semantic.successMuted
-const TONE_NEUTRAL = '#e2c7ff' // primary.base
+const TONE_DANGER = 'var(--color-tertiary)' // tertiary  (strong pink, peak severity)
+const TONE_WARN = 'var(--color-error)' // error      (soft coral, warning)
+const TONE_HEALTHY = 'var(--color-success-muted)' // success-muted
+const TONE_NEUTRAL = 'var(--color-primary)' // primary
 
 const contextTone = (pct: number, accent: string): string => {
   if (pct > 90) {

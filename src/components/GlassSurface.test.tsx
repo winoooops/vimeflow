@@ -8,7 +8,10 @@ describe('GlassSurface', () => {
 
     const el = screen.getByTestId('glass')
     expect(el.className).toContain('glass-panel')
-    expect(el).toHaveStyle({ backgroundColor: 'rgba(13, 13, 28, 0.65)' })
+    // Themed tint: the lowest-surface token mixed to 65% with transparency.
+    expect(el.style.backgroundColor).toBe(
+      'color-mix(in srgb, var(--color-surface-container-lowest) 65%, transparent)'
+    )
     expect(el).toHaveTextContent('content')
   })
 
@@ -24,9 +27,9 @@ describe('GlassSurface', () => {
 
     const el = screen.getByTestId('glass')
     expect(el.className).toContain('rounded-lg')
-    expect(el).toHaveStyle({
-      backgroundColor: 'rgba(13, 13, 28, 0.4)',
-      height: '44px',
-    })
+    expect(el.style.backgroundColor).toBe(
+      'color-mix(in srgb, var(--color-surface-container-lowest) 40%, transparent)'
+    )
+    expect(el.style.height).toBe('44px')
   })
 })

@@ -189,7 +189,7 @@ export const UserCard = ({ user, onSelect }: UserCardProps): ReactElement => {
         />
       ) : (
         <div className="w-12 h-12 rounded-full bg-primary-container flex items-center justify-center">
-          <span className="text-on-primary-container font-medium">
+          <span className="text-primary-deep font-medium">
             {user.name.charAt(0)}
           </span>
         </div>
@@ -402,7 +402,7 @@ export const UserCard = ({ user, onSelect }: UserCardProps): ReactElement => {
         />
       ) : (
         <div className="w-12 h-12 rounded-full bg-primary-container flex items-center justify-center">
-          <span className="text-on-primary-container font-medium">
+          <span className="text-primary-deep font-medium">
             {user.name.charAt(0)}
           </span>
         </div>

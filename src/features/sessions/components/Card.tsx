@@ -21,11 +21,11 @@ export interface CardProps {
 // Status → flat colored text (no chip pill, no dot), per handoff §3.3.
 const STATUS_TEXT: Record<Session['status'], { tone: string; label: string }> =
   {
-    running: { tone: '#7defa1', label: 'Running' },
-    awaiting: { tone: '#ff94a5', label: 'Awaiting you' },
-    idle: { tone: '#8a8299', label: 'Idle' },
-    completed: { tone: '#c9b3f0', label: 'Done' },
-    errored: { tone: '#ffb4ab', label: 'Errored' },
+    running: { tone: 'var(--color-success-muted)', label: 'Running' },
+    awaiting: { tone: 'var(--color-tertiary)', label: 'Awaiting you' },
+    idle: { tone: 'var(--color-on-surface-muted)', label: 'Idle' },
+    completed: { tone: 'var(--color-primary-dim)', label: 'Done' },
+    errored: { tone: 'var(--color-error)', label: 'Errored' },
   }
 
 const MenuRow = ({
@@ -44,8 +44,8 @@ const MenuRow = ({
     onClick={onClick}
     className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left font-label text-[12px] transition-colors ${
       danger
-        ? 'text-[#d99aa6] hover:bg-[rgba(255,148,165,0.12)] hover:text-[#ff94a5]'
-        : 'text-[#cdc3d1] hover:bg-[rgba(226,199,255,0.1)] hover:text-[#f3eeff]'
+        ? 'text-tertiary hover:bg-tertiary/12 hover:text-tertiary'
+        : 'text-on-surface-variant hover:bg-primary/10 hover:text-on-surface'
     }`}
   >
     <span className="material-symbols-outlined text-[14px]" aria-hidden="true">
@@ -134,10 +134,10 @@ const CardComponent = ({
   // Flat fill only — no border, no left accent bar, no status dot. Hover and
   // open-menu share the soft fill; active stays lavender.
   const fillClass = isActive
-    ? 'bg-[rgba(203,166,247,0.13)]'
+    ? 'bg-primary-container/15'
     : menuOpen
-      ? 'bg-[rgba(255,255,255,0.04)]'
-      : 'hover:bg-[rgba(255,255,255,0.04)]'
+      ? 'bg-wash-faint'
+      : 'hover:bg-wash-faint'
 
   const cardClass = `group relative mb-0.5 rounded-[10px] px-3 py-[11px] transition-colors ${
     variant === 'active'
@@ -158,7 +158,7 @@ const CardComponent = ({
         id={`sidebar-activate-${session.id}`}
         data-role="activate"
         tabIndex={isEditing ? -1 : 0}
-        className="absolute inset-0 rounded-[10px] outline-none focus-visible:ring-1 focus-visible:ring-[rgba(203,166,247,0.5)]"
+        className="absolute inset-0 rounded-[10px] outline-none focus-visible:ring-1 focus-visible:ring-primary-container/50"
       />
 
       <div className="pointer-events-none relative flex flex-col">
@@ -190,8 +190,7 @@ const CardComponent = ({
               // it. aria-hidden prevents AT from announcing the name twice —
               // the sibling overlay button already carries aria-label=name.
               aria-hidden="true"
-              className="pointer-events-auto min-w-0 flex-1 cursor-pointer truncate font-label text-[13.5px] font-semibold"
-              style={{ color: isActive ? '#f3eeff' : '#e3e0f7' }}
+              className="pointer-events-auto min-w-0 flex-1 cursor-pointer truncate font-label text-[13.5px] font-semibold text-on-surface"
               onClick={() => {
                 setMenuOpen(false)
                 onClick(session.id)
@@ -211,7 +210,7 @@ const CardComponent = ({
 
         {/* Row 2 — subtitle */}
         {subtitleText !== '' && (
-          <div className="mt-1 truncate font-label text-[11.5px] text-[#9a93ab]">
+          <div className="mt-1 truncate font-label text-[11.5px] text-on-surface-muted">
             {subtitleText}
           </div>
         )}
@@ -221,7 +220,7 @@ const CardComponent = ({
           <span className="font-semibold" style={{ color: status.tone }}>
             {status.label}
           </span>
-          <span className="text-[#6c7086]">
+          <span className="text-syn-comment">
             · {formatRelativeTime(session.lastActivityAt)}
           </span>
           <span className="flex-1" />
@@ -230,8 +229,7 @@ const CardComponent = ({
               data-testid="session-layout-glyph"
               aria-hidden="true"
               title={LAYOUTS[session.layout].name}
-              className="inline-flex shrink-0 items-center gap-1"
-              style={{ color: isActive ? '#cba6f7' : '#7c7689' }}
+              className={`inline-flex shrink-0 items-center gap-1 ${isActive ? 'text-primary-container' : 'text-on-surface-muted'}`}
             >
               <LayoutGlyph layoutId={session.layout} />
               <span
@@ -271,7 +269,7 @@ const CardComponent = ({
               e.stopPropagation()
               setMenuOpen((open) => !open)
             }}
-            className="grid h-6 w-6 place-items-center rounded-md bg-[rgba(20,20,36,0.55)] text-[#9a93ab] backdrop-blur-sm transition-colors hover:text-[#e2c7ff]"
+            className="grid h-6 w-6 place-items-center rounded-md bg-surface-container-lowest/55 text-on-surface-muted backdrop-blur-sm transition-colors hover:text-primary"
           >
             <span
               className="material-symbols-outlined text-[16px]"
@@ -283,7 +281,7 @@ const CardComponent = ({
           {menuOpen && (
             <div
               onClick={(e) => e.stopPropagation()}
-              className="absolute right-0 top-7 z-40 min-w-[132px] rounded-[9px] border border-[rgba(74,68,79,0.45)] bg-[#1c1c30] p-1 shadow-[0_10px_28px_rgba(0,0,0,0.45)]"
+              className="absolute right-0 top-7 z-40 min-w-[132px] rounded-[9px] border border-outline-variant/45 bg-surface-container-lowest p-1 shadow-[0_10px_28px_color-mix(in_srgb,var(--color-scrim)_45%,transparent)]"
             >
               {onRename !== undefined && (
                 <MenuRow
@@ -323,7 +321,7 @@ const CardComponent = ({
         className={cardClass}
         whileDrag={{
           scale: 1.02,
-          boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
+          boxShadow: 'var(--shadow-ambient)',
           zIndex: 50,
         }}
         layout="position"

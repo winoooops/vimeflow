@@ -1,5 +1,6 @@
 // For more info, see https://github.com/storybookjs/eslint-plugin-storybook#configuration-flat-config-format
 import storybook from 'eslint-plugin-storybook'
+import noHardcodedColors from './eslint-rules/no-hardcoded-colors.js'
 import globals from 'globals'
 import tseslint from 'typescript-eslint'
 import pluginReact from 'eslint-plugin-react'
@@ -265,6 +266,17 @@ export default defineConfig([
           configFile: './cspell.config.yaml',
         },
       ],
+    },
+  },
+
+  {
+    files: ['src/**/*.{ts,tsx}'],
+    ignores: ['src/theme/**'],
+    plugins: {
+      vimeflow: { rules: { 'no-hardcoded-colors': noHardcodedColors } },
+    },
+    rules: {
+      'vimeflow/no-hardcoded-colors': 'error',
     },
   },
 

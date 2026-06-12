@@ -37,7 +37,7 @@ test('context bucket tone shifts to coral above 90%', () => {
   )
 
   expect(screen.getByTestId('bucket-ctx-pct-glyph')).toHaveStyle({
-    color: '#ff94a5',
+    color: 'var(--color-tertiary)',
   })
 })
 
@@ -53,7 +53,7 @@ test('context bucket tone is warm coral between 75 and 90%', () => {
   )
 
   expect(screen.getByTestId('bucket-ctx-pct-glyph')).toHaveStyle({
-    color: '#ffb4ab',
+    color: 'var(--color-error)',
   })
 })
 
@@ -97,7 +97,7 @@ test('cache bucket tone is mint at >=70%, lavender 40-70%, coral <40%', () => {
   )
 
   expect(screen.getByTestId('bucket-cache-pct-glyph')).toHaveStyle({
-    color: '#7defa1',
+    color: 'var(--color-success-muted)',
   })
 
   rerender(
@@ -111,7 +111,7 @@ test('cache bucket tone is mint at >=70%, lavender 40-70%, coral <40%', () => {
   )
 
   expect(screen.getByTestId('bucket-cache-pct-glyph')).toHaveStyle({
-    color: '#e2c7ff',
+    color: 'var(--color-primary)',
   })
 
   rerender(
@@ -125,7 +125,7 @@ test('cache bucket tone is mint at >=70%, lavender 40-70%, coral <40%', () => {
   )
 
   expect(screen.getByTestId('bucket-cache-pct-glyph')).toHaveStyle({
-    color: '#ff94a5',
+    color: 'var(--color-tertiary)',
   })
 })
 

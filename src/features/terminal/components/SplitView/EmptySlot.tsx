@@ -41,7 +41,7 @@ export const EmptySlot = ({
             type="button"
             aria-label="add shell pane"
             onClick={handleShellClick}
-            className="rounded-md bg-white/[0.04] px-3 py-2 text-[11px] text-on-surface transition hover:bg-white/[0.08] focus:outline-none focus:ring-2 focus:ring-primary/45"
+            className="rounded-md bg-wash-subtle px-3 py-2 text-[11px] text-on-surface transition hover:bg-wash-soft focus:outline-none focus:ring-2 focus:ring-primary/45"
           >
             Shell
           </button>

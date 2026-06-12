@@ -209,13 +209,44 @@ describe('BrowserPane', () => {
     })
   })
 
+  test('marks the native browser pane invisible while occluded, then restores it', async () => {
+    const { rerender } = render(
+      <BrowserPane session={session} pane={browserPane} isActive isOccluded />
+    )
+
+    await waitFor(() => {
+      expect(bridgeMocks.createBrowserPane).toHaveBeenCalledOnce()
+    })
+    await settle()
+
+    expect(bridgeMocks.setBrowserPaneBounds).toHaveBeenLastCalledWith({
+      sessionId: 'session-1',
+      paneId: 'p1',
+      bounds: { x: 10, y: 20, width: 640, height: 360 },
+      shortcutContext: { activePaneId: 'p1', paneIds: ['p0', 'p1'] },
+      visible: false,
+    })
+
+    rerender(<BrowserPane session={session} pane={browserPane} isActive />)
+
+    await waitFor(() => {
+      expect(bridgeMocks.setBrowserPaneBounds).toHaveBeenLastCalledWith({
+        sessionId: 'session-1',
+        paneId: 'p1',
+        bounds: { x: 10, y: 20, width: 640, height: 360 },
+        shortcutContext: { activePaneId: 'p1', paneIds: ['p0', 'p1'] },
+        visible: true,
+      })
+    })
+  })
+
   test('the focus border uses the cyan WEB accent only when the pane is active', () => {
     const { rerender } = render(
       <BrowserPane session={session} pane={browserPane} isActive />
     )
-    // #4fc8d6 — the WEB accent, which jsdom serializes to rgb().
+    // accent is now a CSS var reference; jsdom preserves var() in style strings.
     expect(screen.getByTestId('browser-pane').style.border).toContain(
-      'rgb(79, 200, 214)'
+      'var(--color-agent-browser-accent)'
     )
 
     rerender(
@@ -227,7 +258,7 @@ describe('BrowserPane', () => {
     )
 
     expect(screen.getByTestId('browser-pane').style.border).toContain(
-      'rgba(74, 68, 79, 0.22)'
+      'color-mix(in srgb, var(--color-outline-variant) 22%, transparent)'
     )
   })
 

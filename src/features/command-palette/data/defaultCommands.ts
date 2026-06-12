@@ -1,3 +1,4 @@
+import { themeService } from '../../../theme'
 import type { Command } from '../types'
 
 /**
@@ -44,10 +45,15 @@ export const defaultCommands: Command[] = [
         label: 'theme',
         description: 'Switch color theme',
         icon: 'palette',
-        execute: (): void => {
-          // eslint-disable-next-line no-console
-          console.info('Switching color theme')
-        },
+        children: themeService.list().map((theme) => ({
+          id: `set-theme-${theme.id}`,
+          label: theme.label,
+          description: `Switch to ${theme.label}`,
+          icon: 'palette',
+          execute: (): void => {
+            themeService.apply(theme.id)
+          },
+        })),
       },
       {
         id: 'set-font',

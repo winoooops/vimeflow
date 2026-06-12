@@ -798,7 +798,7 @@ describe('DockPanel', () => {
     renderDockPanel({ tab: 'diff' })
 
     expect(screen.getByRole('button', { name: /diff viewer/i })).toHaveClass(
-      'text-[#e2c7ff]'
+      'text-primary'
     )
   })
 
@@ -869,9 +869,9 @@ describe('DockPanel', () => {
 
     const editorTab = screen.getByRole('button', { name: /editor/i })
     expect(editorTab).toHaveClass('rounded-md')
-    expect(editorTab).toHaveClass('bg-[rgba(226,199,255,0.08)]')
-    expect(editorTab).toHaveClass('border-[rgba(203,166,247,0.3)]')
-    expect(editorTab).toHaveClass('text-[#e2c7ff]')
+    expect(editorTab).toHaveClass('bg-primary/[0.08]')
+    expect(editorTab).toHaveClass('border-primary-container/30')
+    expect(editorTab).toHaveClass('text-primary')
   })
 
   test('inactive tab has transparent border', () => {
@@ -916,7 +916,7 @@ describe('DockPanel', () => {
       name: /dock: left/i,
     })
     expect(leftSwitcherButton).toBeInTheDocument()
-    expect(leftSwitcherButton).toHaveClass('text-[#cba6f7]')
+    expect(leftSwitcherButton).toHaveClass('text-primary-container')
   })
 
   test('clicking a DockSwitcher button calls onPositionChange', async () => {
@@ -1163,13 +1163,13 @@ describe('DockPanel', () => {
       })
       const focused = screen.getByTestId('dock-panel')
       expect(focused).toHaveClass('border-t')
-      expect(focused).toHaveClass('border-[rgba(74,68,79,0.3)]')
-      expect(focused).not.toHaveClass('border-[#cba6f7]')
+      expect(focused).toHaveClass('border-outline-variant/30')
+      expect(focused).not.toHaveClass('border-primary-container')
 
       rerenderWith({ isFocused: false, position: 'bottom' })
       const unfocused = screen.getByTestId('dock-panel')
-      expect(unfocused).toHaveClass('border-[rgba(74,68,79,0.3)]')
-      expect(unfocused).not.toHaveClass('border-[#cba6f7]')
+      expect(unfocused).toHaveClass('border-outline-variant/30')
+      expect(unfocused).not.toHaveClass('border-primary-container')
     })
 
     test('does not paint a bright focus box shadow or outline overlay', () => {

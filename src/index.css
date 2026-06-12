@@ -1,5 +1,6 @@
-@import '../docs/design/tokens.css';
+@import './theme/base.css';
 @import 'tailwindcss';
+@import './theme/theme.css';
 @config '../tailwind.config.js';
 
 @font-face {
@@ -103,7 +104,7 @@
   }
 
   body {
-    @apply bg-background text-on-surface font-body overflow-hidden m-0;
+    @apply bg-surface text-on-surface font-body overflow-hidden m-0;
   }
 
   .vf-app-drag-region {
@@ -194,88 +195,6 @@
   }
 }
 
-@utility thin-scrollbar {
-  /* `scrollbar-width`/`scrollbar-color` (CSS standard) and
-     `::-webkit-scrollbar` (WebKit pseudo) both apply on WebKitGTK on
-     Linux — the renderer paints two synced vertical tracks. Gate the
-     standard properties to engines that lack the pseudo (Firefox,
-     detected via `-moz-appearance: none`) so WebKit only sees the
-     pseudo-element rules. */
-  @supports (-moz-appearance: none) {
-    scrollbar-width: thin;
-    scrollbar-color: #333344 transparent;
-  }
-  &::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
-  }
-  &::-webkit-scrollbar-track {
-    background: transparent;
-  }
-  &::-webkit-scrollbar-thumb {
-    background: #333344;
-    border-radius: 10px;
-  }
-  &::-webkit-scrollbar-thumb:hover {
-    background: #4a444f;
-  }
-}
-
-.terminal-pane-body .xterm-viewport {
-  scrollbar-width: thin;
-  scrollbar-color: #333344 transparent;
-}
-
-.terminal-pane-body .xterm-viewport::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-
-.terminal-pane-body .xterm-viewport::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.terminal-pane-body .xterm-viewport::-webkit-scrollbar-thumb {
-  background: #333344;
-  border-radius: 10px;
-}
-
-.terminal-pane-body .xterm-viewport::-webkit-scrollbar-thumb:hover {
-  background: #4a444f;
-}
-
-/* CodeMirror's internal scroller — same treatment as @utility thin-scrollbar.
-   The utility class can't be applied to the CodeEditor container because
-   ::-webkit-scrollbar targets the element it's on, not descendants — and
-   the actual scroll container is the nested .cm-scroller (set to
-   `overflow: auto` by the catppuccin theme). The @supports gate mirrors
-   thin-scrollbar: keep the standard scrollbar-* properties Firefox-only
-   so WebKitGTK doesn't paint a second track on top of the pseudo-element. */
-.cm-editor .cm-scroller::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-
-.cm-editor .cm-scroller::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.cm-editor .cm-scroller::-webkit-scrollbar-thumb {
-  background: #333344;
-  border-radius: 10px;
-}
-
-.cm-editor .cm-scroller::-webkit-scrollbar-thumb:hover {
-  background: #4a444f;
-}
-
-@supports (-moz-appearance: none) {
-  .cm-editor .cm-scroller {
-    scrollbar-width: thin;
-    scrollbar-color: #333344 transparent;
-  }
-}
-
 /* Liquid bucket animations (used by both Bucket and ContextBucket via
    LiquidFill). Two opposing sine-wave translations create the ripple;
    vfLiquidSlosh tilts the whole liquid mass < 1deg. Honors
@@ -334,19 +253,19 @@
 
 /* Diff viewer styling */
 .diff-added {
-  background-color: rgba(166, 227, 161, 0.15);
+  background-color: var(--color-diff-added);
 }
 
 .diff-removed {
-  background-color: rgba(243, 139, 168, 0.15);
+  background-color: var(--color-diff-removed);
 }
 
 .diff-highlight-added {
-  background-color: rgba(166, 227, 161, 0.35);
+  background-color: var(--color-diff-highlight-added);
   border-radius: 2px;
 }
 
 .diff-highlight-removed {
-  background-color: rgba(243, 139, 168, 0.35);
+  background-color: var(--color-diff-highlight-removed);
   border-radius: 2px;
 }

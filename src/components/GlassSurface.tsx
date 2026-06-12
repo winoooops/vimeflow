@@ -1,8 +1,9 @@
 import type { CSSProperties, HTMLAttributes, ReactElement } from 'react'
 
-// Lowest-surface tint (#0d0d1c) painted behind the blur. Kept as an RGB
-// triplet so the alpha can be tuned per-instance via `tintAlpha`.
-const GLASS_TINT_RGB = '13, 13, 28'
+// Semantic tint painted behind the blur: the lowest surface token, mixed with
+// transparency via `tintAlpha`. Using the theme var (not a raw rgba) keeps the
+// glass in step with live theme switching.
+const GLASS_TINT_VAR = 'var(--color-surface-container-lowest)'
 
 export interface GlassSurfaceProps extends HTMLAttributes<HTMLDivElement> {
   /**
@@ -20,7 +21,8 @@ export interface GlassSurfaceProps extends HTMLAttributes<HTMLDivElement> {
  * palette, diff popovers).
  *
  * It layers two things:
- *  1. a translucent lowest-surface tint — `rgba(13,13,28,<tintAlpha>)`, and
+ *  1. a translucent lowest-surface tint — the `surface-container-lowest` token
+ *     mixed with transparency by `tintAlpha`, and
  *  2. the global `glass-panel` utility from `src/index.css`
  *     (`backdrop-filter: blur(20px) saturate(150%)`).
  *
@@ -43,8 +45,10 @@ export const GlassSurface = ({
 }: GlassSurfaceProps): ReactElement => {
   // The tint lives on `backgroundColor` so the `glass-panel` utility only has
   // to own the blur; callers' `style` can still override/extend it.
+  const tintPercent = `${+(tintAlpha * 100).toFixed(4)}%`
+
   const mergedStyle: CSSProperties = {
-    backgroundColor: `rgba(${GLASS_TINT_RGB}, ${tintAlpha})`,
+    backgroundColor: `color-mix(in srgb, ${GLASS_TINT_VAR} ${tintPercent}, transparent)`,
     ...style,
   }
 

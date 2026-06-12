@@ -29,13 +29,13 @@ describe('Workspace Types', () => {
         name: 'My Project',
         abbreviation: 'My',
         path: '/home/user/my-project',
-        color: '#e2c7ff',
+        color: 'var(--color-primary)',
         sessions: [],
         createdAt: '2026-04-07T00:00:00Z',
         lastAccessedAt: '2026-04-07T00:00:00Z',
       }
 
-      expect(project.color).toBe('#e2c7ff')
+      expect(project.color).toBe('var(--color-primary)')
     })
   })
 

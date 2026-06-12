@@ -21,7 +21,12 @@ const firePointer = (
 describe('LiquidFill — bar mode geometry', () => {
   test('renders SVG with viewBox "0 0 22 110"', () => {
     const { container } = render(
-      <LiquidFill mode="bar" pct={50} color="#cba6f7" testId="lf" />
+      <LiquidFill
+        mode="bar"
+        pct={50}
+        color="var(--color-primary-container)"
+        testId="lf"
+      />
     )
     // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access -- SVG attributes are not reachable via a11y queries
     const svg = container.querySelector('svg')
@@ -33,7 +38,12 @@ describe('LiquidFill — bar mode geometry', () => {
 
   test('liquid-water-y-base wrapper translateY equals top + ambientAmp + 0.5', () => {
     const { container } = render(
-      <LiquidFill mode="bar" pct={50} color="#cba6f7" testId="lf" />
+      <LiquidFill
+        mode="bar"
+        pct={50}
+        color="var(--color-primary-container)"
+        testId="lf"
+      />
     )
 
     // pct=50 → liquidH=(110-4)*0.5=53 → top=57. ambientAmp = min(1.8, 22*0.09) = 1.8.
@@ -55,7 +65,14 @@ describe('LiquidFill — bar mode geometry', () => {
   })
 
   test('renders tick marks at 25/50/75', () => {
-    render(<LiquidFill mode="bar" pct={50} color="#cba6f7" testId="lf" />)
+    render(
+      <LiquidFill
+        mode="bar"
+        pct={50}
+        color="var(--color-primary-container)"
+        testId="lf"
+      />
+    )
 
     expect(screen.getByTestId('liquid-tick-25')).toBeInTheDocument()
     expect(screen.getByTestId('liquid-tick-50')).toBeInTheDocument()
@@ -63,7 +80,14 @@ describe('LiquidFill — bar mode geometry', () => {
   })
 
   test('renders two phase-offset wave paths in nested transform groups', () => {
-    render(<LiquidFill mode="bar" pct={50} color="#cba6f7" testId="lf" />)
+    render(
+      <LiquidFill
+        mode="bar"
+        pct={50}
+        color="var(--color-primary-container)"
+        testId="lf"
+      />
+    )
 
     const selA = '[data-testid="liquid-wave-shift-a"] path'
     const selB = '[data-testid="liquid-wave-shift-b"] path'
@@ -85,7 +109,7 @@ describe('LiquidFill — bar mode geometry', () => {
       <LiquidFill
         mode="bar"
         pct={50}
-        color="#cba6f7"
+        color="var(--color-primary-container)"
         testId="lf"
         className="some-class"
       />
@@ -98,7 +122,12 @@ describe('LiquidFill — bar mode geometry', () => {
 
   test('wave-A and wave-B paths are actually phase-offset (different d strings)', () => {
     const { container } = render(
-      <LiquidFill mode="bar" pct={50} color="#cba6f7" testId="lf" />
+      <LiquidFill
+        mode="bar"
+        pct={50}
+        color="var(--color-primary-container)"
+        testId="lf"
+      />
     )
 
     // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access -- SVG path attributes are not reachable via a11y queries
@@ -120,7 +149,12 @@ describe('LiquidFill — bar mode geometry', () => {
 
   test('wave path segment density scales with width so wide containers stay smooth', () => {
     const { container } = render(
-      <LiquidFill mode="bar" pct={50} color="#cba6f7" testId="lf" />
+      <LiquidFill
+        mode="bar"
+        pct={50}
+        color="var(--color-primary-container)"
+        testId="lf"
+      />
     )
 
     // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access -- SVG path attributes are not reachable via a11y queries
@@ -137,7 +171,12 @@ describe('LiquidFill — bar mode geometry', () => {
 
   test('wave path period equals width/4 (locks cycles=4 for seamless keyframe loop)', () => {
     const { container } = render(
-      <LiquidFill mode="bar" pct={50} color="#cba6f7" testId="lf" />
+      <LiquidFill
+        mode="bar"
+        pct={50}
+        color="var(--color-primary-container)"
+        testId="lf"
+      />
     )
     // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access -- SVG path attributes are not reachable via a11y queries
     const a = container.querySelector('[data-testid="liquid-water-y-a"] path')
@@ -169,7 +208,14 @@ describe('LiquidFill — bar mode geometry', () => {
 
 describe('LiquidFill — cursor hook integration', () => {
   test('pointermove on outer wrap sets data-interactive on slosh', async () => {
-    render(<LiquidFill mode="bar" pct={50} color="#cba6f7" testId="lf" />)
+    render(
+      <LiquidFill
+        mode="bar"
+        pct={50}
+        color="var(--color-primary-container)"
+        testId="lf"
+      />
+    )
     const wrap = screen.getByTestId('lf')
     Object.defineProperty(wrap, 'getBoundingClientRect', {
       value: () => ({
@@ -197,7 +243,12 @@ describe('LiquidFill — cursor hook integration', () => {
 describe('LiquidFill — sheen cy stability', () => {
   test('cy attribute is not re-committed by React when pct changes', () => {
     const { container, rerender } = render(
-      <LiquidFill mode="bar" pct={50} color="#cba6f7" testId="lf" />
+      <LiquidFill
+        mode="bar"
+        pct={50}
+        color="var(--color-primary-container)"
+        testId="lf"
+      />
     )
     // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access -- SVG attributes are not reachable via a11y queries
     const sheen = container.querySelector('[data-testid="liquid-sheen"]')
@@ -208,7 +259,14 @@ describe('LiquidFill — sheen cy stability', () => {
     sheen?.setAttribute('cy', '99.99')
 
     // Re-render with a different pct (water rose).
-    rerender(<LiquidFill mode="bar" pct={80} color="#cba6f7" testId="lf" />)
+    rerender(
+      <LiquidFill
+        mode="bar"
+        pct={80}
+        color="var(--color-primary-container)"
+        testId="lf"
+      />
+    )
 
     // The cy we wrote via setAttribute must NOT be overwritten by React's
     // commit. If React re-committed cy=geom.top, this would be a snapped
@@ -225,7 +283,12 @@ describe('LiquidFill — sheen cy stability', () => {
 describe('LiquidFill — baseFloor clamp at near-full pct (Round-3 F3)', () => {
   test('liquid-water-y-base wrapper translateY does not exceed h=110 at pct=1', () => {
     const { container } = render(
-      <LiquidFill mode="bar" pct={1} color="#cba6f7" testId="lf-f3" />
+      <LiquidFill
+        mode="bar"
+        pct={1}
+        color="var(--color-primary-container)"
+        testId="lf-f3"
+      />
     )
 
     // At pct=1 (w=22, h=110):
@@ -261,7 +324,7 @@ describe('LiquidFill — fill mode', () => {
       <LiquidFill
         mode="fill"
         pct={50}
-        color="#cba6f7"
+        color="var(--color-primary-container)"
         testId="lf-fill"
         className="h-full w-full"
       />
@@ -284,7 +347,7 @@ describe('LiquidFill — fill mode', () => {
       <LiquidFill
         mode="fill"
         pct={50}
-        color="#cba6f7"
+        color="var(--color-primary-container)"
         testId="lf-fill"
         className="h-full w-full"
       />
@@ -299,7 +362,7 @@ describe('LiquidFill — fill mode', () => {
       <LiquidFill
         mode="fill"
         pct={50}
-        color="#cba6f7"
+        color="var(--color-primary-container)"
         testId="lf-fill-vis"
         className="h-full w-full"
       />
@@ -320,16 +383,29 @@ describe('LiquidFill — fill mode', () => {
 describe('LiquidFill — glow prop', () => {
   test('SVG has drop-shadow filter when glow=true', () => {
     const { container } = render(
-      <LiquidFill mode="bar" pct={50} color="#cba6f7" glow testId="lf-glow" />
+      <LiquidFill
+        mode="bar"
+        pct={50}
+        color="var(--color-primary-container)"
+        glow
+        testId="lf-glow"
+      />
     )
     // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access -- SVG attributes are not reachable via a11y queries
     const svg = container.querySelector('svg') as SVGElement
-    expect(svg.style.filter).toMatch(/drop-shadow\(.*#cba6f7/)
+    expect(svg.style.filter).toMatch(
+      /drop-shadow\(.*var\(--color-primary-container\)/
+    )
   })
 
   test('SVG has no filter when glow is omitted', () => {
     const { container } = render(
-      <LiquidFill mode="bar" pct={50} color="#cba6f7" testId="lf-no-glow" />
+      <LiquidFill
+        mode="bar"
+        pct={50}
+        color="var(--color-primary-container)"
+        testId="lf-no-glow"
+      />
     )
     // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access -- SVG attributes are not reachable via a11y queries
     const svg = container.querySelector('svg') as SVGElement
@@ -341,7 +417,7 @@ describe('LiquidFill — glow prop', () => {
       <LiquidFill
         mode="bar"
         pct={50}
-        color="#cba6f7"
+        color="var(--color-primary-container)"
         glow
         testId="lf-glow-mix"
       />
@@ -349,9 +425,9 @@ describe('LiquidFill — glow prop', () => {
     // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access -- SVG attributes are not reachable via a11y queries
     const svg = container.querySelector('svg') as SVGElement
     expect(svg.style.filter).toContain(
-      'color-mix(in srgb, #cba6f7 25%, transparent)'
+      'color-mix(in srgb, var(--color-primary-container) 25%, transparent)'
     )
-    // Ensure the old hex-alpha form is NOT present
-    expect(svg.style.filter).not.toContain('#cba6f740')
+    // Ensure the old hex-alpha form is NOT present (color-mix must be used)
+    expect(svg.style.filter).not.toMatch(/#[0-9a-f]{8}/i)
   })
 })

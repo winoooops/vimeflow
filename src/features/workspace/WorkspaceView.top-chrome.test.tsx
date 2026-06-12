@@ -314,7 +314,7 @@ describe('WorkspaceView – top chrome (main-stage handoff J2–J6)', () => {
     expect(chromeClasses).toContain('shrink-0')
     expect(chromeClasses).toContain('bg-surface-container-lowest')
     expect(chromeClasses).toContain('border-b')
-    expect(chromeClasses).toContain('border-[rgba(74,68,79,0.25)]')
+    expect(chromeClasses).toContain('border-outline-variant/25')
     expect(chromeClasses).not.toContain('glass-panel')
     expect(chromeClasses).not.toContain('opacity-0')
     expect(chromeClasses).not.toContain('absolute')

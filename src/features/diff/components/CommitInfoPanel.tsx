@@ -82,7 +82,7 @@ const CommitInfoPanel = ({
     <aside
       role="complementary"
       aria-label="Commit info panel"
-      className={`w-[320px] h-screen fixed right-0 top-0 bg-[#1a1a2a] border-l border-[#4a444f]/15 z-40 overflow-y-auto thin-scrollbar transition-all duration-300 ${
+      className={`w-[320px] h-screen fixed right-0 top-0 bg-surface-container-low border-l border-outline-variant/15 z-40 overflow-y-auto transition-all duration-300 ${
         isOpen ? '' : 'translate-x-full'
       }`}
     >

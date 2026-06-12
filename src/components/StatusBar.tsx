@@ -55,50 +55,51 @@ interface ContextPresentation {
 }
 
 const separatorStyle = {
-  color: 'color-mix(in srgb, var(--outline-variant) 70%, transparent)',
+  color: 'color-mix(in srgb, var(--color-outline-variant) 70%, transparent)',
 } satisfies CSSProperties
 
 const barStyle = {
-  borderTopColor: 'color-mix(in srgb, var(--outline-variant) 20%, transparent)',
+  borderTopColor:
+    'color-mix(in srgb, var(--color-outline-variant) 20%, transparent)',
 } satisfies CSSProperties
 
 // Main-stage handoff J7: compact transparent icon buttons — hover fill
 // only, never a persistent background.
 const ACTION_BUTTON_BASE =
-  'inline-flex h-[18px] w-[22px] cursor-pointer items-center justify-center rounded-[5px] transition-colors duration-[140ms] focus-visible:outline-none focus-visible:shadow-[var(--ring-primary)]'
+  'inline-flex h-[18px] w-[22px] cursor-pointer items-center justify-center rounded-[5px] transition-colors duration-[140ms] focus-visible:outline-none focus-visible:shadow-[var(--shadow-ring-primary)]'
 
 const ACTION_BUTTON_IDLE =
-  'text-[#9b93ab] hover:bg-[rgba(226,199,255,0.1)] hover:text-[var(--primary)]'
+  'text-on-surface-muted hover:bg-primary/10 hover:text-primary'
 
 const normalizePct = (pct: number): number =>
   Math.min(100, Math.max(0, Math.round(pct)))
 
 const contextPresentation = (pct: number): ContextPresentation => {
   if (pct < 50) {
-    return { face: '😊', toneClass: 'text-[var(--success)]' }
+    return { face: '😊', toneClass: 'text-success' }
   }
 
   if (pct < 75) {
-    return { face: '😐', toneClass: 'text-[var(--on-surface-variant)]' }
+    return { face: '😐', toneClass: 'text-on-surface-variant' }
   }
 
   if (pct < 90) {
-    return { face: '😟', toneClass: 'text-[var(--tertiary)]' }
+    return { face: '😟', toneClass: 'text-tertiary' }
   }
 
-  return { face: '🥵', toneClass: 'text-[var(--error)]' }
+  return { face: '🥵', toneClass: 'text-error' }
 }
 
 const cacheToneClass = (rate: number): string => {
   if (rate >= 70) {
-    return 'text-[var(--success-muted)]'
+    return 'text-success'
   }
 
   if (rate >= 40) {
-    return 'text-[var(--primary)]'
+    return 'text-primary'
   }
 
-  return 'text-[var(--tertiary)]'
+  return 'text-tertiary'
 }
 
 const cacheRate = (cache: StatusBarCache | undefined): number | null => {
@@ -189,7 +190,7 @@ const buildSegments = ({
             <span
               data-testid="status-bar-burner"
               className="inline-flex items-center gap-1 whitespace-nowrap"
-              style={{ color: '#f0c674' }}
+              style={{ color: 'var(--color-agent-shell-accent)' }}
             >
               <span
                 aria-hidden="true"
@@ -213,7 +214,7 @@ const buildSegments = ({
       node: (
         <span
           data-testid="status-bar-duration"
-          className="inline-flex items-center gap-[4px] whitespace-nowrap text-[var(--on-surface-variant)] max-[760px]:hidden"
+          className="inline-flex items-center gap-[4px] whitespace-nowrap text-on-surface-variant max-[760px]:hidden"
         >
           <MaterialIcon name="schedule" />
           <span>{session.startedAgo}</span>
@@ -252,7 +253,7 @@ const buildSegments = ({
           </span>
           <span
             data-testid="status-bar-cache-label"
-            className="text-[var(--on-surface-muted)] max-[760px]:hidden"
+            className="text-on-surface-muted max-[760px]:hidden"
           >
             cached
           </span>
@@ -267,7 +268,7 @@ const buildSegments = ({
       node: (
         <span
           data-testid="status-bar-turns"
-          className="whitespace-nowrap text-[var(--on-surface-muted)] max-[760px]:hidden"
+          className="whitespace-nowrap text-on-surface-muted max-[760px]:hidden"
         >
           <span className="tabular-nums">{session.turns}</span> turns
         </span>
@@ -284,12 +285,12 @@ const buildSegments = ({
           className="inline-flex whitespace-nowrap font-semibold tabular-nums"
         >
           {session.changes.added > 0 && (
-            <span className="text-[var(--success-muted)]">
+            <span className="text-success">
               +{formatCompactCount(session.changes.added)}
             </span>
           )}
           {session.changes.removed > 0 && (
-            <span className="text-[var(--tertiary)]">
+            <span className="text-tertiary">
               −{formatCompactCount(session.changes.removed)}
             </span>
           )}
@@ -320,7 +321,7 @@ export const StatusBar = ({
       data-testid="status-bar"
       aria-label="App status"
       style={barStyle}
-      className="flex h-[var(--status-bar-h)] shrink-0 items-center gap-x-[14px] border-t border-solid bg-[var(--surface-container-lowest)] px-[12px] font-mono text-[10px] text-[var(--on-surface-muted)] tabular-nums"
+      className="flex h-[var(--status-bar-h)] shrink-0 items-center gap-x-[14px] border-t border-solid bg-surface-container-lowest px-[12px] font-mono text-[10px] text-on-surface-muted tabular-nums"
     >
       <span
         data-testid="status-bar-actions"
@@ -360,7 +361,7 @@ export const StatusBar = ({
             onClick={onToggleDock}
             className={`${ACTION_BUTTON_BASE} ${
               dockOpen
-                ? 'text-[var(--success-muted)] hover:bg-[rgba(125,239,161,0.08)]'
+                ? 'text-success hover:bg-success/[0.08]'
                 : ACTION_BUTTON_IDLE
             }`}
           >

@@ -932,11 +932,41 @@ export const WorkspaceView = (): ReactElement => {
     [sessions]
   )
 
+  // Preferred burner sync targets from the active agent's structured cwd.
+  // This captures agent-driven worktree moves that may not be reflected in the
+  // host shell's pwd yet; `useBurnerTerminals` falls back to `livePaneCwds`.
+  const agentPaneCwds = useMemo(() => {
+    if (
+      !activeSessionId ||
+      !activePtyBackedPaneId ||
+      !activePtyBackedPanePtyId ||
+      !agentCwd ||
+      agentStatus.sessionId !== activePtyBackedPanePtyId ||
+      !agentIsActive ||
+      agentHasExited ||
+      !isActivePaneLive
+    ) {
+      return new Map<string, string>()
+    }
+
+    return new Map([[`${activeSessionId}:${activePtyBackedPaneId}`, agentCwd]])
+  }, [
+    activeSessionId,
+    activePtyBackedPaneId,
+    activePtyBackedPanePtyId,
+    agentCwd,
+    agentHasExited,
+    agentIsActive,
+    agentStatus.sessionId,
+    isActivePaneLive,
+  ])
+
   const {
     renderNode: burnerTerminalNode,
     toggle: toggleBurner,
     runningByPane: runningBurnerByPane,
     activeByPane: activeBurnerByPane,
+    hasVisibleBurner,
   } = useBurnerTerminals({
     service: terminalService,
     resolveFocusedPane,
@@ -946,6 +976,7 @@ export const WorkspaceView = (): ReactElement => {
     livePaneKeys,
     dropAllForPty,
     livePaneCwds,
+    agentPaneCwds,
   })
 
   // Stable wrapper for the `:burner` palette command so the command-list memo
@@ -1649,6 +1680,7 @@ export const WorkspaceView = (): ReactElement => {
     terminalFitDeferred ||
     showUnsavedDialog ||
     commandPalette.state.isOpen ||
+    hasVisibleBurner ||
     paneRenameNode !== null ||
     fileError !== null ||
     infoMessage !== null
@@ -1803,7 +1835,7 @@ export const WorkspaceView = (): ReactElement => {
             shouldRestoreSidebarToggleFocusRef.current = true
             setCompactSidebarOpen(false)
           }}
-          className="fixed inset-0 z-20 cursor-default bg-background/55 backdrop-blur-[2px]"
+          className="fixed inset-0 z-20 cursor-default bg-surface/55 backdrop-blur-[2px]"
         />
       )}
 
@@ -1961,7 +1993,7 @@ export const WorkspaceView = (): ReactElement => {
         ref={mainWorkspaceRef}
         data-testid="workspace-main"
         aria-label="Main workspace"
-        className="relative flex flex-col overflow-hidden bg-background"
+        className="relative flex flex-col overflow-hidden bg-surface"
         inert={isCompactViewport && !isSidebarClosed ? true : undefined}
         aria-hidden={isCompactViewport && !isSidebarClosed ? true : undefined}
         style={{
@@ -1985,7 +2017,7 @@ export const WorkspaceView = (): ReactElement => {
             frosted-glass treatment now lives in <GlassSurface>. */}
         <div
           data-testid="top-chrome"
-          className="relative flex h-[44px] shrink-0 items-center gap-[12px] border-b border-[rgba(74,68,79,0.25)] bg-surface-container-lowest pl-[14px] pr-[14px]"
+          className="relative flex h-[44px] shrink-0 items-center gap-[12px] border-b border-outline-variant/25 bg-surface-container-lowest pl-[14px] pr-[14px]"
         >
           <span className="min-w-[10px] flex-1" />
 
@@ -2000,7 +2032,7 @@ export const WorkspaceView = (): ReactElement => {
                   type="button"
                   aria-label="Configure displayed layouts"
                   title="Configure displayed layouts"
-                  className="inline-flex h-5 w-6 items-center justify-center rounded text-on-surface-muted transition-colors hover:bg-[rgba(226,199,255,0.08)] hover:text-primary"
+                  className="inline-flex h-5 w-6 items-center justify-center rounded text-on-surface-muted transition-colors hover:bg-primary/[0.08] hover:text-primary"
                 >
                   <svg
                     width="14"

@@ -92,7 +92,7 @@ export const LayoutSwitcher = ({
         <span
           aria-hidden="true"
           data-testid="layout-switcher-divider"
-          className="mx-0.5 h-[14px] w-px shrink-0 bg-[rgba(74,68,79,0.5)]"
+          className="mx-0.5 h-[14px] w-px shrink-0 bg-outline-variant/50"
         />
         {trailing}
       </>

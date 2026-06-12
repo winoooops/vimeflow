@@ -1,0 +1,102 @@
+/* GENERATED defaults — single source of truth is
+ * src/theme/themes/obsidian-lens.ts; themeCss.test.ts keeps this
+ * block in sync. Regenerate: npx tsx scripts/generate-theme-css.ts
+ * && npx prettier --write src/theme/theme.css
+ *
+ * NOTE: Tailwind bakes --shadow-* values into shadow-* utilities at
+ * build time — those do NOT re-theme at runtime. Consume themed
+ * shadows via var(--shadow-…) (arbitrary value or inline style). */
+@theme static {
+  --color-surface: #121221;
+  --color-surface-container-lowest: #0d0d1c;
+  --color-surface-container-low: #1a1a2a;
+  --color-surface-container: #1e1e2e;
+  --color-surface-container-high: #292839;
+  --color-surface-container-highest: #333344;
+  --color-surface-bright: #383849;
+  --color-surface-tint: #d9b9ff;
+  --color-browser-bar: #121226;
+  --color-browser-tab-active: #23233b;
+  --color-primary: #e2c7ff;
+  --color-primary-container: #cba6f7;
+  --color-primary-dim: #d3b9f0;
+  --color-primary-deep: #57377f;
+  --color-on-primary: #3f1e66;
+  --color-secondary: #a8c8ff;
+  --color-secondary-container: #124988;
+  --color-secondary-dim: #c39eee;
+  --color-on-secondary: #003062;
+  --color-on-secondary-container: #8fbaff;
+  --color-tertiary: #ff94a5;
+  --color-tertiary-container: #fd7e94;
+  --color-on-tertiary: #3a2e2b;
+  --color-on-tertiary-container: #524442;
+  --color-error: #ffb4ab;
+  --color-error-container: #93000a;
+  --color-error-dim: #d73357;
+  --color-on-error: #690005;
+  --color-on-error-container: #ffdad6;
+  --color-success: #50fa7b;
+  --color-success-muted: #7defa1;
+  --color-warning: #fab387;
+  --color-on-surface: #e3e0f7;
+  --color-on-surface-variant: #cdc3d1;
+  --color-on-surface-muted: #8a8299;
+  --color-outline: #968e9a;
+  --color-outline-variant: #4a444f;
+  --color-editor-fg: #cdd6f4;
+  --color-editor-fg-dim: #a6adc8;
+  --color-vcs-modified: #fbbf24;
+  --color-vcs-added: #34d399;
+  --color-vcs-deleted: #f87171;
+  --color-vcs-renamed: #22d3ee;
+  --color-vcs-untracked: #c084fc;
+  --color-glass-fill: rgba(30, 30, 46, 0.88);
+  --color-selection: rgba(203, 166, 247, 0.3);
+  --color-scrollbar-thumb: #333344;
+  --color-scrollbar-thumb-hover: #4a444f;
+  --color-diff-added: rgba(166, 227, 161, 0.15);
+  --color-diff-removed: rgba(243, 139, 168, 0.15);
+  --color-diff-highlight-added: rgba(166, 227, 161, 0.35);
+  --color-diff-highlight-removed: rgba(243, 139, 168, 0.35);
+  --color-wash-faint: rgba(255, 255, 255, 0.04);
+  --color-wash-subtle: rgba(255, 255, 255, 0.05);
+  --color-wash-soft: rgba(255, 255, 255, 0.08);
+  --color-scrim: #000000;
+  --color-syn-keyword: #cba6f7;
+  --color-syn-string: #a6e3a1;
+  --color-syn-fn: #89b4fa;
+  --color-syn-variable: #f5e0dc;
+  --color-syn-comment: #6c7086;
+  --color-syn-type: #fab387;
+  --color-syn-tag: #f38ba8;
+  --color-syn-class: #f9e2af;
+  --color-syn-operator: #89dceb;
+  --color-agent-claude-accent: #cba6f7;
+  --color-agent-claude-accent-dim: rgb(203 166 247 / 0.16);
+  --color-agent-claude-accent-soft: rgb(203 166 247 / 0.32);
+  --color-agent-claude-on-accent: #2a1646;
+  --color-agent-codex-accent: #7defa1;
+  --color-agent-codex-accent-dim: rgb(125 239 161 / 0.16);
+  --color-agent-codex-accent-soft: rgb(125 239 161 / 0.32);
+  --color-agent-codex-on-accent: #0a2415;
+  --color-agent-gemini-accent: #a8c8ff;
+  --color-agent-gemini-accent-dim: rgb(168 200 255 / 0.16);
+  --color-agent-gemini-accent-soft: rgb(168 200 255 / 0.32);
+  --color-agent-gemini-on-accent: #0e1c33;
+  --color-agent-shell-accent: #f0c674;
+  --color-agent-shell-accent-dim: rgb(240 198 116 / 0.14);
+  --color-agent-shell-accent-soft: rgb(240 198 116 / 0.3);
+  --color-agent-shell-on-accent: #2a1f08;
+  --color-agent-browser-accent: #4fc8d6;
+  --color-agent-browser-accent-dim: rgb(79 200 214 / 0.16);
+  --color-agent-browser-accent-soft: rgb(79 200 214 / 0.3);
+  --color-agent-browser-on-accent: #06232a;
+  --shadow-pane-focus:
+    0 0 0 6px rgb(203 166 247 / 0.16), 0 8px 32px rgb(0 0 0 / 0.35);
+  --shadow-modal: 0 24px 80px rgb(0 0 0 / 0.5);
+  --shadow-pip-glow: 0 0 4px currentColor;
+  --shadow-ambient: 0 10px 40px rgba(0, 0, 0, 0.4);
+  --shadow-glow-primary: 0 0 24px rgba(203, 166, 247, 0.35);
+  --shadow-ring-primary: 0 0 0 3px rgba(203, 166, 247, 0.28);
+}

@@ -6,6 +6,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- 运行时主题系统：Obsidian Lens（深色，默认）与 Flexoki（浅色）现可通过命令面板（`:theme <名称>`）即时切换，无需重启应用。终端（xterm.js）、代码编辑器（CodeMirror）以及 Diff 查看器（Pierre）均通过各自的桥接适配器实时换肤。所有原先硬编码的十六进制颜色已迁移为语义化 CSS 变量 token，统一定义于 `src/theme/themes/*.ts`，并由 `src/theme/service.ts` 在运行时应用。新增 ESLint 规则 `vimeflow/no-hardcoded-colors` 与 CSS 守卫测试，防止颜色回归。规格文档：[`docs/superpowers/specs/2026-06-11-theme-system-design.md`](./docs/superpowers/specs/2026-06-11-theme-system-design.md)。
+
 ### Changed
 
 - 将英文和中文 README 缩短为当前 `0.1.0` 版本线的源码构建指南，并把更深入的实现细节改为通过引用文档进入。

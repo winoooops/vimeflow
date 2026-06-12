@@ -644,7 +644,7 @@ describe('WorkspaceView', () => {
     expect(dialog).toHaveTextContent(/before closing this session/i)
     expect(within(dialog).getByText('src/current.ts')).toBeInTheDocument()
     expect(activeRow.closest('li')!.className).toContain(
-      'bg-[rgba(203,166,247,0.13)]'
+      'bg-primary-container/15'
     )
     expect(releaseScope).not.toHaveBeenCalled()
   })
@@ -714,7 +714,7 @@ describe('WorkspaceView', () => {
     await waitFor(() => {
       expect(
         screen.getByRole('button', { name: 'first' }).closest('li')!.className
-      ).toContain('bg-[rgba(203,166,247,0.13)]')
+      ).toContain('bg-primary-container/15')
     })
     expect(screen.getByRole('button', { name: 'second' })).toBeInTheDocument()
   })
@@ -788,7 +788,7 @@ describe('WorkspaceView', () => {
 
     expect(
       screen.getByRole('button', { name: 'first' }).closest('li')!.className
-    ).toContain('bg-[rgba(203,166,247,0.13)]')
+    ).toContain('bg-primary-container/15')
 
     expect(screen.getByRole('button', { name: 'third' })).toBeInTheDocument()
     expect(releaseScope).toHaveBeenCalledWith('second')
@@ -884,7 +884,7 @@ describe('WorkspaceView', () => {
 
       expect(
         screen.getByRole('button', { name: 'first' }).closest('li')!.className
-      ).toContain('bg-[rgba(203,166,247,0.13)]')
+      ).toContain('bg-primary-container/15')
 
       expect(screen.getByRole('button', { name: 'third' })).toBeInTheDocument()
       expect(releaseScope).toHaveBeenCalledWith('second')
@@ -1033,7 +1033,7 @@ describe('WorkspaceView', () => {
     await waitFor(() => {
       expect(
         screen.getByRole('button', { name: 'third' }).closest('li')!.className
-      ).toContain('bg-[rgba(203,166,247,0.13)]')
+      ).toContain('bg-primary-container/15')
     })
   })
 
@@ -1101,7 +1101,7 @@ describe('WorkspaceView', () => {
     await waitFor(() => {
       expect(
         screen.getByRole('button', { name: 'third' }).closest('li')!.className
-      ).toContain('bg-[rgba(203,166,247,0.13)]')
+      ).toContain('bg-primary-container/15')
     })
   })
 
@@ -1195,9 +1195,7 @@ describe('WorkspaceView', () => {
     const row = await screen.findByRole('button', { name: 'session 1' })
 
     expect(screen.queryByTestId('session-tabs')).toBeNull()
-    expect(row.closest('li')!.className).toContain(
-      'bg-[rgba(203,166,247,0.13)]'
-    )
+    expect(row.closest('li')!.className).toContain('bg-primary-container/15')
   })
 
   test('renders AgentStatusPanel', () => {
@@ -1230,7 +1228,7 @@ describe('WorkspaceView', () => {
     })
     const listItem = firstSession.closest('li')!
     // Active row uses the flat lavender fill per the session-list handoff.
-    expect(listItem.className).toContain('bg-[rgba(203,166,247,0.13)]')
+    expect(listItem.className).toContain('bg-primary-container/15')
   })
 
   test('renders FileExplorer in sidebar', () => {
@@ -1516,7 +1514,7 @@ describe('WorkspaceView', () => {
     const workspaceView = screen.getByTestId('workspace-view')
     const mainWorkspace = workspaceView.children[1] as HTMLElement
 
-    expect(mainWorkspace).toHaveClass('bg-background')
+    expect(mainWorkspace).toHaveClass('bg-surface')
     expect(mainWorkspace.style.borderTopLeftRadius).toBe('16px')
     expect(mainWorkspace.style.borderBottomLeftRadius).toBe('16px')
     // No drop shadow: it would read as a dark gradient seam against the
@@ -1541,7 +1539,7 @@ describe('WorkspaceView', () => {
       name: 'session 1',
     })
     expect(firstSession.closest('li')!.className).toContain(
-      'bg-[rgba(203,166,247,0.13)]'
+      'bg-primary-container/15'
     )
 
     const newSessionButton = within(screen.getByTestId('sidebar')).getByRole(
@@ -1554,11 +1552,11 @@ describe('WorkspaceView', () => {
       name: 'session 2',
     })
     expect(secondSession.closest('li')!.className).toContain(
-      'bg-[rgba(203,166,247,0.13)]'
+      'bg-primary-container/15'
     )
 
     expect(firstSession.closest('li')!.className).not.toContain(
-      'bg-[rgba(203,166,247,0.13)]'
+      'bg-primary-container/15'
     )
   })
 

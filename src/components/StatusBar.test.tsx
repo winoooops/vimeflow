@@ -31,7 +31,7 @@ describe('StatusBar', () => {
 
     const bar = screen.getByTestId('status-bar')
     expect(bar).toHaveClass('h-[var(--status-bar-h)]')
-    expect(bar).toHaveClass('bg-[var(--surface-container-lowest)]')
+    expect(bar).toHaveClass('bg-surface-container-lowest')
     expect(bar).toHaveClass('border-t')
     expect(bar).not.toHaveClass('flex-wrap')
 
@@ -68,7 +68,7 @@ describe('StatusBar', () => {
     // The native title is replaced by the Zed-style Tooltip (covered below).
     expect(palette).not.toHaveAttribute('title')
     expect(staticBgClasses(palette)).toEqual([])
-    expect(palette.className).toContain('hover:bg-[rgba(226,199,255,0.1)]')
+    expect(palette.className).toContain('hover:bg-primary/10')
     expect(palette.className).toContain('rounded-[5px]')
 
     const dockToggle = screen.getByTestId('status-bar-dock-toggle')
@@ -104,16 +104,16 @@ describe('StatusBar', () => {
     const closedToggle = screen.getByTestId('status-bar-dock-toggle')
     expect(closedToggle).toHaveAttribute('aria-pressed', 'false')
     expect(closedToggle).toHaveAccessibleName('Show editor & diff panel')
-    expect(closedToggle.className).toContain('text-[#9b93ab]')
-    expect(closedToggle.className).not.toContain('text-[var(--success-muted)]')
+    expect(closedToggle.className).toContain('text-on-surface-muted')
+    expect(closedToggle.className).not.toContain('text-success')
 
     rerender(<StatusBar {...defaultProps} dockOpen />)
 
     const openToggle = screen.getByTestId('status-bar-dock-toggle')
     expect(openToggle).toHaveAttribute('aria-pressed', 'true')
     expect(openToggle).toHaveAccessibleName('Hide editor & diff panel')
-    expect(openToggle.className).toContain('text-[var(--success-muted)]')
-    expect(openToggle.className).toContain('hover:bg-[rgba(125,239,161,0.08)]')
+    expect(openToggle.className).toContain('text-success')
+    expect(openToggle.className).toContain('hover:bg-success/[0.08]')
     expect(staticBgClasses(openToggle)).toEqual([])
   })
 
@@ -180,24 +180,24 @@ describe('StatusBar', () => {
     })
 
     expect(screen.getByTestId('status-bar-context')).toHaveTextContent('🥵94%')
-    expect(screen.getByText('94%')).toHaveClass('text-[var(--error)]')
+    expect(screen.getByText('94%')).toHaveClass('text-error')
     expect(screen.getByTestId('status-bar-cache-rate')).toHaveTextContent('35%')
 
     expect(screen.getByTestId('status-bar-cache-rate')).toHaveClass(
-      'text-[var(--tertiary)]'
+      'text-tertiary'
     )
 
     expect(screen.getByTestId('status-bar-diff')).toHaveTextContent('+540−1.2k')
   })
 
-  test('maps the warm cache and diff additions to the soft success green', () => {
+  test('maps the warm cache and diff additions to the success token', () => {
     renderStatusBar()
 
-    // Handoff token: #7defa1 (success-muted), not the bright #50fa7b.
+    // Theme token: the semantic success color (set during the #424 migration).
     expect(screen.getByTestId('status-bar-cache-rate')).toHaveClass(
-      'text-[var(--success-muted)]'
+      'text-success'
     )
-    expect(screen.getByText('+212')).toHaveClass('text-[var(--success-muted)]')
+    expect(screen.getByText('+212')).toHaveClass('text-success')
   })
 
   test('renders only the additions span when nothing was removed', () => {

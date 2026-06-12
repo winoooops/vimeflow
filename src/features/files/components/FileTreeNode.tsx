@@ -61,15 +61,15 @@ const getFileIcon = (filename: string, customIcon?: string): string => {
 const getGitStatusColor = (status: GitStatus): string => {
   switch (status) {
     case 'modified':
-      return 'text-amber-400'
+      return 'text-vcs-modified'
     case 'added':
-      return 'text-emerald-400'
+      return 'text-vcs-added'
     case 'deleted':
-      return 'text-red-400'
+      return 'text-vcs-deleted'
     case 'renamed':
-      return 'text-cyan-400'
+      return 'text-vcs-renamed'
     case 'untracked':
-      return 'text-purple-400'
+      return 'text-vcs-untracked'
   }
 }
 
@@ -107,7 +107,7 @@ export const FileTreeNode = ({
   return (
     <div role="treeitem" aria-expanded={isFolder ? isExpanded : undefined}>
       <div
-        className="group flex h-7 cursor-pointer items-center gap-1.5 rounded px-1 text-on-surface/80 transition-colors hover:bg-white/5"
+        className="group flex h-7 cursor-pointer items-center gap-1.5 rounded px-1 text-on-surface/80 transition-colors hover:bg-wash-subtle"
         style={{ paddingLeft: `${indent + 4}px` }}
         onClick={handleClick}
         onContextMenu={handleContextMenu}
@@ -132,7 +132,7 @@ export const FileTreeNode = ({
           className={`material-symbols-outlined text-sm ${
             isFolder
               ? isExpanded
-                ? 'text-sky-400'
+                ? 'text-secondary'
                 : 'text-on-surface/50'
               : 'text-on-surface/40'
           }`}

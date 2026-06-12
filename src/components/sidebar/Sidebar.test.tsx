@@ -8,12 +8,15 @@ describe('Sidebar — slot composition', () => {
     expect(screen.getByTestId('sidebar')).toBeInTheDocument()
   })
 
-  test('root surface is transparent so the sidebar blends into its parent', () => {
+  test('root surface is the recessed chrome shade — darker than the canvas', () => {
+    // Zone hierarchy: left sidebar + top tabs strip + status bar share the
+    // chrome shade (surface-container-lowest); main canvas + activity panel
+    // share `surface`. The sidebar must NOT inherit the canvas color.
     render(<Sidebar content={<div>content</div>} />)
 
     const root = screen.getByTestId('sidebar')
-    expect(root).toHaveClass('bg-transparent')
-    expect(root).not.toHaveClass('bg-surface-container-low')
+    expect(root).toHaveClass('bg-surface-container-lowest')
+    expect(root).not.toHaveClass('bg-transparent')
   })
 
   test('renders the header slot when provided', () => {
@@ -164,7 +167,7 @@ describe('Sidebar — resize handle', () => {
   })
 })
 
-describe('Sidebar — separator keyboard a11y (closes #180)', () => {
+describe('Sidebar — separator keyboard a11y (issue VIM-180)', () => {
   // Imports lazy-loaded so the slot-composition tests above don't pay
   // the userEvent setup cost. Keep the new keyboard tests grouped.
   test('separator is focusable (tabIndex=0) and exposes aria-label', () => {

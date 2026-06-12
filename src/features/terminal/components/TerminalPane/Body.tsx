@@ -15,7 +15,8 @@ import { FitAddon } from '@xterm/addon-fit'
 import { WebglAddon } from '@xterm/addon-webgl'
 import { CanvasAddon } from '@xterm/addon-canvas'
 // WebGL→Canvas2D→DOM renderer chain keeps customGlyphs active for block-element glyphs (see PR #228).
-import { catppuccinMocha, toXtermTheme } from '../../theme/catppuccin-mocha'
+import { themeService } from '../../../../theme'
+import { toXtermTheme } from '../../theme/toXtermTheme'
 import {
   useTerminal,
   type RestoreData,
@@ -609,7 +610,7 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
         cursorBlink: true,
         fontSize: TERMINAL_FONT_SIZE,
         fontFamily: TERMINAL_FONT_FAMILY,
-        theme: toXtermTheme(catppuccinMocha),
+        theme: toXtermTheme(themeService.current().terminal),
         scrollback: 10000,
         allowProposedApi: true,
       })

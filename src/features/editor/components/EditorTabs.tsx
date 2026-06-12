@@ -48,7 +48,7 @@ export const EditorTabs = ({
                 ${
                   isActive
                     ? 'bg-surface text-on-surface border-t-2 border-primary'
-                    : 'text-on-surface-variant/60 hover:bg-surface-variant/20'
+                    : 'text-on-surface-variant/60 hover:bg-surface-container-highest/20'
                 }
               `}
             >
@@ -62,7 +62,7 @@ export const EditorTabs = ({
               <button
                 onClick={(e) => handleCloseClick(e, tab.id)}
                 aria-label={`Close ${tab.fileName}`}
-                className="material-symbols-outlined text-[10px] ml-2 hover:bg-surface-variant rounded-full p-0.5 transition-colors"
+                className="material-symbols-outlined text-[10px] ml-2 hover:bg-surface-container-highest rounded-full p-0.5 transition-colors"
               >
                 close
               </button>

@@ -175,7 +175,7 @@ describe('WorkspaceView Integration Tests', () => {
       // is the surface that reflects the active session.
       await waitFor(() => {
         expect(clickedSession.closest('li')!.className).toContain(
-          'bg-[rgba(203,166,247,0.13)]'
+          'bg-primary-container/15'
         )
       })
       // Terminal zone is still mounted (sanity check) — its panes follow
@@ -235,7 +235,7 @@ describe('WorkspaceView Integration Tests', () => {
       // active session instead.
 
       expect(sessionButtons[0].closest('li')!.className).toContain(
-        'bg-[rgba(203,166,247,0.13)]'
+        'bg-primary-container/15'
       )
       expect(screen.queryByTestId('session-tabs')).toBeNull()
 
@@ -317,9 +317,9 @@ describe('WorkspaceView Integration Tests', () => {
       // Diff tab should have active styling
       const diffButton = diffTab.closest('button')
       expect(diffButton).toHaveClass('rounded-md')
-      expect(diffButton).toHaveClass('bg-[rgba(226,199,255,0.08)]')
-      expect(diffButton).toHaveClass('border-[rgba(203,166,247,0.3)]')
-      expect(diffButton).toHaveClass('text-[#e2c7ff]')
+      expect(diffButton).toHaveClass('bg-primary/[0.08]')
+      expect(diffButton).toHaveClass('border-primary-container/30')
+      expect(diffButton).toHaveClass('text-primary')
     })
   })
 

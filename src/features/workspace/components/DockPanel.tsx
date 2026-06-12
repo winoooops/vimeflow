@@ -244,9 +244,9 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
       ? { height: `${verticalSize}px` }
       : { width: `${horizontalSize}px` }
 
-    // Border edge varies by position; color literals are kept static so
-    // Tailwind JIT can scan and emit both border-[#cba6f7] and
-    // border-[rgba(74,68,79,0.3)] in the production CSS bundle.
+    // Border edge varies by position; semantic token classes are kept static so
+    // Tailwind JIT can scan and emit both border-primary-container and
+    // border-outline-variant/30 in the production CSS bundle.
     const borderEdge =
       position === 'top'
         ? 'border-b'
@@ -257,11 +257,10 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
             : 'border-l'
 
     // The dock keeps a neutral separator edge in BOTH focus states. The active
-    // terminal pane already owns the agent-accent focus highlight (lavender for
-    // Claude — the same hue this used), and focusing the dock dims the panes, so
-    // a second bright lavender outline here only competed with the pane
-    // highlight and made the focused surface ambiguous.
-    const borderClass = `${borderEdge} border-[rgba(74,68,79,0.3)]`
+    // terminal pane already owns the agent-accent focus highlight, and focusing
+    // the dock dims the panes, so a second bright outline here only competed
+    // with the pane highlight and made the focused surface ambiguous.
+    const borderClass = `${borderEdge} border-outline-variant/30`
 
     const sectionAriaLabel = tab === 'editor' ? 'Code editor' : 'Diff viewer'
 
@@ -319,7 +318,7 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
         style={containerStyle}
         onPointerDown={handlePointerDown}
         onFocus={onContainerFocus}
-        className={`relative z-30 flex shrink-0 flex-col bg-[#121221] focus:outline-none ${borderClass}`}
+        className={`relative z-30 flex shrink-0 flex-col bg-surface focus:outline-none ${borderClass}`}
       >
         {isVerticalDock ? (
           <ResizeHandle

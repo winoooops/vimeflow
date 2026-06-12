@@ -2,8 +2,8 @@
 id: ui-visual-regression
 category: code-quality
 created: 2026-06-11
-last_updated: 2026-06-11
-ref_count: 0
+last_updated: 2026-06-12
+ref_count: 1
 ---
 
 # UI Visual Regression
@@ -43,3 +43,30 @@ test case for the state that triggers the collision.
   `#ff94a5`). Added a cold-cache test case asserting that cached and fresh
   stack styles differ.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 2. Browser pane focus halo referenced an undefined `--color-scrim` token
+
+- **Source:** github-codex-connector | PR #424 round 1 | 2026-06-12
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/browser/components/BrowserPane.tsx`
+- **Finding:** The focused browser pane `boxShadow` used `color-mix(in srgb, var(--color-scrim) 35%, transparent)`, but the theme token set did not define `--color-scrim`. The unresolved variable invalidated the `box-shadow` declaration, so the focus halo was lost instead of themed.
+- **Fix:** Added `scrim` to `EFFECT_COLOR_TOKENS`, defined it in both Catppuccin (the default theme, slug `obsidian-lens`) and Flexoki themes, and synced `src/theme/theme.css` so `--color-scrim` resolves.
+- **Commit:** same commit as this entry
+
+### 3. Hard-coded context-menu height clips at high-DPI scaling
+
+- **Source:** github-claude | PR #428 round 1 | 2026-06-12
+- **Severity:** MEDIUM
+- **File:** `src/features/editor/components/MarkdownReadingView.tsx`
+- **Finding:** `CONTEXT_MENU_HEIGHT = 112` was used to clamp the context menu's Y coordinate before render. At 125–150% system DPI the effective rendered height exceeds the room reserved at the bottom edge, causing the menu to overflow the viewport. The fix shape is the same as other visual-regression issues: verify the component against the full display state matrix, not just the default 1x scale.
+- **Fix:** Increased the clamp constant from 112 to 160 px, reserving enough bottom margin for common HiDPI scales. Added a regression test for the clipboard fallback path; future work could measure the actual `offsetHeight` from the menu ref after render for pixel-perfect clamping.
+- **Commit:** same commit as this entry
+
+### 4. File tree git status badges use syntax tokens instead of VCS tokens
+
+- **Source:** github-claude | PR #424 round 1 | 2026-06-12
+- **Severity:** MEDIUM
+- **File:** `src/features/editor/components/FileTreeNode.tsx`
+- **Finding:** `getGitStatusColor` mapped every git status badge to `bg-syn-*` syntax tokens (`syn-class`, `syn-string`, `syn-tag`, `syn-operator`, `syn-keyword`) even though the same PR introduced dedicated `vcs-*` tokens. In Obsidian Lens the same status rendered in a visibly different shade in the file tree than in `ChangedFilesList`/`DiffLegend`.
+- **Fix:** Replaced the `bg-syn-*` classes with the matching `bg-vcs-modified`, `bg-vcs-added`, `bg-vcs-deleted`, `bg-vcs-renamed`, and `bg-vcs-untracked` classes, keeping the `text-surface-container` overlay.
+- **Commit:** same commit as this entry

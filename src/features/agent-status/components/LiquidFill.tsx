@@ -238,13 +238,28 @@ export const LiquidFill = ({
             <stop offset="100%" stopColor={color} stopOpacity="0.55" />
           </linearGradient>
           <linearGradient id={glassId} x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0%" stopColor="rgba(255,255,255,0.06)" />
-            <stop offset="40%" stopColor="rgba(255,255,255,0.02)" />
-            <stop offset="100%" stopColor="rgba(0,0,0,0.15)" />
+            <stop
+              offset="0%"
+              stopColor="color-mix(in srgb, var(--color-on-surface) 6%, transparent)"
+            />
+            <stop
+              offset="40%"
+              stopColor="color-mix(in srgb, var(--color-on-surface) 2%, transparent)"
+            />
+            <stop
+              offset="100%"
+              stopColor="color-mix(in srgb, var(--color-surface-container-lowest) 15%, transparent)"
+            />
           </linearGradient>
           <linearGradient id={sheenId} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="rgba(255,255,255,0.55)" />
-            <stop offset="100%" stopColor="rgba(255,255,255,0)" />
+            <stop
+              offset="0%"
+              stopColor="color-mix(in srgb, var(--color-on-surface) 55%, transparent)"
+            />
+            <stop
+              offset="100%"
+              stopColor="color-mix(in srgb, var(--color-on-surface) 0%, transparent)"
+            />
           </linearGradient>
           <clipPath id={clipId}>
             <rect x="1" y="2" width={w - 2} height={h - 3} rx="3" ry="3" />
@@ -355,7 +370,7 @@ export const LiquidFill = ({
                   x2="4"
                   y1={y}
                   y2={y}
-                  stroke="rgba(255,255,255,0.18)"
+                  stroke="color-mix(in srgb, var(--color-on-surface) 18%, transparent)"
                   strokeWidth="0.8"
                 />
                 <line
@@ -363,7 +378,7 @@ export const LiquidFill = ({
                   x2={w - 1}
                   y1={y}
                   y2={y}
-                  stroke="rgba(255,255,255,0.18)"
+                  stroke="color-mix(in srgb, var(--color-on-surface) 18%, transparent)"
                   strokeWidth="0.8"
                 />
               </g>
@@ -379,7 +394,7 @@ export const LiquidFill = ({
           rx="3"
           ry="3"
           fill="transparent"
-          stroke="rgba(255,255,255,0.18)"
+          stroke="color-mix(in srgb, var(--color-on-surface) 18%, transparent)"
           strokeWidth="1"
         />
       </svg>

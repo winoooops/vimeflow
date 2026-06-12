@@ -14,6 +14,7 @@ import {
 import { TERMINAL_FONT_FAMILY } from './terminalFont'
 import { useTerminal, type UseTerminalReturn } from '../../hooks/useTerminal'
 import type { ITerminalService } from '../../services/terminalService'
+import { obsidianLens } from '../../../../theme'
 
 // Shared mock service for tests that don't exercise service-specific behavior.
 // Round 4 Finding 1 made `service` a required prop on Body (the
@@ -224,9 +225,9 @@ describe('Body', () => {
       expect(Terminal).toHaveBeenCalledWith(
         expect.objectContaining({
           theme: expect.objectContaining({
-            background: '#1e1e2e',
-            foreground: '#cdd6f4',
-            cursor: '#f5e0dc',
+            background: obsidianLens.terminal.background,
+            foreground: obsidianLens.terminal.foreground,
+            cursor: obsidianLens.terminal.cursor,
           }),
         })
       )

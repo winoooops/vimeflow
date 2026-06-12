@@ -164,7 +164,7 @@ export const ContextBucket = ({
             width: `${effectivePct}%`,
             boxShadow:
               pct !== null && effectivePct > 0
-                ? '0 0 8px var(--tw-shadow-color, rgba(203, 166, 247, 0.4))'
+                ? '0 0 8px var(--tw-shadow-color, color-mix(in srgb, var(--color-primary-container) 40%, transparent))'
                 : 'none',
           }}
         />
