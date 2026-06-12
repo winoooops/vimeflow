@@ -296,83 +296,31 @@ describe('WorkspaceView – top chrome (main-stage handoff J2–J6)', () => {
     expect(screen.queryByRole('tablist', { name: 'Open sessions' })).toBeNull()
   })
 
-  test('hover-reveal overlay: 44px zone over the workspace, chrome hidden until hover/focus (J3a)', () => {
+  test('top chrome is an always-visible in-flow bar (no auto-hide, no pin)', () => {
     render(<WorkspaceView />)
 
-    const zone = screen.getByTestId('top-hover-zone')
-    const zoneClasses = zone.className.split(/\s+/)
-    expect(zoneClasses).toContain('absolute')
-    expect(zoneClasses).toContain('h-[44px]')
-    expect(zoneClasses).toContain('z-40')
-    expect(zoneClasses).toContain('group')
-    expect(zoneClasses).toContain('focus:outline-none')
-    expect(zone).toHaveAttribute('tabindex', '0')
-    expect(zone).toHaveAttribute('aria-label', 'Reveal workspace controls')
+    // The auto-hide overlay + hover zone and the pin toggle were removed.
+    expect(screen.queryByTestId('top-hover-zone')).toBeNull()
+    expect(
+      screen.queryByRole('button', { name: /keep top banner visible/i })
+    ).toBeNull()
 
     const chrome = screen.getByTestId('top-chrome')
     const chromeClasses = chrome.className.split(/\s+/)
+    // In-flow 44px bar (panes sit below it): relative, shrink-0, solid lowest
+    // surface, hairline bottom rule. Not the old frosted/auto-hide overlay.
+    expect(chromeClasses).toContain('relative')
     expect(chromeClasses).toContain('h-[44px]')
-    // Auto-hide overlay is frosted glass: translucent lowest-surface tint
-    // plus the app's glass-panel blur so content ghosts through underneath.
-    expect(chromeClasses).toContain('bg-[rgba(13,13,28,0.65)]')
-    expect(chromeClasses).toContain('glass-panel')
-    expect(chromeClasses).not.toContain('bg-surface-container-lowest')
+    expect(chromeClasses).toContain('shrink-0')
+    expect(chromeClasses).toContain('bg-surface-container-lowest')
     expect(chromeClasses).toContain('border-b')
     expect(chromeClasses).toContain('border-[rgba(74,68,79,0.25)]')
-    expect(chromeClasses).toContain('opacity-0')
-    expect(chromeClasses).toContain('-translate-y-[5px]')
-    expect(chromeClasses).toContain('group-hover:opacity-100')
-    // Keyboard focus keeps the bar revealed, but a mouse click on the pin
-    // must not pin it open — focus-visible, not plain focus-within.
-    expect(chromeClasses).toContain('group-focus-visible:opacity-100')
-    expect(chromeClasses).toContain('group-has-[:focus-visible]:opacity-100')
-    expect(chromeClasses).not.toContain('group-focus-within:opacity-100')
-    // Hiding starts the moment the cursor leaves; both directions stay smooth.
-    expect(chromeClasses).toContain(
-      '[transition:opacity_260ms_cubic-bezier(0.4,0,0.2,1),transform_260ms_cubic-bezier(0.4,0,0.2,1),padding-left_180ms_cubic-bezier(0.4,0,0.2,1)]'
-    )
-
-    expect(chromeClasses).toContain(
-      'group-hover:[transition:opacity_200ms_ease-out,transform_200ms_ease-out,padding-left_180ms_cubic-bezier(0.4,0,0.2,1)]'
-    )
-  })
-
-  test('sticky pin reserves a real 44px row and keeps the chrome revealed (J3a)', async () => {
-    const user = userEvent.setup()
-    render(<WorkspaceView />)
-
-    const pin = screen.getByRole('button', { name: 'Keep top banner visible' })
-    expect(pin).toHaveAttribute('aria-pressed', 'false')
-
-    await user.click(pin)
-
-    expect(pin).toHaveAttribute('aria-pressed', 'true')
-    expect(pin).toHaveAccessibleName('Auto-hide top banner')
-    expect(pin.className.split(/\s+/)).toContain('text-primary')
-
-    const zone = screen.getByTestId('top-hover-zone')
-    const zoneClasses = zone.className.split(/\s+/)
-    expect(zoneClasses).toContain('relative')
-    expect(zoneClasses).toContain('shrink-0')
-    expect(zoneClasses).not.toContain('absolute')
-
-    const chromeClasses = screen
-      .getByTestId('top-chrome')
-      .className.split(/\s+/)
-    expect(chromeClasses).toContain('opacity-100')
-    expect(chromeClasses).not.toContain('opacity-0')
-    // Pinned reserves a real row — nothing renders underneath, so the bar
-    // returns to the solid handoff surface instead of frosted glass.
-    expect(chromeClasses).toContain('bg-surface-container-lowest')
     expect(chromeClasses).not.toContain('glass-panel')
-
-    await user.click(pin)
-
-    expect(pin).toHaveAttribute('aria-pressed', 'false')
-    expect(zone.className.split(/\s+/)).toContain('absolute')
+    expect(chromeClasses).not.toContain('opacity-0')
+    expect(chromeClasses).not.toContain('absolute')
   })
 
-  test('split layout: label-free pills right-aligned; config docked in the pillar, pin standalone (J3)', async () => {
+  test('split layout: label-free pills right-aligned; config docked in the pillar (J3)', async () => {
     await setupSessionManager(mockSessions, 'session-2')
     render(<WorkspaceView />)
 
@@ -390,28 +338,19 @@ describe('WorkspaceView – top chrome (main-stage handoff J2–J6)', () => {
     const divider = within(switcher).getByTestId('layout-switcher-divider')
     expect(config.previousElementSibling).toBe(divider)
 
-    // The old bordered action-group wrapper is gone entirely.
+    // No bordered action-group wrapper and no pin button (auto-hide removed).
     expect(within(chrome).queryByTestId('top-action-group')).toBeNull()
-
-    // Pin stands alone — a direct child of the chrome, not inside the
-    // pillar and not wrapped in any group.
-    const pin = within(chrome).getByRole('button', {
-      name: 'Keep top banner visible',
-    })
-    expect(pin.parentElement).toBe(chrome)
     expect(
-      within(switcher).queryByRole('button', {
-        name: 'Keep top banner visible',
+      within(chrome).queryByRole('button', {
+        name: /keep top banner visible/i,
       })
     ).toBeNull()
 
-    // Both relocated controls stay transparent (hover fill only).
-    for (const button of [config, pin]) {
-      const staticBg = button.className
-        .split(/\s+/)
-        .filter((cls) => cls.startsWith('bg-'))
-      expect(staticBg).toEqual([])
-    }
+    // The config control stays transparent (hover fill only).
+    const staticBg = config.className
+      .split(/\s+/)
+      .filter((cls) => cls.startsWith('bg-'))
+    expect(staticBg).toEqual([])
   })
 
   test('layout picks forward to setSessionLayout without touching pane semantics (J6)', async () => {
@@ -430,7 +369,7 @@ describe('WorkspaceView – top chrome (main-stage handoff J2–J6)', () => {
     expect(mockSessionManager.setSessionActivePane).not.toHaveBeenCalled()
   })
 
-  test('single layout: same chrome as the splits — config docked in the pillar, pin standalone', () => {
+  test('single layout: same chrome as the splits — config docked in the pillar', () => {
     render(<WorkspaceView />)
 
     // The session-title identity was removed: a readout that exists in one
@@ -448,50 +387,43 @@ describe('WorkspaceView – top chrome (main-stage handoff J2–J6)', () => {
     })
     expect(config).not.toHaveAccessibleName(/split/i)
 
-    // The pin stands alone outside the pillar; the bordered action group
-    // wrapper no longer exists.
+    // No bordered action group and no pin button (auto-hide removed).
     expect(screen.queryByTestId('top-action-group')).toBeNull()
     expect(
-      within(switcher).queryByRole('button', {
-        name: 'Keep top banner visible',
-      })
+      screen.queryByRole('button', { name: /keep top banner visible/i })
     ).toBeNull()
-
-    expect(
-      screen.getByRole('button', { name: 'Keep top banner visible' })
-    ).toBeInTheDocument()
   })
 
-  test('collapsed sidebar: the hover zone insets past the shell fixed toggle (J4)', () => {
+  test('collapsed sidebar: the expand toggle relocates into the in-flow chrome (J4)', () => {
     render(<WorkspaceView />)
 
-    // The collapsed-state sidebar toggle is owned by the sidebar shell
-    // (`sidebar-toggle-fixed`), not the top chrome — so the chrome never
-    // renders its own gutter toggle, and its padding stays constant.
     const chrome = screen.getByTestId('top-chrome')
-    expect(chrome.className.split(/\s+/)).toContain('pl-[14px]')
-    expect(screen.queryByTestId('sidebar-toggle-chrome')).toBeNull()
 
-    const zone = screen.getByTestId('top-hover-zone')
-    // Sidebar open: the hover zone starts flush at the left edge.
-    expect(zone.style.left).toBe('0px')
+    // Sidebar open: the toggle lives in the sidebar shell anchor, not the
+    // chrome.
+    expect(screen.getByTestId('sidebar-toggle-anchor')).toBeInTheDocument()
+    expect(chrome).not.toContainElement(
+      screen.getByTestId('sidebar-toggle-fixed')
+    )
 
     act(() => {
       setSidebarCollapsed(true)
     })
 
-    // Sidebar collapsed: the always-present fixed toggle remains clickable,
-    // so the (unpinned) hover zone insets its left edge past it instead of
-    // covering it. Padding is unchanged (no 50px gutter).
-    expect(chrome.className.split(/\s+/)).toContain('pl-[14px]')
-    expect(screen.getByTestId('sidebar-toggle-fixed')).toBeInTheDocument()
-    expect(zone.style.left).not.toBe('0px')
-    expect(parseInt(zone.style.left, 10)).toBeGreaterThanOrEqual(40)
+    // Collapsed: the toggle relocates INTO the in-flow chrome. Because the
+    // chrome pushes the panes down (it is not an overlay) the floating toggle
+    // overlaps nothing. The shell anchor is gone.
+    expect(screen.queryByTestId('sidebar-toggle-anchor')).toBeNull()
+    expect(chrome).toContainElement(screen.getByTestId('sidebar-toggle-fixed'))
 
     act(() => {
       setSidebarCollapsed(false)
     })
 
-    expect(zone.style.left).toBe('0px')
+    // Back to the shell anchor when re-opened.
+    expect(screen.getByTestId('sidebar-toggle-anchor')).toBeInTheDocument()
+    expect(chrome).not.toContainElement(
+      screen.getByTestId('sidebar-toggle-fixed')
+    )
   })
 })

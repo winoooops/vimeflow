@@ -1825,15 +1825,16 @@ describe('WorkspaceView', () => {
     }
   })
 
-  test('mounts the top hover zone above the terminal zone', () => {
+  test('mounts the top chrome above the terminal zone', () => {
     render(<WorkspaceView />)
 
-    const zone = screen.getByTestId('top-hover-zone')
+    const chrome = screen.getByTestId('top-chrome')
     const terminal = screen.getByTestId('terminal-zone')
 
-    expect(zone).toBeInTheDocument()
+    expect(chrome).toBeInTheDocument()
     expect(
-      zone.compareDocumentPosition(terminal) & Node.DOCUMENT_POSITION_FOLLOWING
+      chrome.compareDocumentPosition(terminal) &
+        Node.DOCUMENT_POSITION_FOLLOWING
     ).toBeTruthy()
   })
 

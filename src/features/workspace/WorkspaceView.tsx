@@ -191,22 +191,6 @@ const mainAutoCollapseThreshold = (workspaceWidth: number): number =>
     MAIN_AUTO_COLLAPSE_MAX
   )
 
-// Auto-hide top chrome: the moment the cursor/focus leaves, the bar fades
-// out over 260ms on a soft curve — no hold beforehand. Revealing eases in over
-// 200ms via the variants below. Every variant-prefixed class is a full
-// literal — Tailwind's scanner cannot see classes assembled at runtime.
-const TOP_CHROME_HIDE_TRANSITION =
-  '[transition:opacity_260ms_cubic-bezier(0.4,0,0.2,1),transform_260ms_cubic-bezier(0.4,0,0.2,1),padding-left_180ms_cubic-bezier(0.4,0,0.2,1)]'
-
-const TOP_CHROME_SHOW_TRANSITION =
-  '[transition:opacity_200ms_ease-out,transform_200ms_ease-out,padding-left_180ms_cubic-bezier(0.4,0,0.2,1)]'
-
-// Reveal on hover or KEYBOARD focus (focus-visible) only — a mouse click on
-// the pin leaves plain :focus behind, and matching it (focus-within) would
-// hold the bar open after unpinning until the user clicked elsewhere.
-const TOP_CHROME_REVEAL_CLASSES =
-  'group-hover:translate-y-0 group-hover:opacity-100 group-hover:[transition:opacity_200ms_ease-out,transform_200ms_ease-out,padding-left_180ms_cubic-bezier(0.4,0,0.2,1)] group-focus-visible:translate-y-0 group-focus-visible:opacity-100 group-focus-visible:[transition:opacity_200ms_ease-out,transform_200ms_ease-out,padding-left_180ms_cubic-bezier(0.4,0,0.2,1)] group-has-[:focus-visible]:translate-y-0 group-has-[:focus-visible]:opacity-100 group-has-[:focus-visible]:[transition:opacity_200ms_ease-out,transform_200ms_ease-out,padding-left_180ms_cubic-bezier(0.4,0,0.2,1)]'
-
 type DockTab = 'editor' | 'diff'
 
 export const WorkspaceView = (): ReactElement => {
@@ -860,11 +844,6 @@ export const WorkspaceView = (): ReactElement => {
   const dockCanvasRef = useRef<HTMLDivElement>(null)
   const [dockPosition, setDockPosition] = useState<DockPosition>('bottom')
   const [isDockOpen, setIsDockOpen] = useState(true)
-
-  // Main-stage handoff J3a: the 44px top chrome is a hover/focus-revealed
-  // overlay by default; pinning reserves a real row so panes shrink instead
-  // of being covered (the reflow runs the normal terminal fit path).
-  const [topChromePinned, setTopChromePinned] = useState(false)
   const [dockTab, setDockTab] = useState<DockTab>('editor')
 
   const [activeContainerId, setActiveContainerId] = useState<string>(
@@ -1857,24 +1836,29 @@ export const WorkspaceView = (): ReactElement => {
             width: isSidebarClosed ? 0 : sidebarToggleSlideSurfaceWidth,
           }}
         />
-        <div
-          data-testid="sidebar-toggle-anchor"
-          className="absolute z-30"
-          style={{
-            left: sidebarToggleLeft,
-            top: SIDEBAR_TOGGLE_TOP,
-          }}
-        >
-          <SidebarToggle
-            ref={sidebarToggleRef}
-            collapsed={isSidebarClosed}
-            onClick={handleToggleSidebar}
-            size={SIDEBAR_TOGGLE_SIZE}
-            variant="inset"
-            data-testid="sidebar-toggle-fixed"
-            shortcutHint={sidebarShortcutHint}
-          />
-        </div>
+        {/* Sidebar OPEN: the collapse toggle lives here in the shell, over the
+            sidebar's top bar. When the sidebar is collapsed it relocates into
+            the top chrome (which is in-flow, so it no longer floats over the
+            panes). */}
+        {!isSidebarClosed && (
+          <div
+            data-testid="sidebar-toggle-anchor"
+            className="absolute z-30"
+            style={{
+              left: sidebarToggleLeft,
+              top: SIDEBAR_TOGGLE_TOP,
+            }}
+          >
+            <SidebarToggle
+              ref={sidebarToggleRef}
+              onClick={handleToggleSidebar}
+              size={SIDEBAR_TOGGLE_SIZE}
+              variant="inset"
+              data-testid="sidebar-toggle-fixed"
+              shortcutHint={sidebarShortcutHint}
+            />
+          </div>
+        )}
         <div
           aria-hidden={isSidebarClosed || undefined}
           inert={isSidebarClosed || undefined}
@@ -2004,131 +1988,90 @@ export const WorkspaceView = (): ReactElement => {
           willChange: 'border-radius',
         }}
       >
-        {/* Top chrome (44px, main-stage handoff J3/J3a) — hover/focus reveals
-            the overlay; pinning reserves a real row so panes shrink instead of
-            being covered. The collapsed-state sidebar toggle is the sidebar
-            shell's own fixed toggle, so when the sidebar is closed the hover
-            zone insets past it to keep that toggle clickable. */}
+        {/* Top chrome — an always-visible 44px in-flow bar (panes sit BELOW it,
+            so the floating sidebar toggle never overlaps pane content, the way
+            main's session-tab strip behaved). Solid lowest surface + hairline
+            bottom rule. The old auto-hide/pin behavior was removed; its
+            reusable frosted-glass treatment now lives in <GlassSurface>. */}
         <div
-          data-testid="top-hover-zone"
-          tabIndex={0}
-          aria-label="Reveal workspace controls"
-          className={`group focus:outline-none ${
-            topChromePinned
-              ? 'relative h-[44px] w-full shrink-0'
-              : 'absolute right-0 top-0 z-40 h-[44px]'
-          }`}
-          style={
-            topChromePinned
-              ? undefined
-              : {
-                  left: isSidebarClosed
-                    ? sidebarToggleLeft + SIDEBAR_TOGGLE_SIZE
-                    : 0,
-                }
-          }
+          data-testid="top-chrome"
+          className="relative flex h-[44px] shrink-0 items-center gap-[12px] border-b border-[rgba(74,68,79,0.25)] bg-surface-container-lowest pl-[14px] pr-[14px]"
         >
-          <div
-            data-testid="top-chrome"
-            className={`absolute inset-0 flex h-[44px] items-center gap-[12px] border-b border-[rgba(74,68,79,0.25)] pl-[14px] pr-[14px] ${
-              topChromePinned
-                ? `bg-surface-container-lowest translate-y-0 opacity-100 ${TOP_CHROME_SHOW_TRANSITION}`
-                : `glass-panel bg-[rgba(13,13,28,0.65)] -translate-y-[5px] opacity-0 ${TOP_CHROME_HIDE_TRANSITION} ${TOP_CHROME_REVEAL_CLASSES}`
-            }`}
-          >
-            <span className="min-w-[10px] flex-1" />
-
-            {/* Pills render in every layout, with the layout-display config
-                button docked in the same pillar after a divider. The pin
-                toggle stands alone (no wrapper) beside the pillar. */}
-            {activeSession && (
-              <LayoutSwitcher
-                activeLayoutId={activeSession.layout}
-                onPick={handlePickLayout}
-                trailing={
-                  <button
-                    type="button"
-                    aria-label="Configure displayed layouts"
-                    title="Configure displayed layouts"
-                    className="inline-flex h-5 w-6 items-center justify-center rounded text-on-surface-muted transition-colors hover:bg-[rgba(226,199,255,0.08)] hover:text-primary"
-                  >
-                    <svg
-                      width="14"
-                      height="14"
-                      viewBox="0 0 16 16"
-                      fill="none"
-                      aria-hidden="true"
-                    >
-                      <path
-                        d="M3 4.5H6.2M9.8 4.5H13M3 8H9.2M12.2 8H13M3 11.5H4.8M8.2 11.5H13"
-                        stroke="currentColor"
-                        strokeWidth="1.35"
-                        strokeLinecap="round"
-                      />
-                      <circle
-                        cx="8"
-                        cy="4.5"
-                        r="1.6"
-                        stroke="currentColor"
-                        strokeWidth="1.25"
-                      />
-                      <circle
-                        cx="10.7"
-                        cy="8"
-                        r="1.45"
-                        stroke="currentColor"
-                        strokeWidth="1.25"
-                      />
-                      <circle
-                        cx="6.5"
-                        cy="11.5"
-                        r="1.55"
-                        stroke="currentColor"
-                        strokeWidth="1.25"
-                      />
-                    </svg>
-                  </button>
-                }
-              />
-            )}
-
-            <button
-              type="button"
-              aria-label={
-                topChromePinned
-                  ? 'Auto-hide top banner'
-                  : 'Keep top banner visible'
-              }
-              title={
-                topChromePinned
-                  ? 'Auto-hide top banner'
-                  : 'Keep top banner visible'
-              }
-              aria-pressed={topChromePinned}
-              onClick={() => {
-                setTopChromePinned((pinned) => !pinned)
-              }}
-              className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-[7px] transition-colors hover:bg-[rgba(226,199,255,0.08)] hover:text-primary ${
-                topChromePinned ? 'text-primary' : 'text-on-surface-muted'
-              }`}
+          {/* Collapsed sidebar: the expand toggle floats at the chrome's left
+              edge. Because the chrome is in-flow (panes are below it) the
+              toggle overlaps nothing. When the sidebar is open the toggle
+              lives in the sidebar shell anchor instead. */}
+          {isSidebarClosed && (
+            <div
+              className="absolute z-30"
+              style={{ left: sidebarToggleLeft, top: SIDEBAR_TOGGLE_TOP }}
             >
-              <svg
-                width="14"
-                height="14"
-                viewBox="0 0 16 16"
-                fill="none"
-                aria-hidden="true"
-              >
-                <path
-                  d="M6.2 2.8H9.8M7.1 2.8L6.5 7.1L4.4 9.1H11.6L9.5 7.1L8.9 2.8M8 9.2V13.4"
-                  stroke="currentColor"
-                  strokeWidth="1.35"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            </button>
-          </div>
+              <SidebarToggle
+                ref={sidebarToggleRef}
+                collapsed
+                onClick={handleToggleSidebar}
+                size={SIDEBAR_TOGGLE_SIZE}
+                variant="inset"
+                data-testid="sidebar-toggle-fixed"
+                shortcutHint={sidebarShortcutHint}
+              />
+            </div>
+          )}
+
+          <span className="min-w-[10px] flex-1" />
+
+          {/* Pills render in every layout, with the layout-display config
+              button docked in the same pillar after a divider. */}
+          {activeSession && (
+            <LayoutSwitcher
+              activeLayoutId={activeSession.layout}
+              onPick={handlePickLayout}
+              trailing={
+                <button
+                  type="button"
+                  aria-label="Configure displayed layouts"
+                  title="Configure displayed layouts"
+                  className="inline-flex h-5 w-6 items-center justify-center rounded text-on-surface-muted transition-colors hover:bg-[rgba(226,199,255,0.08)] hover:text-primary"
+                >
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 16 16"
+                    fill="none"
+                    aria-hidden="true"
+                  >
+                    <path
+                      d="M3 4.5H6.2M9.8 4.5H13M3 8H9.2M12.2 8H13M3 11.5H4.8M8.2 11.5H13"
+                      stroke="currentColor"
+                      strokeWidth="1.35"
+                      strokeLinecap="round"
+                    />
+                    <circle
+                      cx="8"
+                      cy="4.5"
+                      r="1.6"
+                      stroke="currentColor"
+                      strokeWidth="1.25"
+                    />
+                    <circle
+                      cx="10.7"
+                      cy="8"
+                      r="1.45"
+                      stroke="currentColor"
+                      strokeWidth="1.25"
+                    />
+                    <circle
+                      cx="6.5"
+                      cy="11.5"
+                      r="1.55"
+                      stroke="currentColor"
+                      strokeWidth="1.25"
+                    />
+                  </svg>
+                </button>
+              }
+            />
+          )}
         </div>
 
         <div
