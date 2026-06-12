@@ -3,7 +3,7 @@ id: module-boundaries
 category: code-quality
 created: 2026-04-30
 last_updated: 2026-06-12
-ref_count: 2
+ref_count: 3
 ---
 
 # Module Boundaries
@@ -167,4 +167,13 @@ Don't widen the coupling by adding a second importer.
 - **File:** `src/features/editor/components/MarkdownReadingView.tsx`
 - **Finding:** A new local `ContextMenuState` interface was introduced with shape `{visible, x, y}` while the shared `src/features/editor/types/index.ts` already exports `ContextMenuState` with shape `{visible, x, y, targetNode: FileNode | null}`. The component imported the related `ContextMenuAction` from the shared module but avoided importing the shared `ContextMenuState`, leaving two same-name types with different contracts. A future refactor that tries to unify them would produce a confusing TypeScript error on the missing `targetNode` field.
 - **Fix:** Renamed the local interface to `ReadingViewMenuState` so the intentional subset is explicit and no longer collides with the shared type. (1-line note: this is a naming-boundary issue rather than the utility-promotion cases in #1–#5, but the same principle applies — local definitions must not silently diverge from shared contracts that share the same name.)
+- **Commit:** same commit as this entry
+
+### 15. `writeClipboardText` exported from a CodeMirror hook file instead of a dedicated utility module
+
+- **Source:** github-claude | PR #428 round 3 | 2026-06-12
+- **Severity:** LOW
+- **File:** `src/features/editor/hooks/useCodeMirror.ts` L175-193
+- **Finding:** `writeClipboardText` and its private `writeViaTextarea` fallback were defined inside `useCodeMirror.ts`, a module dense with CodeMirror view/state, Vim-mode wiring, and React hook concerns. The helper has zero imports from `@codemirror/*` and is a general-purpose DOM clipboard writer; `MarkdownReadingView.tsx` already needed to call it, forcing a cross-module import from an unrelated hook file. Future maintainers looking for clipboard fallback logic are unlikely to check a CodeMirror hook first, and refactors of `useCodeMirror.ts` risk silently breaking the reading view's copy path.
+- **Fix:** Promoted the helper to `src/features/editor/utils/clipboard.ts`, exported `ClipboardLike` from the same module, and added the required co-located `clipboard.test.ts`. Updated `useCodeMirror.ts` and `MarkdownReadingView.tsx` to import from the new utility module. The move keeps the hook focused on CodeMirror integration and places the clipboard abstraction next to `readingStyleStore.ts`, the existing stateless utility in `src/features/editor/utils/`.
 - **Commit:** same commit as this entry
