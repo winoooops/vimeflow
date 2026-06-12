@@ -84,4 +84,5 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Persisted State Invariants](patterns/persisted-state-invariants.md)                     | correctness        | 9        | 5    | 2026-06-12   |
 | [macOS Window Chrome](patterns/macos-window-chrome.md)                                   | cross-platform     | 8        | 2    | 2026-06-11   |
 | [Guard Branch Correctness](patterns/guard-branch-correctness.md)                         | correctness        | 1        | 0    | 2026-06-11   |
-| [Synchronous Calls in Async Electron Handlers](patterns/sync-calls-in-async-handlers.md) | code-quality       | 1        | 0    | 2026-06-12   |
+| [IPC Trust Boundary](patterns/ipc-trust-boundary.md)                                     | security           | 1        | 0    | 2026-06-12   |
+| [Synchronous Calls in Async Electron Handlers](patterns/sync-calls-in-async-electron-handlers.md) | code-quality       | 1        | 0    | 2026-06-12   |

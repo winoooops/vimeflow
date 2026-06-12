@@ -217,7 +217,7 @@ let browserPaneController: BrowserPaneController | null = null
 let workspaceLayoutController: WorkspaceLayoutController | null = null
 let workspaceTeardown: WorkspaceTeardown | null = null
 let quitting = false
-let lastKnownSettings: AppSettings | undefined
+let lastKnownOnLastWindowClosed: string | undefined
 
 const RENDERER_DIAGNOSTIC_PREFIXES = [
   '[vimeflow:terminal-cwd]',
@@ -488,8 +488,13 @@ const setupApp = async (): Promise<void> => {
 
   ipcMain.handle(
     SETTINGS_SYNC_SNAPSHOT,
-    (_ipcEvent, settings: AppSettings): void => {
-      lastKnownSettings = settings
+    (_ipcEvent, settings: unknown): void => {
+      if (
+        isRecord(settings) &&
+        typeof settings.onLastWindowClosed === 'string'
+      ) {
+        lastKnownOnLastWindowClosed = settings.onLastWindowClosed
+      }
     }
   )
 
@@ -536,11 +541,11 @@ app.on('before-quit', (event) => {
 app.on('window-all-closed', () => {
   let onLastWindowClosed: string | undefined
 
-  if (lastKnownSettings !== undefined) {
+  if (lastKnownOnLastWindowClosed !== undefined) {
     // The renderer keeps this snapshot in sync whenever the user changes a
     // setting, so we can read the latest value without racing the async save
     // to disk / the Rust sidecar.
-    onLastWindowClosed = lastKnownSettings.onLastWindowClosed
+    onLastWindowClosed = lastKnownOnLastWindowClosed
   } else {
     try {
       const settingsPath = path.join(app.getPath('userData'), 'settings.json')
