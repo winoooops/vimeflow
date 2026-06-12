@@ -225,6 +225,7 @@ describe('MarkdownReadingView', () => {
 
   test('falls back to execCommand copy when navigator.clipboard.writeText is unavailable', () => {
     const originalClipboard = window.navigator.clipboard
+    const originalExecCommand = document.execCommand
     const execCommandMock = vi.fn().mockReturnValue(true)
 
     Object.defineProperty(window.navigator, 'clipboard', {
@@ -259,6 +260,11 @@ describe('MarkdownReadingView', () => {
     } finally {
       Object.defineProperty(window.navigator, 'clipboard', {
         value: originalClipboard,
+        configurable: true,
+        writable: true,
+      })
+      Object.defineProperty(document, 'execCommand', {
+        value: originalExecCommand,
         configurable: true,
         writable: true,
       })

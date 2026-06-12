@@ -54,7 +54,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Generated Artifacts](patterns/generated-artifacts.md)               | code-quality       | 4        | 2    | 2026-06-11   |
 | [Generated Shell Scripts](patterns/generated-shell-scripts.md)       | backend            | 7        | 1    | 2026-06-03   |
 | [Hot-Path Caching](patterns/hot-path-caching.md)                     | backend            | 1        | 0    | 2026-06-09   |
-| [Testing Gaps](patterns/testing-gaps.md)                             | testing            | 62       | 30   | 2026-06-11   |
+| [Testing Gaps](patterns/testing-gaps.md)                             | testing            | 64       | 30   | 2026-06-12   |
 | [Terminal Input Handling](patterns/terminal-input-handling.md)       | terminal           | 4        | 2    | 2026-05-24   |
 | [Documentation Accuracy](patterns/documentation-accuracy.md)         | code-quality       | 85       | 25   | 2026-06-08   |
 | [Accessibility](patterns/accessibility.md)                           | a11y               | 49       | 21   | 2026-06-11   |
