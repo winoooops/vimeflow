@@ -2,7 +2,7 @@
 id: generated-artifacts
 category: code-quality
 created: 2026-04-14
-last_updated: 2026-05-25
+last_updated: 2026-06-12
 ref_count: 2
 ---
 
@@ -55,4 +55,15 @@ checks or leave a regeneration diff.
 - **File:** `docs/design/leftsidebar/Sidebar Chrome.html`
 - **Finding:** The PR included a React/Babel HTML prototype and JSX demo files under `docs/design/` alongside migration markdown. These are hand-authored throwaway demos, not generated artifacts or application code, and add noise to the repository and review surface.
 - **Fix:** Removed `docs/design/leftsidebar/Sidebar Chrome.html` and all JSX files under `docs/design/sidebar-toggle-handoff/src/`, keeping the markdown handoff documents.
+- **Commit:** same commit as this entry
+
+---
+
+### 5. Ignored generated bindings must still be produced for clean-checkout entrypoints
+
+- **Source:** github-codex-connector | PR #441 round 1 | 2026-06-12
+- **Severity:** P2 / MEDIUM
+- **File:** `.gitignore`
+- **Finding:** After adding `/src/bindings/*.ts` to `.gitignore`, a clean checkout contained only the tracked barrel `src/bindings/index.ts`, which re-exports generated modules such as `./PtySession`. Local dev and test scripts (`electron:dev`, `test`, `lint`) did not run `generate:bindings`, so any command that resolved those imports before `build`/`type-check` started from missing modules.
+- **Fix:** Prepended `npm run generate:bindings` to the `electron:dev`, `test`, and `lint` npm scripts so the generated modules are produced before TypeScript-aware tooling needs them. This mirrors the existing pattern used by `build` and `type-check`.
 - **Commit:** same commit as this entry
