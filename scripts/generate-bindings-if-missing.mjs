@@ -16,6 +16,7 @@ const modules = [...new Set(matches.map((match) => match[1]))]
 
 const missing = modules.filter((moduleName) => {
   const fileName = moduleName.replace(/^\.\//u, '')
+
   return !existsSync(join(bindingsDir, `${fileName}.ts`))
 })
 
@@ -25,7 +26,7 @@ if (missing.length === 0) {
 }
 
 process.stderr.write(
-  `Missing generated binding files: ${missing.join(', ')}. Regenerating...\n`,
+  `Missing generated binding files: ${missing.join(', ')}. Regenerating...\n`
 )
 
 const result = spawnSync('npm', ['run', 'generate:bindings'], {
