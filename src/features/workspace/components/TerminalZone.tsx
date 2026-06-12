@@ -197,7 +197,11 @@ export const TerminalZone = forwardRef<TerminalZoneHandle, TerminalZoneProps>(
                     runningBurnerPaneKeys={runningBurnerPaneKeys}
                     areBrowserPanesOccluded={areBrowserPanesOccluded}
                     deferTerminalFit={deferTerminalFit}
-                    showPaneFocusHighlight={isZoneFocused}
+                    // The active pane keeps its highlight even when the dock
+                    // (or another container) has focus, so the user never
+                    // loses track of which pane is active. The zone still dims
+                    // to signal focus is elsewhere.
+                    showPaneFocusHighlight
                   />
                 </div>
               )

@@ -161,14 +161,17 @@ describe('TerminalZone', () => {
     expect(screen.getByTestId('terminal-zone')).toHaveClass('opacity-[0.65]')
   })
 
-  test('isZoneFocused=false suppresses active terminal pane highlight', () => {
+  test('keeps the active pane highlight even when the zone is not focused', () => {
+    // The active pane highlight tracks "which pane is active" and must persist
+    // when focus moves to the dock — the zone still dims, but the highlight
+    // stays so the user never loses the active-pane reference.
     const isZoneFocused = false
 
     render(<TerminalZone {...defaultProps} isZoneFocused={isZoneFocused} />)
 
     expect(screen.getAllByTestId('terminal-pane-mock')[0]).toHaveAttribute(
       'data-show-focus-highlight',
-      'false'
+      'true'
     )
   })
 
