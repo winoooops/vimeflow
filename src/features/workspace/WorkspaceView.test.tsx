@@ -1473,60 +1473,29 @@ describe('WorkspaceView', () => {
     })
   })
 
-  test('closed left dock renders DockPeekButton before TerminalZone', async () => {
+  test('closed dock renders no panel and no peek bar — bottom-bar toggle reopens it', async () => {
     const user = userEvent.setup()
     render(<WorkspaceView />)
 
-    await user.click(screen.getByRole('button', { name: /dock: left/i }))
-    await user.click(screen.getByRole('button', { name: /more dock actions/i }))
-    await user.click(screen.getByRole('button', { name: /collapse panel/i }))
-
-    const inner = screen.getByTestId('dock-canvas-wrapper')
-
-    const peek = screen.getByRole('button', {
-      name: /show panel docked left/i,
-    })
-    const terminal = screen.getByTestId('terminal-zone-wrapper')
-
-    expect(inner).toContainElement(peek)
-    expect(inner).toContainElement(terminal)
-
-    const children = Array.from(inner.children)
-    expect(children.indexOf(peek)).toBeLessThan(children.indexOf(terminal))
-  })
-
-  test('closed bottom dock renders DockPeekButton after TerminalZone', async () => {
-    const user = userEvent.setup()
-    render(<WorkspaceView />)
+    // Dock starts open.
+    expect(screen.getByTestId('dock-panel')).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: /collapse panel/i }))
 
-    const inner = screen.getByTestId('dock-canvas-wrapper')
-    const peek = screen.getByLabelText('Show panel docked bottom')
-    const terminal = screen.getByTestId('terminal-zone-wrapper')
-    const children = Array.from(inner.children)
+    // Closed: the dock is gone and there is no "show panel" peek affordance —
+    // only the terminal remains. The bottom action bar's dock toggle is the
+    // single reopen control.
+    expect(screen.queryByTestId('dock-panel')).toBeNull()
+    expect(screen.queryByText(/show panel/i)).toBeNull()
+    expect(screen.getByTestId('terminal-zone-wrapper')).toBeInTheDocument()
 
-    expect(children.indexOf(peek)).toBeGreaterThan(children.indexOf(terminal))
-  })
+    const dockToggle = screen.getByTestId('status-bar-dock-toggle')
+    expect(dockToggle).toHaveAttribute('aria-pressed', 'false')
 
-  test('closed right dock renders DockPeekButton after TerminalZone', async () => {
-    const user = userEvent.setup()
-    render(<WorkspaceView />)
+    await user.click(dockToggle)
 
-    await user.click(screen.getByRole('button', { name: /dock: right/i }))
-    await user.click(screen.getByRole('button', { name: /more dock actions/i }))
-    await user.click(screen.getByRole('button', { name: /collapse panel/i }))
-
-    const inner = screen.getByTestId('dock-canvas-wrapper')
-
-    const peek = screen.getByRole('button', {
-      name: /show panel docked right/i,
-    })
-    const terminal = screen.getByTestId('terminal-zone-wrapper')
-
-    const children = Array.from(inner.children)
-
-    expect(children.indexOf(peek)).toBeGreaterThan(children.indexOf(terminal))
+    expect(screen.getByTestId('dock-panel')).toBeInTheDocument()
+    expect(dockToggle).toHaveAttribute('aria-pressed', 'true')
   })
 
   test('main workspace area uses flex-col layout', () => {

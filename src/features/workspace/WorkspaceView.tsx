@@ -26,7 +26,6 @@ import {
   TerminalZone,
   type TerminalZoneHandle,
 } from './components/TerminalZone'
-import { DockPeekButton } from './components/DockPeekButton'
 import DockPanel, { type DockPanelHandle } from './components/DockPanel'
 import type { DockPosition } from './components/DockSwitcher'
 import {
@@ -1726,7 +1725,7 @@ export const WorkspaceView = (): ReactElement => {
     terminalService,
   ])
 
-  const dockOrPeek = isDockOpen ? (
+  const dockPanel = isDockOpen ? (
     <DockPanel
       ref={dockPanelRef}
       selectedFilePath={editorBuffer.filePath}
@@ -1766,9 +1765,9 @@ export const WorkspaceView = (): ReactElement => {
       feedbackRepoRootRef={feedbackRepoRootRef}
       feedbackDispatch={feedbackDispatch}
     />
-  ) : (
-    <DockPeekButton position={dockPosition} onOpen={() => openDock()} />
-  )
+  ) : // Closed dock renders nothing — the bottom action bar's dock toggle is
+  // the single reopen affordance (the old "show panel" peek bar is gone).
+  null
 
   const pendingSessionFilePath = pendingSessionRemovalId
     ? editorBuffer.getFilePathForScope(pendingSessionRemovalId)
@@ -2153,7 +2152,7 @@ export const WorkspaceView = (): ReactElement => {
           className="flex min-h-0 min-w-0 flex-1 overflow-hidden"
           style={{ flexDirection: dockCanvasFlexDirection }}
         >
-          {dockBeforeTerminal ? dockOrPeek : null}
+          {dockBeforeTerminal ? dockPanel : null}
           <div
             data-testid="terminal-zone-wrapper"
             className="flex min-h-0 min-w-0 flex-1 overflow-hidden"
@@ -2182,7 +2181,7 @@ export const WorkspaceView = (): ReactElement => {
               runningBurnerPaneKeys={runningBurnerPaneKeys}
             />
           </div>
-          {!dockBeforeTerminal ? dockOrPeek : null}
+          {!dockBeforeTerminal ? dockPanel : null}
         </div>
 
         {(fileError !== null || infoMessage !== null) && (
