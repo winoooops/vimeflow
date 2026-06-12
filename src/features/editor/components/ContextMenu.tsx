@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import type { ReactElement } from 'react'
 import type { ContextMenuAction } from '../types'
 
@@ -52,7 +53,7 @@ export const ContextMenu = ({
     return null
   }
 
-  return (
+  return createPortal(
     <div
       ref={menuRef}
       className="fixed bg-surface-container-highest/80 backdrop-blur-[16px] border border-outline-variant/30 rounded-xl py-2 w-48 shadow-2xl z-50"
@@ -95,6 +96,7 @@ export const ContextMenu = ({
           </button>
         )
       })}
-    </div>
+    </div>,
+    document.body
   )
 }
