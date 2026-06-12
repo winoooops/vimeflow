@@ -16,6 +16,7 @@ import rehypeSanitize from 'rehype-sanitize'
 import rehypeSlug from 'rehype-slug'
 import type { PluggableList } from 'unified'
 import { useReadingStyle } from '../hooks/useReadingStyle'
+import { writeClipboardText } from '../hooks/useCodeMirror'
 import type { ContextMenuAction } from '../types'
 import { ContextMenu } from './ContextMenu'
 import { markdownComponents } from './markdownComponents'
@@ -57,18 +58,14 @@ interface MarkdownReadingViewProps {
   isDirty?: boolean
 }
 
-interface ContextMenuState {
+interface ReadingViewMenuState {
   visible: boolean
   x: number
   y: number
 }
 
-interface ClipboardWriter {
-  writeText?: (text: string) => Promise<void>
-}
-
 const CONTEXT_MENU_WIDTH = 192
-const CONTEXT_MENU_HEIGHT = 112
+const CONTEXT_MENU_HEIGHT = 160
 
 const selectionEndpointIsInside = (
   selection: globalThis.Selection,
@@ -123,7 +120,7 @@ export const MarkdownReadingView = forwardRef<
   const regionRef = useRef<HTMLDivElement>(null)
   const selectedTextRef = useRef('')
 
-  const [contextMenu, setContextMenu] = useState<ContextMenuState>({
+  const [contextMenu, setContextMenu] = useState<ReadingViewMenuState>({
     visible: false,
     x: 0,
     y: 0,
@@ -196,8 +193,7 @@ export const MarkdownReadingView = forwardRef<
       return
     }
 
-    const clipboard = window.navigator.clipboard as ClipboardWriter | undefined
-    void clipboard?.writeText?.(selectedText)
+    void writeClipboardText(selectedText)
   }, [getSelectedRenderedText])
 
   const selectAll = useCallback((): void => {

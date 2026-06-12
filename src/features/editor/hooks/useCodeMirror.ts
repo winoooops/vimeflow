@@ -172,7 +172,7 @@ const writeViaTextarea = (text: string): boolean => {
   }
 }
 
-const writeClipboardText = async (text: string): Promise<boolean> => {
+export const writeClipboardText = async (text: string): Promise<boolean> => {
   if (text === '') {
     return false
   }

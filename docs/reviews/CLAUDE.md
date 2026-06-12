@@ -69,15 +69,15 @@ When appending findings to a pattern file, label the source so future readers ca
 | [PTY Session Management](patterns/pty-session-management.md)         | backend            | 9        | 2    | 2026-06-03   |
 | [Git Operations](patterns/git-operations.md)                         | correctness        | 25       | 10   | 2026-05-31   |
 | [CodeMirror Integration](patterns/codemirror-integration.md)         | editor             | 19       | 4    | 2026-06-06   |
-| [Error Surfacing](patterns/error-surfacing.md)                       | error-handling     | 37       | 11   | 2026-06-08   |
+| [Error Surfacing](patterns/error-surfacing.md)                       | error-handling     | 38       | 11   | 2026-06-12   |
 | [File Tree Paths](patterns/file-tree-paths.md)                       | files              | 4        | 0    | 2026-04-10   |
 | [Scope Boundary](patterns/scope-boundary.md)                         | review-process     | 8        | 3    | 2026-06-01   |
 | [E2E Testing](patterns/e2e-testing.md)                               | e2e-testing        | 19       | 7    | 2026-06-06   |
-| [Module Boundaries](patterns/module-boundaries.md)                   | code-quality       | 13       | 2    | 2026-06-08   |
+| [Module Boundaries](patterns/module-boundaries.md)                   | code-quality       | 14       | 2    | 2026-06-12   |
 | [Diagnostic Instrumentation](patterns/diagnostic-instrumentation.md) | code-quality       | 7        | 2    | 2026-05-02   |
 | [Keyboard Shortcut Guards](patterns/keyboard-shortcut-guards.md)     | keyboard-shortcuts | 19       | 1    | 2026-06-06   |
 | [Verify Render Target](patterns/verify-render-target.md)             | code-quality       | 2        | 0    | 2026-05-24   |
-| [UI Visual Regression](patterns/ui-visual-regression.md)             | code-quality       | 1        | 0    | 2026-06-11   |
+| [UI Visual Regression](patterns/ui-visual-regression.md)             | code-quality       | 2        | 0    | 2026-06-12   |
 | [Status Indicator Display](patterns/status-indicator-display.md)     | code-quality       | 3        | 0    | 2026-05-26   |
 | [Parser Resilience](patterns/parser-resilience.md)                   | code-quality       | 10       | 7    | 2026-06-11   |
 | [Persisted State Invariants](patterns/persisted-state-invariants.md) | correctness        | 6        | 3    | 2026-06-08   |

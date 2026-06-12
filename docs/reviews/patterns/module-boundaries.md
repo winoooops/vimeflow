@@ -2,7 +2,7 @@
 id: module-boundaries
 category: code-quality
 created: 2026-04-30
-last_updated: 2026-06-08
+last_updated: 2026-06-12
 ref_count: 2
 ---
 
@@ -158,4 +158,13 @@ Don't widen the coupling by adding a second importer.
 - **File:** `src/features/sessions/hooks/useSessionRestore.ts`, `src/features/sessions/hooks/useSessionManager.ts`
 - **Finding:** `UseSessionRestoreOptions.onRestore` exposed a `context.storePresent` parameter and `useSessionRestore` computed `storeAuthoritative`, but the only consumer ignored the second argument. The public hook contract implied downstream behavior that did not exist.
 - **Fix:** Remove the unused context parameter, delete the `storeAuthoritative` calculation, and call `onRestore(restored)` with the API shape that callers actually consume.
+- **Commit:** same commit as this entry
+
+### 14. Local `ContextMenuState` shadows the shared `ContextMenuState` type
+
+- **Source:** github-claude | PR #428 round 1 | 2026-06-12
+- **Severity:** MEDIUM
+- **File:** `src/features/editor/components/MarkdownReadingView.tsx`
+- **Finding:** A new local `ContextMenuState` interface was introduced with shape `{visible, x, y}` while the shared `src/features/editor/types/index.ts` already exports `ContextMenuState` with shape `{visible, x, y, targetNode: FileNode | null}`. The component imported the related `ContextMenuAction` from the shared module but avoided importing the shared `ContextMenuState`, leaving two same-name types with different contracts. A future refactor that tries to unify them would produce a confusing TypeScript error on the missing `targetNode` field.
+- **Fix:** Renamed the local interface to `ReadingViewMenuState` so the intentional subset is explicit and no longer collides with the shared type. (1-line note: this is a naming-boundary issue rather than the utility-promotion cases in #1–#5, but the same principle applies — local definitions must not silently diverge from shared contracts that share the same name.)
 - **Commit:** same commit as this entry

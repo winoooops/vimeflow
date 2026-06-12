@@ -223,6 +223,47 @@ describe('MarkdownReadingView', () => {
     }
   })
 
+  test('falls back to execCommand copy when navigator.clipboard.writeText is unavailable', () => {
+    const originalClipboard = window.navigator.clipboard
+    const execCommandMock = vi.fn().mockReturnValue(true)
+
+    Object.defineProperty(window.navigator, 'clipboard', {
+      value: {},
+      configurable: true,
+      writable: true,
+    })
+    Object.defineProperty(document, 'execCommand', {
+      value: execCommandMock,
+      configurable: true,
+      writable: true,
+    })
+
+    try {
+      render(<MarkdownReadingView content="Copy **rendered** text" />)
+
+      const paragraph = screen.getByText(
+        (_text, element) =>
+          element?.tagName.toLowerCase() === 'p' &&
+          element.textContent === 'Copy rendered text'
+      )
+      selectNodeContents(paragraph)
+
+      const region = screen.getByRole('region', {
+        name: /markdown reading view/i,
+      })
+      fireEvent.contextMenu(region, { clientX: 40, clientY: 80 })
+      fireEvent.click(screen.getByRole('menuitem', { name: /^copy$/i }))
+
+      expect(execCommandMock).toHaveBeenCalledWith('copy')
+    } finally {
+      Object.defineProperty(window.navigator, 'clipboard', {
+        value: originalClipboard,
+        configurable: true,
+        writable: true,
+      })
+    }
+  })
+
   test('selects all rendered markdown content from the context menu', () => {
     render(
       <MarkdownReadingView content={'# Doc Title\n\nCopy **rendered** text'} />

@@ -2,7 +2,7 @@
 id: error-surfacing
 category: error-handling
 created: 2026-04-10
-last_updated: 2026-06-08
+last_updated: 2026-06-12
 ref_count: 10
 ---
 
@@ -368,4 +368,13 @@ failed" must mean the editor shows the original file, not the requested one.
 - **File:** `src/features/workspace/commands/buildWorkspaceCommands.ts`
 - **Finding:** `WorkspaceCommandDeps` declared `createBrowserSession?: () => void` as optional, but `buildWorkspaceCommands` unconditionally added a `:new-browser` command whose `execute` callback was `createBrowserSession?.()`. Any caller or test harness that omitted the optional dependency would expose a visible command that silently did nothing — no compile-time error, no runtime warning, and no UI feedback. The optional type was consistent with other optional deps (e.g. `activePaneAgentType?`, `nextPaneRenameRequestId?`) that control internal guard behavior, but inconsistent when the optional dep drives a user-visible palette entry.
 - **Fix:** Conditionally include `:new-browser` in the returned command array only when `createBrowserSession` is provided. Added a regression test asserting the command is absent when the handler is omitted. Keeps the dependency optional (backward-compatible for callers that don't need browser sessions) while eliminating the silent no-op surface.
+- **Commit:** same commit as this entry
+
+### 38. `void` clipboard write silently fails when `navigator.clipboard.writeText` is unavailable or rejects
+
+- **Source:** github-codex-connector | PR #428 round 1 | 2026-06-12
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/editor/components/MarkdownReadingView.tsx`
+- **Finding:** The new reading-view context-menu Copy action called `void clipboard?.writeText?.(selectedText)`, discarding both missing-API and rejection cases. In Electron's `loadFile` runtime or when clipboard permission is denied the copy surface silently does nothing, leaving the user without the selected text on the clipboard. Same `void promise` anti-pattern as #1–#5 and #36, but the fix here is graceful fallback rather than user-facing error surfacing.
+- **Fix:** Replaced the direct call with the existing `writeClipboardText` helper from `useCodeMirror.ts`, which tries `navigator.clipboard.writeText` and falls back to a hidden-textarea / `document.execCommand('copy')` path when the modern API is missing or rejects. Exported the helper so the reading view can share the editor's battle-tested fallback. Added a regression test asserting the fallback path is exercised when `navigator.clipboard.writeText` is absent.
 - **Commit:** same commit as this entry
