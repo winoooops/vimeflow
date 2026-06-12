@@ -142,7 +142,9 @@ codegen-units = 1
 strip = "symbols"
 ```
 
-- `strip = "symbols"` is the big one (typically 30–50% off).
+- `strip = "symbols"` is the big one (typically 30–50% off). It removes the full
+  symbol table, not just DWARF debug info; use `strip = "debuginfo"` instead if
+  you need symbol names for crash symbolication.
 - `panic = "abort"` would shave more but changes unwind semantics under the tokio
   runtime — do not add without testing PTY crash/recovery paths.
 - Verify behavior after profile changes: `cargo test --release` and the e2e terminal suite.
@@ -170,7 +172,7 @@ strip = "symbols"
 - [ ] Before/after size table: AppImage (or DMG), app.asar, sidecar binary
 - [ ] `npx asar list` shows no node_modules (or only intentional re-includes)
 - [ ] Any new native `.node` dependency is explicitly re-included via
-  `electron-builder.yml` packaging configuration
+      `electron-builder.yml` packaging configuration
 - [ ] Packaged app launches; terminal, file explorer, editor, diff all open
 - [ ] `npm run lint && npm run type-check && npm run test` green
 - [ ] Findings Log updated below

@@ -56,7 +56,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Hot-Path Caching](patterns/hot-path-caching.md)                       | backend            | 1        | 0    | 2026-06-09   |
 | [Testing Gaps](patterns/testing-gaps.md)                               | testing            | 64       | 30   | 2026-06-12   |
 | [Terminal Input Handling](patterns/terminal-input-handling.md)         | terminal           | 4        | 2    | 2026-05-24   |
-| [Documentation Accuracy](patterns/documentation-accuracy.md)           | code-quality       | 86       | 25   | 2026-06-12   |
+| [Documentation Accuracy](patterns/documentation-accuracy.md)           | code-quality       | 88       | 26   | 2026-06-12   |
 | [Accessibility](patterns/accessibility.md)                             | a11y               | 51       | 22   | 2026-06-12   |
 | [Event Identity Guard](patterns/event-identity-guard.md)               | backend            | 1        | 0    | 2026-06-11   |
 | [Async Race Conditions](patterns/async-race-conditions.md)             | react-patterns     | 63       | 21   | 2026-06-08   |
