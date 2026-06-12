@@ -89,9 +89,11 @@ files:
 renderer uses goes through Vite. When adding a main-process dependency, either let
 vite-plugin-electron bundle it or explicitly re-include just that package.
 
-**Verify after every electron-builder.yml change:**
+**Verify after every `electron-builder.yml` or `package.json` dependency change:**
 `npx asar list .../app.asar | grep -c node_modules` should be 0 (or exactly the
-re-included packages), and the packaged app must launch.
+re-included packages), and the packaged app must launch. Dependency additions
+are the most common way to introduce a native `.node` addon; local dev may pass
+while the packaged app fails because `node_modules` is excluded from the asar.
 
 ### Chromium locales
 
@@ -167,6 +169,8 @@ strip = "symbols"
 
 - [ ] Before/after size table: AppImage (or DMG), app.asar, sidecar binary
 - [ ] `npx asar list` shows no node_modules (or only intentional re-includes)
+- [ ] Any new native `.node` dependency is explicitly re-included via
+  `electron-builder.yml` packaging configuration
 - [ ] Packaged app launches; terminal, file explorer, editor, diff all open
 - [ ] `npm run lint && npm run type-check && npm run test` green
 - [ ] Findings Log updated below

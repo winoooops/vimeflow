@@ -2,7 +2,7 @@
 id: documentation-accuracy
 category: code-quality
 created: 2026-04-09
-last_updated: 2026-06-08
+last_updated: 2026-06-12
 ref_count: 25
 ---
 
@@ -800,4 +800,13 @@ Stale documentation misleads future contributors and review agents.
 - **File:** `electron/browser-pane.ts`
 - **Finding:** `installFaviconEmitter` had to run before history restore or URL load because Electron can emit `page-favicon-updated` during replay, but no inline comment documented that ordering contract. A future refactor could move the emitter after restore and silently drop restored-tab favicons.
 - **Fix:** Added a short comment directly above `installFaviconEmitter` stating that it must precede history restore/load because the favicon event can fire during that work.
+- **Commit:** same commit as this entry
+
+### 86. Native-addon verification trigger missed dependency additions
+
+- **Source:** github-claude | PR #437 round 1 | 2026-06-12
+- **Severity:** MEDIUM
+- **File:** `rules/electron/optimization.md`
+- **Finding:** The playbook excluded `node_modules` from the packaged asar and documented native-addon handling, but its explicit verify trigger was scoped to `electron-builder.yml` changes while the common way to introduce a native addon is a `package.json` dependency change. Local dev could succeed with `node_modules` present while the packaged app failed at runtime when a `.node` file was excluded.
+- **Fix:** Broadened the verification trigger to cover `package.json` dependency changes, explained that dependency additions are the most common native-addon entry point, and added a checklist item requiring any new native `.node` dependency to be explicitly re-included via `electron-builder.yml` packaging configuration.
 - **Commit:** same commit as this entry
