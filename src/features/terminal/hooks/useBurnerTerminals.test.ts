@@ -183,6 +183,30 @@ test('hiding the popup does not kill the shell', async () => {
   expect(service.kill).not.toHaveBeenCalled()
 })
 
+test('hasVisibleBurner tracks only the visible popup, not hidden live shells', async () => {
+  const service = makeService()
+  const focused = makeFocusedPane()
+
+  const { result } = renderHook(() =>
+    useBurnerTerminals({ service, resolveFocusedPane: () => focused })
+  )
+
+  expect(result.current.hasVisibleBurner).toBe(false)
+
+  await act(async () => {
+    await result.current.toggle()
+  })
+
+  expect(result.current.hasVisibleBurner).toBe(true)
+
+  await act(async () => {
+    await result.current.toggle()
+  })
+
+  expect(result.current.hasVisibleBurner).toBe(false)
+  expect(result.current.renderNode).not.toBeNull()
+})
+
 test('renderNode stays non-null when hidden while a shell is alive', async () => {
   const service = makeService()
   const focused = makeFocusedPane()

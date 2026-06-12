@@ -965,6 +965,7 @@ export const WorkspaceView = (): ReactElement => {
     toggle: toggleBurner,
     runningByPane: runningBurnerByPane,
     activeByPane: activeBurnerByPane,
+    hasVisibleBurner,
   } = useBurnerTerminals({
     service: terminalService,
     resolveFocusedPane,
@@ -1643,6 +1644,7 @@ export const WorkspaceView = (): ReactElement => {
     terminalFitDeferred ||
     showUnsavedDialog ||
     commandPalette.state.isOpen ||
+    hasVisibleBurner ||
     paneRenameNode !== null ||
     fileError !== null ||
     infoMessage !== null

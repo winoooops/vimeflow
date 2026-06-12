@@ -126,6 +126,8 @@ export interface UseBurnerTerminals {
    * distinct from `runningByPane`, which only means a shell exists.
    */
   activeByPane: ReadonlyMap<string, boolean>
+  /** True while a burner popup is visibly open over the workspace. */
+  hasVisibleBurner: boolean
 }
 
 /**
@@ -572,5 +574,11 @@ export const useBurnerTerminals = ({
         )
       : null
 
-  return { renderNode, toggle, runningByPane, activeByPane }
+  return {
+    renderNode,
+    toggle,
+    runningByPane,
+    activeByPane,
+    hasVisibleBurner: visibleKey !== null,
+  }
 }
