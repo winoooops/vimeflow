@@ -2,8 +2,8 @@
 id: documentation-accuracy
 category: code-quality
 created: 2026-04-09
-last_updated: 2026-06-11
-ref_count: 25
+last_updated: 2026-06-12
+ref_count: 26
 ---
 
 # Documentation Accuracy
@@ -818,4 +818,13 @@ Stale documentation misleads future contributors and review agents.
 - **File:** `docs/reviews/CLAUDE.md`
 - **Finding:** The React Lifecycle and Accessibility rows in the index table were rewritten with a leading space before the opening `|`, collapsed column widths, and an extra empty cell `|  |` at the end. Most Markdown renderers produce broken output for misaligned pipe tables.
 - **Fix:** Re-aligned both rows to match the surrounding pipe-table style and removed the trailing empty cell.
+- **Commit:** same commit as this entry
+
+### 88. Version constant duplicated between Rust and TypeScript with no cross-check
+
+- **Source:** github-claude | PR #430 round 3 | 2026-06-12
+- **Severity:** LOW
+- **File:** `src/features/settings/store/settingsDefaults.ts` L4-4
+- **Finding:** Rust declares `CURRENT_APP_SETTINGS_VERSION: u32 = 1` in `crates/backend/src/settings/app_settings.rs:10`, and TypeScript hard-codes `version: 1` in `settingsDefaults.ts:4`. `AppSettingsCache::save()` rejects any settings whose version doesn't match the Rust constant. When the Rust constant is bumped for a schema migration, the TypeScript default must also be updated; if it isn't, all `save_app_settings` calls from fresh renderer sessions will be rejected with a version-mismatch error and `saveError` will be set immediately on first user edit.
+- **Fix:** Added a comment on the TypeScript constant referencing `CURRENT_APP_SETTINGS_VERSION` in `crates/backend/src/settings/app_settings.rs` so the coupling is visible at change time.
 - **Commit:** same commit as this entry

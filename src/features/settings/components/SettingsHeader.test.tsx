@@ -91,9 +91,9 @@ describe('SettingsHeader', () => {
       screen.getByRole('button', { name: 'Edit in settings.json' })
     )
 
-    expect(
-      await screen.findByRole('alert')
-    ).toHaveTextContent('Could not open settings.json')
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Could not open settings.json'
+    )
   })
 
   afterEach(() => {

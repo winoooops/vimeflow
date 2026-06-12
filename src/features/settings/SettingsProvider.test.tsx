@@ -127,4 +127,48 @@ describe('SettingsProvider', () => {
       expect(screen.getByTestId('closeWithNoTabs').textContent).toBe('platform')
     })
   })
+
+  test('surfaces saveError when save() rejects', async () => {
+    const loaded = createLoadedSettings()
+    const load = vi.fn().mockResolvedValue(loaded)
+    const save = vi.fn().mockRejectedValue(new Error('disk full'))
+
+    window.vimeflow = {
+      settings: { load, save, openFile: vi.fn() },
+    } as unknown as Window['vimeflow']
+
+    const SaveErrorConsumer = (): ReactElement => {
+      const { saveError, update } = useSettings()
+
+      return (
+        <div>
+          <span data-testid="saveError">{saveError?.message ?? 'none'}</span>
+          <button
+            type="button"
+            data-testid="update"
+            onClick={() => update({ closeWithNoTabs: 'nothing' })}
+          >
+            Update
+          </button>
+        </div>
+      )
+    }
+
+    render(
+      <SettingsProvider>
+        <SaveErrorConsumer />
+      </SettingsProvider>
+    )
+
+    await waitFor(() => {
+      expect(screen.getByTestId('saveError').textContent).toBe('none')
+    })
+
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'Update' }))
+
+    await waitFor(() => {
+      expect(screen.getByTestId('saveError').textContent).toBe('disk full')
+    })
+  })
 })

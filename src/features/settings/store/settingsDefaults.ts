@@ -1,6 +1,7 @@
 import type { AppSettings } from '../../../bindings/AppSettings'
 
 export const DEFAULT_SETTINGS: AppSettings = {
+  // Must match CURRENT_APP_SETTINGS_VERSION in crates/backend/src/settings/app_settings.rs
   version: 1,
   closeWithNoTabs: 'platform',
   onLastWindowClosed: 'platform',

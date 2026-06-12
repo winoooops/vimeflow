@@ -52,7 +52,9 @@ export const SettingsHeader = ({
       <span className="min-w-0 flex-1" />
 
       <div className="flex items-center gap-2">
-        <GhostButton onClick={handleOpenFile}>Edit in settings.json</GhostButton>
+        <GhostButton onClick={handleOpenFile}>
+          Edit in settings.json
+        </GhostButton>
         {openError && (
           <span role="alert" className="font-body text-xs text-error">
             {openError}

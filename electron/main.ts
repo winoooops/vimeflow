@@ -7,7 +7,7 @@ import {
   session,
   shell,
 } from 'electron'
-import fs from 'node:fs'
+import { access } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import type { AppSettings } from '../src/bindings/AppSettings'
@@ -454,7 +454,11 @@ const setupApp = async (): Promise<void> => {
   ipcMain.handle(SETTINGS_OPEN_FILE, async (): Promise<void> => {
     const settingsPath = path.join(app.getPath('userData'), 'settings.json')
 
-    if (!fs.existsSync(settingsPath)) {
+    const fileExists = await access(settingsPath)
+      .then(() => true)
+      .catch(() => false)
+
+    if (!fileExists) {
       try {
         const defaults =
           await spawnedSidecar.invoke<AppSettings>('load_app_settings')

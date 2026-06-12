@@ -2,8 +2,8 @@
 id: testing-gaps
 category: testing
 created: 2026-04-09
-last_updated: 2026-06-11
-ref_count: 30
+last_updated: 2026-06-12
+ref_count: 31
 ---
 
 # Testing Gaps
@@ -629,4 +629,13 @@ filesystem scope restrictions).
 - **Finding:** The test `cached and fresh styles differ in cold-cache state` compared full `style` attribute strings via `expect(cachedStyle).not.toBe(freshStyle)`. The cached segment carries `boxShadow` and a different `width` than the fresh segment, so the strings always differ regardless of color values. If `FRESH_STACK_GRADIENT` were reverted to the colliding cold-state color `#ff94a5`, the test would still pass, providing zero protection against the regression.
 - **Fix:** Replaced the broad string inequality with a targeted `not.toContain('#ff94a5')` assertion on the fresh segment's style, directly verifying the fresh segment never carries the cold-cache pink color.
 - **Code-review heuristic:** When a test asserts inequality of two computed DOM style strings, check whether structural differences (width, box-shadow, margin, etc.) already guarantee the strings differ. If so, the test is trivially true. Narrow the assertion to the specific property or value that actually matters (e.g., `background`, `color`, or `not.toContain(expectedColor)`).
+- **Commit:** same commit as this entry
+
+### 63. saveError rejection path in SettingsProvider has no test coverage
+
+- **Source:** github-claude | PR #430 round 3 | 2026-06-12
+- **Severity:** MEDIUM
+- **File:** `src/features/settings/SettingsProvider.test.tsx` L112-165
+- **Finding:** `SettingsProvider.test.tsx` covered hydration, update-success, bridge-absent, and load-rejection, but the `catch (error)` branch in `SettingsProvider.saveNext` (where `bridge.save()` rejects and `saveError` is populated) had zero coverage. `saveError` is the primary user-facing error signal for save failures and part of the public `SettingsContextValue` interface that VIM-101..104 panes will consume.
+- **Fix:** Added a fifth test that mocks `window.vimeflow.settings.save` to reject with `Error('disk full')`, triggers `update()`, and asserts `saveError.message` is surfaced in the context consumer.
 - **Commit:** same commit as this entry

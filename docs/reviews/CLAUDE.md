@@ -41,46 +41,47 @@ When appending findings to a pattern file, label the source so future readers ca
 - `local-codex` — local `codex exec` runs (e.g. `/lifeline:review` or post-fix verify in
   `/lifeline:upsource-review`).
 
-| Pattern                                                              | Category           | Findings | Refs | Last Updated |
-| -------------------------------------------------------------------- | ------------------ | -------- | ---- | ------------ |
-| [Filesystem Scope](patterns/filesystem-scope.md)                     | security           | 21       | 3    | 2026-05-20   |
-| [React Lifecycle](patterns/react-lifecycle.md)                       | react-patterns     | 37       | 16   | 2026-06-12   |
-| [React Key Stability](patterns/react-key-stability.md)               | react-patterns     | 2        | 0    | 2026-06-11   |
-| [Motion Layout Projection](patterns/motion-layout-projection.md)     | react-patterns     | 1        | 0    | 2026-06-10   |
-| [Resource Cleanup](patterns/resource-cleanup.md)                     | react-patterns     | 11       | 10   | 2026-06-08   |
-| [Cross-Platform Paths](patterns/cross-platform-paths.md)             | cross-platform     | 6        | 3    | 2026-05-30   |
-| [Debug Artifacts](patterns/debug-artifacts.md)                       | code-quality       | 7        | 0    | 2026-06-11   |
-| [Derived State Consistency](patterns/derived-state-consistency.md)   | code-quality       | 5        | 3    | 2026-06-08   |
-| [Generated Artifacts](patterns/generated-artifacts.md)               | code-quality       | 4        | 2    | 2026-06-11   |
-| [Generated Shell Scripts](patterns/generated-shell-scripts.md)       | backend            | 7        | 1    | 2026-06-03   |
-| [Hot-Path Caching](patterns/hot-path-caching.md)                     | backend            | 1        | 0    | 2026-06-09   |
-| [Testing Gaps](patterns/testing-gaps.md)                             | testing            | 62       | 30   | 2026-06-11   |
-| [Terminal Input Handling](patterns/terminal-input-handling.md)       | terminal           | 4        | 2    | 2026-05-24   |
-| [Documentation Accuracy](patterns/documentation-accuracy.md)         | code-quality       | 87       | 25   | 2026-06-11   |
-| [Accessibility](patterns/accessibility.md)                           | a11y               | 63       | 23   | 2026-06-11   |
-| [Event Identity Guard](patterns/event-identity-guard.md)             | backend            | 1        | 0    | 2026-06-11   |
-| [Async Race Conditions](patterns/async-race-conditions.md)           | react-patterns     | 64       | 22   | 2026-06-12   |
-| [Tokio Blocking On Async](patterns/tokio-blocking-on-async.md)       | backend            | 2        | 1    | 2026-05-20   |
-| [Command Injection](patterns/command-injection.md)                   | security           | 7        | 3    | 2026-05-02   |
-| [Policy Judge Hygiene](patterns/policy-judge-hygiene.md)             | security           | 15       | 2    | 2026-04-20   |
-| [Fail-Closed Hooks](patterns/fail-closed-hooks.md)                   | security           | 3        | 1    | 2026-04-20   |
-| [Preflight Checks](patterns/preflight-checks.md)                     | error-handling     | 3        | 0    | 2026-05-31   |
-| [CSP Configuration](patterns/csp-configuration.md)                   | security           | 8        | 5    | 2026-05-16   |
-| [Network Request Hardening](patterns/network-request-hardening.md)   | security           | 1        | 1    | 2026-06-08   |
-| [PTY Session Management](patterns/pty-session-management.md)         | backend            | 9        | 2    | 2026-06-03   |
-| [Git Operations](patterns/git-operations.md)                         | correctness        | 25       | 10   | 2026-05-31   |
-| [CodeMirror Integration](patterns/codemirror-integration.md)         | editor             | 19       | 4    | 2026-06-06   |
-| [Error Surfacing](patterns/error-surfacing.md)                       | error-handling     | 39       | 13   | 2026-06-12   |
-| [File Tree Paths](patterns/file-tree-paths.md)                       | files              | 4        | 0    | 2026-04-10   |
-| [Scope Boundary](patterns/scope-boundary.md)                         | review-process     | 8        | 3    | 2026-06-01   |
-| [E2E Testing](patterns/e2e-testing.md)                               | e2e-testing        | 19       | 7    | 2026-06-06   |
-| [Module Boundaries](patterns/module-boundaries.md)                   | code-quality       | 14       | 3    | 2026-06-12   |
-| [Diagnostic Instrumentation](patterns/diagnostic-instrumentation.md) | code-quality       | 7        | 2    | 2026-05-02   |
-| [Keyboard Shortcut Guards](patterns/keyboard-shortcut-guards.md)     | keyboard-shortcuts | 19       | 1    | 2026-06-06   |
-| [Verify Render Target](patterns/verify-render-target.md)             | code-quality       | 2        | 0    | 2026-05-24   |
-| [UI Visual Regression](patterns/ui-visual-regression.md)             | code-quality       | 1        | 0    | 2026-06-11   |
-| [Status Indicator Display](patterns/status-indicator-display.md)     | code-quality       | 3        | 0    | 2026-05-26   |
-| [Parser Resilience](patterns/parser-resilience.md)                   | code-quality       | 10       | 7    | 2026-06-11   |
-| [Persisted State Invariants](patterns/persisted-state-invariants.md) | correctness        | 7        | 4    | 2026-06-12   |
-| [macOS Window Chrome](patterns/macos-window-chrome.md)               | cross-platform     | 8        | 2    | 2026-06-11   |
-| [Guard Branch Correctness](patterns/guard-branch-correctness.md)     | correctness        | 1        | 0    | 2026-06-11   |
+| Pattern                                                                                  | Category           | Findings | Refs | Last Updated |
+| ---------------------------------------------------------------------------------------- | ------------------ | -------- | ---- | ------------ |
+| [Filesystem Scope](patterns/filesystem-scope.md)                                         | security           | 21       | 3    | 2026-05-20   |
+| [React Lifecycle](patterns/react-lifecycle.md)                                           | react-patterns     | 37       | 16   | 2026-06-12   |
+| [React Key Stability](patterns/react-key-stability.md)                                   | react-patterns     | 2        | 0    | 2026-06-11   |
+| [Motion Layout Projection](patterns/motion-layout-projection.md)                         | react-patterns     | 1        | 0    | 2026-06-10   |
+| [Resource Cleanup](patterns/resource-cleanup.md)                                         | react-patterns     | 11       | 10   | 2026-06-08   |
+| [Cross-Platform Paths](patterns/cross-platform-paths.md)                                 | cross-platform     | 6        | 3    | 2026-05-30   |
+| [Debug Artifacts](patterns/debug-artifacts.md)                                           | code-quality       | 7        | 0    | 2026-06-11   |
+| [Derived State Consistency](patterns/derived-state-consistency.md)                       | code-quality       | 5        | 3    | 2026-06-08   |
+| [Generated Artifacts](patterns/generated-artifacts.md)                                   | code-quality       | 4        | 2    | 2026-06-11   |
+| [Generated Shell Scripts](patterns/generated-shell-scripts.md)                           | backend            | 7        | 1    | 2026-06-03   |
+| [Hot-Path Caching](patterns/hot-path-caching.md)                                         | backend            | 1        | 0    | 2026-06-09   |
+| [Testing Gaps](patterns/testing-gaps.md)                                                 | testing            | 64       | 31   | 2026-06-12   |
+| [Terminal Input Handling](patterns/terminal-input-handling.md)                           | terminal           | 4        | 2    | 2026-05-24   |
+| [Documentation Accuracy](patterns/documentation-accuracy.md)                             | code-quality       | 88       | 26   | 2026-06-12   |
+| [Accessibility](patterns/accessibility.md)                                               | a11y               | 63       | 23   | 2026-06-11   |
+| [Event Identity Guard](patterns/event-identity-guard.md)                                 | backend            | 1        | 0    | 2026-06-11   |
+| [Async Race Conditions](patterns/async-race-conditions.md)                               | react-patterns     | 64       | 22   | 2026-06-12   |
+| [Tokio Blocking On Async](patterns/tokio-blocking-on-async.md)                           | backend            | 2        | 1    | 2026-05-20   |
+| [Command Injection](patterns/command-injection.md)                                       | security           | 7        | 3    | 2026-05-02   |
+| [Policy Judge Hygiene](patterns/policy-judge-hygiene.md)                                 | security           | 15       | 2    | 2026-04-20   |
+| [Fail-Closed Hooks](patterns/fail-closed-hooks.md)                                       | security           | 3        | 1    | 2026-04-20   |
+| [Preflight Checks](patterns/preflight-checks.md)                                         | error-handling     | 3        | 0    | 2026-05-31   |
+| [CSP Configuration](patterns/csp-configuration.md)                                       | security           | 8        | 5    | 2026-05-16   |
+| [Network Request Hardening](patterns/network-request-hardening.md)                       | security           | 1        | 1    | 2026-06-08   |
+| [PTY Session Management](patterns/pty-session-management.md)                             | backend            | 9        | 2    | 2026-06-03   |
+| [Git Operations](patterns/git-operations.md)                                             | correctness        | 25       | 10   | 2026-05-31   |
+| [CodeMirror Integration](patterns/codemirror-integration.md)                             | editor             | 19       | 4    | 2026-06-06   |
+| [Error Surfacing](patterns/error-surfacing.md)                                           | error-handling     | 39       | 13   | 2026-06-12   |
+| [File Tree Paths](patterns/file-tree-paths.md)                                           | files              | 4        | 0    | 2026-04-10   |
+| [Scope Boundary](patterns/scope-boundary.md)                                             | review-process     | 8        | 3    | 2026-06-01   |
+| [E2E Testing](patterns/e2e-testing.md)                                                   | e2e-testing        | 19       | 7    | 2026-06-06   |
+| [Module Boundaries](patterns/module-boundaries.md)                                       | code-quality       | 14       | 3    | 2026-06-12   |
+| [Diagnostic Instrumentation](patterns/diagnostic-instrumentation.md)                     | code-quality       | 7        | 2    | 2026-05-02   |
+| [Keyboard Shortcut Guards](patterns/keyboard-shortcut-guards.md)                         | keyboard-shortcuts | 19       | 1    | 2026-06-06   |
+| [Verify Render Target](patterns/verify-render-target.md)                                 | code-quality       | 2        | 0    | 2026-05-24   |
+| [UI Visual Regression](patterns/ui-visual-regression.md)                                 | code-quality       | 1        | 0    | 2026-06-11   |
+| [Status Indicator Display](patterns/status-indicator-display.md)                         | code-quality       | 3        | 0    | 2026-05-26   |
+| [Parser Resilience](patterns/parser-resilience.md)                                       | code-quality       | 10       | 7    | 2026-06-11   |
+| [Persisted State Invariants](patterns/persisted-state-invariants.md)                     | correctness        | 7        | 4    | 2026-06-12   |
+| [macOS Window Chrome](patterns/macos-window-chrome.md)                                   | cross-platform     | 8        | 2    | 2026-06-11   |
+| [Guard Branch Correctness](patterns/guard-branch-correctness.md)                         | correctness        | 1        | 0    | 2026-06-11   |
+| [Synchronous Calls in Async Electron Handlers](patterns/sync-calls-in-async-handlers.md) | code-quality       | 1        | 0    | 2026-06-12   |
