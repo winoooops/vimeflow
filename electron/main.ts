@@ -12,7 +12,6 @@ import { access } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import type { AppSettings } from '../src/bindings/AppSettings'
-import { DEFAULT_SETTINGS } from '../src/features/settings/store/settingsDefaults'
 import { isAllowedBackendMethod } from './backend-methods'
 import {
   developmentContentSecurityPolicy,
@@ -56,6 +55,12 @@ const APP_PROTOCOL = 'vimeflow'
 const APP_HOST = 'app'
 const APP_ORIGIN = `${APP_PROTOCOL}://${APP_HOST}`
 const E2E_RUNTIME_ARG = '--vimeflow-e2e'
+
+// Mirrors DEFAULT_SETTINGS.version in src/features/settings/store/settingsDefaults.ts
+// and CURRENT_APP_SETTINGS_VERSION in crates/backend/src/settings/app_settings.rs.
+// Kept local to the main process so Electron startup never depends on a renderer
+// feature module that may later gain browser-only runtime imports.
+const SETTINGS_SCHEMA_VERSION = 1
 
 // E2E detection (env var OR CLI flag fallback). Hoisted above its first
 // caller (installContentSecurityPolicy at ~line 80) so the TDZ never
@@ -548,7 +553,7 @@ app.on('window-all-closed', () => {
 
       // Only honor values written by the current app version. A newer or
       // unsupported version is treated as a mismatch and falls back to default.
-      if (parsed.version === DEFAULT_SETTINGS.version) {
+      if (parsed.version === SETTINGS_SCHEMA_VERSION) {
         onLastWindowClosed = parsed.onLastWindowClosed
       }
     } catch {
