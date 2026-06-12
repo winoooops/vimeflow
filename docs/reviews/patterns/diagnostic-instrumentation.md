@@ -2,8 +2,8 @@
 id: diagnostic-instrumentation
 category: code-quality
 created: 2026-04-30
-last_updated: 2026-05-24
-ref_count: 2
+last_updated: 2026-06-12
+ref_count: 3
 ---
 
 # Diagnostic Instrumentation
@@ -116,6 +116,15 @@ The discipline:
 - **Finding:** Step B'/cycle-1 routed all production Codex attaches through `AgentBindings::for_attach` → `CodexAdapter::with_home`, leaving `CodexAdapter::new` as test-only. But the `log::info!("codex adapter: locator initialized ...")` line — the canonical "did Codex attach?" diagnostic — lived in `CodexAdapter::new`. Result: every production Codex attach was now silent; only test-driven calls emitted the log. Operators grepping for that exact string would see NO production hits. Same finding-class as #5 (structurally-zero `dt`) — observability that's technically present but only fires on the dead code path.
 - **Fix:** Moved the log to `AgentBindings::for_attach` itself, after resolving `codex_home`. Every production attach now emits exactly one `"codex adapter: locator initialized (codex_home={}, pid={})"` line. `CodexAdapter::new` and `CompositeLocator::new` are intentionally silent — see #10 below for why placing it in `CompositeLocator::new` was wrong. Lesson: when a refactor extracts a factory and routes production through a new entry point, audit every log line at every emit site to confirm production reaches them. Don't assume "the log is still there" without confirming "production still touches that line."
 - **Commit:** _(PR #261 round 4 `/lifeline:upsource-review` cycle 4)_
+
+### 11. Diagnostic log performs blocking AWS SSM lookup on every polling tick
+
+- **Source:** github-codex-connector | PR #435 round 2 | 2026-06-12
+- **Severity:** MEDIUM
+- **File:** `scripts/qa-runner/watch.mjs` `tick()` / `watch()`, `scripts/qa-runner/lib/worker-instance.mjs` `resolveWorkerInstanceId()`
+- **Finding:** `watch()` logged the target worker EC2 instance ID by calling `logWorkerInstanceId()`, which called `resolveWorkerInstanceId()` and ran `execFileSync('aws', ['ssm', 'get-parameter', ...], { timeout: 10000 })`. `watch()` then immediately entered its first `tick()`, which called `logWorkerInstanceId()` again, and `tick()` was invoked on every subsequent polling cycle. Every tick therefore performed a synchronous AWS SSM round trip (up to 10 seconds) to resolve a value that does not change during the process lifetime. Degraded SSM or AWS CLI latency directly slowed each poll cycle and added duplicate work at startup.
+- **Fix:** Added a module-level cache in `resolveWorkerInstanceId()` so the SSM lookup runs at most once per process (successful or failed), and removed `logWorkerInstanceId()` from `tick()` because `watch()` already logs the ID once at startup. `tick()` no longer touches the worker identity, so the polling hot path stays free of blocking network I/O. Lesson: diagnostic values that are stable for the lifetime of the process should be resolved once and cached; never place a synchronous external network call inside a loop that runs on a fixed polling interval.
+- **Commit:** _(PR #435 round 2 `/lifeline:upsource-review` cycle 2)_
 
 ### 10. Self-introduced double-log — same constructor reached twice per attach
 
