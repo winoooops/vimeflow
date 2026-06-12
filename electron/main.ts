@@ -7,6 +7,7 @@ import {
   session,
   shell,
 } from 'electron'
+import { readFileSync } from 'node:fs'
 import { access } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -23,6 +24,7 @@ import {
   BACKEND_EVENT,
   BACKEND_INVOKE,
   SETTINGS_OPEN_FILE,
+  SETTINGS_SYNC_SNAPSHOT,
 } from './ipc-channels'
 import { spawnSidecar, type Sidecar } from './sidecar'
 import { setupBrowserPaneIpc, type BrowserPaneController } from './browser-pane'
@@ -32,6 +34,7 @@ import {
 } from './workspace-layout-controller'
 import { WorkspaceLayoutWriter } from './workspace-layout-writer'
 import { WorkspaceTeardown } from './workspace-teardown'
+import { shouldQuitOnAllWindowsClosed } from './last-window-close'
 import type { PersistedTab } from './workspace-layout-types'
 
 // Keep the GPU serving this window while it is occluded (covered by another
@@ -52,6 +55,12 @@ const APP_PROTOCOL = 'vimeflow'
 const APP_HOST = 'app'
 const APP_ORIGIN = `${APP_PROTOCOL}://${APP_HOST}`
 const E2E_RUNTIME_ARG = '--vimeflow-e2e'
+
+// Mirrors DEFAULT_SETTINGS.version in src/features/settings/store/settingsDefaults.ts
+// and CURRENT_APP_SETTINGS_VERSION in crates/backend/src/settings/app_settings.rs.
+// Kept local to the main process so Electron startup never depends on a renderer
+// feature module that may later gain browser-only runtime imports.
+const SETTINGS_SCHEMA_VERSION = 1
 
 // E2E detection (env var OR CLI flag fallback). Hoisted above its first
 // caller (installContentSecurityPolicy at ~line 80) so the TDZ never
@@ -208,6 +217,7 @@ let browserPaneController: BrowserPaneController | null = null
 let workspaceLayoutController: WorkspaceLayoutController | null = null
 let workspaceTeardown: WorkspaceTeardown | null = null
 let quitting = false
+let lastKnownOnLastWindowClosed: string | undefined
 
 const RENDERER_DIAGNOSTIC_PREFIXES = [
   '[vimeflow:terminal-cwd]',
@@ -476,6 +486,18 @@ const setupApp = async (): Promise<void> => {
     }
   })
 
+  ipcMain.handle(
+    SETTINGS_SYNC_SNAPSHOT,
+    (_ipcEvent, settings: unknown): void => {
+      if (
+        isRecord(settings) &&
+        typeof settings.onLastWindowClosed === 'string'
+      ) {
+        lastKnownOnLastWindowClosed = settings.onLastWindowClosed
+      }
+    }
+  )
+
   spawnedSidecar.onEvent((event, payload) => {
     for (const win of BrowserWindow.getAllWindows()) {
       win.webContents.send(BACKEND_EVENT, { event, payload })
@@ -517,7 +539,42 @@ app.on('before-quit', (event) => {
 })
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
+  let onLastWindowClosed: string | undefined
+
+  if (lastKnownOnLastWindowClosed !== undefined) {
+    // The renderer keeps this snapshot in sync whenever the user changes a
+    // setting, so we can read the latest value without racing the async save
+    // to disk / the Rust sidecar.
+    onLastWindowClosed = lastKnownOnLastWindowClosed
+  } else {
+    try {
+      const settingsPath = path.join(app.getPath('userData'), 'settings.json')
+      const raw = readFileSync(settingsPath, 'utf8')
+
+      const parsed = JSON.parse(raw) as {
+        version?: number
+        onLastWindowClosed?: string
+      }
+
+      // Only honor values written by the current app version. A newer or
+      // unsupported version is treated as a mismatch and falls back to default.
+      if (
+        parsed.version === SETTINGS_SCHEMA_VERSION &&
+        typeof parsed.onLastWindowClosed === 'string'
+      ) {
+        onLastWindowClosed = parsed.onLastWindowClosed
+      }
+    } catch {
+      // Missing or corrupt settings.json falls back to the platform default.
+    }
+  }
+
+  if (
+    shouldQuitOnAllWindowsClosed(
+      onLastWindowClosed ?? 'platform',
+      process.platform
+    )
+  ) {
     app.quit()
   }
 })

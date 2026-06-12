@@ -99,6 +99,42 @@ describe('SettingsProvider', () => {
     )
   })
 
+  test('syncs an in-memory snapshot to the main process on load and update', async () => {
+    const loaded = createLoadedSettings()
+    const load = vi.fn().mockResolvedValue(loaded)
+    const save = vi.fn().mockResolvedValue(undefined)
+    const syncSnapshot = vi.fn().mockResolvedValue(undefined)
+
+    window.vimeflow = {
+      settings: { load, save, openFile: vi.fn(), syncSnapshot },
+    } as unknown as Window['vimeflow']
+
+    render(
+      <SettingsProvider>
+        <TestConsumer />
+      </SettingsProvider>
+    )
+
+    await waitFor(() => {
+      expect(screen.getByTestId('closeWithNoTabs').textContent).toBe('close')
+    })
+
+    expect(syncSnapshot).toHaveBeenCalledWith(loaded)
+
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'Update' }))
+
+    await waitFor(() => {
+      expect(screen.getByTestId('closeWithNoTabs').textContent).toBe('nothing')
+    })
+
+    await waitFor(() => {
+      expect(syncSnapshot).toHaveBeenLastCalledWith(
+        expect.objectContaining({ closeWithNoTabs: 'nothing' })
+      )
+    })
+  })
+
   test('falls back to DEFAULT_SETTINGS when the bridge is absent', () => {
     render(
       <SettingsProvider>

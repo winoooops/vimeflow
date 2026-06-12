@@ -34,6 +34,26 @@ export const SettingsProvider = ({
 
   settingsRef.current = settings
 
+  const syncSnapshotToMain = useCallback(
+    async (next: AppSettings): Promise<void> => {
+      const bridge =
+        typeof window !== 'undefined' ? window.vimeflow?.settings : undefined
+
+      if (!bridge?.syncSnapshot) {
+        return
+      }
+
+      try {
+        await bridge.syncSnapshot(next)
+      } catch {
+        // Best-effort: the async save queue is still the source of truth for
+        // persistence; the snapshot only helps the main process avoid a race
+        // when the last window closes.
+      }
+    },
+    []
+  )
+
   useEffect(() => {
     const load = async (): Promise<void> => {
       const bridge =
@@ -47,13 +67,14 @@ export const SettingsProvider = ({
         const loaded = await bridge.load()
         setSettings(loaded)
         settingsRef.current = loaded
+        await syncSnapshotToMain(loaded)
       } catch {
         // Fall back to defaults if the backend load fails.
       }
     }
 
     void load()
-  }, [])
+  }, [syncSnapshotToMain])
 
   const saveNext = useCallback(
     async (previous: Promise<void>, next: AppSettings): Promise<void> => {
@@ -86,9 +107,10 @@ export const SettingsProvider = ({
       setSettings(next)
       setSaveError(null)
 
+      void syncSnapshotToMain(next)
       saveQueueRef.current = saveNext(saveQueueRef.current, next)
     },
-    [saveNext]
+    [saveNext, syncSnapshotToMain]
   )
 
   return (

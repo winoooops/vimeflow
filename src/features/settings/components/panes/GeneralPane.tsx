@@ -1,13 +1,9 @@
-import { useState, type ReactElement } from 'react'
+import type { ReactElement } from 'react'
+import { useSettings } from '../../hooks/useSettings'
 import { PaneTitle, Row, Select, Toggle } from '../controls'
 
 export const GeneralPane = (): ReactElement => {
-  const [closeNoTabs, setCloseNoTabs] = useState('platform')
-  const [lastWindow, setLastWindow] = useState('platform')
-  const [systemPathPrompts, setSystemPathPrompts] = useState(true)
-  const [systemPrompts, setSystemPrompts] = useState(true)
-  const [redactPrivate, setRedactPrivate] = useState(false)
-  const [cliOpenBehavior, setCliOpenBehavior] = useState('existing')
+  const { settings, update } = useSettings()
 
   return (
     <>
@@ -18,8 +14,8 @@ export const GeneralPane = (): ReactElement => {
         hint="What to do when using the 'close active item' action with no tabs."
       >
         <Select
-          value={closeNoTabs}
-          onChange={setCloseNoTabs}
+          value={settings.closeWithNoTabs}
+          onChange={(value): void => update({ closeWithNoTabs: value })}
           aria-label="When closing with no tabs"
           options={[
             { id: 'platform', label: 'Platform Default' },
@@ -34,8 +30,8 @@ export const GeneralPane = (): ReactElement => {
         hint="What to do when the last window is closed."
       >
         <Select
-          value={lastWindow}
-          onChange={setLastWindow}
+          value={settings.onLastWindowClosed}
+          onChange={(value): void => update({ onLastWindowClosed: value })}
           aria-label="On last window closed"
           options={[
             { id: 'platform', label: 'Platform Default' },
@@ -49,8 +45,8 @@ export const GeneralPane = (): ReactElement => {
         hint="Use native OS dialogs for 'Open' and 'Save As'."
       >
         <Toggle
-          on={systemPathPrompts}
-          onChange={setSystemPathPrompts}
+          on={settings.useSystemPathPrompts}
+          onChange={(value): void => update({ useSystemPathPrompts: value })}
           aria-label="Use System Path Prompts"
         />
       </Row>
@@ -60,8 +56,8 @@ export const GeneralPane = (): ReactElement => {
         hint="Use native OS dialogs for confirmations."
       >
         <Toggle
-          on={systemPrompts}
-          onChange={setSystemPrompts}
+          on={settings.useSystemPrompts}
+          onChange={(value): void => update({ useSystemPrompts: value })}
           aria-label="Use System Prompts"
         />
       </Row>
@@ -71,8 +67,8 @@ export const GeneralPane = (): ReactElement => {
         hint="Hide the values of variables in private files."
       >
         <Toggle
-          on={redactPrivate}
-          onChange={setRedactPrivate}
+          on={settings.redactPrivateValues}
+          onChange={(value): void => update({ redactPrivateValues: value })}
           aria-label="Redact Private Values"
         />
       </Row>
@@ -83,8 +79,8 @@ export const GeneralPane = (): ReactElement => {
         last
       >
         <Select
-          value={cliOpenBehavior}
-          onChange={setCliOpenBehavior}
+          value={settings.cliOpenBehavior}
+          onChange={(value): void => update({ cliOpenBehavior: value })}
           aria-label="CLI default open behavior"
           options={[
             { id: 'existing', label: 'Add to Existing Window' },
@@ -92,6 +88,15 @@ export const GeneralPane = (): ReactElement => {
           ]}
         />
       </Row>
+
+      {/*
+        Persistence-only settings note:
+        closeWithNoTabs, useSystemPathPrompts, useSystemPrompts,
+        redactPrivateValues, and cliOpenBehavior are persisted through the
+        settings store above, but the app does not yet have runtime surfaces
+        that honor them (no native OS dialogs, no private-value redaction,
+        and no `vf` CLI). They will light up as those respective features land.
+      */}
     </>
   )
 }

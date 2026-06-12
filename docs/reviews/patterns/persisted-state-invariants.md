@@ -3,7 +3,7 @@ id: persisted-state-invariants
 category: correctness
 created: 2026-06-08
 last_updated: 2026-06-12
-ref_count: 4
+ref_count: 6
 ---
 
 # Persisted State Invariants
@@ -75,4 +75,31 @@ Durable user-facing state (workspace shapes, caches, settings files) can be malf
 - **File:** `electron/main.ts` L452-454
 - **Finding:** The `SETTINGS_OPEN_FILE` handler called `shell.openPath` on `userData/settings.json`. On a fresh profile, `load_app_settings` returns defaults without writing them, so the file does not exist and the open action silently fails (the renderer also ignores the returned error string).
 - **Fix:** Before opening, the handler checks whether `settings.json` exists; if missing, it asks the sidecar to `load_app_settings` (which returns defaults) and then `save_app_settings` so the default file is materialized on disk. The open is still attempted even if seeding fails, letting the OS surface any residual error.
+- **Commit:** same commit as this entry
+
+### 8. Settings version not validated before honoring close behavior
+
+- **Source:** github-codex-connector | PR #432 round 1 | 2026-06-12
+- **Severity:** P2 / MEDIUM
+- **File:** `electron/main.ts` L528
+- **Finding:** The `window-all-closed` handler parsed `onLastWindowClosed` from `settings.json` without validating the persisted `version`. The backend settings store intentionally discards files written by a newer app version and loads defaults on version mismatch, but this direct parse in the main process still honored the field. In a downgrade/unsupported-version scenario such as `{"version":999,"onLastWindowClosed":"quit"}`, the UI/store would behave as platform default while the main process quit on macOS after the last window closed.
+- **Fix:** When reading `settings.json` as a fallback (no in-memory snapshot yet), compare `parsed.version` against `DEFAULT_SETTINGS.version` and only honor `onLastWindowClosed` when the versions match. Mismatched versions fall back to the platform default.
+- **Commit:** same commit as this entry
+
+### 9. Settings version validation imported a renderer value into Electron main
+
+- **Source:** github-codex-connector | PR #432 round 2 | 2026-06-12
+- **Severity:** MEDIUM
+- **File:** `electron/main.ts` L15, L551
+- **Finding:** Round 1's fix for finding #8 imported `DEFAULT_SETTINGS` from `src/features/settings/store/settingsDefaults` into `electron/main.ts` so the fallback `settings.json` parse could compare `parsed.version === DEFAULT_SETTINGS.version`. That is a runtime value import from a renderer feature tree into the Electron main process. The defaults module is a plain object today, but a future edit can add browser/React-facing imports (e.g., a theme helper, a hook, or a component) without any type-system or build guard to stop Electron main from loading it. When that happens, main-process startup or bundling fails silently until runtime.
+- **Fix:** Removed the `DEFAULT_SETTINGS` value import. Added a main-process-local `SETTINGS_SCHEMA_VERSION = 1` constant in `electron/main.ts`, documented as mirroring `DEFAULT_SETTINGS.version` and `CURRENT_APP_SETTINGS_VERSION`. The fallback parse now compares `parsed.version === SETTINGS_SCHEMA_VERSION`. This keeps the version validation behavior identical while severing the runtime dependency on a renderer-owned module. Code-review heuristic: value imports from `src/features/**` into `electron/**` are a process-boundary smell; prefer a local constant, an `electron/`-scoped shared constant, or a type-only import. Type-only imports are erased at compile time and are safe; value imports execute at runtime and couple main-process startup to renderer module graphs.
+- **Commit:** same commit as this entry
+
+### 10. Disk fallback omits runtime string check for onLastWindowClosed
+
+- **Source:** github-claude | PR #432 round 4 | 2026-06-12
+- **Severity:** LOW
+- **File:** `electron/main.ts` L549-567
+- **Finding:** The `window-all-closed` disk fallback parsed `onLastWindowClosed` from `settings.json` under a TypeScript assertion (`as { version?: number; onLastWindowClosed?: string }`), which is erased at runtime. A non-string persisted value such as `true` or `42` would be assigned unchecked, pass through `?? 'platform'`, and reach `shouldQuitOnAllWindowsClosed`. On macOS that produced the wrong quit decision because any non-`'darwin'` truthy value evaluates to quit instead of the platform-default stay-alive behavior.
+- **Fix:** Mirrored the IPC snapshot validation: the disk fallback now checks `parsed.version === SETTINGS_SCHEMA_VERSION && typeof parsed.onLastWindowClosed === 'string'` before assigning the value. This makes the cold-start fallback symmetric with the renderer-sync path and prevents malformed persisted state from altering close behavior.
 - **Commit:** same commit as this entry

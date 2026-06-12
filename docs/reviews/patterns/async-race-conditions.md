@@ -650,3 +650,12 @@ prevent showing previous data.
 - **Finding:** `update()` fired `bridge.save(merged)` as a fire-and-forget promise. If two updates happened before the first save resolved, both full snapshots were dispatched concurrently; the sidecar processes IPC requests concurrently, so an older snapshot could reach the Rust save mutex after a newer one and overwrite the newer preferences on disk.
 - **Fix:** Replaced fire-and-forget with a single-producer save queue. `saveQueueRef` always holds the tail promise; each new update awaits the previous save before invoking `bridge.save(next)`, guaranteeing that the last update to run is the last one persisted.
 - **Commit:** same commit as this entry
+
+### 64. window-all-closed reads stale settings.json before async save completes
+
+- **Source:** github-claude | PR #432 round 1 | 2026-06-12
+- **Severity:** MEDIUM
+- **File:** `electron/main.ts` L531-550
+- **Finding:** The `window-all-closed` handler read `onLastWindowClosed` from disk via `readFileSync`, but settings are persisted through an async IPC → Rust sidecar pipeline (`window.vimeflow.settings.save()`). If the user changed `onLastWindowClosed` to `'quit'` and immediately closed the last window before the queued save flushed to disk, `readFileSync` returned the pre-change value. On macOS the guard then evaluated `platform !== 'darwin'` → `false`, so `app.quit()` was never called and the app silently stayed alive despite the user's explicit quit preference.
+- **Fix:** Added an in-memory settings snapshot in the main process that the renderer updates via a new `settings:sync-snapshot` IPC channel. The close handler now prefers `lastKnownSettings.onLastWindowClosed`; it only falls back to reading `settings.json` when no snapshot has been received.
+- **Commit:** same commit as this entry

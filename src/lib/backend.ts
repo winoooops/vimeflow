@@ -17,6 +17,7 @@ export interface SettingsBridge {
   load: () => Promise<AppSettings>
   save: (settings: AppSettings) => Promise<void>
   openFile: () => Promise<void>
+  syncSnapshot: (settings: AppSettings) => Promise<void>
 }
 
 export interface BackendApi {
