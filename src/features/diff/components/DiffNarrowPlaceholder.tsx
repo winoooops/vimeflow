@@ -11,7 +11,7 @@ export const DiffNarrowPlaceholder = ({
     role="status"
     className="flex flex-col items-center justify-center gap-2 px-4 py-10 rounded-lg bg-surface-container-low/40 text-on-surface-variant text-center"
   >
-    <span className="material-symbols-outlined text-2xl leading-none opacity-70">
+    <span className="material-symbols-outlined rotate-90 text-2xl leading-none opacity-70">
       unfold_more
     </span>
     <p className="text-xs leading-snug">
