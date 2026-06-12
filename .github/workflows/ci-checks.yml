@@ -140,3 +140,4 @@ jobs:
           name: ts-bindings
           path: src/bindings/*.ts
           if-no-files-found: error
+          overwrite: true
