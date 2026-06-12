@@ -386,7 +386,6 @@ const pool = async (items, limit, worker) => {
 }
 
 const tick = async (ctx) => {
-  logWorkerInstanceId()
   let prs = openPRs().filter(
     (p) => (ctx.all || hasLabel(p, ctx.label)) && !p.isDraft
   )

@@ -75,7 +75,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Scope Boundary](patterns/scope-boundary.md)                                   | review-process     | 8        | 3    | 2026-06-01   |
 | [E2E Testing](patterns/e2e-testing.md)                                         | e2e-testing        | 19       | 7    | 2026-06-06   |
 | [Module Boundaries](patterns/module-boundaries.md)                             | code-quality       | 15       | 3    | 2026-06-12   |
-| [Diagnostic Instrumentation](patterns/diagnostic-instrumentation.md)           | code-quality       | 7        | 2    | 2026-05-02   |
+| [Diagnostic Instrumentation](patterns/diagnostic-instrumentation.md)           | code-quality       | 11       | 3    | 2026-06-12   |
 | [Keyboard Shortcut Guards](patterns/keyboard-shortcut-guards.md)               | keyboard-shortcuts | 19       | 1    | 2026-06-06   |
 | [Verify Render Target](patterns/verify-render-target.md)                       | code-quality       | 2        | 0    | 2026-05-24   |
 | [UI Visual Regression](patterns/ui-visual-regression.md)                       | code-quality       | 4        | 1    | 2026-06-12   |
