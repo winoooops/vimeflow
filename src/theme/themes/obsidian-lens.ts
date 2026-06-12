@@ -8,7 +8,10 @@ import type { ThemeDefinition } from '../types'
  * (guarded by themeCss.test.ts). */
 export const obsidianLens: ThemeDefinition = {
   id: 'obsidian-lens',
-  label: 'Obsidian Lens',
+  // Picker display name. The id (and file name) keep the historical
+  // "obsidian-lens" slug — it's persisted in localStorage and baked into
+  // command ids; renaming it would invalidate stored choices.
+  label: 'Catppuccin',
   kind: 'dark',
   ui: {
     surface: '#121221',
