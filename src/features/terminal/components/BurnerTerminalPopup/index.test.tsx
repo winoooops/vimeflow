@@ -67,6 +67,31 @@ const popup = (
   } = {}
 ): ReactElement => <BurnerTerminalPopup open={open} {...baseProps} {...extra} />
 
+const dispatchTabFrom = (
+  target: HTMLElement,
+  init: KeyboardEventInit = {}
+): {
+  terminalKeyDown: ReturnType<typeof vi.fn>
+  preventDefaultSpy: ReturnType<typeof vi.spyOn>
+  stopPropagationSpy: ReturnType<typeof vi.spyOn>
+} => {
+  const terminalKeyDown = vi.fn()
+  target.addEventListener('keydown', terminalKeyDown)
+
+  const event = new KeyboardEvent('keydown', {
+    key: 'Tab',
+    bubbles: true,
+    cancelable: true,
+    ...init,
+  })
+  const preventDefaultSpy = vi.spyOn(event, 'preventDefault')
+  const stopPropagationSpy = vi.spyOn(event, 'stopPropagation')
+
+  target.dispatchEvent(event)
+
+  return { terminalKeyDown, preventDefaultSpy, stopPropagationSpy }
+}
+
 beforeEach(() => {
   focusTerminal.mockClear()
   captured.onPaneReady = undefined
@@ -302,18 +327,20 @@ test('backdrop dismiss button is removed from the tab order', () => {
   ).toHaveAttribute('tabIndex', '-1')
 })
 
-test('Tab from terminal traps focus to the first button', () => {
+test('Tab from terminal passes through to xterm for shell autocomplete', () => {
   render(popup(true, { onAlignCwd: vi.fn() }))
 
   const textarea = screen.getByTestId('xterm-textarea')
   textarea.focus()
   expect(textarea).toHaveFocus()
 
-  fireEvent.keyDown(textarea, { key: 'Tab' })
+  const { terminalKeyDown, preventDefaultSpy, stopPropagationSpy } =
+    dispatchTabFrom(textarea)
 
-  expect(
-    screen.getByRole('button', { name: /align burner to pane directory/i })
-  ).toHaveFocus()
+  expect(terminalKeyDown).toHaveBeenCalledTimes(1)
+  expect(preventDefaultSpy).not.toHaveBeenCalled()
+  expect(stopPropagationSpy).not.toHaveBeenCalled()
+  expect(textarea).toHaveFocus()
 })
 
 test('Tab from last button wraps focus back to the terminal', () => {
@@ -344,37 +371,31 @@ test('Shift+Tab from first button wraps focus back to the terminal', () => {
   expect(focusTerminal).toHaveBeenCalledTimes(1)
 })
 
-test('Shift+Tab from terminal traps focus to the last button', () => {
+test('Shift+Tab from terminal passes through to xterm', () => {
   render(popup(true, { onAlignCwd: vi.fn() }))
 
   const textarea = screen.getByTestId('xterm-textarea')
   textarea.focus()
   expect(textarea).toHaveFocus()
 
-  fireEvent.keyDown(textarea, { key: 'Tab', shiftKey: true })
+  const { terminalKeyDown, preventDefaultSpy, stopPropagationSpy } =
+    dispatchTabFrom(textarea, { shiftKey: true })
 
-  expect(
-    screen.getByRole('button', { name: /hide burner terminal/i })
-  ).toHaveFocus()
+  expect(terminalKeyDown).toHaveBeenCalledTimes(1)
+  expect(preventDefaultSpy).not.toHaveBeenCalled()
+  expect(stopPropagationSpy).not.toHaveBeenCalled()
+  expect(textarea).toHaveFocus()
 })
 
-test('Tab cycles between terminal and hide button when align is absent', () => {
+test('Tab from hide button wraps focus back to the terminal when align is absent', () => {
   render(popup(true))
   focusTerminal.mockClear()
 
-  const textarea = screen.getByTestId('xterm-textarea')
-  textarea.focus()
+  const hideBtn = screen.getByRole('button', { name: /hide burner terminal/i })
+  hideBtn.focus()
+  expect(hideBtn).toHaveFocus()
 
-  fireEvent.keyDown(textarea, { key: 'Tab' })
-
-  expect(
-    screen.getByRole('button', { name: /hide burner terminal/i })
-  ).toHaveFocus()
-
-  fireEvent.keyDown(
-    screen.getByRole('button', { name: /hide burner terminal/i }),
-    { key: 'Tab' }
-  )
+  fireEvent.keyDown(hideBtn, { key: 'Tab' })
 
   expect(focusTerminal).toHaveBeenCalledTimes(1)
 })

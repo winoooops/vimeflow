@@ -112,8 +112,9 @@ export const BurnerTerminalPopup = ({
   // Esc hides the popup. The burner xterm holds focus, so without a native
   // capture-phase intercept the keydown reaches the terminal and is sent to the
   // shell as ^[. Capturing on the overlay fires before xterm's textarea handler.
-  // Tab / Shift+Tab are also trapped so focus cannot escape to background
-  // workspace controls while the modal is open.
+  // Tab / Shift+Tab must pass through while the xterm body has focus so shell
+  // autocomplete and reverse-complete keep working. Toolbar focus still cycles
+  // back to the terminal when a toolbar button owns focus.
   useEffect(() => {
     const overlay = overlayRef.current
     if (!open || !overlay) {
@@ -162,14 +163,6 @@ export const BurnerTerminalPopup = ({
         bodyEl?.contains(document.activeElement) ?? false
 
       if (isFocusInTerminal) {
-        event.preventDefault()
-        event.stopPropagation()
-        if (event.shiftKey) {
-          focusableElements[focusableElements.length - 1]?.focus()
-        } else {
-          focusableElements[0]?.focus()
-        }
-
         return
       }
 
