@@ -45,15 +45,15 @@ const getFileIcon = (filename: string, customIcon?: string): string => {
 const getGitStatusColor = (status: GitStatus): string => {
   switch (status) {
     case 'modified':
-      return 'bg-syn-class text-surface-container' // Yellow for modified
+      return 'bg-vcs-modified text-surface-container'
     case 'added':
-      return 'bg-syn-string text-surface-container' // Green for added
+      return 'bg-vcs-added text-surface-container'
     case 'deleted':
-      return 'bg-syn-tag text-surface-container' // Red for deleted
+      return 'bg-vcs-deleted text-surface-container'
     case 'renamed':
-      return 'bg-syn-operator text-surface-container' // Cyan for renamed
+      return 'bg-vcs-renamed text-surface-container'
     case 'untracked':
-      return 'bg-syn-keyword text-surface-container' // Purple for untracked
+      return 'bg-vcs-untracked text-surface-container'
   }
 }
 
