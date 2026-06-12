@@ -46,6 +46,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Filesystem Scope](patterns/filesystem-scope.md)                     | security           | 21       | 3    | 2026-05-20   |
 | [React Lifecycle](patterns/react-lifecycle.md)                       | react-patterns     | 33       | 14   | 2026-06-11   |
 | [Motion Layout Projection](patterns/motion-layout-projection.md)     | react-patterns     | 1        | 0    | 2026-06-10   |
+| [Fixed-Position Portals](patterns/fixed-position-portals.md)         | react-patterns     | 1        | 0    | 2026-06-12   |
 | [Resource Cleanup](patterns/resource-cleanup.md)                     | react-patterns     | 11       | 10   | 2026-06-08   |
 | [Cross-Platform Paths](patterns/cross-platform-paths.md)             | cross-platform     | 6        | 3    | 2026-05-30   |
 | [Debug Artifacts](patterns/debug-artifacts.md)                       | code-quality       | 7        | 0    | 2026-06-11   |
