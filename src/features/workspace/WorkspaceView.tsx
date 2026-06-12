@@ -9,9 +9,9 @@ import {
   useState,
 } from 'react'
 import { SidebarToggle } from './components/SidebarToggle'
+import { LayoutSwitcher } from '../terminal/components/LayoutSwitcher'
 import { SidebarTopBar } from './components/SidebarTopBar'
 import { SidebarSettingsFooter } from './components/SidebarSettingsFooter'
-import { Tabs } from '../sessions/components/Tabs'
 import { Sidebar } from '../../components/sidebar/Sidebar'
 import {
   SidebarTabs,
@@ -26,7 +26,6 @@ import {
   TerminalZone,
   type TerminalZoneHandle,
 } from './components/TerminalZone'
-import { DockPeekButton } from './components/DockPeekButton'
 import DockPanel, { type DockPanelHandle } from './components/DockPanel'
 import type { DockPosition } from './components/DockSwitcher'
 import {
@@ -43,10 +42,7 @@ import type { RateLimitsState } from '../agent-status/types'
 import { UnsavedChangesDialog } from '../editor/components/UnsavedChangesDialog'
 import { InfoBanner } from './components/InfoBanner'
 import { CommandPalette } from '../command-palette/CommandPalette'
-import {
-  COMMAND_PALETTE_SHORTCUT_KEYS,
-  useCommandPalette,
-} from '../command-palette/hooks/useCommandPalette'
+import { useCommandPalette } from '../command-palette/hooks/useCommandPalette'
 import {
   usePaneRenameChord,
   type FocusedPaneRef,
@@ -69,6 +65,7 @@ import {
   type PaneShortcutModifier,
 } from '../terminal/hooks/usePaneShortcuts'
 import { useDockShortcuts } from './hooks/useDockShortcuts'
+import { useDockToggleShortcut } from './hooks/useDockToggleShortcut'
 import { useSidebarShortcut } from './hooks/useSidebarShortcut'
 import { useNewSessionShortcut } from './hooks/useNewSessionShortcut'
 import { useSidebarCollapsed } from './hooks/useSidebarCollapsed'
@@ -84,7 +81,11 @@ import { lineDelta } from '../sessions/utils/lineDelta'
 import { hasLivePane, isLiveStatus } from '../sessions/utils/sessionStatus'
 import { pickNextVisibleSessionId } from '../sessions/utils/pickNextVisibleSessionId'
 import { AGENTS, agentTypeToRegistryKey } from '../../agents/registry'
-import type { SessionCloseResult, SessionStatus } from '../sessions/types'
+import type {
+  LayoutId,
+  SessionCloseResult,
+  SessionStatus,
+} from '../sessions/types'
 import {
   buildWorkspaceCommands,
   WORKSPACE_TAB_KEYS,
@@ -844,7 +845,7 @@ export const WorkspaceView = (): ReactElement => {
   const dockCanvasRef = useRef<HTMLDivElement>(null)
   const [dockPosition, setDockPosition] = useState<DockPosition>('bottom')
   const [isDockOpen, setIsDockOpen] = useState(true)
-  const [dockTab, setDockTab] = useState<DockTab>('editor')
+  const [dockTab, setDockTab] = useState<DockTab>('diff')
 
   const [activeContainerId, setActiveContainerId] = useState<string>(
     TERMINAL_CONTAINER_ID
@@ -1062,6 +1063,31 @@ export const WorkspaceView = (): ReactElement => {
     claimTerminal()
   }, [claimTerminal])
 
+  // Main-stage handoff J3/J6: the top chrome owns the layout pills; picks
+  // forward to the same setSessionLayout the TerminalZone toolbar used, so
+  // pane add/remove, active-pane, and layout semantics are untouched.
+  const handlePickLayout = useCallback(
+    (layoutId: LayoutId): void => {
+      if (!activeSessionId) {
+        return
+      }
+      setSessionLayout(activeSessionId, layoutId)
+    },
+    [activeSessionId, setSessionLayout]
+  )
+
+  // Main-stage handoff J8: one bottom-bar affordance for both directions.
+  // Closing focuses the terminal (closeDock → claimTerminal); reopening
+  // restores the previous dock tab/position and focuses the dock (openDock).
+  const handleToggleDock = useCallback((): void => {
+    if (isDockOpen) {
+      closeDock()
+
+      return
+    }
+    openDock()
+  }, [closeDock, isDockOpen, openDock])
+
   const handleSetActiveSessionId = useCallback(
     (id: string): void => {
       setActiveSessionId(id)
@@ -1228,6 +1254,11 @@ export const WorkspaceView = (): ReactElement => {
     modKey: preferModifier === 'meta' ? '⌘' : 'Ctrl',
   })
 
+  useDockToggleShortcut({
+    onToggle: handleToggleDock,
+    modKey: preferModifier === 'meta' ? '⌘' : 'Ctrl',
+  })
+
   useSidebarShortcut({
     onToggle: handleToggleSidebar,
     modKey: preferModifier === 'meta' ? '⌘' : 'Ctrl',
@@ -1349,6 +1380,11 @@ export const WorkspaceView = (): ReactElement => {
   // stale content and no feedback on Tauri IPC failures.
   const openFileSafely = useCallback(
     async (filePath: string): Promise<void> => {
+      // Opening a file shows it in the editor. The dock now defaults to the
+      // Diff tab, so surface the editor (and open the dock if collapsed) when
+      // a file is opened — otherwise the file would load behind the diff view.
+      setDockTab('editor')
+      setIsDockOpen(true)
       try {
         await editorBuffer.openFile(filePath)
         setFileError(null)
@@ -1711,7 +1747,7 @@ export const WorkspaceView = (): ReactElement => {
     terminalService,
   ])
 
-  const dockOrPeek = isDockOpen ? (
+  const dockPanel = isDockOpen ? (
     <DockPanel
       ref={dockPanelRef}
       selectedFilePath={editorBuffer.filePath}
@@ -1751,9 +1787,9 @@ export const WorkspaceView = (): ReactElement => {
       feedbackRepoRootRef={feedbackRepoRootRef}
       feedbackDispatch={feedbackDispatch}
     />
-  ) : (
-    <DockPeekButton position={dockPosition} onOpen={() => openDock()} />
-  )
+  ) : // Closed dock renders nothing — the bottom action bar's dock toggle is
+  // the single reopen affordance (the old "show panel" peek bar is gone).
+  null
 
   const pendingSessionFilePath = pendingSessionRemovalId
     ? editorBuffer.getFilePathForScope(pendingSessionRemovalId)
@@ -1803,9 +1839,33 @@ export const WorkspaceView = (): ReactElement => {
         />
       )}
 
-      {/* Sidebar — the shell owns the persistent toggle; the inner panel clips
-          during animated desktop collapse. Compact viewports lift the same
-          shell above main content. */}
+      {/* Persistent sidebar toggle — anchored to the workspace root, which
+          never moves, so the control sits at one fixed coordinate in every
+          state. Parenting it to the sliding sidebar shell (open) or the main
+          column (collapsed) made it ride along as those containers animated,
+          so it visibly jumped on collapse/expand. A single root child with
+          absolute left/top stays put; ⌘B just flips its glyph. Placed before
+          the sidebar and main surfaces so focus order matches its visual
+          position; z-40 keeps it on top. */}
+      <div
+        className="absolute z-40"
+        style={{ left: sidebarToggleLeft, top: SIDEBAR_TOGGLE_TOP }}
+      >
+        <SidebarToggle
+          ref={sidebarToggleRef}
+          collapsed={isSidebarClosed}
+          onClick={handleToggleSidebar}
+          size={SIDEBAR_TOGGLE_SIZE}
+          variant="inset"
+          data-testid="sidebar-toggle-fixed"
+          shortcutHint={sidebarShortcutHint}
+        />
+      </div>
+
+      {/* Sidebar — the shell's panel clips during animated desktop collapse;
+          the toggle that controls it is a root-level child (above), so it does
+          not slide with the shell. Compact viewports lift the shell above main
+          content. */}
       <div
         data-testid="workspace-sidebar-shell"
         role={isCompactViewport && !isSidebarClosed ? 'dialog' : undefined}
@@ -1843,24 +1903,6 @@ export const WorkspaceView = (): ReactElement => {
             width: isSidebarClosed ? 0 : sidebarToggleSlideSurfaceWidth,
           }}
         />
-        <div
-          data-testid="sidebar-toggle-anchor"
-          className="absolute z-30"
-          style={{
-            left: sidebarToggleLeft,
-            top: SIDEBAR_TOGGLE_TOP,
-          }}
-        >
-          <SidebarToggle
-            ref={sidebarToggleRef}
-            collapsed={isSidebarClosed}
-            onClick={handleToggleSidebar}
-            size={SIDEBAR_TOGGLE_SIZE}
-            variant="inset"
-            data-testid="sidebar-toggle-fixed"
-            shortcutHint={sidebarShortcutHint}
-          />
-        </div>
         <div
           aria-hidden={isSidebarClosed || undefined}
           inert={isSidebarClosed || undefined}
@@ -1970,9 +2012,10 @@ export const WorkspaceView = (): ReactElement => {
           `relative` establishes a containing block so the fileError
           banner's `absolute` positioning is scoped to this column
           rather than climbing to the viewport. */}
-      <div
+      <main
         ref={mainWorkspaceRef}
         data-testid="workspace-main"
+        aria-label="Main workspace"
         className="relative flex flex-col overflow-hidden bg-surface"
         inert={isCompactViewport && !isSidebarClosed ? true : undefined}
         aria-hidden={isCompactViewport && !isSidebarClosed ? true : undefined}
@@ -1989,26 +2032,74 @@ export const WorkspaceView = (): ReactElement => {
           willChange: 'border-radius',
         }}
       >
-        <Tabs
-          sessions={sessions}
-          activeSessionId={activeSessionId}
-          onSelect={handleSetActiveSessionId}
-          onClose={handleRemoveSession}
-          onNew={handleCreateSession}
-          leading={
-            isSidebarClosed ? (
-              <div
-                aria-hidden="true"
-                data-testid="sidebar-toggle-tabs-spacer"
-                style={{
-                  width: SIDEBAR_TOGGLE_SIZE,
-                  height: SIDEBAR_TOGGLE_SIZE,
-                }}
-              />
-            ) : undefined
-          }
-          reserveWindowControls={reserveWindowControls}
-        />
+        {/* Top chrome — an always-visible 44px in-flow bar (panes sit BELOW it,
+            so the root-anchored sidebar toggle, which floats over this bar's
+            left edge when collapsed, never overlaps pane content the way main's
+            session-tab strip behaved). Solid lowest surface + hairline bottom
+            rule. The old auto-hide/pin behavior was removed; its reusable
+            frosted-glass treatment now lives in <GlassSurface>. */}
+        <div
+          data-testid="top-chrome"
+          className="relative flex h-[44px] shrink-0 items-center gap-[12px] border-b border-outline-variant/25 bg-surface-container-lowest pl-[14px] pr-[14px]"
+        >
+          <span className="min-w-[10px] flex-1" />
+
+          {/* Pills render in every layout, with the layout-display config
+              button docked in the same pillar after a divider. */}
+          {activeSession && (
+            <LayoutSwitcher
+              activeLayoutId={activeSession.layout}
+              onPick={handlePickLayout}
+              trailing={
+                <button
+                  type="button"
+                  aria-label="Configure displayed layouts"
+                  title="Configure displayed layouts"
+                  disabled
+                  aria-disabled="true"
+                  tabIndex={-1}
+                  className="inline-flex h-5 w-6 items-center justify-center rounded text-on-surface-muted opacity-50 transition-colors enabled:hover:bg-primary/[0.08] enabled:hover:text-primary"
+                >
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 16 16"
+                    fill="none"
+                    aria-hidden="true"
+                  >
+                    <path
+                      d="M3 4.5H6.2M9.8 4.5H13M3 8H9.2M12.2 8H13M3 11.5H4.8M8.2 11.5H13"
+                      stroke="currentColor"
+                      strokeWidth="1.35"
+                      strokeLinecap="round"
+                    />
+                    <circle
+                      cx="8"
+                      cy="4.5"
+                      r="1.6"
+                      stroke="currentColor"
+                      strokeWidth="1.25"
+                    />
+                    <circle
+                      cx="10.7"
+                      cy="8"
+                      r="1.45"
+                      stroke="currentColor"
+                      strokeWidth="1.25"
+                    />
+                    <circle
+                      cx="6.5"
+                      cy="11.5"
+                      r="1.55"
+                      stroke="currentColor"
+                      strokeWidth="1.25"
+                    />
+                  </svg>
+                </button>
+              }
+            />
+          )}
+        </div>
 
         <div
           ref={dockCanvasRef}
@@ -2016,7 +2107,7 @@ export const WorkspaceView = (): ReactElement => {
           className="flex min-h-0 min-w-0 flex-1 overflow-hidden"
           style={{ flexDirection: dockCanvasFlexDirection }}
         >
-          {dockBeforeTerminal ? dockOrPeek : null}
+          {dockBeforeTerminal ? dockPanel : null}
           <div
             data-testid="terminal-zone-wrapper"
             className="flex min-h-0 min-w-0 flex-1 overflow-hidden"
@@ -2033,7 +2124,6 @@ export const WorkspaceView = (): ReactElement => {
               service={terminalService}
               setSessionActivePane={setSessionActivePane}
               updateBrowserPaneUrl={updateBrowserPaneUrl}
-              setSessionLayout={setSessionLayout}
               addPane={addPane}
               removePane={removePane}
               areBrowserPanesOccluded={areBrowserPanesOccluded}
@@ -2046,7 +2136,7 @@ export const WorkspaceView = (): ReactElement => {
               runningBurnerPaneKeys={runningBurnerPaneKeys}
             />
           </div>
-          {!dockBeforeTerminal ? dockOrPeek : null}
+          {!dockBeforeTerminal ? dockPanel : null}
         </div>
 
         {(fileError !== null || infoMessage !== null) && (
@@ -2085,11 +2175,12 @@ export const WorkspaceView = (): ReactElement => {
         <StatusBar
           session={statusBarSession}
           contextPct={statusBarContextPct}
-          paletteShortcut={COMMAND_PALETTE_SHORTCUT_KEYS}
           onOpenPalette={commandPalette.open}
+          dockOpen={isDockOpen}
+          onToggleDock={handleToggleDock}
           burnerCount={runningBurnerPaneKeys.size}
         />
-      </div>
+      </main>
 
       {!isCompactViewport && (
         <div

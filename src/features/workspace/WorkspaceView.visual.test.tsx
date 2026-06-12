@@ -209,11 +209,14 @@ describe('WorkspaceView - Visual Verification (Feature #20)', () => {
       expect(terminalContent.className).toContain('bg-surface')
     })
 
-    test('SessionTabs strip shares the chrome shade (surface-container-lowest)', () => {
+    test('Top chrome bar uses the solid Level 0.5 surface (in-flow, no glass)', () => {
       render(<WorkspaceView />)
-      const tabs = screen.getByTestId('session-tabs')
+      const chrome = screen.getByTestId('top-chrome')
 
-      expect(tabs.className).toContain('bg-surface-container-lowest')
+      // Always-visible in-flow bar: solid lowest surface, no frosted glass
+      // (the auto-hide overlay that needed the blur was removed).
+      expect(chrome.className).toContain('bg-surface-container-lowest')
+      expect(chrome.className).not.toContain('glass-panel')
     })
 
     test('Agent Status Panel shares the canvas surface (bg-surface)', () => {
@@ -271,7 +274,7 @@ describe('WorkspaceView - Visual Verification (Feature #20)', () => {
       // Active group header replaces the prior "Active Sessions" copy.
       expect(screen.getByTestId('session-group-active')).toBeInTheDocument()
 
-      expect(screen.getByTestId('session-tabs')).toBeInTheDocument()
+      expect(screen.getByTestId('top-chrome')).toBeInTheDocument()
       expect(screen.getByTestId('terminal-zone')).toBeInTheDocument()
       expect(screen.getByTestId('dock-panel')).toBeInTheDocument()
       expect(screen.getByTestId('agent-status-panel')).toBeInTheDocument()
