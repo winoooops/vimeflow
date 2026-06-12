@@ -36,10 +36,17 @@ process.stderr.write(
   `Missing generated binding files: ${missing.join(', ')}. Regenerating...\n`
 )
 
+const isWindows = process.platform === 'win32'
+
 const result = spawnSync('npm', ['run', 'generate:bindings'], {
   stdio: 'inherit',
-  shell: false,
+  shell: isWindows,
   cwd: repoRoot,
 })
+
+if (result.error) {
+  process.stderr.write(`Failed to spawn npm: ${result.error.message}\n`)
+  process.exit(1)
+}
 
 process.exit(result.status ?? 1)

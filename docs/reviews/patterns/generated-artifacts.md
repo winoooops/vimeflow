@@ -3,7 +3,7 @@ id: generated-artifacts
 category: code-quality
 created: 2026-04-14
 last_updated: 2026-06-12
-ref_count: 4
+ref_count: 5
 ---
 
 # Generated Artifacts
@@ -89,3 +89,16 @@ checks or leave a regeneration diff.
 - **Finding:** The round-2 guard script change made `npm test` fall back to `npm run generate:bindings` when generated binding leaf files are absent. The `unit-test` CI job has no Rust toolchain, so a clean-checkout run would invoke `cargo test` and fail before vitest started.
 - **Fix:** Added an early-exit branch in `generate-bindings-if-missing.mjs` that skips on-demand generation when `process.env.CI` is set. This makes the Node-only `unit-test` job run vitest directly without ever invoking cargo, while local checkouts still benefit from the guard.
 - **Verification:** With `CI=true` set, `npm run generate:bindings:if-missing` exits without invoking cargo even when binding leaf files are absent.
+
+---
+
+### 8. `spawnSync('npm')` with `shell:false` fails silently on Windows
+
+- **Source:** github-codex-connector | PR #441 round 3 | 2026-06-12
+- **Severity:** P2 / MEDIUM
+- **File:** `scripts/generate-bindings-if-missing.mjs`
+- **Finding:** The round-2 guard script calls `spawnSync('npm', ['run', 'generate:bindings'], { shell: false })`. On Windows, the executable for `npm` is normally `npm.cmd`; spawning `npm` without a shell fails to resolve the command when binding files are missing on a clean checkout. Because `result.error` was not surfaced, the failure produced an unhelpful exit with no diagnostic.
+- **Fix:** Run the child process through the platform shell on Windows (`shell: process.platform === 'win32'`) and check `result.error` after `spawnSync`, writing `result.error.message` to stderr before exiting with code 1.
+- **Verification:** `npm run lint` and `npm run test` still invoke the guard without error on POSIX; the Windows path now uses a shell so `npm.cmd` can be resolved.
+
+---
