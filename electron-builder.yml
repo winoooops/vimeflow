@@ -12,6 +12,14 @@ files:
   - dist/**/*
   - dist-electron/**/*
   - package.json
+  # Vite pre-bundles all deps into dist/ and dist-electron/; see rules/electron/optimization.md.
+  # If a main-process dependency must be required un-bundled (e.g. a native .node addon),
+  # re-include only that package explicitly; see the "node_modules trap" section.
+  - '!node_modules/**'
+
+# English-only UI; drop the other Chromium locale paks
+electronLanguages:
+  - en-US
 
 extraResources:
   - from: target/release/vimeflow-backend
