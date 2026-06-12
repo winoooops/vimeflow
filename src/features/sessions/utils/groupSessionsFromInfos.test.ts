@@ -453,19 +453,19 @@ describe('reconstructWorkspace', () => {
 
     expect(sessions).toHaveLength(1)
     expect(sessions[0].id).toBe('ws-browser')
-    expect(sessions[0].status).toBe('running')
+    expect(sessions[0].status).toBe('idle')
     const pane = sessions[0].panes[0]
     expect(pane.kind).toBe('browser')
     expect(pane.ptyId.startsWith('browser:')).toBe(true)
     expect(pane.agentType).toBe('generic')
-    expect(pane.status).toBe('running')
+    expect(pane.status).toBe('idle')
     expect(pane.cwd).toBe('/home/will/proj')
     expect(pane.active).toBe(true)
   })
 
-  // Mixed session: a live browser keeps the session `running` even though its
-  // only shell came back as a `completed` placeholder. Panes sort by paneIndex.
-  test('mixed dead-shell + browser → running, paneIndex order, one active', () => {
+  // Mixed session: the browser pane is restored idle and the aggregate status
+  // derives from the shell placeholder. Panes sort by paneIndex.
+  test('mixed dead-shell + browser derives status from shell panes', () => {
     const store = storeOf([
       storeSession({
         id: 'ws-mixed',
@@ -491,9 +491,10 @@ describe('reconstructWorkspace', () => {
     expect(s.panes.map((p) => p.id)).toEqual(['p0', 'p1'])
     expect(s.panes[0].status).toBe('completed')
     expect(s.panes[1].kind).toBe('browser')
+    expect(s.panes[1].status).toBe('idle')
     expect(s.panes.filter((p) => p.active)).toHaveLength(1)
     expect(s.panes.find((p) => p.active)?.id).toBe('p1')
-    expect(s.status).toBe('running')
+    expect(s.status).toBe('completed')
     expect(s.layout).toBe('vsplit')
   })
 
@@ -533,11 +534,11 @@ describe('reconstructWorkspace', () => {
       throw new Error('expected browser-only and mixed sessions')
     }
 
-    expect(browserOnly.status).toBe('running')
+    expect(browserOnly.status).toBe('idle')
     expect(browserOnly.panes).toHaveLength(1)
     expect(browserOnly.panes[0].kind).toBe('browser')
 
-    expect(mixed.status).toBe('running')
+    expect(mixed.status).toBe('completed')
     expect(mixed.panes.map((pane) => pane.id)).toEqual(['p0', 'p1'])
     expect(mixed.panes[0].kind ?? 'shell').toBe('shell')
     expect(mixed.panes[0]).toEqual(
@@ -553,7 +554,7 @@ describe('reconstructWorkspace', () => {
     expect(mixed.panes[1]).toEqual(
       expect.objectContaining({
         kind: 'browser',
-        status: 'running',
+        status: 'idle',
         active: true,
       })
     )

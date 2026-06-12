@@ -1015,6 +1015,46 @@ describe('useSessionManager', () => {
     expect(result.current.sessions[0].panes[0].status).toBe('running')
   })
 
+  test('adding a browser pane keeps an idle shell session idle', async () => {
+    const service = createMockService()
+    service.listSessions = vi.fn().mockResolvedValue(aliveSession('a'))
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    await waitFor(() => expect(getLifecycleCallback()).toBeDefined())
+
+    act(() => {
+      getLifecycleCallback()?.({
+        sessionId: 'a',
+        agentSessionId: 'x',
+        phase: 'idle',
+      })
+    })
+
+    act(() => {
+      result.current.setSessionLayout('a', 'vsplit')
+    })
+
+    await waitFor(() =>
+      expect(result.current.sessions[0].layout).toBe('vsplit')
+    )
+
+    act(() => {
+      result.current.addPane('a', 'browser')
+    })
+
+    await waitFor(() =>
+      expect(result.current.sessions[0].panes).toHaveLength(2)
+    )
+
+    const session = result.current.sessions[0]
+    const browserPane = session.panes.find((pane) => pane.kind === 'browser')
+    expect(browserPane?.status).toBe('idle')
+    expect(session.status).toBe('idle')
+  })
+
   test('agent-lifecycle never overrides a terminal (exited) pane', async () => {
     const service = createMockService()
     service.listSessions = vi.fn().mockResolvedValue({
@@ -1386,7 +1426,7 @@ describe('useSessionManager', () => {
   })
 
   // A browser-only session restored from the durable store has no shell PTY,
-  // but its live browser pane makes it a usable workspace — auto-create must
+  // but its idle browser pane makes it a usable workspace — auto-create must
   // NOT seed an extra terminal tab on top of it.
   test('auto-create is skipped for a restored browser-only session', async () => {
     const store: WorkspaceShapeDto = {
@@ -1415,8 +1455,10 @@ describe('useSessionManager', () => {
     await waitFor(() => expect(result.current.sessions).toHaveLength(1))
 
     expect(result.current.sessions[0].id).toBe('ws-browser')
+    expect(result.current.sessions[0].status).toBe('idle')
     expect(result.current.sessions[0].panes[0].kind).toBe('browser')
-    // The live browser pane counts as a live session → no seeded terminal.
+    expect(result.current.sessions[0].panes[0].status).toBe('idle')
+    // The idle browser pane counts as a live session → no seeded terminal.
     expect(service.spawn).not.toHaveBeenCalled()
   })
 
@@ -1608,13 +1650,14 @@ describe('useSessionManager', () => {
     await waitFor(() => expect(result.current.sessions).toHaveLength(1))
     const session = result.current.sessions[0]
     expect(session.layout).toBe('single')
+    expect(session.status).toBe('idle')
     expect(session.panes).toHaveLength(1)
     const pane = session.panes[0]
     expect(pane.kind).toBe('browser')
     expect(pane.id).toBe('p0')
     expect(pane.ptyId.startsWith('browser:')).toBe(true)
     expect(pane.agentType).toBe('generic')
-    expect(pane.status).toBe('running')
+    expect(pane.status).toBe('idle')
     expect(pane.active).toBe(true)
     // No PTY spawn for a browser-only session.
     expect(service.spawn).not.toHaveBeenCalled()
