@@ -310,7 +310,7 @@ describe('DockTab', () => {
       expect(within(tip).getByTestId('tooltip-shortcut')).toHaveTextContent('G')
     })
 
-    test('Collapse panel tooltip is plain (no shortcut chip)', async () => {
+    test('Collapse panel tooltip shows the Mod+B shortcut chip', async () => {
       const user = userEvent.setup()
       render(
         <DockTab
@@ -324,7 +324,9 @@ describe('DockTab', () => {
       await user.hover(screen.getByRole('button', { name: /collapse panel/i }))
       const tip = await screen.findByRole('tooltip')
       expect(tip).toHaveTextContent('Collapse panel')
-      expect(within(tip).queryByTestId('tooltip-shortcut')).toBeNull()
+      // Shares the dock-toggle keybinding (Mod+B) advertised on the
+      // bottom-bar dock button.
+      expect(within(tip).getByTestId('tooltip-shortcut')).toHaveTextContent('B')
     })
 
     // Guards the `disabled={actionsOpen}` branch on the More button's

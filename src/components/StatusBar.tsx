@@ -4,6 +4,14 @@ import {
   type ReactElement,
   type ReactNode,
 } from 'react'
+import { Tooltip } from './Tooltip'
+import type { ShortcutKey } from '../lib/formatShortcut'
+
+// Display-side chords for the bottom-bar actions. The behavior lives in the
+// command palette and dock-shortcut hooks; these mirror those bindings so the
+// Zed-style tooltip chips can't drift from the wired keys.
+const PALETTE_SHORTCUT = ['Mod', ';'] as const satisfies readonly ShortcutKey[]
+const DOCK_SHORTCUT = ['Mod', 'B'] as const satisfies readonly ShortcutKey[]
 
 interface StatusBarCache {
   cached: number
@@ -318,54 +326,59 @@ export const StatusBar = ({
         data-testid="status-bar-actions"
         className="inline-flex items-center gap-[6px]"
       >
-        <button
-          type="button"
-          aria-label="Open command palette"
-          title="Command palette"
-          data-testid="status-bar-palette"
-          onClick={onOpenPalette}
-          className={`${ACTION_BUTTON_BASE} ${ACTION_BUTTON_IDLE}`}
+        <Tooltip content="Command palette" shortcut={PALETTE_SHORTCUT}>
+          <button
+            type="button"
+            aria-label="Open command palette"
+            data-testid="status-bar-palette"
+            onClick={onOpenPalette}
+            className={`${ACTION_BUTTON_BASE} ${ACTION_BUTTON_IDLE}`}
+          >
+            <svg width="13" height="13" viewBox="0 0 16 16" aria-hidden="true">
+              <path
+                d="M3 4.5L6 8L3 11.5M7.5 11.5H13"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.55"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </button>
+        </Tooltip>
+        <Tooltip
+          content={dockOpen ? 'Hide editor & diff' : 'Show editor & diff'}
+          shortcut={DOCK_SHORTCUT}
         >
-          <svg width="13" height="13" viewBox="0 0 16 16" aria-hidden="true">
-            <path
-              d="M3 4.5L6 8L3 11.5M7.5 11.5H13"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.55"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-        </button>
-        <button
-          type="button"
-          aria-label={
-            dockOpen ? 'Hide editor & diff panel' : 'Show editor & diff panel'
-          }
-          title={dockOpen ? 'Hide editor & diff' : 'Show editor & diff'}
-          aria-pressed={dockOpen}
-          data-testid="status-bar-dock-toggle"
-          onClick={onToggleDock}
-          className={`${ACTION_BUTTON_BASE} ${
-            dockOpen
-              ? 'text-[var(--success-muted)] hover:bg-[rgba(125,239,161,0.08)]'
-              : ACTION_BUTTON_IDLE
-          }`}
-        >
-          <svg width="13" height="13" viewBox="0 0 16 16" aria-hidden="true">
-            <rect
-              x="2.2"
-              y="2.8"
-              width="11.6"
-              height="10.4"
-              rx="2"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.3"
-            />
-            <path d="M2.6 9.5H13.4" stroke="currentColor" strokeWidth="1.3" />
-          </svg>
-        </button>
+          <button
+            type="button"
+            aria-label={
+              dockOpen ? 'Hide editor & diff panel' : 'Show editor & diff panel'
+            }
+            aria-pressed={dockOpen}
+            data-testid="status-bar-dock-toggle"
+            onClick={onToggleDock}
+            className={`${ACTION_BUTTON_BASE} ${
+              dockOpen
+                ? 'text-[var(--success-muted)] hover:bg-[rgba(125,239,161,0.08)]'
+                : ACTION_BUTTON_IDLE
+            }`}
+          >
+            <svg width="13" height="13" viewBox="0 0 16 16" aria-hidden="true">
+              <rect
+                x="2.2"
+                y="2.8"
+                width="11.6"
+                height="10.4"
+                rx="2"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.3"
+              />
+              <path d="M2.6 9.5H13.4" stroke="currentColor" strokeWidth="1.3" />
+            </svg>
+          </button>
+        </Tooltip>
       </span>
 
       <span className="min-w-[10px] flex-1" />

@@ -220,7 +220,11 @@ export const DockTab = ({
 
               <div className="flex items-center justify-between gap-2">
                 {children}
-                <Tooltip content="Collapse panel" placement="bottom">
+                <Tooltip
+                  content="Collapse panel"
+                  shortcut={['Mod', 'B']}
+                  placement="bottom"
+                >
                   <button
                     type="button"
                     aria-label="Collapse panel"
@@ -250,7 +254,11 @@ export const DockTab = ({
             >
               {displayPath}
             </span>
-            <Tooltip content="Collapse panel" placement="bottom">
+            <Tooltip
+              content="Collapse panel"
+              shortcut={['Mod', 'B']}
+              placement="bottom"
+            >
               <button
                 type="button"
                 aria-label="Collapse panel"

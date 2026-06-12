@@ -1,5 +1,5 @@
 /* eslint-disable testing-library/no-node-access -- left/right anchoring asserts bar child order the queries API cannot reach */
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, test, vi } from 'vitest'
 import { StatusBar, type StatusBarProps } from './StatusBar'
@@ -65,13 +65,37 @@ describe('StatusBar', () => {
     renderStatusBar()
 
     const palette = screen.getByTestId('status-bar-palette')
-    expect(palette).toHaveAttribute('title', 'Command palette')
+    // The native title is replaced by the Zed-style Tooltip (covered below).
+    expect(palette).not.toHaveAttribute('title')
     expect(staticBgClasses(palette)).toEqual([])
     expect(palette.className).toContain('hover:bg-[rgba(226,199,255,0.1)]')
     expect(palette.className).toContain('rounded-[5px]')
 
     const dockToggle = screen.getByTestId('status-bar-dock-toggle')
+    expect(dockToggle).not.toHaveAttribute('title')
     expect(staticBgClasses(dockToggle)).toEqual([])
+  })
+
+  test('action buttons expose Zed-style tooltips with shortcut chips', async () => {
+    const user = userEvent.setup()
+    renderStatusBar({ dockOpen: false })
+
+    await user.hover(screen.getByTestId('status-bar-palette'))
+    const paletteTip = await screen.findByRole('tooltip')
+    expect(paletteTip).toHaveTextContent('Command palette')
+    expect(
+      within(paletteTip).getByTestId('tooltip-shortcut')
+    ).toHaveTextContent(';')
+
+    await user.unhover(screen.getByTestId('status-bar-palette'))
+
+    await user.hover(screen.getByTestId('status-bar-dock-toggle'))
+    const dockTip = await screen.findByRole('tooltip')
+    expect(dockTip).toHaveTextContent('Show editor & diff')
+    // Same Mod+B keybinding the dock's collapse-panel button advertises.
+    expect(within(dockTip).getByTestId('tooltip-shortcut')).toHaveTextContent(
+      'B'
+    )
   })
 
   test('dock toggle indicates open state through icon color, not a filled background (J8)', () => {
