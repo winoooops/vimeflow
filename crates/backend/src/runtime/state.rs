@@ -6,10 +6,11 @@ use crate::agent::types::{
 };
 use crate::agent::{sanitize_title, AgentWatcherState, TranscriptState};
 use crate::git::watcher::GitWatcherState;
+use crate::settings::{AppSettings, AppSettingsCache};
 use crate::terminal::cache::SessionCache;
-use crate::terminal::workspace_layout::{WorkspaceLayoutCache, WorkspaceLayoutStore};
 use crate::terminal::state::PtyState;
 use crate::terminal::types::SessionId;
+use crate::terminal::workspace_layout::{WorkspaceLayoutCache, WorkspaceLayoutStore};
 
 use super::event_sink::EventSink;
 
@@ -40,6 +41,7 @@ pub struct BackendState {
     pty: PtyState,
     sessions: Arc<SessionCache>,
     workspace_layouts: Arc<WorkspaceLayoutCache>,
+    app_settings: Arc<AppSettingsCache>,
     agents: AgentWatcherState,
     transcripts: TranscriptState,
     git: GitWatcherState,
@@ -52,10 +54,12 @@ impl BackendState {
     pub fn new(app_data_dir: PathBuf, events: Arc<dyn EventSink>) -> Self {
         let cache_path = app_data_dir.join("sessions.json");
         let layouts_path = app_data_dir.join("workspace-layouts.json");
+        let settings_path = app_data_dir.join("settings.json");
         Self {
             pty: PtyState::new(),
             sessions: Arc::new(SessionCache::load_or_recover(cache_path)),
             workspace_layouts: Arc::new(WorkspaceLayoutCache::new(layouts_path)),
+            app_settings: Arc::new(AppSettingsCache::new(settings_path)),
             agents: AgentWatcherState::new(),
             transcripts: TranscriptState::new(),
             git: GitWatcherState::new(),
@@ -98,6 +102,16 @@ impl BackendState {
     /// Persist the assembled workspace-layout store. Main-invoked (not renderer).
     pub fn save_workspace_layout(&self, store: &WorkspaceLayoutStore) -> Result<(), String> {
         self.workspace_layouts.save(store)
+    }
+
+    /// Load the durable app settings store; missing / corrupt → defaults.
+    pub fn load_app_settings(&self) -> AppSettings {
+        self.app_settings.load()
+    }
+
+    /// Persist app settings.
+    pub fn save_app_settings(&self, settings: &AppSettings) -> Result<(), String> {
+        self.app_settings.save(settings)
     }
 
     /// Spawn the burner-terminal foreground poll loop (VIM-71). Call once at

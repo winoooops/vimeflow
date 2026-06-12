@@ -1,4 +1,4 @@
-import { describe, expect, test, vi } from 'vitest'
+import { describe, expect, test, vi, afterEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { SettingsHeader } from './SettingsHeader'
@@ -50,5 +50,30 @@ describe('SettingsHeader', () => {
     expect(
       screen.getByRole('button', { name: 'Edit in settings.json' })
     ).toBeInTheDocument()
+  })
+
+  test('clicking Edit in settings.json calls window.vimeflow.settings.openFile()', async () => {
+    const user = userEvent.setup()
+    const openFile = vi.fn().mockResolvedValue(undefined)
+
+    window.vimeflow = {
+      settings: {
+        load: vi.fn(),
+        save: vi.fn(),
+        openFile,
+      },
+    } as unknown as Window['vimeflow']
+
+    render(<SettingsHeader {...baseProps} />)
+
+    await user.click(
+      screen.getByRole('button', { name: 'Edit in settings.json' })
+    )
+
+    expect(openFile).toHaveBeenCalledTimes(1)
+  })
+
+  afterEach(() => {
+    delete window.vimeflow
   })
 })

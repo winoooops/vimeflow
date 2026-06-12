@@ -6,3 +6,5 @@ export const BACKEND_INVOKE = 'backend:invoke'
 export const BACKEND_EVENT = 'backend:event'
 
 export const COMMAND_PALETTE_TOGGLE = 'command-palette:toggle'
+
+export const SETTINGS_OPEN_FILE = 'settings:open-file'

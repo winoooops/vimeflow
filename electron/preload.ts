@@ -3,7 +3,9 @@ import {
   BACKEND_EVENT,
   BACKEND_INVOKE,
   COMMAND_PALETTE_TOGGLE,
+  SETTINGS_OPEN_FILE,
 } from './ipc-channels'
+import type { AppSettings } from '../src/bindings/AppSettings'
 import {
   BROWSER_PANE_ACTIVATE_TAB,
   BROWSER_PANE_CDP_INFO,
@@ -200,5 +202,11 @@ contextBridge.exposeInMainWorld('vimeflow', {
         ipcRenderer.off(WORKSPACE_LAYOUT_REQUEST_FINAL_SHAPE, handler)
       }
     },
+  },
+  settings: {
+    load: (): Promise<AppSettings> => invoke('load_app_settings'),
+    save: (settings: AppSettings): Promise<void> =>
+      invoke('save_app_settings', { settings }),
+    openFile: (): Promise<void> => ipcRenderer.invoke(SETTINGS_OPEN_FILE),
   },
 })

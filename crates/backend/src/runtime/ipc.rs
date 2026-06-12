@@ -699,6 +699,18 @@ mod router {
                 state.save_workspace_layout(&p.store)?;
                 Ok(Value::Null)
             }
+            "load_app_settings" => encode_result(state.load_app_settings()),
+            "save_app_settings" => {
+                #[derive(Deserialize)]
+                #[serde(rename_all = "camelCase")]
+                struct P {
+                    settings: crate::settings::app_settings::AppSettings,
+                }
+
+                let p: P = serde_json::from_value(params).map_err(|e| format!("params: {e}"))?;
+                state.save_app_settings(&p.settings)?;
+                Ok(Value::Null)
+            }
             #[cfg(feature = "e2e-test")]
             "list_active_pty_sessions" => encode_result(state.list_active_pty_sessions()),
             #[cfg(test)]

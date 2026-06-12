@@ -17,7 +17,11 @@ import {
 import { installCommandPaletteShortcutOverride } from './command-palette-shortcut'
 import { installApplicationEditMenu } from './edit-menu'
 import { installNavigationGuard } from './navigation-guard'
-import { BACKEND_EVENT, BACKEND_INVOKE } from './ipc-channels'
+import {
+  BACKEND_EVENT,
+  BACKEND_INVOKE,
+  SETTINGS_OPEN_FILE,
+} from './ipc-channels'
 import { spawnSidecar, type Sidecar } from './sidecar'
 import { setupBrowserPaneIpc, type BrowserPaneController } from './browser-pane'
 import {
@@ -443,6 +447,10 @@ const setupApp = async (): Promise<void> => {
         }
       }
     }
+  )
+
+  ipcMain.handle(SETTINGS_OPEN_FILE, () =>
+    shell.openPath(path.join(app.getPath('userData'), 'settings.json'))
   )
 
   spawnedSidecar.onEvent((event, payload) => {
