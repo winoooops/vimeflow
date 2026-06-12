@@ -160,7 +160,7 @@ export const AgentStatusPanel = ({
         <ToolCallSummary
           total={status.toolCalls.total}
           byType={status.toolCalls.byType}
-          active={status.toolCalls.active}
+          active={runningEvent === null ? status.toolCalls.active : null}
         />
         {runningEvent !== null && (
           <LiveActionCard
