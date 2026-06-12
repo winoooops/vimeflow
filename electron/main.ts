@@ -12,6 +12,7 @@ import { access } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import type { AppSettings } from '../src/bindings/AppSettings'
+import { DEFAULT_SETTINGS } from '../src/features/settings/store/settingsDefaults'
 import { isAllowedBackendMethod } from './backend-methods'
 import {
   developmentContentSecurityPolicy,
@@ -24,6 +25,7 @@ import {
   BACKEND_EVENT,
   BACKEND_INVOKE,
   SETTINGS_OPEN_FILE,
+  SETTINGS_SYNC_SNAPSHOT,
 } from './ipc-channels'
 import { spawnSidecar, type Sidecar } from './sidecar'
 import { setupBrowserPaneIpc, type BrowserPaneController } from './browser-pane'
@@ -210,6 +212,7 @@ let browserPaneController: BrowserPaneController | null = null
 let workspaceLayoutController: WorkspaceLayoutController | null = null
 let workspaceTeardown: WorkspaceTeardown | null = null
 let quitting = false
+let lastKnownSettings: AppSettings | undefined
 
 const RENDERER_DIAGNOSTIC_PREFIXES = [
   '[vimeflow:terminal-cwd]',
@@ -478,6 +481,13 @@ const setupApp = async (): Promise<void> => {
     }
   })
 
+  ipcMain.handle(
+    SETTINGS_SYNC_SNAPSHOT,
+    (_ipcEvent, settings: AppSettings): void => {
+      lastKnownSettings = settings
+    }
+  )
+
   spawnedSidecar.onEvent((event, payload) => {
     for (const win of BrowserWindow.getAllWindows()) {
       win.webContents.send(BACKEND_EVENT, { event, payload })
@@ -521,13 +531,29 @@ app.on('before-quit', (event) => {
 app.on('window-all-closed', () => {
   let onLastWindowClosed: string | undefined
 
-  try {
-    const settingsPath = path.join(app.getPath('userData'), 'settings.json')
-    const raw = readFileSync(settingsPath, 'utf8')
-    const parsed = JSON.parse(raw) as { onLastWindowClosed?: string }
-    onLastWindowClosed = parsed.onLastWindowClosed
-  } catch {
-    // Missing or corrupt settings.json falls back to the platform default.
+  if (lastKnownSettings !== undefined) {
+    // The renderer keeps this snapshot in sync whenever the user changes a
+    // setting, so we can read the latest value without racing the async save
+    // to disk / the Rust sidecar.
+    onLastWindowClosed = lastKnownSettings.onLastWindowClosed
+  } else {
+    try {
+      const settingsPath = path.join(app.getPath('userData'), 'settings.json')
+      const raw = readFileSync(settingsPath, 'utf8')
+
+      const parsed = JSON.parse(raw) as {
+        version?: number
+        onLastWindowClosed?: string
+      }
+
+      // Only honor values written by the current app version. A newer or
+      // unsupported version is treated as a mismatch and falls back to default.
+      if (parsed.version === DEFAULT_SETTINGS.version) {
+        onLastWindowClosed = parsed.onLastWindowClosed
+      }
+    } catch {
+      // Missing or corrupt settings.json falls back to the platform default.
+    }
   }
 
   if (

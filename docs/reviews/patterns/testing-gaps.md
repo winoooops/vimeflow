@@ -639,3 +639,12 @@ filesystem scope restrictions).
 - **Finding:** `SettingsProvider.test.tsx` covered hydration, update-success, bridge-absent, and load-rejection, but the `catch (error)` branch in `SettingsProvider.saveNext` (where `bridge.save()` rejects and `saveError` is populated) had zero coverage. `saveError` is the primary user-facing error signal for save failures and part of the public `SettingsContextValue` interface that VIM-101..104 panes will consume.
 - **Fix:** Added a fifth test that mocks `window.vimeflow.settings.save` to reject with `Error('disk full')`, triggers `update()`, and asserts `saveError.message` is surfaced in the context consumer.
 - **Commit:** same commit as this entry
+
+### 64. Missing 'General Settings' sub-title assertion in consolidated test
+
+- **Source:** github-claude | PR #432 round 1 | 2026-06-12
+- **Severity:** LOW
+- **File:** `src/features/settings/components/panes/GeneralPane.test.tsx` L56-70
+- **Finding:** The first `GeneralPane` test consolidated the original two pane-rendering tests but the `General Settings` sub-title assertion was inadvertently left out during consolidation. No runtime risk, but a future rename of the subtitle (e.g. during an i18n pass) would go undetected by the test suite.
+- **Fix:** Restored the missing assertion: `expect(screen.getByText('General Settings')).toBeInTheDocument()`.
+- **Commit:** same commit as this entry

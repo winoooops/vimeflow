@@ -32,7 +32,9 @@ const createLoadedSettings = (): AppSettings => ({
   agentShimEnabled: false,
 })
 
-const installBridge = (loaded: AppSettings): { save: ReturnType<typeof vi.fn> } => {
+const installBridge = (
+  loaded: AppSettings
+): { save: ReturnType<typeof vi.fn> } => {
   const save = vi.fn().mockResolvedValue(undefined)
 
   window.vimeflow = {
@@ -59,6 +61,7 @@ describe('GeneralPane', () => {
     )
 
     expect(screen.getByText('General')).toBeInTheDocument()
+    expect(screen.getByText('General Settings')).toBeInTheDocument()
     expect(screen.getByText('When Closing With No Tabs')).toBeInTheDocument()
     expect(screen.getByText('On Last Window Closed')).toBeInTheDocument()
     expect(screen.getByText('Use System Path Prompts')).toBeInTheDocument()
@@ -77,7 +80,11 @@ describe('GeneralPane', () => {
     expect(screen.getByLabelText('When closing with no tabs')).toHaveValue(
       'platform'
     )
-    expect(screen.getByLabelText('On last window closed')).toHaveValue('platform')
+
+    expect(screen.getByLabelText('On last window closed')).toHaveValue(
+      'platform'
+    )
+
     expect(
       screen.getByRole('switch', { name: 'Use System Path Prompts' })
     ).toHaveAttribute('aria-checked', 'true')
@@ -122,7 +129,10 @@ describe('GeneralPane', () => {
     expect(
       screen.getByRole('switch', { name: 'Redact Private Values' })
     ).toHaveAttribute('aria-checked', 'true')
-    expect(screen.getByLabelText('CLI default open behavior')).toHaveValue('new')
+
+    expect(screen.getByLabelText('CLI default open behavior')).toHaveValue(
+      'new'
+    )
   })
 
   test('persists every control through the settings store (update)', async () => {
@@ -181,7 +191,10 @@ describe('GeneralPane', () => {
       )
     })
 
-    await user.click(screen.getByRole('switch', { name: 'Redact Private Values' }))
+    await user.click(
+      screen.getByRole('switch', { name: 'Redact Private Values' })
+    )
+
     await waitFor(() => {
       expect(save).toHaveBeenCalledWith(
         expect.objectContaining({ redactPrivateValues: true })

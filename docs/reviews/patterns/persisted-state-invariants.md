@@ -76,3 +76,12 @@ Durable user-facing state (workspace shapes, caches, settings files) can be malf
 - **Finding:** The `SETTINGS_OPEN_FILE` handler called `shell.openPath` on `userData/settings.json`. On a fresh profile, `load_app_settings` returns defaults without writing them, so the file does not exist and the open action silently fails (the renderer also ignores the returned error string).
 - **Fix:** Before opening, the handler checks whether `settings.json` exists; if missing, it asks the sidecar to `load_app_settings` (which returns defaults) and then `save_app_settings` so the default file is materialized on disk. The open is still attempted even if seeding fails, letting the OS surface any residual error.
 - **Commit:** same commit as this entry
+
+### 8. Settings version not validated before honoring close behavior
+
+- **Source:** github-codex-connector | PR #432 round 1 | 2026-06-12
+- **Severity:** P2 / MEDIUM
+- **File:** `electron/main.ts` L528
+- **Finding:** The `window-all-closed` handler parsed `onLastWindowClosed` from `settings.json` without validating the persisted `version`. The backend settings store intentionally discards files written by a newer app version and loads defaults on version mismatch, but this direct parse in the main process still honored the field. In a downgrade/unsupported-version scenario such as `{"version":999,"onLastWindowClosed":"quit"}`, the UI/store would behave as platform default while the main process quit on macOS after the last window closed.
+- **Fix:** When reading `settings.json` as a fallback (no in-memory snapshot yet), compare `parsed.version` against `DEFAULT_SETTINGS.version` and only honor `onLastWindowClosed` when the versions match. Mismatched versions fall back to the platform default.
+- **Commit:** same commit as this entry

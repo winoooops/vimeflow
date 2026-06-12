@@ -4,6 +4,7 @@ import {
   BACKEND_INVOKE,
   COMMAND_PALETTE_TOGGLE,
   SETTINGS_OPEN_FILE,
+  SETTINGS_SYNC_SNAPSHOT,
 } from './ipc-channels'
 import type { AppSettings } from '../src/bindings/AppSettings'
 import {
@@ -208,5 +209,7 @@ contextBridge.exposeInMainWorld('vimeflow', {
     save: (settings: AppSettings): Promise<void> =>
       invoke('save_app_settings', { settings }),
     openFile: (): Promise<void> => ipcRenderer.invoke(SETTINGS_OPEN_FILE),
+    syncSnapshot: (settings: AppSettings): Promise<void> =>
+      ipcRenderer.invoke(SETTINGS_SYNC_SNAPSHOT, settings),
   },
 })
