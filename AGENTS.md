@@ -67,6 +67,8 @@ Commit messages for Codex-assisted changes must include the trailer `Co-Authored
 
 "The Obsidian Lens" — dark atmospheric UI on Catppuccin Mocha palette. No visible borders — use tonal depth and glassmorphism.
 
+Tooltips are unified: every hover label uses the shared `Tooltip` (`@/components/Tooltip`; contract in `docs/design/UNIFIED.md` §5.6). Flag native `title=` attributes on DOM elements and new hand-rolled floating surfaces — `@floating-ui/react` belongs only in `src/components/`.
+
 **For complete design specifications**, read:
 
 - `DESIGN.md` — color palette, typography, layout, critical design rules, interaction patterns

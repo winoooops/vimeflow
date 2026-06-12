@@ -239,6 +239,12 @@ export default defineConfig([
                 'const last = text.lastIndexOf(captured[2]); return last === -1 ? text : text.slice(0, last - 1) + text.slice(last + captured[2].length)',
             },
           },
+          {
+            regex:
+              'import .* from (\'|")(\\.\\./)+components/(Tooltip|StatusBar|GlassSurface|ResizeHandle|sidebar/)',
+            message:
+              'Shared primitives are imported via the @/components/* alias.',
+          },
         ],
       ],
     },
@@ -277,6 +283,45 @@ export default defineConfig([
     },
     rules: {
       'vimeflow/no-hardcoded-colors': 'error',
+    },
+  },
+
+  {
+    files: ['src/**/*.tsx'],
+    rules: {
+      'react/forbid-dom-props': [
+        'error',
+        {
+          forbid: [
+            {
+              propName: 'title',
+              message:
+                'Native title= renders an OS tooltip — wrap the element in Tooltip from @/components/Tooltip instead.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+
+  {
+    // Floating surfaces are shared primitives: keeping @floating-ui/react
+    // inside src/components stops one-off popovers from drifting off-theme.
+    files: ['src/features/**/*.{ts,tsx}'],
+    rules: {
+      '@typescript-eslint/no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            {
+              name: '@floating-ui/react',
+              allowTypeImports: true,
+              message:
+                'Use Tooltip from @/components/Tooltip, or extract the floating surface into src/components instead of hand-rolling it.',
+            },
+          ],
+        },
+      ],
     },
   },
 

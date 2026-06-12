@@ -56,7 +56,7 @@ vi.mock('../terminal/hooks/useBurnerTerminals', () => ({
 
 // Mock child components to keep test focused on command dispatch while still
 // rendering sidebar chrome needed by WorkspaceView.
-vi.mock('../../components/sidebar/Sidebar', () => ({
+vi.mock('@/components/sidebar/Sidebar', () => ({
   Sidebar: ({ topBar = undefined }: { topBar?: ReactNode }): ReactElement => (
     <div data-testid="sidebar">{topBar}</div>
   ),

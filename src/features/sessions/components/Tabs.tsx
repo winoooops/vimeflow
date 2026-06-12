@@ -1,4 +1,5 @@
 import { type ReactElement, type ReactNode } from 'react'
+import { Tooltip } from '@/components/Tooltip'
 import type { Session, SessionCloseResult } from '../types'
 import { agentForSession } from '../utils/agentForSession'
 import {
@@ -177,15 +178,16 @@ export const Tabs = ({
           )
         })}
       </div>
-      <button
-        type="button"
-        onClick={onNew}
-        aria-label="New session"
-        title="New session"
-        className="vf-app-no-drag mb-px ml-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-on-surface-variant transition-colors hover:bg-primary/10 hover:text-primary"
-      >
-        <span className="material-symbols-outlined text-[15px]">add</span>
-      </button>
+      <Tooltip content="New session" placement="bottom">
+        <button
+          type="button"
+          onClick={onNew}
+          aria-label="New session"
+          className="vf-app-no-drag mb-px ml-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-on-surface-variant transition-colors hover:bg-primary/10 hover:text-primary"
+        >
+          <span className="material-symbols-outlined text-[15px]">add</span>
+        </button>
+      </Tooltip>
       <div
         aria-hidden="true"
         data-testid="session-tabs-drag-region"

@@ -1,4 +1,5 @@
 import type { ReactElement } from 'react'
+import { Tooltip } from '@/components/Tooltip'
 import { FileTree } from '../../../files/components/FileTree'
 import { contextMenuActions } from '../../../files/data/mockFileTree'
 import { useFileTree } from '../../../files/hooks/useFileTree'
@@ -59,39 +60,44 @@ export const FileExplorer = ({
         <h3 className="flex-1 font-label text-xs font-semibold uppercase tracking-wider text-on-surface/50">
           File Explorer
         </h3>
-        <button
-          type="button"
-          onClick={refresh}
-          className="material-symbols-outlined text-sm text-on-surface/30 transition-colors hover:text-on-surface/60"
-          aria-label="Refresh file tree"
-          title="Refresh"
-        >
-          refresh
-        </button>
+        <Tooltip content="Refresh">
+          <button
+            type="button"
+            onClick={refresh}
+            className="material-symbols-outlined text-sm text-on-surface/30 transition-colors hover:text-on-surface/60"
+            aria-label="Refresh file tree"
+          >
+            refresh
+          </button>
+        </Tooltip>
       </div>
 
       {/* Path bar */}
       <div className="mb-1 flex items-center gap-1">
-        <button
-          type="button"
-          onClick={navigateUp}
-          disabled={isRoot}
-          className={`material-symbols-outlined shrink-0 rounded p-0.5 text-sm transition-colors ${
-            isRoot
-              ? 'text-on-surface/20'
-              : 'text-on-surface/50 hover:bg-wash-subtle hover:text-on-surface'
-          }`}
-          aria-label="Go to parent directory"
-          title="Parent directory"
-        >
-          arrow_upward
-        </button>
-        <span
-          className="min-w-0 truncate font-mono text-xs text-on-surface/50"
-          title={currentPath}
-        >
-          {pathLabel}
-        </span>
+        {/* Wrapper span keeps the tooltip alive in the root state — disabled
+            buttons swallow pointer events, so the span is the hover target. */}
+        <Tooltip content="Parent directory">
+          <span className="inline-flex">
+            <button
+              type="button"
+              onClick={navigateUp}
+              disabled={isRoot}
+              className={`material-symbols-outlined shrink-0 rounded p-0.5 text-sm transition-colors ${
+                isRoot
+                  ? 'text-on-surface/20'
+                  : 'text-on-surface/50 hover:bg-wash-subtle hover:text-on-surface'
+              }`}
+              aria-label="Go to parent directory"
+            >
+              arrow_upward
+            </button>
+          </span>
+        </Tooltip>
+        <Tooltip content={currentPath}>
+          <span className="min-w-0 truncate font-mono text-xs text-on-surface/50">
+            {pathLabel}
+          </span>
+        </Tooltip>
       </div>
 
       {/* Content — `min-h-0` is required so this `flex-1` child can shrink

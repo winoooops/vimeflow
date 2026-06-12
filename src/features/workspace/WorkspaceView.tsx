@@ -12,12 +12,13 @@ import { SidebarToggle } from './components/SidebarToggle'
 import { LayoutSwitcher } from '../terminal/components/LayoutSwitcher'
 import { SidebarTopBar } from './components/SidebarTopBar'
 import { SidebarSettingsFooter } from './components/SidebarSettingsFooter'
-import { Sidebar } from '../../components/sidebar/Sidebar'
+import { Sidebar } from '@/components/sidebar/Sidebar'
 import {
   SidebarTabs,
   type SidebarTabItem,
-} from '../../components/sidebar/SidebarTabs'
-import { StatusBar, type StatusBarSession } from '../../components/StatusBar'
+} from '@/components/sidebar/SidebarTabs'
+import { StatusBar, type StatusBarSession } from '@/components/StatusBar'
+import { Tooltip } from '@/components/Tooltip'
 import { AgentStatusCard } from './components/AgentStatusCard'
 import { FilesView } from './components/FilesView'
 import { NewSessionButton } from './components/NewSessionButton'
@@ -2051,51 +2052,59 @@ export const WorkspaceView = (): ReactElement => {
               activeLayoutId={activeSession.layout}
               onPick={handlePickLayout}
               trailing={
-                <button
-                  type="button"
-                  aria-label="Configure displayed layouts"
-                  title="Configure displayed layouts"
-                  disabled
-                  aria-disabled="true"
-                  tabIndex={-1}
-                  className="inline-flex h-5 w-6 items-center justify-center rounded text-on-surface-muted opacity-50 transition-colors enabled:hover:bg-primary/[0.08] enabled:hover:text-primary"
+                // Disabled controls swallow pointer events in Chromium, so the
+                // hover target is a wrapper span rather than the button itself.
+                <Tooltip
+                  content="Configure displayed layouts"
+                  placement="bottom"
                 >
-                  <svg
-                    width="14"
-                    height="14"
-                    viewBox="0 0 16 16"
-                    fill="none"
-                    aria-hidden="true"
-                  >
-                    <path
-                      d="M3 4.5H6.2M9.8 4.5H13M3 8H9.2M12.2 8H13M3 11.5H4.8M8.2 11.5H13"
-                      stroke="currentColor"
-                      strokeWidth="1.35"
-                      strokeLinecap="round"
-                    />
-                    <circle
-                      cx="8"
-                      cy="4.5"
-                      r="1.6"
-                      stroke="currentColor"
-                      strokeWidth="1.25"
-                    />
-                    <circle
-                      cx="10.7"
-                      cy="8"
-                      r="1.45"
-                      stroke="currentColor"
-                      strokeWidth="1.25"
-                    />
-                    <circle
-                      cx="6.5"
-                      cy="11.5"
-                      r="1.55"
-                      stroke="currentColor"
-                      strokeWidth="1.25"
-                    />
-                  </svg>
-                </button>
+                  <span className="inline-flex">
+                    <button
+                      type="button"
+                      aria-label="Configure displayed layouts"
+                      disabled
+                      aria-disabled="true"
+                      tabIndex={-1}
+                      className="inline-flex h-5 w-6 items-center justify-center rounded text-on-surface-muted opacity-50 transition-colors enabled:hover:bg-primary/[0.08] enabled:hover:text-primary"
+                    >
+                      <svg
+                        width="14"
+                        height="14"
+                        viewBox="0 0 16 16"
+                        fill="none"
+                        aria-hidden="true"
+                      >
+                        <path
+                          d="M3 4.5H6.2M9.8 4.5H13M3 8H9.2M12.2 8H13M3 11.5H4.8M8.2 11.5H13"
+                          stroke="currentColor"
+                          strokeWidth="1.35"
+                          strokeLinecap="round"
+                        />
+                        <circle
+                          cx="8"
+                          cy="4.5"
+                          r="1.6"
+                          stroke="currentColor"
+                          strokeWidth="1.25"
+                        />
+                        <circle
+                          cx="10.7"
+                          cy="8"
+                          r="1.45"
+                          stroke="currentColor"
+                          strokeWidth="1.25"
+                        />
+                        <circle
+                          cx="6.5"
+                          cy="11.5"
+                          r="1.55"
+                          stroke="currentColor"
+                          strokeWidth="1.25"
+                        />
+                      </svg>
+                    </button>
+                  </span>
+                </Tooltip>
               }
             />
           )}

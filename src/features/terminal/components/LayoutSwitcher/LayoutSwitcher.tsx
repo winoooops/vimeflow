@@ -6,7 +6,7 @@ import type { LayoutId } from '../../../sessions/types'
 // `layouts.ts` module is the canonical home for `LAYOUTS`.
 import { LAYOUTS } from '../SplitView/layouts'
 import { LayoutGlyph } from './LayoutGlyph'
-import { Tooltip } from '../../../../components/Tooltip'
+import { Tooltip } from '@/components/Tooltip'
 
 export interface LayoutSwitcherProps {
   activeLayoutId: LayoutId
