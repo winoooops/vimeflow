@@ -120,7 +120,7 @@ Parameters:
     Description: Repository cloned by bootstrap/runbook steps.
   WorkerRunnerRef:
     Type: String
-    Default: wip/linear-wiring
+    Default: main
     AllowedPattern: '^[A-Za-z0-9._/-]+$'
     Description: Git ref the worker refreshes before fixer cycles.
   ControlParameterPrefix:
