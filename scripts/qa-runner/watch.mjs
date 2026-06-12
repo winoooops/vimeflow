@@ -63,7 +63,9 @@ const logWorkerInstanceId = () => {
   try {
     out(`worker     ${resolveWorkerInstanceId()}`)
   } catch (e) {
-    err(`worker     unable to resolve worker instance ID: ${e.message.split('\n')[0]}`)
+    err(
+      `worker     unable to resolve worker instance ID: ${e.message.split('\n')[0]}`
+    )
   }
 }
 
