@@ -258,6 +258,12 @@ vi.mock('./components/DockPanel', () => ({
         >
           switch to diff
         </button>
+        <button
+          data-testid="mock-switch-to-editor"
+          onClick={() => onTabChange?.('editor')}
+        >
+          switch to editor
+        </button>
         <button data-testid="mock-close-dock" onClick={onClose}>
           close dock
         </button>
@@ -440,28 +446,27 @@ describe('WorkspaceView lifted-subscription contract', () => {
       render(<WorkspaceView />)
       await screen.findByTestId('dock-panel-mock')
 
-      // First render: agent idle + tab='editor' → enabled: false
-      expect(useGitStatus).toHaveBeenCalledWith(
-        expect.anything(),
-        expect.objectContaining({ watch: true, enabled: false })
-      )
-
-      // Flip the tab to diff via the DockPanel mock's exposed button.
-      // After re-render, useGitStatus must be called with enabled: true
-      // — and because the agent is STILL idle (mockImplementation is
-      // persistent across re-renders), that `true` can only come from
-      // the `dockTab === 'diff'` arm, which is what this test is
-      // meant to exercise. (Round-2 verify caught a subtle bug here:
-      // mockReturnValueOnce only covered the first call, so the
-      // re-render fell back to the active default and the assertion
-      // passed via the wrong branch — this version uses mockImplementation
-      // to keep the agent idle across all renders within the test.)
-      vi.mocked(useGitStatus).mockClear()
-      fireEvent.click(screen.getByTestId('mock-switch-to-diff'))
-
+      // First render: agent idle + tab='diff' (the default) → enabled: true.
+      // The agent is idle, so this `true` can only come from the
+      // `dockTab === 'diff'` arm of the OR-condition — which is exactly the
+      // path this test locks. Diff is now the default dock tab, so the very
+      // first render exercises the arm without any tab switch.
       expect(useGitStatus).toHaveBeenCalledWith(
         expect.anything(),
         expect.objectContaining({ watch: true, enabled: true })
+      )
+
+      // Flip the tab to editor via the DockPanel mock's exposed button.
+      // After re-render the diff arm is no longer active and the agent is
+      // STILL idle (mockImplementation is persistent across re-renders), so
+      // `enabled` must drop to false — proving the earlier `true` came from
+      // the diff arm and not a stale active-agent default.
+      vi.mocked(useGitStatus).mockClear()
+      fireEvent.click(screen.getByTestId('mock-switch-to-editor'))
+
+      expect(useGitStatus).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ watch: true, enabled: false })
       )
     } finally {
       if (originalImpl) {

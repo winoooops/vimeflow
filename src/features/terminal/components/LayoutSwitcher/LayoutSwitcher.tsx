@@ -1,4 +1,4 @@
-import type { ReactElement } from 'react'
+import type { ReactElement, ReactNode } from 'react'
 import type { LayoutId } from '../../../sessions/types'
 // Source the data constant directly from its module rather than the
 // `SplitView` component barrel — otherwise LayoutSwitcher silently
@@ -11,6 +11,13 @@ import { Tooltip } from '../../../../components/Tooltip'
 export interface LayoutSwitcherProps {
   activeLayoutId: LayoutId
   onPick: (next: LayoutId) => void
+  /**
+   * Optional control docked INSIDE the pill container, after a hairline
+   * divider. The workspace top chrome uses it to seat the layout-display
+   * configuration button alongside the pills as one pillar, leaving the
+   * separate pin toggle to stand alone. Omit it and no divider renders.
+   */
+  trailing?: ReactNode
 }
 
 const BASE_BUTTON =
@@ -21,6 +28,7 @@ const INACTIVE_BUTTON = 'text-on-surface-muted hover:text-on-surface'
 export const LayoutSwitcher = ({
   activeLayoutId,
   onPick,
+  trailing = undefined,
 }: LayoutSwitcherProps): ReactElement => (
   <div
     data-testid="layout-switcher"
@@ -77,5 +85,17 @@ export const LayoutSwitcher = ({
         </Tooltip>
       )
     })}
+    {trailing !== undefined && (
+      <>
+        {/* Hairline divider seats the docked control as part of the same
+            pillar without merging it into the pill toggle group visually. */}
+        <span
+          aria-hidden="true"
+          data-testid="layout-switcher-divider"
+          className="mx-0.5 h-[14px] w-px shrink-0 bg-outline-variant/50"
+        />
+        {trailing}
+      </>
+    )}
   </div>
 )

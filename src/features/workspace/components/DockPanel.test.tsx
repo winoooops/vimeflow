@@ -1153,36 +1153,33 @@ describe('DockPanel', () => {
   })
 
   describe('focus highlight', () => {
-    test('isFocused=true applies mauve border to bottom junction edge', () => {
-      renderDockPanel({ isFocused: true, position: 'bottom' })
+    test('keeps a neutral junction edge regardless of focus (no bright border)', () => {
+      // The active terminal pane owns the focus highlight; the dock no longer
+      // paints a competing lavender outline. Both focus states use the same
+      // neutral separator edge.
+      const { rerenderWith } = renderDockPanel({
+        isFocused: true,
+        position: 'bottom',
+      })
+      const focused = screen.getByTestId('dock-panel')
+      expect(focused).toHaveClass('border-t')
+      expect(focused).toHaveClass('border-outline-variant/30')
+      expect(focused).not.toHaveClass('border-primary-container')
 
-      // border-t is the edge class; border-[color] is the shared shorthand
-      const section = screen.getByTestId('dock-panel')
-      expect(section).toHaveClass('border-t')
-      expect(section).toHaveClass('border-primary-container')
+      rerenderWith({ isFocused: false, position: 'bottom' })
+      const unfocused = screen.getByTestId('dock-panel')
+      expect(unfocused).toHaveClass('border-outline-variant/30')
+      expect(unfocused).not.toHaveClass('border-primary-container')
     })
 
-    test('isFocused=false uses neutral bottom junction edge', () => {
-      renderDockPanel({ isFocused: false, position: 'bottom' })
-      const section = screen.getByTestId('dock-panel')
-
-      expect(section).toHaveClass('border-t')
-      expect(section).toHaveClass('border-outline-variant/30')
-      expect(section).not.toHaveClass('border-primary-container')
-    })
-
-    test('isFocused=true applies box shadow', () => {
+    test('does not paint a bright focus box shadow or outline overlay', () => {
       renderDockPanel({ isFocused: true })
 
-      expect(screen.getByTestId('dock-panel').style.boxShadow).toBeTruthy()
-    })
-
-    test('isFocused=true renders a complete focus outline overlay', () => {
-      renderDockPanel({ isFocused: true })
-
-      expect(screen.getByTestId('dock-focus-outline')).toHaveClass(
-        'border-primary-container'
-      )
+      // No lavender ring/glow and no full outline rectangle competing with the
+      // pane highlight.
+      const panel = screen.getByTestId('dock-panel')
+      expect(panel.style.boxShadow).toBeFalsy()
+      expect(screen.queryByTestId('dock-focus-outline')).toBeNull()
     })
 
     test('dock container suppresses native browser focus outline', () => {

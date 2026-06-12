@@ -1,4 +1,4 @@
-import { render, screen, waitFor, act, within } from '@testing-library/react'
+import { render, screen, waitFor, act } from '@testing-library/react'
 import { describe, test, expect, vi, beforeEach } from 'vitest'
 import userEvent from '@testing-library/user-event'
 import type { ReactElement, ReactNode } from 'react'
@@ -6,7 +6,6 @@ import { WorkspaceView } from './WorkspaceView'
 import type { SessionManager } from '../sessions/hooks/useSessionManager'
 import type { AgentStatus } from '../agent-status/types'
 import type { Session } from '../sessions/types'
-import { AGENTS } from '../../agents/registry'
 import type { TerminalZoneProps } from './components/TerminalZone'
 
 const terminalZonePropsSpy = vi.hoisted(() => vi.fn())
@@ -481,7 +480,7 @@ describe('WorkspaceView - Command Palette Integration', () => {
     expect(mockSessionManager.updatePaneAgentType).not.toHaveBeenCalled()
   })
 
-  test('does not apply stale agent status from another session to the active shell tab', async () => {
+  test('does not apply stale agent status from another session to the active shell session', async () => {
     mockSessions[1] = {
       ...mockSessions[1],
       agentType: 'generic',
@@ -511,8 +510,9 @@ describe('WorkspaceView - Command Palette Integration', () => {
 
     render(<WorkspaceView />)
 
-    const activeTab = screen.getByRole('tab', { name: 'feature' })
-    expect(within(activeTab).getByText(AGENTS.shell.glyph)).toBeInTheDocument()
+    // The main session-tab strip is gone, so there is no per-tab agent glyph
+    // to inspect. The guard under test is purely that the stale claude-code
+    // status never re-stamps the active generic pane.
     expect(mockSessionManager.updatePaneAgentType).not.toHaveBeenCalled()
   })
 

@@ -4,7 +4,14 @@ import {
   type ReactElement,
   type ReactNode,
 } from 'react'
-import { formatShortcut, type ShortcutKey } from '../lib/formatShortcut'
+import { Tooltip } from './Tooltip'
+import type { ShortcutKey } from '../lib/formatShortcut'
+
+// Display-side chords for the bottom-bar actions. The behavior lives in the
+// command palette and dock-shortcut hooks; these mirror those bindings so the
+// Zed-style tooltip chips can't drift from the wired keys.
+const PALETTE_SHORTCUT = ['Mod', ';'] as const satisfies readonly ShortcutKey[]
+const DOCK_SHORTCUT = ['Mod', '0'] as const satisfies readonly ShortcutKey[]
 
 interface StatusBarCache {
   cached: number
@@ -29,9 +36,11 @@ export interface StatusBarProps {
   // null = the agent is active but has not reported a context window yet;
   // the segment is suppressed rather than shown as a misleading 0%.
   contextPct: number | null
-  paletteShortcut: readonly ShortcutKey[]
   onOpenPalette: () => void
-  // Total running burner shells across all sessions (§8 secondary cue).
+  /** Whether the editor/diff dock is open — drives the toggle's icon tone. */
+  dockOpen: boolean
+  onToggleDock: () => void
+  /** Total running burner shells across all sessions (VIM-53/71 cue). */
   burnerCount?: number
 }
 
@@ -53,6 +62,14 @@ const barStyle = {
   borderTopColor:
     'color-mix(in srgb, var(--color-outline-variant) 20%, transparent)',
 } satisfies CSSProperties
+
+// Main-stage handoff J7: compact transparent icon buttons — hover fill
+// only, never a persistent background.
+const ACTION_BUTTON_BASE =
+  'inline-flex h-[18px] w-[22px] cursor-pointer items-center justify-center rounded-[5px] transition-colors duration-[140ms] focus-visible:outline-none focus-visible:shadow-[var(--shadow-ring-primary)]'
+
+const ACTION_BUTTON_IDLE =
+  'text-on-surface-muted hover:bg-primary/10 hover:text-primary'
 
 const normalizePct = (pct: number): number =>
   Math.min(100, Math.max(0, Math.round(pct)))
@@ -136,12 +153,6 @@ const MaterialIcon = ({ name }: { name: string }): ReactElement => (
   </span>
 )
 
-const Kbd = ({ children }: { children: ReactNode }): ReactElement => (
-  <kbd className="inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-[4px] border border-outline-variant/60 bg-surface-container-high/60 px-[5px] font-mono text-[10px] font-semibold leading-none text-on-surface-variant">
-    {children}
-  </kbd>
-)
-
 const ContextSmiley = ({ pct }: { pct: number }): ReactElement => {
   const normalizedPct = normalizePct(pct)
   const presentation = contextPresentation(normalizedPct)
@@ -150,7 +161,7 @@ const ContextSmiley = ({ pct }: { pct: number }): ReactElement => {
     <span
       data-testid="status-bar-context"
       aria-label={`Context ${normalizedPct}%`}
-      className="inline-flex items-center gap-1.5 whitespace-nowrap"
+      className="inline-flex items-center gap-[4px] whitespace-nowrap"
     >
       <span aria-hidden="true" className="text-sm leading-none">
         {presentation.face}
@@ -162,41 +173,15 @@ const ContextSmiley = ({ pct }: { pct: number }): ReactElement => {
   )
 }
 
-const PaletteHint = ({
-  shortcut,
-  onOpenPalette,
-}: {
-  shortcut: readonly ShortcutKey[]
-  onOpenPalette: () => void
-}): ReactElement => (
-  <button
-    type="button"
-    aria-label="Open command palette"
-    data-testid="status-bar-palette"
-    onClick={onOpenPalette}
-    className="inline-flex cursor-pointer items-center gap-1 rounded-[var(--radius-sm)] px-1 py-0.5 transition-colors hover:bg-surface-container-low focus-visible:outline-none focus-visible:shadow-[var(--shadow-ring-primary)]"
-  >
-    {shortcut.map((key, index) => (
-      <Kbd key={`${key}-${index}`}>{formatShortcut(key)}</Kbd>
-    ))}
-  </button>
-)
-
 const buildSegments = ({
   session,
   contextPct,
-  paletteShortcut,
-  onOpenPalette,
   burnerCount = 0,
-}: StatusBarProps): Segment[] => {
-  const paletteSegment = {
-    id: 'palette',
-    node: (
-      <PaletteHint shortcut={paletteShortcut} onOpenPalette={onOpenPalette} />
-    ),
-  }
-
-  // Global across sessions, so it shows even when no session is active.
+}: Pick<
+  StatusBarProps,
+  'session' | 'contextPct' | 'burnerCount'
+>): Segment[] => {
+  // Global across sessions, so it surfaces even when no session is active.
   const burnerSegment: Segment | null =
     burnerCount > 0
       ? {
@@ -218,7 +203,7 @@ const buildSegments = ({
       : null
 
   if (session === null) {
-    return burnerSegment ? [burnerSegment, paletteSegment] : [paletteSegment]
+    return burnerSegment ? [burnerSegment] : []
   }
 
   const segments: Segment[] = []
@@ -229,7 +214,7 @@ const buildSegments = ({
       node: (
         <span
           data-testid="status-bar-duration"
-          className="inline-flex items-center gap-1 whitespace-nowrap text-on-surface-variant"
+          className="inline-flex items-center gap-[4px] whitespace-nowrap text-on-surface-variant max-[760px]:hidden"
         >
           <MaterialIcon name="schedule" />
           <span>{session.startedAgo}</span>
@@ -255,7 +240,7 @@ const buildSegments = ({
       node: (
         <span
           data-testid="status-bar-cache"
-          className="inline-flex items-center gap-1 whitespace-nowrap"
+          className="inline-flex items-center gap-[4px] whitespace-nowrap"
         >
           <span className={toneClass}>
             <MaterialIcon name="bolt" />
@@ -266,23 +251,30 @@ const buildSegments = ({
           >
             {rate}%
           </span>
-          <span className="text-on-surface-muted">cached</span>
+          <span
+            data-testid="status-bar-cache-label"
+            className="text-on-surface-muted max-[760px]:hidden"
+          >
+            cached
+          </span>
         </span>
       ),
     })
   }
 
-  segments.push({
-    id: 'turns',
-    node: (
-      <span
-        data-testid="status-bar-turns"
-        className="whitespace-nowrap text-on-surface-muted"
-      >
-        <span className="tabular-nums">{Math.max(0, session.turns)}</span> turns
-      </span>
-    ),
-  })
+  if (session.turns > 0) {
+    segments.push({
+      id: 'turns',
+      node: (
+        <span
+          data-testid="status-bar-turns"
+          className="whitespace-nowrap text-on-surface-muted max-[760px]:hidden"
+        >
+          <span className="tabular-nums">{session.turns}</span> turns
+        </span>
+      ),
+    })
+  }
 
   if (hasChanges(session.changes)) {
     segments.push({
@@ -310,7 +302,6 @@ const buildSegments = ({
   if (burnerSegment) {
     segments.push(burnerSegment)
   }
-  segments.push(paletteSegment)
 
   return segments
 }
@@ -318,36 +309,84 @@ const buildSegments = ({
 export const StatusBar = ({
   session,
   contextPct,
-  paletteShortcut,
   onOpenPalette,
+  dockOpen,
+  onToggleDock,
   burnerCount = 0,
 }: StatusBarProps): ReactElement => {
-  const segments = buildSegments({
-    session,
-    contextPct,
-    paletteShortcut,
-    onOpenPalette,
-    burnerCount,
-  })
+  const segments = buildSegments({ session, contextPct, burnerCount })
 
   return (
     <footer
       data-testid="status-bar"
       aria-label="App status"
       style={barStyle}
-      className="flex h-[var(--status-bar-h)] shrink-0 flex-wrap items-center gap-x-[14px] border-t border-solid bg-surface-container-lowest px-3 font-mono text-[10px] text-on-surface-muted tabular-nums max-[760px]:h-[44px] max-[760px]:content-between max-[760px]:items-start max-[760px]:py-1"
+      className="flex h-[var(--status-bar-h)] shrink-0 items-center gap-x-[14px] border-t border-solid bg-surface-container-lowest px-[12px] font-mono text-[10px] text-on-surface-muted tabular-nums"
     >
-      <span className="whitespace-nowrap text-primary-container">
-        obsidian-cli
+      <span
+        data-testid="status-bar-actions"
+        className="inline-flex items-center gap-[6px]"
+      >
+        <Tooltip content="Command palette" shortcut={PALETTE_SHORTCUT}>
+          <button
+            type="button"
+            aria-label="Open command palette"
+            data-testid="status-bar-palette"
+            onClick={onOpenPalette}
+            className={`${ACTION_BUTTON_BASE} ${ACTION_BUTTON_IDLE}`}
+          >
+            <svg width="13" height="13" viewBox="0 0 16 16" aria-hidden="true">
+              <path
+                d="M3 4.5L6 8L3 11.5M7.5 11.5H13"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.55"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </button>
+        </Tooltip>
+        <Tooltip
+          content={dockOpen ? 'Hide editor & diff' : 'Show editor & diff'}
+          shortcut={DOCK_SHORTCUT}
+        >
+          <button
+            type="button"
+            aria-label={
+              dockOpen ? 'Hide editor & diff panel' : 'Show editor & diff panel'
+            }
+            aria-pressed={dockOpen}
+            data-testid="status-bar-dock-toggle"
+            onClick={onToggleDock}
+            className={`${ACTION_BUTTON_BASE} ${
+              dockOpen
+                ? 'text-success hover:bg-success/[0.08]'
+                : ACTION_BUTTON_IDLE
+            }`}
+          >
+            <svg width="13" height="13" viewBox="0 0 16 16" aria-hidden="true">
+              <rect
+                x="2.2"
+                y="2.8"
+                width="11.6"
+                height="10.4"
+                rx="2"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.3"
+              />
+              <path d="M2.6 9.5H13.4" stroke="currentColor" strokeWidth="1.3" />
+            </svg>
+          </button>
+        </Tooltip>
       </span>
-      <Separator />
-      <span className="whitespace-nowrap text-on-surface-muted">
-        v{__APP_VERSION__}
-      </span>
-      <span className="min-w-0 flex-1 max-[760px]:hidden" />
+
+      <span className="min-w-[10px] flex-1" />
+
       <span
         data-testid="status-bar-right"
-        className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-x-[14px] gap-y-0 max-[760px]:basis-full max-[760px]:justify-end"
+        className="flex min-w-0 items-center justify-end gap-x-[8px] whitespace-nowrap max-[760px]:gap-x-[5px]"
       >
         {segments.map((segment, index) => (
           <Fragment key={segment.id}>

@@ -256,18 +256,11 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
             ? 'border-r'
             : 'border-l'
 
-    const borderClass = isFocused
-      ? `${borderEdge} border-primary-container`
-      : `${borderEdge} border-outline-variant/30`
-
-    const collapseIconName =
-      position === 'top'
-        ? 'expand_less'
-        : position === 'bottom'
-          ? 'expand_more'
-          : position === 'left'
-            ? 'chevron_left'
-            : 'chevron_right'
+    // The dock keeps a neutral separator edge in BOTH focus states. The active
+    // terminal pane already owns the agent-accent focus highlight, and focusing
+    // the dock dims the panes, so a second bright outline here only competed
+    // with the pane highlight and made the focused surface ambiguous.
+    const borderClass = `${borderEdge} border-outline-variant/30`
 
     const sectionAriaLabel = tab === 'editor' ? 'Code editor' : 'Diff viewer'
 
@@ -322,25 +315,11 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
         data-container-id={DOCK_CONTAINER_ID}
         aria-label={sectionAriaLabel}
         tabIndex={-1}
-        style={{
-          ...containerStyle,
-          boxShadow: isFocused
-            ? 'inset 0 0 0 1px var(--color-primary-container), 0 0 0 6px color-mix(in srgb, var(--color-primary-container) 12%, transparent)'
-            : undefined,
-          transition: 'box-shadow 220ms ease',
-        }}
+        style={containerStyle}
         onPointerDown={handlePointerDown}
         onFocus={onContainerFocus}
         className={`relative z-30 flex shrink-0 flex-col bg-surface focus:outline-none ${borderClass}`}
       >
-        {isFocused ? (
-          <span
-            data-testid="dock-focus-outline"
-            aria-hidden="true"
-            className="pointer-events-none absolute inset-0 z-40 border border-primary-container"
-          />
-        ) : null}
-
         {isVerticalDock ? (
           <ResizeHandle
             orientation="horizontal"
@@ -370,7 +349,6 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
           tab={tab}
           onTabChange={onTabChange}
           selectedFilePath={selectedFilePath}
-          collapseIconName={collapseIconName}
           onClose={onClose}
           compactActions={compactActions}
           menuAlign={position === 'left' ? 'left' : 'right'}
