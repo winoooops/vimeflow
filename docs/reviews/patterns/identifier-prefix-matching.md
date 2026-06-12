@@ -3,7 +3,7 @@ id: identifier-prefix-matching
 category: correctness
 created: 2026-06-12
 last_updated: 2026-06-12
-ref_count: 0
+ref_count: 1
 ---
 
 # Identifier Prefix Matching
@@ -48,5 +48,23 @@ the returned record really refers to the intended entity before reusing it.
   `nodes[0]` linked the wrong PR to the existing Linear issue.
 - **Fix:** Same as finding 1: search with the created-title delimiter
   `PR #${prNumber}:` and verify the returned issue before reuse.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on
+  this line)
+
+### 3. findIssueForPr: post-fetch guard only checked on `nodes[0]`
+
+- **Source:** github-claude | PR #434 round 2 | 2026-06-12
+- **Severity:** MEDIUM
+- **File:** `scripts/qa-runner/lib/linear-client.mjs` L96-103
+- **Finding:** After round 1 added a post-fetch guard, the helper still
+  assigned only `d.issues.nodes[0]` to `candidate` and returned `null` when
+  that single node failed the guard. Because the GraphQL query requests
+  `first:10`, a false-positive node at position 0 could hide the real
+  auto-created issue at `nodes[1+]` and cause `ensureLinearLink` to create
+  a duplicate Linear issue.
+- **Fix:** Compute `expectedPrLine` once, then use `d.issues.nodes.find(...)`
+  to return the first node whose title starts with `PR #${prNumber}:` or
+  whose description contains the exact `PR: <url>\n` line, falling back to
+  `null` when none match.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on
   this line)
