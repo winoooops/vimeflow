@@ -1077,7 +1077,7 @@ describe('WorkspaceView focus orchestration', () => {
     ).toBeNull()
   })
 
-  test('clicking dock claims dock focus: terminal dims, dock shows focus outline', async () => {
+  test('clicking dock claims dock focus: terminal dims (no competing dock outline)', async () => {
     render(<WorkspaceView />)
 
     await waitFor(() => {
@@ -1089,15 +1089,16 @@ describe('WorkspaceView focus orchestration', () => {
     dockPanel.focus() // simulate focus entering dock via onFocus
 
     await waitFor(() => {
-      // Terminal zone should dim when dock is active
+      // Terminal zone should dim when dock is active — this is the focus
+      // signal now that the dock no longer paints a bright focus outline (it
+      // competed with the active pane's agent-accent highlight).
       const terminalZone = screen.getByTestId('terminal-zone')
       expect(terminalZone.className).toContain('opacity-[0.65]')
     })
 
-    // Dock should show focus outline
     expect(
       dockPanel.querySelector('[data-testid="dock-focus-outline"]')
-    ).not.toBeNull()
+    ).toBeNull()
   })
 
   test('closing the dock returns container focus to terminal', async () => {

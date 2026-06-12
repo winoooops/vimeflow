@@ -256,9 +256,12 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
             ? 'border-r'
             : 'border-l'
 
-    const borderClass = isFocused
-      ? `${borderEdge} border-[#cba6f7]`
-      : `${borderEdge} border-[rgba(74,68,79,0.3)]`
+    // The dock keeps a neutral separator edge in BOTH focus states. The active
+    // terminal pane already owns the agent-accent focus highlight (lavender for
+    // Claude — the same hue this used), and focusing the dock dims the panes, so
+    // a second bright lavender outline here only competed with the pane
+    // highlight and made the focused surface ambiguous.
+    const borderClass = `${borderEdge} border-[rgba(74,68,79,0.3)]`
 
     const collapseIconName =
       position === 'top'
@@ -322,25 +325,11 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
         data-container-id={DOCK_CONTAINER_ID}
         aria-label={sectionAriaLabel}
         tabIndex={-1}
-        style={{
-          ...containerStyle,
-          boxShadow: isFocused
-            ? '0 0 0 1px #cba6f7 inset, 0 0 0 6px rgba(203,166,247,0.12)'
-            : undefined,
-          transition: 'box-shadow 220ms ease',
-        }}
+        style={containerStyle}
         onPointerDown={handlePointerDown}
         onFocus={onContainerFocus}
         className={`relative z-30 flex shrink-0 flex-col bg-[#121221] focus:outline-none ${borderClass}`}
       >
-        {isFocused ? (
-          <span
-            data-testid="dock-focus-outline"
-            aria-hidden="true"
-            className="pointer-events-none absolute inset-0 z-40 border border-[#cba6f7]"
-          />
-        ) : null}
-
         {isVerticalDock ? (
           <ResizeHandle
             orientation="horizontal"
