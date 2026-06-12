@@ -209,6 +209,37 @@ describe('BrowserPane', () => {
     })
   })
 
+  test('marks the native browser pane invisible while occluded, then restores it', async () => {
+    const { rerender } = render(
+      <BrowserPane session={session} pane={browserPane} isActive isOccluded />
+    )
+
+    await waitFor(() => {
+      expect(bridgeMocks.createBrowserPane).toHaveBeenCalledOnce()
+    })
+    await settle()
+
+    expect(bridgeMocks.setBrowserPaneBounds).toHaveBeenLastCalledWith({
+      sessionId: 'session-1',
+      paneId: 'p1',
+      bounds: { x: 10, y: 20, width: 640, height: 360 },
+      shortcutContext: { activePaneId: 'p1', paneIds: ['p0', 'p1'] },
+      visible: false,
+    })
+
+    rerender(<BrowserPane session={session} pane={browserPane} isActive />)
+
+    await waitFor(() => {
+      expect(bridgeMocks.setBrowserPaneBounds).toHaveBeenLastCalledWith({
+        sessionId: 'session-1',
+        paneId: 'p1',
+        bounds: { x: 10, y: 20, width: 640, height: 360 },
+        shortcutContext: { activePaneId: 'p1', paneIds: ['p0', 'p1'] },
+        visible: true,
+      })
+    })
+  })
+
   test('the focus border uses the cyan WEB accent only when the pane is active', () => {
     const { rerender } = render(
       <BrowserPane session={session} pane={browserPane} isActive />

@@ -2,7 +2,7 @@
 id: testing-gaps
 category: testing
 created: 2026-04-09
-last_updated: 2026-06-11
+last_updated: 2026-06-12
 ref_count: 30
 ---
 
@@ -629,4 +629,13 @@ filesystem scope restrictions).
 - **Finding:** The test `cached and fresh styles differ in cold-cache state` compared full `style` attribute strings via `expect(cachedStyle).not.toBe(freshStyle)`. The cached segment carries `boxShadow` and a different `width` than the fresh segment, so the strings always differ regardless of color values. If `FRESH_STACK_GRADIENT` were reverted to the colliding cold-state color `#ff94a5`, the test would still pass, providing zero protection against the regression.
 - **Fix:** Replaced the broad string inequality with a targeted `not.toContain('#ff94a5')` assertion on the fresh segment's style, directly verifying the fresh segment never carries the cold-cache pink color.
 - **Code-review heuristic:** When a test asserts inequality of two computed DOM style strings, check whether structural differences (width, box-shadow, margin, etc.) already guarantee the strings differ. If so, the test is trivially true. Narrow the assertion to the specific property or value that actually matters (e.g., `background`, `color`, or `not.toContain(expectedColor)`).
+- **Commit:** same commit as this entry
+
+### 63. Test mock leaks across cases because cleanup only restores one of two replaced properties
+
+- **Source:** github-claude | PR #428 round 1 | 2026-06-12
+- **Severity:** LOW
+- **File:** `src/features/editor/components/MarkdownReadingView.test.tsx` L226-266
+- **Finding:** The `falls back to execCommand copy` test replaced both `window.navigator.clipboard` and `document.execCommand`, but the `finally` block only restored the clipboard property. The leaked `execCommand` mock persisted in the shared jsdom document for every subsequent test in the file, creating a false-positive risk for any future test that exercised the textarea fallback path without its own mock.
+- **Fix:** Saved the original `document.execCommand` value before overriding it and restored it in the same `finally` block alongside `navigator.clipboard`, mirroring the symmetric cleanup already used by the `installClipboardMock` helper.
 - **Commit:** same commit as this entry

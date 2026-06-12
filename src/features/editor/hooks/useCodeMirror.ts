@@ -21,6 +21,7 @@ import { history } from '@codemirror/commands'
 import { vim, Vim, getCM } from '@replit/codemirror-vim'
 import { themeService } from '../../../theme'
 import { createEditorTheme } from '../theme/editorTheme'
+import { writeClipboardText, type ClipboardLike } from '../utils/clipboard'
 
 /**
  * Scroll the viewport to follow the cursor on any PURE-selection change
@@ -121,11 +122,6 @@ export interface UseCodeMirrorReturn {
   setContainer: (node: HTMLDivElement | null) => void
 }
 
-interface ClipboardLike {
-  readText?: () => Promise<string>
-  writeText?: (text: string) => Promise<void>
-}
-
 const selectedTextFromState = (state: EditorState): string =>
   state.selection.ranges
     .filter((range) => !range.empty)
@@ -144,54 +140,6 @@ const deletionForRange = (
   changes: { from: range.from, to: range.to, insert: '' },
   range: EditorSelection.cursor(range.from),
 })
-
-const writeViaTextarea = (text: string): boolean => {
-  const execCommand = (
-    document as unknown as {
-      execCommand?: (command: string) => boolean
-    }
-  ).execCommand
-  if (typeof execCommand !== 'function') {
-    return false
-  }
-
-  const textarea = document.createElement('textarea')
-  textarea.value = text
-  textarea.setAttribute('readonly', '')
-  textarea.style.position = 'fixed'
-  textarea.style.opacity = '0'
-  textarea.style.pointerEvents = 'none'
-  document.body.appendChild(textarea)
-  textarea.select()
-
-  try {
-    return execCommand.call(document, 'copy')
-  } catch {
-    return false
-  } finally {
-    document.body.removeChild(textarea)
-  }
-}
-
-const writeClipboardText = async (text: string): Promise<boolean> => {
-  if (text === '') {
-    return false
-  }
-
-  const clipboard = window.navigator.clipboard as ClipboardLike | undefined
-
-  try {
-    if (clipboard?.writeText === undefined) {
-      return writeViaTextarea(text)
-    }
-
-    await clipboard.writeText(text)
-
-    return true
-  } catch {
-    return writeViaTextarea(text)
-  }
-}
 
 const copySelectionFromView = async (view: EditorView): Promise<void> => {
   await writeClipboardText(selectedTextFromState(view.state))

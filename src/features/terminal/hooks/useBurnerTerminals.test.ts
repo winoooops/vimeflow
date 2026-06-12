@@ -183,6 +183,30 @@ test('hiding the popup does not kill the shell', async () => {
   expect(service.kill).not.toHaveBeenCalled()
 })
 
+test('hasVisibleBurner tracks only the visible popup, not hidden live shells', async () => {
+  const service = makeService()
+  const focused = makeFocusedPane()
+
+  const { result } = renderHook(() =>
+    useBurnerTerminals({ service, resolveFocusedPane: () => focused })
+  )
+
+  expect(result.current.hasVisibleBurner).toBe(false)
+
+  await act(async () => {
+    await result.current.toggle()
+  })
+
+  expect(result.current.hasVisibleBurner).toBe(true)
+
+  await act(async () => {
+    await result.current.toggle()
+  })
+
+  expect(result.current.hasVisibleBurner).toBe(false)
+  expect(result.current.renderNode).not.toBeNull()
+})
+
 test('renderNode stays non-null when hidden while a shell is alive', async () => {
   const service = makeService()
   const focused = makeFocusedPane()
@@ -860,6 +884,67 @@ test('the align callback writes `cd <live host cwd>` + Enter to the burner pty',
   })
 })
 
+test('the align callback prefers the agent cwd over the live host cwd', async () => {
+  const service = makeService()
+  const focused = makeFocusedPane('s1', 'p0', '/repo')
+  const livePaneCwds = new Map([['s1:p0', '/repo']])
+
+  const agentPaneCwds = new Map([
+    ['s1:p0', '/repo/.claude/worktrees/agent-task'],
+  ])
+
+  const { result } = renderHook(() =>
+    useBurnerTerminals({
+      service,
+      resolveFocusedPane: () => focused,
+      livePaneCwds,
+      agentPaneCwds,
+    })
+  )
+
+  await act(async () => {
+    await result.current.toggle({ sessionId: 's1', paneId: 'p0', cwd: '/repo' })
+  })
+
+  act(() => {
+    firstPopup(result.current.renderNode).props.onAlignCwd?.()
+  })
+
+  expect(service.write).toHaveBeenCalledWith({
+    sessionId: 'burner-pty',
+    data: "\x05\x15cd '/repo/.claude/worktrees/agent-task'\r",
+  })
+})
+
+test('the align callback falls back to the live host cwd when no agent cwd is available', async () => {
+  const service = makeService()
+  const focused = makeFocusedPane('s1', 'p0', '/repo')
+  const livePaneCwds = new Map([['s1:p0', '/repo/current-shell-pwd']])
+  const agentPaneCwds = new Map([['s1:other', '/repo/.claude/worktrees/task']])
+
+  const { result } = renderHook(() =>
+    useBurnerTerminals({
+      service,
+      resolveFocusedPane: () => focused,
+      livePaneCwds,
+      agentPaneCwds,
+    })
+  )
+
+  await act(async () => {
+    await result.current.toggle({ sessionId: 's1', paneId: 'p0', cwd: '/repo' })
+  })
+
+  act(() => {
+    firstPopup(result.current.renderNode).props.onAlignCwd?.()
+  })
+
+  expect(service.write).toHaveBeenCalledWith({
+    sessionId: 'burner-pty',
+    data: "\x05\x15cd '/repo/current-shell-pwd'\r",
+  })
+})
+
 test('the align callback resolves the latest host cwd at click-time, not a stale snapshot', async () => {
   const service = makeService()
   const focused = makeFocusedPane('s1', 'p0', '/repo')
@@ -1163,6 +1248,34 @@ test('the host pane moving makes the burner out-of-sync', async () => {
     rerender({ cwds: new Map([['s1:p0', '/other']]) })
   })
   expect(firstPopup(result.current.renderNode).props.outOfSync).toBe(true)
+})
+
+test('marks the align button out-of-sync against the agent cwd when one is available', async () => {
+  const service = makeService()
+  const focused = makeFocusedPane('s1', 'p0', '/repo')
+  const livePaneCwds = new Map([['s1:p0', '/repo']])
+  const agentPaneCwds = new Map([['s1:p0', '/repo/worktree']])
+
+  const { result } = renderHook(() =>
+    useBurnerTerminals({
+      service,
+      resolveFocusedPane: () => focused,
+      livePaneCwds,
+      agentPaneCwds,
+    })
+  )
+
+  await act(async () => {
+    await result.current.toggle({ sessionId: 's1', paneId: 'p0', cwd: '/repo' })
+  })
+
+  expect(firstPopup(result.current.renderNode).props.outOfSync).toBe(true)
+
+  act(() => {
+    firstPopup(result.current.renderNode).props.onCwdChange?.('/repo/worktree')
+  })
+
+  expect(firstPopup(result.current.renderNode).props.outOfSync).toBe(false)
 })
 
 test('a trailing-slash-only difference is not treated as out-of-sync', async () => {

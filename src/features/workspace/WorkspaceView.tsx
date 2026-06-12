@@ -931,11 +931,41 @@ export const WorkspaceView = (): ReactElement => {
     [sessions]
   )
 
+  // Preferred burner sync targets from the active agent's structured cwd.
+  // This captures agent-driven worktree moves that may not be reflected in the
+  // host shell's pwd yet; `useBurnerTerminals` falls back to `livePaneCwds`.
+  const agentPaneCwds = useMemo(() => {
+    if (
+      !activeSessionId ||
+      !activePtyBackedPaneId ||
+      !activePtyBackedPanePtyId ||
+      !agentCwd ||
+      agentStatus.sessionId !== activePtyBackedPanePtyId ||
+      !agentIsActive ||
+      agentHasExited ||
+      !isActivePaneLive
+    ) {
+      return new Map<string, string>()
+    }
+
+    return new Map([[`${activeSessionId}:${activePtyBackedPaneId}`, agentCwd]])
+  }, [
+    activeSessionId,
+    activePtyBackedPaneId,
+    activePtyBackedPanePtyId,
+    agentCwd,
+    agentHasExited,
+    agentIsActive,
+    agentStatus.sessionId,
+    isActivePaneLive,
+  ])
+
   const {
     renderNode: burnerTerminalNode,
     toggle: toggleBurner,
     runningByPane: runningBurnerByPane,
     activeByPane: activeBurnerByPane,
+    hasVisibleBurner,
   } = useBurnerTerminals({
     service: terminalService,
     resolveFocusedPane,
@@ -945,6 +975,7 @@ export const WorkspaceView = (): ReactElement => {
     livePaneKeys,
     dropAllForPty,
     livePaneCwds,
+    agentPaneCwds,
   })
 
   // Stable wrapper for the `:burner` palette command so the command-list memo
@@ -1613,6 +1644,7 @@ export const WorkspaceView = (): ReactElement => {
     terminalFitDeferred ||
     showUnsavedDialog ||
     commandPalette.state.isOpen ||
+    hasVisibleBurner ||
     paneRenameNode !== null ||
     fileError !== null ||
     infoMessage !== null

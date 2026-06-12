@@ -1,3 +1,4 @@
+// cspell:ignore winoooops
 import { describe, test, expect, vi } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -427,6 +428,35 @@ describe('AgentStatusPanel — live action card', () => {
     expect(screen.getByText('LIVE')).toBeInTheDocument()
   })
 
+  test('does not duplicate a running exec_command in Tool Calls and NOW', () => {
+    render(
+      <AgentStatusPanel
+        {...defaultProps}
+        cwd="/tmp/repo"
+        agentStatus={{
+          ...activeAgentStatus,
+          toolCalls: {
+            total: 0,
+            byType: {},
+            active: {
+              tool: 'exec_command',
+              args: '{"cmd":"gh pr view 420 --repo winoooops/vimeflow"}',
+              startedAt: '2026-04-22T11:59:42Z',
+              toolUseId: 'cmd-1',
+            },
+          },
+          recentToolCalls: [],
+        }}
+      />
+    )
+
+    expect(screen.getByTestId('live-action-card')).toBeInTheDocument()
+    expect(screen.queryByTestId('active-tool-indicator')).toBeNull()
+    expect(
+      screen.getAllByText(/gh pr view 420 --repo winoooops\/vimeflow/)
+    ).toHaveLength(1)
+  })
+
   test('omits the live card when no tool call is active', () => {
     render(
       <AgentStatusPanel
@@ -438,6 +468,44 @@ describe('AgentStatusPanel — live action card', () => {
 
     expect(screen.queryByText('NOW')).not.toBeInTheDocument()
     expect(screen.queryByTestId('live-action-card')).not.toBeInTheDocument()
+  })
+
+  test('moves a completed exec_command into activity history', () => {
+    render(
+      <AgentStatusPanel
+        {...defaultProps}
+        cwd="/tmp/repo"
+        agentStatus={{
+          ...activeAgentStatus,
+          toolCalls: {
+            total: 1,
+            byType: { exec_command: 1 },
+            active: null,
+          },
+          recentToolCalls: [
+            {
+              id: 'cmd-1',
+              tool: 'exec_command',
+              args: '{"cmd":"gh pr view 420 --repo winoooops/vimeflow"}',
+              status: 'done',
+              durationMs: 500,
+              timestamp: '2026-04-22T12:00:00Z',
+              isTestFile: false,
+            },
+          ],
+        }}
+      />
+    )
+
+    expect(screen.queryByText('NOW')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('live-action-card')).toBeNull()
+    expect(
+      screen.getByRole('button', { name: /activity\s*1/i })
+    ).toBeInTheDocument()
+
+    expect(screen.getByRole('article')).toHaveTextContent(
+      'gh pr view 420 --repo winoooops/vimeflow'
+    )
   })
 
   test('does not also list the running action in the activity feed', () => {
