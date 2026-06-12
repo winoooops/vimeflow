@@ -462,36 +462,36 @@ describe('WorkspaceView – top chrome (main-stage handoff J2–J6)', () => {
     ).toBeInTheDocument()
   })
 
-  test('collapsed sidebar: the hover zone insets past the shell fixed toggle (J4)', () => {
+  test('collapsed sidebar: the expand toggle relocates into the auto-hide chrome (J4)', () => {
     render(<WorkspaceView />)
 
-    // The collapsed-state sidebar toggle is owned by the sidebar shell
-    // (`sidebar-toggle-fixed`), not the top chrome — so the chrome never
-    // renders its own gutter toggle, and its padding stays constant.
     const chrome = screen.getByTestId('top-chrome')
-    expect(chrome.className.split(/\s+/)).toContain('pl-[14px]')
-    expect(screen.queryByTestId('sidebar-toggle-chrome')).toBeNull()
 
-    const zone = screen.getByTestId('top-hover-zone')
-    // Sidebar open: the hover zone starts flush at the left edge.
-    expect(zone.style.left).toBe('0px')
+    // Sidebar open: the toggle lives in the sidebar shell anchor, NOT the
+    // top chrome (so it does not float over the panes via the chrome).
+    expect(screen.getByTestId('sidebar-toggle-anchor')).toBeInTheDocument()
+    expect(chrome).not.toContainElement(
+      screen.getByTestId('sidebar-toggle-fixed')
+    )
 
     act(() => {
       setSidebarCollapsed(true)
     })
 
-    // Sidebar collapsed: the always-present fixed toggle remains clickable,
-    // so the (unpinned) hover zone insets its left edge past it instead of
-    // covering it. Padding is unchanged (no 50px gutter).
-    expect(chrome.className.split(/\s+/)).toContain('pl-[14px]')
-    expect(screen.getByTestId('sidebar-toggle-fixed')).toBeInTheDocument()
-    expect(zone.style.left).not.toBe('0px')
-    expect(parseInt(zone.style.left, 10)).toBeGreaterThanOrEqual(40)
+    // Sidebar collapsed: the toggle relocates INTO the top chrome, so it
+    // auto-hides with the banner instead of permanently overlapping the
+    // pane header. The shell anchor is gone.
+    expect(screen.queryByTestId('sidebar-toggle-anchor')).toBeNull()
+    expect(chrome).toContainElement(screen.getByTestId('sidebar-toggle-fixed'))
 
     act(() => {
       setSidebarCollapsed(false)
     })
 
-    expect(zone.style.left).toBe('0px')
+    // Back to the shell anchor when re-opened.
+    expect(screen.getByTestId('sidebar-toggle-anchor')).toBeInTheDocument()
+    expect(chrome).not.toContainElement(
+      screen.getByTestId('sidebar-toggle-fixed')
+    )
   })
 })
