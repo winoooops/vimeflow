@@ -12,6 +12,12 @@ files:
   - dist/**/*
   - dist-electron/**/*
   - package.json
+  # Vite pre-bundles all deps into dist/ and dist-electron/; see rules/electron/optimization.md
+  - '!node_modules/**'
+
+# English-only UI; drop the other Chromium locale paks
+electronLanguages:
+  - en-US
 
 extraResources:
   - from: target/release/vimeflow-backend

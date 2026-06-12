@@ -1,3 +1,9 @@
 [workspace]
 resolver = "2"
 members = ["crates/backend"]
+
+# Sidecar ships inside the app package; see rules/electron/optimization.md
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
