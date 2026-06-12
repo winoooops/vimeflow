@@ -62,6 +62,7 @@
   --color-wash-faint: rgba(255, 255, 255, 0.04);
   --color-wash-subtle: rgba(255, 255, 255, 0.05);
   --color-wash-soft: rgba(255, 255, 255, 0.08);
+  --color-scrim: #000000;
   --color-syn-keyword: #cba6f7;
   --color-syn-string: #a6e3a1;
   --color-syn-fn: #89b4fa;

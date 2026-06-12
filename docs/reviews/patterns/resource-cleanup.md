@@ -2,7 +2,7 @@
 id: resource-cleanup
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-06-08
+last_updated: 2026-06-12
 ref_count: 10
 ---
 
@@ -116,4 +116,13 @@ causes listener accumulation and duplicate event handling.
 - **File:** `electron/workspace-teardown.ts`
 - **Finding:** Keeping one global `inFlight` promise across `reset()` avoided duplicate flushes, but a new window that opened and closed while the old flush was still running would return the old promise and never drain or persist the new window's final shape.
 - **Fix:** Track a teardown generation. Same-generation callers still share the in-flight flush, but `reset()` advances the generation and a new teardown queues its own flush behind any older flush still running.
+- **Commit:** same commit as this entry
+
+### 12. Terminal theme bridge unsubscribe discarded without acknowledgement
+
+- **Source:** github-claude | PR #424 round 1 | 2026-06-12
+- **Severity:** LOW
+- **File:** `src/main.tsx`
+- **Finding:** `initTerminalThemeBridge()` returns an unsubscribe function, but the call site discarded it. The bridge is intended to live for the renderer lifetime, so ignoring the return value is technically correct today, yet it hides the lifetime contract and risks duplicate subscriptions if a future hot-reload path calls the initializer again.
+- **Fix:** Stored the returned cleanup function in a named const and voided it to satisfy no-unused-locals, with a comment documenting the renderer-lifetime intent.
 - **Commit:** same commit as this entry

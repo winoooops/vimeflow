@@ -2,7 +2,7 @@
 id: ui-visual-regression
 category: code-quality
 created: 2026-06-11
-last_updated: 2026-06-11
+last_updated: 2026-06-12
 ref_count: 0
 ---
 
@@ -43,3 +43,12 @@ test case for the state that triggers the collision.
   `#ff94a5`). Added a cold-cache test case asserting that cached and fresh
   stack styles differ.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 2. Browser pane focus halo referenced an undefined `--color-scrim` token
+
+- **Source:** github-codex-connector | PR #424 round 1 | 2026-06-12
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/browser/components/BrowserPane.tsx`
+- **Finding:** The focused browser pane `boxShadow` used `color-mix(in srgb, var(--color-scrim) 35%, transparent)`, but the theme token set did not define `--color-scrim`. The unresolved variable invalidated the `box-shadow` declaration, so the focus halo was lost instead of themed.
+- **Fix:** Added `scrim` to `EFFECT_COLOR_TOKENS`, defined it in both Obsidian Lens and Flexoki themes, and synced `src/theme/theme.css` so `--color-scrim` resolves.
+- **Commit:** same commit as this entry

@@ -68,6 +68,7 @@ export const obsidianLens: ThemeDefinition = {
     'wash-faint': 'rgba(255, 255, 255, 0.04)',
     'wash-subtle': 'rgba(255, 255, 255, 0.05)',
     'wash-soft': 'rgba(255, 255, 255, 0.08)',
+    scrim: '#000000',
   },
   shadows: {
     'pane-focus':

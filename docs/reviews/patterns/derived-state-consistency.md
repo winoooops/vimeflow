@@ -2,7 +2,7 @@
 id: derived-state-consistency
 category: code-quality
 created: 2026-06-07
-last_updated: 2026-06-08
+last_updated: 2026-06-12
 ref_count: 3
 ---
 
@@ -93,4 +93,13 @@ base data is technically "correct."
 - **File:** `electron/workspace-layout-controller.ts`
 - **Finding:** `tabsForPane` returned `pane.tabs` directly from the controller's retained repaired store. A caller that mutated the returned array or nested history entries could corrupt the in-memory restore source, so later writer fallbacks could persist caller-owned mutations instead of the repaired durable state.
 - **Fix:** Clone tab arrays and nested history entries before returning them from `tabsForPane`. Added a regression test that mutates the returned tabs and verifies a later lookup still reads the original repaired history.
+- **Commit:** same commit as this entry
+
+### 6. Theme child command labels exposed the internal kebab-case ID instead of the human-readable name
+
+- **Source:** github-claude | PR #424 round 1 | 2026-06-12
+- **Severity:** LOW
+- **File:** `src/features/workspace/commands/buildWorkspaceCommands.ts` and `src/features/command-palette/data/defaultCommands.ts`
+- **Finding:** Both command trees mapped theme child entries with `label: theme.id`, so the command palette rendered `"obsidian-lens"` / `"flexoki"` as the primary text. `description` already used `theme.label` (`"Switch to Obsidian Lens"`), confirming the intended display value was available but misassigned.
+- **Fix:** Changed both sites to `label: theme.label` so users see the theme display name.
 - **Commit:** same commit as this entry

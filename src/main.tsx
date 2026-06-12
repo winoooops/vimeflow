@@ -7,7 +7,10 @@ import { themeService } from './theme'
 import { initTerminalThemeBridge } from './features/terminal/theme/themeBridge'
 
 themeService.init()
-initTerminalThemeBridge()
+// The bridge intentionally lives for the renderer lifetime; storing the
+// unsubscribe makes the lifetime contract explicit.
+const cleanupTerminalThemeBridge = initTerminalThemeBridge()
+void cleanupTerminalThemeBridge
 
 const rootElement = document.getElementById('root')
 

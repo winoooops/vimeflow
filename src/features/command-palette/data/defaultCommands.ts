@@ -47,7 +47,7 @@ export const defaultCommands: Command[] = [
         icon: 'palette',
         children: themeService.list().map((theme) => ({
           id: `set-theme-${theme.id}`,
-          label: theme.id,
+          label: theme.label,
           description: `Switch to ${theme.label}`,
           icon: 'palette',
           execute: (): void => {

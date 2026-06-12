@@ -169,7 +169,7 @@ export const buildWorkspaceCommands = (
       icon: 'palette',
       children: themeService.list().map((theme) => ({
         id: `theme-${theme.id}`,
-        label: theme.id,
+        label: theme.label,
         description: `Switch to ${theme.label}`,
         icon: 'palette',
         execute: (): void => {

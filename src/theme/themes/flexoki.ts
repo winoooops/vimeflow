@@ -65,6 +65,7 @@ export const flexoki: ThemeDefinition = {
     'wash-faint': 'rgba(16, 15, 15, 0.04)',
     'wash-subtle': 'rgba(16, 15, 15, 0.05)',
     'wash-soft': 'rgba(16, 15, 15, 0.08)',
+    scrim: '#000000',
   },
   shadows: {
     'pane-focus':
