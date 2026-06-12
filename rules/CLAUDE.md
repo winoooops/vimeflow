@@ -13,7 +13,8 @@ rules/
 │   ├── hooks.md
 │   ├── patterns.md
 │   └── security.md
-└── rust/                  # Rust backend overrides (5 files) — Electron sidecar (`vimeflow-backend`)
+├── rust/                  # Rust backend overrides (5 files) — Electron sidecar (`vimeflow-backend`)
+└── electron/              # Electron packaging/runtime — optimization.md (package size playbook + findings log)
 ```
 
 Language-specific rules reference their common counterpart via `../../common/` (directories) or `../common/` (files). **Do not flatten** — they share filenames intentionally.
@@ -35,6 +36,7 @@ Each directory contains files covering the same topics:
 | `pr-scope.md`             | PR scope discipline — one PR answers one question; drive-by formatting and unrelated improvements split into separate PRs (common only)                               |
 | `development-workflow.md` | Full pipeline: research → plan → TDD → review → commit (common only)                                                                                                  |
 | `performance.md`          | Profiling, caching, bundle size (common only)                                                                                                                         |
+| `optimization.md`         | Electron package-size playbook — asar contents, locales, sidecar binary, measurement commands, findings log (electron only)                                           |
 | `code-review.md`          | Review triggers, severity levels, agent delegation (common only)                                                                                                      |
 | `agents.md`               | Agent orchestration, parallel execution (common only)                                                                                                                 |
 | `worktrees.md`            | Git worktree lifecycle, lock guardrails, cleanup (common only)                                                                                                        |
