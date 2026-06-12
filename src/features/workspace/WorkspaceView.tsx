@@ -65,6 +65,7 @@ import {
   type PaneShortcutModifier,
 } from '../terminal/hooks/usePaneShortcuts'
 import { useDockShortcuts } from './hooks/useDockShortcuts'
+import { useDockToggleShortcut } from './hooks/useDockToggleShortcut'
 import { useSidebarShortcut } from './hooks/useSidebarShortcut'
 import { useNewSessionShortcut } from './hooks/useNewSessionShortcut'
 import { useSidebarCollapsed } from './hooks/useSidebarCollapsed'
@@ -1219,6 +1220,11 @@ export const WorkspaceView = (): ReactElement => {
     activeContainerId,
     openDock,
     claimTerminal,
+    modKey: preferModifier === 'meta' ? '⌘' : 'Ctrl',
+  })
+
+  useDockToggleShortcut({
+    onToggle: handleToggleDock,
     modKey: preferModifier === 'meta' ? '⌘' : 'Ctrl',
   })
 

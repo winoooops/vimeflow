@@ -11,7 +11,7 @@ import type { ShortcutKey } from '../lib/formatShortcut'
 // command palette and dock-shortcut hooks; these mirror those bindings so the
 // Zed-style tooltip chips can't drift from the wired keys.
 const PALETTE_SHORTCUT = ['Mod', ';'] as const satisfies readonly ShortcutKey[]
-const DOCK_SHORTCUT = ['Mod', 'B'] as const satisfies readonly ShortcutKey[]
+const DOCK_SHORTCUT = ['Mod', '0'] as const satisfies readonly ShortcutKey[]
 
 interface StatusBarCache {
   cached: number

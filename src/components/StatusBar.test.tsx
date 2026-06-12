@@ -92,9 +92,9 @@ describe('StatusBar', () => {
     await user.hover(screen.getByTestId('status-bar-dock-toggle'))
     const dockTip = await screen.findByRole('tooltip')
     expect(dockTip).toHaveTextContent('Show editor & diff')
-    // Same Mod+B keybinding the dock's collapse-panel button advertises.
+    // Same Mod+0 keybinding the dock's collapse-panel button advertises.
     expect(within(dockTip).getByTestId('tooltip-shortcut')).toHaveTextContent(
-      'B'
+      '0'
     )
   })
 

@@ -222,7 +222,7 @@ export const DockTab = ({
                 {children}
                 <Tooltip
                   content="Collapse panel"
-                  shortcut={['Mod', 'B']}
+                  shortcut={['Mod', '0']}
                   placement="bottom"
                 >
                   <button
@@ -256,7 +256,7 @@ export const DockTab = ({
             </span>
             <Tooltip
               content="Collapse panel"
-              shortcut={['Mod', 'B']}
+              shortcut={['Mod', '0']}
               placement="bottom"
             >
               <button
