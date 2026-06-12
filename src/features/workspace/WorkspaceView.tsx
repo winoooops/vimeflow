@@ -844,7 +844,7 @@ export const WorkspaceView = (): ReactElement => {
   const dockCanvasRef = useRef<HTMLDivElement>(null)
   const [dockPosition, setDockPosition] = useState<DockPosition>('bottom')
   const [isDockOpen, setIsDockOpen] = useState(true)
-  const [dockTab, setDockTab] = useState<DockTab>('editor')
+  const [dockTab, setDockTab] = useState<DockTab>('diff')
 
   const [activeContainerId, setActiveContainerId] = useState<string>(
     TERMINAL_CONTAINER_ID
@@ -1343,6 +1343,11 @@ export const WorkspaceView = (): ReactElement => {
   // stale content and no feedback on Tauri IPC failures.
   const openFileSafely = useCallback(
     async (filePath: string): Promise<void> => {
+      // Opening a file shows it in the editor. The dock now defaults to the
+      // Diff tab, so surface the editor (and open the dock if collapsed) when
+      // a file is opened — otherwise the file would load behind the diff view.
+      setDockTab('editor')
+      setIsDockOpen(true)
       try {
         await editorBuffer.openFile(filePath)
         setFileError(null)

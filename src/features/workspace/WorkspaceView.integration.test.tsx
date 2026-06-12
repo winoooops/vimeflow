@@ -250,15 +250,15 @@ describe('WorkspaceView Integration Tests', () => {
 
       const dockPanel = screen.getByTestId('dock-panel')
 
-      // Editor should be active by default
-      const editorPanel = within(dockPanel).queryByTestId('editor-panel')
-      expect(editorPanel).toBeInTheDocument()
+      // Diff is the default tab now — the editor panel is not shown yet.
+      expect(
+        within(dockPanel).queryByTestId('editor-panel')
+      ).not.toBeInTheDocument()
 
-      // Click Editor tab explicitly to verify it works
+      // Click Editor tab to surface the editor.
       const editorTab = within(dockPanel).getByText('Editor')
       await user.click(editorTab)
 
-      // EditorPanel should still be visible
       expect(within(dockPanel).getByTestId('editor-panel')).toBeInTheDocument()
     })
 

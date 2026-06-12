@@ -15,17 +15,12 @@ interface DockTabProps {
   tab: DockTabType
   onTabChange: (next: DockTabType) => void
   selectedFilePath: string | null
-  collapseIconName:
-    | 'expand_more'
-    | 'expand_less'
-    | 'chevron_left'
-    | 'chevron_right'
   onClose: () => void
   compactActions?: boolean
   /**
    * Which side the compact actions dropdown opens toward.
    * 'left' = left-docks (opens rightward). 'right' = right-docks (opens leftward).
-   * Defaults to 'right'. Prefer over inferring from collapseIconName.
+   * Defaults to 'right'.
    */
   menuAlign?: 'left' | 'right'
   /** Slot rendered between the tab strip spacer and the file-path/close cluster. */
@@ -50,7 +45,6 @@ export const DockTab = ({
   tab,
   onTabChange,
   selectedFilePath,
-  collapseIconName,
   onClose,
   compactActions = false,
   menuAlign = 'right',
@@ -140,21 +134,6 @@ export const DockTab = ({
       }
     >
       <div className="flex min-w-0 shrink-0 gap-1">
-        <Tooltip content="Editor" shortcut={['Mod', 'E']} placement="bottom">
-          <button
-            type="button"
-            aria-pressed={tab === 'editor'}
-            onClick={() => onTabChange('editor')}
-            className={tabButtonClass(tab === 'editor', compactActions)}
-            aria-label="Editor"
-          >
-            <span className={tabIconClass(tab === 'editor')} aria-hidden="true">
-              code
-            </span>
-            {!compactActions && <span>Editor</span>}
-          </button>
-        </Tooltip>
-
         <Tooltip
           content="Diff Viewer"
           shortcut={['Mod', 'G']}
@@ -171,6 +150,21 @@ export const DockTab = ({
               difference
             </span>
             {!compactActions && <span>Diff Viewer</span>}
+          </button>
+        </Tooltip>
+
+        <Tooltip content="Editor" shortcut={['Mod', 'E']} placement="bottom">
+          <button
+            type="button"
+            aria-pressed={tab === 'editor'}
+            onClick={() => onTabChange('editor')}
+            className={tabButtonClass(tab === 'editor', compactActions)}
+            aria-label="Editor"
+          >
+            <span className={tabIconClass(tab === 'editor')} aria-hidden="true">
+              code
+            </span>
+            {!compactActions && <span>Editor</span>}
           </button>
         </Tooltip>
       </div>
@@ -237,7 +231,7 @@ export const DockTab = ({
                       className="material-symbols-outlined text-[14px]"
                       aria-hidden="true"
                     >
-                      {collapseIconName}
+                      minimize
                     </span>
                   </button>
                 </Tooltip>
@@ -267,7 +261,7 @@ export const DockTab = ({
                   className="material-symbols-outlined text-[14px]"
                   aria-hidden="true"
                 >
-                  {collapseIconName}
+                  minimize
                 </span>
               </button>
             </Tooltip>

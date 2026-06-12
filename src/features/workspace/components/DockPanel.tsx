@@ -263,15 +263,6 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
     // highlight and made the focused surface ambiguous.
     const borderClass = `${borderEdge} border-[rgba(74,68,79,0.3)]`
 
-    const collapseIconName =
-      position === 'top'
-        ? 'expand_less'
-        : position === 'bottom'
-          ? 'expand_more'
-          : position === 'left'
-            ? 'chevron_left'
-            : 'chevron_right'
-
     const sectionAriaLabel = tab === 'editor' ? 'Code editor' : 'Diff viewer'
 
     const compactActions =
@@ -359,7 +350,6 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
           tab={tab}
           onTabChange={onTabChange}
           selectedFilePath={selectedFilePath}
-          collapseIconName={collapseIconName}
           onClose={onClose}
           compactActions={compactActions}
           menuAlign={position === 'left' ? 'left' : 'right'}
