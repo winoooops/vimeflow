@@ -37,6 +37,7 @@ import { linkedVim } from './lib/pr-utils.mjs'
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url))
 const LOCK_DIR = join(SCRIPT_DIR, '.locks')
 const KIMI_TIMEOUT_MS = 45 * 60 * 1000
+const DEFAULT_LINEAR_TEAM_KEY = 'VIM'
 
 const out = (s = '') => process.stdout.write(`${s}\n`)
 const die = (s, code = 1) => {
@@ -50,6 +51,32 @@ const sh = (cmd, args, opts = {}) =>
     maxBuffer: 32 * 1024 * 1024,
     ...opts,
   })
+
+const ensureLinearLink = (pr, teamKey) => {
+  const r = spawnSync(
+    'node',
+    [
+      join(SCRIPT_DIR, 'lib', 'linear-pr-link.mjs'),
+      String(pr),
+      '--team',
+      teamKey,
+    ],
+    { encoding: 'utf8' }
+  )
+  if (r.status !== 0) {
+    out(
+      `Linear link skipped (${(r.stderr || '').trim().split('\n')[0] || 'linear-pr-link failed'})`
+    )
+    return null
+  }
+  const linked = JSON.parse(r.stdout)
+  if (linked.prPatched) {
+    out(
+      `Linear ${linked.identifier}: ${linked.created ? 'created' : 'found'} + patched PR body`
+    )
+  }
+  return linked.identifier
+}
 
 // Latest lifeline version in the plugin cache that ships the skill.
 const lifelineSkillsDir = () => {
@@ -162,7 +189,7 @@ const invocation = (pr, live) => {
   )
 }
 
-const run = (pr, live) => {
+const run = (pr, live, linearTeamKey) => {
   mkdirSync(LOCK_DIR, { recursive: true })
   const lock = join(LOCK_DIR, `pr-${pr}.lock`)
   try {
@@ -228,7 +255,7 @@ const run = (pr, live) => {
     out('--- worktree changes ---')
     out(sh('git', ['-C', wt, 'status', '--short']) || '(none)')
     if (live && r.status === 0) {
-      const vim = linkedVim(info.body)
+      const vim = linkedVim(info.body) || ensureLinearLink(pr, linearTeamKey)
       if (vim) {
         spawnSync(
           'node',
@@ -255,12 +282,20 @@ const run = (pr, live) => {
 const main = () => {
   const argv = process.argv.slice(2)
   const pr = Number(argv.find((a) => /^\d+$/.test(a)))
+  const val = (n) => {
+    const i = argv.indexOf(`--${n}`)
+    return i >= 0 ? argv[i + 1] : undefined
+  }
   if (!pr)
     die(
-      'usage: run.mjs <PR#> [--push]   (default = dry-run; --push arms the live path)'
+      'usage: run.mjs <PR#> [--push] [--linear-team VIM]   (default = dry-run; --push arms the live path)'
     )
   try {
-    run(pr, argv.includes('--push'))
+    run(
+      pr,
+      argv.includes('--push'),
+      val('linear-team') || DEFAULT_LINEAR_TEAM_KEY
+    )
   } catch (e) {
     process.stderr.write(`${e.message}\n`)
     process.exit(e.exitCode || 1)

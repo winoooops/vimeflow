@@ -8,15 +8,16 @@
 //              GOOD_SHAPE → (with --approve) squash-merge AS THE ORCHESTRATOR BOT
 //                           (orchestrator.env) + delete branch.
 //              WAITING / CI_RED → report only.
-//            State is mirrored to the linked Linear issue (a VIM-N in the PR body)
-//            via lib/linear-status.mjs — Linear is the control plane / observability.
+//            Armed runs first ensure the PR body has a Linear issue reference, then
+//            mirror state to that issue via lib/linear-status.mjs.
 //   watch  — loop `tick` every pollSeconds (Ctrl-C to stop).
 //
 // Two identities: the INNER fixer runs as bot.env (handled inside run.mjs); the
 // OUTER merge runs as orchestrator.env so author ≠ approver. Either absent ⇒ that
 // action falls back to your own gh.
 //
-// Default is REPORT-ONLY. `--execute` arms fixing; `--approve` arms merging.
+// Default is REPORT-ONLY. `--ensure-linear` arms PR-body linking, `--execute`
+// arms fixing, and `--approve` arms merging.
 // `--pr N` targets one PR; `--max N` caps parallel fixes. See README.md.
 
 import { execFileSync, spawn, spawnSync } from 'node:child_process'
@@ -30,6 +31,7 @@ const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url))
 const LOCK_DIR = join(SCRIPT_DIR, '.locks')
 const LOG_DIR = join(SCRIPT_DIR, 'logs')
 const DEFAULT_LABEL = 'auto-review'
+const DEFAULT_LINEAR_TEAM_KEY = 'VIM'
 const POLL_SECONDS = 60
 const MAX_PARALLEL = 2
 // CI checks that are the *reviewers*, not the build/test gate — excluded from "CI green".
@@ -164,7 +166,8 @@ const computeState = (pr, ctx) => {
     '--json',
     'mergeable,mergeStateStatus,body,headRefOid',
   ])
-  const vim = linkedVim(view.body)
+  let vim = linkedVim(view.body)
+  if (!vim) vim = ensureLinearLink(pr, ctx)
   let state, detail
   if (ci === 'fail')
     [state, detail] = ['CI_RED', 'non-review CI failing or canceled']
@@ -210,6 +213,33 @@ const postLinear = (vim, body, stateName) => {
     out(
       `           ↳ Linear ${vim}: skipped (${(r.stderr || '').trim().split('\n')[0] || 'no LINEAR_API_KEY'})`
     )
+}
+
+const ensureLinearLink = (pr, ctx) => {
+  if (!ctx.ensureLinear) return null
+  const r = spawnSync(
+    'node',
+    [
+      join(SCRIPT_DIR, 'lib', 'linear-pr-link.mjs'),
+      String(pr.number),
+      '--team',
+      ctx.linearTeamKey,
+    ],
+    { encoding: 'utf8' }
+  )
+  if (r.status !== 0) {
+    out(
+      `           ↳ Linear link skipped (${(r.stderr || '').trim().split('\n')[0] || 'linear-pr-link failed'})`
+    )
+    return null
+  }
+  const linked = JSON.parse(r.stdout)
+  if (linked.prPatched) {
+    out(
+      `           ↳ Linear ${linked.identifier}: ${linked.created ? 'created' : 'found'} + patched PR body`
+    )
+  }
+  return linked.identifier
 }
 
 // Squash-merge + branch delete as the orchestrator bot (or you, if none).
@@ -288,7 +318,7 @@ const approve = (pr, vim, headSha, ctx) => {
 // the console so concurrent runs stay legible. Resolves the exit code; never
 // rejects — a failed child must not abort the pool. run.mjs adopts the INNER
 // (fixer) bot identity itself, so we just inherit the env here.
-const dispatchFix = (pr) =>
+const dispatchFix = (pr, ctx) =>
   new Promise((resolve) => {
     mkdirSync(LOG_DIR, { recursive: true })
     const logPath = join(LOG_DIR, `pr-${pr}.log`)
@@ -297,7 +327,13 @@ const dispatchFix = (pr) =>
     out(`${tag} → run.mjs ${pr} --push   (log: ${logPath})`)
     const child = spawn(
       'node',
-      [join(SCRIPT_DIR, 'run.mjs'), String(pr), '--push'],
+      [
+        join(SCRIPT_DIR, 'run.mjs'),
+        String(pr),
+        '--push',
+        '--linear-team',
+        ctx.linearTeamKey,
+      ],
       {
         env: process.env,
       }
@@ -352,7 +388,7 @@ const tick = async (ctx) => {
   }
   out(
     `QA watcher tick — ${ctx.owner}/${ctx.name} · ${prs.length} PR(s) · ` +
-      `approve=${ctx.approve} execute=${ctx.execute} max=${ctx.maxParallel}\n`
+      `approve=${ctx.approve} execute=${ctx.execute} ensureLinear=${ctx.ensureLinear} max=${ctx.maxParallel}\n`
   )
   const needsFix = []
   for (const pr of prs) {
@@ -397,14 +433,14 @@ const tick = async (ctx) => {
     out(
       `Dispatching ${needsFix.length} fix run(s), up to ${ctx.maxParallel} in parallel…\n`
     )
-    await pool(needsFix, ctx.maxParallel, dispatchFix)
+    await pool(needsFix, ctx.maxParallel, (pr) => dispatchFix(pr, ctx))
   }
 }
 
 const watch = async (ctx) => {
   out(
     `QA watcher — looping every ${POLL_SECONDS}s ` +
-      `(approve=${ctx.approve} execute=${ctx.execute} max=${ctx.maxParallel}). Ctrl-C to stop.\n`
+      `(approve=${ctx.approve} execute=${ctx.execute} ensureLinear=${ctx.ensureLinear} max=${ctx.maxParallel}). Ctrl-C to stop.\n`
   )
   const loop = async () => {
     try {
@@ -456,8 +492,10 @@ const main = () => {
     owner,
     name,
     label: val('label') || DEFAULT_LABEL,
+    linearTeamKey: val('linear-team') || DEFAULT_LINEAR_TEAM_KEY,
     approve: has('approve'),
     execute: has('execute'),
+    ensureLinear: has('ensure-linear') || has('execute') || has('approve'),
     all: has('all'),
     pr: val('pr') ? Number(val('pr')) : undefined,
     maxParallel: Number(val('max')) || MAX_PARALLEL,
@@ -468,7 +506,7 @@ const main = () => {
   if (cmd === 'tick') return tick(ctx)
   if (cmd === 'watch') return watch(ctx)
   err(
-    `unknown command: ${cmd}. Use: scan | tick | watch  [--pr N] [--approve] [--execute] [--all] [--max N] [--label NAME]`
+    `unknown command: ${cmd}. Use: scan | tick | watch  [--pr N] [--approve] [--execute] [--ensure-linear] [--linear-team VIM] [--all] [--max N] [--label NAME]`
   )
   process.exit(1)
 }
