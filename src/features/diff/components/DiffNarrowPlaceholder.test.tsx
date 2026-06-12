@@ -21,4 +21,10 @@ describe('DiffNarrowPlaceholder', (): void => {
     render(<DiffNarrowPlaceholder min={360} />)
     expect(screen.getByRole('status')).toBeInTheDocument()
   })
+
+  test('rotates the resize glyph to indicate horizontal widening', (): void => {
+    render(<DiffNarrowPlaceholder min={360} />)
+
+    expect(screen.getByText('unfold_more')).toHaveClass('rotate-90')
+  })
 })
