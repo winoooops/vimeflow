@@ -77,6 +77,7 @@ jobs:
           name: ts-bindings
           path: src/bindings/*.ts
           if-no-files-found: error
+          overwrite: true
 
   e2e-linux:
     name: E2E smoke suite (Linux)
