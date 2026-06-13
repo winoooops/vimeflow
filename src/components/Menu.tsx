@@ -305,7 +305,9 @@ const MenuRoot = ({
       return true
     }
 
-    return target?.closest(`[${SUBMENU_ROOT_ATTR}="${activeSubmenuId}"]`) ? false : true
+    return target?.closest(`[${SUBMENU_ROOT_ATTR}="${activeSubmenuId}"]`)
+      ? false
+      : true
   }, [])
 
   const {
