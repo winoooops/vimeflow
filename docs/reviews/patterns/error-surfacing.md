@@ -379,7 +379,6 @@ failed" must mean the editor shows the original file, not the requested one.
 - **Fix:** Replaced the direct call with the existing `writeClipboardText` helper from `useCodeMirror.ts`, which tries `navigator.clipboard.writeText` and falls back to a hidden-textarea / `document.execCommand('copy')` path when the modern API is missing or rejects. Exported the helper so the reading view can share the editor's battle-tested fallback. Added a regression test asserting the fallback path is exercised when `navigator.clipboard.writeText` is absent.
 - **Commit:** same commit as this entry
 
-
 ### 39. FileExplorer actionError banner cannot be dismissed
 
 - **Source:** github-claude | PR #444 round 1 | 2026-06-13

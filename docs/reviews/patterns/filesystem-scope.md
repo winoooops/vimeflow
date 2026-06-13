@@ -211,7 +211,6 @@ preserve their original Tauri-era paths.
 - **Fix:** Reject null bytes before path conversion, keep transcript files scoped under canonical `~/.claude`, and document the helper as a best-effort single-user desktop guard. The comment now calls out that fd-pinned traversal or `cap-std`-style APIs are required if the threat model expands to shared writable roots or hostile same-user races.
 - **Commit:** _(pending on this branch)_
 
-
 ### 22. rename_path lacks out-of-home and symlink-leaf rejection tests
 
 - **Source:** github-claude | PR #444 round 1 | 2026-06-13

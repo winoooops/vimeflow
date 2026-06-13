@@ -240,7 +240,6 @@ between display and mutation operations.
 - **Fix:** Fetched `isCrossRepository` from `gh pr view\' and gated the remote ref-delete on `!isCrossRepository`.
 - **Commit:** same commit as this entry
 
-
 ### 26. Diff path computed relative to activeCwd instead of repo root
 
 - **Source:** github-codex-connector | PR #444 round 1 | 2026-06-13

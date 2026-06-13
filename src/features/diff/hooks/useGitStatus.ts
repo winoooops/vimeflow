@@ -96,8 +96,10 @@ export const useGitStatus = (
         setLoading(true)
         setError(null)
 
-        const { files: changedFiles, repoRoot: changedRepoRoot }: GitStatusResponse =
-          await createGitService(cwd).getStatus()
+        const {
+          files: changedFiles,
+          repoRoot: changedRepoRoot,
+        }: GitStatusResponse = await createGitService(cwd).getStatus()
 
         if (!cancelled) {
           setFiles(changedFiles)

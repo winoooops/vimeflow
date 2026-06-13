@@ -524,7 +524,6 @@ handlers must not trap focus without implementing the promised behavior.
 - **Fix:** Moved the same root-anchored, absolutely positioned toggle wrapper earlier in the DOM (right after the compact scrim and before the sidebar shell) so sequential focus order matches the visual layout. Preserved `z-40` and the existing left/top absolute coordinates. Updated co-located tests that asserted on `workspace.children[1]` to query `screen.getByTestId('workspace-main')` directly, since the DOM reordering changed sibling indices.
 - **Commit:** _(see git blame / git log on this line)_
 
-
 ### 49. FileExplorer rename/delete uses native blocking dialogs
 
 - **Source:** github-claude | PR #444 round 1 | 2026-06-13

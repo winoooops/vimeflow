@@ -148,30 +148,25 @@ export const FileExplorer = ({
     [fileSystemService, refresh]
   )
 
-  const startRename = useCallback(
-    (node: FileNode, fullPath: string): void => {
-      setActionError(null)
-      setPendingRename({
-        node,
-        fullPath,
-        value: displayNameFor(node),
-      })
-      // Focus the input on the next tick so the DOM element is mounted.
-      requestAnimationFrame(() => {
-        renameInputRef.current?.focus()
-        renameInputRef.current?.select()
-      })
-    },
-    []
-  )
+  const startRename = useCallback((node: FileNode, fullPath: string): void => {
+    setActionError(null)
+    setPendingRename({
+      node,
+      fullPath,
+      value: displayNameFor(node),
+    })
 
-  const startDelete = useCallback(
-    (node: FileNode, fullPath: string): void => {
-      setActionError(null)
-      setPendingDelete({ node, fullPath })
-    },
-    []
-  )
+    // Focus the input on the next tick so the DOM element is mounted.
+    requestAnimationFrame(() => {
+      renameInputRef.current?.focus()
+      renameInputRef.current?.select()
+    })
+  }, [])
+
+  const startDelete = useCallback((node: FileNode, fullPath: string): void => {
+    setActionError(null)
+    setPendingDelete({ node, fullPath })
+  }, [])
 
   const cancelRename = useCallback((): void => {
     setPendingRename(null)
@@ -214,18 +209,25 @@ export const FileExplorer = ({
 
       if (actionId === 'copy-path') {
         const clipboard = readClipboardWriter()
+        const writeText = clipboard?.writeText
 
-        if (typeof clipboard?.writeText !== 'function') {
+        if (typeof writeText !== 'function') {
           setActionError('Clipboard is unavailable')
 
           return
         }
 
-        void clipboard.writeText(fullPath).catch((caughtError: unknown) => {
-          const message =
-            caughtError instanceof Error ? caughtError.message : String(caughtError)
-          setActionError(`Failed to copy path: ${message}`)
-        })
+        void (async (): Promise<void> => {
+          try {
+            await writeText(fullPath)
+          } catch (caughtError: unknown) {
+            const message =
+              caughtError instanceof Error
+                ? caughtError.message
+                : String(caughtError)
+            setActionError(`Failed to copy path: ${message}`)
+          }
+        })()
 
         return
       }
@@ -365,9 +367,7 @@ export const FileExplorer = ({
             <button
               type="button"
               onClick={() => {
-                if (pendingRename) {
-                  void executeRename(pendingRename)
-                }
+                void executeRename(pendingRename)
               }}
               className="material-symbols-outlined text-sm text-secondary hover:text-secondary/80"
               aria-label="Confirm rename"
@@ -393,9 +393,7 @@ export const FileExplorer = ({
             <button
               type="button"
               onClick={() => {
-                if (pendingDelete) {
-                  void executeDelete(pendingDelete)
-                }
+                void executeDelete(pendingDelete)
               }}
               className="rounded bg-error/20 px-2 py-0.5 font-semibold hover:bg-error/30"
               aria-label="Confirm delete"
