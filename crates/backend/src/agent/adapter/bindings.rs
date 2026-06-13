@@ -174,7 +174,15 @@ impl AgentBindings {
                     kimi_home.display(),
                     ctx.agent_pid,
                 );
-                let kimi_locator: Arc<KimiLocator> = Arc::new(KimiLocator::new(kimi_home));
+                // Pass pid + pty_start + proc_root so the locator can read
+                // the kimi process's own fds / environ (proc-fd, proc-environ);
+                // `kimi_home` stays the env/provider/default fallback home.
+                let kimi_locator: Arc<KimiLocator> = Arc::new(KimiLocator::new(
+                    kimi_home,
+                    ctx.agent_pid,
+                    ctx.pty_start,
+                    ctx.proc_root.clone(),
+                ));
                 let locator: Arc<dyn StatusSourceLocator> = kimi_locator.clone();
                 let adapter: Arc<KimiAdapter> = Arc::new(KimiAdapter::with_locator(kimi_locator));
                 Ok(Self {

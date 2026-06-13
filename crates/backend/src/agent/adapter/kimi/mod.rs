@@ -116,7 +116,12 @@ mod adapter_tests {
     use super::*;
 
     fn adapter() -> KimiAdapter {
-        KimiAdapter::with_locator(Arc::new(KimiLocator::new(PathBuf::from("/tmp/.kimi-code"))))
+        KimiAdapter::with_locator(Arc::new(KimiLocator::new(
+            PathBuf::from("/tmp/.kimi-code"),
+            0,
+            std::time::SystemTime::UNIX_EPOCH,
+            None,
+        )))
     }
 
     #[test]
