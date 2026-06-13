@@ -123,7 +123,7 @@ pub(super) fn start_tailing(
     let Some(session_dir) = session_dir else {
         // No resolvable session dir — tail the single wire (legacy path).
         let file = open_wire(&transcript_path)?;
-        let decoder = KimiTranscriptDecoder::new(events, session_id, String::new());
+        let decoder = KimiTranscriptDecoder::new(events, session_id, String::new(), String::new());
         let service = TranscriptTailService::new(Box::new(decoder), "kimi wire transcript");
         let join_handle = std::thread::spawn(move || {
             service.run(BufReader::new(file), stop_clone);
@@ -139,6 +139,16 @@ pub(super) fn start_tailing(
         run_session_supervisor(events, session_id, session_dir, transcript_path, stop_clone);
     });
     Ok(TranscriptHandle::new(stop_flag, join_handle))
+}
+
+/// kimi's `session_*` id from a session dir (its final path component); empty
+/// when it can't be read.
+fn session_id_from_dir(session_dir: &Path) -> String {
+    session_dir
+        .file_name()
+        .and_then(|name| name.to_str())
+        .map(str::to_owned)
+        .unwrap_or_default()
 }
 
 fn open_wire(path: &Path) -> Result<File, String> {
@@ -181,6 +191,7 @@ fn run_session_supervisor(
     // when `state.json` lists it too.
     let mut children: HashMap<PathBuf, (Arc<AtomicBool>, std::thread::JoinHandle<()>)> =
         HashMap::new();
+    let agent_session_id = session_id_from_dir(&session_dir);
 
     loop {
         // Always tail the main wire; add sub-agent wires as `state.json`
@@ -207,7 +218,12 @@ fn run_session_supervisor(
             let Ok(file) = File::open(&wire) else {
                 continue;
             };
-            let decoder = KimiTranscriptDecoder::new(events.clone(), session_id.clone(), prefix);
+            let decoder = KimiTranscriptDecoder::new(
+                events.clone(),
+                session_id.clone(),
+                agent_session_id.clone(),
+                prefix,
+            );
             let service = TranscriptTailService::new(Box::new(decoder), "kimi wire transcript");
             let child_stop = Arc::new(AtomicBool::new(false));
             let child_stop_run = child_stop.clone();
@@ -241,24 +257,32 @@ fn run_session_supervisor(
 struct KimiTranscriptDecoder {
     events: Arc<dyn EventSink>,
     session_id: String,
+    /// kimi's own `session_*` id, used as the lifecycle `agentSessionId` so
+    /// the frontend's stale-event guard can tell an old run in this pane from
+    /// a new one (the PTY id is identical across runs). Empty when unknown.
+    agent_session_id: String,
     /// Prefix applied to emitted `tool_use_id`s so a sub-agent's tool calls
     /// can't collide with main's (or another sub-agent's) in the shared feed.
     /// Empty for the `main` agent.
     agent_prefix: String,
     in_flight: InFlightToolCalls,
     num_turns: u32,
-    /// kimi-code's own session identity is not present in `wire.jsonl`; the
-    /// PTY session id doubles as the lifecycle identity here.
     last_phase: Option<AgentPhase>,
     replay_phase: Option<AgentPhase>,
     replay_done: bool,
 }
 
 impl KimiTranscriptDecoder {
-    fn new(events: Arc<dyn EventSink>, session_id: String, agent_prefix: String) -> Self {
+    fn new(
+        events: Arc<dyn EventSink>,
+        session_id: String,
+        agent_session_id: String,
+        agent_prefix: String,
+    ) -> Self {
         Self {
             events,
             session_id,
+            agent_session_id,
             agent_prefix,
             in_flight: HashMap::new(),
             num_turns: 0,
@@ -300,7 +324,7 @@ impl TranscriptDecoder for KimiTranscriptDecoder {
                 crate::agent::events::emit_lifecycle_on_change(
                     self.events.as_ref(),
                     &self.session_id,
-                    &self.session_id,
+                    &self.agent_session_id,
                     &mut last,
                     phase,
                 );
@@ -417,7 +441,7 @@ impl KimiTranscriptDecoder {
         record_lifecycle(
             phase,
             &self.session_id,
-            &self.session_id,
+            &self.agent_session_id,
             &self.events,
             &mut self.last_phase,
             &mut self.replay_phase,
@@ -680,7 +704,7 @@ mod tests {
     #[test]
     fn tool_call_timestamp_derives_from_wire_time_not_now() {
         let sink = Arc::new(FakeEventSink::new());
-        let mut decoder = KimiTranscriptDecoder::new(sink.clone(), "sid".into(), String::new());
+        let mut decoder = KimiTranscriptDecoder::new(sink.clone(), "sid".into(), String::new(), String::new());
         // Mirrors the fixture's tool.call envelope `time` (epoch-ms).
         decoder.decode_line(
             r#"{"type":"context.append_loop_event","time":1781345364384,"event":{"type":"tool.call","toolCallId":"t1","name":"Read","args":{"path":"a"}}}"#,
@@ -696,7 +720,7 @@ mod tests {
     #[test]
     fn injection_turn_prompt_does_not_count() {
         let sink = Arc::new(FakeEventSink::new());
-        let mut decoder = KimiTranscriptDecoder::new(sink.clone(), "sid".into(), String::new());
+        let mut decoder = KimiTranscriptDecoder::new(sink.clone(), "sid".into(), String::new(), String::new());
         decoder.decode_line(
             r#"{"type":"turn.prompt","input":[{"type":"text","text":"x"}],"origin":{"kind":"injection","variant":"permission_mode"}}"#,
         );
@@ -706,7 +730,7 @@ mod tests {
     #[test]
     fn tool_call_dedups_by_id() {
         let sink = Arc::new(FakeEventSink::new());
-        let mut decoder = KimiTranscriptDecoder::new(sink.clone(), "sid".into(), String::new());
+        let mut decoder = KimiTranscriptDecoder::new(sink.clone(), "sid".into(), String::new(), String::new());
         let start = r#"{"type":"context.append_loop_event","event":{"type":"tool.call","toolCallId":"t1","name":"Read","args":{"path":"a"},"display":{"path":"/tmp/a"}}}"#;
         decoder.decode_line(start);
         decoder.decode_line(start);

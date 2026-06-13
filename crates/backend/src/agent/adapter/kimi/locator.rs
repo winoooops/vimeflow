@@ -48,6 +48,11 @@ const KIMI_BIND_RETRY_MAX_ATTEMPTS: u32 = 5;
 // still counts as fresh.
 const KIMI_INDEX_FRESHNESS_SLACK: Duration = Duration::from_secs(3);
 
+// Upper bound of the window after the process start in which a session may
+// have been created BY this process (session creation lags the fork slightly).
+// Paired with `KIMI_INDEX_FRESHNESS_SLACK` as the lower (clock-skew) bound.
+const KIMI_OWN_WINDOW: Duration = Duration::from_secs(30);
+
 /// One `session_index.jsonl` line.
 #[derive(Deserialize)]
 struct SessionIndexEntry {
@@ -241,7 +246,7 @@ impl KimiLocator {
         // the process start is unknown (macOS / no proc) nothing is "owned",
         // so selection falls back to the prior newest-index behavior unchanged.
         let process_start = self.process_start();
-        let mut matches: Vec<(usize, bool, SessionIndexEntry)> = Vec::new();
+        let mut matches: Vec<(usize, Option<SystemTime>, SessionIndexEntry)> = Vec::new();
         for line in raw.lines() {
             let line = line.trim();
             if line.is_empty() {
@@ -257,28 +262,34 @@ impl KimiLocator {
                 continue;
             }
             let work_len = work_dir.len();
-            let owned = process_start.is_some_and(|start| {
-                entry
-                    .session_dir
-                    .as_deref()
-                    .and_then(session_created_at)
-                    .is_some_and(|created| created + KIMI_INDEX_FRESHNESS_SLACK >= start)
-            });
-            matches.push((work_len, owned, entry));
+            let created = entry.session_dir.as_deref().and_then(session_created_at);
+            matches.push((work_len, created, entry));
         }
 
-        // When the process start is KNOWN, only a session this process owns
-        // may bind: a fresh attach whose index row / wire has not landed yet
-        // returns None and retries rather than latching a previous same-cwd
-        // run. When it is unknown (macOS / no proc) fall back to the
-        // newest-index match. `max_by_key` keeps the LAST element among equal
-        // keys — the append-ordered newest — preserving the original tie-break.
-        let proc_known = process_start.is_some();
-        let entry = matches
-            .into_iter()
-            .filter(|(_, owned, _)| *owned || !proc_known)
-            .max_by_key(|(work_len, _, _)| *work_len)
-            .map(|(_, _, entry)| entry)?;
+        // Per-process discriminator: when the process start is KNOWN, only a
+        // session created in a narrow window around it can be this process's;
+        // among those bind the one whose creation is CLOSEST to the start
+        // (longest workDir breaks ties), so two same-cwd panes each bind their
+        // OWN run and a fresh attach whose row hasn't landed yet returns None
+        // (→ retry) rather than latching an earlier run. When the start is
+        // unknown (macOS / no proc) fall back to the newest-index match
+        // (`max_by_key` keeps the LAST element among equal workDir lengths).
+        let entry = match process_start {
+            Some(start) => matches
+                .into_iter()
+                .filter_map(|(work_len, created, entry)| {
+                    let created = created?;
+                    created_in_own_window(created, start).then_some((work_len, created, entry))
+                })
+                .min_by_key(|(work_len, created, _)| {
+                    (abs_duration(*created, start), usize::MAX - *work_len)
+                })
+                .map(|(_, _, entry)| entry),
+            None => matches
+                .into_iter()
+                .max_by_key(|(work_len, _, _)| *work_len)
+                .map(|(_, _, entry)| entry),
+        }?;
         let session_dir = entry.session_dir?;
         let status_path = PathBuf::from(&session_dir)
             .join("agents")
@@ -332,7 +343,7 @@ impl KimiLocator {
                 Some(start) => session_path
                     .to_str()
                     .and_then(session_created_at)
-                    .is_some_and(|created| created + KIMI_INDEX_FRESHNESS_SLACK >= start),
+                    .is_some_and(|created| created_in_own_window(created, start)),
                 None => wire_is_fresh(&wire, self.pty_start),
             };
             if !fresh {
@@ -457,6 +468,20 @@ fn clock_ticks_per_sec() -> u64 {
         }
     }
     100
+}
+
+/// True when `created` falls in the window a session created by a process
+/// started at `start` would: from a touch before (clock skew) through
+/// `KIMI_OWN_WINDOW` after (creation lags the fork).
+fn created_in_own_window(created: SystemTime, start: SystemTime) -> bool {
+    let lower = start.checked_sub(KIMI_INDEX_FRESHNESS_SLACK).unwrap_or(start);
+    created >= lower && created <= start + KIMI_OWN_WINDOW
+}
+
+/// Absolute distance between two instants, regardless of order.
+fn abs_duration(a: SystemTime, b: SystemTime) -> Duration {
+    a.duration_since(b)
+        .unwrap_or_else(|_| b.duration_since(a).unwrap_or_default())
 }
 
 /// A session's creation time, read from its `agents/main/wire.jsonl`
@@ -929,6 +954,42 @@ mod tests {
             "must bind the session this process created, not the last index row"
         );
         assert_eq!(located.agent_session_id.as_deref(), Some("session_owned"));
+    }
+
+    /// codex P2: two sessions share a cwd. The locator (whose process started
+    /// at T) must bind the session created CLOSEST to T — its own run — not
+    /// the other pane's later session, even though that one is listed last.
+    #[test]
+    fn closest_created_session_wins_for_concurrent_same_cwd() {
+        let kimi_home = tempfile::tempdir().expect("kimi home");
+        let work = tempfile::tempdir().expect("work dir");
+        let proc_root = tempfile::tempdir().expect("proc root");
+
+        let pid = 4242u32;
+        let hz = clock_ticks_per_sec();
+        let btime = 1_700_000_000u64;
+        let process_start_ms = (btime + 50) * 1000;
+        write_proc_btime(proc_root.path(), btime);
+        write_proc_stat(proc_root.path(), pid, 50 * hz);
+
+        let ours_dir = session_under(kimi_home.path(), "wd_a", "session_ours");
+        let ours_wire = write_wire_created(&ours_dir, process_start_ms);
+        let other_dir = session_under(kimi_home.path(), "wd_a", "session_other");
+        write_wire_created(&other_dir, process_start_ms + 10_000);
+
+        write_index(
+            kimi_home.path(),
+            &[
+                ("session_ours", &ours_dir, work.path()),
+                ("session_other", &other_dir, work.path()),
+            ],
+        );
+
+        let locator =
+            locator_with_proc(kimi_home.path(), pid, SystemTime::now(), proc_root.path());
+        let located = locator.locate(work.path(), "pty-1").expect("ours resolves");
+        assert_eq!(located.status_path, ours_wire);
+        assert_eq!(located.agent_session_id.as_deref(), Some("session_ours"));
     }
 
     /// codex follow-up: with the process start known but the live session's

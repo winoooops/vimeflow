@@ -87,6 +87,12 @@ pub(crate) fn parse_session_aggregate(session_dir: &Path) -> Option<StatusSnapsh
         .map(|w| &w.wire)?;
     let active_raw = std::fs::read_to_string(active_wire).ok()?;
     snapshot.context_window = parse_wire_snapshot(None, &active_raw).ok()?.context_window;
+    // Carry kimi's own `session_*` id so the frontend can distinguish runs.
+    snapshot.agent_session_id = session_dir
+        .file_name()
+        .and_then(|name| name.to_str())
+        .map(str::to_owned)
+        .unwrap_or_default();
     Some(snapshot)
 }
 
@@ -103,10 +109,17 @@ pub(super) struct AgentWire {
 pub(super) fn read_agent_wires(session_dir: &Path) -> Option<Vec<AgentWire>> {
     let raw = std::fs::read_to_string(session_dir.join("state.json")).ok()?;
     let state: KimiStateDto = serde_json::from_str(&raw).ok()?;
+    let canonical_session = std::fs::canonicalize(session_dir).ok()?;
     let mut wires = Vec::new();
     for (agent_id, entry) in &state.agents {
         let wire = PathBuf::from(&entry.homedir).join("wire.jsonl");
-        if wire.starts_with(session_dir) && wire.is_file() {
+        // Canonicalize (resolves `..` and symlinks) and require the result to
+        // stay under the canonical session dir — a lexical `starts_with` would
+        // let a tampered `homedir` escape via `..`/a symlinked subdir.
+        let Ok(wire) = std::fs::canonicalize(&wire) else {
+            continue;
+        };
+        if wire.starts_with(&canonical_session) && wire.is_file() {
             wires.push(AgentWire {
                 agent_id: agent_id.clone(),
                 is_main: entry.agent_type.as_deref() == Some("main"),
