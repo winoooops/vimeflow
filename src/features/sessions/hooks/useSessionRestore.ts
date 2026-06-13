@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import type { SessionInfo } from '../../../bindings'
 import type { Session } from '../types'
 import type { ITerminalService } from '../../terminal/services/terminalService'
 import type { PtyBufferDrain } from '../../terminal/orchestration/usePtyBufferDrain'
@@ -6,7 +7,11 @@ import { registerPtySession } from '../../terminal/ptySessionMap'
 import { createLogger } from '../../../lib/log'
 import { reconstructWorkspace } from '../utils/groupSessionsFromInfos'
 import { isBrowserPane } from '../utils/paneKind'
-import type { WorkspaceShapeDto } from '../workspaceLayoutBridge'
+import type {
+  WorkspaceShapeDto,
+  WorkspaceShapePane,
+  WorkspaceShapeShellPane,
+} from '../workspaceLayoutBridge'
 import {
   beginWorkspaceHydration,
   endWorkspaceHydration,
@@ -20,6 +25,113 @@ const log = createLogger('restore')
 // hydration guard open forever — main keeps suppressing writes until restore
 // settles. Treat a stuck create as timed-out so hydration always completes.
 const RESTORE_PANE_TIMEOUT_MS = 4000
+
+const isShapeShellPane = (
+  pane: WorkspaceShapePane
+): pane is WorkspaceShapeShellPane => pane.kind === 'shell'
+
+interface StoreShellSelection {
+  sessionId: string
+  paneId: string
+  pane: WorkspaceShapeShellPane
+}
+
+interface RestartedStoreShell {
+  storeShape: WorkspaceShapeDto
+  liveSession: SessionInfo
+}
+
+const findActiveStoreShell = (
+  storeShape: WorkspaceShapeDto | null
+): StoreShellSelection | null => {
+  const activeSession = storeShape?.sessions.find((session) => session.active)
+  if (!activeSession) {
+    return null
+  }
+
+  const pane = activeSession.panes.find(
+    (candidate): candidate is WorkspaceShapeShellPane =>
+      candidate.active && isShapeShellPane(candidate)
+  )
+  if (!pane) {
+    return null
+  }
+
+  return {
+    sessionId: activeSession.id,
+    paneId: pane.paneId,
+    pane,
+  }
+}
+
+const shapeWithRestartedShell = (
+  storeShape: WorkspaceShapeDto,
+  selection: StoreShellSelection,
+  liveSession: SessionInfo
+): WorkspaceShapeDto => ({
+  sessions: storeShape.sessions.map((session) =>
+    session.id !== selection.sessionId
+      ? session
+      : {
+          ...session,
+          panes: session.panes.map((pane) =>
+            pane.kind === 'shell' && pane.paneId === selection.paneId
+              ? {
+                  ...pane,
+                  ptyId: liveSession.id,
+                  cwd: liveSession.cwd,
+                  agentType: 'generic',
+                  agentSessionId: null,
+                }
+              : pane
+          ),
+        }
+  ),
+})
+
+const restartPersistedActiveShell = async (
+  service: ITerminalService,
+  storeShape: WorkspaceShapeDto | null,
+  liveSessions: readonly SessionInfo[]
+): Promise<RestartedStoreShell | null> => {
+  if (!storeShape || liveSessions.length > 0) {
+    return null
+  }
+
+  const selection = findActiveStoreShell(storeShape)
+  if (!selection) {
+    return null
+  }
+
+  try {
+    const spawned = await service.spawn({
+      cwd: selection.pane.cwd,
+      env: {},
+      enableAgentBridge: true,
+    })
+
+    const liveSession: SessionInfo = {
+      id: spawned.sessionId,
+      cwd: spawned.cwd,
+      shell: spawned.shell,
+      status: {
+        kind: 'Alive',
+        pid: spawned.pid,
+        replay_data: '',
+        replay_end_offset: 0n,
+      },
+    }
+
+    return {
+      storeShape: shapeWithRestartedShell(storeShape, selection, liveSession),
+      liveSession,
+    }
+  } catch (err) {
+    log.warn('failed to restart persisted active shell during restore', err)
+
+    return null
+  }
+}
 
 export interface UseSessionRestoreOptions {
   service: ITerminalService
@@ -217,7 +329,7 @@ export const useSessionRestore = ({
 
         // The durable store is the authoritative shape; live PTYs overlay it
         // by ptyId. Load both, then reconstruct.
-        const storeShape = await loadWorkspaceForRestore({
+        let storeShape = await loadWorkspaceForRestore({
           projectId,
           workingDirectory,
         })
@@ -226,6 +338,9 @@ export const useSessionRestore = ({
         if (cancelled) {
           return
         }
+
+        let liveSessions = list.sessions
+        let activePtyId = list.activeSessionId
 
         log.info(
           `listSessions returned ${list.sessions.length} PTY session(s); ` +
@@ -237,13 +352,29 @@ export const useSessionRestore = ({
           }
         )
 
+        const restarted = await restartPersistedActiveShell(
+          service,
+          storeShape,
+          liveSessions
+        )
+        if (restarted) {
+          storeShape = restarted.storeShape
+          liveSessions = [restarted.liveSession]
+          activePtyId = restarted.liveSession.id
+        }
+
+        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+        if (cancelled) {
+          return
+        }
+
         const restored = attachBuffers(
-          reconstructWorkspace(storeShape, list.sessions, list.activeSessionId)
+          reconstructWorkspace(storeShape, liveSessions, activePtyId)
         )
 
         log.info(
           `reconstructed ${restored.length} workspace session(s) from ` +
-            `${list.sessions.length} PTY session(s)`,
+            `${liveSessions.length} PTY session(s)`,
           {
             workspaceSessions: restored.map((session) => ({
               id: session.id,

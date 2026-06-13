@@ -1462,6 +1462,61 @@ describe('useSessionManager', () => {
     expect(service.spawn).not.toHaveBeenCalled()
   })
 
+  test('restores a graceful-quit shell workspace in place without auto-creating a second session', async () => {
+    vi.mocked(loadWorkspaceForRestore).mockResolvedValueOnce({
+      sessions: [
+        {
+          id: 'ws-shell',
+          projectId: 'proj-1',
+          layout: 'single',
+          workingDirectory: '/home/will/proj',
+          active: true,
+          panes: [
+            {
+              kind: 'shell',
+              paneId: 'p0',
+              paneIndex: 0,
+              active: true,
+              ptyId: 'pty-old',
+              cwd: '/home/will/proj',
+              agentType: 'codex',
+              agentSessionId: null,
+            },
+          ],
+        },
+      ],
+    })
+
+    const service = createMockService()
+    service.listSessions = vi
+      .fn()
+      .mockResolvedValue({ activeSessionId: null, sessions: [] })
+
+    service.spawn = vi.fn().mockResolvedValue({
+      sessionId: 'pty-restarted',
+      pid: 91,
+      cwd: '/home/will/proj',
+      shell: '/bin/zsh',
+    })
+
+    const { result } = renderHook(() => useSessionManager(service))
+
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    await waitFor(() => expect(result.current.sessions).toHaveLength(1))
+
+    expect(service.spawn).toHaveBeenCalledTimes(1)
+    expect(service.spawn).toHaveBeenCalledWith({
+      cwd: '/home/will/proj',
+      env: {},
+      enableAgentBridge: true,
+    })
+    expect(result.current.sessions[0].id).toBe('ws-shell')
+    expect(result.current.sessions[0].status).toBe('running')
+    expect(result.current.sessions[0].panes[0].ptyId).toBe('pty-restarted')
+    expect(result.current.sessions[0].panes[0].status).toBe('running')
+    expect(result.current.activeSessionId).toBe('ws-shell')
+  })
+
   // When the durable store is authoritative, the legacy localStorage browser
   // cache must NOT be merged — otherwise a pane closed before a crash (never
   // cleared from localStorage) would be resurrected on the next restore.
