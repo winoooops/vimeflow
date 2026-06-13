@@ -91,3 +91,17 @@ detection is one `AGENT_SPECS` entry: `{ agent_type: Kimi, binary_names: ["kimi"
   The 0.14.2 migration copies config but not the OAuth token (left at the legacy
   `~/.kimi/credentials/kimi-code.json`), so a migrated install needs `kimi login` or the
   token relocated to `~/.kimi-code/credentials/kimi-code.json`.
+
+## Known limitations (deferred follow-ups)
+
+- **Reused-PTY freshness on no-proc paths.** The locator's freshness gate uses `pty_start`
+  (terminal creation time). When the proc-fd primary is unavailable (macOS, or Linux where
+  kimi has closed its `wire.jsonl` fd) AND the same PTY previously ran kimi, an old
+  `wire.jsonl` can satisfy the `pty_start` floor during a new session's index-write race, so
+  the watcher may briefly tail stale history. A full fix needs the detected kimi process's own
+  start time (cross-platform: `/proc/<pid>/stat` on Linux, `ps -o lstart` on macOS). The Linux
+  proc-fd primary already binds the exact per-process session, so this only affects no-proc
+  reused-PTY restarts.
+- **Two concurrent same-cwd kimi panes on macOS.** Without `/proc`, two simultaneously-live
+  kimi sessions in one project can't be disambiguated; the index/exact-bucket fallback picks
+  newest-by-mtime. Linux resolves this via the per-process fd.
