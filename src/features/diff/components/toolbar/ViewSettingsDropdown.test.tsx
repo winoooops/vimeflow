@@ -32,7 +32,7 @@ const renderDropdown = (
 }
 
 describe('ViewSettingsDropdown', () => {
-  test('renders the View trigger and keeps the popover closed initially', () => {
+  test('renders the View trigger and keeps the menu closed initially', () => {
     renderDropdown()
 
     expect(
@@ -43,7 +43,7 @@ describe('ViewSettingsDropdown', () => {
     expect(screen.queryByRole('menu')).not.toBeInTheDocument()
   })
 
-  test('clicking the trigger opens the consolidated popover with all six controls', async () => {
+  test('clicking the trigger opens the consolidated menu with all six controls', async () => {
     const user = userEvent.setup()
     renderDropdown()
 
@@ -53,16 +53,33 @@ describe('ViewSettingsDropdown', () => {
     expect(await screen.findByText('Format')).toBeInTheDocument()
     expect(screen.getByText('View options')).toBeInTheDocument()
 
-    // Six row labels — Indicators / Overflow / Line numbers / Background tint
-    // / File header / Sticky header. The label text is rendered alongside a
-    // material icon that's `aria-hidden` so the visible string is the only
-    // accessible name.
-    expect(screen.getByText('Indicators')).toBeInTheDocument()
-    expect(screen.getByText('Overflow')).toBeInTheDocument()
-    expect(screen.getByText('Line numbers')).toBeInTheDocument()
-    expect(screen.getByText('Background tint')).toBeInTheDocument()
-    expect(screen.getByText('File header')).toBeInTheDocument()
-    expect(screen.getByText('Sticky header')).toBeInTheDocument()
+    // Two Format submenu rows render as menuitems; their accessible name
+    // includes the current value label so query by substring.
+    expect(
+      screen.getByRole('menuitem', { name: /indicators/i })
+    ).toBeInTheDocument()
+
+    expect(
+      screen.getByRole('menuitem', { name: /overflow/i })
+    ).toBeInTheDocument()
+
+    // Four View-options rows render with the menuitemcheckbox role. The icon
+    // is aria-hidden so the visible label is the only accessible name.
+    expect(
+      screen.getByRole('menuitemcheckbox', { name: 'Line numbers' })
+    ).toBeInTheDocument()
+
+    expect(
+      screen.getByRole('menuitemcheckbox', { name: 'Background tint' })
+    ).toBeInTheDocument()
+
+    expect(
+      screen.getByRole('menuitemcheckbox', { name: 'File header' })
+    ).toBeInTheDocument()
+
+    expect(
+      screen.getByRole('menuitemcheckbox', { name: 'Sticky header' })
+    ).toBeInTheDocument()
   })
 
   test('reflects checkbox state from the disable* / stickyHeader props', async () => {
@@ -76,32 +93,26 @@ describe('ViewSettingsDropdown', () => {
 
     await user.click(screen.getByRole('button', { name: /view settings/i }))
 
-    // All four checkbox rows should be `aria-pressed="true"` because the
-    // disable flags are inverted (false => checked) and stickyHeader is
-    // direct (true => checked).
-    const lineNumbers = await screen.findByRole('button', {
-      name: /line numbers/i,
+    // All four checkbox rows should be aria-checked="true" because the disable
+    // flags are inverted (false => checked) and stickyHeader is direct (true =>
+    // checked).
+    const lineNumbers = await screen.findByRole('menuitemcheckbox', {
+      name: 'Line numbers',
     })
 
-    expect(lineNumbers.getAttribute('aria-pressed')).toBe('true')
+    expect(lineNumbers).toHaveAttribute('aria-checked', 'true')
 
     expect(
-      screen
-        .getByRole('button', { name: /background tint/i })
-        .getAttribute('aria-pressed')
-    ).toBe('true')
+      screen.getByRole('menuitemcheckbox', { name: 'Background tint' })
+    ).toHaveAttribute('aria-checked', 'true')
 
     expect(
-      screen
-        .getByRole('button', { name: /file header/i })
-        .getAttribute('aria-pressed')
-    ).toBe('true')
+      screen.getByRole('menuitemcheckbox', { name: 'File header' })
+    ).toHaveAttribute('aria-checked', 'true')
 
     expect(
-      screen
-        .getByRole('button', { name: /sticky header/i })
-        .getAttribute('aria-pressed')
-    ).toBe('true')
+      screen.getByRole('menuitemcheckbox', { name: 'Sticky header' })
+    ).toHaveAttribute('aria-checked', 'true')
   })
 
   test('reflects mixed initial state correctly', async () => {
@@ -116,28 +127,20 @@ describe('ViewSettingsDropdown', () => {
     await user.click(screen.getByRole('button', { name: /view settings/i }))
 
     expect(
-      (
-        await screen.findByRole('button', { name: /line numbers/i })
-      ).getAttribute('aria-pressed')
-    ).toBe('false')
+      await screen.findByRole('menuitemcheckbox', { name: 'Line numbers' })
+    ).toHaveAttribute('aria-checked', 'false')
 
     expect(
-      screen
-        .getByRole('button', { name: /background tint/i })
-        .getAttribute('aria-pressed')
-    ).toBe('true')
+      screen.getByRole('menuitemcheckbox', { name: 'Background tint' })
+    ).toHaveAttribute('aria-checked', 'true')
 
     expect(
-      screen
-        .getByRole('button', { name: /file header/i })
-        .getAttribute('aria-pressed')
-    ).toBe('false')
+      screen.getByRole('menuitemcheckbox', { name: 'File header' })
+    ).toHaveAttribute('aria-checked', 'false')
 
     expect(
-      screen
-        .getByRole('button', { name: /sticky header/i })
-        .getAttribute('aria-pressed')
-    ).toBe('false')
+      screen.getByRole('menuitemcheckbox', { name: 'Sticky header' })
+    ).toHaveAttribute('aria-checked', 'false')
   })
 
   test('clicking Line numbers fires onDisableLineNumbersChange with the inverted value', async () => {
@@ -150,7 +153,10 @@ describe('ViewSettingsDropdown', () => {
     })
 
     await user.click(screen.getByRole('button', { name: /view settings/i }))
-    const row = await screen.findByRole('button', { name: /line numbers/i })
+
+    const row = await screen.findByRole('menuitemcheckbox', {
+      name: 'Line numbers',
+    })
     await user.click(row)
 
     expect(onDisableLineNumbersChange).toHaveBeenCalledTimes(1)
@@ -167,7 +173,10 @@ describe('ViewSettingsDropdown', () => {
     })
 
     await user.click(screen.getByRole('button', { name: /view settings/i }))
-    const row = await screen.findByRole('button', { name: /background tint/i })
+
+    const row = await screen.findByRole('menuitemcheckbox', {
+      name: 'Background tint',
+    })
     await user.click(row)
 
     expect(onDisableBackgroundChange).toHaveBeenCalledTimes(1)
@@ -184,7 +193,10 @@ describe('ViewSettingsDropdown', () => {
     })
 
     await user.click(screen.getByRole('button', { name: /view settings/i }))
-    const row = await screen.findByRole('button', { name: /file header/i })
+
+    const row = await screen.findByRole('menuitemcheckbox', {
+      name: 'File header',
+    })
     await user.click(row)
 
     expect(onDisableFileHeaderChange).toHaveBeenCalledTimes(1)
@@ -201,7 +213,10 @@ describe('ViewSettingsDropdown', () => {
     })
 
     await user.click(screen.getByRole('button', { name: /view settings/i }))
-    const row = await screen.findByRole('button', { name: /sticky header/i })
+
+    const row = await screen.findByRole('menuitemcheckbox', {
+      name: 'Sticky header',
+    })
     await user.click(row)
 
     expect(onStickyHeaderChange).toHaveBeenCalledTimes(1)
@@ -219,18 +234,15 @@ describe('ViewSettingsDropdown', () => {
 
     await user.click(screen.getByRole('button', { name: /view settings/i }))
 
-    const indicatorsRow = await screen.findByRole('button', {
+    const indicatorsRow = await screen.findByRole('menuitem', {
       name: /indicators/i,
     })
     await user.click(indicatorsRow)
 
-    // The sub-menu opens as a separate portal-rendered popover; floating-UI
-    // emits another role="menu" element in document.body. Both popovers are
-    // anchored under document.body so `screen` queries reach them.
+    // The sub-list opens as a separate portal-rendered menu; find the one that
+    // hosts the indicator options (look for "bars") and select it.
     const subMenus = await screen.findAllByRole('menu')
-    expect(subMenus.length).toBeGreaterThan(1)
 
-    // Find the menu containing the indicator options (look for "bars").
     const indicatorMenu = subMenus.find((menu) =>
       within(menu).queryByRole('menuitem', { name: /bars/i })
     )
@@ -257,7 +269,10 @@ describe('ViewSettingsDropdown', () => {
     })
 
     await user.click(screen.getByRole('button', { name: /view settings/i }))
-    const overflowRow = await screen.findByRole('button', { name: /overflow/i })
+
+    const overflowRow = await screen.findByRole('menuitem', {
+      name: /overflow/i,
+    })
     await user.click(overflowRow)
 
     const subMenus = await screen.findAllByRole('menu')
@@ -278,7 +293,7 @@ describe('ViewSettingsDropdown', () => {
     expect(onOverflowChange).toHaveBeenCalledWith('wrap')
   })
 
-  test('the View trigger value labels surface the current indicator / overflow values', async () => {
+  test('the Format submenu rows surface the current indicator / overflow values', async () => {
     const user = userEvent.setup()
     renderDropdown({
       diffIndicators: 'bars',
@@ -287,9 +302,7 @@ describe('ViewSettingsDropdown', () => {
 
     await user.click(screen.getByRole('button', { name: /view settings/i }))
 
-    // The Format rows show the current value as text on the right side
-    // (the row aria-label is the row's label only — but the inner value
-    // text is reachable via `getByText`).
+    // Each Format submenu row shows its current value as text on the right.
     expect(await screen.findByText('bars')).toBeInTheDocument()
     expect(screen.getByText('wrap')).toBeInTheDocument()
   })
