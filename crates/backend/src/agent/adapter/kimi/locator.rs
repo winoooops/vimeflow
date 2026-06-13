@@ -91,6 +91,19 @@ impl KimiLocator {
         home.join("session_index.jsonl")
     }
 
+    /// The detected kimi process's actual cwd (`/proc/<pid>/cwd`) when available —
+    /// authoritative because kimi derives its session workDir from its own cwd, and
+    /// the PTY-supplied cwd can be the stale spawn-time cwd. Falls back to `passed`
+    /// when proc_root is None (e.g. macOS) or the link can't be read.
+    fn process_cwd(&self, passed: &Path) -> PathBuf {
+        self.proc_root
+            .as_deref()
+            .and_then(|root| {
+                std::fs::read_link(root.join(self.agent_pid.to_string()).join("cwd")).ok()
+            })
+            .unwrap_or_else(|| passed.to_path_buf())
+    }
+
     /// proc-fd primary: the kimi process holds its session's
     /// `agents/main/wire.jsonl` open, so a `<proc_root>/<pid>/fd/*`
     /// symlink resolves to it. Disambiguates per-process with no workDir
@@ -236,6 +249,10 @@ impl KimiLocator {
 impl StatusSourceLocator for KimiLocator {
     fn locate(&self, cwd: &Path, _session_id: &str) -> Result<LocatedStatusSource, String> {
         let home = self.effective_home();
+        // The PTY-supplied `cwd` can be the stale spawn-time cwd (OSC 7 `cd`
+        // updates never reach PtyState). Prefer the kimi process's real
+        // `/proc/<pid>/cwd`, since kimi derives its session workDir from there.
+        let cwd = self.process_cwd(cwd);
 
         for attempt in 0..KIMI_BIND_RETRY_MAX_ATTEMPTS {
             // proc-fd is authoritative and unambiguous — try it first.
@@ -243,7 +260,7 @@ impl StatusSourceLocator for KimiLocator {
                 return Ok(located);
             }
             // Then the newest same-cwd index match (binds even when idle).
-            if let Some(located) = self.try_resolve_from_index(&home, cwd) {
+            if let Some(located) = self.try_resolve_from_index(&home, &cwd) {
                 return Ok(located);
             }
             if attempt + 1 < KIMI_BIND_RETRY_MAX_ATTEMPTS {
@@ -254,7 +271,7 @@ impl StatusSourceLocator for KimiLocator {
         }
 
         // Neither proc-fd nor a fresh index match — best-effort fallback.
-        if let Some(located) = self.try_resolve_fallback(&home, cwd) {
+        if let Some(located) = self.try_resolve_fallback(&home, &cwd) {
             return Ok(located);
         }
 
@@ -884,6 +901,72 @@ mod tests {
             .locate(&sibling, "pty-1")
             .expect_err("sibling cwd must not bind the ancestor workDir");
         assert!(err.contains("kimi locator"), "got: {}", err);
+    }
+
+    // Symlink <proc_root>/<pid>/cwd → target (so process_cwd resolves it).
+    fn write_proc_cwd(proc_root: &Path, pid: u32, target: &Path) {
+        let pid_dir = proc_root.join(pid.to_string());
+        std::fs::create_dir_all(&pid_dir).expect("create fake pid dir");
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(target, pid_dir.join("cwd")).expect("symlink cwd");
+    }
+
+    /// Root-cause regression: the PTY supplies the STALE spawn-time cwd, but
+    /// the kimi process's real cwd (`/proc/<pid>/cwd`) is the project dir its
+    /// session was registered under. `process_cwd` must override the passed
+    /// (stale) cwd so the index match binds — otherwise `locate` returns Err
+    /// and the agent-status panel stays blank.
+    #[test]
+    fn process_cwd_overrides_stale_passed_cwd_for_index_match() {
+        let kimi_home = tempfile::tempdir().expect("kimi home");
+        let proc_root = tempfile::tempdir().expect("proc root");
+        // The kimi process's REAL cwd (where it registered its session).
+        let real_cwd = tempfile::tempdir().expect("real cwd");
+
+        let session_dir = session_under(kimi_home.path(), "wd_real", "session_real");
+        let wire = write_wire(&session_dir);
+        write_index(
+            kimi_home.path(),
+            &[("session_real", &session_dir, real_cwd.path())],
+        );
+
+        let pid = 9191;
+        write_proc_cwd(proc_root.path(), pid, real_cwd.path());
+
+        let locator = locator_with_proc(kimi_home.path(), pid, SystemTime::now(), proc_root.path());
+        // Passed cwd is STALE/wrong — it does not match the index workDir.
+        let located = locator
+            .locate(Path::new("/some/unrelated/stale/cwd"), "sid")
+            .expect("process cwd from /proc/<pid>/cwd must bind the real session");
+
+        assert_eq!(
+            located.status_path, wire,
+            "must bind via the process cwd, overriding the stale passed cwd"
+        );
+        assert_eq!(located.agent_session_id.as_deref(), Some("session_real"));
+    }
+
+    /// With `proc_root == None` (macOS, no `/proc`), `process_cwd` cannot read
+    /// the link, so it falls back to the passed cwd and the index match uses
+    /// that. Pins the documented fallback path.
+    #[test]
+    fn process_cwd_falls_back_to_passed_cwd_without_proc_root() {
+        let kimi_home = tempfile::tempdir().expect("kimi home");
+        let work = tempfile::tempdir().expect("work dir");
+        let session_dir = session_under(kimi_home.path(), "wd_fb", "session_fb");
+        let wire = write_wire(&session_dir);
+        write_index(
+            kimi_home.path(),
+            &[("session_fb", &session_dir, work.path())],
+        );
+
+        // proc_root is None → process_cwd returns the passed cwd unchanged.
+        let locator = locator_with(kimi_home.path(), 4242, SystemTime::now());
+        let located = locator
+            .locate(work.path(), "sid")
+            .expect("passed cwd binds when proc_root is None");
+        assert_eq!(located.status_path, wire);
+        assert_eq!(located.agent_session_id.as_deref(), Some("session_fb"));
     }
 
     /// macOS path: with `proc_root == None`, the proc fast-paths skip and
