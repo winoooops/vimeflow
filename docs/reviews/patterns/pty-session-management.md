@@ -2,8 +2,8 @@
 id: pty-session-management
 category: backend
 created: 2026-04-09
-last_updated: 2026-06-03
-ref_count: 2
+last_updated: 2026-06-13
+ref_count: 3
 ---
 
 # PTY Session Management
