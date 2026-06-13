@@ -45,6 +45,10 @@ test-results/
 # TypeScript
 *.tsbuildinfo
 
+# Generated Rust -> TypeScript IPC bindings
+/src/bindings/*.ts
+!/src/bindings/index.ts
+
 # Logs
 logs/
 *.log
