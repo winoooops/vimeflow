@@ -136,7 +136,7 @@ export const wash = {
 
 /* ------------------------------------------------------------------
  * Agent session state -> visual tokens
- * Source of truth: UNIFIED.md §4.1.
+ * Source of truth: UNIFIED.md §4.
  * If a new state is added, update UNIFIED.md, this map, and StatusDot
  * -- all three, or none.
  * ------------------------------------------------------------------ */
@@ -195,9 +195,10 @@ export const stateToken: Record<SessionState, StateVisual> = {
 }
 
 /* ------------------------------------------------------------------
- * Context smiley (§5.5) -- surfaces remaining-context pressure in the
- * status bar. Input is "percent full" (0-100). Breakpoints mirror the
- * ContextBucket emoji thresholds in src/features/agent-status.
+ * Context smiley helper (UNIFIED.md §5.4). Input is "percent full" (0-100).
+ * Breakpoints (60/80/90) mirror the ContextBucket emoji in
+ * src/features/agent-status. NOTE: the status-bar ContextSmiley uses a
+ * different 50/75/90 set (contextPresentation()) -- a known divergence.
  * ------------------------------------------------------------------ */
 
 export function contextSmiley(pct: number): string {
