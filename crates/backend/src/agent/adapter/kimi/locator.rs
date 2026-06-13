@@ -10,11 +10,14 @@
 //! 2. proc-environ (Linux): read the kimi process's own
 //!    `KIMI_CODE_HOME` from `<proc_root>/<pid>/environ` so a per-process
 //!    `KIMI_CODE_HOME=/tmp/kimi kimi` is honored.
-//! 3. index fallback: `<kimi_home>/session_index.jsonl` workDir match,
-//!    gated on a `pty_start` mtime freshness check so a stale same-cwd
-//!    entry doesn't win over this process's fresh session.
+//! 3. index fallback: `<kimi_home>/session_index.jsonl` workDir match.
+//!    The newest (last) same-cwd entry is append-ordered and IS the
+//!    current session, so it binds unconditionally — even when idle (its
+//!    `wire.jsonl` may predate `pty_start` before the first prompt).
 //! 4. exact-bucket sha256 scan: last-resort newest `session_*` under
-//!    this cwd's `wd_<basename>_<hex>` bucket.
+//!    this cwd's `wd_<basename>_<hex>` bucket, gated on a `pty_start`
+//!    mtime freshness check (no append ordering to tell current from
+//!    stale, so a stale same-cwd bucket session must not win there).
 //!
 //! On macOS (no `/proc`, `proc_root == None`) steps 1-2 cleanly skip and
 //! resolution falls through to the index / bucket fallbacks.
@@ -108,11 +111,19 @@ impl KimiLocator {
         })
     }
 
-    /// Resolve the LAST `session_index.jsonl` entry whose `workDir`
-    /// matches `cwd` AND whose `wire.jsonl` is FRESH (exists with mtime
-    /// `>= pty_start - slack`). A stale same-cwd entry from an earlier run
-    /// is skipped — not allowed to mask an earlier fresh entry — so the
-    /// retry waits for this process's own session instead of binding stale.
+    /// Resolve the LAST (newest) `session_index.jsonl` entry whose
+    /// `workDir` matches `cwd`, binding it unconditionally. The index is
+    /// append-ordered, so the newest same-cwd entry IS this process's
+    /// current session — bind it even when idle (its `wire.jsonl` may
+    /// predate `pty_start` because the user has not submitted a prompt yet,
+    /// leaving the transcript at its config-only metadata lines).
+    ///
+    /// No freshness gate runs here: the authoritative newest-index match
+    /// must never be rejected just because it is idle (the bug that left
+    /// the agent-status panel blank for a fresh-but-idle session). The
+    /// codex-pass-3 stale-race guard is preserved only on the bucket-scan
+    /// fallback (`try_resolve_fallback`), which has no append ordering to
+    /// distinguish current from stale.
     fn try_resolve_from_index(&self, home: &Path, cwd: &Path) -> Option<LocatedStatusSource> {
         let raw = std::fs::read_to_string(self.session_index_path(home)).ok()?;
         let target = canonical_or_owned(cwd);
@@ -129,19 +140,7 @@ impl KimiLocator {
             let Some(work_dir) = entry.work_dir.as_deref() else {
                 continue;
             };
-            if !paths_match(work_dir, cwd, &target) {
-                continue;
-            }
-            let Some(session_dir) = entry.session_dir.as_deref() else {
-                continue;
-            };
-            let wire = PathBuf::from(session_dir)
-                .join("agents")
-                .join("main")
-                .join("wire.jsonl");
-            // Freshness-gate each candidate so a stale entry can't mask an
-            // earlier fresh one (P1 retry/wait behavior).
-            if wire_is_fresh(&wire, self.pty_start) {
+            if paths_match(work_dir, cwd, &target) {
                 matched = Some(entry);
             }
         }
@@ -223,7 +222,7 @@ impl StatusSourceLocator for KimiLocator {
             if let Some(located) = self.try_resolve_from_proc_fds(&home) {
                 return Ok(located);
             }
-            // Then the freshness-gated index match.
+            // Then the newest same-cwd index match (binds even when idle).
             if let Some(located) = self.try_resolve_from_index(&home, cwd) {
                 return Ok(located);
             }
@@ -560,69 +559,72 @@ mod tests {
         assert_eq!(located.trust_root, env_home.path());
     }
 
-    /// Index freshness: a STALE same-cwd entry (wire mtime far before
-    /// pty_start) is rejected; the FRESH entry (mtime after pty_start)
-    /// wins. Proves the freshness guard portion of P1 for the no-proc
-    /// (macOS) path.
+    /// The index is append-ordered, so the LAST same-cwd entry is the
+    /// current session and binds — even when an EARLIER same-cwd entry has
+    /// a newer `wire.jsonl` mtime. Pins that the newest-index match is
+    /// authoritative and no longer freshness-gated on the index path.
     #[test]
-    fn index_freshness_prefers_fresh_over_stale_same_cwd() {
+    fn index_binds_newest_entry_regardless_of_wire_mtime() {
         let kimi_home = tempfile::tempdir().expect("kimi home");
         let work = tempfile::tempdir().expect("work dir");
 
-        let stale_dir = session_under(kimi_home.path(), "wd_a", "session_stale");
-        let stale_wire = write_wire(&stale_dir);
-        let fresh_dir = session_under(kimi_home.path(), "wd_a", "session_fresh");
-        let fresh_wire = write_wire(&fresh_dir);
+        let older_dir = session_under(kimi_home.path(), "wd_a", "session_older");
+        let older_wire = write_wire(&older_dir);
+        let current_dir = session_under(kimi_home.path(), "wd_a", "session_current");
+        let current_wire = write_wire(&current_dir);
 
         let pty_start = SystemTime::now();
-        // Backdate the stale wire well before pty_start; keep fresh after it.
-        set_mtime(&stale_wire, pty_start - Duration::from_secs(3600));
-        set_mtime(&fresh_wire, pty_start + Duration::from_secs(1));
+        // The current (last-listed) session's wire is IDLE — its mtime
+        // predates pty_start — while the earlier session's wire looks fresh.
+        // The newest index entry must still win.
+        set_mtime(&current_wire, pty_start - Duration::from_secs(3600));
+        set_mtime(&older_wire, pty_start + Duration::from_secs(1));
 
-        // FRESH listed first, STALE last — `try_resolve_from_index` keeps the
-        // last match, so a naive "last entry wins" would pick STALE. The
-        // freshness gate must reject STALE and bind FRESH instead.
         write_index(
             kimi_home.path(),
             &[
-                ("session_fresh", &fresh_dir, work.path()),
-                ("session_stale", &stale_dir, work.path()),
+                ("session_older", &older_dir, work.path()),
+                ("session_current", &current_dir, work.path()),
             ],
         );
 
         let locator = locator_with(kimi_home.path(), 4242, pty_start);
         let located = locator
             .locate(work.path(), "pty-1")
-            .expect("fresh resolves");
+            .expect("newest index entry resolves");
         assert_eq!(
-            located.status_path, fresh_wire,
-            "freshness guard must reject the stale same-cwd entry"
+            located.status_path, current_wire,
+            "newest (last) index entry binds even when its wire predates pty_start"
         );
-        assert_eq!(located.agent_session_id.as_deref(), Some("session_fresh"));
+        assert_eq!(located.agent_session_id.as_deref(), Some("session_current"));
     }
 
-    /// A stale-only index (the single same-cwd entry is older than
-    /// pty_start) with no fallback bucket must error after the retry
-    /// loop rather than binding the stale session.
+    /// Regression pin for the blank-agent-status bug: an IDLE session whose
+    /// `wire.jsonl` mtime is well before `pty_start` (the user opened kimi
+    /// but never submitted a prompt) and which is the sole/newest index
+    /// entry for the cwd MUST bind, so the status watcher attaches and the
+    /// config-only model + context window stream to the panel.
     #[test]
-    fn stale_only_index_errors_rather_than_binding_stale() {
+    fn idle_sole_index_entry_binds() {
         let kimi_home = tempfile::tempdir().expect("kimi home");
         let work = tempfile::tempdir().expect("work dir");
 
-        let stale_dir = session_under(kimi_home.path(), "wd_a", "session_stale");
-        let stale_wire = write_wire(&stale_dir);
+        let idle_dir = session_under(kimi_home.path(), "wd_a", "session_idle");
+        let idle_wire = write_wire(&idle_dir);
         let pty_start = SystemTime::now();
-        set_mtime(&stale_wire, pty_start - Duration::from_secs(3600));
+        // Idle: wire created long before the PTY clock read, never updated.
+        set_mtime(&idle_wire, pty_start - Duration::from_secs(3600));
         write_index(
             kimi_home.path(),
-            &[("session_stale", &stale_dir, work.path())],
+            &[("session_idle", &idle_dir, work.path())],
         );
 
         let locator = locator_with(kimi_home.path(), 4242, pty_start);
-        let err = locator
+        let located = locator
             .locate(work.path(), "pty-1")
-            .expect_err("stale-only index must not bind");
-        assert!(err.contains("kimi locator"), "got: {}", err);
+            .expect("idle sole index entry must bind");
+        assert_eq!(located.status_path, idle_wire);
+        assert_eq!(located.agent_session_id.as_deref(), Some("session_idle"));
     }
 
     /// Recompute kimi's exact bucket name for a cwd in the test (same
