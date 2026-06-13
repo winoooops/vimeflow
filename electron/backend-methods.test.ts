@@ -21,6 +21,8 @@ describe('isAllowedBackendMethod', () => {
     'list_dir',
     'read_file',
     'write_file',
+    'rename_path',
+    'delete_path',
     'git_status',
     'git_branch',
     'git_worktree_name',

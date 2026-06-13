@@ -9,9 +9,9 @@
 
 This module is the sidecar IPC boundary for all filesystem access. Any
 code that reads or writes user files from the Electron renderer MUST go
-through one of the three commands in this directory (`list_dir`,
-`read_file`, `write_file`). No other module in `crates/backend` should open
-files on behalf of the webview.
+through one of the commands in this directory (`list_dir`, `read_file`,
+`write_file`, `rename_path`, `delete_path`). No other module in
+`crates/backend` should open files on behalf of the webview.
 
 ## Threat Model
 
@@ -64,6 +64,7 @@ map before approving changes to the module.
 | `canonicalize_within_home` (rejection)  | `scope_tests::canonicalize_within_home_rejects_escape`, `write_tests::write_file_rejects_path_outside_home`, `write_tests::write_file_refuses_intermediate_symlink_escape`                           |
 | `ensure_within_home`                    | `list_tests::list_dir_*`, `read_tests::read_file_rejects_path_outside_home`                                                                                                                          |
 | `open_nofollow` (Unix)                  | `read_tests::read_file_refuses_to_follow_symlink_escaping_home`, `write_tests::write_file_refuses_to_follow_symlink_escaping_home`, `write_tests::write_file_refuses_symlink_even_to_in_home_target` |
+| Symlink-leaf refusal for mutations      | `mutate_tests::delete_path_refuses_symlink_leaf`                                                                                                                                                     |
 | `open_nofollow` (Windows)               | Currently uncovered — Windows CI is not yet running these tests. Tracked in follow-up (see Deferred Work below).                                                                                     |
 | Atomic write + counter                  | `write_tests::write_file_creates_file`, `write_tests::write_file_overwrites_existing`                                                                                                                |
 
@@ -131,8 +132,7 @@ mixed-concerns file. Fuzz findings deserve their own PR narrative
 **Revisit when either of the following becomes true:**
 
 - A CVE or near-miss surfaces in the write path.
-- New surface area is added (`move_file`, `delete_file`,
-  symlink creation, chmod).
+- New surface area is added (`move_file`, symlink creation, chmod).
 
 ### Windows CI coverage
 

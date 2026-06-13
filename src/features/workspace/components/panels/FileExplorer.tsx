@@ -1,14 +1,54 @@
-import type { ReactElement } from 'react'
+import { useCallback, useMemo, useState, type ReactElement } from 'react'
 import { Tooltip } from '@/components/Tooltip'
 import { FileTree } from '../../../files/components/FileTree'
 import { contextMenuActions } from '../../../files/data/mockFileTree'
 import { useFileTree } from '../../../files/hooks/useFileTree'
-import type { FileNode } from '../../../files/types'
+import {
+  createFileSystemService,
+  type IFileSystemService,
+} from '../../../files/services/fileSystemService'
+import type {
+  ContextMenuAction,
+  ContextMenuActionId,
+  FileNode,
+} from '../../../files/types'
 
 export interface FileExplorerProps {
   cwd?: string
   onFileSelect?: (node: FileNode) => void
+  onViewDiff?: (node: FileNode) => void
+  fileSystemService?: IFileSystemService
 }
+
+interface ClipboardWriter {
+  writeText?: (text: string) => Promise<void>
+}
+
+const readClipboardWriter = (): ClipboardWriter | null =>
+  (navigator as { clipboard?: ClipboardWriter }).clipboard ?? null
+
+const actionIdFor = (action: ContextMenuAction): ContextMenuActionId | null => {
+  if (action.id) {
+    return action.id
+  }
+
+  switch (action.label) {
+    case 'Rename':
+      return 'rename'
+    case 'Delete':
+      return 'delete'
+    case 'Copy Path':
+      return 'copy-path'
+    case 'Open in Editor':
+      return 'open-in-editor'
+    case 'View Diff':
+      return 'view-diff'
+    default:
+      return null
+  }
+}
+
+const displayNameFor = (node: FileNode): string => node.name.replace(/\/$/u, '')
 
 /**
  * FileExplorer displays the file tree in the sidebar.
@@ -18,7 +58,16 @@ export interface FileExplorerProps {
 export const FileExplorer = ({
   cwd = '~',
   onFileSelect = undefined,
+  onViewDiff = undefined,
+  fileSystemService: providedFileSystemService = undefined,
 }: FileExplorerProps): ReactElement => {
+  const defaultFileSystemService = useMemo(() => createFileSystemService(), [])
+
+  const fileSystemService =
+    providedFileSystemService ?? defaultFileSystemService
+
+  const [actionError, setActionError] = useState<string | null>(null)
+
   const {
     nodes,
     currentPath,
@@ -27,17 +76,130 @@ export const FileExplorer = ({
     refresh,
     navigateTo,
     navigateUp,
-  } = useFileTree(cwd)
+  } = useFileTree(cwd, fileSystemService)
 
-  const handleNodeSelect = (node: FileNode, fullPath: string): void => {
-    if (node.type === 'folder') {
-      // Navigate into the folder — the `fullPath` already includes the ancestry.
-      navigateTo(fullPath)
-    } else {
-      // File: emit with canonical full path as the id so consumers can read/save it.
-      onFileSelect?.({ ...node, id: fullPath })
-    }
-  }
+  const handleNodeSelect = useCallback(
+    (node: FileNode, fullPath: string): void => {
+      if (node.type === 'folder') {
+        // Navigate into the folder — the `fullPath` already includes the ancestry.
+        navigateTo(fullPath)
+      } else {
+        // File: emit with canonical full path as the id so consumers can read/save it.
+        onFileSelect?.({ ...node, id: fullPath })
+      }
+    },
+    [navigateTo, onFileSelect]
+  )
+
+  const runContextMenuAction = useCallback(
+    async (
+      action: ContextMenuAction,
+      node: FileNode,
+      fullPath: string
+    ): Promise<void> => {
+      setActionError(null)
+
+      const actionId = actionIdFor(action)
+      const displayName = displayNameFor(node)
+
+      if (actionId === 'rename') {
+        const nextName = window.prompt('Rename to', displayName)
+        if (nextName === null) {
+          return
+        }
+
+        const trimmedName = nextName.trim()
+        if (trimmedName.length === 0 || trimmedName === displayName) {
+          return
+        }
+
+        try {
+          await fileSystemService.renamePath(fullPath, trimmedName)
+          refresh()
+        } catch (caughtError: unknown) {
+          const message =
+            caughtError instanceof Error
+              ? caughtError.message
+              : String(caughtError)
+          setActionError(`Failed to rename ${displayName}: ${message}`)
+        }
+
+        return
+      }
+
+      if (actionId === 'delete') {
+        const confirmed = window.confirm(`Delete ${displayName}?`)
+        if (!confirmed) {
+          return
+        }
+
+        try {
+          await fileSystemService.deletePath(fullPath)
+          refresh()
+        } catch (caughtError: unknown) {
+          const message =
+            caughtError instanceof Error
+              ? caughtError.message
+              : String(caughtError)
+          setActionError(`Failed to delete ${displayName}: ${message}`)
+        }
+
+        return
+      }
+
+      if (actionId === 'copy-path') {
+        const clipboard = readClipboardWriter()
+
+        if (typeof clipboard?.writeText !== 'function') {
+          setActionError('Clipboard is unavailable')
+
+          return
+        }
+
+        try {
+          await clipboard.writeText(fullPath)
+        } catch (caughtError: unknown) {
+          const message =
+            caughtError instanceof Error
+              ? caughtError.message
+              : String(caughtError)
+          setActionError(`Failed to copy path: ${message}`)
+        }
+
+        return
+      }
+
+      if (actionId === 'open-in-editor') {
+        if (node.type !== 'file') {
+          setActionError('Only files can be opened in the editor')
+
+          return
+        }
+
+        onFileSelect?.({ ...node, id: fullPath })
+
+        return
+      }
+
+      if (actionId === 'view-diff') {
+        if (node.type !== 'file') {
+          setActionError('Only files can be opened in the diff viewer')
+
+          return
+        }
+
+        onViewDiff?.({ ...node, id: fullPath })
+      }
+    },
+    [fileSystemService, onFileSelect, onViewDiff, refresh]
+  )
+
+  const handleContextMenuAction = useCallback(
+    (action: ContextMenuAction, node: FileNode, fullPath: string): void => {
+      void runContextMenuAction(action, node, fullPath)
+    },
+    [runContextMenuAction]
+  )
 
   // Display a short label for the current path
   const pathLabel =
@@ -117,12 +279,18 @@ export const FileExplorer = ({
             {error}
           </div>
         )}
+        {actionError && (
+          <div className="mb-2 rounded bg-error/10 px-2 py-1 font-mono text-xs text-error">
+            {actionError}
+          </div>
+        )}
         {!isLoading && !error && (
           <FileTree
             nodes={nodes}
             contextMenuActions={contextMenuActions}
             rootPath={currentPath}
             onNodeSelect={handleNodeSelect}
+            onContextMenuAction={handleContextMenuAction}
           />
         )}
       </div>

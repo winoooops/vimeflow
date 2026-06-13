@@ -252,6 +252,8 @@ describe('WorkspaceView – top chrome (main-stage handoff J2–J6)', () => {
       listDir: vi.fn().mockResolvedValue([]),
       readFile: vi.fn().mockResolvedValue(''),
       writeFile: vi.fn().mockResolvedValue(undefined),
+      renamePath: vi.fn().mockResolvedValue(undefined),
+      deletePath: vi.fn().mockResolvedValue(undefined),
     })
 
     const { createTerminalService } =

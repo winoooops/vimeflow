@@ -7,7 +7,7 @@ interface FileTreeNodeProps {
   depth?: number
   /** Path of the parent directory (e.g. `~/src/middleware`). Used to compute the full path on select. */
   parentPath?: string
-  onContextMenu: (event: MouseEvent, node: FileNode) => void
+  onContextMenu: (event: MouseEvent, node: FileNode, fullPath: string) => void
   onNodeSelect?: (node: FileNode, fullPath: string) => void
 }
 
@@ -96,7 +96,7 @@ export const FileTreeNode = ({
 
   const handleContextMenu = (event: React.MouseEvent): void => {
     event.preventDefault()
-    onContextMenu(event, node)
+    onContextMenu(event, node, fullPath)
   }
 
   const isFolder = node.type === 'folder'

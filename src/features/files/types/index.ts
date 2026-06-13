@@ -8,6 +8,13 @@ export type GitStatus =
   | 'renamed'
   | 'untracked'
 
+export type ContextMenuActionId =
+  | 'rename'
+  | 'delete'
+  | 'copy-path'
+  | 'open-in-editor'
+  | 'view-diff'
+
 /**
  * Represents a file or folder node in the file tree.
  */
@@ -27,6 +34,7 @@ export interface FileNode {
  * Represents an action in the context menu.
  */
 export interface ContextMenuAction {
+  id?: ContextMenuActionId
   label: string
   icon: string
   variant?: 'danger'
@@ -41,6 +49,7 @@ export interface ContextMenuState {
   x: number
   y: number
   targetNode: FileNode | null
+  targetPath: string | null
 }
 
 /**
@@ -129,6 +138,20 @@ export const isContextMenuAction = (
     return false
   }
 
+  if (
+    obj.id !== undefined &&
+    (typeof obj.id !== 'string' ||
+      ![
+        'rename',
+        'delete',
+        'copy-path',
+        'open-in-editor',
+        'view-diff',
+      ].includes(obj.id))
+  ) {
+    return false
+  }
+
   // Validate optional variant
   if (obj.variant !== undefined && obj.variant !== 'danger') {
     return false
@@ -182,7 +205,8 @@ export const isContextMenuState = (
   if (
     typeof obj.visible !== 'boolean' ||
     typeof obj.x !== 'number' ||
-    typeof obj.y !== 'number'
+    typeof obj.y !== 'number' ||
+    (obj.targetPath !== null && typeof obj.targetPath !== 'string')
   ) {
     return false
   }
