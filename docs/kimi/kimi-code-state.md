@@ -38,25 +38,25 @@ targets `~/.kimi-code/` exclusively.
 Every line is `{ "type": <string>, "time": <epoch_ms>, ...payload }`. The granular
 agent-loop lifecycle is **nested** inside `context.append_loop_event.event`.
 
-| top-level `type`         | payload                                                                 | meaning                                                        |
-| ------------------------ | ----------------------------------------------------------------------- | ------------------------------------------------------------- |
-| `metadata`               | `app_version, created_at, protocol_version`                             | session header (CLI version)                                  |
-| `config.update`          | `{profileName, systemPrompt}` **or** `{modelAlias, thinkingLevel}`      | **model** = `modelAlias` (`"kimi-code/kimi-for-coding"`)      |
-| `tools.set_active_tools` | `{names:[...]}`                                                         | active tool registry                                          |
-| `permission.set_mode`    | `{mode}`                                                                 | permission mode                                               |
-| `turn.prompt`            | `{input:[{type,text}], origin:{kind}}`                                  | **user turn** when `origin.kind=="user"` (skip `injection`)   |
-| `context.append_message` | `{message:{role, content:[{type,text}], toolCalls, origin:{kind,variant}}}` | message appended to context                              |
-| `context.append_loop_event` | `{event:{...}}`                                                      | wraps the granular lifecycle below                            |
-| `usage.record`           | `{model, usage:{inputOther,output,inputCacheRead,inputCacheCreation}, usageScope}` | **token usage** snapshot                          |
+| top-level `type`            | payload                                                                            | meaning                                                     |
+| --------------------------- | ---------------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| `metadata`                  | `app_version, created_at, protocol_version`                                        | session header (CLI version)                                |
+| `config.update`             | `{profileName, systemPrompt}` **or** `{modelAlias, thinkingLevel}`                 | **model** = `modelAlias` (`"kimi-code/kimi-for-coding"`)    |
+| `tools.set_active_tools`    | `{names:[...]}`                                                                    | active tool registry                                        |
+| `permission.set_mode`       | `{mode}`                                                                           | permission mode                                             |
+| `turn.prompt`               | `{input:[{type,text}], origin:{kind}}`                                             | **user turn** when `origin.kind=="user"` (skip `injection`) |
+| `context.append_message`    | `{message:{role, content:[{type,text}], toolCalls, origin:{kind,variant}}}`        | message appended to context                                 |
+| `context.append_loop_event` | `{event:{...}}`                                                                    | wraps the granular lifecycle below                          |
+| `usage.record`              | `{model, usage:{inputOther,output,inputCacheRead,inputCacheCreation}, usageScope}` | **token usage** snapshot                                    |
 
 `context.append_loop_event.event.type`:
 
-| `.event.type`  | payload                                                                                        | meaning                                          |
-| -------------- | --------------------------------------------------------------------------------------------- | ------------------------------------------------ |
-| `step.begin`   | `{uuid, turnId, step}`                                                                         | step start                                       |
-| `content.part` | `{..., part:{type:"think"\|"text", think/text}}`                                               | assistant reasoning / visible text               |
-| `tool.call`    | `{toolCallId, name, args, description, display:{kind,operation,path}}`                         | **tool-call START**                              |
-| `tool.result`  | `{parentUuid, toolCallId, result:{output}}`                                                    | **tool-call DONE** (link by `toolCallId`)        |
+| `.event.type`  | payload                                                                                                               | meaning                                           |
+| -------------- | --------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
+| `step.begin`   | `{uuid, turnId, step}`                                                                                                | step start                                        |
+| `content.part` | `{..., part:{type:"think"\|"text", think/text}}`                                                                      | assistant reasoning / visible text                |
+| `tool.call`    | `{toolCallId, name, args, description, display:{kind,operation,path}}`                                                | **tool-call START**                               |
+| `tool.result`  | `{parentUuid, toolCallId, result:{output}}`                                                                           | **tool-call DONE** (link by `toolCallId`)         |
 | `step.end`     | `{uuid, turnId, step, usage:{...}, finishReason:"tool_use"\|"end_turn", llmFirstTokenLatencyMs, llmStreamDurationMs}` | step end + per-step usage; `end_turn` = turn done |
 
 ## Mapping → vimeflow unified events

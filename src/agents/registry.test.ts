@@ -8,7 +8,13 @@ import {
   type AgentId,
 } from './registry'
 
-const ALL_AGENTS: readonly AgentId[] = ['claude', 'codex', 'gemini', 'kimi', 'shell']
+const ALL_AGENTS: readonly AgentId[] = [
+  'claude',
+  'codex',
+  'gemini',
+  'kimi',
+  'shell',
+]
 
 test('AGENTS keys are claude, codex, gemini, shell', () => {
   expect(Object.keys(AGENTS).sort()).toEqual([...ALL_AGENTS].sort())
