@@ -2183,7 +2183,7 @@ export const WorkspaceView = (): ReactElement => {
       {!isCompactViewport && (
         <div
           data-testid="activity-panel-shell"
-          className="h-full shrink-0 overflow-hidden border-l border-outline-variant transition-[width] duration-[220ms] ease-pane"
+          className="h-full shrink-0 overflow-hidden border-l border-outline-variant/25 transition-[width] duration-[220ms] ease-pane"
           style={{
             width: activityPanelCollapsed ? RAIL_WIDTH_PX : PANEL_WIDTH_PX,
           }}

@@ -2,8 +2,8 @@
 id: ui-visual-regression
 category: code-quality
 created: 2026-06-11
-last_updated: 2026-06-12
-ref_count: 1
+last_updated: 2026-06-13
+ref_count: 2
 ---
 
 # UI Visual Regression
@@ -69,4 +69,13 @@ test case for the state that triggers the collision.
 - **File:** `src/features/editor/components/FileTreeNode.tsx`
 - **Finding:** `getGitStatusColor` mapped every git status badge to `bg-syn-*` syntax tokens (`syn-class`, `syn-string`, `syn-tag`, `syn-operator`, `syn-keyword`) even though the same PR introduced dedicated `vcs-*` tokens. In Obsidian Lens the same status rendered in a visibly different shade in the file tree than in `ChangedFilesList`/`DiffLegend`.
 - **Fix:** Replaced the `bg-syn-*` classes with the matching `bg-vcs-modified`, `bg-vcs-added`, `bg-vcs-deleted`, `bg-vcs-renamed`, and `bg-vcs-untracked` classes, keeping the `text-surface-container` overlay.
+- **Commit:** same commit as this entry
+
+### 5. Right activity panel divider uses full-opacity outline token
+
+- **Source:** github-claude | PR #442 round 1 | 2026-06-13
+- **Severity:** LOW
+- **File:** `src/features/workspace/WorkspaceView.tsx`
+- **Finding:** The new `border-l border-outline-variant` on the `activity-panel-shell` divider used the token at full opacity while every other workspace hairline uses an opacity modifier (`/25` or lower). This made the right panel edge read visibly heavier than the rest of the shell and broke the surface/hairline design contract.
+- **Fix:** Changed the divider class to `border-l border-outline-variant/25` to match the surrounding hairline convention.
 - **Commit:** same commit as this entry
