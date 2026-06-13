@@ -203,6 +203,34 @@ Implementation must match §4.1 exactly. If a new state is added, extend `Sessio
 
 Drives off a single integer `pct`. Breakpoints in `tokens.ts::contextSmiley`. Visible in the status bar; also in the Tweaks panel when context pressure is adjustable.
 
+### 5.6 `Tooltip`
+
+The only tooltip in the app. Lives at `src/components/Tooltip.tsx`; import via the alias: `import { Tooltip } from '@/components/Tooltip'`.
+
+```ts
+interface TooltipProps {
+  content: ReactNode // null / false / '' disables the tooltip entirely
+  children: ReactElement // single trigger element; receives the floating ref
+  placement?: Placement // default 'top'; flips automatically near edges
+  delayMs?: number // open delay, default 250
+  disabled?: boolean
+  shortcut?: ShortcutInput // Zed-style key chip, e.g. ['Mod', 'E'] — chrome surface only
+  maxWidth?: number // default 320 — chrome surface only
+  bare?: boolean // consumer owns the whole surface — rich hover cards only
+  interactive?: boolean // pointer may enter the surface; requires ariaLabel
+  ariaLabel?: string // required iff interactive
+}
+```
+
+Rules:
+
+- Native `title=` on DOM elements is **banned** (`react/forbid-dom-props`). Every hover label goes through this component.
+- The default chrome surface (glassmorphic, `rounded-md`, 320px clamp, optional shortcut chip) is the answer for text labels — never restyle it per call site.
+- `bare` is reserved for rich interactive hover **cards** that define a complete surface of their own (canonical consumer: the activity-details card via `ACTIVITY_CARD_SURFACE`). Never use it for plain labels.
+- Icon-only triggers keep their `aria-label` — the tooltip is hover/focus-only and is not an accessible-name substitute.
+- Features must not hand-roll floating surfaces: `@floating-ui/react` imports are restricted to `src/components/` (existing popovers are grandfathered until a shared surface primitive is extracted).
+- A trigger that is `disabled` swallows pointer events in Chromium — wrap it in a `<span className="inline-flex">` and let the span be the Tooltip child.
+
 ---
 
 ## 6. Interaction rules (additions to DESIGN.md §7)

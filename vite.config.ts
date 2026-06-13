@@ -1111,6 +1111,11 @@ export default defineConfig(({ mode }) => ({
   // Tauri serves embedded production assets from its app protocol, so emitted
   // asset URLs must be relative instead of rooted at `/`.
   base: './',
+  resolve: {
+    alias: {
+      '@': path.resolve(repoRoot, 'src'),
+    },
+  },
   plugins: [
     react(),
     reactRefreshNoncePlugin(),

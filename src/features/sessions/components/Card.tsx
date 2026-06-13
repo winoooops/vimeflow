@@ -1,5 +1,6 @@
 import { memo, useState, useRef, useEffect, type ReactElement } from 'react'
 import { Reorder } from 'framer-motion'
+import { Tooltip } from '@/components/Tooltip'
 import type { Session } from '../types'
 import { useRenameState } from '../hooks/useRenameState'
 import { formatRelativeTime } from '../../agent-status/utils/relativeTime'
@@ -225,20 +226,21 @@ const CardComponent = ({
           </span>
           <span className="flex-1" />
           {showGlyph && (
-            <span
-              data-testid="session-layout-glyph"
-              aria-hidden="true"
-              title={LAYOUTS[session.layout].name}
-              className={`inline-flex shrink-0 items-center gap-1 ${isActive ? 'text-primary-container' : 'text-on-surface-muted'}`}
-            >
-              <LayoutGlyph layoutId={session.layout} />
+            <Tooltip content={LAYOUTS[session.layout].name}>
               <span
-                data-testid="session-pane-count"
-                className="font-mono text-[10px] font-semibold leading-none"
+                data-testid="session-layout-glyph"
+                aria-hidden="true"
+                className={`inline-flex shrink-0 items-center gap-1 ${isActive ? 'text-primary-container' : 'text-on-surface-muted'}`}
               >
-                {LAYOUTS[session.layout].capacity}
+                <LayoutGlyph layoutId={session.layout} />
+                <span
+                  data-testid="session-pane-count"
+                  className="font-mono text-[10px] font-semibold leading-none"
+                >
+                  {LAYOUTS[session.layout].capacity}
+                </span>
               </span>
-            </span>
+            </Tooltip>
           )}
         </div>
       </div>

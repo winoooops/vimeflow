@@ -1,6 +1,6 @@
 /* eslint-disable react/require-default-props -- forwardRef components: ESLint cannot see through forwardRef to find destructuring defaults */
 import { forwardRef, type ReactElement } from 'react'
-import { Tooltip } from '../../../components/Tooltip'
+import { Tooltip } from '@/components/Tooltip'
 
 export type SidebarToggleVariant = 'ghost' | 'inset'
 

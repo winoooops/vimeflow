@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react'
-import { Tooltip } from '../../../../components/Tooltip'
+import { Tooltip } from '@/components/Tooltip'
 
 export interface ChangeStepperProps {
   // 1-based `N/N` hunk position string (or `0/0` when there are no hunks),

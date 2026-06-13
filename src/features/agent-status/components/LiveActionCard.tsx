@@ -1,5 +1,5 @@
 import { type KeyboardEvent, type ReactElement } from 'react'
-import { Tooltip } from '../../../components/Tooltip'
+import { Tooltip } from '@/components/Tooltip'
 import {
   ACTIVITY_CARD_SURFACE,
   ActivityTooltipContent,

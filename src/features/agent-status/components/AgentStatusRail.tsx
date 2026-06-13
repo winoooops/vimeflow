@@ -98,7 +98,7 @@ export const AgentStatusRail = ({
           pct={ctxPct}
           color={contextTone(ctxPct, agent.accent)}
           label="CTX"
-          title={`Context: ${Math.round(ctxPct)}%`}
+          tooltip={`Context: ${Math.round(ctxPct)}%`}
         />
       )}
 
@@ -108,7 +108,7 @@ export const AgentStatusRail = ({
             pct={cachePct}
             color={cacheTone(cachePct)}
             label="CACHE"
-            title={`Cache hit rate: ${Math.round(cachePct)}%`}
+            tooltip={`Cache hit rate: ${Math.round(cachePct)}%`}
           />
         </div>
       )}

@@ -7,7 +7,7 @@ import {
   type ReactElement,
   type ReactNode,
 } from 'react'
-import { Tooltip } from '../../../components/Tooltip'
+import { Tooltip } from '@/components/Tooltip'
 
 export type DockTabType = 'editor' | 'diff'
 
@@ -210,13 +210,14 @@ export const DockTab = ({
             >
               {/* stopPropagation so clicking the read-only path label does not
                   bubble to the container's onClick and close the menu */}
-              <span
-                className="max-w-[210px] truncate px-1 font-mono text-[10px] text-outline"
-                title={selectedFilePath ?? ''}
-                onClick={(e): void => e.stopPropagation()}
-              >
-                {displayPath}
-              </span>
+              <Tooltip content={selectedFilePath} placement="bottom">
+                <span
+                  className="max-w-[210px] truncate px-1 font-mono text-[10px] text-outline"
+                  onClick={(e): void => e.stopPropagation()}
+                >
+                  {displayPath}
+                </span>
+              </Tooltip>
 
               <div className="flex items-center justify-between gap-2">
                 {children}
@@ -248,12 +249,11 @@ export const DockTab = ({
           {children && <div className="shrink-0">{children}</div>}
 
           <div className="ml-2 flex min-w-0 items-center gap-3">
-            <span
-              className="min-w-0 max-w-[180px] truncate font-mono text-[10px] text-outline"
-              title={selectedFilePath ?? ''}
-            >
-              {displayPath}
-            </span>
+            <Tooltip content={selectedFilePath} placement="bottom">
+              <span className="min-w-0 max-w-[180px] truncate font-mono text-[10px] text-outline">
+                {displayPath}
+              </span>
+            </Tooltip>
             <Tooltip
               content="Collapse panel"
               shortcut={['Mod', '0']}

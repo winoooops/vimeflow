@@ -3,7 +3,7 @@ id: generated-artifacts
 category: code-quality
 created: 2026-04-14
 last_updated: 2026-06-12
-ref_count: 5
+ref_count: 6
 ---
 
 # Generated Artifacts
@@ -100,5 +100,17 @@ checks or leave a regeneration diff.
 - **Finding:** The round-2 guard script calls `spawnSync('npm', ['run', 'generate:bindings'], { shell: false })`. On Windows, the executable for `npm` is normally `npm.cmd`; spawning `npm` without a shell fails to resolve the command when binding files are missing on a clean checkout. Because `result.error` was not surfaced, the failure produced an unhelpful exit with no diagnostic.
 - **Fix:** Run the child process through the platform shell on Windows (`shell: process.platform === 'win32'`) and check `result.error` after `spawnSync`, writing `result.error.message` to stderr before exiting with code 1.
 - **Verification:** `npm run lint` and `npm run test` still invoke the guard without error on POSIX; the Windows path now uses a shell so `npm.cmd` can be resolved.
+
+---
+
+### 9. `generate:bindings` dropped stale-file cleanup, risking stale TypeScript bindings locally
+
+- **Source:** github-claude | PR #440 round 1 | 2026-06-12
+- **Severity:** MEDIUM
+- **File:** `package.json` L28
+- **Finding:** The `generate:bindings` npm script was rewritten to skip the previous `npm run clean:bindings` pre-step. CI still cleaned before regeneration, but the canonical local command no longer deleted stale `.ts` files in `src/bindings/`. If a Rust type was renamed or removed, the old binding persisted alongside the new one, making local type-checks and imports appear valid until `git status` or the `bindings-check` CI job caught the stale file.
+- **Fix:** Restored the `clean:bindings` script (`mkdir -p src/bindings && find src/bindings -name '*.ts' ! -name 'index.ts' -delete`) and re-added `npm run clean:bindings &&` to the start of `generate:bindings`, preserving the committed `src/bindings/index.ts` re-export. (Note: `main` landed the equivalent `clean:bindings` pre-step independently via the #441 bindings-infra work; this PR's merge takes that version, so the fix is preserved either way.)
+- **Verification:** `npx prettier --check package.json`; codex verify on the staged diff (findings: [], `overall_correctness`: "patch is correct").
+- **Commit:** same commit as this entry
 
 ---

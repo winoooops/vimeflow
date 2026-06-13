@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react'
-import { Tooltip } from '../../../components/Tooltip'
+import { Tooltip } from '@/components/Tooltip'
 
 export type DockPosition = 'top' | 'bottom' | 'left' | 'right'
 

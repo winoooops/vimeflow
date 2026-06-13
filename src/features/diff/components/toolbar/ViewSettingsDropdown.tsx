@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-restricted-imports -- hand-rolled popover predates the shared floating-surface primitive */
 import {
   useState,
   type CSSProperties,

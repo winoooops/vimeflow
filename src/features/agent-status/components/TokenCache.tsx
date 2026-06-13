@@ -6,7 +6,7 @@ import {
   type CacheTone,
 } from '../utils/cacheRate'
 import { Sparkline } from './Sparkline'
-import { Tooltip } from '../../../components/Tooltip'
+import { Tooltip } from '@/components/Tooltip'
 
 export interface TokenCacheProps {
   usage: CurrentUsageState | null
