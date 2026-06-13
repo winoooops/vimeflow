@@ -20,6 +20,11 @@ const waitForFileTree = async (): Promise<void> => {
   })
 }
 
+const openContextMenu = async (name: string): Promise<void> => {
+  await waitForFileTree()
+  fireEvent.contextMenu(screen.getByText(name))
+}
+
 describe('FileExplorer', () => {
   afterEach(() => {
     vi.restoreAllMocks()
@@ -126,9 +131,7 @@ describe('FileExplorer', () => {
     const handleFileSelect = vi.fn()
     render(<FileExplorer onFileSelect={handleFileSelect} />)
 
-    await waitForFileTree()
-
-    fireEvent.contextMenu(screen.getByText('package.json'))
+    await openContextMenu('package.json')
     fireEvent.click(screen.getByRole('menuitem', { name: /open in editor/i }))
 
     expect(handleFileSelect).toHaveBeenCalledWith(
@@ -144,9 +147,7 @@ describe('FileExplorer', () => {
     const handleViewDiff = vi.fn()
     render(<FileExplorer onViewDiff={handleViewDiff} />)
 
-    await waitForFileTree()
-
-    fireEvent.contextMenu(screen.getByText('package.json'))
+    await openContextMenu('package.json')
     fireEvent.click(screen.getByRole('menuitem', { name: /view diff/i }))
 
     expect(handleViewDiff).toHaveBeenCalledWith(
@@ -167,9 +168,7 @@ describe('FileExplorer', () => {
 
     render(<FileExplorer />)
 
-    await waitForFileTree()
-
-    fireEvent.contextMenu(screen.getByText('package.json'))
+    await openContextMenu('package.json')
     fireEvent.click(screen.getByRole('menuitem', { name: /copy path/i }))
 
     await waitFor(() => {
@@ -179,14 +178,15 @@ describe('FileExplorer', () => {
 
   test('renames the context-menu target and refreshes the tree', async () => {
     const service = createTestFileSystemService()
-    vi.spyOn(window, 'prompt').mockReturnValue('renamed.json')
 
     render(<FileExplorer fileSystemService={service} />)
 
-    await waitForFileTree()
-
-    fireEvent.contextMenu(screen.getByText('package.json'))
+    await openContextMenu('package.json')
     fireEvent.click(screen.getByRole('menuitem', { name: /rename/i }))
+
+    const renameInput = screen.getByLabelText('Rename file')
+    fireEvent.change(renameInput, { target: { value: 'renamed.json' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm rename' }))
 
     await waitFor(() => {
       expect(service.renamePath).toHaveBeenCalledWith(
@@ -197,20 +197,87 @@ describe('FileExplorer', () => {
     expect(service.listDir).toHaveBeenCalledTimes(2)
   })
 
-  test('deletes the context-menu target and refreshes the tree', async () => {
+  test('cancels rename without calling the service', async () => {
     const service = createTestFileSystemService()
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
 
     render(<FileExplorer fileSystemService={service} />)
 
-    await waitForFileTree()
+    await openContextMenu('package.json')
+    fireEvent.click(screen.getByRole('menuitem', { name: /rename/i }))
 
-    fireEvent.contextMenu(screen.getByText('package.json'))
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel rename' }))
+
+    expect(service.renamePath).not.toHaveBeenCalled()
+    expect(screen.queryByLabelText('Rename file')).not.toBeInTheDocument()
+  })
+
+  test('shows an error when the rename target contains a path separator', async () => {
+    const service = createTestFileSystemService()
+
+    render(<FileExplorer fileSystemService={service} />)
+
+    await openContextMenu('package.json')
+    fireEvent.click(screen.getByRole('menuitem', { name: /rename/i }))
+
+    const renameInput = screen.getByLabelText('Rename file')
+    fireEvent.change(renameInput, { target: { value: 'foo/bar.json' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm rename' }))
+
+    await waitFor(() => {
+      expect(
+        screen.getByText('Name must not contain "/": foo/bar.json')
+      ).toBeInTheDocument()
+    })
+    expect(service.renamePath).not.toHaveBeenCalled()
+  })
+
+  test('deletes the context-menu target and refreshes the tree', async () => {
+    const service = createTestFileSystemService()
+
+    render(<FileExplorer fileSystemService={service} />)
+
+    await openContextMenu('package.json')
     fireEvent.click(screen.getByRole('menuitem', { name: /delete/i }))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm delete' }))
 
     await waitFor(() => {
       expect(service.deletePath).toHaveBeenCalledWith('~/package.json')
     })
     expect(service.listDir).toHaveBeenCalledTimes(2)
+  })
+
+  test('cancels delete without calling the service', async () => {
+    const service = createTestFileSystemService()
+
+    render(<FileExplorer fileSystemService={service} />)
+
+    await openContextMenu('package.json')
+    fireEvent.click(screen.getByRole('menuitem', { name: /delete/i }))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel delete' }))
+
+    expect(service.deletePath).not.toHaveBeenCalled()
+  })
+
+  test('dismisses the action error banner', async () => {
+    const service = createTestFileSystemService()
+    vi.spyOn(service, 'deletePath').mockRejectedValue(
+      new Error('permission denied')
+    )
+
+    render(<FileExplorer fileSystemService={service} />)
+
+    await openContextMenu('package.json')
+    fireEvent.click(screen.getByRole('menuitem', { name: /delete/i }))
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm delete' }))
+
+    await waitFor(() => {
+      expect(screen.getByText(/Failed to delete/i)).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss error' }))
+
+    expect(screen.queryByText(/Failed to delete/i)).not.toBeInTheDocument()
   })
 })

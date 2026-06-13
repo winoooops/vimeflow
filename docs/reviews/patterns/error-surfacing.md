@@ -2,8 +2,8 @@
 id: error-surfacing
 category: error-handling
 created: 2026-04-10
-last_updated: 2026-06-12
-ref_count: 10
+last_updated: 2026-06-13
+ref_count: 11
 ---
 
 # Error Surfacing
@@ -378,3 +378,13 @@ failed" must mean the editor shows the original file, not the requested one.
 - **Finding:** The new reading-view context-menu Copy action called `void clipboard?.writeText?.(selectedText)`, discarding both missing-API and rejection cases. In Electron's `loadFile` runtime or when clipboard permission is denied the copy surface silently does nothing, leaving the user without the selected text on the clipboard. Same `void promise` anti-pattern as #1–#5 and #36, but the fix here is graceful fallback rather than user-facing error surfacing.
 - **Fix:** Replaced the direct call with the existing `writeClipboardText` helper from `useCodeMirror.ts`, which tries `navigator.clipboard.writeText` and falls back to a hidden-textarea / `document.execCommand('copy')` path when the modern API is missing or rejects. Exported the helper so the reading view can share the editor's battle-tested fallback. Added a regression test asserting the fallback path is exercised when `navigator.clipboard.writeText` is absent.
 - **Commit:** same commit as this entry
+
+
+### 39. FileExplorer actionError banner cannot be dismissed
+
+- **Source:** github-claude | PR #444 round 1 | 2026-06-13
+- **Severity:** MEDIUM
+- **File:** `src/features/workspace/components/panels/FileExplorer.tsx`
+- **Finding:** The error banner set by `actionError` stayed visible indefinitely; it was only cleared at the start of the next context-menu action, leaving stale errors pinned in the sidebar.
+- **Fix:** Added a close button to the banner that calls `setActionError(null)` so users can dismiss it immediately.
+- **Commit:** see `git blame` / `git log` on this line

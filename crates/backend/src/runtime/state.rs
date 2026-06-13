@@ -283,7 +283,7 @@ impl BackendState {
         crate::filesystem::mutate::delete_path_inner(request)
     }
 
-    pub async fn git_status(&self, cwd: String) -> Result<Vec<crate::git::ChangedFile>, String> {
+    pub async fn git_status(&self, cwd: String) -> Result<crate::git::GitStatusResponse, String> {
         crate::git::git_status_inner(cwd).await
     }
 

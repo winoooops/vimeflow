@@ -65,6 +65,43 @@ fn rename_path_rejects_existing_target() {
 }
 
 #[test]
+fn rename_path_rejects_path_outside_home() {
+    let result = rename_path(RenamePathRequest {
+        path: "/etc/passwd".to_string(),
+        new_name: "renamed.txt".to_string(),
+    });
+
+    assert!(result.is_err());
+    assert!(result.unwrap_err().contains("access denied"));
+}
+
+#[cfg(unix)]
+#[test]
+fn rename_path_refuses_symlink_leaf() {
+    use std::os::unix::fs::symlink;
+
+    let dir = home_test_dir("rename_symlink_leaf");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).unwrap();
+    let target = dir.join("target.txt");
+    let link = dir.join("link.txt");
+    fs::write(&target, "content").unwrap();
+    symlink(&target, &link).unwrap();
+
+    let result = rename_path(RenamePathRequest {
+        path: link.to_string_lossy().to_string(),
+        new_name: "renamed.txt".to_string(),
+    });
+
+    assert!(result.is_err());
+    assert!(result.unwrap_err().contains("refusing to mutate symlink"));
+    assert!(link.exists());
+    assert!(target.exists());
+
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn delete_path_removes_file() {
     let dir = home_test_dir("delete_file");
     let _ = fs::remove_dir_all(&dir);

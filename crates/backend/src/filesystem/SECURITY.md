@@ -64,7 +64,7 @@ map before approving changes to the module.
 | `canonicalize_within_home` (rejection)  | `scope_tests::canonicalize_within_home_rejects_escape`, `write_tests::write_file_rejects_path_outside_home`, `write_tests::write_file_refuses_intermediate_symlink_escape`                           |
 | `ensure_within_home`                    | `list_tests::list_dir_*`, `read_tests::read_file_rejects_path_outside_home`                                                                                                                          |
 | `open_nofollow` (Unix)                  | `read_tests::read_file_refuses_to_follow_symlink_escaping_home`, `write_tests::write_file_refuses_to_follow_symlink_escaping_home`, `write_tests::write_file_refuses_symlink_even_to_in_home_target` |
-| Symlink-leaf refusal for mutations      | `mutate_tests::delete_path_refuses_symlink_leaf`                                                                                                                                                     |
+| Symlink-leaf refusal for mutations      | `mutate_tests::delete_path_refuses_symlink_leaf`, `mutate_tests::rename_path_refuses_symlink_leaf`                                                                                                   |
 | `open_nofollow` (Windows)               | Currently uncovered — Windows CI is not yet running these tests. Tracked in follow-up (see Deferred Work below).                                                                                     |
 | Atomic write + counter                  | `write_tests::write_file_creates_file`, `write_tests::write_file_overwrites_existing`                                                                                                                |
 

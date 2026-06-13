@@ -342,6 +342,13 @@ function gitApiPlugin(): Plugin {
             const baseBranch = url.searchParams.get('base') ?? 'main'
             const changedFiles: ChangedFile[] = []
 
+            let statusRepoRoot = ''
+            try {
+              statusRepoRoot = await git.revparse(['--show-toplevel'])
+            } catch {
+              // Not a git repo — leave repoRoot empty and continue with empty files.
+            }
+
             // Get all files changed on this branch vs base (committed changes)
             const branchDiffSummary = await git.diffSummary([baseBranch])
 
@@ -419,7 +426,9 @@ function gitApiPlugin(): Plugin {
             }
 
             res.writeHead(200, { 'Content-Type': 'application/json' })
-            res.end(JSON.stringify(changedFiles))
+            res.end(
+              JSON.stringify({ files: changedFiles, repoRoot: statusRepoRoot })
+            )
 
             return
           }

@@ -2,8 +2,8 @@
 id: git-operations
 category: correctness
 created: 2026-04-09
-last_updated: 2026-05-31
-ref_count: 10
+last_updated: 2026-06-13
+ref_count: 11
 ---
 
 # Git Operations
@@ -239,3 +239,13 @@ between display and mutation operations.
 - **Finding:** `approve()` unconditionally deleted the remote branch via base-repo API after merge. For fork PRs, `headRefName` is the contributor's branch name; the deletion would remove a same-named base-repo branch instead.
 - **Fix:** Fetched `isCrossRepository` from `gh pr view\' and gated the remote ref-delete on `!isCrossRepository`.
 - **Commit:** same commit as this entry
+
+
+### 26. Diff path computed relative to activeCwd instead of repo root
+
+- **Source:** github-codex-connector | PR #444 round 1 | 2026-06-13
+- **Severity:** MEDIUM
+- **File:** `src/features/workspace/WorkspaceView.tsx`
+- **Finding:** `handleFileViewDiff` computed `relativePath` from `activeCwd`, but the git backend normalizes status and diff to the repository top level. For terminals in a subdirectory, this produced a repo-root-relative path that missed the nested prefix and targeted the wrong file.
+- **Fix:** Extended `git_status_inner` to return the repository root (`repoRoot`) and updated `useGitStatus` / `WorkspaceView` to compute diff paths relative to `repoRoot` when available, falling back to `activeCwd`.
+- **Commit:** see `git blame` / `git log` on this line

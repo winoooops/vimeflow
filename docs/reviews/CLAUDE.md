@@ -43,7 +43,7 @@ When appending findings to a pattern file, label the source so future readers ca
 
 | Pattern                                                                                              | Category           | Findings | Refs | Last Updated |
 | ---------------------------------------------------------------------------------------------------- | ------------------ | -------- | ---- | ------------ |
-| [Filesystem Scope](patterns/filesystem-scope.md)                                                     | security           | 21       | 3    | 2026-05-20   |
+| [Filesystem Scope](patterns/filesystem-scope.md)                                                     | security           | 22       | 4    | 2026-06-13   |
 | [React Lifecycle](patterns/react-lifecycle.md)                                                       | react-patterns     | 33       | 15   | 2026-06-11   |
 | [Motion Layout Projection](patterns/motion-layout-projection.md)                                     | react-patterns     | 1        | 0    | 2026-06-10   |
 | [Fixed-Position Portals](patterns/fixed-position-portals.md)                                         | react-patterns     | 1        | 0    | 2026-06-12   |
@@ -57,7 +57,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Testing Gaps](patterns/testing-gaps.md)                                                             | testing            | 64       | 30   | 2026-06-12   |
 | [Terminal Input Handling](patterns/terminal-input-handling.md)                                       | terminal           | 4        | 2    | 2026-05-24   |
 | [Documentation Accuracy](patterns/documentation-accuracy.md)                                         | code-quality       | 85       | 25   | 2026-06-08   |
-| [Accessibility](patterns/accessibility.md)                                                           | a11y               | 51       | 22   | 2026-06-12   |
+| [Accessibility](patterns/accessibility.md)                                                           | a11y               | 52       | 23   | 2026-06-13   |
 | [Event Identity Guard](patterns/event-identity-guard.md)                                             | backend            | 1        | 0    | 2026-06-11   |
 | [Async Race Conditions](patterns/async-race-conditions.md)                                           | react-patterns     | 63       | 22   | 2026-06-08   |
 | [Tokio Blocking On Async](patterns/tokio-blocking-on-async.md)                                       | backend            | 2        | 1    | 2026-05-20   |
@@ -68,9 +68,9 @@ When appending findings to a pattern file, label the source so future readers ca
 | [CSP Configuration](patterns/csp-configuration.md)                                                   | security           | 8        | 5    | 2026-05-16   |
 | [Network Request Hardening](patterns/network-request-hardening.md)                                   | security           | 1        | 1    | 2026-06-08   |
 | [PTY Session Management](patterns/pty-session-management.md)                                         | backend            | 9        | 3    | 2026-06-13   |
-| [Git Operations](patterns/git-operations.md)                                                         | correctness        | 25       | 10   | 2026-05-31   |
+| [Git Operations](patterns/git-operations.md)                                                         | correctness        | 26       | 11   | 2026-06-13   |
 | [CodeMirror Integration](patterns/codemirror-integration.md)                                         | editor             | 19       | 4    | 2026-06-06   |
-| [Error Surfacing](patterns/error-surfacing.md)                                                       | error-handling     | 38       | 11   | 2026-06-12   |
+| [Error Surfacing](patterns/error-surfacing.md)                                                       | error-handling     | 39       | 12   | 2026-06-13   |
 | [File Tree Paths](patterns/file-tree-paths.md)                                                       | files              | 4        | 0    | 2026-04-10   |
 | [Scope Boundary](patterns/scope-boundary.md)                                                         | review-process     | 8        | 3    | 2026-06-01   |
 | [E2E Testing](patterns/e2e-testing.md)                                                               | e2e-testing        | 19       | 7    | 2026-06-06   |
@@ -88,3 +88,4 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Prototype Handoff Artifacts](patterns/prototype-handoff-artifacts.md)                               | review-process     | 2        | 0    | 2026-06-12   |
 | [CloudFormation Environment Prefix Coupling](patterns/cloudformation-environment-prefix-coupling.md) | infrastructure     | 1        | 0    | 2026-06-12   |
 | [CloudFormation Stale References](patterns/cloudformation-stale-references.md)                       | infrastructure     | 2        | 1    | 2026-06-12   |
+| [Dead Code](patterns/dead-code.md)                                                                   | code-quality       | 1        | 0    | 2026-06-13   |

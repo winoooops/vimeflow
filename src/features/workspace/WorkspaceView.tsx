@@ -1485,7 +1485,14 @@ export const WorkspaceView = (): ReactElement => {
         return
       }
 
-      const relativePath = relativePathFromCwd(node.id, activeCwd)
+      // The backend normalizes git status/diff to the repository toplevel, so
+      // derive repo-root-relative paths when we know the toplevel. Fall back
+      // to cwd-relative for directories that are not inside a git repo.
+      const repoRoot = gitStatus.repoRoot
+      const relativePath =
+        repoRoot && repoRoot.length > 0
+          ? relativePathFromCwd(node.id, repoRoot)
+          : relativePathFromCwd(node.id, activeCwd)
 
       if (!relativePath) {
         setFileError(`Cannot view diff outside ${activeCwd}: ${node.id}`)
@@ -1512,7 +1519,7 @@ export const WorkspaceView = (): ReactElement => {
       })
       openDock('diff')
     },
-    [activeCwd, gitStatus.files, gitStatus.filesCwd, openDock]
+    [activeCwd, gitStatus.files, gitStatus.filesCwd, gitStatus.repoRoot, openDock]
   )
 
   // Open a test file from the activity panel. Mirrors handleFileSelect's

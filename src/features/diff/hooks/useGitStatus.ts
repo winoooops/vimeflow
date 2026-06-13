@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { invoke, listen, type UnlistenFn } from '../../../lib/backend'
 import { createGitService } from '../services/gitService'
-import type { ChangedFile } from '../types'
+import type { ChangedFile, GitStatusResponse } from '../types'
 
 interface GitStatusChangedPayload {
   /** List of current working directory paths subscribed to the watcher */
@@ -19,6 +19,11 @@ export interface UseGitStatusReturn {
   files: ChangedFile[]
   /** The cwd of the last successful fetch — never updates on failure or fetch-start */
   filesCwd: string | null
+  /**
+   * Absolute path to the repository toplevel for the last successful fetch.
+   * Empty string when the cwd is not inside a git repo.
+   */
+  repoRoot?: string | null
   loading: boolean
   error: Error | null
   refresh: () => void
@@ -51,6 +56,7 @@ export const useGitStatus = (
 
   const [files, setFiles] = useState<ChangedFile[]>([])
   const [filesCwd, setFilesCwd] = useState<string | null>(null)
+  const [repoRoot, setRepoRoot] = useState<string | null>(null)
   const [loading, setLoading] = useState(() => enabled && isValidCwd(cwd))
   const [error, setError] = useState<Error | null>(null)
   const [refreshKey, setRefreshKey] = useState(0)
@@ -76,6 +82,7 @@ export const useGitStatus = (
     if (!enabled || !isValidCwd(cwd)) {
       setFiles([])
       setFilesCwd(null)
+      setRepoRoot(null)
       setLoading(false)
       setError(null)
 
@@ -89,11 +96,13 @@ export const useGitStatus = (
         setLoading(true)
         setError(null)
 
-        const changedFiles = await createGitService(cwd).getStatus()
+        const { files: changedFiles, repoRoot: changedRepoRoot }: GitStatusResponse =
+          await createGitService(cwd).getStatus()
 
         if (!cancelled) {
           setFiles(changedFiles)
           setFilesCwd(cwd) // Only update on success
+          setRepoRoot(changedRepoRoot || null)
         }
       } catch (err) {
         if (!cancelled) {
@@ -222,6 +231,7 @@ export const useGitStatus = (
   return {
     files,
     filesCwd,
+    repoRoot,
     loading,
     error,
     refresh,
