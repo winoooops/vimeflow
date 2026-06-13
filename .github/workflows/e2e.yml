@@ -39,8 +39,49 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  bindings:
+    name: Generate TypeScript Bindings
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: .
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Generate bindings
+        run: npm run generate:bindings
+
+      - name: Verify bindings are up to date
+        run: |
+          git diff --exit-code src/bindings/
+          test -z "$(git ls-files --others --exclude-standard src/bindings/)"
+
+      - name: Upload generated bindings
+        uses: actions/upload-artifact@v4
+        with:
+          name: ts-bindings
+          path: src/bindings/*.ts
+          if-no-files-found: error
+          overwrite: true
+
   e2e-linux:
     name: E2E smoke suite (Linux)
+    needs: [bindings]
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -77,11 +118,20 @@ jobs:
       - name: Install npm dependencies
         run: npm ci
 
+      - name: Clear generated bindings
+        run: mkdir -p src/bindings && find src/bindings -name '*.ts' ! -name 'index.ts' -delete
+
+      - name: Download generated bindings
+        uses: actions/download-artifact@v4
+        with:
+          name: ts-bindings
+          path: src/bindings
+
       - name: Repair Electron binary install
         run: npm rebuild electron
 
       - name: Build E2E artifacts (renderer + Electron bundles + sidecar)
-        run: npm run test:e2e:build
+        run: npm run test:e2e:build:generated
 
       - name: Run core E2E suite
         run: xvfb-run --auto-servernum npm run test:e2e:core:run

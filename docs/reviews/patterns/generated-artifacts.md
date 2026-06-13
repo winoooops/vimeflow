@@ -2,8 +2,8 @@
 id: generated-artifacts
 category: code-quality
 created: 2026-04-14
-last_updated: 2026-05-25
-ref_count: 2
+last_updated: 2026-06-12
+ref_count: 5
 ---
 
 # Generated Artifacts
@@ -56,3 +56,49 @@ checks or leave a regeneration diff.
 - **Finding:** The PR included a React/Babel HTML prototype and JSX demo files under `docs/design/` alongside migration markdown. These are hand-authored throwaway demos, not generated artifacts or application code, and add noise to the repository and review surface.
 - **Fix:** Removed `docs/design/leftsidebar/Sidebar Chrome.html` and all JSX files under `docs/design/sidebar-toggle-handoff/src/`, keeping the markdown handoff documents.
 - **Commit:** same commit as this entry
+
+---
+
+### 5. Ignored generated bindings must still be produced for clean-checkout entrypoints
+
+- **Source:** github-codex-connector | PR #441 round 1 | 2026-06-12
+- **Severity:** P2 / MEDIUM
+- **File:** `.gitignore`
+- **Finding:** After adding `/src/bindings/*.ts` to `.gitignore`, a clean checkout contained only the tracked barrel `src/bindings/index.ts`, which re-exports generated modules such as `./PtySession`. Local dev and test scripts (`electron:dev`, `test`, `lint`) did not run `generate:bindings`, so any command that resolved those imports before `build`/`type-check` started from missing modules.
+- **Fix:** Prepended `npm run generate:bindings` to the `electron:dev`, `test`, and `lint` npm scripts so the generated modules are produced before TypeScript-aware tooling needs them. This mirrors the existing pattern used by `build` and `type-check`.
+- **Commit:** same commit as this entry
+
+---
+
+### 6. Unconditional binding generation in Node-only CI jobs
+
+- **Source:** github-codex-connector | PR #441 round 2 | 2026-06-12
+- **Severity:** P1 / HIGH
+- **Files:** `package.json`, `.github/workflows/ci-checks.yml`
+- **Finding:** After prepending `npm run generate:bindings` to `lint`, `test`, and related npm scripts in round 1, the `code-check` and `unit-test` CI jobs invoked `cargo test` even though they do not install Rust or the system dependencies required by the backend. `--ignore-scripts` does not suppress commands inside an npm script body, so the Node-only jobs failed.
+- **Fix:** Added a `generate:bindings:if-missing` script (`scripts/generate-bindings-if-missing.mjs`) that regenerates bindings only when a module referenced by `src/bindings/index.ts` is missing. Routed `lint`, `lint:fix`, `test`, and `test:coverage` through this guard.
+- **Verification:** With generated binding files present, `npm run generate:bindings:if-missing` exits without invoking cargo. With files absent, it falls back to `npm run generate:bindings`.
+
+---
+
+### 7. Node-only CI unit-test job could fall back to cargo through the guard script
+
+- **Source:** github-claude | PR #441 round 2 | 2026-06-12
+- **Severity:** HIGH
+- **Files:** `scripts/generate-bindings-if-missing.mjs`
+- **Finding:** The round-2 guard script change made `npm test` fall back to `npm run generate:bindings` when generated binding leaf files are absent. The `unit-test` CI job has no Rust toolchain, so a clean-checkout run would invoke `cargo test` and fail before vitest started.
+- **Fix:** Added an early-exit branch in `generate-bindings-if-missing.mjs` that skips on-demand generation when `process.env.CI` is set. This makes the Node-only `unit-test` job run vitest directly without ever invoking cargo, while local checkouts still benefit from the guard.
+- **Verification:** With `CI=true` set, `npm run generate:bindings:if-missing` exits without invoking cargo even when binding leaf files are absent.
+
+---
+
+### 8. `spawnSync('npm')` with `shell:false` fails silently on Windows
+
+- **Source:** github-codex-connector | PR #441 round 3 | 2026-06-12
+- **Severity:** P2 / MEDIUM
+- **File:** `scripts/generate-bindings-if-missing.mjs`
+- **Finding:** The round-2 guard script calls `spawnSync('npm', ['run', 'generate:bindings'], { shell: false })`. On Windows, the executable for `npm` is normally `npm.cmd`; spawning `npm` without a shell fails to resolve the command when binding files are missing on a clean checkout. Because `result.error` was not surfaced, the failure produced an unhelpful exit with no diagnostic.
+- **Fix:** Run the child process through the platform shell on Windows (`shell: process.platform === 'win32'`) and check `result.error` after `spawnSync`, writing `result.error.message` to stderr before exiting with code 1.
+- **Verification:** `npm run lint` and `npm run test` still invoke the guard without error on POSIX; the Windows path now uses a shell so `npm.cmd` can be resolved.
+
+---
