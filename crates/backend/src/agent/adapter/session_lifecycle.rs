@@ -25,8 +25,8 @@ use std::path::Path;
 use std::sync::Arc;
 
 use super::bindings::AgentBindings;
-use crate::agent::adapter::types::LocatedStatusSource;
 use super::{base, resolve_bind_inputs, AttachContext};
+use crate::agent::adapter::types::LocatedStatusSource;
 use crate::agent::detector::detect_agent;
 use crate::agent::types::AgentType;
 use crate::runtime::EventSink;
@@ -62,8 +62,8 @@ mod tests {
     use crate::agent::adapter::traits::StatusSourceLocator;
     use crate::agent::adapter::types::LocatedStatusSource;
     use crate::agent::types::AgentType;
-    use crate::runtime::FakeEventSink;
     use crate::runtime::EventSink;
+    use crate::runtime::FakeEventSink;
     use crate::terminal::PtyState;
     use tempfile::TempDir;
 
@@ -83,7 +83,11 @@ mod tests {
     fn write_claude_status(cwd: &std::path::Path, sid: &str) {
         let dir = cwd.join(".vimeflow").join("sessions").join(sid);
         std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join("status.json"), r#"{"session_id":"sid","model":{}}"#).unwrap();
+        std::fs::write(
+            dir.join("status.json"),
+            r#"{"session_id":"sid","model":{}}"#,
+        )
+        .unwrap();
     }
 
     fn seeded_fixture(sid: &str) -> (tempfile::TempDir, TranscriptState, AgentWatcherState) {
@@ -359,7 +363,9 @@ mod tests {
             Arc::new(FakeEventSink::new()),
         );
 
-        let trusted = lifecycle.ensure_trust(located).expect("ensure_trust should pass");
+        let trusted = lifecycle
+            .ensure_trust(located)
+            .expect("ensure_trust should pass");
         let handle = lifecycle
             .spawn_watch(bindings, trusted, sid.clone())
             .expect("spawn_watch should return a handle");
@@ -412,12 +418,8 @@ mod tests {
         let transcript_state = TranscriptState::new();
         let watcher_state = AgentWatcherState::new();
 
-        let lifecycle = SessionLifecycle::new(
-            pty_state,
-            watcher_state.clone(),
-            transcript_state,
-            events,
-        );
+        let lifecycle =
+            SessionLifecycle::new(pty_state, watcher_state.clone(), transcript_state, events);
         lifecycle
             .start_inner_for_test(sid.clone(), bindings, tmp.path().to_path_buf())
             .await
@@ -525,11 +527,7 @@ impl SessionLifecycle {
         }
     }
 
-    fn resolve_attach<F>(
-        &self,
-        sid: &SessionId,
-        detect: F,
-    ) -> Result<AttachContext, String>
+    fn resolve_attach<F>(&self, sid: &SessionId, detect: F) -> Result<AttachContext, String>
     where
         F: FnOnce(u32) -> Option<(AgentType, u32)>,
     {
@@ -599,8 +597,7 @@ impl SessionLifecycle {
             sid,
             located,
             move || {
-                watcher_state
-                    .quiesce_existing(&sid_for_quiesce, &transcript_state_for_quiesce);
+                watcher_state.quiesce_existing(&sid_for_quiesce, &transcript_state_for_quiesce);
             },
         )
     }

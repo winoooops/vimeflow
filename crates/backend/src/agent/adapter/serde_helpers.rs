@@ -281,8 +281,7 @@ mod tests {
     #[test]
     fn lenient_object_accepts_objects_rejects_others() {
         // Happy path: an object decodes to Some(_).
-        let p: ObjectProbe =
-            serde_json::from_str(r#"{"block": {"n": 7}}"#).expect("object ok");
+        let p: ObjectProbe = serde_json::from_str(r#"{"block": {"n": 7}}"#).expect("object ok");
         assert_eq!(p.block, Some(Inner { n: Some(7) }));
 
         // Empty object → Some(default) (the block IS present).

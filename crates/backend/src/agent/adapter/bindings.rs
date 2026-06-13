@@ -24,6 +24,7 @@ use std::sync::Arc;
 use super::claude_code::ClaudeCodeAdapter;
 use super::codex::{default_codex_home, CodexAdapter, CompositeLocator};
 use super::error::AttachError;
+use super::kimi::{default_kimi_home, KimiAdapter, KimiLocator};
 use super::traits::{
     StateDecoder, StatusSourceLocator, TranscriptPathValidator, TranscriptStreamer,
 };
@@ -115,10 +116,7 @@ impl AgentBindings {
                 // structural fix (PR #261 cycle 11 F31) shares one
                 // `CompositeLocator`; B'' (this step) then consumes the
                 // streamer view directly in `start_or_replace`.
-                let codex_home = ctx
-                    .provider_home
-                    .clone()
-                    .unwrap_or_else(default_codex_home);
+                let codex_home = ctx.provider_home.clone().unwrap_or_else(default_codex_home);
                 // `ctx.proc_root` carries `Some("/proc")` on Linux,
                 // `None` on non-Linux, and `Some(tempdir)` in test
                 // harnesses that inject a fake `/proc`. Pass the
@@ -159,9 +157,32 @@ impl AgentBindings {
                     streamer: adapter,
                 })
             }
+            AgentType::Kimi => {
+                // kimi-code's locator reads `<kimi_home>/session_index.jsonl`
+                // to resolve the attach cwd to a `wire.jsonl`. `default_kimi_home`
+                // honors `$KIMI_CODE_HOME` first, then `~/.kimi-code`, then a
+                // relative `.kimi-code` so headless sessions still attach.
+                let kimi_home = ctx.provider_home.clone().unwrap_or_else(default_kimi_home);
+                log::info!(
+                    "kimi adapter: locator initialized (kimi_home={}, pid={})",
+                    kimi_home.display(),
+                    ctx.agent_pid,
+                );
+                let kimi_locator: Arc<KimiLocator> = Arc::new(KimiLocator::new(kimi_home));
+                let locator: Arc<dyn StatusSourceLocator> = kimi_locator.clone();
+                let adapter: Arc<KimiAdapter> = Arc::new(KimiAdapter::with_locator(kimi_locator));
+                Ok(Self {
+                    agent_type: ctx.agent_type,
+                    locator,
+                    decoder: adapter.clone(),
+                    transcript_paths: adapter.clone(),
+                    validator: adapter.clone(),
+                    streamer: adapter,
+                })
+            }
             other => {
                 // NoOp adapter for Aider / Generic — covers every
-                // non-Claude / non-Codex variant. `UnsupportedAgent`
+                // non-Claude / non-Codex / non-Kimi variant. `UnsupportedAgent`
                 // is reserved per the acceptance enum for a future
                 // refusal mode; today's behavior matches the
                 // pre-B' `<dyn AgentAdapter>::for_attach` (always
@@ -213,6 +234,19 @@ mod tests {
         }
     }
 
+    fn kimi_ctx(home: Option<PathBuf>) -> AttachContext {
+        AttachContext {
+            session_id: "sid".to_string(),
+            initial_cwd: PathBuf::from("/tmp/ws"),
+            shell_pid: 1,
+            agent_pid: 2,
+            pty_start: SystemTime::UNIX_EPOCH,
+            agent_type: AgentType::Kimi,
+            provider_home: home,
+            proc_root: None,
+        }
+    }
+
     fn aider_ctx() -> AttachContext {
         AttachContext {
             session_id: "sid".to_string(),
@@ -238,8 +272,22 @@ mod tests {
             .expect("codex binds");
         assert_eq!(codex.agent_type, AgentType::Codex);
 
+        let kimi = AgentBindings::for_attach(&kimi_ctx(Some(PathBuf::from("/home/u/.kimi-code"))))
+            .expect("kimi binds");
+        assert_eq!(kimi.agent_type, AgentType::Kimi);
+
         let noop = AgentBindings::for_attach(&aider_ctx()).expect("noop binds aider");
         assert_eq!(noop.agent_type, AgentType::Aider);
+    }
+
+    /// Kimi `for_attach` with `provider_home == None` falls back to
+    /// `default_kimi_home()` (which itself honors `$KIMI_CODE_HOME`)
+    /// rather than failing, matching the Codex fallback contract.
+    #[test]
+    fn for_attach_kimi_without_provider_home_falls_back_to_default_home() {
+        let bindings =
+            AgentBindings::for_attach(&kimi_ctx(None)).expect("kimi falls back to default home");
+        assert_eq!(bindings.agent_type, AgentType::Kimi);
     }
 
     // NOTE: the B' shared-`Arc` regression test

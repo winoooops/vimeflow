@@ -68,6 +68,12 @@ pub(crate) const AGENT_SPECS: &[AgentSpec] = &[
         home_subdir: Some(".codex"),
     },
     AgentSpec {
+        agent_type: AgentType::Kimi,
+        display_name: "Kimi",
+        binary_names: &["kimi"],
+        home_subdir: Some(".kimi-code"),
+    },
+    AgentSpec {
         agent_type: AgentType::Aider,
         display_name: "Aider",
         binary_names: &["aider"],
@@ -154,6 +160,7 @@ mod tests {
         let _ = |at: AgentType| match at {
             AgentType::ClaudeCode
             | AgentType::Codex
+            | AgentType::Kimi
             | AgentType::Aider
             | AgentType::Generic => spec_for(at),
         };
@@ -164,6 +171,7 @@ mod tests {
         for agent_type in [
             AgentType::ClaudeCode,
             AgentType::Codex,
+            AgentType::Kimi,
             AgentType::Aider,
             AgentType::Generic,
         ] {
@@ -184,10 +192,7 @@ mod tests {
 
     #[test]
     fn agent_type_for_binary_maps_canonical_names() {
-        assert_eq!(
-            agent_type_for_binary("claude"),
-            Some(AgentType::ClaudeCode)
-        );
+        assert_eq!(agent_type_for_binary("claude"), Some(AgentType::ClaudeCode));
         assert_eq!(agent_type_for_binary("codex"), Some(AgentType::Codex));
         assert_eq!(agent_type_for_binary("aider"), Some(AgentType::Aider));
     }

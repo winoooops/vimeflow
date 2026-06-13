@@ -10,6 +10,7 @@ mod bindings;
 pub mod claude_code;
 pub mod codex;
 mod error;
+pub mod kimi;
 mod serde_helpers;
 mod session_lifecycle;
 mod traits;
@@ -437,8 +438,7 @@ mod noop_tests {
             provider_home: Some(PathBuf::from("/home/u/.codex")),
             proc_root: None,
         };
-        let bindings =
-            bindings::AgentBindings::for_attach(&ctx).expect("codex bindings construct");
+        let bindings = bindings::AgentBindings::for_attach(&ctx).expect("codex bindings construct");
         assert!(matches!(bindings.agent_type, AgentType::Codex));
 
         let raw = r#"{"timestamp":"...","type":"session_meta","payload":{"id":"sess","cli_version":"0.128.0"}}

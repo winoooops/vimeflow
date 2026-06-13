@@ -12,6 +12,8 @@ pub enum AgentType {
     ClaudeCode,
     /// Codex (AI coding agent)
     Codex,
+    /// Kimi Code (Moonshot kimi-code CLI)
+    Kimi,
     /// Aider (AI pair programming tool)
     Aider,
     /// Generic/unknown agent

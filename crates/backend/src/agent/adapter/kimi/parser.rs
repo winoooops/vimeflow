@@ -1,0 +1,279 @@
+//! Parser for kimi-code `wire.jsonl` files.
+//!
+//! Streaming, line-folded decoder (mirrors `codex/parser.rs`): each line
+//! deserializes through the lenient [`KimiLineDto`], the fold tracks the
+//! latest model + cumulative usage, and `into_snapshot` composes the
+//! provider-neutral [`StatusSnapshot`]. `Ok` always — a partial trailing
+//! line is dropped, a malformed line is logged + skipped.
+
+use super::transcript_dto::{KimiLineDto, KimiRecordType, KimiUsageDto};
+use super::types::KIMI_CONTEXT_WINDOW_SIZE;
+use crate::agent::adapter::types::StatusSnapshot;
+#[cfg(test)]
+use crate::agent::adapter::types::{stamp_snapshot, ParsedStatus};
+use crate::agent::types::{
+    ContextWindowStatus, CostMetrics, CurrentUsage, RateLimitInfo, RateLimits,
+};
+
+/// Test-only wrapper pairing `parse_wire_snapshot` with `stamp_snapshot`
+/// so tests can assert on the full `AgentStatusEvent` shape. Mirrors
+/// `codex::parser::parse_rollout`.
+#[cfg(test)]
+pub(crate) fn parse_wire(session_id: &str, raw: &str) -> Result<ParsedStatus, String> {
+    let snapshot = parse_wire_snapshot(Some(session_id), raw)?;
+    Ok(ParsedStatus {
+        event: stamp_snapshot(session_id, snapshot),
+    })
+}
+
+/// Decode a kimi-code `wire.jsonl` snapshot into a session-id-free
+/// [`StatusSnapshot`]. `session_id` is diagnostic-only (labels the
+/// malformed-line warn). Tolerates a partial trailing line and skips
+/// malformed lines.
+pub(crate) fn parse_wire_snapshot(
+    session_id: Option<&str>,
+    raw: &str,
+) -> Result<StatusSnapshot, String> {
+    let mut state = KimiFoldState::default();
+    let lines: Vec<&str> = raw.split('\n').collect();
+    let trailing_complete = raw.ends_with('\n');
+
+    for (idx, line) in lines.iter().enumerate() {
+        let is_last = idx + 1 == lines.len();
+        if line.is_empty() {
+            continue;
+        }
+        if is_last && !trailing_complete {
+            continue;
+        }
+
+        match serde_json::from_str::<KimiLineDto>(line) {
+            Ok(parsed) => fold_line(&mut state, parsed),
+            Err(_) => log::warn!(
+                "kimi: skipping malformed wire line (sid={})",
+                session_id.unwrap_or("?"),
+            ),
+        }
+    }
+
+    Ok(state.into_snapshot())
+}
+
+#[derive(Default)]
+struct KimiFoldState {
+    model: String,
+    version: String,
+    latest_usage: Option<KimiUsageDto>,
+}
+
+impl KimiFoldState {
+    fn into_snapshot(self) -> StatusSnapshot {
+        let usage = self.latest_usage.unwrap_or_default();
+        let input_other = usage.input_other.unwrap_or(0);
+        let output = usage.output.unwrap_or(0);
+        let input_cache_read = usage.input_cache_read.unwrap_or(0);
+        let input_cache_creation = usage.input_cache_creation.unwrap_or(0);
+
+        let used = input_other
+            .saturating_add(output)
+            .saturating_add(input_cache_read)
+            .saturating_add(input_cache_creation);
+        let context_window_size = KIMI_CONTEXT_WINDOW_SIZE;
+
+        let used_percentage = if context_window_size == 0 {
+            None
+        } else {
+            Some(clamp_percentage(
+                (used as f64 / context_window_size as f64) * 100.0,
+            ))
+        };
+        let remaining_percentage = used_percentage
+            .map(|used| clamp_percentage(100.0 - used))
+            .unwrap_or(100.0);
+
+        let context_window = ContextWindowStatus {
+            used_percentage,
+            remaining_percentage,
+            context_window_size,
+            total_input_tokens: input_other,
+            total_output_tokens: output,
+            current_usage: Some(CurrentUsage {
+                input_tokens: input_other,
+                output_tokens: output,
+                cache_creation_input_tokens: input_cache_creation,
+                cache_read_input_tokens: input_cache_read,
+            }),
+        };
+
+        let cost = CostMetrics {
+            total_cost_usd: None,
+            total_duration_ms: 0,
+            total_api_duration_ms: 0,
+            total_lines_added: 0,
+            total_lines_removed: 0,
+        };
+
+        let rate_limits = RateLimits {
+            five_hour: RateLimitInfo {
+                used_percentage: 0.0,
+                resets_at: 0,
+            },
+            seven_day: None,
+        };
+
+        let (model_id, model_display_name) = if self.model.is_empty() {
+            ("unknown".to_string(), "unknown".to_string())
+        } else {
+            (self.model.clone(), self.model)
+        };
+
+        StatusSnapshot {
+            agent_session_id: String::new(),
+            model_id,
+            model_display_name,
+            version: self.version,
+            context_window,
+            cost,
+            rate_limits,
+        }
+    }
+}
+
+fn fold_line(state: &mut KimiFoldState, line: KimiLineDto) {
+    match line.record_type() {
+        KimiRecordType::Metadata => {
+            if let Some(version) = line.app_version {
+                state.version = version;
+            }
+        }
+        KimiRecordType::ConfigUpdate => {
+            if let Some(model) = line.model_alias {
+                state.model = model;
+            }
+        }
+        KimiRecordType::UsageRecord => {
+            if let Some(model) = line.model {
+                state.model = model;
+            }
+            if let Some(usage) = line.usage {
+                state.latest_usage = Some(usage);
+            }
+        }
+        KimiRecordType::AppendLoopEvent => {
+            // `step.end` carries a per-step usage snapshot; use it as a
+            // fallback when no `usage.record` has been seen yet.
+            if let Some(event) = line.event {
+                if let Some(usage) = event.usage {
+                    state.latest_usage = Some(usage);
+                }
+            }
+        }
+        KimiRecordType::TurnPrompt | KimiRecordType::Other => {}
+    }
+}
+
+fn clamp_percentage(value: f64) -> f64 {
+    value.clamp(0.0, 100.0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn fixture() -> String {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("src/agent/adapter/kimi/fixtures/sample_wire.jsonl");
+        std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("read fixture {}: {}", path.display(), e))
+    }
+
+    #[test]
+    fn folds_fixture_into_snapshot() {
+        let raw = fixture();
+        let parsed = parse_wire("pty-test", &raw).expect("fixture folds");
+        let event = parsed.event;
+
+        assert_eq!(event.session_id, "pty-test");
+        assert_eq!(event.model_id, "kimi-code/kimi-for-coding");
+        assert_eq!(event.model_display_name, "kimi-code/kimi-for-coding");
+        assert_eq!(event.version, "0.14.2");
+        assert_eq!(event.context_window.context_window_size, 262_144);
+
+        // Latest usage.record is the line-19 turn: inputOther=211,
+        // output=35, inputCacheRead=16128, inputCacheCreation=0.
+        let current = event
+            .context_window
+            .current_usage
+            .expect("current usage present");
+        assert_eq!(current.input_tokens, 211);
+        assert_eq!(current.output_tokens, 35);
+        assert_eq!(current.cache_read_input_tokens, 16128);
+        assert_eq!(current.cache_creation_input_tokens, 0);
+
+        assert_eq!(event.context_window.total_input_tokens, 211);
+        assert_eq!(event.context_window.total_output_tokens, 35);
+
+        // used = 211 + 35 + 16128 + 0 = 16374 → non-zero, small fraction.
+        let used = event
+            .context_window
+            .used_percentage
+            .expect("used percentage");
+        assert!(used > 0.0 && used < 100.0, "used in range, got {}", used);
+
+        assert_eq!(event.cost.total_cost_usd, None);
+        assert_eq!(event.agent_session_id, "");
+    }
+
+    #[test]
+    fn tolerates_truncated_trailing_line() {
+        let raw = concat!(
+            r#"{"type":"config.update","modelAlias":"kimi-code/kimi-for-coding"}"#,
+            "\n",
+            r#"{"type":"usage.record","model":"kimi-code/kimi-for-coding","usage":{"inputOther":100,"output":10,"inputCacheRead":0,"inputCacheCreation":0}}"#,
+            "\n",
+            r#"{"type":"usage.record","model":"kimi-code"#, // partial — no trailing newline
+        );
+        let parsed = parse_wire("pty-trunc", raw).expect("truncated trail tolerated");
+        // The complete second line is the latest folded usage.
+        assert_eq!(parsed.event.context_window.total_input_tokens, 100);
+        assert_eq!(parsed.event.model_id, "kimi-code/kimi-for-coding");
+    }
+
+    #[test]
+    fn empty_wire_returns_defaults() {
+        let parsed = parse_wire("pty-empty", "").expect("empty wire");
+        assert_eq!(parsed.event.model_id, "unknown");
+        assert_eq!(parsed.event.context_window.total_input_tokens, 0);
+        // size is the constant; used_percentage is Some(0.0) for zero usage.
+        assert_eq!(parsed.event.context_window.context_window_size, 262_144);
+        assert_eq!(parsed.event.context_window.used_percentage, Some(0.0));
+    }
+
+    #[test]
+    fn malformed_line_skipped_without_error() {
+        let raw = concat!(
+            r#"{"type":"config.update","modelAlias":"kimi-code/kimi-for-coding"}"#,
+            "\n",
+            "{not json\n",
+            r#"{"type":"usage.record","model":"kimi-code/kimi-for-coding","usage":{"inputOther":5,"output":1,"inputCacheRead":0,"inputCacheCreation":0}}"#,
+            "\n",
+        );
+        let parsed = parse_wire("pty-malformed", raw).expect("malformed line skipped");
+        assert_eq!(parsed.event.model_id, "kimi-code/kimi-for-coding");
+        assert_eq!(parsed.event.context_window.total_input_tokens, 5);
+    }
+
+    #[test]
+    fn step_end_usage_used_when_no_usage_record() {
+        let raw = concat!(
+            r#"{"type":"config.update","modelAlias":"kimi-code/kimi-for-coding"}"#,
+            "\n",
+            r#"{"type":"context.append_loop_event","event":{"type":"step.end","usage":{"inputOther":42,"output":7,"inputCacheRead":3,"inputCacheCreation":1},"finishReason":"tool_use"}}"#,
+            "\n",
+        );
+        let parsed = parse_wire("pty-step", raw).expect("step.end usage folds");
+        assert_eq!(parsed.event.context_window.total_input_tokens, 42);
+        let current = parsed.event.context_window.current_usage.expect("usage");
+        assert_eq!(current.cache_creation_input_tokens, 1);
+    }
+}

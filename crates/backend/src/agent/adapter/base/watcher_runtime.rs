@@ -482,8 +482,7 @@ impl AgentWatcherState {
                     // debug-asserts the match so a future
                     // contributor accidentally passing the wrong
                     // session's guard fails fast in debug builds.
-                    removed_transcript =
-                        ts.stop_with_held_gate(&session_id, &_gate_guard);
+                    removed_transcript = ts.stop_with_held_gate(&session_id, &_gate_guard);
                 }
                 // Always clear: either the new handle owns the entry
                 // (claim transferred) or we just tore it down — either
@@ -961,11 +960,7 @@ pub(crate) fn start_watching(
                 }
             }
             Err(e) => {
-                log::warn!(
-                    "Failed to parse statusline for session {}: {}",
-                    sid,
-                    e
-                );
+                log::warn!("Failed to parse statusline for session {}: {}", sid, e);
                 (TxOutcome::ParseError, None)
             }
         };
@@ -1328,10 +1323,7 @@ pub(crate) fn start_watching(
 
 #[cfg(test)]
 impl WatcherHandle {
-    pub(crate) fn new_for_test(
-        transcript_state: TranscriptState,
-        session_id: String,
-    ) -> Self {
+    pub(crate) fn new_for_test(transcript_state: TranscriptState, session_id: String) -> Self {
         // `agent_type` defaults to `ClaudeCode`. Tests that care about
         // the agent type pass the real value through
         // `AgentWatcherState::insert(sid, handle, agent_type)`, which
@@ -1654,7 +1646,15 @@ mod tests {
         let sink = Arc::new(FakeEventSink::new());
 
         let status = transcript_state
-            .start_or_replace(adapter, sink, sid.clone(), transcript_path, None, None, None)
+            .start_or_replace(
+                adapter,
+                sink,
+                sid.clone(),
+                transcript_path,
+                None,
+                None,
+                None,
+            )
             .expect("failed to start transcript watcher");
         assert_eq!(status, TranscriptStartStatus::Started);
 

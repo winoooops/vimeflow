@@ -150,8 +150,9 @@ mod tests {
         assert_eq!(absent.name.as_deref(), Some("Read"));
         assert!(absent.rest.get("input").is_none(), "absent input → None");
 
-        let nulled: ClaudeToolUseDto = serde_json::from_str(r#"{"id":"i","name":"Read","input":null}"#)
-            .expect("tool_use null input");
+        let nulled: ClaudeToolUseDto =
+            serde_json::from_str(r#"{"id":"i","name":"Read","input":null}"#)
+                .expect("tool_use null input");
         assert_eq!(
             nulled.rest.get("input"),
             Some(&Value::Null),
