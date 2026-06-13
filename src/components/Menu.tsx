@@ -31,8 +31,14 @@ interface MenuContextValue {
   // One-open-submenu coordination owned by the parent Menu.
   openSubmenuId: string | null
   setOpenSubmenu: (id: string | null) => void
-  registerSubmenuRoot: (id: string, node: HTMLElement | null) => void
 }
+
+// Marks each submenu's portal root so the parent Menu's outside-press predicate
+// can tell "inside a submenu" from "truly outside" — the submenu panels are
+// portal siblings of the parent panel, so a press inside one would otherwise
+// read as outside the parent. Ported from ViewSettingsDropdown's
+// [data-view-sub-menu] predicate.
+const SUBMENU_ROOT_ATTR = 'data-menu-submenu'
 
 const MenuContext = createContext<MenuContextValue | null>(null)
 
@@ -211,7 +217,6 @@ const MenuRoot = ({
   const [activeIndex, setActiveIndex] = useState<number | null>(null)
   const [openSubmenuId, setOpenSubmenuId] = useState<string | null>(null)
   const listRef = useRef<(HTMLElement | null)[]>([])
-  const submenuRoots = useRef(new Map<string, HTMLElement>())
 
   const { disabledIndices, useItemIndex } = useMenuRegistry()
 
@@ -223,33 +228,13 @@ const MenuRoot = ({
     }
   }, [])
 
-  const registerSubmenuRoot = useCallback(
-    (id: string, node: HTMLElement | null): void => {
-      if (node) {
-        submenuRoots.current.set(id, node)
-      } else {
-        submenuRoots.current.delete(id)
-      }
-    },
-    []
-  )
-
-  // Outside-press lands inside a registered submenu root => keep the parent
-  // open (the submenu owns its own dismissal). Ported from the
-  // [data-view-sub-menu] predicate in ViewSettingsDropdown.
+  // An outside-press inside an open submenu must NOT close the parent (the
+  // submenu owns its own dismissal); a press anywhere else does. Keyed on the
+  // submenu root attribute, ported from ViewSettingsDropdown.
   const dismissWhen = useCallback((event: MouseEvent): boolean => {
-    const target = event.target as Node | null
-    if (target === null) {
-      return true
-    }
+    const target = event.target as Element | null
 
-    for (const root of submenuRoots.current.values()) {
-      if (root.contains(target)) {
-        return false
-      }
-    }
-
-    return true
+    return target?.closest(`[${SUBMENU_ROOT_ATTR}]`) ? false : true
   }, [])
 
   const {
@@ -289,7 +274,6 @@ const MenuRoot = ({
     close: (): void => handleOpenChange(false),
     openSubmenuId,
     setOpenSubmenu,
-    registerSubmenuRoot,
   }
 
   const triggerProps = getReferenceProps({
@@ -488,6 +472,8 @@ const MenuSubmenu = <T extends string | number>({
     sub.refs.setReference(node)
   }
 
+  const closeSubmenu = (): void => menu.setOpenSubmenu(null)
+
   return (
     <>
       <button
@@ -524,13 +510,11 @@ const MenuSubmenu = <T extends string | number>({
       </button>
       {open ? (
         <SurfacePanel
-          setFloating={(node): void => {
-            sub.refs.setFloating(node)
-            menu.registerSubmenuRoot(submenuId, node)
-          }}
+          setFloating={sub.refs.setFloating}
           style={sub.floatingStyles}
           context={sub.context}
           width={220}
+          {...{ [SUBMENU_ROOT_ATTR]: submenuId }}
           {...sub.getFloatingProps()}
         >
           <div className="py-1 max-h-72 overflow-auto">
@@ -540,7 +524,7 @@ const MenuSubmenu = <T extends string | number>({
               activeIndex={subActiveIndex}
               onSelect={(next): void => {
                 onChange(next)
-                menu.setOpenSubmenu(null)
+                closeSubmenu()
               }}
               getItemProps={sub.getItemProps}
               registerItem={(itemIndex, node): void => {
@@ -575,7 +559,6 @@ const MenuContextMenu = ({
 }: MenuContextMenuProps): ReactElement | null => {
   const [activeIndex, setActiveIndex] = useState<number | null>(null)
   const listRef = useRef<(HTMLElement | null)[]>([])
-  const submenuRoots = useRef(new Map<string, HTMLElement>())
 
   const { disabledIndices, useItemIndex } = useMenuRegistry()
 
@@ -588,17 +571,6 @@ const MenuContextMenu = ({
       onOpenChange(nextOpen)
     },
     [onOpenChange]
-  )
-
-  const registerSubmenuRoot = useCallback(
-    (id: string, node: HTMLElement | null): void => {
-      if (node) {
-        submenuRoots.current.set(id, node)
-      } else {
-        submenuRoots.current.delete(id)
-      }
-    },
-    []
   )
 
   const { refs, floatingStyles, context, getFloatingProps, getItemProps } =
@@ -631,7 +603,6 @@ const MenuContextMenu = ({
     // Context menus carry flat items only; submenu coordination is inert here.
     openSubmenuId: null,
     setOpenSubmenu: (): void => undefined,
-    registerSubmenuRoot,
   }
 
   if (!open) {
