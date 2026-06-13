@@ -314,8 +314,17 @@ const MenuRoot = ({
       onNavigate: setActiveIndex,
       loop: true,
       disabledIndices,
+      focusItemOnOpen: true,
     },
   })
+
+  useEffect(() => {
+    if (!open || activeIndex === null) {
+      return
+    }
+
+    listRef.current[activeIndex]?.focus()
+  }, [activeIndex, open])
 
   const setOpenSubmenu = useCallback((id: string | null): void => {
     setOpenSubmenuId(id)
@@ -520,8 +529,17 @@ const MenuSubmenu = <T extends string | number>({
       activeIndex: subActiveIndex,
       onNavigate: setSubActiveIndex,
       loop: true,
+      focusItemOnOpen: true,
     },
   })
+
+  useEffect(() => {
+    if (!open || subActiveIndex === null) {
+      return
+    }
+
+    subListRef.current[subActiveIndex]?.focus()
+  }, [subActiveIndex, open])
 
   // The submenu row joins the PARENT menu's FloatingList for keyboard nav while
   // also anchoring its own surface — merge the list-item ref with the floating

@@ -74,6 +74,43 @@ describe('Menu core', () => {
     expect(screen.getByRole('menu')).toBeInTheDocument()
   })
 
+  test('pressing Enter on the trigger opens the menu and focuses the first item', async () => {
+    const user = userEvent.setup()
+
+    render(
+      <Menu trigger={<button type="button">Open</button>}>
+        <Menu.Item onSelect={vi.fn()}>First</Menu.Item>
+        <Menu.Item onSelect={vi.fn()}>Second</Menu.Item>
+      </Menu>
+    )
+
+    screen.getByRole('button', { name: 'Open' }).focus()
+    await user.keyboard('{Enter}')
+
+    await screen.findByRole('menu')
+    expect(screen.getByRole('menuitem', { name: 'First' })).toHaveFocus()
+  })
+
+  test('ArrowDown from trigger opens the menu and focuses the first item, then moves focus down', async () => {
+    const user = userEvent.setup()
+
+    render(
+      <Menu trigger={<button type="button">Open</button>}>
+        <Menu.Item onSelect={vi.fn()}>Alpha</Menu.Item>
+        <Menu.Item onSelect={vi.fn()}>Beta</Menu.Item>
+      </Menu>
+    )
+
+    screen.getByRole('button', { name: 'Open' }).focus()
+    await user.keyboard('{ArrowDown}')
+
+    await screen.findByRole('menu')
+    expect(screen.getByRole('menuitem', { name: 'Alpha' })).toHaveFocus()
+
+    await user.keyboard('{ArrowDown}')
+    expect(screen.getByRole('menuitem', { name: 'Beta' })).toHaveFocus()
+  })
+
   test('closes on Escape', async () => {
     const user = userEvent.setup()
 
@@ -322,6 +359,36 @@ describe('Menu.Submenu', () => {
       screen.getByRole('menuitem', { name: /Indicators/ })
     ).toBeInTheDocument()
     expect(screen.getByRole('menuitem', { name: 'bars' })).toBeInTheDocument()
+  })
+
+  test('opening a submenu via keyboard moves focus into the sub-list', async () => {
+    const user = userEvent.setup()
+
+    render(
+      <Menu trigger={<button type="button">Open</button>}>
+        <Menu.Submenu
+          label="Indicators"
+          value="classic"
+          options={indicatorOptions}
+          onChange={vi.fn()}
+        />
+      </Menu>
+    )
+
+    screen.getByRole('button', { name: 'Open' }).focus()
+    await user.keyboard('{ArrowDown}')
+
+    await screen.findByRole('menu')
+    const row = screen.getByRole('menuitem', { name: /Indicators/ })
+    expect(row).toHaveFocus()
+
+    await user.keyboard('{Enter}')
+    expect(row).toHaveAttribute('aria-expanded', 'true')
+
+    const classicOption = await screen.findByRole('menuitem', {
+      name: 'classic',
+    })
+    expect(classicOption).toHaveFocus()
   })
 
   test('opening a second submenu closes the first', async () => {
