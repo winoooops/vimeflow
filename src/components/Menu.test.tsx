@@ -385,6 +385,52 @@ describe('Menu.Submenu', () => {
     expect(screen.getByRole('menuitem', { name: 'bars' })).toBeInTheDocument()
   })
 
+  test('a press inside another Menu instance submenu still dismisses this parent', async () => {
+    const user = userEvent.setup()
+
+    render(
+      <div>
+        <Menu trigger={<button type="button">First</button>}>
+          <Menu.Item onSelect={vi.fn()}>First item</Menu.Item>
+        </Menu>
+        <Menu trigger={<button type="button">Second</button>}>
+          <Menu.Submenu
+            label="Indicators"
+            value="classic"
+            options={indicatorOptions}
+            onChange={vi.fn()}
+          />
+        </Menu>
+      </div>
+    )
+
+    await user.click(screen.getByRole('button', { name: 'First' }))
+    await user.click(screen.getByRole('button', { name: 'Second' }))
+    await user.click(
+      await screen.findByRole('menuitem', { name: /Indicators/ })
+    )
+
+    const subList = screen
+      .getAllByRole('menu')
+      .find((menu) => within(menu).queryByRole('menuitem', { name: 'bars' }))
+    expect(subList).toBeDefined()
+    expect(subList).toHaveAttribute('data-menu-submenu')
+
+    // The first menu should dismiss when the user presses inside the second
+    // menu's submenu, because the outside-press exception is scoped to the
+    // menu's own open submenu id.
+    await user.click(subList!)
+
+    expect(
+      screen.queryByRole('menuitem', { name: 'First item' })
+    ).not.toBeInTheDocument()
+
+    expect(
+      screen.getByRole('menuitem', { name: /Indicators/ })
+    ).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: 'bars' })).toBeInTheDocument()
+  })
+
   test('opening a submenu via keyboard moves focus into the sub-list', async () => {
     const user = userEvent.setup()
 

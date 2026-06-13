@@ -275,6 +275,7 @@ const MenuRoot = ({
   const [open, setOpen] = useState(false)
   const [activeIndex, setActiveIndex] = useState<number | null>(null)
   const [openSubmenuId, setOpenSubmenuId] = useState<string | null>(null)
+  const openSubmenuIdRef = useRef(openSubmenuId)
   const listRef = useRef<(HTMLElement | null)[]>([])
   const labelsRef = useRef<(string | null)[]>([])
 
@@ -288,13 +289,23 @@ const MenuRoot = ({
     }
   }, [])
 
-  // An outside-press inside an open submenu must NOT close the parent (the
-  // submenu owns its own dismissal); a press anywhere else does. Keyed on the
-  // submenu root attribute, ported from ViewSettingsDropdown.
+  // Keep a live ref so the stable dismissWhen callback can read the currently
+  // open submenu id without re-registering the listener each time it changes.
+  openSubmenuIdRef.current = openSubmenuId
+
+  // An outside-press inside this menu's own open submenu must NOT close the
+  // parent (the submenu owns its own dismissal); a press anywhere else does.
+  // Scoped to the current submenu id so a sibling Menu's open submenu does not
+  // keep this parent open.
   const dismissWhen = useCallback((event: MouseEvent): boolean => {
     const target = event.target as Element | null
+    const activeSubmenuId = openSubmenuIdRef.current
 
-    return target?.closest(`[${SUBMENU_ROOT_ATTR}]`) ? false : true
+    if (activeSubmenuId === null) {
+      return true
+    }
+
+    return target?.closest(`[${SUBMENU_ROOT_ATTR}="${activeSubmenuId}"]`) ? false : true
   }, [])
 
   const {
