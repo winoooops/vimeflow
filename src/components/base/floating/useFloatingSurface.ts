@@ -107,14 +107,19 @@ export const useFloatingSurface = (
   const point = isVirtualPoint(opts.anchor) ? opts.anchor : null
   const px = point?.x
   const py = point?.y
+  const wasVirtualPoint = useRef(false)
   useEffect(() => {
     if (px === undefined || py === undefined) {
-      // Leaving virtual-point mode: clear the stale position reference so elements.reference (the trigger) regains precedence.
-      refs.setPositionReference(null)
+      // Only clear when leaving a PRIOR virtual point — never for a plain trigger ref (Dropdown), or its reference is wiped.
+      if (wasVirtualPoint.current) {
+        refs.setPositionReference(null)
+        wasVirtualPoint.current = false
+      }
 
       return
     }
 
+    wasVirtualPoint.current = true
     refs.setPositionReference({
       getBoundingClientRect: (): DOMRect => pointRect({ x: px, y: py }),
     })
