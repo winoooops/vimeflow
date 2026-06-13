@@ -11,6 +11,7 @@
 **Spec:** `docs/superpowers/specs/2026-06-13-floating-surface-primitives-design.md` (read it first — §5 has the contracts, §7 the per-consumer behaviour matrix, §6 the lint rings).
 
 **Conventions every task must follow:**
+
 - Test co-location: each `Foo.tsx` has a sibling `Foo.test.tsx`. Every test file **must explicitly import the Vitest helpers it uses** (e.g. `import { describe, test, expect, vi } from 'vitest'`) — import only what you use (`noUnusedLocals` is on); globals are runtime-only, so `tsc -b` + lint-staged block the commit otherwise.
 - Run a single file: `npx vitest run <path>`. Full gate before each PR: `npm run lint && npm run type-check && npm run test && npm run build`.
 - Material Symbols render as ligature **text** if the name is invalid — verify any new icon in a browser, not just via `textContent`.
@@ -22,33 +23,33 @@
 
 **PR1 — substrate + `Dropdown`**
 
-| Path | Responsibility |
-| --- | --- |
-| `src/components/base/floating/glassSurface.ts` | `GLASS_SURFACE` className constant; re-export `type Placement` from `@floating-ui/react` |
-| `src/components/base/floating/useFloatingSurface.ts` | Hook: positioning + dismiss + role + optional list-nav. Returns refs/styles/context/get*Props. Only `@floating-ui` importer (with SurfacePanel) |
-| `src/components/base/floating/SurfacePanel.tsx` | Portal + glass div + optional `FloatingFocusManager` |
-| `src/components/base/OptionList.tsx` | Renders `DropdownOption[]` rows (label/description, selected highlight) |
-| `src/components/Dropdown.tsx` | Public select; composes the substrate + `OptionList` |
-| `src/features/diff/components/toolbar/Dropdown.tsx` | **Deleted** — diff toolbar imports `@/components/Dropdown` |
-| `eslint.config.js` | Ring 1 (tighten) + Ring 2 (new) |
-| `docs/design/UNIFIED.md`, `rules/typescript/coding-style/CLAUDE.md`, `AGENTS.md` | Doc stubs |
+| Path                                                                             | Responsibility                                                                                                                                   |
+| -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `src/components/base/floating/glassSurface.ts`                                   | `GLASS_SURFACE` className constant; re-export `type Placement` from `@floating-ui/react`                                                         |
+| `src/components/base/floating/useFloatingSurface.ts`                             | Hook: positioning + dismiss + role + optional list-nav. Returns refs/styles/context/get\*Props. Only `@floating-ui` importer (with SurfacePanel) |
+| `src/components/base/floating/SurfacePanel.tsx`                                  | Portal + glass div + optional `FloatingFocusManager`                                                                                             |
+| `src/components/base/OptionList.tsx`                                             | Renders `DropdownOption[]` rows (label/description, selected highlight)                                                                          |
+| `src/components/Dropdown.tsx`                                                    | Public select; composes the substrate + `OptionList`                                                                                             |
+| `src/features/diff/components/toolbar/Dropdown.tsx`                              | **Deleted** — diff toolbar imports `@/components/Dropdown`                                                                                       |
+| `eslint.config.js`                                                               | Ring 1 (tighten) + Ring 2 (new)                                                                                                                  |
+| `docs/design/UNIFIED.md`, `rules/typescript/coding-style/CLAUDE.md`, `AGENTS.md` | Doc stubs                                                                                                                                        |
 
 **PR2 — `Menu` + 3 migrations**
 
-| Path | Responsibility |
-| --- | --- |
-| `src/components/Menu.tsx` | Compound menu: `Menu`, `Menu.Context`, `Menu.Section`, `Menu.Item`, `Menu.Checkbox`, `Menu.Submenu` |
-| `src/features/diff/components/toolbar/ViewSettingsDropdown.tsx` | Rewritten on `Menu` + `Menu.Submenu`; sub-popover hand-roll deleted |
-| `src/features/diff/components/toolbar/PriorityPlus.tsx` | Overflow list rewritten on `Menu` |
-| `src/features/terminal/components/TerminalContextMenu.tsx` | Rewritten on `Menu.Context` |
+| Path                                                            | Responsibility                                                                                      |
+| --------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `src/components/Menu.tsx`                                       | Compound menu: `Menu`, `Menu.Context`, `Menu.Section`, `Menu.Item`, `Menu.Checkbox`, `Menu.Submenu` |
+| `src/features/diff/components/toolbar/ViewSettingsDropdown.tsx` | Rewritten on `Menu` + `Menu.Submenu`; sub-popover hand-roll deleted                                 |
+| `src/features/diff/components/toolbar/PriorityPlus.tsx`         | Overflow list rewritten on `Menu`                                                                   |
+| `src/features/terminal/components/TerminalContextMenu.tsx`      | Rewritten on `Menu.Context`                                                                         |
 
 **PR3 — `Popover` + 2 migrations + docs finalize**
 
-| Path | Responsibility |
-| --- | --- |
-| `src/components/Popover.tsx` | Public dialog card on the substrate (role=dialog, modal focus) |
-| `src/features/diff/components/FinishFeedbackPopover.tsx` | Rewritten on `Popover` |
-| `src/features/diff/components/toolbar/DiffChipToolbar.tsx` | Confirm popover rewritten on `Popover` |
+| Path                                                       | Responsibility                                                 |
+| ---------------------------------------------------------- | -------------------------------------------------------------- |
+| `src/components/Popover.tsx`                               | Public dialog card on the substrate (role=dialog, modal focus) |
+| `src/features/diff/components/FinishFeedbackPopover.tsx`   | Rewritten on `Popover`                                         |
+| `src/features/diff/components/toolbar/DiffChipToolbar.tsx` | Confirm popover rewritten on `Popover`                         |
 
 ---
 
@@ -57,6 +58,7 @@
 ### Task 1: `glassSurface.ts` — chrome constant + Placement re-export
 
 **Files:**
+
 - Create: `src/components/base/floating/glassSurface.ts`
 - Test: `src/components/base/floating/glassSurface.test.ts`
 
@@ -97,6 +99,7 @@ export type { Placement } from '@floating-ui/react'
 ### Task 2: `useFloatingSurface` hook
 
 **Files:**
+
 - Create: `src/components/base/floating/useFloatingSurface.ts`
 - Test: `src/components/base/floating/useFloatingSurface.test.tsx`
 
@@ -123,7 +126,12 @@ test('returns ref setters, styles, context and prop getters', () => {
 
 test('accepts a virtual-point anchor without throwing', () => {
   const { result } = renderHook(() =>
-    useFloatingSurface({ open: true, onOpenChange: () => {}, anchor: { x: 10, y: 20 }, role: 'menu' })
+    useFloatingSurface({
+      open: true,
+      onOpenChange: () => {},
+      anchor: { x: 10, y: 20 },
+      role: 'menu',
+    })
   )
   expect(result.current.floatingStyles).toBeDefined()
 })
@@ -148,6 +156,7 @@ test('accepts a virtual-point anchor without throwing', () => {
 ### Task 3: `SurfacePanel`
 
 **Files:**
+
 - Create: `src/components/base/floating/SurfacePanel.tsx`
 - Test: `src/components/base/floating/SurfacePanel.test.tsx`
 
@@ -159,7 +168,11 @@ import { render, screen } from '@testing-library/react'
 import { SurfacePanel } from './SurfacePanel'
 import { useFloatingSurface } from './useFloatingSurface'
 
-const Harness = ({ focus }: { focus?: false | { initialFocus?: number } }): React.ReactElement => {
+const Harness = ({
+  focus,
+}: {
+  focus?: false | { initialFocus?: number }
+}): React.ReactElement => {
   const fs = useFloatingSurface({ open: true, onOpenChange: () => {} })
   return (
     <SurfacePanel
@@ -194,6 +207,7 @@ describe('SurfacePanel', () => {
 ### Task 4: `base/OptionList`
 
 **Files:**
+
 - Create: `src/components/base/OptionList.tsx`
 - Test: `src/components/base/OptionList.test.tsx`
 
@@ -214,7 +228,15 @@ const OPTIONS = [
 
 test('renders options and reports selection', async () => {
   const onSelect = vi.fn()
-  render(<OptionList options={OPTIONS} value="a" onSelect={onSelect} getItemProps={() => ({})} registerItem={() => {}} />)
+  render(
+    <OptionList
+      options={OPTIONS}
+      value="a"
+      onSelect={onSelect}
+      getItemProps={() => ({})}
+      registerItem={() => {}}
+    />
+  )
   expect(screen.getByText('Apple')).toBeInTheDocument()
   expect(screen.getByText('pome')).toBeInTheDocument()
   await userEvent.click(screen.getByText('Pear'))
@@ -232,6 +254,7 @@ test('renders options and reports selection', async () => {
 ### Task 5: `Dropdown` (public)
 
 **Files:**
+
 - Create: `src/components/Dropdown.tsx`
 - Test: `src/components/Dropdown.test.tsx`
 
@@ -252,14 +275,28 @@ const OPTIONS = [
 
 describe('Dropdown', () => {
   test('opens on trigger click and lists options', async () => {
-    render(<Dropdown label="Theme" value="mocha" options={OPTIONS} onChange={() => {}} />)
+    render(
+      <Dropdown
+        label="Theme"
+        value="mocha"
+        options={OPTIONS}
+        onChange={() => {}}
+      />
+    )
     await userEvent.click(screen.getByRole('button', { name: /Obsidian Lens/ }))
     expect(screen.getByText('Flexoki')).toBeInTheDocument()
   })
 
   test('selecting an option calls onChange and closes', async () => {
     const onChange = vi.fn()
-    render(<Dropdown label="Theme" value="mocha" options={OPTIONS} onChange={onChange} />)
+    render(
+      <Dropdown
+        label="Theme"
+        value="mocha"
+        options={OPTIONS}
+        onChange={onChange}
+      />
+    )
     await userEvent.click(screen.getByRole('button', { name: /Obsidian Lens/ }))
     await userEvent.click(screen.getByText('Flexoki'))
     expect(onChange).toHaveBeenCalledWith('flexoki')
@@ -267,7 +304,14 @@ describe('Dropdown', () => {
   })
 
   test('closes on Escape', async () => {
-    render(<Dropdown label="Theme" value="mocha" options={OPTIONS} onChange={() => {}} />)
+    render(
+      <Dropdown
+        label="Theme"
+        value="mocha"
+        options={OPTIONS}
+        onChange={() => {}}
+      />
+    )
     await userEvent.click(screen.getByRole('button', { name: /Obsidian Lens/ }))
     await userEvent.keyboard('{Escape}')
     expect(screen.queryByText('Flexoki')).not.toBeInTheDocument()
@@ -285,6 +329,7 @@ describe('Dropdown', () => {
 ### Task 6: Migrate the diff toolbar; delete the old `Dropdown` + its ratchet disable
 
 **Files:**
+
 - Delete: `src/features/diff/components/toolbar/Dropdown.tsx`
 - Modify: every importer of the old path → `@/components/Dropdown` (grep below). `ViewSettingsDropdown.tsx`, `DiffChipToolbar.tsx`, and `toolbar/index.ts` import `DropdownOption` from `@/components/Dropdown` (the public re-export) — **not** from `base/`, which Ring 2 forbids (its consumer migration lands in PR2; this only fixes the import).
 
@@ -299,6 +344,7 @@ describe('Dropdown', () => {
 ### Task 7: ESLint rings 1 + 2
 
 **Files:**
+
 - Modify: `eslint.config.js`
 
 - [ ] **Step 1:** Apply **Ring 1** exactly as spec §6 (widen the existing `@floating-ui/react` `@typescript-eslint/no-restricted-imports` from `src/features/**` to `files: ['src/**/*.{ts,tsx}']` with `ignores: ['src/components/base/floating/**', 'src/components/Tooltip.tsx']`; **no `allowTypeImports`**).
