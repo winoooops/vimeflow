@@ -44,6 +44,10 @@ struct InFlightToolCall {
 
 type InFlightToolCalls = HashMap<String, InFlightToolCall>;
 
+/// Dedupe key for supervisor `agent-status` refreshes: model + fresh/output
+/// + cache read/creation tokens (cache moves the context % too).
+type StatusSignature = (String, u64, u64, u64, u64);
+
 /// Validate a raw transcript path (null-byte check + canonicalize-under-root)
 /// against a caller-supplied root. `KimiAdapter` passes the locator's
 /// effective home so the trust root matches the per-process `KIMI_CODE_HOME`
@@ -161,15 +165,21 @@ fn emit_session_status(
     events: &dyn EventSink,
     session_id: &str,
     session_dir: &Path,
-    last: &mut Option<(String, u64, u64)>,
+    last: &mut Option<StatusSignature>,
 ) {
     let Some(snapshot) = super::parser::parse_session_aggregate(session_dir) else {
         return;
     };
+    // Include cache tokens: a sub-agent turn often changes only cache read /
+    // creation, which still moves the context % + cache display — dropping
+    // them here would suppress the refresh and leave the card stale.
+    let usage = snapshot.context_window.current_usage.as_ref();
     let signature = (
         snapshot.model_id.clone(),
         snapshot.context_window.total_input_tokens,
         snapshot.context_window.total_output_tokens,
+        usage.map_or(0, |u| u.cache_read_input_tokens),
+        usage.map_or(0, |u| u.cache_creation_input_tokens),
     );
     if last.as_ref() == Some(&signature) {
         return;
@@ -222,7 +232,7 @@ fn run_session_supervisor(
     let mut children: HashMap<PathBuf, (Arc<AtomicBool>, std::thread::JoinHandle<()>)> =
         HashMap::new();
     let agent_session_id = session_id_from_dir(&session_dir);
-    let mut last_status: Option<(String, u64, u64)> = None;
+    let mut last_status: Option<StatusSignature> = None;
 
     loop {
         // Always tail the main wire; add sub-agent wires as `state.json`

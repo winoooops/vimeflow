@@ -262,7 +262,13 @@ impl KimiLocator {
                 continue;
             }
             let work_len = work_dir.len();
-            let created = entry.session_dir.as_deref().and_then(session_created_at);
+            // Only read a candidate's metadata when its sessionDir canonically
+            // resolves under the kimi home — an index row with a `..`/symlinked
+            // sessionDir must not steer reads outside the trusted home.
+            let created = match entry.session_dir.as_deref() {
+                Some(dir) if path_under(dir, home) => session_created_at(dir),
+                _ => None,
+            };
             matches.push((work_len, created, entry));
         }
 
@@ -468,6 +474,18 @@ fn clock_ticks_per_sec() -> u64 {
         }
     }
     100
+}
+
+/// True when `candidate` canonically resolves under `root` (both sides
+/// canonicalized so `..` / symlinks can't escape). Refuses metadata reads
+/// from an index `sessionDir` outside the trusted kimi home.
+fn path_under(candidate: &str, root: &Path) -> bool {
+    let (Ok(candidate), Ok(root)) =
+        (std::fs::canonicalize(candidate), std::fs::canonicalize(root))
+    else {
+        return false;
+    };
+    candidate.starts_with(root)
 }
 
 /// True when `created` falls in the window a session created by a process
