@@ -67,7 +67,7 @@ export const AgentStatusRail = ({
   return (
     <aside
       data-testid="agent-status-rail"
-      className="flex h-full flex-col items-center bg-surface-container pb-3 pt-2"
+      className="flex h-full flex-col items-center bg-surface pb-3 pt-2"
       style={{ width: RAIL_WIDTH_PX }}
     >
       <button
