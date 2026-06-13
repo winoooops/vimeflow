@@ -90,22 +90,25 @@ pub(crate) fn parse_session_aggregate(session_dir: &Path) -> Option<StatusSnapsh
     Some(snapshot)
 }
 
-struct AgentWire {
-    is_main: bool,
-    wire: PathBuf,
+pub(super) struct AgentWire {
+    pub(super) agent_id: String,
+    pub(super) is_main: bool,
+    pub(super) wire: PathBuf,
 }
 
 /// Enumerate the `agents/*/wire.jsonl` of a session from its `state.json`
 /// `agents{}` map. Each wire is required to live UNDER `session_dir` so a
 /// tampered `homedir` can't redirect reads outside the trusted session.
-fn read_agent_wires(session_dir: &Path) -> Option<Vec<AgentWire>> {
+/// Shared by the status aggregator and the transcript supervisor.
+pub(super) fn read_agent_wires(session_dir: &Path) -> Option<Vec<AgentWire>> {
     let raw = std::fs::read_to_string(session_dir.join("state.json")).ok()?;
     let state: KimiStateDto = serde_json::from_str(&raw).ok()?;
     let mut wires = Vec::new();
-    for entry in state.agents.values() {
+    for (agent_id, entry) in &state.agents {
         let wire = PathBuf::from(&entry.homedir).join("wire.jsonl");
         if wire.starts_with(session_dir) && wire.is_file() {
             wires.push(AgentWire {
+                agent_id: agent_id.clone(),
                 is_main: entry.agent_type.as_deref() == Some("main"),
                 wire,
             });

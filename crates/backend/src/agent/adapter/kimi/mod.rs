@@ -91,6 +91,9 @@ impl TranscriptStreamer for KimiAdapter {
         cwd: Option<PathBuf>,
         transcript_path: PathBuf,
     ) -> Result<TranscriptHandle, String> {
+        // Prefer the locator's resolved process cwd over the watcher's stale
+        // spawn cwd so the emitted `agent-cwd` points at the real project.
+        let cwd = self.locator.resolved_cwd().or(cwd);
         transcript::start_tailing(events, session_id, transcript_path, cwd)
     }
 }

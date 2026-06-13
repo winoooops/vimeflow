@@ -69,6 +69,10 @@ pub(crate) struct KimiLocator {
     // The session dir of the LAST successful `locate`, shared with the
     // decoder (same Arc) so it can read sibling `agents/agent-*` wires.
     resolved_session_dir: Arc<Mutex<Option<PathBuf>>>,
+    // The kimi process's real cwd (`/proc/<pid>/cwd`) from the last
+    // `locate`, shared with the tailer so it can emit `agent-cwd` from the
+    // project the agent is actually in, not the stale spawn cwd.
+    resolved_cwd: Arc<Mutex<Option<PathBuf>>>,
 }
 
 impl KimiLocator {
@@ -84,6 +88,7 @@ impl KimiLocator {
             pty_start,
             proc_root,
             resolved_session_dir: Arc::new(Mutex::new(None)),
+            resolved_cwd: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -94,6 +99,15 @@ impl KimiLocator {
         self.resolved_session_dir
             .lock()
             .expect("resolved_session_dir lock")
+            .clone()
+    }
+
+    /// The kimi process's resolved cwd from the last `locate`. `None` until
+    /// the first resolve.
+    pub(crate) fn resolved_cwd(&self) -> Option<PathBuf> {
+        self.resolved_cwd
+            .lock()
+            .expect("resolved_cwd lock")
             .clone()
     }
 
@@ -362,6 +376,7 @@ impl StatusSourceLocator for KimiLocator {
         // updates never reach PtyState). Prefer the kimi process's real
         // `/proc/<pid>/cwd`, since kimi derives its session workDir from there.
         let cwd = self.process_cwd(cwd);
+        *self.resolved_cwd.lock().expect("resolved_cwd lock") = Some(cwd.clone());
         kdbg(&format!("LOCATE process_cwd={}", cwd.display()));
 
         for attempt in 0..KIMI_BIND_RETRY_MAX_ATTEMPTS {

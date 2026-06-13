@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use std::fs::{self, File};
 use std::io::{self, BufReader};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -18,12 +18,19 @@ use super::transcript_dto::{KimiLineDto, KimiLoopEventType, KimiRecordType};
 use crate::agent::adapter::base::{TranscriptDecoder, TranscriptHandle, TranscriptTailService};
 use crate::agent::adapter::claude_code::test_runners::timestamps::compute_duration_ms;
 use crate::agent::adapter::types::ValidateTranscriptError;
-use crate::agent::events::{emit_agent_tool_call, emit_agent_turn, record_lifecycle};
-use crate::agent::types::{AgentPhase, AgentToolCallEvent, AgentTurnEvent, ToolCallStatus};
+use crate::agent::events::{emit_agent_cwd, emit_agent_tool_call, emit_agent_turn, record_lifecycle};
+use crate::agent::types::{
+    AgentCwdEvent, AgentPhase, AgentToolCallEvent, AgentTurnEvent, ToolCallStatus,
+};
 use crate::runtime::EventSink;
 
 /// Maximum length for the args summary string.
 const MAX_ARGS_LEN: usize = 1024;
+
+/// How often the session supervisor rescans `state.json` for newly-spawned
+/// sub-agents, and the tick at which it checks the stop flag while waiting.
+const KIMI_AGENT_SCAN_INTERVAL_MS: u64 = 750;
+const KIMI_SCAN_TICK_MS: u64 = 250;
 
 struct InFlightToolCall {
     started_at: Instant,
@@ -101,25 +108,131 @@ pub(super) fn start_tailing(
     transcript_path: PathBuf,
     cwd: Option<PathBuf>,
 ) -> Result<TranscriptHandle, String> {
-    let file = File::open(&transcript_path).map_err(|e| {
-        format!(
-            "Failed to open kimi wire transcript: {}: {}",
-            transcript_path.display(),
-            e
-        )
-    })?;
-
     let stop_flag = Arc::new(AtomicBool::new(false));
     let stop_clone = stop_flag.clone();
 
-    let decoder = KimiTranscriptDecoder::new(events, session_id, cwd);
-    let service = TranscriptTailService::new(Box::new(decoder), "kimi wire transcript");
+    // `transcript_path` is `<session>/agents/main/wire.jsonl`; three up is the
+    // session dir, which lets the supervisor follow EVERY `agents/*/wire.jsonl`
+    // so a sub-agent's tool calls / turns surface alongside main's.
+    let session_dir = transcript_path
+        .parent()
+        .and_then(Path::parent)
+        .and_then(Path::parent)
+        .map(Path::to_path_buf);
+
+    let Some(session_dir) = session_dir else {
+        // No resolvable session dir — tail the single wire (legacy path).
+        let file = open_wire(&transcript_path)?;
+        let decoder = KimiTranscriptDecoder::new(events, session_id, String::new());
+        let service = TranscriptTailService::new(Box::new(decoder), "kimi wire transcript");
+        let join_handle = std::thread::spawn(move || {
+            service.run(BufReader::new(file), stop_clone);
+        });
+        return Ok(TranscriptHandle::new(stop_flag, join_handle));
+    };
+
+    // Surface the resolved workspace cwd once so the pane / file tree / git
+    // follow the kimi project rather than the stale spawn cwd.
+    emit_initial_cwd(events.as_ref(), &session_id, cwd.as_deref());
 
     let join_handle = std::thread::spawn(move || {
-        service.run(BufReader::new(file), stop_clone);
+        run_session_supervisor(events, session_id, session_dir, transcript_path, stop_clone);
     });
-
     Ok(TranscriptHandle::new(stop_flag, join_handle))
+}
+
+fn open_wire(path: &Path) -> Result<File, String> {
+    File::open(path).map_err(|e| {
+        format!(
+            "Failed to open kimi wire transcript: {}: {}",
+            path.display(),
+            e
+        )
+    })
+}
+
+/// Emit a single `agent-cwd` from the resolved kimi cwd so the rest of the
+/// workspace tracks the project the agent is actually in.
+fn emit_initial_cwd(events: &dyn EventSink, session_id: &str, cwd: Option<&Path>) {
+    let Some(cwd) = cwd.and_then(Path::to_str) else {
+        return;
+    };
+    let event = AgentCwdEvent {
+        session_id: session_id.to_string(),
+        cwd: cwd.to_string(),
+    };
+    if let Err(e) = emit_agent_cwd(events, &event) {
+        log::warn!("Failed to emit kimi agent-cwd event: {}", e);
+    }
+}
+
+/// Follow every `agents/*/wire.jsonl` of a kimi session: discover agents from
+/// `state.json` (sub-agents appear when a turn delegates), spawn a per-agent
+/// tail thread, and tear them all down on stop. A sub-agent's tool ids are
+/// prefixed with its agent id so they don't collide with main's in the feed.
+fn run_session_supervisor(
+    events: Arc<dyn EventSink>,
+    session_id: String,
+    session_dir: PathBuf,
+    main_wire: PathBuf,
+    stop: Arc<AtomicBool>,
+) {
+    // Keyed by wire path so the always-tailed main wire is never double-spawned
+    // when `state.json` lists it too.
+    let mut children: HashMap<PathBuf, (Arc<AtomicBool>, std::thread::JoinHandle<()>)> =
+        HashMap::new();
+
+    loop {
+        // Always tail the main wire; add sub-agent wires as `state.json`
+        // reveals them (a `/init`-style delegation spawns `agent-0`
+        // mid-session). When there is no `state.json`, only main is tailed.
+        let mut targets: Vec<(PathBuf, String)> = vec![(main_wire.clone(), String::new())];
+        if let Some(wires) = super::parser::read_agent_wires(&session_dir) {
+            for wire in wires {
+                if wire.wire == main_wire {
+                    continue;
+                }
+                let prefix = if wire.is_main {
+                    String::new()
+                } else {
+                    format!("{}:", wire.agent_id)
+                };
+                targets.push((wire.wire, prefix));
+            }
+        }
+        for (wire, prefix) in targets {
+            if children.contains_key(&wire) {
+                continue;
+            }
+            let Ok(file) = File::open(&wire) else {
+                continue;
+            };
+            let decoder = KimiTranscriptDecoder::new(events.clone(), session_id.clone(), prefix);
+            let service = TranscriptTailService::new(Box::new(decoder), "kimi wire transcript");
+            let child_stop = Arc::new(AtomicBool::new(false));
+            let child_stop_run = child_stop.clone();
+            let join = std::thread::spawn(move || {
+                service.run(BufReader::new(file), child_stop_run);
+            });
+            children.insert(wire, (child_stop, join));
+        }
+
+        // Poll for newly-spawned sub-agents; check stop on a short tick so
+        // teardown stays prompt.
+        let mut slept = 0;
+        while slept < KIMI_AGENT_SCAN_INTERVAL_MS && !stop.load(Ordering::Relaxed) {
+            std::thread::sleep(std::time::Duration::from_millis(KIMI_SCAN_TICK_MS));
+            slept += KIMI_SCAN_TICK_MS;
+        }
+        if stop.load(Ordering::Relaxed) {
+            break;
+        }
+    }
+
+    for (_, (child_stop, join)) in children {
+        child_stop.store(true, Ordering::Relaxed);
+        let _ = join.join();
+    }
 }
 
 /// Per-session kimi decoder: owns the in-flight tool-call map, turn count,
@@ -128,8 +241,10 @@ pub(super) fn start_tailing(
 struct KimiTranscriptDecoder {
     events: Arc<dyn EventSink>,
     session_id: String,
-    #[allow(dead_code)] // reserved for cwd emission once kimi exposes a cwd channel
-    cwd: Option<PathBuf>,
+    /// Prefix applied to emitted `tool_use_id`s so a sub-agent's tool calls
+    /// can't collide with main's (or another sub-agent's) in the shared feed.
+    /// Empty for the `main` agent.
+    agent_prefix: String,
     in_flight: InFlightToolCalls,
     num_turns: u32,
     /// kimi-code's own session identity is not present in `wire.jsonl`; the
@@ -140,17 +255,22 @@ struct KimiTranscriptDecoder {
 }
 
 impl KimiTranscriptDecoder {
-    fn new(events: Arc<dyn EventSink>, session_id: String, cwd: Option<PathBuf>) -> Self {
+    fn new(events: Arc<dyn EventSink>, session_id: String, agent_prefix: String) -> Self {
         Self {
             events,
             session_id,
-            cwd,
+            agent_prefix,
             in_flight: HashMap::new(),
             num_turns: 0,
             last_phase: None,
             replay_phase: None,
             replay_done: false,
         }
+    }
+
+    /// Namespace a wire `tool_call_id` with this agent's prefix.
+    fn tool_use_id(&self, call_id: &str) -> String {
+        format!("{}{}", self.agent_prefix, call_id)
     }
 }
 
@@ -252,7 +372,7 @@ impl KimiTranscriptDecoder {
 
                 self.emit_tool_call(AgentToolCallEvent {
                     session_id: self.session_id.clone(),
-                    tool_use_id: call_id.to_string(),
+                    tool_use_id: self.tool_use_id(call_id),
                     tool,
                     args,
                     status: ToolCallStatus::Running,
@@ -270,7 +390,7 @@ impl KimiTranscriptDecoder {
                 };
                 self.emit_tool_call(AgentToolCallEvent {
                     session_id: self.session_id.clone(),
-                    tool_use_id: call_id.to_string(),
+                    tool_use_id: self.tool_use_id(call_id),
                     tool: call.tool,
                     args: call.args,
                     status: ToolCallStatus::Done,
@@ -499,9 +619,68 @@ mod tests {
     }
 
     #[test]
+    fn supervisor_surfaces_sub_agent_tool_calls() {
+        let sink = Arc::new(FakeEventSink::new());
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let session = tmp
+            .path()
+            .join("sessions")
+            .join("wd_x")
+            .join("session_y");
+        let main_dir = session.join("agents").join("main");
+        let sub_dir = session.join("agents").join("agent-0");
+        std::fs::create_dir_all(&main_dir).expect("main dir");
+        std::fs::create_dir_all(&sub_dir).expect("sub dir");
+
+        // main only opens a user turn; the sub-agent does the tool work.
+        std::fs::write(
+            main_dir.join("wire.jsonl"),
+            "{\"type\":\"turn.prompt\",\"origin\":{\"kind\":\"user\"}}\n",
+        )
+        .expect("main wire");
+        std::fs::write(
+            sub_dir.join("wire.jsonl"),
+            "{\"type\":\"context.append_loop_event\",\"time\":1781345364384,\"event\":{\"type\":\"tool.call\",\"toolCallId\":\"t1\",\"name\":\"Read\",\"args\":{\"path\":\"a\"}}}\n\
+             {\"type\":\"context.append_loop_event\",\"time\":1781345364999,\"event\":{\"type\":\"tool.result\",\"toolCallId\":\"t1\"}}\n",
+        )
+        .expect("sub wire");
+        std::fs::write(
+            session.join("state.json"),
+            format!(
+                "{{\"agents\":{{\"main\":{{\"homedir\":\"{}\",\"type\":\"main\"}},\"agent-0\":{{\"homedir\":\"{}\",\"type\":\"sub\"}}}}}}",
+                main_dir.display(),
+                sub_dir.display(),
+            ),
+        )
+        .expect("state.json");
+
+        let main_wire = main_dir.join("wire.jsonl");
+        let handle = start_tailing(sink.clone(), "sid".to_string(), main_wire, None)
+            .expect("tailing starts");
+
+        assert!(
+            sink.wait_for_count("agent-tool-call", 2, Duration::from_secs(5)),
+            "sub-agent START + DONE must surface",
+        );
+        assert!(
+            sink.wait_for_count("agent-turn", 1, Duration::from_secs(5)),
+            "main's user turn must surface",
+        );
+        handle.stop();
+
+        let calls = tool_call_events(&sink);
+        assert_eq!(calls.len(), 2);
+        // The sub-agent's tool id is namespaced so it can't collide with main.
+        assert_eq!(calls[0]["toolUseId"], "agent-0:t1");
+        assert_eq!(calls[0]["tool"], "Read");
+        assert_eq!(calls[1]["toolUseId"], "agent-0:t1");
+        assert_eq!(calls[1]["status"], "done");
+    }
+
+    #[test]
     fn tool_call_timestamp_derives_from_wire_time_not_now() {
         let sink = Arc::new(FakeEventSink::new());
-        let mut decoder = KimiTranscriptDecoder::new(sink.clone(), "sid".into(), None);
+        let mut decoder = KimiTranscriptDecoder::new(sink.clone(), "sid".into(), String::new());
         // Mirrors the fixture's tool.call envelope `time` (epoch-ms).
         decoder.decode_line(
             r#"{"type":"context.append_loop_event","time":1781345364384,"event":{"type":"tool.call","toolCallId":"t1","name":"Read","args":{"path":"a"}}}"#,
@@ -517,7 +696,7 @@ mod tests {
     #[test]
     fn injection_turn_prompt_does_not_count() {
         let sink = Arc::new(FakeEventSink::new());
-        let mut decoder = KimiTranscriptDecoder::new(sink.clone(), "sid".into(), None);
+        let mut decoder = KimiTranscriptDecoder::new(sink.clone(), "sid".into(), String::new());
         decoder.decode_line(
             r#"{"type":"turn.prompt","input":[{"type":"text","text":"x"}],"origin":{"kind":"injection","variant":"permission_mode"}}"#,
         );
@@ -527,7 +706,7 @@ mod tests {
     #[test]
     fn tool_call_dedups_by_id() {
         let sink = Arc::new(FakeEventSink::new());
-        let mut decoder = KimiTranscriptDecoder::new(sink.clone(), "sid".into(), None);
+        let mut decoder = KimiTranscriptDecoder::new(sink.clone(), "sid".into(), String::new());
         let start = r#"{"type":"context.append_loop_event","event":{"type":"tool.call","toolCallId":"t1","name":"Read","args":{"path":"a"},"display":{"path":"/tmp/a"}}}"#;
         decoder.decode_line(start);
         decoder.decode_line(start);
