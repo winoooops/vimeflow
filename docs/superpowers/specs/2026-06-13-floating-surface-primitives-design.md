@@ -191,11 +191,12 @@ Each ring is a `no-restricted-imports` block extending #440's existing rules (fl
 }
 ```
 
-**Ring 2 — `@/components/base/**` only within `src/components/`.** Ban its import from features (alias + relative spellings), mirroring #440's `regex` rule for the canonical spelling:
+**Ring 2 — `@/components/base/**` only within `src/components/`.** Ban its import from every module outside `src/components/` — not just features (so `App.tsx`, `hooks/`, `lib/`, `theme/` are covered too) — alias + relative spellings, mirroring #440's `regex` rule for the canonical spelling:
 
 ```js
 {
-  files: ['src/features/**/*.{ts,tsx}'],
+  files: ['src/**/*.{ts,tsx}'],
+  ignores: ['src/components/**'], // base/ is package-private to ALL of src/components, not only fenced from features
   rules: {
     'no-restricted-imports': ['error', {
       patterns: [{ group: ['@/components/base', '@/components/base/**', '**/components/base', '**/components/base/**'],
