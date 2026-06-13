@@ -1,6 +1,9 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import type { FileNode } from '../types'
-import { createFileSystemService } from '../services/fileSystemService'
+import {
+  createFileSystemService,
+  type IFileSystemService,
+} from '../services/fileSystemService'
 
 export interface UseFileTreeResult {
   nodes: FileNode[]
@@ -40,12 +43,16 @@ const normalizeToTilde = (path: string): string => {
   return path
 }
 
-export const useFileTree = (externalCwd: string): UseFileTreeResult => {
+export const useFileTree = (
+  externalCwd: string,
+  providedService?: IFileSystemService
+): UseFileTreeResult => {
   const [currentPath, setCurrentPath] = useState(normalizeToTilde(externalCwd))
   const [nodes, setNodes] = useState<FileNode[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const service = useMemo(() => createFileSystemService(), [])
+  const defaultService = useMemo(() => createFileSystemService(), [])
+  const service = providedService ?? defaultService
   // Generation counter — incremented on every load to discard stale responses
   const generation = useRef(0)
 

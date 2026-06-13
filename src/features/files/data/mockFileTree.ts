@@ -53,12 +53,21 @@ export const mockBreadcrumbs: string[] = ['vibm-project', 'src', 'middleware']
  * Context menu action definitions.
  */
 export const contextMenuActions = [
-  { label: 'Rename', icon: 'edit' },
-  { label: 'Delete', icon: 'delete', variant: 'danger' as const },
+  { id: 'rename' as const, label: 'Rename', icon: 'edit' },
+  {
+    id: 'delete' as const,
+    label: 'Delete',
+    icon: 'delete',
+    variant: 'danger' as const,
+  },
   { label: '', icon: '', separator: true },
-  { label: 'Copy Path', icon: 'content_copy' },
-  { label: 'Open in Editor', icon: 'open_in_new' },
-  { label: 'View Diff', icon: 'difference' },
+  { id: 'copy-path' as const, label: 'Copy Path', icon: 'content_copy' },
+  {
+    id: 'open-in-editor' as const,
+    label: 'Open in Editor',
+    icon: 'open_in_new',
+  },
+  { id: 'view-diff' as const, label: 'View Diff', icon: 'difference' },
 ]
 
 /**

@@ -186,6 +186,36 @@ const SIDEBAR_TAB_ITEMS: readonly SidebarTabItem<SidebarTab>[] = [
   { id: 'files', label: 'FILES', icon: 'folder_open' },
 ]
 
+const normalizePathForComparison = (path: string): string =>
+  path.replace(/\\/g, '/').replace(/\/+$/u, '')
+
+const relativePathFromCwd = (path: string, cwd: string): string | null => {
+  const normalizedPath = normalizePathForComparison(path)
+  const normalizedCwd = normalizePathForComparison(cwd)
+
+  if (normalizedCwd === '') {
+    return null
+  }
+
+  if (normalizedPath === normalizedCwd) {
+    return ''
+  }
+
+  if (normalizedCwd === '/') {
+    return normalizedPath.startsWith('/')
+      ? normalizedPath.replace(/^\/+/u, '')
+      : null
+  }
+
+  const cwdPrefix = `${normalizedCwd}/`
+
+  if (!normalizedPath.startsWith(cwdPrefix)) {
+    return null
+  }
+
+  return normalizedPath.slice(cwdPrefix.length)
+}
+
 const mainAutoCollapseThreshold = (workspaceWidth: number): number =>
   clampSize(
     Math.round(workspaceWidth * MAIN_AUTO_COLLAPSE_RATIO),
@@ -1443,6 +1473,63 @@ export const WorkspaceView = (): ReactElement => {
     ]
   )
 
+  const handleFileViewDiff = useCallback(
+    (node: { id: string; type: 'file' | 'folder' }): void => {
+      if (node.type !== 'file') {
+        return
+      }
+
+      if (activeCwd === '.' || activeCwd === '~' || activeCwd.length === 0) {
+        setFileError('Cannot view diff without an active workspace directory')
+
+        return
+      }
+
+      // The backend normalizes git status/diff to the repository toplevel, so
+      // derive repo-root-relative paths when we know the toplevel. Fall back
+      // to cwd-relative for directories that are not inside a git repo.
+      const repoRoot =
+        gitStatus.filesCwd === activeCwd ? gitStatus.repoRoot : null
+
+      const relativePath =
+        repoRoot && repoRoot.length > 0
+          ? relativePathFromCwd(node.id, repoRoot)
+          : relativePathFromCwd(node.id, activeCwd)
+
+      if (!relativePath) {
+        setFileError(`Cannot view diff outside ${activeCwd}: ${node.id}`)
+
+        return
+      }
+
+      const statusFile =
+        gitStatus.filesCwd === activeCwd
+          ? gitStatus.files.find((file) => file.path === relativePath)
+          : undefined
+
+      if (gitStatus.filesCwd === activeCwd && !statusFile) {
+        setFileError(`No uncommitted changes found for ${relativePath}`)
+
+        return
+      }
+
+      setFileError(null)
+      setSelectedDiffFile({
+        path: relativePath,
+        staged: statusFile?.staged ?? false,
+        cwd: activeCwd,
+      })
+      openDock('diff')
+    },
+    [
+      activeCwd,
+      gitStatus.files,
+      gitStatus.filesCwd,
+      gitStatus.repoRoot,
+      openDock,
+    ]
+  )
+
   // Open a test file from the activity panel. Mirrors handleFileSelect's
   // dirty-state guard so clicking a test result row never silently
   // discards unsaved editor changes — the same unsaved-dialog flow
@@ -1974,6 +2061,7 @@ export const WorkspaceView = (): ReactElement => {
                     hidden={activeTab !== 'files'}
                     cwd={fileExplorerCwd}
                     onFileSelect={handleFileSelect}
+                    onViewDiff={handleFileViewDiff}
                   />
                 </div>
               }

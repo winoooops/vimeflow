@@ -266,6 +266,8 @@ describe('WorkspaceView - Command Palette Integration', () => {
       listDir: vi.fn().mockResolvedValue([]),
       readFile: vi.fn().mockResolvedValue(''),
       writeFile: vi.fn().mockResolvedValue(undefined),
+      renamePath: vi.fn().mockResolvedValue(undefined),
+      deletePath: vi.fn().mockResolvedValue(undefined),
     })
 
     // Mock terminalService

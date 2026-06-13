@@ -41,6 +41,17 @@ describe('FilesView', () => {
     )
   })
 
+  test('forwards onViewDiff to FileExplorer', () => {
+    const onViewDiff = vi.fn()
+
+    render(<FilesView cwd="~" onFileSelect={vi.fn()} onViewDiff={onViewDiff} />)
+
+    expect(FileExplorerMock).toHaveBeenCalledWith(
+      expect.objectContaining({ onViewDiff }),
+      undefined
+    )
+  })
+
   test('hidden=true applies the `hidden` Tailwind utility class on the testid root', () => {
     render(<FilesView cwd="~" onFileSelect={vi.fn()} hidden />)
 

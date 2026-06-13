@@ -12,6 +12,13 @@ export interface ChangedFile {
   staged: boolean // whether file is in the index
 }
 
+/** Response from the git_status backend command. */
+export interface GitStatusResponse {
+  files: ChangedFile[]
+  /** Absolute path to the repository toplevel; empty when cwd is not inside a git repo. */
+  repoRoot: string
+}
+
 /** Selected diff file with cwd tag (for cross-cwd staleness detection) */
 export interface SelectedDiffFile {
   path: string
