@@ -425,6 +425,17 @@ mod tests {
     }
 
     #[test]
+    fn detects_kimi_agent() {
+        let cmdline = vec!["/home/will/.kimi-code/bin/kimi".to_string()];
+        let binary = extract_binary_name(&cmdline).unwrap();
+        assert_eq!(binary, "kimi");
+        assert_eq!(
+            crate::agent::config::agent_type_for_binary(&binary),
+            Some(AgentType::Kimi)
+        );
+    }
+
+    #[test]
     fn detects_aider_agent() {
         let cmdline = vec!["aider".to_string(), "--model".to_string()];
         let binary = extract_binary_name(&cmdline).unwrap();

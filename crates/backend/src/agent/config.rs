@@ -194,6 +194,7 @@ mod tests {
     fn agent_type_for_binary_maps_canonical_names() {
         assert_eq!(agent_type_for_binary("claude"), Some(AgentType::ClaudeCode));
         assert_eq!(agent_type_for_binary("codex"), Some(AgentType::Codex));
+        assert_eq!(agent_type_for_binary("kimi"), Some(AgentType::Kimi));
         assert_eq!(agent_type_for_binary("aider"), Some(AgentType::Aider));
     }
 
