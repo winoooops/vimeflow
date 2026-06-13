@@ -10,6 +10,9 @@ import {
   useState,
   type CSSProperties,
   type HTMLProps,
+  type MouseEvent as ReactMouseEvent,
+  type MouseEventHandler,
+  type KeyboardEventHandler,
   type MutableRefObject,
   type ReactElement,
   type ReactNode,
@@ -340,9 +343,29 @@ const MenuRoot = ({
     setOpenSubmenu,
   }
 
+  // Feed the consumer's trigger handlers into getReferenceProps so floating-ui
+  // composes them (consumer first, then floating). Merge the consumer's ref with
+  // the floating reference ref so both receive the anchor DOM node.
+  const triggerElement = trigger as ReactElement<{
+    onClick?: MouseEventHandler
+    onKeyDown?: KeyboardEventHandler
+    ref?: ((node: Element | null) => void) | null
+  }>
+  const consumerOnClick = triggerElement.props.onClick
+  const consumerOnKeyDown = triggerElement.props.onKeyDown
+
+  const mergedTriggerRef = useMergeRefs([
+    refs.setReference,
+    triggerElement.props.ref ?? null,
+  ])
+
   const triggerProps = getReferenceProps({
-    ref: refs.setReference,
-    onClick: (): void => handleOpenChange(!open),
+    ref: mergedTriggerRef,
+    onClick: (event: ReactMouseEvent): void => {
+      consumerOnClick?.(event)
+      handleOpenChange(!open)
+    },
+    onKeyDown: consumerOnKeyDown,
   })
 
   return (
@@ -541,14 +564,28 @@ const MenuSubmenu = <T extends string | number>({
     subListRef.current[subActiveIndex]?.focus()
   }, [subActiveIndex, open])
 
+  // Captures the row button DOM node so focus can return to it after the
+  // submenu closes (keyboard selection leaves focus on document.body otherwise).
+  const rowButtonRef = useRef<HTMLElement | null>(null)
+
+  const captureRowButton = useCallback((node: HTMLElement | null): void => {
+    rowButtonRef.current = node
+  }, [])
+
   // The submenu row joins the PARENT menu's FloatingList for keyboard nav while
   // also anchoring its own surface — merge the list-item ref with the floating
   // reference ref onto one button.
-  const { index, ref: rowRef } = useMenuRow(false, label, sub.refs.setReference)
+  const { index, ref: rowRef } = useMenuRow(false, label, (node) => {
+    captureRowButton(node)
+    sub.refs.setReference(node)
+  })
 
   const current = options.find((option) => option.value === value)
 
-  const closeSubmenu = (): void => menu.setOpenSubmenu(null)
+  const closeSubmenu = (): void => {
+    menu.setOpenSubmenu(null)
+    rowButtonRef.current?.focus()
+  }
 
   return (
     <>

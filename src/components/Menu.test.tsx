@@ -1,4 +1,4 @@
-import { type ReactElement, useState } from 'react'
+import { type ReactElement, createRef, useState } from 'react'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, test, vi } from 'vitest'
@@ -185,6 +185,30 @@ describe('Menu core', () => {
     const icon = item.querySelector('.material-symbols-outlined')
     expect(icon).toBeInTheDocument()
     expect(within(item).getByText('Ctrl+C')).toBeInTheDocument()
+  })
+
+  test('composes consumer trigger onClick and ref with floating props', async () => {
+    const user = userEvent.setup()
+    const spy = vi.fn()
+    const refSpy = createRef<HTMLButtonElement>()
+
+    render(
+      <Menu
+        trigger={
+          <button type="button" onClick={spy} ref={refSpy}>
+            Open
+          </button>
+        }
+      >
+        <Menu.Item onSelect={vi.fn()}>First</Menu.Item>
+      </Menu>
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Open' }))
+
+    expect(spy).toHaveBeenCalledTimes(1)
+    expect(await screen.findByRole('menu')).toBeInTheDocument()
+    expect(refSpy.current).toBeInstanceOf(HTMLButtonElement)
   })
 })
 
@@ -423,6 +447,43 @@ describe('Menu.Submenu', () => {
       screen.queryByRole('menuitem', { name: 'bars' })
     ).not.toBeInTheDocument()
     expect(screen.getByRole('menuitem', { name: 'wrap' })).toBeInTheDocument()
+  })
+
+  test('selecting a submenu option returns focus to the submenu row and keeps the parent open', async () => {
+    const user = userEvent.setup()
+
+    render(
+      <Menu trigger={<button type="button">Open</button>}>
+        <Menu.Submenu
+          label="Indicators"
+          value="classic"
+          options={indicatorOptions}
+          onChange={vi.fn()}
+        />
+      </Menu>
+    )
+
+    screen.getByRole('button', { name: 'Open' }).focus()
+    await user.keyboard('{ArrowDown}')
+
+    await screen.findByRole('menu')
+    const row = screen.getByRole('menuitem', { name: /Indicators/ })
+    expect(row).toHaveFocus()
+
+    await user.keyboard('{Enter}')
+    expect(row).toHaveAttribute('aria-expanded', 'true')
+
+    const barsOption = await screen.findByRole('menuitem', { name: 'bars' })
+    barsOption.focus()
+    await user.keyboard('{Enter}')
+
+    // Sub-list is gone; focus returns to the submenu row; parent menu stays open.
+    expect(
+      screen.queryByRole('menuitem', { name: 'bars' })
+    ).not.toBeInTheDocument()
+
+    expect(screen.getByRole('menuitem', { name: /Indicators/ })).toHaveFocus()
+    expect(screen.getByRole('menu')).toBeInTheDocument()
   })
 })
 
