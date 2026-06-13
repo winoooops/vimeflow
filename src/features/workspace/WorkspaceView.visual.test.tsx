@@ -226,6 +226,14 @@ describe('WorkspaceView - Visual Verification (Feature #20)', () => {
       expect(panel.className).toContain('bg-surface')
       expect(panel.className).not.toContain('bg-surface-container')
     })
+
+    test('Activity panel shell has a subtle left hairline divider', () => {
+      render(<WorkspaceView />)
+      const activityPanelShell = screen.getByTestId('activity-panel-shell')
+
+      expect(activityPanelShell.className).toContain('border-l')
+      expect(activityPanelShell.className).toContain('border-outline-variant/25')
+    })
   })
 
   describe('No-Line Rule Compliance', () => {

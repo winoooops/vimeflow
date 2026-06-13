@@ -3,7 +3,7 @@ id: ui-visual-regression
 category: code-quality
 created: 2026-06-11
 last_updated: 2026-06-13
-ref_count: 2
+ref_count: 3
 ---
 
 # UI Visual Regression
@@ -78,4 +78,13 @@ test case for the state that triggers the collision.
 - **File:** `src/features/workspace/WorkspaceView.tsx`
 - **Finding:** The new `border-l border-outline-variant` on the `activity-panel-shell` divider used the token at full opacity while every other workspace hairline uses an opacity modifier (`/25` or lower). This made the right panel edge read visibly heavier than the rest of the shell and broke the surface/hairline design contract.
 - **Fix:** Changed the divider class to `border-l border-outline-variant/25` to match the surrounding hairline convention.
+- **Commit:** same commit as this entry
+
+### 6. New right activity panel hairline lacks a visual regression test
+
+- **Source:** github-codex-connector | PR #442 round 2 | 2026-06-13
+- **Severity:** MEDIUM
+- **File:** `src/features/workspace/WorkspaceView.visual.test.tsx`
+- **Finding:** The diff added `border-l border-outline-variant/25` to the `activity-panel-shell` divider, but `WorkspaceView.visual.test.tsx` only updated existing sidebar and top-chrome surface assertions and did not assert the new divider. Without a guard, a future class cleanup or token migration could silently remove or mistype the divider and recreate the visual regression the PR just fixed.
+- **Fix:** Added a focused assertion in the existing Surface Hierarchy block that `activity-panel-shell` includes both `border-l` and `border-outline-variant/25`.
 - **Commit:** same commit as this entry
