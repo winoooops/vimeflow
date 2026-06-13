@@ -460,7 +460,7 @@ export const DiffChipToolbar = ({
     <div
       role="toolbar"
       aria-label="Diff toolbar"
-      className="px-3 py-2 rounded-lg bg-surface-container-low/[0.88] backdrop-blur-xl backdrop-saturate-150 border border-outline-variant/15 shadow-[0_10px_40px_color-mix(in_srgb,var(--color-scrim)_40%,transparent)]"
+      className="px-3 py-2 rounded-lg bg-surface-container-low/[0.88] backdrop-blur-xl backdrop-saturate-150 border border-outline-variant/15"
     >
       <div className="flex w-full items-center">
         <PriorityPlus
