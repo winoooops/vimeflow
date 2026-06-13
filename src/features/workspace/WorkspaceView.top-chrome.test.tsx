@@ -307,12 +307,12 @@ describe('WorkspaceView – top chrome (main-stage handoff J2–J6)', () => {
 
     const chrome = screen.getByTestId('top-chrome')
     const chromeClasses = chrome.className.split(/\s+/)
-    // In-flow 44px bar (panes sit below it): relative, shrink-0, solid lowest
+    // In-flow 44px bar (panes sit below it): relative, shrink-0, canvas
     // surface, hairline bottom rule. Not the old frosted/auto-hide overlay.
     expect(chromeClasses).toContain('relative')
     expect(chromeClasses).toContain('h-[44px]')
     expect(chromeClasses).toContain('shrink-0')
-    expect(chromeClasses).toContain('bg-surface-container-lowest')
+    expect(chromeClasses).toContain('bg-surface')
     expect(chromeClasses).toContain('border-b')
     expect(chromeClasses).toContain('border-outline-variant/25')
     expect(chromeClasses).not.toContain('glass-panel')

@@ -191,14 +191,14 @@ describe('WorkspaceView - Visual Verification (Feature #20)', () => {
   })
 
   describe('Surface Hierarchy: Component Backgrounds', () => {
-    // Zone hierarchy: chrome (left sidebar, session-tabs strip, status bar)
-    // shares the recessed surface-container-lowest; content (main canvas,
-    // agent status panel) shares `surface` — chrome always reads darker.
-    test('Sidebar carries the recessed chrome shade', () => {
+    // Zone hierarchy: the left sidebar is the one distinct chrome tone
+    // (surface-container-low — a step off the canvas; lighter than the canvas
+    // in dark, darker in light). Everything in the main column shares `surface`.
+    test('Sidebar carries the distinct chrome tone (surface-container-low)', () => {
       render(<WorkspaceView />)
       const sidebar = screen.getByTestId('sidebar')
 
-      expect(sidebar.className).toContain('bg-surface-container-lowest')
+      expect(sidebar.className).toContain('bg-surface-container-low')
       expect(sidebar.className).not.toContain('bg-transparent')
     })
 
@@ -209,13 +209,13 @@ describe('WorkspaceView - Visual Verification (Feature #20)', () => {
       expect(terminalContent.className).toContain('bg-surface')
     })
 
-    test('Top chrome bar uses the solid Level 0.5 surface (in-flow, no glass)', () => {
+    test('Top chrome bar sits on the canvas surface (in-flow, no glass)', () => {
       render(<WorkspaceView />)
       const chrome = screen.getByTestId('top-chrome')
 
-      // Always-visible in-flow bar: solid lowest surface, no frosted glass
+      // Always-visible in-flow bar on the canvas surface, no frosted glass
       // (the auto-hide overlay that needed the blur was removed).
-      expect(chrome.className).toContain('bg-surface-container-lowest')
+      expect(chrome.className).toContain('bg-surface')
       expect(chrome.className).not.toContain('glass-panel')
     })
 

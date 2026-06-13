@@ -8,14 +8,14 @@ describe('Sidebar — slot composition', () => {
     expect(screen.getByTestId('sidebar')).toBeInTheDocument()
   })
 
-  test('root surface is the recessed chrome shade — darker than the canvas', () => {
-    // Zone hierarchy: left sidebar + top tabs strip + status bar share the
-    // chrome shade (surface-container-lowest); main canvas + activity panel
-    // share `surface`. The sidebar must NOT inherit the canvas color.
+  test('root surface is the distinct chrome tone, one step off the canvas', () => {
+    // Zone hierarchy: the left sidebar is the one distinct chrome tone
+    // (surface-container-low); the main column — canvas, top chrome, status
+    // bar, activity panel — shares `surface`. The sidebar must NOT inherit it.
     render(<Sidebar content={<div>content</div>} />)
 
     const root = screen.getByTestId('sidebar')
-    expect(root).toHaveClass('bg-surface-container-lowest')
+    expect(root).toHaveClass('bg-surface-container-low')
     expect(root).not.toHaveClass('bg-transparent')
   })
 
