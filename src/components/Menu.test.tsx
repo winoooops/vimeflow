@@ -357,3 +357,126 @@ describe('Menu.Submenu', () => {
     expect(screen.getByRole('menuitem', { name: 'wrap' })).toBeInTheDocument()
   })
 })
+
+describe('Menu.Context', () => {
+  test('renders nothing when closed', () => {
+    const closed = false
+
+    const { container } = render(
+      <Menu.Context
+        position={{ x: 10, y: 20 }}
+        open={closed}
+        onOpenChange={vi.fn()}
+        aria-label="Terminal actions"
+      >
+        <Menu.Item onSelect={vi.fn()}>Copy</Menu.Item>
+      </Menu.Context>
+    )
+
+    expect(container).toBeEmptyDOMElement()
+  })
+
+  test('renders its items at the cursor position when open', () => {
+    render(
+      <Menu.Context
+        position={{ x: 50, y: 60 }}
+        open
+        onOpenChange={vi.fn()}
+        aria-label="Terminal actions"
+      >
+        <Menu.Item onSelect={vi.fn()}>Copy</Menu.Item>
+        <Menu.Item onSelect={vi.fn()}>Paste</Menu.Item>
+      </Menu.Context>
+    )
+
+    expect(
+      screen.getByRole('menu', { name: 'Terminal actions' })
+    ).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: 'Copy' })).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: 'Paste' })).toBeInTheDocument()
+  })
+
+  test('requests close via onOpenChange on Escape', async () => {
+    const user = userEvent.setup()
+    const onOpenChange = vi.fn<(open: boolean) => void>()
+
+    render(
+      <Menu.Context
+        position={{ x: 0, y: 0 }}
+        open
+        onOpenChange={onOpenChange}
+        aria-label="Terminal actions"
+      >
+        <Menu.Item onSelect={vi.fn()}>Copy</Menu.Item>
+      </Menu.Context>
+    )
+
+    await user.keyboard('{Escape}')
+    expect(onOpenChange).toHaveBeenCalledWith(false)
+  })
+
+  test('requests close via onOpenChange on outside press', async () => {
+    const user = userEvent.setup()
+    const onOpenChange = vi.fn<(open: boolean) => void>()
+
+    render(
+      <div>
+        <Menu.Context
+          position={{ x: 0, y: 0 }}
+          open
+          onOpenChange={onOpenChange}
+          aria-label="Terminal actions"
+        >
+          <Menu.Item onSelect={vi.fn()}>Copy</Menu.Item>
+        </Menu.Context>
+        <button type="button">outside</button>
+      </div>
+    )
+
+    await user.click(screen.getByRole('button', { name: 'outside' }))
+    expect(onOpenChange).toHaveBeenCalledWith(false)
+  })
+
+  test('arrow-key navigation skips a disabled first item', async () => {
+    const user = userEvent.setup()
+
+    render(
+      <Menu.Context
+        position={{ x: 0, y: 0 }}
+        open
+        onOpenChange={vi.fn()}
+        aria-label="Terminal actions"
+      >
+        <Menu.Item disabled onSelect={vi.fn()}>
+          Copy
+        </Menu.Item>
+        <Menu.Item onSelect={vi.fn()}>Paste</Menu.Item>
+      </Menu.Context>
+    )
+
+    // Down from the menu lands on the first ENABLED item, skipping disabled Copy.
+    await user.keyboard('{ArrowDown}')
+    expect(screen.getByRole('menuitem', { name: 'Paste' })).toHaveFocus()
+  })
+
+  test('uses non-modal focus so siblings stay in the a11y tree', () => {
+    render(
+      <div>
+        <Menu.Context
+          position={{ x: 0, y: 0 }}
+          open
+          onOpenChange={vi.fn()}
+          aria-label="Terminal actions"
+        >
+          <Menu.Item onSelect={vi.fn()}>Copy</Menu.Item>
+        </Menu.Context>
+        <button type="button">outside</button>
+      </div>
+    )
+
+    // A modal focus manager would mark siblings aria-hidden, hiding them from
+    // role queries. Non-modal leaves the outside button reachable.
+    expect(screen.getByRole('menu')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'outside' })).toBeInTheDocument()
+  })
+})

@@ -142,9 +142,10 @@ const MenuBody = ({
 // Shared registry hook: hands each navigable row a stable render-order index
 // and keeps the parent's disabledIndices array in sync via effect-registration
 // (so floating-ui's list navigation skips disabled rows). Returns the live
-// disabledIndices plus the factory subparts call to claim an index.
+// disabledIndices + item count plus the factory subparts call to claim an index.
 const useMenuRegistry = (): {
   disabledIndices: number[]
+  itemCount: number
   useItemIndex: (disabled: boolean) => number
 } => {
   const counter = useRef(0)
@@ -186,7 +187,7 @@ const useMenuRegistry = (): {
     .filter(([, disabled]) => disabled)
     .map(([index]) => index)
 
-  return { disabledIndices, useItemIndex }
+  return { disabledIndices, itemCount: disabledMap.size, useItemIndex }
 }
 
 interface MenuProps {
@@ -560,7 +561,7 @@ const MenuContextMenu = ({
   const [activeIndex, setActiveIndex] = useState<number | null>(null)
   const listRef = useRef<(HTMLElement | null)[]>([])
 
-  const { disabledIndices, useItemIndex } = useMenuRegistry()
+  const { disabledIndices, useItemIndex, itemCount } = useMenuRegistry()
 
   const handleOpenChange = useCallback(
     (nextOpen: boolean): void => {
@@ -591,6 +592,35 @@ const MenuContextMenu = ({
         openOnArrowKeyDown: false,
       },
     })
+
+  // Focus the first enabled item on open, skipping disabled rows — ported from
+  // TerminalContextMenu's initial-focus behavior. Re-runs as disabledIndices
+  // settles (rows register their disabled flag via effect), so it self-corrects
+  // off a disabled row once the flags are known.
+  const disabledKey = disabledIndices.join(',')
+  useEffect(() => {
+    if (!open || itemCount === 0) {
+      return
+    }
+
+    const firstEnabled = Array.from({ length: itemCount }).findIndex(
+      (_, index) => !disabledIndices.includes(index)
+    )
+    if (firstEnabled === -1) {
+      return
+    }
+
+    const focused =
+      activeIndex !== null && !disabledIndices.includes(activeIndex)
+    if (focused) {
+      return
+    }
+
+    setActiveIndex(firstEnabled)
+    listRef.current[firstEnabled]?.focus()
+    // disabledIndices tracked via disabledKey; activeIndex is read-not-trigger.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, itemCount, disabledKey])
 
   const contextValue: MenuContextValue = {
     getItemProps,
