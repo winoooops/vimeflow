@@ -900,6 +900,168 @@ describe('useSessionRestore', () => {
     ])
   })
 
+  // Codex P2 (PR #443): a transient snapshot can mark both a browser and a
+  // shell pane active. The normalized active pane is the browser (paneIndex 0),
+  // so restore must reconstruct the browser workspace and must NOT spawn a
+  // background shell.
+  test('does not restart shell when mixed workspace has browser normalized active', async () => {
+    const store: WorkspaceShapeDto = {
+      sessions: [
+        {
+          id: 'ws-mixed',
+          projectId: 'proj-1',
+          layout: 'vsplit',
+          workingDirectory: '/home/will/proj',
+          active: true,
+          panes: [
+            { kind: 'browser', paneId: 'p0', paneIndex: 0, active: true },
+            {
+              kind: 'shell',
+              paneId: 'p1',
+              paneIndex: 1,
+              active: true,
+              ptyId: 'pty-old',
+              cwd: '/home/will/proj',
+              agentType: 'codex',
+              agentSessionId: null,
+            },
+          ],
+        },
+      ],
+    }
+    loadWorkspaceForRestore.mockResolvedValue(store)
+
+    const service = {
+      onData: vi.fn().mockResolvedValue(() => undefined),
+      listSessions: vi
+        .fn()
+        .mockResolvedValue({ sessions: [], activeSessionId: null }),
+      spawn: vi.fn(),
+    } as unknown as ITerminalService
+    const onRestore = vi.fn<(sessions: Session[]) => void>()
+
+    const { result } = renderHook(() =>
+      useSessionRestore({
+        service,
+        buffer: buildBuffer(),
+        onRestore,
+        onActiveResolved: vi.fn(),
+        onActivePersisted: vi.fn(),
+      })
+    )
+
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    expect(service.spawn).not.toHaveBeenCalled()
+    expect(createBrowserPane).toHaveBeenCalledWith({
+      sessionId: 'ws-mixed',
+      paneId: 'p0',
+      workspaceId: 'proj-1',
+      restore: true,
+    })
+
+    const restoredSessions = onRestore.mock.calls[0]?.[0]
+    if (!restoredSessions) {
+      throw new Error('expected onRestore to be called')
+    }
+    expect(restoredSessions[0].panes).toEqual([
+      expect.objectContaining({ id: 'p0', kind: 'browser', active: true }),
+      expect.objectContaining({
+        id: 'p1',
+        ptyId: 'pty-old',
+        status: 'completed',
+        active: false,
+      }),
+    ])
+  })
+
+  // Codex P1 (PR #443): the backend lazy-reconciliation path can return only
+  // Exited SessionInfo rows after the cached PTY is gone. Those rows are not
+  // live sessions, so restore must still restart the persisted active shell.
+  test('restarts persisted active shell when listSessions only returns Exited rows', async () => {
+    const store: WorkspaceShapeDto = {
+      sessions: [
+        {
+          id: 'ws-shell',
+          projectId: 'proj-1',
+          layout: 'single',
+          workingDirectory: '/home/will/proj',
+          active: true,
+          panes: [
+            {
+              kind: 'shell',
+              paneId: 'p0',
+              paneIndex: 0,
+              active: true,
+              ptyId: 'pty-old',
+              cwd: '/home/will/proj',
+              agentType: 'codex',
+              agentSessionId: null,
+            },
+          ],
+        },
+      ],
+    }
+    loadWorkspaceForRestore.mockResolvedValue(store)
+
+    const service = {
+      onData: vi.fn().mockResolvedValue(() => undefined),
+      listSessions: vi.fn().mockResolvedValue({
+        sessions: [
+          {
+            id: 'pty-old',
+            cwd: '/home/will/proj',
+            status: {
+              kind: 'Exited',
+              exit_code: 0,
+            },
+          },
+        ],
+        activeSessionId: null,
+      }),
+      spawn: vi.fn().mockResolvedValue({
+        sessionId: 'pty-new',
+        pid: 4321,
+        cwd: '/home/will/proj',
+        shell: '/bin/zsh',
+      }),
+    } as unknown as ITerminalService
+    const onRestore = vi.fn<(sessions: Session[]) => void>()
+    const onActiveResolved = vi.fn()
+
+    const { result } = renderHook(() =>
+      useSessionRestore({
+        service,
+        buffer: buildBuffer(),
+        onRestore,
+        onActiveResolved,
+      })
+    )
+
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    expect(service.spawn).toHaveBeenCalledWith({
+      cwd: '/home/will/proj',
+      env: {},
+      enableAgentBridge: true,
+    })
+
+    const restoredSessions = onRestore.mock.calls[0]?.[0]
+    if (!restoredSessions) {
+      throw new Error('expected onRestore to be called')
+    }
+    expect(restoredSessions).toHaveLength(1)
+    expect(restoredSessions[0].panes[0]).toEqual(
+      expect.objectContaining({
+        id: 'p0',
+        ptyId: 'pty-new',
+        status: 'running',
+        active: true,
+      })
+    )
+    expect(onActiveResolved).toHaveBeenCalledWith('ws-shell')
+  })
+
   // The store load is renderer-initiated with the active project context.
   test('loads the store with project context and always releases hydration', async () => {
     const service = {

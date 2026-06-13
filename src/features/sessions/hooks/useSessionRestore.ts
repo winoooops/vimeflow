@@ -49,18 +49,31 @@ const findActiveStoreShell = (
     return null
   }
 
-  const pane = activeSession.panes.find(
-    (candidate): candidate is WorkspaceShapeShellPane =>
-      candidate.active && isShapeShellPane(candidate)
+  // Normalize the active pane the same way reconstructWorkspace does: sort by
+  // paneIndex and treat the first flagged pane as active. A transient snapshot
+  // can mark both a browser and a shell pane active; in that case the browser
+  // (the normalized active pane) wins and we must NOT restart a background
+  // shell.
+  const ordered = [...activeSession.panes].sort(
+    (a, b) => a.paneIndex - b.paneIndex
   )
-  if (!pane) {
+  if (ordered.length === 0) {
+    return null
+  }
+
+  const firstActiveIdx = ordered.findIndex((pane) => pane.active)
+
+  const activePane =
+    firstActiveIdx === -1 ? ordered[0] : ordered[firstActiveIdx]
+
+  if (!isShapeShellPane(activePane)) {
     return null
   }
 
   return {
     sessionId: activeSession.id,
-    paneId: pane.paneId,
-    pane,
+    paneId: activePane.paneId,
+    pane: activePane,
   }
 }
 
@@ -94,7 +107,10 @@ const restartPersistedActiveShell = async (
   storeShape: WorkspaceShapeDto | null,
   liveSessions: readonly SessionInfo[]
 ): Promise<RestartedStoreShell | null> => {
-  if (!storeShape || liveSessions.length > 0) {
+  const hasLiveSession = liveSessions.some(
+    (session) => session.status.kind === 'Alive'
+  )
+  if (!storeShape || hasLiveSession) {
     return null
   }
 
