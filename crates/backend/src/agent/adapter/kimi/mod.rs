@@ -21,6 +21,7 @@ use crate::agent::adapter::AgentAdapter;
 use crate::agent::types::AgentType;
 use crate::runtime::EventSink;
 
+pub(crate) use self::locator::kdbg;
 pub(crate) use self::locator::KimiLocator;
 pub(crate) use self::types::default_kimi_home;
 
@@ -54,7 +55,15 @@ impl TranscriptPathSource for KimiAdapter {
 
 impl StateDecoder for KimiAdapter {
     fn decode(&self, session_id: Option<&str>, raw: &str) -> Result<StatusSnapshot, String> {
-        parser::parse_wire_snapshot(session_id, raw)
+        let snapshot = parser::parse_wire_snapshot(session_id, raw)?;
+        kdbg(&format!(
+            "DECODE: model={} ctx_size={} input={} output={}",
+            snapshot.model_id,
+            snapshot.context_window.context_window_size,
+            snapshot.context_window.total_input_tokens,
+            snapshot.context_window.total_output_tokens
+        ));
+        Ok(snapshot)
     }
 }
 

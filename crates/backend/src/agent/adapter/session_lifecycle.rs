@@ -232,6 +232,59 @@ mod tests {
         assert_eq!(located.trust_root, tmp.path());
     }
 
+    #[test]
+    #[ignore = "live diagnostic: needs a running kimi; KIMI_LIVE_PID=<pid> cargo test --lib kimi_live_attach_diag -- --ignored --nocapture"]
+    fn kimi_live_attach_diag() {
+        let agent_pid: u32 = std::env::var("KIMI_LIVE_PID")
+            .expect("set KIMI_LIVE_PID")
+            .parse()
+            .expect("KIMI_LIVE_PID must be u32");
+        let stale_cwd = std::env::var("KIMI_STALE_CWD").unwrap_or_else(|_| "/home/will".to_string());
+        if let Ok(shell_pid) = std::env::var("KIMI_SHELL_PID") {
+            let sp: u32 = shell_pid.parse().expect("KIMI_SHELL_PID must be u32");
+            eprintln!(
+                "[diag] detect_agent(shell_pid={}) = {:?}",
+                sp,
+                crate::agent::detector::detect_agent(sp)
+            );
+        }
+        let sid = "live-diag".to_string();
+        let spec = crate::agent::config::spec_for(AgentType::Kimi);
+        let ctx = AttachContext {
+            session_id: sid.clone(),
+            initial_cwd: PathBuf::from(&stale_cwd),
+            shell_pid: 1,
+            agent_pid,
+            pty_start: SystemTime::now(),
+            agent_type: AgentType::Kimi,
+            provider_home: spec.provider_home(),
+            proc_root: crate::agent::config::default_proc_root(),
+        };
+        eprintln!(
+            "[diag] ctx agent_pid={} stale_cwd={} provider_home={:?} proc_root={:?}",
+            agent_pid, stale_cwd, ctx.provider_home, ctx.proc_root
+        );
+        let bindings = AgentBindings::for_attach(&ctx).expect("for_attach kimi");
+        eprintln!("[diag] for_attach OK agent_type={:?}", bindings.agent_type);
+        match bindings.locator.locate(PathBuf::from(&stale_cwd).as_path(), &sid) {
+            Ok(located) => {
+                eprintln!(
+                    "[diag] LOCATE OK status_path={} trust_root={}",
+                    located.status_path.display(),
+                    located.trust_root.display()
+                );
+                let contents =
+                    std::fs::read_to_string(&located.status_path).expect("read located status_path");
+                eprintln!("[diag] wire bytes={}", contents.len());
+                match bindings.decoder.decode(Some(&sid), &contents) {
+                    Ok(snap) => eprintln!("[diag] DECODE OK {:?}", snap),
+                    Err(e) => eprintln!("[diag] DECODE ERR {}", e),
+                }
+            }
+            Err(e) => eprintln!("[diag] LOCATE ERR {}", e),
+        }
+    }
+
     struct ErrLocator;
 
     impl StatusSourceLocator for ErrLocator {
@@ -620,7 +673,27 @@ impl SessionLifecycle {
     /// `insert`'s own `_displaced` drop already handles atomic replace).
     /// `AttachError` is mapped to `String` at this boundary.
     pub(crate) async fn start(&self, session_id: String) -> Result<(), String> {
-        let attach = self.resolve_attach(&session_id, detect_agent)?;
+        crate::debug::debug_log("agent-attach", &format!("start session={}", session_id));
+        let attach = match self.resolve_attach(&session_id, detect_agent) {
+            Ok(attach) => attach,
+            Err(e) => {
+                crate::debug::debug_log(
+                    "agent-attach",
+                    &format!("resolve_attach ERR session={}: {}", session_id, e),
+                );
+                return Err(e);
+            }
+        };
+        crate::debug::debug_log(
+            "agent-attach",
+            &format!(
+                "detected session={} agent={:?} agent_pid={} cwd={}",
+                session_id,
+                attach.agent_type,
+                attach.agent_pid,
+                attach.initial_cwd.display()
+            ),
+        );
         let bindings = self.bind_services(&attach)?;
         let cwd = attach.initial_cwd.clone();
         self.run_watch_sequence(session_id, bindings, cwd).await
@@ -688,6 +761,15 @@ impl SessionLifecycle {
                 session_id,
                 trusted.status_path().display(),
                 lc.watcher_state.active_count(),
+            );
+
+            crate::debug::debug_log(
+                "agent-attach",
+                &format!(
+                    "watch session={} path={}",
+                    session_id,
+                    trusted.status_path().display()
+                ),
             );
 
             // Capture the agent type before `spawn_watch` consumes `bindings`,

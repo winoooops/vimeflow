@@ -33,6 +33,12 @@ use serde::Deserialize;
 use crate::agent::adapter::traits::StatusSourceLocator;
 use crate::agent::adapter::types::LocatedStatusSource;
 
+// Kimi attach/locate observability — routes through the app's debug_log
+// so traces land in vimeflow-debug.log alongside the pty/bridge logs.
+pub(crate) fn kdbg(msg: &str) {
+    crate::debug::debug_log("kimi", msg)
+}
+
 const KIMI_BIND_RETRY_INTERVAL_MS: u64 = 100;
 const KIMI_BIND_RETRY_MAX_ATTEMPTS: u32 = 5;
 
@@ -104,6 +110,33 @@ impl KimiLocator {
             .unwrap_or_else(|| passed.to_path_buf())
     }
 
+    /// Wall-clock start time of the detected kimi process, from
+    /// `<proc_root>/<pid>/stat` field 22 (`starttime`, ticks since boot)
+    /// anchored on the system boot epoch (`btime` in `<proc_root>/stat`).
+    /// `None` when proc is unavailable (macOS) or the files don't parse, so
+    /// callers skip the per-process discriminator and keep newest-index.
+    fn process_start(&self) -> Option<SystemTime> {
+        let proc_root = self.proc_root.as_deref()?;
+        let stat = std::fs::read_to_string(proc_root.join(self.agent_pid.to_string()).join("stat"))
+            .ok()?;
+        // `comm` (field 2) is parenthesized and may contain spaces or
+        // parens, so parse the fields AFTER the last ')'. There, index 19 is
+        // overall field 22 (`starttime`): fields 3.. start at index 0.
+        let starttime_ticks: u64 = stat
+            .rsplit_once(')')?
+            .1
+            .split_whitespace()
+            .nth(19)?
+            .parse()
+            .ok()?;
+        let since_boot_ms = starttime_ticks.checked_mul(1000)? / clock_ticks_per_sec();
+        Some(
+            SystemTime::UNIX_EPOCH
+                + Duration::from_secs(read_btime(proc_root)?)
+                + Duration::from_millis(since_boot_ms),
+        )
+    }
+
     /// proc-fd primary: the kimi process holds its session's
     /// `agents/main/wire.jsonl` open, so a `<proc_root>/<pid>/fd/*`
     /// symlink resolves to it. Disambiguates per-process with no workDir
@@ -111,18 +144,21 @@ impl KimiLocator {
     fn try_resolve_from_proc_fds(&self, home: &Path) -> Option<LocatedStatusSource> {
         let proc_root = self.proc_root.as_deref()?;
         let wire = open_wire_path_from_proc(proc_root, self.agent_pid)?;
+        // Anchor the trust root to THIS process's effective home and require
+        // the fd target to live under it: a detected (or spoofed) process must
+        // not steer the watcher at a wire.jsonl tree outside the kimi home.
+        if !wire.starts_with(home.join("sessions")) {
+            return None;
+        }
         let session_dir = wire.parent()?.parent()?.parent()?;
         let agent_session_id = session_dir
             .file_name()
             .and_then(|n| n.to_str())
             .map(str::to_owned);
-        // Trust root = the kimi home above `sessions/`; derive it from the
-        // resolved wire path, falling back to the effective home.
-        let trust_root = trust_root_from_wire(&wire).unwrap_or_else(|| home.to_path_buf());
         Some(LocatedStatusSource {
             static_transcript_hint: wire.to_str().map(str::to_owned),
             status_path: wire,
-            trust_root,
+            trust_root: home.to_path_buf(),
             agent_session_id,
         })
     }
@@ -149,9 +185,16 @@ impl KimiLocator {
     fn try_resolve_from_index(&self, home: &Path, cwd: &Path) -> Option<LocatedStatusSource> {
         let raw = std::fs::read_to_string(self.session_index_path(home)).ok()?;
 
-        // Track the best match: longest workDir wins; ties go to the last
-        // occurrence (`>=` on equal length keeps the later-listed entry).
-        let mut best: Option<(usize, SessionIndexEntry)> = None;
+        // Gather all cwd-matching entries, then choose: PREFER a session this
+        // kimi process owns — created at/after the process started (codex's
+        // per-process discriminator, resolved via the session's metadata
+        // `created_at`) — so a frozen same-cwd session left by an EARLIER run
+        // can't win the tie-break. Within the chosen group the original rule
+        // applies: longest workDir, ties to the last index occurrence. When
+        // the process start is unknown (macOS / no proc) nothing is "owned",
+        // so selection falls back to the prior newest-index behavior unchanged.
+        let process_start = self.process_start();
+        let mut matches: Vec<(usize, bool, SessionIndexEntry)> = Vec::new();
         for line in raw.lines() {
             let line = line.trim();
             if line.is_empty() {
@@ -167,12 +210,28 @@ impl KimiLocator {
                 continue;
             }
             let work_len = work_dir.len();
-            if best.as_ref().map_or(true, |(len, _)| work_len >= *len) {
-                best = Some((work_len, entry));
-            }
+            let owned = process_start.is_some_and(|start| {
+                entry
+                    .session_dir
+                    .as_deref()
+                    .and_then(session_created_at)
+                    .is_some_and(|created| created + KIMI_INDEX_FRESHNESS_SLACK >= start)
+            });
+            matches.push((work_len, owned, entry));
         }
 
-        let (_, entry) = best?;
+        // When the process start is KNOWN, only a session this process owns
+        // may bind: a fresh attach whose index row / wire has not landed yet
+        // returns None and retries rather than latching a previous same-cwd
+        // run. When it is unknown (macOS / no proc) fall back to the
+        // newest-index match. `max_by_key` keeps the LAST element among equal
+        // keys — the append-ordered newest — preserving the original tie-break.
+        let proc_known = process_start.is_some();
+        let entry = matches
+            .into_iter()
+            .filter(|(_, owned, _)| *owned || !proc_known)
+            .max_by_key(|(work_len, _, _)| *work_len)
+            .map(|(_, _, entry)| entry)?;
         let session_dir = entry.session_dir?;
         let status_path = PathBuf::from(&session_dir)
             .join("agents")
@@ -204,6 +263,7 @@ impl KimiLocator {
         if !bucket_path.is_dir() {
             return None;
         }
+        let process_start = self.process_start();
         let mut newest: Option<(SystemTime, PathBuf)> = None;
 
         let sessions = std::fs::read_dir(&bucket_path).ok()?;
@@ -217,9 +277,18 @@ impl KimiLocator {
             }
             let session_path = session.path();
             let wire = session_path.join("agents").join("main").join("wire.jsonl");
-            // Freshness-gate like the index path so a stale same-cwd bucket
-            // session can't bind when /proc is unavailable.
-            if !wire_is_fresh(&wire, self.pty_start) {
+            // Same per-process discriminator as the index path: when the
+            // process start is known, only a session this process created may
+            // bind; otherwise fall back to the pty-start freshness gate so a
+            // stale same-cwd bucket session can't bind.
+            let fresh = match process_start {
+                Some(start) => session_path
+                    .to_str()
+                    .and_then(session_created_at)
+                    .is_some_and(|created| created + KIMI_INDEX_FRESHNESS_SLACK >= start),
+                None => wire_is_fresh(&wire, self.pty_start),
+            };
+            if !fresh {
                 continue;
             }
             let mtime = session
@@ -249,18 +318,46 @@ impl KimiLocator {
 impl StatusSourceLocator for KimiLocator {
     fn locate(&self, cwd: &Path, _session_id: &str) -> Result<LocatedStatusSource, String> {
         let home = self.effective_home();
+        kdbg(&format!(
+            "LOCATE start: passed_cwd={} agent_pid={} proc_root={:?} home={}",
+            cwd.display(),
+            self.agent_pid,
+            self.proc_root,
+            home.display()
+        ));
         // The PTY-supplied `cwd` can be the stale spawn-time cwd (OSC 7 `cd`
         // updates never reach PtyState). Prefer the kimi process's real
         // `/proc/<pid>/cwd`, since kimi derives its session workDir from there.
         let cwd = self.process_cwd(cwd);
+        kdbg(&format!("LOCATE process_cwd={}", cwd.display()));
 
         for attempt in 0..KIMI_BIND_RETRY_MAX_ATTEMPTS {
             // proc-fd is authoritative and unambiguous — try it first.
-            if let Some(located) = self.try_resolve_from_proc_fds(&home) {
+            let proc_fd = self.try_resolve_from_proc_fds(&home);
+            kdbg(&format!(
+                "LOCATE proc_fd={:?}",
+                proc_fd.as_ref().map(|l| l.status_path.display().to_string())
+            ));
+            if let Some(located) = proc_fd {
+                kdbg(&format!(
+                    "LOCATE => OK status_path={} sid={:?}",
+                    located.status_path.display(),
+                    located.agent_session_id
+                ));
                 return Ok(located);
             }
             // Then the newest same-cwd index match (binds even when idle).
-            if let Some(located) = self.try_resolve_from_index(&home, &cwd) {
+            let index = self.try_resolve_from_index(&home, &cwd);
+            kdbg(&format!(
+                "LOCATE index={:?}",
+                index.as_ref().map(|l| l.status_path.display().to_string())
+            ));
+            if let Some(located) = index {
+                kdbg(&format!(
+                    "LOCATE => OK status_path={} sid={:?}",
+                    located.status_path.display(),
+                    located.agent_session_id
+                ));
                 return Ok(located);
             }
             if attempt + 1 < KIMI_BIND_RETRY_MAX_ATTEMPTS {
@@ -272,16 +369,66 @@ impl StatusSourceLocator for KimiLocator {
 
         // Neither proc-fd nor a fresh index match — best-effort fallback.
         if let Some(located) = self.try_resolve_fallback(&home, &cwd) {
+            kdbg(&format!(
+                "LOCATE => OK status_path={} sid={:?}",
+                located.status_path.display(),
+                located.agent_session_id
+            ));
             return Ok(located);
         }
 
-        Err(format!(
+        let err = format!(
             "kimi locator: no fresh session for cwd={} (pid={}) and no fallback session under {}",
             cwd.display(),
             self.agent_pid,
             home.join("sessions").display(),
-        ))
+        );
+        kdbg(&format!("LOCATE => ERR {}", err));
+        Err(err)
     }
+}
+
+/// System boot time (epoch seconds) from `<proc_root>/stat`'s `btime` line.
+fn read_btime(proc_root: &Path) -> Option<u64> {
+    std::fs::read_to_string(proc_root.join("stat"))
+        .ok()?
+        .lines()
+        .find_map(|line| line.strip_prefix("btime "))
+        .and_then(|value| value.trim().parse().ok())
+}
+
+/// Kernel tick rate (`sysconf(_SC_CLK_TCK)`, 100 on typical Linux). `libc`
+/// is a Unix-only dependency; non-Unix has no `/proc` (so `process_start`
+/// already returns `None`) and just takes the 100 fallback.
+fn clock_ticks_per_sec() -> u64 {
+    #[cfg(unix)]
+    {
+        let hz = unsafe { libc::sysconf(libc::_SC_CLK_TCK) };
+        if hz > 0 {
+            return hz as u64;
+        }
+    }
+    100
+}
+
+/// A session's creation time, read from its `agents/main/wire.jsonl`
+/// `metadata` event (`created_at`, epoch ms). `None` when absent — the
+/// caller then treats the session as not provably owned by this process.
+fn session_created_at(session_dir: &str) -> Option<SystemTime> {
+    let wire = PathBuf::from(session_dir)
+        .join("agents")
+        .join("main")
+        .join("wire.jsonl");
+    for line in std::fs::read_to_string(wire).ok()?.lines() {
+        let Ok(value) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue;
+        };
+        if value.get("type").and_then(serde_json::Value::as_str) == Some("metadata") {
+            let ms = value.get("created_at").and_then(serde_json::Value::as_u64)?;
+            return Some(SystemTime::UNIX_EPOCH + Duration::from_millis(ms));
+        }
+    }
+    None
 }
 
 /// Read `<proc_root>/<pid>/fd/*` and return the first symlink target that
@@ -326,17 +473,6 @@ fn is_kimi_session_wire(path: &Path) -> bool {
         .and_then(Path::file_name)
         .is_some_and(|n| n == "sessions");
     session_named && wd_named && under_sessions
-}
-
-/// The kimi home above `sessions/` for a resolved wire path
-/// (`<home>/sessions/wd_*/session_*/agents/main/wire.jsonl`).
-fn trust_root_from_wire(wire: &Path) -> Option<PathBuf> {
-    // Strip `sessions/wd_*/session_*/agents/main/wire.jsonl` (6 components).
-    let mut home = wire;
-    for _ in 0..6 {
-        home = home.parent()?;
-    }
-    Some(home.to_path_buf())
 }
 
 /// Extract a non-empty `KIMI_CODE_HOME` from the kimi process's environ
@@ -409,6 +545,38 @@ mod tests {
         std::fs::create_dir_all(wire.parent().expect("parent")).expect("mkdir wire");
         std::fs::write(&wire, b"{\"type\":\"metadata\"}\n").expect("write wire");
         wire
+    }
+
+    // Like `write_wire` but stamps the session's creation time into the
+    // `metadata` event so the per-process discriminator can read it.
+    fn write_wire_created(session_dir: &Path, created_ms: u64) -> PathBuf {
+        let wire = session_dir.join("agents").join("main").join("wire.jsonl");
+        std::fs::create_dir_all(wire.parent().expect("parent")).expect("mkdir wire");
+        std::fs::write(
+            &wire,
+            format!("{{\"type\":\"metadata\",\"created_at\":{created_ms}}}\n"),
+        )
+        .expect("write wire");
+        wire
+    }
+
+    // Fake `<proc_root>/stat` carrying a `btime` line.
+    fn write_proc_btime(proc_root: &Path, btime: u64) {
+        std::fs::write(proc_root.join("stat"), format!("cpu 0 0\nbtime {btime}\n"))
+            .expect("write proc stat");
+    }
+
+    // Fake `<proc_root>/<pid>/stat` whose field 22 is `starttime_ticks`
+    // (comm parenthesized, 17 filler fields before starttime).
+    fn write_proc_stat(proc_root: &Path, pid: u32, starttime_ticks: u64) {
+        let pid_dir = proc_root.join(pid.to_string());
+        std::fs::create_dir_all(&pid_dir).expect("pid dir");
+        let filler = "0 ".repeat(17);
+        std::fs::write(
+            pid_dir.join("stat"),
+            format!("{pid} (kimi) S 1 {filler}{starttime_ticks}\n"),
+        )
+        .expect("write pid stat");
     }
 
     fn write_index(kimi_home: &Path, entries: &[(&str, &Path, &Path)]) {
@@ -666,6 +834,85 @@ mod tests {
             .expect("idle sole index entry must bind");
         assert_eq!(located.status_path, idle_wire);
         assert_eq!(located.agent_session_id.as_deref(), Some("session_idle"));
+    }
+
+    /// The "5-minutes-ago" bug / codex P2: two same-`workDir` sessions where
+    /// the FROZEN earlier run is listed last. With the live process's start
+    /// time known, the locator must bind the session THIS process created
+    /// (its `metadata.created_at` is at/after the process start), not the
+    /// last index row.
+    #[test]
+    fn index_binds_session_owned_by_the_live_process() {
+        let kimi_home = tempfile::tempdir().expect("kimi home");
+        let work = tempfile::tempdir().expect("work dir");
+        let proc_root = tempfile::tempdir().expect("proc root");
+
+        let pid = 4242u32;
+        let hz = clock_ticks_per_sec();
+        let btime = 1_700_000_000u64;
+        let starttime_ticks = 50 * hz;
+        // process_start = btime + 50s.
+        let process_start_ms = (btime + 50) * 1000;
+        write_proc_btime(proc_root.path(), btime);
+        write_proc_stat(proc_root.path(), pid, starttime_ticks);
+
+        // Owned: created exactly at process start. Stale: created 50s before
+        // it (well outside the freshness slack) yet listed LAST in the index.
+        let owned_dir = session_under(kimi_home.path(), "wd_a", "session_owned");
+        let owned_wire = write_wire_created(&owned_dir, process_start_ms);
+        let stale_dir = session_under(kimi_home.path(), "wd_a", "session_stale");
+        write_wire_created(&stale_dir, process_start_ms - 50_000);
+
+        write_index(
+            kimi_home.path(),
+            &[
+                ("session_owned", &owned_dir, work.path()),
+                ("session_stale", &stale_dir, work.path()),
+            ],
+        );
+
+        let locator =
+            locator_with_proc(kimi_home.path(), pid, SystemTime::now(), proc_root.path());
+        let located = locator
+            .locate(work.path(), "pty-1")
+            .expect("owned session resolves");
+        assert_eq!(
+            located.status_path, owned_wire,
+            "must bind the session this process created, not the last index row"
+        );
+        assert_eq!(located.agent_session_id.as_deref(), Some("session_owned"));
+    }
+
+    /// codex follow-up: with the process start known but the live session's
+    /// row/wire not landed yet, every same-cwd row is unowned — the resolver
+    /// must NOT latch a previous run's stale row; it returns None so locate
+    /// retries instead of binding the wrong transcript.
+    #[test]
+    fn proc_known_without_owned_session_does_not_bind_stale() {
+        let kimi_home = tempfile::tempdir().expect("kimi home");
+        let work = tempfile::tempdir().expect("work dir");
+        let proc_root = tempfile::tempdir().expect("proc root");
+
+        let pid = 4242u32;
+        let hz = clock_ticks_per_sec();
+        let btime = 1_700_000_000u64;
+        let process_start_ms = (btime + 50) * 1000;
+        write_proc_btime(proc_root.path(), btime);
+        write_proc_stat(proc_root.path(), pid, 50 * hz);
+
+        // Only a stale session exists (created an hour before the process),
+        // and it lives under `wd_a` — NOT this cwd's real bucket — so the
+        // fallback can't pick it up either.
+        let stale_dir = session_under(kimi_home.path(), "wd_a", "session_stale");
+        write_wire_created(&stale_dir, process_start_ms - 3_600_000);
+        write_index(kimi_home.path(), &[("session_stale", &stale_dir, work.path())]);
+
+        let locator =
+            locator_with_proc(kimi_home.path(), pid, SystemTime::now(), proc_root.path());
+        assert!(
+            locator.locate(work.path(), "pty-1").is_err(),
+            "must not bind a session created before this process started"
+        );
     }
 
     /// Recompute kimi's exact bucket name for a cwd in the test (same

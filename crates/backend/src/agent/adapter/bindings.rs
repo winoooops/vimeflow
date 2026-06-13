@@ -169,6 +169,14 @@ impl AgentBindings {
                     .map(PathBuf::from)
                     .or_else(|| ctx.provider_home.clone())
                     .unwrap_or_else(default_kimi_home);
+                super::kimi::kdbg(&format!(
+                    "ATTACH kimi: agent_pid={} initial_cwd={} provider_home={:?} proc_root={:?} home={}",
+                    ctx.agent_pid,
+                    ctx.initial_cwd.display(),
+                    ctx.provider_home,
+                    ctx.proc_root,
+                    kimi_home.display()
+                ));
                 log::info!(
                     "kimi adapter: locator initialized (kimi_home={}, pid={})",
                     kimi_home.display(),
