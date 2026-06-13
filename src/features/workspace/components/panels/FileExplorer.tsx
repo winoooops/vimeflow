@@ -210,23 +210,21 @@ export const FileExplorer = ({
       if (actionId === 'copy-path') {
         const clipboard = readClipboardWriter()
 
-        if (typeof clipboard?.writeText !== 'function') {
+        if (clipboard == null || typeof clipboard.writeText !== 'function') {
           setActionError('Clipboard is unavailable')
 
           return
         }
 
-        void (async (): Promise<void> => {
-          try {
-            await clipboard.writeText(fullPath)
-          } catch (caughtError: unknown) {
+        clipboard
+          .writeText(fullPath)
+          .catch((caughtError: unknown) => {
             const message =
               caughtError instanceof Error
                 ? caughtError.message
                 : String(caughtError)
             setActionError(`Failed to copy path: ${message}`)
-          }
-        })()
+          })
 
         return
       }
