@@ -88,53 +88,38 @@ impl KimiLocator {
 
     /// Best-effort fallback when the index has no matching `workDir`:
     /// pick the newest `session_*` subdir (by mtime) whose
-    /// `agents/main/wire.jsonl` exists, scoped to this cwd's bucket(s)
-    /// (`wd_<basename>_*`). Without a `sha2` dependency the exact
-    /// `sha256(cwd)[:12]` suffix is not reconstructed, but the basename
-    /// prefix keeps the fallback from binding another project's session.
-    /// The index path remains the primary, reliable route.
+    /// `agents/main/wire.jsonl` exists, scoped to this cwd's EXACT bucket
+    /// `wd_<basename>_<hex>` (`<hex>` = `sha256(cwd)[:12]`). Scanning only
+    /// the exact bucket — not a basename prefix — stops a same-basename
+    /// session from another project's cwd binding here. The index path
+    /// remains the primary, reliable route.
     fn try_resolve_fallback(&self, cwd: &Path) -> Option<LocatedStatusSource> {
-        let sessions_root = self.kimi_home.join("sessions");
-        // Scope to this cwd's bucket(s); kimi names buckets wd_<basename>_<hash>.
-        let prefix = format!("wd_{}_", cwd.file_name()?.to_str()?);
+        let bucket_path = self.kimi_home.join("sessions").join(cwd_bucket_name(cwd)?);
+        if !bucket_path.is_dir() {
+            return None;
+        }
         let mut newest: Option<(SystemTime, PathBuf)> = None;
 
-        let buckets = std::fs::read_dir(&sessions_root).ok()?;
-        for bucket in buckets.flatten() {
-            let bucket_path = bucket.path();
-            if !bucket_path.is_dir() {
-                continue;
-            }
-            if !bucket_path
-                .file_name()
-                .and_then(|n| n.to_str())
-                .is_some_and(|name| name.starts_with(&prefix))
-            {
-                continue;
-            }
-            let Ok(sessions) = std::fs::read_dir(&bucket_path) else {
+        let sessions = std::fs::read_dir(&bucket_path).ok()?;
+        for session in sessions.flatten() {
+            let name = session.file_name();
+            let Some(name) = name.to_str() else {
                 continue;
             };
-            for session in sessions.flatten() {
-                let name = session.file_name();
-                let Some(name) = name.to_str() else {
-                    continue;
-                };
-                if !name.starts_with("session_") {
-                    continue;
-                }
-                let session_path = session.path();
-                let wire = session_path.join("agents").join("main").join("wire.jsonl");
-                if !wire.is_file() {
-                    continue;
-                }
-                let mtime = session
-                    .metadata()
-                    .and_then(|m| m.modified())
-                    .unwrap_or(SystemTime::UNIX_EPOCH);
-                if newest.as_ref().map_or(true, |(seen, _)| mtime > *seen) {
-                    newest = Some((mtime, session_path));
-                }
+            if !name.starts_with("session_") {
+                continue;
+            }
+            let session_path = session.path();
+            let wire = session_path.join("agents").join("main").join("wire.jsonl");
+            if !wire.is_file() {
+                continue;
+            }
+            let mtime = session
+                .metadata()
+                .and_then(|m| m.modified())
+                .unwrap_or(SystemTime::UNIX_EPOCH);
+            if newest.as_ref().map_or(true, |(seen, _)| mtime > *seen) {
+                newest = Some((mtime, session_path));
             }
         }
 
@@ -192,6 +177,17 @@ fn paths_match(work_dir: &str, cwd: &Path, canonical_cwd: &Path) -> bool {
 
 fn canonical_or_owned(path: &Path) -> PathBuf {
     std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
+}
+
+/// kimi's exact session-bucket name for a cwd: `wd_<basename>_<hex>` where
+/// `<hex>` is the first 12 hex chars of `sha256(cwd)`. Mirrors how kimi-code
+/// names `<kimi_home>/sessions/` buckets.
+fn cwd_bucket_name(cwd: &Path) -> Option<String> {
+    use sha2::{Digest, Sha256};
+    let basename = cwd.file_name()?.to_str()?;
+    let digest = Sha256::digest(cwd.to_string_lossy().as_bytes());
+    let hex: String = digest.iter().take(6).map(|b| format!("{b:02x}")).collect();
+    Some(format!("wd_{basename}_{hex}"))
 }
 
 #[cfg(test)]
@@ -278,6 +274,24 @@ mod tests {
         assert_eq!(located.agent_session_id.as_deref(), Some("session_new"));
     }
 
+    /// Recompute kimi's exact bucket name for a cwd in the test (same
+    /// `sha256(cwd)[:12]` the locator derives), so the fixture builds the
+    /// bucket the fallback will actually scan.
+    fn bucket_for(cwd: &Path) -> String {
+        use sha2::{Digest, Sha256};
+        let basename = cwd.file_name().and_then(|n| n.to_str()).expect("basename");
+        let digest = Sha256::digest(cwd.to_string_lossy().as_bytes());
+        let hex: String = digest.iter().take(6).map(|b| format!("{b:02x}")).collect();
+        format!("wd_{basename}_{hex}")
+    }
+
+    /// `sha256("/home/will/projects/vimeflow")[:12]` sanity anchor.
+    #[test]
+    fn cwd_bucket_name_hex_matches_known_sha() {
+        let name = cwd_bucket_name(Path::new("/home/will/projects/vimeflow")).expect("bucket");
+        assert_eq!(name, "wd_vimeflow_6650d9cdb25d");
+    }
+
     #[test]
     fn fallback_is_scoped_to_cwd_bucket() {
         let kimi_home = tempfile::tempdir().expect("kimi home");
@@ -289,19 +303,19 @@ mod tests {
             .and_then(|n| n.to_str())
             .expect("work basename");
 
-        // Session in THIS cwd's bucket (wd_<basename>_<hash>) → must win.
+        // Session in THIS cwd's EXACT bucket (wd_<basename>_<sha256[:12]>) → must win.
         let scoped = kimi_home
             .path()
             .join("sessions")
-            .join(format!("wd_{base}_aaaaaaaaaaaa"))
+            .join(bucket_for(work.path()))
             .join("session_scoped");
         let scoped_wire = write_wire(&scoped);
 
-        // Newer decoy in a DIFFERENT project's bucket → must be ignored.
+        // Newer decoy: SAME basename, DIFFERENT hash → must be ignored.
         let decoy = kimi_home
             .path()
             .join("sessions")
-            .join("wd_otherproject_bbbbbbbbbbbb")
+            .join(format!("wd_{base}_ffffffffffff"))
             .join("session_decoy");
         write_wire(&decoy);
 

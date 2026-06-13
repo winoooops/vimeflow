@@ -218,7 +218,9 @@ impl KimiTranscriptDecoder {
         let Some(event) = dto.event.as_ref() else {
             return;
         };
-        let timestamp = now_iso8601();
+        // Wire `time` is epoch-ms; use it so replay reflects historical
+        // action times. Fall back to `now` only when the stamp is missing.
+        let timestamp = dto.time.map_or_else(now_iso8601, epoch_ms_to_iso8601);
 
         match event.loop_event_type() {
             KimiLoopEventType::ToolCall => {
@@ -337,6 +339,14 @@ fn truncate_string(input: &str, max_len: usize) -> String {
         .nth(max_len.saturating_sub(3))
         .map_or(input.len(), |(idx, _)| idx);
     format!("{}...", &input[..end])
+}
+
+/// Convert an epoch-millisecond wire stamp to an RFC3339 string — the same
+/// shape codex carries in `dto.timestamp` and `compute_duration_ms` parses.
+/// Out-of-range stamps fall back to `now`.
+fn epoch_ms_to_iso8601(epoch_ms: u64) -> String {
+    chrono::DateTime::<chrono::Utc>::from_timestamp_millis(epoch_ms as i64)
+        .map_or_else(now_iso8601, |dt| dt.to_rfc3339())
 }
 
 fn now_iso8601() -> String {
@@ -482,6 +492,22 @@ mod tests {
         assert_eq!(turns.len(), 1);
         assert_eq!(turns[0]["numTurns"], 1);
         assert_eq!(turns[0]["sessionId"], "sid-kimi");
+    }
+
+    #[test]
+    fn tool_call_timestamp_derives_from_wire_time_not_now() {
+        let sink = Arc::new(FakeEventSink::new());
+        let mut decoder = KimiTranscriptDecoder::new(sink.clone(), "sid".into(), None);
+        // Mirrors the fixture's tool.call envelope `time` (epoch-ms).
+        decoder.decode_line(
+            r#"{"type":"context.append_loop_event","time":1781345364384,"event":{"type":"tool.call","toolCallId":"t1","name":"Read","args":{"path":"a"}}}"#,
+        );
+        let calls = tool_call_events(&sink);
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0]["timestamp"], epoch_ms_to_iso8601(1781345364384));
+        // The wire time is in 2026; today's `now_iso8601` would differ, so a
+        // direct equality to the derived stamp proves it is not current-time.
+        assert_ne!(calls[0]["timestamp"], now_iso8601());
     }
 
     #[test]

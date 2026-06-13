@@ -298,11 +298,50 @@ pub(crate) async fn stop_agent_watcher_inner(
 }
 
 #[cfg(test)]
+use once_cell::sync::Lazy;
+#[cfg(test)]
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
+#[cfg(test)]
+use std::ffi::OsString;
 #[cfg(test)]
 use std::sync::atomic::AtomicBool;
 #[cfg(test)]
-use std::sync::Mutex;
+use std::sync::{Mutex, MutexGuard};
+
+// Serializes every test that mutates the process-wide `KIMI_CODE_HOME`.
+#[cfg(test)]
+static KIMI_HOME_ENV_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
+
+/// RAII guard: locks `KIMI_HOME_ENV_LOCK` so `KIMI_CODE_HOME`-mutating tests
+/// serialize, snapshots the prior value, and restores it on drop.
+#[cfg(test)]
+pub(crate) struct KimiHomeEnvGuard {
+    _lock: MutexGuard<'static, ()>,
+    prev: Option<OsString>,
+}
+
+#[cfg(test)]
+impl KimiHomeEnvGuard {
+    pub(crate) fn acquire() -> Self {
+        let lock = KIMI_HOME_ENV_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        Self {
+            _lock: lock,
+            prev: std::env::var_os("KIMI_CODE_HOME"),
+        }
+    }
+}
+
+#[cfg(test)]
+impl Drop for KimiHomeEnvGuard {
+    fn drop(&mut self) {
+        match self.prev.take() {
+            Some(v) => std::env::set_var("KIMI_CODE_HOME", v),
+            None => std::env::remove_var("KIMI_CODE_HOME"),
+        }
+    }
+}
 
 #[cfg(test)]
 pub(crate) fn make_test_session() -> crate::terminal::state::ManagedSession {

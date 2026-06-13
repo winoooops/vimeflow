@@ -30,24 +30,17 @@ mod tests {
 
     #[test]
     fn default_kimi_home_prefers_env_var() {
-        // SAFETY: single-threaded test; restore afterward.
-        let prev = std::env::var_os("KIMI_CODE_HOME");
+        // Guard serializes env mutation + restores the prior value on drop.
+        let _guard = crate::agent::adapter::KimiHomeEnvGuard::acquire();
         std::env::set_var("KIMI_CODE_HOME", "/custom/kimi");
         assert_eq!(default_kimi_home(), PathBuf::from("/custom/kimi"));
-        match prev {
-            Some(v) => std::env::set_var("KIMI_CODE_HOME", v),
-            None => std::env::remove_var("KIMI_CODE_HOME"),
-        }
     }
 
     #[test]
     fn default_kimi_home_falls_back_to_home_subdir() {
-        let prev = std::env::var_os("KIMI_CODE_HOME");
+        let _guard = crate::agent::adapter::KimiHomeEnvGuard::acquire();
         std::env::remove_var("KIMI_CODE_HOME");
         let home = default_kimi_home();
         assert!(home.ends_with(".kimi-code"));
-        if let Some(v) = prev {
-            std::env::set_var("KIMI_CODE_HOME", v);
-        }
     }
 }

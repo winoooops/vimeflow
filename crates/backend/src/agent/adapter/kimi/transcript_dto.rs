@@ -41,6 +41,11 @@ pub(super) struct KimiLineDto {
     #[serde(rename = "type", default, deserialize_with = "lenient_string")]
     pub type_tag: Option<String>,
 
+    /// Envelope wall-clock stamp, epoch MILLISECONDS. Used as each emitted
+    /// event's timestamp so replay reflects historical times, not `now`.
+    #[serde(default, deserialize_with = "lenient_u64")]
+    pub time: Option<u64>,
+
     /// `metadata.app_version` — the kimi-code CLI version.
     #[serde(default, deserialize_with = "lenient_string")]
     pub app_version: Option<String>,
