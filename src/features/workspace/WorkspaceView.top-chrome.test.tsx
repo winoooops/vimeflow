@@ -327,7 +327,9 @@ describe('WorkspaceView – top chrome (main-stage handoff J2–J6)', () => {
     const switcher = within(chrome).getByTestId('layout-switcher')
 
     // Right-aligned: a flex-1 spacer sits immediately before the pillar.
-    expect(switcher.previousElementSibling?.className).toContain('flex-1')
+    // eslint-disable-next-line testing-library/no-node-access -- geometry test: assert the flex-1 spacer exists structurally
+    const switcherSpacer = switcher.previousElementSibling
+    expect(switcherSpacer?.className).toContain('flex-1')
     expect(within(chrome).queryByText('Layout')).toBeNull()
 
     // Config button docks INSIDE the pill pillar, right after a divider.
@@ -337,7 +339,9 @@ describe('WorkspaceView – top chrome (main-stage handoff J2–J6)', () => {
       name: 'Configure displayed layouts',
     })
     const divider = within(switcher).getByTestId('layout-switcher-divider')
-    expect(divider.nextElementSibling?.contains(config)).toBe(true)
+    // eslint-disable-next-line testing-library/no-node-access -- geometry test: assert the config wrapper is the divider's next sibling
+    const configWrapper = divider.nextElementSibling
+    expect(configWrapper?.contains(config)).toBe(true)
 
     // No bordered action-group wrapper and no pin button (auto-hide removed).
     expect(within(chrome).queryByTestId('top-action-group')).toBeNull()
