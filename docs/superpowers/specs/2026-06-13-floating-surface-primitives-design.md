@@ -150,7 +150,7 @@ A generic menu on the substrate, exposed as compound subcomponents so consumers 
 
 ```ts
 // Anchored (click trigger) OR controlled context-menu mode:
-<Menu trigger={ReactElement} placement?={Placement} width?={number} aria-label?={string}>…</Menu>
+<Menu trigger={ReactElement} placement?={Placement} width?={number} middleware?={{ ancestorScroll?: boolean }} aria-label?={string}>…</Menu>
 <Menu.Context position={{ x: number; y: number }} open={boolean} onOpenChange={(open) => void} aria-label={string}>…</Menu.Context>
 
 // Rows:
@@ -160,7 +160,7 @@ A generic menu on the substrate, exposed as compound subcomponents so consumers 
 <Menu.Submenu label icon?={string} value options onChange />   // shares base/OptionList with Dropdown
 ```
 
-- **Context mode** (`Menu.Context`) covers `TerminalContextMenu`: a virtual cursor anchor (`position`), external open control, non-modal focus management, and disabled-item navigation — all forwarded to `useFloatingSurface`/`SurfacePanel`, so the feature never imports `base/*`.
+- **Context mode** (`Menu.Context`) covers `TerminalContextMenu`: a virtual cursor anchor (`position`), external open control, non-modal focus management, and disabled-item navigation — all forwarded to `useFloatingSurface`/`SurfacePanel`, so the feature never imports `base/*`. `Menu.Context` **bakes in** the context-menu substrate config (`offset: 0`, flip `fallbackPlacements`, `autoUpdate: false`, `ancestorScroll: false`, `openOnArrowKeyDown: false`, non-modal focus), so consumers pass only `position`/`open`/items.
 - **Submenu coordination** (covers `ViewSettingsDropdown`): `Menu` owns submenu open-state — **only one submenu open at a time**. Each submenu's portal root registers with the parent `Menu`'s `dismissWhen` predicate so an outside-press inside a submenu does **not** close the parent; selecting a submenu option closes **only** the submenu; opening one submenu closes the other. `Menu.Submenu` does **not** embed a public `Dropdown` — both render through the shared `base/OptionList`, while `Menu` owns the submenu lifecycle and dismissal.
 
 ### 5.4 `Popover`

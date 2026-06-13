@@ -11,7 +11,7 @@
 **Spec:** `docs/superpowers/specs/2026-06-13-floating-surface-primitives-design.md` (read it first — §5 has the contracts, §7 the per-consumer behaviour matrix, §6 the lint rings).
 
 **Conventions every task must follow:**
-- Test co-location: each `Foo.tsx` has a sibling `Foo.test.tsx`. Every test file **must** `import { describe, test, expect, vi, beforeEach } from 'vitest'` explicitly (globals are runtime-only; `tsc -b` + lint-staged block the commit otherwise).
+- Test co-location: each `Foo.tsx` has a sibling `Foo.test.tsx`. Every test file **must explicitly import the Vitest helpers it uses** (e.g. `import { describe, test, expect, vi } from 'vitest'`) — import only what you use (`noUnusedLocals` is on); globals are runtime-only, so `tsc -b` + lint-staged block the commit otherwise.
 - Run a single file: `npx vitest run <path>`. Full gate before each PR: `npm run lint && npm run type-check && npm run test && npm run build`.
 - Material Symbols render as ligature **text** if the name is invalid — verify any new icon in a browser, not just via `textContent`.
 - The `@/components/*` alias and the `@floating-ui/react` features ratchet already exist (#440). This plan **tightens** the ratchet; it does not create it.
@@ -330,7 +330,7 @@ describe('Dropdown', () => {
 
 - [ ] **Step 1: Failing test** — `Menu` with a `trigger` opens on click; `Menu.Item` fires `onSelect` and closes; `Menu.Item disabled` does not fire; `Escape`/outside-press dismiss. (Write concrete tests mirroring the Task 5 shape.)
 - [ ] **Step 2:** Run — FAIL.
-- [ ] **Step 3: Implement** `Menu` on `useFloatingSurface({ role: 'menu', list })` + `SurfacePanel`. Compound parts via context: `Menu.Section` (header + group), `Menu.Item` (`role=menuitem`, shortcut chip ported from `TerminalContextMenu.tsx:48-50`, `disabled` → `aria-disabled` + skip in `disabledIndices`).
+- [ ] **Step 3: Implement** `Menu` on `useFloatingSurface({ role: 'menu', list, middleware: props.middleware })` + `SurfacePanel`; expose optional `middleware?: { ancestorScroll?: boolean }` (spec §5.3) for consumers needing plain/window dismiss. Compound parts via context: `Menu.Section` (header + group), `Menu.Item` (`role=menuitem`, shortcut chip ported from `TerminalContextMenu.tsx:48-50`, `disabled` → `aria-disabled` + skip in `disabledIndices`).
 - [ ] **Step 4:** Run — PASS. **Step 5:** Commit.
 
 ### Task 10: `Menu.Checkbox` + `Menu.Submenu`
@@ -341,7 +341,7 @@ describe('Dropdown', () => {
 ### Task 11: `Menu.Context` (cursor-anchored, controlled)
 
 - [ ] **Step 1: Failing test** — `Menu.Context` rendered with `open` + `position={{x,y}}` shows items at that point; `onOpenChange(false)` on outside-press/Escape; a `disabled` first item is skipped by arrow-key nav; focus is non-modal.
-- [ ] **Step 2–4:** Implement on `useFloatingSurface({ anchor: position, role: 'menu', list: { disabledIndices } })` + `SurfacePanel focus={{ modal: false }}`. Port the virtual-rect builder behaviour (now in the hook from Task 2) and `openOnArrowKeyDown: false` semantics from `TerminalContextMenu.tsx`. **Step 5:** Commit.
+- [ ] **Step 2–4:** Implement on `useFloatingSurface({ anchor: position, role: 'menu', offset: 0, fallbackPlacements: ['top-start', 'bottom-end', 'top-end'], middleware: { autoUpdate: false, ancestorScroll: false }, list: { disabledIndices, openOnArrowKeyDown: false } })` + `SurfacePanel focus={{ modal: false }}` — `Menu.Context` **bakes** these context-menu defaults (consumers pass only `position`/`open`/items). Verify the values against `TerminalContextMenu.tsx`. Add tests asserting non-modal focus + disabled-first-item nav. **Step 5:** Commit.
 
 ### Task 12: Migrate `ViewSettingsDropdown` → `Menu` (ratchet 5 → 4)
 
@@ -351,12 +351,12 @@ describe('Dropdown', () => {
 
 ### Task 13: Migrate `PriorityPlus` → `Menu` (ratchet 4 → 3)
 
-- [ ] **Step 1:** Replace the overflow popover with a `Menu` of `Menu.Item`s. **Preserve the manual window-scroll-dismiss** (spec §7) — pass it through `dismissWhen`/an effect; do not silently adopt `ancestorScroll`. Remove its floating-ui disable.
+- [ ] **Step 1:** Replace the overflow popover with a `Menu` of `Menu.Item`s. **Preserve dismiss-on-scroll** (spec §7): read PriorityPlus's manual window-scroll listener — if it is equivalent to `ancestorScroll` (the overflow menu's scroll ancestor is the document), use `Menu`'s default and delete the manual listener (a simplification, behaviour preserved); if it genuinely differs, pass `middleware={{ ancestorScroll: false }}` and keep a local scroll effect. Remove its floating-ui disable.
 - [ ] **Step 2–4:** Tests green (`npx vitest run src/features/diff/components/toolbar`); lint green; commit.
 
 ### Task 14: Migrate `TerminalContextMenu` → `Menu.Context` (ratchet 3 → 2)
 
-- [ ] **Step 1:** Replace the component body with `Menu.Context` (`open={isOpen}`, `position`, `onOpenChange`); the two items become `Menu.Item` (Copy with `canCopy`-driven `disabled`, Paste), shortcuts via the `shortcut` prop. Remove its floating-ui disable. **Preserve no-autoUpdate / no-ancestorScroll / non-modal focus** (spec §7).
+- [ ] **Step 1:** Replace the component body with `Menu.Context` (`open={isOpen}`, `position`, `onOpenChange`); the two items become `Menu.Item` (Copy with `canCopy`-driven `disabled`, Paste), shortcuts via the `shortcut` prop. Remove its floating-ui disable. The no-autoUpdate / no-ancestorScroll / offset-0 / non-modal-focus behaviour is **baked into `Menu.Context`** (Task 11) — assert it stays via the ported copy/paste + platform-shortcut tests.
 - [ ] **Step 2–4:** Run `npx vitest run src/features/terminal` — preserve the copy/paste + platform-shortcut assertions; lint green; commit. **PR2 gate:** full gate + `codex review --base main` to clean; open PR2.
 
 ---
