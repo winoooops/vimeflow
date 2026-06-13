@@ -70,7 +70,8 @@ pub(crate) const AGENT_SPECS: &[AgentSpec] = &[
     AgentSpec {
         agent_type: AgentType::Kimi,
         display_name: "Kimi",
-        binary_names: &["kimi"],
+        // A running kimi rewrites argv0 to "kimi-code" (process.title); match both.
+        binary_names: &["kimi", "kimi-code"],
         home_subdir: Some(".kimi-code"),
     },
     AgentSpec {
@@ -195,6 +196,7 @@ mod tests {
         assert_eq!(agent_type_for_binary("claude"), Some(AgentType::ClaudeCode));
         assert_eq!(agent_type_for_binary("codex"), Some(AgentType::Codex));
         assert_eq!(agent_type_for_binary("kimi"), Some(AgentType::Kimi));
+        assert_eq!(agent_type_for_binary("kimi-code"), Some(AgentType::Kimi));
         assert_eq!(agent_type_for_binary("aider"), Some(AgentType::Aider));
     }
 

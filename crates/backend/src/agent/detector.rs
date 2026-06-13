@@ -433,6 +433,15 @@ mod tests {
             crate::agent::config::agent_type_for_binary(&binary),
             Some(AgentType::Kimi)
         );
+
+        // A running kimi rewrites argv0 to "kimi-code" (process.title) — detect that too.
+        let renamed = vec!["kimi-code".to_string()];
+        let renamed_binary = extract_binary_name(&renamed).unwrap();
+        assert_eq!(renamed_binary, "kimi-code");
+        assert_eq!(
+            crate::agent::config::agent_type_for_binary(&renamed_binary),
+            Some(AgentType::Kimi)
+        );
     }
 
     #[test]

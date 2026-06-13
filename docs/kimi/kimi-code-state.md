@@ -105,3 +105,12 @@ detection is one `AGENT_SPECS` entry: `{ agent_type: Kimi, binary_names: ["kimi"
 - **Two concurrent same-cwd kimi panes on macOS.** Without `/proc`, two simultaneously-live
   kimi sessions in one project can't be disambiguated; the index/exact-bucket fallback picks
   newest-by-mtime. Linux resolves this via the per-process fd.
+- **A running kimi renames its `argv0` to `kimi-code`.** A live kimi process rewrites
+  `process.title`, so `/proc/<pid>/cmdline` reads `kimi-code`, not `kimi`. Detection
+  (`AGENT_SPECS.binary_names`) must match BOTH `kimi` (on-disk launch name) and `kimi-code`
+  (running-process name) or a real session goes undetected. Caught by a live production-attach
+  test on 2026-06-13; the registry now lists both names.
+- **The proc-fd locator primary is inert for kimi v0.14.2.** kimi append-writes `wire.jsonl`
+  line-by-line and does not keep it open as a tracked fd, so `/proc/<pid>/fd` never exposes it;
+  resolution falls through to the freshness-gated `session_index.jsonl` path (which binds the
+  live session correctly). The proc-fd code is retained for builds that hold the fd open.
