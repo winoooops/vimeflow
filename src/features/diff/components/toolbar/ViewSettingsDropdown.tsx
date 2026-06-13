@@ -17,7 +17,7 @@ import {
   useRole,
 } from '@floating-ui/react'
 import type { BaseDiffOptions } from '@pierre/diffs'
-import type { DropdownOption } from './Dropdown'
+import { type DropdownOption } from '@/components/Dropdown'
 
 // Pierre option subtypes — same pattern as DiffChipToolbar.tsx so a Pierre
 // version bump that widens / renames the enums is caught at type-check time.
