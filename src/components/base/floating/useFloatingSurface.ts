@@ -109,6 +109,9 @@ export const useFloatingSurface = (
   const py = point?.y
   useEffect(() => {
     if (px === undefined || py === undefined) {
+      // Leaving virtual-point mode: clear the stale position reference so elements.reference (the trigger) regains precedence.
+      refs.setPositionReference(null)
+
       return
     }
 
