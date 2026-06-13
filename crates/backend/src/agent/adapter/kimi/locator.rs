@@ -26,6 +26,7 @@
 //! resolution falls through to the index / bucket fallbacks.
 
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
 use serde::Deserialize;
@@ -65,6 +66,9 @@ pub(crate) struct KimiLocator {
     // `Some("/proc")` on Linux (or a tempdir in tests); `None` on macOS,
     // where the proc-fd / proc-environ fast-paths skip themselves.
     proc_root: Option<PathBuf>,
+    // The session dir of the LAST successful `locate`, shared with the
+    // decoder (same Arc) so it can read sibling `agents/agent-*` wires.
+    resolved_session_dir: Arc<Mutex<Option<PathBuf>>>,
 }
 
 impl KimiLocator {
@@ -79,7 +83,36 @@ impl KimiLocator {
             agent_pid,
             pty_start,
             proc_root,
+            resolved_session_dir: Arc::new(Mutex::new(None)),
         }
+    }
+
+    /// The session dir (`.../sessions/wd_*/session_*`) of the last
+    /// successful `locate`, used by the decoder to enumerate sub-agent
+    /// wires. `None` until the first resolve.
+    pub(crate) fn resolved_session_dir(&self) -> Option<PathBuf> {
+        self.resolved_session_dir
+            .lock()
+            .expect("resolved_session_dir lock")
+            .clone()
+    }
+
+    /// Record (then pass through) a resolved source's session dir —
+    /// `status_path` is `.../session_*/agents/main/wire.jsonl`, so the
+    /// session dir is three components up.
+    fn remember(&self, located: LocatedStatusSource) -> LocatedStatusSource {
+        if let Some(session_dir) = located
+            .status_path
+            .parent()
+            .and_then(Path::parent)
+            .and_then(Path::parent)
+        {
+            *self
+                .resolved_session_dir
+                .lock()
+                .expect("resolved_session_dir lock") = Some(session_dir.to_path_buf());
+        }
+        located
     }
 
     /// Effective kimi home for THIS process: the kimi process's own
@@ -344,7 +377,7 @@ impl StatusSourceLocator for KimiLocator {
                     located.status_path.display(),
                     located.agent_session_id
                 ));
-                return Ok(located);
+                return Ok(self.remember(located));
             }
             // Then the newest same-cwd index match (binds even when idle).
             let index = self.try_resolve_from_index(&home, &cwd);
@@ -358,7 +391,7 @@ impl StatusSourceLocator for KimiLocator {
                     located.status_path.display(),
                     located.agent_session_id
                 ));
-                return Ok(located);
+                return Ok(self.remember(located));
             }
             if attempt + 1 < KIMI_BIND_RETRY_MAX_ATTEMPTS {
                 std::thread::sleep(std::time::Duration::from_millis(
@@ -374,7 +407,7 @@ impl StatusSourceLocator for KimiLocator {
                 located.status_path.display(),
                 located.agent_session_id
             ));
-            return Ok(located);
+            return Ok(self.remember(located));
         }
 
         let err = format!(

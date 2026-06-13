@@ -55,7 +55,15 @@ impl TranscriptPathSource for KimiAdapter {
 
 impl StateDecoder for KimiAdapter {
     fn decode(&self, session_id: Option<&str>, raw: &str) -> Result<StatusSnapshot, String> {
-        let snapshot = parser::parse_wire_snapshot(session_id, raw)?;
+        // When the locator has resolved a session dir, aggregate across the
+        // session's agents (context from the active sub-agent); otherwise
+        // decode the single main wire the watcher handed us.
+        let snapshot = self
+            .locator
+            .resolved_session_dir()
+            .and_then(|dir| parser::parse_session_aggregate(&dir))
+            .map(Ok)
+            .unwrap_or_else(|| parser::parse_wire_snapshot(session_id, raw))?;
         kdbg(&format!(
             "DECODE: model={} ctx_size={} input={} output={}",
             snapshot.model_id,

@@ -6,6 +6,12 @@
 //! provider-neutral [`StatusSnapshot`]. `Ok` always — a partial trailing
 //! line is dropped, a malformed line is logged + skipped.
 
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::time::SystemTime;
+
+use serde::Deserialize;
+
 use super::transcript_dto::{KimiLineDto, KimiRecordType, KimiUsageDto};
 use super::types::KIMI_CONTEXT_WINDOW_SIZE;
 use crate::agent::adapter::types::StatusSnapshot;
@@ -57,6 +63,69 @@ pub(crate) fn parse_wire_snapshot(
     }
 
     Ok(state.into_snapshot())
+}
+
+/// Aggregate a kimi session across its agents: the model/version come from
+/// the `main` agent (the session identity), the context window from the
+/// MOST-RECENTLY-ACTIVE agent wire (so a `/init`-style run delegating to a
+/// sub-agent shows the sub-agent's live token usage, not main's empty
+/// shell). Returns `None` when `state.json` / its wires can't be read, so
+/// the caller falls back to the single main-wire decode.
+pub(crate) fn parse_session_aggregate(session_dir: &Path) -> Option<StatusSnapshot> {
+    let wires = read_agent_wires(session_dir)?;
+    let main_wire = wires.iter().find(|w| w.is_main).map(|w| &w.wire)?;
+    let main_raw = std::fs::read_to_string(main_wire).ok()?;
+    let mut snapshot = parse_wire_snapshot(None, &main_raw).ok()?;
+
+    let active_wire = wires
+        .iter()
+        .max_by_key(|w| {
+            std::fs::metadata(&w.wire)
+                .and_then(|m| m.modified())
+                .unwrap_or(SystemTime::UNIX_EPOCH)
+        })
+        .map(|w| &w.wire)?;
+    let active_raw = std::fs::read_to_string(active_wire).ok()?;
+    snapshot.context_window = parse_wire_snapshot(None, &active_raw).ok()?.context_window;
+    Some(snapshot)
+}
+
+struct AgentWire {
+    is_main: bool,
+    wire: PathBuf,
+}
+
+/// Enumerate the `agents/*/wire.jsonl` of a session from its `state.json`
+/// `agents{}` map. Each wire is required to live UNDER `session_dir` so a
+/// tampered `homedir` can't redirect reads outside the trusted session.
+fn read_agent_wires(session_dir: &Path) -> Option<Vec<AgentWire>> {
+    let raw = std::fs::read_to_string(session_dir.join("state.json")).ok()?;
+    let state: KimiStateDto = serde_json::from_str(&raw).ok()?;
+    let mut wires = Vec::new();
+    for entry in state.agents.values() {
+        let wire = PathBuf::from(&entry.homedir).join("wire.jsonl");
+        if wire.starts_with(session_dir) && wire.is_file() {
+            wires.push(AgentWire {
+                is_main: entry.agent_type.as_deref() == Some("main"),
+                wire,
+            });
+        }
+    }
+    (!wires.is_empty()).then_some(wires)
+}
+
+/// `<sessionDir>/state.json` — only the `agents{}` map matters here.
+#[derive(Deserialize)]
+struct KimiStateDto {
+    #[serde(default)]
+    agents: HashMap<String, KimiAgentDto>,
+}
+
+#[derive(Deserialize)]
+struct KimiAgentDto {
+    homedir: String,
+    #[serde(rename = "type")]
+    agent_type: Option<String>,
 }
 
 #[derive(Default)]
@@ -185,6 +254,94 @@ mod tests {
             .join("src/agent/adapter/kimi/fixtures/sample_wire.jsonl");
         std::fs::read_to_string(&path)
             .unwrap_or_else(|e| panic!("read fixture {}: {}", path.display(), e))
+    }
+
+    fn write_agent_wire(session_dir: &Path, agent: &str, contents: &str) -> PathBuf {
+        let dir = session_dir.join("agents").join(agent);
+        std::fs::create_dir_all(&dir).expect("agent dir");
+        let wire = dir.join("wire.jsonl");
+        std::fs::write(&wire, contents).expect("agent wire");
+        wire
+    }
+
+    /// `/init`-style session: `main` only carries the model, the `agent-0`
+    /// sub-agent carries the live token usage and is the most recently
+    /// written wire — the aggregate takes the model from main and the
+    /// context window from the active sub-agent.
+    #[test]
+    fn session_aggregate_takes_context_from_active_subagent() {
+        use std::time::Duration;
+        let session = tempfile::tempdir().expect("session");
+        let dir = session.path();
+        let main_wire = write_agent_wire(
+            dir,
+            "main",
+            "{\"type\":\"config.update\",\"modelAlias\":\"kimi-code/kimi-for-coding\"}\n",
+        );
+        let sub_wire = write_agent_wire(
+            dir,
+            "agent-0",
+            "{\"type\":\"config.update\",\"modelAlias\":\"kimi-code/kimi-for-coding\"}\n\
+             {\"type\":\"usage.record\",\"usage\":{\"inputOther\":6492,\"output\":187,\"inputCacheRead\":58624,\"inputCacheCreation\":0}}\n",
+        );
+        std::fs::write(
+            dir.join("state.json"),
+            format!(
+                "{{\"agents\":{{\"main\":{{\"homedir\":\"{}\",\"type\":\"main\"}},\"agent-0\":{{\"homedir\":\"{}\",\"type\":\"sub\"}}}}}}",
+                main_wire.parent().unwrap().display(),
+                sub_wire.parent().unwrap().display(),
+            ),
+        )
+        .expect("state.json");
+
+        let now = SystemTime::now();
+        set_modified(&main_wire, now - Duration::from_secs(60));
+        set_modified(&sub_wire, now);
+
+        let snap = parse_session_aggregate(dir).expect("aggregate resolves");
+        assert_eq!(snap.model_id, "kimi-code/kimi-for-coding");
+        assert_eq!(snap.context_window.total_input_tokens, 6492);
+        assert_eq!(
+            snap.context_window
+                .current_usage
+                .expect("usage")
+                .cache_read_input_tokens,
+            58624
+        );
+    }
+
+    /// A wire whose `homedir` points OUTSIDE the session dir is rejected, so
+    /// the aggregate can't be steered to read an arbitrary path.
+    #[test]
+    fn session_aggregate_rejects_homedir_outside_session() {
+        let session = tempfile::tempdir().expect("session");
+        let outside = tempfile::tempdir().expect("outside");
+        let dir = session.path();
+        write_agent_wire(dir, "main", "{\"type\":\"config.update\"}\n");
+        let escaped = outside.path().join("agents").join("main");
+        std::fs::create_dir_all(&escaped).expect("escaped dir");
+        std::fs::write(escaped.join("wire.jsonl"), "{\"type\":\"metadata\"}\n").expect("escaped wire");
+        std::fs::write(
+            dir.join("state.json"),
+            format!(
+                "{{\"agents\":{{\"main\":{{\"homedir\":\"{}\",\"type\":\"main\"}}}}}}",
+                escaped.display(),
+            ),
+        )
+        .expect("state.json");
+        assert!(
+            parse_session_aggregate(dir).is_none(),
+            "must not read a wire outside the session dir"
+        );
+    }
+
+    fn set_modified(path: &Path, when: SystemTime) {
+        std::fs::OpenOptions::new()
+            .write(true)
+            .open(path)
+            .expect("open for mtime")
+            .set_modified(when)
+            .expect("set mtime");
     }
 
     #[test]
