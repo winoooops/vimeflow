@@ -88,3 +88,21 @@ test case for the state that triggers the collision.
 - **Finding:** The diff added `border-l border-outline-variant/25` to the `activity-panel-shell` divider, but `WorkspaceView.visual.test.tsx` only updated existing sidebar and top-chrome surface assertions and did not assert the new divider. Without a guard, a future class cleanup or token migration could silently remove or mistype the divider and recreate the visual regression the PR just fixed.
 - **Fix:** Added a focused assertion in the existing Surface Hierarchy block that `activity-panel-shell` includes both `border-l` and `border-outline-variant/25`.
 - **Commit:** same commit as this entry
+
+### 7. AgentStatusRail background token change is not guarded by its co-located test
+
+- **Source:** github-claude | PR #442 round 3 | 2026-06-13
+- **Severity:** MEDIUM
+- **File:** `src/features/agent-status/components/AgentStatusRail.tsx`
+- **Finding:** The diff changed `agent-status-rail` from `bg-surface-container` to `bg-surface`, but no co-located test asserted the new token. A future cleanup could silently revert the rail and recreate the visual regression, because the workspace-level visual assertion covers a different wrapper.
+- **Fix:** Added a focused `AgentStatusRail.test.tsx` assertion that the rail element's class list contains `bg-surface` and does not contain `bg-surface-container`.
+- **Commit:** same commit as this entry
+
+### 8. Workspace root backdrop token lacks a visual test guard
+
+- **Source:** github-claude | PR #442 round 3 | 2026-06-13
+- **Severity:** MEDIUM
+- **File:** `src/features/workspace/WorkspaceView.tsx`
+- **Finding:** The root `workspace-view` div was given `bg-surface-container-low` to complete the surface hierarchy behind the rounded main-column edges, but no visual test asserted the class. Existing layout assertions queried the root element but checked only height and overflow.
+- **Fix:** Added a `WorkspaceView.visual.test.tsx` Surface Hierarchy assertion that `workspace-view` includes `bg-surface-container-low`.
+- **Commit:** same commit as this entry

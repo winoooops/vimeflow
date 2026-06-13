@@ -194,6 +194,13 @@ describe('WorkspaceView - Visual Verification (Feature #20)', () => {
     // Zone hierarchy: the left sidebar is the one distinct chrome tone
     // (surface-container-low — a step off the canvas; lighter than the canvas
     // in dark, darker in light). Everything in the main column shares `surface`.
+    test('Workspace root carries the chrome backdrop tone (surface-container-low)', () => {
+      render(<WorkspaceView />)
+      const workspace = screen.getByTestId('workspace-view')
+
+      expect(workspace.className).toContain('bg-surface-container-low')
+    })
+
     test('Sidebar carries the distinct chrome tone (surface-container-low)', () => {
       render(<WorkspaceView />)
       const sidebar = screen.getByTestId('sidebar')
