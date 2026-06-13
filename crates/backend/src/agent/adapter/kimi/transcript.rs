@@ -17,8 +17,10 @@ use std::time::Instant;
 use super::transcript_dto::{KimiLineDto, KimiLoopEventType, KimiRecordType};
 use crate::agent::adapter::base::{TranscriptDecoder, TranscriptHandle, TranscriptTailService};
 use crate::agent::adapter::claude_code::test_runners::timestamps::compute_duration_ms;
-use crate::agent::adapter::types::ValidateTranscriptError;
-use crate::agent::events::{emit_agent_cwd, emit_agent_tool_call, emit_agent_turn, record_lifecycle};
+use crate::agent::adapter::types::{stamp_snapshot, ValidateTranscriptError};
+use crate::agent::events::{
+    emit_agent_cwd, emit_agent_status, emit_agent_tool_call, emit_agent_turn, record_lifecycle,
+};
 use crate::agent::types::{
     AgentCwdEvent, AgentPhase, AgentToolCallEvent, AgentTurnEvent, ToolCallStatus,
 };
@@ -151,6 +153,34 @@ fn session_id_from_dir(session_dir: &Path) -> String {
         .unwrap_or_default()
 }
 
+/// Re-aggregate the session status and emit `agent-status` when it changed.
+/// The shared watcher only re-decodes on MAIN-wire writes, so during
+/// delegated work (sub-agent-only token writes) the supervisor is what keeps
+/// the context/token metrics live. Deduped on a cheap token signature.
+fn emit_session_status(
+    events: &dyn EventSink,
+    session_id: &str,
+    session_dir: &Path,
+    last: &mut Option<(String, u64, u64)>,
+) {
+    let Some(snapshot) = super::parser::parse_session_aggregate(session_dir) else {
+        return;
+    };
+    let signature = (
+        snapshot.model_id.clone(),
+        snapshot.context_window.total_input_tokens,
+        snapshot.context_window.total_output_tokens,
+    );
+    if last.as_ref() == Some(&signature) {
+        return;
+    }
+    *last = Some(signature);
+    let event = stamp_snapshot(session_id, snapshot);
+    if let Err(e) = emit_agent_status(events, &event) {
+        log::warn!("Failed to emit kimi agent-status event: {}", e);
+    }
+}
+
 fn open_wire(path: &Path) -> Result<File, String> {
     File::open(path).map_err(|e| {
         format!(
@@ -192,6 +222,7 @@ fn run_session_supervisor(
     let mut children: HashMap<PathBuf, (Arc<AtomicBool>, std::thread::JoinHandle<()>)> =
         HashMap::new();
     let agent_session_id = session_id_from_dir(&session_dir);
+    let mut last_status: Option<(String, u64, u64)> = None;
 
     loop {
         // Always tail the main wire; add sub-agent wires as `state.json`
@@ -232,6 +263,10 @@ fn run_session_supervisor(
             });
             children.insert(wire, (child_stop, join));
         }
+
+        // Refresh the aggregated status so context/tokens stay live during
+        // sub-agent-only writes the main-wire watcher never sees.
+        emit_session_status(events.as_ref(), &session_id, &session_dir, &mut last_status);
 
         // Poll for newly-spawned sub-agents; check stop on a short tick so
         // teardown stays prompt.
@@ -296,6 +331,13 @@ impl KimiTranscriptDecoder {
     fn tool_use_id(&self, call_id: &str) -> String {
         format!("{}{}", self.agent_prefix, call_id)
     }
+
+    /// Only the main agent drives session-level turns and lifecycle; a
+    /// sub-agent (non-empty prefix) contributes tool calls alone, so its
+    /// `end_turn` can't flip the whole pane idle while main is still running.
+    fn is_main(&self) -> bool {
+        self.agent_prefix.is_empty()
+    }
 }
 
 impl TranscriptDecoder for KimiTranscriptDecoder {
@@ -336,6 +378,11 @@ impl TranscriptDecoder for KimiTranscriptDecoder {
 
 impl KimiTranscriptDecoder {
     fn process_turn_prompt(&mut self, dto: &KimiLineDto) {
+        // Turns and lifecycle are session-level — only the main wire drives
+        // them; a sub-agent's prompts must not add turns or move the phase.
+        if !self.is_main() {
+            return;
+        }
         // Only `origin.kind == "user"` is a real user turn; `injection`
         // turns (permission-mode reminders, etc.) are skipped.
         let is_user = dto
@@ -428,8 +475,9 @@ impl KimiTranscriptDecoder {
                 });
             }
             KimiLoopEventType::StepEnd => {
-                // `end_turn` finish settles the agent into idle.
-                if event.finish_reason.as_deref() == Some("end_turn") {
+                // Only the main wire's `end_turn` settles the pane idle; a
+                // sub-agent finishing a step must not, while main runs on.
+                if self.is_main() && event.finish_reason.as_deref() == Some("end_turn") {
                     self.record_phase(AgentPhase::Idle);
                 }
             }
@@ -699,6 +747,38 @@ mod tests {
         assert_eq!(calls[0]["tool"], "Read");
         assert_eq!(calls[1]["toolUseId"], "agent-0:t1");
         assert_eq!(calls[1]["status"], "done");
+    }
+
+    #[test]
+    fn sub_agent_decoder_emits_tools_but_not_turns_or_lifecycle() {
+        let sink = Arc::new(FakeEventSink::new());
+        // Non-empty prefix => sub-agent.
+        let mut decoder = KimiTranscriptDecoder::new(
+            sink.clone(),
+            "sid".into(),
+            "session_x".into(),
+            "agent-0:".into(),
+        );
+        decoder.decode_line(r#"{"type":"turn.prompt","origin":{"kind":"user"}}"#);
+        decoder.decode_line(
+            r#"{"type":"context.append_loop_event","event":{"type":"tool.call","toolCallId":"t1","name":"Read","args":{"path":"a"}}}"#,
+        );
+        decoder.decode_line(
+            r#"{"type":"context.append_loop_event","event":{"type":"step.end","finishReason":"end_turn"}}"#,
+        );
+        let names: Vec<String> = sink.recorded().into_iter().map(|(name, _)| name).collect();
+        assert!(
+            names.iter().any(|n| n == "agent-tool-call"),
+            "sub-agent must still surface tool calls",
+        );
+        assert!(
+            !names.iter().any(|n| n == "agent-turn"),
+            "sub-agent must not emit session turns",
+        );
+        assert!(
+            !names.iter().any(|n| n == "agent-lifecycle"),
+            "sub-agent must not move the pane lifecycle",
+        );
     }
 
     #[test]
