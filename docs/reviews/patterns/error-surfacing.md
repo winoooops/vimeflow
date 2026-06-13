@@ -3,7 +3,7 @@ id: error-surfacing
 category: error-handling
 created: 2026-04-10
 last_updated: 2026-06-13
-ref_count: 11
+ref_count: 12
 ---
 
 # Error Surfacing
@@ -387,3 +387,12 @@ failed" must mean the editor shows the original file, not the requested one.
 - **Finding:** The error banner set by `actionError` stayed visible indefinitely; it was only cleared at the start of the next context-menu action, leaving stale errors pinned in the sidebar.
 - **Fix:** Added a close button to the banner that calls `setActionError(null)` so users can dismiss it immediately.
 - **Commit:** see `git blame` / `git log` on this line
+
+### 40. Detached native clipboard method throws `TypeError: Illegal invocation` in Electron
+
+- **Source:** github-codex-connector | PR #444 round 2 | 2026-06-13
+- **Severity:** HIGH
+- **File:** `src/features/workspace/components/panels/FileExplorer.tsx`
+- **Finding:** `copy-path` extracted `clipboard?.writeText` into a local `writeText` variable and later called `writeText(fullPath)`. Native Chromium DOM methods validate their receiver, so the detached call can throw `TypeError: Illegal invocation` in Electron even though the Vitest mock passes (vi.fn() does not enforce `this`). The existing try/catch surfaced the error via `actionError`, but the action failed every time in the real renderer.
+- **Fix:** Removed the intermediate `writeText` variable. The guard now checks `typeof clipboard?.writeText !== 'function'` and the call site uses `await clipboard.writeText(fullPath)` directly so the Clipboard object remains the receiver. (Related but distinct from #38, which was about silently discarding missing-API/rejection cases; this finding is about preserving the method's `this` binding.)
+- **Commit:** same commit as this entry

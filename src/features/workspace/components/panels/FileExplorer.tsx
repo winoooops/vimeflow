@@ -209,9 +209,8 @@ export const FileExplorer = ({
 
       if (actionId === 'copy-path') {
         const clipboard = readClipboardWriter()
-        const writeText = clipboard?.writeText
 
-        if (typeof writeText !== 'function') {
+        if (typeof clipboard?.writeText !== 'function') {
           setActionError('Clipboard is unavailable')
 
           return
@@ -219,7 +218,7 @@ export const FileExplorer = ({
 
         void (async (): Promise<void> => {
           try {
-            await writeText(fullPath)
+            await clipboard.writeText(fullPath)
           } catch (caughtError: unknown) {
             const message =
               caughtError instanceof Error
