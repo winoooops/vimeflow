@@ -121,6 +121,8 @@ interface SurfacePanelProps {
 
 `SurfacePanel` always renders the canonical `GLASS_SURFACE` (no `className` escape hatch — that would reopen drift). The substrate is a hook + panel pair, not one component: `Dropdown`/`Menu` must wire both the trigger (`getReferenceProps`) and each item (`getItemProps`), which a single `anchor`-prop component cannot expose without becoming a shallow pass-through.
 
+`base/floating` also re-exports the single floating-ui type the public primitives need (`export type { Placement } from '@floating-ui/react'`), so `Dropdown`/`Menu`/`Popover` type their `placement` prop via `@/components/base/floating` and never import `@floating-ui/react` themselves — making the §6 ring-1 invariant literally true.
+
 ### 5.2 `Dropdown<T>`
 
 ```ts
@@ -175,7 +177,7 @@ interface PopoverProps {
 
 Each ring is a `no-restricted-imports` block extending #440's existing rules (flat config, `files`-scoped).
 
-**Ring 1 — `@floating-ui/react` only under `base/floating` (+ grandfathered `Tooltip`).** Widen #440's features-only ban to all of `src/`, with explicit exceptions via `ignores` (a severity-only later override would *not* clear the banned `paths` — verified against ESLint 9.39.x flat-config merge semantics):
+**Ring 1 — `@floating-ui/react` only under `base/floating` (+ grandfathered `Tooltip`).** Widen #440's features-only ban to all of `src/`, with explicit exceptions via `ignores` (a severity-only later override would *not* clear the banned `paths` — verified against ESLint 9.39.x flat-config merge semantics). Type imports are **not** exempt (no `allowTypeImports`) — `base/floating` re-exports the one type public primitives need (see §5.1), so `@floating-ui/react` stays fully confined:
 
 ```js
 {
@@ -183,7 +185,7 @@ Each ring is a `no-restricted-imports` block extending #440's existing rules (fl
   ignores: ['src/components/base/floating/**', 'src/components/Tooltip.tsx'], // Tooltip grandfathered until it adopts the substrate
   rules: {
     '@typescript-eslint/no-restricted-imports': ['error', {
-      paths: [{ name: '@floating-ui/react', allowTypeImports: true, message: 'Use a primitive from @/components, or extend base/floating — do not hand-roll a floating surface.' }],
+      paths: [{ name: '@floating-ui/react', message: 'Use a primitive from @/components, or extend base/floating — do not hand-roll a floating surface.' }],
     }],
   },
 }
@@ -196,7 +198,7 @@ Each ring is a `no-restricted-imports` block extending #440's existing rules (fl
   files: ['src/features/**/*.{ts,tsx}'],
   rules: {
     'no-restricted-imports': ['error', {
-      patterns: [{ group: ['@/components/base/*', '@/components/base/**', '**/components/base/*'],
+      patterns: [{ group: ['@/components/base', '@/components/base/**', '**/components/base', '**/components/base/**'],
         message: 'src/components/base is package-private — compose Dropdown/Menu/Popover instead.' }],
     }],
   },
