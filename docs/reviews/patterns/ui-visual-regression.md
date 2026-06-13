@@ -3,7 +3,7 @@ id: ui-visual-regression
 category: code-quality
 created: 2026-06-11
 last_updated: 2026-06-13
-ref_count: 3
+ref_count: 4
 ---
 
 # UI Visual Regression
@@ -105,4 +105,13 @@ test case for the state that triggers the collision.
 - **File:** `src/features/workspace/WorkspaceView.tsx`
 - **Finding:** The root `workspace-view` div was given `bg-surface-container-low` to complete the surface hierarchy behind the rounded main-column edges, but no visual test asserted the class. Existing layout assertions queried the root element but checked only height and overflow.
 - **Fix:** Added a `WorkspaceView.visual.test.tsx` Surface Hierarchy assertion that `workspace-view` includes `bg-surface-container-low`.
+- **Commit:** same commit as this entry
+
+### 9. Workspace backdrop guard uses substring match that accepts the old token
+
+- **Source:** github-codex-connector | PR #442 round 4 | 2026-06-13
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/workspace/WorkspaceView.visual.test.tsx` L197-210
+- **Finding:** The new surface-container-low assertion used `className.toContain('bg-surface-container-low')`. Because `bg-surface-container-lowest` contains that substring, a future regression back to the old backdrop token would keep the visual test green. The workspace root has no stricter backup assertion.
+- **Fix:** Replaced both `bg-surface-container-low` substring assertions (workspace root and sidebar) with exact jest-dom `toHaveClass('bg-surface-container-low')` checks, matching existing project test patterns.
 - **Commit:** same commit as this entry

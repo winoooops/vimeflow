@@ -198,14 +198,14 @@ describe('WorkspaceView - Visual Verification (Feature #20)', () => {
       render(<WorkspaceView />)
       const workspace = screen.getByTestId('workspace-view')
 
-      expect(workspace.className).toContain('bg-surface-container-low')
+      expect(workspace).toHaveClass('bg-surface-container-low')
     })
 
     test('Sidebar carries the distinct chrome tone (surface-container-low)', () => {
       render(<WorkspaceView />)
       const sidebar = screen.getByTestId('sidebar')
 
-      expect(sidebar.className).toContain('bg-surface-container-low')
+      expect(sidebar).toHaveClass('bg-surface-container-low')
       expect(sidebar.className).not.toContain('bg-transparent')
     })
 
