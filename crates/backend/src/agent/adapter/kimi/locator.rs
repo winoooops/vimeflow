@@ -246,7 +246,7 @@ impl KimiLocator {
         // the process start is unknown (macOS / no proc) nothing is "owned",
         // so selection falls back to the prior newest-index behavior unchanged.
         let process_start = self.process_start();
-        let mut matches: Vec<(usize, Option<SystemTime>, SessionIndexEntry)> = Vec::new();
+        let mut matches: Vec<(usize, Option<SystemTime>, String, SessionIndexEntry)> = Vec::new();
         for line in raw.lines() {
             let line = line.trim();
             if line.is_empty() {
@@ -262,14 +262,17 @@ impl KimiLocator {
                 continue;
             }
             let work_len = work_dir.len();
-            // Only read a candidate's metadata when its sessionDir canonically
-            // resolves under the kimi home — an index row with a `..`/symlinked
-            // sessionDir must not steer reads outside the trusted home.
-            let created = match entry.session_dir.as_deref() {
-                Some(dir) if path_under(dir, home) => session_created_at(dir),
-                _ => None,
+            // Only consider entries whose sessionDir canonically resolves under
+            // the kimi home — an index row with a missing, `..`/symlinked, or
+            // otherwise untrusted sessionDir must not win selection on macOS
+            // (where the process-start discriminator is unavailable) or steer
+            // reads outside the trusted home.
+            let Some(session_dir) = entry.session_dir.clone().filter(|dir| path_under(dir, home))
+            else {
+                continue;
             };
-            matches.push((work_len, created, entry));
+            let created = session_created_at(&session_dir);
+            matches.push((work_len, created, session_dir, entry));
         }
 
         // Per-process discriminator: when the process start is KNOWN, only a
@@ -280,23 +283,23 @@ impl KimiLocator {
         // (→ retry) rather than latching an earlier run. When the start is
         // unknown (macOS / no proc) fall back to the newest-index match
         // (`max_by_key` keeps the LAST element among equal workDir lengths).
-        let entry = match process_start {
+        let (entry, session_dir) = match process_start {
             Some(start) => matches
                 .into_iter()
-                .filter_map(|(work_len, created, entry)| {
+                .filter_map(|(work_len, created, session_dir, entry)| {
                     let created = created?;
-                    created_in_own_window(created, start).then_some((work_len, created, entry))
+                    created_in_own_window(created, start)
+                        .then_some((work_len, created, session_dir, entry))
                 })
-                .min_by_key(|(work_len, created, _)| {
+                .min_by_key(|(work_len, created, _, _)| {
                     (abs_duration(*created, start), usize::MAX - *work_len)
                 })
-                .map(|(_, _, entry)| entry),
+                .map(|(_, _, session_dir, entry)| (entry, session_dir)),
             None => matches
                 .into_iter()
-                .max_by_key(|(work_len, _, _)| *work_len)
-                .map(|(_, _, entry)| entry),
+                .max_by_key(|(work_len, _, _, _)| *work_len)
+                .map(|(_, _, session_dir, entry)| (entry, session_dir)),
         }?;
-        let session_dir = entry.session_dir?;
         let status_path = PathBuf::from(&session_dir)
             .join("agents")
             .join("main")

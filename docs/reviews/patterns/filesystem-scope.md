@@ -2,7 +2,7 @@
 id: filesystem-scope
 category: security
 created: 2026-04-09
-last_updated: 2026-05-20
+last_updated: 2026-06-13
 ref_count: 3
 ---
 
@@ -210,3 +210,12 @@ preserve their original Tauri-era paths.
 - **Finding:** Transcript path validation built a `PathBuf` from raw statusline text without first rejecting embedded null bytes, and the path-security helper documented its two-phase canonicalize/create/check flow without stating the accepted single-user desktop threat model. That left future maintainers unsure whether the residual same-user TOCTOU window was intentional or overlooked.
 - **Fix:** Reject null bytes before path conversion, keep transcript files scoped under canonical `~/.claude`, and document the helper as a best-effort single-user desktop guard. The comment now calls out that fd-pinned traversal or `cap-std`-style APIs are required if the threat model expands to shared writable roots or hostile same-user races.
 - **Commit:** _(pending on this branch)_
+
+### 22. Kimi index `session_dir` selected without path-under-home guard on macOS
+
+- **Source:** github-claude | PR #447 round 1 | 2026-06-13
+- **Severity:** MEDIUM
+- **File:** `crates/backend/src/agent/adapter/kimi/locator.rs`
+- **Finding:** `try_resolve_from_index` validated `session_dir` only when reading `created_at` metadata, then allowed the macOS fallback (`process_start = None`) to select the longest matching `workDir` regardless of whether its `sessionDir` was missing, outside the Kimi home, or traversing `..`. The winning untrusted path reached `status_path` construction, failed downstream trust checks, and left the agent-status panel blank.
+- **Fix:** Filter index candidates before they enter the match vector: require `session_dir` to be present and canonically resolve under `home` via `path_under`. Carry the validated `session_dir` forward so `status_path` is built from the trusted value and malformed rows can no longer shadow valid sessions.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
