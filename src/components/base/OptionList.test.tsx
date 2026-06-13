@@ -20,6 +20,7 @@ test('renders option labels and optional descriptions', () => {
     <OptionList
       options={OPTIONS}
       value="a"
+      activeIndex={0}
       onSelect={vi.fn()}
       getItemProps={passThroughItemProps}
       registerItem={noopRegister}
@@ -36,6 +37,7 @@ test('renders each option as a menuitem button', () => {
     <OptionList
       options={OPTIONS}
       value="a"
+      activeIndex={0}
       onSelect={vi.fn()}
       getItemProps={passThroughItemProps}
       registerItem={noopRegister}
@@ -54,6 +56,7 @@ test('clicking an option reports its value through onSelect', async () => {
     <OptionList
       options={OPTIONS}
       value="a"
+      activeIndex={0}
       onSelect={onSelect}
       getItemProps={passThroughItemProps}
       registerItem={noopRegister}
@@ -70,6 +73,7 @@ test('the selected option carries text-primary; others carry text-on-surface', (
     <OptionList
       options={OPTIONS}
       value="a"
+      activeIndex={0}
       onSelect={vi.fn()}
       getItemProps={passThroughItemProps}
       registerItem={noopRegister}
@@ -92,6 +96,7 @@ test('spreads getItemProps and calls registerItem with each row node', () => {
     <OptionList
       options={OPTIONS}
       value="a"
+      activeIndex={0}
       onSelect={vi.fn()}
       getItemProps={getItemProps}
       registerItem={(index, node) => {
@@ -119,6 +124,7 @@ test('accepts numeric option values', async () => {
     <OptionList
       options={numeric}
       value={12}
+      activeIndex={0}
       onSelect={onSelect}
       getItemProps={passThroughItemProps}
       registerItem={noopRegister}
@@ -127,4 +133,23 @@ test('accepts numeric option values', async () => {
 
   await userEvent.click(screen.getByRole('menuitem', { name: /14 px/ }))
   expect(onSelect).toHaveBeenCalledWith(14)
+})
+
+test('roving tabIndex: active row has tabindex 0, others have tabindex -1', () => {
+  render(
+    <OptionList
+      options={OPTIONS}
+      value="a"
+      activeIndex={1}
+      onSelect={vi.fn()}
+      getItemProps={passThroughItemProps}
+      registerItem={noopRegister}
+    />
+  )
+
+  const apple = screen.getByRole('menuitem', { name: /Apple/ })
+  const pear = screen.getByRole('menuitem', { name: /Pear/ })
+
+  expect(apple).toHaveAttribute('tabindex', '-1')
+  expect(pear).toHaveAttribute('tabindex', '0')
 })

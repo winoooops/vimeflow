@@ -158,6 +158,7 @@ export const Dropdown = <T extends string | number>({
             <OptionList
               options={options}
               value={value}
+              activeIndex={activeIndex}
               onSelect={selectOption}
               getItemProps={getItemProps}
               registerItem={(index, node): void => {

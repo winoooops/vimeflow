@@ -11,6 +11,7 @@ export interface DropdownOption<T extends string | number> {
 interface OptionListProps<T extends string | number> {
   options: readonly DropdownOption<T>[]
   value: T
+  activeIndex: number | null
   onSelect: (next: T) => void
   // Floating-ui item-prop getter from the parent's useFloatingSurface.
   getItemProps: (props?: HTMLProps<HTMLElement>) => Record<string, unknown>
@@ -24,6 +25,7 @@ interface OptionListProps<T extends string | number> {
 export const OptionList = <T extends string | number>({
   options,
   value,
+  activeIndex,
   onSelect,
   getItemProps,
   registerItem,
@@ -35,6 +37,7 @@ export const OptionList = <T extends string | number>({
         ref={(node): void => registerItem(index, node)}
         type="button"
         role="menuitem"
+        tabIndex={activeIndex === index ? 0 : -1}
         className={`w-full text-left px-3 py-1.5 hover:bg-surface-container-highest transition-colors ${
           option.value === value ? 'text-primary' : 'text-on-surface'
         }`}
