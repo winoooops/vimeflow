@@ -1488,7 +1488,8 @@ export const WorkspaceView = (): ReactElement => {
       // The backend normalizes git status/diff to the repository toplevel, so
       // derive repo-root-relative paths when we know the toplevel. Fall back
       // to cwd-relative for directories that are not inside a git repo.
-      const repoRoot = gitStatus.repoRoot
+      const repoRoot =
+        gitStatus.filesCwd === activeCwd ? gitStatus.repoRoot : null
 
       const relativePath =
         repoRoot && repoRoot.length > 0

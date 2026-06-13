@@ -190,7 +190,11 @@ export const FileExplorer = ({
   )
 
   const handleContextMenuAction = useCallback(
-    (action: ContextMenuAction, node: FileNode, fullPath: string): void => {
+    async (
+      action: ContextMenuAction,
+      node: FileNode,
+      fullPath: string
+    ): Promise<void> => {
       setActionError(null)
 
       const actionId = actionIdFor(action)
@@ -216,15 +220,15 @@ export const FileExplorer = ({
           return
         }
 
-        clipboard
-          .writeText(fullPath)
-          .catch((caughtError: unknown) => {
-            const message =
-              caughtError instanceof Error
-                ? caughtError.message
-                : String(caughtError)
-            setActionError(`Failed to copy path: ${message}`)
-          })
+        try {
+          await clipboard.writeText(fullPath)
+        } catch (caughtError: unknown) {
+          const message =
+            caughtError instanceof Error
+              ? caughtError.message
+              : String(caughtError)
+          setActionError(`Failed to copy path: ${message}`)
+        }
 
         return
       }

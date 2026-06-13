@@ -147,6 +147,24 @@ getting skipped).
 **Revisit when:** the project gains a Windows CI runner, OR when the
 Windows code path changes.
 
+### Rename-path target-existence check (TOCTOU)
+
+**Status:** Accepted limitation, documented.
+
+**Rationale:** `mutate.rs::rename_path_inner` checks
+`fs::symlink_metadata(&target)` before calling `fs::rename(&source,
+&target)` to refuse overwrites. These two syscalls are not atomic: a
+target created in the narrow window between the stat and the rename will
+be silently overwritten by `fs::rename` on most Unix filesystems.
+Portable safe Rust does not expose `renameat2(RENAME_NOREPLACE)` or
+`renamex_np(RENAME_NOREPLACE)`. The check prevents accidental clobbering
+in the common single-process case but cannot guarantee exclusion under
+concurrent writers.
+
+**Revisit when:** the project adds a platform-specific syscall wrapper
+for Linux `renameat2` / macOS `renamex_np`, or when a concrete
+concurrent-writer scenario makes this race worth mitigating.
+
 ## Review Checklist
 
 For reviewers touching this module, run through each item:

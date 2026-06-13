@@ -20,7 +20,7 @@ interface FileTreeProps {
     action: ContextMenuAction,
     node: FileNode,
     fullPath: string
-  ) => void
+  ) => void | Promise<void>
 }
 
 /**
@@ -70,7 +70,7 @@ export const FileTree = ({
       return
     }
 
-    onContextMenuAction?.(
+    void onContextMenuAction?.(
       action,
       contextMenuState.targetNode,
       contextMenuState.targetPath
