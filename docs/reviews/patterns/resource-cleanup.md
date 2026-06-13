@@ -2,8 +2,8 @@
 id: resource-cleanup
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-06-12
-ref_count: 11
+last_updated: 2026-06-13
+ref_count: 12
 ---
 
 # Resource Cleanup
@@ -135,4 +135,13 @@ causes listener accumulation and duplicate event handling.
 - **Finding:** `restartPersistedActiveShell` calls `service.spawn()` inside the restore effect's voided async IIFE. If the component unmounts (or the effect is superseded) while `spawn` is in flight, the IIFE later resumes, assigns the new PTY id to local state, and hits the `cancelled` guard — returning without killing the newly created PTY. The backend session outlives the frontend restore attempt and can interfere with later `listSessions` / restore behavior.
 - **Fix:** Track the restarted PTY id in a `pendingRestartId` local. After a successful spawn, immediately check `cancelled` and dispose of the pending PTY if cleanup already ran. Keep `pendingRestartId` set through all pre-commit awaits and cancellation checks; clear it only after `onRestoreRef.current(restored)` and `activate(...)` have committed the restored workspace. The effect cleanup function also disposes any still-pending restart. Disposal is fire-and-forget with error logging, matching the best-effort cleanup contract elsewhere in the hook.
 - **Verification:** Added regression tests that unmount while `spawn` is pending and while `createBrowserPane` is pending, asserting `service.kill({ sessionId: 'pty-new' })` is called after the async step resolves.
+- **Commit:** same commit as this entry
+
+### 14. Restarted PTY is not disposed if restore throws before commit
+
+- **Source:** github-claude | PR #443 round 3 | 2026-06-13
+- **Severity:** MEDIUM
+- **File:** `src/features/sessions/hooks/useSessionRestore.ts` L442-451
+- **Finding:** After `pendingRestartId` is set to the restarted PTY id, synchronous code such as `reconstructWorkspace`, buffer attachment, `onRestoreRef.current`, or `activate` can throw before `pendingRestartId` is cleared. The catch block only logged and cleared loading state, so the backend PTY remained alive until a later unmount or dependency change, appearing as a phantom session in subsequent `listSessions()` results.
+- **Fix:** Call the existing idempotent `disposePendingRestart()` helper at the start of the restore IIFE's catch block so any uncommitted restarted PTY is killed on errors.
 - **Commit:** same commit as this entry

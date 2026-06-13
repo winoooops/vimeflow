@@ -441,6 +441,10 @@ export const useSessionRestore = ({
         setLoading(false)
       } catch (err) {
         log.error('restore failed; starting empty', err)
+        // If a restarted PTY was spawned but restore threw before it was
+        // committed, kill the orphaned session so it does not leak as a
+        // phantom session in later restore rounds.
+        disposePendingRestart()
         // F15 (claude LOW): intentionally do NOT call stopBuffering() here.
         // The pty-data buffering listener stays alive for the lifetime of
         // useSessionManager so createSession (post-restore) still benefits
