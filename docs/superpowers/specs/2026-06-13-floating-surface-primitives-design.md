@@ -92,6 +92,8 @@ function useFloatingSurface(opts: {
   onOpenChange: (open: boolean) => void
   anchor?: HTMLElement | { x: number; y: number } | null // element OR virtual point (context menus)
   placement?: Placement // default 'bottom-start'
+  offset?: number // default 4 (TerminalContextMenu = 0)
+  fallbackPlacements?: Placement[] // flip() fallbacks (context menu)
   role?: 'menu' | 'listbox' | 'dialog' // default 'menu'
   middleware?: { autoUpdate?: boolean; ancestorScroll?: boolean } // defaults true/true; opt out per consumer
   dismissWhen?: (event: MouseEvent) => boolean // outsidePress predicate; default = always dismiss
@@ -101,6 +103,8 @@ function useFloatingSurface(opts: {
     onNavigate: (index: number | null) => void
     loop?: boolean
     disabledIndices?: number[]
+    focusItemOnOpen?: boolean
+    openOnArrowKeyDown?: boolean // default true; context menu = false
   }
 }): {
   refs; floatingStyles; context // context is exposed so SurfacePanel can drive FloatingFocusManager
@@ -121,7 +125,7 @@ interface SurfacePanelProps {
 
 `SurfacePanel` always renders the canonical `GLASS_SURFACE` (no `className` escape hatch — that would reopen drift). The substrate is a hook + panel pair, not one component: `Dropdown`/`Menu` must wire both the trigger (`getReferenceProps`) and each item (`getItemProps`), which a single `anchor`-prop component cannot expose without becoming a shallow pass-through.
 
-`base/floating` also re-exports the single floating-ui type the public primitives need (`export type { Placement } from '@floating-ui/react'`), so `Dropdown`/`Menu`/`Popover` type their `placement` prop via `@/components/base/floating` and never import `@floating-ui/react` themselves — making the §6 ring-1 invariant literally true.
+`base/floating` also re-exports the single floating-ui type the public primitives need (`export type { Placement } from '@floating-ui/react'`), so `Dropdown`/`Menu`/`Popover` type their `placement` prop via `@/components/base/floating/glassSurface` and never import `@floating-ui/react` themselves — making the §6 ring-1 invariant literally true.
 
 ### 5.2 `Dropdown<T>`
 
@@ -168,6 +172,7 @@ interface PopoverProps {
   onOpenChange: (open: boolean) => void
   placement?: Placement
   width?: number
+  middleware?: { ancestorScroll?: boolean } // DiffChipToolbar confirm = plain dismiss (false)
   'aria-label': string // role=dialog → accessible name required
   children: ReactNode // consumer owns the body; rendered on GLASS_SURFACE, focus-managed (modal)
 }

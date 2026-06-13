@@ -77,7 +77,7 @@ test('GLASS_SURFACE is the canonical glass-panel chrome', () => {
 
 - [ ] **Step 2: Run it — expect FAIL** (`Cannot find module './glassSurface'`). Run: `npx vitest run src/components/base/floating/glassSurface.test.ts`
 
-- [ ] **Step 3: Implement** — port the canonical className from the current `src/features/diff/components/toolbar/Dropdown.tsx:135`:
+- [ ] **Step 3: Implement** — port the canonical className from the current `src/features/diff/components/toolbar/Dropdown.tsx:138` (verify the exact line before copying):
 
 ```ts
 // The one floating-panel chrome. Every floating surface renders this — no per-call-site restyle.
@@ -132,11 +132,11 @@ test('accepts a virtual-point anchor without throwing', () => {
 - [ ] **Step 2: Run — expect FAIL.** `npx vitest run src/components/base/floating/useFloatingSurface.test.tsx`
 
 - [ ] **Step 3: Implement** the hook. Signature per spec §5.1. Key logic:
-  - `useFloating({ open, onOpenChange, placement = 'bottom-start', middleware: [offset(4), flip(), shift({ padding: 8 })], whileElementsMounted: opts.middleware?.autoUpdate === false ? undefined : autoUpdate })`.
+  - `useFloating({ open, onOpenChange, placement = 'bottom-start', middleware: [offset(opts.offset ?? 4), flip({ fallbackPlacements: opts.fallbackPlacements }), shift({ padding: 8 })], whileElementsMounted: opts.middleware?.autoUpdate === false ? undefined : autoUpdate })`. (TerminalContextMenu passes `offset: 0` + explicit `fallbackPlacements`.)
   - When `anchor` is a `{x,y}` point, set a virtual reference via `refs.setPositionReference({ getBoundingClientRect })` (port the rect builder from `TerminalContextMenu.tsx:109-128`); when it is an `HTMLElement`, pass through `elements.reference`.
   - `useDismiss(context, { ancestorScroll: opts.middleware?.ancestorScroll !== false, outsidePress: opts.dismissWhen })`.
   - `useRole(context, { role: opts.role ?? 'menu' })`.
-  - If `opts.list`, add `useListNavigation(context, { listRef: opts.list.ref, activeIndex: opts.list.activeIndex, onNavigate: opts.list.onNavigate, loop: opts.list.loop, disabledIndices: opts.list.disabledIndices })`.
+  - If `opts.list`, add `useListNavigation(context, { listRef: opts.list.ref, activeIndex: opts.list.activeIndex, onNavigate: opts.list.onNavigate, loop: opts.list.loop, disabledIndices: opts.list.disabledIndices, focusItemOnOpen: opts.list.focusItemOnOpen, openOnArrowKeyDown: opts.list.openOnArrowKeyDown })`.
   - `useInteractions([dismiss, role, ...listNav])`; return `{ refs, floatingStyles, context, getReferenceProps, getFloatingProps, getItemProps }`.
   - Explicit return type (define a `FloatingSurfaceApi` interface).
 
@@ -185,7 +185,7 @@ describe('SurfacePanel', () => {
 ```
 
 - [ ] **Step 2: Run — expect FAIL.**
-- [ ] **Step 3: Implement:** `FloatingPortal` → optional `FloatingFocusManager` (only when `focus !== false`, passing `context`, `initialFocus`, `modal`) → `div ref={setFloating} style={{...style, width}} className={GLASS_SURFACE}`. No arbitrary `className` prop. Props per spec §5.1.
+- [ ] **Step 3: Implement:** default `focus = false`. `FloatingPortal` → `FloatingFocusManager` **only when `focus` is an object** (passing `context`, `focus.initialFocus`, `focus.modal`); otherwise render the panel directly → `div ref={setFloating} style={{...style, width}} className={GLASS_SURFACE}`. No arbitrary `className` prop. Props per spec §5.1.
 - [ ] **Step 4: Run — expect PASS.**
 - [ ] **Step 5: Commit:** `git commit -am "feat(components): add SurfacePanel"`
 
@@ -197,7 +197,7 @@ describe('SurfacePanel', () => {
 - Create: `src/components/base/OptionList.tsx`
 - Test: `src/components/base/OptionList.test.tsx`
 
-Port the option-row markup from `Dropdown.tsx:138-161` (the `w-full text-left px-3 py-1.5 hover:bg-surface-container-highest` button, label + optional description, `text-primary` when selected).
+Port the option-row markup from `Dropdown.tsx:141-163` (the `w-full text-left px-3 py-1.5 hover:bg-surface-container-highest` button, label + optional description, `text-primary` when selected). Re-grep before porting — line numbers shift.
 
 - [ ] **Step 1: Write the failing test:**
 
@@ -223,7 +223,7 @@ test('renders options and reports selection', async () => {
 ```
 
 - [ ] **Step 2: Run — expect FAIL.**
-- [ ] **Step 3: Implement:** maps `options` to `role="menuitem"` buttons; calls `onSelect(value)`; applies selected highlight; spreads `getItemProps`/`registerItem(index, node)` so the parent wires keyboard nav. Export `interface DropdownOption<T>` here (single source; the old `./Dropdown` type is deleted in Task 6).
+- [ ] **Step 3: Implement:** maps `options` to `role="menuitem"` buttons; calls `onSelect(value)`; applies selected highlight; spreads `getItemProps`/`registerItem(index, node)` so the parent wires keyboard nav. Define `interface DropdownOption<T>` here as the single source — but it lives under `base/` (package-private). The public `Dropdown` (Task 5) **re-exports** the type so features import it from `@/components/Dropdown`, never from `@/components/base/*` (Ring 2). The old `./Dropdown` type is deleted in Task 6.
 - [ ] **Step 4: Run — expect PASS.**
 - [ ] **Step 5: Commit:** `git commit -am "feat(components): add base/OptionList shared renderer"`
 
@@ -235,9 +235,9 @@ test('renders options and reports selection', async () => {
 - Create: `src/components/Dropdown.tsx`
 - Test: `src/components/Dropdown.test.tsx`
 
-Compose `useFloatingSurface` (role `'menu'`, `list` for keyboard nav) + `SurfacePanel` + `OptionList`. Trigger markup ports from `Dropdown.tsx:99-129`. Props per spec §5.2 (incl. `renderTrigger`). **Keep `role="menu"`/`menuitem`** (spec §2 — listbox is a deferred a11y change).
+Compose `useFloatingSurface` (role `'menu'`, `list` for keyboard nav) + `SurfacePanel` + `OptionList`. Trigger markup ports from `Dropdown.tsx:100-132` (re-grep). Props per spec §5.2 (incl. `renderTrigger`). **Keep `role="menu"`/`menuitem`** (spec §2 — listbox is a deferred a11y change). **Re-export the type:** `export type { DropdownOption } from '@/components/base/OptionList'` so features import it from `@/components/Dropdown`, never from `base/`.
 
-- [ ] **Step 1: Write the failing test** (headline behaviours — these also cover the substrate):
+- [ ] **Step 1: Write the failing tests.** Port the FULL existing behaviour set from the old `src/features/diff/components/toolbar/Dropdown.test.tsx` (portal placement, arrow-key focus, outside-click dismiss, selected styling, descriptions, `leadingIcon`, numeric values) into `src/components/Dropdown.test.tsx`, and add `renderTrigger` coverage — these must land BEFORE Task 6 deletes the old file. The headline cases below also cover the substrate:
 
 ```tsx
 import { describe, test, expect, vi } from 'vitest'
@@ -286,9 +286,9 @@ describe('Dropdown', () => {
 
 **Files:**
 - Delete: `src/features/diff/components/toolbar/Dropdown.tsx`
-- Modify: every importer of the old path → `@/components/Dropdown` (grep below). Modify `ViewSettingsDropdown.tsx` to import `DropdownOption` from `@/components/base/OptionList` (its consumer migration lands in PR2; this only fixes the import).
+- Modify: every importer of the old path → `@/components/Dropdown` (grep below). `ViewSettingsDropdown.tsx`, `DiffChipToolbar.tsx`, and `toolbar/index.ts` import `DropdownOption` from `@/components/Dropdown` (the public re-export) — **not** from `base/`, which Ring 2 forbids (its consumer migration lands in PR2; this only fixes the import).
 
-- [ ] **Step 1:** `grep -rn "toolbar/Dropdown" src --include='*.tsx' --include='*.ts'` — list importers. Repoint each to `@/components/Dropdown` (and `DropdownOption` to `@/components/base/OptionList`).
+- [ ] **Step 1:** `grep -rn "toolbar/Dropdown" src --include='*.tsx' --include='*.ts'` — list importers. Repoint each to `@/components/Dropdown` (both `Dropdown` and the re-exported `DropdownOption`).
 - [ ] **Step 2:** Delete `src/features/diff/components/toolbar/Dropdown.tsx` and its `src/features/diff/components/toolbar/Dropdown.test.tsx` if present. Remove the file-level `@floating-ui` eslint-disable that named this file (the ratchet decrement).
 - [ ] **Step 3: Run the diff-toolbar tests** that exercise the dropdown (e.g. theme/layout selectors). Run: `npx vitest run src/features/diff`. Expected: PASS (behaviour preserved).
 - [ ] **Step 4:** `npm run lint` — expect green (one fewer floating-ui disable; no new violations).
@@ -330,7 +330,7 @@ describe('Dropdown', () => {
 
 - [ ] **Step 1: Failing test** — `Menu` with a `trigger` opens on click; `Menu.Item` fires `onSelect` and closes; `Menu.Item disabled` does not fire; `Escape`/outside-press dismiss. (Write concrete tests mirroring the Task 5 shape.)
 - [ ] **Step 2:** Run — FAIL.
-- [ ] **Step 3: Implement** `Menu` on `useFloatingSurface({ role: 'menu', list })` + `SurfacePanel`. Compound parts via context: `Menu.Section` (header + group), `Menu.Item` (`role=menuitem`, shortcut chip ported from `TerminalContextMenu.tsx:47-49`, `disabled` → `aria-disabled` + skip in `disabledIndices`).
+- [ ] **Step 3: Implement** `Menu` on `useFloatingSurface({ role: 'menu', list })` + `SurfacePanel`. Compound parts via context: `Menu.Section` (header + group), `Menu.Item` (`role=menuitem`, shortcut chip ported from `TerminalContextMenu.tsx:48-50`, `disabled` → `aria-disabled` + skip in `disabledIndices`).
 - [ ] **Step 4:** Run — PASS. **Step 5:** Commit.
 
 ### Task 10: `Menu.Checkbox` + `Menu.Submenu`
@@ -368,7 +368,7 @@ describe('Dropdown', () => {
 **Files:** Create `src/components/Popover.tsx`, `src/components/Popover.test.tsx`
 
 - [ ] **Step 1: Failing test** — renders `children` on glass chrome anchored to `anchor`, `role="dialog"` with the required `aria-label`, dismisses on outside-press/Escape via `onOpenChange`, focus is modal (`initialFocus -1`).
-- [ ] **Step 2–4:** Implement on `useFloatingSurface({ role: 'dialog' })` + `SurfacePanel focus={{ initialFocus: -1, modal: true }}`. Port the surface usage from `FinishFeedbackPopover.tsx:33-61`. **Step 5:** Commit.
+- [ ] **Step 2–4:** Implement on `useFloatingSurface({ role: 'dialog', middleware: props.middleware })` + `SurfacePanel focus={{ initialFocus: -1, modal: true }}`. Forward the optional `middleware` prop (spec §5.4 — e.g. `{ ancestorScroll: false }` for Task 17). Port the surface usage from `FinishFeedbackPopover.tsx:33-61` (re-grep). **Step 5:** Commit.
 
 ### Task 16: Migrate `FinishFeedbackPopover` → `Popover` (ratchet 2 → 1)
 
@@ -377,7 +377,7 @@ describe('Dropdown', () => {
 
 ### Task 17: Migrate `DiffChipToolbar` confirm → `Popover` (ratchet 1 → 0)
 
-- [ ] **Step 1:** Replace the confirm-dialog floating surface (`DiffChipToolbar.tsx:262`) with `Popover`. **Preserve its plain dismiss** (spec §7 — no `ancestorScroll`): pass `middleware={{ ancestorScroll: false }}` through if `Popover` exposes it, else document the one allowed deviation. Remove the **last** floating-ui disable.
+- [ ] **Step 1:** Replace the confirm-dialog floating surface (`DiffChipToolbar.tsx:333-357`, re-grep) with `Popover`. **Preserve its plain dismiss** (spec §7 — no `ancestorScroll`): pass `middleware={{ ancestorScroll: false }}` (Popover exposes it, Task 15). Remove the **last** floating-ui disable.
 - [ ] **Step 2:** `npm run lint` — Ring 1 now stands with **zero** feature exceptions (only `base/floating` + `Tooltip` remain). Confirm: `grep -rn "@floating-ui/react" src/features` → no value imports.
 - [ ] **Step 3:** Finalize docs — UNIFIED.md `§5.8 Menu` (incl. `Menu.Context`) + `§5.9 Popover`; complete the coding-style + AGENTS lines.
 - [ ] **Step 4: Full gate** + `codex review --base main` clean. Open PR3.
