@@ -228,8 +228,38 @@ Rules:
 - The default chrome surface (glassmorphic, `rounded-md`, 320px clamp, optional shortcut chip) is the answer for text labels — never restyle it per call site.
 - `bare` is reserved for rich interactive hover **cards** that define a complete surface of their own (canonical consumer: the activity-details card via `ACTIVITY_CARD_SURFACE`). Never use it for plain labels.
 - Icon-only triggers keep their `aria-label` — the tooltip is hover/focus-only and is not an accessible-name substitute.
-- Features must not hand-roll floating surfaces: `@floating-ui/react` imports are restricted to `src/components/` (existing popovers are grandfathered until a shared surface primitive is extracted).
+- Features must not hand-roll floating surfaces: `@floating-ui/react` is confined to `src/components/base/floating/**` (the substrate) and the grandfathered `src/components/Tooltip.tsx`. Features compose `Dropdown`, `Menu`, or `Popover` instead.
 - A trigger that is `disabled` swallows pointer events in Chromium — wrap it in a `<span className="inline-flex">` and let the span be the Tooltip child.
+
+### 5.7 `Dropdown`
+
+A controlled select surface. Lives at `src/components/Dropdown.tsx`; import via the alias: `import { Dropdown } from '@/components/Dropdown'`.
+
+```ts
+interface DropdownProps<T extends string | number> {
+  value: T
+  options: readonly DropdownOption<T>[] // { value, label, description? }
+  onChange: (next: T) => void
+  placement?: Placement // default 'bottom-start'
+  width?: number
+  label?: string // built-in select trigger
+  leadingIcon?: string // Material Symbol ligature name for the trigger icon
+  renderTrigger?: (a: {
+    ref: React.Ref<HTMLElement>
+    props: React.HTMLAttributes<HTMLElement>
+    open: boolean
+    current: DropdownOption<T> | undefined
+  }) => React.ReactElement // custom trigger; omit to use the built-in label trigger
+}
+```
+
+Rules:
+
+- Import via `@/components/Dropdown`; never import from `src/components/base/**` directly (`base/` is package-private).
+- Built on the package-private `base/floating` substrate (`useFloatingSurface` + `SurfacePanel`). Do not hand-roll a select surface.
+- Keeps `role="menu"` / `menuitem` (the current diff toolbar behaviour is preserved; `role="listbox"` is a deferred a11y improvement).
+- Use `renderTrigger` when the default label-chip trigger does not fit the call site; it receives a typed ref + merged props so the trigger stays keyboard-accessible.
+- `DropdownOption` is re-exported from `@/components/Dropdown` — import it from there, never from `@/components/base/OptionList`.
 
 ---
 

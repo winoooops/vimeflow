@@ -263,7 +263,9 @@ For component-level a11y patterns with WRONG/CORRECT JSX examples, see [a11y-com
 Cross-feature UI primitives live in `src/components/` and are imported via the `@/components/*` alias (never deep relative paths). One implementation per primitive — check there before building a new UI pattern.
 
 - **Tooltips**: always `Tooltip` from `@/components/Tooltip`; native `title=` on DOM elements is banned by `react/forbid-dom-props`. Contract: `docs/design/UNIFIED.md` §5.6.
-- **Floating surfaces**: `@floating-ui/react` is restricted to `src/components/` — features compose shared primitives instead of hand-rolling popovers.
+- **Dropdowns**: always `Dropdown` from `@/components/Dropdown`. Contract: `docs/design/UNIFIED.md` §5.7.
+- **Floating surfaces**: `@floating-ui/react` is confined to `src/components/base/floating/**` (the substrate) and the grandfathered `src/components/Tooltip.tsx`. Features compose `Dropdown`, `Menu`, or `Popover` — never hand-roll a floating surface.
+- **`base/` convention**: `src/components/base/**` is internal substrate that wraps a third-party engine (or owns low-level behaviour) and **must not be imported from `src/features/**`** or any other module outside `src/components/`. Everything under `base/`is package-private to`src/components/`. Features compose the public primitives (`Dropdown`, `Menu`, `Popover`) instead. This boundary is enforced by ESLint ring 2 in `eslint.config.js`.
 
 ## Linting
 

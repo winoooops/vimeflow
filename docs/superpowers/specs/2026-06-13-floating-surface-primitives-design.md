@@ -77,7 +77,7 @@ src/components/
 
 **`base/` convention** (to be documented in `rules/typescript/coding-style`):
 
-> `src/components/base/**` is internal substrate that wraps a third-party engine (or owns low-level behaviour) and **must not be imported from `src/features/**`**. Everything under `base/` is package-private to `src/components/`. Features compose the public primitives instead.
+> `src/components/base/**` is internal substrate that wraps a third-party engine (or owns low-level behaviour) and **must not be imported from `src/features/**`**. Everything under `base/`is package-private to`src/components/`. Features compose the public primitives instead.
 
 Naming the tier `base/` (not `floating/`) keeps the lint glob a durable `@/components/base/**`, auto-fences any future substrate, and avoids the "why isn't `Popover` in `floating/`?" confusion. No barrel: public primitives are imported directly via `@/components/*` (consistent with #440).
 
@@ -107,8 +107,12 @@ function useFloatingSurface(opts: {
     openOnArrowKeyDown?: boolean // default true; context menu = false
   }
 }): {
-  refs; floatingStyles; context // context is exposed so SurfacePanel can drive FloatingFocusManager
-  getReferenceProps; getFloatingProps; getItemProps
+  refs
+  floatingStyles
+  context // context is exposed so SurfacePanel can drive FloatingFocusManager
+  getReferenceProps
+  getFloatingProps
+  getItemProps
 }
 
 // floating/SurfacePanel.tsx — the chrome. Renders FloatingPortal + glass div, optionally focus-managed.
@@ -138,7 +142,12 @@ interface DropdownProps<T extends string | number> {
   width?: number
   label?: string // built-in select trigger
   leadingIcon?: string
-  renderTrigger?: (a: { ref; props; open: boolean; current: DropdownOption<T> | undefined }) => ReactElement
+  renderTrigger?: (a: {
+    ref
+    props
+    open: boolean
+    current: DropdownOption<T> | undefined
+  }) => ReactElement
 }
 ```
 
@@ -182,7 +191,7 @@ interface PopoverProps {
 
 Each ring is a `no-restricted-imports` block extending #440's existing rules (flat config, `files`-scoped).
 
-**Ring 1 — `@floating-ui/react` only under `base/floating` (+ grandfathered `Tooltip`).** Widen #440's features-only ban to all of `src/`, with explicit exceptions via `ignores` (a severity-only later override would *not* clear the banned `paths` — verified against ESLint 9.39.x flat-config merge semantics). Type imports are **not** exempt (no `allowTypeImports`) — `base/floating` re-exports the one type public primitives need (see §5.1), so `@floating-ui/react` stays fully confined:
+**Ring 1 — `@floating-ui/react` only under `base/floating` (+ grandfathered `Tooltip`).** Widen #440's features-only ban to all of `src/`, with explicit exceptions via `ignores` (a severity-only later override would _not_ clear the banned `paths` — verified against ESLint 9.39.x flat-config merge semantics). Type imports are **not** exempt (no `allowTypeImports`) — `base/floating` re-exports the one type public primitives need (see §5.1), so `@floating-ui/react` stays fully confined:
 
 ```js
 {
@@ -196,7 +205,7 @@ Each ring is a `no-restricted-imports` block extending #440's existing rules (fl
 }
 ```
 
-**Ring 2 — `@/components/base/**` only within `src/components/`.** Ban its import from every module outside `src/components/` — not just features (so `App.tsx`, `hooks/`, `lib/`, `theme/` are covered too) — alias + relative spellings, mirroring #440's `regex` rule for the canonical spelling:
+**Ring 2 — `@/components/base/**`only within`src/components/`.** Ban its import from every module outside `src/components/`— not just features (so`App.tsx`, `hooks/`, `lib/`, `theme/`are covered too) — alias + relative spellings, mirroring #440's`regex` rule for the canonical spelling:
 
 ```js
 {
@@ -217,25 +226,25 @@ As each consumer migrates, its file-level `@floating-ui` disable is deleted in t
 
 ## 7. Migration map & behaviour matrix (ratchet 6 → 0)
 
-| #   | File                                   | Today              | Target                                   | Ratchet |
-| --- | -------------------------------------- | ------------------ | ---------------------------------------- | ------- |
-| 1   | `diff/toolbar/Dropdown.tsx`            | hand-rolled select | promote → `@/components/Dropdown`        | 6 → 5   |
-| 2   | `diff/toolbar/ViewSettingsDropdown.tsx`| composite menu     | `Menu` + `Menu.Submenu`                  | 5 → 4   |
-| 3   | `diff/toolbar/PriorityPlus.tsx`        | overflow menu      | `Menu`                                   | 4 → 3   |
-| 4   | `terminal/TerminalContextMenu.tsx`     | context menu       | `Menu.Context`                           | 3 → 2   |
-| 5   | `diff/FinishFeedbackPopover.tsx`       | dialog card        | `Popover`                                | 2 → 1   |
-| 6   | `diff/toolbar/DiffChipToolbar.tsx` (confirm) | confirm dialog | `Popover`                              | 1 → 0   |
+| #   | File                                         | Today              | Target                            | Ratchet |
+| --- | -------------------------------------------- | ------------------ | --------------------------------- | ------- |
+| 1   | `diff/toolbar/Dropdown.tsx`                  | hand-rolled select | promote → `@/components/Dropdown` | 6 → 5   |
+| 2   | `diff/toolbar/ViewSettingsDropdown.tsx`      | composite menu     | `Menu` + `Menu.Submenu`           | 5 → 4   |
+| 3   | `diff/toolbar/PriorityPlus.tsx`              | overflow menu      | `Menu`                            | 4 → 3   |
+| 4   | `terminal/TerminalContextMenu.tsx`           | context menu       | `Menu.Context`                    | 3 → 2   |
+| 5   | `diff/FinishFeedbackPopover.tsx`             | dialog card        | `Popover`                         | 2 → 1   |
+| 6   | `diff/toolbar/DiffChipToolbar.tsx` (confirm) | confirm dialog     | `Popover`                         | 1 → 0   |
 
 **Behaviour matrix** — the substrate defaults to `placement: bottom-start`, `autoUpdate: true`, `ancestorScroll: true`, `role: menu`, no focus manager. Consumers **opt out** where their current behaviour differs; exact values are ported verbatim from each file in its migration PR. Known non-defaults to preserve:
 
-| Consumer            | placement     | autoUpdate | scroll-dismiss        | focus manager        | role   |
-| ------------------- | ------------- | ---------- | --------------------- | -------------------- | ------ |
-| Dropdown (diff)     | bottom-start  | yes        | ancestorScroll        | none (list-nav)      | menu   |
-| ViewSettings        | bottom-end    | yes        | ancestorScroll        | none                 | menu   |
-| PriorityPlus        | (port verbatim) | (port)   | **manual window scroll listener** | (port)   | menu   |
-| TerminalContextMenu | bottom-start (+flip fallbacks) | **no** | **none** | **FloatingFocusManager, non-modal** | menu |
-| FinishFeedbackPopover | bottom-start | yes       | ancestorScroll        | FloatingFocusManager (initialFocus −1) | dialog |
-| DiffChipToolbar confirm | (port verbatim) | (port) | **plain dismiss (no ancestorScroll)** | (port) | dialog |
+| Consumer                | placement                      | autoUpdate | scroll-dismiss                        | focus manager                          | role   |
+| ----------------------- | ------------------------------ | ---------- | ------------------------------------- | -------------------------------------- | ------ |
+| Dropdown (diff)         | bottom-start                   | yes        | ancestorScroll                        | none (list-nav)                        | menu   |
+| ViewSettings            | bottom-end                     | yes        | ancestorScroll                        | none                                   | menu   |
+| PriorityPlus            | (port verbatim)                | (port)     | **manual window scroll listener**     | (port)                                 | menu   |
+| TerminalContextMenu     | bottom-start (+flip fallbacks) | **no**     | **none**                              | **FloatingFocusManager, non-modal**    | menu   |
+| FinishFeedbackPopover   | bottom-start                   | yes        | ancestorScroll                        | FloatingFocusManager (initialFocus −1) | dialog |
+| DiffChipToolbar confirm | (port verbatim)                | (port)     | **plain dismiss (no ancestorScroll)** | (port)                                 | dialog |
 
 **Mechanics carried from VIM-117:** preserve each trigger's `aria-label`; keep the disabled-trigger wrapper where it applies; no visual change except the §2 terminal-chrome convergence.
 

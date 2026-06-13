@@ -4,8 +4,6 @@ export {
   PriorityPlus,
 } from './PriorityPlus'
 
-export { Dropdown, type DropdownOption } from './Dropdown'
-
 export { Segmented } from './Segmented'
 
 export { Toggle } from './Toggle'

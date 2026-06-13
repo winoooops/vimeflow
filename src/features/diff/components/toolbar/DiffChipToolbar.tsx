@@ -14,7 +14,7 @@ import {
   useRole,
 } from '@floating-ui/react'
 import { Tooltip } from '@/components/Tooltip'
-import { Dropdown, type DropdownOption } from './Dropdown'
+import { Dropdown, type DropdownOption } from '@/components/Dropdown'
 import { PriorityPlus } from './PriorityPlus'
 import { Segmented } from './Segmented'
 import { ViewSettingsDropdown } from './ViewSettingsDropdown'
