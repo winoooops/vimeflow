@@ -305,9 +305,10 @@ export default defineConfig([
   },
 
   {
-    // Floating surfaces are shared primitives: keeping @floating-ui/react
-    // inside src/components stops one-off popovers from drifting off-theme.
-    files: ['src/features/**/*.{ts,tsx}'],
+    // Ring 1 — @floating-ui/react is confined to base/floating + grandfathered Tooltip.
+    // Type imports are not exempt: base/floating re-exports the one type public primitives need.
+    files: ['src/**/*.{ts,tsx}'],
+    ignores: ['src/components/base/floating/**', 'src/components/Tooltip.tsx'],
     rules: {
       '@typescript-eslint/no-restricted-imports': [
         'error',
@@ -315,9 +316,34 @@ export default defineConfig([
           paths: [
             {
               name: '@floating-ui/react',
-              allowTypeImports: true,
               message:
-                'Use Tooltip from @/components/Tooltip, or extract the floating surface into src/components instead of hand-rolling it.',
+                'Use a primitive from @/components, or extend base/floating — do not hand-roll a floating surface.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+
+  {
+    // Ring 2 — src/components/base/** is package-private to src/components/.
+    // Features (and App, hooks, lib, theme) must compose Dropdown/Menu/Popover instead.
+    files: ['src/**/*.{ts,tsx}'],
+    ignores: ['src/components/**'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: [
+                '@/components/base',
+                '@/components/base/**',
+                '**/components/base',
+                '**/components/base/**',
+              ],
+              message:
+                'src/components/base is package-private — compose Dropdown/Menu/Popover instead.',
             },
           ],
         },
