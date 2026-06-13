@@ -232,7 +232,9 @@ describe('WorkspaceView - Visual Verification (Feature #20)', () => {
       const activityPanelShell = screen.getByTestId('activity-panel-shell')
 
       expect(activityPanelShell.className).toContain('border-l')
-      expect(activityPanelShell.className).toContain('border-outline-variant/25')
+      expect(activityPanelShell.className).toContain(
+        'border-outline-variant/25'
+      )
     })
   })
 
