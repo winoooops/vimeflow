@@ -41,7 +41,7 @@ export interface Pane {
   shell?: string
 
   /** Detected agent CLI for this pane. */
-  agentType: 'claude-code' | 'codex' | 'aider' | 'generic'
+  agentType: 'claude-code' | 'codex' | 'kimi' | 'aider' | 'generic'
 
   /**
    * Title emitted by the agent for the agent session bound to this PTY.
@@ -103,7 +103,7 @@ export interface Session {
   /** Stable session/project cwd used as the baseline for new panes. */
   workingDirectory: string
   /** Derived from `getActivePane(session).agentType`; retained for existing chrome. */
-  agentType: 'claude-code' | 'codex' | 'aider' | 'generic'
+  agentType: 'claude-code' | 'codex' | 'kimi' | 'aider' | 'generic'
   /** Per-session canvas layout. Default 'single' in step 5a. */
   layout: LayoutId
   /** Session-scoped collapse state for the right agent activity panel.

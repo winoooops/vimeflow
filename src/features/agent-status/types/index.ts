@@ -45,7 +45,7 @@ export interface AgentStatus {
    * metrics during its exit window.
    */
   agentExited: boolean
-  agentType: 'claude-code' | 'codex' | 'aider' | 'generic' | null
+  agentType: 'claude-code' | 'codex' | 'kimi' | 'aider' | 'generic' | null
   modelId: string | null
   modelDisplayName: string | null
   version: string | null

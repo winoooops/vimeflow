@@ -22,6 +22,7 @@ const EXIT_HOLD_MS = 5000
 const AGENT_TYPE_MAP = {
   claudeCode: 'claude-code',
   codex: 'codex',
+  kimi: 'kimi',
   aider: 'aider',
   generic: 'generic',
 } as const

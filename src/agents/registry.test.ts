@@ -8,7 +8,7 @@ import {
   type AgentId,
 } from './registry'
 
-const ALL_AGENTS: readonly AgentId[] = ['claude', 'codex', 'gemini', 'shell']
+const ALL_AGENTS: readonly AgentId[] = ['claude', 'codex', 'gemini', 'kimi', 'shell']
 
 test('AGENTS keys are claude, codex, gemini, shell', () => {
   expect(Object.keys(AGENTS).sort()).toEqual([...ALL_AGENTS].sort())
@@ -67,6 +67,17 @@ test('agentTypeToRegistryKey maps codex to codex', () => {
   expect(agentTypeToRegistryKey('codex')).toBe('codex')
 })
 
+test('kimi is peach with model k2.7', () => {
+  expect(AGENTS.kimi.accent).toBe('var(--color-agent-kimi-accent)')
+  expect(AGENTS.kimi.short).toBe('KIMI')
+  expect(AGENTS.kimi.glyph).toBe('☾')
+  expect(AGENTS.kimi.model).toBe('k2.7')
+})
+
+test('agentTypeToRegistryKey maps kimi to kimi', () => {
+  expect(agentTypeToRegistryKey('kimi')).toBe('kimi')
+})
+
 test.each(['aider', 'generic', null] as const)(
   'agentTypeToRegistryKey maps %s to shell',
   (agentType) => {
@@ -103,7 +114,8 @@ test('vendorMarkFor returns an asset URL for claude and codex', () => {
   expect(claudeMark).not.toBe(codexMark)
 })
 
-test('vendorMarkFor returns null for shell and gemini', () => {
+test('vendorMarkFor returns null for shell, gemini, and kimi', () => {
   expect(vendorMarkFor('shell')).toBeNull()
   expect(vendorMarkFor('gemini')).toBeNull()
+  expect(vendorMarkFor('kimi')).toBeNull()
 })
