@@ -11,9 +11,12 @@
 //!    `KIMI_CODE_HOME` from `<proc_root>/<pid>/environ` so a per-process
 //!    `KIMI_CODE_HOME=/tmp/kimi kimi` is honored.
 //! 3. index fallback: `<kimi_home>/session_index.jsonl` workDir match.
-//!    The newest (last) same-cwd entry is append-ordered and IS the
-//!    current session, so it binds unconditionally — even when idle (its
-//!    `wire.jsonl` may predate `pty_start` before the first prompt).
+//!    A `workDir` matches when it equals `cwd` OR is a component-boundary
+//!    ancestor of it (kimi normalizes a worktree / subdirectory cwd to the
+//!    repo root). Among matches the longest (deepest) workDir wins, then the
+//!    newest (last) append-ordered entry — so it binds unconditionally even
+//!    when idle (its `wire.jsonl` may predate `pty_start` before the first
+//!    prompt), unless that wire does not exist yet (then it falls through).
 //! 4. exact-bucket sha256 scan: last-resort newest `session_*` under
 //!    this cwd's `wd_<basename>_<hex>` bucket, gated on a `pty_start`
 //!    mtime freshness check (no append ordering to tell current from
@@ -111,24 +114,31 @@ impl KimiLocator {
         })
     }
 
-    /// Resolve the LAST (newest) `session_index.jsonl` entry whose
-    /// `workDir` matches `cwd`, binding it unconditionally. The index is
-    /// append-ordered, so the newest same-cwd entry IS this process's
-    /// current session — bind it even when idle (its `wire.jsonl` may
-    /// predate `pty_start` because the user has not submitted a prompt yet,
-    /// leaving the transcript at its config-only metadata lines).
+    /// Resolve the best `session_index.jsonl` entry whose `workDir` matches
+    /// `cwd` (equal, or a component-boundary ancestor — kimi normalizes a
+    /// worktree / subdirectory cwd to the repo root), binding it
+    /// unconditionally. Among all matching entries the winner is the LONGEST
+    /// `workDir` (most specific / deepest ancestor beats a shallower one),
+    /// breaking ties by the LAST occurrence in the append-ordered index (the
+    /// newest session for that workDir IS this process's current session) —
+    /// so it binds even when idle (its `wire.jsonl` may predate `pty_start`
+    /// because the user has not submitted a prompt yet, leaving the
+    /// transcript at its config-only metadata lines).
     ///
     /// No freshness gate runs here: the authoritative newest-index match
     /// must never be rejected just because it is idle (the bug that left
     /// the agent-status panel blank for a fresh-but-idle session). The
     /// codex-pass-3 stale-race guard is preserved only on the bucket-scan
     /// fallback (`try_resolve_fallback`), which has no append ordering to
-    /// distinguish current from stale.
+    /// distinguish current from stale. Returns `None` when the chosen
+    /// entry's `wire.jsonl` does not exist yet, so the caller retries / falls
+    /// through rather than binding a path that has no transcript.
     fn try_resolve_from_index(&self, home: &Path, cwd: &Path) -> Option<LocatedStatusSource> {
         let raw = std::fs::read_to_string(self.session_index_path(home)).ok()?;
-        let target = canonical_or_owned(cwd);
 
-        let mut matched: Option<SessionIndexEntry> = None;
+        // Track the best match: longest workDir wins; ties go to the last
+        // occurrence (`>=` on equal length keeps the later-listed entry).
+        let mut best: Option<(usize, SessionIndexEntry)> = None;
         for line in raw.lines() {
             let line = line.trim();
             if line.is_empty() {
@@ -140,17 +150,27 @@ impl KimiLocator {
             let Some(work_dir) = entry.work_dir.as_deref() else {
                 continue;
             };
-            if paths_match(work_dir, cwd, &target) {
-                matched = Some(entry);
+            if !cwd_matches_workdir(cwd, work_dir) {
+                continue;
+            }
+            let work_len = work_dir.len();
+            if best.as_ref().map_or(true, |(len, _)| work_len >= *len) {
+                best = Some((work_len, entry));
             }
         }
 
-        let entry = matched?;
+        let (_, entry) = best?;
         let session_dir = entry.session_dir?;
         let status_path = PathBuf::from(&session_dir)
             .join("agents")
             .join("main")
             .join("wire.jsonl");
+
+        // Bind only when the transcript exists; a missing wire is the
+        // fresh-attach race, so the caller retries / falls through.
+        if !status_path.exists() {
+            return None;
+        }
 
         Some(LocatedStatusSource {
             static_transcript_hint: status_path.to_str().map(str::to_owned),
@@ -331,15 +351,19 @@ fn wire_is_fresh(wire: &Path, pty_start: SystemTime) -> bool {
     mtime >= floor
 }
 
-/// Compare an index `workDir` string against the attach `cwd`. Prefers a
-/// canonicalized comparison (resolves symlinks / `..`); falls back to a
-/// raw string-equal when either side fails to canonicalize.
-fn paths_match(work_dir: &str, cwd: &Path, canonical_cwd: &Path) -> bool {
+/// True when an index `workDir` matches the attach `cwd` by path-component
+/// semantics: `cwd == workDir` OR `workDir` is a component-boundary ancestor
+/// of `cwd` (kimi normalizes a worktree — and any project subdirectory — cwd
+/// to the repo root, so the registered `workDir` is the ancestor of the pane
+/// cwd). Canonicalizes both sides (resolves symlinks / `..`); falls back to
+/// the raw paths if either side fails to canonicalize. A `starts_with` over
+/// `Path` components — not a string prefix — so `/proj` does NOT match
+/// `/proj-other` (only a real `/` boundary counts).
+fn cwd_matches_workdir(cwd: &Path, work_dir: &str) -> bool {
     let work_path = Path::new(work_dir);
-    match std::fs::canonicalize(work_path) {
-        Ok(canonical_work) => canonical_work == canonical_cwd,
-        Err(_) => work_path == cwd || work_dir == cwd.to_string_lossy(),
-    }
+    let canonical_cwd = canonical_or_owned(cwd);
+    let canonical_work = canonical_or_owned(work_path);
+    canonical_cwd.starts_with(&canonical_work)
 }
 
 fn canonical_or_owned(path: &Path) -> PathBuf {
@@ -758,6 +782,107 @@ mod tests {
         let err = locator
             .locate(work.path(), "pty-1")
             .expect_err("empty kimi home should error");
+        assert!(err.contains("kimi locator"), "got: {}", err);
+    }
+
+    /// `cwd_matches_workdir` component-boundary semantics: equal binds;
+    /// an ancestor binds; a sibling that shares a string prefix but no path
+    /// boundary (`/proj` vs `/proj-other`) does NOT; an unrelated path does
+    /// NOT. Uses real on-disk dirs so canonicalize succeeds on both sides.
+    #[test]
+    fn cwd_matches_workdir_component_boundary_semantics() {
+        let root = tempfile::tempdir().expect("root");
+        let proj = root.path().join("proj");
+        let nested = proj.join("worktrees").join("wt");
+        let sibling = root.path().join("proj-other");
+        let unrelated = root.path().join("elsewhere");
+        for dir in [&nested, &sibling, &unrelated] {
+            std::fs::create_dir_all(dir).expect("mkdir");
+        }
+
+        let proj_str = proj.to_string_lossy().into_owned();
+
+        // Equal: workDir == cwd.
+        assert!(cwd_matches_workdir(&proj, &proj_str));
+        // Ancestor: cwd is under workDir at a real boundary.
+        assert!(cwd_matches_workdir(&nested, &proj_str));
+        // Sibling sharing a string prefix but no path boundary: must NOT match.
+        assert!(!cwd_matches_workdir(&sibling, &proj_str));
+        // Unrelated: must NOT match.
+        assert!(!cwd_matches_workdir(&unrelated, &proj_str));
+    }
+
+    /// Deeper-vs-shallower precedence: when both a deep `workDir` and its
+    /// shallower ancestor match the cwd, the LONGEST (most specific) workDir
+    /// wins, so the more specific session binds.
+    #[test]
+    fn index_prefers_deepest_matching_workdir() {
+        let kimi_home = tempfile::tempdir().expect("kimi home");
+        let root = tempfile::tempdir().expect("work root");
+        let shallow = root.path().to_path_buf();
+        let deep = root.path().join("nested");
+        let cwd = deep.join("leaf");
+        std::fs::create_dir_all(&cwd).expect("mkdir cwd");
+
+        let shallow_dir = session_under(kimi_home.path(), "wd_shallow", "session_shallow");
+        let shallow_wire = write_wire(&shallow_dir);
+        let deep_dir = session_under(kimi_home.path(), "wd_deep", "session_deep");
+        let deep_wire = write_wire(&deep_dir);
+
+        // Deep entry listed FIRST so a last-wins tiebreak can't explain a deep win.
+        write_index(
+            kimi_home.path(),
+            &[
+                ("session_deep", &deep_dir, &deep),
+                ("session_shallow", &shallow_dir, &shallow),
+            ],
+        );
+
+        let locator = locator_with(kimi_home.path(), 4242, SystemTime::now());
+        let located = locator
+            .locate(&cwd, "pty-1")
+            .expect("deepest workDir resolves");
+        assert_eq!(
+            located.status_path, deep_wire,
+            "the longest (deepest) matching workDir must win over a shallower ancestor"
+        );
+        assert_eq!(located.agent_session_id.as_deref(), Some("session_deep"));
+        assert_ne!(located.status_path, shallow_wire);
+    }
+
+    /// Regression for the worktree-cwd bug: kimi registers a worktree (or any
+    /// subdirectory) cwd under its GIT-ROOT `workDir`. An index entry with
+    /// `workDir=/proj` MUST bind when locating `cwd=/proj/worktrees/wt`
+    /// (component-boundary ancestor match), and a sibling cwd `/proj-other`
+    /// (string prefix, no path boundary) MUST NOT bind to it.
+    #[test]
+    fn index_binds_ancestor_workdir_for_worktree_cwd() {
+        let kimi_home = tempfile::tempdir().expect("kimi home");
+        let proj_root = tempfile::tempdir().expect("proj root");
+        let proj = proj_root.path().join("proj");
+        let worktree = proj.join("worktrees").join("wt");
+        let sibling = proj_root.path().join("proj-other");
+        std::fs::create_dir_all(&worktree).expect("mkdir worktree");
+        std::fs::create_dir_all(&sibling).expect("mkdir sibling");
+
+        let session_dir = session_under(kimi_home.path(), "wd_proj", "session_root");
+        let wire = write_wire(&session_dir);
+        write_index(kimi_home.path(), &[("session_root", &session_dir, &proj)]);
+
+        // Ancestor match: the worktree cwd binds the repo-root workDir session.
+        let locator = locator_with(kimi_home.path(), 4242, SystemTime::now());
+        let located = locator
+            .locate(&worktree, "pty-1")
+            .expect("worktree cwd binds its repo-root ancestor session");
+        assert_eq!(located.status_path, wire);
+        assert_eq!(located.agent_session_id.as_deref(), Some("session_root"));
+
+        // Boundary: a sibling sharing a string prefix must NOT bind, so the
+        // ancestor index never matches and the bucket fallback (absent) errors.
+        let sibling_locator = locator_with(kimi_home.path(), 4242, SystemTime::now());
+        let err = sibling_locator
+            .locate(&sibling, "pty-1")
+            .expect_err("sibling cwd must not bind the ancestor workDir");
         assert!(err.contains("kimi locator"), "got: {}", err);
     }
 
