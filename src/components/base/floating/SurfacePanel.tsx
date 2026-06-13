@@ -36,8 +36,8 @@ export const SurfacePanel = ({
     <div
       ref={setFloating}
       style={{ ...style, width }}
-      className={GLASS_SURFACE}
       {...floatingProps}
+      className={GLASS_SURFACE}
     >
       {children}
     </div>
