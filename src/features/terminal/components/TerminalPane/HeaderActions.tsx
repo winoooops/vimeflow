@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react'
-import { Tooltip } from '../../../../components/Tooltip'
+import { Tooltip } from '@/components/Tooltip'
 
 const burnerButtonLabel = (active: boolean, shellExists: boolean): string => {
   if (active) {

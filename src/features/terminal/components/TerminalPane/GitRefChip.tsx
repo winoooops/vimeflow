@@ -1,6 +1,6 @@
 // cspell:ignore worktree
 import type { ReactElement } from 'react'
-import { Tooltip } from '../../../../components/Tooltip'
+import { Tooltip } from '@/components/Tooltip'
 
 export interface GitRefChipProps {
   /** Linked-worktree basename, or null when on the main checkout. */

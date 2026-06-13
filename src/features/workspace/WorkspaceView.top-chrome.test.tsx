@@ -1,4 +1,3 @@
-/* eslint-disable testing-library/no-node-access -- gutter/spacer placement asserts structural DOM geometry the queries API cannot reach */
 import { render, screen, act, within } from '@testing-library/react'
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
 import userEvent from '@testing-library/user-event'
@@ -44,7 +43,7 @@ vi.mock('../files/services/fileSystemService')
 vi.mock('../terminal/services/terminalService')
 vi.mock('../terminal/hooks/usePaneShortcuts')
 
-vi.mock('../../components/sidebar/Sidebar', () => ({
+vi.mock('@/components/sidebar/Sidebar', () => ({
   Sidebar: ({ topBar = undefined }: { topBar?: ReactNode }): ReactElement => (
     <div data-testid="sidebar">{topBar}</div>
   ),
@@ -328,15 +327,21 @@ describe('WorkspaceView – top chrome (main-stage handoff J2–J6)', () => {
     const switcher = within(chrome).getByTestId('layout-switcher')
 
     // Right-aligned: a flex-1 spacer sits immediately before the pillar.
-    expect(switcher.previousElementSibling?.className).toContain('flex-1')
+    // eslint-disable-next-line testing-library/no-node-access -- geometry test: assert the flex-1 spacer exists structurally
+    const switcherSpacer = switcher.previousElementSibling
+    expect(switcherSpacer?.className).toContain('flex-1')
     expect(within(chrome).queryByText('Layout')).toBeNull()
 
     // Config button docks INSIDE the pill pillar, right after a divider.
+    // (It sits inside a tooltip-trigger span, so compare via containment
+    // rather than a direct sibling check.)
     const config = within(switcher).getByRole('button', {
       name: 'Configure displayed layouts',
     })
     const divider = within(switcher).getByTestId('layout-switcher-divider')
-    expect(config.previousElementSibling).toBe(divider)
+    // eslint-disable-next-line testing-library/no-node-access -- geometry test: assert the config wrapper is the divider's next sibling
+    const configWrapper = divider.nextElementSibling
+    expect(configWrapper?.contains(config)).toBe(true)
 
     // No bordered action-group wrapper and no pin button (auto-hide removed).
     expect(within(chrome).queryByTestId('top-action-group')).toBeNull()

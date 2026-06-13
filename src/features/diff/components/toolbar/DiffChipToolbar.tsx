@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-restricted-imports -- hand-rolled popover predates the shared floating-surface primitive */
 import { useState, type ReactElement, type ReactNode } from 'react'
 import type { BaseDiffOptions, DiffsThemeNames } from '@pierre/diffs'
 import {
@@ -12,7 +13,7 @@ import {
   useInteractions,
   useRole,
 } from '@floating-ui/react'
-import { Tooltip } from '../../../../components/Tooltip'
+import { Tooltip } from '@/components/Tooltip'
 import { Dropdown, type DropdownOption } from './Dropdown'
 import { PriorityPlus } from './PriorityPlus'
 import { Segmented } from './Segmented'
