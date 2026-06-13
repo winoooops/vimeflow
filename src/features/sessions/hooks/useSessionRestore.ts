@@ -305,6 +305,24 @@ export const useSessionRestore = ({
     }
 
     let hydrationStarted = false
+    let pendingRestartId: string | null = null
+
+    const disposePendingRestart = (): void => {
+      if (pendingRestartId) {
+        const sessionId = pendingRestartId
+        pendingRestartId = null
+        void (async (): Promise<void> => {
+          try {
+            await service.kill({ sessionId })
+          } catch (err) {
+            log.warn(
+              'failed to kill orphaned restarted PTY on restore cancel',
+              err
+            )
+          }
+        })()
+      }
+    }
 
     void (async (): Promise<void> => {
       try {
@@ -361,10 +379,14 @@ export const useSessionRestore = ({
           storeShape = restarted.storeShape
           liveSessions = [restarted.liveSession]
           activePtyId = restarted.liveSession.id
+          pendingRestartId = restarted.liveSession.id
         }
 
+        // If cleanup ran while spawn was in flight, kill the orphaned PTY.
         // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
         if (cancelled) {
+          disposePendingRestart()
+
           return
         }
 
@@ -397,7 +419,8 @@ export const useSessionRestore = ({
         }
 
         onRestoreRef.current(restored)
-        activate(storeShape, restored, list.activeSessionId)
+        activate(storeShape, restored, activePtyId)
+        pendingRestartId = null
 
         setLoading(false)
       } catch (err) {
@@ -426,6 +449,7 @@ export const useSessionRestore = ({
     return (): void => {
       cancelled = true
       stopBuffering?.()
+      disposePendingRestart()
     }
   }, [service, projectId, workingDirectory])
 

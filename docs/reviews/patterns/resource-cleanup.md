@@ -3,7 +3,7 @@ id: resource-cleanup
 category: react-patterns
 created: 2026-04-09
 last_updated: 2026-06-12
-ref_count: 10
+ref_count: 11
 ---
 
 # Resource Cleanup
@@ -125,4 +125,14 @@ causes listener accumulation and duplicate event handling.
 - **File:** `src/main.tsx`
 - **Finding:** `initTerminalThemeBridge()` returns an unsubscribe function, but the call site discarded it. The bridge is intended to live for the renderer lifetime, so ignoring the return value is technically correct today, yet it hides the lifetime contract and risks duplicate subscriptions if a future hot-reload path calls the initializer again.
 - **Fix:** Stored the returned cleanup function in a named const and voided it to satisfy no-unused-locals, with a comment documenting the renderer-lifetime intent.
+- **Commit:** same commit as this entry
+
+### 13. Restore effect spawns a PTY before cancellation guard, leaving orphaned backend session on unmount
+
+- **Source:** github-claude | PR #443 round 1 | 2026-06-13
+- **Severity:** MEDIUM
+- **File:** `src/features/sessions/hooks/useSessionRestore.ts` L366-384
+- **Finding:** `restartPersistedActiveShell` calls `service.spawn()` inside the restore effect's voided async IIFE. If the component unmounts (or the effect is superseded) while `spawn` is in flight, the IIFE later resumes, assigns the new PTY id to local state, and hits the `cancelled` guard — returning without killing the newly created PTY. The backend session outlives the frontend restore attempt and can interfere with later `listSessions` / restore behavior.
+- **Fix:** Track the restarted PTY id in a `pendingRestartId` local. After a successful spawn, immediately check `cancelled` and dispose of the pending PTY if cleanup already ran. Keep `pendingRestartId` set through all pre-commit awaits and cancellation checks; clear it only after `onRestoreRef.current(restored)` and `activate(...)` have committed the restored workspace. The effect cleanup function also disposes any still-pending restart. Disposal is fire-and-forget with error logging, matching the best-effort cleanup contract elsewhere in the hook.
+- **Verification:** Added regression tests that unmount while `spawn` is pending and while `createBrowserPane` is pending, asserting `service.kill({ sessionId: 'pty-new' })` is called after the async step resolves.
 - **Commit:** same commit as this entry

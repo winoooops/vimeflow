@@ -44,13 +44,13 @@ When appending findings to a pattern file, label the source so future readers ca
 | Pattern                                                                                              | Category           | Findings | Refs | Last Updated |
 | ---------------------------------------------------------------------------------------------------- | ------------------ | -------- | ---- | ------------ |
 | [Filesystem Scope](patterns/filesystem-scope.md)                                                     | security           | 21       | 3    | 2026-05-20   |
-| [React Lifecycle](patterns/react-lifecycle.md)                                                       | react-patterns     | 33       | 14   | 2026-06-11   |
+| [React Lifecycle](patterns/react-lifecycle.md)                                                       | react-patterns     | 33       | 15   | 2026-06-11   |
 | [Motion Layout Projection](patterns/motion-layout-projection.md)                                     | react-patterns     | 1        | 0    | 2026-06-10   |
 | [Fixed-Position Portals](patterns/fixed-position-portals.md)                                         | react-patterns     | 1        | 0    | 2026-06-12   |
-| [Resource Cleanup](patterns/resource-cleanup.md)                                                     | react-patterns     | 12       | 10   | 2026-06-12   |
+| [Resource Cleanup](patterns/resource-cleanup.md)                                                     | react-patterns     | 13       | 11   | 2026-06-13   |
 | [Cross-Platform Paths](patterns/cross-platform-paths.md)                                             | cross-platform     | 6        | 3    | 2026-05-30   |
 | [Debug Artifacts](patterns/debug-artifacts.md)                                                       | code-quality       | 7        | 0    | 2026-06-11   |
-| [Derived State Consistency](patterns/derived-state-consistency.md)                                   | code-quality       | 7        | 4    | 2026-06-12   |
+| [Derived State Consistency](patterns/derived-state-consistency.md)                                   | code-quality       | 8        | 5    | 2026-06-13   |
 | [Generated Artifacts](patterns/generated-artifacts.md)                                               | code-quality       | 4        | 2    | 2026-06-11   |
 | [Generated Shell Scripts](patterns/generated-shell-scripts.md)                                       | backend            | 7        | 1    | 2026-06-03   |
 | [Hot-Path Caching](patterns/hot-path-caching.md)                                                     | backend            | 1        | 0    | 2026-06-09   |
@@ -59,7 +59,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Documentation Accuracy](patterns/documentation-accuracy.md)                                         | code-quality       | 85       | 25   | 2026-06-08   |
 | [Accessibility](patterns/accessibility.md)                                                           | a11y               | 51       | 22   | 2026-06-12   |
 | [Event Identity Guard](patterns/event-identity-guard.md)                                             | backend            | 1        | 0    | 2026-06-11   |
-| [Async Race Conditions](patterns/async-race-conditions.md)                                           | react-patterns     | 63       | 21   | 2026-06-08   |
+| [Async Race Conditions](patterns/async-race-conditions.md)                                           | react-patterns     | 63       | 22   | 2026-06-08   |
 | [Tokio Blocking On Async](patterns/tokio-blocking-on-async.md)                                       | backend            | 2        | 1    | 2026-05-20   |
 | [Command Injection](patterns/command-injection.md)                                                   | security           | 7        | 3    | 2026-05-02   |
 | [Policy Judge Hygiene](patterns/policy-judge-hygiene.md)                                             | security           | 15       | 2    | 2026-04-20   |

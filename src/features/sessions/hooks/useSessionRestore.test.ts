@@ -635,6 +635,200 @@ describe('useSessionRestore', () => {
     expect(onActiveResolved).not.toHaveBeenCalled()
   })
 
+  test('resolves active session from the restarted PTY id when no persisted-active handler is registered', async () => {
+    const store: WorkspaceShapeDto = {
+      sessions: [
+        {
+          id: 'ws-shell',
+          projectId: 'proj-1',
+          layout: 'single',
+          workingDirectory: '/home/will/proj',
+          active: true,
+          panes: [
+            {
+              kind: 'shell',
+              paneId: 'p0',
+              paneIndex: 0,
+              active: true,
+              ptyId: 'pty-old',
+              cwd: '/home/will/proj',
+              agentType: 'codex',
+              agentSessionId: null,
+            },
+          ],
+        },
+      ],
+    }
+    loadWorkspaceForRestore.mockResolvedValue(store)
+
+    const service = {
+      onData: vi.fn().mockResolvedValue(() => undefined),
+      listSessions: vi
+        .fn()
+        .mockResolvedValue({ sessions: [], activeSessionId: null }),
+      spawn: vi.fn().mockResolvedValue({
+        sessionId: 'pty-new',
+        pid: 4321,
+        cwd: '/home/will/proj',
+        shell: '/bin/zsh',
+      }),
+    } as unknown as ITerminalService
+    const onRestore = vi.fn<(sessions: Session[]) => void>()
+    const onActiveResolved = vi.fn()
+
+    const { result } = renderHook(() =>
+      useSessionRestore({
+        service,
+        buffer: buildBuffer(),
+        onRestore,
+        onActiveResolved,
+      })
+    )
+
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    expect(onActiveResolved).toHaveBeenCalledWith('ws-shell')
+  })
+
+  test('kills restarted PTY when restore is cancelled while spawn is in flight', async () => {
+    const store: WorkspaceShapeDto = {
+      sessions: [
+        {
+          id: 'ws-shell',
+          projectId: 'proj-1',
+          layout: 'single',
+          workingDirectory: '/home/will/proj',
+          active: true,
+          panes: [
+            {
+              kind: 'shell',
+              paneId: 'p0',
+              paneIndex: 0,
+              active: true,
+              ptyId: 'pty-old',
+              cwd: '/home/will/proj',
+              agentType: 'codex',
+              agentSessionId: null,
+            },
+          ],
+        },
+      ],
+    }
+    loadWorkspaceForRestore.mockResolvedValue(store)
+
+    let resolveSpawn: (value: unknown) => void = () => undefined
+
+    const spawnPromise = new Promise<unknown>((resolve) => {
+      resolveSpawn = resolve
+    })
+
+    const kill = vi.fn().mockResolvedValue(undefined)
+
+    const service = {
+      onData: vi.fn().mockResolvedValue(() => undefined),
+      listSessions: vi
+        .fn()
+        .mockResolvedValue({ sessions: [], activeSessionId: null }),
+      spawn: vi.fn().mockReturnValue(spawnPromise),
+      kill,
+    } as unknown as ITerminalService
+
+    const { unmount } = renderHook(() =>
+      useSessionRestore({
+        service,
+        buffer: buildBuffer(),
+        onRestore: vi.fn(),
+        onActiveResolved: vi.fn(),
+      })
+    )
+
+    await waitFor(() => expect(service.spawn).toHaveBeenCalled())
+
+    unmount()
+
+    resolveSpawn({
+      sessionId: 'pty-new',
+      pid: 4321,
+      cwd: '/home/will/proj',
+      shell: '/bin/zsh',
+    })
+
+    await waitFor(() =>
+      expect(kill).toHaveBeenCalledWith({ sessionId: 'pty-new' })
+    )
+  })
+
+  test('kills restarted PTY when restore is cancelled after spawn resolves', async () => {
+    const store: WorkspaceShapeDto = {
+      sessions: [
+        {
+          id: 'ws-mixed',
+          projectId: 'proj-1',
+          layout: 'vsplit',
+          workingDirectory: '/home/will/proj',
+          active: true,
+          panes: [
+            {
+              kind: 'shell',
+              paneId: 'p0',
+              paneIndex: 0,
+              active: true,
+              ptyId: 'pty-old',
+              cwd: '/home/will/proj',
+              agentType: 'codex',
+              agentSessionId: null,
+            },
+            { kind: 'browser', paneId: 'p1', paneIndex: 1, active: false },
+          ],
+        },
+      ],
+    }
+    loadWorkspaceForRestore.mockResolvedValue(store)
+
+    let resolveCreateBrowserPane: (value: null) => void = () => undefined
+
+    const createBrowserPanePromise = new Promise<null>((resolve) => {
+      resolveCreateBrowserPane = resolve
+    })
+
+    createBrowserPane.mockReturnValue(createBrowserPanePromise)
+
+    const kill = vi.fn().mockResolvedValue(undefined)
+
+    const service = {
+      onData: vi.fn().mockResolvedValue(() => undefined),
+      listSessions: vi
+        .fn()
+        .mockResolvedValue({ sessions: [], activeSessionId: null }),
+      spawn: vi.fn().mockResolvedValue({
+        sessionId: 'pty-new',
+        pid: 4321,
+        cwd: '/home/will/proj',
+        shell: '/bin/zsh',
+      }),
+      kill,
+    } as unknown as ITerminalService
+
+    const { unmount } = renderHook(() =>
+      useSessionRestore({
+        service,
+        buffer: buildBuffer(),
+        onRestore: vi.fn(),
+        onActiveResolved: vi.fn(),
+      })
+    )
+
+    await waitFor(() => expect(createBrowserPane).toHaveBeenCalled())
+
+    unmount()
+
+    resolveCreateBrowserPane(null)
+
+    await waitFor(() =>
+      expect(kill).toHaveBeenCalledWith({ sessionId: 'pty-new' })
+    )
+  })
+
   test('does not restart an inactive shell when a browser pane is active', async () => {
     const store: WorkspaceShapeDto = {
       sessions: [
