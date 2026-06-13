@@ -5,15 +5,22 @@ import {
   useContext,
   useEffect,
   useId,
+  useMemo,
   useRef,
   useState,
   type CSSProperties,
   type HTMLProps,
+  type MutableRefObject,
   type ReactElement,
   type ReactNode,
 } from 'react'
 import { useFloatingSurface } from '@/components/base/floating/useFloatingSurface'
 import { SurfacePanel } from '@/components/base/floating/SurfacePanel'
+import {
+  FloatingList,
+  useListItem,
+  useMergeRefs,
+} from '@/components/base/floating/list'
 import { OptionList, type DropdownOption } from '@/components/base/OptionList'
 import { type Placement } from '@/components/base/floating/glassSurface'
 import { formatShortcut, type ShortcutInput } from '../lib/formatShortcut'
@@ -23,10 +30,13 @@ import { formatShortcut, type ShortcutInput } from '../lib/formatShortcut'
 // the parent threading props through, keeping Menu's public surface narrow.
 interface MenuContextValue {
   getItemProps: (props?: HTMLProps<HTMLElement>) => Record<string, unknown>
-  registerItem: (index: number, node: HTMLElement | null) => void
   activeIndex: number | null
-  // Claims the next stable list index for a navigable row (render-order).
-  useItemIndex: (disabled: boolean) => number
+  // Reports a row's disabled flag at its FloatingList index so the parent's
+  // disabledIndices (fed to useListNavigation) skips it. Index comes from
+  // useListItem, so it stays correct as rows are added/removed while open.
+  setRowDisabled: (index: number, disabled: boolean) => void
+  // Drops a row's tracked entry on unmount (or index shift) so the map stays dense.
+  clearRow: (index: number) => void
   close: () => void
   // One-open-submenu coordination owned by the parent Menu.
   openSubmenuId: string | null
@@ -101,6 +111,8 @@ interface MenuBodyProps {
   style: CSSProperties
   context: FloatingSurfaceContext
   floatingProps: Record<string, unknown>
+  listRef: MutableRefObject<(HTMLElement | null)[]>
+  labelsRef: MutableRefObject<(string | null)[]>
   width?: number
   ariaLabel?: string
   focus?: false | { modal?: boolean }
@@ -110,12 +122,16 @@ interface MenuBodyProps {
 
 // The shared panel body for both Menu and Menu.Context: portals the glass
 // surface, applies the menu list wrapper, and provides the menu context so
-// rows compose in. Centralized so the two entry points cannot drift.
+// rows compose in. FloatingList wraps the rows so each useListItem gets its
+// live DOM-ordered index (writing into the SAME listRef useListNavigation
+// reads). Centralized so the two entry points cannot drift.
 const MenuBody = ({
   setFloating,
   style,
   context,
   floatingProps,
+  listRef,
+  labelsRef,
   width = undefined,
   ariaLabel = undefined,
   focus = false,
@@ -133,61 +149,100 @@ const MenuBody = ({
   >
     <div className={MENU_BODY_CLASSES}>
       <MenuContext.Provider value={contextValue}>
-        {children}
+        <FloatingList elementsRef={listRef} labelsRef={labelsRef}>
+          {children}
+        </FloatingList>
       </MenuContext.Provider>
     </div>
   </SurfacePanel>
 )
 
-// Shared registry hook: hands each navigable row a stable render-order index
-// and keeps the parent's disabledIndices array in sync via effect-registration
-// (so floating-ui's list navigation skips disabled rows). Returns the live
-// disabledIndices + item count plus the factory subparts call to claim an index.
-const useMenuRegistry = (): {
+// Tracks each navigable row's disabled flag keyed on its FloatingList index, so
+// useListNavigation skips disabled rows. Returns the live disabledIndices, the
+// row count, and a stable setter/clearer rows call from an effect. Indices come
+// from useListItem (DOM order); a row clears its entry on unmount so the map
+// never goes sparse — itemCount stays the true live count.
+const useMenuDisabledIndices = (): {
   disabledIndices: number[]
   itemCount: number
-  useItemIndex: (disabled: boolean) => number
+  setRowDisabled: (index: number, disabled: boolean) => void
+  clearRow: (index: number) => void
 } => {
-  const counter = useRef(0)
-  counter.current = 0
-
   const [disabledMap, setDisabledMap] = useState<ReadonlyMap<number, boolean>>(
     new Map()
   )
 
-  const useItemIndex = (disabled: boolean): number => {
-    const [index] = useState(() => counter.current++)
-
-    useEffect(() => {
+  const setRowDisabled = useCallback(
+    (index: number, disabled: boolean): void => {
       setDisabledMap((previous) => {
+        if (previous.get(index) === disabled) {
+          return previous
+        }
+
         const next = new Map(previous)
         next.set(index, disabled)
 
         return next
       })
+    },
+    []
+  )
 
-      return (): void => {
-        setDisabledMap((previous) => {
-          if (!previous.has(index)) {
-            return previous
-          }
-
-          const next = new Map(previous)
-          next.delete(index)
-
-          return next
-        })
+  const clearRow = useCallback((index: number): void => {
+    setDisabledMap((previous) => {
+      if (!previous.has(index)) {
+        return previous
       }
-    }, [index, disabled])
 
-    return index
+      const next = new Map(previous)
+      next.delete(index)
+
+      return next
+    })
+  }, [])
+
+  const disabledIndices = useMemo(
+    () =>
+      Array.from(disabledMap.entries())
+        .filter(([, disabled]) => disabled)
+        .map(([index]) => index),
+    [disabledMap]
+  )
+
+  return {
+    disabledIndices,
+    itemCount: disabledMap.size,
+    setRowDisabled,
+    clearRow,
   }
+}
 
-  const disabledIndices = Array.from(disabledMap.entries())
-    .filter(([, disabled]) => disabled)
-    .map(([index]) => index)
+// Registers a navigable row with the parent's FloatingList (DOM-ordered index)
+// and keeps its disabled flag synced. Returns the index + the merged ref to put
+// on the row button. An index of -1 means "not yet placed" (first render before
+// FloatingList sorts); the row stays non-focusable until it settles. On unmount
+// (or when its index shifts) it clears the prior entry so the map never leaks.
+const useMenuRow = (
+  disabled: boolean,
+  label: string,
+  extraRef?: (node: HTMLElement | null) => void
+): { index: number; ref: (node: HTMLElement | null) => void } => {
+  const menu = useMenuContext()
+  const { ref, index } = useListItem({ label })
+  const mergedRef = useMergeRefs([ref, extraRef])
 
-  return { disabledIndices, itemCount: disabledMap.size, useItemIndex }
+  const { setRowDisabled, clearRow } = menu
+  useEffect(() => {
+    if (index === -1) {
+      return
+    }
+
+    setRowDisabled(index, disabled)
+
+    return (): void => clearRow(index)
+  }, [index, disabled, setRowDisabled, clearRow])
+
+  return { index, ref: mergedRef ?? ref }
 }
 
 interface MenuProps {
@@ -218,8 +273,9 @@ const MenuRoot = ({
   const [activeIndex, setActiveIndex] = useState<number | null>(null)
   const [openSubmenuId, setOpenSubmenuId] = useState<string | null>(null)
   const listRef = useRef<(HTMLElement | null)[]>([])
+  const labelsRef = useRef<(string | null)[]>([])
 
-  const { disabledIndices, useItemIndex } = useMenuRegistry()
+  const { disabledIndices, setRowDisabled, clearRow } = useMenuDisabledIndices()
 
   const handleOpenChange = useCallback((nextOpen: boolean): void => {
     setOpen(nextOpen)
@@ -267,11 +323,9 @@ const MenuRoot = ({
 
   const contextValue: MenuContextValue = {
     getItemProps,
-    registerItem: (index, node): void => {
-      listRef.current[index] = node
-    },
     activeIndex,
-    useItemIndex,
+    setRowDisabled,
+    clearRow,
     close: (): void => handleOpenChange(false),
     openSubmenuId,
     setOpenSubmenu,
@@ -291,6 +345,8 @@ const MenuRoot = ({
           style={floatingStyles}
           context={context}
           floatingProps={getFloatingProps()}
+          listRef={listRef}
+          labelsRef={labelsRef}
           width={width}
           ariaLabel={ariaLabel}
           contextValue={contextValue}
@@ -345,13 +401,14 @@ const MenuItem = ({
   children,
 }: MenuItemProps): ReactElement => {
   const menu = useMenuContext()
-  const index = menu.useItemIndex(disabled)
+  const label = typeof children === 'string' ? children : ''
+  const { index, ref } = useMenuRow(disabled, label)
 
   return (
     <button
       type="button"
       role="menuitem"
-      ref={(node): void => menu.registerItem(index, node)}
+      ref={ref}
       tabIndex={menu.activeIndex === index ? 0 : -1}
       aria-disabled={disabled ? true : undefined}
       className={`${ITEM_CLASSES} ${DISABLED_ITEM_CLASSES}`}
@@ -397,14 +454,15 @@ const MenuCheckbox = ({
   children,
 }: MenuCheckboxProps): ReactElement => {
   const menu = useMenuContext()
-  const index = menu.useItemIndex(false)
+  const label = typeof children === 'string' ? children : ''
+  const { index, ref } = useMenuRow(false, label)
 
   return (
     <button
       type="button"
       role="menuitemcheckbox"
       aria-checked={checked}
-      ref={(node): void => menu.registerItem(index, node)}
+      ref={ref}
       tabIndex={menu.activeIndex === index ? 0 : -1}
       className={ITEM_CLASSES}
       {...menu.getItemProps({
@@ -445,7 +503,6 @@ const MenuSubmenu = <T extends string | number>({
   onChange,
 }: MenuSubmenuProps<T>): ReactElement => {
   const menu = useMenuContext()
-  const index = menu.useItemIndex(false)
   const submenuId = useId()
   const subListRef = useRef<(HTMLElement | null)[]>([])
   const [subActiveIndex, setSubActiveIndex] = useState<number | null>(null)
@@ -466,12 +523,12 @@ const MenuSubmenu = <T extends string | number>({
     },
   })
 
-  const current = options.find((option) => option.value === value)
+  // The submenu row joins the PARENT menu's FloatingList for keyboard nav while
+  // also anchoring its own surface — merge the list-item ref with the floating
+  // reference ref onto one button.
+  const { index, ref: rowRef } = useMenuRow(false, label, sub.refs.setReference)
 
-  const rowRef = (node: HTMLElement | null): void => {
-    menu.registerItem(index, node)
-    sub.refs.setReference(node)
-  }
+  const current = options.find((option) => option.value === value)
 
   const closeSubmenu = (): void => menu.setOpenSubmenu(null)
 
@@ -560,8 +617,10 @@ const MenuContextMenu = ({
 }: MenuContextMenuProps): ReactElement | null => {
   const [activeIndex, setActiveIndex] = useState<number | null>(null)
   const listRef = useRef<(HTMLElement | null)[]>([])
+  const labelsRef = useRef<(string | null)[]>([])
 
-  const { disabledIndices, useItemIndex, itemCount } = useMenuRegistry()
+  const { disabledIndices, itemCount, setRowDisabled, clearRow } =
+    useMenuDisabledIndices()
 
   const handleOpenChange = useCallback(
     (nextOpen: boolean): void => {
@@ -624,11 +683,9 @@ const MenuContextMenu = ({
 
   const contextValue: MenuContextValue = {
     getItemProps,
-    registerItem: (index, node): void => {
-      listRef.current[index] = node
-    },
     activeIndex,
-    useItemIndex,
+    setRowDisabled,
+    clearRow,
     close: (): void => handleOpenChange(false),
     // Context menus carry flat items only; submenu coordination is inert here.
     openSubmenuId: null,
@@ -645,6 +702,8 @@ const MenuContextMenu = ({
       style={floatingStyles}
       context={context}
       floatingProps={getFloatingProps()}
+      listRef={listRef}
+      labelsRef={labelsRef}
       ariaLabel={ariaLabel}
       focus={{ modal: false }}
       contextValue={contextValue}

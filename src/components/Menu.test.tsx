@@ -1,3 +1,4 @@
+import { type ReactElement, useState } from 'react'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, test, vi } from 'vitest'
@@ -478,5 +479,68 @@ describe('Menu.Context', () => {
     // role queries. Non-modal leaves the outside button reachable.
     expect(screen.getByRole('menu')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'outside' })).toBeInTheDocument()
+  })
+})
+
+describe('Menu dynamic items', () => {
+  // Harness whose item set changes while the menu stays open: a toggle prepends
+  // an enabled "Prepended" row ahead of a disabled "Copy" and an enabled
+  // "Paste". The old counter registry froze each row's index on mount and reset
+  // its counter every parent render, so a row inserted later collided at index 0
+  // and the disabled map went sparse — keyboard nav + disabled-skip then targeted
+  // the wrong row. FloatingList re-derives every index from DOM order, so nav
+  // stays correct across the change.
+  const DynamicContextMenu = (): ReactElement => {
+    const [prepended, setPrepended] = useState(false)
+
+    return (
+      <div>
+        <button type="button" onClick={(): void => setPrepended(true)}>
+          insert row
+        </button>
+        <Menu.Context
+          position={{ x: 0, y: 0 }}
+          open
+          onOpenChange={vi.fn()}
+          aria-label="Dynamic actions"
+        >
+          {prepended ? (
+            <Menu.Item onSelect={vi.fn()}>Prepended</Menu.Item>
+          ) : null}
+          <Menu.Item disabled onSelect={vi.fn()}>
+            Copy
+          </Menu.Item>
+          <Menu.Item onSelect={vi.fn()}>Paste</Menu.Item>
+        </Menu.Context>
+      </div>
+    )
+  }
+
+  test('keyboard nav and disabled-skip stay correct after a row is inserted while open', async () => {
+    const user = userEvent.setup()
+
+    render(<DynamicContextMenu />)
+
+    // Before the change: Down skips disabled Copy and lands on Paste.
+    await user.keyboard('{ArrowDown}')
+    expect(screen.getByRole('menuitem', { name: 'Paste' })).toHaveFocus()
+
+    // Insert an enabled row at the FRONT while the menu is open.
+    await user.click(screen.getByRole('button', { name: 'insert row' }))
+    expect(
+      screen.getByRole('menuitem', { name: 'Prepended' })
+    ).toBeInTheDocument()
+
+    // The new row took DOM index 0; Copy shifted to 1 (still disabled), Paste to
+    // 2. Down from Prepended must skip the now-shifted disabled Copy and reach
+    // Paste — the stale counter would have mis-indexed both and skipped the
+    // wrong row.
+    screen.getByRole('menuitem', { name: 'Prepended' }).focus()
+    await user.keyboard('{ArrowDown}')
+    expect(screen.getByRole('menuitem', { name: 'Paste' })).toHaveFocus()
+
+    // And the disabled Copy is genuinely skipped, never focused, by walking up.
+    await user.keyboard('{ArrowUp}')
+    expect(screen.getByRole('menuitem', { name: 'Prepended' })).toHaveFocus()
   })
 })
