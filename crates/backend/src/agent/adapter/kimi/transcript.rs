@@ -15,7 +15,6 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use super::transcript_dto::{KimiLineDto, KimiLoopEventType, KimiRecordType};
-use super::types::default_kimi_home;
 use crate::agent::adapter::base::{TranscriptDecoder, TranscriptHandle, TranscriptTailService};
 use crate::agent::adapter::claude_code::test_runners::timestamps::compute_duration_ms;
 use crate::agent::adapter::types::ValidateTranscriptError;
@@ -36,8 +35,13 @@ struct InFlightToolCall {
 
 type InFlightToolCalls = HashMap<String, InFlightToolCall>;
 
-pub(super) fn validate_transcript_path(
+/// Validate a raw transcript path (null-byte check + canonicalize-under-root)
+/// against a caller-supplied root. `KimiAdapter` passes the locator's
+/// effective home so the trust root matches the per-process `KIMI_CODE_HOME`
+/// the locator resolved.
+pub(super) fn validate_transcript_path_with_root(
     transcript_path: &str,
+    kimi_root: &Path,
 ) -> Result<PathBuf, ValidateTranscriptError> {
     if transcript_path.bytes().any(|b| b == 0) {
         return Err(ValidateTranscriptError::InvalidPath(
@@ -45,8 +49,7 @@ pub(super) fn validate_transcript_path(
         ));
     }
 
-    let kimi_root = default_kimi_home();
-    validate_transcript_path_under_root(transcript_path, &kimi_root)
+    validate_transcript_path_under_root(transcript_path, kimi_root)
 }
 
 fn validate_transcript_path_under_root(
@@ -439,7 +442,8 @@ mod tests {
 
     #[test]
     fn validate_transcript_path_rejects_null_byte() {
-        let result = validate_transcript_path("/tmp/wire\0.jsonl");
+        let result =
+            validate_transcript_path_with_root("/tmp/wire\0.jsonl", Path::new("/tmp/.kimi-code"));
         assert!(matches!(
             result,
             Err(ValidateTranscriptError::InvalidPath(_))

@@ -72,8 +72,9 @@ impl KimiLocator {
 
     /// Effective kimi home for THIS process: the kimi process's own
     /// `KIMI_CODE_HOME` from `<proc_root>/<pid>/environ` when present,
-    /// else the constructor `kimi_home`.
-    fn effective_home(&self) -> PathBuf {
+    /// else the constructor `kimi_home`. Shared with the validator so the
+    /// trust root is resolved from one source.
+    pub(crate) fn effective_home(&self) -> PathBuf {
         self.proc_root
             .as_deref()
             .and_then(|root| kimi_home_from_proc_environ(root, self.agent_pid))
@@ -162,7 +163,7 @@ impl KimiLocator {
 
     /// Best-effort fallback when the index has no fresh matching
     /// `workDir`: newest `session_*` (by mtime) whose
-    /// `agents/main/wire.jsonl` exists, scoped to this cwd's EXACT bucket
+    /// `agents/main/wire.jsonl` is FRESH, scoped to this cwd's EXACT bucket
     /// `wd_<basename>_<hex>` (`<hex>` = `sha256(cwd)[:12]`). The exact
     /// bucket — not a basename prefix — stops a same-basename session
     /// from another project's cwd binding here.
@@ -184,7 +185,9 @@ impl KimiLocator {
             }
             let session_path = session.path();
             let wire = session_path.join("agents").join("main").join("wire.jsonl");
-            if !wire.is_file() {
+            // Freshness-gate like the index path so a stale same-cwd bucket
+            // session can't bind when /proc is unavailable.
+            if !wire_is_fresh(&wire, self.pty_start) {
                 continue;
             }
             let mtime = session
@@ -682,6 +685,67 @@ mod tests {
             "fallback must pick the session in this cwd's bucket, not the newer decoy"
         );
         assert_eq!(located.agent_session_id.as_deref(), Some("session_scoped"));
+    }
+
+    /// Exact-bucket freshness: a STALE bucket session (wire mtime far
+    /// before pty_start) is rejected while a FRESH one wins, even though
+    /// the stale dir is newer by directory mtime.
+    #[test]
+    fn fallback_freshness_prefers_fresh_over_stale_in_bucket() {
+        let kimi_home = tempfile::tempdir().expect("kimi home");
+        let work = tempfile::tempdir().expect("work dir");
+        let bucket = kimi_home
+            .path()
+            .join("sessions")
+            .join(bucket_for(work.path()));
+
+        // FRESH created first, STALE second: the stale dir is newer by mtime,
+        // so a naive newest-wins scan would pick it — the gate must skip it.
+        let fresh = bucket.join("session_fresh");
+        let fresh_wire = write_wire(&fresh);
+        let stale = bucket.join("session_stale");
+        let stale_wire = write_wire(&stale);
+
+        let pty_start = SystemTime::now();
+        set_mtime(&stale_wire, pty_start - Duration::from_secs(3600));
+        set_mtime(&fresh_wire, pty_start + Duration::from_secs(1));
+
+        // Index never matches this cwd so resolution falls to the bucket scan.
+        write_index(kimi_home.path(), &[]);
+
+        let locator = locator_with(kimi_home.path(), 4242, pty_start);
+        let located = locator
+            .locate(work.path(), "pty-1")
+            .expect("fresh bucket session resolves");
+        assert_eq!(
+            located.status_path, fresh_wire,
+            "fallback must reject the stale bucket session and bind the fresh one"
+        );
+        assert_eq!(located.agent_session_id.as_deref(), Some("session_fresh"));
+    }
+
+    /// A stale-only EXACT bucket (the single session's wire predates
+    /// pty_start) must error rather than bind the stale transcript.
+    #[test]
+    fn fallback_stale_only_bucket_errors() {
+        let kimi_home = tempfile::tempdir().expect("kimi home");
+        let work = tempfile::tempdir().expect("work dir");
+        let bucket = kimi_home
+            .path()
+            .join("sessions")
+            .join(bucket_for(work.path()));
+        let stale = bucket.join("session_stale");
+        let stale_wire = write_wire(&stale);
+
+        let pty_start = SystemTime::now();
+        set_mtime(&stale_wire, pty_start - Duration::from_secs(3600));
+        write_index(kimi_home.path(), &[]);
+
+        let locator = locator_with(kimi_home.path(), 4242, pty_start);
+        let err = locator
+            .locate(work.path(), "pty-1")
+            .expect_err("stale-only bucket must not bind");
+        assert!(err.contains("kimi locator"), "got: {}", err);
     }
 
     #[test]

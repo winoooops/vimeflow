@@ -60,7 +60,9 @@ impl StateDecoder for KimiAdapter {
 
 impl TranscriptPathValidator for KimiAdapter {
     fn validate(&self, raw: &str) -> Result<PathBuf, ValidateTranscriptError> {
-        transcript::validate_transcript_path(raw)
+        // Validate against the SAME effective home the locator resolved
+        // (per-process `KIMI_CODE_HOME`), not a recomputed default root.
+        transcript::validate_transcript_path_with_root(raw, &self.locator.effective_home())
     }
 }
 
@@ -189,6 +191,83 @@ mod adapter_tests {
         assert!(
             <KimiAdapter as AgentAdapter>::validate_transcript(&adapter, "/tmp/not-kimi").is_err(),
             "path outside kimi home should be rejected",
+        );
+    }
+
+    // Write <proc_root>/<pid>/environ from NUL-joined KEY=VALUE entries.
+    fn write_environ(proc_root: &Path, pid: u32, entries: &[&str]) {
+        let pid_dir = proc_root.join(pid.to_string());
+        std::fs::create_dir_all(&pid_dir).expect("create fake pid dir");
+        let mut bytes = Vec::new();
+        for entry in entries {
+            bytes.extend_from_slice(entry.as_bytes());
+            bytes.push(0);
+        }
+        std::fs::write(pid_dir.join("environ"), bytes).expect("write environ");
+    }
+
+    /// Fix B: the validator resolves its trust root from the locator's
+    /// per-process effective home (proc-environ `KIMI_CODE_HOME`), so a
+    /// wire under that home validates even when the sidecar's own
+    /// `KIMI_CODE_HOME` (and constructor home) point elsewhere; a path
+    /// outside the effective home is still rejected.
+    #[test]
+    fn validate_transcript_uses_locator_effective_home() {
+        let env_home = tempfile::tempdir().expect("env home");
+        let wrong_home = tempfile::tempdir().expect("constructor home");
+        let proc_root = tempfile::tempdir().expect("proc root");
+
+        let wire = env_home
+            .path()
+            .join("sessions")
+            .join("wd_x")
+            .join("session_1")
+            .join("agents")
+            .join("main")
+            .join("wire.jsonl");
+        std::fs::create_dir_all(wire.parent().expect("parent")).expect("mkdir wire");
+        std::fs::write(&wire, "").expect("write wire");
+
+        let pid = 9191;
+        write_environ(
+            proc_root.path(),
+            pid,
+            &[&format!("KIMI_CODE_HOME={}", env_home.path().display())],
+        );
+
+        // Constructor + sidecar env both point at the WRONG home; only the
+        // proc-environ home contains the wire.
+        let _guard = crate::agent::adapter::KimiHomeEnvGuard::acquire();
+        std::env::set_var("KIMI_CODE_HOME", wrong_home.path());
+        let adapter = KimiAdapter::with_locator(Arc::new(KimiLocator::new(
+            wrong_home.path().to_path_buf(),
+            pid,
+            std::time::SystemTime::UNIX_EPOCH,
+            Some(proc_root.path().to_path_buf()),
+        )));
+
+        let validated = <KimiAdapter as AgentAdapter>::validate_transcript(
+            &adapter,
+            wire.to_str().expect("utf8 wire"),
+        )
+        .expect("wire under per-process effective home validates");
+        assert_eq!(
+            validated,
+            std::fs::canonicalize(&wire).expect("canonical wire")
+        );
+
+        // A path outside the effective home is still rejected.
+        let outside = wrong_home.path().join("wire.jsonl");
+        std::fs::write(&outside, "").expect("write outside");
+        assert!(
+            matches!(
+                <KimiAdapter as TranscriptPathValidator>::validate(
+                    &adapter,
+                    outside.to_str().expect("utf8 outside"),
+                ),
+                Err(ValidateTranscriptError::OutsideRoot { .. })
+            ),
+            "path outside the effective home must be rejected",
         );
     }
 }
