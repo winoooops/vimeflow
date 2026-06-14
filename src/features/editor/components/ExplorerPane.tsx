@@ -1,4 +1,5 @@
 import type { ReactElement } from 'react'
+import { IconButton } from '@/components/IconButton'
 import type { FileNode, ContextMenuAction } from '../types'
 import { FileTree } from './FileTree'
 
@@ -24,19 +25,14 @@ export const ExplorerPane = ({
 }: ExplorerPaneProps): ReactElement => (
   <>
     {/* Floating reopen button - only visible when explorer is collapsed */}
-    {/* eslint-disable-next-line vimeflow/no-raw-icon-button */}
-    <button
+    <IconButton
+      icon="chevron_right"
+      label="Open explorer panel"
       onClick={onToggle}
-      aria-label="Open explorer panel"
-      className={`fixed left-[308px] top-14 z-30 w-6 h-10 bg-surface-container hover:bg-surface-container-high rounded-r-lg border-r border-y border-outline-variant/10 transition-all duration-300 flex items-center justify-center ${
+      className={`fixed left-[308px] top-14 z-30 w-6 h-10 bg-surface-container text-on-surface-variant hover:bg-surface-container-high rounded-r-lg border-r border-y border-outline-variant/10 transition-all duration-300 ${
         isOpen ? 'opacity-0 pointer-events-none' : 'opacity-100'
       }`}
-      type="button"
-    >
-      <span className="material-symbols-outlined text-on-surface-variant text-lg">
-        chevron_right
-      </span>
-    </button>
+    />
 
     <nav
       className={`
@@ -59,17 +55,11 @@ export const ExplorerPane = ({
         <span className="text-xs font-bold uppercase tracking-widest text-on-surface-variant/70">
           EXPLORER
         </span>
-        {/* eslint-disable-next-line vimeflow/no-raw-icon-button */}
-        <button
+        <IconButton
+          icon="keyboard_double_arrow_left"
+          label={isOpen ? 'Collapse explorer' : 'Expand explorer'}
           onClick={onToggle}
-          className="text-on-surface-variant/60 hover:text-on-surface transition-colors"
-          aria-label={isOpen ? 'Collapse explorer' : 'Expand explorer'}
-          type="button"
-        >
-          <span className="material-symbols-outlined text-[20px]">
-            keyboard_double_arrow_left
-          </span>
-        </button>
+        />
       </div>
 
       {/* File tree content */}
