@@ -1,9 +1,12 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
+  useRef,
   useState,
   type ReactElement,
+  type UIEvent,
 } from 'react'
 import type { Agent } from '../../../../agents/registry'
 import type { AgentStatus } from '../../types'
@@ -23,6 +26,10 @@ import {
 } from '../../../diff/hooks/useGitStatus'
 import type { ChangedFile } from '../../../diff/types'
 import { AgentStatusPanelHeader } from './Header'
+import {
+  readStatusScrollAnchor,
+  writeStatusScrollAnchor,
+} from '../../utils/statusSnapshotStore'
 
 interface AgentStatusPanelProps {
   agentStatus: AgentStatus
@@ -34,6 +41,7 @@ interface AgentStatusPanelProps {
   status: SessionStatus
   onCollapse: () => void
   cacheHistory: number[]
+  snapshotKey?: string | null
 }
 
 // Exported so WorkspaceView can target this width as the
@@ -53,9 +61,12 @@ export const AgentStatusPanel = ({
   status: sessionStatus,
   onCollapse,
   cacheHistory,
+  snapshotKey = null,
 }: AgentStatusPanelProps): ReactElement => {
   const status = agentStatus
   const events = useActivityEvents(status)
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null)
+  const programmaticScrollTopRef = useRef<number | null>(null)
 
   const internalGitStatus = useGitStatus(cwd, {
     watch: true,
@@ -126,6 +137,51 @@ export const AgentStatusPanel = ({
 
   const canActivate = liveFile !== null
 
+  useLayoutEffect(() => {
+    if (snapshotKey === null) {
+      return
+    }
+
+    const scrollContainer = scrollContainerRef.current
+
+    if (scrollContainer === null) {
+      return
+    }
+
+    const scrollTop = readStatusScrollAnchor(snapshotKey)
+
+    programmaticScrollTopRef.current = scrollTop
+    scrollContainer.scrollTop = scrollTop
+    programmaticScrollTopRef.current = scrollContainer.scrollTop
+  }, [
+    snapshotKey,
+    feedEvents,
+    runningId,
+    effectiveFiles,
+    effectiveLoading,
+    error,
+    status.testRun,
+  ])
+
+  const handleScroll = useCallback(
+    (event: UIEvent<HTMLDivElement>): void => {
+      if (snapshotKey === null) {
+        return
+      }
+
+      const nextScrollTop = event.currentTarget.scrollTop
+
+      if (programmaticScrollTopRef.current === nextScrollTop) {
+        programmaticScrollTopRef.current = null
+
+        return
+      }
+
+      writeStatusScrollAnchor(snapshotKey, nextScrollTop)
+    },
+    [snapshotKey]
+  )
+
   return (
     <div
       data-testid="agent-status-panel"
@@ -156,7 +212,11 @@ export const AgentStatusPanel = ({
         />
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-clip">
+      <div
+        ref={scrollContainerRef}
+        className="min-h-0 flex-1 overflow-y-auto overflow-x-clip"
+        onScroll={handleScroll}
+      >
         <ToolCallSummary
           total={status.toolCalls.total}
           byType={status.toolCalls.byType}

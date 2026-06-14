@@ -1,10 +1,15 @@
 // cspell:ignore winoooops
-import { describe, test, expect, vi } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
+import { afterEach, describe, test, expect, vi } from 'vitest'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { AGENTS } from '../../../../agents/registry'
 import type { AgentStatus } from '../../types'
 import * as useGitStatusModule from '../../../diff/hooks/useGitStatus'
+import {
+  clearStatusSnapshots,
+  readStatusScrollAnchor,
+  writeStatusScrollAnchor,
+} from '../../utils/statusSnapshotStore'
 import { AgentStatusPanel } from '.'
 
 const inactiveAgentStatus: AgentStatus = {
@@ -100,6 +105,10 @@ const defaultProps = {
 }
 
 describe('AgentStatusPanel', () => {
+  afterEach(() => {
+    clearStatusSnapshots()
+  })
+
   test('renders at 280px width when agent is not active', () => {
     render(
       <AgentStatusPanel {...defaultProps} agentStatus={inactiveAgentStatus} />
@@ -370,6 +379,33 @@ describe('AgentStatusPanel', () => {
 
     // Sparkline renders when history is present.
     expect(screen.getByTestId('token-cache-sparkline')).toBeInTheDocument()
+  })
+
+  test('restores and stores the pane scroll anchor', () => {
+    writeStatusScrollAnchor('pty-pane-1', 148)
+
+    render(
+      <AgentStatusPanel
+        {...defaultProps}
+        agentStatus={activeAgentStatus}
+        snapshotKey="pty-pane-1"
+      />
+    )
+
+    const panel = screen.getByTestId('agent-status-panel')
+
+    /* eslint-disable testing-library/no-node-access */
+    const scrollable = panel.querySelector('.overflow-y-auto')
+    expect(scrollable).toBeInstanceOf(HTMLDivElement)
+
+    const scrollContainer = scrollable as HTMLDivElement
+    expect(scrollContainer.scrollTop).toBe(148)
+
+    scrollContainer.scrollTop = 260
+    fireEvent.scroll(scrollContainer)
+    /* eslint-enable testing-library/no-node-access */
+
+    expect(readStatusScrollAnchor('pty-pane-1')).toBe(260)
   })
 
   test('renders Header above the body with the provided agent status and onCollapse', async () => {

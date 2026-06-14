@@ -17,6 +17,12 @@ Introduce a stable activity/status snapshot layer so pane switching does not for
 - Merge updates incrementally using stable item ids; do not replace the entire list when only a few rows changed.
 - Keep terminal states and error states explicit so retained content never hides a real failure.
 
+## PR2 Boundary Decision
+
+The current sidebar already has a usable status identity: `WorkspaceView` passes the active PTY-backed pane id into `useAgentStatus`, and backend agent events are already keyed by the same PTY id. PR2 therefore keys snapshots by that PTY-backed pane id and stays frontend-only. No Rust IPC or binding change is required for this slice.
+
+The PR2 store is intentionally in-memory and bounded to the most recent pane snapshots. PR3 owns request orchestration and should add stale-response guards in the hot-load coordinator, where the async refresh lifecycle has a real production caller.
+
 ## Interface Guidance
 
 - Prefer existing feature-local hooks and stores over a new global state framework.

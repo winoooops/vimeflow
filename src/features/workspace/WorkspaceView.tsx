@@ -2309,6 +2309,7 @@ export const WorkspaceView = (): ReactElement => {
               onOpenFile={handleOpenTestFile}
               agent={activityPanelAgent}
               status={activityPanelStatus}
+              snapshotKey={activePtyBackedPanePtyId ?? null}
               onCollapse={() => {
                 handleActivityPanelCollapsed(true)
               }}
