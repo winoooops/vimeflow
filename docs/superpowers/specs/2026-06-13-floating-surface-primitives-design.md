@@ -226,14 +226,14 @@ As each consumer migrates, its file-level `@floating-ui` disable is deleted in t
 
 ## 7. Migration map & behaviour matrix (ratchet 6 → 0)
 
-| #   | File                                         | Today              | Target                            | Ratchet |
-| --- | -------------------------------------------- | ------------------ | --------------------------------- | ------- |
-| 1   | `diff/toolbar/Dropdown.tsx`                  | hand-rolled select | promote → `@/components/Dropdown` | 6 → 5   |
-| 2   | `diff/toolbar/ViewSettingsDropdown.tsx`      | composite menu     | `Menu` + `Menu.Submenu`           | 5 → 4   |
-| 3   | `diff/toolbar/PriorityPlus.tsx`              | overflow menu      | `Menu`                            | 4 → 3   |
-| 4   | `terminal/TerminalContextMenu.tsx`           | context menu       | `Menu.Context`                    | 3 → 2   |
-| 5   | `diff/FinishFeedbackPopover.tsx`             | dialog card        | `Popover`                         | 2 → 1   |
-| 6   | `diff/toolbar/DiffChipToolbar.tsx` (confirm) | confirm dialog     | `Popover`                         | 1 → 0   |
+| #   | File                                         | Today              | Target                                                    | Ratchet |
+| --- | -------------------------------------------- | ------------------ | --------------------------------------------------------- | ------- |
+| 1   | `diff/toolbar/Dropdown.tsx`                  | hand-rolled select | promote → `@/components/Dropdown`                         | 6 → 5   |
+| 2   | `diff/toolbar/ViewSettingsDropdown.tsx`      | composite menu     | `Menu` + `Menu.Submenu`                                   | 5 → 4   |
+| 3   | `diff/toolbar/PriorityPlus.tsx`              | overflow tray      | `Popover` (holds stateful controls, not a flat item list) | 4 → 3   |
+| 4   | `terminal/TerminalContextMenu.tsx`           | context menu       | `Menu.Context`                                            | 3 → 2   |
+| 5   | `diff/FinishFeedbackPopover.tsx`             | dialog card        | `Popover`                                                 | 2 → 1   |
+| 6   | `diff/toolbar/DiffChipToolbar.tsx` (confirm) | confirm dialog     | `Popover`                                                 | 1 → 0   |
 
 **Behaviour matrix** — the substrate defaults to `placement: bottom-start`, `autoUpdate: true`, `ancestorScroll: true`, `role: menu`, no focus manager. Consumers **opt out** where their current behaviour differs; exact values are ported verbatim from each file in its migration PR. Known non-defaults to preserve:
 
@@ -241,7 +241,7 @@ As each consumer migrates, its file-level `@floating-ui` disable is deleted in t
 | ----------------------- | ------------------------------ | ---------- | ------------------------------------- | -------------------------------------- | ------ |
 | Dropdown (diff)         | bottom-start                   | yes        | ancestorScroll                        | none (list-nav)                        | menu   |
 | ViewSettings            | bottom-end                     | yes        | ancestorScroll                        | none                                   | menu   |
-| PriorityPlus            | (port verbatim)                | (port)     | **manual window scroll listener**     | (port)                                 | menu   |
+| PriorityPlus            | (port verbatim)                | (port)     | **manual window scroll listener**     | (port)                                 | dialog |
 | TerminalContextMenu     | bottom-start (+flip fallbacks) | **no**     | **none**                              | **FloatingFocusManager, non-modal**    | menu   |
 | FinishFeedbackPopover   | bottom-start                   | yes        | ancestorScroll                        | FloatingFocusManager (initialFocus −1) | dialog |
 | DiffChipToolbar confirm | (port verbatim)                | (port)     | **plain dismiss (no ancestorScroll)** | (port)                                 | dialog |

@@ -1,19 +1,7 @@
-/* eslint-disable @typescript-eslint/no-restricted-imports -- hand-rolled popover predates the shared floating-surface primitive */
 import { useState, type ReactElement, type ReactNode } from 'react'
 import type { BaseDiffOptions, DiffsThemeNames } from '@pierre/diffs'
-import {
-  FloatingPortal,
-  FloatingFocusManager,
-  autoUpdate,
-  flip,
-  offset,
-  shift,
-  useDismiss,
-  useFloating,
-  useInteractions,
-  useRole,
-} from '@floating-ui/react'
 import { Tooltip } from '@/components/Tooltip'
+import { Popover } from '@/components/Popover'
 import { Dropdown, type DropdownOption } from '@/components/Dropdown'
 import { PriorityPlus } from './PriorityPlus'
 import { Segmented } from './Segmented'
@@ -243,29 +231,12 @@ export const DiffChipToolbar = ({
   onDiscardFeedback = undefined,
 }: DiffChipToolbarProps): ReactElement => {
   // Discard All confirmation popover state. The trigger is the discard-all
-  // button inside the tool-well; the floating content is the DiscardAllConfirm
-  // component rendered via FloatingPortal.
+  // button inside the tool-well; the confirm card renders on the shared Popover
+  // anchored to that button.
   const [discardAllOpen, setDiscardAllOpen] = useState(false)
 
-  const {
-    refs: discardAllRefs,
-    floatingStyles: discardAllStyles,
-    context: discardAllContext,
-  } = useFloating({
-    open: discardAllOpen,
-    onOpenChange: setDiscardAllOpen,
-    placement: 'bottom-end',
-    middleware: [offset(4), flip(), shift({ padding: 8 })],
-    whileElementsMounted: autoUpdate,
-  })
-
-  const discardAllDismiss = useDismiss(discardAllContext)
-  const discardAllRole = useRole(discardAllContext, { role: 'dialog' })
-
-  const {
-    getReferenceProps: getDiscardAllReferenceProps,
-    getFloatingProps: getDiscardAllFloatingProps,
-  } = useInteractions([discardAllDismiss, discardAllRole])
+  const [discardAllAnchor, setDiscardAllAnchor] =
+    useState<HTMLButtonElement | null>(null)
 
   // Counter copy: `1/N` when there is at least one hunk, `0/0` otherwise.
   // Shows the current focused index as `focusedHunkIndex + 1` so the counter
@@ -298,30 +269,29 @@ export const DiffChipToolbar = ({
   // onDiscardAll is provided; otherwise a coming-soon placeholder.
   //
   // Tooltip wraps the SPAN, not the button — the button owns the popover's
-  // floating ref, and Tooltip's cloneElement would clobber it. Disabled while
+  // anchor ref, and Tooltip's cloneElement would clobber it. Disabled while
   // the popover is open so the two floating layers never co-exist.
   const discardAllSlot =
     onDiscardAll !== undefined ? (
       <Tooltip content="Discard all changes" disabled={discardAllOpen}>
         <span>
           <button
-            ref={discardAllRefs.setReference}
+            ref={setDiscardAllAnchor}
             type="button"
             disabled={staging}
             aria-label="discard all"
+            aria-haspopup="dialog"
             aria-expanded={discardAllOpen}
             className={
               staging
                 ? WELL_DISABLED_BUTTON_CLASSES
                 : WELL_DANGER_BUTTON_CLASSES
             }
-            {...getDiscardAllReferenceProps({
-              onClick: (): void => {
-                if (!staging) {
-                  setDiscardAllOpen((prev) => !prev)
-                }
-              },
-            })}
+            onClick={(): void => {
+              if (!staging) {
+                setDiscardAllOpen((prev) => !prev)
+              }
+            }}
           >
             <span
               aria-hidden="true"
@@ -330,32 +300,25 @@ export const DiffChipToolbar = ({
               delete_sweep
             </span>
           </button>
-          {discardAllOpen ? (
-            <FloatingPortal>
-              <FloatingFocusManager
-                context={discardAllContext}
-                initialFocus={-1}
-              >
-                <div
-                  ref={discardAllRefs.setFloating}
-                  style={discardAllStyles}
-                  className="z-50 rounded-lg bg-surface-container-high/95 backdrop-blur-md backdrop-saturate-150 border border-outline-variant/20 shadow-xl"
-                  {...getDiscardAllFloatingProps()}
-                >
-                  <DiscardAllConfirm
-                    fileName={selectedFileName}
-                    onConfirm={(): void => {
-                      setDiscardAllOpen(false)
-                      void onDiscardAll()
-                    }}
-                    onCancel={(): void => {
-                      setDiscardAllOpen(false)
-                    }}
-                  />
-                </div>
-              </FloatingFocusManager>
-            </FloatingPortal>
-          ) : null}
+          <Popover
+            anchor={discardAllAnchor}
+            open={discardAllOpen}
+            onOpenChange={setDiscardAllOpen}
+            placement="bottom-end"
+            middleware={{ ancestorScroll: false }}
+            aria-label="Discard all confirmation"
+          >
+            <DiscardAllConfirm
+              fileName={selectedFileName}
+              onConfirm={(): void => {
+                setDiscardAllOpen(false)
+                void onDiscardAll()
+              }}
+              onCancel={(): void => {
+                setDiscardAllOpen(false)
+              }}
+            />
+          </Popover>
         </span>
       </Tooltip>
     ) : (

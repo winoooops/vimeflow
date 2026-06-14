@@ -261,6 +261,73 @@ Rules:
 - Use `renderTrigger` when the default label-chip trigger does not fit the call site; it receives a typed ref + merged props so the trigger stays keyboard-accessible.
 - `DropdownOption` is re-exported from `@/components/Dropdown` — import it from there, never from `@/components/base/OptionList`.
 
+### 5.8 `Menu`
+
+A generic compound menu (click-anchored or cursor-anchored context-menu mode). Lives at `src/components/Menu.tsx`; import via the alias: `import { Menu } from '@/components/Menu'`.
+
+```ts
+// Anchored (click trigger) — trigger element toggles open:
+interface MenuProps {
+  trigger: ReactElement // cloned with floating ref + interaction props
+  placement?: Placement // default 'bottom-start'
+  width?: number
+  middleware?: { ancestorScroll?: boolean } // opt out of scroll-dismiss where needed
+  'aria-label'?: string
+  children: ReactNode
+}
+
+// Controlled cursor-anchored context menu:
+interface MenuContextMenuProps {
+  position: { x: number; y: number }
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  'aria-label': string // required — non-modal focus; no implicit accessible name
+  children: ReactNode
+}
+
+// Row subcomponents:
+// <Menu.Section label?={string}>…</Menu.Section>
+// <Menu.Item icon?={string} shortcut?={ShortcutInput} disabled?={boolean} onSelect={() => void}>…</Menu.Item>
+// <Menu.Checkbox icon?={string} checked={boolean} onChange={(next: boolean) => void}>…</Menu.Checkbox>
+// <Menu.Submenu label={string} icon?={string} value options onChange /> // shares base/OptionList with Dropdown
+```
+
+Rules:
+
+- Import via `@/components/Menu`; never import from `src/components/base/**` directly (`base/` is package-private).
+- Built on the package-private `base/floating` substrate (`useFloatingSurface` + `SurfacePanel`). Do not hand-roll a menu surface.
+- `Menu.Context` bakes the context-menu substrate defaults (`offset: 0`, flip fallbacks, `autoUpdate: false`, `ancestorScroll: false`, `openOnArrowKeyDown: false`, non-modal focus) — consumers pass only `position`/`open`/items.
+- Rows must form a static set registered with `FloatingList` so each row's index is DOM-ordered; dynamic row sets are unsupported.
+- Keyboard focus and roving `tabIndex` are handled by the primitive via `useListNavigation`; rows must not manage their own `tabIndex`.
+- `Menu` owns one-open-submenu state: opening a submenu closes any other; an outside-press inside an open submenu does not close the parent (`Menu.Submenu` registers its portal root with the parent's `dismissWhen` predicate).
+- `Menu.Submenu` does not embed a public `Dropdown`; both share `base/OptionList` while `Menu` owns submenu lifecycle and dismissal.
+
+### 5.9 `Popover`
+
+An arbitrary-content dialog card. Lives at `src/components/Popover.tsx`; import via the alias: `import { Popover } from '@/components/Popover'`.
+
+```ts
+interface PopoverProps {
+  anchor: HTMLElement | null // element the panel positions against
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  placement?: Placement // default 'bottom-start'
+  width?: number
+  middleware?: { ancestorScroll?: boolean } // { ancestorScroll: false } for plain-dismiss confirm dialogs
+  'aria-label': string // required — role="dialog" needs an accessible name
+  children: ReactNode // consumer owns the body; rendered on GLASS_SURFACE, focus-managed (modal)
+}
+```
+
+Rules:
+
+- Import via `@/components/Popover`; never import from `src/components/base/**` directly (`base/` is package-private).
+- Built on the package-private `base/floating` substrate (`useFloatingSurface` + `SurfacePanel`). Do not hand-roll a dialog card.
+- `role="dialog"` — `aria-label` is required and must be meaningful (it is the dialog's accessible name).
+- Focus is modal (`initialFocus: 0`): focus lands on the first tabbable child on open and `modal: true` engages the focus trap; the consumer's body content is navigable by tab.
+- Pass `middleware={{ ancestorScroll: false }}` for confirm dialogs that should dismiss only on outside-press or Escape, not on scroll.
+- Consumer owns the body layout; the primitive supplies the glass chrome and focus management only.
+
 ---
 
 ## 6. Interaction rules (additions to DESIGN.md §7)

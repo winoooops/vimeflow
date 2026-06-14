@@ -1,24 +1,12 @@
-/* eslint-disable @typescript-eslint/no-restricted-imports -- hand-rolled popover predates the shared floating-surface primitive */
 import {
   isValidElement,
-  useEffect,
   useLayoutEffect,
   useRef,
   useState,
   type ReactElement,
   type ReactNode,
 } from 'react'
-import {
-  FloatingPortal,
-  autoUpdate,
-  flip,
-  offset,
-  shift,
-  useDismiss,
-  useFloating,
-  useInteractions,
-  useRole,
-} from '@floating-ui/react'
+import { Popover } from '@/components/Popover'
 import { Tooltip } from '@/components/Tooltip'
 
 // Rendered overflow chip width (`w-8 h-8` = 32 px) and toolbar `gap-x-3`
@@ -190,53 +178,31 @@ const stableItemKey = (item: ReactNode, index: number): string => {
   return `index-${index}`
 }
 
-// Private helper — not exported. The chip + portal-rendered popover that
-// hosts the overflowed children. Closes on scroll so it can't drift away
-// from the trigger when the toolbar scrolls underneath it.
+// Private helper — not exported. The chip + Popover that hosts the
+// overflowed children. The shared Popover supplies the glass chrome and
+// closes on ancestor scroll (its default dismiss), so the tray can't drift
+// away from the trigger when the toolbar scrolls underneath it. The hidden
+// items are arbitrary stateful controls the user operates inside the tray,
+// so this is a dialog-shaped Popover, not a selectable menu.
 const OverflowMenu = ({
   hiddenItems,
 }: {
   hiddenItems: readonly ReactNode[]
 }): ReactElement => {
   const [open, setOpen] = useState(false)
-
-  const { refs, floatingStyles, context } = useFloating({
-    open,
-    onOpenChange: setOpen,
-    placement: 'bottom-end',
-    middleware: [offset(4), flip(), shift({ padding: 8 })],
-    whileElementsMounted: autoUpdate,
-  })
-  const dismiss = useDismiss(context)
-  const role = useRole(context, { role: 'menu' })
-
-  const { getReferenceProps, getFloatingProps } = useInteractions([
-    dismiss,
-    role,
-  ])
-
-  useEffect(() => {
-    if (!open) {
-      return
-    }
-    const onScroll = (): void => setOpen(false)
-    window.addEventListener('scroll', onScroll, true)
-
-    return (): void => {
-      window.removeEventListener('scroll', onScroll, true)
-    }
-  }, [open])
+  const [anchor, setAnchor] = useState<HTMLButtonElement | null>(null)
 
   return (
     <>
       <Tooltip content={`Show ${hiddenItems.length} more controls`}>
         <button
-          ref={refs.setReference}
+          ref={setAnchor}
           type="button"
           onClick={(): void => setOpen((previous) => !previous)}
           className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-surface-container-high/60 hover:bg-surface-container-highest/80 text-on-surface transition-colors"
           aria-label={`Show ${hiddenItems.length} more controls`}
-          {...getReferenceProps()}
+          aria-haspopup="dialog"
+          aria-expanded={open}
         >
           <span
             aria-hidden="true"
@@ -246,20 +212,19 @@ const OverflowMenu = ({
           </span>
         </button>
       </Tooltip>
-      {open ? (
-        <FloatingPortal>
-          <div
-            ref={refs.setFloating}
-            style={floatingStyles}
-            className="z-50 flex flex-col gap-2 p-3 rounded-lg bg-surface-container-high/95 backdrop-blur-md backdrop-saturate-150 border border-outline-variant/20 shadow-xl max-w-[320px]"
-            {...getFloatingProps()}
-          >
-            {hiddenItems.map((item, index) => (
-              <div key={stableItemKey(item, index)}>{item}</div>
-            ))}
-          </div>
-        </FloatingPortal>
-      ) : null}
+      <Popover
+        anchor={anchor}
+        open={open}
+        onOpenChange={setOpen}
+        placement="bottom-end"
+        aria-label="More controls"
+      >
+        <div className="flex flex-col gap-2 p-3 max-w-[320px]">
+          {hiddenItems.map((item, index) => (
+            <div key={stableItemKey(item, index)}>{item}</div>
+          ))}
+        </div>
+      </Popover>
     </>
   )
 }

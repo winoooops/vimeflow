@@ -2,8 +2,8 @@
 id: resource-cleanup
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-06-12
-ref_count: 10
+last_updated: 2026-06-14
+ref_count: 11
 ---
 
 # Resource Cleanup
@@ -126,3 +126,12 @@ causes listener accumulation and duplicate event handling.
 - **Finding:** `initTerminalThemeBridge()` returns an unsubscribe function, but the call site discarded it. The bridge is intended to live for the renderer lifetime, so ignoring the return value is technically correct today, yet it hides the lifetime contract and risks duplicate subscriptions if a future hot-reload path calls the initializer again.
 - **Fix:** Stored the returned cleanup function in a named const and voided it to satisfy no-unused-locals, with a comment documenting the renderer-lifetime intent.
 - **Commit:** same commit as this entry
+
+### 13. Popover tests leak manually appended anchor buttons across cases
+
+- **Source:** github-claude | PR #450 round 1 | 2026-06-14
+- **Severity:** MEDIUM
+- **File:** `src/components/Popover.test.tsx` L5-12
+- **Finding:** `makeAnchor()` appends a real `<button>` to `document.body` for every test, but nothing removed those anchors between cases. React Testing Library cleanup removes rendered React containers, not manually appended DOM nodes. Stale focusable buttons accumulated in `document.body`, which can mask a broken focus trap because focus can escape to an earlier anchor instead of the asserted outside button.
+- **Fix:** Track every anchor created by `makeAnchor()` in a module-level array and remove them all in a top-level `afterEach`, then clear the tracker. Keeps the realistic DOM-anchor behavior while isolating each test.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

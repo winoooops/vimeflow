@@ -1,5 +1,5 @@
 import { useState, type ReactElement } from 'react'
-import { act, fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { PriorityPlus } from './PriorityPlus'
 
@@ -519,5 +519,70 @@ describe('PriorityPlus', () => {
     // The hidden item's wrapper still carries the hidden class; the
     // OverflowMenu re-mounts the same node when opened.
     expect(wrapperFor('item-2').className).toContain('hidden')
+  })
+
+  test('clicking the chip opens the overflow tray as a labelled dialog', () => {
+    render(
+      <PriorityPlus maxRows={1}>
+        {renderStatefulItems(['a', 'b', 'c'])}
+      </PriorityPlus>
+    )
+
+    stubLayout(
+      rootContainer('stateful-a'),
+      [
+        { offsetTop: 0, offsetHeight: 24, offsetLeft: 0, offsetWidth: 60 },
+        { offsetTop: 0, offsetHeight: 24, offsetLeft: 72, offsetWidth: 60 },
+        { offsetTop: 30, offsetHeight: 24, offsetLeft: 0, offsetWidth: 60 },
+      ],
+      400
+    )
+    fireResize()
+
+    // Closed: no dialog rendered yet.
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /more controls/i }))
+
+    const tray = screen.getByRole('dialog', { name: 'More controls' })
+    expect(tray).toBeInTheDocument()
+  })
+
+  test('a stateful child toggles inside the tray without closing it', () => {
+    render(
+      <PriorityPlus maxRows={1}>
+        {renderStatefulItems(['a', 'b', 'c'])}
+      </PriorityPlus>
+    )
+
+    // Item 'c' overflows into the tray (row 2).
+    stubLayout(
+      rootContainer('stateful-a'),
+      [
+        { offsetTop: 0, offsetHeight: 24, offsetLeft: 0, offsetWidth: 60 },
+        { offsetTop: 0, offsetHeight: 24, offsetLeft: 72, offsetWidth: 60 },
+        { offsetTop: 30, offsetHeight: 24, offsetLeft: 0, offsetWidth: 60 },
+      ],
+      400
+    )
+    fireResize()
+
+    fireEvent.click(screen.getByRole('button', { name: /more controls/i }))
+
+    // The overflowed item also stays in the hidden inline flow, so scope the
+    // assertions to the open tray's copy.
+    const tray = within(screen.getByRole('dialog', { name: 'More controls' }))
+
+    // The overflowed chip is now reachable inside the open tray.
+    expect(tray.getByTestId('stateful-c')).toHaveTextContent('c closed')
+
+    // Operating the chip flips its own state and the tray stays open — the
+    // whole reason this is a Popover and not a menu of selectable rows.
+    fireEvent.click(tray.getByTestId('stateful-c'))
+
+    expect(tray.getByTestId('stateful-c')).toHaveTextContent('c open')
+    expect(
+      screen.getByRole('dialog', { name: 'More controls' })
+    ).toBeInTheDocument()
   })
 })

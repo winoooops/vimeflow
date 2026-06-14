@@ -2,8 +2,8 @@
 id: documentation-accuracy
 category: code-quality
 created: 2026-04-09
-last_updated: 2026-06-08
-ref_count: 25
+last_updated: 2026-06-14
+ref_count: 26
 ---
 
 # Documentation Accuracy
@@ -800,4 +800,13 @@ Stale documentation misleads future contributors and review agents.
 - **File:** `electron/browser-pane.ts`
 - **Finding:** `installFaviconEmitter` had to run before history restore or URL load because Electron can emit `page-favicon-updated` during replay, but no inline comment documented that ordering contract. A future refactor could move the emitter after restore and silently drop restored-tab favicons.
 - **Fix:** Added a short comment directly above `installFaviconEmitter` stating that it must precede history restore/load because the favicon event can fire during that work.
+- **Commit:** same commit as this entry
+
+### 86. Popover focus contract in UNIFIED.md mismatches implementation and tests
+
+- **Source:** github-claude | PR #450 round 3 | 2026-06-14
+- **Severity:** MEDIUM
+- **File:** `docs/design/UNIFIED.md`
+- **Finding:** The Popover contract in `UNIFIED.md` §5.9 said focus is modal with `initialFocus: -1` and lands on the container on open, but `src/components/Popover.tsx` passes `focus={{ initialFocus: 0, modal: true }}` and `src/components/Popover.test.tsx` asserts focus lands on the first tabbable child. The mismatch creates a misleading public primitive contract that future consumers or tests may encode the wrong expectation against.
+- **Fix:** Updated the Popover focus rule to document `initialFocus: 0`, focus landing on the first tabbable child on open, and `modal: true` engaging the focus trap.
 - **Commit:** same commit as this entry
