@@ -1,5 +1,6 @@
 import { memo, useState, useRef, useEffect, type ReactElement } from 'react'
 import { Reorder } from 'framer-motion'
+import { IconButton } from '@/components/IconButton'
 import { Tooltip } from '@/components/Tooltip'
 import type { Session } from '../types'
 import { useRenameState } from '../hooks/useRenameState'
@@ -18,6 +19,10 @@ export interface CardProps {
   onReorderDragStart?: () => void
   onReorderDragEnd?: () => void
 }
+
+// The kebab's inline menu is the disclosure affordance, so its IconButton
+// suppresses the built-in tooltip (named to satisfy react/jsx-boolean-value).
+const menuTriggerHasMenu = true
 
 // Status → flat colored text (no chip pill, no dot), per handoff §3.3.
 const STATUS_TEXT: Record<Session['status'], { tone: string; label: string }> =
@@ -262,25 +267,21 @@ const CardComponent = ({
             }
           }}
         >
-          {/* eslint-disable-next-line vimeflow/no-raw-icon-button */}
-          <button
+          <IconButton
             ref={triggerRef}
-            type="button"
-            aria-label="Session actions"
+            icon="more_horiz"
+            label="Session actions"
+            size="sm"
+            // The inline menu owns the disclosure affordance; a hover tooltip
+            // duplicating the label would conflict with it.
+            showTooltip={!menuTriggerHasMenu}
             aria-expanded={menuOpen}
+            aria-haspopup="menu"
             onClick={(e) => {
               e.stopPropagation()
               setMenuOpen((open) => !open)
             }}
-            className="grid h-6 w-6 place-items-center rounded-md bg-surface-container-lowest/55 text-on-surface-muted backdrop-blur-sm transition-colors hover:text-primary"
-          >
-            <span
-              className="material-symbols-outlined text-[16px]"
-              aria-hidden="true"
-            >
-              more_horiz
-            </span>
-          </button>
+          />
           {menuOpen && (
             <div
               onClick={(e) => e.stopPropagation()}
