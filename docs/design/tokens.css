@@ -54,7 +54,7 @@
   --on-surface: #e3e0f7; /* titles, active */
   --on-surface-variant: #cdc3d1; /* body (reduce eye strain) */
   --on-surface-muted: #8a8299; /* meta, timestamps */
-  --outline-variant: #4a444f; /* ghost borders @ 15% alpha only */
+  --outline-variant: #4a444f; /* ghost hairline; ~15-25% alpha (incl. co-planar seam) */
 
   /* ── Syntax ── */
   --syn-keyword: #cba6f7;

@@ -1,4 +1,4 @@
-import type { ChangedFile, FileDiff } from '../types'
+import type { FileDiff, GitStatusResponse } from '../types'
 import { mockChangedFiles, mockFileDiffs } from '../data/mockDiff'
 import { invoke } from '../../../lib/backend'
 import { isDesktop } from '../../../lib/environment'
@@ -160,8 +160,8 @@ const diffHeaderPaths = (
 
 /** Git service interface for diff operations */
 export interface GitService {
-  /** Get all files with git changes */
-  getStatus(): Promise<ChangedFile[]>
+  /** Get all files with git changes and the repository toplevel. */
+  getStatus(): Promise<GitStatusResponse>
 
   /**
    * Get diff for a specific file. Returns the parsed `FileDiff` plus the raw
@@ -210,8 +210,8 @@ export interface GitService {
 
 /** Mock implementation using static mock data (for tests) */
 export class MockGitService implements GitService {
-  async getStatus(): Promise<ChangedFile[]> {
-    return Promise.resolve([...mockChangedFiles])
+  async getStatus(): Promise<GitStatusResponse> {
+    return Promise.resolve({ files: [...mockChangedFiles], repoRoot: '' })
   }
 
   async getDiff(file: string): Promise<GetGitDiffResponse> {
@@ -237,14 +237,14 @@ export class MockGitService implements GitService {
 
 /** HTTP implementation calling Vite dev middleware (for dev) */
 export class HttpGitService implements GitService {
-  async getStatus(): Promise<ChangedFile[]> {
+  async getStatus(): Promise<GitStatusResponse> {
     const response = await fetch('/api/git/status')
 
     if (!response.ok) {
       throw new Error(`Failed to fetch git status: ${response.statusText}`)
     }
 
-    return response.json() as Promise<ChangedFile[]>
+    return response.json() as Promise<GitStatusResponse>
   }
 
   async getDiff(
@@ -333,9 +333,9 @@ export class DesktopGitService implements GitService {
     this.cwd = cwd
   }
 
-  async getStatus(): Promise<ChangedFile[]> {
+  async getStatus(): Promise<GitStatusResponse> {
     try {
-      return await invoke<ChangedFile[]>('git_status', { cwd: this.cwd })
+      return await invoke<GitStatusResponse>('git_status', { cwd: this.cwd })
     } catch (error) {
       throw new Error(`Failed to get git status: ${String(error)}`)
     }

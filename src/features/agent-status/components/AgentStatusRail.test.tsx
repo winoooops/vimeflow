@@ -175,3 +175,20 @@ test('rail is 44px wide', () => {
 
   expect(screen.getByTestId('agent-status-rail')).toHaveStyle({ width: '44px' })
 })
+
+test('rail sits on the canvas surface token', () => {
+  render(
+    <AgentStatusRail
+      agent={AGENTS.claude}
+      contextUsedPercentage={50}
+      cacheHitPercentage={null}
+      isRunning={notRunning}
+      onExpand={() => undefined}
+    />
+  )
+
+  const rail = screen.getByTestId('agent-status-rail')
+
+  expect(rail.className).toContain('bg-surface')
+  expect(rail.className).not.toContain('bg-surface-container')
+})

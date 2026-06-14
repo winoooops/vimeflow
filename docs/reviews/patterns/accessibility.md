@@ -2,7 +2,7 @@
 id: accessibility
 category: a11y
 created: 2026-04-09
-last_updated: 2026-06-14
+last_updated: 2026-06-13
 ref_count: 23
 ---
 
@@ -524,11 +524,11 @@ handlers must not trap focus without implementing the promised behavior.
 - **Fix:** Moved the same root-anchored, absolutely positioned toggle wrapper earlier in the DOM (right after the compact scrim and before the sidebar shell) so sequential focus order matches the visual layout. Preserved `z-40` and the existing left/top absolute coordinates. Updated co-located tests that asserted on `workspace.children[1]` to query `screen.getByTestId('workspace-main')` directly, since the DOM reordering changed sibling indices.
 - **Commit:** _(see git blame / git log on this line)_
 
-### 49. Popover trigger buttons dropped popup state ARIA after migrating off floating-ui reference props
+### 49. FileExplorer rename/delete uses native blocking dialogs
 
-- **Source:** github-claude | PR #450 round 2 | 2026-06-14
+- **Source:** github-claude | PR #444 round 1 | 2026-06-13
 - **Severity:** MEDIUM
-- **File:** `src/features/diff/components/toolbar/PriorityPlus.tsx`, `src/features/diff/components/toolbar/DiffChipToolbar.tsx`
-- **Finding:** The shared `Popover` primitive intentionally separates the anchor from the floating dialog, so trigger-side ARIA becomes the consumer's responsibility. After migrating the diff toolbar triggers onto `Popover`, `PriorityPlus` kept only `aria-label` on its overflow chip (no `aria-haspopup`, no `aria-expanded`) and `DiffChipToolbar` kept `aria-expanded` on the discard-all button but omitted `aria-haspopup`. Screen-reader users focusing these controls did not hear the popup type, and the overflow trigger did not announce its open/closed state.
-- **Fix:** Added `aria-haspopup="dialog"` and `aria-expanded={open}` to the `PriorityPlus` overflow trigger, and added `aria-haspopup="dialog"` to the `DiffChipToolbar` discard-all trigger while preserving its existing `aria-expanded={discardAllOpen}`.
+- **File:** `src/features/workspace/components/panels/FileExplorer.tsx`
+- **Finding:** `window.prompt` and `window.confirm` blocked the renderer thread, used unstyled OS chrome, and could not display formatted validation hints or be cancelled via Escape reliably.
+- **Fix:** Replaced native dialogs with an inline rename input and a delete-confirmation strip styled with design tokens; kept actions non-blocking.
 - **Commit:** see `git blame` / `git log` on this line

@@ -14,6 +14,6 @@ const parseThemeBlock = (css: string): Record<string, string> => {
   return vars
 }
 
-test('@theme block matches the Obsidian Lens definition exactly', () => {
+test('@theme block matches the Catppuccin (obsidian-lens) definition exactly', () => {
   expect(parseThemeBlock(themeCss)).toEqual(toCssVars(obsidianLens))
 })

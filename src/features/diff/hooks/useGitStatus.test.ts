@@ -84,7 +84,7 @@ describe('useGitStatus', () => {
       expect(result.current.error).toBeNull()
     })
 
-    test('returns correct structure with filesCwd', async () => {
+    test('returns correct structure with filesCwd and repoRoot', async () => {
       const { result } = renderHook(() => useGitStatus('/home/test/project'))
 
       await waitFor(() => {
@@ -93,6 +93,7 @@ describe('useGitStatus', () => {
 
       expect(result.current).toHaveProperty('files')
       expect(result.current).toHaveProperty('filesCwd')
+      expect(result.current).toHaveProperty('repoRoot')
       expect(result.current).toHaveProperty('loading')
       expect(result.current).toHaveProperty('error')
       expect(result.current).toHaveProperty('refresh')

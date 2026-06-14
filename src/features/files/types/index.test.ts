@@ -164,6 +164,7 @@ describe('ContextMenuAction type guard', () => {
   test('returns true for valid action', () => {
     expect(
       isContextMenuAction({
+        id: 'rename',
         label: 'Rename',
         icon: 'edit',
       })
@@ -216,6 +217,16 @@ describe('ContextMenuAction type guard', () => {
     ).toBe(false)
   })
 
+  test('returns false for invalid action id', () => {
+    expect(
+      isContextMenuAction({
+        id: 'invalid',
+        label: 'Rename',
+        icon: 'edit',
+      })
+    ).toBe(false)
+  })
+
   test('returns false for null', () => {
     expect(isContextMenuAction(null)).toBe(false)
   })
@@ -233,6 +244,7 @@ describe('ContextMenuState type guard', () => {
         x: 0,
         y: 0,
         targetNode: null,
+        targetPath: null,
       })
     ).toBe(true)
   })
@@ -248,6 +260,7 @@ describe('ContextMenuState type guard', () => {
           name: 'test.ts',
           type: 'file',
         },
+        targetPath: '~/test.ts',
       })
     ).toBe(true)
   })
@@ -258,6 +271,7 @@ describe('ContextMenuState type guard', () => {
         x: 0,
         y: 0,
         targetNode: null,
+        targetPath: null,
       })
     ).toBe(false)
   })
@@ -268,6 +282,7 @@ describe('ContextMenuState type guard', () => {
         visible: false,
         y: 0,
         targetNode: null,
+        targetPath: null,
       })
     ).toBe(false)
   })
@@ -278,6 +293,7 @@ describe('ContextMenuState type guard', () => {
         visible: false,
         x: 0,
         targetNode: null,
+        targetPath: null,
       })
     ).toBe(false)
   })
@@ -289,6 +305,19 @@ describe('ContextMenuState type guard', () => {
         x: 100,
         y: 200,
         targetNode: { invalid: 'node' },
+        targetPath: '~/test.ts',
+      })
+    ).toBe(false)
+  })
+
+  test('returns false for invalid targetPath', () => {
+    expect(
+      isContextMenuState({
+        visible: true,
+        x: 100,
+        y: 200,
+        targetNode: null,
+        targetPath: 123,
       })
     ).toBe(false)
   })

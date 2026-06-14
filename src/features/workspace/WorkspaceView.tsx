@@ -186,6 +186,36 @@ const SIDEBAR_TAB_ITEMS: readonly SidebarTabItem<SidebarTab>[] = [
   { id: 'files', label: 'FILES', icon: 'folder_open' },
 ]
 
+const normalizePathForComparison = (path: string): string =>
+  path.replace(/\\/g, '/').replace(/\/+$/u, '')
+
+const relativePathFromCwd = (path: string, cwd: string): string | null => {
+  const normalizedPath = normalizePathForComparison(path)
+  const normalizedCwd = normalizePathForComparison(cwd)
+
+  if (normalizedCwd === '') {
+    return null
+  }
+
+  if (normalizedPath === normalizedCwd) {
+    return ''
+  }
+
+  if (normalizedCwd === '/') {
+    return normalizedPath.startsWith('/')
+      ? normalizedPath.replace(/^\/+/u, '')
+      : null
+  }
+
+  const cwdPrefix = `${normalizedCwd}/`
+
+  if (!normalizedPath.startsWith(cwdPrefix)) {
+    return null
+  }
+
+  return normalizedPath.slice(cwdPrefix.length)
+}
+
 const mainAutoCollapseThreshold = (workspaceWidth: number): number =>
   clampSize(
     Math.round(workspaceWidth * MAIN_AUTO_COLLAPSE_RATIO),
@@ -1443,6 +1473,63 @@ export const WorkspaceView = (): ReactElement => {
     ]
   )
 
+  const handleFileViewDiff = useCallback(
+    (node: { id: string; type: 'file' | 'folder' }): void => {
+      if (node.type !== 'file') {
+        return
+      }
+
+      if (activeCwd === '.' || activeCwd === '~' || activeCwd.length === 0) {
+        setFileError('Cannot view diff without an active workspace directory')
+
+        return
+      }
+
+      // The backend normalizes git status/diff to the repository toplevel, so
+      // derive repo-root-relative paths when we know the toplevel. Fall back
+      // to cwd-relative for directories that are not inside a git repo.
+      const repoRoot =
+        gitStatus.filesCwd === activeCwd ? gitStatus.repoRoot : null
+
+      const relativePath =
+        repoRoot && repoRoot.length > 0
+          ? relativePathFromCwd(node.id, repoRoot)
+          : relativePathFromCwd(node.id, activeCwd)
+
+      if (!relativePath) {
+        setFileError(`Cannot view diff outside ${activeCwd}: ${node.id}`)
+
+        return
+      }
+
+      const statusFile =
+        gitStatus.filesCwd === activeCwd
+          ? gitStatus.files.find((file) => file.path === relativePath)
+          : undefined
+
+      if (gitStatus.filesCwd === activeCwd && !statusFile) {
+        setFileError(`No uncommitted changes found for ${relativePath}`)
+
+        return
+      }
+
+      setFileError(null)
+      setSelectedDiffFile({
+        path: relativePath,
+        staged: statusFile?.staged ?? false,
+        cwd: activeCwd,
+      })
+      openDock('diff')
+    },
+    [
+      activeCwd,
+      gitStatus.files,
+      gitStatus.filesCwd,
+      gitStatus.repoRoot,
+      openDock,
+    ]
+  )
+
   // Open a test file from the activity panel. Mirrors handleFileSelect's
   // dirty-state guard so clicking a test result row never silently
   // discards unsaved editor changes — the same unsaved-dialog flow
@@ -1810,7 +1897,7 @@ export const WorkspaceView = (): ReactElement => {
       // `grid-rows-1` pins the implicit row to `1fr`; without it
       // `grid-auto-rows: auto` lets the row grow to content size and
       // `h-full` stops propagating the 100vh constraint downward.
-      className="relative grid h-screen grid-rows-1 overflow-hidden"
+      className="relative grid h-screen grid-rows-1 overflow-hidden bg-surface-container-low"
       style={
         {
           // `--workspace-sidebar-width` is owned by previewSidebarWidth so
@@ -1974,6 +2061,7 @@ export const WorkspaceView = (): ReactElement => {
                     hidden={activeTab !== 'files'}
                     cwd={fileExplorerCwd}
                     onFileSelect={handleFileSelect}
+                    onViewDiff={handleFileViewDiff}
                   />
                 </div>
               }
@@ -2024,9 +2112,7 @@ export const WorkspaceView = (): ReactElement => {
           borderTopLeftRadius: sidebarCollapsed || isCompactViewport ? 0 : 16,
           borderBottomLeftRadius:
             sidebarCollapsed || isCompactViewport ? 0 : 16,
-          // No elevation shadow on the sheet edge: the sidebar is transparent,
-          // so a leftward drop shadow would read as a dark gradient seam against
-          // it. The rounded corners alone carry the inset-sheet treatment.
+          // Tonal step + rounded left corners carry the left separation; no float shadow.
           transition: isDragging
             ? 'none'
             : `border-radius ${SIDEBAR_MOTION_MS}ms ${SIDEBAR_MOTION_EASING}`,
@@ -2036,12 +2122,12 @@ export const WorkspaceView = (): ReactElement => {
         {/* Top chrome — an always-visible 44px in-flow bar (panes sit BELOW it,
             so the root-anchored sidebar toggle, which floats over this bar's
             left edge when collapsed, never overlaps pane content the way main's
-            session-tab strip behaved). Solid lowest surface + hairline bottom
-            rule. The old auto-hide/pin behavior was removed; its reusable
+            session-tab strip behaved). Sits on the sheet surface + hairline
+            bottom rule. The old auto-hide/pin behavior was removed; its reusable
             frosted-glass treatment now lives in <GlassSurface>. */}
         <div
           data-testid="top-chrome"
-          className="relative flex h-[44px] shrink-0 items-center gap-[12px] border-b border-outline-variant/25 bg-surface-container-lowest pl-[14px] pr-[14px]"
+          className="relative flex h-[44px] shrink-0 items-center gap-[12px] border-b border-outline-variant/25 bg-surface pl-[14px] pr-[14px]"
         >
           <span className="min-w-[10px] flex-1" />
 
@@ -2194,7 +2280,7 @@ export const WorkspaceView = (): ReactElement => {
       {!isCompactViewport && (
         <div
           data-testid="activity-panel-shell"
-          className="h-full shrink-0 overflow-hidden transition-[width] duration-[220ms] ease-pane"
+          className="h-full shrink-0 overflow-hidden border-l border-outline-variant/25 transition-[width] duration-[220ms] ease-pane"
           style={{
             width: activityPanelCollapsed ? RAIL_WIDTH_PX : PANEL_WIDTH_PX,
           }}

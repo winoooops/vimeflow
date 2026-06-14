@@ -80,7 +80,7 @@ const selectionEndpointIsInside = (
  * Read-only reading view for markdown files in the dock editor.
  *
  * Renders the buffer's markdown via `react-markdown` as a real React element
- * tree (no `dangerouslySetInnerHTML`), themed to the Obsidian Lens through the
+ * tree (no `dangerouslySetInnerHTML`), themed to The Lens through the
  * `markdownComponents` per-tag map + the scoped `MarkdownReadingView.css`.
  *
  * CRITICAL plugin order: `[rehypeSanitize, rehypeSlug, rehypeHighlight]`.

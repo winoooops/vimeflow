@@ -135,6 +135,7 @@ words:
   - nowarn
   - worktree
   - worktrees
+  - revparse
 
 ignorePaths:
   - node_modules

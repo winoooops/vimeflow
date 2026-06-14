@@ -2,8 +2,8 @@
 id: persisted-state-invariants
 category: correctness
 created: 2026-06-08
-last_updated: 2026-06-08
-ref_count: 3
+last_updated: 2026-06-13
+ref_count: 4
 ---
 
 # Persisted State Invariants
@@ -66,4 +66,22 @@ Durable user-facing state (workspace shapes, caches, settings files) can be malf
 - **File:** `electron/workspace-layout-writer.ts`
 - **Finding:** `noteBrowserPaneShape` added disappearing browser pane keys to `removedBrowserPaneKeys` but did not clear that set when a key reappeared. A pane that briefly disappeared and then reappeared before its live view was capturable caused `tabsForBrowserPane` to return `null`, making teardown flush skip persistence.
 - **Fix:** Clear `removedBrowserPaneKeys` for every key present in the next shape. Updated assemble and flush coverage so a reappearing pane with no live capture persists as `tabs: []` rather than blocking the save.
+- **Commit:** same commit as this entry
+
+### 7. Transient multi-active pane snapshot restarts background shell instead of normalized browser pane
+
+- **Source:** github-codex-connector (P2) | PR #443 cycle 1 | 2026-06-13
+- **Severity:** MEDIUM
+- **File:** `src/features/sessions/hooks/useSessionRestore.ts`
+- **Finding:** `findActiveStoreShell` searched the active session for any active shell pane. After a graceful quit, a mixed browser+shell workspace could briefly persist with both panes marked active. Restore then restarted the shell even though `reconstructWorkspace` normalized the active pane to the browser, causing a background shell to spawn in an otherwise browser-active workspace.
+- **Fix:** Sort panes by `paneIndex`, pick the first flagged pane as the normalized active pane (matching `buildStoreSession`), and only restart when that normalized pane is a shell. Added a regression test with a browser pane at index 0 and a shell pane at index 1 both marked active.
+- **Commit:** same commit as this entry
+
+### 8. `Exited` PTY records treated as live sessions, skipping restart
+
+- **Source:** github-codex-connector (P1) | PR #443 cycle 1 | 2026-06-13
+- **Severity:** MEDIUM
+- **File:** `src/features/sessions/hooks/useSessionRestore.ts`
+- **Finding:** `restartPersistedActiveShell` used `liveSessions.length > 0` as the "session is live" guard. The backend's lazy-reconciliation path can return a non-empty `listSessions()` result where every row has `status.kind === 'Exited'`. The guard treated this as a live restore and skipped restarting the persisted active shell, leaving a `completed` placeholder and forcing auto-create to open a second terminal.
+- **Fix:** Replace the length check with `liveSessions.some((session) => session.status.kind === 'Alive')` so only actually alive PTYs block the restart path. Added a regression test where `listSessions()` returns a single `Exited` record.
 - **Commit:** same commit as this entry

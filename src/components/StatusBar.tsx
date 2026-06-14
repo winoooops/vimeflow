@@ -321,7 +321,7 @@ export const StatusBar = ({
       data-testid="status-bar"
       aria-label="App status"
       style={barStyle}
-      className="flex h-[var(--status-bar-h)] shrink-0 items-center gap-x-[14px] border-t border-solid bg-surface-container-lowest px-[12px] font-mono text-[10px] text-on-surface-muted tabular-nums"
+      className="flex h-[var(--status-bar-h)] shrink-0 items-center gap-x-[14px] border-t border-solid bg-surface px-[12px] font-mono text-[10px] text-on-surface-muted tabular-nums"
     >
       <span
         data-testid="status-bar-actions"

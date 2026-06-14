@@ -31,7 +31,7 @@ describe('StatusBar', () => {
 
     const bar = screen.getByTestId('status-bar')
     expect(bar).toHaveClass('h-[var(--status-bar-h)]')
-    expect(bar).toHaveClass('bg-surface-container-lowest')
+    expect(bar).toHaveClass('bg-surface')
     expect(bar).toHaveClass('border-t')
     expect(bar).not.toHaveClass('flex-wrap')
 
