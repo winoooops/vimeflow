@@ -227,6 +227,12 @@ fn run_session_supervisor(
     main_wire: PathBuf,
     stop: Arc<AtomicBool>,
 ) {
+    // `read_agent_wires` canonicalizes discovered agent wires, so the main
+    // wire must be canonicalized too or symlinked session/home layouts can
+    // cause the same physical file to appear as two PathBuf values and get
+    // tailed twice (duplicate events + inflated turn counts).
+    let main_wire = fs::canonicalize(&main_wire).unwrap_or(main_wire);
+
     // Keyed by wire path so the always-tailed main wire is never double-spawned
     // when `state.json` lists it too.
     let mut children: HashMap<PathBuf, (Arc<AtomicBool>, std::thread::JoinHandle<()>)> =
@@ -757,6 +763,56 @@ mod tests {
         assert_eq!(calls[0]["tool"], "Read");
         assert_eq!(calls[1]["toolUseId"], "agent-0:t1");
         assert_eq!(calls[1]["status"], "done");
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn supervisor_does_not_double_tail_main_wire_through_symlink() {
+        let sink = Arc::new(FakeEventSink::new());
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let session = tmp
+            .path()
+            .join("sessions")
+            .join("wd_x")
+            .join("session_y");
+        let main_dir = session.join("agents").join("main");
+        std::fs::create_dir_all(&main_dir).expect("main dir");
+
+        // Symlink the session dir so the caller-supplied main wire path is
+        // non-canonical while `state.json` references the canonical layout.
+        let link_dir = tmp.path().join("link");
+        std::os::unix::fs::symlink(&session, &link_dir).expect("symlink session dir");
+
+        std::fs::write(
+            main_dir.join("wire.jsonl"),
+            "{\"type\":\"turn.prompt\",\"origin\":{\"kind\":\"user\"}}\n",
+        )
+        .expect("main wire");
+        std::fs::write(
+            session.join("state.json"),
+            format!(
+                "{{\"agents\":{{\"main\":{{\"homedir\":\"{}\",\"type\":\"main\"}}}}}}",
+                main_dir.display(),
+            ),
+        )
+        .expect("state.json");
+
+        let main_wire = link_dir.join("agents").join("main").join("wire.jsonl");
+        let handle = start_tailing(sink.clone(), "sid".to_string(), main_wire, None)
+            .expect("tailing starts");
+
+        assert!(
+            sink.wait_for_count("agent-turn", 1, Duration::from_secs(5)),
+            "main's user turn must surface exactly once",
+        );
+        // Give any duplicate tailer time to emit a second event.
+        std::thread::sleep(Duration::from_millis(400));
+        assert_eq!(
+            sink.count("agent-turn"),
+            1,
+            "symlinked main wire must not be tailed twice"
+        );
+        handle.stop();
     }
 
     #[test]
