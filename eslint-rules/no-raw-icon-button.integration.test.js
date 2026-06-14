@@ -16,13 +16,23 @@ const lint = async (filePath) => {
   return result.messages.filter((m) => m.ruleId === RULE_ID)
 }
 
-test('rule fires on a non-components source file', async () => {
-  // projectService rejects non-existent files — use a real path.
-  const messages = await lint('src/App.tsx')
-  expect(messages.length).toBeGreaterThan(0)
-})
+// Generous timeout: this boots a real ESLint with projectService (TS program
+// load), which exceeds the 5s default under full-suite parallel CPU contention.
+test(
+  'rule fires on a non-components source file',
+  async () => {
+    // projectService rejects non-existent files — use a real path.
+    const messages = await lint('src/App.tsx')
+    expect(messages.length).toBeGreaterThan(0)
+  },
+  20000
+)
 
-test('rule is exempt inside src/components', async () => {
-  const messages = await lint('src/components/Tooltip.tsx')
-  expect(messages).toHaveLength(0)
-})
+test(
+  'rule is exempt inside src/components',
+  async () => {
+    const messages = await lint('src/components/Tooltip.tsx')
+    expect(messages).toHaveLength(0)
+  },
+  20000
+)
