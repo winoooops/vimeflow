@@ -341,12 +341,14 @@ test('icon-only: aria-label from label, aria-hidden icon', () => {
 test('serves as a Menu trigger: ref + onClick + aria-expanded', async () => {
   const user = userEvent.setup()
   const spy = vi.fn()
+  const ref = createRef<HTMLButtonElement>()
   render(
-    <Menu trigger={<IconButton icon="more_vert" label="Actions" onClick={spy} />}>
+    <Menu trigger={<IconButton ref={ref} icon="more_vert" label="Actions" onClick={spy} />}>
       <Menu.Item onSelect={vi.fn()}>One</Menu.Item>
     </Menu>
   )
   const btn = screen.getByRole('button', { name: 'Actions' })
+  expect(ref.current).toBe(btn)
   await user.click(btn)
   expect(spy).toHaveBeenCalledTimes(1)
   expect(await screen.findByRole('menu')).toBeInTheDocument()
