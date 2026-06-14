@@ -1,4 +1,5 @@
 import type { ReactElement } from 'react'
+import { IconButton } from '@/components/IconButton'
 import type { Agent } from '../../../../agents/registry'
 import type { SessionStatus } from '../../../sessions/types'
 import { StatusDot } from '../../../sessions/components/StatusDot'
@@ -34,14 +35,11 @@ export const AgentStatusPanelHeader = ({
       </span>
       <StatusDot status={status} size={6} aria-label={`agent ${status}`} />
     </div>
-    {/* eslint-disable-next-line vimeflow/no-raw-icon-button */}
-    <button
-      type="button"
+    <IconButton
+      icon="chevron_right"
+      label="Collapse activity panel"
       onClick={onCollapse}
-      aria-label="Collapse activity panel"
-      className="grid h-6 w-6 shrink-0 place-items-center rounded-md text-outline transition-colors hover:bg-surface-container-high hover:text-on-surface"
-    >
-      <span className="material-symbols-outlined text-base">chevron_right</span>
-    </button>
+      className="shrink-0"
+    />
   </div>
 )
