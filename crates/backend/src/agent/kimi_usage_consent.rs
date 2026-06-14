@@ -12,13 +12,30 @@
 //! in the per-attach `AttachContext` (which is documented as immutable).
 
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use serde::{Deserialize, Serialize};
 
 // The live, app-wide consent flag. Default OFF: no `/usages` call is ever made
 // until the user explicitly opts in.
 static USAGE_CONSENT: AtomicBool = AtomicBool::new(false);
+
+// Bumped by the refresh IPC. Each kimi supervisor tracks the last generation it
+// acted on; a newer one forces one fetch (bypassing the turn debounce), so a UI
+// "Retry" re-attempts a failed fetch without waiting for a new turn.
+static REFRESH_GEN: AtomicU64 = AtomicU64::new(0);
+
+/// Request a one-shot usage refresh on every live kimi session. The supervisors
+/// pick it up on their next poll.
+pub(crate) fn request_refresh() {
+    REFRESH_GEN.fetch_add(1, Ordering::Relaxed);
+}
+
+/// The current refresh generation, compared by each supervisor against the last
+/// it acted on.
+pub(crate) fn refresh_gen() -> u64 {
+    REFRESH_GEN.load(Ordering::Relaxed)
+}
 
 /// The persisted shape: a single opt-in bool.
 #[derive(Serialize, Deserialize)]
@@ -49,20 +66,34 @@ pub(crate) fn load_into_memory(path: &Path) {
     set_in_memory(enabled);
 }
 
-/// Persist the flag durably and update memory. A **revoke** (`enabled ==
-/// false`) takes effect in memory IMMEDIATELY, before the write and regardless
-/// of whether it succeeds — once the user says stop, the key must never be
-/// sent again even if the durable write fails (the error is still returned so
-/// the caller can surface that the choice wasn't persisted). An **enable**
-/// only flips memory AFTER a successful write, so a non-durable opt-in is never
-/// half-applied.
+/// Persist the flag durably and update memory.
+///
+/// A **revoke** (`enabled == false`) clears memory IMMEDIATELY — once the user
+/// says stop, the key must never be sent again even if the disk op fails — then
+/// REMOVES the file. Deleting is durable where writing `false` is not: it can't
+/// fail on a full disk (the realistic revoke failure), and it uses the same
+/// directory/permissions as the enable that created the file, so a delete error
+/// is near-impossible. A missing file loads as OFF, so the opt-out survives a
+/// restart rather than being silently re-enabled by a stale `true` file.
+///
+/// An **enable** writes the file, then flips memory ON only after the write
+/// lands, so a non-durable opt-in is never half-applied. Both return the disk
+/// error so the caller can surface a non-durable choice.
 pub(crate) fn set_and_persist(path: &Path, enabled: bool) -> std::io::Result<()> {
     if !enabled {
         set_in_memory(false);
+
+        return match std::fs::remove_file(path) {
+            Ok(()) => Ok(()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(e) => Err(e),
+        };
     }
-    let body = serde_json::to_string(&ConsentFile { enabled }).map_err(std::io::Error::other)?;
+
+    let body =
+        serde_json::to_string(&ConsentFile { enabled: true }).map_err(std::io::Error::other)?;
     std::fs::write(path, body)?;
-    set_in_memory(enabled);
+    set_in_memory(true);
     Ok(())
 }
 
@@ -124,18 +155,33 @@ mod tests {
     }
 
     #[test]
-    fn revoke_clears_memory_even_when_persist_fails() {
+    fn revoke_removes_the_file_so_it_loads_off() {
         let _guard = test_serial_guard();
-        // A path under a missing directory makes the write fail.
         let dir = tempfile::tempdir().expect("dir");
-        let unwritable = dir.path().join("missing-subdir").join("consent.json");
+        let path = dir.path().join("kimi-usage-consent.json");
 
+        set_and_persist(&path, true).expect("enable");
+        assert!(path.exists(), "enable writes the file");
+
+        set_and_persist(&path, false).expect("revoke");
+        assert!(!path.exists(), "revoke removes the file (durable opt-out)");
+        assert!(!usage_consent_enabled(), "revoke clears memory");
+
+        // A revoke on an already-absent file is a no-op, not an error.
+        set_and_persist(&path, false).expect("revoke when already absent");
+
+        // A fresh load with the file gone reads as OFF — no stale re-enable.
         set_in_memory(true);
-        let result = set_and_persist(&unwritable, false);
-        assert!(result.is_err(), "the durable write must fail here");
-        assert!(
-            !usage_consent_enabled(),
-            "revoke must clear memory even when persistence fails",
-        );
+        load_into_memory(&path);
+        assert!(!usage_consent_enabled(), "missing file loads as OFF");
+
+        set_for_test(false);
+    }
+
+    #[test]
+    fn request_refresh_bumps_the_generation() {
+        let before = refresh_gen();
+        request_refresh();
+        assert!(refresh_gen() > before, "a refresh request advances the gen");
     }
 }

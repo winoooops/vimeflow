@@ -269,6 +269,8 @@ impl KimiFoldState {
             context_window,
             cost,
             rate_limits,
+            // The decode / supervisor sets this true once a real fetch lands.
+            usage_fetched: false,
         }
     }
 }

@@ -533,6 +533,10 @@ mod router {
                 Ok(Value::Null)
             }
             "get_kimi_usage_consent" => encode_result(state.get_kimi_usage_consent()),
+            "refresh_kimi_usage" => {
+                state.refresh_kimi_usage();
+                Ok(Value::Null)
+            }
             "detect_agent_in_session" => {
                 #[derive(Deserialize)]
                 #[serde(rename_all = "camelCase")]

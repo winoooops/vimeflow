@@ -59,6 +59,10 @@ struct StatusSignature {
     // (used_percentage bits, resets_at) for the 5-hour and weekly windows.
     five_hour: (u64, u64),
     seven_day: (u64, u64),
+    // A landed fetch can carry placeholder-identical values (0% / no reset), so
+    // the flip from default to fetched must itself break the dedupe — else the
+    // gate never learns the fetch succeeded.
+    usage_fetched: bool,
 }
 
 /// Validate a raw transcript path (null-byte check + canonicalize-under-root)
@@ -211,7 +215,10 @@ fn emit_session_status(
     // fetched). Without this the supervisor would re-stamp the parser's zeroed
     // default and overwrite the bars the watcher's decode just filled — and on
     // an idle session this poll is the only thing that pushes a fetch result.
-    if let Some(rate_limits) = locator.cached_rate_limits() {
+    // `usage_fetched` flags a real value so the gate tells LOADING from ON.
+    let cached = locator.cached_rate_limits();
+    snapshot.usage_fetched = cached.is_some();
+    if let Some(rate_limits) = cached {
         snapshot.rate_limits = rate_limits;
     }
     // Include cache tokens: a sub-agent turn often changes only cache read /
@@ -232,6 +239,7 @@ fn emit_session_status(
         seven_day: rate_limits.seven_day.as_ref().map_or((0, 0), |week| {
             (week.used_percentage.to_bits(), week.resets_at)
         }),
+        usage_fetched: snapshot.usage_fetched,
     };
     if last.as_ref() == Some(&signature) {
         return;
@@ -292,6 +300,9 @@ fn run_session_supervisor(
         HashMap::new();
     let agent_session_id = session_id_from_dir(&session_dir);
     let mut last_status: Option<StatusSignature> = None;
+    // Track the refresh generation so a UI-requested refresh forces one fetch
+    // (the start value is already covered by the attach catch-up).
+    let mut acted_refresh_gen = crate::agent::kimi_usage_consent::refresh_gen();
 
     loop {
         // Always tail the main wire; add sub-agent wires as `state.json`
@@ -331,6 +342,14 @@ fn run_session_supervisor(
                 service.run(BufReader::new(file), child_stop_run);
             });
             children.insert(wire, (child_stop, join));
+        }
+
+        // A UI refresh request re-arms the usage fetch (clears the turn
+        // debounce) so the next emit re-attempts even within the same turn.
+        let gen = crate::agent::kimi_usage_consent::refresh_gen();
+        if gen != acted_refresh_gen {
+            locator.disarm_usage();
+            acted_refresh_gen = gen;
         }
 
         // Refresh the aggregated status so context/tokens (and the fetched
@@ -899,6 +918,66 @@ mod tests {
             .map(|(_, payload)| payload)
             .expect("an agent-status event");
         assert_eq!(status_off["rateLimits"]["fiveHour"]["usedPercentage"], 0.0);
+
+        crate::agent::kimi_usage_consent::set_for_test(false);
+    }
+
+    /// A landed fetch whose values equal the placeholder (0% / no reset) must
+    /// still re-emit because `usage_fetched` flips — otherwise the dedupe would
+    /// suppress it and the gate would never learn the fetch succeeded.
+    #[test]
+    fn emit_re_emits_when_usage_fetched_flips_despite_placeholder_values() {
+        use crate::agent::types::{RateLimitInfo, RateLimits};
+
+        let _guard = crate::agent::kimi_usage_consent::test_serial_guard();
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let session = tmp.path().join("sessions").join("wd_x").join("session_z");
+        let main_dir = session.join("agents").join("main");
+        std::fs::create_dir_all(&main_dir).expect("main dir");
+        std::fs::write(
+            main_dir.join("wire.jsonl"),
+            "{\"type\":\"config.update\",\"modelAlias\":\"kimi-code/kimi-for-coding\"}\n",
+        )
+        .expect("main wire");
+        std::fs::write(
+            session.join("state.json"),
+            format!(
+                "{{\"agents\":{{\"main\":{{\"homedir\":\"{}\",\"type\":\"main\"}}}}}}",
+                main_dir.display(),
+            ),
+        )
+        .expect("state.json");
+
+        // A real fetch that landed at 0% with no reset — identical VALUES to the
+        // parser's zeroed default, so only `usage_fetched` distinguishes them.
+        let locator = test_locator();
+        locator.set_cached_rate_limits_for_test(RateLimits {
+            five_hour: RateLimitInfo {
+                used_percentage: 0.0,
+                resets_at: 0,
+            },
+            seven_day: None,
+        });
+
+        let mut last = None;
+
+        // Consent OFF: no merge → usage_fetched=false; records the signature.
+        crate::agent::kimi_usage_consent::set_for_test(false);
+        let sink_off = Arc::new(FakeEventSink::new());
+        emit_session_status(sink_off.as_ref(), "sid", &session, locator.as_ref(), &mut last);
+
+        // Consent ON: same zero values, but usage_fetched flips true — the
+        // dedupe must NOT suppress this emit.
+        crate::agent::kimi_usage_consent::set_for_test(true);
+        let sink_on = Arc::new(FakeEventSink::new());
+        emit_session_status(sink_on.as_ref(), "sid", &session, locator.as_ref(), &mut last);
+        let status = sink_on
+            .recorded()
+            .into_iter()
+            .find(|(name, _)| name == "agent-status")
+            .map(|(_, payload)| payload)
+            .expect("the usage_fetched flip must re-emit despite equal values");
+        assert_eq!(status["usageFetched"], true);
 
         crate::agent::kimi_usage_consent::set_for_test(false);
     }

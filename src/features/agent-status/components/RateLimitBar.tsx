@@ -1,8 +1,18 @@
 import type { ReactElement } from 'react'
 
+// `kimi` recolors the fill to the kimi peach accent for the plan-usage gate;
+// `primary` (default) keeps the Claude/Codex look unchanged.
+export type RateLimitBarAccent = 'primary' | 'kimi'
+
 export interface RateLimitBarProps {
   label: string
   percentage: number
+  accent?: RateLimitBarAccent
+}
+
+const FILL_CLASS: Record<RateLimitBarAccent, string> = {
+  primary: 'bg-primary-container',
+  kimi: 'bg-[var(--color-agent-kimi-accent)]',
 }
 
 // Label + percentage + a thin progress bar. Shared by the agent-status budget
@@ -11,6 +21,7 @@ export interface RateLimitBarProps {
 export const RateLimitBar = ({
   label,
   percentage,
+  accent = 'primary',
 }: RateLimitBarProps): ReactElement => (
   <div className="flex flex-col gap-1">
     <div className="flex items-center justify-between">
@@ -31,7 +42,7 @@ export const RateLimitBar = ({
     >
       <div
         data-testid="rate-limit-bar-fill"
-        className="h-full rounded-full bg-primary-container"
+        className={`h-full rounded-full ${FILL_CLASS[accent]}`}
         style={{ width: `${Math.min(percentage, 100)}%` }}
       />
     </div>

@@ -70,8 +70,12 @@ impl StateDecoder for KimiAdapter {
         // Merge the last fetched plan-usage (`None` when consent is OFF or
         // nothing has been fetched). The fetch itself is driven by the
         // transcript supervisor's poll, not here, so it also reaches idle
-        // sessions the main-wire watcher never re-decodes.
-        if let Some(rate_limits) = self.locator.cached_rate_limits() {
+        // sessions the main-wire watcher never re-decodes. `usage_fetched`
+        // records whether a real value landed, so the gate tells LOADING from a
+        // genuine zero-usage ON without guessing from the values.
+        let cached = self.locator.cached_rate_limits();
+        snapshot.usage_fetched = cached.is_some();
+        if let Some(rate_limits) = cached {
             snapshot.rate_limits = rate_limits;
         }
         kdbg(&format!(

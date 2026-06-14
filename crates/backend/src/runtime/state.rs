@@ -273,6 +273,12 @@ impl BackendState {
         crate::agent::kimi_usage_consent::usage_consent_enabled()
     }
 
+    /// Request a one-shot plan-usage refresh on every live kimi session — the UI
+    /// "Retry" path, which re-attempts a failed fetch without a new turn.
+    pub fn refresh_kimi_usage(&self) {
+        crate::agent::kimi_usage_consent::request_refresh()
+    }
+
     pub fn list_dir(
         &self,
         request: crate::filesystem::types::ListDirRequest,

@@ -196,6 +196,18 @@ vi.mock('../agent-status/components/AgentStatusPanel', () => ({
   PANEL_WIDTH_PX: 280,
 }))
 
+// Only kimi cards instantiate the consent gate, so a global consent=ON keeps
+// the claude rate-limit tests untouched while letting the kimi card reach its
+// ON state (peach bars) for the weekly-only regression below.
+vi.mock('../agent-status/hooks/useKimiUsageConsent', () => ({
+  useKimiUsageConsent: vi.fn(() => ({
+    consent: true,
+    setConsent: vi.fn(),
+    refresh: vi.fn(),
+    persistError: false,
+  })),
+}))
+
 const makeAgentStatus = (
   sessionId: string | null,
   overrides: Partial<AgentStatus> = {}
@@ -2163,6 +2175,38 @@ describe('WorkspaceView', () => {
 
     expect(await screen.findByText('5-hour Session')).toBeInTheDocument()
     expect(screen.getByText('0%')).toBeInTheDocument()
+  })
+
+  test('a weekly-only kimi fetch renders no fabricated 5-hour bar', async () => {
+    vi.mocked(useAgentStatus).mockImplementation(
+      (sessionId: string | null): AgentStatus =>
+        makeAgentStatus(sessionId, {
+          agentType: sessionId === null ? null : 'kimi',
+          modelDisplayName: sessionId === null ? null : 'k2.7',
+          usageFetched: sessionId !== null,
+          rateLimits:
+            sessionId === null
+              ? null
+              : {
+                  // Weekly came back; the absent 5-hour window is the backend's
+                  // required-field placeholder (resetsAt 0) — it must not show
+                  // as a fabricated 0% bar just because the fetch landed.
+                  fiveHour: { usedPercentage: 0, resetsAt: 0 },
+                  sevenDay: {
+                    usedPercentage: 40,
+                    resetsAt: 1_776_086_400_000,
+                  },
+                },
+        })
+    )
+
+    render(<WorkspaceView />)
+
+    await screen.findByRole('button', { name: 'session 1' })
+
+    expect(await screen.findByText('Weekly Usage')).toBeInTheDocument()
+    expect(screen.getByText('40%')).toBeInTheDocument()
+    expect(screen.queryByText('5-hour Session')).not.toBeInTheDocument()
   })
 
   test('mirrors agentStatus.cwd into the active pane.cwd', async () => {

@@ -97,6 +97,12 @@ pub struct StatusSnapshot {
     pub context_window: ContextWindowStatus,
     pub cost: CostMetrics,
     pub rate_limits: RateLimits,
+    /// Whether `rate_limits` carries a real network-fetched value rather than a
+    /// placeholder default. Only kimi fetches usage over the network, so this is
+    /// `false` for claude/codex (they read local files) and for a kimi session
+    /// that hasn't fetched yet — the kimi usage gate uses it to tell LOADING
+    /// from ON without guessing from zeroed values.
+    pub usage_fetched: bool,
 }
 
 /// Statusline-parser output as consumed by `base/watcher_runtime`.
@@ -131,6 +137,7 @@ pub(crate) fn stamp_snapshot(session_id: &str, snapshot: StatusSnapshot) -> Agen
         context_window: snapshot.context_window,
         cost: snapshot.cost,
         rate_limits: snapshot.rate_limits,
+        usage_fetched: snapshot.usage_fetched,
     }
 }
 
