@@ -5,6 +5,7 @@ use crate::agent::types::{
     AgentType, RenameAgentSessionError, RenameAgentSessionErrorReason, RenameAgentSessionRequest,
 };
 use crate::agent::{sanitize_title, AgentWatcherState, TranscriptState};
+use crate::aliases::{AgentAlias, AgentAliasesStore, AliasesCache, CURRENT_AGENT_ALIASES_VERSION};
 use crate::git::watcher::GitWatcherState;
 use crate::settings::{AppSettings, AppSettingsCache};
 use crate::terminal::cache::SessionCache;
@@ -42,6 +43,7 @@ pub struct BackendState {
     sessions: Arc<SessionCache>,
     workspace_layouts: Arc<WorkspaceLayoutCache>,
     app_settings: Arc<AppSettingsCache>,
+    aliases: Arc<AliasesCache>,
     agents: AgentWatcherState,
     transcripts: TranscriptState,
     git: GitWatcherState,
@@ -52,6 +54,14 @@ pub struct BackendState {
 
 impl BackendState {
     pub fn new(app_data_dir: PathBuf, events: Arc<dyn EventSink>) -> Self {
+        Self::new_with_aliases_path(app_data_dir, AliasesCache::default_path(), events)
+    }
+
+    fn new_with_aliases_path(
+        app_data_dir: PathBuf,
+        aliases_path: PathBuf,
+        events: Arc<dyn EventSink>,
+    ) -> Self {
         let cache_path = app_data_dir.join("sessions.json");
         let layouts_path = app_data_dir.join("workspace-layouts.json");
         let settings_path = app_data_dir.join("settings.json");
@@ -60,6 +70,7 @@ impl BackendState {
             sessions: Arc::new(SessionCache::load_or_recover(cache_path)),
             workspace_layouts: Arc::new(WorkspaceLayoutCache::new(layouts_path)),
             app_settings: Arc::new(AppSettingsCache::new(settings_path)),
+            aliases: Arc::new(AliasesCache::new(aliases_path)),
             agents: AgentWatcherState::new(),
             transcripts: TranscriptState::new(),
             git: GitWatcherState::new(),
@@ -74,9 +85,10 @@ impl BackendState {
     pub fn with_fake_sink() -> (Arc<Self>, Arc<super::event_sink::FakeEventSink>) {
         let temp_dir = tempfile::tempdir().expect("temp dir for test BackendState");
         let app_data_dir = temp_dir.path().to_path_buf();
+        let aliases_path = app_data_dir.join("aliases.toml");
         let sink = Arc::new(super::event_sink::FakeEventSink::new());
         let events: Arc<dyn EventSink> = sink.clone();
-        let mut state = Self::new(app_data_dir, events);
+        let mut state = Self::new_with_aliases_path(app_data_dir, aliases_path, events);
         state._test_cache_dir = Some(temp_dir);
         (Arc::new(state), sink)
     }
@@ -114,6 +126,20 @@ impl BackendState {
         self.app_settings.save(settings)
     }
 
+    /// Load the durable agent aliases store; missing / corrupt → empty Vec.
+    pub fn load_agent_aliases(&self) -> Vec<AgentAlias> {
+        self.aliases.load().aliases
+    }
+
+    /// Persist agent aliases.
+    pub fn save_agent_aliases(&self, aliases: &[AgentAlias]) -> Result<(), String> {
+        let store = AgentAliasesStore {
+            version: CURRENT_AGENT_ALIASES_VERSION,
+            aliases: aliases.to_vec(),
+        };
+        self.aliases.save(&store)
+    }
+
     /// Spawn the burner-terminal foreground poll loop (VIM-71). Call once at
     /// startup: it emits `burner-foreground` events as burner shells begin
     /// and finish foreground commands, driving the live "running" cue. Requires
@@ -129,11 +155,15 @@ impl BackendState {
         &self,
         request: crate::terminal::types::SpawnPtyRequest,
     ) -> Result<crate::terminal::types::PtySession, String> {
+        let aliases = self.aliases.load().aliases;
+        let shim_enabled = self.app_settings.load().agent_shim_enabled;
         crate::terminal::commands::spawn_pty_inner(
             self.pty.clone(),
             self.sessions.clone(),
             self.events.clone(),
             request,
+            &aliases,
+            shim_enabled,
         )
         .await
     }
@@ -561,10 +591,7 @@ mod tests {
             session_id: "burner-shutdown".to_string(),
             data: "x".to_string(),
         });
-        assert!(
-            write.is_err(),
-            "shutdown should have reaped the burner PTY"
-        );
+        assert!(write.is_err(), "shutdown should have reaped the burner PTY");
     }
 
     #[test]

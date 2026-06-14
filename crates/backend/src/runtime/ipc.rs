@@ -711,6 +711,18 @@ mod router {
                 state.save_app_settings(&p.settings)?;
                 Ok(Value::Null)
             }
+            "load_agent_aliases" => encode_result(state.load_agent_aliases()),
+            "save_agent_aliases" => {
+                #[derive(Deserialize)]
+                #[serde(rename_all = "camelCase")]
+                struct P {
+                    aliases: Vec<crate::aliases::AgentAlias>,
+                }
+
+                let p: P = serde_json::from_value(params).map_err(|e| format!("params: {e}"))?;
+                state.save_agent_aliases(&p.aliases)?;
+                Ok(Value::Null)
+            }
             #[cfg(feature = "e2e-test")]
             "list_active_pty_sessions" => encode_result(state.list_active_pty_sessions()),
             #[cfg(test)]
