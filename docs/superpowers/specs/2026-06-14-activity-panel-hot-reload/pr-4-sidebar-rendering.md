@@ -19,7 +19,7 @@ Make the sidebar visually stable during pane switches and live status updates.
 
 ## Visual Guidance
 
-- Follow the Obsidian Lens design language: dark, tonal depth, glassmorphism, and no visible border-heavy treatment.
+- Follow The Lens design language: dark, tonal depth, glassmorphism, and no visible border-heavy treatment.
 - Do not use a large stale-data banner for normal refresh.
 - Do not add explanatory in-app text about the feature.
 - Keep the status affordance compact and scannable.
