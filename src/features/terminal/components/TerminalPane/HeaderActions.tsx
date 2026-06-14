@@ -46,11 +46,11 @@ export const HeaderActions = ({
         icon="terminal"
         label={burnerButtonLabel(burnerActive, burnerShellExists)}
         size="sm"
-        pressed={burnerActive}
         onClick={(event) => {
           event.stopPropagation()
           onBurner()
         }}
+        // Running is a status tint, not a toggle — no `pressed` (it would override the accent).
         className={
           burnerActive
             ? 'bg-agent-shell-accent/15 text-agent-shell-accent'

@@ -10,11 +10,7 @@ export interface NewSessionButtonProps {
   ariaKeyshortcuts: string
 }
 
-// Primary "+" new-session control for the sidebar switcher row. The gradient,
-// border, shadow, and active-press chrome come from the Button `primary`
-// variant; only the container-query reveal layout (the width clamp + the
-// inner content/label spans whose @container rule animates the label in/out)
-// stays here via className + children.
+// Primary new-session control; chrome from the Button `primary` variant, reveal layout via className.
 export const NewSessionButton = ({
   onClick,
   shortcutHint,
@@ -27,7 +23,7 @@ export const NewSessionButton = ({
       aria-label="New session"
       aria-keyshortcuts={ariaKeyshortcuts}
       data-testid="sidebar-new-session"
-      className="vf-new-session-button group min-w-[38px] max-w-[150px] flex-1 shrink self-stretch overflow-hidden px-0"
+      className="vf-new-session-button group min-w-[38px] max-w-[150px] flex-1 shrink self-stretch h-auto overflow-hidden px-0"
     >
       <span className="vf-new-session-button-content flex min-w-0 items-center justify-center">
         <span
