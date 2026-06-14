@@ -175,7 +175,7 @@ export const buttonVariants = (options?: ButtonVariantOptions): string => {
 - [ ] **Step 1: Write the failing test** — asserts: `type="button"` by default; `ref` reaches the `<button>`; `disabled` sets the attribute; a passed `className` appears after the variant classes; `pressed` sets `aria-pressed="true"`; an injected `aria-expanded` flows through.
 
 ```tsx
-import { test, expect, vi } from 'vitest'
+import { test, expect } from 'vitest'
 import { createRef } from 'react'
 import { render, screen } from '@testing-library/react'
 import { BaseButton } from './BaseButton'
@@ -194,6 +194,13 @@ test('pressed sets aria-pressed; omitted leaves it unset', () => {
   expect(screen.getByRole('button')).toHaveAttribute('aria-pressed', 'true')
   rerender(<BaseButton />)
   expect(screen.getByRole('button')).not.toHaveAttribute('aria-pressed')
+})
+
+test('disabled sets the attribute; an injected aria-expanded flows through ...rest', () => {
+  render(<BaseButton disabled aria-expanded />)
+  const btn = screen.getByRole('button')
+  expect(btn).toBeDisabled()
+  expect(btn).toHaveAttribute('aria-expanded', 'true')
 })
 ```
 
@@ -549,7 +556,7 @@ const vimeflowPlugin = {
 },
 ```
 
-- [ ] **Step 5: Add the flat-config integration test** — construct an `ESLint` instance against the real `eslint.config.js` and use `lintText(code, { filePath })`: assert one `vimeflow/no-raw-icon-button` error for a Shape-A button at a **non-components** path (e.g. `filePath: 'src/features/__probe__.tsx'`), and **zero** at a `src/components/**` path (the exemption). Do **not** place a fixture file under `src/components/**` — the rule ignores that tree, so a fixture there could never report (codex caught this).
+- [ ] **Step 5: Add the flat-config integration test** — construct an `ESLint` instance against the real `eslint.config.js` and use `lintText(code, { filePath })` with **existing** paths (the `projectService: true` parser rejects non-existent files): for a Shape-A button string, assert a `vimeflow/no-raw-icon-button` message **appears** at `filePath: 'src/App.tsx'` (non-components) and is **absent** at `filePath: 'src/components/Tooltip.tsx'` (the exemption). Filter `result.messages` by `ruleId === 'vimeflow/no-raw-icon-button'` so unrelated rule output on the probe string does not affect the assertion. Do **not** create a fixture file under `src/components/**` — the rule ignores that tree (codex caught both the fixture location and the non-existent `filePath`).
 - [ ] **Step 6: Grandfather** — run `npm run lint`; for every reported offender add `// eslint-disable-next-line vimeflow/no-raw-icon-button` (tag grouped-control ones `-- VIM-125`). The inventory (T1) remains the complete audit.
 - [ ] **Step 7: Gate green + Commit** (`feat(button-primitives): add no-raw-icon-button guardrail and grandfather offenders`).
 
