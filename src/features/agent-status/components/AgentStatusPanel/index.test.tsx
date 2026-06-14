@@ -121,7 +121,7 @@ describe('AgentStatusPanel', () => {
       <AgentStatusPanel {...defaultProps} agentStatus={inactiveAgentStatus} />
     )
 
-    expect(screen.getByText(/CURRENT CONTEXT/)).toBeInTheDocument()
+    expect(screen.getByTestId('context-bucket')).toBeInTheDocument()
     expect(screen.getByTestId('context-percentage')).toHaveTextContent('\u2014')
     expect(screen.getByText(/no data yet/i)).toBeInTheDocument()
     expect(screen.getByText(/No activity yet/i)).toBeInTheDocument()
@@ -351,7 +351,7 @@ describe('AgentStatusPanel', () => {
 
     const panel = screen.getByTestId('agent-status-panel')
     const tokenCache = screen.getByTestId('token-cache')
-    const context = screen.getByText(/CURRENT CONTEXT/)
+    const context = screen.getByTestId('context-bucket')
 
     /* eslint-disable testing-library/no-node-access */
     const scrollable = panel.querySelector('.overflow-y-auto')

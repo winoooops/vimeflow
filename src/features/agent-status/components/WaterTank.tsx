@@ -1,0 +1,178 @@
+import { useId, type ReactElement } from 'react'
+import {
+  resolveContextTone,
+  tankChrome,
+  type ReservoirTheme,
+} from '../utils/contextTone'
+
+export interface WaterTankProps {
+  /** Context fill, 0-100. Drives the waterline height and the tone. */
+  pct: number
+  theme: ReservoirTheme
+  /** Tank height in px (and SVG user units along Y). */
+  height?: number
+  /** When true (context unknown), render the empty tank with no water. */
+  empty?: boolean
+}
+
+// The parallax waves always animate; prefers-reduced-motion disables them via
+// CSS (the static filled tank is fully legible).
+
+// SVG is drawn in a fixed 248-wide user space and stretched to the container
+// (preserveAspectRatio="none"); each wave path spans 2x the width and the
+// keyframe translates it by exactly one width (-50%), so the loop is seamless.
+const TANK_WIDTH = 248
+const WAVE_SPAN = TANK_WIDTH * 2
+// Wavelengths that divide the tank width evenly so each wave tiles without a
+// seam on loop (the handoff's back-wave length of 150 did not tile the 248px
+// translate). The back wave reads as a distinct, slower parallax layer: one
+// broad swell across the tank behind the front's two faster ripples.
+const WAVELENGTH_FRONT = TANK_WIDTH / 2 // 124 — two ripples across the tank
+const WAVELENGTH_BACK = TANK_WIDTH // 248 — one broad swell behind
+
+/**
+ * Y coordinate (in SVG user units) of the waterline for a given fill. A 2%
+ * floor keeps the waterline visible even at very low fill. Exported for
+ * geometry assertions.
+ */
+export const computeTankLevel = (pct: number, height: number): number =>
+  (1 - Math.min(100, Math.max(2, pct)) / 100) * height
+
+export const WaterTank = ({
+  pct,
+  theme,
+  height = 104,
+  empty = false,
+}: WaterTankProps): ReactElement => {
+  const tone = resolveContextTone(pct, theme)
+  const chrome = tankChrome(theme)
+  const level = computeTankLevel(pct, height)
+  const rid = useId().replace(/:/g, '')
+  const fillId = `tank-fill-${rid}`
+  const dryId = `tank-dry-${rid}`
+  const clipId = `tank-clip-${rid}`
+
+  const wavePath = (
+    amplitude: number,
+    phase: number,
+    wavelength: number,
+    close = true
+  ): string => {
+    const yAt = (x: number): number =>
+      level + Math.sin((x / wavelength) * Math.PI * 2 + phase) * amplitude
+    const points: string[] = []
+    for (let x = 0; x < WAVE_SPAN; x += 6) {
+      points.push(`${x === 0 ? 'M' : 'L'} ${x.toFixed(1)} ${yAt(x).toFixed(2)}`)
+    }
+    // Land the final point exactly on the span edge — a step of 6 doesn't
+    // divide 496, so without this the closed fill jumps from x=492 straight to
+    // the bottom corner, a slanted seam that scrolls into view on loop wrap.
+    points.push(`L ${WAVE_SPAN} ${yAt(WAVE_SPAN).toFixed(2)}`)
+    const d = points.join(' ')
+
+    return close ? `${d} L ${WAVE_SPAN} ${height} L 0 ${height} Z` : d
+  }
+
+  return (
+    <svg
+      data-testid="water-tank"
+      viewBox={`0 0 ${TANK_WIDTH} ${height}`}
+      width="100%"
+      height={height}
+      preserveAspectRatio="none"
+      aria-hidden="true"
+      style={{ display: 'block', borderRadius: 11 }}
+    >
+      <defs>
+        {/* depth gradient — luminous at the meniscus, settling translucent at the floor */}
+        <linearGradient
+          id={fillId}
+          x1="0"
+          y1={level}
+          x2="0"
+          y2={height}
+          gradientUnits="userSpaceOnUse"
+        >
+          <stop offset="0" stopColor={tone.fillTop} stopOpacity="0.95" />
+          <stop offset="0.18" stopColor={tone.base} stopOpacity="0.85" />
+          <stop offset="1" stopColor={tone.base} stopOpacity="0.42" />
+        </linearGradient>
+        {/* empty headroom — faint top-down shade so the dry tank reads as recessed */}
+        <linearGradient
+          id={dryId}
+          x1="0"
+          y1="0"
+          x2="0"
+          y2={height}
+          gradientUnits="userSpaceOnUse"
+        >
+          <stop offset="0" stopColor={chrome.dry} stopOpacity="0.55" />
+          <stop offset="1" stopColor={chrome.dry} stopOpacity="0" />
+        </linearGradient>
+        <clipPath id={clipId}>
+          <rect x="0" y="0" width={TANK_WIDTH} height={height} rx="11" />
+        </clipPath>
+      </defs>
+
+      <g clipPath={`url(#${clipId})`}>
+        {/* tank floor */}
+        <rect
+          x="0"
+          y="0"
+          width={TANK_WIDTH}
+          height={height}
+          fill="color-mix(in srgb, var(--color-surface-container-lowest) 85%, transparent)"
+        />
+        <rect
+          x="0"
+          y="0"
+          width={TANK_WIDTH}
+          height={height}
+          fill={`url(#${dryId})`}
+        />
+
+        {!empty && (
+          <>
+            {/* back wave — slower, taller, dim */}
+            <g data-testid="tank-wave-back" className="vf-tank-wave-b">
+              <path
+                d={wavePath(3.2, 0.9, WAVELENGTH_BACK)}
+                fill={`url(#${fillId})`}
+                opacity="0.5"
+              />
+            </g>
+            {/* front wave — the primary body + bright meniscus crest */}
+            <g data-testid="tank-wave-front" className="vf-tank-wave-a">
+              <path
+                data-testid="tank-water"
+                d={wavePath(2.4, 2.4, WAVELENGTH_FRONT)}
+                fill={`url(#${fillId})`}
+              />
+              <path
+                data-testid="tank-meniscus"
+                d={wavePath(2.4, 2.4, WAVELENGTH_FRONT, false)}
+                fill="none"
+                stroke={tone.meniscus}
+                strokeWidth="1.5"
+                strokeOpacity="0.9"
+                style={{ filter: `drop-shadow(0 0 5px ${tone.base})` }}
+              />
+            </g>
+          </>
+        )}
+
+        {/* inner rim */}
+        <rect
+          x="0.5"
+          y="0.5"
+          width={TANK_WIDTH - 1}
+          height={height - 1}
+          rx="10.5"
+          fill="none"
+          stroke={chrome.rim}
+          strokeWidth="1"
+        />
+      </g>
+    </svg>
+  )
+}

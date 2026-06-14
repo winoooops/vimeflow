@@ -1,186 +1,174 @@
-import type { ReactElement } from 'react'
-import { LiquidFill } from './LiquidFill'
-import {
-  LIQUID_COLOR_ERROR,
-  LIQUID_COLOR_PRIMARY_CONTAINER,
-  LIQUID_COLOR_TERTIARY,
-} from './liquidColors'
+import type { CSSProperties, ReactElement } from 'react'
+import { useTheme } from '@/theme/useTheme'
+import { WaterTank } from './WaterTank'
+import { resolveContextTone, tankChrome } from '../utils/contextTone'
 
 export interface ContextBucketProps {
   usedPercentage: number | null
   contextWindowSize: number
-  totalInputTokens: number
-  totalOutputTokens: number
 }
 
-const formatTokens = (n: number): string => {
+// Compact token label: `1M` / `562k` / `999`. Distinct from utils/format's
+// one-decimal `formatTokens` — the reservoir scale/pill want a tight, rounded
+// reading.
+const compactTokens = (n: number): string => {
   if (n >= 1_000_000) {
-    return `${(n / 1_000_000).toFixed(1)}M`
+    const decimals = n % 1_000_000 === 0 ? 0 : 1
+
+    return `${(n / 1_000_000).toFixed(decimals)}M`
   }
   if (n >= 1_000) {
-    return `${(n / 1_000).toFixed(1)}k`
+    const k = Math.round(n / 1_000)
+
+    // Guard the boundary: 999,500–999,999 rounds to 1000k — show 1M instead.
+    return k >= 1000 ? '1M' : `${k}k`
   }
 
-  return n.toString()
+  return `${n}`
 }
 
-const formatTokensDetailed = (n: number): string => n.toLocaleString()
+const formatTokenCount = (n: number): string => n.toLocaleString('en-US')
 
-const formatContextSize = (n: number): string => {
-  if (n >= 1_000_000) {
-    return `${n / 1_000_000}M`
-  }
+const DASH = '—'
 
-  return `${n / 1_000}k`
-}
-
-const getEmoji = (pct: number | null): string => {
-  if (pct === null || pct < 60) {
-    return '\u{1F60A}'
-  }
-  if (pct < 80) {
-    return '\u{1F610}'
-  }
-  if (pct < 90) {
-    return '\u{1F61F}'
-  }
-
-  return '\u{1F975}'
-}
-
-type ColorTier = 'primary' | 'tertiary' | 'error'
-
-const getColorTier = (pct: number | null): ColorTier => {
-  if (pct !== null && pct >= 90) {
-    return 'error'
-  }
-  if (pct !== null && pct >= 80) {
-    return 'tertiary'
-  }
-
-  return 'primary'
-}
-
-const getTierColors = (
-  pct: number | null
-): { bar: string; text: string; hex: string } => {
-  switch (getColorTier(pct)) {
-    case 'error':
-      return {
-        bar: 'bg-error',
-        text: 'text-error',
-        hex: LIQUID_COLOR_ERROR,
-      }
-    case 'tertiary':
-      return {
-        bar: 'bg-tertiary',
-        text: 'text-tertiary',
-        hex: LIQUID_COLOR_TERTIARY,
-      }
-    case 'primary':
-    default:
-      return {
-        bar: 'bg-primary-container',
-        text: 'text-primary-container',
-        hex: LIQUID_COLOR_PRIMARY_CONTAINER,
-      }
-  }
-}
-
+// cspell:ignore seafoam
+/**
+ * Context window as a reservoir: the budget is a tank of resource and the
+ * bounding waterline is how full it is. Color is the continuous seafoam ->
+ * gold -> coral -> rose `ctxTone` sweep keyed to fill (shared with the
+ * collapsed rail meter). No emoji — the degrading faces live in the bottom
+ * status bar.
+ */
 export const ContextBucket = ({
   usedPercentage,
   contextWindowSize,
-  totalInputTokens,
-  totalOutputTokens,
 }: ContextBucketProps): ReactElement => {
   const pct = usedPercentage
+  const mode = useTheme().kind
   const effectivePct = pct ?? 0
-  const tierColors = getTierColors(pct)
-  const emoji = getEmoji(pct)
-  const totalTokens = totalInputTokens + totalOutputTokens
+  const tone = resolveContextTone(effectivePct, mode)
+  const chrome = tankChrome(mode)
+
+  // Current context occupancy in tokens, reconstructed from the authoritative
+  // fill % so the pill, footer count, and headroom all agree with the
+  // waterline. (totalInput/Output exclude cache reads and are not the window
+  // occupancy, so deriving headroom from them would contradict the tank.)
+  const used = Math.round(contextWindowSize * (effectivePct / 100))
+  const headroom = contextWindowSize - used
+
+  // Pill rides the waterline (shares the tank's 2% visibility floor).
+  const waterlineTopPct =
+    (1 - Math.min(100, Math.max(2, effectivePct)) / 100) * 100
+
+  // Card chrome matches the sibling TokenCache directly below it in the panel
+  // (radius 10, 135deg tone wash, tinted border, no elevation) so the two
+  // stacked cards read as one family — keyed here to the live context tone.
+  const cardStyle: CSSProperties = {
+    borderRadius: 10,
+    border: `1px solid color-mix(in srgb, ${tone.base} 15%, transparent)`,
+    background: `linear-gradient(135deg, color-mix(in srgb, ${tone.base} ${mode === 'light' ? 11 : 8}%, transparent), color-mix(in srgb, var(--color-surface-container-lowest) 50%, transparent))`,
+  }
 
   return (
-    <div className="rounded-2xl border border-primary-container/[0.08] bg-surface-container-high/50 p-3.5">
-      {/* Header */}
-      <div className="mb-2 flex items-center justify-between">
-        <span className="text-[10px] font-medium uppercase tracking-wider text-on-surface-variant">
-          <span role="img" aria-label="context status">
-            {emoji}
-          </span>{' '}
-          CURRENT CONTEXT
-        </span>
-        <span
-          className={`font-mono text-xs font-semibold ${pct !== null ? tierColors.text : 'text-outline'}`}
-          data-testid="context-percentage"
-        >
-          {pct !== null ? `${Math.round(pct)}%` : '\u2014'}
-        </span>
-      </div>
-
-      {/* Bucket gauge */}
-      <div className="mb-2 flex h-[72px] gap-1.5">
-        {/* Gauge */}
-        <div
-          className="relative flex flex-1 flex-col justify-end overflow-hidden rounded-lg bg-surface-container-low"
-          data-testid="bucket-gauge"
-        >
-          {/* Grid dot pattern overlay */}
-          <div
-            className="pointer-events-none absolute inset-0 z-10"
+    <div
+      data-testid="context-bucket"
+      className="overflow-hidden"
+      style={cardStyle}
+    >
+      <div className="px-3.5 pb-3.5 pt-3">
+        {/* Header — water-drop identity chip + label + big % */}
+        <div className="mb-[11px] flex items-center gap-[9px]">
+          <span
+            className="grid h-5 w-5 shrink-0 place-items-center overflow-hidden rounded-md"
             style={{
-              backgroundImage:
-                'radial-gradient(circle, currentColor 0.5px, transparent 0.5px)',
-              backgroundSize: '8px 8px',
-              opacity: 0.04,
+              background: `color-mix(in srgb, ${tone.base} 16%, transparent)`,
+              color: tone.label,
             }}
-          />
-          {/* Fill */}
-          <LiquidFill
-            mode="fill"
-            pct={effectivePct}
-            color={tierColors.hex}
-            glow
-            className="h-full w-full"
-            testId="bucket-fill"
-          />
-        </div>
-
-        {/* Scale */}
-        <div className="flex flex-col justify-between py-0.5 font-mono text-[8px] text-outline">
-          <span>{formatContextSize(contextWindowSize)}</span>
-          <span className={pct !== null ? tierColors.text : 'text-outline'}>
-            {pct !== null ? `${formatTokens(totalTokens)}` : '\u2014'}
+          >
+            <span
+              aria-hidden="true"
+              className="material-symbols-outlined text-[13px] leading-none"
+              style={{ fontVariationSettings: "'FILL' 1" }}
+            >
+              water_drop
+            </span>
           </span>
-          <span>0k</span>
+          <span className="flex-1 font-mono text-[10.5px] font-bold uppercase tracking-[0.16em] text-on-surface-muted">
+            Context
+          </span>
+          <span
+            data-testid="context-percentage"
+            className={`font-display text-[18px] font-bold leading-none tracking-[-0.01em] tabular-nums ${pct === null ? 'text-outline' : ''}`}
+            style={pct !== null ? { color: tone.bigNum } : undefined}
+          >
+            {pct !== null ? (
+              <>
+                {Math.round(pct)}
+                <span className="text-[11px] font-semibold opacity-70">%</span>
+              </>
+            ) : (
+              DASH
+            )}
+          </span>
         </div>
-      </div>
 
-      {/* Progress bar */}
-      <div className="mb-2 h-[5px] overflow-hidden rounded-full bg-surface">
-        <div
-          className={`h-full rounded-full ${tierColors.bar}`}
-          data-testid="progress-bar-fill"
-          style={{
-            width: `${effectivePct}%`,
-            boxShadow:
-              pct !== null && effectivePct > 0
-                ? '0 0 8px var(--tw-shadow-color, color-mix(in srgb, var(--color-primary-container) 40%, transparent))'
-                : 'none',
-          }}
-        />
-      </div>
+        {/* Tank with scale ticks + floating waterline value */}
+        <div className="relative">
+          <WaterTank pct={effectivePct} theme={mode} empty={pct === null} />
 
-      {/* Token counts */}
-      <div className="flex items-center justify-between font-mono text-[9px] text-on-surface-variant">
-        <span data-testid="token-count-detail">
-          {pct !== null
-            ? `${formatTokensDetailed(totalTokens)} tokens`
-            : '\u2014 tokens'}
-        </span>
-        <span>{formatContextSize(contextWindowSize)} max</span>
+          <span
+            className="pointer-events-none absolute right-[7px] top-[6px] font-mono text-[8.5px] font-semibold tracking-[0.04em]"
+            style={{ color: chrome.tick }}
+          >
+            {compactTokens(contextWindowSize)}
+          </span>
+          <span
+            className="pointer-events-none absolute bottom-[6px] right-[7px] font-mono text-[8.5px] font-semibold tracking-[0.04em]"
+            style={{ color: chrome.tick }}
+          >
+            0
+          </span>
+
+          {pct !== null && (
+            <div
+              data-testid="context-pill"
+              className="absolute right-[6px] inline-flex -translate-y-1/2 items-center rounded-[5px] px-[6px] py-[1.5px] font-mono text-[9.5px] font-semibold"
+              style={{
+                top: `${waterlineTopPct}%`,
+                background: chrome.pillBg,
+                backdropFilter: 'blur(3px)',
+                WebkitBackdropFilter: 'blur(3px)',
+                border: `1px solid color-mix(in srgb, ${tone.base} 40%, transparent)`,
+                color: tone.pillText,
+                whiteSpace: 'nowrap',
+                boxShadow: `0 2px 8px ${chrome.pillShadow}`,
+              }}
+            >
+              {compactTokens(used)}
+            </div>
+          )}
+        </div>
+
+        {/* Footer — used tokens + headroom remaining */}
+        <div className="mt-[11px] flex items-baseline gap-[6px]">
+          <span data-testid="token-count-detail" className="font-mono">
+            <span className="text-[11px] font-semibold tabular-nums text-on-surface-variant">
+              {pct !== null ? formatTokenCount(used) : DASH}
+            </span>
+            <span className="text-[9.5px] text-on-surface-muted"> tokens</span>
+          </span>
+          <span className="flex-1" />
+          <span
+            data-testid="context-headroom"
+            className={`font-mono text-[9.5px] ${pct === null ? 'text-on-surface-muted' : ''}`}
+            style={pct !== null ? { color: tone.leftText } : undefined}
+          >
+            {pct !== null ? `${compactTokens(headroom)} left` : DASH}
+          </span>
+        </div>
       </div>
     </div>
   )
 }
 
-export { formatTokens, formatContextSize }
+export { compactTokens }

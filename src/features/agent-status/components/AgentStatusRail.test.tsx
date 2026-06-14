@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { test, expect, vi } from 'vitest'
 import { AGENTS } from '../../../agents/registry'
 import { AgentStatusRail } from './AgentStatusRail'
+import { ctxTone } from '../utils/contextTone'
 
 const notRunning = false
 
@@ -25,8 +26,11 @@ test('renders glyph chip, context bucket, cache bucket, and running dot when run
   expect(screen.getByTestId('running-dot')).toBeInTheDocument()
 })
 
-test('context bucket tone shifts to coral above 90%', () => {
-  render(
+// The context bucket shares the continuous ctxTone sweep with the expanded
+// reservoir card so the context color agrees across collapsed + expanded
+// states — no more tiered token swaps.
+test('context bucket color follows the shared ctxTone sweep', () => {
+  const { rerender } = render(
     <AgentStatusRail
       agent={AGENTS.claude}
       contextUsedPercentage={92}
@@ -37,15 +41,13 @@ test('context bucket tone shifts to coral above 90%', () => {
   )
 
   expect(screen.getByTestId('bucket-ctx-pct-glyph')).toHaveStyle({
-    color: 'var(--color-tertiary)',
+    color: ctxTone(92).base,
   })
-})
 
-test('context bucket tone is warm coral between 75 and 90%', () => {
-  render(
+  rerender(
     <AgentStatusRail
       agent={AGENTS.claude}
-      contextUsedPercentage={80}
+      contextUsedPercentage={40}
       cacheHitPercentage={null}
       isRunning={notRunning}
       onExpand={() => undefined}
@@ -53,7 +55,7 @@ test('context bucket tone is warm coral between 75 and 90%', () => {
   )
 
   expect(screen.getByTestId('bucket-ctx-pct-glyph')).toHaveStyle({
-    color: 'var(--color-error)',
+    color: ctxTone(40).base,
   })
 })
 

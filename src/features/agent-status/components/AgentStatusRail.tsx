@@ -1,6 +1,7 @@
 import type { ReactElement } from 'react'
 import type { Agent } from '../../../agents/registry'
 import { Bucket } from './Bucket'
+import { ctxTone } from '../utils/contextTone'
 
 export interface AgentStatusRailProps {
   agent: Agent
@@ -15,33 +16,16 @@ export interface AgentStatusRailProps {
 // duplicated magic number that can drift if the rail is resized.
 export const RAIL_WIDTH_PX = 44
 
-// Bucket fill tones — semantic mapping per the bucket-redesign spec.
-// These literals mirror tokens defined in `docs/design/tokens.ts`
-// (tertiary, error, success-muted, primary);
-// `tokens.ts` is the design reference and is NOT imported from `src/` (see
-// the rationale in `TokenCache.tsx`). If the palette migrates, update these
-// constants in lockstep with tokens.ts.
-// Annotations match the runtime CSS variables to their `docs/design/tokens.ts`
-// names. Severity hierarchy: DANGER > WARN > NEUTRAL/HEALTHY. The Catppuccin
-// Mocha palette names are non-obvious — `tertiary` is the strong
-// pink (highest severity), `error` is the softer coral
-// (intermediate). If the palette migrates, update each constant from the
-// named token so the severity ordering survives.
-const TONE_DANGER = 'var(--color-tertiary)' // tertiary  (strong pink, peak severity)
-const TONE_WARN = 'var(--color-error)' // error      (soft coral, warning)
-const TONE_HEALTHY = 'var(--color-success-muted)' // success-muted
-const TONE_NEUTRAL = 'var(--color-primary)' // primary
-
-const contextTone = (pct: number, accent: string): string => {
-  if (pct > 90) {
-    return TONE_DANGER
-  }
-  if (pct > 75) {
-    return TONE_WARN
-  }
-
-  return accent
-}
+// Cache-bucket fill tones — semantic mapping per the bucket-redesign spec.
+// These literals mirror tokens in `docs/design/tokens.ts` (success-muted,
+// primary, tertiary); `tokens.ts` is the design reference and is NOT imported
+// from `src/` (see the rationale in `TokenCache.tsx`). If the palette migrates,
+// update these in lockstep. The context bucket no longer uses tiered tokens —
+// it shares the continuous `ctxTone` sweep with the expanded reservoir card so
+// the context color agrees across collapsed and expanded states.
+const TONE_DANGER = 'var(--color-tertiary)' // tertiary (strong pink, low cache)
+const TONE_HEALTHY = 'var(--color-success-muted)' // success-muted (high cache)
+const TONE_NEUTRAL = 'var(--color-primary)' // primary (mid cache)
 
 const cacheTone = (rate: number): string => {
   if (rate >= 70) {
@@ -96,7 +80,7 @@ export const AgentStatusRail = ({
       {ctxPct !== null && (
         <Bucket
           pct={ctxPct}
-          color={contextTone(ctxPct, agent.accent)}
+          color={ctxTone(ctxPct).base}
           label="CTX"
           tooltip={`Context: ${Math.round(ctxPct)}%`}
         />
