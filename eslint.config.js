@@ -249,7 +249,7 @@ export default defineConfig([
           },
           {
             regex:
-              'import .* from (\'|")(\\.\\./)+components/(Tooltip|StatusBar|GlassSurface|ResizeHandle|sidebar/)',
+              'import .* from (\'|")(\\.\\./)+components/(Tooltip|StatusBar|GlassSurface|ResizeHandle|Button|IconButton|ToolbarButton|sidebar/)',
             message:
               'Shared primitives are imported via the @/components/* alias.',
           },
