@@ -101,7 +101,29 @@ describe('AgentsPane', () => {
     expect(screen.getAllByTestId('alias-row').length).toBe(1)
   })
 
-  test('falls back to default aliases when the bridge is absent', () => {
+  test('falls back to default aliases when the bridge is absent', async () => {
+    render(
+      <TestWrapper>
+        <AgentsPane />
+      </TestWrapper>
+    )
+
+    await waitFor(() => {
+      DEFAULT_ALIASES.forEach((a) => {
+        expect(screen.getByDisplayValue(a.alias)).toBeInTheDocument()
+      })
+    })
+  })
+
+  test('does not flash default aliases while waiting for the bridge', async () => {
+    const { aliasesLoad } = installBridge(DEFAULT_ALIASES)
+    aliasesLoad.mockImplementation(
+      () =>
+        new Promise<AgentAlias[]>((resolve) => {
+          setTimeout(() => resolve([]), 100)
+        })
+    )
+
     render(
       <TestWrapper>
         <AgentsPane />
@@ -109,7 +131,39 @@ describe('AgentsPane', () => {
     )
 
     DEFAULT_ALIASES.forEach((a) => {
-      expect(screen.getByDisplayValue(a.alias)).toBeInTheDocument()
+      expect(screen.queryByDisplayValue(a.alias)).not.toBeInTheDocument()
+    })
+
+    await waitFor(() => {
+      expect(screen.getByText('Loading aliases…')).toBeInTheDocument()
+    })
+  })
+
+  test('disables alias controls until the initial bridge load completes', async () => {
+    const { aliasesLoad } = installBridge(DEFAULT_ALIASES)
+    let resolveLoad: (value: AgentAlias[]) => void = () => undefined
+
+    aliasesLoad.mockImplementation(
+      () =>
+        new Promise<AgentAlias[]>((resolve) => {
+          resolveLoad = resolve
+        })
+    )
+
+    render(
+      <TestWrapper>
+        <AgentsPane />
+      </TestWrapper>
+    )
+
+    expect(screen.getByRole('button', { name: /Add alias/i })).toBeDisabled()
+
+    resolveLoad(DEFAULT_ALIASES)
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole('button', { name: /Add alias/i })
+      ).not.toBeDisabled()
     })
   })
 

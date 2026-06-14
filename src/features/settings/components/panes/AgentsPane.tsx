@@ -21,23 +21,35 @@ import {
 export const AgentsPane = (): ReactElement => {
   const { settings, update } = useSettings()
   const shimOn = settings.agentShimEnabled
-  const [aliases, setAliases] = useState<AgentAlias[]>(DEFAULT_ALIASES)
+  const [aliases, setAliases] = useState<AgentAlias[]>([])
+  const [isInitializing, setIsInitializing] = useState(true)
   const [saveError, setSaveError] = useState<string | null>(null)
   const saveQueueRef = useRef<Promise<void>>(Promise.resolve())
+  const hasInteractedRef = useRef(false)
 
   useEffect(() => {
     const load = async (): Promise<void> => {
       const bridge = window.vimeflow?.aliases
 
       if (!bridge) {
+        setAliases(DEFAULT_ALIASES)
+        setIsInitializing(false)
+
         return
       }
 
       try {
         const loadedAliases = await bridge.load()
-        setAliases(loadedAliases)
+
+        if (!hasInteractedRef.current) {
+          setAliases(loadedAliases)
+        }
       } catch {
-        // Fall back to defaults if the backend load fails.
+        if (!hasInteractedRef.current) {
+          setAliases(DEFAULT_ALIASES)
+        }
+      } finally {
+        setIsInitializing(false)
       }
     }
 
@@ -74,6 +86,7 @@ export const AgentsPane = (): ReactElement => {
 
   const setAliasesAndPersist = useCallback(
     (next: AgentAlias[]): void => {
+      hasInteractedRef.current = true
       setAliases(next)
       saveQueueRef.current = saveNext(saveQueueRef.current, next)
     },
@@ -141,7 +154,7 @@ export const AgentsPane = (): ReactElement => {
 
           <span className="min-w-0 flex-1" />
 
-          <GhostButton onClick={addAlias}>
+          <GhostButton onClick={addAlias} disabled={isInitializing}>
             <Icon name="add" size={12} className="mr-1 align-middle" />
             Add alias
           </GhostButton>
@@ -155,7 +168,16 @@ export const AgentsPane = (): ReactElement => {
           <span />
         </div>
 
-        <div className="overflow-hidden rounded-lg border border-outline-variant/30 bg-surface-container-lowest/50">
+        <div
+          className="overflow-hidden rounded-lg border border-outline-variant/30 bg-surface-container-lowest/50"
+          aria-busy={isInitializing}
+        >
+          {isInitializing && (
+            <div className="col-span-5 px-3 py-4 font-body text-xs text-on-surface-muted">
+              Loading aliases…
+            </div>
+          )}
+
           {aliases.map((a, i) => (
             <div
               key={a.id}
@@ -166,7 +188,10 @@ export const AgentsPane = (): ReactElement => {
                   : 'border-b border-outline-variant/15'
               } ${shimOn ? '' : 'opacity-45'}`}
             >
-              <fieldset disabled={!shimOn} className="contents">
+              <fieldset
+                disabled={!shimOn || isInitializing}
+                className="contents"
+              >
                 <TextInput
                   width="100%"
                   mono

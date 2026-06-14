@@ -87,6 +87,7 @@ export interface SelectProps {
 export interface GhostButtonProps {
   children: ReactNode
   onClick?: () => void
+  disabled?: boolean
 }
 
 export interface TextInputProps {

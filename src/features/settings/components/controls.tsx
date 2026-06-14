@@ -107,11 +107,13 @@ export const Select = ({
 export const GhostButton = ({
   children,
   onClick = (): void => undefined,
+  disabled = false,
 }: GhostButtonProps): ReactElement => (
   <button
     type="button"
     onClick={onClick}
-    className="rounded-md border border-outline-variant/50 bg-transparent px-3 py-1.5 font-body text-xs text-on-surface-variant transition-colors hover:bg-surface-container-high"
+    disabled={disabled}
+    className="rounded-md border border-outline-variant/50 bg-transparent px-3 py-1.5 font-body text-xs text-on-surface-variant transition-colors hover:bg-surface-container-high disabled:cursor-not-allowed disabled:opacity-45"
   >
     {children}
   </button>
