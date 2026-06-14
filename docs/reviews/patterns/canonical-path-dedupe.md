@@ -15,7 +15,7 @@ must be canonicalized through the same resolver. Mixing raw and canonicalized
 paths — especially once symlinks, `..` segments, or platform-specific casing
 enter the picture — makes the same physical file appear as distinct `PathBuf`
 values. The result is duplicated work (multiple tailers, watchers, or importers),
- inflated counters, and duplicate events.
+inflated counters, and duplicate events.
 
 The safest shape is to canonicalize once at the boundary where the path enters
 the dedupe set, then use that canonical value as the key everywhere: children
