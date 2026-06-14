@@ -78,9 +78,9 @@ crates/backend/
 - CSpell spell-checking enabled via ESLint
 - Conventional commits enforced by commitlint: `feat|fix|refactor|docs|test|chore|perf|ci: description`
 
-## Design System: "The Obsidian Lens"
+## Design System: "The Lens"
 
-Dark atmospheric UI built on Catppuccin Mocha palette. Colors defined as semantic theme tokens in `src/theme/` (TS theme definitions applied as CSS variables at runtime — see `docs/superpowers/specs/2026-06-11-theme-system-design.md`; utilities like `bg-surface-container`, `text-on-surface`, `text-primary` resolve through them). Fonts: Manrope (headlines), Inter (body/labels), JetBrains Mono (code). No visible borders — use tonal depth and glassmorphism.
+**The Lens** is a multi-theme system: **Catppuccin** (dark, default — atmospheric dark on the Catppuccin Mocha palette) and **Flexoki** (light). Colors are defined as semantic theme tokens in `src/theme/` (TS theme definitions applied as CSS variables at runtime — see `docs/superpowers/specs/2026-06-11-theme-system-design.md`; utilities like `bg-surface-container`, `text-on-surface`, `text-primary` resolve per active theme). The dark theme's file/id keeps the legacy `obsidian-lens` slug (its display label is `Catppuccin`). Fonts: Manrope (headlines), Inter (body/labels), JetBrains Mono (code). No visible borders — use tonal depth and glassmorphism.
 
 **Read order:** `docs/design/UNIFIED.md` (authoritative, code-grounded — 3-zone shell + two-plane surface model, agent-state contract, component contracts), then `docs/design/DESIGN.md` (foundational philosophy/typography), then `src/theme/themes/*.ts` for runtime token values. Historical handoffs/mockups live in `docs/design/archive/` (reference only; UNIFIED wins).
 

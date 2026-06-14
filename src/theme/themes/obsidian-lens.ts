@@ -1,6 +1,6 @@
 import type { ThemeDefinition } from '../types'
 
-/* The Obsidian Lens — the current rendered appearance, collected from
+/* Catppuccin (obsidian-lens) — the current rendered appearance, collected from
  * tailwind.config.js (ui), index.css + docs tokens.css (effects),
  * terminal/theme/catppuccin-mocha.ts (terminal), agents/registry.ts +
  * browser/browserIdentity.ts (agents). This file is the single source

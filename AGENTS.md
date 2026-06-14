@@ -65,16 +65,16 @@ Commit messages for Codex-assisted changes must include the trailer `Co-Authored
 
 ## Design System
 
-"The Obsidian Lens" — dark atmospheric UI on Catppuccin Mocha palette. No visible borders — use tonal depth and glassmorphism.
+"The Lens" — a multi-theme system: **Catppuccin** (dark, atmospheric dark on the Catppuccin Mocha palette) + **Flexoki** (light). No visible borders — use tonal depth and glassmorphism.
 
 Tooltips are unified: every hover label uses the shared `Tooltip` (`@/components/Tooltip`; contract in `docs/design/UNIFIED.md` §5.6). Flag native `title=` attributes on DOM elements and new hand-rolled floating surfaces — `@floating-ui/react` belongs only in `src/components/`.
 
 **For complete design specifications**, read:
 
 - `docs/design/UNIFIED.md` — **authoritative, code-grounded UI SSoT** (3-zone shell + two-plane surfaces, agent-state contract, component contracts)
-- `docs/design/DESIGN.md` — design-system foundation (Obsidian Lens philosophy, typography, do/don'ts)
-- `src/theme/themes/*.ts` — runtime token values (obsidian-lens dark + flexoki light)
-- `docs/design/archive/` — historical handoffs / Stitch mockups / prototypes (reference only; UNIFIED wins)
+- `docs/design/DESIGN.md` — design-system foundation (The Lens philosophy, typography, do/don'ts)
+- `src/theme/themes/*.ts` — runtime token values (Catppuccin dark [`obsidian-lens.ts`] + Flexoki light [`flexoki.ts`])
+- `docs/design/archive/` — historical handoffs / first-draft Stitch mockups / prototypes (reference only; UNIFIED wins)
 
 ## Lifeline Integration
 

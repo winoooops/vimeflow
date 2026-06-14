@@ -3,14 +3,15 @@
 > **Authoritative & code-grounded.** This spec is derived from the shipped
 > frontend on `main` (verified against `src/` as of #442/#443). It is the single
 > source of truth for Vimeflow UI. Superseded handoffs, migration briefs, and
-> Google Stitch mockups now live in [`archive/`](archive/) — reference only,
-> never derive new work from them. When this file conflicts with anything in
-> `archive/`, **this file wins**; when this file is silent on an exact value, the
-> code in `src/` and the runtime tokens in `src/theme/themes/*.ts` are the truth.
+> first-draft Google Stitch mockups now live in [`archive/`](archive/) —
+> reference only, never derive new work from them. When this file conflicts with
+> anything in `archive/`, **this file wins**; when this file is silent on an exact
+> value, the code in `src/` and the runtime tokens in `src/theme/themes/*.ts` are
+> the truth.
 
-It extends the foundation in [`DESIGN.md`](DESIGN.md) (the "Obsidian Lens"
-philosophy, typography, elevation, do/don'ts — still valid) and is consumed in
-the read order below.
+It extends the foundation in [`DESIGN.md`](DESIGN.md) (The Lens philosophy,
+typography, elevation, do/don'ts — still valid) and is consumed in the read
+order below.
 
 ---
 
@@ -18,8 +19,8 @@ the read order below.
 
 1. **This file** — layout, surfaces, the agent-state contract, component contracts, interactions.
 2. **`DESIGN.md`** — design philosophy, color/surface theory, typography scale, do/don'ts.
-3. **`src/theme/themes/*.ts`** — the runtime token SSoT: `obsidian-lens` (dark) + `flexoki` (light). `tokens.css` / `tokens.ts` are kept only for the non-color scales (type/radius/motion/dimensions) and the `SessionState` / `stateToken` / `contextSmiley()` contract — **not** color values.
-4. **`archive/`** — historical Stitch screens + prototypes, visual reference only. This file always wins.
+3. **`src/theme/themes/*.ts`** — the runtime token SSoT: **Catppuccin** (dark, `obsidian-lens.ts`) + **Flexoki** (light, `flexoki.ts`). `tokens.css` / `tokens.ts` are kept only for the non-color scales (type/radius/motion/dimensions) and the `SessionState` / `stateToken` / `contextSmiley()` contract — **not** color values.
+4. **`archive/`** — first-draft Stitch screens + prototypes, visual reference only. This file always wins.
 
 ---
 
@@ -237,9 +238,9 @@ If more density is needed, tighten _content_ (abbreviate, collapse), not the tok
 
 ## 9. Tokens & theming
 
-The token system is **multi-theme at runtime** (`src/theme/`): TypeScript `ThemeDefinition`s (`ui` / `effects` / `shadows` / `syntax` / `terminal` / `agents`) applied as `--color-*` / `--shadow-*` CSS variables on `documentElement`. Two themes ship: **`obsidian-lens`** (dark, Catppuccin Mocha) and **`flexoki`** (light), both exposing identical token keys so `bg-surface` etc. resolve per active theme. `themeService.apply(id)` writes the vars, sets `data-theme` + `colorScheme`, persists to `localStorage`, and notifies subscribers (xterm re-themes via `initTerminalThemeBridge`, since it renders to canvas).
+The token system is **multi-theme at runtime** (`src/theme/`): TypeScript `ThemeDefinition`s (`ui` / `effects` / `shadows` / `syntax` / `terminal` / `agents`) applied as `--color-*` / `--shadow-*` CSS variables on `documentElement`. Two themes ship under the design-system name **The Lens**: **Catppuccin** (dark, default — file/id `obsidian-lens`, on the Catppuccin Mocha palette) and **Flexoki** (light — file/id `flexoki`), both exposing identical token keys so `bg-surface` etc. resolve per active theme. The dark theme's file/id keeps the legacy `obsidian-lens` slug; its display `label` is `Catppuccin`. `themeService.apply(id)` writes the vars, sets `data-theme` + `colorScheme`, persists to `localStorage`, and notifies subscribers (xterm re-themes via `initTerminalThemeBridge`, since it renders to canvas).
 
-- **The runtime SSoT is `src/theme/themes/*.ts`** — not the dark-only tables in `DESIGN.md` / `tokens.css`. `theme.css` mirrors the obsidian-lens defaults (kept in sync by `themeCss.test.ts`; regenerate via `scripts/generate-theme-css.ts`).
+- **The runtime SSoT is `src/theme/themes/*.ts`** — not the dark-only tables in `DESIGN.md` / `tokens.css`. `theme.css` mirrors the Catppuccin (`obsidian-lens`) defaults (kept in sync by `themeCss.test.ts`; regenerate via `scripts/generate-theme-css.ts`).
 - `tokens.ts` / `tokens.css` remain for: the `SessionState` union + `stateToken` map + `contextSmiley()` breakpoints, and the non-color scales (type, radius `xl/lg/md/sm/full`, motion `ease-pane` + durations, layout dims). Treat their color tables as a historical snapshot.
 
 ---

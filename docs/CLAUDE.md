@@ -4,9 +4,7 @@
 
 ### `design/`
 
-Single source of truth for all frontend design. Start at `design/UNIFIED.md` (authoritative, code-grounded), with `design/DESIGN.md` as the foundation and `src/theme/themes/*.ts` for runtime token values. Historical handoffs/mockups live in `design/archive/` (reference only). See `design/CLAUDE.md` for the full guide.
-
-Additional design material: https://aistudio.google.com/apps/71779b0a-a865-421d-9e16-8d224a1a26a8?showPreview=true&showAssistant=true
+Single source of truth for all frontend design. Start at `design/UNIFIED.md` (authoritative, code-grounded), with `design/DESIGN.md` as the foundation and `src/theme/themes/*.ts` for runtime token values. Historical handoffs/mockups — including the first-draft Google Stitch screens — live in `design/archive/` (reference only). See `design/CLAUDE.md` for the full guide.
 
 ### `superpowers/specs/`
 
