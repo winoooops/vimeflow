@@ -324,6 +324,82 @@ Rules:
 - Pass `middleware={{ ancestorScroll: false }}` for confirm dialogs that should dismiss only on outside-press or Escape, not on scroll.
 - Consumer owns the body layout; the primitive supplies the glass chrome and focus management only.
 
+### 5.10 `Button`
+
+The text/primary foundation. Lives at `src/components/Button.tsx`; import via the alias: `import { Button } from '@/components/Button'`.
+
+```ts
+interface ButtonProps
+  extends Pick<ButtonVariantProps, 'variant' | 'size'>,
+    Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'className'> {
+  leadingIcon?: string // optional Material Symbol ligature
+  className?: string // layout/positioning only
+  children: ReactNode // the label
+  ref?: React.Ref<HTMLButtonElement>
+}
+```
+
+Rules:
+
+- Import via `@/components/Button`; never import from `src/components/base/**` directly (`base/` is package-private).
+- Variant styling is a single `tailwind-variants` `tv()` definition in the package-private `base/button` substrate (`buttonVariants` + `BaseButton`); the five public variants are `ghost | default | toolbar | primary | danger`, plus `size` and `shape`. Prop types fall out of `VariantProps`, `Pick`ed to `variant`/`size` — `shape` is fixed per primitive (`pill` here), never a consumer prop.
+- `variant` defaults to `'default'`, `size` to `'md'`; use `variant="primary"` for the accent gradient/shadow CTA and `variant="danger"` for destructive actions.
+- Renders `BaseButton` (`shape="pill"`) with an optional leading icon span (`material-symbols-outlined`, `aria-hidden`) and `children` as the label.
+- `className` is for layout/positioning only — never restyle the variant tokens per call site.
+
+### 5.11 `IconButton`
+
+Icon-only. Required `label` is both the accessible name and the Tooltip text. Lives at `src/components/IconButton.tsx`; import via the alias: `import { IconButton } from '@/components/IconButton'`.
+
+```ts
+interface IconButtonProps
+  extends Pick<ButtonVariantProps, 'variant' | 'size'>,
+    Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'className' | 'aria-label'> {
+  icon: string // Material Symbol ligature
+  label: string // REQUIRED — sets aria-label AND the Tooltip content
+  pressed?: boolean // aria-pressed toggle state (standalone toggles / Popover anchors)
+  shortcut?: ShortcutInput // optional Zed-style key chip in the Tooltip
+  tooltipPlacement?: Placement // default 'bottom'
+  showTooltip?: boolean // default true; off when the trigger already has a disclosure affordance
+  className?: string // layout/positioning only
+  ref?: React.Ref<HTMLButtonElement>
+}
+```
+
+Rules:
+
+- Import via `@/components/IconButton`; never import from `src/components/base/**` directly (`base/` is package-private).
+- `label` is **required** — it is the accessible name (`aria-label`) and the Tooltip content. An icon-only `<button>` must always have an accessible name; `showTooltip={false}` suppresses only the hover affordance, never the `aria-label`.
+- `variant` defaults to `'ghost'`; use `variant="danger"` for destructive icon actions.
+- Active state is **attribute-driven**: pass `pressed` for standalone toggles / `Popover` anchors (it sets `aria-pressed`); as a `Menu`/`Dropdown` trigger the open tint comes from the injected `aria-expanded` (no `pressed` prop). `BaseButton` keys both `aria-pressed:` and `aria-expanded:` variants off the same tint.
+- Icon geometry is square with `rounded-chip` radius. `BrowserToolbar` nav (`rounded-lg`) and `PriorityPlus` (`rounded-full` circle) are documented `className` radius exceptions.
+- `ref` + `...rest` forward to the `<button>`, so it composes as a `Menu`/`Dropdown` trigger or `Popover` anchor — `Tooltip` merges the injected ref/handlers (`useMergeRefs` + `cloneElement`). `Placement` / `ShortcutInput` come from the existing re-export points (`@/components/base/floating/glassSurface` / `../lib/formatShortcut`).
+
+### 5.12 `ToolbarButton`
+
+Icon + visible label pill — the diff-toolbar trigger shape. Lives at `src/components/ToolbarButton.tsx`; import via the alias: `import { ToolbarButton } from '@/components/ToolbarButton'`.
+
+```ts
+interface ToolbarButtonProps
+  extends Pick<ButtonVariantProps, 'variant' | 'size'>,
+    Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'className'> {
+  label: string // visible text
+  icon?: string // optional leading Material Symbol
+  trailingIcon?: string // optional trailing symbol (e.g. 'expand_more' caret)
+  pressed?: boolean // aria-pressed; for Menu triggers the open tint comes from injected aria-expanded
+  className?: string // layout/positioning only
+  ref?: React.Ref<HTMLButtonElement>
+}
+```
+
+Rules:
+
+- Import via `@/components/ToolbarButton`; never import from `src/components/base/**` directly (`base/` is package-private).
+- `variant` defaults to `'toolbar'`; `shape` is fixed `pill`.
+- Renders `BaseButton` with a leading icon (if any), the visible label, and an optional trailing caret. Forwards `ref` + `...rest`, so it serves as a `Menu` `trigger` (open tint via injected `aria-expanded`) or a `Popover` anchor (`pressed={open}`, consumer owns `open`) — active state is attribute-driven, same as `IconButton`.
+- `className` is for layout/positioning only.
+- **Out of scope (VIM-125):** grouped controls — tab strips, segmented controls, `Toggle` — and the bespoke `SidebarToggle` SVG glyph are not migrated to this family; they keep their `vimeflow/no-raw-icon-button` disables until that follow-up.
+
 ---
 
 ## 6. Interactions & keyboard shortcuts
