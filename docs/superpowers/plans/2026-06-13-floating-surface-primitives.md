@@ -395,9 +395,11 @@ describe('Dropdown', () => {
 - [ ] **Step 2:** Keep its existing test file green; update only DOM-structure assertions the rewrite changes (preserve behaviour assertions). Run: `npx vitest run src/features/diff/components/toolbar`.
 - [ ] **Step 3:** `npm run lint` green. **Step 4: Commit** `refactor(diff): ViewSettings on shared Menu (ratchet 5->4)`.
 
-### Task 13: Migrate `PriorityPlus` → `Menu` (ratchet 4 → 3)
+### Task 13: Migrate `PriorityPlus` → `Popover` (ratchet 4 → 3)
 
-- [ ] **Step 1:** Replace the overflow popover with a `Menu` of `Menu.Item`s. **Preserve dismiss-on-scroll** (spec §7): read PriorityPlus's manual window-scroll listener — if it is equivalent to `ancestorScroll` (the overflow menu's scroll ancestor is the document), use `Menu`'s default and delete the manual listener (a simplification, behaviour preserved); if it genuinely differs, pass `middleware={{ ancestorScroll: false }}` and keep a local scroll effect. Remove its floating-ui disable.
+Note: `PriorityPlus` is classified as `Popover` (not `Menu`) because its overflow tray holds arbitrary stateful controls, not a flat item list. See spec §7 migration map.
+
+- [ ] **Step 1:** Replace the overflow tray with a `Popover` anchored to the overflow trigger. **Preserve dismiss-on-scroll** (spec §7): read PriorityPlus's manual window-scroll listener — if it is equivalent to `ancestorScroll`, use `Popover`'s default and delete the manual listener; if it genuinely differs, pass `middleware={{ ancestorScroll: false }}` and keep a local scroll effect. Remove its floating-ui disable.
 - [ ] **Step 2–4:** Tests green (`npx vitest run src/features/diff/components/toolbar`); lint green; commit.
 
 ### Task 14: Migrate `TerminalContextMenu` → `Menu.Context` (ratchet 3 → 2)

@@ -69,7 +69,7 @@ Commit messages for Codex-assisted changes must include the trailer `Co-Authored
 
 Tooltips are unified: every hover label uses the shared `Tooltip` (`@/components/Tooltip`; contract in `docs/design/UNIFIED.md` §5.6). Flag native `title=` attributes on DOM elements and new hand-rolled floating surfaces.
 
-Floating surfaces have public primitives: `Dropdown` (`@/components/Dropdown`; §5.7), `Menu`, and `Popover` are the canonical floating surfaces — features import these, never `@floating-ui/react` directly. `@floating-ui/react` belongs only in `src/components/base/floating/**` (the package-private substrate) and the grandfathered `src/components/Tooltip.tsx`. This boundary is enforced by ESLint rings 1–2 in `eslint.config.js`; flag any new `@floating-ui/react` import outside those two paths as a CRITICAL finding.
+Floating surfaces are complete — the `@floating-ui/react` ratchet is CLOSED (0 feature consumers). The canonical public primitives are `Dropdown` (`@/components/Dropdown`; §5.7), `Menu` (`@/components/Menu`; §5.8; click-anchored or cursor-anchored via `Menu.Context`), and `Popover` (`@/components/Popover`; §5.9; arbitrary dialog card). Features compose these three; `@floating-ui/react` appears ONLY in `src/components/base/floating/**` (the package-private substrate) and the grandfathered `src/components/Tooltip.tsx`. This boundary is enforced by ESLint rings 1–2 in `eslint.config.js`; flag any new `@floating-ui/react` import outside those two paths as a CRITICAL finding. Native `title=` on DOM elements and hand-rolled floating surfaces are banned.
 
 **For complete design specifications**, read:
 
