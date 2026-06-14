@@ -324,7 +324,7 @@ Rules:
 - Import via `@/components/Popover`; never import from `src/components/base/**` directly (`base/` is package-private).
 - Built on the package-private `base/floating` substrate (`useFloatingSurface` + `SurfacePanel`). Do not hand-roll a dialog card.
 - `role="dialog"` — `aria-label` is required and must be meaningful (it is the dialog's accessible name).
-- Focus is modal (`initialFocus: -1`): focus lands on the container on open; the consumer's body content is navigable by tab.
+- Focus is modal (`initialFocus: 0`): focus lands on the first tabbable child on open and `modal: true` engages the focus trap; the consumer's body content is navigable by tab.
 - Pass `middleware={{ ancestorScroll: false }}` for confirm dialogs that should dismiss only on outside-press or Escape, not on scroll.
 - Consumer owns the body layout; the primitive supplies the glass chrome and focus management only.
 
