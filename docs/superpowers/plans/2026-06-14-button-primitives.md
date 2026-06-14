@@ -6,7 +6,7 @@
 
 **Architecture:** `base/button/{buttonVariants,BaseButton}` (package-private, fenced by Ring 2) is the single styling + element-contract source; public `Button`/`IconButton`/`ToolbarButton` compose it. Mirrors VIM-119's `base/floating` → `Dropdown`/`Menu`/`Popover`. Spec: `docs/superpowers/specs/2026-06-14-button-primitives-design.md` (codex-clean) — it is the contract; this plan is the steps.
 
-**Tech stack:** React 19 (ref-as-prop, no `forwardRef`), TypeScript, Tailwind v4 (semantic tokens; `aria-pressed:`/`aria-expanded:` variants are first-use in this repo — verify they render), ESLint 9 flat config, Vitest 3 + Testing Library 16.
+**Tech stack:** React 19 (ref-as-prop, no `forwardRef`), TypeScript, Tailwind v4, `tailwind-variants` (`tv()` + `VariantProps`, bundling `tailwind-merge` v3; semantic tokens; `aria-pressed:`/`aria-expanded:` variants are first-use in this repo — verify they render), ESLint 9 flat config, Vitest 3 + Testing Library 16.
 
 **Stacked PRs (integration branch `feat/button-primitives` → `main`):** PR1 = T1–T8 (substrate + icon-only), PR2 = T9–T11 (toolbar pills), PR3 = T12–T15 (close-out). Child PRs carry **no** `VIM-124` magic word; only the final → main PR `Closes VIM-124`.
 
@@ -17,7 +17,7 @@
 ## File structure
 
 **New (PR1):**
-- `src/components/base/button/buttonVariants.ts` (+ `.test.ts`) — variant/size/tone/shape → className.
+- `src/components/base/button/buttonVariants.ts` (+ `.test.ts`) — `tv()` def: variant/size/shape → className; exports `ButtonVariantProps`.
 - `src/components/base/button/BaseButton.tsx` (+ `.test.tsx`) — headless `<button>`.
 - `src/components/Button.tsx` (+ `.test.tsx`) — text/primary; re-exports the variant types.
 - `src/components/IconButton.tsx` (+ `.test.tsx`) — icon-only.
@@ -57,9 +57,15 @@ git add docs/superpowers/plans/2026-06-14-button-primitives-inventory.md
 git commit -m "docs(button-primitives): offender inventory and migration classification"
 ```
 
-## Task 2: `buttonVariants`
+## Task 2: `buttonVariants` (tv) + install deps
 
-**Files:** Create `src/components/base/button/buttonVariants.ts`, `src/components/base/button/buttonVariants.test.ts`.
+**Files:** Create `src/components/base/button/buttonVariants.ts`, `buttonVariants.test.ts`; modify `package.json`.
+
+- [ ] **Step 0: Install the deps** (`tailwind-merge` is a peer of `tailwind-variants`, so install both as runtime deps; verified to support Tailwind v4 + the repo's custom tokens):
+
+```bash
+npm install tailwind-variants tailwind-merge   # → tailwind-variants@^3 · tailwind-merge@^3
+```
 
 - [ ] **Step 1: Write the failing test.**
 
@@ -74,99 +80,83 @@ test('defaults to a md pill default variant', () => {
   expect(cls).toContain('focus-visible:ring-1')
 })
 
-test('ghost icon sm yields the square icon geometry and ghost tokens', () => {
+test('ghost icon sm: square geometry, ghost tokens, rounded-chip', () => {
   const cls = buttonVariants({ variant: 'ghost', size: 'sm', shape: 'icon' })
-  expect(cls).toContain('h-[22px] w-[22px]')
+  expect(cls).toContain('h-[22px]')
+  expect(cls).toContain('w-[22px]')
   expect(cls).toContain('bg-transparent')
   expect(cls).toContain('hover:bg-surface-container-high')
+  expect(cls).toContain('rounded-chip')
 })
 
-test('active state is keyed off aria-pressed and aria-expanded', () => {
+test('active state is keyed off aria-pressed AND aria-expanded', () => {
   const cls = buttonVariants({ variant: 'ghost' })
   expect(cls).toContain('aria-pressed:bg-primary/10')
   expect(cls).toContain('aria-expanded:bg-primary/10')
 })
 
-test('danger tone is a self-contained error skin (no competing base text)', () => {
-  const cls = buttonVariants({ tone: 'danger' })
+test('danger is a self-contained skin (no ghost/default base bleed)', () => {
+  const cls = buttonVariants({ variant: 'danger', shape: 'icon' })
   expect(cls).toContain('text-error')
-  expect(cls).not.toContain('text-on-surface')
+  expect(cls).not.toContain('text-on-surface-muted')
+})
+
+test('tailwind-merge keeps custom tokens: font-size AND color survive', () => {
+  const cls = buttonVariants({ variant: 'ghost', size: 'sm', shape: 'icon' })
+  expect(cls).toContain('text-[13px]') // font-size
+  expect(cls).toContain('text-on-surface-muted') // color
+})
+
+test('class passthrough merges layout', () => {
+  const cls = buttonVariants({ variant: 'ghost', shape: 'icon', class: 'mx-2' })
+  expect(cls).toContain('mx-2')
+  expect(cls).toContain('text-on-surface-muted')
 })
 ```
 
 - [ ] **Step 2: Run — expect FAIL** (`npx vitest run src/components/base/button/buttonVariants.test.ts`).
 
-- [ ] **Step 3: Implement.** (Tokens only — no hex/rgb; passes `vimeflow/no-hardcoded-colors`.)
+- [ ] **Step 3: Implement** as a `tailwind-variants` `tv()` definition (tokens only — passes `vimeflow/no-hardcoded-colors`; geometry via `compoundVariants`; `danger` is the 5th variant; types fall out of `VariantProps`):
 
 ```ts
-export type ButtonVariant = 'default' | 'ghost' | 'toolbar' | 'primary'
+import { tv, type VariantProps } from 'tailwind-variants'
 
-export type ButtonSize = 'sm' | 'md' | 'lg'
-
-export type ButtonTone = 'default' | 'danger'
-
-export type ButtonShape = 'icon' | 'pill'
-
-export interface ButtonVariantOptions {
-  variant?: ButtonVariant
-  size?: ButtonSize
-  tone?: ButtonTone
-  shape?: ButtonShape
-}
-
-const BASE =
-  'inline-flex shrink-0 items-center justify-center transition-colors ' +
-  'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary ' +
-  'disabled:opacity-40 disabled:pointer-events-none'
-
-const VARIANT: Record<ButtonVariant, string> = {
-  ghost:
-    'bg-transparent text-on-surface-muted hover:bg-surface-container-high hover:text-on-surface ' +
-    'aria-pressed:bg-primary/10 aria-pressed:text-primary aria-expanded:bg-primary/10 aria-expanded:text-primary',
-  default:
-    'bg-surface-container-high text-on-surface hover:bg-surface-container-highest ' +
-    'aria-pressed:bg-primary/12 aria-expanded:bg-primary/12',
-  toolbar:
-    'bg-surface-container-high/60 text-on-surface-variant hover:bg-surface-container-highest/80 hover:text-on-surface ' +
-    'aria-pressed:bg-surface-container-highest/80 aria-expanded:bg-surface-container-highest/80 aria-expanded:text-on-surface',
-  primary:
-    'border border-primary/25 bg-[linear-gradient(180deg,var(--color-primary-dim)_0%,var(--color-primary-deep)_100%)] ' +
-    'text-surface-container-lowest ' +
-    'shadow-[0_8px_18px_color-mix(in_srgb,var(--color-primary-deep)_20%,transparent),inset_0_1px_0_var(--color-wash-soft)] ' +
-    'hover:brightness-110 active:translate-y-px',
-}
-
-const DANGER =
-  'bg-transparent text-error hover:bg-error/10 hover:text-error ' +
-  'aria-pressed:bg-error/15 aria-expanded:bg-error/15'
-
-const SHAPE_SIZE: Record<ButtonShape, Record<ButtonSize, string>> = {
-  icon: {
-    sm: 'h-[22px] w-[22px] text-[13px] rounded-md',
-    md: 'h-7 w-7 text-[17px] rounded-md',
-    lg: 'h-8 w-8 text-[19px] rounded-md',
+export const buttonVariants = tv({
+  base: 'inline-flex shrink-0 items-center justify-center transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary disabled:opacity-40 disabled:pointer-events-none',
+  variants: {
+    variant: {
+      ghost:
+        'bg-transparent text-on-surface-muted hover:bg-surface-container-high hover:text-on-surface aria-pressed:bg-primary/10 aria-pressed:text-primary aria-expanded:bg-primary/10 aria-expanded:text-primary',
+      default:
+        'bg-surface-container-high text-on-surface hover:bg-surface-container-highest aria-pressed:bg-primary/12 aria-expanded:bg-primary/12',
+      toolbar:
+        'bg-surface-container-high/60 text-on-surface-variant hover:bg-surface-container-highest/80 hover:text-on-surface aria-pressed:bg-surface-container-highest/80 aria-expanded:bg-surface-container-highest/80 aria-expanded:text-on-surface',
+      primary:
+        'border border-primary/25 bg-[linear-gradient(180deg,var(--color-primary-dim)_0%,var(--color-primary-deep)_100%)] text-surface-container-lowest shadow-[0_8px_18px_color-mix(in_srgb,var(--color-primary-deep)_20%,transparent),inset_0_1px_0_var(--color-wash-soft)] hover:brightness-110 active:translate-y-px',
+      danger:
+        'bg-transparent text-error hover:bg-error/10 hover:text-error aria-pressed:bg-error/15 aria-expanded:bg-error/15',
+    },
+    size: { sm: '', md: '', lg: '' },
+    shape: { icon: '', pill: '' },
   },
-  pill: {
-    sm: 'h-[26px] px-2 text-xs rounded-md gap-1.5',
-    md: 'h-[30px] px-2.5 text-[13px] rounded-md gap-1.5',
-    lg: 'h-9 px-3 text-[15px] rounded-lg gap-2',
-  },
-}
+  compoundVariants: [
+    { shape: 'icon', size: 'sm', class: 'h-[22px] w-[22px] text-[13px] rounded-chip' },
+    { shape: 'icon', size: 'md', class: 'h-7 w-7 text-[17px] rounded-chip' },
+    { shape: 'icon', size: 'lg', class: 'h-8 w-8 text-[19px] rounded-chip' },
+    { shape: 'pill', size: 'sm', class: 'h-[26px] px-2 text-xs rounded-md gap-1.5' },
+    { shape: 'pill', size: 'md', class: 'h-[30px] px-2.5 text-[13px] rounded-md gap-1.5' },
+    { shape: 'pill', size: 'lg', class: 'h-9 px-3 text-[15px] rounded-lg gap-2' },
+  ],
+  defaultVariants: { variant: 'default', size: 'md', shape: 'pill' },
+})
 
-export const buttonVariants = (options?: ButtonVariantOptions): string => {
-  const { variant = 'default', size = 'md', tone = 'default', shape = 'pill' } =
-    options ?? {}
-  // danger is a self-contained skin; it replaces the variant so no competing
-  // text/bg utilities land in the same class string (Tailwind utility order
-  // in the generated CSS, not the string, decides — so never emit both).
-  const skin = tone === 'danger' ? DANGER : VARIANT[variant]
-
-  return `${BASE} ${SHAPE_SIZE[shape][size]} ${skin}`
-}
+export type ButtonVariantProps = VariantProps<typeof buttonVariants>
 ```
 
+> `size`/`shape` variant values are empty strings — geometry is the `shape × size` `compoundVariants`. `tv()` returns a function callable as `buttonVariants({ variant, size, shape, class })`; the `class` arg is merged last by the bundled `tailwind-merge` (smoke-verified: font-size vs color survive). If a future custom token misbehaves, fall back to `tv({...}, { twMerge: false })`.
+
 - [ ] **Step 4: Run — expect PASS.**
-- [ ] **Step 5: Commit** (`feat(button-primitives): add buttonVariants substrate`).
+- [ ] **Step 5: Commit** (`feat(button-primitives): add tv() buttonVariants substrate`).
 
 ## Task 3: `BaseButton`
 
@@ -186,7 +176,8 @@ test('defaults type=button and forwards ref + className after variants', () => {
   const btn = screen.getByRole('button')
   expect(btn).toHaveAttribute('type', 'button')
   expect(ref.current).toBe(btn)
-  expect(btn.className).toMatch(/bg-transparent.*mx-2/s)
+  expect(btn.className).toContain('bg-transparent') // variant
+  expect(btn.className).toContain('mx-2') // merged class passthrough
 })
 
 test('pressed sets aria-pressed; omitted leaves it unset', () => {
@@ -209,39 +200,25 @@ test('disabled sets the attribute; an injected aria-expanded flows through ...re
 
 ```tsx
 import { type ButtonHTMLAttributes, type ReactElement, type Ref } from 'react'
-import {
-  buttonVariants,
-  type ButtonShape,
-  type ButtonSize,
-  type ButtonTone,
-  type ButtonVariant,
-} from './buttonVariants'
+import { buttonVariants, type ButtonVariantProps } from './buttonVariants'
 
-export type {
-  ButtonShape,
-  ButtonSize,
-  ButtonTone,
-  ButtonVariant,
-} from './buttonVariants'
+export type { ButtonVariantProps }
 
 export interface BaseButtonProps
-  extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'className'> {
-  variant?: ButtonVariant
-  size?: ButtonSize
-  tone?: ButtonTone
-  shape?: ButtonShape
+  extends ButtonVariantProps,
+    Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'className'> {
   pressed?: boolean
   className?: string
   ref?: Ref<HTMLButtonElement>
 }
 
+// variant/size/shape default to undefined → tv() applies its defaultVariants.
 export const BaseButton = ({
-  variant = 'default',
-  size = 'md',
-  tone = 'default',
-  shape = 'pill',
+  variant = undefined,
+  size = undefined,
+  shape = undefined,
   pressed = undefined,
-  className = '',
+  className = undefined,
   type = 'button',
   ref = undefined,
   ...rest
@@ -251,7 +228,7 @@ export const BaseButton = ({
     ref={ref}
     type={type}
     aria-pressed={pressed}
-    className={`${buttonVariants({ variant, size, tone, shape })} ${className}`.trim()}
+    className={buttonVariants({ variant, size, shape, class: className })}
   />
 )
 ```
@@ -262,25 +239,21 @@ export const BaseButton = ({
 
 **Files:** Create `src/components/Button.tsx`, `Button.test.tsx`.
 
-- [ ] **Step 1: Failing test** — renders children as label; `leadingIcon` renders an `aria-hidden` Material Symbol; keyboard Enter fires `onClick`; re-exports `ButtonVariant`/`ButtonSize`/`ButtonTone` (a type-only import in the test compiles).
+- [ ] **Step 1: Failing test** — renders children as label; `leadingIcon` renders an `aria-hidden` Material Symbol; keyboard Enter fires `onClick`; re-exports `ButtonVariantProps` (a type-only import in the test compiles).
 - [ ] **Step 2: Run — FAIL. Step 3: Implement:**
 
 ```tsx
 import { type ButtonHTMLAttributes, type ReactElement, type ReactNode } from 'react'
 import {
   BaseButton,
-  type ButtonSize,
-  type ButtonTone,
-  type ButtonVariant,
+  type ButtonVariantProps,
 } from '@/components/base/button/BaseButton'
 
-export type { ButtonVariant, ButtonSize, ButtonTone }
+export type { ButtonVariantProps }
 
 interface ButtonProps
-  extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'className'> {
-  variant?: ButtonVariant
-  size?: ButtonSize
-  tone?: ButtonTone
+  extends Pick<ButtonVariantProps, 'variant' | 'size'>,
+    Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'className'> {
   leadingIcon?: string
   className?: string
   children: ReactNode
@@ -289,9 +262,8 @@ interface ButtonProps
 export const Button = ({
   variant = 'default',
   size = 'md',
-  tone = 'default',
   leadingIcon = undefined,
-  className = '',
+  className = undefined,
   children,
   ...rest
 }: ButtonProps): ReactElement => (
@@ -299,7 +271,6 @@ export const Button = ({
     {...rest}
     variant={variant}
     size={size}
-    tone={tone}
     shape="pill"
     className={className}
   >
@@ -363,20 +334,16 @@ import { type ButtonHTMLAttributes, type ReactElement, type Ref } from 'react'
 import { Tooltip } from '@/components/Tooltip'
 import {
   BaseButton,
-  type ButtonSize,
-  type ButtonTone,
-  type ButtonVariant,
+  type ButtonVariantProps,
 } from '@/components/base/button/BaseButton'
 import { type Placement } from '@/components/base/floating/glassSurface'
 import { type ShortcutInput } from '@/lib/formatShortcut'
 
 interface IconButtonProps
-  extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'className' | 'aria-label'> {
+  extends Pick<ButtonVariantProps, 'variant' | 'size'>,
+    Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'className' | 'aria-label'> {
   icon: string
   label: string
-  variant?: ButtonVariant
-  size?: ButtonSize
-  tone?: ButtonTone
   pressed?: boolean
   shortcut?: ShortcutInput
   tooltipPlacement?: Placement
@@ -390,12 +357,11 @@ export const IconButton = ({
   label,
   variant = 'ghost',
   size = 'md',
-  tone = 'default',
   pressed = undefined,
   shortcut = undefined,
   tooltipPlacement = 'bottom',
   showTooltip = true,
-  className = '',
+  className = undefined,
   ref = undefined,
   ...rest
 }: IconButtonProps): ReactElement => {
@@ -406,7 +372,6 @@ export const IconButton = ({
       aria-label={label}
       variant={variant}
       size={size}
-      tone={tone}
       pressed={pressed}
       shape="icon"
       className={className}
@@ -580,7 +545,7 @@ const vimeflowPlugin = {
 <IconButton icon="close" label="close pane" size="sm" onClick={...} tooltipPlacement="bottom" />
 ```
 
-- [ ] **Per-site notes:** burner button → `pressed={burnerActive}` + `className` for the `agent-shell-accent` tint; `BrowserToolbar` nav → keep `disabled`, accent hover via `className` (`agent-browser-accent` token); `ReviewCommentRow` delete → `tone="danger"`; `Card` kebab → it is a `Menu` trigger, so pass `<IconButton …/>` as `Menu`'s `trigger` (open tint via injected `aria-expanded`, `showTooltip` per the existing affordance); `PriorityPlus` → icon-only `IconButton`, `Popover` anchor (`ref` → anchor, `pressed={open}`).
+- [ ] **Per-site notes:** burner button → `pressed={burnerActive}` + `className` for the `agent-shell-accent` tint; `BrowserToolbar` nav → keep `disabled`, accent hover via `className` (`agent-browser-accent` token); `ReviewCommentRow` delete → `variant="danger"`; `Card` kebab → it is a `Menu` trigger, so pass `<IconButton …/>` as `Menu`'s `trigger` (open tint via injected `aria-expanded`, `showTooltip` per the existing affordance); `PriorityPlus` → icon-only `IconButton`, `Popover` anchor (`ref` → anchor, `pressed={open}`).
 - [ ] For each: update the sibling test to query by role/name (not old class strings); delete the `eslint-disable`; run that file's tests; **render in the browser** to confirm the 1–2px size convergence and the `aria-pressed`/`aria-expanded` tints actually paint (Tailwind v4 first-use of those variants — jsdom can't verify). Commit per file (`refactor(button-primitives): migrate <site> to IconButton`).
 
 ## Task 8: PR1 gate + open PR1
@@ -604,19 +569,15 @@ const vimeflowPlugin = {
 import { type ButtonHTMLAttributes, type ReactElement, type Ref } from 'react'
 import {
   BaseButton,
-  type ButtonSize,
-  type ButtonTone,
-  type ButtonVariant,
+  type ButtonVariantProps,
 } from '@/components/base/button/BaseButton'
 
 interface ToolbarButtonProps
-  extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'className'> {
+  extends Pick<ButtonVariantProps, 'variant' | 'size'>,
+    Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'className'> {
   label: string
   icon?: string
   trailingIcon?: string
-  variant?: ButtonVariant
-  size?: ButtonSize
-  tone?: ButtonTone
   pressed?: boolean
   className?: string
   ref?: Ref<HTMLButtonElement>
@@ -628,9 +589,8 @@ export const ToolbarButton = ({
   trailingIcon = undefined,
   variant = 'toolbar',
   size = 'md',
-  tone = 'default',
   pressed = undefined,
-  className = '',
+  className = undefined,
   ref = undefined,
   ...rest
 }: ToolbarButtonProps): ReactElement => (
@@ -639,7 +599,6 @@ export const ToolbarButton = ({
     ref={ref}
     variant={variant}
     size={size}
-    tone={tone}
     pressed={pressed}
     shape="pill"
     className={className}
@@ -709,6 +668,6 @@ export const ToolbarButton = ({
 ## Self-review checklist (run before handing to execution)
 
 - **Spec coverage:** every spec §4 contract → a task (T2–T5, T9); the guardrail §5 → T6; migrations §7 → T7/T10/T12; rings §6 → T6/T13; docs §9 → T14. ✓
-- **Type consistency:** `ButtonVariant`/`ButtonSize`/`ButtonTone`/`ButtonShape` defined in T2, consumed unchanged in T3–T5/T9; re-export chain `base/button → @/components/Button`. ✓
+- **Type consistency:** `ButtonVariantProps` (from `VariantProps`) defined in T2, `Pick`ed for `variant`/`size` in the public components (T4/T5/T9); re-export chain `buttonVariants → BaseButton → @/components/Button`. ✓
 - **No placeholders:** new-file code is complete; migrations give a worked example + per-site notes + the inventory contract.
 - **Risk flags carried from the spec:** Tailwind-v4 first-use of `aria-pressed:`/`aria-expanded:` → browser-verify (T7/T10); size convergence → browser-verify; `primary` single consumer → revisit in T10.

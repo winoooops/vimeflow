@@ -5,7 +5,7 @@
 
 **Goal:** Replace the hand-rolled icon/toolbar buttons (10 distinct stylings, no shared primitive) with one button family — a package-private `base/button` substrate plus three public primitives — so button chrome, sizing, focus, disabled, and ARIA are defined once and composed everywhere.
 
-**Architecture:** A hidden `src/components/base/button` substrate (`buttonVariants` + `BaseButton`) owns the element contract and the size × variant → className mapping; public `Button` / `IconButton` / `ToolbarButton` compose it. This mirrors how VIM-119's `base/floating` substrate (`useFloatingSurface` + `SurfacePanel`) underlies the public `Dropdown` / `Menu` / `Popover`. The `base/**` package-private boundary (ESLint Ring 2) already fences the substrate; a new custom rule (`vimeflow/no-raw-icon-button`) ratchets out hand-rolled icon-only buttons.
+**Architecture:** A hidden `src/components/base/button` substrate (`buttonVariants` + `BaseButton`) owns the element contract and the variant × size × shape → className mapping (a `tailwind-variants` `tv()` definition); public `Button` / `IconButton` / `ToolbarButton` compose it. This mirrors how VIM-119's `base/floating` substrate (`useFloatingSurface` + `SurfacePanel`) underlies the public `Dropdown` / `Menu` / `Popover`. The `base/**` package-private boundary (ESLint Ring 2) already fences the substrate; a new custom rule (`vimeflow/no-raw-icon-button`) ratchets out hand-rolled icon-only buttons.
 
 **Tech stack:** React + TypeScript, Tailwind (semantic theme tokens), Material Symbols, Vitest + Testing Library, ESLint flat config (custom rule).
 
@@ -36,7 +36,7 @@ Every theme/a11y/motion change today means editing N files. One shared family co
 
 **Goals**
 
-1. A package-private `base/button` substrate that owns the `<button>` element contract (type, focus-visible, disabled, ref-forward, className merge) and the canonical size × variant × tone → className map.
+1. A package-private `base/button` substrate that owns the `<button>` element contract (type, focus-visible, disabled, ref-forward, className merge) and the canonical variant × size × shape → className map (a `tailwind-variants` `tv()` definition).
 2. Three public primitives: `Button` (text / primary foundation), `IconButton` (icon-only, required accessible name), `ToolbarButton` (icon + label pill).
 3. Migrate every **standalone icon-only** button and **toolbar pill** in scope to the new family.
 4. A guardrail — `vimeflow/no-raw-icon-button` — that fails lint on a raw icon-only Material Symbols `<button>` (the glyph class on the button itself or on its single child icon span), outside `src/components/`, ratcheted down per the offender inventory.
@@ -69,12 +69,12 @@ Unlike `@floating-ui` (a third-party engine that *must* stay hidden), a plain `B
 
 ```
 src/components/base/button/         ← package-private (Ring 2 already fences base/**)
-  buttonVariants.ts                 ← size × variant × tone × shape × state → className; the single styling source
+  buttonVariants.ts                 ← tv() · variant × size × shape → className; the single styling source
   buttonVariants.test.ts
   BaseButton.tsx                    ← headless <button>: type, focus-visible, disabled, ref-forward, variants, className merge
   BaseButton.test.tsx
 src/components/                      ← public
-  Button.tsx        Button.test.tsx         ← text / primary foundation; re-exports ButtonVariant/ButtonSize/ButtonTone
+  Button.tsx        Button.test.tsx         ← text / primary foundation; re-exports ButtonVariantProps
   IconButton.tsx    IconButton.test.tsx     ← icon-only; required label → aria-label + Tooltip
   ToolbarButton.tsx ToolbarButton.test.tsx  ← icon + label pill
 eslint-rules/
@@ -88,7 +88,7 @@ eslint-rules/
 - `type="button"` by default (prevents accidental form submit — a real footgun).
 - `focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary` (one focus contract).
 - `disabled` semantics + the disabled visual (`disabled:opacity-40 disabled:pointer-events-none`).
-- Applying `buttonVariants(...)` and merging a consumer `className` **after** it (layout/positioning only).
+- Calling `buttonVariants({ …, class: className })` — `tv()` merges the consumer `className` last via tailwind-merge (layout/positioning only).
 - Forwarding `ref` and `...rest` to the underlying `<button>` so the primitives can serve as `Menu` / `Popover` / `Tooltip` triggers.
 
 That is the same justification as `SurfacePanel`: one place owns the element contract so the public components only configure intent.
@@ -97,23 +97,29 @@ That is the same justification as `SurfacePanel`: one place owns the element con
 
 ### 4.1 `buttonVariants` (substrate)
 
-The single source for button className. A pure function — no React — so it is trivially testable and reused by all three primitives. Its public types are re-exported from `@/components/Button` (consumers never import from `base/`, mirroring how `DropdownOption` is re-exported from `@/components/Dropdown`).
+A [`tailwind-variants`](https://www.tailwind-variants.org) `tv()` definition — the single declarative styling source, reused by all three primitives. `tailwind-variants` (peer `tailwind-merge >= 3`, the Tailwind-v4 line) gives the `variant` / `size` / `shape` axes, `compoundVariants` for shape×size geometry, conflict-free `class` passthrough, and — via `VariantProps` — the prop types for free. Verified against the repo's custom tokens on TW v4 (see §4.1 note + §11).
 
 ```ts
-export type ButtonVariant = 'default' | 'ghost' | 'toolbar' | 'primary'
-export type ButtonSize = 'sm' | 'md' | 'lg'
-export type ButtonTone = 'default' | 'danger'
-export type ButtonShape = 'icon' | 'pill' // square icon-only vs horizontally-padded label
+import { tv, type VariantProps } from 'tailwind-variants'
 
-export interface ButtonVariantOptions {
-  variant?: ButtonVariant // default 'default'
-  size?: ButtonSize // default 'md'
-  tone?: ButtonTone // default 'default'; 'danger' recolors text/hover to error tokens
-  shape?: ButtonShape // default 'pill'
-}
+export const buttonVariants = tv({
+  base: 'inline-flex shrink-0 items-center justify-center transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary disabled:opacity-40 disabled:pointer-events-none',
+  variants: {
+    variant: { ghost, default, toolbar, primary, danger }, // token strings in the table below
+    size: { sm: '', md: '', lg: '' }, // geometry comes from compoundVariants (shape × size)
+    shape: { icon: '', pill: '' },
+  },
+  compoundVariants: [
+    /* shape × size → h / w / px / text / radius / gap — table below */
+  ],
+  defaultVariants: { variant: 'default', size: 'md', shape: 'pill' },
+})
 
-export const buttonVariants = (options?: ButtonVariantOptions): string
+export type ButtonVariantProps = VariantProps<typeof buttonVariants>
+// → { variant?: 'ghost'|'default'|'toolbar'|'primary'|'danger'; size?: 'sm'|'md'|'lg'; shape?: 'icon'|'pill' }
 ```
+
+`ButtonVariantProps` is re-exported from `@/components/Button` (consumers never import from `base/`, mirroring how `DropdownOption` is re-exported from `@/components/Dropdown`).
 
 **Variant → token map** (each grounded in a surveyed call site; exact px verified in-browser during migration):
 
@@ -123,8 +129,9 @@ export const buttonVariants = (options?: ButtonVariantOptions): string
 | `default` | `bg-surface-container-high text-on-surface` | `hover:bg-surface-container-highest` | `aria-pressed:bg-primary/12 aria-expanded:bg-primary/12` | neutral text buttons |
 | `toolbar` | `bg-surface-container-high/60 text-on-surface-variant` | `hover:bg-surface-container-highest/80 hover:text-on-surface` | `aria-pressed:bg-surface-container-highest/80 aria-expanded:bg-surface-container-highest/80 aria-expanded:text-on-surface` | diff toolbar triggers |
 | `primary` | `border border-primary/25 bg-[linear-gradient(180deg,var(--color-primary-dim)_0%,var(--color-primary-deep)_100%)] text-surface-container-lowest shadow-[0_8px_18px_color-mix(in_srgb,var(--color-primary-deep)_20%,transparent),inset_0_1px_0_var(--color-wash-soft)]` | `hover:brightness-110 active:translate-y-px` | n/a | `NewSessionButton` |
+| `danger` | `bg-transparent text-error` | `hover:bg-error/10 hover:text-error` | `aria-pressed:bg-error/15 aria-expanded:bg-error/15` | `ReviewCommentRow` delete |
 
-`tone: 'danger'` selects a self-contained destructive skin (`bg-transparent text-error hover:bg-error/10`) that **replaces** the variant surface rather than layering on it (Tailwind utility order in the generated CSS — not the class string — decides, so the variant and danger color utilities must never both be emitted) — pair it with the icon shape for destructive icon buttons (e.g. `ReviewCommentRow` delete). Feature-specific accents (the burner's `agent-shell-accent`, browser nav's `agent-browser-accent`) are **not** variants or tones — they are semantic tokens passed through `className` (allowed by `vimeflow/no-hardcoded-colors`), documented as accent exceptions.
+`danger` is a full **variant** (not a tone) — a self-contained destructive skin. `tailwind-merge` (bundled with `tailwind-variants`) makes the old class-order hazard moot: it resolves conflicting utilities deterministically rather than by string order, so a consumer `className` merges cleanly and variants never bleed (smoke-verified on TW v4: `text-[13px]` font-size and `text-on-surface-muted` color both survive). Feature-specific accents (the burner's `agent-shell-accent`, browser nav's `agent-browser-accent`) are **not** variants — they are semantic tokens passed through `className` (allowed by `vimeflow/no-hardcoded-colors`), documented as accent exceptions.
 
 **The active state is attribute-driven, not a separate render path.** A toggle sets `pressed` → `aria-pressed`. A floating-surface trigger gets `aria-expanded` injected by floating-ui's interaction props (`getReferenceProps`). `buttonVariants` styles **both** with the same active tint, so `pressed={open}` is unnecessary for `Menu` triggers (where `Menu` owns `open`) — the injected `aria-expanded` drives the tint. `Popover` anchors, where the consumer owns `open`, may also pass `pressed={open}` directly.
 
@@ -132,46 +139,42 @@ export const buttonVariants = (options?: ButtonVariantOptions): string
 
 | | `icon` (square) | `pill` (label) |
 | --- | --- | --- |
-| `sm` | `h-[22px] w-[22px] text-[13px] rounded-md` | `h-[26px] px-2 text-xs rounded-md gap-1.5` |
-| `md` | `h-7 w-7 text-[17px] rounded-md` | `h-[30px] px-2.5 text-[13px] rounded-md gap-1.5` |
-| `lg` | `h-8 w-8 text-[19px] rounded-md` | `h-9 px-3 text-[15px] rounded-lg gap-2` |
+| `sm` | `h-[22px] w-[22px] text-[13px] rounded-chip` | `h-[26px] px-2 text-xs rounded-md gap-1.5` |
+| `md` | `h-7 w-7 text-[17px] rounded-chip` | `h-[30px] px-2.5 text-[13px] rounded-md gap-1.5` |
+| `lg` | `h-8 w-8 text-[19px] rounded-chip` | `h-9 px-3 text-[15px] rounded-lg gap-2` |
 
-All shapes carry the shared base: `inline-flex shrink-0 items-center justify-center transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary disabled:opacity-40 disabled:pointer-events-none`. `rounded-md` is the canonical icon/pill radius (replacing the 6 drifting radii); `lg` pills use `rounded-lg`.
+These rows are the `compoundVariants` (geometry depends on shape **and** size; `size`/`shape` alone contribute nothing). Icon buttons use `rounded-chip` (6px) — crisper than `rounded-md` (~10px), matching the existing 4–7px icon buttons (radius confirmed visually). Pills use `rounded-md` (`rounded-lg` at `lg`). The 6 drifting sizes/radii converge here. The shared `base` (focus ring, disabled, flex centering) lives in the `tv()` `base` slot.
 
 ### 4.2 `BaseButton` (substrate)
 
 ```ts
 export interface BaseButtonProps
-  extends Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'className'> {
-  variant?: ButtonVariant
-  size?: ButtonSize
-  tone?: ButtonTone
-  shape?: ButtonShape
+  extends ButtonVariantProps,
+    Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'className'> {
   pressed?: boolean // sets aria-pressed; the active tint is keyed off the attribute
-  className?: string // layout/positioning only — merged AFTER buttonVariants
+  className?: string // layout/positioning only — passed to tv() as `class`, merged last by tailwind-merge
   ref?: React.Ref<HTMLButtonElement>
 }
 ```
 
-Renders `<button type="button" {...rest} ref={ref} aria-pressed={pressed} className={`${buttonVariants({variant,size,tone,shape})} ${className ?? ''}`} />`. `type` and any injected attribute (e.g. `aria-expanded` from a floating trigger) flow through `...rest`. Ref forwarding follows the repo's React version convention (ref-as-prop on React 19, else `forwardRef` — pinned in the plan after reading `package.json`).
+Renders `<button type="button" {...rest} ref={ref} aria-pressed={pressed} className={buttonVariants({ variant, size, shape, class: className })} />`. `tv()` accepts the consumer `className` via its `class` arg and merges it last. `type` and any injected attribute (e.g. `aria-expanded` from a floating trigger) flow through `...rest`. Ref forwarding uses React 19 ref-as-prop.
 
 ### 4.3 `Button` (public)
 
-The text/primary foundation. Lives at `src/components/Button.tsx`; import via `@/components/Button`. Re-exports `ButtonVariant`, `ButtonSize`, `ButtonTone`.
+The text/primary foundation. Lives at `src/components/Button.tsx`; import via `@/components/Button`. Re-exports `ButtonVariantProps`.
 
 ```ts
 interface ButtonProps
-  extends Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'className'> {
-  variant?: ButtonVariant // default 'default'
-  size?: ButtonSize // default 'md'
-  tone?: ButtonTone // default 'default'
+  extends Pick<ButtonVariantProps, 'variant' | 'size'>,
+    Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'className'> {
+  // variant default 'default', size default 'md'; danger via variant="danger"
   leadingIcon?: string // optional Material Symbol ligature
   className?: string // layout/positioning only
   children: ReactNode // the label
 }
 ```
 
-Renders `BaseButton` with `shape="pill"`, an optional leading icon span (`material-symbols-outlined`, `aria-hidden`), and `children` as the label.
+Renders `BaseButton` with `shape="pill"`, an optional leading icon span (`material-symbols-outlined`, `aria-hidden`), and `children` as the label. The public primitives expose only `variant`/`size` (via `Pick`) — `shape` is fixed per primitive, never a consumer prop.
 
 ### 4.4 `IconButton` (public)
 
@@ -179,12 +182,11 @@ Icon-only. Required `label` is both the accessible name and the Tooltip text. Li
 
 ```ts
 interface IconButtonProps
-  extends Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'className' | 'aria-label'> {
+  extends Pick<ButtonVariantProps, 'variant' | 'size'>,
+    Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'className' | 'aria-label'> {
   icon: string // Material Symbol ligature
   label: string // REQUIRED — sets aria-label AND the Tooltip content
-  variant?: ButtonVariant // default 'ghost'
-  size?: ButtonSize // default 'md'
-  tone?: ButtonTone // default 'default'
+  // variant default 'ghost'; danger via variant="danger"
   pressed?: boolean // aria-pressed toggle state (standalone toggles / Popover anchors)
   shortcut?: ShortcutInput // optional Zed-style key chip in the Tooltip
   tooltipPlacement?: Placement // default 'bottom'
@@ -202,13 +204,12 @@ Icon + visible label pill — the diff-toolbar trigger shape. Lives at `src/comp
 
 ```ts
 interface ToolbarButtonProps
-  extends Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'className'> {
+  extends Pick<ButtonVariantProps, 'variant' | 'size'>,
+    Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'className'> {
   label: string // visible text
   icon?: string // optional leading Material Symbol
   trailingIcon?: string // optional trailing symbol (e.g. 'expand_more' caret)
-  variant?: ButtonVariant // default 'toolbar'
-  size?: ButtonSize // default 'md'
-  tone?: ButtonTone // default 'default'
+  // variant default 'toolbar'
   pressed?: boolean // aria-pressed; for Menu triggers the open tint comes from injected aria-expanded instead
   className?: string // layout/positioning only
   ref?: React.Ref<HTMLButtonElement>
@@ -250,7 +251,7 @@ Because it requires *icon-only* content, Shape B does **not** fire on file rows 
 
 Standalone icon-only buttons and toolbar pills. Grouped controls and `SidebarToggle` are out (§2). **PR1's first task is a full offender inventory** (`grep` every `<button>`-with-`material-symbols`, both shapes from §5 **and** helper-class icons the lint rule cannot see), classifying each as: migrate-now (standalone icon-only), toolbar-pill, deferred-grouped (`-- VIM-125`), or row/menu exception (text alongside the icon — not flagged, not migrated). The inventory is the **authoritative audit and the source of the VIM-125 floor** (the lint-disable set is a subset of it). The table below is the expected migrate-now set; the inventory is the contract.
 
-| Call site | Target | Variant / tone | Notes |
+| Call site | Target | Variant | Notes |
 | --- | --- | --- | --- |
 | `terminal/.../HeaderActions` (burner / collapse / close) | `IconButton` `sm` | `ghost` | burner active tint → `className` (`agent-shell-accent`) + `pressed` |
 | `agent-status/.../AgentStatusRail` glyphs | `IconButton` | `ghost` | |
@@ -258,7 +259,7 @@ Standalone icon-only buttons and toolbar pills. Grouped controls and `SidebarTog
 | `agent-status/.../ActivityEvent` copy | `IconButton` `sm` | `ghost` | |
 | `sessions/.../Card` kebab | `IconButton` `sm` | `ghost` | trigger for the card `Menu`; open tint via `aria-expanded` |
 | `browser/.../BrowserToolbar` back/forward/reload | `IconButton` | `ghost` | exercises `disabled`; accent hover/focus → `className` (`agent-browser-accent`) |
-| `diff/.../ReviewCommentRow` delete | `IconButton` `sm` | `ghost` + `tone="danger"` | destructive |
+| `diff/.../ReviewCommentRow` delete | `IconButton` `sm` | `danger` | destructive |
 | `workspace/.../NewSessionButton` | `Button` | `primary` | reveal-animation layout via `className`; chrome via variant |
 | diff toolbar `ViewSettingsDropdown` trigger | `ToolbarButton` | `toolbar` | passed as `Menu` `trigger`; open tint via injected `aria-expanded` |
 | diff toolbar `PriorityPlus` trigger | `IconButton` | `ghost` | icon-only overflow button; `Popover` anchor → `pressed={open}` |
@@ -268,7 +269,7 @@ Size convergence: `h-6`/`h-[26px]`/`h-[27px]` round to `md` (28); `h-[22px]` →
 
 ## 8. Testing
 
-- **`buttonVariants`** — unit: every variant/size/tone/shape combination yields the expected canonical classes; defaults applied; `danger` recolors; the active classes include both `aria-pressed:` and `aria-expanded:` variants.
+- **`buttonVariants`** — unit: every variant/size/shape combination yields the expected canonical classes; defaults applied; the `danger` variant is a self-contained skin (assert `text-error` present, no base-text bleed); the active classes include both `aria-pressed:` and `aria-expanded:`. **tailwind-merge keeps custom tokens** — assert `text-[13px]` (font-size) and `text-on-surface-muted` (color) both survive, and a `class` passthrough merges.
 - **`BaseButton`** — `type="button"` default; ref reaches the `<button>`; `disabled` sets the attribute + disabled classes; `className` merges after variants; `pressed` sets `aria-pressed`; an injected `aria-expanded` flows through `...rest`.
 - **`Button` / `IconButton` / `ToolbarButton`** — render the icon/label; `IconButton` sets `aria-label` from `label`, renders a Tooltip, forwards a shortcut chip; icon spans carry `aria-hidden="true"`; keyboard (Enter/Space) fires `onClick`; **`IconButton`/`ToolbarButton` as a `Menu` trigger** — the ref reaches the button, the consumer `onClick` fires, and the open state reflects on `aria-expanded` (the live kebab/ViewSettings cases). Every a11y attribute asserted by a Testing-Library query.
 - **`no-raw-icon-button`** — RuleTester: a glyph `<button className="material-symbols-outlined">` (Shape A) and an icon-span-only `<button>` (Shape B) both report; a `<button>` with icon **plus** text does **not** (the row/menu exclusion); a helper-classed icon button is an acknowledged rule miss (a comment in the test marks it as inventory-covered, not rule-covered); a bare `material-symbols` span (no button ancestor) does not; `src/components/**` is exempt. **Plus an ESLint flat-config integration test** that lints a fixture through the real `eslint.config.js` to confirm the rule is wired on the `vimeflow` plugin and scoped correctly.
@@ -290,7 +291,8 @@ Size convergence: `h-6`/`h-[26px]`/`h-[27px]` round to `md` (28); `h-[22px]` →
 
 ## 11. Risks & open questions
 
-- **`primary` has one bespoke consumer.** `NewSessionButton` is currently the only primary button, and it carries a reveal animation (`flex-1`, `min/max-w`, `group` label reveal). The variant now captures its full chrome (gradient + border + shadow + focus + `active:translate-y-px`); its *layout/animation* stays call-site via `className`. If no second primary consumer emerges, the plan may defer the `primary` variant and leave `NewSessionButton` as a documented exception — decided in the plan, not here.
-- **`className` passthrough re-opens a drift door.** Mitigated: documented as layout/positioning only; color literals are caught by `vimeflow/no-hardcoded-colors`; the variant + `tone` own all tonal classes; feature accents use semantic tokens. The floating substrate forbids `className` because its surface is fixed; buttons legitimately need layout control, so the trade-off differs.
+- **`primary` has one bespoke consumer.** `NewSessionButton` is currently the only primary button, and it carries a reveal animation (`flex-1`, `min/max-w`, `group` label reveal). The variant captures its full chrome (gradient + border + shadow + focus + `active:translate-y-px`); its *layout/animation* stays call-site via `className`. Kept per the design review (it's the canonical primary action) even at one consumer today.
+- **`className` passthrough.** Documented as layout/positioning only; color literals are caught by `vimeflow/no-hardcoded-colors`; the variant owns all tonal classes; feature accents use semantic tokens. `tailwind-merge` (via `tv()`) resolves any conflict deterministically rather than by string order, so the old "which utility wins" hazard is gone. The floating substrate forbids `className` because its surface is fixed; buttons legitimately need layout control.
+- **New dependency: `tailwind-variants` + `tailwind-merge`.** Two small runtime deps (peer `tailwind-merge >= 3`, the TW-v4 line). The one real risk — `tailwind-merge` misgrouping the repo's *custom* semantic tokens — was smoke-tested before adoption (font-size vs color survive; custom `bg-`/`text-` tokens merge correctly). Fallback if a future token misbehaves: `tv({...}, { twMerge: false })` (the variants are conflict-free by construction, so merge only matters for the layout `className`) or a `twMergeConfig`. Decision record: `docs/decisions/2026-06-14-tailwind-variants.md`.
 - **Size convergence is visible churn.** Converging six sizes to three shifts some buttons 1–2px. Intentional, but each migration must be eyeballed in-browser (jsdom can't catch it) per the tailwind-rem lesson.
 - **Ratchet floor, not 0; the inventory is the audit.** Because grouped controls hold icon buttons (VIM-125's territory) and some icons are helper-classed (invisible to the AST rule), the lint-disable set alone cannot prove completeness. The **inventory** is the audit of record; the lint rule is a forward guardrail for the two common shapes (§5). "Done" for VIM-124 = every inventory `migrate-now` entry migrated, with the `deferred-grouped` entries handed to VIM-125 as a precise list.
