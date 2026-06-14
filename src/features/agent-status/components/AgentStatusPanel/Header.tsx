@@ -34,6 +34,7 @@ export const AgentStatusPanelHeader = ({
       </span>
       <StatusDot status={status} size={6} aria-label={`agent ${status}`} />
     </div>
+    {/* eslint-disable-next-line vimeflow/no-raw-icon-button */}
     <button
       type="button"
       onClick={onCollapse}

@@ -150,6 +150,7 @@ export const InlineCommentDemo = (): ReactElement => {
             // translate-x-3/4 shifts the "+" out of the line-number cell into the
             // gutter gap next to the code (GitHub-style) — Pierre otherwise
             // center-anchors it on top of the number. Mirrors DiffPanelContent.
+            // eslint-disable-next-line vimeflow/no-raw-icon-button
             <button
               type="button"
               aria-label="Add comment on this line"

@@ -49,6 +49,7 @@ export const ReadingStyleMenu = (): ReactElement => {
       onClick={(event) => event.stopPropagation()}
       className="relative shrink-0"
     >
+      {/* eslint-disable-next-line vimeflow/no-raw-icon-button */}
       <button
         type="button"
         aria-label="Reading style"

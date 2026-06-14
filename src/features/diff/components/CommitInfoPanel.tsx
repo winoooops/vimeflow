@@ -64,6 +64,7 @@ const CommitInfoPanel = ({
 }: CommitInfoPanelProps): ReactElement => (
   <>
     {/* Floating reopen button - only visible when panel is collapsed */}
+    {/* eslint-disable-next-line vimeflow/no-raw-icon-button */}
     <button
       onClick={onToggle}
       aria-label="Open commit info panel"

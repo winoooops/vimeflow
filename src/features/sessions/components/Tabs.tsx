@@ -179,6 +179,7 @@ export const Tabs = ({
         })}
       </div>
       <Tooltip content="New session" placement="bottom">
+        {/* eslint-disable-next-line vimeflow/no-raw-icon-button -- VIM-125: grouped control */}
         <button
           type="button"
           onClick={onNew}

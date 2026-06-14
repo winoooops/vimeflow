@@ -44,6 +44,7 @@ export const FilePill = ({
   return (
     <span className="inline-flex items-center gap-0.5">
       <Tooltip content="Previous file">
+        {/* eslint-disable-next-line vimeflow/no-raw-icon-button */}
         <button
           type="button"
           disabled={!navEnabled}
@@ -88,6 +89,7 @@ export const FilePill = ({
         </div>
       </Tooltip>
       <Tooltip content="Next file">
+        {/* eslint-disable-next-line vimeflow/no-raw-icon-button */}
         <button
           type="button"
           disabled={!navEnabled}

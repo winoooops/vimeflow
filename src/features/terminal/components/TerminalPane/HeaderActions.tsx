@@ -46,6 +46,7 @@ export const HeaderActions = ({
   <>
     {onBurner && (
       <Tooltip content={burnerButtonTooltip(burnerActive)} placement="bottom">
+        {/* eslint-disable-next-line vimeflow/no-raw-icon-button */}
         <button
           type="button"
           aria-label={burnerButtonLabel(burnerActive, burnerShellExists)}
@@ -73,6 +74,7 @@ export const HeaderActions = ({
       content={isCollapsed ? 'Expand status' : 'Collapse status'}
       placement="bottom"
     >
+      {/* eslint-disable-next-line vimeflow/no-raw-icon-button */}
       <button
         type="button"
         aria-label={isCollapsed ? 'expand status' : 'collapse status'}
@@ -93,6 +95,7 @@ export const HeaderActions = ({
 
     {onClose && (
       <Tooltip content="Close pane" placement="bottom">
+        {/* eslint-disable-next-line vimeflow/no-raw-icon-button */}
         <button
           type="button"
           aria-label="close pane"

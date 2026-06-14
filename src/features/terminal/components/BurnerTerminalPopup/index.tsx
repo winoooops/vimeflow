@@ -320,6 +320,7 @@ export const BurnerTerminalPopup = ({
                 // body at z-50 and would otherwise paint behind the overlay.
                 className="!z-[110]"
               >
+                {/* eslint-disable-next-line vimeflow/no-raw-icon-button */}
                 <button
                   type="button"
                   data-testid="burner-align"
@@ -344,6 +345,7 @@ export const BurnerTerminalPopup = ({
               </Tooltip>
             )}
 
+            {/* eslint-disable-next-line vimeflow/no-raw-icon-button */}
             <button
               type="button"
               data-testid="burner-hide"

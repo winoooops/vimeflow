@@ -24,6 +24,7 @@ export const ExplorerPane = ({
 }: ExplorerPaneProps): ReactElement => (
   <>
     {/* Floating reopen button - only visible when explorer is collapsed */}
+    {/* eslint-disable-next-line vimeflow/no-raw-icon-button */}
     <button
       onClick={onToggle}
       aria-label="Open explorer panel"
@@ -58,6 +59,7 @@ export const ExplorerPane = ({
         <span className="text-xs font-bold uppercase tracking-widest text-on-surface-variant/70">
           EXPLORER
         </span>
+        {/* eslint-disable-next-line vimeflow/no-raw-icon-button */}
         <button
           onClick={onToggle}
           className="text-on-surface-variant/60 hover:text-on-surface transition-colors"

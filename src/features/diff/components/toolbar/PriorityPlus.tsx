@@ -195,6 +195,7 @@ const OverflowMenu = ({
   return (
     <>
       <Tooltip content={`Show ${hiddenItems.length} more controls`}>
+        {/* eslint-disable-next-line vimeflow/no-raw-icon-button */}
         <button
           ref={setAnchor}
           type="button"

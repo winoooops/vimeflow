@@ -1360,6 +1360,7 @@ export const DiffPanelContent = ({
                   // the line number. translate-x-3/4 nudges it into the gutter
                   // gap next to the code (GitHub-style); the percentage is of the
                   // button's own width, so it adapts to any line-number column.
+                  // eslint-disable-next-line vimeflow/no-raw-icon-button
                   <button
                     type="button"
                     aria-label="Add comment on this line"

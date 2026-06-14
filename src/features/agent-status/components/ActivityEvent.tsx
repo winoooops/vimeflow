@@ -318,6 +318,7 @@ export const ActivityTooltipContent = ({
           >
             {copyFeedback}
           </span>
+          {/* eslint-disable-next-line vimeflow/no-raw-icon-button */}
           <button
             type="button"
             aria-label={copyButtonLabel}

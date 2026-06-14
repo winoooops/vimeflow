@@ -275,6 +275,7 @@ export const DiffChipToolbar = ({
     onDiscardAll !== undefined ? (
       <Tooltip content="Discard all changes" disabled={discardAllOpen}>
         <span>
+          {/* eslint-disable-next-line vimeflow/no-raw-icon-button */}
           <button
             ref={setDiscardAllAnchor}
             type="button"

@@ -66,6 +66,7 @@ export const FileTabs = ({
                 {file.name}
                 {file.modified && <span className="ml-1 text-primary">●</span>}
               </span>
+              {/* eslint-disable-next-line vimeflow/no-raw-icon-button -- VIM-125: grouped control */}
               <button
                 onClick={(e) => handleCloseClick(e, index)}
                 aria-label={`Close ${file.name}`}
@@ -83,6 +84,7 @@ export const FileTabs = ({
             </div>
           )
         })}
+        {/* eslint-disable-next-line vimeflow/no-raw-icon-button -- VIM-125: grouped control */}
         <button
           onClick={onNewFile}
           aria-label="New file"

@@ -17,6 +17,7 @@ export const ReviewCommentRow = ({
       {comment.text}
     </p>
     <div className="flex shrink-0 items-center gap-1">
+      {/* eslint-disable-next-line vimeflow/no-raw-icon-button */}
       <button
         type="button"
         onClick={(): void => onEdit()}
@@ -30,6 +31,7 @@ export const ReviewCommentRow = ({
           edit
         </span>
       </button>
+      {/* eslint-disable-next-line vimeflow/no-raw-icon-button */}
       <button
         type="button"
         onClick={(): void => onDelete()}

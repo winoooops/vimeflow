@@ -57,6 +57,7 @@ export const ChangeStepper = ({
     </Tooltip>
     <span className="flex flex-col">
       <Tooltip content="Previous change">
+        {/* eslint-disable-next-line vimeflow/no-raw-icon-button */}
         <button
           type="button"
           disabled={!navEnabled}
@@ -73,6 +74,7 @@ export const ChangeStepper = ({
         </button>
       </Tooltip>
       <Tooltip content="Next change">
+        {/* eslint-disable-next-line vimeflow/no-raw-icon-button */}
         <button
           type="button"
           disabled={!navEnabled}

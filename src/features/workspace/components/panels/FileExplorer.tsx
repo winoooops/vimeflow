@@ -280,6 +280,7 @@ export const FileExplorer = ({
           File Explorer
         </h3>
         <Tooltip content="Refresh">
+          {/* eslint-disable-next-line vimeflow/no-raw-icon-button */}
           <button
             type="button"
             onClick={refresh}
@@ -297,6 +298,7 @@ export const FileExplorer = ({
             buttons swallow pointer events, so the span is the hover target. */}
         <Tooltip content="Parent directory">
           <span className="inline-flex">
+            {/* eslint-disable-next-line vimeflow/no-raw-icon-button */}
             <button
               type="button"
               onClick={navigateUp}
@@ -339,6 +341,7 @@ export const FileExplorer = ({
         {actionError && (
           <div className="mb-2 flex items-center gap-2 rounded bg-error/10 px-2 py-1 font-mono text-xs text-error">
             <span className="flex-1">{actionError}</span>
+            {/* eslint-disable-next-line vimeflow/no-raw-icon-button */}
             <button
               type="button"
               onClick={() => setActionError(null)}
@@ -365,6 +368,7 @@ export const FileExplorer = ({
               className="flex-1 rounded border border-on-surface/20 bg-base px-1.5 py-1 font-mono text-xs text-on-surface outline-none focus:border-secondary"
               aria-label="Rename file"
             />
+            {/* eslint-disable-next-line vimeflow/no-raw-icon-button */}
             <button
               type="button"
               onClick={() => {
@@ -375,6 +379,7 @@ export const FileExplorer = ({
             >
               check
             </button>
+            {/* eslint-disable-next-line vimeflow/no-raw-icon-button */}
             <button
               type="button"
               onClick={cancelRename}

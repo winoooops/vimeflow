@@ -262,6 +262,7 @@ const CardComponent = ({
             }
           }}
         >
+          {/* eslint-disable-next-line vimeflow/no-raw-icon-button */}
           <button
             ref={triggerRef}
             type="button"

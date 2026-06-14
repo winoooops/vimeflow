@@ -89,6 +89,7 @@ export const BrowserTabBar = ({
                 </span>
               </button>
               {canCloseTabs ? (
+                /* eslint-disable-next-line vimeflow/no-raw-icon-button -- VIM-125: grouped control */
                 <button
                   type="button"
                   aria-label={`close browser tab ${title}`}
@@ -109,6 +110,7 @@ export const BrowserTabBar = ({
           )
         })}
 
+        {/* eslint-disable-next-line vimeflow/no-raw-icon-button -- VIM-125: grouped control */}
         <button
           type="button"
           aria-label="new browser tab"
@@ -127,6 +129,7 @@ export const BrowserTabBar = ({
       {onClosePane ? (
         <>
           <div className="h-[18px] w-px shrink-0 bg-outline-variant/40" />
+          {/* eslint-disable-next-line vimeflow/no-raw-icon-button -- VIM-125: grouped control */}
           <button
             type="button"
             aria-label="close browser pane"

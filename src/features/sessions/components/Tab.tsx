@@ -113,6 +113,7 @@ export const Tab = ({
           aria-label={`Status ${session.status}`}
         />
       )}
+      {/* eslint-disable-next-line vimeflow/no-raw-icon-button -- VIM-125: grouped control */}
       <button
         type="button"
         // WAI-ARIA tabs §3.27: tablist is one Tab stop; descendants

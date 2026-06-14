@@ -70,6 +70,7 @@ export const AgentStatusRail = ({
       className="flex h-full flex-col items-center bg-surface pb-3 pt-2"
       style={{ width: RAIL_WIDTH_PX }}
     >
+      {/* eslint-disable-next-line vimeflow/no-raw-icon-button */}
       <button
         type="button"
         onClick={onExpand}

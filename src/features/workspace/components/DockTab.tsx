@@ -178,6 +178,7 @@ export const DockTab = ({
             placement="bottom"
             disabled={actionsOpen}
           >
+            {/* eslint-disable-next-line vimeflow/no-raw-icon-button -- VIM-125: grouped control */}
             <button
               ref={triggerRef}
               type="button"
@@ -226,6 +227,7 @@ export const DockTab = ({
                   shortcut={['Mod', '0']}
                   placement="bottom"
                 >
+                  {/* eslint-disable-next-line vimeflow/no-raw-icon-button -- VIM-125: grouped control */}
                   <button
                     type="button"
                     aria-label="Collapse panel"
@@ -259,6 +261,7 @@ export const DockTab = ({
               shortcut={['Mod', '0']}
               placement="bottom"
             >
+              {/* eslint-disable-next-line vimeflow/no-raw-icon-button -- VIM-125: grouped control */}
               <button
                 type="button"
                 aria-label="Collapse panel"

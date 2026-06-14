@@ -53,6 +53,7 @@ export const WellDisabledButton = forwardRef<
   WellDisabledButtonProps
 >(
   ({ icon, label, ...buttonProps }, ref): ReactElement => (
+    // eslint-disable-next-line vimeflow/no-raw-icon-button
     <button
       ref={ref}
       type="button"
@@ -90,6 +91,7 @@ const WellButton = ({
   disabled: boolean
 }): ReactElement => (
   <Tooltip content={tooltip}>
+    {/* eslint-disable-next-line vimeflow/no-raw-icon-button */}
     <button
       type="button"
       disabled={disabled}

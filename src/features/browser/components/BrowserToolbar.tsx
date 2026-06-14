@@ -70,6 +70,7 @@ export const BrowserToolbar = ({
     >
       <div className="flex items-center gap-[6px] justify-self-start">
         {navButtons.map((button) => (
+          // eslint-disable-next-line vimeflow/no-raw-icon-button
           <button
             key={button.key}
             type="button"
@@ -92,6 +93,7 @@ export const BrowserToolbar = ({
         <BrowserAddressBar {...address} />
       </div>
 
+      {/* eslint-disable-next-line vimeflow/no-raw-icon-button */}
       <button
         type="button"
         aria-label="open in system browser"
