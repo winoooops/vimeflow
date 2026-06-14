@@ -170,6 +170,16 @@ pub fn build_alias_lines(aliases: &[AgentAlias]) -> String {
     out
 }
 
+fn normalize_alias_field(value: &str) -> String {
+    let normalized = value.replace("\r\n", "\n").replace('\r', "\n");
+    normalized
+        .split('\n')
+        .collect::<Vec<_>>()
+        .join(" ")
+        .trim()
+        .to_string()
+}
+
 fn build_alias_command(alias: &AgentAlias) -> String {
     let binary = match alias.agent.as_str() {
         "claude" | "codex" | "gemini" => Some(alias.agent.as_str()),
@@ -181,12 +191,13 @@ fn build_alias_command(alias: &AgentAlias) -> String {
 
     if let Some(binary) = binary {
         parts.push(binary.to_string());
-        if !alias.model.is_empty() {
-            parts.push(format!("--model {}", alias.model));
+        let model = normalize_alias_field(&alias.model);
+        if !model.is_empty() {
+            parts.push(format!("--model {}", model));
         }
     }
 
-    let extra = alias.extra.trim();
+    let extra = normalize_alias_field(&alias.extra);
     if !extra.is_empty() {
         parts.push(extra.to_string());
     }
@@ -470,6 +481,48 @@ alias = "c"
         let aliases = vec![make_alias("u", "unknown", "sonnet", "--extra")];
         let lines = build_alias_lines(&aliases);
         assert_eq!(lines, "alias u='--extra'\n");
+    }
+
+    #[test]
+    fn build_alias_lines_replaces_newlines_with_space() {
+        let aliases = vec![
+            make_alias("c", "claude", "son\nnet", "--print\rok"),
+            AgentAlias {
+                id: "s1".into(),
+                alias: "lint".into(),
+                agent: "shell".into(),
+                model: "ignored\nmodel".into(),
+                extra: "npm run lint\r\n--fix".into(),
+                account: None,
+            },
+        ];
+        let lines = build_alias_lines(&aliases);
+        assert_eq!(
+            lines,
+            "alias c='claude --model son net --print ok'\nalias lint='npm run lint --fix'\n"
+        );
+    }
+
+    #[test]
+    fn build_alias_lines_multiline_input_does_not_create_multiple_alias_commands() {
+        let aliases = vec![AgentAlias {
+            id: "a1".into(),
+            alias: "evil".into(),
+            agent: "shell".into(),
+            model: "".into(),
+            extra: "echo first\necho second".into(),
+            account: None,
+        }];
+        let lines = build_alias_lines(&aliases);
+        assert!(
+            lines.starts_with("alias evil='echo first echo second'"),
+            "unexpected multiline alias output: {lines}"
+        );
+        assert_eq!(
+            lines.lines().count(),
+            1,
+            "alias output spanned multiple lines: {lines}"
+        );
     }
 
     #[test]

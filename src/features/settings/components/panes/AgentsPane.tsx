@@ -22,6 +22,7 @@ export const AgentsPane = (): ReactElement => {
   const { settings, update } = useSettings()
   const shimOn = settings.agentShimEnabled
   const [aliases, setAliases] = useState<AgentAlias[]>(DEFAULT_ALIASES)
+  const [saveError, setSaveError] = useState<string | null>(null)
   const saveQueueRef = useRef<Promise<void>>(Promise.resolve())
 
   useEffect(() => {
@@ -54,13 +55,18 @@ export const AgentsPane = (): ReactElement => {
       const bridge = window.vimeflow?.aliases
 
       if (!bridge) {
+        setSaveError('Alias bridge is not available')
+
         return
       }
 
       try {
         await bridge.save(next)
-      } catch {
-        // Persistence failures must not surface as unhandled rejections.
+        setSaveError(null)
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : 'Failed to save aliases'
+        setSaveError(message)
       }
     },
     []
@@ -214,6 +220,17 @@ export const AgentsPane = (): ReactElement => {
             </div>
           ))}
         </div>
+
+        {saveError && (
+          <div
+            className="mt-2.5 flex items-center gap-2 font-body text-xs text-error"
+            role="alert"
+            data-testid="alias-save-error"
+          >
+            <Icon name="error" size={14} />
+            <span>{saveError}</span>
+          </div>
+        )}
 
         <div className="mt-2.5 font-mono text-[10.5px] text-on-surface-muted">
           Try it: in any pane, type{' '}

@@ -2,8 +2,8 @@
 id: command-injection
 category: security
 created: 2026-04-09
-last_updated: 2026-05-02
-ref_count: 3
+last_updated: 2026-06-14
+ref_count: 4
 ---
 
 # Command Injection
@@ -98,3 +98,12 @@ Beyond the general "no template-string shell commands" rule:
 - **Finding:** Round-1's regex tightening (#6) used `/^[a-zA-Z0-9_/][a-zA-Z0-9_/.-]*$/` — slash valid in BOTH the first-character class and the trailing class. Slash is a valid internal ref separator (`feature/cleanup`, `refs/heads/main`) but `git check-ref-format` rejects it as the leading character. So a value like `/foo/bar` passed our allowlist, reached `git diff /foo/bar -- file`, and bubbled up as a 500 from the outer error handler instead of falling through to the working-tree path. No file-read vector (git treats it as a tree-ish, not a filesystem path), but the error semantics are wrong: the user sees "internal server error" when the actual outcome should be "ignored, falling back to working-tree". Same finding-class as #4 (validation considered the obvious vectors but missed a related one).
 - **Fix:** Narrowed the first-character class to `[a-zA-Z0-9_]` (no `/`). Slash remains in the trailing class so internal-separator paths still pass. Test added asserting `/foo/bar` falls through to the working-tree path. The lesson: when an allowlist regex has a "first character" vs "rest" split, the first class is almost always strictly narrower — the underlying spec usually has a "must start with" rule that's stricter than its "may contain" rule.
 - **Commit:** _(see git log for the round-3 fix commit)_
+
+### 8. Newlines in persisted alias fields become command separators at invocation
+
+- **Source:** github-codex-connector | PR #453 round 1 | 2026-06-14
+- **Severity:** MEDIUM
+- **File:** `crates/backend/src/aliases/agent_aliases.rs` L173-202
+- **Finding:** `build_alias_command` trimmed `extra` but did not normalize embedded CR/LF in `model` or `extra` before embedding the command in a shell alias. Single-quote escaping protected `init.sh` sourcing, but alias expansion is reparsed when invoked, where a newline can separate commands. This was reachable via direct `aliases.toml` editing or the IPC surface, turning a single alias invocation into multiple shell commands.
+- **Fix:** Added `normalize_alias_field` to replace `\r\n`, `\r`, and `\n` with a single space, trim, and then generate the alias line. Added regression tests showing multiline `model`/`extra` inputs collapse to one safe alias line and cannot spawn a second command.
+- **Commit:** same commit as this entry

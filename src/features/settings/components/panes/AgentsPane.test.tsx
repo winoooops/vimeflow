@@ -293,4 +293,59 @@ describe('AgentsPane', () => {
     expect(screen.getByText(/aliases.toml/)).toBeInTheDocument()
     expect(screen.getByText(/How this works/)).toBeInTheDocument()
   })
+
+  test('surfaces an inline error when alias save fails', async () => {
+    const { aliasesSave } = installBridge(DEFAULT_ALIASES)
+    aliasesSave.mockRejectedValue(new Error('disk full'))
+    const user = userEvent.setup()
+
+    render(
+      <TestWrapper>
+        <AgentsPane />
+      </TestWrapper>
+    )
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue('cc')).toBeInTheDocument()
+    })
+
+    await user.click(screen.getByRole('button', { name: /Add alias/i }))
+
+    await waitFor(() => {
+      expect(screen.getByTestId('alias-save-error')).toHaveTextContent(
+        'disk full'
+      )
+    })
+  })
+
+  test('clears the save error after a successful save', async () => {
+    const { aliasesSave } = installBridge(DEFAULT_ALIASES)
+    aliasesSave.mockRejectedValueOnce(new Error('disk full'))
+    aliasesSave.mockResolvedValue(undefined)
+    const user = userEvent.setup()
+
+    render(
+      <TestWrapper>
+        <AgentsPane />
+      </TestWrapper>
+    )
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue('cc')).toBeInTheDocument()
+    })
+
+    await user.click(screen.getByRole('button', { name: /Add alias/i }))
+
+    await waitFor(() => {
+      expect(screen.getByTestId('alias-save-error')).toHaveTextContent(
+        'disk full'
+      )
+    })
+
+    await user.click(screen.getByRole('button', { name: /Add alias/i }))
+
+    await waitFor(() => {
+      expect(screen.queryByTestId('alias-save-error')).not.toBeInTheDocument()
+    })
+  })
 })
