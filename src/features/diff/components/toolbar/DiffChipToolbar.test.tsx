@@ -428,7 +428,10 @@ describe('DiffChipToolbar', () => {
     })
 
     await user.click(screen.getByRole('button', { name: /view settings/i }))
-    const row = await screen.findByRole('button', { name: /line numbers/i })
+
+    const row = await screen.findByRole('menuitemcheckbox', {
+      name: /line numbers/i,
+    })
     await user.click(row)
 
     expect(onDisableLineNumbersChange).toHaveBeenCalledTimes(1)

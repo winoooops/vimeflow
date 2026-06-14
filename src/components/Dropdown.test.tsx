@@ -129,6 +129,25 @@ describe('Dropdown', () => {
     expect(screen.queryByRole('menu')).not.toBeInTheDocument()
   })
 
+  test('closes on Escape', async () => {
+    const user = userEvent.setup()
+
+    render(
+      <Dropdown
+        label="theme"
+        value="pierre-dark"
+        options={themeOptions}
+        onChange={vi.fn()}
+      />
+    )
+
+    await user.click(screen.getByRole('button', { name: /pierre-dark/i }))
+    expect(await screen.findByRole('menu')).toBeInTheDocument()
+
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+  })
+
   test('the currently selected option carries the text-primary class', async () => {
     const user = userEvent.setup()
 
@@ -181,8 +200,10 @@ describe('Dropdown', () => {
       />
     )
 
-    // Material symbol ligature renders its name as text content on the trigger.
     const trigger = screen.getByRole('button', { name: /pierre-dark/i })
+    // eslint-disable-next-line testing-library/no-node-access -- verifying icon CSS class
+    const icon = trigger.querySelector('.material-symbols-outlined')
+    expect(icon).toBeInTheDocument()
     expect(trigger).toHaveTextContent('palette')
   })
 
@@ -209,5 +230,56 @@ describe('Dropdown', () => {
     await user.click(within(menu).getByRole('menuitem', { name: /14 px/i }))
 
     expect(handleChange).toHaveBeenCalledWith(14)
+  })
+
+  test('renders a custom trigger via renderTrigger with open + current', async () => {
+    const user = userEvent.setup()
+
+    render(
+      <Dropdown
+        value="dracula"
+        options={themeOptions}
+        onChange={vi.fn()}
+        renderTrigger={({ ref, props, open, current }) => (
+          <button ref={ref} type="button" {...props}>
+            {open ? 'open' : 'closed'}: {current?.label ?? 'none'}
+          </button>
+        )}
+      />
+    )
+
+    const trigger = screen.getByRole('button', { name: /closed: dracula/i })
+    expect(trigger).toBeInTheDocument()
+
+    await user.click(trigger)
+    expect(
+      screen.getByRole('button', { name: /open: dracula/i })
+    ).toBeInTheDocument()
+    expect(await screen.findByRole('menu')).toBeInTheDocument()
+  })
+
+  test('selecting through a custom trigger still fires onChange and closes', async () => {
+    const user = userEvent.setup()
+    const handleChange = vi.fn<(value: Theme) => void>()
+
+    render(
+      <Dropdown
+        value="pierre-dark"
+        options={themeOptions}
+        onChange={handleChange}
+        renderTrigger={({ ref, props }) => (
+          <button ref={ref} type="button" {...props}>
+            pick a theme
+          </button>
+        )}
+      />
+    )
+
+    await user.click(screen.getByRole('button', { name: 'pick a theme' }))
+    const menu = await screen.findByRole('menu')
+    await user.click(within(menu).getByRole('menuitem', { name: /dracula/i }))
+
+    expect(handleChange).toHaveBeenCalledWith('dracula')
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
   })
 })

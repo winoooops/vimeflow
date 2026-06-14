@@ -199,6 +199,131 @@ The **only** tooltip in the app — `src/components/Tooltip.tsx`, imported via `
 - `bare` only for rich interactive hover **cards** (canonical: the activity-details card, `ACTIVITY_CARD_SURFACE`).
 - A `disabled` trigger swallows pointer events — wrap it in `<span className="inline-flex">`.
 
+### 5.6 `Tooltip`
+
+The only tooltip in the app. Lives at `src/components/Tooltip.tsx`; import via the alias: `import { Tooltip } from '@/components/Tooltip'`.
+
+```ts
+interface TooltipProps {
+  content: ReactNode // null / false / '' disables the tooltip entirely
+  children: ReactElement // single trigger element; receives the floating ref
+  placement?: Placement // default 'top'; flips automatically near edges
+  delayMs?: number // open delay, default 250
+  disabled?: boolean
+  shortcut?: ShortcutInput // Zed-style key chip, e.g. ['Mod', 'E'] — chrome surface only
+  maxWidth?: number // default 320 — chrome surface only
+  bare?: boolean // consumer owns the whole surface — rich hover cards only
+  interactive?: boolean // pointer may enter the surface; requires ariaLabel
+  ariaLabel?: string // required iff interactive
+}
+```
+
+Rules:
+
+- Native `title=` on DOM elements is **banned** (`react/forbid-dom-props`). Every hover label goes through this component.
+- The default chrome surface (glassmorphic, `rounded-md`, 320px clamp, optional shortcut chip) is the answer for text labels — never restyle it per call site.
+- `bare` is reserved for rich interactive hover **cards** that define a complete surface of their own (canonical consumer: the activity-details card via `ACTIVITY_CARD_SURFACE`). Never use it for plain labels.
+- Icon-only triggers keep their `aria-label` — the tooltip is hover/focus-only and is not an accessible-name substitute.
+- Features must not hand-roll floating surfaces: `@floating-ui/react` is confined to `src/components/base/floating/**` (the substrate) and the grandfathered `src/components/Tooltip.tsx`. Features compose `Dropdown`, `Menu`, or `Popover` instead.
+- A trigger that is `disabled` swallows pointer events in Chromium — wrap it in a `<span className="inline-flex">` and let the span be the Tooltip child.
+
+### 5.7 `Dropdown`
+
+A controlled select surface. Lives at `src/components/Dropdown.tsx`; import via the alias: `import { Dropdown } from '@/components/Dropdown'`.
+
+```ts
+interface DropdownProps<T extends string | number> {
+  value: T
+  options: readonly DropdownOption<T>[] // { value, label, description? }
+  onChange: (next: T) => void
+  placement?: Placement // default 'bottom-start'
+  width?: number
+  label?: string // built-in select trigger
+  leadingIcon?: string // Material Symbol ligature name for the trigger icon
+  renderTrigger?: (a: {
+    ref: React.Ref<HTMLElement>
+    props: React.HTMLAttributes<HTMLElement>
+    open: boolean
+    current: DropdownOption<T> | undefined
+  }) => React.ReactElement // custom trigger; omit to use the built-in label trigger
+}
+```
+
+Rules:
+
+- Import via `@/components/Dropdown`; never import from `src/components/base/**` directly (`base/` is package-private).
+- Built on the package-private `base/floating` substrate (`useFloatingSurface` + `SurfacePanel`). Do not hand-roll a select surface.
+- Keeps `role="menu"` / `menuitem` (the current diff toolbar behaviour is preserved; `role="listbox"` is a deferred a11y improvement).
+- Use `renderTrigger` when the default label-chip trigger does not fit the call site; it receives a typed ref + merged props so the trigger stays keyboard-accessible.
+- `DropdownOption` is re-exported from `@/components/Dropdown` — import it from there, never from `@/components/base/OptionList`.
+
+### 5.8 `Menu`
+
+A generic compound menu (click-anchored or cursor-anchored context-menu mode). Lives at `src/components/Menu.tsx`; import via the alias: `import { Menu } from '@/components/Menu'`.
+
+```ts
+// Anchored (click trigger) — trigger element toggles open:
+interface MenuProps {
+  trigger: ReactElement // cloned with floating ref + interaction props
+  placement?: Placement // default 'bottom-start'
+  width?: number
+  middleware?: { ancestorScroll?: boolean } // opt out of scroll-dismiss where needed
+  'aria-label'?: string
+  children: ReactNode
+}
+
+// Controlled cursor-anchored context menu:
+interface MenuContextMenuProps {
+  position: { x: number; y: number }
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  'aria-label': string // required — non-modal focus; no implicit accessible name
+  children: ReactNode
+}
+
+// Row subcomponents:
+// <Menu.Section label?={string}>…</Menu.Section>
+// <Menu.Item icon?={string} shortcut?={ShortcutInput} disabled?={boolean} onSelect={() => void}>…</Menu.Item>
+// <Menu.Checkbox icon?={string} checked={boolean} onChange={(next: boolean) => void}>…</Menu.Checkbox>
+// <Menu.Submenu label={string} icon?={string} value options onChange /> // shares base/OptionList with Dropdown
+```
+
+Rules:
+
+- Import via `@/components/Menu`; never import from `src/components/base/**` directly (`base/` is package-private).
+- Built on the package-private `base/floating` substrate (`useFloatingSurface` + `SurfacePanel`). Do not hand-roll a menu surface.
+- `Menu.Context` bakes the context-menu substrate defaults (`offset: 0`, flip fallbacks, `autoUpdate: false`, `ancestorScroll: false`, `openOnArrowKeyDown: false`, non-modal focus) — consumers pass only `position`/`open`/items.
+- Rows must form a static set registered with `FloatingList` so each row's index is DOM-ordered; dynamic row sets are unsupported.
+- Keyboard focus and roving `tabIndex` are handled by the primitive via `useListNavigation`; rows must not manage their own `tabIndex`.
+- `Menu` owns one-open-submenu state: opening a submenu closes any other; an outside-press inside an open submenu does not close the parent (`Menu.Submenu` registers its portal root with the parent's `dismissWhen` predicate).
+- `Menu.Submenu` does not embed a public `Dropdown`; both share `base/OptionList` while `Menu` owns submenu lifecycle and dismissal.
+
+### 5.9 `Popover`
+
+An arbitrary-content dialog card. Lives at `src/components/Popover.tsx`; import via the alias: `import { Popover } from '@/components/Popover'`.
+
+```ts
+interface PopoverProps {
+  anchor: HTMLElement | null // element the panel positions against
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  placement?: Placement // default 'bottom-start'
+  width?: number
+  middleware?: { ancestorScroll?: boolean } // { ancestorScroll: false } for plain-dismiss confirm dialogs
+  'aria-label': string // required — role="dialog" needs an accessible name
+  children: ReactNode // consumer owns the body; rendered on GLASS_SURFACE, focus-managed (modal)
+}
+```
+
+Rules:
+
+- Import via `@/components/Popover`; never import from `src/components/base/**` directly (`base/` is package-private).
+- Built on the package-private `base/floating` substrate (`useFloatingSurface` + `SurfacePanel`). Do not hand-roll a dialog card.
+- `role="dialog"` — `aria-label` is required and must be meaningful (it is the dialog's accessible name).
+- Focus is modal (`initialFocus: 0`): focus lands on the first tabbable child on open and `modal: true` engages the focus trap; the consumer's body content is navigable by tab.
+- Pass `middleware={{ ancestorScroll: false }}` for confirm dialogs that should dismiss only on outside-press or Escape, not on scroll.
+- Consumer owns the body layout; the primitive supplies the glass chrome and focus management only.
+
 ---
 
 ## 6. Interactions & keyboard shortcuts
