@@ -1,15 +1,23 @@
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, test, vi } from 'vitest'
+import { afterEach, describe, expect, test, vi } from 'vitest'
 import { Popover } from './Popover'
+
+const trackedAnchors: HTMLElement[] = []
 
 const makeAnchor = (): HTMLElement => {
   const el = document.createElement('button')
 
   document.body.appendChild(el)
+  trackedAnchors.push(el)
 
   return el
 }
+
+afterEach(() => {
+  trackedAnchors.forEach((el) => el.remove())
+  trackedAnchors.length = 0
+})
 
 describe('Popover', () => {
   test('renders children with role=dialog and the supplied aria-label', () => {

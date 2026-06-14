@@ -2,8 +2,8 @@
 id: testing-gaps
 category: testing
 created: 2026-04-09
-last_updated: 2026-06-12
-ref_count: 30
+last_updated: 2026-06-14
+ref_count: 31
 ---
 
 # Testing Gaps
