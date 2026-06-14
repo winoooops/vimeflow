@@ -31,3 +31,12 @@ maps, target lists, and skip-logic.
 - **Finding:** The kimi transcript supervisor seeded the main wire from the raw caller-supplied path while `read_agent_wires` canonicalized the discovered agent wires. On symlinked kimi home/session layouts the same physical `wire.jsonl` could appear as two different `PathBuf` values, causing two tailers to read it and emit duplicate events with inflated turn counts.
 - **Fix:** Canonicalized `main_wire` at the top of `run_session_supervisor` before using it as a HashMap key or target entry, so dedupe against canonicalized discovered wires is path-equality safe. Added a Unix regression test that symlinks the session dir and asserts exactly one `agent-turn` event is emitted.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 2. proc-fd trust check rejects authoritative binding on symlinked homes
+
+- **Source:** github-claude | PR #447 round 4 | 2026-06-14
+- **Severity:** MEDIUM
+- **File:** `crates/backend/src/agent/adapter/kimi/locator.rs` L197-L217
+- **Finding:** `try_resolve_from_proc_fds` compared the raw `/proc/<pid>/fd` target against `home.join("sessions")` using lexical `PathBuf::starts_with`. If the effective kimi home was reached through a symlink (NFS mount, Docker volume, or `$KIMI_CODE_HOME` pointing through a symlink), the two spellings could differ even though they named the same directory, causing the authoritative per-process binding to fall back to weaker index/bucket heuristics.
+- **Fix:** Canonicalized both the fd wire path and `home.join("sessions")` before the `starts_with` check, falling back to the original paths if either canonicalization fails. The proc-fd fast path now anchors to the real directory while preserving its security boundary.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

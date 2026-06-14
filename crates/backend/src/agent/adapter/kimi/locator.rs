@@ -200,7 +200,15 @@ impl KimiLocator {
         // Anchor the trust root to THIS process's effective home and require
         // the fd target to live under it: a detected (or spoofed) process must
         // not steer the watcher at a wire.jsonl tree outside the kimi home.
-        if !wire.starts_with(home.join("sessions")) {
+        // Canonicalize both sides so symlinked homes (NFS mounts, Docker
+        // volumes, $KIMI_CODE_HOME through a symlink) don't lose the binding.
+        let sessions_root = home.join("sessions");
+        let (trusted_wire, trusted_root) =
+            match (std::fs::canonicalize(&wire), std::fs::canonicalize(&sessions_root)) {
+                (Ok(cwire), Ok(croot)) => (cwire, croot),
+                _ => (wire.clone(), sessions_root),
+            };
+        if !trusted_wire.starts_with(&trusted_root) {
             return None;
         }
         let session_dir = wire.parent()?.parent()?.parent()?;
@@ -469,6 +477,8 @@ fn read_btime(proc_root: &Path) -> Option<u64> {
 fn clock_ticks_per_sec() -> u64 {
     #[cfg(unix)]
     {
+        // SAFETY: _SC_CLK_TCK takes no pointers and only returns a kernel
+        // constant (or -1 on unknown constant); the return value is checked.
         let hz = unsafe { libc::sysconf(libc::_SC_CLK_TCK) };
         if hz > 0 {
             return hz as u64;
