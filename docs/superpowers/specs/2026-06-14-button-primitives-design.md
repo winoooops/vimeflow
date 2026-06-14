@@ -171,6 +171,7 @@ interface ButtonProps
   leadingIcon?: string // optional Material Symbol ligature
   className?: string // layout/positioning only
   children: ReactNode // the label
+  ref?: React.Ref<HTMLButtonElement> // ref-capable like IconButton/ToolbarButton
 }
 ```
 

@@ -239,11 +239,11 @@ export const BaseButton = ({
 
 **Files:** Create `src/components/Button.tsx`, `Button.test.tsx`.
 
-- [ ] **Step 1: Failing test** — renders children as label; `leadingIcon` renders an `aria-hidden` Material Symbol; keyboard Enter fires `onClick`; re-exports `ButtonVariantProps` (a type-only import in the test compiles).
+- [ ] **Step 1: Failing test** — renders children as label; `leadingIcon` renders an `aria-hidden` Material Symbol; keyboard Enter fires `onClick`; **forwards `ref` to the `<button>`**; re-exports `ButtonVariantProps` (a type-only import in the test compiles).
 - [ ] **Step 2: Run — FAIL. Step 3: Implement:**
 
 ```tsx
-import { type ButtonHTMLAttributes, type ReactElement, type ReactNode } from 'react'
+import { type ButtonHTMLAttributes, type ReactElement, type ReactNode, type Ref } from 'react'
 import {
   BaseButton,
   type ButtonVariantProps,
@@ -257,6 +257,7 @@ interface ButtonProps
   leadingIcon?: string
   className?: string
   children: ReactNode
+  ref?: Ref<HTMLButtonElement>
 }
 
 export const Button = ({
@@ -265,10 +266,12 @@ export const Button = ({
   leadingIcon = undefined,
   className = undefined,
   children,
+  ref = undefined,
   ...rest
 }: ButtonProps): ReactElement => (
   <BaseButton
     {...rest}
+    ref={ref}
     variant={variant}
     size={size}
     shape="pill"
