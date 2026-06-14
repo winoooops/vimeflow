@@ -201,6 +201,8 @@ const OverflowMenu = ({
           onClick={(): void => setOpen((previous) => !previous)}
           className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-surface-container-high/60 hover:bg-surface-container-highest/80 text-on-surface transition-colors"
           aria-label={`Show ${hiddenItems.length} more controls`}
+          aria-haspopup="dialog"
+          aria-expanded={open}
         >
           <span
             aria-hidden="true"

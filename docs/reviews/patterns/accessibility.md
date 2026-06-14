@@ -2,8 +2,8 @@
 id: accessibility
 category: a11y
 created: 2026-04-09
-last_updated: 2026-06-12
-ref_count: 22
+last_updated: 2026-06-14
+ref_count: 23
 ---
 
 # Accessibility
@@ -523,3 +523,12 @@ handlers must not trap focus without implementing the promised behavior.
 - **Finding:** The persistent `SidebarToggle` was absolutely positioned at the workspace root so it stayed visually fixed during sidebar collapse/expand animations, but it was rendered as the last child of the workspace root. Keyboard users therefore reached it only after tabbing through the main workspace, activity panel, overlays, and command palette — a WCAG focus-order regression relative to its visual position at the top-left boundary.
 - **Fix:** Moved the same root-anchored, absolutely positioned toggle wrapper earlier in the DOM (right after the compact scrim and before the sidebar shell) so sequential focus order matches the visual layout. Preserved `z-40` and the existing left/top absolute coordinates. Updated co-located tests that asserted on `workspace.children[1]` to query `screen.getByTestId('workspace-main')` directly, since the DOM reordering changed sibling indices.
 - **Commit:** _(see git blame / git log on this line)_
+
+### 49. Popover trigger buttons dropped popup state ARIA after migrating off floating-ui reference props
+
+- **Source:** github-claude | PR #450 round 2 | 2026-06-14
+- **Severity:** MEDIUM
+- **File:** `src/features/diff/components/toolbar/PriorityPlus.tsx`, `src/features/diff/components/toolbar/DiffChipToolbar.tsx`
+- **Finding:** The shared `Popover` primitive intentionally separates the anchor from the floating dialog, so trigger-side ARIA becomes the consumer's responsibility. After migrating the diff toolbar triggers onto `Popover`, `PriorityPlus` kept only `aria-label` on its overflow chip (no `aria-haspopup`, no `aria-expanded`) and `DiffChipToolbar` kept `aria-expanded` on the discard-all button but omitted `aria-haspopup`. Screen-reader users focusing these controls did not hear the popup type, and the overflow trigger did not announce its open/closed state.
+- **Fix:** Added `aria-haspopup="dialog"` and `aria-expanded={open}` to the `PriorityPlus` overflow trigger, and added `aria-haspopup="dialog"` to the `DiffChipToolbar` discard-all trigger while preserving its existing `aria-expanded={discardAllOpen}`.
+- **Commit:** see `git blame` / `git log` on this line

@@ -280,6 +280,7 @@ export const DiffChipToolbar = ({
             type="button"
             disabled={staging}
             aria-label="discard all"
+            aria-haspopup="dialog"
             aria-expanded={discardAllOpen}
             className={
               staging
