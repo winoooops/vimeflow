@@ -25,6 +25,7 @@
 //! On macOS (no `/proc`, `proc_root == None`) steps 1-2 cleanly skip and
 //! resolution falls through to the index / bucket fallbacks.
 
+use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
@@ -271,7 +272,11 @@ impl KimiLocator {
             else {
                 continue;
             };
-            let created = session_created_at(&session_dir);
+            let created = if process_start.is_some() {
+                session_created_at(&session_dir)
+            } else {
+                None
+            };
             matches.push((work_len, created, session_dir, entry));
         }
 
@@ -505,16 +510,24 @@ fn abs_duration(a: SystemTime, b: SystemTime) -> Duration {
         .unwrap_or_else(|_| b.duration_since(a).unwrap_or_default())
 }
 
-/// A session's creation time, read from its `agents/main/wire.jsonl`
-/// `metadata` event (`created_at`, epoch ms). `None` when absent — the
-/// caller then treats the session as not provably owned by this process.
+/// A session's creation time, read from the first `metadata` event in its
+/// `agents/main/wire.jsonl` (`created_at`, epoch ms). `None` when absent —
+/// the caller then treats the session as not provably owned by this process.
+///
+/// This helper stops after the first metadata line and uses buffered line I/O
+/// so attach latency does not scale with the full transcript size.
 fn session_created_at(session_dir: &str) -> Option<SystemTime> {
     let wire = PathBuf::from(session_dir)
         .join("agents")
         .join("main")
         .join("wire.jsonl");
-    for line in std::fs::read_to_string(wire).ok()?.lines() {
-        let Ok(value) = serde_json::from_str::<serde_json::Value>(line) else {
+    let file = std::fs::File::open(wire).ok()?;
+    let reader = BufReader::new(file);
+    for line in reader.lines() {
+        let Ok(line) = line else {
+            continue;
+        };
+        let Ok(value) = serde_json::from_str::<serde_json::Value>(&line) else {
             continue;
         };
         if value.get("type").and_then(serde_json::Value::as_str) == Some("metadata") {

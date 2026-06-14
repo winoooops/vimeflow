@@ -2,7 +2,7 @@
 id: tokio-blocking-on-async
 category: backend
 created: 2026-05-04
-last_updated: 2026-05-20
+last_updated: 2026-06-14
 ref_count: 1
 ---
 
@@ -38,3 +38,12 @@ original Tauri command wording.
 - **Finding:** `run_git_with_timeout` used synchronous `Command::new("taskkill").status()` in the async timeout branch. On Windows, `taskkill.exe` can block long enough to hold a Tokio worker thread while the timed-out git child is being cleaned up.
 - **Fix:** Wrap the Windows `taskkill` subprocess in `tokio::task::spawn_blocking` and detach the handle, matching the existing fire-and-forget Unix kill semantics without blocking the async worker.
 - **Commit:** _(see git log for the PR #214 Windows timeout cleanup review-fix commit)_
+
+### 3. `session_created_at` reads the full `wire.jsonl` and runs even when the timestamp cannot be used
+
+- **Source:** github-claude | PR #447 round 2 | 2026-06-14
+- **Severity:** MEDIUM
+- **File:** `crates/backend/src/agent/adapter/kimi/locator.rs`
+- **Finding:** `try_resolve_from_index` called `session_created_at` for every cwd-matching index entry before knowing whether the value would be used. On macOS `process_start` is `None`, so the returned timestamp was discarded, yet the helper still used `std::fs::read_to_string` over the whole `wire.jsonl` even though the `metadata` record is expected at the start. For long-running projects with multiple same-cwd sessions, attach synchronously read multiple large transcript files before the watcher started.
+- **Fix:** Moved the `session_created_at` call behind a `process_start.is_some()` guard and rewrote the helper to open the wire file once and iterate with `BufReader::lines()`, returning as soon as the first `metadata` line is parsed. This makes the I/O O(metadata line size) instead of O(transcript size) and skips it entirely on platforms without `/proc`.
+- **Commit:** same commit as this entry
