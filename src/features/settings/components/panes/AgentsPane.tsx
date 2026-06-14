@@ -90,7 +90,11 @@ export const AgentsPane = (): ReactElement => {
     void setAliasesAndPersist(next)
   }
 
-  const updateAlias = (id: string, key: keyof AgentAlias, value: string): void => {
+  const updateAlias = (
+    id: string,
+    key: keyof AgentAlias,
+    value: string
+  ): void => {
     const next = aliases.map((a) => (a.id === id ? { ...a, [key]: value } : a))
 
     void setAliasesAndPersist(next)
