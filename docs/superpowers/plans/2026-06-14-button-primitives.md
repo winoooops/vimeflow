@@ -548,7 +548,7 @@ const vimeflowPlugin = {
 <IconButton icon="close" label="close pane" size="sm" onClick={...} tooltipPlacement="bottom" />
 ```
 
-- [ ] **Per-site notes:** burner button → `pressed={burnerActive}` + `className` for the `agent-shell-accent` tint; `BrowserToolbar` nav → keep `disabled`, accent hover via `className` (`agent-browser-accent` token); `ReviewCommentRow` delete → `variant="danger"`; `Card` kebab → it is a `Menu` trigger, so pass `<IconButton …/>` as `Menu`'s `trigger` (open tint via injected `aria-expanded`, `showTooltip` per the existing affordance); `PriorityPlus` → icon-only `IconButton`, `Popover` anchor (`ref` → anchor, `pressed={open}`).
+- [ ] **Per-site notes:** burner button → `pressed={burnerActive}` + `className` for the `agent-shell-accent` tint; `BrowserToolbar` nav → keep `disabled` + `rounded-lg`, accent hover via `className` (`agent-browser-accent` token); `ReviewCommentRow` delete → `variant="danger"`; `Card` kebab → it is a `Menu` trigger, so pass `<IconButton …/>` as `Menu`'s `trigger` (open tint via injected `aria-expanded`, `showTooltip` per the existing affordance); `PriorityPlus` → icon-only `IconButton`, `Popover` anchor (`ref` → anchor, `pressed={open}`, keep `rounded-full` circle via `className`).
 - [ ] For each: update the sibling test to query by role/name (not old class strings); delete the `eslint-disable`; run that file's tests; **render in the browser** to confirm the 1–2px size convergence and the `aria-pressed`/`aria-expanded` tints actually paint (Tailwind v4 first-use of those variants — jsdom can't verify). Commit per file (`refactor(button-primitives): migrate <site> to IconButton`).
 
 ## Task 8: PR1 gate + open PR1

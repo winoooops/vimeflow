@@ -143,7 +143,7 @@ export type ButtonVariantProps = VariantProps<typeof buttonVariants>
 | `md` | `h-7 w-7 text-[17px] rounded-chip` | `h-[30px] px-2.5 text-[13px] rounded-md gap-1.5` |
 | `lg` | `h-8 w-8 text-[19px] rounded-chip` | `h-9 px-3 text-[15px] rounded-lg gap-2` |
 
-These rows are the `compoundVariants` (geometry depends on shape **and** size; `size`/`shape` alone contribute nothing). Icon buttons use `rounded-chip` (6px) — crisper than `rounded-md` (~10px), matching the existing 4–7px icon buttons (radius confirmed visually). Pills use `rounded-md` (`rounded-lg` at `lg`). The 6 drifting sizes/radii converge here. The shared `base` (focus ring, disabled, flex centering) lives in the `tv()` `base` slot.
+These rows are the `compoundVariants` (geometry depends on shape **and** size; `size`/`shape` alone contribute nothing). Icon buttons use `rounded-chip` (6px) — the center of the existing utility-button cluster (HeaderActions 4px, DockSwitcher 5px, SidebarToggle 7px), so most buttons barely move (radius confirmed visually). Pills use `rounded-md` (`rounded-lg` at `lg`). **Two call sites keep a distinctive radius via `className` as intentional exceptions, not drift:** `BrowserToolbar` nav (`rounded-lg`) and `PriorityPlus` overflow (`rounded-full`, a circular affordance). The shared `base` (focus ring, disabled, flex centering) lives in the `tv()` `base` slot.
 
 ### 4.2 `BaseButton` (substrate)
 
@@ -259,11 +259,11 @@ Standalone icon-only buttons and toolbar pills. Grouped controls and `SidebarTog
 | `agent-status/.../AgentStatusPanel/Header` glyph | `IconButton` | `ghost` | |
 | `agent-status/.../ActivityEvent` copy | `IconButton` `sm` | `ghost` | |
 | `sessions/.../Card` kebab | `IconButton` `sm` | `ghost` | trigger for the card `Menu`; open tint via `aria-expanded` |
-| `browser/.../BrowserToolbar` back/forward/reload | `IconButton` | `ghost` | exercises `disabled`; accent hover/focus → `className` (`agent-browser-accent`) |
+| `browser/.../BrowserToolbar` back/forward/reload | `IconButton` | `ghost` | exercises `disabled`; accent hover/focus + `rounded-lg` kept → `className` (intentional) |
 | `diff/.../ReviewCommentRow` delete | `IconButton` `sm` | `danger` | destructive |
 | `workspace/.../NewSessionButton` | `Button` | `primary` | reveal-animation layout via `className`; chrome via variant |
 | diff toolbar `ViewSettingsDropdown` trigger | `ToolbarButton` | `toolbar` | passed as `Menu` `trigger`; open tint via injected `aria-expanded` |
-| diff toolbar `PriorityPlus` trigger | `IconButton` | `ghost` | icon-only overflow button; `Popover` anchor → `pressed={open}` |
+| diff toolbar `PriorityPlus` trigger | `IconButton` | `ghost` | icon-only overflow button; `Popover` anchor → `pressed={open}`; keep `rounded-full` (circle) via `className` |
 | diff toolbar `Dropdown` built-in trigger | `ToolbarButton` | `toolbar` | inside `src/components/Dropdown.tsx` — already a primitive; adopt internally |
 
 Size convergence: `h-6`/`h-[26px]`/`h-[27px]` round to `md` (28); `h-[22px]` → `sm`; `h-8` → `lg`. The 1–2px shifts are the intended unification, verified in-browser per migration.
