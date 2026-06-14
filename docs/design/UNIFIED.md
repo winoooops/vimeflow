@@ -330,7 +330,8 @@ The text/primary foundation. Lives at `src/components/Button.tsx`; import via th
 
 ```ts
 interface ButtonProps
-  extends Pick<ButtonVariantProps, 'variant' | 'size'>,
+  extends
+    Pick<ButtonVariantProps, 'variant' | 'size'>,
     Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'className'> {
   leadingIcon?: string // optional Material Symbol ligature
   className?: string // layout/positioning only
@@ -353,8 +354,12 @@ Icon-only. Required `label` is both the accessible name and the Tooltip text. Li
 
 ```ts
 interface IconButtonProps
-  extends Pick<ButtonVariantProps, 'variant' | 'size'>,
-    Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'className' | 'aria-label'> {
+  extends
+    Pick<ButtonVariantProps, 'variant' | 'size'>,
+    Omit<
+      React.ButtonHTMLAttributes<HTMLButtonElement>,
+      'className' | 'aria-label'
+    > {
   icon: string // Material Symbol ligature
   label: string // REQUIRED — sets aria-label AND the Tooltip content
   pressed?: boolean // aria-pressed toggle state (standalone toggles / Popover anchors)
@@ -381,7 +386,8 @@ Icon + visible label pill — the diff-toolbar trigger shape. Lives at `src/comp
 
 ```ts
 interface ToolbarButtonProps
-  extends Pick<ButtonVariantProps, 'variant' | 'size'>,
+  extends
+    Pick<ButtonVariantProps, 'variant' | 'size'>,
     Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'className'> {
   label: string // visible text
   icon?: string // optional leading Material Symbol

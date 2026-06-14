@@ -1,4 +1,9 @@
-import { type ButtonHTMLAttributes, type ReactElement, type ReactNode, type Ref } from 'react'
+import {
+  type ButtonHTMLAttributes,
+  type ReactElement,
+  type ReactNode,
+  type Ref,
+} from 'react'
 import {
   BaseButton,
   type ButtonVariantProps,
@@ -7,7 +12,8 @@ import {
 export type { ButtonVariantProps }
 
 interface ButtonProps
-  extends Pick<ButtonVariantProps, 'variant' | 'size'>,
+  extends
+    Pick<ButtonVariantProps, 'variant' | 'size'>,
     Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'className'> {
   leadingIcon?: string
   className?: string
@@ -33,7 +39,10 @@ export const Button = ({
     className={className}
   >
     {leadingIcon !== undefined && (
-      <span className="material-symbols-outlined text-[1.1em]" aria-hidden="true">
+      <span
+        className="material-symbols-outlined text-[1.1em]"
+        aria-hidden="true"
+      >
         {leadingIcon}
       </span>
     )}

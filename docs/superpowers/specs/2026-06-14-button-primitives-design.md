@@ -26,7 +26,9 @@ The repeated shape underneath the icon-only buttons is identical:
 
 ```tsx
 <button className="[layout] [size] rounded-[r] [variant-color] hover:[hover] transition-colors [focus]">
-  <span className="material-symbols-outlined [icon-size]" aria-hidden="true">{icon}</span>
+  <span className="material-symbols-outlined [icon-size]" aria-hidden="true">
+    {icon}
+  </span>
 </button>
 ```
 
@@ -44,11 +46,11 @@ Every theme/a11y/motion change today means editing N files. One shared family co
 
 **Non-goals — the scope boundary with VIM-125 (read this carefully; codex flagged an overlap)**
 
-- **Grouped selection controls are out of scope.** Segmented controls (`DockSwitcher`, `ViewModeToggle`, `LayoutSwitcher`, `DockTab`, `Segmented`), tab strips (`SidebarTabs`, `EditorTabs`, `FileTabs`, `BrowserTabBar`, sessions `Tabs`, `ContextSwitcher`), and the boolean `Toggle` belong to **VIM-125 (TabStrip / SegmentedControl / Toggle)**. Those primitives will be *built from* `IconButton` (hence VIM-125 depends on VIM-124). VIM-124 must **not** restructure those groups.
-- **Consequence for the ratchet (the overlap fix):** grouped controls contain raw icon buttons too, so VIM-124 does **not** drive the offender count to 0. The authoritative audit is the **PR1 offender inventory** (§7) — a grep-based classification of *every* raw icon button, **including shapes the lint rule cannot see** (§5) — not the set of lint disables. VIM-124 migrates its in-scope standalone offenders; the inventory's `deferred-grouped` entries are the **frozen floor** handed to VIM-125. Rule-detected grouped offenders additionally carry `// eslint-disable-next-line vimeflow/no-raw-icon-button -- VIM-125: grouped control`, but the inventory (not the disable count) is what "audited floor" means.
+- **Grouped selection controls are out of scope.** Segmented controls (`DockSwitcher`, `ViewModeToggle`, `LayoutSwitcher`, `DockTab`, `Segmented`), tab strips (`SidebarTabs`, `EditorTabs`, `FileTabs`, `BrowserTabBar`, sessions `Tabs`, `ContextSwitcher`), and the boolean `Toggle` belong to **VIM-125 (TabStrip / SegmentedControl / Toggle)**. Those primitives will be _built from_ `IconButton` (hence VIM-125 depends on VIM-124). VIM-124 must **not** restructure those groups.
+- **Consequence for the ratchet (the overlap fix):** grouped controls contain raw icon buttons too, so VIM-124 does **not** drive the offender count to 0. The authoritative audit is the **PR1 offender inventory** (§7) — a grep-based classification of _every_ raw icon button, **including shapes the lint rule cannot see** (§5) — not the set of lint disables. VIM-124 migrates its in-scope standalone offenders; the inventory's `deferred-grouped` entries are the **frozen floor** handed to VIM-125. Rule-detected grouped offenders additionally carry `// eslint-disable-next-line vimeflow/no-raw-icon-button -- VIM-125: grouped control`, but the inventory (not the disable count) is what "audited floor" means.
 - **`SidebarToggle` is NOT migrated here.** It renders a custom SVG glyph (not a Material Symbol), a non-token rail size (~34px), `ghost`/`inset` variants, and a Tooltip shortcut chip — it does not fit `IconButton`'s Material-Symbol-string contract, and the rule does not flag it (no `material-symbols-outlined`). It stays bespoke; revisited only if a second SVG-glyph button appears.
 - No new color tokens — buttons use existing semantic theme tokens.
-- No `Button` adoption sweep across *every* text button; text-button migration is opportunistic (clean call sites only). The surveyed sprawl is the icon/toolbar buttons, and that is the migration contract.
+- No `Button` adoption sweep across _every_ text button; text-button migration is opportunistic (clean call sites only). The surveyed sprawl is the icon/toolbar buttons, and that is the migration contract.
 
 ## 3. Architecture
 
@@ -56,14 +58,14 @@ Every theme/a11y/motion change today means editing N files. One shared family co
 
 VIM-119 established the shape: a hidden substrate wrapping the hard part, with thin public primitives composing it.
 
-| Layer | Floating (VIM-119) | Buttons (VIM-124) |
-| --- | --- | --- |
-| Substrate (package-private, `base/`) | `useFloatingSurface`, `SurfacePanel`, `glassSurface` | `buttonVariants`, `BaseButton` |
-| Public primitives (`src/components/`) | `Dropdown`, `Menu`, `Popover` | `Button`, `IconButton`, `ToolbarButton` |
-| Boundary | Ring 2 — `base/**` not importable from features | Ring 2 (same rule — already covers `base/button`) |
-| Drift guard | Ring 1 — `@floating-ui/react` confined | `vimeflow/no-raw-icon-button` — raw icon-only `<button>` banned |
+| Layer                                 | Floating (VIM-119)                                   | Buttons (VIM-124)                                               |
+| ------------------------------------- | ---------------------------------------------------- | --------------------------------------------------------------- |
+| Substrate (package-private, `base/`)  | `useFloatingSurface`, `SurfacePanel`, `glassSurface` | `buttonVariants`, `BaseButton`                                  |
+| Public primitives (`src/components/`) | `Dropdown`, `Menu`, `Popover`                        | `Button`, `IconButton`, `ToolbarButton`                         |
+| Boundary                              | Ring 2 — `base/**` not importable from features      | Ring 2 (same rule — already covers `base/button`)               |
+| Drift guard                           | Ring 1 — `@floating-ui/react` confined               | `vimeflow/no-raw-icon-button` — raw icon-only `<button>` banned |
 
-Unlike `@floating-ui` (a third-party engine that *must* stay hidden), a plain `Button` is legitimately public — text/primary buttons need it. So the substrate is hidden **and** `Button` is public; both are true, exactly as `glassSurface` is hidden while `Dropdown` is public.
+Unlike `@floating-ui` (a third-party engine that _must_ stay hidden), a plain `Button` is legitimately public — text/primary buttons need it. So the substrate is hidden **and** `Button` is public; both are true, exactly as `glassSurface` is hidden while `Dropdown` is public.
 
 ### 3.2 File structure
 
@@ -123,13 +125,13 @@ export type ButtonVariantProps = VariantProps<typeof buttonVariants>
 
 **Variant → token map** (each grounded in a surveyed call site; exact px verified in-browser during migration):
 
-| Variant | Base | Hover | Active (`aria-pressed` / `aria-expanded`) | Canonical source |
-| --- | --- | --- | --- | --- |
-| `ghost` | `bg-transparent text-on-surface-muted` | `hover:bg-surface-container-high hover:text-on-surface` | `aria-pressed:bg-primary/10 aria-pressed:text-primary aria-expanded:bg-primary/10 aria-expanded:text-primary` | `HeaderActions`, `AgentStatusRail`, browser nav, copy/kebab |
-| `default` | `bg-surface-container-high text-on-surface` | `hover:bg-surface-container-highest` | `aria-pressed:bg-primary/12 aria-expanded:bg-primary/12` | neutral text buttons |
-| `toolbar` | `bg-surface-container-high/60 text-on-surface-variant` | `hover:bg-surface-container-highest/80 hover:text-on-surface` | `aria-pressed:bg-surface-container-highest/80 aria-expanded:bg-surface-container-highest/80 aria-expanded:text-on-surface` | diff toolbar triggers |
-| `primary` | `border border-primary/25 bg-[linear-gradient(180deg,var(--color-primary-dim)_0%,var(--color-primary-deep)_100%)] text-surface-container-lowest shadow-[0_8px_18px_color-mix(in_srgb,var(--color-primary-deep)_20%,transparent),inset_0_1px_0_var(--color-wash-soft)]` | `hover:brightness-110 active:translate-y-px` | n/a | `NewSessionButton` |
-| `danger` | `bg-transparent text-error` | `hover:bg-error/10 hover:text-error` | `aria-pressed:bg-error/15 aria-expanded:bg-error/15` | `ReviewCommentRow` delete |
+| Variant   | Base                                                                                                                                                                                                                                                                   | Hover                                                         | Active (`aria-pressed` / `aria-expanded`)                                                                                  | Canonical source                                            |
+| --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| `ghost`   | `bg-transparent text-on-surface-muted`                                                                                                                                                                                                                                 | `hover:bg-surface-container-high hover:text-on-surface`       | `aria-pressed:bg-primary/10 aria-pressed:text-primary aria-expanded:bg-primary/10 aria-expanded:text-primary`              | `HeaderActions`, `AgentStatusRail`, browser nav, copy/kebab |
+| `default` | `bg-surface-container-high text-on-surface`                                                                                                                                                                                                                            | `hover:bg-surface-container-highest`                          | `aria-pressed:bg-primary/12 aria-expanded:bg-primary/12`                                                                   | neutral text buttons                                        |
+| `toolbar` | `bg-surface-container-high/60 text-on-surface-variant`                                                                                                                                                                                                                 | `hover:bg-surface-container-highest/80 hover:text-on-surface` | `aria-pressed:bg-surface-container-highest/80 aria-expanded:bg-surface-container-highest/80 aria-expanded:text-on-surface` | diff toolbar triggers                                       |
+| `primary` | `border border-primary/25 bg-[linear-gradient(180deg,var(--color-primary-dim)_0%,var(--color-primary-deep)_100%)] text-surface-container-lowest shadow-[0_8px_18px_color-mix(in_srgb,var(--color-primary-deep)_20%,transparent),inset_0_1px_0_var(--color-wash-soft)]` | `hover:brightness-110 active:translate-y-px`                  | n/a                                                                                                                        | `NewSessionButton`                                          |
+| `danger`  | `bg-transparent text-error`                                                                                                                                                                                                                                            | `hover:bg-error/10 hover:text-error`                          | `aria-pressed:bg-error/15 aria-expanded:bg-error/15`                                                                       | `ReviewCommentRow` delete                                   |
 
 `danger` is a full **variant** (not a tone) — a self-contained destructive skin. `tailwind-merge` (bundled with `tailwind-variants`) makes the old class-order hazard moot: it resolves conflicting utilities deterministically rather than by string order, so a consumer `className` merges cleanly and variants never bleed (smoke-verified on TW v4: `text-[13px]` font-size and `text-on-surface-muted` color both survive). Feature-specific accents (the burner's `agent-shell-accent`, browser nav's `agent-browser-accent`) are **not** variants — they are semantic tokens passed through `className` (allowed by `vimeflow/no-hardcoded-colors`), documented as accent exceptions.
 
@@ -137,11 +139,11 @@ export type ButtonVariantProps = VariantProps<typeof buttonVariants>
 
 **Shape × size → geometry:**
 
-| | `icon` (square) | `pill` (label) |
-| --- | --- | --- |
-| `sm` | `h-[22px] w-[22px] text-[13px] rounded-chip` | `h-[26px] px-2 text-xs rounded-md gap-1.5` |
-| `md` | `h-7 w-7 text-[17px] rounded-chip` | `h-[30px] px-2.5 text-[13px] rounded-md gap-1.5` |
-| `lg` | `h-8 w-8 text-[19px] rounded-chip` | `h-9 px-3 text-[15px] rounded-lg gap-2` |
+|      | `icon` (square)                              | `pill` (label)                                   |
+| ---- | -------------------------------------------- | ------------------------------------------------ |
+| `sm` | `h-[22px] w-[22px] text-[13px] rounded-chip` | `h-[26px] px-2 text-xs rounded-md gap-1.5`       |
+| `md` | `h-7 w-7 text-[17px] rounded-chip`           | `h-[30px] px-2.5 text-[13px] rounded-md gap-1.5` |
+| `lg` | `h-8 w-8 text-[19px] rounded-chip`           | `h-9 px-3 text-[15px] rounded-lg gap-2`          |
 
 These rows are the `compoundVariants` (geometry depends on shape **and** size; `size`/`shape` alone contribute nothing). Icon buttons use `rounded-chip` (6px) — the center of the existing utility-button cluster (HeaderActions 4px, DockSwitcher 5px, SidebarToggle 7px), so most buttons barely move (radius confirmed visually). Pills use `rounded-md` (`rounded-lg` at `lg`). **Two call sites keep a distinctive radius via `className` as intentional exceptions, not drift:** `BrowserToolbar` nav (`rounded-lg`) and `PriorityPlus` overflow (`rounded-full`, a circular affordance). The shared `base` (focus ring, disabled, flex centering) lives in the `tv()` `base` slot.
 
@@ -149,7 +151,8 @@ These rows are the `compoundVariants` (geometry depends on shape **and** size; `
 
 ```ts
 export interface BaseButtonProps
-  extends ButtonVariantProps,
+  extends
+    ButtonVariantProps,
     Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'className'> {
   pressed?: boolean // sets aria-pressed; the active tint is keyed off the attribute
   className?: string // layout/positioning only — passed to tv() as `class`, merged last by tailwind-merge
@@ -165,7 +168,8 @@ The text/primary foundation. Lives at `src/components/Button.tsx`; import via `@
 
 ```ts
 interface ButtonProps
-  extends Pick<ButtonVariantProps, 'variant' | 'size'>,
+  extends
+    Pick<ButtonVariantProps, 'variant' | 'size'>,
     Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'className'> {
   // variant default 'default', size default 'md'; danger via variant="danger"
   leadingIcon?: string // optional Material Symbol ligature
@@ -183,8 +187,12 @@ Icon-only. Required `label` is both the accessible name and the Tooltip text. Li
 
 ```ts
 interface IconButtonProps
-  extends Pick<ButtonVariantProps, 'variant' | 'size'>,
-    Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'className' | 'aria-label'> {
+  extends
+    Pick<ButtonVariantProps, 'variant' | 'size'>,
+    Omit<
+      React.ButtonHTMLAttributes<HTMLButtonElement>,
+      'className' | 'aria-label'
+    > {
   icon: string // Material Symbol ligature
   label: string // REQUIRED — sets aria-label AND the Tooltip content
   // variant default 'ghost'; danger via variant="danger"
@@ -205,7 +213,8 @@ Icon + visible label pill — the diff-toolbar trigger shape. Lives at `src/comp
 
 ```ts
 interface ToolbarButtonProps
-  extends Pick<ButtonVariantProps, 'variant' | 'size'>,
+  extends
+    Pick<ButtonVariantProps, 'variant' | 'size'>,
     Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'className'> {
   label: string // visible text
   icon?: string // optional leading Material Symbol
@@ -232,13 +241,13 @@ Implementation: visit `JSXElement` named `button`; if its own `className` litera
 
 > Raw icon-only `<button>` — use `IconButton` from `@/components` (or `ToolbarButton` for icon + label).
 
-Because it requires *icon-only* content, Shape B does **not** fire on file rows (`ChangedFilesList`), the address bar (`BrowserAddressBar`), or menu-item buttons (`ContextMenu`) — those carry text/inputs alongside the icon. It also will not flag the primitives' own files (`ignores: ['src/components/**']`).
+Because it requires _icon-only_ content, Shape B does **not** fire on file rows (`ChangedFilesList`), the address bar (`BrowserAddressBar`), or menu-item buttons (`ContextMenu`) — those carry text/inputs alongside the icon. It also will not flag the primitives' own files (`ignores: ['src/components/**']`).
 
 **Known limitation (covered by the inventory, not ignored):** icon buttons whose class comes from a helper (e.g. `DockTab`'s `tabIconClass()`) are not detected, because no `material-symbols-outlined` literal sits in the JSX. The rule is a **forward guardrail** for the two common syntactic shapes, not an exhaustive migrator. Completeness is the **inventory's** job (§7): the grep audit finds helper-class and dynamically-classed icons the AST rule cannot, and classifies them. "Audited floor" therefore means the inventory, not the disable count — closing the gap codex flagged where a rule-only audit would silently miss existing offenders.
 
 **Scope:** `files: ['src/**/*.tsx'], ignores: ['src/components/**']` — mirrors the Ring 1/Ring 2 `ignores`.
 
-**Ratchet:** every **rule-detected** offender gets `// eslint-disable-next-line vimeflow/no-raw-icon-button` when the rule lands (PR1); the **inventory** (§7) records the complete audit — rule-detected *and* helper-class — split into **VIM-124 in-scope** (migrated away across PR1–PR3) and **VIM-125-deferred** (grouped controls, tagged `-- VIM-125` where a disable exists, else listed in the inventory). Same mechanism as VIM-119's `@floating-ui` ratchet (6 → 0), but it lands at the inventory-defined VIM-124 floor, not 0.
+**Ratchet:** every **rule-detected** offender gets `// eslint-disable-next-line vimeflow/no-raw-icon-button` when the rule lands (PR1); the **inventory** (§7) records the complete audit — rule-detected _and_ helper-class — split into **VIM-124 in-scope** (migrated away across PR1–PR3) and **VIM-125-deferred** (grouped controls, tagged `-- VIM-125` where a disable exists, else listed in the inventory). Same mechanism as VIM-119's `@floating-ui` ratchet (6 → 0), but it lands at the inventory-defined VIM-124 floor, not 0.
 
 **Feasibility:** the visitor + child filtering is a direct adaptation of `no-hardcoded-colors.js`'s per-node className inspection (codex confirmed the ESLint-9 `JSXElement`/`sourceCode` APIs support it).
 
@@ -252,19 +261,19 @@ Because it requires *icon-only* content, Shape B does **not** fire on file rows 
 
 Standalone icon-only buttons and toolbar pills. Grouped controls and `SidebarToggle` are out (§2). **PR1's first task is a full offender inventory** (`grep` every `<button>`-with-`material-symbols`, both shapes from §5 **and** helper-class icons the lint rule cannot see), classifying each as: migrate-now (standalone icon-only), toolbar-pill, deferred-grouped (`-- VIM-125`), or row/menu exception (text alongside the icon — not flagged, not migrated). The inventory is the **authoritative audit and the source of the VIM-125 floor** (the lint-disable set is a subset of it). The table below is the expected migrate-now set; the inventory is the contract.
 
-| Call site | Target | Variant | Notes |
-| --- | --- | --- | --- |
-| `terminal/.../HeaderActions` (burner / collapse / close) | `IconButton` `sm` | `ghost` | burner active tint → `className` (`agent-shell-accent`) + `pressed` |
-| `agent-status/.../AgentStatusRail` glyphs | `IconButton` | `ghost` | |
-| `agent-status/.../AgentStatusPanel/Header` glyph | `IconButton` | `ghost` | |
-| `agent-status/.../ActivityEvent` copy | `IconButton` `sm` | `ghost` | |
-| `sessions/.../Card` kebab | `IconButton` `sm` | `ghost` | trigger for the card `Menu`; open tint via `aria-expanded` |
-| `browser/.../BrowserToolbar` back/forward/reload | `IconButton` | `ghost` | exercises `disabled`; accent hover/focus + `rounded-lg` kept → `className` (intentional) |
-| `diff/.../ReviewCommentRow` delete | `IconButton` `sm` | `danger` | destructive |
-| `workspace/.../NewSessionButton` | `Button` | `primary` | reveal-animation layout via `className`; chrome via variant |
-| diff toolbar `ViewSettingsDropdown` trigger | `ToolbarButton` | `toolbar` | passed as `Menu` `trigger`; open tint via injected `aria-expanded` |
-| diff toolbar `PriorityPlus` trigger | `IconButton` | `ghost` | icon-only overflow button; `Popover` anchor → `pressed={open}`; keep `rounded-full` (circle) via `className` |
-| diff toolbar `Dropdown` built-in trigger | `ToolbarButton` | `toolbar` | inside `src/components/Dropdown.tsx` — already a primitive; adopt internally |
+| Call site                                                | Target            | Variant   | Notes                                                                                                        |
+| -------------------------------------------------------- | ----------------- | --------- | ------------------------------------------------------------------------------------------------------------ |
+| `terminal/.../HeaderActions` (burner / collapse / close) | `IconButton` `sm` | `ghost`   | burner active tint → `className` (`agent-shell-accent`) + `pressed`                                          |
+| `agent-status/.../AgentStatusRail` glyphs                | `IconButton`      | `ghost`   |                                                                                                              |
+| `agent-status/.../AgentStatusPanel/Header` glyph         | `IconButton`      | `ghost`   |                                                                                                              |
+| `agent-status/.../ActivityEvent` copy                    | `IconButton` `sm` | `ghost`   |                                                                                                              |
+| `sessions/.../Card` kebab                                | `IconButton` `sm` | `ghost`   | trigger for the card `Menu`; open tint via `aria-expanded`                                                   |
+| `browser/.../BrowserToolbar` back/forward/reload         | `IconButton`      | `ghost`   | exercises `disabled`; accent hover/focus + `rounded-lg` kept → `className` (intentional)                     |
+| `diff/.../ReviewCommentRow` delete                       | `IconButton` `sm` | `danger`  | destructive                                                                                                  |
+| `workspace/.../NewSessionButton`                         | `Button`          | `primary` | reveal-animation layout via `className`; chrome via variant                                                  |
+| diff toolbar `ViewSettingsDropdown` trigger              | `ToolbarButton`   | `toolbar` | passed as `Menu` `trigger`; open tint via injected `aria-expanded`                                           |
+| diff toolbar `PriorityPlus` trigger                      | `IconButton`      | `ghost`   | icon-only overflow button; `Popover` anchor → `pressed={open}`; keep `rounded-full` (circle) via `className` |
+| diff toolbar `Dropdown` built-in trigger                 | `ToolbarButton`   | `toolbar` | inside `src/components/Dropdown.tsx` — already a primitive; adopt internally                                 |
 
 Size convergence: `h-6`/`h-[26px]`/`h-[27px]` round to `md` (28); `h-[22px]` → `sm`; `h-8` → `lg`. The 1–2px shifts are the intended unification, verified in-browser per migration.
 
@@ -292,8 +301,8 @@ Size convergence: `h-6`/`h-[26px]`/`h-[27px]` round to `md` (28); `h-[22px]` →
 
 ## 11. Risks & open questions
 
-- **`primary` has one bespoke consumer.** `NewSessionButton` is currently the only primary button, and it carries a reveal animation (`flex-1`, `min/max-w`, `group` label reveal). The variant captures its full chrome (gradient + border + shadow + focus + `active:translate-y-px`); its *layout/animation* stays call-site via `className`. Kept per the design review (it's the canonical primary action) even at one consumer today.
+- **`primary` has one bespoke consumer.** `NewSessionButton` is currently the only primary button, and it carries a reveal animation (`flex-1`, `min/max-w`, `group` label reveal). The variant captures its full chrome (gradient + border + shadow + focus + `active:translate-y-px`); its _layout/animation_ stays call-site via `className`. Kept per the design review (it's the canonical primary action) even at one consumer today.
 - **`className` passthrough.** Documented as layout/positioning only; color literals are caught by `vimeflow/no-hardcoded-colors`; the variant owns all tonal classes; feature accents use semantic tokens. `tailwind-merge` (via `tv()`) resolves any conflict deterministically rather than by string order, so the old "which utility wins" hazard is gone. The floating substrate forbids `className` because its surface is fixed; buttons legitimately need layout control.
-- **New dependency: `tailwind-variants` + `tailwind-merge`.** Two small runtime deps (peer `tailwind-merge >= 3`, the TW-v4 line). The one real risk — `tailwind-merge` misgrouping the repo's *custom* semantic tokens — was smoke-tested before adoption (font-size vs color survive; custom `bg-`/`text-` tokens merge correctly). Fallback if a future token misbehaves: `tv({...}, { twMerge: false })` (the variants are conflict-free by construction, so merge only matters for the layout `className`) or a `twMergeConfig`. Decision record: `docs/decisions/2026-06-14-tailwind-variants.md`.
+- **New dependency: `tailwind-variants` + `tailwind-merge`.** Two small runtime deps (peer `tailwind-merge >= 3`, the TW-v4 line). The one real risk — `tailwind-merge` misgrouping the repo's _custom_ semantic tokens — was smoke-tested before adoption (font-size vs color survive; custom `bg-`/`text-` tokens merge correctly). Fallback if a future token misbehaves: `tv({...}, { twMerge: false })` (the variants are conflict-free by construction, so merge only matters for the layout `className`) or a `twMergeConfig`. Decision record: `docs/decisions/2026-06-14-tailwind-variants.md`.
 - **Size convergence is visible churn.** Converging six sizes to three shifts some buttons 1–2px. Intentional, but each migration must be eyeballed in-browser (jsdom can't catch it) per the tailwind-rem lesson.
 - **Ratchet floor, not 0; the inventory is the audit.** Because grouped controls hold icon buttons (VIM-125's territory) and some icons are helper-classed (invisible to the AST rule), the lint-disable set alone cannot prove completeness. The **inventory** is the audit of record; the lint rule is a forward guardrail for the two common shapes (§5). "Done" for VIM-124 = every inventory `migrate-now` entry migrated, with the `deferred-grouped` entries handed to VIM-125 as a precise list.

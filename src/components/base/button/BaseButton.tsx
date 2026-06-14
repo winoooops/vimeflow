@@ -4,7 +4,8 @@ import { buttonVariants, type ButtonVariantProps } from './buttonVariants'
 export type { ButtonVariantProps }
 
 export interface BaseButtonProps
-  extends ButtonVariantProps,
+  extends
+    ButtonVariantProps,
     Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'className'> {
   pressed?: boolean
   className?: string

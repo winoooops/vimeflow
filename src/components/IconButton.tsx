@@ -8,7 +8,8 @@ import { type Placement } from '@/components/base/floating/glassSurface'
 import { type ShortcutInput } from '@/lib/formatShortcut'
 
 interface IconButtonProps
-  extends Pick<ButtonVariantProps, 'variant' | 'size'>,
+  extends
+    Pick<ButtonVariantProps, 'variant' | 'size'>,
     Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'className' | 'aria-label'> {
   icon: string
   label: string

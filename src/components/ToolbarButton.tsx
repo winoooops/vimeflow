@@ -5,7 +5,8 @@ import {
 } from '@/components/base/button/BaseButton'
 
 interface ToolbarButtonProps
-  extends Pick<ButtonVariantProps, 'variant' | 'size'>,
+  extends
+    Pick<ButtonVariantProps, 'variant' | 'size'>,
     Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'className'> {
   label: string
   icon?: string
@@ -36,13 +37,19 @@ export const ToolbarButton = ({
     className={className}
   >
     {icon !== undefined && (
-      <span className="material-symbols-outlined text-[1.1em]" aria-hidden="true">
+      <span
+        className="material-symbols-outlined text-[1.1em]"
+        aria-hidden="true"
+      >
         {icon}
       </span>
     )}
     <span className="truncate">{label}</span>
     {trailingIcon !== undefined && (
-      <span className="material-symbols-outlined text-[1.1em]" aria-hidden="true">
+      <span
+        className="material-symbols-outlined text-[1.1em]"
+        aria-hidden="true"
+      >
         {trailingIcon}
       </span>
     )}

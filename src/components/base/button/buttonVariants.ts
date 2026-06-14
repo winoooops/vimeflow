@@ -19,12 +19,28 @@ export const buttonVariants = tv({
     shape: { icon: '', pill: '' },
   },
   compoundVariants: [
-    { shape: 'icon', size: 'sm', class: 'h-[22px] w-[22px] text-[13px] rounded-chip' },
+    {
+      shape: 'icon',
+      size: 'sm',
+      class: 'h-[22px] w-[22px] text-[13px] rounded-chip',
+    },
     { shape: 'icon', size: 'md', class: 'h-7 w-7 text-[17px] rounded-chip' },
     { shape: 'icon', size: 'lg', class: 'h-8 w-8 text-[19px] rounded-chip' },
-    { shape: 'pill', size: 'sm', class: 'h-[26px] px-2 text-xs rounded-md gap-1.5' },
-    { shape: 'pill', size: 'md', class: 'h-[30px] px-2.5 text-[13px] rounded-md gap-1.5' },
-    { shape: 'pill', size: 'lg', class: 'h-9 px-3 text-[15px] rounded-lg gap-2' },
+    {
+      shape: 'pill',
+      size: 'sm',
+      class: 'h-[26px] px-2 text-xs rounded-md gap-1.5',
+    },
+    {
+      shape: 'pill',
+      size: 'md',
+      class: 'h-[30px] px-2.5 text-[13px] rounded-md gap-1.5',
+    },
+    {
+      shape: 'pill',
+      size: 'lg',
+      class: 'h-9 px-3 text-[15px] rounded-lg gap-2',
+    },
   ],
   defaultVariants: { variant: 'default', size: 'md', shape: 'pill' },
 })

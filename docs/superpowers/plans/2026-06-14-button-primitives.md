@@ -17,6 +17,7 @@
 ## File structure
 
 **New (PR1):**
+
 - `src/components/base/button/buttonVariants.ts` (+ `.test.ts`) — `tv()` def: variant/size/shape → className; exports `ButtonVariantProps`.
 - `src/components/base/button/BaseButton.tsx` (+ `.test.tsx`) — headless `<button>`.
 - `src/components/Button.tsx` (+ `.test.tsx`) — text/primary; re-exports the variant types.
@@ -24,9 +25,11 @@
 - `eslint-rules/no-raw-icon-button.js` (+ `eslint-rules/no-raw-icon-button.test.js`) — the guardrail.
 
 **New (PR2):**
+
 - `src/components/ToolbarButton.tsx` (+ `.test.tsx`) — icon + label pill.
 
 **Modified:**
+
 - `eslint.config.js` — register the rule on the existing `vimeflow` plugin; extend the alias regex (PR3).
 - Migration call sites (PR1/PR2) and `docs/design/UNIFIED.md`, `rules/typescript/coding-style/CLAUDE.md`, `AGENTS.md` (PR3).
 
@@ -140,12 +143,28 @@ export const buttonVariants = tv({
     shape: { icon: '', pill: '' },
   },
   compoundVariants: [
-    { shape: 'icon', size: 'sm', class: 'h-[22px] w-[22px] text-[13px] rounded-chip' },
+    {
+      shape: 'icon',
+      size: 'sm',
+      class: 'h-[22px] w-[22px] text-[13px] rounded-chip',
+    },
     { shape: 'icon', size: 'md', class: 'h-7 w-7 text-[17px] rounded-chip' },
     { shape: 'icon', size: 'lg', class: 'h-8 w-8 text-[19px] rounded-chip' },
-    { shape: 'pill', size: 'sm', class: 'h-[26px] px-2 text-xs rounded-md gap-1.5' },
-    { shape: 'pill', size: 'md', class: 'h-[30px] px-2.5 text-[13px] rounded-md gap-1.5' },
-    { shape: 'pill', size: 'lg', class: 'h-9 px-3 text-[15px] rounded-lg gap-2' },
+    {
+      shape: 'pill',
+      size: 'sm',
+      class: 'h-[26px] px-2 text-xs rounded-md gap-1.5',
+    },
+    {
+      shape: 'pill',
+      size: 'md',
+      class: 'h-[30px] px-2.5 text-[13px] rounded-md gap-1.5',
+    },
+    {
+      shape: 'pill',
+      size: 'lg',
+      class: 'h-9 px-3 text-[15px] rounded-lg gap-2',
+    },
   ],
   defaultVariants: { variant: 'default', size: 'md', shape: 'pill' },
 })
@@ -205,7 +224,8 @@ import { buttonVariants, type ButtonVariantProps } from './buttonVariants'
 export type { ButtonVariantProps }
 
 export interface BaseButtonProps
-  extends ButtonVariantProps,
+  extends
+    ButtonVariantProps,
     Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'className'> {
   pressed?: boolean
   className?: string
@@ -243,7 +263,12 @@ export const BaseButton = ({
 - [ ] **Step 2: Run — FAIL. Step 3: Implement:**
 
 ```tsx
-import { type ButtonHTMLAttributes, type ReactElement, type ReactNode, type Ref } from 'react'
+import {
+  type ButtonHTMLAttributes,
+  type ReactElement,
+  type ReactNode,
+  type Ref,
+} from 'react'
 import {
   BaseButton,
   type ButtonVariantProps,
@@ -252,7 +277,8 @@ import {
 export type { ButtonVariantProps }
 
 interface ButtonProps
-  extends Pick<ButtonVariantProps, 'variant' | 'size'>,
+  extends
+    Pick<ButtonVariantProps, 'variant' | 'size'>,
     Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'className'> {
   leadingIcon?: string
   className?: string
@@ -278,7 +304,10 @@ export const Button = ({
     className={className}
   >
     {leadingIcon !== undefined && (
-      <span className="material-symbols-outlined text-[1.1em]" aria-hidden="true">
+      <span
+        className="material-symbols-outlined text-[1.1em]"
+        aria-hidden="true"
+      >
         {leadingIcon}
       </span>
     )}
@@ -309,7 +338,10 @@ test('icon-only: aria-label from label, aria-hidden icon', () => {
   render(<IconButton icon="close" label="Close pane" />)
   const btn = screen.getByRole('button', { name: 'Close pane' })
   // eslint-disable-next-line testing-library/no-node-access -- asserting icon a11y
-  expect(btn.querySelector('.material-symbols-outlined')).toHaveAttribute('aria-hidden', 'true')
+  expect(btn.querySelector('.material-symbols-outlined')).toHaveAttribute(
+    'aria-hidden',
+    'true'
+  )
 })
 
 test('serves as a Menu trigger: ref + onClick + aria-expanded', async () => {
@@ -317,7 +349,11 @@ test('serves as a Menu trigger: ref + onClick + aria-expanded', async () => {
   const spy = vi.fn()
   const ref = createRef<HTMLButtonElement>()
   render(
-    <Menu trigger={<IconButton ref={ref} icon="more_vert" label="Actions" onClick={spy} />}>
+    <Menu
+      trigger={
+        <IconButton ref={ref} icon="more_vert" label="Actions" onClick={spy} />
+      }
+    >
       <Menu.Item onSelect={vi.fn()}>One</Menu.Item>
     </Menu>
   )
@@ -343,7 +379,8 @@ import { type Placement } from '@/components/base/floating/glassSurface'
 import { type ShortcutInput } from '@/lib/formatShortcut'
 
 interface IconButtonProps
-  extends Pick<ButtonVariantProps, 'variant' | 'size'>,
+  extends
+    Pick<ButtonVariantProps, 'variant' | 'size'>,
     Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'className' | 'aria-label'> {
   icon: string
   label: string
@@ -411,7 +448,13 @@ import { test } from 'vitest'
 import rule from './no-raw-icon-button.js'
 
 const ruleTester = new RuleTester({
-  languageOptions: { parserOptions: { ecmaFeatures: { jsx: true }, ecmaVersion: 2022, sourceType: 'module' } },
+  languageOptions: {
+    parserOptions: {
+      ecmaFeatures: { jsx: true },
+      ecmaVersion: 2022,
+      sourceType: 'module',
+    },
+  },
 })
 
 test('no-raw-icon-button', () => {
@@ -424,8 +467,14 @@ test('no-raw-icon-button', () => {
       // the primitives render the raw pattern; exemption is via config `ignores`, not the rule
     ],
     invalid: [
-      { code: '<button className="material-symbols-outlined">add</button>', errors: [{ messageId: 'rawIconButton' }] }, // Shape A
-      { code: '<button><span className="material-symbols-outlined" aria-hidden="true">close</span></button>', errors: [{ messageId: 'rawIconButton' }] }, // Shape B
+      {
+        code: '<button className="material-symbols-outlined">add</button>',
+        errors: [{ messageId: 'rawIconButton' }],
+      }, // Shape A
+      {
+        code: '<button><span className="material-symbols-outlined" aria-hidden="true">close</span></button>',
+        errors: [{ messageId: 'rawIconButton' }],
+      }, // Shape B
     ],
   })
 })
@@ -576,7 +625,8 @@ import {
 } from '@/components/base/button/BaseButton'
 
 interface ToolbarButtonProps
-  extends Pick<ButtonVariantProps, 'variant' | 'size'>,
+  extends
+    Pick<ButtonVariantProps, 'variant' | 'size'>,
     Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'className'> {
   label: string
   icon?: string
@@ -607,13 +657,19 @@ export const ToolbarButton = ({
     className={className}
   >
     {icon !== undefined && (
-      <span className="material-symbols-outlined text-[1.1em]" aria-hidden="true">
+      <span
+        className="material-symbols-outlined text-[1.1em]"
+        aria-hidden="true"
+      >
         {icon}
       </span>
     )}
     <span className="truncate">{label}</span>
     {trailingIcon !== undefined && (
-      <span className="material-symbols-outlined text-[1.1em]" aria-hidden="true">
+      <span
+        className="material-symbols-outlined text-[1.1em]"
+        aria-hidden="true"
+      >
         {trailingIcon}
       </span>
     )}

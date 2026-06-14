@@ -6,9 +6,7 @@ import { Menu } from '@/components/Menu'
 import { ToolbarButton } from './ToolbarButton'
 
 test('renders icon + visible label + optional trailing caret', () => {
-  render(
-    <ToolbarButton icon="tune" label="View" trailingIcon="expand_more" />
-  )
+  render(<ToolbarButton icon="tune" label="View" trailingIcon="expand_more" />)
   const btn = screen.getByRole('button', { name: /view/i })
   expect(btn).toHaveTextContent('View')
   // eslint-disable-next-line testing-library/no-node-access -- asserting icon a11y
