@@ -32,9 +32,10 @@ export const FinishFeedbackPopover = ({
         }
       }}
       aria-label="Finish feedback"
+      width={320}
     >
       {result.kind === 'none' && (
-        <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-3 p-4">
           <p className="text-sm text-on-surface">
             No coding agent is active in this workspace. Start{' '}
             <code className="rounded bg-surface-container/50 px-1 py-0.5 text-xs font-mono text-on-surface-variant">
@@ -59,7 +60,7 @@ export const FinishFeedbackPopover = ({
       )}
 
       {result.kind === 'one' && (
-        <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-3 p-4">
           <p className="text-sm text-on-surface">
             Send {commentCount} {commentWord} across {fileCount} {fileWord} to{' '}
             {result.pane.tabName} ({result.pane.agentLabel})?
@@ -84,7 +85,7 @@ export const FinishFeedbackPopover = ({
       )}
 
       {result.kind === 'many' && (
-        <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-3 p-4">
           <h2 className="text-sm font-medium text-on-surface">
             Multiple agents in this workspace. Pick one:
           </h2>

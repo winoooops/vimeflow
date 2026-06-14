@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, test, vi } from 'vitest'
 import { Popover } from './Popover'
@@ -104,6 +104,45 @@ describe('Popover', () => {
     await user.click(outsideBtn)
     expect(onOpenChange).toHaveBeenCalledTimes(1)
     expect(onOpenChange.mock.calls[0][0]).toBe(false)
+
+    outsideBtn.remove()
+  })
+
+  test('moves focus into the dialog on open and traps Tab inside it', async () => {
+    const user = userEvent.setup()
+    const anchor = makeAnchor()
+
+    // A focusable sibling outside the popover; the modal trap must not let Tab
+    // reach it. Rendered on body so the inert sibling-hiding cannot remove it.
+    const outsideBtn = document.createElement('button')
+    outsideBtn.textContent = 'outside'
+
+    document.body.appendChild(outsideBtn)
+
+    render(
+      <Popover anchor={anchor} open onOpenChange={vi.fn()} aria-label="Confirm">
+        <button type="button">Cancel</button>
+        <button type="button">Confirm</button>
+      </Popover>
+    )
+
+    const dialog = screen.getByRole('dialog', { name: 'Confirm' })
+
+    // FloatingFocusManager moves focus to the first tabbable child on a
+    // post-render microtask; without the fix focus stays on the trigger.
+    await waitFor(() =>
+      expect(
+        within(dialog).getByRole('button', { name: 'Cancel' })
+      ).toHaveFocus()
+    )
+
+    // Tab advances to the next in-dialog control and never escapes to the
+    // outside sibling — the modal trap is engaged.
+    await user.tab()
+    expect(
+      within(dialog).getByRole('button', { name: 'Confirm' })
+    ).toHaveFocus()
+    expect(outsideBtn).not.toHaveFocus()
 
     outsideBtn.remove()
   })

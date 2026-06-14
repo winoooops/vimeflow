@@ -16,8 +16,8 @@ interface PopoverProps {
 }
 
 // Public dialog card primitive. Composes the floating substrate with
-// role=dialog + modal focus management (initialFocus -1 so focus lands
-// on the container, not the first focusable child).
+// role=dialog + modal focus management (initialFocus 0 moves focus to the
+// first tabbable child on open, engaging the modal trap).
 export const Popover = ({
   anchor,
   open,
@@ -48,7 +48,7 @@ export const Popover = ({
       style={floatingStyles}
       context={context}
       width={width}
-      focus={{ initialFocus: -1, modal: true }}
+      focus={{ initialFocus: 0, modal: true }}
       aria-label={ariaLabel}
       {...getFloatingProps()}
     >
