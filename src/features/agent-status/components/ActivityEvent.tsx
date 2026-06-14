@@ -8,6 +8,7 @@ import {
   type ReactNode,
   type Ref,
 } from 'react'
+import { IconButton } from '@/components/IconButton'
 import { Tooltip } from '@/components/Tooltip'
 import { formatShortcut } from '../../../lib/formatShortcut'
 import { formatRelativeTime, formatDuration } from '../utils/relativeTime'
@@ -214,7 +215,6 @@ export const ActivityTooltipContent = ({
   now,
 }: ActivityTooltipContentProps): ReactElement => {
   const [copyState, setCopyState] = useState<CopyState>('idle')
-  const [isHovered, setIsHovered] = useState(false)
   const copyText = buildCopyText(event)
 
   useEffect(() => {
@@ -248,6 +248,10 @@ export const ActivityTooltipContent = ({
 
   const copyFeedback =
     copyState === 'copied' ? 'Copied' : copyState === 'failed' ? 'Failed' : ''
+
+  // This button lives inside the row's interactive tooltip content, so its own
+  // IconButton tooltip is suppressed to avoid a tooltip nested in a tooltip.
+  const suppressCopyTooltip = true
 
   const isRunning = event.status === 'running'
 
@@ -318,36 +322,18 @@ export const ActivityTooltipContent = ({
           >
             {copyFeedback}
           </span>
-          {/* eslint-disable-next-line vimeflow/no-raw-icon-button */}
-          <button
-            type="button"
-            aria-label={copyButtonLabel}
+          <IconButton
+            icon={copyState === 'copied' ? 'check' : 'content_copy'}
+            label={copyButtonLabel}
+            size="sm"
+            showTooltip={!suppressCopyTooltip}
             onClick={(): void => {
               void handleCopy()
             }}
-            className="grid h-[22px] w-[22px] place-items-center rounded border-none transition-colors duration-[160ms] ease-in-out"
-            style={{
-              background:
-                copyState !== 'copied' && isHovered
-                  ? 'var(--color-wash-subtle)'
-                  : 'transparent',
-              color:
-                copyState === 'copied'
-                  ? 'var(--color-agent-codex-accent)'
-                  : isHovered
-                    ? 'var(--color-primary)'
-                    : 'var(--color-on-surface-muted)',
-            }}
-            onMouseEnter={(): void => setIsHovered(true)}
-            onMouseLeave={(): void => setIsHovered(false)}
-          >
-            <span
-              className="material-symbols-outlined text-xs"
-              aria-hidden="true"
-            >
-              {copyState === 'copied' ? 'check' : 'content_copy'}
-            </span>
-          </button>
+            className={
+              copyState === 'copied' ? 'text-agent-codex-accent' : undefined
+            }
+          />
         </div>
       </div>
 
