@@ -1,6 +1,7 @@
 import { useState, type ReactElement, type ReactNode } from 'react'
 import type { BaseDiffOptions, DiffsThemeNames } from '@pierre/diffs'
 import { Tooltip } from '@/components/Tooltip'
+import { IconButton } from '@/components/IconButton'
 import { Popover } from '@/components/Popover'
 import { Dropdown, type DropdownOption } from '@/components/Dropdown'
 import { PriorityPlus } from './PriorityPlus'
@@ -238,6 +239,10 @@ export const DiffChipToolbar = ({
   const [discardAllAnchor, setDiscardAllAnchor] =
     useState<HTMLButtonElement | null>(null)
 
+  // The explicit Tooltip already wraps the discard-all span, so suppress
+  // IconButton's built-in one to avoid a nested tooltip.
+  const labelledByOuterTooltip = true
+
   // Counter copy: `1/N` when there is at least one hunk, `0/0` otherwise.
   // Shows the current focused index as `focusedHunkIndex + 1` so the counter
   // is consistent with PR3 once prev/next start mutating the index.
@@ -275,14 +280,16 @@ export const DiffChipToolbar = ({
     onDiscardAll !== undefined ? (
       <Tooltip content="Discard all changes" disabled={discardAllOpen}>
         <span>
-          {/* eslint-disable-next-line vimeflow/no-raw-icon-button */}
-          <button
+          <IconButton
             ref={setDiscardAllAnchor}
-            type="button"
+            icon="delete_sweep"
+            label="discard all"
+            variant="danger"
+            size="md"
             disabled={staging}
-            aria-label="discard all"
             aria-haspopup="dialog"
             aria-expanded={discardAllOpen}
+            showTooltip={!labelledByOuterTooltip}
             className={
               staging
                 ? WELL_DISABLED_BUTTON_CLASSES
@@ -293,14 +300,7 @@ export const DiffChipToolbar = ({
                 setDiscardAllOpen((prev) => !prev)
               }
             }}
-          >
-            <span
-              aria-hidden="true"
-              className="material-symbols-outlined text-base leading-none"
-            >
-              delete_sweep
-            </span>
-          </button>
+          />
           <Popover
             anchor={discardAllAnchor}
             open={discardAllOpen}

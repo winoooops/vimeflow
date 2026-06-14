@@ -1,5 +1,6 @@
 import type { ReactElement } from 'react'
 import { Tooltip } from '@/components/Tooltip'
+import { IconButton } from '@/components/IconButton'
 
 export interface FilePillProps {
   // Basename + count are rendered on the lavender pill body. `fileName` is the
@@ -30,6 +31,10 @@ const GHOST_ARROW_CLASSES =
   'text-on-surface-muted hover:bg-surface-bright hover:text-primary-container ' +
   'transition-colors disabled:opacity-40 disabled:pointer-events-none'
 
+// Each arrow is wrapped in its own explicit Tooltip, so suppress IconButton's
+// built-in one to avoid a nested tooltip.
+const LABELLED_BY_OUTER_TOOLTIP = true
+
 export const FilePill = ({
   fileName,
   counterText,
@@ -44,21 +49,15 @@ export const FilePill = ({
   return (
     <span className="inline-flex items-center gap-0.5">
       <Tooltip content="Previous file">
-        {/* eslint-disable-next-line vimeflow/no-raw-icon-button */}
-        <button
-          type="button"
+        <IconButton
+          icon="chevron_left"
+          label="previous file"
+          size="sm"
           disabled={!navEnabled}
-          aria-label="previous file"
           onClick={onPrev}
+          showTooltip={!LABELLED_BY_OUTER_TOOLTIP}
           className={GHOST_ARROW_CLASSES}
-        >
-          <span
-            aria-hidden="true"
-            className="material-symbols-outlined text-base leading-none"
-          >
-            chevron_left
-          </span>
-        </button>
+        />
       </Tooltip>
       <Tooltip content={fileName ?? `File ${counterText}`}>
         {/* role="group" makes the aria-label a valid author name. ARIA 1.2
@@ -89,21 +88,15 @@ export const FilePill = ({
         </div>
       </Tooltip>
       <Tooltip content="Next file">
-        {/* eslint-disable-next-line vimeflow/no-raw-icon-button */}
-        <button
-          type="button"
+        <IconButton
+          icon="chevron_right"
+          label="next file"
+          size="sm"
           disabled={!navEnabled}
-          aria-label="next file"
           onClick={onNext}
+          showTooltip={!LABELLED_BY_OUTER_TOOLTIP}
           className={GHOST_ARROW_CLASSES}
-        >
-          <span
-            aria-hidden="true"
-            className="material-symbols-outlined text-base leading-none"
-          >
-            chevron_right
-          </span>
-        </button>
+        />
       </Tooltip>
     </span>
   )
