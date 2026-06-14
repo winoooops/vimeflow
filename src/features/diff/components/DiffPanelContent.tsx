@@ -42,6 +42,7 @@ import {
 import { ReviewCommentComposer } from './ReviewCommentComposer'
 import { ReviewCommentRow } from './ReviewCommentRow'
 import { FinishFeedbackPopover } from './FinishFeedbackPopover'
+import { IconButton } from '@/components/IconButton'
 import {
   dispatchFeedbackBatch,
   type DispatchEntry,
@@ -111,6 +112,10 @@ export type DiffPanelContentProps = DiffPanelContentBaseProps &
 
 // Monotonic id source. A module counter keeps comment ids stable + unique
 // without reaching for Date.now()/Math.random() in render.
+// The gutter "+" lives in Pierre's hover slot and surfaces its intent via the
+// aria-label, so suppress IconButton's built-in hover tooltip.
+const GUTTER_TOOLTIP_SUPPRESSED = true
+
 let feedbackCommentSeq = 0
 
 const nextFeedbackCommentId = (): string =>
@@ -1360,11 +1365,12 @@ export const DiffPanelContent = ({
                   // the line number. translate-x-3/4 nudges it into the gutter
                   // gap next to the code (GitHub-style); the percentage is of the
                   // button's own width, so it adapts to any line-number column.
-                  // eslint-disable-next-line vimeflow/no-raw-icon-button
-                  <button
-                    type="button"
-                    aria-label="Add comment on this line"
-                    className="flex h-5 w-5 translate-x-3/4 items-center justify-center rounded-full bg-primary text-on-primary shadow-md hover:bg-primary/90"
+                  <IconButton
+                    icon="add"
+                    label="Add comment on this line"
+                    size="sm"
+                    showTooltip={!GUTTER_TOOLTIP_SUPPRESSED}
+                    className="h-5 w-5 translate-x-3/4 rounded-full bg-primary text-on-primary shadow-md hover:bg-primary/90"
                     onClick={(): void => {
                       const hovered = getHoveredLine()
                       if (hovered && selectedFilePath !== null) {
@@ -1385,14 +1391,7 @@ export const DiffPanelContent = ({
                         setComposerTarget(nextTarget)
                       }
                     }}
-                  >
-                    <span
-                      aria-hidden="true"
-                      className="material-symbols-outlined text-sm leading-none"
-                    >
-                      add
-                    </span>
-                  </button>
+                  />
                 )}
                 renderAnnotation={(
                   annotation: DiffLineAnnotation<ReviewComment>

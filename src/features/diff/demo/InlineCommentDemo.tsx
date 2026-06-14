@@ -8,6 +8,7 @@ import {
 } from '../hooks/useFeedbackBatch'
 import { ReviewCommentComposer } from '../components/ReviewCommentComposer'
 import { ReviewCommentRow } from '../components/ReviewCommentRow'
+import { IconButton } from '@/components/IconButton'
 
 // Dev-only interactive demo justifying the PR4 "gutter affordance" approach to
 // adding inline review comments (spec §7), matching the Codex inline-composer
@@ -34,6 +35,10 @@ const NEW_CONTENTS = `export function greet(name: string): string {
   return msg
 }
 `
+
+// The gutter "+" lives in Pierre's hover slot and surfaces its intent via the
+// aria-label, so suppress IconButton's built-in hover tooltip.
+const GUTTER_TOOLTIP_SUPPRESSED = true
 
 // Monotonic id source. A module counter keeps comment ids stable + unique
 // without reaching for Date.now()/Math.random() in render.
@@ -150,11 +155,12 @@ export const InlineCommentDemo = (): ReactElement => {
             // translate-x-3/4 shifts the "+" out of the line-number cell into the
             // gutter gap next to the code (GitHub-style) — Pierre otherwise
             // center-anchors it on top of the number. Mirrors DiffPanelContent.
-            // eslint-disable-next-line vimeflow/no-raw-icon-button
-            <button
-              type="button"
-              aria-label="Add comment on this line"
-              className="flex h-5 w-5 translate-x-3/4 items-center justify-center rounded-full bg-primary text-on-primary shadow-md hover:bg-primary/90"
+            <IconButton
+              icon="add"
+              label="Add comment on this line"
+              size="sm"
+              showTooltip={!GUTTER_TOOLTIP_SUPPRESSED}
+              className="h-5 w-5 translate-x-3/4 rounded-full bg-primary text-on-primary shadow-md hover:bg-primary/90"
               onClick={(): void => {
                 const hovered = getHoveredLine()
                 if (hovered) {
@@ -164,14 +170,7 @@ export const InlineCommentDemo = (): ReactElement => {
                   })
                 }
               }}
-            >
-              <span
-                aria-hidden="true"
-                className="material-symbols-outlined text-sm leading-none"
-              >
-                add
-              </span>
-            </button>
+            />
           )}
           renderAnnotation={(
             annotation: DiffLineAnnotation<ReviewComment>
