@@ -1,6 +1,11 @@
 import { useEffect, useRef, useState, type ReactElement } from 'react'
+import { IconButton } from '@/components/IconButton'
 import { READING_STYLES } from '../data/readingStyles'
 import { useReadingStyle } from '../hooks/useReadingStyle'
+
+// The gear trigger surfaces its intent via the aria-label and opens a menu, so
+// suppress IconButton's built-in tooltip (it would overlap the open menu).
+const TRIGGER_TOOLTIP_SUPPRESSED = true
 
 /**
  * The ⚙ reading-style switcher for the dock header (rendered only for markdown
@@ -49,22 +54,16 @@ export const ReadingStyleMenu = (): ReactElement => {
       onClick={(event) => event.stopPropagation()}
       className="relative shrink-0"
     >
-      {/* eslint-disable-next-line vimeflow/no-raw-icon-button */}
-      <button
-        type="button"
-        aria-label="Reading style"
+      <IconButton
+        icon="settings"
+        label="Reading style"
+        size="sm"
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen((prev) => !prev)}
-        className="grid h-6 w-6 cursor-pointer place-items-center rounded-[5px] bg-transparent text-on-surface-muted transition-colors hover:bg-wash-subtle hover:text-primary focus:bg-wash-subtle focus:text-primary focus:outline-none"
-      >
-        <span
-          className="material-symbols-outlined text-[16px]"
-          aria-hidden="true"
-        >
-          settings
-        </span>
-      </button>
+        showTooltip={!TRIGGER_TOOLTIP_SUPPRESSED}
+        className="h-6 w-6 cursor-pointer rounded-[5px] bg-transparent text-[16px] text-on-surface-muted hover:bg-wash-subtle hover:text-primary focus:bg-wash-subtle focus:text-primary focus:outline-none"
+      />
 
       {open && (
         <div

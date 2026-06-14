@@ -16,9 +16,16 @@ describe('ReadingStyleMenu', () => {
     const user = userEvent.setup()
     render(<ReadingStyleMenu />)
 
-    expect(screen.queryByRole('menu')).toBeNull()
-    await user.click(screen.getByRole('button', { name: /reading style/i }))
+    const trigger = screen.getByRole('button', { name: /reading style/i })
+    // The migrated IconButton forwards aria-haspopup / aria-expanded through
+    // ...rest; closed reads aria-expanded=false.
+    expect(trigger).toHaveAttribute('aria-haspopup', 'menu')
+    expect(trigger).toHaveAttribute('aria-expanded', 'false')
 
+    expect(screen.queryByRole('menu')).toBeNull()
+    await user.click(trigger)
+
+    expect(trigger).toHaveAttribute('aria-expanded', 'true')
     expect(
       screen.getByRole('menu', { name: /reading style/i })
     ).toBeInTheDocument()
