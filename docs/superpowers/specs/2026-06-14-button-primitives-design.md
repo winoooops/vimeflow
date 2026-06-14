@@ -39,7 +39,7 @@ Every theme/a11y/motion change today means editing N files. One shared family co
 1. A package-private `base/button` substrate that owns the `<button>` element contract (type, focus-visible, disabled, ref-forward, className merge) and the canonical size × variant × tone → className map.
 2. Three public primitives: `Button` (text / primary foundation), `IconButton` (icon-only, required accessible name), `ToolbarButton` (icon + label pill).
 3. Migrate every **standalone icon-only** button and **toolbar pill** in scope to the new family.
-4. A guardrail — `vimeflow/no-raw-icon-button` — that fails lint on a raw `<button>` whose only content is a `material-symbols-outlined` span, outside `src/components/`, ratcheted down from a frozen grandfather count.
+4. A guardrail — `vimeflow/no-raw-icon-button` — that fails lint on a raw icon-only Material Symbols `<button>` (the glyph class on the button itself or on its single child icon span), outside `src/components/`, ratcheted down per the offender inventory.
 5. Converge the drifting sizes (6 → `sm` / `md` / `lg`) and radii (6 → one canonical per shape) — an intentional visual convergence verified in-browser per migration.
 
 **Non-goals — the scope boundary with VIM-125 (read this carefully; codex flagged an overlap)**
