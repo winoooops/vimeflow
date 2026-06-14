@@ -96,6 +96,55 @@ pub(crate) fn parse_session_aggregate(session_dir: &Path) -> Option<StatusSnapsh
     Some(snapshot)
 }
 
+/// Count MAIN-agent user turns whose usage has SETTLED — a user `turn.prompt`
+/// followed by a later `usage.record` — in the session's main wire. Drives the
+/// usage refresh from turn COMPLETION (after the provider call records its
+/// tokens) rather than turn start, so the fetched plan-usage reflects the turn
+/// that just finished instead of lagging one behind. Sub-agent wires are never
+/// read, so a delegation's turns can't drive the (network) fetch. `0` when the
+/// main wire is unreadable or the latest turn hasn't produced output yet.
+pub(crate) fn main_settled_turn_count(session_dir: &Path) -> u64 {
+    let Some(wires) = read_agent_wires(session_dir) else {
+        return 0;
+    };
+    let Some(main) = wires.iter().find(|wire| wire.is_main) else {
+        return 0;
+    };
+    let Ok(raw) = std::fs::read_to_string(&main.wire) else {
+        return 0;
+    };
+    count_settled_user_turns(&raw)
+}
+
+/// Number of MAIN-agent user turns whose consumption has landed — a
+/// `turn.prompt origin.kind == "user"` followed later by a `usage.record`. A
+/// turn still in flight (prompt written, no record yet) is not counted, so the
+/// count advances at turn completion; multiple records in one turn credit it
+/// once. Malformed or partial lines fail to parse and are skipped.
+fn count_settled_user_turns(raw: &str) -> u64 {
+    let mut settled: u64 = 0;
+    let mut pending: u64 = 0;
+    for dto in raw
+        .lines()
+        .filter_map(|line| serde_json::from_str::<KimiLineDto>(line).ok())
+    {
+        if is_user_turn_prompt(&dto) {
+            pending += 1;
+        } else if dto.record_type() == KimiRecordType::UsageRecord {
+            settled += pending;
+            pending = 0;
+        }
+    }
+    settled
+}
+
+/// A `turn.prompt` record whose origin is a real user (not a delegated /
+/// agent-originated prompt).
+fn is_user_turn_prompt(dto: &KimiLineDto) -> bool {
+    dto.record_type() == KimiRecordType::TurnPrompt
+        && dto.origin.as_ref().and_then(|origin| origin.kind.as_deref()) == Some("user")
+}
+
 pub(super) struct AgentWire {
     pub(super) agent_id: String,
     pub(super) is_main: bool,
@@ -349,6 +398,67 @@ mod tests {
             parse_session_aggregate(dir).is_none(),
             "must not read a wire outside the session dir"
         );
+    }
+
+    /// The main-wire SETTLED user-turn count drives the usage refresh. Only a
+    /// MAIN-agent `turn.prompt origin.kind=="user"` that has produced a later
+    /// `usage.record` counts — an agent-origin (delegated) main prompt, a user
+    /// prompt in a SUB-agent wire, and an in-flight main turn with no record
+    /// yet are all excluded, so a delegation can't trigger a fetch and the
+    /// count only advances once a turn's consumption has landed.
+    #[test]
+    fn main_settled_turn_count_counts_completed_user_turns_only() {
+        let session = tempfile::tempdir().expect("session");
+        let dir = session.path();
+        let main_wire = write_agent_wire(
+            dir,
+            "main",
+            "{\"type\":\"config.update\",\"modelAlias\":\"kimi-code/kimi-for-coding\"}\n\
+             {\"type\":\"turn.prompt\",\"origin\":{\"kind\":\"user\"}}\n\
+             {\"type\":\"usage.record\",\"usage\":{\"inputOther\":10,\"output\":2}}\n\
+             {\"type\":\"turn.prompt\",\"origin\":{\"kind\":\"agent\"}}\n\
+             {\"type\":\"turn.prompt\",\"origin\":{\"kind\":\"user\"}}\n\
+             {\"type\":\"usage.record\",\"usage\":{\"inputOther\":20,\"output\":4}}\n\
+             {\"type\":\"turn.prompt\",\"origin\":{\"kind\":\"user\"}}\n",
+        );
+        let sub_wire = write_agent_wire(
+            dir,
+            "agent-0",
+            "{\"type\":\"turn.prompt\",\"origin\":{\"kind\":\"user\"}}\n\
+             {\"type\":\"usage.record\",\"usage\":{\"inputOther\":5,\"output\":1}}\n",
+        );
+        std::fs::write(
+            dir.join("state.json"),
+            format!(
+                "{{\"agents\":{{\"main\":{{\"homedir\":\"{}\",\"type\":\"main\"}},\"agent-0\":{{\"homedir\":\"{}\",\"type\":\"sub\"}}}}}}",
+                main_wire.parent().unwrap().display(),
+                sub_wire.parent().unwrap().display(),
+            ),
+        )
+        .expect("state.json");
+
+        // 2 settled user turns in main; the agent-origin main turn, the
+        // sub-agent's settled turn, and the final in-flight user turn (no
+        // record yet) are all excluded.
+        assert_eq!(main_settled_turn_count(dir), 2);
+    }
+
+    /// Several `usage.record` lines within one turn credit it once, so the
+    /// count is stable mid-turn and the supervisor doesn't re-fetch per step.
+    #[test]
+    fn settled_count_credits_a_multi_record_turn_once() {
+        let raw = "{\"type\":\"turn.prompt\",\"origin\":{\"kind\":\"user\"}}\n\
+                   {\"type\":\"usage.record\",\"usage\":{\"output\":1}}\n\
+                   {\"type\":\"usage.record\",\"usage\":{\"output\":2}}\n";
+        assert_eq!(count_settled_user_turns(raw), 1);
+    }
+
+    /// A user prompt with no following `usage.record` is in flight, so it does
+    /// not advance the count until its consumption lands.
+    #[test]
+    fn settled_count_excludes_an_in_flight_turn() {
+        let raw = "{\"type\":\"turn.prompt\",\"origin\":{\"kind\":\"user\"}}\n";
+        assert_eq!(count_settled_user_turns(raw), 0);
     }
 
     fn set_modified(path: &Path, when: SystemTime) {

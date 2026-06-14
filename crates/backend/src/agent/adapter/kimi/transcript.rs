@@ -15,6 +15,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use super::transcript_dto::{KimiLineDto, KimiLoopEventType, KimiRecordType};
+use super::KimiLocator;
 use crate::agent::adapter::base::{TranscriptDecoder, TranscriptHandle, TranscriptTailService};
 use crate::agent::adapter::claude_code::test_runners::timestamps::compute_duration_ms;
 use crate::agent::adapter::types::{stamp_snapshot, ValidateTranscriptError};
@@ -44,9 +45,21 @@ struct InFlightToolCall {
 
 type InFlightToolCalls = HashMap<String, InFlightToolCall>;
 
-/// Dedupe key for supervisor `agent-status` refreshes: model + fresh/output
-/// + cache read/creation tokens (cache moves the context % too).
-type StatusSignature = (String, u64, u64, u64, u64);
+/// Dedupe key for supervisor `agent-status` refreshes: the token metrics that
+/// move the context display, plus the effective rate-limit values so a
+/// plan-usage refresh re-emits even when tokens are unchanged (an idle session
+/// after a `/usages` fetch lands). Percentages are compared as `f64::to_bits`.
+#[derive(PartialEq)]
+struct StatusSignature {
+    model: String,
+    input_tokens: u64,
+    output_tokens: u64,
+    cache_read: u64,
+    cache_creation: u64,
+    // (used_percentage bits, resets_at) for the 5-hour and weekly windows.
+    five_hour: (u64, u64),
+    seven_day: (u64, u64),
+}
 
 /// Validate a raw transcript path (null-byte check + canonicalize-under-root)
 /// against a caller-supplied root. `KimiAdapter` passes the locator's
@@ -113,6 +126,7 @@ pub(super) fn start_tailing(
     session_id: String,
     transcript_path: PathBuf,
     cwd: Option<PathBuf>,
+    locator: Arc<KimiLocator>,
 ) -> Result<TranscriptHandle, String> {
     let stop_flag = Arc::new(AtomicBool::new(false));
     let stop_clone = stop_flag.clone();
@@ -142,7 +156,14 @@ pub(super) fn start_tailing(
     emit_initial_cwd(events.as_ref(), &session_id, cwd.as_deref());
 
     let join_handle = std::thread::spawn(move || {
-        run_session_supervisor(events, session_id, session_dir, transcript_path, stop_clone);
+        run_session_supervisor(
+            events,
+            session_id,
+            session_dir,
+            transcript_path,
+            locator,
+            stop_clone,
+        );
     });
     Ok(TranscriptHandle::new(stop_flag, join_handle))
 }
@@ -160,27 +181,58 @@ fn session_id_from_dir(session_dir: &Path) -> String {
 /// Re-aggregate the session status and emit `agent-status` when it changed.
 /// The shared watcher only re-decodes on MAIN-wire writes, so during
 /// delegated work (sub-agent-only token writes) the supervisor is what keeps
-/// the context/token metrics live. Deduped on a cheap token signature.
+/// the context/token metrics live. Deduped on a cheap token + rate-limit
+/// signature.
 fn emit_session_status(
     events: &dyn EventSink,
     session_id: &str,
     session_dir: &Path,
+    locator: &KimiLocator,
     last: &mut Option<StatusSignature>,
 ) {
-    let Some(snapshot) = super::parser::parse_session_aggregate(session_dir) else {
+    let Some(mut snapshot) = super::parser::parse_session_aggregate(session_dir) else {
         return;
     };
+    // Drive the turn-debounced usage fetch from this poll, so an idle session —
+    // or consent just enabled on an idle pane — still fetches without a fresh
+    // prompt. Count SETTLED turns (consumption recorded) so the fetch reflects
+    // the turn that just finished, not the one just started; gate the (full
+    // main-wire parse) count behind consent so the default opt-out path pays
+    // nothing; while OFF, only re-arm the catch-up.
+    if locator.usage_consented() {
+        locator.maybe_refresh_usage(
+            super::parser::main_settled_turn_count(session_dir),
+            &snapshot.version,
+        );
+    } else {
+        locator.disarm_usage();
+    }
+    // Merge the fetched plan-usage (consent-gated; `None` when OFF or not yet
+    // fetched). Without this the supervisor would re-stamp the parser's zeroed
+    // default and overwrite the bars the watcher's decode just filled — and on
+    // an idle session this poll is the only thing that pushes a fetch result.
+    if let Some(rate_limits) = locator.cached_rate_limits() {
+        snapshot.rate_limits = rate_limits;
+    }
     // Include cache tokens: a sub-agent turn often changes only cache read /
     // creation, which still moves the context % + cache display — dropping
     // them here would suppress the refresh and leave the card stale.
     let usage = snapshot.context_window.current_usage.as_ref();
-    let signature = (
-        snapshot.model_id.clone(),
-        snapshot.context_window.total_input_tokens,
-        snapshot.context_window.total_output_tokens,
-        usage.map_or(0, |u| u.cache_read_input_tokens),
-        usage.map_or(0, |u| u.cache_creation_input_tokens),
-    );
+    let rate_limits = &snapshot.rate_limits;
+    let signature = StatusSignature {
+        model: snapshot.model_id.clone(),
+        input_tokens: snapshot.context_window.total_input_tokens,
+        output_tokens: snapshot.context_window.total_output_tokens,
+        cache_read: usage.map_or(0, |u| u.cache_read_input_tokens),
+        cache_creation: usage.map_or(0, |u| u.cache_creation_input_tokens),
+        five_hour: (
+            rate_limits.five_hour.used_percentage.to_bits(),
+            rate_limits.five_hour.resets_at,
+        ),
+        seven_day: rate_limits.seven_day.as_ref().map_or((0, 0), |week| {
+            (week.used_percentage.to_bits(), week.resets_at)
+        }),
+    };
     if last.as_ref() == Some(&signature) {
         return;
     }
@@ -225,6 +277,7 @@ fn run_session_supervisor(
     session_id: String,
     session_dir: PathBuf,
     main_wire: PathBuf,
+    locator: Arc<KimiLocator>,
     stop: Arc<AtomicBool>,
 ) {
     // `read_agent_wires` canonicalizes discovered agent wires, so the main
@@ -280,9 +333,16 @@ fn run_session_supervisor(
             children.insert(wire, (child_stop, join));
         }
 
-        // Refresh the aggregated status so context/tokens stay live during
-        // sub-agent-only writes the main-wire watcher never sees.
-        emit_session_status(events.as_ref(), &session_id, &session_dir, &mut last_status);
+        // Refresh the aggregated status so context/tokens (and the fetched
+        // plan-usage) stay live during sub-agent-only writes — and during idle,
+        // where this poll is the only thing that pushes a landed usage fetch.
+        emit_session_status(
+            events.as_ref(),
+            &session_id,
+            &session_dir,
+            locator.as_ref(),
+            &mut last_status,
+        );
 
         // Poll for newly-spawned sub-agents; check stop on a short tick so
         // teardown stays prompt.
@@ -666,6 +726,17 @@ mod tests {
             .collect()
     }
 
+    // A locator whose usage cache is empty (no fetch), so the supervisor's
+    // status merge is a no-op — these tests assert on tool-call / turn events.
+    fn test_locator() -> Arc<KimiLocator> {
+        Arc::new(KimiLocator::new(
+            std::path::PathBuf::from("/tmp/.kimi-code"),
+            0,
+            std::time::SystemTime::UNIX_EPOCH,
+            None,
+        ))
+    }
+
     #[test]
     fn fixture_replays_one_user_turn_and_paired_tool_call() {
         let sink = Arc::new(FakeEventSink::new());
@@ -674,7 +745,7 @@ mod tests {
         let transcript_path = tmp.path().join("wire.jsonl");
         std::fs::copy(fixture_path(), &transcript_path).expect("copy fixture");
 
-        let handle = start_tailing(sink.clone(), "sid-kimi".to_string(), transcript_path, None)
+        let handle = start_tailing(sink.clone(), "sid-kimi".to_string(), transcript_path, None, test_locator())
             .expect("tailing starts");
 
         assert!(
@@ -743,7 +814,7 @@ mod tests {
         .expect("state.json");
 
         let main_wire = main_dir.join("wire.jsonl");
-        let handle = start_tailing(sink.clone(), "sid".to_string(), main_wire, None)
+        let handle = start_tailing(sink.clone(), "sid".to_string(), main_wire, None, test_locator())
             .expect("tailing starts");
 
         assert!(
@@ -763,6 +834,73 @@ mod tests {
         assert_eq!(calls[0]["tool"], "Read");
         assert_eq!(calls[1]["toolUseId"], "agent-0:t1");
         assert_eq!(calls[1]["status"], "done");
+    }
+
+    /// The supervisor's status refresh merges the locator's fetched plan-usage
+    /// while consent is ON (so the bars show real limits instead of the
+    /// parser's zero default), and emits zero once consent is OFF.
+    #[test]
+    fn emit_session_status_merges_cached_usage_under_consent() {
+        use crate::agent::types::{RateLimitInfo, RateLimits};
+
+        let _guard = crate::agent::kimi_usage_consent::test_serial_guard();
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let session = tmp.path().join("sessions").join("wd_x").join("session_y");
+        let main_dir = session.join("agents").join("main");
+        std::fs::create_dir_all(&main_dir).expect("main dir");
+        std::fs::write(
+            main_dir.join("wire.jsonl"),
+            "{\"type\":\"config.update\",\"modelAlias\":\"kimi-code/kimi-for-coding\"}\n\
+             {\"type\":\"usage.record\",\"usage\":{\"inputOther\":10,\"output\":2,\"inputCacheRead\":0,\"inputCacheCreation\":0}}\n",
+        )
+        .expect("main wire");
+        std::fs::write(
+            session.join("state.json"),
+            format!(
+                "{{\"agents\":{{\"main\":{{\"homedir\":\"{}\",\"type\":\"main\"}}}}}}",
+                main_dir.display(),
+            ),
+        )
+        .expect("state.json");
+
+        let locator = test_locator();
+        locator.set_cached_rate_limits_for_test(RateLimits {
+            five_hour: RateLimitInfo {
+                used_percentage: 17.0,
+                resets_at: 1781424046,
+            },
+            seven_day: Some(RateLimitInfo {
+                used_percentage: 40.0,
+                resets_at: 1781690446,
+            }),
+        });
+
+        // Consent ON: the fetched limits are merged into the emitted status.
+        crate::agent::kimi_usage_consent::set_for_test(true);
+        let sink = Arc::new(FakeEventSink::new());
+        emit_session_status(sink.as_ref(), "sid", &session, locator.as_ref(), &mut None);
+        let status = sink
+            .recorded()
+            .into_iter()
+            .find(|(name, _)| name == "agent-status")
+            .map(|(_, payload)| payload)
+            .expect("an agent-status event");
+        assert_eq!(status["rateLimits"]["fiveHour"]["usedPercentage"], 17.0);
+        assert_eq!(status["rateLimits"]["sevenDay"]["usedPercentage"], 40.0);
+
+        // Consent OFF: no merge, so the bars fall back to the zeroed default.
+        crate::agent::kimi_usage_consent::set_for_test(false);
+        let sink_off = Arc::new(FakeEventSink::new());
+        emit_session_status(sink_off.as_ref(), "sid", &session, locator.as_ref(), &mut None);
+        let status_off = sink_off
+            .recorded()
+            .into_iter()
+            .find(|(name, _)| name == "agent-status")
+            .map(|(_, payload)| payload)
+            .expect("an agent-status event");
+        assert_eq!(status_off["rateLimits"]["fiveHour"]["usedPercentage"], 0.0);
+
+        crate::agent::kimi_usage_consent::set_for_test(false);
     }
 
     #[test]
@@ -798,7 +936,7 @@ mod tests {
         .expect("state.json");
 
         let main_wire = link_dir.join("agents").join("main").join("wire.jsonl");
-        let handle = start_tailing(sink.clone(), "sid".to_string(), main_wire, None)
+        let handle = start_tailing(sink.clone(), "sid".to_string(), main_wire, None, test_locator())
             .expect("tailing starts");
 
         assert!(

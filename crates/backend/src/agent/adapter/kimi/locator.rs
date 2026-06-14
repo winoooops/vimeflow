@@ -34,6 +34,7 @@ use serde::Deserialize;
 
 use crate::agent::adapter::traits::StatusSourceLocator;
 use crate::agent::adapter::types::LocatedStatusSource;
+use crate::agent::types::RateLimits;
 
 // Kimi attach/locate observability — routes through the app's debug_log
 // so traces land in vimeflow-debug.log alongside the pty/bridge logs.
@@ -79,6 +80,44 @@ pub(crate) struct KimiLocator {
     // `locate`, shared with the tailer so it can emit `agent-cwd` from the
     // project the agent is actually in, not the stale spawn cwd.
     resolved_cwd: Arc<Mutex<Option<PathBuf>>>,
+    // Plan-usage (`/usages`) state, shared with the decoder. The fetch is
+    // gated on user consent and runs at most once per new main-agent turn.
+    usage: Arc<Mutex<UsageState>>,
+}
+
+/// Out-of-band kimi plan-usage state behind the locator's shared Arc. The
+/// only network-fed agent state in the backend, so it is turn-debounced
+/// (`fetched_turn`) and self-throttled (`in_flight`). Consent is the separate,
+/// app-global `kimi_usage_consent` flag, checked before any fetch.
+#[derive(Default)]
+struct UsageState {
+    // The main-agent settled-turn count a fetch was last kicked for. `None`
+    // means "no fetch since consent turned on" — so the first poll after
+    // consent is enabled (or after attach) catches up with one fetch even with
+    // no new turn; thereafter only a newly-settled turn re-fetches. Reset to
+    // `None` while consent is OFF so a later enable re-catches-up.
+    fetched_turn: Option<u64>,
+    // A fetch is running; suppresses overlap if turns arrive faster than the
+    // request completes.
+    in_flight: bool,
+    // Last successful fetch, merged into the snapshot by `decode`.
+    cached: Option<RateLimits>,
+}
+
+impl UsageState {
+    /// Whether a NEW fetch should start, ignoring consent (checked separately
+    /// against the app-global flag): none is in flight, and either nothing has
+    /// been fetched since consent turned on (catch-up) or the main-agent
+    /// settled-turn count has advanced past the last fetched turn.
+    fn fetch_due(&self, settled_turn_count: u64) -> bool {
+        if self.in_flight {
+            return false;
+        }
+        match self.fetched_turn {
+            None => true,
+            Some(last) => settled_turn_count > last,
+        }
+    }
 }
 
 impl KimiLocator {
@@ -95,6 +134,7 @@ impl KimiLocator {
             proc_root,
             resolved_session_dir: Arc::new(Mutex::new(None)),
             resolved_cwd: Arc::new(Mutex::new(None)),
+            usage: Arc::new(Mutex::new(UsageState::default())),
         }
     }
 
@@ -115,6 +155,75 @@ impl KimiLocator {
             .lock()
             .expect("resolved_cwd lock")
             .clone()
+    }
+
+    /// The last successfully fetched plan-usage limits, for `decode` to merge
+    /// into the snapshot. `None` until a fetch lands (so the snapshot keeps its
+    /// zeroed default) and `None` whenever consent is OFF — so a revoke hides
+    /// the bars rather than leaving stale plan data merged from the cache.
+    pub(crate) fn cached_rate_limits(&self) -> Option<RateLimits> {
+        if !self.usage_consented() {
+            return None;
+        }
+        self.usage.lock().expect("usage lock").cached.clone()
+    }
+
+    /// Seed the usage cache directly in tests (bypasses the network fetch).
+    #[cfg(test)]
+    pub(crate) fn set_cached_rate_limits_for_test(&self, rate_limits: RateLimits) {
+        self.usage.lock().expect("usage lock").cached = Some(rate_limits);
+    }
+
+    /// Whether plan-usage consent is ON (the app-global flag). `decode` checks
+    /// this before doing the (otherwise wasted) main-wire turn count, so an OFF
+    /// session — the default — pays nothing for the usage path.
+    pub(crate) fn usage_consented(&self) -> bool {
+        crate::agent::kimi_usage_consent::usage_consent_enabled()
+    }
+
+    /// Re-arm the catch-up while consent is OFF — no wire read, no call — so a
+    /// later enable fetches once. The supervisor calls this on the default
+    /// opt-out path instead of computing the (full main-wire parse) turn count.
+    pub(crate) fn disarm_usage(&self) {
+        self.usage.lock().expect("usage lock").fetched_turn = None;
+    }
+
+    /// Kick a background `/usages` fetch when due (a catch-up after consent was
+    /// just enabled / the session attached, or a new main-agent turn). The
+    /// caller (supervisor poll) has already confirmed consent is ON, so an idle
+    /// session and a just-enabled consent both fetch without a fresh prompt.
+    /// Non-blocking: spawns a detached, timeout-bounded thread, so the local
+    /// status path is never delayed by the network. Skips when a fetch is in
+    /// flight or the UA version is unknown. The worker RE-CHECKS consent at the
+    /// last moment, so a revoke after the gate sends no request and writes no
+    /// cache.
+    pub(crate) fn maybe_refresh_usage(&self, settled_turn_count: u64, version: &str) {
+        if version.is_empty() {
+            return;
+        }
+        {
+            let mut usage = self.usage.lock().expect("usage lock");
+            if !usage.fetch_due(settled_turn_count) {
+                return;
+            }
+            usage.fetched_turn = Some(settled_turn_count);
+            usage.in_flight = true;
+        }
+        let home = self.effective_home();
+        let version = version.to_string();
+        let usage = Arc::clone(&self.usage);
+        std::thread::spawn(move || {
+            // A revoke between the gate above and here must cancel the call (no
+            // key sent) and the cache write (no bars after opt-out).
+            let fetched = crate::agent::kimi_usage_consent::usage_consent_enabled()
+                .then(|| super::usage_fetch::fetch_rate_limits(&home, &version))
+                .flatten();
+            let mut state = usage.lock().expect("usage lock");
+            if fetched.is_some() && crate::agent::kimi_usage_consent::usage_consent_enabled() {
+                state.cached = fetched;
+            }
+            state.in_flight = false;
+        });
     }
 
     /// Record (then pass through) a resolved source's session dir —
@@ -1383,5 +1492,70 @@ mod tests {
         );
         let located = locator.locate(work.path(), "pty-1").expect("index binds");
         assert_eq!(located.status_path, wire);
+    }
+
+    /// The fetch-due guard (consent is checked separately): a catch-up fires
+    /// when nothing has been fetched yet (`fetched_turn` None), a new turn
+    /// re-fetches, the same turn does not, and an in-flight fetch suppresses
+    /// overlap.
+    #[test]
+    fn fetch_due_catches_up_then_debounces_per_turn() {
+        // Catch-up: nothing fetched since consent on, even at turn 0.
+        let armed = UsageState {
+            fetched_turn: None,
+            in_flight: false,
+            cached: None,
+        };
+        assert!(armed.fetch_due(0));
+
+        // Same turn already fetched: no re-fetch within the turn.
+        let same_turn = UsageState {
+            fetched_turn: Some(1),
+            in_flight: false,
+            cached: None,
+        };
+        assert!(!same_turn.fetch_due(1));
+
+        // A new turn re-fetches.
+        assert!(same_turn.fetch_due(2));
+
+        // A fetch already running: suppress overlap even on a new turn.
+        let busy = UsageState {
+            fetched_turn: Some(1),
+            in_flight: true,
+            cached: None,
+        };
+        assert!(!busy.fetch_due(2));
+    }
+
+    /// A revoke hides usage: `cached_rate_limits` returns the cached value only
+    /// while consent is ON, and `None` once it is OFF — so `decode` stops
+    /// merging stale plan data after the user turns consent off.
+    #[test]
+    fn cached_rate_limits_hidden_when_consent_off() {
+        let _guard = crate::agent::kimi_usage_consent::test_serial_guard();
+        let kimi_home = tempfile::tempdir().expect("kimi home");
+        let locator = locator_with(kimi_home.path(), 4242, SystemTime::now());
+        locator.usage.lock().expect("usage lock").cached = Some(RateLimits {
+            five_hour: crate::agent::types::RateLimitInfo {
+                used_percentage: 42.0,
+                resets_at: 100,
+            },
+            seven_day: None,
+        });
+
+        crate::agent::kimi_usage_consent::set_for_test(true);
+        assert!(
+            locator.cached_rate_limits().is_some(),
+            "consent ON surfaces the cached limits"
+        );
+
+        crate::agent::kimi_usage_consent::set_for_test(false);
+        assert!(
+            locator.cached_rate_limits().is_none(),
+            "consent OFF hides the cached limits"
+        );
+
+        crate::agent::kimi_usage_consent::set_for_test(false);
     }
 }

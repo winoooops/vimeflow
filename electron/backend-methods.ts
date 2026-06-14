@@ -12,6 +12,8 @@ const backendMethods = new Set([
   'update_session_cwd',
   'set_session_activity_panel_collapsed',
   'set_workspace_sessions',
+  'set_kimi_usage_consent',
+  'get_kimi_usage_consent',
   'detect_agent_in_session',
   'start_agent_watcher',
   'stop_agent_watcher',
