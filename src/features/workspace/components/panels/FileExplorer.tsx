@@ -6,6 +6,7 @@ import {
   type KeyboardEvent,
   type ReactElement,
 } from 'react'
+import { IconButton } from '@/components/IconButton'
 import { Tooltip } from '@/components/Tooltip'
 import { FileTree } from '../../../files/components/FileTree'
 import { contextMenuActions } from '../../../files/data/mockFileTree'
@@ -266,6 +267,10 @@ export const FileExplorer = ({
 
   const isRoot = currentPath === '~' || currentPath === '/'
 
+  // The parent button delegates its tooltip to the outer wrapper Tooltip so it
+  // stays alive while the button is disabled at the filesystem root.
+  const disabledTooltipDelegated = true
+
   return (
     <div
       className="flex h-full min-h-0 flex-col px-4 pt-3"
@@ -279,39 +284,30 @@ export const FileExplorer = ({
         <h3 className="flex-1 font-label text-xs font-semibold uppercase tracking-wider text-on-surface/50">
           File Explorer
         </h3>
-        <Tooltip content="Refresh">
-          {/* eslint-disable-next-line vimeflow/no-raw-icon-button */}
-          <button
-            type="button"
-            onClick={refresh}
-            className="material-symbols-outlined text-sm text-on-surface/30 transition-colors hover:text-on-surface/60"
-            aria-label="Refresh file tree"
-          >
-            refresh
-          </button>
-        </Tooltip>
+        <IconButton
+          icon="refresh"
+          label="Refresh file tree"
+          size="sm"
+          onClick={refresh}
+        />
       </div>
 
       {/* Path bar */}
       <div className="mb-1 flex items-center gap-1">
         {/* Wrapper span keeps the tooltip alive in the root state — disabled
-            buttons swallow pointer events, so the span is the hover target. */}
+            buttons swallow pointer events, so the span is the hover target. The
+            IconButton's own tooltip is delegated to this outer one. */}
         <Tooltip content="Parent directory">
           <span className="inline-flex">
-            {/* eslint-disable-next-line vimeflow/no-raw-icon-button */}
-            <button
-              type="button"
+            <IconButton
+              icon="arrow_upward"
+              label="Go to parent directory"
+              size="sm"
+              showTooltip={!disabledTooltipDelegated}
               onClick={navigateUp}
               disabled={isRoot}
-              className={`material-symbols-outlined shrink-0 rounded p-0.5 text-sm transition-colors ${
-                isRoot
-                  ? 'text-on-surface/20'
-                  : 'text-on-surface/50 hover:bg-wash-subtle hover:text-on-surface'
-              }`}
-              aria-label="Go to parent directory"
-            >
-              arrow_upward
-            </button>
+              className="shrink-0"
+            />
           </span>
         </Tooltip>
         <Tooltip content={currentPath}>
@@ -341,15 +337,13 @@ export const FileExplorer = ({
         {actionError && (
           <div className="mb-2 flex items-center gap-2 rounded bg-error/10 px-2 py-1 font-mono text-xs text-error">
             <span className="flex-1">{actionError}</span>
-            {/* eslint-disable-next-line vimeflow/no-raw-icon-button */}
-            <button
-              type="button"
+            <IconButton
+              icon="close"
+              label="Dismiss error"
+              size="sm"
               onClick={() => setActionError(null)}
-              className="material-symbols-outlined shrink-0 text-sm hover:text-error/80"
-              aria-label="Dismiss error"
-            >
-              close
-            </button>
+              className="shrink-0"
+            />
           </div>
         )}
 
@@ -368,26 +362,20 @@ export const FileExplorer = ({
               className="flex-1 rounded border border-on-surface/20 bg-base px-1.5 py-1 font-mono text-xs text-on-surface outline-none focus:border-secondary"
               aria-label="Rename file"
             />
-            {/* eslint-disable-next-line vimeflow/no-raw-icon-button */}
-            <button
-              type="button"
+            <IconButton
+              icon="check"
+              label="Confirm rename"
+              size="sm"
               onClick={() => {
                 void executeRename(pendingRename)
               }}
-              className="material-symbols-outlined text-sm text-secondary hover:text-secondary/80"
-              aria-label="Confirm rename"
-            >
-              check
-            </button>
-            {/* eslint-disable-next-line vimeflow/no-raw-icon-button */}
-            <button
-              type="button"
+            />
+            <IconButton
+              icon="close"
+              label="Cancel rename"
+              size="sm"
               onClick={cancelRename}
-              className="material-symbols-outlined text-sm text-on-surface/50 hover:text-on-surface"
-              aria-label="Cancel rename"
-            >
-              close
-            </button>
+            />
           </div>
         )}
 
