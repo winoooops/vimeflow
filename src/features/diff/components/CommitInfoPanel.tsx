@@ -1,4 +1,9 @@
 import type { ReactElement } from 'react'
+import { IconButton } from '@/components/IconButton'
+
+// The floating reopen tab carries its intent via the aria-label and sits at the
+// viewport edge, so suppress IconButton's built-in hover tooltip.
+const REOPEN_TOOLTIP_SUPPRESSED = true
 
 export interface CommitInfoPanelProps {
   commitHash: string
@@ -64,21 +69,18 @@ const CommitInfoPanel = ({
 }: CommitInfoPanelProps): ReactElement => (
   <>
     {/* Floating reopen button - only visible when panel is collapsed */}
-    {/* eslint-disable-next-line vimeflow/no-raw-icon-button */}
-    <button
+    <IconButton
+      icon="chevron_left"
+      label="Open commit info panel"
+      size="sm"
       onClick={onToggle}
-      aria-label="Open commit info panel"
-      className={`fixed right-0 top-14 z-30 w-8 h-12 bg-surface-container hover:bg-surface-container-high rounded-l-lg border-l border-y border-outline-variant/10 transition-all duration-300 flex items-center justify-center ${
+      showTooltip={!REOPEN_TOOLTIP_SUPPRESSED}
+      className={`fixed right-0 top-14 z-30 w-8 h-12 bg-surface-container hover:bg-surface-container-high text-on-surface-variant text-lg rounded-l-lg border-l border-y border-outline-variant/10 transition-all duration-300 ${
         isOpen
           ? 'opacity-0 pointer-events-none translate-x-full'
           : 'opacity-100 translate-x-0'
       }`}
-      type="button"
-    >
-      <span className="material-symbols-outlined text-on-surface-variant text-lg">
-        chevron_left
-      </span>
-    </button>
+    />
 
     <aside
       role="complementary"
