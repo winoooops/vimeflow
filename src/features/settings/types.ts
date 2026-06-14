@@ -112,13 +112,7 @@ export interface KeymapBinding {
   keys: string[]
 }
 
-export interface AgentAlias {
-  id: string
-  alias: string
-  agent: string
-  model: string
-  extra: string
-}
+export type { AgentAlias } from '../../bindings/AgentAlias'
 
 export interface PlaceholderPaneProps {
   section: SettingsSection

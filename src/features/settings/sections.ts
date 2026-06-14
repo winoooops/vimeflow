@@ -82,6 +82,7 @@ export const DEFAULT_ALIASES: AgentAlias[] = [
     agent: 'claude',
     model: 'sonnet-4',
     extra: '--continue',
+    account: null,
   },
   {
     id: 'a2',
@@ -89,6 +90,7 @@ export const DEFAULT_ALIASES: AgentAlias[] = [
     agent: 'codex',
     model: 'gpt-5-codex',
     extra: '',
+    account: null,
   },
   {
     id: 'a3',
@@ -96,5 +98,6 @@ export const DEFAULT_ALIASES: AgentAlias[] = [
     agent: 'gemini',
     model: 'gemini-2.5',
     extra: '--chat',
+    account: null,
   },
 ]

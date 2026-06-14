@@ -1,3 +1,4 @@
+import type { AgentAlias } from '../bindings/AgentAlias'
 import type { AppSettings } from '../bindings/AppSettings'
 import type {
   RenameAgentSessionErrorReason,
@@ -20,6 +21,11 @@ export interface SettingsBridge {
   syncSnapshot: (settings: AppSettings) => Promise<void>
 }
 
+export interface AliasesBridge {
+  load: () => Promise<AgentAlias[]>
+  save: (aliases: AgentAlias[]) => Promise<void>
+}
+
 export interface BackendApi {
   invoke: <T>(method: string, args?: Record<string, unknown>) => Promise<T>
 
@@ -31,6 +37,7 @@ export interface BackendApi {
   onCommandPaletteToggle?: (callback: () => void) => UnlistenFn
 
   settings?: SettingsBridge
+  aliases?: AliasesBridge
 }
 
 const renameAgentSessionErrorReasons: readonly RenameAgentSessionErrorReason[] =

@@ -14,6 +14,8 @@ const backendMethods = new Set([
   'set_workspace_sessions',
   'load_app_settings',
   'save_app_settings',
+  'load_agent_aliases',
+  'save_agent_aliases',
   'detect_agent_in_session',
   'start_agent_watcher',
   'stop_agent_watcher',

@@ -1,6 +1,13 @@
-import { useState, type ReactElement } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactElement,
+} from 'react'
 import type { AgentAlias } from '../../types'
 import { DEFAULT_ALIASES } from '../../sections'
+import { useSettings } from '../../hooks/useSettings'
 import { Icon } from '../Icon'
 import {
   GhostButton,
@@ -12,28 +19,88 @@ import {
 } from '../controls'
 
 export const AgentsPane = (): ReactElement => {
-  const [shimOn, setShimOn] = useState(true)
+  const { settings, update } = useSettings()
+  const shimOn = settings.agentShimEnabled
   const [aliases, setAliases] = useState<AgentAlias[]>(DEFAULT_ALIASES)
+  const saveQueueRef = useRef<Promise<void>>(Promise.resolve())
 
-  const addAlias = (): void =>
-    setAliases((prev) => [
-      ...prev,
+  useEffect(() => {
+    const load = async (): Promise<void> => {
+      const bridge = window.vimeflow?.aliases
+
+      if (!bridge) {
+        return
+      }
+
+      try {
+        const loadedAliases = await bridge.load()
+        setAliases(loadedAliases)
+      } catch {
+        // Fall back to defaults if the backend load fails.
+      }
+    }
+
+    void load()
+  }, [])
+
+  const saveNext = useCallback(
+    async (previous: Promise<void>, next: AgentAlias[]): Promise<void> => {
+      try {
+        await previous
+      } catch {
+        // Swallow prior save errors so the queue keeps moving.
+      }
+
+      const bridge = window.vimeflow?.aliases
+
+      if (!bridge) {
+        return
+      }
+
+      try {
+        await bridge.save(next)
+      } catch {
+        // Persistence failures must not surface as unhandled rejections.
+      }
+    },
+    []
+  )
+
+  const setAliasesAndPersist = useCallback(
+    (next: AgentAlias[]): void => {
+      setAliases(next)
+      saveQueueRef.current = saveNext(saveQueueRef.current, next)
+    },
+    [saveNext]
+  )
+
+  const addAlias = (): void => {
+    const next = [
+      ...aliases,
       {
         id: `a${crypto.randomUUID()}`,
         alias: '',
         agent: 'claude',
         model: 'sonnet-4',
         extra: '',
+        account: null,
       },
-    ])
+    ]
 
-  const update = (id: string, key: keyof AgentAlias, value: string): void =>
-    setAliases((prev) =>
-      prev.map((a) => (a.id === id ? { ...a, [key]: value } : a))
-    )
+    void setAliasesAndPersist(next)
+  }
 
-  const remove = (id: string): void =>
-    setAliases((prev) => prev.filter((a) => a.id !== id))
+  const updateAlias = (id: string, key: keyof AgentAlias, value: string): void => {
+    const next = aliases.map((a) => (a.id === id ? { ...a, [key]: value } : a))
+
+    void setAliasesAndPersist(next)
+  }
+
+  const remove = (id: string): void => {
+    const next = aliases.filter((a) => a.id !== id)
+
+    void setAliasesAndPersist(next)
+  }
 
   return (
     <>
@@ -45,7 +112,7 @@ export const AgentsPane = (): ReactElement => {
       >
         <Toggle
           on={shimOn}
-          onChange={setShimOn}
+          onChange={(value): void => update({ agentShimEnabled: value })}
           aria-label="Manage agent shell aliases"
         />
       </Row>
@@ -95,13 +162,13 @@ export const AgentsPane = (): ReactElement => {
                   mono
                   placeholder="cc"
                   value={a.alias}
-                  onChange={(v) => update(a.id, 'alias', v)}
+                  onChange={(v) => updateAlias(a.id, 'alias', v)}
                   aria-label={`Alias for ${a.agent}`}
                 />
                 <Select
                   width="100%"
                   value={a.agent}
-                  onChange={(v) => update(a.id, 'agent', v)}
+                  onChange={(v) => updateAlias(a.id, 'agent', v)}
                   aria-label={`Agent for ${a.alias || 'new alias'}`}
                   options={[
                     { id: 'claude', label: 'Claude Code' },
@@ -113,7 +180,7 @@ export const AgentsPane = (): ReactElement => {
                 <Select
                   width="100%"
                   value={a.model}
-                  onChange={(v) => update(a.id, 'model', v)}
+                  onChange={(v) => updateAlias(a.id, 'model', v)}
                   aria-label={`Model for ${a.alias || 'new alias'}`}
                   options={[
                     { id: 'sonnet-4', label: 'sonnet-4' },
@@ -127,7 +194,7 @@ export const AgentsPane = (): ReactElement => {
                   mono
                   placeholder="--continue"
                   value={a.extra}
-                  onChange={(v) => update(a.id, 'extra', v)}
+                  onChange={(v) => updateAlias(a.id, 'extra', v)}
                   aria-label={`Extra flags for ${a.agent}`}
                 />
                 <button
