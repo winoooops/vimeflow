@@ -41,8 +41,8 @@ pub(crate) fn kdbg(msg: &str) {
     crate::debug::debug_log("kimi", msg)
 }
 
-const KIMI_BIND_RETRY_INTERVAL_MS: u64 = 100;
-const KIMI_BIND_RETRY_MAX_ATTEMPTS: u32 = 5;
+pub(crate) const KIMI_BIND_RETRY_INTERVAL_MS: u64 = 100;
+pub(crate) const KIMI_BIND_RETRY_MAX_ATTEMPTS: u32 = 5;
 
 // Slack subtracted from `pty_start` before the index freshness check, so a
 // session whose wire.jsonl was created a moment before the PTY clock read
@@ -404,40 +404,33 @@ impl StatusSourceLocator for KimiLocator {
         *self.resolved_cwd.lock().expect("resolved_cwd lock") = Some(cwd.clone());
         kdbg(&format!("LOCATE process_cwd={}", cwd.display()));
 
-        for attempt in 0..KIMI_BIND_RETRY_MAX_ATTEMPTS {
-            // proc-fd is authoritative and unambiguous — try it first.
-            let proc_fd = self.try_resolve_from_proc_fds(&home);
+        // proc-fd is authoritative and unambiguous — try it first.
+        let proc_fd = self.try_resolve_from_proc_fds(&home);
+        kdbg(&format!(
+            "LOCATE proc_fd={:?}",
+            proc_fd.as_ref().map(|l| l.status_path.display().to_string())
+        ));
+        if let Some(located) = proc_fd {
             kdbg(&format!(
-                "LOCATE proc_fd={:?}",
-                proc_fd.as_ref().map(|l| l.status_path.display().to_string())
+                "LOCATE => OK status_path={} sid={:?}",
+                located.status_path.display(),
+                located.agent_session_id
             ));
-            if let Some(located) = proc_fd {
-                kdbg(&format!(
-                    "LOCATE => OK status_path={} sid={:?}",
-                    located.status_path.display(),
-                    located.agent_session_id
-                ));
-                return Ok(self.remember(located));
-            }
-            // Then the newest same-cwd index match (binds even when idle).
-            let index = self.try_resolve_from_index(&home, &cwd);
+            return Ok(self.remember(located));
+        }
+        // Then the newest same-cwd index match (binds even when idle).
+        let index = self.try_resolve_from_index(&home, &cwd);
+        kdbg(&format!(
+            "LOCATE index={:?}",
+            index.as_ref().map(|l| l.status_path.display().to_string())
+        ));
+        if let Some(located) = index {
             kdbg(&format!(
-                "LOCATE index={:?}",
-                index.as_ref().map(|l| l.status_path.display().to_string())
+                "LOCATE => OK status_path={} sid={:?}",
+                located.status_path.display(),
+                located.agent_session_id
             ));
-            if let Some(located) = index {
-                kdbg(&format!(
-                    "LOCATE => OK status_path={} sid={:?}",
-                    located.status_path.display(),
-                    located.agent_session_id
-                ));
-                return Ok(self.remember(located));
-            }
-            if attempt + 1 < KIMI_BIND_RETRY_MAX_ATTEMPTS {
-                std::thread::sleep(std::time::Duration::from_millis(
-                    KIMI_BIND_RETRY_INTERVAL_MS,
-                ));
-            }
+            return Ok(self.remember(located));
         }
 
         // Neither proc-fd nor a fresh index match — best-effort fallback.

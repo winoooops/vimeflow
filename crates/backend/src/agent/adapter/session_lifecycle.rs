@@ -23,8 +23,10 @@
 
 use std::path::Path;
 use std::sync::Arc;
+use std::time::Duration;
 
 use super::bindings::AgentBindings;
+use super::kimi::{KIMI_BIND_RETRY_INTERVAL_MS, KIMI_BIND_RETRY_MAX_ATTEMPTS};
 use super::{base, resolve_bind_inputs, AttachContext};
 use crate::agent::adapter::types::LocatedStatusSource;
 use crate::agent::detector::detect_agent;
@@ -600,6 +602,56 @@ impl SessionLifecycle {
         bindings.locator.locate(cwd, sid)
     }
 
+    /// Async wrapper around [`Self::locate`].
+    ///
+    /// All locator work is dispatched through `tokio::task::spawn_blocking`
+    /// because `StatusSourceLocator::locate` performs filesystem I/O. For
+    /// kimi, the retry loop lives here (outside the blocking closure) so the
+    /// inter-attempt delay is `tokio::time::sleep`, which yields the async
+    /// task instead of parking a blocking-pool thread (PR #447 review F1).
+    /// Other agents either have their own internal retry inside `locate`
+    /// (codex) or are infallible (claude), so they get a single blocking
+    /// locate call.
+    async fn locate_async(
+        &self,
+        bindings: &AgentBindings,
+        cwd: &Path,
+        sid: &str,
+    ) -> Result<LocatedStatusSource, String> {
+        let lc = self.clone();
+        let bindings = bindings.clone();
+        let cwd = cwd.to_path_buf();
+        let sid = sid.to_string();
+
+        if bindings.agent_type != AgentType::Kimi {
+            return tokio::task::spawn_blocking(move || lc.locate(&bindings, &cwd, &sid))
+                .await
+                .map_err(|e| format!("locate task panicked: {}", e))?;
+        }
+
+        let mut last_err = String::from("kimi locate retry exhausted");
+        for attempt in 0..KIMI_BIND_RETRY_MAX_ATTEMPTS {
+            let lc = lc.clone();
+            let bindings = bindings.clone();
+            let cwd = cwd.clone();
+            let sid = sid.clone();
+            match tokio::task::spawn_blocking(move || lc.locate(&bindings, &cwd, &sid))
+                .await
+                .map_err(|e| format!("locate task panicked: {}", e))?
+            {
+                Ok(located) => return Ok(located),
+                Err(e) => {
+                    last_err = e;
+                    if attempt + 1 < KIMI_BIND_RETRY_MAX_ATTEMPTS {
+                        tokio::time::sleep(Duration::from_millis(KIMI_BIND_RETRY_INTERVAL_MS))
+                            .await;
+                    }
+                }
+            }
+        }
+        Err(last_err)
+    }
+
     fn ensure_trust(&self, located: LocatedStatusSource) -> Result<TrustedLocatedSource, String> {
         base::ensure_trusted(located)
     }
@@ -744,9 +796,14 @@ impl SessionLifecycle {
         bindings: AgentBindings,
         cwd: std::path::PathBuf,
     ) -> Result<(), String> {
+        // Locate outside the long-running spawn_blocking closure so kimi's
+        // retry delay can be an async `tokio::time::sleep` that yields the
+        // task. The actual filesystem work still runs on the blocking pool
+        // (see `locate_async`).
+        let located = self.locate_async(&bindings, &cwd, &session_id).await?;
+
         let lc = self.clone();
         tokio::task::spawn_blocking(move || {
-            let located = lc.locate(&bindings, &cwd, &session_id)?;
             let trusted = lc.ensure_trust(located)?;
 
             log::debug!(

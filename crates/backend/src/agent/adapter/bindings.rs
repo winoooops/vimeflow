@@ -60,6 +60,7 @@ use crate::agent::types::AgentType;
 /// - `streamer` — handed to `TranscriptState::start_or_replace` (B''
 ///   migrated this off `Arc<dyn AgentAdapter>`; the façade `Arc` is
 ///   gone with no transitional field surviving).
+#[derive(Clone)]
 pub(crate) struct AgentBindings {
     pub(crate) agent_type: AgentType,
     pub(crate) locator: Arc<dyn StatusSourceLocator>,

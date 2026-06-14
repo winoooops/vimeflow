@@ -23,6 +23,7 @@ use crate::runtime::EventSink;
 
 pub(crate) use self::locator::kdbg;
 pub(crate) use self::locator::KimiLocator;
+pub(crate) use self::locator::{KIMI_BIND_RETRY_INTERVAL_MS, KIMI_BIND_RETRY_MAX_ATTEMPTS};
 pub(crate) use self::types::default_kimi_home;
 
 /// Adapter for the kimi-code CLI. Holds a shared `Arc<KimiLocator>` so
