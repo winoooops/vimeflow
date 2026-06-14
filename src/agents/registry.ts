@@ -52,6 +52,17 @@ export const AGENTS = {
     accentSoft: 'var(--color-agent-gemini-accent-soft)',
     onAccent: 'var(--color-agent-gemini-on-accent)',
   },
+  kimi: {
+    id: 'kimi',
+    name: 'Kimi',
+    short: 'KIMI',
+    glyph: '☾',
+    model: 'k2.7',
+    accent: 'var(--color-agent-kimi-accent)',
+    accentDim: 'var(--color-agent-kimi-accent-dim)',
+    accentSoft: 'var(--color-agent-kimi-accent-soft)',
+    onAccent: 'var(--color-agent-kimi-on-accent)',
+  },
   shell: {
     id: 'shell',
     name: 'Shell',
@@ -77,6 +88,8 @@ export const agentTypeToRegistryKey = (
       return 'claude'
     case 'codex':
       return 'codex'
+    case 'kimi':
+      return 'kimi'
     default:
       return 'shell'
   }

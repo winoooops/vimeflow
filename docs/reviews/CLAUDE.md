@@ -43,7 +43,7 @@ When appending findings to a pattern file, label the source so future readers ca
 
 | Pattern                                                                                              | Category           | Findings | Refs | Last Updated |
 | ---------------------------------------------------------------------------------------------------- | ------------------ | -------- | ---- | ------------ |
-| [Filesystem Scope](patterns/filesystem-scope.md)                                                     | security           | 22       | 4    | 2026-06-13   |
+| [Filesystem Scope](patterns/filesystem-scope.md)                                                     | security           | 23       | 5    | 2026-06-13   |
 | [React Lifecycle](patterns/react-lifecycle.md)                                                       | react-patterns     | 33       | 15   | 2026-06-11   |
 | [Motion Layout Projection](patterns/motion-layout-projection.md)                                     | react-patterns     | 1        | 0    | 2026-06-10   |
 | [Fixed-Position Portals](patterns/fixed-position-portals.md)                                         | react-patterns     | 1        | 0    | 2026-06-12   |
@@ -60,7 +60,8 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Accessibility](patterns/accessibility.md)                                                           | a11y               | 52       | 23   | 2026-06-13   |
 | [Event Identity Guard](patterns/event-identity-guard.md)                                             | backend            | 1        | 0    | 2026-06-11   |
 | [Async Race Conditions](patterns/async-race-conditions.md)                                           | react-patterns     | 63       | 22   | 2026-06-08   |
-| [Tokio Blocking On Async](patterns/tokio-blocking-on-async.md)                                       | backend            | 2        | 1    | 2026-05-20   |
+| [Canonical Path Dedupe](patterns/canonical-path-dedupe.md)                                           | correctness        | 2        | 0    | 2026-06-14   |
+| [Tokio Blocking On Async](patterns/tokio-blocking-on-async.md)                                       | backend            | 4        | 2    | 2026-06-14   |
 | [Command Injection](patterns/command-injection.md)                                                   | security           | 7        | 3    | 2026-05-02   |
 | [Policy Judge Hygiene](patterns/policy-judge-hygiene.md)                                             | security           | 15       | 2    | 2026-04-20   |
 | [Fail-Closed Hooks](patterns/fail-closed-hooks.md)                                                   | security           | 3        | 1    | 2026-04-20   |
@@ -89,3 +90,4 @@ When appending findings to a pattern file, label the source so future readers ca
 | [CloudFormation Environment Prefix Coupling](patterns/cloudformation-environment-prefix-coupling.md) | infrastructure     | 1        | 0    | 2026-06-12   |
 | [CloudFormation Stale References](patterns/cloudformation-stale-references.md)                       | infrastructure     | 2        | 1    | 2026-06-12   |
 | [Dead Code](patterns/dead-code.md)                                                                   | code-quality       | 1        | 0    | 2026-06-13   |
+| [Unsafe Block Safety Comments](patterns/unsafe-block-safety-comments.md)                             | security           | 1        | 0    | 2026-06-14   |
