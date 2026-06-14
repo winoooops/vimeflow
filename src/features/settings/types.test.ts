@@ -53,6 +53,7 @@ describe('settings types compile and shape contracts', () => {
       agent: 'claude',
       model: 'sonnet-4',
       extra: '',
+      account: null,
     }
 
     expect(alias.agent).toBe('claude')

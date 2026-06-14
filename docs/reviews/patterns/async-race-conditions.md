@@ -2,7 +2,7 @@
 id: async-race-conditions
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-06-12
+last_updated: 2026-06-14
 ref_count: 22
 ---
 
@@ -658,4 +658,22 @@ prevent showing previous data.
 - **File:** `electron/main.ts` L531-550
 - **Finding:** The `window-all-closed` handler read `onLastWindowClosed` from disk via `readFileSync`, but settings are persisted through an async IPC → Rust sidecar pipeline (`window.vimeflow.settings.save()`). If the user changed `onLastWindowClosed` to `'quit'` and immediately closed the last window before the queued save flushed to disk, `readFileSync` returned the pre-change value. On macOS the guard then evaluated `platform !== 'darwin'` → `false`, so `app.quit()` was never called and the app silently stayed alive despite the user's explicit quit preference.
 - **Fix:** Added an in-memory settings snapshot in the main process that the renderer updates via a new `settings:sync-snapshot` IPC channel. The close handler now prefers `lastKnownSettings.onLastWindowClosed`; it only falls back to reading `settings.json` when no snapshot has been received.
+- **Commit:** same commit as this entry
+
+### 65. Async alias load can overwrite user edits made before hydration resolves
+
+- **Source:** github-claude | PR #453 round 1 | 2026-06-14
+- **Severity:** HIGH
+- **File:** `src/features/settings/components/panes/AgentsPane.tsx`
+- **Finding:** `AgentsPane` rendered editable alias controls immediately while `bridge.load()` was in flight, then unconditionally called `setAliases(loadedAliases)` after the await. A user mutation during a slow IPC/startup window could be overwritten by the stale pre-session alias list, splitting disk and UI state with no signal.
+- **Fix:** Added an `isInitializing` state that gates alias editing until the initial load finishes, plus a `hasInteractedRef` guard that skips applying `loadedAliases` if the user has already mutated the list. The component initializes to `[]` so controls stay disabled and no stale defaults flash.
+- **Commit:** same commit as this entry
+
+### 66. Default alias seed still flashes and collapses to empty on first backend load
+
+- **Source:** github-claude | PR #453 round 1 | 2026-06-14
+- **Severity:** MEDIUM
+- **File:** `src/features/settings/components/panes/AgentsPane.tsx`
+- **Finding:** The component initialized `aliases` with `DEFAULT_ALIASES`, but the backend returns `[]` when `aliases.toml` is missing. First-launch users saw defaults briefly before the list collapsed to empty; returning users also saw defaults before their real aliases arrived.
+- **Fix:** Initialize `aliases` to `[]` with an explicit `isInitializing` loading state. Defaults are now used only as an intentional fallback when the aliases bridge is absent or when the backend load fails. Added tests verifying no default flash during a slow load and that controls remain disabled until hydration completes.
 - **Commit:** same commit as this entry

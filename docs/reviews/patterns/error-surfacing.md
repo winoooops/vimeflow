@@ -2,8 +2,8 @@
 id: error-surfacing
 category: error-handling
 created: 2026-04-10
-last_updated: 2026-06-12
-ref_count: 12
+last_updated: 2026-06-14
+ref_count: 13
 ---
 
 # Error Surfacing
@@ -387,3 +387,12 @@ failed" must mean the editor shows the original file, not the requested one.
 - **Finding:** The `settings:open-file` handler returned `shell.openPath(settingsPath)` directly. Electron resolves `openPath` with an empty string on success and a non-empty error string on failure, but the preload bridge typed the renderer surface as `Promise<void>` and `SettingsHeader` invoked it as `void bridge.openFile()`. A failure (no JSON file association, missing file handler, Linux `xdg-open` misconfiguration) therefore produced a silent no-op with zero user feedback.
 - **Fix:** Change the main-process handler to `await shell.openPath(...)` and `throw new Error(errorMessage)` when the result is non-empty. In `SettingsHeader`, catch the rejection and render an inline `role="alert"` error message next to the button. Add a regression test asserting the error text appears when `openFile` rejects.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 40. Alias save failures are silently swallowed after optimistic UI update
+
+- **Source:** github-codex-connector | PR #453 round 1 | 2026-06-14
+- **Severity:** MEDIUM
+- **File:** `src/features/settings/components/panes/AgentsPane.tsx` L46-72
+- **Finding:** `AgentsPane` updated local alias state before persistence and then caught and discarded all `bridge.save` errors. In real use, disk, permission, or sidecar failures left the UI showing aliases that were never written, so users lost configuration on restart without any signal. The serial save queue also swallowed prior save errors to keep moving, which is correct for queue continuity but removed the only natural recovery signal.
+- **Fix:** Added a `saveError: string | null` state to `AgentsPane`. The save queue still catches prior errors to keep serialization, but the terminal save result now calls `setSaveError(null)` on success and `setSaveError(message)` on failure. A compact inline `role="alert"` error is rendered near the alias controls so users see persistence failures immediately. Added regression tests for both the error surfacing and the clear-on-success behavior.
+- **Commit:** same commit as this entry

@@ -1,6 +1,13 @@
-import { useState, type ReactElement } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactElement,
+} from 'react'
 import type { AgentAlias } from '../../types'
 import { DEFAULT_ALIASES } from '../../sections'
+import { useSettings } from '../../hooks/useSettings'
 import { Icon } from '../Icon'
 import {
   GhostButton,
@@ -12,28 +19,111 @@ import {
 } from '../controls'
 
 export const AgentsPane = (): ReactElement => {
-  const [shimOn, setShimOn] = useState(true)
-  const [aliases, setAliases] = useState<AgentAlias[]>(DEFAULT_ALIASES)
+  const { settings, update } = useSettings()
+  const shimOn = settings.agentShimEnabled
+  const [aliases, setAliases] = useState<AgentAlias[]>([])
+  const [isInitializing, setIsInitializing] = useState(true)
+  const [saveError, setSaveError] = useState<string | null>(null)
+  const saveQueueRef = useRef<Promise<void>>(Promise.resolve())
+  const hasInteractedRef = useRef(false)
 
-  const addAlias = (): void =>
-    setAliases((prev) => [
-      ...prev,
+  useEffect(() => {
+    const load = async (): Promise<void> => {
+      const bridge = window.vimeflow?.aliases
+
+      if (!bridge) {
+        setAliases(DEFAULT_ALIASES)
+        setIsInitializing(false)
+
+        return
+      }
+
+      try {
+        const loadedAliases = await bridge.load()
+
+        if (!hasInteractedRef.current) {
+          setAliases(loadedAliases)
+        }
+      } catch {
+        if (!hasInteractedRef.current) {
+          setAliases(DEFAULT_ALIASES)
+        }
+      } finally {
+        setIsInitializing(false)
+      }
+    }
+
+    void load()
+  }, [])
+
+  const saveNext = useCallback(
+    async (previous: Promise<void>, next: AgentAlias[]): Promise<void> => {
+      try {
+        await previous
+      } catch {
+        // Swallow prior save errors so the queue keeps moving.
+      }
+
+      const bridge = window.vimeflow?.aliases
+
+      if (!bridge) {
+        setSaveError('Alias bridge is not available')
+
+        return
+      }
+
+      try {
+        await bridge.save(next)
+        setSaveError(null)
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : 'Failed to save aliases'
+        setSaveError(message)
+      }
+    },
+    []
+  )
+
+  const setAliasesAndPersist = useCallback(
+    (next: AgentAlias[]): void => {
+      hasInteractedRef.current = true
+      setAliases(next)
+      saveQueueRef.current = saveNext(saveQueueRef.current, next)
+    },
+    [saveNext]
+  )
+
+  const addAlias = (): void => {
+    const next = [
+      ...aliases,
       {
         id: `a${crypto.randomUUID()}`,
         alias: '',
         agent: 'claude',
         model: 'sonnet-4',
         extra: '',
+        account: null,
       },
-    ])
+    ]
 
-  const update = (id: string, key: keyof AgentAlias, value: string): void =>
-    setAliases((prev) =>
-      prev.map((a) => (a.id === id ? { ...a, [key]: value } : a))
-    )
+    void setAliasesAndPersist(next)
+  }
 
-  const remove = (id: string): void =>
-    setAliases((prev) => prev.filter((a) => a.id !== id))
+  const updateAlias = (
+    id: string,
+    key: keyof AgentAlias,
+    value: string
+  ): void => {
+    const next = aliases.map((a) => (a.id === id ? { ...a, [key]: value } : a))
+
+    void setAliasesAndPersist(next)
+  }
+
+  const remove = (id: string): void => {
+    const next = aliases.filter((a) => a.id !== id)
+
+    void setAliasesAndPersist(next)
+  }
 
   return (
     <>
@@ -45,7 +135,7 @@ export const AgentsPane = (): ReactElement => {
       >
         <Toggle
           on={shimOn}
-          onChange={setShimOn}
+          onChange={(value): void => update({ agentShimEnabled: value })}
           aria-label="Manage agent shell aliases"
         />
       </Row>
@@ -64,7 +154,7 @@ export const AgentsPane = (): ReactElement => {
 
           <span className="min-w-0 flex-1" />
 
-          <GhostButton onClick={addAlias}>
+          <GhostButton onClick={addAlias} disabled={isInitializing}>
             <Icon name="add" size={12} className="mr-1 align-middle" />
             Add alias
           </GhostButton>
@@ -78,7 +168,16 @@ export const AgentsPane = (): ReactElement => {
           <span />
         </div>
 
-        <div className="overflow-hidden rounded-lg border border-outline-variant/30 bg-surface-container-lowest/50">
+        <div
+          className="overflow-hidden rounded-lg border border-outline-variant/30 bg-surface-container-lowest/50"
+          aria-busy={isInitializing}
+        >
+          {isInitializing && (
+            <div className="col-span-5 px-3 py-4 font-body text-xs text-on-surface-muted">
+              Loading aliases…
+            </div>
+          )}
+
           {aliases.map((a, i) => (
             <div
               key={a.id}
@@ -89,19 +188,22 @@ export const AgentsPane = (): ReactElement => {
                   : 'border-b border-outline-variant/15'
               } ${shimOn ? '' : 'opacity-45'}`}
             >
-              <fieldset disabled={!shimOn} className="contents">
+              <fieldset
+                disabled={!shimOn || isInitializing}
+                className="contents"
+              >
                 <TextInput
                   width="100%"
                   mono
                   placeholder="cc"
                   value={a.alias}
-                  onChange={(v) => update(a.id, 'alias', v)}
+                  onChange={(v) => updateAlias(a.id, 'alias', v)}
                   aria-label={`Alias for ${a.agent}`}
                 />
                 <Select
                   width="100%"
                   value={a.agent}
-                  onChange={(v) => update(a.id, 'agent', v)}
+                  onChange={(v) => updateAlias(a.id, 'agent', v)}
                   aria-label={`Agent for ${a.alias || 'new alias'}`}
                   options={[
                     { id: 'claude', label: 'Claude Code' },
@@ -113,7 +215,7 @@ export const AgentsPane = (): ReactElement => {
                 <Select
                   width="100%"
                   value={a.model}
-                  onChange={(v) => update(a.id, 'model', v)}
+                  onChange={(v) => updateAlias(a.id, 'model', v)}
                   aria-label={`Model for ${a.alias || 'new alias'}`}
                   options={[
                     { id: 'sonnet-4', label: 'sonnet-4' },
@@ -127,7 +229,7 @@ export const AgentsPane = (): ReactElement => {
                   mono
                   placeholder="--continue"
                   value={a.extra}
-                  onChange={(v) => update(a.id, 'extra', v)}
+                  onChange={(v) => updateAlias(a.id, 'extra', v)}
                   aria-label={`Extra flags for ${a.agent}`}
                 />
                 <button
@@ -143,6 +245,17 @@ export const AgentsPane = (): ReactElement => {
             </div>
           ))}
         </div>
+
+        {saveError && (
+          <div
+            className="mt-2.5 flex items-center gap-2 font-body text-xs text-error"
+            role="alert"
+            data-testid="alias-save-error"
+          >
+            <Icon name="error" size={14} />
+            <span>{saveError}</span>
+          </div>
+        )}
 
         <div className="mt-2.5 font-mono text-[10.5px] text-on-surface-muted">
           Try it: in any pane, type{' '}

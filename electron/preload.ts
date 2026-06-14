@@ -6,6 +6,7 @@ import {
   SETTINGS_OPEN_FILE,
   SETTINGS_SYNC_SNAPSHOT,
 } from './ipc-channels'
+import type { AgentAlias } from '../src/bindings/AgentAlias'
 import type { AppSettings } from '../src/bindings/AppSettings'
 import {
   BROWSER_PANE_ACTIVATE_TAB,
@@ -211,5 +212,10 @@ contextBridge.exposeInMainWorld('vimeflow', {
     openFile: (): Promise<void> => ipcRenderer.invoke(SETTINGS_OPEN_FILE),
     syncSnapshot: (settings: AppSettings): Promise<void> =>
       ipcRenderer.invoke(SETTINGS_SYNC_SNAPSHOT, settings),
+  },
+  aliases: {
+    load: (): Promise<AgentAlias[]> => invoke('load_agent_aliases'),
+    save: (aliases: AgentAlias[]): Promise<void> =>
+      invoke('save_agent_aliases', { aliases }),
   },
 })
