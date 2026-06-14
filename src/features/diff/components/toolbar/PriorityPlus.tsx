@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-restricted-imports -- hand-rolled popover predates the shared floating-surface primitive */
 import {
   isValidElement,
   useEffect,
@@ -18,6 +19,7 @@ import {
   useInteractions,
   useRole,
 } from '@floating-ui/react'
+import { Tooltip } from '@/components/Tooltip'
 
 // Rendered overflow chip width (`w-8 h-8` = 32 px) and toolbar `gap-x-3`
 // (= 12 px). Exported through index.ts so consumers and measurement logic keep
@@ -227,22 +229,23 @@ const OverflowMenu = ({
 
   return (
     <>
-      <button
-        ref={refs.setReference}
-        type="button"
-        onClick={(): void => setOpen((previous) => !previous)}
-        className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-surface-container-high/60 hover:bg-surface-container-highest/80 text-on-surface transition-colors"
-        aria-label={`Show ${hiddenItems.length} more controls`}
-        title={`Show ${hiddenItems.length} more controls`}
-        {...getReferenceProps()}
-      >
-        <span
-          aria-hidden="true"
-          className="material-symbols-outlined text-base leading-none"
+      <Tooltip content={`Show ${hiddenItems.length} more controls`}>
+        <button
+          ref={refs.setReference}
+          type="button"
+          onClick={(): void => setOpen((previous) => !previous)}
+          className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-surface-container-high/60 hover:bg-surface-container-highest/80 text-on-surface transition-colors"
+          aria-label={`Show ${hiddenItems.length} more controls`}
+          {...getReferenceProps()}
         >
-          more_horiz
-        </span>
-      </button>
+          <span
+            aria-hidden="true"
+            className="material-symbols-outlined text-base leading-none"
+          >
+            more_horiz
+          </span>
+        </button>
+      </Tooltip>
       {open ? (
         <FloatingPortal>
           <div

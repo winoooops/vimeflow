@@ -587,6 +587,28 @@ mod router {
                 state.write_file(p.request)?;
                 Ok(Value::Null)
             }
+            "rename_path" => {
+                #[derive(Deserialize)]
+                #[serde(rename_all = "camelCase")]
+                struct P {
+                    request: crate::filesystem::types::RenamePathRequest,
+                }
+
+                let p: P = serde_json::from_value(params).map_err(|e| format!("params: {e}"))?;
+                state.rename_path(p.request)?;
+                Ok(Value::Null)
+            }
+            "delete_path" => {
+                #[derive(Deserialize)]
+                #[serde(rename_all = "camelCase")]
+                struct P {
+                    request: crate::filesystem::types::DeletePathRequest,
+                }
+
+                let p: P = serde_json::from_value(params).map_err(|e| format!("params: {e}"))?;
+                state.delete_path(p.request)?;
+                Ok(Value::Null)
+            }
             "git_status" => {
                 #[derive(Deserialize)]
                 #[serde(rename_all = "camelCase")]

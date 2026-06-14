@@ -1,5 +1,5 @@
 import { render, screen, fireEvent } from '@testing-library/react'
-import { describe, test, expect } from 'vitest'
+import { describe, test, expect, vi } from 'vitest'
 import { FileTree } from './FileTree'
 import type { FileNode, ContextMenuAction } from '../types'
 
@@ -120,6 +120,27 @@ describe('FileTree', () => {
     // Click menu item
     fireEvent.click(renameButton)
     expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+  })
+
+  test('calls context menu action with target node and full path', () => {
+    const onContextMenuAction = vi.fn()
+    render(
+      <FileTree
+        nodes={mockNodes}
+        contextMenuActions={mockActions}
+        rootPath="~/project"
+        onContextMenuAction={onContextMenuAction}
+      />
+    )
+
+    fireEvent.contextMenu(screen.getByText('test.ts'))
+    fireEvent.click(screen.getByRole('menuitem', { name: /rename/i }))
+
+    expect(onContextMenuAction).toHaveBeenCalledWith(
+      expect.objectContaining({ label: 'Rename' }),
+      expect.objectContaining({ id: '2', name: 'test.ts' }),
+      '~/project/src/test.ts'
+    )
   })
 
   test('tree container has no wrapper styling (inherits from parent)', () => {

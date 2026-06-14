@@ -2,8 +2,8 @@
 id: derived-state-consistency
 category: code-quality
 created: 2026-06-07
-last_updated: 2026-06-12
-ref_count: 4
+last_updated: 2026-06-13
+ref_count: 6
 ---
 
 # Derived State Consistency
@@ -111,4 +111,14 @@ base data is technically "correct."
 - **File:** `src/theme/service.ts`
 - **Finding:** The `import.meta.hot.accept` callback rebuilt the `themes` array from the updated module exports, but when only one theme file changed Vite passed `undefined` for the other module. The fallback used the original static `obsidianLens` / `flexoki` imports, which were frozen at module load and did not reflect earlier HMR updates. Editing one theme, then the other, silently replaced the first edited theme with its initial values until reload.
 - **Fix:** Insert a `themes.find((t) => t.id === ...)` fallback between the new-module export and the original static import, so the live `themes` entry is preserved when a sibling theme file is the one that changed.
+- **Commit:** same commit as this entry
+
+### 8. `activate()` still receives stale `list.activeSessionId` after `activePtyId` is updated for restarted shell
+
+- **Source:** github-claude | PR #443 round 1 | 2026-06-13
+- **Severity:** MEDIUM
+- **File:** `src/features/sessions/hooks/useSessionRestore.ts` L343-400
+- **Finding:** The restore effect correctly recomputes `activePtyId` when `restartPersistedActiveShell` spawns a replacement PTY for the persisted active shell. That updated value is passed to `reconstructWorkspace`, but the subsequent `activate()` call still used the original `list.activeSessionId`. In the graceful-quit restart path that original value is `null`, so callers that rely on the active-PTY activation branch (no `onActivePersisted` handler) fall back to the first session instead of selecting the restarted active shell.
+- **Fix:** Pass the updated `activePtyId` local to `activate()` instead of `list.activeSessionId`.
+- **Verification:** Added regression test that restarts a persisted active shell without an `onActivePersisted` handler and asserts `onActiveResolved` is called with the workspace session id.
 - **Commit:** same commit as this entry

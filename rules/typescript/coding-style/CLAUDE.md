@@ -258,6 +258,13 @@ React components must use semantic HTML and ARIA attributes to be accessible. Ke
 
 For component-level a11y patterns with WRONG/CORRECT JSX examples, see [a11y-components.md](./a11y-components.md).
 
+## Shared UI Primitives
+
+Cross-feature UI primitives live in `src/components/` and are imported via the `@/components/*` alias (never deep relative paths). One implementation per primitive — check there before building a new UI pattern.
+
+- **Tooltips**: always `Tooltip` from `@/components/Tooltip`; native `title=` on DOM elements is banned by `react/forbid-dom-props`. Contract: `docs/design/UNIFIED.md` §5.6.
+- **Floating surfaces**: `@floating-ui/react` is restricted to `src/components/` — features compose shared primitives instead of hand-rolling popovers.
+
 ## Linting
 
 ESLint flat config (`eslint.config.js`) enforces these standards. Key enforced rules:

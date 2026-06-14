@@ -83,6 +83,7 @@ const buildPane = (
     id: paneId,
     ptyId: info.id,
     cwd: info.cwd,
+    shell: info.shell,
     agentType,
     status,
     active,

@@ -33,7 +33,7 @@ import {
   KEYBOARD_STEP_PX,
   KEYBOARD_STEP_SHIFT_PX,
 } from '../panelConfig'
-import { ResizeHandle } from '../../../components/ResizeHandle'
+import { ResizeHandle } from '@/components/ResizeHandle'
 
 type TabType = 'editor' | 'diff'
 

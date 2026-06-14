@@ -4,7 +4,7 @@ import {
   type ReactElement,
   type ReactNode,
 } from 'react'
-import { Tooltip } from '../../../../components/Tooltip'
+import { Tooltip } from '@/components/Tooltip'
 
 // Shared icon-button base for every button inside the tool-well (and the
 // discard-all button the parent renders into the `discardAllSlot`, so the

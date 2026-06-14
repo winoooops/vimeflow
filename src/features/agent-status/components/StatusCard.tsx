@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react'
-import { Tooltip } from '../../../components/Tooltip'
+import { Tooltip } from '@/components/Tooltip'
 import type { CostState, RateLimitsState } from '../types'
 import { BudgetMetrics } from './BudgetMetrics'
 

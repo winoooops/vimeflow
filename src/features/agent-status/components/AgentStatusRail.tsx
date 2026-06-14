@@ -67,7 +67,7 @@ export const AgentStatusRail = ({
   return (
     <aside
       data-testid="agent-status-rail"
-      className="flex h-full flex-col items-center bg-surface-container pb-3 pt-2"
+      className="flex h-full flex-col items-center bg-surface pb-3 pt-2"
       style={{ width: RAIL_WIDTH_PX }}
     >
       <button
@@ -98,7 +98,7 @@ export const AgentStatusRail = ({
           pct={ctxPct}
           color={contextTone(ctxPct, agent.accent)}
           label="CTX"
-          title={`Context: ${Math.round(ctxPct)}%`}
+          tooltip={`Context: ${Math.round(ctxPct)}%`}
         />
       )}
 
@@ -108,7 +108,7 @@ export const AgentStatusRail = ({
             pct={cachePct}
             color={cacheTone(cachePct)}
             label="CACHE"
-            title={`Cache hit rate: ${Math.round(cachePct)}%`}
+            tooltip={`Cache hit rate: ${Math.round(cachePct)}%`}
           />
         </div>
       )}

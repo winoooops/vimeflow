@@ -1,7 +1,7 @@
 //! Test module for filesystem IPC commands.
 //!
-//! Tests are split by command (`list_tests`, `read_tests`, `write_tests`)
-//! plus unit tests for the sandbox primitives (`scope_tests`). Shared
+//! Tests are split by command (`list_tests`, `mutate_tests`, `read_tests`,
+//! `write_tests`) plus unit tests for the sandbox primitives (`scope_tests`). Shared
 //! helpers live here and are re-exported to child modules via
 //! `use super::*;`.
 //!
@@ -17,8 +17,12 @@ use std::path::PathBuf;
 
 // Re-export command items under test
 pub(super) use super::list::list_dir;
+pub(super) use super::mutate::{delete_path, rename_path};
 pub(super) use super::read::read_file;
-pub(super) use super::types::{EntryType, ListDirRequest, ReadFileRequest, WriteFileRequest};
+pub(super) use super::types::{
+    DeletePathRequest, EntryType, ListDirRequest, ReadFileRequest, RenamePathRequest,
+    WriteFileRequest,
+};
 pub(super) use super::write::write_file;
 
 // Re-export scope helpers for unit tests. Aliased with `scope_` prefix
@@ -36,6 +40,7 @@ pub(super) fn home_test_dir(name: &str) -> PathBuf {
 }
 
 mod list_tests;
+mod mutate_tests;
 mod read_tests;
 mod scope_tests;
 mod write_tests;

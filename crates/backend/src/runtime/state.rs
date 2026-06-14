@@ -269,7 +269,21 @@ impl BackendState {
         crate::filesystem::write::write_file_inner(request)
     }
 
-    pub async fn git_status(&self, cwd: String) -> Result<Vec<crate::git::ChangedFile>, String> {
+    pub fn rename_path(
+        &self,
+        request: crate::filesystem::types::RenamePathRequest,
+    ) -> Result<(), String> {
+        crate::filesystem::mutate::rename_path_inner(request)
+    }
+
+    pub fn delete_path(
+        &self,
+        request: crate::filesystem::types::DeletePathRequest,
+    ) -> Result<(), String> {
+        crate::filesystem::mutate::delete_path_inner(request)
+    }
+
+    pub async fn git_status(&self, cwd: String) -> Result<crate::git::GitStatusResponse, String> {
         crate::git::git_status_inner(cwd).await
     }
 

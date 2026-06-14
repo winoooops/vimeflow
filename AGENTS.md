@@ -67,17 +67,14 @@ Commit messages for Codex-assisted changes must include the trailer `Co-Authored
 
 "The Obsidian Lens" — dark atmospheric UI on Catppuccin Mocha palette. No visible borders — use tonal depth and glassmorphism.
 
+Tooltips are unified: every hover label uses the shared `Tooltip` (`@/components/Tooltip`; contract in `docs/design/UNIFIED.md` §5.6). Flag native `title=` attributes on DOM elements and new hand-rolled floating surfaces — `@floating-ui/react` belongs only in `src/components/`.
+
 **For complete design specifications**, read:
 
-- `DESIGN.md` — color palette, typography, layout, critical design rules, interaction patterns
-- `docs/design/UNIFIED.md` — current authoritative UI contract for the handoff migration
-- `docs/design/DESIGN.md` — full design system spec
-- `docs/design/handoff/` — current UI handoff screenshots and prototype
-- `docs/design/agent_workspace/` — workspace screen mockup and reference HTML
-- `docs/design/code_editor/` — code editor screen
-- `docs/design/files_explorer/` — files explorer screen
-- `docs/design/git_diff/` — git diff viewer screen
-- `docs/design/command_palette/` — command palette overlay
+- `docs/design/UNIFIED.md` — **authoritative, code-grounded UI SSoT** (3-zone shell + two-plane surfaces, agent-state contract, component contracts)
+- `docs/design/DESIGN.md` — design-system foundation (Obsidian Lens philosophy, typography, do/don'ts)
+- `src/theme/themes/*.ts` — runtime token values (obsidian-lens dark + flexoki light)
+- `docs/design/archive/` — historical handoffs / Stitch mockups / prototypes (reference only; UNIFIED wins)
 
 ## Lifeline Integration
 
@@ -110,7 +107,7 @@ Connector review findings should follow the same profile as Claude Code Review:
 ## Review Guidelines
 
 - **Scope boundary (mandatory)**: Review ONLY the lines added or modified in the diff. Pre-existing bugs in unchanged code are out of scope — note them as follow-ups in a separate "Out-of-Scope Observations" section, never as findings with severity. Do not cascade into related files or chase increasingly niche edge cases in working code. Exception: actively exploitable CRITICAL security vulnerabilities.
-- **Illustrative docs are out of scope**: Static, hand-authored explainer/diagram files under `docs/**` (e.g. `docs/diagrams/*.html`, `docs/design/*/code.html`) carry no application logic, runtime code, or tests. They are documentation. Do not line-by-line review them, raise CSS/SVG/markup nits, or treat them as behavioral surface; at most confirm links resolve. These files are also Prettier-ignored.
+- **Illustrative docs are out of scope**: Static, hand-authored explainer/diagram files under `docs/**` (e.g. `docs/diagrams/*.html`, `docs/design/archive/**`) carry no application logic, runtime code, or tests. They are documentation. Do not line-by-line review them, raise CSS/SVG/markup nits, or treat them as behavioral surface; at most confirm links resolve. These files are also Prettier-ignored.
 - Severity levels: CRITICAL (security/data loss), HIGH (bugs), MEDIUM (maintainability), LOW (style)
 - Flag any hardcoded secrets, `console.log` statements, or `any` types
 - Approval: no CRITICAL/HIGH = approve; HIGH only = warn; CRITICAL = block

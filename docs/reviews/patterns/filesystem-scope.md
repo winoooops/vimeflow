@@ -3,7 +3,7 @@ id: filesystem-scope
 category: security
 created: 2026-04-09
 last_updated: 2026-06-13
-ref_count: 3
+ref_count: 5
 ---
 
 # Filesystem Scope
@@ -211,7 +211,16 @@ preserve their original Tauri-era paths.
 - **Fix:** Reject null bytes before path conversion, keep transcript files scoped under canonical `~/.claude`, and document the helper as a best-effort single-user desktop guard. The comment now calls out that fd-pinned traversal or `cap-std`-style APIs are required if the threat model expands to shared writable roots or hostile same-user races.
 - **Commit:** _(pending on this branch)_
 
-### 22. Kimi index `session_dir` selected without path-under-home guard on macOS
+### 22. rename_path lacks out-of-home and symlink-leaf rejection tests
+
+- **Source:** github-claude | PR #444 round 1 | 2026-06-13
+- **Severity:** MEDIUM
+- **File:** `crates/backend/src/filesystem/tests/mutate_tests.rs`
+- **Finding:** `rename_path` shared the `resolve_existing_path` enforcement path with `delete_path` but had no tests proving it rejected paths outside home or symlink leaves; SECURITY.md coverage table mapped symlink-leaf refusal only to delete.
+- **Fix:** Added `rename_path_rejects_path_outside_home` and `rename_path_refuses_symlink_leaf` tests and updated the SECURITY.md coverage map.
+- **Commit:** see `git blame` / `git log` on this line
+
+### 23. Kimi index `session_dir` selected without path-under-home guard on macOS
 
 - **Source:** github-claude | PR #447 round 1 | 2026-06-13
 - **Severity:** MEDIUM

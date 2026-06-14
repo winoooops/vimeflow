@@ -8,7 +8,7 @@ import {
   type ReactNode,
   type Ref,
 } from 'react'
-import { Tooltip } from '../../../components/Tooltip'
+import { Tooltip } from '@/components/Tooltip'
 import { formatShortcut } from '../../../lib/formatShortcut'
 import { formatRelativeTime, formatDuration } from '../utils/relativeTime'
 import type {

@@ -6,12 +6,14 @@ export interface FilesViewProps {
   hidden?: boolean
   cwd: string
   onFileSelect: (file: FileNode) => void
+  onViewDiff?: (file: FileNode) => void
 }
 
 export const FilesView = ({
   hidden = false,
   cwd,
   onFileSelect,
+  onViewDiff = undefined,
 }: FilesViewProps): ReactElement => (
   // See SessionsView for why we use a conditional class instead of the HTML
   // `hidden` attribute (Tailwind v4 cascade-layer order).
@@ -19,6 +21,10 @@ export const FilesView = ({
     className={`min-h-0 flex-1 flex-col ${hidden ? 'hidden' : 'flex'}`}
     data-testid="files-view"
   >
-    <FileExplorer cwd={cwd} onFileSelect={onFileSelect} />
+    <FileExplorer
+      cwd={cwd}
+      onFileSelect={onFileSelect}
+      onViewDiff={onViewDiff}
+    />
   </div>
 )

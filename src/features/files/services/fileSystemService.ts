@@ -1,5 +1,9 @@
 import type { FileNode } from '../types'
-import type { FileEntry } from '../../../bindings'
+import type {
+  DeletePathRequest,
+  FileEntry,
+  RenamePathRequest,
+} from '../../../bindings'
 import { isDesktop } from '../../../lib/environment'
 import { invoke } from '../../../lib/backend'
 import { mockFileTree } from '../data/mockFileTree'
@@ -8,6 +12,8 @@ export interface IFileSystemService {
   listDir(path: string): Promise<FileNode[]>
   readFile(path: string): Promise<string>
   writeFile(path: string, content: string): Promise<void>
+  renamePath(path: string, newName: string): Promise<void>
+  deletePath(path: string): Promise<void>
 }
 
 // Join a parent directory path and a child name. Matches the semantics
@@ -60,6 +66,18 @@ class DesktopFileSystemService implements IFileSystemService {
       request: { path, content },
     })
   }
+
+  async renamePath(path: string, newName: string): Promise<void> {
+    const request = { path, newName } satisfies RenamePathRequest
+
+    await invoke<void>('rename_path', { request })
+  }
+
+  async deletePath(path: string): Promise<void> {
+    const request = { path } satisfies DeletePathRequest
+
+    await invoke<void>('delete_path', { request })
+  }
 }
 
 /** Walk mock tree to find children matching a path like "~/src" */
@@ -97,6 +115,14 @@ class MockFileSystemService implements IFileSystemService {
   writeFile(): Promise<void> {
     // Mock implementation - no-op
     // This service is only used in browser mode (not desktop)
+    return Promise.resolve()
+  }
+
+  renamePath(): Promise<void> {
+    return Promise.resolve()
+  }
+
+  deletePath(): Promise<void> {
     return Promise.resolve()
   }
 }

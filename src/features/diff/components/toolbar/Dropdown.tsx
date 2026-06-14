@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-restricted-imports -- hand-rolled popover predates the shared floating-surface primitive */
 import { useEffect, useRef, useState, type ReactElement } from 'react'
 import {
   FloatingPortal,
@@ -11,6 +12,7 @@ import {
   useListNavigation,
   useRole,
 } from '@floating-ui/react'
+import { Tooltip } from '@/components/Tooltip'
 
 export interface DropdownOption<T extends string | number> {
   value: T
@@ -100,33 +102,34 @@ export const Dropdown = <T extends string | number>({
       <span className="text-on-surface-variant text-[0.7rem] uppercase tracking-wider font-label">
         {label}
       </span>
-      <button
-        ref={refs.setReference}
-        type="button"
-        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-surface-container-high/60 hover:bg-surface-container-highest/80 text-on-surface text-xs font-medium transition-colors min-w-[6rem] justify-between"
-        title={current?.label ?? String(value)}
-        {...getReferenceProps({
-          onClick: (): void => handleOpenChange(!open),
-        })}
-      >
-        {leadingIcon !== undefined ? (
+      <Tooltip content={current?.label ?? String(value)}>
+        <button
+          ref={refs.setReference}
+          type="button"
+          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-surface-container-high/60 hover:bg-surface-container-highest/80 text-on-surface text-xs font-medium transition-colors min-w-[6rem] justify-between"
+          {...getReferenceProps({
+            onClick: (): void => handleOpenChange(!open),
+          })}
+        >
+          {leadingIcon !== undefined ? (
+            <span
+              aria-hidden="true"
+              className="material-symbols-outlined text-[15px] leading-none text-primary-dim shrink-0"
+            >
+              {leadingIcon}
+            </span>
+          ) : null}
+          <span className="truncate max-w-[7rem]">
+            {current?.label ?? String(value)}
+          </span>
           <span
             aria-hidden="true"
-            className="material-symbols-outlined text-[15px] leading-none text-primary-dim shrink-0"
+            className="material-symbols-outlined text-sm leading-none shrink-0"
           >
-            {leadingIcon}
+            expand_more
           </span>
-        ) : null}
-        <span className="truncate max-w-[7rem]">
-          {current?.label ?? String(value)}
-        </span>
-        <span
-          aria-hidden="true"
-          className="material-symbols-outlined text-sm leading-none shrink-0"
-        >
-          expand_more
-        </span>
-      </button>
+        </button>
+      </Tooltip>
       {open ? (
         <FloatingPortal>
           <div

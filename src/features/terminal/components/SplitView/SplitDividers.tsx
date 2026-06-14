@@ -1,6 +1,6 @@
 // cspell:ignore vsplit hsplit vdiv hdiv subcomponent
 import { Fragment, useCallback, type ReactElement, type RefObject } from 'react'
-import { ResizeHandle } from '../../../../components/ResizeHandle'
+import { ResizeHandle } from '@/components/ResizeHandle'
 import type { LayoutId } from '../../../sessions/types'
 import { useSplitDivider } from './useSplitDivider'
 import type { LayoutRatios } from './resolveGrid'

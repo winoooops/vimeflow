@@ -46,3 +46,20 @@ pub struct WriteFileRequest {
     pub path: String,
     pub content: String,
 }
+
+#[derive(Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct RenamePathRequest {
+    pub path: String,
+    pub new_name: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct DeletePathRequest {
+    pub path: String,
+}

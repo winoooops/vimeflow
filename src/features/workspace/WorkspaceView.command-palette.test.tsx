@@ -56,7 +56,7 @@ vi.mock('../terminal/hooks/useBurnerTerminals', () => ({
 
 // Mock child components to keep test focused on command dispatch while still
 // rendering sidebar chrome needed by WorkspaceView.
-vi.mock('../../components/sidebar/Sidebar', () => ({
+vi.mock('@/components/sidebar/Sidebar', () => ({
   Sidebar: ({ topBar = undefined }: { topBar?: ReactNode }): ReactElement => (
     <div data-testid="sidebar">{topBar}</div>
   ),
@@ -266,6 +266,8 @@ describe('WorkspaceView - Command Palette Integration', () => {
       listDir: vi.fn().mockResolvedValue([]),
       readFile: vi.fn().mockResolvedValue(''),
       writeFile: vi.fn().mockResolvedValue(undefined),
+      renamePath: vi.fn().mockResolvedValue(undefined),
+      deletePath: vi.fn().mockResolvedValue(undefined),
     })
 
     // Mock terminalService

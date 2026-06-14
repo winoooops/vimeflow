@@ -2,8 +2,8 @@
 id: accessibility
 category: a11y
 created: 2026-04-09
-last_updated: 2026-06-12
-ref_count: 22
+last_updated: 2026-06-13
+ref_count: 23
 ---
 
 # Accessibility
@@ -523,3 +523,12 @@ handlers must not trap focus without implementing the promised behavior.
 - **Finding:** The persistent `SidebarToggle` was absolutely positioned at the workspace root so it stayed visually fixed during sidebar collapse/expand animations, but it was rendered as the last child of the workspace root. Keyboard users therefore reached it only after tabbing through the main workspace, activity panel, overlays, and command palette — a WCAG focus-order regression relative to its visual position at the top-left boundary.
 - **Fix:** Moved the same root-anchored, absolutely positioned toggle wrapper earlier in the DOM (right after the compact scrim and before the sidebar shell) so sequential focus order matches the visual layout. Preserved `z-40` and the existing left/top absolute coordinates. Updated co-located tests that asserted on `workspace.children[1]` to query `screen.getByTestId('workspace-main')` directly, since the DOM reordering changed sibling indices.
 - **Commit:** _(see git blame / git log on this line)_
+
+### 49. FileExplorer rename/delete uses native blocking dialogs
+
+- **Source:** github-claude | PR #444 round 1 | 2026-06-13
+- **Severity:** MEDIUM
+- **File:** `src/features/workspace/components/panels/FileExplorer.tsx`
+- **Finding:** `window.prompt` and `window.confirm` blocked the renderer thread, used unstyled OS chrome, and could not display formatted validation hints or be cancelled via Escape reliably.
+- **Fix:** Replaced native dialogs with an inline rename input and a delete-confirmation strip styled with design tokens; kept actions non-blocking.
+- **Commit:** see `git blame` / `git log` on this line

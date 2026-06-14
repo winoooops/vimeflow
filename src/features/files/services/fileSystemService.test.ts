@@ -64,6 +64,8 @@ describe('fileSystemService', () => {
 
     expect(service).toBeDefined()
     expect(typeof service.writeFile).toBe('function')
+    expect(typeof service.renamePath).toBe('function')
+    expect(typeof service.deletePath).toBe('function')
   })
 
   test('mock service writeFile resolves without error', async () => {
@@ -72,5 +74,19 @@ describe('fileSystemService', () => {
     await expect(
       service.writeFile('~/test.txt', 'content')
     ).resolves.toBeUndefined()
+  })
+
+  test('mock service renamePath resolves without error', async () => {
+    const service = createFileSystemService()
+
+    await expect(
+      service.renamePath('~/test.txt', 'renamed.txt')
+    ).resolves.toBeUndefined()
+  })
+
+  test('mock service deletePath resolves without error', async () => {
+    const service = createFileSystemService()
+
+    await expect(service.deletePath('~/test.txt')).resolves.toBeUndefined()
   })
 })

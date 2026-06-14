@@ -1,5 +1,6 @@
 // cspell:ignore cheatsheet incard powershell pwsh tcsh xonsh zsh
 import type { ReactElement } from 'react'
+import { Tooltip } from '@/components/Tooltip'
 import { RateLimitBar } from '../../agent-status/components/RateLimitBar'
 import { parseModelTitle } from '../utils/parseModelTitle'
 
@@ -95,25 +96,24 @@ const shellCheatsheetUrl = (shellName: string): string =>
   )}`
 
 const TurnPill = ({ turns }: { turns: number | null }): ReactElement => (
-  <span
-    className="inline-flex h-6 max-w-[86px] shrink-0 items-center justify-center whitespace-nowrap rounded-full border border-outline-variant/40 bg-surface-container-lowest/35 px-[7px] font-mono text-[10px] font-bold leading-none text-on-surface-variant"
-    title={`${turns ?? 0} turns`}
-  >
-    {/* Both the Material icon and the descender-less mono label ride ~1px high
+  <Tooltip content={`${turns ?? 0} turns`}>
+    <span className="inline-flex h-6 max-w-[86px] shrink-0 items-center justify-center whitespace-nowrap rounded-full border border-outline-variant/40 bg-surface-container-lowest/35 px-[7px] font-mono text-[10px] font-bold leading-none text-on-surface-variant">
+      {/* Both the Material icon and the descender-less mono label ride ~1px high
         in their own line-boxes. Wrap them in one flex row so items-center keeps
         them aligned to each other, then nudge the whole row down ~1px to center
         the pair in the pill. Relative offset → no layout/height change. */}
-    <span className="relative top-px inline-flex items-center gap-[5px]">
-      <span
-        className="material-symbols-outlined text-syn-comment"
-        aria-hidden="true"
-        style={{ fontSize: 12, lineHeight: 1 }}
-      >
-        forum
+      <span className="relative top-px inline-flex items-center gap-[5px]">
+        <span
+          className="material-symbols-outlined text-syn-comment"
+          aria-hidden="true"
+          style={{ fontSize: 12, lineHeight: 1 }}
+        >
+          forum
+        </span>
+        <span>{turns ?? 0} turns</span>
       </span>
-      <span>{turns ?? 0} turns</span>
     </span>
-  </span>
+  </Tooltip>
 )
 
 const ShellBody = ({ shellName }: { shellName: string }): ReactElement => (
@@ -146,28 +146,29 @@ const ShellBody = ({ shellName }: { shellName: string }): ReactElement => (
       </div>
     </div>
 
-    <a
-      href={shellCheatsheetUrl(shellName)}
-      target="_blank"
-      rel="noopener noreferrer"
-      title={`${shellName} command cheatsheet`}
-      className="flex w-full items-center gap-[7px] rounded-[7px] bg-surface-container-lowest/45 py-[5px] pr-[7px] pl-[9px] font-mono text-[10.5px] leading-none text-on-surface-muted no-underline transition-colors hover:bg-primary/10 hover:text-primary"
-    >
-      <span
-        className="material-symbols-outlined text-[15px]"
-        aria-hidden="true"
+    <Tooltip content={`${shellName} command cheatsheet`}>
+      <a
+        href={shellCheatsheetUrl(shellName)}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="flex w-full items-center gap-[7px] rounded-[7px] bg-surface-container-lowest/45 py-[5px] pr-[7px] pl-[9px] font-mono text-[10.5px] leading-none text-on-surface-muted no-underline transition-colors hover:bg-primary/10 hover:text-primary"
       >
-        menu_book
-      </span>
-      <span>{shellName} cheatsheet</span>
-      <span className="flex-1" />
-      <span
-        className="material-symbols-outlined text-[13px] opacity-[0.55]"
-        aria-hidden="true"
-      >
-        open_in_new
-      </span>
-    </a>
+        <span
+          className="material-symbols-outlined text-[15px]"
+          aria-hidden="true"
+        >
+          menu_book
+        </span>
+        <span>{shellName} cheatsheet</span>
+        <span className="flex-1" />
+        <span
+          className="material-symbols-outlined text-[13px] opacity-[0.55]"
+          aria-hidden="true"
+        >
+          open_in_new
+        </span>
+      </a>
+    </Tooltip>
   </div>
 )
 
@@ -221,13 +222,14 @@ export const AgentStatusCard = ({
                 {modelName}
               </span>
               {contextLabel !== null && (
-                <span
-                  data-testid="agent-card-context-badge"
-                  title={`${contextLabel} context window`}
-                  className="shrink-0 rounded-[5px] bg-surface-container-highest px-[5px] py-[2px] font-mono text-[9.5px] font-semibold leading-none text-on-surface-variant"
-                >
-                  {contextLabel}
-                </span>
+                <Tooltip content={`${contextLabel} context window`}>
+                  <span
+                    data-testid="agent-card-context-badge"
+                    className="shrink-0 rounded-[5px] bg-surface-container-highest px-[5px] py-[2px] font-mono text-[9.5px] font-semibold leading-none text-on-surface-variant"
+                  >
+                    {contextLabel}
+                  </span>
+                </Tooltip>
               )}
             </div>
             <TurnPill turns={turns} />

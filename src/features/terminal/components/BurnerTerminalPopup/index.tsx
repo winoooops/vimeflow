@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react'
 import type { ReactElement, ReactNode } from 'react'
-import { Tooltip } from '../../../../components/Tooltip'
+import { Tooltip } from '@/components/Tooltip'
 import { Body } from '../TerminalPane/Body'
 import type { BodyHandle } from '../TerminalPane/Body'
 import { AGENTS } from '../../../../agents/registry'

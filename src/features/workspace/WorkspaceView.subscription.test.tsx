@@ -199,7 +199,7 @@ interface MockSidebarProps {
 // Render the `header` slot through so a mocked AgentStatusCard can be
 // observed. Other slots (content, bottomPane, footer) are intentionally
 // dropped — this test only cares about the agent-status flow into the header.
-vi.mock('../../components/sidebar/Sidebar', () => ({
+vi.mock('@/components/sidebar/Sidebar', () => ({
   Sidebar: ({ header = undefined }: MockSidebarProps): ReactElement => (
     <div data-testid="sidebar-mock">{header}</div>
   ),

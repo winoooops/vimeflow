@@ -1,88 +1,75 @@
 # Design — Single Source of Truth for Frontend
 
-This directory is the authoritative reference for all Vimeflow UI implementation. Every screen, component, color, and interaction pattern defined here must be followed exactly.
+This directory is the authoritative reference for all Vimeflow UI. It is
+**code-grounded**: the spec is derived from and kept honest against the shipped
+frontend in `src/`.
 
-Start with `UNIFIED.md` — it's authoritative and resolves Stitch drift. Fall back to `DESIGN.md` for the foundational token/typography tables it extends.
+Start with **`UNIFIED.md`** — it is authoritative and complete. Fall back to
+`DESIGN.md` for the foundational philosophy/typography it extends, and to
+`src/theme/themes/*.ts` for live token values.
 
 ## Contents
 
-### `UNIFIED.md` — authoritative
+### `UNIFIED.md` — authoritative, code-grounded SSoT
 
-Canonical spec layered on top of `DESIGN.md`. Defines the current shell layout (icon rail · sidebar · main canvas with session tabs, SplitView, and DockPanel · activity panel · status bar), the full agent-session-state contract (`running` / `awaiting` / `completed` / `errored` / `idle`), TypeScript component APIs (`SessionCard`, `StatusDot`, `ActivityPanel`, `CommandPalette`, `ContextSmiley`), and an anti-patterns list. When any value conflicts with Stitch `code.html` files, UNIFIED wins.
+The canonical spec, derived from the shipped app (verified against `src/`):
+the three-zone shell + two-plane surface model, every main-canvas surface
+(terminal/SplitView, dock, editor, diff, browser pane, burner popup), the full
+agent-session-state contract (`running` / `awaiting` / `completed` / `errored`
+/ `idle`), and the component contracts for everything that ships
+(`SessionCard`, `AgentStatusPanel`/`Rail`, `StatusDot`, `SplitView`/
+`TerminalPane`, `DockPanel`, `CodeEditor`, `DiffPanelContent`, `CommandPalette`,
+`StatusBar`/`ContextSmiley`, `GitRefChip`, `Tooltip`, …), plus an anti-patterns
+list. **When any value conflicts with another doc, `UNIFIED.md` wins.**
 
-### `tokens.css` / `tokens.ts`
+### `DESIGN.md` — foundation
 
-Copy-pasteable token values. Same data in two formats: CSS custom properties for stylesheets, typed TS export (with `stateToken` map and `contextSmiley()` helper) for programmatic use. Keep them in sync when evolving. Superseded for runtime color tokens (2026-06-11): the live source of truth is src/theme/themes/\*.ts; these files remain as design reference.
+The design-system philosophy: "The Obsidian Lens", color/surface theory,
+typography scale, elevation principles, do's/don'ts. Foundational — `UNIFIED.md`
+extends rather than contradicts it. (Its hex tables are the `obsidian-lens`
+dark snapshot; see tokens below for the runtime source.)
 
-### `DESIGN.md`
+### `src/theme/themes/*.ts` — runtime token SSoT
 
-Complete design system specification: color theory, surface hierarchy, typography scale, elevation principles, component primitives, layout rules, and explicit do's/don'ts. Foundational — `UNIFIED.md` extends rather than contradicts it.
+The live color/shadow values. The system is **multi-theme** at runtime:
+`obsidian-lens` (dark) + `flexoki` (light), applied as CSS variables. This is
+the source of truth for any color value.
 
-### Screen References — Stitch (illustrative, superseded)
+### `tokens.css` / `tokens.ts` — non-color scales + state contract
 
-> **STATUS:** The Stitch-generated screens below are kept as visual references only. The single source of truth is the **Claude Design** project, exported into this repo as `UNIFIED.md` + `tokens.css` + `tokens.ts`. Each `code.html` now carries a banner saying the same thing. When a Stitch screen disagrees with `UNIFIED.md` — on layout, tokens, state visuals, or anything else — **UNIFIED wins, always**. Don't use them to derive new components; use them only to cross-check visual intent.
+Kept for the parts that are _not_ runtime color: the type / radius / motion /
+layout-dimension scales, plus the `SessionState` union, `stateToken` visual map,
+and `contextSmiley()` breakpoints that `UNIFIED.md` §4/§5 cite. Their color
+tables are a historical snapshot — use `src/theme` for color.
 
-Each subdirectory contains a reference screenshot and the HTML implementation produced by Google Stitch:
+### `archive/` — historical handoffs & mockups (reference only)
 
-| Directory          | Screen          | What It Shows                                                                                                                                                                    |
-| ------------------ | --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `agent_workspace/` | Agent Workspace | Historical primary application view — terminal pane with agent output, session list in sidebar, context switcher (Files/Editor/Diff), agent activity panel with status and usage |
-| `code_editor/`     | Code Editor     | Tabbed file editor, syntax-highlighted code, line number gutter, minimap, vim status bar, file tree in sidebar                                                                   |
-| `files_explorer/`  | Files Explorer  | File tree with breadcrumbs, folder expand/collapse, git status badges (M/A/D), drag-and-drop with drop zones, glassmorphism context menu                                         |
-| `git_diff/`        | Git Diff Viewer | Side-by-side diff with added/removed highlighting, hunk navigation, Stage Hunk/Discard actions, changed files sidebar, floating glassmorphism legend                             |
-| `command_palette/` | Command Palette | Centered overlay modal, search with `:command` syntax, filtered result list, keyboard navigation hints                                                                           |
+Every superseded design handoff, migration brief, Stitch `code.html` mockup,
+and runnable prototype. They predate/drifted from the shipped app (4/5-zone +
+icon rail, pre-#442 tokens, dark-only hex, screens that no longer exist). Their
+still-valid contracts have been folded into `UNIFIED.md`. **Do not derive new
+work from `archive/`** — see `archive/README.md`. Slated for deletion in a
+follow-up.
 
-### File Structure Per Screen
+## How to use
 
-```
-<screen>/
-├── screen.png   # Visual reference — what it should look like
-├── code.html    # Full HTML+Tailwind implementation from Stitch
-└── DESIGN.md    # Screen-specific design notes (if applicable)
-```
+- **Building a component** — read `UNIFIED.md` (§5 contracts), then the live
+  component in `src/`. Don't copy from `archive/`.
+- **Checking a color** — `src/theme/themes/<theme>.ts` (runtime SSoT), not the
+  `DESIGN.md` tables.
+- **Layout / surface questions** — `UNIFIED.md` §2 (three zones, two planes).
+- **Interaction states** — `UNIFIED.md` §4 (agent states) + §6 (interactions).
 
-The `code.html` files contain the complete Tailwind config with all color tokens, font families, and border radius values. They are the implementation reference for exact class names, spacing, and component structure.
+## Viewing the runnable prototype
 
-**Important:** The `agent_workspace/code.html` Tailwind config has Stitch-generated color tokens that diverge from the authoritative palette in root `DESIGN.md` and `docs/design/DESIGN.md`. When tokens conflict, the root `DESIGN.md` is authoritative. See the reconciliation notes in `agent_workspace/DESIGN.md`.
+The prototype is hosted in the Claude Design project (not in-repo). With the
+`claude-in-chrome` MCP:
 
-## How to Use These References
-
-1. **Building a new component** — Find the screen that contains it, open `code.html`, extract the relevant HTML/Tailwind classes
-2. **Checking a color value** — Use root `DESIGN.md` as the authoritative token source. Screen `code.html` files may have Stitch variants.
-3. **Verifying layout** — Compare your implementation against `screen.png`
-4. **Understanding interaction states** — The HTML shows hover, active, focus, and disabled states inline
-
-## Shared Components Across Screens
-
-These components appear across screens with consistent structure:
-
-- **Icon Rail** (48px, far left) — Project avatars, `+` new project, `⚙` settings
-- **Sidebar** (260px) — Agent session list (top), context switcher tabs with content (bottom)
-- **Session Tabs + SplitView** (main canvas top/body) — session tabs, layout switcher, and 1-4 terminal panes
-- **DockPanel** (main canvas dock) — Editor / Diff surfaces, docked bottom/top/left/right
-- **Agent Activity Panel** (280px, right) — Status, context window, usage, collapsible sections
-- **Command Palette** (overlay) — `:` trigger, Lens Blur background
-
-Extract these once as shared React components. The HTML in each screen shows them in context.
-
-## Viewing Prototypes
-
-The current in-repo handoff prototype lives in `docs/design/handoff/prototype/` and covers the multi-pane shell, SplitView layouts, activity panel, dock, command palette, and screenshots. Use it first for current handoff migration work.
-
-`UNIFIED.md` §9 also references an older runnable Claude Design project — streaming terminal, state transitions, command palette, all five zones wired together. Treat it as historical/contextual unless a task explicitly asks for the Claude-hosted prototype.
+1. `mcp__claude-in-chrome__tabs_context_mcp` — confirm the MCP tab group; create a tab on `claude.ai` if none.
+2. `mcp__claude-in-chrome__navigate` to the project URL below (you must already be logged into `claude.ai` in that profile — don't sign in programmatically).
+3. The prototype renders in an iframe whose `src` is a short-lived signed `*.claudeusercontent.com/...` URL — **don't hardcode it**; start from the project URL and let the page hand you a fresh signed `src`.
+4. Read with `get_page_text` / `javascript_tool`; capture with `take_screenshot` / `gif_creator`.
 
 **Project URL:** `https://claude.ai/design/p/e9c4e751-f5ca-40eb-9ce7-611948803ce4`
 
-**Recipe for an agent with the `claude-in-chrome` MCP available:**
-
-1. `mcp__claude-in-chrome__tabs_context_mcp` — confirms the MCP tab group exists. If no tab is open on `claude.ai`, create one with `tabs_create_mcp`.
-2. `mcp__claude-in-chrome__navigate` to the project URL above. The user must already be logged into `claude.ai` in that browser profile; the session cookie carries auth — don't attempt to sign in programmatically.
-3. Inside the page, the prototype renders in an iframe whose `src` is a signed `*.claudeusercontent.com/v1/design/projects/<id>/serve/Vimeflow.html?t=<token>` URL. The token is short-lived, so **don't hardcode it** — always start from the `claude.ai` project URL and let the page hand you a fresh signed iframe `src`.
-4. To read rendered text: `get_page_text` on the tab, or `javascript_tool` to pull the iframe's `src` then `navigate` that URL to inspect raw HTML.
-5. To capture visuals for spec comparison: `take_screenshot` (or `gif_creator` for interaction sequences).
-
-**Other files in the Claude Design project:** `Handoff.html` (the merge guide — consumed into `docs/design/handoff/`) and `tokens.ts` (empty placeholder; real content lives in `docs/design/tokens.ts`).
-
-## Additional Material
-
-Online design exploration: https://aistudio.google.com/apps/71779b0a-a865-421d-9e16-8d224a1a26a8?showPreview=true&showAssistant=true
+Treat the prototype as historical/contextual; when it diverges from `UNIFIED.md`, this repo wins.
