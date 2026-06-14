@@ -6,6 +6,7 @@ import {
   type ReactElement,
   type ReactNode,
 } from 'react'
+import { IconButton } from '@/components/IconButton'
 import { Popover } from '@/components/Popover'
 import { Tooltip } from '@/components/Tooltip'
 
@@ -192,26 +193,27 @@ const OverflowMenu = ({
   const [open, setOpen] = useState(false)
   const [anchor, setAnchor] = useState<HTMLButtonElement | null>(null)
 
+  // The explicit Tooltip already supplies the label, so suppress IconButton's
+  // built-in one to avoid a nested tooltip.
+  const labelledByOuterTooltip = true
+
   return (
     <>
       <Tooltip content={`Show ${hiddenItems.length} more controls`}>
-        {/* eslint-disable-next-line vimeflow/no-raw-icon-button */}
-        <button
+        <IconButton
           ref={setAnchor}
-          type="button"
+          icon="more_horiz"
+          label={`Show ${hiddenItems.length} more controls`}
+          size="lg"
+          pressed={open}
+          showTooltip={!labelledByOuterTooltip}
           onClick={(): void => setOpen((previous) => !previous)}
-          className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-surface-container-high/60 hover:bg-surface-container-highest/80 text-on-surface transition-colors"
-          aria-label={`Show ${hiddenItems.length} more controls`}
           aria-haspopup="dialog"
           aria-expanded={open}
-        >
-          <span
-            aria-hidden="true"
-            className="material-symbols-outlined text-base leading-none"
-          >
-            more_horiz
-          </span>
-        </button>
+          // Circular overflow affordance — an intentional radius exception
+          // (the chip's 32px width feeds the PriorityPlus overflow math).
+          className="rounded-full"
+        />
       </Tooltip>
       <Popover
         anchor={anchor}
