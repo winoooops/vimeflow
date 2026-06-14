@@ -72,7 +72,7 @@ export const ContextBucket = ({
   return (
     <div
       data-testid="context-bucket"
-      className="overflow-hidden"
+      className="cursor-default overflow-hidden"
       style={cardStyle}
     >
       <div className="px-3.5 pb-3.5 pt-3">

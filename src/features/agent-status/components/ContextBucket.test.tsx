@@ -57,6 +57,14 @@ describe('ContextBucket header', () => {
   })
 })
 
+describe('ContextBucket chrome', () => {
+  test('uses a default cursor so the read-only numbers do not look editable', () => {
+    render(<ContextBucket {...defaultProps} />)
+
+    expect(screen.getByTestId('context-bucket')).toHaveClass('cursor-default')
+  })
+})
+
 describe('ContextBucket continuous color', () => {
   test('percentage tone tracks the fill (no tiered jumps)', () => {
     const { rerender } = render(
