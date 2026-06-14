@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react'
 import type { ReactElement, ReactNode } from 'react'
+import { IconButton } from '@/components/IconButton'
 import { Tooltip } from '@/components/Tooltip'
 import { Body } from '../TerminalPane/Body'
 import type { BodyHandle } from '../TerminalPane/Body'
@@ -243,6 +244,10 @@ export const BurnerTerminalPopup = ({
     bufferedEvents: [],
   }
 
+  // Header buttons sit inside the z-[100] popup; the align button already wears a
+  // z-lifted Tooltip, so IconButton's own body-portalled tooltip is suppressed.
+  const inPopupTooltipSuppressed = true
+
   return (
     <div
       ref={overlayRef}
@@ -320,43 +325,30 @@ export const BurnerTerminalPopup = ({
                 // body at z-50 and would otherwise paint behind the overlay.
                 className="!z-[110]"
               >
-                {/* eslint-disable-next-line vimeflow/no-raw-icon-button */}
-                <button
-                  type="button"
+                <IconButton
+                  icon="sync"
+                  label="Align burner to pane directory"
+                  showTooltip={!inPopupTooltipSuppressed}
                   data-testid="burner-align"
-                  aria-label="Align burner to pane directory"
                   onClick={handleAlign}
                   disabled={alignBusy}
-                  className={`grid h-[26px] w-[26px] place-items-center rounded-[7px] ${
-                    alignBusy
-                      ? 'text-on-surface-muted/40 cursor-not-allowed'
-                      : outOfSync
-                        ? 'text-[var(--color-agent-shell-accent)] bg-[color-mix(in_srgb,var(--color-agent-shell-accent)_15%,transparent)] hover:bg-[color-mix(in_srgb,var(--color-agent-shell-accent)_25%,transparent)]'
-                        : 'text-on-surface-muted hover:text-on-surface hover:bg-wash-subtle'
+                  className={`h-[26px] w-[26px] rounded-[7px] ${
+                    outOfSync
+                      ? 'text-[var(--color-agent-shell-accent)] bg-[color-mix(in_srgb,var(--color-agent-shell-accent)_15%,transparent)] hover:bg-[color-mix(in_srgb,var(--color-agent-shell-accent)_25%,transparent)]'
+                      : ''
                   }`}
-                >
-                  <span
-                    className="material-symbols-outlined text-[15px] leading-none"
-                    aria-hidden="true"
-                  >
-                    sync
-                  </span>
-                </button>
+                />
               </Tooltip>
             )}
 
-            {/* eslint-disable-next-line vimeflow/no-raw-icon-button */}
-            <button
-              type="button"
+            <IconButton
+              icon="close"
+              label="Hide burner terminal"
+              showTooltip={!inPopupTooltipSuppressed}
               data-testid="burner-hide"
-              aria-label="Hide burner terminal"
               onClick={onHide}
-              className="text-on-surface-muted hover:text-on-surface grid h-[26px] w-[26px] place-items-center rounded-[7px] hover:bg-wash-subtle"
-            >
-              <span className="material-symbols-outlined text-[15px] leading-none">
-                close
-              </span>
-            </button>
+              className="h-[26px] w-[26px] rounded-[7px]"
+            />
           </div>
         </header>
 
