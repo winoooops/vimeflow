@@ -199,7 +199,8 @@ pub fn start_tailing(
     // file, so all lines belong to the current session. Replay catches any
     // tool calls written before tailing started (the transcript file is often
     // created seconds after the statusline first reports its path).
-    let decoder = ClaudeTranscriptDecoder::new(events, session_id, cwd, claude_agent_session_id);
+    let decoder =
+        ClaudeTranscriptDecoder::new(events, session_id, cwd, claude_agent_session_id);
     let service = TranscriptTailService::new(Box::new(decoder), "transcript");
 
     let join_handle = std::thread::spawn(move || {
@@ -357,7 +358,9 @@ fn process_line(
     // can mirror them into pane.cwd without depending on the interactive
     // shell emitting OSC 7.
     if let Some(observed) = dto.cwd.as_deref() {
-        if !observed.is_empty() && last_cwd.as_deref().map_or(true, |seen| seen != observed) {
+        if !observed.is_empty()
+            && last_cwd.as_deref().map_or(true, |seen| seen != observed)
+        {
             let event = AgentCwdEvent {
                 session_id: session_id.to_string(),
                 cwd: observed.to_string(),
@@ -383,10 +386,7 @@ fn process_line(
                 _ => None,
             }),
         Some("user")
-            if dto
-                .message
-                .as_ref()
-                .is_some_and(|m| is_user_prompt(&m.content)) =>
+            if dto.message.as_ref().is_some_and(|m| is_user_prompt(&m.content)) =>
         {
             Some(AgentPhase::Running)
         }
@@ -409,7 +409,9 @@ fn process_line(
             process_assistant_message(&dto, session_id, cwd, events, in_flight);
         }
         "user" => {
-            process_user_message(&dto, session_id, cwd, events, emitter, in_flight, num_turns);
+            process_user_message(
+                &dto, session_id, cwd, events, emitter, in_flight, num_turns,
+            );
         }
         "tool_result" => {
             let timestamp = extract_timestamp(dto.timestamp.as_deref());
@@ -476,7 +478,9 @@ fn emit_title(
     let sanitized = sanitize_title(raw_title);
     let is_user_renamed = matches!(&source, TitleSource::UserRenamed);
     let (title, new_memo) = match sanitized {
-        Some(title) if last_title_memo.as_deref() == Some(title.as_str()) && !is_user_renamed => {
+        Some(title)
+            if last_title_memo.as_deref() == Some(title.as_str()) && !is_user_renamed =>
+        {
             return;
         }
         Some(title) => (title.clone(), Some(title)),
@@ -1335,10 +1339,7 @@ mod tests {
         assert!(result.ends_with("..."));
         // Byte length is unbounded by design — sanity check it's larger
         // than max_len in chars, proving the char-count is the real cap.
-        assert!(
-            result.len() > MAX_ARGS_LEN,
-            "byte length should exceed char cap"
-        );
+        assert!(result.len() > MAX_ARGS_LEN, "byte length should exceed char cap");
     }
 
     #[test]
@@ -1464,10 +1465,7 @@ mod tests {
     // contract so future refactors can't silently regress it.
     #[test]
     fn extract_timestamp_uses_transcript_field_when_present() {
-        assert_eq!(
-            extract_timestamp(Some("2026-04-22T10:30:00Z")),
-            "2026-04-22T10:30:00Z"
-        );
+        assert_eq!(extract_timestamp(Some("2026-04-22T10:30:00Z")), "2026-04-22T10:30:00Z");
     }
 
     #[test]
@@ -1642,8 +1640,7 @@ mod tests {
             },
         );
 
-        let line =
-            r#"{"type":"tool_result","tool_use_id":"toolu_xyz","content":"ok","is_error":"oops"}"#;
+        let line = r#"{"type":"tool_result","tool_use_id":"toolu_xyz","content":"ok","is_error":"oops"}"#;
         let mut last_title_memo: Option<String> = None;
         process_line(
             line,
@@ -1805,8 +1802,7 @@ mod tests {
         // One valid tool_use assistant line, split mid-string-value so neither
         // side parses on its own: `..."tool_us` | `e"...`.
         let first: &[u8] = br#"{"type":"assistant","message":{"content":[{"type":"tool_us"#;
-        let second: &[u8] =
-            b"e\",\"id\":\"toolu_g3\",\"name\":\"Read\",\"input\":{\"file_path\":\"/a.ts\"}}]}}\n";
+        let second: &[u8] = b"e\",\"id\":\"toolu_g3\",\"name\":\"Read\",\"input\":{\"file_path\":\"/a.ts\"}}]}}\n";
 
         let stop = Arc::new(AtomicBool::new(false));
         TranscriptTailService::new(Box::new(decoder), "transcript")

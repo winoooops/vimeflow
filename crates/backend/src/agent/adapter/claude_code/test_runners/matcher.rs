@@ -3,9 +3,9 @@
 
 use std::path::Path;
 
+use super::RUNNERS;
 use super::script_resolution;
 use super::types::TestRunner;
-use super::RUNNERS;
 
 /// Tokenize a command string into shell-words, returning None if the input
 /// can't be parsed (e.g. unmatched quotes). None is treated as "no match"

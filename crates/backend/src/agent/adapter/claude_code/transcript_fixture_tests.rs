@@ -350,9 +350,7 @@ fn replay_collapses_then_live_test_run_emits() {
     let turns_before = sink.count("agent-turn");
     append_lines(
         &transcript_path,
-        &[
-            r#"{"type":"user","timestamp":"2026-04-28T11:03:02.000Z","message":{"content":"sentinel prompt"}}"#,
-        ],
+        &[r#"{"type":"user","timestamp":"2026-04-28T11:03:02.000Z","message":{"content":"sentinel prompt"}}"#],
     );
     assert!(
         sink.wait_for_count("agent-turn", turns_before + 1, Duration::from_secs(5)),
@@ -368,9 +366,6 @@ fn replay_collapses_then_live_test_run_emits() {
         .filter(|(event, _)| event == "test-run")
         .collect();
     assert_eq!(runs.len(), 2, "1 replay-collapsed + 1 live");
-    assert_eq!(
-        runs[0].1["summary"]["passed"], 3,
-        "collapsed replay = latest of 3"
-    );
+    assert_eq!(runs[0].1["summary"]["passed"], 3, "collapsed replay = latest of 3");
     assert_eq!(runs[1].1["summary"]["passed"], 4, "live pair");
 }

@@ -28,9 +28,9 @@
 use serde::Deserialize;
 
 use super::super::serde_helpers::{lenient_f64, lenient_object, lenient_string, lenient_u64};
-use crate::agent::adapter::types::StatusSnapshot;
 #[cfg(test)]
 use crate::agent::adapter::types::{stamp_snapshot, ParsedStatus};
+use crate::agent::adapter::types::StatusSnapshot;
 use crate::agent::types::{
     ContextWindowStatus, CostMetrics, CurrentUsage, RateLimitInfo, RateLimits,
 };
@@ -542,8 +542,8 @@ mod tests {
     #[test]
     fn parse_rollout_snapshot_returns_session_id_free_status() {
         let raw = fixture("rollout-minimal.jsonl");
-        let snapshot =
-            parse_rollout_snapshot(Some("pty-direct"), &raw).expect("snapshot should parse");
+        let snapshot = parse_rollout_snapshot(Some("pty-direct"), &raw)
+            .expect("snapshot should parse");
         // R2.2: snapshot carries `agent_session_id` (from JSONL
         // payload) but NO Vimeflow session_id field — that's stamped
         // by the runtime via `stamp_snapshot`.

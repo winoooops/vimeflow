@@ -85,7 +85,11 @@ impl StateDecoder for ClaudeCodeAdapter {
     /// `session_id` is ignored — Claude's parser deserializes the whole
     /// JSON document atomically (one `Result`), so there's no per-line
     /// warn site that needs the context.
-    fn decode(&self, _session_id: Option<&str>, raw: &str) -> Result<StatusSnapshot, String> {
+    fn decode(
+        &self,
+        _session_id: Option<&str>,
+        raw: &str,
+    ) -> Result<StatusSnapshot, String> {
         statusline::parse_statusline_snapshot(raw)
     }
 }

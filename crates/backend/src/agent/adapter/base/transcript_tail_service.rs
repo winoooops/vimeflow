@@ -479,7 +479,10 @@ mod tests {
         let caught = dec.caught_up.clone();
         TranscriptTailService::new(Box::new(dec), "t")
             .with_poll_interval(Duration::ZERO)
-            .run(ScriptedReader::new(steps.into_iter(), stop.clone()), stop);
+            .run(
+                ScriptedReader::new(steps.into_iter(), stop.clone()),
+                stop,
+            );
         let decoded = lines.lock().unwrap().clone();
         (decoded, caught.load(Ordering::Acquire))
     }
@@ -748,7 +751,7 @@ mod tests {
         let big = vec![b'x'; MAX_PARTIAL_BYTES + 1];
         let (lines, _) = drive(vec![
             Step::ChunkOwned(big),
-            Step::Chunk(b"\n"), // terminate the over-long line; exits skip mode
+            Step::Chunk(b"\n"),        // terminate the over-long line; exits skip mode
             Step::Chunk(b"{\"b\":2}\n"), // next valid line decodes normally
             Step::EofStop,
         ]);

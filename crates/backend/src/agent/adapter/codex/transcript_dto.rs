@@ -159,7 +159,8 @@ mod tests {
         assert!(matches!(unknown.record_type(), CodexRecordType::Other));
         let missing: CodexLineDto = serde_json::from_str(r#"{"payload":{}}"#).unwrap();
         assert!(matches!(missing.record_type(), CodexRecordType::Other));
-        let nonstring: CodexLineDto = serde_json::from_str(r#"{"type":42,"payload":{}}"#).unwrap();
+        let nonstring: CodexLineDto =
+            serde_json::from_str(r#"{"type":42,"payload":{}}"#).unwrap();
         assert!(matches!(nonstring.record_type(), CodexRecordType::Other));
     }
 

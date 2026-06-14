@@ -37,7 +37,11 @@ pub(crate) fn ensure_status_source_under_trust_root(
             .parent()
             .ok_or_else(|| format!("status path escapes filesystem root: {}", parent.display()))?;
     };
-    canonicalize_and_verify_under_root(ancestor_to_check, &canonical_root, "status source path")?;
+    canonicalize_and_verify_under_root(
+        ancestor_to_check,
+        &canonical_root,
+        "status source path",
+    )?;
 
     fs::create_dir_all(parent).map_err(|e| format!("failed to create status directory: {}", e))?;
 
@@ -84,8 +88,8 @@ pub(crate) fn canonicalize_and_verify_under_root(
 }
 
 mod trusted {
-    use crate::agent::adapter::types::LocatedStatusSource;
     use std::path::Path;
+    use crate::agent::adapter::types::LocatedStatusSource;
 
     pub(crate) struct TrustedLocatedSource(LocatedStatusSource);
 
@@ -107,7 +111,7 @@ mod trusted {
     }
 }
 
-pub(crate) use trusted::{ensure_trusted, TrustedLocatedSource};
+pub(crate) use trusted::{TrustedLocatedSource, ensure_trusted};
 
 #[cfg(test)]
 mod tests {
@@ -276,8 +280,11 @@ mod tests {
         // Call the helper directly. canonicalize follows the symlink to
         // `outside`, which doesn't start_with `canonical_root` →
         // returns Err with the "escapes trust_root" diagnostic.
-        let result =
-            canonicalize_and_verify_under_root(&symlinked_parent, &canonical_root, "test phase");
+        let result = canonicalize_and_verify_under_root(
+            &symlinked_parent,
+            &canonical_root,
+            "test phase",
+        );
         assert!(result.is_err(), "symlink-to-outside should be rejected");
         let msg = result.unwrap_err();
         assert!(
