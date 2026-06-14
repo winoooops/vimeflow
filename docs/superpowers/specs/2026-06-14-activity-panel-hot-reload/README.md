@@ -1,7 +1,8 @@
 # Activity Panel Hot Reload — VIM-127
 
 **Linear:** [VIM-127](https://linear.app/vimeflow/issue/VIM-127/epic-stabilize-activity-panel-hot-reload-across-pane-switching)
-**Branch / worktree:** `feature/vim-127` on `worktrees/vim-127-activity-panel-hot-reload`
+**Integration branch:** `feat/vim-127-activity-panel-hot-reload`
+**PR1 branch / worktree:** `feature/vim-127` on `worktrees/vim-127-activity-panel-hot-reload`
 **Status:** draft
 **Supporting design analysis:** [`docs/design/activity-panel-hot-reload-analysis.html`](../../../design/activity-panel-hot-reload-analysis.html)
 
@@ -11,6 +12,8 @@ The right activity/status sidebar currently becomes visually unstable when a use
 
 This spec plans a five-PR stabilization sequence. PR1 is documentation-only: it adds the technical plan, links the supporting HTML analysis, and defines the validation loop. PR2-PR5 implement the data model, hot loading, render stability, and final verification in separate reviewable increments.
 
+All five implementation PRs target the integration branch, not `main`. After PR5 lands and the full feature is verified, the accumulated integration branch gets one final PR into `main`.
+
 ## Product Direction
 
 - Preserve a per-pane scroll anchor so switching panes does not destroy reading context.
@@ -18,6 +21,7 @@ This spec plans a five-PR stabilization sequence. PR1 is documentation-only: it 
 - Show stale/loading state as a subtle header affordance rather than a large banner.
 - Hot-load only the current session's visible split panes in v1, keeping background work bounded.
 - Let each PR revise its own plan at the beginning based on what the previous PR actually found.
+- Accumulate PR1-PR5 on `feat/vim-127-activity-panel-hot-reload` before opening the final `main` PR.
 
 ## PR Sequence
 

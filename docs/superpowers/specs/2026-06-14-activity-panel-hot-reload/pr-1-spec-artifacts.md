@@ -2,13 +2,15 @@
 
 **Status:** draft
 **Scope:** documentation only
-**Base branch:** `main`
+**Base branch:** `feat/vim-127-activity-panel-hot-reload`
 **Feature branch:** `feature/vim-127`
 **Linear:** [VIM-127](https://linear.app/vimeflow/issue/VIM-127/epic-stabilize-activity-panel-hot-reload-across-pane-switching)
 
 ## Goal
 
 Create the first implementation-ready plan for VIM-127 without changing runtime code. This PR establishes the five-PR sequence, the supporting HTML analysis, the validation expectations, and the Claude Code review loop.
+
+This PR targets the VIM-127 integration branch. Future PRs land on the same branch so the feature can accumulate safely before the final merge request to `main`.
 
 ## Changes
 
