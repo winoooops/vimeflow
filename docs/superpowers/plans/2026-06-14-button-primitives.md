@@ -10,6 +10,8 @@
 
 **Stacked PRs (integration branch `feat/button-primitives` → `main`):** PR1 = T1–T8 (substrate + icon-only), PR2 = T9–T11 (toolbar pills), PR3 = T12–T15 (close-out). Child PRs carry **no** `VIM-124` magic word; only the final → main PR `Closes VIM-124`.
 
+**Commit convention:** conventional-commits subject (commitlint — lowercase after the colon, identifiers in trailing parens). Per `AGENTS.md` / `rules/common/git-workflow.md`, append the co-author trailer `Co-Authored-By: codex <codex@openai.com>` to every commit. The `git commit -m` examples below show the subject only.
+
 ---
 
 ## File structure
@@ -85,8 +87,10 @@ test('active state is keyed off aria-pressed and aria-expanded', () => {
   expect(cls).toContain('aria-expanded:bg-primary/10')
 })
 
-test('danger tone recolors to error tokens', () => {
-  expect(buttonVariants({ tone: 'danger' })).toContain('text-error')
+test('danger tone is a self-contained error skin (no competing base text)', () => {
+  const cls = buttonVariants({ tone: 'danger' })
+  expect(cls).toContain('text-error')
+  expect(cls).not.toContain('text-on-surface')
 })
 ```
 
@@ -96,8 +100,11 @@ test('danger tone recolors to error tokens', () => {
 
 ```ts
 export type ButtonVariant = 'default' | 'ghost' | 'toolbar' | 'primary'
+
 export type ButtonSize = 'sm' | 'md' | 'lg'
+
 export type ButtonTone = 'default' | 'danger'
+
 export type ButtonShape = 'icon' | 'pill'
 
 export interface ButtonVariantOptions {
@@ -129,7 +136,9 @@ const VARIANT: Record<ButtonVariant, string> = {
     'hover:brightness-110 active:translate-y-px',
 }
 
-const TONE_DANGER = 'text-error hover:bg-error/10 hover:text-error'
+const DANGER =
+  'bg-transparent text-error hover:bg-error/10 hover:text-error ' +
+  'aria-pressed:bg-error/15 aria-expanded:bg-error/15'
 
 const SHAPE_SIZE: Record<ButtonShape, Record<ButtonSize, string>> = {
   icon: {
@@ -147,9 +156,12 @@ const SHAPE_SIZE: Record<ButtonShape, Record<ButtonSize, string>> = {
 export const buttonVariants = (options?: ButtonVariantOptions): string => {
   const { variant = 'default', size = 'md', tone = 'default', shape = 'pill' } =
     options ?? {}
-  const tones = tone === 'danger' ? ` ${TONE_DANGER}` : ''
+  // danger is a self-contained skin; it replaces the variant so no competing
+  // text/bg utilities land in the same class string (Tailwind utility order
+  // in the generated CSS, not the string, decides — so never emit both).
+  const skin = tone === 'danger' ? DANGER : VARIANT[variant]
 
-  return `${BASE} ${SHAPE_SIZE[shape][size]} ${VARIANT[variant]}${tones}`
+  return `${BASE} ${SHAPE_SIZE[shape][size]} ${skin}`
 }
 ```
 
@@ -196,6 +208,13 @@ import {
   type ButtonSize,
   type ButtonTone,
   type ButtonVariant,
+} from './buttonVariants'
+
+export type {
+  ButtonShape,
+  ButtonSize,
+  ButtonTone,
+  ButtonVariant,
 } from './buttonVariants'
 
 export interface BaseButtonProps
@@ -477,7 +496,7 @@ export default {
     },
     messages: {
       rawIconButton:
-        'Raw icon-only <button> — use IconButton from @/components (or ToolbarButton for icon + label).',
+        'Raw icon-only <button> — use IconButton from @/components/IconButton (or ToolbarButton for icon + label). There is no @/components barrel; import the specific module.',
     },
     schema: [],
   },
@@ -530,7 +549,7 @@ const vimeflowPlugin = {
 },
 ```
 
-- [ ] **Step 5: Add the flat-config integration test** — lint a fixture (one Shape-A button) through the real config and assert one `vimeflow/no-raw-icon-button` error; assert `src/components/**` is exempt. (`src/components/base/button/__fixtures__` or a sibling test that constructs an `ESLint` instance with `overrideConfigFile`.)
+- [ ] **Step 5: Add the flat-config integration test** — construct an `ESLint` instance against the real `eslint.config.js` and use `lintText(code, { filePath })`: assert one `vimeflow/no-raw-icon-button` error for a Shape-A button at a **non-components** path (e.g. `filePath: 'src/features/__probe__.tsx'`), and **zero** at a `src/components/**` path (the exemption). Do **not** place a fixture file under `src/components/**` — the rule ignores that tree, so a fixture there could never report (codex caught this).
 - [ ] **Step 6: Grandfather** — run `npm run lint`; for every reported offender add `// eslint-disable-next-line vimeflow/no-raw-icon-button` (tag grouped-control ones `-- VIM-125`). The inventory (T1) remains the complete audit.
 - [ ] **Step 7: Gate green + Commit** (`feat(button-primitives): add no-raw-icon-button guardrail and grandfather offenders`).
 
