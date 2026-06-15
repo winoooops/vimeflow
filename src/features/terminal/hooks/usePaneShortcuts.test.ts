@@ -527,7 +527,7 @@ describe('usePaneShortcuts container reclaim extensions', () => {
   })
 })
 
-describe('directional focus (Ctrl/Cmd+Shift+Arrow)', () => {
+describe('directional focus (Ctrl/Cmd+Arrow)', () => {
   test('vsplit active p0 Ctrl+Shift+Right focuses p1 and prevents default', () => {
     const setSessionActivePane = vi.fn()
     renderHook(() =>
@@ -551,7 +551,10 @@ describe('directional focus (Ctrl/Cmd+Shift+Arrow)', () => {
     expect(event.preventDefaultSpy).toHaveBeenCalled()
   })
 
-  test('vsplit active p0 plain Ctrl+Right propagates (no Shift)', () => {
+  test('vsplit active p0 plain Cmd/Ctrl+Right (no Shift) focuses p1', () => {
+    // VIM-104 follow-up: directional nav is now shift-agnostic — plain
+    // ⌘/Ctrl+Arrow navigates (Shift no longer required), since the chord has
+    // no terminal meaning and the editor/dock is guarded out below.
     const setSessionActivePane = vi.fn()
     renderHook(() =>
       usePaneShortcuts({
@@ -559,6 +562,7 @@ describe('directional focus (Ctrl/Cmd+Shift+Arrow)', () => {
         activeSessionId: 's1',
         setSessionActivePane,
         setSessionLayout: vi.fn(),
+        isTerminalContainerActive: true,
       })
     )
 
@@ -567,8 +571,9 @@ describe('directional focus (Ctrl/Cmd+Shift+Arrow)', () => {
       code: 'ArrowRight',
     })
 
-    expect(setSessionActivePane).not.toHaveBeenCalled()
-    expect(event.preventDefaultSpy).not.toHaveBeenCalled()
+    expect(setSessionActivePane).toHaveBeenCalledOnce()
+    expect(setSessionActivePane).toHaveBeenCalledWith('s1', 'p1')
+    expect(event.preventDefaultSpy).toHaveBeenCalled()
   })
 
   test('directional focus is suppressed while a dialog is open', () => {

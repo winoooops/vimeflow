@@ -214,7 +214,7 @@ describe('VIM-104 keymap + Vim mode keybindings', () => {
     await waitForLayout('vsplit')
   })
 
-  it('Cmd+Shift+Arrow moves focus between two panes', async () => {
+  it('Cmd+Arrow moves focus between two panes', async () => {
     // Ensure a 2-pane vsplit, then fill the empty slot with a second shell.
     await runExCommand(':vsplit')
     await waitForLayout('vsplit')
@@ -228,32 +228,30 @@ describe('VIM-104 keymap + Vim mode keybindings', () => {
       timeoutMsg: 'second pane did not spawn after clicking "add shell pane"',
     })
 
-    // Cmd+Shift+Left lands on the leftmost pane (pane 0) from either pane.
-    // (Unlike Cmd+1, the directional handler has no "reclaim terminal zone"
-    // branch — it just moves to the active pane's left neighbour.)
+    // Cmd+Left lands on the leftmost pane (pane 0) from either pane. The
+    // directional handler is shift-agnostic and terminal-gated; plain ⌘+Arrow
+    // just moves to the active pane's neighbour.
     await focusUntil(
       () =>
         fireKey({
           key: 'ArrowLeft',
           code: 'ArrowLeft',
           ...modInit(),
-          shiftKey: true,
         }),
       0,
-      'Cmd+Shift+Left did not focus the first (left) pane'
+      'Cmd+Left did not focus the first (left) pane'
     )
 
-    // Cmd+Shift+Right → the right (second) pane.
+    // Cmd+Right → the right (second) pane.
     await focusUntil(
       () =>
         fireKey({
           key: 'ArrowRight',
           code: 'ArrowRight',
           ...modInit(),
-          shiftKey: true,
         }),
       1,
-      'Cmd+Shift+Right did not focus the second (right) pane'
+      'Cmd+Right did not focus the second (right) pane'
     )
   })
 })

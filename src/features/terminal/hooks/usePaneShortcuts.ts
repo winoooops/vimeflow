@@ -220,17 +220,14 @@ export const usePaneShortcuts = ({
       if (arrowDirection === null) {
         return
       }
-      if (!event.shiftKey) {
-        return
-      }
 
-      // The digit-key handler already guards on the active container so
-      // pane shortcuts don't steal from the editor/dock. The arrow handler
-      // runs at the document capture phase with stopPropagation(), so it
-      // needs the same guard or it would silence CodeMirror's text-selection
-      // shortcuts (Cmd/Ctrl+Shift+Arrow) whenever a neighbor pane exists.
-      // When the caller does not provide the guard at all, default to safe:
-      // do not claim the keystroke. (Claude review round 3.)
+      // ⌘/Ctrl+Arrow navigates panes — shift-agnostic, mirroring the ⌘1-4
+      // digit shortcuts above (Shift is NOT required; ⌘⇧+Arrow still works).
+      // This is a terminal-pane action: it is gated on the terminal container
+      // being active and runs at the document capture phase with
+      // stopPropagation, so when the editor/dock is focused the handler bails
+      // and ⌘+Arrow stays the editor's own line/document navigation. With no
+      // guard provided at all, default to safe — do not claim the keystroke.
       const isTerminalContainerActiveValue =
         isTerminalContainerActiveRef.current
       if (!isTerminalContainerActiveValue) {
