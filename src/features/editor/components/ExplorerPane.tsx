@@ -29,7 +29,7 @@ export const ExplorerPane = ({
       icon="chevron_right"
       label="Open explorer panel"
       onClick={onToggle}
-      className={`fixed left-[308px] top-14 z-30 w-6 h-10 bg-surface-container text-on-surface-variant hover:bg-surface-container-high rounded-r-lg border-r border-y border-outline-variant/10 transition-all duration-300 ${
+      className={`fixed left-[308px] top-14 z-30 w-6 h-10 bg-surface-container text-on-surface-variant hover:bg-surface-container-high rounded-none rounded-r-lg border-r border-y border-outline-variant/10 transition-all duration-300 ${
         isOpen ? 'opacity-0 pointer-events-none' : 'opacity-100'
       }`}
     />

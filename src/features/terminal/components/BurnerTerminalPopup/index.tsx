@@ -333,7 +333,7 @@ export const BurnerTerminalPopup = ({
                   onClick={handleAlign}
                   disabled={alignBusy}
                   className={`h-[26px] w-[26px] rounded-[7px] ${
-                    outOfSync
+                    outOfSync && !alignBusy
                       ? 'text-[var(--color-agent-shell-accent)] bg-[color-mix(in_srgb,var(--color-agent-shell-accent)_15%,transparent)] hover:bg-[color-mix(in_srgb,var(--color-agent-shell-accent)_25%,transparent)]'
                       : ''
                   }`}

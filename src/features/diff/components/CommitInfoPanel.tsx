@@ -75,7 +75,7 @@ const CommitInfoPanel = ({
       size="sm"
       onClick={onToggle}
       showTooltip={!REOPEN_TOOLTIP_SUPPRESSED}
-      className={`fixed right-0 top-14 z-30 w-8 h-12 bg-surface-container hover:bg-surface-container-high text-on-surface-variant text-lg rounded-l-lg border-l border-y border-outline-variant/10 transition-all duration-300 ${
+      className={`fixed right-0 top-14 z-30 w-8 h-12 bg-surface-container hover:bg-surface-container-high text-on-surface-variant text-lg rounded-none rounded-l-lg border-l border-y border-outline-variant/10 transition-all duration-300 ${
         isOpen
           ? 'opacity-0 pointer-events-none translate-x-full'
           : 'opacity-100 translate-x-0'
