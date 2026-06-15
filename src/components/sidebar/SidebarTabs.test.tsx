@@ -114,6 +114,7 @@ describe('SidebarTabs', () => {
 
   test('shows a tooltip with the keyboard shortcut when an item provides one', async () => {
     const user = userEvent.setup()
+
     const tabsWithTips: readonly SidebarTabItem<Tab>[] = [
       {
         id: 'sessions',

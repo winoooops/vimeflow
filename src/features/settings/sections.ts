@@ -22,6 +22,10 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
   { id: 'network', label: 'Network', icon: 'lan' },
 ]
 
+/* eslint-disable vimeflow/no-hardcoded-colors -- literal preview swatches for the
+   appearance scheme picker (AppearancePane): each entry intentionally shows that
+   scheme's own accent/surface/text, which are distinct from the active theme's
+   runtime tokens, so they cannot be expressed as semantic var(--color-*) tokens. */
 export const BUILTIN_SCHEMES: AppearanceScheme[] = [
   {
     id: 'obsidian',
@@ -59,6 +63,7 @@ export const BUILTIN_SCHEMES: AppearanceScheme[] = [
     text: '#343331',
   },
 ]
+/* eslint-enable vimeflow/no-hardcoded-colors */
 
 export const KEYMAP_GROUPS: KeymapGroup[] = [
   {

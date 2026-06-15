@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, type ReactElement } from 'react'
 import type { SettingsSectionId, SettingsDialogProps } from './types'
 import { SETTINGS_SECTIONS } from './sections'
 import { Icon } from './components/Icon'
+import { Tooltip } from '@/components/Tooltip'
 import { Kbd } from './components/Kbd'
 import { SettingsHeader } from './components/SettingsHeader'
 import { SettingsSidebar } from './components/SettingsSidebar'
@@ -127,7 +128,7 @@ export const SettingsDialog = ({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.15 }}
-            className="absolute inset-0 backdrop-blur-sm bg-black/40"
+            className="absolute inset-0 backdrop-blur-sm bg-[color-mix(in_srgb,var(--color-scrim)_40%,transparent)]"
             onClick={onClose}
           />
 
@@ -141,19 +142,21 @@ export const SettingsDialog = ({
               damping: 30,
             }}
             onClick={(e) => e.stopPropagation()}
-            className="relative flex h-[640px] w-[920px] max-h-[90vh] max-w-[95vw] flex-col overflow-hidden rounded-xl border border-outline-variant/45 bg-surface-container/95 backdrop-blur-2xl shadow-[0_28px_72px_rgba(0,0,0,0.6),0_0_0_1px_rgba(203,166,247,0.08)]"
+            className="relative flex h-[640px] w-[920px] max-h-[90vh] max-w-[95vw] flex-col overflow-hidden rounded-xl border border-outline-variant/45 bg-surface-container/95 backdrop-blur-2xl shadow-[0_28px_72px_color-mix(in_srgb,var(--color-scrim)_60%,transparent),0_0_0_1px_color-mix(in_srgb,var(--color-primary)_8%,transparent)]"
           >
             {/* Title bar */}
             <div className="flex h-9 shrink-0 items-center justify-end gap-1.5 border-b border-outline-variant/25 bg-surface-container px-2.5">
-              <button
-                ref={closeButtonRef}
-                type="button"
-                title="close"
-                onClick={onClose}
-                className="grid h-[22px] w-[22px] place-items-center rounded border-none bg-transparent text-on-surface-muted transition-colors hover:bg-white/[0.04] hover:text-on-surface"
-              >
-                <Icon name="close" size={14} />
-              </button>
+              <Tooltip content="Close">
+                <button
+                  ref={closeButtonRef}
+                  type="button"
+                  aria-label="Close"
+                  onClick={onClose}
+                  className="grid h-[22px] w-[22px] place-items-center rounded border-none bg-transparent text-on-surface-muted transition-colors hover:bg-on-surface/[0.04] hover:text-on-surface"
+                >
+                  <Icon name="close" size={14} />
+                </button>
+              </Tooltip>
             </div>
 
             <div className="flex min-h-0 flex-1">

@@ -37,7 +37,7 @@ export const SettingsSidebar = ({
             className={`relative mb-px flex w-full items-center gap-2 rounded-md border-none px-2.5 py-1.5 text-left font-body text-[13px] transition-colors ${
               isActive
                 ? 'bg-primary-container/10 text-primary'
-                : 'bg-transparent text-on-surface-variant hover:bg-white/[0.03]'
+                : 'bg-transparent text-on-surface-variant hover:bg-on-surface/[0.03]'
             }`}
           >
             {isActive && (

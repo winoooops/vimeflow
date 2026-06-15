@@ -70,7 +70,7 @@ describe('SettingsDialog', () => {
     const onClose = vi.fn()
     render(<SettingsDialog open onClose={onClose} />)
 
-    await user.click(screen.getByTitle('close'))
+    await user.click(screen.getByRole('button', { name: 'Close' }))
 
     expect(onClose).toHaveBeenCalledTimes(1)
   })
@@ -147,7 +147,7 @@ describe('SettingsDialog', () => {
 
     await user.click(screen.getByRole('button', { name: 'Open settings' }))
 
-    expect(screen.getByTitle('close')).toHaveFocus()
+    expect(screen.getByRole('button', { name: 'Close' })).toHaveFocus()
   })
 
   test('traps Tab focus inside the dialog', async () => {
@@ -161,7 +161,7 @@ describe('SettingsDialog', () => {
     lastFocusable.focus()
     await user.tab()
 
-    expect(screen.getByTitle('close')).toHaveFocus()
+    expect(screen.getByRole('button', { name: 'Close' })).toHaveFocus()
   })
 
   test('restores focus to the triggering element on close', async () => {
@@ -170,7 +170,7 @@ describe('SettingsDialog', () => {
 
     const trigger = screen.getByRole('button', { name: 'Open settings' })
     await user.click(trigger)
-    await user.click(screen.getByTitle('close'))
+    await user.click(screen.getByRole('button', { name: 'Close' }))
 
     expect(trigger).toHaveFocus()
   })
@@ -186,7 +186,7 @@ describe('SettingsDialog', () => {
 
     expect(screen.queryByRole('button', { name: 'General' })).toBeNull()
 
-    await user.click(screen.getByTitle('close'))
+    await user.click(screen.getByRole('button', { name: 'Close' }))
     await user.click(trigger)
 
     expect(screen.getByRole('button', { name: 'General' })).toBeInTheDocument()
