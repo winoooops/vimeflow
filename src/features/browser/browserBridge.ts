@@ -130,13 +130,16 @@ export const createBrowserPane = async (
 export const setBrowserPaneBounds = async (
   request: BrowserPaneBoundsRequest
 ): Promise<void> => {
-  const browserBridge = bridge()
-
-  if (browserPaneBoundsCaptureActive && browserBridge) {
-    browserPaneBoundsCaptures.push(cloneBoundsCapture(request))
+  const bri = bridge()
+  if (!bri) {
+    return
   }
 
-  await browserBridge?.setBounds(request)
+  await bri.setBounds(request)
+
+  if (browserPaneBoundsCaptureActive) {
+    browserPaneBoundsCaptures.push(cloneBoundsCapture(request))
+  }
 }
 
 export const navigateBrowserPane = async (

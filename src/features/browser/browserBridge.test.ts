@@ -256,7 +256,7 @@ describe('browserBridge', () => {
     expect(navStateCleanup).toBe(unlistenNavState)
   })
 
-  test('captures browser pane bounds requests before forwarding to preload', async () => {
+  test('captures browser pane bounds requests after forwarding to preload succeeds', async () => {
     const bridge: BrowserPaneBridge = {
       createPane: vi.fn(),
       setBounds: vi.fn().mockResolvedValue(undefined),

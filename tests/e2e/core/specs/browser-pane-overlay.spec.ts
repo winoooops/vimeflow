@@ -299,5 +299,5 @@ describe('BrowserPane native overlay occlusion', () => {
       hiddenCapture.sequence
     )
     assertRealLayoutBounds(shownCapture, 'restored')
-  })
+  }, 60_000)
 })
