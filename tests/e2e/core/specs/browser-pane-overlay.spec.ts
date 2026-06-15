@@ -151,18 +151,21 @@ const startBoundsCapture = async (): Promise<void> => {
 const matchingBoundsCaptures = (
   captures: BrowserPaneBoundsCapture[],
   identity: BrowserPaneIdentity,
-  visible: boolean
+  visible: boolean,
+  minSequence = -1
 ): BrowserPaneBoundsCapture[] =>
   captures.filter(
     (capture) =>
       capture.sessionId === identity.sessionId &&
       capture.paneId === identity.paneId &&
-      capture.visible === visible
+      capture.visible === visible &&
+      capture.sequence > minSequence
   )
 
 const waitForBoundsCapture = async (
   identity: BrowserPaneIdentity,
-  visible: boolean
+  visible: boolean,
+  minSequence?: number
 ): Promise<BrowserPaneBoundsCapture> => {
   await browser.waitUntil(
     async () => {
@@ -170,7 +173,10 @@ const waitForBoundsCapture = async (
         () => window.__VIMEFLOW_E2E__?.getBrowserPaneBoundsCaptures() ?? []
       )
 
-      return matchingBoundsCaptures(captures, identity, visible).length > 0
+      return (
+        matchingBoundsCaptures(captures, identity, visible, minSequence)
+          .length > 0
+      )
     },
     {
       timeout: 5_000,
@@ -182,7 +188,12 @@ const waitForBoundsCapture = async (
   const captures = await browser.execute(
     () => window.__VIMEFLOW_E2E__?.getBrowserPaneBoundsCaptures() ?? []
   )
-  const matching = matchingBoundsCaptures(captures, identity, visible)
+  const matching = matchingBoundsCaptures(
+    captures,
+    identity,
+    visible,
+    minSequence
+  )
   const capture = matching[matching.length - 1]
   if (!capture) {
     throw new Error(`missing visible=${String(visible)} bounds capture`)
@@ -266,7 +277,11 @@ describe('BrowserPane native overlay occlusion', () => {
     assertRealLayoutBounds(hiddenCapture, 'occluded')
 
     await closeCommandPalette()
-    const shownCapture = await waitForBoundsCapture(identity, true)
+    const shownCapture = await waitForBoundsCapture(
+      identity,
+      true,
+      hiddenCapture.sequence
+    )
     assertRealLayoutBounds(shownCapture, 'restored')
 
     if (shownCapture.sequence <= hiddenCapture.sequence) {
