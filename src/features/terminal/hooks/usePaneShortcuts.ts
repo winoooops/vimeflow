@@ -266,6 +266,14 @@ export const usePaneShortcuts = ({
         arrowDirection
       )
       if (targetVisibleIndex === null) {
+        // The chord is recognized as an app-level pane-navigation shortcut
+        // and the editor/dock/dialog guards have already passed. Claim it so
+        // the keystroke doesn't fall through to xterm and emit a modified-
+        // arrow escape sequence to the PTY at layout edges or in single-pane
+        // sessions. (Codex review cycle 11.)
+        event.preventDefault()
+        event.stopPropagation()
+
         return
       }
       event.preventDefault()

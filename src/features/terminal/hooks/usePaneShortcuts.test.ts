@@ -597,7 +597,10 @@ describe('directional focus (Ctrl/Cmd+Shift+Arrow)', () => {
     document.body.removeChild(dialog)
   })
 
-  test('single active p0 Ctrl+Shift+Right is a no-op', () => {
+  test('single active p0 Ctrl+Shift+Right at edge claims the shortcut', () => {
+    // No neighbor exists, but the chord is recognized as an app-level pane-
+    // navigation shortcut after the container/dialog guards pass, so we
+    // prevent it from falling through to xterm and reaching the PTY.
     const setSessionActivePane = vi.fn()
     renderHook(() =>
       usePaneShortcuts({
@@ -615,7 +618,7 @@ describe('directional focus (Ctrl/Cmd+Shift+Arrow)', () => {
     })
 
     expect(setSessionActivePane).not.toHaveBeenCalled()
-    expect(event.preventDefaultSpy).not.toHaveBeenCalled()
+    expect(event.preventDefaultSpy).toHaveBeenCalled()
   })
 
   test('hsplit active p0 Ctrl+Shift+Down focuses p1', () => {

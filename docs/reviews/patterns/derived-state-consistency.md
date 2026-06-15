@@ -103,3 +103,12 @@ base data is technically "correct."
 - **Finding:** When a session had more panes than the current layout capacity, `SplitView.selectVisiblePanes` rendered the active pane in the last visible slot, but the new directional shortcut passed the pane's original array index into `resolveDirectionalPane`. The grid only contains slots like `p0`/`p1`, so a pane beyond the prefix could not be found and the shortcut returned `null` even though the pane was clearly visible.
 - **Fix:** Moved `selectVisiblePanes` to a shared utility and computed the visible-pane mapping inside `usePaneShortcuts`. Directional resolution now uses the active pane's visible-slot index and maps the resulting visible-slot index back to the actual pane id via `visiblePanes[targetVisibleIndex].id`.
 - **Commit:** same commit as this entry
+
+### 7. Vim leader directional chords resolved against raw pane indices instead of visible slots
+
+- **Source:** github-claude | PR #460 round 2 | 2026-06-15
+- **Severity:** HIGH
+- **File:** `src/features/command-palette/hooks/useVimLeaderChords.ts`
+- **Finding:** `focusDirection` passed the active pane's raw `session.panes` index into `resolveDirectionalPane`, but the layout grid only contains slots up to `capacity - 1`. When the session had more panes than the layout capacity and the active pane was rescued into the last visible slot, the chord consumed the key and returned `true` with no movement because the raw slot did not exist in the grid.
+- **Fix:** Mirrored the `usePaneShortcuts` approach: compute `visiblePanes` via `selectVisiblePanes(session.panes, shape.capacity)`, resolve from `activeVisibleIndex`, and activate `visiblePanes[targetVisibleIndex].id`. Added an over-capacity regression test for Vim leader `h`/`j`/`k`/`l`.
+- **Commit:** same commit as this entry

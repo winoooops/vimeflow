@@ -8,6 +8,7 @@ import {
   resolveDirectionalPane,
   type PaneDirection,
 } from '../../terminal/utils/resolveDirectionalPane'
+import { selectVisiblePanes } from '../../terminal/utils/selectVisiblePanes'
 import { registerChord } from '../chordRegistry'
 
 export interface UseVimLeaderChordsOptions {
@@ -44,24 +45,32 @@ export const useVimLeaderChords = (
       return true
     }
 
-    const activeIndex = session.panes.findIndex((pane) => pane.active)
-    if (activeIndex === -1) {
-      return true
-    }
-
     const shape = LAYOUTS[session.layout] as LayoutShape | undefined
     if (shape === undefined) {
       return true
     }
 
-    const target = resolveDirectionalPane(
+    // Directional resolution must run against the visible slot grid (same
+    // mapping SplitView uses via selectVisiblePanes), not the raw pane array
+    // indices. Otherwise a pane rescued into the last visible slot when the
+    // layout is over-capacity cannot be navigated from. (Codex review cycle 11.)
+    const visiblePanes = selectVisiblePanes(session.panes, shape.capacity)
+    const activeVisibleIndex = visiblePanes.findIndex((pane) => pane.active)
+    if (activeVisibleIndex === -1) {
+      return true
+    }
+
+    const targetVisibleIndex = resolveDirectionalPane(
       shape,
-      activeIndex,
-      session.panes.length,
+      activeVisibleIndex,
+      visiblePanes.length,
       direction
     )
-    if (target !== null) {
-      setSessionActivePaneRef.current(session.id, session.panes[target].id)
+    if (targetVisibleIndex !== null) {
+      setSessionActivePaneRef.current(
+        session.id,
+        visiblePanes[targetVisibleIndex].id
+      )
     }
 
     return true

@@ -288,3 +288,12 @@ against three classes of false-fire:
 - **Finding:** The new `Cmd/Ctrl+Shift+Arrow` directional handler registered at the document capture phase with `stopPropagation()` but only checked `event.shiftKey` before acting. It did not reuse the existing `isTerminalContainerActive` guard that the digit-key handler already used, so the shortcut fired when CodeMirror (in the dock) had focus and silently stole `Cmd+Shift+Arrow` text-selection shortcuts whenever a neighbor pane existed.
 - **Fix:** Added the same guard pattern used by the digit-key path: when `isTerminalContainerActive` is explicitly provided and `false`, return early before the `shiftKey` check so editor focus keeps the event.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 21. No-op directional shortcuts still propagated into the terminal
+
+- **Source:** github-claude | PR #460 round 2 | 2026-06-15
+- **Severity:** MEDIUM
+- **File:** `src/features/terminal/hooks/usePaneShortcuts.ts`
+- **Finding:** After the container-active and dialog guards passed, the directional arrow handler returned without claiming the key when `resolveDirectionalPane` found no neighbor. Because the listener runs at the document capture phase, the unclaimed `keydown` reached xterm.js and forwarded a modified-arrow escape sequence to the PTY on Linux/Windows, making an advertised pane-navigation chord affect the running shell/editor at layout edges or in single-pane sessions.
+- **Fix:** Called `event.preventDefault()` and `event.stopPropagation()` before returning from the `target === null` branch, while keeping the editor/dock guard intact. Updated the regression test to expect the shortcut is claimed at edges.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

@@ -201,4 +201,26 @@ describe('useVimLeaderChords', () => {
     expect(dispatch('l')).toBe(true)
     expect(setSessionActivePane).not.toHaveBeenCalled()
   })
+
+  test('vim h resolves against visible slots when active pane is over capacity', () => {
+    // 3 panes in a 2-slot vsplit, active at index 2. SplitView renders
+    // [p0, p2] in slots p0/p1, so `h` from the rescued active pane should
+    // move focus to the visible slot 0 (pane p0) — not silently do nothing
+    // because p3 is not in the grid.
+    const setSessionActivePane = vi.fn()
+
+    renderHook(() =>
+      useVimLeaderChords({
+        keymapPreset: 'vim',
+        activeSession: makeSession('s1', 'vsplit', ['p0', 'p1', 'p2'], 2),
+        setSessionActivePane,
+        closeActivePane: vi.fn(),
+        setActiveSessionLayout: vi.fn(),
+      })
+    )
+
+    expect(dispatch('h')).toBe(true)
+    expect(setSessionActivePane).toHaveBeenCalledOnce()
+    expect(setSessionActivePane).toHaveBeenCalledWith('s1', 'p0')
+  })
 })
