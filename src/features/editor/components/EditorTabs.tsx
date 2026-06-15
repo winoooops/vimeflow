@@ -1,5 +1,6 @@
 import type { ReactElement } from 'react'
 import type { EditorTab } from '../types'
+import { IconButton } from '@/components/IconButton'
 
 interface EditorTabsProps {
   tabs: EditorTab[]
@@ -59,14 +60,12 @@ export const EditorTabs = ({
                 {tab.fileName}
                 {tab.isDirty && <span className="ml-1 text-primary">●</span>}
               </span>
-              {/* eslint-disable-next-line vimeflow/no-raw-icon-button -- VIM-125: grouped control */}
-              <button
+              <IconButton
+                icon="close"
+                label={`Close ${tab.fileName}`}
                 onClick={(e) => handleCloseClick(e, tab.id)}
-                aria-label={`Close ${tab.fileName}`}
-                className="material-symbols-outlined text-[10px] ml-2 hover:bg-surface-container-highest rounded-full p-0.5 transition-colors"
-              >
-                close
-              </button>
+                className="ml-2 h-auto w-auto rounded-full p-0.5 text-[10px] hover:bg-surface-container-highest"
+              />
             </div>
           )
         })}

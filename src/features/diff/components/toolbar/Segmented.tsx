@@ -1,4 +1,5 @@
 import type { ReactElement } from 'react'
+import { SegmentedControl } from '@/components/SegmentedControl'
 
 interface SegmentedProps<T extends string | number> {
   value: T
@@ -15,25 +16,13 @@ export const Segmented = <T extends string | number>({
   options,
   onChange,
 }: SegmentedProps<T>): ReactElement => (
-  <span className="inline-flex items-center gap-0.5 bg-surface-container/40 rounded-full p-0.5">
-    {options.map((option) => {
-      const active = option === value
-
-      return (
-        <button
-          key={String(option)}
-          type="button"
-          onClick={(): void => onChange(option)}
-          aria-pressed={active}
-          className={`px-3 py-1 rounded-full text-[0.65rem] font-bold uppercase tracking-wider transition-colors ${
-            active
-              ? 'bg-primary text-on-primary'
-              : 'text-on-surface-variant hover:text-on-surface'
-          }`}
-        >
-          {String(option)}
-        </button>
-      )
-    })}
-  </span>
+  <SegmentedControl
+    aria-label="Diff view mode"
+    value={value}
+    options={options.map((option) => ({
+      value: option,
+      label: String(option),
+    }))}
+    onChange={onChange}
+  />
 )
