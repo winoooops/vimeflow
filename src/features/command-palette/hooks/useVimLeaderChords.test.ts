@@ -116,6 +116,26 @@ describe('useVimLeaderChords', () => {
     expect(setSessionActivePane).toHaveBeenCalledWith('s1', 'p1')
   })
 
+  test('vim w cycles within visible panes when layout is over capacity', () => {
+    // 3 panes in a 2-slot vsplit; SplitView renders [p0, p2]. `w` should wrap
+    // from the rescued active pane (p2) back to the first visible slot (p0).
+    const setSessionActivePane = vi.fn()
+
+    renderHook(() =>
+      useVimLeaderChords({
+        keymapPreset: 'vim',
+        activeSession: makeSession('s1', 'vsplit', ['p0', 'p1', 'p2'], 2),
+        setSessionActivePane,
+        closeActivePane: vi.fn(),
+        setActiveSessionLayout: vi.fn(),
+      })
+    )
+
+    expect(dispatch('w')).toBe(true)
+    expect(setSessionActivePane).toHaveBeenCalledOnce()
+    expect(setSessionActivePane).toHaveBeenCalledWith('s1', 'p0')
+  })
+
   test('vim c closes the active pane', () => {
     const closeActivePane = vi.fn()
 

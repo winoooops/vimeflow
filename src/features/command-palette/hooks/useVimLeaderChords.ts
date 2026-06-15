@@ -82,12 +82,26 @@ export const useVimLeaderChords = (
       return true
     }
 
-    const activeIndex = session.panes.findIndex((pane) => pane.active)
+    const shape = LAYOUTS[session.layout] as LayoutShape | undefined
+    if (shape === undefined) {
+      return true
+    }
+
+    // Cycle within the visible slot subset, matching SplitView rendering and
+    // directional navigation. Using the raw pane array would let `w` focus a
+    // hidden pane in over-capacity layouts and cause a visible layout jump.
+    const visiblePanes = selectVisiblePanes(session.panes, shape.capacity)
+    if (visiblePanes.length === 0) {
+      return true
+    }
+
+    const activeVisibleIndex = visiblePanes.findIndex((pane) => pane.active)
 
     const next =
-      (activeIndex === -1 ? 0 : activeIndex + 1) % session.panes.length
+      (activeVisibleIndex === -1 ? 0 : activeVisibleIndex + 1) %
+      visiblePanes.length
 
-    setSessionActivePaneRef.current(session.id, session.panes[next].id)
+    setSessionActivePaneRef.current(session.id, visiblePanes[next].id)
 
     return true
   }
