@@ -132,7 +132,7 @@ export const ContextBucket = ({
           {pct !== null && (
             <div
               data-testid="context-pill"
-              className="absolute right-[6px] inline-flex -translate-y-1/2 items-center rounded-[5px] px-[6px] py-[1.5px] font-mono text-[9.5px] font-semibold"
+              className="pointer-events-none absolute right-[6px] inline-flex -translate-y-1/2 items-center rounded-[5px] px-[6px] py-[1.5px] font-mono text-[9.5px] font-semibold"
               style={{
                 top: `${waterlineTopPct}%`,
                 background: chrome.pillBg,

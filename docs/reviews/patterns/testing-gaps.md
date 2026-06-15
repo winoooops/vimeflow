@@ -648,3 +648,12 @@ filesystem scope restrictions).
 - **Finding:** Three macOS drag-region tests set `navigator.platform = "MacIntel"` via `Object.defineProperty` but never reset the value. Vitest runs tests in declaration order within a file, so every later test inherits the mutated platform and macOS behavior (`preferModifier = "meta"`, `reserveWindowControls = true`). No existing assertion checks the absence of `vf-app-drag-region`, so the suite stays green, but any future non-macOS test added below the macOS blocks silently receives macOS behavior and fails spuriously.
 - **Fix:** Added an `Object.defineProperty(navigator, "platform", { value: "", configurable: true })` reset at the top of the file's `beforeEach` so every test starts with a clean platform value.
 - **Commit:** same commit as this entry
+
+### 65. MQL change handler and cleanup untested because the mock is a no-op
+
+- **Source:** github-claude | PR #457 round 1 | 2026-06-15
+- **Severity:** MEDIUM
+- **File:** `src/features/agent-status/hooks/useReservoirFlow.test.tsx`
+- **Finding:** `makeMql` returned `addEventListener`/`removeEventListener` as `vi.fn()` stubs that recorded nothing and fired nothing, so the hook's `onMqlChange` handler was unreachable in tests. The unmount test also only asserted pointer-event cleanup, never `mql.removeEventListener('change', onMqlChange)`.
+- **Fix:** Upgraded the mock to a `MockMql` helper that captures listeners and exposes a `fire()` method, then added a reduced-motion-toggle test and a cleanup assertion for the `'change'` listener. (Carried forward across the swell-model rewrite of the hook.)
+- **Commit:** same commit as this entry

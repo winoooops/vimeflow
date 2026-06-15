@@ -251,52 +251,6 @@
   }
 }
 
-/* Context reservoir (WaterTank) parallax. Each wave path is 2x the tank width
-   (496) and translates by exactly one tank width (248) for a seamless loop.
-   `transform-box: fill-box` is required so the -50% resolves against the 496px
-   path, not the 248px viewBox — without it the percentage is viewBox-relative
-   (-124px), half the back wave's 248px wavelength, so it resets mid-wave every
-   loop. Both waves move the same direction; the back wave reads as a distinct
-   layer through its longer wavelength, slower speed, taller amplitude, and
-   offset phase. Honors prefers-reduced-motion — the static tank is legible. */
-@keyframes vfTankWaveA {
-  from {
-    transform: translateX(0);
-  }
-  to {
-    transform: translateX(-50%);
-  }
-}
-
-@keyframes vfTankWaveB {
-  from {
-    transform: translateX(0);
-  }
-  to {
-    transform: translateX(-50%);
-  }
-}
-
-.vf-tank-wave-a,
-.vf-tank-wave-b {
-  transform-box: fill-box;
-}
-
-.vf-tank-wave-a {
-  animation: vfTankWaveA 4.6s linear infinite;
-}
-
-.vf-tank-wave-b {
-  animation: vfTankWaveB 7s linear infinite;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .vf-tank-wave-a,
-  .vf-tank-wave-b {
-    animation: none;
-  }
-}
-
 /* Diff viewer styling */
 .diff-added {
   background-color: var(--color-diff-added);

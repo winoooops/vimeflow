@@ -1,9 +1,23 @@
-import { useId, type ReactElement } from 'react'
+import {
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  type ReactElement,
+} from 'react'
 import {
   resolveContextTone,
   tankChrome,
   type ReservoirTheme,
 } from '../utils/contextTone'
+import {
+  useReservoirFlow,
+  buildReservoirSurface,
+  SWELL_PRESETS,
+  type ReservoirSurfaceRefs,
+  type ReservoirGeom,
+  type SwellVariant,
+} from '../hooks/useReservoirFlow'
 
 export interface WaterTankProps {
   /** Context fill, 0-100. Drives the waterline height and the tone. */
@@ -13,22 +27,19 @@ export interface WaterTankProps {
   height?: number
   /** When true (context unknown), render the empty tank with no water. */
   empty?: boolean
+  /**
+   * Hover-swell flavor — how the water rises toward the cursor. Three are
+   * available (see SWELL_PRESETS); defaults to `soft-mound`. A future user
+   * setting will choose this per preference — tracked in Linear VIM-128.
+   */
+  swell?: SwellVariant
 }
 
-// The parallax waves always animate; prefers-reduced-motion disables them via
-// CSS (the static filled tank is fully legible).
-
 // SVG is drawn in a fixed 248-wide user space and stretched to the container
-// (preserveAspectRatio="none"); each wave path spans 2x the width and the
-// keyframe translates it by exactly one width (-50%), so the loop is seamless.
+// (preserveAspectRatio="none"). The water surface is redrawn each frame by
+// useReservoirFlow: a calm drift plus a swell that rises toward the cursor on
+// hover. The fill always closes flat to the floor, so it reads as real water.
 const TANK_WIDTH = 248
-const WAVE_SPAN = TANK_WIDTH * 2
-// Wavelengths that divide the tank width evenly so each wave tiles without a
-// seam on loop (the handoff's back-wave length of 150 did not tile the 248px
-// translate). The back wave reads as a distinct, slower parallax layer: one
-// broad swell across the tank behind the front's two faster ripples.
-const WAVELENGTH_FRONT = TANK_WIDTH / 2 // 124 — two ripples across the tank
-const WAVELENGTH_BACK = TANK_WIDTH // 248 — one broad swell behind
 
 /**
  * Y coordinate (in SVG user units) of the waterline for a given fill. A 2%
@@ -43,6 +54,7 @@ export const WaterTank = ({
   theme,
   height = 104,
   empty = false,
+  swell = 'soft-mound',
 }: WaterTankProps): ReactElement => {
   const tone = resolveContextTone(pct, theme)
   const chrome = tankChrome(theme)
@@ -52,29 +64,76 @@ export const WaterTank = ({
   const dryId = `tank-dry-${rid}`
   const clipId = `tank-clip-${rid}`
 
-  const wavePath = (
-    amplitude: number,
-    phase: number,
-    wavelength: number,
-    close = true
-  ): string => {
-    const yAt = (x: number): number =>
-      level + Math.sin((x / wavelength) * Math.PI * 2 + phase) * amplitude
-    const points: string[] = []
-    for (let x = 0; x < WAVE_SPAN; x += 6) {
-      points.push(`${x === 0 ? 'M' : 'L'} ${x.toFixed(1)} ${yAt(x).toFixed(2)}`)
-    }
-    // Land the final point exactly on the span edge — a step of 6 doesn't
-    // divide 496, so without this the closed fill jumps from x=492 straight to
-    // the bottom corner, a slanted seam that scrolls into view on loop wrap.
-    points.push(`L ${WAVE_SPAN} ${yAt(WAVE_SPAN).toFixed(2)}`)
-    const d = points.join(' ')
+  // Resting surface for the first paint / reduced-motion. React no longer owns
+  // the animated `d` attributes — we seed them imperatively below so `pct`
+  // updates cannot overwrite the rAF-painted surface for a frame. No swell at
+  // rest (amp 0).
+  const resting = buildReservoirSurface(
+    level,
+    height,
+    0,
+    0,
+    TANK_WIDTH / 2,
+    SWELL_PRESETS[swell].width
+  )
 
-    return close ? `${d} L ${WAVE_SPAN} ${height} L 0 ${height} Z` : d
-  }
+  const svgRef = useRef<SVGSVGElement>(null)
+  const fillRef = useRef<SVGPathElement>(null)
+  const meniscusRef = useRef<SVGPathElement>(null)
+  const flowRefsRef = useRef<ReservoirSurfaceRefs | null>(null)
+  const geomRef = useRef<ReservoirGeom | null>({ level, height })
+
+  // The hook reads the live waterline each frame (eased) without restarting on
+  // every pct change.
+  geomRef.current = { level, height }
+
+  useLayoutEffect(() => {
+    const fill = fillRef.current
+    const meniscus = meniscusRef.current
+    flowRefsRef.current =
+      fill !== null && meniscus !== null ? { fill, meniscus } : null
+    // Seed the first paint / reduced-motion surface before the browser paints.
+    // Compute from the mutable geom ref rather than the render-scoped `resting`
+    // so this effect does not re-run on every `pct` change.
+    const geom = geomRef.current
+    if (fill === null || meniscus === null || geom === null) {
+      return
+    }
+
+    const { fill: fillPath, crest } = buildReservoirSurface(
+      geom.level,
+      geom.height,
+      0,
+      0,
+      TANK_WIDTH / 2,
+      SWELL_PRESETS[swell].width
+    )
+    fill.setAttribute('d', fillPath)
+    meniscus.setAttribute('d', crest)
+  }, [empty, swell])
+
+  // Keep the static surface in sync with `pct` under reduced motion. During
+  // normal animation the rAF loop in useReservoirFlow owns the `d` attributes
+  // and reads geomRef.current each frame, so this passive effect deliberately
+  // does nothing when reduced motion is not requested.
+  useEffect(() => {
+    const fill = fillRef.current
+    const meniscus = meniscusRef.current
+    if (fill === null || meniscus === null) {
+      return
+    }
+    if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      return
+    }
+    fill.setAttribute('d', resting.fill)
+    meniscus.setAttribute('d', resting.crest)
+  }, [resting.fill, resting.crest])
+
+  useReservoirFlow(svgRef, flowRefsRef, geomRef, !empty, swell)
 
   return (
     <svg
+      ref={svgRef}
       data-testid="water-tank"
       viewBox={`0 0 ${TANK_WIDTH} ${height}`}
       width="100%"
@@ -133,31 +192,20 @@ export const WaterTank = ({
 
         {!empty && (
           <>
-            {/* back wave — slower, taller, dim */}
-            <g data-testid="tank-wave-back" className="vf-tank-wave-b">
-              <path
-                d={wavePath(3.2, 0.9, WAVELENGTH_BACK)}
-                fill={`url(#${fillId})`}
-                opacity="0.5"
-              />
-            </g>
-            {/* front wave — the primary body + bright meniscus crest */}
-            <g data-testid="tank-wave-front" className="vf-tank-wave-a">
-              <path
-                data-testid="tank-water"
-                d={wavePath(2.4, 2.4, WAVELENGTH_FRONT)}
-                fill={`url(#${fillId})`}
-              />
-              <path
-                data-testid="tank-meniscus"
-                d={wavePath(2.4, 2.4, WAVELENGTH_FRONT, false)}
-                fill="none"
-                stroke={tone.meniscus}
-                strokeWidth="1.5"
-                strokeOpacity="0.9"
-                style={{ filter: `drop-shadow(0 0 5px ${tone.base})` }}
-              />
-            </g>
+            <path
+              ref={fillRef}
+              data-testid="tank-water"
+              fill={`url(#${fillId})`}
+            />
+            <path
+              ref={meniscusRef}
+              data-testid="tank-meniscus"
+              fill="none"
+              stroke={tone.meniscus}
+              strokeWidth="1.5"
+              strokeOpacity="0.9"
+              style={{ filter: `drop-shadow(0 0 5px ${tone.base})` }}
+            />
           </>
         )}
 
