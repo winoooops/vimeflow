@@ -1936,7 +1936,8 @@ export const WorkspaceView = (): ReactElement => {
           the sidebar and main surfaces so focus order matches its visual
           position; z-40 keeps it on top. */}
       <div
-        className="absolute z-40"
+        data-testid="sidebar-toggle-fixed-shell"
+        className="vf-app-no-drag absolute z-40"
         style={{ left: sidebarToggleLeft, top: SIDEBAR_TOGGLE_TOP }}
       >
         <SidebarToggle
@@ -2127,8 +2128,23 @@ export const WorkspaceView = (): ReactElement => {
             frosted-glass treatment now lives in <GlassSurface>. */}
         <div
           data-testid="top-chrome"
-          className="relative flex h-[44px] shrink-0 items-center gap-[12px] border-b border-outline-variant/25 bg-surface pl-[14px] pr-[14px]"
+          className={`relative flex h-[44px] shrink-0 items-center gap-[12px] border-b border-outline-variant/25 bg-surface pl-[14px] pr-[14px] ${
+            reserveWindowControls ? 'vf-app-drag-region' : ''
+          }`}
         >
+          {reserveWindowControls && isSidebarClosed && (
+            <span
+              aria-hidden="true"
+              data-testid="top-chrome-sidebar-toggle-clearance"
+              className="vf-app-no-drag pointer-events-none absolute"
+              style={{
+                left: sidebarToggleLeft,
+                top: SIDEBAR_TOGGLE_TOP,
+                width: SIDEBAR_TOGGLE_SIZE,
+                height: SIDEBAR_TOGGLE_SIZE,
+              }}
+            />
+          )}
           <span className="min-w-[10px] flex-1" />
 
           {/* Pills render in every layout, with the layout-display config
@@ -2298,6 +2314,7 @@ export const WorkspaceView = (): ReactElement => {
               onExpand={() => {
                 handleActivityPanelCollapsed(false)
               }}
+              reserveWindowControls={reserveWindowControls}
             />
           ) : (
             <AgentStatusPanel
@@ -2312,6 +2329,7 @@ export const WorkspaceView = (): ReactElement => {
               onCollapse={() => {
                 handleActivityPanelCollapsed(true)
               }}
+              reserveWindowControls={reserveWindowControls}
             />
           )}
         </div>

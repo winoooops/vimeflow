@@ -186,6 +186,10 @@ describe('WorkspaceView – top chrome (main-stage handoff J2–J6)', () => {
   }
 
   beforeEach(async () => {
+    Object.defineProperty(navigator, 'platform', {
+      value: '',
+      configurable: true,
+    })
     vi.clearAllMocks()
     act(() => {
       setSidebarCollapsed(false)
@@ -321,6 +325,86 @@ describe('WorkspaceView – top chrome (main-stage handoff J2–J6)', () => {
     expect(chromeClasses).not.toContain('absolute')
   })
 
+  test('macOS top chrome is draggable with the layout pillar cut out', () => {
+    Object.defineProperty(navigator, 'platform', {
+      value: 'MacIntel',
+      configurable: true,
+    })
+
+    render(<WorkspaceView />)
+
+    expect(screen.getByTestId('top-chrome')).toHaveClass('vf-app-drag-region')
+
+    expect(screen.getByTestId('layout-switcher')).toHaveClass('vf-app-no-drag')
+
+    expect(screen.getByTestId('sidebar-toggle-fixed')).toHaveClass(
+      'vf-app-no-drag'
+    )
+  })
+
+  test('macOS collapsed activity rail keeps only its expand control clickable', async () => {
+    Object.defineProperty(navigator, 'platform', {
+      value: 'MacIntel',
+      configurable: true,
+    })
+
+    await setupSessionManager(
+      [
+        {
+          ...mockSessions[0],
+          activityPanelCollapsed: true,
+        },
+      ],
+      'session-1'
+    )
+
+    render(<WorkspaceView />)
+
+    expect(screen.getByTestId('top-chrome')).toHaveClass('vf-app-drag-region')
+
+    expect(screen.getByTestId('layout-switcher')).toHaveClass('vf-app-no-drag')
+
+    expect(screen.getByTestId('agent-status-rail')).toHaveClass(
+      'vf-app-drag-region'
+    )
+
+    expect(
+      screen.getByRole('button', { name: /expand activity panel/i })
+    ).toHaveClass('vf-app-no-drag')
+  })
+
+  test('macOS collapsed left-sidebar toggle is cut out of the draggable top chrome', () => {
+    Object.defineProperty(navigator, 'platform', {
+      value: 'MacIntel',
+      configurable: true,
+    })
+
+    render(<WorkspaceView />)
+
+    expect(
+      screen.queryByTestId('top-chrome-sidebar-toggle-clearance')
+    ).toBeNull()
+
+    act(() => {
+      setSidebarCollapsed(true)
+    })
+
+    expect(screen.getByTestId('top-chrome')).toHaveClass('vf-app-drag-region')
+    expect(screen.getByTestId('sidebar-toggle-fixed-shell')).toHaveClass(
+      'vf-app-no-drag'
+    )
+
+    const clearance = screen.getByTestId('top-chrome-sidebar-toggle-clearance')
+    expect(clearance).toHaveClass('vf-app-no-drag')
+    expect(clearance).toHaveClass('pointer-events-none')
+    expect(clearance).toHaveStyle({
+      left: '82px',
+      top: '7px',
+      width: '28px',
+      height: '28px',
+    })
+  })
+
   test('split layout: label-free pills right-aligned; config docked in the pillar (J3)', async () => {
     await setupSessionManager(mockSessions, 'session-2')
     render(<WorkspaceView />)
@@ -408,8 +492,10 @@ describe('WorkspaceView – top chrome (main-stage handoff J2–J6)', () => {
 
     // Open: a single toggle, anchored to the workspace root — NOT inside the
     // chrome, and there is no separate in-shell anchor element anymore.
+    const toggleShell = screen.getByTestId('sidebar-toggle-fixed-shell')
     const toggleOpen = screen.getByTestId('sidebar-toggle-fixed')
     expect(toggleOpen).toBeInTheDocument()
+    expect(toggleShell).toHaveClass('vf-app-no-drag')
     expect(chrome).not.toContainElement(toggleOpen)
     expect(screen.queryByTestId('sidebar-toggle-anchor')).toBeNull()
 
@@ -422,6 +508,7 @@ describe('WorkspaceView – top chrome (main-stage handoff J2–J6)', () => {
     // shell and main columns animate.
     const toggleCollapsed = screen.getByTestId('sidebar-toggle-fixed')
     expect(toggleCollapsed).toBe(toggleOpen)
+    expect(toggleShell).toHaveClass('vf-app-no-drag')
     expect(chrome).not.toContainElement(toggleCollapsed)
 
     act(() => {

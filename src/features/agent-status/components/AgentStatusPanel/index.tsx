@@ -34,6 +34,7 @@ interface AgentStatusPanelProps {
   status: SessionStatus
   onCollapse: () => void
   cacheHistory: number[]
+  reserveWindowControls?: boolean
 }
 
 // Exported so WorkspaceView can target this width as the
@@ -53,6 +54,7 @@ export const AgentStatusPanel = ({
   status: sessionStatus,
   onCollapse,
   cacheHistory,
+  reserveWindowControls = false,
 }: AgentStatusPanelProps): ReactElement => {
   const status = agentStatus
   const events = useActivityEvents(status)
@@ -138,6 +140,7 @@ export const AgentStatusPanel = ({
         agent={agent}
         status={sessionStatus}
         onCollapse={onCollapse}
+        reserveWindowControls={reserveWindowControls}
       />
 
       <div className="flex flex-col gap-2 p-2">
