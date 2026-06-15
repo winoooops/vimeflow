@@ -3,7 +3,7 @@ id: keyboard-shortcut-guards
 category: keyboard-shortcuts
 created: 2026-05-18
 last_updated: 2026-06-15
-ref_count: 3
+ref_count: 4
 ---
 
 # Keyboard Shortcut Guards
@@ -349,4 +349,22 @@ against three classes of false-fire:
 - **File:** `src/features/terminal/hooks/usePaneShortcuts.ts` L224-242
 - **Finding:** The directional arrow handler was shift-agnostic, so on Linux/Windows (where `preferModifier` is `ctrl`) it claimed bare `Ctrl+Arrow` keystrokes before xterm could forward them to the PTY. `Ctrl+Left/Right` is common terminal input for word movement in shells, readline, vim, tmux, and other TUI programs, causing visible terminal input regressions. The PR's own design doc (`docs/superpowers/specs/2026-06-14-keymap-presets-vim-mode-design.md` §5.2) specified `⌘+Shift`+arrow.
 - **Fix:** Added `if (!event.shiftKey) return` after the container-active and dialog guards in the arrow branch, restoring the Shift requirement on all platforms. Updated the regression test that previously asserted shiftless navigation to instead assert that bare `Ctrl+Arrow` and bare `Cmd+Arrow` pass through, and updated the Keymap settings labels to advertise `Mod+Shift+Arrow`.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 27. Sidebar-tab shortcut matched logical `event.key`, breaking non-Latin layouts
+
+- **Source:** github-claude | PR #460 round 9 | 2026-06-15
+- **Severity:** MEDIUM
+- **File:** `src/features/workspace/hooks/useSidebarTabShortcut.ts` L43-45
+- **Finding:** The shortcut detected S/F via `event.key.toLowerCase()`. On non-Latin IME layouts (Cyrillic, Arabic, Hebrew, CJK), the physical S/F keys produce non-Latin characters in `event.key`, so the guard never matched and ⌘⇧S / Ctrl+⇧S silently did nothing. Other keyboard hooks in the same PR already used `event.code` for physical-key matching.
+- **Fix:** Replaced the `event.key` check with `event.code !== 'KeyS' && event.code !== 'KeyF'` and derived the dispatch key from `event.code`. Updated the unit-test helper to set `KeyboardEvent.code` by default and added a regression test with a Cyrillic `event.key`.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 28. Session-navigation shortcut did not reclaim terminal focus after switching
+
+- **Source:** github-codex-connector | PR #460 round 9 | 2026-06-15
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/workspace/WorkspaceView.tsx` L1500-1512
+- **Finding:** When Ctrl/Cmd+[ or ] changed `activeSessionId`, `TerminalZone` kept inactive sessions mounted hidden and the newly shown session's active pane did not get a focus rising edge. DOM focus could stay on the old hidden xterm textarea or fall to `body`, so subsequent typing went nowhere until the user clicked.
+- **Fix:** Called `claimTerminal()` immediately after `setActiveSessionId(nextSession.id)` in `switchRelativeSession`, reusing the existing terminal-focus request path so the new active session's pane receives focus.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

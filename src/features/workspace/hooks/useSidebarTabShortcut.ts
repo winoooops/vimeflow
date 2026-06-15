@@ -40,10 +40,13 @@ export const useSidebarTabShortcut = ({
         return
       }
 
-      const key = event.key.toLowerCase()
-      if (key !== 's' && key !== 'f') {
+      // Match the physical S/F keys (event.code) so the binding survives Shift
+      // and non-Latin IME layouts (Cyrillic, Arabic, Hebrew, CJK).
+      if (event.code !== 'KeyS' && event.code !== 'KeyF') {
         return
       }
+
+      const key = event.code === 'KeyS' ? 's' : 'f'
 
       // Match only this platform's modifier; reject the opposite so the other
       // chord still reaches the terminal.

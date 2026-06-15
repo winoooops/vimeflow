@@ -19,8 +19,12 @@ const fireKey = (
   modifiers: Partial<KeyboardEventInit> = {},
   target: EventTarget = document.body
 ): boolean => {
+  const code =
+    modifiers.code ??
+    (key.length === 1 && /[a-zA-Z]/.test(key) ? `Key${key.toUpperCase()}` : undefined)
   const event = new KeyboardEvent('keydown', {
     key,
+    code,
     bubbles: true,
     cancelable: true,
     ...modifiers,
@@ -113,6 +117,18 @@ describe('useSidebarTabShortcut', () => {
 
     expect(props.onShowSessions).not.toHaveBeenCalled()
     expect(props.onShowFiles).not.toHaveBeenCalled()
+  })
+
+  test('matches physical S/F keys even when event.key is non-Latin', () => {
+    // Cyrillic: the physical S key produces 'ы' in the active IME, but
+    // event.code still identifies it as KeyS.
+    const props = makeProps({ modKey: '⌘' })
+    renderHook(() => useSidebarTabShortcut(props))
+
+    const prevented = fireKey('ы', { metaKey: true, shiftKey: true, code: 'KeyS' })
+
+    expect(props.onShowSessions).toHaveBeenCalledOnce()
+    expect(prevented).toBe(true)
   })
 
   test('bails while a modal dialog is open', () => {

@@ -1507,8 +1507,9 @@ export const WorkspaceView = (): ReactElement => {
       }
 
       setActiveSessionId(nextSession.id)
+      claimTerminal()
     },
-    [sessions, activeSessionId, setActiveSessionId, notifyInfo]
+    [sessions, activeSessionId, setActiveSessionId, notifyInfo, claimTerminal]
   )
 
   const handlePrevSession = useCallback((): void => {
