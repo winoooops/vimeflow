@@ -15,7 +15,7 @@ const toggleVariants = tv({
 
 interface ToggleProps extends Omit<
   ButtonHTMLAttributes<HTMLButtonElement>,
-  'className' | 'onChange' | 'aria-pressed' | 'value'
+  'className' | 'onClick' | 'onChange' | 'aria-pressed' | 'value'
 > {
   label: string
   value?: boolean
