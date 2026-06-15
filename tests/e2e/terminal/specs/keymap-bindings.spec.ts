@@ -1,0 +1,282 @@
+import { clickBySelector } from '../../shared/actions.js'
+
+/**
+ * VIM-104 end-to-end verification of the keymap + opt-in Vim mode keybindings,
+ * driven against the real Electron app.
+ *
+ * App-level shortcuts are `document` capture-phase keydown listeners, so we
+ * trigger them by dispatching synthetic KeyboardEvents to `document` (the same
+ * shape the unit tests use). Leader chords dispatch `⌘;` and the follow-up key
+ * inside ONE `browser.execute` so the chord lands within the 500ms leader
+ * window regardless of WebDriver round-trip latency.
+ */
+
+interface KeyInit {
+  key: string
+  code?: string
+  metaKey?: boolean
+  shiftKey?: boolean
+}
+
+const fireKey = async (init: KeyInit): Promise<void> => {
+  await browser.execute((i: KeyInit) => {
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', {
+        bubbles: true,
+        cancelable: true,
+        ...i,
+      })
+    )
+  }, init)
+}
+
+// `⌘;` then the chord key, dispatched synchronously so the chord is seen while
+// the leader window is still open.
+const fireLeaderChord = async (chordKey: string): Promise<void> => {
+  await browser.execute((k: string) => {
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', {
+        key: ';',
+        metaKey: true,
+        bubbles: true,
+        cancelable: true,
+      })
+    )
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', {
+        key: k,
+        bubbles: true,
+        cancelable: true,
+      })
+    )
+  }, chordKey)
+}
+
+const splitView = (): ReturnType<typeof $> => $('[data-testid="split-view"]')
+
+const currentLayout = async (): Promise<string | null> =>
+  (await splitView()).getAttribute('data-layout')
+
+const waitForLayout = async (expected: string): Promise<void> => {
+  await browser.waitUntil(async () => (await currentLayout()) === expected, {
+    timeout: 8_000,
+    timeoutMsg: `split-view data-layout did not become "${expected}"`,
+  })
+}
+
+const bodyHasText = async (text: string): Promise<boolean> =>
+  browser.execute((t: string) => document.body.innerText.includes(t), text)
+
+const activePaneIndex = async (): Promise<number> =>
+  browser.execute(() => {
+    const slots = Array.from(
+      document.querySelectorAll('[data-testid="split-view-slot"]')
+    )
+    return slots.findIndex((s) => s.getAttribute('data-pane-active') === 'true')
+  })
+
+const paneSlotCount = async (): Promise<number> =>
+  browser.execute(
+    () => document.querySelectorAll('[data-testid="split-view-slot"]').length
+  )
+
+// Re-fire a focus key until the expected pane becomes active. addPane holds a
+// short "pane op in flight" lock during PTY spawn, and setSessionActivePane
+// intentionally no-ops while it is held — so a single dispatch immediately
+// after adding a pane can be dropped. Retrying absorbs that settle window
+// without masking a genuinely broken binding (it still times out if focus
+// never moves at all).
+const focusUntil = async (
+  fire: () => Promise<void>,
+  target: number,
+  label: string
+): Promise<void> => {
+  await browser.waitUntil(
+    async () => {
+      await fire()
+      return (await activePaneIndex()) === target
+    },
+    { timeout: 12_000, interval: 500, timeoutMsg: label }
+  )
+}
+
+const openSettings = async (): Promise<void> => {
+  await clickBySelector('[data-testid="sidebar-settings-footer"]')
+  await (
+    await $('[role="dialog"][aria-label="Settings"]')
+  ).waitForDisplayed({ timeout: 8_000 })
+}
+
+const gotoKeymapPane = async (): Promise<void> => {
+  await browser.execute(() => {
+    const button = Array.from(
+      document.querySelectorAll('[role="dialog"] nav button')
+    ).find((b) => (b.textContent ?? '').includes('Keymap'))
+    ;(button as HTMLElement | undefined)?.click()
+  })
+  await (
+    await $('select[aria-label="Keymap preset"]')
+  ).waitForDisplayed({ timeout: 8_000 })
+}
+
+const closeSettings = async (): Promise<void> => {
+  await clickBySelector('[role="dialog"] button[title="close"]')
+  await (
+    await $('[role="dialog"][aria-label="Settings"]')
+  ).waitForDisplayed({ reverse: true, timeout: 5_000 })
+}
+
+const setPreset = async (value: 'vimeflow' | 'vim'): Promise<void> => {
+  await openSettings()
+  await gotoKeymapPane()
+  await (
+    await $('select[aria-label="Keymap preset"]')
+  ).selectByAttribute('value', value)
+  await closeSettings()
+}
+
+describe('VIM-104 keymap + Vim mode keybindings', () => {
+  before(async () => {
+    await (
+      await $('[data-testid="workspace-view"]')
+    ).waitForDisplayed({ timeout: 20_000 })
+
+    // Ensure a terminal session (and therefore a split-view) exists. The
+    // app may launch with zero sessions depending on restore state.
+    const sv = await $('[data-testid="split-view"]')
+    if (!(await sv.isExisting())) {
+      await clickBySelector('[data-testid="sidebar-new-session"]')
+    }
+    await (
+      await $('[data-testid="split-view"]')
+    ).waitForDisplayed({ timeout: 20_000 })
+  })
+
+  it('Cmd+; opens the command palette', async () => {
+    await fireKey({ key: ';', metaKey: true })
+
+    const palette = await $(
+      '[role="combobox"][aria-label="Command palette search"]'
+    )
+    await palette.waitForDisplayed({ timeout: 8_000 })
+
+    // The palette owns its Escape handler.
+    await fireKey({ key: 'Escape' })
+    await palette.waitForDisplayed({ reverse: true, timeout: 5_000 })
+  })
+
+  it('Keymap pane: Vim preset reveals vim bindings and persists across reopen', async () => {
+    await openSettings()
+    await gotoKeymapPane()
+
+    const select = await $('select[aria-label="Keymap preset"]')
+    if ((await select.getValue()) !== 'vimeflow') {
+      throw new Error('Keymap preset did not default to "vimeflow"')
+    }
+    if (await bodyHasText('Cycle to next pane')) {
+      throw new Error('Vim leader-chord rows shown while preset is vimeflow')
+    }
+
+    await select.selectByAttribute('value', 'vim')
+    await browser.waitUntil(async () => bodyHasText('Cycle to next pane'), {
+      timeout: 8_000,
+      timeoutMsg: 'Vim binding rows did not appear after switching to Vim',
+    })
+
+    await closeSettings()
+
+    // Reopen — the persisted preset must still be Vim.
+    await openSettings()
+    await gotoKeymapPane()
+    if (
+      (await (await $('select[aria-label="Keymap preset"]')).getValue()) !==
+      'vim'
+    ) {
+      throw new Error('Keymap preset did not persist as "vim" across reopen')
+    }
+    await closeSettings()
+  })
+
+  it('Cmd+\\ cycles the pane layout', async () => {
+    const before = await currentLayout()
+    await fireKey({ key: '\\', code: 'Backslash', metaKey: true })
+    await browser.waitUntil(async () => (await currentLayout()) !== before, {
+      timeout: 8_000,
+      timeoutMsg: `layout did not change from "${before}" on Cmd+\\`,
+    })
+  })
+
+  it('Vim ex-command :vsplit (via palette) sets the vsplit layout', async () => {
+    await setPreset('vim')
+
+    await fireKey({ key: ';', metaKey: true })
+    const input = await $(
+      '[role="combobox"][aria-label="Command palette search"]'
+    )
+    await input.waitForDisplayed({ timeout: 8_000 })
+
+    await input.setValue(':vsplit')
+    await fireKey({ key: 'Enter' })
+
+    await waitForLayout('vsplit')
+  })
+
+  it('Vim leader chord (Cmd+; then s) sets the hsplit layout', async () => {
+    // preset is already vim from the previous test
+    await fireLeaderChord('s')
+    await waitForLayout('hsplit')
+
+    await fireLeaderChord('v')
+    await waitForLayout('vsplit')
+  })
+
+  it('Cmd+Shift+Arrow and the Cmd+; h chord move focus between two panes', async () => {
+    // Ensure a 2-pane vsplit, then fill the empty slot with a second shell.
+    await fireLeaderChord('v')
+    await waitForLayout('vsplit')
+
+    const addShell = await $('[aria-label="add shell pane"]')
+    if (await addShell.isExisting()) {
+      await clickBySelector('[aria-label="add shell pane"]')
+    }
+    await browser.waitUntil(async () => (await paneSlotCount()) >= 2, {
+      timeout: 15_000,
+      timeoutMsg: 'second pane did not spawn after clicking "add shell pane"',
+    })
+
+    // Cmd+Shift+Left lands on the leftmost pane (pane 0) from either pane.
+    // (Unlike Cmd+1, the directional handler has no "reclaim terminal zone"
+    // branch — it just moves to the active pane's left neighbour.)
+    await focusUntil(
+      () =>
+        fireKey({
+          key: 'ArrowLeft',
+          code: 'ArrowLeft',
+          metaKey: true,
+          shiftKey: true,
+        }),
+      0,
+      'Cmd+Shift+Left did not focus the first (left) pane'
+    )
+
+    // Cmd+Shift+Right → the right (second) pane.
+    await focusUntil(
+      () =>
+        fireKey({
+          key: 'ArrowRight',
+          code: 'ArrowRight',
+          metaKey: true,
+          shiftKey: true,
+        }),
+      1,
+      'Cmd+Shift+Right did not focus the second (right) pane'
+    )
+
+    // Vim leader chord h → back to the left (first) pane.
+    await focusUntil(
+      () => fireLeaderChord('h'),
+      0,
+      'Cmd+; h did not focus the first (left) pane'
+    )
+  })
+})
