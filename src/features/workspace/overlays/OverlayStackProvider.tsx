@@ -40,10 +40,21 @@ export interface NativeSurfaceState extends NativeSurfaceDescriptor {
   occludingOverlayIds: readonly string[]
 }
 
+/**
+ * Snapshot of the overlay stack and registered native surfaces.
+ *
+ * Note: live occlusion state is intentionally NOT pre-aggregated here.
+ * `overlays` and `nativeSurfaces` only change when descriptors are registered
+ * or unregistered; descriptor geometry is resolved lazily via stable `getRect`
+ * callbacks. A pre-computed snapshot would therefore freeze occlusion at the
+ * last registration moment and silently become stale when an open overlay or
+ * native surface moves or resizes. Callers that need current occlusion must use
+ * `getNativeSurfaceState(descriptor)` during render, which evaluates the live
+ * rects.
+ */
 export interface OverlayStackSnapshot {
   overlays: readonly OverlayDescriptor[]
   nativeSurfaces: readonly NativeSurfaceDescriptor[]
-  nativeSurfaceStates: readonly NativeSurfaceState[]
 }
 
 interface OverlayStackContextValue extends OverlayStackSnapshot {
@@ -51,6 +62,11 @@ interface OverlayStackContextValue extends OverlayStackSnapshot {
   unregisterOverlayDescriptor: (id: string) => void
   registerNativeSurfaceDescriptor: (descriptor: NativeSurfaceDescriptor) => void
   unregisterNativeSurfaceDescriptor: (id: string) => void
+  /**
+   * Returns the live occlusion state for a single native surface. This is the
+   * only source of truth for current occlusion: it evaluates the latest
+   * `getRect` callbacks, so it stays correct when geometry changes.
+   */
   getNativeSurfaceState: (
     descriptor: NativeSurfaceDescriptor
   ) => NativeSurfaceState
@@ -260,19 +276,10 @@ export const OverlayStackProvider = ({
     [overlays]
   )
 
-  const nativeSurfaceStates = useMemo(
-    () =>
-      nativeSurfaces.map((nativeSurface) =>
-        nativeSurfaceStateFrom(nativeSurface, overlays)
-      ),
-    [nativeSurfaces, overlays]
-  )
-
   const contextValue = useMemo(
     (): OverlayStackContextValue => ({
       overlays,
       nativeSurfaces,
-      nativeSurfaceStates,
       registerOverlayDescriptor,
       unregisterOverlayDescriptor,
       registerNativeSurfaceDescriptor,
@@ -282,7 +289,6 @@ export const OverlayStackProvider = ({
     [
       overlays,
       nativeSurfaces,
-      nativeSurfaceStates,
       registerOverlayDescriptor,
       unregisterOverlayDescriptor,
       registerNativeSurfaceDescriptor,

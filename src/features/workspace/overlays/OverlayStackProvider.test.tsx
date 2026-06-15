@@ -6,6 +6,7 @@ import {
   OverlayStackProvider,
   rectsIntersect,
   useOverlayStackContext,
+  type NativeSurfaceState,
   type OverlayStackSnapshot,
 } from './OverlayStackProvider'
 import { useNativeSurface } from './useNativeSurface'
@@ -37,23 +38,29 @@ const rect = (
   }),
 })
 
+interface ProbeSnapshot extends OverlayStackSnapshot {
+  nativeSurfaceState?: NativeSurfaceState
+}
+
 interface SnapshotProbeProps {
-  onSnapshot: (snapshot: OverlayStackSnapshot) => void
+  onSnapshot: (snapshot: ProbeSnapshot) => void
 }
 
 const SnapshotProbe = ({
   onSnapshot,
 }: SnapshotProbeProps): ReactElement | null => {
-  const { overlays, nativeSurfaces, nativeSurfaceStates } =
+  const { overlays, nativeSurfaces, getNativeSurfaceState } =
     useOverlayStackContext()
 
   useEffect(() => {
     onSnapshot({
       overlays,
       nativeSurfaces,
-      nativeSurfaceStates,
+      nativeSurfaceState: nativeSurfaces[0]
+        ? getNativeSurfaceState(nativeSurfaces[0])
+        : undefined,
     })
-  }, [nativeSurfaceStates, nativeSurfaces, onSnapshot, overlays])
+  }, [getNativeSurfaceState, nativeSurfaces, onSnapshot, overlays])
 
   return null
 }
@@ -81,8 +88,8 @@ const NativeSurfaceProbe = (): ReactElement | null => {
 }
 
 const latestSnapshotFrom = (
-  snapshots: readonly OverlayStackSnapshot[]
-): OverlayStackSnapshot | undefined => {
+  snapshots: readonly ProbeSnapshot[]
+): ProbeSnapshot | undefined => {
   if (snapshots.length === 0) {
     return undefined
   }
@@ -105,9 +112,9 @@ describe('OverlayStackProvider', () => {
   })
 
   test('tracks registered descriptors and unregisters them on unmount', async () => {
-    let snapshots: readonly OverlayStackSnapshot[] = []
+    let snapshots: readonly ProbeSnapshot[] = []
 
-    const onSnapshot = (snapshot: OverlayStackSnapshot): void => {
+    const onSnapshot = (snapshot: ProbeSnapshot): void => {
       snapshots = [...snapshots, snapshot]
     }
 
@@ -123,7 +130,7 @@ describe('OverlayStackProvider', () => {
       const snapshot = latestSnapshotFrom(snapshots)
       expect(snapshot?.overlays.map(({ id }) => id)).toEqual(['overlay'])
       expect(snapshot?.nativeSurfaces.map(({ id }) => id)).toEqual(['surface'])
-      expect(snapshot?.nativeSurfaceStates[0]?.occluded).toBe(true)
+      expect(snapshot?.nativeSurfaceState?.occluded).toBe(true)
     })
 
     rerender(
@@ -136,7 +143,7 @@ describe('OverlayStackProvider', () => {
       const snapshot = latestSnapshotFrom(snapshots)
       expect(snapshot?.overlays).toEqual([])
       expect(snapshot?.nativeSurfaces).toEqual([])
-      expect(snapshot?.nativeSurfaceStates).toEqual([])
+      expect(snapshot?.nativeSurfaceState).toBeUndefined()
     })
   })
 })

@@ -3,7 +3,7 @@ id: react-lifecycle
 category: react-patterns
 created: 2026-04-09
 last_updated: 2026-06-15
-ref_count: 16
+ref_count: 17
 ---
 
 # React Lifecycle
@@ -320,3 +320,12 @@ to avoid unintended re-runs (e.g., PTY respawning on every cwd change).
 - **Finding:** The hook synchronously called `getNativeSurfaceState` in render, and `nativeSurfaceStateFrom` always allocated a fresh object and `occludingOverlayIds` array. Consumers that used the returned state in `useEffect`, `useMemo`, or `useCallback` dependency arrays would re-run on every parent re-render, even when occlusion had not changed. A naive `useMemo` with `[getNativeSurfaceState, id, owner, belowPlane, getRect]` did not work in this codebase because the overlay stack uses a `latestDescriptorRef` pattern: overlay descriptors are stored once and read through refs on subsequent renders, so the `overlays` array reference (and therefore `getNativeSurfaceState`) does not change when an overlay's rect or other mutable content changes.
 - **Fix:** Compute the state every render so the latest ref-based overlay descriptor values are observed, but keep a `useRef` to the previous result and return the previous object when descriptor identity, occlusion flag, and `occludingOverlayIds` content are unchanged. This preserves referential stability for dependency arrays without breaking the ref-based content-update path.
 - **Commit:** _(PR #467 round 1)_
+
+### 32. `nativeSurfaceStates` snapshot freezes occlusion on geometry changes
+
+- **Source:** github-claude + github-codex-connector | PR #467 round 2 | 2026-06-15
+- **Severity:** MEDIUM / P2
+- **File:** `src/features/workspace/overlays/OverlayStackProvider.tsx`
+- **Finding:** Pre-aggregated `nativeSurfaceStates` was computed by a `useMemo` keyed on `[nativeSurfaces, overlays]`, which only update when descriptors are registered or unregistered. `useOverlayRegistration` stores a stable `getRect` callback that reads from `latestDescriptorRef`, so moving or resizing an already-open `intersects` overlay does not change the descriptor arrays. The snapshot therefore kept the occlusion values from the last registration moment and would silently expose stale `occluded`/`occludingOverlayIds` to any context consumer reading `nativeSurfaceStates`.
+- **Fix:** Removed `nativeSurfaceStates` from `OverlayStackSnapshot` and the context value, leaving `getNativeSurfaceState(descriptor)` as the only public occlusion API. It evaluates the live `getRect` callbacks during each consumer's render, so geometry changes are always reflected. Added JSDoc explaining the design choice and updated the provider test to read live state via `getNativeSurfaceState` instead of the removed snapshot field.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
