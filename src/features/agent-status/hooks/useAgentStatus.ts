@@ -482,15 +482,18 @@ export const useAgentStatus = (
             ) {
               const priorTokenTotal = locallyResetTokenTotalRef.current
               const nextTokenTotal = eventTokenTotal(p.contextWindow)
+              if (priorTokenTotal === null) {
+                return prev
+              }
+
               if (
-                priorTokenTotal !== null &&
                 nextTokenTotal !== null &&
                 nextTokenTotal >= priorTokenTotal
               ) {
                 return prev
               }
 
-              if (priorTokenTotal !== null && nextTokenTotal === null) {
+              if (nextTokenTotal === null) {
                 return prev
               }
 

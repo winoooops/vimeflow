@@ -3,7 +3,7 @@ id: agent-state-guards
 category: correctness
 created: 2026-06-15
 last_updated: 2026-06-15
-ref_count: 0
+ref_count: 1
 ---
 
 # Agent-State Guards
@@ -21,4 +21,13 @@ UI state that tracks an active agent session must validate the agent's identity 
 - **File:** `src/features/workspace/WorkspaceView.tsx` L544-564
 - **Finding:** `handleTerminalCommandSubmit` incremented the agent-status reset generation for any `/clear` command submitted from any terminal pane, with no check that the pane was actually running Codex. A false positive in a subprocess (e.g. searching `/clear` in vim and pressing Enter) captured the still-running Codex session ID and token total, causing `useAgentStatus` to suppress every subsequent same-run status, tool-call, turn, and test-run event until a real session boundary or pane switch.
 - **Fix:** Gated `setAgentStatusReset` on `agentStatus.agentType === 'codex'` when the submitted `/clear` came from the active PTY-backed pane. Cache-history clearing for the matching pane remained unconditional because it is harmless on a false positive. Added a regression test covering the non-Codex case.
+- **Commit:** same commit as this entry
+
+### 2. Stale status event leaks through null priorTokenTotal gate
+
+- **Source:** github-claude | PR #469 round 2 | 2026-06-15
+- **Severity:** MEDIUM
+- **File:** `src/features/agent-status/hooks/useAgentStatus.ts` L480-512
+- **Finding:** After a local `/clear` reset, `useAgentStatus` compared arriving `agent-status` token totals against a pre-reset snapshot to decide whether the event was stale. If the React state had no `contextWindow` snapshot at reset time (`priorTokenTotal === null`), neither suppression branch fired, so a concurrent stale same-run status event repopulated `agentSessionId` and `contextWindow` and also cleared the run-scoped event latch, allowing old tool-call, turn, and test-run events to refill the sidebar.
+- **Fix:** Added a conservative `priorTokenTotal === null` early-return inside the same-session reset guard. When freshness cannot be measured, the hook keeps the previous cleared state and preserves the run-scoped suppression latch until a fresh session boundary (different `agentSessionId`) arrives. Added a regression test covering the null-snapshot case.
 - **Commit:** same commit as this entry

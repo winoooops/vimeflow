@@ -1257,6 +1257,131 @@ describe('useAgentStatus', () => {
     expect(result.current.toolCalls.active?.toolUseId).toBe('new-running-call')
   })
 
+  test('resetGeneration with null contextWindow suppresses same-run status until new session boundary', async () => {
+    const { result, rerender } = renderHook(
+      ({ resetGeneration }: { resetGeneration: number }) =>
+        useAgentStatus('session-1', resetGeneration),
+      { initialProps: { resetGeneration: 0 } }
+    )
+
+    await vi.waitFor(() => {
+      expect(eventListeners.get('agent-status')?.length).toBe(1)
+      expect(eventListeners.get('agent-tool-call')?.length).toBe(1)
+      expect(eventListeners.get('agent-turn')?.length).toBe(1)
+    })
+
+    // Establish a run with a known agentSessionId but no contextWindow snapshot.
+    act(() => {
+      emit('agent-status', {
+        sessionId: 'pty-session-1',
+        modelId: 'gpt-5.5',
+        modelDisplayName: 'GPT-5.5',
+        version: '0.139.0',
+        agentSessionId: 'codex-old',
+        contextWindow: null,
+        cost: null,
+        rateLimits: null,
+      })
+    })
+
+    expect(result.current.agentSessionId).toBe('codex-old')
+    expect(result.current.contextWindow).toBeNull()
+
+    // Trigger the local reset before any token total is known.
+    rerender({ resetGeneration: 1 })
+
+    expect(result.current.agentSessionId).toBeNull()
+    expect(result.current.contextWindow).toBeNull()
+
+    // A stale same-run status event with a non-null contextWindow must not
+    // repopulate the cleared sidebar, because freshness is undecidable when
+    // the pre-reset snapshot lacked a token total.
+    act(() => {
+      emit('agent-status', {
+        sessionId: 'pty-session-1',
+        modelId: 'gpt-5.5',
+        modelDisplayName: 'GPT-5.5',
+        version: '0.139.0',
+        agentSessionId: 'codex-old',
+        contextWindow: {
+          usedPercentage: 80,
+          remainingPercentage: 20,
+          contextWindowSize: 258000,
+          totalInputTokens: 9000,
+          totalOutputTokens: 1000,
+          currentUsage: null,
+        },
+        cost: null,
+        rateLimits: null,
+      })
+    })
+
+    expect(result.current.agentSessionId).toBeNull()
+    expect(result.current.contextWindow).toBeNull()
+
+    // Run-scoped events must stay suppressed for the same session.
+    act(() => {
+      emit('agent-tool-call', {
+        sessionId: 'pty-session-1',
+        toolUseId: 'stale-running-call',
+        tool: 'exec_command',
+        args: 'aws ssm get-command-invocation',
+        status: 'running',
+        timestamp: '2026-06-15T12:01:00Z',
+        durationMs: null,
+      })
+
+      emit('agent-turn', {
+        sessionId: 'pty-session-1',
+        numTurns: 9,
+      })
+    })
+
+    expect(result.current.toolCalls.active).toBeNull()
+    expect(result.current.toolCalls.total).toBe(0)
+    expect(result.current.numTurns).toBe(0)
+
+    // A fresh session boundary clears the suppression latch and allows updates.
+    act(() => {
+      emit('agent-status', {
+        sessionId: 'pty-session-1',
+        modelId: 'gpt-5.5',
+        modelDisplayName: 'GPT-5.5',
+        version: '0.139.0',
+        agentSessionId: 'codex-new',
+        contextWindow: {
+          usedPercentage: 1,
+          remainingPercentage: 99,
+          contextWindowSize: 258000,
+          totalInputTokens: 10,
+          totalOutputTokens: 1,
+          currentUsage: null,
+        },
+        cost: null,
+        rateLimits: null,
+      })
+    })
+
+    expect(result.current.agentSessionId).toBe('codex-new')
+    expect(result.current.contextWindow?.usedPercentage).toBe(1)
+
+    act(() => {
+      emit('agent-tool-call', {
+        sessionId: 'pty-session-1',
+        toolUseId: 'fresh-running-call',
+        tool: 'exec_command',
+        args: 'npm test',
+        status: 'running',
+        timestamp: '2026-06-15T12:02:00Z',
+        durationMs: null,
+      })
+    })
+
+    expect(result.current.toolCalls.active?.toolUseId).toBe(
+      'fresh-running-call'
+    )
+  })
+
   test('does not invoke start_agent_watcher again while a prior start is in flight', async () => {
     let resolveStart: (() => void) | undefined
 
