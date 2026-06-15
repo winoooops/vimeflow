@@ -214,7 +214,13 @@ const waitForBoundsCapture = async (
 
 const dispatchCommandPaletteShortcut = async (): Promise<void> => {
   await browser.execute(() => {
-    const isMac = navigator.platform.toLowerCase().includes('mac')
+    const platform =
+      (
+        navigator as Navigator & {
+          userAgentData?: { platform?: string }
+        }
+      ).userAgentData?.platform ?? navigator.platform
+    const isMac = platform.toLowerCase().includes('mac')
     document.dispatchEvent(
       new KeyboardEvent('keydown', {
         key: ';',

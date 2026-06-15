@@ -66,6 +66,10 @@ export const startBrowserPaneBoundsCapture = (): boolean => {
     return false
   }
 
+  if (browserPaneBoundsCaptureActive) {
+    return true
+  }
+
   browserPaneBoundsCaptureActive = true
   browserPaneBoundsCaptures = []
   browserPaneBoundsSequence = 0

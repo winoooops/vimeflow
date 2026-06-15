@@ -415,6 +415,61 @@ describe('browserBridge', () => {
     ])
   })
 
+  test('keeps active bounds capture when start is called twice', async () => {
+    const bridge: BrowserPaneBridge = {
+      createPane: vi.fn(),
+      setBounds: vi.fn().mockResolvedValue(undefined),
+      navigate: vi.fn(),
+      newTab: vi.fn(),
+      destroyPane: vi.fn(),
+      focusPane: vi.fn(),
+      activateTab: vi.fn(),
+      closeTab: vi.fn(),
+      openExternal: vi.fn(),
+      navAction: vi.fn(),
+      getCdpInfo: vi.fn(),
+      onFocus: vi.fn(() => (): void => undefined),
+      onFocusAddress: vi.fn(() => (): void => undefined),
+      onUrlChange: vi.fn(() => (): void => undefined),
+      onTabsChange: vi.fn(() => (): void => undefined),
+      onNavStateChange: vi.fn(() => (): void => undefined),
+    }
+    browserWindow().vimeflow = {
+      invoke: vi.fn(),
+      listen: vi.fn(),
+      browserPane: bridge,
+    }
+
+    expect(startBrowserPaneBoundsCapture()).toBe(true)
+
+    await setBrowserPaneBounds({
+      sessionId: 'sess-1',
+      paneId: 'browser-1',
+      bounds: { x: 10, y: 20, width: 640, height: 480 },
+      visible: false,
+    })
+
+    expect(startBrowserPaneBoundsCapture()).toBe(true)
+
+    await setBrowserPaneBounds({
+      sessionId: 'sess-1',
+      paneId: 'browser-1',
+      bounds: { x: 10, y: 20, width: 640, height: 480 },
+      visible: true,
+    })
+
+    expect(getBrowserPaneBoundsCaptures()).toEqual([
+      expect.objectContaining({
+        sequence: 0,
+        visible: false,
+      }),
+      expect.objectContaining({
+        sequence: 1,
+        visible: true,
+      }),
+    ])
+  })
+
   test('stops bounds capture without discarding collected captures', async () => {
     const bridge: BrowserPaneBridge = {
       createPane: vi.fn(),
