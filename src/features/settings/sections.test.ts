@@ -77,7 +77,8 @@ describe('KEYMAP_GROUPS', () => {
     KEYMAP_GROUPS.flatMap((g) => g.bindings).forEach((b) => {
       expect(b.id).toBeDefined()
       expect(b.label).toBeDefined()
-      expect(b.keys.length).toBeGreaterThan(0)
+      const resolved = typeof b.keys === 'function' ? b.keys(false) : b.keys
+      expect(resolved.length).toBeGreaterThan(0)
     })
   })
 })
