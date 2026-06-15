@@ -17,10 +17,11 @@ vi.mock('../utils/statusRefreshCoordinator', async () => {
 describe('useAgentStatusHotLoading', () => {
   beforeEach(() => {
     vi.mocked(refreshVisibleAgentStatusPanes).mockClear()
+    vi.mocked(refreshVisibleAgentStatusPanes).mockResolvedValue([])
   })
 
   test('does not refresh when no visible panes are available', () => {
-    renderHook(() =>
+    const { result } = renderHook(() =>
       useAgentStatusHotLoading({
         activePtyId: null,
         visiblePtyIds: [],
@@ -28,10 +29,11 @@ describe('useAgentStatusHotLoading', () => {
     )
 
     expect(refreshVisibleAgentStatusPanes).not.toHaveBeenCalled()
+    expect(result.current).toBe(false)
   })
 
   test('refreshes visible panes through the coordinator', async () => {
-    renderHook(() =>
+    const { result } = renderHook(() =>
       useAgentStatusHotLoading({
         activePtyId: 'pty-b',
         visiblePtyIds: ['pty-a', 'pty-b', 'pty-a'],
@@ -44,5 +46,32 @@ describe('useAgentStatusHotLoading', () => {
         visiblePtyIds: ['pty-a', 'pty-b', 'pty-a'],
       })
     })
+
+    await waitFor(() => expect(result.current).toBe(false))
+  })
+
+  test('reports refreshing until the coordinator settles', async () => {
+    let resolveRefresh: (
+      value: Awaited<ReturnType<typeof refreshVisibleAgentStatusPanes>>
+    ) => void = () => undefined
+
+    vi.mocked(refreshVisibleAgentStatusPanes).mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveRefresh = resolve
+      })
+    )
+
+    const { result } = renderHook(() =>
+      useAgentStatusHotLoading({
+        activePtyId: 'pty-a',
+        visiblePtyIds: ['pty-a'],
+      })
+    )
+
+    await waitFor(() => expect(result.current).toBe(true))
+
+    resolveRefresh([])
+
+    await waitFor(() => expect(result.current).toBe(false))
   })
 })

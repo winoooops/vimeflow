@@ -2,7 +2,7 @@
 id: accessibility
 category: a11y
 created: 2026-04-09
-last_updated: 2026-06-13
+last_updated: 2026-06-15
 ref_count: 23
 ---
 
@@ -531,4 +531,22 @@ handlers must not trap focus without implementing the promised behavior.
 - **File:** `src/features/workspace/components/panels/FileExplorer.tsx`
 - **Finding:** `window.prompt` and `window.confirm` blocked the renderer thread, used unstyled OS chrome, and could not display formatted validation hints or be cancelled via Escape reliably.
 - **Fix:** Replaced native dialogs with an inline rename input and a delete-confirmation strip styled with design tokens; kept actions non-blocking.
+- **Commit:** see `git blame` / `git log` on this line
+
+### 50. Reduced-motion media query leaves animated element visible at rest
+
+- **Source:** github-claude | PR #464 round 1 | 2026-06-15
+- **Severity:** MEDIUM
+- **File:** `src/index.css`
+- **Finding:** The `prefers-reduced-motion: reduce` block set `animation: none` on `.vf-activity-refresh-comet` but left the 45%-wide gradient `div` mounted at `translateX(0)`. Because keyframe positions are not applied when animation is disabled, users who opted out of motion saw a static semi-transparent bar in the header divider.
+- **Fix:** Added `transform: translateX(-100%)` as a base style on `.vf-activity-refresh-comet` so the rest position is off-screen regardless of animation state.
+- **Commit:** see `git blame` / `git log` on this line
+
+### 51. `aria-live` region announces completion on every refresh cycle
+
+- **Source:** github-claude | PR #464 round 1 | 2026-06-15
+- **Severity:** LOW
+- **File:** `src/features/agent-status/components/AgentStatusPanel/index.tsx`
+- **Finding:** The live region alternated between `'Fetching latest agent status'` and `'Agent status updated'`. Screen readers queued both strings on every hot-load cycle, producing background chatter during rapid pane switches.
+- **Fix:** Changed the idle branch to an empty string so only the refresh-start state is announced; the visual header affordance communicates completion.
 - **Commit:** see `git blame` / `git log` on this line

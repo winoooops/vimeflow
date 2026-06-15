@@ -525,7 +525,7 @@ export const WorkspaceView = (): ReactElement => {
     [activeSession]
   )
 
-  useAgentStatusHotLoading({
+  const isAgentStatusRefreshing = useAgentStatusHotLoading({
     activePtyId: activePtyBackedPanePtyId ?? null,
     visiblePtyIds: visibleAgentStatusPtyIds,
   })
@@ -2325,6 +2325,7 @@ export const WorkspaceView = (): ReactElement => {
               cacheHistory={activePtyBackedPane?.cacheHistory ?? []}
               cwd={activeCwd}
               gitStatus={gitStatus}
+              isRefreshing={isAgentStatusRefreshing}
               onOpenDiff={handleOpenDiff}
               onOpenFile={handleOpenTestFile}
               agent={activityPanelAgent}
