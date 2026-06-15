@@ -2,7 +2,7 @@
 id: testing-gaps
 category: testing
 created: 2026-04-09
-last_updated: 2026-06-14
+last_updated: 2026-06-15
 ref_count: 31
 ---
 
@@ -639,3 +639,12 @@ filesystem scope restrictions).
 - **Finding:** The `falls back to execCommand copy` test replaced both `window.navigator.clipboard` and `document.execCommand`, but the `finally` block only restored the clipboard property. The leaked `execCommand` mock persisted in the shared jsdom document for every subsequent test in the file, creating a false-positive risk for any future test that exercised the textarea fallback path without its own mock.
 - **Fix:** Saved the original `document.execCommand` value before overriding it and restored it in the same `finally` block alongside `navigator.clipboard`, mirroring the symmetric cleanup already used by the `installClipboardMock` helper.
 - **Commit:** same commit as this entry
+
+### 64. MQL change handler and cleanup untested because the mock is a no-op
+
+- **Source:** github-claude | PR #457 round 1 | 2026-06-15
+- **Severity:** MEDIUM
+- **File:** `src/features/agent-status/hooks/useReservoirFlow.test.tsx` L12-22
+- **Finding:** `makeMql` returned `addEventListener`/`removeEventListener` as `vi.fn()` stubs that recorded nothing and fired nothing, so the hook's `onMqlChange` handler was unreachable in tests. The unmount test also only asserted pointer-event cleanup, never `mql.removeEventListener('change', onMqlChange)`.
+- **Fix:** Upgraded the mock to a `MockMql` helper that captures listeners and exposes a `fire()` method, then added a reduced-motion-mid-hover test and a cleanup assertion for the `'change'` listener.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

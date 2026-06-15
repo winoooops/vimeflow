@@ -1,6 +1,14 @@
 import { render, screen } from '@testing-library/react'
 import { useEffect, useRef, type ReactElement } from 'react'
-import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  test,
+  vi,
+  type Mock,
+} from 'vitest'
 import { useReservoirFlow, type ReservoirFlowRefs } from './useReservoirFlow'
 
 // jsdom lacks PointerEvent; dispatch a typed MouseEvent — the hook only keys
@@ -9,17 +17,29 @@ const fire = (el: Element, type: 'pointerenter' | 'pointerleave'): void => {
   el.dispatchEvent(new MouseEvent(type, { bubbles: true }))
 }
 
-const makeMql = (
+interface MockMql {
   matches: boolean
-): {
-  matches: boolean
-  addEventListener: () => void
-  removeEventListener: () => void
-} => ({
-  matches,
-  addEventListener: vi.fn(),
-  removeEventListener: vi.fn(),
-})
+  addEventListener: Mock<(type: string, cb: EventListener) => void>
+  removeEventListener: Mock<(type: string, cb: EventListener) => void>
+  fire: () => void
+}
+
+const makeMql = (matches: boolean): MockMql => {
+  const listeners: EventListener[] = []
+
+  return {
+    matches,
+    addEventListener: vi.fn((_: string, cb: EventListener) => {
+      listeners.push(cb)
+    }),
+    removeEventListener: vi.fn(),
+    fire: (): void => {
+      listeners.forEach((cb) => {
+        cb(new Event('change'))
+      })
+    },
+  }
+}
 
 const makeRefs = (): ReservoirFlowRefs => ({
   front: document.createElementNS('http://www.w3.org/2000/svg', 'g'),
@@ -156,6 +176,25 @@ describe('useReservoirFlow', () => {
     expect(pending).toBeNull()
   })
 
+  test('stops the loop and clears transforms when reduced-motion is enabled mid-hover', () => {
+    const refs = makeRefs()
+    render(<Harness refs={refs} />)
+
+    fire(screen.getByTestId('hover'), 'pointerenter')
+    for (let i = 0; i < 10; i++) {
+      frame()
+    }
+    expect(pending).not.toBeNull()
+    expect(refs.front.getAttribute('transform')).not.toBeNull()
+
+    mql.matches = true
+    mql.fire()
+
+    expect(pending).toBeNull()
+    expect(refs.front.getAttribute('transform')).toBeNull()
+    expect(refs.back.getAttribute('transform')).toBeNull()
+  })
+
   test('removes its listeners on unmount', () => {
     const { unmount } = render(<Harness refs={makeRefs()} />)
 
@@ -169,5 +208,9 @@ describe('useReservoirFlow', () => {
     const removed = removeSpy.mock.calls.map((c) => c[0])
     expect(removed).toContain('pointerenter')
     expect(removed).toContain('pointerleave')
+    expect(mql.removeEventListener).toHaveBeenCalledWith(
+      'change',
+      expect.any(Function)
+    )
   })
 })

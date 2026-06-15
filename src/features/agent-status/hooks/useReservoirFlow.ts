@@ -109,6 +109,16 @@ export const useReservoirFlow = (
 
     const onLeave = (): void => {
       targetIntensity = 0
+      // Skip under reduced-motion and when there is no water to drift, mirroring
+      // onEnter. Also avoid scheduling a single spurious frame when the loop is
+      // already at rest.
+      if (
+        mql.matches ||
+        refsRef.current === null ||
+        (rafId === null && intensity < REST_EPSILON)
+      ) {
+        return
+      }
       ensureLoop()
     }
 
