@@ -31,7 +31,7 @@ This principle is the foundation for all current and future keymap work, so it i
 here explicitly (confirmed by reading the keybinding code, not assumed):
 
 - App shortcuts are registered as **capture-phase** `document` keydown listeners (e.g.
-  `useCommandPalette`, `usePaneShortcuts`, `useDockShortcuts`). They run *before* xterm's
+  `useCommandPalette`, `usePaneShortcuts`, `useDockShortcuts`). They run _before_ xterm's
   textarea listener.
 - They **deliberately intercept only modified combos and let bare keys fall straight through
   to the focused pane's PTY.** A bare `:`, `j`, or `gt` typed over a focused vim/TUI goes to
@@ -42,11 +42,11 @@ here explicitly (confirmed by reading the keybinding code, not assumed):
   `metaKey` and then fully swallows the event (`preventDefault` +
   `stopImmediatePropagation`), so xterm never sees it. Mechanically, **`⌘;` is Vimeflow's
   `:`**.
-- `⌘;` already opens a **500ms leader window**; the next key is a *chord* dispatched via
+- `⌘;` already opens a **500ms leader window**; the next key is a _chord_ dispatched via
   `chordRegistry` (today `⌘;` then `r` renames the focused pane via `usePaneRenameChord`).
   This is structurally identical to Vim's `Ctrl-W <key>` window-command prefix and to `:`
   command entry. **The bones of a Vim leader already exist.**
-- `⌥`/Option is *not* a safe app modifier: the OS delivers `⌥`+key to the PTY as a Meta/ESC
+- `⌥`/Option is _not_ a safe app modifier: the OS delivers `⌥`+key to the PTY as a Meta/ESC
   sequence (readline `Alt-b`/`Alt-f`, etc.), and `usePaneShortcuts` documents that it avoids
   stealing such keys. (This is why the earlier `⌥H/J/K/L` directional-nav idea is dropped —
   see D3.)
@@ -60,18 +60,18 @@ window. Neither steals a key from the TUI.
 
 - **D1 — Presets shipped in v1: `Vimeflow` (default) + `Vim` (opt-in, default OFF).**
   Emacs is deferred (user is not an Emacs user; its bindings are all `Ctrl-`/`Meta-`, owned
-  by the terminal even more thoroughly). VS Code is deferred — it requires *remapping the
-  `⌘` keys themselves* (e.g. palette `⌘;` → `⇧⌘P`, quick-open `⌘P`, split `⌘\`), which is
+  by the terminal even more thoroughly). VS Code is deferred — it requires _remapping the
+  `⌘` keys themselves_ (e.g. palette `⌘;` → `⇧⌘P`, quick-open `⌘P`, split `⌘\`), which is
   the same engine as per-key custom rebinding. JetBrains/Custom dropped from the prototype.
-- **D2 — Vim mode is an *additive layer*, not a key-swap.** The Vimeflow `⌘` keymap always
-  applies. Turning Vim ON *adds* ex-command aliases + leader chords on top; it removes
+- **D2 — Vim mode is an _additive layer_, not a key-swap.** The Vimeflow `⌘` keymap always
+  applies. Turning Vim ON _adds_ ex-command aliases + leader chords on top; it removes
   nothing. Rationale (user's words): "having the option to switch it on and off is better —
   some might not like the vim-like thing." Default OFF keeps the base experience clean.
 - **D3 — Directional pane navigation.** Default (both presets): **`⌘+Shift` + arrow keys**,
   applied globally (no focus-deferral branch). This deliberately leaves the editor's plain
   `⌘+arrow` cursor-move (line/doc start/end — the keys editors use most) untouched, and
-  overrides only the rarer `⌘+Shift+arrow` *select-to-edge* in CodeMirror/inputs — an
-  accepted minor cost for a much simpler, conflict-free binding. Vim ON *additionally* binds
+  overrides only the rarer `⌘+Shift+arrow` _select-to-edge_ in CodeMirror/inputs — an
+  accepted minor cost for a much simpler, conflict-free binding. Vim ON _additionally_ binds
   **`⌘;` then `h/j/k/l`**. The earlier bare-`⌘+arrow` and `⌥H/J/K/L` ideas are both dropped
   (`⌥` → PTY Meta; bare `⌘+arrow` collided with the editor's most-used keys).
 - **D4 — Out of scope (follow-up issues):** per-key custom rebinding (the old "Option B"),
@@ -96,8 +96,8 @@ helper, so a future unknown stored value degrades to non-vim rather than throwin
 
 ### 5.1 Directional pane adjacency — shared engine
 
-Both `⌘`+arrows (default) and `⌘;`+`hjkl` (vim) need the same answer: *given the active pane,
-the layout, and a direction, which pane is the neighbor?* This is a single pure module,
+Both `⌘`+arrows (default) and `⌘;`+`hjkl` (vim) need the same answer: _given the active pane,
+the layout, and a direction, which pane is the neighbor?_ This is a single pure module,
 unit-tested in isolation.
 
 - **Module:** `src/features/terminal/utils/resolveDirectionalPane.ts`
@@ -108,7 +108,7 @@ unit-tested in isolation.
      `layout.areas` whose value equals that slot (a pane may span multiple cells, e.g. `p0`
      in `threeRight`).
   2. From each such cell, step one cell at a time in `direction` until a cell with a
-     *different* `pN` slot is found (or the grid edge is hit).
+     _different_ `pN` slot is found (or the grid edge is hit).
   3. Among the neighbor slots found, return the nearest in reading order (top-to-bottom,
      left-to-right) whose index `< paneCount`. Return `null` if none.
 - **Why generic:** it derives adjacency from the canonical `areas` grid that already defines
@@ -136,7 +136,7 @@ and `⌘\`):
   only when a move actually happens (so no-op directions still propagate).
 - **Applied globally — no editor/text-input deferral branch.** Choosing the `Shift` variant
   is what makes this safe: the editor's most-used `⌘+arrow` cursor-move is left untouched;
-  only the rarer `⌘+Shift+arrow` *select-to-edge* in CodeMirror/inputs is overridden (the
+  only the rarer `⌘+Shift+arrow` _select-to-edge_ in CodeMirror/inputs is overridden (the
   accepted cost). The `⌘`-prefix already means the keys never reach a terminal's PTY, so
   terminals are unaffected. The existing `DIALOG_SELECTOR` guard still suppresses it while a
   modal is open.
@@ -153,18 +153,18 @@ tracked by sibling issues.
   append additive `Command` entries (distinct IDs, e.g. `vim-tabnew`, so they coexist with
   the base `:new`/`:close`/`:next` in the registry):
 
-  | Ex-command | Action (existing dep) |
-  | --- | --- |
-  | `:w` / `:write` | save the active editor buffer (or `notifyInfo` if no editor open) |
-  | `:q` | `removePane(activeSessionId, activePaneId)` — guard with `canClosePane`; else notify |
-  | `:qa` | `removeSession(activeSessionId)` |
-  | `:tabnew` / `:tabe` | `createSession()` |
-  | `:tabclose` / `:tabc` | `removeSession(activeSessionId)` |
-  | `:tabn` / `:tabnext` | next session; `:tabp` / `:tabprev` → previous |
-  | `:vsplit` / `:vs` | `setSessionLayout(id, 'vsplit')` |
-  | `:split` / `:sp` | `setSessionLayout(id, 'hsplit')` |
-  | `:only` / `:on` | `setSessionLayout(id, 'single')` |
-  | `:e` / `:edit <path>` | `editorBuffer.openFile(path)` |
+  | Ex-command            | Action (existing dep)                                                                |
+  | --------------------- | ------------------------------------------------------------------------------------ |
+  | `:w` / `:write`       | save the active editor buffer (or `notifyInfo` if no editor open)                    |
+  | `:q`                  | `removePane(activeSessionId, activePaneId)` — guard with `canClosePane`; else notify |
+  | `:qa`                 | `removeSession(activeSessionId)`                                                     |
+  | `:tabnew` / `:tabe`   | `createSession()`                                                                    |
+  | `:tabclose` / `:tabc` | `removeSession(activeSessionId)`                                                     |
+  | `:tabn` / `:tabnext`  | next session; `:tabp` / `:tabprev` → previous                                        |
+  | `:vsplit` / `:vs`     | `setSessionLayout(id, 'vsplit')`                                                     |
+  | `:split` / `:sp`      | `setSessionLayout(id, 'hsplit')`                                                     |
+  | `:only` / `:on`       | `setSessionLayout(id, 'single')`                                                     |
+  | `:e` / `:edit <path>` | `editorBuffer.openFile(path)`                                                        |
 
 - Base commands (`:new`, `:close`, `:next`, `:previous`, `:goto`, `:rename-*`,
   `:toggle-sidebar`, `:burner`, `:theme`, `:new-browser`) remain in both presets unchanged.
@@ -178,14 +178,14 @@ preset, mirroring `usePaneRenameChord`:
 - New hook `src/features/command-palette/hooks/useVimLeaderChords.ts`. When
   `keymapPreset === 'vim'`, `registerChord` for each of:
 
-  | Chord (`⌘;` then …) | Action | Vim analogue |
-  | --- | --- | --- |
+  | Chord (`⌘;` then …)   | Action                                                 | Vim analogue     |
+  | --------------------- | ------------------------------------------------------ | ---------------- |
   | `h` / `j` / `k` / `l` | directional pane focus (§5.1 + `setSessionActivePane`) | `Ctrl-W h/j/k/l` |
-  | `w` | cycle to next pane | `Ctrl-W w` |
-  | `c` | `removePane` (close focused pane) | `Ctrl-W c` |
-  | `s` | `setSessionLayout('hsplit')` | `Ctrl-W s` |
-  | `v` | `setSessionLayout('vsplit')` | `Ctrl-W v` |
-  | `o` | `setSessionLayout('single')` | `Ctrl-W o` |
+  | `w`                   | cycle to next pane                                     | `Ctrl-W w`       |
+  | `c`                   | `removePane` (close focused pane)                      | `Ctrl-W c`       |
+  | `s`                   | `setSessionLayout('hsplit')`                           | `Ctrl-W s`       |
+  | `v`                   | `setSessionLayout('vsplit')`                           | `Ctrl-W v`       |
+  | `o`                   | `setSessionLayout('single')`                           | `Ctrl-W o`       |
 
 - `r` (rename) is already registered by `usePaneRenameChord` in both presets — leave as-is.
 - When the preset flips back to `vimeflow`, the registrations are torn down via the cleanup
@@ -214,7 +214,7 @@ preset, mirroring `usePaneRenameChord`:
 - `⌘+Shift`+arrows is global (§5.2 — the `Shift` variant dodges the editor's most-used keys)
   and still honors the already-active/out-of-range deferral + dialog guard already in
   `usePaneShortcuts`.
-- Vim leader chords only fire *inside* the `⌘;` leader window, so they never touch a focused
+- Vim leader chords only fire _inside_ the `⌘;` leader window, so they never touch a focused
   TUI's keystrokes.
 
 ## 7. Implementation stages (kimi→codex)
@@ -226,9 +226,10 @@ preset, mirroring `usePaneRenameChord`:
 - **Stage C** — §5.4 `KeymapPane` wiring + `sections.ts` correction + tests.
 
 Each stage: `npm run type-check` + scoped ESLint (settings/terminal/command-palette/workspace)
-+ `vitest run` on touched suites; codex review per stage; one PR to `feat/settings` (labeled
-`auto-review` + `auto-approve`, plain-text `Closes VIM-104`). Split into multiple PRs only if
-a single diff proves too large to review well.
+
+- `vitest run` on touched suites; codex review per stage; one PR to `feat/settings` (labeled
+  `auto-review` + `auto-approve`, plain-text `Closes VIM-104`). Split into multiple PRs only if
+  a single diff proves too large to review well.
 
 ## 8. Testing
 
