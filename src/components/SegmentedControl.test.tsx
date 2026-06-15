@@ -87,6 +87,44 @@ describe('SegmentedControl', () => {
     expect(screen.getByRole('button', { name: 'Unified' })).toHaveFocus()
   })
 
+  test('toolbar icon uses absolute font size when no iconClassName is supplied', () => {
+    render(
+      <SegmentedControl
+        aria-label="Toolbar"
+        variant="toolbar"
+        value="split"
+        options={[
+          { value: 'split', label: 'Split', icon: 'terminal' },
+          { value: 'unified', label: 'Unified', icon: 'folder' },
+        ]}
+        onChange={vi.fn()}
+      />
+    )
+
+    expect(screen.getByText('terminal')).toHaveClass('text-[16px]')
+  })
+
+  test('skipActiveReselect suppresses keyboard navigation callbacks for the active option', async () => {
+    const user = userEvent.setup()
+    const handleChange = vi.fn()
+    render(
+      <SegmentedControl
+        aria-label="Diff view"
+        value="split"
+        options={OPTIONS}
+        onChange={handleChange}
+        skipActiveReselect
+      />
+    )
+
+    const split = screen.getByRole('button', { name: 'Split' })
+    split.focus()
+
+    await user.keyboard('{Home}')
+
+    expect(handleChange).not.toHaveBeenCalled()
+  })
+
   test('sidebar variant renders the active thumb', () => {
     render(
       <SegmentedControl

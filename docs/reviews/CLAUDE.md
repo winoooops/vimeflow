@@ -78,7 +78,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Diagnostic Instrumentation](patterns/diagnostic-instrumentation.md)                                 | code-quality       | 11       | 3    | 2026-06-12   |
 | [Keyboard Shortcut Guards](patterns/keyboard-shortcut-guards.md)                                     | keyboard-shortcuts | 19       | 1    | 2026-06-06   |
 | [Verify Render Target](patterns/verify-render-target.md)                                             | code-quality       | 2        | 0    | 2026-05-24   |
-| [UI Visual Regression](patterns/ui-visual-regression.md)                                             | code-quality       | 11       | 5    | 2026-06-15   |
+| [UI Visual Regression](patterns/ui-visual-regression.md)                                             | code-quality       | 12       | 6    | 2026-06-15   |
 | [Boolean Sentinel Consistency](patterns/boolean-sentinel-consistency.md)                             | code-quality       | 1        | 0    | 2026-06-15   |
 | [Status Indicator Display](patterns/status-indicator-display.md)                                     | code-quality       | 4        | 1    | 2026-06-15   |
 | [Parser Resilience](patterns/parser-resilience.md)                                                   | code-quality       | 11       | 8    | 2026-06-12   |
@@ -90,4 +90,4 @@ When appending findings to a pattern file, label the source so future readers ca
 | [CloudFormation Environment Prefix Coupling](patterns/cloudformation-environment-prefix-coupling.md) | infrastructure     | 1        | 0    | 2026-06-12   |
 | [CloudFormation Stale References](patterns/cloudformation-stale-references.md)                       | infrastructure     | 2        | 1    | 2026-06-12   |
 | [Dead Code](patterns/dead-code.md)                                                                   | code-quality       | 1        | 0    | 2026-06-13   |
-| [React Prop Contracts](patterns/react-prop-contracts.md)                                             | react-patterns     | 1        | 0    | 2026-06-15   |
+| [React Prop Contracts](patterns/react-prop-contracts.md)                                             | react-patterns     | 2        | 1    | 2026-06-15   |

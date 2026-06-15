@@ -3,7 +3,7 @@ id: ui-visual-regression
 category: code-quality
 created: 2026-06-11
 last_updated: 2026-06-15
-ref_count: 5
+ref_count: 6
 ---
 
 # UI Visual Regression
@@ -132,4 +132,13 @@ test case for the state that triggers the collision.
 - **File:** `src/features/workspace/components/NewSessionButton.tsx`
 - **Finding:** The original raw button carried `rounded-[10px]` (10 px). The migrated `Button` uses the default `shape="pill" size="md"` compound variant, which resolves to `rounded-md` (6 px). The new `className` overrode height and padding but omitted a radius class, so `rounded-md` survived via tailwind-merge.
 - **Fix:** Added `rounded-[10px]` to the `className` override so the sidebar new-session button keeps its previous radius.
+- **Commit:** same commit as this entry
+
+### 12. Toolbar icon inherits `text-[0px]` and renders at 0 px
+
+- **Source:** github-claude | PR #461 round 1 | 2026-06-15
+- **Severity:** MEDIUM
+- **File:** `src/components/SegmentedControl.tsx`
+- **Finding:** The `toolbar` and `toolbarInline` variants set `text-[0px]` on the button to hide labels, but `renderDefaultOption` fell back to `iconClassName ?? 'material-symbols-outlined text-[1.1em]'`. With no explicit `iconClassName`, the icon span inherited the parent's zero font-size and `1.1em` resolved to `0 px`, making the icon invisible.
+- **Fix:** Changed the default icon class fallback to `text-[16px]` so the icon size is independent of the parent button's label-hiding font-size.
 - **Commit:** same commit as this entry

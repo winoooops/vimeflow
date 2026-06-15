@@ -220,7 +220,7 @@ export const SegmentedControl = <T extends string | number>({
           className={
             typeof iconClassName === 'function'
               ? iconClassName(active)
-              : (iconClassName ?? 'material-symbols-outlined text-[1.1em]')
+              : (iconClassName ?? 'material-symbols-outlined text-[16px]')
           }
           style={
             fillActiveIcon
@@ -246,7 +246,10 @@ export const SegmentedControl = <T extends string | number>({
     }
 
     event.preventDefault()
-    onChange(options[nextIndex].value)
+
+    if (!(skipActiveReselect && nextIndex === index)) {
+      onChange(options[nextIndex].value)
+    }
 
     const parent = event.currentTarget.parentElement
 
