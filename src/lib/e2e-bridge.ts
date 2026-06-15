@@ -6,6 +6,7 @@ import {
   clearBrowserPaneBoundsCaptures,
   getBrowserPaneBoundsCaptures,
   startBrowserPaneBoundsCapture,
+  stopBrowserPaneBoundsCapture,
 } from '../features/browser/browserBridge'
 
 const isVisible = (el: HTMLElement): boolean => {
@@ -140,6 +141,7 @@ if (import.meta.env.VITE_E2E) {
       invoke<string[]>('list_active_pty_sessions'),
     startBrowserPaneBoundsCapture,
     clearBrowserPaneBoundsCaptures,
+    stopBrowserPaneBoundsCapture,
     getBrowserPaneBoundsCaptures,
   }
 }

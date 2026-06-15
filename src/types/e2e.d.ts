@@ -1,6 +1,7 @@
 export {}
 
 declare global {
+  // Mirrors BrowserPaneBoundsCapture in src/features/browser/browserBridge.ts.
   interface BrowserPaneBoundsCapture {
     sequence: number
     sessionId: string
@@ -27,6 +28,7 @@ declare global {
       listActivePtySessions(): Promise<string[]>
       startBrowserPaneBoundsCapture(): boolean
       clearBrowserPaneBoundsCaptures(): void
+      stopBrowserPaneBoundsCapture(): void
       getBrowserPaneBoundsCaptures(): BrowserPaneBoundsCapture[]
     }
   }

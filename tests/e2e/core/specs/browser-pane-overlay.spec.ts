@@ -148,6 +148,12 @@ const startBoundsCapture = async (): Promise<void> => {
   }
 }
 
+const stopBoundsCapture = async (): Promise<void> => {
+  await browser.execute(() => {
+    window.__VIMEFLOW_E2E__?.stopBrowserPaneBoundsCapture()
+  })
+}
+
 const matchingBoundsCaptures = (
   captures: BrowserPaneBoundsCapture[],
   identity: BrowserPaneIdentity,
@@ -265,6 +271,10 @@ const assertRealLayoutBounds = (
 }
 
 describe('BrowserPane native overlay occlusion', () => {
+  afterEach(async () => {
+    await stopBoundsCapture()
+  })
+
   it('hides a real WebContentsView browser pane behind the command palette', async () => {
     await waitForBrowserPane()
     const identity = await readBrowserPaneIdentity()
