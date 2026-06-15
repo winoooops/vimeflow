@@ -526,3 +526,158 @@ describe('usePaneShortcuts container reclaim extensions', () => {
     expect(event.preventDefaultSpy).not.toHaveBeenCalled()
   })
 })
+
+describe('directional focus (Ctrl/Cmd+Shift+Arrow)', () => {
+  test('vsplit active p0 Ctrl+Shift+Right focuses p1 and prevents default', () => {
+    const setSessionActivePane = vi.fn()
+    renderHook(() =>
+      usePaneShortcuts({
+        sessions: [makeSession('s1', 'vsplit', ['p0', 'p1'])],
+        activeSessionId: 's1',
+        setSessionActivePane,
+        setSessionLayout: vi.fn(),
+      })
+    )
+
+    const event = fire('ArrowRight', {
+      ctrlKey: true,
+      shiftKey: true,
+      code: 'ArrowRight',
+    })
+
+    expect(setSessionActivePane).toHaveBeenCalledOnce()
+    expect(setSessionActivePane).toHaveBeenCalledWith('s1', 'p1')
+    expect(event.preventDefaultSpy).toHaveBeenCalled()
+  })
+
+  test('vsplit active p0 plain Ctrl+Right propagates (no Shift)', () => {
+    const setSessionActivePane = vi.fn()
+    renderHook(() =>
+      usePaneShortcuts({
+        sessions: [makeSession('s1', 'vsplit', ['p0', 'p1'])],
+        activeSessionId: 's1',
+        setSessionActivePane,
+        setSessionLayout: vi.fn(),
+      })
+    )
+
+    const event = fire('ArrowRight', {
+      ctrlKey: true,
+      code: 'ArrowRight',
+    })
+
+    expect(setSessionActivePane).not.toHaveBeenCalled()
+    expect(event.preventDefaultSpy).not.toHaveBeenCalled()
+  })
+
+  test('directional focus is suppressed while a dialog is open', () => {
+    const setSessionActivePane = vi.fn()
+    const dialog = document.createElement('div')
+    dialog.setAttribute('role', 'dialog')
+    document.body.appendChild(dialog)
+
+    renderHook(() =>
+      usePaneShortcuts({
+        sessions: [makeSession('s1', 'vsplit', ['p0', 'p1'])],
+        activeSessionId: 's1',
+        setSessionActivePane,
+        setSessionLayout: vi.fn(),
+      })
+    )
+
+    const event = fire('ArrowRight', {
+      ctrlKey: true,
+      shiftKey: true,
+      code: 'ArrowRight',
+    })
+
+    expect(setSessionActivePane).not.toHaveBeenCalled()
+    expect(event.preventDefaultSpy).not.toHaveBeenCalled()
+
+    document.body.removeChild(dialog)
+  })
+
+  test('single active p0 Ctrl+Shift+Right is a no-op', () => {
+    const setSessionActivePane = vi.fn()
+    renderHook(() =>
+      usePaneShortcuts({
+        sessions: [makeSession('s1', 'single', ['p0'])],
+        activeSessionId: 's1',
+        setSessionActivePane,
+        setSessionLayout: vi.fn(),
+      })
+    )
+
+    const event = fire('ArrowRight', {
+      ctrlKey: true,
+      shiftKey: true,
+      code: 'ArrowRight',
+    })
+
+    expect(setSessionActivePane).not.toHaveBeenCalled()
+    expect(event.preventDefaultSpy).not.toHaveBeenCalled()
+  })
+
+  test('hsplit active p0 Ctrl+Shift+Down focuses p1', () => {
+    const setSessionActivePane = vi.fn()
+    renderHook(() =>
+      usePaneShortcuts({
+        sessions: [makeSession('s1', 'hsplit', ['p0', 'p1'])],
+        activeSessionId: 's1',
+        setSessionActivePane,
+        setSessionLayout: vi.fn(),
+      })
+    )
+
+    fire('ArrowDown', {
+      ctrlKey: true,
+      shiftKey: true,
+      code: 'ArrowDown',
+    })
+
+    expect(setSessionActivePane).toHaveBeenCalledOnce()
+    expect(setSessionActivePane).toHaveBeenCalledWith('s1', 'p1')
+  })
+
+  test('quad active p0 Ctrl+Shift+Down focuses p2', () => {
+    const setSessionActivePane = vi.fn()
+    renderHook(() =>
+      usePaneShortcuts({
+        sessions: [makeSession('s1', 'quad', ['p0', 'p1', 'p2', 'p3'])],
+        activeSessionId: 's1',
+        setSessionActivePane,
+        setSessionLayout: vi.fn(),
+      })
+    )
+
+    fire('ArrowDown', {
+      ctrlKey: true,
+      shiftKey: true,
+      code: 'ArrowDown',
+    })
+
+    expect(setSessionActivePane).toHaveBeenCalledOnce()
+    expect(setSessionActivePane).toHaveBeenCalledWith('s1', 'p2')
+  })
+
+  test('quad active p0 Ctrl+Shift+Right focuses p1', () => {
+    const setSessionActivePane = vi.fn()
+    renderHook(() =>
+      usePaneShortcuts({
+        sessions: [makeSession('s1', 'quad', ['p0', 'p1', 'p2', 'p3'])],
+        activeSessionId: 's1',
+        setSessionActivePane,
+        setSessionLayout: vi.fn(),
+      })
+    )
+
+    fire('ArrowRight', {
+      ctrlKey: true,
+      shiftKey: true,
+      code: 'ArrowRight',
+    })
+
+    expect(setSessionActivePane).toHaveBeenCalledOnce()
+    expect(setSessionActivePane).toHaveBeenCalledWith('s1', 'p1')
+  })
+})

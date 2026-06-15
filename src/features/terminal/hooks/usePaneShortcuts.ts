@@ -3,7 +3,11 @@ import type { LayoutId, Session } from '../../sessions/types'
 // Source the data constant directly from its module rather than the
 // SplitView barrel — keeps usePaneShortcuts decoupled from a
 // sibling component's re-export surface.
-import { LAYOUTS } from '../components/SplitView/layouts'
+import { LAYOUTS, type LayoutShape } from '../components/SplitView/layouts'
+import {
+  resolveDirectionalPane,
+  type PaneDirection,
+} from '../utils/resolveDirectionalPane'
 import {
   DIALOG_SELECTOR,
   DOCK_CONTAINER_ID,
@@ -196,6 +200,52 @@ export const usePaneShortcuts = ({
         const nextIndex = (currentIndex + 1) % LAYOUT_CYCLE.length
         setSessionLayout(activeSession.id, LAYOUT_CYCLE[nextIndex])
       }
+
+      const arrowDirection: PaneDirection | null =
+        ((): PaneDirection | null => {
+          switch (event.code) {
+            case 'ArrowLeft':
+              return 'left'
+            case 'ArrowRight':
+              return 'right'
+            case 'ArrowUp':
+              return 'up'
+            case 'ArrowDown':
+              return 'down'
+            default:
+              return null
+          }
+        })()
+      if (arrowDirection === null) {
+        return
+      }
+      if (!event.shiftKey) {
+        return
+      }
+      if (document.querySelector(DIALOG_SELECTOR)) {
+        return
+      }
+      const shape = LAYOUTS[activeSession.layout] as LayoutShape | undefined
+      if (shape === undefined) {
+        return
+      }
+      const activeIndex = activeSession.panes.findIndex((pane) => pane.active)
+      if (activeIndex === -1) {
+        return
+      }
+
+      const target = resolveDirectionalPane(
+        shape,
+        activeIndex,
+        activeSession.panes.length,
+        arrowDirection
+      )
+      if (target === null) {
+        return
+      }
+      event.preventDefault()
+      event.stopPropagation()
+      setSessionActivePane(activeSession.id, activeSession.panes[target].id)
     }
 
     document.addEventListener('keydown', handleKeyDown, { capture: true })
