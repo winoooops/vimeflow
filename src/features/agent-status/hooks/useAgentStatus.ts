@@ -45,6 +45,7 @@ const createDefaultStatus = (sessionId: string | null): AgentStatus => ({
   contextWindow: null,
   cost: null,
   rateLimits: null,
+  usageFetched: false,
   numTurns: 0,
   toolCalls: { total: 0, byType: {}, active: null },
   recentToolCalls: [],
@@ -493,6 +494,7 @@ export const useAgentStatus = (sessionId: string | null): AgentStatus => {
                       : {}),
                   }
                 : base.rateLimits,
+              usageFetched: p.usageFetched,
             }
           })
         }

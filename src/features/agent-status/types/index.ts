@@ -24,6 +24,9 @@ export interface AgentStatusEvent {
   contextWindow: ContextWindowStatus | null
   cost: CostMetrics | null
   rateLimits: RateLimits | null
+  // True once kimi's network usage fetch has landed; false for claude/codex
+  // and a kimi session that hasn't fetched yet.
+  usageFetched: boolean
 }
 
 // Runtime-accurate override for CostMetrics. Rust Option<f64> serializes to
@@ -72,6 +75,11 @@ export interface AgentStatus {
   contextWindow: ContextWindowState | null
   cost: CostState | null
   rateLimits: RateLimitsState | null
+  // True once kimi's network usage fetch has landed (the kimi usage gate uses
+  // this to tell LOADING from ON); false for claude/codex and pre-fetch kimi.
+  // Optional so the hook always sets it while consumers default absent to
+  // false — no test fixture needs to carry a kimi-only field.
+  usageFetched?: boolean
 
   // Activity
   numTurns: number

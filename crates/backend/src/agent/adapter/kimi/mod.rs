@@ -5,6 +5,8 @@ mod parser;
 mod transcript;
 mod transcript_dto;
 mod types;
+mod usage;
+mod usage_fetch;
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -59,12 +61,23 @@ impl StateDecoder for KimiAdapter {
         // When the locator has resolved a session dir, aggregate across the
         // session's agents (context from the active sub-agent); otherwise
         // decode the single main wire the watcher handed us.
-        let snapshot = self
-            .locator
-            .resolved_session_dir()
-            .and_then(|dir| parser::parse_session_aggregate(&dir))
+        let session_dir = self.locator.resolved_session_dir();
+        let mut snapshot = session_dir
+            .as_deref()
+            .and_then(parser::parse_session_aggregate)
             .map(Ok)
             .unwrap_or_else(|| parser::parse_wire_snapshot(session_id, raw))?;
+        // Merge the last fetched plan-usage (`None` when consent is OFF or
+        // nothing has been fetched). The fetch itself is driven by the
+        // transcript supervisor's poll, not here, so it also reaches idle
+        // sessions the main-wire watcher never re-decodes. `usage_fetched`
+        // records whether a real value landed, so the gate tells LOADING from a
+        // genuine zero-usage ON without guessing from the values.
+        let cached = self.locator.cached_rate_limits();
+        snapshot.usage_fetched = cached.is_some();
+        if let Some(rate_limits) = cached {
+            snapshot.rate_limits = rate_limits;
+        }
         kdbg(&format!(
             "DECODE: model={} ctx_size={} input={} output={}",
             snapshot.model_id,
@@ -95,7 +108,9 @@ impl TranscriptStreamer for KimiAdapter {
         // Prefer the locator's resolved process cwd over the watcher's stale
         // spawn cwd so the emitted `agent-cwd` points at the real project.
         let cwd = self.locator.resolved_cwd().or(cwd);
-        transcript::start_tailing(events, session_id, transcript_path, cwd)
+        // Hand the supervisor the locator so its status poll merges the fetched
+        // plan-usage (and pushes it to idle sessions).
+        transcript::start_tailing(events, session_id, transcript_path, cwd, self.locator.clone())
     }
 }
 

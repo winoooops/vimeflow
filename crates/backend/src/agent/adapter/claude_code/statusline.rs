@@ -215,6 +215,8 @@ fn dto_to_snapshot(dto: ClaudeStatusDto) -> StatusSnapshot {
         context_window: context_window_from_dto(dto.context_window),
         cost: cost_from_dto(dto.cost),
         rate_limits: rate_limits_from_dto(dto.rate_limits),
+        // Network-fetched-usage is a kimi-only concept.
+        usage_fetched: false,
     }
 }
 
