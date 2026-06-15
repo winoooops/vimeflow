@@ -16,37 +16,14 @@ export const useOverlayRegistration = (descriptor: OverlayDescriptor): void => {
     const getLatestRect = (): DOMRectReadOnly | null =>
       latestDescriptorRef.current.getRect?.() ?? null
 
-    let overlayDescriptor: OverlayDescriptor
-    if (nativeOcclusion === 'intersects') {
-      overlayDescriptor = {
-        id,
-        plane,
-        get isOpen(): boolean {
-          return latestDescriptorRef.current.isOpen
-        },
-        nativeOcclusion,
-        getRect: getLatestRect,
-      }
-    } else if (nativeOcclusion === 'global') {
-      overlayDescriptor = {
-        id,
-        plane,
-        get isOpen(): boolean {
-          return latestDescriptorRef.current.isOpen
-        },
-        nativeOcclusion,
-        getRect: getLatestRect,
-      }
-    } else {
-      overlayDescriptor = {
-        id,
-        plane,
-        get isOpen(): boolean {
-          return latestDescriptorRef.current.isOpen
-        },
-        nativeOcclusion,
-        getRect: getLatestRect,
-      }
+    const overlayDescriptor: OverlayDescriptor = {
+      id,
+      plane,
+      get isOpen(): boolean {
+        return latestDescriptorRef.current.isOpen
+      },
+      nativeOcclusion,
+      getRect: getLatestRect,
     }
 
     registerOverlayDescriptor(overlayDescriptor)

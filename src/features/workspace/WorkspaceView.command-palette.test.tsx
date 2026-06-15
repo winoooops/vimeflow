@@ -495,6 +495,7 @@ describe('WorkspaceView - Command Palette Integration', () => {
 
     expect(latestTerminalZoneProps().deferTerminalFit).toBe(true)
     expect(latestOverlayRegistrationProps().dragOverlayOpen).toBe(false)
+    expect(latestOverlayRegistrationProps().dockDragOverlayOpen).toBe(true)
   })
 
   test('records detected agent type on the active session', async () => {

@@ -75,7 +75,7 @@ export const useNativeSurface = (
   // committed before BrowserPane visibility decisions settle. This intentionally
   // runs after every commit because rect getter values can change even when
   // descriptor identity and overlay membership stay stable.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- overlays/getNativeSurfaceState/getRect are intentionally read on every commit for live rect re-evaluation.
   useLayoutEffect(() => {
     const hasOpenIntersectingOverlay = overlays.some(
       (overlay) => overlay.isOpen && overlay.nativeOcclusion === 'intersects'
