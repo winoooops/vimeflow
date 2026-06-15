@@ -3,7 +3,7 @@ id: agent-state-guards
 category: correctness
 created: 2026-06-15
 last_updated: 2026-06-15
-ref_count: 1
+ref_count: 2
 ---
 
 # Agent-State Guards
@@ -30,4 +30,13 @@ UI state that tracks an active agent session must validate the agent's identity 
 - **File:** `src/features/agent-status/hooks/useAgentStatus.ts` L480-512
 - **Finding:** After a local `/clear` reset, `useAgentStatus` compared arriving `agent-status` token totals against a pre-reset snapshot to decide whether the event was stale. If the React state had no `contextWindow` snapshot at reset time (`priorTokenTotal === null`), neither suppression branch fired, so a concurrent stale same-run status event repopulated `agentSessionId` and `contextWindow` and also cleared the run-scoped event latch, allowing old tool-call, turn, and test-run events to refill the sidebar.
 - **Fix:** Added a conservative `priorTokenTotal === null` early-return inside the same-session reset guard. When freshness cannot be measured, the hook keeps the previous cleared state and preserves the run-scoped suppression latch until a fresh session boundary (different `agentSessionId`) arrives. Added a regression test covering the null-snapshot case.
+- **Commit:** same commit as this entry
+
+### 3. Double clear overwrites the reset latch with null
+
+- **Source:** github-claude | PR #469 round 3 | 2026-06-15
+- **Severity:** MEDIUM
+- **File:** `src/features/agent-status/hooks/useAgentStatus.ts` L197-200
+- **Finding:** A second `/clear` after the first reset committed saw `prev.agentSessionId === null` and overwrote `locallyResetAgentSessionIdRef` with null. That disabled the same-run staleness guard, so the next stale `agent-status` event could repopulate the cleared sidebar and clear the run-scoped suppression latch for old tool-call, turn, and test events.
+- **Fix:** Preserved the existing reset latch when `prev.agentSessionId` is already null, while still keeping run-scoped suppression active. Added a regression test that sends two reset generations across separate renders, then verifies same-run stale status, tool-call, and turn events remain suppressed until a fresh agent session ID arrives.
 - **Commit:** same commit as this entry

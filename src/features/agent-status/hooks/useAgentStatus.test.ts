@@ -1382,6 +1382,113 @@ describe('useAgentStatus', () => {
     )
   })
 
+  test('double resetGeneration preserves the stale same-run suppression latch', async () => {
+    const { result, rerender } = renderHook(
+      ({ resetGeneration }: { resetGeneration: number }) =>
+        useAgentStatus('session-1', resetGeneration),
+      { initialProps: { resetGeneration: 0 } }
+    )
+
+    await vi.waitFor(() => {
+      expect(eventListeners.get('agent-status')?.length).toBe(1)
+      expect(eventListeners.get('agent-tool-call')?.length).toBe(1)
+      expect(eventListeners.get('agent-turn')?.length).toBe(1)
+    })
+
+    act(() => {
+      emit('agent-status', {
+        sessionId: 'pty-session-1',
+        modelId: 'gpt-5.5',
+        modelDisplayName: 'GPT-5.5',
+        version: '0.139.0',
+        agentSessionId: 'codex-old',
+        contextWindow: {
+          usedPercentage: 80,
+          remainingPercentage: 20,
+          contextWindowSize: 258000,
+          totalInputTokens: 9000,
+          totalOutputTokens: 1000,
+          currentUsage: null,
+        },
+        cost: null,
+        rateLimits: null,
+      })
+    })
+
+    expect(result.current.agentSessionId).toBe('codex-old')
+    expect(result.current.contextWindow?.usedPercentage).toBe(80)
+
+    rerender({ resetGeneration: 1 })
+    expect(result.current.agentSessionId).toBeNull()
+
+    rerender({ resetGeneration: 2 })
+    expect(result.current.agentSessionId).toBeNull()
+
+    act(() => {
+      emit('agent-status', {
+        sessionId: 'pty-session-1',
+        modelId: 'gpt-5.5',
+        modelDisplayName: 'GPT-5.5',
+        version: '0.139.0',
+        agentSessionId: 'codex-old',
+        contextWindow: {
+          usedPercentage: 81,
+          remainingPercentage: 19,
+          contextWindowSize: 258000,
+          totalInputTokens: 9100,
+          totalOutputTokens: 1000,
+          currentUsage: null,
+        },
+        cost: null,
+        rateLimits: null,
+      })
+
+      emit('agent-tool-call', {
+        sessionId: 'pty-session-1',
+        toolUseId: 'stale-running-call-after-double-clear',
+        tool: 'exec_command',
+        args: 'npm run lint',
+        status: 'running',
+        timestamp: '2026-06-15T12:01:00Z',
+        durationMs: null,
+      })
+
+      emit('agent-turn', {
+        sessionId: 'pty-session-1',
+        numTurns: 10,
+      })
+    })
+
+    expect(result.current.agentSessionId).toBeNull()
+    expect(result.current.contextWindow).toBeNull()
+    expect(result.current.toolCalls.active).toBeNull()
+    expect(result.current.toolCalls.total).toBe(0)
+    expect(result.current.numTurns).toBe(0)
+
+    act(() => {
+      emit('agent-status', {
+        sessionId: 'pty-session-1',
+        modelId: 'gpt-5.5',
+        modelDisplayName: 'GPT-5.5',
+        version: '0.139.0',
+        agentSessionId: 'codex-new',
+        contextWindow: {
+          usedPercentage: 1,
+          remainingPercentage: 99,
+          contextWindowSize: 258000,
+          totalInputTokens: 10,
+          totalOutputTokens: 1,
+          currentUsage: null,
+        },
+        cost: null,
+        rateLimits: null,
+      })
+    })
+
+    expect(result.current.agentSessionId).toBe('codex-new')
+    expect(result.current.contextWindow?.usedPercentage).toBe(1)
+  })
+
   test('does not invoke start_agent_watcher again while a prior start is in flight', async () => {
     let resolveStart: (() => void) | undefined
 

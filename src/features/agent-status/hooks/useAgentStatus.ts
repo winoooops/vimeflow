@@ -195,8 +195,10 @@ export const useAgentStatus = (
     }
 
     setStatus((prev) => {
-      locallyResetAgentSessionIdRef.current = prev.agentSessionId
-      locallyResetTokenTotalRef.current = statusTokenTotal(prev.contextWindow)
+      if (prev.agentSessionId !== null) {
+        locallyResetAgentSessionIdRef.current = prev.agentSessionId
+        locallyResetTokenTotalRef.current = statusTokenTotal(prev.contextWindow)
+      }
       locallyResetRunScopedEventsRef.current = true
 
       return createRunResetStatus(prev, sessionId)
