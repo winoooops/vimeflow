@@ -1,0 +1,1316 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Browser Pane Overlay Hierarchy · Vimeflow Technical Note</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0d0d1c;
+        --surface: #121221;
+        --surface-low: #1a1a2a;
+        --surface-mid: #23233b;
+        --surface-high: #313244;
+        --line: rgba(137, 180, 250, 0.16);
+        --line-strong: rgba(79, 200, 214, 0.32);
+        --text: #e3e0f7;
+        --muted: #a79daf;
+        --dim: #71677c;
+        --cyan: #4fc8d6;
+        --cyan-soft: rgba(79, 200, 214, 0.13);
+        --green: #7defa1;
+        --green-soft: rgba(125, 239, 161, 0.12);
+        --amber: #fab387;
+        --amber-soft: rgba(250, 179, 135, 0.12);
+        --coral: #ff94a5;
+        --coral-soft: rgba(255, 148, 165, 0.12);
+        --mauve: #cba6f7;
+        --mauve-soft: rgba(203, 166, 247, 0.12);
+        --blue: #89b4fa;
+        --blue-soft: rgba(137, 180, 250, 0.12);
+        --mono: 'SFMono-Regular', 'Menlo', 'Consolas', monospace;
+        --sans:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+          'Segoe UI', sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html {
+        scroll-behavior: smooth;
+      }
+
+      body {
+        margin: 0;
+        background:
+          radial-gradient(
+            780px 520px at 12% 0%,
+            rgba(79, 200, 214, 0.11),
+            transparent 66%
+          ),
+          radial-gradient(
+            680px 460px at 90% 6%,
+            rgba(203, 166, 247, 0.08),
+            transparent 62%
+          ),
+          linear-gradient(180deg, var(--bg) 0%, var(--surface) 100%);
+        color: var(--text);
+        font-family: var(--sans);
+        line-height: 1.62;
+      }
+
+      .page {
+        width: min(1160px, calc(100vw - 42px));
+        margin: 0 auto;
+        padding: 48px 0 76px;
+      }
+
+      .hero {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 330px;
+        gap: 34px;
+        align-items: end;
+        min-height: 330px;
+        padding-bottom: 34px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .eyebrow {
+        margin: 0 0 14px;
+        color: var(--cyan);
+        font-family: var(--mono);
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      h1,
+      h2,
+      h3,
+      h4 {
+        margin: 0;
+        letter-spacing: 0;
+        line-height: 1.16;
+      }
+
+      h1 {
+        max-width: 860px;
+        font-size: clamp(34px, 5.3vw, 66px);
+        font-weight: 780;
+      }
+
+      h2 {
+        margin-top: 42px;
+        color: var(--cyan);
+        font-size: 25px;
+        font-weight: 760;
+        scroll-margin-top: 18px;
+      }
+
+      h3 {
+        margin-top: 26px;
+        color: var(--text);
+        font-size: 18px;
+        font-weight: 720;
+      }
+
+      h4 {
+        margin: 18px 0 8px;
+        color: var(--muted);
+        font-family: var(--mono);
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+
+      p {
+        margin: 9px 0;
+      }
+
+      a {
+        color: var(--blue);
+        text-decoration: none;
+      }
+
+      a:hover {
+        text-decoration: underline;
+      }
+
+      code {
+        border-radius: 5px;
+        background: rgba(13, 13, 28, 0.74);
+        color: #94e2d5;
+        font-family: var(--mono);
+        font-size: 0.86em;
+        padding: 1px 6px;
+      }
+
+      pre {
+        overflow-x: auto;
+        margin: 12px 0;
+        border: 1px solid rgba(137, 180, 250, 0.14);
+        border-radius: 12px;
+        background: rgba(13, 13, 28, 0.88);
+        padding: 14px 16px;
+      }
+
+      pre code {
+        display: block;
+        min-width: max-content;
+        background: none;
+        color: #94e2d5;
+        font-size: 12.5px;
+        line-height: 1.5;
+        padding: 0;
+      }
+
+      table {
+        width: 100%;
+        margin: 14px 0;
+        border-collapse: collapse;
+        font-size: 13px;
+      }
+
+      th,
+      td {
+        border-bottom: 1px solid rgba(137, 180, 250, 0.12);
+        padding: 10px 12px;
+        text-align: left;
+        vertical-align: top;
+      }
+
+      th {
+        background: rgba(13, 13, 28, 0.62);
+        color: var(--muted);
+        font-family: var(--mono);
+        font-size: 11px;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+
+      ul,
+      ol {
+        margin: 10px 0;
+        padding-left: 22px;
+      }
+
+      li {
+        margin: 6px 0;
+      }
+
+      .lead {
+        max-width: 790px;
+        margin-top: 20px;
+        color: var(--muted);
+        font-size: 18px;
+      }
+
+      .meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 9px;
+        margin-top: 24px;
+      }
+
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        min-height: 28px;
+        border-radius: 999px;
+        background: rgba(35, 35, 59, 0.78);
+        color: var(--muted);
+        font-family: var(--mono);
+        font-size: 12px;
+        padding: 5px 10px;
+      }
+
+      .dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 999px;
+        background: var(--cyan);
+        box-shadow: 0 0 18px rgba(79, 200, 214, 0.62);
+      }
+
+      .preview {
+        overflow: hidden;
+        min-height: 320px;
+        border: 1px solid rgba(79, 200, 214, 0.22);
+        border-radius: 18px;
+        background:
+          linear-gradient(180deg, rgba(79, 200, 214, 0.1), transparent 32%),
+          rgba(26, 26, 42, 0.8);
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.04),
+          0 24px 70px rgba(0, 0, 0, 0.36);
+      }
+
+      .preview-chrome {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        border-bottom: 1px solid rgba(79, 200, 214, 0.14);
+        padding: 12px 14px;
+      }
+
+      .preview-chip {
+        border-radius: 7px;
+        background: var(--cyan-soft);
+        color: var(--cyan);
+        font-family: var(--mono);
+        font-size: 11px;
+        font-weight: 700;
+        padding: 5px 8px;
+      }
+
+      .preview-tab {
+        height: 25px;
+        flex: 1;
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.07);
+      }
+
+      .preview-body {
+        position: relative;
+        min-height: 266px;
+        padding: 18px;
+      }
+
+      .native-view {
+        position: absolute;
+        inset: 22px;
+        border: 1px solid rgba(137, 180, 250, 0.18);
+        border-radius: 13px;
+        background:
+          linear-gradient(135deg, rgba(137, 180, 250, 0.11), transparent 42%),
+          rgba(13, 13, 28, 0.92);
+      }
+
+      .native-view::before,
+      .native-view::after {
+        position: absolute;
+        left: 20px;
+        right: 20px;
+        height: 10px;
+        border-radius: 999px;
+        background: rgba(227, 224, 247, 0.1);
+        content: '';
+      }
+
+      .native-view::before {
+        top: 34px;
+      }
+
+      .native-view::after {
+        top: 58px;
+        right: 92px;
+      }
+
+      .overlay-plane {
+        position: absolute;
+        inset: 56px 42px 38px;
+        display: grid;
+        place-items: center;
+        border: 1px solid var(--line-strong);
+        border-radius: 16px;
+        background: rgba(18, 18, 33, 0.78);
+        color: var(--cyan);
+        font-family: var(--mono);
+        font-size: 12px;
+        font-weight: 700;
+        box-shadow:
+          0 18px 50px rgba(0, 0, 0, 0.36),
+          inset 0 1px 0 rgba(255, 255, 255, 0.05);
+        backdrop-filter: blur(10px);
+      }
+
+      .toc {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin: 22px 0 6px;
+      }
+
+      .toc a {
+        border: 1px solid rgba(137, 180, 250, 0.14);
+        border-radius: 999px;
+        background: rgba(26, 26, 42, 0.78);
+        color: var(--muted);
+        font-family: var(--mono);
+        font-size: 12px;
+        padding: 6px 12px;
+      }
+
+      .toc a:hover {
+        border-color: rgba(79, 200, 214, 0.42);
+        color: var(--text);
+        text-decoration: none;
+      }
+
+      .callout,
+      .card,
+      .idea,
+      .decision {
+        border: 1px solid rgba(137, 180, 250, 0.14);
+        border-radius: 16px;
+        background:
+          linear-gradient(180deg, rgba(255, 255, 255, 0.035), transparent),
+          rgba(26, 26, 42, 0.7);
+        padding: 17px 20px;
+        margin: 16px 0;
+      }
+
+      .callout {
+        border-color: var(--line-strong);
+        background:
+          linear-gradient(180deg, rgba(79, 200, 214, 0.12), transparent),
+          rgba(26, 26, 42, 0.78);
+      }
+
+      .decision {
+        border-color: rgba(125, 239, 161, 0.28);
+        background:
+          linear-gradient(180deg, var(--green-soft), transparent),
+          rgba(26, 26, 42, 0.78);
+      }
+
+      .idea {
+        border-color: rgba(203, 166, 247, 0.24);
+      }
+
+      .idea h4 {
+        color: var(--mauve);
+        margin-top: 0;
+      }
+
+      .idea dl {
+        display: grid;
+        grid-template-columns: 92px minmax(0, 1fr);
+        gap: 7px 14px;
+        margin: 0;
+      }
+
+      .idea dt {
+        color: var(--mauve);
+        font-family: var(--mono);
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      .idea dd {
+        margin: 0;
+        color: var(--muted);
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 14px;
+      }
+
+      .status {
+        display: inline-flex;
+        align-items: center;
+        min-height: 24px;
+        border-radius: 999px;
+        font-family: var(--mono);
+        font-size: 11px;
+        font-weight: 700;
+        padding: 3px 9px;
+      }
+
+      .status.good {
+        background: var(--green-soft);
+        color: var(--green);
+      }
+
+      .status.warn {
+        background: var(--amber-soft);
+        color: var(--amber);
+      }
+
+      .status.bad {
+        background: var(--coral-soft);
+        color: var(--coral);
+      }
+
+      .status.neutral {
+        background: var(--blue-soft);
+        color: var(--blue);
+      }
+
+      .muted {
+        color: var(--muted);
+      }
+
+      .footnotes {
+        margin-top: 42px;
+        border-top: 1px solid var(--line);
+        padding-top: 22px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      @media (max-width: 840px) {
+        .hero,
+        .grid {
+          grid-template-columns: 1fr;
+        }
+
+        .preview {
+          min-height: 250px;
+        }
+
+        .preview-body {
+          min-height: 210px;
+        }
+
+        .idea dl {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <section class="hero">
+        <div>
+          <p class="eyebrow">Vimeflow technical note</p>
+          <h1>Make the Browser Pane Share the Workspace Overlay Hierarchy</h1>
+          <p class="lead">
+            The current integration hides native browser content through a
+            workspace-level boolean that manually names every overlay source. It
+            works, but it makes the browser pane a special case. The stronger
+            shape is an overlay registry that browser panes subscribe to like
+            any other pane-level surface.
+          </p>
+          <div class="meta" aria-label="Document metadata">
+            <span class="pill"><span class="dot"></span>2026-06-15</span>
+            <span class="pill">Status: investigation</span>
+            <span class="pill">Owner: browser pane / workspace shell</span>
+            <a
+              class="pill"
+              href="./2026-06-15-browser-pane-overlay-hierarchy.zh-CN.html"
+              >中文</a
+            >
+          </div>
+        </div>
+        <div class="preview" aria-label="Overlay hierarchy preview">
+          <div class="preview-chrome">
+            <span class="preview-chip">WEB</span>
+            <span class="preview-tab"></span>
+          </div>
+          <div class="preview-body">
+            <div class="native-view"></div>
+            <div class="overlay-plane">registered overlay plane</div>
+          </div>
+        </div>
+      </section>
+
+      <nav class="toc" aria-label="Table of contents">
+        <a href="#answer">Answer</a>
+        <a href="#current-shape">Current Shape</a>
+        <a href="#electron-facts">Electron Facts</a>
+        <a href="#target">Target Contract</a>
+        <a href="#difficulties">Difficulties</a>
+        <a href="#alternatives">Alternatives</a>
+        <a href="#plan">Migration Plan</a>
+        <a href="#sources">Sources</a>
+      </nav>
+
+      <section id="answer">
+        <h2>Short Answer</h2>
+        <div class="decision">
+          <p>
+            It is possible for the browser pane to share the same overlay
+            hierarchy as terminal panes, but not by relying on CSS
+            <code>z-index</code> over the native page. Electron
+            <code>WebContentsView</code> is outside the React DOM. React
+            overlays can only beat it if the main process hides, moves, or
+            reorders the native view, or if the overlay itself becomes native.
+          </p>
+          <p>
+            Recommended path: keep <code>WebContentsView</code>, remove the
+            hand-built <code>areBrowserPanesOccluded</code> list, and introduce
+            a workspace <code>OverlayStackProvider</code>. Overlay primitives
+            register their plane and native-view policy.
+            <code>BrowserPane</code>
+            registers its native content rectangle and derives occlusion from
+            that shared stack.
+          </p>
+        </div>
+      </section>
+
+      <section id="current-shape">
+        <h2>Current Shape</h2>
+        <p>
+          Today the browser pane already lives inside the split-pane model, but
+          its native page area is controlled through a parent-computed flag:
+          <code>WorkspaceView</code> builds
+          <code>areBrowserPanesOccluded</code>, <code>TerminalZone</code> passes
+          it into <code>SplitView</code>, and <code>SplitView</code> passes it
+          into <code>BrowserPane</code> as <code>isOccluded</code>.
+        </p>
+        <pre><code>// src/features/workspace/WorkspaceView.tsx
+const areBrowserPanesOccluded =
+  terminalFitDeferred ||
+  showUnsavedDialog ||
+  commandPalette.state.isOpen ||
+  hasVisibleBurner ||
+  paneRenameNode !== null ||
+  fileError !== null ||
+  infoMessage !== null
+
+// src/features/browser/components/BrowserPane.tsx
+const visible =
+  isActiveRef.current &amp;&amp;
+  !isOccludedRef.current &amp;&amp;
+  rect.width &gt; 0 &amp;&amp;
+  rect.height &gt; 0
+
+void setBrowserPaneBounds({ sessionId, paneId, bounds, visible })</code></pre>
+        <p>
+          The Electron controller then projects <code>visible: false</code> to
+          zero-sized native bounds. That is the correct class of workaround for
+          DOM overlays, but the source of truth is too far away from the overlay
+          system.
+        </p>
+        <pre><code>// electron/browser-pane.ts
+private applyRecordBounds(record: BrowserPaneRecord): void {
+  const active = this.activeTab(record)
+  for (const tab of record.tabs.values()) {
+    tab.view.setBounds(
+      tab === active
+        ? visibleBounds(record.lastBounds, record.visible)
+        : { x: 0, y: 0, width: 0, height: 0 }
+    )
+  }
+}</code></pre>
+
+        <div class="callout">
+          <p>
+            The pain is not the visibility mechanism. The pain is that every new
+            dialog, popup, rename surface, banner, drag layer, or future overlay
+            must remember to update a browser-specific boolean. That is a hidden
+            coupling between workspace overlay hierarchy and a single pane type.
+          </p>
+        </div>
+      </section>
+
+      <section id="electron-facts">
+        <h2>Electron Facts</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Fact</th>
+              <th>Implication for Vimeflow</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>
+                <code>WebContentsView</code> is a main-process native
+                <code>View</code>, not a DOM node.
+              </td>
+              <td>
+                React portals and Tailwind z-index cannot directly stack above
+                it. Renderer and main must coordinate bounds or visibility.
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <code>View.addChildView(view, index)</code> can reorder native
+                child views, and re-adding an existing view makes it topmost.
+              </td>
+              <td>
+                Native overlays are technically possible, but only if the
+                overlay is also represented as a native view/window.
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <code>View.setVisible(false)</code> exists, and bounds can also
+                be set to <code>0x0</code>.
+              </td>
+              <td>
+                The current zero-bounds strategy can become an implementation
+                detail behind a cleaner native-surface contract.
+              </td>
+            </tr>
+            <tr>
+              <td>
+                Electron recommends avoiding <code>&lt;webview&gt;</code> for
+                new work.
+              </td>
+              <td>
+                Moving to a DOM custom element just to make z-index feel simpler
+                trades a known native-view problem for stability and security
+                risks.
+              </td>
+            </tr>
+            <tr>
+              <td>
+                Offscreen rendering can provide bitmaps or shared textures.
+              </td>
+              <td>
+                It can make browser pixels part of the DOM/canvas hierarchy, but
+                then input, IME, accessibility, video, and performance become
+                product-level problems.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section id="target">
+        <h2>Target Contract</h2>
+        <p>
+          BrowserPane should not be told by <code>WorkspaceView</code> that
+          overlays exist. Instead, it should participate in the same overlay
+          hierarchy the terminal canvas already lives under.
+        </p>
+
+        <div class="grid">
+          <div class="card">
+            <h3>Overlay sources self-register</h3>
+            <p>
+              Dialogs, popovers, drag covers, command palette, rename controls,
+              and banners declare their overlay plane and whether they occlude
+              native browser surfaces.
+            </p>
+          </div>
+          <div class="card">
+            <h3>Native surfaces subscribe</h3>
+            <p>
+              BrowserPane registers its page rectangle as a native surface and
+              receives <code>occluded: true</code> when any higher overlay plane
+              intersects or globally covers it.
+            </p>
+          </div>
+        </div>
+
+        <h3>Proposed Type Shape</h3>
+        <pre><code>type OverlayPlane =
+  | 'pane-chrome'
+  | 'popover'
+  | 'dialog'
+  | 'palette'
+  | 'drag'
+  | 'toast'
+
+type NativeOcclusionPolicy = 'none' | 'intersects' | 'global'
+
+interface OverlayDescriptor {
+  id: string
+  plane: OverlayPlane
+  isOpen: boolean
+  nativeOcclusion: NativeOcclusionPolicy
+  getRect?: () =&gt; DOMRectReadOnly | null
+}
+
+interface NativeSurfaceDescriptor {
+  id: string
+  owner: 'browser-pane'
+  getRect: () =&gt; DOMRectReadOnly | null
+  belowPlane: OverlayPlane
+}</code></pre>
+
+        <h3>Component UML</h3>
+        <pre><code>WorkspaceView
+  |
+  +-- OverlayStackProvider
+      |
+      +-- TerminalZone
+      |   |
+      |   +-- SplitView
+      |       |
+      |       +-- TerminalPane       (pure DOM surface)
+      |       +-- BrowserPane
+      |           |
+      |           +-- useNativeSurface(contentRef)
+      |           +-- setBrowserPaneBounds({ visible: !occluded })
+      |
+      +-- CommandPalette       -- useOverlayRegistration()
+      +-- UnsavedChangesDialog -- useOverlayRegistration()
+      +-- BurnerTerminal       -- useOverlayRegistration()
+      +-- PaneRenameOverlay    -- useOverlayRegistration()
+      +-- Info/ErrorBanner     -- useOverlayRegistration()</code></pre>
+
+        <h3>Occlusion Sequence</h3>
+        <pre><code>CommandPalette opens
+  -&gt; useOverlayRegistration({ plane: 'palette', nativeOcclusion: 'global' })
+  -&gt; OverlayStackProvider recomputes native surface visibility
+  -&gt; BrowserPane receives occluded = true
+  -&gt; BrowserPane sends setBrowserPaneBounds({ visible: false })
+  -&gt; BrowserPaneController applies zero bounds or setVisible(false)
+  -&gt; React palette is now visually and interactively topmost
+
+CommandPalette closes
+  -&gt; overlay descriptor is removed
+  -&gt; BrowserPane receives occluded = false
+  -&gt; BrowserPane sends latest measured bounds with visible = true
+  -&gt; controller restores active tab bounds and focus policy decides refocus</code></pre>
+
+        <h3>BrowserPane Pseudocode</h3>
+        <pre><code>export const BrowserPane = (props: BrowserPaneProps): ReactElement =&gt; {
+  const contentRef = useRef&lt;HTMLDivElement&gt;(null)
+  const nativeSurface = useNativeSurface({
+    id: `browser:${props.session.id}:${props.pane.id}`,
+    owner: 'browser-pane',
+    getRect: () =&gt; contentRef.current?.getBoundingClientRect() ?? null,
+    belowPlane: 'pane-chrome',
+  })
+
+  const syncBounds = useCallback((): void =&gt; {
+    const rect = contentRef.current?.getBoundingClientRect()
+    if (!rect || !nativePaneReadyRef.current) {
+      return
+    }
+
+    void setBrowserPaneBounds({
+      sessionId: props.session.id,
+      paneId: props.pane.id,
+      bounds: rectToBounds(rect),
+      visible:
+        props.isActive &amp;&amp;
+        props.pane.active &amp;&amp;
+        !nativeSurface.occluded &amp;&amp;
+        rect.width &gt; 0 &amp;&amp;
+        rect.height &gt; 0,
+      shortcutContext: shortcutContextRef.current,
+    })
+  }, [props.isActive, props.pane.active, props.pane.id, nativeSurface.occluded])
+
+  useLayoutEffect(syncBounds)
+
+  return &lt;div ref={contentRef} data-testid="browser-pane-content" /&gt;
+}</code></pre>
+
+        <h3>Overlay Source Pseudocode</h3>
+        <pre><code>export const CommandPalette = ({ state, ...props }: Props): ReactElement =&gt; {
+  const panelRef = useRef&lt;HTMLDivElement&gt;(null)
+
+  useOverlayRegistration({
+    id: 'command-palette',
+    plane: 'palette',
+    isOpen: state.isOpen,
+    nativeOcclusion: 'global',
+    getRect: () =&gt; panelRef.current?.getBoundingClientRect() ?? null,
+  })
+
+  return state.isOpen ? (
+    &lt;div className="fixed inset-0 z-100"&gt;
+      &lt;div ref={panelRef}&gt;...&lt;/div&gt;
+    &lt;/div&gt;
+  ) : null
+}</code></pre>
+      </section>
+
+      <section id="difficulties">
+        <h2>Technical Difficulties</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Difficulty</th>
+              <th>Why it matters</th>
+              <th>Mitigation</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>DOM and native view are different compositors</td>
+              <td>
+                A React overlay can be visually under a native browser page even
+                when its CSS z-index is higher.
+              </td>
+              <td>
+                Treat native browser content as a registered surface with
+                explicit visibility controlled by the main process.
+              </td>
+            </tr>
+            <tr>
+              <td>Overlay ownership is distributed</td>
+              <td>
+                Command palette, dialogs, burner terminals, rename affordances,
+                banners, and drag covers live in different components.
+              </td>
+              <td>
+                Each overlay registers itself. No parent manually knows the full
+                list.
+              </td>
+            </tr>
+            <tr>
+              <td>Rect measurement is fragile</td>
+              <td>
+                <code>ResizeObserver</code> catches size changes, but pure
+                position changes can require render-time syncing.
+              </td>
+              <td>
+                Keep the existing post-render <code>syncBounds()</code> pattern,
+                add a shared requestAnimationFrame scheduler, and de-dupe bounds
+                keys.
+              </td>
+            </tr>
+            <tr>
+              <td>Focus return can steal user intent</td>
+              <td>
+                When a dialog closes, the browser page may reclaim focus while
+                the user expected the terminal zone, dock, or command palette
+                entry path to finish.
+              </td>
+              <td>
+                Keep BrowserPane's existing focus guards and only refocus native
+                content when the pane was active before occlusion and no higher
+                priority focus target requested restoration.
+              </td>
+            </tr>
+            <tr>
+              <td>Pointer capture during drag</td>
+              <td>
+                Native web content can consume mouse events while split handles,
+                dock handles, or sidebar handles are dragging.
+              </td>
+              <td>
+                Register drag layers as <code>nativeOcclusion: 'global'</code>.
+                Do not require every drag source to call browser-specific code.
+              </td>
+            </tr>
+            <tr>
+              <td>Multiple browser tabs per pane</td>
+              <td>
+                Only the active native tab should receive real bounds. Inactive
+                tab views must stay alive but hidden.
+              </td>
+              <td>
+                Keep <code>BrowserPaneController.applyRecordBounds()</code> as
+                the authority for active-tab projection.
+              </td>
+            </tr>
+            <tr>
+              <td>Security boundary must stay strict</td>
+              <td>
+                Remote pages are untrusted. A simpler DOM embed can reopen Node,
+                preload, or navigation risks.
+              </td>
+              <td>
+                Keep sandboxed <code>WebContentsView</code> with
+                <code>nodeIntegration: false</code>,
+                <code>contextIsolation: true</code>, and existing
+                navigation/popup policies.
+              </td>
+            </tr>
+            <tr>
+              <td>Testing real layout requires Electron</td>
+              <td>
+                JSDOM cannot prove native views are hidden under real overlays.
+              </td>
+              <td>
+                Add unit tests for registry math, renderer tests for bridge
+                calls, and one Electron visual/integration check for overlay
+                occlusion.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section id="alternatives">
+        <h2>Alternatives Analysis</h2>
+
+        <article class="card">
+          <h3>
+            Option A - Overlay registry with BrowserPane native-surface
+            subscription
+            <span class="status good">recommended</span>
+          </h3>
+          <p>
+            Keep the current <code>WebContentsView</code> browser architecture,
+            but replace the parent flag with a generic overlay/native-surface
+            registry.
+          </p>
+          <div class="idea">
+            <h4>IDEA</h4>
+            <dl>
+              <dt>I - Intent</dt>
+              <dd>
+                Let BrowserPane share the workspace overlay hierarchy without
+                making every overlay source remember browser-specific gates.
+              </dd>
+              <dt>D - Danger</dt>
+              <dd>
+                The registry becomes infrastructure; if descriptors are not
+                registered by all overlay primitives, native occlusion can
+                drift.
+              </dd>
+              <dt>E - Explain</dt>
+              <dd>
+                This preserves the working native browser surface and moves the
+                coupling into one explicit contract: overlays describe their
+                plane, native panes subscribe.
+              </dd>
+              <dt>A - Alternatives</dt>
+              <dd>
+                Use Option B only if Vimeflow needs native overlays above native
+                pages without hiding the page. Use Option E only as a short
+                compatibility bridge.
+              </dd>
+            </dl>
+          </div>
+          <pre><code>interface OverlayStackApi {
+  registerOverlay(descriptor: OverlayDescriptor): () =&gt; void
+  registerNativeSurface(descriptor: NativeSurfaceDescriptor): NativeSurfaceState
+}
+
+const occluded = overlays.some((overlay) =&gt;
+  overlay.isOpen &amp;&amp;
+  overlay.nativeOcclusion !== 'none' &amp;&amp;
+  isHigherPlane(overlay.plane, surface.belowPlane) &amp;&amp;
+  (overlay.nativeOcclusion === 'global' ||
+    rectsIntersect(overlay.getRect?.(), surface.getRect()))
+)</code></pre>
+          <pre><code>Sequence
+
+Overlay opens
+  -&gt; registerOverlay()
+  -&gt; OverlayStackProvider computes affected native surfaces
+  -&gt; BrowserPane syncBounds()
+  -&gt; Electron main hides WebContentsView
+  -&gt; Overlay remains DOM-native and visually correct</code></pre>
+        </article>
+
+        <article class="card">
+          <h3>
+            Option B - Native overlay compositor in Electron main
+            <span class="status neutral">powerful</span>
+          </h3>
+          <p>
+            Move the app shell and overlay surfaces into a native
+            <code>BaseWindow</code> view hierarchy, or add a dedicated overlay
+            <code>WebContentsView</code> above browser page views.
+          </p>
+          <div class="idea">
+            <h4>IDEA</h4>
+            <dl>
+              <dt>I - Intent</dt>
+              <dd>
+                Make overlays literally native siblings above browser native
+                views, so the browser can remain visible under translucent glass
+                surfaces.
+              </dd>
+              <dt>D - Danger</dt>
+              <dd>
+                This is a windowing architecture change. It risks focus bugs,
+                lifecycle leaks, cross-platform child-window behavior, and a
+                large test matrix.
+              </dd>
+              <dt>E - Explain</dt>
+              <dd>
+                Electron supports child view ordering, but Vimeflow currently
+                renders overlays as React DOM inside the app window. Turning
+                those into native views creates a second renderer surface.
+              </dd>
+              <dt>A - Alternatives</dt>
+              <dd>
+                Option A gives most of the UX benefit with lower risk. Reach for
+                Option B only if hiding browser content under overlays becomes
+                unacceptable.
+              </dd>
+            </dl>
+          </div>
+          <pre><code>BaseWindow
+  contentView
+    index 0: appShellView       // React shell without native browser pages
+    index 1: browserPaneView[]  // remote pages clipped to pane rects
+    index 2: overlayView        // React overlay-only renderer, transparent
+
+OverlayStackProvider
+  -&gt; ipcMain.setOverlayBounds(rect)
+  -&gt; win.contentView.addChildView(overlayView)
+  -&gt; overlayView.setBounds(viewportBounds)</code></pre>
+          <pre><code>Risk sketch
+
+React shell focus -&gt; overlay WebContents focus -&gt; browser WebContents focus
+        ^                    |                         |
+        +------ IPC focus restoration and keyboard routing must be exact -----+</code></pre>
+        </article>
+
+        <article class="card">
+          <h3>
+            Option C - Replace WebContentsView with the Electron webview tag
+            <span class="status bad">reject</span>
+          </h3>
+          <p>
+            Render browser pages as <code>&lt;webview&gt;</code> custom elements
+            inside React so DOM overlays and browser content share one DOM-ish
+            layout tree.
+          </p>
+          <div class="idea">
+            <h4>IDEA</h4>
+            <dl>
+              <dt>I - Intent</dt>
+              <dd>
+                Make z-index behavior feel natural by turning the browser pane
+                into a renderer-owned element.
+              </dd>
+              <dt>D - Danger</dt>
+              <dd>
+                Electron explicitly discourages new webview usage, it requires
+                enabling <code>webviewTag</code>, and preload hardening becomes
+                more sensitive.
+              </dd>
+              <dt>E - Explain</dt>
+              <dd>
+                The appeal is real: the host page controls layout directly. The
+                cost is moving from a recommended API to a less stable embed
+                path with event-routing caveats.
+              </dd>
+              <dt>A - Alternatives</dt>
+              <dd>
+                Option A keeps the recommended browser primitive while solving
+                the actual coupling. Option C is not worth the regression risk.
+              </dd>
+            </dl>
+          </div>
+          <pre><code>const BrowserPaneWebview = ({ url }: Props): ReactElement =&gt; (
+  &lt;div className="relative h-full"&gt;
+    &lt;webview
+      src={url}
+      partition="persist:vimeflow-browser:workspace:session"
+      className="absolute inset-0"
+    /&gt;
+    &lt;CommandPalette className="fixed z-100" /&gt;
+  &lt;/div&gt;
+)</code></pre>
+          <pre><code>Problem path
+
+untrusted page
+  -&gt; webview preload / navigation / permission policy
+  -&gt; renderer-hosted custom element
+  -&gt; async event bridge
+  -&gt; more surface area than current WebContentsView controller</code></pre>
+        </article>
+
+        <article class="card">
+          <h3>
+            Option D - Offscreen render browser pages into a DOM canvas
+            <span class="status warn">research only</span>
+          </h3>
+          <p>
+            Render remote pages offscreen and draw their frames into a canvas or
+            shared texture inside the BrowserPane DOM subtree.
+          </p>
+          <div class="idea">
+            <h4>IDEA</h4>
+            <dl>
+              <dt>I - Intent</dt>
+              <dd>
+                Make browser pixels fully part of the React composition layer,
+                enabling true DOM overlays and visual effects.
+              </dd>
+              <dt>D - Danger</dt>
+              <dd>
+                Input routing, text selection, IME, cursor shape, accessibility,
+                high frame-rate video, GPU memory, and audio focus all become
+                custom product work.
+              </dd>
+              <dt>E - Explain</dt>
+              <dd>
+                Electron can emit offscreen frames, but that is a rendering
+                primitive, not a complete interactive browser pane.
+              </dd>
+              <dt>A - Alternatives</dt>
+              <dd>
+                Keep this for future streaming or preview modes. It should not
+                replace the durable workspace browser.
+              </dd>
+            </dl>
+          </div>
+          <pre><code>// Main process sketch
+const win = new BrowserWindow({
+  show: false,
+  webPreferences: {
+    offscreen: { useSharedTexture: true },
+  },
+})
+
+win.webContents.on('paint', (_event, dirty, image) =&gt; {
+  browserPaneFrames.emit({ dirty, png: image.toPNG() })
+})</code></pre>
+          <pre><code>// Renderer sketch
+canvas.drawImage(nextFrameBitmap, dirty.x, dirty.y)
+forwardPointerEventToMain(event)
+forwardKeyboardEventToMain(event)
+
+// Every one of these forwarding paths needs browser-grade fidelity.</code></pre>
+        </article>
+
+        <article class="card">
+          <h3>
+            Option E - Keep the parent boolean and document the overlay list
+            <span class="status warn">temporary</span>
+          </h3>
+          <p>
+            Continue with <code>areBrowserPanesOccluded</code> and require every
+            overlay change to update the list.
+          </p>
+          <div class="idea">
+            <h4>IDEA</h4>
+            <dl>
+              <dt>I - Intent</dt>
+              <dd>
+                Avoid new infrastructure while keeping current browser overlays
+                usable.
+              </dd>
+              <dt>D - Danger</dt>
+              <dd>
+                The next overlay can forget the flag and ship a real visual or
+                input bug. The coupling is hidden in <code>WorkspaceView</code>.
+              </dd>
+              <dt>E - Explain</dt>
+              <dd>
+                This was a reasonable spike path because it proved the native
+                hiding mechanism and kept BrowserPane stable.
+              </dd>
+              <dt>A - Alternatives</dt>
+              <dd>
+                Keep only as a compatibility fallback while Option A lands. Do
+                not make it the long-term contract.
+              </dd>
+            </dl>
+          </div>
+          <pre><code>const areBrowserPanesOccluded =
+  isDragging ||
+  showUnsavedDialog ||
+  commandPalette.state.isOpen ||
+  hasVisibleBurner ||
+  paneRenameNode !== null ||
+  fileError !== null ||
+  infoMessage !== null ||
+  futureOverlayThatSomeoneMustRemember</code></pre>
+        </article>
+      </section>
+
+      <section id="plan">
+        <h2>Migration Plan</h2>
+        <ol>
+          <li>
+            Add
+            <code
+              >src/features/workspace/overlays/OverlayStackProvider.tsx</code
+            >
+            with descriptor registration, plane ordering, rectangle
+            intersection, and a single scheduled recompute path.
+          </li>
+          <li>
+            Add <code>useOverlayRegistration()</code> and wire it into
+            <code>CommandPalette</code>, <code>UnsavedChangesDialog</code>,
+            burner terminal overlays, pane rename, drag covers, and workspace
+            banners.
+          </li>
+          <li>
+            Add <code>useNativeSurface()</code> to <code>BrowserPane</code>. The
+            hook should replace <code>isOccluded</code> with a derived
+            <code>nativeSurface.occluded</code> value.
+          </li>
+          <li>
+            Keep the existing <code>setBrowserPaneBounds()</code> IPC and
+            <code>BrowserPaneController.applyRecordBounds()</code> behavior. The
+            implementation can later add <code>view.setVisible(false)</code> if
+            Electron testing shows it is cleaner than zero bounds.
+          </li>
+          <li>
+            Delete <code>areBrowserPanesOccluded</code> after each current
+            overlay has a registration test. Keep a temporary compatibility flag
+            only during the migration PR if needed.
+          </li>
+        </ol>
+
+        <h3>Acceptance Criteria</h3>
+        <ul>
+          <li>
+            Adding a new overlay requires registering its overlay plane, not
+            editing <code>WorkspaceView</code> browser-specific logic.
+          </li>
+          <li>
+            Command palette, unsaved dialog, burner popup, rename overlay, drag
+            layer, and banners all hide native browser content when they should.
+          </li>
+          <li>
+            Browser panes remain mounted, preserve tab state, preserve CDP
+            target identity, and restore active-tab bounds after overlays close.
+          </li>
+          <li>
+            Unit tests cover plane ordering and rect intersection. BrowserPane
+            component tests cover bridge calls. Electron integration covers at
+            least one DOM overlay over a real native browser pane.
+          </li>
+        </ul>
+      </section>
+
+      <section id="sources" class="footnotes">
+        <h2>Sources Checked</h2>
+        <ul>
+          <li>
+            Electron Web Embeds:
+            <a href="https://www.electronjs.org/docs/latest/tutorial/web-embeds"
+              >WebContentsView is outside the DOM and requires main/renderer
+              coordination for positioning</a
+            >.
+          </li>
+          <li>
+            Electron WebContentsView API:
+            <a
+              href="https://www.electronjs.org/docs/latest/api/web-contents-view"
+              >main-process view that displays a WebContents</a
+            >.
+          </li>
+          <li>
+            Electron View API:
+            <a href="https://www.electronjs.org/docs/latest/api/view"
+              >child view ordering, bounds, and visibility methods</a
+            >.
+          </li>
+          <li>
+            Electron webview tag:
+            <a href="https://www.electronjs.org/docs/latest/api/webview-tag"
+              >Electron recommends considering alternatives to webview</a
+            >.
+          </li>
+          <li>
+            Electron WebPreferences:
+            <a
+              href="https://www.electronjs.org/docs/latest/api/structures/web-preferences"
+              >webviewTag and offscreen rendering options</a
+            >.
+          </li>
+          <li>
+            Electron Offscreen Rendering:
+            <a
+              href="https://www.electronjs.org/docs/latest/tutorial/offscreen-rendering"
+              >bitmap and shared-texture rendering trade-offs</a
+            >.
+          </li>
+          <li>
+            Vimeflow local references:
+            <a href="../design/UNIFIED.md">docs/design/UNIFIED.md</a>,
+            <a href="../../src/features/workspace/WorkspaceView.tsx"
+              >WorkspaceView.tsx</a
+            >,
+            <a href="../../src/features/browser/components/BrowserPane.tsx"
+              >BrowserPane.tsx</a
+            >,
+            <a href="../../electron/browser-pane.ts">electron/browser-pane.ts</a
+            >,
+            <a href="../../rules/common/idea-framework.md">IDEA framework</a>.
+          </li>
+        </ul>
+      </section>
+    </main>
+  </body>
+</html>
