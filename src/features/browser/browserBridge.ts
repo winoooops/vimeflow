@@ -29,6 +29,7 @@ type BrowserCapableWindow = Window & {
 
 let browserPaneBoundsCaptureActive = false
 let browserPaneBoundsCaptures: BrowserPaneBoundsCapture[] = []
+let browserPaneBoundsSequence = 0
 
 const bridge = (): BrowserPaneBridge | undefined => {
   if (typeof window === 'undefined') {
@@ -42,12 +43,13 @@ const cloneBoundsCapture = (
   request: BrowserPaneBoundsRequest
 ): BrowserPaneBoundsCapture => {
   const capture: BrowserPaneBoundsCapture = {
-    sequence: browserPaneBoundsCaptures.length,
+    sequence: browserPaneBoundsSequence,
     sessionId: request.sessionId,
     paneId: request.paneId,
     bounds: { ...request.bounds },
     visible: request.visible,
   }
+  browserPaneBoundsSequence += 1
 
   if (request.shortcutContext) {
     capture.shortcutContext = {
@@ -66,6 +68,7 @@ export const startBrowserPaneBoundsCapture = (): boolean => {
 
   browserPaneBoundsCaptureActive = true
   browserPaneBoundsCaptures = []
+  browserPaneBoundsSequence = 0
 
   return true
 }
@@ -77,6 +80,7 @@ export const clearBrowserPaneBoundsCaptures = (): void => {
 export const stopBrowserPaneBoundsCapture = (): void => {
   browserPaneBoundsCaptureActive = false
   browserPaneBoundsCaptures = []
+  browserPaneBoundsSequence = 0
 }
 
 export const getBrowserPaneBoundsCaptures = (): BrowserPaneBoundsCapture[] =>
