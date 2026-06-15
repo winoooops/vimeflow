@@ -177,16 +177,22 @@ const waitForBoundsCapture = async (
   visible: boolean,
   minSequence?: number
 ): Promise<BrowserPaneBoundsCapture> => {
+  let capture: BrowserPaneBoundsCapture | undefined
+
   await browser.waitUntil(
     async () => {
       const captures = await browser.execute(
         () => window.__VIMEFLOW_E2E__?.getBrowserPaneBoundsCaptures() ?? []
       )
-
-      return (
-        matchingBoundsCaptures(captures, identity, visible, minSequence)
-          .length > 0
+      const matching = matchingBoundsCaptures(
+        captures,
+        identity,
+        visible,
+        minSequence
       )
+
+      capture = matching[matching.length - 1]
+      return capture !== undefined
     },
     {
       timeout: 5_000,
@@ -195,16 +201,6 @@ const waitForBoundsCapture = async (
     }
   )
 
-  const captures = await browser.execute(
-    () => window.__VIMEFLOW_E2E__?.getBrowserPaneBoundsCaptures() ?? []
-  )
-  const matching = matchingBoundsCaptures(
-    captures,
-    identity,
-    visible,
-    minSequence
-  )
-  const capture = matching[matching.length - 1]
   if (!capture) {
     throw new Error(`missing visible=${String(visible)} bounds capture`)
   }
