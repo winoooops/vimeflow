@@ -509,6 +509,10 @@ export const AgentStatusPanel = ({
         return
       }
 
+      if (bodySnapshotKey !== snapshotKey) {
+        return
+      }
+
       writeStatusScrollAnchor(bodySnapshotKey, nextScrollTop)
 
       const currentMetrics = scrollMetricsRef.current
@@ -520,7 +524,7 @@ export const AgentStatusPanel = ({
         }
       }
     },
-    [bodySnapshotKey]
+    [bodySnapshotKey, snapshotKey]
   )
 
   return (
