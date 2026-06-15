@@ -99,6 +99,9 @@ const overlayPlaneRanks: Record<OverlayPlane, number> = {
 
 const OverlayStackContext = createContext<OverlayStackContextValue | null>(null)
 
+// `isOpen` and `nativeOcclusion` may be live-ref getters that read from the
+// same latestDescriptorRef.current, so these comparisons can be vacuously
+// true. The guard still catches id/plane/getRect changes.
 const areOverlayDescriptorsEqual = (
   left: OverlayDescriptor,
   right: OverlayDescriptor

@@ -10,9 +10,14 @@ export const useOverlayRegistration = (descriptor: OverlayDescriptor): void => {
   const latestDescriptorRef = useRef(descriptor)
   latestDescriptorRef.current = descriptor
 
-  const { id, plane, nativeOcclusion } = descriptor
+  const { id, plane, nativeOcclusion, isOpen } = descriptor
 
   useLayoutEffect(() => {
+    // `isOpen` is listed as a dep to force re-registration when the overlay
+    // toggles, invalidating provider state so native-surface subscribers
+    // re-render. The descriptor getter reads the live ref for the current value.
+    void isOpen
+
     const getLatestRect = (): DOMRectReadOnly | null =>
       latestDescriptorRef.current.getRect?.() ?? null
 
@@ -33,6 +38,7 @@ export const useOverlayRegistration = (descriptor: OverlayDescriptor): void => {
     id,
     plane,
     nativeOcclusion,
+    isOpen,
     registerOverlayDescriptor,
     unregisterOverlayDescriptor,
   ])

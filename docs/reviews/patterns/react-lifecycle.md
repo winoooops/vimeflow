@@ -356,3 +356,12 @@ to avoid unintended re-runs (e.g., PTY respawning on every cwd change).
 - **Finding:** The dep-array-less `useLayoutEffect` (lines 78-92) runs after every React commit for every mounted `BrowserPane`. When an `'intersects'`-type overlay is open (pane-rename or workspace-banners), each commit calls `getBoundingClientRect()` on the overlay element (`document.querySelector(...)`) and on `contentRef.current`. During pane-rename, every keystroke is a commit, producing 2 forced layout reads per browser pane per keystroke. The `areOcclusionStatesEqual` guard correctly prevents render cascades, so only the reads accumulate. With multiple panes the reads are proportional. Fix: skip the re-check when no open `'intersects'` overlay is registered, reducing DOM reads to zero during the common `'global'`-only case.
 - **Fix:** Added an early return in the post-commit useLayoutEffect when no open intersecting overlay is registered, eliminating layout reads in the global-only case.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 36. useNativeSurface: bare eslint-disable on unbounded effect lacks rationale
+
+- **Source:** github-claude | PR #474 round 1 | 2026-06-15
+- **Severity:** LOW
+- **File:** `src/features/workspace/overlays/useNativeSurface.ts`
+- **Finding:** The second `useLayoutEffect` captures `overlays`, `getNativeSurfaceState`, `id`, `owner`, `belowPlane`, and `getRect` but lists no deps so it runs after every commit. The `// eslint-disable-next-line react-hooks/exhaustive-deps` suppresses the warning without naming which variables are deliberately unlisted or why each is safe.
+- **Fix:** Extended the suppress comment to name the stable refs (`overlays/getNativeSurfaceState/getRect`) and explain that the effect must run every commit for rect re-evaluation.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
